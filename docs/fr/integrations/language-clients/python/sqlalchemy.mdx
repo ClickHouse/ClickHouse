@@ -143,7 +143,9 @@ with engine.connect() as conn:
 
 Les erreurs levées par le driver via une connexion SQLAlchemy utilisent les classes DB-API exportées par `clickhouse_connect.dbapi`. Ce sont les mêmes objets de classe que les classes correspondantes de `clickhouse_connect.driver.exceptions` : SQLAlchemy les encapsule donc dans la sous-classe `sqlalchemy.exc.DBAPIError` correspondante. `StreamFailureError` est une `OperationalError` et est encapsulée sous la forme d&#39;une `sqlalchemy.exc.OperationalError`.
 
-L&#39;exécution SQL suit la [politique de nouvelles tentatives HTTP](/fr/integrations/language-clients/python/driver-api#http-retries) du driver. Les insertions en masse natives suivent la [politique de nouvelles tentatives d&#39;insertion](/fr/integrations/language-clients/python/advanced-inserting#insert-retries-and-deduplication).
+Si une table n&#39;existe pas, l&#39;inspection des colonnes et l&#39;introspection de la table lèvent `sqlalchemy.exc.NoSuchTableError`. Cette exception hérite également de `sqlalchemy.exc.NoResultFound`, de sorte que les handlers existants continuent de l&#39;intercepter. Son message est `Table <database>.<table_name> does not exist`.
+
+L&#39;exécution SQL suit la [politique de nouvelles tentatives HTTP](/fr/integrations/language-clients/python/driver-api#http-retries) du driver. Les insertions en masse au format Native suivent la [politique de nouvelles tentatives d&#39;insertion](/fr/integrations/language-clients/python/advanced-inserting#insert-retries-and-deduplication).
 
 Si une annulation déclenchée par l&#39;appelant risque d&#39;interrompre un appel explicite à `AsyncConnection.invalidate()`, exécutez l&#39;invalidation dans une task dédiée et attendez la fin de cette task avant de propager l&#39;annulation. SQLAlchemy peut ainsi finaliser la mise à jour de ses enregistrements de connexion :
 
@@ -441,6 +443,8 @@ ClickHouse ne prend pas en charge les CTE matérialisées récursives. Les helpe
 ## DDL et introspection {#sqlalchemy-ddl-reflection}
 
 ClickHouse Connect fournit les types de données ClickHouse, les moteurs de table, les structures de dictionnaire, le DDL des bases de données et l’introspection des tables.
+
+`Inspector.get_table_names()` inclut tous les types de vues par souci de compatibilité. `MetaData.reflect()` les inclut par défaut, et `only` permet de sélectionner une vue par son nom. Utilisez `Inspector.get_view_names()` pour les vues non matérialisées et `Inspector.get_materialized_view_names()` pour les vues matérialisées. Ces deux méthodes acceptent `schema` et fonctionnent avec SQLAlchemy 1.4.40 et les versions ultérieures, y compris 2.x. L’inspection de la définition de la vue via `Inspector.get_view_definition()` n’est pas prise en charge.
 
 `Nullable()` et `LowCardinality()` de `clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes` acceptent une classe ou une instance de type SQLAlchemy ClickHouse et conservent son type concret pour les vérificateurs de types. Par exemple, `Nullable(String)` renvoie une instance de `String` et peut être passé directement à `Column`. Les vérificateurs de types déduisent `list[String]` pour `[Nullable(String)]`. Si la liste contient également d’autres types ClickHouse, annotez-la avec `list[ChSqlaType]` et importez `ChSqlaType` depuis `clickhouse_connect.cc_sqlalchemy.datatypes.base`.
 

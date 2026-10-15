@@ -7,42 +7,42 @@
       "versionId": "9b3345383ff3389c6681dbde6573112bd992f08e5b332453425e342f66849919",
       "translations": {
         "ja": {
-          "updatedAt": "2026-10-14T23:37:01.004Z",
+          "updatedAt": "2026-10-15T01:02:46.395Z",
           "fileName": "docs.json",
           "postProcessHash": "8cb52a0b4023236611c055d492d94af589c9a645520f0ef62b2a988254372541"
         },
         "pt-BR": {
-          "updatedAt": "2026-10-14T23:37:01.383Z",
+          "updatedAt": "2026-10-15T01:02:46.750Z",
           "fileName": "docs.json",
           "postProcessHash": "8cb52a0b4023236611c055d492d94af589c9a645520f0ef62b2a988254372541"
         },
         "ar": {
-          "updatedAt": "2026-10-14T23:37:01.953Z",
+          "updatedAt": "2026-10-15T01:02:47.309Z",
           "fileName": "docs.json",
           "postProcessHash": "8cb52a0b4023236611c055d492d94af589c9a645520f0ef62b2a988254372541"
         },
         "ko": {
-          "updatedAt": "2026-10-14T23:37:01.189Z",
+          "updatedAt": "2026-10-15T01:02:46.574Z",
           "fileName": "docs.json",
           "postProcessHash": "8cb52a0b4023236611c055d492d94af589c9a645520f0ef62b2a988254372541"
         },
         "ru": {
-          "updatedAt": "2026-10-14T23:37:01.576Z",
+          "updatedAt": "2026-10-15T01:02:46.935Z",
           "fileName": "docs.json",
           "postProcessHash": "8cb52a0b4023236611c055d492d94af589c9a645520f0ef62b2a988254372541"
         },
         "es": {
-          "updatedAt": "2026-10-14T23:37:00.812Z",
+          "updatedAt": "2026-10-15T01:02:46.207Z",
           "fileName": "docs.json",
           "postProcessHash": "8cb52a0b4023236611c055d492d94af589c9a645520f0ef62b2a988254372541"
         },
         "zh": {
-          "updatedAt": "2026-10-14T23:37:01.761Z",
+          "updatedAt": "2026-10-15T01:02:47.127Z",
           "fileName": "docs.json",
           "postProcessHash": "8cb52a0b4023236611c055d492d94af589c9a645520f0ef62b2a988254372541"
         },
         "fr": {
-          "updatedAt": "2026-10-14T23:37:02.143Z",
+          "updatedAt": "2026-10-15T01:02:47.493Z",
           "fileName": "docs.json",
           "postProcessHash": "8cb52a0b4023236611c055d492d94af589c9a645520f0ef62b2a988254372541"
         }
@@ -41857,47 +41857,47 @@
     },
     {
       "fileId": "a1090f71543aad22f66b5781b66fbed4a45698068e3a2ac49179600a7caf49ce",
-      "versionId": "7942b1524772a0d1a434d5e0e82319fe383cb4e94aa88c5270d70d5a0b322bc7",
+      "versionId": "cf44f371b125aeeb9e3cd8df8a7f588c168f9ee0d89359bc01acfb163ed97ed0",
       "translations": {
-        "es": {
-          "updatedAt": "2026-10-09T08:37:53.470Z",
-          "fileName": "es/integrations/language-clients/python/driver-api.mdx",
-          "postProcessHash": "58c857f218a606406e522917d755bfea1e5516d4f95549b25d96bfd8bbf0f792"
-        },
-        "ja": {
-          "updatedAt": "2026-10-09T08:37:53.472Z",
-          "fileName": "ja/integrations/language-clients/python/driver-api.mdx",
-          "postProcessHash": "038f797d727527cb4d28db932a15ff1a9c56b4a64adb15e6224250417adbdd77"
+        "pt-BR": {
+          "updatedAt": "2026-10-15T01:02:50.954Z",
+          "fileName": "pt-BR/integrations/language-clients/python/driver-api.mdx",
+          "postProcessHash": "024340be39bf79a47bd3867cc3003c3a31319b9cd3ea998e9b905c736b1f0534"
         },
         "ko": {
-          "updatedAt": "2026-10-09T08:37:53.473Z",
+          "updatedAt": "2026-10-15T01:02:50.955Z",
           "fileName": "ko/integrations/language-clients/python/driver-api.mdx",
-          "postProcessHash": "bbe638609d3b56818037793bea825ebffff86098685fcc46bf0f7958074aebd7"
+          "postProcessHash": "f467daa1db2fbec1df416f3735a8c8808ab6db4aff4f9e7a6b47b6f3a303a8bc"
         },
-        "pt-BR": {
-          "updatedAt": "2026-10-09T08:37:53.473Z",
-          "fileName": "pt-BR/integrations/language-clients/python/driver-api.mdx",
-          "postProcessHash": "dfa066f4f7025684a5eb2e5a482ce4eb9c01a93a486001cb64bc6441c6a08a64"
-        },
-        "ru": {
-          "updatedAt": "2026-10-09T08:37:53.475Z",
-          "fileName": "ru/integrations/language-clients/python/driver-api.mdx",
-          "postProcessHash": "e7072e33ae0a2c6c9bc35c470cd5d268d91497bb5a63cb84413246563c328e68"
-        },
-        "zh": {
-          "updatedAt": "2026-10-09T08:37:53.476Z",
-          "fileName": "zh/integrations/language-clients/python/driver-api.mdx",
-          "postProcessHash": "529ee966871bc95a3dce2bf35438a05f5bf33481120ec04922654c680194a905"
-        },
-        "ar": {
-          "updatedAt": "2026-10-09T08:37:53.477Z",
-          "fileName": "ar/integrations/language-clients/python/driver-api.mdx",
-          "postProcessHash": "696179cd8d7c8141cec9685ec36e3fc5f9b3f7b4a5f2be9409ef56c07e30fc48"
+        "ja": {
+          "updatedAt": "2026-10-15T01:02:50.956Z",
+          "fileName": "ja/integrations/language-clients/python/driver-api.mdx",
+          "postProcessHash": "816779839f1ba5905a18eceb6a484a0d53ac88af4ed473c5c08902337eae4a8e"
         },
         "fr": {
-          "updatedAt": "2026-10-09T08:37:53.479Z",
+          "updatedAt": "2026-10-15T01:02:50.957Z",
           "fileName": "fr/integrations/language-clients/python/driver-api.mdx",
-          "postProcessHash": "50a3bfdc9b7432052d8ed973f147d092cddad3789de1876861d87231efb85a7e"
+          "postProcessHash": "b962acb03bcd0f71f7d4a914a09241b2261435c2d67af071bec33e85cef66d97"
+        },
+        "ar": {
+          "updatedAt": "2026-10-15T01:02:50.958Z",
+          "fileName": "ar/integrations/language-clients/python/driver-api.mdx",
+          "postProcessHash": "fb8b157c140f491066a905d41e0f8ca334e601d7fc2802b86333d1e7c41281f9"
+        },
+        "es": {
+          "updatedAt": "2026-10-15T01:02:50.959Z",
+          "fileName": "es/integrations/language-clients/python/driver-api.mdx",
+          "postProcessHash": "85c8f983fdb8077d95c1501e9f1fd9c9fd1a55c7ed8def747d91264607248c1e"
+        },
+        "zh": {
+          "updatedAt": "2026-10-15T01:02:50.960Z",
+          "fileName": "zh/integrations/language-clients/python/driver-api.mdx",
+          "postProcessHash": "eb0995e6849a693eab2d13ae63c6ff211a0060afddaff560c616b46c9d05a142"
+        },
+        "ru": {
+          "updatedAt": "2026-10-15T01:02:50.961Z",
+          "fileName": "ru/integrations/language-clients/python/driver-api.mdx",
+          "postProcessHash": "8a2a66fa9c32e282b598af876d9efbaef915950b7a9c6bb4fe25ceeea9fe2ab5"
         }
       },
       "fileName": "integrations/language-clients/python/driver-api.mdx"
@@ -41951,47 +41951,47 @@
     },
     {
       "fileId": "738557a2a213484c9bf5e325949e95728a9e7590324f834478720c22b599a116",
-      "versionId": "74506a7a3bd16db6c642216a51e74dab45235782880004a3ea5c0b4ae18e6c0a",
+      "versionId": "93c26f23a808adba314b3c5fa5641011fb2461b8eaf943571aa1b5bdd3cdc697",
       "translations": {
         "es": {
-          "updatedAt": "2026-10-09T08:37:53.495Z",
+          "updatedAt": "2026-10-15T01:02:50.957Z",
           "fileName": "es/integrations/language-clients/python/sqlalchemy.mdx",
-          "postProcessHash": "50f1383cb09f7ee33efcd2f5292d6148f90aeca3476cd37d0cffccc3ad5e6339"
-        },
-        "ja": {
-          "updatedAt": "2026-10-09T08:37:53.495Z",
-          "fileName": "ja/integrations/language-clients/python/sqlalchemy.mdx",
-          "postProcessHash": "0f1d83bd4e3ecb18c12c2120d7b1fa05e2e8d9463defcfdc364bfd0cf3d5eff9"
-        },
-        "ko": {
-          "updatedAt": "2026-10-09T08:37:53.496Z",
-          "fileName": "ko/integrations/language-clients/python/sqlalchemy.mdx",
-          "postProcessHash": "8e4927e00db22037d3b94187b50fa95a5e0cddd1b6d70f858b3a3a9bb209a272"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-10-09T08:37:53.497Z",
-          "fileName": "pt-BR/integrations/language-clients/python/sqlalchemy.mdx",
-          "postProcessHash": "2b755506e2541f23a7c8aa3d8ac0db8e48bcec9015814847b32c57dfaa387d95"
-        },
-        "ru": {
-          "updatedAt": "2026-10-09T08:37:53.498Z",
-          "fileName": "ru/integrations/language-clients/python/sqlalchemy.mdx",
-          "postProcessHash": "50dac2791f8db6f82311e2de860835832eb0f3a867bdc9f52f7322467c3994c3"
+          "postProcessHash": "9e10c8580694a89baaeeacd0203b1c0464d8f8ddc736373b6f7d7ffef54c30a8"
         },
         "zh": {
-          "updatedAt": "2026-10-09T08:37:53.500Z",
+          "updatedAt": "2026-10-15T01:02:50.959Z",
           "fileName": "zh/integrations/language-clients/python/sqlalchemy.mdx",
-          "postProcessHash": "7bd1bc19d347f13f9e8e52b02e448ee214d4a8ebd6a054c17a8383ea7def3f89"
+          "postProcessHash": "8ed3651a8a691f4f6251931676609ed830515462204084e0696aadcdc52f13a2"
         },
-        "ar": {
-          "updatedAt": "2026-10-09T08:37:53.501Z",
-          "fileName": "ar/integrations/language-clients/python/sqlalchemy.mdx",
-          "postProcessHash": "48c9369ca2451cbfa3d5a90ca6a94f8141b3fc99ba963fbb2794fbf5d93bde8c"
+        "ru": {
+          "updatedAt": "2026-10-15T01:02:50.962Z",
+          "fileName": "ru/integrations/language-clients/python/sqlalchemy.mdx",
+          "postProcessHash": "961b3312a360786b6952e655a751e9cd3db2c31ca787a6205eb9a7b29899d064"
+        },
+        "ja": {
+          "updatedAt": "2026-10-15T01:02:50.962Z",
+          "fileName": "ja/integrations/language-clients/python/sqlalchemy.mdx",
+          "postProcessHash": "d4d4700fe8ebc0ae623872991cb0f49f78b108288d1722d5fe563128532f630c"
+        },
+        "ko": {
+          "updatedAt": "2026-10-15T01:02:50.963Z",
+          "fileName": "ko/integrations/language-clients/python/sqlalchemy.mdx",
+          "postProcessHash": "d4834cc0dce08e9fe5c927b680a31b4f3fa432e0bc880c4c7d44faf512b88cd8"
         },
         "fr": {
-          "updatedAt": "2026-10-09T08:37:53.503Z",
+          "updatedAt": "2026-10-15T01:02:50.963Z",
           "fileName": "fr/integrations/language-clients/python/sqlalchemy.mdx",
-          "postProcessHash": "d78ad7b738671178884cf1dd097be0e3edd4ed7593f51b659668e53cbb30bde1"
+          "postProcessHash": "075d5f0863593171cc67ea5ee2975482b511da0dbce8ba56becc07f5fd357305"
+        },
+        "ar": {
+          "updatedAt": "2026-10-15T01:02:50.964Z",
+          "fileName": "ar/integrations/language-clients/python/sqlalchemy.mdx",
+          "postProcessHash": "0716782dac465959a4da557974dc3c561141f3371821f2d24ca0198d2a8cf6ea"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-10-15T01:02:50.964Z",
+          "fileName": "pt-BR/integrations/language-clients/python/sqlalchemy.mdx",
+          "postProcessHash": "be334bebbfa775ed3cd6b0c57ef1a08f72e1b8df4df23b5ec6677b28787e2a26"
         }
       },
       "fileName": "integrations/language-clients/python/sqlalchemy.mdx"

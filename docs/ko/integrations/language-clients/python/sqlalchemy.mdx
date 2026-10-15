@@ -143,6 +143,8 @@ with engine.connect() as conn:
 
 SQLAlchemy 연결을 통해 드라이버에서 발생하는 오류는 `clickhouse_connect.dbapi`에서 내보내는 DB-API 클래스를 사용합니다. 이 클래스들은 `clickhouse_connect.driver.exceptions`의 대응 클래스와 동일한 클래스 객체이므로, SQLAlchemy는 이를 해당하는 `sqlalchemy.exc.DBAPIError` 하위 클래스로 래핑합니다. `StreamFailureError`는 `OperationalError`의 일종이므로 `sqlalchemy.exc.OperationalError`로 래핑됩니다.
 
+테이블이 존재하지 않으면 컬럼 검사와 테이블 리플렉션(Reflection) 시 `sqlalchemy.exc.NoSuchTableError` 예외가 발생합니다. 이 예외는 `sqlalchemy.exc.NoResultFound`도 상속하므로 기존 핸들러에서도 그대로 포착됩니다. 예외 메시지는 `Table <database>.<table_name> does not exist`입니다.
+
 SQL 실행에는 드라이버의 [HTTP 재시도 정책](/ko/integrations/language-clients/python/driver-api#http-retries)이 적용됩니다. Native 대량 삽입에는 [삽입 재시도 정책](/ko/integrations/language-clients/python/advanced-inserting#insert-retries-and-deduplication)이 적용됩니다.
 
 호출자 측의 취소로 인해 명시적으로 호출한 `AsyncConnection.invalidate()`가 중단될 수 있다면, 무효화를 별도로 소유한 작업(task)에서 실행하고, 취소를 전파하기 전에 해당 작업이 완료될 때까지 기다리십시오. 이렇게 하면 SQLAlchemy가 연결 레코드 정리 작업을 끝까지 마칠 수 있습니다:
@@ -442,7 +444,9 @@ ClickHouse는 재귀적 구체화된 CTE를 지원하지 않습니다. `recursiv
 
 ClickHouse Connect는 ClickHouse 데이터 타입, 테이블 엔진, 딕셔너리 구문, 데이터베이스 DDL 및 테이블 리플렉션을 제공합니다.
 
-`clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes`의 `Nullable()` 및 `LowCardinality()`는 ClickHouse SQLAlchemy 타입 클래스 또는 인스턴스를 인수로 받으며, 타입 검사기가 구체 타입을 그대로 인식할 수 있도록 유지합니다. 예를 들어 `Nullable(String)`은 `String` 인스턴스를 반환하므로 `Column`에 바로 전달할 수 있습니다. 타입 검사기는 `[Nullable(String)]`의 타입을 `list[String]`으로 추론합니다. 리스트에 다른 ClickHouse 타입도 포함되어 있다면 `clickhouse_connect.cc_sqlalchemy.datatypes.base`에서 `ChSqlaType`을 가져온 다음 리스트에 `list[ChSqlaType]` 타입 어노테이션을 지정하십시오.
+`Inspector.get_table_names()`는 호환성을 위해 모든 종류의 뷰를 포함합니다. `MetaData.reflect()`도 기본적으로 뷰를 포함하며, `only`를 사용하면 이름으로 특정 뷰를 선택할 수 있습니다. 구체화되지 않은 뷰에는 `Inspector.get_view_names()`를, materialized view에는 `Inspector.get_materialized_view_names()`를 사용하십시오. 두 메서드 모두 `schema`를 인수로 받으며, 2.x를 포함한 SQLAlchemy 1.4.40 이상에서 동작합니다. `Inspector.get_view_definition()`을 통한 뷰 정의(view definition) 조회는 지원되지 않습니다.
+
+`clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes`의 `Nullable()` 및 `LowCardinality()`는 ClickHouse SQLAlchemy 타입 클래스 또는 인스턴스를 인수로 받으며, 타입 검사 도구가 구체 타입을 그대로 인식할 수 있도록 유지합니다. 예를 들어 `Nullable(String)`은 `String` 인스턴스를 반환하므로 `Column`에 바로 전달할 수 있습니다. 타입 검사 도구는 `[Nullable(String)]`의 타입을 `list[String]`으로 추론합니다. 리스트에 다른 ClickHouse 타입도 포함되어 있다면 `clickhouse_connect.cc_sqlalchemy.datatypes.base`에서 `ChSqlaType`을 가져온 다음 리스트에 `list[ChSqlaType]` 타입 어노테이션을 지정하십시오.
 
 단독 `Variant` 컬럼은 SQLAlchemy 내부 타입을 통해 리플렉션되며, Alembic 자동 생성은 반복적인 타입 변경 없이 해당 컬럼의 정규 원시 타입 이름을 유지합니다. `Geometry` 및 `MultiPoint` 컬럼은 공개 SQLAlchemy 타입으로 리플렉션됩니다.
 
@@ -505,7 +509,7 @@ engine_clause = SummingMergeTree("id", columns=("delta", "n_tx"))
 # Sum delta and n_tx for rows with the same id.
 ```
 
-문자열, SQLAlchemy 컬럼, 매핑된 컬럼 속성 또는 이러한 값으로 구성된 비어 있지 않은 리스트나 튜플을 전달하세요. 리스트 및 튜플의 문자열 항목은 식별자로 인용됩니다. 스칼라 문자열은 `"delta"` 또는 `"(delta, n_tx)"`와 같은 원시 SQL로 전달됩니다. 서버는 이러한 컬럼을 식별자로 지정해야 합니다. `columns`를 생략하면 ClickHouse가 합산할 컬럼을 선택합니다. 리플렉션과 Alembic 자동 생성은 명시적으로 지정된 컬럼 목록을 유지합니다.
+문자열, SQLAlchemy 컬럼, 매핑된 컬럼 속성 또는 이러한 값으로 구성된 비어 있지 않은 리스트나 튜플을 전달하세요. 리스트 및 튜플의 문자열 항목은 식별자로 인용됩니다. 스칼라 문자열은 `"delta"` 또는 `"(delta, n_tx)"`와 같은 원시 SQL(Raw SQL)로 전달됩니다. 서버는 이러한 컬럼을 식별자로 지정해야 합니다. `columns`를 생략하면 ClickHouse가 합산할 컬럼을 선택합니다. 리플렉션과 Alembic 자동 생성은 명시적으로 지정된 컬럼 목록을 유지합니다.
 
 ## 삽입 및 기본 ORM 사용 {#sqlalchemy-inserts}
 
