@@ -678,9 +678,10 @@ size_t ColumnStatistics::allocatedBytes() const
     static constexpr size_t map_node_overhead = 4 * sizeof(void *);
 
     size_t res = sizeof(*this);
-    res += stats_desc.types_to_desc.size() * (sizeof(ColumnStatisticsDescription::StatisticsTypeDescMap::value_type) + map_node_overhead);
+    for (const auto & [type, desc] : stats_desc.types_to_desc)
+        res += sizeof(ColumnStatisticsDescription::StatisticsTypeDescMap::value_type) + map_node_overhead + desc.allocatedBytes();
     for (const auto & [type, single_stats] : stats)
-        res += sizeof(StatsMap::value_type) + map_node_overhead + single_stats->allocatedBytes();
+        res += sizeof(StatsMap::value_type) + map_node_overhead + single_stats->allocatedBytes() + single_stats->descriptionAllocatedBytes();
     return res;
 }
 
