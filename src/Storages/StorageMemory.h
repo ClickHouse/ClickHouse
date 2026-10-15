@@ -166,7 +166,7 @@ private:
     static VirtualColumnsDescription createVirtuals();
 
     /// Restores the data of this table from backup.
-    void restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup);
+    void restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup, const ContextPtr & context);
 
     /// The blocks of the table together with the exact number of rows and bytes in them.
     /// The counters are a part of the same object, so they are published atomically with the
