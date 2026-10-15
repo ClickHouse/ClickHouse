@@ -153,7 +153,7 @@ String getMetadataVersionPathInBackup(const String & table_metadata_path_in_back
 {
     constexpr std::string_view ext = ".sql";
     chassert(table_metadata_path_in_backup.ends_with(ext));
-    return table_metadata_path_in_backup.substr(0, table_metadata_path_in_backup.size() - ext.size()) + ".metadata_version.txt";
+    return table_metadata_path_in_backup.substr(0, table_metadata_path_in_backup.size() - ext.size()) + String{METADATA_VERSION_FILE_SUFFIX};
 }
 
 }

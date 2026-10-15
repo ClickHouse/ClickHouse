@@ -35,6 +35,7 @@
 #include <Access/ContextAccess.h>
 
 #include <Backups/BackupFactory.h>
+#include <Backups/BackupUtils.h>
 
 #include <Disks/DiskBackup.h>
 #include <Disks/SingleDiskVolume.h>
@@ -308,6 +309,12 @@ void DatabaseBackup::loadTablesMetadata(ContextPtr local_context, ParsedTablesMe
 
         /// Permanently detached table flag
         if (endsWith(file_name, ".sql.detached"))
+        {
+            continue;
+        }
+
+        /// Metadata version of a replicated table, it is not needed to attach the table.
+        if (file_name.ends_with(BackupUtils::METADATA_VERSION_FILE_SUFFIX))
         {
             continue;
         }
