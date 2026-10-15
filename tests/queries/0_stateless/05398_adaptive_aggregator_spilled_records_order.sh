@@ -4,15 +4,15 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# `deltaSumTimestamp` adds the rows of a state in the order they come, so the merge of the adaptive aggregator adds
-# every thread's staged records in the order the thread staged them: first those it wrote to disk, then those it kept
-# in memory. The tables freeze at their first key, so the rows of key 1024 of each lane, almost all of them, are
-# staged, and a spill threshold of a megabyte writes most of them to disk while the latest ones stay in memory. The
-# result matches the same query with the feature off and no spilling. The thresholds are pinned because the runner
-# randomizes them, and the query runs in its own clickhouse-local process, so the counters in `system.events` belong to
-# it alone.
-query="SELECT sum(s), max(s) FROM (
-    SELECT lane * 10000 + if(number < 1024, number, 1024) AS k, deltaSumTimestamp(number, number) AS s
+# The merge of the adaptive aggregator adds every thread's staged records in the order the thread staged them: first
+# those it wrote to disk, then those it kept in memory. So `groupArray` lists the values of a key that one thread staged
+# in the order of that thread's rows, as with the feature off. Each lane of `UNION ALL` is its own thread. The tables
+# freeze at their first key, so the rows of key 1024 of each lane, almost all of them, are staged, and a spill threshold
+# of a megabyte writes most of them to disk while the latest ones stay in memory. The result matches the same query with
+# the feature off and no spilling. The thresholds are pinned because the runner randomizes them, and the query runs in
+# its own clickhouse-local process, so the counters in `system.events` belong to it alone.
+query="SELECT sum(cityHash64(a)) FROM (
+    SELECT lane * 10000 + if(number < 1024, number, 1024) AS k, groupArray(number) AS a
     FROM (SELECT toUInt64(0) AS lane, number FROM numbers(100000) UNION ALL SELECT toUInt64(1) AS lane, number FROM numbers(100000))
     GROUP BY k SETTINGS __SETTINGS__)"
 off=${query//__SETTINGS__/enable_adaptive_aggregator = 0}
