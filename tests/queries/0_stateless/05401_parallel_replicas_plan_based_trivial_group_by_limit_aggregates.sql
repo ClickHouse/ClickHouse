@@ -20,7 +20,10 @@ CREATE TABLE t_pr_kept_keys (k UInt64) ENGINE = MergeTree ORDER BY tuple();
 -- Large enough for the remote replicas to get a share: a table that one replica reads alone gives exact counts.
 INSERT INTO t_pr_kept_keys SELECT number % 4999 FROM numbers(9998000);
 
-SELECT count() > 0 FROM (EXPLAIN SELECT k, count() FROM t_pr_kept_keys GROUP BY k LIMIT 2000) WHERE explain ILIKE '%MergingAggregated%';
+SELECT
+    countIf(explain LIKE '%ReadFromParallelReplicas%') > 0 AS has_remote_read,
+    countIf(explain LIKE '%MergingAggregated%') > 0 AS has_merging_aggregated
+FROM (EXPLAIN pretty = 0, description = 0 SELECT k, count() FROM t_pr_kept_keys GROUP BY k LIMIT 2000);
 
 -- Delay the local replica's read requests so that the remote replicas get a share too.
 SYSTEM ENABLE FAILPOINT slowdown_parallel_replicas_local_plan_read;
