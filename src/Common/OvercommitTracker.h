@@ -8,6 +8,7 @@
 #include <condition_variable>
 #include <mutex>
 #include <unordered_map>
+#include <Common/FiberLocal.h>
 #include <Common/SharedMutex.h>
 
 // This struct is used for the comparison of query memory usage.
@@ -162,8 +163,8 @@ protected:
 // This class is used to disallow tracking during logging to avoid deadlocks.
 struct OvercommitTrackerBlockerInThread
 {
-    OvercommitTrackerBlockerInThread() { ++counter; }
-    ~OvercommitTrackerBlockerInThread() { --counter; }
+    OvercommitTrackerBlockerInThread() { counter = counter + 1; }
+    ~OvercommitTrackerBlockerInThread() { counter = counter - 1; }
 
     OvercommitTrackerBlockerInThread(OvercommitTrackerBlockerInThread const &) = delete;
     OvercommitTrackerBlockerInThread & operator=(OvercommitTrackerBlockerInThread const &) = delete;
@@ -171,5 +172,5 @@ struct OvercommitTrackerBlockerInThread
     static bool isBlocked() { return counter > 0; }
 
 private:
-    static thread_local size_t counter;
+    static constinit FiberLocal<size_t, FiberLocalSlot::OVERCOMMIT_TRACKER_BLOCKER_COUNTER> counter;
 };
