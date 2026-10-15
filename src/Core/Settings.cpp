@@ -7104,7 +7104,7 @@ Possible values:
 - 0 - Disabled.
 - 1 - Enabled.
 )", 0, \
-        {"26.10", false, false, "New setting to restrict query cache entries to cases when none of the referenced tables were changed since the entry was cached."}) \
+        {"26.11", false, false, "New setting to restrict query cache entries to cases when none of the referenced tables were changed since the entry was cached."}) \
     DECLARE(UInt64, query_cache_max_size_in_bytes, 0, R"(
 The maximum amount of memory (in bytes) the current user may allocate in the in-memory [query cache](/concepts/features/performance/caches/query-cache). 0 means unlimited.
 
