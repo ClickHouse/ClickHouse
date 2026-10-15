@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
+# Tag no-fasttest: `ipcrypt2` is not built in the fast test.
 
 # --dump-schema cases from review: a sharding key after a qualified remote() target, the ipcrypt gate, a computed
 # CAST target type, row data of values() that looks like a type, and a failed write to stdout.
