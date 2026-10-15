@@ -455,7 +455,7 @@ static HashJoin::Type chooseMethod(const ColumnRawPtrs & key_columns, Sizes & ke
         return Type::keys64;
     if (all_fixed && keys_bytes <= 16)
         return Type::keys128;
-    if (all_fixed && keys_bytes <= 32)
+    if (all_fixed && keys_bytes <= HashJoin::max_packed_keys_bytes)
         return Type::keys256;
 
     /// If there is single string key, use hash table of it's values.
@@ -1383,6 +1383,45 @@ void HashJoin::checkTypesOfKeys(const Block & block) const
     }
 }
 
+/// Keeps selector-backed probe continuations inside HashJoin so an unprocessed left suffix
+/// is not materialized and resubmitted while preserving the joined-block size limit.
+class HashJoin::ContinuationResult final : public IJoinResult
+{
+public:
+    ContinuationResult(HashJoin & join_, JoinResultPtr current_result_)
+        : join(join_)
+        , current_result(std::move(current_result_))
+    {
+    }
+
+    JoinResultBlock next() override
+    {
+        auto result = current_result->next();
+
+        if (result.is_last)
+        {
+            addMatchedRightRows(matched_right_rows, current_result->getMatchedRightRows());
+
+            if (result.next_block)
+                current_result = join.runJoinDispatch(std::move(*result.next_block));
+            else
+                current_result.reset();
+        }
+
+        return {std::move(result.block), nullptr, !current_result};
+    }
+
+    std::optional<size_t> getMatchedRightRows() const override
+    {
+        return matched_right_rows;
+    }
+
+private:
+    HashJoin & join;
+    JoinResultPtr current_result;
+    std::optional<size_t> matched_right_rows = 0;
+};
+
 JoinResultPtr HashJoin::joinBlock(Block block)
 {
     if (!data)
@@ -1397,7 +1436,8 @@ JoinResultPtr HashJoin::joinBlock(Block block)
 
     materializeColumnsFromLeftBlock(block);
 
-    return runJoinDispatch(ScatteredBlock(std::move(block)));
+    auto result = runJoinDispatch(ScatteredBlock(std::move(block)));
+    return std::make_unique<ContinuationResult>(*this, std::move(result));
 }
 
 JoinResultPtr HashJoin::joinScatteredBlock(ScatteredBlock block)
@@ -1418,7 +1458,8 @@ JoinResultPtr HashJoin::joinScatteredBlock(ScatteredBlock block)
             cond_column_name.second);
     }
 
-    return runJoinDispatch(std::move(block));
+    auto result = runJoinDispatch(std::move(block));
+    return std::make_unique<ContinuationResult>(*this, std::move(result));
 }
 
 JoinResultPtr HashJoin::runJoinDispatch(ScatteredBlock block)

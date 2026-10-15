@@ -5,14 +5,11 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnFunction.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnFunction.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Columns/FilterDescription.h>
-#include <Common/Stopwatch.h>
-
-#include <optional>
 #include <Columns/MaskOperations.h>
 #include <Common/typeid_cast.h>
 #include <Columns/IColumn.h>
@@ -22,12 +19,21 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionUnaryArithmetic.h>
 #include <Common/FieldVisitors.h>
+#include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Columns/ColumnsCommon.h>
 #include <base/TypeLists.h>
 
-#include <cstring>
 #include <algorithm>
+#include <cstring>
+#include <numeric>
+#include <optional>
 
+namespace ProfileEvents
+{
+    extern const Event ShortCircuitArgumentsReordered;
+}
 
 namespace DB
 {
@@ -42,6 +48,7 @@ Setting [`short_circuit_function_evaluation`](/reference/settings/session-settin
 If enabled, `val_i` is evaluated only if `(val_1 AND val_2 AND ... AND val_{i-1})` is `true`.
 
 For example, with short-circuit evaluation, no division-by-zero exception is thrown when executing the query `SELECT and(number = 2, intDiv(1, number)) FROM numbers(5)`.
+The order of evaluation can differ from the order of the arguments when it doesn't change the result and doesn't introduce exceptions, see setting [`short_circuit_function_evaluation_reorder_arguments`](/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation_reorder_arguments).
 Zero as an argument is considered `false`, non-zero values are considered `true`.
 )";
         FunctionDocumentation::Syntax syntax = "and(val1, val2[, ...])";
@@ -73,6 +80,7 @@ Setting [`short_circuit_function_evaluation`](/reference/settings/session-settin
 If enabled, `val_i` is evaluated only if `((NOT val_1) AND (NOT val_2) AND ... AND (NOT val_{i-1}))` is `true`.
 
 For example, with short-circuit evaluation, no division-by-zero exception is thrown when executing the query `SELECT or(number = 0, intDiv(1, number) != 0) FROM numbers(5)`.
+The order of evaluation can differ from the order of the arguments when it doesn't change the result and doesn't introduce exceptions, see setting [`short_circuit_function_evaluation_reorder_arguments`](/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation_reorder_arguments).
 Zero as an argument is considered `false`, non-zero values are considered `true`.
 )";
         FunctionDocumentation::Syntax syntax = "or(val1, val2[, ...])";
@@ -751,18 +759,51 @@ static void applyTernaryLogic(const IColumn::Filter & mask, IColumn::Filter & nu
         applyTernaryLogicImpl<false>(mask, null_bytemap);
 }
 
+/** Chooses the order in which `and`/`or` executes its arguments. The first argument is executed on all rows and stays
+  * first. An argument with statistics can be executed on more rows than in the original order: it cannot throw, it is
+  * not stateful and has no observable side effects, so this changes nothing but the time. An argument without
+  * statistics must be executed only on the rows that passed all the arguments preceding it in the original order.
+  * So these arguments stay in place, and split the arguments with statistics into groups, which are sorted by rank
+  * inside. Arguments that have not been executed yet go first in their group, to collect their statistics.
+  * Returns whether the order has changed.
+  */
+static bool orderArgumentsByStatistics(VectorWithMemoryTracking<size_t> & order, const VectorWithMemoryTracking<ShortCircuitArgumentStatistics *> & statistics)
+{
+    VectorWithMemoryTracking<double> ranks(order.size());
+    for (size_t i = 1; i < order.size(); ++i)
+        if (statistics[i])
+            ranks[i] = statistics[i]->getRank();
+
+    auto group_begin = order.begin() + 1;
+    while (group_begin != order.end())
+    {
+        auto group_end = std::find_if(group_begin, order.end(), [&](size_t i) { return statistics[i] == nullptr; });
+        /// The rank is negative for the arguments that have not been executed yet.
+        std::stable_sort(group_begin, group_end, [&](size_t lhs, size_t rhs) { return ranks[lhs] < ranks[rhs]; });
+        group_begin = group_end == order.end() ? group_end : group_end + 1;
+    }
+
+    return !std::is_sorted(order.begin(), order.end());
+}
+
 template <typename Impl, typename Name>
 template <bool with_profile>
-ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, FunctionExecutionProfile * profile [[maybe_unused]]) const
+ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(
+    ColumnsWithTypeAndName & arguments,
+    const DataTypePtr & result_type,
+    bool eager_arguments_reordered,
+    FunctionExecutionProfile * profile [[maybe_unused]]) const
 {
     if (Name::name != NameAnd::name && Name::name != NameOr::name)
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} doesn't support short circuit execution", getName());
 
     /// Creating a `Stopwatch` costs a `clock_gettime`, so it is only done when profiling is requested.
-    std::optional<Stopwatch> watch;
+    std::optional<Stopwatch> profile_watch;
     if constexpr (with_profile)
-        watch.emplace();
+        profile_watch.emplace();
 
+    /// The positions of the profiles in `profile->argument_profiles` are the positions in `arguments`,
+    /// the caller maps them back to the positions of the original arguments.
     if (with_profile && checkAndGetShortCircuitArgument(arguments[0].column))
     {
         profile->argument_profiles.emplace_back(std::make_pair(0, FunctionExecutionProfile()));
@@ -787,8 +828,31 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTy
     if (result_type->isNullable())
         nulls = std::make_unique<IColumn::Filter>(arguments[0].column->size(), 0);
 
+    /// Statistics are present for the lazy arguments that are allowed to be executed before the arguments that
+    /// precede them (see ExpressionActions.cpp). They are used to choose the order in which the arguments are executed.
+    VectorWithMemoryTracking<ShortCircuitArgumentStatistics *> statistics(arguments.size());
+    bool has_statistics = false;
+    for (size_t i = 1; i < arguments.size(); ++i)
+    {
+        if (const auto * column_function = checkAndGetShortCircuitArgument(arguments[i].column))
+        {
+            statistics[i] = column_function->getShortCircuitArgumentStatistics().get();
+            has_statistics |= statistics[i] != nullptr;
+        }
+    }
+
+    VectorWithMemoryTracking<size_t> order(arguments.size());
+    std::iota(order.begin(), order.end(), 0);
+    bool lazy_arguments_reordered = has_statistics && orderArgumentsByStatistics(order, statistics);
+
+    /// Counted once per block, after the final execution order is known.
+    if (eager_arguments_reordered || lazy_arguments_reordered)
+        ProfileEvents::increment(ProfileEvents::ShortCircuitArgumentsReordered);
+
     MaskInfo mask_info{.has_ones = true, .has_zeros = false};
-    for (size_t i = 0; i < arguments.size(); ++i)
+    /// The number of rows that are still undecided, if it is known.
+    std::optional<size_t> undecided_rows = mask.size();
+    for (size_t i : order)
     {
         FunctionExecutionProfile * arg_profile = nullptr;
         if constexpr (with_profile)
@@ -799,7 +863,28 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTy
                 arg_profile = &profile->argument_profiles.back().second;
             }
         }
-        mask_info = maskedExecuteAndUpdateMask(arguments[i], mask, mask_info, inverted, nulls.get(), null_value, arg_profile);
+
+        if (statistics[i])
+        {
+            size_t executed_rows = undecided_rows ? *undecided_rows : countBytesInFilter(mask);
+            Stopwatch watch;
+            mask_info = maskedExecuteAndUpdateMask(arguments[i], mask, mask_info, inverted, nulls.get(), null_value, arg_profile);
+            UInt64 elapsed = watch.elapsedNanoseconds();
+
+            if (!mask_info.has_ones)
+                undecided_rows = 0;
+            else if (!mask_info.has_zeros)
+                undecided_rows = mask.size();
+            else
+                undecided_rows = countBytesInFilter(mask);
+
+            statistics[i]->add(executed_rows, *undecided_rows, elapsed);
+        }
+        else
+        {
+            mask_info = maskedExecuteAndUpdateMask(arguments[i], mask, mask_info, inverted, nulls.get(), null_value, arg_profile);
+            undecided_rows.reset();
+        }
 
         /// Stop when every row has a decisive result.
         if (!mask_info.has_ones)
@@ -817,7 +902,7 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTy
 
     if constexpr (with_profile)
     {
-        profile->execution_elapsed = watch->elapsed();
+        profile->execution_elapsed = profile_watch->elapsed();
         profile->executed_rows = res->size();
         size_t side_elapsed = 0;
         for (const auto & [i, arg_profile] : profile->argument_profiles)
@@ -857,6 +942,7 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImplWithProfile(
         /// arguments, and combine it with the remaining function column arguments, use them as the input of
         /// `exeucteShortCircuit` to calculate the final result.
         ColumnRawPtrs not_short_circuit_args;
+        size_t last_not_short_circuit_arg_index = 0;
         VectorWithMemoryTracking<size_t> short_circuit_args_index;
         ColumnsWithTypeAndName new_args;
         /// Creating a `Stopwatch` costs a `clock_gettime`, so it is only done when profiling is requested.
@@ -872,8 +958,16 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImplWithProfile(
             if (checkAndGetShortCircuitArgument(arguments[i].column))
                 short_circuit_args_index.emplace_back(i);
             else
+            {
                 not_short_circuit_args.emplace_back(arguments[i].column.get());
+                last_not_short_circuit_arg_index = i;
+            }
         }
+
+        /// Eager (cheap) arguments are executed before all the lazy ones. It changes the order of the query if a lazy
+        /// argument precedes an eager one (see `arguments_are_commutative` in ExpressionActions.cpp).
+        bool eager_arguments_reordered = !not_short_circuit_args.empty() && !short_circuit_args_index.empty()
+            && short_circuit_args_index.front() < last_not_short_circuit_arg_index;
 
         ColumnPtr partial_result = nullptr;
         if (not_short_circuit_args.size() > 1)
@@ -894,23 +988,38 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImplWithProfile(
             for (const auto & index : short_circuit_args_index)
                 new_args.emplace_back(std::move(arguments[index]));
         }
+        else if (not_short_circuit_args.size() == 1 && last_not_short_circuit_arg_index != 0)
+        {
+            /// The first argument is lazy, because it is heavy while another one is cheap (see `arguments_are_commutative`).
+            /// Start from the cheap one.
+            new_args.emplace_back(std::move(arguments[last_not_short_circuit_arg_index]));
+            for (const auto & index : short_circuit_args_index)
+                new_args.emplace_back(std::move(arguments[index]));
+        }
         else
+        {
             new_args.swap(arguments);
+            short_circuit_args_index.clear();
+        }
 
         if (profile)
         {
             auto coalesce_elapsed = watch->elapsed();
-            auto res = executeShortCircuit<true>(new_args, result_type, profile);
+            auto res = executeShortCircuit<true>(new_args, result_type, eager_arguments_reordered, profile);
             profile->execution_elapsed += coalesce_elapsed;
-            // Profiles are only available for short-circuit arguments, and their positions need to be mapped back to the
-            // original argument positions.
-            // The execution will stop early when all rows are filtered, the last few short-circuit arguments are skipped
-            // and no profiles are generated for them.
-            for (size_t i = existing_arg_profiles_num; i < profile->argument_profiles.size(); ++i)
-                profile->argument_profiles[i].first = short_circuit_args_index[i - existing_arg_profiles_num];
+            /// Profiles are only available for short-circuit arguments, and their positions in `new_args` need to be
+            /// mapped back to the original argument positions. If `new_args` are not the original arguments, its first
+            /// element is an eager argument (or the partial result of all of them), followed by the short-circuit ones.
+            /// The execution stops early when all rows are filtered, so the short-circuit arguments which are not
+            /// executed have no profiles.
+            if (!short_circuit_args_index.empty())
+            {
+                for (size_t i = existing_arg_profiles_num; i < profile->argument_profiles.size(); ++i)
+                    profile->argument_profiles[i].first = short_circuit_args_index[profile->argument_profiles[i].first - 1];
+            }
             return res;
         }
-        return executeShortCircuit<false>(new_args, result_type, profile);
+        return executeShortCircuit<false>(new_args, result_type, eager_arguments_reordered, profile);
     }
 
     /// Creating a `Stopwatch` costs a `clock_gettime`, so it is only done when profiling is requested.

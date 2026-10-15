@@ -103,6 +103,7 @@ SELECT generateUUIDv4(1), generateUUIDv4(1);
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionGenerateUUIDv4>(documentation);
+    factory.registerAlias("uuid", "generateUUIDv4", FunctionFactory::Case::Insensitive);
 }
 
 }
