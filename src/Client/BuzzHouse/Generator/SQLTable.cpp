@@ -70,18 +70,23 @@ void collectColumnPaths(
             uint32_t i = 1;
             ArrayType * at = dynamic_cast<ArrayType *>(tp);
             ArrayType * at2 = at;
-            ArrayType * at3 = nullptr;
 
-            while (at && (at = dynamic_cast<ArrayType *>(at->subtype.get())))
+            while (at)
             {
+                at = dynamic_cast<ArrayType *>(at->subtype.get());
+                if (!at)
+                    break;
                 next.path.emplace_back(ColumnPathChainEntry("size" + std::to_string(i), &(*size_tp)));
                 paths.push_back(next);
                 next.path.pop_back();
                 i++;
             }
             /// Array null values
-            while (at2 && (at3 = dynamic_cast<ArrayType *>(at2->subtype.get())))
+            while (at2)
             {
+                ArrayType * at3 = dynamic_cast<ArrayType *>(at2->subtype.get());
+                if (!at3)
+                    break;
                 at2 = at3;
             }
             if (at2)
@@ -1002,10 +1007,10 @@ void StatementGenerator::generateMergeTreeEngineDetails(
         chassert(this->ids.empty());
         for (const auto & entry : this->entries)
         {
-            IntType * itp = nullptr;
             SQLType * tp = entry.getBottomType();
+            const auto * itp = dynamic_cast<IntType *>(tp);
 
-            if ((itp = dynamic_cast<IntType *>(tp)) && itp->is_unsigned)
+            if (itp && itp->is_unsigned)
             {
                 const TableKey & tpk = te->primary_key();
 
@@ -1409,26 +1414,26 @@ void StatementGenerator::generateEngineDetails(
         else if (b.isBufferEngine())
         {
             /// num_layers
-            te->add_params()->set_num(static_cast<uint32_t>(rg.nextLargeNumber() % 101));
+            te->add_params()->set_num(rg.nextLargeNumber() % 101);
             /// min_time, max_time, min_rows, max_rows, min_bytes, max_bytes
             for (int i = 0; i < 6; i++)
             {
-                te->add_params()->set_num(static_cast<uint32_t>(rg.nextLargeNumber() % 1001));
+                te->add_params()->set_num(rg.nextLargeNumber() % 1001);
             }
             if (rg.nextSmallNumber() < 7)
             {
                 /// flush_time
-                te->add_params()->set_num(static_cast<uint32_t>(rg.nextLargeNumber() % 61));
+                te->add_params()->set_num(rg.nextLargeNumber() % 61);
             }
             if (rg.nextSmallNumber() < 7)
             {
                 /// flush_rows
-                te->add_params()->set_num(static_cast<uint32_t>(rg.nextLargeNumber() % 1001));
+                te->add_params()->set_num(rg.nextLargeNumber() % 1001);
             }
             if (rg.nextSmallNumber() < 7)
             {
                 /// flush_bytes
-                te->add_params()->set_num(static_cast<uint32_t>(rg.nextLargeNumber() % 1001));
+                te->add_params()->set_num(rg.nextLargeNumber() % 1001);
             }
         }
     }
