@@ -1,0 +1,4 @@
+deterministic lambda: 1
+non-deterministic lambda: 0
+non-deterministic nested lambda: 0
+current time inside lambda: 0

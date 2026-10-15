@@ -22,7 +22,7 @@ ${CLICKHOUSE_CLIENT} --allow_experimental_time_series_table 1 -q "
     CREATE TABLE ${db}.ext_tags (id UUID, metric_name LowCardinality(String), tags Map(LowCardinality(String), String))
         ENGINE = MergeTree ORDER BY (metric_name, id);
     CREATE TABLE ${db}.ts_src ENGINE = TimeSeries
-        SETTINGS store_min_time_and_max_time = 0, recent_samples_ttl_seconds = 0
+        SETTINGS store_time_ranges = 0, recent_samples_ttl_seconds = 0
         DATA ${db}.ext_data TAGS ${db}.ext_tags;
 "
 
