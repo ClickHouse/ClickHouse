@@ -38,7 +38,6 @@ private:
 
     String paging_state;
     bool is_finished = false;
-    bool columns_checked = false;
 };
 
 }

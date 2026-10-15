@@ -73,7 +73,7 @@ endif()
 if (TARGET ch_contrib::nats_io)
     set(USE_NATSIO 1)
 endif()
-# The Cassandra client is implemented in `src/Dictionaries/Cassandra` and does not need third-party libraries.
+# The Cassandra client is implemented in `src/Dictionaries/CassandraClient.cpp` and does not need third-party libraries.
 option(ENABLE_CASSANDRA "Enable Cassandra dictionary source" ${ENABLE_LIBRARIES})
 if (ENABLE_CASSANDRA)
     set(USE_CASSANDRA 1)

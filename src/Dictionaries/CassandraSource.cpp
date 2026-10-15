@@ -207,11 +207,9 @@ Chunk CassandraSource::generate()
 
     Cassandra::ResultPage page = pool->query(query, static_cast<Int32>(max_block_size), paging_state);
 
-    if (!columns_checked)
-    {
-        checkColumns(page);
-        columns_checked = true;
-    }
+    /// Every page carries its own metadata, and the values are laid out by it, so check each page:
+    /// otherwise a page with a different set of columns would be decoded with a wrong row stride.
+    checkColumns(page);
 
     if (page.hasMorePages())
         paging_state = page.pagingState();
