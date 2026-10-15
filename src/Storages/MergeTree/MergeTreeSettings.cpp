@@ -803,7 +803,7 @@ child merges after it, and the merge is narrowed to fit each of them as well.
 
 Set to `0` to disable this and select merges by `max_parts_to_merge_at_once` alone.
 )", 0, \
-        {"26.10", 0, 4096, "New setting. Lowers `max_parts_to_merge_at_once` when merging that many parts of a very wide table would not fit in memory, so that such merges stop failing with `MEMORY_LIMIT_EXCEEDED` on small servers. The previous value disables the estimate, preserving pre-26.10 behavior."}) \
+        {"26.11", 0, 4096, "New setting. Lowers `max_parts_to_merge_at_once` when merging that many parts of a very wide table would not fit in memory, so that such merges stop failing with `MEMORY_LIMIT_EXCEEDED` on small servers. The previous value disables the estimate, preserving pre-26.11 behavior."}) \
     DECLARE(Bool, materialize_statistics_on_merge, true, R"(When enabled, merges will build and store statistics for new parts.
     Otherwise they can be created/stored by explicit [MATERIALIZE STATISTICS](/sql-reference/statements/alter/statistics.md)
     or [during INSERTs](/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert))", 0, \
@@ -1525,7 +1525,7 @@ server but a significant share of the budget on a small one, where it can make a
 
 Set to `0` to disable this trigger and select adaptive write buffers by column count only.
 )", 0, \
-        {"26.10", 0., 1. / 32, "New setting. Activate adaptive write buffers when the buffers a wide part preallocates would take at least this fraction of the server memory limit, so that a many-column table does not reserve hundreds of megabytes of write buffers on a small server. The previous value disables the trigger, preserving pre-26.10 behavior."}) \
+        {"26.11", 0., 1. / 32, "New setting. Activate adaptive write buffers when the buffers a wide part preallocates would take at least this fraction of the server memory limit, so that a many-column table does not reserve hundreds of megabytes of write buffers on a small server. The previous value disables the trigger, preserving pre-26.11 behavior."}) \
     DECLARE(NonZeroUInt64, adaptive_write_buffer_initial_size, 16 * 1024, R"(
 Sets the initial size, in bytes, of each adaptive write buffer used when writing MergeTree data. Buffers grow automatically as needed. Lower values reduce initial memory use, especially for tables with many columns, but may cause more frequent buffer flushes. This is a starting size, not a memory limit.
 
