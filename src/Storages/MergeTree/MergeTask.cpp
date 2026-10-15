@@ -2562,6 +2562,11 @@ bool MergeTask::MergeProjectionsStage::executeProjections() const
         parent_elem->current_projection_parts_remaining.store(0, std::memory_order_relaxed);
     }
 
+    /// Release the finished projection task: a compact projection writer keeps its compressors after the
+    /// part is finalized, and the merge memory reservation prices only the largest single projection.
+    ctx->merged_projection_parts.push_back((*ctx->projections_iterator)->getFuture().get());
+    ctx->projections_iterator->reset();
+
     ++ctx->projections_iterator;
     return true;
 }
@@ -2569,11 +2574,11 @@ bool MergeTask::MergeProjectionsStage::executeProjections() const
 
 bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
 {
-    for (const auto & task : ctx->tasks_for_projections)
+    for (auto & part : ctx->merged_projection_parts)
     {
-        auto part = task->getFuture().get();
         part->getDataPartStorage().commitTransaction();
-        global_ctx->new_data_part->addProjectionPart(part->name, std::move(part));
+        const String name = part->name;
+        global_ctx->new_data_part->addProjectionPart(name, std::move(part));
     }
 
     if (global_ctx->chosen_merge_algorithm != MergeAlgorithm::Vertical)
@@ -2824,7 +2829,8 @@ bool MergeTask::MergeProjectionsStage::execute()
 void MergeTask::MergeProjectionsStage::cancel() noexcept
 {
     for (auto & prj_task: ctx->tasks_for_projections)
-        prj_task->cancel();
+        if (prj_task)
+            prj_task->cancel();
 
     if (!global_ctx->projection)
     {

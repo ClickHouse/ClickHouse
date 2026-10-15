@@ -571,6 +571,10 @@ private:
         using MergeTasks = std::deque<MergeTaskPtr>;
         MergeTasks tasks_for_projections;
         MergeTasks::iterator projections_iterator;
+        /// The parts of the projections merged so far. A finished projection task is released right away
+        /// (its slot in `tasks_for_projections` is reset), so the buffers its writer still holds are freed
+        /// before the next projection runs.
+        std::vector<MergeTreeData::MutableDataPartPtr> merged_projection_parts;
 
         LoggerPtr log{getLogger("MergeTask::MergeProjectionsStage")};
         UInt64 elapsed_execute_ns{0};
