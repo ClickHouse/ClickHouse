@@ -68,6 +68,9 @@ void addUnionColumnStats(
     UInt64 result_rows,
     UInt64 other_rows)
 {
+    /// A value of one input can be in another.
+    for (auto & [_, stats] : result)
+        stats.unique = false;
     for (size_t position = 0; position < result_columns.size() && position < other_columns.size(); ++position)
     {
         auto result_column = result.find(result_columns[position]);
@@ -386,6 +389,9 @@ void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const Ac
             stats.max_value.reset();
             stats.null_fraction.reset();
         }
+        /// Such a function can map two values to one.
+        if (output_lineage.input->kind == ActionsDAGLineageKind::DistinctValuesBound || output_lineage.input->ndv_delta != 0)
+            stats.unique = false;
         mapped[outputs[output_lineage.output_position]->result_name] = stats;
     }
 

@@ -1274,10 +1274,17 @@ QueryPlan::Node * JoinOrderPlanBuilder::build(
             auto lhs_estimation = entry->left->estimated_rows;
             auto rhs_estimation = entry->right->estimated_rows;
 
+            /// The smaller side is built. A side without an estimate counts as smaller when its bound is below the
+            /// other side's estimate; without this a join of unknown inputs would build the known large input.
+            const auto lhs_known_smaller = [&]
+            {
+                if (lhs_estimation && rhs_estimation)
+                    return lhs_estimation.value() < rhs_estimation.value();
+                return !lhs_estimation && rhs_estimation && entry->left->max_rows && *entry->left->max_rows < *rhs_estimation;
+            };
             bool swap_on_sizes = optimization_settings.join_swap_table.has_value()
                 ? optimization_settings.join_swap_table.value()
-                : entry->join_method == JoinMethod::Hash && lhs_estimation && rhs_estimation
-                    && lhs_estimation.value() < rhs_estimation.value();
+                : entry->join_method == JoinMethod::Hash && lhs_known_smaller();
 
             bool flip_join = has_prepared_storage_at_left || (!has_prepared_storage_at_right && swap_on_sizes);
 

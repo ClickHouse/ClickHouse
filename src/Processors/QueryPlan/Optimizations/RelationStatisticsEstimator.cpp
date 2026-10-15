@@ -277,6 +277,9 @@ RelationStats estimateGroupStats(const Names & keys, const RelationStats & input
         key_distinct_values.push_back(distinct_values);
     }
 
+    if (keys.size() == 1)
+        aggregation_stats.column_stats[keys.front()].unique = true;
+
     auto groups = estimateGroupCount(key_distinct_values, input_stats.estimated_rows, input_stats.max_rows);
     /// Keys limited to constants by a filter below bound the groups by the product of their values.
     std::optional<UInt64> proven_groups = keys.empty() ? std::nullopt : std::optional<UInt64>(1);
@@ -307,10 +310,14 @@ RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_s
         stats.estimated_rows = multiplyRows(stats.estimated_rows, sets);
         stats.max_rows = multiplyRows(input_stats.max_rows, sets);
         stats.imprecise_estimate = true;
-        /// A key missing from a set is filled with a default or NULL: one more value.
+        /// A key missing from a set is filled with a default or NULL: one more value, which a group of another set
+        /// can have too.
         for (auto & [_, column_stats] : stats.column_stats)
+        {
             if (column_stats.max_distinct_values)
                 column_stats.max_distinct_values = saturatingAdd(column_stats.max_distinct_values, UInt64{1});
+            column_stats.unique = false;
+        }
     }
     return stats;
 }

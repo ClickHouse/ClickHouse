@@ -28,6 +28,9 @@ struct ColumnStats
     /// by what follows it; zero when nothing proves a limit. Unlike `num_distinct_values` it never
     /// comes from a sketch, so the row bounds may use it.
     UInt64 max_distinct_values = 0;
+    /// Every value of the column is on at most one row: the column is the only key of an aggregation. A join on it
+    /// matches each row of the other side at most once. Whatever can repeat a row (a join, a union) drops the flag.
+    bool unique = false;
 };
 
 struct RelationProfile

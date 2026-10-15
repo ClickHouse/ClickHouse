@@ -41,11 +41,14 @@ namespace Setting
     extern const SettingsBool allow_statistics_optimize;
 }
 
-/// Drops the distinct-value caps of a result whose values the derivation does not follow.
+/// Drops the distinct-value caps and the uniqueness of a result whose values the derivation does not follow.
 static void clearDistinctValueCaps(ExpressionStatistics & statistics)
 {
     for (auto & [_, column_stats] : statistics.column_statistics)
+    {
         column_stats.max_distinct_values = 0;
+        column_stats.unique = false;
+    }
 }
 
 void StatisticsDerivation::deriveStatistics(GroupId group_id)
@@ -689,6 +692,8 @@ ExpressionStatistics StatisticsDerivation::deriveExpressionStatistics(const Expr
         result_statistics.rows_unknown = true;
         result_statistics.min_row_count = 0;
         result_statistics.max_row_count = Float64(std::numeric_limits<UInt64>::max());
+        for (auto & [_, column_statistics] : result_statistics.column_statistics)
+            column_statistics.unique = false;
     }
     /// Keep the input row width: most projections pass columns through, and the input width may carry
     /// storage-derived or hinted byte sizes that a header-based type-default estimate would discard.

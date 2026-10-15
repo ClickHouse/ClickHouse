@@ -71,9 +71,43 @@ DPJoinEntry::DPJoinEntry(DPJoinEntryPtr lhs,
     , join_operator(std::move(join_operator_))
     , join_method(join_method_)
 {
-    /// Merge column stats from both children, then update NDVs for equi-join key columns.
+    /// An equality on a unique column of one side matches each row of the other side at most once.
+    if (join_operator.strictness != JoinStrictness::Semi && join_operator.strictness != JoinStrictness::Anti)
+    {
+        for (const auto & predicate : join_operator.expression)
+        {
+            auto [op, left_node, right_node] = predicate.asBinaryPredicate();
+            if (op != JoinConditionOperator::Equals && op != JoinConditionOperator::NullSafeEquals)
+                continue;
+            /// The sources are relation ids of the whole graph, not the two sides of this join.
+            if (isSubsetOf(left_node.getSourceRelations(), right->relations) && isSubsetOf(right_node.getSourceRelations(), left->relations))
+                std::swap(left_node, right_node);
+            if (!isSubsetOf(left_node.getSourceRelations(), left->relations) || !isSubsetOf(right_node.getSourceRelations(), right->relations))
+                continue;
+            const auto is_unique = [](const DPJoinEntry & side, const String & column)
+            {
+                const auto it = side.column_stats.find(column);
+                return it != side.column_stats.end() && it->second.unique;
+            };
+            const auto narrow = [&](const std::optional<UInt64> & other_side_max)
+            {
+                if (other_side_max)
+                    max_rows = max_rows ? std::min(*max_rows, *other_side_max) : *other_side_max;
+            };
+            const auto kind = join_operator.kind;
+            if (is_unique(*right, right_node.getColumnName()) && (kind == JoinKind::Inner || kind == JoinKind::Left))
+                narrow(left->max_rows);
+            if (is_unique(*left, left_node.getColumnName()) && (kind == JoinKind::Inner || kind == JoinKind::Right))
+                narrow(right->max_rows);
+        }
+    }
+
+    /// Merge column stats from both children, then update NDVs for equi-join key columns. A join can repeat the rows
+    /// of either side, so no column stays unique.
     column_stats = left->column_stats;
     column_stats.insert(right->column_stats.begin(), right->column_stats.end());
+    for (auto & [_, stats] : column_stats)
+        stats.unique = false;
 
     /// An outer join pads the unmatched rows of one side with NULLs or defaults for the other side's
     /// columns: one more value each.
