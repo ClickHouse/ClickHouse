@@ -200,9 +200,9 @@ public:
 
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(InputOrderInfoPtr order_info_, size_t query_limit = 0);
-    /// Whether `requestReadingInOrder` accepts a reverse direction: every reading step of every child plan
-    /// has to accept it (see `ReadFromMergeTree::canReadInReverseOrder`). Creates the child plans.
-    bool canReadInReverseOrder();
+    /// Whether `requestReadingInOrder` accepts `direction`: every reading step of every child plan has to be
+    /// a `ReadFromMergeTree` that accepts it (see `ReadFromMergeTree::canReadInReverseOrder`). Creates the child plans.
+    bool canReadInOrder(int direction);
     const InputOrderInfoPtr & getInputOrder() const { return order_info; }
 
     /// Whether the child plans have been created (`filterTablesAndCreateChildrenPlans`).
@@ -313,6 +313,8 @@ private:
         QueryProcessingStage::Enum stage;
         /// Set for a child aggregated by keys of other types than the `Merge` table.
         bool forget_aggregation_buckets = false;
+        /// Set when the child's plan was built by the interpreter, which applies the child's row policy itself.
+        bool applies_row_policy = false;
     };
 
     /// Answer of `getExpandableReads`, unset until it is asked for. The parallel-replicas pass asks first

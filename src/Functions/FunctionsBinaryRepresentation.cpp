@@ -991,6 +991,8 @@ the result is undefined (no exception is thrown).
     factory.registerFunction<DecodeFromBinaryRepresentation<UnhexImpl>>(unhex_documentation, FunctionFactory::Case::Insensitive);
     factory.registerFunction<EncodeToBinaryRepresentation<BinImpl>>(bin_documentation, FunctionFactory::Case::Insensitive);
     factory.registerFunction<DecodeFromBinaryRepresentation<UnbinImpl>>(unbin_documentation, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("to_hex", "hex", FunctionFactory::Case::Insensitive);
+    factory.registerAlias("from_hex", "unhex", FunctionFactory::Case::Insensitive);
 }
 
 }
