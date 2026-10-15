@@ -1,5 +1,5 @@
 -- Lazy materialization over joins with constants of a side an outer join can leave unmatched: under `join_use_nulls`
--- the join wraps them in `toNullable`, and they are NULL at the rows it stuffs, although they read no column of a
+-- the join wraps them in `toNullable`, and they are NULL at the rows it pads, although they read no column of a
 -- table. Every query is followed by the number of lazy reads in its plan, and the results are compared with the
 -- optimization disabled.
 

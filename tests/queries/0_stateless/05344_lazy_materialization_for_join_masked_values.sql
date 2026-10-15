@@ -1,5 +1,5 @@
 -- Lazy materialization over joins recomputes a value of the side a join can leave unmatched above the LIMIT as
--- `if(mask, value, default)`, so that the rows the join stuffed get the default, as the join itself stands there.
+-- `if(mask, value, default)`, so that the rows the join padded get the default, as the join itself stands there.
 -- That holds for a constant of that side as well. `if` drops `LowCardinality`, so a masked value is cast back to its
 -- type. Every query is followed by the columns read lazily, and the results are compared with the optimization
 -- disabled.

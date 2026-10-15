@@ -263,9 +263,9 @@ TEST(LazyFrontier, ComputesAnUnusedNonDeterministicValueWhereThePlanDoes)
     EXPECT_TRUE(frontier.at(random_in_merged).computed_below);
 }
 
-/// Values a join can stuff: `a + b` and `intDiv(heavy, b)` are computed from one side of an outer join,
+/// Values a join can pad: `a + b` and `intDiv(heavy, b)` are computed from one side of an outer join,
 /// and the result reads both above the LIMIT. Recomputing one there under the join's mask evaluates it
-/// on the stuffed rows too, which only a value that cannot throw survives.
+/// on the padded rows too, which only a value that cannot throw survives.
 TEST(LazyFrontier, RecomputesAGatedValueOnlyUnderAMaskAndWhenItCannotThrow)
 {
     tryRegisterFunctions();
@@ -287,11 +287,11 @@ TEST(LazyFrontier, RecomputesAGatedValueOnlyUnderAMaskAndWhenItCannotThrow)
     auto merged = buildMergedPlanDAG(expression);
 
     /// What the builder records for a subtree on the side of an outer join that can be left unmatched.
-    const auto & stuffing = merged.stuffings.emplace_back();
+    const auto & padded_side = merged.padded_sides.emplace_back();
     for (const auto & node : merged.getDAG().getNodes())
     {
         merged.nodes_with_join_above.insert(&node);
-        merged.nearest_stuffing[&node] = &stuffing;
+        merged.nearest_padded_side[&node] = &padded_side;
     }
 
     const auto * sum_in_merged = findNodeContaining(merged, "plus(");
@@ -300,7 +300,7 @@ TEST(LazyFrontier, RecomputesAGatedValueOnlyUnderAMaskAndWhenItCannotThrow)
     ASSERT_TRUE(quotient_in_merged != nullptr);
     const std::vector<size_t> sort_keys{outputPosition(merged, "a")};
 
-    /// With no mask, neither can be recomputed: both are computed below the LIMIT, where the join stuffs them.
+    /// With no mask, neither can be recomputed: both are computed below the LIMIT, where the join pads them.
     {
         const auto frontier = chooseLazyFrontier(merged, sort_keys, {true});
         EXPECT_EQ(frontier.at(sum_in_merged).above, Placement::Above::Crossing);
@@ -308,9 +308,9 @@ TEST(LazyFrontier, RecomputesAGatedValueOnlyUnderAMaskAndWhenItCannotThrow)
     }
 
     /// With a mask, the sum is recomputed, reading `b` lazily, and the division still crosses, since it
-    /// throws for a stuffed row where `b` is zero.
+    /// throws for a padded row where `b` is zero.
     {
-        const auto frontier = chooseLazyFrontier(merged, sort_keys, {true}, {&stuffing});
+        const auto frontier = chooseLazyFrontier(merged, sort_keys, {true}, {&padded_side});
         EXPECT_EQ(frontier.at(sum_in_merged).above, Placement::Above::Recomputed);
         EXPECT_EQ(frontier.at(quotient_in_merged).above, Placement::Above::Crossing);
         EXPECT_TRUE(frontier.at(quotient_in_merged).computed_below);

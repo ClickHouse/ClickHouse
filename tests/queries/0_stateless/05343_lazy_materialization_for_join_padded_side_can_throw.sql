@@ -1,8 +1,8 @@
 -- Lazy materialization over joins may compute a value of the side a join can leave unmatched above the LIMIT, as
--- `if(mask, value, default)`, which evaluates it on the rows the join stuffed as well, where its arguments hold the
+-- `if(mask, value, default)`, which evaluates it on the rows the join padded as well, where its arguments hold the
 -- defaults. So only a function that cannot throw is computed that way. A comparison is cheap but can throw: decimals of
 -- different scales are rescaled to a common scale, which can overflow. Such a comparison is computed below the LIMIT,
--- where the join stuffs its result, while a comparison of decimals of the same scale is computed above it.
+-- where the join pads its result, while a comparison of decimals of the same scale is computed above it.
 
 SET enable_analyzer = 1;
 SET query_plan_optimize_lazy_materialization = 1;

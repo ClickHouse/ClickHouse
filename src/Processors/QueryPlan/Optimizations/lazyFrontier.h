@@ -16,7 +16,7 @@ struct Placement
 
     /// Where whatever reads it above the `LIMIT` gets it from. Nothing more is needed for the rows a join
     /// left unmatched: whether the value is gated, and by which join, is a property of the DAG rather
-    /// than of this decision - see `MergedPlanDAG::getNearestStuffing` - and it applies to a column the
+    /// than of this decision - see `MergedPlanDAG::getNearestPaddedSide` - and it applies to a column the
     /// lazy read returns just as much as to a recomputed one.
     enum class Above : uint8_t
     {
@@ -57,16 +57,16 @@ struct LazyFrontier
 /// `lazy_sources` says which sources support a second, row-addressed read; a value reading one that does
 /// not is computed below the `LIMIT` and crosses instead.
 ///
-/// `masked_stuffings` are the stuffings the caller has a mask for above the `LIMIT`. A value gated by one
+/// `masked_padded_sides` are the padded sides the caller has a mask for above the `LIMIT`. A value gated by one
 /// of them is recomputed there as `if(mask, value, default)`, which evaluates it on the rows the join
-/// stuffed as well - so only a value whose function cannot throw (`IExecutableFunction::canThrow`) is
-/// recomputed this way. Any other gated value, and one whose stuffing has no mask, is computed below the
-/// `LIMIT`, where the join stuffs it itself.
+/// padded as well - so only a value whose function cannot throw (`IExecutableFunction::canThrow`) is
+/// recomputed this way. Any other gated value, and one whose padded side has no mask, is computed below the
+/// `LIMIT`, where the join pads it itself.
 LazyFrontier chooseLazyFrontier(
     const MergedPlanDAG & merged,
     const std::vector<size_t> & eager_output_positions,
     const std::vector<bool> & lazy_sources,
-    const std::unordered_set<const MergedPlanDAG::Stuffing *> & masked_stuffings = {});
+    const std::unordered_set<const MergedPlanDAG::PaddedSide *> & masked_padded_sides = {});
 
 /// The inputs each source's lazy read has to produce, indexed by source. Derived from the frontier, so
 /// that the one answer lives in one place.

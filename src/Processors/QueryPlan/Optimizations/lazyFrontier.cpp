@@ -85,10 +85,10 @@ std::optional<size_t> findSourceOfInput(const MergedPlanDAG & merged, const Acti
     return *node_sources.begin();
 }
 
-/// Whether evaluating the node on rows it was never meant to see is harmless: the rows a join stuffed hold the
+/// Whether evaluating the node on rows it was never meant to see is harmless: the rows a join padded hold the
 /// defaults, so the function must not throw on any value. Being cheap is not enough: a comparison of decimals of
 /// different scales is not worth evaluating lazily, but rescaling can overflow.
-bool canEvaluateOnStuffedRows(const ActionsDAG::Node * node)
+bool canEvaluateOnPaddedRows(const ActionsDAG::Node * node)
 {
     DataTypesWithConstInfo arguments;
     arguments.reserve(node->children.size());
@@ -106,8 +106,8 @@ public:
     FrontierChooser(
         const MergedPlanDAG & merged_,
         const std::vector<bool> & lazy_sources_,
-        const std::unordered_set<const MergedPlanDAG::Stuffing *> & masked_stuffings_)
-        : merged(merged_), lazy_sources(lazy_sources_), masked_stuffings(masked_stuffings_)
+        const std::unordered_set<const MergedPlanDAG::PaddedSide *> & masked_padded_sides_)
+        : merged(merged_), lazy_sources(lazy_sources_), masked_padded_sides(masked_padded_sides_)
     {
     }
 
@@ -218,15 +218,15 @@ private:
         /// second time, anything else is computed a second time.
         const auto have_it_above = source ? Decision::LazyRead : Decision::Recompute;
 
-        /// A function or a constant a join can stuff is recomputed above the `LIMIT` under that join's mask, so on
-        /// every row, the stuffed ones included. That needs a mask, and for a function one harmless to evaluate
+        /// A function or a constant a join can pad is recomputed above the `LIMIT` under that join's mask, so on
+        /// every row, the padded ones included. That needs a mask, and for a function one harmless to evaluate
         /// there. A source column read lazily needs neither, as the lazy read stands the default at a row nothing
-        /// matched, and nor does an alias, which is whatever its child is, stuffed rows included.
+        /// matched, and nor does an alias, which is whatever its child is, padded rows included.
         if (node->type == ActionsDAG::ActionType::FUNCTION || node->type == ActionsDAG::ActionType::COLUMN)
         {
-            if (const auto * stuffing = merged.getNearestStuffing(node))
-                if (!masked_stuffings.contains(stuffing)
-                    || (node->type == ActionsDAG::ActionType::FUNCTION && !canEvaluateOnStuffedRows(node)))
+            if (const auto * padded_side = merged.getNearestPaddedSide(node))
+                if (!masked_padded_sides.contains(padded_side)
+                    || (node->type == ActionsDAG::ActionType::FUNCTION && !canEvaluateOnPaddedRows(node)))
                     return Decision::Cross;
         }
 
@@ -249,14 +249,14 @@ private:
     }
 
     /// Whether a function would cross on its own for a reason of its own rather than of how the rest is placed: it
-    /// cannot be recomputed, or a join can stuff it and it cannot be recomputed under a mask.
+    /// cannot be recomputed, or a join can pad it and it cannot be recomputed under a mask.
     bool wouldCross(const ActionsDAG::Node * node) const
     {
         if (!canBeRecomputed(node))
             return true;
 
-        if (const auto * stuffing = merged.getNearestStuffing(node))
-            return !masked_stuffings.contains(stuffing) || !canEvaluateOnStuffedRows(node);
+        if (const auto * padded_side = merged.getNearestPaddedSide(node))
+            return !masked_padded_sides.contains(padded_side) || !canEvaluateOnPaddedRows(node);
 
         return false;
     }
@@ -318,7 +318,7 @@ private:
 
     const MergedPlanDAG & merged;
     const std::vector<bool> & lazy_sources;
-    const std::unordered_set<const MergedPlanDAG::Stuffing *> & masked_stuffings;
+    const std::unordered_set<const MergedPlanDAG::PaddedSide *> & masked_padded_sides;
     NodeSet already_crossing;
     LazyFrontier frontier;
 };
@@ -329,13 +329,13 @@ LazyFrontier chooseLazyFrontier(
     const MergedPlanDAG & merged,
     const std::vector<size_t> & eager_output_positions,
     const std::vector<bool> & lazy_sources,
-    const std::unordered_set<const MergedPlanDAG::Stuffing *> & masked_stuffings)
+    const std::unordered_set<const MergedPlanDAG::PaddedSide *> & masked_padded_sides)
 {
     chassert(lazy_sources.size() == merged.sources.size());
 
     const auto & outputs = merged.getOutputs();
 
-    FrontierChooser chooser(merged, lazy_sources, masked_stuffings);
+    FrontierChooser chooser(merged, lazy_sources, masked_padded_sides);
 
     ActionsDAG::NodeRawConstPtrs computed_below_roots = merged.filter_nodes;
     computed_below_roots.append_range(merged.join_condition_nodes);

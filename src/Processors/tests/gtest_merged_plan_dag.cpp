@@ -103,11 +103,11 @@ TEST(MergedPlanDAG, MergesAChainIntoOneDAG)
         EXPECT_TRUE(merged.origins.contains(&node)) << node.result_name;
 
     /// There is no join, so nothing here is gated by one.
-    EXPECT_TRUE(merged.stuffings.empty());
+    EXPECT_TRUE(merged.padded_sides.empty());
     for (const auto & node : merged.getDAG().getNodes())
     {
         EXPECT_EQ(merged.getSources(&node).count(), 1u) << node.result_name;
-        EXPECT_EQ(merged.getNearestStuffing(&node), nullptr) << node.result_name;
+        EXPECT_EQ(merged.getNearestPaddedSide(&node), nullptr) << node.result_name;
     }
 }
 

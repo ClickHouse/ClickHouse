@@ -21,9 +21,9 @@ const BitSet & MergedPlanDAG::getSources(const ActionsDAG::Node * node) const
     return JoinActionRef(node, expression_actions).getSourceRelations();
 }
 
-const MergedPlanDAG::Stuffing * MergedPlanDAG::getNearestStuffing(const ActionsDAG::Node * node) const
+const MergedPlanDAG::PaddedSide * MergedPlanDAG::getNearestPaddedSide(const ActionsDAG::Node * node) const
 {
-    if (const auto it = nearest_stuffing.find(node); it != nearest_stuffing.end())
+    if (const auto it = nearest_padded_side.find(node); it != nearest_padded_side.end())
         return it->second;
 
     return nullptr;
@@ -43,7 +43,7 @@ namespace
 
 /// Which side of a join can end up with rows its columns took no part in. A kind that keeps every row of
 /// one side has to fill the other side in for the rows that matched nothing there.
-std::pair<bool, bool> findStuffedSides(JoinKind kind)
+std::pair<bool, bool> findPaddedSides(JoinKind kind)
 {
     switch (kind)
     {
@@ -59,7 +59,8 @@ std::pair<bool, bool> findStuffedSides(JoinKind kind)
         case JoinKind::Full:
             return {true, true};
         /// `PASTE` matches rows by position rather than by a condition, and cuts both sides to the shorter one rather than
-        /// padding either. The careful answer costs no more than a mask that is never false, and does not depend on that.
+        /// padding either. The careful answer costs at most a mask that is never false, or a value carried that could
+        /// have been recomputed, and does not depend on that.
         case JoinKind::Paste:
             return {true, true};
     }
@@ -163,7 +164,7 @@ struct Built
 {
     MergedPlanDAG dag;
 
-    /// Values no join below has gated yet. A stuffing join above gates exactly these, so each value is
+    /// Values no join below has gated yet. A join above that pads their side gates exactly these, so each value is
     /// visited once over the whole build rather than once per join it sits under.
     ActionsDAG::NodeRawConstPtrs ungated_nodes;
 
@@ -330,10 +331,10 @@ std::optional<Built> tryBuildFromStep(QueryPlan::Node & node, std::vector<Built>
     built.dag.unread_join_sides.append_range(right.dag.unread_join_sides);
     built.dag.step_read_nodes.append_range(right.dag.step_read_nodes);
 
-    /// Both of these move rather than copy: the stuffings are a list, so this is a relink, and the
+    /// Both of these move rather than copy: the padded sides are a list, so this is a relink, and the
     /// values map points at them, so nothing has to be renumbered.
-    built.dag.stuffings.splice(built.dag.stuffings.end(), right.dag.stuffings);
-    built.dag.nearest_stuffing.merge(right.dag.nearest_stuffing);
+    built.dag.padded_sides.splice(built.dag.padded_sides.end(), right.dag.padded_sides);
+    built.dag.nearest_padded_side.merge(right.dag.nearest_padded_side);
     built.dag.origins.merge(right.dag.origins);
     built.dag.step_mappings.merge(right.dag.step_mappings);
     built.dag.step_outputs.merge(right.dag.step_outputs);
@@ -345,27 +346,27 @@ std::optional<Built> tryBuildFromStep(QueryPlan::Node & node, std::vector<Built>
     built.last_node_below_top_join = lastNodeBefore(dag);
 
     /// Every value still ungated on a side this join can leave unmatched is gated by it. A value gated
-    /// further down keeps that one: it is the nearer, and its mask is stuffed by this join in turn, so
+    /// further down keeps that one: it is the nearer, and its mask is padded by this join in turn, so
     /// it answers for both.
     const auto & join_operator = join_step->getJoinOperator();
-    const auto stuffed_sides = findStuffedSides(join_operator.kind);
-    const std::array<bool, 2> side_is_stuffed{stuffed_sides.first, stuffed_sides.second};
+    const auto padded_join_sides = findPaddedSides(join_operator.kind);
+    const std::array<bool, 2> side_is_padded{padded_join_sides.first, padded_join_sides.second};
     const std::array<ActionsDAG::NodeRawConstPtrs *, 2> side_ungated{&built.ungated_nodes, &right.ungated_nodes};
 
-    std::array<const MergedPlanDAG::Stuffing *, 2> side_stuffing{nullptr, nullptr};
+    std::array<const MergedPlanDAG::PaddedSide *, 2> join_padded_sides{nullptr, nullptr};
     ActionsDAG::NodeRawConstPtrs still_ungated;
     for (size_t side = 0; side < 2; ++side)
     {
-        if (!side_is_stuffed[side])
+        if (!side_is_padded[side])
         {
             still_ungated.append_range(*side_ungated[side]);
             continue;
         }
 
-        const auto & stuffing = built.dag.stuffings.emplace_back(MergedPlanDAG::Stuffing{&node, side});
-        side_stuffing[side] = &stuffing;
+        const auto & padded_side = built.dag.padded_sides.emplace_back(MergedPlanDAG::PaddedSide{&node, side});
+        join_padded_sides[side] = &padded_side;
         for (const auto * ungated : *side_ungated[side])
-            built.dag.nearest_stuffing.emplace(ungated, &stuffing);
+            built.dag.nearest_padded_side.emplace(ungated, &padded_side);
     }
     built.ungated_nodes = std::move(still_ungated);
 
@@ -375,8 +376,8 @@ std::optional<Built> tryBuildFromStep(QueryPlan::Node & node, std::vector<Built>
 
     /// The join's own DAG computes some values before the join - its keys, and the columns it hands on,
     /// wrapped in `toNullable` under `join_use_nulls` - and the rest after it, from `actions_after_join`
-    /// up. A value of the first kind reads one side only and is stuffed by the join like any column of
-    /// that side, so it is gated by the join's stuffing of that side, and it is below the join. The side is
+    /// up. A value of the first kind reads one side only and is padded by the join like any column of
+    /// that side, so it is gated by the padded side of the join it is on, and it is below the join. The side is
     /// the one of the join's inputs it reads, which the join's own DAG knows: the nodes below that the merge
     /// put in place of those inputs need not read any table, as a constant of a subquery does not.
     {
@@ -407,13 +408,13 @@ std::optional<Built> tryBuildFromStep(QueryPlan::Node & node, std::vector<Built>
             built.pre_join_nodes.push_back(pre_join);
 
             const JoinActionRef in_join(original_of.at(pre_join), join_step->getExpressionActions());
-            const MergedPlanDAG::Stuffing * stuffing = nullptr;
+            const MergedPlanDAG::PaddedSide * padded_side = nullptr;
             if (in_join.fromLeft())
-                stuffing = side_stuffing[0];
+                padded_side = join_padded_sides[0];
             else if (in_join.fromRight())
-                stuffing = side_stuffing[1];
+                padded_side = join_padded_sides[1];
 
-            if (stuffing && built.dag.nearest_stuffing.emplace(pre_join, stuffing).second)
+            if (padded_side && built.dag.nearest_padded_side.emplace(pre_join, padded_side).second)
                 gated_here.insert(pre_join);
         }
 
