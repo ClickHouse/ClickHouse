@@ -7,9 +7,11 @@ doc_type: 'reference'
 keywords: ['clickpipes', 'openapi', 'api', 'programmatic', 'rest', 'curl']
 ---
 
-所有 ClickPipes 类型都可以通过 [ClickHouse Cloud OpenAPI](/zh/products/cloud/api-reference/clickpipes/list-clickpipes) 以编程方式创建、更新和删除。本页介绍身份验证以及可用的 ClickPipes 端点，并为每种 ClickPipe 类型提供 `curl` 请求示例。
+所有 ClickPipes 类型都可以通过 [ClickHouse Cloud OpenAPI](/zh/api-reference/organization/get-list-of-available-organizations#tag/ClickPipes) 以编程方式创建、更新和删除。本页介绍身份验证以及可用的 ClickPipes 端点，并为每种 ClickPipe 类型提供 `curl` 请求示例。
 
-## 身份验证 {#authentication}
+<div id="authentication">
+  ## 身份验证
+</div>
 
 ClickHouse Cloud API 使用 HTTP Basic 身份验证。你需要一个在目标服务上具有相应权限的 API 密钥 (key ID + key secret) 。有关如何创建 API 密钥，请参见[管理 API 密钥](/zh/products/cloud/features/admin-features/api/openapi)。
 
@@ -22,27 +24,31 @@ export ORG_ID=<your_organization_id>
 export SERVICE_ID=<your_service_id>
 ```
 
-## 基准 URL {#base-url}
+<div id="base-url">
+  ## 基准 URL
+</div>
 
 ```bash
 https://api.clickhouse.cloud/v1
 ```
 
-## 端点 {#endpoints}
+<div id="endpoints">
+  ## 端点
+</div>
 
 所有 ClickPipes 端点都限定在特定的 ClickHouse Cloud 服务范围内：
 
-| Method   | Path                                                                                     | Description             |
-| -------- | ---------------------------------------------------------------------------------------- | ----------------------- |
-| `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes`                        | 列出所有 ClickPipes         |
-| `POST`   | `/organizations/{organizationId}/services/{serviceId}/clickpipes`                        | 创建 ClickPipe            |
-| `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}`          | 获取 ClickPipe            |
-| `PATCH`  | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}`          | 更新 ClickPipe            |
-| `DELETE` | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}`          | 删除 ClickPipe            |
-| `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings` | 获取 ClickPipe 设置         |
-| `PUT`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings` | 更新 ClickPipe 设置         |
-| `PATCH`  | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/scaling`  | 更新 ClickPipe 扩缩容        |
-| `PATCH`  | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/state`    | 更新 ClickPipe 状态 (启动/停止) |
+| Method   | Path                                                                                     | Description              |
+| -------- | ---------------------------------------------------------------------------------------- | ------------------------ |
+| `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes`                        | 列出所有 ClickPipes          |
+| `POST`   | `/organizations/{organizationId}/services/{serviceId}/clickpipes`                        | 创建 ClickPipe             |
+| `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}`          | 获取 ClickPipe             |
+| `PATCH`  | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}`          | 更新 ClickPipe             |
+| `DELETE` | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}`          | 删除 ClickPipe             |
+| `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings` | 获取 ClickPipe 设置          |
+| `PUT`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings` | 更新 ClickPipe 设置          |
+| `PATCH`  | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/scaling`  | 更新 ClickPipe 扩缩容         |
+| `PATCH`  | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/state`    | 更新 ClickPipe 状态 (启动/停止)  |
 
 对于 CDC ClickPipes (Postgres、MySQL、MongoDB) ，还提供了用于共享 CDC 基础设施扩缩容的组织级端点：
 
@@ -51,18 +57,24 @@ https://api.clickhouse.cloud/v1
 | `GET`   | `/organizations/{organizationId}/clickpipes/cdcScaling` | 获取 CDC ClickPipes 扩缩容 |
 | `PATCH` | `/organizations/{organizationId}/clickpipes/cdcScaling` | 更新 CDC ClickPipes 扩缩容 |
 
-如需查看每个端点的完整请求和响应 schema，请参阅 [API 参考文档](/zh/products/cloud/api-reference/clickpipes/list-clickpipes)。
+如需查看每个端点的完整请求和响应 schema，请参阅 [Swagger UI](/zh/api-reference/organization/get-list-of-available-organizations#tag/ClickPipes)。
 
-## 示例 {#examples}
+<div id="examples">
+  ## 示例
+</div>
 
-### 查看 ClickPipes 列表 {#list-clickpipes}
+<div id="list-clickpipes">
+  ### 查看 ClickPipes 列表
+</div>
 
 ```bash
 curl -u "$KEY_ID:$KEY_SECRET" \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
 ```
 
-### 获取 ClickPipe {#get-clickpipe}
+<div id="get-clickpipe">
+  ### 获取 ClickPipe
+</div>
 
 ```bash
 CLICKPIPE_ID=<your_clickpipe_id>
@@ -71,7 +83,9 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes/$CLICKPIPE_ID"
 ```
 
-### 停止或启动 ClickPipe {#stop-start-clickpipe}
+<div id="stop-start-clickpipe">
+  ### 停止或启动 ClickPipe
+</div>
 
 ```bash
 # 停止
@@ -89,7 +103,9 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes/$CLICKPIPE_ID/state"
 ```
 
-### 删除 ClickPipe {#delete-clickpipe}
+<div id="delete-clickpipe">
+  ### 删除 ClickPipe
+</div>
 
 ```bash
 curl -u "$KEY_ID:$KEY_SECRET" \
@@ -97,11 +113,15 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes/$CLICKPIPE_ID"
 ```
 
-## 创建 ClickPipes {#creating-clickpipes}
+<div id="creating-clickpipes">
+  ## 创建 ClickPipes
+</div>
 
-`POST /clickpipes` 的请求体会因源类型不同而有所差异。以下示例展示了每种受支持的 ClickPipe 类型的结构。有关权威 JSON schema，请参阅 [API 参考文档](/zh/products/cloud/api-reference/clickpipes/list-clickpipes)。
+`POST /clickpipes` 的请求体会因源类型不同而有所差异。以下示例展示了每种受支持的 ClickPipe 类型的结构。有关权威 JSON schema，请参阅 [Swagger UI](/zh/api-reference/organization/get-list-of-available-organizations#tag/ClickPipes)。
 
-### Kafka {#create-kafka}
+<div id="create-kafka">
+  ### Kafka
+</div>
 
 支持的 Kafka 兼容数据源：`kafka`、`confluent`、`msk`、`azureeventhub`、`redpanda`、`warpstream`。
 
@@ -141,7 +161,9 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
 ```
 
-### 亚马逊 Kinesis {#create-kinesis}
+<div id="create-kinesis">
+  ### 亚马逊 Kinesis
+</div>
 
 ```bash
 curl -u "$KEY_ID:$KEY_SECRET" \
@@ -151,16 +173,11 @@ curl -u "$KEY_ID:$KEY_SECRET" \
     "name": "My Kinesis ClickPipe",
     "source": {
       "kinesis": {
-        "format": "AvroConfluent",
+        "format": "JSONEachRow",
         "streamName": "my-stream",
         "region": "us-east-1",
         "iteratorType": "TRIM_HORIZON",
         "authentication": "IAM_USER",
-        "schemaRegistry": {
-          "type": "glue",
-          "glueRegion": "us-east-1",
-          "glueRegistryName": "my-registry"
-        },
         "accessKey": {
           "accessKeyId": "AKIAIOSFODNN7EXAMPLE",
           "secretKey": "<secret_key>"
@@ -182,9 +199,9 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
 ```
 
-此示例为 Avro 配置了 AWS Glue Schema Registry。若要通过 Glue 解码 Protobuf，请将 `format` 设置为 `Protobuf`，并保留 `schemaRegistry`。若要改为上传 Protobuf schema，请将 `format` 设置为 `Protobuf`，并在 `protobufSchema` 中提供 Base64 编码的 `.proto` 文件或序列化后的 `FileDescriptorSet`；此时请求中请勿包含 `schemaRegistry`。
-
-### 亚马逊 S3 {#create-s3}
+<div id="create-s3">
+  ### 亚马逊 S3
+</div>
 
 ```bash
 curl -u "$KEY_ID:$KEY_SECRET" \
@@ -219,7 +236,9 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
 ```
 
-### Google Cloud Storage {#create-gcs}
+<div id="create-gcs">
+  ### Google Cloud Storage
+</div>
 
 `serviceAccountKey` 必须填写为经 Base64 编码的 GCP 服务账号 JSON 密钥文件内容。
 
@@ -253,7 +272,9 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
 ```
 
-### Azure Blob 存储 {#create-abs}
+<div id="create-abs">
+  ### Azure Blob 存储
+</div>
 
 ```bash
 curl -u "$KEY_ID:$KEY_SECRET" \
@@ -286,7 +307,9 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
 ```
 
-### Postgres CDC {#create-postgres}
+<div id="create-postgres">
+  ### Postgres CDC
+</div>
 
 ```bash
 curl -u "$KEY_ID:$KEY_SECRET" \
@@ -322,7 +345,9 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
 ```
 
-### MySQL CDC {#create-mysql}
+<div id="create-mysql">
+  ### MySQL CDC
+</div>
 
 ```bash
 curl -u "$KEY_ID:$KEY_SECRET" \
@@ -357,7 +382,9 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
 ```
 
-### MongoDB CDC {#create-mongodb}
+<div id="create-mongodb">
+  ### MongoDB CDC
+</div>
 
 ```bash
 curl -u "$KEY_ID:$KEY_SECRET" \
@@ -392,7 +419,9 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
 ```
 
-### BigQuery {#create-bigquery}
+<div id="create-bigquery">
+  ### BigQuery
+</div>
 
 `serviceAccountFile` 必须填写经 Base64 编码的 GCP 服务账号 JSON 密钥文件内容。
 

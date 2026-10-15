@@ -178,11 +178,7 @@ def test_remove_orphan_files_after_external_upgrade(started_cluster_iceberg_with
     now_ts = time.strftime("%Y-%m-%d %H:%M:%S")
     instance.query(
         f"ALTER TABLE {table_name} EXECUTE remove_orphan_files(older_than = '{now_ts}', dry_run = 1);",
-        settings={
-            **ICEBERG_SETTINGS,
-            "allow_iceberg_remove_orphan_files": 1,
-            "iceberg_orphan_files_min_retention_seconds": 0,
-        },
+        settings={**ICEBERG_SETTINGS, "allow_iceberg_remove_orphan_files": 1},
     )
 
     instance.query(f"DROP TABLE {table_name}")

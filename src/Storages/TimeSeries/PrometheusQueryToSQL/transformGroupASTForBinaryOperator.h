@@ -6,14 +6,11 @@
 namespace DB::PrometheusQueryToSQL
 {
 
-/// Checks whether the specified AST is the zero group, i.e. either the literal 0 or CAST(0, 'UInt64').
-bool isZeroGroupAST(const ASTPtr & group);
-
 /// Applies the `on(tags)` or `ignoring(tags)` matching rules to a `group` expression,
 /// produces a reduced set of tags that can be used to match time series from both sides of a binary operator,
 /// and also to calculate the result group if there is no grouping modifier used.
 ASTPtr transformGroupASTForBinaryOperator(
-    const PrometheusQueryTree::BinaryOperator * operator_node,
+    const PQT::BinaryOperator * operator_node,
     ASTPtr && group,
     bool drop_metric_name,
     bool & metric_name_dropped);

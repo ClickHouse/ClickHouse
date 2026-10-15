@@ -1,35 +1,35 @@
 ---
-description: 'A collection of dislikes of YouTube videos.'
-sidebarTitle: 'YouTube dislikes'
+description: 'YouTube 视频点踩数据集。'
+sidebarTitle: 'YouTube 点踩'
 slug: /getting-started/example-datasets/youtube-dislikes
-title: 'YouTube dataset of dislikes'
+title: 'YouTube 点踩数据集'
 doc_type: 'guide'
-keywords: ['example dataset', 'youtube', 'sample data', 'video analytics', 'dislikes']
+keywords: ['示例数据集', 'youtube', '示例数据', '视频分析', '点踩']
 ---
 
 2021 年 11 月，YouTube 移除了所有视频公开显示的 ***点踩*** 数。虽然创作者仍然可以看到点踩数量，但观众只能看到某个视频获得了多少 ***点赞***。
 
 <Warning>
-  该数据集包含超过 45.5 亿条记录，因此除非你的资源能够承载如此规模的数据量，否则请谨慎直接复制粘贴下面的命令。这些命令是在资源配置适当的 [ClickHouse Cloud](/zh/products/cloud/getting-started/intro) 服务上运行的。
+  该数据集包含超过 45.5 亿条记录，因此除非你的资源能够承载如此规模的数据量，否则请谨慎直接复制粘贴下面的命令。下面的命令是在 [ClickHouse Cloud](https://clickhouse.cloud) 的 **生产环境**实例上执行的。
 </Warning>
-
-<Tip>
-  如需亲自尝试这些命令，你可以注册免费试用 [ClickHouse Cloud](https://clickhouse.cloud/signUp?loc=docs-get-started-sample-datasets-youtube-dislikes)，或搭建[自行托管的 ClickHouse](/zh/get-started/setup/install)。
-</Tip>
 
 这些数据采用 JSON 格式，可从 [archive.org](https://archive.org/download/dislikes_youtube_2021_12_video_json_files) 下载。我们也已将相同的数据提供在 S3 上，以便更高效地将其下载到 ClickHouse Cloud 实例中。
 
 以下是在 ClickHouse Cloud 中创建表并插入数据的步骤。
 
 <Note>
-  下面的步骤同样适用于本地安装的 ClickHouse。
+  下面的步骤同样也适用于本地安装的 ClickHouse。唯一需要修改的是使用 `s3` 函数而不是 `s3cluster` (除非你已经配置了集群——在这种情况下，将 `default` 改为你的集群名称) 。
 </Note>
 
-## 分步指南 {#step-by-step-instructions}
+<div id="step-by-step-instructions">
+  ## 分步指南
+</div>
 
 <Steps>
-  <Step title="数据探索" id="data-exploration">
-    让我们看看这些数据的样子。`s3` 表函数会返回一个表，因此我们可以对结果执行 `DESCRIBE`：
+  <Step>
+    ### 数据探索
+
+    让我们看看这些数据的样子。`s3cluster` 表函数会返回一个表，因此我们可以对结果执行 `DESCRIBE`：
 
     ```sql
     DESCRIBE s3(
@@ -67,7 +67,9 @@ keywords: ['example dataset', 'youtube', 'sample data', 'video analytics', 'disl
     ```
   </Step>
 
-  <Step title="创建表" id="create-the-table">
+  <Step>
+    ### 创建表
+
     根据推断出的 schema，我们对数据类型进行了整理，并添加了主键。
     定义如下表：
 
@@ -101,7 +103,9 @@ keywords: ['example dataset', 'youtube', 'sample data', 'video analytics', 'disl
     ```
   </Step>
 
-  <Step title="插入数据" id="insert-data">
+  <Step>
+    ### 插入数据
+
     以下命令会将 S3 文件中的记录流式写入 `youtube` 表。
 
     <Warning>
@@ -146,7 +150,9 @@ keywords: ['example dataset', 'youtube', 'sample data', 'video analytics', 'disl
     * 我们使用 `ifNull` 来避免表中出现 `NULL` 值。如果传入的值是 `NULL`，`ifNull` 函数会将其设为空字符串
   </Step>
 
-  <Step title="统计行数" id="count-row-numbers">
+  <Step>
+    ### 统计行数
+
     在 ClickHouse Cloud 的 SQL 控制台中打开一个新标签页 (或新开一个 `clickhouse-client` 窗口) ，观察计数持续增加。
     插入 45.6 亿行需要一些时间，具体取决于服务器资源。 (如果不调整任何设置，大约需要 4.5 小时。)
 
@@ -162,7 +168,9 @@ keywords: ['example dataset', 'youtube', 'sample data', 'video analytics', 'disl
     ```
   </Step>
 
-  <Step title="探索数据" id="explore-the-data">
+  <Step>
+    ### 探索数据
+
     数据插入后，不妨统计一下你喜欢的视频或频道被点踩的次数。让我们看看 ClickHouse 上传了多少个视频：
 
     ```sql
@@ -243,9 +251,13 @@ keywords: ['example dataset', 'youtube', 'sample data', 'video analytics', 'disl
   </Step>
 </Steps>
 
-## 常见问题 {#questions}
+<div id="questions">
+  ## 常见问题
+</div>
 
-### 如果有人关闭评论功能，是否会降低人们实际去点“点赞”或“点踩”的可能性？ {#if-someone-disables-comments-does-it-lower-the-chance-someone-will-actually-click-like-or-dislike}
+<div id="if-someone-disables-comments-does-it-lower-the-chance-someone-will-actually-click-like-or-dislike">
+  ### 如果有人关闭评论功能，是否会降低人们实际去点“点赞”或“点踩”的可能性？
+</div>
 
 关闭评论后，人们是否更倾向于通过点赞或点踩来表达自己对视频的感受？
 
@@ -300,7 +312,9 @@ ORDER BY
 
 启用评论似乎与更高的互动率有关。
 
-### 视频数量随时间如何变化——有哪些值得注意的事件？ {#how-does-the-number-of-videos-change-over-time---notable-events}
+<div id="how-does-the-number-of-videos-change-over-time---notable-events">
+  ### 视频数量随时间如何变化——有哪些值得注意的事件？
+</div>
 
 ```sql
 SELECT
@@ -338,7 +352,9 @@ ORDER BY month ASC;
 
 在[新冠疫情前后，上传者数量明显激增](https://www.theverge.com/2020/3/27/21197642/youtube-with-me-style-videos-views-coronavirus-cook-workout-study-home-beauty)。
 
-### 字幕是从什么时候开始逐渐增多的 {#more-subtitles-over-time-and-when}
+<div id="more-subtitles-over-time-and-when">
+  ### 字幕是从什么时候开始逐渐增多的
+</div>
 
 随着语音识别技术的进步，给视频制作字幕比以往任何时候都更容易。YouTube 在 2009 年底推出了自动字幕功能——字幕数量的增长是从那时开始的吗？
 
@@ -375,7 +391,9 @@ ORDER BY month ASC;
 数据显示，2009 年出现了一个峰值。显然，当时 YouTube 正在取消其社区字幕功能，该功能允许用户为他人的视频上传字幕。
 这促成了一场非常成功的倡议活动，推动创作者为自己的视频添加字幕，方便听障和失聪观众观看。
 
-### 主要上传者随时间变化 {#top-uploaders-over-time}
+<div id="top-uploaders-over-time">
+  ### 主要上传者随时间变化
+</div>
 
 ```sql
 WITH uploaders AS
@@ -418,7 +436,9 @@ ORDER BY
 │ 2008-09-01 │ WWE                        │     3717092 │   0.07872802579349912 │
 ```
 
-### 随着观看量增加，点赞率如何变化？ {#how-do-like-ratio-changes-as-views-go-up}
+<div id="how-do-like-ratio-changes-as-views-go-up">
+  ### 随着观看量增加，点赞率如何变化？
+</div>
 
 ```sql
 SELECT
@@ -466,7 +486,9 @@ ORDER BY
 └───────────────────┴─────────────────────┴────────────┘
 ```
 
-### 观看量是如何分布的？ {#how-are-views-distributed}
+<div id="how-are-views-distributed">
+  ### 观看量是如何分布的？
+</div>
 
 ```sql
 SELECT

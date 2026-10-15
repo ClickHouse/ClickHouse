@@ -32,15 +32,15 @@ INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
 
 <Accordion title="تشغيل المحلّل الكامل">
   يمكنك أيضًا تشغيل المحلّل الكامل للبيانات
-  باستخدام الإعداد [`input_format_values_interpret_expressions`](/ar/reference/settings/formats/input-format#input_format_values_interpret_expressions).
+  باستخدام الإعداد [`input_format_values_interpret_expressions`](/ar/reference/settings/formats#input_format_values_interpret_expressions).
 
   عندما تكون قيمة الإعداد المذكور أعلاه `1`،
   يحاول ClickHouse أولًا تحليل القيم باستخدام محلّل التدفق السريع.
-  وإذا أخفق ذلك، يحاول ClickHouse استخدام المحلّل الكامل للبيانات، مع التعامل معها كتعبير SQL [تعبير](#expressions).
+  وإذا أخفق ذلك، يحاول ClickHouse استخدام المحلّل الكامل للبيانات، مع التعامل معها كتعبير SQL [expression](#expressions).
 </Accordion>
 
 يمكن أن تكون البيانات بأي تنسيق.
-وعند استلام استعلام، لا يحتسب الخادم في RAM أكثر من [max&#95;query&#95;size](/ar/reference/settings/session-settings/max#max_query_size) بايت من الطلب
+وعند استلام استعلام، لا يحتسب الخادم في RAM أكثر من [max&#95;query&#95;size](/ar/reference/settings/session-settings#max_query_size) بايت من الطلب
 (افتراضيًا، 1 MB)، ويُحلَّل الباقي كتدفق.
 وذلك لتجنّب المشكلات المرتبطة باستعلامات `INSERT` الكبيرة، وهي الطريقة الموصى بها لإدراج بياناتك في ClickHouse.
 
@@ -536,7 +536,7 @@ Code: 184. DB::Exception: Received from localhost:9000, 127.0.0.1. DB::Exception
 وقد أدى هذا الاستبدال إلى حدوث الاستثناء.
 
 <Note>
-  يمكنك تغيير هذا السلوك الافتراضي بتعيين [prefer&#95;column&#95;name&#95;to&#95;alias](/ar/reference/settings/session-settings/prefer#prefer_column_name_to_alias) إلى `1`.
+  يمكنك تغيير هذا السلوك الافتراضي بتعيين [prefer&#95;column&#95;name&#95;to&#95;alias](/ar/reference/settings/session-settings#prefer_column_name_to_alias) إلى `1`.
 </Note>
 
 <div id="asterisk">

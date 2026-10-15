@@ -99,7 +99,7 @@ $CH_CLIENT -q "select * from file('$file_name', 'Avro', '
   double_or_null_or_string_or_long Variant(Float64, String, Int64, Int64),
   double_or_long_or_string_in_array Array(Variant(Float64, String, Int64)),
   double_or_string_or_long_or_null_in_map Map(String, Variant(Float64, Int64, String))
-');" 2>&1 | grep -c 'DB::Exception: The number of distinct (non-null) union types in Avro record (2) does not match the number of types in destination Variant type (3).'
+');" 2>&1 | grep -c 'DB::Exception: The number of (non-null) union types in Avro record (2) does not match the number of types in destination Variant type (3).'
 echo
 
 echo "== SELECT * WITH CustomSchema less types than expected =="
