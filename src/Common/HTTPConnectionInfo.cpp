@@ -18,6 +18,11 @@ static thread_local bool capture_connection_info = false;
 /// the sockets it spans.
 static thread_local size_t requests_in_scope = 0;
 
+/// Set by `beginHTTPConnectionInfoTransportAttempt` and consumed by the next
+/// `beginHTTPConnectionInfoRequest`, so that an attempt counted by the transport before its
+/// connection setup is not counted again when the pooled session sends it.
+static thread_local bool transport_attempt_pending = false;
+
 UInt64 nextHTTPConnectionId()
 {
     static std::atomic<UInt64> counter{0};
@@ -27,10 +32,12 @@ UInt64 nextHTTPConnectionId()
 HTTPConnectionInfoScope::HTTPConnectionInfoScope(bool enabled)
     : previously_enabled(capture_connection_info)
     , previous_requests_in_scope(requests_in_scope)
+    , previous_transport_attempt_pending(transport_attempt_pending)
 {
     capture_connection_info = enabled;
     current_connection_info = {};
     requests_in_scope = 0;
+    transport_attempt_pending = false;
 }
 
 HTTPConnectionInfoScope::~HTTPConnectionInfoScope()
@@ -41,6 +48,7 @@ HTTPConnectionInfoScope::~HTTPConnectionInfoScope()
     capture_connection_info = previously_enabled;
     current_connection_info = {};
     requests_in_scope = previous_requests_in_scope;
+    transport_attempt_pending = previous_transport_attempt_pending;
 }
 
 bool isHTTPConnectionInfoCaptureEnabled()
@@ -48,15 +56,33 @@ bool isHTTPConnectionInfoCaptureEnabled()
     return capture_connection_info;
 }
 
+void beginHTTPConnectionInfoTransportAttempt()
+{
+    if (!capture_connection_info)
+        return;
+
+    ++requests_in_scope;
+    current_connection_info = {};
+    transport_attempt_pending = true;
+}
+
 void beginHTTPConnectionInfoRequest()
 {
     if (!capture_connection_info)
         return;
 
+    current_connection_info = {};
+
+    /// Already counted by the transport before it set up the connection.
+    if (transport_attempt_pending)
+    {
+        transport_attempt_pending = false;
+        return;
+    }
+
     /// Counted per request rather than per socket: a dead keep-alive socket replaced by a reconnect
     /// inside one `sendRequest` is still one request, and does not make the entry ambiguous.
     ++requests_in_scope;
-    current_connection_info = {};
 }
 
 void setCurrentHTTPConnectionInfo(const HTTPConnectionInfo & info)

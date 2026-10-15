@@ -652,6 +652,41 @@ TEST_F(ConnectionPoolTest, ConnectionInfoIdleTimeAfterReconnect)
     ASSERT_GE(reused.idle_microseconds, idle_for_microseconds / 2);
 }
 
+/// The idle time is the time a connection spent in the pool, not the time since its previous
+/// request went out. The latter also covers the transfer of that request's response, so a warm
+/// connection that has just finished a slow exchange and is borrowed again right away would land
+/// among the stale ones this column exists to find.
+TEST_F(ConnectionPoolTest, ConnectionInfoIdleTimeExcludesTransfer)
+{
+    auto ka = Poco::Timespan(10, 0); // 10 seconds
+    timeouts.withHTTPKeepAliveTimeout(ka);
+
+    auto pool = getPool();
+
+    DB::HTTPConnectionInfo slow_info;
+    {
+        auto connection = pool->getConnection(timeouts, nullptr);
+        echoRequestAndTakeConnectionInfo("Hello", *connection);
+
+        setSlowDown(1);
+        slow_info = echoRequestAndTakeConnectionInfo("Hello", *connection);
+        setSlowDown(0);
+    } // returned to the pool right after the slow response has been read
+
+    ASSERT_TRUE(slow_info.has_value);
+    /// A second request over the same checkout: the connection was held by its user, not idle.
+    ASSERT_EQ(0, slow_info.idle_microseconds);
+
+    auto connection = pool->getConnection(timeouts, nullptr);
+    auto reused = echoRequestAndTakeConnectionInfo("Hello", *connection);
+
+    ASSERT_TRUE(reused.has_value);
+    ASSERT_EQ(slow_info.id, reused.id);
+    ASSERT_EQ(2, reused.requests_served);
+    /// Borrowed again immediately: the second the server spent on the previous response is not idle time.
+    ASSERT_LT(reused.idle_microseconds, 500 * 1000);
+}
+
 /// A reconnect can also fail, and then the request never reaches a socket at all. The caller learns
 /// that from the exception and writes its error row inside the same scope - failed requests being
 /// among the rows users inspect most closely - so the slot must not still be holding the identity of
@@ -795,6 +830,34 @@ TEST_F(ConnectionPoolTest, ConnectionInfoIsEmptyWhenScopeSpansSeveralRequests)
     auto info = echoRequestAndTakeConnectionInfo("Hello", *connection);
     ASSERT_TRUE(info.has_value);
     ASSERT_EQ(2, info.requests_served);
+}
+
+/// The object storage transports count each attempt before setting up its connection, which can
+/// fail on its own - a connect timeout that the SDK then retries never reaches the pooled session.
+/// Such a retry still makes the entry span several attempts, while an attempt that does reach the
+/// pooled session must not be counted a second time there.
+TEST_F(ConnectionPoolTest, ConnectionInfoCountsAttemptsFailedBeforeSending)
+{
+    auto pool = getPool();
+
+    auto connection = pool->getConnection(timeouts, nullptr);
+
+    {
+        DB::HTTPConnectionInfoScope scope(true);
+        DB::beginHTTPConnectionInfoTransportAttempt();
+        echoRequest("Hello", *connection);
+        auto info = DB::takeCurrentHTTPConnectionInfo();
+        ASSERT_TRUE(info.has_value);
+        ASSERT_EQ(0, info.requests_served);
+    }
+
+    {
+        DB::HTTPConnectionInfoScope scope(true);
+        DB::beginHTTPConnectionInfoTransportAttempt(); /// fails while connecting, then retried
+        DB::beginHTTPConnectionInfoTransportAttempt();
+        echoRequest("Hello", *connection);
+        ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
+    }
 }
 
 TEST_F(ConnectionPoolTest, ReceiveTimeout)

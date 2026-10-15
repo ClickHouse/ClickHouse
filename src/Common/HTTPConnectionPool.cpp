@@ -481,6 +481,7 @@ private:
             const UInt64 other_socket_inode = other.socket_inode;
             const UInt32 other_requests_on_socket = other.requests_on_socket;
             const Poco::Timespan other_last_idle_time = other.last_idle_time;
+            const Poco::Timestamp other_idle_since = other.idle_since;
 
             Session::assign(other);
 
@@ -490,6 +491,7 @@ private:
             socket_inode = other_socket_inode;
             requests_on_socket = other_requests_on_socket;
             last_idle_time = other_last_idle_time;
+            idle_since = other_idle_since;
         }
 
         /// Called on every path that drops this session's socket. The fd number and the inode are
@@ -503,12 +505,24 @@ private:
             socket_inode = 0;
         }
 
-        /// Time this socket spent idle since its previous request. On a socket's first request
-        /// there is no previous request to be idle after, and Poco seeds that timestamp at
-        /// construction, so report zero rather than the connection setup time.
+        /// Called when the connection is stored in the pool: from now on it is idle.
+        ///
+        /// Poco's own last-request timestamp cannot serve for this. It is updated when the request
+        /// headers go out, so the time since then includes the transfer of the request and response
+        /// bodies and whatever the user did with the connection before returning it - a warm
+        /// connection that has just finished a long transfer would look as if it had been sitting
+        /// in the pool all along.
+        void markIdle()
+        {
+            idle_since.update();
+        }
+
+        /// Called when the connection is handed out from the pool: the time it spent there is the
+        /// idle time of the next request it carries. A socket that has not carried a request yet
+        /// was never idle after one, so it reports zero.
         void sampleIdleTime()
         {
-            last_idle_time = requests_on_socket ? idleTime() : Poco::Timespan(0);
+            last_idle_time = requests_on_socket ? Poco::Timespan(Poco::Timestamp() - idle_since) : Poco::Timespan(0);
         }
 
         void reconnect(UInt64 * connect_time) override
@@ -529,16 +543,13 @@ private:
                 Session::reconnect(connect_time);
                 ProfileEvents::increment(metrics.created);
             }
-            notifySocketInode();
-
             /// Poco can reconnect from inside sendRequest when the borrowed connection turns out
-            /// to be dead. Re-sample the idle time for the socket that is going to carry the
-            /// request: the connection we just took from the pool may have been sitting there far
-            /// longer than the sample `assignFrom` copied along with it, which belongs to that
-            /// socket's previous request. The connection itself is published by `sendRequest`
-            /// once the request has gone out, so it describes this socket, not the discarded one.
-            if (isHTTPConnectionInfoCaptureEnabled())
-                sampleIdleTime();
+            /// to be dead. The idle time of the socket that is going to carry the request was
+            /// sampled when `getPooledConnection` handed it out, and `assignFrom` carried it over;
+            /// a freshly opened socket gets zero from `notifySocketInode`. The connection itself is
+            /// published by `sendRequest` once the request has gone out, so it describes this
+            /// socket, not the discarded one.
+            notifySocketInode();
         }
 
         String getTarget() const
@@ -551,12 +562,6 @@ private:
             return fmt::format("{}:{}",
                                Session::getHost(),
                                Session::getPort());
-        }
-
-        Poco::Timespan idleTime()
-        {
-            Poco::Timestamp now;
-            return now - Session::getLastRequest();
         }
 
         /// Installs IO scheduling hooks and per-thread throttlers on the session.
@@ -576,9 +581,8 @@ private:
 
         /// Runs one of Poco's send entrypoints, recording the connection that carried the request.
         ///
-        /// The idle time is sampled before the send, which updates the session's last-request
-        /// timestamp. Only for a request that is going to be logged: the pool is shared by
-        /// many callers that never read it, and they should not pay for the sampling.
+        /// Only for a request that is going to be logged: the pool is shared by many callers that
+        /// never read it, and they should not pay for the sampling.
         ///
         /// The connection is published only after the send returns, i.e. once the request has
         /// actually been written to the socket. Anything that throws before that - a failed
@@ -590,10 +594,7 @@ private:
         {
             const bool capture_connection_info = isHTTPConnectionInfoCaptureEnabled();
             if (capture_connection_info)
-            {
-                sampleIdleTime();
                 beginHTTPConnectionInfoRequest();
-            }
 
             installTransportHooks(request);
 
@@ -601,6 +602,11 @@ private:
             if (capture_connection_info)
                 publishConnectionInfo();
             ++requests_on_socket;
+
+            /// The idle time belongs to the first request after the connection left the pool. Any
+            /// further request over the same checkout follows the previous one on a connection its
+            /// user was holding, not one that was idle in the pool.
+            last_idle_time = Poco::Timespan(0);
 
             return result;
         }
@@ -810,8 +816,10 @@ private:
         int socket_fd = -1;
         UInt64 socket_inode = 0;
         UInt32 requests_on_socket = 0;
-        /// How long the socket had been idle when the in-flight request was handed to it.
+        /// How long the socket had been idle in the pool when it was handed out for the next request.
         Poco::Timespan last_idle_time;
+        /// When the socket was last stored in the pool.
+        Poco::Timestamp idle_since;
     };
 
     using Connection = PooledConnection;
@@ -886,6 +894,8 @@ public:
         {
             ProfileEvents::increment(getMetrics().reused, 1);
             group->releaseStoredConnections(1);
+
+            reused_connection->sampleIdleTime();
 
             setTimeouts(*reused_connection, timeouts);
 
@@ -1264,6 +1274,7 @@ private:
             auto connection_to_store = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
             connection_to_store->assignFrom(connection);
             connection_to_store->notifySocketInode();
+            connection_to_store->markIdle();
 
             {
                 MemoryTrackerSwitcher switcher{&total_memory_tracker};

@@ -41,8 +41,9 @@ struct HTTPConnectionInfo
     /// Since the current TCP connection was established.
     UInt64 age_microseconds = 0;
 
-    /// Since the previous request on this socket was sent — i.e. how long the connection sat
-    /// idle in the pool before being handed out for this request. 0 on a socket's first request.
+    /// How long the connection sat idle in the pool - from the moment it was returned there until it
+    /// was handed out for this request. 0 on a socket's first request, and on any later request
+    /// sent over the same checkout of the connection, which was held by its user rather than idle.
     UInt64 idle_microseconds = 0;
 
     /// False when no single blob storage request can be attributed to the entry being written: an
@@ -94,12 +95,21 @@ public:
 private:
     bool previously_enabled;
     size_t previous_requests_in_scope;
+    bool previous_transport_attempt_pending;
 };
 
 /// Whether the current thread is inside an enabled `HTTPConnectionInfoScope`. The pooled session checks it
 /// before sampling the connection, so that requests nobody is going to log - most of the traffic
 /// through the shared pool - do not pay for it.
 bool isHTTPConnectionInfoCaptureEnabled();
+
+/// Note that an HTTP client is about to make one attempt of a request on this thread, before it sets
+/// up the connection for it. Called by the object storage transports, so that an attempt that fails
+/// while connecting - before the pooled session is ever asked to send anything - still counts
+/// towards the requests the entry spans. The pooled session's `beginHTTPConnectionInfoRequest` for
+/// the same attempt then does not count it a second time. Does nothing outside of an
+/// `HTTPConnectionInfoScope`.
+void beginHTTPConnectionInfoTransportAttempt();
 
 /// Note that a request is about to be issued on this thread, and drop whatever was published for
 /// the previous one. Called by the pooled session before it tries to send the request, so that an
