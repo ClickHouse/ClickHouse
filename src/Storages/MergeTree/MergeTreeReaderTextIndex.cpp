@@ -579,24 +579,25 @@ void MergeTreeReaderTextIndex::createEmptyColumns(MutableColumns & columns, size
     }
 }
 
-std::unique_ptr<MergeTreeReaderStream> MergeTreeReaderTextIndex::makePostingsStream(const TokenPostingsInfo & token_info, bool use_page_cache_lookahead) const
+std::unique_ptr<MergeTreeReaderStream> MergeTreeReaderTextIndex::makePostingsStream(const TokenPostingsInfo & token_info) const
 {
+    /// One stream per token, consumed by a cursor that can skip segments forward (see `getPostingsStream`)
+    /// or read whole and dropped (see `readAllPostingsForToken`). A longer lookahead would be abandoned
+    /// with data in flight in both cases, so ask the page cache for one block at a time.
     return makeTextIndexInputStream(
         *data_part_info_for_read,
         index_read_task.index.index->getFileName(),
         index_read_task.index.index->getSubstreams()[2],
         settings,
         estimatePostingListBufferSize(token_info),
-        use_page_cache_lookahead);
+        /*use_page_cache_lookahead=*/ false);
 }
 
 MergeTreeReaderStream & MergeTreeReaderTextIndex::getPostingsStream(std::string_view token, const TokenPostingsInfo & token_info)
 {
     auto [it, inserted] = postings_streams.try_emplace(token);
-    /// One stream per token, consumed by a cursor that can skip segments forward
-    /// rather than reading every byte, so ask the page cache for one block at a time.
     if (inserted)
-        it->second = makePostingsStream(token_info, /*use_page_cache_lookahead=*/ false);
+        it->second = makePostingsStream(token_info);
 
     return *it->second;
 }
@@ -883,8 +884,7 @@ PostingList MergeTreeReaderTextIndex::readAllPostingsForToken(std::string_view t
 
     PostingList result;
     /// The whole list is read once, so do not keep a stream for it in `postings_streams`
-    /// unless the token already has one. The blocks are read in file order, so a new stream
-    /// keeps the normal page cache lookahead; a reused cursor stream reads one block at a time.
+    /// unless the token already has one.
     std::unique_ptr<MergeTreeReaderStream> local_postings_stream;
     MergeTreeReaderStream * postings_stream = nullptr;
 
@@ -901,7 +901,7 @@ PostingList MergeTreeReaderTextIndex::readAllPostingsForToken(std::string_view t
                 }
                 else
                 {
-                    local_postings_stream = makePostingsStream(token_info, /*use_page_cache_lookahead=*/ true);
+                    local_postings_stream = makePostingsStream(token_info);
                     postings_stream = local_postings_stream.get();
                 }
             }
