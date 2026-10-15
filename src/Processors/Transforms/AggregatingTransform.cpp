@@ -1726,6 +1726,18 @@ size_t AggregatingTransform::spill(size_t)
     if (!getMemoryStats().spillable_memory_bytes)
         return 0;
 
+    /// A spill requested by the scheduler runs outside of `consume`, while another transform of
+    /// this aggregation may be merging this variant into a query result preview snapshot (see
+    /// tryEmitQueryResultPreview). The kept-keys cutoff and the spill below rebuild and free the
+    /// hash table, so they happen under the participant lock; the snapshot either sees the table
+    /// before the spill or the temporary data after it.
+    std::unique_lock<std::mutex> preview_lock;
+    if (query_result_previews)
+    {
+        preview_lock = std::unique_lock(query_result_previews->control.participantMutex(variant_index));
+        query_result_previews->control.disable();
+    }
+
     if (adaptive_context && adaptive_context->session->initialized.load(std::memory_order_acquire))
         /// Publishing producer-local chunks is not reclamation; the shared component drains them.
         params->aggregator.flushPendingChunks(*adaptive_context);

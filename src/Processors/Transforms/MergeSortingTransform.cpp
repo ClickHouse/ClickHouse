@@ -274,7 +274,22 @@ size_t MergeSortingTransform::spill(size_t /*at_least_bytes*/)
     if (!bytes)
         return 0;
 
-    auto sink = prepareSpill();
+    std::shared_ptr<BufferingToFileSink> sink;
+    {
+        /// A spill requested by the scheduler runs outside of `consume`, while another transform of
+        /// this sorting may be snapshotting the accumulated chunks for a query result preview (see
+        /// tryEmitQueryResultPreview). Moving the chunks out and counting the temporary file happen
+        /// under the participant lock, so the snapshot either sees the chunks or the spill.
+        std::unique_lock<std::mutex> preview_lock;
+        if (query_result_previews)
+        {
+            preview_lock = std::unique_lock(query_result_previews->control.participantMutex(preview_participant_index));
+            query_result_previews->control.disable();
+        }
+
+        sink = prepareSpill();
+    }
+
     while (auto chunk = merge_sorter->read())
     {
         if (isCancelled())
