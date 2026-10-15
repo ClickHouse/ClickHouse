@@ -95,7 +95,7 @@ private:
         bool zero_width = false; /// An assertion such as `\b`: always matches the empty string and never consumes.
         bool nullable = false; /// Can match the empty string, e.g. `o*`, or is not understood well enough to tell.
         bool is_dollar = false; /// The element is a bare `$` anchor, not quantified and not quoted by `\Q...\E`.
-        bool is_caret = false; /// The element is a bare `^` anchor, not quantified.
+        bool is_caret = false; /// The element is a `^` anchor, possibly quantified - see `nullable`.
     };
 
     /// The result of tokenizing a pattern that is not understood: a single element that can match
@@ -290,8 +290,8 @@ private:
                 ++i; /// An ordinary character.
             }
 
-            /// A quantifier binds to the element that has just been read. A quantified `^` or `$` is
-            /// no longer an anchor that the pattern must start or end at, so it does not count as one.
+            /// A quantifier binds to the element that has just been read. A quantified `$` is no
+            /// longer an anchor that the pattern must end at, so it does not count as one.
             const size_t element_end = i;
             if (i < regexp.size() && (regexp[i] == '*' || regexp[i] == '?'))
             {
@@ -332,7 +332,7 @@ private:
                 ++i;
 
             if (i != element_end)
-                atom.is_caret = atom.is_dollar = false;
+                atom.is_dollar = false;
 
             atoms.push_back(atom);
         }
@@ -363,12 +363,12 @@ private:
         return !atoms.back().nullable;
     }
 
-    /// Whether the pattern starts with a `^` anchor, so that it can only match at offset 0. A
-    /// quantified `^`, as in `^?x`, can match zero times, and then the pattern matches anywhere.
+    /// Whether the pattern starts with a `^` that has to match, so that it can only match at offset 0.
+    /// `^+x` still has to, while `^?x` or `^{0,3}x` can skip the `^` and then match anywhere.
     static bool startsWithCaretAnchor(const std::string & regexp)
     {
         const auto atoms = tokenizeRegexp(regexp);
-        return !atoms.empty() && atoms.front().is_caret;
+        return !atoms.empty() && atoms.front().is_caret && !atoms.front().nullable;
     }
 
     /// Whether a `\Q` quoted section reaches the end of the pattern. re2 treats everything after
@@ -454,8 +454,8 @@ private:
         if (regexp.empty())
             return false;
 
-        /// A `^` at the very start cannot be quoted - a `\Q` would have to precede it - so unless it is
-        /// quantified, it is an anchor and the pattern can only match at offset 0. A pattern anchored only by
+        /// A `^` at the very start cannot be quoted - a `\Q` would have to precede it - so unless a quantifier
+        /// lets it repeat zero times, it is an anchor and the pattern can only match at offset 0. A pattern anchored only by
         /// a trailing `$` matches once at the end - if the `$` is an anchor rather than quoted or
         /// quantified text, and unless the pattern can also match the empty string there, in which
         /// case a global replace replaces twice: `replaceRegexpAll('foo', 'o*$', 'Z')` is `fZZ`,
