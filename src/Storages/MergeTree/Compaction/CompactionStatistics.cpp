@@ -88,6 +88,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 number_of_free_entries_in_pool_to_lower_max_size_of_merge;
     extern const MergeTreeSettingsBool vertical_merge_optimize_ttl_delete;
     extern const MergeTreeSettingsBool write_marks_for_substreams_in_compact_parts;
+    extern const MergeTreeSettingsBool share_nested_offsets;
 }
 
 namespace Setting
@@ -1385,12 +1386,29 @@ static UInt64 estimateNeededMemoryForMergeImpl(
             for (const auto & part_column : part->getColumns())
                 columns_present_in_patch_parts.insert(part_column.name);
 
-        if (mutations_snapshot)
+        /// The missing-column markers (skip_empty_columns_on_insert with serialization_info_version =
+        /// 'with_missing_columns'): a part that omitted an all-default column records a marker instead of
+        /// storing it. MergeTask materializes - and writes - such a column unless every non-empty source part
+        /// carries a marker of the same frozen type, even though no source part physically stores it, and
+        /// exempts it from expiry. Mirror that decision, with the same rename / drop resolution of the marker
+        /// names through each part's alter conversions.
+        struct MissingColumnMergeState
         {
-            const auto storage_column_names = output_columns.getNameSet();
-            for (const auto & part : future_part.parts)
+            String type_name;
+            size_t parts_with_marker = 0;
+            bool has_different_types = false;
+        };
+        std::map<String, MissingColumnMergeState> missing_column_states;
+        size_t non_empty_parts = 0;
+        NameSet missing_columns_to_materialize;
+
+        const auto storage_column_names = output_columns.getNameSet();
+        for (const auto & part : future_part.parts)
+        {
+            AlterConversionsPtr conversions;
+            if (mutations_snapshot)
             {
-                const auto conversions = MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, context
+                conversions = MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, context
 #if CLICKHOUSE_CLOUD
                     , nullptr
 #endif
@@ -1403,12 +1421,62 @@ static UInt64 estimateNeededMemoryForMergeImpl(
                         pending_rename_sources.emplace(rename.rename_to, rename.rename_from);
                 }
             }
+
+            if (part->rows_count == 0)
+                continue;
+            ++non_empty_parts;
+            for (const auto & marker : part->getSerializationInfos().getMissingColumns())
+            {
+                String current_name = marker.name;
+                if (conversions)
+                {
+                    if (conversions->columnHasNewName(marker.name))
+                        current_name = conversions->getColumnNewName(marker.name);
+                    const bool share_nested = settings[MergeTreeSetting::share_nested_offsets];
+                    if (conversions->isColumnDropped(marker.name, share_nested) || conversions->isColumnDropped(current_name, share_nested))
+                        continue;
+                }
+
+                auto [it, inserted] = missing_column_states.try_emplace(current_name);
+                if (inserted)
+                    it->second.type_name = marker.type_name;
+                else if (it->second.type_name != marker.type_name)
+                    it->second.has_different_types = true;
+                ++it->second.parts_with_marker;
+            }
+        }
+        for (const auto & [name, state] : missing_column_states)
+            if (state.has_different_types || state.parts_with_marker != non_empty_parts)
+                missing_columns_to_materialize.insert(name);
+
+        /// A patch may still need a rename that every base part has already passed (MergeTask checks each
+        /// selected patch's own conversions as well): a column added, filled by a lightweight UPDATE, and
+        /// renamed while the patch application was disabled for the merges of the base parts keeps its only
+        /// values in a patch under the old name. Such a target is kept alive. It is mapped to the patch's
+        /// old name for the source-part probes only when no base part stores the new name: the probes use
+        /// one name for all source parts, and the base parts that have already passed the rename and store
+        /// the column under the new name carry its streams with the same type.
+        if (mutations_snapshot)
+        {
+            for (const auto & patch : future_part.patch_parts)
+            {
+                /// The same conversions MergeTreeData::getAlterConversionsForPart builds for a patch of a part.
+                const AlterConversions patch_conversions(
+                    mutations_snapshot->getOnFlyMutationCommandsForPart(patch), PatchPartsForReader{}, context);
+                for (const auto & rename : patch_conversions.getRenameMap())
+                {
+                    if (columns_present_in_patch_parts.contains(rename.rename_from) && !storage_column_names.contains(rename.rename_from)
+                        && !columns_present_in_parts.contains(rename.rename_to))
+                        pending_rename_sources.emplace(rename.rename_to, rename.rename_from);
+                }
+            }
         }
 
         for (const auto & storage_column : output_columns)
             if (!columns_present_in_parts.contains(storage_column.name)
                 && !columns_present_in_patch_parts.contains(storage_column.name)
                 && !pending_rename_sources.contains(storage_column.name)
+                && !missing_columns_to_materialize.contains(storage_column.name)
                 && !columns_description.getDefault(storage_column.name))
                 expired_columns.insert(storage_column.name);
     }
@@ -1577,20 +1645,28 @@ static UInt64 estimateNeededMemoryForMergeImpl(
     /// it physically stores only the columns it patches plus the system columns needed to apply them, all
     /// of which its reader reads, and it has no projection parts.
     const UInt64 input_decompressed_block_size = resolve_max_compress_block_size(settings, input_columns, columns_description);
-    UInt64 input_memory = 0;
+    /// The reader buffers of the base parts when the merge reads `read_columns` (in the source-part view)
+    /// from all of them at once. The vertical pricing below reuses it for the reader sets of its stages.
+    const auto base_reader_memory = [&](const NamesAndTypesList & read_columns)
+    {
+        UInt64 memory = 0;
+        for (const auto & part : future_part.parts)
+        {
+            /// Compact and in-memory parts read all columns through a single shared stream.
+            const size_t streams = part->getType() == MergeTreeDataPartType::Wide
+                ? countPartStreamsForColumns(*part, read_columns, settings)
+                : 1;
+            const UInt64 read_buffer_size = saturatingAdd(part_read_buffer_size(part), input_decompressed_block_size);
+            const ColumnSize read_bytes = partReadBytes(*part, read_columns);
+            memory = saturatingAdd(memory, std::min<UInt64>(
+                saturatingStreamsTimesBuffer(streams, read_buffer_size), read_bytes.data_compressed + read_bytes.data_uncompressed));
+        }
+        return memory;
+    };
     UInt64 sum_input_bytes_uncompressed = 0;
     for (const auto & part : future_part.parts)
-    {
-        /// Compact and in-memory parts read all columns through a single shared stream.
-        const size_t streams = part->getType() == MergeTreeDataPartType::Wide
-            ? countPartStreamsForColumns(*part, part_view_input_columns, settings)
-            : 1;
-        const UInt64 read_buffer_size = saturatingAdd(part_read_buffer_size(part), input_decompressed_block_size);
-        const ColumnSize read_bytes = partReadBytes(*part, part_view_input_columns);
-        input_memory += std::min<UInt64>(
-            saturatingStreamsTimesBuffer(streams, read_buffer_size), read_bytes.data_compressed + read_bytes.data_uncompressed);
-        sum_input_bytes_uncompressed += read_bytes.data_uncompressed;
-    }
+        sum_input_bytes_uncompressed += partReadBytes(*part, part_view_input_columns).data_uncompressed;
+    UInt64 patch_input_memory = 0;
     for (const auto & part : future_part.patch_parts)
     {
         const size_t streams = part->getType() == MergeTreeDataPartType::Wide
@@ -1598,9 +1674,10 @@ static UInt64 estimateNeededMemoryForMergeImpl(
             : 1;
         const UInt64 read_buffer_size = saturatingAdd(part_read_buffer_size(part), input_decompressed_block_size);
         const UInt64 part_bytes = part->getBytesOnDisk() + part->getBytesUncompressedOnDisk();
-        input_memory += std::min<UInt64>(saturatingStreamsTimesBuffer(streams, read_buffer_size), part_bytes);
+        patch_input_memory += std::min<UInt64>(saturatingStreamsTimesBuffer(streams, read_buffer_size), part_bytes);
         sum_input_bytes_uncompressed += part->getBytesUncompressedOnDisk();
     }
+    UInt64 input_memory = saturatingAdd(base_reader_memory(part_view_input_columns), patch_input_memory);
 
     /// Output side: one writer stream per column substream of the result part. The result part is not
     /// written yet, so its dynamic substreams (JSON, Dynamic) are not known up front and the default
@@ -1873,14 +1950,22 @@ static UInt64 estimateNeededMemoryForMergeImpl(
     /// compressor takes the same adaptive decision as the data compressor of its stream
     /// (query_write_settings.use_adaptive_write_buffer is passed to both), so an adaptive stream's marks
     /// block starts at adaptive_write_buffer_initial_size (capped by the marks block size) as well.
+    /// On multipart object storage an adaptive stream's marks file does not start at the fixed small size
+    /// either: S3ObjectStorage / AzureObjectStorage open the writer of an adaptive file at
+    /// adaptive_write_buffer_initial_size instead of the caller's buf_size, and WriteBufferFromS3 /
+    /// WriteBufferFromAzureBlobStorage cap that initial buffer at DBMS_DEFAULT_BUFFER_SIZE.
     const UInt64 marks_compress_block_size
         = std::min<UInt64>(settings[MergeTreeSetting::marks_compress_block_size], MergeTreeWriterSettings::MAX_COMPRESS_BLOCK_SIZE);
     const auto marks_eager_buffers = [&](bool adaptive_stream)
     {
+        const UInt64 adaptive_initial_buffer_size = settings[MergeTreeSetting::adaptive_write_buffer_initial_size];
         const UInt64 marks_block = adaptive_stream
-            ? std::min<UInt64>(settings[MergeTreeSetting::adaptive_write_buffer_initial_size], marks_compress_block_size)
+            ? std::min<UInt64>(adaptive_initial_buffer_size, marks_compress_block_size)
             : marks_compress_block_size;
-        return marks_block + MergeTreeWriterStream::MARKS_FILE_BUFFER_SIZE;
+        const UInt64 marks_file_buffer = adaptive_stream && remote_write_buffer_size != 0
+            ? std::min<UInt64>(adaptive_initial_buffer_size, DBMS_DEFAULT_BUFFER_SIZE)
+            : MergeTreeWriterStream::MARKS_FILE_BUFFER_SIZE;
+        return marks_block + marks_file_buffer;
     };
     /// Both chains of a non-adaptive stream, the footprint every stream priced outside the adaptive split
     /// (skip-index streams, delayed vertical streams) allocates eagerly.
@@ -2289,6 +2374,25 @@ static UInt64 estimateNeededMemoryForMergeImpl(
                     saturatingStreamsTimesBuffer(3, saturatingStreamsTimesBuffer(output_marks_bytes_per_stream, alive_streams)));
 
                 output_memory = std::min({output_memory, vertical_worst_case, vertical_data_bound});
+
+                /// The same holds for the readers: a vertical merge reads the merging columns (and the
+                /// lightweight-delete mask) in its horizontal stage, then reads one gathering column at a time
+                /// from every source part. Price the merging reader set plus twice the most expensive gathering
+                /// column (a remote prefetch can keep the readers of the next column alive), with the patch
+                /// readers whole, as the horizontal pricing does. Both stages are summed, although the merging
+                /// readers are released before the gathering stage: that can only over-price.
+                NamesAndTypesList part_view_merging_read_columns = part_view_merging_columns;
+                part_view_merging_read_columns.emplace_back(RowExistsColumn::name, RowExistsColumn::type);
+                UInt64 max_gathering_column_reader_memory = 0;
+                for (const auto & column : gathering_columns)
+                {
+                    const NamesAndTypesList single_column{NameAndTypePair(part_source_name(column.name), column.type)};
+                    max_gathering_column_reader_memory = std::max(max_gathering_column_reader_memory, base_reader_memory(single_column));
+                }
+                const UInt64 vertical_input_memory = saturatingAdd(
+                    saturatingAdd(base_reader_memory(part_view_merging_read_columns), patch_input_memory),
+                    saturatingStreamsTimesBuffer(2, max_gathering_column_reader_memory));
+                input_memory = std::min(input_memory, vertical_input_memory);
             }
         }
     }
@@ -2356,8 +2460,10 @@ static UInt64 estimateNeededMemoryForMergeImpl(
     /// The projections are processed one at a time, so their IO is priced at the largest single footprint,
     /// not the sum: MergeProjectionsStage::executeStep runs one nested merge (of the existing projection
     /// parts, or of the temporary parts of a rebuilt projection) at a time and moves on only after it has
-    /// finished, and the temporary parts of rebuilt projections are written one after another
-    /// (writeTempProjectionPart), each writer finalized before the next one is created.
+    /// finished, releasing the finished nested task (and the buffers its writer still holds, such as the
+    /// compressors of a compact writer) before starting the next one, and the temporary parts of rebuilt
+    /// projections are written one after another (writeTempProjectionPart), each writer finalized before
+    /// the next one is created.
     UInt64 projection_memory = 0;
     const auto projection_mode = settings[MergeTreeSetting::deduplicate_merge_projection_mode];
     const bool merge_processes_projections = !future_part.parts.empty()
