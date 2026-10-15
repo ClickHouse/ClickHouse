@@ -249,8 +249,10 @@ static size_t addNewFilterStepOrThrow(
 
     /// New filter column is the first one.
     String split_filter_column_name = split_filter.dag.getOutputs()[split_filter.filter_pos]->result_name;
-    node.step = std::make_unique<FilterStep>(
+    auto new_filter = std::make_unique<FilterStep>(
         node.children.at(0)->step->getOutputHeader(), std::move(split_filter.dag), std::move(split_filter_column_name), split_filter.remove_filter);
+    new_filter->setOptimizeConstantColumnsAfterFilter(filter->getOptimizeConstantColumnsAfterFilter());
+    node.step = std::move(new_filter);
     node.step->setStepDescription(*filter);
 
     child->updateInputHeader(node.step->getOutputHeader(), child_idx);
@@ -1457,11 +1459,13 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
             filter_node.children.push_back(parent_node->children[i]);
             parent_node->children[i] = &filter_node;
 
-            filter_node.step = std::make_unique<FilterStep>(
+            auto new_filter = std::make_unique<FilterStep>(
                 filter_node.children.front()->step->getOutputHeader(),
                 filter->getExpression().clone(),
                 filter->getFilterColumnName(),
                 filter->removesFilterColumn());
+            new_filter->setOptimizeConstantColumnsAfterFilter(filter->getOptimizeConstantColumnsAfterFilter());
+            filter_node.step = std::move(new_filter);
         }
 
         ///       - Filter - Something

@@ -173,21 +173,23 @@ bool canReplaceColumnWithConstantAfterFilter(
     if (containsDynamic(result_type) || containsVariant(result_type) || containsObject(result_type) || containsFloat(result_type))
         return false;
 
-    const bool constant_type_is_dynamic = containsDynamic(constant_type);
+    /// A constant of a runtime-dispatched type hides its actual type, so none of the checks below can be applied to it.
+    /// E.g. a `UInt64` column compared with `CAST(toDecimal64('0', 18), 'Dynamic')` is scaled by an unchecked
+    /// multiplication with `decimal_check_overflow = 0`, so distinct stored values can compare equal.
+    if (containsDynamic(constant_type) || containsVariant(constant_type) || containsObject(constant_type))
+        return false;
 
-    if (containsColumnedAsDecimal(result_type)
-        && (containsFloat(constant_type) || constant_type_is_dynamic))
+    if (containsColumnedAsDecimal(result_type) && containsFloat(constant_type))
         return false;
 
     if (containsString(result_type)
-        && (containsFixedString(constant_type) || containsEnum(constant_type) || containsTuple(constant_type) || constant_type_is_dynamic))
+        && (containsFixedString(constant_type) || containsEnum(constant_type) || containsTuple(constant_type)))
         return false;
 
     if (containsFixedString(result_type) && !result_type->equals(*constant_type))
         return false;
 
-    if (containsDateOrTime(result_type)
-        && (constant_type_is_dynamic || (containsDateOrTime(constant_type) && !result_type->equals(*constant_type))))
+    if (containsDateOrTime(result_type) && containsDateOrTime(constant_type) && !result_type->equals(*constant_type))
         return false;
 
     /// A `Decimal` constant of a different type makes the comparison scale or narrow the column values.
@@ -378,7 +380,8 @@ FilterTransform::FilterTransform(
     bool on_totals_,
     std::shared_ptr<std::atomic<size_t>> rows_filtered_,
     std::optional<std::pair<UInt64, String>> condition_,
-    bool update_row_numbers_info_)
+    bool update_row_numbers_info_,
+    std::optional<bool> optimize_constant_columns_after_filter_)
     : FilterTransform(
             header_,
             std::make_shared<const Block>(expression_ ? expression_->getActionsDAG().updateHeader(*header_) : *header_),
@@ -389,7 +392,8 @@ FilterTransform::FilterTransform(
             on_totals_,
             std::move(rows_filtered_),
             std::move(condition_),
-            update_row_numbers_info_)
+            update_row_numbers_info_,
+            optimize_constant_columns_after_filter_)
 {
 }
 
@@ -402,7 +406,8 @@ FilterTransform::FilterTransform(
     bool on_totals_,
     std::shared_ptr<std::atomic<size_t>> rows_filtered_,
     std::optional<std::pair<UInt64, String>> condition_,
-    bool update_row_numbers_info_)
+    bool update_row_numbers_info_,
+    std::optional<bool> optimize_constant_columns_after_filter_)
     : ISimpleTransform(
             header_,
             std::make_shared<const Block>(checkAndRemoveFilterColumn(*transformed_header_, filter_column_name_, remove_filter_column_)),
@@ -415,11 +420,13 @@ FilterTransform::FilterTransform(
     , rows_filtered(rows_filtered_)
     , condition(condition_)
     , transformed_header(*transformed_header_)
+    , optimize_constant_columns_after_filter(optimize_constant_columns_after_filter_)
 {
     if (expression)
     {
-        constant_columns_after_filter
-            = collectConstantColumnsAfterFilter(expression->getActionsDAG(), filter_column_name, transformed_header);
+        if (optimize_constant_columns_after_filter.value_or(true))
+            constant_columns_after_filter
+                = collectConstantColumnsAfterFilter(expression->getActionsDAG(), filter_column_name, transformed_header);
 
         set_spillables.add(expression->getActionsDAG());
         /// Special check to stop queries like "WHERE ignore(...)"
@@ -494,10 +501,13 @@ void FilterTransform::applyConstantColumnsAfterFilter(Columns & columns, size_t 
     if (constant_columns_after_filter.empty() || num_rows == 0)
         return;
 
-    if (auto query_context = CurrentThread::tryGetQueryContext())
+    if (!optimize_constant_columns_after_filter.has_value())
     {
-        if (!query_context->getSettingsRef()[Setting::optimize_constant_columns_after_filter])
-            return;
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+        {
+            if (!query_context->getSettingsRef()[Setting::optimize_constant_columns_after_filter])
+                return;
+        }
     }
 
     for (const auto position : constant_columns_after_filter)

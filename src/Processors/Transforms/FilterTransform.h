@@ -27,7 +27,8 @@ public:
         SharedHeader header_, ExpressionActionsPtr expression_, String filter_column_name_,
         bool remove_filter_column_, bool on_totals_ = false, std::shared_ptr<std::atomic<size_t>> rows_filtered_ = nullptr,
         std::optional<std::pair<UInt64, String>> condition_ = std::nullopt,
-        bool update_row_numbers_info_ = false);
+        bool update_row_numbers_info_ = false,
+        std::optional<bool> optimize_constant_columns_after_filter_ = std::nullopt);
 
     /// Use this overload when the transformed header (the header after the expression, but before
     /// removing the filter column) is already known (computed once per step) to avoid recomputing
@@ -37,7 +38,8 @@ public:
         SharedHeader header_, SharedHeader transformed_header_, ExpressionActionsPtr expression_, String filter_column_name_,
         bool remove_filter_column_, bool on_totals_ = false, std::shared_ptr<std::atomic<size_t>> rows_filtered_ = nullptr,
         std::optional<std::pair<UInt64, String>> condition_ = std::nullopt,
-        bool update_row_numbers_info_ = false);
+        bool update_row_numbers_info_ = false,
+        std::optional<bool> optimize_constant_columns_after_filter_ = std::nullopt);
 
     static Block
     transformHeader(const Block & header, const ActionsDAG * expression, const String & filter_column_name, bool remove_filter_column);
@@ -81,6 +83,9 @@ private:
     Block transformed_header;
 
     std::vector<size_t> constant_columns_after_filter;
+    /// The value of `optimize_constant_columns_after_filter` from the context the filter was planned in.
+    /// If not set, it is read from the query context.
+    std::optional<bool> optimize_constant_columns_after_filter;
 
     bool are_prepared_sets_initialized = false;
 

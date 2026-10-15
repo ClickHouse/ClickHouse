@@ -23,3 +23,15 @@ SELECT toInt64(i) AS x FROM values('i IntervalYear', toIntervalYear(0), toInterv
 SETTINGS optimize_constant_columns_after_filter = 0;
 SELECT toInt64(i) AS x FROM values('i IntervalYear', toIntervalYear(0), toIntervalYear(4611686018427387904)) WHERE i = toIntervalMonth(0) ORDER BY x
 SETTINGS optimize_constant_columns_after_filter = 1;
+
+SELECT 'integer vs dynamic decimal';
+SELECT u FROM values('u UInt64', 0, 70368744177664) WHERE u = CAST(toDecimal64('0', 18), 'Dynamic') ORDER BY u
+SETTINGS decimal_check_overflow = 0, optimize_constant_columns_after_filter = 0;
+SELECT u FROM values('u UInt64', 0, 70368744177664) WHERE u = CAST(toDecimal64('0', 18), 'Dynamic') ORDER BY u
+SETTINGS decimal_check_overflow = 0, optimize_constant_columns_after_filter = 1;
+
+SELECT 'tuple integer vs tuple dynamic decimal';
+SELECT t FROM values('t Tuple(UInt64)', tuple(0), tuple(70368744177664)) WHERE t = tuple(CAST(toDecimal64('0', 18), 'Dynamic')) ORDER BY t
+SETTINGS decimal_check_overflow = 0, optimize_constant_columns_after_filter = 0;
+SELECT t FROM values('t Tuple(UInt64)', tuple(0), tuple(70368744177664)) WHERE t = tuple(CAST(toDecimal64('0', 18), 'Dynamic')) ORDER BY t
+SETTINGS decimal_check_overflow = 0, optimize_constant_columns_after_filter = 1;

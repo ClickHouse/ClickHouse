@@ -83,11 +83,13 @@ size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes, const Op
     node->children.swap(filter_node.children);
     node->children.push_back(&filter_node);
 
-    filter_node.step = std::make_unique<FilterStep>(
+    auto new_filter_step = std::make_unique<FilterStep>(
             filter_node.children.at(0)->step->getOutputHeader(),
             std::move(split.first),
             std::move(split_filter_name),
             remove_filter);
+    new_filter_step->setOptimizeConstantColumnsAfterFilter(filter_step->getOptimizeConstantColumnsAfterFilter());
+    filter_node.step = std::move(new_filter_step);
 
     auto expression_step = std::make_unique<ExpressionStep>(filter_node.step->getOutputHeader(), std::move(split.second));
 
