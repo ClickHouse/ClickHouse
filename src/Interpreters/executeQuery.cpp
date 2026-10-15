@@ -3303,14 +3303,9 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
 
         /// `Set` and `Join` report `storesDataOnDisk` unconditionally, but with `persistent = 0` they do not
         /// write the inserted rows to disk, so `ATTACH` would restore an empty set or hash table.
-        {
-            StoragePtr storage = table;
-            if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
-                storage = proxy->getNested();
-            if (const auto * set_or_join = dynamic_cast<const StorageSetOrJoinBase *>(storage.get());
-                set_or_join && !set_or_join->isPersistent())
-                continue;
-        }
+        if (const auto set_or_join = castStorage<const StorageSetOrJoinBase>(table, DeferredTable::Load);
+            set_or_join && !set_or_join->isPersistent())
+            continue;
 
         /// A kind-specific metadata probe (`EXISTS VIEW`, `SHOW CREATE DICTIONARY`, ...) on a name that
         /// resolved to a different object kind never touches this table's storage — the outer query
