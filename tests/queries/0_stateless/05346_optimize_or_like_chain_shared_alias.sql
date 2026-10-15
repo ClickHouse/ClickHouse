@@ -15,5 +15,7 @@ SELECT (ls LIKE '%a%' OR ls LIKE '%b%' OR ls LIKE '%c%' OR ls LIKE '%1%') AS r F
 SELECT (s LIKE '%a%' OR s LIKE '%b%' OR s LIKE '%c%' OR s LIKE '%1%' OR ls LIKE '%a%' OR ls LIKE '%b%' OR ls LIKE '%c%' OR ls LIKE '%2%') AS r FROM t_or_like_shared GROUP BY r ORDER BY r;
 SELECT (s LIKE '%a%' OR s LIKE '%b%' OR s LIKE '%c%' OR s LIKE '%1%') AS r, count() FROM t_or_like_shared GROUP BY r WITH ROLLUP ORDER BY r, count();
 WITH if(s LIKE '%a%' OR s LIKE '%b%' OR s LIKE '%c%' OR s LIKE '%1%', s, 'z') AS h SELECT (h LIKE '%a%' OR h LIKE '%b%' OR h LIKE '%c%' OR h LIKE '%1%') AS r FROM t_or_like_shared GROUP BY r ORDER BY r;
+SELECT (s LIKE '%a%' OR s LIKE '%b%' OR s LIKE '%c%' OR s LIKE '%1%') AS r, indexHint(r) FROM t_or_like_shared GROUP BY r ORDER BY r;
+SELECT (s LIKE '%a%' OR s LIKE '%b%' OR s LIKE '%c%' OR s LIKE '%1%') AS r, count() FROM t_or_like_shared GROUP BY r ORDER BY ALL SETTINGS enable_identifier_resolve_cache = 0;
 
 DROP TABLE t_or_like_shared;
