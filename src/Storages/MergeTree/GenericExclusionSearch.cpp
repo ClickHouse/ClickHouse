@@ -207,8 +207,7 @@ GenericExclusionSearchResult genericExclusionSearch(
     assertSortedAndNonIntersecting(initial_ranges);
 #endif
 
-    /// An exhaustive search of N marks makes at most 2N - 1 checks, because every split makes at least two
-    /// subranges, so such a budget is never reached.
+    /// An exhaustive search of N marks makes at most 2N - 1 checks, so such a budget is never reached.
     if (search_settings.max_steps == 0 || search_settings.max_steps / 2 >= initial_ranges.getNumberOfMarks())
         searchUnlimited(initial_ranges, check_in_range, search_settings, collect_exact_ranges, result);
     else

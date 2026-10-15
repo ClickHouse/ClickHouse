@@ -57,9 +57,8 @@ struct GenericExclusionSearchResult
 /// rows of the given mark range.
 using MarkRangeCheck = std::function<BoolMask(const MarkRange &)>;
 
-/// The step budget of the search over the primary key of a part: one step per `rows_per_step` rows of the analyzed marks,
-/// but at least 100000 steps, and at most `max_steps` when it is non-zero. `rows_per_step` 0 disables the row bound, and
-/// the result 0 means unlimited.
+/// Step budget for the primary key of a part: one step per `rows_per_step` rows, at least 100000, at most a non-zero
+/// `max_steps`. `rows_per_step` 0 disables the row bound; the result 0 means unlimited.
 size_t genericExclusionSearchStepBudget(size_t max_steps, size_t rows_per_step, size_t num_marks, size_t rows_per_mark);
 
 /// The initial ranges must be sorted and non-intersecting.
