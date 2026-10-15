@@ -9,6 +9,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsHashing.h>
 #include <Functions/IFunction.h>
+#include <Functions/icebergCommon.h>
 #include <Interpreters/Context.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Core/ColumnWithTypeAndName.h>
@@ -155,9 +156,8 @@ public:
             {
                     DateTime64 value = decimal_column->getElement(i & idx_mask);
                     Int64 value_int = value.convertTo<Int64>();
-                    /// The Iceberg spec floors nanoseconds to microseconds before hashing.
                     if (scale == 9)
-                        value_int = value_int / 1000 - (value_int % 1000 < 0 ? 1 : 0);
+                        value_int = floorDivide(value_int, 1000);
                 result_data[i] = hashLong(value_int);
             }
         }
