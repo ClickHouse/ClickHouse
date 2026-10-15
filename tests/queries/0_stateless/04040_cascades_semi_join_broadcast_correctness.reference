@@ -7,9 +7,8 @@ Expression ((Project names + Projection))
           JoinLogical (Broadcast HashJoin )
             Expression (Change column names to column identifiers)
               ReadFromMergeTree (ParallelRead default.test_orders)
-            Expression (Create result for always true EXISTS expression)
-              Filter ((WHERE + (Renaming correlated columns to equivalent expressions in subquery + Change column names to column identifiers)))
-                ReadFromMergeTree (ReplicatedRead default.test_lineitem)
+            Expression ((Create result for always true EXISTS expression + (WHERE + (Renaming correlated columns to equivalent expressions in subquery + Change column names to column identifiers))))
+              ReadFromMergeTree (ReplicatedRead default.test_lineitem)
 20
 20
 -- RIGHT SEMI JOIN (commuted to LEFT SEMI: orders=ParallelRead, lineitem=Broadcast)

@@ -184,6 +184,9 @@ struct DecorrelationScope
     /// (including rows that never match any outer value), so e.g. a division that is safe
     /// over the outer domain could throw.
     std::unordered_set<String> identifiers_used_outside_equalities;
+    /// Correlated identifiers reconstructed at this scope's uncorrelated boundary from a boundary column without a
+    /// conversion that can reject rows, keyed by identifier: the name of that boundary column.
+    std::unordered_map<String, String> substituted_identifiers;
 };
 
 struct DecorrelationContext
@@ -280,6 +283,118 @@ bool isRecordableEquivalencePair(const DataTypePtr & lhs_type, const DataTypePtr
     bool safe_number_pair = isNativeNumber(lhs_base) && isNativeNumber(rhs_base)
         && tryGetLeastSupertype(DataTypes{lhs_base, rhs_base}) != nullptr;
     return equal_bases || safe_number_pair;
+}
+
+/// `x = x` is true for every non-NULL value: no floats (NaN), no `Tuple` (compares elements as values).
+bool hasReflexiveEquality(const DataTypePtr & type)
+{
+    WhichDataType which(removeNullable(removeLowCardinality(type)));
+    return which.isInteger() || which.isDecimal() || which.isEnum() || which.isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64()
+        || which.isStringOrFixedString() || which.isUUID() || which.isIPv4() || which.isIPv6();
+}
+
+enum class RemovedEqualities
+{
+    None,
+    Some,
+    All,
+};
+
+/// Removes the recorded `X = P` conjuncts that are 1 on every row, P being reconstructed from the non-NULL X itself.
+RemovedEqualities removeEqualitiesAbsorbedBySubstitution(
+    ActionsDAG & dag,
+    const String & filter_column_name,
+    const ActionsDAG::NodeRawConstPtrs & conjuncts,
+    const std::unordered_set<const ActionsDAG::Node *> & recorded_equalities,
+    const std::unordered_map<String, String> & substituted,
+    const ContextPtr & query_context)
+{
+    if (substituted.empty())
+        return RemovedEqualities::None;
+
+    auto is_absorbed = [&](const ActionsDAG::Node & correlated, const ActionsDAG::Node & member)
+    {
+        auto it = substituted.find(correlated.result_name);
+        return it != substituted.end()
+            && member.type == ActionsDAG::ActionType::INPUT
+            && member.result_name == it->second
+            && !isNullableOrLowCardinalityNullable(member.result_type)
+            && hasReflexiveEquality(member.result_type)
+            && hasReflexiveEquality(correlated.result_type);
+    };
+
+    std::unordered_set<const ActionsDAG::Node *> removed;
+    for (const auto * conjunct : conjuncts)
+    {
+        if (!recorded_equalities.contains(conjunct))
+            continue;
+        const auto & lhs = *conjunct->children[0];
+        const auto & rhs = *conjunct->children[1];
+        if (is_absorbed(lhs, rhs) || is_absorbed(rhs, lhs))
+            removed.insert(conjunct);
+    }
+
+    if (removed.empty())
+        return RemovedEqualities::None;
+
+    auto and_function = FunctionFactory::instance().get("and", query_context);
+    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> rebuilt;
+
+    /// Returns nullptr for a removed subtree; keeps the argument order of every `and`.
+    auto rebuild = [&](auto & self, const ActionsDAG::Node * node) -> const ActionsDAG::Node *
+    {
+        if (removed.contains(node))
+            return nullptr;
+        if (auto it = rebuilt.find(node); it != rebuilt.end())
+            return it->second;
+
+        const ActionsDAG::Node * result = node;
+        if (node->type == ActionsDAG::ActionType::ALIAS)
+        {
+            const auto * child = self(self, node->children.front());
+            if (child != node->children.front())
+                result = child;
+        }
+        else if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "and")
+        {
+            ActionsDAG::NodeRawConstPtrs kept_children;
+            bool changed = false;
+            for (const auto * child : node->children)
+            {
+                const auto * new_child = self(self, child);
+                changed |= new_child != child;
+                if (new_child)
+                    kept_children.push_back(new_child);
+            }
+
+            if (changed)
+            {
+                if (kept_children.empty())
+                    result = nullptr;
+                else if (kept_children.size() == 1)
+                    result = kept_children.front();
+                else
+                    result = &dag.addFunction(and_function, std::move(kept_children), {});
+            }
+        }
+
+        rebuilt[node] = result;
+        return result;
+    };
+
+    const auto * filter_node = &dag.findInOutputs(filter_column_name);
+    const auto * new_filter_node = rebuild(rebuild, filter_node);
+
+    if (!new_filter_node)
+    {
+        std::erase(dag.getOutputs(), filter_node);
+        dag.removeUnusedActions(/*allow_remove_inputs=*/false, /*allow_constant_folding=*/false);
+        return RemovedEqualities::All;
+    }
+
+    dag.addOrReplaceInOutputs(dag.addAlias(*new_filter_node, filter_column_name));
+    dag.removeUnusedActions(/*allow_remove_inputs=*/false, /*allow_constant_folding=*/false);
+    return RemovedEqualities::Some;
 }
 
 /// A renaming of a correlated column to an equivalent column of the decorrelated subplan.
@@ -647,6 +762,8 @@ QueryPlan decorrelateQueryPlan(
                 for (const auto & renaming : expression_renamings)
                 {
                     needs_prefilter |= renaming.conversion.needs_null_prefilter;
+                    if (!renaming.conversion.needs_null_prefilter)
+                        context.scope_stack.back().substituted_identifiers[renaming.correlated_name] = renaming.source->result_name;
 
                     const ActionsDAG::Node * substituted = renaming.source;
                     if (renaming.conversion.needs_accurate_cast)
@@ -907,6 +1024,26 @@ QueryPlan decorrelateQueryPlan(
         filter_step->getExpression().appendInputsForUnusedColumns(*input_header);
         for (const auto & column : input_header->getColumnsWithTypeAndName())
             filter_step->getExpression().tryRestoreColumn(column.name);
+
+        /// A kept filter column is read by the next step, so only a removed one may change.
+        if (filter_step->removesFilterColumn())
+        {
+            auto removed_equalities = removeEqualitiesAbsorbedBySubstitution(
+                dag,
+                filter_step->getFilterColumnName(),
+                conjuncts_list,
+                recorded_equality_nodes,
+                context.scope_stack.back().substituted_identifiers,
+                context.planner_context->getQueryContext());
+
+            if (removed_equalities == RemovedEqualities::All)
+            {
+                auto expression_step = std::make_unique<ExpressionStep>(input_header, std::move(dag));
+                expression_step->setStepDescription(*filter_step);
+                decorrelated_query_plan.addStep(std::move(expression_step));
+                return decorrelated_query_plan;
+            }
+        }
 
         node->step->updateInputHeader(input_header);
 

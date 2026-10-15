@@ -43,21 +43,14 @@ Positions: 3 0 1
             Function: sum(Int16) → Int64
             Arguments: __table3.age
       Skip merging: 0
-        Expression (Before GROUP BY)
-        Actions: INPUT :: 0 -> __table3.age Int16 : 0
-                 INPUT :: 1 -> __table3.name String : 1
-                 INPUT :: 2 -> __table1.name String : 2
-        Positions: 0 1 2
-          Filter ((WHERE + (Renaming correlated columns to equivalent expressions in subquery + Change column names to column identifiers)))
-          Filter column: equals(__table1.name, __table3.name) (removed)
-          Actions: INPUT : 0 -> age Int16 : 0
-                   INPUT : 1 -> name String : 1
-                   ALIAS age :: 0 -> __table3.age Int16 : 2
-                   FUNCTION equals(name : 1, name : 1) -> equals(__table1.name, __table3.name) UInt8 : 0
-                   ALIAS name : 1 -> __table3.name String : 3
-                   ALIAS name :: 1 -> __table1.name String : 4
-          Positions: 0 2 3 4
-            ReadFromMemoryStorage
+        Expression ((Before GROUP BY + (WHERE + (Renaming correlated columns to equivalent expressions in subquery + Change column names to column identifiers))))
+        Actions: INPUT : 0 -> age Int16 : 0
+                 INPUT : 1 -> name String : 1
+                 ALIAS age :: 0 -> __table3.age Int16 : 2
+                 ALIAS name :: 1 -> __table3.name String : 0
+                 ALIAS __table3.name : 0 -> __table1.name String : 1
+        Positions: 2 0 1
+          ReadFromMemoryStorage
     Expression (Change column names to column identifiers)
     Actions: INPUT : 0 -> uid Int16 : 0
              INPUT : 1 -> name String : 1

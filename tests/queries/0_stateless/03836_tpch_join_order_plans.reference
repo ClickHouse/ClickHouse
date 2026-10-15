@@ -36,7 +36,7 @@ Expression (Project names)
                                   Expression ((Before GROUP BY + ))
                                     ShuffleExchange
                                       JoinLogical (Broadcast HashJoin  swapped)
-                                        Expression (((WHERE + Renaming correlated columns to equivalent expressions in subquery) + Change column names to column identifiers))
+                                        Expression (Change column names to column identifiers)
                                           ReadFromMergeTree (ParallelRead default.partsupp)
                                         JoinLogical (Replicated  swapped)
                                           Expression (Change column names to column identifiers)
@@ -355,8 +355,8 @@ Expression (Project names)
                   Expression ((WHERE + Change column names to column identifiers))
                     ShuffleExchange
                       ReadFromMergeTree (ParallelRead default.part)
-                Expression (Create result for always true EXISTS expression)
-                  Expression (((WHERE + (Renaming correlated columns to equivalent expressions in subquery + (Change column names to column identifiers + (Project names + (Projection + (Change column names to column identifiers + (Project names + Projection))))))) + (WHERE + Change column names to column identifiers)))
+                Expression ((Create result for always true EXISTS expression + (WHERE + (Renaming correlated columns to equivalent expressions in subquery + (Change column names to column identifiers + (Project names + (Projection + (Change column names to column identifiers + (Project names + Projection)))))))))
+                  Expression ((WHERE + Change column names to column identifiers))
                     ReadFromMergeTree (ReplicatedRead default.supplier)
 -- Q17
 Expression ((Project names + Projection))
@@ -373,10 +373,9 @@ Expression ((Project names + Projection))
                   JoinLogical (Shuffle HashJoin )
                     Expression ((Create renaming actions for scalar subquery + (Create correlated subquery result alias + (Project names + Projection))))
                       Aggregating
-                        Expression (Before GROUP BY)
-                          Expression ((WHERE + (Renaming correlated columns to equivalent expressions in subquery + Change column names to column identifiers)))
-                            ShuffleExchange
-                              ReadFromMergeTree (ParallelRead default.lineitem)
+                        Expression ((Before GROUP BY + (WHERE + (Renaming correlated columns to equivalent expressions in subquery + Change column names to column identifiers))))
+                          ShuffleExchange
+                            ReadFromMergeTree (ParallelRead default.lineitem)
                     Expression ((WHERE + Change column names to column identifiers))
                       ShuffleExchange
                         ReadFromMergeTree (ParallelRead default.part)
@@ -424,10 +423,10 @@ Expression (Project names)
                         Expression (Change column names to column identifiers)
                           ShuffleExchange
                             ReadFromMergeTree (ParallelRead default.customer)
-                  Expression (Create result for always true EXISTS expression)
-                    Filter (((WHERE + (Renaming correlated columns to equivalent expressions in subquery + (Change column names to column identifiers + (Project names + (Projection + (Change column names to column identifiers + (Project names + Projection))))))) + HAVING))
+                  Expression ((Create result for always true EXISTS expression + (WHERE + (Renaming correlated columns to equivalent expressions in subquery + (Change column names to column identifiers + (Project names + (Projection + (Change column names to column identifiers + (Project names + Projection)))))))))
+                    Filter (HAVING)
                       Aggregating
-                        Expression ((((WHERE + (Renaming correlated columns to equivalent expressions in subquery + (Change column names to column identifiers + (Project names + (Projection + (Change column names to column identifiers + (Project names + Projection))))))) + HAVING) + (Before GROUP BY + Change column names to column identifiers)))
+                        Expression ((Before GROUP BY + Change column names to column identifiers))
                           ShuffleExchange
                             ReadFromMergeTree (ParallelRead default.lineitem)
 -- Q19
@@ -466,20 +465,21 @@ Expression (Project names)
               ReadFromMergeTree (ReplicatedRead default.nation)
           BroadcastExchange
             GatherExchange
-              Expression (Create result for always true EXISTS expression)
-                Filter (((WHERE + (Renaming correlated columns to equivalent expressions in subquery + (Change column names to column identifiers + (Project names + (Projection + (Change column names to column identifiers + (Project names + Projection))))))) + WHERE))
+              Expression ((Create result for always true EXISTS expression + (WHERE + (Renaming correlated columns to equivalent expressions in subquery + (Change column names to column identifiers + (Project names + (Projection + (Change column names to column identifiers + (Project names + Projection)))))))))
+                Filter (WHERE)
                   JoinLogical (Shuffle HashJoin )
-                    Expression ((((WHERE + (Renaming correlated columns to equivalent expressions in subquery + (Change column names to column identifiers + (Project names + (Projection + (Change column names to column identifiers + (Project names + Projection))))))) + WHERE) + (Create renaming actions for scalar subquery + (Create correlated subquery result alias + (Project names + Projection)))))
+                    Expression ((Create renaming actions for scalar subquery + (Create correlated subquery result alias + (Project names + Projection))))
                       Aggregating
-                        Expression ((((((WHERE + (Renaming correlated columns to equivalent expressions in subquery + (Change column names to column identifiers + (Project names + (Projection + (Change column names to column identifiers + (Project names + Projection))))))) + WHERE) + (Create renaming actions for scalar subquery + (Create correlated subquery result alias + (Project names + Projection)))) + Before GROUP BY) + (WHERE + (Renaming correlated columns to equivalent expressions in subquery + Change column names to column )
-                          ShuffleExchange
-                            ReadFromMergeTree (ParallelRead default.lineitem)
+                        Expression (Before GROUP BY)
+                          Expression ((WHERE + (Renaming correlated columns to equivalent expressions in subquery + Change column names to column identifiers)))
+                            ShuffleExchange
+                              ReadFromMergeTree (ParallelRead default.lineitem)
                     ShuffleExchange
                       JoinLogical (Broadcast HashJoin  swapped)
-                        Expression (((((WHERE + (Renaming correlated columns to equivalent expressions in subquery + (Change column names to column identifiers + (Project names + (Projection + (Change column names to column identifiers + (Project names + Projection))))))) + WHERE) + WHERE) + Change column names to column identifiers))
+                        Expression (Change column names to column identifiers)
                           ReadFromMergeTree (ParallelRead default.partsupp)
-                        Expression (Create result for always true EXISTS expression)
-                          Expression (((WHERE + (Renaming correlated columns to equivalent expressions in subquery + (Change column names to column identifiers + (Project names + (Projection + (Change column names to column identifiers + (Project names + Projection))))))) + (WHERE + Change column names to column identifiers)))
+                        Expression ((Create result for always true EXISTS expression + (WHERE + (Renaming correlated columns to equivalent expressions in subquery + (Change column names to column identifiers + (Project names + (Projection + (Change column names to column identifiers + (Project names + Projection)))))))))
+                          Expression ((WHERE + Change column names to column identifiers))
                             ReadFromMergeTree (ReplicatedRead default.part)
 -- Q21
 Expression (Project names)
@@ -599,10 +599,9 @@ Expression (Project names)
           ShuffleExchange
             Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + (Projection + WHERE)))))
               JoinLogical (Shuffle HashJoin )
-                Expression (Create result for always true EXISTS expression)
-                  Filter ((WHERE + (Renaming correlated columns to equivalent expressions in subquery + Change column names to column identifiers)))
-                    ShuffleExchange
-                      ReadFromMergeTree (ParallelRead default.orders)
+                Expression ((Create result for always true EXISTS expression + (WHERE + (Renaming correlated columns to equivalent expressions in subquery + Change column names to column identifiers))))
+                  ShuffleExchange
+                    ReadFromMergeTree (ParallelRead default.orders)
                 Expression ((WHERE + Change column names to column identifiers))
                   ShuffleExchange
                     ReadFromMergeTree (ParallelRead default.customer)
