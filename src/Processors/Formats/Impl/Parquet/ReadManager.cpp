@@ -31,6 +31,7 @@ namespace ProfileEvents
     extern const Event ParquetReadRowGroups;
     extern const Event ParquetPrunedRowGroups;
     extern const Event ParquetTopKSkippedRowGroups;
+    extern const Event ParquetColumnDataReadAheadRowGroups;
 }
 
 namespace DB::Parquet
@@ -41,11 +42,13 @@ void AtomicBitSet::resize(size_t bits)
     a = std::vector<std::atomic<UInt64>>((bits + 63) / 64);
 }
 
-std::optional<size_t> AtomicBitSet::findFirst()
+std::optional<size_t> AtomicBitSet::findNext(size_t start) const
 {
-    for (size_t i = 0; i < a.size(); ++i)
+    for (size_t i = start >> 6; i < a.size(); ++i)
     {
         UInt64 x = a[i].load(std::memory_order_relaxed);
+        if (i == start >> 6)
+            x &= ~0ull << (start & 63);
         if (x)
             return (i << 6) + getTrailingZeroBitsUnsafe(x);
     }
@@ -77,6 +80,8 @@ void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_, 
         stages[i].schedulable_row_groups.resize(num_row_groups);
         stages[i].row_group_tasks_to_schedule.resize(num_row_groups);
     }
+    column_data_read_ahead = reader.options.is_remote_fs && reader.prefetcher.readsInBackground();
+    column_data_read_ahead_row_groups.resize(num_row_groups);
 
     /// Distribute memory budget among stages.
     /// The distribution is static to make sure no stage gets starved if others eat all the memory.
@@ -834,11 +839,96 @@ void ReadManager::scheduleTasksIfNeeded(ReadStage stage_idx)
         LOG_TEST(getLogger("ParquetReadManager"), "scheduleTasksIfNeeded: stage={} no tasks to schedule",
                   magic_enum::enum_name(stage_idx));
     }
+
+    if (stage_idx == ReadStage::ColumnData && column_data_read_ahead)
+        readAheadColumnData();
+}
+
+void ReadManager::readAheadColumnData()
+{
+    size_t depth = parser_shared_resources->getIOThreadsPerReader();
+    Stage & stage = stages[size_t(ReadStage::ColumnData)];
+    auto limits = SharedResourcesExt::getLimitsPerReader(*parser_shared_resources, stage.memory_target_fraction);
+    if (depth <= limits.parsing_threads)
+        return;
+
+    MemoryUsageDiff diff(ReadStage::ColumnData);
+    {
+        std::lock_guard lock(column_data_prefetch_mutex);
+        for (auto row_group_idx = stage.schedulable_row_groups.findNext(0); row_group_idx.has_value();
+             row_group_idx = stage.schedulable_row_groups.findNext(*row_group_idx + 1))
+        {
+            size_t memory_usage = stage.memory_usage.load(std::memory_order_relaxed) + size_t(diff.by_stage[size_t(ReadStage::ColumnData)]);
+            if (stage.batches_in_progress.load(std::memory_order_relaxed) + column_data_read_ahead_count.load(std::memory_order_relaxed) >= depth
+                || memory_usage >= limits.memory_high_watermark)
+                break;
+
+            /// The admission path clears the schedulable bit before it locks the mutex in scheduleTask,
+            /// and consumes the tasks only after that, so a row group still schedulable here keeps its tasks.
+            size_t i = *row_group_idx;
+            if (column_data_read_ahead_row_groups.test(i, std::memory_order_relaxed) || !stage.schedulable_row_groups.test(i, std::memory_order_acquire))
+                continue;
+
+            std::vector<PrefetchHandle *> prefetches;
+            for (const Task & task : stage.row_group_tasks_to_schedule[i])
+                addColumnDataPrefetches(task, prefetches);
+            if (prefetches.empty())
+                continue;
+
+            reader.prefetcher.startPrefetch(prefetches, &diff);
+            column_data_read_ahead_row_groups.set(i, std::memory_order_relaxed);
+            column_data_read_ahead_count.fetch_add(1, std::memory_order_relaxed);
+            ProfileEvents::increment(ProfileEvents::ParquetColumnDataReadAheadRowGroups);
+        }
+    }
+
+    diff.finalized = true;
+    for (size_t i = 0; i < diff.by_stage.size(); ++i)
+    {
+        chassert(diff.by_stage[i] >= 0);
+        if (diff.by_stage[i] != 0)
+            stages[i].memory_usage.fetch_add(diff.by_stage[i], std::memory_order_relaxed);
+    }
+}
+
+void ReadManager::addColumnDataPrefetches(const Task & task, std::vector<PrefetchHandle *> & out)
+{
+    if (task.column_idx == UINT64_MAX)
+        return;
+    RowGroup & row_group = reader.row_groups[task.row_group_idx];
+    RowSubgroup & row_subgroup = row_group.subgroups.at(task.row_subgroup_idx);
+    if (row_subgroup.filter.rows_pass == 0)
+        return;
+    ColumnChunk & column = row_group.columns.at(task.column_idx);
+    reader.determinePagesToPrefetch(column, row_subgroup, row_group, out);
+
+    /// Side note: would be nice to avoid reading the dictionary if all dictionary-encoded
+    /// pages were filtered out (e.g. if it's a 100 MB column chunk with unique long strings,
+    /// typically only the first ~1 MB would be dictionary-encoded; if we only need a few
+    /// rows, we likely won't hit that 1 MB). But AFAICT parquet metadata doesn't have
+    /// enough information for that (there's no page encoding in offset/column indexes).
+    if (!column.dictionary.isInitialized() && column.dictionary_page_prefetch)
+    {
+        out.push_back(&column.dictionary_page_prefetch);
+    }
+
+    if (column.data_pages.empty())
+    {
+        out.push_back(&column.data_pages_prefetch);
+    }
 }
 
 void ReadManager::scheduleTask(Task task, bool is_first_in_group, MemoryUsageDiff & diff, std::vector<Task> & out_tasks)
 {
     LOG_TEST(getLogger("ParquetReadManager"), "scheduleTask: schedule task.row_group_idx={}, task.row_subgroup_idx={}, task.stage={}, task.column_idx={}, task.step_idx={}", task.row_group_idx, task.row_subgroup_idx, static_cast<Int32>(task.stage), task.column_idx, task.step_idx);
+
+    std::unique_lock<std::mutex> prefetch_lock;
+    if (task.stage == ReadStage::ColumnData && column_data_read_ahead)
+    {
+        prefetch_lock = std::unique_lock(column_data_prefetch_mutex);
+        if (is_first_in_group && column_data_read_ahead_row_groups.unset(task.row_group_idx, std::memory_order_relaxed))
+            column_data_read_ahead_count.fetch_sub(1, std::memory_order_relaxed);
+    }
 
     /// Kick off prefetches and count estimated memory usage.
     std::vector<PrefetchHandle *> prefetches;
@@ -874,22 +964,7 @@ void ReadManager::scheduleTask(Task task, bool is_first_in_group, MemoryUsageDif
                 ColumnSubchunk & subchunk = row_subgroup.columns.at(task.column_idx);
                 if (row_subgroup.filter.rows_pass == 0)
                     break;
-                reader.determinePagesToPrefetch(column, row_subgroup, row_group, prefetches);
-
-                /// Side note: would be nice to avoid reading the dictionary if all dictionary-encoded
-                /// pages were filtered out (e.g. if it's a 100 MB column chunk with unique long strings,
-                /// typically only the first ~1 MB would be dictionary-encoded; if we only need a few
-                /// rows, we likely won't hit that 1 MB). But AFAICT parquet metadata doesn't have
-                /// enough information for that (there's no page encoding in offset/column indexes).
-                if (!column.dictionary.isInitialized() && column.dictionary_page_prefetch)
-                {
-                    prefetches.push_back(&column.dictionary_page_prefetch);
-                }
-
-                if (column.data_pages.empty())
-                {
-                    prefetches.push_back(&column.data_pages_prefetch);
-                }
+                addColumnDataPrefetches(task, prefetches);
 
                 double bytes_per_row = reader.estimateColumnMemoryBytesPerRow(column, row_group, reader.primitive_columns.at(task.column_idx));
                 double estimate = bytes_per_row * static_cast<double>(row_subgroup.filter.rows_pass);
@@ -1265,6 +1340,8 @@ ReadManager::ReadResult ReadManager::read()
                             throw Exception(ErrorCodes::LOGICAL_ERROR, "Leak in memory or task accounting in parquet reader: got {} bytes, {} batches, {} tasks in stage {}", mem, batches, unsched, i);
                     }
                 }
+                if (size_t n = column_data_read_ahead_count.load(std::memory_order_relaxed))
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Leak in parquet reader: {} row groups hold a column data read-ahead slot", n);
                 return {};
             }
 

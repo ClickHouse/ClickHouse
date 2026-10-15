@@ -24,7 +24,14 @@ struct AtomicBitSet
         return (x & mask) != 0;
     }
 
-    std::optional<size_t> findFirst();
+    bool test(size_t i, std::memory_order memory_order) const
+    {
+        return (a[i >> 6].load(memory_order) >> (i & 63)) & 1;
+    }
+
+    /// First set bit at or after `start`.
+    std::optional<size_t> findNext(size_t start) const;
+    std::optional<size_t> findFirst() const { return findNext(0); }
 };
 
 // I'd like to talk to the manager.
@@ -131,6 +138,16 @@ private:
     };
     TopKAdmission top_k_admission;
 
+    /// Whether ColumnData prefetches of schedulable row groups are started ahead of their decoding,
+    /// up to the reader's share of `max_download_threads` (see readAheadColumnData).
+    bool column_data_read_ahead = false;
+    /// Held while selecting and starting ColumnData prefetches, which mutate the column chunks.
+    std::mutex column_data_prefetch_mutex;
+    /// Row groups whose current ColumnData prefetches were started by read-ahead and whose decoding
+    /// was not scheduled yet. Modified with column_data_prefetch_mutex locked.
+    AtomicBitSet column_data_read_ahead_row_groups;
+    std::atomic<size_t> column_data_read_ahead_count {0};
+
     void scheduleTask(Task task, bool is_first_in_group, MemoryUsageDiff & diff, std::vector<Task> & out_tasks);
     void runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff);
     /// A live reservation handle on the memory the dictionary-filter pruning path may still use: the
@@ -144,6 +161,8 @@ private:
     PruningMemoryReservation pruningMemoryReservation(const MemoryUsageDiff & diff);
     void runBatchOfTasks(const std::vector<Task> & tasks) noexcept;
     void scheduleTasksIfNeeded(ReadStage stage_idx);
+    void readAheadColumnData();
+    void addColumnDataPrefetches(const Task & task, std::vector<PrefetchHandle *> & out);
     void finishRowGroupStage(size_t row_group_idx, ReadStage stage, MemoryUsageDiff & diff);
     void finishRowSubgroupStage(size_t row_group_idx, size_t row_subgroup_idx, ReadStage stage, size_t step_idx, MemoryUsageDiff & diff);
     /// Free some memory ColumnChunk that's not needed after decoding is done in all row sugroups.

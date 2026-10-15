@@ -68,6 +68,9 @@ public:
     size_t getFileSize() const { return file_size; }
     bool isLocalFile() const { return is_local_file; }
 
+    /// Whether started prefetches are read by background tasks that can run in parallel.
+    bool readsInBackground() const;
+
 private:
     friend class PrefetchHandle;
 

@@ -105,6 +105,11 @@ void Prefetcher::determineReadModeAndFileSize(ReadBuffer * reader_, const ReadOp
     }
 }
 
+bool Prefetcher::readsInBackground() const
+{
+    return read_mode == ReadMode::RandomRead && parser_shared_resources && !parser_shared_resources->io_runner.isDisabled();
+}
+
 void Prefetcher::readSync(char * to, size_t n, size_t offset)
 {
     if (offset > file_size || n > file_size - offset)
