@@ -29,10 +29,11 @@ SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
 CREATE TABLE t_maps (id UInt64, c Tuple(left Map(String, String), right Map(String, String))) ENGINE = MergeTree ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 
-INSERT INTO t_json SELECT number, concat('{"kind":"a","payload":"', repeat('x', 1000), '"}') FROM numbers(20000);
-INSERT INTO t_tuple SELECT number, tuple('a', repeat('x', 1000)) FROM numbers(20000);
-INSERT INTO t_map SELECT number, mapFromArrays(arrayMap(i -> 'k' || toString(i), range(16)), arrayMap(i -> repeat('v', 60), range(16))) FROM numbers(20000);
-INSERT INTO t_maps SELECT number, tuple(map('k', 'a'), map('k', repeat('x', 1000))) FROM numbers(20000);
+-- Random values, so that the size of a column on disk, by which the conditions are ordered, reflects the cost of reading it.
+INSERT INTO t_json SELECT number, concat('{"kind":"a","payload":"', hex(randomString(500)), '"}') FROM numbers(20000);
+INSERT INTO t_tuple SELECT number, tuple('a', hex(randomString(500))) FROM numbers(20000);
+INSERT INTO t_map SELECT number, mapFromArrays(arrayMap(i -> 'k' || toString(i), range(16)), arrayMap(i -> hex(randomString(30)), range(16))) FROM numbers(20000);
+INSERT INTO t_maps SELECT number, tuple(map('k', 'a'), map('k', hex(randomString(500)))) FROM numbers(20000);
 
 SELECT count() FROM t_json WHERE j.kind = 'b' FORMAT Null SETTINGS log_comment = 'json_cheap';
 SELECT count() FROM t_tuple WHERE t.kind = 'b' FORMAT Null SETTINGS log_comment = 'tuple_cheap';
