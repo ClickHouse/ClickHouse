@@ -49,7 +49,8 @@ SELECT 'row policy';
 CREATE TABLE t_rp (k Int64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO t_rp SELECT number FROM numbers(5);
 CREATE ROW POLICY rp_pos_05401 ON t_rp USING k IN (SELECT number FROM numbers(5) ORDER BY 1 DESC LIMIT 1) TO ALL;
-SELECT * FROM remote('127.0.0.2', currentDatabase(), t_rp);
+-- A remote server executing a plan shipped with serialize_query_plan = 1 does not apply its row policies (#112891).
+SELECT * FROM remote('127.0.0.2', currentDatabase(), t_rp) SETTINGS serialize_query_plan = 0;
 DROP ROW POLICY rp_pos_05401 ON t_rp;
 
 SELECT 'parameterized view';
@@ -66,7 +67,8 @@ CREATE TABLE t_buf_dst (k Int64) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE t_buf_dist AS t_buf_dst ENGINE = Distributed(test_shard_localhost, currentDatabase(), t_buf_dst);
 CREATE TABLE t_buf AS t_buf_dst ENGINE = Buffer(currentDatabase(), t_buf_dist, 1, 100000, 100000, 1000000, 1000000, 1000000000, 1000000000);
 INSERT INTO t_buf SELECT number FROM numbers(3);
-SELECT * FROM view(SELECT 5, k FROM t_buf ORDER BY ALL) ORDER BY ALL;
+-- With serialize_query_plan = 1 this server also plans the query `t_buf_dist` sends to its shard, which is not covered here.
+SELECT * FROM view(SELECT 5, k FROM t_buf ORDER BY ALL) ORDER BY ALL SETTINGS serialize_query_plan = 0;
 
 SELECT 'cluster table function';
 INSERT INTO FUNCTION file(currentDatabase() || '_05401.tsv', 'TSV', 'x UInt8') SELECT number FROM numbers(3) SETTINGS engine_file_truncate_on_insert = 1;
