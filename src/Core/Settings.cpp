@@ -9455,7 +9455,7 @@ By default `t.grp` and `t.val` refer to the aliased `t AS c`, which turns the pr
 
 The table's own name works as a qualifier either way whenever no enclosing query carries it, and also inside a subquery that sits in a `FROM` or `JOIN` of the enclosing query, which cannot read a column of its siblings at all.
 )", 0, \
-        {"26.10", false, false, "New setting. When enabled, the alias of a table expression hides the table's own name from a qualifier when an enclosing query has a table expression of that name, so such a subquery is correlated as SQL requires. Off by default, which keeps the previous resolution."}) \
+        {"26.11", false, false, "New setting. When enabled, the alias of a table expression hides the table's own name from a qualifier when an enclosing query has a table expression of that name, so such a subquery is correlated as SQL requires. Off by default, which keeps the previous resolution."}) \
     DECLARE(Bool, analyzer_compatibility_prefer_alias_over_subcolumn, false, R"(
 When a multi-part identifier like `b.id` could refer to either the column `id` of a table aliased `b` or to a Tuple subcolumn `b.id` of some other column, prefer the alias-prefix interpretation (column `id` of `b`). By default the analyzer prefers the subcolumn. Enable to match the old analyzer's resolution.
 )", 0, \
