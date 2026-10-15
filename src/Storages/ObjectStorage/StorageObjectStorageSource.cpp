@@ -2617,8 +2617,10 @@ ObjectInfoPtr StorageObjectStorageSource::ArchiveIterator::next(size_t processor
             if (!filter(path_in_archive))
                 continue;
 
-            /// Entries are reopened by name, so two entries without a name cannot be told apart.
-            if (path_in_archive.empty())
+            current_file_info = file_enumerator->getFileInfo();
+
+            /// Entries are reopened by name, so two entries stored without a name cannot be told apart.
+            if (!current_file_info.has_name)
             {
                 if (archive_has_unnamed_entry)
                     throw Exception(
@@ -2627,8 +2629,6 @@ ObjectInfoPtr StorageObjectStorageSource::ArchiveIterator::next(size_t processor
                         archive_object->getPath());
                 archive_has_unnamed_entry = true;
             }
-
-            current_file_info = file_enumerator->getFileInfo();
         }
         else
         {

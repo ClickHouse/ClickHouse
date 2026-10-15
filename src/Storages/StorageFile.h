@@ -409,6 +409,8 @@ private:
     bool current_file_version_settled = false;
     struct stat current_archive_stat{};
     std::optional<String> filename_override;
+    /// False while reading an archive entry stored without a name.
+    bool current_path_has_name = true;
     Block sample_block;
     std::unique_ptr<ReadBuffer> read_buf;
     InputFormatPtr input_format;

@@ -29,6 +29,8 @@ public:
         UInt64 compressed_size{};
         Poco::Timestamp last_modified;
         bool is_encrypted{};
+        /// False for an entry stored without a name (not even an empty one), e.g. in a 7z archive without file names.
+        bool has_name = true;
     };
 
     /// Returns the information about a file stored in the archive.

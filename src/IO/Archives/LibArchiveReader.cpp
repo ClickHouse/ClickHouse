@@ -229,6 +229,7 @@ public:
             file_info->compressed_size = archive_entry_size(current_entry);
             file_info->last_modified = archive_entry_mtime(current_entry);
             file_info->is_encrypted = false;
+            file_info->has_name = archive_entry_pathname(current_entry) != nullptr;
         }
 
         return *file_info;
