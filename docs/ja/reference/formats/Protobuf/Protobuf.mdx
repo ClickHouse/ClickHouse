@@ -15,7 +15,7 @@ doc_type: 'guide'
 | -- | -- | ----- |
 | ✔  | ✔  |       |
 
-## 説明
+## 説明 {#description}
 
 `Protobuf` 形式は、[Protocol Buffers](https://protobuf.dev/) のフォーマットです。
 
@@ -109,9 +109,9 @@ Enum (Enum8 または Enum16 を含む) には、不在を示す 0 と、ター�
 ClickHouse は protobuf メッセージを `長さ区切り` フォーマットで入出力します。
 つまり、各メッセージの前に、その長さを [可変長整数 (varint) ](https://developers.google.com/protocol-buffers/docs/encoding#varints) として書き込む必要があります。
 
-## 使用例
+## 使用例 {#example-usage}
 
-### データの読み書き
+### データの読み書き {#basic-examples}
 
 <Note title="サンプルファイル">
   この例で使用するファイルは、[examples リポジトリ](https://github.com/ClickHouse/formats/ProtoBuf)で入手できます。
@@ -274,9 +274,9 @@ SELECT * FROM test.protobuf_messages INTO OUTFILE 'protobuf_message_from_clickho
 
 Protobufスキーマがあれば、ClickHouse からファイル `protobuf_message_from_clickhouse.bin` に書き出されたデータをデシリアライズできるようになりました。
 
-### ClickHouse Cloud を使用したデータの読み書き
+### ClickHouse Cloud を使用したデータの読み書き {#basic-examples-cloud}
 
-ClickHouse Cloud では、Protobuf のスキーマファイルをアップロードできません。ただし、`format_protobuf_schema`
+ClickHouse Cloud では、Protobuf のスキーマファイルをアップロードできません。ただし、`format_schema_source`
 設定を使用して、クエリ内でスキーマを指定できます。この例では、ローカル
 マシンからシリアライズされたデータを読み込み、それを ClickHouse Cloud のテーブルに挿入する方法を示します。
 
@@ -302,18 +302,18 @@ ORDER BY tuple()
 * &#39;string&#39;: `format_schema` はスキーマの内容そのものです。
 * &#39;query&#39;: `format_schema` はスキーマを取得するためのクエリです。
 
-### `format_schema_source='string'`
+### `format_schema_source='string'` {#format-schema-source-string}
 
 スキーマを文字列として指定してデータをClickHouse Cloudに挿入するには、次を実行します。
 
 ```bash
-cat protobuf_messages.bin | clickhouse client --host <hostname> --secure --password <password> --query "INSERT INTO testing.protobuf_messages SETTINGS format_schema_source='syntax = "proto3";message MessageType {  string name = 1;  string surname = 2;  uint32 birthDate = 3;  repeated string phoneNumbers = 4;};', format_schema='schemafile:MessageType' FORMAT Protobuf"
+cat protobuf_messages.bin | clickhouse client --host <hostname> --secure --password <password> --query "INSERT INTO test.protobuf_messages SETTINGS format_schema_source='string', format_schema='syntax = \"proto3\";message MessageType {  string name = 1;  string surname = 2;  uint32 birthDate = 3;  repeated string phoneNumbers = 4;};', format_schema_message_name='MessageType' FORMAT Protobuf"
 ```
 
 テーブルに挿入されたデータを選択します：
 
 ```bash
-clickhouse client --host <hostname> --secure --password <password> --query "SELECT * FROM testing.protobuf_messages"
+clickhouse client --host <hostname> --secure --password <password> --query "SELECT * FROM test.protobuf_messages"
 ```
 
 ```response
@@ -322,14 +322,14 @@ Javier Rodriguez 20001015 ['(555) 891-2046','(555) 738-5129']
 Mei Ling 19980616 ['(555) 956-1834','(555) 403-7682']
 ```
 
-### `format_schema_source='query'`
+### `format_schema_source='query'` {#format-schema-source-query}
 
-Protobuf スキーマはテーブルに保存することもできます。
+Protobuf スキーマをテーブルに保存することもできます。
 
-データの挿入先となるテーブルを ClickHouse Cloud に作成します:
+データの挿入先となるテーブルを ClickHouse Cloud 上に作成します。
 
 ```sql
-CREATE TABLE testing.protobuf_schema (
+CREATE TABLE test.protobuf_schema (
   schema String
 )
 ENGINE = MergeTree()
@@ -337,19 +337,32 @@ ORDER BY tuple();
 ```
 
 ```sql
-INSERT INTO testing.protobuf_schema VALUES ('syntax = "proto3";message MessageType {  string name = 1;  string surname = 2;  uint32 birthDate = 3;  repeated string phoneNumbers = 4;};');
+INSERT INTO test.protobuf_schema VALUES ('syntax = "proto3";message MessageType {  string name = 1;  string surname = 2;  uint32 birthDate = 3;  repeated string phoneNumbers = 4;};');
 ```
 
-実行するクエリでスキーマを指定して、データをClickHouse Cloudに挿入します:
+前の例を実行した場合は、以下と同じ結果になるよう、先にテーブルを空にしてください。
 
-```bash
-cat protobuf_messages.bin | clickhouse client --host <hostname> --secure --password <password> --query "INSERT INTO testing.protobuf_messages SETTINGS format_schema_source='SELECT schema FROM testing.protobuf_schema', format_schema='schemafile:MessageType' FORMAT Protobuf"
+```sql
+TRUNCATE TABLE test.protobuf_messages;
 ```
 
-テーブルに挿入したデータを選択します:
+スキーマを実行するクエリとして指定し、ClickHouse Cloud にデータを挿入します。
+この挿入は [HTTP インターフェイス](/ja/concepts/features/interfaces/http#insert-protobuf) 経由で送信してください。HTTP インターフェイスではサーバー側でデータがパースされ、スキーマクエリが実行されます。一方、`clickhouse client` は入力データをクライアント側でパースするため、スキーマクエリが失敗します。
+curl の `--url-query` オプション (curl 7.87 以降) は各パラメータを URL エンコードするため、クエリとスキーマクエリをそのまま記述できます。
 
 ```bash
-clickhouse client --host <hostname> --secure --password <password> --query "SELECT * FROM testing.protobuf_messages"
+curl 'https://<hostname>:8443/' --user 'default:<password>' \
+    --url-query 'query=INSERT INTO test.protobuf_messages FORMAT Protobuf' \
+    --url-query 'format_schema_source=query' \
+    --url-query 'format_schema=SELECT schema FROM test.protobuf_schema' \
+    --url-query 'format_schema_message_name=MessageType' \
+    --data-binary @protobuf_messages.bin
+```
+
+テーブルに挿入されたデータを SELECT します：
+
+```bash
+clickhouse client --host <hostname> --secure --password <password> --query "SELECT * FROM test.protobuf_messages"
 ```
 
 ```response
@@ -358,7 +371,7 @@ Javier Rodriguez 20001015 ['(555) 891-2046','(555) 738-5129']
 Mei Ling 19980616 ['(555) 956-1834','(555) 403-7682']
 ```
 
-### 自動生成されたスキーマを使用する
+### 自動生成されたスキーマを使用する {#using-autogenerated-protobuf-schema}
 
 データ用の外部 Protobuf スキーマがなくても、自動生成されたスキーマを使って Protobuf 形式でデータを出力/入力できます。
 この場合は、`format_protobuf_use_autogenerated_schema` 設定を使用します。
@@ -388,7 +401,7 @@ SELECT * FROM test.hits format Protobuf SETTINGS format_protobuf_use_autogenerat
 
 この場合、自動生成された Protobuf スキーマは `path/to/schema/schema.capnp` というファイルに保存されます。
 
-### Protobuf キャッシュを削除
+### Protobuf キャッシュを削除 {#drop-protobuf-cache}
 
 [`format_schema_path`](/ja/reference/settings/server-settings/settings/format#format_schema_path) で読み込まれた Protobuf スキーマを再読み込みするには、[`SYSTEM DROP ... FORMAT CACHE`](/ja/reference/statements/system#system-drop-schema-format) ステートメントを使用します。
 
