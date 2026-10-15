@@ -2355,11 +2355,18 @@ bool Aggregator::executeOnBlock(Columns columns,
     MemoryTracker * aggregator_tracker = switchToOwnTracker(result, memory_tracker_switcher);
 
     /// The staged records of an adaptive producer are not part of this table: the table's tracker measures what
-    /// writing the table releases, so the staging runs under the aggregator's tracker instead.
-    const auto aggregator_scope = [&](std::optional<MemoryTrackerSwitcher> & scope)
+    /// writing the table releases, so the staging runs under the aggregator's tracker instead. A thread reports its
+    /// allocations to its tracker in batches, and the switch holds the unreported ones back until the scope ends. A
+    /// scope in which the table may freeze reports them to the table's tracker first: the freeze takes the table's
+    /// tracked memory as the base of its growth (see `adaptiveFrozenTableWorthSpilling`).
+    const auto aggregator_scope = [&](std::optional<MemoryTrackerSwitcher> & scope, bool table_may_freeze)
     {
         if (aggregator_tracker)
+        {
+            if (table_may_freeze)
+                CurrentThread::flushUntrackedMemory();
             scope.emplace(aggregator_tracker);
+        }
     };
 
     /// `result` will destroy the states of aggregate functions in the destructor
@@ -2462,7 +2469,7 @@ bool Aggregator::executeOnBlock(Columns columns,
         /// The frozen adaptive path updates hits in the local table and stages misses as delayed records
         /// in the producer's partition buffers for the merge.
         std::optional<MemoryTrackerSwitcher> scope;
-        aggregator_scope(scope);
+        aggregator_scope(scope, /*table_may_freeze=*/false);
         executeFrozen(
             columns, row_begin, row_end, result, key_columns, aggregate_functions_instructions.data(), *adaptive, all_keys_are_const,
             aggregator_tracker ? result.memory_tracker.get() : nullptr);
@@ -2486,7 +2493,7 @@ bool Aggregator::executeOnBlock(Columns columns,
         if (split < row_end)
         {
             std::optional<MemoryTrackerSwitcher> scope;
-            aggregator_scope(scope);
+            aggregator_scope(scope, /*table_may_freeze=*/true);
             freezeAdaptive(result, *adaptive);
             executeFrozen(
                 columns,
@@ -2524,7 +2531,7 @@ bool Aggregator::executeOnBlock(Columns columns,
     if (adaptive)
     {
         std::optional<MemoryTrackerSwitcher> scope;
-        aggregator_scope(scope);
+        aggregator_scope(scope, /*table_may_freeze=*/adaptive->isLearning());
         stays_adaptive
             = advanceAdaptiveProducer(result, *adaptive, row_end - row_begin, worth_convert_to_two_level, current_memory_usage);
     }

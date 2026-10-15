@@ -910,7 +910,9 @@ private:
 
     /// The freeze transition: creates the producer's partitions and count bins at its first freeze, flips its phase,
     /// and records the event. Owned here so the mid-block crossing and the between-blocks check perform the identical
-    /// transition.
+    /// transition. The frozen phase takes the table's arena bytes and tracked memory as the bases of its spill guard
+    /// (see `adaptiveFrozenTableWorthSpilling`), so the caller reports the thread's unreported allocations to the
+    /// table's tracker first (see `executeOnBlock`).
     void freezeAdaptive(AggregatedDataVariants & result, AdaptiveAggregationProducer & adaptive) const;
 
     /// The thaw transition: the producer returns to the baseline path for good, keeping the records it staged.
