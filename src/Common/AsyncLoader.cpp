@@ -149,11 +149,6 @@ void LoadJob::finish()
     finish_time = std::chrono::system_clock::now();
     if (waiters > 0)
         finished.notify_all();
-    else
-    {
-        on_waiters_increment = {};
-        on_waiters_decrement = {};
-    }
 }
 
 void LoadJob::scheduled(UInt64 job_id_)
@@ -857,24 +852,8 @@ void AsyncLoader::wait(std::unique_lock<std::mutex> & job_lock, const LoadJobPtr
     if (log_events)
         LOG_DEBUG(log, "Wait load job '{}' in {}", job->name, getPoolName(job->pool_id));
 
-    if (run_waiter_callbacks)
-    {
-        if (on_waiters_increment)
-            on_waiters_increment(job);
-        if (job->on_waiters_increment)
-        {
-            try
-            {
-                job->on_waiters_increment(job);
-            }
-            catch (...)
-            {
-                if (on_waiters_decrement)
-                    on_waiters_decrement(job);
-                throw;
-            }
-        }
-    }
+    if (run_waiter_callbacks && on_waiters_increment)
+        on_waiters_increment(job);
 
     // WARNING: it is important not to throw below this point to avoid `on_waiters_increment` call w/o matching `on_waiters_decrement` call
 
@@ -884,19 +863,8 @@ void AsyncLoader::wait(std::unique_lock<std::mutex> & job_lock, const LoadJobPtr
     job->waiters--;
     ProfileEvents::increment(ProfileEvents::AsyncLoaderWaitMicroseconds, watch.elapsedMicroseconds());
 
-    if (run_waiter_callbacks)
-    {
-        if (job->on_waiters_decrement)
-            job->on_waiters_decrement(job);
-        if (on_waiters_decrement)
-            on_waiters_decrement(job);
-    }
-
-    if (job->waiters == 0)
-    {
-        job->on_waiters_increment = {};
-        job->on_waiters_decrement = {};
-    }
+    if (run_waiter_callbacks && on_waiters_decrement)
+        on_waiters_decrement(job);
 }
 
 bool AsyncLoader::canSpawnWorker(Pool & pool, std::unique_lock<std::mutex> &)
