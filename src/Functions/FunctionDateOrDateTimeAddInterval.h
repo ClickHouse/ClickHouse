@@ -726,8 +726,13 @@ struct SubtractIntervalImpl : public Transform
         UInt16 scale) const
     {
         Int64 negated = 0;
-        if (!negate(delta, negated))
-            return executeNegationOverflow(t, negated, time_zone, utc_time_zone, scale);
+        if constexpr (fixed_offset)
+        {
+            if (!negate(delta, negated))
+                return executeNegationOverflow(t, negated, time_zone, utc_time_zone, scale);
+        }
+        else
+            negate(delta, negated);
         return Transform::template executeWithOffsetMode<fixed_offset>(t, negated, time_zone, utc_time_zone, scale);
     }
 
