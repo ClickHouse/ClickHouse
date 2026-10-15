@@ -7,6 +7,7 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/SortNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/UnionNode.h>
@@ -93,12 +94,68 @@ bool storageCanReadTupleElement(const StorageSnapshotPtr & storage_snapshot, con
     return true;
 }
 
+bool isSameSubstream(const ISerialization::Substream & lhs, const ISerialization::Substream & rhs)
+{
+    return lhs.type == rhs.type && lhs.name_of_substream == rhs.name_of_substream
+        && lhs.variant_element_name == rhs.variant_element_name
+        && lhs.object_path_name == rhs.object_path_name && lhs.bucket == rhs.bucket;
+}
+
+/// Subcolumn names are flat, so `<column>.<subcolumn_name>` is not necessarily the subcolumn `subcolumn_name` of
+/// `column` in the storage: a declared column wins over a subcolumn with the same name (`n Nullable(Int32)` next to
+/// `` `n.null` UInt8 ``), and a column whose name is a prefix can serve it as well. Resolve the name against the
+/// storage and check that it is the same substream of the same column with the expected type, as
+/// `FunctionToSubcolumnsPass` does.
+bool storageResolvesToSubcolumn(
+    const StorageSnapshotPtr & storage_snapshot,
+    const NameAndTypePair & column_in_table,
+    const String & subcolumn_name,
+    const DataTypePtr & subcolumn_type)
+{
+    auto resolved = storage_snapshot->tryGetColumn(
+        GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), column_in_table.name + "." + subcolumn_name);
+    if (!resolved || !resolved->isSubcolumn() || resolved->getNameInStorage() != column_in_table.getNameInStorage())
+        return false;
+
+    if (!resolved->type->equals(*subcolumn_type))
+        return false;
+
+    auto resolved_info = resolved->getTypeInStorage()->tryGetSubcolumnInfo(resolved->getSubcolumnName());
+    if (!resolved_info)
+        return false;
+
+    /// The expected path is the path of the column itself (empty if it is not a subcolumn) followed by the path
+    /// of `subcolumn_name` inside of it.
+    ISerialization::SubstreamPath expected_path;
+    if (column_in_table.isSubcolumn())
+    {
+        auto column_info = column_in_table.getTypeInStorage()->tryGetSubcolumnInfo(column_in_table.getSubcolumnName());
+        if (!column_info)
+            return false;
+        expected_path = column_info->substreams_path;
+    }
+
+    auto subcolumn_info = column_in_table.type->tryGetSubcolumnInfo(subcolumn_name);
+    if (!subcolumn_info)
+        return false;
+    expected_path.insert(expected_path.end(), subcolumn_info->substreams_path.begin(), subcolumn_info->substreams_path.end());
+
+    const auto & resolved_path = resolved_info->substreams_path;
+    return resolved_path.size() == expected_path.size()
+        && std::equal(resolved_path.begin(), resolved_path.end(), expected_path.begin(), isSameSubstream);
+}
+
 /// Whether the storage behind `proj_column` can serve its subcolumn `subcolumn_name` directly. This is the same
 /// gate `FunctionToSubcolumnsPass` applies before reading a subcolumn instead of the whole column: some storages
 /// (system tables, ...) report `supportsOptimizationToSubcolumns` = false, others (`file`, `url`, ...) can serve
 /// only tuple elements, virtual columns and columns the storage does not know under that exact type cannot be
 /// read as subcolumns either.
-bool storageCanReadSubcolumn(const ColumnNode & proj_column, const String & subcolumn_name, const QueryTreeNodePtr & proj_source, const ContextPtr & context)
+bool storageCanReadSubcolumn(
+    const ColumnNode & proj_column,
+    const String & subcolumn_name,
+    const DataTypePtr & subcolumn_type,
+    const QueryTreeNodePtr & proj_source,
+    const ContextPtr & context)
 {
     auto storage_snapshot = getStorageSnapshotForColumnSource(proj_source);
     if (!storage_snapshot)
@@ -119,7 +176,10 @@ bool storageCanReadSubcolumn(const ColumnNode & proj_column, const String & subc
     if (!column_in_table || !column_in_table->type->equals(*column.type))
         return false;
 
-    return storage.supportsOptimizationToSubcolumns() || storageCanReadTupleElement(storage_snapshot, column, subcolumn_name);
+    if (storage.supportsOptimizationToSubcolumns())
+        return storageResolvesToSubcolumn(storage_snapshot, *column_in_table, subcolumn_name, subcolumn_type);
+
+    return storageCanReadTupleElement(storage_snapshot, column, subcolumn_name);
 }
 
 /// Check if a projection column can be optimized and return the new projection node.
@@ -144,7 +204,7 @@ QueryTreeNodePtr tryCreateSubcolumnProjectionNode(
     {
         /// Some storage engines don't support subcolumn optimization (e.g., system tables), or support it only
         /// for tuple elements (e.g., `file`). Skip optimization for those to avoid errors.
-        if (proj_column->hasExpression() || !storageCanReadSubcolumn(*proj_column, subcolumn_name, proj_source, context))
+        if (proj_column->hasExpression() || !storageCanReadSubcolumn(*proj_column, subcolumn_name, subcolumn_type, proj_source, context))
             return nullptr;
 
         /// The name has to be built from the name of the column in the table, which is not necessarily
@@ -177,8 +237,20 @@ QueryTreeNodePtr tryCreateSubcolumnProjectionNode(
 /// subcolumn outside of the grouping keys, which is not a valid query at all.
 /// `INTERPOLATE` targets are projection columns as well, so dropping one from the projection
 /// would leave a dangling target (`Missing column 'tup' as an INTERPOLATE expression target`).
+/// `WITH FILL` generates rows with default values of the projected columns, and the default value of a subcolumn is
+/// not necessarily that subcolumn of the default value of the column: a filled `Nullable` column is NULL, so its
+/// `null` subcolumn is 1, while a filled `UInt8` column is 0.
 bool isSourceQuerySafeToRewrite(const QueryNode & source_query)
 {
+    if (source_query.hasOrderBy())
+    {
+        for (const auto & sort_node : source_query.getOrderBy().getNodes())
+        {
+            if (sort_node->as<const SortNode &>().withFill())
+                return false;
+        }
+    }
+
     return !source_query.isDistinct()
         && !source_query.hasGroupBy()
         && !source_query.isGroupByAll()
@@ -573,9 +645,18 @@ void SubcolumnPushdownPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr c
 
     /// Get unique subcolumns to add (deduplicate by full_subcolumn_name).
     /// Multiple accesses to the same subcolumn (e.g., tup.a used twice) share one projection column.
+    /// The flattened name is not injective: `getSubcolumn(p, 'a.b')` and `` getSubcolumn(`p.a`, 'b') `` are both `p.a.b`.
+    /// Accesses of different subcolumns under the same name are left alone, they would all read one of them.
     std::unordered_map<String, SubcolumnAccess *> unique_subcolumns;
+    std::unordered_set<String> ambiguous_subcolumns;
     for (auto & access : accesses)
-        unique_subcolumns.try_emplace(access.full_subcolumn_name, &access);
+    {
+        auto [unique_it, inserted] = unique_subcolumns.try_emplace(access.full_subcolumn_name, &access);
+        if (!inserted && (unique_it->second->projection_index != access.projection_index || unique_it->second->subcolumn_name != access.subcolumn_name))
+            ambiguous_subcolumns.insert(access.full_subcolumn_name);
+    }
+    for (const auto & ambiguous_subcolumn : ambiguous_subcolumns)
+        unique_subcolumns.erase(ambiguous_subcolumn);
 
     /// Count how many times each base column of this source is referenced anywhere in the query.
     /// A base column may only be dropped from the projection once every one of its references has
