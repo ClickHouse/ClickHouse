@@ -157,7 +157,7 @@ void InterpreterSelectIntersectExceptQuery::buildQueryPlan(QueryPlan & query_pla
     auto step = std::make_unique<IntersectOrExceptStep>(
         std::move(headers),
         final_operator,
-        getEffectiveMaxThreads(settings));
+        getEffectiveMaxThreads(*context));
     query_plan.unitePlans(std::move(step), std::move(plans));
 
     const auto & query = query_ptr->as<ASTSelectIntersectExceptQuery &>();
