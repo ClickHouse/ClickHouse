@@ -251,10 +251,12 @@ void resolveGCSRequestRateLimit(
 /// `chooseGCSCredentialSource`. Exposed separately from `getGCSClient` so that a consumer which
 /// needs the credentials themselves — rather than a client built from them — cannot disagree with
 /// the client about which authentication mode the settings select.
+/// `service_account_key` is the JSON key for a service-account source (the inline key, or the contents
+/// of the key file read by the caller), so that it is read once per client.
 /// `token_request_options` configure the requests a credential makes on its own behalf (a token
 /// exchange), separately from the storage requests.
 std::shared_ptr<google::cloud::Credentials> makeGCSCredentials(
-    const GCSObjectStorageSettings & settings, google::cloud::Options token_request_options = {});
+    const GCSObjectStorageSettings & settings, const String & service_account_key, google::cloud::Options token_request_options = {});
 
 /// Build a native GCS storage client from the parsed settings. The resolved network destination
 /// (`CLOUD_STORAGE_EMULATOR_ENDPOINT` when the server's environment sets it, else the endpoint

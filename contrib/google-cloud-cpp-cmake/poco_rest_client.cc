@@ -32,6 +32,7 @@
 #include <Poco/Net/HTTPSClientSession.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/SSLException.h>
+#include <Poco/RegularExpression.h>
 #include <Poco/Timespan.h>
 #include <Poco/URI.h>
 
@@ -44,6 +45,7 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
+#include <filesystem>
 #include <functional>
 #include <istream>
 #include <memory>
@@ -149,16 +151,38 @@ std::chrono::seconds RequestTimeout(Options const& options) {
   return timeout;
 }
 
+// Appends the device, inode, size and modification time of `path` (following
+// symlinks), or a marker when it cannot be `stat`ed, so that it appearing later
+// changes the value too.
+void AppendFileFingerprint(std::string const& path, std::string& result) {
+  result += path;
+  struct stat st;
+  if (::stat(path.c_str(), &st) != 0) {
+    result += "|-|";
+    return;
+  }
+#if defined(__APPLE__)
+  auto const& mtime = st.st_mtimespec;
+#else
+  auto const& mtime = st.st_mtim;
+#endif
+  result += "|" + std::to_string(st.st_dev) + ":" + std::to_string(st.st_ino) +
+            ":" + std::to_string(st.st_size) + ":" +
+            std::to_string(mtime.tv_sec) + "." +
+            std::to_string(mtime.tv_nsec) + "|";
+}
+
 // Identifies the current contents of the trust store an SSL context loads: the
 // explicit CA bundle (file or directory) when one is configured, otherwise the
 // OpenSSL default locations (honouring `SSL_CERT_FILE` / `SSL_CERT_DIR`, where
-// the latter may be a `:`-separated list of directories). Each
-// path contributes its device, inode, size and modification time, so replacing a
-// bundle in place, or atomically through a rename, yields a different value. For
-// a directory only entries being added, removed or renamed change its mtime, which
-// is how `c_rehash`-style CA directories are updated. A path that cannot be
-// `stat`ed contributes a marker, so it appearing later changes the value too.
-std::string TrustStoreFingerprint(std::string const& ca_location) {
+// the latter may be a `:`-separated list of directories). Each path contributes
+// its device, inode, size and modification time, so replacing a bundle in place,
+// or atomically through a rename, yields a different value. A directory
+// contributes every entry in it as well: OpenSSL loads the certificates of a
+// `c_rehash`-style directory by their hashed names, and rewriting one of them in
+// place (or the target of a hashed symlink) changes neither the directory's own
+// metadata nor the set of names in it.
+std::string ComputeTrustStoreFingerprint(std::string const& ca_location) {
   std::vector<std::string> paths;
   if (!ca_location.empty()) {
     paths.push_back(ca_location);
@@ -180,23 +204,46 @@ std::string TrustStoreFingerprint(std::string const& ca_location) {
   }
   std::string result;
   for (auto const& path : paths) {
-    result += path;
-    struct stat st;
-    if (::stat(path.c_str(), &st) != 0) {
-      result += "|-|";
-      continue;
+    AppendFileFingerprint(path, result);
+    std::error_code ec;
+    if (!std::filesystem::is_directory(path, ec)) continue;
+    std::vector<std::string> entries;
+    for (std::filesystem::directory_iterator it(path, ec), end; !ec && it != end;
+         it.increment(ec)) {
+      entries.push_back(it->path().string());
     }
-#if defined(__APPLE__)
-    auto const& mtime = st.st_mtimespec;
-#else
-    auto const& mtime = st.st_mtim;
-#endif
-    result += "|" + std::to_string(st.st_dev) + ":" + std::to_string(st.st_ino) +
-              ":" + std::to_string(st.st_size) + ":" +
-              std::to_string(mtime.tv_sec) + "." +
-              std::to_string(mtime.tv_nsec) + "|";
+    // The order of a directory listing is unspecified; sort it so that an
+    // unchanged directory always yields the same value.
+    std::sort(entries.begin(), entries.end());
+    for (auto const& entry : entries) AppendFileFingerprint(entry, result);
   }
   return result;
+}
+
+// `ComputeTrustStoreFingerprint` walks whole CA directories, which is too much
+// work for every request, so its value is reused for a second. A rotated CA is
+// picked up by the connections opened after that.
+std::string TrustStoreFingerprint(std::string const& ca_location) {
+  static constexpr auto kRefreshInterval = std::chrono::seconds(1);
+  struct CachedFingerprint {
+    std::string value;
+    std::chrono::steady_clock::time_point computed_at;
+  };
+  static std::mutex mu;
+  static auto* cache =
+      new std::unordered_map<std::string, CachedFingerprint>();
+  auto const now = std::chrono::steady_clock::now();
+  {
+    std::lock_guard<std::mutex> lock(mu);
+    auto it = cache->find(ca_location);
+    if (it != cache->end() && now - it->second.computed_at < kRefreshInterval) {
+      return it->second.value;
+    }
+  }
+  auto value = ComputeTrustStoreFingerprint(ca_location);
+  std::lock_guard<std::mutex> lock(mu);
+  (*cache)[ca_location] = CachedFingerprint{value, now};
+  return value;
 }
 
 // Building a Poco::Net::Context creates an OpenSSL SSL_CTX: it loads the trust
@@ -296,9 +343,23 @@ class SessionPool {
     return nullptr;
   }
 
+  // Called from the destructor of a response, so it does not throw: when the
+  // session cannot be retained (e.g. an allocation of the pool fails), it is
+  // destroyed, which closes its connection.
   void Release(std::string const& key,
                std::unique_ptr<Poco::Net::HTTPClientSession> session,
-               std::size_t max_per_endpoint) {
+               std::size_t max_per_endpoint) noexcept {
+    try {
+      ReleaseImpl(key, std::move(session), max_per_endpoint);
+    } catch (...) {
+      // The session, if not retained yet, is destroyed with the exception.
+    }
+  }
+
+ private:
+  void ReleaseImpl(std::string const& key,
+                   std::unique_ptr<Poco::Net::HTTPClientSession> session,
+                   std::size_t max_per_endpoint) {
     if (!session || !session->connected()) return;
     if (max_per_endpoint == 0) return;
     auto const now = std::chrono::steady_clock::now();
@@ -322,7 +383,6 @@ class SessionPool {
     entries.push_back({std::move(session), now});
   }
 
- private:
   struct Entry {
     std::unique_ptr<Poco::Net::HTTPClientSession> session;
     std::chrono::steady_clock::time_point returned_at;
@@ -483,7 +543,27 @@ std::unique_ptr<Poco::Net::HTTPClientSession> MakeSession(
       effective_proxy.password = proxy.password();
     }
   }
+  // A host matching the no-proxy pattern is connected to directly, exactly as
+  // `HTTPClientSession::bypassProxy` decides. The session is then not configured
+  // with the proxy at all, so neither the pool key nor a failure report refers
+  // to a proxy this request does not travel through.
+  if (!effective_proxy.host.empty() && !effective_proxy.nonProxyHosts.empty() &&
+      Poco::RegularExpression::match(uri.getHost(), effective_proxy.nonProxyHosts,
+                                     Poco::RegularExpression::RE_CASELESS |
+                                         Poco::RegularExpression::RE_ANCHORED)) {
+    effective_proxy = {};
+  }
   if (effective_proxy.host.empty()) effective_proxy = {};
+
+  // An HTTPS request through a plain HTTP proxy without tunnelling goes to the
+  // proxy as a plain HTTP request in absolute form, and the proxy makes the
+  // HTTPS request itself, as `HTTPConnectionPool` does for the same configuration
+  // (`disable_tunneling_for_https_requests_over_http_proxy`). A TLS session would
+  // instead try to establish TLS with the proxy.
+  bool const secure =
+      uri.getScheme() == "https" &&
+      !(!effective_proxy.host.empty() && effective_proxy.protocol == "http" &&
+        !effective_proxy.tunnel);
 
   ::ClickHouse::PocoRestKeepAliveOption::Type keep_alive;
   if (options.has<::ClickHouse::PocoRestKeepAliveOption>()) {
@@ -497,7 +577,7 @@ std::unique_ptr<Poco::Net::HTTPClientSession> MakeSession(
 
   // Only HTTPS sessions verify a peer, so only they depend on the trust store.
   std::string const trust_store_fingerprint =
-      uri.getScheme() == "https" ? TrustStoreFingerprint(ca_location) : "";
+      secure ? TrustStoreFingerprint(ca_location) : "";
   auto const key = SessionKey(uri, effective_proxy, keep_alive, ca_location,
                               trust_store_fingerprint);
   if (ticket != nullptr) {
@@ -517,7 +597,7 @@ std::unique_ptr<Poco::Net::HTTPClientSession> MakeSession(
   }
   auto session = SessionPool::Instance().Acquire(key, stale_check);
   if (!session) {
-    if (uri.getScheme() == "https") {
+    if (secure) {
       session = std::make_unique<Poco::Net::HTTPSClientSession>(
           uri.getHost(), uri.getPort(), SslContextFor(ca_location, trust_store_fingerprint));
     } else {
@@ -592,6 +672,10 @@ class PocoHttpPayload : public HttpPayload {
     if (!failed_ && !finished_) FinishForReuse();
     if (!finished_ || failed_) return;
     if (!response_ || !response_->getKeepAlive()) return;
+    // The IO scheduling hooks belong to the request that installed them
+    // (`PocoRestSessionHooksOption`), not to whoever borrows the session next.
+    session_->setSendDataHooks();
+    session_->setReceiveDataHooks();
     SessionPool::Instance().Release(ticket_.key, std::move(session_),
                                     ticket_.max_per_endpoint);
   }
@@ -744,6 +828,10 @@ class PocoRestClient : public RestClient {
       credential_options.unset<::ClickHouse::PocoRestAuthorizedUserOption>();
       credential_options.unset<CustomHeadersOption>();
       credential_options.unset<::ClickHouse::PocoRestRequestThrottleOption>();
+      // The token endpoint was vetted on its own when the client was configured
+      // (Google's default one deliberately is not), so the URL check of the
+      // storage requests does not apply to it.
+      credential_options.unset<::ClickHouse::PocoRestUrlCheckOption>();
       if (credential_options.has<::ClickHouse::PocoRestTokenProxyConfigProviderOption>()) {
         credential_options.set<::ClickHouse::PocoRestProxyConfigProviderOption>(
             credential_options.get<::ClickHouse::PocoRestTokenProxyConfigProviderOption>());
@@ -870,6 +958,19 @@ class PocoRestClient : public RestClient {
     };
     try {
       for (int redirect = 0; redirect != kMaxRedirects; ++redirect) {
+        // Every URL is checked, not only the endpoint the client was built
+        // with: a redirect target or a session URL handed out by the server
+        // (the `Location` of a resumable upload) can point at any host.
+        if (options.has<::ClickHouse::PocoRestUrlCheckOption>()) {
+          auto const& url_check =
+              options.get<::ClickHouse::PocoRestUrlCheckOption>();
+          if (url_check) {
+            auto reason = url_check(url);
+            if (!reason.empty()) {
+              return Status(StatusCode::kPermissionDenied, std::move(reason));
+            }
+          }
+        }
         auto response = MakeSingleRequest(context, request, method, payload,
                                           url, options, auth_header,
                                           &used_proxy);
@@ -1015,6 +1116,11 @@ class PocoRestClient : public RestClient {
       auto const& observer =
           options.get<::ClickHouse::PocoRestRequestObserverOption>();
       if (observer) observer(method, path);
+    }
+
+    if (options.has<::ClickHouse::PocoRestSessionHooksOption>()) {
+      auto const& hooks = options.get<::ClickHouse::PocoRestSessionHooksOption>();
+      if (hooks) hooks(*session, http_request);
     }
 
     auto& body_stream = session->sendRequest(http_request);

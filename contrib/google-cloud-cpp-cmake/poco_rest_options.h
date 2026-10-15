@@ -14,6 +14,7 @@
 #include <string>
 
 #include <Poco/Net/HTTPClientSession.h>
+#include <Poco/Net/HTTPRequest.h>
 
 namespace ClickHouse
 {
@@ -137,6 +138,26 @@ struct PocoRestRequestThrottleOption
 struct PocoRestRequestObserverOption
 {
     using Type = std::function<void(const std::string & method, const std::string & path_and_query)>;
+};
+
+/// Called by the transport with the full URL of every request before it borrows a session for it,
+/// including a URL the server handed out (the session URL of a resumable upload is the `Location` of
+/// the response that started it) and a redirect target. It returns an empty string when the URL may be
+/// requested, otherwise the reason it may not, and the request then fails without connecting. ClickHouse
+/// checks the URL against `remote_url_allow_hosts` here. It runs on the thread issuing the request and
+/// must not throw.
+struct PocoRestUrlCheckOption
+{
+    using Type = std::function<std::string(const std::string & url)>;
+};
+
+/// Called by the transport on the session of every request right before the request is sent, so that
+/// ClickHouse can install the IO scheduling hooks of the current thread on it (`ResourceGuard` for the
+/// read and write resources, as `HTTPConnectionPool` does), or remove the hooks of a previous request
+/// when the current thread has none. It runs on the thread issuing the request.
+struct PocoRestSessionHooksOption
+{
+    using Type = std::function<void(Poco::Net::HTTPClientSession & session, const Poco::Net::HTTPRequest & request)>;
 };
 
 }

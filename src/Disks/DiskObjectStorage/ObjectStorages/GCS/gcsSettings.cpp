@@ -22,6 +22,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <Common/Exception.h>
+#include <Common/HTTPConnectionPool.h>
 #include <Common/HTTPHeaderFilter.h>
 #include <Common/Macros.h>
 #include <Common/ProfileEvents.h>
@@ -239,6 +240,10 @@ static String resolveGCSEndpoint(const String & endpoint_override)
         return endpoint_override;
     return String("https://") + DEFAULT_GCS_HOST;
 }
+
+/// The SDK derives its default endpoint from `GOOGLE_CLOUD_UNIVERSE_DOMAIN` in the server's environment as
+/// well. That one does not take precedence over a `RestEndpointOption`, so `getGCSClient` always sets the
+/// option to the value of `resolveGCSEndpoint`: the endpoint vetted by the host filter is then the one used.
 
 std::function<Poco::Net::HTTPClientSession::ProxyConfig()> makeGCSProxyConfigProvider(
     const std::shared_ptr<ProxyConfigurationResolver> & resolver)
@@ -583,17 +588,16 @@ static String readFileToString(const String & path)
     return contents;
 }
 
-std::shared_ptr<gc::Credentials> makeGCSCredentials(const GCSObjectStorageSettings & settings, gc::Options token_request_options)
+std::shared_ptr<gc::Credentials> makeGCSCredentials(
+    const GCSObjectStorageSettings & settings, const String & service_account_key, gc::Options token_request_options)
 {
     switch (chooseGCSCredentialSource(settings))
     {
         case GCSCredentialSource::Anonymous:
             return gc::MakeInsecureCredentials();
         case GCSCredentialSource::ServiceAccountKey:
-            return gc::MakeServiceAccountCredentials(settings.service_account_key, std::move(token_request_options));
         case GCSCredentialSource::ServiceAccountKeyFile:
-            return gc::MakeServiceAccountCredentials(
-                readFileToString(settings.service_account_key_file), std::move(token_request_options));
+            return gc::MakeServiceAccountCredentials(service_account_key, std::move(token_request_options));
         case GCSCredentialSource::AccessToken:
         {
             const auto expiry = std::chrono::system_clock::now()
@@ -635,6 +639,13 @@ std::unique_ptr<gcs::Client> getGCSClient(const GCSObjectStorageSettings & setti
 
     const auto credential_source = chooseGCSCredentialSource(settings);
     gc::Options token_request_options;
+    /// The key file is read once: the `token_uri` checks below and the credentials have to see the same
+    /// contents, even if the file is rewritten in between.
+    String service_account_key;
+    if (credential_source == GCSCredentialSource::ServiceAccountKey)
+        service_account_key = settings.service_account_key;
+    else if (credential_source == GCSCredentialSource::ServiceAccountKeyFile)
+        service_account_key = readFileToString(settings.service_account_key_file);
     if (credential_source == GCSCredentialSource::ServiceAccountKey || credential_source == GCSCredentialSource::ServiceAccountKeyFile)
     {
         /// A service-account key normally mints self-signed JWTs locally, but the SDK exchanges a signed
@@ -645,10 +656,7 @@ std::unique_ptr<gcs::Client> getGCSClient(const GCSObjectStorageSettings & setti
         /// storage endpoint, exactly as `google_adc_token_uri` does below. Its requests also get a proxy
         /// resolved for the scheme of the token endpoint, as the refresh-token exchange does. A key that
         /// does not parse is left for the SDK to report: it then makes no request at all.
-        const String key = credential_source == GCSCredentialSource::ServiceAccountKey
-            ? settings.service_account_key
-            : readFileToString(settings.service_account_key_file);
-        const auto key_info = gc::oauth2_internal::ParseServiceAccountCredentials(key, "service_account_key");
+        const auto key_info = gc::oauth2_internal::ParseServiceAccountCredentials(service_account_key, "service_account_key");
         if (key_info)
         {
             if (key_info->token_uri != gc::oauth2_internal::GoogleOAuthRefreshEndpoint())
@@ -672,7 +680,7 @@ std::unique_ptr<gcs::Client> getGCSClient(const GCSObjectStorageSettings & setti
         }
     }
 
-    options.set<gc::UnifiedCredentialsOption>(makeGCSCredentials(settings, std::move(token_request_options)));
+    options.set<gc::UnifiedCredentialsOption>(makeGCSCredentials(settings, service_account_key, std::move(token_request_options)));
 
     if (credential_source == GCSCredentialSource::RefreshToken)
     {
@@ -703,8 +711,8 @@ std::unique_ptr<gcs::Client> getGCSClient(const GCSObjectStorageSettings & setti
         options.set<::ClickHouse::PocoRestTokenProxyErrorReportOption>(makeGCSProxyErrorReporter(token_proxy_resolver));
     }
 
-    if (!settings.endpoint_override.empty())
-        options.set<gcs::RestEndpointOption>(settings.endpoint_override);
+    /// Set even without an override, so the SDK does not derive another default endpoint (see `resolveGCSEndpoint`).
+    options.set<gcs::RestEndpointOption>(resolved_endpoint);
 
     if (!settings.headers.empty())
     {
@@ -757,6 +765,29 @@ std::unique_ptr<gcs::Client> getGCSClient(const GCSObjectStorageSettings & setti
     /// `close_notify`, and reusing it would fail the next request spuriously or make it parse leftover
     /// bytes as its own response. The transport cannot call this itself -- it is a contrib translation
     /// unit that must not depend on the ClickHouse libraries -- so the probe is handed to it here.
+    /// The client is configured with one endpoint, but the server can send it to others: the session URL
+    /// of a resumable upload is the `Location` header of the response that started it, and the transport
+    /// requests it verbatim. So every URL a storage request goes to is checked, not only the endpoint.
+    /// The filter lives in the shared part of the context, for the lifetime of the server.
+    const RemoteHostFilter * remote_host_filter = &context->getRemoteHostFilter();
+    options.set<::ClickHouse::PocoRestUrlCheckOption>(
+        [remote_host_filter](const std::string & url) -> std::string
+        {
+            const Poco::URI uri(url, /* enable_url_encoding */ false);
+            if (remote_host_filter->checkURL(uri, /* throw_on_error */ false))
+                return {};
+            return fmt::format("URL \"{}\" is not allowed in configuration file, see <remote_url_allow_hosts>", uri.getHost());
+        });
+
+    /// The IO scheduling of the current thread (`WriteBufferFromGCS` installs it with
+    /// `CurrentThread::IOSchedulingScope`) is applied to the socket I/O of the requests, as for the
+    /// sessions of `HTTPConnectionPool`.
+    options.set<::ClickHouse::PocoRestSessionHooksOption>(
+        [](Poco::Net::HTTPClientSession & session, const Poco::Net::HTTPRequest & request)
+        {
+            setIOSchedulingSessionHooks(session, request);
+        });
+
     options.set<::ClickHouse::PocoRestSessionStaleCheckOption>(
         [](Poco::Net::HTTPClientSession & session) -> bool
         {
