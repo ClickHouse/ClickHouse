@@ -410,6 +410,8 @@ void ReadBufferFromGCS::setReadUntilPosition(size_t position)
     if (static_cast<off_t>(position) != read_until_position)
     {
         read_until_position = position;
+        /// `offset` is the end of the buffered data; keep the logical position at the first unread byte.
+        offset = getPosition();
         resetWorkingBuffer();
         read_stream.reset();
         initialized = false;
@@ -421,6 +423,7 @@ void ReadBufferFromGCS::setReadUntilEnd()
     if (read_until_position)
     {
         read_until_position = 0;
+        offset = getPosition();
         resetWorkingBuffer();
         read_stream.reset();
         initialized = false;
