@@ -42,7 +42,7 @@ public:
         bool current = true;
         bool preferred = true;
         bool probing = true;
-        size_t windows_left_in_phase = phaseWindows(true, warmup_windows);
+        size_t windows_left_in_phase = phaseWindows(current, warmup_windows);
         /// Zero until the first decision.
         size_t probe_interval = 0;
         /// Time per byte of the last phase of each option, negative while unknown.
@@ -120,14 +120,11 @@ public:
         if (precheck_window)
             addWindow(state.precheck, window_ns, window.units);
 
+        /// When the cache option changes, the costs of the existence check are not reset: its regular
+        /// schedule measures both of its options again, while a reset would re-measure them right away,
+        /// in windows that the cache choice then skips, and skew the cache's next comparison.
         if (precheck_preferred)
-        {
-            const bool cache_preferred = state.cache.preferred;
             addWindow(state.cache, window_ns, window.units);
-            /// The costs of the existence check were measured with the other cache option.
-            if (state.cache.preferred != cache_preferred)
-                state.precheck = Choice{.current = state.precheck.preferred, .preferred = state.precheck.preferred};
-        }
 
         state.precheck_eligible = precheck_allowed && window.matched * 20 < window_rows_count;
     }
