@@ -8,10 +8,11 @@
 #include <memory>
 #include <string>
 #if defined(OS_WINDOWS)
-/// Windows has no `statvfs`. Only these five fields are read anywhere in the codebase, and
-/// `GetDiskFreeSpaceEx` supplies the four that describe blocks; see `getStatVFS`.
+/// Windows has no `statvfs`. Only these six fields are read anywhere in the codebase, and
+/// `GetDiskFreeSpaceEx` supplies the ones that describe blocks; see `getStatVFS`.
 struct statvfs
 {
+    unsigned long long f_bsize;   /// Preferred I/O block size.
     unsigned long long f_frsize;  /// Fragment size, i.e. the unit `f_blocks`/`f_bavail` count in.
     unsigned long long f_blocks;  /// Total number of fragments.
     unsigned long long f_bavail;  /// Fragments available to an unprivileged process.

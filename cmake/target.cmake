@@ -17,6 +17,18 @@ elseif (CMAKE_SYSTEM_NAME MATCHES "Darwin")
 elseif (CMAKE_SYSTEM_NAME MATCHES "SunOS")
     set (OS_SUNOS 1)
     add_definitions(-D OS_SUNOS)
+
+    # Disable features that aren't currently supported on illumos.
+    # `CACHE INTERNAL` forces the value, so it also applies on reconfigure of an existing build directory.
+    set (ENABLE_AZURE_BLOB_STORAGE OFF CACHE INTERNAL "")
+    set (ENABLE_HDFS OFF CACHE INTERNAL "")
+    set (ENABLE_LDAP OFF CACHE INTERNAL "")
+    set (ENABLE_LIBPQXX OFF CACHE INTERNAL "")
+    set (USE_MONGODB OFF CACHE INTERNAL "")
+    set (ENABLE_PARQUET OFF CACHE INTERNAL "")
+    set (ENABLE_ROCKSDB OFF CACHE INTERNAL "")
+    set (ENABLE_SSH OFF CACHE INTERNAL "")
+    set (ENABLE_RUST OFF CACHE INTERNAL "")
 elseif (CMAKE_SYSTEM_NAME MATCHES "Windows")
     set (OS_WINDOWS 1)
     add_definitions(-D OS_WINDOWS)
@@ -256,6 +268,8 @@ if (CMAKE_CROSSCOMPILING)
         set (ENABLE_LIBURING OFF CACHE INTERNAL "")
         set (ENABLE_NUMACTL OFF CACHE INTERNAL "")
         set (ENABLE_RSEQ OFF CACHE INTERNAL "")
+    elseif (OS_SUNOS)
+        # The SunOS toolchain supplies the cross compiler and sysroot.
     elseif (OS_WASM)
         # Handled in the OS_WASM block above: it has to run before this one, because the
         # `CMAKE_CROSSCOMPILING` check below it needs `OS_WASM` to already be set.

@@ -62,6 +62,7 @@ struct statvfs getStatVFS(String path)
         {
             /// Report in bytes: `GetDiskFreeSpaceEx` gives byte counts, so a fragment is one byte
             /// and the free-space arithmetic elsewhere (`f_bavail * f_frsize`) comes out right.
+            fs.f_bsize = 1;
             fs.f_frsize = 1;
             fs.f_blocks = total.QuadPart;
             fs.f_bavail = available_to_caller.QuadPart;
@@ -101,7 +102,7 @@ struct statvfs getStatVFS(String path)
             continue;
         }
 
-        ErrnoException::throwFromPath(ErrorCodes::CANNOT_STATVFS, path, "Could not calculate available disk space (statvfs)");
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_STATVFS, path, "Could not get disk stat (statvfs)");
     }
     return fs;
 #endif
