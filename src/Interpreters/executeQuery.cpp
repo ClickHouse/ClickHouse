@@ -163,6 +163,7 @@ namespace ProfileEvents
     extern const Event ASTFuzzerSkippedBackupRestore;
     extern const Event ASTFuzzerSkippedReplicatedDDLInternal;
     extern const Event ASTFuzzerSkippedCollaborativeWorker;
+    extern const Event ASTFuzzerSkippedSecondaryQuery;
     extern const Event QueryParseMicroseconds;
 }
 
@@ -3571,6 +3572,14 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
     if (context->getClientInfo().collaborate_with_initiator)
     {
         ProfileEvents::increment(ProfileEvents::ASTFuzzerSkippedCollaborativeWorker);
+        return;
+    }
+
+    /// Any other secondary query's context still holds the callbacks its initiator installed (e.g. the read-task
+    /// callback of a cluster function), which a fuzzed copy must not call. The initiator fuzzes its own query.
+    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+    {
+        ProfileEvents::increment(ProfileEvents::ASTFuzzerSkippedSecondaryQuery);
         return;
     }
 
