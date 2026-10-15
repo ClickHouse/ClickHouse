@@ -644,6 +644,8 @@ protected:
     /// enable_positional_arguments would otherwise be skipped (views are expanded on remote nodes,
     /// not on the initiator).
     bool is_view_inner_query = false;
+    /// True in the analysis of an interpreter that swaps the view source in for the source table after the passes.
+    bool view_source_substituted = false;
     /// True when positional arguments in the outer query have already been resolved by the
     /// initiator node. Set by distributed/parallel-replicas local plan builders to prevent
     /// double-resolution. Unlike disabling enable_positional_arguments, this flag is a context
@@ -1970,6 +1972,9 @@ public:
 
     bool isViewInnerQuery() const { return is_view_inner_query; }
     void setIsViewInnerQuery(bool value) { is_view_inner_query = value; }
+
+    bool isViewSourceSubstituted() const { return view_source_substituted; }
+    void setViewSourceSubstituted(bool value) { view_source_substituted = value; }
 
     bool isPositionalArgumentsAlreadyResolved() const { return positional_arguments_already_resolved; }
     void setPositionalArgumentsAlreadyResolved(bool value) { positional_arguments_already_resolved = value; }

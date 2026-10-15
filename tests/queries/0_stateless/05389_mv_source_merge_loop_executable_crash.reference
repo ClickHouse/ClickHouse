@@ -1,3 +1,4 @@
-loop	3	3
-merge	3	6
-executable	3	6
+loop	3	109
+merge	3	1045
+merge_in	3	0
+executable	3	1045
