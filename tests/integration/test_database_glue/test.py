@@ -1021,6 +1021,37 @@ def test_native_create_gzip_metadata(started_cluster):
     assert node.query(f"SELECT count() FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "0\n"
 
 
+def test_native_create_s3a_base_location(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_native_create_s3a_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    additional_settings = {"default_base_location": "s3a://warehouse-glue/data"}
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME, additional_settings)
+    node.query(
+        f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (x String)",
+        settings={
+            "allow_experimental_database_glue_catalog": 1,
+            "allow_database_glue_catalog": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
+    )
+
+    glue_client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
+    table_info = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
+    metadata_location = table_info["Parameters"]["metadata_location"]
+    expected_key = f"data/{root_namespace}/{table_name}/metadata/v1.metadata.json"
+    assert metadata_location == f"s3://warehouse-glue/{expected_key}", metadata_location
+    started_cluster.minio_client.stat_object("warehouse-glue", expected_key)
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME, additional_settings)
+    assert node.query(f"SELECT count() FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "0\n"
+
+
 @pytest.mark.parametrize("initial_compression_method", ["none", "gzip"])
 def test_native_create_if_not_exists_over_leftover_metadata(started_cluster, initial_compression_method):
     node = started_cluster.instances["node1"]

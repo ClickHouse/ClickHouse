@@ -607,10 +607,10 @@ GlueCatalog::ObjectStorageWithPath GlueCatalog::createObjectStorageForEarlyTable
 
     auto object_storage = configuration->createObjectStorage(getContext(), true, {});
 
-    /// Parse S3 path to extract bucket and table path
+    /// Parse S3 path to extract bucket and table path. The scheme may be any S3 alias, e.g. `s3a://`.
     String table_path = s3_location;
-    if (table_path.starts_with("s3://"))
-        table_path = table_path.substr(5);
+    if (auto scheme_end = table_path.find("://"); scheme_end != std::string::npos)
+        table_path = table_path.substr(scheme_end + 3);
     else if (table_path.starts_with("s3:/"))
         table_path = table_path.substr(4);
 
