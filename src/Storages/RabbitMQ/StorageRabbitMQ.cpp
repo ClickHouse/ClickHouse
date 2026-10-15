@@ -152,6 +152,23 @@ StorageRabbitMQ::StorageRabbitMQ(
         std::find_if(queue_settings_list.begin(), queue_settings_list.end(),
                      [](const String & name) { return name.starts_with(deadletter_exchange_setting); });
 
+    /// The first routing key is used unconditionally for binding and publishing.
+    /// An empty list is meaningful (e.g. `fanout` ignores the routing key, `rabbitmq_queue_consume`
+    /// does not bind at all), so treat it as a single empty routing key.
+    if (routing_keys.empty())
+        routing_keys.emplace_back();
+
+    /// For the `headers` exchange every routing key is a `key=value` pair.
+    if (exchange_type == AMQP::ExchangeType::headers)
+    {
+        for (const auto & header : routing_keys)
+        {
+            if (!header.contains('='))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Invalid routing key '{}' for the `headers` exchange type: expected `key=value`", header);
+        }
+    }
+
     const auto & config = getContext()->getConfigRef();
 
     std::pair<String, UInt16> parsed_address;
