@@ -188,7 +188,7 @@ void BuildTextIndexTransform::finalize()
 {
     for (size_t i = 0; i < indexes.size(); ++i)
     {
-        if (!aggregators[i]->empty())
+        if (!aggregators[i]->empty() || indexes[i]->alwaysPersistEmptyGranule())
             writeTemporarySegment(i);
     }
 }
@@ -506,33 +506,33 @@ MergeTextIndexesTask::MergeTextIndexesTask(
 
     const auto & text_index = typeid_cast<const MergeTreeIndexText &>(*index_ptr);
     params = text_index.getParams();
+    all_sources_have_defined = params.defined_enabled;
+
+    output_has_positions = params.enable_positions;
+    output_serialization_version = params.serialization_version;
     sparse_index_tokens = ColumnString::create();
     sparse_index_offsets = ColumnUInt64::create();
 
-    /// Registered here rather than inside `makeOutputStreams`: the other caller writes temporary
-    /// segments into a different directory and must claim nothing in this part.
-    if (writer_settings.stream_base_manifest)
-    {
-        const String index_file_name = index_ptr->getFileName();
-        for (const auto & substream : index_ptr->getSubstreams())
-            writer_settings.stream_base_manifest->registerStreamBase(
-                index_file_name + substream.suffix,
-                {StreamBaseManifest::Kind::SkipIndex, index_ptr->index.name});
-    }
-
-    std::tie(output_streams, output_streams_holders) = makeOutputStreams(
-        index_ptr->getSubstreams(),
-        index_ptr->getFileName(),
-        new_data_part->getDataPartStoragePtr(),
-        new_data_part->default_codec,
-        new_data_part->getMarksFileExtension(),
-        writer_settings);
-
-    auto substreams = index_ptr->getSubstreams();
-
     for (size_t i = 0; i < segments.size(); ++i)
     {
-        for (const auto & substream : substreams)
+        MergeTreeIndexFormat physical_format;
+        if (segments[i].part_storage->existsFile("checksums.txt"))
+        {
+            MergeTreeDataPartChecksums checksums;
+            auto checksums_buffer = segments[i].part_storage->readFile("checksums.txt", ReadSettings{}, std::nullopt);
+            checksums.read(*checksums_buffer);
+            physical_format = index_ptr->getPhysicalFormat(checksums, *segments[i].part_storage, segments[i].index_file_name);
+            if (!physical_format)
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Cannot merge missing text index {}", segments[i].index_file_name);
+        }
+        else
+        {
+            /// Temporary segments are written by the current index definition and have no
+            /// `checksums.txt`; use their definition-level format until they are finalized.
+            physical_format = {1, index_ptr->getSubstreams()};
+        }
+
+        for (const auto & substream : physical_format.substreams)
         {
             /// The merge reads the dictionary and the postings of a source part sequentially,
             /// so their streams take the regular read buffer size.
@@ -558,7 +558,53 @@ MergeTextIndexesTask::MergeTextIndexesTask(
         /// Only the version and codecs are needed here, so skip deserializing the sparse index.
         auto header = TextIndexSerialization::deserializeHeaderPrefix(*stream->getDataBuffer());
         source_postings_serializations.emplace_back(PostingListCodecFactory::createPostingListCodec(header.codec_type), header.version);
+        all_sources_have_defined = all_sources_have_defined && header.has_defined;
+        output_serialization_version = std::min(output_serialization_version, header.version);
+        output_has_positions = output_has_positions && header.has_positions;
     }
+
+    if (!all_sources_have_defined)
+        output_serialization_version = std::min(
+            output_serialization_version,
+            MergeTreeTextIndexSerializationVersion::V2_WithPositions);
+
+    if (output_serialization_version < MergeTreeTextIndexSerializationVersion::V1_WithCodec)
+    {
+        postings_serialization = PostingsSerialization(
+            PostingListCodecFactory::createPostingListCodec(IPostingListCodec::Type::None),
+            output_serialization_version);
+    }
+
+    MergeTreeIndexSubstreams output_substreams = index_ptr->getSubstreams();
+    if (!all_sources_have_defined)
+    {
+        std::erase_if(
+            output_substreams,
+            [](const auto & substream)
+            {
+                return substream.type == MergeTreeIndexSubstream::Type::TextIndexIdentityDictionary
+                    || substream.type == MergeTreeIndexSubstream::Type::TextIndexIdentityPostings;
+            });
+    }
+
+    /// Registered here rather than inside `makeOutputStreams`: the other caller writes temporary
+    /// segments into a different directory and must claim nothing in this part.
+    if (writer_settings.stream_base_manifest)
+    {
+        const String index_file_name = index_ptr->getFileName();
+        for (const auto & substream : output_substreams)
+            writer_settings.stream_base_manifest->registerStreamBase(
+                index_file_name + substream.suffix,
+                {StreamBaseManifest::Kind::SkipIndex, index_ptr->index.name});
+    }
+
+    std::tie(output_streams, output_streams_holders) = makeOutputStreams(
+        output_substreams,
+        index_ptr->getFileName(),
+        new_data_part->getDataPartStoragePtr(),
+        new_data_part->default_codec,
+        new_data_part->getMarksFileExtension(),
+        writer_settings);
 }
 
 MergeTextIndexesTask::~MergeTextIndexesTask() noexcept
@@ -568,6 +614,9 @@ MergeTextIndexesTask::~MergeTextIndexesTask() noexcept
 
 Block MergeTextIndexesTask::getHeader() const
 {
+    /// Sort-cursor schema only. Identity keys are also strings, so the same header
+    /// is reused after `merging_identity` flips `activeDictionaryType()` to the identity stream.
+    /// This is not the sparse-index header; dictionary blocks come from `readDictionaryBlock`.
     return Block{ColumnWithTypeAndName{ColumnString::create(), std::make_shared<DataTypeString>(), "token"}};
 }
 
@@ -583,9 +632,23 @@ void MergeTextIndexesTask::initializeTokensQueue()
     }
 }
 
+MergeTreeIndexSubstream::Type MergeTextIndexesTask::activeDictionaryType() const
+{
+    return merging_identity
+        ? MergeTreeIndexSubstream::Type::TextIndexIdentityDictionary
+        : MergeTreeIndexSubstream::Type::TextIndexDictionary;
+}
+
+MergeTreeIndexSubstream::Type MergeTextIndexesTask::activePostingsType() const
+{
+    return merging_identity
+        ? MergeTreeIndexSubstream::Type::TextIndexIdentityPostings
+        : MergeTreeIndexSubstream::Type::TextIndexPostings;
+}
+
 void MergeTextIndexesTask::readDictionaryBlock(size_t source_num)
 {
-    auto * stream = input_streams[source_num].at(MergeTreeIndexSubstream::Type::TextIndexDictionary);
+    auto * stream = input_streams[source_num].at(activeDictionaryType());
     auto * data_buffer = stream->getDataBuffer();
 
     if (data_buffer->eof())
@@ -655,7 +718,7 @@ void MergeTextIndexesTask::initPostingsCursor(PostingsMergeCursor & cursor, cons
 void MergeTextIndexesTask::readPostingsSegment(const TokenSource & source, size_t segment_idx, PaddedPODArray<UInt32> & row_ids)
 {
     const auto & info = source.info;
-    auto * stream = input_streams[source.source_num].at(MergeTreeIndexSubstream::Type::TextIndexPostings);
+    auto * stream = input_streams[source.source_num].at(activePostingsType());
     stream->seekToMark({info.offsets[segment_idx], 0});
     source_postings_serializations[source.source_num].deserializeToArray(*stream->getDataBuffer(), info, segment_idx, row_ids);
 }
@@ -951,7 +1014,7 @@ void MergeTextIndexesTask::mergePostings(Sink && sink)
             postings_queue->push(source);
     }
 
-    const bool has_positions = params.enable_positions && std::ranges::any_of(current_token_sources,
+    const bool has_positions = !merging_identity && params.enable_positions && std::ranges::any_of(current_token_sources,
         [](const auto & source) { return source.info.header & PostingsSerialization::Flags::HasPositions; });
 
     if (has_positions)
@@ -1031,7 +1094,7 @@ void MergeTextIndexesTask::flushPostingList()
 {
     chassert(!current_token_sources.empty());
 
-    auto * postings_stream = output_streams.at(MergeTreeIndexSubstream::Type::TextIndexPostings);
+    auto * postings_stream = output_streams.at(activePostingsType());
     TokenPostingsInfo token_info;
 
     /// Sources own disjoint row sets, so the cardinality of the merged posting is sum of source cardinalities.
@@ -1044,7 +1107,9 @@ void MergeTextIndexesTask::flushPostingList()
     else
         token_info = flushEncodedPostings(*postings_stream, total_cardinality);
 
-    positions_merge->finish(token_info);
+    /// Identity postings do not carry positions. `merging_identity` keeps this from reading `.pos`.
+    if (!merging_identity)
+        positions_merge->finish(token_info);
 
     output_infos.push_back(token_info);
     current_token_sources.clear();
@@ -1064,17 +1129,20 @@ void MergeTextIndexesTask::flushDictionaryBlock()
 
     size_t num_tokens = output_infos.size();
     auto & output_str = assert_cast<ColumnString &>(*output_tokens);
-    auto * dictionary_stream = output_streams.at(MergeTreeIndexSubstream::Type::TextIndexDictionary);
+    auto * dictionary_stream = output_streams.at(activeDictionaryType());
     auto & ostr = dictionary_stream->compressed_hashing;
 
     ostr.next();
     auto current_mark = dictionary_stream->getCurrentMark();
     chassert(current_mark.offset_in_decompressed_block == 0);
 
+    auto & sparse_tokens = merging_identity ? identity_sparse_index_tokens : sparse_index_tokens;
+    auto & sparse_offsets = merging_identity ? identity_sparse_index_offsets : sparse_index_offsets;
+
     auto first_token = output_tokens->getDataAt(0);
     TextIndexSerialization::checkTokenSize(first_token.size());
-    assert_cast<ColumnString &>(*sparse_index_tokens).insertData(first_token.data(), first_token.size());
-    assert_cast<ColumnUInt64 &>(*sparse_index_offsets).insertValue(current_mark.offset_in_compressed_file);
+    assert_cast<ColumnString &>(*sparse_tokens).insertData(first_token.data(), first_token.size());
+    assert_cast<ColumnUInt64 &>(*sparse_offsets).insertValue(current_mark.offset_in_compressed_file);
 
     TextIndexSerialization::serializeTokens(output_str, ostr, tokens_format);
 
@@ -1121,6 +1189,15 @@ bool MergeTextIndexesTask::executeStep()
         return false;
     }
 
+    mergeQueueStep(/*enforce_time_limit=*/ true);
+    return true;
+}
+
+bool MergeTextIndexesTask::mergeQueueStep(bool enforce_time_limit)
+{
+    if (!tokens_queue.isValid())
+        return false;
+
     Stopwatch watch(CLOCK_MONOTONIC_COARSE);
 
     do
@@ -1164,9 +1241,51 @@ bool MergeTextIndexesTask::executeStep()
             tokens_queue.removeTop();
             readDictionaryBlock(source_num);
         }
-    } while (tokens_queue.isValid() && watch.elapsedMilliseconds() < step_time_ms);
+    } while (tokens_queue.isValid() && (!enforce_time_limit || watch.elapsedMilliseconds() < step_time_ms));
 
-    return true;
+    return tokens_queue.isValid();
+}
+
+void MergeTextIndexesTask::mergeIdentityDictionaries()
+{
+    identity_sparse_index_tokens = ColumnString::create();
+    identity_sparse_index_offsets = ColumnUInt64::create();
+
+    /// An empty part still carries both identity files and an empty identity sparse index.
+    if (num_rows == 0)
+        return;
+
+    for (const auto & input_stream : input_streams)
+    {
+        auto dictionary_it = input_stream.find(MergeTreeIndexSubstream::Type::TextIndexIdentityDictionary);
+        auto postings_it = input_stream.find(MergeTreeIndexSubstream::Type::TextIndexIdentityPostings);
+        if (dictionary_it == input_stream.end() || !dictionary_it->second
+            || postings_it == input_stream.end() || !postings_it->second)
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Text index identity streams are missing");
+    }
+
+    /// Token rows are already flushed. Reuse the queue for identities.
+    /// A source whose identity dictionary lacks a key contributes no rows.
+    /// Identity postings have no positions; `merging_identity` keeps PositionsMerge off.
+    chassert(!tokens_queue.isValid());
+    chassert(output_tokens->empty());
+    chassert(output_infos.empty());
+    chassert(current_token_sources.empty());
+
+    merging_identity = true;
+    initializeTokensQueue();
+    /// `finalize` runs once: a time-limited step would drop remaining sources and write a
+    /// short identity posting while the header still claims `has_defined`. Drain in this call.
+    if (tokens_queue.isValid() && mergeQueueStep(/*enforce_time_limit=*/ false))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index identity merge did not drain the queue");
+
+    if (!current_token_sources.empty())
+        flushPostingList();
+
+    if (!output_tokens->empty())
+        flushDictionaryBlock();
+
+    merging_identity = false;
 }
 
 void MergeTextIndexesTask::finalize()
@@ -1179,13 +1298,20 @@ void MergeTextIndexesTask::finalize()
 
     auto * index_stream = output_streams.at(MergeTreeIndexSubstream::Type::Regular);
 
+    if (all_sources_have_defined)
+        mergeIdentityDictionaries();
+
     TextIndexHeader header
     {
-        .version = params.serialization_version,
+        .version = output_serialization_version,
         .codec_type = postings_serialization.getPostingListCodec()->getType(),
-        .has_positions = params.enable_positions,
+        .has_positions = output_has_positions,
         .positions_codec = params.positions_codec,
+        .has_defined = all_sources_have_defined,
         .sparse_index = DictionarySparseIndex(std::move(sparse_index_tokens), std::move(sparse_index_offsets)),
+        .identity_sparse_index = all_sources_have_defined
+            ? DictionarySparseIndex(std::move(identity_sparse_index_tokens), std::move(identity_sparse_index_offsets))
+            : DictionarySparseIndex(),
     };
 
     TextIndexSerialization::serializeHeader(header, index_stream->compressed_hashing);
@@ -1380,6 +1506,74 @@ std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
         extension,
         data_part_storage->getFileSize(*actual_stream_name + extension),
         makeTextIndexReaderSettings(reader_settings, substream.type, expected_buffer_size));
+}
+
+std::pair<std::unique_ptr<MergeTreeReaderStream>, std::unique_ptr<MergeTreeReaderStream>>
+openTextIndexIdentityStreamsIfPresent(
+    const MergeTreeIndexSubstreams & substreams,
+    const IMergeTreeDataPartInfoForReader & part_info,
+    const String & index_file_name,
+    const MergeTreeReaderSettings & reader_settings)
+{
+    const auto * dictionary_substream = findSubstream(substreams, MergeTreeIndexSubstream::Type::TextIndexIdentityDictionary);
+    const auto * postings_substream = findSubstream(substreams, MergeTreeIndexSubstream::Type::TextIndexIdentityPostings);
+    if ((dictionary_substream == nullptr) != (postings_substream == nullptr))
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Text index identity streams must be present together");
+    if (!dictionary_substream)
+        return {};
+
+    return {
+        makeTextIndexInputStream(part_info, index_file_name, *dictionary_substream, reader_settings, std::nullopt),
+        makeTextIndexInputStream(part_info, index_file_name, *postings_substream, reader_settings, std::nullopt),
+    };
+}
+
+MergeTreeIndexInputStreams TextIndexInputStreamsHolder::toInputStreams() const
+{
+    MergeTreeIndexInputStreams streams;
+    streams[MergeTreeIndexSubstream::Type::Regular] = sparse_index.get();
+    if (identity_dictionary)
+    {
+        streams[MergeTreeIndexSubstream::Type::TextIndexIdentityDictionary] = identity_dictionary.get();
+        streams[MergeTreeIndexSubstream::Type::TextIndexIdentityPostings] = identity_postings.get();
+    }
+    return streams;
+}
+
+std::pair<std::unique_ptr<MergeTreeReaderStream>, std::unique_ptr<MergeTreeReaderStream>> openTextIndexIdentityStreams(
+    const IMergeTreeDataPartInfoForReader & part_info, const String & index_file_name, const MergeTreeReaderSettings & reader_settings)
+{
+    return {
+        makeTextIndexInputStream(
+            part_info, index_file_name, textIndexIdentityDictionarySubstream(), reader_settings, /*expected_buffer_size=*/{}),
+        makeTextIndexInputStream(
+            part_info, index_file_name, textIndexIdentityPostingsSubstream(), reader_settings, /*expected_buffer_size=*/{}),
+    };
+}
+
+TextIndexInputStreamsHolder openTextIndexInputStreams(
+    const IMergeTreeDataPartInfoForReader & part_info,
+    const String & index_file_name,
+    const MergeTreeIndexSubstreams & substreams,
+    bool load_identity_streams,
+    const MergeTreeReaderSettings & reader_settings)
+{
+    TextIndexInputStreamsHolder holder;
+    holder.sparse_index = makeTextIndexInputStream(
+        part_info,
+        index_file_name,
+        requireSubstream(substreams, MergeTreeIndexSubstream::Type::Regular),
+        reader_settings,
+        /*expected_buffer_size=*/std::nullopt);
+
+    if (load_identity_streams)
+    {
+        std::tie(holder.identity_dictionary, holder.identity_postings)
+            = openTextIndexIdentityStreamsIfPresent(substreams, part_info, index_file_name, reader_settings);
+    }
+
+    holder.sparse_index->seekToStart();
+    return holder;
 }
 
 }

@@ -5,6 +5,7 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
@@ -46,6 +47,8 @@
 #include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <base/defines.h>
+
+#include <unordered_set>
 
 namespace DB::ErrorCodes
 {
@@ -102,6 +105,66 @@ String getNameWithoutAliases(const ActionsDAG::Node * node)
     return node->result_name;
 }
 
+const ActionsDAG::Node * unwrapAliases(const ActionsDAG::Node * node)
+{
+    while (node && node->type == ActionsDAG::ActionType::ALIAS && !node->children.empty())
+        node = node->children.front();
+    return node;
+}
+
+/// `visited` holds the nodes whose subtree was already traversed and found free of `hasToken`; a
+/// subtree that does contain it returns true before the walk can finish, so it is never recorded.
+/// Without it a node reached through several parents is traversed once per path, which is
+/// exponential in the depth of a DAG that reuses each level twice (`y2 = y1 + y1`, ...).
+bool subtreeHasHasToken(const ActionsDAG::Node * node, std::unordered_set<const ActionsDAG::Node *> & visited)
+{
+    node = unwrapAliases(node);
+    if (!node)
+        return false;
+
+    if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base && node->function_base->getName() == "hasToken")
+        return true;
+
+    if (!visited.emplace(node).second)
+        return false;
+
+    for (const auto * child : node->children)
+    {
+        if (subtreeHasHasToken(child, visited))
+            return true;
+    }
+
+    return false;
+}
+
+/// Positive `hasToken` in `WHERE` / `AND` / `OR` only needs token postings: NULL and false both drop.
+/// `NOT`, `isNull`, `= 0`, and similar consumers distinguish false from NULL and need identity.
+bool hasTokenNeedsIdentityNullMap(const ActionsDAG & dag)
+{
+    std::unordered_set<const ActionsDAG::Node *> visited;
+
+    for (const auto & node : dag.getNodes())
+    {
+        if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base)
+            continue;
+
+        const auto & name = node.function_base->getName();
+        if (name == "and" || name == "or" || name == "hasToken")
+            continue;
+
+        /// A conversion around the predicate, e.g. `CAST(hasToken(lower(s), 'foo') AS Nullable(UInt8))`
+        /// left by the rewrite of `hasToken(toNullable(s), 'Foo')`, is transparent: it cannot turn a
+        /// false into a NULL, so the predicate still does not distinguish the two.
+        if (unwrapLosslessConversion(&node) != &node)
+            continue;
+
+        if (subtreeHasHasToken(&node, visited))
+            return true;
+    }
+
+    return false;
+}
+
 /// Check if a node with the given canonical name exists as a subexpression within the DAG rooted at `node`.
 bool hasSubexpression(const ActionsDAG::Node * node, const String & subexpression_name)
 {
@@ -111,6 +174,26 @@ bool hasSubexpression(const ActionsDAG::Node * node, const String & subexpressio
     for (const auto * child : node->children)
     {
         if (hasSubexpression(child, subexpression_name))
+            return true;
+    }
+
+    return false;
+}
+
+/// True if `node` or any node below it is a conversion that drops `Nullable`, e.g. `CAST(s, 'String')`
+/// anywhere inside `hasToken(CAST(s, 'String'), 'a')`. Such a conversion throws on NULL, so the rows
+/// it would throw for must still be read and evaluated instead of being answered from the index.
+bool dropsNullableInSubtree(const ActionsDAG::Node * node, std::unordered_set<const ActionsDAG::Node *> & visited)
+{
+    if (!node || !visited.emplace(node).second)
+        return false;
+
+    if (unwrapLosslessConversion(node, /*allow_drop_nullable=*/ false) != unwrapLosslessConversion(node))
+        return true;
+
+    for (const auto * child : node->children)
+    {
+        if (dropsNullableInSubtree(child, visited))
             return true;
     }
 
@@ -580,10 +663,10 @@ private:
         /// The index is analyzed under a `CAST` that drops `Nullable` and throws on NULL. Direct read replaces or
         /// short-circuits the predicate, so `NOT hasToken(CAST(s, 'String'), 'a')` would return the NULL row
         /// instead of throwing. Use the index only to skip granules then.
-        const bool drops_nullable = std::ranges::any_of(canonical_node.children, [](const auto * argument)
-        {
-            return unwrapLosslessConversion(argument, /*allow_drop_nullable=*/ false) != unwrapLosslessConversion(argument);
-        });
+        /// The conversion can sit anywhere in the predicate, e.g. inside `hasToken(CAST(s, 'String'), 'a')`,
+        /// so walk the whole subtree instead of only the top-level arguments.
+        std::unordered_set<const ActionsDAG::Node *> visited;
+        const bool drops_nullable = dropsNullableInSubtree(&canonical_node, visited);
 
         NameSet used_index_columns;
         std::vector<SelectedCondition> selected_conditions;
@@ -895,6 +978,8 @@ private:
             return lhs.virtual_column.name < rhs.virtual_column.name;
         });
 
+        const bool needs_identity_null_map = hasTokenNeedsIdentityNullMap(actions_dag);
+
         bool has_exact_search = false;
         bool has_materialized_index = false;
 
@@ -912,6 +997,8 @@ private:
         ASTPtr exact_default_expression;
         if (has_exact_search)
         {
+            /// The rewritten predicate, so a part the index cannot answer (a V2 nullable `hasToken`
+            /// has no identity streams) evaluates the same expression the row-level scan does.
             exact_default_expression = convertNodeToAST(function_node);
             if (!exact_default_expression)
             {
@@ -938,6 +1025,18 @@ private:
                     column.default_expression = exact_default_expression;
                 else if (column.search_query->getDirectReadMode() == TextIndexDirectReadMode::Hint)
                     column.default_expression = make_intrusive<ASTLiteral>(Field(1));
+
+                /// `hasToken` over a nullable haystack is three-valued. Identity fills the null
+                /// map only when a consumer distinguishes false from NULL. A positive filter
+                /// (`WHERE hasToken`, `AND` / `OR`) keeps `UInt8` and reads only token postings.
+                const auto & query_function_name = column.search_query->getFunctionName();
+                const bool nullable_has_token = query_function_name == "hasToken"
+                    && isNullableOrLowCardinalityNullable(function_node.result_type);
+                /// `isNull` / `isNotNull` always return `UInt8`, and only a `hasToken` column is made
+                /// nullable, so a null-check virtual column can never be nullable.
+                chassert(!isNullCheckFunction(query_function_name) || !isNullableOrLowCardinalityNullable(function_node.result_type));
+                if (nullable_has_token && needs_identity_null_map)
+                    column.type = makeNullable(std::make_shared<DataTypeUInt8>());
 
                 it->second = &actions_dag.addInput(column.name, column.type);
                 auto [task_it, task_inserted] = index_read_tasks.try_emplace(condition.index_name);
@@ -976,8 +1075,16 @@ private:
         /// If the type of original function does not match the type of replacement,
         /// add a cast to the replacement to match the expected type (e.g. hasAnyTokens('hello world', toNullable('world'))).
         /// It can happen when the original function returns Nullable or LowCardinality type and replacement doesn't.
+        /// Do not cast a positive-filter `hasToken` back to `Nullable`: `_CAST(UInt8)` would add an
+        /// all-false null map and `NOT` / `= 0` would treat NULL rows as 0.
         if (!function_node.result_type->equals(*result_node->result_type))
-            result_node = &actions_dag.addCast(*result_node, function_node.result_type, "", context);
+        {
+            const bool keep_uint8_for_positive_has_token = function_node.function_base
+                && function_node.function_base->getName() == "hasToken"
+                && !needs_identity_null_map;
+            if (!keep_uint8_for_positive_has_token)
+                result_node = &actions_dag.addCast(*result_node, function_node.result_type, "", context);
+        }
 
         /// Preserve the original column name so that downstream steps (e.g. ExpressionStep for SELECT)
         /// that reference the predicate by its original name can still find it in the block.

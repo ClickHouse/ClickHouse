@@ -1,8 +1,8 @@
 -- Tags: no-parallel-replicas
 
 -- Tests the `text_index_serialization_version` MergeTree setting that selects the on-disk text index format
--- version ('v0_initial', 'v1_with_codec' or 'v2_with_positions'), used to preserve forward compatibility
--- during upgrades.
+-- version ('v0_initial', 'v1_with_codec', 'v2_with_positions' or 'v3_with_defined'), used to preserve
+-- forward compatibility during upgrades.
 
 SET enable_analyzer = 1;
 

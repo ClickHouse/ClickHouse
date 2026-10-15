@@ -22,6 +22,8 @@ public:
         MergeTreeIndexWithCondition index;
         std::shared_ptr<MergeTreeIndexConditionText> condition;
         TextSearchQueryPtr query;
+        /// `isNull` / `isNotNull` are answered from the identity postings, so only they need the V3 streams.
+        bool needs_identity = false;
     };
 
     ReadFromTextIndexCount(

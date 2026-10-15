@@ -21,6 +21,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
+#include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
 
@@ -291,10 +292,16 @@ std::optional<ResolvedQuery> recoverSearchQuery(const ReadFromMergeTree & readin
         if (query->getSearchMode() == TextSearchMode::Phrase || !query->getPatterns().empty())
             return {};
 
-        if (query->getTokens().empty())
+        const bool count_needs_identity = query->isNullCheck();
+        if (query->getTokens().empty() && !count_needs_identity)
             return {};
 
-        return ResolvedQuery{.index = task.index, .condition = std::move(condition), .query = std::move(query)};
+        return ResolvedQuery{
+            .index = task.index,
+            .condition = std::move(condition),
+            .query = std::move(query),
+            .needs_identity = count_needs_identity,
+        };
     }
 
     return {};
@@ -309,7 +316,11 @@ String makeStepDescription(const ResolvedQuery & resolved)
     WriteBufferFromOwnString description;
     description << "Trivial count from text index (" << resolved.index.index->index.name << ", ";
 
-    if (query_tokens.size() == 1)
+    if (query_tokens.empty())
+    {
+        description << resolved.query->getFunctionName();
+    }
+    else if (query_tokens.size() == 1)
     {
         description << "token = " << tokenizer.formatTokenForLogs(query_tokens.front());
     }
@@ -369,9 +380,16 @@ bool optimizeTrivialCountFromTextIndex(QueryPlan::Node & node, QueryPlan::Nodes 
 
     /// Split the parts by index materialization (checksum lookups if materialized)
     const auto & text_index = *search_query->index.index;
+    const bool count_needs_identity = search_query->needs_identity;
     auto is_materialized_part = [&](const RangesInDataPart & part_with_ranges)
     {
-        return !!text_index.getDeserializedFormat(*part_with_ranges.data_part, text_index.getFileName());
+        auto format = text_index.getDeserializedFormat(*part_with_ranges.data_part, text_index.getFileName());
+        if (!format)
+            return false;
+        /// `isNull` / `isNotNull` need identity streams. A V2 leftover part is counted from rows.
+        if (count_needs_identity)
+            return findSubstream(format.substreams, MergeTreeIndexSubstream::Type::TextIndexIdentityDictionary) != nullptr;
+        return true;
     };
 
     const auto & all_parts = matched->reading->getParts();

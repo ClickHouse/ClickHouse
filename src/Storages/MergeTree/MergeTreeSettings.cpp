@@ -856,12 +856,18 @@ Allow creating text indexes with the experimental `support_phrase_search` argume
 which stores token positions to support exact phrase matching.
 )", EXPERIMENTAL, \
         {"26.7", false, false, "New setting"}) \
-    DECLARE(MergeTreeTextIndexSerializationVersion, text_index_serialization_version, MergeTreeTextIndexSerializationVersion::V2_WithPositions, R"(
+    DECLARE(MergeTreeTextIndexSerializationVersion, text_index_serialization_version, MergeTreeTextIndexSerializationVersion::V3_WithDefined, R"(
 The preferred on-disk serialization format version for writing text indexes.
 
 The setting is a preference rather than a hard constraint: if the configured version cannot
-represent an index, a newer version that can represent it is chosen automatically, and
-writing a text index never fails because of this setting.
+represent an index, a newer version that can represent it is chosen automatically. The
+effective version can also be lowered: a request for `v3_with_defined` on an index that
+cannot store identity streams (for example a non-nullable column) is clamped to `v2_with_positions`.
+Writing a text index never fails because of this setting.
+
+Identity streams for nullable scalars are omitted when the effective version is below
+`v3_with_defined`. A compatibility pin therefore keeps writing V2 parts that older servers
+can still read, instead of forcing V3.
 
 During a rolling upgrade, pin the format with the profile-level `compatibility` setting on
 the already upgraded servers, so that they keep writing the format that older servers can still read.
@@ -871,7 +877,9 @@ Possible values:
 - `v0_initial` — The original format. Does not persist the posting list codec type.
 - `v1_with_codec` — Persists the posting list codec type in the text index header.
 - `v2_with_positions` — Persists token positions for indexes with `support_phrase_search`.
+- `v3_with_defined` — Persists identity postings for supported nullable scalar indexes.
 )", 0, \
+        {"26.10", "v2_with_positions", "v3_with_defined", "Allow the 'v3_with_defined' text index format that persists identity postings for nullable scalar indexes. Reverts to 'v2_with_positions' under older compatibility so that newer servers keep writing the format that older servers can read during a rolling upgrade."}, \
         {"26.8", "v1_with_codec", "v2_with_positions", "Allow the 'v2_with_positions' text index format that persists token positions for phrase search. Reverts to 'v1_with_codec' under older compatibility so that newer servers keep writing the format that older servers can read during a rolling upgrade."}, \
         {"26.6", "v0_initial", "v1_with_codec", "New setting. Controls the on-disk format version of text indexes. Reverts to 'v0_initial' under older compatibility so that newer servers keep writing the previous format that older servers can read during a rolling upgrade."}) \
     DECLARE(UInt64, merge_selecting_sleep_ms, 5000, R"(

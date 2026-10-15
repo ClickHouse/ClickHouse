@@ -41,6 +41,10 @@ enum class TextIndexDirectReadMode : uint8_t
     Hint,
 };
 
+/// `isNull` / `isNotNull` over a text index virtual column. Answered from the identity postings,
+/// not from the token postings, so they are the only queries that need the V3 identity streams.
+inline bool isNullCheckFunction(std::string_view function_name) { return function_name == "isNull" || function_name == "isNotNull"; }
+
 /// Represents a single text-search function
 struct TextSearchQuery
 {
@@ -50,9 +54,15 @@ struct TextSearchQuery
         TextIndexDirectReadMode direct_read_mode_,
         VectorWithMemoryTracking<String> tokens_,
         std::vector<OptimizedRegularExpression> patterns_ = {},
-        VectorWithMemoryTracking<String> phrase_tokens_ = {});
+        VectorWithMemoryTracking<String> phrase_tokens_ = {},
+        String identity_ = {},
+        bool identity_preserves_null_ = true);
 
     const String & getFunctionName() const { return function_name; }
+    bool isNullCheck() const { return isNullCheckFunction(function_name); }
+    /// Scalar defined uses `""`. Later Map keys and JSON paths use the same field.
+    const String & getIdentity() const { return identity; }
+    bool identityPreservesNull() const { return identity_preserves_null; }
     TextSearchMode getSearchMode() const { return search_mode; }
     TextIndexDirectReadMode getDirectReadMode() const { return direct_read_mode; }
     const VectorWithMemoryTracking<String> & getTokens() const { return tokens; }
@@ -72,6 +82,10 @@ private:
     std::vector<OptimizedRegularExpression> patterns;
     /// Not sorted, not deduplicated.
     VectorWithMemoryTracking<String> phrase_tokens;
+    /// Identity-dictionary key. Scalar defined is `""`. Compared through `hash`.
+    String identity;
+    /// False when the predicate reaches the indexed column through a conversion that drops `Nullable`.
+    bool identity_preserves_null;
     /// Precomputed in the constructor because getHash is called on hot paths.
     UInt128 hash{};
 };
@@ -99,6 +113,7 @@ public:
         MergeTreeIndexTextPreprocessorPtr preprocessor_,
         MergeTreeIndexTextPostprocessorPtr postprocessor_,
         bool has_positions_,
+        bool defined_enabled_,
         NameSet columns_shadowing_map_subcolumns_,
         JSONIndexArgumentTypes json_argument_types_);
 
@@ -111,6 +126,8 @@ public:
     std::string getDescription() const override;
 
     bool hasSearchPatterns() const;
+    /// True when granule pruning must open identity streams (`isNull` / `NOT hasToken`).
+    bool needsIdentityStreams() const;
     UInt128 getSearchPatternsHash() const { return search_patterns_hash; }
     const std::vector<String> & getAllSearchTokens() const { return all_search_tokens; }
     const std::unordered_map<UInt128, TextSearchQueryPtr> & getAllSearchQueries() const { return all_search_queries; }
@@ -148,6 +165,8 @@ private:
             FUNCTION_HAS_ALL_TOKENS,
             FUNCTION_HAS_PHRASE,
             FUNCTION_LIKE,
+            FUNCTION_IS_NULL,
+            FUNCTION_IS_NOT_NULL,
             /// Can take any value
             FUNCTION_UNKNOWN,
             /// Operators
@@ -161,6 +180,10 @@ private:
 
         Function function = FUNCTION_UNKNOWN;
         std::vector<TextSearchQueryPtr> text_search_queries;
+        /// True when the predicate reaches the indexed column through a conversion that drops
+        /// `Nullable` (e.g. `CAST(s, 'String')`). Such a conversion throws on NULL, so under `NOT`
+        /// the NULL rows must still be read and evaluated instead of being pruned by the index.
+        bool drops_nullable = false;
     };
 
     using RPN = std::vector<RPNElement>;
@@ -179,6 +202,10 @@ private:
         RPNElement & out) const;
 
     TextIndexDirectReadMode getHintOrNoneMode() const;
+
+    /// `hasToken` on this index's nullable scalar. Used so `hasToken(...) IS NULL`
+    /// / `IS NOT NULL` share the defined-window mask with `IS NULL` / `IS NOT NULL`.
+    bool isHasTokenOnIndexedNullableColumn(const RPNBuilderTreeNode & node) const;
 
     bool traverseMapElementKeyNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;
     bool traverseMapElementValueNode(const RPNBuilderTreeNode & index_column_node, const Field & const_value) const;
@@ -227,7 +254,10 @@ private:
 
     bool tryPrepareSetForTextSearch(const RPNBuilderTreeNode & lhs, const RPNBuilderTreeNode & rhs, const String & function_name, RPNElement & out) const;
 
-    bool hasIndexForColumn(const String & column_name) const { return header.has(column_name) || column_name == normalized_index_column_name; }
+    bool hasIndexForColumn(const String & column_name) const
+    {
+        return header.has(column_name) || column_name == normalized_index_column_name;
+    }
 
     /// Returns true if all tokens must be read for text index analysis
     /// and we cannot exit analysis earlier if some of the tokens are missing in granule.
@@ -266,6 +296,8 @@ private:
     bool has_postprocessor;
     /// Whether the index has position data for phrase queries.
     bool has_positions = false;
+    /// Definition-level capability; a physical old part remains unprunable.
+    bool defined_enabled = false;
     /// Cache for tokens and their infos (cardinality, etc.)
     TextIndexTokensCachePtr tokens_cache;
     /// Cache for headers of the text index

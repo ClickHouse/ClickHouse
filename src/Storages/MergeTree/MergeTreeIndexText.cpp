@@ -53,6 +53,7 @@
 #include <base/PackedStringRef.h>
 #include <fmt/ranges.h>
 
+#include <algorithm>
 #include <limits>
 #include <numeric>
 
@@ -106,6 +107,7 @@ namespace Setting
 static_assert(static_cast<UInt64>(MergeTreeTextIndexSerializationVersion::V0_Initial) == 0);
 static_assert(static_cast<UInt64>(MergeTreeTextIndexSerializationVersion::V1_WithCodec) == 1);
 static_assert(static_cast<UInt64>(MergeTreeTextIndexSerializationVersion::V2_WithPositions) == 2);
+static_assert(static_cast<UInt64>(MergeTreeTextIndexSerializationVersion::V3_WithDefined) == 3);
 static_assert(static_cast<UInt64>(IPostingListCodec::Type::None) == 0);
 static_assert(static_cast<UInt64>(IPostingListCodec::Type::Bitpacking) == 1);
 static_assert(static_cast<UInt64>(IPostingListCodec::Type::PFor) == 2);
@@ -581,24 +583,6 @@ String makeIndexIdForCaches(const IMergeTreeDataPartInfoForReader & part_info, c
     return fmt::format("{}:{}:{}", part_storage.getDiskName(), part_storage.getFullPath(), index.getFileName());
 }
 
-std::shared_ptr<TextIndexHeader> loadHeader(
-    MergeTreeIndexReaderStream & header_stream, const MergeTreeIndexConditionText & condition_text, const String & index_id_for_caches)
-{
-    const auto load_header = [&]
-    {
-        header_stream.seekToStart();
-        auto loaded_header = std::make_shared<TextIndexHeader>(TextIndexSerialization::deserializeHeader(*header_stream.getDataBuffer()));
-
-        /// Optimize the memory usage of the sparse index only if the header is put into the global cache.
-        if (condition_text.useGlobalHeaderCache())
-            loaded_header->sparse_index.optimize();
-
-        return loaded_header;
-    };
-
-    auto header_hash = TextIndexHeaderCache::hash(index_id_for_caches);
-    return condition_text.headerCache()->getOrSet(header_hash, load_header);
-}
 
 /// Returns the indices of the found tokens in the dictionary block and the tokens absent from it.
 std::pair<std::vector<size_t>, NameSet> matchTokens(const ColumnString & all_tokens, std::vector<std::string_view> needed_tokens)
@@ -638,6 +622,156 @@ std::pair<std::vector<size_t>, NameSet> matchTokens(const ColumnString & all_tok
 
 MergeTreeIndexGranuleText::~MergeTreeIndexGranuleText() = default;
 
+uint64_t textIndexPostingCountInRange(const PostingList & postings, size_t begin, size_t end)
+{
+    if (begin >= end)
+        return 0;
+
+    /// Text index row ids are `UInt32`. A window that starts past that domain contains nothing.
+    if (begin > std::numeric_limits<UInt32>::max())
+        return 0;
+
+    const auto range_begin = static_cast<UInt32>(begin);
+    const auto range_last = end - 1 > std::numeric_limits<UInt32>::max()
+        ? std::numeric_limits<UInt32>::max()
+        : static_cast<UInt32>(end - 1);
+    /// `rank(x)` is the number of values <= x.
+    const uint64_t rank_end = postings.rank(range_last);
+    const uint64_t rank_before = range_begin == 0 ? 0 : postings.rank(range_begin - 1);
+    return rank_end - rank_before;
+}
+
+TextIndexDefinedWindow textIndexDefinedInRange(const PostingList & postings, size_t begin, size_t end)
+{
+    if (begin >= end)
+        return {};
+
+    const uint64_t cardinality = textIndexPostingCountInRange(postings, begin, end);
+    const uint64_t length = begin > std::numeric_limits<UInt32>::max()
+        ? 0
+        : static_cast<uint64_t>(std::min(end, static_cast<size_t>(std::numeric_limits<UInt32>::max()) + 1) - begin);
+    return {cardinality != 0, cardinality == length};
+}
+
+void textIndexFillFromIdentityPosting(std::span<UInt8> values, size_t row_offset, bool value_when_defined, const PostingList & identity)
+{
+    if (row_offset > std::numeric_limits<UInt32>::max())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index identity fill does not support row_offset larger than UINT32_MAX, got {}", row_offset);
+    const UInt8 absent_value = value_when_defined ? 0 : 1;
+    const UInt8 present_value = value_when_defined ? 1 : 0;
+    std::fill(values.begin(), values.end(), absent_value);
+
+    if (values.empty() || identity.cardinality() == 0)
+        return;
+
+    const uint64_t range_begin = row_offset;
+    const uint64_t range_end = std::min(
+        row_offset + values.size(),
+        static_cast<uint64_t>(std::numeric_limits<UInt32>::max()) + 1);
+    if (range_begin >= range_end)
+        return;
+
+    /// Intersect with the requested window so a dense identity is decoded in O(window),
+    /// not one `select` per defined row of the whole part.
+    PostingList window;
+    window.addRange(range_begin, range_end);
+    window &= identity;
+    const uint64_t matched = window.cardinality();
+    if (matched == 0)
+        return;
+
+    PaddedPODArray<UInt32> ids;
+    ids.resize(matched);
+    window.toUint32Array(ids.data());
+    for (UInt32 value : ids)
+        values[value - row_offset] = present_value;
+}
+
+std::optional<TokenPostingsInfo> MergeTreeIndexGranuleText::findIdentity(std::string_view identity) const
+{
+    if (!identity_streams_loaded || !loaded_header || loaded_header->identity_sparse_index.empty())
+        return std::nullopt;
+
+    if (!identity_dictionary_stream)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index identity dictionary stream is missing for a point lookup");
+
+    const auto & identity_sparse_index = loaded_header->identity_sparse_index;
+    size_t block_idx = identity_sparse_index.upperBound(identity);
+    if (block_idx == 0)
+        return std::nullopt;
+    --block_idx;
+
+    if (identity_sparse_index.getToken(block_idx) > identity)
+        return std::nullopt;
+
+    identity_dictionary_stream->seekToMark({identity_sparse_index.getOffsetInFile(block_idx), 0});
+    auto block = TextIndexSerialization::deserializeDictionaryBlock(*identity_dictionary_stream->getDataBuffer(), /*with_postings=*/ true);
+    const auto & tokens = assert_cast<const ColumnString &>(*block.tokens);
+
+    size_t lo = 0;
+    size_t hi = block.token_infos.size();
+    while (lo < hi)
+    {
+        const size_t mid = (lo + hi) / 2;
+        if (std::string_view(tokens.getDataAt(mid)) < identity)
+            lo = mid + 1;
+        else
+            hi = mid;
+    }
+
+    if (lo >= block.token_infos.size() || std::string_view(tokens.getDataAt(lo)) != identity)
+        return std::nullopt;
+
+    return block.token_infos[lo];
+}
+
+PostingListPtr MergeTreeIndexGranuleText::materializeIdentityPostings(const TokenPostingsInfo & token_info) const
+{
+    auto postings = std::make_shared<PostingList>();
+
+    if (!token_info.embedded_postings.empty())
+    {
+        postings->addMany(token_info.embedded_postings.size(), token_info.embedded_postings.data());
+        return postings;
+    }
+
+    if (!identity_postings_stream || !identity_postings_serialization || !identity_condition)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index identity postings stream is missing for a point lookup");
+
+    const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*identity_condition);
+    for (size_t posting_block_idx = 0; posting_block_idx < token_info.offsets.size(); ++posting_block_idx)
+    {
+        auto block = readPostingsBlock(
+            *identity_postings_stream,
+            condition_text,
+            token_info,
+            posting_block_idx,
+            *identity_postings_serialization,
+            index_id_for_caches,
+            static_cast<UInt8>(TextIndexPostingsCacheKind::IdentityDefined));
+        *postings |= *block;
+    }
+
+    return postings;
+}
+
+const PostingList * MergeTreeIndexGranuleText::findIdentityPostings(std::string_view identity) const
+{
+    const String key(identity);
+    if (const auto it = identity_postings.find(key); it != identity_postings.end())
+        return it->second.get();
+
+    const auto found = findIdentity(identity);
+    if (!found)
+    {
+        identity_postings.emplace(key, nullptr);
+        return nullptr;
+    }
+
+    auto postings = materializeIdentityPostings(*found);
+    return identity_postings.emplace(key, std::move(postings)).first->second.get();
+}
+
 void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIndexInputStreams & streams, MergeTreeIndexDeserializationState & state)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::TextIndexReadGranulesMicroseconds);
@@ -653,6 +787,7 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
 
     is_empty = false;
     analyzer = std::make_unique<TextIndexAnalyzer>(condition_text);
+    part_row_count = state.part_info.getRowCount();
 
     /// Push the row ranges still readable after the analysis of the primary key and prior skip indexes into the analyzer.
     if (state.readable_ranges)
@@ -673,11 +808,47 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
         analyzer->setReadableRows(std::move(readable_row_ranges));
     }
 
-    auto text_index_header = loadHeader(*index_stream, condition_text, index_id_for_caches);
+    auto text_index_header = loadHeader(*index_stream, state);
     auto postings_codec = PostingListCodecFactory::createPostingListCodec(text_index_header->codec_type);
     auto postings_serialization = PostingsSerialization(std::move(postings_codec), text_index_header->version);
     serialization_version = text_index_header->version;
     positions_codec = text_index_header->positions_codec;
+    /// `deserializeHeaderPrefix` rejects V3 without defined, so the version alone is enough.
+    /// The physical header, not the current index definition, decides whether this granule has identity streams.
+    const bool part_has_identity_streams = text_index_header->version == MergeTreeTextIndexSerializationVersion::V3_WithDefined;
+
+    if (part_has_identity_streams)
+    {
+        auto identity_dictionary_it = streams.find(MergeTreeIndexSubstream::Type::TextIndexIdentityDictionary);
+        auto identity_postings_it = streams.find(MergeTreeIndexSubstream::Type::TextIndexIdentityPostings);
+        const bool streams_provided = identity_dictionary_it != streams.end() && identity_dictionary_it->second
+            && identity_postings_it != streams.end() && identity_postings_it->second;
+
+        if (streams_provided)
+        {
+            identity_dictionary_stream = identity_dictionary_it->second;
+            identity_postings_stream = identity_postings_it->second;
+        }
+        else if (state.load_identity_streams)
+        {
+            /// Skip-index reader only passes Regular. Open identity streams the same way as dictionary.
+            std::tie(owned_identity_dictionary_stream, owned_identity_postings_stream) = openTextIndexIdentityStreams(
+                state.part_info,
+                state.index.getFileName(),
+                state.reader_settings);
+            identity_dictionary_stream = owned_identity_dictionary_stream.get();
+            identity_postings_stream = owned_identity_postings_stream.get();
+        }
+
+        if (identity_dictionary_stream)
+        {
+            loaded_header = text_index_header;
+            auto identity_codec = PostingListCodecFactory::createPostingListCodec(text_index_header->codec_type);
+            identity_postings_serialization = std::make_unique<PostingsSerialization>(std::move(identity_codec), text_index_header->version);
+            identity_condition = state.condition;
+            identity_streams_loaded = true;
+        }
+    }
 
     /// The stream opens its file on the first read, so a granule answered from the caches does not open it.
     const auto dictionary_substream = getSubstream(state.index, MergeTreeIndexSubstream::Type::TextIndexDictionary);
@@ -943,16 +1114,38 @@ std::vector<String> MergeTreeIndexGranuleText::fillTokensFromCache(MergeTreeInde
     return tokens_to_read;
 }
 
+std::shared_ptr<TextIndexHeader> MergeTreeIndexGranuleText::loadHeader(MergeTreeIndexReaderStream & header_stream, MergeTreeIndexDeserializationState & state)
+{
+    const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*state.condition);
+
+    const auto load_header = [&]
+    {
+        header_stream.seekToStart();
+        auto deserialized_header = std::make_shared<TextIndexHeader>(TextIndexSerialization::deserializeHeader(*header_stream.getDataBuffer()));
+
+        /// Optimize the memory usage of the sparse index only if the header is put into the global cache.
+        if (condition_text.useGlobalHeaderCache())
+        {
+            deserialized_header->sparse_index.optimize();
+            deserialized_header->identity_sparse_index.optimize();
+        }
+
+        return deserialized_header;
+    };
+
+    auto header_hash = TextIndexHeaderCache::hash(index_id_for_caches);
+    return condition_text.headerCache()->getOrSet(header_hash, load_header);
+}
+
 PostingListPtr MergeTreeIndexGranuleText::readPostingsBlock(
     MergeTreeIndexReaderStream & stream,
-    MergeTreeIndexDeserializationState & state,
+    const MergeTreeIndexConditionText & condition_text,
     const TokenPostingsInfo & token_info,
     size_t block_idx,
     PostingsSerialization & postings_serialization,
-    const String & index_id_for_caches)
+    const String & index_id,
+    UInt8 cache_kind)
 {
-    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*state.condition);
-
     const auto load_postings = [&]
     {
         ProfileEvents::increment(ProfileEvents::TextIndexReadPostings);
@@ -961,9 +1154,28 @@ PostingListPtr MergeTreeIndexGranuleText::readPostingsBlock(
         return std::make_shared<TextIndexPostingsCacheCell>(std::move(postings));
     };
 
-    auto hash = TextIndexPostingsCache::hash(index_id_for_caches, token_info.offsets[block_idx], static_cast<UInt8>(TextIndexPostingsCacheKind::Roaring));
+    auto hash = TextIndexPostingsCache::hash(index_id, token_info.offsets[block_idx], cache_kind);
     auto cell = condition_text.postingsCache()->getOrSet(hash, load_postings);
     return std::get<PostingListPtr>(cell->value);
+}
+
+PostingListPtr MergeTreeIndexGranuleText::readPostingsBlock(
+    MergeTreeIndexReaderStream & stream,
+    MergeTreeIndexDeserializationState & state,
+    const TokenPostingsInfo & token_info,
+    size_t block_idx,
+    PostingsSerialization & postings_serialization,
+    const String & index_id,
+    UInt8 cache_kind)
+{
+    return readPostingsBlock(
+        stream,
+        assert_cast<const MergeTreeIndexConditionText &>(*state.condition),
+        token_info,
+        block_idx,
+        postings_serialization,
+        index_id,
+        cache_kind);
 }
 
 void MergeTreeIndexGranuleText::analyzePostings(PostingsSerialization & postings_serialization, MergeTreeIndexDeserializationState & state)
@@ -1024,19 +1236,42 @@ size_t MergeTreeIndexGranuleText::memoryUsageBytes() const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method memoryUsageBytes is not implemented for MergeTreeIndexGranuleText");
 }
 
+namespace
+{
+
+SortedTokens sortedTokensFromMap(TokenToPostingsBuilderMap & map)
+{
+    SortedTokens sorted;
+    sorted.reserve(map.size());
+    map.forEachValue([&](const auto & key, auto & mapped)
+    {
+        if (mapped.isFiltered())
+            return;
+        sorted.push_back(SortedToken{static_cast<std::string_view>(key), &mapped});
+    });
+    std::ranges::sort(sorted, [](const auto & lhs, const auto & rhs) { return lhs.token < rhs.token; });
+    return sorted;
+}
+
+}
+
 MergeTreeIndexGranuleTextWritable::MergeTreeIndexGranuleTextWritable(
     MergeTreeIndexTextParams params_,
     IPostingListCodec::Type posting_list_codec_type_,
     TokenToPostingsBuilderMap && tokens_map_,
     std::unique_ptr<Arena> && arena_,
-    SortedTokens && sorted_tokens_)
+    SortedTokens && sorted_tokens_,
+    TokenToPostingsBuilderMap && identity_map_)
     : params(std::move(params_))
     , posting_list_codec_type(posting_list_codec_type_)
     , tokens_map(std::move(tokens_map_))
     , arena(std::move(arena_))
     , sorted_tokens(std::move(sorted_tokens_))
+    , identity_map(std::move(identity_map_))
     , logger(getLogger("TextIndexGranuleWriter"))
 {
+    /// Identities are sorted after the map is a member so the `SortedToken` pointers stay valid.
+    sorted_identities = sortedTokensFromMap(identity_map);
 }
 
 namespace
@@ -1266,6 +1501,40 @@ void TextIndexSerialization::serializeTokenInfo(WriteBuffer & ostr, const TokenP
     }
 }
 
+namespace
+{
+
+void serializeDictionarySparseIndex(const DictionarySparseIndex & sparse_index, WriteBuffer & ostr)
+{
+    /// Sparse indexes are created with raw columns and bit-packed only by optimize.
+    /// The write path never calls optimize, so expect the raw columns here.
+    auto tokens_column = sparse_index.getTokensColumn();
+    auto offsets_column = sparse_index.getOffsetsColumn();
+    chassert(tokens_column->size() == offsets_column->size());
+
+    auto serialization_string = SerializationString::create();
+    auto serialization_number = SerializationNumber<UInt64>::create();
+
+    writeVarUInt(tokens_column->size(), ostr);
+    serialization_string->serializeBinaryBulk(*tokens_column, ostr, 0, tokens_column->size());
+    serialization_number->serializeBinaryBulk(*offsets_column, ostr, 0, offsets_column->size());
+}
+
+DictionarySparseIndex deserializeDictionarySparseIndex(ReadBuffer & istr)
+{
+    size_t num_sparse_index_tokens = 0;
+    readVarUInt(num_sparse_index_tokens, istr);
+
+    auto tokens = deserializeTokensRaw(istr, num_sparse_index_tokens);
+    auto offsets = ColumnUInt64::create();
+
+    auto serialization_number = SerializationNumber<UInt64>::create();
+    serialization_number->deserializeBinaryBulk(*offsets, istr, num_sparse_index_tokens, 0.0);
+    return DictionarySparseIndex(std::move(tokens), std::move(offsets));
+}
+
+}
+
 void TextIndexSerialization::serializeHeader(const TextIndexHeader & header, WriteBuffer & ostr)
 {
     /// `textIndexCreator` raises the version to one that can represent the codec
@@ -1275,6 +1544,11 @@ void TextIndexSerialization::serializeHeader(const TextIndexHeader & header, Wri
 
     if (header.has_positions && header.version < MergeTreeTextIndexSerializationVersion::V2_WithPositions)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index version {} does not support positions", static_cast<UInt64>(header.version));
+
+    if (header.has_defined && header.version < MergeTreeTextIndexSerializationVersion::V3_WithDefined)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index version {} does not support defined", static_cast<UInt64>(header.version));
+    if (header.version >= MergeTreeTextIndexSerializationVersion::V3_WithDefined && !header.has_defined)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index version 'v3_with_defined' must have defined");
 
     writeVarUInt(static_cast<UInt64>(header.version), ostr);
 
@@ -1289,18 +1563,12 @@ void TextIndexSerialization::serializeHeader(const TextIndexHeader & header, Wri
             writeVarUInt(static_cast<UInt64>(header.positions_codec), ostr);
     }
 
-    /// Sparse indexes are created with raw columns and bit-packed only by optimize.
-    /// The write path never calls optimize, so expect the raw columns here.
-    auto tokens_column = header.sparse_index.getTokensColumn();
-    auto offsets_column = header.sparse_index.getOffsetsColumn();
-    chassert(tokens_column->size() == offsets_column->size());
+    if (header.version >= MergeTreeTextIndexSerializationVersion::V3_WithDefined)
+        writeVarUInt(static_cast<UInt64>(header.has_defined), ostr);
 
-    auto serialization_string = SerializationString::create();
-    auto serialization_number = SerializationNumber<UInt64>::create();
-
-    writeVarUInt(tokens_column->size(), ostr);
-    serialization_string->serializeBinaryBulk(*tokens_column, ostr, 0, tokens_column->size());
-    serialization_number->serializeBinaryBulk(*offsets_column, ostr, 0, offsets_column->size());
+    serializeDictionarySparseIndex(header.sparse_index, ostr);
+    if (header.has_defined)
+        serializeDictionarySparseIndex(header.identity_sparse_index, ostr);
 }
 
 TextIndexHeader TextIndexSerialization::deserializeHeaderPrefix(ReadBuffer & istr)
@@ -1308,7 +1576,7 @@ TextIndexHeader TextIndexSerialization::deserializeHeaderPrefix(ReadBuffer & ist
     UInt64 version = 0;
     readVarUInt(version, istr);
 
-    if (version > static_cast<UInt64>(MergeTreeTextIndexSerializationVersion::V2_WithPositions))
+    if (version > static_cast<UInt64>(MergeTreeTextIndexSerializationVersion::V3_WithDefined))
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Unsupported version of sparse index ({})", version);
 
     TextIndexHeader header;
@@ -1344,6 +1612,18 @@ TextIndexHeader TextIndexSerialization::deserializeHeaderPrefix(ReadBuffer & ist
         }
     }
 
+    if (header.version >= MergeTreeTextIndexSerializationVersion::V3_WithDefined)
+    {
+        UInt64 has_defined = 0;
+        readVarUInt(has_defined, istr);
+        if (has_defined != 1)
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "Text index version 'v3_with_defined' has has_defined={}, expected 1",
+                has_defined);
+        header.has_defined = true;
+    }
+
     return header;
 }
 
@@ -1353,15 +1633,9 @@ TextIndexHeader TextIndexSerialization::deserializeHeader(ReadBuffer & istr)
 
     TextIndexHeader header = deserializeHeaderPrefix(istr);
 
-    size_t num_sparse_index_tokens = 0;
-    readVarUInt(num_sparse_index_tokens, istr);
-
-    auto tokens = deserializeTokensRaw(istr, num_sparse_index_tokens);
-    auto offsets = ColumnUInt64::create();
-
-    auto serialization_number = SerializationNumber<UInt64>::create();
-    serialization_number->deserializeBinaryBulk(*offsets, istr, num_sparse_index_tokens, 0.0);
-    header.sparse_index = DictionarySparseIndex(std::move(tokens), std::move(offsets));
+    header.sparse_index = deserializeDictionarySparseIndex(istr);
+    if (header.has_defined)
+        header.identity_sparse_index = deserializeDictionarySparseIndex(istr);
     return header;
 }
 
@@ -1656,13 +1930,43 @@ void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(Merge
         *postings_stream,
         positions_stream);
 
+    DictionarySparseIndex identity_sparse_index(ColumnString::create(), ColumnUInt64::create());
+    if (params.defined_enabled)
+    {
+        auto identity_dictionary_it = streams.find(MergeTreeIndexSubstream::Type::TextIndexIdentityDictionary);
+        auto identity_postings_it = streams.find(MergeTreeIndexSubstream::Type::TextIndexIdentityPostings);
+        if (identity_dictionary_it == streams.end() || !identity_dictionary_it->second
+            || identity_postings_it == streams.end() || !identity_postings_it->second)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Index with type 'text' and defined enabled must have identity dictionary and identity postings streams");
+
+        /// Identity postings use the same codec and tiers as token postings, and never store positions.
+        const PostingListBuildContext identity_context
+        {
+            .codec = *codec,
+            .segment_size = params.posting_list_block_size,
+            .enable_positions = false,
+        };
+
+        identity_sparse_index = serializeTokensAndPostings(
+            sorted_identities,
+            identity_context,
+            params,
+            *identity_dictionary_it->second,
+            *identity_postings_it->second,
+            nullptr);
+    }
+
     TextIndexHeader header
     {
         .version = params.serialization_version,
         .codec_type = posting_list_codec_type,
         .has_positions = params.enable_positions,
         .positions_codec = params.positions_codec,
+        .has_defined = params.defined_enabled,
         .sparse_index = std::move(sparse_index_block),
+        .identity_sparse_index = std::move(identity_sparse_index),
     };
 
     TextIndexSerialization::serializeHeader(header, index_stream->compressed_hashing);
@@ -1878,10 +2182,7 @@ void MergeTreeIndexTextGranuleBuilder::addToken(std::string_view token, UInt32 t
     }
 
     bool inserted = false;
-    TokenToPostingsBuilderMap::LookupResult it{};
-
-    ArenaPackedStringHolder key_holder{packed_key, *arena};
-    tokens_map.emplace(key_holder, it, inserted);
+    TokenToPostingsBuilderMap::LookupResult it = emplaceKey(tokens_map, token, inserted);
 
     if (inserted)
     {
@@ -1906,6 +2207,32 @@ void MergeTreeIndexTextGranuleBuilder::addToken(std::string_view token, UInt32 t
     }
 
     ++num_processed_tokens;
+}
+
+TokenToPostingsBuilderMap::LookupResult
+MergeTreeIndexTextGranuleBuilder::emplaceKey(TokenToPostingsBuilderMap & map, std::string_view key, bool & inserted) const
+{
+    auto packed_key = PackedStringRef::build(key.data(), key.size(), PackedStringRefHash{});
+    ArenaPackedStringHolder key_holder{packed_key, *arena};
+    TokenToPostingsBuilderMap::LookupResult it{};
+    map.emplace(key_holder, it, inserted);
+    return it;
+}
+
+void MergeTreeIndexTextGranuleBuilder::markIdentity(std::string_view identity)
+{
+    bool inserted = false;
+    TokenToPostingsBuilderMap::LookupResult it = emplaceKey(identity_map, identity, inserted);
+
+    /// Identities never store positions.
+    PostingListBuildContext context = buildContext();
+    context.enable_positions = false;
+    const auto row = static_cast<UInt32>(current_row);
+
+    if (inserted)
+        constructBuilder(it, row, /*token_position=*/0, context);
+    else
+        it->getMapped().add(row, /*position=*/0, context);
 }
 
 void MergeTreeIndexTextGranuleBuilder::incrementCurrentRow()
@@ -1941,6 +2268,14 @@ void MergeTreeIndexTextGranuleBuilder::addDocumentsFromLowCardinality(
 
     for (size_t row = start_row; row < start_row + rows_read; ++row)
     {
+        /// Scalar `LowCardinality(Nullable)` uses this path. Arrays never have defined enabled.
+        if (params.defined_enabled && !column_array)
+        {
+            const size_t index = column_low_cardinality.getIndexAt(row);
+            if (!dictionary.isNullAt(index))
+                markIdentity("");
+        }
+
         for (size_t i = elements_begin(row); i < elements_begin(row + 1); ++i)
         {
             const size_t index = column_low_cardinality.getIndexAt(i);
@@ -1993,25 +2328,14 @@ void MergeTreeIndexTextGranuleBuilder::addDocumentsFromLowCardinality(
 
 std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuilder::build()
 {
-    SortedTokens sorted_tokens;
-    sorted_tokens.reserve(tokens_map.size());
-
-    tokens_map.forEachValue([&](const auto & key, auto & mapped)
-    {
-        std::string_view token = static_cast<std::string_view>(key);
-        if (mapped.isFiltered())
-            return;
-        sorted_tokens.push_back(SortedToken{token, &mapped});
-    });
-
-    std::ranges::sort(sorted_tokens, [](const auto & lhs, const auto & rhs) { return lhs.token < rhs.token; });
-
+    auto sorted_tokens = sortedTokensFromMap(tokens_map);
     return std::make_unique<MergeTreeIndexGranuleTextWritable>(
         params,
         posting_list_codec ? posting_list_codec->getType() : IPostingListCodec::Type::None,
         std::move(tokens_map),
         std::move(arena),
-        std::move(sorted_tokens));
+        std::move(sorted_tokens),
+        std::move(identity_map));
 }
 
 void MergeTreeIndexTextGranuleBuilder::reset()
@@ -2021,6 +2345,7 @@ void MergeTreeIndexTextGranuleBuilder::reset()
     num_processed_tokens = 0;
     tokens_map = {};
     arena = std::make_unique<Arena>();
+    identity_map = {};
 
     seedDropFilter();
 }
@@ -2085,6 +2410,16 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
     const auto & index_column = block.getByName(index_column_name);
     auto [preprocessed_column, offset] = preprocessor->processColumn(index_column, *pos, rows_read);
 
+    if (params.defined_enabled
+        && (preprocessor->hasActions() || postprocessor->hasActions()
+            || isArray(index_column.type) || isMap(index_column.type) || isObject(index_column.type)
+            || !isNullableOrLowCardinalityNullable(index_column.type)))
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Text index defined is enabled for an unsupported index path");
+    }
+
     if (postprocessor->hasActions() && !use_postprocessor_drop_fast_path)
     {
         ColumnPtr tokenized = tokenizeToArray(*tokenizer, *preprocessed_column, offset, rows_read);
@@ -2109,7 +2444,12 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
 
         for (size_t i = offset; i < offset + rows_read; ++i)
         {
-            if (!column_is_nullable || !preprocessed_column->isNullAt(i))
+            const bool is_null = column_is_nullable && preprocessed_column->isNullAt(i);
+            /// NULL rows are absent from every identity. An empty string is present and has no tokens.
+            if (params.defined_enabled && !is_null)
+                granule_builder.markIdentity("");
+
+            if (!is_null)
             {
                 const std::string_view ref = preprocessed_column->getDataAt(i);
                 granule_builder.addDocument(ref, context);
@@ -2249,6 +2589,16 @@ std::optional<String> getNormalizedIndexColumnName(const IndexDescription & inde
 
 }
 
+MergeTreeIndexSubstream textIndexIdentityDictionarySubstream()
+{
+    return {MergeTreeIndexSubstream::Type::TextIndexIdentityDictionary, ".idt.dct", ".idx"};
+}
+
+MergeTreeIndexSubstream textIndexIdentityPostingsSubstream()
+{
+    return {MergeTreeIndexSubstream::Type::TextIndexIdentityPostings, ".idt.pst", ".idx"};
+}
+
 MergeTreeIndexText::MergeTreeIndexText(
     StorageMetadataPtr metadata_snapshot_,
     const IndexDescription & index_,
@@ -2277,19 +2627,29 @@ MergeTreeIndexSubstreams MergeTreeIndexText::getSubstreams() const
     if (params.enable_positions)
         substreams.push_back({MergeTreeIndexSubstream::Type::TextIndexPositions, ".pos", ".idx"});
 
+    /// Defined is a definition-level capability; readers resolve the physical
+    /// substream set independently for old parts.
+    if (params.defined_enabled)
+    {
+        substreams.push_back(textIndexIdentityDictionarySubstream());
+        substreams.push_back(textIndexIdentityPostingsSubstream());
+    }
+
     return substreams;
 }
 
 MergeTreeIndexSubstreams MergeTreeIndexText::getPotentialSubstreams() const
 {
-    /// `.pos` unconditionally: whether a part holds it is a property of that part, not of the
-    /// current `params.enable_positions`.
+    /// `.pos` and identity streams unconditionally: whether a part holds them is a property of
+    /// that part, not of the current `params.enable_positions` / `params.defined_enabled`.
     return
     {
         {MergeTreeIndexSubstream::Type::Regular, "", ".idx"},
         {MergeTreeIndexSubstream::Type::TextIndexDictionary, ".dct", ".idx"},
         {MergeTreeIndexSubstream::Type::TextIndexPostings, ".pst", ".idx"},
-        {MergeTreeIndexSubstream::Type::TextIndexPositions, ".pos", ".idx"}
+        {MergeTreeIndexSubstream::Type::TextIndexPositions, ".pos", ".idx"},
+        textIndexIdentityDictionarySubstream(),
+        textIndexIdentityPostingsSubstream()
     };
 }
 
@@ -2306,14 +2666,36 @@ MergeTreeIndexFormat MergeTreeIndexText::getPhysicalFormat(
         {MergeTreeIndexSubstream::Type::TextIndexPostings, ".pst", ".idx"}
     };
 
-    /// V2: the part has the positions substream.
-    if (indexFileExistsInChecksums(checksums, relative_path_prefix + ".pos", ".idx", &storage))
-    {
+    const bool has_positions = indexFileExistsInChecksums(checksums, relative_path_prefix + ".pos", ".idx", &storage);
+    const bool has_identity_dictionary = indexFileExistsInChecksums(
+        checksums, relative_path_prefix + textIndexIdentityDictionarySubstream().suffix, ".idx", &storage);
+    const bool has_identity_postings = indexFileExistsInChecksums(
+        checksums, relative_path_prefix + textIndexIdentityPostingsSubstream().suffix, ".idx", &storage);
+    if (has_identity_dictionary != has_identity_postings)
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA,
+            "Text index identity streams must be present together");
+
+    if (has_positions)
         substreams.push_back({MergeTreeIndexSubstream::Type::TextIndexPositions, ".pos", ".idx"});
-        return {2, std::move(substreams)};
+
+    /// File probe only chooses which files to open. The header byte is the version.
+    const auto version = [&]() -> MergeTreeIndexVersion
+    {
+        if (has_identity_dictionary)
+            return static_cast<MergeTreeIndexVersion>(MergeTreeTextIndexSerializationVersion::V3_WithDefined);
+        if (has_positions)
+            return static_cast<MergeTreeIndexVersion>(MergeTreeTextIndexSerializationVersion::V2_WithPositions);
+        return static_cast<MergeTreeIndexVersion>(MergeTreeTextIndexSerializationVersion::V1_WithCodec);
+    }();
+
+    if (has_identity_dictionary)
+    {
+        substreams.push_back(textIndexIdentityDictionarySubstream());
+        substreams.push_back(textIndexIdentityPostingsSubstream());
     }
 
-    return {1, std::move(substreams)};
+    return {version, std::move(substreams)};
 }
 
 MergeTreeIndexGranulePtr MergeTreeIndexText::createIndexGranule() const
@@ -2330,7 +2712,7 @@ MergeTreeIndexConditionPtr MergeTreeIndexText::createIndexCondition(const Action
 {
     return std::make_shared<MergeTreeIndexConditionText>(
         predicate, context, index.sample_block, normalized_index_column_name, tokenizer.get(),
-        preprocessor, postprocessor, params.enable_positions, getColumnsShadowingMapSubcolumns(), collectJSONIndexArgumentTypes(*index.expression));
+        preprocessor, postprocessor, params.enable_positions, params.defined_enabled, getColumnsShadowingMapSubcolumns(), collectJSONIndexArgumentTypes(*index.expression));
 }
 
 DataTypePtr MergeTreeIndexText::getNestedDataType(const DataTypePtr & data_type)
@@ -2361,6 +2743,20 @@ static const String ARGUMENT_POSITIONS = "support_phrase_search";
 
 namespace
 {
+
+/// Returns true only for the scalar nullable forms supported by V3 defined:
+/// Nullable(String), Nullable(FixedString), LowCardinality(Nullable(String)),
+/// and Nullable(LowCardinality(String)).
+bool isDefinedCapableNullableString(const DataTypePtr & data_type)
+{
+    DataTypePtr nested = recursiveRemoveLowCardinality(data_type);
+    const auto * nullable = typeid_cast<const DataTypeNullable *>(nested.get());
+    if (!nullable)
+        return false;
+
+    const WhichDataType which(nullable->getNestedType());
+    return which.isString() || which.isFixedString();
+}
 
 template <typename Type>
 Type castAs(const Field & field, std::string_view argument_name)
@@ -2471,7 +2867,9 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
     bool has_codec = posting_list_codec && posting_list_codec->getType() != IPostingListCodec::Type::None;
 
     /// The setting is a preference to preserve compatibility, not a hard constraint.
-    /// If the setting contradicts the index features on the current version, the index features take precedence.
+    /// Phrase search cannot be represented below V2, so it raises `min_version`.
+    /// Defined streams *can* be omitted: a compatibility pin below V3 keeps writing V2
+    /// so older nodes can still read new parts during a rolling upgrade.
     using enum MergeTreeTextIndexSerializationVersion;
     MergeTreeTextIndexSerializationVersion min_version = V0_Initial;
     MergeTreeTextIndexSerializationVersion max_version = V2_WithPositions;
@@ -2482,8 +2880,18 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
     if (enable_positions)
         min_version = V2_WithPositions;
 
+    /// Defined is bound to the exact scalar index expression, not merely to the
+    /// effective output type of a preprocessor or postprocessor.
+    const bool defined_capable
+        = !preprocessor_ast && !postprocessor_ast && index.isSimpleSingleColumnIndex()
+        && isDefinedCapableNullableString(index.data_types[0]);
+
+    if (defined_capable)
+        max_version = V3_WithDefined;
+
     const MergeTreeTextIndexSerializationVersion version_setting = settings[MergeTreeSetting::text_index_serialization_version];
     MergeTreeTextIndexSerializationVersion serialization_version = std::clamp(version_setting, min_version, max_version);
+    const bool defined_enabled = defined_capable && serialization_version >= V3_WithDefined;
 
     MergeTreeIndexTextParams index_params{
         dictionary_block_size,
@@ -2491,6 +2899,7 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
         posting_list_block_size,
         enable_positions,
         static_cast<UInt8>(TextIndexPositionCodec::Encoding::BlockedPfor), /// not user-configurable yet
+        defined_enabled,
         std::move(preprocessor_ast),
         std::move(postprocessor_ast),
         serialization_version};

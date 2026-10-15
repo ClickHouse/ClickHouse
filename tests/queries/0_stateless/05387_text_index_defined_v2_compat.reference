@@ -1,0 +1,66 @@
+-- pinned v2 writes no identity streams
+idt files absent
+-- V2 leftover Exact / count match scan
+isNull indexed	1
+isNull indexed	5
+isNull indexed	8
+isNull indexed	9
+isNull scan	1
+isNull scan	5
+isNull scan	8
+isNull scan	9
+isNotNull indexed	0
+isNotNull indexed	2
+isNotNull indexed	3
+isNotNull indexed	4
+isNotNull indexed	6
+isNotNull indexed	7
+isNotNull indexed	10
+isNotNull indexed	11
+isNotNull scan	0
+isNotNull scan	2
+isNotNull scan	3
+isNotNull scan	4
+isNotNull scan	6
+isNotNull scan	7
+isNotNull scan	10
+isNotNull scan	11
+not hasToken indexed	2
+not hasToken indexed	6
+not hasToken indexed	10
+not hasToken indexed	11
+not hasToken scan	2
+not hasToken scan	6
+not hasToken scan	10
+not hasToken scan	11
+count isNull indexed	4
+count isNull scan	4
+count isNotNull indexed	8
+count isNotNull scan	8
+-- mixed V2 leftover + V3 part still matches scan
+mixed isNull indexed	1
+mixed isNull indexed	5
+mixed isNull indexed	8
+mixed isNull indexed	9
+mixed isNull indexed	13
+mixed isNull scan	1
+mixed isNull scan	5
+mixed isNull scan	8
+mixed isNull scan	9
+mixed isNull scan	13
+mixed count isNull indexed	5
+mixed count isNull scan	5
+mixed not hasToken indexed	2
+mixed not hasToken indexed	6
+mixed not hasToken indexed	10
+mixed not hasToken indexed	11
+mixed not hasToken indexed	14
+mixed not hasToken indexed	15
+mixed not hasToken scan	2
+mixed not hasToken scan	6
+mixed not hasToken scan	10
+mixed not hasToken scan	11
+mixed not hasToken scan	14
+mixed not hasToken scan	15
+-- new part after unpin has identity streams
+parts with identity: 1/2

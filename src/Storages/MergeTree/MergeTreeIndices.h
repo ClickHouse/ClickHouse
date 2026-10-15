@@ -337,6 +337,10 @@ struct IMergeTreeIndex
 
     virtual MergeTreeIndexAggregatorPtr createIndexAggregator() const = 0;
 
+    /// True when the granule must be written out even when it is empty: the writer would otherwise
+    /// skip the index, but an empty granule can still own files a reader expects to find.
+    virtual bool alwaysPersistEmptyGranule() const { return false; }
+
     virtual MergeTreeIndexConditionPtr createIndexCondition(
         const ActionsDAG::Node * predicate, ContextPtr context) const = 0;
 

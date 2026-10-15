@@ -1,0 +1,45 @@
+oracle isNull
+8
+9
+10
+11
+12
+13
+14
+15
+oracle isNotNull
+0
+1
+2
+3
+4
+5
+6
+7
+16
+indexed isNull
+8
+9
+10
+11
+12
+13
+14
+15
+indexed isNotNull
+0
+1
+2
+3
+4
+5
+6
+7
+16
+isNull skips the all-defined mark
+1
+1
+isNotNull skips the all-NULL mark
+1
+hasToken skips the all-NULL mark
+1

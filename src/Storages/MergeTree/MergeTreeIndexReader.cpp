@@ -2,6 +2,7 @@
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
+#include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 
@@ -178,6 +179,8 @@ void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * co
         if (!res)
             res = index->createIndexGranule();
 
+        const auto * text_condition = typeid_cast<const MergeTreeIndexConditionText *>(condition);
+
         MergeTreeIndexDeserializationState state
         {
             .version = version,
@@ -187,6 +190,7 @@ void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * co
             .readable_ranges = readable_ranges,
             .text_index_read_postings = true,
             .reader_settings = settings,
+            .load_identity_streams = text_condition == nullptr || text_condition->needsIdentityStreams(),
         };
 
         res->deserializeBinaryWithMultipleStreams(streams, state);

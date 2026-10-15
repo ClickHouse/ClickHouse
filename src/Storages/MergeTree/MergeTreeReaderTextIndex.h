@@ -79,9 +79,20 @@ private:
     MergeTreeDataPartPtr getDataPart() const;
 
     void readGranule();
+    void classifyColumnKinds();
     /// Sets per-column flags from the analyzer's verdict.
     void classifyVirtualColumns();
     void fillColumn(IColumn & column, const PostingList & postings, size_t row_offset, size_t num_rows);
+    /// Fills a nullable virtual column. `postings == nullptr` means the needle is empty, so every
+    /// present row is a match (nested value 1); otherwise the nested value is the intersection of
+    /// `postings` with the identity postings. The null map is always derived from the identity postings.
+    void fillNullableColumn(
+        IColumn & column,
+        const PostingList * postings,
+        size_t row_offset,
+        size_t num_rows,
+        std::string_view identity);
+    void fillDefinedColumn(IColumn & column, size_t row_offset, size_t num_rows, bool value_when_defined, std::string_view identity);
     void fillColumnLazy(IColumn & column, size_t column_idx, size_t row_offset, size_t num_rows);
 
     /// Search of one column resolved once per part.
@@ -139,6 +150,10 @@ private:
     std::vector<bool> use_fallback;
     /// A separate stream is created for each token to read postings blocks continuously without additional seeks.
     absl::flat_hash_map<std::string_view, std::unique_ptr<MergeTreeReaderStream>> postings_streams;
+    /// Identity streams of the granule being read. The granule's identity lookups hold raw pointers
+    /// into them, so they must outlive `readGranule`.
+    std::unique_ptr<MergeTreeReaderStream> identity_dictionary_stream;
+    std::unique_ptr<MergeTreeReaderStream> identity_postings_stream;
 
     /// Stream for position data (.pos file) used for phrase queries.
     std::unique_ptr<MergeTreeReaderStream> positions_stream;
@@ -152,8 +167,17 @@ private:
     TextIndexBlockedPositionsCodec::DecodeScratch blocked_positions_scratch;
 
     bool is_initialized = false;
+    /// True when this part has V3 identity streams. V2 nullable `hasToken` Exact
+    /// direct read falls back to the physical column when this is false.
+    bool part_has_identity_streams = false;
     /// Virtual columns that are always true.
     std::vector<bool> is_always_true;
+    /// Per virtual column: the result type is `Nullable(UInt8)`, so a null map must be filled.
+    std::vector<bool> result_is_nullable;
+    /// Per virtual column: the query is `isNull` / `isNotNull`, answered from the identity postings.
+    std::vector<bool> query_is_null_check;
+    /// Whether this reader needs the part's identity streams at all. Classified once per reader.
+    bool needs_identity_streams = false;
     std::unique_ptr<MergeTreeIndexDeserializationState> deserialization_state;
     std::optional<PostingsSerialization> postings_serialization;
 

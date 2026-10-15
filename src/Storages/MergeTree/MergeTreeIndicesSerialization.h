@@ -4,8 +4,15 @@
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Formats/MarkInCompressedFile.h>
 
+#include <algorithm>
+#include <Common/Exception.h>
+
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 /// Prefix used by every per-substream skip-index file name on disk: "skp_idx_<name>...".
 inline constexpr std::string_view SKIP_INDEX_FILE_PREFIX = "skp_idx_";
@@ -41,6 +48,9 @@ struct MergeTreeIndexSubstream
         TextIndexDictionary,
         TextIndexPostings,
         TextIndexPositions,
+        /// Identity dictionary is compressed like the token dictionary. Identity postings are plain, like token postings.
+        TextIndexIdentityDictionary,
+        TextIndexIdentityPostings,
     };
 
     Type type;
@@ -53,16 +63,33 @@ struct MergeTreeIndexSubstream
     {
         /// Text index postings and positions are not compressed by write buffer,
         /// because the compression is implicitly applied during building them.
-        return type != Type::TextIndexPostings && type != Type::TextIndexPositions;
+        /// Identity postings share that layout. Identity dictionary stays compressed.
+        return type != Type::TextIndexPostings && type != Type::TextIndexPositions && type != Type::TextIndexIdentityPostings;
     }
 };
 
 using MergeTreeIndexSubstreams = std::vector<MergeTreeIndexSubstream>;
 using MergeTreeIndexVersion = uint8_t;
 
+/// Finds a substream of the given type, or returns nullptr if absent.
+inline const MergeTreeIndexSubstream * findSubstream(const MergeTreeIndexSubstreams & substreams, MergeTreeIndexSubstream::Type type)
+{
+    const auto it = std::ranges::find_if(substreams, [type](const auto & substream) { return substream.type == type; });
+    return it == substreams.end() ? nullptr : &*it;
+}
+
+/// Finds a substream of the given type, or throws if absent.
+inline const MergeTreeIndexSubstream & requireSubstream(const MergeTreeIndexSubstreams & substreams, MergeTreeIndexSubstream::Type type)
+{
+    const auto * substream = findSubstream(substreams, type);
+    if (!substream)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index is missing a substream of type {}", static_cast<int>(type));
+    return *substream;
+}
+
 struct MergeTreeIndexFormat
 {
-    MergeTreeIndexVersion version;
+    MergeTreeIndexVersion version{};
     MergeTreeIndexSubstreams substreams;
 
     explicit operator bool() const { return version != 0; }
@@ -83,6 +110,9 @@ struct MergeTreeIndexDeserializationState
     const MarkRanges * readable_ranges = nullptr;
     bool text_index_read_postings = true;
     const MergeTreeReaderSettings & reader_settings;
+    /// When false, a V3 part does not open `.idt` streams. Positive `hasToken` skip and
+    /// filter-only Exact reads do not need identity postings.
+    bool load_identity_streams = true;
 };
 
 }

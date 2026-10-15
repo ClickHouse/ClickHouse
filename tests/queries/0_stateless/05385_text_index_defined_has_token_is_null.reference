@@ -1,0 +1,105 @@
+scan hasToken IS NULL
+8
+9
+10
+11
+12
+13
+14
+15
+indexed hasToken IS NULL
+8
+9
+10
+11
+12
+13
+14
+15
+scan isNull(hasToken)
+8
+9
+10
+11
+12
+13
+14
+15
+indexed isNull(hasToken)
+8
+9
+10
+11
+12
+13
+14
+15
+scan missing-token IS NULL
+8
+9
+10
+11
+12
+13
+14
+15
+indexed missing-token IS NULL
+8
+9
+10
+11
+12
+13
+14
+15
+scan hasToken IS NOT NULL
+0
+1
+2
+3
+4
+5
+6
+7
+16
+indexed hasToken IS NOT NULL
+0
+1
+2
+3
+4
+5
+6
+7
+16
+scan isNotNull(hasToken)
+0
+1
+2
+3
+4
+5
+6
+7
+16
+indexed isNotNull(hasToken)
+0
+1
+2
+3
+4
+5
+6
+7
+16
+hasToken IS NULL skips the all-defined mark
+1
+1
+isNull(hasToken) skips the all-defined mark
+1
+missing-token IS NULL skips the all-defined mark
+1
+hasToken IS NOT NULL skips the all-NULL mark
+1
+hasTokenOrNull IS NULL does not use defined skip
+1

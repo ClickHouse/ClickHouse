@@ -1,0 +1,19 @@
+-- nullable V3 has identity streams
+idt files exist
+-- non-nullable V2 has no identity streams
+idt files absent
+-- preprocessor nullable part has no identity streams
+idt files absent
+-- V2 fallback NOT hasToken matches scan
+2
+6
+10
+11
+14
+15
+2
+6
+10
+11
+14
+15

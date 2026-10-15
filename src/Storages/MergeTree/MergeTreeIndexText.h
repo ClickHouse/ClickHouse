@@ -21,6 +21,8 @@
 #include <base/types.h>
 #include <base/PackedStringRef.h>
 
+#include <list>
+#include <optional>
 #include <span>
 #include <variant>
 #include <vector>
@@ -37,11 +39,14 @@ namespace DB
   * Granules are aggregated the same way as for other skip indexes
   * Unlike other skip indexes, text index can be merged instead of rebuilt on merge of the data parts.
   *
-  * Text index has three streams (files with data and marks for them), plus a fourth with 'support_phrase_search':
+  * Text index has three streams (files with data and marks for them), plus optional extra streams:
   * - File with index granules (.idx)
   * - File with dictionary blocks (.dct)
   * - File with posting lists (.pst)
-  * - File with token positions (.pos), one blob per token (see TextIndexBlockedPositionsCodec)
+  * - File with token positions (.pos), one blob per token (see TextIndexBlockedPositionsCodec),
+  *   present when the index has `support_phrase_search`
+  * - Identity dictionary and postings (`.idt.dct` / `.idt.pst`), present only from V3 (`v3_with_defined`)
+  *   on nullable scalar indexes without a preprocessor or postprocessor
   *
   * Index granule accumulates tokens from all documents and collects the posting lists
   * (positions in the granule of documents that contain the token) for each token.
@@ -91,6 +96,7 @@ struct MergeTreeIndexTextParams
     size_t posting_list_block_size = 1024 * 1024;
     bool enable_positions = false;
     UInt8 positions_codec = static_cast<UInt8>(TextIndexPositionCodec::Encoding::BlockedPfor);
+    bool defined_enabled = false;
     ASTPtr preprocessor;
     ASTPtr postprocessor;
     MergeTreeTextIndexSerializationVersion serialization_version = MergeTreeTextIndexSerializationVersion::V0_Initial;
@@ -106,6 +112,25 @@ struct PostingListBuildContext
     size_t segment_size;
     bool enable_positions;
 };
+
+/// `any_defined` / `all_defined` of posting `postings` on the half-open row window `[begin, end)`.
+/// An empty window is not defined and is entirely defined. `TokenPostingsInfo::ranges` is not used:
+/// a block range is only the minimum and maximum row and may contain holes.
+struct TextIndexDefinedWindow
+{
+    bool any_defined = false;
+    bool all_defined = true;
+};
+
+uint64_t textIndexPostingCountInRange(const PostingList & postings, size_t begin, size_t end);
+TextIndexDefinedWindow textIndexDefinedInRange(const PostingList & postings, size_t begin, size_t end);
+
+/// Fills `values` from identity posting `identity` on rows `[row_offset, row_offset + values.size())`.
+/// A row in the posting gets `value_when_defined`; every other row gets the opposite value.
+void textIndexFillFromIdentityPosting(std::span<UInt8> values, size_t row_offset, bool value_when_defined, const PostingList & identity);
+
+MergeTreeIndexSubstream textIndexIdentityDictionarySubstream();
+MergeTreeIndexSubstream textIndexIdentityPostingsSubstream();
 
 /// Builds one token's posting list during the index build.
 /// Up to inline_capacity row ids live inline (no heap allocation for the many rare tokens).
@@ -330,7 +355,11 @@ struct TextIndexHeader
     /// has_positions and positions_codec are persisted for version >= V2_WithPositions.
     bool has_positions = false;
     UInt8 positions_codec = 0;
+    /// Persisted for version >= V3_WithDefined. Every physical V3 text index has identity streams.
+    bool has_defined = false;
     DictionarySparseIndex sparse_index;
+    /// Second sparse index over the identity dictionary. Present iff `has_defined`.
+    DictionarySparseIndex identity_sparse_index;
 };
 
 struct TextIndexSerialization
@@ -405,6 +434,21 @@ public:
     IPostingListCodec::Type getPostingsCodecType() const { return postings_codec_type; }
     MergeTreeTextIndexSerializationVersion getSerializationVersion() const { return serialization_version; }
     UInt8 getPositionsCodec() const { return positions_codec; }
+    bool hasIdentityStreams() const { return identity_streams_loaded; }
+    size_t getPartRowCount() const { return part_row_count; }
+    /// Sparse-index point lookup of one identity's postings. Empty when this part has no posting for `identity`.
+    std::optional<TokenPostingsInfo> findIdentity(std::string_view identity) const;
+    /// `nullptr` when this part has no posting for `identity`. That is an empty posting: every row is NULL.
+    const PostingList * findIdentityPostings(std::string_view identity) const;
+
+    static PostingListPtr readPostingsBlock(
+        MergeTreeIndexReaderStream & stream,
+        const MergeTreeIndexConditionText & condition_text,
+        const TokenPostingsInfo & token_info,
+        size_t block_idx,
+        PostingsSerialization & postings_serialization,
+        const String & index_id,
+        UInt8 cache_kind = 0 /*TextIndexPostingsCacheKind::Roaring*/);
 
     static PostingListPtr readPostingsBlock(
         MergeTreeIndexReaderStream & stream,
@@ -412,7 +456,8 @@ public:
         const TokenPostingsInfo & token_info,
         size_t block_idx,
         PostingsSerialization & postings_serialization,
-        const String & index_id_for_caches);
+        const String & index_id,
+        UInt8 cache_kind = 0 /*TextIndexPostingsCacheKind::Roaring*/);
 
 private:
     /// Reads dictionary blocks and analyzes them for tokens.
@@ -426,6 +471,8 @@ private:
     /// Reads the single-segment posting lists of the needed tokens and folds them into the analyzer.
     /// Opens the postings stream itself, once the tokens are known, with a buffer that fits the largest of the lists.
     void analyzePostings(PostingsSerialization & postings_serialization, MergeTreeIndexDeserializationState & state);
+    std::shared_ptr<TextIndexHeader> loadHeader(MergeTreeIndexReaderStream & header_stream, MergeTreeIndexDeserializationState & state);
+    PostingListPtr materializeIdentityPostings(const TokenPostingsInfo & token_info) const;
 
     bool is_empty = true;
     MergeTreeIndexTextParams params;
@@ -441,7 +488,30 @@ private:
     MergeTreeTextIndexSerializationVersion serialization_version = MergeTreeTextIndexSerializationVersion::V0_Initial;
     /// Positions on-disk codec persisted in the header.
     UInt8 positions_codec = 0;
+    /// True when the part header is V3 and the identity streams were opened.
+    bool identity_streams_loaded = false;
+    /// Rows in the data part. Prune windows clip `end` to this.
+    size_t part_row_count = 0;
+    /// Keeps the cached header alive so `findIdentity` can point-lookup the identity sparse index.
+    std::shared_ptr<TextIndexHeader> loaded_header;
+    /// Opened here when the caller only passed the Regular stream (skip-index reader).
+    std::unique_ptr<MergeTreeIndexReaderStream> owned_identity_dictionary_stream;
+    std::unique_ptr<MergeTreeIndexReaderStream> owned_identity_postings_stream;
+    mutable MergeTreeIndexReaderStream * identity_dictionary_stream = nullptr;
+    mutable MergeTreeIndexReaderStream * identity_postings_stream = nullptr;
+    std::unique_ptr<PostingsSerialization> identity_postings_serialization;
+    const IMergeTreeIndexCondition * identity_condition = nullptr;
+    /// Materialized identity postings. Not stored in the token `TokenToPostingsInfosMap`.
+    mutable absl::flat_hash_map<String, PostingListPtr> identity_postings;
 };
+
+/// No identity posting for `identity` means an empty posting: no row of this part is defined.
+inline const PostingList & identityPostingsOrEmpty(const MergeTreeIndexGranuleText & granule, std::string_view identity)
+{
+    static const PostingList empty;
+    const auto * found = granule.findIdentityPostings(identity);
+    return found ? *found : empty;
+}
 
 /// Text index granule created on writing of the index.
 /// It differs from MergeTreeIndexGranuleText because it
@@ -453,7 +523,8 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
         IPostingListCodec::Type posting_list_codec_type_,
         TokenToPostingsBuilderMap && tokens_map_,
         std::unique_ptr<Arena> && arena_,
-        SortedTokens && sorted_tokens_);
+        SortedTokens && sorted_tokens_,
+        TokenToPostingsBuilderMap && identity_map_);
 
     ~MergeTreeIndexGranuleTextWritable() override = default;
 
@@ -461,7 +532,7 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
     void serializeBinaryWithMultipleStreams(MergeTreeIndexOutputStreams & streams) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
 
-    bool empty() const override { return sorted_tokens.empty(); }
+    bool empty() const override { return sorted_tokens.empty() && sorted_identities.empty() && !params.defined_enabled; }
     size_t memoryUsageBytes() const override;
 
     MergeTreeIndexTextParams params;
@@ -470,6 +541,10 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
     std::unique_ptr<Arena> arena;
     /// Sorted view of tokens with their posting/position builders (non-owning; references the fields above).
     SortedTokens sorted_tokens;
+    /// Identity keys and posting builders. Separate from the token dictionary.
+    TokenToPostingsBuilderMap identity_map;
+    /// Sorted view of identities. Non-owning; references `identity_map`.
+    SortedTokens sorted_identities;
     LoggerPtr logger;
 };
 
@@ -497,6 +572,11 @@ struct MergeTreeIndexTextGranuleBuilder
 
     void incrementCurrentRow();
     void setCurrentRow(size_t row) { current_row = row; }
+    /// Records `current_row` for `identity`. The caller marks each identity at most once per row.
+    void markIdentity(std::string_view identity);
+
+    /// Inserts `key` into `map`, copying it into `arena`. `inserted` tells whether it is a new key.
+    TokenToPostingsBuilderMap::LookupResult emplaceKey(TokenToPostingsBuilderMap & map, std::string_view key, bool & inserted) const;
 
     std::unique_ptr<MergeTreeIndexGranuleTextWritable> build();
     bool empty() const { return is_empty; }
@@ -516,6 +596,8 @@ struct MergeTreeIndexTextGranuleBuilder
     TokenToPostingsBuilderMap tokens_map;
     /// Keys may be serialized into arena (see ArenaPackedStringHolder).
     std::unique_ptr<Arena> arena;
+    /// Identity posting lists. Separate from `tokens_map` so identity keys never enter the token dictionary.
+    TokenToPostingsBuilderMap identity_map;
     /// IN/NOT IN filter-only postprocessor fast path: `IN` marks dropped tokens in the map on first
     /// insertion, `NOT IN` collects postings only for the pre-seeded keep-set tokens. Non-owning.
     const MergeTreeIndexTextInlineFilter * postprocessor_drop_filter = nullptr;
@@ -580,6 +662,7 @@ public:
 
     MergeTreeIndexTextParams getParams() const { return params; }
     bool isTextIndex() const override { return true; }
+    bool isDefinedEnabled() const { return params.defined_enabled; }
 
     MergeTreeIndexSubstreams getSubstreams() const override;
     MergeTreeIndexSubstreams getPotentialSubstreams() const override;
@@ -591,6 +674,8 @@ public:
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
+    /// An empty granule still carries the identity streams, which readers of a V3 part look up.
+    bool alwaysPersistEmptyGranule() const override { return isDefinedEnabled(); }
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const override;
 
     const IPostingListCodec * getPostingListCodec() const { return posting_list_codec.get(); }

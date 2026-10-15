@@ -26,6 +26,7 @@
 #include <IO/WriteBufferFromString.h>
 
 #include <algorithm>
+#include <array>
 #include <filesystem>
 #include <fstream>
 #include <random>
@@ -3657,6 +3658,7 @@ TEST(PostingListCursorTest, TextIndexHeaderPersistsCodecType)
         .version = MergeTreeTextIndexSerializationVersion::V1_WithCodec,
         .codec_type = IPostingListCodec::Type::Bitpacking,
         .sparse_index = std::move(sparse_index),
+        .identity_sparse_index = {},
     };
 
     WriteBufferFromOwnString out;
@@ -3709,6 +3711,7 @@ TEST(PostingListCursorTest, TextIndexHeaderWriteInitialVersionOmitsCodec)
         .version = MergeTreeTextIndexSerializationVersion::V0_Initial,
         .codec_type = IPostingListCodec::Type::None,
         .sparse_index = DictionarySparseIndex(tokens->getPtr(), offsets->getPtr()),
+        .identity_sparse_index = {},
     };
 
     WriteBufferFromOwnString out_initial;
@@ -3719,6 +3722,7 @@ TEST(PostingListCursorTest, TextIndexHeaderWriteInitialVersionOmitsCodec)
         .version = MergeTreeTextIndexSerializationVersion::V1_WithCodec,
         .codec_type = IPostingListCodec::Type::None,
         .sparse_index = DictionarySparseIndex(tokens->getPtr(), offsets->getPtr()),
+        .identity_sparse_index = {},
     };
 
     WriteBufferFromOwnString out_with_codec;
@@ -3734,6 +3738,7 @@ TEST(PostingListCursorTest, TextIndexHeaderWriteInitialVersionOmitsCodec)
         .has_positions = true,
         .positions_codec = static_cast<UInt8>(TextIndexPositionCodec::Encoding::BlockedPfor),
         .sparse_index = DictionarySparseIndex(tokens->getPtr(), offsets->getPtr()),
+        .identity_sparse_index = {},
     };
 
     WriteBufferFromOwnString out_with_positions;
@@ -3749,6 +3754,7 @@ TEST(PostingListCursorTest, TextIndexHeaderWriteInitialVersionOmitsCodec)
         .version = MergeTreeTextIndexSerializationVersion::V2_WithPositions,
         .codec_type = IPostingListCodec::Type::None,
         .sparse_index = DictionarySparseIndex(tokens->getPtr(), offsets->getPtr()),
+        .identity_sparse_index = {},
     };
 
     WriteBufferFromOwnString out_no_positions;
@@ -3773,6 +3779,327 @@ TEST(PostingListCursorTest, TextIndexHeaderWriteInitialVersionOmitsCodec)
 
     EXPECT_EQ(with_positions_data.version, MergeTreeTextIndexSerializationVersion::V2_WithPositions);
     EXPECT_TRUE(with_positions_data.has_positions);
+}
+
+/// The V3 header carries the defined flag and a second sparse index over the identity dictionary.
+/// `empty_part` is a part with no rows: both sparse indexes are empty, but still serialized.
+class TextIndexHeaderV3WithIdentity : public ::testing::TestWithParam<bool>
+{
+};
+
+TEST_P(TextIndexHeaderV3WithIdentity, RoundTrip)
+{
+    const bool empty_part = GetParam();
+
+    auto tokens = ColumnString::create();
+    auto offsets = ColumnUInt64::create();
+    auto identity_tokens = ColumnString::create();
+    auto identity_offsets = ColumnUInt64::create();
+    if (!empty_part)
+    {
+        tokens->insert("delta");
+        offsets->insertValue(17);
+        identity_tokens->insert("");
+        identity_offsets->insertValue(3);
+    }
+
+    TextIndexHeader header_v2
+    {
+        .version = MergeTreeTextIndexSerializationVersion::V2_WithPositions,
+        .codec_type = IPostingListCodec::Type::None,
+        .sparse_index = DictionarySparseIndex(tokens->getPtr(), offsets->getPtr()),
+        .identity_sparse_index = {},
+    };
+
+    WriteBufferFromOwnString out_v2;
+    TextIndexSerialization::serializeHeader(header_v2, out_v2);
+
+    TextIndexHeader header_v3
+    {
+        .version = MergeTreeTextIndexSerializationVersion::V3_WithDefined,
+        .codec_type = IPostingListCodec::Type::None,
+        .has_defined = true,
+        .sparse_index = DictionarySparseIndex(tokens->getPtr(), offsets->getPtr()),
+        .identity_sparse_index = DictionarySparseIndex(identity_tokens->getPtr(), identity_offsets->getPtr()),
+    };
+
+    WriteBufferFromOwnString out_v3;
+    TextIndexSerialization::serializeHeader(header_v3, out_v3);
+
+    /// V3 adds the defined flag and a second sparse index after the token sparse index.
+    EXPECT_GT(out_v3.str().size(), out_v2.str().size());
+
+    ReadBufferFromString in(out_v3.str());
+    auto header = TextIndexSerialization::deserializeHeader(in);
+    EXPECT_EQ(header.version, MergeTreeTextIndexSerializationVersion::V3_WithDefined);
+    EXPECT_TRUE(header.has_defined);
+    EXPECT_FALSE(header.has_positions);
+    if (empty_part)
+    {
+        EXPECT_TRUE(header.sparse_index.empty());
+        EXPECT_TRUE(header.identity_sparse_index.empty());
+    }
+    else
+    {
+        EXPECT_EQ(header.sparse_index.size(), 1u);
+        EXPECT_EQ(header.sparse_index.getToken(0), "delta");
+        EXPECT_EQ(header.identity_sparse_index.size(), 1u);
+        EXPECT_EQ(header.identity_sparse_index.getToken(0), "");
+        EXPECT_EQ(header.identity_sparse_index.getOffsetInFile(0), 3u);
+    }
+
+    TextIndexHeader header_v3_without_defined
+    {
+        .version = MergeTreeTextIndexSerializationVersion::V3_WithDefined,
+        .codec_type = IPostingListCodec::Type::None,
+        .has_defined = false,
+        .sparse_index = DictionarySparseIndex(tokens->getPtr(), offsets->getPtr()),
+        .identity_sparse_index = {},
+    };
+    WriteBufferFromOwnString out_missing_defined;
+    EXPECT_THROW(TextIndexSerialization::serializeHeader(header_v3_without_defined, out_missing_defined), Exception);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    PostingListCursorTest,
+    TextIndexHeaderV3WithIdentity,
+    ::testing::Bool(),
+    ([](const ::testing::TestParamInfo<bool> & param_info) { return param_info.param ? "EmptyPart" : "WithTokens"; }));
+
+TEST(PostingListCursorTest, TextIndexIdentityPostingsAreSeparateFromTokens)
+{
+    MergeTreeIndexTextParams params;
+    params.defined_enabled = true;
+    params.dictionary_block_size = 128;
+    params.serialization_version = MergeTreeTextIndexSerializationVersion::V3_WithDefined;
+
+    MergeTreeIndexTextGranuleBuilder builder(params, nullptr, nullptr);
+
+    /// Row 0 is present as the scalar identity. Row 1 is NULL and is not marked.
+    builder.markIdentity("");
+    builder.incrementCurrentRow();
+    builder.incrementCurrentRow();
+    builder.markIdentity("key");
+    builder.incrementCurrentRow();
+
+    auto granule = builder.build();
+    /// `getGranuleAndReset` clears the builder after `build`. The empty identity is stored in the
+    /// hash table zero slot, so its posting pointer must already refer to the moved map.
+    builder.reset();
+    ASSERT_EQ(granule->sorted_tokens.size(), 0u);
+    ASSERT_EQ(granule->sorted_identities.size(), 2u);
+    EXPECT_EQ(granule->sorted_identities[0].token, "");
+    EXPECT_EQ(granule->sorted_identities[1].token, "key");
+
+    ASSERT_TRUE(granule->sorted_identities[0].postings->isInline());
+    EXPECT_EQ(granule->sorted_identities[0].postings->getInline().size, 1u);
+    EXPECT_EQ(granule->sorted_identities[0].postings->getInline().values[0], 0u);
+
+    ASSERT_TRUE(granule->sorted_identities[1].postings->isInline());
+    EXPECT_EQ(granule->sorted_identities[1].postings->getInline().size, 1u);
+    EXPECT_EQ(granule->sorted_identities[1].postings->getInline().values[0], 2u);
+
+    MergeTreeIndexTextGranuleBuilder all_null(params, nullptr, nullptr);
+    all_null.incrementCurrentRow();
+    all_null.incrementCurrentRow();
+    auto empty_identities = all_null.build();
+    EXPECT_TRUE(empty_identities->sorted_identities.empty());
+}
+
+TEST(PostingListCursorTest, TextIndexDefinedWindowUsesPostingCardinality)
+{
+    PostingList postings;
+    postings.add(0);
+    postings.add(2);
+    postings.add(5);
+
+    const auto partial = textIndexDefinedInRange(postings, 0, 4);
+    EXPECT_TRUE(partial.any_defined);
+    EXPECT_FALSE(partial.all_defined);
+
+    const auto covered = textIndexDefinedInRange(postings, 2, 3);
+    EXPECT_TRUE(covered.any_defined);
+    EXPECT_TRUE(covered.all_defined);
+
+    const auto hole = textIndexDefinedInRange(postings, 0, 3);
+    EXPECT_TRUE(hole.any_defined);
+    EXPECT_FALSE(hole.all_defined);
+
+    const auto missing = textIndexDefinedInRange(postings, 3, 5);
+    EXPECT_FALSE(missing.any_defined);
+    EXPECT_FALSE(missing.all_defined);
+
+    const auto empty_window = textIndexDefinedInRange(postings, 4, 4);
+    EXPECT_FALSE(empty_window.any_defined);
+    EXPECT_TRUE(empty_window.all_defined);
+
+    PostingList none;
+    const auto absent = textIndexDefinedInRange(none, 0, 3);
+    EXPECT_FALSE(absent.any_defined);
+    EXPECT_FALSE(absent.all_defined);
+}
+
+TEST(PostingListCursorTest, TextIndexIdentityPostingFillsNullMap)
+{
+    PostingList identity;
+    identity.add(1);
+    identity.add(3);
+    identity.add(6);
+
+    std::array<UInt8, 4> null_map{};
+    textIndexFillFromIdentityPosting(null_map, 2, false, identity);
+    EXPECT_EQ(null_map, (std::array<UInt8, 4>({1, 0, 1, 1})));
+
+    std::array<UInt8, 3> is_null{};
+    textIndexFillFromIdentityPosting(is_null, 1, false, identity);
+    EXPECT_EQ(is_null, (std::array<UInt8, 3>({0, 1, 0})));
+
+    std::array<UInt8, 3> is_not_null{};
+    textIndexFillFromIdentityPosting(is_not_null, 1, true, identity);
+    EXPECT_EQ(is_not_null, (std::array<UInt8, 3>({1, 0, 1})));
+
+    PostingList none;
+    std::array<UInt8, 2> all_null{0, 0};
+    textIndexFillFromIdentityPosting(all_null, 0, false, none);
+    EXPECT_EQ(all_null, (std::array<UInt8, 2>({1, 1})));
+}
+
+/// A header prefix the reader must refuse: the values are the varuints written before the
+/// sparse indexes.
+class TextIndexHeaderRejects : public ::testing::TestWithParam<std::vector<UInt64>>
+{
+};
+
+TEST_P(TextIndexHeaderRejects, DeserializeThrows)
+{
+    WriteBufferFromOwnString out;
+    for (UInt64 value : GetParam())
+        writeVarUInt(value, out);
+
+    ReadBufferFromString in(out.str());
+    EXPECT_THROW(TextIndexSerialization::deserializeHeader(in), Exception);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    PostingListCursorTest,
+    TextIndexHeaderRejects,
+    ::testing::Values(
+        /// version, codec, has_positions, has_defined
+        std::vector<UInt64>{3, 0, 0, 0}, /// V3 without defined
+        std::vector<UInt64>{3, 0, 0, 3}, /// V3 with `has_defined` other than 1
+        std::vector<UInt64>{4}),         /// version above V3
+    ([](const ::testing::TestParamInfo<std::vector<UInt64>> & param_info)
+    {
+        static constexpr std::array names{"V3WithoutDefined", "V3HasDefinedNotOne", "VersionAboveV3"};
+        return names[param_info.index];
+    }));
+
+TEST(PostingListCursorTest, TextIndexHeaderGoldenBytesV2AndV3)
+{
+    /// `idx_s` on String ('a','b','c') is V2; `idx_ns` on Nullable(String) (NULL, '', 'x')
+    /// is V3 with identity `""`.
+    auto v2_tokens = ColumnString::create();
+    v2_tokens->insert("a");
+    auto v2_offsets = ColumnUInt64::create();
+    v2_offsets->insertValue(0);
+    DictionarySparseIndex v2_index(v2_tokens->getPtr(), v2_offsets->getPtr());
+
+    TextIndexHeader header_v2_in
+    {
+        .version = MergeTreeTextIndexSerializationVersion::V2_WithPositions,
+        .codec_type = IPostingListCodec::Type::None,
+        .sparse_index = std::move(v2_index),
+        .identity_sparse_index = {},
+    };
+
+    WriteBufferFromOwnString out_v2;
+    TextIndexSerialization::serializeHeader(header_v2_in, out_v2);
+
+    const auto v2 = out_v2.str();
+    ASSERT_GE(v2.size(), 3u);
+    EXPECT_EQ(static_cast<UInt8>(v2[0]), 2);
+    EXPECT_EQ(static_cast<UInt8>(v2[1]), 0);
+    EXPECT_EQ(static_cast<UInt8>(v2[2]), 0);
+
+    ReadBufferFromString in_v2(v2);
+    auto header_v2 = TextIndexSerialization::deserializeHeader(in_v2);
+    EXPECT_EQ(header_v2.version, MergeTreeTextIndexSerializationVersion::V2_WithPositions);
+    EXPECT_FALSE(header_v2.has_defined);
+    EXPECT_EQ(header_v2.sparse_index.getToken(0), "a");
+
+    auto v3_tokens = ColumnString::create();
+    v3_tokens->insert("x");
+    auto v3_offsets = ColumnUInt64::create();
+    v3_offsets->insertValue(0);
+    DictionarySparseIndex v3_index(v3_tokens->getPtr(), v3_offsets->getPtr());
+
+    auto identity_tokens = ColumnString::create();
+    identity_tokens->insert("");
+    auto identity_offsets = ColumnUInt64::create();
+    identity_offsets->insertValue(0);
+    DictionarySparseIndex identity_index(identity_tokens->getPtr(), identity_offsets->getPtr());
+
+    TextIndexHeader header_v3_in
+    {
+        .version = MergeTreeTextIndexSerializationVersion::V3_WithDefined,
+        .codec_type = IPostingListCodec::Type::None,
+        .has_defined = true,
+        .sparse_index = std::move(v3_index),
+        .identity_sparse_index = std::move(identity_index),
+    };
+
+    WriteBufferFromOwnString out_v3;
+    TextIndexSerialization::serializeHeader(header_v3_in, out_v3);
+
+    const auto v3 = out_v3.str();
+    ASSERT_GE(v3.size(), 4u);
+    EXPECT_EQ(static_cast<UInt8>(v3[0]), 3);
+    EXPECT_EQ(static_cast<UInt8>(v3[1]), 0);
+    EXPECT_EQ(static_cast<UInt8>(v3[2]), 0);
+    EXPECT_EQ(static_cast<UInt8>(v3[3]), 1);
+
+    ReadBufferFromString in_v3(v3);
+    auto header_v3 = TextIndexSerialization::deserializeHeader(in_v3);
+    EXPECT_EQ(header_v3.version, MergeTreeTextIndexSerializationVersion::V3_WithDefined);
+    EXPECT_TRUE(header_v3.has_defined);
+    EXPECT_EQ(header_v3.sparse_index.getToken(0), "x");
+    EXPECT_EQ(header_v3.identity_sparse_index.getToken(0), "");
+
+    WriteBufferFromOwnString out_v2_again;
+    TextIndexSerialization::serializeHeader(header_v2, out_v2_again);
+    EXPECT_EQ(out_v2_again.str(), v2);
+
+    WriteBufferFromOwnString out_v3_again;
+    TextIndexSerialization::serializeHeader(header_v3, out_v3_again);
+    EXPECT_EQ(out_v3_again.str(), v3);
+
+    ReadBufferFromString in_v2_prefix(v2);
+    auto prefix_v2 = TextIndexSerialization::deserializeHeaderPrefix(in_v2_prefix);
+    EXPECT_EQ(prefix_v2.version, MergeTreeTextIndexSerializationVersion::V2_WithPositions);
+    EXPECT_FALSE(prefix_v2.has_defined);
+    EXPECT_TRUE(prefix_v2.sparse_index.empty());
+    EXPECT_TRUE(prefix_v2.identity_sparse_index.empty());
+
+    ReadBufferFromString in_v3_prefix(v3);
+    auto prefix_v3 = TextIndexSerialization::deserializeHeaderPrefix(in_v3_prefix);
+    EXPECT_EQ(prefix_v3.version, MergeTreeTextIndexSerializationVersion::V3_WithDefined);
+    EXPECT_TRUE(prefix_v3.has_defined);
+    EXPECT_TRUE(prefix_v3.sparse_index.empty());
+    EXPECT_TRUE(prefix_v3.identity_sparse_index.empty());
+}
+
+TEST(PostingListCursorTest, TextIndexEmptyDefinedGranuleIsNotEmpty)
+{
+    MergeTreeIndexTextParams params;
+    params.defined_enabled = true;
+    params.dictionary_block_size = 128;
+    params.serialization_version = MergeTreeTextIndexSerializationVersion::V3_WithDefined;
+
+    MergeTreeIndexTextGranuleBuilder builder(params, nullptr, nullptr);
+    auto granule = builder.build();
+    EXPECT_FALSE(granule->empty());
+    EXPECT_TRUE(granule->sorted_identities.empty());
+    EXPECT_TRUE(granule->sorted_tokens.empty());
 }
 
 // Section: row_offset beyond UInt32::max must throw — doc IDs are 32-bit, and

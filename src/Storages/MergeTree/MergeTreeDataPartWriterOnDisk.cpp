@@ -441,7 +441,7 @@ void MergeTreeDataPartWriterOnDisk::fillSkipIndicesChecksums(MergeTreeData::Data
 {
     for (size_t i = 0; i < skip_indices.size(); ++i)
     {
-        if (!skip_indices_aggregators[i]->empty())
+        if (!skip_indices_aggregators[i]->empty() || skip_indices[i]->alwaysPersistEmptyGranule())
         {
             auto & index_streams = skip_indices_streams[i];
             auto index_granule = skip_indices_aggregators[i]->getGranuleAndReset();

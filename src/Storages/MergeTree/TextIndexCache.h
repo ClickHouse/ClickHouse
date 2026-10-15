@@ -121,7 +121,7 @@ struct TextIndexHeaderWeightFunction
 {
     size_t operator()(const TextIndexHeader & header) const
     {
-        return header.sparse_index.memoryUsageBytes();
+        return header.sparse_index.memoryUsageBytes() + header.identity_sparse_index.memoryUsageBytes();
     }
 };
 
@@ -157,7 +157,11 @@ enum class TextIndexPostingsCacheKind : UInt8
 {
     Roaring = 0,
     Segment = 1,
+    /// 2 is unused (do not reuse: older cache dumps / comments may still mention it).
     Phrase = 3, /// phrase-search result, a sorted array of doc ids
+    /// Identity postings live in `.idt.pst` and may reuse a token-file offset.
+    /// `TextIndexPostingsCache::hash` mixes this kind in, so `""` cannot collide with a token slot.
+    IdentityDefined = 4,
 };
 
 /// A single cell of TextIndexPostingsCache. It holds one of:

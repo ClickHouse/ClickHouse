@@ -150,6 +150,13 @@ enum class ExecuteTTLType : uint8_t
     RECALCULATE= 2,
 };
 
+/// Every substream suffix and index file extension a skip index can write. Mutation needs the union
+/// to tell a file owned by a surviving index from one belonging to an index being dropped; claiming
+/// a suffix or extension no index type writes would only ever match a file of the dropped index.
+const std::array<String, 6> all_index_substream_suffixes
+    = {"", ".dct", ".pst", ".pos", textIndexIdentityDictionarySubstream().suffix, textIndexIdentityPostingsSubstream().suffix};
+const std::array<String, 2> all_index_extensions = {".idx2", ".idx"};
+
 namespace MutationHelpers
 {
 
@@ -1806,8 +1813,6 @@ static NameToNameVector collectFilesForRenames(
     /// Ownership must come from each surviving index's own `getSubstreams`, and only for the
     /// extension that substream declares: claiming a substream or extension the type does not write
     /// would protect, and so leak, a file of the index being dropped.
-    static const std::array<String, 4> owned_substream_suffixes = {"", ".dct", ".pst", ".pos"};
-    static const std::array<String, 2> owned_index_extensions = {".idx2", ".idx"};
 
     NameSet surviving_index_owned_files;
     {
@@ -1850,9 +1855,9 @@ static NameToNameVector collectFilesForRenames(
         {
             /// The index type is gone from metadata by now, so enumerate every suffix any skip
             /// index can own (positional text adds `.pos` to `.dct`/`.pst`) and both minmax extensions.
-            for (const auto & substream : owned_substream_suffixes)
+            for (const auto & substream : all_index_substream_suffixes)
             {
-                for (const auto & extension : owned_index_extensions)
+                for (const auto & extension : all_index_extensions)
                 {
                     const String index_filename = getIndexFileName(command.column_name, metadata_snapshot->escape_index_filenames);
                     const String stream_name = index_filename + substream;
@@ -4484,8 +4489,6 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
         /// all skip-index types. This both detects archive_dirty for drop-only mutations and yields
         /// the exact in-archive filenames the filter must remove (avoiding a prefix collision when
         /// two indices share a getIndexFileName prefix, e.g. `a` and `a.b` with `escape_index_filenames` = 0).
-        static const std::array<String, 4> known_substream_suffixes = {"", ".dct", ".pst", ".pos"};
-        static const std::array<String, 2> known_index_extensions = {".idx2", ".idx"};
         const bool escape_filenames = ctx->metadata_snapshot->escape_index_filenames;
 
         /// Exact in-archive filenames owned by the surviving indices, so a speculative suffix never
@@ -4521,9 +4524,9 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
         for (const auto & idx_name : ctx->indices_to_drop_names)
         {
             const String idx_file_name = getIndexFileName(idx_name, escape_filenames);
-            for (const auto & sub : known_substream_suffixes)
+            for (const auto & sub : all_index_substream_suffixes)
             {
-                for (const auto & ext : known_index_extensions)
+                for (const auto & ext : all_index_extensions)
                 {
                     const String candidate = idx_file_name + sub + ext;
                     if (surviving_index_owned_files.contains(candidate))

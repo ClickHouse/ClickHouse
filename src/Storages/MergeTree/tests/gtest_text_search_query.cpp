@@ -38,3 +38,14 @@ TEST(TextSearchQuery, hashDistinguishesAnchoredLiterals)
     /// The same pattern still hashes the same, otherwise the cache would never hit.
     EXPECT_EQ(prefix, hashOfPattern("^lit"));
 }
+
+TEST(TextSearchQuery, hashIncludesIdentity)
+{
+    TextSearchQuery scalar("hasToken", TextSearchMode::All, TextIndexDirectReadMode::Exact, {"a"});
+    TextSearchQuery key("hasToken", TextSearchMode::All, TextIndexDirectReadMode::Exact, {"a"}, {}, {}, "k");
+
+    EXPECT_EQ(scalar.getIdentity(), "");
+    EXPECT_EQ(key.getIdentity(), "k");
+    EXPECT_NE(scalar.getHash(), key.getHash());
+    EXPECT_EQ(scalar.getHash(), (TextSearchQuery("hasToken", TextSearchMode::All, TextIndexDirectReadMode::Exact, {"a"}).getHash()));
+}

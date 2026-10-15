@@ -1,0 +1,54 @@
+bitpacking isNull indexed
+8
+9
+10
+11
+12
+13
+14
+15
+bitpacking isNull scan
+8
+9
+10
+11
+12
+13
+14
+15
+bitpacking isNotNull indexed
+0
+1
+2
+3
+4
+5
+6
+7
+16
+bitpacking isNotNull scan
+0
+1
+2
+3
+4
+5
+6
+7
+16
+bitpacking tail isNotNull indexed
+16
+bitpacking tail isNotNull scan
+16
+fixed isNull indexed
+1
+fixed isNull scan
+1
+fixed isNotNull indexed
+0
+2
+3
+fixed isNotNull scan
+0
+2
+3

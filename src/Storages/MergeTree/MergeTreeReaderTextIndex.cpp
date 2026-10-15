@@ -16,6 +16,8 @@
 #include <Common/logger_useful.h>
 #include <Common/Stopwatch.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnNullable.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <Core/Settings.h>
 
@@ -51,6 +53,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+
 MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
     const IMergeTreeReader * main_reader_,
     IndexReadTask index_read_task_,
@@ -76,7 +79,8 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
 
     for (const auto & column : columns_)
     {
-        if (!column.name.starts_with(TEXT_INDEX_VIRTUAL_COLUMN_PREFIX) || !WhichDataType(column.type).isUInt8())
+        if (!column.name.starts_with(TEXT_INDEX_VIRTUAL_COLUMN_PREFIX)
+            || !WhichDataType(removeNullable(column.type)).isUInt8())
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Column {} with type {} should not be filled by text index reader",
@@ -90,9 +94,26 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
         search_queries.push_back(task_column_it->search_query);
     }
 
+    classifyColumnKinds();
+
     auto data_part = getDataPart();
     auto index_format = index_read_task.index.index->getDeserializedFormat(*data_part, index_read_task.index.index->getFileName());
-    chassert(index_format);
+    if (!index_format)
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Text index {} is not materialized in part {}. It must have been checked at plan time",
+            index_read_task.index.index->index.name,
+            data_part->name);
+    }
+    const auto * identity_dictionary_substream = findSubstream(index_format.substreams, MergeTreeIndexSubstream::Type::TextIndexIdentityDictionary);
+    const auto * identity_postings_substream = findSubstream(index_format.substreams, MergeTreeIndexSubstream::Type::TextIndexIdentityPostings);
+    if ((identity_dictionary_substream == nullptr) != (identity_postings_substream == nullptr))
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Text index identity streams must be present together");
+    part_has_identity_streams = identity_dictionary_substream != nullptr;
+
+    needs_identity_streams = std::ranges::any_of(result_is_nullable, [](bool value) { return value; })
+        || std::ranges::any_of(query_is_null_check, [](bool value) { return value; });
 
     MergeTreeIndexDeserializationState state
     {
@@ -103,6 +124,7 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
         .readable_ranges = nullptr,
         .text_index_read_postings = true,
         .reader_settings = settings,
+        .load_identity_streams = needs_identity_streams,
     };
 
     deserialization_state = std::make_unique<MergeTreeIndexDeserializationState>(std::move(state));
@@ -114,7 +136,11 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
     lazy_mode_requested = (apply_mode == TextIndexPostingListApplyMode::Lazy);
     intersection_algorithm = ctx_settings[Setting::text_index_postings_intersection_algorithm].value;
 
-    if (index_granule_)
+    /// A granule handed in by the caller is shared by every read task of this part, but looking up
+    /// identity postings mutates the granule: it seeks the granule's identity stream and caches the
+    /// decoded postings in it. A reader that needs identity must therefore own its granule, which
+    /// `readRows` builds through `readGranule()` (the same path used when no granule was precomputed).
+    if (index_granule_ && !needs_identity_streams)
         setIndexGranule(std::move(index_granule_));
 
     initializeFallbackReader(main_reader_);
@@ -145,15 +171,22 @@ void MergeTreeReaderTextIndex::initializeFallbackReader(const IMergeTreeReader *
     /// - Phrase queries (hasPhrase with Exact mode): fallback when estimated cardinality is too high
     ///   and reading position data would be slower than evaluating directly.
     /// Only exact direct read needs it: a hint keeps the original predicate, so it can just be always true.
-    auto needs_fallback_for_query = [](const auto & search_query)
+    auto needs_fallback_for_query = [&](size_t column_idx, const auto & search_query)
     {
         if (!search_query || search_query->getDirectReadMode() != TextIndexDirectReadMode::Exact)
             return false;
 
+        if (query_is_null_check[column_idx] || result_is_nullable[column_idx])
+            return !part_has_identity_streams;
+
         return !search_query->getPatterns().empty() || search_query->getSearchMode() == TextSearchMode::Phrase;
     };
 
-    if (std::ranges::none_of(search_queries, needs_fallback_for_query))
+    bool needs_fallback = false;
+    for (size_t i = 0; i < search_queries.size(); ++i)
+        needs_fallback |= needs_fallback_for_query(i, search_queries[i]);
+
+    if (!needs_fallback)
         return;
 
     /// Build a fallback evaluation path. Compile each virtual column's default expression
@@ -177,7 +210,7 @@ void MergeTreeReaderTextIndex::initializeFallbackReader(const IMergeTreeReader *
     {
         const auto & column = columns_to_read[i];
         const auto & search_query = search_queries[i];
-        if (!needs_fallback_for_query(search_query))
+        if (!needs_fallback_for_query(i, search_query))
             continue;
 
         /// Compile the virtual column's default expression (the original search predicate).
@@ -268,28 +301,67 @@ MergeTreeDataPartPtr MergeTreeReaderTextIndex::getDataPart() const
 
 void MergeTreeReaderTextIndex::readGranule()
 {
-    auto substreams = index_read_task.index.index->getSubstreams();
     auto data_part = getDataPart();
+    auto physical_format = index_read_task.index.index->getDeserializedFormat(*data_part, index_read_task.index.index->getFileName());
+    if (!physical_format)
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Text index {} is not materialized in part {}. It must have been checked at plan time",
+            index_read_task.index.index->index.name,
+            data_part->name);
+    }
 
     LOG_TRACE(getLogger("MergeTreeReaderTextIndex"), "Reading text index granule for data part '{}'", data_part->getDataPartStorage().getFullPath());
 
-    auto sparse_index_stream = makeTextIndexInputStream(*data_part_info_for_read, index_read_task.index.index->getFileName(), substreams[0], settings, /*expected_buffer_size=*/ std::nullopt);
-    sparse_index_stream->seekToStart();
+    auto streams_holder = openTextIndexInputStreams(
+        *data_part_info_for_read,
+        index_read_task.index.index->getFileName(),
+        physical_format.substreams,
+        deserialization_state->load_identity_streams,
+        settings);
+
     resetCursors();
 
     /// The analysis opens the dictionary and postings streams itself.
-    MergeTreeIndexInputStreams streams;
-    streams[MergeTreeIndexSubstream::Type::Regular] = sparse_index_stream.get();
+    auto streams = streams_holder.toInputStreams();
 
     auto granule_ptr = index_read_task.index.index->createIndexGranule();
     granule_ptr->deserializeBinaryWithMultipleStreams(streams, *deserialization_state);
     setIndexGranule(std::move(granule_ptr));
+
+    /// Granule identity lookups keep raw pointers into these streams.
+    identity_dictionary_stream = std::move(streams_holder.identity_dictionary);
+    identity_postings_stream = std::move(streams_holder.identity_postings);
+}
+
+void MergeTreeReaderTextIndex::classifyColumnKinds()
+{
+    result_is_nullable.assign(columns_to_read.size(), false);
+    query_is_null_check.assign(columns_to_read.size(), false);
+
+    for (size_t i = 0; i < columns_to_read.size(); ++i)
+    {
+        result_is_nullable[i] = isNullableOrLowCardinalityNullable(columns_to_read[i].type);
+        if (result_is_nullable[i] && !WhichDataType(removeNullable(columns_to_read[i].type)).isUInt8())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Nullable text index virtual column {} has unsupported type {}",
+                columns_to_read[i].name, columns_to_read[i].type->getName());
+
+        query_is_null_check[i] = search_queries[i] && search_queries[i]->isNullCheck();
+    }
 }
 
 void MergeTreeReaderTextIndex::classifyVirtualColumns()
 {
     is_always_true.resize(columns_to_read.size(), false);
     use_fallback.resize(columns_to_read.size(), false);
+
+    /// The classification is done once in the constructor (needed for fallback setup) and stays
+    /// valid for the reader's lifetime.
+    /// Defined virtual columns are `UInt8` with an empty token list. Lazy apply would
+    /// treat that as "no cursors" and fill zeros, so `isNotNull` would drop every row.
+    if (needs_identity_streams)
+        use_lazy_mode = false;
 
     const auto & analyzer = granule->getAnalyzer();
 
@@ -299,18 +371,51 @@ void MergeTreeReaderTextIndex::classifyVirtualColumns()
         const auto & search_query = search_queries[i];
         const auto & query_builder = analyzer.getQueryBuilder(*search_query);
 
+        /// V2 nullable `hasToken` has no identity streams. Filling `Nullable(UInt8)` from an
+        /// empty identity posting makes every row NULL, so `NOT hasToken` drops the whole part.
+        /// Evaluate the original predicate on the physical column instead.
+        if (!part_has_identity_streams
+            && search_query->getDirectReadMode() == TextIndexDirectReadMode::Exact
+            && (result_is_nullable[i] || query_is_null_check[i]))
+        {
+            if (!fallback_reader || !fallback_expressions.contains(column.name))
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "The fallback reader or expression for nullable virtual column '{}' is not initialized", column.name);
+            }
+
+            use_fallback[i] = true;
+            continue;
+        }
+
+        /// The null map and the `isNull` / `isNotNull` values are filled from the identity postings of
+        /// the granule, not from the part's files. A granule deserialized without them yields an empty
+        /// posting, which would make every row NULL and silently drop the whole part, so the branch
+        /// above must have claimed this column before it gets here.
+        if (search_query->getDirectReadMode() == TextIndexDirectReadMode::Exact
+            && (result_is_nullable[i] || query_is_null_check[i])
+            && !granule->hasIdentityStreams())
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Text index {} has no identity streams in the granule of the current part, but virtual column '{}' needs them",
+                index_read_task.index.index->index.name, column.name);
+        }
+
         if (search_query->getTokens().empty() && search_query->getPatterns().empty())
         {
             /// Token and phrase searches with no search tokens never match (row-level returns 0, e.g. when a
             /// postprocessor maps every needle token to empty). Encode this as an explicit no-match so direct
             /// read agrees with the row-scan path; otherwise an always-true virtual column would wrongly keep
             /// all rows once granule pruning cannot mask it (e.g. under OR).
+            if (query_is_null_check[i])
+                continue;
+
             if (search_query->getFunctionName() == "hasAnyTokens" || search_query->getFunctionName() == "hasAllTokens"
                 || search_query->getSearchMode() == TextSearchMode::Phrase)
                 continue;
 
-            /// Always return true for empty needles.
-            is_always_true[i] = true;
+            /// A nullable result is not constant: absent rows remain NULL.
+            is_always_true[i] = !result_is_nullable[i];
         }
         else if (query_builder.is_failed)
         {
@@ -386,7 +491,7 @@ void MergeTreeReaderTextIndex::initializePositionsStream()
     const auto & data_part = getDataPart();
 
     auto index_format = index_read_task.index.index->getDeserializedFormat(*data_part, index_read_task.index.index->getFileName());
-    if (index_format.version != 2)
+    if (index_format.version < static_cast<MergeTreeIndexVersion>(MergeTreeTextIndexSerializationVersion::V2_WithPositions))
         return;
 
     const auto positions_substream = std::ranges::find_if(
@@ -394,7 +499,7 @@ void MergeTreeReaderTextIndex::initializePositionsStream()
         [](const auto & substream) { return substream.type == MergeTreeIndexSubstream::Type::TextIndexPositions; });
 
     if (positions_substream == index_format.substreams.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index format V2 has no positions substream for index `{}`", index_read_task.index.index->index.name);
+        return;
 
     positions_stream = makeTextIndexInputStream(
         *data_part_info_for_read,
@@ -517,7 +622,7 @@ size_t MergeTreeReaderTextIndex::readRows(
                 auto & column_data = assert_cast<ColumnUInt8 &>(column_mutable).getData();
                 column_data.resize_fill(column_mutable.size() + rows_to_read, 1);
             }
-            else if (use_fallback[i] && !fallback_block.empty())
+            else if (use_fallback[i] && fallback_block.columns() == fallback_columns_list.size())
             {
                 fillColumnFallback(
                     column_mutable,
@@ -538,7 +643,30 @@ size_t MergeTreeReaderTextIndex::readRows(
             }
             else
             {
-                fillColumn(column_mutable, mark_postings[i], from_row, rows_to_read);
+                if (query_is_null_check[i])
+                {
+                    fillDefinedColumn(
+                        column_mutable,
+                        from_row,
+                        rows_to_read,
+                        search_queries[i]->getFunctionName() == "isNotNull",
+                        search_queries[i]->getIdentity());
+                }
+                else if (result_is_nullable[i])
+                {
+                    /// An empty needle is not the scalar identity `""`: every present row matches.
+                    const bool empty_needle = search_queries[i]->getTokens().empty() && search_queries[i]->getPatterns().empty();
+                    fillNullableColumn(
+                        column_mutable,
+                        empty_needle ? nullptr : &mark_postings[i],
+                        from_row,
+                        rows_to_read,
+                        search_queries[i]->getIdentity());
+                }
+                else
+                {
+                    fillColumn(column_mutable, mark_postings[i], from_row, rows_to_read);
+                }
             }
         }
 
@@ -775,6 +903,53 @@ void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const PostingList & 
         chassert(relative_row_number < num_rows);
         column_data[old_size + relative_row_number] = 1;
     }
+}
+
+void MergeTreeReaderTextIndex::fillNullableColumn(
+    IColumn & column,
+    const PostingList * postings,
+    size_t row_offset,
+    size_t num_rows,
+    std::string_view identity)
+{
+    auto & nullable_column = assert_cast<ColumnNullable &>(column);
+    const PostingList & identity_postings = identityPostingsOrEmpty(*granule, identity);
+
+    if (postings)
+    {
+        PostingList nested = *postings;
+        nested &= identity_postings;
+        fillColumn(nullable_column.getNestedColumn(), nested, row_offset, num_rows);
+    }
+    else
+    {
+        /// Empty needle: every present row is a match. Avoid building a full-range posting list
+        /// just to set every nested value to 1.
+        auto & nested_data = assert_cast<ColumnUInt8 &>(nullable_column.getNestedColumn()).getData();
+        nested_data.resize_fill(nested_data.size() + num_rows, 1);
+    }
+
+    auto & null_map = nullable_column.getNullMapData();
+    const size_t old_size = null_map.size();
+    null_map.resize(old_size + num_rows);
+    /// Absent rows are NULL. Present rows keep the nested value.
+    textIndexFillFromIdentityPosting(std::span<UInt8>(null_map.data() + old_size, num_rows), row_offset, false, identity_postings);
+}
+
+void MergeTreeReaderTextIndex::fillDefinedColumn(
+    IColumn & column, size_t row_offset, size_t num_rows, bool value_when_defined, std::string_view identity)
+{
+    /// Identity postings are part-wide. Clip them to the read window; `fillColumn` requires
+    /// that every row id already lies in `[row_offset, row_offset + num_rows)`.
+    const PostingList & identity_postings = identityPostingsOrEmpty(*granule, identity);
+    auto & column_data = assert_cast<ColumnUInt8 &>(column).getData();
+    const size_t old_size = column_data.size();
+    column_data.resize(old_size + num_rows);
+    textIndexFillFromIdentityPosting(
+        std::span<UInt8>(column_data.data() + old_size, num_rows),
+        row_offset,
+        value_when_defined,
+        identity_postings);
 }
 
 MergeTreeReaderTextIndex::ResolvedSearch MergeTreeReaderTextIndex::resolveSearch(size_t column_idx)
@@ -1162,17 +1337,19 @@ void MergeTreeReaderTextIndex::fillColumnFallback(
     /// The predicate result can be sparse/const (inputs may be sparse), so make it full before the dense cast.
     const auto & result_col = slice.getByName(column_name);
     auto result_full = result_col.column->convertToFullIfWrapped();
-    const auto & result_data = assert_cast<const ColumnUInt8 &>(*result_full).getData();
-    chassert(result_data.size() == num_rows);
+    chassert(result_full->size() == num_rows);
 
-    auto & column_data = assert_cast<ColumnUInt8 &>(column).getData();
-    const size_t old_size = column_data.size();
-    column_data.resize(old_size + num_rows);
-    memcpy(&column_data[old_size], result_data.data(), num_rows);
+    column.insertRangeFrom(*result_full, 0, num_rows);
 }
 
 void MergeTreeReaderTextIndex::setPrecomputedGranule(const IndexGranulesMap & granules)
 {
+    /// See the constructor: a precomputed granule is shared by every read task of the part, so it may
+    /// be reused only by a reader that never touches identity postings. Otherwise `readGranule()`
+    /// deserializes a private granule with the identity streams loaded.
+    if (needs_identity_streams)
+        return;
+
     auto it = granules.find(index_read_task.index.index->index.name);
 
     if (it != granules.end() && it->second)

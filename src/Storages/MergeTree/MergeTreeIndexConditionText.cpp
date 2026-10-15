@@ -3,7 +3,10 @@
 #include "config.h"
 
 #include <algorithm>
+#include <limits>
+#include <optional>
 #include <set>
+#include <unordered_set>
 #include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/OptimizedRegularExpression.h>
@@ -73,13 +76,17 @@ TextSearchQuery::TextSearchQuery(
     TextIndexDirectReadMode direct_read_mode_,
     VectorWithMemoryTracking<String> tokens_,
     std::vector<OptimizedRegularExpression> patterns_,
-    VectorWithMemoryTracking<String> phrase_tokens_)
+    VectorWithMemoryTracking<String> phrase_tokens_,
+    String identity_,
+    bool identity_preserves_null_)
     : function_name(std::move(function_name_))
     , search_mode(search_mode_)
     , direct_read_mode(direct_read_mode_)
     , tokens(std::move(tokens_))
     , patterns(std::move(patterns_))
     , phrase_tokens(std::move(phrase_tokens_))
+    , identity(std::move(identity_))
+    , identity_preserves_null(identity_preserves_null_)
 {
     std::sort(tokens.begin(), tokens.end());
     initializeHash();
@@ -91,6 +98,8 @@ void TextSearchQuery::initializeHash()
     hash_state.update(function_name);
     hash_state.update(search_mode);
     hash_state.update(direct_read_mode);
+    hash_state.update(identity.size());
+    hash_state.update(identity);
 
     hash_state.update(tokens.size());
     for (const auto & token : tokens)
@@ -189,6 +198,7 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     MergeTreeIndexTextPreprocessorPtr preprocessor_,
     MergeTreeIndexTextPostprocessorPtr postprocessor_,
     bool has_positions_,
+    bool defined_enabled_,
     NameSet columns_shadowing_map_subcolumns_,
     JSONIndexArgumentTypes json_argument_types_)
     : WithContext(context_)
@@ -205,6 +215,7 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     , postprocessor(postprocessor_)
     , has_postprocessor(postprocessor && postprocessor->hasActions())
     , has_positions(has_positions_)
+    , defined_enabled(defined_enabled_)
 {
     if (!predicate)
     {
@@ -301,6 +312,8 @@ bool MergeTreeIndexConditionText::requiresReadingAllTokens(const RPNElement & el
         case RPNElement::FUNCTION_UNKNOWN:
         case RPNElement::ALWAYS_TRUE:
         case RPNElement::ALWAYS_FALSE:
+        case RPNElement::FUNCTION_IS_NULL:
+        case RPNElement::FUNCTION_IS_NOT_NULL:
         {
             return false;
         }
@@ -314,6 +327,8 @@ bool MergeTreeIndexConditionText::requiresReadingAllTokens(const RPNElement & el
 bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_name)
 {
     return function_name == "hasToken"
+        || function_name == "isNull"
+        || function_name == "isNotNull"
         || function_name == "hasAnyTokens"
         || function_name == "hasAllTokens"
         || function_name == "hasPhrase"
@@ -381,6 +396,13 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
         || function_name == "hasAllTokens")
     {
         return TextIndexDirectReadMode::Exact;
+    }
+
+    if (isNullCheckFunction(function_name))
+    {
+        /// Definition-level Exact. A V2 part has no identity streams; `MergeTreeReaderTextIndex`
+        /// evaluates the original predicate on the physical column instead of filling from identity.
+        return defined_enabled ? TextIndexDirectReadMode::Exact : TextIndexDirectReadMode::None;
     }
 
     if (function_name == "hasPhrase")
@@ -473,11 +495,32 @@ bool MergeTreeIndexConditionText::alwaysUnknownOrTrue() const
          RPNElement::FUNCTION_HAS_ALL_TOKENS,
          RPNElement::FUNCTION_HAS_PHRASE,
          RPNElement::FUNCTION_LIKE,
+         RPNElement::FUNCTION_IS_NULL,
+         RPNElement::FUNCTION_IS_NOT_NULL,
          RPNElement::FUNCTION_HAS_ANY_ELEMENTS});
 }
 
 namespace
 {
+
+/// True if `node` or any node below it is a conversion that drops `Nullable` (e.g. `CAST(s, 'String')`).
+/// Such a conversion throws on NULL, so rows it would throw for must still be read and evaluated.
+bool dropsNullableInSubtree(const ActionsDAG::Node * node, std::unordered_set<const ActionsDAG::Node *> & visited)
+{
+    if (!node || !visited.emplace(node).second)
+        return false;
+
+    if (unwrapLosslessConversion(node, /*allow_drop_nullable=*/ false) != unwrapLosslessConversion(node))
+        return true;
+
+    for (const auto * child : node->children)
+    {
+        if (dropsNullableInSubtree(child, visited))
+            return true;
+    }
+
+    return false;
+}
 
 /// Returns whether a text search query may match some row in current_range,
 /// given the per-granule analysis state of the query (query_builder).
@@ -556,6 +599,56 @@ bool hasAllTokensInRange(const TextSearchQuery & query, const TextIndexAnalyzer:
     return queryMayBeTrueInRange(query_builder, current_range, TextSearchMode::All);
 }
 
+std::pair<size_t, size_t> clippedDefinedWindow(const MergeTreeIndexGranuleText & granule)
+{
+    const auto & current = granule.getCurrentRange();
+    if (!current.has_value())
+        return {0, 0};
+
+    size_t begin = current->begin;
+    size_t exclusive_end = current->end;
+    if (exclusive_end < std::numeric_limits<size_t>::max())
+        ++exclusive_end;
+    exclusive_end = std::min(exclusive_end, granule.getPartRowCount());
+    return {begin, exclusive_end};
+}
+
+std::optional<BoolMask> hasTokenDefinedMask(
+    const MergeTreeIndexGranuleText & granule,
+    const TextSearchQuery & query,
+    const TextIndexAnalyzer::QueryBuilder & query_builder,
+    bool negated)
+{
+    if (!granule.hasIdentityStreams() || query.getFunctionName() != "hasToken")
+        return std::nullopt;
+
+    /// A conversion that drops `Nullable` throws on NULL. The identity posting must not prune
+    /// that granule: the row-level predicate still needs to execute to preserve the exception.
+    if (!query.identityPreservesNull())
+        return std::nullopt;
+
+    const auto [begin, end] = clippedDefinedWindow(granule);
+    if (begin >= end)
+        return BoolMask(false, true);
+
+    if (query_builder.is_analysis_incomplete || query_builder.is_bypassed)
+        return BoolMask(true, true);
+
+    uint64_t token_count = 0;
+    if (!query_builder.is_failed && query_builder.postings.has_value())
+        token_count = textIndexPostingCountInRange(*query_builder.postings, begin, end);
+
+    /// Token postings never contain NULL rows, so `can_be_true` is token presence.
+    /// Positive `hasToken` leaves `can_be_false` unknown: computing it needs the
+    /// defined posting, which is often dense when few rows are NULL.
+    if (!negated)
+        return BoolMask(token_count > 0, true);
+
+    const uint64_t defined_count
+        = textIndexPostingCountInRange(identityPostingsOrEmpty(granule, query.getIdentity()), begin, end);
+    return BoolMask(defined_count > token_count, token_count > 0);
+}
+
 }
 
 bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const
@@ -570,8 +663,9 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
     /// Check like in KeyCondition.
     absl::InlinedVector<BoolMask, 8> rpn_stack;
     size_t element_idx = 0;
-    for (const auto & element : rpn)
+    for (size_t rpn_i = 0; rpn_i < rpn.size(); ++rpn_i)
     {
+        const auto & element = rpn[rpn_i];
         if (element.function == RPNElement::FUNCTION_UNKNOWN)
         {
             rpn_stack.emplace_back(true, true);
@@ -616,8 +710,13 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
             chassert(element.text_search_queries.size() == 1);
             const auto & text_search_query = element.text_search_queries.front();
             const auto & query_builder = analyzer.getQueryBuilder(*text_search_query);
-            bool exists_in_granule = hasAllTokensOrEmptyInRange(*text_search_query, query_builder, current_range);
-            rpn_stack.emplace_back(exists_in_granule, true);
+            if (auto mask = hasTokenDefinedMask(*granule, *text_search_query, query_builder, /*negated=*/ false))
+                rpn_stack.push_back(*mask);
+            else
+            {
+                bool exists_in_granule = hasAllTokensOrEmptyInRange(*text_search_query, query_builder, current_range);
+                rpn_stack.emplace_back(exists_in_granule, true);
+            }
         }
         else if (element.function == RPNElement::FUNCTION_HAS_ANY_ELEMENTS)
         {
@@ -637,9 +736,52 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
 
             rpn_stack.emplace_back(exists_in_granule, true);
         }
+        else if (element.function == RPNElement::FUNCTION_IS_NULL
+            || element.function == RPNElement::FUNCTION_IS_NOT_NULL)
+        {
+            const auto & current = granule->getCurrentRange();
+            const auto * query = element.text_search_queries.empty() ? nullptr : element.text_search_queries.front().get();
+            /// Parts without identity streams cannot tell NULL from an empty string.
+            if (!granule->hasIdentityStreams() || !current.has_value() || !query)
+            {
+                rpn_stack.emplace_back(true, true);
+            }
+            else
+            {
+                /// `RowsRange` is closed. Clip the exclusive end to the part row count.
+                const auto [begin, end] = clippedDefinedWindow(*granule);
+                const auto window = textIndexDefinedInRange(
+                    identityPostingsOrEmpty(*granule, query->getIdentity()), begin, end);
+                const bool is_null = element.function == RPNElement::FUNCTION_IS_NULL;
+                rpn_stack.emplace_back(
+                    is_null ? !window.all_defined : window.any_defined,
+                    is_null ? window.any_defined : !window.all_defined);
+            }
+        }
         else if (element.function == RPNElement::FUNCTION_NOT)
         {
-            rpn_stack.back() = !rpn_stack.back();
+            bool replaced = false;
+            if (rpn_i > 0)
+            {
+                const auto & prev = rpn[rpn_i - 1];
+                if (prev.function == RPNElement::FUNCTION_EQUALS && !prev.text_search_queries.empty())
+                {
+                    const auto & prev_query = *prev.text_search_queries.front();
+                    const auto & prev_builder = analyzer.getQueryBuilder(prev_query);
+                    /// `NOT` over a conversion that drops `Nullable` is true for the NULL rows, and
+                    /// evaluating those rows is what raises the exception. Answering the negation
+                    /// from the index would skip them and silently return the wrong result.
+                    if (prev.drops_nullable)
+                        rpn_stack.back() = BoolMask(true, true);
+                    else if (auto mask = hasTokenDefinedMask(*granule, prev_query, prev_builder, /*negated=*/ true))
+                    {
+                        rpn_stack.back() = *mask;
+                        replaced = true;
+                    }
+                }
+            }
+            if (!replaced)
+                rpn_stack.back() = !rpn_stack.back();
         }
         else if (element.function == RPNElement::FUNCTION_AND)
         {
@@ -703,9 +845,69 @@ std::string MergeTreeIndexConditionText::getDescription() const
     return description;
 }
 
+bool MergeTreeIndexConditionText::needsIdentityStreams() const
+{
+    if (!defined_enabled)
+        return false;
+
+    for (size_t i = 0; i < rpn.size(); ++i)
+    {
+        const auto function = rpn[i].function;
+        if (function == RPNElement::FUNCTION_IS_NULL || function == RPNElement::FUNCTION_IS_NOT_NULL)
+            return true;
+
+        if (function == RPNElement::FUNCTION_NOT && i > 0 && rpn[i - 1].function == RPNElement::FUNCTION_EQUALS)
+            return true;
+    }
+
+    return false;
+}
+
 bool MergeTreeIndexConditionText::hasSearchPatterns() const
 {
     return std::ranges::any_of(all_search_queries, [](const auto & query) { return !query.second->getPatterns().empty(); });
+}
+
+bool MergeTreeIndexConditionText::isHasTokenOnIndexedNullableColumn(const RPNBuilderTreeNode & node) const
+{
+    if (!defined_enabled || has_preprocessor || has_postprocessor)
+        return false;
+
+    const auto function = node.toFunctionNodeOrNull();
+    if (!function)
+        return false;
+
+    /// Only `hasToken`. `hasTokenOrNull` can be NULL for an ill-formed needle on a defined row.
+    /// `hasAllTokens` / `hasAnyTokens` / `hasPhrase` are not three-state in this version.
+    /// `function_base->getName()` is the registered name, so aliases already canonicalize here.
+    if (function->getFunctionName() != "hasToken")
+        return false;
+
+    if (function->getArgumentsSize() < 1)
+        return false;
+
+    const auto haystack = unwrapLosslessConversion(function->getArgumentAt(0));
+    if (!hasIndexForColumn(haystack.getColumnName()))
+        return false;
+
+    const auto * haystack_dag = haystack.getDAGNode();
+    if (!haystack_dag || !haystack_dag->result_type
+        || !isNullableOrLowCardinalityNullable(haystack_dag->result_type))
+        return false;
+
+    /// `hasToken` propagates NULL from every argument. A NULL needle makes the result NULL for a
+    /// defined row too, so `hasToken(...) IS NULL` is no longer equivalent to `haystack IS NULL`
+    /// and must not be answered from the defined window.
+    if (function->getArgumentsSize() >= 2)
+    {
+        /// Do not unwrap a conversion that drops `Nullable`: it would hide a nullable needle.
+        const auto needle = unwrapLosslessConversion(function->getArgumentAt(1), /*allow_drop_nullable=*/ false);
+        const auto * needle_dag = needle.getDAGNode();
+        if (!needle_dag || !needle_dag->result_type || isNullableOrLowCardinalityNullable(needle_dag->result_type))
+            return false;
+    }
+
+    return true;
 }
 
 bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & node, RPNElement & out) const
@@ -743,11 +945,53 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
         auto function_name = function.getFunctionName();
         size_t function_arguments_size = function.getArgumentsSize();
 
+        /// A conversion that drops `Nullable` throws on NULL. Its NULL rows must still be read and
+        /// evaluated, so the index may not prune any granule of this predicate. Checked on the whole
+        /// function subtree because the conversion can wrap any argument, e.g. the haystack of
+        /// `hasToken(CAST(s, 'String'), 'a')`, which index analysis has already unwrapped.
+        std::unordered_set<const ActionsDAG::Node *> drop_nullable_visited;
+        const bool drops_nullable = dropsNullableInSubtree(function.getDAGNode(), drop_nullable_visited);
+        /// Only the negation needs this: `NOT hasToken(CAST(s, 'String'), 'a')` is true for the NULL
+        /// rows, so it would return them instead of throwing. The positive form matches only defined
+        /// rows, and skipping the rest keeps its exception.
+        out.drops_nullable = drops_nullable;
+
         if (traverseMapElementKeyNode(function, out))
             return true;
 
         if (traverseJSONSubcolumnKeyNode(function, out))
             return true;
+
+        if (isNullCheckFunction(function_name) && function_arguments_size == 1)
+        {
+            auto argument = function.getArgumentAt(0);
+            const bool on_indexed_column = hasIndexForColumn(argument.getColumnName());
+            /// Do not unwrap a conversion that drops `Nullable`: `isNull(CAST(hasToken(...) AS UInt8))`
+            /// is not three-valued and must not share the column `IS NULL` mask.
+            const bool on_has_token = !on_indexed_column
+                && isHasTokenOnIndexedNullableColumn(unwrapLosslessConversion(argument, /*allow_drop_nullable=*/ false));
+
+            if (!on_indexed_column && !on_has_token)
+                return false;
+
+            if (on_indexed_column)
+            {
+                const auto * argument_dag_node = argument.getDAGNode();
+                /// `DataTypeLowCardinality::isNullable` is always false. `LowCardinality(Nullable(T))`
+                /// reports nullability through `isLowCardinalityNullable`, which `RPNBuilderTreeNode::isNullable` does not consult.
+                if (!argument_dag_node || !argument_dag_node->result_type
+                    || !isNullableOrLowCardinalityNullable(argument_dag_node->result_type)
+                    || has_preprocessor || has_postprocessor || !defined_enabled)
+                    return false;
+            }
+
+            out.function = function_name == "isNull"
+                ? RPNElement::FUNCTION_IS_NULL
+                : RPNElement::FUNCTION_IS_NOT_NULL;
+            out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
+                function_name, TextSearchMode::All, getDirectReadMode(function_name), VectorWithMemoryTracking<String>{}));
+            return true;
+        }
 
         /// `LIKE pattern ESCAPE 'c'` and `ILIKE pattern ESCAPE 'c'` arrive here as a 3-argument
         /// function call `like(col, pattern, escape_char)`. Fold the escape character into the
@@ -1212,6 +1456,11 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
     /// The index knows the expression under the conversion, e.g. `m.key_<key>` in `equals(_CAST(m.key_<key>, 'String'), 'value')`.
     const auto index_column_node = unwrapLosslessConversion(argument_node);
+    /// Identity postings are valid for the expression before such a conversion only while its
+    /// `Nullable` result still reaches `hasToken`. If the conversion drops `Nullable`, it throws
+    /// on NULL and must not be replaced by a three-valued identity mask.
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    const bool identity_preserves_null = !dropsNullableInSubtree(argument_node.getDAGNode(), visited);
 
     /// The builders below tokenize a string needle or expect an index on `mapKeys` / `mapValues` / a JSON
     /// path. Partition hard, so none of them can emit a token in the pair format.
@@ -1384,7 +1633,15 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
         auto tokens = stringToTokens(value_field, /*compact=*/ true);
         out.function = RPNElement::FUNCTION_EQUALS;
-        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
+        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
+            function_name,
+            TextSearchMode::All,
+            direct_read_mode,
+            std::move(tokens),
+            std::vector<OptimizedRegularExpression>{},
+            VectorWithMemoryTracking<String>{},
+            /*identity_=*/ "",
+            identity_preserves_null));
         return true;
     }
     if (function_name == "hasAnyTokens" || function_name == "hasAllTokens")

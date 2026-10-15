@@ -16,6 +16,7 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IPostingListCodec.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/PostingListCursor.h>
 #include <Storages/MergeTree/TextIndexAnalyzer.h>
@@ -175,6 +176,8 @@ UInt64 computeCountForPart(
 
     /// A single-token count is answered directly from the dictionary cardinality, so posting list is never read.
     const bool single_token = resolved.query->getTokens().size() == 1;
+    const auto & function_name = resolved.query->getFunctionName();
+    const bool count_needs_identity = resolved.needs_identity;
 
     LoadedMergeTreeDataPartInfoForReader part_info(data_part, std::make_shared<AlterConversions>());
 
@@ -187,21 +190,18 @@ UInt64 computeCountForPart(
         .readable_ranges = nullptr,
         .text_index_read_postings = !single_token,
         .reader_settings = reader_settings,
+        .load_identity_streams = count_needs_identity,
     };
 
-    const auto substreams = index.index->getSubstreams();
-    auto sparse_index_stream = makeTextIndexInputStream(
+    auto streams_holder = openTextIndexInputStreams(
         part_info,
         index.index->getFileName(),
-        substreams[0],
-        reader_settings,
-        /*expected_buffer_size=*/ std::nullopt);
-
-    sparse_index_stream->seekToStart();
+        index_format.substreams,
+        count_needs_identity,
+        reader_settings);
 
     /// The analysis opens the dictionary and postings streams itself
-    MergeTreeIndexInputStreams streams;
-    streams[MergeTreeIndexSubstream::Type::Regular] = sparse_index_stream.get();
+    auto streams = streams_holder.toInputStreams();
 
     auto granule_ptr = index.index->createIndexGranule();
     granule_ptr->deserializeBinaryWithMultipleStreams(streams, state);
@@ -212,6 +212,27 @@ UInt64 computeCountForPart(
 
     const auto & analyzer = granule->getAnalyzer();
     const auto & tokens = resolved.query->getTokens();
+
+    /// `isNull` / `isNotNull` are answered from the V3 identity posting, not from token dictionaries.
+    /// A missing identity stream is not "0 rows defined": that is the V2 leftover case and must not
+    /// be answered here. Plan time already keeps those parts on the regular count path.
+    if (count_needs_identity)
+    {
+        if (!streams_holder.identity_dictionary || !streams_holder.identity_postings || !granule->hasIdentityStreams())
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Text index {} in part {} has no identity streams; {} cannot be counted from a V2 text index",
+                index.index->index.name,
+                data_part->name,
+                function_name);
+        }
+
+        const auto * identity_postings = granule->findIdentityPostings(resolved.query->getIdentity());
+        /// `nullptr` is the empty posting: every row in this V3 part is NULL.
+        const UInt64 defined_count = identity_postings ? identity_postings->cardinality() : 0;
+        return function_name == "isNotNull" ? defined_count : data_part->rows_count - defined_count;
+    }
 
     /// One granule per part (GRANULARITY ignored), so the dictionary cardinality is the exact part-wide count; no posting I/O.
     if (single_token)
@@ -262,7 +283,7 @@ UInt64 computeCountForPart(
             cursor_streams.push_back(makeTextIndexInputStream(
                 part_info,
                 index.index->getFileName(),
-                substreams[2],
+                requireSubstream(index_format.substreams, MergeTreeIndexSubstream::Type::TextIndexPostings),
                 reader_settings,
                 estimatePostingListBufferSize(*token_info)));
 
@@ -295,7 +316,7 @@ UInt64 computeCountForPart(
     auto postings_stream = makeTextIndexInputStream(
         part_info,
         index.index->getFileName(),
-        substreams[2],
+        requireSubstream(index_format.substreams, MergeTreeIndexSubstream::Type::TextIndexPostings),
         reader_settings,
         largest_segment_bytes);
 

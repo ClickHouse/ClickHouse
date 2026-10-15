@@ -152,6 +152,14 @@ private:
     void flushPostingList();
     void flushDictionaryBlock();
 
+    /// Merges one batch of the current queue. When `enforce_time_limit` is set, returns
+    /// before `step_time_ms` elapses. Returns whether the queue still has rows.
+    bool mergeQueueStep(bool enforce_time_limit);
+    void mergeIdentityDictionaries();
+
+    MergeTreeIndexSubstream::Type activeDictionaryType() const;
+    MergeTreeIndexSubstream::Type activePostingsType() const;
+
     std::vector<TextIndexSegment> segments;
     MergeTreeMutableDataPartPtr new_data_part;
     size_t num_rows;
@@ -186,15 +194,25 @@ private:
     /// Merges the postings cursors of the current token; drained by every mergePostings call.
     std::unique_ptr<PostingsMergeQueue> postings_queue;
     std::unique_ptr<PositionsMerge> positions_merge;
+    /// Whether every source has identity streams. A source without them drops identity output.
+    bool all_sources_have_defined = false;
+    /// Set while `mergeIdentityDictionaries` reads and writes the identity streams.
+    bool merging_identity = false;
 
     /// Sparse index accumulated for the task. Flushed only once in the end of the task.
     MutableColumnPtr sparse_index_tokens;
     MutableColumnPtr sparse_index_offsets;
+    /// Identity sparse index, filled only by `mergeIdentityDictionaries`.
+    MutableColumnPtr identity_sparse_index_tokens;
+    MutableColumnPtr identity_sparse_index_offsets;
 
     /// Deserializer for the merged output part, using the destination codec resolved from the index definition.
     PostingsSerialization postings_serialization;
     /// Per-source deserializers, each using the codec read from that source part's own header.
     std::vector<PostingsSerialization> source_postings_serializations;
+    /// Output feature set shared by the index definition and all physical sources.
+    MergeTreeTextIndexSerializationVersion output_serialization_version = MergeTreeTextIndexSerializationVersion::V0_Initial;
+    bool output_has_positions = false;
 
     bool is_initialized = false;
 };
@@ -222,5 +240,40 @@ std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
 
 /// Estimates the read buffer size for the posting list of a token based on max estimated segment size.
 size_t estimatePostingListBufferSize(const TokenPostingsInfo & token_info);
+
+/// Opens both identity streams when the physical format has them. Empty when the part has no `.idt`.
+/// Throws if only one of the two streams is present.
+std::pair<std::unique_ptr<MergeTreeReaderStream>, std::unique_ptr<MergeTreeReaderStream>>
+openTextIndexIdentityStreamsIfPresent(
+    const MergeTreeIndexSubstreams & substreams,
+    const IMergeTreeDataPartInfoForReader & part_info,
+    const String & index_file_name,
+    const MergeTreeReaderSettings & reader_settings);
+
+/// The streams a text index granule is deserialized from, owned by the caller.
+struct TextIndexInputStreamsHolder
+{
+    std::unique_ptr<MergeTreeReaderStream> sparse_index;
+    std::unique_ptr<MergeTreeReaderStream> identity_dictionary;
+    std::unique_ptr<MergeTreeReaderStream> identity_postings;
+
+    /// Raw pointers for `deserializeBinaryWithMultipleStreams`. Identity entries are set only when
+    /// the streams were opened; the holder keeps them alive.
+    MergeTreeIndexInputStreams toInputStreams() const;
+};
+
+/// Opens both identity streams from their fixed substream descriptors, for a caller that has no
+/// part's substream list: the granule knows from the header that the part is V3 and must have them.
+std::pair<std::unique_ptr<MergeTreeReaderStream>, std::unique_ptr<MergeTreeReaderStream>> openTextIndexIdentityStreams(
+    const IMergeTreeDataPartInfoForReader & part_info, const String & index_file_name, const MergeTreeReaderSettings & reader_settings);
+
+/// Opens the sparse index stream and, when `load_identity_streams` is set, the identity streams the
+/// part has. The sparse index stream is rewound to its start.
+TextIndexInputStreamsHolder openTextIndexInputStreams(
+    const IMergeTreeDataPartInfoForReader & part_info,
+    const String & index_file_name,
+    const MergeTreeIndexSubstreams & substreams,
+    bool load_identity_streams,
+    const MergeTreeReaderSettings & reader_settings);
 
 }
