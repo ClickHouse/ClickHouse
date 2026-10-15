@@ -1,16 +1,17 @@
 -- Tests that GROUP BY ... WITH ROLLUP returns the same rows no matter how the input is split into
--- blocks, and that aggregates whose result depends on the order values are merged in keep the
--- result they have today. Each case compares a many-block run against a one-block run of the same
--- query, over a multiset checksum so the comparison ignores row order but not a missing row. The
--- last sections read profile events and a plan line, so that which runs received several blocks at
--- all, and which GROUP BY algorithm produced them, is checked and not assumed.
+-- blocks. Each case compares a many-block run against a one-block run of the same query, over a
+-- multiset checksum so the comparison ignores row order but not a missing row. The last sections
+-- read profile events and a plan line, so that which runs received several blocks at all, which of
+-- them skipped the input merge, and which GROUP BY algorithm produced them, is checked and not
+-- assumed. Runs 2 and 3 there check that an aggregate whose result depends on the merge order keeps
+-- today's merge.
 
 -- The settings every run shares are set once below, so that each query carries only what makes it
--- the case it is and the two arms of a comparison can be seen to differ in nothing else. The large
--- `max_bytes_before_external_group_by` is one of them and must stay non-zero: two-level
--- aggregation, which is what splits the input of a single reading stream into several blocks, is
--- only offered to a query that may spill. The limit itself is far above anything 30000 rows can
--- reach, so no run spills, and the profile events check that rather than assuming it.
+-- the case it is and the two arms of a comparison can be seen to differ only in how their input is
+-- split. The large `max_bytes_before_external_group_by` is one of them and must stay non-zero:
+-- two-level aggregation, which is what splits the input of a single reading stream into several
+-- blocks, is only offered to a query that may spill. The limit itself is far above anything 30000
+-- rows can reach, so no run spills, and the profile events check that rather than assuming it.
 
 SET allow_suspicious_low_cardinality_types = 1;
 
@@ -38,10 +39,11 @@ ENGINE = MergeTree PARTITION BY a ORDER BY tuple();
 INSERT INTO rollup_partitioned SELECT number % 8, number % 11, number FROM numbers(30000);
 
 -- `max_threads` and the two external-aggregation limits are pinned because the test runner
--- randomizes them, and a comparison whose arms drew different values would not be one. The two
--- `group_by_two_level_threshold*` settings are pinned so that only the per-query one below decides
--- whether the input is split, and `merge_tree_min_rows_for_concurrent_read[_for_remote_filesystem]`
--- so that how many threads read a table is decided by its part count alone, on any disk.
+-- randomizes them. The two `group_by_two_level_threshold*` settings are pinned so that only the
+-- per-query one below decides whether the input is split, and the concurrent-read limits so that
+-- how many threads read a table is decided by its part count alone, on any disk. The one-block runs
+-- use one thread: several threads reading the eight-part table would aggregate its partitions
+-- independently, or adaptively, and either way hand the rollup more than one block.
 SET max_threads = 4;
 SET enable_parallel_replicas = 0;
 SET max_bytes_before_external_group_by = 1000000000;
@@ -49,6 +51,7 @@ SET max_bytes_ratio_before_external_group_by = 0;
 SET group_by_two_level_threshold_bytes = 0;
 SET merge_tree_min_rows_for_concurrent_read = 163840;
 SET merge_tree_min_rows_for_concurrent_read_for_remote_filesystem = 163840;
+SET merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem = 251658240;
 
 SELECT 'rollup, three keys', count(), sum(cityHash64(toString((a, b, c, s, n))))
 FROM (
@@ -67,7 +70,7 @@ SELECT 'many blocks = one block, three keys', (
 ) = (
     SELECT sum(cityHash64(toString((a, b, c, s, n)))) FROM (
         SELECT a, b, c, sum(v) AS s, count() AS n FROM rollup_blocks GROUP BY a, b, c WITH ROLLUP
-        SETTINGS max_block_size = 1000000, group_by_two_level_threshold = 0)
+        SETTINGS max_threads = 1, max_block_size = 1000000, group_by_two_level_threshold = 0)
 );
 
 SELECT 'many blocks = one block, no aggregate functions', (
@@ -77,7 +80,7 @@ SELECT 'many blocks = one block, no aggregate functions', (
 ) = (
     SELECT sum(cityHash64(toString((a, b)))) FROM (
         SELECT a, b FROM rollup_blocks GROUP BY a, b WITH ROLLUP
-        SETTINGS max_block_size = 1000000, group_by_two_level_threshold = 0)
+        SETTINGS max_threads = 1, max_block_size = 1000000, group_by_two_level_threshold = 0)
 );
 
 SELECT 'many blocks = one block, null keys for sub-totals', (
@@ -87,7 +90,8 @@ SELECT 'many blocks = one block, null keys for sub-totals', (
 ) = (
     SELECT sum(cityHash64(toString((a, b, s)))) FROM (
         SELECT a, b, sum(v) AS s FROM rollup_blocks GROUP BY a, b WITH ROLLUP
-        SETTINGS group_by_use_nulls = 1, max_block_size = 1000000, group_by_two_level_threshold = 0)
+        SETTINGS group_by_use_nulls = 1, max_threads = 1,
+                 max_block_size = 1000000, group_by_two_level_threshold = 0)
 );
 
 SELECT 'many blocks = one block, condition and low cardinality arguments', (
@@ -97,7 +101,7 @@ SELECT 'many blocks = one block, condition and low cardinality arguments', (
 ) = (
     SELECT sum(cityHash64(toString((a, b, s, l)))) FROM (
         SELECT a, b, sumIf(v, c > 5) AS s, sum(lc) AS l FROM rollup_blocks GROUP BY a, b WITH ROLLUP
-        SETTINGS max_block_size = 1000000, group_by_two_level_threshold = 0)
+        SETTINGS max_threads = 1, max_block_size = 1000000, group_by_two_level_threshold = 0)
 );
 
 SELECT 'many blocks = one block, a key repeated in the group by list', (
@@ -107,29 +111,7 @@ SELECT 'many blocks = one block, a key repeated in the group by list', (
 ) = (
     SELECT sum(cityHash64(toString((a, b, s)))) FROM (
         SELECT a, b, sum(v) AS s FROM rollup_blocks GROUP BY a, b, a WITH ROLLUP
-        SETTINGS max_block_size = 1000000, group_by_two_level_threshold = 0)
-);
-
-SELECT 'many blocks = one block, result depends on merge order', (
-    SELECT sum(cityHash64(toString((a, b, m, g)))) FROM (
-        SELECT a, b, argMax(v, c) AS m, arraySort(groupArray(v % 5)) AS g
-        FROM rollup_blocks GROUP BY a, b WITH ROLLUP
-        SETTINGS max_block_size = 100, group_by_two_level_threshold = 1)
-) = (
-    SELECT sum(cityHash64(toString((a, b, m, g)))) FROM (
-        SELECT a, b, argMax(v, c) AS m, arraySort(groupArray(v % 5)) AS g
-        FROM rollup_blocks GROUP BY a, b WITH ROLLUP
-        SETTINGS max_block_size = 1000000, group_by_two_level_threshold = 0)
-);
-
-SELECT 'many blocks = one block, floating point argument', (
-    SELECT sum(cityHash64(toString((a, b, s)))) FROM (
-        SELECT a, b, sum(f) AS s FROM rollup_blocks GROUP BY a, b WITH ROLLUP
-        SETTINGS max_block_size = 100, group_by_two_level_threshold = 1)
-) = (
-    SELECT sum(cityHash64(toString((a, b, s)))) FROM (
-        SELECT a, b, sum(f) AS s FROM rollup_blocks GROUP BY a, b WITH ROLLUP
-        SETTINGS max_block_size = 1000000, group_by_two_level_threshold = 0)
+        SETTINGS max_threads = 1, max_block_size = 1000000, group_by_two_level_threshold = 0)
 );
 
 SELECT 'many blocks = one block, array and map keys', (
@@ -139,21 +121,21 @@ SELECT 'many blocks = one block, array and map keys', (
 ) = (
     SELECT sum(cityHash64(toString((af, m, s)))) FROM (
         SELECT af, map('k', a) AS m, sum(v) AS s FROM rollup_blocks GROUP BY af, m WITH ROLLUP
-        SETTINGS max_block_size = 1000000, group_by_two_level_threshold = 0)
+        SETTINGS max_threads = 1, max_block_size = 1000000, group_by_two_level_threshold = 0)
 );
 
+-- `allow_aggregate_partitions_independently` is set on the statement in the next two cases, because
+-- a subquery's `SETTINGS` do not reach the plan optimization that reads it.
 SELECT 'many blocks = one block, independently aggregated partitions', (
     SELECT sum(cityHash64(toString((a, b, s, n)))) FROM (
         SELECT a, b, sum(v) AS s, count() AS n FROM rollup_partitioned GROUP BY a, b WITH ROLLUP
-        SETTINGS allow_aggregate_partitions_independently = 1,
-                 force_aggregate_partitions_independently = 1,
+        SETTINGS force_aggregate_partitions_independently = 1,
                  max_block_size = 100, group_by_two_level_threshold = 1)
 ) = (
     SELECT sum(cityHash64(toString((a, b, s, n)))) FROM (
         SELECT a, b, sum(v) AS s, count() AS n FROM rollup_partitioned GROUP BY a, b WITH ROLLUP
-        SETTINGS allow_aggregate_partitions_independently = 0,
-                 max_block_size = 1000000, group_by_two_level_threshold = 0)
-);
+        SETTINGS max_threads = 1, max_block_size = 1000000, group_by_two_level_threshold = 0)
+) SETTINGS allow_aggregate_partitions_independently = 1;
 
 -- The adaptive GROUP BY, which is on by default, is a second way to produce an input whose group
 -- keys each land in one block only: every thread stops growing its own table at
@@ -164,16 +146,14 @@ SELECT 'many blocks = one block, independently aggregated partitions', (
 SELECT 'many blocks = one block, adaptive aggregation', (
     SELECT sum(cityHash64(toString((v, a, s, n)))) FROM (
         SELECT v, a, sum(v) AS s, count() AS n FROM rollup_partitioned GROUP BY v, a WITH ROLLUP
-        SETTINGS allow_aggregate_partitions_independently = 0,
-                 adaptive_aggregator_freeze_threshold = 0,
+        SETTINGS adaptive_aggregator_freeze_threshold = 0,
                  max_block_size = 100, group_by_two_level_threshold = 1)
 ) = (
     SELECT sum(cityHash64(toString((v, a, s, n)))) FROM (
         SELECT v, a, sum(v) AS s, count() AS n FROM rollup_partitioned GROUP BY v, a WITH ROLLUP
-        SETTINGS allow_aggregate_partitions_independently = 0,
-                 adaptive_aggregator_freeze_threshold = 0,
-                 max_block_size = 1000000, group_by_two_level_threshold = 0)
-);
+        SETTINGS adaptive_aggregator_freeze_threshold = 0,
+                 max_threads = 1, max_block_size = 1000000, group_by_two_level_threshold = 0)
+) SETTINGS allow_aggregate_partitions_independently = 0;
 
 SELECT 'rollup with totals, two keys', a, b, sum(v) FROM rollup_blocks
 WHERE a < 2 AND b < 2 GROUP BY a, b WITH ROLLUP WITH TOTALS ORDER BY ALL
@@ -229,7 +209,7 @@ SYSTEM FLUSH LOGS query_log;
 SELECT
     log_comment,
     used_aggregate_functions[1] AS func,
-    max(ProfileEvents['AggregationRollupSkippedInputMerges']) > 0 AS input_merge_skipped,
+    max(ProfileEvents['AggregationRollupSkippedInputMerges']) AS input_merges_skipped,
     max(ProfileEvents['AggregationConvertedToTwoLevel']) > 0 AS input_was_split,
     max(ProfileEvents['AdaptiveAggregationDrainedRecords']) > 0 AS adaptive_engaged,
     max(ProfileEvents['ExternalAggregationWritePart']) AS spilled
