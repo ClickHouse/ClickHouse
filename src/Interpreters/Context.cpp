@@ -2317,21 +2317,35 @@ void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_
     /// an existing context (`EXECUTE AS`, a view's definer), whose own settings say nothing about the target.
     if (!isUserDefinedInConfig(user_id_))
     {
-        auto global_context = getGlobalContext();
-        const auto & new_session_settings = global_context->getSettingsRef();
-        auto new_session_constraints = global_context->getSettingsConstraintsAndCurrentProfiles();
-        new_session_constraints->constraints.check(
-            new_session_settings, user->settings, SettingSource::USER, /* skip_config_defined_profiles= */ true);
-        new_session_constraints->constraints.check(
-            new_session_settings, enabled_roles->settings_from_enabled_roles, SettingSource::ROLE,
-            /* skip_config_defined_profiles= */ true);
+        try
+        {
+            auto global_context = getGlobalContext();
+            const auto & new_session_settings = global_context->getSettingsRef();
+            auto new_session_constraints = global_context->getSettingsConstraintsAndCurrentProfiles();
+            const auto * resolved_constraints = &enabled_profiles->constraints;
+            new_session_constraints->constraints.check(
+                new_session_settings, user->settings, SettingSource::USER, /* skip_config_defined_profiles= */ true,
+                /* actor_is_config_defined= */ false, resolved_constraints);
+            new_session_constraints->constraints.check(
+                new_session_settings, enabled_roles->settings_from_enabled_roles, SettingSource::ROLE,
+                /* skip_config_defined_profiles= */ true, /* actor_is_config_defined= */ false, resolved_constraints);
 
-        /// A profile also reaches the user through its own `TO` clause, which neither list above holds.
-        SettingsProfileElements applied_profiles;
-        for (const auto & profile_id : enabled_profiles->profiles)
-            applied_profiles.emplace_back().parent_profile = profile_id;
-        new_session_constraints->constraints.check(
-            new_session_settings, applied_profiles, SettingSource::PROFILE, /* skip_config_defined_profiles= */ true);
+            /// A profile also reaches the user through its own `TO` clause, which neither list above holds.
+            SettingsProfileElements applied_profiles;
+            for (const auto & profile_id : enabled_profiles->profiles)
+                applied_profiles.emplace_back().parent_profile = profile_id;
+            new_session_constraints->constraints.check(
+                new_session_settings, applied_profiles, SettingSource::PROFILE, /* skip_config_defined_profiles= */ true,
+                /* actor_is_config_defined= */ false, resolved_constraints);
+        }
+        catch (Exception & e)
+        {
+            /// A new session starts with the constraints of the system profile.
+            e.addMessage(
+                "while checking the settings of user {} against the constraints of the system profile {}",
+                backQuote(user->getName()), backQuote(getSystemProfileName()));
+            throw;
+        }
     }
 
     /// Apply user's profiles, constraints, settings, roles.
@@ -3962,6 +3976,12 @@ void Context::checkSettingsConstraintsForSettingsReset(const std::vector<String>
     SharedLockGuard lock(mutex);
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.checkResetToDefault(
         *settings, after_reset->getSettingsRef(), names, source);
+}
+
+void Context::clampSettingsConstraintsForSettingsReset(std::vector<String> & names, SettingsChanges & clamped_changes, SettingSource source)
+{
+    SharedLockGuard lock(mutex);
+    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.clampResetToDefault(*settings, names, clamped_changes, source);
 }
 
 void Context::checkSettingsConstraintsForSettingsReset(
@@ -9685,7 +9705,8 @@ AIQuotaTrackerPtr Context::getAIQuotaTracker() const
             settings_ref[Setting::ai_function_max_input_tokens_per_query],
             settings_ref[Setting::ai_function_max_output_tokens_per_query],
             settings_ref[Setting::ai_function_max_api_calls_per_query],
-            settings_ref[Setting::ai_function_throw_on_quota_exceeded]);
+            settings_ref[Setting::ai_function_throw_on_quota_exceeded],
+            query_context->process_list_elem);
     }
     return query_context->ai_quota_tracker;
 }
