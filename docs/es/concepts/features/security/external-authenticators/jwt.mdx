@@ -7,6 +7,7 @@ doc_type: 'reference'
 ---
 
 import { CloudOnlyBadge } from "/snippets/es/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
+import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
 import { VersionBadge } from "/snippets/es/components/VersionBadge/VersionBadge.jsx";
 import { EnterprisePlanFeatureBadge } from "/snippets/es/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
@@ -222,36 +223,15 @@ curl -H 'Authorization: Bearer <your_jwt_token>' \
   Envíe siempre los JWT a través de HTTPS. Un token Bearer enviado por HTTP sin cifrar queda expuesto a cualquiera que esté en la ruta de red y equivale a comprometer la credencial.
 </Warning>
 
-### Inicio de sesión con código de dispositivo OAuth2 {#oauth2-device-code-login}
+<div id="oauth2-device-code-login">
+  ### Inicio de sesión con código de dispositivo de OAuth2
+</div>
 
-`clickhouse-client` admite el flujo interactivo de concesión de autorización de dispositivo de OAuth 2.0 ([RFC 8628](https://datatracker.ietf.org/doc/html/rfc8628)) mediante el indicador `--login`.
-
-Para los endpoints de ClickHouse Cloud, si no se especifica ninguna opción `--oauth-*`, el cliente inicia sesión con el IdP de ClickHouse Cloud y realiza automáticamente un intercambio de tokens para obtener un JWT específico de ClickHouse. Los tokens se renuevan de forma transparente durante la sesión. Cada vez que se obtiene un token nuevo, el cliente se vuelve a conectar automáticamente.
+`clickhouse-client` admite un flujo interactivo de código de dispositivo de OAuth2 mediante la opción `--login`. En los endpoints de ClickHouse Cloud, el cliente realiza automáticamente el intercambio de tokens para obtener un JWT específico de ClickHouse. Los tokens se renuevan de forma transparente durante la sesión. Cuando se obtiene un token nuevo, el cliente se reconecta automáticamente.
 
 ```bash
 clickhouse-client --host your-instance.clickhouse.cloud --login
 ```
-
-Para un IdP personalizado, pase el emisor de OIDC como `--oauth-url`. Si se pasa cualquier opción `--oauth-*`, se selecciona el flujo de IdP personalizado, incluso para hosts de ClickHouse Cloud (por ejemplo, cuando la [autenticación con JWT con un proveedor de identidad personalizado](#enabling-jwt-authentication-for-your-service) está habilitada para el servicio). El Client descubre `device_authorization_endpoint` y `token_endpoint` a partir del `/.well-known/openid-configuration` del emisor (y de las URL de metadata de OAuth relacionadas). Si `grant_types_supported` está presente, debe incluir `urn:ietf:params:oauth:grant-type:device_code`. Si el descubrimiento falla, el Client informa de un error; cuando la metadata no esté disponible, establezca explícitamente tanto `--oauth-device-uri` como `--oauth-token-uri`.
-
-Durante el inicio de sesión, el Client muestra el `verification_uri` corto y el `user_code` (RFC 8628). Si el IdP también devuelve `verification_uri_complete`, esa URL de acceso directo se muestra, se abre en un navegador y, si la herramienta `qrencode` está disponible, se representa como un código QR en la terminal. Con el IdP de ClickHouse Cloud, solo se muestran `verification_uri_complete` y `user_code`. Los Clients confidenciales pueden pasar `--oauth-client-secret` junto con `--oauth-client-auth basic|post`.
-
-```bash
-# Microsoft Entra ID (issuer URL, not the device endpoint itself)
-clickhouse-client --host your-clickhouse-host --secure --login \
-  --oauth-client-id <app-client-id> \
-  --oauth-url https://login.microsoftonline.com/<TENANT_ID>/v2.0 \
-  --oauth-scope "openid profile offline_access api://<app-client-id>/.default"
-
-# Explicit endpoints when discovery is unavailable
-clickhouse-client --host your-clickhouse-host --secure --login \
-  --oauth-client-id <app-client-id> \
-  --oauth-device-uri https://login.microsoftonline.com/<TENANT_ID>/oauth2/v2.0/devicecode \
-  --oauth-token-uri https://login.microsoftonline.com/<TENANT_ID>/oauth2/v2.0/token \
-  --oauth-scope "openid profile offline_access api://<app-client-id>/.default"
-```
-
-El token de acceso resultante se presenta a ClickHouse como un JWT. La asignación de roles y privilegios sigue dependiendo de la configuración del autenticador JWT del lado del servidor (por ejemplo, las reclamaciones `clickhouse:roles`).
 
 <div id="clickhouse-cloud-built-in">
   ## Autenticador JWT integrado de ClickHouse Cloud
@@ -273,11 +253,13 @@ No necesitas configurar nada para usar este autenticador. Se aprovisiona automá
   ## Habilitar la autenticación con JWT para su servicio
 </div>
 
+<BetaBadge />
+
 <VersionBadge minVersion="26.4" />
 
 <EnterprisePlanFeatureBadge feature="Autenticación con JWT con un proveedor de identidad personalizado" />
 
-Además del autenticador JWT predefinido, puede configurar su servicio de ClickHouse Cloud para que acepte JWT emitidos por su propio proveedor de identidad (por ejemplo, Microsoft Entra u Okta). Esta función está disponible en el plan Enterprise para servicios que ejecutan ClickHouse versión 26.4 o posterior. Puede configurarla usted mismo desde la consola de Cloud en **Configuración → Seguridad → Autenticación con JWT**; consulte [Configuración de la autenticación con JWT](/es/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup) para obtener instrucciones paso a paso. Cada proveedor se define mediante lo siguiente:
+Además del autenticador JWT predefinido, puede configurar su servicio de ClickHouse Cloud para que acepte JWT emitidos por su propio proveedor de identidad (por ejemplo, Microsoft Entra u Okta). Esta función beta está disponible en el plan Enterprise para servicios que ejecutan ClickHouse versión 26.4 o posterior. Puede configurarla usted mismo desde la consola de Cloud en **Configuración → Seguridad → Autenticación con JWT**; consulte [Configuración de la autenticación con JWT](/es/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup) para obtener instrucciones paso a paso. Cada proveedor se define mediante lo siguiente:
 
 | Parámetro                 | Descripción                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

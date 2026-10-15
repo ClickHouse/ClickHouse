@@ -57,8 +57,3 @@ SELECT id FROM tab WHERE hasPhrase(doc, '勉強を日本語') ORDER BY id;
 -- Explicit tokenizer argument must be accepted rather than rejected with BAD_ARGUMENTS.
 SELECT id FROM tab WHERE hasPhrase(doc, '日本語', 'icu(''ja'')') ORDER BY id;
 1
-['quick','brown']
-1
-[1,2]
-[1]
-[1]

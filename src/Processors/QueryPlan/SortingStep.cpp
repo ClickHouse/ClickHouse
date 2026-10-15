@@ -96,7 +96,7 @@ namespace Setting
 
 namespace QueryPlanSerializationSetting
 {
-    extern const QueryPlanSerializationSettingsNonZeroUInt64 max_block_size;
+    extern const QueryPlanSerializationSettingsUInt64 max_block_size;
     extern const QueryPlanSerializationSettingsUInt64 max_bytes_before_external_sort;
     extern const QueryPlanSerializationSettingsDouble max_bytes_ratio_before_external_sort;
     extern const QueryPlanSerializationSettingsUInt64 max_bytes_before_remerge_sort;
@@ -292,7 +292,7 @@ void SortingStep::addPerStreamLimitByIfNeeded(QueryPipelineBuilder & pipeline, c
     if (limit_by_columns.empty() || pipeline.getNumStreams() <= 1)
         return;
 
-    auto sort_prefix = getCollationAwareSortPrefixInColumns(stream_sort_desc, limit_by_columns, *input_headers.front());
+    auto sort_prefix = getCollationAwareSortPrefixInColumns(stream_sort_desc, limit_by_columns);
     if (sort_prefix.size() != limit_by_columns.size())
         return;
 
@@ -470,8 +470,7 @@ void SortingStep::mergeSorting(
             .current_metric = CurrentMetrics::TemporaryFilesForSort,
             .bytes_compressed = ProfileEvents::ExternalSortCompressedBytes,
             .bytes_uncompressed = ProfileEvents::ExternalSortUncompressedBytes,
-            .num_files = ProfileEvents::ExternalSortWritePart,
-            .spilled_to_disk_operator = "sort"},
+            .num_files = ProfileEvents::ExternalSortWritePart},
             sort_settings.temporary_files_buffer_size, sort_settings.temporary_files_codec);
 
     if (sort_settings.max_bytes_in_block_before_external_sort && tmp_data_on_disk == nullptr)
@@ -566,8 +565,6 @@ void SortingStep::fullSort(QueryPipelineBuilder & pipeline, const SortDescriptio
             SortingQueueStrategy::Batch,
             limit_,
             always_read_till_end);
-        if (threshold_tracker && limit_)
-            transform->setTopKThresholdTracker(threshold_tracker, result_sort_desc.front().column_name, limit_);
 
         pipeline.addTransform(std::move(transform));
         merge_streams = collector.detachProcessors(static_cast<size_t>(SortingStage::MergeStreams));
@@ -754,9 +751,9 @@ void SortingStep::serialize(Serialization & ctx) const
             "Serialization of SortingStep requires query plan serialization version >= {}; "
             "all nodes must run the same version", DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARTITIONED_SORTING);
 
-    serializeSortDescription(result_description, ctx.out, ctx.version, ctx.for_cache_key, ctx.input_header);
+    serializeSortDescription(result_description, ctx.out, ctx.version);
 
-    serializeSortDescription(partition_by_description, ctx.out, ctx.version, ctx.for_cache_key, ctx.input_header);
+    serializeSortDescription(partition_by_description, ctx.out, ctx.version);
 
     /// `FinishSorting` arises in distributed plans when `applyOrder` sees the step's input is already
     /// sorted by a prefix (e.g. the output of a pushed-down window, or a ReadInOrder distributed read).
@@ -774,7 +771,7 @@ void SortingStep::serialize(Serialization & ctx) const
     writeIntBinary(flags, ctx.out);
 
     if (type == Type::FinishSorting)
-        serializeSortDescription(prefix_description, ctx.out, ctx.version, ctx.for_cache_key, ctx.input_header);
+        serializeSortDescription(prefix_description, ctx.out, ctx.version);
 
     /// The limit matters for a distributed partial top-N: the sort runs on a worker below a
     /// sorted gather, and losing the limit would turn it into an unbounded full sort there.

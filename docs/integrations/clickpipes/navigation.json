@@ -190,8 +190,7 @@
           "icon": "/images/logo-bigquery.svg",
           "pages": [
             "integrations/clickpipes/bigquery/overview",
-            "integrations/clickpipes/bigquery/get-started",
-            "integrations/clickpipes/bigquery/faq"
+            "integrations/clickpipes/bigquery/get-started"
           ]
         }
       ]
@@ -202,14 +201,6 @@
       "pages": [
         "integrations/clickpipes/programmatic-access/openapi",
         "integrations/clickpipes/programmatic-access/terraform"
-      ]
-    },
-    {
-      "group": "Security and access",
-      "icon": "shield-check",
-      "pages": [
-        "integrations/clickpipes/security/aws-iam-role",
-        "integrations/clickpipes/security/gcp-workload-identity"
       ]
     },
     {
