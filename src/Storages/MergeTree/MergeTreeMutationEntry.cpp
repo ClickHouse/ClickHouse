@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergeTreeMutationEntry.h>
+#include <Common/ErrnoException.h>
 #include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <IO/Operators.h>
@@ -9,6 +10,7 @@
 #include <Interpreters/TransactionManager.h>
 #include <Backups/BackupEntryFromMemory.h>
 
+#include <cerrno>
 #include <utility>
 
 
@@ -18,12 +20,14 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_WRITE_TO_FILE;
     extern const int CANNOT_WRITE_TO_OSTREAM;
 }
 
 namespace FailPoints
 {
     extern const char transaction_mutation_csn_store_fail[];
+    extern const char transaction_mutation_csn_store_fail_after_write[];
 }
 
 String MergeTreeMutationEntry::versionToFileName(UInt64 block_number_)
@@ -139,12 +143,20 @@ void MergeTreeMutationEntry::writeCSN(CSN csn_, bool sync_directory)
     *out << "csn: " << csn_ << "\n";
     out->finalize();
     out->sync();
-    /// The rename is durable only once the directory is synced; the guard does it on destruction,
-    /// as for `txn_version.txt` in `VersionMetadataOnDisk::storeInfoToDataPartStorage`.
+    /// Fault injection for tests: a disk error after the temporary file is complete, so a retry
+    /// has to overwrite it.
+    fiu_do_on(FailPoints::transaction_mutation_csn_store_fail_after_write,
+    {
+        ErrnoException::throwWithErrno(ErrorCodes::CANNOT_WRITE_TO_FILE, ENOSPC, "Injected transient failure after writing mutation CSN");
+    });
+    /// The rename is durable only once the directory is synced. The sync is explicit: the guard's
+    /// destructor only logs a failure, and the caller must see it to retry the write.
     SyncGuardPtr sync_guard;
     if (sync_directory)
         sync_guard = disk->getDirectorySyncGuard(path_prefix);
     disk->replaceFile(path_prefix + tmp_file_name, path_prefix + file_name);
+    if (sync_guard)
+        sync_guard->sync();
     csn = csn_;
 }
 

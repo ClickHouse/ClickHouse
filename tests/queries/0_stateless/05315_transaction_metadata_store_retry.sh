@@ -9,7 +9,8 @@
 # that the statement completed and the retry was logged once. Scenarios A and B also
 # check the metadata on disk; scenario C (rollback) checks visibility only, because a
 # rolled-back transaction re-derives the same state at load whether or not the write
-# landed.
+# landed. Scenarios A-D fail before any I/O; E fails with an errno after the temporary
+# file is written, F fails in the directory sync after the rename.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -21,6 +22,8 @@ function cleanup()
 {
     $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT transaction_metadata_store_fail" ||:
     $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT transaction_mutation_csn_store_fail" ||:
+    $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT transaction_mutation_csn_store_fail_after_write" ||:
+    $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT transaction_metadata_sync_fail" ||:
 }
 trap cleanup EXIT
 
@@ -156,4 +159,58 @@ tx_sync 5 "ALTER TABLE t_meta_retry_lock DROP PARTITION ID 'all'"
 tx_sync 5 "COMMIT"
 $CLICKHOUSE_CLIENT -q "SELECT 'rows after later drop', count() FROM t_meta_retry_lock"
 
-$CLICKHOUSE_CLIENT -q "DROP TABLE t_meta_retry; DROP TABLE t_meta_retry_mut; DROP TABLE t_meta_retry_rb; DROP TABLE t_meta_retry_lock"
+# ---------------------------------------------------------------------------
+echo "--- E: commit, mutation CSN, ENOSPC after the write"
+# The failure is an `ErrnoException` raised after the temporary file is complete: the retry
+# must overwrite it, and the loader must still see exactly one `csn:` line.
+$CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS t_meta_retry_mut_errno;
+    CREATE TABLE t_meta_retry_mut_errno (k Int64, v Int64) ENGINE = MergeTree ORDER BY k;
+    INSERT INTO t_meta_retry_mut_errno VALUES (1, 1), (2, 2), (3, 3);
+"
+tx_sync 6 "BEGIN TRANSACTION"
+tx_sync 6 "ALTER TABLE t_meta_retry_mut_errno UPDATE v = v + 1 WHERE 1"
+tid=$(tx 6 "SELECT transactionID()" | cut -f2)
+
+$CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT transaction_mutation_csn_store_fail_after_write"
+tx_sync 6 "COMMIT"
+
+report_retry_lines mutation t_meta_retry_mut_errno
+csn=$(commit_csn "$tid")
+data_path=$($CLICKHOUSE_CLIENT -q "SELECT data_paths[1] FROM system.tables WHERE database = currentDatabase() AND name = 't_meta_retry_mut_errno'")
+mutation_id=$($CLICKHOUSE_CLIENT -q "SELECT mutation_id FROM system.mutations WHERE database = currentDatabase() AND table = 't_meta_retry_mut_errno'")
+echo "csn lines in mutation file: $(grep -c '^csn: ' "${data_path}${mutation_id}")"
+echo "last line is the csn: $([ "$(tail -n 1 "${data_path}${mutation_id}")" == "csn: ${csn}" ] && echo 1 || echo 0)"
+echo "temporary files left: $(find "${data_path}" -maxdepth 1 -name 'tmp_mutation_*' | wc -l)"
+$CLICKHOUSE_CLIENT -q "DETACH TABLE t_meta_retry_mut_errno; ATTACH TABLE t_meta_retry_mut_errno"
+$CLICKHOUSE_CLIENT -q "SELECT 'sum after reattach', sum(v) FROM t_meta_retry_mut_errno"
+$CLICKHOUSE_CLIENT -q "SELECT 'mutations after reattach', count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_meta_retry_mut_errno'"
+
+# ---------------------------------------------------------------------------
+echo "--- F: commit, part metadata, EIO on the directory sync"
+# With `fsync_part_directory` the rename of `txn_version.txt` is followed by a sync of the part
+# directory; a failed sync must reach the retry instead of being logged by the guard's destructor.
+$CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS t_meta_retry_fsync;
+    CREATE TABLE t_meta_retry_fsync (k Int64) ENGINE = MergeTree ORDER BY k SETTINGS old_parts_lifetime = 3600, fsync_part_directory = 1;
+    SYSTEM STOP MERGES t_meta_retry_fsync;
+    INSERT INTO t_meta_retry_fsync VALUES (1);
+    INSERT INTO t_meta_retry_fsync VALUES (2);
+"
+tx_sync 7 "BEGIN TRANSACTION"
+tx_sync 7 "ALTER TABLE t_meta_retry_fsync DROP PARTITION ID 'all'"
+tx_sync 7 "INSERT INTO t_meta_retry_fsync VALUES (3)"
+tid=$(tx 7 "SELECT transactionID()" | cut -f2)
+
+$CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT transaction_metadata_sync_fail"
+tx_sync 7 "COMMIT"
+
+report_retry_lines part t_meta_retry_fsync
+csn=$(commit_csn "$tid")
+part_path=$($CLICKHOUSE_CLIENT -q "SELECT path FROM system.parts WHERE database = currentDatabase() AND table = 't_meta_retry_fsync' AND active")
+echo "creation_csn persisted: $(grep -c "^creation_csn: ${csn}$" "${part_path}txn_version.txt")"
+$CLICKHOUSE_CLIENT -q "SELECT 'rows after commit', count() FROM t_meta_retry_fsync"
+$CLICKHOUSE_CLIENT -q "DETACH TABLE t_meta_retry_fsync; ATTACH TABLE t_meta_retry_fsync"
+$CLICKHOUSE_CLIENT -q "SELECT 'rows after reattach', count() FROM t_meta_retry_fsync"
+
+$CLICKHOUSE_CLIENT -q "DROP TABLE t_meta_retry; DROP TABLE t_meta_retry_mut; DROP TABLE t_meta_retry_rb; DROP TABLE t_meta_retry_lock; DROP TABLE t_meta_retry_mut_errno; DROP TABLE t_meta_retry_fsync"
