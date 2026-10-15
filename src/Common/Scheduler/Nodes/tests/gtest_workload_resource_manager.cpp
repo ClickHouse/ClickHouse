@@ -574,6 +574,45 @@ TEST(SchedulerWorkloadResourceManager, DropNotEmptyQueue)
 // failed the request), the thread-local `Request` must be reset back to `Finished`. Otherwise
 // the next `ResourceGuard` on the same thread chasserts in `enqueue` because the request is
 // still in `Dequeued` state with `exception` set.
+TEST(SchedulerWorkloadResourceManager, DropWorkloadFailsPendingRequests)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE res1 (WRITE DISK disk, READ DISK disk)");
+    t.query("CREATE WORKLOAD all SETTINGS max_io_requests = 1");
+    t.query("CREATE WORKLOAD intermediate IN all");
+
+    std::barrier<std::__empty_completion> sync_before_enqueue(2);
+    std::barrier<std::__empty_completion> sync_before_drop(3);
+    std::barrier<std::__empty_completion> sync_after_drop(2);
+    t.async("intermediate", "res1", [&] (ResourceLink link)
+    {
+        TestGuard g(t, link, 1);
+        sync_before_enqueue.arrive_and_wait();
+        sync_before_drop.arrive_and_wait(); // 1st resource request is consuming
+        sync_after_drop.arrive_and_wait(); // 1st resource request is still consuming
+    });
+
+    sync_before_enqueue.arrive_and_wait(); // to maintain correct order of resource requests
+
+    t.async("intermediate", "res1", [&] (ResourceLink link)
+    {
+        {
+            TestGuard g(t, link, 1, EnqueueOnly);
+            sync_before_drop.arrive_and_wait(); // 2nd resource request is enqueued
+            g.waitFailed("is about to be destructed");
+        }
+        // The dropped workload's queue is kept alive by this classifier, but it must not accept new requests.
+        EXPECT_THROW(ResourceGuard(ResourceGuard::Metrics::getIOWrite(), link, 1), DB::Exception);
+    });
+
+    sync_before_drop.arrive_and_wait();
+    t.query("DROP WORKLOAD intermediate");
+    sync_after_drop.arrive_and_wait();
+
+    t.wait(); // Wait for threads to finish before destructing locals
+}
+
 TEST(SchedulerWorkloadResourceManager, ResourceGuardDefaultLockResetsOnFailure)
 {
     ResourceTest t;
@@ -2859,6 +2898,31 @@ TEST(SchedulerWorkloadResourceManager, RetiredAllocationQueueOutlivesWorkload)
 
     // Destroy the original queue after its workload, through the classifier for a different workload.
     classifier_b.reset();
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationDropWorkloadFailsRunningAllocation)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 100");
+    t.query("CREATE WORKLOAD A IN all");
+    t.query("CREATE WORKLOAD B IN all");
+
+    ClassifierPtr c_a = t.manager->acquire("A");
+    TestAllocation a(c_a->get("memory"), "a", 60);
+    a.waitSync();
+
+    // The classifier keeps `A`'s queue alive, but the allocation must not keep running outside the limits of `all`.
+    t.query("DROP WORKLOAD A");
+    EXPECT_THROW(a.waitSync(), Exception);
+    a.setSize(80);
+    EXPECT_THROW(a.waitSync(), Exception);
+
+    // The memory of the failed allocation is available to the rest of the hierarchy.
+    ClassifierPtr c_b = t.manager->acquire("B");
+    TestAllocation b(c_b->get("memory"), "b", 100);
+    b.waitSync();
 }
 
 // Regression: simulate the race where the owner's destructor reaches `queue.removeAllocation`

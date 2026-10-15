@@ -67,10 +67,6 @@ struct WorkloadNodeTraits<ITimeSharedNode>
         static_cast<FifoQueue &>(*node).purgeQueue();
     }
 
-    static void onQueueDetached(const NodePtr &)
-    {
-    }
-
     static NodePtr makeFairPolicy(IWorkloadNode * workload, EventQueue & event_queue_, Priority priority)
     {
         NodePtr result = std::make_shared<FairPolicy>(event_queue_, SchedulerNodeInfo{});
@@ -176,11 +172,6 @@ struct WorkloadNodeTraits<ISpaceSharedNode>
     static void purgeQueue(const NodePtr & node)
     {
         static_cast<AllocationQueue &>(*node).purgeQueue();
-    }
-
-    static void onQueueDetached(const NodePtr & node)
-    {
-        static_cast<AllocationQueue &>(*node).processActivation();
     }
 
     static NodePtr makeFairPolicy(IWorkloadNode * workload, EventQueue & event_queue_, Priority precedence)
@@ -504,14 +495,15 @@ protected:
                 Traits::updateQueue(queue, settings, unit);
         }
 
-        /// The queue outlives this node while older versions reference it, and from now on it serves
-        /// its allocations on its own.
-        void detachQueue()
+        /// Fails the requests and allocations of a dropped workload, the same way `removeQueue` does
+        /// when the workload gets its first child. The queue itself stays alive while older hierarchy
+        /// versions reference it.
+        void purgeDroppedQueue()
         {
             if (!queue)
                 return;
             detach(queue);
-            Traits::onQueueDetached(queue);
+            Traits::purgeQueue(queue);
         }
 
     private:
@@ -661,7 +653,7 @@ public:
     ~WorkloadNodeCommon() override
     {
         /// Queues and constraints outlive this node while older versions are still referenced by classifiers.
-        impl.branch.detachQueue();
+        impl.branch.purgeDroppedQueue();
         forEachSchedulerNode([](ISchedulerNode * node) { node->workload = nullptr; });
     }
 
