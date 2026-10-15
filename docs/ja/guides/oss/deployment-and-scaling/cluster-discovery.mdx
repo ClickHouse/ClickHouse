@@ -6,32 +6,19 @@ title: 'クラスター検出'
 doc_type: 'guide'
 ---
 
-<div id="overview">
-  ## 概要
-</div>
+## 概要 {#overview}
 
-ClickHouse の Cluster Discovery 機能を使うと、設定ファイルに各ノードを明示的に定義しなくても、ノードが自動的に検出・登録されるため、クラスター構成を簡素化できます。これは、各ノードを個別に手動定義するのが煩雑になる場合に特に有効です。
+ClickHouse の クラスター検出 機能を使うと、設定ファイルに各ノードを明示的に定義しなくても、ノードが自動的に検出・登録されるため、クラスター構成を簡素化できます。これは、各ノードを個別に手動定義するのが煩雑になる場合に特に有効です。
 
 <Note>
-  Cluster Discovery は Experimental な機能であり、今後のバージョンで変更または削除される可能性があります。
-  有効にするには、設定ファイルに `allow_experimental_cluster_discovery` 設定を追加してください。
-
-  ```xml
-  <clickhouse>
-      <!-- ... -->
-      <allow_experimental_cluster_discovery>1</allow_experimental_cluster_discovery>
-      <!-- ... -->
-  </clickhouse>
-  ```
+  クラスター検出 を使用するには、[ClickHouse Keeper](/ja/guides/sre/keeper/clickhouse-keeper) または ZooKeeper が設定されている必要があります。
+  以前のバージョンでは Experimental な機能であり、設定ファイルで `allow_experimental_cluster_discovery` 設定を指定して有効にする必要がありました。
+  この設定は現在廃止されており、指定しても効果はありません。
 </Note>
 
-<div id="remote-servers-configuration">
-  ## リモートサーバーの設定
-</div>
+## リモートサーバーの設定 {#remote-servers-configuration}
 
-<div id="traditional-manual-configuration">
-  ### 従来の手動設定
-</div>
+### 従来の手動設定 {#traditional-manual-configuration}
 
 従来、ClickHouse では、クラスター内の各分片とレプリカを設定ファイルで手動で指定する必要がありました。
 
@@ -63,9 +50,7 @@ ClickHouse の Cluster Discovery 機能を使うと、設定ファイルに各�
 
 ```
 
-<div id="using-cluster-discovery">
-  ### クラスター検出 の使用
-</div>
+### クラスター検出 の使用 {#using-cluster-discovery}
 
 クラスター検出 では、各ノードを明示的に定義する代わりに、ZooKeeper 内のパスを指定するだけで済みます。ZooKeeper でこのパス配下に登録されたすべてのノードは、自動的に検出され、クラスターに追加されます。
 
@@ -113,9 +98,7 @@ ClickHouse の Cluster Discovery 機能を使うと、設定ファイルに各�
 </discovery>
 ```
 
-<div id="observer-mode">
-  ### オブザーバーモード
-</div>
+### オブザーバーモード {#observer-mode}
 
 オブザーバーモードに設定されたノードは、自身をレプリカとして登録しません。
 これらのノードは、能動的には参加せず、クラスター内のほかのアクティブなレプリカを監視・検出するだけです。
@@ -128,9 +111,7 @@ ClickHouse の Cluster Discovery 機能を使うと、設定ファイルに各�
 </discovery>
 ```
 
-<div id="discovery-of-clusters">
-  ### クラスターの検出
-</div>
+### クラスターの検出 {#discovery-of-clusters}
 
 場合によっては、クラスター内のホストだけでなく、クラスター自体を追加・削除する必要があります。複数のクラスターのルートパスを持つ `<multicluster_root_path>` ノードを使用できます：
 
@@ -171,9 +152,7 @@ ClickHouse の Cluster Discovery 機能を使うと、設定ファイルに各�
 * `<multicluster_root_path>` は `<observer/>` と組み合わせてのみ使用できます。
 * Keeper の path の最後の部分がクラスター名として使用されますが、登録時の名前は XML タグから取得されます。
 
-<div id="use-cases-and-limitations">
-  ## ユースケースと制限事項
-</div>
+## ユースケースと制限事項 {#use-cases-and-limitations}
 
 指定されたZooKeeper path にノードが追加または削除されると、設定を変更したり server を再起動したりしなくても、それらのノードは自動的に検出されるか、クラスターから削除されます。
 

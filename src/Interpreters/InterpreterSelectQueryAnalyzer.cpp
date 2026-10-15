@@ -146,25 +146,18 @@ ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOpti
             Block{{DataTypeUInt32().createColumnConst(1, *select_query_options.shard_count), std::make_shared<DataTypeUInt32>(), "_shard_count"}});
 
     const auto & settings = result_context->getSettingsRef();
-    if (settings[Setting::automatic_parallel_replicas_mode] != 0)
-    {
-        // If `automatic_parallel_replicas_mode` is not zero, it means that the heuristic for automatic parallel replicas is enabled.
-        // In this case, we should disable `allow_experimental_parallel_reading_from_replicas`, since it is interpreted as an enforcement to use parallel replicas.
-        // If `allow_experimental_parallel_reading_from_replicas` was zero, then we have to skip applying the heuristic.
-        if (settings[Setting::allow_experimental_parallel_reading_from_replicas] > 0
-            && settings[Setting::parallel_replicas_mode] == ParallelReplicasMode::READ_TASKS)
-        {
-            LOG_DEBUG(
-                getLogger("InterpreterSelectQueryAnalyzer"),
-                "Setting 'enable_parallel_replicas' is enabled but 'automatic_parallel_replicas_mode' is not zero."
-                " To enforce use of parallel replicas, please disable 'automatic_parallel_replicas_mode'.");
-            result_context->setSetting("enable_parallel_replicas", Field(0));
-        }
-        else
-        {
-            result_context->setSetting("automatic_parallel_replicas_mode", Field(0));
-        }
-    }
+    // If `automatic_parallel_replicas_mode` is not zero, the heuristic for automatic parallel replicas decides whether
+    // `MergeTree` reads use parallel replicas: `canUseTaskBasedParallelReplicas` is false while it is set, so
+    // `enable_parallel_replicas` is not an enforcement for them. It is kept as is, because cluster engines are not
+    // covered by the heuristic and still follow it (see `canReplaceClusterEngineWithClusterVariant`). Code that asks
+    // whether parallel replicas are enabled uses `Context::isParallelReplicasEnabled`, which accounts for the automatic mode.
+    // If parallel replicas are not enabled, the heuristic has nothing to switch to and is skipped. If they are forced, the
+    // heuristic is skipped as well (see `Context::getAutomaticParallelReplicasMode`).
+    if (settings[Setting::automatic_parallel_replicas_mode] != 0
+        && (settings[Setting::allow_experimental_parallel_reading_from_replicas] == 0
+            || Context::getAutomaticParallelReplicasMode(settings) == 0
+            || settings[Setting::parallel_replicas_mode] != ParallelReplicasMode::READ_TASKS))
+        result_context->setSetting("automatic_parallel_replicas_mode", Field(0));
 
     /// Injecting `ORDER BY rand()` (the setting `inject_random_order_for_select_without_order_by`) is only valid
     /// for a query processed up to the stage `Complete`: the injection wraps the query into
@@ -310,6 +303,7 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
 /// Like `extractAllTableReferences`, but does not descend into the inner queries of views inlined
 /// by the analyzer (`analyzer_inline_views`) into a query that is not itself inside a view:
 /// they read their own tables, just like a view that is not inlined.
+/// With `with_expression_subqueries`, also walks the subqueries in expressions and the children of a `TableNode`.
 static bool isViewInnerQueryNode(const QueryTreeNodePtr & node)
 {
     if (const auto * query_node = node->as<QueryNode>())
@@ -319,32 +313,50 @@ static bool isViewInnerQueryNode(const QueryTreeNodePtr & node)
     return false;
 }
 
-static void extractTableReferencesOutsideViews(const QueryTreeNodePtr & node, bool outer_is_view_inner, QueryTreeNodes & result)
+static void extractTableReferencesOutsideViews(
+    const QueryTreeNodePtr & node, bool outer_is_view_inner, bool with_expression_subqueries, QueryTreeNodes & result)
 {
     bool is_view_inner = isViewInnerQueryNode(node);
     if (is_view_inner && !outer_is_view_inner)
         return;
 
     if (node->getNodeType() == QueryTreeNodeType::TABLE)
-    {
         result.push_back(node);
+
+    if (with_expression_subqueries)
+    {
+        /// Like in `extractAllTableReferences`, the arguments of a table function are not table references.
+        if (node->getNodeType() == QueryTreeNodeType::TABLE_FUNCTION)
+            return;
+
+        /// Only a query or a union can enter or leave a view inner query.
+        if (!node->as<QueryNode>() && !node->as<UnionNode>())
+            is_view_inner = outer_is_view_inner;
+
+        /// Also reaches the subquery of a materialized CTE, a child of its `TableNode`.
+        for (const auto & child : node->getChildren())
+            if (child)
+                extractTableReferencesOutsideViews(child, is_view_inner, with_expression_subqueries, result);
     }
     else if (const auto * query_node = node->as<QueryNode>())
     {
         for (const auto & table_expression : extractTableExpressions(query_node->getJoinTreeNodeTyped(), /*add_array_join=*/ false, /*recursive=*/ false))
-            extractTableReferencesOutsideViews(table_expression, is_view_inner, result);
+            extractTableReferencesOutsideViews(table_expression, is_view_inner, with_expression_subqueries, result);
     }
     else if (const auto * union_node = node->as<UnionNode>())
     {
         for (const auto & query : union_node->getQueries().getNodes())
-            extractTableReferencesOutsideViews(query, is_view_inner, result);
+            extractTableReferencesOutsideViews(query, is_view_inner, with_expression_subqueries, result);
     }
 }
 
 void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr & context, const StoragePtr & storage)
 {
+    /// `tryResolveTableIdentifier` types every reference to the view source table outside view inner queries
+    /// by the view source, not only those in the join tree, so all of them are replaced.
+    bool with_expression_subqueries = storage == context->getViewSource();
     QueryTreeNodes nodes;
-    extractTableReferencesOutsideViews(query_tree, isViewInnerQueryNode(query_tree), nodes);
+    extractTableReferencesOutsideViews(query_tree, isViewInnerQueryNode(query_tree), with_expression_subqueries, nodes);
     IQueryTreeNode::ReplacementMap replacement_map;
 
     for (auto & node : nodes)
@@ -423,7 +435,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, nullptr /*storage*/))
     , planner(query_tree, select_query_options, post_filter_)
     , query_plan_with_parallel_replicas_builder(
-          // Copy over the original `context_` since we need the original value of  `enable_parallel_replicas` that might be changed in `buildContext`.
+          // Copy over the original `context_`, not the one adjusted by `buildContext`: the builder applies its own adjustments.
           [ast = query_->clone(),
            ctx = Context::createCopy(context_),
            select_options = select_query_options_,
@@ -446,7 +458,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, storage_))
     , planner(query_tree, select_query_options)
     , query_plan_with_parallel_replicas_builder(
-          // Copy over the original `context_` since we need the original value of  `enable_parallel_replicas` that might be changed in `buildContext`.
+          // Copy over the original `context_`, not the one adjusted by `buildContext`: the builder applies its own adjustments.
           [ast = query_->clone(),
            ctx = Context::createCopy(context_),
            storage = storage_,
@@ -466,7 +478,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , query_tree(query_tree_)
     , planner(query_tree_, select_query_options)
     , query_plan_with_parallel_replicas_builder(
-          // Copy over the original `context_` since we need the original value of  `enable_parallel_replicas` that might be changed in `buildContext`.
+          // Copy over the original `context_`, not the one adjusted by `buildContext`: the builder applies its own adjustments.
           // `tree` is cloned because `toAST` below feeds a separate interpreter, while
           // `single_node_tree` must stay the very tree the single-node plan was built from: it is the
           // one carrying the query's own `SETTINGS` clause, which is what the eligibility check reads.

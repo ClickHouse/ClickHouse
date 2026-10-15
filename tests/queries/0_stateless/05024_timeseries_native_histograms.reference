@@ -31,7 +31,7 @@ MergeTree	id, timestamp
 2024-01-01 00:00:02.000	1	-53	0	6.5	12.25	0	[(0,2)]	[4.5,2]	[]	[]	[0.1,0.5]	0	0	[]	[]
 -- histogram rows share the series id with the tags table
 test_histogram_seconds	test	2
--- min_time and max_time in the tags table come from histogram timestamps too
+-- min_time and max_time in the time ranges table come from histogram timestamps too
 2024-01-01 00:00:01.000	2024-01-01 00:00:02.000
 -- histograms without a metric name are rejected
 -- a histogram-enabled definition survives DETACH/ATTACH unchanged
