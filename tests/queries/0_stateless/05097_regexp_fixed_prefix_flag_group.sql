@@ -62,7 +62,7 @@ INSERT INTO t_prefix_utf8 VALUES ('c'), ('éc'), ('ééc'), ('aéc'), ('ac'), ('
 
 SELECT 'a quantifier over a multi-byte literal';
 SELECT match('c', '^é*c'), match('c', '^é(?m)*c'), match('c', '^é\Q\E*c');
-SELECT match('abcdx', 'abcdé?x'), match('abcdx', 'abcdé(?)?x');
+SELECT match('abcdx', 'abcdé?x'), match('abcdx', 'abcdé(?)?x'), match('abcdx', 'abcdé\Q\E?x');
 SELECT count() FROM t_prefix_utf8 WHERE match(s, '^é*c');
 SELECT countIf(match(s, '^é*c')) FROM t_prefix_utf8;
 SELECT count() FROM t_prefix_utf8 WHERE match(s, '^é?c');

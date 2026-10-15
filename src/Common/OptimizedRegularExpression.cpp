@@ -6,6 +6,7 @@
 #include <Common/checkStackSize.h>
 #include <Common/OptimizedRegularExpression.h>
 
+#include <Common/RegexpUtils.h>
 #include <Common/StringSearcher.h>
 #include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
@@ -380,6 +381,11 @@ const char * analyzeImpl(
                 if (isEscapedLiteral(*pos))
                     goto ordinary;
 
+                /// An empty `\Q\E` quote is zero-width, so a quantifier after it applies to the character before it.
+                if (depth == 0 && !in_square_braces && !last_substring->first.empty()
+                    && DB::isZeroAllowingQuantifier(DB::skipZeroWidthConstructs(pos - 1, end), end))
+                    DB::dropLastLiteral(last_substring->first);
+
                 /// Consume the whole escape, so its argument bytes are not taken as a literal (issue #106382).
                 finish_non_trivial_char();
                 pos = skipUnsupportedEscape(pos, end);
@@ -411,20 +417,6 @@ const char * analyzeImpl(
                     auto is_flag_char = [](char x)
                     {
                         return x == '-' || x == 'i' || x == 'm' || x == 's' || x == 'U' || x == 'u';
-                    };
-                    /// Flag groups are zero-width: a quantifier after a chain of them applies to the atom before the chain.
-                    auto skip_flag_groups = [&](const char * p)
-                    {
-                        while (end - p >= 3 && p[0] == '(' && p[1] == '?')
-                        {
-                            const char * it = p + 2;
-                            while (it < end && is_flag_char(*it))
-                                ++it;
-                            if (it == end || *it != ')')
-                                break;
-                            p = it + 1;
-                        }
-                        return p;
                     };
                     /// A flag group, `(?flags)` or `(?flags:regex)`. re2 also accepts an empty flag list, `(?)`.
                     if (pos + 2 < end && pos[1] == '?' && (is_flag_char(pos[2]) || pos[2] == ')'))
@@ -481,10 +473,8 @@ const char * analyzeImpl(
                     /// or this group itself when it captures.
                     has_capture = has_capture || group_has_capture || !is_non_capturing_group;
 
-                    /// For ()? or ()* or (){0,1}, we can just ignore the whole group, also with flag groups before the quantifier.
-                    const char * after_group = skip_flag_groups(pos + 1);
-                    if ((after_group < end && (*after_group == '?' || *after_group == '*')) ||
-                        (after_group + 1 < end && *after_group == '{' && after_group[1] == '0'))
+                    /// For ()? or ()* or (){0,1}, we can just ignore the whole group, also with zero-width constructs before the quantifier.
+                    if (DB::isZeroAllowingQuantifier(DB::skipZeroWidthConstructs(pos + 1, end), end))
                     {
                         finish_non_trivial_char();
                     }
@@ -561,12 +551,7 @@ const char * analyzeImpl(
             case '*':
                 if (depth == 0 && !last_substring->first.empty() && !in_square_braces)
                 {
-                    /// The quantifier applies to the whole last character, which takes several bytes in UTF-8.
-                    auto & literal = last_substring->first;
-                    size_t new_size = literal.size() - 1;
-                    while (new_size > 0 && DB::UTF8::isContinuationOctet(static_cast<UInt8>(literal[new_size])))
-                        --new_size;
-                    literal.resize(new_size);
+                    DB::dropLastLiteral(last_substring->first);
                 }
                 finish_non_trivial_char();
                 ++pos;

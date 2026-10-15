@@ -51,5 +51,7 @@ SELECT extract(materialize('abcd'), '(?:(?))b.*$');
 SELECT match(materialize('abce'), 'abcd(?)?e');
 -- The quantifier after a flag group makes a whole group before it optional.
 SELECT match(materialize('x'), '(?:abcd)(?)*x'), match(materialize('x'), '(?:abcd)(?s)*x');
+-- So is an empty `\Q\E` quote.
+SELECT match(materialize('abcx'), 'abcd\Q\E?x'), match(materialize('x'), '(?:abcd)\Q\E*x');
 -- A capture group after `(?)` still allows the rewrite.
 EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT extract(materialize('abcd'), '(?)(b).*$');
