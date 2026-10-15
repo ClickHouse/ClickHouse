@@ -145,3 +145,22 @@ TEST(PipelineExecutor, ThreadsForSlotsGrantedAfterStartEagerAllocation)
 {
     checkThreadsForLateSlots(/* lazy_allocation */ false);
 }
+
+/// A thread downscaled because its preempted slot was not granted back in time is requested again,
+/// so that it is started when the slot is granted later.
+TEST(PipelineExecutor, ThreadRequestedAfterDownscale)
+{
+    ExecutorTasks tasks;
+    tasks.init(num_streams, 1, std::make_shared<GrantedAllocation>(num_streams), false, false, nullptr, nullptr, nullptr);
+    tasks.upscale(0);
+    tasks.upscale(1);
+    EXPECT_FALSE(tasks.hasThreadsToSpawn());
+
+    tasks.preempt(1);
+    tasks.downscale(1);
+    EXPECT_TRUE(tasks.hasThreadsToSpawn());
+
+    tasks.upscale(1);
+    EXPECT_FALSE(tasks.hasThreadsToSpawn());
+    tasks.finish();
+}

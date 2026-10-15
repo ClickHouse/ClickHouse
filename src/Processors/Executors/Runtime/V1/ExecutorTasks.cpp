@@ -371,6 +371,9 @@ void ExecutorTasks::downscale(size_t slot_id)
             }
         }
     }
+
+    /// The thread stopped because its slot was not granted in time. The slot may be granted later.
+    addThreadsToSpawn(1);
 }
 
 void ExecutorTasks::preempt(size_t slot_id)

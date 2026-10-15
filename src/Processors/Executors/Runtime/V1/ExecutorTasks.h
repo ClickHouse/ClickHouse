@@ -73,7 +73,8 @@ class ExecutorTasks : public ISpillRequestListener
     /// CPU slots for each thread.
     SlotAllocationPtr cpu_slots;
 
-    /// Threads requested for queued tasks that have not started yet, because no CPU slot was granted at that time.
+    /// Threads requested for queued tasks or in place of downscaled ones, that have not started yet,
+    /// because no CPU slot was granted at that time.
     /// Changed under `mutex`; atomic so that `hasThreadsToSpawn` can be checked without the lock after every task.
     /// Rarely changes, so it is kept apart from the frequently changed fields above to keep those checks cheap.
     alignas(64) std::atomic<size_t> threads_to_spawn = 0;
@@ -153,7 +154,8 @@ public:
     /// one at a time and re-call upscale after each.
     size_t upscale(size_t slot_id);
 
-    /// Downscale by removing slot_id from active slots. Updates use_threads to highest active slot + 1
+    /// Downscale by removing slot_id from active slots. Updates use_threads to highest active slot + 1.
+    /// Requests a thread instead, to be started when a slot is granted again.
     void downscale(size_t slot_id);
 
     /// Temporarily release slot_id without downscale. Later either downscale() or resume() is called.
