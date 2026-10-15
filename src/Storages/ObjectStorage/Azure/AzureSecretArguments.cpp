@@ -85,6 +85,16 @@ bool maskAzureConnectionString(FunctionSecretArgumentsFinder & finder, ssize_t u
     return false;
 }
 
+/// Hides every `extra_credentials(...)` whole, its keys included: a key can be written as anything, a credential too.
+void maskAzureExtraCredentials(FunctionSecretArgumentsFinder & finder)
+{
+    for (size_t i = 0, size = finder.function->arguments->size(); i < size; ++i)
+    {
+        if (const auto f = finder.function->arguments->at(i)->getFunction(); f && f->name() == "extra_credentials")
+            finder.markSecretArgument(i);
+    }
+}
+
 /// The keys an Azure named collection accepts (`StorageAzureConfiguration`). An override with any
 /// other key, which can name any credential, is rejected only after the statement is logged.
 bool isAzureCollectionKey(std::string_view key)
@@ -281,7 +291,7 @@ void findAzureBlobStorageFunctionSecretArguments(FunctionSecretArgumentsFinder &
     /// azureBlobStorageCluster('cluster_name', 'conn_string/storage_account_url', ...) has 'conn_string/storage_account_url' as its second argument.
     size_t url_arg_idx = is_cluster_function ? 1 : 0;
 
-    finder.maskNestedSecretMap("extra_credentials", {"client_id", "tenant_id"});
+    maskAzureExtraCredentials(finder);
 
     /// The other values are hidden before a connection string is: hiding that replaces its whole argument.
     if (!is_cluster_function && finder.isNamedCollectionName(0))
@@ -326,7 +336,7 @@ void findAzureBlobStorageTableEngineSecretArguments(FunctionSecretArgumentsFinde
     /// AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, format, [account_name, account_key, ...])
     size_t url_arg_idx = 0;
 
-    finder.maskNestedSecretMap("extra_credentials", {"client_id", "tenant_id"});
+    maskAzureExtraCredentials(finder);
 
     if (finder.isNamedCollectionName(url_arg_idx))
     {

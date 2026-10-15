@@ -58,6 +58,7 @@ SELECT * FROM azureBlobStorage('https://account.blob.core.windows.net/container/
 SELECT * FROM azureBlobStorage('https://account.blob.core.windows.net', 'container', 'blob', account_key = 'plain_account_key')
 SELECT * FROM azureBlobStorage('https://account.blob.core.windows.net', 'container', 'blob', extra_credentials(client_id = 'id'), extra_credentials(tenant_id = 'tid'), 'plain_account_key', 'CSV')
 SELECT * FROM azureBlobStorageCluster(extra_credentials(client_id = 'id'), 'https://account.blob.core.windows.net/container/blob.csv', 'sp=r&sig=plain_sas_signature')
+SELECT * FROM azureBlobStorage('https://account.blob.core.windows.net', 'container', 'blob', extra_credentials('plain_client_secret' = 'x', client_id = 'plain_client_id'))
 SELECT * FROM azureBlobStorage('AccountName=account;AccountKey=plain_account_key;BlobEndpoint=https://account.blob.core.windows.net', 'container', 'blob', 'account', 'plain_account_key')
 SELECT * FROM azureBlobStorage('AccountName=account;AccountKey=plain_account_key;SharedAccessSignature=sp=r&sig=plain_sas_signature', 'container', 'blob')
 SELECT * FROM azureBlobStorage('AccountName=account;AccountKey=plain_account_key;AccountKey=plain_account_key_2', 'container', 'blob')
@@ -92,6 +93,11 @@ EOF
 # The query tree hides an argument masked whole, not only the right side of a comparison.
 $CLICKHOUSE_CLIENT -q "SELECT countIf(explain LIKE '%plain_sas_signature%'), countIf(explain LIKE '%[HIDDEN]%') FROM (EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM azureBlobStorage('https://account.blob.core.windows.net/container/blob.csv', 'sp=r&sig=plain_sas_signature' = 'x'))"
 $CLICKHOUSE_CLIENT -q "SELECT countIf(explain LIKE '%plain_sas_signature%'), countIf(explain LIKE '%[HIDDEN]%') FROM (EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM azureBlobStorage(azure_conf, 'sp=r&sig=plain_sas_signature' = 'x'))"
+
+# Nothing inside an Azure `extra_credentials(...)` is dumped, keys included.
+for explain in "AST" "QUERY TREE run_passes = 0"; do
+    $CLICKHOUSE_CLIENT -q "SELECT countIf(explain LIKE '%plain_client_%'), countIf(explain LIKE '%[HIDDEN]%') FROM (EXPLAIN $explain SELECT * FROM azureBlobStorage('https://account.blob.core.windows.net', 'container', 'blob', extra_credentials('plain_client_secret' = 'x', client_id = 'plain_client_id')))"
+done
 
 # A dictionary source key that is only partly secret still makes the logged query masked.
 $CLICKHOUSE_CLIENT -q "CREATE DICTIONARY ${CLICKHOUSE_DATABASE}.dict_mongodb_uri (key UInt64, value String) PRIMARY KEY key SOURCE(MONGODB(URI 'mongodb://user:plain_mongodb_password@localhost:27017/db' COLLECTION 'c')) LIFETIME(0) LAYOUT(FLAT())"
