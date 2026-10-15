@@ -134,6 +134,16 @@
     M(IcebergMetadataReturnedObjectInfos, "Total number of returned object infos from iceberg iterator.", ValueType::Number) \
     M(IcebergMinMaxNonPrunedDeleteFiles, "Total number of accepted data files-position delete file pairs by minmax analysis from pairs suitable by partitioning and sequence number.", ValueType::Number) \
     M(IcebergMinMaxPrunedDeleteFiles, "Total number of accepted data files-position delete file pairs by minmax analysis from pairs suitable by partitioning and sequence number.", ValueType::Number) \
+    M(IcebergCompactionCleanupDeferredByReaders, "Number of times the removal of data files superseded by Iceberg compaction was postponed because a query on this or another replica was still reading a snapshot that references them.", ValueType::Number) \
+    M(IcebergCompactionCleanupDeferredBySnapshotLifetime, "Number of times the removal of data files superseded by Iceberg compaction was postponed because the compaction or a snapshot it superseded was fresher than `iceberg_outdated_snapshot_lifetime_seconds`.", ValueType::Number) \
+    M(ObjectStorageSharedLeasesAcquired, "Number of shared leases of keys, such as Iceberg snapshots being read, written to object storage when a query of this server acquired a key that was not leased by the server yet.", ValueType::Number) \
+    M(ObjectStorageSharedLeasesRenewed, "Number of shared leases rewritten in object storage by the renewal task while the queries of this server held the key.", ValueType::Number) \
+    M(ObjectStorageSharedLeasesRefused, "Number of attempts to lease a key in object storage refused because a cleaner condemned the key, such as an Iceberg snapshot about to be removed by the cleanup after a compaction.", ValueType::Number) \
+    M(ObjectStorageSharedLeaseWriteFailures, "Number of failed writes of shared leases to object storage, on acquisition or on renewal.", ValueType::Number) \
+    M(ObjectStorageSharedLeasesCondemned, "Number of keys condemned in object storage by a cleaner of this server, so that no replica leases them while it removes what they protect.", ValueType::Number) \
+    M(ObjectStorageExclusiveLeasesAcquired, "Number of exclusive leases of keys, such as the compaction of an Iceberg table, acquired in object storage by this server.", ValueType::Number) \
+    M(ObjectStorageExclusiveLeasesRefused, "Number of attempts to acquire an exclusive lease in object storage given up because another replica held a live lease of the key.", ValueType::Number) \
+    M(ObjectStorageExpiredLeasesRemoved, "Number of expired lease objects and condemned markers removed from object storage.", ValueType::Number) \
     M(DeltaLakeDeltaLogExistenceChecks, "Number of object-storage listings issued to check whether a DeltaLake `_delta_log` exists (e.g. during CREATE TABLE).", ValueType::Number) \
     M(OneLakeAccessTokenRequests, "Number of access token requests issued by the OneLake catalog via the Entra ID refresh token grant.", ValueType::Number) \
     M(OneLakeAccessTokenRequestFailures, "Number of failed access token requests issued by the OneLake catalog via the Entra ID refresh token grant (including expired or revoked refresh tokens).", ValueType::Number) \
@@ -1356,6 +1366,7 @@ The server successfully detected this situation and will download merged part fr
     \
     M(DistrCacheLockRegistryMicroseconds, "Distributed Cache registry event. Time spent to take DistributedCacheRegistry lock", ValueType::Microseconds) \
     M(DistrCacheRegistryUpdateMicroseconds, "Distributed Cache registry event. Time spent updating distributed cache registry", ValueType::Microseconds) \
+    M(DistrCacheRejectedRegistryRecords, "Distributed Cache registry event. The number of registry entries ignored because their certificate is not trusted, their signature does not match, or either is missing", ValueType::Number) \
     M(DistrCacheRegistryUpdates, "Distributed Cache registry event. Number of distributed cache registry updates", ValueType::Number) \
     M(DistrCacheHashRingRebuilds, "Distributed Cache registry event. Number of distributed cache hash ring rebuilds", ValueType::Number) \
     M(DistrCacheSuccessfulRegistryUpdates, "Distributed Cache registry event. The number of successful server registry updates", ValueType::Number) \
@@ -1381,6 +1392,8 @@ The server successfully detected this situation and will download merged part fr
     M(DistrCacheConnectAttempts, "Distributed Cache connection event. The number of connection attempts to distributed cache", ValueType::Number) \
     M(DistrCacheSuccessfulConnectAttempts, "Distributed Cache connection event. The number of successful connection attempts to distributed cache", ValueType::Number) \
     M(DistrCacheUnsuccessfulConnectAttempts, "Distributed Cache connection event. The number of unsuccessful connection attempts to distributed cache", ValueType::Number) \
+    M(DistrCacheUnexpectedServerCertificate, "Distributed Cache connection event. The number of times a distributed cache server presented a certificate whose key is not the one in its registry entry, so the client closed the connection and excluded the server", ValueType::Number) \
+    M(DistrCacheVerifiedServerCertificate, "Distributed Cache connection event. The number of times a distributed cache server presented a certificate with the key in its registry entry", ValueType::Number) \
     M(DistrCacheGetClientMicroseconds, "Distributed Cache connection event. Time spent getting client for distributed cache", ValueType::Microseconds) \
     \
     M(DistrCacheTemporaryFilesCreated, "Distributed Cache connection event. Number of temporary files created in distributed cache", ValueType::Number) \

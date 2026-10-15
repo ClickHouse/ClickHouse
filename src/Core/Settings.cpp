@@ -8395,7 +8395,7 @@ Hard lower limit on the task size (even when the number of granules is low and t
 )", 0, \
         {"24.10", 8, 8, "New setting"}) \
     DECLARE(UInt64, merge_tree_compact_parts_min_granules_to_multibuffer_read, 16, R"(
-Only has an effect in ClickHouse Cloud. Number of granules in stripe of compact part of MergeTree tables to use multibuffer reader, which supports parallel reading and prefetch. In case of reading from remote fs using of multibuffer reader increases number of read request. A part is read with a single buffer when it contains both fewer granules than this threshold and fewer granules than the number of columns being read, because in that case the single buffer reader issues fewer read requests than the multibuffer reader.
+Only has an effect in ClickHouse Cloud. Number of granules in stripe of compact part of MergeTree tables to use multibuffer reader, which supports parallel reading and prefetch. In case of reading from remote fs using of multibuffer reader increases number of read request.
 )", 0) \
     \
     DECLARE(Bool, send_table_structure_on_insert_with_inline_data, true, R"(
@@ -10861,6 +10861,10 @@ Allow to execute `insert` queries into iceberg.
         {"25.7", false, false, "New setting."}) \
     DECLARE(Bool, allow_experimental_cleanup_old_data_files_compaction, false, R"(
 Allow to clean up old data files during Iceberg compaction.
+
+The cleanup runs `iceberg_compaction_data_cleanup` after a compaction. It expires the snapshots the compaction made obsolete, the same
+way as `expire_snapshots`: removes them from the table metadata and deletes the files that no other snapshot references. For a table
+of the format version 1 or behind a transactional catalog it only deletes the files, and the snapshots stay in the metadata.
 )", EXPERIMENTAL, \
         {"26.5", false, false, "New setting"}) \
     DECLARE(Bool, allow_experimental_iceberg_compaction, false, R"(
