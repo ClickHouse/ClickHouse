@@ -1796,14 +1796,13 @@ public:
     /// a conjunct over these can't leave ON, and full_sorting_merge rejects it there
     TableExpressionNodes preserved_join_tables;
 
-    /// Whether `node` reads at least one table column and all of them come from `preserved_join_tables`.
-    /// Columns a lambda captures count, as the join reads them like any other input; lambda arguments do not.
+    /// Whether every table column `node` reads, lambda captures included, comes from `preserved_join_tables`.
+    /// A column-less `node` qualifies too, as the join evaluates it with the left side; lambda arguments never count.
     bool readsOnlyPreservedJoinTables(const QueryTreeNodePtr & node) const
     {
         if (preserved_join_tables.empty())
             return false;
 
-        bool has_column = false;
         std::vector<const IQueryTreeNode *> nodes_to_process{node.get()};
         while (!nodes_to_process.empty())
         {
@@ -1817,7 +1816,6 @@ public:
                     continue;
                 if (!std::ranges::contains(preserved_join_tables, source))
                     return false;
-                has_column = true;
             }
             else if (const auto * function = current->as<FunctionNode>())
             {
@@ -1829,7 +1827,7 @@ public:
                 nodes_to_process.push_back(lambda->getExpression().get());
             }
         }
-        return has_column;
+        return true;
     }
 
     bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child)

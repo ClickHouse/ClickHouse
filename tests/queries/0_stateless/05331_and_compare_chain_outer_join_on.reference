@@ -42,6 +42,10 @@ lambda capturing the preserved side
 0	10
 1	0
 2	0
+column-less key
+0	0
+1	1
+2	0
 contradiction with a skipped bound
 0	0
 1	0
