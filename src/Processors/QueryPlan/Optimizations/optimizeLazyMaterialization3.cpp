@@ -769,21 +769,8 @@ private:
             if (candidates.empty())
                 continue;
 
-            const auto lazily_read = typeid_cast<const ReadFromObjectStorageStep &>(*step).getLazilyReadColumns(lazy.eager_names);
-
-            for (const auto * input : candidates)
-            {
-                if (lazily_read.contains(input->result_name))
-                    lazy.inputs.push_back(input);
-                else
-                {
-                    lazy.eager_names.insert(input->result_name);
-                    kept_by_read.insert(input);
-                }
-            }
-
-            /// The lazy read fetches every column the main read leaves out, so the two have to agree.
-            if (lazy.inputs.size() != lazily_read.size())
+            lazy.inputs = std::move(candidates);
+            if (!settleObjectStorageLazyRead(source, lazy, kept_by_read))
                 return false;
 
             if (!lazy.inputs.empty())
@@ -793,6 +780,30 @@ private:
         return !lazy_by_source.empty();
     }
 
+    /// Leaves to the lazy read of an object storage source those of `lazy.inputs` the read can leave out given the columns
+    /// it keeps, `lazy.eager_names`, and keeps the others, which cross the `LIMIT` instead. Keeping a column can keep
+    /// others with it - a column whose `DEFAULT` is computed from it - so this goes on until nothing more is kept.
+    bool settleObjectStorageLazyRead(size_t source, LazySource & lazy, NodeSet & kept_by_read) const
+    {
+        const auto & step = typeid_cast<const ReadFromObjectStorageStep &>(*merged.sources[source].plan_node->step);
+        while (true)
+        {
+            const auto lazily_read = step.getLazilyReadColumns(lazy.eager_names);
+            const auto kept = std::erase_if(lazy.inputs, [&](const ActionsDAG::Node * input)
+            {
+                if (lazily_read.contains(input->result_name))
+                    return false;
+                lazy.eager_names.insert(input->result_name);
+                kept_by_read.insert(input);
+                return true;
+            });
+
+            /// The lazy read fetches every column the main read leaves out, so the two have to agree.
+            if (kept == 0)
+                return lazy.inputs.size() == lazily_read.size();
+        }
+    }
+
     /// A join keeps the first input of a side no condition of it reads when nothing else of that side is needed below the
     /// `LIMIT`, for the number of rows, so that input is computed below the `LIMIT`, and the columns of the reads it is
     /// computed from have to stay in the main read: those meant for a lazy read cross the `LIMIT` instead. The input can
@@ -800,6 +811,9 @@ private:
     /// or of several, or a constant, which reads none.
     bool keepColumnsOfUnreadJoinSides(NodeSet & kept_by_read)
     {
+        /// The object storage sources whose lazy read lost a column, which may take others with it.
+        std::set<size_t> changed_object_storage_sources;
+
         for (const auto & side_inputs : merged.unread_join_sides)
         {
             bool is_any_needed_below = false;
@@ -841,12 +855,28 @@ private:
                 if (!lazy.positions.empty())
                     lazy.positions.erase(lazy.positions.begin() + index);
                 else
+                {
                     lazy.eager_names.insert(column->result_name);
+                    changed_object_storage_sources.insert(source);
+                }
                 kept_by_read.insert(column);
 
                 if (lazy.inputs.empty())
                     lazy_by_source.erase(lazy_it);
             }
+        }
+
+        for (size_t source : changed_object_storage_sources)
+        {
+            const auto lazy_it = lazy_by_source.find(source);
+            if (lazy_it == lazy_by_source.end())
+                continue;
+
+            if (!settleObjectStorageLazyRead(source, lazy_it->second, kept_by_read))
+                return false;
+
+            if (lazy_it->second.inputs.empty())
+                lazy_by_source.erase(lazy_it);
         }
 
         return !lazy_by_source.empty();
