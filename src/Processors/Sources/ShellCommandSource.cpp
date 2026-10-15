@@ -359,10 +359,10 @@ public:
     }
 
     /// Check if stderr was accumulated (for THROW mode)
-    bool hasStderr() const { return stderr_full_output.has_value(); }
+    [[nodiscard]] bool hasStderr() const { return stderr_full_output.has_value(); }
 
     /// Get accumulated stderr content (for THROW mode)
-    const String & getStderr() const { return *stderr_full_output; }
+    [[nodiscard]] const String & getStderr() const { return *stderr_full_output; }
 
     /// Get buffered stderr content from circular buffer (for LOG_FIRST/LOG_LAST modes)
     /// Clears the buffer to prevent duplicate logging in destructor

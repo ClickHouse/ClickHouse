@@ -610,7 +610,7 @@ struct DeserializeBinaryBulkStateMap : public ISerialization::DeserializeBinaryB
     ISerialization::DeserializeBinaryBulkStatePtr bucket_index_state;
     bool has_bucket_index = false;
 
-    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    [[nodiscard]] ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateMap>(*this);
         new_state->nested_state = nested_state ? nested_state->clone() : nullptr;
@@ -639,9 +639,9 @@ struct KeysOrValuesSubcolumnCreator : public ISerialization::ISubcolumnCreator
     {
     }
 
-    DataTypePtr create(const DataTypePtr & prev) const override { return nested_creator->create(prev); }
-    ColumnPtr create(const ColumnPtr & prev) const override { return nested_creator->create(prev); }
-    SerializationPtr create(const SerializationPtr & prev, const DataTypePtr & type) const override
+    [[nodiscard]] DataTypePtr create(const DataTypePtr & prev) const override { return nested_creator->create(prev); }
+    [[nodiscard]] ColumnPtr create(const ColumnPtr & prev) const override { return nested_creator->create(prev); }
+    [[nodiscard]] SerializationPtr create(const SerializationPtr & prev, const DataTypePtr & type) const override
     {
         return SerializationMapKeysOrValues::create(nested_creator->create(prev, type), serialization_version);
     }

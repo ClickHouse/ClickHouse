@@ -25,7 +25,7 @@ public:
 
     bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr &) { return true; }
 
-    bool shouldReplaceWithClusterAlternatives() const
+    [[nodiscard]] bool shouldReplaceWithClusterAlternatives() const
     {
         return subquery_count <= 1 && !has_join && ((table_count + table_function_count) == 1 || (table_function_count == 0));
     }

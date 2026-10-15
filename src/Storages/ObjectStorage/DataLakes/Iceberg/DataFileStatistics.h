@@ -33,12 +33,12 @@ public:
     void addColumnSizesOnDisk(const std::unordered_map<String, size_t> & sizes_by_column_name, const Block & sample_block);
     void merge(const DataFileStatistics & other);
 
-    std::vector<std::pair<size_t, size_t>> getColumnSizes() const;
-    std::vector<std::pair<size_t, size_t>> getNullCounts() const;
-    std::vector<std::pair<size_t, Field>> getLowerBounds() const;
-    std::vector<std::pair<size_t, Field>> getUpperBounds() const;
+    [[nodiscard]] std::vector<std::pair<size_t, size_t>> getColumnSizes() const;
+    [[nodiscard]] std::vector<std::pair<size_t, size_t>> getNullCounts() const;
+    [[nodiscard]] std::vector<std::pair<size_t, Field>> getLowerBounds() const;
+    [[nodiscard]] std::vector<std::pair<size_t, Field>> getUpperBounds() const;
 
-    const std::vector<Int64> & getFieldIds() const { return field_ids; }
+    [[nodiscard]] const std::vector<Int64> & getFieldIds() const { return field_ids; }
 private:
     static Range uniteRanges(const Range & left, const Range & right);
 

@@ -76,7 +76,7 @@ public:
 
     bool checkForEndOfRow() override;
 
-    bool yieldStrings() const { return yield_strings; }
+    [[nodiscard]] bool yieldStrings() const { return yield_strings; }
 private:
     bool yield_strings;
 };
@@ -87,7 +87,7 @@ public:
     JSONCompactEachRowRowSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, bool yield_strings_, const FormatSettings & format_settings_);
 
 private:
-    bool allowVariableNumberOfColumns() const override { return format_settings.json.compact_allow_variable_number_of_columns; }
+    [[nodiscard]] bool allowVariableNumberOfColumns() const override { return format_settings.json.compact_allow_variable_number_of_columns; }
 
     std::optional<DataTypes> readRowAndGetDataTypesImpl() override;
 

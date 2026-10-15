@@ -119,7 +119,7 @@ public:
         ++files_it;
     }
 
-    bool isValid() const override
+    [[nodiscard]] bool isValid() const override
     {
         if (files_it == files.end())
         {
@@ -130,7 +130,7 @@ public:
         return true;
     }
 
-    bool isFile() const override
+    [[nodiscard]] bool isFile() const override
     {
         if (files_it == files.end())
         {
@@ -141,7 +141,7 @@ public:
         return true;
     }
 
-    std::string name() const override
+    [[nodiscard]] std::string name() const override
     {
         if (files_it == files.end())
         {
@@ -152,7 +152,7 @@ public:
         return *files_it;
     }
 
-    std::string path() const override
+    [[nodiscard]] std::string path() const override
     {
         if (files_it == files.end())
         {

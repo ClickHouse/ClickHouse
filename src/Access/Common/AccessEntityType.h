@@ -33,7 +33,7 @@ struct AccessEntityTypeInfo
     const char unique_char;     /// Unique character for this type. E.g. 'P' for SETTINGS_PROFILE.
     const int not_found_error_code;
 
-    String formatEntityNameWithType(const String & entity_name) const;
+    [[nodiscard]] String formatEntityNameWithType(const String & entity_name) const;
 
     static const AccessEntityTypeInfo & get(AccessEntityType type_);
     static AccessEntityType parseType(const String & name_);

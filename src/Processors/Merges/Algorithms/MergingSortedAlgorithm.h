@@ -33,13 +33,13 @@ public:
 
     void addInput();
 
-    const char * getName() const override { return "MergingSortedAlgorithm"; }
+    [[nodiscard]] const char * getName() const override { return "MergingSortedAlgorithm"; }
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
     Status merge() override;
     void onSourceExhausted(size_t source_num) override;
 
-    MergedStats getMergedStats() const override { return merged_data.getMergedStats(); }
+    [[nodiscard]] MergedStats getMergedStats() const override { return merged_data.getMergedStats(); }
 
 private:
     SharedHeader header;
@@ -118,7 +118,7 @@ private:
 
     /// Where the rows to keep come from: the filter column of the header, or the chunk's
     /// `RowFilterInfo`. Resolved once per chunk, so the per-row path is one indexed read.
-    const IColumnFilter * resolveRowFilterMask(const Chunk & chunk) const;
+    [[nodiscard]] const IColumnFilter * resolveRowFilterMask(const Chunk & chunk) const;
     /// Issue read-ahead for the next deferred sources up to the window size.
     void topUpPrefetch();
     /// Mark a deferred source as no longer reading ahead (its real data arrived or it

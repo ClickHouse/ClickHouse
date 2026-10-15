@@ -44,17 +44,17 @@ public:
     /// The predicted ABSOLUTE end of the current run: `frontier + max(foldedEstimate, estimate)`.
     /// Anchored at the run start, not the caller's offset -- anchoring at the offset would re-anchor
     /// forward as the cursor advances, inflating the prediction. 0 before the first serve / after a reset.
-    size_t predictedEnd() const;
+    [[nodiscard]] size_t predictedEnd() const;
 
     /// The current contiguous run span (frontier - run start).
-    size_t currentRun() const;
+    [[nodiscard]] size_t currentRun() const;
 
     /// The carried EWMA estimate of past run lengths.
-    size_t estimate() const { return static_cast<size_t>(expected_run); }
+    [[nodiscard]] size_t estimate() const { return static_cast<size_t>(expected_run); }
 
 private:
     /// The EWMA fold of the live run into the estimate: `alpha * currentRun + (1 - alpha) * expected_run`.
-    double foldedEstimate() const;
+    [[nodiscard]] double foldedEstimate() const;
 
     /// Fold the run into the estimate without ending it (the positive-signal checkpoint).
     void checkpointRun();

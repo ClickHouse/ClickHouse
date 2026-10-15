@@ -62,7 +62,7 @@ public:
         }
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return Data::name;
     }
@@ -91,7 +91,7 @@ public:
         );
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -145,7 +145,7 @@ struct MeanZTestData : public ZTestMoments<Float64>
 {
     static constexpr auto name = "meanZTest";
 
-    std::pair<Float64, Float64> getResult(Float64 pop_var_x, Float64 pop_var_y) const
+    [[nodiscard]] std::pair<Float64, Float64> getResult(Float64 pop_var_x, Float64 pop_var_y) const
     {
         Float64 mean_x = getMeanX();
         Float64 mean_y = getMeanY();

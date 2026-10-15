@@ -87,21 +87,21 @@ public:
 
     /// Estimate the cardinality of the column.
     /// Throws if the statistics object is not able to do a meaningful estimation.
-    virtual UInt64 estimateCardinality() const;
+    [[nodiscard]] virtual UInt64 estimateCardinality() const;
 
     /// Per-value estimations.
     /// Returns std::nullopt when the statistics object cannot produce a meaningful estimate
     /// (e.g. the value cannot be converted to the column type).
-    virtual std::optional<Float64> estimateEqual(const Field & val) const; /// cardinality of val in the column
-    virtual std::optional<Float64> estimateLess(const Field & val) const;  /// summarized cardinality of values < val in the column
-    virtual Float64 estimateRange(const Range & range) const;
-    virtual String getNameForLogs() const = 0;
+    [[nodiscard]] virtual std::optional<Float64> estimateEqual(const Field & val) const; /// cardinality of val in the column
+    [[nodiscard]] virtual std::optional<Float64> estimateLess(const Field & val) const;  /// summarized cardinality of values < val in the column
+    [[nodiscard]] virtual Float64 estimateRange(const Range & range) const;
+    [[nodiscard]] virtual String getNameForLogs() const = 0;
 
     /// Returns true iff `other` can be safely merged into this statistics object.
     /// Incompatible state layouts (e.g. a Nullable vs non-Nullable column type change that
     /// shifts the aggregate-function state layout) should return false so that
     /// ColumnStatistics::structureEquals routes the part to a rebuild instead of a corrupt merge.
-    virtual bool isCompatibleWith(const IStatistics &) const { return true; }
+    [[nodiscard]] virtual bool isCompatibleWith(const IStatistics &) const { return true; }
 
 protected:
     SingleStatisticsDescription stat;
@@ -136,41 +136,41 @@ public:
     void build(const ColumnPtr & column);
     void merge(const ColumnStatisticsPtr & other);
 
-    UInt64 getNumRows() const { return rows; }
+    [[nodiscard]] UInt64 getNumRows() const { return rows; }
     /// Total NULL rows for a Nullable column when `Basic` statistics are present; 0 otherwise.
     /// Callers should consult `hasNullCount` first.
-    UInt64 getNullCount() const;
+    [[nodiscard]] UInt64 getNullCount() const;
     /// Returns `rows - getNullCount()` when null-count tracking is available, else `rows`.
-    UInt64 getNonNullRowCount() const;
+    [[nodiscard]] UInt64 getNonNullRowCount() const;
     /// True iff null-count tracking is available for this column (e.g. via `Basic` on a Nullable column).
-    bool hasNullCount() const;
+    [[nodiscard]] bool hasNullCount() const;
     /// True iff loaded statistics include a source of numeric min/max values
     /// (`MinMax`, or `Basic` on a numeric/temporal column).
-    bool hasMinMax() const;
+    [[nodiscard]] bool hasMinMax() const;
     /// True iff `estimateCardinality` is backed by a uniq sketch. When it is not, that method returns a
     /// fixed fraction of the row count, which callers dividing by the cardinality must not mistake for
     /// a measurement.
-    bool hasCardinality() const;
-    UInt64 estimateCardinality() const;
-    UInt64 estimateDefaults() const;
+    [[nodiscard]] bool hasCardinality() const;
+    [[nodiscard]] UInt64 estimateCardinality() const;
+    [[nodiscard]] UInt64 estimateDefaults() const;
 
     /// `null_count / rows` when `Basic` statistics are present; otherwise a default factor.
-    Float64 estimateIsNull() const;
+    [[nodiscard]] Float64 estimateIsNull() const;
     /// `(rows - null_count) / rows` when `Basic` statistics are present; otherwise a default factor.
-    Float64 estimateIsNotNull() const;
+    [[nodiscard]] Float64 estimateIsNotNull() const;
 
-    std::optional<Float64> estimateLess(const Field & val) const;
-    std::optional<Float64> estimateGreater(const Field & val) const;
-    std::optional<Float64> estimateEqual(const Field & val) const;
-    std::optional<Float64> estimateRange(const Range & range) const;
+    [[nodiscard]] std::optional<Float64> estimateLess(const Field & val) const;
+    [[nodiscard]] std::optional<Float64> estimateGreater(const Field & val) const;
+    [[nodiscard]] std::optional<Float64> estimateEqual(const Field & val) const;
+    [[nodiscard]] std::optional<Float64> estimateRange(const Range & range) const;
 
-    Estimate getEstimate() const;
-    String getNameForLogs() const;
-    DataTypePtr getDataType() const { return stats_desc.data_type; }
+    [[nodiscard]] Estimate getEstimate() const;
+    [[nodiscard]] String getNameForLogs() const;
+    [[nodiscard]] DataTypePtr getDataType() const { return stats_desc.data_type; }
 
-    const StatsMap & getStats() const { return stats; }
-    bool structureEquals(const ColumnStatistics & other) const;
-    std::shared_ptr<ColumnStatistics> cloneEmpty() const;
+    [[nodiscard]] const StatsMap & getStats() const { return stats; }
+    [[nodiscard]] bool structureEquals(const ColumnStatistics & other) const;
+    [[nodiscard]] std::shared_ptr<ColumnStatistics> cloneEmpty() const;
 
 private:
     friend class MergeTreeStatisticsFactory;
@@ -189,12 +189,12 @@ public:
     using Base::Base;
 
     explicit ColumnsStatistics(const ColumnsDescription & columns);
-    ColumnsStatistics cloneEmpty() const;
+    [[nodiscard]] ColumnsStatistics cloneEmpty() const;
 
     void build(const Block & block);
     void buildIfExists(const Block & block);
     void merge(const ColumnsStatistics & other);
-    Estimates getEstimates() const;
+    [[nodiscard]] Estimates getEstimates() const;
 };
 
 struct ColumnDescription;
@@ -210,18 +210,18 @@ public:
     /// only when the current CREATE/ALTER does not newly introduce `minmax`, so unrelated ALTERs of
     /// such old tables are not rejected.
     void validate(const ColumnStatisticsDescription & stats, const DataTypePtr & data_type, bool allow_deprecated_minmax = false) const;
-    ColumnStatisticsDescription cloneWithSupportedStatistics(const ColumnStatisticsDescription & stats, const DataTypePtr & data_type) const;
+    [[nodiscard]] ColumnStatisticsDescription cloneWithSupportedStatistics(const ColumnStatisticsDescription & stats, const DataTypePtr & data_type) const;
 
     using Validator = std::function<bool(const SingleStatisticsDescription & stats, const DataTypePtr & data_type)>;
     using Creator = std::function<StatisticsPtr(const SingleStatisticsDescription & stats, const DataTypePtr & data_type)>;
 
-    ColumnStatisticsPtr get(const ColumnDescription & column_desc) const;
-    ColumnStatisticsPtr get(const ColumnStatisticsDescription & stats_desc) const;
-    ColumnStatisticsDescription::StatisticsTypeDescMap get(const std::vector<StatisticsType> & stat_types, const DataTypePtr & data_type) const;
+    [[nodiscard]] ColumnStatisticsPtr get(const ColumnDescription & column_desc) const;
+    [[nodiscard]] ColumnStatisticsPtr get(const ColumnStatisticsDescription & stats_desc) const;
+    [[nodiscard]] ColumnStatisticsDescription::StatisticsTypeDescMap get(const std::vector<StatisticsType> & stat_types, const DataTypePtr & data_type) const;
     /// Create a single statistics object by type. Returns `nullptr` if the type is unknown
     /// or unsupported for `data_type`. Used by the V4 deserializer to instantiate statistics
     /// types one at a time (and to silently skip types the current build doesn't know about).
-    StatisticsPtr tryCreateSingle(StatisticsType type, const DataTypePtr & data_type) const;
+    [[nodiscard]] StatisticsPtr tryCreateSingle(StatisticsType type, const DataTypePtr & data_type) const;
 
     void registerValidator(StatisticsType type, Validator validator);
     void registerCreator(StatisticsType type, Creator creator);

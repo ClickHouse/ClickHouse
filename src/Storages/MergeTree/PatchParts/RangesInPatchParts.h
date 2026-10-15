@@ -17,11 +17,11 @@ public:
 
     void optimize();
     void addPart(const DataPartPtr & original_part, const PatchPartsForReader & patch_parts, const MarkRanges & original_ranges);
-    std::vector<MarkRanges> getRanges(const DataPartPtr & original_part, const PatchPartsForReader & patch_parts, const MarkRanges & ranges) const;
-    const std::unordered_map<String, MarkRanges> & getRanges() const { return ranges_by_name; }
+    [[nodiscard]] std::vector<MarkRanges> getRanges(const DataPartPtr & original_part, const PatchPartsForReader & patch_parts, const MarkRanges & ranges) const;
+    [[nodiscard]] const std::unordered_map<String, MarkRanges> & getRanges() const { return ranges_by_name; }
 
 private:
-    MarkRanges getIntersectingRanges(const String & patch_name, const MarkRanges & ranges) const;
+    [[nodiscard]] MarkRanges getIntersectingRanges(const String & patch_name, const MarkRanges & ranges) const;
 
     size_t max_granules_in_range;
     std::unordered_map<String, MarkRanges> ranges_by_name;

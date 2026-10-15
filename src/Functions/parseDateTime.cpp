@@ -465,7 +465,7 @@ namespace
         }
 
         /// For debug
-        [[maybe_unused]] String toString() const
+        [[nodiscard]] [[maybe_unused]] String toString() const
         {
             String res;
             res += "year:" + std::to_string(year);
@@ -609,19 +609,19 @@ namespace
         {
         }
 
-        String getName() const override { return name; }
+        [[nodiscard]] String getName() const override { return name; }
 
-        bool useDefaultImplementationForConstants() const override { return true; }
+        [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
         /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
         /// row references it, so the throwing variant must not be executed on the whole dictionary -
         /// the empty string is not a date and it would fail on entirely valid data.
-        bool canBeExecutedOnDefaultArguments() const override { return error_handling != ErrorHandling::Exception; }
-        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-        ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
-        bool isVariadic() const override { return true; }
-        size_t getNumberOfArguments() const override { return 0; }
+        [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return error_handling != ErrorHandling::Exception; }
+        [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+        [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
+        [[nodiscard]] bool isVariadic() const override { return true; }
+        [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
-        DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+        [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
             FunctionArgumentDescriptors mandatory_args{
                 {"time", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
@@ -672,7 +672,7 @@ namespace
             return data_type;
         }
 
-        ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+        [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
         {
             DataTypePtr result_type_without_nullable;
             if constexpr (error_handling == ErrorHandling::Null)
@@ -844,10 +844,10 @@ namespace
             explicit Instruction(const String & literal_) : literal(literal_), fragment("LITERAL") { }
             explicit Instruction(String && literal_) : literal(std::move(literal_)), fragment("LITERAL") { }
 
-            const String & getFragment() const { return fragment; }
+            [[nodiscard]] const String & getFragment() const { return fragment; }
 
             /// For debug
-            [[maybe_unused]] String toString() const
+            [[nodiscard]] [[maybe_unused]] String toString() const
             {
                 if (func)
                     return "func:" + func_name + ",fragment:" + fragment;
@@ -1846,7 +1846,7 @@ namespace
         };
         /// NOLINTEND(readability-else-after-return)
 
-        VectorWithMemoryTracking<Instruction> parseFormat(const String & format) const
+        [[nodiscard]] VectorWithMemoryTracking<Instruction> parseFormat(const String & format) const
         {
             static_assert(
                 parse_syntax == ParseSyntax::MySQL || parse_syntax == ParseSyntax::Joda,
@@ -1858,7 +1858,7 @@ namespace
                 return parseJodaFormat(format);
         }
 
-        VectorWithMemoryTracking<Instruction> parseMysqlFormat(const String & format) const
+        [[nodiscard]] VectorWithMemoryTracking<Instruction> parseMysqlFormat(const String & format) const
         {
 #define ACTION_ARGS(func) &(func), #func, std::string_view(pos - 1, 2)
 
@@ -2122,7 +2122,7 @@ namespace
 #undef ACTION_ARGS
         }
 
-        VectorWithMemoryTracking<Instruction> parseJodaFormat(const String & format) const
+        [[nodiscard]] VectorWithMemoryTracking<Instruction> parseJodaFormat(const String & format) const
         {
 #define ACTION_ARGS_WITH_BIND(func, arg) std::bind_front(&(func), (arg)), #func, std::string_view(cur_token, repetitions)
 
@@ -2251,7 +2251,7 @@ namespace
         }
 
 
-        String getFormat(const ColumnsWithTypeAndName & arguments) const
+        [[nodiscard]] String getFormat(const ColumnsWithTypeAndName & arguments) const
         {
             if (arguments.size() == 1)
             {
@@ -2277,7 +2277,7 @@ namespace
             }
         }
 
-        const DateLUTImpl & getTimeZone(const ColumnsWithTypeAndName & arguments) const
+        [[nodiscard]] const DateLUTImpl & getTimeZone(const ColumnsWithTypeAndName & arguments) const
         {
             if (arguments.size() < 3)
                 return DateLUT::instance();

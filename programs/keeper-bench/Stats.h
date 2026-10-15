@@ -17,7 +17,7 @@ struct Stats
         Sampler sampler;
 
         /// requests/second, bytes/second
-        std::pair<double, double> getThroughput(double elapsed_seconds) const;
+        [[nodiscard]] std::pair<double, double> getThroughput(double elapsed_seconds) const;
         double getPercentile(double percent);
 
         void add(uint64_t microseconds, size_t requests_inc, size_t bytes_inc);

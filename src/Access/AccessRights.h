@@ -27,20 +27,20 @@ public:
     AccessRights(AccessRights && src) noexcept;
     AccessRights & operator =(AccessRights && src) noexcept;
 
-    bool isEmpty() const;
+    [[nodiscard]] bool isEmpty() const;
 
     /// Revokes everything. It's the same as revoke(AccessType::ALL).
     void clear();
 
     /// Returns the information about all the access granted as a string.
-    String toString() const;
+    [[nodiscard]] String toString() const;
 
     /// Returns the information about all the access granted.
-    AccessRightsElements getElements() const;
+    [[nodiscard]] AccessRightsElements getElements() const;
 
     /// Returns the subset of access rights that can be granted to others
     /// (i.e. rights with GRANT OPTION, with partial revokes applied).
-    AccessRights getGrantableRights() const;
+    [[nodiscard]] AccessRights getGrantableRights() const;
 
     /// Grants access on a specified database/table/column.
     /// Does nothing if the specified access has been already granted.
@@ -111,48 +111,48 @@ public:
     void revokeWildcardGrantOption(const AccessFlags & flags, std::string_view database, std::string_view table, const Strings & columns);
 
     /// Whether a specified access granted.
-    bool isGranted(const AccessFlags & flags) const;
-    bool isGranted(const AccessFlags & flags, std::string_view database) const;
-    bool isGranted(const AccessFlags & flags, std::string_view database, std::string_view table) const;
-    bool isGranted(const AccessFlags & flags, std::string_view database, std::string_view table, std::string_view column) const;
-    bool isGranted(const AccessFlags & flags, std::string_view database, std::string_view table, const std::vector<std::string_view> & columns) const;
-    bool isGranted(const AccessFlags & flags, std::string_view database, std::string_view table, const Strings & columns) const;
-    bool isGranted(const AccessRightsElement & element) const;
-    bool isGranted(const AccessRightsElements & elements) const;
+    [[nodiscard]] bool isGranted(const AccessFlags & flags) const;
+    [[nodiscard]] bool isGranted(const AccessFlags & flags, std::string_view database) const;
+    [[nodiscard]] bool isGranted(const AccessFlags & flags, std::string_view database, std::string_view table) const;
+    [[nodiscard]] bool isGranted(const AccessFlags & flags, std::string_view database, std::string_view table, std::string_view column) const;
+    [[nodiscard]] bool isGranted(const AccessFlags & flags, std::string_view database, std::string_view table, const std::vector<std::string_view> & columns) const;
+    [[nodiscard]] bool isGranted(const AccessFlags & flags, std::string_view database, std::string_view table, const Strings & columns) const;
+    [[nodiscard]] bool isGranted(const AccessRightsElement & element) const;
+    [[nodiscard]] bool isGranted(const AccessRightsElements & elements) const;
 
-    bool isGrantedWildcard(const AccessFlags & flags) const;
-    bool isGrantedWildcard(const AccessFlags & flags, std::string_view database) const;
-    bool isGrantedWildcard(const AccessFlags & flags, std::string_view database, std::string_view table) const;
-    bool isGrantedWildcard(const AccessFlags & flags, std::string_view database, std::string_view table, std::string_view column) const;
-    bool isGrantedWildcard(const AccessFlags & flags, std::string_view database, std::string_view table, const std::vector<std::string_view> & columns) const;
-    bool isGrantedWildcard(const AccessFlags & flags, std::string_view database, std::string_view table, const Strings & columns) const;
+    [[nodiscard]] bool isGrantedWildcard(const AccessFlags & flags) const;
+    [[nodiscard]] bool isGrantedWildcard(const AccessFlags & flags, std::string_view database) const;
+    [[nodiscard]] bool isGrantedWildcard(const AccessFlags & flags, std::string_view database, std::string_view table) const;
+    [[nodiscard]] bool isGrantedWildcard(const AccessFlags & flags, std::string_view database, std::string_view table, std::string_view column) const;
+    [[nodiscard]] bool isGrantedWildcard(const AccessFlags & flags, std::string_view database, std::string_view table, const std::vector<std::string_view> & columns) const;
+    [[nodiscard]] bool isGrantedWildcard(const AccessFlags & flags, std::string_view database, std::string_view table, const Strings & columns) const;
 
-    bool hasGrantOption(const AccessFlags & flags) const;
-    bool hasGrantOption(const AccessFlags & flags, std::string_view database) const;
-    bool hasGrantOption(const AccessFlags & flags, std::string_view database, std::string_view table) const;
-    bool hasGrantOption(const AccessFlags & flags, std::string_view database, std::string_view table, std::string_view column) const;
-    bool hasGrantOption(const AccessFlags & flags, std::string_view database, std::string_view table, const std::vector<std::string_view> & columns) const;
-    bool hasGrantOption(const AccessFlags & flags, std::string_view database, std::string_view table, const Strings & columns) const;
-    bool hasGrantOption(const AccessRightsElement & element) const;
-    bool hasGrantOption(const AccessRightsElements & elements) const;
+    [[nodiscard]] bool hasGrantOption(const AccessFlags & flags) const;
+    [[nodiscard]] bool hasGrantOption(const AccessFlags & flags, std::string_view database) const;
+    [[nodiscard]] bool hasGrantOption(const AccessFlags & flags, std::string_view database, std::string_view table) const;
+    [[nodiscard]] bool hasGrantOption(const AccessFlags & flags, std::string_view database, std::string_view table, std::string_view column) const;
+    [[nodiscard]] bool hasGrantOption(const AccessFlags & flags, std::string_view database, std::string_view table, const std::vector<std::string_view> & columns) const;
+    [[nodiscard]] bool hasGrantOption(const AccessFlags & flags, std::string_view database, std::string_view table, const Strings & columns) const;
+    [[nodiscard]] bool hasGrantOption(const AccessRightsElement & element) const;
+    [[nodiscard]] bool hasGrantOption(const AccessRightsElements & elements) const;
 
-    bool hasGrantOptionWildcard(const AccessFlags & flags) const;
-    bool hasGrantOptionWildcard(const AccessFlags & flags, std::string_view database) const;
-    bool hasGrantOptionWildcard(const AccessFlags & flags, std::string_view database, std::string_view table) const;
-    bool hasGrantOptionWildcard(const AccessFlags & flags, std::string_view database, std::string_view table, std::string_view column) const;
-    bool hasGrantOptionWildcard(const AccessFlags & flags, std::string_view database, std::string_view table, const std::vector<std::string_view> & columns) const;
-    bool hasGrantOptionWildcard(const AccessFlags & flags, std::string_view database, std::string_view table, const Strings & columns) const;
+    [[nodiscard]] bool hasGrantOptionWildcard(const AccessFlags & flags) const;
+    [[nodiscard]] bool hasGrantOptionWildcard(const AccessFlags & flags, std::string_view database) const;
+    [[nodiscard]] bool hasGrantOptionWildcard(const AccessFlags & flags, std::string_view database, std::string_view table) const;
+    [[nodiscard]] bool hasGrantOptionWildcard(const AccessFlags & flags, std::string_view database, std::string_view table, std::string_view column) const;
+    [[nodiscard]] bool hasGrantOptionWildcard(const AccessFlags & flags, std::string_view database, std::string_view table, const std::vector<std::string_view> & columns) const;
+    [[nodiscard]] bool hasGrantOptionWildcard(const AccessFlags & flags, std::string_view database, std::string_view table, const Strings & columns) const;
 
     /// Checks if a given `access_rights` is a subset for the current access rights.
     /// This function checks both access rights with and without grant option.
     ///
     /// root ⊇ other.root && root_with_grant_option ⊇ other.root_with_grant_option
-    bool contains(const AccessRights & access_rights) const;
+    [[nodiscard]] bool contains(const AccessRights & access_rights) const;
 
     /// Similar to `contains`, but checks that current access rights with grant option contain other access rights
     ///
     /// root_with_grant_option ⊇ other.root
-    bool containsWithGrantOption(const AccessRights & access_rights) const;
+    [[nodiscard]] bool containsWithGrantOption(const AccessRights & access_rights) const;
 
     /// Merges two sets of access rights together.
     /// It's used to combine access rights from multiple roles.
@@ -171,7 +171,7 @@ public:
         AccessFlags access_flags;
         String path;
     };
-    std::vector<Filter> getFilters(std::string_view parameter) const;
+    [[nodiscard]] std::vector<Filter> getFilters(std::string_view parameter) const;
 
     /// Traverse the tree and modify each access flags.
     using ModifyFlagsFunction = std::function<AccessFlags(
@@ -191,7 +191,7 @@ public:
 
     /// Methods for tests
     void dumpTree(WriteBuffer & buffer) const;
-    std::vector<String> dumpNodes() const;
+    [[nodiscard]] std::vector<String> dumpNodes() const;
 
 private:
     template <bool with_grant_option, bool wildcard, typename... Args>
@@ -222,16 +222,16 @@ private:
     bool isGrantedImpl(const AccessFlags & flags, const Args &... args) const;
 
     template <bool grant_option, bool wildcard>
-    bool isGrantedImpl(const AccessRightsElement & element) const;
+    [[nodiscard]] bool isGrantedImpl(const AccessRightsElement & element) const;
 
     template <bool grant_option, bool wildcard>
-    bool isGrantedImpl(const AccessRightsElements & elements) const;
+    [[nodiscard]] bool isGrantedImpl(const AccessRightsElements & elements) const;
 
     template <bool grant_option>
-    bool containsImpl(const AccessRights & other) const;
+    [[nodiscard]] bool containsImpl(const AccessRights & other) const;
 
     template <bool grant_option, bool wildcard>
-    bool isGrantedImplHelper(const AccessRightsElement & element) const;
+    [[nodiscard]] bool isGrantedImplHelper(const AccessRightsElement & element) const;
 
     struct Node;
     std::unique_ptr<Node> root;

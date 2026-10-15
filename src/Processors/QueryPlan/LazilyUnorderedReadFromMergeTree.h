@@ -33,7 +33,7 @@ public:
 
     void setLazyMaterializingRows(LazyMaterializingRowsPtr lazy_materializing_rows_);
 
-    String getName() const override { return "LazilyReadFromMergeTree"; }
+    [[nodiscard]] String getName() const override { return "LazilyReadFromMergeTree"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 
     void describeActions(JSONBuilder::JSONMap & map) const override;

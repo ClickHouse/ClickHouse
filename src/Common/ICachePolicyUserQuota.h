@@ -23,7 +23,7 @@ public:
     virtual void decreaseActual(const UUID & user_id, size_t entry_size_in_bytes) = 0;
 
     /// Is the user allowed to write a new entry into the cache?
-    virtual bool approveWrite(const UUID & user_id, size_t entry_size_in_bytes) const = 0;
+    [[nodiscard]] virtual bool approveWrite(const UUID & user_id, size_t entry_size_in_bytes) const = 0;
 
     /// Clears the policy contents
     virtual void clear() = 0;
@@ -40,7 +40,7 @@ public:
     void setQuotaForUser(const UUID & /*user_id*/, size_t /*max_size_in_bytes*/, size_t /*max_entries*/) override {}
     void increaseActual(const UUID & /*user_id*/, size_t /*entry_size_in_bytes*/) override {}
     void decreaseActual(const UUID & /*user_id*/, size_t /*entry_size_in_bytes*/) override {}
-    bool approveWrite(const UUID & /*user_id*/, size_t /*entry_size_in_bytes*/) const override { return true; }
+    [[nodiscard]] bool approveWrite(const UUID & /*user_id*/, size_t /*entry_size_in_bytes*/) const override { return true; }
     void clear() override {}
 };
 

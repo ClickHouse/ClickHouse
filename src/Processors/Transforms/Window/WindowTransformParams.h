@@ -31,7 +31,7 @@ public:
         const WindowDescription & window_description,
         const std::vector<WindowFunctionDescription> & functions);
 
-    bool arePeers(const Columns & lhs, size_t lhs_row, const Columns & rhs, size_t rhs_row) const;
+    [[nodiscard]] bool arePeers(const Columns & lhs, size_t lhs_row, const Columns & rhs, size_t rhs_row) const;
 };
 
 }

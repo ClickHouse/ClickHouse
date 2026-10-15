@@ -45,7 +45,7 @@ public:
 
     /// The virtual columns are resolved from per-mark posting lists addressed
     /// by absolute row number, so a read may start or stop inside a mark.
-    bool canReadIncompleteGranules() const override { return can_read_incomplete_granules; }
+    [[nodiscard]] bool canReadIncompleteGranules() const override { return can_read_incomplete_granules; }
     void updateAllMarkRanges(const MarkRanges & ranges) override;
     void updateReadRequestMap(MarkRangesPtr request_map) override;
 
@@ -58,7 +58,7 @@ private:
     void initializeFallbackReader(const IMergeTreeReader * main_reader);
     void createEmptyColumns(MutableColumns & columns, size_t max_rows_to_read) const;
     /// Opens the postings stream of one token, with the buffer sized to the token's largest segment.
-    std::unique_ptr<MergeTreeReaderStream> makePostingsStream(const TokenPostingsInfo & token_info) const;
+    [[nodiscard]] std::unique_ptr<MergeTreeReaderStream> makePostingsStream(const TokenPostingsInfo & token_info) const;
     /// The postings stream of a token, opened on first use and kept in `postings_streams`.
     MergeTreeReaderStream & getPostingsStream(std::string_view token, const TokenPostingsInfo & token_info);
 
@@ -75,8 +75,8 @@ private:
     /// Drops all cached cursors, keeping the per-column sizing.
     void resetCursors();
 
-    std::optional<RowsRange> getRowsRangeForMark(size_t mark) const;
-    MergeTreeDataPartPtr getDataPart() const;
+    [[nodiscard]] std::optional<RowsRange> getRowsRangeForMark(size_t mark) const;
+    [[nodiscard]] MergeTreeDataPartPtr getDataPart() const;
 
     void readGranule();
     /// Sets per-column flags from the analyzer's verdict.

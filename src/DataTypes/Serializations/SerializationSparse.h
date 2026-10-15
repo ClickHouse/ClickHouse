@@ -107,9 +107,9 @@ private:
         SubcolumnCreator(const ColumnPtr & offsets_, size_t size_)
             : offsets(offsets_), size(size_) {}
 
-        DataTypePtr create(const DataTypePtr & prev) const override { return prev; }
-        SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override;
-        ColumnPtr create(const ColumnPtr & prev) const override;
+        [[nodiscard]] DataTypePtr create(const DataTypePtr & prev) const override { return prev; }
+        [[nodiscard]] SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override;
+        [[nodiscard]] ColumnPtr create(const ColumnPtr & prev) const override;
     };
 
     struct NullMapSubcolumnCreator : public ISubcolumnCreator
@@ -120,9 +120,9 @@ private:
         NullMapSubcolumnCreator(const ColumnPtr & offsets_, size_t size_)
             : offsets(offsets_), size(size_) {}
 
-        DataTypePtr create(const DataTypePtr & prev) const override { return prev; }
-        SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override { return prev; }
-        ColumnPtr create(const ColumnPtr & prev) const override;
+        [[nodiscard]] DataTypePtr create(const DataTypePtr & prev) const override { return prev; }
+        [[nodiscard]] SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override { return prev; }
+        [[nodiscard]] ColumnPtr create(const ColumnPtr & prev) const override;
     };
 
     template <typename Reader>

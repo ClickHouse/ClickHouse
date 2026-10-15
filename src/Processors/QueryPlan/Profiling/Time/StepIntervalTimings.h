@@ -27,7 +27,7 @@ public:
     const StepTimeAndConcurrency * findTiming(const IQueryPlanStep * step) const;
 
     /// `execution_time_ns` is the wall-clock time of the whole pipeline execution, the denominator of every time share.
-    ExecutionTimeBreakdown executionTimeBreakdown(UInt64 execution_time_ns) const;
+    [[nodiscard]] ExecutionTimeBreakdown executionTimeBreakdown(UInt64 execution_time_ns) const;
 
 private:
 
@@ -37,7 +37,7 @@ private:
     void collectPlanSteps(const QueryPlan &);
 
     /// One sorted, non-overlapping sequence per step, merged from the per-thread runs.
-    TimeIntervalsByStep collectStepIntervals(const WorkIntervalsPerThread & intervals_per_thread) const;
+    [[nodiscard]] TimeIntervalsByStep collectStepIntervals(const WorkIntervalsPerThread & intervals_per_thread) const;
 
     /// Post-order walk that records the metrics of every node from its own and its subtree's intervals.
     void computeBranchTime(const QueryPlan & plan, TimeIntervalsByStep time_intervals_by_step);

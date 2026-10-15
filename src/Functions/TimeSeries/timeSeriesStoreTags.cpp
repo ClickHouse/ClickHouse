@@ -24,28 +24,28 @@ public:
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTimeSeriesStoreTags>(context); }
     explicit FunctionTimeSeriesStoreTags(ContextPtr context) : tags_collector(context->getQueryContext()->getTimeSeriesTagsCollector()) {}
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
     /// There should be 2 or more arguments.
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
     /// Function timeSeriesStoreTags(id, ...) always returns `id`, so it's deterministic.
-    bool isDeterministic() const override { return true; }
+    [[nodiscard]] bool isDeterministic() const override { return true; }
 
     /// Stateful: writes to the per-query tags collector read by timeSeriesIdToGroup() etc.
-    bool isStateful() const override { return true; }
+    [[nodiscard]] bool isStateful() const override { return true; }
 
     /// Disable constant folding: the side effect (storing tags in the per-query `ContextTimeSeriesTagsCollector`)
     /// must run at execution time, not analysis time.
-    bool isSuitableForConstantFolding() const override { return false; }
+    [[nodiscard]] bool isSuitableForConstantFolding() const override { return false; }
 
     /// This function allows NULLs as a way to specify that some tags don't have values.
-    bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         checkArgumentTypes(arguments);
         return arguments[0].type;
@@ -63,7 +63,7 @@ public:
         TimeSeriesTagsFunctionHelpers::checkArgumentTypesForTagNamesAndValues(name, arguments, 1);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t /* input_rows_count */) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t /* input_rows_count */) const override
     {
         auto tags_vector = TimeSeriesTagsFunctionHelpers::extractTagNamesAndValuesFromArguments(name, arguments, 1);
         tags_collector->storeTags(arguments[0].column, tags_vector);

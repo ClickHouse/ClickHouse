@@ -21,11 +21,11 @@ public:
     void serialize(WriteBuffer & buf) override;
     void deserialize(ReadBuffer & buf, StatisticsFileVersion version) override;
 
-    const Field & getMin() const { return min; }
-    const Field & getMax() const { return max; }
+    [[nodiscard]] const Field & getMin() const { return min; }
+    [[nodiscard]] const Field & getMax() const { return max; }
 
-    std::optional<Float64> estimateLess(const Field & val) const override;
-    String getNameForLogs() const override;
+    [[nodiscard]] std::optional<Float64> estimateLess(const Field & val) const override;
+    [[nodiscard]] String getNameForLogs() const override;
 private:
     Field min; /// null Field means "not initialized"
     Field max; /// null Field means "not initialized"

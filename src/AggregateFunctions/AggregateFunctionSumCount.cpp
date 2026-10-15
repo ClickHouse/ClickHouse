@@ -45,7 +45,7 @@ public:
             this->data(place).denominator);
     }
 
-    String getName() const final { return "sumCount"; }
+    [[nodiscard]] String getName() const final { return "sumCount"; }
 
     /// Keep the legacy nullable behavior/state layout for sumCount.
     /// After `Nullable(Tuple)` was introduced, for Nullable arguments in the
@@ -57,7 +57,7 @@ public:
     /// So we force the legacy adapter for sumCount to preserve compatibility.
     /// The extra null-flag is also redundant for sumCount: "has non-NULL rows"
     /// can be inferred from `count` (`count > 0` means at least one row was seen).
-    AggregateFunctionPtr getOwnNullAdapter(
+    [[nodiscard]] AggregateFunctionPtr getOwnNullAdapter(
         const AggregateFunctionPtr & nested_function,
         const DataTypes & arguments,
         const Array & params,
@@ -68,7 +68,7 @@ public:
 
 #if USE_EMBEDDED_COMPILER
 
-    bool isCompilable() const override
+    [[nodiscard]] bool isCompilable() const override
     {
         return false;
     }

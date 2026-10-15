@@ -100,7 +100,7 @@ public:
         Update && resetDecrease() && noexcept { decrease = std::nullopt; return std::move(*this); }
 
         // For debugging purposes only
-        String toString() const
+        [[nodiscard]] String toString() const
         {
             return fmt::format("{{ attached={}, detached={}, increase={}, decrease={}, reclaimable_delta={}, reclaiming_delta={} }}",
                 attached ? attached->getPath() : "nullptr",
@@ -146,20 +146,20 @@ public:
     }
 
     /// For parent only. Checks the usage key.
-    bool usageKeyEquals(double value) const
+    [[nodiscard]] bool usageKeyEquals(double value) const
     {
         return usage_key.first == value;
     }
 
     /// For parent only. Checks the child state.
-    bool isPending() const noexcept { return pending_hook.is_linked(); }
-    bool isRunning() const noexcept { return running_hook.is_linked(); }
-    bool isIncreasing() const noexcept { return increasing_hook.is_linked(); }
-    bool isDecreasing() const noexcept { return decreasing_hook.is_linked(); }
+    [[nodiscard]] bool isPending() const noexcept { return pending_hook.is_linked(); }
+    [[nodiscard]] bool isRunning() const noexcept { return running_hook.is_linked(); }
+    [[nodiscard]] bool isIncreasing() const noexcept { return increasing_hook.is_linked(); }
+    [[nodiscard]] bool isDecreasing() const noexcept { return decreasing_hook.is_linked(); }
 
     /// For parent only. True iff this child is currently listed in the parent's reclaimable-filtered set.
     /// This holds exactly when `reclaimable > 0` (and the child is attached).
-    bool isReclaimable() const noexcept { return reclaimable_hook.is_linked(); }
+    [[nodiscard]] bool isReclaimable() const noexcept { return reclaimable_hook.is_linked(); }
 
     void apply(Update & update)
     {
@@ -266,7 +266,7 @@ protected:
     using ReclaimableSetByUsage = boost::intrusive::set<ISpaceSharedNode, ReclaimableHook, boost::intrusive::compare<ByUsage>>;
     using ReclaimableSetByPrecedence = boost::intrusive::set<ISpaceSharedNode, ReclaimableHook, boost::intrusive::compare<ByPrecedence>>;
 
-    ISpaceSharedNode & castParent() const
+    [[nodiscard]] ISpaceSharedNode & castParent() const
     {
         return static_cast<ISpaceSharedNode &>(*parent);
     }

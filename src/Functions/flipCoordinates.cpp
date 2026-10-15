@@ -27,21 +27,21 @@ public:
     static constexpr auto name = "flipCoordinates";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionFlipCoordinates>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
     /// Handle the `Geometry` `Variant` here so its type name is preserved; the generic
     /// `FunctionBaseVariantAdaptor` rebuilds a bare `Variant` and drops the custom name. Every other
     /// `Variant` still goes through the adaptor, keeping its `variant_throw_on_type_mismatch` handling.
-    bool useDefaultImplementationForVariantWithCustomName(const DataTypePtr & type) const override
+    [[nodiscard]] bool useDefaultImplementationForVariantWithCustomName(const DataTypePtr & type) const override
     {
         return type->getName() != "Geometry";
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() != 1)
             throw Exception(
@@ -53,7 +53,7 @@ public:
         return arguments[0];
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override
     {
         const ColumnWithTypeAndName & arg = arguments[0];
 
@@ -164,7 +164,7 @@ private:
             column_variant->getLocalToGlobalDiscriminatorsMapping());
     }
 
-    ColumnPtr executeForPoint(const ColumnPtr & column) const
+    [[nodiscard]] ColumnPtr executeForPoint(const ColumnPtr & column) const
     {
         const auto * column_tuple = checkAndGetColumn<ColumnTuple>(column.get());
         if (!column_tuple)

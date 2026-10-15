@@ -56,12 +56,12 @@ public:
     /// memory limit stops it.
     const size_t max_elements;
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return with_values ? 4 : 3; }
-    bool isDeterministic() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return with_values ? 4 : 3; }
+    [[nodiscard]] bool isDeterministic() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         checkDataTypes(arguments);
 
@@ -131,7 +131,7 @@ public:
         }
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         constexpr size_t expected_num_ars = with_values ? 4 : 3;
         chassert(arguments.size() == expected_num_ars);

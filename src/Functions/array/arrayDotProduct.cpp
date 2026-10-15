@@ -191,13 +191,13 @@ class FunctionArrayScalarProduct final : public IFunction
 public:
     static constexpr auto name = Kernel::name;
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayScalarProduct>(); }
-    size_t getNumberOfArguments() const override { return 2; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         std::array<DataTypePtr, 2> nested_types;
         for (size_t i = 0; i < 2; ++i)
@@ -233,7 +233,7 @@ public:
     ACTION(Float32) \
     ACTION(Float64)
 
-    ColumnPtr
+    [[nodiscard]] ColumnPtr
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
         DataTypePtr type_x = typeid_cast<const DataTypeArray *>(arguments[0].type.get())->getNestedType();
@@ -260,7 +260,7 @@ public:
 
 private:
     template <typename LeftType>
-    ColumnPtr executeWithLeftType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr executeWithLeftType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
         DataTypePtr type_y = typeid_cast<const DataTypeArray *>(arguments[1].type.get())->getNestedType();
 
@@ -285,7 +285,7 @@ private:
     }
 
     template <typename LeftType, typename RightType>
-    ColumnPtr executeWithLeftAndRightType(ColumnPtr col_x, ColumnPtr col_y, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr executeWithLeftAndRightType(ColumnPtr col_x, ColumnPtr col_y, size_t input_rows_count) const
     {
         /// Compute result type from input types, matching getReturnType logic.
         /// This avoids an extra dispatch level (10x fewer template instantiations).
@@ -299,7 +299,7 @@ private:
     }
 
     template <typename ResultType, typename LeftType, typename RightType>
-    ColumnPtr executeWithResultTypeAndLeftTypeAndRightType(ColumnPtr col_x, ColumnPtr col_y, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr executeWithResultTypeAndLeftTypeAndRightType(ColumnPtr col_x, ColumnPtr col_y, size_t input_rows_count) const
     {
         if (typeid_cast<const ColumnConst *>(col_x.get()))
         {
@@ -377,7 +377,7 @@ private:
     }
 
     template <typename ResultType, typename LeftType, typename RightType>
-    ColumnPtr executeWithLeftArgConst(ColumnPtr col_x, ColumnPtr col_y, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr executeWithLeftArgConst(ColumnPtr col_x, ColumnPtr col_y, size_t input_rows_count) const
     {
         col_x = assert_cast<const ColumnConst *>(col_x.get())->getDataColumnPtr();
         col_y = col_y->convertToFullColumnIfConst();

@@ -59,7 +59,7 @@ struct MovingSumData : public MovingData<T>
 {
     static constexpr auto name = "groupArrayMovingSum";
 
-    T NO_SANITIZE_UNDEFINED get(size_t idx, UInt64 window_size) const
+    [[nodiscard]] T NO_SANITIZE_UNDEFINED get(size_t idx, UInt64 window_size) const
     {
         if (idx < window_size)
             return this->value[idx];
@@ -72,7 +72,7 @@ struct MovingAvgData : public MovingData<T>
 {
     static constexpr auto name = "groupArrayMovingAvg";
 
-    T NO_SANITIZE_UNDEFINED get(size_t idx, UInt64 window_size) const
+    [[nodiscard]] T NO_SANITIZE_UNDEFINED get(size_t idx, UInt64 window_size) const
     {
         if (idx < window_size)
             return this->value[idx] / T(window_size);
@@ -100,11 +100,11 @@ public:
         : IAggregateFunctionDataHelper<Data, MovingImpl<T, LimitNumElements, Data>>({data_type_}, parameters_, createResultType(data_type_))
         , window_size(window_size_) {}
 
-    String getName() const override { return Data::name; }
+    [[nodiscard]] String getName() const override { return Data::name; }
 
     /// The window size only affects finalization, not the serialized state, so parameterized and
     /// parameterless states share one representation and stay Merge-/CAST-compatible.
-    DataTypePtr getNormalizedStateType() const override
+    [[nodiscard]] DataTypePtr getNormalizedStateType() const override
     {
         DataTypes normalized_argument_types;
         normalized_argument_types.reserve(this->argument_types.size());
@@ -196,7 +196,7 @@ public:
         }
     }
 
-    bool allocatesMemoryInArena() const override
+    [[nodiscard]] bool allocatesMemoryInArena() const override
     {
         return true;
     }

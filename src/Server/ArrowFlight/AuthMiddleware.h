@@ -45,15 +45,15 @@ public:
         return *static_cast<AuthMiddleware *>(context.GetMiddleware(AUTHORIZATION_MIDDLEWARE_NAME));
     }
 
-    const std::string & getUsername() const { return username; }
-    const std::shared_ptr<Session> & getSession() const { return session; }
-    const std::string & getSessionId() const { return session_id; }
-    std::chrono::steady_clock::duration getSessionTimeout() const { return session_timeout; }
+    [[nodiscard]] const std::string & getUsername() const { return username; }
+    [[nodiscard]] const std::shared_ptr<Session> & getSession() const { return session; }
+    [[nodiscard]] const std::string & getSessionId() const { return session_id; }
+    [[nodiscard]] std::chrono::steady_clock::duration getSessionTimeout() const { return session_timeout; }
 
     void SendingHeaders(arrow::flight::AddCallHeaders * outgoing_headers) override;
     void CallCompleted(const arrow::Status & /*status*/) override;
 
-    std::string name() const override { return AUTHORIZATION_MIDDLEWARE_NAME; }
+    [[nodiscard]] std::string name() const override { return AUTHORIZATION_MIDDLEWARE_NAME; }
 
 private:
     std::shared_ptr<Session> session;

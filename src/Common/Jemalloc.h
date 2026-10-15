@@ -105,7 +105,7 @@ struct MibCache
         valid = (je_mallctlnametomib(name, mib, &mib_length) == 0);
     }
 
-    bool isValid() const { return valid; }
+    [[nodiscard]] bool isValid() const { return valid; }
 
     void setValue(T value) const
     {
@@ -126,7 +126,7 @@ struct MibCache
 
     /// Strict variant: asserts that the read succeeded. Mirrors `Jemalloc::getValue`.
     /// Use `tryGetValue` when the mallctl may be absent.
-    T getValue() const
+    [[nodiscard]] T getValue() const
     {
         T value{};
         [[maybe_unused]] const bool ok = tryGetValue(value);

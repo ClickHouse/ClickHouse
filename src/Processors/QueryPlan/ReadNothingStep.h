@@ -10,14 +10,14 @@ class ReadNothingStep : public ISourceStep
 public:
     explicit ReadNothingStep(SharedHeader output_header);
 
-    String getName() const override { return "ReadNothing"; }
+    [[nodiscard]] String getName() const override { return "ReadNothing"; }
 
-    QueryPlanStepPtr clone() const override;
+    [[nodiscard]] QueryPlanStepPtr clone() const override;
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     void serialize(Serialization & ctx) const override;
-    bool isSerializable() const override { return true; }
+    [[nodiscard]] bool isSerializable() const override { return true; }
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 };

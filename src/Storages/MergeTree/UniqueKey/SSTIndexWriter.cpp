@@ -180,7 +180,7 @@ public:
     {
     }
 
-    const char * Name() const override { return "UniqueKeySSTFileSystem"; }
+    [[nodiscard]] const char * Name() const override { return "UniqueKeySSTFileSystem"; }
 
     rocksdb::IOStatus NewWritableFile(
         const std::string &,

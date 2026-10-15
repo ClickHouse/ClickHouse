@@ -18,12 +18,12 @@ public:
         chassert(source_shards.size() == 1);
     }
 
-    String getName() const override { return "BroadcastReceive"; }
+    [[nodiscard]] String getName() const override { return "BroadcastReceive"; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 
     void serialize(Serialization & ctx) const override;
-    bool isSerializable() const override { return true; }
+    [[nodiscard]] bool isSerializable() const override { return true; }
 
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 

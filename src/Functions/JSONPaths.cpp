@@ -99,7 +99,7 @@ public:
     {
     }
 
-    std::string getName() const override
+    [[nodiscard]] std::string getName() const override
     {
         return name;
     }
@@ -107,11 +107,11 @@ public:
     /// The setting decides which paths count for the same arguments, see `IFunctionBase::updateHash`.
     void updateHash(SipHash & hash) const override { hash.update(skip_null_typed_paths); }
 
-    size_t getNumberOfArguments() const override { return 1; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & data_types) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & data_types) const override
     {
         if (data_types.size() != 1)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires single argument with type JSON", getName());
@@ -124,7 +124,7 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
         const ColumnWithTypeAndName & elem = arguments[0];
         const auto * column_object = typeid_cast<const ColumnObject *>(elem.column.get());
@@ -138,7 +138,7 @@ public:
     }
 
 private:
-    ColumnPtr executeWithoutTypes(const ColumnObject & column_object) const
+    [[nodiscard]] ColumnPtr executeWithoutTypes(const ColumnObject & column_object) const
     {
         if constexpr (Impl::paths_mode == PathsMode::SHARED_DATA_PATHS)
         {
@@ -228,7 +228,7 @@ private:
         return ColumnArray::create(std::move(data_column), std::move(offsets_column));
     }
 
-    ColumnPtr executeWithTypes(const ColumnObject & column_object, const DataTypeObject & type_object) const
+    [[nodiscard]] ColumnPtr executeWithTypes(const ColumnObject & column_object, const DataTypeObject & type_object) const
     {
         auto offsets_column = ColumnArray::ColumnOffsets::create();
         auto & offsets = offsets_column->getData();
@@ -376,7 +376,7 @@ private:
         return ColumnMap::create(ColumnPtr(std::move(paths_column)), ColumnPtr(std::move(types_column)), ColumnPtr(std::move(offsets_column)));
     }
 
-    String getDynamicValueType(const ColumnPtr & column, size_t i) const
+    [[nodiscard]] String getDynamicValueType(const ColumnPtr & column, size_t i) const
     {
         const ColumnDynamic * dynamic_column = checkAndGetColumn<ColumnDynamic>(column.get());
         const auto & variant_info = dynamic_column->getVariantInfo();
@@ -395,7 +395,7 @@ private:
         return variant_info.variant_names[global_discr];
     }
 
-    std::optional<String> getDynamicValueTypeFromSharedData(std::string_view value) const
+    [[nodiscard]] std::optional<String> getDynamicValueTypeFromSharedData(std::string_view value) const
     {
         ReadBufferFromMemory buf(value);
         auto type = decodeDataType(buf);
@@ -406,7 +406,7 @@ private:
 
     /// Returns true if the path should be included in the output.
     /// Dynamic paths are skipped when NULL. Typed paths are skipped when NULL only if skip_null_typed_paths is enabled.
-    bool shouldIncludePath(
+    [[nodiscard]] bool shouldIncludePath(
         std::string_view path,
         size_t row,
         const auto & dynamic_path_columns,

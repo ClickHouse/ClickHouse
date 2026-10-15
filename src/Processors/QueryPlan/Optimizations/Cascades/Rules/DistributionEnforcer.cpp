@@ -33,10 +33,10 @@ namespace ErrorCodes
 class DistributionEnforcer : public IOptimizationRule
 {
 public:
-    String getName() const override { return "DistributionEnforcer"; }
-    bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & memo) const override;
-    Promise getPromise() const override { return 1000; }
-    bool isTransformation() const override { return false; }
+    [[nodiscard]] String getName() const override { return "DistributionEnforcer"; }
+    [[nodiscard]] bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & memo) const override;
+    [[nodiscard]] Promise getPromise() const override { return 1000; }
+    [[nodiscard]] bool isTransformation() const override { return false; }
 
     class EnforcerEnumerator;
 
@@ -78,7 +78,7 @@ private:
     void addEnforcer(QueryPlanStepPtr step, ExpressionProperties input_required, SortDescription output_sorting = {});
     /// Input requirement matching the source expression's own distribution: the exchange
     /// consumes the stream where it already is.
-    ExpressionProperties inputAtSourceDistribution() const;
+    [[nodiscard]] ExpressionProperties inputAtSourceDistribution() const;
 
     const DistributionEnforcer & rule;
     GroupExpressionPtr expression;

@@ -35,12 +35,12 @@ public:
     static constexpr auto name = "toFixedString";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionToFixedString>(); }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
 
     /// Injective only for a `FixedString(M)` argument that fits into the target width. A `String` is
     /// NUL-padded to the target width, so 'a' and 'a\0' both become the same `FixedString(2)`. Every
@@ -48,7 +48,7 @@ public:
     /// suffix to all of them - but only when `M <= N`; otherwise execution throws, and eliminating
     /// the call would silently turn a query that must fail into one that succeeds.
     /// A caller that passes no arguments gets no claim, because the answer depends on them.
-    bool isInjective(const ColumnsWithTypeAndName & sample_columns) const override
+    [[nodiscard]] bool isInjective(const ColumnsWithTypeAndName & sample_columns) const override
     {
         if (sample_columns.size() != 2)
             return false;
@@ -72,9 +72,9 @@ public:
 
         return fixed_string->getN() <= width_column->getUInt(0);
     }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (!isUInt(arguments[1].type))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument for function {} must be unsigned integer", getName());
@@ -87,10 +87,10 @@ public:
         return std::make_shared<DataTypeFixedString>(n);
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         const auto n = arguments[1].column->getUInt(0);
         return executeForN<ConvertToFixedStringExceptionMode::Throw>(arguments, n);

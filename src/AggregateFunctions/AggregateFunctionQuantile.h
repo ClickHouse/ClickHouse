@@ -180,7 +180,7 @@ public:
         }
     }
 
-    String getName() const override { return Name::name; }
+    [[nodiscard]] String getName() const override { return Name::name; }
 
     void create(AggregateDataPtr __restrict place) const override /// NOLINT
     {
@@ -207,13 +207,13 @@ public:
             return res;
     }
 
-    bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override
+    [[nodiscard]] bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override
     {
         return GatherFunctionQuantileData::toFusedNameOrSelf(getName()) == GatherFunctionQuantileData::toFusedNameOrSelf(rhs.getName())
             && this->haveEqualArgumentTypes(rhs);
     }
 
-    DataTypePtr getNormalizedStateType() const override
+    [[nodiscard]] DataTypePtr getNormalizedStateType() const override
     {
         /// Return normalized state type: quantiles*(1)(...)
         Array params{1};
@@ -229,7 +229,7 @@ public:
             params);
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -258,7 +258,7 @@ public:
         this->data(place).merge(this->data(rhs));
     }
 
-    bool isVersioned() const override { return state_version > 0; }
+    [[nodiscard]] bool isVersioned() const override { return state_version > 0; }
 
     /// The default version - the one used when the type carries no explicit version - must stay 0.
     /// Unversioned `AggregateFunction(quantileDeterministic, ...)` types already exist in persisted
@@ -273,13 +273,13 @@ public:
     /// state (a `-State` query result, an inferred `CREATE TABLE ... AS SELECT` column, a value
     /// entering a `Dynamic` column) carries the version with it on every medium, while a fresh
     /// `CREATE TABLE` with a spelled-out unversioned column type gets the version pinned at DDL time.
-    size_t getDefaultVersion() const override { return 0; }
+    [[nodiscard]] size_t getDefaultVersion() const override { return 0; }
 
     /// The state type spells the version out, so that the type name and the payload stay consistent
     /// on every medium the state can travel through - including the generic formats, which serialize
     /// query results with the state type as-is (only the `Native` wire re-derives versions from the
     /// negotiated revision).
-    DataTypePtr getStateType() const override
+    [[nodiscard]] DataTypePtr getStateType() const override
     {
         if constexpr (state_version > 0)
             return std::make_shared<DataTypeAggregateFunction>(this->shared_from_this(), this->argument_types, this->parameters, state_version);
@@ -287,7 +287,7 @@ public:
             return IAggregateFunction::getStateType();
     }
 
-    size_t getVersionFromRevision(size_t revision) const override
+    [[nodiscard]] size_t getVersionFromRevision(size_t revision) const override
     {
         if constexpr (state_version >= 1)
         {

@@ -25,42 +25,42 @@ public:
     explicit Identifier(const std::string & full_name_);
     explicit Identifier(std::string && full_name_);
 
-    const std::string & getFullName() const
+    [[nodiscard]] const std::string & getFullName() const
     {
         return full_name;
     }
 
-    const std::vector<std::string> & getParts() const
+    [[nodiscard]] const std::vector<std::string> & getParts() const
     {
         return parts;
     }
 
-    size_t getPartsSize() const
+    [[nodiscard]] size_t getPartsSize() const
     {
         return parts.size();
     }
 
-    bool empty() const
+    [[nodiscard]] bool empty() const
     {
         return parts.empty();
     }
 
-    bool isEmpty() const
+    [[nodiscard]] bool isEmpty() const
     {
         return parts.empty();
     }
 
-    bool isShort() const
+    [[nodiscard]] bool isShort() const
     {
         return parts.size() == 1;
     }
 
-    bool isCompound() const
+    [[nodiscard]] bool isCompound() const
     {
         return parts.size() > 1;
     }
 
-    const std::string & at(size_t index) const
+    [[nodiscard]] const std::string & at(size_t index) const
     {
         if (index >= parts.size())
             throw std::out_of_range("identifier access part is out of range");
@@ -73,12 +73,12 @@ public:
         return parts[index];
     }
 
-    const std::string & front() const
+    [[nodiscard]] const std::string & front() const
     {
         return parts.front();
     }
 
-    const std::string & back() const
+    [[nodiscard]] const std::string & back() const
     {
         return parts.back();
     }
@@ -97,12 +97,12 @@ public:
 
     using const_iterator = std::vector<std::string>::const_iterator;
 
-    const_iterator begin() const
+    [[nodiscard]] const_iterator begin() const
     {
         return parts.begin();
     }
 
-    const_iterator end() const
+    [[nodiscard]] const_iterator end() const
     {
         return parts.end();
     }
@@ -185,42 +185,42 @@ public:
         , parts_end_it(identifier.end())
     {}
 
-    std::string_view getFullName() const
+    [[nodiscard]] std::string_view getFullName() const
     {
         return full_name_view;
     }
 
-    size_t getPartsSize() const
+    [[nodiscard]] size_t getPartsSize() const
     {
         return parts_end_it - parts_start_it;
     }
 
-    size_t getLength() const
+    [[nodiscard]] size_t getLength() const
     {
         return full_name_view.length();
     }
 
-    bool empty() const
+    [[nodiscard]] bool empty() const
     {
         return parts_start_it == parts_end_it;
     }
 
-    bool isEmpty() const
+    [[nodiscard]] bool isEmpty() const
     {
         return parts_start_it == parts_end_it;
     }
 
-    bool isShort() const
+    [[nodiscard]] bool isShort() const
     {
         return getPartsSize() == 1;
     }
 
-    bool isCompound() const
+    [[nodiscard]] bool isCompound() const
     {
         return getPartsSize() > 1;
     }
 
-    std::string_view at(size_t index) const
+    [[nodiscard]] std::string_view at(size_t index) const
     {
         if (index >= getPartsSize())
             throw std::out_of_range("identifier access part is out of range");
@@ -233,22 +233,22 @@ public:
         return *(parts_start_it + index);
     }
 
-    std::string_view front() const
+    [[nodiscard]] std::string_view front() const
     {
         return *parts_start_it;
     }
 
-    std::string_view back() const
+    [[nodiscard]] std::string_view back() const
     {
         return *(parts_end_it - 1);
     }
 
-    bool startsWith(std::string_view part) const
+    [[nodiscard]] bool startsWith(std::string_view part) const
     {
         return !isEmpty() && *parts_start_it == part;
     }
 
-    bool endsWith(std::string_view part) const
+    [[nodiscard]] bool endsWith(std::string_view part) const
     {
         return !isEmpty() && *(parts_end_it - 1) == part;
     }
@@ -269,12 +269,12 @@ public:
 
     using const_iterator = Identifier::const_iterator;
 
-    const_iterator begin() const
+    [[nodiscard]] const_iterator begin() const
     {
         return parts_start_it;
     }
 
-    const_iterator end() const
+    [[nodiscard]] const_iterator end() const
     {
         return parts_end_it;
     }

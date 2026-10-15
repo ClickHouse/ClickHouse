@@ -39,17 +39,17 @@ namespace
             return std::make_shared<UTCTimestampTransform>(name, to_utc);
         }
 
-        String getName() const override { return function_name; }
+        [[nodiscard]] String getName() const override { return function_name; }
 
-        size_t getNumberOfArguments() const override { return 2; }
+        [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
 
-        bool useDefaultImplementationForConstants() const override { return true; }
+        [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+        [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-        ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+        [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-        DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+        [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
             FunctionArgumentDescriptors mandatory_args{
                 {"datetime", &isDateTimeOrDateTime64, nullptr, "DateTime or DateTime64"},
@@ -71,7 +71,7 @@ namespace
             return date_time_type;
         }
 
-        ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+        [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
         {
             if (arguments.size() != 2)
                 throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {}'s arguments number must be 2.", function_name);

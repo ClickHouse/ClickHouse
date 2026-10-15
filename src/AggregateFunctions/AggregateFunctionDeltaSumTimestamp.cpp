@@ -62,9 +62,9 @@ public:
     {
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
-    String getName() const override { return "deltaSumTimestamp"; }
+    [[nodiscard]] String getName() const override { return "deltaSumTimestamp"; }
 
     static DataTypePtr createResultType() { return std::make_shared<DataTypeNumber<ValueType>>(); }
 

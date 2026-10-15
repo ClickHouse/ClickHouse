@@ -92,9 +92,9 @@ namespace
         }
 
         /// `1` (bits header) + `4 * BLOCK_SIZE` (bit-pure max at `bits = 32`) + 16 (SIMD alignment slack).
-        size_t maxBlockBytes() const override { return 1 + sizeof(uint32_t) * BLOCK_SIZE + 16; }
+        [[nodiscard]] size_t maxBlockBytes() const override { return 1 + sizeof(uint32_t) * BLOCK_SIZE + 16; }
 
-        IPostingListCodec::Type type() const override { return IPostingListCodec::Type::Bitpacking; }
+        [[nodiscard]] IPostingListCodec::Type type() const override { return IPostingListCodec::Type::Bitpacking; }
     };
 
     /// One PFor block over gaps `SegmentedPostingListCodec` already computed, hence `Delta::none`.
@@ -133,9 +133,9 @@ namespace
             return consumed;
         }
 
-        size_t maxBlockBytes() const override { return MAX_BLOCK_BYTES; }
+        [[nodiscard]] size_t maxBlockBytes() const override { return MAX_BLOCK_BYTES; }
 
-        IPostingListCodec::Type type() const override { return IPostingListCodec::Type::PFor; }
+        [[nodiscard]] IPostingListCodec::Type type() const override { return IPostingListCodec::Type::PFor; }
 
     private:
         static constexpr size_t MAX_BLOCK_BYTES = PFor::maxCompressedBytes<uint32_t>(BLOCK_SIZE);

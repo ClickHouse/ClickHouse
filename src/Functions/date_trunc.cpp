@@ -40,22 +40,22 @@ public:
     FunctionDateTrunc(FunctionOverloadResolverPtr to_start_of_interval_, IntervalKind::Kind datepart_kind_)
         : to_start_of_interval(to_start_of_interval_), datepart_kind(datepart_kind_) {}
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    bool isVariadic() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & /*arguments*/) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & /*arguments*/) const override
     {
         /// Not called through the overload resolver path.
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} should only be used through the overload resolver", getName());
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 2}; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 2}; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         ColumnsWithTypeAndName temp_columns(arguments.size());
         temp_columns[0] = arguments[1];
@@ -71,12 +71,12 @@ public:
         return to_start_of_interval->build(temp_columns)->execute(temp_columns, result_type, input_rows_count, /* dry_run = */ false);
     }
 
-    bool hasInformationAboutMonotonicity() const override
+    [[nodiscard]] bool hasInformationAboutMonotonicity() const override
     {
         return true;
     }
 
-    Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
+    [[nodiscard]] Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
     {
         return { .is_monotonic = true, .is_always_monotonic = true };
     }

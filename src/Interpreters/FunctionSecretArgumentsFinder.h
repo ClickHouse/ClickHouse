@@ -63,7 +63,7 @@ public:
     static bool hasOnlyLiteralArguments(const AbstractFunction & function);
 
     /// Whether a specified argument can be the name of a named collection?
-    bool isNamedCollectionName(size_t arg_idx) const;
+    [[nodiscard]] bool isNamedCollectionName(size_t arg_idx) const;
 
 private:
     void findPositionalAndNamedSecretArguments(const SecretArgumentsSpec & spec);

@@ -174,7 +174,7 @@ public:
             chassert(type != Type::Data && type != Type::FileDescriptor);
         }
 
-        Type getType() const { return type; }
+        [[nodiscard]] Type getType() const { return type; }
 
         Block getBlock()
         {
@@ -182,7 +182,7 @@ public:
             return std::move(block);
         }
 
-        int getFileDescriptor() const
+        [[nodiscard]] int getFileDescriptor() const
         {
             chassert(type == Type::FileDescriptor);
             return fd;

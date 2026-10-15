@@ -33,7 +33,7 @@ public:
 
     /// Get the shared pointer to the task info.
     /// Useful when you need to extend the lifetime of the task.
-    BackgroundSchedulePoolTaskInfoPtr getTaskInfoPtr() const;
+    [[nodiscard]] BackgroundSchedulePoolTaskInfoPtr getTaskInfoPtr() const;
 
 private:
     BackgroundSchedulePoolTaskInfoPtr task_info;

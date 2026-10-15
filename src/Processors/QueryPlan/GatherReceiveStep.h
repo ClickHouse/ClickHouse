@@ -18,12 +18,12 @@ public:
     {
     }
 
-    String getName() const override { return "GatherReceive"; }
+    [[nodiscard]] String getName() const override { return "GatherReceive"; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 
     void serialize(Serialization & ctx) const override;
-    bool isSerializable() const override { return true; }
+    [[nodiscard]] bool isSerializable() const override { return true; }
 
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 

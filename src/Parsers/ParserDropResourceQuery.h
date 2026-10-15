@@ -8,7 +8,7 @@ namespace DB
 class ParserDropResourceQuery : public IParserBase
 {
 protected:
-    const char * getName() const override { return "DROP RESOURCE query"; }
+    [[nodiscard]] const char * getName() const override { return "DROP RESOURCE query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 }

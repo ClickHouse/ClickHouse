@@ -22,7 +22,7 @@ public:
     void advance(const SlidingBlocks & blocks);
     void finish();
 
-    const PartitionBounds & bounds() const;
+    [[nodiscard]] const PartitionBounds & bounds() const;
 
 private:
     PartitionBounds partition_bounds;

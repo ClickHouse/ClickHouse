@@ -16,9 +16,9 @@ public:
 
     BlockIO execute() override;
 
-    bool ignoreQuota() const override { return true; }
-    bool ignoreLimits() const override { return true; }
-    bool supportsTransactions() const override { return true; }
+    [[nodiscard]] bool ignoreQuota() const override { return true; }
+    [[nodiscard]] bool ignoreLimits() const override { return true; }
+    [[nodiscard]] bool supportsTransactions() const override { return true; }
 
     BlockIO executeBegin(ContextMutablePtr session_context);
     BlockIO executeCommit(ContextMutablePtr session_context);

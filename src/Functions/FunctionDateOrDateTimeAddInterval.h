@@ -701,7 +701,7 @@ struct SubtractIntervalImpl : public Transform
     }
 
     template <typename T>
-    auto execute(T t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale) const
+    [[nodiscard]] auto execute(T t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale) const
     {
         Int64 negated = 0;
         negate(delta, negated);
@@ -718,7 +718,7 @@ struct SubtractIntervalImpl : public Transform
     }
 
     template <bool fixed_offset, typename T>
-    auto executeWithOffsetMode(
+    [[nodiscard]] auto executeWithOffsetMode(
         T t,
         Int64 delta,
         const DateLUTImpl & time_zone,
@@ -732,7 +732,7 @@ struct SubtractIntervalImpl : public Transform
     }
 
     template <typename T>
-    NO_SANITIZE_UNDEFINED auto executeForTime(
+    [[nodiscard]] NO_SANITIZE_UNDEFINED auto executeForTime(
         T t,
         Int64 delta,
         const DateLUTImpl & time_zone,
@@ -840,7 +840,7 @@ struct Processor
 
 private:
     template <typename FromDataType, typename T>
-    auto executeTransform(
+    [[nodiscard]] auto executeTransform(
         T t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale) const
     {
         if constexpr (supports_fixed_offset_dispatch<Transform, FromDataType>)
@@ -1008,13 +1008,13 @@ public:
     static constexpr auto name = Transform::name;
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionDateOrDateTimeAddInterval>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 2 && arguments.size() != 3)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -1109,7 +1109,7 @@ public:
     using TransformResultDataType = typename date_and_time_type_details::ResultDataTypeMap<TransformExecuteReturnType<FromDataType>>::ResultDataType;
 
     template <typename FromDataType>
-    DataTypePtr resolveReturnType(const ColumnsWithTypeAndName & arguments) const
+    [[nodiscard]] DataTypePtr resolveReturnType(const ColumnsWithTypeAndName & arguments) const
     {
         using ResultDataType = TransformResultDataType<FromDataType>;
 
@@ -1174,10 +1174,10 @@ public:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected result type in datetime add interval function");
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {2}; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {2}; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const IDataType * from_type = arguments[0].type.get();
         WhichDataType which(from_type);

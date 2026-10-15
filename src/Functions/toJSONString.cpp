@@ -23,25 +23,25 @@ namespace
         {
         }
 
-        String getName() const override { return name; }
+        [[nodiscard]] String getName() const override { return name; }
 
         /// The captured settings decide the text produced for the same value, see `IFunctionBase::updateHash`.
         void updateHash(SipHash & hash) const override { hash.update(format_settings_hash); }
 
-        size_t getNumberOfArguments() const override { return 1; }
+        [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
 
-        DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName &) const override { return std::make_shared<DataTypeString>(); }
+        [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName &) const override { return std::make_shared<DataTypeString>(); }
 
-        DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+        [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
         {
             return std::make_shared<DataTypeString>();
         }
 
-        bool useDefaultImplementationForConstants() const override { return true; }
+        [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+        [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-        ColumnPtr
+        [[nodiscard]] ColumnPtr
         executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
         {
             auto res = ColumnString::create();

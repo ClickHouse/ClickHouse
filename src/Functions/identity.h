@@ -32,34 +32,34 @@ public:
         return std::make_shared<FunctionIdentityBase>(name, is_identity);
     }
 
-    String getName() const override { return function_name; }
-    size_t getNumberOfArguments() const override { return 1; }
-    bool isSuitableForConstantFolding() const override { return false; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] String getName() const override { return function_name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] bool isSuitableForConstantFolding() const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     /// `executeImpl` returns the argument column verbatim, so the result type must be exactly the
     /// argument type. The default `LowCardinality` implementation strips (nested) `LowCardinality` from
     /// the declared result type while the passthrough column keeps it, yielding a type/column mismatch
     /// that later aborts during serialization (e.g. `WITH TOTALS` const key). Keep the type identical
     /// to the column.
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     /// Same reasoning for `Variant`: the adaptor reassembles a bare `Variant` and drops a custom name
     /// such as `Geometry`, which would no longer match the passed-through column.
-    bool useDefaultImplementationForVariant() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForVariant() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         return arguments.front();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         return arguments.front().column;
     }
 
 #if USE_EMBEDDED_COMPILER
-    bool isCompilableImpl(const DataTypes & /*types*/, const DataTypePtr & result_type) const override
+    [[nodiscard]] bool isCompilableImpl(const DataTypes & /*types*/, const DataTypePtr & result_type) const override
     {
         return is_identity && canBeNativeType(result_type);
     }
@@ -89,7 +89,7 @@ public:
     /// Used as the internal impl of passthrough map functions (FunctionMapToArrayAdapter), whose
     /// array-returning convention deliberately strips nested LowCardinality. Restore the default
     /// behavior so the base-class override applies only to user-facing identity()/__scalarSubqueryResult.
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return true; }
 };
 
 
@@ -98,15 +98,15 @@ class FunctionActionName final : public FunctionIdentityBase
 public:
     FunctionActionName() : FunctionIdentityBase("__actionName", false) {}
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionActionName>(); }
-    size_t getNumberOfArguments() const override { return 2; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 1}; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 1}; }
 
     /// Do not allow any argument to have type other than String
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForNothing() const override { return false; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNothing() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         for (const auto & arg : arguments)
         {

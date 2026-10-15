@@ -78,14 +78,14 @@ public:
     static CompressionCodecFactory & instance();
 
     /// Return default codec (currently ZSTD(3))
-    CompressionCodecPtr getDefaultCodec() const;
+    [[nodiscard]] CompressionCodecPtr getDefaultCodec() const;
 
     /// True if `codec` is the default codec: no CODEC clause (null), or a lone CODEC(Default).
     /// A compound such as CODEC(Delta, Default) would return false.
     static bool isDefaultCodec(const ASTPtr & codec);
 
     /// Validate codecs AST specified by user and parses codecs description (substitute default parameters)
-    ASTPtr validateCodecAndGetPreprocessedAST(
+    ASTPtr validateCodecAndGetPreprocessedAST( /// NOLINT(modernize-use-nodiscard): often called only for its side effect
         const ASTPtr & ast, const DataTypePtr & column_type, const CodecValidationSettings & validation_settings) const;
 
     /// Validate codecs AST specified by user
@@ -106,26 +106,26 @@ public:
     CompressionCodecPtr get(const ASTPtr & ast, const IDataType * column_type, CompressionCodecPtr current_default = nullptr, bool only_generic = false) const;
 
     /// Just wrapper for previous method.
-    CompressionCodecPtr get(const ASTPtr & ast, const DataTypePtr & column_type, CompressionCodecPtr current_default = nullptr, bool only_generic = false) const
+    [[nodiscard]] CompressionCodecPtr get(const ASTPtr & ast, const DataTypePtr & column_type, CompressionCodecPtr current_default = nullptr, bool only_generic = false) const
     {
         return get(ast, column_type.get(), current_default, only_generic);
     }
 
     /// Get codec by method byte (no params available)
-    CompressionCodecPtr get(uint8_t byte_code) const;
+    [[nodiscard]] CompressionCodecPtr get(uint8_t byte_code) const;
 
     /// For backward compatibility with config settings
-    CompressionCodecPtr get(const String & family_name, std::optional<int> level) const;
+    [[nodiscard]] CompressionCodecPtr get(const String & family_name, std::optional<int> level) const;
 
     /// Get codec by name with optional params. Example: LZ4, ZSTD(3)
-    CompressionCodecPtr get(const String & compression_codec) const;
+    [[nodiscard]] CompressionCodecPtr get(const String & compression_codec) const;
 
     /// Throws if any codec of the chain in `ast` is declarative (see `CompressionCodecFamilyProperties`).
     /// For a caller that applies a codec chain directly to bytes, e.g. `estimateCompressionRatio`.
     void checkCodecChainIsNotDeclarative(const ASTPtr & ast) const;
 
     /// Names of the dedicated settings gating registered codec families.
-    Strings getGateSettingNames() const;
+    [[nodiscard]] Strings getGateSettingNames() const;
 
     /// Insert codec information into MutableColumns to show in the system table
     void fillCodecDescriptions(MutableColumns & res_columns) const;
@@ -133,7 +133,7 @@ public:
     /// The embedded documentation of every registered codec, as a (family name, documentation) pair. The
     /// description is the codec's `getDescription` and the `source` is the file where the codec was registered.
     /// Used by `system.documentation`.
-    VectorWithMemoryTracking<std::pair<String, Documentation>> getCodecDocumentations() const;
+    [[nodiscard]] VectorWithMemoryTracking<std::pair<String, Documentation>> getCodecDocumentations() const;
 
     /// Register codec with parameters and column type. The `source` is captured automatically at the call site
     /// (the codec's registration), so it points to the source file that defines the codec; do not pass it explicitly.
@@ -157,7 +157,7 @@ public:
     /// Register codec without parameters
     void registerSimpleCompressionCodec(const String & family_name, std::optional<uint8_t> byte_code, SimpleCreator creator, std::source_location source = std::source_location::current());
 
-    Strings getAllRegisteredNames() const;
+    [[nodiscard]] Strings getAllRegisteredNames() const;
 
 protected:
     CompressionCodecPtr getImpl(const String & family_name, const ASTPtr & arguments, const IDataType * column_type) const;
@@ -165,10 +165,10 @@ protected:
 private:
     /// The canonical (registered) spelling of a codec family name matched case-insensitively, or nullptr if no such
     /// codec family is registered.
-    const String * tryGetCanonicalFamilyName(const String & family_name) const;
+    [[nodiscard]] const String * tryGetCanonicalFamilyName(const String & family_name) const;
 
     /// True if `family_name` names a registered declarative codec (see `CompressionCodecFamilyProperties`).
-    bool isDeclarativeCodec(const String & family_name) const;
+    [[nodiscard]] bool isDeclarativeCodec(const String & family_name) const;
 
     /// A declarative codec given as a string (a table-level, network or temporary files setting, a server config)
     /// has no column, so accepting it there would silently do nothing. `Default` stands for the codec that encloses

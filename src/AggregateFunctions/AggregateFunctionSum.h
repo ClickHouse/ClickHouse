@@ -280,7 +280,7 @@ struct AggregateFunctionSumData
         readBinaryLittleEndian(sum, buf);
     }
 
-    T get() const
+    [[nodiscard]] T get() const
     {
 #if defined(__x86_64__)
         if constexpr (std::is_same_v<AccumulateResult, wide::BitInt256> || std::is_same_v<AccumulateResult, wide::BitUInt256>)
@@ -430,7 +430,7 @@ struct AggregateFunctionSumKahanData
         readBinary(compensation, buf);
     }
 
-    T get() const
+    [[nodiscard]] T get() const
     {
         return sum;
     }
@@ -453,7 +453,7 @@ public:
     using ColVecType = ColumnVectorOrDecimal<T>;
     using ResultType = TResult;
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         if constexpr (Type == AggregateFunctionTypeSum)
             return "sum";
@@ -488,7 +488,7 @@ public:
         }
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -582,7 +582,7 @@ public:
         this->data(place).write(buf);
     }
 
-    std::optional<size_t> getSerializedSizeBound(std::optional<size_t> /* version */) const override
+    [[nodiscard]] std::optional<size_t> getSerializedSizeBound(std::optional<size_t> /* version */) const override
     {
         return Data::serialized_size_bound;
     }
@@ -605,7 +605,7 @@ public:
 
 #if USE_EMBEDDED_COMPILER
 
-    bool isCompilable() const override
+    [[nodiscard]] bool isCompilable() const override
     {
         if constexpr (Type == AggregateFunctionTypeSumKahan)
             return false;

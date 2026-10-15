@@ -18,11 +18,11 @@ namespace
 class AggregateFunctionCombinatorForEach final : public IAggregateFunctionCombinator
 {
 public:
-    String getName() const override { return "ForEach"; }
+    [[nodiscard]] String getName() const override { return "ForEach"; }
 
-    bool transformsArgumentTypes() const override { return true; }
+    [[nodiscard]] bool transformsArgumentTypes() const override { return true; }
 
-    DataTypes transformArguments(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypes transformArguments(const DataTypes & arguments) const override
     {
         DataTypes nested_arguments;
         for (const auto & type : arguments)
@@ -37,7 +37,7 @@ public:
         return nested_arguments;
     }
 
-    AggregateFunctionPtr transformAggregateFunction(
+    [[nodiscard]] AggregateFunctionPtr transformAggregateFunction(
         const AggregateFunctionPtr & nested_function,
         const AggregateFunctionProperties &,
         const DataTypes & arguments,

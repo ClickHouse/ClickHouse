@@ -32,7 +32,7 @@ struct MaterializedPostgreSQLSettings
     MATERIALIZED_POSTGRESQL_SETTINGS_SUPPORTED_TYPES(MaterializedPostgreSQLSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 
     void applyChange(const SettingChange & change);
-    bool has(std::string_view name) const;
+    [[nodiscard]] bool has(std::string_view name) const;
     void loadFromQuery(ASTStorage & storage_def);
 
     static bool hasBuiltin(std::string_view name);

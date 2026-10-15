@@ -36,12 +36,12 @@ public:
     virtual void write(const Block & block) = 0;
     virtual void cancel() noexcept = 0;
 
-    MergeTreeIndexGranularityPtr getIndexGranularity() const
+    [[nodiscard]] MergeTreeIndexGranularityPtr getIndexGranularity() const
     {
         return writer->getIndexGranularity();
     }
 
-    MergeTreeWriterSettings getWriterSettings() const
+    [[nodiscard]] MergeTreeWriterSettings getWriterSettings() const
     {
         return writer->getWriterSettings();
     }
@@ -56,7 +56,7 @@ public:
         return writer ? writer->releaseCachedIndexMarks() : PlainMarksByName{};
     }
 
-    size_t getNumberOfOpenStreams() const
+    [[nodiscard]] size_t getNumberOfOpenStreams() const
     {
         return writer->getNumberOfOpenStreams();
     }

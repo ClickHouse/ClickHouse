@@ -192,7 +192,7 @@ TEST_P(ArchiveReaderAndWriterTest, SingleFileInArchive)
         auto enumerator = reader->firstFile();
         ASSERT_NE(enumerator, nullptr);
         EXPECT_FALSE(enumerator->nextFile());
-        expectException(ErrorCodes::CANNOT_UNPACK_ARCHIVE, "No current file", [&] { enumerator->getFileName(); });
+        expectException(ErrorCodes::CANNOT_UNPACK_ARCHIVE, "No current file", [&] { (void)enumerator->getFileName(); });
 
         expectException(ErrorCodes::CANNOT_UNPACK_ARCHIVE, "No current file", [&] { reader->readFile(std::move(enumerator)); });
     }

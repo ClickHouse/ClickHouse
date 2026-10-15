@@ -41,8 +41,8 @@ public:
         using Ptr = std::unique_ptr<CheckShardsAndTables>;
 
         /// These methods could be overridden for the need of the unit test.
-        virtual bool hasAtLeastTwoShards(const IStorage & table) const;
-        virtual std::pair<std::string, std::string> getRemoteDatabaseAndTableName(const IStorage & table) const;
+        [[nodiscard]] virtual bool hasAtLeastTwoShards(const IStorage & table) const;
+        [[nodiscard]] virtual std::pair<std::string, std::string> getRemoteDatabaseAndTableName(const IStorage & table) const;
         virtual ~CheckShardsAndTables() = default;
     };
 

@@ -80,7 +80,7 @@ private:
         std::vector<TargetManifest> fully_matched;
         std::vector<TargetManifest> partially_matched;
 
-        bool empty() const { return fully_matched.empty() && partially_matched.empty(); }
+        [[nodiscard]] bool empty() const { return fully_matched.empty() && partially_matched.empty(); }
     };
 
     struct DropPlan
@@ -93,8 +93,8 @@ private:
 
     std::optional<SnapshotState> fetchSnapshotState();
 
-    TargetFilePaths discoverTargetFilePaths(const SnapshotState & state, const Row & target_partition) const;
-    DropPlan buildDropPlan(const SnapshotState & state, const TargetFilePaths & targets, const Row & target_partition) const;
+    [[nodiscard]] TargetFilePaths discoverTargetFilePaths(const SnapshotState & state, const Row & target_partition) const;
+    [[nodiscard]] DropPlan buildDropPlan(const SnapshotState & state, const TargetFilePaths & targets, const Row & target_partition) const;
     bool tryCommit(SnapshotState & state, const DropPlan & plan);
 
     struct ManifestListWriteResult

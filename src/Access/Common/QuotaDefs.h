@@ -39,12 +39,12 @@ struct QuotaTypeInfo
     const String max_allowed_usage_description;
     const bool output_as_float = false;
     const UInt64 output_denominator = 1;
-    String valueToString(QuotaValue value) const;
-    QuotaValue stringToValue(const String & str) const;
+    [[nodiscard]] String valueToString(QuotaValue value) const;
+    [[nodiscard]] QuotaValue stringToValue(const String & str) const;
     /// Converts a value expressed in the units the user writes (e.g. seconds for `execution_time`)
     /// to the internal representation, throwing if the scaled value does not fit into `QuotaValue`.
-    QuotaValue scaleToValue(Float64 unscaled) const;
-    String valueToStringWithName(QuotaValue value) const;
+    [[nodiscard]] QuotaValue scaleToValue(Float64 unscaled) const;
+    [[nodiscard]] String valueToStringWithName(QuotaValue value) const;
     static const QuotaTypeInfo & get(QuotaType type);
 };
 

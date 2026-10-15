@@ -58,8 +58,8 @@ public:
     /// Uncompressed size for an already-written file; persisted only when finalized as v1+.
     void setUncompressedSize(const String & file_name, UInt64 uncompressed_size);
 
-    bool isWritten(const String & name) const { return written_files.contains(name); }
-    bool hasModifiedFiles() const { return !written_files.empty() || !metadata_changes.empty(); }
+    [[nodiscard]] bool isWritten(const String & name) const { return written_files.contains(name); }
+    [[nodiscard]] bool hasModifiedFiles() const { return !written_files.empty() || !metadata_changes.empty(); }
 
     /// Everything @finalize needs to know in advance: the order of the files in the archive,
     /// their index, and whether the archive has to be fsynced.
@@ -78,7 +78,7 @@ public:
     /// file can open that file after this succeeded and never leave a truncated archive behind.
     /// The caller can provide files order hint to optimize the order of files in the archive. The files listed in the hint
     /// Will be written first in the archive in the specified order, and the rest of the files will be written after them.
-    FinalizePlan prepareFinalize(const Strings & files_order_hint, UInt8 version) const;
+    [[nodiscard]] FinalizePlan prepareFinalize(const Strings & files_order_hint, UInt8 version) const;
 
     /// Dumps the index and the contents of the files into the provided output write buffer
     /// according to @plan.
@@ -94,7 +94,7 @@ public:
     /// Settings of the files written into the archive. The archive is a single file on disk,
     /// so the settings of its members apply to it. The caller needs them to create the
     /// destination buffer before @finalize starts writing into it.
-    WriteSettings getWriteSettings() const { return write_settings.value_or(WriteSettings{}); }
+    [[nodiscard]] WriteSettings getWriteSettings() const { return write_settings.value_or(WriteSettings{}); }
 
     /// Applies changes of files metadata both to the @written_files and @index.
     void applyMetadataChanges(PackedFilesIO::Index & index);

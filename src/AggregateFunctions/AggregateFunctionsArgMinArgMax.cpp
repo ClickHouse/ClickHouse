@@ -35,9 +35,9 @@ private:
 
 public:
     ResultType & result() { return result_data; }
-    const ResultType & result() const { return result_data; }
+    [[nodiscard]] const ResultType & result() const { return result_data; }
     ValueType & value() { return value_data; }
-    const ValueType & value() const { return value_data; }
+    [[nodiscard]] const ValueType & value() const { return value_data; }
 
     AggregateFunctionArgMinMaxData() = default;
     explicit AggregateFunctionArgMinMaxData(const DataTypePtr &) {}
@@ -60,9 +60,9 @@ private:
 
 public:
     SingleValueDataBase & result() { return result_data.get(); }
-    const SingleValueDataBase & result() const { return result_data.get(); }
+    [[nodiscard]] const SingleValueDataBase & result() const { return result_data.get(); }
     ValueType & value() { return value_data; }
-    const ValueType & value() const { return value_data; }
+    [[nodiscard]] const ValueType & value() const { return value_data; }
 
     [[noreturn]] AggregateFunctionArgMinMaxDataGeneric() // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
     {
@@ -165,7 +165,7 @@ public:
 
     /// Parameters are non-semantic here and never reach the serialized state, so parameterized and
     /// parameterless states share one representation and stay Merge-/CAST-compatible.
-    DataTypePtr getNormalizedStateType() const override
+    [[nodiscard]] DataTypePtr getNormalizedStateType() const override
     {
         DataTypes normalized_argument_types;
         normalized_argument_types.reserve(this->argument_types.size());
@@ -179,7 +179,7 @@ public:
         new (place) Data(data_type_res);
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         if (return_both)
         {
@@ -303,7 +303,7 @@ public:
             throwArgMinMaxInvalidDeserializedState(getName(), this->data(place).value().has(), this->data(place).result().has());
     }
 
-    bool allocatesMemoryInArena() const override
+    [[nodiscard]] bool allocatesMemoryInArena() const override
     {
         return Data::allocatesMemoryInArena(result_type_index);
     }

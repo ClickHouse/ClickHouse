@@ -110,33 +110,33 @@ public:
     {
     }
 
-    String getName() const override;
+    [[nodiscard]] String getName() const override;
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
     /// A lazily replicated array argument is consumed by gathering from the compact nested column.
     /// When true it materializes the compacted representation to a full column.
-    bool useDefaultImplementationForReplicatedColumns() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForReplicatedColumns() const override { return false; }
     /// `Nullable(QBit)` with an array of indices must produce `Array(Nullable(T))`,
     /// which cannot be represented by the default nullable wrapper around the result.
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForDynamic() const override { return true; }
-    bool useDefaultImplementationForVariant() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForDynamic() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForVariant() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
 
     /// Keep the inherited getReturnTypeImpl(ColumnsWithTypeAndName) visible alongside the
     /// overload declared below; FunctionWithLowCardinalityFastPath calls it by qualified name.
     using IFunction::getReturnTypeImpl;
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
 
-    ColumnPtr
+    [[nodiscard]] ColumnPtr
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
 
     /// Fast path hook for FunctionWithLowCardinalityFastPath (see FunctionLowCardinalityFastPath.h):
     /// element access over Array(LowCardinality(String)) and Map with LowCardinality string keys
     /// without materializing the dictionary into full columns. Returns nullptr to decline.
-    ColumnPtr tryExecuteLowCardinality(
+    [[nodiscard]] ColumnPtr tryExecuteLowCardinality(
         const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const;
 
 private:
@@ -147,7 +147,7 @@ private:
         size_t input_rows_count) const;
 
     /// Element access over a lazily replicated array (Replicated(Array)) without materializing it.
-    ColumnPtr executeReplicated(
+    [[nodiscard]] ColumnPtr executeReplicated(
         const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const;
 
     template <typename IndexType>
@@ -236,31 +236,31 @@ private:
 
     /** For a map array, the function is evaluated component-wise for its keys and values
       */
-    ColumnPtr executeMap2(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const;
+    [[nodiscard]] ColumnPtr executeMap2(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const;
 
     /** For a map the function finds the matched value for a key.
      *  Currently implemented just as linear search in array.
      *  However, optimizations are possible.
      */
-    ColumnPtr executeMap(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const;
+    [[nodiscard]] ColumnPtr executeMap(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const;
 
     /** For a JSON (Object) column, extract the combined subcolumn for the given key.
       */
-    ColumnPtr executeJSON(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const;
+    [[nodiscard]] ColumnPtr executeJSON(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const;
 
-    ColumnPtr executeWithArrayIndex(
+    [[nodiscard]] ColumnPtr executeWithArrayIndex(
         const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const;
 
     /** For a QBit, reconstructs the n-th vector element from its bit planes. Only the planes of the single
       * stride group that contains the element are read.
       */
-    ColumnPtr executeQBit(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const;
+    [[nodiscard]] ColumnPtr executeQBit(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const;
 
     template <typename T>
-    ColumnPtr executeQBitImpl(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const;
+    [[nodiscard]] ColumnPtr executeQBitImpl(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const;
 
     template <typename T>
-    ColumnPtr executeQBitWithArrayIndex(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const;
+    [[nodiscard]] ColumnPtr executeQBitWithArrayIndex(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const;
 
     using Offsets = ColumnArray::Offsets;
 
@@ -284,7 +284,7 @@ private:
     executeMatchConstKeyToIndex(size_t num_rows, size_t num_values, PaddedPODArray<UInt64> & matched_idxs, const Matcher & matcher);
 
     /// Escape dots in JSON key if json_type_escape_dots_in_keys setting is enabled.
-    String escapeJSONKeyIfNeeded(const String & key) const;
+    [[nodiscard]] String escapeJSONKeyIfNeeded(const String & key) const;
 
     /// True for `Nullable(JSON)`, which supports the bracket syntax exactly like bare `JSON`.
     static bool isNullableJSON(const DataTypePtr & type);
@@ -1870,7 +1870,7 @@ struct MatcherString
     const DataColumn & data;
     const IndexColumn & index;
 
-    bool match(size_t row_data, size_t row_index) const
+    [[nodiscard]] bool match(size_t row_data, size_t row_index) const
     {
         auto data_ref = data.getDataAt(row_data);
         auto index_ref = index.getDataAt(row_index);
@@ -1884,7 +1884,7 @@ struct MatcherStringConst
     const DataColumn & data;
     const String & index;
 
-    bool match(size_t row_data, size_t /* row_index */) const
+    [[nodiscard]] bool match(size_t row_data, size_t /* row_index */) const
     {
         auto data_ref = data.getDataAt(row_data);
         return index.size() == data_ref.size() && memcmp(index.data(), data_ref.data(), data_ref.size()) == 0;
@@ -1897,7 +1897,7 @@ struct MatcherNumber
     const PaddedPODArray<DataType> & data;
     const PaddedPODArray<IndexType> & index;
 
-    bool match(size_t row_data, size_t row_index) const { return data[row_data] == static_cast<DataType>(index[row_index]); }
+    [[nodiscard]] bool match(size_t row_data, size_t row_index) const { return data[row_data] == static_cast<DataType>(index[row_index]); }
 };
 
 template <typename DataType>
@@ -1906,7 +1906,7 @@ struct MatcherNumberConst
     const PaddedPODArray<DataType> & data;
     DataType index;
 
-    bool match(size_t row_data, size_t /* row_index */) const { return data[row_data] == index; }
+    [[nodiscard]] bool match(size_t row_data, size_t /* row_index */) const { return data[row_data] == index; }
 };
 
 /// Matcher for keys of a ColumnLowCardinality. The requested key is resolved to its dictionary
@@ -1917,7 +1917,7 @@ struct MatcherLowCardinalityConst
     const IndexType * indexes;
     IndexType key_index;
 
-    bool match(size_t row_data, size_t /* row_index */) const { return indexes[row_data] == key_index; }
+    [[nodiscard]] bool match(size_t row_data, size_t /* row_index */) const { return indexes[row_data] == key_index; }
 };
 
 }
@@ -2638,7 +2638,7 @@ ColumnPtr FunctionArrayElement<mode>::executeQBit(const ColumnsWithTypeAndName &
 
 template <ArrayElementExceptionMode mode>
 template <typename T>
-ColumnPtr FunctionArrayElement<mode>::executeQBitWithArrayIndex(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+[[nodiscard]] ColumnPtr FunctionArrayElement<mode>::executeQBitWithArrayIndex(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
 {
     using Word = std::conditional_t<
         sizeof(T) == 1,
@@ -2796,7 +2796,7 @@ ColumnPtr FunctionArrayElement<mode>::executeQBitWithArrayIndex(const ColumnsWit
   */
 template <ArrayElementExceptionMode mode>
 template <typename T>
-ColumnPtr FunctionArrayElement<mode>::executeQBitImpl(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+[[nodiscard]] ColumnPtr FunctionArrayElement<mode>::executeQBitImpl(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
 {
     /// Note: the 8-bit word is `uint8_t` (not ClickHouse's `UInt8`, which is `char8_t`).
     using Word = std::conditional_t<

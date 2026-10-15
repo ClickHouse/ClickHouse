@@ -29,10 +29,10 @@ public:
         return res;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override { return getTransactionIDDataType(); }
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override { return getTransactionIDDataType(); }
 
     /// Reads the executing node's transaction state.
-    bool isServerConstant() const override { return true; }
+    [[nodiscard]] bool isServerConstant() const override { return true; }
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTransactionID>(context); }
     explicit FunctionTransactionID(ContextPtr context) : FunctionConstantBase(getValue(context->getCurrentTransaction()), context->isDistributed()) {}
@@ -48,7 +48,7 @@ class FunctionTransactionLatestSnapshot final : public FunctionConstantBase<Func
 public:
     static constexpr auto name = "transactionLatestSnapshot";
     /// Reads the executing node's transaction state.
-    bool isServerConstant() const override { return true; }
+    [[nodiscard]] bool isServerConstant() const override { return true; }
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTransactionLatestSnapshot>(context); }
     explicit FunctionTransactionLatestSnapshot(ContextPtr context) : FunctionConstantBase(getLatestSnapshot(context), context->isDistributed()) {}
@@ -64,7 +64,7 @@ class FunctionTransactionOldestSnapshot final : public FunctionConstantBase<Func
 public:
     static constexpr auto name = "transactionOldestSnapshot";
     /// Reads the executing node's transaction state.
-    bool isServerConstant() const override { return true; }
+    [[nodiscard]] bool isServerConstant() const override { return true; }
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTransactionOldestSnapshot>(context); }
     explicit FunctionTransactionOldestSnapshot(ContextPtr context) : FunctionConstantBase(getOldestSnapshot(context), context->isDistributed()) {}

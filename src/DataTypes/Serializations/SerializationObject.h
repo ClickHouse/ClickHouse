@@ -150,7 +150,7 @@ private:
         {
         }
 
-        DeserializeBinaryBulkStatePtr clone() const override
+        [[nodiscard]] DeserializeBinaryBulkStatePtr clone() const override
         {
             return std::make_shared<DeserializeBinaryBulkStateObjectStructure>(*this);
         }
@@ -166,9 +166,9 @@ private:
 
         explicit TypedPathSubcolumnCreator(const String & path_) : path(path_) {}
 
-        DataTypePtr create(const DataTypePtr & prev) const override { return prev; }
-        ColumnPtr create(const ColumnPtr & prev) const override { return prev; }
-        SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override;
+        [[nodiscard]] DataTypePtr create(const DataTypePtr & prev) const override { return prev; }
+        [[nodiscard]] ColumnPtr create(const ColumnPtr & prev) const override { return prev; }
+        [[nodiscard]] SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override;
     };
 
 protected:

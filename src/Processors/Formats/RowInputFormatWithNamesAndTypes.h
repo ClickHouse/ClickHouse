@@ -146,13 +146,13 @@ public:
     /// Check if we are at the end of row, not between fields.
     virtual bool checkForEndOfRow() { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method checkForEndOfRow is not implemented"); }
 
-    const FormatSettings & getFormatSettings() const { return format_settings; }
+    [[nodiscard]] const FormatSettings & getFormatSettings() const { return format_settings; }
 
     virtual void setReadBuffer(ReadBuffer & in_) { in = &in_; }
 
     virtual ~FormatWithNamesAndTypesReader() = default;
 
-    virtual FormatSettings::EscapingRule getEscapingRule() const
+    [[nodiscard]] virtual FormatSettings::EscapingRule getEscapingRule() const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Format reader doesn't have an escaping rule");
     }

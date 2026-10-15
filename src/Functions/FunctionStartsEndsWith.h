@@ -92,29 +92,29 @@ public:
     static constexpr auto is_utf8 = Name::is_utf8;
     static constexpr bool is_case_insensitive = Name::is_case_insensitive;
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionStartsEndsWith<Name>>(); }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
     {
         return true;
     }
 
-    size_t getNumberOfArguments() const override
+    [[nodiscard]] size_t getNumberOfArguments() const override
     {
         return 2;
     }
 
-    bool useDefaultImplementationForConstants() const override
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override
     {
         return true;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if ((!is_utf8 && isStringOrFixedString(arguments[0]) && isStringOrFixedString(arguments[1]))
             || (isString(arguments[0]) && isString(arguments[1])))
@@ -128,12 +128,12 @@ public:
             arguments[0]->getName(), arguments[1]->getName(), getName());
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeUInt8>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto data_type = arguments[0].type;
 
@@ -147,7 +147,7 @@ public:
     }
 
 private:
-    ColumnPtr executeImplArray(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr executeImplArray(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
     {
         DataTypePtr common_type
             = getLeastSupertype(DataTypes{std::from_range_t{}, arguments | std::views::transform([](auto & arg) { return arg.type; })});
@@ -184,7 +184,7 @@ private:
         return result_column;
     }
 
-    ColumnPtr executeImplString(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr executeImplString(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
     {
         const IColumn * haystack_column = arguments[0].column.get();
         const IColumn * needle_column = arguments[1].column.get();
@@ -207,7 +207,7 @@ private:
         return col_res;
     }
 
-    ColumnPtr executeImplStringUTF8(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr executeImplStringUTF8(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
     {
         const IColumn * haystack_column = arguments[0].column.get();
         const IColumn * needle_column = arguments[1].column.get();

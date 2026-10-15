@@ -33,7 +33,7 @@ public:
     virtual std::unique_ptr<DiskSet> finish() = 0;
 
     /// After `finish`, returns whether the set stopped at its size limits in the `break` overflow mode.
-    virtual bool isTruncated() const = 0;
+    [[nodiscard]] virtual bool isTruncated() const = 0;
 
     /// Returns the smallest run that a builder writes, which is the smaller of 16 MiB and
     /// a nonzero `max_bytes_before_external_set`. The builder writes no keys to disk before it buffers that many

@@ -17,9 +17,9 @@ struct MaskingPolicyName
     String database;
     String table_name;
 
-    bool empty() const { return short_name.empty(); }
-    String toString() const;
-    auto toTuple() const { return std::tie(short_name, database, table_name); }
+    [[nodiscard]] bool empty() const { return short_name.empty(); }
+    [[nodiscard]] String toString() const;
+    [[nodiscard]] auto toTuple() const { return std::tie(short_name, database, table_name); }
     friend bool operator ==(const MaskingPolicyName & left, const MaskingPolicyName & right) { return left.toTuple() == right.toTuple(); }
     friend bool operator !=(const MaskingPolicyName & left, const MaskingPolicyName & right) { return left.toTuple() != right.toTuple(); }
 };
@@ -35,10 +35,10 @@ struct MaskingPolicy : public IAccessEntity
     void setFullName(const String & short_name, const String & database, const String & table_name);
     void setFullName(const MaskingPolicyName & full_name_);
 
-    const String & getDatabase() const { return full_name.database; }
-    const String & getTableName() const { return full_name.table_name; }
-    const String & getShortName() const { return full_name.short_name; }
-    const MaskingPolicyName & getFullName() const { return full_name; }
+    [[nodiscard]] const String & getDatabase() const { return full_name.database; }
+    [[nodiscard]] const String & getTableName() const { return full_name.table_name; }
+    [[nodiscard]] const String & getShortName() const { return full_name.short_name; }
+    [[nodiscard]] const MaskingPolicyName & getFullName() const { return full_name; }
 
     /// UPDATE assignments (ASTExpressionList of ASTAssignment objects)
     ASTPtr update_assignments;
@@ -52,19 +52,19 @@ struct MaskingPolicy : public IAccessEntity
     /// Which roles or users should use this masking policy.
     RolesOrUsersSet to_roles;
 
-    bool equal(const IAccessEntity & other) const override;
-    std::shared_ptr<IAccessEntity> clone() const override { return cloneImpl<MaskingPolicy>(); }
+    [[nodiscard]] bool equal(const IAccessEntity & other) const override;
+    [[nodiscard]] std::shared_ptr<IAccessEntity> clone() const override { return cloneImpl<MaskingPolicy>(); }
     static constexpr auto TYPE = AccessEntityType::MASKING_POLICY;
-    AccessEntityType getType() const override { return TYPE; }
+    [[nodiscard]] AccessEntityType getType() const override { return TYPE; }
 
-    std::vector<UUID> findDependencies() const override;
-    bool hasDependencies(const std::unordered_set<UUID> & ids) const override;
+    [[nodiscard]] std::vector<UUID> findDependencies() const override;
+    [[nodiscard]] bool hasDependencies(const std::unordered_set<UUID> & ids) const override;
     void replaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new_ids) override;
     void copyDependenciesFrom(const IAccessEntity & src, const std::unordered_set<UUID> & ids) override;
     void removeDependencies(const std::unordered_set<UUID> & ids) override;
     void clearAllExceptDependencies() override;
 
-    bool isBackupAllowed() const override { return true; }
+    [[nodiscard]] bool isBackupAllowed() const override { return true; }
 
 private:
     void setName(const String &) override;

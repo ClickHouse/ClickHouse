@@ -843,7 +843,7 @@ namespace
             StorageFile::getSchemaCache(getContext()).addColumns(cache_key, columns);
         }
 
-        String getLastFilePath() const override
+        [[nodiscard]] String getLastFilePath() const override
         {
             if (current_index != 0)
                 return paths[current_index - 1];
@@ -855,7 +855,7 @@ namespace
             format = format_name;
         }
 
-        bool supportsLastReadBufferRecreation() const override { return true; }
+        [[nodiscard]] bool supportsLastReadBufferRecreation() const override { return true; }
 
         std::unique_ptr<ReadBuffer> recreateLastReadBuffer() override
         {
@@ -1103,12 +1103,12 @@ namespace
             format = format_name;
         }
 
-        String getLastFilePath() const override
+        [[nodiscard]] String getLastFilePath() const override
         {
             return last_read_file_path;
         }
 
-        bool supportsLastReadBufferRecreation() const override { return true; }
+        [[nodiscard]] bool supportsLastReadBufferRecreation() const override { return true; }
 
         std::unique_ptr<ReadBuffer> recreateLastReadBuffer() override
         {

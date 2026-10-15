@@ -1276,7 +1276,7 @@ public:
         InterpreterTransactionControlQuery tc(tcl_ast, query_context);
         tc.execute();
     }
-    bool transactionRunning() const { return transaction_running; }
+    [[nodiscard]] bool transactionRunning() const { return transaction_running; }
 
 private:
     bool transaction_running{false};
@@ -1514,7 +1514,7 @@ struct ConstructionSettings
     Float64 offset = 0;
     bool present = false;
 
-    bool empty() const
+    [[nodiscard]] bool empty() const
     {
         return select_expr.empty() && filter_expr.empty() && order_expr.empty() && limit == 0 && offset == 0;
     }

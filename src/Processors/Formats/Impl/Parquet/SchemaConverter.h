@@ -94,12 +94,12 @@ private:
         const parq::SchemaElement * element = nullptr;
         std::optional<size_t> output_idx; // index in output_columns
 
-        const String & getParquetName() const
+        [[nodiscard]] const String & getParquetName() const
         {
             return parquet_name.has_value() ? *parquet_name : name;
         }
 
-        String getNameForLogging() const
+        [[nodiscard]] String getNameForLogging() const
         {
             if (parquet_name.has_value() && *parquet_name != name)
                 return fmt::format("{} (mapped to {})", *parquet_name, name);

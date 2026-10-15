@@ -15,9 +15,9 @@ public:
         const StorageMergeTree & storage_, const MergeTreeTransactionPtr & tx_, std::unique_lock<std::mutex> & merge_mutate_lock_);
     ~MergeTreeMergePredicate() override = default;
 
-    std::expected<void, PreformattedMessage> canMergeParts(const PartProperties & left, const PartProperties & right) const override;
-    std::expected<void, PreformattedMessage> canUsePartInMerges(const MergeTreeDataPartPtr & part) const;
-    PartsRange getPatchesToApplyOnMerge(const PartsRange & range) const override;
+    [[nodiscard]] std::expected<void, PreformattedMessage> canMergeParts(const PartProperties & left, const PartProperties & right) const override;
+    [[nodiscard]] std::expected<void, PreformattedMessage> canUsePartInMerges(const MergeTreeDataPartPtr & part) const;
+    [[nodiscard]] PartsRange getPatchesToApplyOnMerge(const PartsRange & range) const override;
 
 private:
     const StorageMergeTree & storage;

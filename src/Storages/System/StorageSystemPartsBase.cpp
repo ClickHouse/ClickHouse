@@ -413,7 +413,7 @@ StoragesInfoStream::StoragesInfoStream(std::optional<ActionsDAG> filter_by_datab
 class ReadFromSystemPartsBase : public SourceStepWithFilter
 {
 public:
-    std::string getName() const override { return "ReadFromSystemPartsBase"; }
+    [[nodiscard]] std::string getName() const override { return "ReadFromSystemPartsBase"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     ReadFromSystemPartsBase(

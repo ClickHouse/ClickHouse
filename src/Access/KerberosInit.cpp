@@ -46,7 +46,7 @@ private:
     krb5_creds my_creds {};
     krb5_keytab keytab = nullptr;
     krb5_principal defcache_princ = nullptr;
-    String fmtError(krb5_error_code code) const;
+    [[nodiscard]] String fmtError(krb5_error_code code) const;
 };
 }
 

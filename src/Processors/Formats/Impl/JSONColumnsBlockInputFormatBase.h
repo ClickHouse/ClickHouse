@@ -86,7 +86,7 @@ public:
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
     void transformTypesFromDifferentFilesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
 
-    bool needContext() const override { return !hints_str.empty(); }
+    [[nodiscard]] bool needContext() const override { return !hints_str.empty(); }
     void setContext(const ContextPtr & ctx) override;
 
     void setMaxRowsAndBytesToRead(size_t max_rows, size_t max_bytes) override
@@ -95,7 +95,7 @@ public:
         max_bytes_to_read = max_bytes;
     }
 
-    size_t getNumRowsRead() const override { return total_rows_read; }
+    [[nodiscard]] size_t getNumRowsRead() const override { return total_rows_read; }
 
 private:
     NamesAndTypesList readSchema() override;

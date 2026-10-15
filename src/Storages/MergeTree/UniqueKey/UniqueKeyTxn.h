@@ -50,7 +50,7 @@ public:
         std::vector<DeleteBitmapStore::BitmapLink> carried;
 
         /// Every target this write is now on the hook for, in either role.
-        std::vector<MergeTreePartInfo> allTargets() const
+        [[nodiscard]] std::vector<MergeTreePartInfo> allTargets() const
         {
             std::vector<MergeTreePartInfo> all = targets;
             for (const auto & link : carried)
@@ -62,11 +62,11 @@ public:
     virtual ~IUniqueKeyCommit() = default;
 
     /// The partition this write publishes into
-    virtual String partitionId() const = 0;
+    [[nodiscard]] virtual String partitionId() const = 0;
 
     /// Names this write in the log. Every line the commit protocol emits is keyed by it and the
     /// partition, so one grep replays a whole commit.
-    virtual std::string_view writeKind() const = 0;
+    [[nodiscard]] virtual std::string_view writeKind() const = 0;
 
     /// Put everything on disk inside the part this write will publish
     virtual std::optional<StagedWrite> stage(const PartitionWriteGuard & guard) = 0;

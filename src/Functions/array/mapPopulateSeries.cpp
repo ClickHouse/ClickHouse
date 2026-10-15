@@ -36,12 +36,12 @@ public:
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMapPopulateSeries>(); }
 
 private:
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isVariadic() const override { return true; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     void checkTypes(const DataTypePtr & key_type, const DataTypePtr & value_type, const DataTypePtr & max_key_type) const
     {
@@ -87,7 +87,7 @@ private:
                 max_key_type->getName());
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.empty() || arguments.size() > 3)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -313,7 +313,7 @@ private:
         ColumnPtr max_key_column;
     };
 
-    KeyAndValueInput extractKeyAndValueInput(const ColumnsWithTypeAndName & arguments) const
+    [[nodiscard]] KeyAndValueInput extractKeyAndValueInput(const ColumnsWithTypeAndName & arguments) const
     {
         KeyAndValueInput input;
 
@@ -450,7 +450,7 @@ private:
         return result;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t) const override
     {
         auto input = extractKeyAndValueInput(arguments);
 

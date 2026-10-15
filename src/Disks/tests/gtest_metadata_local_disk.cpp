@@ -1338,13 +1338,13 @@ TEST_F(MetadataLocalDiskTest, TestNonExistingObjects)
     auto metadata = getMetadataStorage("/TestNonExistingObjects");
     EXPECT_FALSE(metadata->existsFile("non-existing"));
     EXPECT_FALSE(metadata->existsDirectory("non-existing"));
-    EXPECT_THROW(metadata->listDirectory("non-existing"), std::exception);
-    EXPECT_THROW(metadata->readInlineDataToString("non-existing"), std::exception);
-    EXPECT_THROW(metadata->getFileSize("non-existing"), std::exception);
-    EXPECT_THROW(metadata->getLastModified("non-existing"), std::exception);
-    EXPECT_THROW(metadata->getLastChanged("non-existing"), std::exception);
-    EXPECT_THROW(metadata->getStorageObjects("non-existing"), std::exception);
-    EXPECT_THROW(metadata->getHardlinkCount("non-existing"), std::exception);
+    EXPECT_THROW((void)metadata->listDirectory("non-existing"), std::exception);
+    EXPECT_THROW((void)metadata->readInlineDataToString("non-existing"), std::exception);
+    EXPECT_THROW((void)metadata->getFileSize("non-existing"), std::exception);
+    EXPECT_THROW((void)metadata->getLastModified("non-existing"), std::exception);
+    EXPECT_THROW((void)metadata->getLastChanged("non-existing"), std::exception);
+    EXPECT_THROW((void)metadata->getStorageObjects("non-existing"), std::exception);
+    EXPECT_THROW((void)metadata->getHardlinkCount("non-existing"), std::exception);
 }
 
 TEST_F(MetadataLocalDiskTest, TestNonExistingObjectsInTransaction)

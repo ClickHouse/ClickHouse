@@ -23,13 +23,13 @@ namespace
         static constexpr auto name = "logTrace";
         static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionLogTrace>(); }
 
-        String getName() const override { return name; }
+        [[nodiscard]] String getName() const override { return name; }
 
-        size_t getNumberOfArguments() const override { return 1; }
+        [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
 
-        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+        [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-        DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+        [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
         {
             if (!isString(arguments[0]))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
@@ -37,7 +37,7 @@ namespace
             return std::make_shared<DataTypeUInt8>();
         }
 
-        ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+        [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
         {
             String message;
             if (const ColumnConst * col = checkAndGetColumnConst<ColumnString>(arguments[0].column.get()))

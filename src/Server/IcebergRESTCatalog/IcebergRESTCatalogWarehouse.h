@@ -26,9 +26,9 @@ struct IcebergRESTCatalogWarehouse
     const ObjectStoragePtr object_storage;
 
     /// Whether the S3 client of this warehouse can address `location`.
-    bool isInBucket(const String & location) const;
+    [[nodiscard]] bool isInBucket(const String & location) const;
     /// Throws `INCORRECT_DATA`. Callers validate client input with `isInBucket` first.
-    String objectKey(const String & location) const;
+    [[nodiscard]] String objectKey(const String & location) const;
 };
 
 using IcebergRESTCatalogWarehousePtr = std::shared_ptr<const IcebergRESTCatalogWarehouse>;
@@ -49,7 +49,7 @@ public:
 
     explicit IcebergRESTCatalogWarehouses(Map warehouses_) : warehouses(std::move(warehouses_)) {}
 
-    IcebergRESTCatalogWarehousePtr tryGet(const String & name) const
+    [[nodiscard]] IcebergRESTCatalogWarehousePtr tryGet(const String & name) const
     {
         auto it = warehouses.find(name);
         if (it == warehouses.end())

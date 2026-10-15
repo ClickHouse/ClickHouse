@@ -28,7 +28,7 @@ public:
     // Must insert the result for current_row.
     virtual void windowInsertResultInto(const WindowTransform * transform, size_t function_index) const = 0;
 
-    virtual std::optional<WindowFrame> getDefaultFrame() const { return {}; }
+    [[nodiscard]] virtual std::optional<WindowFrame> getDefaultFrame() const { return {}; }
 
     /// Is the frame type supported by this function.
     virtual bool checkWindowFrameType(const WindowTransform * /*transform*/) const { return true; }

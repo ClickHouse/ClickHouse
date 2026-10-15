@@ -13,7 +13,7 @@ protected:
     bool allow_settings_after_format_in_insert;
     bool select_only;
 
-    const char * getName() const override { return "EXPLAIN"; }
+    [[nodiscard]] const char * getName() const override { return "EXPLAIN"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 public:
     explicit ParserExplainQuery(const char* end_, bool allow_settings_after_format_in_insert_)
@@ -26,7 +26,7 @@ public:
         : end(nullptr) , allow_settings_after_format_in_insert(false) , select_only(true)
     {}
 
-    std::map<String, Documentation> getDocumentation() const override;
+    [[nodiscard]] std::map<String, Documentation> getDocumentation() const override;
 
 };
 

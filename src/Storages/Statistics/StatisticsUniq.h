@@ -19,10 +19,10 @@ public:
     void serialize(WriteBuffer & buf) override;
     void deserialize(ReadBuffer & buf, StatisticsFileVersion version) override;
 
-    UInt64 estimateCardinality() const override;
-    bool isCompatibleWith(const IStatistics & other) const override;
+    [[nodiscard]] UInt64 estimateCardinality() const override;
+    [[nodiscard]] bool isCompatibleWith(const IStatistics & other) const override;
 
-    String getNameForLogs() const override { return "Uniq : " + std::to_string(estimateCardinality()); }
+    [[nodiscard]] String getNameForLogs() const override { return "Uniq : " + std::to_string(estimateCardinality()); }
 private:
     std::unique_ptr<Arena> arena;
     AggregateFunctionPtr collector;

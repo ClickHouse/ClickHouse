@@ -12,7 +12,7 @@ class FractionalOffsetStep : public ITransformingStep
 public:
     FractionalOffsetStep(const SharedHeader & input_header_, Float64 fractional_offset_);
 
-    String getName() const override { return "FractionalOffset"; }
+    [[nodiscard]] String getName() const override { return "FractionalOffset"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
@@ -20,12 +20,12 @@ public:
     void describeActions(FormatSettings & settings) const override;
 
     void serialize(Serialization & ctx) const override;
-    bool isSerializable() const override { return true; }
+    [[nodiscard]] bool isSerializable() const override { return true; }
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
     /// Like `FractionalLimitStep`: the fraction is resolved against the whole result.
-    bool supportsDataflowStatisticsCollection() const override { return true; }
+    [[nodiscard]] bool supportsDataflowStatisticsCollection() const override { return true; }
 
 private:
     void updateOutputHeader() override { output_header = input_headers.front(); }

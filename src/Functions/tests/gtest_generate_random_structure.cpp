@@ -29,7 +29,7 @@ TEST(GenerateRandomStructure, DepthLimitFallbackEmitsSingleValidType)
             << "unparseable type for seed " << seed << ": " << type;
 
         /// Round-trip: the reparsed type name must be self-consistent (guards against silently-accepted junk).
-        ASSERT_NO_THROW(DataTypeFactory::instance().get(parsed->getName()))
+        ASSERT_NO_THROW((void)DataTypeFactory::instance().get(parsed->getName()))
             << "type name not reparseable for seed " << seed << ": " << type;
     }
 }

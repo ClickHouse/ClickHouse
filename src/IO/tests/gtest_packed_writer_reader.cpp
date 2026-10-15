@@ -170,7 +170,7 @@ TEST(PackedFilesWriter, PrepareFinalizeDoesNotTouchDestination)
     writer2.applyMetadataChanges(old_index);
 
     ASSERT_THROW(
-        writer2.prepareFinalize({}, PackedFilesIO::VERSION_WITHOUT_UNCOMPRESSED_SIZE),
+        (void)writer2.prepareFinalize({}, PackedFilesIO::VERSION_WITHOUT_UNCOMPRESSED_SIZE),
         Exception);
 
     /// The old archive is intact: it was never opened for writing.

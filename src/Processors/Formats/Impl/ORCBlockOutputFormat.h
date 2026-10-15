@@ -27,12 +27,12 @@ class ORCOutputStream : public orc::OutputStream
 public:
     explicit ORCOutputStream(WriteBuffer & out_);
 
-    uint64_t getLength() const override;
-    uint64_t getNaturalWriteSize() const override;
+    [[nodiscard]] uint64_t getLength() const override;
+    [[nodiscard]] uint64_t getNaturalWriteSize() const override;
     void write(const void * buf, size_t length) override;
 
     void close() override {}
-    const std::string& getName() const override { return name; }
+    [[nodiscard]] const std::string& getName() const override { return name; }
 
 private:
     WriteBuffer & out;

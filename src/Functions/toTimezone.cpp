@@ -31,9 +31,9 @@ class ExecutableFunctionToTimeZone final : public IExecutableFunction
 public:
     explicit ExecutableFunctionToTimeZone() = default;
 
-    String getName() const override { return "toTimezone"; }
+    [[nodiscard]] String getName() const override { return "toTimezone"; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override
     {
         return arguments[0].column;
     }

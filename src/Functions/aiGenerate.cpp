@@ -24,11 +24,11 @@ public:
 
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionAiGenerate>(context_); }
 
-    String getName() const override { return name; }
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
             {"prompt", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringOrNullableString), nullptr, "String"},
@@ -44,7 +44,7 @@ public:
 private:
     static constexpr float default_temp = 0.7f;
 
-    AIParamSpecs functionParams() const override
+    [[nodiscard]] AIParamSpecs functionParams() const override
     {
         return {
             {"temperature", AIParamKind::Float, Field(static_cast<Float64>(default_temp))},
@@ -52,12 +52,12 @@ private:
         };
     }
 
-    String buildSystemPrompt(const ColumnsWithTypeAndName &, const AIParams & params) const override
+    [[nodiscard]] String buildSystemPrompt(const ColumnsWithTypeAndName &, const AIParams & params) const override
     {
         return params.getString("system_prompt");
     }
 
-    String buildUserMessage(const ColumnsWithTypeAndName & arguments, size_t row) const override
+    [[nodiscard]] String buildUserMessage(const ColumnsWithTypeAndName & arguments, size_t row) const override
     {
         return String(arguments[0].column->getDataAt(row));
     }

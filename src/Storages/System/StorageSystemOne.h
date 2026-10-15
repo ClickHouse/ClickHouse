@@ -51,9 +51,9 @@ public:
     ReadFromSystemOneStep(const ReadFromSystemOneStep &) = default;
     ReadFromSystemOneStep(ReadFromSystemOneStep &&) = default;
 
-    String getName() const override { return "ReadFromSystemOne"; }
+    [[nodiscard]] String getName() const override { return "ReadFromSystemOne"; }
 
-    QueryPlanStepPtr clone() const override
+    [[nodiscard]] QueryPlanStepPtr clone() const override
     {
         return std::make_unique<ReadFromSystemOneStep>(*this);
     }

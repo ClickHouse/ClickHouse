@@ -27,8 +27,8 @@ struct FlatStringMap
         ends.push_back(static_cast<UInt32>(data.size()));
     }
 
-    size_t size() const { return ends.size() / 2; }
-    bool empty() const { return ends.empty(); }
+    [[nodiscard]] size_t size() const { return ends.size() / 2; }
+    [[nodiscard]] bool empty() const { return ends.empty(); }
 
     void reserve(size_t entries, size_t bytes)
     {

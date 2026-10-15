@@ -34,22 +34,22 @@ public:
     ReadFromMemoryStorageStep(ReadFromMemoryStorageStep &&) = default;
     ReadFromMemoryStorageStep & operator=(ReadFromMemoryStorageStep &&) = delete;
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
     void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
 
-    bool supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_column) const override;
+    [[nodiscard]] bool supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_column) const override;
     void setTopKFilter(FormatTopKFilterInfoPtr info) override;
 
     void describeActions(FormatSettings & format_settings) const override;
     void describeActions(JSONBuilder::JSONMap & map) const override;
 
-    QueryPlanStepPtr clone() const override;
+    [[nodiscard]] QueryPlanStepPtr clone() const override;
 
-    const StoragePtr & getStorage() const { return storage; }
+    [[nodiscard]] const StoragePtr & getStorage() const { return storage; }
 
 private:
     static constexpr auto name = "ReadFromMemoryStorage";
@@ -69,7 +69,7 @@ private:
 
     /// In-source filtering (TopN threshold, row-level security filter, PREWHERE),
     /// or nullptr when there is nothing to apply.
-    MemorySourceFilterPtr makeSourceFilter(const NamesAndTypesList & physical_columns) const;
+    [[nodiscard]] MemorySourceFilterPtr makeSourceFilter(const NamesAndTypesList & physical_columns) const;
 
     Pipe makePipe();
 };

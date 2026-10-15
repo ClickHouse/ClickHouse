@@ -204,12 +204,12 @@ private:
         /// We can read only a part of the chunk, so we need to remember the state of the last read chunk.
         ChunkStructure last_chunk_structure;
 
-        ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+        [[nodiscard]] ISerialization::DeserializeBinaryBulkStatePtr clone() const override
         {
             return std::make_shared<DeserializeBinaryBulkStateObjectSharedDataStructure>(*this);
         }
 
-        bool checkIfPathMatchesAnyRequestedPrefix(const String & path) const
+        [[nodiscard]] bool checkIfPathMatchesAnyRequestedPrefix(const String & path) const
         {
             return std::ranges::any_of(requested_paths_prefixes, [&](const auto & prefix) { return path.starts_with(prefix); });
         }

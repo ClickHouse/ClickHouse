@@ -51,7 +51,7 @@ public:
     /// only if it explicitly opts in by overriding this, so a buffer whose nextImpl ignores
     /// set() is never read zero-copy. Callers that want zero-copy via set()+next() must check
     /// this first.
-    virtual bool supportsExternalBufferMode() const { return false; }
+    [[nodiscard]] virtual bool supportsExternalBufferMode() const { return false; }
 
     /** read next data and fill a buffer with it; set position to the beginning of the new data
       * (but not necessarily to the beginning of working_buffer!);
@@ -64,7 +64,7 @@ public:
 
     void cancel();
 
-    bool isCanceled() const
+    [[nodiscard]] bool isCanceled() const
     {
         return canceled;
     }
@@ -79,7 +79,7 @@ public:
 
     /// True if the whole input is already in the working buffer and will never be refilled
     /// (e.g. ReadBufferFromMemory). Lets hot parsers take the no-copy path without an RTTI check.
-    virtual bool isMemoryBuffer() const { return false; }
+    [[nodiscard]] virtual bool isMemoryBuffer() const { return false; }
 
     /** Unlike std::istream, it returns true if all data was read
       *  (and not in case there was an attempt to read after the end).

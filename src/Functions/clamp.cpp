@@ -25,13 +25,13 @@ class FunctionClamp final : public IFunction
 public:
     static constexpr auto name = "clamp";
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 3; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 3; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionClamp>(); }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & types) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & types) const override
     {
         if (types.size() != 3)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires 3 arguments", getName());
@@ -39,7 +39,7 @@ public:
         return getLeastSupertype(types);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         size_t arg_size = arguments.size();
         Columns converted_columns(arg_size);

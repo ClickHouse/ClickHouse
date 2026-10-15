@@ -59,7 +59,7 @@ struct PathElements
         elements.emplace_back(last_dot_pos + 1, size_t(pos - last_dot_pos - 1));
     }
 
-    size_t size() const { return elements.size(); }
+    [[nodiscard]] size_t size() const { return elements.size(); }
 
     std::vector<std::string_view> elements;
 };
@@ -79,7 +79,7 @@ struct Prefix
     }
 
     /// Check is_first flag in current object.
-    bool isFirstInCurrentObject() const
+    [[nodiscard]] bool isFirstInCurrentObject() const
     {
         if (elements.empty())
             return root_is_first_flag;
@@ -95,7 +95,7 @@ struct Prefix
             elements.back().second = false;
     }
 
-    size_t size() const { return elements.size(); }
+    [[nodiscard]] size_t size() const { return elements.size(); }
 
     /// Elements of the prefix: (path element, is_first flag in this prefix).
     /// is_first flag indicates if we already serialized some key in the object with such prefix.

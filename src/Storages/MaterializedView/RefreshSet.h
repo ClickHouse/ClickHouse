@@ -35,8 +35,8 @@ public:
 
         explicit operator bool() const { return parent_set != nullptr; }
 
-        const StorageID & getID() const { return id; }
-        const std::vector<StorageID> & getDependencies() const { return dependencies; }
+        [[nodiscard]] const StorageID & getID() const { return id; }
+        [[nodiscard]] const std::vector<StorageID> & getDependencies() const { return dependencies; }
 
     private:
         RefreshSet * parent_set = nullptr;

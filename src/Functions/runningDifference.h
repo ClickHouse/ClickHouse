@@ -176,36 +176,36 @@ public:
         return std::make_shared<FunctionRunningDifferenceImpl<is_first_line_zero>>();
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
 
-    bool isStateful() const override
+    [[nodiscard]] bool isStateful() const override
     {
         return true;
     }
 
-    size_t getNumberOfArguments() const override
+    [[nodiscard]] size_t getNumberOfArguments() const override
     {
         return 1;
     }
 
-    bool isDeterministic() const override
+    [[nodiscard]] bool isDeterministic() const override
     {
         return false;
     }
 
-    bool isDeterministicInScopeOfQuery() const override
+    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override
     {
         return false;
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         DataTypePtr res;
         dispatchForSourceType(*removeNullable(arguments[0]), [&](auto field_type_tag)
@@ -219,7 +219,7 @@ public:
         return res;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const auto & src = arguments.at(0);
 

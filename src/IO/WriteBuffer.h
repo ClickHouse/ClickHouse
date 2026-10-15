@@ -25,7 +25,7 @@ public:
     class CurrentBufferExhausted : public std::exception
     {
     public:
-        const char * what() const noexcept override { return "WriteBuffer limit is exhausted"; }
+        [[nodiscard]] const char * what() const noexcept override { return "WriteBuffer limit is exhausted"; }
     };
 
     using BufferBase::set;

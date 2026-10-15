@@ -64,7 +64,7 @@ public:
     UInt64 thread_id TSA_GUARDED_BY(getMutex()) = CurrentThread::get().thread_id;
 
     /// Return a reference to the mutex, used for Thread Sanitizer annotations.
-    Mutex & getMutex() const TSA_RETURN_CAPABILITY(mutex)
+    [[nodiscard]] Mutex & getMutex() const TSA_RETURN_CAPABILITY(mutex)
     {
         if (!mutex)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Mutex cannot be NULL");

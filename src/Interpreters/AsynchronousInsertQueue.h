@@ -140,12 +140,12 @@ public:
         InsertQuery(const InsertQuery & other);
         InsertQuery & operator=(const InsertQuery & other);
         bool operator==(const InsertQuery & other) const;
-        StorageID getStorageID() const;
+        [[nodiscard]] StorageID getStorageID() const;
 
     private:
         /// `authentication_grants` is compared by content in `operator==` (a shared_ptr would compare
         /// identity, which is inconsistent with the content-based hash), so it is not part of this tuple.
-        auto toTupleCmp() const { return std::tie(data_kind, query_str_with_secrets, user_id, current_roles, authentication_valid_until, current_user, initial_user, authenticated_user, quota_key, setting_changes); }
+        [[nodiscard]] auto toTupleCmp() const { return std::tie(data_kind, query_str_with_secrets, user_id, current_roles, authentication_valid_until, current_user, initial_user, authenticated_user, quota_key, setting_changes); }
 
         std::vector<SettingChange> setting_changes;
     };
@@ -155,7 +155,7 @@ private:
     {
         using std::variant<StringWithMemoryTracking, Block>::variant;
 
-        size_t byteSize() const
+        [[nodiscard]] size_t byteSize() const
         {
             return std::visit([]<typename T>(const T & arg)
             {
@@ -166,14 +166,14 @@ private:
             }, *this);
         }
 
-        AsynchronousInsertQueueDataKind getDataKind() const
+        [[nodiscard]] AsynchronousInsertQueueDataKind getDataKind() const
         {
             if (std::holds_alternative<Block>(*this))
                 return AsynchronousInsertQueueDataKind::Preprocessed;
             return AsynchronousInsertQueueDataKind::Parsed;
         }
 
-        bool empty() const
+        [[nodiscard]] bool empty() const
         {
             return std::visit([]<typename T>(const T & arg)
             {
@@ -184,8 +184,8 @@ private:
             }, *this);
         }
 
-        const StringWithMemoryTracking * asString() const { return std::get_if<StringWithMemoryTracking>(this); }
-        const Block * asBlock() const { return std::get_if<Block>(this); }
+        [[nodiscard]] const StringWithMemoryTracking * asString() const { return std::get_if<StringWithMemoryTracking>(this); }
+        [[nodiscard]] const Block * asBlock() const { return std::get_if<Block>(this); }
     };
 
     struct InsertData

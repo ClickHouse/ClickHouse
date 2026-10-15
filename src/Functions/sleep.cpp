@@ -76,16 +76,16 @@ public:
             name, variant, context->getSettingsRef()[Setting::function_sleep_max_microseconds_per_block]);
     }
 
-    String getName() const override { return function_name; }
-    bool isSuitableForConstantFolding() const override { return false; } /// Do not sleep during query analysis.
+    [[nodiscard]] String getName() const override { return function_name; }
+    [[nodiscard]] bool isSuitableForConstantFolding() const override { return false; } /// Do not sleep during query analysis.
     /// What the function does is observable outside of its return value - it spends time, it can throw
     /// `TOO_SLOW`, and it accounts `SleepFunctionCalls` / `SleepFunctionMicroseconds` - and how much of
     /// that happens depends on how many times and on how many rows it is evaluated.
-    bool hasObservableSideEffects() const override { return true; }
-    size_t getNumberOfArguments() const override { return 1; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool hasObservableSideEffects() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         auto is_float_or_native_uint = [](const IDataType & type)
         {
@@ -100,19 +100,19 @@ public:
 
         return std::make_shared<DataTypeUInt8>();
     }
-    ColumnPtr
+    [[nodiscard]] ColumnPtr
     executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
         return execute(arguments, result_type, true);
     }
 
-    ColumnPtr
+    [[nodiscard]] ColumnPtr
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
         return execute(arguments, result_type, false);
     }
 
-    ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, bool dry_run) const
+    [[nodiscard]] ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, bool dry_run) const
     {
         /// Resolved from the executing thread rather than captured: this instance can be stored in table
         /// metadata and then run by any later query.

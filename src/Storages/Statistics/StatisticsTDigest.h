@@ -17,10 +17,10 @@ public:
     void serialize(WriteBuffer & buf) override;
     void deserialize(ReadBuffer & buf, StatisticsFileVersion version) override;
 
-    std::optional<Float64> estimateLess(const Field & val) const override;
-    std::optional<Float64> estimateEqual(const Field & val) const override;
+    [[nodiscard]] std::optional<Float64> estimateLess(const Field & val) const override;
+    [[nodiscard]] std::optional<Float64> estimateEqual(const Field & val) const override;
 
-    String getNameForLogs() const override { return "TDigest"; }
+    [[nodiscard]] String getNameForLogs() const override { return "TDigest"; }
 
 private:
     QuantileTDigest<Float64> t_digest;

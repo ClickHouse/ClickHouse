@@ -75,7 +75,7 @@ namespace
 
         /// No direct IO, so reads need no alignment. The `kDefaultPageSize`
         /// default would inflate every read to a 4096-aligned window.
-        size_t GetRequiredBufferAlignment() const override { return 1; }
+        [[nodiscard]] size_t GetRequiredBufferAlignment() const override { return 1; }
 
         rocksdb::IOStatus Read(
             uint64_t offset,
@@ -127,7 +127,7 @@ namespace
             read_settings.reader_executor.enabled = false;
         }
 
-        const char * Name() const override { return "ReadBufferFileSystem"; }
+        [[nodiscard]] const char * Name() const override { return "ReadBufferFileSystem"; }
 
         rocksdb::IOStatus NewRandomAccessFile(
             const std::string & f,

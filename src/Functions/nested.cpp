@@ -39,36 +39,36 @@ public:
         return std::make_shared<FunctionNested>();
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
 
-    bool isVariadic() const override { return true; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
 
-    size_t getNumberOfArguments() const override
+    [[nodiscard]] size_t getNumberOfArguments() const override
     {
         return 0;
     }
 
-    bool useDefaultImplementationForConstants() const override
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override
     {
         return true;
     }
 
-    bool useDefaultImplementationForLowCardinalityColumns() const override
+    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override
     {
         return false;
     }
 
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
     {
         return {0};
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         // Validation is not exhaustive.
         FunctionArgumentDescriptors mandatory_args{{"column_names", &isArray, &isColumnConst, "const Array(String)"}};
@@ -84,7 +84,7 @@ public:
             getName(), arguments[0].type->getName());
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t) const override
     {
         size_t arguments_size = arguments.size();
         Columns columns;
@@ -110,7 +110,7 @@ private:
         return type;
     }
 
-    DataTypePtr getTupleType(size_t array_depth, const ColumnString & column, const ColumnsWithTypeAndName & arguments) const
+    [[nodiscard]] DataTypePtr getTupleType(size_t array_depth, const ColumnString & column, const ColumnsWithTypeAndName & arguments) const
     {
         if (column.size() + 1 != arguments.size())
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -144,7 +144,7 @@ private:
         return std::make_shared<DataTypeTuple>(types, names);
     }
 
-    DataTypePtr getType(size_t array_depth, const IColumn & column, const ColumnsWithTypeAndName & arguments) const
+    [[nodiscard]] DataTypePtr getType(size_t array_depth, const IColumn & column, const ColumnsWithTypeAndName & arguments) const
     {
         const auto * col_string = typeid_cast<const ColumnString *>(&column);
         if (col_string)

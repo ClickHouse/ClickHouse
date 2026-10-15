@@ -22,11 +22,11 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<ArrayFlatten>(); }
 
-    size_t getNumberOfArguments() const override { return 1; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isArray(arguments[0]))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}, expected Array",
@@ -39,7 +39,7 @@ public:
         return std::make_shared<DataTypeArray>(nested_type);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         /** We create an array column with array elements as the most deep elements of nested arrays,
           * and construct offsets by selecting elements of most deep offsets by values of ancestor offsets.
@@ -113,7 +113,7 @@ result: Row 1: [1, 2, 3], Row2: [4]
     }
 
 private:
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }

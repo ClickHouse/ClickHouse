@@ -71,7 +71,7 @@ struct DeserializeBinaryBulkStateObjectSharedDataPath : public ISerialization::D
 
     ISerialization::DeserializeBinaryBulkStatePtr structure_state;
 
-    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    [[nodiscard]] ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateObjectSharedDataPath>(*this);
         new_state->map_state = map_state ? map_state->clone() : nullptr;

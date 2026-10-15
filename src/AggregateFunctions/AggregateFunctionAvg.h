@@ -169,7 +169,7 @@ struct AvgFraction
 
     /// Allow division by zero as sometimes we need to return NaN.
     /// Invoked only is either Numerator or Denominator are Decimal.
-    Float64 NO_SANITIZE_UNDEFINED divideIfAnyDecimal(UInt32 num_scale, UInt32 denom_scale [[maybe_unused]]) const
+    [[nodiscard]] Float64 NO_SANITIZE_UNDEFINED divideIfAnyDecimal(UInt32 num_scale, UInt32 denom_scale [[maybe_unused]]) const
     {
         Float64 numerator_float = 0;
         if constexpr (is_decimal<Numerator>)
@@ -186,7 +186,7 @@ struct AvgFraction
         return numerator_float / denominator_float;
     }
 
-    Float64 NO_SANITIZE_UNDEFINED divide() const
+    [[nodiscard]] Float64 NO_SANITIZE_UNDEFINED divide() const
     {
         if constexpr (DecimalOrExtendedInt<Denominator>) /// if extended int
             return static_cast<Float64>(numerator) / static_cast<Float64>(denominator);
@@ -224,9 +224,9 @@ public:
         , denom_scale(denom_scale_)
     {}
 
-    DataTypePtr createResultType() const { return std::make_shared<DataTypeNumber<Float64>>(); }
+    [[nodiscard]] DataTypePtr createResultType() const { return std::make_shared<DataTypeNumber<Float64>>(); }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
     void NO_SANITIZE_UNDEFINED mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
@@ -246,7 +246,7 @@ public:
 
     /// final: AggregateFunctionAvg is not final (AggregateFunctionSumCount derives from it), so the
     /// batch loop can only devirtualize these if the methods themselves are.
-    std::optional<size_t> getSerializedSizeBound(std::optional<size_t> /* version */) const final
+    [[nodiscard]] std::optional<size_t> getSerializedSizeBound(std::optional<size_t> /* version */) const final
     {
         return sizeof(Numerator) + (std::is_unsigned_v<Denominator> ? VAR_UINT_MAX_SIZE : sizeof(Denominator));
     }
@@ -340,7 +340,7 @@ public:
 
 #if USE_EMBEDDED_COMPILER
 
-    bool isCompilable() const override
+    [[nodiscard]] bool isCompilable() const override
     {
         if constexpr (!canBeNativeType<Numerator>() || !canBeNativeType<Denominator>())
             return false;
@@ -556,7 +556,7 @@ public:
         increment(place, sum_data.get());
     }
 
-    String getName() const override { return "avg"; }
+    [[nodiscard]] String getName() const override { return "avg"; }
 
 #if USE_EMBEDDED_COMPILER
 

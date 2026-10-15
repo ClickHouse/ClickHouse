@@ -41,12 +41,12 @@ public:
         : allow_custom_error_code_argument(context_->getSettingsRef()[Setting::allow_custom_error_code_in_throwif])
     {
     }
-    String getName() const override { return name; }
-    bool isVariadic() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const size_t number_of_arguments = arguments.size();
 
@@ -75,26 +75,26 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeUInt8>();
     }
 
-    bool useDefaultImplementationForConstants() const override { return false; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return false; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
     /// With a LowCardinality argument the default implementation would run throwIf on the whole
     /// dictionary, which always contains the reserved default value even if no row references it.
     /// That spurious entry could make throwIf throw for values absent from the data, so execute on
     /// the minimal (only actually referenced) dictionary instead.
-    bool canBeExecutedOnDefaultArguments() const override { return false; }
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
 
     /** Prevent constant folding for FunctionThrowIf because for short circuit evaluation
       * it is unsafe to evaluate this function during DAG analysis.
       */
-    bool isSuitableForConstantFolding() const override { return false; }
+    [[nodiscard]] bool isSuitableForConstantFolding() const override { return false; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         if (input_rows_count == 0)
             return result_type->createColumn();

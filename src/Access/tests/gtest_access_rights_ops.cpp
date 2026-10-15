@@ -563,12 +563,12 @@ TEST(AccessRights, FilterDoesNotMutate)
 
     /// A parameter that is absent from the tree: "URL" shares no first character with
     /// "S3", so the lookup misses and a mutating find-or-create would insert nodes.
-    root.getFilters("URL");
+    (void)root.getFilters("URL");
     ASSERT_EQ(root, before);
     ASSERT_EQ(root.dumpNodes(), nodes_before);
 
     /// A parameter that is present must likewise leave the tree untouched.
-    root.getFilters("S3");
+    (void)root.getFilters("S3");
     ASSERT_EQ(root, before);
     ASSERT_EQ(root.dumpNodes(), nodes_before);
 }
@@ -584,7 +584,7 @@ TEST(AccessRights, FilterDoesNotMutateOnPrefixSplit)
     /// "SQLITE" shares its first character with the existing "S3" node but mismatches
     /// after it, so a mutating find-or-create would rename "S3" in place and splice it
     /// into a new "S" parent. Both are real source names.
-    root.getFilters("SQLITE");
+    (void)root.getFilters("SQLITE");
     ASSERT_EQ(root, before);
     ASSERT_EQ(root.dumpNodes(), nodes_before);
 }

@@ -20,8 +20,8 @@ public:
     StopToken & operator=(const StopToken &) = default;
     StopToken & operator=(StopToken &&) = default;
 
-    bool stop_requested() const;
-    bool stop_possible() const { return state != nullptr; }
+    [[nodiscard]] bool stop_requested() const;
+    [[nodiscard]] bool stop_possible() const { return state != nullptr; }
 
 private:
     friend class StopSource;
@@ -42,7 +42,7 @@ public:
     StopSource & operator=(const StopSource &) = default;
     StopSource & operator=(StopSource &&) = default;
 
-    StopToken get_token() const { return StopToken(state); }
+    [[nodiscard]] StopToken get_token() const { return StopToken(state); }
     bool request_stop();
 
 private:

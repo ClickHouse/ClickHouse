@@ -65,8 +65,8 @@ public:
         /// if the action is lazy executed.
         std::optional<size_t> short_circuit_eager_argument = {};
 
-        std::string toString() const;
-        JSONBuilder::ItemPtr toTree() const;
+        [[nodiscard]] std::string toString() const;
+        [[nodiscard]] JSONBuilder::ItemPtr toTree() const;
     };
 
     using Actions = std::vector<Action>;
@@ -95,15 +95,15 @@ public:
     ExpressionActions(ExpressionActions &&) = default;
     ExpressionActions & operator=(ExpressionActions &&) = default;
 
-    const Actions & getActions() const { return actions; }
-    const std::list<Node> & getNodes() const { return actions_dag.getNodes(); }
-    const ActionsDAG & getActionsDAG() const { return actions_dag; }
-    const ColumnNumbers & getResultPositions() const { return result_positions; }
-    const ExpressionActionsSettings & getSettings() const { return settings; }
+    [[nodiscard]] const Actions & getActions() const { return actions; }
+    [[nodiscard]] const std::list<Node> & getNodes() const { return actions_dag.getNodes(); }
+    [[nodiscard]] const ActionsDAG & getActionsDAG() const { return actions_dag; }
+    [[nodiscard]] const ColumnNumbers & getResultPositions() const { return result_positions; }
+    [[nodiscard]] const ExpressionActionsSettings & getSettings() const { return settings; }
 
     /// Get a list of input columns.
-    Names getRequiredColumns() const;
-    const NamesAndTypesList & getRequiredColumnsWithTypes() const { return required_columns; }
+    [[nodiscard]] Names getRequiredColumns() const;
+    [[nodiscard]] const NamesAndTypesList & getRequiredColumnsWithTypes() const { return required_columns; }
 
     /// Execute the expression on the block. The block must contain all the columns returned by getRequiredColumns.
     ///
@@ -132,7 +132,7 @@ public:
     ///
     /// `executeOnColumns` consumes `columns` (chunk data, in `header` order) and returns the result
     /// columns in `getSampleBlock()` order. It assumes `allow_duplicates_in_input == false`.
-    std::vector<ssize_t> getInputPositions(const Block & header) const;
+    [[nodiscard]] std::vector<ssize_t> getInputPositions(const Block & header) const;
     Columns executeOnColumns(
         Columns columns,
         const Block & header,
@@ -141,17 +141,17 @@ public:
         bool dry_run = false,
         const std::atomic<bool> * is_cancelled = nullptr) const;
 
-    bool hasArrayJoin() const;
+    [[nodiscard]] bool hasArrayJoin() const;
     void assertDeterministic() const;
 
     /// Obtain a sample block that contains the names and types of result columns.
-    const Block & getSampleBlock() const { return sample_block; }
+    [[nodiscard]] const Block & getSampleBlock() const { return sample_block; }
 
-    std::string dumpActions() const;
+    [[nodiscard]] std::string dumpActions() const;
 
     void describeActions(WriteBuffer & out, std::string_view prefix) const;
 
-    JSONBuilder::ItemPtr toTree() const;
+    [[nodiscard]] JSONBuilder::ItemPtr toTree() const;
 
     /// Find the column with the smallest estimated in-memory size.
     /// When skip_subcolumns=true (default), meta-subcolumns like .size0/.keys
@@ -159,7 +159,7 @@ public:
     /// projections where all entries are valid query-level outputs.
     static NameAndTypePair getSmallestColumn(const NamesAndTypesList & columns, bool skip_subcolumns = true);
 
-    ExpressionActionsPtr clone() const;
+    [[nodiscard]] ExpressionActionsPtr clone() const;
 
 private:
     ExpressionActions() = default;
@@ -193,17 +193,17 @@ struct Step
 
     void addRequiredOutput(const std::string & name) { required_output[name] = true; }
 
-    virtual NamesAndTypesList getRequiredColumns() const = 0;
-    virtual ColumnsWithTypeAndName getResultColumns() const = 0;
+    [[nodiscard]] virtual NamesAndTypesList getRequiredColumns() const = 0;
+    [[nodiscard]] virtual ColumnsWithTypeAndName getResultColumns() const = 0;
     /// Remove unused result and update required columns
     virtual void finalize(const NameSet & required_output_) = 0;
     /// Add projections to expression
     virtual void prependProjectInput() = 0;
-    virtual std::string dump() const = 0;
+    [[nodiscard]] virtual std::string dump() const = 0;
 
     /// Only for ExpressionActionsStep
     ActionsAndProjectInputsFlagPtr & actions();
-    const ActionsAndProjectInputsFlagPtr & actions() const;
+    [[nodiscard]] const ActionsAndProjectInputsFlagPtr & actions() const;
 };
 
 struct ExpressionActionsStep : public Step
@@ -217,12 +217,12 @@ struct ExpressionActionsStep : public Step
     {
     }
 
-    NamesAndTypesList getRequiredColumns() const override
+    [[nodiscard]] NamesAndTypesList getRequiredColumns() const override
     {
         return actions_and_flags->dag.getRequiredColumns();
     }
 
-    ColumnsWithTypeAndName getResultColumns() const override
+    [[nodiscard]] ColumnsWithTypeAndName getResultColumns() const override
     {
         return actions_and_flags->dag.getResultColumns();
     }
@@ -238,7 +238,7 @@ struct ExpressionActionsStep : public Step
         actions_and_flags->project_input = true;
     }
 
-    std::string dump() const override
+    [[nodiscard]] std::string dump() const override
     {
         return actions_and_flags->dag.dumpDAG();
     }
@@ -252,11 +252,11 @@ struct ArrayJoinStep : public Step
 
     ArrayJoinStep(const Names & array_join_columns_, ColumnsWithTypeAndName required_columns_);
 
-    NamesAndTypesList getRequiredColumns() const override { return required_columns; }
-    ColumnsWithTypeAndName getResultColumns() const override { return result_columns; }
+    [[nodiscard]] NamesAndTypesList getRequiredColumns() const override { return required_columns; }
+    [[nodiscard]] ColumnsWithTypeAndName getResultColumns() const override { return result_columns; }
     void finalize(const NameSet & required_output_) override;
     void prependProjectInput() override {} /// TODO: remove unused columns before ARRAY JOIN ?
-    std::string dump() const override { return "ARRAY JOIN"; }
+    [[nodiscard]] std::string dump() const override { return "ARRAY JOIN"; }
 };
 
 struct JoinStep : public Step
@@ -268,11 +268,11 @@ struct JoinStep : public Step
     ColumnsWithTypeAndName result_columns;
 
     JoinStep(std::shared_ptr<TableJoin> analyzed_join_, JoinPtr join_, const ColumnsWithTypeAndName & required_columns_);
-    NamesAndTypesList getRequiredColumns() const override { return required_columns; }
-    ColumnsWithTypeAndName getResultColumns() const override { return result_columns; }
+    [[nodiscard]] NamesAndTypesList getRequiredColumns() const override { return required_columns; }
+    [[nodiscard]] ColumnsWithTypeAndName getResultColumns() const override { return result_columns; }
     void finalize(const NameSet & required_output_) override;
     void prependProjectInput() override {} /// TODO: remove unused columns before JOIN ?
-    std::string dump() const override { return "JOIN"; }
+    [[nodiscard]] std::string dump() const override { return "JOIN"; }
 };
 
 }
@@ -335,7 +335,7 @@ struct ExpressionActionsChain : WithContext
             std::make_shared<ActionsAndProjectInputsFlag>(ActionsDAG(columns), false)));
     }
 
-    std::string dumpChain() const;
+    [[nodiscard]] std::string dumpChain() const;
 };
 
 }

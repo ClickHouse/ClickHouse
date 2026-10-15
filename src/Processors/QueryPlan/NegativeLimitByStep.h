@@ -13,7 +13,7 @@ public:
             const SharedHeader & input_header_,
             size_t group_length_, size_t group_offset_, Names columns_);
 
-    String getName() const override { return "NegativeLimitBy"; }
+    [[nodiscard]] String getName() const override { return "NegativeLimitBy"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
@@ -21,11 +21,11 @@ public:
     void describeActions(FormatSettings & settings) const override;
 
     void serialize(Serialization & ctx) const override;
-    bool isSerializable() const override { return true; }
+    [[nodiscard]] bool isSerializable() const override { return true; }
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
-    const Names & getColumns() const { return columns; }
+    [[nodiscard]] const Names & getColumns() const { return columns; }
 
     void applyOrder(const SortDescription & sort_description);
 

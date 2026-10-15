@@ -81,7 +81,7 @@ public:
     /// Restart the ordering state (virtual time, arrival sequence) of the empty algorithm, as if new.
     virtual void reset() noexcept = 0;
 
-    virtual bool empty() const = 0;
+    [[nodiscard]] virtual bool empty() const = 0;
 };
 
 /// `fifo` — first-come-first-served. Byte-for-byte the historical leaf ordering.
@@ -120,7 +120,7 @@ public:
 
     void reset() noexcept override {}
 
-    bool empty() const override { return requests.empty(); }
+    [[nodiscard]] bool empty() const override { return requests.empty(); }
 
 private:
     ResourceRequest::EnqueuedList requests;
@@ -213,7 +213,7 @@ public:
         next_seq = 0;
     }
 
-    bool empty() const override { return requests.empty(); }
+    [[nodiscard]] bool empty() const override { return requests.empty(); }
 
 private:
     /// Undo the virtual runtime a request projected onto its query at push(), for a request that will
@@ -268,7 +268,7 @@ private:
     /// True once the query's real cumulative service crosses a `weight_lowering_*` threshold.
     /// `attained_cost` already tracks real service (finish folds its correction straight in). For CPU
     /// it is granted service and leads spent CPU by at most one quantum.
-    bool weightLoweringThresholdCrossed(const ResourceSchedulingContext & ctx, const ResourceQueryState & state) const
+    [[nodiscard]] bool weightLoweringThresholdCrossed(const ResourceSchedulingContext & ctx, const ResourceQueryState & state) const
     {
         if (ctx.weight_lowering_age_seconds > 0)
         {
@@ -391,7 +391,7 @@ public:
         next_seq = 0;
     }
 
-    bool empty() const override { return requests.empty(); }
+    [[nodiscard]] bool empty() const override { return requests.empty(); }
 
 private:
     /// Internal per-resource quantum used as the bucketing unit (not exposed as a SQL setting).
@@ -407,7 +407,7 @@ private:
         return 1;
     }
 
-    UInt32 levelOf(Int64 attained) const
+    [[nodiscard]] UInt32 levelOf(Int64 attained) const
     {
         if (attained <= 0)
             return 0;
@@ -495,7 +495,7 @@ public:
         next_seq = 0;
     }
 
-    bool empty() const override { return requests.empty(); }
+    [[nodiscard]] bool empty() const override { return requests.empty(); }
 
 private:
     struct ByKey

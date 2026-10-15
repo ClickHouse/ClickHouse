@@ -20,7 +20,7 @@ class FunctionDateOrDateTimeToSomething final : public IFunctionDateOrDateTime<T
 public:
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionDateOrDateTimeToSomething>(); }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         constexpr bool result_is_date_or_date32 = (std::is_same_v<ToDataType, DataTypeDate> || std::is_same_v<ToDataType, DataTypeDate32>);
         this->checkArguments(arguments, result_is_date_or_date32);
@@ -103,7 +103,7 @@ public:
             return std::make_shared<ToDataType>();
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         /// If result type is DateTime or DateTime64 we don't know the timezone and scale without argument types.
         /// Keep this branch as the `if constexpr` so `std::make_shared<ToDataType>()` is not instantiated
@@ -120,7 +120,7 @@ public:
         }
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const IDataType * from_type = arguments[0].type.get();
 
@@ -159,15 +159,15 @@ private:
     /// PostgreSQL-style `EXTRACT(<unit> FROM INTERVAL ...)`: kind matching is
     /// validated in `getReturnTypeImpl`, so here we just return the underlying
     /// Int64 values cast to the function's result type.
-    ColumnPtr executeOnInterval(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const
+    [[nodiscard]] ColumnPtr executeOnInterval(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const
     {
         return castColumn(arguments[0], result_type);
     }
 
 public:
-    bool hasInformationAboutPreimage() const override { return Transform::hasPreimage(); }
+    [[nodiscard]] bool hasInformationAboutPreimage() const override { return Transform::hasPreimage(); }
 
-    FieldIntervalPtr getPreimage(const IDataType & type, const Field & point) const override
+    [[nodiscard]] FieldIntervalPtr getPreimage(const IDataType & type, const Field & point) const override
     {
         if constexpr (Transform::hasPreimage())
             return Transform::getPreimage(type, point);

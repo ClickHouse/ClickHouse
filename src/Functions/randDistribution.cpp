@@ -313,7 +313,7 @@ private:
     DistributionLimits limits;
 
     template <typename ResultType>
-    ResultType getParameterFromConstColumn(size_t parameter_number, const ColumnsWithTypeAndName & arguments) const
+    [[nodiscard]] ResultType getParameterFromConstColumn(size_t parameter_number, const ColumnsWithTypeAndName & arguments) const
     {
         if (parameter_number >= arguments.size())
             throw Exception(
@@ -348,14 +348,14 @@ public:
     }
 
     static constexpr auto name = Distribution::getName();
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return Distribution::getNumberOfArguments(); }
-    bool isVariadic() const override { return true; }
-    bool isDeterministic() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const override { return false; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return Distribution::getNumberOfArguments(); }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] bool isDeterministic() const override { return false; }
+    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         auto desired = Distribution::getNumberOfArguments();
         if (arguments.size() != desired && arguments.size() != desired + 1)
@@ -375,7 +375,7 @@ public:
         return std::make_shared<typename Distribution::ReturnType>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
         if constexpr (std::is_same_v<Distribution, BernoulliDistribution>)
         {

@@ -79,38 +79,38 @@ struct IndexDescription
     /// if something change in columns.
     void recalculateWithNewColumns(const ColumnsDescription & new_columns, ContextPtr context);
 
-    bool isImplicitlyCreated() const { return is_implicitly_created; }
+    [[nodiscard]] bool isImplicitlyCreated() const { return is_implicitly_created; }
 
     void initExpressionInfo(ASTPtr index_expression, const ColumnsDescription & columns, ContextPtr context);
 
-    bool isSimpleSingleColumnIndex() const;
+    [[nodiscard]] bool isSimpleSingleColumnIndex() const;
 };
 
 /// All secondary indices in storage
 struct IndicesDescription : public std::vector<IndexDescription>, IHints<>
 {
     /// Index with name exists
-    bool has(const String & name) const;
+    [[nodiscard]] bool has(const String & name) const;
     /// Get index by name; throws if not found
-    const IndexDescription & getByName(const String & name) const;
+    [[nodiscard]] const IndexDescription & getByName(const String & name) const;
     /// Index with type exists
-    bool hasType(const String & type) const;
+    [[nodiscard]] bool hasType(const String & type) const;
 
     /// Convert description to string. Includes only explicitly created indices
-    String explicitToString() const;
+    [[nodiscard]] String explicitToString() const;
 
     /// Convert description to string. Includes all indices.
     /// It should only used for compatibility or debugging. Otherwise prefer explicitToString()
-    String allToString() const;
+    [[nodiscard]] String allToString() const;
 
     /// Parse description from string
     static IndicesDescription
     parse(const String & str, const ColumnsDescription & columns, bool escape_index_filenames, ContextPtr context);
 
     /// Return common expression for all stored indices
-    ExpressionActionsPtr getSingleExpressionForIndices(const ColumnsDescription & columns, ContextPtr context) const;
+    [[nodiscard]] ExpressionActionsPtr getSingleExpressionForIndices(const ColumnsDescription & columns, ContextPtr context) const;
 
-    VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
+    [[nodiscard]] VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
 };
 
 /// Extract Field value from an index argument AST node.

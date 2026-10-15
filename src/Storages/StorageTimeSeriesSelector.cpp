@@ -156,10 +156,10 @@ struct TableTimeRange
     std::optional<DateTime64> max_time;
 
     /// Every timestamp of the table is in the range.
-    bool containsAllTimestamps() const { return !min_time && !max_time; }
+    [[nodiscard]] bool containsAllTimestamps() const { return !min_time && !max_time; }
 
     /// No timestamp of the table is in the range.
-    bool containsNoTimestamps() const { return min_time && max_time && (*min_time > *max_time); }
+    [[nodiscard]] bool containsNoTimestamps() const { return min_time && max_time && (*min_time > *max_time); }
 
     static const TableTimeRange ALL_TIMESTAMPS;
     static const TableTimeRange NO_TIMESTAMPS;

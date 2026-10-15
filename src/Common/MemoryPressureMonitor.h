@@ -41,7 +41,7 @@ struct MemoryPressureThresholds
     uint16_t generation = 0;
 
     /// The values alone, as one word. Two publications hold the same thresholds when these are equal.
-    constexpr uint32_t packValues() const
+    [[nodiscard]] constexpr uint32_t packValues() const
     {
         return (static_cast<uint32_t>(elevated_pct) << 16)
              | (static_cast<uint32_t>(high_pct) << 8)
@@ -50,14 +50,14 @@ struct MemoryPressureThresholds
 
     /// The published form, `(generation << 32) | packValues()`. Values and generation share one word, so
     /// a reader can never pair a new generation with old values.
-    constexpr uint64_t pack() const { return (static_cast<uint64_t>(generation) << 32) | packValues(); }
+    [[nodiscard]] constexpr uint64_t pack() const { return (static_cast<uint64_t>(generation) << 32) | packValues(); }
 
     static constexpr MemoryPressureThresholds unpack(uint64_t packed)
     {
         return {(packed >> 16) & 0xFFu, (packed >> 8) & 0xFFu, packed & 0xFFu, static_cast<uint16_t>(packed >> 32)};
     }
 
-    MemoryPressureLevel classify(double pressure) const;
+    [[nodiscard]] MemoryPressureLevel classify(double pressure) const;
 };
 
 /// Each threshold must be in [1, 100] with `elevated <= high <= critical`, else throws `BAD_ARGUMENTS`.
@@ -114,7 +114,7 @@ private:
         uint16_t generation = 0;
         uint64_t cooldown_since_ms = 0;
 
-        constexpr uint64_t pack() const
+        [[nodiscard]] constexpr uint64_t pack() const
         {
             return (static_cast<uint64_t>(level) << LEVEL_SHIFT)
                  | (static_cast<uint64_t>(generation) << MS_BITS)
@@ -129,7 +129,7 @@ private:
                 packed & MS_MASK};
         }
 
-        constexpr uint64_t elapsedTo(uint64_t now_ms) const { return (now_ms - cooldown_since_ms) & MS_MASK; }
+        [[nodiscard]] constexpr uint64_t elapsedTo(uint64_t now_ms) const { return (now_ms - cooldown_since_ms) & MS_MASK; }
     };
 
     static_assert(State::LEVEL_SHIFT + 2 == 64, "the packed state must fill exactly one word");

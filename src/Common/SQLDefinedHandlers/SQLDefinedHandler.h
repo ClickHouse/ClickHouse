@@ -61,7 +61,7 @@ struct SQLDefinedHandler
     bool consumes_request_body = false;
 
     /// Returns true if the request path (without query string and fragment) matches this handler's URL.
-    bool matchesURL(const String & path) const;
+    [[nodiscard]] bool matchesURL(const String & path) const;
 
     /// Whether `path` matches the base path `prefix` on a path-segment boundary: the base path itself or
     /// anything below it after a '/'. E.g. "/api/v1" matches "/api/v1", "/api/v1/" and "/api/v1/write",
@@ -71,11 +71,11 @@ struct SQLDefinedHandler
     static bool urlPrefixMatches(std::string_view prefix, std::string_view path);
 
     /// Returns true if the given HTTP method (uppercase) is allowed by this handler.
-    bool matchesMethod(const String & method) const;
+    [[nodiscard]] bool matchesMethod(const String & method) const;
 
     /// Returns true if the handler is active for the given protocol name.
     /// Empty protocol_name means a legacy http/https port (matches only protocol-less handlers).
-    bool matchesProtocol(const String & protocol_name) const;
+    [[nodiscard]] bool matchesProtocol(const String & protocol_name) const;
 };
 
 using SQLDefinedHandlerPtr = std::shared_ptr<const SQLDefinedHandler>;

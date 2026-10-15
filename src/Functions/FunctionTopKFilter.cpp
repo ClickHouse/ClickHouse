@@ -92,18 +92,18 @@ public:
         }
     }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    bool isVariadic() const override { return false; }
-    bool isInjective(const ColumnsWithTypeAndName &) const override { return false; }
-    bool isSuitableForConstantFolding() const override { return false; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    bool isDeterministic() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const override { return false; }
-    bool useDefaultImplementationForNulls() const override { return false; }
-    size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] bool isVariadic() const override { return false; }
+    [[nodiscard]] bool isInjective(const ColumnsWithTypeAndName &) const override { return false; }
+    [[nodiscard]] bool isSuitableForConstantFolding() const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isDeterministic() const override { return false; }
+    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() != 1)
             throw Exception(
@@ -115,11 +115,11 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeUInt8>(); }
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeUInt8>(); }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         if (input_rows_count == 0)
             return ColumnUInt8::create();
@@ -143,7 +143,7 @@ public:
 
 private:
     /// Fast path: vectorized less/greater for non-nullable, non-collation types without NaN.
-    ColumnPtr executeVectorized(
+    [[nodiscard]] ColumnPtr executeVectorized(
         const ColumnWithTypeAndName & argument,
         const Field & current_threshold,
         const DataTypePtr & data_type,
@@ -162,7 +162,7 @@ private:
     }
 
     /// General path for `Nullable` (also nested), collation-aware, floating-point, and non-vectorizable `Tuple` types.
-    ColumnPtr executeGeneral(
+    [[nodiscard]] ColumnPtr executeGeneral(
         const ColumnWithTypeAndName & argument,
         const Field & current_threshold,
         const DataTypePtr & data_type,

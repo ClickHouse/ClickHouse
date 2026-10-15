@@ -79,7 +79,7 @@ class FunctionWidthBucket final : public IFunction
     }
 
     template <typename TResultType, typename TCountType>
-    std::optional<TResultType> checkArguments(const Float64 operand, const Float64 low, const Float64 high, const TCountType count) const
+    [[nodiscard]] std::optional<TResultType> checkArguments(const Float64 operand, const Float64 low, const Float64 high, const TCountType count) const
     {
         if (count == 0)
         {
@@ -107,7 +107,7 @@ class FunctionWidthBucket final : public IFunction
     }
 
     template <typename TResultType, typename TCountType>
-    TResultType NO_SANITIZE_UNDEFINED calculate(const Float64 operand, const Float64 low, const Float64 high, const TCountType count) const
+    [[nodiscard]] TResultType NO_SANITIZE_UNDEFINED calculate(const Float64 operand, const Float64 low, const Float64 high, const TCountType count) const
     {
         if (const auto maybe_early_return = checkArguments<TResultType>(operand, low, high, count); maybe_early_return.has_value())
         {
@@ -125,7 +125,7 @@ class FunctionWidthBucket final : public IFunction
     }
 
     template <is_any_of<UInt8, UInt16, UInt32, UInt64> TCountType>
-    ColumnPtr executeForResultType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr executeForResultType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
         using ResultType = typename NumberTraits::Construct<false, false, NumberTraits::nextSize(sizeof(TCountType))>::Type;
         auto common_type = std::make_shared<DataTypeNumber<Float64>>();
@@ -185,11 +185,11 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionWidthBucket>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 4; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 4; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
             {"operand", isNativeNumber, nullptr, "native numeric"},
@@ -217,9 +217,9 @@ public:
         UNREACHABLE();
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    ColumnPtr
+    [[nodiscard]] ColumnPtr
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
         switch (arguments[3].type->getTypeId())
@@ -239,7 +239,7 @@ public:
         UNREACHABLE();
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 };
 
 REGISTER_FUNCTION(WidthBucket)

@@ -40,14 +40,14 @@ public:
         , fun_multi_if(FunctionFactory::instance().get("multiIf", context_))
     {
     }
-    bool isVariadic() const override { return true; }
-    bool useDefaultImplementationForConstants() const override { return false; }
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    size_t getNumberOfArguments() const override { return 0; }
-    String getName() const override { return name; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & args) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & args) const override
     {
         if (args.empty())
             throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function {} expects at least 1 arguments", getName());
@@ -73,7 +73,7 @@ public:
     }
 
     /// Helper function to implement CASE WHEN equality semantics where NULL = NULL is true
-    ColumnPtr caseWhenEquals(const ColumnWithTypeAndName & expr, const ColumnWithTypeAndName & when_value, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr caseWhenEquals(const ColumnWithTypeAndName & expr, const ColumnWithTypeAndName & when_value, size_t input_rows_count) const
     {
         // for CASE WHEN semantics, NULL should match NULL
         // we need: if (isNull(expr)) then (isNull(when)) else if (isNull(when)) then 0 else (expr = when)
@@ -135,7 +135,7 @@ public:
             ->execute(outer_if_args, std::make_shared<DataTypeUInt8>(), input_rows_count, false);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         if (args.empty())
             throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function {} expects at least 1 argument", getName());

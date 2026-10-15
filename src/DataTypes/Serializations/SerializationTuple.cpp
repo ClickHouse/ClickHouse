@@ -752,7 +752,7 @@ struct DeserializeBinaryBulkStateTuple : public ISerialization::DeserializeBinar
 {
     std::vector<ISerialization::DeserializeBinaryBulkStatePtr> states;
 
-    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    [[nodiscard]] ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateTuple>();
         new_state->states.reserve(states.size());

@@ -46,7 +46,7 @@ namespace
         std::unordered_map<UUID, std::pair<String, AccessEntityType>> dependencies;
         std::unordered_map<UUID, AccessEntityPtr> dependents;
 
-        BackupEntryPtr toBackupEntry() const
+        [[nodiscard]] BackupEntryPtr toBackupEntry() const
         {
             WriteBufferFromOwnString buf;
 

@@ -35,7 +35,7 @@ struct StreamDisjointnessProperty
     /// whose stream count is already the full pipeline width.
     const ReadFromMergeTree * reading = nullptr;
 
-    bool isDisjoint() const { return partition_key_actions.has_value(); }
+    [[nodiscard]] bool isDisjoint() const { return partition_key_actions.has_value(); }
 };
 
 static void appendExpression(std::optional<ActionsDAG> & dag, const ActionsDAG & expression)

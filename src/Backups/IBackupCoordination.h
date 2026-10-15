@@ -28,7 +28,7 @@ public:
     /// Sets that the backup query was sent to other hosts.
     /// Function waitOtherHostsFinish() will check that to find out if it should really wait or not.
     virtual void setBackupQueryIsSentToOtherHosts() = 0;
-    virtual bool isBackupQuerySentToOtherHosts() const = 0;
+    [[nodiscard]] virtual bool isBackupQuerySentToOtherHosts() const = 0;
 
     /// Sets the current stage and waits for other hosts to come to this stage too.
     virtual Strings setStage(const String & new_stage, const String & message, bool sync) = 0;
@@ -37,7 +37,7 @@ public:
     virtual void setError(std::exception_ptr exception, bool throw_if_error) = 0;
 
     /// Returns true if some host (the current host or one of the other hosts) has encountered an error.
-    virtual bool isErrorSet() const = 0;
+    [[nodiscard]] virtual bool isErrorSet() const = 0;
 
     /// Waits until all the other hosts finish their work.
     /// Stops waiting and throws an exception if another host encounters an error or if some host gets cancelled.
@@ -47,10 +47,10 @@ public:
     virtual void finish(bool throw_if_error) = 0;
 
     /// Returns true if this host finished its work (i.e. finish() was called successfully).
-    virtual bool finished() const = 0;
+    [[nodiscard]] virtual bool finished() const = 0;
 
     /// Returns true if all the hosts finished their work.
-    virtual bool allHostsFinished() const = 0;
+    [[nodiscard]] virtual bool allHostsFinished() const = 0;
 
     /// Removes temporary nodes in ZooKeeper.
     virtual void cleanup(bool throw_if_error) = 0;
@@ -71,7 +71,7 @@ public:
     /// Returns the names of the parts which a specified replica of a replicated table should put to the backup.
     /// This is the same list as it was added by call of the function addReplicatedPartNames() but without duplications and without
     /// parts covered by another parts.
-    virtual Strings getReplicatedPartNames(const String & table_zk_path, const String & replica_name) const = 0;
+    [[nodiscard]] virtual Strings getReplicatedPartNames(const String & table_zk_path, const String & replica_name) const = 0;
 
     struct MutationInfo
     {
@@ -83,13 +83,13 @@ public:
     virtual void addReplicatedMutations(const String & table_zk_path, const String & table_name_for_logs, const String & replica_name, const std::vector<MutationInfo> & mutations) = 0;
 
     /// Returns all mutations of a replicated table which are not finished for some data parts added by addReplicatedPartNames().
-    virtual std::vector<MutationInfo> getReplicatedMutations(const String & table_zk_path, const String & replica_name) const = 0;
+    [[nodiscard]] virtual std::vector<MutationInfo> getReplicatedMutations(const String & table_zk_path, const String & replica_name) const = 0;
 
     /// Adds information about KeeperMap tables
     virtual void addKeeperMapTable(const String & table_zookeeper_root_path, const String & table_id, const String & data_path_in_backup) = 0;
 
     /// KeeperMap tables use shared storage without local data so only one table should backup the data
-    virtual String getKeeperMapDataPath(const String & table_zookeeper_root_path) const = 0;
+    [[nodiscard]] virtual String getKeeperMapDataPath(const String & table_zookeeper_root_path) const = 0;
 
     /// Adds information about EmbeddedRocksDB tables that share one rocksdb_dir (a writable table plus
     /// any number of read_only tables over the same directory). election_id encodes writability so the
@@ -98,12 +98,12 @@ public:
 
     /// Returns the data path in backup of the elected owner table for a given rocksdb_dir. A read_only
     /// sibling of a writable owner references this path instead of dumping the shared RocksDB again.
-    virtual String getRocksDBDataPath(const String & rocksdb_dir) const = 0;
+    [[nodiscard]] virtual String getRocksDBDataPath(const String & rocksdb_dir) const = 0;
 
     /// Returns the election_id of the elected owner table for a given rocksdb_dir. The caller inspects it
     /// to decide whether to reference the owner (safe only when the owner is a writable table, which sees
     /// the freshest shared data) or dump its own snapshot (an all-read_only group has no common live view).
-    virtual String getRocksDBDataOwnerElectionId(const String & rocksdb_dir) const = 0;
+    [[nodiscard]] virtual String getRocksDBDataOwnerElectionId(const String & rocksdb_dir) const = 0;
 
     /// Adds a data path in backup for a replicated table.
     /// Multiple replicas of the replicated table call this function and then all the added paths can be returned by call of the function
@@ -111,19 +111,19 @@ public:
     virtual void addReplicatedDataPath(const String & table_zk_path, const String & data_path) = 0;
 
     /// Returns all the data paths in backup added for a replicated table (see also addReplicatedDataPath()).
-    virtual Strings getReplicatedDataPaths(const String & table_zk_path) const = 0;
+    [[nodiscard]] virtual Strings getReplicatedDataPaths(const String & table_zk_path) const = 0;
 
     /// Adds a path to access.txt file keeping access entities of a ReplicatedAccessStorage.
     virtual void addReplicatedAccessFilePath(const String & access_zk_path, AccessEntityType access_entity_type, const String & file_path) = 0;
-    virtual Strings getReplicatedAccessFilePaths(const String & access_zk_path, AccessEntityType access_entity_type) const = 0;
+    [[nodiscard]] virtual Strings getReplicatedAccessFilePaths(const String & access_zk_path, AccessEntityType access_entity_type) const = 0;
 
     /// Adds a path to a directory with user-defined SQL objects inside the backup.
     virtual void addReplicatedSQLObjectsDir(const String & loader_zk_path, UserDefinedSQLObjectType object_type, const String & dir_path) = 0;
-    virtual Strings getReplicatedSQLObjectsDirs(const String & loader_zk_path, UserDefinedSQLObjectType object_type) const = 0;
+    [[nodiscard]] virtual Strings getReplicatedSQLObjectsDirs(const String & loader_zk_path, UserDefinedSQLObjectType object_type) const = 0;
 
     /// Adds a path to a directory with workload entities (WORKLOAD and RESOURCE) inside the backup.
     virtual void addReplicatedWorkloadEntitiesDir(const String & loader_zk_path, WorkloadEntityType entity_type, const String & dir_path) = 0;
-    virtual Strings getReplicatedWorkloadEntitiesDirs(const String & loader_zk_path, WorkloadEntityType entity_type) const = 0;
+    [[nodiscard]] virtual Strings getReplicatedWorkloadEntitiesDirs(const String & loader_zk_path, WorkloadEntityType entity_type) const = 0;
 
     /// Adds file information.
     /// If specified checksum+size are new for this IBackupContentsInfo the function sets `is_data_file_required`.
@@ -131,7 +131,7 @@ public:
     /// Returns the file infos of the current host by reference to avoid copying them (a backup can contain millions).
     /// The reference is valid until the coordination is destroyed. It must only be called after file collection has
     /// finished (i.e. no more addFileInfos()), because the referenced storage is immutable only after preparation.
-    virtual const BackupFileInfos & getFileInfos() const = 0;
+    [[nodiscard]] virtual const BackupFileInfos & getFileInfos() const = 0;
 
     /// Iterates the file infos of all hosts in place, without copying them into a vector
     /// (a backup can contain millions).
@@ -142,7 +142,7 @@ public:
     /// Starts writing a specified file, the function returns false if that file is already being written concurrently.
     virtual bool startWritingFile(size_t data_file_index) = 0;
 
-    virtual ZooKeeperRetriesInfo getOnClusterInitializationKeeperRetriesInfo() const = 0;
+    [[nodiscard]] virtual ZooKeeperRetriesInfo getOnClusterInitializationKeeperRetriesInfo() const = 0;
 };
 
 }

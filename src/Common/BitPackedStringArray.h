@@ -24,11 +24,11 @@ public:
     BitPackedStringArray(std::span<const char> chars_, std::span<const UInt64> offsets_);
     BitPackedStringArray(const PaddedPODArray<UInt8> & chars_, const PaddedPODArray<UInt64> & offsets_);
 
-    std::string_view get(size_t idx) const;
+    [[nodiscard]] std::string_view get(size_t idx) const;
 
-    size_t size() const { return offsets.size(); }
-    bool empty() const { return offsets.empty(); }
-    size_t allocatedBytes() const;
+    [[nodiscard]] size_t size() const { return offsets.size(); }
+    [[nodiscard]] bool empty() const { return offsets.empty(); }
+    [[nodiscard]] size_t allocatedBytes() const;
 
 private:
     PODArray<char> chars;

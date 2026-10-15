@@ -122,7 +122,7 @@ public:
     {
     }
 
-    String getName() const override { return "ReadFromStorageKafka"; }
+    [[nodiscard]] String getName() const override { return "ReadFromStorageKafka"; }
 
 private:
     Pipe makePipe() final

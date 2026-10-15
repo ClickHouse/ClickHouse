@@ -171,15 +171,15 @@ private:
     String tmp_value;
     LoggerPtr log;
 
-    Int32 calculateBitSetWidthInBytes() const { return ((arity + 63 + HEADER_SIZE_IN_BITS) / 64) * 8; }
-    Int32 offset() const { return ARITY_SIZE; }
-    Int32 getFieldOffset(Int32 pos) const
+    [[nodiscard]] Int32 calculateBitSetWidthInBytes() const { return ((arity + 63 + HEADER_SIZE_IN_BITS) / 64) * 8; }
+    [[nodiscard]] Int32 offset() const { return ARITY_SIZE; }
+    [[nodiscard]] Int32 getFieldOffset(Int32 pos) const
     {
         Int32 res = offset() + calculateBitSetWidthInBytes() + pos * 8;
         LOG_TEST(log, "pos: {}, offset: {}", pos, res);
         return res;
     }
-    Int32 byteIndex(Int32 bit_index) const { return bit_index >> ADDRESS_BITS_PER_WORD; }
+    [[nodiscard]] Int32 byteIndex(Int32 bit_index) const { return bit_index >> ADDRESS_BITS_PER_WORD; }
     void seek(Int32 offset) { reader.seek(offset, SEEK_SET); }
     static bool isLittleEndian();
     template <typename T>

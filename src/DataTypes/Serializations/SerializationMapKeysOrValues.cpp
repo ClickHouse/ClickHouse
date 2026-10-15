@@ -54,7 +54,7 @@ struct DeserializeBinaryBulkStateMapKeysOrValuesWithBuckets : public ISerializat
     ISerialization::DeserializeBinaryBulkStatePtr bucket_index_state;
     bool has_bucket_index = false;
 
-    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    [[nodiscard]] ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateMapKeysOrValuesWithBuckets>(*this);
         new_state->buckets_info_state = buckets_info_state ? buckets_info_state->clone() : nullptr;

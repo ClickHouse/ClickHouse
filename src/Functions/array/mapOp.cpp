@@ -53,12 +53,12 @@ public:
 private:
     const OpTypes op_type;
 
-    String getName() const override { return (op_type == OpTypes::ADD) ? "mapAdd" : "mapSubtract"; }
+    [[nodiscard]] String getName() const override { return (op_type == OpTypes::ADD) ? "mapAdd" : "mapSubtract"; }
 
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isVariadic() const override { return true; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     void checkTypes(
         DataTypePtr & key_type, DataTypePtr & promoted_val_type, const DataTypePtr & check_key_type, DataTypePtr & check_val_type) const
@@ -81,7 +81,7 @@ private:
         }
     }
 
-    DataTypePtr getReturnTypeForTuples(const DataTypes & arguments) const
+    [[nodiscard]] DataTypePtr getReturnTypeForTuples(const DataTypes & arguments) const
     {
         DataTypePtr key_type;
         DataTypePtr val_type;
@@ -127,7 +127,7 @@ private:
         return res;
     }
 
-    DataTypePtr getReturnTypeForMaps(const DataTypes & arguments) const
+    [[nodiscard]] DataTypePtr getReturnTypeForMaps(const DataTypes & arguments) const
     {
         DataTypePtr key_type;
         DataTypePtr val_type;
@@ -158,7 +158,7 @@ private:
         return res;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() < 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "{} accepts at least two maps or map tuples", getName());
@@ -315,7 +315,7 @@ private:
         }
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
         DataTypePtr key_type;
         size_t row_count = 0;

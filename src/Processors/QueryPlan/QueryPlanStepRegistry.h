@@ -47,7 +47,7 @@ public:
 
     /// The version to write for a stream serialized at `plan_version`: the newest one the peer's
     /// release knows.
-    UInt64 versionToWrite(const std::string & name, UInt64 plan_version) const;
+    [[nodiscard]] UInt64 versionToWrite(const std::string & name, UInt64 plan_version) const;
 
     /// Throws unless `version` is one this binary can read. Called before `createStep`, so an unknown
     /// version is refused up front and never misparsed.
@@ -60,7 +60,7 @@ private:
         StepVersions versions;
     };
 
-    const Entry & getEntry(const std::string & name) const;
+    [[nodiscard]] const Entry & getEntry(const std::string & name) const;
 
     std::unordered_map<std::string, Entry> steps;
 

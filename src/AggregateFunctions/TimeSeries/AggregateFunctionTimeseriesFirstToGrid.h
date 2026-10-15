@@ -51,7 +51,7 @@ struct AggregateFunctionTimeseriesFirstToGridTraits
         ValueType value{};
         bool has_value = false;
 
-        bool empty() const { return !has_value; }
+        [[nodiscard]] bool empty() const { return !has_value; }
 
         void add(TimestampType sample_timestamp, ValueType sample_value)
         {
@@ -130,7 +130,7 @@ struct AggregateFunctionTimeseriesFirstToGridTraits
                 window.pop_front();
         }
 
-        std::optional<ResultType> getResult(GridScaleTimestampType /*grid_timestamp*/) const
+        [[nodiscard]] std::optional<ResultType> getResult(GridScaleTimestampType /*grid_timestamp*/) const
         {
             if (window.empty())
                 return std::nullopt;

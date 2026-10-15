@@ -58,15 +58,15 @@ namespace DB
 
         static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionUniqTheta>(); }
 
-        String getName() const override { return name; }
+        [[nodiscard]] String getName() const override { return name; }
 
-        bool isVariadic() const override { return false; }
+        [[nodiscard]] bool isVariadic() const override { return false; }
 
-        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+        [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-        size_t getNumberOfArguments() const override { return 2; }
+        [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
 
-        DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+        [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
         {
             const auto * sketch_type0 = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
             if (!(sketch_type0 && sketch_type0->getFunctionName() == "uniqTheta"))
@@ -102,9 +102,9 @@ namespace DB
             return arguments[0];
         }
 
-        bool useDefaultImplementationForConstants() const override { return true; }
+        [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-        ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+        [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
         {
             const ColumnAggregateFunction * column_ptrs[2];
             bool is_column_const[2];

@@ -37,7 +37,7 @@ public:
     /// is needed because it decides whether the asynchronous metric keys are exposed as labels at all.
     /// The default reflects the full server surface;
     /// derived writers override to reflect their own (e.g. Keeper exposes only keeper_* families).
-    virtual std::unordered_set<std::string> getReservedLabelNames(
+    [[nodiscard]] virtual std::unordered_set<std::string> getReservedLabelNames(
         bool expose_info,
         bool expose_asynchronous_metrics,
         AsynchronousMetricsKeyValuesMode async_metrics_mode,
@@ -68,7 +68,7 @@ public:
     void writeErrors(WriteBuffer & wb) const override;
     void writeHistogramMetrics(WriteBuffer & wb) const override;
     void writeDimensionalMetrics(WriteBuffer & wb) const override;
-    std::unordered_set<std::string> getReservedLabelNames(
+    [[nodiscard]] std::unordered_set<std::string> getReservedLabelNames(
         bool expose_info,
         bool expose_asynchronous_metrics,
         AsynchronousMetricsKeyValuesMode async_metrics_mode,

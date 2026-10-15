@@ -41,7 +41,7 @@ public:
 
     static FrequencyHolder & getInstance();
 
-    const EncodingContainer & getEncodingsFrequency() const
+    [[nodiscard]] const EncodingContainer & getEncodingsFrequency() const
     {
         return encodings_freq;
     }

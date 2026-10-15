@@ -50,11 +50,11 @@ public:
     ~PNGSerializer();
 
     /// Whether the input has a `t` column, which turns the result into an animation.
-    bool isAnimated() const;
+    [[nodiscard]] bool isAnimated() const;
 
     /// Whether the frames are handed over as soon as they are complete, instead of being buffered until the
     /// whole result has been read.
-    bool isStreamingAnimation() const;
+    [[nodiscard]] bool isStreamingAnimation() const;
 
     /// Called once per completed frame, in ascending order of `t`. The frame is displayed for
     /// `delay_num / delay_den` seconds. `pixels` is only valid for the duration of the call.
@@ -73,16 +73,16 @@ public:
     /// The frame count to declare in the `acTL` chunk. Exact once all frames are known, which is the case
     /// while `finalizeFrames` is running in the buffered mode; an upper bound in the streaming mode, where
     /// the frames are written out before the last one has been seen.
-    UInt32 getDeclaredFrameCount() const;
+    [[nodiscard]] UInt32 getDeclaredFrameCount() const;
 
     /// The fixed image dimensions and the number of channels (1, 3, or 4) determined from the input columns.
-    size_t getWidth() const;
-    size_t getHeight() const;
-    size_t getChannels() const;
+    [[nodiscard]] size_t getWidth() const;
+    [[nodiscard]] size_t getHeight() const;
+    [[nodiscard]] size_t getChannels() const;
 
     /// The rendered image as a tightly packed buffer of `getWidth() * getHeight() * getChannels()` bytes.
     /// Only meaningful when the result is a still image.
-    const UInt8 * getPixels() const;
+    [[nodiscard]] const UInt8 * getPixels() const;
 
 private:
     class Impl;

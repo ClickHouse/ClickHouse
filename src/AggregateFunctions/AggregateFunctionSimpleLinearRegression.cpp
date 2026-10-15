@@ -69,7 +69,7 @@ struct AggregateFunctionSimpleLinearRegressionData final
         readBinary(sum_xy, buf);
     }
 
-    Float64 getK() const
+    [[nodiscard]] Float64 getK() const
     {
         Float64 divisor = sum_xx * static_cast<Float64>(count) - sum_x * sum_x;
 
@@ -79,7 +79,7 @@ struct AggregateFunctionSimpleLinearRegressionData final
         return (sum_xy * static_cast<Float64>(count) - sum_x * sum_y) / divisor;
     }
 
-    Float64 getB(Float64 k) const
+    [[nodiscard]] Float64 getB(Float64 k) const
     {
         if (count == 0)
             return std::numeric_limits<Float64>::quiet_NaN();

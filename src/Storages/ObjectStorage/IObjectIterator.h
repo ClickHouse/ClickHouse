@@ -40,17 +40,17 @@ struct ObjectInfo
 
     virtual ~ObjectInfo() = default;
 
-    virtual std::string getFileName() const { return relative_path_with_metadata.getFileName(); }
-    virtual std::string getPath() const { return relative_path_with_metadata.relative_path; }
-    virtual bool isArchive() const { return false; }
-    virtual std::string getPathToArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
-    virtual size_t fileSizeInArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
-    virtual std::string getPathOrPathToArchiveIfArchive() const;
-    virtual std::optional<std::string> getFileFormat() const { return std::nullopt; }
+    [[nodiscard]] virtual std::string getFileName() const { return relative_path_with_metadata.getFileName(); }
+    [[nodiscard]] virtual std::string getPath() const { return relative_path_with_metadata.relative_path; }
+    [[nodiscard]] virtual bool isArchive() const { return false; }
+    [[nodiscard]] virtual std::string getPathToArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
+    [[nodiscard]] virtual size_t fileSizeInArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
+    [[nodiscard]] virtual std::string getPathOrPathToArchiveIfArchive() const;
+    [[nodiscard]] virtual std::optional<std::string> getFileFormat() const { return std::nullopt; }
 
-    virtual std::optional<size_t> getFileSizeHint() const { return std::nullopt; }
+    [[nodiscard]] virtual std::optional<size_t> getFileSizeHint() const { return std::nullopt; }
 
-    std::optional<ObjectMetadata> getObjectMetadata() const { return relative_path_with_metadata.metadata; }
+    [[nodiscard]] std::optional<ObjectMetadata> getObjectMetadata() const { return relative_path_with_metadata.metadata; }
     void setObjectMetadata(const ObjectMetadata & metadata) { relative_path_with_metadata.metadata = metadata; }
 
     FileBucketInfoPtr file_bucket_info;
@@ -59,8 +59,8 @@ struct ObjectInfo
     /// Sorted absolute row indexes within the file, see FormatFilterInfo::rows_to_read.
     std::shared_ptr<const PaddedPODArray<UInt64>> rows_to_read;
 
-    String getIdentifier(bool include_file_bucket_info = true) const;
-    String getIdentifierForPath(const String & path, bool include_file_bucket_info = true) const;
+    [[nodiscard]] String getIdentifier(bool include_file_bucket_info = true) const;
+    [[nodiscard]] String getIdentifierForPath(const String & path, bool include_file_bucket_info = true) const;
 };
 
 using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;
@@ -72,7 +72,7 @@ struct IObjectIterator
     virtual ~IObjectIterator() = default;
     virtual ObjectInfoPtr next(size_t) = 0;
     virtual size_t estimatedKeysCount() = 0;
-    virtual std::optional<UInt64> getSnapshotVersion() const { return std::nullopt; }
+    [[nodiscard]] virtual std::optional<UInt64> getSnapshotVersion() const { return std::nullopt; }
 
     /// When false, the iterator should not emit ProfileEvents.
     /// Used when the iterator is created for metadata purposes (e.g. `getPathSample`)
@@ -130,7 +130,7 @@ public:
 
     ObjectInfoPtr next(size_t) override;
     size_t estimatedKeysCount() override { return iterator->estimatedKeysCount(); }
-    std::optional<UInt64> getSnapshotVersion() const override { return iterator->getSnapshotVersion(); }
+    [[nodiscard]] std::optional<UInt64> getSnapshotVersion() const override { return iterator->getSnapshotVersion(); }
 
 private:
     const ObjectIterator iterator;

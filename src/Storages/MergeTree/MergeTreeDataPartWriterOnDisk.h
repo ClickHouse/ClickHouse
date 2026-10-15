@@ -75,12 +75,12 @@ public:
         return skip_indices_packed_writer ? skip_indices_packed_writer.get() : skip_indices_packed_writer_borrowed;
     }
 
-    const Block & getColumnsSample() const override { return block_sample; }
-    const ColumnsSubstreams & getColumnsSubstreams() const override { return columns_substreams; }
+    [[nodiscard]] const Block & getColumnsSample() const override { return block_sample; }
+    [[nodiscard]] const ColumnsSubstreams & getColumnsSubstreams() const override { return columns_substreams; }
 
 protected:
      /// Count index_granularity for block and store in `index_granularity`
-    size_t computeIndexGranularity(const Block & block) const;
+    [[nodiscard]] size_t computeIndexGranularity(const Block & block) const;
 
     /// Write primary index according to granules_to_write
     void calculateAndSerializePrimaryIndex(const Block & primary_index_block, const Granules & granules_to_write);
@@ -97,20 +97,20 @@ protected:
     void finishSkipIndicesSerialization(bool sync);
 
     /// Get global number of the current which we are writing (or going to start to write)
-    size_t getCurrentMark() const { return current_mark; }
+    [[nodiscard]] size_t getCurrentMark() const { return current_mark; }
 
     void setCurrentMark(size_t mark) { current_mark = mark; }
 
     /// Get unique non ordered skip indices column.
-    Names getSkipIndicesColumns() const;
+    [[nodiscard]] Names getSkipIndicesColumns() const;
 
     virtual void addStreams(const NameAndTypePair & name_and_type, const ASTPtr & effective_codec_desc) = 0;
 
     /// Per-column min_compress_block_size override if set, otherwise the table default.
-    UInt64 getEffectiveMinCompressBlockSize(const NameAndTypePair & name_and_type) const;
+    [[nodiscard]] UInt64 getEffectiveMinCompressBlockSize(const NameAndTypePair & name_and_type) const;
 
     /// Codec for one substream of a column whose codec is `effective_codec_desc`.
-    CompressionCodecPtr getSubstreamCodec(
+    [[nodiscard]] CompressionCodecPtr getSubstreamCodec(
         const ASTPtr & effective_codec_desc, const ISerialization::SubstreamPath & substream_path, bool column_uses_default_codec) const;
 
     /// For some columns the set of streams may depend on the dynamic structure/statistics of the actual column.
@@ -124,7 +124,7 @@ protected:
     /// Initialize columns_substreams for all columns. Should be called after first prepareBlockForWriting when block sample is initialized.
     void initColumnsSubstreamsIfNeeded();
 
-    virtual ISerialization::SerializeBinaryBulkSettings getSerializationSettings() const = 0;
+    [[nodiscard]] virtual ISerialization::SerializeBinaryBulkSettings getSerializationSettings() const = 0;
 
     /// This is useful only for vector codecs (like SZ3).
     static void setVectorDimensionsIfNeeded(CompressionCodecPtr codec, const IColumn * column);

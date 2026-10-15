@@ -186,14 +186,14 @@ template <class Kernel>
 class FunctionArrayNorm final : public IFunction
 {
 public:
-    String getName() const override { static auto name = String("array") + Kernel::name + "Norm"; return name; }
+    [[nodiscard]] String getName() const override { static auto name = String("array") + Kernel::name + "Norm"; return name; }
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayNorm<Kernel>>(); }
-    size_t getNumberOfArguments() const override { return 1; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {}; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {}; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].type.get());
         if (!array_type)
@@ -227,7 +227,7 @@ public:
         }
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         DataTypePtr type = typeid_cast<const DataTypeArray *>(arguments[0].type.get())->getNestedType();
         ColumnPtr column = arguments[0].column->convertToFullColumnIfConst();
@@ -263,7 +263,7 @@ private:
 
 
     template <typename ResultType>
-    ColumnPtr executeWithResultType(const ColumnArray & array, const DataTypePtr & nested_type, size_t input_rows_count, const ColumnsWithTypeAndName & arguments) const
+    [[nodiscard]] ColumnPtr executeWithResultType(const ColumnArray & array, const DataTypePtr & nested_type, size_t input_rows_count, const ColumnsWithTypeAndName & arguments) const
     {
         switch (nested_type->getTypeId())
         {
@@ -285,7 +285,7 @@ private:
     }
 
     template <typename ResultType, typename ArgumentType>
-    ColumnPtr executeWithTypes(const ColumnArray & array, size_t input_rows_count, const ColumnsWithTypeAndName & arguments) const
+    [[nodiscard]] ColumnPtr executeWithTypes(const ColumnArray & array, size_t input_rows_count, const ColumnsWithTypeAndName & arguments) const
     {
         const auto & data = typeid_cast<const ColumnVector<ArgumentType> &>(array.getData()).getData();
         const auto & offsets = array.getOffsets();
@@ -308,7 +308,7 @@ private:
         return result_col;
     }
 
-    typename Kernel::ConstParams initConstParams(const ColumnsWithTypeAndName &) const { return {}; }
+    [[nodiscard]] typename Kernel::ConstParams initConstParams(const ColumnsWithTypeAndName &) const { return {}; }
 };
 
 template <>
@@ -389,14 +389,14 @@ template <class Kernel>
 class FunctionArrayNormalize final : public IFunction
 {
 public:
-    String getName() const override { static auto name = String("array") + Kernel::name + "Normalize"; return name; }
+    [[nodiscard]] String getName() const override { static auto name = String("array") + Kernel::name + "Normalize"; return name; }
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayNormalize<Kernel>>(); }
-    size_t getNumberOfArguments() const override { return 1; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {}; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {}; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].type.get());
         if (!array_type)
@@ -430,7 +430,7 @@ public:
         }
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         DataTypePtr type = typeid_cast<const DataTypeArray *>(arguments[0].type.get())->getNestedType();
         ColumnPtr column = arguments[0].column->convertToFullColumnIfConst();
@@ -450,7 +450,7 @@ public:
 
 private:
     template <typename ResultType>
-    ColumnPtr executeWithResultType(const ColumnArray & array, const DataTypePtr & nested_type, size_t input_rows_count, const ColumnsWithTypeAndName & arguments) const
+    [[nodiscard]] ColumnPtr executeWithResultType(const ColumnArray & array, const DataTypePtr & nested_type, size_t input_rows_count, const ColumnsWithTypeAndName & arguments) const
     {
         switch (nested_type->getTypeId())
         {
@@ -472,7 +472,7 @@ private:
     }
 
     template <typename ResultType, typename ArgumentType>
-    ColumnPtr executeWithTypes(const ColumnArray & array, size_t input_rows_count, const ColumnsWithTypeAndName & arguments) const
+    [[nodiscard]] ColumnPtr executeWithTypes(const ColumnArray & array, size_t input_rows_count, const ColumnsWithTypeAndName & arguments) const
     {
         const auto & data = typeid_cast<const ColumnVector<ArgumentType> &>(array.getData()).getData();
         const auto & offsets = array.getOffsets();
@@ -493,7 +493,7 @@ private:
         return ColumnArray::create(std::move(result_data_col), array.getOffsetsPtr());
     }
 
-    typename Kernel::ConstParams initConstParams(const ColumnsWithTypeAndName &) const { return {}; }
+    [[nodiscard]] typename Kernel::ConstParams initConstParams(const ColumnsWithTypeAndName &) const { return {}; }
 };
 
 template <>

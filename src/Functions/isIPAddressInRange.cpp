@@ -87,14 +87,14 @@ public:
         }
     }
 
-    UInt32 asV4() const
+    [[nodiscard]] UInt32 asV4() const
     {
         if (const auto * val = std::get_if<IPv4AddrType>(&addr))
             return *val;
         return 0;
     }
 
-    const uint8_t * asV6() const
+    [[nodiscard]] const uint8_t * asV6() const
     {
         if (const auto * val = std::get_if<IPv6AddrType>(&addr))
             return val->data();
@@ -162,14 +162,14 @@ namespace DB
     {
     public:
         static constexpr auto name = "isIPAddressInRange";
-        String getName() const override { return name; }
+        [[nodiscard]] String getName() const override { return name; }
         static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIsIPAddressContainedIn>(); }
         /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
         /// row references it, so a function that throws on the default value must not be executed on
         /// the whole dictionary - it would fail on entirely valid data.
-        bool canBeExecutedOnDefaultArguments() const override { return false; }
+        [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
 
-        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+        [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
         template <IPKind kind>
         static inline IPAddressVariant parseIP(const IPTrait<kind>::ColumnType * col_addr, size_t n)
@@ -202,7 +202,7 @@ namespace DB
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The IP column type must be one of: String, IPv4, IPv6, Nullable(IPv4), Nullable(IPv6), or Nullable(String).");
         }
 
-        ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* return_type */, size_t input_rows_count) const override
+        [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* return_type */, size_t input_rows_count) const override
         {
             const IColumn * col_addr = arguments[0].column.get();
             const IColumn * col_cidr = arguments[1].column.get();
@@ -218,7 +218,7 @@ namespace DB
             return executeImpl(*col_addr, *col_cidr, input_rows_count);
         }
 
-        DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+        [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
         {
             if (arguments.size() != 2)
                 throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -244,8 +244,8 @@ namespace DB
             return std::make_shared<DataTypeUInt8>();
         }
 
-        size_t getNumberOfArguments() const override { return 2; }
-        bool useDefaultImplementationForNulls() const override { return false; }
+        [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+        [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
 
     private:
         /// Like checkAndGetColumnConst() but this function doesn't

@@ -39,16 +39,16 @@ namespace
             return std::make_shared<FunctionSubstringIndex>(name, is_utf8);
         }
 
-        String getName() const override { return function_name; }
+        [[nodiscard]] String getName() const override { return function_name; }
 
-        size_t getNumberOfArguments() const override { return 3; }
+        [[nodiscard]] size_t getNumberOfArguments() const override { return 3; }
 
-        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+        [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-        bool useDefaultImplementationForConstants() const override { return true; }
-        ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+        [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+        [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-        DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+        [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
             FunctionArgumentDescriptors mandatory_args{
                 {"s", &isString, nullptr, "String"},
@@ -61,12 +61,12 @@ namespace
             return std::make_shared<DataTypeString>();
         }
 
-        DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+        [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
         {
             return std::make_shared<DataTypeString>();
         }
 
-        ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+        [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
         {
             ColumnPtr column_string = arguments[0].column;
             ColumnPtr column_delim = arguments[1].column;
@@ -212,7 +212,7 @@ namespace
             }
         }
 
-        Int64 getInt64(const IColumn & column, size_t index) const
+        [[nodiscard]] Int64 getInt64(const IColumn & column, size_t index) const
         {
             if (column.getDataType() == TypeIndex::UInt64)
             {

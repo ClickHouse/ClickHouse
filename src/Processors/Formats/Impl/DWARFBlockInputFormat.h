@@ -62,7 +62,7 @@ private:
         uint64_t offset = 0;
         std::vector<StackEntry> stack;
 
-        bool eof() const { return offset == end_offset; }
+        [[nodiscard]] bool eof() const { return offset == end_offset; }
 
         explicit UnitState(llvm::DWARFUnit * u);
     };

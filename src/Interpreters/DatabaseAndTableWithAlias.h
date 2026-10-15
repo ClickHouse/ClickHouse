@@ -35,13 +35,13 @@ struct DatabaseAndTableWithAlias
 
 
     /// "alias." or "table." if alias is empty
-    String getQualifiedNamePrefix(bool with_dot = true) const;
+    [[nodiscard]] String getQualifiedNamePrefix(bool with_dot = true) const;
 
     /// Check if it satisfies another db_table name. @note opterion is not symmetric.
-    bool satisfies(const DatabaseAndTableWithAlias & table, bool table_may_be_an_alias) const;
+    [[nodiscard]] bool satisfies(const DatabaseAndTableWithAlias & table, bool table_may_be_an_alias) const;
 
     /// Exactly the same table name
-    bool same(const DatabaseAndTableWithAlias & db_table) const
+    [[nodiscard]] bool same(const DatabaseAndTableWithAlias & db_table) const
     {
         return database == db_table.database && table == db_table.table && alias == db_table.alias && uuid == db_table.uuid;
     }
@@ -63,7 +63,7 @@ struct TableWithColumnNamesAndTypes
             names.insert(col.name);
     }
 
-    bool hasColumn(const String & name) const { return names.contains(name); }
+    [[nodiscard]] bool hasColumn(const String & name) const { return names.contains(name); }
 
     void addHiddenColumns(const NamesAndTypesList & addition)
     {

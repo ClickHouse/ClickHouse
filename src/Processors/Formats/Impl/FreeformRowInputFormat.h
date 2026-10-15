@@ -47,17 +47,17 @@ public:
     template <bool with_offset>
     // parseField is the general interface that other classes will use to parse/build solutions.
     Result parseField(PeekableReadBuffer & in, unsigned index);
-    const FormatSettings::EscapingRule & getEscapingRule() const { return rule; }
+    [[nodiscard]] const FormatSettings::EscapingRule & getEscapingRule() const { return rule; }
     // transformTypesIfPossible attempts to find the union between &first and &second and then reassign both of them to this new type if it exists.
     void transformTypesIfPossible(DataTypePtr & first, DataTypePtr & second)
     {
         transformInferredTypesByEscapingRuleIfNeeded(first, second, settings, rule, &json_inference_info);
     }
 
-    virtual String getName() const = 0;
+    [[nodiscard]] virtual String getName() const = 0;
     /// Whether the field is the whole remainder of the line, taken verbatim: such a field is not
     /// bound by the escaping rule when it is finally deserialized (see `FreeformRowInputFormat::readField`).
-    virtual bool readsWholeLine() const { return false; }
+    [[nodiscard]] virtual bool readsWholeLine() const { return false; }
     virtual ~FieldMatcher() = default;
 
 protected:
@@ -74,7 +74,7 @@ class JSONFieldMatcher : public FieldMatcher
 {
 public:
     using FieldMatcher::FieldMatcher;
-    String getName() const override { return "JSONFieldMatcher"; }
+    [[nodiscard]] String getName() const override { return "JSONFieldMatcher"; }
     std::vector<std::pair<String, String>> readFieldsByEscapingRule(PeekableReadBuffer & in, unsigned index) const override;
 };
 
@@ -82,7 +82,7 @@ class CSVFieldMatcher : public FieldMatcher
 {
 public:
     using FieldMatcher::FieldMatcher;
-    String getName() const override { return "CSVFieldMatcher"; }
+    [[nodiscard]] String getName() const override { return "CSVFieldMatcher"; }
     NamesAndFields readFieldsByEscapingRule(PeekableReadBuffer & in, unsigned index) const override;
 };
 
@@ -90,7 +90,7 @@ class QuotedFieldMatcher : public FieldMatcher
 {
 public:
     using FieldMatcher::FieldMatcher;
-    String getName() const override { return "QuotedFieldMatcher"; }
+    [[nodiscard]] String getName() const override { return "QuotedFieldMatcher"; }
     NamesAndFields readFieldsByEscapingRule(PeekableReadBuffer & in, unsigned index) const override;
 };
 
@@ -98,7 +98,7 @@ class EscapedFieldMatcher : public FieldMatcher
 {
 public:
     using FieldMatcher::FieldMatcher;
-    String getName() const override { return "EscapedFieldMatcher"; }
+    [[nodiscard]] String getName() const override { return "EscapedFieldMatcher"; }
     NamesAndFields readFieldsByEscapingRule(PeekableReadBuffer & in, unsigned index) const override;
 };
 
@@ -106,7 +106,7 @@ class RawByWhitespaceFieldMatcher : public FieldMatcher
 {
 public:
     using FieldMatcher::FieldMatcher;
-    String getName() const override { return "RawByWhitespaceFieldMatcher"; }
+    [[nodiscard]] String getName() const override { return "RawByWhitespaceFieldMatcher"; }
     NamesAndFields readFieldsByEscapingRule(PeekableReadBuffer & in, unsigned index) const override;
 };
 
@@ -118,8 +118,8 @@ class RestOfLineFieldMatcher : public FieldMatcher
 {
 public:
     using FieldMatcher::FieldMatcher;
-    String getName() const override { return "RestOfLineFieldMatcher"; }
-    bool readsWholeLine() const override { return true; }
+    [[nodiscard]] String getName() const override { return "RestOfLineFieldMatcher"; }
+    [[nodiscard]] bool readsWholeLine() const override { return true; }
     NamesAndFields readFieldsByEscapingRule(PeekableReadBuffer & in, unsigned index) const override;
 
 protected:
@@ -164,11 +164,11 @@ public:
 
     const String & getField(unsigned index) { return matched_fields[index]; }
     const FormatSettings::EscapingRule & getRule(unsigned index) { return rules[index]; }
-    bool readsWholeLine(unsigned index) const { return whole_line[index]; }
+    [[nodiscard]] bool readsWholeLine(unsigned index) const { return whole_line[index]; }
     NamesAndTypes & getNamesAndTypes() { return final_solution.columns; }
-    unsigned getSolutionLength() const { return final_solution.size; }
+    [[nodiscard]] unsigned getSolutionLength() const { return final_solution.size; }
     /// The number of rows the accepted solution was checked against.
-    size_t getRowsChecked() const { return rows_checked; }
+    [[nodiscard]] size_t getRowsChecked() const { return rows_checked; }
 
 private:
     /// The matchers tried for a field, in the order of priority; the last one is the
@@ -212,7 +212,7 @@ private:
     /// Prepares the chosen `final_solution` for `parseRow`.
     void setFinalSolution(const Solution & solution);
     // readNextFields iterates over the list of matchers and try to parse all the possible fields.
-    std::vector<Fields> readNextFields(bool one_string, unsigned index, size_t offset) const;
+    [[nodiscard]] std::vector<Fields> readNextFields(bool one_string, unsigned index, size_t offset) const;
 };
 
 class FreeformRowInputFormat final : public IRowInputFormat
@@ -252,7 +252,7 @@ public:
     // readSchema initiates the solutions building process, run them against 100 rows and pick the best solution according to the scoring criteria.
     NamesAndTypesList readSchema() override;
     /// Columns named by the data (the keys of a root JSON object) are read by name, so they may be reordered.
-    bool hasStrictOrderOfColumns() const override { return false; }
+    [[nodiscard]] bool hasStrictOrderOfColumns() const override { return false; }
 
 private:
     std::unique_ptr<PeekableReadBuffer> buf;

@@ -135,12 +135,12 @@ public:
         return std::make_shared<FunctionArrayAUC>(name, is_pr);
     }
 
-    String getName() const override { return function_name; }
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+    [[nodiscard]] String getName() const override { return function_name; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         size_t argument_count = arguments.size();
 
@@ -211,9 +211,9 @@ public:
         return std::make_shared<DataTypeFloat64>();
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeFloat64>(); }
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeFloat64>(); }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         size_t argument_count = arguments.size();
 
@@ -325,7 +325,7 @@ private:
         return true;
     }
 
-    Float64 increase_unscaled_area(size_t prev_fp, size_t prev_tp, size_t curr_fp, size_t curr_tp) const
+    [[nodiscard]] Float64 increase_unscaled_area(size_t prev_fp, size_t prev_tp, size_t curr_fp, size_t curr_tp) const
     {
         if (is_pr)
             /// PR curve plots Precision x Recall
@@ -368,7 +368,7 @@ private:
             return static_cast<Float64>(curr_fp - prev_fp) * static_cast<Float64>(curr_tp + prev_tp) / 2.0;
     }
 
-    Float64 scale_back_area(Float64 area, size_t total_positive_labels, size_t total_negative_labels) const
+    [[nodiscard]] Float64 scale_back_area(Float64 area, size_t total_positive_labels, size_t total_negative_labels) const
     {
         if (is_pr)
             /// To simplify the calculations, previously we calculated the AUC for the Precision x TP curve.
@@ -380,7 +380,7 @@ private:
             return area / static_cast<Float64>(total_positive_labels) / static_cast<Float64>(total_negative_labels);
     }
 
-    Float64 apply(
+    [[nodiscard]] Float64 apply(
         const IColumn & scores,
         const IColumn & labels,
         ColumnArray::Offset current_offset,

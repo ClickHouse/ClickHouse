@@ -43,9 +43,9 @@ public:
     {
     }
 
-    String getName() const override { return name; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
 
 private:
     std::shared_ptr<const ITokenizer> tokenizer;

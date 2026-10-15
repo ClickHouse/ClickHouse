@@ -32,7 +32,7 @@ public:
 
     void backup(size_t len) override { out.position() -= len; }
 
-    uint64_t byteCount() const override { return out.count(); }
+    [[nodiscard]] uint64_t byteCount() const override { return out.count(); }
     void flush() override {}
 
 private:
@@ -44,7 +44,7 @@ class AvroSerializer
 {
 public:
     AvroSerializer(const ColumnsWithTypeAndName & columns, std::unique_ptr<AvroSerializerTraits>, const FormatSettings & settings_, ColumnMapperPtr column_mapper_ = nullptr);
-    const avro::ValidSchema & getSchema() const { return valid_schema; }
+    [[nodiscard]] const avro::ValidSchema & getSchema() const { return valid_schema; }
     void serializeRow(const Columns & columns, size_t row_num, avro::Encoder & encoder);
 
     using SerializeFn = std::function<void(const IColumn & column, size_t row_num, avro::Encoder & encoder)>;

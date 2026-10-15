@@ -77,7 +77,7 @@ public:
     DeleteBitmap & operator=(DeleteBitmap &&) noexcept;
 
     /// True if `row` is set.
-    bool contains(UInt64 row) const;
+    [[nodiscard]] bool contains(UInt64 row) const;
 
     /// Bulk point-containment; writes 1 to `out_keep[i]` when `rows[i]` is
     /// *not* in the bitmap, 0 otherwise. `n == 0` is a no-op.
@@ -98,22 +98,22 @@ public:
     void subtract(const DeleteBitmap & other);
 
     /// Number of set bits.
-    size_t cardinality() const;
+    [[nodiscard]] size_t cardinality() const;
     /// True if no bits are set.
-    bool empty() const;
+    [[nodiscard]] bool empty() const;
 
     /// |bitmap ∩ [begin, end)|, computed as `rank(end-1) - rank(begin-1)`.
     /// O(log N) per `rank` on bitset containers, O(log K) on array containers.
-    size_t rangeCardinality(UInt64 begin, UInt64 end) const;
+    [[nodiscard]] size_t rangeCardinality(UInt64 begin, UInt64 end) const;
 
     /// All set row indices in ascending order. O(cardinality).
-    std::vector<UInt64> toVector() const;
-    IColumn::Permutation toPermutation() const;
+    [[nodiscard]] std::vector<UInt64> toVector() const;
+    [[nodiscard]] IColumn::Permutation toPermutation() const;
 
     /// Portable-serialized size + a small entry overhead. Stable proxy for
     /// the on-disk `.rbm` cost; empty bitmap returns a small non-zero constant
     /// so cache weighting works.
-    size_t memoryUsage() const;
+    [[nodiscard]] size_t memoryUsage() const;
 
     /// Serialize to the on-disk format.
     void serialize(WriteBuffer & out) const;
@@ -172,7 +172,7 @@ private:
     /// this file.
     std::variant<R32Ptr, R64Ptr> bitmap;
 
-    bool is64Bit() const;
+    [[nodiscard]] bool is64Bit() const;
     void upgradeTo64();
 };
 

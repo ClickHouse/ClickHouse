@@ -89,7 +89,7 @@ struct LowCardinalityArrayView
 
     /// Build arrayElement(Array(LowCardinality), const) by selecting dictionary values through LC indexes,
     /// instead of materializing the whole nested array first.
-    inline ColumnPtr arrayElementConst(const Field & index, const IDataType & result_type) const
+    [[nodiscard]] inline ColumnPtr arrayElementConst(const Field & index, const IDataType & result_type) const
     {
         auto result = result_type.createColumn();
         result->reserve(rows);
@@ -107,7 +107,7 @@ struct LowCardinalityArrayView
     }
 
     /// Given a per-dictionary-entry predicate result, compute whether any element in each array row matches.
-    inline ColumnUInt8::MutablePtr existsByDictionaryMatches(const PaddedPODArray<UInt8> & dictionary_matches) const
+    [[nodiscard]] inline ColumnUInt8::MutablePtr existsByDictionaryMatches(const PaddedPODArray<UInt8> & dictionary_matches) const
     {
         auto result = ColumnUInt8::create();
         auto & result_data = result->getData();
@@ -129,7 +129,7 @@ struct LowCardinalityArrayView
     }
 
     /// Given a per-dictionary-entry predicate result, build a filter and offsets for matching array elements.
-    inline FilterAndOffsets filterByDictionaryMatches(const PaddedPODArray<UInt8> & dictionary_matches) const
+    [[nodiscard]] inline FilterAndOffsets filterByDictionaryMatches(const PaddedPODArray<UInt8> & dictionary_matches) const
     {
         FilterAndOffsets result{.filter = IColumn::Filter(elements.size()), .offsets = ColumnArray::ColumnOffsets::create()};
         auto & new_offsets = result.offsets->getData();

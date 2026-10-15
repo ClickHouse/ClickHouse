@@ -108,15 +108,15 @@ namespace
         static constexpr auto name = "parseTimeDelta";
         static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionParseTimeDelta>(); }
 
-        String getName() const override { return name; }
+        [[nodiscard]] String getName() const override { return name; }
 
-        bool isVariadic() const override { return true; }
+        [[nodiscard]] bool isVariadic() const override { return true; }
 
-        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+        [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-        size_t getNumberOfArguments() const override { return 0; }
+        [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
-        DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+        [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
             if (arguments.empty())
                 throw Exception(
@@ -141,7 +141,7 @@ namespace
             return std::make_shared<DataTypeFloat64>();
         }
 
-        DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+        [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
         {
             return std::make_shared<DataTypeFloat64>();
         }
@@ -149,11 +149,11 @@ namespace
         /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
         /// row references it, so a function that throws on the default value must not be executed on
         /// the whole dictionary - it would fail on entirely valid data.
-        bool canBeExecutedOnDefaultArguments() const override { return false; }
+        [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
 
-        bool useDefaultImplementationForConstants() const override { return true; }
+        [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-        ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+        [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
         {
             auto col_to = ColumnFloat64::create();
             auto & res_data = col_to->getData();

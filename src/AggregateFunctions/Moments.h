@@ -174,12 +174,12 @@ struct VarMoments
         readPODBinary(*this, buf);
     }
 
-    T get() const
+    [[nodiscard]] T get() const
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Variation moments should be obtained by either 'getSample' or 'getPopulation' method");
     }
 
-    T getPopulation() const
+    [[nodiscard]] T getPopulation() const
     {
         if (m[0] == 0)
             return std::numeric_limits<T>::quiet_NaN();
@@ -190,14 +190,14 @@ struct VarMoments
         return std::max(T{}, (m[2] - m[1] * m[1] / m[0]) / m[0]);
     }
 
-    T getSample() const
+    [[nodiscard]] T getSample() const
     {
         if (m[0] <= 1)
             return std::numeric_limits<T>::quiet_NaN();
         return std::max(T{}, (m[2] - m[1] * m[1] / m[0]) / (m[0] - 1));
     }
 
-    T getMoment3() const
+    [[nodiscard]] T getMoment3() const
     {
         if constexpr (_level < 3)
         {
@@ -219,7 +219,7 @@ struct VarMoments
         }
     }
 
-    T getMoment4() const
+    [[nodiscard]] T getMoment4() const
     {
         if constexpr (_level < 4)
         {
@@ -386,27 +386,27 @@ struct CovarMoments
         readPODBinary(*this, buf);
     }
 
-    T get() const
+    [[nodiscard]] T get() const
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Covariation moments should be obtained by either 'getSample' or 'getPopulation' method");
     }
 
-    T getMoment3() const
+    [[nodiscard]] T getMoment3() const
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Covariation moments should be obtained by either 'getSample' or 'getPopulation' method");
     }
 
-    T getMoment4() const
+    [[nodiscard]] T getMoment4() const
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Covariation moments should be obtained by either 'getSample' or 'getPopulation' method");
     }
 
-    T NO_SANITIZE_UNDEFINED getPopulation() const
+    [[nodiscard]] T NO_SANITIZE_UNDEFINED getPopulation() const
     {
         return (xy - x1 * y1 / m0) / m0;
     }
 
-    T NO_SANITIZE_UNDEFINED getSample() const
+    [[nodiscard]] T NO_SANITIZE_UNDEFINED getSample() const
     {
         if (m0 == 0)
             return std::numeric_limits<T>::quiet_NaN();
@@ -566,27 +566,27 @@ struct CorrMoments
         readPODBinary(*this, buf);
     }
 
-    T NO_SANITIZE_UNDEFINED get() const
+    [[nodiscard]] T NO_SANITIZE_UNDEFINED get() const
     {
         return (m0 * xy - x1 * y1) / std::sqrt((m0 * x2 - x1 * x1) * (m0 * y2 - y1 * y1));
     }
 
-    T getSample() const
+    [[nodiscard]] T getSample() const
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Correlation moments should be obtained by the 'get' method");
     }
 
-    T getPopulation() const
+    [[nodiscard]] T getPopulation() const
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Correlation moments should be obtained by the 'get' method");
     }
 
-    T getMoment3() const
+    [[nodiscard]] T getMoment3() const
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Correlation moments should be obtained by either 'getSample' or 'getPopulation' method");
     }
 
-    T getMoment4() const
+    [[nodiscard]] T getMoment4() const
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Correlation moments should be obtained by either 'getSample' or 'getPopulation' method");
     }
@@ -637,17 +637,17 @@ struct TTestMoments
         readPODBinary(*this, buf);
     }
 
-    Float64 getMeanX() const
+    [[nodiscard]] Float64 getMeanX() const
     {
         return x1 / nx;
     }
 
-    Float64 getMeanY() const
+    [[nodiscard]] Float64 getMeanY() const
     {
         return y1 / ny;
     }
 
-    Float64 getStandardError() const
+    [[nodiscard]] Float64 getStandardError() const
     {
         /// The original formulae looks like  \frac{1}{size_x - 1} \sum_{i = 1}^{size_x}{(x_i - \bar{x}) ^ 2}
         /// But we made some mathematical transformations not to store original sequences.
@@ -661,7 +661,7 @@ struct TTestMoments
         return std::sqrt(sx2 / nx + sy2 / ny);
     }
 
-    std::pair<Float64, Float64> getConfidenceIntervals(Float64 confidence_level, Float64 degrees_of_freedom) const
+    [[nodiscard]] std::pair<Float64, Float64> getConfidenceIntervals(Float64 confidence_level, Float64 degrees_of_freedom) const
     {
         Float64 mean_x = getMeanX();
         Float64 mean_y = getMeanY();
@@ -676,7 +676,7 @@ struct TTestMoments
         return {ci_low, ci_high};
     }
 
-    bool isEssentiallyConstant() const
+    [[nodiscard]] bool isEssentiallyConstant() const
     {
         return getStandardError() < 10 * DBL_EPSILON * std::max(std::abs(getMeanX()), std::abs(getMeanY()));
     }
@@ -721,12 +721,12 @@ struct OneSampleTTestMoments
         readPODBinary(*this, buf);
     }
 
-    Float64 getMean() const
+    [[nodiscard]] Float64 getMean() const
     {
         return x1 / n;
     }
 
-    Float64 getVariance() const
+    [[nodiscard]] Float64 getVariance() const
     {
         if (n <= 1)
             return std::numeric_limits<Float64>::quiet_NaN();
@@ -734,25 +734,25 @@ struct OneSampleTTestMoments
         return (x2 + n * mean * mean - 2 * mean * x1) / (n - 1);
     }
 
-    Float64 getStandardError() const
+    [[nodiscard]] Float64 getStandardError() const
     {
         Float64 variance = getVariance();
         return std::sqrt(variance / n);
     }
 
-    Float64 getTStatistic() const
+    [[nodiscard]] Float64 getTStatistic() const
     {
         Float64 sample_mean = getMean();
         Float64 standard_error = getStandardError();
         return (sample_mean - population_mean) / standard_error;
     }
 
-    Float64 getDegreesOfFreedom() const
+    [[nodiscard]] Float64 getDegreesOfFreedom() const
     {
         return n - 1;
     }
 
-    std::pair<Float64, Float64> getConfidenceIntervals(Float64 confidence_level) const
+    [[nodiscard]] std::pair<Float64, Float64> getConfidenceIntervals(Float64 confidence_level) const
     {
         Float64 sample_mean = getMean();
         Float64 standard_error = getStandardError();
@@ -767,13 +767,13 @@ struct OneSampleTTestMoments
         return {ci_low, ci_high};
     }
 
-    bool isEssentiallyConstant() const
+    [[nodiscard]] bool isEssentiallyConstant() const
     {
         Float64 standard_error = getStandardError();
         return standard_error < 10 * DBL_EPSILON * std::abs(getMean());
     }
 
-    bool hasEnoughObservations() const
+    [[nodiscard]] bool hasEnoughObservations() const
     {
         return n > 1;
     }
@@ -817,23 +817,23 @@ struct ZTestMoments
         readPODBinary(*this, buf);
     }
 
-    Float64 getMeanX() const
+    [[nodiscard]] Float64 getMeanX() const
     {
         return x1 / nx;
     }
 
-    Float64 getMeanY() const
+    [[nodiscard]] Float64 getMeanY() const
     {
         return y1 / ny;
     }
 
-    Float64 getStandardError(Float64 pop_var_x, Float64 pop_var_y) const
+    [[nodiscard]] Float64 getStandardError(Float64 pop_var_x, Float64 pop_var_y) const
     {
         /// \sqrt{\frac{\sigma_{1}^{2}}{n_{1}} + \frac{\sigma_{2}^{2}}{n_{2}}}
         return std::sqrt(pop_var_x / nx + pop_var_y / ny);
     }
 
-    std::pair<Float64, Float64> getConfidenceIntervals(Float64 pop_var_x, Float64 pop_var_y, Float64 confidence_level) const
+    [[nodiscard]] std::pair<Float64, Float64> getConfidenceIntervals(Float64 pop_var_x, Float64 pop_var_y, Float64 confidence_level) const
     {
         /// (\bar{x_{1}} - \bar{x_{2}}) \pm zscore \times \sqrt{\frac{\sigma_{1}^{2}}{n_{1}} + \frac{\sigma_{2}^{2}}{n_{2}}}
         Float64 mean_x = getMeanX();
@@ -926,7 +926,7 @@ struct AnalysisOfVarianceMoments
                 ns.size());
     }
 
-    Float64 getMeanAll() const
+    [[nodiscard]] Float64 getMeanAll() const
     {
         const auto n = std::accumulate(ns.begin(), ns.end(), 0UL);
         if (n == 0)
@@ -935,7 +935,7 @@ struct AnalysisOfVarianceMoments
         return std::accumulate(xs1.begin(), xs1.end(), 0.0) / static_cast<Float64>(n);
     }
 
-    Float64 getMeanGroup(size_t group) const
+    [[nodiscard]] Float64 getMeanGroup(size_t group) const
     {
         if (ns[group] == 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no observations for group {}", group);
@@ -943,7 +943,7 @@ struct AnalysisOfVarianceMoments
         return xs1[group] / static_cast<T>(ns[group]);
     }
 
-    Float64 getBetweenGroupsVariation() const
+    [[nodiscard]] Float64 getBetweenGroupsVariation() const
     {
         Float64 res = 0;
         auto mean = getMeanAll();
@@ -956,7 +956,7 @@ struct AnalysisOfVarianceMoments
         return res;
     }
 
-    Float64 getWithinGroupsVariation() const
+    [[nodiscard]] Float64 getWithinGroupsVariation() const
     {
         Float64 res = 0;
         for (size_t i = 0; i < xs1.size(); ++i)
@@ -967,7 +967,7 @@ struct AnalysisOfVarianceMoments
         return res;
     }
 
-    Float64 getFStatistic() const
+    [[nodiscard]] Float64 getFStatistic() const
     {
         const auto k = xs1.size();
         const auto n = std::accumulate(ns.begin(), ns.end(), 0UL);
@@ -981,7 +981,7 @@ struct AnalysisOfVarianceMoments
         return (getBetweenGroupsVariation() * static_cast<double>(n - k)) / (getWithinGroupsVariation() * static_cast<double>(k - 1));
     }
 
-    Float64 getPValue(Float64 f_statistic) const
+    [[nodiscard]] Float64 getPValue(Float64 f_statistic) const
     {
         if (unlikely(!std::isfinite(f_statistic)))
             return std::numeric_limits<Float64>::quiet_NaN();

@@ -72,16 +72,16 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayMapped>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    bool isHigherOrderFunction() const override { return true; }
-    bool isDeterministic() const override { return IsDeterministic; }
-    bool isDeterministicInScopeOfQuery() const override { return IsDeterministic; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isHigherOrderFunction() const override { return true; }
+    [[nodiscard]] bool isDeterministic() const override { return IsDeterministic; }
+    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return IsDeterministic; }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
     /// Called if at least one function argument is a lambda expression.
     /// For argument-lambda expressions, it defines the types of arguments of these expressions.
@@ -170,7 +170,7 @@ public:
         arguments[0] = std::make_shared<DataTypeFunction>(nested_types);
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         size_t min_args = (Impl::needExpression() ? 2 : 1) + num_fixed_params ;
         if (arguments.size() < min_args)
@@ -264,17 +264,17 @@ public:
             return Impl::getReturnType(return_type, first_array_type->getNestedType());
     }
 
-    ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         return executeImplCommon(arguments, result_type, input_rows_count, /*dry_run=*/true);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         return executeImplCommon(arguments, result_type, input_rows_count, /*dry_run=*/false);
     }
 
-    ColumnPtr executeImplCommon(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/, bool dry_run) const
+    [[nodiscard]] ColumnPtr executeImplCommon(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/, bool dry_run) const
     {
         if (arguments.size() == 1 + num_fixed_params)
         {

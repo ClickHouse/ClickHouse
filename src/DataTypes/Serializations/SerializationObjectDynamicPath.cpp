@@ -38,7 +38,7 @@ struct DeserializeBinaryBulkStateObjectDynamicPath : public ISerialization::Dese
     SerializationPtr shared_data_path_serialization;
     bool read_from_shared_data{};
 
-    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    [[nodiscard]] ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateObjectDynamicPath>(*this);
         new_state->structure_state = structure_state ? structure_state->clone() : nullptr;

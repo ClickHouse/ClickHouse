@@ -86,7 +86,7 @@ public:
     String info;
 
 protected:
-    size_t getPayloadSize() const override;
+    [[nodiscard]] size_t getPayloadSize() const override;
 
     void readPayloadImpl(ReadBuffer & payload) override;
 
@@ -107,7 +107,7 @@ public:
     int status_flags;
 
 protected:
-    size_t getPayloadSize() const override;
+    [[nodiscard]] size_t getPayloadSize() const override;
 
     void readPayloadImpl(ReadBuffer & payload) override;
 
@@ -128,7 +128,7 @@ public:
     String error_message;
 
 protected:
-    size_t getPayloadSize() const override;
+    [[nodiscard]] size_t getPayloadSize() const override;
 
     void readPayloadImpl(ReadBuffer & payload) override;
 
@@ -190,7 +190,7 @@ class LengthEncodedNumber : public IMySQLWritePacket
 protected:
     uint64_t value;
 
-    size_t getPayloadSize() const override;
+    [[nodiscard]] size_t getPayloadSize() const override;
 
     void writePayloadImpl(WriteBuffer & buffer) const override;
 
