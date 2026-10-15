@@ -781,6 +781,12 @@ object_storages_properties = {
     "web": {},
 }
 
+# Object storage elements that only one metadata storage reads: the server rejects them on any other.
+metadata_type_properties = {
+    "metadata_keep_free_space_bytes": {"local"},
+    "object_metadata_cache_size": {"plain"},
+}
+
 s3_with_keeper_properties = {
     "metadata_cache_cleanup_interval": threshold_generator(
         0.2, 0.2, 1, 60, allow_unlimited=False
@@ -1180,8 +1186,12 @@ def add_single_disk(
             allowed_path_xml = ET.SubElement(backups_element, "allowed_path")
             allowed_path_xml.text = f"/var/lib/clickhouse/disk{i}/"
 
-        # Add a endpoint_subpath
-        if metadata_type == "plain_rewritable" and random.randint(1, 100) <= 70:
+        # Add a endpoint_subpath, read only by the S3 and Azure object storages
+        if (
+            metadata_type == "plain_rewritable"
+            and object_storage_type in ("s3", "s3_with_keeper", "azure")
+            and random.randint(1, 100) <= 70
+        ):
             endpoint_subpath_xml = ET.SubElement(next_disk, "endpoint_subpath")
             endpoint_subpath_xml.text = (
                 f"node{random.choice(range(0, len(args.replica_values)))}"
@@ -1192,9 +1202,12 @@ def add_single_disk(
             "s3" if object_storage_type == "s3_with_keeper" else object_storage_type
         )
         if object_storages_properties[dict_entry] and random.randint(1, 100) <= 70:
-            apply_properties_recursively(
-                next_disk, object_storages_properties[dict_entry]
-            )
+            storage_properties = {
+                name: generator
+                for name, generator in object_storages_properties[dict_entry].items()
+                if metadata_type in metadata_type_properties.get(name, {metadata_type})
+            }
+            apply_properties_recursively(next_disk, storage_properties)
         if (
             is_private_binary
             and (object_storage_type == "s3_with_keeper" or metadata_type == "keeper")
