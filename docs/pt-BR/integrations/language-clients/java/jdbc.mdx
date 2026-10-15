@@ -24,15 +24,33 @@ import WideTableWrapper from "/snippets/pt-BR/components/WideTableWrapper/WideTa
 
   ### Setup {#setup}
 
-  ```xml
-  {/* https://mvnrepository.com/artifact/com.clickhouse/clickhouse-jdbc */}
-  <dependency>
-      <groupId>com.clickhouse</groupId>
-      <artifactId>clickhouse-jdbc</artifactId>
-      <version>0.10.0</version>
-      <classifier>all</classifier>
-  </dependency>
-  ```
+  <Tabs>
+    <Tab title="Maven">
+      ```xml
+      {/* https://mvnrepository.com/artifact/com.clickhouse/clickhouse-jdbc */}
+      <dependency>
+          <groupId>com.clickhouse</groupId>
+          <artifactId>clickhouse-jdbc</artifactId>
+          <version>0.9.8</version>
+          <classifier>all</classifier>
+      </dependency>
+      ```
+    </Tab>
+
+    <Tab title="Gradle (Kotlin)">
+      ```kotlin
+      // https://mvnrepository.com/artifact/com.clickhouse/clickhouse-jdbc
+      implementation("com.clickhouse:clickhouse-jdbc:0.9.8:all")
+      ```
+    </Tab>
+
+    <Tab title="Gradle">
+      ```groovy
+      // https://mvnrepository.com/artifact/com.clickhouse/clickhouse-jdbc
+      implementation 'com.clickhouse:clickhouse-jdbc:0.9.8:all'
+      ```
+    </Tab>
+  </Tabs>
 
   Se você estiver usando o driver JDBC em uma aplicação que requer a adição do jar ao classpath, é necessário fazer o download do jar em:
 
@@ -167,97 +185,6 @@ import WideTableWrapper from "/snippets/pt-BR/components/WideTableWrapper/WideTa
   ```
 
   **Nota:** esta abordagem funciona para usos de declaração em thread única, pois `localSettings` é compartilhado entre as threads.
-
-  ### Cabeçalhos HTTP personalizados {#custom-http-headers}
-
-  Cabeçalhos HTTP personalizados são passados como propriedades do cliente. Cada cabeçalho usa o prefixo `http_header_`. `ClientConfigProperties.httpHeader(String)` (ou `DriverProperties.httpHeader(String)`) gera essa chave. A propriedade `custom_http_headers` da V1 não é usada no JDBC V2.
-
-  ```java showLineNumbers
-  Properties properties = new Properties();
-  properties.setProperty(ClientConfigProperties.httpHeader("X-ClickHouse-Quota"), "test");
-  properties.setProperty(ClientConfigProperties.httpHeader("X-ClickHouse-Test"), "value1,value2");
-  Connection conn = Driver.connect("jdbc:ch:https://localhost:8443/", properties);
-
-  // URL equivalent:
-  // jdbc:ch:https://localhost:8443?http_header_X-CLICKHOUSE-QUOTA=test&http_header_X-CLICKHOUSE-TEST=value1,value2
-  ```
-
-  ## Recursos do ClickHouse Cloud {#clickhouse-cloud-features}
-
-  Recursos aplicáveis ao se conectar ao [ClickHouse Cloud](https://clickhouse.com/cloud).
-
-  ### Roteamento sensível a réplicas (CLOUD) {#replica-aware-routing}
-
-  O ClickHouse Cloud pode fixar requisições HTTP relacionadas em uma mesma réplica. Envie o cabeçalho `X-ClickHouse-Replica-Tag` para que um proxy do Cloud roteie para uma única réplica todas as requisições que compartilham o mesmo rótulo. Use esse recurso para objetos com escopo de sessão, como tabelas temporárias, para reutilização de cache local da réplica ou para garantir consistência de leitura após gravação.
-  Leia mais: https://clickhouse.com/docs/products/cloud/features/infrastructure/replica-aware-routing.
-
-  **O que definir:** cabeçalho HTTP `X-ClickHouse-Replica-Tag` (`com.clickhouse.client.api.http.ClickHouseHttpProto.HEADER_REPLICA_TAG`). Use o mesmo valor de tag para todas as requisições que devem permanecer em uma única réplica.
-
-  ```java showLineNumbers
-  String replicaTag = "my-app-session-1";
-
-  Properties properties = new Properties();
-  properties.setProperty("user", user);
-  properties.setProperty("password", password);
-  properties.setProperty(
-          ClientConfigProperties.httpHeader(ClickHouseHttpProto.HEADER_REPLICA_TAG),
-          replicaTag);
-
-  Connection conn = Driver.connect("jdbc:ch:https://your-service.clickhouse.cloud:8443", properties);
-
-  // URL equivalent:
-  // jdbc:ch:https://your-service.clickhouse.cloud:8443?http_header_X-CLICKHOUSE-REPLICA-TAG=my-app-session-1
-  ```
-
-  ### Autenticação JWT (CLOUD) {#jwt-authentication}
-
-  A [autenticação JWT](/pt-BR/concepts/features/security/external-authenticators/jwt) permite a autenticação com JSON Web Tokens (JWTs) no ClickHouse Cloud. O ClickHouse cria dinamicamente **usuários efêmeros** a partir das claims do token.
-
-  #### Configuração inicial {#initial-configuration}
-
-  Para configurar a autenticação JWT inicial no JDBC, passe a propriedade `bearer_token` nas propriedades de conexão ou diretamente na URL JDBC:
-
-  ```java showLineNumbers
-  import java.sql.Connection;
-  import java.sql.DriverManager;
-  import java.sql.SQLException;
-  import java.util.Properties;
-
-  public Connection createJwtConnection(String jwtToken) throws SQLException {
-      Properties properties = new Properties();
-      properties.setProperty("bearer_token", jwtToken);
-
-      return DriverManager.getConnection("jdbc:ch:https://your-service.clickhouse.cloud:8443", properties);
-  }
-  ```
-
-  URL equivalente:
-
-  ```plaintext
-  jdbc:ch:https://your-service.clickhouse.cloud:8443?bearer_token=<your_jwt_token>
-  ```
-
-  #### Atualizando o token em tempo de execução {#updating-token-at-runtime}
-
-  Como os JWTs têm um período de validade limitado, novos tokens JWT devem ser definidos **antes** que o token atual expire, para que nenhuma operação falhe.
-
-  Para atualizar o token JWT em uma conexão JDBC ativa em tempo de execução, desencapsule a conexão para acessar a instância subjacente de `com.clickhouse.client.api.Client` e chame `updateBearerToken`:
-
-  ```java showLineNumbers
-  import com.clickhouse.jdbc.ConnectionImpl;
-  import java.sql.Connection;
-  import java.sql.SQLException;
-
-  public void refreshJwtToken(Connection connection, String newJwtToken) throws SQLException {
-      // Unwrap the connection to get the underlying Client instance
-      ConnectionImpl connImpl = connection.unwrap(ConnectionImpl.class);
-
-      // Set the new JWT before the current token expires
-      connImpl.getClient().updateBearerToken(newJwtToken);
-  }
-  ```
-
-  As instruções subsequentes executadas nesta conexão JDBC usarão o token JWT atualizado.
 
   ## Tipos de dados suportados {#supported-data-types}
 
@@ -671,7 +598,7 @@ import WideTableWrapper from "/snippets/pt-BR/components/WideTableWrapper/WideTa
   }});
   ```
 
-  Há uma opção mais conveniente para ler JSON como String passando a configuração do servidor `jdbc_read_json_as_string=true` nas propriedades de conexão.
+  Há uma opção mais conveniente para ler JSON como String passando a configuração do servidor `output_format_binary_write_json_as_string=1` nas propriedades de conexão.
   Isso faz com que o driver retorne valores JSON como String, que podem ser analisados usando qualquer biblioteca JSON.
 
   ```java
@@ -760,61 +687,6 @@ import WideTableWrapper from "/snippets/pt-BR/components/WideTableWrapper/WideTa
       ps.executeBatch(); // stream everything on-hand into ClickHouse
   }
   ```
-
-  ## Observabilidade e Monitoramento {#jdbc-v2-o11y}
-
-  O Driver JDBC do ClickHouse (V2) oferece suporte a métricas e rastreamento distribuído por meio do motor subjacente do Cliente V2 e da instrumentação padrão de aplicações JDBC. Para definições detalhadas de métricas, atributos de span e convenções semânticas do OpenTelemetry, consulte a [Documentação de Observabilidade do Cliente V2](/pt-BR/integrations/language-clients/java/client#v2-o11y).
-
-  ### Rastreamento distribuído e spans {#distributed-tracing-spans}
-
-  Ao executar instruções JDBC (`executeQuery`, `executeUpdate`, `executeBatch`), o rastreamento distribuído opera em uma hierarquia de spans pai-filho:
-
-  1. **Span externo de JDBC / Aplicação**: Criado automaticamente pelo Agente Java do OpenTelemetry ou pela instrumentação de APM ao interceptar chamadas de métodos de `java.sql` (por exemplo, `PreparedStatement.executeBatch()`).
-  2. **Span de operação do Cliente V2**: Criado pelo motor subjacente do Cliente V2 dentro do contexto de rastreamento ativo atual (`Context.current()`). Contém metadados ClickHouse-specific, como `clickhouse.query_id`, o texto da instrução (`db.query.text`) e estatísticas de execução do servidor (`clickhouse.response.read_rows`, `clickhouse.response.written_rows`).
-  3. **Span de requisição de transporte**: Criado a cada tentativa de requisição HTTP POST ao Servidor do ClickHouse, registrando detalhes do endpoint (`server.address`, `server.port`), códigos de status HTTP (`http.response.status_code`) e novas tentativas.
-
-  ```text
-  Application HTTP Request Span
-    └── JDBC Statement Span (e.g., PreparedStatement.executeQuery)
-        └── Client V2 Operation Span (query default)
-            └── Transport Request Span (POST http://localhost:8123)
-  ```
-
-  Como o Cliente V2 herda `Context.current()`, os spans de banco de dados do JDBC são incorporados automaticamente ao trace do ambiente no contexto HTTP ou de mensageria em que são executados, sem necessidade de propagação manual de contexto.
-
-  ### Instrumentação automática do JDBC {#jdbc-auto-instrumentation}
-
-  As operações JDBC padrão (`Connection`, `PreparedStatement`, `ResultSet`, `executeBatch`) são rastreadas automaticamente pelos frameworks de tempo de execução de aplicações Java e pelos agentes de APM:
-
-  * **Agente Java do OpenTelemetry**: intercepta automaticamente as chamadas a métodos JDBC padrão, criando spans de rastreamento para as execuções no banco de dados (`SELECT`, `INSERT`, `TRUNCATE`) com `db.system=clickhouse`, o texto da instrução e os tempos de execução.
-  * **Spring Boot &amp; Micrometer**: os repositórios do Spring Data JPA e o `JdbcTemplate` instrumentam automaticamente as chamadas ao banco de dados quando o Micrometer Observation do Spring Boot ou as métricas do Spring Actuator estão ativos.
-
-  ### Configurando gravadores de métricas do driver {#configuring-driver-metrics-recorders}
-
-  Você pode habilitar métricas operacionais do Cliente V2 (durações, contagens, retentativas) para conexões JDBC usando a propriedade de conexão `jdbc_metrics_recorder`. O driver instancia a classe especificada por meio de seu construtor público sem argumentos, uma vez por conexão.
-
-  ```java
-  // Configure via JDBC URL parameter
-  String url = "jdbc:clickhouse://localhost:8123/default?jdbc_metrics_recorder=com.clickhouse.client.api.observability.micrometer.MicrometerMetricsRecorder";
-
-  // Or set via java.util.Properties
-  Properties properties = new Properties();
-  properties.setProperty("jdbc_metrics_recorder", "com.clickhouse.client.api.observability.micrometer.MicrometerMetricsRecorder");
-
-  try (Connection conn = DriverManager.getConnection(url, properties)) {
-      // JDBC operations report operation metrics to Micrometer's globalRegistry
-  }
-  ```
-
-  *Nota: `MicrometerMetricsRecorder` é fornecido com o driver, mas requer que `io.micrometer:micrometer-core` esteja disponível no classpath de tempo de execução da aplicação.*
-
-  ### Referência da demonstração do Spring Boot {#spring-boot-demo-reference}
-
-  Para um exemplo completo que demonstra a configuração do driver JDBC e a telemetria em um serviço Spring Boot, consulte o módulo `examples/demo-spring-service` neste repositório:
-
-  * **Configuração do Datasource JDBC** (`src/main/resources/application.yml`): Configura `spring.datasource` com `com.clickhouse.jdbc.ClickHouseDriver` e as propriedades do driver (`jdbc_ignore_unsupported_values: true`).
-  * **Integração com Spring Data JPA** (`com.clickhouse.examples.repository.SignalRepository`): Mostra a persistência de entidades baseada em repositório sobre o ClickHouse JDBC.
-  * **Utilitários `JdbcTemplate`** (`com.clickhouse.examples.schema.ClickHouseSchemaInitializer`): Demonstra a execução de DDL e a exportação de pontos de métricas usando o `JdbcTemplate` do Spring.
 
   ## `HikariCP` {#hikaricp}
 
@@ -912,7 +784,6 @@ import WideTableWrapper from "/snippets/pt-BR/components/WideTableWrapper/WideTa
     * Dados de streaming não têm suporte no JDBC V2 porque não fazem parte da especificação do JDBC nem do Java.
   * O JDBC V2 exige configuração explícita. Não há failover por padrão.
     * O protocolo deve ser especificado na URL. Não há detecção implícita do protocolo com base no número da porta.
-  * Cabeçalhos HTTP personalizados usam uma propriedade por cabeçalho (`http_header_*`). A propriedade `custom_http_headers` da V1, com valores separados por vírgula, não é aceita.
 
   ### Alterações de Configuração {#configuration-changes}
 
@@ -972,7 +843,7 @@ import WideTableWrapper from "/snippets/pt-BR/components/WideTableWrapper/WideTa
 
   * A principal diferença é que os tipos sem sinal são mapeados para tipos Java para melhorar a portabilidade.
 
-  **Tipos String**
+  **Tipos de String**
 
   | Tipo do ClickHouse | Compatível com V1 | Tipo JDBC (V2) | Classe Java (V2) | Tipo JDBC (V1) | Classe Java (V1) |
   | ------------------ | ----------------- | -------------- | ---------------- | -------------- | ---------------- |
@@ -1166,42 +1037,6 @@ import WideTableWrapper from "/snippets/pt-BR/components/WideTableWrapper/WideTa
 
   Nota: consulte a [configuração específica do JDBC](https://github.com/ClickHouse/clickhouse-java/blob/main/clickhouse-jdbc/src/main/java/com/clickhouse/jdbc/JdbcConfig.java) para mais detalhes.
 
-  ### Cabeçalhos HTTP personalizados {#v07-custom-http-headers}
-
-  Cabeçalhos de requisição adicionais são definidos com `custom_http_headers`. Cada cabeçalho segue o formato `Name=Value`. Separe vários cabeçalhos com uma vírgula. Para escapar uma vírgula dentro de um valor, use `\,`. Um `=` dentro de um valor é mantido como parte do valor.
-
-  ```java
-  properties.setProperty("custom_http_headers", "X-ClickHouse-Quota=test");
-  properties.setProperty("custom_http_headers", "X-ClickHouse-Quota=test, X-ClickHouse-Test=test");
-
-  // URL Equivalent
-  // jdbc:ch:http://localhost:8123?custom_http_headers=X-ClickHouse-Quota%3Dtest,X-ClickHouse-Test%3Dtest
-  ```
-
-  ## Recursos do ClickHouse Cloud {#v1-clickhouse-cloud-features}
-
-  Recursos aplicáveis ao se conectar ao [ClickHouse Cloud](https://clickhouse.com/cloud).
-
-  ### Roteamento sensível a réplicas (CLOUD) {#v1-replica-aware-routing}
-
-  O ClickHouse Cloud pode fixar requisições HTTP relacionadas em uma mesma réplica. Envie o cabeçalho `X-ClickHouse-Replica-Tag` para que um proxy do Cloud encaminhe para uma única réplica todas as requisições que compartilham o mesmo rótulo. Use esse recurso para objetos com escopo de sessão, como tabelas temporárias, para a reutilização de cache local da réplica ou para garantir consistência de leitura após gravação.
-  Saiba mais: https://clickhouse.com/docs/products/cloud/features/infrastructure/replica-aware-routing.
-
-  **O que definir:** cabeçalho HTTP `X-ClickHouse-Replica-Tag` (`com.clickhouse.client.http.config.ClickHouseHttpOption.HEADER_REPLICA_TAG`) por meio de `custom_http_headers`. Use o mesmo valor da tag em todas as requisições que devem permanecer em uma única réplica.
-
-  ```java
-  String replicaTag = "my-app-session-1";
-
-  Properties properties = new Properties();
-  properties.setProperty("custom_http_headers", "X-ClickHouse-Replica-Tag=" + replicaTag);
-
-  ClickHouseDataSource dataSource = new ClickHouseDataSource(
-          "jdbc:clickhouse:https://your-service.clickhouse.cloud:8443", properties);
-  try (Connection conn = dataSource.getConnection("default", "password")) {
-      // requests on this connection are pinned to the replica selected for replicaTag
-  }
-  ```
-
   ## Tipos de dados suportados {#v07-supported-data-types}
 
   O driver JDBC suporta os mesmos formatos de dados que a biblioteca cliente.
@@ -1384,16 +1219,16 @@ import WideTableWrapper from "/snippets/pt-BR/components/WideTableWrapper/WideTa
 
   ## Propriedades SSL {#ssl-properties}
 
-  | Nome                 | Valor default | Valores opcionais | Descrição                                                                                  |
-  | -------------------- | ------------- | ----------------- | ------------------------------------------------------------------------------------------ |
-  | `ssl`                | false         | true, false       | Indica se SSL/TLS deve ser habilitado para a conexão                                       |
-  | `sslmode`            | strict        | strict, none      | Define se o certificado SSL/TLS deve ser verificado                                        |
-  | `sslrootcert`        |               |                   | Caminho para os certificados raiz de SSL/TLS                                               |
-  | `sslcert`            |               |                   | Caminho para o certificado SSL/TLS                                                         |
-  | `sslkey`             |               |                   | Chave RSA no formato PKCS#8                                                                |
-  | `key_store_type`     |               | JKS, PKCS12       | Especifica o tipo ou formato do arquivo `KeyStore`/`TrustStore`                            |
-  | `trust_store`        |               |                   | Caminho até o arquivo `TrustStore`                                                         |
-  | `key_store_password` |               |                   | Senha necessária para acessar o arquivo `KeyStore` especificado na configuração `KeyStore` |
+  | Nome                 | Valor padrão | Valores opcionais | Descrição                                                                                  |
+  | -------------------- | ------------ | ----------------- | ------------------------------------------------------------------------------------------ |
+  | `ssl`                | false        | true, false       | Indica se SSL/TLS deve ser habilitado para a conexão                                       |
+  | `sslmode`            | strict       | strict, none      | Define se o certificado SSL/TLS deve ser verificado                                        |
+  | `sslrootcert`        |              |                   | Caminho para os certificados raiz de SSL/TLS                                               |
+  | `sslcert`            |              |                   | Caminho para o certificado SSL/TLS                                                         |
+  | `sslkey`             |              |                   | Chave RSA no formato PKCS#8                                                                |
+  | `key_store_type`     |              | JKS, PKCS12       | Especifica o tipo ou formato do arquivo `KeyStore`/`TrustStore`                            |
+  | `trust_store`        |              |                   | Caminho até o arquivo `TrustStore`                                                         |
+  | `key_store_password` |              |                   | Senha necessária para acessar o arquivo `KeyStore` especificado na configuração `KeyStore` |
 
   Essas propriedades garantem que sua aplicação Java se comunique com o servidor ClickHouse por meio de uma conexão criptografada, aumentando a segurança dos dados durante a transmissão.
 

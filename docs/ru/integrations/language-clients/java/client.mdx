@@ -21,16 +21,35 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   ## Setup {#setup}
 
   * Maven Central (веб-страница проекта): https://mvnrepository.com/artifact/com.clickhouse/client-v2
+  * Ночные сборки (ссылка на репозиторий): https://central.sonatype.com/repository/maven-snapshots/
 
   <br />
 
-  ```xml
-  <dependency>
-      <groupId>com.clickhouse</groupId>
-      <artifactId>client-v2</artifactId>
-      <version>0.10.0</version>
-  </dependency>
-  ```
+  <Tabs>
+    <Tab title="Maven">
+      ```xml
+      <dependency>
+          <groupId>com.clickhouse</groupId>
+          <artifactId>client-v2</artifactId>
+          <version>0.9.8</version>
+      </dependency>
+      ```
+    </Tab>
+
+    <Tab title="Gradle (Kotlin)">
+      ```kotlin
+      // https://mvnrepository.com/artifact/com.clickhouse/client-v2
+      implementation("com.clickhouse:client-v2:0.9.8")
+      ```
+    </Tab>
+
+    <Tab title="Gradle">
+      ```groovy
+      // https://mvnrepository.com/artifact/com.clickhouse/client-v2
+      implementation 'com.clickhouse:client-v2:0.9.8'
+      ```
+    </Tab>
+  </Tabs>
 
   <br />
 
@@ -65,16 +84,16 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
           .build();
   ```
 
-  Для аутентификации с помощью токена доступа или Bearer-токена (например, JWT) необходимо задать токен, вызвав `useBearerTokenAuth(String)` (или `setAccessToken(String)` для необработанных токенов доступа):
+  Для аутентификации с помощью токена доступа необходимо задать токен доступа, вызвав `setAccessToken(String)`:
 
   ```java showLineNumbers
    Client client = new Client.Builder()
           .addEndpoint("https://clickhouse-cloud-instance:8443/")
-          .useBearerTokenAuth(userAccessToken)
+          .setAccessToken(userAccessToken)
           .build();
   ```
 
-  Аутентификация с помощью SSL-сертификата клиента требует указания имени пользователя, включения SSL-аутентификации, а также задания клиентского сертификата и клиентского ключа посредством вызовов `setUsername(String)`,  `useSSLAuthentication(boolean)`, `setClientCertificate(String)` и `setClientKey(String)` соответственно:
+  Аутентификация с помощью SSL-сертификата клиента требует указания имени пользователя, включения SSL-аутентификации, а также задания клиентского сертификата и клиентского ключа посредством вызовов `setUsername(String)`, `useSSLAuthentication(boolean)`, `setClientCertificate(String)` и `setClientKey(String)` соответственно:
 
   ```java showLineNumbers
   Client client = new Client.Builder()
@@ -94,35 +113,6 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
       * получить CN из сертификата пользователя — `openssl x509 -noout -subject -in [user.cert]`
       * убедиться, что в базе данных задано то же значение: `select name, auth_type, auth_params from system.users where auth_type = 'ssl_certificate'` (запрос выведет `auth_params` с чем-то вроде ` {"common_names":["some_user"]}`)
   </Note>
-
-  ### Пул соединений {#connection-pooling}
-
-  `Client` использует Apache HttpClient 5 с внутренним пулом HTTP-соединений. Каждая операция берёт соединение из пула, отправляет запрос, получает ответ в потоковом режиме и возвращает соединение в пул.
-
-  Основные настройки пула соединений в `Client.Builder`:
-
-  | Настройка                          | Метод построителя                                              | По умолчанию                     | Описание                                                                                                        |
-  | ---------------------------------- | -------------------------------------------------------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-  | Максимальное число соединений      | `setMaxConnections(int)`                                       | `10`                             | Максимальное число открытых HTTP-соединений для каждой конечной точки сервера.                                  |
-  | TTL соединения                     | `setConnectionTTL(long, ChronoUnit)`                           | `-1` (отключено)                 | Time-to-live, по истечении которого активное соединение закрывается и создаётся заново.                         |
-  | Тайм-аут Keep-Alive                | `setKeepAliveTimeout(long, ChronoUnit)`                        | Значение по умолчанию на сервере | Длительность поддержания бездействующих соединений из пула открытыми с помощью HTTP Keep-Alive.                 |
-  | Тайм-аут запроса соединения        | `setConnectionRequestTimeout(long, ChronoUnit)`                | `10000ms`                        | Максимальное время, в течение которого поток остаётся заблокированным в ожидании доступного соединения из пула. |
-  | Стратегия повторного использования | `setConnectionReuseStrategy(ConnectionReuseStrategy strategy)` | `FIFO`                           | Стратегия выделения соединений из пула (`FIFO` или `LIFO`).                                                     |
-  | Пул соединений                     | `enableConnectionPool(boolean enable)`                         | `true`                           | Включить или отключить пулинг HTTP-соединений.                                                                  |
-
-  #### Рекомендуемая конфигурация пула соединений {#recommended-connection-pool-configuration}
-
-  ```java showLineNumbers
-  Client client = new Client.Builder()
-          .addEndpoint("https://clickhouse-cloud-instance:8443/")
-          .setUsername("default")
-          .setPassword("secret")
-          .setMaxConnections(50)
-          .setConnectionRequestTimeout(5, TimeUnit.SECONDS)
-          .setKeepAliveTimeout(60, TimeUnit.SECONDS)
-          .setConnectionReuseStrategy(ConnectionReuseStrategy.FIFO)
-          .build();
-  ```
 
   ## Конфигурация {#configuration}
 
@@ -213,9 +203,9 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
       | Метод                                       | Аргументы                                                             | Описание                                                                                                                                                                                                                                                                                                   | По умолчанию | Ключ                                     |
       | ------------------------------------------- | --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | ---------------------------------------- |
       | `setHttpCookiesEnabled(boolean enabled)`    | `enabled` - флаг включения/отключения                                 | Указывает, следует ли запоминать HTTP cookie и отправлять их обратно серверу.                                                                                                                                                                                                                              | -            | -                                        |
-      | `httpHeader(String key, String value)`      | `key` - ключ HTTP-заголовка<br />`value` - строковое значение         | Задает значение одного HTTP-заголовка. Предыдущее значение переопределяется.                                                                                                                                                                                                                               | `none`       | `http_header_*`                          |
-      | `httpHeader(String key, Collection values)` | `key` - ключ HTTP-заголовка<br />`values` - список строковых значений | Задает значения одного HTTP-заголовка. Предыдущее значение переопределяется.                                                                                                                                                                                                                               | `none`       | `http_header_*`                          |
-      | `httpHeaders(Map headers)`                  | `headers` - map с HTTP-заголовками                                    | Задает сразу несколько HTTP-заголовков.                                                                                                                                                                                                                                                                    | `none`       | `http_header_*`                          |
+      | `httpHeader(String key, String value)`      | `key` - ключ HTTP-заголовка<br />`value` - строковое значение         | Задает значение одного HTTP-заголовка. Предыдущее значение переопределяется.                                                                                                                                                                                                                               | `none`       | `none`                                   |
+      | `httpHeader(String key, Collection values)` | `key` - ключ HTTP-заголовка<br />`values` - список строковых значений | Задает значения одного HTTP-заголовка. Предыдущее значение переопределяется.                                                                                                                                                                                                                               | `none`       | `none`                                   |
+      | `httpHeaders(Map headers)`                  | `headers` - map с HTTP-заголовками                                    | Задает сразу несколько HTTP-заголовков.                                                                                                                                                                                                                                                                    | `none`       | `none`                                   |
       | `useHttpFormDataForQuery(boolean enable)`   | `enable` - флаг включения/отключения                                  | Указывает, следует ли отправлять параметры запроса как данные HTTP-формы в теле запроса, а не в URL. Работает только при сжатии на стороне сервера. Если включено сжатие на уровне клиента, оно будет отключено для запросов с параметрами, так как каждый параметр отправляется как multipart-содержимое. | `false`      | `client.http.use_form_request_for_query` |
     </Tab>
 
@@ -321,100 +311,19 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
 
   ⚠️ Если параметры задаются через метод `setOption` (будь то `Client.Builder` или класс настроек операции), имя настройки сервера должно иметь префикс `clickhouse_setting_`. В этом случае может пригодиться `com.clickhouse.client.api.ClientConfigProperties#serverSetting()`.
 
-  ### Пользовательские HTTP-заголовки {#custom-http-headers}
+  ### Пользовательский HTTP-заголовок {#custom-http-header}
 
-  Пользовательские HTTP-заголовки можно задать для всех операций (на уровне клиента) или для отдельной операции (на уровне операции). Настройки операции переопределяют одноимённые заголовки, заданные на уровне клиента.
-
-  ```java showLineNumbers
-  Map<String, String> userHeaders = new HashMap<>();
-  userHeaders.put("X-User-Header1", "value1");
-  userHeaders.put("X-User-Header2", "value2");
-
-  Client client = new Client.Builder()
-          .addEndpoint("https://clickhouse-cloud-instance:8443/")
-          .setUsername(user)
-          .setPassword(password)
-          .httpHeader("X-ClickHouse-Quota", "test")
-          .httpHeader("X-Forwarded-For", Arrays.asList("1.2.3.4", "5.6.7.8"))
-          .httpHeaders(userHeaders)
-          .build();
-  ```
-
-  **Важно**: если параметры задаются через `setOption` (в `Client.Builder` или в классе настроек операции), имя заголовка должно начинаться с префикса `http_header_`. Такой ключ формирует `ClientConfigProperties.httpHeader(String)`.
-  Поскольку имя заголовка — это обычный строковый ключ, оно должно быть записано в едином регистре, иначе дублирующиеся значения приведут к неопределённому поведению. `ClickHouseConfigProperties.httpHeader(String)` решает эту проблему.&#96;
+  Пользовательские HTTP-заголовки можно задать для всех операций (на уровне клиента) или для отдельной операции (на уровне операции).
 
   ```java showLineNumbers
-  clientBuilder.setOption(ClientConfigProperties.httpHeader("X-ClickHouse-Quota"), "test");
-  // equivalent to:
-  clientBuilder.setOption("http_header_X-CLICKHOUSE-QUOTA", "test");
+
+  QuerySettings settings = new QuerySettings()
+      .httpHeader(HttpHeaders.REFERER, clientReferer)
+      .setQueryId(qId);
+
   ```
 
-  ## Возможности ClickHouse Cloud {#clickhouse-cloud-features}
-
-  Возможности, доступные при подключении к [ClickHouse Cloud](https://clickhouse.com/cloud).
-
-  ### Маршрутизация с учётом реплик (CLOUD) {#replica-aware-routing}
-
-  ClickHouse Cloud может закреплять связанные HTTP-запросы за одной репликой. Передайте заголовок `X-ClickHouse-Replica-Tag`, и прокси Cloud будет направлять все запросы с одинаковой меткой на одну и ту же реплику. Это полезно для объектов уровня сеанса, например временных таблиц, для повторного использования локального кэша реплики, а также для обеспечения согласованности чтения после записи.
-  Подробнее: https://clickhouse.com/docs/products/cloud/features/infrastructure/replica-aware-routing.
-
-  **Что задать:** HTTP-заголовок `X-ClickHouse-Replica-Tag` (`com.clickhouse.client.api.http.ClickHouseHttpProto.HEADER_REPLICA_TAG`). Используйте одно и то же значение метки для всех запросов, которые должны обрабатываться одной репликой.
-
-  ```java showLineNumbers
-  String replicaTag = "my-app-session-1";
-
-  try (Client client = new Client.Builder()
-          .addEndpoint("https://your-service.clickhouse.cloud:8443")
-          .setUsername(user)
-          .setPassword(password)
-          .httpHeader(ClickHouseHttpProto.HEADER_REPLICA_TAG, replicaTag)
-          .build()) {
-      client.query("SELECT hostname()").get();
-  }
-  ```
-
-  Чтобы настроить заголовок для отдельной операции, задайте его в `QuerySettings`, `InsertSettings` или `CommandSettings`, а не в построителе клиента.
-
-  ### JWT-аутентификация (CLOUD) {#jwt-authentication}
-
-  [JWT-аутентификация](/ru/concepts/features/security/external-authenticators/jwt) позволяет аутентифицировать пользователей с помощью JSON Web Tokens (JWT) в ClickHouse Cloud. Вместо заранее созданных пользователей базы данных ClickHouse динамически создаёт **эфемерных пользователей** на основе утверждений, встроенных в каждый токен.
-
-  #### Начальная настройка {#initial-configuration}
-
-  Чтобы настроить начальную JWT-аутентификацию на клиенте, используйте `useBearerTokenAuth(token)` (метод автоматически добавляет префикс `Bearer_`.
-  (см. [документацию по HTTP-интерфейсу](/ru/concepts/features/security/external-authenticators/jwt#http-interface) ) при создании экземпляра `Client`:
-
-  ```java showLineNumbers
-  import com.clickhouse.client.api.Client;
-
-  public Client createJwtClient(String jwtToken) {
-      return new Client.Builder()
-              .addEndpoint("https://your-service.clickhouse.cloud:8443")
-              .useBearerTokenAuth(jwtToken)
-              .build();
-  }
-  ```
-
-  <Note>
-    `useBearerTokenAuth(token)` автоматически добавляет префикс `Bearer ` к значению HTTP-заголовка `Authorization`.
-  </Note>
-
-  #### Обновление токена во время выполнения {#updating-token-at-runtime}
-
-  Поскольку JWT недолговечны, а эфемерные пользователи существуют лишь в течение времени жизни токена, новые JWT-токены следует задавать **до** истечения срока действия текущего токена, чтобы ни одна операция не завершилась ошибкой.
-
-  Bearer-токен можно обновить в существующем экземпляре `Client` во время выполнения, не пересоздавая клиент:
-
-  ```java showLineNumbers
-  import com.clickhouse.client.api.Client;
-
-  public void refreshJwtToken(Client client, String newJwtToken) {
-      // Set the new JWT before the current token expires
-      client.updateBearerToken(newJwtToken);
-  }
-  ```
-
-  Все последующие запросы через экземпляр `Client` будут использовать обновлённый JWT-токен.
+  Если параметры задаются через метод `setOption` (будь то `Client.Builder` или класс настроек операции), имя пользовательского заголовка должно начинаться с префикса `http_header_`. В этом случае может пригодиться метод `com.clickhouse.client.api.ClientConfigProperties#httpHeader()`.
 
   ## Общие определения {#common-definitions}
 
@@ -604,9 +513,6 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   | `setInputStreamCopyBufferSize(int size)`        | Размер буфера копирования. Буфер используется при операциях записи для копирования данных из входного потока, заданного пользователем, в выходной поток. По умолчанию: `8196`. |
   | `serverSetting(String name, String value)`      | Устанавливает отдельные настройки сервера для операции.                                                                                                                        |
   | `serverSetting(String name, Collection values)` | Устанавливает отдельные настройки сервера с несколькими значениями для операции. Элементы коллекции должны иметь тип `String`.                                                 |
-  | `httpHeader(String key, String value)`          | Задаёт пользовательский HTTP-заголовок для вставки.                                                                                                                            |
-  | `httpHeader(String key, Collection values)`     | Задаёт пользовательский HTTP-заголовок с несколькими значениями.                                                                                                               |
-  | `httpHeaders(Map headers)`                      | Задаёт несколько пользовательских HTTP-заголовков.                                                                                                                             |
   | `setDBRoles(Collection dbRoles)`                | Задает роли БД, которые будут установлены перед выполнением операции. Элементы коллекции должны быть строковыми значениями `String`.                                           |
   | `setOption(String option, Object value)`        | Задаёт параметр конфигурации в исходном формате. Это не настройка сервера.                                                                                                     |
 
@@ -624,24 +530,6 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   | `String getQueryId()`           | Возвращает Query id, назначенный операции приложением (через настройки операции) или сервером. |
 
   ## API запросов {#query-api}
-
-  **Выбор формата**
-
-  Клиент предоставляет прозрачный доступ к потоку ответов сервера. Пользователь может указать в запросе любой формат ClickHouse и читать данные через `InputStream`
-  из объекта `QueryResponse`.
-  Формат можно задать следующими способами:
-
-  * `QuerySettings#setFormat()` — задаёт заголовок формата в запросе.
-  * В секции `FORMAT` в самом запросе.
-  * Настройка сервера `default_format` (/reference/settings/session-settings/default#default&#95;format)
-
-  Поведение различается в зависимости от версии ClickHouse и клиента:
-
-  * Client &lt; `0.11.0` &amp; ClickHouse &lt; `26.8` — предложение `FORMAT` имеет приоритет над заголовком формата в запросе.
-  * Client &gt; `0.11.0` &amp; ClickHouse &gt; `26.8` — заголовок запроса имеет приоритет над предложением `FORMAT`.
-    * Если формат не указан в `QuerySettings`, клиент задаёт заголовок, из-за чего формат нельзя переопределить в запросе.
-  * Начиная с версии `0.11.0`, клиент задаёт значение `format` по умолчанию на уровне клиента, а не на уровне операции. Благодаря этому существующий код
-    работает без изменений, а в новом коде можно использовать предложение `FORMAT`, установив для `format` на уровне клиента значение `null`.
 
   ### query(String sqlQuery) {#querystring-sqlquery}
 
@@ -744,7 +632,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
 
   Запрашивает данные в формате `RowBinaryWithNamesAndTypes`. Возвращает результат в виде коллекции. Производительность чтения аналогична reader, однако для хранения всего набора данных требуется больше памяти.
 
-  **Сигнатуры**
+  **Подписи**
 
   ```java
   List<GenericRecord> queryAll(String sqlQuery)
@@ -784,21 +672,18 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
 
   **Методы конфигурации**
 
-  | Метод                                             | Описание                                                                                                                                             |
-  | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-  | `setQueryId(String queryId)`                      | Устанавливает Query id, который будет присвоен операции.                                                                                             |
-  | `setFormat(ClickHouseFormat format)`              | Задает формат ответа. Полный список см. в `RowBinaryWithNamesAndTypes`.                                                                              |
-  | `setMaxExecutionTime(Integer maxExecutionTime)`   | Устанавливает время выполнения операции на сервере. Не влияет на тайм-аут чтения.                                                                    |
-  | `waitEndOfQuery(Boolean waitEndOfQuery)`          | Указывает серверу дождаться завершения запроса перед отправкой ответа.                                                                               |
-  | `setUseServerTimeZone(Boolean useServerTimeZone)` | Часовой пояс сервера (см. конфигурацию клиента) будет использоваться для разбора типов date/time в результате операции. По умолчанию — `false`.      |
-  | `setUseTimeZone(String timeZone)`                 | Просит сервер использовать `timeZone` для преобразования времени. См. [session&#95;timezone](/ru/reference/settings/session-settings#session_timezone). |
-  | `serverSetting(String name, String value)`        | Устанавливает отдельные настройки сервера для операции.                                                                                              |
-  | `serverSetting(String name, Collection values)`   | Устанавливает отдельные настройки сервера с несколькими значениями для операции. Элементы коллекции должны иметь тип `String`.                       |
-  | `httpHeader(String key, String value)`            | Задаёт пользовательский HTTP-заголовок для запроса.                                                                                                  |
-  | `httpHeader(String key, Collection values)`       | Задаёт пользовательский HTTP-заголовок с несколькими значениями.                                                                                     |
-  | `httpHeaders(Map headers)`                        | Задаёт несколько пользовательских HTTP-заголовков.                                                                                                   |
-  | `setDBRoles(Collection dbRoles)`                  | Задает роли БД, которые будут установлены перед выполнением операции. Элементы коллекции должны быть строковыми значениями `String`.                 |
-  | `setOption(String option, Object value)`          | Задаёт параметр конфигурации в исходном формате. Это не настройка сервера.                                                                           |
+  | Метод                                             | Описание                                                                                                                                                   |
+  | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | `setQueryId(String queryId)`                      | Устанавливает Query id, который будет присвоен операции.                                                                                                   |
+  | `setFormat(ClickHouseFormat format)`              | Задает формат ответа. Полный список см. в `RowBinaryWithNamesAndTypes`.                                                                                    |
+  | `setMaxExecutionTime(Integer maxExecutionTime)`   | Устанавливает время выполнения операции на сервере. Не влияет на тайм-аут чтения.                                                                          |
+  | `waitEndOfQuery(Boolean waitEndOfQuery)`          | Указывает серверу дождаться завершения запроса перед отправкой ответа.                                                                                     |
+  | `setUseServerTimeZone(Boolean useServerTimeZone)` | Часовой пояс сервера (см. конфигурацию клиента) будет использоваться для разбора типов date/time в результате операции. По умолчанию — `false`.            |
+  | `setUseTimeZone(String timeZone)`                 | Просит сервер использовать `timeZone` для преобразования времени. См. [session&#95;timezone](/ru/reference/settings/session-settings/other#session_timezone). |
+  | `serverSetting(String name, String value)`        | Устанавливает отдельные настройки сервера для операции.                                                                                                    |
+  | `serverSetting(String name, Collection values)`   | Устанавливает отдельные настройки сервера с несколькими значениями для операции. Элементы коллекции должны иметь тип `String`.                             |
+  | `setDBRoles(Collection dbRoles)`                  | Задает роли БД, которые будут установлены перед выполнением операции. Элементы коллекции должны быть строковыми значениями `String`.                       |
+  | `setOption(String option, Object value)`          | Задаёт параметр конфигурации в исходном формате. Это не настройка сервера.                                                                                 |
 
   ### QueryResponse {#queryresponse}
 
@@ -959,190 +844,6 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## Обсервабилити и мониторинг {#v2-o11y}
-
-  Java-клиент ClickHouse (V2) предоставляет встроенные возможности обсервабилити, основанные на семантических соглашениях OpenTelemetry и метриках Micrometer. Клиент позволяет отслеживать длительность операций, пропускную способность, повторные попытки, статистику выполнения на сервере, состояние пула соединений и спаны распределённой трассировки.
-
-  Полноценный пример приложения Spring Boot, построенного по принципам продакшн-приложений и демонстрирующего конфигурацию Клиента V2, использование пула соединений, передачу контекста трассировки через границы `@Async` и полную интеграцию телеметрии, см. в модуле `examples/demo-spring-service` этого репозитория.
-
-  ### API обсервабилити в Client Builder {#v2-o11y-builder-api}
-
-  `Client.Builder` предоставляет три основных метода для настройки обсервабилити и сбора метрик:
-
-  * `setMetricsRecorder(MetricsRecorder recorder)`: регистрирует регистратор метрик для экспорта эксплуатационных метрик (длительность, число вхождений, повторные попытки, ошибки). Если не задан явно, по умолчанию используется `DefaultMetricsRecorder.NOOP`.
-  * `setSpanRecorder(SpanRecorder recorder)`: регистрирует регистратор спанов для распределённой трассировки (спаны операций и спаны транспортных запросов). Если не задан явно, по умолчанию используется `DefaultSpanRecorder.NOOP`.
-  * `registerClientMetrics(Object registry, String groupName)`: привязывает метрики пула соединений Apache HttpClient (например, число доступных и арендованных соединений, число запросов в ожидании и время создания соединения) к `MeterRegistry` Micrometer.
-
-  **Требования к зависимостям**
-
-  Встроенные классы `OpenTelemetrySpanRecorder` и `MicrometerMetricsRecorder` входят в пакет `client-v2`. Однако для их работы библиотеки OpenTelemetry API (`io.opentelemetry:opentelemetry-api`) и Micrometer (`io.micrometer:micrometer-core`) должны присутствовать в пути поиска классов приложения во время выполнения. Основной артефакт клиента не включает эти сторонние зависимости и не подключает их транзитивно. Приложения, использующие трассировку OpenTelemetry или метрики Micrometer, должны явно объявлять эти зависимости в конфигурации сборки проекта (`pom.xml` или `build.gradle`).
-
-  **Пример конфигурации Builder**
-
-  ```java
-  import com.clickhouse.client.api.Client;
-  import com.clickhouse.client.api.observability.micrometer.MicrometerMetricsRecorder;
-  import com.clickhouse.client.api.observability.otel.OpenTelemetrySpanRecorder;
-
-  import io.micrometer.core.instrument.MeterRegistry;
-  import io.opentelemetry.api.OpenTelemetry;
-
-  public Client createObservedClient(MeterRegistry meterRegistry, OpenTelemetry openTelemetry) {
-      return new Client.Builder()
-          .addEndpoint("http://localhost:8123")
-          .setUsername("default")
-          .setPassword("secret")
-          .setMetricsRecorder(new MicrometerMetricsRecorder(meterRegistry))
-          .setSpanRecorder(new OpenTelemetrySpanRecorder(openTelemetry))
-          .registerClientMetrics(meterRegistry, "clickhouse-client-pool")
-          .build();
-  }
-  ```
-
-  **Подходы к интеграции**
-
-  Обсервабилити можно интегрировать в приложения двумя основными способами:
-
-  1. **Агент OpenTelemetry и глобальная автоконфигурация**:
-     * Для приложений, использующих Java-агент OpenTelemetry или глобальную автоконфигурацию SDK, создавайте экземпляры `OpenTelemetrySpanRecorder` и `MicrometerMetricsRecorder` с помощью конструкторов по умолчанию (без аргументов).
-     * Конструкторы по умолчанию автоматически привязываются к `GlobalOpenTelemetry.get()` и к `Metrics.globalRegistry` из Micrometer.
-  2. **Явная интеграция на уровне клиента**:
-     * Передавайте явно созданные экземпляры `OpenTelemetry`, `Tracer` или Micrometer `MeterRegistry` напрямую в конструкторы рекордеров.
-     * Оптимальный вариант для работы с несколькими изолированными клиентами или мультитенантными сервисами, у которых свои, независимые приёмники телеметрии.
-
-  ```java
-  import com.clickhouse.client.api.Client;
-  import com.clickhouse.client.api.observability.micrometer.MicrometerMetricsRecorder;
-  import com.clickhouse.client.api.observability.otel.OpenTelemetrySpanRecorder;
-
-  public Client.Builder configureGlobalTelemetry(Client.Builder builder) {
-      return builder
-          .setMetricsRecorder(new MicrometerMetricsRecorder()) // uses Metrics.globalRegistry
-          .setSpanRecorder(new OpenTelemetrySpanRecorder());    // uses GlobalOpenTelemetry
-  }
-  ```
-
-  ### Отправляемые метрики {#v2-o11y-metrics}
-
-  #### Операционные метрики {#operational-metrics}
-
-  Метрики, экспортируемые через `MetricsRecorder`, соответствуют семантическим соглашениям OpenTelemetry для метрик клиентов баз данных (`MetricName` и `MetricAttribute`):
-
-  | Имя метрики                                          | Тип / Единица измерения | Описание                                                                                                                                               |
-  | ---------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-  | `db.client.operation.duration`                       | Таймер (`s`)            | Длительность операции клиента ClickHouse (запроса или вставки), регистрируемая как для успешных операций, так и для операций, завершившихся с ошибкой. |
-  | `clickhouse.client.operation.serialization.duration` | Таймер (`s`)            | Длительность этапа сериализации (например, сериализации POJO при вставках).                                                                            |
-  | `clickhouse.client.operation.count`                  | Counter (`{operation}`) | Общее количество завершённых операций клиента с группировкой по результату.                                                                            |
-  | `clickhouse.client.operation.retries`                | Counter (`{retry}`)     | Количество повторных попыток выполнения операций клиента.                                                                                              |
-
-  #### Атрибуты / метки метрик {#metric-attributes-tags}
-
-  Счётчики (meters), создаваемые `MicrometerMetricsRecorder`, содержат метки с низкой мощностью (`MetricAttribute`):
-
-  | Ключ атрибута             | Описание                                                             | Примеры значений                            |
-  | ------------------------- | -------------------------------------------------------------------- | ------------------------------------------- |
-  | `db.system.name`          | Идентификатор системы управления базами данных.                      | `clickhouse`                                |
-  | `db.namespace`            | Имя целевой базы данных.                                             | `default`, `analytics`                      |
-  | `db.operation.name`       | Тип операции.                                                        | `query`, `insert`                           |
-  | `db.collection.name`      | Имя целевой таблицы (записывается при вставках).                     | `events`                                    |
-  | `db.response.status_code` | Код ошибки сервера ClickHouse при сбое.                              | `60`                                        |
-  | `error.type`              | Имя класса исключения при ошибке или `none` при успешном выполнении. | `com.clickhouse.client.api.ServerException` |
-
-  #### Метрики пула соединений {#connection-pool-metrics}
-
-  При вызове `registerClientMetrics(meterRegistry, "groupName")` в Micrometer регистрируются метрики типа Gauge для пула HTTP-соединений:
-
-  * `httpcomponents.httpclient.pool.total.max`: настроенное максимально допустимое количество постоянных соединений.
-  * `httpcomponents.httpclient.pool.total.connections` (с меткой `state="available"` или `state="leased"`): активные соединения в пуле.
-  * `httpcomponents.httpclient.pool.total.pending`: количество запросов на соединение, ожидающих освобождения соединения.
-  * `httpcomponents.httpclient.pool.route.max.default`: настроенное по умолчанию максимальное количество соединений на маршрут.
-  * `httpcomponents.httpclient.connect.time`: скользящее среднее время установления соединения.
-
-  #### API метрик ответа {#response-metrics-api}
-
-  Помимо средств записи метрик, подробная статистика выполнения доступна непосредственно в объектах ответа (`QueryResponse`, `InsertResponse`) через `OperationMetrics`:
-
-  ```java
-  import com.clickhouse.client.api.Client;
-  import com.clickhouse.client.api.metrics.ClientMetrics;
-  import com.clickhouse.client.api.metrics.OperationMetrics;
-  import com.clickhouse.client.api.metrics.ServerMetrics;
-  import com.clickhouse.client.api.query.QueryResponse;
-
-  public void inspectResponseMetrics(Client client) throws Exception {
-      try (QueryResponse response = client.query("SELECT * FROM my_table").get()) {
-          OperationMetrics metrics = response.getMetrics();
-          long readRows = metrics.getMetric(ServerMetrics.NUM_ROWS_READ).getLong();
-          long readBytes = metrics.getMetric(ServerMetrics.NUM_BYTES_READ).getLong();
-          long durationMs = metrics.getMetric(ClientMetrics.OP_DURATION).getLong();
-      }
-  }
-  ```
-
-  ### Регистрируемые спаны {#v2-o11y-spans}
-
-  Трассировка в Клиенте V2 создаёт спаны двух типов, организованные в иерархию «родитель — дочерний элемент»:
-
-  1. **Спан операции**: представляет высокоуровневую операцию клиента (`QUERY <database>` или `INSERT <database>.<table_name>`). Запускается в контексте трассировки текущего потока (`Context.current()`), благодаря чему операции с базой данных встраиваются в активный спан трассировки вызывающего кода.
-  2. **Спан транспортного запроса**: представляет отдельную попытку выполнения транспортного HTTP-запроса (`POST`). Создаётся как дочерний спан соответствующего спана операции. При каждой повторной попытке внутри спана операции создаётся новый спан транспортного запроса.
-
-  #### Атрибуты спана {#v2-o11y-span-attributes}
-
-  Спаны содержат стандартные атрибуты OpenTelemetry (`SpanAttribute`):
-
-  | Ключ атрибута спана                 | Область действия / Тип        | Момент записи                                      | Описание                                                                                                                              |
-  | ----------------------------------- | ----------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-  | `db.system.name`                    | Все операции                  | До начала запроса                                  | Всегда `clickhouse`.                                                                                                                  |
-  | `db.namespace`                      | Все операции                  | До начала запроса                                  | Имя целевой базы данных.                                                                                                              |
-  | `db.query.text`                     | Запрос                        | Перед началом запроса                              | Текст оператора SQL для запросов или команд.                                                                                          |
-  | `db.collection.name`                | Вставка                       | Перед началом запроса                              | Имя целевой таблицы.                                                                                                                  |
-  | `db.operation.name`                 | Вставка                       | Перед началом запроса                              | Тип операции (`INSERT`). Задаётся для операций вставки, но не задаётся для запросов, поскольку SQL не разбирается на стороне клиента. |
-  | `db.operation.batch.size`           | Вставка                       | Перед началом запроса                              | Количество элементов в батче вставки.                                                                                                 |
-  | `db.query.parameter.<name>`         | Запрос                        | Перед началом запроса                              | Значения параметров оператора.                                                                                                        |
-  | `clickhouse.query_id`               | Все операции                  | До начала запроса, с обновлением по его завершении | Идентификатор запроса к ClickHouse, присвоенный клиентом или сервером.                                                                |
-  | `db.response.returned_rows`         | Запрос                        | При успешном завершении                            | Количество строк, возвращённых сервером.                                                                                              |
-  | `clickhouse.response.read_rows`     | Запрос                        | При успешном завершении                            | Количество строк, прочитанных сервером из хранилища.                                                                                  |
-  | `clickhouse.response.read_bytes`    | Запрос                        | При успешном завершении                            | Количество байтов, прочитанных сервером из хранилища.                                                                                 |
-  | `clickhouse.response.written_rows`  | Вставка                       | При успешном завершении                            | Количество строк, записанных сервером в хранилище.                                                                                    |
-  | `clickhouse.response.written_bytes` | Вставка                       | При успешном завершении                            | Количество байтов, записанных сервером в хранилище.                                                                                   |
-  | `server.address`                    | Транспортный запрос           | Перед попыткой                                     | Имя хоста или IP-адрес целевого сервера.                                                                                              |
-  | `server.port`                       | Транспортный запрос           | Перед попыткой                                     | Порт целевого сервера.                                                                                                                |
-  | `http.request.method`               | Транспортный запрос           | Перед попыткой                                     | HTTP-метод (всегда `POST`).                                                                                                           |
-  | `http.response.status_code`         | Транспортный запрос           | При получении ответа / при сбое                    | Код состояния HTTP, возвращаемый сервером (например, `200`, `500`).                                                                   |
-  | `db.response.status_code`           | Все &amp; транспортный запрос | При сбое                                           | Код ошибки сервера ClickHouse при сбое.                                                                                               |
-  | `error.type`                        | Все &amp; транспортный запрос | При сбое                                           | Имя класса исключения при возникновении ошибки.                                                                                       |
-
-  <Note>
-    **Распространение контекста через асинхронные границы:** поскольку Client V2 наследует `Context.current()`, операции, запущенные в потоках с активным спаном трассировки, автоматически присоединяются к трассе. При передаче задач между пулами потоков (например, через Spring `@Async` или пользовательский `ExecutorService`) явно распространяйте контекст OpenTelemetry:
-
-    ```java
-    import io.opentelemetry.context.Context;
-    import io.opentelemetry.context.Scope;
-    import com.clickhouse.client.api.Client;
-    import com.clickhouse.client.api.insert.InsertResponse;
-
-    public void processBatchAsync(Client client, String table, List<?> data, Context parentContext) throws Exception {
-        try (Scope ignored = parentContext.makeCurrent()) {
-            try (InsertResponse response = client.insert(table, data).get()) {
-                // Background Client V2 span joins parentContext trace
-            }
-        }
-    }
-    ```
-  </Note>
-
-  ### Разработка пользовательских рекордеров {#v2-o11y-custom-recorders}
-
-  Приложения, использующие собственные системы обсервабилити, могут реализовать пользовательские рекордеры, расширив `DefaultMetricsRecorder` (для метрик) или `DefaultSpanRecorder` (для трассировки).
-
-  * **`DefaultMetricsRecorder`**: базовая реализация `MetricsRecorder`. Переопределите нужные функции обратного вызова, например `recordQuerySuccess` или `recordQueryFailure`. С помощью `MetricsSupport.DEFAULT` можно получить стандартные имена метрик (`MetricName`), единицы измерения и словари атрибутов (`MetricAttribute`).
-  * **`DefaultSpanRecorder`**: базовая реализация `SpanRecorder`. Переопределите функции обратного вызова, создающие спаны, например `startQuerySpan`, `startInsertSpan` или `startRequestSpan`. С помощью `SpanSupport.DEFAULT` можно вычислить стандартные имена спанов OpenTelemetry и их атрибуты (`SpanAttribute`).
-
-  Эталонные реализации для продакшна см. во встроенных классах клиентов:
-
-  * `com.clickhouse.client.api.observability.otel.OpenTelemetrySpanRecorder` (интеграция с OpenTelemetry для трассировки)
-  * `com.clickhouse.client.api.observability.micrometer.MicrometerMetricsRecorder` (интеграция с Micrometer для метрик)
-
   ## Руководство по миграции {#migration_guide}
 
   Старый клиент (V1) использовал `com.clickhouse.client.ClickHouseClient#builder` в качестве точки входа. Новый клиент (V2) использует аналогичный подход с `com.clickhouse.client.api.Client.Builder`. Основные
@@ -1287,7 +988,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
       | `ClickHouseClientOption#MAX_CORE_THREAD_TTL`                   | ✗                                 |                                  |
     </Tab>
 
-    <Tab title="HTTP & заголовки">
+    <Tab title="HTTP и заголовки">
       | Конфигурация V1                                      | Метод построителя V2           | Комментарии                                         |
       | ---------------------------------------------------- | ------------------------------ | --------------------------------------------------- |
       | `ClickHouseHttpOption#CUSTOM_HEADERS`                | `Client.Builder#httpHeaders`   |                                                     |
@@ -1391,7 +1092,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
 
   ```
 
-  **V2: вставка данных в формате TSV.**
+  **V2 Вставка данных в формате TSV.**
 
   ```java
   InputStream inData = getInData();
@@ -1539,7 +1240,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
           .executeAndWait()) {
               for (ClickHouseRecord r : response.records()) {
               int num = r.getValue(0).asInteger();
-              // type conversion
+              // преобразование типов
               String str = r.getValue(0).asString();
               LocalDate date = r.getValue(0).asDate();
           }
@@ -1551,12 +1252,11 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   ## API вставки {#v1-insert-api}
 
   ```java showLineNumbers
-
   try (ClickHouseClient client = ClickHouseClient.newInstance(ClickHouseProtocol.HTTP);
        ClickHouseResponse response = client.read(servers).write()
           .format(ClickHouseFormat.RowBinaryWithNamesAndTypes)
           .query("insert into my_table select c2, c3 from input('c1 UInt8, c2 String, c3 Int32')")
-          .data(myInputStream) // `myInputStream` is source of data in RowBinary format
+          .data(myInputStream) // `myInputStream` — источник данных в формате RowBinary
           .executeAndWait()) {
               ClickHouseResponseSummary summary = response.getSummary();
               summary.getWrittenRows();
@@ -1722,7 +1422,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
 
   Ниже приведён список параметров настройки балансировки нагрузки:
 
-  | Свойство                      | По умолчанию                             | Описание                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+  | Параметр                      | По умолчанию                             | Описание                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
   | ----------------------------- | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
   | load&#95;balancing&#95;policy | `""`                                     | Политика балансировки нагрузки может быть одной из: <li>`firstAlive` — запрос отправляется на первый доступный узел из списка управляемых узлов</li><li>`random` — запрос отправляется на случайный узел из списка управляемых узлов </li><li>`roundRobin` — запрос по очереди отправляется на каждый узел из списка управляемых узлов.</li><li>полное имя класса, реализующего `ClickHouseLoadBalancingPolicy` — пользовательская политика балансировки нагрузки</li>Если она не указана, запрос отправляется на первый узел из списка управляемых узлов |
   | load&#95;balancing&#95;tags   | `""`                                     | Теги балансировки нагрузки для фильтрации узлов. Запросы отправляются только на узлы с указанными тегами                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
@@ -1743,47 +1443,18 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
 
   ### Добавление пользовательских HTTP-заголовков {#v1-adding-custom-http-headers}
 
-  HTTP-транспорт принимает дополнительные заголовки запроса через свойство `custom_http_headers` (`ClickHouseHttpOption.CUSTOM_HEADERS`). Каждый заголовок задаётся в формате `Name=Value`. Несколько заголовков перечисляются через запятую. Запятую внутри значения экранируйте как `\,`. Символ `=` внутри значения считается частью значения.
+  Java-клиент поддерживает транспортный уровень HTTP/S и позволяет добавлять пользовательские HTTP-заголовки к запросу.
+  Для этого используйте свойство custom&#95;http&#95;headers; заголовки перечисляются через `,`. Ключ и значение заголовка разделяются символом `=`.
 
-  **Один заголовок**
-
-  ```java
-  options.put("custom_http_headers", "X-ClickHouse-Quota=test");
-  // or
-  options.put(ClickHouseHttpOption.CUSTOM_HEADERS, "X-ClickHouse-Quota=test");
-  ```
-
-  **Несколько заголовков**
+  ## Поддержка Java-клиента {#v1-java-client-support}
 
   ```java
   options.put("custom_http_headers", "X-ClickHouse-Quota=test, X-ClickHouse-Test=test");
   ```
 
-  Заголовки также можно задать для запроса:
+  ## JDBC-драйвер {#v1-jdbc-driver}
 
   ```java
-  client.read(server)
-          .option(ClickHouseHttpOption.CUSTOM_HEADERS, "X-ClickHouse-Quota=test, X-ClickHouse-Test=test")
-          .query("SELECT 1")
-          .executeAndWait();
-  ```
-
-  ## Возможности ClickHouse Cloud {#v1-clickhouse-cloud-features}
-
-  Возможности, доступные при подключении к [ClickHouse Cloud](https://clickhouse.com/cloud).
-
-  ### Маршрутизация с учётом реплик (CLOUD) {#v1-replica-aware-routing}
-
-  ClickHouse Cloud может закреплять связанные HTTP-запросы за одной репликой. Передавайте заголовок `X-ClickHouse-Replica-Tag`, чтобы прокси Cloud направлял все запросы с одинаковой меткой на одну и ту же реплику. Это полезно для объектов уровня сеанса, таких как временные таблицы, для повторного использования локального кэша реплики, а также для обеспечения согласованности чтения после записи.
-  Подробнее: https://clickhouse.com/docs/products/cloud/features/infrastructure/replica-aware-routing.
-
-  **Что задать:** HTTP-заголовок `X-ClickHouse-Replica-Tag` (`com.clickhouse.client.http.config.ClickHouseHttpOption.HEADER_REPLICA_TAG`) через `custom_http_headers`. Используйте одно и то же значение тега для всех запросов, которые должны обрабатываться одной репликой.
-
-  ```java
-  String replicaTag = "my-app-session-1";
-  options.put("custom_http_headers", "X-ClickHouse-Replica-Tag=" + replicaTag);
-  // or
-  options.put(ClickHouseHttpOption.CUSTOM_HEADERS,
-          ClickHouseHttpOption.HEADER_REPLICA_TAG + "=" + replicaTag);
+  properties.setProperty("custom_http_headers", "X-ClickHouse-Quota=test, X-ClickHouse-Test=test");
   ```
 </View>

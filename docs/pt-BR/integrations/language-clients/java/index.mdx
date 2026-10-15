@@ -73,9 +73,6 @@ O cliente Java foi desenvolvido em 2015. Sua base de código ficou muito difíci
 | Variant                 | ✔                        | ✗                        |
 | Dynamic                 | ✔                        | ✗                        |
 | JSON                    | ✔                        | ✗                        |
-| MultiPoint              | ✔                        | ✗                        |
-| BFloat16                | ✔                        | ✗                        |
-| QBit                    | ✔                        | ✗                        |
 
 [Tipos de dados do ClickHouse](/pt-BR/reference/data-types/index)
 
@@ -97,29 +94,28 @@ O cliente Java foi desenvolvido em 2015. Sua base de código ficou muito difíci
 
 Tabela de funcionalidades dos clientes:
 
-| Nome                                            | Client V2 | Client V1 |             Comentários             |
-| ----------------------------------------------- | :-------: | :-------: | :---------------------------------: |
-| Conexão HTTP                                    |     ✔     |     ✔     |                                     |
-| Compressão HTTP                                 |     ✔     |     ✔     |                                     |
-| Compressão controlada pela aplicação            |     ✔     |     ✗     |                                     |
-| Compressão da resposta do servidor - LZ4, ZSTD  |     ✔     |     ✗     |                                     |
-| Compressão da requisição do cliente - LZ4, ZSTD |     ✔     |     ✔     |                                     |
-| HTTPS                                           |     ✔     |     ✔     |                                     |
-| Certificado SSL do cliente (mTLS)               |     ✔     |     ✔     |                                     |
-| Proxy HTTP                                      |     ✔     |     ✔     |                                     |
-| SerDe de POJO                                   |     ✔     |     ✗     |                                     |
-| Pool de conexões                                |     ✔     |     ✔     | Quando o Apache HTTP Client é usado |
-| Parâmetros nomeados                             |     ✔     |     ✔     |                                     |
-| Nova tentativa em caso de falha                 |     ✔     |     ✔     |                                     |
-| Failover                                        |     ✗     |     ✔     |                                     |
-| Balanceamento de carga                          |     ✗     |     ✔     |                                     |
-| Descoberta automática do servidor               |     ✗     |     ✔     |                                     |
-| Comentário de log                               |     ✔     |     ✔     |                                     |
-| Papéis de sessão                                |     ✔     |     ✔     |                                     |
-| Autenticação SSL do cliente                     |     ✔     |     ✔     |                                     |
-| Configuração de SNI                             |     ✔     |     ✗     |                                     |
-| Sessões                                         |     ✔     |     ✔     |                                     |
-| Telemetria (tracing, métricas)                  |     ✔     |     ✗     |                                     |
+| Nome                                      | Client V2 | Client V1 |             Comentários             |
+| ----------------------------------------- | :-------: | :-------: | :---------------------------------: |
+| Conexão HTTP                              |     ✔     |     ✔     |                                     |
+| Compressão HTTP (LZ4)                     |     ✔     |     ✔     |                                     |
+| Compressão controlada pela aplicação      |     ✔     |     ✗     |                                     |
+| Compressão da resposta do servidor - LZ4  |     ✔     |     ✔     |                                     |
+| Compressão da requisição do cliente - LZ4 |     ✔     |     ✔     |                                     |
+| HTTPS                                     |     ✔     |     ✔     |                                     |
+| Certificado SSL do cliente (mTLS)         |     ✔     |     ✔     |                                     |
+| Proxy HTTP                                |     ✔     |     ✔     |                                     |
+| SerDe de POJO                             |     ✔     |     ✗     |                                     |
+| Pool de conexões                          |     ✔     |     ✔     | Quando o Apache HTTP Client é usado |
+| Parâmetros nomeados                       |     ✔     |     ✔     |                                     |
+| Nova tentativa em caso de falha           |     ✔     |     ✔     |                                     |
+| Failover                                  |     ✗     |     ✔     |                                     |
+| Balanceamento de carga                    |     ✗     |     ✔     |                                     |
+| Descoberta automática do servidor         |     ✗     |     ✔     |                                     |
+| Comentário de log                         |     ✔     |     ✔     |                                     |
+| Papéis de sessão                          |     ✔     |     ✔     |                                     |
+| Autenticação SSL do cliente               |     ✔     |     ✔     |                                     |
+| Configuração de SNI                       |     ✔     |     ✗     |                                     |
+| Fuso horário da sessão                    |     ✔     |     ✔     |                                     |
 
 O driver JDBC herda as mesmas funcionalidades da implementação de cliente subjacente. Outras funcionalidades do JDBC estão listadas em sua [página](/pt-BR/integrations/language-clients/java/jdbc).
 

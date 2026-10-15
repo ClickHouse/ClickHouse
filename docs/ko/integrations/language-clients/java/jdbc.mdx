@@ -24,15 +24,33 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
 
   ### Setup {#setup}
 
-  ```xml
-  {/* https://mvnrepository.com/artifact/com.clickhouse/clickhouse-jdbc */}
-  <dependency>
-      <groupId>com.clickhouse</groupId>
-      <artifactId>clickhouse-jdbc</artifactId>
-      <version>0.10.0</version>
-      <classifier>all</classifier>
-  </dependency>
-  ```
+  <Tabs>
+    <Tab title="Maven">
+      ```xml
+      {/* https://mvnrepository.com/artifact/com.clickhouse/clickhouse-jdbc */}
+      <dependency>
+          <groupId>com.clickhouse</groupId>
+          <artifactId>clickhouse-jdbc</artifactId>
+          <version>0.9.8</version>
+          <classifier>all</classifier>
+      </dependency>
+      ```
+    </Tab>
+
+    <Tab title="Gradle (Kotlin)">
+      ```kotlin
+      // https://mvnrepository.com/artifact/com.clickhouse/clickhouse-jdbc
+      implementation("com.clickhouse:clickhouse-jdbc:0.9.8:all")
+      ```
+    </Tab>
+
+    <Tab title="Gradle">
+      ```groovy
+      // https://mvnrepository.com/artifact/com.clickhouse/clickhouse-jdbc
+      implementation 'com.clickhouse:clickhouse-jdbc:0.9.8:all'
+      ```
+    </Tab>
+  </Tabs>
 
   애플리케이션에서 JDBC 드라이버를 사용하고 해당 jar를 클래스패스에 추가해야 하는 경우, 다음에서 jar를 다운로드하십시오:
 
@@ -166,97 +184,6 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
 
   **참고:** `localSettings`가 스레드 간에 공유되므로 이 방식은 statement를 단일 스레드에서 사용할 때만 작동합니다.
 
-  ### 사용자 정의 HTTP 헤더 {#custom-http-headers}
-
-  사용자 정의 HTTP 헤더는 클라이언트 속성으로 전달됩니다. 각 헤더에는 `http_header_` 접두사가 붙습니다. 해당 키는 `ClientConfigProperties.httpHeader(String)`(또는 `DriverProperties.httpHeader(String)`)로 생성할 수 있습니다. V1의 `custom_http_headers` 속성은 JDBC V2에서 사용되지 않습니다.
-
-  ```java showLineNumbers
-  Properties properties = new Properties();
-  properties.setProperty(ClientConfigProperties.httpHeader("X-ClickHouse-Quota"), "test");
-  properties.setProperty(ClientConfigProperties.httpHeader("X-ClickHouse-Test"), "value1,value2");
-  Connection conn = Driver.connect("jdbc:ch:https://localhost:8443/", properties);
-
-  // URL equivalent:
-  // jdbc:ch:https://localhost:8443?http_header_X-CLICKHOUSE-QUOTA=test&http_header_X-CLICKHOUSE-TEST=value1,value2
-  ```
-
-  ## ClickHouse Cloud 기능 {#clickhouse-cloud-features}
-
-  [ClickHouse Cloud](https://clickhouse.com/cloud)에 연결할 때 적용되는 기능입니다.
-
-  ### Replica-aware 라우팅 (CLOUD) {#replica-aware-routing}
-
-  ClickHouse Cloud에서는 서로 관련된 HTTP 요청을 동일한 레플리카에 고정할 수 있습니다. `X-ClickHouse-Replica-Tag` 헤더를 전송하면 Cloud 프록시가 같은 태그를 가진 모든 요청을 하나의 레플리카로 라우팅합니다. 임시 테이블과 같은 세션 범위 객체를 사용하거나, 레플리카 로컬 캐시를 재사용하거나, 쓰기 후 읽기 일관성이 필요한 경우에 이 기능을 사용하십시오.
-  자세한 내용: https://clickhouse.com/docs/products/cloud/features/infrastructure/replica-aware-routing.
-
-  **설정할 항목:** HTTP 헤더 `X-ClickHouse-Replica-Tag` (`com.clickhouse.client.api.http.ClickHouseHttpProto.HEADER_REPLICA_TAG`). 하나의 레플리카에서 처리되어야 하는 모든 요청에는 동일한 태그 값을 사용하십시오.
-
-  ```java showLineNumbers
-  String replicaTag = "my-app-session-1";
-
-  Properties properties = new Properties();
-  properties.setProperty("user", user);
-  properties.setProperty("password", password);
-  properties.setProperty(
-          ClientConfigProperties.httpHeader(ClickHouseHttpProto.HEADER_REPLICA_TAG),
-          replicaTag);
-
-  Connection conn = Driver.connect("jdbc:ch:https://your-service.clickhouse.cloud:8443", properties);
-
-  // URL equivalent:
-  // jdbc:ch:https://your-service.clickhouse.cloud:8443?http_header_X-CLICKHOUSE-REPLICA-TAG=my-app-session-1
-  ```
-
-  ### JWT 인증 (CLOUD) {#jwt-authentication}
-
-  [JWT 인증](/ko/concepts/features/security/external-authenticators/jwt)을 사용하면 ClickHouse Cloud에서 JSON Web Token(JWT)으로 인증할 수 있습니다. ClickHouse는 토큰 클레임을 기반으로 **임시 사용자**를 동적으로 생성합니다.
-
-  #### 초기 구성 {#initial-configuration}
-
-  JDBC에서 초기 JWT 인증을 구성하려면 연결 속성에 `bearer_token` 속성을 전달하거나 JDBC URL에 직접 지정하십시오:
-
-  ```java showLineNumbers
-  import java.sql.Connection;
-  import java.sql.DriverManager;
-  import java.sql.SQLException;
-  import java.util.Properties;
-
-  public Connection createJwtConnection(String jwtToken) throws SQLException {
-      Properties properties = new Properties();
-      properties.setProperty("bearer_token", jwtToken);
-
-      return DriverManager.getConnection("jdbc:ch:https://your-service.clickhouse.cloud:8443", properties);
-  }
-  ```
-
-  동등한 URL 표현:
-
-  ```plaintext
-  jdbc:ch:https://your-service.clickhouse.cloud:8443?bearer_token=<your_jwt_token>
-  ```
-
-  #### 런타임에 토큰 업데이트 {#updating-token-at-runtime}
-
-  JWT는 유효 기간이 제한되어 있으므로, 작업이 실패하지 않도록 현재 토큰이 만료되기 **전에** 새 JWT 토큰을 설정해야 합니다.
-
-  런타임에 활성 JDBC 연결의 JWT 토큰을 갱신하려면 연결을 언래핑하여 내부 `com.clickhouse.client.api.Client` 인스턴스에 액세스한 후 `updateBearerToken`을 호출하십시오:
-
-  ```java showLineNumbers
-  import com.clickhouse.jdbc.ConnectionImpl;
-  import java.sql.Connection;
-  import java.sql.SQLException;
-
-  public void refreshJwtToken(Connection connection, String newJwtToken) throws SQLException {
-      // Unwrap the connection to get the underlying Client instance
-      ConnectionImpl connImpl = connection.unwrap(ConnectionImpl.class);
-
-      // Set the new JWT before the current token expires
-      connImpl.getClient().updateBearerToken(newJwtToken);
-  }
-  ```
-
-  이후 이 JDBC 연결에서 실행되는 SQL 문(statements)에는 업데이트된 JWT 토큰이 사용됩니다.
-
   ## 지원되는 데이터 타입 {#supported-data-types}
 
   JDBC 드라이버는 기반 [Java 클라이언트](/ko/integrations/language-clients/java/index#supported-data-types)와 동일한 데이터 포맷을 지원합니다.
@@ -350,9 +277,9 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
 
   | ClickHouse 유형 | JDBC 유형 | Java 클래스                  |
   | ------------- | ------- | ------------------------- |
-  | Array         | ARRAY   | java.sql.Array            |
+  | 배열            | ARRAY   | java.sql.Array            |
   | Tuple         | OTHER   | com.clickhouse.data.Tuple |
-  | Map           | OTHER   | java.util.Map             |
+  | 맵             | OTHER   | java.util.Map             |
   | Nested        | ARRAY   | java.sql.Array            |
 
   * 기본적으로 `Array`는 JDBC와의 호환성을 위해 `java.sql.Array`에 매핑됩니다. 이는 반환되는 배열 값에 관한 더 많은 정보를 제공하기 위한 것이기도 합니다. 유형 추론에 유용합니다.
@@ -402,14 +329,14 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   | Array(Float64)                                                             | Float64                                                             | DOUBLE          |
   | Array(String)                                                              | String                                                              | VARCHAR         |
   | Array(FixedString(8))                                                      | FixedString(8)                                                      | VARCHAR         |
-  | Array(Bool)                                                                | Bool                                                                | BOOLEAN         |
-  | Array(Date)                                                                | Date                                                                | DATE            |
-  | Array(DateTime)                                                            | DateTime                                                            | TIMESTAMP       |
+  | 배열(Bool)                                                                   | Bool                                                                | BOOLEAN         |
+  | 배열(Date)                                                                   | Date                                                                | DATE            |
+  | 배열(DateTime)                                                               | DateTime                                                            | TIMESTAMP       |
   | Array(UUID)                                                                | UUID                                                                | OTHER           |
   | Array(Nullable(Int32))                                                     | Nullable(Int32)                                                     | INTEGER         |
-  | Array(Nullable(String))                                                    | Nullable(String)                                                    | VARCHAR         |
-  | Array(LowCardinality(String))                                              | LowCardinality(String)                                              | VARCHAR         |
-  | Array(LowCardinality(Nullable(String)))                                    | LowCardinality(Nullable(String))                                    | VARCHAR         |
+  | 배열(널 허용(String))                                                           | 널 허용(String)                                                        | VARCHAR         |
+  | 배열(LowCardinality(String))                                                 | LowCardinality(String)                                              | VARCHAR         |
+  | 배열(LowCardinality(널 허용(String)))                                           | LowCardinality(Nullable(String))                                    | VARCHAR         |
   | Array(Array(Int32))                                                        | Int32                                                               | INTEGER         |
   | Array(Array(Array(String)))                                                | String                                                              | VARCHAR         |
   | Array(Tuple(name String, val Int32))                                       | Tuple(name String, val Int32)                                       | OTHER           |
@@ -667,7 +594,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   }});
   ```
 
-  연결(connection) 속성에 서버 설정 `jdbc_read_json_as_string=true`을 전달하면 JSON을 문자열(String)로 읽을 수 있습니다.
+  연결(connection) 속성에 서버 설정 `output_format_binary_write_json_as_string=1`을 전달하면 JSON을 문자열(String)로 읽을 수 있습니다.
   이 설정을 사용하면 드라이버가 JSON 값을 문자열로 반환하므로 원하는 JSON 라이브러리로 파싱할 수 있습니다.
 
   ```java
@@ -755,61 +682,6 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
       ps.executeBatch(); // stream everything on-hand into ClickHouse
   }
   ```
-
-  ## 관측성 및 모니터링 {#jdbc-v2-o11y}
-
-  ClickHouse JDBC 드라이버(V2)는 기반이 되는 클라이언트 V2 엔진과 표준 JDBC 애플리케이션 instrumentation을 활용하여 메트릭과 분산 추적(distributed tracing)을 지원합니다. 메트릭 정의, 스팬 속성, OpenTelemetry 의미론적 규약에 대한 자세한 내용은 [클라이언트 V2 관측성 문서](/ko/integrations/language-clients/java/client#v2-o11y)를 참조하십시오.
-
-  ### 분산 추적(distributed tracing) 및 스팬 {#distributed-tracing-spans}
-
-  JDBC SQL 문(`executeQuery`, `executeUpdate`, `executeBatch`)을 실행하면 분산 추적(distributed tracing)은 다음과 같은 상위-하위 스팬 계층 구조로 동작합니다:
-
-  1. **외부 JDBC / 애플리케이션 스팬**: OpenTelemetry Java 에이전트 또는 APM instrumentation이 `java.sql` 메서드 호출(예: `PreparedStatement.executeBatch()`)을 가로챌 때 자동으로 생성합니다.
-  2. **클라이언트 V2 작업 스팬**: 내부 클라이언트 V2 엔진이 현재 활성화된 추적 컨텍스트(`Context.current()`)에서 생성합니다. `clickhouse.query_id`, SQL 문 텍스트(`db.query.text`), 서버 실행 통계(`clickhouse.response.read_rows`, `clickhouse.response.written_rows`) 등의 ClickHouse 전용 메타데이터를 담습니다.
-  3. **전송 요청 스팬**: ClickHouse 서버에 HTTP POST 요청을 시도할 때마다 생성되며, 엔드포인트 세부 정보(`server.address`, `server.port`), HTTP 상태 코드(`http.response.status_code`), 재시도 내역을 기록합니다.
-
-  ```text
-  Application HTTP Request Span
-    └── JDBC Statement Span (e.g., PreparedStatement.executeQuery)
-        └── Client V2 Operation Span (query default)
-            └── Transport Request Span (POST http://localhost:8123)
-  ```
-
-  클라이언트 V2는 `Context.current()`를 상속하므로, JDBC 데이터베이스 스팬은 수동으로 컨텍스트를 전파하지 않아도 주변 HTTP 또는 메시징 컨텍스트의 현재 트레이스에 자동으로 합류합니다.
-
-  ### JDBC auto-instrumentation {#jdbc-auto-instrumentation}
-
-  표준 JDBC 작업(`Connection`, `PreparedStatement`, `ResultSet`, `executeBatch`)은 Java 애플리케이션 런타임 프레임워크와 APM 에이전트가 자동으로 추적합니다:
-
-  * **OpenTelemetry Java 에이전트**: 표준 JDBC 메서드 호출을 자동으로 가로채, 데이터베이스 실행(`SELECT`, `INSERT`, `TRUNCATE`)에 대해 `db.system=clickhouse`, SQL 문 텍스트, 실행 시간 정보를 포함한 추적 스팬을 생성합니다.
-  * **Spring Boot &amp; Micrometer**: Spring Boot의 Micrometer Observation 또는 Spring Actuator 메트릭이 활성화되어 있으면 Spring Data JPA 리포지토리와 `JdbcTemplate`이 데이터베이스 호출을 자동으로 계측합니다.
-
-  ### 드라이버 메트릭 레코더 구성 {#configuring-driver-metrics-recorders}
-
-  `jdbc_metrics_recorder` 연결 속성을 사용하면 JDBC 연결에서 클라이언트 V2 운영 메트릭(소요 시간, 발생 횟수, 재시도)을 활성화할 수 있습니다. 드라이버는 연결마다 지정된 클래스의 인수 없는 public 생성자를 호출하여 해당 클래스의 인스턴스를 생성합니다.
-
-  ```java
-  // Configure via JDBC URL parameter
-  String url = "jdbc:clickhouse://localhost:8123/default?jdbc_metrics_recorder=com.clickhouse.client.api.observability.micrometer.MicrometerMetricsRecorder";
-
-  // Or set via java.util.Properties
-  Properties properties = new Properties();
-  properties.setProperty("jdbc_metrics_recorder", "com.clickhouse.client.api.observability.micrometer.MicrometerMetricsRecorder");
-
-  try (Connection conn = DriverManager.getConnection(url, properties)) {
-      // JDBC operations report operation metrics to Micrometer's globalRegistry
-  }
-  ```
-
-  *참고: `MicrometerMetricsRecorder`는 드라이버에 포함되어 있지만, 사용하려면 애플리케이션의 런타임 클래스패스에 `io.micrometer:micrometer-core`가 있어야 합니다.*
-
-  ### Spring Boot 데모 참고 {#spring-boot-demo-reference}
-
-  Spring Boot 서비스에서 JDBC 드라이버 설정과 텔레메트리를 구성하는 전체 예시는 이 리포지토리의 `examples/demo-spring-service` 모듈을 참조하십시오:
-
-  * **JDBC 데이터 소스 설정** (`src/main/resources/application.yml`): `com.clickhouse.jdbc.ClickHouseDriver`와 드라이버 속성(`jdbc_ignore_unsupported_values: true`)으로 `spring.datasource`를 구성합니다.
-  * **Spring Data JPA 통합** (`com.clickhouse.examples.repository.SignalRepository`): ClickHouse JDBC를 통해 리포지토리 기반으로 엔터티를 영구 저장하는 방법을 보여줍니다.
-  * **`JdbcTemplate` 유틸리티** (`com.clickhouse.examples.schema.ClickHouseSchemaInitializer`): Spring `JdbcTemplate`을 사용하여 DDL을 실행하고 메트릭 포인트를 내보내는 방법을 보여줍니다.
 
   ## `HikariCP` {#hikaricp}
 
@@ -907,7 +779,6 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
     * 스트리밍 데이터는 JDBC 사양이나 Java에 포함되지 않으므로 JDBC V2에서는 지원되지 않습니다.
   * JDBC V2는 명시적인 구성이 필요합니다. 기본 failover 설정은 없습니다.
     * URL에 프로토콜을 명시해야 합니다. 포트 번호를 기반으로 프로토콜을 암묵적으로 감지하지 않습니다.
-  * 사용자 정의 HTTP 헤더는 헤더마다 별도의 속성(`http_header_*`)을 사용합니다. V1에서 사용하던 쉼표로 구분된 `custom_http_headers` 속성은 허용되지 않습니다.
 
   ### 구성 변경 사항 {#configuration-changes}
 
@@ -1004,9 +875,9 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
 
   | ClickHouse 유형 | V1 호환 여부 | JDBC 유형 (V2)    | Java 클래스 (V2)    | JDBC 유형 (V1) | Java 클래스 (V1)                |
   | ------------- | -------- | --------------- | ---------------- | ------------ | ---------------------------- |
-  | Array         | ❌        | ARRAY           | java.sql.Array   | ARRAY        | Object[] 또는 기본 타입 배열 |
+  | 배열            | ❌        | ARRAY           | java.sql.Array   | ARRAY        | Object[] 또는 기본 타입 배열 |
   | Tuple         | ❌        | OTHER           | Object[] | STRUCT       | java.sql.Struct              |
-  | Map           | ❌        | JAVA&#95;OBJECT | java.util.Map    | STRUCT       | java.util.Map                |
+  | 맵             | ❌        | JAVA&#95;OBJECT | java.util.Map    | STRUCT       | java.util.Map                |
   | Nested        | ❌        | ARRAY           | java.sql.Array   | STRUCT       | java.sql.Struct              |
 
   * V2에서는 JDBC와의 호환성을 위해 기본적으로 `Array`를 `java.sql.Array`에 매핑합니다. 이렇게 하면 반환되는 배열 값에 대한 정보를 더 많이 제공할 수 있습니다. 유형 추론에 유용합니다.
@@ -1160,42 +1031,6 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   | `wrapperObject`            | `false` | Array / Tuple에 대해 [`getObject()`](https://docs.oracle.com/javase/8/docs/api/java/sql/ResultSet.html#getObject-int-)가 java.sql.Array / java.sql.Struct를 반환할지 여부.                                                                                                                                                                                                                       |
 
   참고: 자세한 내용은 [JDBC 전용 구성](https://github.com/ClickHouse/clickhouse-java/blob/main/clickhouse-jdbc/src/main/java/com/clickhouse/jdbc/JdbcConfig.java)을 참조하십시오.
-
-  ### 사용자 정의 HTTP 헤더 {#v07-custom-http-headers}
-
-  추가 요청 헤더는 `custom_http_headers`로 설정합니다. 각 헤더는 `Name=Value` 형식입니다. 여러 헤더는 쉼표로 구분하십시오. 값 안의 쉼표는 `\,`로 이스케이프하십시오. 값 안의 `=`는 값의 일부로 그대로 유지됩니다.
-
-  ```java
-  properties.setProperty("custom_http_headers", "X-ClickHouse-Quota=test");
-  properties.setProperty("custom_http_headers", "X-ClickHouse-Quota=test, X-ClickHouse-Test=test");
-
-  // URL Equivalent
-  // jdbc:ch:http://localhost:8123?custom_http_headers=X-ClickHouse-Quota%3Dtest,X-ClickHouse-Test%3Dtest
-  ```
-
-  ## ClickHouse Cloud 기능 {#v1-clickhouse-cloud-features}
-
-  [ClickHouse Cloud](https://clickhouse.com/cloud)에 연결할 때 적용되는 기능입니다.
-
-  ### Replica-aware 라우팅 (CLOUD) {#v1-replica-aware-routing}
-
-  ClickHouse Cloud는 서로 관련된 HTTP 요청을 동일한 레플리카에 고정할 수 있습니다. `X-ClickHouse-Replica-Tag` 헤더를 전송하면 Cloud 프록시가 같은 태그를 가진 모든 요청을 하나의 레플리카로 라우팅합니다. 임시 테이블과 같은 세션 범위 객체를 사용하거나, 레플리카 로컬 캐시를 재사용하거나, 쓰기 후 읽기 일관성이 필요한 경우에 이 기능을 사용하십시오.
-  자세히 알아보기: https://clickhouse.com/docs/products/cloud/features/infrastructure/replica-aware-routing.
-
-  **설정 항목:** HTTP 헤더 `X-ClickHouse-Replica-Tag` (`com.clickhouse.client.http.config.ClickHouseHttpOption.HEADER_REPLICA_TAG`) 를 `custom_http_headers`로 설정합니다. 하나의 레플리카로만 라우팅되어야 하는 모든 요청에는 동일한 태그 값을 사용하십시오.
-
-  ```java
-  String replicaTag = "my-app-session-1";
-
-  Properties properties = new Properties();
-  properties.setProperty("custom_http_headers", "X-ClickHouse-Replica-Tag=" + replicaTag);
-
-  ClickHouseDataSource dataSource = new ClickHouseDataSource(
-          "jdbc:clickhouse:https://your-service.clickhouse.cloud:8443", properties);
-  try (Connection conn = dataSource.getConnection("default", "password")) {
-      // requests on this connection are pinned to the replica selected for replicaTag
-  }
-  ```
 
   ## 지원되는 데이터 타입 {#v07-supported-data-types}
 

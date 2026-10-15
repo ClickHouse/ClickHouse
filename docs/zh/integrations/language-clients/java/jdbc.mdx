@@ -24,15 +24,33 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
 
   ### 设置 {#setup}
 
-  ```xml
-  {/* https://mvnrepository.com/artifact/com.clickhouse/clickhouse-jdbc */}
-  <dependency>
-      <groupId>com.clickhouse</groupId>
-      <artifactId>clickhouse-jdbc</artifactId>
-      <version>0.10.0</version>
-      <classifier>all</classifier>
-  </dependency>
-  ```
+  <Tabs>
+    <Tab title="Maven">
+      ```xml
+      {/* https://mvnrepository.com/artifact/com.clickhouse/clickhouse-jdbc */}
+      <dependency>
+          <groupId>com.clickhouse</groupId>
+          <artifactId>clickhouse-jdbc</artifactId>
+          <version>0.9.8</version>
+          <classifier>all</classifier>
+      </dependency>
+      ```
+    </Tab>
+
+    <Tab title="Gradle (Kotlin)">
+      ```kotlin
+      // https://mvnrepository.com/artifact/com.clickhouse/clickhouse-jdbc
+      implementation("com.clickhouse:clickhouse-jdbc:0.9.8:all")
+      ```
+    </Tab>
+
+    <Tab title="Gradle">
+      ```groovy
+      // https://mvnrepository.com/artifact/com.clickhouse/clickhouse-jdbc
+      implementation 'com.clickhouse:clickhouse-jdbc:0.9.8:all'
+      ```
+    </Tab>
+  </Tabs>
 
   如果您在应用程序中使用 JDBC 驱动，且该应用程序需要将 jar 添加到 classpath，则需要从以下地址下载 jar：
 
@@ -81,7 +99,7 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
   | `jdbc_ignore_unsupported_values`    | `false`  | 在不影响驱动程序工作的情况下抑制 `SQLFeatureNotSupportedException`                             |
   | `clickhouse.jdbc.v1`                | `false`  | 使用旧版 JDBC 实现，而不是新版 JDBC                                                        |
   | `default_query_settings`            | `null`   | 允许在执行查询操作时传递默认查询设置                                                             |
-  | `jdbc_resultset_auto_close`         | `true`   | `Statement` 关闭时会自动关闭 `ResultSet`                                               |
+  | `jdbc_resultset_auto_close`         | `true`   | 关闭 `Statement` 时自动关闭 `ResultSet`                                               |
   | `beta.row_binary_for_simple_insert` | `false`  | 使用基于 `RowBinary` 写入器的 `PreparedStatement` 实现。仅适用于 `INSERT INTO ... VALUES` 语句。 |
   | `jdbc_resultset_auto_close`         | `true`   | `Statement` 关闭时会自动关闭 `ResultSet`                                               |
   | `jdbc_use_max_result_rows`          | `false`  | 启用后，可使用服务器属性 `max_result_rows` 限制查询返回的行数，并覆盖用户设置的溢出模式。详见 JavaDoc。              |
@@ -166,97 +184,6 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
 
   **注意：** 此方法仅适用于单线程使用 statement 的场景，因为 `localSettings` 在线程之间是共享的。
 
-  ### 自定义 HTTP 请求头 {#custom-http-headers}
-
-  自定义 HTTP 请求头以客户端属性的形式传递。每个请求头都使用 `http_header_` 前缀。`ClientConfigProperties.httpHeader(String)` (或 `DriverProperties.httpHeader(String)`) 用于生成该键。JDBC V2 不再使用 V1 中的 `custom_http_headers` 属性。
-
-  ```java showLineNumbers
-  Properties properties = new Properties();
-  properties.setProperty(ClientConfigProperties.httpHeader("X-ClickHouse-Quota"), "test");
-  properties.setProperty(ClientConfigProperties.httpHeader("X-ClickHouse-Test"), "value1,value2");
-  Connection conn = Driver.connect("jdbc:ch:https://localhost:8443/", properties);
-
-  // URL equivalent:
-  // jdbc:ch:https://localhost:8443?http_header_X-CLICKHOUSE-QUOTA=test&http_header_X-CLICKHOUSE-TEST=value1,value2
-  ```
-
-  ## ClickHouse Cloud 功能 {#clickhouse-cloud-features}
-
-  连接到 [ClickHouse Cloud](https://clickhouse.com/cloud) 时适用的功能。
-
-  ### 副本感知路由 (CLOUD) {#replica-aware-routing}
-
-  ClickHouse Cloud 可以将相关的 HTTP 请求固定到同一个副本。发送 `X-ClickHouse-Replica-Tag` 请求头后，Cloud proxy 会将所有带有相同标签的请求路由到同一个副本。该功能适用于会话作用域对象 (例如临时表) 、副本本地缓存复用以及写后读一致性等场景。
-  了解更多： https://clickhouse.com/docs/products/cloud/features/infrastructure/replica-aware-routing.
-
-  **设置内容：** HTTP 请求头 `X-ClickHouse-Replica-Tag` (`com.clickhouse.client.api.http.ClickHouseHttpProto.HEADER_REPLICA_TAG`) 。为所有需要始终路由到同一副本的请求使用相同的标签值。
-
-  ```java showLineNumbers
-  String replicaTag = "my-app-session-1";
-
-  Properties properties = new Properties();
-  properties.setProperty("user", user);
-  properties.setProperty("password", password);
-  properties.setProperty(
-          ClientConfigProperties.httpHeader(ClickHouseHttpProto.HEADER_REPLICA_TAG),
-          replicaTag);
-
-  Connection conn = Driver.connect("jdbc:ch:https://your-service.clickhouse.cloud:8443", properties);
-
-  // URL equivalent:
-  // jdbc:ch:https://your-service.clickhouse.cloud:8443?http_header_X-CLICKHOUSE-REPLICA-TAG=my-app-session-1
-  ```
-
-  ### JWT 身份验证 (CLOUD) {#jwt-authentication}
-
-  [JWT 身份验证](/zh/concepts/features/security/external-authenticators/jwt)允许在 ClickHouse Cloud 中使用 JSON Web Token (JWT) 进行身份验证。ClickHouse 会根据令牌中的声明动态创建**临时用户**。
-
-  #### 初始配置 {#initial-configuration}
-
-  要在 JDBC 中配置初始 JWT 身份验证，请在连接属性中或直接在 JDBC URL 中传递 `bearer_token` 属性：
-
-  ```java showLineNumbers
-  import java.sql.Connection;
-  import java.sql.DriverManager;
-  import java.sql.SQLException;
-  import java.util.Properties;
-
-  public Connection createJwtConnection(String jwtToken) throws SQLException {
-      Properties properties = new Properties();
-      properties.setProperty("bearer_token", jwtToken);
-
-      return DriverManager.getConnection("jdbc:ch:https://your-service.clickhouse.cloud:8443", properties);
-  }
-  ```
-
-  等价的 URL 写法：
-
-  ```plaintext
-  jdbc:ch:https://your-service.clickhouse.cloud:8443?bearer_token=<your_jwt_token>
-  ```
-
-  #### 运行时更新令牌 {#updating-token-at-runtime}
-
-  由于 JWT 的有效期有限，应在当前令牌过期**之前**设置新的 JWT 令牌，以免操作失败。
-
-  要在运行时更新活跃 JDBC 连接上的 JWT 令牌，请对该连接执行 unwrap 操作以访问底层的 `com.clickhouse.client.api.Client` 实例，然后调用 `updateBearerToken`：
-
-  ```java showLineNumbers
-  import com.clickhouse.jdbc.ConnectionImpl;
-  import java.sql.Connection;
-  import java.sql.SQLException;
-
-  public void refreshJwtToken(Connection connection, String newJwtToken) throws SQLException {
-      // Unwrap the connection to get the underlying Client instance
-      ConnectionImpl connImpl = connection.unwrap(ConnectionImpl.class);
-
-      // Set the new JWT before the current token expires
-      connImpl.getClient().updateBearerToken(newJwtToken);
-  }
-  ```
-
-  此后在该 JDBC 连接上执行的语句都将使用更新后的 JWT 令牌。
-
   ## 支持的数据类型 {#supported-data-types}
 
   JDBC 驱动支持与底层 [java client](/zh/integrations/language-clients/java/index#supported-data-types) 相同的数据格式。
@@ -333,7 +260,7 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
   | ------------- | --------- | ------------------ |
   | Date          | DATE      | java.sql.Date      |
   | Date32        | DATE      | java.sql.Date      |
-  | DateTime      | TIMESTAMP | java.sql.Timestamp |
+  | 日期时间          | TIMESTAMP | java.sql.Timestamp |
   | DateTime64    | TIMESTAMP | java.sql.Timestamp |
   | Time          | TIME      | java.sql.Time      |
   | Time64        | TIME      | java.sql.Time      |
@@ -404,7 +331,7 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
   | Array(FixedString(8))                                                      | FixedString(8)                                                      | VARCHAR         |
   | Array(Bool)                                                                | Bool                                                                | BOOLEAN         |
   | Array(Date)                                                                | Date                                                                | DATE            |
-  | Array(DateTime)                                                            | DateTime                                                            | TIMESTAMP       |
+  | Array(日期时间)                                                                | 日期时间                                                                | TIMESTAMP       |
   | Array(UUID)                                                                | UUID                                                                | OTHER           |
   | Array(Nullable(Int32))                                                     | Nullable(Int32)                                                     | INTEGER         |
   | Array(Nullable(String))                                                    | Nullable(String)                                                    | VARCHAR         |
@@ -540,7 +467,7 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
   }
   ```
 
-  **读取 Map**
+  **读取地图**
 
   可以通过 `getObject(columnIndex, Map.class)` 方法将 Map 读取为 `java.collections.Map` 对象。
 
@@ -668,7 +595,7 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
   }});
   ```
 
-  还有一种更便捷的方式：将服务器设置 `jdbc_read_json_as_string=true` 传入连接属性，即可将 JSON 读取为字符串。
+  还有一种更便捷的方式：将服务器设置 `output_format_binary_write_json_as_string=1` 传入连接属性，即可将 JSON 读取为字符串。
   这样驱动程序会将 JSON 值以字符串形式返回，并可使用任意 JSON 库进行解析。
 
   ```java
@@ -756,61 +683,6 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
       ps.executeBatch(); // stream everything on-hand into ClickHouse
   }
   ```
-
-  ## 可观测性与监控 {#jdbc-v2-o11y}
-
-  ClickHouse JDBC 驱动程序 (V2) 依托底层的客户端 V2 引擎和标准的 JDBC 应用程序插桩，支持指标和分布式链路追踪。有关指标的详细定义、跨度属性以及 OpenTelemetry 语义约定，请参阅[客户端 V2 可观测性文档](/zh/integrations/language-clients/java/client#v2-o11y)。
-
-  ### 分布式链路追踪与 span {#distributed-tracing-spans}
-
-  执行 JDBC 语句 (`executeQuery`、`executeUpdate`、`executeBatch`) 时，分布式链路追踪基于父子跨度层次结构进行：
-
-  1. **外层 JDBC / 应用程序跨度**：由 OpenTelemetry Java 代理或 APM 插桩在拦截 `java.sql` 方法调用 (例如 `PreparedStatement.executeBatch()`) 时自动创建。
-  2. **客户端 V2 操作跨度**：由底层客户端 V2 引擎在当前活跃的追踪上下文 (`Context.current()`) 中创建，携带 ClickHouse 特有的元数据，例如 `clickhouse.query_id`、语句文本 (`db.query.text`) 以及服务器执行统计信息 (`clickhouse.response.read_rows`、`clickhouse.response.written_rows`)。
-  3. **传输请求跨度**：每次向 ClickHouse 服务器发起 HTTP POST 请求尝试时创建，记录端点详细信息 (`server.address`、`server.port`)、HTTP 状态码 (`http.response.status_code`) 以及重试情况。
-
-  ```text
-  Application HTTP Request Span
-    └── JDBC Statement Span (e.g., PreparedStatement.executeQuery)
-        └── Client V2 Operation Span (query default)
-            └── Transport Request Span (POST http://localhost:8123)
-  ```
-
-  由于客户端 V2 会继承 `Context.current()`，JDBC 数据库 span 会自动加入外围 HTTP 或消息上下文中由运行环境提供的 trace，无需手动传播上下文。
-
-  ### JDBC 自动插桩 {#jdbc-auto-instrumentation}
-
-  Java 应用程序运行时框架和 APM agent 会自动跟踪标准 JDBC 操作 (`Connection`、`PreparedStatement`、`ResultSet`、`executeBatch`)：
-
-  * **OpenTelemetry Java 代理**：自动拦截标准 JDBC 方法调用，为数据库执行操作 (`SELECT`、`INSERT`、`TRUNCATE`) 创建追踪跨度，其中包含 `db.system=clickhouse`、语句文本以及执行耗时。
-  * **Spring Boot &amp; Micrometer**：启用 Spring Boot 的 Micrometer Observation 或 Spring Actuator 指标后，Spring Data JPA 存储库和 `JdbcTemplate` 会自动对数据库调用进行插桩。
-
-  ### 配置驱动程序指标记录器 {#configuring-driver-metrics-recorders}
-
-  你可以通过 `jdbc_metrics_recorder` 连接属性，为 JDBC 连接启用客户端 V2 运行指标 (耗时、计数、重试) 。驱动程序会为每个连接调用指定类的 public 无参构造函数，创建该类的实例。
-
-  ```java
-  // Configure via JDBC URL parameter
-  String url = "jdbc:clickhouse://localhost:8123/default?jdbc_metrics_recorder=com.clickhouse.client.api.observability.micrometer.MicrometerMetricsRecorder";
-
-  // Or set via java.util.Properties
-  Properties properties = new Properties();
-  properties.setProperty("jdbc_metrics_recorder", "com.clickhouse.client.api.observability.micrometer.MicrometerMetricsRecorder");
-
-  try (Connection conn = DriverManager.getConnection(url, properties)) {
-      // JDBC operations report operation metrics to Micrometer's globalRegistry
-  }
-  ```
-
-  *注意：`MicrometerMetricsRecorder` 随驱动程序一同提供，但需要应用程序的运行时 classpath 中包含 `io.micrometer:micrometer-core`。*
-
-  ### Spring Boot 演示参考文档 {#spring-boot-demo-reference}
-
-  如需查看在 Spring Boot 服务中设置 JDBC 驱动并采集遥测数据的完整示例，请参阅本代码仓库中的 `examples/demo-spring-service` 模块：
-
-  * **JDBC 数据源设置** (`src/main/resources/application.yml`)：使用 `com.clickhouse.jdbc.ClickHouseDriver` 和驱动程序属性 (`jdbc_ignore_unsupported_values: true`) 配置 `spring.datasource`。
-  * **Spring Data JPA 集成** (`com.clickhouse.examples.repository.SignalRepository`)：演示如何基于 ClickHouse JDBC，通过 repository 实现实体持久化。
-  * **`JdbcTemplate` 工具** (`com.clickhouse.examples.schema.ClickHouseSchemaInitializer`)：演示如何使用 Spring `JdbcTemplate` 执行 DDL 并导出指标数据点。
 
   ## `HikariCP` {#hikaricp}
 
@@ -908,7 +780,6 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
     * JDBC V2 不支持流式数据，因为流式数据不属于 JDBC 规范，也不是 Java 的一部分。
   * JDBC V2 需要显式配置。不默认启用故障转移。
     * 应在 URL 中指定协议。不支持根据端口号隐式检测协议。
-  * 自定义 HTTP 请求头需按每个请求头一个属性的方式配置 (`http_header_*`)。V1 中以逗号分隔的 `custom_http_headers` 属性已不再受支持。
 
   ### 配置变更 {#configuration-changes}
 
@@ -984,7 +855,7 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
   | ------------- | ----- | ------------ | ------------------ | ------------------------------- | ------------------------ |
   | Date          | ❌     | DATE         | java.sql.Date      | DATE                            | java.time.LocalDate      |
   | Date32        | ❌     | DATE         | java.sql.Date      | DATE                            | java.time.LocalDate      |
-  | DateTime      | ❌     | TIMESTAMP    | java.sql.Timestamp | TIMESTAMP&#95;WITH&#95;TIMEZONE | java.time.OffsetDateTime |
+  | 日期时间          | ❌     | TIMESTAMP    | java.sql.Timestamp | TIMESTAMP&#95;WITH&#95;TIMEZONE | java.time.OffsetDateTime |
   | DateTime64    | ❌     | TIMESTAMP    | java.sql.Timestamp | TIMESTAMP&#95;WITH&#95;TIMEZONE | java.time.OffsetDateTime |
   | Time          | ✅     | TIME         | java.sql.Time      | 新类型/不受支持                        | 新类型/不受支持                 |
   | Time64        | ✅     | TIME         | java.sql.Time      | 新类型/不受支持                        | 新类型/不受支持                 |
@@ -996,7 +867,7 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
 
   | ClickHouse 类型 | 兼容 V1 | JDBC 类型 (V2) | Java 类 (V2)      | JDBC 类型 (V1) | Java 类 (V1)      |
   | ------------- | ----- | ------------ | ---------------- | ------------ | ---------------- |
-  | Enum          | ✅     | VARCHAR      | java.lang.String | OTHER        | java.lang.String |
+  | 枚举            | ✅     | VARCHAR      | java.lang.String | OTHER        | java.lang.String |
   | Enum8         | ✅     | VARCHAR      | java.lang.String | OTHER        | java.lang.String |
   | Enum16        | ✅     | VARCHAR      | java.lang.String | OTHER        | java.lang.String |
 
@@ -1160,42 +1031,6 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
   | `wrapperObject`            | `false` | [`getObject()`](https://docs.oracle.com/javase/8/docs/api/java/sql/ResultSet.html#getObject-int-) 是否应为 Array / Tuple 返回 java.sql.Array / java.sql.Struct。                                                                                                                                                                                                        |
 
   注意：如需了解更多信息，请参阅 [JDBC 专项配置](https://github.com/ClickHouse/clickhouse-java/blob/main/clickhouse-jdbc/src/main/java/com/clickhouse/jdbc/JdbcConfig.java)。
-
-  ### 自定义 HTTP 请求头 {#v07-custom-http-headers}
-
-  额外的请求头通过 `custom_http_headers` 设置。每个请求头的格式为 `Name=Value`。多个请求头之间用逗号分隔。值中的逗号需转义为 `\,`。值中的 `=` 会作为值的一部分保留。
-
-  ```java
-  properties.setProperty("custom_http_headers", "X-ClickHouse-Quota=test");
-  properties.setProperty("custom_http_headers", "X-ClickHouse-Quota=test, X-ClickHouse-Test=test");
-
-  // URL Equivalent
-  // jdbc:ch:http://localhost:8123?custom_http_headers=X-ClickHouse-Quota%3Dtest,X-ClickHouse-Test%3Dtest
-  ```
-
-  ## ClickHouse Cloud 功能 {#v1-clickhouse-cloud-features}
-
-  连接到 [ClickHouse Cloud](https://clickhouse.com/cloud) 时适用的功能。
-
-  ### 副本感知路由 (CLOUD) {#v1-replica-aware-routing}
-
-  ClickHouse Cloud 可以将相关的 HTTP 请求固定到同一个副本上。发送 `X-ClickHouse-Replica-Tag` 请求头后，Cloud proxy 会将带有相同标签的所有请求路由到同一个副本。此功能适用于会话作用域内的对象 (例如临时表) 、副本本地的缓存复用以及写后读一致性等场景。
-  了解更多： https://clickhouse.com/docs/products/cloud/features/infrastructure/replica-aware-routing.
-
-  **需要设置的内容：** 通过 `custom_http_headers` 设置 HTTP 请求头 `X-ClickHouse-Replica-Tag` (`com.clickhouse.client.http.config.ClickHouseHttpOption.HEADER_REPLICA_TAG`) 。凡是需要固定路由到同一副本的请求，均应使用相同的标签值。
-
-  ```java
-  String replicaTag = "my-app-session-1";
-
-  Properties properties = new Properties();
-  properties.setProperty("custom_http_headers", "X-ClickHouse-Replica-Tag=" + replicaTag);
-
-  ClickHouseDataSource dataSource = new ClickHouseDataSource(
-          "jdbc:clickhouse:https://your-service.clickhouse.cloud:8443", properties);
-  try (Connection conn = dataSource.getConnection("default", "password")) {
-      // requests on this connection are pinned to the replica selected for replicaTag
-  }
-  ```
 
   ## 支持的数据类型 {#v07-supported-data-types}
 
@@ -1379,13 +1214,13 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
 
   ## SSL 属性 {#ssl-properties}
 
-  | 名称                   | 默认值    | 可选值          | 描述                                      |
+  | 名称                   | 默认值    | 可选值          | 说明                                      |
   | -------------------- | ------ | ------------ | --------------------------------------- |
   | `ssl`                | false  | true, false  | 是否为该连接启用 SSL/TLS                        |
   | `sslmode`            | strict | strict, none | 是否验证 SSL/TLS 证书                         |
   | `sslrootcert`        |        |              | SSL/TLS 根证书路径                           |
   | `sslcert`            |        |              | SSL/TLS 证书路径                            |
-  | `sslkey`             |        |              | PKCS#8 格式的 RSA 私钥                       |
+  | `sslkey`             |        |              | PKCS#8 格式的 RSA 密钥                       |
   | `key_store_type`     |        | JKS, PKCS12  | 指定 `KeyStore`/`TrustStore` 文件的类型或格式     |
   | `trust_store`        |        |              | `TrustStore` 文件路径                       |
   | `key_store_password` |        |              | 访问 `KeyStore` 配置中指定的 `KeyStore` 文件所需的密码 |

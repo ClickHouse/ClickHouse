@@ -24,15 +24,33 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   ### Setup {#setup}
 
-  ```xml
-  {/* https://mvnrepository.com/artifact/com.clickhouse/clickhouse-jdbc */}
-  <dependency>
-      <groupId>com.clickhouse</groupId>
-      <artifactId>clickhouse-jdbc</artifactId>
-      <version>0.10.0</version>
-      <classifier>all</classifier>
-  </dependency>
-  ```
+  <Tabs>
+    <Tab title="Maven">
+      ```xml
+      {/* https://mvnrepository.com/artifact/com.clickhouse/clickhouse-jdbc */}
+      <dependency>
+          <groupId>com.clickhouse</groupId>
+          <artifactId>clickhouse-jdbc</artifactId>
+          <version>0.9.8</version>
+          <classifier>all</classifier>
+      </dependency>
+      ```
+    </Tab>
+
+    <Tab title="Gradle (Kotlin)">
+      ```kotlin
+      // https://mvnrepository.com/artifact/com.clickhouse/clickhouse-jdbc
+      implementation("com.clickhouse:clickhouse-jdbc:0.9.8:all")
+      ```
+    </Tab>
+
+    <Tab title="Gradle">
+      ```groovy
+      // https://mvnrepository.com/artifact/com.clickhouse/clickhouse-jdbc
+      implementation 'com.clickhouse:clickhouse-jdbc:0.9.8:all'
+      ```
+    </Tab>
+  </Tabs>
 
   アプリケーション内でJDBCドライバーを使用しており、jarをクラスパスに追加する必要がある場合は、以下からjarをダウンロードしてください：
 
@@ -166,97 +184,6 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   **注意:** `localSettings` はスレッド間で共有されるため、このアプローチはステートメントのシングルスレッド使用時にのみ有効です。
 
-  ### カスタム HTTP ヘッダー {#custom-http-headers}
-
-  カスタム HTTP ヘッダーは、クライアントのプロパティとして渡します。各ヘッダーには `http_header_` プレフィックスを付けます。このキーは `ClientConfigProperties.httpHeader(String)` (または `DriverProperties.httpHeader(String)`) で生成できます。V1 の `custom_http_headers` プロパティは、JDBC V2 では使用されません。
-
-  ```java showLineNumbers
-  Properties properties = new Properties();
-  properties.setProperty(ClientConfigProperties.httpHeader("X-ClickHouse-Quota"), "test");
-  properties.setProperty(ClientConfigProperties.httpHeader("X-ClickHouse-Test"), "value1,value2");
-  Connection conn = Driver.connect("jdbc:ch:https://localhost:8443/", properties);
-
-  // URL equivalent:
-  // jdbc:ch:https://localhost:8443?http_header_X-CLICKHOUSE-QUOTA=test&http_header_X-CLICKHOUSE-TEST=value1,value2
-  ```
-
-  ## ClickHouse Cloud の機能 {#clickhouse-cloud-features}
-
-  [ClickHouse Cloud](https://clickhouse.com/cloud) に接続する際に適用される機能です。
-
-  ### レプリカ対応ルーティング (CLOUD) {#replica-aware-routing}
-
-  ClickHouse Cloud では、関連する HTTP リクエストを同じレプリカに固定できます。`X-ClickHouse-Replica-Tag` ヘッダーを送信すると、Cloud のプロキシは同じタグを持つすべてのリクエストを 1 つのレプリカに振り分けます。この機能は、一時テーブルなどのセッションスコープのオブジェクトを扱う場合や、レプリカローカルなキャッシュを再利用したい場合、書き込み後の読み取り整合性が必要な場合に使用してください。
-  詳細はこちら: https://clickhouse.com/docs/products/cloud/features/infrastructure/replica-aware-routing.
-
-  **設定内容:** HTTP ヘッダー `X-ClickHouse-Replica-Tag` (`com.clickhouse.client.api.http.ClickHouseHttpProto.HEADER_REPLICA_TAG`) 。同じレプリカで処理させたいリクエストには、すべて同じタグの値を指定してください。
-
-  ```java showLineNumbers
-  String replicaTag = "my-app-session-1";
-
-  Properties properties = new Properties();
-  properties.setProperty("user", user);
-  properties.setProperty("password", password);
-  properties.setProperty(
-          ClientConfigProperties.httpHeader(ClickHouseHttpProto.HEADER_REPLICA_TAG),
-          replicaTag);
-
-  Connection conn = Driver.connect("jdbc:ch:https://your-service.clickhouse.cloud:8443", properties);
-
-  // URL equivalent:
-  // jdbc:ch:https://your-service.clickhouse.cloud:8443?http_header_X-CLICKHOUSE-REPLICA-TAG=my-app-session-1
-  ```
-
-  ### JWT認証 (CLOUD) {#jwt-authentication}
-
-  [JWT認証](/ja/concepts/features/security/external-authenticators/jwt)を使用すると、ClickHouse Cloud で JSON Web Token (JWT) による認証を行えます。ClickHouse は、トークンのクレームに基づいて**一時ユーザー**を動的に作成します。
-
-  #### 初期設定 {#initial-configuration}
-
-  JDBC で初期 JWT認証を設定するには、`bearer_token` プロパティを接続プロパティで渡すか、JDBC URL に直接指定します：
-
-  ```java showLineNumbers
-  import java.sql.Connection;
-  import java.sql.DriverManager;
-  import java.sql.SQLException;
-  import java.util.Properties;
-
-  public Connection createJwtConnection(String jwtToken) throws SQLException {
-      Properties properties = new Properties();
-      properties.setProperty("bearer_token", jwtToken);
-
-      return DriverManager.getConnection("jdbc:ch:https://your-service.clickhouse.cloud:8443", properties);
-  }
-  ```
-
-  同等の URL：
-
-  ```plaintext
-  jdbc:ch:https://your-service.clickhouse.cloud:8443?bearer_token=<your_jwt_token>
-  ```
-
-  #### 実行時のトークン更新 {#updating-token-at-runtime}
-
-  JWT には有効期間があるため、操作が失敗しないよう、現在のトークンの有効期限が切れる**前に**新しい JWT トークンを設定する必要があります。
-
-  有効な JDBC 接続の JWT トークンをランタイムに更新するには、接続をアンラップして基盤となる `com.clickhouse.client.api.Client` インスタンスにアクセスし、`updateBearerToken` を呼び出します。
-
-  ```java showLineNumbers
-  import com.clickhouse.jdbc.ConnectionImpl;
-  import java.sql.Connection;
-  import java.sql.SQLException;
-
-  public void refreshJwtToken(Connection connection, String newJwtToken) throws SQLException {
-      // Unwrap the connection to get the underlying Client instance
-      ConnectionImpl connImpl = connection.unwrap(ConnectionImpl.class);
-
-      // Set the new JWT before the current token expires
-      connImpl.getClient().updateBearerToken(newJwtToken);
-  }
-  ```
-
-  この JDBC 接続で以降に実行されるステートメントでは、更新された JWT トークンが使用されます。
-
   ## サポートされているデータ型 {#supported-data-types}
 
   JDBCドライバーは、基盤となる[Java クライアント](/ja/integrations/language-clients/java/index#supported-data-types)と同じデータフォーマットをサポートしています。
@@ -329,14 +256,14 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   **日付/時刻型**
 
-  | ClickHouse の型 | JDBC 型    | Java クラス           |
-  | ------------- | --------- | ------------------ |
-  | Date          | DATE      | java.sql.Date      |
-  | Date32        | DATE      | java.sql.Date      |
-  | DateTime      | TIMESTAMP | java.sql.Timestamp |
-  | DateTime64    | TIMESTAMP | java.sql.Timestamp |
-  | Time          | TIME      | java.sql.Time      |
-  | Time64        | TIME      | java.sql.Time      |
+  | ClickHouse 型 | JDBC 型    | Java クラス           |
+  | ------------ | --------- | ------------------ |
+  | Date         | DATE      | java.sql.Date      |
+  | Date32       | DATE      | java.sql.Date      |
+  | DateTime     | TIMESTAMP | java.sql.Timestamp |
+  | DateTime64   | TIMESTAMP | java.sql.Timestamp |
+  | Time         | TIME      | java.sql.Time      |
+  | Time64       | TIME      | java.sql.Time      |
 
   * Date / Time 型は、JDBC との互換性を高めるため、`java.sql` 型にマッピングされます。ただし、`ResultSet#getObject(columnIndex, Class<T>)` を使用し、第 2 引数に対応するクラスを指定することで、`java.time.LocalDate`、`java.time.LocalDateTime`、`java.time.LocalTime` を取得することもできます。
     * `rs.getObject(1, java.time.LocalDate.class)` は、`Date` カラムの値を `java.time.LocalDate` として返します。
@@ -611,12 +538,12 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   **Geo Types**
 
-  | ClickHouse の型 | JDBC 型 | Java クラス                                       |
-  | ------------- | ------ | ---------------------------------------------- |
-  | Point         | OTHER  | double[]                               |
-  | Ring          | OTHER  | double[][]                     |
-  | Polygon       | OTHER  | double[][][]           |
-  | MultiPolygon  | OTHER  | double[][][][] |
+  | ClickHouse 型 | JDBC 型 | Java クラス                                       |
+  | ------------ | ------ | ---------------------------------------------- |
+  | Point        | OTHER  | double[]                               |
+  | Ring         | OTHER  | double[][]                     |
+  | Polygon      | OTHER  | double[][][]           |
+  | MultiPolygon | OTHER  | double[][][][] |
 
   **NullableとLowCardinalityの型**
 
@@ -667,7 +594,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   }});
   ```
 
-  接続プロパティにサーバー設定 `jdbc_read_json_as_string=true` を渡すことで、JSONをStringとして読み取るより便利な方法があります。
+  接続プロパティにサーバー設定 `output_format_binary_write_json_as_string=1` を渡すことで、JSONをStringとして読み取るより便利な方法があります。
   これにより、ドライバーはJSON値をStringとして返すようになり、任意のJSONライブラリを使用して解析できます。
 
   ```java
@@ -755,61 +682,6 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
       ps.executeBatch(); // stream everything on-hand into ClickHouse
   }
   ```
-
-  ## オブザーバビリティと監視 {#jdbc-v2-o11y}
-
-  ClickHouse JDBCドライバー (V2) は、基盤となるクライアント V2 エンジンと標準的な JDBC アプリケーションのインストルメンテーションを活用して、メトリクスと分散トレーシングをサポートしています。メトリクスの詳細な定義、スパン属性、および OpenTelemetry のセマンティック規約については、[クライアント V2 オブザーバビリティのドキュメント](/ja/integrations/language-clients/java/client#v2-o11y)を参照してください。
-
-  ### 分散トレーシングとスパン {#distributed-tracing-spans}
-
-  JDBC ステートメント (`executeQuery`、`executeUpdate`、`executeBatch`) を実行すると、分散トレーシングは親子関係にあるスパンの階層構造に沿って動作します:
-
-  1. **外側の JDBC / アプリケーションスパン**: OpenTelemetry Java Agent または APM のインストルメンテーションが `java.sql` メソッドの呼び出し (例: `PreparedStatement.executeBatch()`) をインターセプトする際に自動的に作成されます。
-  2. **クライアント V2 オペレーションスパン**: 基盤となるクライアント V2 エンジンにより、現在有効なトレースコンテキスト (`Context.current()`) 配下で作成されます。`clickhouse.query_id`、ステートメントのテキスト (`db.query.text`)、サーバー側の実行統計 (`clickhouse.response.read_rows`、`clickhouse.response.written_rows`) などの ClickHouse 固有のメタデータを保持します。
-  3. **トランスポートリクエストスパン**: ClickHouseサーバーへの HTTP POST リクエストの試行ごとに作成され、エンドポイントの詳細 (`server.address`、`server.port`)、HTTP ステータスコード (`http.response.status_code`)、および再試行の状況を記録します。
-
-  ```text
-  Application HTTP Request Span
-    └── JDBC Statement Span (e.g., PreparedStatement.executeQuery)
-        └── Client V2 Operation Span (query default)
-            └── Transport Request Span (POST http://localhost:8123)
-  ```
-
-  クライアント V2 は `Context.current()` を継承するため、JDBC のデータベーススパンは、コンテキストを手動で伝播しなくても、周囲の HTTP やメッセージング処理のコンテキストにある実行環境由来のトレースに自動的に組み込まれます。
-
-  ### JDBC の自動計装 {#jdbc-auto-instrumentation}
-
-  標準的な JDBC 操作 (`Connection`、`PreparedStatement`、`ResultSet`、`executeBatch`) は、Java アプリケーションのランタイムフレームワークや APM エージェントによって自動的にトレースされます。
-
-  * **OpenTelemetry Java Agent**: 標準的な JDBC メソッド呼び出しを自動的にインターセプトし、データベースの実行 (`SELECT`、`INSERT`、`TRUNCATE`) ごとに、`db.system=clickhouse`、ステートメントのテキスト、実行時間を含むトレーススパンを作成します。
-  * **Spring Boot &amp; Micrometer**: Spring Boot の Micrometer Observation または Spring Actuator のメトリクスが有効になっている場合、Spring Data JPA リポジトリと `JdbcTemplate` によるデータベース呼び出しは自動的にインストルメントされます。
-
-  ### ドライバーのメトリクスレコーダーの設定 {#configuring-driver-metrics-recorders}
-
-  `jdbc_metrics_recorder` 接続プロパティを使用すると、JDBC 接続でクライアント V2 の運用メトリクス (所要時間、出現回数、再試行) を有効化できます。ドライバーは接続ごとに、指定されたクラスを public な引数なしコンストラクターでインスタンス化します。
-
-  ```java
-  // Configure via JDBC URL parameter
-  String url = "jdbc:clickhouse://localhost:8123/default?jdbc_metrics_recorder=com.clickhouse.client.api.observability.micrometer.MicrometerMetricsRecorder";
-
-  // Or set via java.util.Properties
-  Properties properties = new Properties();
-  properties.setProperty("jdbc_metrics_recorder", "com.clickhouse.client.api.observability.micrometer.MicrometerMetricsRecorder");
-
-  try (Connection conn = DriverManager.getConnection(url, properties)) {
-      // JDBC operations report operation metrics to Micrometer's globalRegistry
-  }
-  ```
-
-  *注意: `MicrometerMetricsRecorder` はドライバーに同梱されていますが、アプリケーションのランタイムクラスパス上で `io.micrometer:micrometer-core` が利用可能である必要があります。*
-
-  ### Spring Boot デモリファレンス {#spring-boot-demo-reference}
-
-  Spring Boot サービスでの JDBCドライバーのセットアップとテレメトリーを示す完全なサンプルについては、このリポジトリ内の `examples/demo-spring-service` モジュールを参照してください：
-
-  * **JDBC データソースの設定** (`src/main/resources/application.yml`): `com.clickhouse.jdbc.ClickHouseDriver` とドライバーのプロパティ (`jdbc_ignore_unsupported_values: true`) を使用して `spring.datasource` を設定します。
-  * **Spring Data JPA との連携** (`com.clickhouse.examples.repository.SignalRepository`): ClickHouse JDBC を介して、リポジトリベースでエンティティを永続化する方法を示します。
-  * **`JdbcTemplate` ユーティリティ** (`com.clickhouse.examples.schema.ClickHouseSchemaInitializer`): Spring の `JdbcTemplate` を使用して DDL を実行し、メトリクスの点をエクスポートする方法を示します。
 
   ## `HikariCP` {#hikaricp}
 
@@ -907,7 +779,6 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
     * ストリーミングデータはJDBC仕様やJavaに含まれていないため、JDBC V2ではサポートされていません。
   * JDBC V2 では明示的な設定が必要です。フェイルオーバーのデフォルト設定はありません。
     * URLにはプロトコルを指定する必要があります。ポート番号による暗黙的なプロトコル判別は行われません。
-  * カスタム HTTP ヘッダーは、ヘッダーごとに個別のプロパティ (`http_header_*`) で指定します。V1 のカンマ区切り形式の `custom_http_headers` プロパティは使用できません。
 
   ### 設定の変更 {#configuration-changes}
 
@@ -1160,42 +1031,6 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   | `wrapperObject`            | `false` | Array / Tuple に対して [`getObject()`](https://docs.oracle.com/javase/8/docs/api/java/sql/ResultSet.html#getObject-int-) が java.sql.Array / java.sql.Struct を返すようにするかどうか。                                                                                                                                                                                                        |
 
   注意: 詳細は[JDBC固有の設定](https://github.com/ClickHouse/clickhouse-java/blob/main/clickhouse-jdbc/src/main/java/com/clickhouse/jdbc/JdbcConfig.java)を参照してください。
-
-  ### カスタム HTTP ヘッダー {#v07-custom-http-headers}
-
-  追加のリクエストヘッダーは `custom_http_headers` で設定します。各ヘッダーは `Name=Value` の形式で指定します。複数のヘッダーはカンマで区切ります。値の中のカンマは `\,` としてエスケープしてください。値の中の `=` は値の一部としてそのまま保持されます。
-
-  ```java
-  properties.setProperty("custom_http_headers", "X-ClickHouse-Quota=test");
-  properties.setProperty("custom_http_headers", "X-ClickHouse-Quota=test, X-ClickHouse-Test=test");
-
-  // URL Equivalent
-  // jdbc:ch:http://localhost:8123?custom_http_headers=X-ClickHouse-Quota%3Dtest,X-ClickHouse-Test%3Dtest
-  ```
-
-  ## ClickHouse Cloud の機能 {#v1-clickhouse-cloud-features}
-
-  [ClickHouse Cloud](https://clickhouse.com/cloud) に接続する際に適用される機能です。
-
-  ### レプリカ対応ルーティング (CLOUD) {#v1-replica-aware-routing}
-
-  ClickHouse Cloud では、関連する HTTPリクエストを同一のレプリカに固定できます。`X-ClickHouse-Replica-Tag` ヘッダーを送信すると、Cloud のプロキシは同じタグを共有するすべてのリクエストを 1 つのレプリカに振り分けます。一時テーブルなどの session スコープのオブジェクトを扱う場合や、レプリカローカルなキャッシュの再利用、書き込み後の読み取り整合性が必要な場合に使用してください。
-  詳細はこちら: https://clickhouse.com/docs/products/cloud/features/infrastructure/replica-aware-routing.
-
-  **設定内容:**  `X-ClickHouse-Replica-Tag` (`com.clickhouse.client.http.config.ClickHouseHttpOption.HEADER_REPLICA_TAG`) という HTTP ヘッダーを `custom_http_headers` で指定します。同一のレプリカで処理させたいすべてのリクエストには、同じタグの値を使用してください。
-
-  ```java
-  String replicaTag = "my-app-session-1";
-
-  Properties properties = new Properties();
-  properties.setProperty("custom_http_headers", "X-ClickHouse-Replica-Tag=" + replicaTag);
-
-  ClickHouseDataSource dataSource = new ClickHouseDataSource(
-          "jdbc:clickhouse:https://your-service.clickhouse.cloud:8443", properties);
-  try (Connection conn = dataSource.getConnection("default", "password")) {
-      // requests on this connection are pinned to the replica selected for replicaTag
-  }
-  ```
 
   ## サポートされているデータ型 {#v07-supported-data-types}
 
