@@ -243,7 +243,7 @@ StorageMerge::StorageMerge(
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_.empty()
-        ? getColumnsDescriptionFromSourceTables(context_)
+        ? getColumnsDescriptionFromSourceTables(context_, nullptr)
         : columns_);
     storage_metadata.setComment(comment);
     storage_metadata.setVirtuals(createVirtuals());
@@ -257,7 +257,8 @@ StorageMerge::StorageMerge(
     const String & source_database_name_or_regexp_,
     bool database_is_regexp_,
     const String & source_table_regexp_,
-    ContextPtr context_)
+    ContextPtr context_,
+    bool keep_inferred_source_metadata)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , database_name_or_regexp(
@@ -268,7 +269,7 @@ StorageMerge::StorageMerge(
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_.empty()
-        ? getColumnsDescriptionFromSourceTables(context_)
+        ? getColumnsDescriptionFromSourceTables(context_, keep_inferred_source_metadata ? &inferred_source_metadata : nullptr)
         : columns_);
     storage_metadata.setComment(comment);
     storage_metadata.setVirtuals(createVirtuals());
@@ -288,13 +289,13 @@ ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTables(
     size_t max_tables_to_look)
 {
     DatabaseNameOrRegexp database_name_or_regexp(source_database_name_or_regexp, database_is_regexp, source_database_name_or_regexp, source_table_regexp, {});
-    return getColumnsDescriptionFromSourceTablesImpl(query_context, database_name_or_regexp, max_tables_to_look, nullptr);
+    return getColumnsDescriptionFromSourceTablesImpl(query_context, database_name_or_regexp, max_tables_to_look, nullptr, nullptr);
 }
 
-ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTables(const ContextPtr & query_context) const
+ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTables(const ContextPtr & query_context, SourceMetadata * source_metadata) const
 {
     auto max_tables_to_look = query_context->getSettingsRef()[Setting::merge_table_max_tables_to_look_for_schema_inference];
-    auto res = getColumnsDescriptionFromSourceTablesImpl(query_context, database_name_or_regexp, max_tables_to_look, this);
+    auto res = getColumnsDescriptionFromSourceTablesImpl(query_context, database_name_or_regexp, max_tables_to_look, this, source_metadata);
     if (res.empty())
         throw Exception{DB::ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "There are no tables satisfied provided regexp, you must specify table structure manually"};
     /// Merge does not support TTL.
@@ -306,13 +307,14 @@ ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTablesImpl(
     const ContextPtr & query_context,
     const DatabaseNameOrRegexp & database_name_or_regexp,
     size_t max_tables_to_look,
-    const IStorage * ignore_self)
+    const IStorage * ignore_self,
+    SourceMetadata * source_metadata)
 {
     auto access = query_context->getAccess();
     size_t table_num = 0;
     ColumnsDescription res;
 
-    traverseTablesUntilImpl(query_context, ignore_self, database_name_or_regexp, [&table_num, &access, &res, max_tables_to_look, &query_context](auto && t)
+    traverseTablesUntilImpl(query_context, ignore_self, database_name_or_regexp, [&table_num, &access, &res, max_tables_to_look, &query_context, source_metadata](auto && t)
     {
         if (!t)
             return false;
@@ -336,6 +338,8 @@ ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTablesImpl(
         /// and a lazy stand-in that is not loaded yet reports the columns of its `CREATE` query.
         resolveStorageProxyLoading(t)->updateExternalDynamicMetadataIfExists(query_context);
         auto table_metadata = t->getInMemoryMetadataPtr(query_context, false);
+        if (source_metadata)
+            source_metadata->emplace(t, table_metadata);
         const auto & structure = table_metadata->getColumns();
         String prev_column_name;
         for (const ColumnDescription & column : structure)
@@ -1188,9 +1192,18 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
             Aliases aliases;
             RowPolicyDataOpt row_policy_data_opt;
-            /// The analyzer refreshes only the outer storage, so a data lake child would keep the snapshot of its last direct query.
-            resolveStorageProxy(storage)->updateExternalDynamicMetadataIfExists(modified_context);
-            auto storage_metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
+            StorageMetadataHandle storage_metadata_snapshot;
+            const auto & inferred_source_metadata = assert_cast<const StorageMerge &>(*storage_merge).inferred_source_metadata;
+            if (auto it = inferred_source_metadata.find(storage); it != inferred_source_metadata.end())
+            {
+                storage_metadata_snapshot = it->second;
+            }
+            else
+            {
+                /// The analyzer refreshes only the outer storage, so a data lake child would keep the snapshot of its last direct query.
+                resolveStorageProxy(storage)->updateExternalDynamicMetadataIfExists(modified_context);
+                storage_metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
+            }
 
             if (storage_metadata_snapshot->getColumns().empty())
             {

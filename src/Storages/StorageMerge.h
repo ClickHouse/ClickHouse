@@ -1,6 +1,8 @@
 #pragma once
 
 #include <functional>
+#include <map>
+#include <memory>
 
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
@@ -43,7 +45,8 @@ public:
         const String & source_database_name_or_regexp_,
         bool database_is_regexp_,
         const String & source_table_regexp_,
-        ContextPtr context_);
+        ContextPtr context_,
+        bool keep_inferred_source_metadata = false);
 
     std::string getName() const override { return "Merge"; }
 
@@ -140,6 +143,11 @@ private:
 
     DatabaseNameOrRegexp database_name_or_regexp;
 
+    /// The metadata of each source table as the schema inference of the `merge` table function read it, so that
+    /// its read uses the same data lake snapshot instead of refreshing the table again.
+    using SourceMetadata = std::map<std::weak_ptr<IStorage>, StorageMetadataPtr, std::owner_less<>>;
+    SourceMetadata inferred_source_metadata;
+
     template <typename F>
     StoragePtr traverseTablesUntil(F && predicate) const;
 
@@ -154,14 +162,15 @@ private:
         const ContextPtr & context,
         const DatabaseNameOrRegexp & database_name_or_regexp,
         size_t max_tables_to_look,
-        const IStorage * ignore_self);
+        const IStorage * ignore_self,
+        SourceMetadata * source_metadata);
 
     ColumnSizeByName getColumnSizes() const override;
     ColumnSizeByName getColumnSizes(const Names & columns, bool calculate_subcolumn_sizes) const override;
 
     std::optional<ColumnSizeByName> tryGetColumnSizes() const override;
 
-    ColumnsDescription getColumnsDescriptionFromSourceTables(const ContextPtr & context) const;
+    ColumnsDescription getColumnsDescriptionFromSourceTables(const ContextPtr & context, SourceMetadata * source_metadata) const;
 
     static VirtualColumnsDescription createVirtuals();
 
