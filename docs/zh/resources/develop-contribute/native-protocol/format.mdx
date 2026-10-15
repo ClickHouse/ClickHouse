@@ -1421,33 +1421,50 @@ ClickHouse 可以使用一种内部帧格式压缩 `Native` 流中的列数据�
 
 服务器为整流 `Native` 帧信息生成的正是以下三种编解码器：HTTP `compress=1` 输出使用服务器的默认编解码器 (`ZSTD(3)`) ，而原生 TCP 协议则根据 `network_compression_method` 使用 `LZ4`、`ZSTD` 或 `NONE`。通用的 `Native` 客户端只需生成和解析这几种即可。
 
-| 字节     | 方法   | 请求正文编码                                    |
+| 字节     | 方法   | 请求正文编码                                  |
 | ------ | ---- | --------------------------------------- |
-| `0x02` | NONE | 请求正文为原始字节 (未压缩) 。帧仍会照常发出；接收方会校验 校验和。 |
-| `0x82` | LZ4  | 请求正文为 **LZ4 块格式**，*而非* LZ4 帧格式。不含魔数。      |
-| `0x90` | ZSTD | 请求正文为原始 zstd 单帧流 (标准 zstd 魔数包含在请求正文中) 。     |
+| `0x02` | NONE | 请求正文为原始字节 (未压缩) 。帧仍会照常发出；接收方会校验 校验和。    |
+| `0x82` | LZ4  | 请求正文为 **LZ4 块格式**，*而非* LZ4 帧格式。不含魔数。    |
+| `0x90` | ZSTD | 请求正文为原始 zstd 单帧流 (标准 zstd 魔数包含在请求正文中) 。 |
+
+### per-column 编解码器帧 {#per-column-codec-frames}
+
+上述三种方法字节 (`NONE`/`LZ4`/`ZSTD`) 是 ClickHouse 传输层唯一会*发出*的字节：`compress=1` 输出和网络压缩路径都只会使用其中之一。不过，负责解码帧的共享 `CompressedReadBuffer` 会根据方法字节在完整的编解码器 registry 中进行分派，因此任何已注册的 per-column 编解码器字节 (见下文) 在输入时都会被*接受*，HTTP `decompress=1` 路径也不例外。所以，可互操作的实现无需生成这些帧，但完全通用的读取器必须能够识别它们 (或者直接拒绝未知字节，而不是错误地解析它们) 。
+
+`0xa0` (PCO) 承载由 `PCO` 编解码器写入的自描述请求正文：
+
+```text
+[1 byte:  W]        ← element width in bytes (1, 2, 4 or 8); high bit 0x80 = "stored"
+[1 byte:  B]        ← number of leading raw bytes = uncompressed_size mod W
+[B bytes]           ← the raw leading partial value (as in Gorilla/FPC)
+[payload]           ← if the 0x80 flag is set: the raw uncompressed bytes;
+                      otherwise: a standalone pcodec (.pco) stream of (uncompressed_size − B) / W values
+```
+
+当 `0x80` 标志位未设置时，载荷是一个独立的 `.pco` 流，与 pcodec 参考实现逐字节兼容，并自描述其数值类型；仅当压缩无法减小块大小时才使用存储形式 (标志位已设置) ，从而将输出大小限制为输入大小加上两个头部字节。`PCO` 在压缩时需要列类型，但解码时不需要：元素宽度 `W` 以及 `.pco` 流中携带的数值类型已足够。如果解码器知道预期的列类型，还会拒绝 `W` (对于压缩形式，还包括其嵌入的数值类型) 与该类型不一致的块，而不是重新解释这些值。
 
 方法字节还用于标识[列级编解码器](/zh/reference/statements/create/table/codec)。这些编解码器在 MergeTree 磁盘路径上按列应用，而不是作用于整流帧信息；但 `decompress=1` HTTP 输入路径会从每个帧的方法字节中读取编解码器，因此这些字节中的任何一个都可能合法地出现在输入中。所以，符合规范的解码器必须能够识别整个已分配的取值空间，遇到未实现的字节时应直接拒绝，而不是错误地解析请求正文。这些编解码器的请求正文格式各不相同，不在本通用帧约定的范围内：
 
-| 字节     | 方法                               |
-| ------ | -------------------------------- |
-| `0x91` | `Multiple` (封装一系列嵌套编解码器的组合编解码器)  |
-| `0x92` | `Delta`                          |
-| `0x93` | `T64`                            |
-| `0x94` | `DoubleDelta`                    |
-| `0x95` | `Gorilla`                        |
-| `0x96` | `AES_128_GCM_SIV` (加密)           |
-| `0x97` | `AES_256_GCM_SIV` (加密)           |
-| `0x98` | `FPC`                            |
-| `0x9a` | `GCD`                            |
-| `0x9c` | `ALP`                            |
-| `0x9d` | `SZ3`                            |
-| `0x9e` | `Quantized`                      |
-| `0x9f` | `ZXC`                            |
+| 字节     | 方法                                            |
+| ------ | --------------------------------------------- |
+| `0x91` | `Multiple` (封装一系列嵌套编解码器的组合编解码器)               |
+| `0x92` | `Delta`                                       |
+| `0x93` | `T64`                                         |
+| `0x94` | `DoubleDelta`                                 |
+| `0x95` | `Gorilla`                                     |
+| `0x96` | `AES_128_GCM_SIV` (加密)                        |
+| `0x97` | `AES_256_GCM_SIV` (加密)                        |
+| `0x98` | `FPC`                                         |
+| `0x9a` | `GCD`                                         |
+| `0x9c` | `ALP`                                         |
+| `0x9d` | `SZ3`                                         |
+| `0x9e` | `Quantized`                                   |
+| `0x9f` | `ZXC`                                         |
+| `0xa0` | `PCO` (参见[per-column 编解码器帧](#per-column-codec-frames)) |
 
 `DoubleDelta` (`0x94`) 以 MSB 优先的前缀/符号/幅值位存储二阶差分。基于字的解码会保留这种编码方式、元素数量以及末字节填充。
 
-`0x9c` (`ALP`) 是一种适用于 `Float32` 和 `Float64` 的 **beta** 无损编解码器 (自适应无损浮点压缩) 。只有启用 `enable_alp_codec` 设置后，才能使用 `CODEC(ALP)` 创建表；但解压时始终接受该方法字节，以确保先前写入的数据仍可读取。`0x9d` (`SZ3`) 是一种 **Experimental** 的误差有界*有损*编解码器，适用于 `Float32`、`Float64` 以及由这些类型构成的 `Array`。只有启用 `enable_sz3_codec` 设置后，才能使用 `CODEC(SZ3)` 创建表；但解压时始终接受该方法字节，以确保先前写入的数据仍可读取。`0x9f` (`ZXC`) 是一种 **Experimental** 的非对称 LZ 编解码器：压缩较慢，但解压极快，压缩率介于 `LZ4` 和 `ZSTD` 之间。只有启用 `enable_zxc_codec` 设置后，才能使用 `CODEC(ZXC)` 创建表；但解压时始终接受该方法字节，以确保先前写入的数据仍可读取。字节 `0x99` (`DeflateQpl`) 和 `0x9b` (`ZSTD_QPL`) 曾分配给现已移除的编解码器，目前作为保留值，不会被复用。
+`0x9c` (`ALP`) 是一种适用于 `Float32` 和 `Float64` 的 **beta** 无损编解码器 (自适应无损浮点压缩) 。只有启用 `enable_alp_codec` 设置后，才能使用 `CODEC(ALP)` 创建表；但解压时始终接受该方法字节，以确保先前写入的数据仍可读取。`0x9d` (`SZ3`) 是一种 **Experimental** 的误差有界*有损*编解码器，适用于 `Float32`、`Float64` 以及由这些类型构成的 `Array`。只有启用 `enable_sz3_codec` 设置后，才能使用 `CODEC(SZ3)` 创建表；但解压时始终接受该方法字节，以确保先前写入的数据仍可读取。`0x9f` (`ZXC`) 是一种 **Experimental** 的非对称 LZ 编解码器：压缩较慢，但解压极快，压缩率介于 `LZ4` 和 `ZSTD` 之间。只有启用 `enable_zxc_codec` 设置后，才能使用 `CODEC(ZXC)` 创建表；但解压时始终接受该方法字节，以确保先前写入的数据仍可读取。`0xa0` (`PCO`) 是一种适用于定宽数值列的 **beta** 无损编解码器，由 pcodec Rust 库实现。只有启用 `enable_pco_codec` 设置后，才能使用 `CODEC(PCO)` 创建表。在包含该库的构建中，解压时始终接受该方法字节，以确保先前写入的数据仍可读取。若服务器构建时未包含该库 (未启用 Rust，或设置了 `ENABLE_PCO=OFF`) ，则不会注册该编解码器，并会以 `UNKNOWN_CODEC` 错误拒绝 `0xa0` 帧。字节 `0x99` (`DeflateQpl`) 和 `0x9b` (`ZSTD_QPL`) 曾分配给现已移除的编解码器，目前作为保留值，不会被复用。
 
 `0x9e` (`Quantized`) 是一种 **Experimental** 的列编解码器，适用于稠密向量列 (`Array(Float32)` 及类似类型) 。与 `NONE` 一样，它采用直通方式，全精度请求正文按原样存储；但启用它后会附加一种序列化方式，额外写入一个紧凑的量化伴随流，用于加速向量搜索。只有启用 `enable_quantized_codec` 设置后，才能使用 `CODEC(Quantized(...))` 创建表，而解压时始终接受该方法字节。
 
