@@ -266,6 +266,17 @@ StorageMergeTree::StorageMergeTree(
     , cleanup_thread(*this)
     , support_transaction(supportTransaction(getDisks(), log.load()))
 {
+    /// `UNIQUE KEY` tables do not follow the leadership contract yet: loading the parts may repair or
+    /// remove a dense index, or detach a part, without holding the lease, and a transient read error
+    /// of a dense index drops the part from the in-memory set instead of failing a takeover, so a new
+    /// leader could enable writes over an incomplete part set. Reject the combination before the parts
+    /// are loaded, because that loading is one of the paths that would mutate the shared storage.
+    if ((*getSettings())[MergeTreeSetting::leader_election] && metadata_.hasUniqueKey())
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The `leader_election` setting cannot be used with a table that has a `UNIQUE KEY`");
+    }
+
     initializeDirectoriesAndFormatVersion(relative_data_path_, LoadingStrictnessLevel::ATTACH <= mode, date_column_name);
 
     loadDataParts(LoadingStrictnessLevel::FORCE_RESTORE <= mode, std::nullopt);
