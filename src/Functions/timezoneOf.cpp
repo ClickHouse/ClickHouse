@@ -78,7 +78,7 @@ private:
 REGISTER_FUNCTION(TimezoneOf)
 {
     FunctionDocumentation::Description description = R"(
-Returns the timezone name of a [`DateTime`](/reference/data-types/datetime) or [`DateTime64`](/reference/data-types/datetime64) value.
+Returns the timezone name of a [`DateTime`](/sql-reference/data-types/datetime) or [`DateTime64`](/sql-reference/data-types/datetime64) value.
     )";
     FunctionDocumentation::Syntax syntax = "timezoneOf(datetime)";
     FunctionDocumentation::Arguments arguments = {
@@ -92,7 +92,7 @@ SELECT timezoneOf(now());
         )",
         R"(
 ┌─timezoneOf(now())─┐
-│ Etc/UTC           │
+│ Europe/Amsterdam  │
 └───────────────────┘
         )"}
     };

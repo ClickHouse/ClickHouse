@@ -1,0 +1,380 @@
+---
+noindex: true
+title: "Referencia de ClickHouse Private API"
+sidebarTitle: "Referencia de la API"
+description: "ClickHouse Private API es un componente opcional e independiente para gestionar clústeres de ClickHouse Private."
+---
+
+ClickHouse Private API es un componente opcional e independiente para gestionar clústeres de ClickHouse Private. Proporciona endpoints REST para copias de seguridad, escalado vertical, restablecimiento de contraseñas y monitorización del estado del clúster.
+
+***
+
+<div id="configuration-options">
+  ## Opciones de configuración
+</div>
+
+La API se instala mediante un gráfico de Helm (`helm/airgap-management`).
+
+| Valor de Helm                | Tipo    | Predeterminado | Descripción                                                |
+| ---------------------------- | ------- | -------------- | ---------------------------------------------------------- |
+| `image.repository`           | string  | --             | Repositorio ECR/GAR para la imagen de la API privada       |
+| `image.tag`                  | string  | --             | Etiqueta de la imagen que se va a desplegar                |
+| `api.port`                   | integer | `8080`         | Puerto en el que escucha la API                            |
+| `api.basicAuth.enabled`      | boolean | `false`        | Habilita la autenticación básica HTTP                      |
+| `api.basicAuth.username`     | string  | `"admin"`      | Nombre de usuario para la autenticación básica             |
+| `api.basicAuth.password`     | string  | `"password"`   | Contraseña para la autenticación básica                    |
+| `serviceAccount.enabled`     | boolean | `true`         | Crea una cuenta de servicio para la API                    |
+| `serviceAccount.annotations` | map     | `{}`           | Anotaciones para la cuenta de servicio (p. ej., para IRSA) |
+
+***
+
+<div id="authentication">
+  ## Autenticación
+</div>
+
+De forma predeterminada, la autenticación básica está desactivada. Para entornos de producción, actívela mediante Helm:
+
+```text
+--set-json='api.basicAuth.enabled=true'
+--set-json='api.basicAuth.username="admin"'
+--set-json='api.basicAuth.password="YOUR_SECURE_PASSWORD"'
+```
+
+Si está habilitado, incluya credenciales en las solicitudes:
+
+```bash
+curl -u admin:YOUR_SECURE_PASSWORD http://localhost:8080/api/v1/...
+```
+
+***
+
+<div id="resource-quantity-format">
+  ## Formato de cantidad de recursos
+</div>
+
+La API admite el formato de cantidad de recursos de Kubernetes para los campos de CPU y memoria.
+
+<div id="cpu-quantities">
+  ### Cantidades de CPU
+</div>
+
+| Formato    | Ejemplo  | Significado        |
+| ---------- | -------- | ------------------ |
+| Entero     | `"4"`    | 4 núcleos de CPU   |
+| Decimal    | `"2.5"`  | 2.5 núcleos de CPU |
+| Millicores | `"500m"` | 0.5 núcleos de CPU |
+
+<div id="memory-quantities">
+  ### Cantidades de memoria
+</div>
+
+| Formato               | Ejemplo    | Significado     |
+| --------------------- | ---------- | --------------- |
+| Binario (recomendado) | `"16Gi"`   | 16 gibibytes    |
+| Binario               | `"4096Mi"` | 4096 mebibytes  |
+| Decimal               | `"16G"`    | 16 gigabytes    |
+| Decimal               | `"16000M"` | 16000 megabytes |
+
+Se recomienda usar unidades binarias (Ki, Mi, Gi) para la memoria, de acuerdo con las convenciones de Kubernetes.
+
+***
+
+<div id="endpoints">
+  ## Endpoints
+</div>
+
+<div id="health-check">
+  ### Comprobación de estado
+</div>
+
+<div id="get-readiness">
+  #### `GET /readiness`
+</div>
+
+Devuelve el estado de salud/readiness de la API.
+
+**Respuesta:** `200 OK`
+
+***
+
+<div id="backups">
+  ### Copias de seguridad
+</div>
+
+<div id="create-backup">
+  #### Crear copia de seguridad
+</div>
+
+`POST /api/v1/backups?instance_id={instance_id}`
+
+Crea una nueva copia de seguridad para el clúster de ClickHouse especificado.
+
+**Parámetros de consulta:**
+
+| Parámetro     | Tipo   | Obligatorio | Descripción                                                |
+| ------------- | ------ | ----------- | ---------------------------------------------------------- |
+| `instance_id` | string | Sí          | Nombre del clúster de ClickHouse (p. ej., `default-xx-01`) |
+
+**Cuerpo de la solicitud:**
+
+```json
+{
+    "incremental": false,
+    "baseBackupUuid": "uuid-of-previous-backup",
+    "databases": ["mydb"],
+    "tables": ["mydb2.table"]
+}
+```
+
+| Campo            | Tipo             | Obligatorio | Descripción                                                                                                                               |
+| ---------------- | ---------------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `incremental`    | booleano         | No          | `false` para copia de seguridad completa, `true` para incremental. El valor predeterminado es `false`.                                    |
+| `baseBackupUuid` | cadena           | No          | UUID de la copia de seguridad anterior (obligatorio cuando `incremental` es `true`)                                                       |
+| `databases`      | array de cadenas | No          | Bases de datos específicas de las que hacer copia de seguridad. Omítalo para incluir todas las bases de datos.                            |
+| `tables`         | array de cadenas | No          | Tablas específicas de las que hacer copia de seguridad. Deben usar nombres completos (`db.table`). Omítalo para incluir todas las tablas. |
+
+**Respuesta:** `201 Created` -- Devuelve el objeto de copia de seguridad creado, con su UUID.
+
+**Comportamiento:** Crea un recurso personalizado `Backup` en el espacio de nombres del clúster de ClickHouse. El operador supervisa los nuevos objetos `Backup` y ejecuta la instrucción SQL de copia de seguridad correspondiente, controlando el estado mediante tablas del sistema.
+
+***
+
+<div id="get-backup">
+  #### Obtener una copia de seguridad
+</div>
+
+`GET /api/v1/backups/{backup_id}?instance_id={instance_id}`
+
+Devuelve el estado y los detalles de una copia de seguridad concreta.
+
+**Parámetros de ruta:**
+
+| Parameter   | Type   | Required | Description                   |
+| ----------- | ------ | -------- | ----------------------------- |
+| `backup_id` | string | Sí       | UUID de la copia de seguridad |
+
+**Parámetros de consulta:**
+
+| Parameter     | Type   | Required | Description                      |
+| ------------- | ------ | -------- | -------------------------------- |
+| `instance_id` | string | Sí       | Nombre del clúster de ClickHouse |
+
+**Respuesta:** `200 OK` -- Devuelve el objeto de la copia de seguridad. El campo `status.state` indica el estado de finalización (por ejemplo, `Ready` cuando se ha completado).
+
+***
+
+<div id="list-backups">
+  #### Listar copias de seguridad
+</div>
+
+`GET /api/v1/backups?instance_id={instance_id}`
+
+Muestra todas las copias de seguridad del clúster especificado.
+
+**Parámetros de consulta:**
+
+| Parámetro           | Tipo    | Obligatorio | Descripción                                                     |
+| ------------------- | ------- | ----------- | --------------------------------------------------------------- |
+| `instance_id`       | string  | Sí          | Nombre del clúster de ClickHouse                                |
+| `status__state__eq` | string  | No          | Filtra por el estado de la copia de seguridad (p. ej., `Ready`) |
+| `sort`              | string  | No          | Campo de ordenación (p. ej., `status__finishTime`)              |
+| `limit`             | integer | No          | Número máximo de resultados que se devolverán                   |
+
+**Respuesta:** `200 OK` -- Devuelve un array de objetos de copia de seguridad.
+
+**Ejemplo:** Buscar el UUID de la última copia de seguridad correcta:
+
+```text
+GET /api/v1/backups?instance_id=default-xx-01&status__state__eq=Ready&sort=status__finishTime&limit=1
+```
+
+***
+
+<div id="restore-backup">
+  #### Restaurar copia de seguridad
+</div>
+
+`POST /api/v1/backups/{backup_id}/restore?instance_id={instance_id}&target_instance_id={target_instance_id}`
+
+Restaura una copia de seguridad en un clúster de ClickHouse de destino. Ejecuta un `RESTORE ALL` de la copia de seguridad.
+
+**Parámetros de ruta:**
+
+| Parameter   | Type   | Required | Description                                         |
+| ----------- | ------ | -------- | --------------------------------------------------- |
+| `backup_id` | string | Yes      | UUID de la copia de seguridad que se va a restaurar |
+
+**Parámetros de consulta:**
+
+| Parameter            | Type   | Required | Description                                                                      |
+| -------------------- | ------ | -------- | -------------------------------------------------------------------------------- |
+| `instance_id`        | string | Yes      | Nombre del clúster de ClickHouse de origen (donde se creó la copia de seguridad) |
+| `target_instance_id` | string | Yes      | Nombre del clúster de ClickHouse de destino (donde se restaurará)                |
+
+**Restricciones:** - La restauración en la misma instancia (`instance_id == target_instance_id`) está **prohibida** por motivos de seguridad. - Se recomienda restaurar en un clúster nuevo para evitar sobrecargar el original.
+
+**Respuesta:** `202 Accepted` -- Devuelve los ID de las operaciones de restauración.
+
+***
+
+<div id="vertical-scaling">
+  ### Escalado vertical
+</div>
+
+<div id="scale-cluster">
+  #### Escalar clúster
+</div>
+
+`POST /api/v1/instances/{instance_id}/scale`
+
+Escala verticalmente un clúster de ClickHouse ajustando los recursos de CPU y memoria.
+
+**Parámetros de ruta:**
+
+| Parámetro     | Tipo   | Obligatorio | Descripción                      |
+| ------------- | ------ | ----------- | -------------------------------- |
+| `instance_id` | string | Sí          | Nombre del clúster de ClickHouse |
+
+**Cuerpo de la solicitud:**
+
+```json
+{
+  "vertical": {
+    "resources": {
+      "cpu": "4",
+      "memory": "16Gi"
+    }
+  }
+}
+```
+
+| Campo                       | Tipo   | Obligatorio | Descripción                                                            |
+| --------------------------- | ------ | ----------- | ---------------------------------------------------------------------- |
+| `vertical.resources.cpu`    | string | No*         | Asignación de CPU en formato de cantidad de recursos de Kubernetes     |
+| `vertical.resources.memory` | string | No*         | Asignación de memoria en formato de cantidad de recursos de Kubernetes |
+
+*Se debe proporcionar al menos uno de `cpu` o `memory`.
+
+**Relación CPU-memoria:** La API aplica una **proporción de 1:4** (1 núcleo de CPU por cada 4 GiB de memoria) con un margen del 5 %. Si solo se proporciona un recurso, el otro se calcula automáticamente para mantener esta proporción.
+
+**Comportamiento:** Actualiza el `ServerPodPolicy` del recurso personalizado `ClickhouseCluster`. El operador provoca un **reinicio escalonado** de los StatefulSets con la nueva asignación de recursos.
+
+**Importante:** A diferencia de ClickHouse Cloud, ClickHouse Private **no** usa escalado Make Before Break (MBB). El escalado vertical provoca un reinicio escalonado que puede interrumpir temporalmente el servicio.
+
+**Respuesta:** `201 Created`
+
+***
+
+<div id="password-reset">
+  ### Restablecimiento de contraseña
+</div>
+
+<div id="reset-user-password">
+  #### Restablecer la contraseña del usuario
+</div>
+
+`POST /api/v1/instances/{instance_id}/reset-user-password`
+
+Restablece la contraseña de un usuario de un clúster de ClickHouse.
+
+**Parámetros de ruta:**
+
+| Parámetro     | Tipo   | Obligatorio | Descripción                      |
+| ------------- | ------ | ----------- | -------------------------------- |
+| `instance_id` | string | Sí          | Nombre del clúster de ClickHouse |
+
+**Cuerpo de la solicitud:**
+
+```json
+{
+  "user_hashed_password": "<base64-encoded-sha256-hash>",
+  "hashing_function": "sha256",
+  "username": "default"
+}
+```
+
+| Campo                  | Tipo   | Requerido | Predeterminado | Descripción                                       |
+| ---------------------- | ------ | --------- | -------------- | ------------------------------------------------- |
+| `user_hashed_password` | string | Sí        | --             | Hash de la nueva contraseña codificado en Base64  |
+| `hashing_function`     | string | No        | `"sha256"`     | Algoritmo de hash utilizado                       |
+| `username`             | string | No        | `"default"`    | Nombre de usuario cuya contraseña se restablecerá |
+
+**Generación del hash de la contraseña:**
+
+```ini
+PASSWORD='My super secret p@$$w0rd'
+HASHED_PASSWORD=$(echo -n "$PASSWORD" | shasum -a 256 | awk '{printf $1}' | base64)
+```
+
+**Restricciones:** - El restablecimiento de contraseña **no** se puede realizar en las instancias hijas de Hydra. En su lugar, restablézcala en la instancia principal.
+
+**Respuesta:**
+
+```json
+{
+  "message": "User password reset successfully"
+}
+```
+
+**Comportamiento:** Actualiza el campo `CustomerAccount` en el recurso personalizado `ClickhouseCluster`. El operador aplica el cambio de credenciales al clúster. La contraseña surte efecto después de que el operador procese el cambio.
+
+***
+
+<div id="cluster-status">
+  ### Estado del clúster
+</div>
+
+<div id="get-cluster-status">
+  #### Obtener el estado del clúster
+</div>
+
+`GET /api/v1/instances/{instance_id}/status`
+
+Devuelve el estado actual del clúster de ClickHouse especificado.
+
+**Parámetros de ruta:**
+
+| Parámetro     | Tipo   | Obligatorio | Descripción                      |
+| ------------- | ------ | ----------- | -------------------------------- |
+| `instance_id` | string | Sí          | Nombre del clúster de ClickHouse |
+
+**Respuesta:**
+
+```json
+{
+  "state": "Running",
+  "previousState": "Provisioning",
+  "message": "Cluster is healthy",
+  "stateProvidedBy": "operator"
+}
+```
+
+| Campo             | Tipo   | Descripción                                        |
+| ----------------- | ------ | -------------------------------------------------- |
+| `state`           | string | Estado actual del clúster de ClickHouse            |
+| `previousState`   | string | Estado desde el que hizo la transición el clúster  |
+| `message`         | string | Detalles sobre por qué el clúster cambió de estado |
+| `stateProvidedBy` | string | Proceso responsable de la transición de estado     |
+
+**Casos de uso:** - Verificar que se haya completado una operación de escalado vertical. - Confirmar que un restablecimiento de contraseña se haya aplicado en todo el clúster. - Supervisar el progreso del aprovisionamiento del clúster.
+
+***
+
+<div id="endpoint-summary">
+  ## Resumen de endpoints
+</div>
+
+| Método | Ruta                                                                           | Descripción                                |
+| ------ | ------------------------------------------------------------------------------ | ------------------------------------------ |
+| `GET`  | `/readiness`                                                                   | Comprobación de estado/readiness           |
+| `GET`  | `/liveness`                                                                    | Comprobación de liveness                   |
+| `POST` | `/api/v1/backups?instance_id={id}`                                             | Crear una copia de seguridad               |
+| `GET`  | `/api/v1/backups/{backup_id}?instance_id={id}`                                 | Obtener el estado de la copia de seguridad |
+| `GET`  | `/api/v1/backups?instance_id={id}`                                             | Listar copias de seguridad                 |
+| `POST` | `/api/v1/backups/{backup_id}/restore?instance_id={id}&target_instance_id={id}` | Restaurar una copia de seguridad           |
+| `POST` | `/api/v1/instances/{id}/scale`                                                 | Escalar verticalmente el clúster           |
+| `POST` | `/api/v1/instances/{id}/reset-user-password`                                   | Restablecer la contraseña del usuario      |
+| `GET`  | `/api/v1/instances/{id}/status`                                                | Obtener el estado del clúster              |
+| `GET`  | `/api/v1/license`                                                              | Obtener información de la licencia         |
+| `PUT`  | `/api/v1/license`                                                              | Crear o actualizar la licencia             |
+| `POST` | `/api/v1/license/fingerprint`                                                  | Obtener la huella digital de la licencia   |

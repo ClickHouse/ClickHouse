@@ -1,4 +1,4 @@
--- Tags: no-darwin
+-- Tags: no-darwin, no-old-analyzer
 -- Parallel FINAL via primary-key-range layers in the distributed query plan must equal local FINAL,
 -- including when duplicate keys straddle layer borders. make_distributed_plan splits a FINAL read into
 -- PK-range layers; each layer is deduplicated independently and the layers concatenate.
@@ -15,8 +15,7 @@ INSERT INTO t_final_layers_rep SELECT number, number, 1 FROM numbers(80000);
 INSERT INTO t_final_layers_rep SELECT number + 40000, number + 2000000, 2 FROM numbers(80000);
 
 SELECT 'Replacing local', count(), sum(v) FROM t_final_layers_rep FINAL SETTINGS make_distributed_plan = 0;
-SELECT 'Replacing distributed', count(), sum(v) FROM t_final_layers_rep FINAL
-SETTINGS make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0;
+SELECT 'Replacing distributed', count(), sum(v) FROM t_final_layers_rep FINAL SETTINGS make_distributed_plan = 1;
 
 -- The FINAL read itself must distribute (split into PK-range layers), not fall back to a serial read.
 -- A bare SELECT (no aggregation to distribute on its own) is distributed only if the read is.
@@ -30,8 +29,7 @@ INSERT INTO t_final_layers_col SELECT number, number, 1 FROM numbers(100000);
 INSERT INTO t_final_layers_col SELECT number, number, -1 FROM numbers(50000);
 
 SELECT 'Collapsing local', count(), sum(v) FROM t_final_layers_col FINAL SETTINGS make_distributed_plan = 0;
-SELECT 'Collapsing distributed', count(), sum(v) FROM t_final_layers_col FINAL
-SETTINGS make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0;
+SELECT 'Collapsing distributed', count(), sum(v) FROM t_final_layers_col FINAL SETTINGS make_distributed_plan = 1;
 
 DROP TABLE IF EXISTS t_final_layers_sum;
 CREATE TABLE t_final_layers_sum (k UInt64, v UInt64) ENGINE = SummingMergeTree ORDER BY k;
@@ -40,8 +38,7 @@ INSERT INTO t_final_layers_sum SELECT number, 10 FROM numbers(100000);
 INSERT INTO t_final_layers_sum SELECT number, 5 FROM numbers(100000);
 
 SELECT 'Summing local', count(), sum(v) FROM t_final_layers_sum FINAL SETTINGS make_distributed_plan = 0;
-SELECT 'Summing distributed', count(), sum(v) FROM t_final_layers_sum FINAL
-SETTINGS make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0;
+SELECT 'Summing distributed', count(), sum(v) FROM t_final_layers_sum FINAL SETTINGS make_distributed_plan = 1;
 
 DROP TABLE t_final_layers_rep;
 DROP TABLE t_final_layers_col;

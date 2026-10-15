@@ -1,20 +1,5 @@
 -- the analyzer wraps the subcolumn into a cast to String
 1
--- keyValuePairs: the index prunes granules through the cast
-Granules: 2/2
-Name: idx
-Granules: 1/2
--- keyValuePairs: exact direct read replaces the predicate
-1
--- keyValuePairs: results match the scan
-idx	1
-idx	3
-scan	1
-scan	3
-idx	3
-scan	3
-idx	0
-idx	0
 -- mapValues: the index prunes granules through the cast
 Granules: 2/2
 Name: idx
@@ -80,8 +65,12 @@ idx	1
 idx	2
 scan	1
 scan	2
--- Nullable column: dropping Nullable is not looked through, the cast still throws on the NULL row
-0
+-- Nullable column: dropping Nullable is looked through, the cast does not throw if the granule with NULL is skipped
+Granules: 2/2
+Name: idx
+Granules: 1/2
+idx	1
+idx	2
 -- Array column: a cast that only wraps the elements is looked through
 Array(Nullable)	Granules: 2/2
 Array(Nullable)	Name: idx

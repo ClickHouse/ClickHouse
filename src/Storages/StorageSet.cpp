@@ -1,30 +1,26 @@
-#include <filesystem>
-#include <optional>
-#include <Access/Common/AccessFlags.h>
-#include <Access/EnabledRowPolicies.h>
-#include <Compression/CompressedReadBuffer.h>
-#include <Compression/CompressedWriteBuffer.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
-#include <Disks/IDisk.h>
-#include <Formats/NativeReader.h>
-#include <Formats/NativeWriter.h>
-#include <IO/ReadBufferFromFileBase.h>
-#include <IO/WriteBufferFromFile.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/Set.h>
-#include <Parsers/ASTCreateQuery.h>
-#include <Processors/Sinks/SinkToStorage.h>
-#include <QueryPipeline/ProfileInfo.h>
 #include <Storages/SetSettings.h>
-#include <Storages/StorageFactory.h>
 #include <Storages/StorageSet.h>
+#include <Storages/StorageFactory.h>
+#include <Compression/CompressedReadBuffer.h>
+#include <IO/WriteBufferFromFile.h>
+#include <Compression/CompressedWriteBuffer.h>
+#include <Formats/NativeWriter.h>
+#include <Formats/NativeReader.h>
+#include <QueryPipeline/ProfileInfo.h>
+#include <Disks/IDisk.h>
 #include <Common/CurrentThread.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
-#include <Common/MemoryTrackerUtils.h>
-#include <Common/StringUtils.h>
 #include <Common/formatReadable.h>
+#include <Common/StringUtils.h>
+#include <Interpreters/Context.h>
+#include <IO/ReadBufferFromFileBase.h>
 #include <Common/logger_useful.h>
+#include <Interpreters/Set.h>
+#include <Processors/Sinks/SinkToStorage.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <filesystem>
+#include <optional>
 
 namespace fs = std::filesystem;
 
@@ -40,7 +36,6 @@ namespace SetSetting
 
 namespace ErrorCodes
 {
-    extern const int ACCESS_DENIED;
     extern const int INCORRECT_FILE_NAME;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
@@ -127,7 +122,6 @@ void SetOrJoinSink::consume(Chunk & chunk)
 void SetOrJoinSink::onFinish()
 {
     table.finishInsert();
-    setCurrentQueryMemoryDriftExpected();
     if (backup_buf)
     {
         backup_stream->flush();
@@ -205,24 +199,6 @@ SetPtr StorageSet::getSet() const
 }
 
 
-void StorageSet::checkNoRowPolicy(const ContextPtr & context) const
-{
-    auto storage_id = getStorageID();
-    auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
-    context->checkAccess(AccessType::SELECT, storage_id, metadata_snapshot->getColumns().getNamesOfPhysical());
-
-    auto row_policy_filter
-        = context->getRowPolicyFilter(storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-
-    if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
-        throw Exception(
-            ErrorCodes::ACCESS_DENIED,
-            "Cannot use table {} on the right side of IN because a row policy applies to it. "
-            "The Set engine has no read path that could filter the rows",
-            storage_id.getNameForLogs());
-}
-
-
 void StorageSet::insertBlock(const Block & block, ContextPtr)
 {
     SetPtr current_set;
@@ -290,8 +266,6 @@ void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_sn
     auto new_set = std::make_shared<Set>(SizeLimits(), 0, true);
     new_set->setHeader(header.getColumnsWithTypeAndName());
     {
-        /// Table data belongs to the server, not to the query releasing it.
-        MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
         std::lock_guard lock(mutex);
         set = new_set;
     }
@@ -392,9 +366,9 @@ void registerStorageSet(StorageFactory & factory)
     }, StorageFactory::StorageFeatures{ .supports_settings = true, .has_builtin_setting_fn = SetSettings::hasBuiltin, },
     Documentation{
         .description = R"DOCS_MD(
-<Note>
+:::note
 In ClickHouse Cloud, if your service was created with a version earlier than 25.4, you will need to set the compatibility to at least 25.4 using  `SET compatibility=25.4`.
-</Note>
+:::
 
 A data set that is always in RAM. It is intended for use on the right side of the `IN` operator (see the section "IN operators").
 
@@ -411,7 +385,7 @@ When creating a table, the following settings are applied:
 
 #### Persistent {#persistent}
 
-Disables persistency for the Set and [Join](/reference/engines/table-engines/special/join) table engines.
+Disables persistency for the Set and [Join](/engines/table-engines/special/join) table engines.
 
 Reduces the I/O overhead. Suitable for scenarios that pursue performance and do not require persistence.
 

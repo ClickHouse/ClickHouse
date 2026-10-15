@@ -69,14 +69,6 @@ namespace
         }
 
         auto value = literal_value->as<ASTLiteral>()->value;
-
-        /// A named collection value is stored as text, and an aggregate state has no text
-        /// representation: fieldToString() on it raises a LOGICAL_ERROR (an abort under
-        /// debug/sanitizers). The value comes from the query, so this is a user error.
-        if (value.getType() == Field::Types::AggregateFunctionState)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "Value of key '{}' cannot be an aggregate function state", key);
-
         return std::pair{key, Field(value)};
     }
 
@@ -342,11 +334,8 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
         }
 
         const auto & [key, value] = *value_override;
-        /// Marked before the value is written: the mark remembers the stored value the override
-        /// replaces, so consumers can tell an override that drops a collection-provided value
-        /// from one that never had anything to drop (see `StorageMySQL::getSSLParams`).
-        collection_copy->markQueryOverridden(key);
         collection_copy->setOrUpdate<String>(key, fieldToString(std::get<Field>(value)), {});
+        collection_copy->markQueryOverridden(key);
     }
 
     if (dependent_table_id)
@@ -376,12 +365,6 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
             continue;
 
         checkNamedCollectionOverrideLock(*collection, key);
-
-        /// The keys of a dictionary created with a DDL query come from the query, so mark them the
-        /// same way as the AST-based overload above: `StorageMySQL::getSSLParams` distinguishes a
-        /// credential supplied at the point of use from one defined in the collection itself.
-        /// Marked before the value is written so the mark remembers the replaced stored value.
-        collection_copy->markQueryOverridden(key);
         collection_copy->setOrUpdate<String>(key, config.getString(config_prefix + '.' + key), {});
     }
 

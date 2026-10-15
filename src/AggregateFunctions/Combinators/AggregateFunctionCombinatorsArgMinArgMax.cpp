@@ -1,8 +1,6 @@
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 #include <AggregateFunctions/SingleValueData.h>
 #include <Common/memory.h>
-#include <DataTypes/TypeTree.h>
-#include <DataTypes/getLeastSupertype.h>
 
 namespace DB
 {
@@ -81,12 +79,12 @@ public:
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Illegal type {} of argument of aggregate function {} because the values of that data type can contain values with "
-                    "different data types. Consider using typed subcolumns or cast column to a specific data type{}",
+                    "different data types. Consider using typed subcolumns or cast column to a specific data type",
                     arguments[key_col]->getName(),
-                    getName(),
-                    getNumericVariantSupertypeHint(type.getPtr()));
+                    getName());
         };
-        forEachInTypeTree(*arguments[key_col], check_not_dynamic_or_variant);
+        check_not_dynamic_or_variant(*arguments[key_col]);
+        arguments[key_col]->forEachChild(check_not_dynamic_or_variant);
     }
 
     String getName() const override

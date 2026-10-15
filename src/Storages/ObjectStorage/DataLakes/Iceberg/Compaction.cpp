@@ -1,5 +1,4 @@
 #include <limits>
-#include <map>
 #include <optional>
 #include <string>
 #include <unordered_set>
@@ -258,15 +257,12 @@ static Plan getPlan(
 
             for (const auto & data_file : files_handle.getFilesWithoutDeleted(FileContentType::DATA))
             {
-                auto partition_index = plan.partition_encoder.encodePartition(data_file->normalized_partition_key_value);
+                auto partition_index = plan.partition_encoder.encodePartition(data_file->parsed_entry->partition_key_value);
                 if (plan.partitions.size() <= partition_index)
                     plan.partitions.push_back({});
 
                 IcebergDataObjectInfoPtr data_object_info = std::make_shared<IcebergDataObjectInfo>(
-                    data_file,
-                    persistent_table_components.path_resolver.resolve(data_file->parsed_entry->file_path_key),
-                    0,
-                    Iceberg::getIdentityPartitionColumnValues(*data_file, *persistent_table_components.schema_processor));
+                    data_file, persistent_table_components.path_resolver.resolve(data_file->parsed_entry->file_path_key), 0);
                 /// One DataFilePlan per source *data file*, keyed by the data file's own path.
                 /// Keying by the manifest path made every data file after the first in a
                 /// manifest reuse the first file's plan, so writeDataFiles rewrote only one
@@ -295,17 +291,14 @@ static Plan getPlan(
 
     for (const auto & delete_file : all_positional_delete_files)
     {
-        auto partition_index = plan.partition_encoder.encodePartition(delete_file->normalized_partition_key_value);
+        auto partition_index = plan.partition_encoder.encodePartition(delete_file->parsed_entry->partition_key_value);
         if (partition_index >= plan.partitions.size())
             continue;
-
-        if (delete_file->parsed_entry->isDeletionVector())
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Compaction of Iceberg tables with deletion vectors is not supported");
 
         for (auto & data_file : plan.partitions[partition_index])
         {
             if (data_file->data_object_info->info.sequence_number <= delete_file->sequence_number)
-                data_file->data_object_info->addPositionDeleteFile(
+                data_file->data_object_info->addPositionDeleteObject(
                     delete_file, persistent_table_components.path_resolver.resolve(delete_file->parsed_entry->file_path_key));
         }
     }
@@ -343,11 +336,11 @@ static void writeDataFiles(
     {
         /// The transform requires `ChunkInfoRowNumbers` in every chunk even when it has nothing
         /// to delete, and only the Parquet input formats attach it. Data files with attached
-        /// position deletes are guaranteed to be Parquet by `addPositionDeleteFile`, but a data
+        /// position deletes are guaranteed to be Parquet by `addPositionDeleteObject`, but a data
         /// file without them (e.g. an ORC file newer than all position deletes) may be in any
         /// format, so the transform must be skipped for it.
         std::shared_ptr<IcebergBitmapPositionDeleteTransform> delete_file_transform;
-        if (data_file->data_object_info->info.hasPositionDeletes())
+        if (!data_file->data_object_info->info.position_deletes_objects.empty())
             delete_file_transform = std::make_shared<IcebergBitmapPositionDeleteTransform>(
                 sample_block,
                 data_file->data_object_info,
@@ -358,12 +351,7 @@ static void writeDataFiles(
                 context);
 
         RelativePathWithMetadata relative_path(data_file->data_object_info->getPath());
-        /// A data file may be Parquet/ORC/Avro; only the ones that will actually seek to a footer at
-        /// the tail should skip the generic from-start prefetch.
-        auto read_settings = context->getReadSettings();
-        read_settings.remote_fs_settings.random_access = FormatFactory::instance().checkIfFormatIsRandomAccessInput(
-            data_file->data_object_info->getFileFormat().value_or(write_format), context);
-        auto read_buffer = createReadBuffer(relative_path, object_storage, context, getLogger("IcebergCompaction"), read_settings);
+        auto read_buffer = createReadBuffer(relative_path, object_storage, context, getLogger("IcebergCompaction"));
 
         const Settings & settings = context->getSettingsRef();
         auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(
@@ -500,19 +488,17 @@ static bool writeConsolidatedManifestFile(
 
     auto partitions_specs = metadata_object->getArray(f_partition_specs);
 
-    /// After partition evolution each manifest must be rewritten under the spec its source files used, and after schema evolution
-    /// (e.g. widening `decimal(P, S)`) its partition values must be encoded under the schema its source files were written with;
-    /// resolve and cache spec info per (spec-id, schema-id).
+    /// After partition evolution each manifest must be rewritten under the spec its source files used; resolve and cache spec info per spec-id.
     struct ResolvedPartitionSpec
     {
         Poco::JSON::Object::Ptr spec;
         std::vector<String> partition_columns;
         DataTypes partition_types;
     };
-    std::map<std::pair<Int32, Int32>, ResolvedPartitionSpec> resolved_specs;
-    auto resolve_partition_spec = [&](Int32 spec_id, Int32 files_schema_id) -> const ResolvedPartitionSpec &
+    std::unordered_map<Int32, ResolvedPartitionSpec> resolved_specs;
+    auto resolve_partition_spec = [&](Int32 spec_id) -> const ResolvedPartitionSpec &
     {
-        if (auto it = resolved_specs.find({spec_id, files_schema_id}); it != resolved_specs.end())
+        if (auto it = resolved_specs.find(spec_id); it != resolved_specs.end())
             return it->second;
 
         Poco::JSON::Object::Ptr spec;
@@ -544,8 +530,7 @@ static bool writeConsolidatedManifestFile(
             source_ids.push_back(spec_field->getValue<Int32>(Iceberg::f_source_id));
         }
 
-        /// Derive partition value types from a schema that defines every source column the spec references, preferring the schema
-        /// the source files were written with, then the current one, then any historical one; register all schemas first so they can be queried by id.
+        /// Derive partition value types from a schema that defines every source column the spec references, preferring the current schema then any historical one; register all schemas first so they can be queried by id.
         for (UInt32 i = 0; i < schemas->size(); ++i)
             persistent_table_components.schema_processor->addIcebergTableSchema(schemas->getObject(i));
 
@@ -562,19 +547,14 @@ static bool writeConsolidatedManifestFile(
             return block;
         };
 
-        Int32 schema_id_for_spec = files_schema_id;
+        Int32 schema_id_for_spec = static_cast<Int32>(current_schema_id);
         std::optional<Block> spec_sample_block = build_sample_block(schema_id_for_spec);
-        if (!spec_sample_block && files_schema_id != static_cast<Int32>(current_schema_id))
-        {
-            schema_id_for_spec = static_cast<Int32>(current_schema_id);
-            spec_sample_block = build_sample_block(schema_id_for_spec);
-        }
         if (!spec_sample_block)
         {
             for (UInt32 i = 0; i < schemas->size(); ++i)
             {
                 Int32 candidate_id = schemas->getObject(i)->getValue<Int32>(Iceberg::f_schema_id);
-                if (candidate_id == files_schema_id || candidate_id == static_cast<Int32>(current_schema_id))
+                if (candidate_id == schema_id_for_spec)
                     continue;
                 spec_sample_block = build_sample_block(candidate_id);
                 if (spec_sample_block)
@@ -595,7 +575,7 @@ static bool writeConsolidatedManifestFile(
         resolved.partition_types
             = ChunkPartitioner(spec_fields, schema_for_spec->getArray(Iceberg::f_fields), context, shared_sample_block).getResultTypes();
 
-        return resolved_specs.emplace(std::make_pair(spec_id, files_schema_id), std::move(resolved)).first->second;
+        return resolved_specs.emplace(spec_id, std::move(resolved)).first->second;
     };
 
     /// Return the raw metadata schema object for a given schema-id, used as the verbatim Avro `schema` header of a rewritten manifest so its data-file bounds resolve under the same schema the files were written with.
@@ -641,9 +621,8 @@ static bool writeConsolidatedManifestFile(
     // Collect live data files from the current snapshot only; iterating older snapshots would resurrect deleted files.
     size_t total_data_files = 0;
     // Only data manifests are consolidated; delete-file manifests are carried forward unchanged so deleted rows do not reappear.
+    size_t num_data_manifests = 0;
     std::unordered_set<String> delete_manifest_paths;
-    /// The data manifests of the current snapshot, i.e. exactly the ones a rewrite would replace.
-    std::vector<IcebergPathFromMetadata> data_manifest_paths;
 
     auto current_manifest_list = getManifestList(
         object_storage, persistent_table_components, context, IcebergPathFromMetadata::deserialize(current_manifest_list_path), log);
@@ -655,8 +634,24 @@ static bool writeConsolidatedManifestFile(
             delete_manifest_paths.insert(manifest_file.manifest_file_path.serialize());
             continue;
         }
-        data_manifest_paths.push_back(manifest_file.manifest_file_path);
+        ++num_data_manifests;
         const Int32 source_partition_spec_id = manifest_file.partition_spec_id;
+
+        /// A manifest-only rewrite cannot round-trip per-file `key_metadata` (data-file encryption keys), so reject rather than silently dropping it and making an encrypted table unreadable.
+        {
+            RelativePathWithMetadata key_metadata_object_info(persistent_table_components.path_resolver.resolve(manifest_file.manifest_file_path));
+            auto key_metadata_buf = createReadBuffer(key_metadata_object_info, object_storage, context, log);
+            AvroForIcebergDeserializer key_metadata_deserializer(std::move(key_metadata_buf), manifest_file.manifest_file_path, getFormatSettings(context));
+            if (key_metadata_deserializer.hasPath(c_data_file_key_metadata))
+            {
+                for (size_t row = 0; row < key_metadata_deserializer.rows(); ++row)
+                    if (!key_metadata_deserializer.getValueFromRowByName(row, c_data_file_key_metadata).isNull())
+                        throw Exception(
+                            ErrorCodes::NOT_IMPLEMENTED,
+                            "OPTIMIZE TABLE ... MANIFEST is not supported for Iceberg tables with per-file key_metadata "
+                            "(encrypted data files): preserving the encryption metadata across a manifest rewrite is not implemented");
+            }
+        }
 
         auto files_handle = getManifestFileEntriesHandle(
             object_storage, persistent_table_components, context, log, manifest_file, static_cast<Int32>(current_schema_id));
@@ -667,7 +662,7 @@ static bool writeConsolidatedManifestFile(
             const Int32 source_schema_id = data_file->resolved_schema_id;
             String partition_key = std::to_string(source_partition_spec_id) + "|" + std::to_string(source_schema_id) + "|";
             FieldVisitorDump dump_visitor;
-            for (const auto & val : data_file->normalized_partition_key_value)
+            for (const auto & val : data_file->parsed_entry->partition_key_value)
                 partition_key += applyVisitor(dump_visitor, val) + "|";
 
             if (!partitions_map.contains(partition_key))
@@ -676,7 +671,7 @@ static bool writeConsolidatedManifestFile(
             auto & pd = partitions_map.at(partition_key);
             pd.partition_spec_id = source_partition_spec_id;
             pd.schema_id = source_schema_id;
-            pd.partition_values = data_file->normalized_partition_key_value;
+            pd.partition_values = data_file->parsed_entry->partition_key_value;
             // A single manifest file should not list the same data file twice
             if (std::find(pd.file_paths.begin(), pd.file_paths.end(), data_file->parsed_entry->file_path_key) == pd.file_paths.end())
             {
@@ -724,47 +719,15 @@ static bool writeConsolidatedManifestFile(
         }
     }
 
-    /// Not a single live data file was collected: every DATA manifest still listed by the current snapshot holds
-    /// only deleted entries (e.g. every row was deleted). There is nothing to consolidate, and a rewrite would ask
-    /// the Avro writer to close a manifest list that was never written to, dereferencing a null stream.
-    /// This is not the "unpartitioned table" case: `partition_key` always carries the source spec-id and schema-id,
-    /// so an unpartitioned table with live files still forms one group and is consolidated as before.
-    if (total_data_files == 0)
-    {
-        LOG_INFO(log, "No live data files in the current snapshot ({} data manifests hold only deleted entries); nothing to do",
-                 data_manifest_paths.size());
-        return true;
-    }
-
     /// Data manifests already optimally consolidated (at most one per partition): rewriting cannot reduce the count, so report success.
-    if (partitions_map.size() >= data_manifest_paths.size())
+    if (partitions_map.size() >= num_data_manifests)
     {
         LOG_INFO(log, "Manifests already optimally consolidated ({} data manifests, {} unique partitions); nothing to do",
-                 data_manifest_paths.size(), partitions_map.size());
+                 num_data_manifests, partitions_map.size());
         return true;
     }
 
     const auto & path_resolver = persistent_table_components.path_resolver;
-
-    /// A manifest-only rewrite cannot round-trip per-file `key_metadata` (data-file encryption keys), so reject
-    /// rather than silently dropping it and making an encrypted table unreadable. This is checked only here,
-    /// past the early returns above: those leave every manifest exactly as it is, so for a table that needs no
-    /// rewrite at all - in particular an emptied one, whose deleted-only manifests are never read again - there
-    /// is no encryption metadata to lose and reporting success must not turn into a hard error.
-    for (const auto & data_manifest_path : data_manifest_paths)
-    {
-        RelativePathWithMetadata key_metadata_object_info(path_resolver.resolve(data_manifest_path));
-        auto key_metadata_buf = createReadBuffer(key_metadata_object_info, object_storage, context, log);
-        AvroForIcebergDeserializer key_metadata_deserializer(std::move(key_metadata_buf), data_manifest_path, getFormatSettings(context));
-        if (!key_metadata_deserializer.hasPath(c_data_file_key_metadata))
-            continue;
-        for (size_t row = 0; row < key_metadata_deserializer.rows(); ++row)
-            if (!key_metadata_deserializer.getValueFromRowByName(row, c_data_file_key_metadata).isNull())
-                throw Exception(
-                    ErrorCodes::NOT_IMPLEMENTED,
-                    "OPTIMIZE TABLE ... MANIFEST is not supported for Iceberg tables with per-file key_metadata "
-                    "(encrypted data files): preserving the encryption metadata across a manifest rewrite is not implemented");
-    }
 
     // Create file name generator for new metadata files
     FileNamesGenerator generator(
@@ -859,8 +822,8 @@ static bool writeConsolidatedManifestFile(
             consolidated_counts.min_sequence_number = manifest_min_sequence_number;
             existing_entry_counts.push_back(consolidated_counts);
 
-            /// Rewrite this manifest under the partition spec and the schema its source files used, not the default and the current ones.
-            const auto & resolved_spec = resolve_partition_spec(pd.partition_spec_id, pd.schema_id);
+            /// Rewrite this manifest under the partition spec its source files used, not the default.
+            const auto & resolved_spec = resolve_partition_spec(pd.partition_spec_id);
             entry_partition_spec_ids.push_back(pd.partition_spec_id);
 
             /// The manifest's partition tuple must match the resolved spec; a mismatch (corrupt or inconsistently-evolved
@@ -1399,10 +1362,8 @@ void compactIcebergManifests(
         if (attempt > 0)
             LOG_INFO(log, "Retrying manifest compaction (attempt {}/{})", attempt + 1, MAX_COMPACTION_RETRIES);
 
-        const auto [metadata_version, metadata_file_path, _] = getLatestMetadataFileAndVersionWithCatalog(
+        const auto [metadata_version, metadata_file_path, _] = getLatestOrExplicitMetadataFileAndVersion(
             object_storage_,
-            catalog,
-            table_id.getTableName(),
             persistent_table_components.table_path,
             data_lake_settings,
             persistent_table_components.metadata_cache,
@@ -1410,7 +1371,8 @@ void compactIcebergManifests(
             log.get(),
             persistent_table_components.table_uuid,
             persistent_table_components.metadata_compression_method,
-            /* ignore_metadata_pointer_overrides */ true);
+            /* force_fetch_latest_metadata */ true,
+            /* ignore_explicit_metadata_file_path */ true);
 
         auto metadata_object = getMetadataJSONObject(
             metadata_file_path,

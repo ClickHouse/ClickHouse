@@ -1,0 +1,541 @@
+---
+noindex: true
+title: "Implantar o ClickHouse em bare metal"
+sidebarTitle: "Implantar em bare metal"
+description: "Este tutorial mostra como implantar o ClickHouse em nós bare metal usando Terraform e Ansible em instâncias AWS EC2, com o RKE2 como distribuição Kubernetes"
+---
+
+Este tutorial mostra como implantar o ClickHouse em nós bare metal usando Terraform e Ansible em instâncias AWS EC2, com o RKE2 como distribuição Kubernetes. Ao final, você terá um cluster RKE2 em execução, com o ClickHouse implantado usando o operator.
+
+Para ver especificações detalhadas da infraestrutura, consulte [reference/infrastructure-requirements.md](/pt-BR/products/clickhouse-private/reference/infrastructure-requirements-reference).
+
+***
+
+<div id="prerequisites">
+  ## Pré-requisitos
+</div>
+
+* Estação de trabalho Linux (RHEL/Rocky Linux ou similar)
+* `terraform` v1.13+
+* `ansible` com suporte a roles do Ansible Galaxy
+* `kubectl`
+* `helm` v3.x
+* Credenciais do AWS IAM com permissões para EC2, VPC e S3
+* Acesso ao registro de contêineres do ClickHouse
+* [example-scripts.zip](https://d9v141ecaehea.cloudfront.net/example-scripts.zip?Expires=1796083200\&Signature=gY-eqdeGHilnNqad8y6KVoXjEYnJlpE2-QzSXOkV-qQmMbiDX0VSrrw6TLgS4Ls8pRQ9tjMuK2pM-cr2G92ZnP7H0EMoA-5P--YLbtU5RRD-HEDnTVc1cyLfLqb2uPmiWgEuWvkNA2lrQB7THp-MwDzdueV4x0hYGY3IoZTsPo9NvbuXasLgKTZ3Ioo0-GYeAdWpxi7sTOpESGXar9regLk~36uU7HFLE4gm~-KbTYbLcgfdf4S9VQIauIQPVaDUaFZ7X7ojpC1NvKWL2mJgRW84s53WtZCp947LslH-h-6QX1wzy6FEHKQr47j7jS4TkIA1aO7f9iDM~woCD7UH6Q__\&Key-Pair-Id=K3MEXWCGKHWKPM) -- contém módulos do Terraform, playbooks do Ansible e templates de valores do Helm
+
+***
+
+<Steps>
+  <Step>
+    ## Fase 1: Instale o Terraform
+
+    ```text
+    dnf install -y unzip git
+    ```
+
+    ```bash
+    curl -O https://releases.hashicorp.com/terraform/1.13.2/terraform_1.13.2_linux_amd64.zip
+    ```
+
+    ```text
+    unzip terraform_1.13.2_linux_amd64.zip
+    ```
+
+    ```bash
+    sudo cp terraform /usr/local/bin
+    ```
+
+    Verifique a instalação:
+
+    ```text
+    terraform version
+    ```
+
+    Saída esperada:
+
+    ```text
+    Terraform v1.13.2
+    on linux_amd64
+    ```
+
+    ***
+  </Step>
+
+  <Step>
+    ## Fase 2: Baixar scripts de exemplo
+
+    Baixe e extraia os scripts de exemplo fornecidos pelo ClickHouse:
+
+    ```text
+    unzip example-scripts.zip
+    cd ./bare-metal
+    ```
+
+    O arquivo compactado contém módulos do Terraform, playbooks do Ansible, modelos de inventário e arquivos de valores do Helm.
+
+    ***
+  </Step>
+
+  <Step>
+    ## Fase 3: Configurar credenciais da AWS
+
+    Crie um arquivo de credenciais com a chave de acesso e a chave secreta do AWS IAM:
+
+    ```bash
+    cat > aws-creds.sh <<EOF
+    export AWS_ACCESS_KEY_ID=<Your AWS ACCESS KEY ID>
+    export AWS_SECRET_ACCESS_KEY=<Your AWS SECRET ACCESS KEY>
+    export AWS_REGION=us-east-2
+    EOF
+    ```
+
+    Substitua `<Your AWS ACCESS KEY ID>` e `<Your AWS SECRET ACCESS KEY>` pelos valores do console do AWS IAM.
+
+    Carregue as credenciais:
+
+    ```bash
+    source ./aws-creds.sh
+    ```
+
+    ***
+  </Step>
+
+  <Step>
+    ## Fase 4: Inicializar e aplicar o Terraform
+
+    Inicialize o módulo do Terraform para o RKE2. Adicione `-migrate-state` se estiver migrando o estado do armazenamento local para o S3.
+
+    ```text
+    terraform -chdir=modules/rke2 init \
+    -backend-config="encrypt=true" \
+    -backend-config="region=us-east-2" \
+    -backend-config="bucket=chb-tfstate-359774249275" \
+    -backend-config="use_lockfile=true" \
+    -backend-config="key=chb/rke2/terraform.tfstate"
+    ```
+
+    Aplique a configuração do Terraform para provisionar a infraestrutura:
+
+    ```text
+    terraform -chdir=modules/rke2 apply \
+    -var-file=../../vars/common.tfvars \
+    -var-file=../../vars/instances.tfvars \
+    -var-file=../../vars/rke2.tfvars
+    ```
+
+    Isso cria as instâncias do EC2, a configuração de rede e os grupos de segurança necessários para o cluster RKE2.
+
+    ***
+  </Step>
+
+  <Step>
+    ## Fase 5: Instalar as dependências do Ansible
+
+    Navegue até o diretório do Ansible e instale as roles e coleções necessárias do Galaxy:
+
+    ```bash
+    cd ~/bare-metal/ansible
+    ```
+
+    ```text
+    ansible-galaxy role install lablabs.rke2
+    ```
+
+    ```text
+    ansible-galaxy collection install kubernetes.core
+    ```
+
+    ***
+  </Step>
+
+  <Step>
+    ## Fase 6: Implantar o RKE2
+
+    ### Verifique se os nós estão prontos
+
+    ```text
+    ansible all -i inventory.yml -a 'cloud-init status'
+    ```
+
+    ### Configure os NVMEs
+
+    ```text
+    ansible-playbook -i inventory.yml disks_nvme.yml
+    ```
+
+    ### Execute o playbook do RKE2
+
+    ```text
+    ansible-playbook -i inventory.yml rke2_playbook.yml
+    ```
+
+    Este playbook instala e configura o RKE2 em todos os nós. Ele provisiona o primeiro nó de servidor, aguarda até que ele esteja pronto e, em seguida, adiciona os nós de servidor e de agente restantes ao cluster.
+
+    A saída do playbook mostrará tarefas em execução em todos os nós (por exemplo, de `chb-rke2s101` a `chb-rke2s302`). Quando for concluído, você deverá ver um resumo como este:
+
+    ```text
+    PLAY RECAP *********************************************************************
+    chb-rke2s101               : ok=40   changed=12   unreachable=0    failed=0    skipped=45   rescued=0    ignored=0
+    chb-rke2s102               : ok=23   changed=7    unreachable=0    failed=0    skipped=38   rescued=0    ignored=0
+    chb-rke2s201               : ok=23   changed=7    unreachable=0    failed=0    skipped=38   rescued=0    ignored=0
+    chb-rke2s202               : ok=23   changed=7    unreachable=0    failed=0    skipped=38   rescued=0    ignored=0
+    chb-rke2s301               : ok=23   changed=7    unreachable=0    failed=0    skipped=38   rescued=0    ignored=0
+    chb-rke2s302               : ok=23   changed=7    unreachable=0    failed=0    skipped=38   rescued=0    ignored=0
+    ```
+
+    A tarefa `K8s nodes state` também exibirá um resumo com todos os nós com status `Ready`, suas funções e versões.
+
+    ***
+  </Step>
+
+  <Step>
+    ## Fase 7: Configure o cert-manager e os certificados
+
+    Instale o cert-manager, o trust-manager e gere certificados para o ClickHouse usando o playbook do Ansible:
+
+    ```bash
+    cd ~/bare-metal/ansible
+    ansible-playbook -i 127.0.0.1, --connection=local manage_helm_applications.yml
+    ```
+
+    Este playbook executa o seguinte:
+
+    1. Instala o Chart do Helm do cert-manager
+    2. Instala o Chart do Helm do trust-manager
+    3. Cria um emissor autoassinado e um certificado de AC
+    4. Cria um emissor de certificado de AC
+    5. Configura o Rancher (opcional)
+    6. Cria o espaço de nomes do cluster do ClickHouse
+    7. Gera certificados do servidor ClickHouse e do Keeper
+    8. Copia os certificados para os Secrets do Kubernetes correspondentes
+
+    Resultado esperado:
+
+    ```text
+    PLAY RECAP *****************************************************************
+    127.0.0.1                  : ok=18   changed=13   unreachable=0    failed=0    skipped=0    rescued=0    ignored=0
+    ```
+
+    ***
+  </Step>
+
+  <Step>
+    ## Fase 8: Instale o armazenamento local
+
+    ### Instale o local-path-provisioner
+
+    ```bash
+    kubectl apply -f https://raw.githubusercontent.com/rancher/local-path-provisioner/v0.0.32/deploy/local-path-storage.yaml
+    ```
+
+    ### Criar StorageClass
+
+    ```bash
+    cd ~/bare-metal/ch-cluster-deployment
+    kubectl apply -f local-nvme-sc.yaml
+    ```
+
+    O YAML da StorageClass deve ficar assim (atualize os valores de topologia para corresponder aos nomes dos seus nós):
+
+    ```yaml
+    apiVersion: storage.k8s.io/v1
+    kind: StorageClass
+    metadata:
+      name: local-nvme-sc
+    allowVolumeExpansion: true
+    parameters:
+      path: /nvme/disk
+    provisioner: rancher.io/local-path
+    reclaimPolicy: Delete
+    volumeBindingMode: WaitForFirstConsumer
+    allowedTopologies:
+    - matchLabelExpressions:
+        - key: topology.kubernetes.io/zone
+          values:
+            - <your_cluster_name>-keeper
+            - <your_host_1>
+            - <your_host_2>
+            - <your_host_3>
+            - <your_host_4>
+            - <your_host_5>
+            - <your_host_6>
+        - key: directpv.min.io/region
+          values:
+            - default
+    ```
+
+    ***
+  </Step>
+
+  <Step>
+    ## Fase 9: Rotular os nós
+
+    Rotule os nós com os labels de grupo do ClickHouse e de zona de topologia exigidos pelo operador:
+
+    ```bash
+    kubectl get nodes |awk '{ print $1}'|grep '01'|xargs -I {} -n 1 kubectl label nodes '{}' clickhouseGroup=keeper-amd64  topology.kubernetes.io/zone=c-baremetal-ch-01-keeper --overwrite
+    kubectl get nodes |awk '{ print $1}'|grep '02'|xargs -I {} -n 1 kubectl label nodes '{}' clickhouseGroup=server-amd64  --overwrite
+    kubectl label nodes chb-rke2s102 topology.kubernetes.io/zone=chb-rke2s102 --overwrite
+    kubectl label nodes chb-rke2s202 topology.kubernetes.io/zone=chb-rke2s202 --overwrite
+    kubectl label nodes chb-rke2s302 topology.kubernetes.io/zone=chb-rke2s302 --overwrite
+    ```
+
+    Ajuste os nomes e as labels dos nós de acordo com o seu ambiente.
+
+    ***
+  </Step>
+
+  <Step>
+    ## Fase 10: Instalar o ClickHouse Operator e o Cluster
+
+    ### Definir Variáveis de Ambiente
+
+    Crie e carregue o script de variáveis do Helm. Atualize todos os valores de placeholder:
+
+    ```bash
+    #!/bin/bash
+    # AWS/S3 creds
+    export AWS_ACCESS_KEY_ID=<your_aws_key>
+    export AWS_SECRET_ACCESS_KEY=<your_aws_secret>
+    export AWS_REGION=<your_aws_region>
+    export S3_ACCESS_KEY_ID=<s3_or_minio_key>
+    export S3_SECRET_ACCESS_KEY=<s3_or_minio_secret>
+    export S3_REGION=us-east-1
+    export S3_BUCKET_NAME=<your_s3_bucket>
+    export S3_KEY_PREFIX=<ch-s3-unique-uuid>
+    export S3_ENDPOINT=https://s3.us-east-1.amazonaws.com
+    export ECR_HOST=<ecr_host>
+    # Set AZs as determined by VPC subnets. If not relevant then use your k8s host names.
+    export AZ_LIST='["<your_host_1>", "<your_host_2>", "<your_host_3>","<your_host_4>", "<your_host_5>", "<your_host_6>"]'
+
+    PASSWORD='My super secret p@$$w0rd'
+    export HASHED_PASSWORD=$(echo -n "$PASSWORD" | sha256sum | awk '{printf $1}' | base64 -w 0)
+    export CLUSTER_NAME="baremetal-ch-01"
+    export CHART_VERSION="1.1.311"
+
+    export SERVER_NG_GROUP="server-amd64"
+    export KEEPER_NG_GROUP="keeper-amd64"
+    export KEEPER_CPU="4"
+    export KEEPER_MEMORY="16Gi"
+    export SERVER_CPU="64"
+    export SERVER_MEMORY="128Gi"
+    export CACHE_DISK_SIZE_GI=379Gi
+    ```
+
+    Execute o script no shell atual:
+
+    ```bash
+    source ./set_helm_vars.sh
+    ```
+
+    ### Instalar o Operator
+
+    Faça login no registro do Helm e instale o operator:
+
+    ```text
+    # Log into the Helm registry
+    aws ecr get-login-password | helm registry login --username AWS --password-stdin $ECR_HOST
+
+    # Create image pull secret
+    kubectl create secret docker-registry all-icr-io \
+      --docker-server=$ECR_HOST \
+      --docker-username=AWS \
+      --docker-password=$(aws ecr get-login-password) \
+      -n clickhouse-operator-system
+
+    OPERATOR_VERSION=1.18587.1
+
+    helm upgrade clickhouse-operator \
+      oci://$ECR_HOST/helm/clickhouse-operator-helm \
+      --install --reuse-values \
+      --version="$OPERATOR_VERSION" \
+      --create-namespace \
+      -n clickhouse-operator-system \
+      --set-json="image.repository=\"$ECR_HOST/clickhouse-operator\"" \
+      --set-json='cilium.enabled=false' \
+      --set-json='idleScalerEnabled=false' \
+      --set-json='webhooks.enabled=false' \
+      --set-json='operator.debug=true' \
+      --set-json='operator.metricsScraper.enabled=false' \
+      --set-json='operator.featureFlags.backupOnASeparatePod=true' \
+      --set-json='operator.featureFlags.serverCMEKEnabled=true' \
+      --set-json='imagePullSecrets=[{"name":"all-icr-io"}]' \
+      --set-json="operator.availabilityZones=$AZ_LIST"
+    ```
+
+    ### Implantando o Cluster do ClickHouse
+
+    Crie o arquivo de valores do Helm (`clickhouse-values.yaml`) com a configuração do seu cluster:
+
+    ```yaml expandable
+    imagePullSecrets:
+    - name: all-icr-io
+
+    account:
+      hashedPassword: "$HASHED_PASSWORD"
+    server:
+      ssdCacheConfiguration:
+        cacheDiskSize: "$CACHE_DISK_SIZE_GI"
+      openSSL:
+        enabled: true
+        required: true
+      replicaCount: 3
+      arm64: false
+      podPolicy:
+        nodeSelector:
+          clickhouseGroup: "$SERVER_NG_GROUP"
+        resources:
+          limits:
+            cpu: "$SERVER_CPU"
+            memory: "$SERVER_MEMORY"
+          requests:
+            cpu: "$SERVER_CPU"
+            memory: "$SERVER_MEMORY"
+      tolerations:
+        - effect: NoSchedule
+          key: "clickhouse.com/do-not-schedule"
+          operator: Exists
+      storage:
+        storageClassName: local-nvme-sc
+        resources:
+          requests: "300Gi"
+        s3:
+          bucketName: "$S3_BUCKET_NAME"
+          keyPrefix: "$S3_KEY_PREFIX"
+          endpoint: "$S3_ENDPOINT"
+          region: "$S3_REGION"
+      image:
+        repository: "$ECR_HOST/clickhouse-server"
+        tag: "25.12.1.1497"
+      additionalEnvVars:
+        - name: AWS_ACCESS_KEY_ID
+          value: "${S3_ACCESS_KEY_ID}"
+        - name: AWS_SECRET_ACCESS_KEY
+          value: "${S3_SECRET_ACCESS_KEY}"
+
+    keeper:
+      openSSL:
+        enabled: true
+        required: true
+      image:
+        repository: "$ECR_HOST/clickhouse-keeper"
+        tag: "26.2.1.258"
+      arm64: false
+      podPolicy:
+        nodeSelector:
+          clickhouseGroup: "$KEEPER_NG_GROUP"
+        resources:
+          limits:
+            cpu: "$KEEPER_CPU"
+            memory: "$KEEPER_MEMORY"
+          requests:
+            cpu: "$KEEPER_CPU"
+            memory: "$KEEPER_MEMORY"
+      tolerations:
+        - effect: NoSchedule
+          key: "clickhouse.com/do-not-schedule"
+          operator: Exists
+      storage:
+        storageClassName: local-nvme-sc
+        resources:
+          requests: 30Gi
+
+    serviceAccount:
+      create: false
+      name: default
+
+    storageClass:
+      create: false
+      name: local-nvme-sc
+      provisioner: rancher.io/local-path
+    ```
+
+    Instale o cluster usando o arquivo de values:
+
+    ```text
+    # Create namespace
+    kubectl create namespace ns-$CLUSTER_NAME
+
+    # Create image pull secret in the cluster namespace
+    kubectl create secret docker-registry all-icr-io \
+      --docker-server=$ECR_HOST \
+      --docker-username=AWS \
+      --docker-password=$(aws ecr get-login-password) \
+      -n ns-$CLUSTER_NAME
+
+    # Expand variables and install
+    TEMP_VALUES_FILE=$(mktemp)
+    envsubst < clickhouse-values.yaml > "$TEMP_VALUES_FILE"
+
+    helm upgrade "$CLUSTER_NAME" \
+      oci://$ECR_HOST/helm/onprem-clickhouse-cluster \
+      --install --reuse-values \
+      --version="$CHART_VERSION" \
+      -n ns-$CLUSTER_NAME \
+      --create-namespace \
+      --values "$TEMP_VALUES_FILE" \
+      --timeout 10m0s
+
+    rm "$TEMP_VALUES_FILE"
+    ```
+
+    ### Correções Pós-Instalação
+
+    Após o deploy do cluster, pode ser necessário aplicar um patch no StatefulSet do Keeper para adicionar secrets de pull de imagem e credenciais S3:
+
+    ```text
+    # Copy pull secret to cluster namespace
+    kubectl get secret all-icr-io -n default -o yaml | \
+      sed "s/namespace: default/namespace: ns-$CLUSTER_NAME/" | \
+      kubectl apply -n ns-$CLUSTER_NAME --force -f -
+
+    # Patch keeper StatefulSet (use sts_keeper_patch_template.yaml from example scripts)
+    kubectl patch sts c-$CLUSTER_NAME-keeper -n ns-$CLUSTER_NAME \
+      --patch "$(envsubst < sts_keeper_patch_template.yaml)"
+
+    # Restart keeper pods
+    kubectl delete pod c-$CLUSTER_NAME-keeper-{0,1,2} -n ns-$CLUSTER_NAME
+    ```
+
+    Aguarde os pods do Keeper serem reimplantados e, se necessário, corrija os PVs do servidor:
+
+    ```text
+    ./sts_server_patch.sh "ns-$CLUSTER_NAME" all-icr-io
+    kubectl delete pod -l kind=clickhouse-server
+    ```
+
+    ***
+  </Step>
+</Steps>
+
+<div id="verify-installation">
+  ## Verifique a instalação
+</div>
+
+Quando todos os pods estiverem em execução, faça o redirecionamento de porta e verifique. Como esta implantação usa TLS (openSSL ativado), use a porta 9440:
+
+```bash
+kubectl port-forward svc/c-$CLUSTER_NAME-server-any 9440:9440 -n ns-$CLUSTER_NAME
+```
+
+Conecte-se usando o ClickHouse client:
+
+```bash
+clickhouse client --host localhost --port 9440 --password "$PASSWORD" --secure --accept-invalid-certificate
+```
+
+Execute uma consulta de teste:
+
+```sql
+SELECT 1;
+```
+
+Saída esperada:
+
+```text
+   ┌─1─┐
+1. │ 1 │
+   └───┘
+1 row in set. Elapsed: 0.001 sec.
+```
