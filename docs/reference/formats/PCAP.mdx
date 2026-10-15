@@ -42,8 +42,12 @@ link types are Ethernet (`LINKTYPE_ETHERNET`), Linux cooked capture
 IEEE 802.11 with or without a radiotap header (`LINKTYPE_IEEE802_11`,
 `LINKTYPE_IEEE802_11_RADIOTAP`), and raw IP (`LINKTYPE_RAW`, `LINKTYPE_IPV4`,
 `LINKTYPE_IPV6`). For raw IP captures the outermost layer is the IP header, so
-`link_type` is `IP` or `IPv6` and the Ethernet columns are empty. Frames of any
-other link type are not dissected: they still produce rows with the capture
+`link_type` is `IP` or `IPv6` and the Ethernet columns are empty. Ethernet
+captures may hold both Ethernet II frames (`link_type` is `ETHERNET_II`) and
+IEEE 802.3 frames, whose type field is a length of at most 1500 (`link_type` is
+`IEEE802_3`). An IEEE 802.3 frame carries an `LLC` header, followed by a `SNAP`
+header when both SAPs are `0xAA`; the protocol named in the `SNAP` header, for
+example IP, is dissected further. Frames of any other link type are not dissected: they still produce rows with the capture
 metadata and `raw`, but `link_type` is `RAW`, `protocols` is `['RAW']`, and the
 layer-specific columns are empty.
 </Note>
@@ -74,11 +78,11 @@ The `PCAP` format produces the following columns:
 | `timestamp` | `DateTime64(9)` | Capture time of the packet. The column type has nanosecond scale, but capture files are read with microsecond precision, so the value is currently truncated to microseconds even for nanosecond captures |
 | `capture_length` | `UInt32` | Number of bytes saved in the file for this packet; equals `length(raw)` |
 | `original_length` | `UInt32` | Size of the packet on the wire; `>= capture_length` |
-| `link_type` | `LowCardinality(String)` | Type of the outermost layer, for example `ETHERNET_II`, or `IP` / `IPv6` for raw IP captures |
+| `link_type` | `LowCardinality(String)` | Type of the outermost layer, for example `ETHERNET_II`, `IEEE802_3`, or `IP` / `IPv6` for raw IP captures, also when the IP header was cut by the snapshot length |
 | `protocols` | `Array(LowCardinality(String))` | Ordered list of the protocol headers dissected from the captured bytes, from the link layer inwards, for example `['ETHERNET_II', 'IP', 'TCP']`. IPv6 extension headers are listed right after `IPv6` by their IANA keywords: `HOPOPT`, `IPv6-Route`, `IPv6-Frag`, `AH`, `IPv6-Opts`, `Mobility Header`, `HIP` and `Shim6`. The list stops at the last header that could be decoded: when the transport header was cut off by the snapshot length, even partially, or is not decodable, it ends with `IP` / `IPv6` (or `RAW`) even though `ip_protocol` names the transport. Use `ip_protocol` rather than `has(protocols, 'TCP')` to select packets by transport protocol |
 | `eth_src` | `Nullable(String)` | Source MAC address of the outermost Ethernet header, or `NULL` when the link layer is not Ethernet |
 | `eth_dst` | `Nullable(String)` | Destination MAC address of the outermost Ethernet header |
-| `eth_type` | `LowCardinality(String)` | Protocol carried by the outermost Ethernet frame, for example `IP`; empty when the link layer is not Ethernet. 802.1Q tags are unwrapped, so a VLAN-tagged frame reports the encapsulated protocol and not `DOT1Q`; the tag itself is exposed as `vlan_id` |
+| `eth_type` | `LowCardinality(String)` | Protocol carried by the outermost Ethernet frame, for example `IP`; empty when the link layer is not Ethernet. 802.1Q tags are unwrapped, so a VLAN-tagged frame reports the encapsulated protocol and not `DOT1Q`; the tag itself is exposed as `vlan_id`. For an IEEE 802.3 frame it is `LLC`, or the protocol named in the `SNAP` header. When the snapshot length cuts the header of that protocol, or leaves none of it, it is still named from the type field, for example `IP`, while `protocols` ends with `RAW` or with the last complete header |
 | `vlan_id` | `Nullable(UInt16)` | 802.1Q VLAN identifier of the tag right after the outermost Ethernet header, if present |
 | `ip_version` | `Nullable(UInt8)` | Version of the outermost IP header, `4` or `6`, or `NULL` for non-IP packets |
 | `src_addr` | `Nullable(IPv6)` | Source address of the outermost IP header; IPv4 addresses are mapped to IPv6 (`::ffff:a.b.c.d`) |
