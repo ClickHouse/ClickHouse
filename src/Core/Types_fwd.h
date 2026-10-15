@@ -7,7 +7,6 @@
 #include <base/defines.h>
 #include <base/types.h>
 #include <base/Decimal_fwd.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
 
 namespace wide
 {
@@ -37,6 +36,6 @@ enum class TypeIndex : uint8_t;
 
 /// Not a data type in database, defined just for convenience.
 using Strings = std::vector<String>;
-using TypeIndexesSet = UnorderedSetWithMemoryTracking<TypeIndex>;
+using TypeIndexesSet = std::unordered_set<TypeIndex>;
 
 }

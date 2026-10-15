@@ -1,4 +1,3 @@
--- Tags: no-flaky-check
 DROP DATABASE IF EXISTS memory_01069;
 CREATE DATABASE memory_01069 ENGINE = Memory;
 SHOW CREATE DATABASE memory_01069;

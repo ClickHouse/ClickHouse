@@ -54,7 +54,7 @@ public:
         return *pos != ',' && *pos != ']' && *pos != ' ' && *pos != '\t';
     }
 
-    bool readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String & column_name, size_t column_index) override;
+    bool readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String & column_name) override;
 
     void skipField(size_t /*column_index*/) override { skipField(); }
     void skipField();
@@ -81,7 +81,7 @@ private:
     bool yield_strings;
 };
 
-class JSONCompactEachRowRowSchemaReader final : public FormatWithNamesAndTypesSchemaReader
+class JSONCompactEachRowRowSchemaReader : public FormatWithNamesAndTypesSchemaReader
 {
 public:
     JSONCompactEachRowRowSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, bool yield_strings_, const FormatSettings & format_settings_);

@@ -1,6 +1,0 @@
-CREATE TABLE t (`a` UInt8, `b` UInt8 CODEC(LZ4), `c` UInt8 STATISTICS(tdigest), `d` DateTime TTL d + toIntervalDay(1), INDEX i arrayJoin([a]) TYPE minmax GRANULARITY 1) ENGINE = MergeTree PARTITION BY a % 8 PRIMARY KEY a ORDER BY (a, b) SAMPLE BY a TTL d + toIntervalDay(2) WHERE a > 0
-CREATE TABLE t (`a` UInt8) ENGINE = MergeTree ORDER BY tuple()
-CREATE TABLE t (`d` Date, `x` UInt64) ENGINE = MergeTree(d, x, 8192)
-ALTER TABLE t (MODIFY ORDER BY (a, b)), (MODIFY SAMPLE BY a), (ADD INDEX i a TYPE minmax GRANULARITY 1), (UPDATE  a = a + 1 WHERE a > 0), (MODIFY TTL d + toIntervalDay(1) RECOMPRESS CODEC(LZ4))
-ALTER TABLE t (MODIFY TTL d + toIntervalDay(1) GROUP BY a SET d = max(d))
-1
