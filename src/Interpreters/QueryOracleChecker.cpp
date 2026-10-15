@@ -339,7 +339,7 @@ bool namesNonDeterministicRegularFunction(const String & name, const ContextPtr 
 
 /// The sub-ASTs of `ast` that its `children` do not contain.
 /// `ASTColumnsApplyTransformer` copies `parameters` and `lambda` by hand in
-/// `clone()` rather than through `cloneChildren()`, so neither is a child.
+/// `clone` rather than through `cloneChildren`, so neither is a child.
 ASTs hiddenApplyMembers(const ASTPtr & ast)
 {
     const auto * apply = ast->as<ASTColumnsApplyTransformer>();
