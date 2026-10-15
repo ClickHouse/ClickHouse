@@ -90,13 +90,15 @@ def test_play_credentials_store(started_cluster, nodejs_container):
         "refilled-login-same-identity-after-reload",
         "stored-implicit-entry-keeps-its-account",
         "run-snapshot-before-implicit-user-learned",
-        "run-link-names-implicit-account",
+        "run-link-carries-implicit-account",
+        "proxy-authenticated-implicit-replay",
         "learned-implicit-user-restamps-recorded-run",
         "explicit-default-sent-without-userinfo",
         "userinfo-nothing-stored",
         "probe-outside-of-session",
         "probe-after-run-completes",
         "refill-after-passwordless-login",
+        "refill-after-passwordless-query",
         "no-password-credential-api-skips",
     ):
         assert (

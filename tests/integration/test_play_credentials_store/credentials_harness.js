@@ -102,6 +102,10 @@ function makeContext(storage) {
         /// What the fake server reports as `currentUser` for a request without a `user` parameter
         /// (its `default_session_user`); `null` makes the status request fail.
         implicit_user: 'default',
+        /// When set, a proxy in front of the fake server authenticates every request as this user with
+        /// the `X-ClickHouse-User` / `X-ClickHouse-Key` headers, and, like the server, a request that
+        /// also carries a `user` parameter is rejected.
+        proxy_user: null,
         URL,
         console,
         encodeURIComponent,
@@ -149,7 +153,8 @@ function makeContext(storage) {
         ctx.fetched.push({ url, options });
         if (ctx.implicit_user === null) return { ok: false, json: async () => ({}) };
         const m = url.match(/[?&]user=([^&]*)/);
-        const u = m ? decodeURIComponent(m[1]) : ctx.implicit_user;
+        if (ctx.proxy_user !== null && m) return { ok: false, json: async () => ({}) };
+        const u = ctx.proxy_user !== null ? ctx.proxy_user : m ? decodeURIComponent(m[1]) : ctx.implicit_user;
         return { ok: true, json: async () => ({ v: 'test', t: 0, u }) };
     };
     vm.createContext(ctx);
@@ -157,11 +162,12 @@ function makeContext(storage) {
 }
 
 const FUNCTIONS = ['effectiveConnectionUser', 'implicitUserStamp', 'implicitUserVisitState', 'pendingImplicitUserStamp',
-    'resolvedImplicitUser', 'durableImplicitUserStamp', 'durableResultSnapshot', 'runEntryUser', 'sameConnectionUser', 'sameAsLiveConnectionUser',
+    'resolvedImplicitUser', 'durableImplicitUserStamp', 'durableResultSnapshot', 'runEntryImplicitUser', 'replayConnectionUser',
+    'learnImplicitUser', 'sameConnectionUser', 'sameAsLiveConnectionUser',
     'serverIdentityKey', 'learnedImplicitUser', 'rememberImplicitUser', 'restampPendingImplicitUser',
     'serverAddressWithoutSession', 'storeCredentials', 'getServerStatus', 'buildCompletionUrl',
     'isAutofilled', 'dropAutofilledStalePassword', 'passwordlessLoginKey', 'loadPasswordlessLogins',
-    'rememberLoginPassword', 'connectionTuple', 'checkCredentials'];
+    'rememberLoginPassword', 'rememberAuthenticationOutcome', 'connectionTuple', 'checkCredentials'];
 
 function boot(js, { withPasswordCredential = true, storage = makeStorage() } = {}) {
     const ctx = makeContext(storage);
@@ -322,15 +328,15 @@ scenario('stored-implicit-entry-keeps-its-account', async js => {
     second.password_elem.value = 'secret';
     /// Before this visit asks the server, nothing proves the empty field is still alice: the entry is
     /// not the live connection (the selected database is not kept for it), and a `run=1` link of a run
-    /// launched now does not name alice for a query that runs as bob.
+    /// launched now does not carry alice for a query that runs as bob.
     assertEqual(sameAsLive(second, entry), false, 'an entry recorded for alice before this visit asks the server');
     const early_run = stampConnection(second);
     second.entry = early_run;
-    assertEqual(vm.runInContext('runEntryUser(entry.server, entry.user, entry.implicitUser)', second), '',
-        'a run launched before this visit asks the server names no account');
+    assertEqual(vm.runInContext('runEntryImplicitUser(entry.server, entry.user, entry.implicitUser)', second), '',
+        'a run launched before this visit asks the server carries no account');
     await store(second);
-    assertEqual(vm.runInContext('runEntryUser(entry.server, entry.user, entry.implicitUser)', second), 'bob',
-        'and names the account learned for it once this visit has asked');
+    assertEqual(vm.runInContext('runEntryImplicitUser(entry.server, entry.user, entry.implicitUser)', second), 'bob',
+        'and carries the account learned for it once this visit has asked');
     assertEqual(second.stored[0].id, 'bob', 'remembered under the newly reported implicit user');
     assertEqual(stampConnection(second).implicitUser, 'bob', 'new entries are stamped with the new implicit user');
     second.user_elem.value = 'bob';
@@ -395,7 +401,7 @@ scenario('run-snapshot-before-implicit-user-learned', async js => {
 /// An auto-executed `run=1` link must replay under the account that produced it, not under whatever
 /// the server's `default_session_user` is when the link is opened: once the implicit user is known,
 /// the link names it explicitly, including for a run snapshotted before the name was learned.
-scenario('run-link-names-implicit-account', async js => {
+scenario('run-link-carries-implicit-account', async js => {
     const ctx = boot(js);
     ctx.implicit_user = 'alice';
     ctx.url_elem.value = 'http://host:8123/';
@@ -403,21 +409,68 @@ scenario('run-link-names-implicit-account', async js => {
     ctx.password_elem.value = 'secret';
     const run_snapshot = stampConnection(ctx);
     ctx.entry = run_snapshot;
-    const runUser = () => vm.runInContext('runEntryUser(entry.server, entry.user, entry.implicitUser)', ctx);
-    assertEqual(runUser(), '', 'nothing to name before the implicit user is known');
+    const runImplicitUser = () => vm.runInContext('runEntryImplicitUser(entry.server, entry.user, entry.implicitUser)', ctx);
+    assertEqual(runImplicitUser(), '', 'nothing to carry before the implicit user is known');
     await store(ctx);
-    assertEqual(runUser(), 'alice', 'the learned account of the in-flight run');
+    assertEqual(runImplicitUser(), 'alice', 'the learned account of the in-flight run');
     ctx.entry = { ...run_snapshot, implicitUser: 'carol' };
-    assertEqual(runUser(), 'carol', 'the account the stored entry was stamped with');
+    assertEqual(runImplicitUser(), 'carol', 'the account the stored entry was stamped with');
     ctx.entry = { server: 'http://host:8123/', user: 'bob', implicitUser: '' };
-    assertEqual(runUser(), 'bob', 'an explicit user is kept');
+    assertEqual(runImplicitUser(), '', 'an explicit user needs no implicit account');
     ctx.entry = { server: 'http://dave@host:8123/', user: '', implicitUser: '' };
-    assertEqual(runUser(), '', 'a userinfo connection keeps the empty field');
+    assertEqual(runImplicitUser(), '', 'a userinfo connection needs no implicit account');
+});
+
+/// An empty field can be authenticated by a proxy injecting the `X-ClickHouse-User` / `X-ClickHouse-Key`
+/// headers, and the server rejects a `user` parameter combined with them. Reproducing an implicit run
+/// (Download) must keep the empty field while the server still authenticates it as the recorded
+/// account, including on a later visit that has not learned the name yet, and only name the account
+/// when the server now authenticates an empty field as somebody else.
+scenario('proxy-authenticated-implicit-replay', async js => {
+    const server = 'http://host:8123/';
+    const first = boot(js);
+    first.proxy_user = 'alice';
+    first.url_elem.value = server;
+    first.user_elem.value = '';
+    first.password_elem.value = '';
+    vm.runInContext('checkCredentials()', first);
+    for (let i = 0; i < 5; ++i) await new Promise(resolve => setImmediate(resolve));
+    const recorded = stampConnection(first);
+    assertEqual(recorded.implicitUser, 'alice', 'the proxy-authenticated implicit run is stamped with its account');
+
+    const replay = async (ctx, entry) => {
+        ctx.entry = entry;
+        ctx.fetched.length = 0;
+        const user = await vm.runInContext('replayConnectionUser(entry.server, entry.user, entry.implicitUser)', ctx);
+        ctx.replay_user = user;
+        const status = await vm.runInContext('getServerStatus(entry.server, replay_user, password_elem.value)', ctx);
+        return { user, status };
+    };
+    let result = await replay(first, recorded);
+    assertEqual(result.user, '', 'the replay keeps the empty field');
+    assertEqual(result.status && result.status.u, 'alice', 'and is authenticated as the recorded account');
+
+    /// A later visit (a restored result) asks the server first instead of naming the account.
+    const later = boot(js);
+    later.proxy_user = 'alice';
+    later.url_elem.value = server;
+    result = await replay(later, recorded);
+    assertEqual(result.user, '', 'a later visit keeps the empty field too');
+    assertEqual(result.status && result.status.u, 'alice', 'and is authenticated as the recorded account');
+
+    /// The empty field is now authenticated as another account: the recorded one is named, so the
+    /// request fails visibly instead of exporting the data of bob.
+    const changed = boot(js);
+    changed.proxy_user = 'bob';
+    changed.url_elem.value = server;
+    result = await replay(changed, recorded);
+    assertEqual(result.user, 'alice', 'the recorded account is named when the implicit account changed');
+    assertEqual(result.status, false, 'and the request is not served as bob');
 });
 
 /// A fast run can finish, and be recorded with its marker, before this visit learns the implicit name.
 /// Learning the name then writes the current history entry and the persisted snapshots again, so the
-/// `run=1` URL names the account and the snapshot is stored with the name (`durableResultSnapshot`).
+/// `run=1` URL carries the account and the snapshot is stored with the name (`durableResultSnapshot`).
 /// Nothing is written when no state carries a marker of this visit, or when the name was already known.
 scenario('learned-implicit-user-restamps-recorded-run', async js => {
     const ctx = boot(js);
@@ -437,8 +490,8 @@ scenario('learned-implicit-user-restamps-recorded-run', async js => {
     assertEqual(ctx.refreshed[0] === tab, true, 'the active tab is refreshed');
     assertEqual(ctx.saves, 1, 'the snapshots recorded with the marker are saved again');
     ctx.entry = run;
-    assertEqual(vm.runInContext('runEntryUser(entry.server, entry.user, entry.implicitUser)', ctx), 'alice',
-        'the refreshed `run=1` URL names the account');
+    assertEqual(vm.runInContext('runEntryImplicitUser(entry.server, entry.user, entry.implicitUser)', ctx), 'alice',
+        'the refreshed `run=1` URL carries the account');
     await store(ctx);
     assertEqual(ctx.refreshed.length + ctx.saves, 2, 'nothing is written again once the name is known');
 
@@ -482,8 +535,8 @@ scenario('persisted-result-stamp-is-durable', async js => {
     assertEqual(sameAsLive(reloaded, { server: snapshot.url, user: '', implicitUser: snapshot.implicitUser }), true,
         'the persisted snapshot matches the same implicit account after a reload');
     reloaded.entry = { server: snapshot.url, user: '', implicitUser: snapshot.implicitUser };
-    assertEqual(vm.runInContext('runEntryUser(entry.server, entry.user, entry.implicitUser)', reloaded), 'alice',
-        'a download of the persisted snapshot names the producing account');
+    assertEqual(vm.runInContext('runEntryImplicitUser(entry.server, entry.user, entry.implicitUser)', reloaded), 'alice',
+        'a `run=1` link of the persisted snapshot carries the producing account');
 });
 
 /// The probe is an ordinary query of the same user, so it must not compete with the query of the Run
@@ -565,6 +618,56 @@ scenario('refill-after-passwordless-login', async js => {
     await store(fifth);
     assertEqual(fifth.password_elem.value, 'new', 'the autofilled password is kept after a password login');
     assertEqual(fifth.stored[0].id, 'alice', 'and offered to the browser');
+});
+
+/// The same, when the passwordless login is proven only by a query (`rememberAuthenticationOutcome`):
+/// on routed deployments the ping of `checkURL` fails and `checkCredentials` never runs, so this visit
+/// has not learned the implicit name, and the page asks the server for it.
+scenario('refill-after-passwordless-query', async js => {
+    const settle = async () => { for (let i = 0; i < 5; ++i) await new Promise(resolve => setImmediate(resolve)); };
+    const visit = (storage, user, password) => {
+        const ctx = boot(js, { storage });
+        ctx.AUTOFILL_SELECTOR = ':autofill';
+        ctx.implicit_user = 'alice';
+        ctx.url_elem.value = 'http://host:8123/?session_id=s1';
+        ctx.user_elem.value = user;
+        ctx.password_elem.value = password;
+        return ctx;
+    };
+    const query = (ctx) => {
+        ctx.response = { ok: true, status: 200, headers: { get: () => null } };
+        vm.runInContext('rememberAuthenticationOutcome(response, url_elem.value, user_elem.value, password_elem.value)', ctx);
+    };
+    const storage = makeStorage();
+    const first = visit(storage, '', 'secret');
+    await store(first);
+    assertEqual(first.stored[0].id, 'alice', 'the empty-field login is saved under the implicit user');
+
+    const second = visit(storage, '', '');
+    query(second);
+    query(second);
+    await settle();
+    assertEqual(second.fetched.length, 1, 'the implicit user is asked from the server once');
+    if (second.fetched[0].url.includes('session_id')) throw new Error(`the probe is sent in the session: ${second.fetched[0].url}`);
+
+    const third = visit(storage, 'alice', 'secret');
+    third.password_elem.autofilled = true;
+    await store(third);
+    assertEqual(third.password_elem.value, '', 'the stale autofilled password of the refilled login is dropped');
+    assertEqual(third.stored.length, 0, 'and not offered to the browser again');
+
+    const other = visit(storage, 'bob', 'secret');
+    other.password_elem.autofilled = true;
+    await store(other);
+    assertEqual(other.password_elem.value, 'secret', 'the autofilled password of another user is kept');
+
+    const fourth = visit(storage, '', 'new');
+    query(fourth);
+    await settle();
+    const fifth = visit(storage, 'alice', 'new');
+    fifth.password_elem.autofilled = true;
+    await store(fifth);
+    assertEqual(fifth.password_elem.value, 'new', 'the autofilled password is kept after a password query');
 });
 
 scenario('implicit-default-round-trip-with-query-string', async js => {

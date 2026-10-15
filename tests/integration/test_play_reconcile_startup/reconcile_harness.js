@@ -485,6 +485,9 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 async function runScenario(js, config) {
     const { sandbox, stores, stats } = makeContext(config);
     vm.runInContext(js, sandbox, { filename: 'play.html.js' });
+    /// A scenario may replace page functions or the network right after the synchronous bootstrap,
+    /// before the asynchronous reconciliation reaches the deferred auto-run.
+    if (config.afterBoot) config.afterBoot(sandbox);
     /// A scenario on the live implicit connection may need this visit to have learned its user, as
     /// `checkCredentials` does when the server answers before `reconcileStartup` reads IndexedDB:
     /// `config.learnImplicitUser` is the name the server reports for the origin of the page.
@@ -1721,6 +1724,48 @@ async function main() {
         });
         check('format-connection-change', 'the Format result for the previous connection is discarded',
             switched === 'select 1', switched);
+    }
+
+    /// Guard (implicit account of a `run=1` link): a link of an implicit run carries the account it ran
+    /// as (`implicit_user`) instead of naming it as `user`, which a proxy-authenticated server would
+    /// reject. The startup auto-run proceeds only once the server confirms that a request without a
+    /// user is authenticated as that account; otherwise the query stays in the editor and the URL
+    /// loses `run=1`.
+    for (const [server_user, expect_run] of [['alice', true], ['bob', false]]) {
+        const q = 'SELECT 7';
+        const probes = [];
+        let runs = 0;
+        const r = await runScenario(js, {
+            href: base + '?run=1&implicit_user=alice#' + Buffer.from(q, 'utf8').toString('base64'),
+            historyState: null,
+            seedTabs: [],
+            seedMeta: null,
+            afterBoot: (sandbox) => {
+                sandbox.postAll = async () => { ++runs; };
+                sandbox.fetch = async (url, options) => {
+                    probes.push({ url: String(url), body: options && options.body });
+                    return {
+                        ok: true,
+                        status: 200,
+                        headers: { get: () => null },
+                        text: async () => '',
+                        json: async () => ({ v: 'test', t: 0, u: server_user }),
+                    };
+                };
+            },
+        });
+        await sleep(50);
+        const what = expect_run ? 'the confirmed implicit account' : 'another implicit account';
+        check('run-link-implicit-user', `the server is asked which account an empty user is (${what})`,
+            probes.some(p => String(p.body).includes('currentUser()') && !/[?&]user=/.test(p.url)), probes);
+        check('run-link-implicit-user', `the query is auto-run only for ${expect_run ? 'it' : 'the linked account'} (${what})`,
+            runs === (expect_run ? 1 : 0), runs);
+        if (!expect_run) {
+            check('run-link-implicit-user', 'the refused link no longer carries run=1',
+                new URL(r.sandbox.location.href).searchParams.get('run') === null, r.sandbox.location.href);
+            check('run-link-implicit-user', 'the query stays in the editor',
+                vm.runInContext('query_area.value', r.sandbox) === q, vm.runInContext('query_area.value', r.sandbox));
+        }
     }
 
     if (failures) {

@@ -10433,6 +10433,12 @@ function rememberLoginPassword(server_address, user, password, implicit_user = '
 /// Without the proof a non-empty password still forgets the passwordless entry: at worst the page then
 /// keeps an autofilled password it would have dropped, which is the pre-existing behaviour. An empty
 /// password is remembered only with the proof, since the entry makes the page drop a saved password.
+///
+/// A login of an empty `user` field is recorded under the name of the account too (see
+/// `rememberLoginPassword`). When this visit has not learned that name yet (`checkCredentials` may
+/// never run, see above), it is asked from the server with the same password (`learnImplicitUser`),
+/// once at a time per server, and the login is recorded under it as well. Best-effort like the rest:
+/// if the server cannot tell, only the empty spelling is recorded.
 const ACCESS_DENIED_ERROR_CODE = '497';
 function rememberAuthenticationOutcome(response, server_address, user, password) {
     const exception_code = response.headers.get('X-ClickHouse-Exception-Code');
@@ -10440,6 +10446,16 @@ function rememberAuthenticationOutcome(response, server_address, user, password)
     if (response.status === 403 && exception_code?.trim() !== ACCESS_DENIED_ERROR_CODE) return;
     if (response.ok || exception_code !== null || password) {
         rememberLoginPassword(server_address, user, password);
+        if (effectiveConnectionUser(server_address, user) || learnedImplicitUser(server_address)) return;
+        /// The servers being asked, kept on the function like `implicitUserVisitState`.
+        const probes = rememberAuthenticationOutcome.probes ??= new Set();
+        const key = serverIdentityKey(server_address);
+        if (key === null || probes.has(key)) return;
+        probes.add(key);
+        learnImplicitUser(server_address, password).then(name => {
+            probes.delete(key);
+            if (name) rememberLoginPassword(server_address, user, password, name);
+        });
     }
 }
 
@@ -14284,7 +14300,7 @@ function cellRuntimeDefaults() {
         downloadDatabase: '',   /// database the download should target (the producing connection)
         downloadUrl: '',        /// server address the download reproduces against (producing connection)
         downloadUser: '',       /// user the download reproduces against (producing connection)
-        downloadImplicitUser: '', /// stamp of the account an implicit `downloadUser` ran as (see `runEntryUser`)
+        downloadImplicitUser: '', /// stamp of the account an implicit `downloadUser` ran as (see `replayConnectionUser`)
         downloadVisible: false, /// whether the download / copy buttons apply to this cell
         copyVisible: false,
         launchQuery: undefined, /// editor text snapshotted when this cell's run was launched (see `saveHistory`)
@@ -16668,9 +16684,12 @@ async function persist() {
 /// reloaded `run=1` URL reproduces the displayed result instead of replaying against a different
 /// database or server.
 /// `fromRun` marks an entry that a genuine run produced (see `writeHistoryEntry`).
-function buildHistoryParams(params, tabName, fromRun, colorModes, pinnedColumns, shape, user, server_address, database) {
+function buildHistoryParams(params, tabName, fromRun, colorModes, pinnedColumns, shape, user, server_address, database, implicitUser) {
     const out = [];
     if (user) out.push('user=' + encodeURIComponent(user));
+    /// The account an implicit run (an empty `user`) was authenticated as, see `runEntryImplicitUser`.
+    /// It is a parameter of this page only, never sent to the server.
+    if (implicitUser) out.push('implicit_user=' + encodeURIComponent(implicitUser));
     /// Only carry `run=1` for an entry whose query/params were produced by a genuine run and
     /// still match it (`fromRun`). `saveHistory` sets it on the run itself; the editor-only
     /// writers (`syncHistory`/`refreshCurrentHistoryEntry`, driven by tab switch/rename,
@@ -16868,15 +16887,48 @@ function sameConnectionUser(a_server, a_user, a_implicit_user, b_server, b_user,
     return a_account !== '' && a_account === b_account;
 }
 
-/// The `user` to serialize into the URL of an entry that carries `run=1`: an auto-executed link must
-/// replay under the account that produced it, but an implicit connection (an empty field) is
-/// authenticated as whatever the server's `default_session_user` is when the link is opened. So once
-/// the stamp denotes a known name (`resolvedImplicitUser`), the link names that account explicitly
-/// (the server authenticates it with the same password). A connection naming its user (the field or
-/// the userinfo of the server address) keeps the field as it is.
-function runEntryUser(server_address, user, implicit_user) {
-    if (effectiveConnectionUser(server_address, user)) return user;
+/// The `implicit_user` to serialize into the URL of an entry that carries `run=1`: an auto-executed
+/// link must replay under the account that produced it, but an implicit connection (an empty field)
+/// is authenticated as whatever the server's `default_session_user` is when the link is opened. The
+/// link must not name that account as `user` though: an empty field can also be authenticated by
+/// a proxy in front of the server (the `X-ClickHouse-User` / `X-ClickHouse-Key` headers) or by a TLS
+/// certificate, and the server rejects a `user` parameter combined with those. So the link keeps the
+/// empty field and carries the name the stamp denotes (`resolvedImplicitUser`) as `implicit_user`
+/// instead, and the startup auto-run proceeds only after the server confirms that a request without a
+/// user is still authenticated as that account (`runDeferredStartupQuery`). Empty for a connection
+/// naming its user (the field or the userinfo of the server address), or while the name is unknown.
+function runEntryImplicitUser(server_address, user, implicit_user) {
+    if (effectiveConnectionUser(server_address, user)) return '';
     return resolvedImplicitUser(server_address, implicit_user);
+}
+
+/// The `user` to send to reproduce a result recorded as `server_address`/`user` with the stamp
+/// `implicit_user` (Download). An implicit connection keeps the empty field, which preserves how it is
+/// authenticated (see `runEntryImplicitUser`), while the server still authenticates a request without
+/// a user as the recorded account; the name is asked from the server if this visit does not know it
+/// yet. If the server now authenticates such a request as another account, the recorded account is
+/// named explicitly, so the request fails visibly or reproduces the result as that account, rather
+/// than silently exporting the data of another user. A stamp that denotes no known name (recorded by
+/// an earlier visit before the name was learned) keeps the empty field.
+async function replayConnectionUser(server_address, user, implicit_user) {
+    if (effectiveConnectionUser(server_address, user)) return user;
+    const account = resolvedImplicitUser(server_address, implicit_user);
+    if (!account) return '';
+    if (!learnedImplicitUser(server_address)) await learnImplicitUser(server_address, password_elem.value);
+    return account === learnedImplicitUser(server_address) ? '' : account;
+}
+
+/// Ask the server which user it authenticates a request without a `user` as (`currentUser` in
+/// `getServerStatus`), and remember the answer (`rememberImplicitUser`). Returns the name, or empty if
+/// the server cannot tell. The probe is sent outside of the connection's HTTP session (see
+/// `storeCredentials`).
+async function learnImplicitUser(server_address, password) {
+    const probe_address = serverAddressWithoutSession(server_address);
+    if (!probe_address) return '';
+    const json = await getServerStatus(probe_address, '', password);
+    if (!json || !json.u) return '';
+    rememberImplicitUser(server_address, json.u);
+    return json.u;
 }
 
 /// `sameConnectionUser` of a stored connection and the live connection fields.
@@ -16917,8 +16969,8 @@ function rememberImplicitUser(server_address, user) {
 
 /// The markers of this visit (`pendingImplicitUserStamp`) have just resolved to a name. A run that
 /// finished before the name was learned has already been recorded with its marker: the current
-/// history entry (its `run=1` URL then has no `user=`, see `runEntryUser`) and possibly the persisted
-/// result snapshots. Write them again, so the durable form (`durableImplicitUserStamp`) replaces the
+/// history entry (its `run=1` URL then has no `implicit_user=`, see `runEntryImplicitUser`) and
+/// possibly the persisted result snapshots. Write them again, so the durable form (`durableImplicitUserStamp`) replaces the
 /// marker: the current entry is refreshed in place (`refreshCurrentHistoryEntry`, keeping `run=1` only
 /// under the usual conditions), and the snapshots are saved again (`durableResultSnapshot`). Only
 /// state that carries a marker of this visit is touched, so nothing is written during the startup
@@ -17140,11 +17192,9 @@ function writeHistoryEntry(tab, titleForDoc, forceReplace, fromRun, recorded) {
     /// on reload would not reproduce it (and must not fire a write against the wrong server/database).
     /// The producing user/server/database are serialized into the URL and stamped into the state so
     /// Back/Forward can restore this entry's `database=` only while the live connection still matches.
-    /// A `run=1` URL names the account of an implicit run explicitly once it is known (`runEntryUser`).
-    /// The state keeps `connectionUser`/`connectionImplicitUser` as recorded: the identity gates see
-    /// both spellings as the same connection (`sameConnectionUser`).
-    const url_user = stamp_run ? runEntryUser(entry_server, entry_user, entry_implicit_user) : entry_user;
-    const history_params = buildHistoryParams(recorded_params, tab.title, stamp_run, color_modes, pinned_columns, shape, url_user, entry_server, entry_database);
+    /// A `run=1` URL carries the account of an implicit run once it is known (`runEntryImplicitUser`).
+    const url_implicit_user = stamp_run ? runEntryImplicitUser(entry_server, entry_user, entry_implicit_user) : '';
+    const history_params = buildHistoryParams(recorded_params, tab.title, stamp_run, color_modes, pinned_columns, shape, entry_user, entry_server, entry_database, url_implicit_user);
     let history_url = window.location.pathname;
     if (history_params.length > 0) history_url += '?' + history_params.join('&');
     history_url += '#' + toBase64(recorded_query);
@@ -18115,12 +18165,9 @@ function storeCredentials(run) {
     if (!password || typeof PasswordCredential !== 'function') return Promise.resolve();
     const store = id => navigator.credentials.store(new PasswordCredential({ id, password, name: server_address }));
     if (user) return store(user);
-    const probe_address = serverAddressWithoutSession(server_address);
-    if (!probe_address) return Promise.resolve();
-    return Promise.allSettled([run]).then(() => getServerStatus(probe_address, '', password)).then(json => {
-        if (!json || !json.u) return;
-        rememberImplicitUser(server_address, json.u);
-        return store(json.u);
+    if (!serverAddressWithoutSession(server_address)) return Promise.resolve();
+    return Promise.allSettled([run]).then(() => learnImplicitUser(server_address, password)).then(name => {
+        if (name) return store(name);
     });
 }
 
@@ -21690,6 +21737,37 @@ const url_query = query_area.value;          /// already decoded from the hash; 
 /// query that produced nothing.
 const defer_run_for_reconcile = run_immediately;
 
+/// The account a `run=1` link of an implicit run was produced as (see `runEntryImplicitUser`).
+const implicit_user_from_url = current_url.searchParams.get('implicit_user') || '';
+
+/// Run the deferred startup `run=1` query. A link of an implicit run carries the account it was
+/// produced as (`implicit_user`): while the connection is still implicit, the query runs only once the
+/// server confirms that a request without a user is authenticated as that account
+/// (`learnImplicitUser`), since the server's `default_session_user` may have changed since the link was
+/// written, or the link is opened by someone the server authenticates as another account. Otherwise
+/// the query is left in the editor and the link no longer carries `run=1`, failing closed. Any change
+/// of the connection, the tab or the query while the server is being asked, or a run started
+/// meanwhile, cancels the auto-run as well.
+function runDeferredStartupQuery() {
+    if (!implicit_user_from_url || effectiveConnectionUser(url_elem.value, user_elem.value)) {
+        postAll();   /// saves history itself on completion
+        return;
+    }
+    const connection = connectionTuple();
+    const tab = getActiveTab();
+    const query = query_area.value;
+    learnImplicitUser(url_elem.value, password_elem.value).then(name => {
+        const unchanged = connectionTuple() === connection && getActiveTab() === tab && query_area.value === query;
+        if (!unchanged || activeInFlight()) return;
+        if (name === implicit_user_from_url) {
+            postAll();
+        } else {
+            tab.runnableUrl = false;
+            refreshCurrentHistoryEntry(tab);
+        }
+    });
+}
+
 /// Reconcile the freshly loaded URL (query + tab name) against tabs saved in IndexedDB.
 async function reconcileStartup() {
     const loaded = await loadFromDb();
@@ -22239,7 +22317,7 @@ async function reconcileStartup() {
     /// cancels the run (`deferred_run_cancelled`): running anyway would execute the shared query
     /// against a target or edit the live URL no longer requests it for.
     if (defer_run_for_reconcile && !deferred_run_cancelled && !stale_blank_reload_bare && query_area.value && !preserve_local_query && !bootstrap_dirty) {
-        postAll();   /// saves history itself on completion
+        runDeferredStartupQuery();
     } else if (activated) {
         syncHistory();   /// reflect the restored active tab in the URL (replaceState)
     } else if (reown_adopted_entry) {
@@ -22351,7 +22429,7 @@ let last_url_for_download = '';
 let last_user_for_download = '';
 /// The implicit-user stamp of the producing connection (see `sameConnectionUser`): an implicit run
 /// (no `user`) is downloaded as the account it was authenticated as once that name is known
-/// (`runEntryUser`), not as whatever the server's `default_session_user` is at download time.
+/// (`replayConnectionUser`), not as whatever the server's `default_session_user` is at download time.
 let last_implicit_user_for_download = '';
 
 // Toggle download dropdown
@@ -22487,8 +22565,8 @@ document.getElementById('download-button').addEventListener('click', async funct
     // connection then surfaces as a visible authentication error rather than silently exporting
     // data from the wrong server.
     const server_address = last_url_for_download || url_elem.value;
-    const user = runEntryUser(server_address, last_user_for_download, last_implicit_user_for_download);
     dropAutofilledStalePassword();
+    const user = await replayConnectionUser(server_address, last_user_for_download, last_implicit_user_for_download);
     const password = password_elem.value;
     const query = last_query_for_download;
 
