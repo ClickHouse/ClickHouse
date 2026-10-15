@@ -1,0 +1,251 @@
+---
+slug: /clickstack/managed-onboarding/setting-up-your-opentelemetry-collector-serverless
+title: 'Connecting an OpenTelemetry Collector'
+sidebarTitle: 'Connect an OpenTelemetry Collector'
+description: 'Add one exporter to the OpenTelemetry Collector you already run so its logs, metrics, and traces flow to ClickHouse Observability, then confirm the data arrives.'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'OpenTelemetry collector', 'OTLP', 'gateway', 'otlp_http', 'telemetrygen', 'host metrics', 'Kubernetes', 'Prometheus']
+unlisted: true
+custom_edit_url: null
+hide_advert: true
+---
+
+import { Image } from '/snippets/components/Image.jsx';
+
+<Info>
+**TL;DR**
+
+Already running an OpenTelemetry Collector? Copy the exporter snippet from your service's Getting Started page into its configuration, add the exporter to your pipelines, and reload. Your existing receivers and processors keep working, and everything they collect flows to ClickHouse Observability.
+
+Time required: about 10 minutes
+</Info>
+
+You have created your ClickHouse Observability service. This guide is for when you already run an OpenTelemetry Collector in your environment that does the collecting, for example:
+
+- **Infrastructure telemetry.** Host CPU, memory, disk, and network metrics, and log files on disk.
+- **Kubernetes.** Container logs, kubelet and cluster metrics, and Kubernetes events.
+- **Existing metrics endpoints.** Scraping Prometheus endpoints that your services already expose.
+- **A [gateway](/clickstack/ingesting-data/collector#collector-roles).** One endpoint inside your network that receives OTLP from SDKs and agent collectors, batches it, and forwards it from a single place.
+
+Whatever the collector gathers, you connect it the same way. It needs one `otlp_http` exporter pointed at your service's managed OTLP endpoint. Your receivers, processors, and any existing exporters stay as they are, so you can send to your current backend and to ClickHouse Observability side by side while you evaluate. ClickHouse Observability handles ingestion, schemas, storage, optimization, and scaling from there.
+
+<Note>
+**No collector yet?**
+
+You do not need one to get started. Applications can export OpenTelemetry straight to the managed endpoint: see [Instrument your application with OpenTelemetry](/clickstack/managed-onboarding/instrument-application-serverless). If you want to start collecting infrastructure telemetry, [Local logs and metrics](/clickstack/observability/example-datasets/local-data) and [Monitoring Kubernetes](/clickstack/observability/example-datasets/kubernetes) each include a complete collector configuration you can deploy as is.
+</Note>
+
+## Prerequisites {#prerequisites}
+
+- A ClickHouse Observability service. If you do not have one yet, follow the [Getting started guide](/clickstack/observability/getting-started).
+- An OpenTelemetry Collector you can reconfigure and restart. Any distribution works, including vendor builds, because the `otlp_http` exporter is part of the core collector.
+- Outbound HTTPS access on port `4318` from the collector host to your service's telemetry endpoint.
+
+## Connect your collector {#connect-your-collector}
+
+<Steps>
+<Step title="Copy your exporter configuration" id="copy-exporter-configuration">
+Open your ClickHouse Observability service. Until data arrives it shows the **Start sending telemetry** page.
+
+<Image img="/images/clickstack/getting-started/observability-start-sending-telemetry.png" alt="Start sending telemetry page showing the current service with no data yet and three options: Use an existing OpenTelemetry setup, Instrument with AI, and Follow setup guides" size="lg" />
+
+Under **Use an existing OpenTelemetry setup**, select **View connection details**, then open the **Collector config** tab. It shows a ready-made exporter block for your service. Select **Reveal key** to show the full API key, then use the copy button.
+
+<Image img="/images/clickstack/getting-started/observability-collector-config.png" alt="Set up OpenTelemetry dialog with the Collector config tab selected, showing an otlphttp exporter with the masked endpoint and a Bearer authorization header" size="md" />
+
+The snippet has this shape:
+
+```yaml
+exporters:
+  otlphttp:
+    endpoint: https://YOUR_OTEL_ENDPOINT:4318
+    headers:
+      authorization: Bearer <your-api-key>
+```
+
+Two details matter. The endpoint is the base URL: do not append `/v1/logs`, `/v1/traces`, or `/v1/metrics`, because the exporter adds the signal path itself. The header value includes the `Bearer` prefix.
+
+The UI names the exporter `otlphttp`. Recent collector releases call it `otlp_http` and keep `otlphttp` as a deprecated alias, so both work. The examples below use the current name.
+
+You can find the same values at any time under **Team Settings → Managed Telemetry**.
+</Step>
+
+<Step title="Add the exporter" id="add-the-exporter">
+Add the block to the `exporters` section of your collector configuration. Supplying the key from the environment keeps it out of the file:
+
+```yaml
+exporters:
+  otlp_http:
+    endpoint: ${env:CLICKSTACK_OTLP_ENDPOINT}
+    headers:
+      authorization: "Bearer ${env:CLICKSTACK_API_KEY}"
+```
+
+If your configuration already has an exporter named `otlp_http`, give this one a distinct name such as `otlp_http/clickhouse` and use that name in the next step.
+
+If the collector runs in Kubernetes, store the key in a Secret and surface both values through `extraEnvs` or the pod spec. The [Monitoring Kubernetes](/clickstack/observability/example-datasets/kubernetes) guide shows this pattern with the OpenTelemetry Helm chart.
+</Step>
+
+<Step title="Add it to your pipelines" id="add-to-pipelines">
+Append the exporter to every pipeline whose data you want in ClickHouse Observability. Keep your existing exporters in place to run both destinations side by side:
+
+```yaml
+service:
+  pipelines:
+    logs:
+      receivers: [otlp, file_log]
+      processors: [memory_limiter, batch]
+      exporters: [otlp_http, your_existing_exporter]
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlp_http, your_existing_exporter]
+    metrics:
+      receivers: [otlp, host_metrics, prometheus]
+      processors: [memory_limiter, batch]
+      exporters: [otlp_http, your_existing_exporter]
+```
+
+Your receivers and processors stay as they are. Only the exporter lists change.
+
+<Info>
+**Agent and gateway roles**
+
+If you run agent collectors on each host that forward to a central gateway, change only the gateway. The agents keep sending to the gateway as before.
+</Info>
+</Step>
+
+<Step title="Reload and check the logs" id="reload-and-check">
+Set `CLICKSTACK_OTLP_ENDPOINT` to the endpoint URL and `CLICKSTACK_API_KEY` to the key in the collector's environment, however it receives configuration: a systemd unit, a Docker `-e` flag, or a Kubernetes Secret. Then restart or reload the collector and watch its logs for export errors:
+
+- `401` or `403` responses mean the API key is wrong or missing its `Bearer` prefix.
+- `404` responses usually mean a signal path such as `/v1/logs` was appended to the endpoint.
+- `no such host` or TLS errors point at a typo in the endpoint or a blocked outbound connection on port `4318`.
+
+Everything the collector was already gathering now flows to your service as well.
+</Step>
+</Steps>
+
+## Confirm data is arriving {#confirm-data-is-arriving}
+
+Return to the **Start sending telemetry** page in your service and select **Check for data**. Once your telemetry has arrived, the service status changes to **Data received** and **Start exploring** becomes available.
+
+<Image img="/images/clickstack/getting-started/observability-data-received.png" alt="Start sending telemetry page showing the service status as Data received, a confirmation that you are ready to explore, and the Start exploring button enabled" size="lg" />
+
+Select **Start exploring** to open **Search**. Select the **Logs** source, set the time range to **Last 15 minutes**, and filter on a `ServiceName` your collector reports. Switch the source to **Metrics** in **Chart Explorer** to confirm any metrics receivers are flowing too.
+
+{/* TODO(dale): screenshot of Search showing logs from the connected collector. */}
+
+If your collector has nothing to send yet, for example because the log files it tails are quiet, jump to [Send sample data](#send-sample-data) at the end of this guide.
+
+## If nothing shows up {#if-nothing-shows-up}
+
+- Read the collector logs first. Authentication, endpoint, and TLS problems are all reported there with the error codes listed above.
+- Confirm every pipeline you expect data from lists `otlp_http` in its `exporters`. A receiver that is defined but not referenced by a pipeline collects nothing.
+- Confirm the collector actually reloaded. Some distributions require a restart rather than a configuration reload to pick up a new exporter.
+- Widen the time range in **Search** and remove any filters. The default source may be set to **Traces** rather than **Logs**.
+- To rule out the service itself, go to **Team Settings → Managed Telemetry** and use **Send a Test Log**. If that log appears in **Search**, the service is receiving data and the problem is between your collector and the endpoint.
+- To isolate your collector, point the `telemetrygen` generator from [Send sample data](#send-sample-data) at the collector's own OTLP receiver instead of the service, as `host:port` with no scheme, for example `--otlp-endpoint localhost:4317 --otlp-insecure` without `--otlp-http`. If that data arrives, the collector's exporter is fine and the problem is upstream of it.
+
+## Collect more with your collector {#collect-more}
+
+With the exporter in place, every receiver you add flows to your service through the same pipeline:
+
+- [Local logs and metrics](/clickstack/observability/example-datasets/local-data): a complete configuration that tails log files with the `file_log` receiver and collects CPU, memory, disk, and network metrics with the `host_metrics` receiver.
+- [Monitoring Kubernetes](/clickstack/observability/example-datasets/kubernetes): a DaemonSet for container logs and kubelet metrics plus a Deployment for cluster metrics and events, installed with the OpenTelemetry Helm chart.
+- **Prometheus endpoints.** Add the [`prometheus` receiver](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/prometheusreceiver) with your existing `scrape_configs` to the `metrics` pipeline. Scraped series arrive as OpenTelemetry metrics and appear in Chart Explorer.
+- **SDKs through the gateway.** Point your applications at the collector by setting `OTEL_EXPORTER_OTLP_ENDPOINT` to its address, for example `http://otel-collector.observability.svc:4318`. [Instrument your application with OpenTelemetry](/clickstack/managed-onboarding/instrument-application-serverless) walks through instrumenting a demo app; swap the managed endpoint for your collector's address and drop the API key, which the gateway now supplies.
+- **Processing at the gateway.** Use the [`filter`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/filterprocessor), [`transform`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/transformprocessor), and [`resourcedetection`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/resourcedetectionprocessor) processors to drop noise, reshape attributes, and tag telemetry with cloud and host metadata before it leaves your network.
+
+For the collector itself, the [OpenTelemetry Collector documentation](https://opentelemetry.io/docs/collector/) covers deployment patterns, scaling, and the full configuration reference.
+
+## No live telemetry yet? Send sample data {#send-sample-data}
+
+If your collector is connected but its sources are quiet, or you want richer data to explore the UI with, send a burst of synthetic logs, traces, and metrics straight to your service. This bypasses your collector and takes the connection details from the **Env vars** tab, so there is nothing to retype.
+
+Open **View connection details** on the **Start sending telemetry** page, or **Team Settings → Managed Telemetry**, and select the **Env vars** tab. Select **Reveal key**, copy the tab, and paste it into your shell between `set -a` and `set +a`, so every line is exported:
+
+<Image img="/images/clickstack/getting-started/observability-env-vars.png" alt="Set up OpenTelemetry dialog with the Env vars tab selected, showing OTEL_EXPORTER_OTLP_ENDPOINT, OTEL_EXPORTER_OTLP_HEADERS with a masked Bearer key, and OTEL_EXPORTER_OTLP_PROTOCOL" size="md" />
+
+```shell
+set -a
+# Paste the Env vars tab here. It looks like this:
+OTEL_EXPORTER_OTLP_ENDPOINT=https://YOUR_OTEL_ENDPOINT:4318
+OTEL_EXPORTER_OTLP_HEADERS="authorization=Bearer <your-api-key>"
+OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+set +a
+```
+
+Run [`telemetrygen`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/cmd/telemetrygen), the OpenTelemetry Collector Contrib data generator, from its Docker image:
+
+```shell
+telemetrygen() {
+  docker run --rm \
+    ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:latest "$@"
+}
+```
+
+Or install the binary with Go:
+
+```shell
+go install github.com/open-telemetry/opentelemetry-collector-contrib/cmd/telemetrygen@latest
+```
+
+Define a small `tg` helper. It takes the host and port from `OTEL_EXPORTER_OTLP_ENDPOINT` and the key from `OTEL_EXPORTER_OTLP_HEADERS`, because the `telemetrygen` endpoint flag does not accept a URL scheme. It sends OTLP over HTTPS with certificate verification, and each run lasts 20 seconds:
+
+```shell
+tg() { local signal=$1; shift; telemetrygen "$signal" \
+  --otlp-endpoint "${OTEL_EXPORTER_OTLP_ENDPOINT#*://}" --otlp-http \
+  --otlp-header "authorization=\"${OTEL_EXPORTER_OTLP_HEADERS#authorization=}\"" \
+  --rate 5 --duration 20s "$@"; }
+```
+
+Always call `tg` rather than `telemetrygen` directly. Passing the full `https://` URL to `telemetrygen` fails with `too many colons in address`.
+
+Send logs with a realistic mix of severities across three services:
+
+```shell
+tg logs --service frontend --severity-text Info  --severity-number 9  --body "GET /api/products 200" \
+  --otlp-attributes 'deployment.environment="production"' \
+  --telemetry-attributes 'http.method="GET"' --telemetry-attributes 'http.status_code="200"'
+tg logs --service checkout --severity-text Warn  --severity-number 13 --body "retrying payment authorization" \
+  --otlp-attributes 'deployment.environment="production"' \
+  --telemetry-attributes 'http.method="POST"'
+tg logs --service payment  --severity-text Error --severity-number 17 --body "payment gateway timeout" \
+  --otlp-attributes 'deployment.environment="production"' \
+  --telemetry-attributes 'http.status_code="500"'
+```
+
+Each command ends with a `logs generated` summary. A wrong key fails immediately with a `401` in the error message.
+
+To also populate traces, the service map, and metrics, expand and run the commands below in the same shell.
+
+<Accordion title="Generate richer telemetry (optional)">
+Send multi-span traces from several healthy services plus one slow, failing dependency:
+
+```shell
+for svc in frontend checkout cart; do
+  tg traces --service "$svc" --child-spans 3 --span-duration 80ms --status-code Ok \
+    --otlp-attributes 'deployment.environment="production"' \
+    --telemetry-attributes "http.route=\"/$svc\""
+done
+
+tg traces --service payment --child-spans 3 --span-duration 450ms --span-links 1 --status-code Error \
+  --otlp-attributes 'deployment.environment="production"' \
+  --telemetry-attributes 'http.route="/charge"'
+```
+
+Send a counter, a gauge, and a histogram:
+
+```shell
+tg metrics --service frontend --metric-type Sum       --otlp-metric-name http.server.requests --aggregation-temporality cumulative
+tg metrics --service frontend --metric-type Gauge     --otlp-metric-name system.memory.usage
+tg metrics --service payment  --metric-type Histogram --otlp-metric-name http.server.duration
+```
+</Accordion>
+
+Back in your service, select **Check for data**, then **Start exploring**. In **Search**, filter `ServiceName` to `frontend`, `checkout`, or `payment`, and `SeverityText` to `Error` to find the payment gateway timeouts. If you generated the richer set, open a `payment` trace under the **Traces** source to see its child spans and error status, and chart `http.server.requests` in **Chart Explorer** to confirm metrics are flowing.
+
+{/* TODO(dale): screenshot of Search showing the telemetrygen logs with the frontend, checkout, and payment services visible. */}
+
+For the full set of flags, see [Synthetic data with telemetrygen](/clickstack/observability/example-datasets/telemetrygen). [otelgen](/clickstack/observability/example-datasets/otelgen) is an alternative generator with a different data shape.
