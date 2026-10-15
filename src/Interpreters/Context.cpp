@@ -3978,6 +3978,12 @@ void Context::checkSettingsConstraintsForSettingsReset(const std::vector<String>
         *settings, after_reset->getSettingsRef(), names, source);
 }
 
+void Context::clampSettingsConstraintsForSettingsReset(std::vector<String> & names, SettingsChanges & clamped_changes, SettingSource source)
+{
+    SharedLockGuard lock(mutex);
+    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.clampResetToDefault(*settings, names, clamped_changes, source);
+}
+
 void Context::checkSettingsConstraintsForSettingsReset(
     const std::vector<String> & names, const SettingsChanges & changes_applied_first, SettingSource source)
 {
@@ -9699,7 +9705,8 @@ AIQuotaTrackerPtr Context::getAIQuotaTracker() const
             settings_ref[Setting::ai_function_max_input_tokens_per_query],
             settings_ref[Setting::ai_function_max_output_tokens_per_query],
             settings_ref[Setting::ai_function_max_api_calls_per_query],
-            settings_ref[Setting::ai_function_throw_on_quota_exceeded]);
+            settings_ref[Setting::ai_function_throw_on_quota_exceeded],
+            query_context->process_list_elem);
     }
     return query_context->ai_quota_tracker;
 }
