@@ -108,7 +108,7 @@ std::vector<String> listFilesNonRecursive(
         path,
         prefix,
         [&](const RelativePathWithMetadata & file_with_metadata)
-        { return isDirectlyInside(file_with_metadata.relative_path, directory) && check_need(file_with_metadata); });
+        { return check_need(file_with_metadata) && isDirectlyInside(file_with_metadata.relative_path, directory); });
 }
 
 bool deltaLogExists(const IObjectStorage & object_storage, const String & path)
