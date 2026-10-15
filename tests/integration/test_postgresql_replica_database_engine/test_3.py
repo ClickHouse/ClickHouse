@@ -3352,6 +3352,431 @@ def test_table_engine_retries_recoverable_attach_conflict(started_cluster):
         cursor.execute(f"SELECT pg_drop_replication_slot('{legacy_slot}')")
 
 
+postgres_table_template_without_primary_key = """
+    CREATE TABLE IF NOT EXISTS "{}" (
+    key Integer NOT NULL, value Integer)
+    """
+
+
+def get_single_publication(cursor):
+    cursor.execute(
+        "SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    publications = [row[0] for row in cursor.fetchall()]
+    assert len(publications) == 1, f"expected exactly one publication, got {publications}"
+    return publications[0]
+
+
+def wait_for_replication_slot(cursor, expected_count=1):
+    for _ in range(60):
+        cursor.execute(
+            "SELECT slot_name FROM pg_replication_slots WHERE database = 'postgres_database'"
+        )
+        slots = [row[0] for row in cursor.fetchall()]
+        if len(slots) == expected_count:
+            return slots
+        time.sleep(1)
+    raise AssertionError(f"expected {expected_count} replication slot(s), got {slots}")
+
+
+def assert_count_stays(query, expected):
+    for _ in range(5):
+        assert expected == int(instance.query(query))
+        time.sleep(1)
+
+
+def test_attach_fails_closed_when_publication_lost_behind_slot(started_cluster):
+    # If the publication is lost while the replication slot survives, a recreated publication would
+    # silently skip the changes committed in the meantime: pgoutput resolves publication membership from
+    # the historic catalog at each change's LSN. The attach must fail instead, and recreating the database
+    # takes a fresh snapshot with every row.
+    table = "pub_lost_table"
+    mat_db = "pub_lost_database"
+    settings = [
+        f"materialized_postgresql_tables_list = '{table}'",
+        "materialized_postgresql_backoff_min_ms = 100",
+        "materialized_postgresql_backoff_max_ms = 100",
+    ]
+    pg_manager.create_postgres_table(table)
+    instance.query(
+        f"INSERT INTO postgres_database.{table} SELECT number, number FROM numbers(0, 30)"
+    )
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=settings,
+    )
+    check_tables_are_synchronized(instance, table, materialized_database=mat_db)
+
+    cursor = pg_manager.get_db_cursor()
+    slots = wait_for_replication_slot(cursor)
+    publication = get_single_publication(cursor)
+
+    instance.stop_clickhouse()
+    cursor.execute(f'DROP PUBLICATION "{publication}"')
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(30, 49) AS i")
+    instance.start_clickhouse()
+
+    assert_logs_contain_with_retry(
+        instance,
+        "would silently lose every change written while the publication did not exist",
+        retry_count=60,
+        sleep_time=1,
+    )
+    assert_count_stays(f"SELECT count() FROM {mat_db}.{table}", 30)
+    cursor.execute(
+        "SELECT count(*) FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    assert 0 == int(cursor.fetchall()[0][0])
+    assert slots == wait_for_replication_slot(cursor)
+
+    # Recreating the database takes a fresh snapshot, so nothing was lost by failing.
+    pg_manager.drop_materialized_db(mat_db)
+    wait_for_replication_slot(cursor, expected_count=0)
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=settings,
+    )
+    check_tables_are_synchronized(instance, table, materialized_database=mat_db)
+    assert 50 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+
+    pg_manager.drop_materialized_db(mat_db)
+
+
+def test_attach_fails_closed_when_slot_lost_behind_publication(started_cluster):
+    # If the replication slot is lost (for example, after `pg_upgrade`) while the replica holds data, a new
+    # snapshot into the existing nested tables would leave it stale: the snapshot rows have `_sign = 1` and
+    # `_version = 1`, so they neither delete rows nor override rows with a higher version.
+    table = "slot_lost_table"
+    mat_db = "slot_lost_database"
+    pg_manager.create_postgres_table(table)
+    instance.query(
+        f"INSERT INTO postgres_database.{table} SELECT number, number FROM numbers(0, 30)"
+    )
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_tables_are_synchronized(instance, table, materialized_database=mat_db)
+
+    cursor = pg_manager.get_db_cursor()
+    slot = wait_for_replication_slot(cursor)[0]
+    get_single_publication(cursor)
+
+    instance.stop_clickhouse()
+    cursor.execute(f"SELECT pg_drop_replication_slot('{slot}')")
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(30, 49) AS i")
+    instance.start_clickhouse()
+
+    assert_logs_contain_with_retry(
+        instance,
+        "would silently leave the replica stale",
+        retry_count=60,
+        sleep_time=1,
+    )
+    assert_count_stays(f"SELECT count() FROM {mat_db}.{table}", 30)
+    wait_for_replication_slot(cursor, expected_count=0)
+
+    pg_manager.drop_materialized_db(mat_db)
+
+
+def test_attach_fails_closed_when_publication_drifts(started_cluster):
+    # A replicated table dropped from the publication would silently stop receiving changes, and the
+    # changes committed while it was not published cannot be recovered.
+    table_a = "drift_tables_list_a"
+    table_b = "drift_tables_list_b"
+    mat_db = "drift_tables_list_database"
+    for table in (table_a, table_b):
+        pg_manager.create_postgres_table(table)
+        instance.query(
+            f"INSERT INTO postgres_database.{table} SELECT number, number FROM numbers(0, 30)"
+        )
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table_a}, {table_b}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_tables_are_synchronized(instance, table_a, materialized_database=mat_db)
+    check_tables_are_synchronized(instance, table_b, materialized_database=mat_db)
+
+    cursor = pg_manager.get_db_cursor()
+    publication = get_single_publication(cursor)
+
+    instance.stop_clickhouse()
+    cursor.execute(f'ALTER PUBLICATION "{publication}" DROP TABLE {table_b}')
+    cursor.execute(f"INSERT INTO {table_a} SELECT i, i FROM generate_series(30, 49) AS i")
+    cursor.execute(f"INSERT INTO {table_b} SELECT i, i FROM generate_series(30, 49) AS i")
+    instance.start_clickhouse()
+
+    assert_logs_contain_with_retry(
+        instance,
+        f"no longer publishes the following replicated tables: public.{table_b}",
+        retry_count=60,
+        sleep_time=1,
+    )
+    assert_count_stays(f"SELECT count() FROM {mat_db}.{table_a}", 30)
+
+    pg_manager.drop_materialized_db(mat_db)
+
+
+def test_attach_fails_closed_when_publication_publish_flags_altered(started_cluster):
+    # With `publish = 'insert'` every UPDATE and DELETE would be silently omitted.
+    table = "publish_flags_altered"
+    mat_db = "publish_flags_altered_database"
+    pg_manager.create_postgres_table(table)
+    instance.query(
+        f"INSERT INTO postgres_database.{table} SELECT number, number FROM numbers(0, 30)"
+    )
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_tables_are_synchronized(instance, table, materialized_database=mat_db)
+
+    cursor = pg_manager.get_db_cursor()
+    publication = get_single_publication(cursor)
+
+    instance.stop_clickhouse()
+    cursor.execute(f"ALTER PUBLICATION \"{publication}\" SET (publish = 'insert')")
+    cursor.execute(f"UPDATE {table} SET value = value + 1000 WHERE key < 10")
+    instance.start_clickhouse()
+
+    assert_logs_contain_with_retry(
+        instance,
+        "does not publish all operation types",
+        retry_count=60,
+        sleep_time=1,
+    )
+    assert_count_stays(
+        f"SELECT countIf(value >= 1000) FROM {mat_db}.{table}", 0
+    )
+
+    pg_manager.drop_materialized_db(mat_db)
+
+
+def test_attach_bootstraps_when_slot_survives_a_never_synchronized_run(
+    started_cluster,
+):
+    # The first synchronization created the replication slot and the publication, but did not materialize
+    # any table (the only table has no primary key). Nothing can become stale, so on attach the leftover
+    # slot is dropped and the initial synchronization runs from scratch, instead of resuming from the slot
+    # without a snapshot.
+    table = "never_synchronized_table"
+    mat_db = "never_synchronized_database"
+    pg_manager.create_postgres_table(
+        table, template=postgres_table_template_without_primary_key
+    )
+    cursor = pg_manager.get_db_cursor()
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(0, 29) AS i")
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    wait_for_replication_slot(cursor)
+    get_single_publication(cursor)
+    assert 0 == int(instance.query(f"EXISTS TABLE {mat_db}.{table}"))
+
+    instance.stop_clickhouse()
+    cursor.execute(f"ALTER TABLE {table} ADD PRIMARY KEY (key)")
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(30, 49) AS i")
+    instance.start_clickhouse()
+
+    check_tables_are_synchronized(instance, table, materialized_database=mat_db)
+    assert 50 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(50, 59) AS i")
+    check_tables_are_synchronized(instance, table, materialized_database=mat_db)
+    assert 60 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+
+    pg_manager.drop_materialized_db(mat_db)
+
+
+def test_fresh_full_definition_attach_table_bootstraps(started_cluster):
+    # A full-definition `ATTACH TABLE ... ENGINE = MaterializedPostgreSQL` introduces a new object without
+    # a replication slot and a publication: it must take its initial snapshot rather than fail as a replica
+    # whose replication slot is lost.
+    table = "fresh_attach_table"
+    table_uuid = "00000000-0000-0000-0000-000000110493"
+    pg_manager.create_postgres_table(table)
+    cursor = pg_manager.get_db_cursor()
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(0, 49) AS i")
+
+    instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    instance.query(
+        f"""
+        SET allow_experimental_materialized_postgresql_table=1;
+        ATTACH TABLE default.{table} UUID '{table_uuid}' (key Int32, value Int32)
+        ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
+        ORDER BY key
+        SETTINGS materialized_postgresql_backoff_min_ms = 100,
+                 materialized_postgresql_backoff_max_ms = 100
+        """
+    )
+
+    check_tables_are_synchronized(instance, table, materialized_database="default")
+    assert 50 == int(instance.query(f"SELECT count() FROM {table}"))
+
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(50, 59) AS i")
+    check_tables_are_synchronized(instance, table, materialized_database="default")
+    assert 60 == int(instance.query(f"SELECT count() FROM {table}"))
+
+    instance.query(f"DROP TABLE {table} SYNC")
+    wait_for_replication_slot(cursor, expected_count=0)
+
+
+def test_attach_bootstraps_listed_table_whose_first_snapshot_failed(started_cluster):
+    # A table of `materialized_postgresql_tables_list` whose first snapshot failed (it had no primary key)
+    # has no nested table. On attach it takes its first snapshot, while the other table resumes from the
+    # replication slot. Previously every attach failed on the missing nested table.
+    good = "partial_sync_good"
+    bad = "partial_sync_bad"
+    mat_db = "partial_sync_database"
+    pg_manager.create_postgres_table(good)
+    pg_manager.create_postgres_table(
+        bad, template=postgres_table_template_without_primary_key
+    )
+    cursor = pg_manager.get_db_cursor()
+    cursor.execute(f"INSERT INTO {good} SELECT i, i FROM generate_series(0, 29) AS i")
+    cursor.execute(f"INSERT INTO {bad} SELECT i, i FROM generate_series(0, 29) AS i")
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            f"materialized_postgresql_tables_list = '{good}, {bad}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_tables_are_synchronized(instance, good, materialized_database=mat_db)
+    assert 0 == int(instance.query(f"EXISTS TABLE {mat_db}.{bad}"))
+
+    # While the table is still broken, the other table keeps replicating after a restart.
+    instance.restart_clickhouse()
+    cursor.execute(f"INSERT INTO {good} SELECT i, i FROM generate_series(30, 39) AS i")
+    check_tables_are_synchronized(instance, good, materialized_database=mat_db)
+    assert 0 == int(instance.query(f"EXISTS TABLE {mat_db}.{bad}"))
+
+    instance.stop_clickhouse()
+    cursor.execute(f"ALTER TABLE {bad} ADD PRIMARY KEY (key)")
+    cursor.execute(f"INSERT INTO {good} SELECT i, i FROM generate_series(40, 49) AS i")
+    cursor.execute(f"INSERT INTO {bad} SELECT i, i FROM generate_series(30, 49) AS i")
+    instance.start_clickhouse()
+
+    check_tables_are_synchronized(instance, good, materialized_database=mat_db)
+    check_tables_are_synchronized(instance, bad, materialized_database=mat_db)
+    assert 50 == int(instance.query(f"SELECT count() FROM {mat_db}.{good}"))
+    assert 50 == int(instance.query(f"SELECT count() FROM {mat_db}.{bad}"))
+
+    cursor.execute(f"UPDATE {bad} SET value = value + 1000 WHERE key < 10")
+    cursor.execute(f"DELETE FROM {bad} WHERE key >= 45")
+    check_tables_are_synchronized(instance, bad, materialized_database=mat_db)
+
+    pg_manager.drop_materialized_db(mat_db)
+
+
+def test_attach_table_reuses_existing_publication_membership(started_cluster):
+    # `ATTACH TABLE` of a table that is already in the publication must not issue a duplicate
+    # `ALTER PUBLICATION ... ADD TABLE`, which PostgreSQL rejects.
+    table_a = "membership_a"
+    table_b = "membership_b"
+    mat_db = "membership_database"
+    for table in (table_a, table_b):
+        pg_manager.create_postgres_table(table)
+        instance.query(
+            f"INSERT INTO postgres_database.{table} SELECT number, number FROM numbers(0, 10)"
+        )
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table_a}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_tables_are_synchronized(instance, table_a, materialized_database=mat_db)
+
+    cursor = pg_manager.get_db_cursor()
+    publication = get_single_publication(cursor)
+    cursor.execute(f'ALTER PUBLICATION "{publication}" ADD TABLE ONLY {table_b}')
+
+    instance.query(f"ATTACH TABLE {mat_db}.{table_b}")
+    check_tables_are_synchronized(instance, table_b, materialized_database=mat_db)
+    cursor.execute(f"INSERT INTO {table_b} SELECT i, i FROM generate_series(10, 19) AS i")
+    check_tables_are_synchronized(instance, table_b, materialized_database=mat_db)
+    assert 20 == int(instance.query(f"SELECT count() FROM {mat_db}.{table_b}"))
+
+    pg_manager.drop_materialized_db(mat_db)
+
+
+def test_detach_permanently_rejects_last_replicated_table(started_cluster):
+    # A database without replicated tables could not start again, so detaching the last table is refused.
+    tables = ["detach_last_a", "detach_last_b"]
+    mat_db = "detach_last_database"
+    for table in tables:
+        pg_manager.create_postgres_table(table)
+        instance.query(
+            f"INSERT INTO postgres_database.{table} SELECT number, number FROM numbers(0, 10)"
+        )
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            f"materialized_postgresql_tables_list = '{','.join(tables)}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    for table in tables:
+        check_tables_are_synchronized(instance, table, materialized_database=mat_db)
+
+    instance.query(f"DETACH TABLE {mat_db}.{tables[0]} PERMANENTLY")
+    error = instance.query_and_get_error(
+        f"DETACH TABLE {mat_db}.{tables[1]} PERMANENTLY"
+    )
+    assert "QUERY_NOT_ALLOWED" in error
+    assert "it is the only table replicated by" in error
+
+    instance.restart_clickhouse()
+    instance.query(
+        f"INSERT INTO postgres_database.{tables[1]} SELECT number, number FROM numbers(10, 10)"
+    )
+    check_tables_are_synchronized(instance, tables[1], materialized_database=mat_db)
+
+    pg_manager.drop_materialized_db(mat_db)
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")

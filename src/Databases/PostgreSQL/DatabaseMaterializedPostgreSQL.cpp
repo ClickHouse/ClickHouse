@@ -37,6 +37,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Common/escapeForFileName.h>
+#include <Common/quoteString.h>
 
 namespace DB
 {
@@ -48,6 +49,7 @@ namespace Setting
 namespace MaterializedPostgreSQLSetting
 {
     extern const MaterializedPostgreSQLSettingsString materialized_postgresql_tables_list;
+    extern const MaterializedPostgreSQLSettingsString materialized_postgresql_schema_list;
 }
 
 namespace FailPoints
@@ -118,6 +120,7 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
             connection_info,
             getContext(),
             is_attach,
+            /* is_fresh_definition = */ !is_attach,
             *settings,
             /* is_materialized_postgresql_database = */ true);
 
@@ -449,34 +452,63 @@ void DatabaseMaterializedPostgreSQL::attachTable(ContextPtr context_, const Stri
         auto nested_table = DatabaseAtomic::tryGetTable(table_name, current_context);
         chassert(nested_table != nullptr);
 
+        bool added_to_replication = false;
+        bool publication_added = false;
         try
         {
-            auto tables_to_replicate = (*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_tables_list].value;
-            if (tables_to_replicate.empty())
+            auto storage = std::make_shared<StorageMaterializedPostgreSQL>(table, getContext(), remote_database_name, table_name);
+
+            /// Set up the PostgreSQL side first, so that a failed snapshot leaves neither the persisted
+            /// table list nor the wrapper behind.
             {
-                std::lock_guard tables_lock(tables_mutex);
-                tables_to_replicate = getFormattedTablesList();
+                std::lock_guard lock(handler_mutex);
+                publication_added = replication_handler->addTableToReplication(dynamic_cast<StorageMaterializedPostgreSQL *>(storage.get()), table_name);
+            }
+            added_to_replication = true;
+
+            /// For a database with `materialized_postgresql_schema_list` the table list is not persisted, otherwise
+            /// the stored definition would have both settings, and the next startup would fail with "Cannot have
+            /// schema list and tables list at the same time". The attached table is replicated after restart anyway,
+            /// because it is in the replicated schemas.
+            if ((*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_schema_list].value.empty())
+            {
+                auto tables_to_replicate = (*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_tables_list].value;
+                if (tables_to_replicate.empty())
+                {
+                    std::lock_guard tables_lock(tables_mutex);
+                    tables_to_replicate = getFormattedTablesList();
+                }
+
+                /// tables_to_replicate can be empty if postgres database had no tables when this database was created.
+                SettingChange new_setting("materialized_postgresql_tables_list", tables_to_replicate.empty() ? table_name : (tables_to_replicate + "," + table_name));
+                auto alter_query = createAlterSettingsQuery(new_setting);
+
+                /// Executed without `tables_mutex`: the ALTER reaches `applySettingsChanges`, which takes
+                /// `handler_mutex`, and the two mutexes must always be taken in that order.
+                InterpreterAlterQuery(alter_query, current_context).execute();
             }
 
-            /// tables_to_replicate can be empty if postgres database had no tables when this database was created.
-            SettingChange new_setting("materialized_postgresql_tables_list", tables_to_replicate.empty() ? table_name : (tables_to_replicate + "," + table_name));
-            auto alter_query = createAlterSettingsQuery(new_setting);
-
-            /// Executed without `tables_mutex`: the ALTER reaches `applySettingsChanges`, which takes
-            /// `handler_mutex`, and the two mutexes must always be taken in that order.
-            InterpreterAlterQuery(alter_query, current_context).execute();
-
-            auto storage = std::make_shared<StorageMaterializedPostgreSQL>(table, getContext(), remote_database_name, table_name);
             {
                 std::lock_guard tables_lock(tables_mutex);
                 materialized_tables[table_name] = storage;
             }
-
-            std::lock_guard lock(handler_mutex);
-            replication_handler->addTableToReplication(dynamic_cast<StorageMaterializedPostgreSQL *>(storage.get()), table_name);
         }
         catch (...)
         {
+            /// Roll back the replication of the table, but keep a publication entry that this query did not create.
+            if (added_to_replication)
+            {
+                try
+                {
+                    std::lock_guard lock(handler_mutex);
+                    replication_handler->removeTableFromReplication(table_name, publication_added);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, "Failed to roll back MaterializedPostgreSQL replication after ATTACH TABLE failure");
+                }
+            }
+
             /// This is a failed attach table. Remove already created nested table.
             DatabaseAtomic::dropTable(current_context, table_name, true);
             throw;
@@ -511,15 +543,27 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
             if (it == materialized_tables.end() || !it->second)
                 throw Exception(ErrorCodes::UNKNOWN_TABLE, "Materialized table `{}` does not exist", table_name);
 
+            /// A database without replicated tables cannot start again: on the next startup, nothing would distinguish
+            /// it from a database that did not finish its initial synchronization, so the detached tables
+            /// would be loaded from a new snapshot again.
+            if (materialized_tables.size() == 1)
+                throw Exception(
+                    ErrorCodes::QUERY_NOT_ALLOWED,
+                    "Cannot detach table `{}` permanently: it is the only table replicated by MaterializedPostgreSQL "
+                    "database `{}`. Use `DROP DATABASE {}` to stop replication",
+                    table_name, getDatabaseName(), backQuoteIfNeed(getDatabaseName()));
+
             table_to_delete = it->second;
             tables_to_replicate = getFormattedTablesList(table_name);
         }
 
-        /// tables_to_replicate can be empty if postgres database had no tables when this database was created.
-        SettingChange new_setting("materialized_postgresql_tables_list", tables_to_replicate);
-        auto alter_query = createAlterSettingsQuery(new_setting);
-
+        /// See the comment in attachTable about `materialized_postgresql_schema_list`.
+        if ((*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_schema_list].value.empty())
         {
+            /// tables_to_replicate can be empty if postgres database had no tables when this database was created.
+            SettingChange new_setting("materialized_postgresql_tables_list", tables_to_replicate);
+            auto alter_query = createAlterSettingsQuery(new_setting);
+
             auto current_context = Context::createCopy(getContext()->getGlobalContext());
             current_context->setInternalQuery(true);
             InterpreterAlterQuery(alter_query, current_context).execute();
@@ -530,7 +574,7 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Inner table `{}` does not exist", table_name);
 
         std::lock_guard lock(handler_mutex);
-        replication_handler->removeTableFromReplication(table_name);
+        replication_handler->removeTableFromReplication(table_name, /* remove_from_publication */ true);
 
         try
         {
@@ -921,6 +965,12 @@ It is possible to remove specific tables from replication:
 ```sql
 DETACH TABLE postgres_database.table_to_remove PERMANENTLY;
 ```
+
+The last replicated table cannot be removed this way. Use `DROP DATABASE` to stop replication entirely.
+
+## Restarting replication {#restarting-replication}
+
+On server restart, replication resumes from the existing replication slot through the existing publication. If the PostgreSQL side was changed in a way that makes resuming lose changes silently, replication does not start, and an exception is logged and retried in the background. This happens if the replication slot or the publication was removed while the database already holds data, if a replicated table was removed from the publication, or if the publication definition was altered (for example, with a row filter or `publish = 'insert'`). To recover, recreate the database, which loads a fresh snapshot.
 
 ## PostgreSQL schema {#schema}
 

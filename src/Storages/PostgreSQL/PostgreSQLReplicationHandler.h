@@ -6,6 +6,9 @@
 #include <Core/PostgreSQL/Utils.h>
 #include <Parsers/ASTCreateQuery.h>
 
+#include <map>
+#include <set>
+
 
 namespace DB
 {
@@ -29,6 +32,7 @@ public:
             const postgres::ConnectionInfo & connection_info_,
             ContextPtr context_,
             bool is_attach_,
+            bool is_fresh_definition_,
             const MaterializedPostgreSQLSettings & replication_settings,
             bool is_materialized_postgresql_database_);
 
@@ -52,9 +56,12 @@ public:
 
     ASTPtr getCreateNestedTableQuery(StorageMaterializedPostgreSQL * storage, const String & table_name);
 
-    void addTableToReplication(StorageMaterializedPostgreSQL * storage, const String & postgres_table_name);
+    /// Returns true if this call added the table to the publication, and false if the publication already
+    /// published it. The caller needs the distinction to roll back only what it created: dropping a
+    /// pre-existing publication entry would introduce the publication drift that the attach refuses.
+    bool addTableToReplication(StorageMaterializedPostgreSQL * storage, const String & postgres_table_name);
 
-    void removeTableFromReplication(const String & postgres_table_name);
+    void removeTableFromReplication(const String & postgres_table_name, bool remove_from_publication);
 
     void setSetting(const SettingChange & setting);
 
@@ -73,9 +80,21 @@ private:
 
     std::set<String> fetchTablesFromPublication(pqxx::work & tx);
 
+    /// The (schema, table) pairs the publication currently publishes, with the default schema reported as
+    /// "public", so that they can be compared with getNormalizedSchemaAndTableName.
+    std::set<std::pair<String, String>> fetchPublishedTablePairs(pqxx::nontransaction & tx) const;
+
+    /// An existing publication may only be resumed through when its definition matches what ClickHouse creates:
+    /// all operation types are published, no `FOR ALL TABLES`, and, since PostgreSQL 15, no row filter, no schema-level
+    /// membership, and no column list other than the ones `materialized_postgresql_tables_list` requests.
+    /// Otherwise the replication stream is silently filtered, and the filtered-out changes cannot be recovered later.
+    /// Returns a human-readable reason when the definition does not match, or an empty string when it does.
+    String publicationDefinitionConflict(pqxx::nontransaction & tx) const;
+
     void dropPublication(pqxx::nontransaction & ntx);
 
-    void addTableToPublication(pqxx::nontransaction & ntx, const String & table_name);
+    /// Returns true if the table was added, and false if the publication already published it.
+    bool addTableToPublication(pqxx::nontransaction & ntx, const String & table_name);
 
     void removeTableFromPublication(pqxx::nontransaction & ntx, const String & table_name);
 
@@ -106,6 +125,25 @@ private:
 
     std::pair<String, String> getSchemaAndTableName(const String & table_name) const;
 
+    /// getSchemaAndTableName with the default schema normalized to "public", as in `pg_publication_tables`.
+    std::pair<String, String> getNormalizedSchemaAndTableName(const String & table_name) const;
+
+    /// In the single-schema modes the replication consumer identifies relations by their bare name, so a published
+    /// table from another schema with the same bare name as a replicated table would have its changes applied
+    /// to the replicated table. Returns a comma-separated list of such tables, or an empty string.
+    String collidingForeignPublishedTables(
+        const std::set<std::pair<String, String>> & expected,
+        const std::set<std::pair<String, String>> & published) const;
+
+    /// Whether any of the replicated tables already has its nested table, i.e. this replica holds data from
+    /// a previous run, which a fresh snapshot into the existing nested tables would make stale.
+    bool hasNestedStorage() const;
+
+    /// Checks the existing replication slot and publication on attach. Throws if resuming from them would silently
+    /// lose changes. Returns true if the previous run did not materialize any table, so the leftover replication slot
+    /// must be dropped and the initial synchronization must run from scratch.
+    bool checkReplicationStateOnAttach(pqxx::nontransaction & tx);
+
     void assertInitialized() const;
 
     void execWithRetryAndFaultInjection(postgres::Connection & connection, const std::function<void(pqxx::nontransaction &)> & exec) const;
@@ -114,6 +152,10 @@ private:
 
     /// If it is not attach, i.e. a create query, then if publication already exists - always drop it.
     bool is_attach;
+
+    /// Whether the engine definition is supplied by the user now (a `CREATE`, or an `ATTACH` with a full definition),
+    /// as opposed to a replay of the stored definition of an object that already completed its initial synchronization.
+    const bool is_fresh_definition;
 
     String postgres_database;
     String postgres_schema;
@@ -130,6 +172,11 @@ private:
 
     /// A coma-separated list of tables, which are going to be replicated for database engine. By default, a whole database is replicated.
     String tables_list;
+
+    /// Whether the set of replicated tables is configured explicitly by `tables_list`: always for the single-table
+    /// engine, and for the database engine with `materialized_postgresql_tables_list`. Otherwise, the database engine
+    /// replicates whole schemas, and its replicated tables are the ones that have nested tables.
+    const bool has_configured_tables_list;
 
     String schema_list;
 
@@ -154,6 +201,10 @@ private:
     /// the schema (a user-managed slot or a unique replication consumer identifier).
     const String legacy_replication_slot;
     const String legacy_publication_name;
+
+    /// The column subsets `materialized_postgresql_tables_list` requests (`table(col1, col2)`), by (schema, table)
+    /// with the default schema normalized to "public". The publication is created with exactly these column lists.
+    std::map<std::pair<String, String>, std::set<String>> configured_column_lists;
 
     /// Replication consumer. Manages decoding of replication stream and syncing into tables.
     ConsumerPtr consumer;
