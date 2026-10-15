@@ -856,12 +856,13 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
         TranslateQualifiedNamesVisitor::Data translation_data({}, joined_tables.tablesWithColumns());
         TranslateQualifiedNamesVisitor(translation_data).visit(visible_query_ast);
 
-        const auto & visible_select_list = visible_query_ast->as<const ASTSelectQuery &>().select()->children;
         auto visible_query_tree = buildProjectionQueryTree(visible_query_ast, analyzer_storage, mut_context);
         const auto & visible_query_node = visible_query_tree->as<const QueryNode &>();
         const auto & resolved_outputs = visible_query_node.getProjectionColumns();
         const auto & projection_nodes = visible_query_node.getProjection().getNodes();
-        if (visible_select_list.size() != resolved_outputs.size() || projection_nodes.size() != resolved_outputs.size())
+        /// The Analyzer expands multi-output expressions such as `untuple`, so AST child count
+        /// is not the count of visible outputs used for codec binding.
+        if (projection_nodes.size() != resolved_outputs.size())
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Cannot bind codec declarations to the outputs of projection {}", backQuote(result.name));
 
