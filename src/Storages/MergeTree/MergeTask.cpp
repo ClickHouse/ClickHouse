@@ -1429,6 +1429,10 @@ bool MergeTask::hasLightweightDelete(const FutureMergedMutatedPartPtr & future_p
 
 bool MergeTask::isVerticalLightweightDelete(const GlobalRuntimeContext & global_ctx)
 {
+    /// A patch part's rows with `_row_exists = 0` are payload, and the merge keeps them all.
+    if (global_ctx.future_part->isResultPatch())
+        return false;
+
     if (global_ctx.chosen_merge_algorithm != MergeAlgorithm::Vertical)
         return false;
 
