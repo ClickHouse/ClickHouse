@@ -86,6 +86,10 @@ SELECT count() FROM t_n64 WHERE (d, x) IN (SELECT toDateTime('2023-02-01 12:00:0
 SELECT count() FROM t_n64 WHERE d IN (SELECT toDateTime('2023-02-01 12:00:00', 'UTC')) SETTINGS transform_null_in = 1, use_skip_indexes_on_data_read = 0;
 SELECT count() FROM t_n64 WHERE d IN (SELECT toDateTime('2023-02-01 12:00:00', 'UTC')) SETTINGS use_skip_indexes_on_data_read = 0;
 
+CREATE TABLE t_tup64 (d DateTime64(3, 'UTC'), x UInt8) ENGINE = MergeTree ORDER BY (d, x) SETTINGS index_granularity = 1;
+INSERT INTO t_tup64 VALUES ('2023-02-01 12:00:00.500', 1), ('2023-02-03 13:00:00', 1);
+SELECT count() FROM t_tup64 WHERE (d, x) IN (SELECT tuple(toDateTime('2023-02-01 12:00:00', 'UTC'), toUInt8(1)));
+
 -- A set whose cast merges nothing keeps pruning.
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dt WHERE d IN (SELECT toDateTime('2023-02-01 12:00:01', 'UTC'))) WHERE explain ILIKE '%Granules: 1/2%';
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dt WHERE d IN (SELECT toDateTime64('2023-02-01 12:00:01', 3, 'UTC'))) WHERE explain ILIKE '%Granules: 1/2%';
@@ -132,3 +136,4 @@ DROP TABLE t_apia;
 DROP TABLE t_dt64s;
 DROP TABLE t_wrap;
 DROP TABLE t_n64;
+DROP TABLE t_tup64;

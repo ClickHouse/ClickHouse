@@ -3497,6 +3497,8 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
 
     Columns new_columns;
     DataTypes new_types;
+    /// A set of one `Tuple` column is unpacked below, while `IN` hands the key tuple to `Set::execute` whole.
+    const bool set_is_packed = set_columns.size() < candidate.args_count;
     while (set_columns.size() < candidate.args_count) /// If we have a packed tuple inside, we unpack it
     {
         bool has_tuple = false;
@@ -3586,7 +3588,9 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
             /// A cast that merges distinct keys, such as `DateTime` into `Date`, leaves the set holding one of
             /// them, and a relaxed atom would still prune the rest.
             if (keyToSetConversionMayCollapse(
-                    predicate_column_type, element_type, /*plain_column=*/ !isNullableOrLowCardinalityNullable(predicate_input_type)))
+                    predicate_column_type,
+                    element_type,
+                    /*plain_column=*/ !set_is_packed && !isNullableOrLowCardinalityNullable(predicate_input_type)))
                 return false;
         }
 
