@@ -38,7 +38,7 @@ public:
         if (!function_node || !function_node->isOrdinaryFunction() || !isString(removeNullable(function_node->getResultType())))
             return;
 
-        /// If a regular expression without alternatives starts with ^ or ends with an unescaped $, rewrite
+        /// If a regular expression without alternatives starts with a ^ that has to match or ends with an unescaped $, rewrite
         /// replaceRegexpAll with replaceRegexpOne.
         if (function_node->getFunctionName() == "replaceRegexpAll" || Poco::toLower(function_node->getFunctionName()) == "regexp_replace")
             handleReplaceRegexpAll(*function_node);
