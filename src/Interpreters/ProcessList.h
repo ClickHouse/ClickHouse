@@ -81,6 +81,7 @@ struct QueryStatusInfo
     size_t written_bytes;
     Int64 memory_usage;
     Int64 peak_memory_usage;
+    Int64 spillable_memory_bytes;
     ClientInfo client_info;
     bool is_cancelled;
     CancelReason cancel_reason;
@@ -117,7 +118,8 @@ protected:
 
     /// Acquired workload resources
     QuerySlotPtr query_slot;
-    MemoryReservationPtr memory_reservation;
+    mutable std::mutex memory_reservation_mutex;
+    MemoryReservationPtr memory_reservation TSA_GUARDED_BY(memory_reservation_mutex);
 
     /// Whether this query holds an admission slot (for early release).
     /// Compound updates (e.g. transferring the slot to a FIFO waiter) happen under `ProcessList::mutex`,
@@ -264,6 +266,7 @@ public:
 
     MemoryReservation * getMemoryReservation() const
     {
+        std::lock_guard lock(memory_reservation_mutex);
         return memory_reservation.get();
     }
 
