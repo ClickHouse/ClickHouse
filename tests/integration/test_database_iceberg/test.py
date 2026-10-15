@@ -2300,6 +2300,49 @@ def test_create_table_as(started_cluster):
     node.query(f"DROP TABLE {source}")
 
 
+def test_create_table_as_mv_external_target_requires_grant(started_cluster):
+    node = started_cluster.instances["node1"]
+    namespace = f"ctas_mv_grant_{uuid.uuid4().hex}"
+    source = f"default.src_{namespace}"
+    user = f"user_{uuid.uuid4().hex}"
+    settings = {"allow_database_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    node.query(
+        f"CREATE TABLE {source}_target (visible Int64, private_sort_key Int64) "
+        "ENGINE = MergeTree ORDER BY private_sort_key"
+    )
+    node.query(
+        f"CREATE MATERIALIZED VIEW {source}_mv TO {source}_target (visible Int64) "
+        f"AS SELECT visible FROM {source}_target"
+    )
+    node.query(f"CREATE USER {user}")
+    try:
+        node.query(f"GRANT SHOW COLUMNS ON {source}_mv TO {user}")
+        node.query(f"GRANT CREATE TABLE ON {CATALOG_NAME}.* TO {user}")
+        node.query(f"GRANT READ, WRITE ON S3 TO {user}")
+
+        target = f"{CATALOG_NAME}.`{namespace}.copy`"
+        create_query = (
+            f"CREATE TABLE {target} AS {source}_mv "
+            f"ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{namespace}/copy/', "
+            f"'{minio_access_key}', '{minio_secret_key}')"
+        )
+        error = node.query_and_get_error(create_query, user=user, settings=settings)
+        assert "ACCESS_DENIED" in error, error
+        assert "private_sort_key" not in error, error
+        assert node.query(f"SHOW TABLES FROM {CATALOG_NAME} LIKE '{namespace}.%'") == ""
+
+        # With the privilege on the target its sorting key is inherited, and it names a column the view does not expose.
+        node.query(f"GRANT SHOW COLUMNS ON {source}_target TO {user}")
+        error = node.query_and_get_error(create_query, user=user, settings=settings)
+        assert "ACCESS_DENIED" not in error, error
+        assert "private_sort_key" in error, error
+    finally:
+        node.query(f"DROP USER IF EXISTS {user}")
+        node.query(f"DROP TABLE IF EXISTS {source}_mv")
+        node.query(f"DROP TABLE IF EXISTS {source}_target")
+
+
 @pytest.mark.parametrize("column_definition,explicit_engine", [
     ("name String CODEC(ZSTD)", False),
     ("dt Date TTL dt + INTERVAL 1 DAY", True),

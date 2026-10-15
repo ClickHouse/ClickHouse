@@ -916,6 +916,28 @@ String DatabaseDataLake::getNewTableLocation(
     const String & namespace_name,
     const String & table_name) const
 {
+    /// The table is read back from `storage_endpoint` with the bucket of the location as a path prefix,
+    /// see `getStorageEndpointForTable`. Returns `location` rewritten to the objects it is reopened at.
+    auto get_reopened_location = [&](const String & location) -> String
+    {
+        if (settings[DatabaseDataLakeSetting::storage_endpoint].value.empty()
+            || settings[DatabaseDataLakeSetting::storage_uri_style].value == S3UriStyle::VIRTUAL_HOSTED
+            || DataLake::parseStorageTypeFromLocation(location) != DatabaseDataLakeStorageType::S3)
+            return location;
+
+        auto table_metadata = DataLake::TableMetadata().withLocation();
+        if (settings[DatabaseDataLakeSetting::force_add_bucket])
+            table_metadata.withForceAddBucket();
+        table_metadata.setLocation(location);
+
+        String path = Poco::URI(getStorageEndpointForTable(table_metadata)).getPath();
+        while (path.starts_with('/'))
+            path.erase(0, 1);
+        while (path.ends_with('/'))
+            path.pop_back();
+        return "s3://" + path;
+    };
+
     String base_location = catalog->getDefaultBaseLocation();
     if (base_location.empty())
         base_location = settings[DatabaseDataLakeSetting::default_base_location].value;
@@ -932,7 +954,26 @@ String DatabaseDataLake::getNewTableLocation(
 
         while (base_location.ends_with('/'))
             base_location.pop_back();
-        return fmt::format("{}/{}/{}", base_location, namespace_name, table_name);
+        String location = fmt::format("{}/{}/{}", base_location, namespace_name, table_name);
+
+        /// The catalog registers this location for other engines, so it cannot be rewritten to the objects
+        /// the table is reopened at: reject placements where they differ.
+        if (!catalog->managesTableLocation() && !settings[DatabaseDataLakeSetting::force_add_bucket])
+        {
+            auto without_scheme = [](const String & uri)
+            {
+                auto pos = uri.find("://");
+                return pos == String::npos ? uri : uri.substr(pos + 3);
+            };
+            String reopened_location = get_reopened_location(location);
+            if (without_scheme(reopened_location) != without_scheme(location))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Table location '{}' derived from the default base location is reopened under `storage_endpoint` ('{}') "
+                    "as '{}', so the table would be unreadable immediately after creation. Make the bucket of the default "
+                    "base location match `storage_endpoint`",
+                    location, settings[DatabaseDataLakeSetting::storage_endpoint].value, reopened_location);
+        }
+        return location;
     }
 
     auto namespace_table_location = catalog->getDefaultTableLocation(namespace_name, table_name);
@@ -948,25 +989,8 @@ String DatabaseDataLake::getNewTableLocation(
         String location = *namespace_table_location;
         LOG_DEBUG(log, "Location assigned by the catalog for new table {}.{}: {}", namespace_name, table_name, location);
 
-        /// The table is read back from `storage_endpoint` with the bucket of the location as a path prefix,
-        /// see `getStorageEndpointForTable`, so the location has to name the same objects.
-        if (!settings[DatabaseDataLakeSetting::storage_endpoint].value.empty()
-            && settings[DatabaseDataLakeSetting::storage_uri_style].value != S3UriStyle::VIRTUAL_HOSTED
-            && DataLake::parseStorageTypeFromLocation(location) == DatabaseDataLakeStorageType::S3)
-        {
-            auto table_metadata = DataLake::TableMetadata().withLocation();
-            if (settings[DatabaseDataLakeSetting::force_add_bucket])
-                table_metadata.withForceAddBucket();
-            table_metadata.setLocation(location);
-
-            String path = Poco::URI(getStorageEndpointForTable(table_metadata)).getPath();
-            while (path.starts_with('/'))
-                path.erase(0, 1);
-            while (path.ends_with('/'))
-                path.pop_back();
-            location = "s3://" + path;
-        }
-        return location;
+        /// The location has to name the same objects the table is reopened at.
+        return get_reopened_location(location);
     }
 
     const auto storage_endpoint = settings[DatabaseDataLakeSetting::storage_endpoint].value;

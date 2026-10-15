@@ -2816,7 +2816,12 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             StoragePtr as_storage = DatabaseCatalog::instance().getTable({as_database_name, as_table_saved}, getContext());
             /// A materialized view keeps its keys in its target table.
             if (const auto * materialized_view = as_storage->as<StorageMaterializedView>())
+            {
+                /// An external target is a separate table, so reading its keys requires the privilege on it.
+                if (!materialized_view->hasInnerTable())
+                    getContext()->checkAccess(AccessType::SHOW_COLUMNS, materialized_view->getTargetTableId());
                 as_storage = materialized_view->getTargetTable();
+            }
             auto as_storage_metadata = as_storage->getInMemoryMetadataPtr(getContext(), false);
             if (as_storage_metadata->isPartitionKeyDefined() && as_storage_metadata->hasPartitionKey())
                 source_partition_by = as_storage_metadata->getPartitionKeyAST();
