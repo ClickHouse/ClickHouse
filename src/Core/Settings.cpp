@@ -7916,6 +7916,10 @@ Allow to convert ANY JOIN to SEMI or ANTI JOIN if filter after JOIN always evalu
 Allow to merge filter into `JOIN` condition and convert `CROSS JOIN` to `INNER`.
 )", 0, \
         {"25.4", false, true, "Added new setting to merge filter into join condition"}) \
+    DECLARE(Bool, query_plan_replace_always_true_filter, true, R"(
+Replace a filter step with an expression step when the filter condition is always true and the query does not use the filter column. Such a filter step does not remove rows, but it stops join reordering.
+)", 0, \
+        {"26.10", true, true, "New setting."}) \
     DECLARE(Bool, query_plan_merge_expression_into_join, true, R"(
 Allow to merge expressions into JOIN step during join reordering optimization.
 )", 0, \
