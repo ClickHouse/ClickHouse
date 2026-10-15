@@ -11189,7 +11189,7 @@ streaming query. It does not apply to the auxiliary expressions evaluated outsid
 those are evaluated by short-lived expression objects with no room for profiling, and they keep the static
 short-circuit behavior controlled by `short_circuit_function_evaluation`.
 )", EXPERIMENTAL, \
-        {"26.10", false, false, "New setting. Enable dynamic evaluation of whether a short-circuit function's argument should be lazily executed."}) \
+        {"26.11", false, false, "New setting. Enable dynamic evaluation of whether a short-circuit function's argument should be lazily executed."}) \
     \
     /* ####################################################### */ \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \
