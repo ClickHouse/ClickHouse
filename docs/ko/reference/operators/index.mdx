@@ -648,6 +648,8 @@ SELECT arrayMap(plus(_, 1) | multiply(_, 2), [1, 2, 3]); -- [4, 6, 8]
 
 `[x1, ...]` – `array(x1, ...)` 함수.
 
+`ARRAY[x1, ...]` – 위와 동일하며, SQL 표준, PostgreSQL 및 Trino에서 사용하는 표기법입니다.
+
 ## 튜플 생성 연산자 {#tuple-creation-operator}
 
 `(x1, x2, ...)` – `tuple(x2, x2, ...)` 함수입니다.

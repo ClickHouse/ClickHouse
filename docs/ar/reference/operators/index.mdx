@@ -645,9 +645,11 @@ SELECT arrayMap(plus(_, 1) | multiply(_, 2), [1, 2, 3]); -- [4, 6, 8]
 
 لا تملك المشغّلات التالية أولوية لأنها أقواس:
 
-## معامل إنشاء المصفوفة {#array-creation-operator}
+## مشغّل إنشاء المصفوفة {#array-creation-operator}
 
 `[x1, ...]` – الدالة `array(x1, ...)`.
+
+`ARRAY[x1, ...]` – مكافئ لما سبق، بالصيغة المعتمدة في معيار SQL وPostgreSQL وTrino.
 
 ## معامل إنشاء Tuple {#tuple-creation-operator}
 

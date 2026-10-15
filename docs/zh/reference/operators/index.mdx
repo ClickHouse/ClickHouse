@@ -649,6 +649,8 @@ SELECT arrayMap(plus(_, 1) | multiply(_, 2), [1, 2, 3]); -- [4, 6, 8]
 
 `[x1, ...]` – `array(x1, ...)` 函数。
 
+`ARRAY[x1, ...]` – 作用同上，采用 SQL 标准、PostgreSQL 和 Trino 的写法。
+
 ## Tuple 创建运算符 {#tuple-creation-operator}
 
 `(x1, x2, ...)` – 即 `tuple(x2, x2, ...)` 函数。

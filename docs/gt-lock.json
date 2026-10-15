@@ -7,42 +7,42 @@
       "versionId": "9b3345383ff3389c6681dbde6573112bd992f08e5b332453425e342f66849919",
       "translations": {
         "ja": {
-          "updatedAt": "2026-10-15T02:55:23.052Z",
+          "updatedAt": "2026-10-15T04:44:06.396Z",
           "fileName": "docs.json",
           "postProcessHash": "8cb52a0b4023236611c055d492d94af589c9a645520f0ef62b2a988254372541"
         },
         "pt-BR": {
-          "updatedAt": "2026-10-15T02:55:23.245Z",
+          "updatedAt": "2026-10-15T04:44:06.636Z",
           "fileName": "docs.json",
           "postProcessHash": "8cb52a0b4023236611c055d492d94af589c9a645520f0ef62b2a988254372541"
         },
         "ar": {
-          "updatedAt": "2026-10-15T02:55:23.579Z",
+          "updatedAt": "2026-10-15T04:44:06.953Z",
           "fileName": "docs.json",
           "postProcessHash": "8cb52a0b4023236611c055d492d94af589c9a645520f0ef62b2a988254372541"
         },
         "ko": {
-          "updatedAt": "2026-10-15T02:55:23.151Z",
+          "updatedAt": "2026-10-15T04:44:06.515Z",
           "fileName": "docs.json",
           "postProcessHash": "8cb52a0b4023236611c055d492d94af589c9a645520f0ef62b2a988254372541"
         },
         "ru": {
-          "updatedAt": "2026-10-15T02:55:23.381Z",
+          "updatedAt": "2026-10-15T04:44:06.743Z",
           "fileName": "docs.json",
           "postProcessHash": "8cb52a0b4023236611c055d492d94af589c9a645520f0ef62b2a988254372541"
         },
         "es": {
-          "updatedAt": "2026-10-15T02:55:22.926Z",
+          "updatedAt": "2026-10-15T04:44:06.288Z",
           "fileName": "docs.json",
           "postProcessHash": "8cb52a0b4023236611c055d492d94af589c9a645520f0ef62b2a988254372541"
         },
         "zh": {
-          "updatedAt": "2026-10-15T02:55:23.477Z",
+          "updatedAt": "2026-10-15T04:44:06.857Z",
           "fileName": "docs.json",
           "postProcessHash": "8cb52a0b4023236611c055d492d94af589c9a645520f0ef62b2a988254372541"
         },
         "fr": {
-          "updatedAt": "2026-10-15T02:55:23.688Z",
+          "updatedAt": "2026-10-15T04:44:07.052Z",
           "fileName": "docs.json",
           "postProcessHash": "8cb52a0b4023236611c055d492d94af589c9a645520f0ef62b2a988254372541"
         }
@@ -17811,47 +17811,47 @@
     },
     {
       "fileId": "a943c35ad577fa31c71c4b1564eb368dc4da12d260248c2599933d7bb7cacac3",
-      "versionId": "4f8e2bafdb25b3d77e0a61c4af1afd99f7c776ab4de0aaa08b8c0f8e82f641be",
+      "versionId": "f5eb1dfd2a56c92b90f44c1f8273ea082ef451ad8a9b558b12f00dd933d251b8",
       "translations": {
-        "fr": {
-          "updatedAt": "2026-10-14T14:46:57.409Z",
-          "fileName": "fr/reference/operators/index.mdx",
-          "postProcessHash": "99913903d2bc30ad2a0504872f638e322f0b8cb193458e12b0fbbd300749e13b"
+        "ko": {
+          "updatedAt": "2026-10-15T04:44:09.283Z",
+          "fileName": "ko/reference/operators/index.mdx",
+          "postProcessHash": "429569166983ecb717ecb2d5a110b830a2ebe6e14143e0083a4f0e2a6c62945e"
         },
         "ru": {
-          "updatedAt": "2026-10-14T14:46:57.458Z",
+          "updatedAt": "2026-10-15T04:44:09.284Z",
           "fileName": "ru/reference/operators/index.mdx",
-          "postProcessHash": "92dd139aee16e097f25a73d09e867a2770072a29c0b90ae10b71016c632b8892"
-        },
-        "es": {
-          "updatedAt": "2026-10-14T14:46:57.480Z",
-          "fileName": "es/reference/operators/index.mdx",
-          "postProcessHash": "96f4066a09e63c7db9b3aa98586cd144a3765088d846a3f4180c9723de5f487e"
-        },
-        "ja": {
-          "updatedAt": "2026-10-14T14:46:57.480Z",
-          "fileName": "ja/reference/operators/index.mdx",
-          "postProcessHash": "7cc8b3e3178c7469549d5e312db587e3e32b41c09fb0564274ef4790222801c5"
-        },
-        "zh": {
-          "updatedAt": "2026-10-14T14:46:57.505Z",
-          "fileName": "zh/reference/operators/index.mdx",
-          "postProcessHash": "f0721527bb975438c6660536676249af72b8ccb54061ee9c208098da588f8100"
+          "postProcessHash": "57fefa4e00bb75497626989efb250f743421f65f854ea4adb70c29398061b7f0"
         },
         "pt-BR": {
-          "updatedAt": "2026-10-14T14:46:57.508Z",
+          "updatedAt": "2026-10-15T04:44:09.284Z",
           "fileName": "pt-BR/reference/operators/index.mdx",
-          "postProcessHash": "698ed873b1676add4880fb136a27cf40897e9a9df2ca28b150b688a6b8af910a"
+          "postProcessHash": "7dedf40ce7bcd9344768339b49898cf087c5c63da163779784fa523142f862df"
         },
-        "ko": {
-          "updatedAt": "2026-10-14T14:46:57.512Z",
-          "fileName": "ko/reference/operators/index.mdx",
-          "postProcessHash": "2fb310c2c805db68bb25df5878046d18bb8147d57442ff24b141cf17b9eaf43d"
+        "ja": {
+          "updatedAt": "2026-10-15T04:44:09.285Z",
+          "fileName": "ja/reference/operators/index.mdx",
+          "postProcessHash": "67ffb7d650a8bd3bcba209a128316cdb494aeaca34a2044896eec0b0509ec94f"
+        },
+        "zh": {
+          "updatedAt": "2026-10-15T04:44:09.285Z",
+          "fileName": "zh/reference/operators/index.mdx",
+          "postProcessHash": "5d3a10cb77ad842c685e35ed984d103e19941f3745402a7a52d3b8020e3d19e1"
+        },
+        "fr": {
+          "updatedAt": "2026-10-15T04:44:09.286Z",
+          "fileName": "fr/reference/operators/index.mdx",
+          "postProcessHash": "0dc456490d9cb23975be4fd9b0cdc4bbb2205946742f6a46b874432e35172e67"
+        },
+        "es": {
+          "updatedAt": "2026-10-15T04:44:09.286Z",
+          "fileName": "es/reference/operators/index.mdx",
+          "postProcessHash": "350259d5a0f8b6ccc208637600e3cabda739bf6a91fc02582d9b1729d862dcfd"
         },
         "ar": {
-          "updatedAt": "2026-10-14T14:46:57.542Z",
+          "updatedAt": "2026-10-15T04:44:09.287Z",
           "fileName": "ar/reference/operators/index.mdx",
-          "postProcessHash": "a88ca35bfb904119c4efe07997330e13a7da25560550e1424d8024a3485b0b6e"
+          "postProcessHash": "41f876d9450136b6484f52c9c32e75dee191514a03be216d9824d4ab5488f4d1"
         }
       },
       "fileName": "reference/operators/index.mdx"

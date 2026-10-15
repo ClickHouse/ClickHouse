@@ -649,6 +649,8 @@ SELECT arrayMap(plus(_, 1) | multiply(_, 2), [1, 2, 3]); -- [4, 6, 8]
 
 `[x1, ...]` – Функция `array(x1, ...)`.
 
+`ARRAY[x1, ...]` – То же самое в записи, принятой в стандарте SQL, PostgreSQL и Trino.
+
 ## Оператор создания Tuple {#tuple-creation-operator}
 
 `(x1, x2, ...)` — функция `tuple(x2, x2, ...)`.
