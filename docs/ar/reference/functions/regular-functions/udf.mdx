@@ -18,22 +18,20 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 * تُشغِّل [Experimental WebAssembly UDFs](#webassembly-user-defined-functions) تعليمات برمجية مُجمَّعة إلى WebAssembly داخل sandbox ضمن server process. وهي توفّر overhead أقل لكل استدعاء مقارنةً بالبرامج التنفيذية الخارجية، مع عزل أفضل من الامتدادات native، مما يجعلها مناسبة للخوارزميات المخصّصة المكتوبة بلغات يمكنها الاستهداف إلى WASM (مثل C/C++/Rust).
 * تتيح [Experimental UDFs القابلة للتنفيذ المعتمدة على برامج التشغيل](#driver-based-executable-user-defined-functions) لـ برنامج التشغيل يوفّره المشغّل أن يحوّل مقطع شيفرة مُقدَّمًا في `CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'` إلى UDF قابلة للتنفيذ عند وقت إنشاء الدالة (على سبيل المثال، عن طريق تجميعه). وهي تستند إلى UDFs القابلة للتنفيذ وتتطلب إعداد برنامج التشغيل على جانب server.
 
-<div id="executable-user-defined-functions">
-  ## الدوال المعرّفة من قبل المستخدم القابلة للتنفيذ
-</div>
+## الدوال المعرّفة من قبل المستخدم القابلة للتنفيذ {#executable-user-defined-functions}
 
 <BetaBadge />
 
 <Note>
-  في ClickHouse Cloud، تكون UDFs القابلة للتنفيذ متاحة ضمن الإصدار التجريبي العام، ويتم إنشاؤها عبر واجهة مستخدم Cloud Console. راجع [الدوال المعرّفة من قبل المستخدم في Cloud](/ar/products/cloud/features/sql-console-features/user-defined-functions) للاطلاع على سير العمل الخاص بـ Cloud.
+  في ClickHouse Cloud، تكون UDFs القابلة للتنفيذ متاحة عمومًا، ويتم إنشاؤها عبر وحدة تحكم ClickHouse Cloud أو Cloud API أو Terraform. راجع [الدوال المعرّفة من قبل المستخدم في Cloud](/ar/products/cloud/features/sql-console-features/user-defined-functions) للاطلاع على سير العمل الخاص بـ Cloud، بما في ذلك بيئة التشغيل Native للملفات الثنائية المُصرَّفة.
 </Note>
 
 يمكن لـ ClickHouse استدعاء أي برنامج خارجي قابل للتنفيذ أو برنامج نصي لمعالجة البيانات.
 
-يمكن أن يوجد تكوين الدوال المعرّفة من قبل المستخدم القابلة للتنفيذ في ملف XML واحد أو أكثر.
-ويُحدَّد مسار هذا التكوين في المَعلمة [`user_defined_executable_functions_config`](/ar/reference/settings/server-settings/settings/user-defined#user_defined_executable_functions_config).
+يمكن أن توجد تهيئة الدوال المعرّفة من قبل المستخدم القابلة للتنفيذ في ملف XML واحد أو أكثر.
+ويُحدَّد مسار هذه التهيئة في المَعلمة [`user_defined_executable_functions_config`](/ar/reference/settings/server-settings/settings/user-defined#user_defined_executable_functions_config).
 
-يتضمن تكوين الدالة الإعدادات التالية:
+تتضمن تهيئة الدالة الإعدادات التالية:
 
 | Parameter                     | الوصف                                                                                                                                                                                                                                                                                                                                                                                   | مطلوب   | القيمة الافتراضية         |
 | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ------------------------- |
@@ -58,17 +56,11 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 يجب أن يقرأ الأمر الوسائط من `STDIN` وأن يكتب النتيجة إلى `STDOUT`. ويجب أن يعالج الأمر الوسائط على نحو تكراري. أي إنه بعد معالجة دفعة من الوسائط، يجب أن ينتظر الدفعة التالية.
 
-<div id="executable-user-defined-functions">
-  ## الدوال المعرّفة من قبل المستخدم القابلة للتنفيذ
-</div>
+## الدوال المعرّفة من قبل المستخدم القابلة للتنفيذ {#executable-user-defined-functions}
 
-<div id="examples">
-  ## أمثلة
-</div>
+## أمثلة {#examples}
 
-<div id="udf-inline">
-  ### UDF من برنامج نصي مضمن
-</div>
+### UDF من برنامج نصي مضمن {#udf-inline}
 
 أنشئ `test_function_sum` يدويًا مع ضبط `execute_direct` على القيمة `0` باستخدام إعدادات XML أو YAML.
 
@@ -132,9 +124,7 @@ SELECT test_function_sum(2, 2);
 └─────────────────────────┘
 ```
 
-<div id="udf-python">
-  ### UDF من برنامج نصي بايثون
-</div>
+### UDF من برنامج نصي بايثون {#udf-python}
 
 في هذا المثال، ننشئ UDF يقرأ قيمة من `STDIN` ويُرجعها كسلسلة نصية.
 
@@ -203,9 +193,7 @@ SELECT test_function_python(toUInt64(2));
 └─────────────────────────┘
 ```
 
-<div id="udf-stdin">
-  ### اقرأ قيمتين من `STDIN` وأعِد مجموعهما على شكل كائن JSON
-</div>
+### اقرأ قيمتين من `STDIN` وأعِد مجموعهما على شكل كائن JSON {#udf-stdin}
 
 أنشئ `test_function_sum_json` باستخدام وسيطات مُسمّاة وتنسيق [JSONEachRow](/ar/reference/formats/JSON/JSONEachRow)، وذلك باستخدام تهيئة XML أو YAML.
 
@@ -285,9 +273,7 @@ SELECT test_function_sum_json(2, 2);
 └──────────────────────────────┘
 ```
 
-<div id="udf-parameters-in-command">
-  ### استخدام المعلمات في إعداد `command`
-</div>
+### استخدام المعلمات في إعداد `command` {#udf-parameters-in-command}
 
 يمكن للدوال المعرّفة من قبل المستخدم القابلة للتنفيذ أخذ معلمات ثابتة تُضبط في إعداد `command` (يعمل هذا فقط مع الدوال المعرّفة من قبل المستخدم من النوع `executable`).
 ويتطلب ذلك أيضًا الخيار `execute_direct` لضمان عدم وجود ثغرة ناتجة عن توسيع وسيطات الصدفة.
@@ -355,9 +341,7 @@ SELECT test_function_parameter_python(1)(2);
 └──────────────────────────────────────┘
 ```
 
-<div id="udf-shell-script">
-  ### UDF من برنامج نصي shell
-</div>
+### UDF من برنامج نصي shell {#udf-shell-script}
 
 في هذا المثال، ننشئ برنامجًا نصيًا لـ shell يُضاعف كل قيمة.
 
@@ -430,26 +414,20 @@ SELECT test_shell(number) FROM numbers(10);
     └────────────────────┘
 ```
 
-<div id="error-handling">
-  ## معالجة الأخطاء
-</div>
+## معالجة الأخطاء {#error-handling}
 
 قد تُطلق بعض الدوال استثناءً إذا كانت البيانات غير صالحة.
 في هذه الحالة، يُلغى الاستعلام ويُعاد نص الخطأ إلى العميل.
 في المعالجة الموزعة، إذا حدث استثناء على أحد الخوادم، تحاول الخوادم الأخرى أيضًا إلغاء الاستعلام.
 
-<div id="evaluation-of-argument-expressions">
-  ## تقييم تعبيرات الوسائط
-</div>
+## تقييم تعبيرات الوسائط {#evaluation-of-argument-expressions}
 
 في معظم لغات البرمجة، قد لا يُقيَّم أحد الوسائط مع بعض المعاملات.
 وعادةً ما تكون هذه المعاملات هي `&&` و `||` و `?:`.
 في ClickHouse، تُقيَّم وسائط الدوال (المعاملات) دائمًا.
 ويرجع ذلك إلى أن أجزاءً كاملة من الأعمدة تُقيَّم دفعةً واحدة، بدلًا من حساب كل صف على حدة.
 
-<div id="performing-functions-for-distributed-query-processing">
-  ## تنفيذ الدوال في معالجة الاستعلامات الموزعة
-</div>
+## تنفيذ الدوال في معالجة الاستعلامات الموزعة {#performing-functions-for-distributed-query-processing}
 
 في معالجة الاستعلامات الموزعة، يُنفَّذ أكبر عدد ممكن من مراحل معالجة الاستعلام على الخوادم البعيدة، وتُنفَّذ بقية المراحل (مثل دمج النتائج الوسيطة وكل ما يلي ذلك) على الخادم الطالب.
 
@@ -465,15 +443,11 @@ SELECT test_shell(number) FROM numbers(10);
 
 إذا كانت دالة في استعلام ما تُنفَّذ على الخادم الطالب، لكنك تحتاج إلى تنفيذها على الخوادم البعيدة، فيمكنك تغليفها داخل الدالة التجميعية &#39;any&#39; أو إضافتها إلى مفتاح في `GROUP BY`.
 
-<div id="sql-user-defined-functions">
-  ## دوال SQL المعرفة من قبل المستخدم
-</div>
+## دوال SQL المعرفة من قبل المستخدم {#sql-user-defined-functions}
 
 يمكن إنشاء دوال مخصصة من تعبيرات lambda باستخدام عبارة [CREATE FUNCTION](/ar/reference/statements/create/function). ولحذف هذه الدوال، استخدم عبارة [DROP FUNCTION](/ar/reference/statements/drop#drop-function).
 
-<div id="webassembly-user-defined-functions">
-  ## دوال WebAssembly المعرّفة من قبل المستخدم
-</div>
+## دوال WebAssembly المعرّفة من قبل المستخدم {#webassembly-user-defined-functions}
 
 <CloudNotSupportedBadge />
 
@@ -481,9 +455,7 @@ SELECT test_shell(number) FROM numbers(10);
 
 تتيح لك دوال WebAssembly المعرّفة من قبل المستخدم (WASM UDFs) تشغيل تعليمات برمجية مخصّصة مُجمَّعة إلى WebAssembly داخل عملية خادم ClickHouse.
 
-<div id="quick-start">
-  ### البدء السريع
-</div>
+### البدء السريع {#quick-start}
 
 فعِّل دعم WebAssembly التجريبي في تهيئة ClickHouse:
 
@@ -517,15 +489,11 @@ RETURNS UInt32;
 SELECT my_function(10, 20);
 ```
 
-<div id="more-information">
-  ### مزيد من المعلومات
-</div>
+### مزيد من المعلومات {#more-information}
 
 راجِع وثائق [دوال WebAssembly المعرّفة من قبل المستخدم](/ar/reference/functions/regular-functions/wasm_udf) لمزيد من التفاصيل.
 
-<div id="driver-based-executable-user-defined-functions">
-  ## الدوال المعرّفة من قبل المستخدم القابلة للتنفيذ المعتمد على برامج التشغيل
-</div>
+## الدوال المعرّفة من قبل المستخدم القابلة للتنفيذ المعتمد على برامج التشغيل {#driver-based-executable-user-defined-functions}
 
 <CloudNotSupportedBadge />
 
@@ -539,9 +507,7 @@ SELECT my_function(10, 20);
 
 يتيح ذلك للمسؤولين توفير طريقة آمنة ومحدودة للمستخدمين لتعريف دوال بلغة برمجة كيفما كانت (على سبيل المثال، C بعد ترجمتها داخل حاوية معزولة) من دون منحهم إمكانية الوصول إلى ملفات تهيئة الخادم أو نظام الملفات. وتظل مجموعة برامج التشغيل المتاحة خاضعة بالكامل لسيطرة المشغّل.
 
-<div id="enabling-drivers">
-  ### تمكين برامج التشغيل
-</div>
+### تمكين برامج التشغيل {#enabling-drivers}
 
 تكون UDFs القابلة للتنفيذ المعتمد على برامج التشغيل معطّلة افتراضيًا. لتمكينها:
 
@@ -564,9 +530,7 @@ SELECT my_function(10, 20);
 
 يُحمَّل سجل برامج التشغيل عند بدء تشغيل الخادم، ويُحدَّث عند `SYSTEM RELOAD CONFIG`، لذلك يمكن إضافة برامج التشغيل أو تعديلها أو إزالتها دون إعادة تشغيل الخادم.
 
-<div id="driver-configuration">
-  ### إعداد برنامج التشغيل
-</div>
+### إعداد برنامج التشغيل {#driver-configuration}
 
 يُعرَّف برنامج التشغيل من خلال ملف XML (أو YAML) يحتوي على عنصر `<driver>` في المستوى الأعلى. الحقول التالية مدعومة:
 
@@ -597,9 +561,7 @@ SELECT my_function(10, 20);
 </clickhouse>
 ```
 
-<div id="driver-invocation-contract">
-  #### بروتوكول استدعاء برنامج التشغيل
-</div>
+#### بروتوكول استدعاء برنامج التشغيل {#driver-invocation-contract}
 
 عند تنفيذ `CREATE FUNCTION`، يُستدعى `create_command` بعد ضبط متغيرات `env` المهيأة، مع تمرير الوسيطات التالية:
 
@@ -612,9 +574,7 @@ SELECT my_function(10, 20);
 
 ويُستدعى `drop_command`، عند وجوده، بالطريقة نفسها (ولكن من دون متن شيفرة على `stdin`) عند حذف الدالة.
 
-<div id="creating-a-function-with-a-driver">
-  ### إنشاء function
-</div>
+### إنشاء function {#creating-a-function-with-a-driver}
 
 ```sql
 CREATE [OR REPLACE] FUNCTION [IF NOT EXISTS] name [ON CLUSTER cluster]
@@ -625,9 +585,7 @@ CREATE [OR REPLACE] FUNCTION [IF NOT EXISTS] name [ON CLUSTER cluster]
 
 يشغّل ClickHouse الأمر `create_command` الخاص ببرنامج التشغيل، ويكتب التهيئة الناتجة إلى [`dynamic_user_defined_executable_functions_path`](/ar/reference/settings/server-settings/settings/other#dynamic_user_defined_executable_functions_path)، ثم يكتشفها مُحمِّل UDF التنفيذي الحالي. بعد ذلك يمكن استدعاء الدالة مثل أي دالة أخرى.
 
-<div id="dropping-a-function-with-a-driver">
-  ### حذف دالة
-</div>
+### حذف دالة {#dropping-a-function-with-a-driver}
 
 ```sql
 DROP FUNCTION [IF EXISTS] name [ON CLUSTER cluster]
@@ -635,23 +593,17 @@ DROP FUNCTION [IF EXISTS] name [ON CLUSTER cluster]
 
 يستدعي `DROP FUNCTION` الأمر `drop_command` الخاص ببرنامج التشغيل (إن وُجد)، ويزيل التهيئة الديناميكية المُنشأة ودليل العمل الخاص بكل دالة، ويُعيد تحميل مُحمِّل UDF التنفيذي، ويزيل الاستعلام المحفوظ.
 
-<div id="driver-persistence-and-restart">
-  ### الاستمرارية وإعادة التشغيل
-</div>
+### الاستمرارية وإعادة التشغيل {#driver-persistence-and-restart}
 
 يُحفَظ الاستعلام الأصلي على هيئة عبارة `ATTACH FUNCTION ...` في دليل كائنات SQL المعرَّفة من قبل المستخدم، بحيث تبقى الدالة بعد إعادة تشغيل الخادم. عند بدء التشغيل، تُحمَّل التهيئات المُولَّدة في [`dynamic_user_defined_executable_functions_path`](/ar/reference/settings/server-settings/settings/other#dynamic_user_defined_executable_functions_path) مباشرةً من دون إعادة تشغيل برنامج التشغيل. وإذا لم تكن لعبارة `ATTACH FUNCTION` المحفوظة تهيئة مُولَّدة مطابقة (على سبيل المثال، إذا فُقد الدليل الديناميكي)، فستُعاد تشغيل برنامج التشغيل لإعادة إنشائها.
 
-<div id="driver-limitations">
-  ### القيود
-</div>
+### القيود {#driver-limitations}
 
 * هذه الميزة تجريبية ولا تتاح إلا عند تفعيل `allow_experimental_executable_udf_drivers`.
 * الدوال المستندة إلى برامج التشغيل غير مدعومة مع التخزين المُكرَّر للدوال المعرّفة من قبل المستخدم (`ON CLUSTER` و `<user_defined_zookeeper_path>`)، لأن الاستعلام الأصلي فقط هو الذي يُكرَّر، وليس الملفات الناتجة.
 * تؤدي عملية `RESTORE` لدالة مستندة إلى برنامج تشغيل جرى أخذ نسخة احتياطية لها إلى الاحتفاظ بالاستعلام، لكنها لا تعيد تشغيل برنامج التشغيل؛ إذ تُطبَّق التهيئة المُولَّدة وتُحفَظ لاحقًا أثناء استرداد إعادة التشغيل.
 
-<div id="example-c-drivers">
-  ### مثال على برامج تشغيل C
-</div>
+### مثال على برامج تشغيل C {#example-c-drivers}
 
 تتضمن شجرة المصدر برامج تشغيل تجريبية لإثبات المفهوم ضمن `programs/server/user_defined_executable_function_drivers_config.d/`، وهي تُترجم جسم دالة بلغة C وتُشغّله. وهذه مجرد أمثلة و**لا تُثبَّت عبر الحزم**:
 
@@ -661,8 +613,6 @@ DROP FUNCTION [IF EXISTS] name [ON CLUSTER cluster]
 
 صُمِّمت برامج التشغيل التجريبية هذه كنقطة بداية؛ لذا راجع آليات العزل وعزّزها بما يناسب بيئتك قبل إتاحتها لمستخدمين غير موثوقين.
 
-<div id="related-content">
-  ## محتوى ذو صلة
-</div>
+## محتوى ذو صلة {#related-content}
 
 * [الدوال المعرَّفة من قبل المستخدم في ClickHouse Cloud](https://clickhouse.com/blog/user-defined-functions-clickhouse-udfs)

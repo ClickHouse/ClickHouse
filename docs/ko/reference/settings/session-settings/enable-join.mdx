@@ -14,7 +14,7 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 이러한 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며, [소스 코드](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)에서 자동 생성됩니다.
 
-## enable_join_fixed_hash_table_conversion
+## enable_join_fixed_hash_table_conversion {#enable_join_fixed_hash_table_conversion}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -22,7 +22,7 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 키가 값 범위가 작은 단일 정수인 경우, 조인 시 해시 테이블을 평면 배열로 변환하는 기능을 활성화합니다.
 
-## enable_join_key_only_hash_tables
+## enable_join_key_only_hash_tables {#enable_join_key_only_hash_tables}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -30,7 +30,7 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 결과에 오른쪽 행에서 가져온 값이 절대 포함될 수 없는 조인, 즉 `LEFT ANTI` 및 오른쪽 컬럼을 선택하지 않은 `LEFT SEMI`에서는 오른쪽 행에 대한 참조 없이 JOIN 키만 저장하는 해시 테이블을 사용합니다. 이러한 테이블은 cell 크기가 더 작고, 오른쪽 block을 저장하지 않고 삭제할 수 있습니다.
 
-## enable_join_runtime_filters
+## enable_join_runtime_filters {#enable_join_runtime_filters}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -38,15 +38,22 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 런타임에 오른쪽에서 수집한 JOIN 키 집합을 사용해 왼쪽을 필터링합니다.
 
-## enable_join_runtime_filters_index_analysis
+## enable_join_runtime_filters_index_analysis {#enable_join_runtime_filters_index_analysis}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "JOIN 런타임 필터가 Production 티어 기능이 되었습니다."}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "0"},{"label": "동적 인덱스 분석을 사용해 조인 필터링을 활성화하는 새로운 설정"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "JOIN 런타임 필터가 Production 티어 기능이 되었습니다."}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "0"},{"label": "동적 인덱스 분석을 사용한 조인 필터링을 활성화하는 새로운 설정"}]}, {"id": "row-3","items": [{"label": "26.10"},{"label": "1"},{"label": "빌드(오른쪽) 측에서 수집한 런타임 필터로 JOIN의 프로브(왼쪽) 측 그래뉼 프루닝을 활성화합니다."}]}]} />
 
-두 번째 패스 인덱스 분석(`use_skip_indexes_on_data_read` 사용)을 실행해 조인의 좌측(LHS)에서 그래뉼을 프루닝합니다.
+빌드 측에서 수집한 런타임 필터를 사용하여 JOIN의 프로브 측 그래뉼을 프루닝합니다. `enable_join_runtime_filters`를 참조하십시오.
+`use_skip_indexes_on_data_read = 1`인 경우에만 적용됩니다.
+프로브 측의 기본 키(primary key) 컬럼이거나 `minmax`, `set` 또는 `bloom_filter` 스킵 인덱스가 적용된 조인 키만 프루닝할 수 있습니다.
+런타임 필터가 정확한 키 값을 유지한 경우 프루닝 프레디케이트는 해당 값들로 이루어진 `IN` 집합이 되고, 그렇지 않으면 키의 최솟값/최댓값 범위가 사용됩니다(이 경우 프루닝 효과가 더 낮습니다).
 
-## enable_join_transitive_predicates
+조인의 프로브 측을 로컬에서 읽을 때만 적용됩니다. 프루닝을 수행하는 디스크립터는 쿼리 계획을 최적화하는 과정에서 읽기 단계에 연결되지만, 원격 실행을 위해 해당 단계를 재구성할 때는 함께 전달되지 않습니다. 따라서 병렬 레플리카(`enable_parallel_replicas = 1`)나 분산 쿼리 계획(`make_distributed_plan = 1`)을 사용하면 그래뉼 프루닝이 수행되지 않습니다. 이러한 모드에서는 이 설정이 아무런 효과가 없습니다. 쿼리는 동일한 결과를 반환하고 JOIN 런타임 필터 자체도 이 설정을 비활성화했을 때와 똑같이 동작하며, 그래뉼 프루닝만 적용되지 않을 뿐입니다.
+
+`FINAL`로 읽는 프로브 측(`FINAL` 읽기에는 프루닝이 구현되어 있지 않으며, `optimizeLazyFinal`은 이러한 읽기를 디스크립터 없이 재구성합니다)과 대기 중인 데이터, `ALTER` 뮤테이션 또는 패치 파트가 있는 테이블에서도 그래뉼 프루닝은 수행되지 않습니다. 이러한 경우에도 마찬가지로 이 설정은 아무런 효과가 없습니다.
+
+## enable_join_transitive_predicates {#enable_join_transitive_predicates}
 
 <BetaBadge />
 
