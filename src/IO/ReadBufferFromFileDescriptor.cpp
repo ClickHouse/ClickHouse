@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <limits>
 #include <optional>
+#include <vector>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
@@ -64,8 +65,16 @@ namespace
 /// anything else would let the following read block past the timeout, so peek the queue and
 /// answer only for the records a read would actually consume, discarding the rest (a read would
 /// discard them too).
+///
+/// In line mode (`ENABLE_LINE_INPUT`, the console default) even a character is not enough:
+/// `ReadFile` returns only once a whole line has been entered, so a partly typed line must not
+/// count as readiness until its Enter is in the queue.
 bool pollConsoleInput(HANDLE handle, int timeout_milliseconds, const std::string & file_name)
 {
+    DWORD console_mode = 0;
+    const bool line_input = GetConsoleMode(handle, &console_mode) && (console_mode & ENABLE_LINE_INPUT);
+
+    std::vector<INPUT_RECORD> records;
     Stopwatch watch;
     for (;;)
     {
@@ -87,9 +96,22 @@ bool pollConsoleInput(HANDLE handle, int timeout_milliseconds, const std::string
         if (waited != WAIT_OBJECT_0)
             return false;
 
-        INPUT_RECORD records[16];
+        /// Peek the whole queue: in line mode the Enter that completes a line can be behind any
+        /// number of characters.
+        DWORD queued = 0;
+        if (!GetNumberOfConsoleInputEvents(handle, &queued))
+        {
+            ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
+            throw Exception(
+                ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR,
+                "Cannot poll file {} (GetNumberOfConsoleInputEvents), error code: {}",
+                file_name,
+                GetLastError());
+        }
+        records.resize(std::max<DWORD>(queued, 1));
+
         DWORD count = 0;
-        if (!PeekConsoleInputW(handle, records, static_cast<DWORD>(std::size(records)), &count))
+        if (!PeekConsoleInputW(handle, records.data(), static_cast<DWORD>(records.size()), &count))
         {
             ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
             throw Exception(
@@ -99,22 +121,33 @@ bool pollConsoleInput(HANDLE handle, int timeout_milliseconds, const std::string
                 GetLastError());
         }
 
-        DWORD to_discard = 0;
-        while (to_discard < count)
+        auto is_character = [](const INPUT_RECORD & record)
         {
-            const auto & record = records[to_discard];
-            if (record.EventType == KEY_EVENT && record.Event.KeyEvent.bKeyDown
-                && record.Event.KeyEvent.uChar.UnicodeChar != 0)
-                return true;
+            return record.EventType == KEY_EVENT && record.Event.KeyEvent.bKeyDown && record.Event.KeyEvent.uChar.UnicodeChar != 0;
+        };
+
+        /// The records before the first character are invisible to a read.
+        DWORD to_discard = 0;
+        while (to_discard < count && !is_character(records[to_discard]))
             ++to_discard;
+
+        bool partial_line = false;
+        if (to_discard < count)
+        {
+            if (!line_input)
+                return true;
+            for (DWORD i = to_discard; i < count; ++i)
+                if (is_character(records[i]) && records[i].Event.KeyEvent.uChar.UnicodeChar == L'\r')
+                    return true;
+            partial_line = true;
         }
 
-        /// Everything peeked is invisible to a read: consume it, or the handle stays signaled by it
-        /// and this loop would spin until the timeout instead of waiting.
+        /// Consume the invisible records, or the handle stays signaled by them and this loop would
+        /// spin until the timeout instead of waiting.
         if (to_discard != 0)
         {
             DWORD discarded = 0;
-            if (!ReadConsoleInputW(handle, records, to_discard, &discarded))
+            if (!ReadConsoleInputW(handle, records.data(), to_discard, &discarded))
             {
                 ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
                 throw Exception(
@@ -123,6 +156,16 @@ bool pollConsoleInput(HANDLE handle, int timeout_milliseconds, const std::string
                     file_name,
                     GetLastError());
             }
+        }
+
+        if (partial_line)
+        {
+            /// The characters of the line stay queued until a read takes the whole line, so the handle
+            /// stays signaled and cannot tell us when the rest arrives: look at the queue again a bit
+            /// later, until the timeout.
+            if (remaining == 0)
+                return false;
+            Sleep(static_cast<DWORD>(std::min<UInt64>(remaining, 10)));
         }
     }
 }
