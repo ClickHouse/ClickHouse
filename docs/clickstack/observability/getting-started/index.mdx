@@ -9,21 +9,19 @@ keywords: ['ClickHouse Observability', 'getting started', 'fully managed']
 
 import { Image } from "/snippets/components/Image.jsx";
 
-<Warning>
-The service-creation steps are still being verified. The telemetry examples linked below use an existing fully managed ClickHouse Observability service.
-</Warning>
-
 Get started with ClickHouse Observability, send a test event, and confirm that the event is available in the observability UI.
 
 The service provides a managed telemetry endpoint. Send data from your applications, agents, or an existing OpenTelemetry Collector to this endpoint.
 
+If you manage your own ingestion pipeline and schema, follow the [self-configured getting-started guide](/clickstack/self-configured/getting-started/managed).
+
 ## Before you begin {#before-you-begin}
 
-You need an existing fully managed ClickHouse Observability service and access to its telemetry endpoint and API key. Open the service’s **Getting Started** page and choose one of the three paths below to send telemetry.
+You need a fully managed ClickHouse Observability service and access to its telemetry endpoint and API key.
 
-<Note>
-**Review: service creation.** Add the verified steps for creating a fully managed Observability service.
-</Note>
+### Create a service {#create-a-service}
+
+If you don't have a service yet, start with [Create a ClickHouse service](/get-started/setup/cloud#1-create-a-clickhouse-service) in the ClickHouse Cloud quickstart. Once your service is running, open ClickHouse Observability. If the service has no data yet, the **Getting Started** page opens automatically. Choose one of the three paths below to send telemetry.
 
 ## Set up ClickHouse Observability {#set-up-clickhouse-observability}
 
@@ -42,7 +40,7 @@ Use this path if your application, agent, or collector already produces OpenTele
 3. Configure your sender to export telemetry to the managed endpoint using the provided authentication details.
 4. Generate normal activity in your application, then confirm that the resulting data appears in [Search](/clickstack/observability/features/search).
 
-You can also find these connection details under **Team Settings → Managed Telemetry**.
+You can also find these connection details under **Team Settings → Data → Managed Telemetry**.
 
 <Tip>
 For an optional quick check, select **send a test log** on the getting started page. The button immediately sends a test log from the UI; it does not verify your application's or collector's configuration.

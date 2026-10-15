@@ -12,7 +12,13 @@
           "group": "Introduction",
           "pages": [
             "clickstack/observability/overview",
-            "clickstack/observability/getting-started/index",
+            {
+              "group": "Getting started",
+              "pages": [
+                "clickstack/observability/getting-started/index",
+                "clickstack/self-configured/getting-started/managed"
+              ]
+            },
             {
               "group": "Sample datasets",
               "pages": [
@@ -235,7 +241,6 @@
           "group": "Self configured",
           "pages": [
             "clickstack/self-configured/overview",
-            "clickstack/self-configured/getting-started/managed",
             "clickstack/self-configured/architecture",
             "clickstack/self-configured/deployment/managed",
             {
