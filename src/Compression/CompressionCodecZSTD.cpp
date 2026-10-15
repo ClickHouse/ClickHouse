@@ -60,14 +60,14 @@ SimpleObjectPool<ContextPtr> & contextPool()
 /// that `ZSTD_compress2` allocates, each rounded up by the allocator.
 Int64 trackedSize([[maybe_unused]] ZSTD_CCtx * cctx)
 {
-#if USE_JEMALLOC && (defined(OS_LINUX) || defined(OS_FREEBSD))
+#if USE_JEMALLOC
     static const size_t context_size = ZSTD_sizeof_CCtx(ZstdCCtxPtr(ZSTD_createCCtx()).get());
     static const Int64 fixed_size
         = ::Memory::getActualAllocationSize(sizeof(ZstdCCtxPtr)) + ::Memory::getActualAllocationSize(context_size);
     size_t workspace_size = ZSTD_sizeof_CCtx(cctx) - context_size;
     return fixed_size + (workspace_size ? ::Memory::getActualAllocationSize(workspace_size) : 0);
 #else
-    /// Without the `malloc` interceptors, the allocations of `libzstd` are not tracked: only the holder from `new` is.
+    /// Without jemalloc, the allocations of `libzstd` are not tracked: only the holder from `new` is.
     return sizeof(ZstdCCtxPtr);
 #endif
 }
