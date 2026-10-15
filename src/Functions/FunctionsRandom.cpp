@@ -83,7 +83,8 @@ struct LinearCongruentialGenerator
         current = value;
     }
 
-    [[maybe_unused]] UInt32 next()
+    /// The generator works modulo 2^64.
+    [[maybe_unused]] NO_SANITIZE_UNSIGNED_OVERFLOW UInt32 next()
     {
         current = current * a + c;
         return static_cast<UInt32>(current >> 16);
