@@ -3669,11 +3669,11 @@ A table that another query is using at that moment is skipped as well: the inter
 
 All of the eligibility checks, and the `DETACH`/`ATTACH` pair itself, are best-effort and point-in-time: the pair is issued by table name and is not serialized against other DDL on that name, so a concurrent `CREATE`, `RENAME`, `EXCHANGE`, or `DROP` of the same name may make it act on a different table than the one collected during preflight, or skip the reattach. The feature does not guarantee that the exact table observed during collection is the one reattached.
 )", EXPERIMENTAL, \
-        {"26.10", false, false, "New setting for testing table reattachment before query execution."}) \
+        {"26.11", false, false, "New setting for testing table reattachment before query execution."}) \
     DECLARE(Float, reattach_tables_before_query_execution_probability, 0., R"(
 For testing purposes only. The probability of enabling `reattach_tables_before_query_execution` if it's disabled.
 )", EXPERIMENTAL, \
-        {"26.10", 0., 0., "New setting for testing table reattachment before query execution."}) \
+        {"26.11", 0., 0., "New setting for testing table reattachment before query execution."}) \
     DECLARE(Bool, enable_vertical_final, true, R"(
 If enable, remove duplicated rows during FINAL by marking rows as deleted and filtering them later instead of merging rows
 )", 0, \
