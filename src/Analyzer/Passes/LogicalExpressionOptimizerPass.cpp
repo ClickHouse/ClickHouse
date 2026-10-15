@@ -1796,6 +1796,7 @@ public:
     TableExpressionNodes preserved_join_tables;
 
     /// Whether `node` reads at least one column and all of them come from `preserved_join_tables`.
+    /// Like the planner's split of ON by side, only columns under function arguments count: lambdas and subqueries are skipped.
     bool readsOnlyPreservedJoinTables(const QueryTreeNodePtr & node) const
     {
         if (preserved_join_tables.empty())
@@ -1818,10 +1819,6 @@ public:
             {
                 for (const auto & argument : function->getArguments().getNodes())
                     nodes_to_process.push_back(argument.get());
-            }
-            else if (!current->as<ConstantNode>())
-            {
-                return false;
             }
         }
         return has_column;

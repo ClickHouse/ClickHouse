@@ -34,6 +34,10 @@ expression over array join
 0	1	1
 1	0	1
 1	1	0
+expression with a lambda
+0	10
+1	0
+2	0
 contradiction with a skipped bound
 0	0
 1	0
