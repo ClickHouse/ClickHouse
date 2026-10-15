@@ -53,6 +53,23 @@ INSERT INTO prometheus (metric_name, tags, samples) VALUES
     ('or_chain_b', map('test_case', 'chain'), [(toDateTime64(100, 3), 9), (toDateTime64(110, 3), 2)]),
     ('or_chain_c', map('test_case', 'chain'), [(toDateTime64(100, 3), 8), (toDateTime64(110, 3), 8), (toDateTime64(120, 3), 3)]);
 
+INSERT INTO prometheus (metric_name, tags, samples)
+SELECT
+    metric_name,
+    map('series', toString(series)),
+    groupArray((toDateTime64(100 + step * 10, 3), toFloat64(1)))
+FROM
+(
+    SELECT 'wide_left' AS metric_name, number AS series, step
+    FROM numbers(200)
+    ARRAY JOIN arrayFilter(s -> s % 3 != 0, range(30)) AS step
+    UNION ALL
+    SELECT 'wide_right' AS metric_name, number AS series, step
+    FROM numbers(200)
+    ARRAY JOIN arrayFilter(s -> s % 5 != 0, range(30)) AS step
+)
+GROUP BY metric_name, series;
+
 SELECT '-- or, range';
 SELECT * FROM prometheusQueryRange('prometheus', 'last_over_time(m[10]) or last_over_time(n[10])', 100, 130, 10) ORDER BY tags;
 SELECT '-- or, range: identical result with materialization disabled';
@@ -122,6 +139,14 @@ SELECT '-- unless uses a compact per-step presence mask';
 SELECT countIf(explain LIKE '%groupBitOrForEach%') > 0 AS uses_presence_mask,
        countIf(explain LIKE '%countForEach%') = 0 AS avoids_count_aggregate
 FROM (EXPLAIN SELECT * FROM prometheusQueryRange('prometheus', 'last_over_time(m[10]) unless last_over_time(n[10])', 100, 130, 10));
+
+SELECT '-- or on() has one match group, so the presence window needs no partition sort; the one Sorting step is the final ORDER BY';
+SELECT countIf(explain LIKE '%Sorting%') AS sorting_steps
+FROM (EXPLAIN SELECT * FROM prometheusQueryRange('prometheus', 'last_over_time(m[10]) or on() last_over_time(n[10])', 100, 130, 10));
+
+SELECT '-- or with tags in the match key partitions the presence window, so it adds one Sorting step';
+SELECT countIf(explain LIKE '%Sorting%') AS sorting_steps
+FROM (EXPLAIN SELECT * FROM prometheusQueryRange('prometheus', 'last_over_time(m[10]) or last_over_time(n[10])', 100, 130, 10));
 
 SELECT '-- subqueries referenced once stay inlined: plain sum(rate(...)) reads the samples table once, nothing is materialized';
 SELECT countIf(explain LIKE '%ReadFromMergeTree%samples_table%') AS samples_table_reads,
@@ -201,6 +226,33 @@ FROM system.query_log
 WHERE event_date >= yesterday()
   AND current_database = currentDatabase()
   AND log_comment IN ('promql_or_empty_on', 'promql_or_identical');
+
+SELECT '-- wide empty on() keeps left series and unmasked right steps';
+SELECT count() AS series_count, sum(length(samples)) AS sample_count
+FROM prometheusQueryRange(
+    'prometheus',
+    'last_over_time(wide_left[10]) or on() last_over_time(wide_right[10])',
+    100, 390, 10)
+SETTINGS log_comment = 'promql_or_wide_on';
+
+SELECT '-- wide identical series or matches the left operand';
+SELECT count() = 0
+FROM
+(
+    SELECT * FROM prometheusQueryRange('prometheus', 'last_over_time(wide_left[10]) or last_over_time(wide_left[10])', 100, 390, 10)
+    EXCEPT
+    SELECT * FROM prometheusQueryRange('prometheus', 'last_over_time(wide_left[10])', 100, 390, 10)
+)
+SETTINGS log_comment = 'promql_or_wide_identical';
+
+SYSTEM FLUSH LOGS query_log;
+SELECT
+    countIf(log_comment = 'promql_or_wide_on' AND type = 'QueryFinish' AND memory_usage > 0 AND query_duration_ms >= 0) > 0,
+    countIf(log_comment = 'promql_or_wide_identical' AND type = 'QueryFinish' AND memory_usage > 0 AND query_duration_ms >= 0) > 0
+FROM system.query_log
+WHERE event_date >= yesterday()
+  AND current_database = currentDatabase()
+  AND log_comment IN ('promql_or_wide_on', 'promql_or_wide_identical');
 
 SELECT '-- thirteen-term or names each operand once';
 SELECT sum(countMatches(explain, '"v1"')) AS v1_mentions,

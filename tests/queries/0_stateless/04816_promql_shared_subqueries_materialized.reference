@@ -40,6 +40,10 @@
 1	1
 -- unless uses a compact per-step presence mask
 1	1
+-- or on() has one match group, so the presence window needs no partition sort; the one Sorting step is the final ORDER BY
+1
+-- or with tags in the match key partitions the presence window, so it adds one Sorting step
+2
 -- subqueries referenced once stay inlined: plain sum(rate(...)) reads the samples table once, nothing is materialized
 1	0
 -- subqueries referenced once stay inlined: a binary operator reads each of its two operands once, nothing is materialized
@@ -63,6 +67,11 @@
 -- or range records peak memory
 2
 4
+1	1
+-- wide empty on() keeps left series and unmasked right steps
+400	5600
+-- wide identical series or matches the left operand
+1
 1	1
 -- thirteen-term or names each operand once
 1	1

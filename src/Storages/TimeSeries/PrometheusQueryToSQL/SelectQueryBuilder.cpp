@@ -6,6 +6,7 @@
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTWithElement.h>
@@ -97,6 +98,14 @@ ASTPtr SelectQueryBuilder::getSelectQuery()
 
     if (limit)
         select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, make_intrusive<ASTLiteral>(*limit));
+
+    if (!settings.empty())
+    {
+        auto settings_ast = make_intrusive<ASTSetQuery>();
+        settings_ast->is_standalone = false;
+        settings_ast->changes = std::move(settings);
+        select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(settings_ast));
+    }
 
     if (!with.empty())
     {
