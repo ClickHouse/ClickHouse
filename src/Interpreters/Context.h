@@ -1956,7 +1956,13 @@ public:
     void setRecoveryFromStoredMetadata(bool value) { is_recovery_from_stored_metadata = value; }
 
     bool isViewInnerQuery() const { return is_view_inner_query; }
-    void setIsViewInnerQuery(bool value) { is_view_inner_query = value; }
+    /// A view body is parsed from scratch, so its positional arguments are not resolved yet.
+    void setIsViewInnerQuery(bool value)
+    {
+        is_view_inner_query = value;
+        if (value)
+            positional_arguments_already_resolved = false;
+    }
 
     bool isPositionalArgumentsAlreadyResolved() const { return positional_arguments_already_resolved; }
     void setPositionalArgumentsAlreadyResolved(bool value) { positional_arguments_already_resolved = value; }

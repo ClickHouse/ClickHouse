@@ -356,7 +356,6 @@ ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage
     view_settings[Setting::extremes] = false;
     view_context->setSettings(view_settings);
     view_context->setIsViewInnerQuery(true);
-    view_context->setPositionalArgumentsAlreadyResolved(false);
     return view_context;
 }
 
@@ -945,7 +944,6 @@ ContextPtr StorageView::getViewSubqueryContext(ContextPtr context, const Storage
     /// The inlined view body is the inner query of the view, just like in `getViewContext`:
     /// e.g. it must read the table itself, not the inserted block of a materialized view.
     view_context->setIsViewInnerQuery(true);
-    view_context->setPositionalArgumentsAlreadyResolved(false);
     return view_context;
 }
 

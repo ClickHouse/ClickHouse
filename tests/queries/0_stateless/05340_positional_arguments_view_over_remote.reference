@@ -57,6 +57,10 @@ view row policy
 1	2
 inlined view row policy
 1	2
+obfuscate order by
+1970-01-04
+obfuscate group by
+4
 merge
 3	4	0
 3	4	0

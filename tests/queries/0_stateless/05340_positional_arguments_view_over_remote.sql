@@ -51,6 +51,13 @@ SELECT 'inlined view row policy';
 SELECT s, c FROM remote('127.0.0.1', currentDatabase(), v_pos)
 SETTINGS prefer_localhost_replica = 1, enable_positional_arguments = 1, analyzer_inline_views = 1;
 DROP ROW POLICY rp_05340 ON v_pos;
+-- And the hidden query of `obfuscate` (it keeps `Date` values as they are).
+SELECT 'obfuscate order by';
+SELECT * FROM remote('127.0.0.1', obfuscate(SELECT toDate(number + 1) AS d FROM numbers(3) ORDER BY 1 DESC LIMIT 1)) LIMIT 1
+SETTINGS prefer_localhost_replica = 1, enable_positional_arguments = 1, obfuscate_seed = '05340';
+SELECT 'obfuscate group by';
+SELECT count() FROM (SELECT * FROM remote('127.0.0.1', obfuscate(SELECT number % 2 AS k, count() AS c FROM numbers(4) GROUP BY 1)) LIMIT 4)
+SETTINGS prefer_localhost_replica = 1, enable_positional_arguments = 1, obfuscate_seed = '05340';
 
 CREATE TABLE t_pos_m1 (k Int64, src Int64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO t_pos_m1 SELECT number, 4 - number FROM numbers(5);
