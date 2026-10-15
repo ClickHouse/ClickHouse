@@ -715,8 +715,7 @@ struct HashMethodKeysFixed
     }
 
 private:
-    /// The rows to batch-pack: the whole block, or for a state over a part of it that part, if it has at
-    /// least `min_rows_to_batch_pack_sub_range` rows.
+    /// The rows to batch-pack: the whole block, the state's sub-range if it is long enough, or none.
     RowRange rowsToBatchPack(const ColumnRawPtrs & key_columns, RowRange rows)
     {
         const size_t block_rows = key_columns.empty() ? 0 : key_columns[0]->size();
