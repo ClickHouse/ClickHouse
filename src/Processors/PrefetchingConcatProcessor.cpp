@@ -55,6 +55,7 @@ PrefetchingConcatProcessor::Status PrefetchingConcatProcessor::prepare()
     /// have `IS_NEEDED == 0` here: an upstream chunk can race with our previous
     /// `setNotNeeded` (e.g. set when the output became not-needed, or when the
     /// buffer hit capacity), arriving after the flag was cleared.
+    auto pull_inputs = [&]
     {
         size_t total_buffered_bytes = 0;
         for (const auto & buffer : buffers)
@@ -93,23 +94,34 @@ PrefetchingConcatProcessor::Status PrefetchingConcatProcessor::prepare()
                     input.setNotNeeded();
             }
         }
-    }
+    };
 
-    /// Skip finished inputs with empty buffers.
+    auto current_input_is_drained = [&]
     {
         auto it = inputs.begin();
         std::advance(it, current_input_idx);
-        while (it != inputs.end() && it->isFinished() && buffers[current_input_idx].chunks.empty())
-        {
-            ++it;
-            ++current_input_idx;
-        }
-    }
+        return it->isFinished() && buffers[current_input_idx].chunks.empty();
+    };
 
-    if (current_input_idx >= buffers.size())
+    /// Skip finished inputs with empty buffers. The inputs must be pulled again after the current input
+    /// changes: the new current input has the head start, and its data may already wait in the port
+    /// while it had no room before. Returning `NeedData` without pulling it would hang the pipeline,
+    /// because no new data would arrive to wake this processor up.
+    while (true)
     {
-        output.finish();
-        return Status::Finished;
+        while (current_input_idx < buffers.size() && current_input_is_drained())
+            ++current_input_idx;
+
+        if (current_input_idx >= buffers.size())
+        {
+            output.finish();
+            return Status::Finished;
+        }
+
+        pull_inputs();
+
+        if (!current_input_is_drained())
+            break;
     }
 
     /// Try to output from the current input's buffer.
