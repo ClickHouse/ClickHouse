@@ -1,0 +1,11 @@
+--- the data files hold values beyond the precision ---
+-18000000	18000000
+1.6
+--- a filter returns every matching row ---
+1
+1
+1
+1
+--- bounds inside the precision still prune ---
+0
+1
