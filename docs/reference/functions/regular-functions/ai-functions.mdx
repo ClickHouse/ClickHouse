@@ -202,7 +202,7 @@ AND type IN ('QueryFinish', 'ExceptionWhileProcessing')
 ORDER BY event_time DESC;
 ```
 
-Enable `log_queries` and `log_profile_events` to record these events in `system.query_log`.
+`log_queries` and `log_profile_events` are enabled by default to record these events in `system.query_log`.
 Server-wide totals are also available in `system.events`.
 
 {/*
