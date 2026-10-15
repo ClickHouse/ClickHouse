@@ -123,7 +123,7 @@ Every message after that uses the negotiated version to decide which fields are 
 
 A feature is identified by the protocol version that introduced it, and is **active** when the negotiated version is greater than or equal to that number.
 
-One feature is an exception: [`RESET_SESSION`](#reset-session-phase) adds a request that does not change the layout of any message. The client compares its version with the server's version from [`ServerHello`](#serverhello), not with the negotiated version, and the server accepts the request from a client with any version. A client can use it without support for the features of the versions before it.
+One feature is an exception: [`RESET_SESSION`](#reset-session-phase) adds a request that does not change the layout of any message. The client compares this feature's minimum version with the server's version from [`ServerHello`](#serverhello), not with the negotiated version, and the server accepts the request from a client with any version. A client can use it without support for the features of the versions before it.
 
 <Warning>
 When a feature is active, its fields **must** be present on the wire. The protocol is strictly positional, so omitting a feature-gated field corrupts the byte stream for every field that follows.
@@ -347,7 +347,7 @@ sequenceDiagram
 
 ### Reset session phase {#reset-session-phase}
 
-Returns the session to its state right after the handshake, without a new TCP connection. A connection pool can use it to clean a connection before it gives the connection to the next user. The client sends it only if the server's version from [`ServerHello`](#serverhello) is `54495` or more ([`RESET_SESSION`](#feature-table)). An older server terminates the connection when it receives an unknown packet type.
+Returns the session to its state right after the handshake, without a new TCP connection. A connection pool can use it to clean a connection before it gives the connection to the next user. Reusing the connection avoids the extra TCP and TLS handshake round trips and reduces socket churn under frequent pool reuse. The client sends it only if the server's version from [`ServerHello`](#serverhello) is `54495` or more ([`RESET_SESSION`](#feature-table)). An older server terminates the connection when it receives an unknown packet type.
 
 Starting from `READY`, the flow is:
 
@@ -374,7 +374,7 @@ sequenceDiagram
    | `Exception` (2)       | Decode [`Exception`](#exception) and return as error. The session did not change. Return to `READY`, except for `USER_EXPIRED`, after which the server closes the connection. |
    | anything else         | Protocol violation. |
 
-A reset is a new login of the authenticated user, without its credentials. The server makes the session again in the same way as at login, from the current access control data:
+A reset makes a fresh session context for the existing authenticated connection. It keeps the authentication method's grants and expiry, external roles, and the external authentication response from login; it does not authenticate again. The server rebuilds the session from the current local access control data:
 
 - The user is the authenticated user.
 - The settings, settings profiles, constraints and current roles are those of the user, with the settings that an external authentication server returned at login. This includes settings that the session cannot change back itself, such as `readonly` and `allow_ddl`.
@@ -390,6 +390,8 @@ The reset fails, and the session does not change, in these cases:
 - The session runs as another user after `EXECUTE AS` (`ACCESS_DENIED`). A reset would give back the rights that `EXECUTE AS` dropped, without the credentials of the authenticated user. The client must open a new connection. After `EXECUTE AS` back to the authenticated user, the session can be reset.
 
 A SQL statement cannot send `ResetSession`, so the SQL that runs in a session cannot undo `EXECUTE AS`, `readonly` or `allow_ddl` with it. Only the client that owns the connection can reset the session. A proxy that forwards the packets of a less trusted client on its own connection must not forward `ResetSession`.
+
+A pool must wait for `EndOfStream` before reusing the connection as clean. An `Exception` can leave the previous session state intact; discard the connection if cleanup cannot be completed.
 
 The server does not send its settings again. A client that applies the server settings from [`ServerHello`](#serverhello) (`SERVER_SETTINGS`) keeps the values that it received at login.
 

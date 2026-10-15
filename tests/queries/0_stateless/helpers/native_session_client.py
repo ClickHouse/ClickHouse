@@ -285,9 +285,9 @@ class NativeSessionClient:
         assert packet == SERVER_PONG, f"unexpected packet {packet}"
 
 
-def error_name(code):
+def error_name(code, host=CLICKHOUSE_HOST, port=CLICKHOUSE_PORT_TCP):
     """Returns the name of the error code. Uses a new connection, because the failed one can be closed."""
-    with NativeSessionClient() as client:
+    with NativeSessionClient(host=host, port=port) as client:
         return client.value(f"SELECT CAST(errorCodeToName({int(code)}) AS String)")
 
 
@@ -296,7 +296,12 @@ def expect_error(name, func, *args):
     try:
         func(*args)
     except ServerError as e:
-        actual = error_name(e.code)
+        # Integration tests connect to a container rather than the default test server.
+        client = getattr(func, "__self__", None)
+        if isinstance(client, NativeSessionClient):
+            actual = error_name(e.code, client.host, client.port)
+        else:
+            actual = error_name(e.code)
         assert actual == name, f"expected {name}, got {actual}: {e}"
         return
     raise AssertionError(f"expected {name}, got no error")

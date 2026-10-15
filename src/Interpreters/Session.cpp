@@ -624,7 +624,7 @@ void Session::resetSessionContext(const std::function<void(const ContextMutableP
 
     checkIfUserIsStillValid();
 
-    /// A reset is a new login of the authenticated user without its credentials. After `EXECUTE AS`
+    /// A reset rebuilds the context for the existing authenticated connection. After `EXECUTE AS`
     /// the session runs as another user, so a reset would give back the rights that `EXECUTE AS` dropped.
     /// The settings are not checked: a new login of the same user also gets them from its profile.
     if (session_context->getUserID() != user_id)
@@ -645,11 +645,13 @@ void Session::resetSessionContext(const std::function<void(const ContextMutableP
     ContextMutablePtr new_session_context = createSessionContextForUser(client_info);
     applySettingsFromAuthServer(new_session_context);
     prepare(new_session_context);
+    /// Resolving access can throw too; finish preparing both values before replacing the live context.
+    auto new_user = new_session_context->getUser();
 
     /// The user ID does not change, so the session tracker handle stays valid.
     /// The old context is destroyed at the end of the scope, together with its temporary tables.
     session_context.swap(new_session_context);
-    user = session_context->getUser();
+    user.swap(new_user);
 }
 
 ContextMutablePtr Session::createSessionContextForUser(const ClientInfo & client_info) const
