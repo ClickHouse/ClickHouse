@@ -35,7 +35,9 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 * 有足够的磁盘空间存储日志文件
 
 <Steps>
-  <Step title="配置 PostgreSQL 日志" id="configure-postgres">
+  <Step>
+    #### 配置 PostgreSQL 日志
+
     PostgreSQL 支持多种日志格式。为了便于使用 OpenTelemetry 进行结构化解析，我们建议使用 CSV 格式，因为它能提供一致且易于解析的输出。
 
     `postgresql.conf` 文件通常位于：
@@ -47,19 +49,19 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     在 `postgresql.conf` 中添加或修改以下设置：
 
     ```conf
-    # Required for CSV logging
+    # CSV 日志所需配置
     logging_collector = on
     log_destination = 'csvlog'
 
-    # Recommended: Connection logging
+    # 推荐：连接日志
     log_connections = on
     log_disconnections = on
 
-    # Optional: Tune based on your monitoring needs
-    #log_min_duration_statement = 1000  # Log queries taking more than 1 second
-    #log_statement = 'ddl'               # Log DDL statements (CREATE, ALTER, DROP)
-    #log_checkpoints = on                # Log checkpoint activity
-    #log_lock_waits = on                 # Log lock contention
+    # 可选：根据监控需求进行调整
+    #log_min_duration_statement = 1000  # 记录耗时超过 1 秒的查询
+    #log_statement = 'ddl'               # 记录 DDL 语句（CREATE、ALTER、DROP）
+    #log_checkpoints = on                # 记录检查点活动
+    #log_lock_waits = on                 # 记录锁竞争情况
     ```
 
     <Note>
@@ -69,17 +71,17 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     完成这些更改后，重启 PostgreSQL：
 
     ```bash
-    # For systemd
+    # 适用于 systemd
     sudo systemctl restart postgresql
 
-    # For Docker
+    # 适用于 Docker
     docker restart 
     ```
 
     检查日志是否正在写入：
 
     ```bash
-    # Default log location on Linux
+    # Linux 上的默认日志位置
     tail -f /var/lib/postgresql/{version}/main/log/postgresql-*.log
 
     # macOS Homebrew
@@ -87,7 +89,9 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step title="创建自定义 OTel collector 配置" id="custom-otel">
+  <Step>
+    #### 创建自定义 OTel collector 配置
+
     ClickStack 支持通过挂载自定义配置文件并设置环境变量来扩展基础 OpenTelemetry Collector 配置。该自定义配置会与 HyperDX 通过 OpAMP 管理的基础配置合并。
 
     创建一个名为 `postgres-logs-monitoring.yaml` 的文件，内容如下：
@@ -96,7 +100,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     receivers:
       filelog/postgres:
         include:
-          - /var/lib/postgresql/*/main/log/postgresql-*.csv # Adjust to match your PostgreSQL installation
+          - /var/lib/postgresql/*/main/log/postgresql-*.csv # 请根据您的 PostgreSQL 实际安装路径进行调整
         start_at: end
         multiline:
           line_start_pattern: '^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}'
@@ -149,7 +153,9 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step title="配置 ClickStack 以加载自定义配置" id="load-custom">
+  <Step>
+    #### 配置 ClickStack 以加载自定义配置
+
     要在现有的 ClickStack 部署中启用自定义 collector 配置，您必须：
 
     1. 将自定义配置文件挂载到 `/etc/otelcol-contrib/custom.config.yaml`
@@ -163,14 +169,14 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     ```yaml
     services:
       clickstack:
-        # ... existing configuration ...
+        # ... 现有配置 ...
         environment:
           - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
-          # ... other environment variables ...
+          # ... 其他环境变量 ...
         volumes:
           - ./postgres-logs-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
           - /var/lib/postgresql:/var/lib/postgresql:ro
-          # ... other volumes ...
+          # ... 其他挂载卷 ...
     ```
 
     ##### 选项 2：Docker 运行 (All-in-One 镜像)
@@ -191,7 +197,9 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step title="在 HyperDX 中验证日志" id="verifying-logs">
+  <Step>
+    #### 在 HyperDX 中验证日志
+
     配置完成后，登录 HyperDX，确认日志已正常流入：
 
     1. 前往搜索视图
@@ -212,7 +220,9 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 对于想在配置生产系统之前先测试 PostgreSQL 日志集成的用户，我们提供了一个预生成的 PostgreSQL 日志样本数据集，其中包含贴近真实场景的日志模式。
 
 <Steps>
-  <Step title="下载样本数据集" id="download-sample">
+  <Step>
+    #### 下载样本数据集
+
     下载样本日志文件：
 
     ```bash
@@ -220,7 +230,9 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step title="创建测试 collector 配置" id="test-config">
+  <Step>
+    #### 创建测试采集器配置
+
     创建一个名为 `postgres-logs-demo.yaml` 的文件，内容如下：
 
     ```yaml
@@ -265,7 +277,9 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step title="使用演示配置运行 ClickStack" id="run-demo">
+  <Step>
+    #### 使用演示配置运行 ClickStack
+
     使用演示日志和配置运行 ClickStack：
 
     ```bash
@@ -278,7 +292,9 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step title="在 HyperDX 中验证日志" id="verify-demo-logs">
+  <Step>
+    #### 在 HyperDX 中验证日志
+
     ClickStack 运行后：
 
     1. 打开 [HyperDX](http://localhost:8080/) 并登录您的账户 (您可能需要先创建一个账户)
@@ -304,12 +320,14 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 为帮助你开始使用 ClickStack 监控 PostgreSQL，我们提供了用于查看 PostgreSQL 日志的核心可视化内容。
 
 <Steps>
-  <Step title="下载仪表盘配置" id="download">
-    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/postgres-logs-dashboard.json'} download="postgresql-logs-dashboard.json" eventName="docs.postgres_logs_monitoring.dashboard_download">下载仪表盘配置文件</TrackedLink>。
+  <Step>
+    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/postgres-logs-dashboard.json'} download="postgresql-logs-dashboard.json" eventName="docs.postgres_logs_monitoring.dashboard_download">下载</TrackedLink>仪表盘配置
   </Step>
 
-  <Step title="导入预置仪表盘" id="import-dashboard">
-    1. 打开 HyperDX，进入仪表盘部分
+  <Step>
+    #### 导入预置仪表盘
+
+    1. 打开 HyperDX 并进入 Dashboards 部分
     2. 点击右上角省略号菜单中的 **Import Dashboard**
 
     <Image img="/images/clickstack/import-dashboard.webp" alt="导入仪表盘按钮" />
@@ -319,8 +337,10 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     <Image img="/images/clickstack/postgres/import-logs-dashboard.webp" alt="完成导入" />
   </Step>
 
-  <Step title="查看仪表盘" id="created-dashboard">
-    仪表盘创建后，其中的所有可视化都已预先配置完成：
+  <Step>
+    #### 查看仪表盘
+
+    仪表盘创建后，所有可视化都已预先配置好：
 
     <Image img="/images/clickstack/postgres/postgres-logs-dashboard.webp" alt="日志仪表盘" />
 
@@ -382,7 +402,7 @@ docker exec <container> cat /tmp/postgres-demo/postgresql.log | wc -l
 * 配置 `log_min_duration_statement`，以识别超过您性能要求阈值的慢查询
 
 <div id="going-to-production">
-  ## 面向生产环境
+  ## 投入生产环境
 </div>
 
-本指南基于 ClickStack 内置的 OpenTelemetry Collector，便于快速完成设置。对于生产环境部署，我们建议运行您自己的 OTel Collector，并将数据发送到 ClickStack 的 OTLP 端点。有关生产环境配置，请参阅[发送 OpenTelemetry 数据](/zh/clickstack/ingesting-data/opentelemetry)。
+本指南利用 ClickStack 内置的 OpenTelemetry Collector 实现快速设置。对于生产部署，我们建议运行您自己的 OTel Collector，并将数据发送到 ClickStack 的 OTLP 端点。有关生产环境配置，请参阅[发送 OpenTelemetry 数据](/zh/clickstack/ingesting-data/opentelemetry)。

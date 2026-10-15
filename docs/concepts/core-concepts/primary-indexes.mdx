@@ -47,20 +47,13 @@ We sketch how the sparse primary index is used for query acceleration with anoth
 
 <br/><br/>
 
-<Steps>
-<Step title="Parse the query predicate">
-The example query includes a predicate on both primary key columns: `town = 'LONDON' AND street = 'OXFORD STREET'`.
-</Step>
-<Step title="Load the primary index">
-To accelerate the query, ClickHouse loads the table's primary index into memory.
-</Step>
-<Step title="Identify matching granules">
-It then scans the index entries to identify which granules might contain rows matching the predicate—in other words, which granules can't be skipped.
-</Step>
-<Step title="Load and process granules">
-These potentially relevant granules are then loaded and [processed](/concepts/core-concepts/query-parallelism) in memory, along with the corresponding granules from any other columns required for the query.
-</Step>
-</Steps>
+① The example query includes a predicate on both primary key columns: `town = 'LONDON' AND street = 'OXFORD STREET'`.
+
+② To accelerate the query, ClickHouse loads the table's primary index into memory.
+
+③ It then scans the index entries to identify which granules might contain rows matching the predicate—in other words, which granules can't be skipped.
+
+④ These potentially relevant granules are then loaded and [processed](/concepts/core-concepts/query-parallelism) in memory, along with the corresponding granules from any other columns required for the query.
 
 ## Monitoring primary indexes {#monitoring-primary-indexes}
 Each [data part](/concepts/core-concepts/parts) in the table has its own primary index. We can inspect the contents of these indexes using the [mergeTreeIndex](/reference/functions/table-functions/mergeTreeIndex) table function.

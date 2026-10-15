@@ -1,0 +1,48 @@
+---
+noindex: true
+title: "Versões dos componentes"
+sidebarTitle: "Versões dos componentes"
+description: "Versões estáveis atuais de todos os componentes do ClickHouse Private."
+---
+
+Versões estáveis atuais de todos os componentes do ClickHouse Private. Use estas tags ao copiar artefatos para seu registry e instalar com o Helm.
+
+<div id="container-images">
+  ## Imagens de Contêiner
+</div>
+
+| Componente               | Tag da imagem       | Descrição                                                        |
+| ------------------------ | ------------------- | ---------------------------------------------------------------- |
+| clickhouse-server        | `25.12.1.1497`      | ClickHouse server (padrão)                                       |
+| clickhouse-server (FIPS) | `25.12.1.1497-fips` | ClickHouse server com conformidade FIPS 140-2                    |
+| clickhouse-keeper        | `26.2.1.258`        | Serviço de coordenação distribuída (alternativa ao ZooKeeper)    |
+| clickhouse-keeper (FIPS) | `26.2.1.258-fips`   | ClickHouse Keeper com conformidade FIPS 140-2                    |
+| clickhouse-operator      | `main-1.18587.1`    | operador do Kubernetes para gerenciar o ciclo de vida do cluster |
+
+<div id="helm-charts">
+  ## Charts do Helm
+</div>
+
+| Chart                          | Versão      | Descrição                                               |
+| ------------------------------ | ----------- | ------------------------------------------------------- |
+| helm/clickhouse-operator-helm  | `1.18587.1` | Instala o ClickHouse Operator                           |
+| helm/onprem-clickhouse-cluster | `1.1.311`   | Cria um recurso personalizado do tipo ClickHouseCluster |
+| helm/airgap-management         | `1.165.1`   | API de gerenciamento opcional                           |
+| helm/preflight-check           | `1.31.0`    | Verificações de validação antes da instalação           |
+| helm/support-bundle            | `1.11.0`    | Coleta dados de diagnóstico para solução de problemas   |
+
+<div id="api">
+  ## API
+</div>
+
+| Componente        | Versão    |
+| ----------------- | --------- |
+| airgap-management | `1.165.1` |
+
+<div id="notes">
+  ## Observações
+</div>
+
+* A **versão do Chart do Helm do operador** (`1.18587.1`) difere da **tag da imagem** do operador (`main-1.18587.1`). Use a versão do Chart do Helm ao instalar via `helm install` e a tag da imagem ao copiar imagens de contêiner.
+* As **compilações FIPS** acrescentam `-fips` às tags de imagem padrão tanto para o servidor quanto para o Keeper.
+* As tags de versão são substituídas automaticamente quando esta documentação é compilada. Se você vir variáveis de template sem processamento (por exemplo, `25.12.1.1497`), a etapa de compilação não foi executada.

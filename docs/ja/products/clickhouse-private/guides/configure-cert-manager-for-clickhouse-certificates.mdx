@@ -1,0 +1,90 @@
+---
+noindex: true
+title: "ClickHouse の証明書用に Cert Manager を設定する"
+sidebarTitle: "Cert Manager を設定する"
+description: "Cert Manager を使用して ClickHouse Server と Keeper の TLS 証明書を生成します。"
+---
+
+Cert Manager を使用して ClickHouse Server と Keeper の TLS 証明書を生成します。
+
+> このガイドの背景となる概念、つまり各証明書の用途、検証モードの仕組み、ローテーション時の挙動については、[ClickHouse Private における PKI と mTLS](/ja/products/clickhouse-private/explanation/pki-and-mtls-in-clickhouse-private)を参照してください。
+
+<div id="prerequisites">
+  ## 前提条件
+</div>
+
+* クラスターに [Cert Manager](https://cert-manager.io/) がインストールされていること
+* クラスター名を決めておくこと (このガイドでは `default-xx-01` を例として使用します)
+
+<div id="steps">
+  ## 手順
+</div>
+
+<Steps>
+  <Step>
+    ### 1. Certificate Issuer を作成する
+
+    証明書認証局として使用する自己署名 `Issuer` を作成します。
+
+    ```yaml
+    apiVersion: cert-manager.io/v1
+    kind: Issuer
+    metadata:
+      name: selfsigned-issuer
+      namespace: ns-default-xx-01
+    spec:
+      selfSigned: {}
+    ```
+
+    > **注:** `Issuer` はネームスペース単位のリソースであり、それを参照する `Certificate` リソースと同じネームスペースに存在する必要があります。自己署名 issuer はテスト用途に適しています。本番環境では、[issuer オプションの一覧](https://cert-manager.io/docs/configuration/issuers/)を確認してください。
+  </Step>
+
+  <Step>
+    ### 2. Certificate リソースを作成する
+
+    ClickHouse Server 用の `Certificate` リソースを作成します。
+
+    ```yaml
+    apiVersion: cert-manager.io/v1
+    kind: Certificate
+    metadata:
+      name: clickhouse-server-tls
+      namespace: ns-default-xx-01
+    spec:
+      secretName: default-xx-01-server-cert-secret
+      dnsNames:
+        - "*.c-default-xx-01-server-headless.ns-default-xx-01.svc.cluster.local"
+      issuerRef:
+        name: selfsigned-issuer
+        kind: Issuer
+    ```
+
+    これにより、`ca.crt`、`tls.crt`、`tls.key` の各キーを含む `default-xx-01-server-cert-secret` という名前の Kubernetes Secret が作成されます。
+
+    必要に応じて、Keeper 用にも適切な `dnsNames` と `secretName` を指定して同じ手順を繰り返してください。
+  </Step>
+
+  <Step>
+    ### 3. cert-manager の Secret キーを使用するように Helm の values を設定する
+
+    デフォルトでは、`onprem-clickhouse-cluster` Helm チャート は `ca.crt`、`server.crt`、`server.key` という名前の secret キーを想定しています。cert-manager が生成するのは `ca.crt`、`tls.crt`、`tls.key` です。Helm の values でキー名を上書きしてください。
+
+    ```yaml
+    server:
+      openSSL:
+        enabled: true
+        secret:
+          caKey: ca.crt
+          certKey: tls.crt
+          keyKey: tls.key
+    ```
+
+    証明書は、Server では `/etc/clickhouse-server/certs/` に、Keeper では `/etc/clickhouse-keeper/certs/` にマウントされます。Helm チャート が正しい OpenSSL 設定を自動的に生成します。
+  </Step>
+</Steps>
+
+<div id="notes-on-cacrt-availability">
+  ## ca.crt の有無に関する注意
+</div>
+
+`ca.crt` キーは、issuer から取得できる場合にのみ secret に追加されます。たとえば、ACME issuer には `ca.crt` は含まれません。その場合は、公開ルート CA を手動で `ca.crt` キーに追加するか、[trust-manager](https://cert-manager.io/docs/trust/trust-manager/) を使用して CA bundle を生成し、正しい secret を対象にしてください。

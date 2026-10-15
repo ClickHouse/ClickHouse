@@ -6,13 +6,12 @@
 #include <Backups/IBackupEntry.h>
 #include <Backups/BackupIO_S3.h>
 #include <Backups/getBackupDataFileName.h>
-#include <Backups/findCharacterNotPreservedByXML.h>
 #include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/FailPoint.h>
 #include <Common/StackTrace.h>
 #include <Common/StringUtils.h>
-#include <Common/Hex.h>
+#include <base/hex.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Core/UUID.h>
@@ -23,17 +22,12 @@
 #include <IO/ConcatReadBufferFromFile.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
-#include <IO/StdStreamFromReadBuffer.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <IO/copyData.h>
 #include <Poco/Util/XMLConfiguration.h>
-#if CLICKHOUSE_CLOUD && USE_SSL
-#include <Backups/BackupEncryptionSidecar.h>
-#endif
-#include <Poco/SAX/InputSource.h>
 #include <Poco/SAX/SAXParser.h>
 #include <Poco/SAX/XMLReader.h>
 
@@ -57,13 +51,6 @@ namespace DB
 namespace FailPoints
 {
     extern const char backup_fail_before_writing_metadata[];
-    extern const char backup_fail_lock_file_check_after_creation[];
-    extern const char backup_fail_lock_file_removal[];
-    extern const char backup_fail_lock_file_write_after_commit[];
-    extern const char backup_fail_lock_file_write_after_open[];
-    extern const char backup_fail_reading_archive_size[];
-    extern const char backup_pause_before_lock_file_creation[];
-    extern const char backup_pause_after_lock_file_creation[];
 }
 
 namespace ErrorCodes
@@ -92,7 +79,6 @@ namespace
     /// We may use lightweight backup in version 2.
     const int CURRENT_BACKUP_VERSION = 2;
     constexpr auto BASE_BACKUP_COPY_S3_CREDENTIALS_FROM_BACKUP = "base_backup_copy_s3_credentials_from_backup";
-    constexpr auto METADATA_FILE_NAME = ".backup";
 
     using SizeAndChecksum = IBackup::SizeAndChecksum;
 
@@ -168,24 +154,6 @@ namespace
                 backup_name_for_logging,
                 field_name,
                 quoteString(file_name));
-    }
-
-    void writeDataFileAndCopiesToArchive(
-        IArchiveWriter & archive_writer, const IBackupWriter & writer, const BackupFileInfo & info, const BackupEntryPtr & entry)
-    {
-        const auto write_file = [&](const String & file_name)
-        {
-            auto out = archive_writer.writeFile(file_name, info.size);
-            auto read_buffer = entry->getReadBuffer(writer.getReadSettings());
-            if (info.base_size != 0)
-                read_buffer->seek(info.base_size, SEEK_SET);
-            copyData(*read_buffer, *out);
-            out->finalize();
-        };
-
-        write_file(info.data_file_name);
-        for (const auto & data_file_copy : info.data_file_copies)
-            write_file(data_file_copy);
     }
 }
 
@@ -272,10 +240,6 @@ void BackupImpl::open()
 {
     std::lock_guard lock{mutex};
 
-#if CLICKHOUSE_CLOUD && USE_SSL
-    encryption_sidecar = std::make_unique<BackupEncryptionSidecar>(*this);
-#endif
-
     if (open_mode == OpenMode::UNLOCK)
     {
         ProfileEvents::increment(ProfileEvents::BackupsOpenedForUnlock);
@@ -289,69 +253,22 @@ void BackupImpl::open()
     else
     {
         ProfileEvents::increment(ProfileEvents::BackupsOpenedForWrite);
+        LOG_INFO(log, "Writing backup: {}", backup_name_for_logging);
         timestamp = std::time(nullptr);
+        if (!uuid)
+            uuid = UUIDHelpers::generateV4();
         lock_file_name = use_archive ? (archive_params.archive_name + ".lock") : ".lock";
         lock_file_before_first_file_checked = false;
         writing_finalized = false;
 
-        /// `open` runs from the constructor, so a throw anywhere below leaves no backup behind for
-        /// anything else to clean up. The lock must not outlive the attempt that created it: it fences
-        /// the destination against every later one, which cannot match it either, because a retry picks
-        /// a fresh backup UUID. That covers opening the archive as much as taking the lock.
-        try
-        {
-#if CLICKHOUSE_CLOUD
-            if (params.resume)
-                BackupResumer(*this, *params.resume).openDestination();
-            else
-#endif
-            {
-                LOG_INFO(log, "Writing backup: {}", backup_name_for_logging);
-                if (!uuid)
-                    uuid = UUIDHelpers::generateV4();
-
-                /// Check that we can write a backup there and create the lock file to own this destination.
-                checkBackupDoesntExist();
-                if (!params.is_internal_backup)
-                    createLockFile();
-
-                /// `createLockFile` can already have proven the lock is ours: it created the lock exclusively,
-                /// or read it back and found this attempt's own contents in it. Reading it a second time right
-                /// away cannot make that ownership any more certain, and it can fail on its own: that would
-                /// abort an uncontended backup and leave behind a lock nothing can remove, because removal
-                /// needs a readable lock too.
-                ///
-                /// An archive is the exception: `openArchive` below truncates the archive file right away, before
-                /// any checked write. The lock being ours when it was created does not keep it ours: a `File(...)`
-                /// destination is reachable through `Disk(...)` too, whose writer overwrites `.lock` in rewrite
-                /// mode. So check the lock again before touching the archive, or a backup that has lost its lock
-                /// can truncate the archive of the one that took it.
-                if (!lock_file_verified_on_create || use_archive)
-                {
-                    fiu_do_on(FailPoints::backup_fail_lock_file_check_after_creation,
-                    {
-                        throw Exception(
-                            ErrorCodes::FAULT_INJECTED,
-                            "Failpoint backup_fail_lock_file_check_after_creation is triggered");
-                    });
-                    checkLockFile(true);
-                }
-                FailPointInjection::pauseFailPoint(FailPoints::backup_pause_after_lock_file_creation);
-            }
-
-            if (use_archive)
-                openArchive();
-        }
-        catch (...)
-        {
-            if (!params.is_internal_backup)
-                tryRemoveOwnLockFile();
-            throw;
-        }
+        /// Check that we can write a backup there and create the lock file to own this destination.
+        checkBackupDoesntExist();
+        if (!params.is_internal_backup)
+            createLockFile();
+        checkLockFile(true);
     }
 
-    /// A write opens the archive inside the guard above, where a failure still removes the lock.
-    if (use_archive && open_mode != OpenMode::WRITE)
+    if (use_archive)
         openArchive();
 
     if (open_mode == OpenMode::READ || open_mode == OpenMode::UNLOCK)
@@ -422,12 +339,12 @@ std::shared_ptr<const IBackup> BackupImpl::getBaseBackupUnlocked() const
         BackupInfo effective_base_backup_info = *base_backup_info;
         if (params.use_same_s3_credentials_for_base_backup)
         {
-            backup_info.copyS3CredentialsTo(effective_base_backup_info, params.context);
+            backup_info.copyS3CredentialsTo(effective_base_backup_info);
         }
-        else if (base_backup_copy_s3_credentials_from_backup && backup_info.canCopyS3CredentialsTo(effective_base_backup_info, params.context))
+        else if (base_backup_copy_s3_credentials_from_backup && backup_info.canCopyS3CredentialsTo(effective_base_backup_info))
         {
             /// Metadata marker asks to copy credentials from this backup locator at restore time.
-            backup_info.copyS3CredentialsTo(effective_base_backup_info, params.context);
+            backup_info.copyS3CredentialsTo(effective_base_backup_info);
         }
 
         BackupFactory::CreateParams base_params = params.getCreateParamsForBaseBackup(std::move(effective_base_backup_info), archive_params.password);
@@ -526,49 +443,19 @@ void BackupImpl::writeBackupMetadata()
     chassert(!params.is_internal_backup);
     checkLockFile(true);
 
-#if CLICKHOUSE_CLOUD
-    /// A Keeper session can expire while this upload is in flight. The progress fingerprint covers every
-    /// input written to the manifest, so a new owner can only publish the same metadata bytes.
-    if (params.resume)
-        params.resume->check_owner();
-#endif
-
     std::unique_ptr<WriteBuffer> out;
     if (use_archive)
-        out = archive_writer->writeFile(METADATA_FILE_NAME);
+        out = archive_writer->writeFile(".backup");
     else
-        out = writer->writeFile(METADATA_FILE_NAME);
-
-    /// A value XML cannot carry unchanged has no escaped form either, and writing it raw reported
-    /// `BACKUP_CREATED` over a manifest that reads back wrong, or not at all.
-    ///
-    /// The value is never quoted in the message: `<base_backup>` holds a locator that can carry credentials.
-    auto xml_string = [](std::string_view element, const String & str)
-    {
-        if (auto offset = findCharacterNotPreservedByXML(str))
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Cannot write the backup metadata: the value of <{}> has a character at byte offset {} that "
-                "XML cannot carry unchanged. The value is not shown because it may carry credentials",
-                element,
-                *offset);
-        return std::string_view(str.data(), str.size());
-    };
+        out = writer->writeFile(".backup");
 
     *out << "<config>";
     *out << "<version>" << (params.is_lightweight_snapshot ? CURRENT_BACKUP_VERSION : INITIAL_BACKUP_VERSION) << "</version>";
     *out << "<deduplicate_files>" << params.deduplicate_files << "</deduplicate_files>";
-    *out << "<timestamp>"
-#if CLICKHOUSE_CLOUD
-         /// A continued attempt republishes the timestamp of the one it continues, byte for byte.
-         << (params.resume ? params.resume->timestamp_text : toString(LocalDateTime{timestamp}))
-#else
-         << toString(LocalDateTime{timestamp})
-#endif
-         << "</timestamp>";
+    *out << "<timestamp>" << toString(LocalDateTime{timestamp}) << "</timestamp>";
     *out << "<uuid>" << toString(*uuid) << "</uuid>";
     if (!backup_id.empty())
-        *out << "<backup_id>" << xml << xml_string("backup_id", backup_id) << "</backup_id>";
+        *out << "<backup_id>" << xml << backup_id << "</backup_id>";
     if (data_file_name_generator != BackupDataFileNameGeneratorType::FirstFileName)
         *out << "<data_file_name_generator>" << SettingFieldBackupDataFileNameGeneratorTypeTraits::toString(data_file_name_generator)
              << "</data_file_name_generator>";
@@ -593,23 +480,20 @@ void BackupImpl::writeBackupMetadata()
             /// Persist base backup locators without inline `S3` credentials.
             BackupInfo effective_base_backup_info = *base_backup_info;
             if (params.use_same_s3_credentials_for_base_backup)
-                backup_info.copyS3CredentialsTo(effective_base_backup_info, params.context);
+                backup_info.copyS3CredentialsTo(effective_base_backup_info);
 
             const BackupInfo base_backup_info_for_metadata = effective_base_backup_info.withoutS3Credentials(params.context);
             const bool base_backup_credentials_were_stripped = base_backup_info_for_metadata.toString() != effective_base_backup_info.toString();
             bool base_backup_can_use_this_backup_credentials = false;
 
-            if (base_backup_credentials_were_stripped && backup_info.canCopyS3CredentialsTo(base_backup_info_for_metadata, params.context))
+            if (base_backup_credentials_were_stripped && backup_info.canCopyS3CredentialsTo(base_backup_info_for_metadata))
             {
                 BackupInfo base_backup_info_with_this_backup_credentials = base_backup_info_for_metadata;
-                backup_info.copyS3CredentialsTo(base_backup_info_with_this_backup_credentials, params.context);
+                backup_info.copyS3CredentialsTo(base_backup_info_with_this_backup_credentials);
                 base_backup_can_use_this_backup_credentials = base_backup_info_with_this_backup_credentials.toString() == effective_base_backup_info.toString();
             }
 
-            /// Named for readability. Inline would be safe too: the temporary lives to the end of the
-            /// full-expression, which is the whole statement.
-            const String base_backup_text = base_backup_info_for_metadata.toString();
-            *out << "<base_backup>" << xml << xml_string("base_backup", base_backup_text) << "</base_backup>";
+            *out << "<base_backup>" << xml << base_backup_info_for_metadata.toString() << "</base_backup>";
             *out << "<base_backup_uuid>" << getBaseBackupUnlocked()->getUUID() << "</base_backup_uuid>";
             if (base_backup_can_use_this_backup_credentials)
                 *out << "<" << BASE_BACKUP_COPY_S3_CREDENTIALS_FROM_BACKUP << ">true</"
@@ -619,8 +503,8 @@ void BackupImpl::writeBackupMetadata()
 
     if (params.is_lightweight_snapshot)
     {
-        *out << "<original_endpoint>" << xml << xml_string("original_endpoint", original_endpoint) << "</original_endpoint>";
-        *out << "<original_namespace>" << xml << xml_string("original_namespace", original_namespace) << "</original_namespace>";
+        *out << "<original_endpoint>" << original_endpoint << "</original_endpoint>";
+        *out << "<original_namespace>" << original_namespace << "</original_namespace>";
     }
 
     num_files = num_all_file_infos;
@@ -633,12 +517,12 @@ void BackupImpl::writeBackupMetadata()
     {
         *out << "<file>";
 
-        *out << "<name>" << xml << xml_string("name", info.file_name) << "</name>";
+        *out << "<name>" << xml << info.file_name << "</name>";
         *out << "<size>" << info.size << "</size>";
 
         if (!info.object_key.empty())
         {
-            *out << "<object_key>" << xml << xml_string("object_key", info.object_key) << "</object_key>";
+            *out << "<object_key>" << info.object_key << "</object_key>";
             if (original_endpoint.empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "In lightweight snapshot backup, the endpoint should not be empty. Do not run this command with `ON CLUSTER`");
         }
@@ -656,7 +540,7 @@ void BackupImpl::writeBackupMetadata()
                 }
             }
             if (!info.data_file_name.empty() && (info.data_file_name != info.file_name))
-                *out << "<data_file>" << xml << xml_string("data_file", info.data_file_name) << "</data_file>";
+                *out << "<data_file>" << xml << info.data_file_name << "</data_file>";
             if (info.encrypted_by_disk)
                 *out << "<encrypted_by_disk>true</encrypted_by_disk>";
         }
@@ -681,43 +565,9 @@ void BackupImpl::writeBackupMetadata()
     out->finalize();
 
     uncompressed_size = size_of_entries + out->count();
-#if CLICKHOUSE_CLOUD && USE_SSL
-    uncompressed_size += encryption_sidecar->getFileSize();
-#endif
 
     LOG_TRACE(log, "Backup {}: Metadata was written", backup_name_for_logging);
 }
-
-
-#if CLICKHOUSE_CLOUD
-void BackupImpl::recalculateMetadataCounters()
-{
-    num_files = 0;
-    total_size = 0;
-    num_entries = 0;
-    size_of_entries = 0;
-
-    coordination->forEachFileInfoForAllHosts([&](const BackupFileInfo & info)
-    {
-        ++num_files;
-        total_size += info.size;
-        const bool has_entry = !params.deduplicate_files
-            || (info.size && info.size != info.base_size
-                && (info.data_file_name.empty()
-                    || info.data_file_name == getBackupDataFileName(info, data_file_name_generator, data_file_name_prefix_length)));
-        if (has_entry)
-        {
-            ++num_entries;
-            size_of_entries += info.size - info.base_size;
-        }
-    });
-
-    uncompressed_size = size_of_entries + writer->getFileSize(METADATA_FILE_NAME);
-#if USE_SSL
-    uncompressed_size += encryption_sidecar->getFileSize();
-#endif
-}
-#endif
 
 
 void BackupImpl::readBackupMetadata()
@@ -728,17 +578,20 @@ void BackupImpl::readBackupMetadata()
     std::unique_ptr<ReadBuffer> in;
     if (use_archive)
     {
-        if (!archive_reader->fileExists(METADATA_FILE_NAME))
+        if (!archive_reader->fileExists(".backup"))
             throw Exception(ErrorCodes::BACKUP_NOT_FOUND, "Archive {} is not a backup", backup_name_for_logging);
         setCompressedSize();
-        in = archive_reader->readFile(METADATA_FILE_NAME, /*throw_on_not_found=*/true);
+        in = archive_reader->readFile(".backup", /*throw_on_not_found=*/true);
     }
     else
     {
-        if (!reader->fileExists(METADATA_FILE_NAME))
+        if (!reader->fileExists(".backup"))
             throw Exception(ErrorCodes::BACKUP_NOT_FOUND, "Backup {} not found", backup_name_for_logging);
-        in = reader->readFile(METADATA_FILE_NAME);
+        in = reader->readFile(".backup");
     }
+
+    String str;
+    readStringUntilEOF(str, *in);
 
     num_files = 0;
     total_size = 0;
@@ -884,9 +737,21 @@ void BackupImpl::readBackupMetadata()
             info.encrypted_by_disk = get_bool("encrypted_by_disk", false);
         }
 
-        const auto size_and_checksum = std::pair{info.size, info.checksum};
+        file_names.emplace(info.file_name, std::pair{info.size, info.checksum});
+        if (!info.object_key.empty())
+        {
+            if (original_endpoint.empty() || original_namespace.empty())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "In lightweight snapshot backup, the endpoint or namespace should be not empty. We cannot restore this file.");
 
-        /// Update counters before `info` is moved below.
+            if (open_mode == OpenMode::READ)
+                lightweight_snapshot_reader = lightweight_snapshot_reader_creator(original_endpoint, original_namespace);
+
+            file_object_keys.emplace(info.file_name, info.object_key);
+            lightweight_snapshot_file_infos.try_emplace(info.object_key, info);
+        }
+        else if (info.size)
+            file_infos.try_emplace(std::pair{info.size, info.checksum}, info);
+
         ++num_files;
         total_size += info.size;
         bool has_entry = !params.deduplicate_files || (info.size && (info.size != info.base_size) && (info.data_file_name.empty() || info.data_file_name == info.file_name));
@@ -894,32 +759,6 @@ void BackupImpl::readBackupMetadata()
         {
             ++num_entries;
             size_of_entries += info.size - info.base_size;
-        }
-
-        if (!info.object_key.empty())
-        {
-            if (original_endpoint.empty() || original_namespace.empty())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "In lightweight snapshot backup, the endpoint or namespace should be not empty. We cannot restore this file.");
-
-            /// UNLOCK only reads table metadata to remove the snapshot's locks, never the data parts
-            /// (`object_key` entries). Skipping their bookkeeping avoids holding one `BackupFileInfo` per
-            /// part, which OOMs the server for snapshots with millions of parts.
-            if (open_mode != OpenMode::UNLOCK)
-            {
-                if (open_mode == OpenMode::READ)
-                    lightweight_snapshot_reader = lightweight_snapshot_reader_creator(original_endpoint, original_namespace);
-
-                file_names.emplace(info.file_name, size_and_checksum);
-                file_object_keys.emplace(info.file_name, info.object_key);
-                /// The key is copied from `info.object_key` before `info` is moved into the value.
-                lightweight_snapshot_file_infos.try_emplace(info.object_key, std::move(info));
-            }
-        }
-        else
-        {
-            file_names.emplace(info.file_name, size_and_checksum);
-            if (info.size)
-                file_infos.try_emplace(size_and_checksum, std::move(info));
         }
     };
 
@@ -930,18 +769,9 @@ void BackupImpl::readBackupMetadata()
     /// ordinary element; with it the handler sees "x:contents" and ignores it (writeBackupMetadata never
     /// emits namespaces, so this only rejects hand-crafted manifests).
     xml_parser.setFeature(Poco::XML::XMLReader::FEATURE_NAMESPACE_PREFIXES, true);
-    /// The metadata is parsed while it is read, in chunks, instead of being read into one string first: it has
-    /// a record per file and can take gigabytes for a backup of many files.
-    ReadBuffer & metadata_in = *in;
-    /// The parser reads the stream from start to end and never seeks, so the stream doesn't need the size.
-    StdIStreamFromReadBuffer metadata_stream(std::move(in), /*size=*/ 0);
-    /// `std::istream` swallows an exception thrown by the buffer and only sets `badbit`, which the parser takes
-    /// for the end of the data. Rethrow it instead, so a read error isn't reported as a malformed manifest.
-    metadata_stream.exceptions(std::ios::badbit);
-    Poco::XML::InputSource metadata_source(metadata_stream);
     try
     {
-        xml_parser.parse(&metadata_source);
+        xml_parser.parseMemoryNP(str.data(), str.size());
     }
     catch (...)
     {
@@ -961,18 +791,7 @@ void BackupImpl::readBackupMetadata()
     if (!contents_seen)
         throw Exception(ErrorCodes::BACKUP_DAMAGED, "Backup {}: Metadata has no <contents>", backup_name_for_logging);
 
-    uncompressed_size = size_of_entries + metadata_in.count();
-
-#if CLICKHOUSE_CLOUD && USE_SSL
-    /// A backup written with an encryption config file next to it carries the TDE key information of that
-    /// file (a backup created from this one may carry it further, see `BACKUP FROM SNAPSHOT`), and counts
-    /// the file in its sizes the same way as when it was written.
-    if (open_mode == OpenMode::READ)
-    {
-        encryption_sidecar->read();
-        uncompressed_size += encryption_sidecar->getFileSize();
-    }
-#endif
+    uncompressed_size = size_of_entries + str.size();
     compressed_size = uncompressed_size;
     if (!use_archive)
         setCompressedSize();
@@ -986,14 +805,10 @@ void BackupImpl::checkBackupDoesntExist() const
     if (use_archive)
         file_name_to_check_existence = archive_params.archive_name;
     else
-        file_name_to_check_existence = METADATA_FILE_NAME;
+        file_name_to_check_existence = ".backup";
 
     if (writer->fileExists(file_name_to_check_existence))
         throw Exception(ErrorCodes::BACKUP_ALREADY_EXISTS, "Backup {} already exists", backup_name_for_logging);
-#if CLICKHOUSE_CLOUD && USE_SSL
-    if (encryption_sidecar->existsInDestination())
-        throw Exception(ErrorCodes::BACKUP_ALREADY_EXISTS, "Backup {} already exists", backup_name_for_logging);
-#endif
 
     /// Check that no other backup (excluding internal backups) is writing to the same destination.
     if (!params.is_internal_backup)
@@ -1010,190 +825,21 @@ void BackupImpl::createLockFile()
     chassert(!params.is_internal_backup);
 
     chassert(uuid);
-    if (lock_file_contents.empty())
-        lock_file_contents = toString(*uuid);
-    const String completed_file = use_archive ? archive_params.archive_name : METADATA_FILE_NAME;
-    FailPointInjection::pauseFailPoint(FailPoints::backup_pause_before_lock_file_creation);
-    /// Set once the lock has been created exclusively by the open itself, before its contents are written.
-    bool created_exclusively_on_open = false;
-    try
-    {
-        auto out = writer->writeFileIfNotExists(lock_file_name);
-        created_exclusively_on_open = writer->createsFileOnOpenIfNotExists();
-        fiu_do_on(FailPoints::backup_fail_lock_file_write_after_open,
-        {
-            throw Exception(
-                ErrorCodes::FAULT_INJECTED, "Failpoint backup_fail_lock_file_write_after_open is triggered");
-        });
-        *out << lock_file_contents;
-        out->finalize();
-        fiu_do_on(FailPoints::backup_fail_lock_file_write_after_commit,
-        {
-            throw Exception(
-                ErrorCodes::FAULT_INJECTED, "Failpoint backup_fail_lock_file_write_after_commit is triggered");
-        });
-        created_own_lock_file = true;
-        /// A backend with conditional-create semantics has just created the lock exclusively, so reading it
-        /// back right away cannot tell anything new. Elsewhere the write ran in rewrite mode and could have
-        /// raced with another backup, so the caller still checks the lock.
-        lock_file_verified_on_create = writer->supportsAtomicCreateIfNotExists();
-    }
-    catch (...)
-    {
-        auto exception = std::current_exception();
-        String actual_file_contents;
-        bool lock_contents_match = false;
-        /// The write may have committed the lock, and no check below is guaranteed to observe it: each
-        /// issues its own request and can fail on its own. So the lock is this `open`'s to take back
-        /// unless it continues an earlier attempt; `removeLockFile` re-reads it and has the final say,
-        /// and removes the lock only while it still holds this attempt's contents.
-        ///
-        /// That holds on a backend without conditional-create semantics too, where the write ran in
-        /// rewrite mode and may have replaced the lock of the backup that got to the destination first.
-        /// Keeping the lock would not protect that backup: its own lock is gone the moment it was written
-        /// over, so its next `checkLockFile` fails whether the lock still holds this attempt's contents or
-        /// nothing at all. A lock left in place would then fence a destination nobody owns any more,
-        /// against every later attempt, until somebody removes it by hand. So the failed attempt takes
-        /// back the lock that carries its contents, and the destination is free again for the next one.
-#if CLICKHOUSE_CLOUD
-        if (!params.resume || !params.resume->continuing_existing_progress)
-#endif
-            created_own_lock_file = true;
-        try
-        {
-            lock_contents_match = writer->fileContentsEqual(lock_file_name, lock_file_contents, actual_file_contents);
-        }
-        catch (...)
-        {
-            /// The lock can be removed while we read it, by the backup that created it. The existence
-            /// checks below decide who owns the destination, and rethrow if they find nothing.
-            tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("Could not read lock file {}", lock_file_name));
-        }
-        /// Matching contents identify this attempt's own write only when that write could not have replaced
-        /// somebody else's lock. A writer without conditional-create semantics (`Disk`, `Memory`) writes the
-        /// lock in rewrite mode, so a second backup can clobber the lock of the backup that got to the
-        /// destination first and then read back its own contents here. Treating that as ownership would let
-        /// the second attempt take a destination that is taken, and both would then write to it. On such
-        /// backends the destination stays reported as taken, which is the safe answer; the lock itself goes
-        /// back with the failed attempt (see `created_own_lock_file` above), so nothing stays fenced.
-        const bool own_write_committed = lock_contents_match && writer->supportsAtomicCreateIfNotExists();
-
-        /// The open created the lock exclusively, and writing its contents failed afterwards (`ENOSPC`, `EIO`,
-        /// a failed `finalize`, ...). No other `O_EXCL` create can have replaced that file, but the same local
-        /// directory is reachable through `Disk(...)` too, whose writer opens the lock in rewrite mode and can
-        /// write over it. So the file is this attempt's own half-written lock only while it holds a prefix of
-        /// this attempt's contents (nothing at all, or a short write). Anything else - foreign contents, or a
-        /// lock that could not be read - stays on the fail-closed path below and is reported as taken.
-        bool own_half_written_lock = false;
-        if (created_exclusively_on_open && !lock_contents_match)
-        {
-            try
-            {
-                const UInt64 lock_file_size = writer->getFileSize(lock_file_name);
-                String unused_contents;
-                own_half_written_lock = lock_file_size <= lock_file_contents.size()
-                    && writer->fileContentsEqual(lock_file_name, lock_file_contents.substr(0, lock_file_size), unused_contents);
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("Could not read lock file {}", lock_file_name));
-            }
-        }
-
-        if (own_half_written_lock)
-        {
-            /// This is not a concurrent backup's lock: reporting the destination as taken would misreport a
-            /// local I/O error. `removeLockFile` cannot take it back either, because it needs the lock to hold
-            /// this attempt's whole contents, so remove it here and rethrow the original error.
-            try
-            {
-                writer->removeFile(lock_file_name);
-                own_lock_cleanup_result = true;
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("Could not remove lock file {}", lock_file_name));
-                own_lock_cleanup_result = false;
-            }
-            std::rethrow_exception(exception);
-        }
-#if CLICKHOUSE_CLOUD
-        /// A resumable attempt whose own contents are already there falls through, so a later failure lands
-        /// inside `BackupResumer`'s inner try, which reports the lock and keeps its progress. Its contents
-        /// come from the progress record of the very attempt that wrote them, so this does not depend on how
-        /// the lock was written.
-        const bool continues_own_attempt = lock_contents_match && params.resume;
-#else
-        const bool continues_own_attempt = false;
-#endif
-        if (lock_contents_match && !own_write_committed && !continues_own_attempt)
-            throw Exception(
-                ErrorCodes::BACKUP_ALREADY_EXISTS,
-                "A concurrent backup writing to the same destination {} detected",
-                backup_name_for_logging);
-
-        if (own_write_committed)
-        {
-            /// The write reported a failure after it had committed: a conditional `PutObject` that times
-            /// out on the client can still have been applied, and its retry then fails `If-None-Match`
-            /// against the object the first attempt wrote. `lock_file_contents` belongs to this attempt
-            /// alone -- `open` picks a fresh backup UUID for every retry, and a resumed attempt continues
-            /// the very attempt that wrote them -- so finding them in the destination means the lock is
-            /// this backup's own. Reporting a concurrent backup here fails an uncontended destination.
-            LOG_INFO(
-                log,
-                "Lock file {} of backup {} already holds the contents of this attempt: the write that "
-                "reported a failure had committed",
-                lock_file_name,
-                backup_name_for_logging);
-            /// The lock has just been read back and it is ours: the caller does not have to check it again.
-            lock_file_verified_on_create = true;
-        }
-        else if (!lock_contents_match)
-        {
-            if (writer->fileExists(lock_file_name))
-                throw Exception(
-                    ErrorCodes::BACKUP_ALREADY_EXISTS,
-                    "A concurrent backup writing to the same destination {} detected",
-                    backup_name_for_logging);
-            if (writer->fileExists(completed_file))
-                throw Exception(ErrorCodes::BACKUP_ALREADY_EXISTS, "Backup {} already exists", backup_name_for_logging);
-            std::rethrow_exception(exception);
-        }
-    }
-
-    if (writer->fileExists(completed_file))
-    {
-        tryRemoveOwnLockFile();
-        throw Exception(ErrorCodes::BACKUP_ALREADY_EXISTS, "Backup {} already exists", backup_name_for_logging);
-    }
+    auto out = writer->writeFile(lock_file_name);
+    writeUUIDText(*uuid, *out);
+    out->finalize();
 }
 
 bool BackupImpl::checkLockFile(bool throw_if_failed) const
 {
-    try
+    if (!lock_file_name.empty() && uuid)
     {
-        if (!lock_file_name.empty() && uuid)
-        {
-            LOG_TRACE(log, "Checking lock file {}", lock_file_name);
-            ProfileEvents::increment(ProfileEvents::BackupLockFileReads);
-            String actual_file_contents;
-            const String expected_file_contents = lock_file_contents.empty() ? toString(*uuid) : lock_file_contents;
-            if (writer->fileContentsEqual(lock_file_name, expected_file_contents, actual_file_contents))
-                return true;
-            LOG_TRACE(log, "Lock file {} contents do not match, expected: {}, actual: {}", lock_file_name, expected_file_contents, actual_file_contents);
-        }
-    }
-    catch (...)
-    {
-        if (throw_if_failed)
-        {
-            throw;
-        }
-
-        tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("Could not verify lock file {} for backup {}",
-            lock_file_name, backup_name_for_logging));
-        return false;
+        LOG_TRACE(log, "Checking lock file {}", lock_file_name);
+        ProfileEvents::increment(ProfileEvents::BackupLockFileReads);
+        String actual_file_contents;
+        if (writer->fileContentsEqual(lock_file_name, toString(*uuid), actual_file_contents))
+            return true;
+        LOG_TRACE(log, "Lock file {} contents do not match, expected: {}, actual: {}", lock_file_name, toString(*uuid), actual_file_contents);
     }
 
     if (throw_if_failed)
@@ -1213,48 +859,10 @@ bool BackupImpl::checkLockFile(bool throw_if_failed) const
     return false;
 }
 
-bool BackupImpl::removeLockFile()
+void BackupImpl::removeLockFile()
 {
-    /// `checkLockFile(false)` returns false both for a foreign lock and for one it could not read, so a
-    /// caller cannot tell "the lock is not ours" from "we do not know" -- and in the second case the lock
-    /// is still there. Report that as a failure to remove: everything upstream that decides whether the
-    /// destination is clean has to treat an unverifiable lock as one that survived.
-    fiu_do_on(FailPoints::backup_fail_lock_file_removal, { return false; });
-    if (!checkLockFile(false))
-        return false;
-    writer->removeFile(lock_file_name);
-    return true;
-}
-
-bool BackupImpl::tryRemoveOwnLockFile() noexcept
-{
-    /// A failed `open` must leave the destination as it found it. Otherwise the lock it just created
-    /// outlives it and fences the destination against every later attempt, which cannot match it either:
-    /// a retry that finds no progress picks a fresh backup UUID, so the orphaned lock's UUID belongs to
-    /// nobody. `removeLockFile` only removes a lock this backup still owns, so a foreign lock -- which may
-    /// belong to a concurrent attempt that won the race -- is deliberately left alone. Never throws: it
-    /// runs from an exception handler, where throwing would hide the original error.
-    ///
-    /// At most one attempt per `open`, and a repeat call answers with what that attempt found. A second
-    /// removal could delete a lock the first attempt reported as left behind, leaving the record of that
-    /// report describing a destination it no longer matches.
-    if (own_lock_cleanup_result.has_value())
-        return *own_lock_cleanup_result;
-    /// Only a lock this `open` wrote is ours to take back: a continued attempt holds the contents of the
-    /// lock the attempt it continues wrote, which `removeLockFile` cannot tell from its own, so removing it
-    /// would leave the progress naming a lock that is gone and fail every later attempt.
-    if (!created_own_lock_file)
-        return false;
-    try
-    {
-        own_lock_cleanup_result = removeLockFile();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-        own_lock_cleanup_result = false;
-    }
-    return *own_lock_cleanup_result;
+    if (checkLockFile(false))
+        writer->removeFile(lock_file_name);
 }
 
 bool BackupImpl::directoryExists(const String & directory) const
@@ -1568,11 +1176,7 @@ size_t BackupImpl::copyFileToDisk(const SizeAndChecksum & size_and_checksum,
     if (size_and_checksum.first == 0)
     {
         /// Entry's data is empty.
-        /// The destination must exist afterwards either way: the non-empty path below writes through
-        /// writeFile(), which creates a missing file, while createFile() throws on an existing one.
-        const bool create_destination
-            = (write_mode == WriteMode::Rewrite) || !destination_disk->existsFile(destination_path);
-        if (create_destination)
+        if (write_mode == WriteMode::Rewrite)
         {
             if (sync)
             {
@@ -1682,11 +1286,6 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
 
     {
         std::lock_guard lock{mutex};
-#if CLICKHOUSE_CLOUD
-        /// Only a continued attempt can find the manifest already published.
-        if (params.resume && params.resume->metadata_published())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup metadata is already published");
-#endif
         ++num_files;
         total_size += info.size;
     }
@@ -1713,37 +1312,47 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
 
     /// NOTE: `mutex` must be unlocked during copying otherwise writing will be in one thread maximum and hence slow.
 
+    const auto write_info_to_archive = [&](const auto & file_name)
+    {
+        auto out = archive_writer->writeFile(file_name, info.size);
+        auto read_buffer = entry->getReadBuffer(writer->getReadSettings());
+        if (info.base_size != 0)
+            read_buffer->seek(info.base_size, SEEK_SET);
+        copyData(*read_buffer, *out);
+        out->finalize();
+    };
+
     if (use_archive)
     {
         LOG_TRACE(log, "Writing backup for file {} from {}: data file #{}, adding to archive", info.data_file_name, src_file_desc, info.data_file_index);
-        writeDataFileAndCopiesToArchive(*archive_writer, *writer, info, entry);
+        write_info_to_archive(info.data_file_name);
+    }
+    else if (src_disk && from_immutable_file)
+    {
+        LOG_TRACE(log, "Writing backup for file {} from {} (disk {}): data file #{}", info.data_file_name, src_file_desc, src_disk->getName(), info.data_file_index);
+        writer->copyFileFromDisk(info.data_file_name, src_disk, src_file_path, info.encrypted_by_disk, info.base_size, info.size - info.base_size);
     }
     else
     {
-        if (src_disk && from_immutable_file)
-        {
-            LOG_TRACE(log, "Writing backup for file {} from {} (disk {}): data file #{}", info.data_file_name, src_file_desc, src_disk->getName(), info.data_file_index);
-            writer->copyFileFromDisk(info.data_file_name, src_disk, src_file_path, info.encrypted_by_disk, info.base_size, info.size - info.base_size);
-        }
-        else
-        {
-            LOG_TRACE(log, "Writing backup for file {} from {}: data file #{}", info.data_file_name, src_file_desc, info.data_file_index);
-            auto create_read_buffer = [entry, read_settings = writer->getReadSettings()] { return entry->getReadBuffer(read_settings); };
-            writer->copyDataToFile(info.data_file_name, create_read_buffer, info.base_size, info.size - info.base_size);
-        }
-
-        for (const auto & data_file_copy : info.data_file_copies)
-            writer->copyFile(data_file_copy, info.data_file_name, info.size - info.base_size);
+        LOG_TRACE(log, "Writing backup for file {} from {}: data file #{}", info.data_file_name, src_file_desc, info.data_file_index);
+        auto create_read_buffer = [entry, read_settings = writer->getReadSettings()] { return entry->getReadBuffer(read_settings); };
+        writer->copyDataToFile(info.data_file_name, create_read_buffer, info.base_size, info.size - info.base_size);
     }
 
-    /// Make the just-written data file and its copies durable. Archives are synced as a single
-    /// file in finalizeWriting instead. Concurrency-safe: each call fsyncs its own file.
-    if (params.fsync_backup_files && !use_archive)
+    std::function<void(const String &)> copy_file_inside_backup;
+    if (use_archive)
     {
-        writer->syncFileToDisk(info.data_file_name);
-        for (const auto & data_file_copy : info.data_file_copies)
-            writer->syncFileToDisk(data_file_copy);
+        copy_file_inside_backup = write_info_to_archive;
     }
+    else
+    {
+        copy_file_inside_backup = [&](const auto & data_file_copy)
+        {
+            writer->copyFile(data_file_copy, info.data_file_name, info.size - info.base_size);
+        };
+    }
+
+    std::ranges::for_each(info.data_file_copies, copy_file_inside_backup);
 
     {
         std::lock_guard lock{mutex};
@@ -1773,81 +1382,21 @@ void BackupImpl::finalizeWriting()
         {
             throw Exception(ErrorCodes::FAULT_INJECTED, "Failpoint backup_fail_before_writing_metadata is triggered");
         });
-#if CLICKHOUSE_CLOUD && USE_SSL
-        if (!use_archive)
-            uncompressed_size += encryption_sidecar->write();
-#endif
-#if CLICKHOUSE_CLOUD
-        /// A continued attempt whose manifest is already in the destination republishes nothing; it only
-        /// recomputes the counters it reports.
-        if (params.resume && params.resume->metadata_published())
-            recalculateMetadataCounters();
-        else
-#endif
-            writeBackupMetadata();
-#if CLICKHOUSE_CLOUD && USE_SSL
-        if (use_archive)
-            uncompressed_size += encryption_sidecar->write();
-#endif
+        writeBackupMetadata();
         closeArchive(/* finalize= */ true);
-    }
-
-    /// The backup is published at this point: `.backup` is readable at the destination, or the
-    /// archive has been finalized. A published backup must never be removed as a failed one, so arm
-    /// the guard read by `setIsCorrupted` before the steps below, which can still throw.
-    writing_finalized = true;
-
-    if (params.fsync_backup_files && writer)
-    {
-        /// Sync the manifest (or, for archives, the archive file) last, after all data files were
-        /// synced in writeFile, so a persisted manifest never precedes its payload. Only the
-        /// initiator writes the manifest.
-        if (!params.is_internal_backup)
-        {
-#if CLICKHOUSE_CLOUD && USE_SSL
-            /// Payload, not metadata: written outside the archive and not a backup entry, so no other
-            /// sync covers it, and the data files do not decrypt without it. Key infos exist iff it does.
-            if (!encryption_sidecar->getKeyInfos().empty())
-                writer->syncFileToDisk(encryption_sidecar->fileName());
-#endif
-            writer->syncFileToDisk(use_archive ? archive_params.archive_name : ".backup");
-        }
-
-        /// Every writer syncs its directory entries, including the internal writers of BACKUP ON
-        /// CLUSTER, which write their own data files.
-        writer->syncDirectoriesToDisk();
-    }
-
-    if (!params.is_internal_backup)
-    {
-        /// For an archive this reads the size back off the destination disk and can throw, so it
-        /// must stay below the guard above.
         setCompressedSize();
-#if CLICKHOUSE_CLOUD
-        if (params.resume)
-            params.resume->check_owner();
-#endif
         removeLockFile();
         LOG_TRACE(log, "Finalized backup {}", backup_name_for_logging);
     }
+
+    writing_finalized = true;
 }
 
 
 void BackupImpl::setCompressedSize()
 {
     if (use_archive)
-    {
-        fiu_do_on(FailPoints::backup_fail_reading_archive_size,
-        {
-            throw Exception(ErrorCodes::FAULT_INJECTED, "Failpoint backup_fail_reading_archive_size is triggered");
-        });
         compressed_size = writer ? writer->getFileSize(archive_params.archive_name) : reader->getFileSize(archive_params.archive_name);
-#if CLICKHOUSE_CLOUD && USE_SSL
-        /// The encryption config file is written outside of the archive, so its size must be added
-        /// to the size of the archive to get the physical footprint of the backup.
-        compressed_size += encryption_sidecar->getFileSize();
-#endif
-    }
     else
         compressed_size = uncompressed_size;
 }
@@ -1921,36 +1470,23 @@ bool BackupImpl::tryRemoveAllFiles() noexcept
         }
         else
         {
-            files_to_remove.push_back(METADATA_FILE_NAME);
+            files_to_remove.push_back(".backup");
             coordination->forEachFileInfoForAllHosts([&](const BackupFileInfo & file_info)
             {
                 /// Skip entries with no data file — an empty file, or one wholly covered by the base backup.
                 /// Their `data_file_name` is empty, which would otherwise resolve to the backup root.
                 if (!file_info.data_file_name.empty())
                     files_to_remove.push_back(file_info.data_file_name);
-                /// Copies are materialized next to the data file, so a failure after copying
-                /// (e.g. in a durability fsync) must not leave them behind.
-                for (const auto & data_file_copy : file_info.data_file_copies)
-                    files_to_remove.push_back(data_file_copy);
             });
         }
-
-#if CLICKHOUSE_CLOUD && USE_SSL
-        /// The encryption config file is written outside of the archive, so it must be removed in both cases.
-        if (!encryption_sidecar->getKeyInfos().empty())
-            files_to_remove.push_back(encryption_sidecar->fileName());
-#endif
 
         if (!checkLockFile(false))
             return false;
 
         writer->removeFiles(files_to_remove);
-        /// The lock is the last thing to go, and it can survive its removal: `removeLockFile` gives up
-        /// when it cannot verify the lock is still ours. Returning true then would tell the caller the
-        /// destination is empty while it is still fenced by a lock no later attempt can match.
-        const bool removed_lock_file = removeLockFile();
+        removeLockFile();
         writer->removeEmptyDirectories();
-        return removed_lock_file;
+        return true;
     }
     catch (...)
     {

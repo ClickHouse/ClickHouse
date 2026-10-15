@@ -1,0 +1,90 @@
+---
+noindex: true
+title: "トラブルシューティング用のサポートバンドルを収集する"
+sidebarTitle: "サポートバンドルを収集"
+description: "support-bundle Helm チャートを使用して、ClickHouse Private クラスターから診断データを収集します。"
+---
+
+`support-bundle` Helm チャートを使用して、ClickHouse Private クラスターから診断データを収集します。生成されたアーカイブを ClickHouse Support と共有することで、インシデント解決を迅速化できます。
+
+<div id="prerequisites">
+  ## 前提条件
+</div>
+
+このチャートは、クラスター診断用の kubectl プラグインである [Troubleshoot](https://troubleshoot.sh/) を使用します。[Krew](https://krew.sigs.k8s.io/) からインストールしてください。
+
+```bash
+kubectl krew install support-bundle
+```
+
+その他のインストール方法については、[Troubleshoot documentation](https://troubleshoot.sh/docs/)も参照してください。
+
+<div id="generating-and-running-the-bundle">
+  ## バンドルの生成と実行
+</div>
+
+このチャートはクラスターにリソースをインストールしません。代わりに、`kubectl support-bundle` プラグインによって使用される `SupportBundle` マニフェストをレンダリングします。
+
+`default-xx-01` という名前の ClickHouse クラスターがある場合は、チャートをローカルでレンダリングしてバンドルを実行します。
+
+```bash
+helm template oci://$HELM_REGISTRY/helm/support-bundle \
+  --set-json='supportBundle.clickhouseClusterName="default-xx-01"' > support-bundle.yaml
+
+kubectl support-bundle support-bundle.yaml
+```
+
+プラグインはデータを収集し、現在のディレクトリに `tar.gz` アーカイブを作成します。
+
+<div id="what-is-collected">
+  ## 収集される内容
+</div>
+
+このバンドルは、ClickHouse Operator のネームスペースとクラスターのネームスペース (`ns-<cluster-name>` から導出) という 2 つのソースからデータを収集します。
+
+**ClickHouse Operator** (`supportBundle.collectors.operator.enabled` で切り替え) :
+
+* operator デプロイメントのコンテナログ
+* operator ネームスペース内の Kubernetes リソース (ポッド、Services、ConfigMaps、Events など) 
+* operator ネームスペースにインストールされた Helm チャートのリリース values
+
+**ClickHouse Cluster** (`supportBundle.collectors.clickhouseCluster.enabled` で切り替え) :
+
+* ClickHouse Server のコンテナログ
+* ClickHouse Keeper のコンテナログ
+* クラスターのネームスペース内の Kubernetes リソース
+* クラスターのネームスペースにインストールされた Helm チャートのリリース values
+* 最初の ClickHouse Server ポッドからの `SELECT version()` の出力
+* 最初の Keeper ポッドからの Keeper `mntr` コマンドの出力
+
+機密データ (パスワード、S3 の認証情報、クラスターのシークレット、パスワードハッシュ) は自動的にマスキングされます。
+
+<div id="customizing-collection">
+  ## 収集のカスタマイズ
+</div>
+
+デフォルト設定はほとんどのケースに合わせて調整されていますが、必要に応じて変更できます。たとえば、過去24時間分のログのみを収集し、operator のデータを除外するには、次のようにします。
+
+```yaml
+supportBundle:
+  clickhouseClusterName: "default-xx-01"
+  collectors:
+    operator:
+      enabled: false
+    clickhouseCluster:
+      enabled: true
+      logs:
+        maxAge: "24h"
+        maxLines: 50000
+```
+
+カスタムの values ファイルを使用してレンダリングします:
+
+```bash
+helm template oci://$HELM_REGISTRY/helm/support-bundle \
+  -f custom-values.yaml > support-bundle.yaml
+
+kubectl support-bundle support-bundle.yaml
+```
+
+ClickHouse Operator がデフォルト以外のネームスペースにインストールされている場合は、`supportBundle.collectors.operator.namespace` をそれに合わせて設定してください。
