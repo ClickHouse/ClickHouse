@@ -208,7 +208,7 @@
 	url = https://github.com/ClickHouse/nats.c
 [submodule "contrib/vectorscan"]
 	path = contrib/vectorscan
-	url = https://github.com/ClickHouse/vectorscan.git
+	url = https://github.com/ClickHouse/vectorscan
 [submodule "contrib/llvm-project"]
 	path = contrib/llvm-project
 	url = https://github.com/ClickHouse/llvm-project
@@ -336,9 +336,6 @@
 [submodule "contrib/sz3"]
 	path = contrib/sz3
 	url = https://github.com/ClickHouse/SZ3.git
-[submodule "contrib/numactl"]
-	path = contrib/numactl
-	url = https://github.com/ClickHouse/numactl.git
 [submodule "contrib/postgres"]
 	path = contrib/postgres
 	url = https://github.com/ClickHouse/postgres.git
@@ -477,3 +474,6 @@
 [submodule "contrib/spdlog"]
 	path = contrib/spdlog
 	url = https://github.com/gabime/spdlog.git
+[submodule "contrib/parquet-testing"]
+	path = contrib/parquet-testing
+	url = https://github.com/apache/parquet-testing
