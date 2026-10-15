@@ -4,7 +4,6 @@
 #include <base/scope_guard.h>
 
 #include <Common/Logger.h>
-#include <Common/Scheduler/CostUnit.h>
 #include <Common/Scheduler/EventQueue.h>
 #include <Common/Scheduler/IWorkloadNode.h>
 #include <Common/Scheduler/IResourceManager.h>
@@ -203,17 +202,16 @@ private:
         }
 
         /// Runs `task` in the scheduler thread and waits for it. Exceptions are rethrown in the caller,
-        /// except for a task that modifies the hierarchy of a time-shared resource: it would leave the hierarchy
-        /// half-modified, so the exception escapes into the scheduler thread, which terminates the server.
+        /// except for a task that modifies the hierarchy: it would leave the hierarchy half-modified,
+        /// so the exception escapes into the scheduler thread, which terminates the server.
         template <class Task>
         void executeInSchedulerThread(Task && task, bool modifies_hierarchy = false)
         {
             std::promise<void> promise;
             auto future = promise.get_future();
-            const bool terminate_on_exception = modifies_hierarchy && getSharingMode(unit) == SharingMode::TimeShared;
             scheduler->event_queue.enqueue([&]
             {
-                if (terminate_on_exception)
+                if (modifies_hierarchy)
                 {
                     task();
                     promise.set_value();

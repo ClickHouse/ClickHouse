@@ -2544,6 +2544,41 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreaseDecrease)
     }
 }
 
+// Same as `WorkloadNamedLikeInternalNode` for a space-shared resource: siblings with equal precedence are joined by `p<precedence>_fair`
+TEST(SchedulerWorkloadResourceManager, WorkloadNamedLikeInternalNodeMemoryReservation)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+
+    // The internal fair node is created after the workload with the same name
+    t.query("CREATE WORKLOAD x SETTINGS max_memory = '1Ti'");
+    t.query("CREATE WORKLOAD p1_fair IN x");
+    t.query("CREATE WORKLOAD a IN x SETTINGS precedence = 1");
+    t.query("CREATE WORKLOAD b IN x SETTINGS precedence = 1");
+
+    // The internal fair node is created before the workload with the same name
+    t.query("CREATE WORKLOAD y SETTINGS max_memory = '1Ti'");
+    t.query("CREATE WORKLOAD c IN y SETTINGS precedence = 2");
+    t.query("CREATE WORKLOAD d IN y SETTINGS precedence = 2");
+    t.query("CREATE WORKLOAD p2_fair IN y");
+
+    auto allocate = [&] (const String & workload)
+    {
+        ClassifierPtr classifier = t.manager->acquire(workload);
+        TestAllocation allocation(classifier->get("memory"), workload, 10);
+        allocation.waitSync();
+    };
+
+    for (const String & workload : {"p1_fair", "a", "b", "c", "d", "p2_fair"})
+        allocate(workload);
+
+    t.query("DROP WORKLOAD a");
+    t.query("DROP WORKLOAD p2_fair");
+    for (const String & workload : {"p1_fair", "b", "c", "d"})
+        allocate(workload);
+}
+
 // Multiple root workloads on a space-shared resource (MEMORY RESERVATION). Each parentless workload
 // becomes a child of the resource's implicit anonymous root workload (the scheduler's single child)
 // and enforces its own limit independently.
