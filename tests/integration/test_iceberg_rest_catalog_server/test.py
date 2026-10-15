@@ -345,6 +345,18 @@ def test_update_namespace_properties(started_cluster):
     )
     assert_error_shape(response, "NoSuchNamespaceException")
 
+    # The location must be inside the warehouse bucket, same as on create.
+    for location in ["http://x", "s3://other-bucket/x"]:
+        response = update_namespace_properties(
+            [ns], updates={"location": location}, expected_code=400
+        )
+        assert_error_shape(response, "BadRequestException")
+    assert load_namespace_properties([ns]) == {"b": "2", "owner": "bob"}
+
+    location = f"s3://{BUCKET}/props/"
+    update_namespace_properties([ns], updates={"location": location})
+    assert load_namespace_properties([ns])["location"] == location
+
     for body in [{"updates": "x"}, {"removals": "x"}, []]:
         response = requests.post(
             catalog_url(f"/v1/my_warehouse/namespaces/{ns}/properties"), json=body

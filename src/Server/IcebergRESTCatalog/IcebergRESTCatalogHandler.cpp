@@ -85,6 +85,18 @@ CompressionMethod getMetadataCompressionMethod(const std::map<String, String> & 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "'{}' must be 'none' or 'gzip', got '{}'", METADATA_COMPRESSION_CODEC_PROPERTY, it->second);
 }
 
+/// Tables of the namespace go under `location`. The server has credentials for one bucket only, so refuse others now.
+void validateNamespaceLocation(const IcebergRESTCatalogWarehouse & warehouse, const std::map<String, String> & properties)
+{
+    const auto it = properties.find("location");
+    if (it == properties.end())
+        return;
+    if (!hasS3Scheme(it->second))
+        throw Poco::Exception("the 'location' property must be an s3:// URI");
+    if (!warehouse.isInBucket(it->second))
+        throw Poco::Exception("the 'location' property must be inside the warehouse bucket");
+}
+
 /// Codec suffix inside a metadata file name: `v1-<uuid>.gz.metadata.json`. The spec spells gzip as `gz`.
 String getMetadataCompressionSuffix(CompressionMethod compression_method)
 {
@@ -539,14 +551,7 @@ void IcebergRESTCatalogHandler::handleCreateNamespace(const IcebergRESTCatalogWa
                 properties[key] = value.extract<String>();
         }
 
-        /// Tables of the namespace go under `location`. The server has credentials for one bucket only, so refuse others now.
-        if (const auto it = properties.find("location"); it != properties.end())
-        {
-            if (!hasS3Scheme(it->second))
-                throw Poco::Exception("the 'location' property must be an s3:// URI");
-            if (!warehouse.isInBucket(it->second))
-                throw Poco::Exception("the 'location' property must be inside the warehouse bucket");
-        }
+        validateNamespaceLocation(warehouse, properties);
     }
     catch (const Poco::Exception & e)
     {
@@ -607,6 +612,7 @@ void IcebergRESTCatalogHandler::handleUpdateNamespaceProperties(
                 throw Poco::Exception("'updates' must be an object");
             for (const auto & [key, value] : *updates_object)
                 updates[key] = value.extract<String>();
+            validateNamespaceLocation(warehouse, updates);
         }
 
         if (json->has("removals"))
