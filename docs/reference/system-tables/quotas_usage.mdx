@@ -43,6 +43,8 @@ Quota usage by all users.
 - `max_execution_time` ([Nullable(Float64)](/reference/data-types/nullable)) — The maximum amount of time (in nanoseconds) allowed for all queries to execute within the specified period of time
 - `written_bytes` ([Nullable(UInt64)](/reference/data-types/nullable)) — The current total number of bytes written during execution of all queries within the current period of time.
 - `max_written_bytes` ([Nullable(UInt64)](/reference/data-types/nullable)) — The maximum number of bytes to written during execution of all queries allowed within the specified period of time.
+- `written_rows` ([Nullable(UInt64)](/reference/data-types/nullable)) — The current total number of rows written during execution of all queries within the current period of time.
+- `max_written_rows` ([Nullable(UInt64)](/reference/data-types/nullable)) — The maximum number of rows to be written during execution of all queries allowed within the specified period of time.
 - `failed_sequential_authentications` ([Nullable(UInt64)](/reference/data-types/nullable)) — The current number of consecutive authentication failures within the current period of time.
 - `max_failed_sequential_authentications` ([Nullable(UInt64)](/reference/data-types/nullable)) — The maximum number of consecutive authentication failures allowed within the specified period of time.
 - `queries_per_normalized_hash` ([Nullable(UInt64)](/reference/data-types/nullable)) — The current maximum number of executions of any single normalized query within the current period of time.
