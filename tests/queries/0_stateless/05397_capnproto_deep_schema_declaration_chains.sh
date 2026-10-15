@@ -46,14 +46,16 @@ def schema(name, text):
     with open(directory + '/' + name + '.capnp', 'w') as f:
         f.write(header + text)
 
-n = 20000
-n_suffix = 200000
+# Long enough to overflow the stack without the guard, and several times the length at which a release build rejects them.
+n = 5000
+n_suffix = 20000
 schema('member_chain', 'struct M { data @0 :Int32' + '.a' * n_suffix + '; }\n')
 schema('application_chain', 'struct M { data @0 :Int32' + '()' * n_suffix + '; }\n')
 schema('nested_suffix_chains', 'struct M { data @0 :' + 'List(' * 10 + 'Int32' + (')' + '.a' * 200) * 10 + '; }\n')
 schema('alias_chain', 'struct M { data @0 :A0; }\n' + alias_chain(n))
 schema('const_chain', message + const_chain(n))
-schema('struct_chain_with_defaults', message + struct_chain_with_defaults(n))
+# A struct field costs less stack per link than the chains above.
+schema('struct_chain_with_defaults', message + struct_chain_with_defaults(12000))
 schema('enum_annotation_chain', message + enum_annotation_chain(n))
 schema('shallow_chains', 'struct M { data @0 :A0; s @1 :S0; e @2 :E0; }\n'
        + alias_chain(2) + const_chain(2) + struct_chain_with_defaults(2) + enum_annotation_chain(2))
