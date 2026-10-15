@@ -450,12 +450,6 @@ struct BackupsWorker::BackupStarter
         if (is_internal_backup && !query_context->isDDLOrOnClusterInternal())
             throw Exception(ErrorCodes::ACCESS_DENIED, "Setting 'internal' cannot be set explicitly");
 
-        /// `backup_uuid` is how a backup proves that the lock file in the destination is its own:
-        /// a user-chosen value could repeat the UUID of a backup in progress and take over its lock.
-        /// Only queries initiated by another query may carry it (the initiator passes its UUID to them).
-        if (backup_settings.backup_uuid && !query_context->isDDLOrOnClusterInternal())
-            throw Exception(ErrorCodes::ACCESS_DENIED, "Setting 'backup_uuid' cannot be set explicitly");
-
         on_cluster = !backup_query->cluster.empty() || is_internal_backup;
 
         if (!backup_settings.backup_uuid)
@@ -471,8 +465,7 @@ struct BackupsWorker::BackupStarter
         if (is_internal_backup)
             backup_id += "-internal-" + backup_settings.host_id;
 
-        /// An internal backup must name data files like the initiator, which sends its generator unless it is the default.
-        if (!is_internal_backup && backup_settings.data_file_name_generator == BackupDataFileNameGeneratorType::FirstFileName)
+        if (backup_settings.data_file_name_generator == BackupDataFileNameGeneratorType::FirstFileName)
             backup_settings.data_file_name_generator = SettingFieldBackupDataFileNameGeneratorTypeTraits::fromString(
                 backup_context->getConfigRef().getString("backups.data_file_name_generator", ""));
 
@@ -687,7 +680,6 @@ BackupMutablePtr BackupsWorker::openBackupForWriting(
     /// workers never write a manifest (writeBackupMetadata asserts !is_internal_backup), so this is the id readers see.
     backup_create_params.backup_id = backup_settings.id.empty() ? toString(*backup_settings.backup_uuid) : backup_settings.id;
     backup_create_params.deduplicate_files = backup_settings.deduplicate_files;
-    backup_create_params.fsync_backup_files = backup_settings.fsync_backup_files;
     backup_create_params.allow_s3_native_copy = backup_settings.allow_s3_native_copy;
     backup_create_params.allow_azure_native_copy = backup_settings.allow_azure_native_copy;
     backup_create_params.use_same_s3_credentials_for_base_backup = backup_settings.use_same_s3_credentials_for_base_backup;
@@ -972,14 +964,6 @@ struct BackupsWorker::RestoreStarter
         if (is_internal_restore && !query_context->isDDLOrOnClusterInternal())
             throw Exception(ErrorCodes::ACCESS_DENIED, "Setting 'internal' cannot be set explicitly");
 
-#if CLICKHOUSE_CLOUD
-        /// Internal like the setting above. `doRestore` computes it for every non-internal restore,
-        /// but a privilege decision should be refused here rather than left to that overwrite.
-        if (restore_settings.allow_local_dictionary_source && !query_context->isDDLOrOnClusterInternal())
-            throw Exception(
-                ErrorCodes::ACCESS_DENIED, "Setting 'allow_local_dictionary_source' cannot be set explicitly");
-#endif
-
         /// RESTORE is a write operation, it should be forbidden in strict readonly mode (readonly=1).
         /// Note: readonly=2 allows changing settings but still restricts writes - however it's set automatically
         /// by the HTTP interface for GET requests (to protect against accidental writes), so we only block readonly=1
@@ -1168,14 +1152,6 @@ void BackupsWorker::doRestore(
     const ClusterPtr & cluster)
 {
     bool is_internal_restore = restore_settings.internal;
-
-#if CLICKHOUSE_CLOUD
-    /// The only place the restoring user is known: on each host the restore runs in a context with
-    /// no user. The verdict is taken here and travels with the query, and a user-supplied value
-    /// never reaches this point.
-    if (!is_internal_restore)
-        restore_settings.allow_local_dictionary_source = BackupUtils::mayRestoreLocalDictionarySource(context);
-#endif
 
     maybeSleepForTesting();
 

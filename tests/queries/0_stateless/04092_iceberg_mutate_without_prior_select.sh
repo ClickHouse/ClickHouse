@@ -35,9 +35,15 @@ ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "INSERT INTO ${TABLE}
 ${CLICKHOUSE_CLIENT} --query "DETACH TABLE ${TABLE}"
 ${CLICKHOUSE_CLIENT} --query "ATTACH TABLE ${TABLE}"
 
-# This mutation is the first data-reading operation on the freshly attached storage — no
-# prior SELECT or INSERT has called `updateExternalDynamicMetadataIfExists`.
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "ALTER TABLE ${TABLE} UPDATE c0 = 'b' WHERE TRUE"
+# This mutation is the first data-reading operation on the freshly attached
+# storage — no prior SELECT or INSERT has called
+# `updateExternalDynamicMetadataIfExists`.
+# `validate_mutation_query = 0` is required to suppress the validate stage
+# of `MutationsInterpreter`, which would otherwise construct an
+# `InterpreterSelectQuery` whose constructor calls
+# `updateExternalDynamicMetadataIfExists` as a side effect and masks the bug.
+# Without the fix, this throws a `LOGICAL_ERROR` exception.
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --validate_mutation_query=0 --query "ALTER TABLE ${TABLE} UPDATE c0 = 'b' WHERE TRUE"
 
 ${CLICKHOUSE_CLIENT} --query "SELECT c0 FROM ${TABLE}"
 

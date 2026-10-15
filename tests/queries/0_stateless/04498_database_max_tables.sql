@@ -1,6 +1,3 @@
--- Tags: no-replicated-database
--- Tag no-replicated-database: moving tables between databases is not supported
-
 -- Tests the `max_tables` database setting. Per-database limit on the number of tables.
 
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};

@@ -50,9 +50,9 @@ public:
             bool last_attempt = attempt + 1 >= max_tries;
             try
             {
-                sendHTTPRequest(*session, request)->finalize();
-                auto body = receiveHTTPResponse(*session, response);
-                return parser.parse(response, body.get());
+                session->sendRequest(request);
+                auto & body_stream = session->receiveResponse(response);
+                return parser.parse(response, &body_stream);
             }
             catch (const Poco::Exception &) // TODO: make retries smarter
             {

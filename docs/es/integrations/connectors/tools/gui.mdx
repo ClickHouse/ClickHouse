@@ -6,7 +6,9 @@ title: 'Interfaces visuales de terceros'
 doc_type: 'reference'
 ---
 
-## Código abierto {#open-source}
+<div id="open-source">
+  ## Código abierto
+</div>
 
 <Accordion title="agx">
   [agx](https://github.com/agnosticeng/agx) es una aplicación de escritorio creada con Tauri y SvelteKit que proporciona una interfaz moderna para explorar y consultar datos mediante el motor de base de datos integrado de ClickHouse (chdb).
@@ -28,23 +30,6 @@ doc_type: 'reference'
   * Almacenamiento local de datos: todos los datos se almacenan localmente en el navegador, lo que garantiza que no se envíen a ningún otro lugar.
 </Accordion>
 
-<Accordion title="CHewie">
-  [CHewie](https://github.com/kolsys/chewie) es un Client para ClickHouse rápido, ligero, repleto de funcionalidades y que se ejecuta únicamente en el navegador. No necesita backend: la aplicación se comunica directamente con ClickHouse a través de la interfaz HTTP, y todo lo que almacena (conexiones, pestañas, historial de consultas) se guarda en tu navegador.
-
-  Características:
-
-  * Múltiples conexiones guardadas con etiquetas `DEV` / `STAGING` / `PROD` y un indicador de entorno codificado por colores, además de ajustes de ClickHouse por conexión (`max_execution_time=300`, ...) que se aplican a cada consulta.
-  * Editor SQL con resaltado de sintaxis de ClickHouse, autocompletado, ejecución en múltiples pestañas e historial de consultas.
-  * Visualización de datos integrada: convierte de forma flexible cualquier resultado de consulta en un gráfico de líneas, de áreas o de barras con un par de clics, directamente desde la cuadrícula de resultados.
-  * Consulta rápida de tablas: abre al instante una pestaña `SELECT` precompletada directamente desde la página de resumen de la tabla.
-  * Exportación de resultados en cualquier formato de salida nativo de ClickHouse (CSV, TabSeparated, la familia JSON, Parquet, Avro, SQLInsert, Markdown y más), transmitidos en streaming desde el servidor.
-  * Copia un rango de filas de la cuadrícula de resultados y pégalo en Google Sheets, Excel o Docs con las columnas correctamente separadas.
-  * Visor de logs para todas las tablas `system.*_log` del servidor, con vistas predefinidas para las más habituales.
-  * Dashboard de métricas: rendimiento de consultas, estadísticas de tablas, utilización de recursos y resumen de la configuración.
-  * Datos solo en local: no se envía nada a ningún sitio, salvo a tu servidor de ClickHouse.
-  * Se despliega como imagen de Docker, como archivos estáticos en S3 o en cualquier alojamiento estático, o directamente desde el propio ClickHouse mediante `http_server_default_response`, sin necesidad de un servidor de aplicaciones.
-</Accordion>
-
 <Accordion title="ChartDB">
   [ChartDB](https://chartdb.io) es una herramienta gratuita y de código abierto para visualizar y diseñar esquemas de bases de datos, incluido ClickHouse, a partir de una sola consulta. Desarrollada con React, ofrece una experiencia fluida y fácil de usar, sin necesidad de credenciales de base de datos ni de registrarse para empezar.
 
@@ -59,20 +44,20 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="CHOps">
-  [CHOps](https://ch-ops.io) es un dashboard web gratuito, de código abierto y autohospedado para administrar y monitorizar clústeres de ClickHouse. Encapsula la interfaz HTTP de ClickHouse en una UI de navegador desde la que se puede ejecutar SQL, inspeccionar consultas lentas, configurar alertas, gestionar copias de seguridad y controlar el acceso. Funciona con cualquier despliegue de ClickHouse accesible mediante HTTP. Actualmente, CHOps es compatible con ClickHouse 26.3 LTS; otras versiones recientes también funcionan, aunque es posible que falten algunas funcionalidades menores.
+  [CHOps](https://ch-ops.io) es un dashboard web gratuito, de código abierto y autohospedado para administrar y monitorizar clústeres de ClickHouse. Ofrece la interfaz HTTP de ClickHouse en una UI de navegador para ejecutar SQL, inspeccionar consultas lentas, configurar alertas, gestionar copias de seguridad y controlar el acceso. Funciona con implementaciones de ClickHouse accesibles mediante HTTP. Actualmente, CHOps admite ClickHouse 26.3 LTS; otras versiones recientes también funcionan, aunque puede haber pequeñas carencias de funcionalidad.
 
   Características:
 
-  * Editor SQL con autocompletado, tipos de `EXPLAIN`, exportación de resultados en 22 formatos, perfilador de consultas y línea de tiempo de métricas de consultas.
-  * Vista general del clúster: monitor de consultas en tiempo real con controles para terminarlas, análisis y log de consultas, inspección de tablas y partes, fusiones y mutaciones, y cola de DDL distribuido.
-  * Dashboards personalizados con un generador de gráficos, más de 10 tipos de gráficos y diseños de cuadrícula configurables.
-  * Monitorización con reproducción tipo DVR para revisar métricas históricas fotograma a fotograma.
+  * Editor SQL con autocompletado, tipos `EXPLAIN`, exportación de resultados en 22 formatos, perfilador de consultas y una línea de tiempo de métricas de consultas.
+  * Resumen del clúster: monitor de consultas en directo con controles para cancelarlas, analítica y registro de consultas, inspección de tablas y partes, fusiones y mutaciones, y cola de DDL distribuido.
+  * Dashboards personalizados con un creador de gráficos, más de 10 tipos de gráficos y diseños de cuadrícula configurables.
+  * Monitorización con reproducción estilo DVR para revisar métricas históricas fotograma a fotograma.
   * Reglas de alerta basadas en SQL con evaluación de umbrales y notificaciones por correo electrónico.
   * Control de acceso: gestión de usuarios y roles de ClickHouse, visualización de permisos y edición de perfiles de configuración.
-  * Orquestación de copias de seguridad y restauraciones en almacenamiento compatible con S3, con detección de copias de seguridad y gestión de perfiles de almacenamiento.
+  * Orquestación de copias de seguridad y restauración en almacenamiento compatible con S3, con detección de copias de seguridad y gestión de perfiles de almacenamiento.
   * Herramientas de índices: visualización de índices de omisión de datos, gestión de proyecciones y creación de índices secundarios.
-  * Visores de excepciones, errores y logs de texto con mapas de calor de calendario y búsqueda con filtros.
-  * Se despliega como un único binario autocontenido, mediante Docker o desde el código fuente.
+  * Visores de excepciones, errores y registros de texto con mapas de calor de calendario y búsqueda filtrada.
+  * Se despliega como un único binario autónomo, mediante Docker o desde el código fuente.
 
   [Código fuente de CHOps](https://github.com/Quantrail-Data/CH-Ops).
 </Accordion>
@@ -102,40 +87,40 @@ doc_type: 'reference'
   * **Inspección de tablas del sistema**: Examina en profundidad `system.query_log`, `system.query_views_log`, `system.zookeeper`, `system.ddl_distributed_queue`, `system.part_log` y `system.processes` mediante un potente dashboard de visualización y filtros para comprender rápidamente tu clúster.
   * **Explain con un clic**: Comprende al instante los planes de ejecución de consultas con vistas visuales de AST y canalización.
   * **Grafo de dependencias**: Visualiza las relaciones entre tablas y rastrea los flujos de datos a través de vistas materializadas, tablas Distributed y sistemas externos.
-  * **Monitorización de clústeres**: Supervisa todos los nodos con métricas en tiempo real, operaciones de fusión, estado de replicación, rendimiento de las consultas y más.
+  * **Monitorización de clústeres**: Supervisa todos los nodos con métricas en tiempo real, operaciones de merge, estado de replicación, rendimiento de las consultas y más.
   * **Privacidad y seguridad**: Todas las consultas SQL se ejecutan directamente desde tu navegador en tu servidor ClickHouse, lo que garantiza una privacidad total.
 
   [Documentación de DataStoria](https://docs.datastoria.app).
 </Accordion>
 
 <Accordion title="DataPup">
-  [DataPup](https://github.com/DataPupOrg/DataPup) es un Client de bases de datos moderno, multiplataforma y asistido por IA, con compatibilidad nativa con ClickHouse.
+  [DataPup](https://github.com/DataPupOrg/DataPup) es un Client de bases de datos moderno, multiplataforma y asistido por IA, con soporte nativo para ClickHouse.
 
   Características:
 
-  * Asistencia para consultas SQL basada en IA con sugerencias inteligentes
-  * Compatibilidad nativa con conexiones a ClickHouse y gestión segura de credenciales
-  * Interfaz atractiva y accesible con varios temas (claro, oscuro y variantes de color)
+  * Asistencia de IA para consultas SQL con sugerencias inteligentes
+  * Soporte nativo para conexiones a ClickHouse con gestión segura de credenciales
+  * Interfaz atractiva y accesible con varios temas (claro, oscuro y variantes coloridas)
   * Filtrado y exploración avanzados de resultados de consultas
-  * Compatibilidad multiplataforma (macOS, Windows, Linux)
+  * Soporte multiplataforma (macOS, Windows, Linux)
   * Rendimiento rápido y ágil
-  * De código abierto y con licencia MIT
+  * Código abierto y con licencia MIT
 </Accordion>
 
 <Accordion title="Dory">
-  [Dory](https://github.com/dorylab/dory) es un workspace de SQL nativo de IA, con compatibilidad de primer nivel con ClickHouse e IA integrada.
+  [Dory](https://github.com/dorylab/dory) es un espacio de trabajo SQL nativo de IA con soporte de primer nivel para ClickHouse e IA integrada.
 
   Características:
 
-  * Copiloto de IA para generar, explicar y depurar SQL
-  * Administra y consulta varios clusters de ClickHouse desde un workspace unificado
-  * Autocompletado de SQL que tiene en cuenta el esquema y workspace de consultas con varias pestañas
+  * Copiloto de IA para la generación, explicación y depuración de SQL
+  * Administra y consulta varios clústeres de ClickHouse desde un espacio de trabajo unificado
+  * Autocompletado SQL basado en el esquema y espacio de trabajo de consultas con varias pestañas
   * Exploración interactiva de resultados de consultas con filtrado y visualización
-  * Resúmenes de tablas generados con IA para comprender los conjuntos de datos
+  * Resúmenes de tablas impulsados por IA para comprender conjuntos de datos
   * Conexiones directas a ClickHouse con soporte para túneles SSH
-  * Interfaz moderna y pensada para desarrolladores, con temas claro, oscuro y personalizables
+  * Interfaz moderna y orientada a desarrolladores con temas claros, oscuros y otros temas
   * Aplicación de escritorio multiplataforma (macOS, Windows, Linux) y soporte para Docker
-  * De código abierto y con licencia MIT
+  * Código abierto y con licencia MIT
 </Accordion>
 
 <Accordion title="ClickHouse Schema Flow Visualizer">
@@ -152,7 +137,7 @@ doc_type: 'reference'
   * Filtro dinámico en la barra lateral y una paleta de comandos `Ctrl+K` / `⌘K` para ir a cualquier tabla, columna o motor
   * Superposición opcional de metadatos que muestra el recuento de filas y el tamaño en disco por tabla
   * Exporta el diagrama actual como un archivo HTML autocontenido
-  * Conexión TLS a ClickHouse, con omisión opcional de la verificación y certificados de CA o de Client personalizados
+  * Conexión TLS a ClickHouse, con omisión opcional de la verificación y certificados de CA o de cliente personalizados
 
   [ClickHouse Schema Flow Visualizer - código fuente](https://github.com/FulgerX2007/clickhouse-schemaflow-visualizer)
 </Accordion>
@@ -218,9 +203,9 @@ doc_type: 'reference'
 <Accordion title="Grafana">
   [Grafana](https://grafana.com/grafana/plugins/grafana-clickhouse-datasource/) es una plataforma de monitorización y visualización.
 
-  &quot;Grafana te permite consultar, visualizar, generar alertas y comprender tus métricas, independientemente de dónde estén almacenadas. Crea, explora y comparte dashboards con tu equipo y fomenta una cultura basada en datos. Con la confianza y el aprecio de la comunidad&quot; — grafana.com.
+  &quot;Grafana te permite consultar, visualizar, generar alertas sobre tus métricas y comprenderlas, independientemente de dónde estén almacenadas. Crea, explora y comparte dashboards con tu equipo, y fomenta una cultura basada en datos. La comunidad confía en ella y la aprecia&quot; — grafana.com.
 
-  El plugin de fuente de datos de ClickHouse ofrece compatibilidad con ClickHouse como base de datos de backend.
+  El plugin de fuente de datos de ClickHouse permite usar ClickHouse como base de datos de backend.
 </Accordion>
 
 <Accordion title="qryn">
@@ -229,7 +214,7 @@ doc_type: 'reference'
   Características:
 
   * UI Explore integrada y CLI LogQL para consultar, extraer y visualizar datos
-  * Compatibilidad con APIs nativas de Grafana para consultar, procesar, ingestar, realizar tracing y generar alertas sin plugins
+  * Compatibilidad con APIs nativas de Grafana para consultar, procesar, ingestar, rastrear y generar alertas sin plugins
   * Potente canalización para buscar, filtrar y extraer dinámicamente datos de logs, eventos, traces y más
   * APIs de ingestión y PUSH compatibles de forma transparente con LogQL, PromQL, InfluxDB, Elastic y muchos otros
   * Listo para usar con agents como Promtail, Grafana-Agent, Vector, Logstash, Telegraf y muchos otros
@@ -280,19 +265,19 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="DBM">
-  [DBM](https://github.com/devlive-community/dbm) es una herramienta visual de administración para ClickHouse.
+  [DBM](https://github.com/devlive-community/dbm) es una herramienta de administración visual para ClickHouse.
 
   Características:
 
-  * Historial de consultas (paginación, borrado completo, etc.)
-  * Ejecución de cláusulas SQL seleccionadas
-  * Cancelación de consultas
-  * Administración de tablas (metadatos, eliminación, vista previa)
-  * Administración de bases de datos (eliminación, creación)
-  * Consultas personalizadas
-  * Administración de múltiples fuentes de datos (prueba de conexión, monitorización)
-  * Monitorización (procesador, conexiones, consultas)
-  * Migración de datos
+  * Compatibilidad con el historial de consultas (paginación, borrar todo, etc.)
+  * Compatibilidad con consultas de cláusulas SQL seleccionadas
+  * Compatibilidad con la cancelación de consultas
+  * Compatibilidad con la administración de tablas (metadatos, eliminación, vista previa)
+  * Compatibilidad con la administración de bases de datos (eliminación, creación)
+  * Compatibilidad con consultas personalizadas
+  * Compatibilidad con la administración de múltiples fuentes de datos (prueba de conexión, monitorización)
+  * Compatibilidad con la monitorización (procesador, conexión, consulta)
+  * Compatibilidad con la migración de datos
 </Accordion>
 
 <Accordion title="Bytebase">
@@ -347,15 +332,15 @@ doc_type: 'reference'
   * Preajustes e historial de consultas
   * 100 % basado en navegador, sin servidor ni backend
 
-  El Client está disponible para su uso inmediato a través de GitHub Pages: https://metrico.github.io/clickhouse-mate/
+  El cliente está disponible para su uso inmediato a través de GitHub Pages: https://metrico.github.io/clickhouse-mate/
 </Accordion>
 
 <Accordion title="Uptrace">
-  [Uptrace](https://github.com/uptrace/uptrace) es una herramienta de APM que proporciona tracing distribuido y métricas basadas en OpenTelemetry y ClickHouse.
+  [Uptrace](https://github.com/uptrace/uptrace) es una herramienta de APM que proporciona trazabilidad distribuida y métricas basadas en OpenTelemetry y ClickHouse.
 
   Características:
 
-  * [Tracing de OpenTelemetry](https://uptrace.dev/opentelemetry/distributed-tracing.html), métricas y logs.
+  * [Trazabilidad de OpenTelemetry](https://uptrace.dev/opentelemetry/distributed-tracing.html), métricas y logs.
   * Notificaciones por correo electrónico, Slack y PagerDuty mediante AlertManager.
   * Lenguaje de consulta similar a SQL para agregar spans.
   * Lenguaje similar a PromQL para consultar métricas.
@@ -443,55 +428,12 @@ doc_type: 'reference'
   * Implementación basada en Docker para una configuración rápida en entornos de desarrollo.
 </Accordion>
 
-<Accordion title="Beekeeper Studio">
-  [Beekeeper Studio](https://www.beekeeperstudio.io/) es un editor SQL y gestor de bases de datos gratuito y de código abierto compatible con ClickHouse.
-
-  Características:
-
-  * Editor SQL moderno con autocompletado y ejecución de consultas en varias pestañas.
-  * Explorador de esquema para tablas, vistas y columnas.
-  * Guarda y organiza tus consultas favoritas.
-  * Aplicación de escritorio multiplataforma (Windows, macOS, Linux), además de una edición autohospedado/web.
-
-  [Guía de Beekeeper Studio y ClickHouse](https://docs.beekeeperstudio.io/user_guide/connecting/clickhouse/) · [GitHub](https://github.com/beekeeper-studio/beekeeper-studio)
-</Accordion>
-
-<Accordion title="Tabularis">
-  [Tabularis](https://github.com/TabularisDB/tabularis) es un workspace SQL de escritorio de código abierto para Windows, macOS y Linux, con licencia Apache 2.0. La compatibilidad con ClickHouse se obtiene mediante un plugin oficial que se instala desde la propia aplicación y que se comunica con la interfaz HTTP (`8123`, o `8443` with TLS) a través del client `clickhouse` de Rust.
-
-  Características:
-
-  * Exploración de bases de datos, tablas y vistas con tipos nativos de ClickHouse, incluidos los índices de omisión de datos con su tipo, columnas y granularidad.
-  * Editor SQL basado en Monaco, con autocompletado, ejecución de varias sentencias y resultados paginados.
-  * Inserción, actualización y eliminación en línea desde la cuadrícula de datos; generación de DDL para `CREATE TABLE`, `ALTER TABLE ... ADD/MODIFY/RENAME COLUMN` y `ADD INDEX`.
-  * MCP server integrado, de modo que los AI agents pueden leer el esquema y ejecutar consultas desde la misma aplicación.
-  * ClickHouse junto a PostgreSQL, MySQL, SQLite, DuckDB, Redis, MongoDB y otros motores en una sola ventana.
-
-  [Plugin de ClickHouse para Tabularis](https://github.com/TabularisDB/tabularis-clickhouse-plugin) · [Sitio web](https://tabularis.dev)
-</Accordion>
-
-## Comercial {#commercial}
-
-<Accordion title="ADQM Notebook">
-  [ADQM Notebook](https://docs.arenadata.io/en/ADQM/current/notebook.html) es un espacio de trabajo SQL de estilo notebook incluido en la edición Enterprise de [Arenadata QuickMarts (ADQM)](https://docs.arenadata.io/en/ADQM/current/introduction/intro.html), el DBMS orientado a columnas creado sobre ClickHouse por Arenadata. Amplía la interfaz web integrada de ClickHouse con notebooks de múltiples celdas, resultados interactivos, análisis de planes de consulta y un explorador de esquemas a nivel de clúster, y está disponible de forma inmediata en `/notebook` en el puerto HTTP (`8123`) de un host ADQM, junto a `/play`, o mediante Chproxy.
-
-  Características:
-
-  * Celdas SQL y Markdown, hasta cinco sentencias por celda y límites de memoria, tiempo y subprocesos por notebook o celda.
-  * Editor SQL con resaltado de sintaxis, autocompletado, sustitución de `{{variable}}` y `Beautify SQL`.
-  * Resultados en una cuadrícula ordenable y con búsqueda, con proporción de NULL, recuento de valores únicos y rango de valores por columna.
-  * Gráficos de líneas, áreas y barras; descargas en CSV, TSV, JSON, JSONLines o Parquet.
-  * Planes de consulta estimados y reales, `EXPLAIN PIPELINE` y vistas lógicas, así como hallazgos con correcciones sugeridas.
-  * Estadísticas de consultas de `system.query_log` con desglose por nodo; historial de las últimas cinco ejecuciones.
-  * Panel de bases de datos para el host local o para todo el clúster, con estadísticas de columnas y consultas predefinidas.
-  * Grafo de dependencias de tablas, vistas, vistas materializadas, diccionarios y proyecciones.
-  * Vista en vivo de las consultas en ejecución con un botón `KILL`.
-  * Acceso mediante Chproxy como punto de entrada único al clúster, con las consultas balanceadas entre todos los hosts.
-  * Guardado automático, exportación e importación en JSON, almacenamiento de notebooks en el servidor de ClickHouse y compartición mediante enlace.
-</Accordion>
+<div id="commercial">
+  ## Comercial
+</div>
 
 <Accordion title="ProbeDeck">
-  [ProbeDeck](https://probedeck.app) es un Client de iOS y iPadOS para monitorizar y consultar ClickHouse.
+  [ProbeDeck](https://probedeck.app) es un cliente de iOS y iPadOS para monitorizar y consultar ClickHouse.
 
   Características:
 
@@ -549,13 +491,13 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="Looker">
-  [Looker](https://looker.com) es una plataforma de datos y herramienta de inteligencia empresarial compatible con más de 50 dialectos de bases de datos, incluido ClickHouse. Looker está disponible como plataforma SaaS y en versión autohospedada. Los usuarios pueden utilizar Looker desde el navegador para explorar datos, crear visualizaciones y dashboards, programar informes y compartir sus conclusiones con sus colegas. Looker ofrece un amplio conjunto de herramientas para integrar estas funcionalidades en otras aplicaciones, así como una API
+  [Looker](https://looker.com) es una plataforma de datos y herramienta de inteligencia empresarial compatible con más de 50 dialectos de bases de datos, incluido ClickHouse. Looker está disponible como plataforma SaaS y autohospedada. Los usuarios pueden utilizar Looker mediante el navegador para explorar datos, crear visualizaciones y dashboards, programar informes y compartir información con sus colegas. Looker proporciona un amplio conjunto de herramientas para integrar estas funcionalidades en otras aplicaciones, y una API
   para integrar datos con otras aplicaciones.
 
   Características:
 
   * Desarrollo sencillo y ágil mediante LookML, un lenguaje que admite
-    [Data Modeling](https://looker.com/platform/data-modeling) curado para dar soporte a los autores de informes y a los usuarios finales.
+    [modelado de datos](https://looker.com/platform/data-modeling) cuidadosamente diseñado para ayudar a los creadores de informes y usuarios finales.
   * Potente integración de flujos de trabajo mediante las [Data Actions](https://looker.com/platform/actions) de Looker.
 
   [Cómo configurar ClickHouse en Looker.](https://docs.looker.com/setup-and-management/database-config/clickhouse)
@@ -583,7 +525,7 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="TABLUM.IO">
-  [TABLUM.IO](https://tablum.io/) es una herramienta en línea de consultas y analítica para ETL y visualización. Permite conectarse a ClickHouse, consultar datos mediante una versátil consola SQL y cargar datos desde archivos estáticos y servicios de terceros. TABLUM.IO permite visualizar los resultados como gráficos y tablas.
+  [TABLUM.IO](https://tablum.io/) es una herramienta en línea de consultas y análisis para ETL y visualización. Permite conectarse a ClickHouse, consultar datos mediante una versátil consola SQL y cargar datos desde archivos estáticos y servicios de terceros. TABLUM.IO permite visualizar los resultados como gráficos y tablas.
 
   Características:
 
@@ -622,40 +564,11 @@ doc_type: 'reference'
   Características:
 
   * Resumen del servidor al conectarse: versión, tiempo de actividad, consultas en ejecución, fusiones activas, partes y tamaños de almacenamiento, estado de la réplica, clústeres y nodos de un vistazo.
-  * Generador visual de consultas (selectores de columnas, filtros, ordenación, límite) junto con un editor SQL de Monaco con resaltado de sintaxis e historial de consultas por conexión.
+  * Constructor visual de consultas (selectores de columnas, filtros, ordenación, límite) junto con un editor SQL de Monaco con resaltado de sintaxis e historial de consultas por conexión.
   * Asistente visual de `CREATE TABLE` compatible con variantes de `MergeTree`, `ORDER BY`, `PARTITION BY`, `SETTINGS` y aplicación automática de `Nullable()`.
   * Manejo nativo de tipos de ClickHouse: `Nullable`, `Array`, `LowCardinality` y objetos anidados.
   * Soporte para búsqueda vectorial: columnas de embeddings `Array(Float32)` representadas como celdas vectoriales compactas, visualización de embeddings en 2D y búsqueda de elementos similares mediante `cosineDistance`.
   * Edición de datos en línea en tablas de resultados con guardado por lotes, además de exportación e importación CSV/JSON/SQL mediante los formatos nativos de ClickHouse.
   * Opciones de conexión: HTTP/HTTPS, túnel SSH para clústeres privados detrás de un firewall y modo opcional de solo lectura para explorar de forma segura entornos de producción.
   * Funciona con ClickHouse Cloud y en entornos autohospedados.
-</Accordion>
-
-<Accordion title="ADQM Control">
-  [ADQM Control](https://docs.arenadata.io/en/ADQMCONTROL/current/concept/overview.html) (Arenadata QuickMarts Control) es una plataforma de observabilidad para clústeres de ClickHouse desplegados como [Arenadata QuickMarts (ADQM)](https://docs.arenadata.io/en/ADQM/current/introduction/intro.html), el DBMS orientado a columna desarrollado por Arenadata sobre ClickHouse. Combina métricas de hosts procedentes de Prometheus con datos sobre hosts, tablas y consultas recopilados del clúster para mostrar cómo crecen las tablas, cómo se comportan las consultas y qué hosts están sometidos a mayor carga, en uno o varios clústeres de ADQM. ADQM Control se despliega como un clúster independiente con [Arenadata Cluster Manager (ADCM)](https://github.com/arenadata/adcm) y almacena los datos recopilados en PostgreSQL.
-
-  Características:
-
-  * Mapa de calor del estado de los hosts para el clúster de ADQM seleccionado.
-  * Alertas relacionadas agrupadas en incidentes por tiempo, con sensibilidad ajustable.
-  * Tamaño de las tablas, filas y número de peticiones a lo largo del tiempo, con métricas de sesgo y desequilibrio entre hosts.
-  * Tamaño comprimido y sin comprimir por columna, ahorro por compresión y códec, con gráficos.
-  * Historial completo de consultas con estado, códigos de excepción, duración, memoria y filas y bytes leídos y escritos.
-  * Filtros de consultas por texto, tabla, usuario, host, duración, estado y valores predefinidos de códigos de excepción.
-  * Gráficos de consultas por duración, usuario y tipo; gráficos de carga por host con detección de anomalías.
-  * Alertas por umbral sobre los recursos de los hosts que explican el problema y recomiendan una solución.
-</Accordion>
-
-<Accordion title="VisuaLeaf">
-  [VisuaLeaf](https://visualeaf.com/database/clickhouse/) es una interfaz gráfica de escritorio multiplataforma para bases de datos con soporte para ClickHouse, además de MongoDB, PostgreSQL, MySQL y otras bases de datos.
-
-  Características:
-
-  * Exploración de bases de datos de ClickHouse y tablas columnares.
-  * Ejecución de consultas SQL analíticas.
-  * Conversión de los resultados de las consultas en gráficos y dashboards.
-  * Reconocimiento de conexiones de ClickHouse Cloud.
-  * Disponible para Windows, macOS y Linux.
-
-  Hay disponible una Community Edition gratuita, así como ediciones de pago con características adicionales.
 </Accordion>

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Processors/ISimpleTransform.h>
-#include <Processors/SpillableAdapter.h>
 #include <Processors/Transforms/DistinctSetFilter.h>
 #include <QueryPipeline/SizeLimits.h>
 
@@ -59,7 +58,6 @@ public:
     /// followed by an exact deduplicating consumer. The transform frees its set when this threshold is
     /// exceeded or projected growth and filtering exceed its remaining budget. Subsequent rows pass
     /// through, giving up any remaining local limit hint. Zero disables this memory policy.
-    /// `allow_spilling_` permits the scheduler to request the same release for preliminary deduplication.
     DistinctTransform(
         SharedHeader header_,
         const SizeLimits & set_size_limits_,
@@ -67,21 +65,14 @@ public:
         const Names & columns_,
         bool allow_abandoning_ = false,
         bool skip_null_keys_ = false,
-        UInt64 max_bytes_before_pass_through_ = 0,
-        bool allow_spilling_ = false);
+        UInt64 max_bytes_before_pass_through_ = 0);
 
     String getName() const override { return "DistinctTransform"; }
-
-    std::span<ISpillable * const> getSpillables() override { return {&spillable_ptr, allow_spilling ? 1uz : 0uz}; }
-    ProcessorMemoryStats getMemoryStats() const;
-    size_t spill(size_t at_least_bytes);
 
 protected:
     void transform(Chunk & chunk) override;
 
 private:
-    SpillableAdapter<DistinctTransform> spillable{*this};
-    ISpillable * const spillable_ptr = &spillable;
     /// An absent filter means subsequent chunks pass through without deduplication.
     std::optional<DistinctSetFilter> distinct_set;
     const UInt64 limit_hint;
@@ -89,7 +80,6 @@ private:
     std::optional<DeduplicationAbandonController> abandon_controller;
 
     const UInt64 max_bytes_before_pass_through;
-    const bool allow_spilling;
 };
 
 }
