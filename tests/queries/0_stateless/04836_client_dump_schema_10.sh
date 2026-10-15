@@ -43,10 +43,12 @@ round_trip computed_cast "
     CREATE TABLE d.t (y UInt8, x UInt8 DEFAULT isNull(CAST(1, concat('LowCardinality(', 'UInt64)'))))
     ENGINE = MergeTree ORDER BY y;"
 
+# A plain materialized view: a refreshable one starts a refresh that can still run when clickhouse-local exits.
 round_trip values_rows "
     CREATE DATABASE d;
+    CREATE TABLE d.src (s String) ENGINE = MergeTree ORDER BY s;
     CREATE TABLE d.dst (s String) ENGINE = MergeTree ORDER BY s;
-    CREATE MATERIALIZED VIEW d.mv REFRESH EVERY 1 HOUR TO d.dst AS SELECT s FROM values('s String', 'x LowCardinality(UInt64)');"
+    CREATE MATERIALIZED VIEW d.mv TO d.dst AS SELECT s FROM d.src WHERE s IN (SELECT s FROM values('s String', 'x LowCardinality(UInt64)'));"
 
 # A dump that cannot be written must not report success.
 if $CLICKHOUSE_LOCAL --path "$work/src" --dump-schema d < /dev/null >&- 2>/dev/null; then
