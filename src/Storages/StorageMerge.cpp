@@ -413,13 +413,11 @@ bool StorageMerge::hasChildTable(std::function<bool(const StoragePtr &)> predica
     }) != nullptr;
 }
 
-bool StorageMerge::mayReadViewSource(const StorageID & view_source_id, const ContextPtr & query_context) const
+bool StorageMerge::mayReadViewSource(const ContextPtr & query_context) const
 {
     return hasChildTable([&](const StoragePtr & table)
     {
-        return table->getStorageID().getFullNameNotQuoted() == view_source_id.getFullNameNotQuoted()
-            || table->mayReadViewSource(view_source_id, query_context)
-            || hiddenFilterMayReadTable(*table, "", query_context);
+        return hiddenFilterMayReadTable(*table, "", query_context) || table->mayReadViewSource(query_context);
     });
 }
 

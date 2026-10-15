@@ -52,9 +52,9 @@ public:
     /// `StorageTableProxy` around a delegating storage (`Distributed`, `Merge`, `Buffer`, `Alias`)
     /// answering false would let a `_table`/`_database` filter incorrectly prune the child.
     bool readsFromOtherTables() const override { return getNested()->readsFromOtherTables(); }
-    bool mayReadViewSource(const StorageID & view_source_id, const ContextPtr & query_context) const override
+    bool mayReadViewSource(const ContextPtr & query_context) const override
     {
-        return getNested()->mayReadViewSource(view_source_id, query_context);
+        return getNested()->mayReadViewSource(query_context);
     }
     size_t getMaxReadStreams(size_t num_streams, ContextPtr context) override { return getNested()->getMaxReadStreams(num_streams, context); }
     /// `AlterCommands::validate` checks these on the storage the ALTER is addressed to, which is

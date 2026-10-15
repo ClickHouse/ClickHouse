@@ -138,7 +138,7 @@ bool subtreeMayReadViewSourceImpl(const IQueryTreeNode * node, const StorageID &
     }
 
     if (storage
-        && (storage->mayReadViewSource(view_source_id, current_context)
+        && (storage->mayReadViewSource(current_context)
             || hiddenFilterMayReadTable(*storage, node->getOriginalAlias(), current_context)))
         return true;
 

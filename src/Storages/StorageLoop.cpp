@@ -2,7 +2,6 @@
 #include <Storages/StorageFactory.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromLoopStep.h>
-#include <Planner/Utils.h>
 #include <Common/CurrentThread.h>
 
 
@@ -32,12 +31,9 @@ namespace DB
         return QueryProcessingStage::FetchColumns;
     }
 
-    bool StorageLoop::mayReadViewSource(const StorageID & view_source_id, const ContextPtr & query_context) const
+    bool StorageLoop::mayReadViewSource(const ContextPtr & query_context) const
     {
-        return inner_storage
-            && (inner_storage->getStorageID().getFullNameNotQuoted() == view_source_id.getFullNameNotQuoted()
-                || inner_storage->mayReadViewSource(view_source_id, query_context)
-                || hiddenFilterMayReadTable(*inner_storage, "", query_context));
+        return inner_storage && inner_storage->mayReadViewSource(query_context);
     }
 
     void StorageLoop::read(
