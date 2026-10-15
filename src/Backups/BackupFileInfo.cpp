@@ -229,27 +229,24 @@ BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entr
 
     std::atomic_bool failed = false;
 
-    /// A task builds the infos of several consecutive entries: the runner keeps every task until the end, and a backup
-    /// can have millions of entries. Building an info is quick for most entries, so batches this small still spread the
-    /// work evenly over the threads.
-    static constexpr size_t entries_per_task = 100;
+    /// The runner keeps every task until the end, and a backup can have millions of entries, so a bounded number of
+    /// workers take the entries one by one from a shared index instead of a task per entry. One by one, because building
+    /// an info may read the whole file to calculate its checksum.
+    std::atomic<size_t> next_entry = 0;
+    const size_t num_workers = std::min<size_t>(backup_entries.size(), std::max<size_t>(thread_pool.getMaxThreads(), 1));
 
     ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::BACKUP_WORKER);
-    for (size_t begin = 0; begin < backup_entries.size(); begin += entries_per_task)
+    for (size_t worker = 0; worker != num_workers; ++worker)
     {
-        if (failed)
-            break;
-
-        size_t end = std::min(begin + entries_per_task, backup_entries.size());
-
         /// Passing references here is fine. All the objects are created **before** runner so they will be destroyed after it in case
         /// of an exception
-        runner.enqueueAndKeepTrack([&infos, &backup_entries, &read_settings, &base_backup, &process_list_element, begin, end, log, &failed, current_component = Coordination::getCurrentComponent()]()
+        runner.enqueueAndKeepTrack([&infos, &backup_entries, &read_settings, &base_backup, &process_list_element, &next_entry, log, &failed, current_component = Coordination::getCurrentComponent()]()
         {
             auto component_guard = Coordination::setCurrentComponent(current_component);
-            for (size_t i = begin; i != end; ++i)
+            while (!failed)
             {
-                if (failed)
+                const size_t i = next_entry.fetch_add(1);
+                if (i >= backup_entries.size())
                     return;
 
                 try
