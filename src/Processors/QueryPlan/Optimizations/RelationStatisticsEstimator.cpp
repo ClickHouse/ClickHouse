@@ -158,6 +158,38 @@ UnaryStepStatsKind classifyUnaryStepStats(const IQueryPlanStep & step)
     return UnaryStepStatsKind::Unsupported;
 }
 
+/// A runtime filter prunes nothing at plan time, so it must not count as a filter when estimating.
+/// True for a `__applyFilter` call, an `and` of such predicates, or an `or` with at least one such
+/// operand. Aliases are looked through.
+bool prunesNothingAtPlanTime(const ActionsDAG::Node * node)
+{
+    if (!node)
+        return false;
+
+    if (node->type == ActionsDAG::ActionType::ALIAS && !node->children.empty())
+        return prunesNothingAtPlanTime(node->children.front());
+
+    if (node->type != ActionsDAG::ActionType::FUNCTION || !node->function_base)
+        return false;
+
+    const auto & function_name = node->function_base->getName();
+    if (function_name == "__applyFilter")
+        return true;
+
+    if (node->children.empty())
+        return false;
+
+    if (function_name == "and")
+        return std::ranges::all_of(node->children, prunesNothingAtPlanTime);
+
+    /// One operand passes every row at plan time, so the whole `or` does. `addNullBypassForAntiJoin`
+    /// builds this form for `LEFT ANTI JOIN`: `__applyFilter(...) OR isNull(key)`.
+    if (function_name == "or")
+        return std::ranges::any_of(node->children, prunesNothingAtPlanTime);
+
+    return false;
+}
+
 }
 
 std::optional<RelationStats> estimateUnaryStepStats(const IQueryPlanStep & step, RelationStats input_stats)
@@ -231,7 +263,9 @@ std::optional<RelationStats> estimateUnaryStepStats(const IQueryPlanStep & step,
         case UnaryStepStatsKind::LogicalExchange:
             /// Estimates must see through exchanges: they do not change rows or values, and an
             /// already-distributed subtree would otherwise report unknown cardinality, degrading
-            /// broadcast-vs-shuffle and join order decisions.
+            /// broadcast-vs-shuffle and join order decisions. Runtime-filter transport sizes the
+            /// exact phase from this estimate, and the build filter sits below the join shuffle, so
+            /// the walk has to cross exchanges on every build.
             return input_stats;
         case UnaryStepStatsKind::ValuePreservingTransform:
             return input_stats;
@@ -312,10 +346,58 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
                 .source = RowEstimateSource::NoStatistics};
         }
 
-        auto prewhere_info = reading->getPrewhereInfo();
+        /// A runtime filter prunes nothing at plan time, so it does not count as a filter for the row estimate.
+        /// It still drops rows at execution time, so the provenance flags below keep looking at the raw `filter`.
+        const ActionsDAG::Node * plan_time_filter = prunesNothingAtPlanTime(filter) ? nullptr : filter;
+
+        /// A PREWHERE that prunes nothing at plan time is likewise not a plan-time filter. As above, the
+        /// provenance flags below keep looking at the raw `prewhere_info`.
+        const PrewhereInfoPtr prewhere_info = reading->getPrewhereInfo();
         const ActionsDAG::Node * prewhere_node = prewhere_info
             ? static_cast<const ActionsDAG::Node *>(prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name))
             : nullptr;
+        const bool has_prewhere_filter = prewhere_info && !prunesNothingAtPlanTime(prewhere_node);
+        if (!has_prewhere_filter)
+            prewhere_node = nullptr;
+
+        bool is_filtered_by_index = false;
+        if (analyzed_result)
+        {
+            UInt64 total_parts = 0;
+            UInt64 total_granules = 0;
+            for (const auto & idx_stat : analyzed_result->index_stats)
+            {
+                /// We expect the first element to be an index with None type, which is used to estimate the total amount of data in the table.
+                /// Further index_stats are used to estimate amount of filtered data after applying the index.
+                if (ReadFromMergeTree::IndexType::None == idx_stat.type)
+                {
+                    total_parts = idx_stat.num_parts_after;
+                    total_granules = idx_stat.num_granules_after;
+                    continue;
+                }
+
+                is_filtered_by_index = is_filtered_by_index || (total_parts && idx_stat.num_parts_after < total_parts)
+                    || (total_granules && idx_stat.num_granules_after < total_granules);
+
+                if (is_filtered_by_index)
+                    break;
+            }
+        }
+        const bool has_filter = plan_time_filter || has_prewhere_filter;
+
+        /// Runtime-filter transport may raise its hard exact-phase row cap to this estimate. Under an
+        /// unindexed plan-time filter, column statistics still produce a number, but it is only a guess
+        /// and would override the exact limit from the settings. So the transport gets no estimate and
+        /// keeps the settings geometry. Join-order estimation keeps using statistics.
+        if (options.for_runtime_filter_transport && has_filter && !is_filtered_by_index)
+        {
+            return RelationStats{
+                .estimated_rows = {},
+                .table_name = table_display_name,
+                .imprecise_estimate = true,
+                .source = RowEstimateSource::NoStatistics};
+        }
+
         const auto & query_info = reading->getQueryInfo();
         const bool has_final = query_info.isFinal();
         const bool has_lightweight_deleted_rows
@@ -332,7 +414,7 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
         /// In particular, FINAL can synthesize values in SummingMergeTree, AggregatingMergeTree and
         /// GraphiteMergeTree. Treat every FINAL read conservatively so new merge modes fail closed.
         const bool has_unsupported_value_changes = has_on_fly_data_changes || has_masking_policy || has_final;
-        /// Predicates cover explicit, deferred and row-policy filters; query modifiers cover `FINAL`,
+        /// Predicates cover explicit, deferred, row-policy and runtime filters; query modifiers cover `FINAL`,
         /// `SAMPLE`, stream reads and trivial limits; deleted rows and vector-index selection can prune
         /// rows without a filter step in the plan. A transaction snapshot is deliberately absent: the
         /// visible parts are the exact input for that read.
@@ -359,7 +441,7 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
         {
             if (auto estimator = reading->getConditionSelectivityEstimator(reading->getAllColumnNames(), analyzed_result))
             {
-                auto relation_profile = estimator->estimateRelationProfile(reading->getStorageMetadata(), filter, prewhere_node);
+                auto relation_profile = estimator->estimateRelationProfile(reading->getStorageMetadata(), plan_time_filter, prewhere_node);
                 /// The rows of the selected parts, which the statistics describe.
                 const bool is_top_k_subset = top_k_may_drop_rows(relation_profile.rows);
                 RelationStats stats{
@@ -387,28 +469,6 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
                 .table_name = table_display_name,
                 .imprecise_estimate = true,
                 .source = RowEstimateSource::NoStatistics};
-
-        bool is_filtered_by_index = false;
-        UInt64 total_parts = 0;
-        UInt64 total_granules = 0;
-        for (const auto & idx_stat : analyzed_result->index_stats)
-        {
-            /// We expect the first element to be an index with None type, which is used to estimate the total amount of data in the table.
-            /// Further index_stats are used to estimate amount of filtered data after applying the index.
-            if (ReadFromMergeTree::IndexType::None == idx_stat.type)
-            {
-                total_parts = idx_stat.num_parts_after;
-                total_granules = idx_stat.num_granules_after;
-                continue;
-            }
-
-            is_filtered_by_index = is_filtered_by_index || (total_parts && idx_stat.num_parts_after < total_parts)
-                || (total_granules && idx_stat.num_granules_after < total_granules);
-
-            if (is_filtered_by_index)
-                break;
-        }
-        bool has_filter = filter || prewhere_info;
 
         /// If any conditions are pushed down to storage but not used in the index,
         /// we cannot precisely estimate the row count
