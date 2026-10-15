@@ -133,6 +133,8 @@ struct QueryPlanOptimizationSettings
     bool optimize_projection;
     bool use_query_condition_cache;
     bool use_query_condition_cache_for_top_k;
+    bool use_query_condition_cache_for_time_conditions;
+    double query_condition_cache_time_condition_grid_factor;
     bool read_in_order_through_join;
     bool optimize_aggregation_in_order_limit;
     bool correlated_subqueries_use_in_memory_buffer;
@@ -280,7 +282,6 @@ struct QueryPlanOptimizationSettings
     /// of re-running the same subqueries.
     std::function<std::unique_ptr<QueryPlan>(const BuiltSetsByHashPtr &)> query_plan_with_parallel_replicas_builder;
 
-    bool parallel_replicas_filter_pushdown = false;
     bool enable_parallel_replicas = false;
 };
 

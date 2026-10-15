@@ -84,7 +84,9 @@ public:
     /// Serve no byte at or past logical offset `bound`; `nullopt` serves to the file end. It does not limit a fetch.
     void setReadUntil(std::optional<size_t> bound) { read_until = bound; }
 
-    /// The logical ranges the caller will read. A fetch stops at the end of the run that holds the position.
+    /// The logical ranges the caller will read. A fetch tries to stop at the end of the map run that holds the
+    /// position, but it reads outside the map where it has to: holes shorter than `min_bytes_for_seek`, one block
+    /// for a read outside the map, and cache cells that fill only from their committed front or only as a whole.
     void setRequestMap(ByteRangeSet ranges);
 
     size_t getPosition() const { return position; }

@@ -1577,6 +1577,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"output_format_parquet_enum_as_byte_array", CHSetting(trueOrFalse, {}, false)},
     {"output_format_parquet_fixed_string_as_fixed_byte_array", trueOrFalseSettingNoOracle},
     {"output_format_parquet_geometadata", trueOrFalseSettingNoOracle},
+    {"output_format_parquet_write_file_logical_type", trueOrFalseSettingNoOracle},
     {"output_format_parquet_max_dictionary_size",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
@@ -2368,15 +2369,16 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
         serverSettings.insert({{entry, CHSetting(readerExecutorSizeRange, {"131072", "1048576", "'10M'"}, false)}});
     }
     /// Shares the same band, but `reader_executor_plan_look_ahead` must also be at least
-    /// `reader_executor_block_size`. Staying at or above that setting's ceiling keeps every draw
-    /// legal without coupling the two generators; same reason the oracle values start at 10 MiB.
+    /// `reader_executor_block_size` and twice `reader_executor_window_size`. Staying at or above twice
+    /// their 10 MiB ceiling keeps every draw legal without coupling the generators; same reason the
+    /// oracle values start at 20 MiB.
     const auto readerExecutorPlanLookAheadSetting = CHSetting(
         [](RandomGenerator & rg, FuzzConfig &)
         {
             return std::to_string(rg.thresholdGenerator<uint64_t>(
-                0.2, 0.2, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024), DB::MAX_READER_EXECUTOR_SIZE));
+                0.2, 0.2, UINT32_C(20) * UINT32_C(1024) * UINT32_C(1024), DB::MAX_READER_EXECUTOR_SIZE));
         },
-        {"'10M'", "'20M'", "'40M'"},
+        {"20971520", "31457280", "41943040"},
         false);
     performanceSettings.insert({{"reader_executor_plan_look_ahead", readerExecutorPlanLookAheadSetting}});
     serverSettings.insert({{"reader_executor_plan_look_ahead", readerExecutorPlanLookAheadSetting}});
@@ -2468,6 +2470,11 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
              {"iceberg_metadata_staleness_ms",
               CHSetting(
                   [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.3, 0, 60000)); },
+                  {},
+                  false)},
+             {"iceberg_orphan_files_min_retention_seconds",
+              CHSetting(
+                  [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.3, 0, 600)); },
                   {},
                   false)},
              {"iceberg_orphan_files_older_than_seconds",
