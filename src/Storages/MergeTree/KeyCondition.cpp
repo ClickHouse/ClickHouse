@@ -3351,8 +3351,9 @@ std::optional<KeyCondition::SetIndexAnalysisResult> KeyCondition::tryAnalyzePred
 }
 
 /// False only when casting the KEY into `set_element_type` -- the direction runtime membership takes -- keeps distinct
-/// key values apart; any other cast may map two keys onto one set value. `is_element` marks a pair nested in a composite.
-static bool keyToSetConversionMayCollapse(const DataTypePtr & key_type, const DataTypePtr & set_element_type, bool is_element)
+/// key values apart; any other cast may map two keys onto one set value. `plain_column` marks a key that `Set::execute`
+/// gets as a non-`Nullable` column of its own, not inside a composite.
+static bool keyToSetConversionMayCollapse(const DataTypePtr & key_type, const DataTypePtr & set_element_type, bool plain_column)
 {
     auto key_unwrapped = removeLowCardinalityAndNullable(key_type);
     auto set_unwrapped = removeLowCardinalityAndNullable(set_element_type);
@@ -3380,7 +3381,7 @@ static bool keyToSetConversionMayCollapse(const DataTypePtr & key_type, const Da
         return keyToSetConversionMayCollapse(
             assert_cast<const DataTypeArray &>(*key_unwrapped).getNestedType(),
             assert_cast<const DataTypeArray &>(*set_unwrapped).getNestedType(),
-            /*is_element=*/ true);
+            /*plain_column=*/ false);
 
     /// `CAST` turns an array of pairs into a `Map` pair by pair, by position, and keeps repeated keys.
     if (key_which.isArray() && set_which.isMap())
@@ -3388,8 +3389,8 @@ static bool keyToSetConversionMayCollapse(const DataTypePtr & key_type, const Da
         const auto * pair = typeid_cast<const DataTypeTuple *>(assert_cast<const DataTypeArray &>(*key_unwrapped).getNestedType().get());
         const auto & set_map = assert_cast<const DataTypeMap &>(*set_unwrapped);
         return !pair || pair->getElements().size() != 2
-            || keyToSetConversionMayCollapse(pair->getElements()[0], set_map.getKeyType(), /*is_element=*/ true)
-            || keyToSetConversionMayCollapse(pair->getElements()[1], set_map.getValueType(), /*is_element=*/ true);
+            || keyToSetConversionMayCollapse(pair->getElements()[0], set_map.getKeyType(), /*plain_column=*/ false)
+            || keyToSetConversionMayCollapse(pair->getElements()[1], set_map.getValueType(), /*plain_column=*/ false);
     }
 
     if (key_which.isTuple() && set_which.isTuple())
@@ -3409,7 +3410,8 @@ static bool keyToSetConversionMayCollapse(const DataTypePtr & key_type, const Da
                 for (size_t i = 0; i < key_elements.size(); ++i)
                 {
                     auto set_position = set_tuple.tryGetPositionByName(key_names[i]);
-                    if (!set_position || keyToSetConversionMayCollapse(key_elements[i], set_elements[*set_position], /*is_element=*/ true))
+                    if (!set_position
+                        || keyToSetConversionMayCollapse(key_elements[i], set_elements[*set_position], /*plain_column=*/ false))
                         return true;
                 }
 
@@ -3421,7 +3423,7 @@ static bool keyToSetConversionMayCollapse(const DataTypePtr & key_type, const Da
             return false;
 
         for (size_t i = 0; i < key_elements.size(); ++i)
-            if (keyToSetConversionMayCollapse(key_elements[i], set_elements[i], /*is_element=*/ true))
+            if (keyToSetConversionMayCollapse(key_elements[i], set_elements[i], /*plain_column=*/ false))
                 return true;
 
         return false;
@@ -3447,16 +3449,18 @@ static bool keyToSetConversionMayCollapse(const DataTypePtr & key_type, const Da
     if (key_which.isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64()
         && set_which.isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64())
     {
-        /// Only widenings keep every key: a day becomes its midnight, a time gains sub-second digits.
+        /// Only widenings keep every key: a day keeps its number, a time gains sub-second digits. A day does not
+        /// keep its midnight, because a time zone can skip a day (`Pacific/Apia` skipped 2011-12-30).
         if (key_which.isDate())
-            return !(set_which.isDate32() || set_which.isDateTimeOrDateTime64());
-        if (key_which.isDate32() || key_which.isDateTime())
+            return !set_which.isDate32();
+        if (key_which.isDateTime())
             return !set_which.isDateTime64();
         if (key_which.isTime())
             return !set_which.isTime64();
-        /// `Set::execute` drops the sub-second keys of a top-level `DateTime64` column only, so an element is truncated.
+        /// `Set::execute` drops the sub-second keys only of a plain `DateTime64` column; a tuple `IN` and
+        /// `transform_null_in` pass a `Nullable` key as is, and an element is truncated.
         if (key_which.isDateTime64() && set_which.isDateTime())
-            return is_element && *key_scale > 0;
+            return !plain_column && *key_scale > 0;
         const bool same_family = (key_which.isDateTime64() && set_which.isDateTime64()) || (key_which.isTime64() && set_which.isTime64());
         return !same_family || *set_scale < *key_scale;
     }
@@ -3571,8 +3575,8 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
         /// so the full scan may match another spelling or raise a conversion error that pruning would hide.
         if (membership_compares_carriers)
         {
-            const DataTypePtr predicate_column_type
-                = removeLowCardinalityAndNullable(mapping.set_transform ? mapping.set_transform->input_type : key_column_type);
+            const DataTypePtr predicate_input_type = mapping.set_transform ? mapping.set_transform->input_type : key_column_type;
+            const DataTypePtr predicate_column_type = removeLowCardinalityAndNullable(predicate_input_type);
             const DataTypePtr element_type = removeLowCardinalityAndNullable(set_element_type);
 
             if (isStringOrFixedString(predicate_column_type) && !isString(element_type) && !isNothing(element_type)
@@ -3581,7 +3585,8 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
 
             /// A cast that merges distinct keys, such as `DateTime` into `Date`, leaves the set holding one of
             /// them, and a relaxed atom would still prune the rest.
-            if (keyToSetConversionMayCollapse(predicate_column_type, element_type, /*is_element=*/ false))
+            if (keyToSetConversionMayCollapse(
+                    predicate_column_type, element_type, /*plain_column=*/ !isNullableOrLowCardinalityNullable(predicate_input_type)))
                 return false;
         }
 

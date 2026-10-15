@@ -76,12 +76,23 @@ CREATE TABLE t_i64e (x Int64) ENGINE = MergeTree ORDER BY x SETTINGS index_granu
 INSERT INTO t_i64e VALUES (1), (257);
 SELECT count() FROM t_i64e WHERE x IN (SELECT CAST(1, 'Enum8(''a'' = 1)'));
 
+CREATE TABLE t_apia (d Date) ENGINE = MergeTree PARTITION BY d ORDER BY tuple();
+INSERT INTO t_apia VALUES ('2011-12-29'), ('2011-12-30'), ('2011-12-31');
+SELECT count() FROM t_apia WHERE d IN (SELECT toDateTime('2011-12-31 00:00:00', 'Pacific/Apia'));
+
+CREATE TABLE t_n64 (d Nullable(DateTime64(3, 'UTC')), x UInt8, INDEX i d TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
+INSERT INTO t_n64 VALUES ('2023-02-01 12:00:00.500', 1), ('2023-02-03 13:00:00', 1);
+SELECT count() FROM t_n64 WHERE (d, x) IN (SELECT toDateTime('2023-02-01 12:00:00', 'UTC'), 1) SETTINGS use_skip_indexes_on_data_read = 0;
+SELECT count() FROM t_n64 WHERE d IN (SELECT toDateTime('2023-02-01 12:00:00', 'UTC')) SETTINGS transform_null_in = 1, use_skip_indexes_on_data_read = 0;
+SELECT count() FROM t_n64 WHERE d IN (SELECT toDateTime('2023-02-01 12:00:00', 'UTC')) SETTINGS use_skip_indexes_on_data_read = 0;
+
 -- A set whose cast merges nothing keeps pruning.
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dt WHERE d IN (SELECT toDateTime('2023-02-01 12:00:01', 'UTC'))) WHERE explain ILIKE '%Granules: 1/2%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dt WHERE d IN (SELECT toDateTime64('2023-02-01 12:00:01', 3, 'UTC'))) WHERE explain ILIKE '%Granules: 1/2%';
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dt WHERE toDate(d) IN (SELECT toDate('2023-02-01'))) WHERE explain ILIKE '%Granules: 1/2%';
 CREATE TABLE t_date (d Date) ENGINE = MergeTree ORDER BY d SETTINGS index_granularity = 1;
 INSERT INTO t_date VALUES ('2023-02-01'), ('2023-02-03');
-SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_date WHERE d IN (SELECT toDateTime('2023-02-01 00:00:00', 'UTC'))) WHERE explain ILIKE '%Granules: 1/2%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_date WHERE d IN (SELECT toDate32('2023-02-01'))) WHERE explain ILIKE '%Granules: 1/2%';
 CREATE TABLE t_dec9 (d Decimal(9, 0)) ENGINE = MergeTree ORDER BY d SETTINGS index_granularity = 1;
 INSERT INTO t_dec9 VALUES (1), (2);
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dec9 WHERE d IN (SELECT toFloat64(1))) WHERE explain ILIKE '%Granules: 1/2%';
@@ -89,6 +100,13 @@ SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT a FROM t_arr WHERE a IN (SEL
 CREATE TABLE t_enum (e Enum8('a' = 1, 'b' = 2)) ENGINE = MergeTree ORDER BY e SETTINGS index_granularity = 1;
 INSERT INTO t_enum VALUES ('a'), ('b');
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT e FROM t_enum WHERE e IN (SELECT CAST('a', 'Enum8(''a'' = 1, ''b'' = 2, ''c'' = 3)'))) WHERE explain ILIKE '%Granules: 1/2%';
+CREATE TABLE t_dt64s (d DateTime64(3, 'UTC')) ENGINE = MergeTree ORDER BY d SETTINGS index_granularity = 1;
+INSERT INTO t_dt64s VALUES ('2023-02-01 12:00:00'), ('2023-02-01 13:00:00.500');
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dt64s WHERE d IN (SELECT toDateTime('2023-02-01 12:00:00', 'UTC'))) WHERE explain ILIKE '%Granules: 1/2%';
+CREATE TABLE t_wrap (k Int64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1;
+INSERT INTO t_wrap VALUES (1), (5);
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_wrap WHERE k IN (SELECT CAST(toInt64(1), 'Dynamic'))) WHERE explain ILIKE '%Granules: 1/2%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_wrap WHERE k IN (SELECT CAST(toInt64(1), 'Variant(Int64, String)'))) WHERE explain ILIKE '%Granules: 1/2%';
 
 DROP TABLE t_dt;
 DROP TABLE t_dt64;
@@ -110,3 +128,7 @@ DROP TABLE t_dst;
 DROP TABLE t_arr;
 DROP TABLE t_i64e;
 DROP TABLE t_enum;
+DROP TABLE t_apia;
+DROP TABLE t_dt64s;
+DROP TABLE t_wrap;
+DROP TABLE t_n64;
