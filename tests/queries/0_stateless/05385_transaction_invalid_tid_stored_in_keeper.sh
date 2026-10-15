@@ -33,11 +33,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 INVALID_TIDS="/test/clickhouse/txn/invalid_tids"
 POLL_INTERVAL=0.1
 POLL_TRIES=100
-# FP_FORCE is enabled only around the rollbacks: it would turn the rollback of every unrelated
-# background transaction into a record too.
+# FP_FORCE is on only around the rollbacks: it would record every unrelated background one too.
 FP_FORCE=smt_force_txn_rollback_invalidation
 FP_PAUSE=transaction_rollback_pause_after_mark
-POKE="BEGIN TRANSACTION; INSERT INTO txn_invalid_tid SELECT -1; COMMIT;"
+POKE="BEGIN TRANSACTION; INSERT INTO txn_invalid_tid SETTINGS async_insert = 0 SELECT -1; COMMIT;"
+# Every INSERT pins async_insert = 0: an async insert inside a transaction is NOT_IMPLEMENTED.
 # system.transactions is not transactional, and our own row names the record before the txn ends.
 NO_THROW="SET throw_on_unsupported_query_inside_transaction = 0;"
 
@@ -75,7 +75,7 @@ CREATE TABLE txn_invalid_tid (n Int64) ENGINE = MergeTree ORDER BY n;
 $NO_THROW
 SYSTEM ENABLE FAILPOINT $FP_FORCE;
 BEGIN TRANSACTION;
-INSERT INTO txn_invalid_tid SELECT 1;
+INSERT INTO txn_invalid_tid SETTINGS async_insert = 0 SELECT 1;
 SELECT tid_hash, tid.1, tid.2 FROM system.transactions WHERE tid = transactionID();
 ROLLBACK;
 SYSTEM DISABLE FAILPOINT $FP_FORCE;
@@ -87,10 +87,10 @@ wait_for_record "$tid_a"
 # second one. A copy of the record of case 1 keeps the pre-created znode parsable.
 tx 1 "BEGIN TRANSACTION" > /dev/null
 tid_b1=$(tid_hash_of 1)
-tx 1 "INSERT INTO txn_invalid_tid SELECT 2" > /dev/null
+tx 1 "INSERT INTO txn_invalid_tid SETTINGS async_insert = 0 SELECT 2" > /dev/null
 tx 2 "BEGIN TRANSACTION" > /dev/null
 tid_b2=$(tid_hash_of 2)
-tx 2 "INSERT INTO txn_invalid_tid SELECT 3" > /dev/null
+tx 2 "INSERT INTO txn_invalid_tid SETTINGS async_insert = 0 SELECT 3" > /dev/null
 $CLICKHOUSE_CLIENT -q "INSERT INTO system.zookeeper (path, name, value) SELECT '$INVALID_TIDS',
     '$tid_b1', (SELECT value FROM system.zookeeper WHERE path = '$INVALID_TIDS' AND name = '$tid_a')"
 
