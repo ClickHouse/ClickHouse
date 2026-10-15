@@ -638,7 +638,7 @@ void BackupEntriesCollector::gatherTablesMetadata()
     /// partition-related constraints.
     for (auto & [qualified_name, res_table_info] : table_infos)
     {
-        res_table_info.should_backup_data = shouldBackupTableData(qualified_name, res_table_info.storage, rmv_replace_target_ids);
+        res_table_info.should_backup_data = shouldBackupTableData(qualified_name, res_table_info.storage, res_table_info.create_table_query, rmv_replace_target_ids);
 
         const auto & database_info = database_infos.at(qualified_name.database);
 
@@ -959,6 +959,7 @@ void BackupEntriesCollector::makeBackupEntriesForTableData(const QualifiedTableN
 bool BackupEntriesCollector::shouldBackupTableData(
     const QualifiedTableName & table_name,
     const StoragePtr & storage,
+    const ASTPtr & create_table_query,
     const std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> & rmv_replace_target_ids) const
 {
     if (backup_settings.structure_only)
@@ -977,7 +978,10 @@ bool BackupEntriesCollector::shouldBackupTableData(
         return false;
     }
 
-    if (storage && BackupUtils::isDataOnBackupMetadataOnlyStoragePolicy(storage, context))
+    /// A `Replicated` database may give only the definition of a table not created on this replica yet.
+    const auto * create = create_table_query ? create_table_query->as<ASTCreateQuery>() : nullptr;
+    if (storage ? BackupUtils::isDataOnBackupMetadataOnlyStoragePolicy(storage, context)
+                : create && BackupUtils::isCreatedOnBackupMetadataOnlyStoragePolicy(*create, context))
     {
         LOG_INFO(log, "Skipping table data for {} (on a storage policy marked backup_metadata_only)", table_name.getFullName());
         return false;

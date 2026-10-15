@@ -9,12 +9,14 @@ cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
     "node1",
     main_configs=["configs/disk_s3.xml"],
+    macros={"shard": "s1", "replica": "r1"},
     with_minio=True,
     with_zookeeper=True,
 )
 node2 = cluster.add_instance(
     "node2",
     main_configs=["configs/disk_s3.xml"],
+    macros={"shard": "s1", "replica": "r2"},
     with_minio=True,
     with_zookeeper=True,
 )
@@ -53,6 +55,17 @@ def test_partitions_of_table_not_created_on_replica(start_cluster):
             f"BACKUP TABLE rdb.t PARTITIONS 0 TO S3('http://minio1:9001/root/data/backups/{uuid.uuid4().hex}', 'minio', '{minio_secret_key}')"
         )
         assert "CANNOT_BACKUP_TABLE" in err and "Cannot backup specific partitions" in err, err
+
+        # A `ReplicatedMergeTree` table on such a policy is refused from its definition too, unless its data is left out.
+        node1.query(
+            f"CREATE TABLE rdb.t_replicated (key Int) ENGINE = ReplicatedMergeTree ORDER BY key SETTINGS storage_policy = '{policy}'",
+            settings={"distributed_ddl_task_timeout": 0},
+        )
+        assert node2.query("SELECT count() FROM system.tables WHERE database = 'rdb' AND name = 't_replicated'") == "0\n"
+        backup_destination = f"S3('http://minio1:9001/root/data/backups/{uuid.uuid4().hex}', 'minio', '{minio_secret_key}')"
+        err = node2.query_and_get_error(f"BACKUP TABLE rdb.t_replicated TO {backup_destination}")
+        assert "NOT_IMPLEMENTED" in err and "ReplicatedMergeTree table on a storage policy marked backup_metadata_only" in err, err
+        node2.query(f"BACKUP TABLE rdb.t_replicated TO {backup_destination} SETTINGS structure_only = 1")
     finally:
         node2.query("SYSTEM DISABLE FAILPOINT database_replicated_stop_entry_execution")
         for node in [node1, node2]:

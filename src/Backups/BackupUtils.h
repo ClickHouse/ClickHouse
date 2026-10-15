@@ -34,8 +34,8 @@ bool isInnerTable(const String & database_name, const String & table_name);
 /// read-only dataset: `BACKUP` stores only the definition of the table, and `RESTORE` recreates the table with its UUID
 /// from the backup, because the data is on the storage under a path derived from the UUID, and doesn't restore data.
 
-/// Whether `storage` keeps its data on a storage policy marked `backup_metadata_only`. Throws for a `ReplicatedMergeTree`
-/// table on such a policy, and for a materialized view or a `TimeSeries` table with an inner table on it: not supported.
+/// Whether `storage` keeps its data on a storage policy marked `backup_metadata_only`. Throws for a replicated or shared
+/// `MergeTree` table on such a policy, and for a materialized view or a `TimeSeries` table with an inner table on it.
 bool isDataOnBackupMetadataOnlyStoragePolicy(const StoragePtr & storage, const ContextPtr & context);
 
 /// Whether a table created by `create_query` is on a storage policy marked `backup_metadata_only`.

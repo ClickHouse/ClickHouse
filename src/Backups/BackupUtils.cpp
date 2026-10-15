@@ -11,7 +11,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/StorageMergeTree.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageTimeSeries.h>
@@ -183,13 +183,15 @@ bool isMergeTreeOnBackupMetadataOnlyStoragePolicy(const StoragePtr & storage)
     if (!policy || !policy->isBackupMetadataOnly())
         return false;
 
-    /// `RESTORE` creates a `ReplicatedMergeTree` table in a mode that refuses the existing parts it finds on the storage.
-    if (castStorage<StorageReplicatedMergeTree>(resolved, DeferredTable::Skip))
+    /// Only a table of the plain `MergeTree` family reopens the parts it finds on the storage. `RESTORE` creates a
+    /// `ReplicatedMergeTree` table in a mode that refuses them, and a `SharedMergeTree` table sees only the parts in Keeper.
+    if (!castStorage<StorageMergeTree>(resolved, DeferredTable::Skip))
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
-            "{} is a ReplicatedMergeTree table on a storage policy marked backup_metadata_only, BACKUP and RESTORE support such "
-            "policies only for tables of other MergeTree engines",
-            storage->getStorageID().getNameForLogs());
+            "{} is a {} table on a storage policy marked backup_metadata_only. BACKUP and RESTORE support such policies only "
+            "for tables of the MergeTree family that are neither replicated nor shared",
+            storage->getStorageID().getNameForLogs(),
+            merge_tree->getName());
     return true;
 }
 
@@ -249,7 +251,19 @@ bool isCreatedOnBackupMetadataOnlyStoragePolicy(const ASTCreateQuery & create_qu
     if (it == storages.end() || !it->second.features.has_builtin_setting_fn || !it->second.features.has_builtin_setting_fn("storage_policy"))
         return false;
 
-    return context->getStoragePolicy(policy_name->safeGet<String>())->isBackupMetadataOnly();
+    if (!context->getStoragePolicy(policy_name->safeGet<String>())->isBackupMetadataOnly())
+        return false;
+
+    /// The same restriction as in `isDataOnBackupMetadataOnlyStoragePolicy`, for a table known only by its definition. The
+    /// name is the only way to tell the engine here, as the replicated and shared engines have the same features.
+    const auto & engine_name = storage->engine->name;
+    if (engine_name.starts_with("Replicated") || engine_name.starts_with("Shared"))
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "A {} table on a storage policy marked backup_metadata_only is not supported. BACKUP and RESTORE support such "
+            "policies only for tables of the MergeTree family that are neither replicated nor shared",
+            engine_name);
+    return true;
 }
 
 }
