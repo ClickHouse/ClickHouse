@@ -3047,29 +3047,29 @@ Previews are emitted only while the intermediate state is small: the aggregation
 
 Stateful operations apply to each preview standalone: `DISTINCT` deduplicates the preview alone, and window functions are computed over the preview alone (so `bar(x, 0, max(x) OVER (), 100)` draws bars scaled by the maximum of the intermediate result). For queries with `WITH TOTALS`, `ROLLUP`, `CUBE`, `GROUPING SETS`, `LIMIT BY`, `WITH FILL`, and for the merging stages of distributed queries, previews are not emitted.
 )", EXPERIMENTAL, \
-        {"26.10", false, false, "New experimental setting to enable real-time previews of query results."}) \
+        {"26.11", false, false, "New experimental setting to enable real-time previews of query results."}) \
     DECLARE(UInt64, query_result_previews_min_interval_ms, 1000, R"(
 The minimum time in milliseconds between two consecutive previews of the query result (see `query_result_previews`).
 )", EXPERIMENTAL, \
-        {"26.10", 1000, 1000, "New setting to limit the frequency of query result previews."}) \
+        {"26.11", 1000, 1000, "New setting to limit the frequency of query result previews."}) \
     DECLARE(UInt64, query_result_previews_min_rows, 0, R"(
 The minimum number of source rows an accumulating processor has to process between two consecutive previews of the query result (see `query_result_previews`). Zero means no limit.
 )", EXPERIMENTAL, \
-        {"26.10", 0, 0, "New setting to limit the frequency of query result previews."}) \
+        {"26.11", 0, 0, "New setting to limit the frequency of query result previews."}) \
     DECLARE(UInt64, query_result_previews_min_bytes, 0, R"(
 The minimum number of source bytes an accumulating processor has to process between two consecutive previews of the query result (see `query_result_previews`). Zero means no limit.
 )", EXPERIMENTAL, \
-        {"26.10", 0, 0, "New setting to limit the frequency of query result previews."}) \
+        {"26.11", 0, 0, "New setting to limit the frequency of query result previews."}) \
     DECLARE(UInt64, query_result_previews_max_result_rows, 1000, R"(
 The maximum number of rows in the intermediate state (the number of aggregation keys of the whole aggregation, or the `LIMIT` of a sorting) for which previews of the query result are emitted (see `query_result_previews`). When the state grows above this threshold, previews stop.
 )", EXPERIMENTAL, \
-        {"26.10", 1000, 1000, "New setting to limit the size of the intermediate state for which query result previews are emitted."}) \
+        {"26.11", 1000, 1000, "New setting to limit the size of the intermediate state for which query result previews are emitted."}) \
     DECLARE(UInt64, query_result_previews_max_result_bytes, 67108864, R"(
 The maximum size in bytes of the intermediate state for which previews of the query result are emitted (see `query_result_previews`). When the state grows above this threshold, previews stop.
 
 The size is the memory the aggregation really holds across all of its threads, as accounted by the aggregation's own memory tracker - the one that also decides when to spill to disk. It covers the arenas and the hash tables as well as everything the aggregate function states allocate on their own, which is where a `uniq`, a `uniqExact` or a `groupArray` keeps almost all of its data.
 )", EXPERIMENTAL, \
-        {"26.10", 67108864, 67108864, "New setting to limit the size of the intermediate state for which query result previews are emitted."}) \
+        {"26.11", 67108864, 67108864, "New setting to limit the size of the intermediate state for which query result previews are emitted."}) \
     \
     DECLARE(Bool, fsync_metadata, true, R"(
 Enables or disables [fsync](http://pubs.opengroup.org/onlinepubs/9699919799/functions/fsync.html) when writing `.sql` files. Enabled by default.
