@@ -317,6 +317,14 @@ private:
 
     using GlobalRuntimeContextPtr = std::shared_ptr<GlobalRuntimeContext>;
 
+    friend class RowsSourcesTemporaryFile;
+    friend size_t rewriteRowsSources(
+        ReadBuffer & in,
+        WriteBuffer & out,
+        std::vector<QueryPipeline> row_exists_per_part,
+        TemporaryDataBuffer * ttl_kept_rows,
+        const GlobalRuntimeContext & global_ctx);
+
     /// By default this context is uninitialized, but some variables has to be set after construction,
     /// some variables are used in a process of execution
     /// Proper initialization is responsibility of the author
@@ -474,15 +482,17 @@ private:
         ProfileEvents::Event getTotalTimeProfileEvent() const override { return ProfileEvents::MergeVerticalStageTotalMilliseconds; }
 
         bool prepareVerticalMergeForAllColumns() const;
+        bool rewriteRowsSourcesForVerticalMerge() const;
         bool executeVerticalMergeForAllColumns() const;
         bool finalizeVerticalMergeForAllColumns() const;
 
         /// NOTE: Using pointer-to-member instead of std::function and lambda makes stacktraces much more concise and readable
-        using VerticalMergeStageSubtasks = std::array<bool(VerticalMergeStage::*)()const, 3>;
+        using VerticalMergeStageSubtasks = std::array<bool(VerticalMergeStage::*)()const, 4>;
 
         const VerticalMergeStageSubtasks subtasks
         {
             &VerticalMergeStage::prepareVerticalMergeForAllColumns,
+            &VerticalMergeStage::rewriteRowsSourcesForVerticalMerge,
             &VerticalMergeStage::executeVerticalMergeForAllColumns,
             &VerticalMergeStage::finalizeVerticalMergeForAllColumns
         };

@@ -307,11 +307,14 @@ public:
     }
 
     /// Replaces the finalized file with its `rewriteRowsSources` rewrite; returns the number of row sources written without the skip flag.
-    size_t rewrite(std::vector<QueryPipeline> row_exists_per_part, TemporaryDataBuffer * ttl_kept_rows)
+    size_t rewrite(
+        std::vector<QueryPipeline> row_exists_per_part,
+        TemporaryDataBuffer * ttl_kept_rows,
+        const MergeTask::GlobalRuntimeContext & global_ctx)
     {
         auto rewritten = std::make_unique<TemporaryDataBuffer>(temporary_data_on_disk);
-        const size_t num_kept_row_sources
-            = rewriteRowsSources(*getTemporaryFileForReading(FILE_ID), *rewritten, std::move(row_exists_per_part), ttl_kept_rows);
+        const size_t num_kept_row_sources = rewriteRowsSources(
+            *getTemporaryFileForReading(FILE_ID), *rewritten, std::move(row_exists_per_part), ttl_kept_rows, global_ctx);
         final_size = rewritten->finishWriting().uncompressed_size;
         tmp_data_buffer = std::move(rewritten);
         return num_kept_row_sources;
@@ -2007,18 +2010,6 @@ bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
                         "of bytes written to rows_sources file ({}). It is a bug.",
                         sum_input_rows_exact, input_rows_filtered, rows_sources_count);
 
-    /// `rows_sources` gets the rows dropped outside the merging algorithm that the gather stage still reads: lightweight-deleted
-    /// rows when it reads without the mask, and the rows `TTLTransform` drops.
-    if (global_ctx->vertical_lightweight_delete || global_ctx->ttl_kept_rows)
-    {
-        const size_t num_kept_row_sources
-            = ctx->rows_sources_temporary_file->rewrite(createPipelinesForReadingRowExists(), global_ctx->ttl_kept_rows.get());
-        if (num_kept_row_sources != global_ctx->rows_written)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "rows_sources of a vertical merge keeps {} rows after the rewrite, but the horizontal stage wrote {} rows",
-                num_kept_row_sources, global_ctx->rows_written);
-    }
 
     ctx->it_name_and_type = global_ctx->gathering_columns.cbegin();
 
@@ -2030,6 +2021,29 @@ bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
     bool all_parts_on_remote_disks = std::ranges::all_of(global_ctx->future_part->parts, [](const auto & part) { return part->isStoredOnRemoteDisk(); });
     ctx->use_prefetch = all_parts_on_remote_disks && storage_settings[MergeTreeSetting::vertical_merge_remote_filesystem_prefetch];
 
+    return false;
+}
+
+bool MergeTask::VerticalMergeStage::rewriteRowsSourcesForVerticalMerge() const
+{
+    /// No need to execute this part if it is horizontal merge.
+    if (global_ctx->chosen_merge_algorithm != MergeAlgorithm::Vertical)
+        return false;
+
+    /// `rows_sources` gets the rows dropped outside the merging algorithm that the gather stage still reads: lightweight-deleted
+    /// rows when it reads without the mask, and the rows `TTLTransform` drops.
+    if (global_ctx->vertical_lightweight_delete || global_ctx->ttl_kept_rows)
+    {
+        const size_t num_kept_row_sources = ctx->rows_sources_temporary_file->rewrite(
+            createPipelinesForReadingRowExists(), global_ctx->ttl_kept_rows.get(), *global_ctx);
+        if (num_kept_row_sources != global_ctx->rows_written)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "rows_sources of a vertical merge keeps {} rows after the rewrite, but the horizontal stage wrote {} rows",
+                num_kept_row_sources, global_ctx->rows_written);
+    }
+
+    /// After the rewrite: building a column pipeline opens the `rows_sources` file.
     if (ctx->use_prefetch && ctx->it_name_and_type != global_ctx->gathering_columns.end())
         ctx->prepared_pipeline = createPipelineForReadingOneColumn(ctx->it_name_and_type->name);
 

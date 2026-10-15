@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/rewriteRowsSources.h>
 
 #include <Columns/ColumnsNumber.h>
+#include <Core/Defines.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -67,7 +68,11 @@ private:
 }
 
 size_t rewriteRowsSources(
-    ReadBuffer & in, WriteBuffer & out, std::vector<QueryPipeline> row_exists_per_part, TemporaryDataBuffer * ttl_kept_rows)
+    ReadBuffer & in,
+    WriteBuffer & out,
+    std::vector<QueryPipeline> row_exists_per_part,
+    TemporaryDataBuffer * ttl_kept_rows,
+    const MergeTask::GlobalRuntimeContext & global_ctx)
 {
     const auto ttl_kept_rows_in = ttl_kept_rows ? ttl_kept_rows->read() : nullptr;
 
@@ -76,12 +81,19 @@ size_t rewriteRowsSources(
         parts.push_back(std::make_unique<PartRowExists>(std::move(pipeline)));
     size_t num_kept_row_sources = 0;
 
+    auto write_row_source = [&](RowSourcePart row_source)
+    {
+        if (out.count() % DEFAULT_BLOCK_SIZE == 0)
+            global_ctx.checkOperationIsNotCanceled();
+        writeBinary(row_source.data, out);
+    };
+
     /// Writes a skipped row source for each dropped row of the part from its cursor on, until the next kept row.
     auto write_dropped_input_rows = [&](size_t part_index)
     {
         auto & part = *parts[part_index];
         for (; part.hasRow() && !part.rowExists(); part.nextRow())
-            writeBinary(RowSourcePart(part_index, /*skip_flag=*/ true).data, out);
+            write_row_source(RowSourcePart(part_index, /*skip_flag=*/ true));
     };
 
     while (!in.eof())
@@ -115,7 +127,7 @@ size_t rewriteRowsSources(
         }
 
         num_kept_row_sources += !row_source.getSkipFlag();
-        writeBinary(row_source.data, out);
+        write_row_source(row_source);
     }
 
     for (size_t part_index = 0; part_index < parts.size(); ++part_index)
