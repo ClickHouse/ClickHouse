@@ -83,6 +83,12 @@ ${CLICKHOUSE_CLIENT} --query "SELECT * FROM url('http://leakuser:${SIC_SECRET}@$
 ${CLICKHOUSE_CLIENT} --query "SELECT source FROM system.schema_inference_cache WHERE storage = 'URL'" \
     | assert_shape "schema_inference_cache" "$SIC_SECRET" "[HIDDEN]@${CLICKHOUSE_HOST}"
 
+# 4b. When schema inference fails, the source URL is appended to the error as "(in file/uri ...)", and it
+#     must be masked there too. The "Ok." body of /ping is not JSON, so inferring JSONEachRow fails.
+SIE_SECRET="siepwprobe${CLICKHOUSE_TEST_UNIQUE_NAME}"
+${CLICKHOUSE_CLIENT} --query "DESC url('http://leakuser:${SIE_SECRET}@${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/ping', 'JSONEachRow')" 2>&1 \
+    | grep -F 'in file/uri' | assert_shape "schema_inference_error" "$SIE_SECRET" "(in file/uri http://[HIDDEN]@${CLICKHOUSE_HOST}"
+
 # 5. A header value is never decoded as a credential. An 'Authorization: Basic <payload>' whose payload
 #    is not valid base64 (here supplied through headers()) must reach the endpoint verbatim, not fail
 #    while the request is inspected for secrets to scrub. /ping needs no auth and answers "Ok.".
