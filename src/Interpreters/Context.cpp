@@ -2837,8 +2837,10 @@ void Context::setParentSchedulingGroup(QuerySchedulingGroupPtr group)
 
 void Context::checkSchedulingSettingsOfQueryPart(const SettingsChanges & changes, const std::vector<String> & reset_settings) const
 {
-    if (!std::ranges::any_of(changes, [](const SettingChange & change) { return isQuerySchedulingSetting(change.name); })
-        && !std::ranges::any_of(reset_settings, [](const String & name) { return isQuerySchedulingSetting(name); }))
+    /// A settings profile can set any of them too.
+    auto may_change_scheduling = [](std::string_view name) { return isQuerySchedulingSetting(name) || name == "profile"; };
+    if (!std::ranges::any_of(changes, [&](const SettingChange & change) { return may_change_scheduling(change.name); })
+        && !std::ranges::any_of(reset_settings, [&](const String & name) { return may_change_scheduling(name); }))
         return;
 
     QuerySchedulingGroupPtr parent;
