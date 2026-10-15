@@ -6,8 +6,10 @@
 #include <QueryPipeline/SizeLimits.h>
 #include <Interpreters/Context_fwd.h>
 #include <Columns/IColumn_fwd.h>
+#include <DataTypes/IDataType_fwd.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Processors/QueryPlan/ExchangeLookup.h>
+#include <Processors/QueryPlan/RuntimeFilterGeometry.h>
 #include <Parsers/IAST_fwd.h>
 
 #include <functional>
@@ -93,6 +95,11 @@ struct ExplainPlanOptions
     /// Collect per-processor work intervals during execution to report per-step and per-branch wall time.
     /// Gives access to more elaborative time metrics, affects the performance of a query
     bool time = false;
+    /// When set, each step is annotated with the hash of the plan node it belongs to. Nothing in a
+    /// plan carries these - they come from `calculateHashTableCacheKeys` - so a caller holding them
+    /// can hand them over and have the tree `EXPLAIN` already prints do the laying out. Keyed by
+    /// step rather than by node so this header does not have to know about `QueryPlan::Node`.
+    const std::unordered_map<const IQueryPlanStep *, UInt64> * step_hashes = nullptr;
 
     SettingsChanges toSettingsChanges() const;
 };
@@ -362,6 +369,17 @@ struct QueryPlanParameters
     std::unordered_map<String, Field> parameters;
 };
 
+/// One transported runtime filter this task receives: the executor reads the filter from `stream`
+/// (the broadcast of the merge root) and registers it under `filter_key` in the task's filter lookup.
+struct RuntimeFilterReceiveDescriptor
+{
+    String filter_key;
+    String filter_name;
+    DataTypePtr key_column_type;
+    RuntimeFilterGeometry geometry;
+    ExchangeStreamId stream;
+};
+
 /// Represents a single local task in a distributed query plan
 struct DistributedQueryTask
 {
@@ -369,6 +387,7 @@ struct DistributedQueryTask
     QueryPlanParameters parameters;
     std::vector<ExchangeStreamId> input_exchange_streams;
     std::vector<ExchangeStreamId> output_exchange_streams;
+    std::vector<RuntimeFilterReceiveDescriptor> runtime_filter_descriptors;
 };
 
 /// A group of tasks with the same plan fragment and differenet parameters
@@ -377,6 +396,10 @@ struct DistributedQueryStage
 {
     QueryPlan query_plan_fragment;   /// Common for all tasks
     std::vector<DistributedQueryTask> tasks;   /// Individual set of parameter values for each task
+
+    /// The stage only merges and sends a runtime filter (an `rf_merge_*` stage); it produces no
+    /// query data. See `waitsForFilterOnlyStages` for whether an executor waits for it.
+    bool filter_only = false;
 };
 
 /// Represents a graph of stages
