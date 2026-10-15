@@ -112,3 +112,23 @@ def test_replicated_merge_tree_ignores_the_flag(start_cluster):
         assert node1.query("SELECT uuid FROM system.tables WHERE name = 't_replicated'").strip() != uuid_before
     finally:
         node1.query("DROP TABLE IF EXISTS t_replicated SYNC")
+
+
+def test_log_family_keeps_the_normal_uuid_path(start_cluster):
+    # `storage_policy` is a builtin setting of the `Log` family too, but those engines keep no data on a storage policy
+    # and never take the metadata-only data-skip path. They keep their ordinary backup and restore behavior, which
+    # includes giving a restored copy a new UUID: preserving the source's would collide with the table it was taken from.
+    policy = "policy_s3_plain_backup_metadata_only"
+    node1.query(f"CREATE TABLE t_log (key Int) ENGINE = Log SETTINGS storage_policy = '{policy}'")
+    try:
+        backup_destination = f"S3('http://minio1:9001/root/data/backups/{uuid.uuid4().hex}', 'minio', '{minio_secret_key}')"
+        node1.query(f"BACKUP TABLE t_log TO {backup_destination}")
+        # The source is left in place on purpose: a preserved UUID is refused as already taken.
+        node1.query(f"RESTORE TABLE t_log AS t_log_copy FROM {backup_destination} SETTINGS structure_only = 1")
+        distinct_uuids = node1.query(
+            "SELECT countDistinct(uuid) FROM system.tables WHERE database = 'default' AND name IN ('t_log', 't_log_copy')"
+        ).strip()
+        assert distinct_uuids == "2", distinct_uuids
+    finally:
+        node1.query("DROP TABLE IF EXISTS t_log SYNC")
+        node1.query("DROP TABLE IF EXISTS t_log_copy SYNC")

@@ -11,6 +11,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageProxy.h>
@@ -240,17 +241,20 @@ bool isCreatedOnBackupMetadataOnlyStoragePolicy(const ASTCreateQuery & create_qu
     if (!policy_name)
         return false;
 
-    /// Only the engines with the setting keep their data on a storage policy. An unknown engine is reported by `CREATE`.
+    /// Only an engine of the `MergeTree` family keeps its data on a storage policy, see
+    /// `isDataOnBackupMetadataOnlyStoragePolicy`. `storage_policy` is a builtin setting of the `Log` family too, so what
+    /// identifies the family is the settings the engine declares, not that it declares this one. An unknown engine is
+    /// reported by `CREATE`.
     const auto & storages = StorageFactory::instance().getAllStorages();
     auto it = storages.find(storage->engine->name);
-    if (it == storages.end() || !it->second.features.has_builtin_setting_fn || !it->second.features.has_builtin_setting_fn("storage_policy"))
+    if (it == storages.end() || it->second.features.has_builtin_setting_fn != MergeTreeSettings::hasBuiltin)
         return false;
 
     if (!context->getStoragePolicy(policy_name->safeGet<String>())->isBackupMetadataOnly())
         return false;
 
-    /// Only the plain `MergeTree` family reopens the parts it finds on the storage, see `isDataOnBackupMetadataOnlyStoragePolicy`.
-    /// The replicated and shared engines are registered with `supports_replication`.
+    /// Only the plain family reopens the parts it finds on the storage: the replicated and shared engines are
+    /// registered with `supports_replication`.
     return !it->second.features.supports_replication;
 }
 
