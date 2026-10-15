@@ -489,13 +489,13 @@ Introducido en: v1.1.0
 Devuelve una cadena que contiene la representación hexadecimal del argumento
 según la siguiente lógica para distintos tipos:
 
-| Tipo                       | Descripción                                                                                                                                                                                                                                                                                                                               |
-| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Tipo                       | Descripción                                                                                                                                                                                                                                                                                                                                     |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `(U)Int*`                  | Imprime dígitos hexadecimales (&quot;nibbles&quot;) del más significativo al menos significativo (orden big-endian o de &quot;legible para humanos&quot;). Comienza con el byte distinto de cero más significativo (se omiten los bytes cero iniciales), pero siempre imprime ambos dígitos de cada byte, incluso si el dígito inicial es cero. |
-| `Date` and `DateTime`      | Se formatea como los enteros correspondientes (el número de días desde la época para Date y el valor de la marca de tiempo Unix para DateTime).                                                                                                                                                                                           |
-| `String` and `FixedString` | Todos los bytes se codifican simplemente como dos dígitos hexadecimales. Los bytes cero no se omiten.                                                                                                                                                                                                                                     |
-| `Float*` and `Decimal`     | Se codifican según su representación en memoria. ClickHouse representa internamente los valores siempre en little endian, por lo tanto se codifican de esa manera. Los bytes cero iniciales y finales no se omiten.                                                                                                                       |
-| `UUID`                     | Se codifica como una cadena en orden big-endian.                                                                                                                                                                                                                                                                                          |
+| `Date` and `DateTime`      | Se formatea como los enteros correspondientes (el número de días desde la época para Date y el valor de la marca de tiempo Unix para DateTime).                                                                                                                                                                                                 |
+| `String` and `FixedString` | Todos los bytes se codifican simplemente como dos dígitos hexadecimales. Los bytes cero no se omiten.                                                                                                                                                                                                                                           |
+| `Float*` and `Decimal`     | Se codifican según su representación en memoria. ClickHouse representa internamente los valores siempre en little endian, por lo tanto se codifican de esa manera. Los bytes cero iniciales y finales no se omiten.                                                                                                                             |
+| `UUID`                     | Se codifica como una cadena en orden big-endian.                                                                                                                                                                                                                                                                                                |
 
 La función usa letras mayúsculas `A-F` y no utiliza ningún prefijo (como `0x`) ni sufijo (como `h`).
 
@@ -504,6 +504,8 @@ La función usa letras mayúsculas `A-F` y no utiliza ningún prefijo (como `0x`
 ```sql
 hex(arg)
 ```
+
+**Alias**: `to_hex`
 
 **Argumentos**
 
@@ -1151,6 +1153,8 @@ En el caso de un argumento numérico, `unhex()` no realiza la operación inversa
 ```sql
 unhex(arg)
 ```
+
+**Alias**: `from_hex`
 
 **Argumentos**
 

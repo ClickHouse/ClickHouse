@@ -18,6 +18,14 @@ import { CloudNotSupportedBadge } from "/snippets/ja/components/CloudNotSupporte
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />LOGICAL&#95;ERROR 例外が発生すると、サーバーをクラッシュさせます。上級者向けです。
 
+## ai_function_allow_sql_named_collections {#ai_function_allow_sql_named_collections}
+
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
+
+AI関数 (`aiGenerate`、`aiEmbed`、`aiSimilarity` など) で、`CREATE NAMED COLLECTION` により作成された名前付きコレクションを使用できるようにします。
+無効にすると、AI関数ではサーバー設定ファイルで定義された名前付きコレクションのみが使用可能となり、それ以外のコレクションを使用すると例外がスローされます。
+これは、`credentials` パラメータと、`ai_function_text_default_credentials` および `ai_function_embedding_default_credentials` 設定の両方に適用されます。
+
 ## allowed_disks_for_table_engines {#allowed_disks_for_table_engines}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Iceberg で使用できるディスクの一覧

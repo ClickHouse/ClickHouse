@@ -1178,6 +1178,10 @@ DDLWorker が ZooKeeper にプッシュした DDL エントリの最大 ID。
 
 メモリ予約に対する保留中の増加リクエストの総バイト数
 
+### MemoryReservationReclaimable {#memoryreservationreclaimable}
+
+回収可能なメモリの合計量
+
 ### MemoryTracking {#memorytracking}
 
 サーバーが追跡しているメモリの総量 (バイト単位) 。デフォルトでは、バックグララウンドメモリワーカーが、プロセスの実際のメモリ使用量を外部から測定した結果に基づいて、ティックごとにこの値を補正します (`memory_worker_correct_memory_tracker` サーバー設定を参照) 。そのため、この値は割り当ての単純な合計ではなく、測定された使用量を反映します。補正を適用していない値については、`MemoryTrackingUncorrected` を参照してください。

@@ -350,6 +350,8 @@ SELECT accurateCastOrDefault('abc', 'UInt32')
 
 이 함수는 [`accurateCast`](#accurateCast)의 안전성과 안정적인 오류 처리를 결합합니다.
 
+Trino, Spark, Snowflake, SQL Server의 SQL 방언(SQL dialect)에서 사용하는 `TRY_CAST(x AS T)` 구문은 `accurateCastOrNull(x, 'T')`와 동일합니다.
+
 **구문**
 
 ```sql

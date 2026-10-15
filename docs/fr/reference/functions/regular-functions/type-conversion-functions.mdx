@@ -343,12 +343,14 @@ SELECT accurateCastOrDefault('abc', 'UInt32')
 
 ## accurateCastOrNull {#accurateCastOrNull}
 
-Introduit dans : v1.1.0
+Introduit dans : v1.1.0
 
 Convertit une valeur dans un type de données spécifié.
 Comme [`accurateCast`](#accurateCast), mais renvoie `NULL` au lieu de lever une exception si la conversion ne peut pas être effectuée avec précision.
 
 Cette fonction combine la sécurité de [`accurateCast`](#accurateCast) avec une gestion souple des erreurs.
+
+La syntaxe `TRY_CAST(x AS T)`, utilisée dans les dialectes SQL de Trino, Spark, Snowflake et SQL Server, équivaut à `accurateCastOrNull(x, 'T')`.
 
 **Syntaxe**
 

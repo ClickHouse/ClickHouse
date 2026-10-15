@@ -34,8 +34,8 @@ Se respetan las configuraciones de agregación externa (`max_bytes_before_extern
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "nueva configuración. Habilita el volcado adaptativo de datos en memoria al almacenamiento externo."}]}]} />
 
-Hace que el procesador vuelque datos al almacenamiento externo de forma adaptativa. Actualmente, se admiten los hash joins que pueden volcar datos, tanto
-`grace_hash` como la vía adaptativa `hash` / `parallel_hash`.
+Vuelca de forma adaptativa al almacenamiento externo los procesadores elegibles de agregación, ordenación, `DISTINCT` y unión hash cuando la consulta está bajo presión de memoria.
+Entre las uniones hash compatibles se incluyen `grace_hash` y la vía adaptativa `hash` / `parallel_hash`.
 
 ## enable_add_distinct_to_in_subqueries {#enable_add_distinct_to_in_subqueries}
 
@@ -444,6 +444,16 @@ Todos los servidores que participan en una consulta distribuida deben tener el m
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.10"},{"label": "1"},{"label": "Nueva configuración"}]}]} />
 
 Si es true, los datos pueden parsearse directamente en columnas con serialización personalizada (p. ej., Sparse) según las pistas de serialización obtenidas de la tabla.
+
+## enable_pco_codec {#enable_pco_codec}
+
+<BetaBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nueva configuración para habilitar el códec de compresión `PCO`, en fase Beta."}]}]} />
+
+Habilita el códec de compresión `PCO`.
 
 ## enable_producing_buckets_out_of_order_in_aggregation {#enable_producing_buckets_out_of_order_in_aggregation}
 

@@ -842,6 +842,8 @@ SELECT mapFromArrays([1, 2, 3], map('a', 1, 'b', 2, 'c', 3))
 mapKeys(map)
 ```
 
+**別名**: `map_keys`
+
 **引数**
 
 * `map` — キーを抽出する対象の Map。[`Map(K, V)`](/ja/reference/data-types/map)
@@ -1163,16 +1165,18 @@ SELECT mapUpdate(map('key1', 0, 'key3', 0), map('key1', 10, 'key2', 10))
 
 導入バージョン: v21.2.0
 
-指定したマップの値を返します。
+指定したMapの値を返します。
 この関数は、設定 [`optimize_functions_to_subcolumns`](/ja/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) を有効にすることで最適化できます。
-この設定を有効にすると、関数はマップ全体ではなく、`values` サブカラムのみを読み取ります。
+この設定を有効にすると、関数はMap全体ではなく、`values` サブカラムのみを読み取ります。
 クエリ `SELECT mapValues(m) FROM table` は `SELECT m.values FROM table` に変換されます。
 
-**Syntax**
+**構文**
 
 ```sql
 mapValues(map)
 ```
+
+**別名**: `map_values`
 
 **引数**
 

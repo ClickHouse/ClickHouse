@@ -73,11 +73,15 @@ Cuántas columnas de argumentos preparadas normalizó el sellado de la agregaci�
 
 ### AdaptiveAggregationSharedTableSpills {#adaptiveaggregationsharedtablespills}
 
-Número de veces que la agregación adaptativa volcó a disco su tabla compartida de vaciado por haber alcanzado el límite de partes bajo presión de memoria.
+Número de veces que la agregación adaptativa volcó a disco su tabla de drenaje compartida bajo presión de memoria, al alcanzar el límite de partes o ante una solicitud explícita de volcado a disco.
 
 ### AdaptiveAggregationSpillBacklogSheds {#adaptiveaggregationspillbacklogsheds}
 
 Cuántas veces la agregación adaptativa descartó el backlog preparado porque un thread del algoritmo baseline —uno que el deshielo devolvió allí o uno que se retiró por sí mismo— estaba a punto de hacer spill mientras aún quedaban registros preparados residentes en memoria.
+
+### AdaptiveAggregationSpillDrains {#adaptiveaggregationspilldrains}
+
+Número de solicitudes de volcado a disco del planificador de memoria que la agregación adaptativa atendió escribiendo en disco registros preparados temporalmente o residuos de vaciado compartidos, en lugar de abandonar la ruta adaptativa.
 
 ### AdaptiveAggregationStagedBytes {#adaptiveaggregationstagedbytes}
 
@@ -342,6 +346,10 @@ Cuántos mensajes se han descartado de text&#95;log porque la cola de logs asín
 ### AsyncLoggingTextLogTotalMessages {#asyncloggingtextlogtotalmessages}
 
 Número de mensajes (aceptados o descartados) que se han enviado a la cola asíncrona de text&#95;log
+
+### AutomaticParallelReplicasDecidedWithoutBuildingPlan {#automaticparallelreplicasdecidedwithoutbuildingplan}
+
+Número de veces que el mecanismo automático de réplicas paralelas decidió no usar réplicas paralelas en un límite recordado de una ejecución anterior, sin construir un plan candidato para estimar su costo
 
 ### AutomaticParallelReplicasProbePlansBuilt {#automaticparallelreplicasprobeplansbuilt}
 
@@ -3450,6 +3458,18 @@ Número total de solicitudes aprobadas de aumento de MemoryReservation
 
 Número total de señales de terminación de reserva de memoria
 
+### MemoryReservationReclaimableBytes {#memoryreservationreclaimablebytes}
+
+Memoria de la consulta que pasó a ser recuperable (susceptible de volcado a disco)
+
+### MemoryReservationSpilledBytes {#memoryreservationspilledbytes}
+
+Cantidad total de memoria volcada a disco
+
+### MemoryReservationSpillingMicroseconds {#memoryreservationspillingmicroseconds}
+
+Tiempo que tarda el volcado a disco
+
 ### MemoryWorkerRun {#memoryworkerrun}
 
 Número de ejecuciones de MemoryWorker en segundo plano
@@ -5633,6 +5653,10 @@ Número de veces que se ha adquirido el bloqueo de partes de datos compartidas p
 ### SharedPartsLockWaitMicroseconds {#sharedpartslockwaitmicroseconds}
 
 Tiempo total invertido en esperar el bloqueo de partes de datos compartidos en tablas MergeTree
+
+### ShortCircuitArgumentsReordered {#shortcircuitargumentsreordered}
+
+Número de bloques en los que la función `and` u `or` evaluó sus argumentos en un orden distinto al de la consulta: un argumento barato antes que uno costoso, o según las estadísticas recopiladas en los bloques anteriores (parámetro de configuración `short_circuit_function_evaluation_reorder_arguments`). No se contabiliza la reordenación de los átomos de la cadena AND en `WHERE` / `HAVING`, que se decide una sola vez cuando `FilterStep` construye su canalización.
 
 ### Llamadas a funciones sleep {#sleepfunctioncalls}
 

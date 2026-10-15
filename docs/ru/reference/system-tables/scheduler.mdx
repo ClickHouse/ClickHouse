@@ -43,13 +43,15 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 * `is_satisfied` ([Nullable(UInt8)](/ru/reference/data-types/nullable)) — Только для узлов ограничений (например, `inflight_limit`). Равно `1`, если все ограничения этого узла выполнены.
 * `inflight_requests` ([Nullable(Int64)](/ru/reference/data-types/nullable)) — Только для узлов `inflight_limit`. Количество запросов ресурсов, извлечённых из очереди этого узла и находящихся в состоянии использования.
 * `inflight_cost` ([Nullable(Int64)](/ru/reference/data-types/nullable)) — Только для узлов `inflight_limit`. Сумма стоимостей (например, в байтах) всех запросов ресурсов, извлечённых из очереди этого узла и находящихся в состоянии использования.
-* `max_requests` ([Nullable(Int64)](/ru/reference/data-types/nullable)) — Только для узлов `inflight_limit`. Верхний предел `inflight&#95;requests`, при котором происходит нарушение ограничения.
+* `max_requests` ([Nullable(Int64)](/ru/reference/data-types/nullable)) — Только для узлов `inflight_limit`. Верхний предел inflight&#95;requests, при котором происходит нарушение ограничения.
 * `max_cost` ([Nullable(Int64)](/ru/reference/data-types/nullable)) — Только для узлов `inflight_limit`. Верхний предел inflight&#95;cost, при превышении которого нарушается ограничение.
 * `max_speed` ([Nullable(Float64)](/ru/reference/data-types/nullable)) — Только для узлов `bandwidth_limit`. Верхний предел пропускной способности в токенах в секунду.
 * `max_burst` ([Nullable(Float64)](/ru/reference/data-types/nullable)) — Только для узлов `bandwidth_limit`. Верхний предел количества токенов, доступных в ограничителе token-bucket.
 * `throttling_us` ([Nullable(Int64)](/ru/reference/data-types/nullable)) — Только для узлов `bandwidth_limit`. Общее количество микросекунд, в течение которых этот узел находился в состоянии ограничения скорости.
 * `tokens` ([Nullable(Float64)](/ru/reference/data-types/nullable)) — Только для узлов `bandwidth_limit`. Количество токенов, доступных в данный момент в ограничителе token-bucket.
 * `allocated` ([Nullable(Int64)](/ru/reference/data-types/nullable)) — Только для узлов с разделением по пространству. Текущий объём ресурса, выделенный в этом узле.
+* `reclaimable` ([Nullable(Int64)](/ru/reference/data-types/nullable)) — Только для узлов с разделением по пространству. Память, доступная для новых запросов на сброс данных на диск в этом узле. Для каждого выделения невыполненные запросы вычитаются из заявленного им объёма освобождаемой памяти, а результат перед суммированием ограничивается снизу нулём.
+* `reclaiming` ([Nullable(Int64)](/ru/reference/data-types/nullable)) — Только для узлов с разделением по пространству. Память, запрошенная для сброса данных на диск, но ещё не завершённая в этом узле, включая запросы, выполнение которых ещё не началось. При завершении списывается запрошенный объём независимо от фактически освобождённого.
 * `allocations` ([Nullable(UInt64)](/ru/reference/data-types/nullable)) — Только для узлов с разделением по пространству. Текущее число активных выделений ресурса в этом узле.
 * `updates` ([Nullable(UInt64)](/ru/reference/data-types/nullable)) — Только для узлов с разделением по пространству. Общее число обновлений, переданных через этот узел.
 * `increases` ([Nullable(UInt64)](/ru/reference/data-types/nullable)) — Только для узлов с разделением по пространству. Общее число запросов на увеличение, одобренных этим узлом.
@@ -58,6 +60,8 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 * `removes` ([Nullable(UInt64)](/ru/reference/data-types/nullable)) — Только для узлов с разделением по пространству. Общее число выделений, удалённых из этого узла.
 * `killers` ([Nullable(UInt64)](/ru/reference/data-types/nullable)) — Только для узлов с разделением по пространству. Общее число вытеснений, инициированных этим узлом в связи с запросами на увеличение.
 * `victims` ([Nullable(UInt64)](/ru/reference/data-types/nullable)) — Только для узлов с разделением по пространству. Общее число выделений, вытесненных из этого узла.
+* `spills` ([Nullable(UInt64)](/ru/reference/data-types/nullable)) — Только для узлов с разделением по пространству. Общее число запросов на сброс данных на диск, отправленных этим узлом из-за превышения его мягкого ограничения памяти.
+* `soft_limit` ([Nullable(Int64)](/ru/reference/data-types/nullable)) — Только для узлов `allocation_limit`. Эффективное мягкое ограничение памяти, при превышении которого освобождаемым выделениям предлагается выполнить сброс данных на диск (меньшее из `max_memory_before_spill` и `max_memory_to_spill_ratio * max_memory`). Значения не ниже жёсткого лимита означают, что сброс данных на диск отключён.
 * `rejects` ([Nullable(UInt64)](/ru/reference/data-types/nullable)) — Только для узлов `allocation_queue`. Общее число выделений ресурса, отклонённых этим узлом.
 * `pending` ([Nullable(UInt64)](/ru/reference/data-types/nullable)) — Только для узлов `allocation_queue`. Текущее число ожидающих выделений ресурса в этом узле.
 

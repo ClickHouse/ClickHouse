@@ -350,6 +350,8 @@ SELECT accurateCastOrDefault('abc', 'UInt32')
 
 この関数は、[`accurateCast`](#accurateCast) の安全性と、適切なエラーハンドリングを兼ね備えています。
 
+Trino、Spark、Snowflake、SQL Server の SQL方言で使われる構文 `TRY_CAST(x AS T)` は、`accurateCastOrNull(x, 'T')` と同等です。
+
 **構文**
 
 ```sql
@@ -359,7 +361,7 @@ accurateCastOrNull(x, T)
 **引数**
 
 * `x` — 変換する値。[`Any`](/ja/reference/data-types/index)
-* `T` — 変換先のデータ型名。[`String`](/ja/reference/data-types/string)
+* `T` — 変換先の型名。[`String`](/ja/reference/data-types/string)
 
 **戻り値**
 
@@ -367,7 +369,7 @@ accurateCastOrNull(x, T)
 
 **例**
 
-**変換が成功する場合**
+**変換に成功した場合**
 
 ```sql title=Query
 SELECT accurateCastOrNull(42, 'String')

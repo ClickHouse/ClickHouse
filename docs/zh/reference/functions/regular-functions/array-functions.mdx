@@ -4040,6 +4040,8 @@ SELECT arraySimilarity(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5
 arraySlice(arr, offset [, length])
 ```
 
+**别名**: `slice`
+
 **参数**
 
 * `arr` — 要切片的数组。[`Array(T)`](/zh/reference/data-types/array) 或 [`QBit`](/zh/reference/data-types/qbit)
@@ -4052,7 +4054,7 @@ arraySlice(arr, offset [, length])
 
 **示例**
 
-**用法示例**
+**使用示例**
 
 ```sql title=Query
 SELECT arraySlice([1, 2, NULL, 4, 5], 2, 3) AS res;
@@ -4401,6 +4403,8 @@ SELECT arrayTranspose([['a', 'b'], ['c', 'd']])
 arrayUnion(arr1, arr2, ..., arrN)
 ```
 
+**别名**：`array_union`
+
 **参数**
 
 * `arrN` — 用于构造新数组的 N 个数组。[`Array(T)`](/zh/reference/data-types/array)
@@ -4560,6 +4564,8 @@ SELECT arrayZip(['a', 'b', 'c'], [5, 2, 1]);
 ```sql
 arrayZipUnaligned(arr1, arr2, ..., arrN)
 ```
+
+**别名**：`zip`
 
 **参数**
 

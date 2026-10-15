@@ -72,11 +72,15 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 
 ### AdaptiveAggregationSharedTableSpills {#adaptiveaggregationsharedtablespills}
 
-アダプティブ集約が、メモリ逼迫下でパーツ数の上限に達したために共有ドレインテーブルを書き出した回数。
+適応型集約が、メモリ逼迫時、パーツ数の上限到達時、または明示的なスピルリクエストの受信時に共有ドレインテーブルを書き出した回数。
 
 ### AdaptiveAggregationSpillBacklogSheds {#adaptiveaggregationspillbacklogsheds}
 
 ステージ済みのレコードがまだ残っている状態で、baseline アルゴリズム上のスレッド (thaw によってそこへ戻されたもの、または自ら退いたもの) がスピルしようとしたため、アダプティブ集約がステージ済みのバックログを破棄した回数。
+
+### AdaptiveAggregationSpillDrains {#adaptiveaggregationspilldrains}
+
+適応型集約が、アダプティブパスから外れずに、ステージングされたレコードまたは共有の排出残余データをディスクに書き込むことで対応した、メモリスケジューラからのスピルリクエストの数。
 
 ### AdaptiveAggregationStagedBytes {#adaptiveaggregationstagedbytes}
 
@@ -341,6 +345,10 @@ syslog の非同期キューに送信されたメッセージ数 (受け入れ�
 ### AsyncLoggingTextLogTotalMessages {#asyncloggingtextlogtotalmessages}
 
 text&#95;log の非同期キューに送信されたメッセージ (受け付けられたもの、または破棄されたもの) の総数
+
+### AutomaticParallelReplicasDecidedWithoutBuildingPlan {#automaticparallelreplicasdecidedwithoutbuildingplan}
+
+自動並列レプリカが、以前の実行時に記憶した境界に基づき、コスト評価用の候補実行計画を構築せずに並列レプリカを使用しないと判断した回数
 
 ### AutomaticParallelReplicasProbePlansBuilt {#automaticparallelreplicasprobeplansbuilt}
 
@@ -3449,6 +3457,18 @@ OvercommitTracker でメモリが解放されるまでの待機に費やされ�
 
 メモリ予約のキルシグナルの総数
 
+### MemoryReservationReclaimableBytes {#memoryreservationreclaimablebytes}
+
+クエリによって回収可能 (スピル可能) になったメモリ量
+
+### MemoryReservationSpilledBytes {#memoryreservationspilledbytes}
+
+ディスクにスピルされたメモリの合計量
+
+### MemoryReservationSpillingMicroseconds {#memoryreservationspillingmicroseconds}
+
+スピルに要した時間
+
 ### MemoryWorkerRun {#memoryworkerrun}
 
 MemoryWorker がバックグラウンドで実行した回数
@@ -5632,6 +5652,10 @@ MergeTree テーブルで共有データパーツのロックが取得された�
 ### SharedPartsLockWaitMicroseconds {#sharedpartslockwaitmicroseconds}
 
 MergeTree テーブルで共有データパーツのロック待機に費やされた合計時間
+
+### ShortCircuitArgumentsReordered {#shortcircuitargumentsreordered}
+
+`and` または `or` 関数が、クエリ内の記述順とは異なる順序で引数を評価したブロックの数です。具体的には、コストの低い引数をコストの高い引数より先に評価した場合や、前のブロックで収集した統計情報に基づいて評価順序を決定した場合 (設定 `short_circuit_function_evaluation_reorder_arguments`) が該当します。`WHERE` / `HAVING` における AND チェーンの要素の並べ替えは、`FilterStep` がパイプラインを構築する際に一度だけ決定されるものであり、カウントの対象外です。
 
 ### SleepFunctionCalls {#sleepfunctioncalls}
 

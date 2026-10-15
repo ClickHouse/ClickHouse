@@ -18,6 +18,14 @@ import { CloudNotSupportedBadge } from "/snippets/ko/components/CloudNotSupporte
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />LOGICAL&#95;ERROR 예외가 발생하면 server를 크래시합니다. 전문가만 사용하십시오.
 
+## ai_function_allow_sql_named_collections {#ai_function_allow_sql_named_collections}
+
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
+
+AI 함수(예: `aiGenerate`, `aiEmbed`, `aiSimilarity`)에서 `CREATE NAMED COLLECTION`으로 생성한 이름이 지정된 컬렉션(named collections)을 사용할 수 있도록 허용합니다.
+비활성화하면 AI 함수는 서버 설정 파일에 정의된 이름이 지정된 컬렉션만 허용하며, 그 외의 컬렉션을 사용하면 예외가 발생합니다.
+이 설정은 `credentials` 매개변수뿐만 아니라 `ai_function_text_default_credentials` 및 `ai_function_embedding_default_credentials` 설정에도 적용됩니다.
+
 ## allowed_disks_for_table_engines {#allowed_disks_for_table_engines}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Iceberg에서 사용할 수 있도록 허용된 디스크 목록

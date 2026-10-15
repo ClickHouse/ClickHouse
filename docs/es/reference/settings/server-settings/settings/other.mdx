@@ -18,6 +18,14 @@ Estos ajustes configuran el servidor de ClickHouse y se generan automáticamente
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />Hace que el servidor falle ante excepciones LOGICAL&#95;ERROR. Solo para expertos.
 
+## ai_function_allow_sql_named_collections {#ai_function_allow_sql_named_collections}
+
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
+
+Permite que las funciones de IA (como `aiGenerate`, `aiEmbed`, `aiSimilarity`) utilicen colecciones con nombre creadas con `CREATE NAMED COLLECTION`.
+Si está deshabilitado, las funciones de IA solo aceptan colecciones con nombre definidas en el archivo de configuración del servidor, y usar cualquier otra colección lanza una excepción.
+Esto se aplica tanto al parámetro `credentials` como a los ajustes `ai_function_text_default_credentials` y `ai_function_embedding_default_credentials`.
+
 ## allowed_disks_for_table_engines {#allowed_disks_for_table_engines}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Lista de discos permitidos para su uso con Iceberg

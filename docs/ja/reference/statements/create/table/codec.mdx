@@ -134,6 +134,22 @@ ClickHouse は、汎用コーデックと特殊用途のコーデックをサポ
   このコーデックはベータ版であり、使用するには `SET enable_alp_codec = 1` が必要です。
 </Note>
 
+### PCO {#pco}
+
+<BetaBadge />
+
+`PCO(level)` — [pcodec](https://github.com/pcodec/pcodec) ライブラリを使用した、固定幅の数値の数列向けの可逆圧縮です。1、2、4、または 8 バイトのすべての数値型 (`Int8`..`Int64`、`UInt8`..`UInt64`、`Float32`、`Float64`、およびそれらを基盤とする `Date`、`DateTime`、`Decimal32`、`Decimal64`、`IPv4`、`Enum` などの型) に適用できます。`Decimal128`/`Decimal256` および数値以外の型はサポートされていません。
+
+pcodec は数値の近似的な構造 (「モード」。例: 近似的な共通乗数) を特定し、各値を「latent」に分割したうえで、差分エンコーディングとインターリーブ方式の [tANS](https://en.wikipedia.org/wiki/Asymmetric_numeral_systems) エントロピー符号化器で圧縮します。分布が滑らか、多峰性、または高エントロピーである数値カラム (測定値、所要時間、カウンター、識別子など) では、`Gorilla`/`FPC`/`ZSTD`/`ALP` よりも高い圧縮率が得られることが多くあります。一方、ランレングスやマッチングに基づく処理経路を持たないため、定数カラムや低カーディナリティのカラムでは圧縮率が劣ります。エンコードは `ZSTD` より数倍遅く、デコード速度はワークロードによって異なります。
+
+任意の `level` 引数で圧縮レベルを 0 から 12 の範囲で指定します (デフォルトは 8) 。ブロックが圧縮できない場合 (圧縮不可能なデータなど) は非圧縮のまま保存されるため、このコーデックによってデータが膨張しても、ブロックあたりごくわずかな定数分にとどまります。
+
+各圧縮ブロックのペイロードはスタンドアロンの [`.pco`](https://github.com/pcodec/pcodec) ストリームであり、pcodec のリファレンス実装と互換性があります。
+
+<Note>
+  このコーデックはベータ版であり、使用するには `SET enable_pco_codec = 1` を実行する必要があります。カラムの型の情報が必要なため、カラム単位でのみ指定できます。型指定のない圧縮設定 (`marks_compression_codec`、`primary_key_compression_codec`、`default_compression_codec`) や `TTL ... RECOMPRESS` では使用できません。
+</Note>
+
 ### FPC {#fpc}
 
 `FPC(level, float_size)` - 数列内の次の浮動小数点値を、2 つの予測器のうち精度の高い方を使って繰り返し予測し、実際の値と予測値の XOR を取り、その結果を先行ゼロ圧縮します。Gorilla と同様に、変化の緩やかな浮動小数点値の系列を保存する場合に効率的です。64 ビット値 (double) では FPC は Gorilla より高速ですが、32 ビット値では性能が異なる場合があります。指定可能な `level` の値は 1～28 で、デフォルト値は 12 です。指定可能な `float_size` の値は 4、8 で、型が Float の場合、デフォルト値は `sizeof(type)` です。それ以外の場合は 4 です。アルゴリズムの詳細については、[High Throughput Compression of Double-Precision Floating-Point Data](https://userweb.cs.txstate.edu/~burtscher/papers/dcc07a.pdf) を参照してください。

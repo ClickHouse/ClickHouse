@@ -73,11 +73,15 @@ Nombre de colonnes d&#39;arguments en attente que le scellement de l&#39;agréga
 
 ### AdaptiveAggregationSharedTableSpills {#adaptiveaggregationsharedtablespills}
 
-Nombre de fois où l&#39;agrégation adaptative a déversé sa table de vidange partagée sur disque parce qu&#39;elle avait atteint la limite de partie de données sous pression mémoire.
+Nombre de fois où l&#39;agrégation adaptative a déversé sa table de vidange partagée sur disque sous pression mémoire, en atteignant la limite de partie de données ou sur requête explicite de déversement.
 
 ### AdaptiveAggregationSpillBacklogSheds {#adaptiveaggregationspillbacklogsheds}
 
 Nombre de fois où l&#39;agrégation adaptative a abandonné l&#39;arriéré en attente parce qu&#39;un thread exécutant l&#39;algorithme de référence — soit un thread que le dégel y avait replacé, soit un thread qui s&#39;était retiré de lui-même — était sur le point d&#39;effectuer un déversement alors que des enregistrements en attente étaient encore présents en mémoire.
+
+### AdaptiveAggregationSpillDrains {#adaptiveaggregationspilldrains}
+
+Nombre de requêtes de déversement émises par le planificateur de mémoire que l&#39;agrégation adaptative a traitées en écrivant sur disque les enregistrements en attente ou le résidu de vidage partagé, plutôt que de quitter le chemin adaptatif.
 
 ### AdaptiveAggregationStagedBytes {#adaptiveaggregationstagedbytes}
 
@@ -342,6 +346,10 @@ Nombre de messages perdus dans `text_log` parce que la file d’attente des jour
 ### AsyncLoggingTextLogTotalMessages {#asyncloggingtextlogtotalmessages}
 
 Nombre de messages (acceptés ou rejetés) envoyés vers la file d&#39;attente asynchrone de text&#95;log
+
+### AutomaticParallelReplicasDecidedWithoutBuildingPlan {#automaticparallelreplicasdecidedwithoutbuildingplan}
+
+Nombre de fois où le mécanisme automatique de répliques parallèles a choisi de ne pas utiliser les répliques parallèles à une frontière mémorisée lors d&#39;une exécution précédente, sans construire de plan candidat pour en évaluer le coût
 
 ### AutomaticParallelReplicasProbePlansBuilt {#automaticparallelreplicasprobeplansbuilt}
 
@@ -3450,6 +3458,18 @@ Nombre total de demandes approuvées d’augmentation de réservation de mémoir
 
 Nombre total de signaux d’arrêt forcé de réservation de mémoire
 
+### MemoryReservationReclaimableBytes {#memoryreservationreclaimablebytes}
+
+Mémoire devenue récupérable (déversable sur disque) par la requête
+
+### MemoryReservationSpilledBytes {#memoryreservationspilledbytes}
+
+Quantité totale de mémoire déversée sur le disque
+
+### MemoryReservationSpillingMicroseconds {#memoryreservationspillingmicroseconds}
+
+Temps passé à déverser les données sur le disque
+
 ### MemoryWorkerRun {#memoryworkerrun}
 
 Nombre d’exécutions de MemoryWorker en arrière-plan
@@ -5633,6 +5653,10 @@ Nombre d&#39;acquisitions du verrou des data parts partagées pour les tables Me
 ### SharedPartsLockWaitMicroseconds {#sharedpartslockwaitmicroseconds}
 
 Temps total passé en attente du verrou des data parts partagées dans les tables MergeTree
+
+### ShortCircuitArgumentsReordered {#shortcircuitargumentsreordered}
+
+Nombre de blocs sur lesquels la fonction `and` ou `or` a évalué ses arguments dans un ordre différent de celui de la requête : un argument peu coûteux avant un argument coûteux, ou selon les statistiques collectées sur les blocs précédents (paramètre `short_circuit_function_evaluation_reorder_arguments`). La réorganisation des atomes de la chaîne AND dans `WHERE` / `HAVING`, décidée une seule fois au moment où `FilterStep` construit son pipeline, n&#39;est pas comptabilisée.
 
 ### SleepFunctionCalls {#sleepfunctioncalls}
 

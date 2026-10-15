@@ -134,6 +134,22 @@ El códec acepta un argumento de variante opcional:
   Este códec está en beta y requiere `SET enable_alp_codec = 1` para poder utilizarse.
 </Note>
 
+### PCO {#pco}
+
+<BetaBadge />
+
+`PCO(level)` — Compresión sin pérdida para secuencias de números de ancho fijo, mediante la biblioteca [pcodec](https://github.com/pcodec/pcodec). Se aplica a todos los tipos numéricos de 1, 2, 4 u 8 bytes (`Int8`..`Int64`, `UInt8`..`UInt64`, `Float32`, `Float64` y los tipos basados en ellos, como `Date`, `DateTime`, `Decimal32`, `Decimal64`, `IPv4` y `Enum`). `Decimal128`/`Decimal256` y los tipos no numéricos no son compatibles.
+
+pcodec identifica una estructura aproximada de los números (un «modo», p. ej., un multiplicador común aproximado) y divide cada valor en «latentes», que luego comprime con codificación delta y un codificador de entropía [tANS](https://en.wikipedia.org/wiki/Asymmetric_numeral_systems) entrelazado. En columnas numéricas con distribuciones suaves, multimodales o de alta entropía (mediciones, tiempos, contadores, identificadores), suele comprimir mejor que `Gorilla`/`FPC`/`ZSTD`/`ALP`; al no disponer de un mecanismo basado en run-length ni en coincidencias, las columnas constantes o de baja cardinalidad se comprimen peor. La codificación es varias veces más lenta que con `ZSTD`; la velocidad de decodificación depende del workload.
+
+El argumento opcional `level` establece el nivel de compresión, de 0 a 12; el valor predeterminado es 8. Si un bloque no se puede comprimir (p. ej., con datos incompresibles), se almacena sin comprimir, de modo que el códec nunca aumenta el tamaño de los datos más allá de una pequeña cantidad constante por bloque.
+
+La carga útil de cada bloque de compresión es un stream [`.pco`](https://github.com/pcodec/pcodec) independiente, compatible con la implementación de referencia de pcodec.
+
+<Note>
+  Este códec está en fase Beta y, para usarlo, es necesario ejecutar `SET enable_pco_codec = 1`. Como necesita conocer el tipo de columna, solo puede especificarse a nivel de columna; no puede usarse en los ajustes de compresión sin tipo (`marks_compression_codec`, `primary_key_compression_codec`, `default_compression_codec`) ni en `TTL ... RECOMPRESS`.
+</Note>
+
 ### FPC {#fpc}
 
 `FPC(level, float_size)` - Predice repetidamente el siguiente valor de coma flotante de la secuencia usando el mejor de dos predictores; a continuación, aplica XOR entre el valor real y el predicho y comprime el resultado mediante ceros iniciales. Al igual que Gorilla, es eficiente para almacenar una serie de valores de coma flotante que cambian lentamente. Para valores de 64 bits (double), FPC es más rápido que Gorilla; para valores de 32 bits, el rendimiento puede variar. Valores posibles de `level`: 1-28; el valor predeterminado es 12.  Valores posibles de `float_size`: 4, 8; el valor predeterminado es `sizeof(type)` si el tipo es Float. En todos los demás casos, es 4. Para obtener una descripción detallada del algoritmo, consulte [High Throughput Compression of Double-Precision Floating-Point Data](https://userweb.cs.txstate.edu/~burtscher/papers/dcc07a.pdf).

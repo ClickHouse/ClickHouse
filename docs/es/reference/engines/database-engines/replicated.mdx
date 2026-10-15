@@ -155,6 +155,10 @@ node2 :) SELECT materialize(hostName()) AS host, groupArray(n) FROM r.d GROUP BY
 
 Se admiten los siguientes ajustes:
 
+<Note>
+  Los ajustes `default_replica_path`, `default_replica_shard_name` y `default_replica_name` se introdujeron en ClickHouse 25.10. En versiones anteriores, estos ajustes no se reconocen y, si se configuran, se produce el error `Code: 115. DB::Exception: Unknown setting '<name>': in DatabaseReplicated config`.
+</Note>
+
 | Setting                                                                      | Default                        | Description                                                                                                                                                                                                                                                                                                                                                                |
 | ---------------------------------------------------------------------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `max_broken_tables_ratio`                                                    | 1                              | No recuperar automáticamente la réplica si la proporción de tablas obsoletas respecto del total de tablas es mayor                                                                                                                                                                                                                                                         |

@@ -677,6 +677,8 @@ Float32、Float64、または BFloat16 の引数が無限大でも `NaN` でも�
 isFinite(x)
 ```
 
+**別名**: `is_finite`
+
 **引数**
 
 * `x` — 有限かどうかを判定する数値。[`Float*`](/ja/reference/data-types/float) または [`BFloat16`](/ja/reference/data-types/float)
@@ -710,6 +712,8 @@ Float32 または Float64、あるいは BFloat16 の引数が無限大の場合
 isInfinite(x)
 ```
 
+**別名**: `is_infinite`
+
 **引数**
 
 * `x` — 無限大かどうかを判定する数値。[`Float*`](/ja/reference/data-types/float) または [`BFloat16`](/ja/reference/data-types/float)
@@ -741,6 +745,8 @@ SELECT isInfinite(inf), isInfinite(NaN), isInfinite(10)
 ```sql
 isNaN(x)
 ```
+
+**別名**: `is_nan`
 
 **引数**
 

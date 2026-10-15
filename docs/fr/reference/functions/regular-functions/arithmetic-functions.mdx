@@ -666,7 +666,7 @@ SELECT intDivOrZero(0.05, -1)
 
 ## isFinite {#isFinite}
 
-Introduit dans : v1.1.0
+Introduit dans : v1.1.0
 
 Renvoie `1` si l’argument Float32, Float64 ou BFloat16 n’est ni infini ni `NaN`,
 sinon cette fonction renvoie `0`.
@@ -676,6 +676,8 @@ sinon cette fonction renvoie `0`.
 ```sql
 isFinite(x)
 ```
+
+**Alias** : `is_finite`
 
 **Arguments**
 
@@ -710,6 +712,8 @@ Notez que `0` est également renvoyé pour un `NaN`.
 isInfinite(x)
 ```
 
+**Alias** : `is_infinite`
+
 **Arguments**
 
 * `x` — Nombre dont il faut vérifier s’il est infini. [`Float*`](/fr/reference/data-types/float) ou [`BFloat16`](/fr/reference/data-types/float)
@@ -732,7 +736,7 @@ SELECT isInfinite(inf), isInfinite(NaN), isInfinite(10)
 
 ## isNaN {#isNaN}
 
-Introduit dans : v1.1.0
+Introduit dans : v1.1.0
 
 Renvoie `1` si l’argument de type Float32, Float64 ou BFloat16 est `NaN`, sinon `0`.
 
@@ -741,6 +745,8 @@ Renvoie `1` si l’argument de type Float32, Float64 ou BFloat16 est `NaN`, sino
 ```sql
 isNaN(x)
 ```
+
+**Alias** : `is_nan`
 
 **Arguments**
 

@@ -671,14 +671,16 @@ SELECT intDivOrZero(0.05, -1)
 
 أُضيفت في: v1.1.0
 
-تُرجع `1` إذا كانت الوسيطة من النوع Float32 أو Float64 أو BFloat16 غير لانهائية وليست `NaN`،
+تُرجع `1` إذا كانت الوسيطة من النوع Float32 أو Float64 أو BFloat16 غير لا نهائية وليست `NaN`،
 وإلا فستُرجع هذه الدالة `0`.
 
-**البنية**
+**الصيغة**
 
 ```sql
 isFinite(x)
 ```
+
+**الأسماء البديلة**: `is_finite`
 
 **الوسيطات**
 
@@ -686,7 +688,7 @@ isFinite(x)
 
 **القيمة المُعادة**
 
-`1` إذا لم تكن قيمة x غير متناهية ولم تكن `NaN`، وإلا فالقيمة `0`.
+`1` إذا لم تكن قيمة x لا نهائية ولم تكن `NaN`، وإلا فالقيمة `0`.
 
 **أمثلة**
 
@@ -713,7 +715,9 @@ SELECT isFinite(inf)
 isInfinite(x)
 ```
 
-**وسيطات الدالة**
+**الأسماء البديلة**: `is_infinite`
+
+**الوسيطات**
 
 * `x` — العدد المراد التحقق مما إذا كان لا نهائيًا. [`Float*`](/ar/reference/data-types/float) أو [`BFloat16`](/ar/reference/data-types/float)
 
@@ -739,15 +743,17 @@ SELECT isInfinite(inf), isInfinite(NaN), isInfinite(10)
 
 تعيد `1` إذا كانت الوسيطة من النوع Float32 أو Float64 أو BFloat16 تساوي `NaN`، وإلا فتعيد `0`.
 
-**الصياغة**
+**الصيغة**
 
 ```sql
 isNaN(x)
 ```
 
-**الوسائط**
+**الأسماء البديلة**: `is_nan`
 
-* `x` — الوسيط المطلوب التحقق مما إذا كانت قيمته `NaN`. [`Float*`](/ar/reference/data-types/float) أو [`BFloat16`](/ar/reference/data-types/float)
+**الوسيطات**
+
+* `x` — الوسيطة المطلوب التحقق مما إذا كانت قيمتها `NaN`. [`Float*`](/ar/reference/data-types/float) أو [`BFloat16`](/ar/reference/data-types/float)
 
 **القيمة المعادة**
 

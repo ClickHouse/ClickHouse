@@ -1178,6 +1178,10 @@ DDLWorker가 ZooKeeper에 푸시한 최대 DDL 엔트리 ID입니다.
 
 메모리 예약에 대한 미처리 증가 요청 바이트의 총량
 
+### MemoryReservationReclaimable {#memoryreservationreclaimable}
+
+회수 가능한 메모리의 총량
+
 ### MemoryTracking {#memorytracking}
 
 서버가 추적하는 총 메모리 사용량(바이트)입니다. 기본적으로 백그라운드에서 실행되는 메모리 워커는 매 틱마다 프로세스의 실제 메모리 사용량을 외부에서 측정한 값을 기준으로 이 값을 보정합니다(`memory_worker_correct_memory_tracker` 서버 설정 참조). 따라서 이 값은 메모리 할당량을 단순히 합산한 값이 아니라 측정된 사용량을 반영합니다. 보정 전 값은 `MemoryTrackingUncorrected`를 참조하십시오.

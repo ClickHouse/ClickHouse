@@ -73,11 +73,15 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 
 ### AdaptiveAggregationSharedTableSpills {#adaptiveaggregationsharedtablespills}
 
-Сколько раз адаптивная агрегация сбрасывала на диск свою общую таблицу из-за достижения границы части при нехватке памяти.
+Сколько раз адаптивная агрегация сбрасывала на диск свою общую таблицу сброса при нехватке памяти, по достижении границы части или по явному запросу на сброс данных на диск.
 
 ### AdaptiveAggregationSpillBacklogSheds {#adaptiveaggregationspillbacklogsheds}
 
 Сколько раз адаптивная агрегация отбрасывала накопленную очередь отложенных записей из-за того, что поток, работающий по базовому алгоритму, — либо возвращённый туда при «оттаивании», либо перешедший на него самостоятельно — был близок к сбросу данных на диск, тогда как промежуточные записи всё ещё находились в памяти.
+
+### AdaptiveAggregationSpillDrains {#adaptiveaggregationspilldrains}
+
+Количество запросов на сброс данных на диск от планировщика памяти, которые адаптивная агрегация обработала, записав на диск промежуточные записи или общий остаток выгрузки, вместо того чтобы покинуть адаптивный путь выполнения.
 
 ### AdaptiveAggregationStagedBytes {#adaptiveaggregationstagedbytes}
 
@@ -342,6 +346,10 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 ### AsyncLoggingTextLogTotalMessages {#asyncloggingtextlogtotalmessages}
 
 Количество сообщений (принятых или отброшенных), отправленных в асинхронную очередь для text&#95;log
+
+### AutomaticParallelReplicasDecidedWithoutBuildingPlan {#automaticparallelreplicasdecidedwithoutbuildingplan}
+
+Количество случаев, когда механизм автоматических параллельных реплик отказался от использования параллельных реплик на границе, запомненной при одном из предыдущих выполнений, не строя план-кандидат для оценки стоимости
 
 ### AutomaticParallelReplicasProbePlansBuilt {#automaticparallelreplicasprobeplansbuilt}
 
@@ -3450,6 +3458,18 @@ Distributed Cache server event. Время ожидания мьютекса б�
 
 Общее количество сигналов о завершении резервирования памяти
 
+### MemoryReservationReclaimableBytes {#memoryreservationreclaimablebytes}
+
+Объём памяти, который запрос сделал доступным для высвобождения (для сброса данных на диск)
+
+### MemoryReservationSpilledBytes {#memoryreservationspilledbytes}
+
+Общий объём памяти, для которой выполнен сброс данных на диск
+
+### MemoryReservationSpillingMicroseconds {#memoryreservationspillingmicroseconds}
+
+Время, затраченное на сброс данных на диск
+
 ### MemoryWorkerRun {#memoryworkerrun}
 
 Количество запусков MemoryWorker в фоновом режиме
@@ -5633,6 +5653,10 @@ Distributed Cache server event. Время ожидания мьютекса б�
 ### SharedPartsLockWaitMicroseconds {#sharedpartslockwaitmicroseconds}
 
 Общее время ожидания блокировки общих частей данных в таблицах MergeTree
+
+### ShortCircuitArgumentsReordered {#shortcircuitargumentsreordered}
+
+Количество блоков, для которых функция `and` или `or` вычисляла свои аргументы в порядке, отличном от указанного в запросе: дешёвый аргумент раньше тяжёлого либо в соответствии со статистикой, собранной по предыдущим блокам (настройка `short_circuit_function_evaluation_reorder_arguments`). Переупорядочивание атомов цепочки AND в `WHERE` / `HAVING`, которое выполняется однократно при построении конвейера в `FilterStep`, не учитывается.
 
 ### Вызовы функций sleep {#sleepfunctioncalls}
 

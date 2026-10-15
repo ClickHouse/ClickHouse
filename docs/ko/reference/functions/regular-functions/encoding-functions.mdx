@@ -500,6 +500,8 @@ SELECT encodeQuotedPrintable('Café = 3 €') AS encoded
 hex(arg)
 ```
 
+**별칭(Aliases)**: `to_hex`
+
 **인수**
 
 * `arg` — 16진수로 변환할 값입니다. [`String`](/ko/reference/data-types/string) 또는 [`(U)Int*`](/ko/reference/data-types/int-uint) 또는 [`Float*`](/ko/reference/data-types/float) 또는 [`Decimal`](/ko/reference/data-types/decimal) 또는 [`Date`](/ko/reference/data-types/date) 또는 [`DateTime`](/ko/reference/data-types/datetime)
@@ -1142,6 +1144,8 @@ SELECT reinterpretAsUInt64(reverse(unbin('1110'))) AS num
 ```sql
 unhex(arg)
 ```
+
+**별칭(Aliases)**: `from_hex`
 
 **인수**
 

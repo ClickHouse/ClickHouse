@@ -18,6 +18,14 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />يؤدي إلى تعطل الخادم عند حدوث استثناءات LOGICAL&#95;ERROR. للمختصين فقط.
 
+## ai_function_allow_sql_named_collections {#ai_function_allow_sql_named_collections}
+
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
+
+يسمح لدوال الذكاء الاصطناعي (مثل `aiGenerate` و`aiEmbed` و`aiSimilarity`) باستخدام المجموعات المسمّاة المُنشأة عبر `CREATE NAMED COLLECTION`.
+عند تعطيل هذا الإعداد، لا تقبل دوال الذكاء الاصطناعي سوى المجموعات المسمّاة المعرّفة في ملف تهيئة الخادم، ويؤدي استخدام أي مجموعة أخرى إلى إطلاق استثناء.
+وينطبق ذلك على المَعلمة `credentials` وعلى الإعدادين `ai_function_text_default_credentials` و`ai_function_embedding_default_credentials` على حدٍّ سواء.
+
 ## allowed_disks_for_table_engines {#allowed_disks_for_table_engines}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />قائمة الأقراص المسموح بها للاستخدام مع Iceberg

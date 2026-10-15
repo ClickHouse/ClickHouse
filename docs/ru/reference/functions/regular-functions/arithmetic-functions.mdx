@@ -680,6 +680,8 @@ SELECT intDivOrZero(0.05, -1)
 isFinite(x)
 ```
 
+**Псевдонимы**: `is_finite`
+
 **Аргументы**
 
 * `x` — Число для проверки на конечность. [`Float*`](/ru/reference/data-types/float) или [`BFloat16`](/ru/reference/data-types/float)
@@ -713,6 +715,8 @@ SELECT isFinite(inf)
 isInfinite(x)
 ```
 
+**Псевдонимы**: `is_infinite`
+
 **Аргументы**
 
 * `x` — число, которое нужно проверить на бесконечность. [`Float*`](/ru/reference/data-types/float) или [`BFloat16`](/ru/reference/data-types/float)
@@ -744,6 +748,8 @@ SELECT isInfinite(inf), isInfinite(NaN), isInfinite(10)
 ```sql
 isNaN(x)
 ```
+
+**Псевдонимы**: `is_nan`
 
 **Аргументы**
 

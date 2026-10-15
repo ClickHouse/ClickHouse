@@ -4054,6 +4054,8 @@ SELECT arraySimilarity(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5
 arraySlice(arr, offset [, length])
 ```
 
+**Псевдонимы**: `slice`
+
 **Аргументы**
 
 * `arr` — Массив, из которого берётся срез. [`Array(T)`](/ru/reference/data-types/array) или [`QBit`](/ru/reference/data-types/qbit)
@@ -4415,13 +4417,15 @@ SELECT arrayTranspose([['a', 'b'], ['c', 'd']])
 arrayUnion(arr1, arr2, ..., arrN)
 ```
 
+**Псевдонимы**: `array_union`
+
 **Аргументы**
 
 * `arrN` — N массивов, из которых создаётся новый массив. [`Array(T)`](/ru/reference/data-types/array)
 
 **Возвращаемое значение**
 
-Возвращает массив с уникальными элементами из исходных массивов [`Array(T)`](/ru/reference/data-types/array)
+Возвращает массив с различными элементами из исходных массивов [`Array(T)`](/ru/reference/data-types/array)
 
 **Примеры**
 
@@ -4577,13 +4581,15 @@ SELECT arrayZip(['a', 'b', 'c'], [5, 2, 1]);
 arrayZipUnaligned(arr1, arr2, ..., arrN)
 ```
 
+**Псевдонимы**: `zip`
+
 **Аргументы**
 
 * `arr1, arr2, ..., arrN` — N массивов, объединённых в один массив. [`Array(T)`](/ru/reference/data-types/array)
 
 **Возвращаемое значение**
 
-Возвращает массив с элементами из исходных массивов, объединёнными в кортежи. Типы данных в кортеже совпадают с типами входных массивов и идут в том же порядке, в котором передаются массивы. [`Array(T)`](/ru/reference/data-types/array) или [`Tuple(T1, T2, ...)`](/ru/reference/data-types/tuple)
+Возвращает массив с элементами из исходных массивов, сгруппированными в кортежи. Типы данных в кортеже совпадают с типами входных массивов и идут в том же порядке, в котором передаются массивы. [`Array(T)`](/ru/reference/data-types/array) или [`Tuple(T1, T2, ...)`](/ru/reference/data-types/tuple)
 
 **Примеры**
 

@@ -778,6 +778,7 @@
             "es/reference/functions/table-functions/timeSeriesSamples",
             "es/reference/functions/table-functions/timeSeriesSelector",
             "es/reference/functions/table-functions/timeSeriesTags",
+            "es/reference/functions/table-functions/timeSeriesTimeRanges",
             "es/reference/functions/table-functions/url",
             "es/reference/functions/table-functions/urlCluster",
             "es/reference/functions/table-functions/values",

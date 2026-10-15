@@ -608,15 +608,16 @@ ALTER TABLE iceberg_table EXECUTE expire_snapshots(retention_period = '1d', dry_
 
 O comando retorna uma tabela com duas colunas (`metric_name String`, `metric_value Int64`), contendo uma linha por métrica. Os nomes das métricas seguem a [especificação do Iceberg](https://iceberg.apache.org/docs/latest/spark-procedures/#output):
 
-| metric&#95;name                       | Descrição                                                           |
-| ------------------------------------- | ------------------------------------------------------------------- |
-| `deleted_data_files_count`            | Número de arquivos de dados excluídos                               |
-| `deleted_position_delete_files_count` | Número de arquivos de exclusão por posição excluídos                |
-| `deleted_equality_delete_files_count` | Número de arquivos de exclusão por igualdade excluídos              |
-| `deleted_manifest_files_count`        | Número de arquivos de manifesto excluídos                           |
-| `deleted_manifest_lists_count`        | Número de arquivos de lista de manifesto excluídos                  |
-| `deleted_statistics_files_count`      | Número de arquivos de estatísticas excluídos (no momento, sempre 0) |
-| `dry_run`                             | `1` para modo de simulação, `0` para execução normal                |
+| metric&#95;name                       | Descrição                                                                                                                                                    |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `deleted_data_files_count`            | Número de arquivos de dados excluídos                                                                                                                        |
+| `deleted_position_delete_files_count` | Número de arquivos de exclusão por posição excluídos                                                                                                         |
+| `deleted_equality_delete_files_count` | Número de arquivos de exclusão por igualdade excluídos                                                                                                       |
+| `deleted_manifest_files_count`        | Número de arquivos de manifesto excluídos                                                                                                                    |
+| `deleted_manifest_lists_count`        | Número de arquivos de lista de manifesto excluídos                                                                                                           |
+| `deleted_statistics_files_count`      | Número de arquivos de estatísticas excluídos (no momento, sempre 0)                                                                                          |
+| `dry_run`                             | `1` para modo dry-run, `0` para execução normal                                                                                                         |
+| `failed_deletions_count`              | Número de arquivos cuja exclusão retornou um erro. Esses arquivos podem permanecer no armazenamento e ser excluídos posteriormente por `remove_orphan_files` |
 
 O comando executa as seguintes etapas:
 
@@ -625,7 +626,7 @@ O comando executa as seguintes etapas:
 3. Expira os snapshots que não forem retidos pela política nem protegidos pelo limite de timestamp
 4. Calcula quais arquivos estão associados exclusivamente a snapshots expirados
 5. No modo normal: gera novos metadados sem os snapshots expirados
-6. No modo normal: exclui fisicamente listas de manifesto, arquivos de manifesto e arquivos de dados inacessíveis
+6. No modo normal: exclui fisicamente listas de manifesto, arquivos de manifesto e arquivos de dados inacessíveis; se a exclusão de um arquivo retornar um erro, ele é contabilizado em `failed_deletions_count`
 7. No modo `dry_run = 1`: ignora as etapas 5 e 6 e retorna apenas as métricas calculadas
 
 #### Política de retenção de snapshots {#iceberg-snapshot-retention-policy}
@@ -642,7 +643,7 @@ Cada referência de snapshot (`refs` nos metadados do Iceberg) pode substituir e
 
 **Avaliação da retenção:**
 
-* **Para cada branch** (incluindo `main`): a cadeia ancestral é percorrida a partir do head da branch. Os snapshots são mantidos enquanto qualquer uma destas condições for verdadeira:
+* **Para cada branch** (incluindo `main`): o head da branch é sempre mantido. A cadeia ancestral é percorrida a partir do head da branch, e os snapshots são mantidos enquanto qualquer uma destas condições for verdadeira:
   * O snapshot está entre os primeiros `min-snapshots-to-keep` da cadeia
   * A idade do snapshot está dentro de `max-snapshot-age-ms` (ou seja, `now - timestamp-ms <= max-snapshot-age-ms`)
 * **Para tags**: o snapshot marcado pela tag é mantido, a menos que a tag tenha excedido seu `max-ref-age-ms`, caso em que a referência da tag é removida
@@ -655,10 +656,10 @@ Cada referência de snapshot (`refs` nos metadados do Iceberg) pode substituir e
 O privilégio `ALTER TABLE EXECUTE` é necessário, e ele é um privilégio filho de `ALTER TABLE` na hierarquia de controle de acesso do ClickHouse. Você pode concedê-lo especificamente ou por meio do privilégio pai:
 
 ```sql
--- Conceder apenas a permissão EXECUTE
+-- Grant only EXECUTE permission
 GRANT ALTER TABLE EXECUTE ON my_iceberg_table TO my_user;
 
--- Ou conceder todas as permissões de ALTER TABLE (inclui ALTER TABLE EXECUTE)
+-- Or grant all ALTER TABLE permissions (includes ALTER TABLE EXECUTE)
 GRANT ALTER TABLE ON my_iceberg_table TO my_user;
 ```
 

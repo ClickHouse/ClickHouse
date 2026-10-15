@@ -1179,6 +1179,10 @@ Nombre total d’octets actuellement alloués pour des réservations mémoire ap
 
 Nombre total d’octets des demandes d’augmentation de réservation de mémoire en attente
 
+### MemoryReservationReclaimable {#memoryreservationreclaimable}
+
+Quantité totale de mémoire récupérable
+
 ### MemoryTracking {#memorytracking}
 
 Quantité totale de mémoire (en octets) suivie par le serveur. Par défaut, le worker mémoire en arrière-plan corrige cette valeur à chaque tick à partir d&#39;une mesure externe de la mémoire réellement utilisée par le processus (voir le paramètre serveur `memory_worker_correct_memory_tracker`) ; elle reflète donc l&#39;utilisation mesurée plutôt qu&#39;un simple décompte des allocations. Voir `MemoryTrackingUncorrected` pour la valeur sans aucune correction.

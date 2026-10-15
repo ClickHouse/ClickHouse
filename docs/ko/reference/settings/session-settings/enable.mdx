@@ -32,9 +32,10 @@ import { PrivatePreviewBadge } from "/snippets/ko/components/PrivatePreviewBadge
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "새 설정입니다. 메모리 데이터를 외부 스토리지로 적응적으로 spill할 수 있도록 설정합니다."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "새 설정입니다. 메모리 데이터를 외부 스토리지로 적응적으로 디스크 유출(spill)할 수 있도록 설정합니다."}]}]} />
 
-프로세서가 데이터를 외부 스토리지로 적응적으로 spill하도록 트리거합니다. 현재는 spill이 가능한 해시 조인, 즉 `grace_hash`와 적응형 `hash` / `parallel_hash` 경로가 지원됩니다.
+쿼리에 메모리 압력이 발생하면 대상이 되는 집계, 정렬(sorting), `DISTINCT`, 해시 조인 프로세서의 데이터를 외부 스토리지로 적응적으로 디스크 유출(spill)합니다.
+지원되는 해시 조인은 `grace_hash`와 적응형 `hash` / `parallel_hash` 경로입니다.
 
 ## enable_add_distinct_to_in_subqueries {#enable_add_distinct_to_in_subqueries}
 
@@ -438,6 +439,16 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.10"},{"label": "1"},{"label": "새로운 설정"}]}]} />
 
 true인 경우, 테이블에서 가져온 직렬화 힌트에 따라 데이터를 사용자 지정 직렬화(예: Sparse)가 적용된 컬럼으로 직접 파싱할 수 있습니다.
+
+## enable_pco_codec {#enable_pco_codec}
+
+<BetaBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "베타 버전인 `PCO` 압축 코덱을 활성화하는 새로운 설정입니다."}]}]} />
+
+`PCO` 압축 코덱을 활성화합니다.
 
 ## enable_producing_buckets_out_of_order_in_aggregation {#enable_producing_buckets_out_of_order_in_aggregation}
 

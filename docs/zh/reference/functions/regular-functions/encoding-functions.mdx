@@ -503,6 +503,8 @@ SELECT encodeQuotedPrintable('Café = 3 €') AS encoded
 hex(arg)
 ```
 
+**别名**: `to_hex`
+
 **参数**
 
 * `arg` — 要转换为十六进制的值。[`String`](/zh/reference/data-types/string)、[`(U)Int*`](/zh/reference/data-types/int-uint)、[`Float*`](/zh/reference/data-types/float)、[`Decimal`](/zh/reference/data-types/decimal)、[`Date`](/zh/reference/data-types/date) 或 [`DateTime`](/zh/reference/data-types/datetime)
@@ -1144,9 +1146,11 @@ SELECT reinterpretAsUInt64(reverse(unbin('1110'))) AS num
 unhex(arg)
 ```
 
+**别名**：`from_hex`
+
 **参数**
 
-* `arg` — 包含任意个十六进制字符的字符串。[`String`](/zh/reference/data-types/string) 或 [`FixedString`](/zh/reference/data-types/fixedstring)
+* `arg` — 包含任意个十六进制数字的字符串。[`String`](/zh/reference/data-types/string) 或 [`FixedString`](/zh/reference/data-types/fixedstring)
 
 **返回值**
 

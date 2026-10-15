@@ -154,12 +154,16 @@ node2 :) SELECT materialize(hostName()) AS host, groupArray(n) FROM r.d GROUP BY
 
 다음 설정을 지원합니다:
 
+<Note>
+  `default_replica_path`, `default_replica_shard_name`, `default_replica_name` 설정은 ClickHouse 25.10에서 도입되었습니다. 이전 버전에서는 이 설정을 인식하지 못하므로, 해당 설정을 구성하면 `Code: 115. DB::Exception: Unknown setting '<name>': in DatabaseReplicated config` 오류가 발생합니다.
+</Note>
+
 | Setting                                                                      | Default                        | Description                                                                                                                                                                                   |
 | ---------------------------------------------------------------------------- | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `max_broken_tables_ratio`                                                    | 1                              | 오래된 테이블 수의 비율이 전체 테이블 대비 이 값보다 크면 레플리카를 자동으로 복구하지 않습니다                                                                                                                                        |
 | `max_replication_lag_to_enqueue`                                             | 50                             | 레플리카의 복제 지연이 이 값보다 크면 쿼리 실행을 시도할 때 예외를 발생시킵니다. `0`보다 커야 하며, `0`은 `BAD_ARGUMENTS`로 거부됩니다(최솟값은 `1`)                                                                                             |
 | `wait_entry_commited_timeout_sec`                                            | 3600                           | 제한 시간을 초과했지만 initiator 호스트가 아직 이를 실행하지 않은 경우, 레플리카는 쿼리 취소를 시도합니다                                                                                                                              |
-| `collection_name`                                                            |                                | 클러스터 인증에 필요한 모든 정보가 정의된 서버의 구성에 있는 collection 이름입니다                                                                                                                                       |
+| `collection_name`                                                            |                                | 클러스터 인증에 필요한 모든 정보가 정의된 서버의 구성에 있는 collection 이름입니다                                                                                                                                           |
 | `check_consistency`                                                          | true                           | 로컬 메타데이터와 Keeper의 메타데이터 일관성을 확인하고, 불일치가 있으면 레플리카 복구를 수행합니다                                                                                                                                    |
 | `max_retries_before_automatic_recovery`                                      | 10                             | 큐 항목 실행의 최대 시도 횟수입니다. 이를 초과하면 레플리카를 손실된 것으로 표시하고 snapshot에서 복구합니다(0은 무한을 의미합니다)                                                                                                               |
 | `allow_skipping_old_temporary_tables_ddls_of_refreshable_materialized_views` | false                          | 활성화하면 복제된 데이터베이스에서 DDLs를 처리할 때, 가능하면 갱신 가능 구체화 뷰의 임시 테이블에 대한 DDL 생성 및 교환을 건너뜁니다                                                                                                               |

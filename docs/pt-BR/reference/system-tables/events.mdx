@@ -73,11 +73,15 @@ Quantas colunas de argumentos preparadas o selo de agregação adaptativa normal
 
 ### AdaptiveAggregationSharedTableSpills {#adaptiveaggregationsharedtablespills}
 
-Quantas vezes a agregação adaptativa gravou em disco sua tabela compartilhada de drenagem por ter atingido o limite de partes sob pressão de memória.
+Quantas vezes a agregação adaptativa gravou em disco sua tabela compartilhada de escoamento sob pressão de memória, ao atingir o limite de partes ou mediante uma requisição explícita de spill.
 
 ### AdaptiveAggregationSpillBacklogSheds {#adaptiveaggregationspillbacklogsheds}
 
 Quantas vezes a agregação adaptativa descartou o backlog preparado porque uma thread no algoritmo de referência — seja uma que o descongelamento devolveu para lá, seja uma que se retirou por conta própria — estava prestes a fazer spill enquanto registros preparados ainda estavam residentes na memória.
+
+### AdaptiveAggregationSpillDrains {#adaptiveaggregationspilldrains}
+
+Número de requisições de spill do scheduler de memória que a agregação adaptativa atendeu gravando em disco registros preparados ou resíduos compartilhados de escoamento, em vez de abandonar o caminho adaptativo.
 
 ### AdaptiveAggregationStagedBytes {#adaptiveaggregationstagedbytes}
 
@@ -342,6 +346,10 @@ Quantas mensagens foram descartadas do text&#95;log porque a fila de log assínc
 ### AsyncLoggingTextLogTotalMessages {#asyncloggingtextlogtotalmessages}
 
 Número de mensagens (aceitas ou descartadas) enviadas para a fila assíncrona do text&#95;log
+
+### AutomaticParallelReplicasDecidedWithoutBuildingPlan {#automaticparallelreplicasdecidedwithoutbuildingplan}
+
+Número de vezes em que o modo automático de réplicas paralelas decidiu não usar réplicas paralelas em um limite memorizado de uma execução anterior, sem construir um plano candidato para estimar seu custo
 
 ### AutomaticParallelReplicasProbePlansBuilt {#automaticparallelreplicasprobeplansbuilt}
 
@@ -3450,6 +3458,18 @@ Número total de solicitações aprovadas para aumento da reserva de memória
 
 Número total de sinais de interrupção da reserva de memória
 
+### MemoryReservationReclaimableBytes {#memoryreservationreclaimablebytes}
+
+Memória que se tornou recuperável (passível de spill) pela consulta
+
+### MemoryReservationSpilledBytes {#memoryreservationspilledbytes}
+
+Quantidade total de memória descarregada em disco
+
+### MemoryReservationSpillingMicroseconds {#memoryreservationspillingmicroseconds}
+
+Tempo gasto no spill
+
 ### MemoryWorkerRun {#memoryworkerrun}
 
 Número de execuções do MemoryWorker em segundo plano
@@ -5633,6 +5653,10 @@ Número de vezes que o bloqueio de partes de dados compartilhados foi adquirido 
 ### SharedPartsLockWaitMicroseconds {#sharedpartslockwaitmicroseconds}
 
 Tempo total de espera pelo bloqueio de partes de dados compartilhadas em tabelas MergeTree
+
+### ShortCircuitArgumentsReordered {#shortcircuitargumentsreordered}
+
+Número de blocos nos quais a função `and` ou `or` avaliou seus argumentos em uma ordem diferente da especificada na consulta: um argumento leve antes de um pesado, ou de acordo com as estatísticas coletadas nos blocos anteriores (configuração `short_circuit_function_evaluation_reorder_arguments`). A reordenação dos átomos da cadeia AND em `WHERE` / `HAVING`, definida uma única vez quando o `FilterStep` constrói seu pipeline, não é contabilizada.
 
 ### SleepFunctionCalls {#sleepfunctioncalls}
 

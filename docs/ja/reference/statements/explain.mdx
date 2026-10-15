@@ -823,6 +823,18 @@ I/O: rows <in> → <out> (<selectivity>%) · <bytes_in> → <bytes_out>
   2. `max_threads` で設定されたクエリ処理スレッドの最大数
 </Note>
 
+#### 集約・ソート・DISTINCT の処理ステップにおけるスピル {#explain-analyze-spilling}
+
+`GROUP BY`、`ORDER BY`、または `DISTINCT` の処理ステップがデータを一時ストレージにスピルすると、次の情報が出力されます:
+
+```txt
+Spill: spilled <compressed_bytes>
+```
+
+これは、並列プロセッサを含むステップ全体で書き込まれた圧縮バイト数の累積値です。
+この合計には、すでに読み取り済みまたは削除済みの一時ファイルも含まれます。また、データが複数回ディスクに退避された場合は、書き込みごとに個別にカウントされます。
+データがディスクに退避されなかった場合、この行は出力されません。
+
 #### 結合 ステップ {#explain-analyze-join-steps}
 
 結合 ステップでは、`EXPLAIN ANALYZE` は結合順序オプティマイザの推定値と実際に起きたことを比較する行 ([推定値と実測値の join メトリクス](#explain-analyze-join-estimation) を参照) と、各側の*参加*行 (`Left` と `Right`) を出力し、その後に 結合 の実装固有の行を出力します。`Left` と `Right` は SQL 上の論理的な側に対応します。ほとんどの場合、`Left` は 結合 のプローブ側、`Right` は 結合 のビルド側にもなります。ただし、結合 の実行中に入れ替え (swap) が発生することがあるため、常にそうなるとは限りません。[`join_algorithm`](/ja/reference/settings/session-settings/join#join_algorithm) のすべての値 (`hash`、`parallel_hash`、`grace_hash`、`partial_merge`、`full_sorting_merge`、`parallel_full_sorting_merge`、`direct`) に対応しています。また、この設定では選択できない 3 つの実装、すなわち `CROSS` または `COMMA` 結合、結合キーが定まらない `ON` 句を受け取る [block nested loop 結合](/ja/reference/statements/select/join#join-with-an-arbitrary-on-condition)、および [`Join`](/ja/reference/engines/table-engines/special/join) テーブルエンジンも対象です。ほとんどの実装では両側が報告されますが、マテリアライズする側のみを報告するものもあります (たとえば、`direct` は `Left:` のみを出力します) 。

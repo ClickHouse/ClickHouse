@@ -1522,13 +1522,13 @@ SELECT locate('ca', 'abcabc')
 
 ## match {#match}
 
-Introduit dans : v1.1.0
+Introduit dans : v1.1.0
 
 Vérifie si une chaîne donnée correspond au motif d’expression régulière fourni.
 
 Cette fonction utilise la bibliothèque d’expressions régulières RE2. Veuillez consulter [re2](https://github.com/google/re2/wiki/Syntax) pour connaître la syntaxe prise en charge.
 
-La correspondance repose sur l’hypothèse UTF-8 : par exemple, `¥` utilise deux octets en interne, mais est traité comme un seul point de code lors de la correspondance.
+La correspondance repose sur l’hypothèse UTF-8 : par exemple, `¥` utilise deux octets en interne, mais est traité comme un seul point de code lors de la correspondance.
 L’expression régulière ne doit pas contenir d’octets NULL.
 Si la chaîne d’entrée ou le motif ne sont pas en UTF-8 valide, le comportement est indéfini.
 
@@ -1538,7 +1538,7 @@ Le motif n’est pas ancré. Pour faire correspondre la chaîne entière, ancrez
 
 Si vous souhaitez simplement rechercher des sous-chaînes, vous pouvez utiliser à la place les fonctions [`like`](#like) ou [`position`](#position), qui sont bien plus rapides que cette fonction.
 
-Syntaxe d’opérateur alternative : `haystack REGEXP pattern` ou `haystack ~ pattern` (style PostgreSQL).
+Syntaxe d’opérateur alternative : `haystack REGEXP pattern` ou `haystack ~ pattern` (style PostgreSQL).
 
 **Syntaxe**
 
@@ -1546,7 +1546,7 @@ Syntaxe d’opérateur alternative : `haystack REGEXP pattern` ou `haystack ~ p
 match(haystack, pattern)
 ```
 
-**Alias** : `REGEXP_MATCHES`
+**Alias** : `REGEXP_MATCHES`, `REGEXP_LIKE`
 
 **Arguments**
 

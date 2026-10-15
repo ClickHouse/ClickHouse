@@ -1114,6 +1114,14 @@ No añadir alias a la lista de expresiones de nivel superior al reescribir múlt
 
 Normalizar los nombres de las funciones a su forma canónica
 
+## obfuscate_seed {#obfuscate_seed}
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": ""},{"label": "Nueva configuración: cadena de semilla para la función de tabla obfuscate."}]}]} />
+
+Semilla para la función de tabla `obfuscate`. Es una cadena arbitraria: la semilla de cada columna se deriva de ella y del nombre de columna, por lo que una misma semilla siempre produce la misma ofuscación. Si se deja como cadena vacía, se genera una semilla aleatoria para cada consulta.
+
+La semilla es un parámetro de configuración ordinario, no un secreto: su valor se almacena y se muestra en texto sin cifrar, como cualquier otro parámetro de configuración, por ejemplo en `system.query_log` y `system.settings`. No utilice una contraseña ni ningún otro secreto como semilla. Si las salidas ofuscadas de distintas consultas no deben poder correlacionarse entre sí, mantenga el valor vacío predeterminado (una semilla aleatoria nueva por consulta) en lugar de establecer una semilla fija.
+
 ## offset {#offset}
 
 <SettingsInfoBlock type="Double" default_value="0" />

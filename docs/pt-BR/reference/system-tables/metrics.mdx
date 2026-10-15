@@ -1179,6 +1179,10 @@ Número total de bytes atualmente alocados (aprovados) em reservas de memória
 
 Número total de bytes referentes a solicitações pendentes de aumento de reservas de memória
 
+### MemoryReservationReclaimable {#memoryreservationreclaimable}
+
+Quantidade total de memória recuperável
+
 ### MemoryTracking {#memorytracking}
 
 Quantidade total de memória (em bytes) rastreada pelo servidor. Por padrão, o background memory worker corrige esse valor a cada tick com base em uma medição externa da memória efetivamente usada pelo processo (consulte a configuração de servidor `memory_worker_correct_memory_tracker`). Assim, o valor reflete o uso medido, e não uma simples contagem de alocações. Consulte `MemoryTrackingUncorrected` para obter o valor sem nenhuma correção aplicada.

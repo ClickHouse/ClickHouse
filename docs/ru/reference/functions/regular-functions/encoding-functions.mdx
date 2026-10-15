@@ -505,6 +505,8 @@ SELECT encodeQuotedPrintable('Café = 3 €') AS encoded
 hex(arg)
 ```
 
+**Псевдонимы**: `to_hex`
+
 **Аргументы**
 
 * `arg` — значение для преобразования в шестнадцатеричное представление. [`String`](/ru/reference/data-types/string) или [`(U)Int*`](/ru/reference/data-types/int-uint) или [`Float*`](/ru/reference/data-types/float) или [`Decimal`](/ru/reference/data-types/decimal) или [`Date`](/ru/reference/data-types/date) или [`DateTime`](/ru/reference/data-types/datetime)
@@ -1151,6 +1153,8 @@ SELECT reinterpretAsUInt64(reverse(unbin('1110'))) AS num
 ```sql
 unhex(arg)
 ```
+
+**Псевдонимы**: `from_hex`
 
 **Аргументы**
 

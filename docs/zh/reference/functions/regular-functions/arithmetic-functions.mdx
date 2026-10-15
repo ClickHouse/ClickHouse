@@ -677,6 +677,8 @@ SELECT intDivOrZero(0.05, -1)
 isFinite(x)
 ```
 
+**别名**：`is_finite`
+
 **参数**
 
 * `x` — 要检查是否为有限值的数。[`Float*`](/zh/reference/data-types/float) 或 [`BFloat16`](/zh/reference/data-types/float)
@@ -710,6 +712,8 @@ SELECT isFinite(inf)
 isInfinite(x)
 ```
 
+**别名**: `is_infinite`
+
 **参数**
 
 * `x` — 用于检查是否为无穷大的数值。[`Float*`](/zh/reference/data-types/float) 或 [`BFloat16`](/zh/reference/data-types/float)
@@ -741,6 +745,8 @@ SELECT isInfinite(inf), isInfinite(NaN), isInfinite(10)
 ```sql
 isNaN(x)
 ```
+
+**别名**：`is_nan`
 
 **参数**
 

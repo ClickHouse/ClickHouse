@@ -1113,6 +1113,14 @@ Ne pas ajouter d’alias à la liste des expressions de premier niveau lors de l
 
 Ramener les noms de fonctions à leur forme canonique
 
+## obfuscate_seed {#obfuscate_seed}
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": ""},{"label": "Nouveau paramètre : chaîne servant de graine pour la fonction de table obfuscate."}]}]} />
+
+Graine pour la fonction de table `obfuscate`. Chaîne arbitraire : la graine de chaque colonne est dérivée de cette valeur et du nom de colonne, de sorte qu&#39;une même graine produit toujours la même obfuscation. Une chaîne vide signifie qu&#39;une graine aléatoire est générée pour chaque requête.
+
+La graine est un paramètre ordinaire, et non un secret : sa valeur est stockée et affichée en texte en clair comme celle de n&#39;importe quel autre paramètre, par exemple dans `system.query_log` et `system.settings`. N&#39;utilisez pas de mot de passe ni aucun autre secret comme graine. Si les sorties obfusquées de différentes requêtes ne doivent pas pouvoir être corrélées entre elles, conservez la valeur vide par défaut (une nouvelle graine aléatoire par requête) plutôt que de définir une graine fixe.
+
 ## offset {#offset}
 
 <SettingsInfoBlock type="Double" default_value="0" />

@@ -607,15 +607,16 @@ ALTER TABLE iceberg_table EXECUTE expire_snapshots(retention_period = '1d', dry_
 
 该命令会返回一个包含两列 (`metric_name String`、`metric_value Int64`) 的表，其中每个指标对应一行。指标名称遵循 [Iceberg 规范](https://iceberg.apache.org/docs/latest/spark-procedures/#output)：
 
-| metric&#95;name                       | 描述                      |
-| ------------------------------------- | ----------------------- |
-| `deleted_data_files_count`            | 已删除的数据文件数量              |
-| `deleted_position_delete_files_count` | 已删除的位置删除文件数量            |
-| `deleted_equality_delete_files_count` | 已删除的等值删除文件数量            |
-| `deleted_manifest_files_count`        | 已删除的 manifest 文件数量      |
-| `deleted_manifest_lists_count`        | 已删除的 manifest 列表文件数量    |
-| `deleted_statistics_files_count`      | 已删除的统计信息文件数量 (当前始终为 0)  |
-| `dry_run`                             | `1` 表示试运行模式，`0` 表示正常执行  |
+| metric&#95;name                       | 描述                                                       |
+| ------------------------------------- | -------------------------------------------------------- |
+| `deleted_data_files_count`            | 已删除的数据文件数量                                               |
+| `deleted_position_delete_files_count` | 已删除的位置删除文件数量                                             |
+| `deleted_equality_delete_files_count` | 已删除的等值删除文件数量                                             |
+| `deleted_manifest_files_count`        | 已删除的 manifest 文件数量                                       |
+| `deleted_manifest_lists_count`        | 已删除的 manifest 列表文件数量                                     |
+| `deleted_statistics_files_count`      | 已删除的统计信息文件数量 (当前始终为 0)                                   |
+| `dry_run`                             | `1` 表示试运行模式，`0` 表示正常执行                                   |
+| `failed_deletions_count`              | 删除时返回错误的文件数量。此类文件可能残留在存储中，之后可通过 `remove_orphan_files` 删除 |
 
 该命令执行以下步骤：
 
@@ -624,24 +625,24 @@ ALTER TABLE iceberg_table EXECUTE expire_snapshots(retention_period = '1d', dry_
 3. 让既未被保留策略保留、也未受时间戳保护机制保护的快照过期
 4. 计算哪些文件仅与已过期的快照关联
 5. 在正常模式下：生成不包含已过期快照的新元数据
-6. 在正常模式下：物理删除不可达的 manifest 列表、manifest 文件和数据文件
+6. 在正常模式下：物理删除不可达的 manifest 列表、manifest 文件和数据文件；如果某个文件删除时返回错误，则不再删除，而是将其计入 `failed_deletions_count`
 7. 在 `dry_run = 1` 模式下：跳过步骤 5 和 6，仅返回计算出的指标
 
 #### 快照保留策略 {#iceberg-snapshot-retention-policy}
 
 `expire_snapshots` 命令遵循 [Iceberg 快照保留策略](https://iceberg.apache.org/spec/#snapshot-retention-policy)。保留策略通过 Iceberg 表属性以及按引用的覆盖设置进行配置：
 
-| 属性                                     | 范围 | 默认值                                                                    | 描述                                |
-| -------------------------------------- | -- | ---------------------------------------------------------------------- | --------------------------------- |
-| `history.expire.min-snapshots-to-keep` | 表  | `iceberg_expire_default_min_snapshots_to_keep` (默认值为 `1`)              | 每个分支的祖先链中至少要保留的快照数量               |
-| `history.expire.max-snapshot-age-ms`   | 表  | `iceberg_expire_default_max_snapshot_age_ms` (默认值为 `432000000`，即 5 天)  | 分支中要保留的快照的最大保留时长 (毫秒)             |
-| `history.expire.max-ref-age-ms`        | 表  | `iceberg_expire_default_max_ref_age_ms` (默认值为 `∞`)                     | 快照引用 (分支或标签) 在被移除前允许的最大保留时长 (毫秒)  |
+| 属性                                     | 范围 | 默认值                                                                   | 描述                               |
+| -------------------------------------- | -- | --------------------------------------------------------------------- | -------------------------------- |
+| `history.expire.min-snapshots-to-keep` | 表  | `iceberg_expire_default_min_snapshots_to_keep` (默认值为 `1`)             | 每个分支的祖先链中至少要保留的快照数量              |
+| `history.expire.max-snapshot-age-ms`   | 表  | `iceberg_expire_default_max_snapshot_age_ms` (默认值为 `432000000`，即 5 天) | 分支中要保留的快照的最大保留时长 (毫秒)            |
+| `history.expire.max-ref-age-ms`        | 表  | `iceberg_expire_default_max_ref_age_ms` (默认值为 `∞`)                    | 快照引用 (分支或标签) 在被移除前允许的最大保留时长 (毫秒) |
 
 每个快照引用 (Iceberg 元数据中的 `refs`) 都可以通过引用级字段覆盖这些值：`min-snapshots-to-keep`、`max-snapshot-age-ms` 和 `max-ref-age-ms`。
 
 **保留规则评估：**
 
-* **对于每个分支** (包括 `main`) ：从分支头开始遍历其祖先链。只要满足以下任一条件，就会保留该快照：
+* **对于每个分支** (包括 `main`) ：分支头始终会被保留。从分支头开始遍历其祖先链，只要满足以下任一条件，就会保留该快照：
   * 该快照位于祖先链中的前 `min-snapshots-to-keep` 个快照之内
   * 该快照的存在时长未超过 `max-snapshot-age-ms` (即 `now - timestamp-ms <= max-snapshot-age-ms`)
 * **对于标签**：被标记的快照会被保留，除非该标签已超过其 `max-ref-age-ms`，此时会移除该标签引用
@@ -654,16 +655,16 @@ ALTER TABLE iceberg_table EXECUTE expire_snapshots(retention_period = '1d', dry_
 需要 `ALTER TABLE EXECUTE` 权限，它在 ClickHouse 访问控制层级中是 `ALTER TABLE` 的子权限。你可以单独授予该权限，也可以通过其父权限授予：
 
 ```sql
--- 仅授予 EXECUTE 权限
+-- Grant only EXECUTE permission
 GRANT ALTER TABLE EXECUTE ON my_iceberg_table TO my_user;
 
--- 或授予所有 ALTER TABLE 权限（包含 ALTER TABLE EXECUTE）
+-- Or grant all ALTER TABLE permissions (includes ALTER TABLE EXECUTE)
 GRANT ALTER TABLE ON my_iceberg_table TO my_user;
 ```
 
 <Note>
   * 仅支持 Iceberg format version 2 表 (v1 快照不保证包含 `manifest-list`，而安全识别待清理文件需要它)
-  * 当前快照始终会被保留，即使它早于指定的 timestamp
+  * 当前快照始终会被保留，即使它早于指定的 时间戳
   * 要求启用 `allow_insert_into_iceberg` 设置
   * 要求启用 `allow_experimental_expire_snapshots` 设置
   * 当 ClickHouse 更新元数据时，目录 自身的授权 (REST catalog auth、AWS Glue IAM 等) 仍会独立执行

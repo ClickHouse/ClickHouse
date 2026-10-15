@@ -4048,6 +4048,8 @@ SELECT arraySimilarity(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5
 arraySlice(arr, offset [, length])
 ```
 
+**別名**: `slice`
+
 **引数**
 
 * `arr` — スライス対象の Array。[`Array(T)`](/ja/reference/data-types/array) または [`QBit`](/ja/reference/data-types/qbit)
@@ -4409,13 +4411,15 @@ SELECT arrayTranspose([['a', 'b'], ['c', 'd']])
 arrayUnion(arr1, arr2, ..., arrN)
 ```
 
+**別名**: `array_union`
+
 **引数**
 
 * `arrN` — 新しい配列の作成元となる N 個の配列。[`Array(T)`](/ja/reference/data-types/array)
 
 **戻り値**
 
-ソース配列内の一意な要素からなる配列を返します [`Array(T)`](/ja/reference/data-types/array)
+ソース配列内の重複のない要素からなる配列を返します [`Array(T)`](/ja/reference/data-types/array)
 
 **例**
 
@@ -4569,6 +4573,8 @@ SELECT arrayZip(['a', 'b', 'c'], [5, 2, 1]);
 ```sql
 arrayZipUnaligned(arr1, arr2, ..., arrN)
 ```
+
+**別名**: `zip`
 
 **引数**
 

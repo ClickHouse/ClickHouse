@@ -607,51 +607,52 @@ ALTER TABLE iceberg_table EXECUTE expire_snapshots(retention_period = '1d', dry_
 
 La commande renvoie un tableau comportant deux colonnes (`metric_name String`, `metric_value Int64`) et contenant une ligne par métrique. Les noms des métriques suivent la [spécification Iceberg](https://iceberg.apache.org/docs/latest/spark-procedures/#output) :
 
-| metric&#95;name                       | Description                                                            |
-| ------------------------------------- | ---------------------------------------------------------------------- |
-| `deleted_data_files_count`            | Nombre de fichiers de données supprimés                                |
-| `deleted_position_delete_files_count` | Nombre de fichiers de suppression par position supprimés               |
-| `deleted_equality_delete_files_count` | Nombre de fichiers de suppression par égalité supprimés                |
-| `deleted_manifest_files_count`        | Nombre de fichiers manifest supprimés                                  |
-| `deleted_manifest_lists_count`        | Nombre de fichiers de liste de manifests supprimés                     |
-| `deleted_statistics_files_count`      | Nombre de fichiers de statistiques supprimés (toujours 0 actuellement) |
-| `dry_run`                             | `1` pour le mode simulation, `0` pour l’exécution normale              |
+| metric&#95;name                       | Description                                                                                                                                                            |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `deleted_data_files_count`            | Nombre de fichiers de données supprimés                                                                                                                                |
+| `deleted_position_delete_files_count` | Nombre de fichiers de suppression par position supprimés                                                                                                               |
+| `deleted_equality_delete_files_count` | Nombre de fichiers de suppression par égalité supprimés                                                                                                                |
+| `deleted_manifest_files_count`        | Nombre de fichiers manifest supprimés                                                                                                                                  |
+| `deleted_manifest_lists_count`        | Nombre de fichiers de liste de manifests supprimés                                                                                                                     |
+| `deleted_statistics_files_count`      | Nombre de fichiers de statistiques supprimés (toujours 0 actuellement)                                                                                                 |
+| `dry_run`                             | `1` pour le mode simulation, `0` pour l’exécution normale                                                                                                              |
+| `failed_deletions_count`              | Nombre de fichiers dont la suppression a renvoyé une erreur. Un tel fichier peut subsister dans le stockage ; `remove_orphan_files` pourra le supprimer ultérieurement |
 
-La commande effectue les étapes suivantes :
+La commande effectue les étapes suivantes :
 
 1. Évalue la politique de rétention (voir ci-dessous) afin de déterminer quels snapshots doivent être conservés
-2. Si un argument d’horodatage a été fourni, protège également tous les snapshots correspondant à cet horodatage ou plus récents
-3. Fait expirer les snapshots qui ne sont ni conservés par la politique ni protégés par le seuil d’horodatage
+2. Si un argument de timestamp a été fourni, protège également tous les snapshots correspondant à ce timestamp ou plus récents
+3. Fait expirer les snapshots qui ne sont ni conservés par la politique ni protégés par le seuil de timestamp
 4. Détermine quels fichiers sont associés exclusivement aux snapshots expirés
-5. En mode normal : génère de nouvelles métadonnées sans les snapshots expirés
-6. En mode normal : supprime physiquement les listes de manifests, les fichiers manifest et les fichiers de données devenus inaccessibles
-7. En mode `dry_run = 1` : ignore les étapes 5 et 6 et renvoie uniquement les métriques calculées
+5. En mode normal : génère de nouvelles métadonnées sans les snapshots expirés
+6. En mode normal : supprime physiquement les listes de manifests, les fichiers manifest et les fichiers de données devenus inaccessibles ; tout fichier dont la suppression renvoie une erreur est alors comptabilisé dans `failed_deletions_count`
+7. En mode `dry_run = 1` : ignore les étapes 5 et 6 et renvoie uniquement les métriques calculées
 
 #### Politique de rétention des snapshots {#iceberg-snapshot-retention-policy}
 
-La commande `expire_snapshots` respecte la [politique de rétention des snapshots d’Iceberg](https://iceberg.apache.org/spec/#snapshot-retention-policy). La rétention se configure via les propriétés de table Iceberg et des remplacements par référence :
+La commande `expire_snapshots` respecte la [politique de rétention des snapshots d’Iceberg](https://iceberg.apache.org/spec/#snapshot-retention-policy). La rétention se configure via les propriétés de table Iceberg et des surcharges par référence :
 
-| Propriété                              | Portée | Par défaut                                                                     | Description                                                                                                      |
-| -------------------------------------- | ------ | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| Propriété                              | Portée | Par défaut                                                                     | Description                                                                                                     |
+| -------------------------------------- | ------ | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
 | `history.expire.min-snapshots-to-keep` | Table  | `iceberg_expire_default_min_snapshots_to_keep` (par défaut `1`)                | Nombre minimal de snapshots à conserver dans la chaîne d’ancêtres de chaque branche                             |
-| `history.expire.max-snapshot-age-ms`   | Table  | `iceberg_expire_default_max_snapshot_age_ms` (par défaut `432000000`, 5 jours) | Âge maximal (en ms) des snapshots à conserver dans une branche                                                 |
+| `history.expire.max-snapshot-age-ms`   | Table  | `iceberg_expire_default_max_snapshot_age_ms` (par défaut `432000000`, 5 jours) | Âge maximal (en ms) des snapshots à conserver dans une branche                                                  |
 | `history.expire.max-ref-age-ms`        | Table  | `iceberg_expire_default_max_ref_age_ms` (par défaut `∞`)                       | Âge maximal (en ms) d’une référence de snapshot (branche ou tag) avant la suppression de la référence elle-même |
 
-Chaque référence de snapshot (`refs` dans les métadonnées Iceberg) peut remplacer ces valeurs au moyen de champs propres à la référence : `min-snapshots-to-keep`, `max-snapshot-age-ms` et `max-ref-age-ms`.
+Chaque référence de snapshot (`refs` dans les métadonnées Iceberg) peut remplacer ces valeurs au moyen de champs propres à la référence : `min-snapshots-to-keep`, `max-snapshot-age-ms` et `max-ref-age-ms`.
 
-**Évaluation de la rétention :**
+**Évaluation de la rétention :**
 
-* **Pour chaque branche** (y compris `main`) : la chaîne d’ancêtres est parcourue à partir de la tête de la branche. Les snapshots sont conservés tant qu’au moins l’une des conditions suivantes est vraie :
+* **Pour chaque branche** (y compris `main`) : la tête de la branche est toujours conservée. La chaîne d’ancêtres est parcourue à partir de la tête de la branche, et les snapshots sont conservés tant qu’au moins l’une des conditions suivantes est vraie :
   * Le snapshot fait partie des `min-snapshots-to-keep` premiers snapshots de la chaîne
   * L’âge du snapshot ne dépasse pas `max-snapshot-age-ms` (c.-à-d. `now - timestamp-ms <= max-snapshot-age-ms`)
-* **Pour les tags** : le snapshot tagué est conservé, sauf si le tag a dépassé sa valeur `max-ref-age-ms`, auquel cas la référence du tag est supprimée
+* **Pour les tags** : le snapshot tagué est conservé, sauf si le tag a dépassé sa valeur `max-ref-age-ms`, auquel cas la référence du tag est supprimée
 * **Les références autres que `main`** dont l’âge dépasse `max-ref-age-ms` sont entièrement supprimées (la branche `main` n’est jamais supprimée)
 * **Les références orphelines** qui pointent vers des snapshots inexistants sont supprimées avec un avertissement
 * **Le snapshot actuel est toujours conservé**, quels que soient les paramètres de rétention
 
-**Privilèges requis :**
+**Privilèges requis :**
 
-Le privilège `ALTER TABLE EXECUTE` est requis. Il s’agit d’un privilège enfant de `ALTER TABLE` dans la hiérarchie du contrôle d’accès de ClickHouse. Vous pouvez l’accorder spécifiquement ou via le parent :
+Le privilège `ALTER TABLE EXECUTE` est requis. Il s’agit d’un privilège enfant de `ALTER TABLE` dans la hiérarchie du contrôle d’accès de ClickHouse. Vous pouvez l’accorder spécifiquement ou via le parent :
 
 ```sql
 -- Grant only EXECUTE permission
@@ -663,10 +664,10 @@ GRANT ALTER TABLE ON my_iceberg_table TO my_user;
 
 <Note>
   * Seules les tables Iceberg format version 2 sont prises en charge (les snapshots v1 ne garantissent pas `manifest-list`, requis pour identifier en toute sécurité les fichiers à nettoyer)
-  * Le snapshot actuel est toujours conservé, même s’il est antérieur à l’horodatage spécifié
+  * Le snapshot actuel est toujours conservé, même s’il est antérieur au timestamp spécifié
   * Nécessite que le paramètre `allow_insert_into_iceberg` soit activé
   * Nécessite que le paramètre `allow_experimental_expire_snapshots` soit activé
-  * Le mécanisme d’autorisation propre au catalog (authentification du catalogue REST, AWS Glue IAM, etc.) est appliqué indépendamment lorsque ClickHouse met à jour les métadonnées
+  * Le mécanisme d’autorisation propre au Catalogue (authentification du Catalogue REST, AWS Glue IAM, etc.) est appliqué indépendamment lorsque ClickHouse met à jour les métadonnées
 </Note>
 
 ### Supprimer les fichiers orphelins {#iceberg-remove-orphan-files}

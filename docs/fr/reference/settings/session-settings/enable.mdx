@@ -34,8 +34,8 @@ Les paramètres d’agrégation externe (`max_bytes_before_external_group_by`, `
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "Nouveau paramètre. Active le déversement adaptatif des données en mémoire vers un stockage externe."}]}]} />
 
-Déclenche le processeur pour déverser de manière adaptative les données vers un stockage externe. Les jointures de hachage capables de déverser sont actuellement prises en charge, aussi bien
-`grace_hash` que le chemin adaptatif `hash` / `parallel_hash`.
+Permet aux processeurs éligibles d&#39;agrégation, de tri, de `DISTINCT` et de jointure par hachage de déverser de manière adaptative leurs données vers un stockage externe lorsque la requête subit une pression mémoire.
+Les jointures par hachage prises en charge incluent `grace_hash` ainsi que le chemin adaptatif `hash` / `parallel_hash`.
 
 ## enable_add_distinct_to_in_subqueries {#enable_add_distinct_to_in_subqueries}
 
@@ -443,6 +443,16 @@ Tous les serveurs participant à une requête distribuée doivent utiliser la m�
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.10"},{"label": "1"},{"label": "Nouveau paramètre"}]}]} />
 
 Si la valeur est true, les données peuvent être analysées directement dans des colonnes avec une sérialisation personnalisée (par ex. Sparse), selon les indications de sérialisation obtenues depuis la table.
+
+## enable_pco_codec {#enable_pco_codec}
+
+<BetaBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nouveau paramètre permettant d'activer le codec de compression bêta `PCO`."}]}]} />
+
+Active le codec de compression `PCO`.
 
 ## enable_producing_buckets_out_of_order_in_aggregation {#enable_producing_buckets_out_of_order_in_aggregation}
 

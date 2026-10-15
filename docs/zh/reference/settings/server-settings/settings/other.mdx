@@ -18,6 +18,14 @@ import { CloudNotSupportedBadge } from "/snippets/zh/components/CloudNotSupporte
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />发生 LOGICAL&#95;ERROR 异常时使服务器崩溃。仅供专家使用。
 
+## ai_function_allow_sql_named_collections {#ai_function_allow_sql_named_collections}
+
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
+
+允许 AI 函数 (例如 `aiGenerate`、`aiEmbed`、`aiSimilarity`) 使用通过 `CREATE NAMED COLLECTION` 创建的命名集合。
+禁用后，AI 函数仅接受服务器配置文件中定义的命名集合，使用其他任何集合都会抛出异常。
+该规则既适用于 `credentials` 参数，也适用于 `ai_function_text_default_credentials` 和 `ai_function_embedding_default_credentials` 设置。
+
 ## allowed_disks_for_table_engines {#allowed_disks_for_table_engines}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />允许用于 Iceberg 的磁盘列表

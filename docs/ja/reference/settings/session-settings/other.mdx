@@ -1094,6 +1094,14 @@ MergeTree の marks をバックグラウンドの thread pool (server setting `
 
 関数名を標準名に正規化します
 
+## obfuscate_seed {#obfuscate_seed}
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": ""},{"label": "新しい設定: obfuscate テーブル関数用の seed 文字列。"}]}]} />
+
+`obfuscate` テーブル関数で使用する seed です。任意の文字列を指定でき、各カラムの seed はこの値とカラム名から導出されます。そのため、同じ seed からは常に同じ難読化結果が得られます。空文字列を指定すると、クエリごとに乱数シードが生成されます。
+
+この seed は通常の設定であり、シークレットではありません。値は他の設定と同様に平文で保存・表示されます (`system.query_log` や `system.settings` など)。パスワードなどのシークレットを seed として使用しないでください。異なるクエリの難読化された出力同士を関連付けられないようにする必要がある場合は、固定の seed を設定せず、デフォルトの空の値 (クエリごとに新しい乱数シードを生成) のままにしてください。
+
 ## offset {#offset}
 
 <SettingsInfoBlock type="Double" default_value="0" />

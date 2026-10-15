@@ -4044,7 +4044,7 @@ SELECT arraySimilarity(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5
 
 Introduzido em: v1.1.0
 
-Retorna uma parte do array, incluindo elementos `NULL`.
+Retorna uma fatia do array, incluindo elementos `NULL`.
 
 O primeiro argumento também pode ser um [QBit](/pt-BR/reference/data-types/qbit): o resultado é um QBit nas dimensões selecionadas (uma projeção para um subconjunto de dimensões). Nesse caso, `offset` e `length` devem ser constantes, pois a dimensão de um QBit faz parte de seu tipo, e a fatia deve selecionar pelo menos uma dimensão. Uma fatia alinhada aos limites dos grupos de stride do QBit mantém o stride e reutiliza os fluxos de planos de bits armazenados sem cópia.
 
@@ -4053,6 +4053,8 @@ O primeiro argumento também pode ser um [QBit](/pt-BR/reference/data-types/qbit
 ```sql
 arraySlice(arr, offset [, length])
 ```
+
+**Nomes alternativos**: `slice`
 
 **Argumentos**
 
@@ -4415,6 +4417,8 @@ Recebe vários arrays e retorna um array que contém todos os elementos presente
 arrayUnion(arr1, arr2, ..., arrN)
 ```
 
+**Nomes alternativos**: `array_union`
+
 **Argumentos**
 
 * `arrN` — N arrays usados para criar o novo array. [`Array(T)`](/pt-BR/reference/data-types/array)
@@ -4576,6 +4580,8 @@ Combina vários arrays em um único array, permitindo arrays não alinhados (arr
 ```sql
 arrayZipUnaligned(arr1, arr2, ..., arrN)
 ```
+
+**Nomes alternativos**: `zip`
 
 **Argumentos**
 

@@ -350,6 +350,8 @@ SELECT accurateCastOrDefault('abc', 'UInt32')
 
 Эта функция сочетает безопасность [`accurateCast`](#accurateCast) с удобной обработкой ошибок.
 
+Синтаксис `TRY_CAST(x AS T)`, применяемый в диалектах SQL Trino, Spark, Snowflake и SQL Server, эквивалентен `accurateCastOrNull(x, 'T')`.
+
 **Синтаксис**
 
 ```sql

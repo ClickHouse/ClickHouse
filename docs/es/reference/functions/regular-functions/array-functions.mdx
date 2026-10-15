@@ -4054,6 +4054,8 @@ El primer argumento también puede ser un [QBit](/es/reference/data-types/qbit):
 arraySlice(arr, offset [, length])
 ```
 
+**Alias**: `slice`
+
 **Argumentos**
 
 * `arr` — Array que se va a segmentar. [`Array(T)`](/es/reference/data-types/array) o [`QBit`](/es/reference/data-types/qbit)
@@ -4415,13 +4417,15 @@ Toma varios arrays y devuelve un array que contiene todos los elementos que est�
 arrayUnion(arr1, arr2, ..., arrN)
 ```
 
+**Alias**: `array_union`
+
 **Argumentos**
 
 * `arrN` — N arrays a partir de las cuales se crea el nuevo array. [`Array(T)`](/es/reference/data-types/array)
 
 **Valor devuelto**
 
-Devuelve un array con elementos distintos de los arrays de entrada [`Array(T)`](/es/reference/data-types/array)
+Devuelve un array con elementos distintos de los arrays de origen [`Array(T)`](/es/reference/data-types/array)
 
 **Ejemplos**
 
@@ -4576,6 +4580,8 @@ Combina varios arrays en un único array, lo que permite arrays no alineados (de
 ```sql
 arrayZipUnaligned(arr1, arr2, ..., arrN)
 ```
+
+**Alias**: `zip`
 
 **Argumentos**
 

@@ -111,13 +111,13 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 ## parallel_replicas_filter_pushdown {#parallel_replicas_filter_pushdown}
 
-<BetaBadge />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "0"},{"label": "새로운 설정"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "기본적으로 활성화됨"}]}]} />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "0"},{"label": "새로운 설정"}]}]} />
+병렬 레플리카가 실행하는 쿼리 부분보다 상위에 있는 조건을 해당 부분과 레플리카로 전송되는 쿼리에 푸시다운하여, 레플리카에서도 이 조건으로 필터링하도록 합니다.
 
-병렬 레플리카가 실행하도록 선택한 쿼리 부분에 필터를 푸시다운할 수 있도록 허용합니다
+26.10 이전 버전처럼 조건을 initiator에서 읽기 단계 상위에 그대로 두려면 이 설정을 비활성화하십시오. 푸시다운이 정상적으로 동작하지 않을 때 이 설정으로 문제를 피할 수 있습니다. 설정 여부와 관계없이 결과는 동일하며, 레플리카가 처리하는 작업량과 작업을 수행하는 시점만 달라집니다.
 
 ## parallel_replicas_for_cluster_engines {#parallel_replicas_for_cluster_engines}
 

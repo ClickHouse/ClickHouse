@@ -1337,9 +1337,10 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "Autres",
-      count: 126,
+      count: 127,
       settings: [
         { name: "abort_on_logical_error", path: "/other#abort_on_logical_error", default: "0" },
+        { name: "ai_function_allow_sql_named_collections", path: "/other#ai_function_allow_sql_named_collections", default: "1" },
         { name: "allowed_disks_for_table_engines", path: "/other#allowed_disks_for_table_engines", default: '""' },
         { name: "auth_use_forwarded_address", path: "/other#auth_use_forwarded_address", default: "false" },
         { name: "bcrypt_workfactor", path: "/other#bcrypt_workfactor", default: "12" },

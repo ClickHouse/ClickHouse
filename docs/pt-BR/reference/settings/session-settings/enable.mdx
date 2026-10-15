@@ -34,7 +34,8 @@ As configurações de agregação externa (`max_bytes_before_external_group_by`,
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "Nova configuração. Habilita o spill adaptativo de dados da memória para armazenamento externo."}]}]} />
 
-Faz o processador realizar spill de dados para o armazenamento externo de forma adaptativa. Atualmente, há suporte para hash joins que podem fazer spill de dados, tanto `grace_hash` quanto o caminho adaptativo `hash` / `parallel_hash`.
+Realiza, de forma adaptativa, o spill para o armazenamento externo de processadores elegíveis de agregação, ordenação, `DISTINCT` e hash join quando a consulta está sob pressão de memória.
+Os hash joins compatíveis incluem `grace_hash` e o caminho adaptativo `hash` / `parallel_hash`.
 
 ## enable_add_distinct_to_in_subqueries {#enable_add_distinct_to_in_subqueries}
 
@@ -443,6 +444,16 @@ Todos os servidores que participam de uma consulta distribuída devem usar o mes
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.10"},{"label": "1"},{"label": "Nova configuração"}]}]} />
 
 Se true, os dados podem ser convertidos diretamente para colunas com serialização personalizada (por exemplo, Sparse), de acordo com as indicações de serialização obtidas da tabela.
+
+## enable_pco_codec {#enable_pco_codec}
+
+<BetaBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nova configuração para habilitar o codec de compressão `PCO`, em Beta."}]}]} />
+
+Habilita o codec de compressão `PCO`.
 
 ## enable_producing_buckets_out_of_order_in_aggregation {#enable_producing_buckets_out_of_order_in_aggregation}
 

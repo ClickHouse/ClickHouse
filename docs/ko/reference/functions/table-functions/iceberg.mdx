@@ -608,15 +608,16 @@ ALTER TABLE iceberg_table EXECUTE expire_snapshots(retention_period = '1d', dry_
 
 이 명령은 두 개의 컬럼(`metric_name String`, `metric_value Int64`)으로 구성된 테이블을 반환하며, 각 메트릭마다 하나의 행이 포함됩니다. 메트릭 이름은 [Iceberg 사양](https://iceberg.apache.org/docs/latest/spark-procedures/#output)을 따릅니다:
 
-| metric&#95;name                       | 설명                            |
-| ------------------------------------- | ----------------------------- |
-| `deleted_data_files_count`            | 삭제된 데이터 파일 수                  |
-| `deleted_position_delete_files_count` | 삭제된 포지션 삭제 파일 수               |
-| `deleted_equality_delete_files_count` | 삭제된 equality 삭제 파일 수          |
-| `deleted_manifest_files_count`        | 삭제된 manifest 파일 수             |
-| `deleted_manifest_lists_count`        | 삭제된 manifest 목록 파일 수          |
-| `deleted_statistics_files_count`      | 삭제된 statistics 파일 수(현재는 항상 0) |
-| `dry_run`                             | 드라이런 모드에서는 `1`, 일반 실행에서는 `0`  |
+| metric&#95;name                       | 설명                                                                                  |
+| ------------------------------------- | ----------------------------------------------------------------------------------- |
+| `deleted_data_files_count`            | 삭제된 데이터 파일 수                                                                        |
+| `deleted_position_delete_files_count` | 삭제된 포지션 삭제 파일 수                                                                     |
+| `deleted_equality_delete_files_count` | 삭제된 동등성 기반 삭제 파일(equality-delete files) 수                                                                |
+| `deleted_manifest_files_count`        | 삭제된 매니페스트 파일 수                                                                   |
+| `deleted_manifest_lists_count`        | 삭제된 manifest 목록 파일 수                                                                |
+| `deleted_statistics_files_count`      | 삭제된 statistics 파일 수(현재는 항상 0)                                                       |
+| `dry_run`                             | 드라이런 모드에서는 `1`, 일반 실행에서는 `0`                                                        |
+| `failed_deletions_count`              | 삭제 중 오류가 발생한 파일 수. 이러한 파일은 스토리지에 남아 있을 수 있으며, 나중에 `remove_orphan_files`로 삭제할 수 있습니다 |
 
 이 명령은 다음 단계를 수행합니다:
 
@@ -625,12 +626,12 @@ ALTER TABLE iceberg_table EXECUTE expire_snapshots(retention_period = '1d', dry_
 3. 정책에 따라 유지되지 않고 타임스탬프 퓨즈로도 보호되지 않는 스냅샷을 만료시킵니다
 4. 만료된 스냅샷에만 연결된 파일을 계산합니다
 5. 일반 모드: 만료된 스냅샷이 제외된 새 메타데이터를 생성합니다
-6. 일반 모드: 더 이상 도달할 수 없는 manifest 목록, manifest 파일, 데이터 파일을 물리적으로 삭제합니다
+6. 일반 모드: 더 이상 도달할 수 없는 manifest 목록, 매니페스트 파일, 데이터 파일을 물리적으로 삭제합니다. 삭제 중 오류가 발생한 파일은 삭제하는 대신 `failed_deletions_count`에 집계합니다
 7. `dry_run = 1` 모드: 5단계와 6단계를 건너뛰고 계산된 메트릭만 반환합니다
 
 #### 스냅샷 보존 정책 {#iceberg-snapshot-retention-policy}
 
-`expire_snapshots` 명령은 [Iceberg 스냅샷 retention policy](https://iceberg.apache.org/spec/#snapshot-retention-policy)를 따릅니다. 보존 설정은 Iceberg 테이블 속성과 참조별 재정의 값으로 구성됩니다.
+`expire_snapshots` 명령은 [Iceberg 스냅샷 보존 정책](https://iceberg.apache.org/spec/#snapshot-retention-policy)를 따릅니다. 보존 설정은 Iceberg 테이블 속성과 참조별 재정의 값으로 구성됩니다.
 
 | 속성                                     | 범위  | 기본값                                                                | 설명                                            |
 | -------------------------------------- | --- | ------------------------------------------------------------------ | --------------------------------------------- |
@@ -642,7 +643,7 @@ ALTER TABLE iceberg_table EXECUTE expire_snapshots(retention_period = '1d', dry_
 
 **보존 평가:**
 
-* **각 브랜치**(`main` 포함): 브랜치 헤드에서 시작해 조상 체인을 따라가며 검사합니다. 다음 조건 중 하나라도 만족하면 스냅샷이 유지됩니다.
+* **각 브랜치**(`main` 포함): 브랜치 헤드는 항상 유지됩니다. 브랜치 헤드에서 시작해 조상 체인을 따라가며 검사하고, 다음 조건 중 하나라도 만족하면 스냅샷이 유지됩니다.
   * 해당 스냅샷이 체인에서 앞의 `min-snapshots-to-keep`개 중 하나인 경우
   * 스냅샷의 경과 시간이 `max-snapshot-age-ms` 이내인 경우(즉, `now - timestamp-ms <= max-snapshot-age-ms`)
 * **태그의 경우**: 태그가 가리키는 스냅샷은 유지되지만, 태그가 `max-ref-age-ms`를 초과하면 태그 참조가 제거됩니다
@@ -655,10 +656,10 @@ ALTER TABLE iceberg_table EXECUTE expire_snapshots(retention_period = '1d', dry_
 `ALTER TABLE EXECUTE` 권한이 필요합니다. 이 권한은 ClickHouse 접근 제어 계층 구조에서 `ALTER TABLE`의 하위 권한입니다. 이 권한만 개별적으로 부여하거나 상위 권한을 통해 부여할 수 있습니다.
 
 ```sql
--- EXECUTE 권한만 부여
+-- Grant only EXECUTE permission
 GRANT ALTER TABLE EXECUTE ON my_iceberg_table TO my_user;
 
--- 또는 모든 ALTER TABLE 권한 부여 (ALTER TABLE EXECUTE 포함)
+-- Or grant all ALTER TABLE permissions (includes ALTER TABLE EXECUTE)
 GRANT ALTER TABLE ON my_iceberg_table TO my_user;
 ```
 

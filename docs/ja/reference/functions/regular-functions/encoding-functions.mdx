@@ -503,6 +503,8 @@ SELECT encodeQuotedPrintable('Café = 3 €') AS encoded
 hex(arg)
 ```
 
+**別名**: `to_hex`
+
 **引数**
 
 * `arg` — 16進数に変換する値。[`String`](/ja/reference/data-types/string) または [`(U)Int*`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`Decimal`](/ja/reference/data-types/decimal) または [`Date`](/ja/reference/data-types/date) または [`DateTime`](/ja/reference/data-types/datetime)
@@ -1148,6 +1150,8 @@ SELECT reinterpretAsUInt64(reverse(unbin('1110'))) AS num
 ```sql
 unhex(arg)
 ```
+
+**別名**: `from_hex`
 
 **引数**
 

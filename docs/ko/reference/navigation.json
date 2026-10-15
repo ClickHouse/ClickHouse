@@ -778,6 +778,7 @@
             "ko/reference/functions/table-functions/timeSeriesSamples",
             "ko/reference/functions/table-functions/timeSeriesSelector",
             "ko/reference/functions/table-functions/timeSeriesTags",
+            "ko/reference/functions/table-functions/timeSeriesTimeRanges",
             "ko/reference/functions/table-functions/url",
             "ko/reference/functions/table-functions/urlCluster",
             "ko/reference/functions/table-functions/values",

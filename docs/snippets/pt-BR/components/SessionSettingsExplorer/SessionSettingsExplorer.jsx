@@ -1,6 +1,6 @@
 const SessionSettingsExplorer = ({ href: baseRoute }) => {
   // O renderizador de produção do Mintlify avalia o componente exportado sem
-  // preservar os bindings do escopo do módulo. O estado lazy mantém os dados gerados
+  // preservar os bindings no escopo do módulo. O estado lazy mantém os dados gerados
   // nesse escopo de avaliação, construindo-os apenas uma vez por montagem.
   const [entries] = useState(() => [
     {
@@ -297,11 +297,12 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "automatic_parallel_*",
-      count: 3,
+      count: 4,
       settings: [
         { name: "automatic_parallel_replicas_max_duplicated_read_ratio", path: "/automatic-parallel#automatic_parallel_replicas_max_duplicated_read_ratio", default: "0.5" },
         { name: "automatic_parallel_replicas_min_bytes_per_replica", path: "/automatic-parallel#automatic_parallel_replicas_min_bytes_per_replica", default: "1048576" },
-        { name: "automatic_parallel_replicas_mode", path: "/automatic-parallel#automatic_parallel_replicas_mode", default: "0" }
+        { name: "automatic_parallel_replicas_mode", path: "/automatic-parallel#automatic_parallel_replicas_mode", default: "0" },
+        { name: "automatic_parallel_replicas_remember_boundary", path: "/automatic-parallel#automatic_parallel_replicas_remember_boundary", default: "1" }
       ],
       children: []
     },
@@ -773,7 +774,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "enable_*",
-      count: 58,
+      count: 59,
       settings: [
         { name: "enable_adaptive_aggregator", path: "/enable#enable_adaptive_aggregator", default: "1" },
         { name: "enable_adaptive_memory_spill_scheduler", path: "/enable#enable_adaptive_memory_spill_scheduler", default: "0" },
@@ -808,6 +809,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "enable_order_by_all", path: "/enable#enable_order_by_all", default: "1" },
         { name: "enable_packed_string_keys_in_aggregation", path: "/enable#enable_packed_string_keys_in_aggregation", default: "1" },
         { name: "enable_parsing_to_custom_serialization", path: "/enable#enable_parsing_to_custom_serialization", default: "1" },
+        { name: "enable_pco_codec", path: "/enable#enable_pco_codec", default: "0" },
         { name: "enable_producing_buckets_out_of_order_in_aggregation", path: "/enable#enable_producing_buckets_out_of_order_in_aggregation", default: "1" },
         { name: "enable_quantized_codec", path: "/enable#enable_quantized_codec", default: "0" },
         { name: "enable_reads_from_columns_cache", path: "/enable#enable_reads_from_columns_cache", default: "1" },
@@ -1883,8 +1885,9 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "min_bytes_*",
-      count: 2,
+      count: 3,
       settings: [
+        { name: "min_bytes_to_spill", path: "/min-bytes#min_bytes_to_spill", default: "67108864" },
         { name: "min_bytes_to_use_direct_io", path: "/min-bytes#min_bytes_to_use_direct_io", default: "0" },
         { name: "min_bytes_to_use_mmap_io", path: "/min-bytes#min_bytes_to_use_mmap_io", default: "0" }
       ],
@@ -2009,6 +2012,19 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
       settings: [
         { name: "number_of_mutations_to_delay", path: "/number-of#number_of_mutations_to_delay", default: "0" },
         { name: "number_of_mutations_to_throw", path: "/number-of#number_of_mutations_to_throw", default: "0" }
+      ],
+      children: []
+    },
+    {
+      label: "obfuscate_markov_*",
+      count: 6,
+      settings: [
+        { name: "obfuscate_markov_determinator_sliding_window_size", path: "/obfuscate-markov#obfuscate_markov_determinator_sliding_window_size", default: "8" },
+        { name: "obfuscate_markov_frequency_add", path: "/obfuscate-markov#obfuscate_markov_frequency_add", default: "0" },
+        { name: "obfuscate_markov_frequency_cutoff", path: "/obfuscate-markov#obfuscate_markov_frequency_cutoff", default: "5" },
+        { name: "obfuscate_markov_frequency_desaturate", path: "/obfuscate-markov#obfuscate_markov_frequency_desaturate", default: "0" },
+        { name: "obfuscate_markov_num_buckets_cutoff", path: "/obfuscate-markov#obfuscate_markov_num_buckets_cutoff", default: "0" },
+        { name: "obfuscate_markov_order", path: "/obfuscate-markov#obfuscate_markov_order", default: "5" }
       ],
       children: []
     },
@@ -2263,7 +2279,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "parallel_replicas_custom_key", path: "/parallel-replicas#parallel_replicas_custom_key", default: '""' },
         { name: "parallel_replicas_custom_key_range_lower", path: "/parallel-replicas#parallel_replicas_custom_key_range_lower", default: "0" },
         { name: "parallel_replicas_custom_key_range_upper", path: "/parallel-replicas#parallel_replicas_custom_key_range_upper", default: "0" },
-        { name: "parallel_replicas_filter_pushdown", path: "/parallel-replicas#parallel_replicas_filter_pushdown", default: "0" },
+        { name: "parallel_replicas_filter_pushdown", path: "/parallel-replicas#parallel_replicas_filter_pushdown", default: "1" },
         { name: "parallel_replicas_for_cluster_engines", path: "/parallel-replicas#parallel_replicas_for_cluster_engines", default: "1" },
         { name: "parallel_replicas_for_non_replicated_merge_tree", path: "/parallel-replicas#parallel_replicas_for_non_replicated_merge_tree", default: "0" },
         { name: "parallel_replicas_for_queries_with_multiple_tables", path: "/parallel-replicas#parallel_replicas_for_queries_with_multiple_tables", default: "1" },
@@ -2704,11 +2720,12 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "short_circuit_function_evaluation_*",
-      count: 3,
+      count: 4,
       settings: [
         { name: "short_circuit_function_evaluation", path: "/short-circuit-function-evaluation#short_circuit_function_evaluation", default: "enable" },
         { name: "short_circuit_function_evaluation_for_nulls", path: "/short-circuit-function-evaluation#short_circuit_function_evaluation_for_nulls", default: "1" },
-        { name: "short_circuit_function_evaluation_for_nulls_threshold", path: "/short-circuit-function-evaluation#short_circuit_function_evaluation_for_nulls_threshold", default: "1" }
+        { name: "short_circuit_function_evaluation_for_nulls_threshold", path: "/short-circuit-function-evaluation#short_circuit_function_evaluation_for_nulls_threshold", default: "1" },
+        { name: "short_circuit_function_evaluation_reorder_arguments", path: "/short-circuit-function-evaluation#short_circuit_function_evaluation_reorder_arguments", default: "1" }
       ],
       children: []
     },
@@ -3097,7 +3114,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "Outros",
-      count: 155,
+      count: 156,
       settings: [
         { name: "adaptive_aggregator_freeze_threshold", path: "/other#adaptive_aggregator_freeze_threshold", default: "16384" },
         { name: "adaptive_aggregator_freeze_threshold_bytes", path: "/other#adaptive_aggregator_freeze_threshold_bytes", default: "4194304" },
@@ -3185,6 +3202,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "mongodb_throw_on_unsupported_query", path: "/other#mongodb_throw_on_unsupported_query", default: "1" },
         { name: "multiple_joins_try_to_keep_original_names", path: "/other#multiple_joins_try_to_keep_original_names", default: "0" },
         { name: "normalize_function_names", path: "/other#normalize_function_names", default: "1" },
+        { name: "obfuscate_seed", path: "/other#obfuscate_seed", default: '""' },
         { name: "offset", path: "/other#offset", default: "0" },
         { name: "order", path: "/other#order", default: '""' },
         { name: "output_format", path: "/other#output_format", default: '""' },
@@ -3483,7 +3501,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
           type="search"
           value={searchTerm}
           onChange={(event) => setSearchTerm(event.target.value)}
-          placeholder="Pesquise configurações, por exemplo, parallel replicas ou %materialized%"
+          placeholder="Pesquisar configurações, ex.: parallel replicas ou %materialized%"
           className="w-full rounded-lg border border-gray-500 bg-gray-50 py-2 pl-9 pr-3 text-sm text-gray-900 placeholder:text-gray-600 focus:border-gray-600 focus:outline-0 focus-visible:outline-0 dark:border-white/30 dark:bg-white/5 dark:text-white dark:placeholder:text-gray-400 dark:focus:border-[#fdff75]"
         />
       </div>

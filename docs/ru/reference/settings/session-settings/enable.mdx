@@ -32,9 +32,10 @@ import { PrivatePreviewBadge } from "/snippets/ru/components/PrivatePreviewBadge
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "Новая настройка. Включает адаптивную выгрузку данных из памяти во внешнее хранилище."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "Новая настройка. Включает адаптивный сброс данных на диск из памяти во внешнее хранилище."}]}]} />
 
-Включает адаптивную выгрузку данных из памяти во внешнее хранилище. На данный момент поддерживаются hash join, способные выгружать данные на диск: как `grace_hash`, так и адаптивный путь `hash` / `parallel_hash`.
+Включает адаптивный сброс данных на диск во внешнее хранилище для подходящих процессоров агрегации, сортировки, `DISTINCT` и хеш-соединения при нехватке памяти для запроса.
+Из хеш-соединений поддерживаются `grace_hash` и адаптивный путь `hash` / `parallel_hash`.
 
 ## enable_add_distinct_to_in_subqueries {#enable_add_distinct_to_in_subqueries}
 
@@ -443,6 +444,16 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.10"},{"label": "1"},{"label": "новая настройка"}]}]} />
 
 Если значение равно true, данные можно напрямую разбирать в столбцы с пользовательской сериализацией (например, Sparse) в соответствии с подсказками по сериализации, полученными из таблицы.
+
+## enable_pco_codec {#enable_pco_codec}
+
+<BetaBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Новая настройка для включения кодека сжатия `PCO` в статусе бета."}]}]} />
+
+Включает кодек сжатия `PCO`.
 
 ## enable_producing_buckets_out_of_order_in_aggregation {#enable_producing_buckets_out_of_order_in_aggregation}
 

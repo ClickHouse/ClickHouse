@@ -18,6 +18,14 @@ import { CloudNotSupportedBadge } from "/snippets/ru/components/CloudNotSupporte
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />Приводит к аварийному завершению работы сервера при исключениях LOGICAL&#95;ERROR. Только для опытных пользователей.
 
+## ai_function_allow_sql_named_collections {#ai_function_allow_sql_named_collections}
+
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
+
+Разрешает функциям ИИ (например, `aiGenerate`, `aiEmbed`, `aiSimilarity`) использовать именованные коллекции, созданные с помощью `CREATE NAMED COLLECTION`.
+Если настройка отключена, функции ИИ принимают только именованные коллекции, определённые в файле конфигурации сервера, а при попытке использовать любую другую коллекцию генерируется исключение.
+Это относится как к параметру `credentials`, так и к настройкам `ai_function_text_default_credentials` и `ai_function_embedding_default_credentials`.
+
 ## allowed_disks_for_table_engines {#allowed_disks_for_table_engines}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Список дисков, разрешённых для использования с Iceberg

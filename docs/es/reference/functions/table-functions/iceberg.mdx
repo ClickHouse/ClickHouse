@@ -608,15 +608,16 @@ ALTER TABLE iceberg_table EXECUTE expire_snapshots(retention_period = '1d', dry_
 
 El comando devuelve una tabla con dos columnas (`metric_name String`, `metric_value Int64`) que contiene una fila por cada métrica. Los nombres de las métricas siguen la [especificación de Iceberg](https://iceberg.apache.org/docs/latest/spark-procedures/#output):
 
-| metric&#95;name                       | Descripción                                                           |
-| ------------------------------------- | --------------------------------------------------------------------- |
-| `deleted_data_files_count`            | Número de archivos de datos eliminados                                |
-| `deleted_position_delete_files_count` | Número de archivos de eliminación por posición eliminados             |
-| `deleted_equality_delete_files_count` | Número de archivos de eliminación por igualdad eliminados             |
-| `deleted_manifest_files_count`        | Número de archivos de manifiesto eliminados                           |
-| `deleted_manifest_lists_count`        | Número de archivos de lista de manifiestos eliminados                 |
-| `deleted_statistics_files_count`      | Número de archivos de estadísticas eliminados (actualmente siempre 0) |
-| `dry_run`                             | `1` para el modo de simulación, `0` para la ejecución normal          |
+| metric&#95;name                       | Descripción                                                                                                                                                    |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `deleted_data_files_count`            | Número de archivos de datos eliminados                                                                                                                         |
+| `deleted_position_delete_files_count` | Número de archivos de eliminación por posición eliminados                                                                                                      |
+| `deleted_equality_delete_files_count` | Número de archivos de eliminación por igualdad eliminados                                                                                                      |
+| `deleted_manifest_files_count`        | Número de archivos de manifiesto eliminados                                                                                                                    |
+| `deleted_manifest_lists_count`        | Número de archivos de lista de manifiestos eliminados                                                                                                          |
+| `deleted_statistics_files_count`      | Número de archivos de estadísticas eliminados (actualmente siempre 0)                                                                                          |
+| `dry_run`                             | `1` para el modo de simulación, `0` para la ejecución normal                                                                                                   |
+| `failed_deletions_count`              | Número de archivos cuya eliminación devolvió un error. Un archivo así puede quedar en el almacenamiento, y `remove_orphan_files` puede eliminarlo más adelante |
 
 El comando realiza los siguientes pasos:
 
@@ -624,8 +625,8 @@ El comando realiza los siguientes pasos:
 2. Si se proporcionó un argumento de marca de tiempo, también protege todas las instantáneas en esa marca de tiempo o posteriores
 3. Expira las instantáneas que no se conservan según la política ni están protegidas por la salvaguarda de marca de tiempo
 4. Calcula qué archivos están asociados exclusivamente a instantáneas expiradas
-5. En modo normal: genera metadatos nuevos sin las instantáneas expiradas
-6. En modo normal: elimina físicamente las listas de manifiestos, los archivos de manifiesto y los archivos de datos inaccesibles
+5. En modo normal: genera metadata nueva sin las instantáneas expiradas
+6. En modo normal: elimina físicamente las listas de manifiestos, los archivos de manifiesto y los archivos de datos inaccesibles y, en su lugar, contabiliza en `failed_deletions_count` cualquier archivo cuya eliminación devuelva un error
 7. En el modo `dry_run = 1`: omite los pasos 5 y 6 y solo devuelve las métricas calculadas
 
 #### Política de retención de instantáneas {#iceberg-snapshot-retention-policy}
@@ -638,11 +639,11 @@ El comando `expire_snapshots` respeta la [política de retención de instantáne
 | `history.expire.max-snapshot-age-ms`   | Tabla  | `iceberg_expire_default_max_snapshot_age_ms` (predeterminado `432000000`, 5 días) | Antigüedad máxima (en ms) de las instantáneas que se conservan en una rama                                          |
 | `history.expire.max-ref-age-ms`        | Tabla  | `iceberg_expire_default_max_ref_age_ms` (predeterminado `∞`)                      | Antigüedad máxima (en ms) de una referencia de instantánea (rama o etiqueta) antes de eliminar la propia referencia |
 
-Cada referencia de instantánea (`refs` en los metadatos de Iceberg) puede sobrescribir estos valores con campos por referencia: `min-snapshots-to-keep`, `max-snapshot-age-ms` y `max-ref-age-ms`.
+Cada referencia de instantánea (`refs` en la metadata de Iceberg) puede sobrescribir estos valores con campos por referencia: `min-snapshots-to-keep`, `max-snapshot-age-ms` y `max-ref-age-ms`.
 
 **Evaluación de la retención:**
 
-* **Para cada rama** (incluida `main`): se recorre la cadena de ancestros a partir de la cabecera de la rama. Las instantáneas se conservan mientras se cumpla cualquiera de estas condiciones:
+* **Para cada rama** (incluida `main`): la cabecera de la rama siempre se conserva. Se recorre la cadena de ancestros a partir de la cabecera de la rama y las instantáneas se conservan mientras se cumpla cualquiera de estas condiciones:
   * La instantánea es una de las primeras `min-snapshots-to-keep` de la cadena
   * La antigüedad de la instantánea está dentro de `max-snapshot-age-ms` (es decir, `now - timestamp-ms <= max-snapshot-age-ms`)
 * **Para las etiquetas**: la instantánea etiquetada se conserva, salvo que la etiqueta haya superado su `max-ref-age-ms`, en cuyo caso se elimina la referencia de la etiqueta
@@ -655,10 +656,10 @@ Cada referencia de instantánea (`refs` en los metadatos de Iceberg) puede sobre
 Se requiere el privilegio `ALTER TABLE EXECUTE`, que es un privilegio secundario de `ALTER TABLE` en la jerarquía de control de acceso de ClickHouse. Puede concederlo específicamente o a través del privilegio principal:
 
 ```sql
--- Otorgar solo el permiso EXECUTE
+-- Grant only EXECUTE permission
 GRANT ALTER TABLE EXECUTE ON my_iceberg_table TO my_user;
 
--- O conceder todos los permisos de ALTER TABLE (incluye ALTER TABLE EXECUTE)
+-- Or grant all ALTER TABLE permissions (includes ALTER TABLE EXECUTE)
 GRANT ALTER TABLE ON my_iceberg_table TO my_user;
 ```
 
@@ -667,7 +668,7 @@ GRANT ALTER TABLE ON my_iceberg_table TO my_user;
   * La instantánea actual siempre se conserva, incluso si es anterior a la marca de tiempo especificada
   * Requiere que la configuración `allow_insert_into_iceberg` esté habilitada
   * Requiere que la configuración `allow_experimental_expire_snapshots` esté habilitada
-  * La autorización propia del catalog (autenticación del REST catalog, AWS Glue IAM, etc.) se aplica de forma independiente cuando ClickHouse actualiza los metadatos
+  * La autorización propia del Catálogo (autenticación del catálogo REST, AWS Glue IAM, etc.) se aplica de forma independiente cuando ClickHouse actualiza la metadata
 </Note>
 
 ### Eliminar archivos huérfanos {#iceberg-remove-orphan-files}

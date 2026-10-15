@@ -351,6 +351,8 @@ Como [`accurateCast`](#accurateCast), mas retorna `NULL` em vez de lançar uma e
 
 Esta função combina a segurança de [`accurateCast`](#accurateCast) com um tratamento de erros mais adequado.
 
+A sintaxe `TRY_CAST(x AS T)`, presente nos dialetos SQL do Trino, Spark, Snowflake e SQL Server, equivale a `accurateCastOrNull(x, 'T')`.
+
 **Sintaxe**
 
 ```sql

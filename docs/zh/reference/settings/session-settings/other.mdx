@@ -1085,6 +1085,14 @@ Possible values:
 
 将函数名称规范化为其标准名称
 
+## obfuscate_seed {#obfuscate_seed}
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": ""},{"label": "新增设置：obfuscate 表函数的种子字符串。"}]}]} />
+
+`obfuscate` 表函数使用的种子，可以是任意字符串。每一列的种子均由该字符串和列名派生而来，因此相同的种子始终会产生相同的混淆结果。如果设置为空字符串，则会为每个查询生成一个随机种子。
+
+该种子只是一个普通设置，而非机密信息：与其他设置一样，其值会以明文形式存储和显示，例如在 `system.query_log` 和 `system.settings` 中。请勿使用密码或其他机密信息作为种子。如果要求不同查询的已混淆输出之间无法相互关联，请保留默认的空值 (即每个查询使用一个新的随机种子) ，不要设置固定种子。
+
 ## offset {#offset}
 
 <SettingsInfoBlock type="Double" default_value="0" />

@@ -505,6 +505,8 @@ A função usa letras maiúsculas `A-F` e não usa prefixos (como `0x`) nem sufi
 hex(arg)
 ```
 
+**aliases**: `to_hex`
+
 **Argumentos**
 
 * `arg` — Um valor a ser convertido em hexadecimal. [`String`](/pt-BR/reference/data-types/string) ou [`(U)Int*`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`Decimal`](/pt-BR/reference/data-types/decimal) ou [`Date`](/pt-BR/reference/data-types/date) ou [`DateTime`](/pt-BR/reference/data-types/datetime)
@@ -1152,9 +1154,11 @@ Para um argumento numérico, `unhex()` não executa o inverso de `hex(N)`.
 unhex(arg)
 ```
 
+**aliases**: `from_hex`
+
 **Argumentos**
 
-* `arg` — Uma sequência de caracteres contendo qualquer quantidade de dígitos hexadecimais. [`String`](/pt-BR/reference/data-types/string) ou [`FixedString`](/pt-BR/reference/data-types/fixedstring)
+* `arg` — Uma string contendo qualquer quantidade de dígitos hexadecimais. [`String`](/pt-BR/reference/data-types/string) ou [`FixedString`](/pt-BR/reference/data-types/fixedstring)
 
 **Valor retornado**
 

@@ -111,13 +111,13 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 ## parallel_replicas_filter_pushdown {#parallel_replicas_filter_pushdown}
 
-<BetaBadge />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "0"},{"label": "新增设置"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "默认启用"}]}]} />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "0"},{"label": "新设置"}]}]} />
+将位于并行副本执行部分之上的条件下推到该部分，并下推到发送给各副本的查询中，使副本同样按该条件进行过滤。
 
-允许将过滤器下推到由并行副本选择执行的查询部分
+关闭此设置后，条件将保留在发起服务器上读取操作的上方，与 26.10 之前版本的行为一致。如果下推出现异常，可以通过关闭此设置来规避：无论开启与否，查询结果都不会改变，改变的只是副本的工作量以及过滤发生的早晚。
 
 ## parallel_replicas_for_cluster_engines {#parallel_replicas_for_cluster_engines}
 

@@ -34,7 +34,8 @@ import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "新しい設定。メモリ内のデータを外部ストレージへアダプティブにスピルできるようにします。"}]}]} />
 
-トリガープロセッサが、データを外部ストレージへアダプティブにスピルします。現時点でサポートされているのは、スピル可能なハッシュ結合、すなわち `grace_hash` とアダプティブな `hash` / `parallel_hash` の経路です。
+クエリがメモリ逼迫状態になった際に、対象となる集約、ソート、`DISTINCT`、ハッシュ結合の各プロセッサのデータを外部ストレージへアダプティブにスピルします。
+サポートされているハッシュ結合は、`grace_hash` と、アダプティブな `hash` / `parallel_hash` の経路です。
 
 ## enable_add_distinct_to_in_subqueries {#enable_add_distinct_to_in_subqueries}
 
@@ -435,6 +436,16 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.10"},{"label": "1"},{"label": "新しい設定"}]}]} />
 
 true の場合、テーブルから取得したシリアライゼーションのヒントに基づいて、カスタムシリアライゼーション (例: スパース) を使用するカラムにデータを直接パースできます。
+
+## enable_pco_codec {#enable_pco_codec}
+
+<BetaBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "ベータ版の `PCO` 圧縮コーデックを有効にする新しい設定。"}]}]} />
+
+`PCO` 圧縮コーデックを有効にします。
 
 ## enable_producing_buckets_out_of_order_in_aggregation {#enable_producing_buckets_out_of_order_in_aggregation}
 

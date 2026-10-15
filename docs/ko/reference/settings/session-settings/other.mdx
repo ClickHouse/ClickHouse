@@ -1102,6 +1102,14 @@ true로 설정하면 `KILL QUERY`는 현재 실행 중인 `KILL` SQL 문을 제�
 
 함수 이름을 정규 이름으로 변환합니다
 
+## obfuscate_seed {#obfuscate_seed}
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": ""},{"label": "새로운 설정: obfuscate 테이블 함수의 seed 문자열입니다."}]}]} />
+
+`obfuscate` 테이블 함수에 사용할 seed입니다. 임의의 문자열을 지정할 수 있으며, 각 컬럼의 seed는 이 값과 컬럼명을 기반으로 생성되므로 동일한 seed를 사용하면 항상 동일한 난독화 결과를 얻습니다. 빈 문자열을 지정하면 쿼리마다 랜덤 시드가 생성됩니다.
+
+seed는 시크릿이 아닌 일반 설정입니다. 다른 설정과 마찬가지로 값이 평문으로 저장되고 표시되며, `system.query_log`, `system.settings` 등에서 확인할 수 있습니다. 비밀번호나 기타 시크릿을 seed로 사용하지 마십시오. 서로 다른 쿼리의 난독화된 출력을 서로 연관 지을 수 없어야 한다면, 고정된 seed를 설정하지 말고 기본값인 빈 값(쿼리마다 새로운 랜덤 시드 생성)을 그대로 유지하십시오.
+
 ## offset {#offset}
 
 <SettingsInfoBlock type="Double" default_value="0" />

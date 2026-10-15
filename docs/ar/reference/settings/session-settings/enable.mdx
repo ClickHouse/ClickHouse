@@ -32,10 +32,10 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "إعداد جديد. تمكين تفريغ بيانات الذاكرة إلى التخزين الخارجي بشكل تكيّفي."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "إعداد جديد. تمكين كتابة بيانات الذاكرة إلى التخزين الخارجي بشكل تكيّفي."}]}]} />
 
-يحفّز المعالج على تفريغ البيانات إلى التخزين الخارجي بشكل تكيّفي. يتوفر حاليًا دعم عمليات hash join القابلة للتفريغ، سواء
-`grace_hash` أو المسار التكيّفي `hash` / `parallel_hash`.
+يكتب بشكل تكيّفي معالجات التجميع والفرز و`DISTINCT` والربط بالتجزئة المؤهلة إلى التخزين الخارجي عند تعرّض الاستعلام لضغط الذاكرة.
+تشمل عمليات الربط بالتجزئة المدعومة `grace_hash` والمسار التكيّفي `hash` / `parallel_hash`.
 
 ## enable_add_distinct_to_in_subqueries {#enable_add_distinct_to_in_subqueries}
 
@@ -443,6 +443,16 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.10"},{"label": "1"},{"label": "إعداد جديد"}]}]} />
 
 إذا كانت القيمة true، فيمكن تحليل البيانات مباشرةً إلى الأعمدة ذات التسلسل المخصّص (مثل Sparse) وفقًا لتلميحات التسلسل المستمدة من الجدول.
+
+## enable_pco_codec {#enable_pco_codec}
+
+<BetaBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "إعداد جديد لتمكين مرمّز الضغط التجريبي `PCO`."}]}]} />
+
+يفعّل مرمّز الضغط `PCO`.
 
 ## enable_producing_buckets_out_of_order_in_aggregation {#enable_producing_buckets_out_of_order_in_aggregation}
 

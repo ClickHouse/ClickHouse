@@ -4042,17 +4042,19 @@ SELECT arraySimilarity(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5
 
 ## arraySlice {#arraySlice}
 
-Introduit dans : v1.1.0
+Introduit dans : v1.1.0
 
 Renvoie un secteur du tableau, en incluant les éléments `NULL`.
 
-Le premier argument peut également être un [QBit](/fr/reference/data-types/qbit) : le résultat est un QBit sur les dimensions sélectionnées (une projection sur un sous-ensemble de dimensions). Dans ce cas, `offset` et `length` doivent être des constantes, car la dimension d’un QBit fait partie de son type et le secteur doit sélectionner au moins une dimension. Un secteur aligné sur les limites des groupes de pas du QBit conserve le pas et réutilise les flux de plans de bits stockés sans copie.
+Le premier argument peut également être un [QBit](/fr/reference/data-types/qbit) : le résultat est un QBit sur les dimensions sélectionnées (une projection sur un sous-ensemble de dimensions). Dans ce cas, `offset` et `length` doivent être des constantes, car la dimension d’un QBit fait partie de son type et le secteur doit sélectionner au moins une dimension. Un secteur aligné sur les limites des groupes de pas du QBit conserve le pas et réutilise les flux de plans de bits stockés sans copie.
 
 **Syntaxe**
 
 ```sql
 arraySlice(arr, offset [, length])
 ```
+
+**Alias** : `slice`
 
 **Arguments**
 
@@ -4405,7 +4407,7 @@ SELECT arrayTranspose([['a', 'b'], ['c', 'd']])
 
 ## arrayUnion {#arrayUnion}
 
-Introduit dans : v24.10.0
+Introduit dans : v24.10.0
 
 Prend plusieurs tableaux et renvoie un tableau contenant tous les éléments présents dans au moins l’un des tableaux sources. Le résultat ne contient que des valeurs uniques.
 
@@ -4414,6 +4416,8 @@ Prend plusieurs tableaux et renvoie un tableau contenant tous les éléments pr�
 ```sql
 arrayUnion(arr1, arr2, ..., arrN)
 ```
+
+**Alias** : `array_union`
 
 **Arguments**
 
@@ -4567,7 +4571,7 @@ SELECT arrayZip(['a', 'b', 'c'], [5, 2, 1]);
 
 ## arrayZipUnaligned {#arrayZipUnaligned}
 
-Introduit dans : v20.1.0
+Introduit dans : v20.1.0
 
 Combine plusieurs tableaux en un seul, en autorisant des tableaux non alignés (de longueurs différentes). Le tableau obtenu contient les éléments correspondants des tableaux sources, regroupés en tuples dans l’ordre des arguments indiqués.
 
@@ -4576,6 +4580,8 @@ Combine plusieurs tableaux en un seul, en autorisant des tableaux non alignés (
 ```sql
 arrayZipUnaligned(arr1, arr2, ..., arrN)
 ```
+
+**Alias** : `zip`
 
 **Arguments**
 

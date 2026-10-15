@@ -206,6 +206,8 @@ SELECT ascii('234')
 base32Decode(encoded)
 ```
 
+**별칭**: `from_base32`
+
 **인수**
 
 * `encoded` — `String` 컬럼 또는 상수. [`String`](/ko/reference/data-types/string)
@@ -239,6 +241,8 @@ SELECT base32Decode('IVXGG33EMVSA====');
 ```sql
 base32Encode(plaintext)
 ```
+
+**별칭**: `to_base32`
 
 **인수**
 
@@ -415,7 +419,7 @@ SELECT base64Encode('clickhouse')
 
 RFC 4648에 따라 URL 안전 문자 집합을 사용한 [Base64](https://en.wikipedia.org/wiki/Base64) 형식의 문자열을 디코딩합니다.
 표준 문자 집합(`+` 및 `/`)도 디코딩할 때 허용됩니다.
-버전 26.7부터는 입력의 공백 문자 스페이스, tab (`\t`), line feed (`\n`), carriage return (`\r`), form feed (`\f`)를 무시합니다(이전 버전에서는 이러한 문자가 포함된 입력을 거부했습니다). Vertical tab (`\v`) 및 Base64 알파벳에 속하지 않는 그 밖의 모든 문자는 거부됩니다.
+버전 26.7부터는 입력의 공백 문자 스페이스, tab (`\t`), 줄 바꿈 (`\n`), 캐리지 리턴 (`\r`), 폼 피드 (`\f`)를 무시합니다(이전 버전에서는 이러한 문자가 포함된 입력을 거부했습니다). 수직 탭 (`\v`) 및 Base64 알파벳에 속하지 않는 그 밖의 모든 문자는 거부됩니다.
 오류가 발생하면 예외를 발생시킵니다.
 
 **구문**
@@ -423,6 +427,8 @@ RFC 4648에 따라 URL 안전 문자 집합을 사용한 [Base64](https://en.wik
 ```sql
 base64URLDecode(encoded)
 ```
+
+**별칭**: `from_base64url`
 
 **인수**
 
@@ -450,13 +456,15 @@ SELECT base64URLDecode('aHR0cHM6Ly9jbGlja2hvdXNlLmNvbQ')
 
 도입 버전: v18.16.0
 
-URL에 안전한 알파벳을 사용해 문자열을 [Base64](https://datatracker.ietf.org/doc/html/rfc4648#section-4)(RFC 4648) 형식으로 인코딩합니다.
+URL 안전 문자 집합을 사용해 문자열을 [Base64](https://datatracker.ietf.org/doc/html/rfc4648#section-4)(RFC 4648) 형식으로 인코딩합니다.
 
 **구문**
 
 ```sql
 base64URLEncode(plaintext)
 ```
+
+**별칭**: `to_base64url`
 
 **인수**
 
@@ -1097,7 +1105,7 @@ SELECT editDistance('clickhouse', 'mouse')
 editDistanceUTF8(s1, s2)
 ```
 
-**별칭**: `levenshteinDistanceUTF8`
+**별칭**: `levenshteinDistanceUTF8`, `levenshtein_distance`
 
 **인수**
 
@@ -1169,6 +1177,8 @@ SELECT
 ```sql
 endsWith(s, suffix)
 ```
+
+**별칭**: `ends_with`
 
 **인수**
 
@@ -2882,6 +2892,8 @@ SELECT sparseGramsUTF8('алиса', 3)
 ```sql
 startsWith(s, prefix)
 ```
+
+**별칭(Aliases)**: `starts_with`
 
 **인수**
 

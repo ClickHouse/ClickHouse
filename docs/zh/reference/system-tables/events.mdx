@@ -72,11 +72,15 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 
 ### AdaptiveAggregationSharedTableSpills {#adaptiveaggregationsharedtablespills}
 
-自适应聚合因在内存压力下达到分片上限，而将其共享排空表落盘的次数。
+自适应聚合在内存压力下、达到分片上限时或收到显式落盘请求时，将其共享排出表落盘的次数。
 
 ### AdaptiveAggregationSpillBacklogSheds {#adaptiveaggregationspillbacklogsheds}
 
 自适应聚合丢弃暂存积压的次数：当某个运行在基线算法上的线程 (可能是被解冻后重新放回该算法的线程，也可能是自行退出的线程) 即将落盘，而暂存记录仍驻留在内存中时，即会发生此情况。
+
+### AdaptiveAggregationSpillDrains {#adaptiveaggregationspilldrains}
+
+自适应聚合通过将暂存记录或共享排空残留数据写入磁盘 (而非退出自适应路径) 来响应内存调度器落盘请求的次数。
 
 ### AdaptiveAggregationStagedBytes {#adaptiveaggregationstagedbytes}
 
@@ -341,6 +345,10 @@ DNS 解析结果中发现的 HTTP 连接新地址总数
 ### AsyncLoggingTextLogTotalMessages {#asyncloggingtextlogtotalmessages}
 
 已发送到 text&#95;log 异步队列的消息总数 (包括已接收和已丢弃的消息)
+
+### AutomaticParallelReplicasDecidedWithoutBuildingPlan {#automaticparallelreplicasdecidedwithoutbuildingplan}
+
+自动并行副本机制依据先前执行时记录的边界，未构建候选执行计划进行成本评估即决定不使用并行副本的次数
 
 ### AutomaticParallelReplicasProbePlansBuilt {#automaticparallelreplicasprobeplansbuilt}
 
@@ -3449,6 +3457,18 @@ Trace 级别的日志消息数量
 
 内存预留终止信号的总数
 
+### MemoryReservationReclaimableBytes {#memoryreservationreclaimablebytes}
+
+查询中已变为可回收 (可落盘) 的内存
+
+### MemoryReservationSpilledBytes {#memoryreservationspilledbytes}
+
+溢写到磁盘的内存总字节数
+
+### MemoryReservationSpillingMicroseconds {#memoryreservationspillingmicroseconds}
+
+溢写所耗费的时间
+
 ### MemoryWorkerRun {#memoryworkerrun}
 
 MemoryWorker 在后台执行的次数
@@ -5632,6 +5652,10 @@ MergeTree 表中共享数据分区片段锁的获取次数
 ### SharedPartsLockWaitMicroseconds {#sharedpartslockwaitmicroseconds}
 
 等待 MergeTree 表中共享数据分区片段锁的总耗时
+
+### ShortCircuitArgumentsReordered {#shortcircuitargumentsreordered}
+
+`and` 或 `or` 函数未按查询中的顺序计算其参数的块数：即先计算开销较小的参数、再计算开销较大的参数，或根据先前块上收集的统计信息调整计算顺序 (由设置 `short_circuit_function_evaluation_reorder_arguments` 控制) 。`WHERE` / `HAVING` 中 AND 链各原子条件的重排序不计入此项，因为该重排序是在 `FilterStep` 构建其管道时一次性确定的。
 
 ### SleepFunctionCalls {#sleepfunctioncalls}
 

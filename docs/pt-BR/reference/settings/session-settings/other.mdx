@@ -1113,6 +1113,14 @@ Não adiciona aliases à lista de expressões de nível superior na reescrita de
 
 Normaliza os nomes das funções para suas formas canônicas
 
+## obfuscate_seed {#obfuscate_seed}
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": ""},{"label": "Nova configuração: string de seed para a função de tabela obfuscate."}]}]} />
+
+Seed para a função de tabela `obfuscate`. String arbitrária — o seed de cada coluna é derivado dela e do nome da coluna, de modo que o mesmo seed sempre produz a mesma ofuscação. Uma string vazia significa que uma semente aleatória é gerada para cada consulta.
+
+O seed é uma configuração comum, não um segredo: seu valor é armazenado e exibido em texto simples como qualquer outra configuração, por exemplo, em `system.query_log` e `system.settings`. Não use uma senha nem qualquer outro segredo como seed. Se as saídas ofuscadas de consultas diferentes não devem poder ser correlacionadas entre si, mantenha o valor padrão vazio (uma nova semente aleatória por consulta) em vez de definir um seed fixo.
+
 ## offset {#offset}
 
 <SettingsInfoBlock type="Double" default_value="0" />
