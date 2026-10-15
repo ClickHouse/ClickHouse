@@ -245,8 +245,56 @@ CREATE TABLE t_sleep_dist_04402 AS t_sleep_local_04402
 INSERT INTO t_sleep_local_04402 SELECT 1, number FROM numbers(10);
 SELECT k, sum(x) FROM t_sleep_dist_04402 GROUP BY k HAVING sleepEachRow(0.001) = 0
     SETTINGS query_plan_enable_optimizations = 0, max_block_size = 16, function_sleep_max_microseconds_per_block = 2000;
+
+-- A grouping-key conjunct must not be moved to `WHERE` while a sibling with observable side effects stays in `HAVING`:
+-- that would remove groups before `sleepEachRow` is evaluated. Ten groups need 10000 microseconds per block.
+-- Two-level aggregation would split the groups into several blocks.
+SELECT '--- HAVING with sleepEachRow and a grouping-key conjunct';
+TRUNCATE TABLE t_sleep_local_04402;
+INSERT INTO t_sleep_local_04402 SELECT number % 10, 1 FROM numbers(100);
+SELECT k, count() FROM t_sleep_dist_04402 GROUP BY k HAVING sleepEachRow(0.001) = 0 AND k = 0
+    SETTINGS query_plan_enable_optimizations = 0, short_circuit_function_evaluation = 'disable',
+        max_threads = 1, max_block_size = 100, function_sleep_max_microseconds_per_block = 2000,
+        group_by_two_level_threshold = 0, group_by_two_level_threshold_bytes = 0; -- { serverError TOO_SLOW }
 DROP TABLE t_sleep_dist_04402;
 DROP TABLE t_sleep_local_04402;
+
+-- A conjunct depending on the time zone of the server stays in `HAVING`, because the shards may have a different
+-- time zone than the initiator. With an explicit time zone it is moved and used for the primary key analysis.
+SELECT '--- HAVING depending on the time zone of the server';
+-- `DateTime` without a time zone takes the session time zone when the table is created and when the query is analyzed.
+SET session_timezone = 'UTC';
+DROP TABLE IF EXISTS t_tz_local_04402;
+DROP TABLE IF EXISTS t_tz_dist_04402;
+CREATE TABLE t_tz_local_04402 (dt DateTime, dt_utc DateTime('UTC'), x UInt64)
+    ENGINE = MergeTree ORDER BY (dt, dt_utc) SETTINGS index_granularity = 10;
+CREATE TABLE t_tz_dist_04402 AS t_tz_local_04402
+    ENGINE = Distributed('test_cluster_two_shards', currentDatabase(), 't_tz_local_04402');
+INSERT INTO t_tz_local_04402 SELECT toDateTime(number * 3600, 'UTC'), toDateTime(number * 3600, 'UTC'), 1 FROM numbers(1000);
+SELECT count() FROM (SELECT dt, sum(x) FROM t_tz_dist_04402 GROUP BY dt HAVING toHour(dt) = 0);
+SELECT count() FROM (SELECT dt_utc, sum(x) FROM t_tz_dist_04402 GROUP BY dt_utc HAVING toHour(dt_utc) = 0);
+SELECT
+    countIf(explain ILIKE '%Condition: (dt in%') > 0 AS shard_prunes,
+    countIf(explain ILIKE '%Condition: true%') > 0 AS shard_reads_all_parts
+FROM (
+    EXPLAIN indexes = 1, distributed = 1
+    SELECT dt, sum(x) FROM t_tz_dist_04402 GROUP BY dt HAVING dt < '1970-01-02 00:00:00'
+);
+SELECT
+    countIf(explain ILIKE '%Condition: (dt_utc in%') > 0 AS shard_prunes,
+    countIf(explain ILIKE '%Condition: true%') > 0 AS shard_reads_all_parts
+FROM (
+    EXPLAIN indexes = 1, distributed = 1
+    SELECT dt_utc, sum(x) FROM t_tz_dist_04402 GROUP BY dt_utc HAVING dt_utc < toDateTime(86400, 'UTC')
+);
+SELECT
+    countIf(explain ILIKE '%Condition: true%') > 0 AS shard_reads_all_parts
+FROM (
+    EXPLAIN indexes = 1, distributed = 1
+    SELECT dt_utc, sum(x) FROM t_tz_dist_04402 GROUP BY dt_utc HAVING toUnixTimestamp(toString(dt_utc)) < 86400
+);
+DROP TABLE t_tz_dist_04402;
+DROP TABLE t_tz_local_04402;
 
 DROP VIEW v_hav_04402;
 DROP VIEW v_agg_04402;

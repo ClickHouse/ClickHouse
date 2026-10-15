@@ -77,3 +77,10 @@
 1	0
 --- HAVING with sleepEachRow
 1	90
+--- HAVING with sleepEachRow and a grouping-key conjunct
+--- HAVING depending on the time zone of the server
+42
+42
+0	1
+1	0
+1

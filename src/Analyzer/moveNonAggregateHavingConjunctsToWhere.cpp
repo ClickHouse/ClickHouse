@@ -1,11 +1,20 @@
 #include <Analyzer/moveNonAggregateHavingConjunctsToWhere.h>
 
+#include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <TableFunctions/ITableFunction.h>
@@ -16,29 +25,59 @@ namespace DB
 namespace
 {
 
+/// Whether the type is or contains a `DateTime` or `DateTime64` without an explicit time zone.
+/// Such values are converted from and to their calendar representation in the time zone of the executing server.
+bool hasImplicitTimeZone(const DataTypePtr & type)
+{
+    if (const auto * date_time = typeid_cast<const DataTypeDateTime *>(type.get()))
+        return !date_time->hasExplicitTimeZone();
+    if (const auto * date_time64 = typeid_cast<const DataTypeDateTime64 *>(type.get()))
+        return !date_time64->hasExplicitTimeZone();
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(type.get()))
+        return hasImplicitTimeZone(nullable->getNestedType());
+    if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(type.get()))
+        return hasImplicitTimeZone(low_cardinality->getDictionaryType());
+    if (const auto * array = typeid_cast<const DataTypeArray *>(type.get()))
+        return hasImplicitTimeZone(array->getNestedType());
+    if (const auto * map = typeid_cast<const DataTypeMap *>(type.get()))
+        return hasImplicitTimeZone(map->getKeyType()) || hasImplicitTimeZone(map->getValueType());
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+        return std::ranges::any_of(tuple->getElements(), hasImplicitTimeZone);
+    if (const auto * variant = typeid_cast<const DataTypeVariant *>(type.get()))
+        return std::ranges::any_of(variant->getVariants(), hasImplicitTimeZone);
+    return false;
+}
+
 /** Classify a HAVING conjunct subtree for the `HAVING` -> `WHERE` rewrite.
   *
   * `AbortRewrite` outranks `KeepInHaving` outranks `Move`:
   * - any window function or stateful function -> `AbortRewrite` (matches legacy `return false`);
+  * - any function with observable side effects (like `sleepEachRow`) -> `AbortRewrite` (stricter than legacy,
+  *   which moved them): it must be evaluated once per group, and a sibling conjunct moved to `WHERE` would remove groups
+  *   before it is evaluated;
   * - else any aggregate function -> `KeepInHaving`;
   * - else any `grouping` function -> `KeepInHaving` (stricter than legacy; required because
   *   `validateAggregates` rejects `grouping` in `WHERE`);
   * - else any `arrayJoin` function -> `KeepInHaving` (before aggregation it would multiply the rows);
   * - else, with `keep_index_hint_conjuncts`, any `indexHint` function -> `KeepInHaving` (before aggregation it would
   *   prune granules, leaving partial groups);
-  * - else any non-deterministic function or function with observable side effects (like `sleepEachRow`)
-  *   -> `KeepInHaving` (stricter than legacy, which moved them);
+  * - else any non-deterministic function -> `KeepInHaving` (stricter than legacy, which moved them);
   * - else -> `Move`.
   *
-  * Inside subqueries only the non-deterministic and stateful functions are taken into account: aggregate, window
-  * and `grouping` functions there belong to the scope of the subquery. A non-deterministic subquery, or one with
-  * a function with observable side effects or a stateful function (like `timeSeriesStoreTags`, which has side effects), keeps the conjunct in `HAVING`,
-  * because in `WHERE` a correlated subquery would be evaluated per source row instead of per group. The same holds for a subquery reading a non-deterministic table function, like `generateRandom`.
+  * Inside subqueries only the non-deterministic and stateful functions and the functions with observable side effects
+  * are taken into account: aggregate, window and `grouping` functions there belong to the scope of the subquery.
+  * A non-deterministic subquery, or one with a stateful function, keeps the conjunct in `HAVING`, because in `WHERE`
+  * a correlated subquery would be evaluated per source row instead of per group. The same holds for a subquery reading
+  * a non-deterministic table function, like `generateRandom`. A subquery with a function with observable side effects
+  * (like `timeSeriesStoreTags`) cancels the rewrite, as at the top level.
   *
   * With `keep_server_dependent_conjuncts`, a conjunct also stays in `HAVING` if its result may differ between
   * servers: if it contains a function that is not deterministic at all (like `shardNum`, `hostName` or `dictGet`),
   * or reads a table or a table function, in a subquery or as the right-hand side of `IN`. A subquery without `FROM`,
   * which reads `system.one`, is still moved.
+  * Such a conjunct also stays in `HAVING` if it has a value of type `DateTime` or `DateTime64` without an explicit time zone
+  * (like `toHour(toDateTime(k))`) or uses `toUnixTimestamp` to parse a string: the result depends on the time zone of
+  * the server, which may differ between the shards and the initiator.
   * The right-hand side of the `GLOBAL IN` family is an exception: the initiator computes the set once and sends the same
   * temporary table to every server, so it is not server-dependent.
   */
@@ -78,11 +117,23 @@ HavingConjunctMoveAction classifyHavingConjunctForMove(
         if (current_type == QueryTreeNodeType::QUERY || current_type == QueryTreeNodeType::UNION)
             inside_subquery = true;
 
+        if (check_server_dependent
+            && (current_type == QueryTreeNodeType::CONSTANT || current_type == QueryTreeNodeType::COLUMN
+                || current_type == QueryTreeNodeType::FUNCTION)
+            && hasImplicitTimeZone(current->getResultType()))
+            keep_in_having();
+
         if (auto * constant_node = current->as<ConstantNode>())
         {
             /// A secondary server folds functions like `shardNum` into constants.
             if (check_server_dependent && !constant_node->isDeterministic())
                 keep_in_having();
+
+            /// A constant folded from a function, like `toUnixTimestamp('2024-01-05 00:00:00')`, may still depend on
+            /// the time zone of the server, so check the expression it was folded from.
+            if (check_server_dependent && constant_node->hasSourceExpression()
+                && constant_node->getSourceExpression()->getNodeType() == QueryTreeNodeType::FUNCTION)
+                nodes_to_visit.push_back({constant_node->getSourceExpression(), inside_subquery, check_server_dependent});
         }
         else if (auto * table_function_node = current->as<TableFunctionNode>())
         {
@@ -99,14 +150,25 @@ HavingConjunctMoveAction classifyHavingConjunctForMove(
         }
         else if (auto * function_node = current->as<FunctionNode>())
         {
+            /// `toUnixTimestamp` parses a string in the time zone of the server.
+            if (check_server_dependent && function_node->isOrdinaryFunction())
+            {
+                const auto & arguments = function_node->getArguments().getNodes();
+                auto function_base = function_node->getFunction();
+                if (function_base && function_base->getName() == "toUnixTimestamp" && arguments.size() == 1
+                    && isStringOrFixedString(removeLowCardinalityAndNullable(arguments[0]->getResultType())))
+                    keep_in_having();
+            }
+
             if (inside_subquery)
             {
                 if (function_node->isOrdinaryFunction())
                 {
                     auto function_base = function_node->getFunction();
+                    if (function_base && function_base->hasObservableSideEffects())
+                        return HavingConjunctMoveAction::AbortRewrite;
                     if (function_base
                         && (function_base->isStateful()
-                            || function_base->hasObservableSideEffects()
                             || !function_base->isDeterministicInScopeOfQuery()
                             || (check_server_dependent && !function_base->isDeterministic())))
                         keep_in_having();
@@ -121,12 +183,12 @@ HavingConjunctMoveAction classifyHavingConjunctForMove(
                 {
                     if (auto function_base = function_node->getFunction())
                     {
-                        if (function_base->isStateful())
+                        /// Functions like `sleepEachRow` must be evaluated once per group, not per source row,
+                        /// and a sibling conjunct moved to `WHERE` must not change the number of groups they see.
+                        if (function_base->isStateful() || function_base->hasObservableSideEffects())
                             return HavingConjunctMoveAction::AbortRewrite;
 
-                        /// Functions like `sleepEachRow` must be evaluated once per group, not per source row.
-                        if (function_base->hasObservableSideEffects()
-                            || !function_base->isDeterministicInScopeOfQuery()
+                        if (!function_base->isDeterministicInScopeOfQuery()
                             || (check_server_dependent && !function_base->isDeterministic()))
                             keep_in_having();
                     }
