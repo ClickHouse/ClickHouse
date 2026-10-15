@@ -6018,9 +6018,9 @@ Controls whether the conversion of `FixedString` to `String` (`CAST`, `toString`
 Possible values:
 
 - 0 — The bytes of the `FixedString` value are kept as is, including the zero bytes that pad it to its length: `CAST(toFixedString('a', 2) AS String)` is `'a\0'`.
-- 1 — The trailing zero bytes are removed: `CAST(toFixedString('a', 2) AS String)` is `'a'`. This was the behavior before version 26.10.
+- 1 — The trailing zero bytes are removed: `CAST(toFixedString('a', 2) AS String)` is `'a'`. This was the behavior before version 26.11.
 )", 0, \
-        {"26.10", true, false, "The conversion of `FixedString` to `String` keeps the trailing zero bytes instead of removing them."}) \
+        {"26.11", true, false, "The conversion of `FixedString` to `String` keeps the trailing zero bytes instead of removing them."}) \
     DECLARE(Bool, cast_keep_nullable, false, R"(
 Enables or disables keeping of the `Nullable` data type in [CAST](/reference/functions/regular-functions/type-conversion-functions#CAST) operations.
 
