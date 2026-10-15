@@ -10,7 +10,7 @@ class StorageEmbeddedRocksDB;
 struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
-class EmbeddedRocksDBSink final : public SinkToStorage
+class EmbeddedRocksDBSink : public SinkToStorage
 {
 public:
     EmbeddedRocksDBSink(StorageEmbeddedRocksDB & storage_, const StorageMetadataPtr & metadata_snapshot_);

@@ -1,15 +1,12 @@
 #pragma once
 
-#include <base/defines.h>
-
 #include <cstdint>
-#include <mutex>
 
 namespace DB
 {
 
 /// Maintains dynamically changing delay, convenient to use in periodic tasks.
-/// Thread safe.
+/// Not thread safe.
 class DynamicDelay
 {
 public:
@@ -27,12 +24,11 @@ public:
     void rotateToMax();
 
 private:
-    mutable std::mutex mutex;
-    double min_delay TSA_GUARDED_BY(mutex) = 0;
-    double max_delay TSA_GUARDED_BY(mutex) = 0;
-    double delay TSA_GUARDED_BY(mutex) = 0;
-    double factor_up TSA_GUARDED_BY(mutex) = 1;
-    double factor_lower TSA_GUARDED_BY(mutex) = 1;
+    double min_delay = 0;
+    double max_delay = 0;
+    double delay = 0;
+    double factor_up = 1;
+    double factor_lower = 1;
 };
 
 }

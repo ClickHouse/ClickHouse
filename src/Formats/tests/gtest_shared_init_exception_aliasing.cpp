@@ -98,7 +98,7 @@ TEST(FormatSharedInit, FilterInfoDoesNotLeakCallerContext)
     ActionsDAG dag;
     const auto & key_node = dag.addInput("dt", key_type);
     const auto & const_node = dag.addColumn(
-        DataTypeString().createColumnConst(1, "not-a-datetime"), string_type, "'not-a-datetime'_String");
+        ColumnWithTypeAndName(DataTypeString().createColumnConst(1, "not-a-datetime"), string_type, "'not-a-datetime'_String"));
     auto equals = FunctionFactory::instance().get("equals", context)->build(
         {{key_node.column, key_node.result_type, key_node.result_name},
          {const_node.column, const_node.result_type, const_node.result_name}});
