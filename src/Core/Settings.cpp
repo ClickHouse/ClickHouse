@@ -7916,6 +7916,10 @@ Allow to convert ANY JOIN to SEMI or ANTI JOIN if filter after JOIN always evalu
 Allow to merge filter into `JOIN` condition and convert `CROSS JOIN` to `INNER`.
 )", 0, \
         {"25.4", false, true, "Added new setting to merge filter into join condition"}) \
+    DECLARE(Bool, query_plan_replace_always_true_filter, true, R"(
+Replace a filter step with an expression step when the filter condition is always true and the query does not use the filter column. Such a filter step does not remove rows, but it stops join reordering.
+)", 0, \
+        {"26.10", true, true, "New setting."}) \
     DECLARE(Bool, query_plan_merge_expression_into_join, true, R"(
 Allow to merge expressions into JOIN step during join reordering optimization.
 )", 0, \
@@ -8464,6 +8468,10 @@ If set to `true`, increases performance of processing archives in cluster functi
 If is not zero, limit the number of threads reading data from files in *Cluster table functions.
 )", 0, \
         {"25.12", 0, 0, "Add a new setting that allows to limit number of streams for files processing in *Cluster table functions"}) \
+    DECLARE(Milliseconds, cluster_function_wait_for_replica_ms, 0, R"(
+How long the initiator of a `*Cluster` table function or of parallel replicas over object storage waits for a replica to ask for tasks before giving the files assigned to that replica to other replicas. `0` disables the wait.
+)", 0, \
+        {"26.10", 0, 0, "New setting"}) \
     DECLARE(Bool, enable_filesystem_cache, true, R"(
 Use cache for remote filesystem. This setting does not turn on/off cache for disks (must be done via disk config), but allows to bypass cache for some queries if intended
 )", 0) \
