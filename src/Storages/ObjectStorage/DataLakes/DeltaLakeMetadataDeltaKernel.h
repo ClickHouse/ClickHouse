@@ -57,6 +57,8 @@ public:
         bool supports_subset_of_columns,
         bool supports_tuple_elements) override;
 
+    std::optional<NameSet> supportedPrewhereColumns(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const override;
+
     bool operator ==(const IDataLakeMetadata &) const override;
 
     void modifyFormatSettings(FormatSettings & format_settings, const Context &) const override;
@@ -138,6 +140,9 @@ private:
     /// No version means latest version.
     DeltaLake::TableSnapshotPtr getTableSnapshot(
         std::optional<SnapshotVersion> version = std::nullopt) const;
+
+    DeltaLake::TableSnapshotPtr getTableSnapshotForRead(
+        const StorageMetadataPtr & storage_metadata_snapshot, const ContextPtr & context) const;
 
     std::string latestSnapshotVersionToStr() const TSA_REQUIRES(snapshots_mutex);
 };

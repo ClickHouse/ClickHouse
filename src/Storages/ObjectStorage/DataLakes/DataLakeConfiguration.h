@@ -447,10 +447,19 @@ public:
     bool supportsPrewhere() const override
     {
 #if USE_AVRO
-        return std::is_same_v<DataLakeMetadata, IcebergMetadata>;
-#else
-        return false;
+        if constexpr (std::is_same_v<DataLakeMetadata, IcebergMetadata>)
+            return true;
 #endif
+#if USE_PARQUET
+        if constexpr (std::is_same_v<DataLakeMetadata, DeltaLakeMetadata>)
+            return true;
+#endif
+        return false;
+    }
+
+    std::optional<NameSet> supportedPrewhereColumns(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const override
+    {
+        return getMetadata()->supportedPrewhereColumns(storage_metadata_snapshot, context);
     }
 
     bool supportsLazyMaterialization(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const override

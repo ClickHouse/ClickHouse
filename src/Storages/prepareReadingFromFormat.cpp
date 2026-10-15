@@ -290,6 +290,15 @@ ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, con
     /// don't need to replace subcolumns with their nested columns etc.
     new_info.source_header = new_info.format_header;
 
+    NamesAndTypesList columns_added_after_reading;
+    for (const auto & column : info.requested_columns)
+    {
+        if (!info.format_header.has(column.getNameInStorage()) && !new_info.format_header.has(column.name))
+            columns_added_after_reading.push_back(column);
+    }
+    for (const auto & column : columns_added_after_reading)
+        new_info.source_header.insert({column.type->createColumn(), column.type, column.name});
+
     /// Hive partition columns come from the file path, not the data file, so prewhere column
     /// pruning above does not concern them. Carry them over and keep their position before the
     /// virtual columns (as in prepareReadingFromFormat), otherwise the source skips appending them
@@ -315,6 +324,13 @@ ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, con
             /// Column produced by prewhere expression.
             new_info.columns_description.add(ColumnDescription(col.name, col.type));
         }
+    }
+
+    for (const auto & column : columns_added_after_reading)
+    {
+        new_info.requested_columns.push_back(column);
+        if (info.columns_description.has(column.name))
+            new_info.columns_description.add(info.columns_description.get(column.name));
     }
 
     return new_info;

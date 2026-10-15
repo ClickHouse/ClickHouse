@@ -40,6 +40,8 @@ public:
 
     DeltaLakePartitionColumns getPartitionColumns() const { return partition_columns; }
 
+    std::optional<NameSet> supportedPrewhereColumns(StorageMetadataPtr, ContextPtr) const override { return NameSet{}; }
+
     bool operator==(const IDataLakeMetadata & other) const override
     {
         const auto * deltalake_metadata = dynamic_cast<const DeltaLakeMetadata *>(&other);
