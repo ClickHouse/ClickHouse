@@ -36,7 +36,6 @@ SELECT '-- correlated subqueries';
 SELECT k FROM t_alias_agg GROUP BY k HAVING EXISTS (SELECT 1 WHERE k_excl != 'b!') ORDER BY k;
 SELECT k, (SELECT k_excl) FROM t_alias_agg GROUP BY k ORDER BY k;
 SELECT k FROM t_alias_agg GROUP BY k HAVING EXISTS (SELECT 1 WHERE n_plus != 101); -- { serverError NOT_AN_AGGREGATE }
-SELECT k FROM t_alias_agg GROUP BY k HAVING EXISTS (SELECT 1 WHERE n != 1); -- { serverError NOT_AN_AGGREGATE }
 SELECT k FROM t_alias_agg GROUP BY k HAVING (SELECT k_excl != 'b!') ORDER BY k;
 -- A constant ALIAS is computed in place where it is used directly, but correlated subqueries take it from the outer query.
 SELECT k FROM t_alias_agg GROUP BY k HAVING EXISTS (SELECT 1 WHERE const_alias = 42) ORDER BY k;

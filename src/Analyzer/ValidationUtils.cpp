@@ -218,6 +218,7 @@ public:
         , original_group_by_keys_nodes(original_group_by_keys_nodes_)
         , query_node(query_node_)
         , group_by_use_nulls(group_by_use_nulls_)
+        , outer_columns(query_node_->as<QueryNode &>().getCorrelatedColumnsSet())
     {}
 
     void visitImpl(const QueryTreeNodePtr & node)
@@ -289,11 +290,8 @@ public:
     bool needChildVisit(const QueryTreeNodePtr & parent_node, const QueryTreeNodePtr & child_node)
     {
         /// A subquery is validated in its own scope; only the columns of this query that it uses are checked here.
-        /// The planner computes the ALIAS columns among them after aggregation as well.
         if (auto * parent_query_node = parent_node->as<QueryNode>())
             return child_node == parent_query_node->getCorrelatedColumnsNode();
-        if (auto * parent_union_node = parent_node->as<UnionNode>())
-            return child_node == parent_union_node->getCorrelatedColumnsNode();
 
         /// Arguments of the `grouping` function are validated in visitImpl against the keys
         /// in the original form. They must not be visited as ordinary expressions: when
@@ -307,10 +305,35 @@ public:
             return false;
 
         /// The expression of an ALIAS column is validated in visitImpl.
-        return parent_node->getNodeType() != QueryTreeNodeType::COLUMN;
+        if (parent_node->getNodeType() == QueryTreeNodeType::COLUMN)
+            return false;
+
+        auto child_node_type = child_node->getNodeType();
+        if (child_node_type == QueryTreeNodeType::QUERY || child_node_type == QueryTreeNodeType::UNION)
+        {
+            /// The planner computes the ALIAS columns that a subquery correlates on after aggregation,
+            /// other correlated columns are checked when the subquery is planned.
+            validateCorrelatedAliasColumns(child_node);
+            return false;
+        }
+
+        return true;
     }
 
 private:
+
+    void validateCorrelatedAliasColumns(const QueryTreeNodePtr & subquery_node)
+    {
+        const auto & correlated_columns_node = subquery_node->getNodeType() == QueryTreeNodeType::QUERY
+            ? subquery_node->as<QueryNode &>().getCorrelatedColumnsNode()
+            : subquery_node->as<UnionNode &>().getCorrelatedColumnsNode();
+
+        for (const auto & correlated_column : correlated_columns_node->as<ListNode &>().getNodes())
+        {
+            if (isTableAliasColumn(correlated_column) && !outer_columns.contains(std::static_pointer_cast<ColumnNode>(correlated_column)))
+                visitImpl(correlated_column);
+        }
+    }
 
     /// The value of a column is computed for every row, so it is determined by GROUP BY keys only if its expression is.
     /// Computed after aggregation, `rand` would give a value per group, `rowNumberInAllBlocks` would count the groups
@@ -381,6 +404,7 @@ private:
     const QueryTreeNodes & original_group_by_keys_nodes;
     const QueryTreeNodePtr & query_node;
     bool group_by_use_nulls;
+    ColumnNodePtrWithHashSet outer_columns;
 };
 
 }
