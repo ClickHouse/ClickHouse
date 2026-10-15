@@ -7,7 +7,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/CommonParsers.h>
-#include <Storages/TimeSeries/TimeSeriesVersion.h>
+#include <Parsers/Prometheus/TimeSeriesVersion.h>
 #include <IO/WriteHelpers.h>
 #include <base/EnumReflection.h>
 #include <Core/UUID.h>
@@ -38,6 +38,7 @@ namespace
             case ViewTarget::RecentSamples: return Keyword::RECENT_SAMPLES; /// RECENT SAMPLES mydb.myrecentsamples
             case ViewTarget::Histograms: return Keyword::HISTOGRAMS; /// HISTOGRAMS mydb.myhistograms
             case ViewTarget::Tags:    return Keyword::TAGS;    /// TAGS mydb.mytags
+            case ViewTarget::TimeRanges: return Keyword::TIME_RANGES; /// TIME RANGES mydb.mytimeranges
             case ViewTarget::MetricFamilies: return Keyword::METRIC_FAMILIES; /// METRIC FAMILIES mydb.mymetricfamilies
         }
         UNREACHABLE();

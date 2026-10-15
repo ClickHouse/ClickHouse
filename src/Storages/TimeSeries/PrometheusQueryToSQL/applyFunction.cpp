@@ -18,6 +18,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyOneArgumentMathFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyRoundFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fromFunctionPi.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/fromFunctionStepRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fromFunctionTime.h>
 
 
@@ -40,6 +41,9 @@ SQLQueryPiece applyFunction(
 
     if (isFunctionScalar(function_name))
         return applyFunctionScalar(function_node, std::move(arguments), context);
+
+    if (isFunctionStepRange(function_name))
+        return fromFunctionStepRange(function_node, std::move(arguments), context);
 
     if (isFunctionTime(function_name))
         return fromFunctionTime(function_node, std::move(arguments), context);

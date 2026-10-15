@@ -133,10 +133,10 @@ def test_int_histogram():
         " GROUP BY t.metric_name, t.tags['job']"
     ) == TSV([["test_hist", "test", "1"]])
 
-    # min_time/max_time in the tags table are updated from histogram timestamps.
+    # min_time/max_time in the time ranges table are updated from histogram timestamps.
     assert node.query(
-        "SELECT min(min_time), max(max_time) FROM timeSeriesTags(prometheus)"
-        " WHERE metric_name = 'test_hist'"
+        "SELECT min(min_time), max(max_time) FROM timeSeriesTimeRanges(prometheus)"
+        " WHERE id IN (SELECT id FROM timeSeriesTags(prometheus) WHERE metric_name = 'test_hist')"
     ) == TSV([["2024-01-01 00:00:01.000", "2024-01-01 00:00:01.000"]])
 
     events_after = int(
@@ -260,8 +260,8 @@ def test_mixed_samples_and_histograms():
     )
     # min_time comes from the sample, max_time from the histogram.
     assert node.query(
-        "SELECT min(min_time), max(max_time) FROM timeSeriesTags(prometheus)"
-        " WHERE metric_name = 'test_mixed'"
+        "SELECT min(min_time), max(max_time) FROM timeSeriesTimeRanges(prometheus)"
+        " WHERE id IN (SELECT id FROM timeSeriesTags(prometheus) WHERE metric_name = 'test_mixed')"
     ) == TSV([["2024-01-01 00:00:05.000", "2024-01-01 00:00:06.000"]])
 
 
