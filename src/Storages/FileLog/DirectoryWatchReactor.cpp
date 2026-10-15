@@ -196,7 +196,6 @@ DirectoryWatchReactor::DirectoryWatchReactor(std::chrono::milliseconds pairing_t
         throw ErrnoException(ErrorCodes::IO_SETUP_ERROR, "Cannot initialize inotify for the directory watch reactor");
 
     try
-
     {
         /// The epoll data comes back with every event of the descriptor, so that the loop knows what the event is for:
         /// the control pipe is registered with `this`, it is a wake-up for a command, the inotify descriptor is
@@ -458,27 +457,31 @@ void DirectoryWatchReactor::flushPairingTimeout()
 DirectoryWatchReactor::DirectoryWatchReactor()
     : log(getLogger("DirectoryWatchReactor"))
 {
+    control_pipe.setNonBlockingReadWrite();
+
     kqueue_fd = ::kqueue();
     if (kqueue_fd == -1)
         throw ErrnoException(ErrorCodes::IO_SETUP_ERROR, "Cannot create kqueue for the directory watch reactor");
 
-    control_pipe.setNonBlockingReadWrite();
-    /// The user data comes back with every event of the descriptor, so that the loop knows what the event is for.
-    /// The control pipe is registered with `this`: an event with `this` as its user data is a wake-up for a command,
-    /// any other event belongs to the watcher whose registration it carries.
-    struct kevent change{};
-    /// Edge-triggered, as `drainReadyEvents` must not get the pipe again and again; `commands_pending` remembers it.
-    EV_SET(&change, control_pipe.fds_rw[0], EVFILT_READ, EV_ADD | EV_CLEAR, 0, 0, this);
-    if (::kevent(kqueue_fd, &change, 1, nullptr, 0, nullptr) == -1)
+    try
     {
-        const int saved_errno = errno;
+        /// The user data comes back with every event of the descriptor, so that the loop knows what the event is for.
+        /// The control pipe is registered with `this`: an event with `this` as its user data is a wake-up for a command,
+        /// any other event belongs to the watcher whose registration it carries.
+        struct kevent change{};
+        /// Edge-triggered, as `drainReadyEvents` must not get the pipe again and again; `commands_pending` remembers it.
+        EV_SET(&change, control_pipe.fds_rw[0], EVFILT_READ, EV_ADD | EV_CLEAR, 0, 0, this);
+        if (::kevent(kqueue_fd, &change, 1, nullptr, 0, nullptr) == -1)
+            throw ErrnoException(ErrorCodes::IO_SETUP_ERROR, "Cannot register the control pipe of the directory watch reactor");
+
+        thread = std::make_unique<ThreadFromGlobalPool>([this] { run(); });
+    }
+    catch (...)
+    {
         int err = ::close(kqueue_fd);
         chassert(!err || errno == EINTR);
-        errno = saved_errno;
-        throw ErrnoException(ErrorCodes::IO_SETUP_ERROR, "Cannot register the control pipe of the directory watch reactor");
+        throw;
     }
-
-    thread = std::make_unique<ThreadFromGlobalPool>([this] { run(); });
 }
 
 DirectoryWatchReactor::~DirectoryWatchReactor()
