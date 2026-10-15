@@ -364,7 +364,10 @@ NamedCollectionPtr BackupInfo::getNamedCollection(ContextPtr context) const
         auto mutable_collection = collection->duplicate();
         auto params_from_query = getParamsMapFromAST(kv_args, context);
         for (const auto & [key, value] : params_from_query)
+        {
+            checkNamedCollectionOverride(*collection, key, context);
             mutable_collection->setOrUpdate<String>(key, fieldToString(value), {});
+        }
         collection = std::move(mutable_collection);
     }
 
