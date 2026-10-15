@@ -1024,23 +1024,25 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
         };
 
         /// Merges the source cells and the records of the unit that `filter` takes into the bucket's table: the records
-        /// in memory, then those of the spill streams. The cells go first: a key a source holds is adopted with its
-        /// state, so the records of that key update the adopted state instead of creating one. Returns how many records
-        /// `filter` skipped.
+        /// of the spill streams, then those in memory. A thread writes its staged records to the spill streams in the
+        /// order it staged them and keeps only its latest ones in memory, so this order adds every thread's records to
+        /// the states in the order the thread staged them, which order-sensitive functions such as `deltaSumTimestamp`
+        /// rely on. The cells go first: a key a source holds is adopted with its state, so the records of that key
+        /// update the adopted state instead of creating one. Returns how many records `filter` skipped.
         const auto merge_unit = [&](const auto & filter)
         {
             adoptSourceCells<Method>(table, cells, filter, task);
             if (!task.places.empty())
                 mergeAdaptiveSourceStates(task.places, task.source_slots, task, session, arena, is_cancelled);
             size_t skipped = 0;
-            for_each_in_memory_partition([&](const AdaptiveRecordRanges & ranges)
-            {
-                skipped += drainAdaptivePartition<Method, /*copy_keys=*/false>(table, arena, ranges, filter, task.places, task.records);
-            });
             for_each_spilled_block([&](const AdaptiveRecordRanges & ranges)
             {
                 skipped += drainAdaptivePartition<Method, adaptive_key_stages_bytes<AdaptiveRecordKey<Method>>>(
                     table, arena, ranges, filter, task.places, task.records);
+            });
+            for_each_in_memory_partition([&](const AdaptiveRecordRanges & ranges)
+            {
+                skipped += drainAdaptivePartition<Method, /*copy_keys=*/false>(table, arena, ranges, filter, task.places, task.records);
             });
             return skipped;
         };
