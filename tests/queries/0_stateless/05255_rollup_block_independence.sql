@@ -43,9 +43,12 @@ INSERT INTO rollup_partitioned SELECT number % 8, number % 11, number FROM numbe
 -- per-query one below decides whether the input is split, and the concurrent-read limits so that
 -- how many threads read a table is decided by its part count alone, on any disk. The one-block runs
 -- use one thread: several threads reading the eight-part table would aggregate its partitions
--- independently, or adaptively, and either way hand the rollup more than one block.
+-- independently, or adaptively, and either way hand the rollup more than one block. The test
+-- profile sets `max_rows_to_group_by`, and any such limit stops partitions being aggregated
+-- independently, so it is reset.
 SET max_threads = 4;
 SET enable_parallel_replicas = 0;
+SET max_rows_to_group_by = 0;
 SET max_bytes_before_external_group_by = 1000000000;
 SET max_bytes_ratio_before_external_group_by = 0;
 SET group_by_two_level_threshold_bytes = 0;
