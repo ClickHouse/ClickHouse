@@ -528,7 +528,7 @@ def test_clickhouse_rest_catalog_client(started_cluster):
     level = "a b?#%41+/é"
     create_namespace([ns, level], properties={"location": f"s3://{BUCKET}/{ns}_special"})
     create_table(f"{ns}%1F{quote(level, safe='')}", "events")
-    create_table(ns, "t?x")
+    create_table(ns, "t?#x")
 
     node.query(f"""
         DROP DATABASE IF EXISTS rest_client_db;
@@ -546,9 +546,9 @@ def test_clickhouse_rest_catalog_client(started_cluster):
             f"DESCRIBE rest_client_db.`{ns}.events` FORMAT TSVRaw SETTINGS describe_compact_output = 1"
         ) == "id\tInt64\nname\tNullable(String)\n"
         assert f"{ns}.{level}.events" in tables
-        assert f"{ns}.t%3Fx" in tables
+        assert f"{ns}.t%3F%23x" in tables
         assert node.query(f"SELECT count() FROM rest_client_db.`{ns}.{level}.events`") == "0\n"
-        assert node.query(f"EXISTS TABLE rest_client_db.`{ns}.t%3Fx`") == "1\n"
+        assert node.query(f"EXISTS TABLE rest_client_db.`{ns}.t%3F%23x`") == "1\n"
     finally:
         node.query("DROP DATABASE IF EXISTS rest_client_db")
 
