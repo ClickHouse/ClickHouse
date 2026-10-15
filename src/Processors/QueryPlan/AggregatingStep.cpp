@@ -5,6 +5,7 @@
 #include <numeric>
 #include <ranges>
 #include <unordered_set>
+#include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
@@ -100,6 +101,44 @@ static bool memoryBoundMergingWillBeUsed(
     SortDescription sort_description_for_merging)
 {
     return should_produce_results_in_order_of_bucket_number && memory_bound_merging_of_aggregation_results_enabled && !sort_description_for_merging.empty();
+}
+
+/// Whether a state of `function` can own memory outside its arenas. A state with a trivial destructor cannot
+/// own anything it would have to free, so its whole footprint is its `sizeOfData` bytes (allocated in an arena)
+/// plus whatever it allocates in the arena. A state with a non-trivial destructor that does not allocate in the
+/// arena keeps its payload on the heap instead (e.g. the hash set of `uniqExact`, grown through
+/// `HashTableAllocator`). Combinators are checked through their nested functions: e.g. `-ForEach` allocates its
+/// nested states in the arena, but a nested `uniqExact` state still grows its hash set on the heap.
+static bool aggregateStateMayOwnMemoryOutsideArenas(const IAggregateFunction & function)
+{
+    if (!function.hasTrivialDestructor() && !function.allocatesMemoryInArena())
+        return true;
+
+    if (auto nested = function.getNestedFunction())
+        return aggregateStateMayOwnMemoryOutsideArenas(*nested);
+
+    return false;
+}
+
+/// Whether some column of `header` (at any nesting level, e.g. `Array(AggregateFunction(...))`) carries
+/// aggregate states whose memory the shuffle buffer budget cannot measure.
+static bool hasAggregateStatesWithMemoryOutsideArenas(const Block & header)
+{
+    bool result = false;
+    auto check = [&](const IColumn & column)
+    {
+        if (const auto * aggregate = typeid_cast<const ColumnAggregateFunction *>(&column))
+            result = result || aggregateStateMayOwnMemoryOutsideArenas(*aggregate->getAggregateFunction());
+    };
+
+    for (const auto & column : header)
+    {
+        if (!column.column)
+            continue;
+        check(*column.column);
+        column.column->forEachSubcolumnRecursively(check);
+    }
+    return result;
 }
 
 static ITransformingStep::Traits getTraits(bool should_produce_results_in_order_of_bucket_number)
@@ -750,7 +789,14 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             /// makes pipeline construction itself a memory/time regression before aggregation begins, so bail
             /// out to the ordinary in-order funnel above the same threshold the (now removed) sharded
             /// aggregation used.
-            && pipeline.getNumStreams() * max_threads < 100'000;
+            && pipeline.getNumStreams() * max_threads < 100'000
+            /// The buffer budget measures the columns of a buffered chunk and, for aggregate states, the arenas
+            /// they live in. A state that keeps its payload on the heap (e.g. `uniqExact` read from an
+            /// `AggregatingMergeTree`) can retain megabytes per state that neither is visible to, so the
+            /// budget would let such chunks accumulate without bound. Do not use the shuffle for them unless
+            /// the budget is disabled anyway.
+            && (settings.aggregation_in_order_shuffle_max_buffered_bytes == 0
+                || !hasAggregateStatesWithMemoryOutsideArenas(pipeline.getHeader()));
 
         if (use_shuffle_in_order)
         {
