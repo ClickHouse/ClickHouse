@@ -38,6 +38,8 @@ def _pool_user_data() -> str:
 
 _POOL_USER_DATA = _pool_user_data()
 MAC_OS_TAHOE_ARM_IMAGE_AMI = "ami-0cbd6d494543c15b3"
+# Public `amzn-ec2-macos-26.7-20260918-025529-arm64`.
+MAC_OS_26_ARM_US_EAST_1_AMI = "ami-0d2a9e55f71bda474"
 
 
 def _image_builders():
@@ -288,6 +290,13 @@ PROJECTS = [
                     VPC.Subnet(availability_zone="ap-southeast-2b"),
                 ],
             ),
+            VPC.Config(
+                name="macos-us-east-1",
+                region="us-east-1",
+                subnets=[
+                    VPC.Subnet(availability_zone="us-east-1c"),
+                ],
+            ),
         ],
         storages=[
             # Storage.Config(
@@ -343,12 +352,13 @@ PROJECTS = [
                 vpc_name="macos-ap-southeast-2",
             ),
             _mac_runner_pool(
-                name="pr-macos-m4",
-                availability_zones=["ap-southeast-2b"],
-                instance_type="mac-m4.metal",
-                image_id=MAC_OS_TAHOE_ARM_IMAGE_AMI,
+                name="pr-macos-m4pro-use1",
+                # Zone ID `use1-az2`.
+                availability_zones=["us-east-1c"],
+                instance_type="mac-m4pro.metal",
+                image_id=MAC_OS_26_ARM_US_EAST_1_AMI,
                 quantity_per_az=5,
-                vpc_name="macos-ap-southeast-2",
+                vpc_name="macos-us-east-1",
             ),
         ],
         # TODO: make self-contained component SlackApp
