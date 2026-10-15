@@ -675,8 +675,13 @@ public:
     ~WorkloadNodeCommon() override
     {
         /// Queues and constraints outlive this node while older versions are still referenced by classifiers.
+        /// The queue clears its own pointer in `purgeQueue` under its mutex, because query threads read it there.
         impl.branch.purgeDroppedQueue();
-        forEachSchedulerNode([](ISchedulerNode * node) { node->workload = nullptr; });
+        forEachSchedulerNode([this](ISchedulerNode * node)
+        {
+            if (node != impl.branch.queue.get())
+                node->workload = nullptr;
+        });
     }
 
     void attachWorkloadChild(const WorkloadNodePtr & child) final

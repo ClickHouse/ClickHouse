@@ -3417,6 +3417,41 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationDropWorkloadFailsRunning
     b.waitSync();
 }
 
+TEST(SchedulerWorkloadResourceManager, MemoryReservationDropWorkloadWhileAllocating)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD A SETTINGS max_memory = 100");
+
+    ClassifierPtr c_a = t.manager->acquire("A");
+    ResourceLink link = c_a->get("memory");
+
+    // Keep inserting allocations into `A`'s queue while `A` is dropped: the rejections after the purge read the
+    // queue's workload name while the workload node is being destroyed, which lets TSan check that overlap.
+    std::atomic<bool> dropped{false};
+    std::atomic<size_t> rejected{0};
+    std::thread allocator([&]
+    {
+        while (!dropped.load() || rejected.load() < 100)
+        {
+            try
+            {
+                TestAllocation allocation(link, "racer", 0);
+            }
+            catch (const Exception &)
+            {
+                rejected.fetch_add(1);
+            }
+        }
+    });
+
+    t.query("DROP WORKLOAD A");
+    dropped.store(true);
+    allocator.join();
+    EXPECT_GE(rejected.load(), 100);
+}
+
 // Regression: simulate the race where the owner's destructor reaches `queue.removeAllocation`
 // AFTER `updateMinMaxAllocated`/`updateQueueLimit` has already rejected the allocation. The
 // guard in `removeAllocation` must keep an already-failed allocation out of
