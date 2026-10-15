@@ -47,5 +47,8 @@ round_trip values_rows "
     CREATE MATERIALIZED VIEW d.mv REFRESH EVERY 1 HOUR TO d.dst AS SELECT s FROM values('s String', 'x LowCardinality(UInt64)');"
 
 # A dump that cannot be written must not report success.
-$CLICKHOUSE_LOCAL --path "$work/src" --dump-schema d < /dev/null >&- 2>/dev/null
-echo "closed stdout: rc=$?"
+if $CLICKHOUSE_LOCAL --path "$work/src" --dump-schema d < /dev/null >&- 2>/dev/null; then
+    echo "closed stdout: success"
+else
+    echo "closed stdout: failed"
+fi
