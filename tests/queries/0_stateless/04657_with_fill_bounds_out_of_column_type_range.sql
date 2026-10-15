@@ -307,7 +307,10 @@ SELECT 'a step whose ticks overflow Int64 but whose result fits is not saturated
 SELECT t FROM (SELECT toDateTime64('1700-01-01 00:00:00', 9, 'UTC') AS t) ORDER BY t WITH FILL TO toDateTime64('2200-01-01 00:00:00', 9, 'UTC') STEP INTERVAL 200000000 MINUTE;
 SELECT t FROM (SELECT toDateTime64('2200-01-01 00:00:00', 9, 'UTC') AS t) ORDER BY t DESC WITH FILL TO toDateTime64('1700-01-01 00:00:00', 9, 'UTC') STEP INTERVAL -200000000 MINUTE;
 -- The same interval as `STALENESS` bounds the window at the same value.
-SELECT t FROM (SELECT toDateTime64('1700-01-01 00:00:00', 9, 'UTC') AS t UNION ALL SELECT toDateTime64('2200-01-01 00:00:00', 9, 'UTC')) ORDER BY t WITH FILL STEP INTERVAL 100000000 MINUTE STALENESS INTERVAL 200000000 MINUTE;
+SELECT t FROM (SELECT toDateTime64('1700-01-01 00:00:00', 9, 'UTC') AS t UNION ALL SELECT toDateTime64('1800-01-01 00:00:00', 9, 'UTC')) ORDER BY t WITH FILL STEP INTERVAL 100000000 MINUTE STALENESS INTERVAL 200000000 MINUTE;
+-- A `STALENESS` window past the range of the column is not cut at the boundary of the storage: the filling of the
+-- window after 2200 would continue the steps from 1700 to 2270, which the column cannot hold.
+SELECT t FROM (SELECT toDateTime64('1700-01-01 00:00:00', 9, 'UTC') AS t UNION ALL SELECT toDateTime64('2200-01-01 00:00:00', 9, 'UTC')) ORDER BY t WITH FILL STEP INTERVAL 100000000 MINUTE STALENESS INTERVAL 200000000 MINUTE FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
 
 SELECT 'a calendar step does not wrap around before it is compared';
 
@@ -320,3 +323,20 @@ SELECT count() FROM (SELECT toDate('1970-01-01') AS d ORDER BY d WITH FILL TO 3 
 SELECT 'a numeric step truncated to zero ticks does not advance';
 
 SELECT t FROM (SELECT toDateTime64('9999-12-31 23:59:58', 2, 'UTC') AS t) ORDER BY t WITH FILL FROM toDateTime64('9999-12-31 23:59:58', 2, 'UTC') TO toDateTime64('9999-12-31 23:59:58', 2, 'UTC') + INTERVAL 10 SECOND STEP 0.001;
+
+SELECT 'a quarter step whose number of months overflows Int64 does not wrap around';
+
+-- `3 * 6148914691236517206` months wrap to 2, which used to generate a row every two months.
+SELECT groupArray(t) FROM (SELECT toDateTime('2000-01-01 00:00:00', 'UTC') AS t ORDER BY t WITH FILL TO toDateTime('2001-01-01 00:00:00', 'UTC') STEP INTERVAL 6148914691236517206 QUARTER);
+SELECT groupArray(t) FROM (SELECT toDateTime('2001-01-01 00:00:00', 'UTC') AS t ORDER BY t DESC WITH FILL TO toDateTime('2000-01-01 00:00:00', 'UTC') STEP INTERVAL -6148914691236517206 QUARTER);
+
+SELECT 'a bound past the storage of DateTime64 is not confused with its last value';
+
+-- At scale 9 the maximum of Int64 is a valid value of the column, so neither the exclusive `STALENESS` bound nor a
+-- step past it may be saturated to it.
+SELECT groupArray(toUnixTimestamp64Nano(t)) FROM (SELECT toDateTime64('2262-04-11 23:47:16.854775805', 9, 'UTC') AS t ORDER BY t WITH FILL STEP INTERVAL 1 NANOSECOND STALENESS INTERVAL 3 NANOSECOND);
+SELECT groupArray(toUnixTimestamp64Nano(t)) FROM (SELECT toDateTime64('2262-04-11 23:47:16.854775805', 9, 'UTC') AS t ORDER BY t WITH FILL STEP INTERVAL 2 NANOSECOND STALENESS INTERVAL 4 NANOSECOND);
+-- A `STALENESS` bound past the storage lets the filling run up to its last value, and the next one is rejected as a
+-- value the column cannot hold, as for any other column type.
+SELECT groupArray(toUnixTimestamp64Nano(t)) FROM (SELECT toDateTime64('2262-04-11 23:47:16.854775805', 9, 'UTC') AS t ORDER BY t WITH FILL STEP INTERVAL 1 NANOSECOND STALENESS INTERVAL 1 DAY); -- { serverError INVALID_WITH_FILL_EXPRESSION }
+SELECT groupArray(toUnixTimestamp64Nano(t)) FROM (SELECT toDateTime64('1900-01-01 00:00:00.000000002', 9, 'UTC') AS t ORDER BY t DESC WITH FILL STEP INTERVAL -1 NANOSECOND STALENESS INTERVAL -3 NANOSECOND);
