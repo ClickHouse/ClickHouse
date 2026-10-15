@@ -8,6 +8,7 @@
 #include <Interpreters/Context.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Storages/NATS/INATSConsumer.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -16,6 +17,16 @@ namespace Setting
 {
     extern const SettingsMilliseconds rabbitmq_max_wait_ms;
     extern const SettingsUInt64 interactive_delay;
+}
+
+namespace ErrorCodes
+{
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    extern const char nats_fail_resubscribe_within_query[];
 }
 
 static std::pair<Block, Block> getHeaders(const StorageSnapshotPtr & storage_snapshot)
@@ -76,10 +87,27 @@ NATSSource::~NATSSource()
     if (!consumer)
         return;
 
-    consumer->dropConsumed();
-
+    /// What a direct `SELECT` committed is acknowledged by `generate` already, so whatever it still
+    /// holds goes back to the broker while the subscription is alive; otherwise the broker hides it
+    /// until the ACK deadline.
     if (unsubscribe_on_destroy)
+    {
+        /// The subscription of a direct `SELECT` ends with it, together with its local queue.
+        consumer->finishAndReturnUnprocessed(INATSConsumer::SkippedMessages::ReturnToBroker);
         consumer->unsubscribe();
+    }
+    else if (!background_streaming)
+    {
+        /// A direct `SELECT` that got a consumer still subscribed by the streaming task leaves it
+        /// subscribed, and its local queue to whoever takes the consumer next.
+        consumer->returnConsumed();
+    }
+    else
+    {
+        /// A streaming cycle keeps the subscription and the local queue for the next cycle. Its
+        /// insert failed if it did not acknowledge, and the messages are redelivered.
+        consumer->dropConsumed();
+    }
 
     storage.pushConsumer(consumer);
 }
@@ -170,39 +198,13 @@ Chunk NATSSource::generateImpl()
             return {};
         }
 
-        /// A JetStream pull subscription survives a reconnect client side, but the server has
-        /// discarded the pull request it was waiting for. Direct reads do not return the consumer
-        /// to `StorageNATS` until this source is destroyed, so recover it here instead of waiting
-        /// for the background streaming task to notice it.
-        /// Nothing the consumer holds locally can outlive its subscription: a `natsMsg` keeps a
-        /// plain pointer to the `natsSubscription` it arrived on, and `natsMsg_Ack` follows it to
-        /// reach the JetStream context and the connection, so acknowledging a message whose
-        /// subscription has been destroyed reads freed memory. So recovery prefers a cycle that
-        /// starts holding nothing: no rows in the current output block, whose ACK handles
-        /// `StorageNATS` needs until it has inserted them, and nothing left in the local queue,
-        /// which the cycles before this one insert and acknowledge.
-        /// Those checks are only a snapshot - `onMsg` runs on the NATS client thread and the
-        /// drain inside `unsubscribe` delivers whatever the subscription still has - so what the
-        /// consumer does turn out to hold is returned to the broker instead of being destroyed,
-        /// while the subscription it arrived on is still alive.
-        /// Emitting no rows is not the same as having consumed nothing: `consume` takes a message
-        /// before it is parsed, and `nats_skip_broken_messages` turns a message that yields no rows
-        /// into an ordinary outcome. Such a message is not waiting to be inserted, so the recovery
-        /// does not have to wait for it: `markLastConsumedSkipped` moves it aside as soon as it
-        /// turns out to have produced nothing. Only a background streaming cycle, which never
-        /// inserts such a message and whose skip is therefore already final when it happens,
-        /// acknowledges it here rather than handing it back, which keeps the skip instead of
-        /// showing the same malformed input to the next cycle. A direct `SELECT` consumes only what
-        /// it has committed, and this recovery runs long before the commit point in `generate` - a
-        /// query cancelled in between must leave the message for the next reader, whatever
-        /// `nats_commit_on_select` says - so there a skipped message goes back to the broker like
-        /// the rest of what the consumer holds. The redelivery is skipped again right away and is
-        /// acknowledged with everything else once the query does commit.
-        /// What the guard below waits for is a message that still owes rows to this query.
-        /// `unsubscribe_on_destroy` keeps its previous value: a background streaming consumer must
-        /// stay subscribed when this source is destroyed, so the next streaming cycle keeps
-        /// consuming where this one left off. Only a consumer this source subscribed from an
-        /// unsubscribed state (the direct `SELECT` case above) is unsubscribed on destroy.
+        /// A direct read holds its consumer until it ends, so a subscription that stopped consuming
+        /// is recovered here rather than by `StorageNATS::resubscribeStaleConsumers`. Only a
+        /// consumer that holds no message which may still owe rows is recovered, because the
+        /// recovery returns everything it holds to the broker. A skipped message owes nothing:
+        /// a streaming cycle acknowledges it, as its skip is final, while a direct `SELECT` has not
+        /// reached its commit point in `generate` yet and returns it.
+        /// `unsubscribe_on_destroy` is kept: a streaming consumer stays subscribed for the next cycle.
         if (total_rows == 0 && !consumer->hasConsumedMessages() && consumer->queueEmpty() && consumer->needsResubscribe())
         {
             LOG_INFO(log, "A subscription stopped consuming from the NATS server, resubscribing within a running query");
@@ -210,7 +212,28 @@ Chunk NATSSource::generateImpl()
                 background_streaming ? INATSConsumer::SkippedMessages::Acknowledge
                                      : INATSConsumer::SkippedMessages::ReturnToBroker);
             consumer->unsubscribe();
-            consumer->subscribe();
+
+            try
+            {
+                fiu_do_on(FailPoints::nats_fail_resubscribe_within_query,
+                {
+                    throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure of resubscribing within a running query");
+                });
+                consumer->subscribe();
+            }
+            catch (...)
+            {
+                /// A consumer the streaming task subscribed no longer reports that it needs to be
+                /// recovered once it is unsubscribed, so `subscribeConsumers` has to subscribe it.
+                if (!unsubscribe_on_destroy)
+                    storage.markConsumersNotReady();
+                if (!background_streaming)
+                    throw;
+
+                /// Let the other sources of the cycle insert what they have.
+                tryLogCurrentException(log, "Cannot resubscribe a NATS consumer");
+                return {};
+            }
         }
 
         if (consumer->isConsumerStopped() || !checkTimeLimit())
@@ -229,9 +252,7 @@ Chunk NATSSource::generateImpl()
         {
             new_rows = executor.execute(*buf);
 
-            /// A message that parsed into no rows is one `nats_skip_broken_messages` passed over
-            /// (with `handle_error_mode = 'stream'` a malformed message still yields its error row).
-            /// Nothing is waiting for it, so it must not hold back a reconnect recovery.
+            /// Passed over by `nats_skip_broken_messages`.
             if (new_rows == 0)
                 consumer->markLastConsumedSkipped();
         }

@@ -131,19 +131,19 @@ REGISTER_FUNCTION(CountDigits)
     FunctionDocumentation::Description description = R"(
 Returns the number of decimal digits needed to represent a value.
 
-:::note
+<Note>
 This function takes into account the scales of decimal values i.e., it calculates the result over the underlying integer type which is `(value * scale)`.
 
 For example:
 - `countDigits(42) = 2`
 - `countDigits(42.000) = 5`
 - `countDigits(0.04200) = 4`
-:::
+</Note>
 
-:::tip
+<Tip>
 You can check decimal overflow for `Decimal64` with `countDigits(x) > 18`,
 although it is slower than [`isDecimalOverflow`](#isDecimalOverflow).
-:::
+</Tip>
 )";
     FunctionDocumentation::Syntax syntax = "countDigits(x)";
     FunctionDocumentation::Arguments arguments = {

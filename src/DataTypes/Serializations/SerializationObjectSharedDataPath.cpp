@@ -105,7 +105,8 @@ void SerializationObjectSharedDataPath::enumerateStreams(
         if (serialization_version.value == SerializationObjectSharedData::SerializationVersion::MAP_WITH_BUCKETS)
             settings.path.pop_back();
     }
-    else if (serialization_version.value == SerializationObjectSharedData::SerializationVersion::ADVANCED)
+    else if (serialization_version.value == SerializationObjectSharedData::SerializationVersion::ADVANCED
+             || serialization_version.value == SerializationObjectSharedData::SerializationVersion::ADVANCED_CHUNKED)
     {
         settings.path.push_back(Substream::Bucket);
         settings.path.back().bucket = bucket;
@@ -182,7 +183,8 @@ void SerializationObjectSharedDataPath::deserializeBinaryBulkStatePrefix(
         if (serialization_version.value == SerializationObjectSharedData::SerializationVersion::MAP_WITH_BUCKETS)
             settings.path.pop_back();
     }
-    else if (serialization_version.value == SerializationObjectSharedData::SerializationVersion::ADVANCED)
+    else if (serialization_version.value == SerializationObjectSharedData::SerializationVersion::ADVANCED
+             || serialization_version.value == SerializationObjectSharedData::SerializationVersion::ADVANCED_CHUNKED)
     {
         settings.path.push_back(Substream::Bucket);
         settings.path.back().bucket = bucket;
@@ -291,47 +293,48 @@ void SerializationObjectSharedDataPath::deserializeBinaryBulkWithMultipleStreams
             column.insertRangeFrom(*subcolumn, 0, subcolumn->size());
         }
     }
-    else if (serialization_version.value == SerializationObjectSharedData::SerializationVersion::ADVANCED)
+    else if (serialization_version.value == SerializationObjectSharedData::SerializationVersion::ADVANCED
+             || serialization_version.value == SerializationObjectSharedData::SerializationVersion::ADVANCED_CHUNKED)
     {
         settings.path.push_back(Substream::Bucket);
         settings.path.back().bucket = bucket;
 
         auto * shared_data_structure_state = checkAndGetState<SerializationObjectSharedData::DeserializeBinaryBulkStateObjectSharedDataStructure>(shared_data_path_state->structure_state);
-        auto structure_granules = SerializationObjectSharedData::deserializeStructure(limit, settings, *shared_data_structure_state, cache);
-        auto paths_infos_granules = SerializationObjectSharedData::deserializePathsInfos(*structure_granules, *shared_data_structure_state, settings, cache);
-        auto paths_data_granules = SerializationObjectSharedData::deserializePathsData(*structure_granules, *paths_infos_granules, *shared_data_structure_state, settings, dynamic_type, dynamic_serialization, cache);
+        auto chunk_structures = SerializationObjectSharedData::deserializeStructure(limit, settings, *shared_data_structure_state, cache);
+        auto paths_infos_chunks = SerializationObjectSharedData::deserializePathsInfos(*chunk_structures, *shared_data_structure_state, settings, cache);
+        auto paths_data_chunks = SerializationObjectSharedData::deserializePathsData(*chunk_structures, *paths_infos_chunks, *shared_data_structure_state, settings, dynamic_type, dynamic_serialization, cache);
 
-        for (size_t granule = 0; granule != structure_granules->size(); ++granule)
+        for (size_t chunk_idx = 0; chunk_idx != chunk_structures->size(); ++chunk_idx)
         {
-            const auto & structure_granule = (*structure_granules)[granule];
-            const auto & paths_info_granule = (*paths_infos_granules)[granule];
-            const auto & paths_data_granule = (*paths_data_granules)[granule];
+            const auto & chunk_structure = (*chunk_structures)[chunk_idx];
+            const auto & paths_info_chunk = (*paths_infos_chunks)[chunk_idx];
+            const auto & paths_data_chunk = (*paths_data_chunks)[chunk_idx];
 
-            /// Skip granule if there is nothing to read from it.
-            if (!structure_granule.limit)
+            /// Skip chunk if there is nothing to read from it.
+            if (!chunk_structure.limit)
                 continue;
 
-            /// Skip granule if it doesn't have requested path.
-            if (!paths_info_granule.path_to_info.contains(path))
+            /// Skip chunk if it doesn't have requested path.
+            if (!paths_info_chunk.path_to_info.contains(path))
             {
-                column.insertManyDefaults(structure_granule.limit);
+                column.insertManyDefaults(chunk_structure.limit);
                 continue;
             }
 
-            auto path_data_it = paths_data_granule.paths_data.find(path);
+            auto path_data_it = paths_data_chunk.paths_data.find(path);
             /// Check if we have data of the whole path.
-            if (path_data_it != paths_data_granule.paths_data.end())
+            if (path_data_it != paths_data_chunk.paths_data.end())
             {
                 /// If no subcolumn is requested, just insert path data into destination column.
                 if (path_subcolumn.empty())
                 {
-                    column.insertRangeFrom(*path_data_it->second, structure_granule.offset, structure_granule.limit);
+                    column.insertRangeFrom(*path_data_it->second, chunk_structure.offset, chunk_structure.limit);
                 }
                 /// If subcolumn is requested, extract it from the path data.
                 else
                 {
                     auto subcolumn = dynamic_type->getSubcolumn(path_subcolumn, path_data_it->second);
-                    column.insertRangeFrom(*subcolumn, structure_granule.offset, structure_granule.limit);
+                    column.insertRangeFrom(*subcolumn, chunk_structure.offset, chunk_structure.limit);
                 }
             }
             /// If no subcolumn is requested we must have path data.
@@ -342,15 +345,15 @@ void SerializationObjectSharedDataPath::deserializeBinaryBulkWithMultipleStreams
             /// Otherwise we must have subcolumn in paths subcolumns data.
             else
             {
-                auto path_subcolumns_data_it = paths_data_granule.paths_subcolumns_data.find(path);
-                if (path_subcolumns_data_it == paths_data_granule.paths_subcolumns_data.end())
+                auto path_subcolumns_data_it = paths_data_chunk.paths_subcolumns_data.find(path);
+                if (path_subcolumns_data_it == paths_data_chunk.paths_subcolumns_data.end())
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Subcolumns data of path {} is not deserialized", path);
 
                 auto subcolumn_data_it = path_subcolumns_data_it->second.find(path_subcolumn);
                 if (subcolumn_data_it == path_subcolumns_data_it->second.end())
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Data of subcolumn {} of path {} is not deserialized", path_subcolumn, path);
 
-                column.insertRangeFrom(*subcolumn_data_it->second, structure_granule.offset, structure_granule.limit);
+                column.insertRangeFrom(*subcolumn_data_it->second, chunk_structure.offset, chunk_structure.limit);
             }
         }
 

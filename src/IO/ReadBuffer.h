@@ -5,6 +5,7 @@
 
 #include <Common/Priority.h>
 #include <IO/BufferBase.h>
+#include <IO/ByteRangeSet.h>
 #include <Common/Exception.h>
 
 
@@ -234,6 +235,10 @@ public:
     virtual void setReadUntilPosition(size_t /* position */) {}
 
     virtual void setReadUntilEnd() {}
+
+    /// The byte ranges the caller will read until it announces another map; empty = nothing.
+    /// Without a map, the caller may read the whole file. Advisory: it may bound read-ahead, never refuse a read.
+    virtual void setRequestMap(ByteRangeSet /* ranges */) {}
 
 protected:
     /// The number of bytes to ignore from the initial position of `working_buffer`

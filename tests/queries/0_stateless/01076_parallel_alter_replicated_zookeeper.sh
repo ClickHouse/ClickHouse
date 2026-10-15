@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: replica, no-parallel, no-fasttest
+# Tags: long, replica, no-parallel, no-fasttest
+# long: 5-replica parallel-ALTER stress + teardown drain legitimately exceeds the 180s flaky-check cap
 
 # This test checks mutations concurrent execution with concurrent inserts.
 # There was a bug in mutations finalization, when mutation finishes not after all
@@ -48,14 +49,13 @@ done
 
 INITIAL_SUM=$($CLICKHOUSE_CLIENT --query "SELECT SUM(value1) FROM concurrent_mutate_mt_1")
 
-# Run mutation on random replica
+# Run mutation on replica 1, which detach_attach_thread never takes down
 function correct_alter_thread()
 {
     local TIMELIMIT=$((SECONDS+TIMEOUT))
     while [ $SECONDS -lt "$TIMELIMIT" ]
     do
-        REPLICA=$(($RANDOM % 5 + 1))
-        $CLICKHOUSE_CLIENT --query "ALTER TABLE concurrent_mutate_mt_$REPLICA UPDATE value1 = value1 + 1 WHERE 1";
+        $CLICKHOUSE_CLIENT --query "ALTER TABLE concurrent_mutate_mt_1 UPDATE value1 = value1 + 1 WHERE 1";
         sleep 1
     done
 }
@@ -79,7 +79,9 @@ function detach_attach_thread()
     local TIMELIMIT=$((SECONDS+TIMEOUT))
     while [ $SECONDS -lt "$TIMELIMIT" ]
     do
-        REPLICA=$(($RANDOM % 5 + 1))
+        # Replicas 2.. only: correct_alter_thread needs replica 1 attached, or an ALTER that draws a
+        # DETACHed replica fails with UNKNOWN_TABLE and the run assigns no mutation to check.
+        REPLICA=$(($RANDOM % (REPLICAS - 1) + 2))
         $CLICKHOUSE_CLIENT --query "DETACH TABLE concurrent_mutate_mt_$REPLICA"
         sleep 0.$RANDOM
         sleep 0.$RANDOM
@@ -91,8 +93,9 @@ function detach_attach_thread()
 
 echo "Starting alters"
 
-# We assign a lot of mutations so timeout shouldn't be too big
-TIMEOUT=15
+# We assign a lot of mutations so timeout shouldn't be too big. 10s still exercises the race;
+# 15s piled up a backlog whose post-stress SYNC/CHECK drain overran the 600s timeout on s3/SMT.
+TIMEOUT=10
 
 detach_attach_thread 2> /dev/null &
 
@@ -142,9 +145,17 @@ for i in $(seq $REPLICAS); do
     $CLICKHOUSE_CLIENT --query "SYSTEM SYNC REPLICA concurrent_mutate_mt_$i"
     $CLICKHOUSE_CLIENT --query "CHECK TABLE concurrent_mutate_mt_$i" &> /dev/null # if we will remove something the output of select will be wrong
     $CLICKHOUSE_CLIENT --query "SELECT SUM(toUInt64(value1)) > $INITIAL_SUM FROM concurrent_mutate_mt_$i"
-    $CLICKHOUSE_CLIENT --query "SELECT COUNT() FROM system.mutations WHERE table='concurrent_mutate_mt_$i' and is_done=0" # all mutations have to be done
-    $CLICKHOUSE_CLIENT --query "SELECT * FROM system.mutations WHERE table='concurrent_mutate_mt_$i' and is_done=0" # for verbose output
+    # >=1 mutation applied to visible data: initial rows are number+10 over numbers(50) so max is 59, and
+    # insert_thread only ever adds value1 in {7,8,9}, so only ALTER ... UPDATE value1 = value1 + 1 can exceed 59.
+    $CLICKHOUSE_CLIENT --query "SELECT MAX(toUInt64(value1)) > 59 FROM concurrent_mutate_mt_$i"
+    $CLICKHOUSE_CLIENT --query "SELECT COUNT() FROM system.mutations WHERE database='${CLICKHOUSE_DATABASE}' and table='concurrent_mutate_mt_$i' and is_done=0" # all mutations have to be done
+    $CLICKHOUSE_CLIENT --query "SELECT * FROM system.mutations WHERE database='${CLICKHOUSE_DATABASE}' and table='concurrent_mutate_mt_$i' and is_done=0" # for verbose output
 done
+
+# The stress phase must have assigned at least one mutation: every check above is also satisfied by a
+# run that assigned none, because the concurrent inserts alone raise the sum and a run without
+# mutations has none unfinished. The SYSTEM SYNC REPLICA calls above make the entries visible here.
+$CLICKHOUSE_CLIENT --query "SELECT count() > 0 FROM system.mutations WHERE database='${CLICKHOUSE_DATABASE}' AND table LIKE 'concurrent_mutate_mt_%'"
 
 for i in $(seq $REPLICAS); do
     $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS concurrent_mutate_mt_$i"

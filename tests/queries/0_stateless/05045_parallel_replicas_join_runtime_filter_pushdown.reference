@@ -1,0 +1,11 @@
+Aggregating
+   │     ├──Aggregating
+   │     │  └──ReadFromMergeTree
+   │     │        Runtime filters: RF1(k, k from default.pr_rf_build)
+   │     └──Filter
+   │        │  Runtime filters: RF1(k, k from default.pr_rf_build)
+   │        └──ReadFromRemoteParallelReplicas
+   └──BuildRuntimeFilter
+      │  Filter id: RF1
+      └──ReadFromMergeTree
+45

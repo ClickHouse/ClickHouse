@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-old-analyzer
 
 # Tests for column-level SELECT grants on ALIAS columns.
 #

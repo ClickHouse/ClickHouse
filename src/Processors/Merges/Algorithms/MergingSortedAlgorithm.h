@@ -1,7 +1,9 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
+#include <Processors/Merges/Algorithms/RowFilterInfo.h>
 #include <Core/Block_fwd.h>
 #include <Core/SortDescription.h>
 #include <Core/SortCursor.h>
@@ -53,7 +55,8 @@ private:
     /// If it is not nullptr then it should be populated during execution
     WriteBuffer * out_row_sources_buf = nullptr;
 
-    /// The position of filter column if filter is set.
+    /// The position of the filter column of lightweight delete, which is a stored column no
+    /// transform computes. A TTL merge's mask arrives on the chunks instead.
     ssize_t filter_column_position = -1;
 
     bool apply_virtual_row_conversions;
@@ -74,15 +77,15 @@ private:
     /// Sources whose initial chunk is a virtual row (so their real data has not been
     /// requested yet), ordered by the virtual row sort key, i.e. in the order the merge
     /// will need them.
-    std::vector<size_t> deferred_sources_in_merge_order;
+    VectorWithMemoryTracking<size_t> deferred_sources_in_merge_order;
     /// Position in `deferred_sources_in_merge_order` of the next source to prefetch.
     size_t next_deferred_source_pos = 0;
     /// Number of issued prefetches whose real data has not arrived yet.
     size_t prefetches_in_flight = 0;
     /// Per-source deferral state.
-    std::vector<SourceDeferralState> source_deferral_state;
+    VectorWithMemoryTracking<SourceDeferralState> source_deferral_state;
     /// Sources to report for read-ahead with the next `merge` status.
-    std::vector<size_t> sources_to_prefetch;
+    VectorWithMemoryTracking<size_t> sources_to_prefetch;
     /// Whether the merge has actually advanced past a source: it asked for a source other
     /// than the one that last delivered real data, or a source was exhausted without any.
     /// Read-ahead is only started after this: as long as the merge keeps asking the same
@@ -96,6 +99,11 @@ private:
     /// Chunks currently being merged.
     Inputs current_inputs;
 
+    /// Per source, the rows to keep in the chunk above, or nullptr when that chunk is not
+    /// filtered. Valid for exactly as long as the chunk, so it is refreshed whenever one arrives
+    /// and dropped when one is passed through whole.
+    VectorWithMemoryTracking<const IColumnFilter *> source_row_filter_masks;
+
     SortingQueueStrategy sorting_queue_strategy;
 
     SortCursorImpls cursors;
@@ -108,7 +116,9 @@ private:
     template <typename TSortingQueue>
     Status mergeBatchImpl(TSortingQueue & queue);
 
-    bool hasFilter() const { return filter_column_position != -1; }
+    /// Where the rows to keep come from: the filter column of the header, or the chunk's
+    /// `RowFilterInfo`. Resolved once per chunk, so the per-row path is one indexed read.
+    const IColumnFilter * resolveRowFilterMask(const Chunk & chunk) const;
     /// Issue read-ahead for the next deferred sources up to the window size.
     void topUpPrefetch();
     /// Mark a deferred source as no longer reading ahead (its real data arrived or it
@@ -120,7 +130,7 @@ private:
     void insertChunk(size_t source_num);
 
     /// Per-input pending virtual-row boundary (empty when none), used for debug checks to ensure virtual rows are placed correctly.
-    std::vector<Columns> virtual_row_boundary;
+    VectorWithMemoryTracking<Columns> virtual_row_boundary;
 };
 
 }

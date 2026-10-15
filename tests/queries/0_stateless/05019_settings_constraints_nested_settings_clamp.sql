@@ -1,8 +1,7 @@
--- Tags: no-parallel, no-old-analyzer
+-- Tags: no-parallel
 -- no-parallel: a settings profile is server-global rather than per-database, and its name cannot be
 -- made unique per run: query parameters are not accepted in access-entity DDL. So this test is not
 -- safe against a concurrent copy of itself - which is how the flaky check runs it.
--- no-old-analyzer: the clamp is analyzer-path behaviour; the legacy interpreter has always thrown
 -- on a nested clause that violates the constraints, so these expectations do not hold there.
 
 -- A `SETTINGS` clause nested inside a subquery, a CTE, or a view's inner query must not override the

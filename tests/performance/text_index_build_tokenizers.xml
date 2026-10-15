@@ -1,0 +1,25 @@
+<test>
+    <!-- Cost of building a text index with the byte-class tokenizers on log lines: many short tokens, dense
+         separators, a few unique identifiers per line. Merges are stopped so that only the INSERT builds the
+         index. Inserting the same rows into a table without an index takes about a fifth of the time, so
+         these queries mostly measure the index build. -->
+    <create_query>SYSTEM STOP MERGES</create_query>
+
+    <create_query>CREATE TABLE tib_log_src (s String) ENGINE = Memory</create_query>
+
+    <create_query>CREATE TABLE tib_log_non_alpha (s String, INDEX idx s TYPE text(tokenizer = splitByNonAlpha)) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE tib_log_by_string (s String, INDEX idx s TYPE text(tokenizer = splitByString([' ', '=', ',', '"']))) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE tib_log_by_string_multi (s String, INDEX idx s TYPE text(tokenizer = splitByString([', ', '="', ' ', '=']))) ENGINE = MergeTree ORDER BY tuple()</create_query>
+
+    <fill_query>INSERT INTO tib_log_src SELECT concat('2024-01-01 12:00:00.', toString(number % 1000), ' [thread-', toString(number % 64), '] INFO Request processed user_id=', toString(number), ' method=GET path=/api/v1/items/', hex(cityHash64(number)), ' status=200 latency_ms=', toString(number % 500), ' ua="Mozilla/5.0 (X11; Linux x86_64)" ok') FROM numbers(500000)</fill_query>
+
+    <query>INSERT INTO tib_log_non_alpha SELECT s FROM tib_log_src</query>
+    <query>INSERT INTO tib_log_by_string SELECT s FROM tib_log_src</query>
+    <query>INSERT INTO tib_log_by_string_multi SELECT s FROM tib_log_src</query>
+
+    <drop_query>SYSTEM START MERGES</drop_query>
+    <drop_query>DROP TABLE IF EXISTS tib_log_src</drop_query>
+    <drop_query>DROP TABLE IF EXISTS tib_log_non_alpha</drop_query>
+    <drop_query>DROP TABLE IF EXISTS tib_log_by_string</drop_query>
+    <drop_query>DROP TABLE IF EXISTS tib_log_by_string_multi</drop_query>
+</test>

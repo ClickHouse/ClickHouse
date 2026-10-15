@@ -150,6 +150,9 @@ public:
         if (column_length_const)
             length = column_length_const->getInt(0);
 
+        if (column_offset_const && offset == 1 && !column_length && isString(arguments[0].type))
+            return column_string;
+
         if (is_utf8)
         {
             if (const ColumnString * col = checkAndGetColumn<ColumnString>(column_string.get()))
@@ -263,10 +266,10 @@ Code point counting starts from `1` with the following logic:
 
 An optional argument `length` specifies the maximum number of code points the returned substring may have.
 
-:::note
+<Note>
 This function assumes that the string contains valid UTF-8 encoded text.
 If this assumption is violated, no exception is thrown and the result is undefined.
-:::
+</Note>
 )";
     FunctionDocumentation::Syntax syntax_utf8 = "substringUTF8(s, offset[, length])";
     FunctionDocumentation::Arguments arguments_utf8 = {
