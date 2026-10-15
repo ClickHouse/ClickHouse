@@ -398,7 +398,8 @@ std::optional<ColumnWithType> traceUnionColumnIntoArm(
 /// pushing dependent join down and replacing it with CROSS JOIN.
 /// Either context can be the one that builds the QueryPlanOptimizationSettings and creates the
 /// buffer, so neither alone is authoritative: keep the protection when either would buffer.
-bool referencedInputUsesInMemoryBuffer(const DecorrelationContext & context)
+/// With `in_every_context`, whether both would buffer: only then every reference reads the same evaluation of the input.
+bool referencedInputUsesInMemoryBuffer(const DecorrelationContext & context, bool in_every_context = false)
 {
     auto would_buffer = [](const Settings & settings_to_check)
     {
@@ -407,8 +408,11 @@ bool referencedInputUsesInMemoryBuffer(const DecorrelationContext & context)
     };
     const auto & settings = context.planner_context->getQueryContext()->getSettingsRef();
     const auto top_level_context = context.planner_context->getQueryContext();
-    return would_buffer(settings)
-        || (top_level_context->hasQueryContext() && would_buffer(top_level_context->getQueryContext()->getSettingsRef()));
+    bool planner_buffers = would_buffer(settings);
+    bool query_buffers = top_level_context->hasQueryContext()
+        ? would_buffer(top_level_context->getQueryContext()->getSettingsRef())
+        : planner_buffers;
+    return in_every_context ? (planner_buffers && query_buffers) : (planner_buffers || query_buffers);
 }
 
 /// The distinct values of the correlated columns in the outer plan (the domain of the correlated subquery),
@@ -517,6 +521,11 @@ QueryPlan addMissingCorrelatedGroupsToAggregateInput(
         std::swap(get_lhs_column_name, get_rhs_column_name);
         join_kind = JoinKind::Left;
     }
+    /// Without a shared buffer the domain is another evaluation of the outer plan, which can produce other values
+    /// (`rand()`), so the input rows whose values it lacks are kept as well.
+    bool keep_all_input_rows = !referencedInputUsesInMemoryBuffer(context, /*in_every_context=*/ true);
+    if (keep_all_input_rows)
+        join_kind = JoinKind::Full;
 
     auto lhs_plan_header = lhs_plan.getCurrentHeader();
     auto rhs_plan_header = rhs_plan.getCurrentHeader();
@@ -555,12 +564,55 @@ QueryPlan addMissingCorrelatedGroupsToAggregateInput(
     domain_join->setStepDescription("JOIN to restore the empty groups of the correlated aggregate");
     makeInternalDecorrelationJoinUnbounded(*domain_join);
 
+    /// The user's `join_algorithm` list must not decide whether this internal join can run.
+    auto & join_settings = domain_join->getJoinSettings();
+    if (!JoinCommon::canBeExecutedByEnabledAlgorithm(join_settings, join_kind, JoinStrictness::All))
+        join_settings.join_algorithms = {JoinAlgorithm::HASH, JoinAlgorithm::PARALLEL_HASH};
+
     QueryPlan result_plan;
     std::vector<QueryPlanPtr> plans;
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(lhs_plan)));
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(rhs_plan)));
     result_plan.unitePlans(std::move(domain_join), {std::move(plans)});
+
+    if (keep_all_input_rows)
+    {
+        /// An input row without a domain row has defaults in the domain columns: it keeps its own correlated values.
+        const auto & query_context = context.planner_context->getQueryContext();
+        ActionsDAG dag(result_plan.getCurrentHeader()->getNamesAndTypesList());
+        const auto & marker = dag.findInOutputs(marker_name);
+        for (auto & output : dag.getOutputs())
+        {
+            if (!std::ranges::contains(correlated_columns, output->result_name))
+                continue;
+
+            const auto & input_value = dag.findInOutputs(get_inner_column_name(output->result_name));
+            const auto * value = &dag.addFunction(FunctionFactory::instance().get("if", query_context), {&marker, &input_value, output}, {});
+            output = &dag.addCast(*value, output->result_type, output->result_name, query_context);
+        }
+
+        auto values_step = std::make_unique<ExpressionStep>(result_plan.getCurrentHeader(), std::move(dag));
+        values_step->setStepDescription("Take the correlated values of the input rows without a domain row");
+        result_plan.addStep(std::move(values_step));
+    }
+
     return result_plan;
+}
+
+bool foldsMarkerIntoCondition(const AggregateDescription & aggregate)
+{
+    return aggregate.function->getName().ends_with("If") && !aggregate.argument_names.empty();
+}
+
+/// The factory builds the -If form with the same handling of Nullable arguments as for a user
+/// query; wrapping an already Null-adapted function by hand breaks on Nullable arguments.
+AggregateFunctionPtr getAggregateFunctionWithMarker(const AggregateDescription & aggregate)
+{
+    DataTypes argument_types = aggregate.function->getArgumentTypes();
+    argument_types.push_back(std::make_shared<DataTypeUInt8>());
+    AggregateFunctionProperties properties;
+    return AggregateFunctionFactory::instance().get(
+        aggregate.function->getName() + "If", NullsAction::EMPTY, argument_types, aggregate.parameters, properties);
 }
 
 /// An aggregate without user keys yields one row per outer row even over an empty input (see
@@ -569,10 +621,19 @@ QueryPlan addMissingCorrelatedGroupsToAggregateInput(
 /// already produces. A scalar subquery does not restore the groups: its missing group is rendered as NULL.
 bool canRestoreEmptyGroups(const DecorrelationContext & context, const Aggregator::Params & params)
 {
-    return (context.correlated_subquery.kind == CorrelatedSubqueryKind::LATERAL_JOIN
-            || context.correlated_subquery.kind == CorrelatedSubqueryKind::EXISTS)
-        && params.keys.empty()
-        && !params.empty_result_for_aggregation_by_empty_set;
+    if (!params.keys.empty() || params.empty_result_for_aggregation_by_empty_set)
+        return false;
+    if (context.correlated_subquery.kind == CorrelatedSubqueryKind::LATERAL_JOIN)
+        return true;
+
+    /// The -If form can have another type: for `sumState` over a Nullable argument it is the state of `sum` over the
+    /// non-Nullable type.
+    return context.correlated_subquery.kind == CorrelatedSubqueryKind::EXISTS
+        && std::ranges::all_of(params.aggregates, [](const AggregateDescription & aggregate)
+        {
+            return foldsMarkerIntoCondition(aggregate)
+                || getAggregateFunctionWithMarker(aggregate)->getResultType()->equals(*aggregate.function->getResultType());
+        });
 }
 
 /// A group without rows has `count() = 0`; other aggregates and correlated values are unknown here.
@@ -1130,11 +1191,10 @@ QueryPlan decorrelateQueryPlan(
             const auto * marker_node = &filter_dag.findInOutputs(marker_name);
             bool has_folded_filters = false;
 
-            auto marker_type = std::make_shared<DataTypeUInt8>();
             for (size_t aggregate_index = 0; aggregate_index < new_aggregates.size(); ++aggregate_index)
             {
                 auto & aggregate = new_aggregates[aggregate_index];
-                if (aggregate.function->getName().ends_with("If") && !aggregate.argument_names.empty())
+                if (foldsMarkerIntoCondition(aggregate))
                 {
                     const auto & filter_type = aggregate.function->getArgumentTypes().back();
                     /// A condition that is always NULL already rejects the restored rows.
@@ -1152,13 +1212,7 @@ QueryPlan decorrelateQueryPlan(
                     continue;
                 }
 
-                /// The factory builds the -If form with the same handling of Nullable arguments as for a user
-                /// query; wrapping an already Null-adapted function by hand breaks on Nullable arguments.
-                DataTypes argument_types = aggregate.function->getArgumentTypes();
-                argument_types.push_back(marker_type);
-                AggregateFunctionProperties properties;
-                aggregate.function = AggregateFunctionFactory::instance().get(
-                    aggregate.function->getName() + "If", NullsAction::EMPTY, argument_types, aggregate.parameters, properties);
+                aggregate.function = getAggregateFunctionWithMarker(aggregate);
                 aggregate.argument_names.push_back(marker_name);
             }
 

@@ -182,5 +182,37 @@ SELECT o.number, EXISTS (
 FROM numbers(3) AS o ORDER BY o.number
 SETTINGS correlated_subqueries_use_in_memory_buffer = 0, correlated_subqueries_substitute_equivalent_expressions = 0;
 
+SELECT '-- outer keys that differ between evaluations of the outer plan';
+SELECT o.number, EXISTS (SELECT sum(i.number) AS s FROM numbers(1000) AS i WHERE i.number = o.r HAVING s >= 0)
+FROM (SELECT number, rand64() % 1000 AS r FROM numbers(5)) AS o ORDER BY o.number
+SETTINGS correlated_subqueries_use_in_memory_buffer = 0;
+SELECT o.number, EXISTS (SELECT sum(i.number) AS s FROM numbers(1000) AS i WHERE i.number = o.r HAVING s >= 0)
+FROM (SELECT number, rand64() % 1000 AS r FROM numbers(5)) AS o ORDER BY o.number
+SETTINGS correlated_subqueries_default_join_kind = 'left';
+SELECT * FROM (
+    SELECT o.number, EXISTS (SELECT sum(i.number) AS s FROM numbers(1000) AS i WHERE i.number = o.r HAVING s >= 0)
+    FROM (SELECT number, rand64() % 1000 AS r FROM numbers(5)) AS o
+    SETTINGS correlated_subqueries_use_in_memory_buffer = 1)
+ORDER BY ALL
+SETTINGS correlated_subqueries_use_in_memory_buffer = 0;
+SELECT o.number, l.c
+FROM (SELECT number, rand64() % 1000 AS r FROM numbers(5)) AS o
+INNER JOIN LATERAL (SELECT count() AS c FROM numbers(1000) AS i WHERE i.number = o.r) AS l ON true
+ORDER BY o.number
+SETTINGS allow_experimental_lateral_join = 1, correlated_subqueries_use_in_memory_buffer = 0;
+
+SELECT '-- an aggregate state over a Nullable argument';
+SELECT o.number, EXISTS (
+    SELECT sumState(toNullable(i.number)) AS c FROM numbers(2) AS i WHERE i.number = o.number + 1 HAVING finalizeAggregation(c) > 0)
+FROM numbers(2) AS o ORDER BY o.number;
+
+SELECT '-- a join_algorithm that cannot execute the restoring join';
+SELECT o.number, EXISTS (SELECT sum(i.number) AS s FROM numbers(2) AS i WHERE i.number = o.number AND i.number = 1 HAVING s > 0)
+FROM numbers(2) AS o ORDER BY o.number
+SETTINGS join_algorithm = 'direct';
+SELECT o.number, EXISTS (SELECT sum(i.number) AS s FROM numbers(2) AS i WHERE i.number = o.number AND i.number = 1 HAVING s > 0)
+FROM numbers(2) AS o ORDER BY o.number
+SETTINGS join_algorithm = 'direct', correlated_subqueries_use_in_memory_buffer = 0;
+
 DROP DICTIONARY d_05401;
 DROP TABLE t_05401_dict_source;
