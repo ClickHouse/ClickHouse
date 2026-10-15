@@ -873,13 +873,31 @@ policy_properties = {
 
 
 all_disks_properties = {
-    "description": lambda: generate_xml_safe_string(random.randint(1, 1024)),
-    "keep_free_space_bytes": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
-    "min_bytes_for_seek": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
-    "perform_ttl_move_on_insert": true_false_lambda,
-    "readonly": lambda: 1 if random.randint(0, 9) < 2 else 0,
     # "skip_access_check": true_false_lambda, may break the startup
     "thread_pool_size": no_zero_threads_lambda,
+}
+
+# The server rejects a disk element that its disk type does not read, so these go only to the
+# kinds that read them (`object_storage/<type>` for an object storage disk).
+disk_kind_properties = {
+    "keep_free_space_bytes": (
+        threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
+        {"local", "object_storage/local"},
+    ),
+    "min_bytes_for_seek": (
+        threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
+        {"object_storage/azure"},
+    ),
+    "readonly": (
+        lambda: 1 if random.randint(0, 9) < 2 else 0,
+        {
+            "object_storage/local",
+            "object_storage/s3",
+            "object_storage/s3_with_keeper",
+            "object_storage/azure",
+            "s3_with_keeper",
+        },
+    ),
 }
 
 
@@ -1234,7 +1252,16 @@ def add_single_disk(
                 )
 
     if disk_type != "cache" and random.randint(1, 100) <= 50:
-        apply_properties_recursively(next_disk, all_disks_properties)
+        kind = (
+            f"object_storage/{final_type}"
+            if disk_type == "object_storage"
+            else disk_type
+        )
+        disk_properties = dict(all_disks_properties)
+        for name, (generator, kinds) in disk_kind_properties.items():
+            if kind in kinds:
+                disk_properties[name] = generator
+        apply_properties_recursively(next_disk, disk_properties)
     return (prev_disk, final_type, final_super_type, final_metadata_type)
 
 
