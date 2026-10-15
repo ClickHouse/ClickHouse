@@ -2654,10 +2654,11 @@ class TestCase:
     )
 
     def has_non_throw_overflow_mode_in_test(self):
-        # Matches both a SQL assignment and a command line flag, which may separate the
-        # value with a space. 'throw', 'break' and 'any' are the only overflow modes.
+        # Matches a SQL assignment and a command line flag, which may separate the value with a
+        # space. Any value but a literal 'throw' or DEFAULT counts, e.g. a shell variable.
+        names = "|".join(self.OVERFLOW_MODE_SETTINGS)
         pattern = re.compile(
-            r"\b(?:%s)\s*(?:=\s*)?'?(?:any|break)\b" % "|".join(self.OVERFLOW_MODE_SETTINGS),
+            r"(?:\b(?:%s)\s*=|--(?:%s)\s)\s*(?!\\?['\"]?(?:throw|default)\b)\S" % (names, names),
             re.IGNORECASE,
         )
         # A comment starts at `--` or `#` only when it is not part of a `--setting` flag.
