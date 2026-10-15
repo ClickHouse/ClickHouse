@@ -769,7 +769,7 @@ endif ()
 # their own groups instead of next to their translation units all over `.text`. Startup then reads a few
 # hundred contiguous pages instead of thousands scattered over the binary, which matters most when the
 # binary is not in the page cache. Supported by lld and mold; same exclusions as above.
-if (NOT OS_DARWIN AND NOT OS_WASM)
+if (NOT OS_DARWIN AND NOT OS_WASM AND NOT OS_WINDOWS)
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,keep-text-section-prefix")
 endif ()
 
