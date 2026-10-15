@@ -6245,7 +6245,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     {
         if (!index.isImplicitlyCreated())
         {
-            for (const String & col : index.getRequiredColumns())
+            for (const String & col : old_metadata.getColumnsRequiredForIndex(index))
                 columns_in_explicit_indices.emplace(col, index.name);
         }
     }

@@ -60,6 +60,8 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
     extern const SettingsAggregateFunctionInputFormat aggregate_function_input_format;
     extern const SettingsBool print_pretty_type_names;
     extern const SettingsBool implicit_select;
+    extern const SettingsBool json_extract_named_tuples_as_objects;
+    extern const SettingsBool use_legacy_to_time;
     extern const SettingsBool qbit_one_bit_symmetric_distance;
     extern const SettingsUInt64 max_query_size;
     extern const SettingsUInt64 max_parser_depth;
@@ -144,6 +146,10 @@ UInt64 queryConditionCacheSettingsSalt(const Settings & settings)
     hash.update(settings[Setting::type_json_skip_null_typed_paths].value);
     hash.update(settings[Setting::type_json_allow_duplicated_key_with_literal_and_nested_object].value);
     hash.update(settings[Setting::allow_simdjson].value);
+    /// `JSONExtract` into a named `Tuple` reads a JSON object by names, or an array by position.
+    hash.update(settings[Setting::json_extract_named_tuples_as_objects].value);
+    /// `toTime` builds a different function (and returns another type) depending on it.
+    hash.update(settings[Setting::use_legacy_to_time].value);
     /// The conversion functions (`toString`, `toDateTime`, `toDecimal*`, `toIPv4`, `CAST`, ...) snapshot a whole
     /// `FormatSettings` and a few more settings in `FunctionConvertSettings` when they are built, and the text
     /// serializations they call for a `String` source or target read it: `toString(d)` of a `DateTime64(1)` column

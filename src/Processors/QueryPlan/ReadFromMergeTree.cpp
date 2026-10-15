@@ -3087,24 +3087,42 @@ void collectConjuncts(const ActionsDAG::Node * node, std::unordered_set<const Ac
 
 /// matchTrees() equates two functions by name, result type and arguments. That is not enough for a
 /// partial index, where a wrong match drops rows: a lambda is compared by its captured arguments and
-/// type names but not by its body, and a function can capture a setting that changes its value
-/// without changing its name or type (`JSON_VALUE`). So a filter with a lambda never matches, and the
-/// settings of the query must be the ones the condition of the index was built with.
-bool hasLambda(const ActionsDAG::Node * root)
+/// type names but not by its body, and a function can capture a setting that changes its value without
+/// changing its name or type (`JSON_VALUE`, `JSONExtract`). So a filter with a lambda never matches, and each
+/// function of the filter must carry the same captured state (`IFunctionBase::updateHash`) as the function of
+/// the stored condition it is matched to. The stored condition is analysed in the server context, like the writers
+/// do, so this is the state the data was written with. The settings salt is a coarse check of the same, kept first.
+bool hasSameFunctionSemantics(const ActionsDAG::Node * query_node, const MatchedTrees::Matches & matches)
 {
     std::unordered_set<const ActionsDAG::Node *> visited;
-    std::vector<const ActionsDAG::Node *> stack{root};
+    std::vector<const ActionsDAG::Node *> stack{query_node};
     while (!stack.empty())
     {
         const auto * node = stack.back();
         stack.pop_back();
         if (!visited.insert(node).second)
             continue;
-        if (node->type == ActionsDAG::ActionType::FUNCTION && typeid_cast<const FunctionCapture *>(node->function_base.get()))
-            return true;
+
         stack.insert(stack.end(), node->children.begin(), node->children.end());
+
+        if (node->type != ActionsDAG::ActionType::FUNCTION)
+            continue;
+
+        if (typeid_cast<const FunctionCapture *>(node->function_base.get()))
+            return false;
+
+        auto it = matches.find(node);
+        if (it == matches.end() || !it->second.node || it->second.node->type != ActionsDAG::ActionType::FUNCTION)
+            return false;
+
+        SipHash query_hash;
+        SipHash index_hash;
+        node->function_base->updateHash(query_hash);
+        it->second.node->function_base->updateHash(index_hash);
+        if (query_hash.get128() != index_hash.get128())
+            return false;
     }
-    return false;
+    return true;
 }
 
 /// A partial index has no data for rows outside its `WHERE`, so it can be used only if
@@ -3130,7 +3148,7 @@ bool filterImpliesIndexCondition(const ActionsDAG & filter_dag, const IndexDescr
     for (const auto * conjunct : filter_conjuncts)
     {
         auto it = matches.find(conjunct);
-        if (it != matches.end() && it->second.node && !it->second.monotonicity && !hasLambda(conjunct))
+        if (it != matches.end() && it->second.node && !it->second.monotonicity && hasSameFunctionSemantics(conjunct, matches))
             index_conjuncts.erase(it->second.node);
     }
     return index_conjuncts.empty();

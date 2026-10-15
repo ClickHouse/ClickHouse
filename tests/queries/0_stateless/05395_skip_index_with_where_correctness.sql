@@ -10,6 +10,13 @@ DROP TABLE IF EXISTS t_type;
 DROP TABLE IF EXISTS t_json;
 DROP TABLE IF EXISTS t_layout;
 DROP TABLE IF EXISTS t_gate;
+DROP TABLE IF EXISTS t_patch;
+DROP TABLE IF EXISTS t_tuple_type;
+DROP TABLE IF EXISTS t_format_row;
+DROP TABLE IF EXISTS t_legacy_time;
+DROP TABLE IF EXISTS t_json_tuple;
+DROP TABLE IF EXISTS t_array;
+DROP TABLE IF EXISTS t_array_compact;
 DROP TABLE IF EXISTS t_ddl_tz;
 DROP TABLE IF EXISTS t_enc;
 DROP TABLE IF EXISTS t_set;
@@ -147,6 +154,65 @@ ALTER TABLE t_enc ATTACH PARTITION ID '0';
 SELECT count() FROM t_enc WHERE id = 1 AND flag = 1 SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0;
 SELECT count() FROM t_enc WHERE id = 2 AND flag = 1 SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 1;
 
+SELECT 'function that captures a setting: named tuple from JSON';
+CREATE TABLE t_json_tuple (id UInt64, j String, INDEX i id TYPE minmax WHERE JSONExtract(j, 'Tuple(x String, y String)') = tuple('', '')) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_json_tuple VALUES (1, '["a","b"]');
+SELECT count() FROM t_json_tuple WHERE id = 1 AND JSONExtract(j, 'Tuple(x String, y String)') = tuple('', '') SETTINGS json_extract_named_tuples_as_objects = 1, use_skip_indexes = 0;
+SELECT count() FROM t_json_tuple WHERE id = 1 AND JSONExtract(j, 'Tuple(x String, y String)') = tuple('', '') SETTINGS json_extract_named_tuples_as_objects = 1, use_skip_indexes = 1, use_skip_indexes_on_data_read = 0;
+SELECT count() FROM t_json_tuple WHERE id = 1 AND JSONExtract(j, 'Tuple(x String, y String)') = tuple('', '') SETTINGS json_extract_named_tuples_as_objects = 1, use_skip_indexes = 1, use_skip_indexes_on_data_read = 1;
+-- With the setting the index was defined with, the index is used and agrees.
+SELECT count() FROM t_json_tuple WHERE id = 1 AND JSONExtract(j, 'Tuple(x String, y String)') = tuple('', '') SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_json_tuple WHERE id = 1 AND JSONExtract(j, 'Tuple(x String, y String)') = tuple('', '') SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0, force_data_skipping_indices = 'i';
+SELECT count() FROM t_json_tuple WHERE id = 1 AND JSONExtract(j, 'Tuple(x String, y String)') = tuple('', '') SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 1, force_data_skipping_indices = 'i';
+
+SELECT 'function that captures format settings: formatRow';
+CREATE TABLE t_format_row (k UInt64, n UInt64, INDEX idx k TYPE minmax WHERE formatRow('JSONEachRow', n) = '{"n":"1"}\n') ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_format_row VALUES (1, 1);
+SELECT count() FROM t_format_row WHERE k = 1 AND formatRow('JSONEachRow', n) = '{"n":"1"}\n' SETTINGS output_format_json_quote_64bit_integers = 1, use_skip_indexes = 0;
+SELECT count() FROM t_format_row WHERE k = 1 AND formatRow('JSONEachRow', n) = '{"n":"1"}\n' SETTINGS output_format_json_quote_64bit_integers = 1, use_skip_indexes = 1, use_skip_indexes_on_data_read = 0;
+SELECT count() FROM t_format_row WHERE k = 1 AND formatRow('JSONEachRow', n) = '{"n":"1"}\n' SETTINGS output_format_json_quote_64bit_integers = 1, use_skip_indexes = 1, use_skip_indexes_on_data_read = 1;
+
+SELECT 'setting read from the query that writes the part: use_legacy_to_time';
+SET enable_time_time64_type = 1;
+CREATE TABLE t_legacy_time (k UInt64, dt DateTime('UTC'), INDEX idx k TYPE minmax WHERE toString(toTime(dt)) = '10:00:00') ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_legacy_time SETTINGS use_legacy_to_time = 1 VALUES (1, '2020-01-01 10:00:00');
+SELECT count() FROM t_legacy_time WHERE k = 1 AND toString(toTime(dt)) = '10:00:00' SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_legacy_time WHERE k = 1 AND toString(toTime(dt)) = '10:00:00' SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0;
+SELECT count() FROM t_legacy_time WHERE k = 1 AND toString(toTime(dt)) = '10:00:00' SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 1;
+
+SELECT 'update of the parent column of a subcolumn the condition reads';
+CREATE TABLE t_array (id UInt64, p Array(UInt8), INDEX i id TYPE minmax GRANULARITY 1 WHERE p.size0 > 1) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1, min_bytes_for_wide_part = 0;
+INSERT INTO t_array VALUES (1, [1]);
+ALTER TABLE t_array UPDATE p = [1, 2] WHERE id = 1 SETTINGS mutations_sync = 2;
+SELECT count() FROM t_array WHERE id = 1 AND p.size0 > 1 SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_array WHERE id = 1 AND p.size0 > 1 SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0;
+SELECT count() FROM t_array WHERE id = 1 AND p.size0 > 1 SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 1;
+CREATE TABLE t_array_compact (id UInt64, p Array(UInt8), INDEX i id TYPE minmax GRANULARITY 1 WHERE p.size0 > 1) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1, min_bytes_for_wide_part = '100G';
+INSERT INTO t_array_compact VALUES (1, [1]);
+ALTER TABLE t_array_compact UPDATE p = [1, 2] WHERE id = 1 SETTINGS mutations_sync = 2;
+SELECT count() FROM t_array_compact WHERE id = 1 AND p.size0 > 1 SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_array_compact WHERE id = 1 AND p.size0 > 1 SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0;
+SELECT count() FROM t_array_compact WHERE id = 1 AND p.size0 > 1 SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 1;
+
+SELECT 'subcolumn index, compact part with a patch part and a DELETE';
+CREATE TABLE t_patch (id UInt64, w UInt32, p Array(UInt32), INDEX i p.size0 TYPE minmax GRANULARITY 1, INDEX j id TYPE minmax GRANULARITY 1 WHERE p.size0 > 1)
+ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = '1G', index_granularity = 2, enable_block_number_column = 1, enable_block_offset_column = 1;
+INSERT INTO t_patch SELECT number, 0, range(number % 4) FROM numbers(10);
+UPDATE t_patch SET p = [1, 2, 3] WHERE id % 2 = 1;
+ALTER TABLE t_patch DELETE WHERE id % 4 = 0 SETTINGS mutations_sync = 2;
+SELECT count() FROM t_patch WHERE p.size0 = 3 AND id < 100 SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_patch WHERE p.size0 = 3 AND id < 100 SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0;
+SELECT count() FROM t_patch WHERE p.size0 = 3 AND id < 100 SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 1;
+
+SELECT 'type of the column a subcolumn index reads is changed';
+CREATE TABLE t_tuple_type (id UInt64, tt Tuple(a UInt32, b String), INDEX i tt.a TYPE minmax GRANULARITY 1, INDEX j id TYPE minmax GRANULARITY 1 WHERE tt.a > 2)
+ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0, index_granularity = 3;
+INSERT INTO t_tuple_type SELECT number, (number % 5 + 3, 'x') FROM numbers(40);
+ALTER TABLE t_tuple_type MODIFY COLUMN tt Tuple(a Float32, b String) SETTINGS mutations_sync = 2;
+SELECT count() FROM t_tuple_type WHERE tt.a = 5 AND tt.a > 2 SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_tuple_type WHERE tt.a = 5 AND tt.a > 2 SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0;
+SELECT count() FROM t_tuple_type WHERE tt.a = 5 AND tt.a > 2 SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 1;
+
 SELECT 'experimental gate';
 SET allow_experimental_partial_skip_indexes = 0;
 CREATE TABLE t_gate_create (x UInt64, f UInt8, INDEX i x TYPE minmax WHERE f = 1) ENGINE = MergeTree ORDER BY tuple(); -- { serverError SUPPORT_IS_DISABLED }
@@ -180,6 +246,13 @@ DROP TABLE t_type;
 DROP TABLE t_json;
 DROP TABLE t_layout;
 DROP TABLE t_gate;
+DROP TABLE t_patch;
+DROP TABLE t_tuple_type;
+DROP TABLE t_format_row;
+DROP TABLE t_legacy_time;
+DROP TABLE t_json_tuple;
+DROP TABLE t_array;
+DROP TABLE t_array_compact;
 DROP TABLE t_ddl_tz;
 DROP TABLE t_enc;
 DROP TABLE t_set;

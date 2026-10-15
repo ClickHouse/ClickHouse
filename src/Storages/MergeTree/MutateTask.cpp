@@ -22,6 +22,8 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/DataTypeString.h>
+#include <Functions/FunctionFactory.h>
 #include <Disks/SingleDiskVolume.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -3170,16 +3172,88 @@ static bool hasAnyIndexFileOnDisk(
 /// after the TTL transforms: the writer reuses whatever expression column it finds in the block, so
 /// evaluating it earlier writes an index that describes the pre-TTL values of a column the TTL reset
 /// or of a `MATERIALIZED` column recomputed from one - the index then prunes granules that do match.
+/// The mutation reads a subcolumn that an index uses (`p.size0`) from the source part, next to the column it belongs to
+/// (`p`), which an `UPDATE` may have just replaced: the subcolumn then describes the old values. Take the subcolumns
+/// of the columns of the block from those columns.
+static void addSubcolumnsRefreshFromParentsTransform(QueryPipelineBuilder & builder, const MutationContextPtr & ctx)
+{
+    const auto & header = builder.getHeader();
+
+    /// Subcolumn name -> (name of its column, name of the subcolumn within it).
+    std::unordered_map<String, std::pair<String, String>> stale;
+    for (const auto & column : header)
+    {
+        for (auto [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(column.name))
+        {
+            const auto * parent = header.findByName(column_name);
+            if (parent && parent->type->tryGetSubcolumnType(subcolumn_name))
+            {
+                stale.emplace(column.name, std::make_pair(String(column_name), String(subcolumn_name)));
+                break;
+            }
+        }
+    }
+
+    if (stale.empty())
+        return;
+
+    ActionsDAG dag;
+    std::unordered_map<String, const ActionsDAG::Node *> inputs;
+    for (const auto & column : header)
+        inputs.emplace(column.name, &dag.addInput(column));
+
+    for (const auto & column : header)
+    {
+        auto it = stale.find(column.name);
+        if (it == stale.end())
+        {
+            dag.getOutputs().push_back(inputs.at(column.name));
+            continue;
+        }
+
+        auto subcolumn_name_type = std::make_shared<DataTypeString>();
+        const auto & subcolumn_name_arg = dag.addColumn(
+            subcolumn_name_type->createColumnConst(0, it->second.second), subcolumn_name_type, it->second.second);
+        const auto & function_node = dag.addFunction(
+            FunctionFactory::instance().get("getSubcolumn", ctx->context), {inputs.at(it->second.first), &subcolumn_name_arg}, {});
+        dag.getOutputs().push_back(&dag.addAlias(function_node, column.name));
+    }
+
+    builder.addTransform(std::make_shared<ExpressionTransform>(builder.getSharedHeader(), std::make_shared<ExpressionActions>(std::move(dag))));
+}
+
 static void addIndicesRecalculationTransform(QueryPipelineBuilder & builder, const MutationContextPtr & ctx)
 {
     if (!ctx->indices_recalc_expr_list)
         return;
 
-    auto syntax_result
-        = TreeRewriter(ctx->context).analyze(ctx->indices_recalc_expr_list, builder.getHeader().getNamesAndTypesList());
+    addSubcolumnsRefreshFromParentsTransform(builder, ctx);
+
+    /// An index can read a subcolumn of a column of the block (`p.size0` of `p`) that the block does not carry as a
+    /// column of its own: the expressions are analysed with the subcolumns available, and extracted from the column
+    /// before the expressions run.
+    const auto & header = builder.getHeader();
+    NamesAndTypesList source_columns = header.getNamesAndTypesList();
+    {
+        NameSet present;
+        for (const auto & column : header)
+            present.insert(column.name);
+        for (const auto & column : header)
+            for (const auto & subcolumn_name : column.type->getSubcolumnNames())
+                if (auto subcolumn_type = column.type->tryGetSubcolumnType(subcolumn_name);
+                    subcolumn_type && present.insert(Nested::concatenateName(column.name, subcolumn_name)).second)
+                    source_columns.emplace_back(column.name, subcolumn_name, column.type, subcolumn_type);
+    }
+
+    auto syntax_result = TreeRewriter(ctx->context).analyze(ctx->indices_recalc_expr_list, source_columns);
     auto expression = ExpressionAnalyzer(ctx->indices_recalc_expr_list, syntax_result, ctx->context).getActions(false);
 
-    builder.addTransform(std::make_shared<ExpressionTransform>(builder.getSharedHeader(), expression));
+    auto dag = expression->getActionsDAG().clone();
+    auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(header, dag.getRequiredColumnsNames(), ctx->context);
+    if (!extracting_subcolumns_dag.getNodes().empty())
+        dag = ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(dag));
+
+    builder.addTransform(std::make_shared<ExpressionTransform>(builder.getSharedHeader(), std::make_shared<ExpressionActions>(std::move(dag))));
     builder.addTransform(std::make_shared<MaterializingTransform>(builder.getSharedHeader()));
 }
 
@@ -3459,6 +3533,9 @@ private:
         /// describing the data of the source part instead of the data of the new part.
         if (ctx->metadata_snapshot->hasPrimaryKey() || ctx->metadata_snapshot->hasSecondaryIndices())
         {
+            /// The columns the mutation has just updated, not the source part, are what their subcolumns are taken from.
+            addSubcolumnsRefreshFromParentsTransform(*builder, ctx);
+
             auto indices_expression_dag = ctx->data->getPrimaryKeyAndSkipIndicesExpression(ctx->metadata_snapshot, skip_indices)->getActionsDAG().clone();
             auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(builder->getHeader(), indices_expression_dag.getRequiredColumnsNames(), ctx->context);
             if (!extracting_subcolumns_dag.getNodes().empty())

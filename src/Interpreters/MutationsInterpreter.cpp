@@ -1573,7 +1573,7 @@ void MutationsInterpreter::prepare(bool dry_run)
 
                     for (const auto & index : metadata_snapshot->getSecondaryIndices())
                     {
-                        const auto & index_cols = index.getRequiredColumns();
+                        const auto index_cols = metadata_snapshot->getColumnsRequiredForIndex(index);
                         if (std::find(index_cols.begin(), index_cols.end(), command.column_name) != index_cols.end())
                         {
                             switch (index_mode)
@@ -1611,7 +1611,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             /// availability depend on whether the value had physical files.
             for (const auto & index : metadata_snapshot->getSecondaryIndices())
             {
-                const auto & index_cols = index.getRequiredColumns();
+                const auto index_cols = metadata_snapshot->getColumnsRequiredForIndex(index);
                 if (std::find(index_cols.begin(), index_cols.end(), command.column_name) == index_cols.end())
                     continue;
 
@@ -1758,7 +1758,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             continue;
         }
 
-        const auto & index_cols = index.getRequiredColumns();
+        const auto index_cols = metadata_snapshot->getColumnsRequiredForIndex(index);
         bool changed = std::any_of(
             index_cols.begin(),
             index_cols.end(),

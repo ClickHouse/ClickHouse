@@ -55,6 +55,36 @@ partial minmax index redefined as a set index under the same name
 1
 1
 1
+function that captures a setting: named tuple from JSON
+1
+1
+1
+0
+0
+0
+function that captures format settings: formatRow
+1
+1
+1
+setting read from the query that writes the part: use_legacy_to_time
+1
+1
+1
+update of the parent column of a subcolumn the condition reads
+1
+1
+1
+1
+1
+1
+subcolumn index, compact part with a patch part and a DELETE
+5
+5
+5
+type of the column a subcolumn index reads is changed
+8
+8
+8
 experimental gate
 i
 j

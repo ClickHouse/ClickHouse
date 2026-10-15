@@ -1,3 +1,6 @@
+#include <Interpreters/Context.h>
+#include <Core/Settings.h>
+#include <Common/CurrentThread.h>
 #include <IO/NullWriteBuffer.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Common/DateLUT.h>
@@ -29,6 +32,12 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool use_legacy_to_time;
+}
+
 
 namespace ErrorCodes
 {
@@ -472,6 +481,9 @@ String IMergeTreeIndex::getPartialIndexSignature(const IndexDescription & index_
     /// The condition is evaluated by whichever query or background job writes the part, and the session time
     /// zone it runs with is not part of the metadata, so it must be recorded to be compared later.
     hash.update(DateLUT::instance().getTimeZone());
+    /// `toTime` is built from the settings of the thread's query, which for a part is the query that writes it.
+    if (const auto query_context = CurrentThread::tryGetQueryContext())
+        hash.update(query_context->getSettingsRef()[Setting::use_legacy_to_time].value);
     const UInt128 value = hash.get128();
     return String(reinterpret_cast<const char *>(&value), sizeof(value));
 }
