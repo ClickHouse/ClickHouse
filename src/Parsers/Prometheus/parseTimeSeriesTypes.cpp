@@ -235,8 +235,11 @@ namespace
                 return result;
 
             /// Otherwise accept any date-time text parseDateTimeBestEffort understands, e.g. 'Tue, 14 Nov 2023 22:13:20 GMT'.
+            /// A plain number is always Unix seconds, so one that failed above (too big) is not read as a date.
+            size_t digits_start = (str.starts_with('+') || str.starts_with('-')) ? 1 : 0;
+            bool is_plain_number = str.size() > digits_start && str.find_first_not_of("0123456789.", digits_start) == std::string_view::npos;
             ReadBufferFromString buf{str};
-            if (tryParseDateTime64BestEffort(result, scale, buf, DateLUT::instance(), DateLUT::instance("UTC")) && buf.eof())
+            if (!is_plain_number && tryParseDateTime64BestEffort(result, scale, buf, DateLUT::instance(), DateLUT::instance("UTC")) && buf.eof())
                 return result;
         }
         else

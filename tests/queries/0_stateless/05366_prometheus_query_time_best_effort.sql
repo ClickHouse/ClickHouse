@@ -30,5 +30,6 @@ SELECT timestamp FROM prometheusQuery('ts', '1', 'now'); -- { serverError BAD_AR
 SELECT timestamp FROM prometheusQuery('ts', '1', 'abc'); -- { serverError BAD_ARGUMENTS }
 SELECT timestamp FROM prometheusQuery('ts', '1', '2023-11-14T22:13:20Z junk'); -- { serverError BAD_ARGUMENTS }
 SELECT timestamp FROM prometheusQuery('ts', '1', '1970-13-01'); -- { serverError BAD_ARGUMENTS }
+SELECT timestamp FROM prometheusQuery('ts', '1', '9223372036854775808'); -- { serverError BAD_ARGUMENTS }
 
 DROP TABLE ts;
