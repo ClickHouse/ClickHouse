@@ -23,6 +23,8 @@
 #include <Common/ThreadPool.h>
 #include <Common/ThreadStatus.h>
 #include <Common/TraceSender.h>
+#include <Common/tests/gtest_global_context.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/TraceCollector.h>
 #include <base/scope_guard.h>
@@ -407,6 +409,108 @@ TEST(MemoryTracker, SpeculativeReservationOutlivesNonNestedGuards)
         EXPECT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), reservation);
     }
     EXPECT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), 0);
+}
+
+TEST(MemoryTracker, RejectedSpeculativeReservationGuardLeavesNoCharge)
+{
+    /// A guard whose charge is rejected by the server-wide hard limit must leave neither the
+    /// total charge nor the global reservation counter behind, and must install no state that
+    /// a later guard on this thread would share.
+    constexpr Int64 reservation = OVER_LIMIT;
+    const Int64 setting_before = additional_memory_tracking_per_thread.load();
+    const Int64 amount_before = total_memory_tracker.get();
+    const Int64 rss_before = total_memory_tracker.getRSS();
+    const Int64 hard_limit_before = total_memory_tracker.getHardLimit();
+    SCOPE_EXIT({
+        additional_memory_tracking_per_thread.store(setting_before);
+        total_memory_tracker.setHardLimit(hard_limit_before);
+        MemoryTracker::updateAllocated(amount_before, /*log_change=*/ false);
+        MemoryTracker::updateRSS(rss_before);
+    });
+
+    additional_memory_tracking_per_thread.store(reservation);
+    ASSERT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), 0);
+
+    total_memory_tracker.setHardLimit(std::max(amount_before, rss_before) + LIMIT);
+    try
+    {
+        DB::SpeculativeMemoryReservation rejected;
+        FAIL() << "Expected the total memory tracker to reject the reservation of " << reservation;
+    }
+    catch (const DB::Exception & exception)
+    {
+        EXPECT_EQ(exception.code(), DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED);
+    }
+    EXPECT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), 0);
+    EXPECT_LE(std::abs(total_memory_tracker.get() - amount_before), GLOBAL_TOLERANCE);
+
+    /// The next guard takes a fresh charge and releases it completely.
+    total_memory_tracker.setHardLimit(hard_limit_before);
+    {
+        DB::SpeculativeMemoryReservation accepted;
+        EXPECT_EQ(accepted.getSize(), reservation);
+        EXPECT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), reservation);
+    }
+    EXPECT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), 0);
+}
+
+TEST(MemoryTracker, SpeculativeReservationIsNotSharedAcrossQueries)
+{
+    /// A pooled thread can start a guard for another query while a suspended guard of the
+    /// previous query is still alive. The new guard must take its own charge credited to its
+    /// own query, and the previous query's charge must keep that query's tracker alive until
+    /// its last guard is gone, even after the query itself has released its thread group.
+    constexpr Int64 reservation = 4 * MB;
+    const Int64 setting_before = additional_memory_tracking_per_thread.load();
+    additional_memory_tracking_per_thread.store(reservation);
+    SCOPE_EXIT({ additional_memory_tracking_per_thread.store(setting_before); });
+
+    ASSERT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), 0);
+
+    /// The credit of the speculative reservations on a query tracker.
+    auto credit = [](MemoryTracker & tracker)
+    {
+        return tracker.getOvercommitRatio(1).committed - tracker.getOvercommitRatio().committed;
+    };
+
+    std::thread([&]
+    {
+        DB::ThreadStatus thread_status;
+        auto context = getContext().context;
+
+        auto group_a = std::make_shared<DB::ThreadGroup>(context, 0);
+        DB::CurrentThread::attachToGroup(group_a);
+        auto suspended_guard_of_a = std::make_unique<DB::SpeculativeMemoryReservation>();
+        EXPECT_EQ(credit(group_a->memory_tracker), reservation);
+        DB::CurrentThread::detachFromGroupIfNotDetached();
+
+        auto group_b = std::make_shared<DB::ThreadGroup>(context, 0);
+        DB::CurrentThread::attachToGroup(group_b);
+        auto guard_of_b = std::make_unique<DB::SpeculativeMemoryReservation>();
+        EXPECT_EQ(guard_of_b->getSize(), reservation);
+        EXPECT_EQ(credit(group_b->memory_tracker), reservation);
+        EXPECT_EQ(credit(group_a->memory_tracker), reservation);
+        EXPECT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), 2 * reservation);
+
+        /// A nested guard of the same query shares its charge.
+        {
+            DB::SpeculativeMemoryReservation nested_guard_of_b;
+            EXPECT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), 2 * reservation);
+            EXPECT_EQ(credit(group_b->memory_tracker), reservation);
+        }
+
+        /// Query A finishes, then its suspended guard is destroyed on another thread.
+        group_a.reset();
+        std::thread([&] { suspended_guard_of_a.reset(); }).join();
+        EXPECT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), reservation);
+        EXPECT_EQ(credit(group_b->memory_tracker), reservation);
+
+        guard_of_b.reset();
+        EXPECT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), 0);
+        EXPECT_EQ(credit(group_b->memory_tracker), 0);
+
+        DB::CurrentThread::detachFromGroupIfNotDetached();
+    }).join();
 }
 
 TEST(MemoryTracker, GlobalLimitFailureRollsBackAmountAndRSS)

@@ -34,6 +34,8 @@ struct CurrentMemoryTracker
     /// on a different thread (e.g. executor destruction on cancellation), so re-deriving it
     /// from the current thread there could uncredit the wrong tracker.
     [[nodiscard]] static MemoryTracker * allocGlobal(Int64 size);
+    /// The tracker `allocGlobal` would credit if called now on the current thread.
+    static MemoryTracker * getQueryTrackerForGlobal();
     static void freeGlobal(Int64 size, MemoryTracker * credited_query_tracker);
 
     /// Throws MEMORY_LIMIT_EXCEEDED (if it's allowed to throw exceptions)

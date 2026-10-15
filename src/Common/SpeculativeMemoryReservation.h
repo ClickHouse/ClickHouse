@@ -29,6 +29,11 @@ namespace DB
 /// thread. The charge is released only when the last guard sharing it is destroyed, so
 /// a live guard always implies a live charge for the thread that took it.
 ///
+/// Sharing is limited to guards of the same query (the same credited query tracker): a
+/// pooled thread can run a guard of another query while a suspended guard of the previous
+/// one is still alive, and the new guard then takes its own charge. Each charge keeps the
+/// thread group of its query alive, so the credited tracker outlives the last guard.
+///
 /// The constructor may throw `MEMORY_LIMIT_EXCEEDED` (the throwing path is intentional);
 /// it must be invoked inside the worker's `try` block so the error propagates through
 /// the pipeline like any other job failure.
