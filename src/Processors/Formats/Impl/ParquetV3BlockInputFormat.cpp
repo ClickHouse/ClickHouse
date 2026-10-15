@@ -438,31 +438,18 @@ std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitByByteRanges(size_t b
     if (file_size == 0 || split_offsets.empty() || split_offsets.back() >= file_size)
         return {};
 
-    const size_t num_buckets = bucket_size == 0
-        ? split_offsets.size()
-        : std::clamp<size_t>((file_size + bucket_size - 1) / bucket_size, 1, split_offsets.size());
-
-    std::vector<size_t> bucket_starts;
-    size_t previous_bucket = 0;
-    for (size_t i = 0; i < split_offsets.size(); ++i)
-    {
-        const UInt64 end = i + 1 < split_offsets.size() ? split_offsets[i + 1] : file_size;
-        const UInt64 midpoint = split_offsets[i] + (end - split_offsets[i]) / 2;
-        const size_t bucket = num_buckets == split_offsets.size()
-            ? i
-            : std::min(num_buckets - 1, static_cast<size_t>(static_cast<double>(midpoint) / static_cast<double>(file_size) * static_cast<double>(num_buckets)));
-        if (i == 0 || bucket != previous_bucket)
-            bucket_starts.push_back(i);
-        previous_bucket = bucket;
-    }
-
     std::vector<FileBucketInfoPtr> result;
-    for (size_t i = 0; i < bucket_starts.size(); ++i)
+    UInt64 bucket_begin = 0;
+    for (size_t i = 1; i < split_offsets.size(); ++i)
     {
-        const UInt64 begin = i == 0 ? 0 : split_offsets[bucket_starts[i]];
-        const UInt64 end = i + 1 < bucket_starts.size() ? split_offsets[bucket_starts[i + 1]] : file_size;
-        result.push_back(std::make_shared<ParquetFileBucketInfo>(begin, end - begin));
+        const UInt64 row_group_end = i + 1 < split_offsets.size() ? split_offsets[i + 1] : file_size;
+        if (row_group_end - bucket_begin > bucket_size)
+        {
+            result.push_back(std::make_shared<ParquetFileBucketInfo>(bucket_begin, split_offsets[i] - bucket_begin));
+            bucket_begin = split_offsets[i];
+        }
     }
+    result.push_back(std::make_shared<ParquetFileBucketInfo>(bucket_begin, file_size - bucket_begin));
     return result;
 }
 
