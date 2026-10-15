@@ -4,3 +4,5 @@ PrimaryKeyExpand for the float column, not for the integer one
 1
 0
 NaN payloads
+primary key ranges are kept
+1
