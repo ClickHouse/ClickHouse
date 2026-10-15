@@ -268,24 +268,35 @@ SQLQueryPiece applyLabelManipulationFunction(
 
         case StoreMethod::VECTOR_GRID:
         {
-            /// Step 1:
-            /// SELECT f(group, 'arg2', 'arg3', ...) AS new_group,
-            ///        anyForEach(values) AS new_values
+            /// SELECT f(<vector_grid>.group, 'arg2', 'arg3', ...) AS group,
+            ///        anyForEach(<vector_grid>.values) AS values
             /// FROM <vector_grid>
-            /// GROUP BY new_group
-            /// HAVING timeSeriesThrowDuplicateSeriesIf(arrayExists(c -> c > 1, countForEach(values)), new_group) = 0
+            /// GROUP BY f(<vector_grid>.group, 'arg2', 'arg3', ...)
+            /// HAVING timeSeriesThrowDuplicateSeriesIf(arrayExists(c -> c > 1, countForEach(<vector_grid>.values)), f(<vector_grid>.group, ...)) = 0
             ///
-            /// Series which get the same `new_group` are merged step by step. An exception is thrown only if two of them
+            /// Series which get the same group are merged step by step. An exception is thrown only if two of them
             /// have values at the same step.
+            ///
+            /// GROUP BY and HAVING qualify the source columns. The output aliases are `group` and `values`, and an
+            /// unqualified name in those clauses reads the alias.
             ///
             /// A write of `__name__` removes the marker of a dropped metric name. `label_replace` writes only when the regex
             /// matches, so the same regex first writes an empty value to the marker, which removes it:
             /// timeSeriesReplaceTag(timeSeriesReplaceTag(group, '', '', src_label, regex), '__name__', replacement, src_label, regex)
-            ASTPtr label_replacing_query;
             {
                 SelectQueryBuilder builder;
 
-                ASTPtr group = make_intrusive<ASTIdentifier>(ColumnNames::Group);
+                context.subqueries.emplace_back(
+                    SQLSubquery{context.subqueries.size(), std::move(first_argument.select_query), SQLSubqueryType::TABLE});
+                const String source_table = context.subqueries.back().name;
+                builder.from_table = source_table;
+
+                auto source_column = [&source_table](const char * column)
+                {
+                    return make_intrusive<ASTIdentifier>(std::vector<String>{source_table, String(column)});
+                };
+
+                ASTPtr group = source_column(ColumnNames::Group);
                 if (dest_label == kMetricName)
                 {
                     if (function_name == "label_replace")
@@ -315,46 +326,17 @@ SQLQueryPiece applyLabelManipulationFunction(
                 auto group_function = makeASTFunction(impl_info->ch_function_name);
                 group_function->arguments->children = std::move(group_function_args);
 
+                builder.group_by.push_back(group_function->clone());
+                builder.having = makeNoDuplicateSeriesPerStepCheck(source_column(ColumnNames::Values), group_function->clone());
+
+                group_function->setAlias(ColumnNames::Group);
                 builder.select_list.push_back(std::move(group_function));
-                builder.select_list.back()->setAlias(ColumnNames::NewGroup);
 
-                builder.select_list.push_back(makeNoDuplicateSeriesPerStepValues(make_intrusive<ASTIdentifier>(ColumnNames::Values)));
-                builder.select_list.back()->setAlias(ColumnNames::NewValues);
-
-                context.subqueries.emplace_back(
-                    SQLSubquery{context.subqueries.size(), std::move(first_argument.select_query), SQLSubqueryType::TABLE});
-                builder.from_table = context.subqueries.back().name;
-
-                builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
-
-                builder.having = makeNoDuplicateSeriesPerStepCheck(
-                    make_intrusive<ASTIdentifier>(ColumnNames::Values),
-                    make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
-
-                label_replacing_query = builder.getSelectQuery();
-            }
-
-            /// Step 2:
-            /// SELECT new_group AS group, new_values AS values
-            /// FROM step1
-            ASTPtr column_renaming_query;
-            {
-                SelectQueryBuilder builder;
-
-                builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
-                builder.select_list.back()->setAlias(ColumnNames::Group);
-
-                builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewValues));
+                builder.select_list.push_back(makeNoDuplicateSeriesPerStepValues(source_column(ColumnNames::Values)));
                 builder.select_list.back()->setAlias(ColumnNames::Values);
 
-                context.subqueries.emplace_back(
-                    SQLSubquery{context.subqueries.size(), std::move(label_replacing_query), SQLSubqueryType::TABLE});
-                builder.from_table = context.subqueries.back().name;
-
-                column_renaming_query = builder.getSelectQuery();
+                res.select_query = builder.getSelectQuery();
             }
-
-            res.select_query = std::move(column_renaming_query);
 
             /// A rewrite may have written '__name__', so the name is not known to be absent.
             /// A miss keeps the marker, and finalizeSQL still removes that name.

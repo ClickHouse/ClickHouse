@@ -53,14 +53,13 @@ SQLQueryPiece dropMetricName(SQLQueryPiece && query_piece, ConverterContext & co
             ///
             /// finalizeSQL removes both `__name__` and the marker, and throws an exception if series collide after that.
 
-            /// Step 1:
-            /// SELECT if(isNotNull(timeSeriesExtractTag(group, '__name__')), timeSeriesReplaceTag(group, '', '1', '', ''), group) AS new_group,
+            /// SELECT if(isNotNull(timeSeriesExtractTag(group, '__name__')), timeSeriesReplaceTag(group, '', '1', '', ''), group) AS group,
             ///        values
             /// FROM <vector_grid>
             ///
             /// The empty source tag is a missing tag, and the empty regular expression matches its empty value,
             /// so the marker is written to every series which has a metric name, whatever bytes that name contains.
-            ASTPtr metric_name_marking_query;
+            /// The `if` reads the source column `group`. Its alias is the output column of the same name.
             {
                 SelectQueryBuilder builder;
 
@@ -80,35 +79,15 @@ SQLQueryPiece dropMetricName(SQLQueryPiece && query_piece, ConverterContext & co
                         make_intrusive<ASTLiteral>(String{}),
                         make_intrusive<ASTLiteral>(String{})),
                     make_intrusive<ASTIdentifier>(ColumnNames::Group)));
-                builder.select_list.back()->setAlias(ColumnNames::NewGroup);
+                builder.select_list.back()->setAlias(ColumnNames::Group);
 
                 builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
 
                 context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(query_piece.select_query), SQLSubqueryType::TABLE});
                 builder.from_table = context.subqueries.back().name;
 
-                metric_name_marking_query = builder.getSelectQuery();
+                query_piece.select_query = builder.getSelectQuery();
             }
-
-            /// Step 2:
-            /// SELECT new_group AS group, values
-            /// FROM step1
-            ASTPtr column_renaming_query;
-            {
-                SelectQueryBuilder builder;
-
-                builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
-                builder.select_list.back()->setAlias(ColumnNames::Group);
-
-                builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
-
-                context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(metric_name_marking_query), SQLSubqueryType::TABLE});
-                builder.from_table = context.subqueries.back().name;
-
-                column_renaming_query = builder.getSelectQuery();
-            }
-
-            query_piece.select_query = std::move(column_renaming_query);
             context.metric_name_drop_deferred = true;
 
             return std::move(query_piece);
