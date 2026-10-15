@@ -1147,7 +1147,7 @@ private:
         bool skip_compiled) const;
 
     /// Whether the state of the `i`-th aggregate function of the source row `src` is the last pair recorded in `deferred`.
-    bool isRecordedDeferredPair(const DeferredMerges * deferred, size_t i, AggregateDataPtr src) const;
+    bool isRecordedDeferredPair(const DeferredMerges * deferred, size_t i, ConstAggregateDataPtr src) const;
 
     /// Merge data from hash table `src` into `dst`, but only for keys that already exist in dst. In other cases, merge the data into `overflows`.
     /// `deferred` is the same as for `mergeDataImpl`.

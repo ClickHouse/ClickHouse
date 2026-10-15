@@ -4877,7 +4877,7 @@ void Aggregator::mergeAndDestroyDetachedBatch(
     std::atomic<bool> & is_cancelled,
     [[maybe_unused]] bool skip_compiled) const
 {
-    auto is_skipped = [&](size_t i)
+    auto is_skipped = [&]([[maybe_unused]] size_t i)
     {
 #if USE_EMBEDDED_COMPILER
         return skip_compiled && is_aggregate_function_compiled[i];
@@ -5088,7 +5088,7 @@ void Aggregator::mergeAndDestroyRowOrDefer(AggregateDataPtr dst, AggregateDataPt
     }
 }
 
-bool Aggregator::isRecordedDeferredPair(const DeferredMerges * deferred, size_t i, AggregateDataPtr src) const
+bool Aggregator::isRecordedDeferredPair(const DeferredMerges * deferred, size_t i, ConstAggregateDataPtr src) const
 {
     if (!deferred)
         return false;
