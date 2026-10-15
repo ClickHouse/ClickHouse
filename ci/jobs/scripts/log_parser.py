@@ -60,11 +60,16 @@ class FuzzerLogParser:
     CRASH_RECORD_QUERY_END = ") Received signal "
     # How far back to look for the start of the log record a line belongs to.
     QUERY_TEXT_LOOKBACK = 100
+    # Anchored to the start of the line: the sanitizer runtime writes its report raw, never
+    # through the logger, so the same words inside a log record are query or message text.
     SANITIZER_ERROR_PATTERN = (
-        r"(SUMMARY|ERROR|WARNING): [a-zA-Z]+Sanitizer:.*|"
-        r".*[a-zA-Z]+Sanitizer: CHECK failed:.*"
+        r"^(==[0-9]+==)?(SUMMARY|ERROR|WARNING): [a-zA-Z]+Sanitizer:.*|"
+        r"^(==[0-9]+==)?[a-zA-Z]+Sanitizer: CHECK failed:.*"
     )
-    RUNTIME_ERROR_PATTERN = r".*runtime error: .*|.*is located.*"
+    # UBSan's "<file>:<line>:<column>: runtime error: ..." and ASan's "[Address ]0x... is located".
+    RUNTIME_ERROR_PATTERN = (
+        r"^[^ ]+: runtime error: .*|^(Address )?0x[0-9a-f]+ is located.*"
+    )
     # (name, flag_name, pattern) triples checked in this order by `parse_failure`;
     # also used to bound the thread-less `Format string:` search by the next failure
     # of any kind, so keep every failure-carrying pattern listed here.
