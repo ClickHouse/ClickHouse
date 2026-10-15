@@ -869,6 +869,7 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
         if (create_table_query->uuid != UUIDHelpers::Nil && BackupUtils::isCreatedOnBackupMetadataOnlyStoragePolicy(*create_table_query, context))
         {
             /// The table finds its data on the storage under a path derived from its UUID, so it keeps its UUID from the backup.
+            /// The other table can be in any database, so its name is not shown: the user may not be allowed to see it.
             auto existing_table = DatabaseCatalog::instance().tryGetByUUID(create_table_query->uuid).second;
             if (existing_table)
             {
@@ -876,10 +877,10 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
                 if (existing_table_id.database_name != table_name.database || existing_table_id.table_name != table_name.table)
                     throw Exception(
                         ErrorCodes::CANNOT_RESTORE_TABLE,
-                        "The table is on a storage policy marked backup_metadata_only, so it keeps its UUID {} from the backup "
-                        "to find its data on the storage, but table {} already has this UUID",
-                        toString(create_table_query->uuid),
-                        existing_table_id.getNameForLogs());
+                        "Cannot restore {}: it is on a storage policy marked backup_metadata_only, so it keeps its UUID {} from "
+                        "the backup to find its data on the storage, but another table already has this UUID",
+                        tableNameWithTypeToString(table_name.database, table_name.table, false),
+                        toString(create_table_query->uuid));
             }
         }
         else

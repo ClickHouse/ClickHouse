@@ -1382,7 +1382,34 @@ def test_backup_restore_s3_plain_backup_metadata_only(cluster):
     err = instance.query_and_get_error(
         f"RESTORE TABLE sample AS sample_copy FROM {backup_destination}"
     )
-    assert "CANNOT_RESTORE_TABLE" in err and "already has this UUID" in err, err
+    assert "CANNOT_RESTORE_TABLE" in err and "another table already has this UUID" in err, err
+
+    # The other table can be in a database the restoring user may not see, so the error doesn't name it.
+    instance.query(
+        """
+        CREATE DATABASE private_db;
+        RENAME TABLE sample TO private_db.secret_table;
+        CREATE DATABASE restore_db;
+        CREATE USER restore_user;
+        GRANT CREATE TABLE, INSERT ON restore_db.* TO restore_user;
+        GRANT READ ON S3 TO restore_user;
+        """
+    )
+    try:
+        err = instance.query_and_get_error(
+            f"RESTORE TABLE sample AS restore_db.sample FROM {backup_destination}", user="restore_user"
+        )
+        assert "CANNOT_RESTORE_TABLE" in err and "another table already has this UUID" in err, err
+        assert "private_db" not in err and "secret_table" not in err, err
+    finally:
+        instance.query(
+            """
+            RENAME TABLE private_db.secret_table TO sample;
+            DROP DATABASE private_db;
+            DROP DATABASE restore_db;
+            DROP USER restore_user;
+            """
+        )
 
     instance.query("DROP TABLE sample_alias SYNC")
     instance.query("DROP TABLE sample SYNC")
