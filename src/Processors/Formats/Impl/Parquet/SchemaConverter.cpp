@@ -24,6 +24,7 @@
 #include <Processors/Formats/Impl/Parquet/FileLogicalType.h>
 
 #include <array>
+#include <cstring>
 #include <unordered_set>
 #include <fmt/ranges.h>
 
@@ -1218,6 +1219,14 @@ void SchemaConverter::processPrimitiveColumn(
     /// After parsing, columns are converted (using castColumn) from out_decoded_type to the final
     /// data type. E.g. maybe out_decoded_type is Int32 based on parquet physical type, but
     /// out_inferred_type is Int16 based on schema inference, and castColumn does the conversion.
+
+    /// The physical type is read from the file as an integer and may be out of the range of the enum.
+    /// Check it without loading it as the enum, which would be undefined behavior.
+    Int32 raw_type = 0;
+    static_assert(sizeof(raw_type) == sizeof(element.type));
+    memcpy(&raw_type, &element.type, sizeof(raw_type));
+    if (raw_type < parq::Type::BOOLEAN || raw_type > parq::Type::FIXED_LEN_BYTE_ARRAY)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type: {}", raw_type);
 
     parq::Type::type type = element.type;
     std::optional<parq::ConvertedType::type> converted =
