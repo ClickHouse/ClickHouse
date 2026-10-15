@@ -136,6 +136,9 @@ size_t tryMergeFilters(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const 
 /// Move FilterStep down if possible.
 /// May split FilterStep and push down only part of it.
 size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
+/// Moves a filter that applies join runtime filters below the exchange under it, so that the rows are filtered before
+/// they are sent. The filter then runs in another stage than the join, so the filter must be sent there.
+size_t tryPushDownRuntimeFilterOverExchange(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes);
 
 /// Fuse a FilterStep directly above an ArrayJoinStep: element-only conjuncts become the ArrayJoinStep's
 /// element filter, applied before expansion so filtered elements are never expanded or replicated.

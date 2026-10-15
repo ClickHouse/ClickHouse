@@ -1,7 +1,10 @@
 -- the initiator plan builds and applies the filter
-JoinLogical (Shuffle HashJoin )
-((Apply runtime join filter + Change column names to column identifiers))
-BuildRuntimeFilter (Build runtime join filter on __table2.k)
--- the result is right
+1	1	1
+-- without PREWHERE the filter step is below the exchange of the probe side
+1
+-- the filter crosses stages, and the result is right
 49504500
 49504500
+49504500
+05401_cascades_transport	1
+05401_cascades_transport_no_prewhere	1

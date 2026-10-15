@@ -298,6 +298,27 @@ static void expandJoinGraphs(QueryPlan::Node & root)
     }
 }
 
+/// Repeats `tryPushDownRuntimeFilterOverExchange` until no filter moves, so that a filter crosses every exchange
+/// between it and the read.
+static void pushDownRuntimeFiltersOverExchanges(QueryPlan::Node & root, QueryPlan::Nodes & nodes)
+{
+    bool moved = true;
+    while (moved)
+    {
+        moved = false;
+        std::vector<QueryPlan::Node *> stack{&root};
+        while (!stack.empty())
+        {
+            auto * node = stack.back();
+            stack.pop_back();
+            while (tryPushDownRuntimeFilterOverExchange(node, nodes))
+                moved = true;
+            for (auto * child : node->children)
+                stack.push_back(child);
+        }
+    }
+}
+
 void optimizeTreeSecondPass(
     const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes, QueryPlan & query_plan)
 {
@@ -578,6 +599,11 @@ void optimizeTreeSecondPass(
         checkCascadesSupported(root);
         CascadesOptimizer cascades_optimizer(query_plan, optimization_settings);
         cascades_optimizer.optimize();
+
+        /// Cascades counts no rows removed by a runtime filter, so it can place the probe-side exchange below the filter;
+        /// the filter must run before the exchange, where it reduces the rows sent.
+        if (optimization_settings.distributed_plan_join_runtime_filters)
+            pushDownRuntimeFiltersOverExchanges(root, nodes);
     }
 
     /// Cascades chose between the join orders; a join graph left (Cascades did not run on this plan) keeps the chosen one.

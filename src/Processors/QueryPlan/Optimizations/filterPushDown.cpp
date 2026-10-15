@@ -16,6 +16,8 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
+#include <Processors/QueryPlan/LogicalExchangeStep.h>
+#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/CommonSubplanStep.h>
 #include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
@@ -1252,6 +1254,28 @@ static bool mayFixColumn(const ActionsDAG::Node * conjunct)
     }
 
     return false;
+}
+
+size_t tryPushDownRuntimeFilterOverExchange(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes)
+{
+    const auto * filter = typeid_cast<const FilterStep *>(parent_node->step.get());
+    if (!filter || parent_node->children.size() != 1)
+        return 0;
+    if (findAppliedRuntimeFilters(filter->getExpression(), filter->getFilterColumnName()).empty())
+        return 0;
+
+    QueryPlan::Node * exchange_node = parent_node->children.front();
+    const auto * exchange = dynamic_cast<const LogicalExchangeStep *>(exchange_node->step.get());
+    if (!exchange || exchange_node->children.size() != 1)
+        return 0;
+
+    /// The filter below the exchange keeps the estimate of its input: it removes only rows the join drops anyway.
+    const auto input_estimation = exchange_node->children.front()->cost_estimation;
+    Names allowed_inputs = exchange->getOutputHeader()->getNames();
+    const size_t updated_steps = tryAddNewFilterStep(parent_node, /*step_changes_the_number_of_rows=*/ true, nodes, allowed_inputs);
+    if (updated_steps)
+        exchange_node->children.front()->cost_estimation = input_estimation;
+    return updated_steps;
 }
 
 size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
