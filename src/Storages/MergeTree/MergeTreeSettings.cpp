@@ -2893,7 +2893,8 @@ a follower will assume that the leader is dead and try to claim leadership. Must
 Expiry is measured on each node's own monotonic clock, from the moment it first observed the
 current version of the lease, so the wall clocks of the participating nodes do not need to be
 synchronized. A node that has just started waits a full session timeout before it can take over
-an orphaned lease.
+an orphaned lease. The lease records the session timeout of the node that wrote it, and if the nodes
+sharing the table use different values, a node waits for the longer of its own and the writer's.
 )", EXPERIMENTAL, \
         {"26.10", 30, 30, "New setting to control leader lease expiry threshold"}) \
     DECLARE(Bool, materialize_projections_on_insert, true, R"(
