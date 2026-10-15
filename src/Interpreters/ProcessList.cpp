@@ -229,7 +229,6 @@ static bool isMetadataSystemQuery(const ASTSystemQuery & query)
         case ASTSystemQuery::Type::ENABLE_FAILPOINT:
         case ASTSystemQuery::Type::DISABLE_FAILPOINT:
         case ASTSystemQuery::Type::DISABLE_ALL_FAILPOINTS:
-        case ASTSystemQuery::Type::ALLOCATE_MEMORY:
         case ASTSystemQuery::Type::FREE_MEMORY:
         case ASTSystemQuery::Type::WAIT_FAILPOINT:
         case ASTSystemQuery::Type::NOTIFY_FAILPOINT:
@@ -276,7 +275,8 @@ static bool isMetadataSystemQuery(const ASTSystemQuery & query)
         case ASTSystemQuery::Type::CANCEL:
         case ASTSystemQuery::Type::REFRESH:
             return true;
-        /// Read or send table data on the thread group of the query.
+        /// Read or send table data on the thread group of the query, or allocate memory.
+        case ASTSystemQuery::Type::ALLOCATE_MEMORY:
         case ASTSystemQuery::Type::UNKNOWN:
         case ASTSystemQuery::Type::PREWARM_MARK_CACHE:
         case ASTSystemQuery::Type::PREWARM_PRIMARY_INDEX_CACHE:
