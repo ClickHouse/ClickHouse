@@ -245,9 +245,16 @@ ArrowType parseType(const flatbuf::Field & field)
             requireSingleChild(type, "FixedSizeList");
             break;
         case flatbuf::Type_Struct_:
+        {
             type.kind = TypeKind::Struct;
             type.children = parseChildren(field.children());
+            Strings names;
+            names.reserve(type.children.size());
+            for (const ArrowField & child : type.children)
+                names.push_back(child.name);
+            type.positional_fields = !DataTypeTuple::hasValidElementNames(names);
             break;
+        }
         case flatbuf::Type_Map:
             type.kind = TypeKind::Map;
             type.children = parseChildren(field.children());
@@ -1150,12 +1157,10 @@ DataTypePtr fieldToCHType(
                 elems.push_back(fieldToCHType(child, settings, child.nullable, allow_null_type));
                 names.push_back(child.name);
             }
-            /// Arrow allows empty and repeated struct field names, which a named `Tuple` cannot have.
-            /// Such a struct is read as an unnamed `Tuple`, and its fields are matched by position.
-            if (DataTypeTuple::hasValidElementNames(names))
-                result = std::make_shared<DataTypeTuple>(elems, names);
-            else
+            if (type.positional_fields)
                 result = std::make_shared<DataTypeTuple>(elems);
+            else
+                result = std::make_shared<DataTypeTuple>(elems, names);
             break;
         }
         case TypeKind::Map:

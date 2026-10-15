@@ -766,8 +766,11 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
         {
             /// Resolve the element's target exactly as the decoder did when it decoded this element: by
             /// name for a named target Tuple (so reordered or subset targets pair correctly), by position
-            /// for an unnamed one. An element the request does not mention stays as decoded.
-            const DataTypePtr elem_target = ArrowIPC::tupleElementHint(to_type, from_names[i], i, case_insensitive);
+            /// for an unnamed one, and also by position for a struct with empty or repeated field names,
+            /// which is decoded as an unnamed Tuple. An element the request does not mention stays as decoded.
+            const DataTypePtr elem_target = from_tup->hasExplicitNames()
+                ? ArrowIPC::tupleElementHint(to_type, from_names[i], i, case_insensitive)
+                : ArrowIPC::tupleElementHintByPosition(to_type, i);
             if (elem_target)
             {
                 auto [c, t] = reinterpretRawBytes(
