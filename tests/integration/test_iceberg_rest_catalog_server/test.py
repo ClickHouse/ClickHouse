@@ -1029,14 +1029,17 @@ def test_commit_rejected(started_cluster):
         ({"action": "add-schema", "schema": DEFAULT_SCHEMA}, "UnsupportedOperationException"),
         # Snapshot id 100 is taken.
         ({"action": "add-snapshot", "snapshot": fake_snapshot(100, 2)}, "BadRequestException"),
-        # Sequence number 1 is not greater than the current one.
-        ({"action": "add-snapshot", "snapshot": fake_snapshot(101, 1)}, "BadRequestException"),
         # Snapshot 5 does not exist.
         ({"action": "set-snapshot-ref", "ref-name": "main", "type": "branch", "snapshot-id": 5}, "BadRequestException"),
     ]
     for update, expected_type in bad_updates:
         response = commit_table(ns, "events", [], [update], expected_code=400)
         assert_error_shape(response, expected_type)
+
+    # Sequence number 1 is not greater than the current one, so another commit landed first.
+    stale = {"action": "add-snapshot", "snapshot": fake_snapshot(101, 1)}
+    response = commit_table(ns, "events", [], [stale], expected_code=409)
+    assert_error_shape(response, "CommitFailedException")
 
     response = commit_table(ns, "events", [{"type": "assert-something-else"}], [], expected_code=400)
     assert_error_shape(response, "BadRequestException")
