@@ -471,6 +471,7 @@ bool SchemaConverter::processSubtreePrimitive(TraversalNode & node)
 
     DataTypePtr primitive_type_hint = node.type_hint;
     bool output_nullable = false;
+    bool output_nullable_requested = false;
     bool output_nullable_if_not_json = false;
     if (primitive_type_hint)
     {
@@ -481,6 +482,7 @@ bool SchemaConverter::processSubtreePrimitive(TraversalNode & node)
         if (primitive_type_hint->isNullable())
         {
             output_nullable = true;
+            output_nullable_requested = true;
             primitive_type_hint = assert_cast<const DataTypeNullable &>(*primitive_type_hint).getNestedType();
         }
     }
@@ -528,10 +530,12 @@ bool SchemaConverter::processSubtreePrimitive(TraversalNode & node)
         }
     }
 
-    /// GeoParquet types like Point or Polygon can't be inside Nullable.
+    /// Geo types based on arrays, like Polygon, can't be inside Nullable.
     /// Geometry (Variant) is also not Nullable-compatible.
+    /// Point (Tuple) can be inside Nullable, but it is inferred as non-nullable. If `Nullable(Point)`
+    /// is requested explicitly, keep the null map, otherwise NULLs would silently become (0, 0).
     if (typeid_cast<const DataTypeArray *>(inferred_type.get())
-        || typeid_cast<const DataTypeTuple *>(inferred_type.get())
+        || (typeid_cast<const DataTypeTuple *>(inferred_type.get()) && !output_nullable_requested)
         || typeid_cast<const DataTypeVariant *>(inferred_type.get()))
     {
         output_nullable = false;

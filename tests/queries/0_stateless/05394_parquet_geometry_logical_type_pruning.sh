@@ -6,7 +6,10 @@
 # - a bounding box crossing the antimeridian (`xmin > xmax`) bounds the vertices of a polygon, but
 #   not its straight segments, which the Cartesian predicates use;
 # - a NULL read into a non-nullable geo type becomes the default value, e.g. the point (0, 0),
-#   which is not covered by the bounding box.
+#   which is not covered by the bounding box;
+# - a conversion of coordinates to the requested type, e.g. `Tuple(UInt8, UInt8)`, can move a
+#   geometry out of the bounding box.
+# Also, an explicitly requested `Nullable(Point)` keeps NULLs.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -67,6 +70,7 @@ bbox = pq.ParquetFile(path).metadata.row_group(0).column(0).geo_statistics
 print("wrapped bbox:", bbox.xmin, bbox.xmax)
 
 pq.write_table(pa.table({"pt": column([point(7, 8), None, point(9, 10)])}), sys.argv[1] + "/nulls.parquet", store_schema=False)
+pq.write_table(pa.table({"pt": column([point(1.9, 1.9)])}), sys.argv[1] + "/point.parquet", store_schema=False)
 PY
 
 echo "--- a polygon with a bounding box crossing the antimeridian"
@@ -86,5 +90,15 @@ echo "--- pruning still works if the filter does not contain (0, 0)"
 FILTER="pointInPolygon(pt, [(20., 20.), (21., 20.), (21., 21.), (20., 21.), (20., 20.)])"
 $CLICKHOUSE_LOCAL --print-profile-events -q "SELECT pt FROM file('${DATA_DIR}/nulls.parquet', Parquet) WHERE $FILTER FORMAT Null" 2>&1 \
     | grep -o 'ParquetPrunedRowGroups: [0-9]*'
+
+echo "--- coordinates converted to the requested type"
+FILTER="pointInPolygon(pt, [(0.5, 0.5), (1.5, 0.5), (1.5, 1.5), (0.5, 1.5), (0.5, 0.5)])"
+for push_down in 0 1
+do
+    $CLICKHOUSE_LOCAL -q "SELECT pt FROM file('${DATA_DIR}/point.parquet', Parquet, 'pt Tuple(UInt8, UInt8)') WHERE $FILTER SETTINGS input_format_parquet_spatial_filter_push_down = $push_down"
+done
+
+echo "--- NULLs read as Nullable(Point)"
+$CLICKHOUSE_LOCAL -q "SELECT toTypeName(pt), pt, isNull(pt) FROM file('${DATA_DIR}/nulls.parquet', Parquet, 'pt Nullable(Point)')"
 
 rm -rf "${DATA_DIR}"
