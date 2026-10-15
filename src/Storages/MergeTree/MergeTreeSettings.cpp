@@ -786,7 +786,7 @@ does not wait for the query to finish: with `false` it fsyncs the parts of each 
 right after committing them. On disks that cannot fsync a file after it was written (object
 storage disks, including `local_blob_storage`) the parts are always synced as they are written.
 )", 0, \
-        {"26.10", true, false, "New setting. With fsync_after_insert enabled, the fsync is now done once when the INSERT finishes, over the active parts covering the inserted data, instead of once per part as it is written. previous_value=true so that `compatibility` with earlier versions restores the per-part fsync."}) \
+        {"26.11", true, false, "New setting. With fsync_after_insert enabled, the fsync is now done once when the INSERT finishes, over the active parts covering the inserted data, instead of once per part as it is written. previous_value=true so that `compatibility` with earlier versions restores the per-part fsync."}) \
     DECLARE(Bool, fsync_part_directory, false, R"(
 Do fsync for part directory after all part operations (writes, renames, etc.).
 )", 0) \
