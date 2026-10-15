@@ -155,7 +155,7 @@ protected:
             context.reset();
             session.reset();
             params.reset();
-            request_span = nullptr;
+            handled_exception.reset();
         });
 
         session = std::make_unique<Session>(server().context(), ClientInfo::Interface::PROMETHEUS, request.isSecure());
@@ -181,7 +181,6 @@ protected:
             trace_settings_context->getOpenTelemetrySpanLog());
         thread_trace_context.root_span.kind = OpenTelemetry::SpanKind::SERVER;
         thread_trace_context.root_span.addAttribute("http.method", request.getMethod());
-        request_span = &thread_trace_context.root_span;
 
         try
         {
@@ -207,6 +206,8 @@ protected:
 
                 query_scope = QueryScope::create(context);
                 handlingRequestWithContext(request, response);
+                if (handled_exception)
+                    thread_trace_context.root_span.addAttribute(*handled_exception);
             }
 
             /// Finalize the response here, so that a failure in the final flush is recorded on the root span.
@@ -332,8 +333,8 @@ protected:
     std::unique_ptr<Session> session;
     std::unique_ptr<Credentials> request_credentials;
     ContextMutablePtr context;
-    /// The root span of the current request, for errors that are turned into a response.
-    OpenTelemetry::Span * request_span = nullptr;
+    /// An error of the current request that was turned into a response, for the root span.
+    std::optional<Exception> handled_exception;
 };
 
 
@@ -673,8 +674,7 @@ public:
             /// before writing the error response.
             getOutputStream(response).rejectBufferedDataSave();
 
-            if (request_span)
-                request_span->addAttribute(e);
+            handled_exception.emplace(e);
 
             /// A schema-version rejection (see TimeSeriesVersion.h) is a problem with the server or the table,
             /// not with the query: report it as an internal error so that clients don't attribute it
