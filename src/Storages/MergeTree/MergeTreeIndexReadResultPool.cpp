@@ -79,9 +79,11 @@ void MergeTreeSkipIndexReader::setTopKPrimaryKeyPruning(size_t primary_key_colum
     top_k_threshold_tracker = std::move(tracker);
 }
 
-void MergeTreeSkipIndexReader::setPrimaryKeyCondition(ConditionTemplate<KeyCondition>::Ptr key_condition_)
+void MergeTreeSkipIndexReader::setPrimaryKeyCondition(
+    ConditionTemplate<KeyCondition>::Ptr key_condition_, std::vector<std::optional<size_t>> primary_key_to_minmax_slot_)
 {
     primary_key_condition = std::move(key_condition_);
+    primary_key_to_minmax_slot = std::move(primary_key_to_minmax_slot_);
 }
 
 bool MergeTreeSkipIndexReader::hasRuntimeFilters() const
@@ -113,7 +115,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
                 /*part_offset_condition=*/nullptr,
                 /*total_offset_condition=*/nullptr,
                 /*exact_ranges=*/nullptr,
-                /*pk_to_minmax_slot=*/nullptr,
+                primary_key_to_minmax_slot.empty() ? nullptr : &primary_key_to_minmax_slot,
                 context->getSettingsRef(),
                 log);
         }
