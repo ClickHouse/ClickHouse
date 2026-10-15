@@ -1,4 +1,10 @@
+-- Tags: no-replicated-database
+-- Tag no-replicated-database: plain `DETACH TABLE` is unsupported in a `Replicated` database.
+
 -- Bind aliases to the names in the stored projection metadata, before Analyzer rewrites expressions.
+
+SET distributed_ddl_entry_format_version = 5;
+SET allow_projection_column_codecs_in_replicated_or_distributed_ddl = 1;
 
 DROP TABLE IF EXISTS t_projection_codec_folded_name;
 DROP TABLE IF EXISTS t_projection_codec_interval_name;

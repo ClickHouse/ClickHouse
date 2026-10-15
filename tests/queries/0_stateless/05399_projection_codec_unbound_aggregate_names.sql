@@ -1,5 +1,8 @@
 -- Both `count()` spellings are stored, but the codec only targets `k`.
 
+SET distributed_ddl_entry_format_version = 5;
+SET allow_projection_column_codecs_in_replicated_or_distributed_ddl = 1;
+
 DROP TABLE IF EXISTS t_projection_codec_unbound_aggregates;
 
 CREATE TABLE t_projection_codec_unbound_aggregates

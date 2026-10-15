@@ -1,4 +1,10 @@
+-- Tags: no-replicated-database
+-- Tag no-replicated-database: plain `DETACH TABLE` is unsupported in a `Replicated` database.
+
 -- The old interpreter stores `countDistinct` under its resolved aggregate name.
+
+SET distributed_ddl_entry_format_version = 5;
+SET allow_projection_column_codecs_in_replicated_or_distributed_ddl = 1;
 
 DROP TABLE IF EXISTS t_projection_codec_count_distinct;
 
