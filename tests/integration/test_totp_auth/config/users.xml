@@ -70,7 +70,7 @@
         <totuser_background_2>
             <password>aa+bb</password>
             <time_based_one_time_password>
-                <secret>AL4V2===</secret>
+                <secret>5EU6KPEL7TILTB3R</secret>
                 <period>60</period>
                 <digits>9</digits>
                 <algorithm>SHA256</algorithm>

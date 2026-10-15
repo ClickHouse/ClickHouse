@@ -105,13 +105,16 @@ exec bash -c {
     echo "${USER_NAME}" > "$work_dir/user"
 } bash $basedir $work_dir 2>@1
 
-set agent_pid [exec python3 $work_dir/agent.py $work_dir/agent.sock $work_dir/.ssh/id_ed25519.pub > /dev/null 2> /dev/null &]
-for {set attempt 0} {$attempt < 100 && ![file exists $work_dir/agent.sock]} {incr attempt} {
+# A unix socket path is limited to about 100 bytes, which the work directory of the test runner can exceed.
+set agent_dir [exec mktemp -d /tmp/05400.XXXXXX]
+set agent_pid [exec python3 $work_dir/agent.py $agent_dir/agent.sock $work_dir/.ssh/id_ed25519.pub > /dev/null 2> /dev/null &]
+for {set attempt 0} {$attempt < 100 && ![file exists $agent_dir/agent.sock]} {incr attempt} {
     after 100
 }
 
-proc cleanup {basedir work_dir agent_pid} {
+proc cleanup {basedir work_dir agent_pid agent_dir} {
     catch {exec kill $agent_pid}
+    file delete -force -- $agent_dir
     catch {
         exec bash -c {
             source "$1/../shell_config.sh"
@@ -150,8 +153,8 @@ proc wait_for_final_state {job_id} {
 
 spawn bash -c {
     source "$1/../shell_config.sh"
-    HOME="$2" SSH_AUTH_SOCK="$2/agent.sock" ${CLICKHOUSE_CLIENT_BINARY} ${CLICKHOUSE_CLIENT_OPT} --user "$(cat "$2/user")" --ssh-key-file "$2/.ssh/id_ed25519" --history_file="$3"
-} bash $basedir $work_dir $history_file
+    HOME="$2" SSH_AUTH_SOCK="$4/agent.sock" ${CLICKHOUSE_CLIENT_BINARY} ${CLICKHOUSE_CLIENT_EXPECT_OPT} --user "$(cat "$2/user")" --ssh-key-file "$2/.ssh/id_ed25519" --history_file="$3"
+} bash $basedir $work_dir $history_file $agent_dir
 expect ":) "
 
 # The job signs, and the agent never answers. Give it time to get there, then cancel it.
@@ -177,4 +180,4 @@ expect ":) "
 after 1500
 send -- "\4"
 expect eof
-cleanup $basedir $work_dir $agent_pid
+cleanup $basedir $work_dir $agent_pid $agent_dir

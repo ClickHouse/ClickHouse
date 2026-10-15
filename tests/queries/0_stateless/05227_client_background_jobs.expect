@@ -173,6 +173,8 @@ set previous_timeout $timeout
 set timeout 3
 set cancellation_deadline [expr {[clock milliseconds] + 10000}]
 submit {\cancel 3}
+# Type the next command only after this one ran, or the line editor can take its Enter as a pasted newline.
+expect -ex {Cancellation requested for background job 3}
 expect ":) "
 
 set cancelled_during_start 0

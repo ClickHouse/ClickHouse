@@ -94,7 +94,7 @@ proc wait_for_job {job_id} {
 spawn bash -c {
     source "$1/../shell_config.sh"
     . "$2/agent.env" > /dev/null
-    HOME="$2" ${CLICKHOUSE_CLIENT_BINARY} ${CLICKHOUSE_CLIENT_OPT} --user "$(cat "$2/user")" --ssh-key-file "$2/.ssh/id_ed25519" --history_file="$3"
+    HOME="$2" ${CLICKHOUSE_CLIENT_BINARY} ${CLICKHOUSE_CLIENT_EXPECT_OPT} --user "$(cat "$2/user")" --ssh-key-file "$2/.ssh/id_ed25519" --history_file="$3"
 } bash $basedir $work_dir $history_file
 
 # The agent refuses, so the main thread falls back to the key file and asks for its passphrase.

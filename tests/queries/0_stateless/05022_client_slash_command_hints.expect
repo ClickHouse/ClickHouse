@@ -171,6 +171,8 @@ expect -ex {The `/clear` command does not accept an argument}
 # A leading `/` that opens a comment is SQL, not a command.
 type_and_submit {/* comment */ SELECT 6759}
 expect "6759"
+# Interrupt at the prompt: while a query runs, the terminal does not echo the `^C`.
+expect ":) "
 clear_and_quit
 
 # ─── 6. Nothing is offered where a `/` is not a command ──────────────────────
