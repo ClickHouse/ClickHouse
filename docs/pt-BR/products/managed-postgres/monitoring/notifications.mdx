@@ -3,7 +3,7 @@ slug: /cloud/managed-postgres/monitoring/notifications
 sidebarTitle: 'Notificações'
 title: 'Notificações do ClickHouse Managed Postgres'
 description: 'Notificações do Console Cloud para serviços do ClickHouse Managed Postgres'
-keywords: ['managed postgres', 'notificações', 'alertas', 'armazenamento', 'uso de disco']
+keywords: ['managed postgres', 'notificações', 'alertas', 'armazenamento', 'uso de disco', 'defasagem de réplica', 'replicação']
 doc_type: 'guia'
 ---
 
@@ -18,17 +18,14 @@ a caixa de entrada do console, e-mail e Slack, e podem ser personalizadas para c
 notificação na seção **Postgres** da página de configurações de
 notificações. A seção é exibida para organizações com serviços Managed Postgres.
 
-<div id="supported-notifications">
-  ## Notificações compatíveis
-</div>
+## Notificações compatíveis {#supported-notifications}
 
-| Notificar quando                                               | Condição específica do alerta                                                                                                               | Canais de notificação padrão | Etapas de resolução                                                                                                                                                                                             |
-| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| O uso de armazenamento do Postgres ultrapassar o limite de 85% | Quando o uso de armazenamento de um serviço Managed Postgres atingir 85% da capacidade. A notificação será acionada apenas uma vez por dia. | UI, e-mail                   | O armazenamento é escalado automaticamente quando o uso atinge 90% (breve indisponibilidade durante a transição). Nenhuma ação é necessária, a menos que o escalonamento automático já tenha atingido o limite. |
+| Notificar quando                                                     | Condição específica do alerta                                                                                                                                                          | Canais de notificação padrão | Etapas de resolução                                                                                                                                                                                                                                                                                                                                                                                        |
+| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| O uso de armazenamento do Postgres ultrapassar o limite de 85%       | Quando o uso de armazenamento de um serviço Managed Postgres atingir 85% da capacidade. A notificação será acionada apenas uma vez por dia.                                            | UI, e-mail                   | O armazenamento é escalado automaticamente quando o uso atinge 90% (breve indisponibilidade durante a transição). Nenhuma ação é necessária, a menos que o escalonamento automático já tenha atingido o limite.                                                                                                                                                                                            |
+| A defasagem da réplica do Postgres ultrapassar o limite de 5 minutos | Quando a defasagem de replicação em um standby de alta disponibilidade ou em uma réplica de leitura permanecer acima de 5 minutos. A notificação será acionada apenas uma vez por dia. | UI, e-mail                   | No caso de um standby, a prontidão para failover fica reduzida até que ele se atualize; no caso de uma réplica de leitura, as leituras podem retornar dados desatualizados. Normalmente a defasagem se resolve sozinha assim que a carga de escrita diminui. Se ela continuar aumentando, verifique a CPU, a memória e o disco da réplica no dashboard de monitoramento ou entre em contato com o suporte. |
 
-<div id="related">
-  ## Páginas relacionadas
-</div>
+## Páginas relacionadas {#related}
 
 * [Notificações do Cloud](/pt-BR/products/cloud/features/monitoring/notifications) — canais, níveis de severidade e
   como personalizar o envio

@@ -3,6 +3,7 @@
 #include "config.h"
 
 #include <Backups/BackupInfo.h>
+#include <Backups/resolveDefaultedSettings.h>
 #include <Common/SettingsChanges.h>
 #include <map>
 #include <optional>
@@ -222,7 +223,7 @@ struct RestoreSettings
     /// `ReplaceQueryParameterVisitor` has substituted query parameters.
     /// Used by `InterpreterSetQuery::applySettingsFromQuery` to apply core
     /// settings (e.g. `max_execution_time`) before `ProcessList::insert`.
-    static SettingsChanges extractCoreSettingsFromQuery(const ASTBackupQuery & query);
+    static CoreSettingsFromQuery extractCoreSettingsFromQuery(const ASTBackupQuery & query);
 };
 
 }

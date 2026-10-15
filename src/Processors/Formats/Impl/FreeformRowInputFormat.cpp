@@ -1,6 +1,10 @@
 #include <Processors/Formats/Impl/FreeformRowInputFormat.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/ReadBufferFromString.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
+#include <Common/CurrentMemoryTracker.h>
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Common/assert_cast.h>
@@ -34,6 +38,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int ONLY_NULLS_WHILE_READING_SCHEMA;
+    extern const int TIMEOUT_EXCEEDED;
     extern const int UNSUPPORTED_METHOD;
 }
 
@@ -50,6 +55,14 @@ static inline void skipWhitespacesAndDelimiters(ReadBuffer & in)
 static inline bool atRowEnd(ReadBuffer & in)
 {
     return in.eof() || *in.position() == '\n' || *in.position() == '\r';
+}
+
+/// The candidates are kept in standard containers, whose allocations do not throw on the memory limit.
+static void checkSearchLimits(const QueryStatusPtr & query_status)
+{
+    CurrentMemoryTracker::check();
+    if (query_status && !query_status->checkTimeLimit())
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded while searching for the structure of a `Freeform` row");
 }
 
 // Returns the score of the given type. This doesn't take nullable into account.
@@ -321,7 +334,8 @@ DataTypePtr RestOfLineFieldMatcher::getDataTypeFromField(const String &)
 }
 
 FreeformFieldMatcher::FreeformFieldMatcher(PeekableReadBuffer & in_, const FormatSettings & settings_)
-    : in(in_)
+    : max_search_steps(settings_.freeform_max_search_steps)
+    , in(in_)
 {
     setLimits(settings_.max_rows_to_read_for_schema_inference, settings_.max_bytes_to_read_for_schema_inference);
 
@@ -386,8 +400,23 @@ FreeformFieldMatcher::readNextFields(bool parse_till_newline_as_one_string, unsi
 }
 
 void FreeformFieldMatcher::buildSolutions(
-    Solution current_solution, std::vector<Solution> & solutions, bool parse_till_newline_as_one_string, size_t offset) const
+    Solution current_solution,
+    std::vector<Solution> & solutions,
+    bool parse_till_newline_as_one_string,
+    size_t offset,
+    size_t & search_steps,
+    const QueryStatusPtr & query_status) const
 {
+    /// Every candidate is kept in memory and then validated against the sample rows, so an unbounded
+    /// search over a wide row of strings exhausts memory and time long before it ends.
+    if (max_search_steps && ++search_steps > max_search_steps)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Cannot infer the structure of the row: it can be split into fields in too many ways (the search exceeded {} steps). "
+            "Use a format with a fixed structure, such as `TSV` or `CSV`, or raise `input_format_freeform_max_search_steps`",
+            max_search_steps);
+    checkSearchLimits(query_status);
+
     seekInRow(offset);
     skipWhitespacesAndDelimiters(in);
 
@@ -414,7 +443,8 @@ void FreeformFieldMatcher::buildSolutions(
         next.score += fields.parse_result.score;
         next.size += fields.parse_result.names_and_types.size();
 
-        buildSolutions(next, solutions, fields.parse_result.parse_till_newline_as_one_string, fields.parse_result.offset);
+        buildSolutions(
+            next, solutions, fields.parse_result.parse_till_newline_as_one_string, fields.parse_result.offset, search_steps, query_status);
     }
 }
 
@@ -477,7 +507,7 @@ void FreeformFieldMatcher::readRowBySolution(
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Row does not end at a newline after all fields of the inferred solution");
 }
 
-bool FreeformFieldMatcher::validateSolution(Solution & solution)
+bool FreeformFieldMatcher::validateSolution(Solution & solution, const QueryStatusPtr & query_status)
 {
     try
     {
@@ -496,6 +526,8 @@ bool FreeformFieldMatcher::validateSolution(Solution & solution)
 
         for (size_t row = 0; row < max_rows_to_check; ++row)
         {
+            checkSearchLimits(query_status);
+
             // For each iteration, we try to parse fields and find the type union of the current row and the previously parsed rows. If it doesn't exist,
             // the solution is invalid.
 
@@ -583,10 +615,21 @@ bool FreeformFieldMatcher::buildSolutionsAndPickBest()
     if (in.eof())
         return false;
 
+    QueryStatusPtr query_status;
+    if (auto query_context = CurrentThread::tryGetQueryContext())
+        query_status = query_context->getProcessListElementSafe();
+
     in.setCheckpoint();
 
     std::vector<Solution> solutions;
-    buildSolutions(Solution{.columns = {}, .matchers_order = {}, .first_columns = {}, .score = 0, .size = 0}, solutions, false, 0);
+    size_t search_steps = 0;
+    buildSolutions(
+        Solution{.columns = {}, .matchers_order = {}, .first_columns = {}, .score = 0, .size = 0},
+        solutions,
+        false,
+        0,
+        search_steps,
+        query_status);
     in.rollbackToCheckpoint();
     if (solutions.empty())
     {
@@ -604,7 +647,7 @@ bool FreeformFieldMatcher::buildSolutionsAndPickBest()
     // Validation also widens the types of the solution to the union of the types seen in the checked rows (the first row alone
     // does not tell whether a column of integers is nullable), so the validated solution is the one that becomes final.
     for (auto & solution : solutions)
-        if (validateSolution(solution))
+        if (validateSolution(solution, query_status))
         {
             setFinalSolution(solution);
             in.rollbackToCheckpoint(true);
@@ -946,11 +989,15 @@ void registerFreeformSchemaReader(FormatFactory & factory)
         [](ReadBuffer & buf, const FormatSettings & settings) { return std::make_shared<FreeformSchemaReader>(buf, settings); });
 
     /// Every escaping rule a matcher uses takes part in inference, so all of their settings affect the result.
+    /// The search bound decides whether inference succeeds at all, so it is part of the key too.
     factory.registerAdditionalInfoForSchemaCacheGetter(
         "Freeform",
         [](const FormatSettings & settings)
         {
-            String result = fmt::format("column_names_for_schema_inference={}", settings.column_names_for_schema_inference);
+            String result = fmt::format(
+                "column_names_for_schema_inference={}, freeform_max_search_steps={}",
+                settings.column_names_for_schema_inference,
+                settings.freeform_max_search_steps);
             for (auto rule : {FormatSettings::EscapingRule::JSON, FormatSettings::EscapingRule::CSV, FormatSettings::EscapingRule::Raw,
                               FormatSettings::EscapingRule::Quoted, FormatSettings::EscapingRule::Escaped})
                 result += ", " + getAdditionalFormatInfoByEscapingRule(settings, rule);

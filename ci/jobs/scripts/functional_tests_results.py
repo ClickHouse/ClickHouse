@@ -59,16 +59,25 @@ ABORTED_RUN_LIVENESS_LEAF = "Server liveness check failed"
 # `HUNG_CHECK_EXIT_CODE` IS included: the run was aborted mid-flight exactly as
 # for the other members, so the same demotion applies; only the synthetic leaf's
 # name differs.
-ABORTED_RUN_EXIT_CODES = frozenset(
+#
+# Kept as its own set because, unlike the in-band codes, these establish only
+# that the run was killed, never by whom.
+KILLED_BY_SIGNAL_EXIT_CODES = frozenset(
     {
-        STOP_TESTING_EXIT_CODE,
-        HUNG_CHECK_EXIT_CODE,
         128 + signal.SIGTERM,  # 143
         128 + signal.SIGKILL,  # 137
         -signal.SIGTERM,  # -15
         -signal.SIGKILL,  # -9
     }
 )
+
+# Derived so the two sets cannot drift apart.
+ABORTED_RUN_EXIT_CODES = (
+    frozenset({STOP_TESTING_EXIT_CODE, HUNG_CHECK_EXIT_CODE})
+    | KILLED_BY_SIGNAL_EXIT_CODES
+)
+
+KILLED_BY_SIGNAL_RESULT_NAME = "Test command killed by signal"
 
 NO_TESTS_SIGN = "No tests were run"
 NO_TESTS_FILTERED_OUT_SIGN = (
@@ -265,6 +274,24 @@ class FTResultsProcessor:
             state = Result.Status.FAIL
             test_results.append(
                 Result("Some queries hung", Result.Status.FAIL, info="Some queries hung")
+            )
+        elif (
+            runner_exit_code in KILLED_BY_SIGNAL_EXIT_CODES
+            and s.failed == 0
+            and s.unknown == 0
+        ):
+            # Gate on the counters: `NOT_FAILED` rows are invisible to
+            # `is_failure`. ERROR goes on the leaf only, where the bugfix
+            # inverter reads it - an ERROR aggregate disables coverage collection.
+            state = Result.Status.FAIL
+            test_results.append(
+                Result(
+                    KILLED_BY_SIGNAL_RESULT_NAME,
+                    Result.Status.ERROR,
+                    info=f"The test command exited with {runner_exit_code} (killed by "
+                    "signal) and no test was reported as failed, so the cause could "
+                    "not be attributed. Check the server log for a crash.",
+                )
             )
         elif runner_exit_code in ABORTED_RUN_EXIT_CODES:
             state = Result.Status.FAIL
