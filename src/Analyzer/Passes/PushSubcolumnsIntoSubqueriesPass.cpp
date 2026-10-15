@@ -61,7 +61,7 @@ enum class ClauseKind
     /// JOIN TREE (including JOIN ON and ARRAY JOIN expressions), WHERE, PREWHERE.
     /// Expressions here are evaluated directly on the rows exported by the subquery.
     PreAggregation,
-    /// Projection, GROUP BY, HAVING, WINDOW, QUALIFY, ORDER BY, LIMIT BY.
+    /// Projection, GROUP BY, HAVING, WINDOW, QUALIFY, ORDER BY, LIMIT BY, LIMIT AFTER, LIMIT UNTIL.
     /// With GROUP BY or aggregate functions present, expressions here can be evaluated
     /// only over aggregation keys and aggregate function results.
     PostAggregation,
@@ -881,10 +881,12 @@ std::optional<CandidateMatch> matchCandidate(FunctionNode & function_node)
     auto subcolumn_type = subcolumn_type_override ? subcolumn_type_override : function_node.getResultType();
     if (function_name == "variantElement")
     {
-        const auto & variant_type = assert_cast<const DataTypeVariant &>(*column_node->getColumnType());
-        auto discriminator = variant_type.tryGetVariantDiscriminator(subcolumn_path);
-        chassert(discriminator);
-        subcolumn_type = variant_type.getVariant(*discriminator);
+        /// The type of the projected alternative subcolumn is the one declared by the Variant type
+        /// itself (e.g. `v.UInt32` is `Nullable(UInt32)`, while `v.Array(UInt32)` is not wrapped),
+        /// the replacement casts it to the result type of the function when they differ.
+        subcolumn_type = column_node->getColumnType()->tryGetSubcolumnType(subcolumn_path);
+        if (!subcolumn_type)
+            return {};
     }
 
     return CandidateMatch{
@@ -989,7 +991,10 @@ bool canAddProjectionColumns(const QueryNode & subquery)
 
     if (hasAggregateFunctionNodes(subquery.getProjectionNode())
         || (subquery.hasHaving() && hasAggregateFunctionNodes(subquery.getHaving()))
-        || (subquery.hasOrderBy() && hasAggregateFunctionNodes(subquery.getOrderByNode())))
+        || (subquery.hasOrderBy() && hasAggregateFunctionNodes(subquery.getOrderByNode()))
+        || (subquery.hasQualify() && hasAggregateFunctionNodes(subquery.getQualify()))
+        || (subquery.hasLimitAfter() && hasAggregateFunctionNodes(subquery.getLimitAfter()))
+        || (subquery.hasLimitUntil() && hasAggregateFunctionNodes(subquery.getLimitUntil())))
         return false;
 
     if (subquery.hasOrderBy())
@@ -1236,9 +1241,100 @@ QueryTreeNodePtr unwrapSubcolumnFunctions(
     return node;
 }
 
+/// Find `table_expression` in the JOIN TREE of a query and tell whether it is in a position that
+/// can be filled with default values for non-matched rows (a side of LEFT/RIGHT/FULL/PASTE JOIN).
+/// Returns nullopt if the table expression is not found.
+std::optional<bool> isTableExpressionDefaultable(
+    const QueryTreeNodePtr & join_tree_node, const IQueryTreeNode * table_expression, bool can_be_filled_with_defaults)
+{
+    if (!join_tree_node)
+        return {};
+
+    if (join_tree_node.get() == table_expression)
+        return can_be_filled_with_defaults;
+
+    if (auto * join_node = join_tree_node->as<JoinNode>())
+    {
+        auto kind = join_node->getKind();
+        bool left_defaultable = can_be_filled_with_defaults || kind == JoinKind::Right || kind == JoinKind::Full || kind == JoinKind::Paste;
+        bool right_defaultable = can_be_filled_with_defaults || kind == JoinKind::Left || kind == JoinKind::Full || kind == JoinKind::Paste;
+
+        if (auto result = isTableExpressionDefaultable(join_node->getLeftTableExpressionNode(), table_expression, left_defaultable))
+            return result;
+        return isTableExpressionDefaultable(join_node->getRightTableExpressionNode(), table_expression, right_defaultable);
+    }
+
+    if (auto * cross_join_node = join_tree_node->as<CrossJoinNode>())
+    {
+        for (const auto & child : cross_join_node->getTableExpressions())
+            if (auto result = isTableExpressionDefaultable(child, table_expression, can_be_filled_with_defaults))
+                return result;
+        return {};
+    }
+
+    if (auto * array_join_node = join_tree_node->as<ArrayJoinNode>())
+        return isTableExpressionDefaultable(array_join_node->getTableExpressionNode(), table_expression, can_be_filled_with_defaults);
+
+    return {};
+}
+
+bool isSameSubstream(const ISerialization::Substream & lhs, const ISerialization::Substream & rhs)
+{
+    return lhs.type == rhs.type && lhs.name_of_substream == rhs.name_of_substream
+        && lhs.variant_element_name == rhs.variant_element_name
+        && lhs.object_path_name == rhs.object_path_name && lhs.bucket == rhs.bucket;
+}
+
+/// Subcolumn names are flat, so the synthesized name `<column>.<path>` can be claimed by a different
+/// subcolumn with the same type: in ``Tuple(`a.size` UInt64, a String)`` the name `c.a.size` resolves
+/// to the element `a.size` rather than to the sizes of the element `a`; the name `j.m.key_k` of
+/// a path of a `JSON j` can be served by a physical column `j.m`. Check that the subcolumn resolved
+/// by the storage is the subcolumn `path` of the column `column_name`, comparing substream paths
+/// (like `canOptimizeToExpectedSubcolumn` of `FunctionToSubcolumnsPass`).
+bool resolvedSubcolumnMatchesPath(
+    const StorageSnapshotPtr & storage_snapshot,
+    const String & column_name,
+    const DataTypePtr & column_type,
+    const String & path,
+    const NameAndTypePair & resolved)
+{
+    if (!resolved.isSubcolumn())
+        return false;
+
+    auto source = storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), column_name);
+    if (!source || source->getNameInStorage() != resolved.getNameInStorage())
+        return false;
+
+    ISerialization::SubstreamPath expected_path;
+    if (source->isSubcolumn())
+    {
+        auto source_info = source->getTypeInStorage()->tryGetSubcolumnInfo(source->getSubcolumnName());
+        if (!source_info)
+            return false;
+        expected_path = source_info->substreams_path;
+    }
+
+    auto resolved_info = resolved.getTypeInStorage()->tryGetSubcolumnInfo(resolved.getSubcolumnName());
+    if (!resolved_info)
+        return false;
+    const auto & resolved_path = resolved_info->substreams_path;
+
+    /// The nested JSON-array subcolumn (`:`Array(JSON)`.b`) of a `Dynamic` value is resolved only by
+    /// the JSON column owning the path, not by the `Dynamic` type itself. Then at least require the
+    /// resolved subcolumn to descend from the column.
+    auto path_info = column_type->tryGetSubcolumnInfo(path);
+    if (!path_info)
+        return resolved_path.size() > expected_path.size()
+            && std::equal(expected_path.begin(), expected_path.end(), resolved_path.begin(), isSameSubstream);
+
+    expected_path.insert(expected_path.end(), path_info->substreams_path.begin(), path_info->substreams_path.end());
+    return std::ranges::equal(resolved_path, expected_path, isSameSubstream);
+}
+
 QueryTreeNodePtr buildSubcolumnProjectionNode(
     const PushdownGroup & group,
     const QueryTreeNodePtr & inner_node,
+    const QueryNode & leaf,
     const ContextPtr & context,
     const std::unordered_set<const IQueryTreeNode *> & synthesized_carrier_reads,
     bool & via_function_carrier)
@@ -1276,6 +1372,14 @@ QueryTreeNodePtr buildSubcolumnProjectionNode(
 
     if (table_node || table_function_node)
     {
+        /// A table on a side of an outer JOIN inside the leaf query has its columns filled with
+        /// default values for non-matched rows, and the subcolumn read directly from the table is
+        /// filled with the default value of the subcolumn type, which is not always `getSubcolumn`
+        /// of the filled parent column (the `null` subcolumn of NULL is 1, the default UInt8 is 0).
+        auto defaultable = isTableExpressionDefaultable(leaf.getJoinTreeNode(), inner_source.get(), false /*can_be_filled_with_defaults*/);
+        if (!defaultable || *defaultable)
+            return nullptr;
+
         const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
 
         /// For queries with FINAL, converting a function to a subcolumn may alter the special
@@ -1326,7 +1430,8 @@ QueryTreeNodePtr buildSubcolumnProjectionNode(
             return nullptr;
 
         auto subcolumn = storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), subcolumn_full_name);
-        if (!subcolumn || !subcolumn->type->equals(*group.subcolumn_type))
+        if (!subcolumn || !subcolumn->type->equals(*group.subcolumn_type)
+            || !resolvedSubcolumnMatchesPath(storage_snapshot, inner_column->getColumnName(), inner_column->getColumnType(), subcolumn_path, *subcolumn))
             return nullptr;
 
         return std::make_shared<ColumnNode>(NameAndTypePair{subcolumn_full_name, subcolumn->type}, inner_source);
@@ -1456,7 +1561,7 @@ bool collectLeafApplications(
 
     bool via_function_carrier = false;
     auto new_projection_node = buildSubcolumnProjectionNode(
-        group, projection_nodes[column_index], subquery.getContext(), synthesized_carrier_reads, via_function_carrier);
+        group, projection_nodes[column_index], subquery, subquery.getContext(), synthesized_carrier_reads, via_function_carrier);
     if (!new_projection_node || !new_projection_node->getResultType()->equals(*group.subcolumn_type))
         return false;
 
@@ -1793,7 +1898,9 @@ void processQuery(
             || hasAggregateFunctionNodes(query_node.getProjectionNode())
             || (query_node.hasHaving() && hasAggregateFunctionNodes(query_node.getHaving()))
             || (query_node.hasOrderBy() && hasAggregateFunctionNodes(query_node.getOrderByNode()))
-            || (query_node.hasQualify() && hasAggregateFunctionNodes(query_node.getQualify()));
+            || (query_node.hasQualify() && hasAggregateFunctionNodes(query_node.getQualify()))
+            || (query_node.hasLimitAfter() && hasAggregateFunctionNodes(query_node.getLimitAfter()))
+            || (query_node.hasLimitUntil() && hasAggregateFunctionNodes(query_node.getLimitUntil()));
 
         if (query_node.hasGroupBy())
         {
@@ -1841,6 +1948,8 @@ void processQuery(
         visit_clause(query_node.getLimitByNode(), ClauseKind::PostAggregation);
         visit_clause(query_node.getLimitByLimit(), ClauseKind::PostAggregation);
         visit_clause(query_node.getLimitByOffset(), ClauseKind::PostAggregation);
+        visit_clause(query_node.getLimitAfter(), ClauseKind::PostAggregation);
+        visit_clause(query_node.getLimitUntil(), ClauseKind::PostAggregation);
         visit_clause(query_node.getLimit(), ClauseKind::PostAggregation);
         visit_clause(query_node.getOffset(), ClauseKind::PostAggregation);
     };
