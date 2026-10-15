@@ -3,9 +3,11 @@
 #include <Columns/ColumnString.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/OptimizedRegularExpression.h>
+#include <Common/Stopwatch.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/re2.h>
 #include <Functions/Regexps.h>
+#include <Functions/ReplaceRegexpModeHint.h>
 #include <Functions/ReplaceStringImpl.h>
 #include <Interpreters/JIT/CompileRegexp.h>
 #include <base/types.h>
@@ -177,6 +179,35 @@ struct ReplaceRegexpImpl
         if (foldcase)
             prefix.clear();
         return prefix;
+    }
+
+    /// Whether every match of `searcher` must start at the beginning of the haystack (the same shapes
+    /// as RE2's own `IsAnchorStart`). For such a pattern with capturing groups, RE2 skips its DFA on a
+    /// short haystack and runs OnePass or BitState right away, which are slower to reject a non-matching
+    /// haystack than the DFA that a capture-free existence check runs. An unanchored match runs the DFA
+    /// first anyway, so for it the check would only scan every matching haystack twice.
+    static bool isAnchoredAtStart(const re2::RE2 & searcher)
+    {
+        re2::Regexp * re = searcher.Regexp();
+        for (size_t depth = 0; re && depth < 4; ++depth)
+        {
+            switch (re->op())
+            {
+                case re2::kRegexpBeginText:
+                    return true;
+                case re2::kRegexpConcat:
+                    if (re->nsub() == 0)
+                        return false;
+                    re = re->sub()[0];
+                    break;
+                case re2::kRegexpCapture:
+                    re = re->sub()[0];
+                    break;
+                default:
+                    return false;
+            }
+        }
+        return false;
     }
 
     /// Returns whether at least one match was found.
@@ -386,19 +417,26 @@ struct ReplaceRegexpImpl
         }
     }
 
-    /// Haystacks are often repetitive (e.g. URLs), so run the regexp once per distinct value and copy the
-    /// cached result for repeats. Only worth it for RE2 matches: a JIT-compiled match is about as cheap as
-    /// the hash table probe it would save, which is why the JIT loop processes every row directly.
-    /// A row without a match comes out identical to its input, so caching it saves only the match attempt,
-    /// and for short-circuiting patterns such as '^foo' that attempt is cheaper than hashing the haystack.
-    /// Once a block proves to be almost entirely non-matching, a capture-free existence check therefore runs
-    /// first and rejected rows are copied through directly, at the cost of the plain loop. While the cache
-    /// is enabled, rejects are cached like matches, so repeats of a rejecting value skip the re-check; only
-    /// after the distinct-ratio guard disables the cache do rejected rows bypass hashing entirely.
+    /// Haystacks are often repetitive (e.g. URLs), so the regexp can run once per distinct value and the
+    /// cached result be copied for repeats. Only worth considering for RE2 matches: a JIT-compiled match is
+    /// about as cheap as the hash table probe it would save, which is why the JIT loop processes every row
+    /// directly. Even for RE2, whether the cache pays depends on how the cost of the regexp compares with
+    /// hashing the haystack, which neither the pattern nor the share of repeats tells reliably: a cheap
+    /// reject such as '^[a-z]' over long haystacks loses to the plain loop even when most rows repeat, while
+    /// a full scan such as '[0-9]{50}' wins with few repeats. So the rows are processed in windows, the time
+    /// of a window per byte is measured, and the cheaper of the cached and the plain mode is kept. The other
+    /// mode is probed again at exponentially growing intervals, so that a block whose shape changes midway
+    /// is followed, while a block that keeps its shape pays for little more than the first probes.
+    /// The measurement only selects between two ways to compute the same result, so the result never
+    /// depends on it.
+    /// For a pattern anchored at the start with capturing groups (see `isAnchoredAtStart`), once a window
+    /// proves to be almost entirely non-matching, a capture-free existence check runs first and rejected
+    /// rows are copied through directly. In the cached mode the check runs after the lookup, so rejects are
+    /// cached like matches and repeats of a rejecting value skip the re-check.
     /// A row that does not start with `required_prefix` (see `getRequiredPrefix`) cannot match, so it is
-    /// copied through ahead of everything else and left out of the window statistics: the heuristics then
-    /// judge only the rows that can match, and a few long matching rows among many prefix rejects are not
-    /// scanned twice by the pre-check.
+    /// copied through ahead of everything else and left out of the match ratio: the pre-check then judges
+    /// only the rows that can match, and a few long matching rows among many prefix rejects are not scanned
+    /// twice by it.
     /// `get_haystack(i)` must stay valid for the whole call.
     template <typename GetHaystack>
     static void processStringsDeduplicated(
@@ -409,8 +447,10 @@ struct ReplaceRegexpImpl
         ColumnString::Offset & res_offset,
         const re2::RE2 & searcher,
         std::string_view required_prefix,
+        bool use_precheck,
         int num_captures,
         const Instructions & instructions,
+        ReplaceRegexpModeHint * mode_hint,
         CancellationBudget & budget)
     {
         struct CachedResult
@@ -421,44 +461,65 @@ struct ReplaceRegexpImpl
         };
 
         HashMap<std::string_view, CachedResult> results_cache;
-        bool map_enabled = true;
-        /// The heuristics are re-evaluated once per window of rows. The window is small so that even a
-        /// block far shorter than the default `max_block_size` samples its match ratio, and so that a
-        /// wrong decision is corrected within a bounded number of rows.
-        static constexpr size_t ratio_check_window = 32;
-        /// The distinct ratio needs a longer sample: values that repeat with a longer cycle would be
-        /// written off as distinct before the first repeat can arrive.
-        static constexpr size_t distinct_ratio_window = 256;
-        static_assert(distinct_ratio_window % ratio_check_window == 0);
-        /// The number of rows following a sampled haystack that are compared against it, and so the
-        /// longest cycle of values the sample can catch.
-        static constexpr size_t sample_probe_rows = 32;
-        static_assert(sample_probe_rows < distinct_ratio_window);
+
+        /// The match ratio and the mode are re-evaluated once per window of rows that pass the prefix check.
+        /// The window is small so that even a block far shorter than the default `max_block_size` gets
+        /// measured, and so that a wrong decision is corrected within a bounded number of rows.
+        static constexpr size_t window_rows_count = 32;
+        /// The per-row cost of a window, independent of the haystack length, expressed in bytes for the
+        /// normalization of the window time, so that windows of short and of long haystacks compare fairly.
+        static constexpr size_t row_cost_in_bytes = 64;
+        /// The cached mode has to be this much cheaper to be chosen: on a tie the plain mode is kept,
+        /// as it does not grow the cache.
+        static constexpr double cache_advantage_required = 0.9;
+        static constexpr size_t initial_probe_interval = 4;
+        static constexpr size_t max_probe_interval = 256;
+        /// A phase is measured over several windows, as the cost of a single window follows whichever
+        /// run of cheap or expensive rows it happens to cover.
+        static constexpr size_t measured_probe_windows = 2;
+        /// A probe of the cached mode spends its first window refilling the cache, which the plain mode
+        /// does not update, and measures the following ones.
+        auto probe_windows = [](bool cache) { return cache ? measured_probe_windows + 1 : measured_probe_windows; };
 
         bool precheck_non_matching = false;
         size_t rows_in_window = 0;
-        size_t rows_in_distinct_window = 0;
         size_t matched_in_window = 0;
-        size_t cache_size_at_distinct_check = 0;
+
+        /// The mode of the current window, the mode chosen as cheaper, and whether the current phase
+        /// measures the other mode.
+        bool use_cache = true;
+        bool cache_is_cheaper = true;
+        bool probing = true;
+        size_t windows_left_in_phase = probe_windows(true);
+        size_t probe_interval = initial_probe_interval;
+        /// The time per byte of the last phase in each mode, or a negative value while it is unknown.
+        double cost_cached = -1;
+        double cost_plain = -1;
+        /// The time and the normalized bytes of the measured windows of the current phase.
+        UInt64 phase_ns = 0;
+        size_t phase_units = 0;
+
+        /// Continue the schedule of the previous block, so that probes stay as rare as they had become.
+        bool decided = false;
+        if (mode_hint && mode_hint->known.load(std::memory_order_relaxed))
+        {
+            decided = true;
+            cache_is_cheaper = mode_hint->cache_is_cheaper.load(std::memory_order_relaxed);
+            use_cache = cache_is_cheaper;
+            probing = false;
+            probe_interval = std::clamp<size_t>(
+                mode_hint->probe_interval.load(std::memory_order_relaxed), initial_probe_interval, max_probe_interval);
+            windows_left_in_phase = std::clamp<size_t>(
+                mode_hint->windows_until_probe.load(std::memory_order_relaxed), 1, max_probe_interval);
+        }
+
+        UInt64 window_start_ns = clock_gettime_ns(CLOCK_MONOTONIC);
+        size_t window_bytes = 0;
+        size_t window_all_rows = 0;
 
         std::string_view prev_haystack;
         bool has_prev_haystack = false;
         CachedResult prev_result{0, 0, false};
-
-        /// While the cache is off, one haystack per distinct-ratio window is kept as a sample and the
-        /// cache comes back on the spot as soon as a row equal to it arrives, so that a block whose
-        /// remainder turns repetitive after a mostly-distinct window is not stuck on the plain path for
-        /// the rest of the block. Only the rows right after the sample are compared against it: a compare
-        /// of distinct values runs to the first differing byte, which for equal-length values sharing a
-        /// long prefix (URLs that differ only in the tail) is about the cost of the copy every row pays
-        /// anyway, so comparing every row would slow the mostly-distinct blocks the guard exists to
-        /// protect. Comparing the consecutive rows that follow the sample rather than one row per ratio
-        /// window catches every cycle of up to `sample_probe_rows` values regardless of its length: probes
-        /// spaced at a fixed stride only ever land on the cycle positions the stride happens to reach (a
-        /// stride of 32 never meets a cycle of 9). An all-distinct block never re-enables the cache at
-        /// all, and a value that recurs only after more rows than the probes cover escapes the sample
-        /// just as a value that recurs after more than a window escapes the distinct ratio.
-        std::string_view sample_haystack;
 
         /// `haystack_bytes_read` is the size of the haystack the compare or lookup scanned to find the
         /// entry. Charging only the copied result would let a run of repeated multi-megabyte haystacks
@@ -474,81 +535,106 @@ struct ReplaceRegexpImpl
             budget.chargeUnits((haystack_bytes_read + cached.length) / CancellationBudget::bytes_per_unit);
         };
 
+        auto copy_unchanged = [&](std::string_view haystack)
+        {
+            res_data.resize(res_data.size() + haystack.size());
+            memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], haystack.data(), haystack.size());
+            res_offset += haystack.size();
+        };
+
+        /// Called at the end of every window: records the cost of the window and selects the mode of the next one.
+        auto finish_window = [&]
+        {
+            const UInt64 now_ns = clock_gettime_ns(CLOCK_MONOTONIC);
+            /// The first window of a probe of the cached mode refills the cache and is not representative.
+            const bool measured = !(probing && use_cache && windows_left_in_phase == probe_windows(true));
+            if (measured)
+            {
+                phase_ns += now_ns - window_start_ns;
+                phase_units += window_bytes + window_all_rows * row_cost_in_bytes;
+            }
+            window_start_ns = now_ns;
+            window_bytes = 0;
+            window_all_rows = 0;
+
+            if (--windows_left_in_phase != 0)
+                return;
+
+            if (phase_units)
+                (use_cache ? cost_cached : cost_plain) = static_cast<double>(phase_ns) / static_cast<double>(phase_units);
+            phase_ns = 0;
+            phase_units = 0;
+
+            if (probing && (cost_cached < 0 || cost_plain < 0))
+            {
+                /// The first probes measure both modes before anything is chosen.
+                use_cache = !use_cache;
+                windows_left_in_phase = probe_windows(use_cache);
+                return;
+            }
+
+            if (probing)
+            {
+                const bool cheaper = cost_cached < cost_plain * cache_advantage_required;
+                if (cheaper != cache_is_cheaper)
+                {
+                    cache_is_cheaper = cheaper;
+                    probe_interval = initial_probe_interval;
+                }
+                else
+                    probe_interval = std::min(probe_interval * 2, max_probe_interval);
+
+                probing = false;
+                decided = true;
+                use_cache = cache_is_cheaper;
+                windows_left_in_phase = probe_interval;
+            }
+            else
+            {
+                probing = true;
+                use_cache = !cache_is_cheaper;
+                windows_left_in_phase = probe_windows(use_cache);
+            }
+        };
+
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             budget.charge();
 
             const std::string_view haystack = get_haystack(i);
+            window_bytes += haystack.size();
+            ++window_all_rows;
 
             if (!haystack.starts_with(required_prefix))
             {
-                res_data.resize(res_data.size() + haystack.size());
-                memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], haystack.data(), haystack.size());
-                res_offset += haystack.size();
+                copy_unchanged(haystack);
                 budget.charge(haystack.size());
                 res_offsets[i] = res_offset;
                 continue;
             }
 
             /// The checkpoint runs ahead of every fast path below, so every row past the prefix check
-            /// advances it and no `continue` can starve it: a block of pre-check rejects, of adjacent
-            /// duplicates, or of cache-disabled rows all keep re-evaluating the heuristics on schedule. The match ratio
-            /// covers only the last window, so the pre-check follows a shift between rejecting and
-            /// matching runs within at most two windows regardless of the block's shape.
-            if (rows_in_window == ratio_check_window)
+            /// advances it and no `continue` can starve it. The match ratio covers only the last window,
+            /// so the pre-check follows a shift between rejecting and matching runs within at most two
+            /// windows regardless of the block's shape.
+            if (rows_in_window == window_rows_count)
             {
-                precheck_non_matching = matched_in_window * 20 < ratio_check_window;
-                if (rows_in_distinct_window == distinct_ratio_window)
-                {
-                    /// While the cache is enabled every row either reaches it or is an adjacent duplicate
-                    /// (a repeat the caching strategy serves), so the insertions since the previous check
-                    /// count the distinct rows of the last window. The ratio covers only that window rather
-                    /// than the whole prefix: a repetitive prefix must not keep the cache on for a
-                    /// mostly-distinct remainder of the block, where the lookups would pay for nothing.
-                    if (map_enabled)
-                    {
-                        const size_t distinct_in_window = results_cache.size() - cache_size_at_distinct_check;
-                        if (distinct_in_window * 10 > distinct_ratio_window * 9)
-                        {
-                            map_enabled = false;
-                            /// Not `clearAndShrink`: that frees the buffer and leaves the table unusable,
-                            /// while the sample below may bring the cache back later in the block.
-                            results_cache.clear();
-                        }
-                        cache_size_at_distinct_check = results_cache.size();
-                    }
-
-                    if (!map_enabled)
-                        sample_haystack = haystack;
-                    rows_in_distinct_window = 0;
-                }
+                precheck_non_matching = use_precheck && matched_in_window * 20 < window_rows_count;
+                finish_window();
                 rows_in_window = 0;
                 matched_in_window = 0;
             }
             ++rows_in_window;
 
-            /// The sample is taken on the first row of a distinct-ratio window, so the probed rows are
-            /// the ones right after it and the sampled row never counts as a repeat of itself.
-            /// The recurrence proves the rows are not all-distinct, so the cache is rebuilt from this row
-            /// on rather than at the next distinct-ratio boundary: a block shorter than a boundary apart
-            /// would otherwise end before the recurrence could be acted on. The distinct ratio of the
-            /// window the rebuilt cache runs into judges it again, so a wrong re-enable costs a window of
-            /// lookups, while a cycle of a few values keeps the cache for good.
-            const size_t offset_in_distinct_window = rows_in_distinct_window++;
-            if (!map_enabled && offset_in_distinct_window != 0 && offset_in_distinct_window <= sample_probe_rows
-                && haystack == sample_haystack)
-                map_enabled = true;
-
             const UInt64 result_start = res_offset;
             bool row_matched = false;
 
-            if (map_enabled)
+            if (use_cache)
             {
                 /// Ahead of the lookup: an adjacent duplicate is served by a compare against a value that
                 /// is still cache-hot, which costs about as much as the copy both paths pay, while hashing
                 /// the haystack reads all of it again. A distinct row loses only a compare that exits at
-                /// the first differing byte (or at the length check), and while the cache is enabled the
-                /// window is repetitive enough for the hits to pay for those misses.
+                /// the first differing byte (or at the length check).
                 if (has_prev_haystack && haystack == prev_haystack)
                 {
                     copy_cached(prev_result, haystack.size());
@@ -588,9 +674,7 @@ struct ReplaceRegexpImpl
 
                     if (precheck_rejected)
                     {
-                        res_data.resize(res_data.size() + haystack.size());
-                        memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], haystack.data(), haystack.size());
-                        res_offset += haystack.size();
+                        copy_unchanged(haystack);
                         budget.charge();
                         row_matched = false;
                     }
@@ -601,12 +685,10 @@ struct ReplaceRegexpImpl
             }
             else
             {
-                /// No per-row compare against the previous value here: the cache is off because the
-                /// window was mostly distinct, so an adjacent duplicate is rare while every distinct row
-                /// would pay the compare, and the sample probe above brings the cache (and with it the
-                /// adjacent-duplicate compare) back once the rows turn repetitive. A rejected row plus
-                /// the copy is exactly the plain loop's cost. It is non-matching by definition, so
-                /// leaving `matched_in_window` untouched counts it correctly.
+                /// No compare against the previous value here: even a run of equal values does not pay for
+                /// it when the regexp rejects or matches after a few bytes, as the compare reads the whole
+                /// haystack. A rejected row plus the copy is exactly the plain loop's cost. It is
+                /// non-matching by definition, so leaving `matched_in_window` untouched counts it correctly.
                 /// The attempt is charged ahead of its outcome, as on the cached path above.
                 bool precheck_rejected = false;
                 if (precheck_non_matching)
@@ -618,9 +700,7 @@ struct ReplaceRegexpImpl
 
                 if (precheck_rejected)
                 {
-                    res_data.resize(res_data.size() + haystack.size());
-                    memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], haystack.data(), haystack.size());
-                    res_offset += haystack.size();
+                    copy_unchanged(haystack);
                     budget.charge();
                 }
                 else
@@ -633,6 +713,15 @@ struct ReplaceRegexpImpl
             prev_result = {result_start, res_offset - result_start, row_matched};
             res_offsets[i] = res_offset;
         }
+
+        if (mode_hint && decided)
+        {
+            mode_hint->cache_is_cheaper.store(cache_is_cheaper, std::memory_order_relaxed);
+            mode_hint->probe_interval.store(static_cast<UInt32>(probe_interval), std::memory_order_relaxed);
+            /// A probe cut short by the end of the block is repeated at the start of the next one.
+            mode_hint->windows_until_probe.store(probing ? 0 : static_cast<UInt32>(windows_left_in_phase), std::memory_order_relaxed);
+            mode_hint->known.store(true, std::memory_order_relaxed);
+        }
     }
 
     static void vectorConstantConstant(
@@ -644,6 +733,7 @@ struct ReplaceRegexpImpl
         ColumnString::Offsets & res_offsets,
         size_t input_rows_count,
         size_t regexp_jit_min_count = std::numeric_limits<size_t>::max(),
+        ReplaceRegexpModeHint * mode_hint = nullptr,
         const std::function<void()> & check_cancellation = {})
     {
         CancellationBudget budget(check_cancellation);
@@ -725,7 +815,8 @@ struct ReplaceRegexpImpl
                     reinterpret_cast<const char *>(haystack_data.data() + from),
                     static_cast<size_t>(haystack_offsets[i] - from));
             },
-            input_rows_count, res_data, res_offsets, res_offset, searcher, getRequiredPrefix(searcher), num_captures, instructions, budget);
+            input_rows_count, res_data, res_offsets, res_offset, searcher, getRequiredPrefix(searcher),
+            isAnchoredAtStart(searcher) && num_captures > 1, num_captures, instructions, mode_hint, budget);
     }
 
     static void vectorVectorConstant(
@@ -916,6 +1007,7 @@ struct ReplaceRegexpImpl
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets,
         size_t input_rows_count,
+        ReplaceRegexpModeHint * mode_hint = nullptr,
         const std::function<void()> & check_cancellation = {})
     {
         CancellationBudget budget(check_cancellation);
@@ -949,7 +1041,8 @@ struct ReplaceRegexpImpl
 
         processStringsDeduplicated(
             [&](size_t i) { return std::string_view(reinterpret_cast<const char *>(haystack_data.data() + i * n), n); },
-            input_rows_count, res_data, res_offsets, res_offset, searcher, getRequiredPrefix(searcher), num_captures, instructions, budget);
+            input_rows_count, res_data, res_offsets, res_offset, searcher, getRequiredPrefix(searcher),
+            isAnchoredAtStart(searcher) && num_captures > 1, num_captures, instructions, mode_hint, budget);
     }
 };
 
