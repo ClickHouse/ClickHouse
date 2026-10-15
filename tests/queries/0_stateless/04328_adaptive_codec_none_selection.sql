@@ -22,7 +22,7 @@ OPTIMIZE TABLE t_adaptive_none FINAL;
 
 SELECT column,
        mapContains(codec_block_counts, 'NONE') AS has_none,
-       mapContains(codec_block_counts, 'T64') AS has_t64,
+       mapContains(codec_block_counts, 'T64, LZ4') AS has_t64_chain,
        mapContains(codec_block_counts, 'LZ4') AS has_lz4
 FROM mergeTreeCodecBlockCounts(currentDatabase(), t_adaptive_none) ORDER BY column;
 

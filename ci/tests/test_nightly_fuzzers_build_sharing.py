@@ -61,7 +61,7 @@ from ci.workflows.weekly_fuzzers_corpus import (  # noqa: E402
     workflow as corpus_workflow,
 )
 
-_SHARED_BUILD = "Build (amd_release)"
+_SHARED_BUILD = "Build (arm_release)"
 
 # ci/praktika/digest.py's drop list, mirrored so a change there surfaces here.
 _DROPPED_FROM_DIGEST = [
@@ -176,16 +176,24 @@ class TestBuildIsSharedWithMasterCI:
         )
         assert _config_digest(job, untagged) != _config_digest(job, nightly_workflow)
 
-    def test_the_examples_wiring_does_not_reach_the_shared_build(self):
-        # It is appended to the ARM release job only, which is why the plain and
-        # the with-examples list agree on the AMD job the two workflows share.
+    def test_the_examples_wiring_reaches_both_sides_or_neither(self):
+        # The suffix is appended to the ARM release job only, and that is the job
+        # the two workflows share, so both must take it from the same list. A
+        # workflow switched back to the plain list would keep the name and lose
+        # the cache entry.
         with_examples = [
             j.name
             for j in JobConfigs.release_build_jobs_with_examples
             if "--build-examples" in j.command
         ]
         assert with_examples, "no job takes the examples: this arm is vacuous"
-        assert _SHARED_BUILD not in with_examples
+        nightly, master = _mangled("NightlyFuzzers"), _mangled("MasterCI")
+        assert (
+            _job(nightly, _SHARED_BUILD).command == _job(master, _SHARED_BUILD).command
+        )
+        assert sorted(_job(nightly, _SHARED_BUILD).provides) == sorted(
+            _job(master, _SHARED_BUILD).provides
+        )
 
     def test_what_the_shared_build_provides_is_declared(self):
         # An artifact a job provides but the workflow does not declare has
@@ -311,13 +319,13 @@ class TestConsumerRequiresTheReleaseBinary:
     _CONSUMER = "libFuzzer tests"
 
     def test_job_config_requires_the_release_binary(self):
-        assert ArtifactNames.CH_AMD_RELEASE in JobConfigs.libfuzzer_job.requires
+        assert ArtifactNames.CH_ARM_RELEASE in JobConfigs.libfuzzer_job.requires
 
     def test_the_workflow_job_requires_it_too(self):
         # The workflow takes the shared config, but a workflow is free to
         # substitute a job, so assert the instance the workflow will run.
         assert (
-            ArtifactNames.CH_AMD_RELEASE
+            ArtifactNames.CH_ARM_RELEASE
             in _job(nightly_workflow, self._CONSUMER).requires
         )
 
@@ -326,7 +334,7 @@ class TestConsumerRequiresTheReleaseBinary:
         # never resolve.
         provided = {a for job in nightly_workflow.jobs for a in job.provides}
         required = set(_job(nightly_workflow, self._CONSUMER).requires)
-        assert ArtifactNames.CH_AMD_RELEASE in provided
+        assert ArtifactNames.CH_ARM_RELEASE in provided
         assert required <= provided, sorted(required - provided)
 
     def test_dictionary_inputs_are_in_the_consumer_digest(self):
@@ -381,7 +389,7 @@ class TestOnlyTheGeneratingJobNeedsTheBinary:
             job.name
             for job in self._script_jobs()
             if ("--minimize-only" in job.command)
-            == (ArtifactNames.CH_AMD_RELEASE in job.requires)
+            == (ArtifactNames.CH_ARM_RELEASE in job.requires)
         ]
         assert mismatched == [], mismatched
 
@@ -395,7 +403,7 @@ class TestOnlyTheGeneratingJobNeedsTheBinary:
         # The other half: a job cannot be given an artifact its workflow never
         # produces, so this is what makes the requirement above unsatisfiable.
         provided = {a for job in corpus_workflow.jobs for a in job.provides}
-        assert ArtifactNames.CH_AMD_RELEASE not in provided
+        assert ArtifactNames.CH_ARM_RELEASE not in provided
 
 
 class TestLongRetentionTags:
