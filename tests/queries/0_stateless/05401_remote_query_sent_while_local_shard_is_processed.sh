@@ -16,4 +16,8 @@ ${CLICKHOUSE_CLIENT} -q "
     SELECT dateDiff('millisecond', initial_query_start_time_microseconds, query_start_time_microseconds) BETWEEN 0 AND 2999
     FROM system.query_log
     WHERE event_date >= yesterday() AND event_time >= now() - 600 AND initial_query_id = '$query_id'
-        AND NOT is_initial_query AND type = 'QueryFinish'"
+        AND NOT is_initial_query AND type = 'QueryFinish';
+    SELECT ProfileEvents['SuspendSendingQueryToShard'] > 0
+    FROM system.query_log
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '$query_id'
+        AND is_initial_query AND type = 'QueryFinish'"
