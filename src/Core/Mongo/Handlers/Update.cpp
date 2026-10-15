@@ -74,10 +74,11 @@ std::vector<String> getColumnNames(const CollectionRef & collection, std::shared
 
 /** A nested document is stored as one column per leaf, named by its dotted path (see
   * `flattenAssignedDocument` and the insert paths). `$set` of a subdocument expands into these
-  * leaves by the shape of the value it assigns, but `$unset` and `$rename` name only the path, so
-  * the leaves of a path that is not a column itself are taken from the columns of the collection:
-  * `{"$unset": {"profile": ""}}` unsets `profile.name` and `profile.age`, and
-  * `{"$rename": {"profile": "user"}}` renames them to `user.name` and `user.age`.
+  * leaves by the shape of the value it assigns, but `$unset` names only the path, so the leaves of
+  * a path that is not a column itself are taken from the columns of the collection:
+  * `{"$unset": {"profile": ""}}` unsets `profile.name` and `profile.age`. `$rename` is left to
+  * `expandMongoSubtreeAssignments`, because the renamed subdocument replaces the target as a whole,
+  * which a rename of each leaf on its own would no longer say.
   */
 void expandSubtreeUpdates(rapidjson::Value & update, const std::vector<String> & columns, rapidjson::Document::AllocatorType & allocator)
 {
@@ -85,49 +86,39 @@ void expandSubtreeUpdates(rapidjson::Value & update, const std::vector<String> &
         return;
 
     const std::unordered_set<std::string_view> column_set(columns.begin(), columns.end());
-    for (const char * operator_name : {"$unset", "$rename"})
+    auto operator_it = update.FindMember("$unset");
+    if (operator_it == update.MemberEnd() || !operator_it->value.IsObject())
+        return;
+
+    rapidjson::Value expanded(rapidjson::kObjectType);
+    for (auto & member : operator_it->value.GetObject())
     {
-        auto operator_it = update.FindMember(operator_name);
-        if (operator_it == update.MemberEnd() || !operator_it->value.IsObject())
-            continue;
-
-        const bool is_rename = std::string_view(operator_name) == "$rename";
-        rapidjson::Value expanded(rapidjson::kObjectType);
-        for (auto & member : operator_it->value.GetObject())
+        const std::string_view path(member.name.GetString(), member.name.GetStringLength());
+        const String prefix = String(path) + ".";
+        bool expanded_member = false;
+        if (!path.empty() && !column_set.contains(path))
         {
-            const std::string_view path(member.name.GetString(), member.name.GetStringLength());
-            const String prefix = String(path) + ".";
-            bool expanded_member = false;
-            if (!path.empty() && !column_set.contains(path))
+            for (const auto & column : columns)
             {
-                for (const auto & column : columns)
-                {
-                    if (!column.starts_with(prefix))
-                        continue;
+                if (!column.starts_with(prefix))
+                    continue;
 
-                    rapidjson::Value value;
-                    if (is_rename && member.value.IsString())
-                    {
-                        const String renamed = String(member.value.GetString(), member.value.GetStringLength()) + column.substr(path.size());
-                        value.SetString(renamed.data(), static_cast<rapidjson::SizeType>(renamed.size()), allocator);
-                    }
-                    else
-                        value.CopyFrom(member.value, allocator);
-
-                    expanded.AddMember(rapidjson::Value(column.data(), static_cast<rapidjson::SizeType>(column.size()), allocator), value, allocator);
-                    expanded_member = true;
-                }
-            }
-
-            if (!expanded_member)
-            {
-                rapidjson::Value name(member.name, allocator);
-                rapidjson::Value value(member.value, allocator);
-                expanded.AddMember(name, value, allocator);
+                rapidjson::Value value;
+                value.CopyFrom(member.value, allocator);
+                expanded.AddMember(
+                    rapidjson::Value(column.data(), static_cast<rapidjson::SizeType>(column.size()), allocator), value, allocator);
+                expanded_member = true;
             }
         }
-        operator_it->value = expanded;
+
+        if (!expanded_member)
+        {
+            rapidjson::Value name(member.name, allocator);
+            rapidjson::Value value(member.value, allocator);
+            expanded.AddMember(name, value, allocator);
+        }
     }
+    operator_it->value = expanded;
 }
 
 /// Throws if an assignment of the `ALTER TABLE ... UPDATE` that `ast` is names a column that the

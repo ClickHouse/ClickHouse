@@ -414,13 +414,23 @@ void expandMongoSubtreeAssignments(ASTPtr & ast, const std::vector<std::string> 
                     continue;
                 }
             }
-            /// The target of `$rename` is the only assignment whose value is a bare field.
+            /// The target of `$rename` is the only assignment whose value is a bare field. The
+            /// renamed field replaces the target as a whole, as `$set` of a subdocument does, so the
+            /// leaves of the target that the source does not have go back to their defaults.
             else if (const auto * source = expression->as<ASTIdentifier>())
             {
                 if (auto suffixes = leaves(source->name()); !suffixes.empty())
                 {
+                    const std::unordered_set<std::string> moved(suffixes.begin(), suffixes.end());
                     for (const auto & suffix : suffixes)
                         expanded.push_back(makeAssignment(assignment.column_name + suffix, make_intrusive<ASTIdentifier>(source->name() + suffix)));
+                    for (const auto & suffix : leaves(assignment.column_name))
+                    {
+                        if (moved.contains(suffix))
+                            continue;
+                        const auto leaf = assignment.column_name + suffix;
+                        expanded.push_back(makeAssignment(leaf, makeDefaultValue(leaf)));
+                    }
                     expanded_any = true;
                     continue;
                 }
