@@ -13,7 +13,9 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 이러한 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며 [소스 코드](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)에서 자동 생성됩니다.
 
-## use_skip_indexes {#use_skip_indexes}
+<div id="use_skip_indexes">
+  ## use_skip_indexes
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -24,7 +26,9 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 * 0 — 비활성화됨.
 * 1 — 활성화됨.
 
-## use_skip_indexes_for_disjunctions {#use_skip_indexes_for_disjunctions}
+<div id="use_skip_indexes_for_disjunctions">
+  ## use_skip_indexes_for_disjunctions
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -38,7 +42,9 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 * 0 — 비활성화됨.
 * 1 — 활성화됨.
 
-## use_skip_indexes_for_top_k {#use_skip_indexes_for_top_k}
+<div id="use_skip_indexes_for_top_k">
+  ## use_skip_indexes_for_top_k
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -53,7 +59,9 @@ TopK 필터링에 데이터 스키핑 인덱스를 사용하도록 설정합니�
 * 0 — 비활성화됩니다.
 * 1 — 활성화됩니다.
 
-## use_skip_indexes_if_final {#use_skip_indexes_if_final}
+<div id="use_skip_indexes_if_final">
+  ## use_skip_indexes_if_final
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -61,14 +69,16 @@ TopK 필터링에 데이터 스키핑 인덱스를 사용하도록 설정합니�
 
 FINAL 수정자를 사용한 쿼리를 실행할 때 스킵 인덱스를 사용할지 제어합니다.
 
-스킵 인덱스는 최신 데이터가 포함된 행(그래뉼)을 제외할 수 있으므로, FINAL 수정자를 사용하는 쿼리에서 잘못된 결과가 나올 수 있습니다. 이 설정을 활성화하면 FINAL 수정자를 사용하더라도 스킵 인덱스가 적용되어 성능이 향상될 수 있습니다. 정확한 결과는 기본적으로 활성화되어 있으며 스킵 인덱스가 반환한 범위와 겹치는 추가 파트를 스캔하는 use&#95;skip&#95;indexes&#95;if&#95;final&#95;exact&#95;mode 설정에 따라 달라집니다. 최근 UPDATE가 누락될 위험은 해당 설정이 비활성화된 경우에만 있습니다.
+스킵 인덱스는 최신 데이터가 포함된 행(그래뉼)을 제외할 수 있으므로, FINAL 수정자를 사용하는 쿼리에서 잘못된 결과가 나올 수 있습니다. 이 설정을 활성화하면 FINAL 수정자를 사용하더라도 스킵 인덱스가 적용되어 성능이 향상될 수 있지만, 최근 UPDATE가 누락될 위험이 있습니다. 이 설정은 use&#95;skip&#95;indexes&#95;if&#95;final&#95;exact&#95;mode 설정과 함께 활성화해야 합니다(기본값은 활성화임).
 
 가능한 값:
 
 * 0 — 비활성화.
 * 1 — 활성화.
 
-## use_skip_indexes_if_final_exact_mode {#use_skip_indexes_if_final_exact_mode}
+<div id="use_skip_indexes_if_final_exact_mode">
+  ## use_skip_indexes_if_final_exact_mode
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -83,11 +93,13 @@ FINAL 수정자를 사용한 쿼리를 실행할 때 스킵 인덱스를 사용�
 * 0 — 비활성화됨.
 * 1 — 활성화됨.
 
-## use_skip_indexes_on_data_read {#use_skip_indexes_on_data_read}
+<div id="use_skip_indexes_on_data_read">
+  ## use_skip_indexes_on_data_read
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "1"},{"label": "기본적으로 활성화"}]}, {"id": "row-2","items": [{"label": "25.9"},{"label": "0"},{"label": "새로운 설정"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "이제 텍스트 인덱스가 일반 제공됩니다"}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "0"},{"label": "기본적으로 활성화"}]}, {"id": "row-3","items": [{"label": "25.9"},{"label": "0"},{"label": "새로운 설정"}]}]} />
 
 데이터를 읽는 동안 데이터 스키핑 인덱스를 사용하도록 설정합니다.
 

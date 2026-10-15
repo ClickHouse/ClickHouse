@@ -156,17 +156,12 @@ public:
 
                 Int32 day_num = 0;
 
-                if (year >= Traits::MIN_YEAR && year <= Traits::MAX_YEAR && dayofyear >= 1)
+                if (year >= Traits::MIN_YEAR && year <= Traits::MAX_YEAR &&
+                    dayofyear >= 1 && dayofyear <= 365)
                 {
-                    const auto year_int = static_cast<Int16>(year);
-                    const auto days_in_year = date_lut.calc_days_in_year(year_int) + (year_int == 0 ? 1 : 0);
-
-                    if (dayofyear <= static_cast<Float32>(days_in_year))
-                    {
-                        Int32 days_since_epoch = date_lut.makeDayNum(year_int, 1, 1) + static_cast<Int32>(dayofyear) - 1;
-                        if (days_since_epoch <= max_days_since_epoch)
-                            day_num = days_since_epoch;
-                    }
+                    Int32 days_since_epoch = date_lut.makeDayNum(static_cast<Int16>(year), 1, 1) + static_cast<Int32>(dayofyear) - 1;
+                    if (days_since_epoch <= max_days_since_epoch)
+                        day_num = days_since_epoch;
                 }
 
                 result_data[i] = static_cast<Traits::ReturnDataType::FieldType>(day_num);
@@ -721,7 +716,7 @@ public:
 
             auto fraction = std::llround(decimal * fraction_pow);
 
-            result_data[i] = DecimalUtils::dateTimeFromComponents(date_time, fraction, precision);
+            result_data[i] = DecimalUtils::decimalFromComponents<DateTime64>(date_time, fraction, precision);
         }
 
         return res_column;
@@ -746,7 +741,7 @@ makeDate(year, day_of_year)
         {"year", "Year number.", {"(U)Int*", "Float*", "Decimal"}},
         {"month", "Month number (1-12).", {"(U)Int*", "Float*", "Decimal"}},
         {"day", "Day of the month (1-31).", {"(U)Int*", "Float*", "Decimal"}},
-        {"day_of_year", "Day of the year (1-365, or 366 in leap years).", {"(U)Int*", "Float*", "Decimal"}}
+        {"day_of_year", "Day of the year (1-365).", {"(U)Int*", "Float*", "Decimal"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_makeDate = {"Returns a `Date` value constructed from the provided arguments", {"Date"}};
     FunctionDocumentation::Examples examples_makeDate = {
@@ -787,7 +782,7 @@ makeDate32(year, day_of_year)
         {"year", "Year number.", {"(U)Int*", "Float*", "Decimal"}},
         {"month", "Month number (1-12).", {"(U)Int*", "Float*", "Decimal"}},
         {"day", "Day of the month (1-31).", {"(U)Int*", "Float*", "Decimal"}},
-        {"day_of_year", "Day of the year (1-365, or 366 in leap years).", {"(U)Int*", "Float*", "Decimal"}}
+        {"day_of_year", "Day of the year (1-365).", {"(U)Int*", "Float*", "Decimal"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_makeDate32 = {"Returns a `Date32` value constructed from the provided arguments", {"Date32"}};
     FunctionDocumentation::Examples examples_makeDate32 = {
@@ -899,9 +894,9 @@ YYYYMMDDToDate(YYYYMMDD)
 SELECT YYYYMMDDToDate(20230911);
         )",
         R"(
-┌─YYYYMMDDToDate(20230911)─┐
-│               2023-09-11 │
-└──────────────────────────┘
+┌─toYYYYMMDD(20230911)─┐
+│           2023-09-11 │
+└──────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_yyyymmddtodate = {23, 9};
@@ -954,12 +949,12 @@ YYYYMMDDhhmmssToDateTime(YYYYMMDDhhmmss[, timezone])
     FunctionDocumentation::ReturnedValue returned_value_yyyymmddhhmmsstodatetime = {"Returns a `DateTime` value from the provided arguments", {"DateTime"}};
     FunctionDocumentation::Examples examples_yyyymmddhhmmsstodatetime = {
         {"Example", R"(
-SELECT YYYYMMDDhhmmssToDateTime(20230911131415);
+SELECT YYYYMMDDToDateTime(20230911131415);
         )",
         R"(
-┌─YYYYMMDDhhmmssToDateTime(20230911131415)─┐
-│                      2023-09-11 13:14:15 │
-└──────────────────────────────────────────┘
+┌──────YYYYMMDDhhmmssToDateTime(20230911131415)─┐
+│                           2023-09-11 13:14:15 │
+└───────────────────────────────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_yyyymmddhhmmsstodatetime = {23, 9};
@@ -988,9 +983,9 @@ YYYYMMDDhhmmssToDateTime64(YYYYMMDDhhmmss[, precision[, timezone]])
 SELECT YYYYMMDDhhmmssToDateTime64(20230911131415, 3, 'Asia/Istanbul');
         )",
         R"(
-┌─YYYYMMDDhhmmssToDateTime64(20230911131415, 3, 'Asia/Istanbul')─┐
-│                                        2023-09-11 13:14:15.000 │
-└────────────────────────────────────────────────────────────────┘
+┌─YYYYMMDDhhmm⋯/Istanbul')─┐
+│  2023-09-11 13:14:15.000 │
+└──────────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_yyyymmddhhmmsstodatetime64 = {23, 9};

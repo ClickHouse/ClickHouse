@@ -49,7 +49,8 @@ SELECT 'apply_deleted_mask = 0 and _row_exists', count() FROM (SELECT id FROM t_
 SELECT 'apply_deleted_mask = 0 and _row_exists', arraySort(groupArray(d)) FROM (SELECT L2Distance(v, [5.0, 5.0]) AS d FROM t_05205 WHERE _row_exists ORDER BY d LIMIT 3 SETTINGS apply_deleted_mask = 0);
 -- The same with `FINAL`, where the `PREWHERE` on `_row_exists` is deferred until after the `FINAL` merge.
 SELECT 'FINAL, apply_deleted_mask = 0 and deferred PREWHERE _row_exists uses the index', count() FROM (EXPLAIN indexes = 1 SELECT id FROM t_05205 FINAL PREWHERE _row_exists ORDER BY L2Distance(v, [5.0, 5.0]) LIMIT 3 SETTINGS apply_deleted_mask = 0, apply_prewhere_after_final = 1, use_skip_indexes_on_data_read = 0) WHERE explain LIKE '% Granules: 3/300';
-SELECT 'FINAL, apply_deleted_mask = 0 and deferred PREWHERE _row_exists', count() FROM (SELECT id FROM t_05205 FINAL PREWHERE _row_exists ORDER BY L2Distance(v, [5.0, 5.0]) LIMIT 3 SETTINGS apply_deleted_mask = 0, apply_prewhere_after_final = 1);
+-- Only the plan is checked here: reading with a bare `PREWHERE _row_exists` deferred after `FINAL` fails with
+-- `THERE_IS_NO_COLUMN` in 26.8 regardless of the index, fixed on master by https://github.com/ClickHouse/ClickHouse/pull/114578.
 
 -- Deleting a whole cluster of near neighbours used to empty the result as well.
 DELETE FROM t_05205 WHERE L2Distance(v, [5.0, 5.0]) < 1.5;

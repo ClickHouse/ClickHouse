@@ -17,7 +17,9 @@ Los diccionarios son útiles para:
 
 <Image img="/images/dictionary/dictionary-use-cases.webp" size="lg" alt="Casos de uso del diccionario en ClickHouse" />
 
-## Acelerar los JOIN usando un Diccionario {#speeding-up-joins-using-a-dictionary}
+<div id="speeding-up-joins-using-a-dictionary">
+  ## Acelerar los JOIN usando un Diccionario
+</div>
 
 Los diccionarios pueden usarse para acelerar un tipo específico de `JOIN`: el [tipo `LEFT ANY`](/es/reference/statements/select/join#supported-types-of-join), en el que la clave de join debe coincidir con el atributo clave del almacenamiento clave-valor subyacente.
 
@@ -264,13 +266,11 @@ LIMIT 5
 Peak memory usage: 248.84 MiB.
 ```
 
-## Enriquecimiento durante la indexación {#index-time-enrichment}
+<div id="index-time-enrichment">
+  ## Enriquecimiento durante la indexación
+</div>
 
-En el ejemplo anterior, usamos un diccionario en tiempo de consulta para eliminar un join. Los diccionarios también se pueden usar para enriquecer filas en tiempo de inserción. Esto suele ser apropiado si el valor de enriquecimiento no cambia y existe en una fuente externa que puede usarse para poblar el diccionario. En este caso, enriquecer la fila en tiempo de inserción evita tener que consultar el diccionario en tiempo de consulta.
-
-<Note>
-  Evite las estructuras de diccionario basadas en caché para el enriquecimiento en tiempo de inserción cuando sean importantes una latencia predecible y la disponibilidad de la fuente. Cada servidor mantiene su propia caché local, que queda vacía tras un reinicio o un reemplazo, por lo que las inserciones pasan a depender de búsquedas con la caché en frío contra la fuente del diccionario. El autoescalado de ClickHouse Cloud y el reemplazo gestionado de nodos hacen más probable esta situación. Elija una estructura de diccionario que cargue el diccionario completo en cada servidor. Consulte [Diccionarios cache en rutas de ingestión](/es/concepts/features/dictionaries/best-practices#cache-dictionaries-in-ingestion-path).
-</Note>
+En el ejemplo anterior, usamos un diccionario en tiempo de consulta para eliminar un join. Los diccionarios también se pueden usar para enriquecer filas en tiempo de inserción. Esto suele ser apropiado si el valor de enriquecimiento no cambia y existe en una fuente externa que puede usarse para rellenar el diccionario. En este caso, enriquecer la fila en tiempo de inserción evita tener que consultar el diccionario en tiempo de consulta.
 
 Supongamos que la `Location` de un usuario en Stack Overflow nunca cambia (en realidad sí cambia), concretamente la columna `Location` de la tabla `users`. Supongamos que queremos hacer una consulta analítica sobre la tabla `posts` por ubicación. Esta contiene un `UserId`.
 
@@ -308,7 +308,7 @@ En el ejemplo anterior, `Location` se declara como una columna `MATERIALIZED`. E
 
 > ClickHouse también admite [columnas `DEFAULT`](/es/reference/statements/create/table#default_values) (donde el valor puede insertarse o calcularse si no se proporciona).
 
-Para poblar la tabla, podemos usar la instrucción habitual `INSERT INTO SELECT` desde S3:
+Para rellenar la tabla, podemos usar la instrucción habitual `INSERT INTO SELECT` desde S3:
 
 ```sql
 INSERT INTO posts_with_location SELECT Id, PostTypeId::UInt8, AcceptedAnswerId, CreationDate, Score, ViewCount, Body, OwnerUserId, OwnerDisplayName, LastEditorUserId, LastEditorDisplayName, LastEditDate, LastActivityDate, Title, Tags, AnswerCount, CommentCount, FavoriteCount, ContentLicense, ParentId, CommunityOwnedDate, ClosedDate FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
@@ -362,7 +362,9 @@ Para orígenes de base de datos como ClickHouse y Postgres, puede configurar una
 
 ClickHouse también admite diccionarios [jerárquicos](/es/reference/statements/create/dictionary/layouts/hierarchical), [Polygon](/es/reference/statements/create/dictionary/layouts/polygon) y de [expresión regular](/es/reference/statements/create/dictionary/layouts/regexp-tree).
 
-### Más información {#more-reading}
+<div id="more-reading">
+  ### Más información
+</div>
 
 * [Buenas prácticas para diccionarios](/es/concepts/features/dictionaries/best-practices) — elección del layout, diccionarios frente a JOINs, monitorización
 * [Uso de diccionarios para acelerar las consultas](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse)
