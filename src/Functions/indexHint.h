@@ -30,6 +30,8 @@ public:
         return std::make_shared<FunctionIndexHint>();
     }
 
+    static FunctionOverloadResolverPtr createImplied();
+
     bool isVariadic() const override
     {
         return true;

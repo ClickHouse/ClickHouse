@@ -1,10 +1,18 @@
 #include <Functions/indexHint.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <DataTypes/DataTypesNumber.h>
 
 
 namespace DB
 {
+
+FunctionOverloadResolverPtr FunctionIndexHint::createImplied()
+{
+    auto function = std::make_shared<FunctionIndexHint>();
+    function->setImplied(true);
+    return std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(function));
+}
 
 REGISTER_FUNCTION(IndexHint)
 {

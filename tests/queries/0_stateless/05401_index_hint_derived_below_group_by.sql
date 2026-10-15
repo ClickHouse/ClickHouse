@@ -4,6 +4,7 @@
 SET optimize_and_compare_chain = 1;
 SET query_plan_filter_push_down = 1;
 SET use_query_condition_cache = 0;
+SET optimize_or_like_chain = 1;
 
 DROP TABLE IF EXISTS t_chain_keys;
 CREATE TABLE t_chain_keys (a UInt32, b UInt32) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 128, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0;
@@ -24,6 +25,10 @@ SELECT count() FROM (SELECT a, max(b) AS m FROM t_chain_keys GROUP BY a HAVING a
 
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM (SELECT a, b FROM t_chain_keys ORDER BY a, b LIMIT 1 BY a, b) WHERE (b < a AND a < 10) OR a = 500) WHERE explain LIKE '%Granules: %/%';
 SELECT count() FROM (SELECT a, b FROM t_chain_keys ORDER BY a, b LIMIT 1 BY a, b) WHERE (b < a AND a < 10) OR a = 500;
+
+-- a hint the OR-LIKE chain rewrite adds does not keep the OR above the aggregation
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT a, b FROM t_chain_keys GROUP BY a, b HAVING (a < 10 AND (toString(b) LIKE '%1%' OR toString(b) LIKE '%2%' OR toString(b) LIKE '%3%' OR toString(b) LIKE '%4%')) OR a = 500) WHERE explain LIKE '%Granules: %/%';
+SELECT count() FROM (SELECT a, b FROM t_chain_keys GROUP BY a, b HAVING (a < 10 AND (toString(b) LIKE '%1%' OR toString(b) LIKE '%2%' OR toString(b) LIKE '%3%' OR toString(b) LIKE '%4%')) OR a = 500);
 
 DROP TABLE t_chain_keys;
 
