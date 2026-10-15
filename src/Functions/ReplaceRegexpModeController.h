@@ -113,14 +113,21 @@ public:
         window_start_ns = now_ns;
         state.window_ns = 0;
 
-        if (precheck_allowed && state.precheck_eligible && !state.cache.probing)
+        /// Each choice is fed only windows that ran the other choice's preferred option, so that the
+        /// options it compares differ in nothing else.
+        const bool precheck_window = precheck_allowed && state.precheck_eligible && !state.cache.probing;
+        const bool precheck_preferred = !precheck_window || state.precheck.current == state.precheck.preferred;
+        if (precheck_window)
             addWindow(state.precheck, window_ns, window.units);
 
-        const bool cache_preferred = state.cache.preferred;
-        addWindow(state.cache, window_ns, window.units);
-        /// The cost of the existence check was measured with the other cache option.
-        if (state.cache.preferred != cache_preferred)
-            state.precheck = Choice{};
+        if (precheck_preferred)
+        {
+            const bool cache_preferred = state.cache.preferred;
+            addWindow(state.cache, window_ns, window.units);
+            /// The costs of the existence check were measured with the other cache option.
+            if (state.cache.preferred != cache_preferred)
+                state.precheck = Choice{.current = state.precheck.preferred, .preferred = state.precheck.preferred};
+        }
 
         state.precheck_eligible = precheck_allowed && window.matched * 20 < window_rows_count;
     }
