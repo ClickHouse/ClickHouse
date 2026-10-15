@@ -1,0 +1,72 @@
+rows	1000
+distinct dictionary values	309
+1 needle	667	667	1
+8 needles	500	500	1
+mixed needles	533	533	1
+duplicated needle	667	667	1
+empty string needle	143	143	1
+64 needles	500	500	1
+needle absent from dictionary	0	0	1
+no needle present	0	0	1
+hasAny 1 needle	667	667	1
+hasAny 8 needles	734	734	1
+hasAny absent and present	667	667	1
+hasAny no needle present	0	0	1
+LowCardinality needle	533	533	1
+small blocks	533	533	1
+single row blocks	734	734	1
+empty needle hasAll	1000	1000	1
+empty needle hasAny	0	0	1
+65 needles	500	500	1
+non constant needle	533	533	1
+constant haystack	500	500
+hasSubstr	533	533	1
+all arguments constant	1	0	0	UInt8
+declared type	UInt8	UInt8	UInt8
+nullable dictionary hasAll	18	18	1
+nullable dictionary hasAny	30	30	1
+null needle	30	30	1
+nullable declared type	UInt8	UInt8	UInt8
+nested array	10	10	1
+variant array argument	8	Variant(Array(String))	Nullable(UInt8)
+FixedString matching needle	40	40	1
+FixedString hasAny	60	60	1
+FixedString hasSubstr	40	40	1
+FixedString String needle	40	40	1
+FixedString NUL tail needle	0	0	1
+UInt16 matching needle	22	22	1
+UInt16 hasAny	33	33	1
+UInt16 hasSubstr	22	22	1
+UInt16 widening needle	22	22	1
+UInt16 out of range needle	22	22	1
+Int64 matching needle	22	22	1
+Int64 hasAny	33	33	1
+Int64 hasSubstr	22	22	1
+Date matching needle	27	27	1
+Date hasAny	40	40	1
+Date hasSubstr	27	27	1
+Date DateTime needle	27	27	1
+Date DateTime needle with time	0	0	1
+UUID matching needle	27	27	1
+UUID hasAny	40	40	1
+UUID hasSubstr	27	27	1
+IPv4 matching needle	27	27	1
+IPv4 hasAny	40	40	1
+IPv4 hasSubstr	27	27	1
+Float64 nan hasAll	0	0	1
+Float64 nan hasAny	0	0	1
+Float64 nan and value hasAll	0	0	1
+Float64 nan hasSubstr	0	0	1
+Float64 zero hasAll	27	27	1
+Float64 inf hasAny	20	20	1
+Float64 value hasAll	27	27	1
+Float64 has nan reference	30	0
+small dictionary	10	10	1
+small dictionary hasAny	15	15	1
+bloom_filter hasAll	17	17	17
+bloom_filter hasAny	51	51	51
+bloom_filter absent needle	0	0
+text index hasAll	17	17
+bloom_filter FixedString needle	34	34	34
+bloom_filter String needle	34	34	34
+bloom_filter NUL tail needle	0	0	0
