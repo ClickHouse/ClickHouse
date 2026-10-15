@@ -47,25 +47,30 @@ struct AccumulateResultType<wide::integer<256, unsigned>>
 };
 #endif
 
-/// Uses addOverflow method (if available) to avoid UB for sumWithOverflow()
+/// Adds with wrap-around, to avoid UB for sumWithOverflow().
 ///
 /// Since NO_SANITIZE_UNDEFINED works only for the function itself, without
-/// callers, and in case of non-POD type (i.e. Decimal) you have overwritten
-/// operator+=(), which will have UB.
+/// callers, a Decimal is added via its native value here, rather than with its
+/// operator+=(), which would have UB, or with the out-of-line addOverflow(),
+/// which costs a call per row in the per-row paths (GROUP BY, window functions).
 template <typename T>
 struct AggregateFunctionSumAddOverflowImpl
 {
     static void NO_SANITIZE_UNDEFINED ALWAYS_INLINE add(T & lhs, const T & rhs)
     {
-        lhs += rhs;
+        /// `wide::integer` adds in a loop with carries; `unsigned __int128` compiles to `add` and `adc`.
+        if constexpr (std::is_same_v<T, Int128> || std::is_same_v<T, UInt128>)
+            lhs = __builtin_bit_cast(T, __builtin_bit_cast(unsigned __int128, lhs) + __builtin_bit_cast(unsigned __int128, rhs));
+        else
+            lhs += rhs;
     }
 };
 template <typename DecimalNativeType>
 struct AggregateFunctionSumAddOverflowImpl<Decimal<DecimalNativeType>>
 {
-    static void NO_SANITIZE_UNDEFINED ALWAYS_INLINE add(Decimal<DecimalNativeType> & lhs, const Decimal<DecimalNativeType> & rhs)
+    static void ALWAYS_INLINE add(Decimal<DecimalNativeType> & lhs, const Decimal<DecimalNativeType> & rhs)
     {
-        lhs.addOverflow(rhs);
+        AggregateFunctionSumAddOverflowImpl<DecimalNativeType>::add(lhs.value, rhs.value);
     }
 };
 
