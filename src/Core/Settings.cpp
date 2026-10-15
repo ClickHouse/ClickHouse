@@ -10544,7 +10544,7 @@ Enables the `SZ3` compression codec.
     DECLARE(Bool, enable_wallaby_codec, false, R"(
 Allows using the experimental `Wallaby` compression codec.
 )", EXPERIMENTAL, \
-        {"26.10", false, false, "New setting to enable the experimental `Wallaby` compression codec individually, without the `allow_experimental_codecs`."}) \
+        {"26.11", false, false, "New setting to enable the experimental `Wallaby` compression codec individually, without the `allow_experimental_codecs`."}) \
     DECLARE(Bool, enable_zxc_codec, false, R"(
 Enables the `ZXC` compression codec.
 )", EXPERIMENTAL, \
