@@ -8983,6 +8983,23 @@ std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsSta
     if (statuses.empty())
         return statuses;
 
+    /// A rebuilt queue (`clear` on reconnect) drops mutations without `dropMutationInitialBytes`.
+    /// Forget cached ids older than the newest listed one that this snapshot no longer lists.
+    {
+        std::unordered_set<String> listed_ids;
+        String newest_listed_id;
+        for (const auto & status : statuses)
+        {
+            listed_ids.insert(status.id);
+            newest_listed_id = std::max(newest_listed_id, status.id);
+        }
+        std::lock_guard initial_bytes_lock(mutation_initial_bytes_mutex);
+        std::erase_if(mutation_initial_bytes, [&](const auto & cached)
+        {
+            return cached.first < newest_listed_id && !listed_ids.contains(cached.first);
+        });
+    }
+
     /// Byte-weighted progress is resolved here, outside of the queue's state lock: part
     /// sizes need the parts set, and parts locks must not be taken under the queue mutex.
     std::unordered_map<String, UInt64> part_bytes_on_disk;

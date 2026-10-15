@@ -1266,6 +1266,12 @@ StorageMergeTree::PreparedMutationEntry StorageMergeTree::prepareMutationEntry(
         throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after mutation commit");
     });
 
+    /// Snapshot the byte weight of the parts this mutation will have to rewrite; the finished
+    /// portion keeps this weight in `progress`, whatever size the rewrite leaves behind.
+    for (const auto & part : getDataPartsVectorForInternalUsage())
+        if (getPartMutationScope(*part, version, entry.tid) == PartMutationScope::Inside)
+            entry.initial_bytes_to_do.account(part->info, part->getBytesOnDisk());
+
     String mutation_id = entry.file_name;
     if (txn)
         txn->addMutation(shared_from_this(), mutation_id);
@@ -1298,11 +1304,6 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, Context
     /// mutex across the file I/O would block merge selection for its full duration.
     auto prepared = prepareMutationEntry(commands, query_context);
     Int64 version = prepared.version;
-    /// Snapshot the byte weight of the parts this mutation will have to rewrite; the finished
-    /// portion keeps this weight in `progress`, whatever size the rewrite leaves behind.
-    for (const auto & part : getDataPartsVectorForInternalUsage())
-        if (getPartMutationScope(*part, version, prepared.entry.tid) == PartMutationScope::Inside)
-            prepared.entry.initial_bytes_to_do.account(part->info, part->getBytesOnDisk());
 
     String mutation_id = prepared.mutation_id;
     FailPointInjection::pauseFailPoint(FailPoints::mt_pause_before_register_mutation);
@@ -1334,7 +1335,9 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, Context
             chassert(it != current_mutations_by_version.end());
             if (it != current_mutations_by_version.end())
             {
-                decrementMutationsCounters(mutation_counters, *it->second.commands);
+                /// `markFinishedMutations` above may have counted it done already.
+                if (!it->second.is_done)
+                    decrementMutationsCounters(mutation_counters, *it->second.commands);
                 rolled_back_entry.emplace(std::move(it->second));
                 current_mutations_by_version.erase(it);
             }
@@ -1386,6 +1389,9 @@ void StorageMergeTree::updateMutationEntriesErrors(FutureMergedMutatedPartPtr re
             }
             else
             {
+                /// Selection skips a mutation whose snapshot does not see the part, so the failure is not its own.
+                if (getPartMutationScope(*failed_part, static_cast<Int64>(it->first), entry.tid) == PartMutationScope::Outside)
+                    continue;
                 entry.latest_failed_part = failed_part->name;
                 entry.latest_failed_part_info = failed_part->info;
                 entry.latest_fail_time = time(nullptr);
@@ -3287,9 +3293,9 @@ size_t StorageMergeTree::markFinishedMutations(UInt64 first_just_completed_versi
         if (!entry.finish_time && mutation_version >= first_just_completed_version)
             entry.finish_time = now;
 
-        /// Same committedness check as `clearOldMutations`: a rolled-back transaction removes its
-        /// entry through `killMutation`, so an entry without a CSN belongs to a still-open one.
-        if (!entry.tid.isNonTransactional() && !entry.csn && !TransactionManager::getCSN(entry.tid))
+        /// A committed transaction writes the entry's CSN only after the commit, in `afterCommit`,
+        /// which fails if the entry is gone; keep it until that local CSN is there.
+        if (!entry.tid.isNonTransactional() && !entry.csn)
             erasable_prefix = false;
         if (erasable_prefix)
             ++done_count;
@@ -3322,8 +3328,8 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
         for (size_t i = 0; i < to_delete_count; ++i)
         {
             const auto & tid = it->second.tid;
-            /// Same committedness rule as markFinishedMutations: the log may have already dropped a committed TID.
-            if (!tid.isNonTransactional() && !it->second.csn && !TransactionManager::getCSN(tid))
+            /// Same rule as markFinishedMutations: only an entry with its local CSN can be removed.
+            if (!tid.isNonTransactional() && !it->second.csn)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot remove mutation {}, because transaction {} is not committed. It's a bug",
                                 it->first, tid);
 
