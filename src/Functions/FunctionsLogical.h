@@ -201,9 +201,10 @@ public:
         settings.arguments_with_disabled_lazy_execution.insert(0);
         settings.enable_lazy_execution_for_common_descendants_of_arguments = true;
         settings.force_enable_lazy_execution = false;
+        settings.arguments_are_commutative = true;
         return name == NameAnd::name || name == NameOr::name;
     }
-    ColumnPtr executeShortCircuit(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const;
+    ColumnPtr executeShortCircuit(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, bool eager_arguments_reordered) const;
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     bool isNameInsensitive() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
