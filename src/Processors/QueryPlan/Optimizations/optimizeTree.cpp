@@ -735,6 +735,10 @@ void optimizeTreeSecondPass(
             /// The sub-plan becomes part of the current plan, so it must follow the current plan's
             /// distributed-plan decision, which the read context (copied before that decision) does not carry.
             sub_settings.make_distributed_plan = optimization_settings.make_distributed_plan;
+            /// These come from the EXPLAIN query, not from the settings, so the read context does not carry them.
+            sub_settings.keep_logical_steps = optimization_settings.keep_logical_steps;
+            sub_settings.is_explain = optimization_settings.is_explain;
+            sub_settings.max_step_description_length = optimization_settings.max_step_description_length;
             auto sub_plan = read_from_time_series->extractQueryPlan();
             sub_plan->optimize(sub_settings);
 

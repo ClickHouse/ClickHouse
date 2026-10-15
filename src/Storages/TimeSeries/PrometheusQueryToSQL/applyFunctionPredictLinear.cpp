@@ -11,6 +11,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fixedAtModifier.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/getRangeVectorGroupKey.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/getToGridAggregateFunctionArguments.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
@@ -232,7 +233,10 @@ SQLQueryPiece applyFunctionPredictLinear(
     }
     else
     {
-        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+        auto group_key = getRangeVectorGroupKey(range_argument, context);
+        builder.select_list.push_back(std::move(group_key.group_expression));
+        builder.select_list.back()->setAlias(ColumnNames::Group);
+        builder.group_by.push_back(std::move(group_key.group_by_key));
     }
 
     ASTPtr regression = addParametersToAggregateFunction(
@@ -264,9 +268,6 @@ SQLQueryPiece applyFunctionPredictLinear(
 
     builder.select_list.push_back(std::move(aggregate_values));
     builder.select_list.back()->setAlias(ColumnNames::Values);
-
-    if (!from_scalar)
-        builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
 
     if (range_argument.select_query)
     {

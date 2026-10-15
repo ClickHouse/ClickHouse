@@ -9,6 +9,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/NodeEvaluationRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/getRangeVectorGroupKey.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/getToGridAggregateFunctionArguments.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fixedAtModifier.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
@@ -280,7 +281,10 @@ SQLQueryPiece applyFunctionOverRange(
     }
     else
     {
-        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+        auto group_key = getRangeVectorGroupKey(argument, context);
+        builder.select_list.push_back(std::move(group_key.group_expression));
+        builder.select_list.back()->setAlias(ColumnNames::Group);
+        builder.group_by.push_back(std::move(group_key.group_by_key));
     }
 
     /// <aggregate_function>(<timestamps>, <values>) AS values
@@ -305,9 +309,6 @@ SQLQueryPiece applyFunctionOverRange(
 
     builder.select_list.push_back(std::move(aggregate_values));
     builder.select_list.back()->setAlias(ColumnNames::Values);
-
-    if (!from_scalar)
-        builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
 
     if (argument.select_query)
     {

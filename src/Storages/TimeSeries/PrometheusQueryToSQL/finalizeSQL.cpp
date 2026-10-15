@@ -10,6 +10,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/checkSharedSubqueriesAreMaterialized.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/getRangeVectorGroupKey.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/transformGroupASTForAggregationOperator.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
@@ -422,14 +423,15 @@ namespace
 
             case StoreMethod::RAW_DATA:
             {
-                /// SELECT timeSeriesGroupToTags(group) AS tags,
+                /// SELECT timeSeriesGroupToTags(timeSeriesIdToGroup(id)) AS tags,
                 ///        CAST(timeSeriesGroupArray(timestamp, value), 'Array(Tuple(result_timestamp_type, Float64))') AS samples
                 /// FROM <raw_data>
-                /// GROUP BY group
+                /// GROUP BY id
                 /// HAVING notEmpty(samples)
 
-                /// timeSeriesGroupToTags(group) AS tags
-                tags = makeASTFunction("timeSeriesGroupToTags", make_intrusive<ASTIdentifier>(ColumnNames::Group));
+                /// timeSeriesGroupToTags(timeSeriesIdToGroup(id)) AS tags
+                auto group_key = getRangeVectorGroupKey(result, context);
+                tags = makeASTFunction("timeSeriesGroupToTags", std::move(group_key.group_expression));
                 tags->setAlias(ColumnNames::Tags);
 
                 /// CAST(timeSeriesGroupArray(timestamp, value), 'Array(Tuple(result_timestamp_type, Float64))') AS samples
@@ -441,7 +443,7 @@ namespace
                     make_intrusive<ASTLiteral>(fmt::format("Array(Tuple({}, Float64))", context.result_timestamp_type->getName())));
                 time_series->setAlias(samples_outer_column_name);
 
-                group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+                group_by.push_back(std::move(group_key.group_by_key));
                 having = makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(samples_outer_column_name));
 
                 break;
