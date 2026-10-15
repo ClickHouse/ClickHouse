@@ -59,11 +59,11 @@ constexpr size_t adaptive_drain_range_prefetch_bytes = 4096;
 /// cache through the drain, and a prefetch of a cache-resident slot is pure overhead.
 constexpr size_t adaptive_drain_prefetch_min_table_bytes = 512 << 10;
 /// A producer over the external-aggregation threshold writes its staged records to disk only once they take this much
-/// memory, and its frozen table only once the table's states grew by this much since its freeze (see
-/// `Aggregator::adaptiveFrozenTableWorthSpilling`). A smaller threshold lowers the floor to half of the threshold split
-/// among the threads. A write of staged records takes a block and a lock per partition, and a written table learns its
-/// keys again and freezes anew, so a producer that just wrote must not write a trickle of new bytes on every block
-/// that follows.
+/// memory, its learning table only once the table holds this much, and its frozen table only once the table's states
+/// grew by this much since its freeze (see `Aggregator::adaptiveTableWorthSpilling`). A smaller threshold lowers the
+/// floor to half of the threshold split among the threads. A write of staged records takes a block and a lock per
+/// partition, and a written table learns its keys again from empty, so a producer that just wrote must not write a
+/// trickle of new bytes on every block that follows.
 constexpr size_t adaptive_spill_min_bytes = 16 << 20;
 /// The spill streams of a session, one per partition, are open together, and each holds about three buffers of the
 /// streams' buffer size: the compression input, the compressed block and the file's write buffer. Their buffer size

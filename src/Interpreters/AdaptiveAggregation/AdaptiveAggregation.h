@@ -27,8 +27,9 @@ namespace DB
 /// freeze the table by its memory where its key count never would. Each table freezes on its own
 /// bounds alone: a bound on the memory of the whole aggregation would let the growth of some tables
 /// freeze the others. A table that reaches no bound is small and keeps learning, like a small
-/// baseline table; a frozen one whose states keep growing is written to disk over the
-/// external-aggregation threshold and learns again from empty.
+/// baseline table. Over the external-aggregation threshold a learning table that holds enough
+/// memory, or a frozen one whose states keep growing, is written to disk, and its thread learns its
+/// keys again from empty.
 ///
 /// One guard hands the work back to the baseline path when freezing cannot pay: when a thread's
 /// staged stream proves to repeat the same keys over and over, the thread thaws its table. A key's

@@ -2372,9 +2372,9 @@ bool Aggregator::executeOnBlock(Columns columns,
     /// The staged records of an adaptive producer are not part of this table: the table's tracker measures what
     /// writing the table releases, so the staging runs under the aggregator's tracker instead. A thread reports its
     /// allocations to its tracker in batches, and the switch holds the unreported ones back until the scope ends. A
-    /// scope in which the table may freeze reports them to the table's tracker first: the freeze bound reads the
-    /// table's tracked memory, and the freeze takes it as the base of its growth (see `adaptiveFreezeBoundReached` and
-    /// `adaptiveFrozenTableWorthSpilling`).
+    /// scope in which the table may freeze reports them to the table's tracker first: the freeze bound and the write of
+    /// a learning table read the table's tracked memory, and the freeze takes it as the base of its growth (see
+    /// `adaptiveFreezeBoundReached` and `adaptiveTableWorthSpilling`).
     const auto aggregator_scope = [&](std::optional<MemoryTrackerSwitcher> & scope, bool table_may_freeze)
     {
         if (aggregator_tracker)
@@ -2532,6 +2532,8 @@ bool Aggregator::executeOnBlock(Columns columns,
 
     size_t result_size = result.sizeWithoutOverflowRow();
     Int64 current_memory_usage = getCurrentQueryMemoryUsage();
+    const bool over_external_threshold = params.max_bytes_before_external_group_by
+        && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by);
 
     /// An adaptive producer advances its phase in place of the conversion below, until it is on the baseline path. Like
     /// the baseline, it checks the limits after the transition and before its table goes to disk.
@@ -2540,7 +2542,7 @@ bool Aggregator::executeOnBlock(Columns columns,
     {
         std::optional<MemoryTrackerSwitcher> scope;
         aggregator_scope(scope, /*table_may_freeze=*/adaptive->isLearning());
-        stays_adaptive = advanceAdaptiveProducer(result, *adaptive, row_end - row_begin, current_memory_usage);
+        stays_adaptive = advanceAdaptiveProducer(result, *adaptive, row_end - row_begin, over_external_threshold);
     }
     if (stays_adaptive)
     {
@@ -2549,12 +2551,10 @@ bool Aggregator::executeOnBlock(Columns columns,
             return false;
 
         /// Unlike the baseline's table below, the table does not convert to two-level: a learning table stays within
-        /// its freeze bounds, and the merge converts the tables of an aggregation in which a producer froze. A frozen
-        /// table is written to disk over the external-aggregation threshold when its states grow, and its producer
-        /// learns again.
-        if (adaptive->isFrozen() && params.max_bytes_before_external_group_by
-            && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by)
-            && adaptiveFrozenTableWorthSpilling(result, *adaptive))
+        /// its freeze bounds, and the merge converts the tables of an aggregation in which a producer froze. Over the
+        /// external-aggregation threshold the table is written to disk once the write frees enough memory, whether it
+        /// is learning or frozen, and its producer learns again.
+        if (over_external_threshold && adaptiveTableWorthSpilling(result, *adaptive))
             spillAdaptiveTable(result, *adaptive, current_memory_usage + params.min_free_disk_space);
         return true;
     }
@@ -2583,9 +2583,8 @@ bool Aggregator::executeOnBlock(Columns columns,
       * or re-seeds the kept keys into the emptied table (after it); see
       * `spillAllowedUnderKeptKeysCutoff` and `reseedKeptKeysAfterSpill`.
       */
-    if (params.max_bytes_before_external_group_by
+    if (over_external_threshold
         && result.isTwoLevel()
-        && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by)
         && worth_convert_to_two_level
         && spillAllowedUnderKeptKeysCutoff(no_more_keys, result))
     {

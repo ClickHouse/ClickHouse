@@ -881,11 +881,12 @@ private:
         bool all_keys_are_const) const;
 
     /// Advances an adaptive producer's phase between blocks, in place of the baseline's conversion: writes its staged
-    /// records to disk over the external-aggregation threshold, thaws a frozen table whose staged stream repeats, and
-    /// freezes a learning table at its bounds. A learning table counts the block's `rows` toward the end of its slicing
-    /// (see `adaptiveLearningSlices`). Returns false once the producer is on the baseline path, whose checks then apply.
+    /// records to disk when the query is `over_external_threshold`, thaws a frozen table whose staged stream repeats,
+    /// and freezes a learning table at its bounds. A learning table counts the block's `rows` toward the end of its
+    /// slicing (see `adaptiveLearningSlices`). Returns false once the producer is on the baseline path, whose checks
+    /// then apply.
     bool advanceAdaptiveProducer(
-        AggregatedDataVariants & result, AdaptiveAggregationProducer & adaptive, size_t rows, Int64 current_memory_usage) const;
+        AggregatedDataVariants & result, AdaptiveAggregationProducer & adaptive, size_t rows, bool over_external_threshold) const;
 
     /// Whether a learning table reached a bound of the freeze: its key count or its own tracked memory, so the caller
     /// reports the thread's unreported allocations to the table's tracker first (see `executeOnBlock`).
@@ -898,16 +899,17 @@ private:
     /// Whether a producer over the external-aggregation threshold holds enough staged records to write them to disk.
     bool adaptiveStagingWorthSpilling(const AdaptiveAggregationProducer & adaptive) const;
 
-    /// Whether writing a frozen table to disk over the external-aggregation threshold frees enough memory: its states
-    /// grew past the floor of `adaptive_spill_min_bytes` since the freeze, in its tracked memory or in its arenas.
-    bool adaptiveFrozenTableWorthSpilling(
-        const AggregatedDataVariants & result, const AdaptiveAggregationProducer & adaptive) const;
+    /// Whether writing a learning or frozen table to disk over the external-aggregation threshold frees enough memory:
+    /// a learning table holds the floor of `adaptive_spill_min_bytes` in its tracked memory, a frozen one's states grew
+    /// past the floor since the freeze, in its tracked memory or in its arenas. For a learning table the caller reports
+    /// the thread's unreported allocations to the table's tracker first (see `executeOnBlock`).
+    bool adaptiveTableWorthSpilling(const AggregatedDataVariants & result, const AdaptiveAggregationProducer & adaptive) const;
 
     /// The freeze transition: creates the producer's partitions and count bins at its first freeze, flips its phase,
     /// and records the event. Owned here so the mid-block crossing and the between-blocks check perform the identical
     /// transition. The frozen phase takes the table's arena bytes and tracked memory as the bases of its spill guard
-    /// (see `adaptiveFrozenTableWorthSpilling`), so the caller reports the thread's unreported allocations to the
-    /// table's tracker first (see `executeOnBlock`).
+    /// (see `adaptiveTableWorthSpilling`), so the caller reports the thread's unreported allocations to the table's
+    /// tracker first (see `executeOnBlock`).
     void freezeAdaptive(AggregatedDataVariants & result, AdaptiveAggregationProducer & adaptive) const;
 
     /// The thaw transition: the producer returns to the baseline path for good, keeping the records it staged.
@@ -1129,9 +1131,9 @@ private:
     void spillAdaptivePartitions(AdaptiveAggregationProducer & adaptive) const;
 
     /// Writes the producer's learning or frozen table to disk as a part of the ordinary external aggregation, then lets
-    /// the producer learn its keys again in an empty single-level table. Called for a frozen table over the
-    /// external-aggregation threshold when the write frees enough memory (see `adaptiveFrozenTableWorthSpilling`), and
-    /// on request of the memory scheduler (see `spillAdaptiveProducer`).
+    /// the producer learn its keys again in an empty single-level table. Called for a table over the
+    /// external-aggregation threshold when the write frees enough memory (see `adaptiveTableWorthSpilling`), and on
+    /// request of the memory scheduler (see `spillAdaptiveProducer`).
     void spillAdaptiveTable(AggregatedDataVariants & result, AdaptiveAggregationProducer & adaptive, size_t max_temp_file_size) const;
 
     void executeAggregateInstructions(

@@ -172,14 +172,8 @@ AdaptiveAggregationSessionPtr Aggregator::createAdaptiveSession(size_t producers
 }
 
 bool Aggregator::advanceAdaptiveProducer(
-    AggregatedDataVariants & result,
-    AdaptiveAggregationProducer & adaptive,
-    size_t rows,
-    Int64 current_memory_usage) const
+    AggregatedDataVariants & result, AdaptiveAggregationProducer & adaptive, size_t rows, bool over_external_threshold) const
 {
-    const bool over_external_threshold = params.max_bytes_before_external_group_by
-        && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by);
-
     /// Over the external-aggregation threshold a producer writes its staged records to disk, whatever its phase: one
     /// back on the baseline path keeps the records it staged while frozen, which flushing its own table cannot free.
     if (over_external_threshold && adaptiveStagingWorthSpilling(adaptive))
@@ -232,9 +226,16 @@ bool Aggregator::adaptiveStagingWorthSpilling(const AdaptiveAggregationProducer 
     return adaptive.partitions && adaptive.partitions->allocatedChunkBytes() >= adaptiveSpillMinBytes(params);
 }
 
-bool Aggregator::adaptiveFrozenTableWorthSpilling(
+bool Aggregator::adaptiveTableWorthSpilling(
     const AggregatedDataVariants & result, const AdaptiveAggregationProducer & adaptive) const
 {
+    const size_t min_bytes = adaptiveSpillMinBytes(params);
+
+    /// A learning table is written once its tracked memory reaches the floor, so a table that was just written and
+    /// learns its keys again from empty is not written on every block while the query stays over the threshold.
+    if (adaptive.isLearning())
+        return result.memoryUsage() >= min_bytes && result.hasData();
+
     /// A frozen table admits no new keys, so it grows only through states that keep growing after the freeze. A table
     /// that did not grow is never written: it would learn its keys again up to the same bounds, so the write frees
     /// nothing. The growth must pass the floor, so a table that was just written, learned its keys again and froze
@@ -243,12 +244,11 @@ bool Aggregator::adaptiveFrozenTableWorthSpilling(
     /// take whole chunks of doubling size, so a table that froze just after taking a large chunk fills it without
     /// growing its tracked memory: the bytes that the states took in the arenas count as growth as well.
     const auto & frozen = std::get<AdaptiveAggregationProducer::FrozenState>(adaptive.phase);
-    const size_t min_growth = adaptiveSpillMinBytes(params);
     const size_t used_arena_bytes = result.usedArenaBytes();
     /// Nothing frees what the arenas held at the freeze: the frozen kernel builds its lookup keys in a scratch arena.
     chassert(used_arena_bytes >= frozen.used_arena_bytes_at_freeze);
-    return result.memoryUsage() > frozen.memory_usage_at_freeze + min_growth
-        || used_arena_bytes - frozen.used_arena_bytes_at_freeze > min_growth;
+    return result.memoryUsage() > frozen.memory_usage_at_freeze + min_bytes
+        || used_arena_bytes - frozen.used_arena_bytes_at_freeze > min_bytes;
 }
 
 void Aggregator::freezeAdaptive(AggregatedDataVariants & result, AdaptiveAggregationProducer & adaptive) const
