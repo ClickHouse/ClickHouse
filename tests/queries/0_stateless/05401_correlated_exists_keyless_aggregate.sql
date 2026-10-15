@@ -54,34 +54,83 @@ SELECT o.number, EXISTS (
     SETTINGS empty_result_for_aggregation_by_empty_set = 1)
 FROM numbers(2) AS o ORDER BY o.number;
 
+SELECT '-- a HAVING that rejects a group without rows keeps the plan without restored groups';
+SELECT o.number, EXISTS (SELECT 1 FROM numbers(2) AS i WHERE i.number = o.number AND i.number = 1 HAVING count() > 0)
+FROM numbers(2) AS o ORDER BY o.number;
+SELECT count() > 0 FROM (
+    EXPLAIN PLAN actions = 1 SELECT o.number, EXISTS (SELECT 1 FROM numbers(2) AS i WHERE i.number = o.number AND i.number = 1 HAVING count() > 0)
+    FROM numbers(2) AS o)
+WHERE explain ILIKE '%correlated_aggregate_input_marker%';
+SELECT count() > 0 FROM (
+    EXPLAIN PLAN actions = 1 SELECT o.number, EXISTS (SELECT 1 FROM numbers(2) AS i WHERE i.number = o.number AND i.number = 1 HAVING count() = 0)
+    FROM numbers(2) AS o)
+WHERE explain ILIKE '%correlated_aggregate_input_marker%';
+SELECT o.number, EXISTS (SELECT 1 FROM numbers(2) AS i WHERE i.number = o.number AND i.number = 1 HAVING count() > 0 AND max(i.number) >= 0)
+FROM numbers(2) AS o ORDER BY o.number;
+SELECT count() > 0 FROM (
+    EXPLAIN PLAN actions = 1 SELECT o.number, EXISTS (SELECT 1 FROM numbers(2) AS i WHERE i.number = o.number AND i.number = 1 HAVING count() > 0 AND max(i.number) >= 0)
+    FROM numbers(2) AS o)
+WHERE explain ILIKE '%correlated_aggregate_input_marker%';
+SELECT o.number, l.c
+FROM numbers(2) AS o
+LEFT JOIN LATERAL (SELECT count() AS c FROM numbers(2) AS i WHERE i.number = o.number AND i.number = 1 HAVING c > 0) AS l ON true
+ORDER BY o.number
+SETTINGS allow_experimental_lateral_join = 1, join_use_nulls = 0;
+SELECT count() > 0 FROM (
+    EXPLAIN PLAN actions = 1 SELECT o.number, l.c
+    FROM numbers(2) AS o
+    LEFT JOIN LATERAL (SELECT count() AS c FROM numbers(2) AS i WHERE i.number = o.number AND i.number = 1 HAVING c > 0) AS l ON true
+    SETTINGS allow_experimental_lateral_join = 1, join_use_nulls = 0)
+WHERE explain ILIKE '%correlated_aggregate_input_marker%';
+
+SELECT '-- a HAVING that cannot be decided at planning restores the groups';
+SELECT o.number, EXISTS (SELECT 1 FROM numbers(2) AS i WHERE i.number = o.number AND i.number = 1 HAVING isNaN(avg(i.number)))
+FROM numbers(2) AS o ORDER BY o.number;
+SELECT o.number, EXISTS (SELECT 1 FROM numbers(2) AS i WHERE i.number = o.number AND i.number = 1 HAVING finalizeAggregation(countState()) = 0)
+FROM numbers(2) AS o ORDER BY o.number;
+SELECT o.number, EXISTS (SELECT 1 FROM numbers(2) AS i WHERE i.number = o.number AND i.number = 1 HAVING count() > rand() % 1)
+FROM numbers(2) AS o ORDER BY o.number;
+SELECT count() > 0 FROM (
+    EXPLAIN PLAN actions = 1 SELECT o.number, EXISTS (SELECT 1 FROM numbers(2) AS i WHERE i.number = o.number AND i.number = 1 HAVING count() > rand() % 1)
+    FROM numbers(2) AS o)
+WHERE explain ILIKE '%correlated_aggregate_input_marker%';
+SELECT o.number, EXISTS (
+    SELECT * FROM (SELECT count() AS c FROM numbers(2) AS i WHERE i.number = o.number AND i.number = 1) WHERE c > o.t)
+FROM (SELECT number, toInt64(number) - 1 AS t FROM numbers(2)) AS o ORDER BY o.number;
+
 SELECT '-- layouts of the decorrelated plan';
 SELECT
     o.number,
     EXISTS (SELECT count() FROM numbers(2) AS i WHERE i.number = o.number AND i.number IN (SELECT 1)),
-    EXISTS (SELECT count() AS c FROM numbers(3) AS i WHERE i.number > o.number HAVING c = 0)
+    EXISTS (SELECT count() AS c FROM numbers(3) AS i WHERE i.number > o.number HAVING c = 0),
+    EXISTS (SELECT count() FROM numbers(3) AS i WHERE i.number > o.number HAVING count() > 0)
 FROM numbers(3) AS o ORDER BY o.number;
 SELECT
     o.number,
     EXISTS (SELECT count() FROM numbers(2) AS i WHERE i.number = o.number AND i.number IN (SELECT 1)),
-    EXISTS (SELECT count() AS c FROM numbers(3) AS i WHERE i.number > o.number HAVING c = 0)
+    EXISTS (SELECT count() AS c FROM numbers(3) AS i WHERE i.number > o.number HAVING c = 0),
+    EXISTS (SELECT count() FROM numbers(3) AS i WHERE i.number > o.number HAVING count() > 0)
 FROM numbers(3) AS o ORDER BY o.number
 SETTINGS correlated_subqueries_default_join_kind = 'left';
 SELECT
     o.number,
     EXISTS (SELECT count() FROM numbers(2) AS i WHERE i.number = o.number AND i.number IN (SELECT 1)),
-    EXISTS (SELECT count() AS c FROM numbers(3) AS i WHERE i.number > o.number HAVING c = 0)
+    EXISTS (SELECT count() AS c FROM numbers(3) AS i WHERE i.number > o.number HAVING c = 0),
+    EXISTS (SELECT count() FROM numbers(3) AS i WHERE i.number > o.number HAVING count() > 0)
 FROM numbers(3) AS o ORDER BY o.number
 SETTINGS correlated_subqueries_use_in_memory_buffer = 0;
 SELECT
     o.number,
     EXISTS (SELECT count() FROM numbers(2) AS i WHERE i.number = o.number AND i.number IN (SELECT 1)),
-    EXISTS (SELECT count() AS c FROM numbers(3) AS i WHERE i.number > o.number HAVING c = 0)
+    EXISTS (SELECT count() AS c FROM numbers(3) AS i WHERE i.number > o.number HAVING c = 0),
+    EXISTS (SELECT count() FROM numbers(3) AS i WHERE i.number > o.number HAVING count() > 0)
 FROM numbers(3) AS o ORDER BY o.number
 SETTINGS correlated_subqueries_substitute_equivalent_expressions = 0;
 SELECT
     o.number,
     EXISTS (SELECT count() FROM numbers(2) AS i WHERE i.number = o.number AND i.number IN (SELECT 1)),
-    EXISTS (SELECT count() AS c FROM numbers(3) AS i WHERE i.number > o.number HAVING c = 0)
+    EXISTS (SELECT count() AS c FROM numbers(3) AS i WHERE i.number > o.number HAVING c = 0),
+    EXISTS (SELECT count() FROM numbers(3) AS i WHERE i.number > o.number HAVING count() > 0)
 FROM numbers(3) AS o ORDER BY o.number
 SETTINGS correlated_subqueries_default_join_kind = 'left', correlated_subqueries_substitute_equivalent_expressions = 0;
 
@@ -90,6 +139,13 @@ SELECT o.number, EXISTS (SELECT count() FROM numbers(3) AS i WHERE i.number = o.
 FROM numbers(3) AS o ORDER BY o.number
 SETTINGS max_rows_to_group_by = 1, group_by_overflow_mode = 'throw';
 SELECT o.number, EXISTS (SELECT count() FROM numbers(3) AS i WHERE i.number = o.number AND i.number IN (SELECT 1) HAVING count() > 0)
+FROM numbers(3) AS o ORDER BY o.number
+SETTINGS max_rows_to_group_by = 1, group_by_overflow_mode = 'any';
+
+SELECT o.number, EXISTS (SELECT count() FROM numbers(3) AS i WHERE i.number = o.number AND i.number IN (SELECT 1))
+FROM numbers(3) AS o ORDER BY o.number
+SETTINGS max_rows_to_group_by = 1, group_by_overflow_mode = 'throw';
+SELECT o.number, EXISTS (SELECT count() FROM numbers(3) AS i WHERE i.number = o.number AND i.number IN (SELECT 1))
 FROM numbers(3) AS o ORDER BY o.number
 SETTINGS max_rows_to_group_by = 1, group_by_overflow_mode = 'any';
 
