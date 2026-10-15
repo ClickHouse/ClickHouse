@@ -370,6 +370,40 @@ static bool hasOrderSensitiveFunctions(const ActionsDAG::Node * node, std::unord
     return res;
 }
 
+/// Is the column of the node, or of the node it is an alias for, executed lazily?
+static bool isLazilyExecuted(const ActionsDAG::Node * node, const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes)
+{
+    while (node->type == ActionsDAG::ActionType::ALIAS)
+        node = node->children.front();
+    return lazy_executed_nodes.contains(node);
+}
+
+/// Does the lazily executed part of the argument contain a node used more than once? Such a node is executed
+/// by each of its consumers, on the rows of that consumer, see `ColumnFunction::reduce`.
+static bool hasSharedLazilyExecutedNodes(
+    const ActionsDAG::Node * argument,
+    const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes,
+    const ActionsDAGReverseInfo & reverse_info)
+{
+    std::stack<const ActionsDAG::Node *> nodes;
+    nodes.push(argument);
+    while (!nodes.empty())
+    {
+        const auto * node = nodes.top();
+        nodes.pop();
+
+        if (!isLazilyExecuted(node, lazy_executed_nodes))
+            continue;
+
+        if (reverse_info.nodes_info[reverse_info.reverse_index.at(node)].parents.size() != 1)
+            return true;
+
+        for (const auto * child : node->children)
+            nodes.push(child);
+    }
+    return false;
+}
+
 static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions(
     const ActionsDAG & actions_dag,
     ShortCircuitFunctionEvaluation short_circuit_function_evaluation,
@@ -394,7 +428,7 @@ static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions
             /// is cheap, and the function allows it, execute the cheap argument on all rows instead, so that the heavy one
             /// is executed lazily, only on the rows that passed the cheap one. Example: `heavy(x) AND y > 0`.
             /// It is safe: the cheap argument is executed on all rows anyway (it is not lazy), and the heavy one is
-            /// executed on a subset of the rows it was executed on before.
+            /// executed on a subset of the rows it was executed on before, unless it is shared (see below).
             /// In the `force_enable` mode all arguments are lazy, so there is no cheap argument that is executed anyway.
             /// The heavy argument must not contain stateful functions, functions with observable side effects (like `sleep`)
             /// or functions that are not deterministic in the scope of the query (like `rand`),
@@ -435,21 +469,46 @@ static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions
 
     auto reverse_info = getActionsDAGReverseInfo(nodes, actions_dag.getOutputs());
 
-    /// For each node we fill LazyExecutionInfo.
-    std::unordered_map<const ActionsDAG::Node *, LazyExecutionInfo> lazy_execution_infos;
-    for (const auto & node : nodes)
-        setLazyExecutionInfo(&node, reverse_info, short_circuit_nodes, lazy_execution_infos);
-
-    std::unordered_set<const ActionsDAG::Node *> lazy_executed_nodes;
-    for (const auto & [node, settings] : short_circuit_nodes)
+    auto find_lazy_executed_nodes = [&]
     {
-        /// Recursively find nodes that should be lazy executed.
-        findLazyExecutedNodes(
-            node->children,
-            lazy_execution_infos,
-            settings.force_enable_lazy_execution || short_circuit_function_evaluation == ShortCircuitFunctionEvaluation::FORCE_ENABLE,
-            lazy_executed_nodes);
+        /// For each node we fill LazyExecutionInfo.
+        std::unordered_map<const ActionsDAG::Node *, LazyExecutionInfo> lazy_execution_infos;
+        for (const auto & node : nodes)
+            setLazyExecutionInfo(&node, reverse_info, short_circuit_nodes, lazy_execution_infos);
+
+        std::unordered_set<const ActionsDAG::Node *> lazy_executed_nodes;
+        for (const auto & [node, settings] : short_circuit_nodes)
+        {
+            /// Recursively find nodes that should be lazy executed.
+            findLazyExecutedNodes(
+                node->children,
+                lazy_execution_infos,
+                settings.force_enable_lazy_execution || short_circuit_function_evaluation == ShortCircuitFunctionEvaluation::FORCE_ENABLE,
+                lazy_executed_nodes);
+        }
+        return lazy_executed_nodes;
+    };
+
+    auto lazy_executed_nodes = find_lazy_executed_nodes();
+
+    /// A heavy argument that is executed after the cheap one is executed lazily. If its lazily executed part is shared,
+    /// every consumer executes it again, so execute such an argument first, on all rows, as without reordering.
+    /// This only reduces lazy execution, so the arguments that keep the new order do not become shared.
+    /// A function that is itself executed lazily still executes the cheap argument first (`short_circuit_eager_arguments`):
+    /// its heavy argument is executed lazily in either order.
+    bool order_restored = false;
+    for (const auto & [node, _] : short_circuit_eager_arguments)
+    {
+        if (hasSharedLazilyExecutedNodes(node->children.front(), lazy_executed_nodes, reverse_info))
+        {
+            short_circuit_nodes.at(node).arguments_with_disabled_lazy_execution = {0};
+            order_restored = true;
+        }
     }
+
+    if (order_restored)
+        lazy_executed_nodes = find_lazy_executed_nodes();
+
     return lazy_executed_nodes;
 }
 
