@@ -23,7 +23,6 @@
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ASTUserNameWithHost.h>
 #include <boost/range/algorithm/copy.hpp>
-#include <algorithm>
 
 
 namespace DB
@@ -151,9 +150,10 @@ namespace
             if (global_valid_until && !query.authentication_methods[i]->valid_until)
                 authentication_method.setValidUntil(*global_valid_until);
 
-            /// Skip a method the user already has, so that repeating `ADD IDENTIFIED WITH` does not accumulate copies.
-            if (std::ranges::find(user.authentication_methods, authentication_method) == user.authentication_methods.end())
-                user.authentication_methods.emplace_back(std::move(authentication_method));
+            /// Replace a method the user already has instead of adding a copy, moving it to the end of the list:
+            /// `RESET AUTHENTICATION METHODS TO NEW` keeps the last one.
+            std::erase(user.authentication_methods, authentication_method);
+            user.authentication_methods.emplace_back(std::move(authentication_method));
         }
 
         // max_number_of_authentication_methods == 0 means unlimited
