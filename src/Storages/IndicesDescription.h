@@ -72,6 +72,11 @@ struct IndexDescription
         ContextPtr context,
         bool validate_expressions);
 
+    /// The expression list `getIndexFromAST` would compile for `definition_ast`, with SQL UDFs and
+    /// `ALIAS` columns expanded, but without analyzing it - so it neither builds sets nor reads tables.
+    /// Returns `nullptr` if the definition has no expression.
+    static ASTPtr getExpandedExpressionList(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr context);
+
     IndexDescription() = default;
 
     /// We need custom copy constructors because we don't want

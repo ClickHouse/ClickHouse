@@ -60,6 +60,9 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 
+#include <deque>
+#include <unordered_map>
+
 namespace DB
 {
 namespace Setting
@@ -816,6 +819,42 @@ ASTPtr parseAdditionalResultFilter(const Settings & settings)
         settings[Setting::max_parser_depth],
         settings[Setting::max_parser_backtracks]);
     return additional_result_filter_ast;
+}
+
+bool makeFilterKeepHeader(ActionsDAG & dag, const Block & header, const ActionsDAG::Node * filter_node)
+{
+    /// Inputs are matched to the header columns by name and position, as `ActionsDAG::updateHeader` does,
+    /// so a header with duplicate names gets one input per column.
+    std::unordered_map<std::string_view, std::deque<const ActionsDAG::Node *>> inputs_by_name;
+    for (const auto * input : dag.getInputs())
+        inputs_by_name[input->result_name].push_back(input);
+
+    ActionsDAG::NodeRawConstPtrs outputs;
+    outputs.reserve(header.columns() + 1);
+    bool filter_node_is_header_column = false;
+    for (const auto & column : header)
+    {
+        auto & inputs = inputs_by_name[column.name];
+        const ActionsDAG::Node * input = nullptr;
+        if (inputs.empty())
+        {
+            input = &dag.addInput(column.name, column.type);
+        }
+        else
+        {
+            input = inputs.front();
+            inputs.pop_front();
+        }
+
+        filter_node_is_header_column |= input == filter_node;
+        outputs.push_back(input);
+    }
+
+    if (!filter_node_is_header_column)
+        outputs.push_back(filter_node);
+
+    dag.getOutputs() = std::move(outputs);
+    return !filter_node_is_header_column;
 }
 
 void appendSetsFromActionsDAG(const ActionsDAG & dag, UsefulSets & useful_sets)

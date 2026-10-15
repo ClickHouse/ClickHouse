@@ -398,9 +398,24 @@ ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const std::unordered_map<
                 if (!function_expression)
                     return nullptr;
 
+                /// A captured value is a constant: a set (e.g. the `('a', 'b')` of `x -> x IN ('a', 'b')`) has no
+                /// `Field` and must be rebuilt from its elements, and a captured lambda cannot be represented as
+                /// a literal at all, so decline instead of emitting a wrong value.
                 ASTs captured_values;
                 for (const auto & captured_column : column_function->getCapturedColumns())
-                    captured_values.push_back(make_intrusive<ASTLiteral>((*captured_column.column)[0]));
+                {
+                    if (!captured_column.column || captured_column.column->empty())
+                        return nullptr;
+
+                    if (WhichDataType(captured_column.type).isSet())
+                        captured_values.push_back(convertSetColumnToAST(*captured_column.column));
+                    else if (WhichDataType(captured_column.type).isFunction()
+                        || checkAndGetColumnConstData<ColumnFunction>(captured_column.column.get())
+                        || checkAndGetColumn<ColumnFunction>(captured_column.column.get()))
+                        return nullptr;
+                    else
+                        captured_values.push_back(make_intrusive<ASTLiteral>((*captured_column.column)[0]));
+                }
 
                 return convertCapturedLambdaToAST(function_expression->getCapture(), function_expression->getAcionsDAG(), captured_values);
             }

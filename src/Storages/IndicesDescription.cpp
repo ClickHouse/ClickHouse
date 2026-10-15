@@ -171,6 +171,36 @@ IndexDescription IndexDescription::getIndexFromAST(
     return result;
 }
 
+namespace
+{
+
+ASTPtr replaceAliasesInExpressionList(ASTPtr index_expression, const ColumnsDescription & columns)
+{
+    using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;
+
+    ASTPtr expr_list = extractKeyExpressionList(index_expression);
+    if (expr_list == nullptr)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expression is not set");
+
+    ReplaceAliasToExprVisitor::Data data{columns, {}};
+    ReplaceAliasToExprVisitor{data}.visit(expr_list);
+    return expr_list;
+}
+
+}
+
+ASTPtr IndexDescription::getExpandedExpressionList(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr context)
+{
+    ASTPtr expanded_definition_ast = definition_ast->clone();
+    UserDefinedSQLFunctionVisitor::visit(expanded_definition_ast, context);
+
+    const auto * index_definition = expanded_definition_ast->as<ASTIndexDeclaration>();
+    if (!index_definition || !index_definition->getExpression())
+        return nullptr;
+
+    return replaceAliasesInExpressionList(index_definition->getExpression(), columns);
+}
+
 void IndexDescription::recalculateWithNewColumns(const ColumnsDescription & new_columns, ContextPtr context)
 {
     /// Rebuilding stored metadata, not fresh user input: the definition was already validated when it
@@ -182,14 +212,7 @@ void IndexDescription::initExpressionInfo(ASTPtr index_expression, const Columns
 {
     chassert(index_expression != nullptr);
 
-    using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;
-
-    ASTPtr expr_list = extractKeyExpressionList(index_expression);
-    if (expr_list == nullptr)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expression is not set");
-
-    ReplaceAliasToExprVisitor::Data data{columns, {}};
-    ReplaceAliasToExprVisitor{data}.visit(expr_list);
+    ASTPtr expr_list = replaceAliasesInExpressionList(index_expression, columns);
 
     /// The stored `definition_ast` keeps the matcher text, and `recalculateWithNewColumns`
     /// rebuilds the index from it after a column-layout change, so a wildcard or a column

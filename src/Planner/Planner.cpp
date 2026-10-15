@@ -2313,6 +2313,10 @@ void addAdditionalFilterStepIfNeeded(QueryPlan & query_plan,
     if (!query_plan.isInitialized())
         return;
 
+    /// The filter must not reorder the result columns.
+    const auto * filter_node = &filter_info.actions.findInOutputs(filter_info.column_name);
+    filter_info.do_remove_column = makeFilterKeepHeader(filter_info.actions, *query_plan.getCurrentHeader(), filter_node);
+
     auto filter_step = std::make_unique<FilterStep>(query_plan.getCurrentHeader(),
         std::move(filter_info.actions),
         filter_info.column_name,
