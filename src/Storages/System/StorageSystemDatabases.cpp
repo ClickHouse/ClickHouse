@@ -84,7 +84,9 @@ static String getEngineFull(const ContextPtr & ctx, const DatabasePtr & database
 
 Block StorageSystemDatabases::getFilterSampleBlock() const
 {
+    /// Must list every column of the block passed to filterBlockWithPredicate in getFilteredDatabases.
     return {
+        { {}, std::make_shared<DataTypeString>(), "name" },
         { {}, std::make_shared<DataTypeString>(), "engine" },
         { {}, std::make_shared<DataTypeUUID>(), "uuid" },
     };

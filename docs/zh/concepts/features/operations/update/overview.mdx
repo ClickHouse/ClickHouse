@@ -308,7 +308,9 @@ UPDATE posts SET AnswerCount = AnswerCount + 1 WHERE Id = 404346
 
 更多信息：[轻量级 UPDATE](/zh/reference/statements/update)
 
-### 即时变更
+<div id="on-the-fly-mutations-summary">
+  ### 即时变更
+</div>
 
 即时变更提供了一种更新行的机制，使后续的 `SELECT` 查询无需等待后台处理完成，即可自动返回变更后的值。这实际上解决了常规变更在原子性方面的局限。
 
@@ -325,10 +327,10 @@ SELECT ViewCount FROM posts WHERE Id = 404346
 ```
 
 ```sql
--- 递增计数
+-- Increment the count
 ALTER TABLE posts UPDATE ViewCount = ViewCount + 1 WHERE Id = 404346
 
--- 更新后的值立即可见
+-- The updated value is immediately visible
 SELECT ViewCount FROM posts WHERE Id = 404346
 ```
 

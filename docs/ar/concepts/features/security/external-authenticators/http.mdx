@@ -64,11 +64,9 @@ import SelfManaged from '/snippets/ar/_self_managed_only_no_roadmap.mdx';
 
 يحدّد هذا الجزء الرؤوس التي سيتم تمريرها من رؤوس طلب العميل إلى خدمة المصادقة الخارجية عبر HTTP. لاحظ أن الرؤوس ستُطابَق مع الرؤوس المعرّفة في الإعدادات بطريقة غير حساسة لحالة الأحرف، لكن سيتم تمريرها كما هي، أي دون تعديل.
 
-<div id="enabling-http-auth-in-users-xml">
-  ### تمكين مصادقة HTTP في `users.xml`
-</div>
+### تمكين مصادقة HTTP في `users.xml` {#enabling-http-auth-in-users-xml}
 
-لتمكين مصادقة HTTP لهذا المستخدم، حدِّد قسم `http_authentication` بدلًا من `password` أو أي أقسام مشابهة في تعريف المستخدم.
+لتمكين مصادقة HTTP لهذا المستخدم، حدِّد قسم `http_authentication` بدلًا من `password` أو أي أقسام مشابهة في تعريف المستخدم.
 
 المعلمات:
 
@@ -86,7 +84,7 @@ import SelfManaged from '/snippets/ar/_self_managed_only_no_roadmap.mdx';
             <server>basic_server</server>
             <scheme>basic</scheme>
         </http_authentication>
-    </test_user_2>
+    </my_user>
 </clickhouse>
 ```
 

@@ -19,14 +19,14 @@ doc_type: 'reference'
   ## Описание
 </div>
 
-Похож на [Template](/ru/reference/formats/Template/Template), но выводит или считывает все имена и типы столбцов, а также использует правило экранирования из настройки [format&#95;custom&#95;escaping&#95;rule](/ru/reference/settings/formats#format_custom_escaping_rule) и разделители из следующих настроек:
+Похож на [Template](/ru/reference/formats/Template/Template), но выводит или считывает все имена и типы столбцов, а также использует правило экранирования из настройки [format&#95;custom&#95;escaping&#95;rule](/ru/reference/settings/formats/format-custom#format_custom_escaping_rule) и разделители из следующих настроек:
 
-* [format&#95;custom&#95;field&#95;delimiter](/ru/reference/settings/formats#format_custom_field_delimiter)
-* [format&#95;custom&#95;row&#95;before&#95;delimiter](/ru/reference/settings/formats#format_custom_row_before_delimiter)
-* [format&#95;custom&#95;row&#95;after&#95;delimiter](/ru/reference/settings/formats#format_custom_row_after_delimiter)
-* [format&#95;custom&#95;row&#95;between&#95;delimiter](/ru/reference/settings/formats#format_custom_row_between_delimiter)
-* [format&#95;custom&#95;result&#95;before&#95;delimiter](/ru/reference/settings/formats#format_custom_result_before_delimiter)
-* [format&#95;custom&#95;result&#95;after&#95;delimiter](/ru/reference/settings/formats#format_custom_result_after_delimiter)
+* [format&#95;custom&#95;field&#95;delimiter](/ru/reference/settings/formats/format-custom#format_custom_field_delimiter)
+* [format&#95;custom&#95;row&#95;before&#95;delimiter](/ru/reference/settings/formats/format-custom#format_custom_row_before_delimiter)
+* [format&#95;custom&#95;row&#95;after&#95;delimiter](/ru/reference/settings/formats/format-custom#format_custom_row_after_delimiter)
+* [format&#95;custom&#95;row&#95;between&#95;delimiter](/ru/reference/settings/formats/format-custom#format_custom_row_between_delimiter)
+* [format&#95;custom&#95;result&#95;before&#95;delimiter](/ru/reference/settings/formats/format-custom#format_custom_result_before_delimiter)
+* [format&#95;custom&#95;result&#95;after&#95;delimiter](/ru/reference/settings/formats/format-custom#format_custom_result_after_delimiter)
 
 <Note>
   Он не использует настройки правил экранирования и разделители из строк формата.
@@ -98,10 +98,10 @@ row('2022-04-30';2021;'Sutton United';'Bradford City';1;4),row('2022-04-30';2021
 
 Дополнительные настройки:
 
-| Настройка                                                                                                                                                            | Описание                                                                                                                                       | По умолчанию |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
-| [input&#95;format&#95;custom&#95;detect&#95;header](/ru/reference/settings/formats#input_format_custom_detect_header)                                                   | включает автоматическое определение заголовка с именами и типами, если он есть.                                                                | `true`       |
-| [input&#95;format&#95;custom&#95;skip&#95;trailing&#95;empty&#95;lines](/ru/reference/settings/formats#input_format_custom_skip_trailing_empty_lines)                   | пропускает конечные пустые строки в конце файла.                                                                                               | `false`      |
-| [input&#95;format&#95;custom&#95;allow&#95;variable&#95;number&#95;of&#95;columns](/ru/reference/settings/formats#input_format_custom_allow_variable_number_of_columns) | разрешает переменное число столбцов в формате CustomSeparated, игнорирует лишние столбцы и использует значения по умолчанию для отсутствующих. | `false`      |
+| Настройка                                                                                                                                                                         | Описание                                                                                                                                       | По умолчанию |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| [input&#95;format&#95;custom&#95;detect&#95;header](/ru/reference/settings/formats/input-format#input_format_custom_detect_header)                                                   | включает автоматическое определение заголовка с именами и типами, если он есть.                                                                | `true`       |
+| [input&#95;format&#95;custom&#95;skip&#95;trailing&#95;empty&#95;lines](/ru/reference/settings/formats/input-format#input_format_custom_skip_trailing_empty_lines)                   | пропускает конечные пустые строки в конце файла.                                                                                               | `false`      |
+| [input&#95;format&#95;custom&#95;allow&#95;variable&#95;number&#95;of&#95;columns](/ru/reference/settings/formats/input-format#input_format_custom_allow_variable_number_of_columns) | разрешает переменное число столбцов в формате CustomSeparated, игнорирует лишние столбцы и использует значения по умолчанию для отсутствующих. | `false`      |
 
 {/*AUTOGENERATED_END*/}

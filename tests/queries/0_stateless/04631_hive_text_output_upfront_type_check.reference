@@ -1,0 +1,9 @@
+Type Time is not supported by the HiveText output format
+Type Int128 is not supported by the HiveText output format
+Decimal precision 39 is not supported by the HiveText output format
+Type Enum is not supported by the HiveText output format
+Type Time64 is not supported by the HiveText output format
+Type UUID is not supported by the HiveText output format
+Type Interval is not supported by the HiveText output format
+\N
+;;\N

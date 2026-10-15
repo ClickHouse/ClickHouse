@@ -57,8 +57,9 @@ déterminé par &#39;timeout&#95;overflow&#95;mode&#39;, qui est défini par dé
 
 <Note>
   Le délai d’expiration n’est vérifié et la requête ne peut s’arrêter qu’à des endroits précis pendant le traitement des données.
-  Actuellement, elle ne peut pas s’arrêter pendant la fusion des états d’agrégation ni pendant l’analyse de la requête,
-  et le temps d’exécution réel sera supérieur à la valeur de ce paramètre.
+  Actuellement, elle ne peut pas s’arrêter pendant la fusion des états d’agrégation ni pendant la majeure partie de l’analyse de la requête
+  (l’établissement d’une connexion à une réplique distante est un cas où elle le peut), et le temps d’exécution réel
+  sera supérieur à la valeur de ce paramètre.
 </Note>
 
 <div id="max_execution_time_leaf">

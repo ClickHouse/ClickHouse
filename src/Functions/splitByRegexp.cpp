@@ -64,7 +64,7 @@ public:
                             "Must be constant string.", arguments[0].column->getName(), name);
 
         if (!col->getValue<String>().empty())
-            re = std::make_shared<OptimizedRegularExpression>(Regexps::createRegexp<false, false, false>(col->getValue<String>()));
+            re = std::make_shared<OptimizedRegularExpression>(Regexps::createRegexp<false, false, false, false>(col->getValue<String>()));
 
         max_substrings_includes_remaining_string = max_substrings_includes_remaining_string_;
         max_splits = extractMaxSplits(arguments, 2);
@@ -198,7 +198,7 @@ private:
         String pattern = col->getValue<String>();
         if (pattern.size() == 1)
         {
-            OptimizedRegularExpression re = Regexps::createRegexp<false, false, false>(pattern);
+            OptimizedRegularExpression re = Regexps::createRegexp<false, false, false, false>(pattern);
 
             std::string required_substring;
             bool is_trivial = false;
@@ -226,9 +226,9 @@ Empty substrings may be selected when:
 - there are multiple consecutive non-empty regular expression matches
 - the original string string is empty while the regular expression is not empty.
 
-:::note
+<Note>
 Setting [`splitby_max_substrings_includes_remaining_string`](/reference/settings/session-settings/other#splitby_max_substrings_includes_remaining_string) (default: `0`) controls if the remaining string is included in the last element of the result array when argument `max_substrings > 0`.
-:::
+</Note>
 )";
     FunctionDocumentation::Syntax syntax = "splitByRegexp(regexp, s[, max_substrings])";
     FunctionDocumentation::Arguments arguments = {
@@ -242,9 +242,9 @@ Setting [`splitby_max_substrings_includes_remaining_string`](/reference/settings
         "Usage example",
         "SELECT splitByRegexp('\\\\d+', 'a12bc23de345f');",
         R"(
-┌─splitByRegex⋯c23de345f')─┐
-│ ['a12bc23de345f']        │
-└──────────────────────────┘
+┌─splitByRegexp('\\d+', 'a12bc23de345f')─┐
+│ ['a','bc','de','f']                    │
+└────────────────────────────────────────┘
         )"
     },
     {

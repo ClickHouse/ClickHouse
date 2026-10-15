@@ -47,6 +47,11 @@ option(OPENSSL_NO_ASM "Build OpenSSL from the portable C sources instead of the 
 if(NOT (ARCH_AMD64 OR ARCH_AARCH64 OR ARCH_PPC64LE OR ARCH_S390X OR ARCH_RISCV64 OR ARCH_LOONGARCH64))
     message(STATUS "OpenSSL: no assembly for ${CMAKE_SYSTEM_PROCESSOR}, building the portable C sources")
     set(OPENSSL_NO_ASM ON)
+elseif(SANITIZE STREQUAL "memory")
+    # MemorySanitizer cannot instrument assembly, so an asm cipher core leaves its output buffer
+    # poisoned. Upstream's `Configure` disables asm under MSan for this reason.
+    message(STATUS "OpenSSL: MSan build, building the portable C sources instead of the assembly")
+    set(OPENSSL_NO_ASM ON)
 endif()
 
 if(OPENSSL_NO_ASM)
@@ -696,6 +701,7 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/crypto/rand/rand_pool.c
     ${OPENSSL_SOURCE_DIR}/crypto/rand/rand_uniform.c
     ${OPENSSL_SOURCE_DIR}/crypto/rand/randfile.c
+    ${OPENSSL_SOURCE_DIR}/crypto/rbtree/rbtree.c
     ${OPENSSL_SOURCE_DIR}/crypto/rc2/rc2_cbc.c
     ${OPENSSL_SOURCE_DIR}/crypto/rc2/rc2_ecb.c
     ${OPENSSL_SOURCE_DIR}/crypto/rc2/rc2_skey.c
@@ -1353,7 +1359,7 @@ set(SSL_SRC
     ${OPENSSL_SOURCE_DIR}/ssl/quic/quic_record_util.c
     ${OPENSSL_SOURCE_DIR}/ssl/quic/quic_rstream.c
     ${OPENSSL_SOURCE_DIR}/ssl/quic/quic_rx_depack.c
-    ${OPENSSL_SOURCE_DIR}/ssl/quic/quic_sf_list.c
+    ${OPENSSL_SOURCE_DIR}/ssl/quic/quic_strm_reas.c
     ${OPENSSL_SOURCE_DIR}/ssl/quic/quic_srt_gen.c
     ${OPENSSL_SOURCE_DIR}/ssl/quic/quic_srtm.c
     ${OPENSSL_SOURCE_DIR}/ssl/quic/quic_sstream.c

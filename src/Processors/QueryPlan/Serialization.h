@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Interpreters/Context_fwd.h>
+#include <Core/Block_fwd.h>
 
 namespace DB
 {
@@ -16,15 +17,35 @@ struct IQueryPlanStep::Serialization
     WriteBuffer & out;
     SerializedSetsRegistry & registry;
 
-    // A durty hack used by the automatic parallel replicas implementation:
-    // the `final` value differs for `AggregatingStep` in single-node and distributed query plans.
-    // This breaks matching by hash.
-    bool skip_final_flag = false;
-    // The same situation as above.
-    bool skip_cache_key = false;
+    // Set when a step is serialized to compute its Auto-PR plan cache-key hash (not for transmission).
+    // In that mode the serialization omits fields that would otherwise break hash matching between the
+    // single-node and distributed (parallel-replicas) plan builds: `AggregatingStep`'s `final` flag
+    // (which differs between those builds) and its stats-collecting cache key, the runtime-filter
+    // id value in `ActionsDAG::serialize`, and the same rendezvous key in `BuildRuntimeFilterStep`.
+    // MUST be kept in sync with `for_cache_key` on `SerializedSetsRegistry` (the registry one drives
+    // `ActionsDAG::serialize`, this one drives the step's own `serialize`): set both or neither.
+    bool for_cache_key = false;
 
     /// Query-plan serialization version the stream is being written with (DBMS_QUERY_PLAN_SERIALIZATION_VERSION).
     UInt64 version = 0;
+
+    /// This step's own serialization version, chosen by the registry for the stable global `version`
+    /// and written next to the step. A step bumps it on any change to its bytes and branches its
+    /// `serialize` on it. Zero for a step that has never changed its format.
+    UInt64 step_version = 0;
+
+    /// The step's input header, set only when serializing for a cache key (see
+    /// `calculateHashTableCacheKeys`). It is what gives a column name in a payload an identity beyond
+    /// its text - see `writeCacheKeyColumnName`.
+    const Block * input_header = nullptr;
+
+    /// Write a column name carried by a step's payload (a GROUP BY key, an aggregate argument, a sort
+    /// column, ...). In cache-key mode the index of the analyzer-generated table qualifier is erased,
+    /// because it is branch-local: the same column is `__table3.o_custkey` in one plan build and
+    /// `__table4.o_custkey` in the other. Erasing it also merges the same name taken from two different
+    /// join inputs, so the column's position in `input_header` is written alongside to tell those apart.
+    /// See `writeCacheKeyColumnName` and `ActionsDAG::Node::updateHash`.
+    void writeColumnName(const String & name) const;
 };
 
 struct SerializedSetsRegistry;
@@ -49,6 +70,10 @@ struct IQueryPlanStep::Deserialization
 
     /// Query-plan serialization version the stream was written with (DBMS_QUERY_PLAN_SERIALIZATION_VERSION).
     UInt64 version = 0;
+
+    /// This step's own serialization version, read from the stream and already checked against the
+    /// versions this binary can read for the step. The step branches its `deserialize` on it.
+    UInt64 step_version = 0;
     /// The plan is being drained (e.g. TCPHandler::skipData) and will be discarded, not executed.
     /// Steps that are expensive or need execution-only context (index analysis, parallel-replicas
     /// callbacks) may read their bytes but build a lightweight placeholder instead of a real step.
