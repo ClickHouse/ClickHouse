@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/TypeTree.h>
 #include <Functions/ComparisonOrderDomain.h>
 #include <Functions/FunctionFactory.h>
 #include <Formats/FormatFactory.h>
@@ -439,18 +440,6 @@ static ValueComparisonResult invertComparisonResult(ValueComparisonResult result
     default:
         return result;
     }
-}
-
-/// Whether `type` is or contains a `Variant`, ignoring `LowCardinality`/`Nullable` wrappers.
-static bool expressionTypeContainsVariant(const DataTypePtr & type)
-{
-    auto unwrapped = removeNullable(removeLowCardinality(type));
-    if (isVariant(unwrapped))
-        return true;
-
-    bool found = false;
-    unwrapped->forEachChild([&](const IDataType & child) { found |= isVariant(child); });
-    return found;
 }
 
 /// Try to convert a constant to the expression's (column) type using strict (lossless) conversion.
@@ -903,7 +892,7 @@ static AddComparisonFilterResult addComparisonFilter(
 
     /// A converted constant is not an exact orderable point for a `Variant` expression, so it must not
     /// drive pruning. Staying opaque also vetoes the global fold-to-false collapse.
-    if (expressionTypeContainsVariant(expr_type))
+    if (anyInTypeTree(*expr_type, [](const IDataType & type) { return isVariant(type); }))
     {
         filter_map[expression].opaque_filters.push_back(std::move(new_filter));
         return AddComparisonFilterResult::ADDED;
