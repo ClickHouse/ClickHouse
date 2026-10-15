@@ -342,7 +342,7 @@ void LimitTransform::splitChunk(PortsData & data)
 
     /// Check if other rows in current block equals to last one in limit
     /// when rows read >= offset + limit.
-    if (with_ties && offset + limit <= rows_read && length)
+    if (with_ties && !limit_is_unreachable && offset + limit <= rows_read && length)
     {
         UInt64 current_row_num = start + length;
         previous_row_chunk = makeChunkWithPreviousRow(data.current_chunk, current_row_num - 1);
