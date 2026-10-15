@@ -20,7 +20,7 @@ def started_cluster():
         cluster.shutdown()
 
 
-def run_kill_query_failpoint_test(query, failpoint_name, query_id=None):
+def run_kill_query_failpoint_test(query, failpoint_name, expected_cancel_marker, query_id=None):
     if query_id is None:
         query_id = str(uuid.uuid4())
 
@@ -69,11 +69,13 @@ def run_kill_query_failpoint_test(query, failpoint_name, query_id=None):
 
     cancel_log = node1.grep_in_log(query_id)
     assert "QUERY_WAS_CANCELLED" in cancel_log
-    # Second observable: the transform must report that it stopped at a poll site
-    # (`Cancelled during ...`) rather than only reaching the late bail-out after the whole
-    # range/loop had run (`Cancelled after ...`). A missing in-loop cancellation check would
-    # hash later runs first and only trip the final check, leaving this line absent.
-    assert "Cancelled during" in cancel_log, cancel_log
+    # Second observable: `QUERY_WAS_CANCELLED` only proves the query ended, not that the
+    # transform stopped at the intended poll. Every poll site logs its own distinct
+    # "Cancelled while/at ..." message, and the late bail-out (reached after a whole
+    # range/chunk was processed) logs "Cancelled after ...". Asserting the exact poll-site
+    # message of the code path this test targets fails if that check is dropped and the
+    # transform keeps hashing until the late bail-out.
+    assert expected_cancel_marker in cancel_log, (expected_cancel_marker, cancel_log)
 
 
 def test_sorted_stream_kill_query(started_cluster):
@@ -84,7 +86,10 @@ def test_sorted_stream_kill_query(started_cluster):
         "FORMAT Null "
         "SETTINGS max_block_size=10000, max_threads=1, max_rows_to_read=0"
     )
-    run_kill_query_failpoint_test(query, "distinct_sorted_stream_transform_pause")
+    # Runs of length 1: the only poll reached is the outer-loop throttle at row 4096.
+    run_kill_query_failpoint_test(
+        query, "distinct_sorted_stream_transform_pause", "Cancelled at the outer-loop poll"
+    )
 
 
 def test_sorted_stream_kill_query_long_runs(started_cluster):
@@ -99,7 +104,12 @@ def test_sorted_stream_kill_query_long_runs(started_cluster):
             "FORMAT Null "
             "SETTINGS max_block_size=10000, max_threads=1, max_rows_to_read=0"
         )
-        run_kill_query_failpoint_test(query, "distinct_sorted_stream_transform_pause")
+        # Runs of 5000: the plain-range skip loop crosses its 4096-row poll inside run k=0.
+        run_kill_query_failpoint_test(
+            query,
+            "distinct_sorted_stream_transform_pause",
+            "Cancelled while skipping a plain range at a poll site",
+        )
     finally:
         node1.query("DROP TABLE IF EXISTS test_runs")
 
@@ -116,7 +126,13 @@ def test_sorted_stream_kill_query_other_columns(started_cluster):
             "FORMAT Null "
             "SETTINGS max_block_size=10000, max_threads=1, max_rows_to_read=0"
         )
-        run_kill_query_failpoint_test(query, "distinct_sorted_stream_transform_pause")
+        # Runs of 5000 with a non-sorted column: buildFilterForRange crosses i=4096 inside
+        # run k=0, so the in-loop hashed-range poll must be the one that observes the cancel.
+        run_kill_query_failpoint_test(
+            query,
+            "distinct_sorted_stream_transform_pause",
+            "Cancelled while hashing a range at a poll site",
+        )
     finally:
         node1.query("DROP TABLE IF EXISTS test_other_columns")
 
@@ -133,7 +149,12 @@ def test_sorted_stream_kill_query_continuation(started_cluster):
             "FORMAT Null "
             "SETTINGS max_block_size=4000, max_threads=1, max_rows_to_read=0"
         )
-        run_kill_query_failpoint_test(query, "distinct_sorted_stream_transform_pause")
+        # The failpoint is consumed at the outer-loop poll while the second chunk is processed.
+        run_kill_query_failpoint_test(
+            query,
+            "distinct_sorted_stream_transform_pause",
+            "Cancelled at the outer-loop poll",
+        )
     finally:
         node1.query("DROP TABLE IF EXISTS test_cont")
 
@@ -156,7 +177,11 @@ def test_sorted_stream_kill_query_other_columns_multiple_runs(started_cluster):
             "FORMAT Null "
             "SETTINGS max_block_size=10000, max_threads=1, max_rows_to_read=0"
         )
-        run_kill_query_failpoint_test(query, "distinct_sorted_stream_transform_pause")
+        run_kill_query_failpoint_test(
+            query,
+            "distinct_sorted_stream_transform_pause",
+            "Cancelled while hashing a range at a poll site",
+        )
     finally:
         node1.query("DROP TABLE IF EXISTS test_other_runs")
 
@@ -180,6 +205,11 @@ def test_sorted_stream_kill_query_other_columns_continuation(started_cluster):
             "FORMAT Null "
             "SETTINGS max_block_size=3000, max_threads=1, max_rows_to_read=0"
         )
-        run_kill_query_failpoint_test(query, "distinct_sorted_stream_transform_pause")
+        # Chunk 2's in-loop hashed-range poll is the one that observes the cancel.
+        run_kill_query_failpoint_test(
+            query,
+            "distinct_sorted_stream_transform_pause",
+            "Cancelled while hashing a range at a poll site",
+        )
     finally:
         node1.query("DROP TABLE IF EXISTS test_other_cont")

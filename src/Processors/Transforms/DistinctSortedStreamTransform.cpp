@@ -102,6 +102,7 @@ size_t DistinctSortedStreamTransform::buildFilterForRange(
                 FailPointInjection::pauseFailPoint(FailPoints::distinct_sorted_stream_transform_pause);
             if (isCancelled())
             {
+                LOG_TEST(getLogger("DistinctSortedStreamTransform"), "Cancelled while hashing a range at a poll site");
                 std::fill(filter.begin() + i + 1, filter.end(), 0);
                 return count;
             }
@@ -127,6 +128,7 @@ bool DistinctSortedStreamTransform::fillFilterRangeWithPolling(IColumnFilter & f
         FailPointInjection::pauseFailPoint(FailPoints::distinct_sorted_stream_transform_pause);
         if (isCancelled())
         {
+            LOG_TEST(getLogger("DistinctSortedStreamTransform"), "Cancelled while skipping a plain range at a poll site");
             std::fill(filter.begin() + pos, filter.end(), 0);
             return false;
         }
@@ -183,13 +185,13 @@ std::pair<size_t, size_t> DistinctSortedStreamTransform::continueWithPrevRange(c
         /// inside it so a long all-same-key chunk stays interruptible.
         if (!fillFilterRangeWithPolling(filter, 0, range_end))
         {
-            LOG_TEST(getLogger("DistinctSortedStreamTransform"), "Cancelled during continuation from previous chunk");
+            LOG_TEST(getLogger("DistinctSortedStreamTransform"), "Cancelled while skipping the carried-over prefix");
             return {range_end, output_rows};
         }
         FailPointInjection::pauseFailPoint(FailPoints::distinct_sorted_stream_transform_pause);
         if (isCancelled())
         {
-            LOG_TEST(getLogger("DistinctSortedStreamTransform"), "Cancelled during continuation from previous chunk");
+            LOG_TEST(getLogger("DistinctSortedStreamTransform"), "Cancelled at the carried-over prefix poll");
             return {range_end, output_rows};
         }
     }
@@ -200,7 +202,7 @@ std::pair<size_t, size_t> DistinctSortedStreamTransform::continueWithPrevRange(c
         FailPointInjection::pauseFailPoint(FailPoints::distinct_sorted_stream_transform_pause);
         if (isCancelled())
         {
-            LOG_TEST(getLogger("DistinctSortedStreamTransform"), "Cancelled during continuation from previous chunk");
+            LOG_TEST(getLogger("DistinctSortedStreamTransform"), "Cancelled while hashing the carried-over prefix");
             return {range_end, output_rows};
         }
     }
@@ -254,7 +256,7 @@ void DistinctSortedStreamTransform::transform(Chunk & chunk)
             filter[range_begin] = 1;
             if (!fillFilterRangeWithPolling(filter, range_begin + 1, range_end))
             {
-                LOG_TEST(getLogger("DistinctSortedStreamTransform"), "Cancelled during row processing");
+                LOG_TEST(getLogger("DistinctSortedStreamTransform"), "Cancelled after skipping a plain range");
                 break;
             }
             ++output_rows;
@@ -266,7 +268,7 @@ void DistinctSortedStreamTransform::transform(Chunk & chunk)
             output_rows += ordinaryDistinctOnRange<clear_data>(filter, range_begin, range_end);
             if (isCancelled())
             {
-                LOG_TEST(getLogger("DistinctSortedStreamTransform"), "Cancelled during row processing");
+                LOG_TEST(getLogger("DistinctSortedStreamTransform"), "Cancelled after hashing a range");
                 std::fill(filter.begin() + range_end, filter.end(), 0);
                 break;
             }
@@ -281,7 +283,7 @@ void DistinctSortedStreamTransform::transform(Chunk & chunk)
             FailPointInjection::pauseFailPoint(FailPoints::distinct_sorted_stream_transform_pause);
             if (isCancelled())
             {
-                LOG_TEST(getLogger("DistinctSortedStreamTransform"), "Cancelled during row processing");
+                LOG_TEST(getLogger("DistinctSortedStreamTransform"), "Cancelled at the outer-loop poll");
                 std::fill(filter.begin() + range_begin, filter.end(), 0);
                 break;
             }
@@ -290,7 +292,8 @@ void DistinctSortedStreamTransform::transform(Chunk & chunk)
     if (isCancelled())
     {
         /// Late bail-out after the loop already finished (e.g. the cancel arrived after the last
-        /// poll). Poll sites log "Cancelled during ...", so this message is deliberately distinct.
+        /// poll). Every poll site logs its own distinct "Cancelled while/at ..." message, so this
+        /// one being the only one proves no poll observed the cancellation.
         LOG_TEST(getLogger("DistinctSortedStreamTransform"), "Cancelled after the row processing loop");
         stopReading();
         chunk.clear();
