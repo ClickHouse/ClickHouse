@@ -13,6 +13,7 @@
 
 
 #include "Poco/Util/LayeredConfiguration.h"
+#include "Poco/Util/MapConfiguration.h"
 #include "Poco/Exception.h"
 #include <set>
 
@@ -189,12 +190,14 @@ bool LayeredConfiguration::getRaw(const std::string& key, std::string& value) co
 		if (it->pConfig->getRaw(key, value))
 			return true;
 	}
-	/// A flat layer such as `MapConfiguration` has `a.b` but no key `a`. Node `a` still exists in the merged
-	/// configuration, so report it, with an empty value, if no layer has a value for it.
+	/// A `MapConfiguration` layer has `a.b` but no key `a` (node-based layers report `a` themselves). Report node `a`
+	/// with an empty value, so `getString("a", default)` returns "" rather than `default`, and `getInt` and the like throw.
 	if (!key.empty())
 	{
 		for (ConfigList::const_iterator it = _configs.begin(); it != _configs.end(); ++it)
 		{
+			if (!dynamic_cast<const MapConfiguration *>(it->pConfig.get()))
+				continue;
 			Keys range;
 			it->pConfig->enumerate(key, range);
 			if (!range.empty())
