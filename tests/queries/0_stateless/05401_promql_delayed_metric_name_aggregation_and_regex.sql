@@ -28,3 +28,19 @@ SELECT '-- a metric name with a newline is dropped';
 SELECT tags, value FROM prometheusQuery('prometheus', 'label_replace(vector(1), "__name__", "foo\\nbar", "", "") + 1', 100);
 
 DROP TABLE prometheus;
+
+CREATE TABLE prometheus ENGINE = TimeSeries;
+
+INSERT INTO prometheus (metric_name, tags, samples) VALUES
+    ('foo', map('job', 'a'), [(toDateTime64(100, 3), 10)]),
+    ('h_bucket', map('le', '1'), [(toDateTime64(100, 3), 1)]),
+    ('h_bucket', map('le', '+Inf'), [(toDateTime64(100, 3), 2)]);
+
+SELECT '-- buckets of one histogram stay in one group when only some of them dropped the metric name';
+SELECT tags, value FROM prometheusQuery('prometheus', 'histogram_quantile(0.5, (h_bucket{le="1"} + 0) or h_bucket{le="+Inf"})', 100);
+
+SELECT '-- an or operand with an all-NULL grid does not drop the metric name';
+SELECT tags, value FROM prometheusQuery('prometheus', 'sum by (__name__) (foo or (foo + 1))', 100) ORDER BY tags;
+SELECT tags, value FROM prometheusQuery('prometheus', 'quantile by (__name__) (1, foo or (foo + 1))', 100) ORDER BY tags;
+
+DROP TABLE prometheus;

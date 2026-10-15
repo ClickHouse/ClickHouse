@@ -72,8 +72,9 @@ ASTPtr transformGroupASTForAggregationOperator(
 
 ASTPtr copyDroppedMetricNameMarkerToBucket(const ASTPtr & bucket_group)
 {
-    /// timeSeriesCopyTag(<bucket_group>, anyIf(group, isNotNull(timeSeriesExtractTag(group, ''))), '')
-    /// `anyIf` returns the group without tags when no series in the bucket has the marker, so nothing is copied.
+    /// timeSeriesCopyTag(<bucket_group>, anyIf(group, isNotNull(timeSeriesExtractTag(group, '')) AND arrayExists(x -> isNotNull(x), values)), '')
+    /// A row matches when it has the marker and a non-NULL sample.
+    /// Otherwise anyIf returns the group without tags, so nothing is copied.
     return makeASTFunction(
         "timeSeriesCopyTag",
         bucket_group->clone(),
@@ -81,11 +82,20 @@ ASTPtr copyDroppedMetricNameMarkerToBucket(const ASTPtr & bucket_group)
             "anyIf",
             make_intrusive<ASTIdentifier>(ColumnNames::Group),
             makeASTFunction(
-                "isNotNull",
+                "and",
                 makeASTFunction(
-                    "timeSeriesExtractTag",
-                    make_intrusive<ASTIdentifier>(ColumnNames::Group),
-                    make_intrusive<ASTLiteral>(kDroppedMetricNameMarker)))),
+                    "isNotNull",
+                    makeASTFunction(
+                        "timeSeriesExtractTag",
+                        make_intrusive<ASTIdentifier>(ColumnNames::Group),
+                        make_intrusive<ASTLiteral>(kDroppedMetricNameMarker))),
+                makeASTFunction(
+                    "arrayExists",
+                    makeASTFunction(
+                        "lambda",
+                        makeASTFunction("tuple", make_intrusive<ASTIdentifier>("x")),
+                        makeASTFunction("isNotNull", make_intrusive<ASTIdentifier>("x"))),
+                    make_intrusive<ASTIdentifier>(ColumnNames::Values)))),
         make_intrusive<ASTLiteral>(kDroppedMetricNameMarker));
 }
 

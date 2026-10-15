@@ -17,7 +17,8 @@ ASTPtr transformGroupASTForAggregationOperator(
     bool & metric_name_dropped);
 
 /// Returns an aggregate expression which adds the marker of a dropped metric name to `bucket_group`
-/// if any series aggregated into that bucket has the marker. The query must group by `bucket_group`.
+/// if any series aggregated into that bucket has the marker and a non-NULL sample.
+/// The query must group by `bucket_group`.
 ASTPtr copyDroppedMetricNameMarkerToBucket(const ASTPtr & bucket_group);
 
 }

@@ -9,3 +9,8 @@
 [('__name__','renamed'),('job','a\nb')]	6
 -- a metric name with a newline is dropped
 []	2
+-- buckets of one histogram stay in one group when only some of them dropped the metric name
+[]	1
+-- an or operand with an all-NULL grid does not drop the metric name
+[('__name__','foo')]	10
+[('__name__','foo')]	10

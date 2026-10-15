@@ -215,8 +215,9 @@ SQLQueryPiece applyAggregationOperatorQuantile(
                 makeASTFunction("quantileExactInclusiveForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values)),
                 getPhi(std::move(phi_arg), context));
         }
+        /// `new_values` keeps the input column `values` visible to the marker copy.
         builder.select_list.push_back(std::move(quantile_expr));
-        builder.select_list.back()->setAlias(ColumnNames::Values);
+        builder.select_list.back()->setAlias(ColumnNames::NewValues);
 
         if (operator_node->by || operator_node->without)
             builder.group_by.push_back(std::move(bucket_group));
@@ -233,8 +234,9 @@ SQLQueryPiece applyAggregationOperatorQuantile(
         builder.from_table = context.subqueries.back().name;
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
         builder.select_list.back()->setAlias(ColumnNames::Group);
-        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
-        builder.where = makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(ColumnNames::Values));
+        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewValues));
+        builder.select_list.back()->setAlias(ColumnNames::Values);
+        builder.where = makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(ColumnNames::NewValues));
 
         res.select_query = builder.getSelectQuery();
     }

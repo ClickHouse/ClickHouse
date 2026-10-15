@@ -91,9 +91,10 @@ SQLQueryPiece applyHistogramQuantile(
 
     Float64 phi = phi_arg.scalar_value;
 
-    /// Step 1: Extract le tags, group by non-le labels (keeping __name__ so that
-    /// distinct histograms remain separate), and compute quantile.
-    /// SELECT timeSeriesRemoveTag(group, 'le') AS new_group,
+    /// Step 1: Extract le tags, group by labels other than `le` and the dropped
+    /// metric name marker (keeping __name__ so that distinct histograms remain
+    /// separate), and compute quantile.
+    /// SELECT timeSeriesRemoveTags(group, ['le', '']) AS new_group,
     ///        quantilePrometheusHistogramForEach(phi)(
     ///            arrayResize(CAST([] AS Array(Float64)), length(values),
     ///                ifNull(toFloat64OrNull(timeSeriesExtractTag(group, 'le')), nan)),
@@ -105,17 +106,19 @@ SQLQueryPiece applyHistogramQuantile(
     {
         SelectQueryBuilder builder;
 
-        /// new_group expression: remove only the `le` tag. Keep `__name__` in the
-        /// group key so a query that selects multiple `*_bucket` metrics with the
-        /// same non-name labels (for example `{__name__=~"a_bucket|b_bucket"}` or
-        /// `a_bucket or b_bucket`) keeps each histogram's quantile separate. We
-        /// drop `__name__` afterwards through `dropMetricName`, which preserves
+        /// new_group expression: remove the `le` tag and the dropped metric name
+        /// marker. Keep `__name__` in the group key so a query that selects
+        /// multiple `*_bucket` metrics with the same non-name labels (for example
+        /// `{__name__=~"a_bucket|b_bucket"}` or `a_bucket or b_bucket`) keeps each
+        /// histogram's quantile separate. Buckets of one histogram stay in one
+        /// group when only some of them carry the marker.
+        /// We drop `__name__` afterwards through `dropMetricName`, which preserves
         /// PromQL's "function output has no metric name" semantics; the
         /// no-duplicate-labelset rule is enforced on the final result by finalizeSQL.
         auto new_group_expr = makeASTFunction(
-            "timeSeriesRemoveTag",
+            "timeSeriesRemoveTags",
             make_intrusive<ASTIdentifier>(ColumnNames::Group),
-            make_intrusive<ASTLiteral>("le"));
+            make_intrusive<ASTLiteral>(Array{"le", kDroppedMetricNameMarker}));
         new_group_expr->setAlias(ColumnNames::NewGroup);
         builder.select_list.push_back(std::move(new_group_expr));
 
