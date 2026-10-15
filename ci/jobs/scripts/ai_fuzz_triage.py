@@ -146,9 +146,13 @@ SELF_TRIAGING_AUTHORS = {"groeneai", "oranjeai"}
 MAX_FAILURE_INFO_CHARS = 4000
 MAX_FAILURES_IN_PROMPT = 5
 
-# Machine-readable dedup key carried in the issue body. Kept in sync with
-# `Issue.parse_issue_body_fields`, which reads it back out of existing issues.
+# Machine-readable dedup key carried in the issue body, on a line of its own.
 FINGERPRINT_FIELD = "Fuzz fingerprint"
+# The only form of it lookups trust: `_issue_text` writes it, and strips every
+# other line that could pass for it from the text it takes from the agent and logs.
+FINGERPRINT_LINE_RE = re.compile(
+    rf"^{FINGERPRINT_FIELD}: ([0-9a-f]{{12}})\r?$", re.MULTILINE
+)
 # The `fuzz` label already holds thousands of issues, so listing them all and
 # grepping is not an option: the lookup has to be targeted (search) plus a small
 # newest-first window (REST). The window only needs to cover the concurrent jobs
@@ -213,6 +217,18 @@ def _tracked_signature(failures):
     """The signature the fingerprint is built from, or "" when there is none."""
     names = sorted(n for n in (_stable_signature(name) for name, _ in failures) if n)
     return names[0] if names else ""
+
+
+def _tracked_failures(failures):
+    """The failures the fingerprint is built from: the group its issue describes."""
+    tracked = _tracked_signature(failures)
+    return [f for f in failures if tracked and _stable_signature(f[0]) == tracked]
+
+
+def _tracked_first(failures):
+    """`failures` with the tracked group first, so the prompt cap never drops it."""
+    tracked = _tracked_failures(failures)
+    return tracked + [f for f in failures if f not in tracked]
 
 
 def uncovered_failure_names(failures):
@@ -370,7 +386,7 @@ pre-existing bug:
 """
 
 
-def _issue_task(pr_mode, fingerprint):
+def _issue_task(pr_mode, fingerprint, signature):
     if not fingerprint:
         # Without a dedup key every job would file its own issue, or point at
         # an unrelated one, so the failure is left to the job report.
@@ -388,14 +404,17 @@ This failure has no stable signature, so no issue is filed for it. Leave
     return f"""\
 ## Task 2 - issue draft ({scope})
 
-This job looks up the issues carrying this failure's fingerprint and files a
-new one only when none tracks it, from your draft. Fill in:
+The fingerprint, and so the issue, tracks one failure: `{signature}`. Describe
+that one, even when you judge another failure more interesting; the job files
+the others itself. This job looks up the issues carrying the fingerprint and
+files a new one only when none tracks it, from your draft. Fill in:
 
 - `issue_title`: short signature, e.g. `Fuzzer: Logical error: '<assertion>' in <function>`.
 - `issue_body`: markdown with what failed, the error/stack excerpt (trimmed),
   and the raw failing query from the logs (a later step adds a reduced
   reproducer when it finds one). Use full GitHub URLs when linking anything.
-  The job adds the fingerprint, CI link and provenance lines itself.
+  The job adds the fingerprint, CI link, provenance lines and the failure as
+  the job reported it itself.
 """
 
 
@@ -443,7 +462,7 @@ def _build_prompt(
     return f"""\
 You are triaging a failed `{job_kind}` CI job {run_kind}.
 
-{_evidence_sections(failures, evidence_paths)}
+{_evidence_sections(_tracked_first(failures), evidence_paths)}
 ## Context
 
 {_change_line(info, pr_mode)}
@@ -453,7 +472,7 @@ You are triaging a failed `{job_kind}` CI job {run_kind}.
   it is needed. Read the code and the logs, and finish within {timeout_sec // 60} minutes.
 
 {_relatedness_task(info, pr_mode, fingerprint, occurrences)}
-{_issue_task(pr_mode, fingerprint)}
+{_issue_task(pr_mode, fingerprint, _tracked_signature(failures))}
 ## Task 3 - verdict file (MANDATORY)
 
 Write a single JSON object to `{VERDICT_FILE.resolve()}`:
@@ -474,12 +493,19 @@ Write a single JSON object to `{VERDICT_FILE.resolve()}`:
 def _build_repro_prompt(
     info, job_kind, failures, evidence_paths, repro_hint, pr_mode, verdict, timeout_sec
 ):
+    signature = _tracked_signature(failures)
+    # The reproducer goes to the issue of this failure, not of any other one.
+    target = (
+        f"\nReproduce `{signature}`, and no other failure of the job.\n"
+        if signature
+        else ""
+    )
     return f"""\
 You are reducing a minimal reproducer for a failed `{job_kind}` CI job. An
 earlier step judged the failure `{verdict["verdict"]}`:
 {(verdict.get("reasoning") or "(no reasoning given)").strip()[:1200]}
-
-{_evidence_sections(failures, evidence_paths)}
+{target}
+{_evidence_sections(_tracked_first(failures), evidence_paths)}
 ## Context
 
 {_change_line(info, pr_mode)}
@@ -833,17 +859,26 @@ def fixed_occurrences(issues, fingerprint):
     A closed issue says nothing about whether the failure predates the change;
     the change may be what brought it back.
     """
-    marker = f"{FINGERPRINT_FIELD}: {fingerprint}"
     return sorted(
         issue["url"]
         for issue in issues
         if (issue.get("state") or "").upper() == "CLOSED"
-        and marker in (issue.get("body") or "")
+        and _tracks_fingerprint(issue, fingerprint)
     )
 
 
 def _has_fuzz_label(issue):
     return "fuzz" in [label.get("name", "") for label in (issue.get("labels") or [])]
+
+
+def _tracks_fingerprint(issue, fingerprint):
+    """Whether the issue's one `FINGERPRINT_LINE_RE` line names `fingerprint`.
+
+    The fingerprint quoted anywhere else, e.g. in a query, does not count, and
+    neither does a body with two such lines: it cannot say which one it tracks.
+    """
+    found = FINGERPRINT_LINE_RE.findall(issue.get("body") or "")
+    return bool(fingerprint) and found == [fingerprint]
 
 
 def independent_occurrences(issues, fingerprint, cutoff):
@@ -857,13 +892,12 @@ def independent_occurrences(issues, fingerprint, cutoff):
     It must also be a tracking issue `_verify_issue_marker` accepts, `fuzz` label
     included: linking one that is not would skip the agent that files a real one.
     """
-    marker = f"{FINGERPRINT_FIELD}: {fingerprint}"
     urls = []
     for issue in issues:
         body = issue.get("body") or ""
         if (
             (issue.get("state") or "").upper() == "OPEN"
-            and marker in body
+            and _tracks_fingerprint(issue, fingerprint)
             and _has_fuzz_label(issue)
             and not FOUND_WHILE_TESTING_RE.search(body)
             and _parse_github_time(issue["createdAt"]) < cutoff
@@ -953,11 +987,11 @@ def _verify_issue_marker(issue_url, fingerprint, repo_name):
             f"AI triage WARNING: {issue_url} is not open, so the bug regressed "
             f"and needs a new issue carrying this fingerprint"
         )
-    if f"{FINGERPRINT_FIELD}: {fingerprint}" not in (issue.get("body") or ""):
+    if not _tracks_fingerprint(issue, fingerprint):
         problems.append(
             f"AI triage WARNING: {issue_url} does not carry "
-            f"`{FINGERPRINT_FIELD}: {fingerprint}` - the next job hitting this "
-            f"bug will file a duplicate; add the line by hand"
+            f"`{FINGERPRINT_FIELD}: {fingerprint}` as its only fingerprint line - "
+            f"the next job hitting this bug will file a duplicate; fix the line by hand"
         )
     if not _has_fuzz_label(issue):
         problems.append(
@@ -1015,7 +1049,6 @@ def _fingerprint_issues(repo_name, fingerprint, deadline):
     backlog but its index lags minutes behind, and the REST list is current but
     bounded to the newest issues - where one a sibling job just filed is.
     """
-    marker = f"{FINGERPRINT_FIELD}: {fingerprint}"
     fields = "number,url,state,body,labels"
     issues = json.loads(
         _robot_gh(
@@ -1050,7 +1083,7 @@ def _fingerprint_issues(repo_name, fingerprint, deadline):
         )
         or "[]"
     )
-    by_url = {i["url"]: i for i in issues if marker in (i.get("body") or "")}
+    by_url = {i["url"]: i for i in issues if _tracks_fingerprint(i, fingerprint)}
     return sorted(by_url.values(), key=lambda i: i["number"])
 
 
@@ -1084,12 +1117,27 @@ def _comment_once(repo_name, issue, job_kind, found_in, deadline):
 def _issue_text(
     verdict, failures, *, job_kind, fingerprint, found_in, tested_pr, related
 ):
-    """Title and body of a new issue: the agent's draft plus the lines lookups parse."""
-    signature = verdict.get("signature") or _tracked_signature(failures)
-    title = " ".join(verdict["issue_title"].split()) or f"Fuzzer: {signature}"
-    draft = MACHINE_LINE_RE.sub("", verdict["issue_body"]).strip()
+    """Title and body of a new issue: the agent's draft plus the lines lookups parse.
+
+    `failures` is the group the fingerprint tracks. The body always carries the
+    job's own text for it, so it holds the right diagnostics whatever the draft says.
+    """
+    # Not the agent's `signature`: it may name another failure of the job.
+    title = (
+        " ".join(verdict["issue_title"].split())
+        or f"Fuzzer: {_tracked_signature(failures)}"
+    )
+    draft = verdict["issue_body"].strip()[:MAX_ISSUE_BODY_CHARS]
+    reported = _failures_section(failures)
+    if draft:
+        reported = (
+            f"<details><summary>Failure as reported by the job</summary>\n\n"
+            f"{reported}\n\n</details>"
+        )
+    text = "\n\n".join(part for part in (draft, reported) if part)
     lines = [
-        draft[:MAX_ISSUE_BODY_CHARS] or _failures_section(failures),
+        # Agent drafts and logs may quote any fingerprint; only the line below is ours.
+        MACHINE_LINE_RE.sub("", text).strip(),
         "",
         f"{FINGERPRINT_FIELD}: {fingerprint}",
         f"Found by {job_kind} in CI: {found_in}",
@@ -1634,7 +1682,7 @@ def triage_and_apply(
                             repo_name,
                             fingerprint,
                             verdict,
-                            failures,
+                            _tracked_failures(failures),
                             job_kind,
                             found_in,
                             info.pr_url if pr_mode else "",
