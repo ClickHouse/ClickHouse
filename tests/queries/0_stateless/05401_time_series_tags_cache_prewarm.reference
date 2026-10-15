@@ -1,0 +1,8 @@
+--- a restarted table skips the time series already stored ---
+2
+--- a new tag set is still written ---
+3
+--- clearing the cache makes the next insert write the rows again ---
+4
+--- the same check with a tag stored in its own column ---
+2

@@ -79,6 +79,9 @@ public:
     /// It's called by `TRUNCATE TABLE` and by `SYSTEM DROP TIME SERIES CACHES`.
     void clearCaches();
 
+    /// Fills the tags deduplication cache from the tags table before the table accepts inserts.
+    void startup() override;
+
     void readImpl(
         QueryPlan & query_plan,
         const Names & column_names,
@@ -160,6 +163,9 @@ private:
     /// The running inserts continue with the old cache.
     void createOrDropTagsDeduplicationCache();
     void createOrDropMetricFamiliesDeduplicationCache();
+
+    /// Reads the tags table into `cache`, up to its capacity. The column order matches the block hashed by inserts.
+    void prewarmTagsDeduplicationCache(TimeSeriesDeduplicationCache & cache);
 
     MultiVersion<TimeSeriesSettings> storage_settings;
 

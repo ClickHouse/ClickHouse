@@ -4,7 +4,11 @@
 #include <Columns/IColumn.h>
 #include <Common/PODArray.h>
 #include <Common/SipHash.h>
+#include <Common/randomSeed.h>
 #include <Core/Block.h>
+#include <pcg_random.hpp>
+
+#include <random>
 
 
 namespace DB
@@ -173,6 +177,29 @@ bool TimeSeriesDeduplicationCache::isExpired(const WrittenRow & written_row, Tim
     /// The elapsed time is compared in seconds, so that any value of the setting fits without overflow.
     auto elapsed_seconds = std::chrono::duration_cast<std::chrono::seconds>(now - written_row.written_at).count();
     return (elapsed_seconds >= 0) && (static_cast<UInt64>(elapsed_seconds) >= expiration_seconds);
+}
+
+void TimeSeriesDeduplicationCache::addWrittenRows(const Block & block, size_t key_column_index)
+{
+    if (!block.rows())
+        return;
+
+    PaddedPODArray<UInt8> filter;
+    filter.resize_fill(block.rows(), true);
+    auto hashed_rows = hashRows(block, key_column_index, filter);
+
+    /// An age of `expiration_seconds` is already expired, so the oldest remembered row is one second younger.
+    const UInt64 max_age_seconds = expiration_seconds ? expiration_seconds - 1 : 0;
+    pcg64 rng(randomSeed());
+    std::uniform_int_distribution<UInt64> age_seconds(0, max_age_seconds);
+    auto now = std::chrono::steady_clock::now();
+
+    for (const auto & hashed_row : hashed_rows)
+    {
+        auto written_at = now - std::chrono::seconds(age_seconds(rng));
+        WrittenRow written_row{.row_hash = hashed_row.row_hash, .written_at = written_at};
+        cache.set(hashed_row.key_hash, std::make_shared<WrittenRow>(written_row));
+    }
 }
 
 void TimeSeriesDeduplicationCache::markRowsAsWritten(PendingRows && pending_rows_)
