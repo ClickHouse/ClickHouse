@@ -233,7 +233,9 @@ void DistinctSortedStreamTransform::transform(Chunk & chunk)
 
     if (isCancelled())
     {
-        LOG_TEST(getLogger("DistinctSortedStreamTransform"), "Cancelled during continuation from previous chunk");
+        /// Late bail-out: `continueWithPrevRange` already reported no cancellation, so nothing was
+        /// interrupted at a poll site. A distinct message lets tests tell this apart from the polls.
+        LOG_TEST(getLogger("DistinctSortedStreamTransform"), "Cancelled after the continuation range");
         stopReading();
         chunk.clear();
         return;
@@ -287,7 +289,9 @@ void DistinctSortedStreamTransform::transform(Chunk & chunk)
     }
     if (isCancelled())
     {
-        LOG_TEST(getLogger("DistinctSortedStreamTransform"), "Cancelled during row processing");
+        /// Late bail-out after the loop already finished (e.g. the cancel arrived after the last
+        /// poll). Poll sites log "Cancelled during ...", so this message is deliberately distinct.
+        LOG_TEST(getLogger("DistinctSortedStreamTransform"), "Cancelled after the row processing loop");
         stopReading();
         chunk.clear();
         return;

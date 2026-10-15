@@ -50,6 +50,8 @@ def run_kill_query_failpoint_test(query, failpoint_name, query_id=None):
         if not done:
             pool.shutdown(wait=False, cancel_futures=True)
             assert False, f"Failpoint {failpoint_name} not triggered within 60s"
+        # Propagate any exception from the wait (e.g. query error/timeout)
+        wait_future.result()
         pool.shutdown(wait=False)
 
         node1.http_query(f"KILL QUERY WHERE query_id='{query_id}'")
@@ -67,6 +69,11 @@ def run_kill_query_failpoint_test(query, failpoint_name, query_id=None):
 
     cancel_log = node1.grep_in_log(query_id)
     assert "QUERY_WAS_CANCELLED" in cancel_log
+    # Second observable: the transform must report that it stopped at a poll site
+    # (`Cancelled during ...`) rather than only reaching the late bail-out after the whole
+    # range/loop had run (`Cancelled after ...`). A missing in-loop cancellation check would
+    # hash later runs first and only trip the final check, leaving this line absent.
+    assert "Cancelled during" in cancel_log, cancel_log
 
 
 def test_sorted_stream_kill_query(started_cluster):
