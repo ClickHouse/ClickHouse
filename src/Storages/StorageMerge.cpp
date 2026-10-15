@@ -1625,7 +1625,8 @@ QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
     TableExpressionNodePtr original_table_expression,
     TableExpressionNodePtr replacement_table_expression,
     const ContextPtr & context,
-    const Names & required_column_names)
+    const Names & required_column_names,
+    const NamesAndTypesList & child_only_columns)
 {
     auto * query_node = query->as<QueryNode>();
     auto join_tree_type = query_node->getJoinTreeNode()->getNodeType();
@@ -1709,36 +1710,53 @@ QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
     // which is quadratic in the number of columns. As this function is called once per source table,
     // the total cost becomes cubic, and a query joining `merge` over many wide tables (for example,
     // `merge('system', '')`) spends minutes in query planning.
+    //
+    // A column in `child_only_columns` is a physical column of the child that the `Merge` does not
+    // declare (the substitute read for a query over nothing but the `Merge` virtual columns), so it
+    // cannot be resolved against the `Merge` and is bound to the child table expression directly.
     if (!required_column_names.empty())
     {
         auto identifiers_list = std::make_shared<ListNode>();
         identifiers_list->getNodes().reserve(required_column_names.size());
         for (const auto & column_name : required_column_names)
-            identifiers_list->getNodes().push_back(std::make_shared<IdentifierNode>(Identifier{column_name}));
+            if (!child_only_columns.contains(column_name))
+                identifiers_list->getNodes().push_back(std::make_shared<IdentifierNode>(Identifier{column_name}));
 
+        const size_t expected_resolved_nodes = identifiers_list->getNodes().size();
         QueryTreeNodePtr resolved_identifiers = std::move(identifiers_list);
 
-        QueryAnalysisPass query_analysis_pass(original_table_expression);
-        query_analysis_pass.run(resolved_identifiers, context);
+        if (expected_resolved_nodes != 0)
+        {
+            QueryAnalysisPass query_analysis_pass(original_table_expression);
+            query_analysis_pass.run(resolved_identifiers, context);
+        }
 
         auto & resolved_nodes = resolved_identifiers->as<ListNode &>().getNodes();
-        if (resolved_nodes.size() != required_column_names.size())
+        if (resolved_nodes.size() != expected_resolved_nodes)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Expected {} resolved columns, got {}",
-                required_column_names.size(),
+                expected_resolved_nodes,
                 resolved_nodes.size());
 
         projection.reserve(required_column_names.size());
         projection_columns.reserve(required_column_names.size());
 
-        for (size_t i = 0; i < required_column_names.size(); ++i)
+        size_t next_resolved_node = 0;
+        for (const auto & column_name : required_column_names)
         {
-            auto & fake_node = resolved_nodes[i];
+            if (auto child_column = child_only_columns.tryGetByName(column_name))
+            {
+                projection.push_back(std::make_shared<ColumnNode>(*child_column, replacement_table_expression));
+                projection_columns.push_back(*child_column);
+                continue;
+            }
+
+            auto & fake_node = resolved_nodes[next_resolved_node++];
 
             auto * resolved_column = fake_node->as<ColumnNode>();
             if (!resolved_column)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Required column '{}' is not resolved", required_column_names[i]);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Required column '{}' is not resolved", column_name);
             auto fake_column = resolved_column->getColumn();
 
             // Identifier is resolved to ColumnNode, but we need to get rid of ALIAS columns
@@ -1783,7 +1801,24 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
         if (query_info.table_expression_modifiers)
             replacement_table_expression->setTableExpressionModifiers(*query_info.table_expression_modifiers);
 
-        modified_query_info.query_tree = replaceTableExpressionAndRemoveJoin(modified_query_info.query_tree, modified_query_info.table_expression, replacement_table_expression, modified_context, required_column_names);
+        /// A physical column of the child that the `Merge` does not declare can be requested only as the
+        /// substitute read of a query over nothing but the `Merge` virtual columns.
+        NamesAndTypesList child_only_columns;
+        if (is_smallest_column_requested)
+        {
+            const auto merge_column_options = GetColumnsOptions(GetColumnsOptions::All)
+                .withSubcolumns(merge_storage_snapshot->storage.supportsSubcolumns())
+                .withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
+            for (const auto & column_name : required_column_names)
+            {
+                if (merge_storage_snapshot->tryGetColumn(merge_column_options, column_name))
+                    continue;
+                if (auto child_column = storage_snapshot_->metadata->getColumns().tryGetPhysical(column_name))
+                    child_only_columns.push_back(*child_column);
+            }
+        }
+
+        modified_query_info.query_tree = replaceTableExpressionAndRemoveJoin(modified_query_info.query_tree, modified_query_info.table_expression, replacement_table_expression, modified_context, required_column_names, child_only_columns);
         modified_query_info.table_expression = replacement_table_expression;
         modified_query_info.planner_context->getOrCreateTableExpressionData(replacement_table_expression);
 
