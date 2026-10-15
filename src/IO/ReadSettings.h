@@ -132,7 +132,6 @@ struct FilesystemCacheSettings
     /// How long a read may wait for a file segment which is being downloaded by a concurrent query
     /// before bypassing the cache and reading directly from remote storage.
     size_t wait_for_concurrent_download_timeout_milliseconds = 1000;
-    size_t query_limit_bytes = 0;
     bool enable_log = false;
     bool verbose_logging = false;
 };

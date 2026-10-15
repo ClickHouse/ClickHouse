@@ -14,7 +14,6 @@
 #include <Common/ThreadPool_fwd.h>
 #include <Common/StatusFile.h>
 #include <Interpreters/FileCache/FileCache_fwd.h>
-#include <Interpreters/FileCache/QueryLimit.h>
 #include <Interpreters/FileCache/FileSegment.h>
 #include <Interpreters/FileCache/Metadata.h>
 #include <Interpreters/FileCache/FileCache_fwd_internal.h>
@@ -224,16 +223,6 @@ public:
 
     size_t getBoundaryAlignment() const { return boundary_alignment; }
 
-    /// The budget of the current query for this cache, created on the first call. Null when this
-    /// cache forbids the limit, the query sets none, or there is no query at all (a background
-    /// operation).
-    FileCacheQueryBudgetPtr getQueryBudget(size_t query_limit_bytes) const;
-
-    /// The budget of the current query for this cache, if it already has one. Nullopt when the
-    /// calling thread has no query at all (a background operation), which the caller has to tell
-    /// apart from a query which set no limit.
-    std::optional<FileCacheQueryBudgetPtr> getCurrentQueryBudget() const;
-
     size_t getReserveGranularity() const { return reserve_granularity.load(std::memory_order_relaxed); }
 
     bool tryReserve(
@@ -260,7 +249,6 @@ public:
     void deactivateBackgroundOperations();
 
     std::vector<FileSegment::Info> sync();
-
 
     using IterateFunc = std::function<void(const FileSegmentInfo &)>;
     void iterate(IterateFunc && func, const UserID & user_id);
@@ -386,8 +374,6 @@ private:
         std::mutex mutex;
     };
     CheckCacheProbability check_cache_probability;
-
-    bool query_limit_allowed = false;
 
     void initializeImpl(bool load_metadata);
 

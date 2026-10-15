@@ -79,7 +79,6 @@ CachedOnDiskReadBufferFromFile::ReadInfo::ReadInfo(
     const FilesystemCacheSettings & cache_settings_,
     size_t local_fs_buffer_size_,
     size_t read_until_position_,
-    FileCacheQueryBudgetPtr query_budget_,
     ThrottlerPtr local_throttler_)
     : cache_key(cache_key_)
     , source_file_path(source_file_path_)
@@ -88,7 +87,6 @@ CachedOnDiskReadBufferFromFile::ReadInfo::ReadInfo(
     , cache_settings(cache_settings_)
     , local_fs_buffer_size(local_fs_buffer_size_)
     , local_throttler(std::move(local_throttler_))
-    , query_budget(std::move(query_budget_))
     , read_until_position(read_until_position_)
 {
 }
@@ -110,7 +108,6 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     size_t remote_fs_buffer_size_,
     size_t local_fs_buffer_size_,
     const String & query_id_,
-    FileCacheQueryBudgetPtr query_budget_,
     size_t file_size_,
     bool allow_seeks_after_first_read_,
     bool use_external_buffer_,
@@ -143,7 +140,6 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
         cache_settings_,
         local_fs_buffer_size_,
         read_until_position_.value_or(file_size_),
-        std::move(query_budget_),
         std::move(local_throttler_))
 {
     LOG_TEST(
@@ -1132,7 +1128,6 @@ bool CachedOnDiskReadBufferFromFile::predownloadForFileSegment(
                 size,
                 info.cache_settings.reserve_space_wait_lock_timeout_milliseconds,
                 failure_reason,
-                info.query_budget,
                 /* reserve_stat */nullptr,
                 reserve_hint);
 
@@ -1637,7 +1632,6 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
                 size,
                 info.cache_settings.reserve_space_wait_lock_timeout_milliseconds,
                 failure_reason,
-                info.query_budget,
                 /* reserve_stat */nullptr,
                 reserve_hint);
 
@@ -1838,7 +1832,7 @@ size_t CachedOnDiskReadBufferFromFile::readBigAt(
     ReadInfo current_info(
         info.cache_key, info.source_file_path, info.implementation_buffer_creator,
         info.use_external_buffer, info.cache_settings, info.local_fs_buffer_size,
-        /* read_until_position */range_begin + n, info.query_budget, info.local_throttler);
+        /* read_until_position */range_begin + n, info.local_throttler);
 
     if (info.cache_settings.temp_cache_only)
     {

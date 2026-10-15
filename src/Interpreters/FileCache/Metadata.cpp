@@ -1001,10 +1001,6 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
     if (offset != static_cast<size_t>(buf->getPosition()))
         buf->seek(offset, SEEK_SET);
 
-    /// This thread has no query, so the reservations below are charged to the query which
-    /// downloaded this segment last. It cannot change while this thread is the downloader.
-    const auto query_budget = file_segment.getQueryBudget();
-
     while (size_to_download && !buf->eof())
     {
         const auto available = buf->available();
@@ -1014,7 +1010,7 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
         size_to_download -= size;
 
         std::string failure_reason;
-        if (!file_segment.reserve(size, reserve_space_lock_wait_timeout_milliseconds, failure_reason, query_budget))
+        if (!file_segment.reserve(size, reserve_space_lock_wait_timeout_milliseconds, failure_reason))
         {
             LOG_TEST(
                 log, "Failed to reserve space during background download "

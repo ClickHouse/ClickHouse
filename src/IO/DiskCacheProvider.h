@@ -60,8 +60,7 @@ public:
         size_t object_file_offset_,
         const FilesystemCacheSettings & cache_settings_,
         FileSegmentsHolderSharedPtr segment_holder_,
-        ByteRange aligned_range_in_file,
-        FileCacheQueryBudgetPtr query_budget_);
+        ByteRange aligned_range_in_file);
 
     ByteRange range() const override { return aligned_range; }
     size_t committed() const override;
@@ -77,8 +76,6 @@ private:
     FileSegment & segment() const { chassert(segment_holder && segment_holder->size() == 1); return segment_holder->front(); }
 
     FileCachePtr cache;
-    /// The budget of the query the provider was created for; null when it set no limit.
-    FileCacheQueryBudgetPtr query_budget;
     /// The blob's start offset in the logical file (multi-blob files); cache coordinates are blob-local.
     size_t object_file_offset;
     FilesystemCacheSettings cache_settings;
@@ -97,11 +94,9 @@ private:
 class DiskCacheProvider : public ICacheProvider
 {
 public:
-    /// Writes are charged to `query_budget`, the budget of the query which created the provider.
     DiskCacheProvider(
         FileCachePtr cache_,
         const FilesystemCacheSettings & cache_settings_,
-        const String & query_id_ = {},
         ThrottlerPtr local_throttler_ = nullptr,
         std::optional<FileCacheKey> custom_cache_key_ = std::nullopt,
         std::optional<FileCacheOriginInfo> custom_origin_ = std::nullopt);
@@ -121,9 +116,6 @@ private:
     ThrottlerPtr local_throttler;
     std::optional<FileCacheKey> custom_cache_key;
     std::optional<FileCacheOriginInfo> custom_origin;
-    /// The budget of the query which created the provider, passed to each `DiskCacheWriter`;
-    /// see the constructor.
-    FileCacheQueryBudgetPtr query_budget;
     /// Keep-alive anchors for recently-used cache-segment readers; see
     /// `ReaderAnchorCache`.
     ReaderAnchorCache reader_anchors;

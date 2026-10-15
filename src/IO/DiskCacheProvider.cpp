@@ -209,10 +209,8 @@ DiskCacheWriter::DiskCacheWriter(
     size_t object_file_offset_,
     const FilesystemCacheSettings & cache_settings_,
     FileSegmentsHolderSharedPtr segment_holder_,
-    ByteRange aligned_range_in_file,
-    FileCacheQueryBudgetPtr query_budget_)
+    ByteRange aligned_range_in_file)
     : cache(std::move(cache_))
-    , query_budget(std::move(query_budget_))
     , object_file_offset(object_file_offset_)
     , cache_settings(cache_settings_)
     , segment_holder(std::move(segment_holder_))
@@ -285,8 +283,7 @@ size_t DiskCacheWriter::write(ChainedBuffers data, const FillRole & role)
     const bool reserved = seg.reserve(
         contiguous,
         cache_settings.reserve_space_wait_lock_timeout_milliseconds,
-        failure_reason,
-        query_budget);
+        failure_reason);
     if (!reserved)
     {
         LOG_TRACE(log, "DiskCacheWriter::write: reserve failed for [{}, {}]: {}",
@@ -484,7 +481,6 @@ DiskCacheReader::~DiskCacheReader()
 DiskCacheProvider::DiskCacheProvider(
     FileCachePtr cache_,
     const FilesystemCacheSettings & cache_settings_,
-    const String &, /// the budget comes from the query itself now
     ThrottlerPtr local_throttler_,
     std::optional<FileCacheKey> custom_cache_key_,
     std::optional<FileCacheOriginInfo> custom_origin_)
@@ -497,9 +493,6 @@ DiskCacheProvider::DiskCacheProvider(
     /// byte cap an entry count.
     , reader_anchors(CurrentMetrics::end(), CurrentMetrics::end(), /*max_size_in_bytes=*/16)
 {
-    /// Created here, in the query's thread, so that the writes below find it. Null when the query
-    /// sets no limit.
-    query_budget = cache->getQueryBudget(cache_settings.query_limit_bytes);
 }
 
 /// The disk tier's residency walk. One `resolve` = one cache transaction, no per-call state (shared
@@ -612,7 +605,7 @@ VectorWithMemoryTracking<ICacheProvider::CacheResolution> DiskCacheProvider::res
         miss.range = ByteRange{seg_left + object_file_offset, seg_end - seg_left};
         miss.writer = std::make_unique<DiskCacheWriter>(
             cache, object_file_offset, cache_settings,
-            seg_holder, miss.range, query_budget);
+            seg_holder, miss.range);
         out.push_back(std::move(miss));
     };
 

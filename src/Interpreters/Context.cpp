@@ -78,7 +78,6 @@
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
-#include <Interpreters/FileCache/QueryLimit.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/Cache/EncryptionHeaderCache.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
@@ -328,7 +327,6 @@ namespace Setting
     extern const SettingsBool enable_blob_storage_log;
     extern const SettingsBool enable_blob_storage_log_for_read_operations;
     extern const SettingsUInt64 filesystem_cache_boundary_alignment;
-    extern const SettingsUInt64 filesystem_cache_query_limit_bytes;
     extern const SettingsUInt64 filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
     extern const SettingsUInt64 filesystem_cache_wait_for_concurrent_download_timeout_milliseconds;
     extern const SettingsUInt64 filesystem_cache_segments_batch_size;
@@ -4184,22 +4182,6 @@ MultiVersion<Macros>::Version Context::getMacros() const
 void Context::setMacros(std::unique_ptr<Macros> && macros)
 {
     shared->macros.set(std::move(macros));
-}
-
-FileCacheQueryBudgetPtr Context::getFilesystemCacheQueryBudget(const FileCache & cache, size_t size_limit) const
-{
-    std::lock_guard lock(filesystem_cache_query_budgets_mutex);
-    auto & budget = filesystem_cache_query_budgets[&cache];
-    if (!budget)
-        budget = std::make_shared<FileCacheQueryBudget>(size_limit);
-    return budget;
-}
-
-FileCacheQueryBudgetPtr Context::tryGetFilesystemCacheQueryBudget(const FileCache & cache) const
-{
-    std::lock_guard lock(filesystem_cache_query_budgets_mutex);
-    auto it = filesystem_cache_query_budgets.find(&cache);
-    return it == filesystem_cache_query_budgets.end() ? nullptr : it->second;
 }
 
 ContextMutablePtr Context::getQueryContext() const
@@ -9264,8 +9246,6 @@ ReadSettings Context::getReadSettings() const
     if (settings_ref[Setting::filesystem_cache_boundary_alignment])
         res.filesystem_cache_settings.boundary_alignment = settings_ref[Setting::filesystem_cache_boundary_alignment];
 
-    res.filesystem_cache_settings.query_limit_bytes = settings_ref[Setting::filesystem_cache_query_limit_bytes];
-
     res.use_page_cache_for_disks_without_file_cache = settings_ref[Setting::use_page_cache_for_disks_without_file_cache];
     res.use_page_cache_with_distributed_cache = settings_ref[Setting::use_page_cache_with_distributed_cache];
     res.use_page_cache_for_local_disks = settings_ref[Setting::use_page_cache_for_local_disks];
@@ -9367,7 +9347,6 @@ WriteSettings Context::getWriteSettings() const
     res.throw_on_error_from_cache = settings_ref[Setting::throw_on_error_from_cache_on_write_operations];
     res.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds
         = settings_ref[Setting::filesystem_cache_reserve_space_wait_lock_timeout_milliseconds];
-    res.filesystem_cache_query_limit_bytes = settings_ref[Setting::filesystem_cache_query_limit_bytes];
 
     res.s3_allow_parallel_part_upload = settings_ref[Setting::s3_allow_parallel_part_upload];
     res.azure_allow_parallel_part_upload = settings_ref[Setting::azure_allow_parallel_part_upload];

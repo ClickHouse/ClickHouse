@@ -5,8 +5,6 @@
 #include <IO/ReadSettings.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromString.h>
-#include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <Interpreters/FileCache/FileCacheSettings.h>
 #include <Interpreters/FileCache/IFileCachePriority.h>
 #include <Interpreters/FileCache/CacheUsage.h>
@@ -126,7 +124,6 @@ namespace FileCacheSetting
     extern const FileCacheSettingsBool enable_bypass_cache_with_threshold;
     extern const FileCacheSettingsUInt64 bypass_cache_threshold;
     extern const FileCacheSettingsUInt64 cache_hits_threshold;
-    extern const FileCacheSettingsBool enable_filesystem_query_cache_limit;
     extern const FileCacheSettingsBool allow_dynamic_cache_resize;
     extern const FileCacheSettingsUInt64 dynamic_resize_lock_wait_ms;
     extern const FileCacheSettingsBool use_split_cache;
@@ -444,8 +441,6 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
         LOG_WARNING(log, "idle_client_ttl_sec is set but the cache policy does not track "
                          "per-client usage; idle-client eviction is disabled");
 
-    query_limit_allowed = settings[FileCacheSetting::enable_filesystem_query_cache_limit];
-
     CurrentMetrics::add(CurrentMetrics::FilesystemCacheSizeLimit, settings[FileCacheSetting::max_size]);
 }
 
@@ -504,40 +499,6 @@ String FileCache::getFileSegmentPath(const Key & key, size_t offset, FileSegment
 String FileCache::getKeyPath(const Key & key, const OriginInfo & origin) const
 {
     return metadata.getKeyPath(key, origin);
-}
-
-namespace
-{
-ContextPtr getCurrentQueryContext()
-{
-    if (!CurrentThread::isInitialized() || CurrentThread::getQueryId().empty())
-        return nullptr;
-    return CurrentThread::get().tryGetQueryContext();
-}
-}
-
-FileCacheQueryBudgetPtr FileCache::getQueryBudget(size_t query_limit_bytes) const
-{
-    if (!query_limit_allowed || query_limit_bytes == 0)
-        return nullptr;
-
-    auto query_context = getCurrentQueryContext();
-    if (!query_context)
-        return nullptr;
-
-    return query_context->getFilesystemCacheQueryBudget(*this, query_limit_bytes);
-}
-
-std::optional<FileCacheQueryBudgetPtr> FileCache::getCurrentQueryBudget() const
-{
-    auto query_context = getCurrentQueryContext();
-    if (!query_context)
-        return {};
-
-    if (!query_limit_allowed)
-        return FileCacheQueryBudgetPtr{};
-
-    return query_context->tryGetFilesystemCacheQueryBudget(*this);
 }
 
 void FileCache::assertInitialized() const
@@ -3199,7 +3160,6 @@ bool FileCache::doDynamicResizeImpl(
 
     return false;
 }
-
 
 std::vector<FileSegment::Info> FileCache::sync()
 {

@@ -24,7 +24,6 @@ namespace fs = std::filesystem;
 
 namespace ProfileEvents
 {
-    extern const Event FilesystemCacheFailToReserveSpaceBecauseOfQueryLimit;
     extern const Event FileSegmentWaitMicroseconds;
     extern const Event FileSegmentWaitTimeouts;
     extern const Event FileSegmentCompleteMicroseconds;
@@ -301,11 +300,6 @@ String FileSegment::getOrSetDownloader()
 
         auto & download = getOrCreateDownloadDataUnlocked(lk);
         current_downloader = download.downloader_id = caller_id;
-        /// A background continuation of this download is charged to the query downloading now,
-        /// including when it sets no limit. The background thread itself has no query and keeps
-        /// the stamp: it downloads on behalf of that query.
-        if (auto budget = cache->getCurrentQueryBudget())
-            download.query_budget = std::move(*budget);
         setDownloadState(State::DOWNLOADING, lk);
         chassert(key_metadata.lock());
     }
@@ -419,12 +413,6 @@ void FileSegment::setRemoteFileReader(RemoteFileReaderPtr remote_file_reader_)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Remote file reader already exists");
 
     download.remote_file_reader = remote_file_reader_;
-}
-
-FileCacheQueryBudgetPtr FileSegment::getQueryBudget() const
-{
-    auto lk = lock();
-    return download_data ? download_data->query_budget : nullptr;
 }
 
 void FileSegment::write(char * from, size_t size, size_t offset_in_file)
@@ -680,7 +668,6 @@ bool FileSegment::reserve(
     size_t size_to_reserve,
     size_t lock_wait_timeout_milliseconds,
     std::string & failure_reason,
-    const FileCacheQueryBudgetPtr & query_budget,
     FileCacheReserveStat * reserve_stat,
     size_t reserve_hint)
 {
@@ -757,21 +744,7 @@ bool FileSegment::reserve(
     if (!reserve_stat)
         reserve_stat = &dummy_stat;
 
-    if (query_budget && !query_budget->tryChargeBytes(size_to_reserve))
-    {
-        ProfileEvents::increment(ProfileEvents::FilesystemCacheFailToReserveSpaceBecauseOfQueryLimit);
-        failure_reason = "query limit exceeded";
-        setDownloadFailedUnlocked(lock());
-        return false;
-    }
-
-    bool reserved = false;
-    SCOPE_EXIT({
-        if (query_budget && !reserved)
-            query_budget->unchargeBytes(size_to_reserve);
-    });
-
-    reserved = cache->tryReserve(
+    const bool reserved = cache->tryReserve(
         *this, size_to_reserve, *reserve_stat, *getKeyMetadata()->origin, lock_wait_timeout_milliseconds,
         failure_reason);
 

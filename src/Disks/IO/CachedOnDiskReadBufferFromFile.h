@@ -2,7 +2,6 @@
 
 #include <Interpreters/FileCache/FileCacheKey.h>
 #include <Interpreters/FileCache/FileCache_fwd.h>
-#include <Interpreters/FileCache/QueryLimit.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadSettings.h>
@@ -38,7 +37,6 @@ public:
         size_t remote_fs_buffer_size_,
         size_t local_fs_buffer_size_,
         const String & query_id_,
-        FileCacheQueryBudgetPtr query_budget_,
         size_t file_size_,
         bool allow_seeks_after_first_read_,
         bool use_external_buffer_,
@@ -102,7 +100,6 @@ public:
             const FilesystemCacheSettings & cache_settings_,
             size_t local_fs_buffer_size_,
             size_t read_until_position_,
-            FileCacheQueryBudgetPtr query_budget_,
             ThrottlerPtr local_throttler_ = nullptr);
 
         /// The readers can be reused among different ReadFromFileSegmentState
@@ -125,8 +122,6 @@ public:
         const size_t local_fs_buffer_size;
         /// Throttler for local filesystem reads (cache file reads).
         const ThrottlerPtr local_throttler;
-        /// How much the query may still write into the cache. Null when it set no limit.
-        const FileCacheQueryBudgetPtr query_budget;
 
         /// Non-included range end offset.
         size_t read_until_position = 0;
