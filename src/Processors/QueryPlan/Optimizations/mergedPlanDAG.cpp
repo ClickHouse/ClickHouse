@@ -58,7 +58,8 @@ std::pair<bool, bool> findStuffedSides(JoinKind kind)
             return {true, false};
         case JoinKind::Full:
             return {true, true};
-        /// `PASTE` matches rows by position rather than by a condition. Take the careful answer.
+        /// `PASTE` matches rows by position rather than by a condition, and cuts both sides to the shorter one rather than
+        /// padding either. The careful answer costs no more than a mask that is never false, and does not depend on that.
         case JoinKind::Paste:
             return {true, true};
     }
