@@ -83,6 +83,10 @@ public:
     /// `primary_key_column_position`.
     void setTopKPrimaryKeyPruning(size_t primary_key_column_position, TopKThresholdTrackerPtr tracker);
 
+    /// Narrows each part's input ranges by the primary key before reading the skip indexes, for a read whose ranges
+    /// were not analyzed (see `ReadFromMergeTree::AnalysisResult::key_condition_not_applied`).
+    void setPrimaryKeyCondition(ConditionTemplate<KeyCondition>::Ptr key_condition_);
+
     void cancel() noexcept { is_cancelled = true; }
 
 private:
@@ -101,6 +105,7 @@ private:
 
     std::optional<size_t> top_k_primary_key_column_position;
     TopKThresholdTrackerPtr top_k_threshold_tracker;
+    ConditionTemplate<KeyCondition>::Ptr primary_key_condition;
     ContextPtr context;
     LoggerPtr log;
 

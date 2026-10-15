@@ -3728,6 +3728,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         // Skip index analysis and return parts with all marks
         // The coordinator will choose ranges to read for workers based on index analysis on its side
         result.parts_with_ranges = std::move(res_parts);
+        result.key_condition_not_applied = indexes->key_condition;
     }
     else
     {
@@ -5691,6 +5692,9 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
 
     if (skip_index_reader && top_k_primary_key_column_position)
         skip_index_reader->setTopKPrimaryKeyPruning(*top_k_primary_key_column_position, top_k_filter_info->threshold_tracker);
+
+    if (skip_index_reader && result.key_condition_not_applied)
+        skip_index_reader->setPrimaryKeyCondition(result.key_condition_not_applied);
 
     /// Account SelectedRanges / SelectedMarks here, once all reader-creation paths above have
     /// run. When a read-time skip-index reader is installed (the use_skip_indexes_on_data_read
