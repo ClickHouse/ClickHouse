@@ -66,6 +66,10 @@ function that captures format settings: formatRow
 1
 1
 1
+formatRow field names given by aliases
+1
+1
+1
 setting read from the query that writes the part: use_legacy_to_time
 1
 1

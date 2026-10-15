@@ -13,6 +13,7 @@ DROP TABLE IF EXISTS t_gate;
 DROP TABLE IF EXISTS t_patch;
 DROP TABLE IF EXISTS t_tuple_type;
 DROP TABLE IF EXISTS t_format_row;
+DROP TABLE IF EXISTS t_format_row_alias;
 DROP TABLE IF EXISTS t_legacy_time;
 DROP TABLE IF EXISTS t_json_tuple;
 DROP TABLE IF EXISTS t_array;
@@ -172,6 +173,13 @@ SELECT count() FROM t_format_row WHERE k = 1 AND formatRow('JSONEachRow', n) = '
 SELECT count() FROM t_format_row WHERE k = 1 AND formatRow('JSONEachRow', n) = '{"n":"1"}\n' SETTINGS output_format_json_quote_64bit_integers = 1, use_skip_indexes = 1, use_skip_indexes_on_data_read = 0;
 SELECT count() FROM t_format_row WHERE k = 1 AND formatRow('JSONEachRow', n) = '{"n":"1"}\n' SETTINGS output_format_json_quote_64bit_integers = 1, use_skip_indexes = 1, use_skip_indexes_on_data_read = 1;
 
+SELECT 'formatRow field names given by aliases';
+CREATE TABLE t_format_row_alias (k UInt64, n UInt64, INDEX idx k TYPE minmax WHERE formatRow('JSONEachRow', n) = '{"x":1}\n') ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_format_row_alias VALUES (1, 1);
+SELECT count() FROM t_format_row_alias WHERE k = 1 AND formatRow('JSONEachRow', n AS x) = '{"x":1}\n' SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_format_row_alias WHERE k = 1 AND formatRow('JSONEachRow', n AS x) = '{"x":1}\n' SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0;
+SELECT count() FROM t_format_row_alias WHERE k = 1 AND formatRow('JSONEachRow', n AS x) = '{"x":1}\n' SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 1;
+
 SELECT 'setting read from the query that writes the part: use_legacy_to_time';
 SET enable_time_time64_type = 1;
 CREATE TABLE t_legacy_time (k UInt64, dt DateTime('UTC'), INDEX idx k TYPE minmax WHERE toString(toTime(dt)) = '10:00:00') ENGINE = MergeTree ORDER BY tuple();
@@ -249,6 +257,7 @@ DROP TABLE t_gate;
 DROP TABLE t_patch;
 DROP TABLE t_tuple_type;
 DROP TABLE t_format_row;
+DROP TABLE t_format_row_alias;
 DROP TABLE t_legacy_time;
 DROP TABLE t_json_tuple;
 DROP TABLE t_array;
