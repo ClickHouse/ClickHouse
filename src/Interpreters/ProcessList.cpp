@@ -119,15 +119,17 @@ static bool isUnlimitedQuery(const IAST * ast)
 }
 
 /// A subquery anywhere in a statement (e.g. a scalar subquery in an engine argument) may be executed
-/// while the statement is analyzed. So may the body of a SQL user-defined function, and a dictionary
-/// function loads the dictionary from its source.
+/// while the statement is analyzed. So may the body of a SQL user-defined function, and some functions
+/// read data when evaluated: a dictionary function loads the dictionary, `file` reads a file, and
+/// `joinGet` reads a `Join` table.
 static bool hasSubquery(const IAST & ast)
 {
     if (ast.as<ASTSubquery>() || ast.as<ASTSelectWithUnionQuery>() || ast.as<ASTSelectQuery>())
         return true;
     if (const auto * function = ast.as<ASTFunction>())
     {
-        if (function->name.starts_with("dict") || UserDefinedSQLFunctionFactory::instance().has(function->name))
+        if (function->name.starts_with("dict") || function->name == "file" || function->name.starts_with("joinGet")
+            || UserDefinedSQLFunctionFactory::instance().has(function->name))
             return true;
     }
     for (const auto & child : ast.children)
