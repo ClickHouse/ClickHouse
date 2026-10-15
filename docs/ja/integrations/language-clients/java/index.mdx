@@ -13,17 +13,13 @@ integration:
 * [JDBC 0.8+](/ja/integrations/language-clients/java/jdbc)
 * [R2DBC Driver](/ja/integrations/language-clients/java/r2dbc)
 
-<div id="clickhouse-client">
-  ## ClickHouse client
-</div>
+## ClickHouse client {#clickhouse-client}
 
 Java クライアントは、ClickHouse server とのネットワーク通信の詳細を抽象化する独自の API を実装したライブラリです。現時点でサポートされているのは HTTP インターフェイスのみです。このライブラリには、さまざまな ClickHouse フォーマットの操作や、そのほかの関連機能のためのユーティリティが用意されています。
 
 Java クライアントは 2015 年とかなり早い時期に開発されましたが、コードベースの保守は非常に難しくなり、API もわかりにくく、これ以上の最適化も困難になっていました。そのため、2024 年にこれを新しいコンポーネント `client-v2` としてリファクタリングしました。これにより、API はより明確になり、コードベースはより軽量になり、パフォーマンスも改善され、ClickHouse フォーマット (特に RowBinary と Native) のサポートも強化されました。JDBC も近いうちにこのクライアントを使用する予定です。
 
-<div id="supported-data-types">
-  ### サポートされているデータ型
-</div>
+### サポートされているデータ型 {#supported-data-types}
 
 | **データ型**                | **Client V2対応** | **Client V1対応** |
 | ----------------------- | --------------- | --------------- |
@@ -77,6 +73,9 @@ Java クライアントは 2015 年とかなり早い時期に開発されまし
 | Variant                 | ✔               | ✗               |
 | Dynamic                 | ✔               | ✗               |
 | JSON                    | ✔               | ✗               |
+| MultiPoint              | ✔               | ✗               |
+| BFloat16                | ✔               | ✗               |
+| QBit                    | ✔               | ✗               |
 
 [ClickHouse のデータ型](/ja/reference/data-types/index)
 
@@ -94,49 +93,44 @@ Java クライアントは 2015 年とかなり早い時期に開発されまし
   * **UInt64** — client-v1 では `long` にマッピングされます。
 </Info>
 
-<div id="features">
-  ### 機能
-</div>
+### 機能 {#features}
 
 クライアントの機能一覧:
 
-| Name                  | Client V2 | Client V1 |          Comments          |
-| --------------------- | :-------: | :-------: | :------------------------: |
-| HTTP 接続               |     ✔     |     ✔     |                            |
-| HTTP 圧縮 (LZ4)         |     ✔     |     ✔     |                            |
-| アプリケーション制御の圧縮         |     ✔     |     ✗     |                            |
-| サーバー応答の圧縮 - LZ4       |     ✔     |     ✔     |                            |
-| クライアントリクエストの圧縮 - LZ4  |     ✔     |     ✔     |                            |
-| HTTPS                 |     ✔     |     ✔     |                            |
-| クライアント SSL 証明書 (mTLS) |     ✔     |     ✔     |                            |
-| HTTP プロキシ             |     ✔     |     ✔     |                            |
-| POJO SerDe            |     ✔     |     ✗     |                            |
-| 接続プール                 |     ✔     |     ✔     | Apache HTTP Client を使用する場合 |
-| 名前付きパラメーター            |     ✔     |     ✔     |                            |
-| 障害時の再試行               |     ✔     |     ✔     |                            |
-| フェイルオーバー              |     ✗     |     ✔     |                            |
-| 負荷分散                  |     ✗     |     ✔     |                            |
-| サーバーの自動検出             |     ✗     |     ✔     |                            |
-| ログコメント                |     ✔     |     ✔     |                            |
-| セッションロール              |     ✔     |     ✔     |                            |
-| SSL クライアント認証          |     ✔     |     ✔     |                            |
-| SNI 設定                |     ✔     |     ✗     |                            |
-| セッションタイムゾーン           |     ✔     |     ✔     |                            |
+| Name                       | Client V2 | Client V1 |          Comments          |
+| -------------------------- | :-------: | :-------: | :------------------------: |
+| HTTP 接続                    |     ✔     |     ✔     |                            |
+| HTTP 圧縮                    |     ✔     |     ✔     |                            |
+| アプリケーション制御の圧縮              |     ✔     |     ✗     |                            |
+| サーバー応答の圧縮 - LZ4, ZSTD      |     ✔     |     ✗     |                            |
+| クライアントリクエストの圧縮 - LZ4, ZSTD |     ✔     |     ✔     |                            |
+| HTTPS                      |     ✔     |     ✔     |                            |
+| クライアント SSL 証明書 (mTLS)      |     ✔     |     ✔     |                            |
+| HTTP プロキシ                  |     ✔     |     ✔     |                            |
+| POJO SerDe                 |     ✔     |     ✗     |                            |
+| 接続プール                      |     ✔     |     ✔     | Apache HTTP Client を使用する場合 |
+| 名前付きパラメーター                 |     ✔     |     ✔     |                            |
+| 障害時の再試行                    |     ✔     |     ✔     |                            |
+| フェイルオーバー                   |     ✗     |     ✔     |                            |
+| 負荷分散                       |     ✗     |     ✔     |                            |
+| サーバーの自動検出                  |     ✗     |     ✔     |                            |
+| ログコメント                     |     ✔     |     ✔     |                            |
+| セッションロール                   |     ✔     |     ✔     |                            |
+| SSL クライアント認証               |     ✔     |     ✔     |                            |
+| SNI 設定                     |     ✔     |     ✗     |                            |
+| セッション                      |     ✔     |     ✔     |                            |
+| テレメトリー (トレーシング、メトリクス)      |     ✔     |     ✗     |                            |
 
 JDBC ドライバは、基盤となるクライアント実装と同じ機能を継承します。その他の JDBC 機能は、[ページ](/ja/integrations/language-clients/java/jdbc)に記載されています。
 
-<div id="compatibility">
-  ### 互換性
-</div>
+### 互換性 {#compatibility}
 
 * このリポジトリ内のすべてのプロジェクトは、ClickHouse の[現在サポート中のすべての LTS バージョン](https://github.com/ClickHouse/ClickHouse/pulls?q=is%3Aopen+is%3Apr+label%3Arelease)でテストされています。
 * [サポートポリシー](https://github.com/ClickHouse/ClickHouse/blob/master/SECURITY.md#security-change-log-and-support)
 * セキュリティ修正や新しい改善を見逃さないよう、クライアントは継続的にアップグレードすることを推奨します
 * v2 API への移行で問題がある場合は、[issue を作成](https://github.com/ClickHouse/clickhouse-java/issues/new?assignees=\&labels=v2-feedback\&projects=\&template=v2-feedback.md\&title=)してください。対応します！
 
-<div id="logging">
-  ### ログ
-</div>
+### ログ {#logging}
 
 Java 言語クライアントでは、ログに [SLF4J](https://www.slf4j.org/) を使用しています。`Logback` や `Log4j` など、SLF4J 互換の任意のログフレームワークを使用できます。
 たとえば、Maven を使用している場合は、`pom.xml` ファイルに次の依存関係を追加できます。
@@ -166,9 +160,7 @@ Java 言語クライアントでは、ログに [SLF4J](https://www.slf4j.org/) 
 </dependencies>
 ```
 
-<div id="configuring-logging">
-  #### ログの設定
-</div>
+#### ログの設定 {#configuring-logging}
 
 これは、使用しているロギングフレームワークによって異なります。たとえば、`Logback` を使用している場合は、`logback.xml` という名前のファイルでログを設定できます。
 

@@ -13,70 +13,69 @@ integration:
 * [JDBC 0.8+](/ar/integrations/language-clients/java/jdbc)
 * [R2DBC Driver](/ar/integrations/language-clients/java/r2dbc)
 
-<div id="clickhouse-client">
-  ## عميل ClickHouse
-</div>
+## عميل ClickHouse {#clickhouse-client}
 
 Java عميل هي مكتبة توفّر واجهة برمجة تطبيقات خاصة بها، وتعزل تفاصيل اتصالات الشبكة مع خادم ClickHouse. وفي الوقت الحالي، لا تدعم سوى واجهة HTTP. كما توفّر المكتبة أدوات مساعدة للعمل مع تنسيقات ClickHouse المختلفة ووظائف أخرى ذات صلة.
 
 طُوِّر Java عميل في وقت مبكر يعود إلى عام 2015. ومع مرور الوقت، أصبحت شيفرته المصدرية صعبة الصيانة جدًا، وأصبحت واجهة برمجة التطبيقات فيه مُربِكة، كما صار من الصعب تحسينه أكثر. لذلك أعدنا تصميمه في عام 2024 في صورة مكوّن جديد `client-v2`. وهو يوفّر واجهة برمجة تطبيقات أوضح، وشيفرة مصدرية أخف، وتحسينات أكبر في الأداء، ودعمًا أفضل لتنسيقات ClickHouse (وخاصة RowBinary وNative). وسيستخدم JDBC هذا العميل في المستقبل القريب.
 
-<div id="supported-data-types">
-  ### أنواع البيانات المدعومة
-</div>
+### أنواع البيانات المدعومة {#supported-data-types}
 
-| **نوع البيانات**        | **دعم عميل V2** | **دعم عميل V1** |
-| ----------------------- | ----------------- | ----------------- |
-| Int8                    | ✔                 | ✔                 |
-| Int16                   | ✔                 | ✔                 |
-| Int32                   | ✔                 | ✔                 |
-| Int64                   | ✔                 | ✔                 |
-| Int128                  | ✔                 | ✔                 |
-| Int256                  | ✔                 | ✔                 |
-| UInt8                   | ✔                 | ✔                 |
-| UInt16                  | ✔                 | ✔                 |
-| UInt32                  | ✔                 | ✔                 |
-| UInt64                  | ✔                 | ✔                 |
-| UInt128                 | ✔                 | ✔                 |
-| UInt256                 | ✔                 | ✔                 |
-| Float32                 | ✔                 | ✔                 |
-| Float64                 | ✔                 | ✔                 |
-| Decimal                 | ✔                 | ✔                 |
-| Decimal32               | ✔                 | ✔                 |
-| Decimal64               | ✔                 | ✔                 |
-| Decimal128              | ✔                 | ✔                 |
-| Decimal256              | ✔                 | ✔                 |
-| Bool                    | ✔                 | ✔                 |
-| String                  | ✔                 | ✔                 |
-| FixedString             | ✔                 | ✔                 |
-| Nullable                | ✔                 | ✔                 |
-| Date                    | ✔                 | ✔                 |
-| Date32                  | ✔                 | ✔                 |
-| DateTime                | ✔                 | ✔                 |
-| DateTime32              | ✔                 | ✔                 |
-| DateTime64              | ✔                 | ✔                 |
-| Interval                | ✗                 | ✗                 |
-| Enum                    | ✔                 | ✔                 |
-| Enum8                   | ✔                 | ✔                 |
-| Enum16                  | ✔                 | ✔                 |
-| Array                   | ✔                 | ✔                 |
-| Map                     | ✔                 | ✔                 |
-| Nested                  | ✔                 | ✔                 |
-| Tuple                   | ✔                 | ✔                 |
-| UUID                    | ✔                 | ✔                 |
-| IPv4                    | ✔                 | ✔                 |
-| IPv6                    | ✔                 | ✔                 |
-| Object                  | ✗                 | ✔                 |
-| Point                   | ✔                 | ✔                 |
-| Nothing                 | ✔                 | ✔                 |
-| MultiPolygon            | ✔                 | ✔                 |
-| Ring                    | ✔                 | ✔                 |
-| Polygon                 | ✔                 | ✔                 |
-| SimpleAggregateFunction | ✔                 | ✔                 |
-| AggregateFunction*      | ✔                 | ✔                 |
-| Variant                 | ✔                 | ✗                 |
-| Dynamic                 | ✔                 | ✗                 |
-| JSON                    | ✔                 | ✗                 |
+| **نوع البيانات**        | **دعم العميل V2** | **دعم العميل V1** |
+| ----------------------- | --------------- | --------------- |
+| Int8                    | ✔               | ✔               |
+| Int16                   | ✔               | ✔               |
+| Int32                   | ✔               | ✔               |
+| Int64                   | ✔               | ✔               |
+| Int128                  | ✔               | ✔               |
+| Int256                  | ✔               | ✔               |
+| UInt8                   | ✔               | ✔               |
+| UInt16                  | ✔               | ✔               |
+| UInt32                  | ✔               | ✔               |
+| UInt64                  | ✔               | ✔               |
+| UInt128                 | ✔               | ✔               |
+| UInt256                 | ✔               | ✔               |
+| Float32                 | ✔               | ✔               |
+| Float64                 | ✔               | ✔               |
+| Decimal                 | ✔               | ✔               |
+| Decimal32               | ✔               | ✔               |
+| Decimal64               | ✔               | ✔               |
+| Decimal128              | ✔               | ✔               |
+| Decimal256              | ✔               | ✔               |
+| Bool                    | ✔               | ✔               |
+| String                  | ✔               | ✔               |
+| FixedString             | ✔               | ✔               |
+| Nullable                | ✔               | ✔               |
+| Date                    | ✔               | ✔               |
+| Date32                  | ✔               | ✔               |
+| DateTime                | ✔               | ✔               |
+| DateTime32              | ✔               | ✔               |
+| DateTime64              | ✔               | ✔               |
+| Interval                | ✗               | ✗               |
+| Enum                    | ✔               | ✔               |
+| Enum8                   | ✔               | ✔               |
+| Enum16                  | ✔               | ✔               |
+| Array                   | ✔               | ✔               |
+| Map                     | ✔               | ✔               |
+| Nested                  | ✔               | ✔               |
+| Tuple                   | ✔               | ✔               |
+| UUID                    | ✔               | ✔               |
+| IPv4                    | ✔               | ✔               |
+| IPv6                    | ✔               | ✔               |
+| Object                  | ✗               | ✔               |
+| Point                   | ✔               | ✔               |
+| Nothing                 | ✔               | ✔               |
+| MultiPolygon            | ✔               | ✔               |
+| Ring                    | ✔               | ✔               |
+| Polygon                 | ✔               | ✔               |
+| SimpleAggregateFunction | ✔               | ✔               |
+| AggregateFunction*      | ✔               | ✔               |
+| Variant                 | ✔               | ✗               |
+| Dynamic                 | ✔               | ✗               |
+| JSON                    | ✔               | ✗               |
+| MultiPoint              | ✔               | ✗               |
+| BFloat16                | ✔               | ✗               |
+| QBit                    | ✔               | ✗               |
 
 [أنواع بيانات ClickHouse](/ar/reference/data-types/index)
 
@@ -91,52 +90,47 @@ Java عميل هي مكتبة توفّر واجهة برمجة تطبيقات خ
 
   * **Decimal** — استخدم `SET output_format_decimal_trailing_zeros=1` في 21.9+ للحفاظ على الاتساق.
   * **Enum** — يمكن التعامل معه كسلسلة نصية أو كعدد صحيح.
-  * **UInt64** — يُعيَّن إلى `long` في عميل-v1.
+  * **UInt64** — يُعيَّن إلى `long` في عميل-v1.
 </Info>
 
-<div id="features">
-  ### الميزات
-</div>
+### الميزات {#features}
 
 جدول ميزات العملاء:
 
-| Name                       | Client V2 | Client V1 |            Comments            |
-| -------------------------- | :-------: | :-------: | :----------------------------: |
-| اتصال HTTP                 |     ✔     |     ✔     |                                |
-| ضغط HTTP (LZ4)             |     ✔     |     ✔     |                                |
-| ضغط يتحكم فيه التطبيق      |     ✔     |     ✗     |                                |
-| ضغط استجابة الخادم - LZ4   |     ✔     |     ✔     |                                |
-| ضغط طلب العميل - LZ4       |     ✔     |     ✔     |                                |
-| HTTPS                      |     ✔     |     ✔     |                                |
-| شهادة SSL للعميل (mTLS)    |     ✔     |     ✔     |                                |
-| وكيل HTTP                  |     ✔     |     ✔     |                                |
-| POJO SerDe                 |     ✔     |     ✗     |                                |
-| مجمّع الاتصالات            |     ✔     |     ✔     | عند استخدام Apache HTTP Client |
-| المعلمات المسماة           |     ✔     |     ✔     |                                |
-| إعادة المحاولة عند الفشل   |     ✔     |     ✔     |                                |
-| التبديل الاحتياطي          |     ✗     |     ✔     |                                |
-| موازنة التحميل             |     ✗     |     ✔     |                                |
-| الاكتشاف التلقائي للخادم   |     ✗     |     ✔     |                                |
-| تعليق السجل                |     ✔     |     ✔     |                                |
-| أدوار الجلسة               |     ✔     |     ✔     |                                |
-| مصادقة العميل باستخدام SSL |     ✔     |     ✔     |                                |
-| إعداد SNI                  |     ✔     |     ✗     |                                |
-| المنطقة الزمنية للجلسة     |     ✔     |     ✔     |                                |
+| Name                                      | العميل V2 | العميل V1 |            Comments            |
+| ----------------------------------------- | :-------: | :-------: | :----------------------------: |
+| اتصال HTTP                                |     ✔     |     ✔     |                                |
+| ضغط HTTP                                  |     ✔     |     ✔     |                                |
+| ضغط يتحكم فيه التطبيق                     |     ✔     |     ✗     |                                |
+| ضغط استجابة الخادم - LZ4، ZSTD            |     ✔     |     ✗     |                                |
+| ضغط طلب العميل - LZ4، ZSTD                |     ✔     |     ✔     |                                |
+| HTTPS                                     |     ✔     |     ✔     |                                |
+| شهادة SSL للعميل (mTLS)                   |     ✔     |     ✔     |                                |
+| وكيل HTTP                                 |     ✔     |     ✔     |                                |
+| POJO SerDe                                |     ✔     |     ✗     |                                |
+| مجمّع الاتصالات                           |     ✔     |     ✔     | عند استخدام Apache HTTP Client |
+| المعلمات المسماة                          |     ✔     |     ✔     |                                |
+| إعادة المحاولة عند الفشل                  |     ✔     |     ✔     |                                |
+| التبديل الاحتياطي                         |     ✗     |     ✔     |                                |
+| موازنة التحميل                            |     ✗     |     ✔     |                                |
+| الاكتشاف التلقائي للخادم                  |     ✗     |     ✔     |                                |
+| تعليق السجل                               |     ✔     |     ✔     |                                |
+| أدوار الجلسة                              |     ✔     |     ✔     |                                |
+| مصادقة العميل باستخدام SSL                |     ✔     |     ✔     |                                |
+| إعداد SNI                                 |     ✔     |     ✗     |                                |
+| الجلسات                                   |     ✔     |     ✔     |                                |
+| بيانات القياس عن بُعد (التتبّع، المقاييس) |     ✔     |     ✗     |                                |
 
 يرث مشغّل JDBC الميزات نفسها من تنفيذ العميل الأساسي. وتُدرج ميزات JDBC الأخرى في [صفحته](/ar/integrations/language-clients/java/jdbc).
 
-<div id="compatibility">
-  ### التوافق
-</div>
+### التوافق {#compatibility}
 
 * تُختبَر جميع المشاريع في هذا المستودع مع جميع [إصدارات LTS النشطة](https://github.com/ClickHouse/ClickHouse/pulls?q=is%3Aopen+is%3Apr+label%3Arelease) من ClickHouse.
 * [سياسة الدعم](https://github.com/ClickHouse/ClickHouse/blob/master/SECURITY.md#security-change-log-and-support)
 * نوصي بترقية العميل بانتظام حتى لا تفوتك الإصلاحات الأمنية والتحسينات الجديدة.
 * إذا واجهت مشكلة في الترحيل إلى واجهة برمجة التطبيقات v2، [فأنشئ issue](https://github.com/ClickHouse/clickhouse-java/issues/new?assignees=\&labels=v2-feedback\&projects=\&template=v2-feedback.md\&title=) وسنرد عليك!
 
-<div id="logging">
-  ### التسجيل
-</div>
+### التسجيل {#logging}
 
 تستخدم مكتبة عملاء Java لدينا [SLF4J](https://www.slf4j.org/) للتسجيل. يمكنك استخدام أي إطار عمل للتسجيل متوافق مع SLF4J، مثل `Logback` أو `Log4j`.
 على سبيل المثال، إذا كنت تستخدم Maven، يمكنك إضافة التبعية التالية إلى ملف `pom.xml`:
@@ -166,9 +160,7 @@ Java عميل هي مكتبة توفّر واجهة برمجة تطبيقات خ
 </dependencies>
 ```
 
-<div id="configuring-logging">
-  #### تهيئة التسجيل
-</div>
+#### تهيئة التسجيل {#configuring-logging}
 
 يعتمد ذلك على إطار عمل التسجيل الذي تستخدمه. على سبيل المثال، إذا كنت تستخدم `Logback`، فيمكنك تهيئة التسجيل في ملف يُسمى `logback.xml`:
 

@@ -13,17 +13,13 @@ integration:
 * [JDBC 0.8+](/zh/integrations/language-clients/java/jdbc)
 * [R2DBC Driver](/zh/integrations/language-clients/java/r2dbc)
 
-<div id="clickhouse-client">
-  ## ClickHouse client
-</div>
+## ClickHouse client {#clickhouse-client}
 
 Java client 是一个实现了自身 API 的库，用于屏蔽与 ClickHouse server 进行网络通信的底层细节。目前仅支持 HTTP interface。该库还提供了处理不同 ClickHouse formats 以及其他相关功能的实用工具。
 
 Java Client 最早于 2015 年开发。如今，它的代码库已变得非常难以维护，API 也较为混乱，并且很难再继续优化。因此，我们在 2024 年将其重构为一个新组件 `client-v2`。它具有更清晰的 API、更轻量的代码库和更好的性能提升，同时对 ClickHouse formats 的支持也更完善 (主要是 RowBinary 和 Native) 。JDBC 在不久的将来将使用这个客户端。
 
-<div id="supported-data-types">
-  ### 支持的数据类型
-</div>
+### 支持的数据类型 {#supported-data-types}
 
 | **数据类型**                | **Client V2 支持情况** | **Client V1 支持情况** |
 | ----------------------- | ------------------ | ------------------ |
@@ -77,6 +73,9 @@ Java Client 最早于 2015 年开发。如今，它的代码库已变得非常�
 | Variant                 | ✔                  | ✗                  |
 | Dynamic                 | ✔                  | ✗                  |
 | JSON                    | ✔                  | ✗                  |
+| MultiPoint              | ✔                  | ✗                  |
+| BFloat16                | ✔                  | ✗                  |
+| QBit                    | ✔                  | ✗                  |
 
 [ClickHouse 数据类型](/zh/reference/data-types/index)
 
@@ -94,49 +93,44 @@ Java Client 最早于 2015 年开发。如今，它的代码库已变得非常�
   * **UInt64** — 在 client-v1 中映射为 `long`。
 </Info>
 
-<div id="features">
-  ### 功能
-</div>
+### 功能 {#features}
 
 客户端功能表：
 
-| 名称                | Client V2 | Client V1 |            注释           |
-| ----------------- | :-------: | :-------: | :---------------------: |
-| HTTP 连接           |     ✔     |     ✔     |                         |
-| HTTP 压缩 (LZ4)     |     ✔     |     ✔     |                         |
-| 应用程序控制压缩          |     ✔     |     ✗     |                         |
-| 服务器响应压缩 - LZ4     |     ✔     |     ✔     |                         |
-| 客户端请求压缩 - LZ4     |     ✔     |     ✔     |                         |
-| HTTPS             |     ✔     |     ✔     |                         |
-| 客户端 SSL 证书 (mTLS) |     ✔     |     ✔     |                         |
-| HTTP 代理           |     ✔     |     ✔     |                         |
-| POJO SerDe        |     ✔     |     ✗     |                         |
-| 连接池               |     ✔     |     ✔     | 使用 Apache HTTP Client 时 |
-| 命名参数              |     ✔     |     ✔     |                         |
-| 失败时重试             |     ✔     |     ✔     |                         |
-| 故障转移              |     ✗     |     ✔     |                         |
-| 负载均衡              |     ✗     |     ✔     |                         |
-| 服务器自动发现           |     ✗     |     ✔     |                         |
-| 日志注释              |     ✔     |     ✔     |                         |
-| 会话角色              |     ✔     |     ✔     |                         |
-| SSL 客户端身份验证       |     ✔     |     ✔     |                         |
-| SNI 配置            |     ✔     |     ✗     |                         |
-| 会话时区              |     ✔     |     ✔     |                         |
+| 名称                 | Client V2 | Client V1 |            注释           |
+| ------------------ | :-------: | :-------: | :---------------------: |
+| HTTP 连接            |     ✔     |     ✔     |                         |
+| HTTP 压缩            |     ✔     |     ✔     |                         |
+| 应用程序控制压缩           |     ✔     |     ✗     |                         |
+| 服务器响应压缩 - LZ4、ZSTD |     ✔     |     ✗     |                         |
+| 客户端请求压缩 - LZ4、ZSTD |     ✔     |     ✔     |                         |
+| HTTPS              |     ✔     |     ✔     |                         |
+| 客户端 SSL 证书 (mTLS)  |     ✔     |     ✔     |                         |
+| HTTP 代理            |     ✔     |     ✔     |                         |
+| POJO SerDe         |     ✔     |     ✗     |                         |
+| 连接池                |     ✔     |     ✔     | 使用 Apache HTTP Client 时 |
+| 命名参数               |     ✔     |     ✔     |                         |
+| 失败时重试              |     ✔     |     ✔     |                         |
+| 故障转移               |     ✗     |     ✔     |                         |
+| 负载均衡               |     ✗     |     ✔     |                         |
+| 服务器自动发现            |     ✗     |     ✔     |                         |
+| 日志注释               |     ✔     |     ✔     |                         |
+| 会话角色               |     ✔     |     ✔     |                         |
+| SSL 客户端身份验证        |     ✔     |     ✔     |                         |
+| SNI 配置             |     ✔     |     ✗     |                         |
+| 会话                 |     ✔     |     ✔     |                         |
+| 遥测数据 (追踪、指标)       |     ✔     |     ✗     |                         |
 
 JDBC 驱动继承了其底层客户端实现的相同功能。其他 JDBC 功能请参见其[页面](/zh/integrations/language-clients/java/jdbc)。
 
-<div id="compatibility">
-  ### 兼容性
-</div>
+### 兼容性 {#compatibility}
 
 * 此仓库中的所有项目均已针对 ClickHouse 所有[当前活跃的 LTS 版本](https://github.com/ClickHouse/ClickHouse/pulls?q=is%3Aopen+is%3Apr+label%3Arelease)进行了测试。
 * [支持策略](https://github.com/ClickHouse/ClickHouse/blob/master/SECURITY.md#security-change-log-and-support)
 * 我们建议持续升级客户端，以免错过安全修复和新改进
 * 如果你在迁移到 v2 API 时遇到问题，请[创建 issue](https://github.com/ClickHouse/clickhouse-java/issues/new?assignees=\&labels=v2-feedback\&projects=\&template=v2-feedback.md\&title=)，我们会及时回复！
 
-<div id="logging">
-  ### 日志
-</div>
+### 日志 {#logging}
 
 我们的 Java 客户端使用 [SLF4J](https://www.slf4j.org/) 进行日志记录。你可以使用任何兼容 SLF4J 的日志框架，例如 `Logback` 或 `Log4j`。
 例如，如果你使用 Maven，可以将以下依赖添加到 `pom.xml` 文件中：
@@ -166,9 +160,7 @@ JDBC 驱动继承了其底层客户端实现的相同功能。其他 JDBC 功能
 </dependencies>
 ```
 
-<div id="configuring-logging">
-  #### 配置日志
-</div>
+#### 配置日志 {#configuring-logging}
 
 这取决于所使用的日志框架。例如，如果你使用的是 `Logback`，则可以在名为 `logback.xml` 的文件中配置日志：
 
