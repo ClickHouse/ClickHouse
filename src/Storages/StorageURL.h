@@ -293,6 +293,8 @@ private:
     Poco::URI curr_uri;
     std::optional<size_t> current_file_size;
     std::optional<time_t> current_file_last_modified;
+    /// The `Date` of the response that reported `current_file_last_modified`, by the clock of the same server.
+    std::optional<time_t> current_file_response_date;
     String format;
     const std::optional<FormatSettings> & format_settings;
     FormatParserSharedResourcesPtr parser_shared_resources;

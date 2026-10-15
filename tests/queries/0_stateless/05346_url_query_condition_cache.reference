@@ -18,6 +18,12 @@
 --- a recently modified file
 100	1000900
 100	1000900
+--- an origin with a lagging clock
+10	1000990
+10	1000990
+--- an origin without a date
+10	1000990
+10	1000990
 --- the url table function
 11100
 11100
@@ -33,5 +39,9 @@ policy	0	0
 after_policy	1	0
 recent_1	0	0
 recent_2	0	0
+skew_1	0	0
+skew_2	0	0
+no_date_1	0	0
+no_date_2	0	0
 function_1	0	0
 function_2	0	0

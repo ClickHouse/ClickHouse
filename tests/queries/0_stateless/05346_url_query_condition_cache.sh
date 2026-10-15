@@ -17,7 +17,8 @@ mkdir -p "${DIR}"
 trap 'rm -rf "${DIR}"; kill ${HTTP_PID} 2>/dev/null; wait ${HTTP_PID} 2>/dev/null' EXIT
 
 # A static file server with `Last-Modified` (from the modification time of the file), `HEAD` and
-# `Range` requests, like a typical web server.
+# `Range` requests, like a typical web server. The file `date_skew` shifts the `Date` of its responses
+# by the given number of seconds, as if the clock of the server was off, or with `none` omits it.
 HTTP_PORT=$(python3 -c "
 import socket
 s = socket.socket()
@@ -27,7 +28,7 @@ s.close()
 ")
 
 python3 -c "
-import os, re
+import os, re, time
 from email.utils import formatdate
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
@@ -35,6 +36,13 @@ ROOT = '${DIR}'
 
 class Handler(BaseHTTPRequestHandler):
     protocol_version = 'HTTP/1.1'
+
+    def send_response(self, code, message=None):
+        self.send_response_only(code, message)
+        skew_path = os.path.join(ROOT, 'date_skew')
+        skew = open(skew_path).read().strip() if os.path.isfile(skew_path) else '0'
+        if skew != 'none':
+            self.send_header('Date', formatdate(time.time() + int(skew), usegmt=True))
 
     def serve(self, with_body):
         path = os.path.join(ROOT, os.path.basename(self.path.split('?')[0]))
@@ -177,6 +185,40 @@ ${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_05346_b (k Int64, s String) ENGINE 
 run recent_1 "SELECT count(), min(k) FROM t_05346_b WHERE s LIKE '10009%'"
 run recent_2 "SELECT count(), min(k) FROM t_05346_b WHERE s LIKE '10009%'"
 
+echo "--- an origin with a lagging clock"
+# The clock of the web server is two minutes behind: by the clock of this server a file it has just
+# written looks settled, but not by the `Date` of its response. Had the cache been used, the first read
+# would record that the second row group of `c.parquet` has none of the values, and the rewrite below,
+# which swaps its two row groups, keeps the size and lands in the same second of the clock of the web
+# server, would keep the version of the file: the second read would skip the row group with the values.
+function write_small_file()
+{
+    ${CLICKHOUSE_CLIENT} --query "
+        INSERT INTO FUNCTION file('${DIR}/c.parquet')
+        SELECT if(intDiv(number, 1000) = $1, 1000000 + number % 1000, number % 1000) AS k, toString(k) AS s FROM numbers(2000)
+        SETTINGS output_format_parquet_row_group_size = 1000, engine_file_truncate_on_insert = 1"
+}
+echo -120 > "${DIR}/date_skew"
+MODIFIED=$(( $(date +%s) - 120 ))
+write_small_file 0
+touch -d "@${MODIFIED}" "${DIR}/c.parquet"
+SIZE_BEFORE=$(stat -c %s "${DIR}/c.parquet")
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_05346_c"
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_05346_c (k Int64, s String) ENGINE = URL('http://127.0.0.1:${HTTP_PORT}/c.parquet', 'Parquet')"
+run skew_1 "SELECT count(), min(k) FROM t_05346_c WHERE s LIKE '100099%'"
+write_small_file 1
+touch -d "@${MODIFIED}" "${DIR}/c.parquet"
+[ "$(stat -c %s "${DIR}/c.parquet")" = "${SIZE_BEFORE}" ] || echo "The size of the rewritten file has changed"
+run skew_2 "SELECT count(), min(k) FROM t_05346_c WHERE s LIKE '100099%'"
+
+echo "--- an origin without a date"
+# Without the `Date` of the response the age of the modification is unknown: the cache is not used.
+echo none > "${DIR}/date_skew"
+touch -d '2020-01-03 00:00:00' "${DIR}/b.parquet"
+run no_date_1 "SELECT count(), min(k) FROM t_05346_b WHERE s LIKE '100099%'"
+run no_date_2 "SELECT count(), min(k) FROM t_05346_b WHERE s LIKE '100099%'"
+rm "${DIR}/date_skew"
+
 echo "--- the url table function"
 # A table without a UUID has no cache entries.
 URL="url('http://127.0.0.1:${HTTP_PORT}/a.parquet', 'Parquet')"
@@ -184,7 +226,8 @@ run function_1 "SELECT count() FROM ${URL} WHERE s LIKE '9%'"
 run function_2 "SELECT count() FROM ${URL} WHERE s LIKE '9%'"
 
 echo "--- query condition cache lookups"
-events where_1 where_2 where_top_k top_k_1 top_k_plain rewritten_1 rewritten_2 policy after_policy recent_1 recent_2 function_1 function_2
+events where_1 where_2 where_top_k top_k_1 top_k_plain rewritten_1 rewritten_2 policy after_policy recent_1 recent_2 skew_1 skew_2 no_date_1 no_date_2 function_1 function_2
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05346"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05346_b"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05346_c"

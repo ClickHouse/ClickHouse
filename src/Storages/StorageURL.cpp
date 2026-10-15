@@ -684,6 +684,7 @@ StorageURLSource::StorageURLSource(
 
             curr_uri = uri_and_buf.first;
             current_file_last_modified = uri_and_buf.second->tryGetLastModificationTime();
+            current_file_response_date = uri_and_buf.second->tryGetResponseDateOfFileInfo();
             read_buf = std::move(uri_and_buf.second);
 
             FailPointInjection::pauseFailPoint(FailPoints::storage_url_pause_between_metadata_probes);
@@ -1057,12 +1058,15 @@ std::optional<String> StorageURLSource::makeQueryConditionCacheFileKey() const
     /// A web server reports no `ETag` here, so the version of a file is its modification time and size.
     /// `Last-Modified` has a precision of a second, so a rewrite that keeps the size and lands in the same
     /// second as the previous write produces the same version. Once the last modification is comfortably
-    /// in the past, any further write is guaranteed to change it. The window is wider than for local files
-    /// (see `StorageFileSource`), as the time comes from the clock of the server. Without the modification
-    /// time or the size, the cache is not used.
+    /// in the past, any further write is guaranteed to change it. `Last-Modified` comes from the clock of the
+    /// web server, which can be behind the clock of this server, so the age of the modification is measured
+    /// against the `Date` of the same response, as RFC 9110 (section 8.8.2.2) does to decide whether
+    /// `Last-Modified` is a strong validator. The window is wider than for local files (see `StorageFileSource`)
+    /// to allow for the precision of the timestamps. Without the modification time, the date or the size,
+    /// the cache is not used.
     static constexpr Int64 version_settle_seconds = 60;
-    if (!current_file_last_modified || !current_file_size
-        || static_cast<Int64>(*current_file_last_modified) + version_settle_seconds > static_cast<Int64>(time(nullptr)))
+    if (!current_file_last_modified || !current_file_response_date || !current_file_size
+        || static_cast<Int64>(*current_file_last_modified) + version_settle_seconds > static_cast<Int64>(*current_file_response_date))
         return {};
 
     /// The URL can carry credentials (`user:password@`) or a signature in its query parameters. The cache
