@@ -163,6 +163,36 @@ SELECT * FROM timeSeriesTags('db_name', 'time_series_table');
 ```
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{});
 
+    factory.registerFunction<TableFunctionTimeSeriesTarget<ViewTarget::TimeRanges>>(
+        {.description = R"DOCS_MD(
+`timeSeriesTimeRanges(db_name.time_series_table)` - Returns the [time ranges](/reference/engines/table-engines/integrations/time-series#time-ranges-table) table
+used by table `db_name.time_series_table` whose table engine is the [TimeSeries](/reference/engines/table-engines/integrations/time-series) engine:
+
+```sql
+CREATE TABLE db_name.time_series_table ENGINE=TimeSeries TIME RANGES time_ranges_table
+```
+
+The function also works if the _time ranges_ table is inner:
+
+```sql
+CREATE TABLE db_name.time_series_table ENGINE=TimeSeries TIME RANGES INNER UUID '01234567-89ab-cdef-0123-456789abcdef'
+```
+
+The following queries are equivalent:
+
+```sql
+SELECT * FROM timeSeriesTimeRanges(db_name.time_series_table);
+SELECT * FROM timeSeriesTimeRanges('db_name.time_series_table');
+SELECT * FROM timeSeriesTimeRanges('db_name', 'time_series_table');
+```
+
+<Note>
+The _time ranges_ table exists if the `store_time_ranges` setting is enabled.
+Tables of [version](/reference/engines/table-engines/integrations/time-series#schema-versioning) 7 or earlier keep the columns `min_time` and `max_time`
+in the [tags](/reference/engines/table-engines/integrations/time-series#tags-table) table.
+</Note>
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{});
+
     factory.registerFunction<TableFunctionTimeSeriesTarget<ViewTarget::MetricFamilies>>(
         {.description = R"DOCS_MD(
 `timeSeriesMetricFamilies(db_name.time_series_table)` - Returns the [metric families](/reference/engines/table-engines/integrations/time-series#metric-families-table) table
@@ -286,13 +316,13 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 | Label | `label_replace`, `label_join` |
 | Type | `scalar`, `vector` |
 | Histogram | `histogram_quantile` |
-| Other | `time`, `pi`, `absent`, `timestamp` |
+| Other | `time`, `step`, `range`, `pi`, `absent`, `timestamp` |
 
 **Note**: `histogram_quantile` uses linear interpolation on classic histogram buckets (identified by the `le` label). Native histograms are not supported. The `phi` (quantile level) argument must be a constant scalar. Expressions that vary per step, such as `histogram_quantile(time() / 1000, ...)`, are rejected with a `NOT_IMPLEMENTED` exception.
 
 **Note**: `min_of(a, b)` and `max_of(a, b)` return the smaller or larger of two scalar values. Both arguments must be scalars.
 
-**Note**: `min_of`, `max_of`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_last_over_time`, `first_over_time`, `ts_of_first_over_time` and `mad_over_time` are experimental functions in Prometheus (enabled there with `--enable-feature=promql-experimental-functions`); ClickHouse evaluates them without requiring that flag.
+**Note**: `step`, `range`, `min_of`, `max_of`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_last_over_time`, `first_over_time`, `ts_of_first_over_time` and `mad_over_time` are experimental functions in Prometheus (enabled there with `--enable-feature=promql-experimental-functions`); ClickHouse evaluates them without requiring that flag.
 
 ### Operators {#operators}
 
@@ -367,13 +397,13 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 | Label | `label_replace`, `label_join` |
 | Type | `scalar`, `vector` |
 | Histogram | `histogram_quantile` |
-| Other | `time`, `pi`, `absent`, `timestamp` |
+| Other | `time`, `step`, `range`, `pi`, `absent`, `timestamp` |
 
 **Note**: `histogram_quantile` uses linear interpolation on classic histogram buckets (identified by the `le` label). Native histograms are not supported. The `phi` (quantile level) argument must be a constant scalar. Expressions that vary per step, such as `histogram_quantile(time() / 1000, ...)`, are rejected with a `NOT_IMPLEMENTED` exception.
 
 **Note**: `min_of(a, b)` and `max_of(a, b)` return the smaller or larger of two scalar values. Both arguments must be scalars.
 
-**Note**: `min_of`, `max_of`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_last_over_time`, `first_over_time`, `ts_of_first_over_time` and `mad_over_time` are experimental functions in Prometheus (enabled there with `--enable-feature=promql-experimental-functions`); ClickHouse evaluates them without requiring that flag.
+**Note**: `step`, `range`, `min_of`, `max_of`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_last_over_time`, `first_over_time`, `ts_of_first_over_time` and `mad_over_time` are experimental functions in Prometheus (enabled there with `--enable-feature=promql-experimental-functions`); ClickHouse evaluates them without requiring that flag.
 
 ### Operators {#operators}
 
