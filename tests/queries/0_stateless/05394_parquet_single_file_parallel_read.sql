@@ -25,12 +25,22 @@ SELECT trimLeft(explain) FROM (
     EXPLAIN PIPELINE SELECT sum(id) FROM file(currentDatabase() || '_05394.parquet')
     SETTINGS max_threads = 4, parallelize_output_from_storages = 0)
 WHERE trimLeft(explain) LIKE 'File %';
-
--- Not more sources than row groups.
-SELECT trimLeft(explain) = 'File × ' || toString((SELECT num_row_groups FROM file(currentDatabase() || '_05394.parquet', ParquetMetadata))) || ' 0 → 1'
-FROM (
+-- Not split if seeks are not allowed: every reader would read the whole file.
+SELECT trimLeft(explain) FROM (
     EXPLAIN PIPELINE SELECT sum(id) FROM file(currentDatabase() || '_05394.parquet')
-    SETTINGS max_threads = 1000, parallelize_output_from_storages = 1, input_format_parquet_preserve_order = 0)
+    SETTINGS max_threads = 4, parallelize_output_from_storages = 1, input_format_parquet_preserve_order = 0, input_format_allow_seeks = 0)
+WHERE trimLeft(explain) LIKE 'File %';
+
+-- Not more sources than row groups. A small file is used, because the server may lower `max_threads`
+-- according to the available memory.
+INSERT INTO FUNCTION file(currentDatabase() || '_05394_small.parquet')
+SELECT number AS id FROM numbers(8000)
+SETTINGS output_format_parquet_row_group_size = 1000, output_format_parquet_use_custom_encoder = 1;
+
+SELECT trimLeft(explain) = 'File × ' || toString((SELECT num_row_groups FROM file(currentDatabase() || '_05394_small.parquet', ParquetMetadata))) || ' 0 → 1'
+FROM (
+    EXPLAIN PIPELINE SELECT sum(id) FROM file(currentDatabase() || '_05394_small.parquet')
+    SETTINGS max_threads = 32, parallelize_output_from_storages = 1, input_format_parquet_preserve_order = 0)
 WHERE trimLeft(explain) LIKE 'File %';
 
 -- The results are the same as when the file is read by a single source.

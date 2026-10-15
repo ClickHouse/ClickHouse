@@ -109,7 +109,10 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
             else
                 reader->reader.file_metadata = getFileMetadata(reader->reader.prefetcher);
             reader->reader.init(read_options, getPort().getHeader(), format_filter_info);
-            reader->init(parser_shared_resources, buckets_to_read ? std::optional(buckets_to_read->row_group_ids) : std::nullopt);
+            reader->init(
+                parser_shared_resources,
+                buckets_to_read ? std::optional(buckets_to_read->row_group_ids) : std::nullopt,
+                /*other_row_groups_are_read_by_other_readers=*/ buckets_to_read && buckets_to_read->is_split_for_parallel_reading);
         }
     }
 }
@@ -337,6 +340,7 @@ std::shared_ptr<FileBucketInfo> ParquetFileBucketInfo::filterByMatchingRowGroups
         return nullptr;
     auto result = std::make_shared<ParquetFileBucketInfo>(std::move(filtered));
     result->file_metadata = file_metadata;
+    result->is_split_for_parallel_reading = is_split_for_parallel_reading;
     return result;
 }
 
@@ -395,6 +399,10 @@ std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitForParallelReading(
     if (max_buckets < 2 || format_settings_.parquet.preserve_order)
         return {};
 
+    /// Without seeks, every reader would read the whole file into its own buffer.
+    if (!format_settings_.seekable_read)
+        return {};
+
     Parquet::ReadOptions read_options = convertReadOptions(format_settings_);
     Parquet::Prefetcher prefetcher;
     prefetcher.init(&buf, read_options, /*parser_shared_resources_=*/ nullptr);
@@ -418,6 +426,7 @@ std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitForParallelReading(
     {
         bucket = std::make_shared<ParquetFileBucketInfo>();
         bucket->file_metadata = metadata;
+        bucket->is_split_for_parallel_reading = true;
         bucket->row_group_ids.reserve(row_groups.size() / num_buckets + 1);
     }
     for (size_t i = 0; i < row_groups.size(); ++i)

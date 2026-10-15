@@ -23,6 +23,11 @@ struct ParquetFileBucketInfo : public FileBucketInfo
     /// carry it.
     std::shared_ptr<const parquet::format::FileMetaData> file_metadata;
 
+    /// Whether the bucket is one of the buckets made by `ParquetBucketSplitter::splitForParallelReading`,
+    /// so that the other row groups of the file are read by other readers of the same query rather than
+    /// skipped. Not serialized, like `file_metadata`.
+    bool is_split_for_parallel_reading = false;
+
     ParquetFileBucketInfo() = default;
     explicit ParquetFileBucketInfo(const std::vector<size_t> & row_group_ids_);
     void serialize(WriteBuffer & buffer) override;

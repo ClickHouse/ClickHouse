@@ -60,7 +60,10 @@ std::optional<size_t> AtomicBitSet::findFirst()
     return std::nullopt;
 }
 
-void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_, const std::optional<std::vector<size_t>> & buckets_to_read_)
+void ReadManager::init(
+    FormatParserSharedResourcesPtr parser_shared_resources_,
+    const std::optional<std::vector<size_t>> & buckets_to_read_,
+    bool other_row_groups_are_read_by_other_readers)
 {
     parser_shared_resources = parser_shared_resources_;
 
@@ -77,9 +80,11 @@ void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_, 
     reader.prefilterAndInitRowGroups(row_groups_to_read);
     reader.preparePrewhere();
 
-    /// The row groups of other buckets are neither read nor pruned by this reader.
+    /// The row groups of other buckets of a split file are neither read nor pruned by this reader. Otherwise,
+    /// the row groups not in the bucket count as pruned, e.g. the ones the query condition cache knows to
+    /// have no matching rows.
     size_t row_groups_to_consider = reader.file_metadata->row_groups.size();
-    if (row_groups_to_read)
+    if (row_groups_to_read && other_row_groups_are_read_by_other_readers)
     {
         row_groups_to_consider = 0;
         for (size_t i = 0; i < reader.file_metadata->row_groups.size(); ++i)
