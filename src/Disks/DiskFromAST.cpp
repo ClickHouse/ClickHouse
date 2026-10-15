@@ -37,13 +37,20 @@ static std::pair<std::string, CustomDiskRegistrationPtr> getOrCreateCustomDisk(
     bool for_system_database,
     CustomDiskRegistrations nested_registrations)
 {
+    auto disk_settings_hash = sipHash128(serialization.data(), serialization.size());
+
+    /// A definition is checked as a new one unless it is loaded from existing metadata. A definition that was
+    /// loaded from existing metadata before is not checked again when its disk is created anew after being
+    /// released: before the disks were released, it would have been reused without any checks.
+    const bool existing_definition = attach || context->isCustomDiskLoadedFromExistingMetadata(disk_settings_hash);
+
     const auto & server_config = context->getConfigRef();
     std::string include_from_path = server_config.getString("include_from", "");
 
     Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
     {
         DynamicS3DiskCredentialInfo s3_disk_info;
-        auto xml_document = getDiskConfigurationFromASTImpl(disk_args, context, attach, &s3_disk_info, for_system_database);
+        auto xml_document = getDiskConfigurationFromASTImpl(disk_args, context, existing_definition, &s3_disk_info, for_system_database);
 
         Poco::AutoPtr<Poco::XML::NamePool> name_pool(new Poco::XML::NamePool());
         Poco::XML::DOMParser dom_parser(name_pool);
@@ -55,7 +62,7 @@ static std::pair<std::string, CustomDiskRegistrationPtr> getOrCreateCustomDisk(
             xml_document,
             substitutions,
             include_from_path,
-            /* throw_on_bad_incl= */!attach,
+            /* throw_on_bad_incl= */!existing_definition,
             dom_parser,
             getLogger("getOrCreateCustomDisk"),
             /*contributing_zk_paths=*/ {},
@@ -71,7 +78,7 @@ static std::pair<std::string, CustomDiskRegistrationPtr> getOrCreateCustomDisk(
         if (s3_disk_info.load_anonymously)
             forceAnonymousS3DiskConfig(*config);
         else
-            validateResolvedS3DiskCredentials(*config, context, attach, s3_disk_info);
+            validateResolvedS3DiskCredentials(*config, context, existing_definition, s3_disk_info);
     }
 
     Poco::Util::AbstractConfiguration::Keys disk_settings_keys;
@@ -82,13 +89,11 @@ static std::pair<std::string, CustomDiskRegistrationPtr> getOrCreateCustomDisk(
             ErrorCodes::BAD_ARGUMENTS,
             "Disk function must have arguments. Invalid disk description.");
 
-    if (disk_settings_keys.size() == 1 && disk_settings_keys.front() == "name" && !attach)
+    if (disk_settings_keys.size() == 1 && disk_settings_keys.front() == "name" && !existing_definition)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Disk function `{}` must have other arguments apart from `name`, which describe disk configuration. Invalid disk description.",
             serialization);
-
-    auto disk_settings_hash = sipHash128(serialization.data(), serialization.size());
 
     std::string disk_name;
     if (config->has("name"))
@@ -103,16 +108,35 @@ static std::pair<std::string, CustomDiskRegistrationPtr> getOrCreateCustomDisk(
         disk_name = DiskSelector::TMP_INTERNAL_DISK_PREFIX + toString(disk_settings_hash);
     }
 
-    if (!attach && (disk_name.empty() || disk_name == "." || disk_name == ".." || disk_name.contains('/')))
+    if (!existing_definition && (disk_name.empty() || disk_name == "." || disk_name == ".." || disk_name.contains('/')))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk name cannot be empty, `.`, `..` or contain `/` ({})", disk_name);
 
+    /// A wrapper disk (`cache`, `encrypted`) may refer to the disk it wraps by name instead of a nested `disk(...)`.
+    /// If that is a custom disk, keep it registered for as long as the wrapper is, like a nested one.
+    if (config->has("disk"))
+    {
+        const auto wrapped_disk_name = config->getString("disk");
+        bool is_nested = std::any_of(nested_registrations.begin(), nested_registrations.end(),
+            [&](const auto & nested) { return nested->getDiskName() == wrapped_disk_name; });
+        if (!is_nested)
+        {
+            if (auto wrapped_registration = context->tryGetCustomDiskRegistration(wrapped_disk_name))
+                nested_registrations.push_back(std::move(wrapped_registration));
+        }
+    }
+
+    /// The registrations in `nested_registrations` that are not taken over are destroyed when this function
+    /// returns, without any lock held.
     auto [disk, registration] = context->getOrCreateCustomDisk(disk_name, disk_settings_hash, [&](const DisksMap & disks_map) -> DiskPtr {
         auto result = DiskFactory::instance().create(
-            disk_name, *config, /* config_path */"", context, disks_map, /* attach */attach, /* custom_disk */true);
+            disk_name, *config, /* config_path */"", context, disks_map, /* attach */existing_definition, /* custom_disk */true);
         /// Mark that disk can be used without storage policy.
         result->markDiskAsCustom(disk_settings_hash);
         return result;
-    }, std::move(nested_registrations));
+    }, nested_registrations);
+
+    if (attach && registration)
+        context->rememberCustomDiskLoadedFromExistingMetadata(disk_settings_hash);
 
     if (!disk->isCustomDisk())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,

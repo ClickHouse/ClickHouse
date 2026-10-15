@@ -41,7 +41,7 @@ CustomDiskRegistry::~CustomDiskRegistry()
     }
 }
 
-CustomDiskRegistrationPtr CustomDiskRegistry::getOrCreate(const String & name, CustomDiskRegistrations nested)
+CustomDiskRegistrationPtr CustomDiskRegistry::getOrCreate(const String & name, CustomDiskRegistrations & nested)
 {
     std::lock_guard lock(mutex);
 
@@ -79,6 +79,18 @@ void CustomDiskRegistry::release(const String & name)
 
     registrations.erase(name);
     names_pending_shutdown.insert(name);
+}
+
+void CustomDiskRegistry::rememberDefinitionLoadedFromExistingMetadata(UInt128 settings_hash)
+{
+    std::lock_guard lock(mutex);
+    definitions_loaded_from_existing_metadata.insert(settings_hash);
+}
+
+bool CustomDiskRegistry::isDefinitionLoadedFromExistingMetadata(UInt128 settings_hash) const
+{
+    std::lock_guard lock(mutex);
+    return definitions_loaded_from_existing_metadata.contains(settings_hash);
 }
 
 void CustomDiskRegistry::scheduleShutdown(const String & name, DiskPtr disk)

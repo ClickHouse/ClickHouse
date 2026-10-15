@@ -3366,7 +3366,7 @@ void MergeTreeSettings::applyChange(const SettingChange & change, ContextPtr con
 
 CustomDiskRegistrationPtr MergeTreeSettings::resolveDiskSetting(SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database)
 {
-    /// Only the `disk` setting yields a registration, and a setting occurs at most once.
+    /// Only the `disk` and `storage_policy` settings yield a registration, and a setting occurs at most once.
     CustomDiskRegistrationPtr registration;
     for (auto & change : changes)
     {
@@ -3378,6 +3378,16 @@ CustomDiskRegistrationPtr MergeTreeSettings::resolveDiskSetting(SettingsChanges 
 
 CustomDiskRegistrationPtr MergeTreeSettings::resolveDiskSetting(SettingChange & change, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database)
 {
+    if (change.name == "storage_policy")
+    {
+        /// The single-disk storage policy implicitly created for a custom disk can be named directly. Keep
+        /// the disk registered for as long as the table uses the policy, as if it was named in `disk`.
+        String policy_name;
+        if (change.value.tryGet<String>(policy_name) && policy_name.starts_with(StoragePolicySelector::TMP_STORAGE_POLICY_PREFIX))
+            return context->tryGetCustomDiskRegistration(policy_name.substr(strlen(StoragePolicySelector::TMP_STORAGE_POLICY_PREFIX)));
+        return nullptr;
+    }
+
     if (change.name != "disk")
         return nullptr;
 

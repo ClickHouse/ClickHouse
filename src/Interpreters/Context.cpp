@@ -7993,7 +7993,7 @@ DiskPtr Context::getDisk(const String & name) const
 }
 
 std::pair<DiskPtr, CustomDiskRegistrationPtr> Context::getOrCreateCustomDisk(
-    const String & name, UInt128 settings_hash, DiskCreator creator, CustomDiskRegistrations nested) const
+    const String & name, UInt128 settings_hash, DiskCreator creator, CustomDiskRegistrations & nested) const
 {
     while (true)
     {
@@ -8031,8 +8031,20 @@ std::pair<DiskPtr, CustomDiskRegistrationPtr> Context::getOrCreateCustomDisk(
         /// An existing registration already owns the registrations of the nested disks: the name of a
         /// disk is derived from its definition with the nested definitions replaced by the names of
         /// the disks they describe, so the same name means the same nested disks.
-        return {disk, shared->custom_disk_registry.getOrCreate(name, std::move(nested))};
+        /// The registrations in `nested` that the registry does not take over are destroyed by the caller,
+        /// after `storage_policies_mutex` is unlocked: destroying one may release a disk, which locks it.
+        return {disk, shared->custom_disk_registry.getOrCreate(name, nested)};
     }
+}
+
+void Context::rememberCustomDiskLoadedFromExistingMetadata(UInt128 settings_hash) const
+{
+    shared->custom_disk_registry.rememberDefinitionLoadedFromExistingMetadata(settings_hash);
+}
+
+bool Context::isCustomDiskLoadedFromExistingMetadata(UInt128 settings_hash) const
+{
+    return shared->custom_disk_registry.isDefinitionLoadedFromExistingMetadata(settings_hash);
 }
 
 CustomDiskRegistrationPtr Context::tryGetCustomDiskRegistration(const String & name) const

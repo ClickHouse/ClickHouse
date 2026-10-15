@@ -31,8 +31,9 @@ public:
     ~CustomDiskRegistry();
 
     /// The registration of the disk `name`. If there is none yet, creates it, and the new
-    /// registration takes over `nested`.
-    CustomDiskRegistrationPtr getOrCreate(const String & name, CustomDiskRegistrations nested);
+    /// registration takes over `nested`. Otherwise `nested` is left to the caller: destroying a
+    /// registration may release a disk, which locks the mutexes the caller may be holding.
+    CustomDiskRegistrationPtr getOrCreate(const String & name, CustomDiskRegistrations & nested);
     /// The registration of the disk `name`, or nullptr if there is none.
     CustomDiskRegistrationPtr tryGet(const String & name) const;
     /// Whether the last registration of the disk `name` is being destroyed. It is not if the disk
@@ -56,6 +57,13 @@ public:
     /// used again instead of creating a new disk with the same name. nullptr if there is none.
     /// std::nullopt if the disk `name` is being shut down, and `waitForShutdown` has to be called first.
     std::optional<DiskPtr> tryTakeReleasedDisk(const String & name);
+
+    /// A disk definition (`settings_hash`, see `IDisk::markDiskAsCustom`) loaded from existing metadata,
+    /// e.g. at server start, is exempt from the checks of a new definition. It stays exempt after its disk
+    /// is released, as if the disk was still registered, so that `UNDROP TABLE` or `DETACH` and `ATTACH`
+    /// of a table or database using it keep working.
+    void rememberDefinitionLoadedFromExistingMetadata(UInt128 settings_hash);
+    bool isDefinitionLoadedFromExistingMetadata(UInt128 settings_hash) const;
 
     /// Waits for the scheduled shutdowns and shuts down the disks still waiting for their references to
     /// go away. The disks released after that are shut down in place.
@@ -87,6 +95,7 @@ private:
     /// came. They are shut down when the reference goes away, or used again if a table or database with
     /// the same definition appears before that.
     std::map<String, DiskPtr> lingering_disks TSA_GUARDED_BY(mutex);
+    std::set<UInt128> definitions_loaded_from_existing_metadata TSA_GUARDED_BY(mutex);
     bool shutdown_called TSA_GUARDED_BY(mutex) = false;
     /// Started on the first scheduled shutdown.
     std::unique_ptr<ThreadFromGlobalPoolNoTracingContextPropagation> thread TSA_GUARDED_BY(mutex);
