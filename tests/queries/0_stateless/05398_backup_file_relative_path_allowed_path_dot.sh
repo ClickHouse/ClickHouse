@@ -42,4 +42,25 @@ EOF
         -q "BACKUP TABLE t TO File('../escape') FORMAT Null" 2>&1 | grep -o -m1 BAD_ARGUMENTS
 done
 
+# A relative path that leaves the first entry must not be admitted by a later entry that contains it.
+mkdir -p "${WORK_DIR}/area/backups"
+cat > "${WORK_DIR}/config.xml" <<EOF
+<clickhouse>
+    <backups>
+        <allowed_path>${WORK_DIR}/area/backups</allowed_path>
+        <allowed_path>${WORK_DIR}/area</allowed_path>
+    </backups>
+</clickhouse>
+EOF
+rm -rf "${WORK_DIR}/data"
+echo "overlapping"
+${CLICKHOUSE_LOCAL} --config-file "${WORK_DIR}/config.xml" --path "${WORK_DIR}/data" -m -q "
+    CREATE TABLE t (x UInt64) ENGINE = MergeTree ORDER BY x;
+    INSERT INTO t SELECT number FROM numbers(10);
+    BACKUP TABLE t TO File('b3') FORMAT Null;
+"
+ls "${WORK_DIR}/area/backups"
+${CLICKHOUSE_LOCAL} --config-file "${WORK_DIR}/config.xml" --path "${WORK_DIR}/data" \
+    -q "BACKUP TABLE t TO File('../../escape') FORMAT Null" 2>&1 | grep -o -m1 BAD_ARGUMENTS
+
 cd "${CUR_DIR}" && rm -rf "${WORK_DIR}"
