@@ -3528,6 +3528,11 @@ void MergeTreeData::startStatisticsCache()
     const auto settings = getSettings();
     UInt64 refresh_statistics_seconds = (*settings)[MergeTreeSetting::refresh_statistics_interval].totalSeconds();
     std::lock_guard lock(refresh_stats_task_mutex);
+    if (refresh_stats_pause_count > 0)
+    {
+        refresh_stats_rearm_after_pause = true;
+        return;
+    }
     if (refresh_stats_task)
     {
         refresh_stats_cancelled = true;
@@ -3553,6 +3558,39 @@ void MergeTreeData::stopStatisticsCache()
     refresh_stats_cancelled = true;
     if (refresh_stats_task)
         refresh_stats_task->deactivate();
+}
+
+scope_guard MergeTreeData::pauseStatisticsCache()
+{
+    {
+        std::lock_guard lock(refresh_stats_task_mutex);
+        ++refresh_stats_pause_count;
+        if (refresh_stats_task && !refresh_stats_stopped)
+            refresh_stats_rearm_after_pause = true;
+        refresh_stats_cancelled = true;
+        if (refresh_stats_task)
+            refresh_stats_task->deactivate();
+    }
+
+    return [this]
+    {
+        bool rearm = false;
+        {
+            std::lock_guard lock(refresh_stats_task_mutex);
+            if (--refresh_stats_pause_count == 0)
+                rearm = std::exchange(refresh_stats_rearm_after_pause, false);
+        }
+        if (!rearm)
+            return;
+        try
+        {
+            startStatisticsCache();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to restart the statistics refresh");
+        }
+    };
 }
 
 void MergeTreeData::refreshDataParts(UInt64 interval_milliseconds)
@@ -5266,6 +5304,9 @@ void MergeTreeData::rename(const String & new_table_path, const StorageID & new_
         if (disk->existsDirectory(new_table_path))
             throw Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS, "Target path already exists: {}", fullPath(disk, new_table_path));
     }
+
+    /// The paths of all parts change, and the statistics refresh reads them without any table lock.
+    auto statistics_cache_pause = pauseStatisticsCache();
 
     for (const auto & disk : disks)
     {

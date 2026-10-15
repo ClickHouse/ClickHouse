@@ -327,7 +327,12 @@ public:
     /// Restores table metadata if ZooKeeper lost it.
     /// Used only on restarted readonly replicas (not checked). All active (Active) parts are moved to detached/
     /// folder and attached. Parts in all other states are just moved to detached/ folder.
-    void restoreMetadataInZooKeeper(const ZooKeeperRetriesInfo & zookeeper_retries_info, bool is_called_during_attach);
+    /// `lock_out_readers`, if set, returns an exclusive lock on the table object that queries lock; it is held
+    /// while the parts are moved.
+    void restoreMetadataInZooKeeper(
+        const ZooKeeperRetriesInfo & zookeeper_retries_info,
+        bool is_called_during_attach,
+        const std::function<TableExclusiveLockHolder()> & lock_out_readers = {});
 
     /// Get throttler for replicated fetches
     ThrottlerPtr getFetchesThrottler() const

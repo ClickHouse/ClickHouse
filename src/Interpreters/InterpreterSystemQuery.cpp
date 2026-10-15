@@ -1453,7 +1453,8 @@ void InterpreterSystemQuery::restoreReplica()
             settings[Setting::keeper_retry_initial_backoff_ms],
             settings[Setting::keeper_retry_max_backoff_ms],
             getContext()->getProcessListElementSafe()},
-        false);
+        false,
+        [&] { return table_ptr->lockExclusively(getContext()->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]); });
 }
 
 void InterpreterSystemQuery::restoreDatabaseReplica(ASTSystemQuery & query)
