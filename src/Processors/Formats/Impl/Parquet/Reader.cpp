@@ -515,7 +515,7 @@ bool Reader::topKShouldSkipRowGroup(const RowGroup & row_group) const
     return !tracker.isValueInsideThreshold(boundary);
 }
 
-std::optional<Chunk> Reader::readMinMaxFromStatistics(const std::optional<std::unordered_set<UInt64>> & row_groups_to_read) const
+std::optional<Chunk> Reader::readMinMaxFromStatistics(const RowGroupSelection & row_groups_to_read) const
 {
     /// Statistics cannot describe a subset of rows inside a row group.
     if (format_filter_info->rows_to_read)
@@ -559,7 +559,7 @@ std::optional<Chunk> Reader::readMinMaxFromStatistics(const std::optional<std::u
         const auto & meta = file_metadata.row_groups[row_group_idx];
         if (meta.num_rows < 0 || meta.columns.size() != total_primitive_columns_in_file)
             return std::nullopt;
-        if (meta.num_rows == 0 || (row_groups_to_read.has_value() && !row_groups_to_read->contains(row_group_idx)))
+        if (meta.num_rows == 0 || !row_groups_to_read.contains(row_group_idx, meta))
             continue;
         has_rows = true;
 
@@ -685,7 +685,32 @@ bool Reader::spatialBboxStatsHaveNoNulls(const parq::RowGroup & meta, size_t spa
     return true;
 }
 
-void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UInt64>> & row_groups_to_read)
+UInt64 RowGroupSelection::rowGroupStartOffset(const parq::RowGroup & meta)
+{
+    if (meta.columns.empty())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Row group has no column chunks");
+    const auto & column = meta.columns.front().meta_data;
+    Int64 offset = column.data_page_offset;
+    if (column.__isset.dictionary_page_offset && column.dictionary_page_offset > 0 && column.dictionary_page_offset < offset)
+        offset = column.dictionary_page_offset;
+    if (offset < 0)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Negative column chunk offset in row group: {}", offset);
+    return UInt64(offset);
+}
+
+bool RowGroupSelection::contains(size_t row_group_idx, const parq::RowGroup & meta) const
+{
+    if (row_group_ids.has_value() && !row_group_ids->contains(row_group_idx))
+        return false;
+    if (byte_range.has_value())
+    {
+        UInt64 start = rowGroupStartOffset(meta);
+        return byte_range->first <= start && start - byte_range->first < byte_range->second;
+    }
+    return true;
+}
+
+void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_groups_to_read)
 {
     extended_sample_block = *sample_block;
     for (const auto & col : format_filter_info->additional_columns)
@@ -1154,7 +1179,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
             .hyperrectangle = std::move(hyperrectangle),
             .top_k_sort_column_range = getTopKSortColumnRange(*meta)});
         if (candidates.back().top_k_sort_column_range.has_value()
-            && (!row_groups_to_read.has_value() || row_groups_to_read->contains(row_group_idx)))
+            && row_groups_to_read.contains(row_group_idx, *meta))
             some_top_k_range_to_read = true;
     }
 
@@ -1180,7 +1205,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
         const auto * meta = candidate.meta;
         RowGroup & row_group = row_groups.emplace_back();
         row_group.meta = meta;
-        row_group.need_to_process = !row_groups_to_read.has_value() || row_groups_to_read->contains(candidate.row_group_idx);
+        row_group.need_to_process = row_groups_to_read.contains(candidate.row_group_idx, *meta);
         row_group.requested_rows_slice = candidate.requested_rows_slice;
         row_group.row_group_idx = candidate.row_group_idx;
         row_group.start_global_row_idx = candidate.start_global_row_idx;

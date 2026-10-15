@@ -10073,6 +10073,12 @@ For instance, if a Parquet file contains multiple row groups, enabling `bucket` 
 Defines the approximate size of a batch (in bytes) used in distributed processing of tasks in cluster table functions with `bucket` split granularity. The system accumulates data until at least this amount is reached. The actual size may be slightly larger to align with data boundaries.
 )", 0, \
         {"25.11", 0, 0, "New setting."}) \
+    DECLARE(Bool, cluster_table_function_split_by_split_offsets, false, R"(
+With `bucket` split granularity, when the table metadata records the file size and the row group offsets (`split_offsets` in Iceberg), cut files into byte ranges on these offsets without reading them; each task reads the row groups that start in its range. Otherwise, and on a hit in the query condition cache, the initiator reads the footer of every file.
+
+Requires all servers of the cluster to support it: a task with a byte range cannot be sent to a server of an older version.
+)", 0, \
+        {"26.10", false, false, "New setting."}) \
     DECLARE(UInt64, merge_table_max_tables_to_look_for_schema_inference, 1000, R"(
 When creating a `Merge` table without an explicit schema or when using the `merge` table function, infer schema as a union of not more than the specified number of matching tables.
 If there is a larger number of tables, the schema will be inferred from the first specified number of tables.

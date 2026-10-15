@@ -52,19 +52,14 @@ std::optional<size_t> AtomicBitSet::findFirst()
     return std::nullopt;
 }
 
-void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_, const std::optional<std::vector<size_t>> & buckets_to_read_)
+void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_, RowGroupSelection row_groups_to_read_)
 {
     parser_shared_resources = parser_shared_resources_;
 
     if (reader.file_metadata.schema.empty())
         reader.file_metadata = Reader::readFileMetaData(reader.prefetcher, reader.options.format.parquet.footer_read_size);
 
-    if (buckets_to_read_)
-    {
-        row_groups_to_read = std::unordered_set<UInt64>{};
-        for (auto rg : *buckets_to_read_)
-            row_groups_to_read->insert(rg);
-    }
+    row_groups_to_read = std::move(row_groups_to_read_);
     reader.prefilterAndInitRowGroups(row_groups_to_read);
     reader.preparePrewhere();
 

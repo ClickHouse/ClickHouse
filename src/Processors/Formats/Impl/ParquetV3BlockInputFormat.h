@@ -15,11 +15,13 @@ namespace DB
 struct ParquetFileBucketInfo : public FileBucketInfo
 {
     std::vector<size_t> row_group_ids;
+    std::optional<std::pair<UInt64, UInt64>> byte_range;
 
     ParquetFileBucketInfo() = default;
     explicit ParquetFileBucketInfo(const std::vector<size_t> & row_group_ids_);
-    void serialize(WriteBuffer & buffer) override;
-    void deserialize(ReadBuffer & buffer) override;
+    ParquetFileBucketInfo(UInt64 offset, UInt64 length);
+    void serialize(WriteBuffer & buffer, size_t protocol_version) const override;
+    void deserialize(ReadBuffer & buffer, size_t protocol_version) override;
     String getIdentifier() const override;
     String getFormatName() const override
     {
@@ -33,6 +35,7 @@ struct ParquetBucketSplitter : public IBucketSplitter
 {
     ParquetBucketSplitter() = default;
     std::vector<FileBucketInfoPtr> splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_) override;
+    std::vector<FileBucketInfoPtr> splitByByteRanges(size_t bucket_size, size_t file_size, const std::vector<UInt64> & split_offsets) override;
 };
 
 class ParquetV3BlockInputFormat final : public IInputFormat
@@ -96,6 +99,7 @@ private:
 
     void initializeIfNeeded();
     std::shared_ptr<ParquetFileBucketInfo> buckets_to_read;
+    Parquet::RowGroupSelection rowGroupSelection() const;
 
     parquet::format::FileMetaData getFileMetadata(Parquet::Prefetcher & prefetcher) const;
 };
