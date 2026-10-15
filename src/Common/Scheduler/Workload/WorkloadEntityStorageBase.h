@@ -1,6 +1,5 @@
 #pragma once
 
-#include <functional>
 #include <list>
 #include <mutex>
 #include <unordered_map>
@@ -36,7 +35,6 @@ public:
 
     bool empty() const override;
 
-    void setOuterReferences(std::string_view outer_storage_name_, const WorkloadEntityKeys & keys) override;
 
     void loadEntities(const Poco::Util::AbstractConfiguration & config) override;
 
@@ -137,15 +135,6 @@ private:
     /// Throws if references of loaded `new_own_entities` are broken (see "References" in IWorkloadEntityStorage.h)
     void checkLoadedReferences(const WorkloadEntities & new_own_entities) const;
 
-    /// Replaces own entities with `new_own_entities` if `commit` returns `Ok`. References to the entities of the next
-    /// storage are registered with it for both the current and the new own entities before `commit`, and for the
-    /// resulting own entities after it.
-    OperationResult commitOwnEntities(WorkloadEntities new_own_entities, const std::function<OperationResult()> & commit);
-
-    /// Registers with the next storage the references of `own_entities` and `new_own_entities` to entities that are
-    /// not own entities
-    void registerOuterReferences(const WorkloadEntities * new_own_entities = nullptr);
-
     /// Notify subscribers about changes described by vector of events `tx`. Takes `notify_mutex` before unlocking
     /// `lock`, so transactions are delivered in the order they were computed.
     void unlockAndNotify(std::unique_lock<std::recursive_mutex> & lock, const std::vector<Event> & tx);
@@ -185,8 +174,6 @@ private:
     WorkloadEntities visible_entities; /// The merged view of this layer
     WorkloadEntities own_entities; /// Entities that are stored in this layer, including shadowed ones
     WorkloadEntities inherited_entities; /// Visible entities of the next storage (a copy to be accessed under own mutex)
-    WorkloadEntityKeys outer_references; /// Visible entities referenced by the outer storage (see `setOuterReferences`)
-    String outer_storage_name;
 
     /// Serializes deliveries of transactions to subscribers. Taken while `mutex` is held, then held without
     /// `mutex` while handlers run.

@@ -446,19 +446,6 @@ bool WorkloadEntityStorageBase::empty() const
     return visible_entities.empty();
 }
 
-void WorkloadEntityStorageBase::setOuterReferences(std::string_view outer_storage_name_, const WorkloadEntityKeys & keys)
-{
-    std::lock_guard lock(mutex);
-    for (const auto & key : keys)
-    {
-        if (!outer_references.contains(key) && !visible_entities.contains(key))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The {} '{}' referenced by the {} storage does not exist in the {} storage",
-                getKindName(key.type), key.name, outer_storage_name_, getName());
-    }
-    outer_references = keys;
-    outer_storage_name = outer_storage_name_;
-}
-
 void WorkloadEntityStorageBase::loadEntities(const Poco::Util::AbstractConfiguration & config)
 {
     if (next_storage)
@@ -532,12 +519,9 @@ bool WorkloadEntityStorageBase::storeEntity(
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity cycles are not allowed");
             });
 
-        WorkloadEntities new_own_entities = own_entities;
-        new_own_entities[key] = create_entity_query;
-        auto result = commitOwnEntities(std::move(new_own_entities), [&]
-        {
-            return storeEntityImpl(current_context, entity_type, entity_name, create_entity_query, throw_if_exists, replace_if_exists, settings);
-        });
+        auto result = storeEntityImpl(current_context, entity_type, entity_name, create_entity_query, throw_if_exists, replace_if_exists, settings);
+        if (result == OperationResult::Ok)
+            own_entities[key] = create_entity_query;
 
         if (result == OperationResult::Retry)
             continue; // Entities were updated, we need to rerun all the validations
@@ -583,12 +567,9 @@ bool WorkloadEntityStorageBase::removeEntity(
         if (!names.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity '{}' cannot be dropped. It is referenced by:{}", entity_name, names);
 
-        WorkloadEntities new_own_entities = own_entities;
-        new_own_entities.erase(key);
-        auto result = commitOwnEntities(std::move(new_own_entities), [&]
-        {
-            return removeEntityImpl(current_context, entity_type, entity_name, throw_if_not_exists);
-        });
+        auto result = removeEntityImpl(current_context, entity_type, entity_name, throw_if_not_exists);
+        if (result == OperationResult::Ok)
+            own_entities.erase(key);
 
         if (result == OperationResult::Retry)
             continue; // Entities were updated, we need to rerun all the validations
@@ -726,15 +707,6 @@ void WorkloadEntityStorageBase::checkLoadedReferences(const WorkloadEntities & n
 
     // Inherited entities cannot reference own entities, so a cycle consists of own entities only
     checkParentCycles(new_own_entities);
-
-    // An entity referenced by the outer storage must stay visible
-    WorkloadEntities new_visible_entities = computeVisibleEntities(new_own_entities);
-    for (const auto & key : outer_references)
-    {
-        if (!new_visible_entities.contains(key))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot drop {} '{}' of the {} storage: it is referenced by the {} storage",
-                getKindName(key.type), key.name, getName(), outer_storage_name);
-    }
 }
 
 WorkloadEntities WorkloadEntityStorageBase::computeVisibleEntities(const WorkloadEntities & own) const
@@ -886,7 +858,7 @@ void WorkloadEntityStorageBase::setOwnEntities(const ASTs & queries)
 
     checkLoadedReferences(new_own_entities);
 
-    commitOwnEntities(std::move(new_own_entities), [] { return OperationResult::Ok; });
+    own_entities = std::move(new_own_entities);
     updateVisibleEntities(lock);
 }
 
@@ -894,48 +866,6 @@ void WorkloadEntityStorageBase::replaceOwnEntities(std::unique_lock<std::recursi
 {
     own_entities = std::move(new_own_entities);
     updateVisibleEntities(lock);
-}
-
-WorkloadEntityStorageBase::OperationResult WorkloadEntityStorageBase::commitOwnEntities(
-    WorkloadEntities new_own_entities, const std::function<OperationResult()> & commit)
-{
-    registerOuterReferences(&new_own_entities);
-    OperationResult result;
-    try
-    {
-        result = commit();
-    }
-    catch (...)
-    {
-        registerOuterReferences();
-        throw;
-    }
-    if (result == OperationResult::Ok)
-        own_entities = std::move(new_own_entities);
-    registerOuterReferences();
-    return result;
-}
-
-void WorkloadEntityStorageBase::registerOuterReferences(const WorkloadEntities * new_own_entities)
-{
-    if (!next_storage)
-        return;
-    WorkloadEntityKeys keys;
-    const WorkloadEntities * current_own_entities = &own_entities;
-    for (const auto * entities : {current_own_entities, new_own_entities})
-    {
-        if (!entities)
-            continue;
-        for (const auto & [key, entity] : *entities)
-        {
-            forEachReference(entity, [&](const WorkloadEntityKey & target, const String &)
-            {
-                if (!entities->contains(target))
-                    keys.insert(target);
-            });
-        }
-    }
-    next_storage->setOuterReferences(getName(), keys);
 }
 
 WorkloadEntities WorkloadEntityStorageBase::getAllEntities() const

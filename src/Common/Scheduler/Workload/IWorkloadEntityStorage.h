@@ -79,14 +79,8 @@ class RestorerFromBackup;
  * and SQL entities may reference configuration entities, but not implicit ones. Every statement and every load
  * (configuration, Keeper, disk) rejects a missing target and a parent cycle; a configuration reload is then not
  * applied, and a failed Keeper or disk load fails the startup or the refresh. A dropped entity must not be referenced
- * by an own entity. The SQL layer registers its references to configuration entities with `setOuterReferences` of
- * the configuration, under its lock, before committing a statement or a load. The configuration rejects the
- * registration of an entity it does not have (e.g. dropped by a concurrent reload), and rejects a reload that drops a
- * registered entity.
- *
- * Locks. `setOuterReferences` takes the configuration lock under the SQL lock. Nothing takes them in the opposite
- * order: the configuration notifies the SQL layer without its lock, its loads are serialized, and the implicit layer
- * never calls into the SQL layer under its own lock.
+ * by an own entity. A configuration reload is not checked against the SQL layer: dropping a configuration entity
+ * that a SQL entity references breaks the reference, and the next load of the SQL entities fails until it is fixed.
  *
  * Writes, backup and restore. `storeEntity`, `removeEntity`, `backup` and `restore` are served by the SQL layer: the
  * implicit layer forwards them, and the configuration is read-only. A backup contains the own entities of the SQL
@@ -112,8 +106,6 @@ struct WorkloadEntityKey
 
     auto operator<=>(const WorkloadEntityKey &) const = default;
 };
-
-using WorkloadEntityKeys = std::set<WorkloadEntityKey>;
 
 /// Maps a workload entity into its CREATE query
 using WorkloadEntities = std::map<WorkloadEntityKey, ASTPtr>;
@@ -183,10 +175,6 @@ public:
 
     /// Stops watching.
     virtual void stopWatching() {}
-
-    /// Replaces the set of visible entities that the outer storage `outer_storage_name` references (see "References"
-    /// above). Throws if a newly registered entity is not visible.
-    virtual void setOuterReferences(std::string_view /*outer_storage_name*/, const WorkloadEntityKeys & /*keys*/) {}
 
     /// Stores an entity.
     virtual bool storeEntity(
