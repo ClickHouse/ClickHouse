@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -227,9 +228,20 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node, FindReadingStepContext
 /// Fixed columns are 'x' and 'y'.
 using FixedColumns = std::unordered_set<const ActionsDAG::Node *>;
 
+/// Whether the type is a `Variant` or `Dynamic`, also as an element of a `Tuple` or of a nested `Tuple`: `equals` compares tuples
+/// element by element, but `Array` and `Map` values of one type with `compareAt`, which tells apart the types stored in a `Dynamic`.
+bool isVariantOrDynamicThroughTuples(const DataTypePtr & type_with_wrappers)
+{
+    auto type = removeLowCardinalityAndNullable(type_with_wrappers);
+    if (isVariant(type) || isDynamic(type))
+        return true;
+    const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get());
+    return tuple && std::ranges::any_of(tuple->getElements(), isVariantOrDynamicThroughTuples);
+}
+
 /// Whether `column = constant` holds for several values of the column that sort differently, so it does not fix the column.
 /// `equals` pads a `FixedString` with zero bytes against a `String`, so `s = toFixedString('a', 2)` matches `'a'` with any
-/// number of trailing zero bytes, also inside `Tuple`, `Variant` and `Dynamic`, but not inside `Array` or `Map`.
+/// number of trailing zero bytes, also inside `Tuple`, `Variant` and `Dynamic`, but not inside `Array` or `Map` cast to a common type.
 bool equalsMatchesSeveralValues(
     const DataTypePtr & column_type_with_wrappers, ColumnPtr constant, const DataTypePtr & constant_type_with_wrappers)
 {
@@ -263,12 +275,24 @@ bool equalsMatchesSeveralValues(
 
     if (isString(column_type) && isFixedString(constant_type))
         return true;
+    /// A float is compared with a `Decimal`, `DateTime64` or `Time64` in `Float64`, which keeps distinct `Decimal32` values
+    /// distinct but not wider ones, so `d = 1.0` matches both `1` and `1.000000000000000001`.
+    if (isColumnedAsDecimal(column_type) && !WhichDataType(column_type).isDecimal32() && isFloat(constant_type))
+        return true;
     /// Values of several types can be equal to the constant (`'a'` as `String` and `FixedString(1)`) and sort differently.
     if (isVariant(column_type) || isDynamic(column_type))
+        return true;
+    /// `Array` values without a common type are compared element by element with `equals`, which can match several values.
+    /// `equals` looks for the common type without `LowCardinality`, which cannot hold every common type, e.g. `DateTime64`.
+    if (isArray(column_type) && isArray(constant_type)
+        && !tryGetLeastSupertype(DataTypes{recursiveRemoveLowCardinality(column_type), recursiveRemoveLowCardinality(constant_type)}))
         return true;
 
     const auto * column_tuple = typeid_cast<const DataTypeTuple *>(column_type.get());
     const auto * constant_tuple = typeid_cast<const DataTypeTuple *>(constant_type.get());
+    /// `equals` parses a string into the type of the tuple, so only `Variant` and `Dynamic` elements can match several values.
+    if (column_tuple && isStringOrFixedString(constant_type))
+        return isVariantOrDynamicThroughTuples(column_type);
     if (!column_tuple || !constant_tuple)
         return false;
 
