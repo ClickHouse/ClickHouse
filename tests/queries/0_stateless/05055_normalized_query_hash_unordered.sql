@@ -26,7 +26,6 @@ SELECT normalizedQueryHashUnordered('SELECT a, a FROM t') = normalizedQueryHashU
 
 -- different tokens still differ
 SELECT normalizedQueryHashUnordered('SELECT a, b FROM t') = normalizedQueryHashUnordered('SELECT a, c FROM t');
-SELECT normalizedQueryHashUnordered('SELECT NULL FROM t') = normalizedQueryHashUnordered('SELECT 1 FROM t');
 SELECT normalizedQueryHashUnordered('SELECT 1 AS x FROM t') = normalizedQueryHashUnordered('SELECT 1 AS y FROM t');
 SELECT normalizedQueryHashUnordered('SELECT 1 UNION ALL SELECT 2') = normalizedQueryHashUnordered('SELECT 1 UNION DISTINCT SELECT 2');
 SELECT normalizedQueryHashUnordered('SELECT sum(x) OVER (ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) FROM t') = normalizedQueryHashUnordered('SELECT sum(x) OVER (ROWS BETWEEN CURRENT ROW AND 1 FOLLOWING) FROM t');

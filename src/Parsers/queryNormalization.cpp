@@ -3,9 +3,31 @@
 #include <Common/SipHash.h>
 #include <Common/StringUtils.h>
 
+#include <string_view>
+
 
 namespace DB
 {
+
+namespace
+{
+
+/// NULL, TRUE and FALSE are bare words to the lexer, but values to the parser, apart from the Null engine and format
+bool isValueKeyword(const Token & token)
+{
+    if (token.type != TokenType::BareWord)
+        return false;
+    std::string_view word(token.begin, token.size());
+    return equalsCaseInsensitive(word, "null") || equalsCaseInsensitive(word, "true") || equalsCaseInsensitive(word, "false");
+}
+
+bool isLiteral(const Token & token)
+{
+    return token.type == TokenType::Number || token.type == TokenType::StringLiteral || token.type == TokenType::HereDoc
+        || isValueKeyword(token);
+}
+
+}
 
 UInt64 normalizedQueryHash(const char * begin, const char * end, bool keep_names)
 {
@@ -24,7 +46,7 @@ UInt64 normalizedQueryHash(const char * begin, const char * end, bool keep_names
             continue;
 
         /// Literals.
-        if (token.type == TokenType::Number || token.type == TokenType::StringLiteral || token.type == TokenType::HereDoc)
+        if (isLiteral(token))
         {
             if (0 == num_literals_in_sequence)
                 hash.update("\x00", 1);
@@ -128,7 +150,7 @@ UInt64 normalizedQueryHashUnordered(const char * begin, const char * end)
             continue;
 
         /// Literals.
-        if (token.type == TokenType::Number || token.type == TokenType::StringLiteral || token.type == TokenType::HereDoc)
+        if (isLiteral(token))
         {
             if (0 == num_literals_in_sequence)
                 sum += sipHash64("\x00", 1);
@@ -241,7 +263,7 @@ void normalizeQueryToPODArray(const char * begin, const char * end, PaddedPODArr
         prev_insignificant = false;
 
         /// Literals.
-        if (token.type == TokenType::Number || token.type == TokenType::StringLiteral || token.type == TokenType::HereDoc)
+        if (isLiteral(token))
         {
             if (0 == num_literals_in_sequence)
                 res_data.push_back('?');
