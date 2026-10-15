@@ -349,6 +349,12 @@ private:
       */
     std::unordered_map<QueryTreeNodePtr, QueryTreeNodePtr> named_window_snapshots;
 
+    /** The `REPLACE` transformer mappings of the matchers resolved between the first and the second expansion of
+      * the projection matchers under `group_by_use_nulls` (in `WHERE`, `GROUP BY`, etc.), which rewrote the `WINDOW` clause.
+      * The clause is restored to its state before the first expansion, so they are replayed on it, see `resolveQuery`.
+      */
+    std::unordered_map<const IQueryTreeNode *, std::vector<std::unordered_map<std::string, QueryTreeNodePtr>>> window_rewrites_to_replay;
+
     std::unordered_map<IQueryTreeNode *, QueryTreeNodePtr> cte_copy_to_original_map;
 
     /** The name of the view a table expression was inlined from, see `inlineViewSubqueryIfNeeded`.
