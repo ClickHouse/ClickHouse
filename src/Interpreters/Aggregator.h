@@ -409,6 +409,15 @@ public:
         std::atomic<bool> & is_cancelled,
         PaddedPODArray<AggregateDataPtr> & places_scratch) const;
 
+    /// `drainStagedBatch` into the session's shared table, called under `pressure_sweep_mutex`.
+    /// A drain that throws midway (a memory limit hit while creating states, say) leaves keys
+    /// in the shared table whose states are null; the session is cancelled before the lock is
+    /// released, so no other producer drains into that table or writes it.
+    size_t drainStagedBatchIntoSharedTable(
+        AdaptiveAggregationSession & shared,
+        const std::vector<StagedChunkPtr> & chunks,
+        PaddedPODArray<AggregateDataPtr> & places_scratch) const;
+
     /// A fresh drain destination of the session's method type, with one arena per bucket.
     AggregatedDataVariantsPtr createAdaptiveDrainTable(AggregatedDataVariants::Type type) const;
 
