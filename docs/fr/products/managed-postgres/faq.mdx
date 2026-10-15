@@ -53,43 +53,107 @@ Oui, vous pouvez modifier les paramètres de configuration de PostgreSQL et de P
 
 ## Pool de connexions {#connection-pooling}
 
-### Pourquoi est-ce que je vois des erreurs `prepared statement does not exist` avec PgBouncer ? {#prepared-statement-errors}
+### Pourquoi des erreurs `prepared statement does not exist` apparaissent-elles via PgBouncer ? {#prepared-statement-errors}
 
-ClickHouse Managed Postgres exécute PgBouncer en mode **pool de connexions par transaction**. Dans ce mode, une connexion backend Postgres n’est attribuée à votre client que pendant une seule transaction, puis remise dans le pool — la transaction suivante du même client peut être dirigée vers un autre backend.
+ClickHouse Managed Postgres exécute PgBouncer en mode **pool de connexions par transaction**. Dans ce mode, une connexion Postgres backend n&#39;est assignée à votre client que le temps d&#39;une seule transaction, puis elle est restituée au pool — la transaction suivante du même client peut donc être routée vers un autre backend.
 
-Cela casse les **prepared statements côté serveur**, qui sont liés au backend précis ayant exécuté le `PREPARE` (ou le `Parse` de la requête étendue). Lorsque l’`EXECUTE` correspondant est envoyé à un autre backend, vous obtenez des erreurs comme :
+PgBouncer suit les **requêtes préparées au niveau du protocole**, que la plupart des drivers envoient via le protocole de requête étendu (messages `Parse`, `Bind` et `Execute`). Lorsqu&#39;un statement s&#39;exécute sur un backend qui ne le connaît pas encore, PgBouncer l&#39;y prépare au préalable. Chaque connexion backend en conserve jusqu&#39;à `max_prepared_statements`, soit `200` par défaut. La plupart des drivers fonctionnent donc via PgBouncer avec leurs paramètres par défaut.
+
+Ce qui ne fonctionne pas via PgBouncer :
+
+* **Les requêtes préparées au niveau SQL.** PgBouncer ne suit pas les commandes `PREPARE` et `EXECUTE` envoyées en SQL ; un `EXECUTE` peut donc être routé vers un backend qui n&#39;a jamais exécuté le `PREPARE`.
+* **La libération des statements avec la commande SQL `DEALLOCATE`.** PgBouncer renomme les statements sur le backend, si bien qu&#39;un `DEALLOCATE` portant sur le nom de statement utilisé par le client échoue. Au sein d&#39;une transaction, cet échec interrompt la transaction, et les statements suivants échouent avec `current transaction is aborted`. Les drivers reposant sur libpq 17 ou version ultérieure libèrent quant à eux les statements à l&#39;aide d&#39;un message `Close` au niveau du protocole, que PgBouncer prend en charge.
+* **Les statements non nommés répartis sur plusieurs allers-retours.** Certains modes de driver envoient le `Parse` d&#39;un statement non nommé lors d&#39;un aller-retour, puis son `Bind` lors du suivant. PgBouncer peut alors exécuter le second aller-retour sur un autre backend : l&#39;opération échoue avec `unnamed prepared statement does not exist`, ou bien le statement d&#39;un autre client est exécuté silencieusement et ses résultats sont renvoyés.
+
+Dans ces cas, on obtient des erreurs telles que :
 
 ```text
 ERROR:  prepared statement "..." does not exist
 ERROR:  unnamed prepared statement does not exist
+ERROR:  prepared statement did not exist
 ```
 
-Symptômes qui remontent souvent à cette même cause profonde :
+Voici quelques symptômes qui découlent souvent de la même cause profonde :
 
-* Des rafales d’erreurs `prepared statement does not exist`, en particulier pendant les backfills ou les écritures à forte concurrence
-* Des insertions qui semblent « échouer silencieusement » — l’instruction renvoie une erreur, le driver réessaie, et un batch peut se retrouver partiellement appliqué ou abandonné
-* Des valeurs renvoyées avec le mauvais type (par exemple, une colonne `BIGINT` décodée comme un motif de bits `float64`) — cela se produit lorsqu’un plan côté client mis en cache réutilise des codes de type/format obsolètes sur un backend qui n’a jamais reçu le `Parse` correspondant
+* Des pics d&#39;erreurs `prepared statement does not exist`, en particulier lors de backfills ou d&#39;écritures à forte concurrence
+* Des insertions qui semblent « échouer silencieusement » : le statement renvoie une erreur, le driver effectue de nouvelles tentatives, et un batch peut finir par être partiellement appliqué ou perdu
+* Des transactions qui échouent avec `current transaction is aborted` après la libération d&#39;un statement
+* Des lignes qui appartiennent à une autre requête
 
-**Correctif : désactivez les prepared statements côté serveur dans votre driver.** Le réglage exact dépend de votre bibliothèque cliente :
+**Solution : utilisez le paramètre correspondant à votre driver ci-dessous.** Si votre driver ne figure pas dans la liste, mettez-le à niveau vers une version qui utilise libpq 17 ou version ultérieure, ou désactivez-y les requêtes préparées côté serveur.
 
-| Pilote                           | Paramètre                                                                                          |
-| -------------------------------- | -------------------------------------------------------------------------------------------------- |
-| **pgx** (Go)                     | `statement_cache_capacity=0` et `default_query_exec_mode=exec` (ou `simple_protocol`)              |
-| **psycopg3** (Python)            | `prepare_threshold=None`                                                                           |
-| **asyncpg** (Python)             | `statement_cache_size=0`                                                                           |
-| **JDBC** (Java)                  | `prepareThreshold=0`                                                                               |
-| **node-postgres / pg** (Node.js) | Ne passez pas de `name` à `query()` (les requêtes nommées deviennent alors préparées côté serveur) |
+| Driver                               | Via PgBouncer                                                                                                                                                                                                                                                                              |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **node-postgres / pg** (Node.js)     | Aucune modification nécessaire.                                                                                                                                                                                                                                                            |
+| **Bun.sql** (Bun)                    | Aucune modification nécessaire. Si l’erreur `prepared statement does not exist` apparaît, définissez `prepare: false`.                                                                                                                                                                     |
+| **Prisma** avec `@prisma/adapter-pg` | Aucune modification nécessaire. Le paramètre d’URL `pgbouncer=true` n’a aucun effet dans Prisma 7.                                                                                                                                                                                         |
+| **psycopg 3** (Python, Django)       | Aucune modification nécessaire avec `psycopg[binary]` ou avec libpq 17 ou version ultérieure. Avec une version plus ancienne de libpq, définissez `prepare_threshold=None`. Django utilise par défaut la liaison côté client ; aucune modification n’est donc nécessaire.                  |
+| **asyncpg** (Python, SQLAlchemy)     | Aucune modification nécessaire. Si vous désactivez le cache de statements avec `statement_cache_size=0` sous SQLAlchemy, définissez également `prepared_statement_cache_size=0` dans l’URL.                                                                                                |
+| **pgjdbc** (Java)                    | Aucune modification nécessaire. Utilisez pgjdbc 42.7.5 ou version ultérieure ; les versions antérieures ne peuvent pas se connecter via PgBouncer. Voir [`unsupported startup parameter`](#unsupported-startup-parameter).                                                                 |
+| **Npgsql** (.NET)                    | Aucune modification nécessaire : la préparation automatique est désactivée par défaut. N’activez pas `Max Auto Prepare` et n’appelez pas `Prepare` via PgBouncer ; si vous y êtes contraint, définissez également `No Reset On Close=true`.                                                |
+| **pgx** (Go)                         | Définissez `default_query_exec_mode=cache_describe` (ou `exec`). N’utilisez jamais `describe_exec`, qui répartit les statements non nommés sur plusieurs allers-retours.                                                                                                                   |
+| **Postgrex / Ecto** (Elixir)         | Définissez `prepare: :unnamed` dans la configuration de votre repo. Avec des statements nommés, une requête d’environ 4 Ko peut rester bloquée via PgBouncer.                                                                                                                              |
+| **sqlx** (Rust)                      | Aucun paramètre lié aux requêtes préparées n’est nécessaire. N’utilisez ni `.persistent(false)` ni `statement_cache_capacity(0)`. Pour que la connexion puisse s’établir, définissez `extra_float_digits(None)` ; voir [`unsupported startup parameter`](#unsupported-startup-parameter). |
+| **Active Record** (Ruby on Rails)    | Aucune modification nécessaire avec la gem `pg` 1.6 ou version ultérieure et libpq 17 ou version ultérieure. Sinon, définissez `prepared_statements: false` dans `config/database.yml`.                                                                                                    |
+| **PDO** (PHP, Laravel)               | Aucune modification nécessaire lorsque `pdo_pgsql` est compilé avec libpq 17 ou version ultérieure. Sinon, définissez `PDO::ATTR_EMULATE_PREPARES => true`.                                                                                                                                |
 
-Si votre workload dépend des prepared statements, connectez-vous **directement à PostgreSQL** (port 5432) plutôt qu’au pooler PgBouncer — les connexions directes prennent en charge les prepared statements normalement. Consultez [Connection](/fr/products/managed-postgres/connection) pour plus de détails sur le choix entre les endpoints mutualisés et directs.
+Si votre charge de travail repose sur `PREPARE` au niveau SQL, connectez-vous **directement à PostgreSQL** (port 5432) plutôt qu’au pooler PgBouncer. Consultez [Connexion](/fr/products/managed-postgres/connection) pour savoir comment choisir entre l’endpoint avec pooling et l’endpoint direct.
 
-### Que signifie le paramètre `max_client_conn` dans PgBouncer, et comment se compare-t-il à `max_connections` dans Postgres ? {#pgbouncer-vs-pg-connections}
+### Pourquoi les requêtes échouent-elles avec `cached plan must not change result type` après une migration ? {#cached-plan-result-type}
 
-Ils ne contrôlent pas la même chose :
+PgBouncer conserve les requêtes préparées sur ses connexions Postgres et les réutilise pour un même texte SQL. Après une modification de schéma qui change le type d&#39;une colonne renvoyée par une requête (par exemple de `integer` à `bigint`), cette requête continue d&#39;échouer via PgBouncer avec l&#39;erreur `cached plan must not change result type`. L&#39;échec persiste même depuis de nouvelles connexions client, tant que PgBouncer n&#39;a pas remplacé ses connexions Postgres. Certains drivers, eux, décodent les types de résultat obsolètes et renvoient des valeurs erronées sans signaler d&#39;erreur. Via la connexion directe, chaque connexion échoue au plus une fois, puis se rétablit.
 
-* **Postgres `max_connections`** fixe le nombre maximal de connexions **backend** à PostgreSQL lui-même. C’est la limite la plus coûteuse : chaque backend consomme de la mémoire et un slot de processus.
+Pour résoudre le problème, fermez les connexions Postgres de PgBouncer pour cette base de données : PgBouncer en ouvrira de nouvelles. Comme PgBouncer se connecte à Postgres en local, ses connexions n&#39;ont pas de `client_addr`. Exécutez la commande suivante via la connexion directe (port `5432`), avec le même utilisateur que votre application. Elle ne met fin qu&#39;aux connexions de PgBouncer associées à l&#39;utilisateur de votre application : les transactions en cours via PgBouncer à ce moment-là échoueront, mais les connexions directes ne seront pas affectées :
+
+```sql
+SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+WHERE datname = '<your_database>' AND usename = current_user
+  AND client_addr IS NULL AND backend_type = 'client backend'
+  AND pid <> pg_backend_pid();
+```
+
+Les drivers qui utilisent des statements non nommés, comme Npgsql avec sa configuration par défaut, Postgrex avec `prepare: :unnamed` ou pgx avec `cache_describe`, ne sont pas concernés.
+
+### Pourquoi l&#39;erreur `unsupported startup parameter` apparaît-elle avec PgBouncer ? {#unsupported-startup-parameter}
+
+PgBouncer rejette les paramètres définis à l&#39;ouverture de la connexion qu&#39;il ne peut pas appliquer de manière cohérente à l&#39;ensemble de ses connexions Postgres mutualisées, et renvoie alors l&#39;erreur `FATAL: unsupported startup parameter: ...` ou `unsupported startup parameter in options: ...`. Les cas les plus courants sont les suivants :
+
+* **`extra_float_digits`**, que pgjdbc 42.7.4 et versions antérieures (par exemple avec Spring Boot 3) ainsi que sqlx envoient à chaque connexion. Mettez à niveau pgjdbc vers la version 42.7.5 ou ultérieure. Dans sqlx, définissez `extra_float_digits(None)` sur `PgConnectOptions`.
+* **`search_path` et les autres paramètres passés dans la chaîne de connexion**, comme `currentSchema` dans une URL JDBC, `Search Path` dans une chaîne de connexion Npgsql, `options=-c ...` ou `OPTIONS["options"]` dans Django. Définissez plutôt la valeur par défaut avec `ALTER ROLE ... SET` ou `ALTER DATABASE ... SET`, utilisez `SET LOCAL` au sein d&#39;une transaction, ou connectez-vous directement.
+
+`application_name` et `TimeZone` sont pris en charge.
+
+### Pourquoi les commandes `SET` ne sont-elles pas conservées avec PgBouncer ? {#session-state}
+
+En mode pool de connexions par transaction, un `SET` au niveau de la session s&#39;applique à la connexion Postgres qui l&#39;a exécuté, et non à votre client. Les transactions suivantes de votre client peuvent s&#39;exécuter sur d&#39;autres connexions où ce paramètre n&#39;est pas défini, tandis que d&#39;autres clients peuvent s&#39;exécuter sur la connexion où il l&#39;est. Cela vaut aussi pour `SET ROLE` : un rôle que vous assumez peut donc s&#39;appliquer aux requêtes d&#39;un autre client. Utilisez `SET LOCAL` à l&#39;intérieur d&#39;une transaction, définissez des valeurs par défaut avec `ALTER ROLE ... SET` ou `ALTER DATABASE ... SET`, ou connectez-vous directement pour les charges de travail qui reposent sur l&#39;état de session.
+
+### Pourquoi les migrations se bloquent-elles ou n&#39;arrivent-elles pas à libérer un verrou consultatif via PgBouncer ? {#migration-advisory-locks}
+
+De nombreux outils de migration acquièrent un verrou consultatif au niveau de la session afin qu&#39;une seule migration s&#39;exécute à la fois, puis le libèrent au moyen d&#39;un statement distinct. Avec PgBouncer, cette libération peut s&#39;exécuter sur une autre connexion Postgres, et le verrou reste alors détenu par une connexion du pool. Les migrations suivantes restent dès lors en attente ou échouent avec des erreurs telles que `failed to release advisory lock`, même via la connexion directe. Parmi les outils qui utilisent des verrous consultatifs de session figurent golang-migrate, sqlx, le `Migrator` de Kysely, Rails, Flyway avec `transactional-lock=false` et Ecto avec `migration_lock: :pg_advisory_lock`.
+
+Exécutez les migrations via la connexion directe (port `5432`). Un verrou orphelin est détenu par une session inactive, alors qu&#39;une migration encore en cours détient son verrou depuis une session active. Pour supprimer les verrous orphelins, mettez fin uniquement aux sessions inactives qui détiennent des verrous consultatifs dans votre base de données, là encore via la connexion directe :
+
+```sql
+SELECT pg_terminate_backend(l.pid) FROM pg_locks l
+JOIN pg_stat_activity a ON a.pid = l.pid
+WHERE l.locktype = 'advisory' AND a.state = 'idle'
+  AND l.database = (SELECT oid FROM pg_database WHERE datname = current_database());
+```
+
+### Que signifie le paramètre `max_client_conn` dans PgBouncer, et comment se compare-t-il à `max_connections` dans Postgres ? {#pgbouncer-vs-pg-connections}
+
+Ils ne contrôlent pas la même chose :
+
+* **Postgres `max_connections`** fixe le nombre maximal de connexions **backend** à PostgreSQL lui-même. C’est la limite la plus coûteuse : chaque backend consomme de la mémoire et un slot de processus.
 * **PgBouncer `max_client_conn`** fixe le nombre maximal de connexions **client** pouvant être ouvertes simultanément dans le pooler. PgBouncer multiplexe ce grand nombre de connexions client sur un ensemble bien plus réduit de connexions backend.
 
-Une instance ClickHouse Managed Postgres typique est configurée pour que PgBouncer accepte environ **10× plus de connexions client que de backends Postgres** (par ex. 5 000 clients / 500 backends). Si vous voyez des erreurs de connexion au niveau du pooler, il est bien plus probable que vous atteigniez une limite backend par pool (`default_pool_size`) plutôt que la limite client globale.
+PgBouncer accepte plusieurs fois plus de connexions client que de backends Postgres. Par exemple, une instance dont `max_connections` est défini sur `500` accepte `2500` connexions client au niveau du pooler. Si vous voyez des erreurs de connexion au niveau du pooler, il est bien plus probable que vous atteigniez une limite backend par pool (`default_pool_size`, ou `max_db_connections` par base de données) plutôt que la limite client globale.
+
+Pour consulter les valeurs de votre instance, connectez-vous à la base de données spéciale `pgbouncer` via PgBouncer (port `6432`) et exécutez `SHOW CONFIG` :
+
+```bash
+psql "postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:6432/pgbouncer?sslmode=verify-full&sslrootcert=ca-certificate.pem" -c "SHOW CONFIG;"
+```
 
 ## Fonctionnalités de la base de données {#database-capabilities}
 
