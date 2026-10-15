@@ -38,6 +38,20 @@ SELECT 'inlined view body';
 SELECT s, c FROM view(SELECT s, c FROM remote('127.0.0.{1,2}', currentDatabase(), v_pos) ORDER BY s)
 SETTINGS prefer_localhost_replica = 1, enable_positional_arguments = 1, analyzer_inline_views = 1;
 
+-- So are the other queries the local replica analyzes: a table function argument and a row policy.
+SELECT 'table function in a subquery with settings';
+SELECT k FROM remote('127.0.0.1', currentDatabase(), t_pos)
+WHERE k IN (SELECT k FROM view(SELECT number % 5 AS k, count() FROM numbers(10) GROUP BY 1) SETTINGS max_threads = 1) ORDER BY k
+SETTINGS prefer_localhost_replica = 1, enable_positional_arguments = 1;
+CREATE ROW POLICY OR REPLACE rp_05340 ON v_pos USING s IN (SELECT number FROM numbers(2) ORDER BY 1 DESC LIMIT 1) TO ALL;
+SELECT 'view row policy';
+SELECT s, c FROM remote('127.0.0.1', currentDatabase(), v_pos)
+SETTINGS prefer_localhost_replica = 1, enable_positional_arguments = 1, analyzer_inline_views = 0;
+SELECT 'inlined view row policy';
+SELECT s, c FROM remote('127.0.0.1', currentDatabase(), v_pos)
+SETTINGS prefer_localhost_replica = 1, enable_positional_arguments = 1, analyzer_inline_views = 1;
+DROP ROW POLICY rp_05340 ON v_pos;
+
 CREATE TABLE t_pos_m1 (k Int64, src Int64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO t_pos_m1 SELECT number, 4 - number FROM numbers(5);
 CREATE TABLE t_pos_d AS t_pos ENGINE = Distributed(test_shard_localhost, currentDatabase(), t_pos);

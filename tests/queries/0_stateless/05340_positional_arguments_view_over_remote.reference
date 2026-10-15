@@ -47,6 +47,16 @@ inlined view body
 0	3
 1	2
 1	2
+table function in a subquery with settings
+0
+1
+2
+3
+4
+view row policy
+1	2
+inlined view row policy
+1	2
 merge
 3	4	0
 3	4	0

@@ -1613,6 +1613,15 @@ ContextMutablePtr Context::createCopy(const ContextMutablePtr & other)
     return createCopy(std::const_pointer_cast<const Context>(other));
 }
 
+ContextPtr Context::withUnresolvedPositionalArguments(const ContextPtr & context)
+{
+    if (!context->isPositionalArgumentsAlreadyResolved())
+        return context;
+    auto copy = createCopy(context);
+    copy->setPositionalArgumentsAlreadyResolved(false);
+    return copy;
+}
+
 Context::~Context() = default;
 
 InterserverIOHandler & Context::getInterserverIOHandler() { return shared->interserver_io_handler; }
