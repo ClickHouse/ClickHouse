@@ -76,9 +76,9 @@ void CompressedReadBufferFromFile::prefetch(Priority priority)
 
 void CompressedReadBufferFromFile::seek(size_t offset_in_compressed_file, size_t offset_in_decompressed_block)
 {
-    /// Nothing to do if we already at required position.
-    /// Without a block (`size_compressed == 0`) `working_buffer` may still hold an exhausted block left by `readBig`,
-    /// so only the pending lazy offset tells where the next read starts.
+    chassert(size_compressed || working_buffer.empty());
+
+    /// Nothing to do if we already at required position
     if (!size_compressed && static_cast<size_t>(file_in.getPosition()) == offset_in_compressed_file && /// correct position in compressed file
         nextimpl_working_buffer_offset == offset_in_decompressed_block) /// we will move our position to correct one
         return;
@@ -127,8 +127,10 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
             size_t size_decompressed = 0;
             size_t size_compressed_without_checksum = 0;
 
+            bytes += offset();
+            resetWorkingBuffer();
+            size_compressed = 0;
             size_t new_size_compressed = readCompressedData(size_decompressed, size_compressed_without_checksum, false);
-            size_compressed = 0; /// file_in no longer points to the end of the block in working_buffer.
 
             if (!new_size_compressed)
                 return bytes_read;
@@ -147,7 +149,6 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
             {
                 /// Need to skip some bytes in decompressed data (seek happened before readBig call).
                 size_compressed = new_size_compressed;
-                bytes += offset();
 
                 /// This is for clang static analyzer.
                 chassert(size_decompressed + additional_size_at_the_end_of_buffer > 0);
@@ -173,7 +174,6 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
             else
             {
                 size_compressed = new_size_compressed;
-                bytes += offset();
 
                 /// This is for clang static analyzer.
                 chassert(size_decompressed + additional_size_at_the_end_of_buffer > 0);
