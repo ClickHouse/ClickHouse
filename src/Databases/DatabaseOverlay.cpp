@@ -190,6 +190,8 @@ void DatabaseOverlay::renameTable(
 {
     for (auto & db : databases)
     {
+        /// A member database with the asynchronous loading attaches the table only in its load job.
+        db->waitTableStarted(name);
         if (db->isTableExist(name, current_context))
         {
             if (DatabaseOverlay * to_overlay_database = typeid_cast<DatabaseOverlay *>(&to_database))
