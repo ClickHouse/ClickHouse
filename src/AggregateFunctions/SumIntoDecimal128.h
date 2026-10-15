@@ -38,11 +38,14 @@ ALWAYS_INLINE inline void loadRowMasks(const UInt8 * __restrict flags, UInt64Lan
     Vector<UInt8, rows> row_flags;
     std::memcpy(&row_flags, flags, sizeof(row_flags));
 
+    /// Widen before comparing: comparing bytes gives a vector of `char`, which is unsigned on ARM and s390x,
+    /// so converting that to 64 bits would give 255 instead of all ones.
+    const RowMasks wide_flags = __builtin_convertvector(row_flags, RowMasks);
     RowMasks row_masks;
     if constexpr (add_if_zero)
-        row_masks = __builtin_convertvector(row_flags == 0, RowMasks);
+        row_masks = __builtin_bit_cast(RowMasks, wide_flags == 0);
     else
-        row_masks = __builtin_convertvector(row_flags != 0, RowMasks);
+        row_masks = __builtin_bit_cast(RowMasks, wide_flags != 0);
 
     /// Duplicating the 64-bit masks rather than the flag bytes keeps the loads of the values unmasked:
     /// otherwise AVX-512 folds the mask into masked loads, which are much slower when reading from memory.
