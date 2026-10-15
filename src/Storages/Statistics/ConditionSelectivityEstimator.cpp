@@ -12,6 +12,7 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Core/Settings.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/misc.h>
@@ -300,6 +301,55 @@ static std::optional<String> tryGetNullMapParentColumn(const String & column_nam
         return {};
 
     return parent_name;
+}
+
+bool ConditionSelectivityEstimator::filterReadsOnlyColumnsWithoutStatistics(
+    const StorageMetadataPtr & metadata, const ActionsDAG::Node * filter, const ActionsDAG::Node * prewhere) const
+{
+    std::vector<const ActionsDAG::Node *> stack;
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    for (const auto * root : {filter, prewhere})
+    {
+        if (root)
+            stack.push_back(root);
+    }
+
+    bool reads_column = false;
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+        if (!visited.insert(node).second)
+            continue;
+
+        if (node->type == ActionsDAG::ActionType::FUNCTION)
+        {
+            const auto function_name = node->function_base->getName();
+            if (function_name == "indexHint" || function_name == "__applyFilter")
+                continue;
+        }
+
+        if (node->type == ActionsDAG::ActionType::INPUT)
+        {
+            String column_name = node->result_name;
+            if (metadata)
+            {
+                if (auto parent_name = tryGetNullMapParentColumn(column_name, *metadata))
+                    column_name = std::move(*parent_name);
+            }
+
+            auto it = column_estimators.find(column_name);
+            if (it != column_estimators.end() && isCompatibleStatistics(metadata, it->second.stats, column_name))
+                return false;
+            reads_column = true;
+            continue;
+        }
+
+        for (const auto * child : node->children)
+            stack.push_back(child);
+    }
+
+    return reads_column;
 }
 
 bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node, RPNElement & out) const

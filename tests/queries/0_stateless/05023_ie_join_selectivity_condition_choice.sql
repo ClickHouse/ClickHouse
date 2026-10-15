@@ -87,6 +87,23 @@ SELECT count(), sum(a1 + a3 + lo + hi + b3) FROM t_sel_l AS l, t_sel_band AS r
 WHERE r.lo < l.a1 AND l.a1 < r.hi AND l.a3 < r.b3
 SETTINGS join_algorithm = 'hash';
 
+SELECT '-- a filter on a JSON path keeps the choice by selectivity';
+DROP TABLE IF EXISTS t_sel_json;
+CREATE TABLE t_sel_json (a1 UInt32, a2 UInt32, a3 UInt32, j JSON(k String))
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS auto_statistics_types = 'basic, uniq_v2';
+
+INSERT INTO t_sel_json SELECT number % 1000, number % 1000, (number * 97) % 100000, '{"k":"x"}' FROM numbers(1000);
+
+SELECT extract(explain, 'Conditions: .*') FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM t_sel_json AS l JOIN t_sel_r AS r
+    ON l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.b3
+    WHERE l.j.k = 'x'
+    SETTINGS query_plan_join_swap_table = 'false'
+) WHERE explain LIKE '%Conditions:%';
+
 DROP TABLE t_sel_l;
 DROP TABLE t_sel_r;
 DROP TABLE t_sel_band;
+DROP TABLE t_sel_json;
