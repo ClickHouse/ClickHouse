@@ -165,17 +165,18 @@ void collectFixedExpressions(const QueryTreeNodePtr & condition, const FormatSet
     }
 }
 
-/// Replaces the fixed expressions with constants in an expression evaluated after aggregation. The arguments
-/// of aggregate functions are evaluated before it, and subqueries and the expressions of columns, such as
-/// those of `JOIN USING`, belong to other steps.
-void replaceFixedExpressions(QueryTreeNodePtr & node, const FixedExpressions & fixed_expressions)
+/// Replaces the fixed expressions in an expression evaluated after aggregation with `materialize(constant)`, which,
+/// like the column, is evaluated for each row: a function of a constant is folded while planning, so `intDiv(1, x)`
+/// would throw even when no row has `x = 0`. The arguments of aggregate functions are evaluated before the
+/// aggregation, and subqueries and the expressions of columns, such as those of `JOIN USING`, belong to other steps.
+void replaceFixedExpressions(QueryTreeNodePtr & node, const FixedExpressions & fixed_expressions, const ContextPtr & context)
 {
     if (!node)
         return;
 
     if (const auto * replacement = fixed_expressions.find(node))
     {
-        node = replacement->clone();
+        node = createResolvedFunction(context, "materialize", {replacement->clone()});
         return;
     }
 
@@ -186,7 +187,7 @@ void replaceFixedExpressions(QueryTreeNodePtr & node, const FixedExpressions & f
         return;
 
     for (auto & child : node->getChildren())
-        replaceFixedExpressions(child, fixed_expressions);
+        replaceFixedExpressions(child, fixed_expressions, context);
 }
 
 class OptimizeKeysFixedByWhereVisitor : public InDepthQueryTreeVisitorWithContext<OptimizeKeysFixedByWhereVisitor>
@@ -269,7 +270,7 @@ public:
     }
 
 private:
-    /// A fixed GROUP BY key is replaced with a constant everywhere after the aggregation. The planner removes
+    /// A fixed GROUP BY key is replaced with a constant, and its other uses with the same value. The planner removes
     /// constant keys, and returns an empty result for empty input if no key remains.
     void optimizeGroupBy(QueryNode & query, const FixedExpressions & fixed_expressions)
     {
@@ -283,23 +284,30 @@ private:
             && std::ranges::all_of(keys, [&](const QueryTreeNodePtr & key) { return is_fixed(key) || key->getNodeType() == QueryTreeNodeType::CONSTANT; }))
             return;
 
-        QueryTreeNodePtr * after_aggregation[] = {
-            &query.getProjectionNode(),
-            &query.getHaving(),
-            &query.getWindowNode(),
-            &query.getQualify(),
-            &query.getOrderByNode(),
-            &query.getLimitByNode(),
-        };
+        /// Every clause but these is evaluated after the aggregation.
+        const QueryTreeNodePtr * before_aggregation[]
+            = {&query.getWithNode(), &query.getJoinTreeNode(), &query.getPrewhere(), &query.getWhere(), &query.getGroupByNode()};
+        std::vector<QueryTreeNodePtr *> after_aggregation;
+        for (auto & child : query.getChildren())
+            if (child && std::ranges::find(before_aggregation, &child) == std::end(before_aggregation))
+                after_aggregation.push_back(&child);
 
         /// A correlated subquery reads the columns of this query, which the aggregation no longer outputs.
         for (const auto * expression : after_aggregation)
-            if (*expression && containsCorrelatedSubquery(*expression))
+            if (containsCorrelatedSubquery(*expression))
                 return;
 
-        replaceFixedExpressions(query.getGroupByNode(), fixed_expressions);
+        /// A key that is a constant is removed by the planner.
+        for (auto & key : keys)
+        {
+            if (const auto * replacement = fixed_expressions.find(key))
+                key = replacement->clone();
+            else
+                replaceFixedExpressions(key, fixed_expressions, getContext());
+        }
+
         for (auto * expression : after_aggregation)
-            replaceFixedExpressions(*expression, fixed_expressions);
+            replaceFixedExpressions(*expression, fixed_expressions, getContext());
     }
 };
 

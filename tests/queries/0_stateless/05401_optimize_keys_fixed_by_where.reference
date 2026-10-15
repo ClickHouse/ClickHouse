@@ -7,7 +7,7 @@ CREATE TABLE t (tenant String, day Date, v UInt64) ENGINE = MergeTree ORDER BY (
 INSERT INTO t VALUES ('x', '2024-01-01', 1), ('x', '2024-01-01', 2), ('x', '2024-01-02', 3), ('y', '2024-01-01', 4);
 -- GROUP BY and ORDER BY: the key fixed by WHERE becomes a constant, which the planner drops from the aggregation keys.
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT tenant, day, sum(v) FROM t WHERE tenant = 'x' GROUP BY tenant, day ORDER BY tenant, day;
-SELECT\n    \'x\' AS tenant,\n    __table1.day AS day,\n    sum(__table1.v) AS `sum(v)`\nFROM default.t AS __table1\nWHERE equals(__table1.tenant, \'x\')\nGROUP BY\n    \'x\',\n    __table1.day\nORDER BY __table1.day ASC
+SELECT\n    materialize(\'x\') AS tenant,\n    __table1.day AS day,\n    sum(__table1.v) AS `sum(v)`\nFROM default.t AS __table1\nWHERE equals(__table1.tenant, \'x\')\nGROUP BY\n    \'x\',\n    __table1.day\nORDER BY __table1.day ASC
 SELECT tenant, day, sum(v) FROM t WHERE tenant = 'x' GROUP BY tenant, day ORDER BY tenant, day;
 x	2024-01-01	3
 x	2024-01-02	3
@@ -16,10 +16,15 @@ EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT day FROM t WHERE tenant = 'x' OR
 SELECT __table1.day AS day\nFROM default.t AS __table1\nWHERE equals(__table1.tenant, \'x\')\nORDER BY __table1.tenant ASC
 -- An expression of the key after the aggregation is replaced too.
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT concat(tenant, '-', toString(day)) AS s, count() FROM t WHERE tenant = 'x' GROUP BY tenant, day ORDER BY s;
-SELECT\n    concat(\'x\', \'-\', toString(__table1.day)) AS s,\n    count() AS `count()`\nFROM default.t AS __table1\nWHERE equals(__table1.tenant, \'x\')\nGROUP BY\n    \'x\',\n    __table1.day\nORDER BY concat(\'x\', \'-\', toString(__table1.day)) ASC
+SELECT\n    concat(materialize(\'x\'), \'-\', toString(__table1.day)) AS s,\n    count() AS `count()`\nFROM default.t AS __table1\nWHERE equals(__table1.tenant, \'x\')\nGROUP BY\n    \'x\',\n    __table1.day\nORDER BY concat(materialize(\'x\'), \'-\', toString(__table1.day)) ASC
 SELECT concat(tenant, '-', toString(day)) AS s, count() FROM t WHERE tenant = 'x' GROUP BY tenant, day ORDER BY s;
 x-2024-01-01	2
 x-2024-01-02	1
+-- The key is evaluated for each row like the column, so a function of it does not throw when no row is left.
+SELECT intDiv(1, number), count() FROM numbers(3) WHERE number = 0 GROUP BY number HAVING count() > 1;
+-- Every clause after the aggregation is rewritten.
+SELECT number, count() FROM numbers(3) WHERE number = 1 GROUP BY number LIMIT AFTER number = 1;
+1	1
 -- PARTITION BY of a window function.
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT day, v, row_number() OVER (PARTITION BY tenant, day ORDER BY v) FROM t WHERE tenant = 'x' ORDER BY day, v;
 SELECT\n    __table1.day AS day,\n    __table1.v AS v,\n    row_number() OVER (PARTITION BY __table1.day ORDER BY __table1.v ASC) AS `row_number() OVER (PARTITION BY tenant, day ORDER BY v ASC)`\nFROM default.t AS __table1\nWHERE equals(__table1.tenant, \'x\')\nORDER BY\n    __table1.day ASC,\n    __table1.v ASC
@@ -29,7 +34,7 @@ SELECT day, v, row_number() OVER (PARTITION BY tenant, day ORDER BY v) FROM t WH
 2024-01-02	3	1
 -- ORDER BY is still truncated after the remaining GROUP BY keys.
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT tenant, day, sum(v) FROM t WHERE tenant = 'x' GROUP BY tenant, day ORDER BY tenant, day, sum(v) SETTINGS optimize_truncate_order_by_after_group_by_keys = 1;
-SELECT\n    \'x\' AS tenant,\n    __table1.day AS day,\n    sum(__table1.v) AS `sum(v)`\nFROM default.t AS __table1\nWHERE equals(__table1.tenant, \'x\')\nGROUP BY\n    \'x\',\n    __table1.day\nORDER BY __table1.day ASC\nSETTINGS optimize_truncate_order_by_after_group_by_keys = 1
+SELECT\n    materialize(\'x\') AS tenant,\n    __table1.day AS day,\n    sum(__table1.v) AS `sum(v)`\nFROM default.t AS __table1\nWHERE equals(__table1.tenant, \'x\')\nGROUP BY\n    \'x\',\n    __table1.day\nORDER BY __table1.day ASC\nSETTINGS optimize_truncate_order_by_after_group_by_keys = 1
 -- Empty input gives no rows when every key is removed.
 SELECT tenant, count() FROM t WHERE tenant = 'z' GROUP BY tenant;
 -- Aggregation by constant keys would return a row here, so the key is kept.

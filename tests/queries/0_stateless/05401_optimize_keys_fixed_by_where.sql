@@ -17,6 +17,10 @@ EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT day FROM t WHERE tenant = 'x' OR
 -- An expression of the key after the aggregation is replaced too.
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT concat(tenant, '-', toString(day)) AS s, count() FROM t WHERE tenant = 'x' GROUP BY tenant, day ORDER BY s;
 SELECT concat(tenant, '-', toString(day)) AS s, count() FROM t WHERE tenant = 'x' GROUP BY tenant, day ORDER BY s;
+-- The key is evaluated for each row like the column, so a function of it does not throw when no row is left.
+SELECT intDiv(1, number), count() FROM numbers(3) WHERE number = 0 GROUP BY number HAVING count() > 1;
+-- Every clause after the aggregation is rewritten.
+SELECT number, count() FROM numbers(3) WHERE number = 1 GROUP BY number LIMIT AFTER number = 1;
 
 -- PARTITION BY of a window function.
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT day, v, row_number() OVER (PARTITION BY tenant, day ORDER BY v) FROM t WHERE tenant = 'x' ORDER BY day, v;
