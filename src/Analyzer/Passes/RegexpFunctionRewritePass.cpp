@@ -364,7 +364,6 @@ private:
     }
 
     /// Whether the pattern starts with a `^` that has to match, so that it can only match at offset 0.
-    /// `^+x` still has to, while `^?x` or `^{0,3}x` can skip the `^` and then match anywhere.
     static bool startsWithCaretAnchor(const std::string & regexp)
     {
         const auto atoms = tokenizeRegexp(regexp);
