@@ -3447,6 +3447,12 @@ The maximum size of the set in the right-hand side of the `IN` operator for whic
         {"26.8", 10000, 10000, "New setting to bound the cost of estimating the selectivity of `IN` with a large set: above the limit the estimator uses the size of the set and its bounding range instead of the exact ranges. The previous value is deliberately equal to the new one, so that `compatibility` with an earlier version keeps the bound instead of restoring the uncapped estimation, which could add hundreds of milliseconds to the planning of a single query."}, \
         {"26.7", 10000, 10000, "The bound on the cost of estimating the selectivity of `IN` with a large set is kept under `compatibility` with an earlier version: the previous value is deliberately equal to the new one, so that the uncapped estimation, which could add hundreds of milliseconds to the planning of a single query, is not restored."}, \
         {"26.6", 10000, 10000, "The bound on the cost of estimating the selectivity of `IN` with a large set is kept under `compatibility` with an earlier version: the previous value is deliberately equal to the new one, so that the uncapped estimation, which could add hundreds of milliseconds to the planning of a single query, is not restored."}) \
+    DECLARE(Bool, analyze_index_with_multiple_key_columns_per_condition, true, R"(
+Allow one atomic condition of the `WHERE`/`PREWHERE` expression (a single comparison, `IN`, `has`, etc.) to constrain multiple key columns during index analysis.
+
+For example, if a table has `ORDER BY (toDate(ts), ts)` and the query has `WHERE ts = '2026-01-10 00:00:00' AND user_id = 42`, the first of the two conditions constrains both key columns: it is analyzed as if `toDate(ts) = '2026-01-10' AND ts = '2026-01-10 00:00:00'` were written. When the setting is disabled, this predicate constrains only `ts`. Tuple membership predicates such as `(a, b) IN ((1, 2), (3, 4))` can still constrain multiple key columns.
+)", 0, \
+        {"26.10", false, true, "New setting to allow a single condition to constrain multiple key columns during index analysis."}) \
     DECLARE(Bool, analyze_index_with_space_filling_curves, true, R"(
 If a table has a space-filling curve in its index, e.g. `ORDER BY mortonEncode(x, y)` or `ORDER BY hilbertEncode(x, y)`, and the query has conditions on its arguments, e.g. `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`, use the space-filling curve for index analysis. Currently, 2D analysis skips curves with `UInt64` arguments because the curve implementations use only 32 bits per argument.
 )", 0) \
@@ -4637,6 +4643,12 @@ A value of `0` means no reservation.
 This setting takes effect only if MEMORY RESERVATION resource is created.
 )", EXPERIMENTAL, \
         {"26.7", 0, 0, "New setting to reserve memory for specific workload before starting a query."}) \
+    DECLARE(UInt64, min_bytes_to_spill, 64_MiB, R"(
+Used in workload scheduling.
+The minimum amount of bytes to spill.
+This setting takes effect only if MEMORY RESERVATION resource is created.
+)", EXPERIMENTAL, \
+        {"26.10", 0, 64_MiB, "New setting for dynamic spilling via workloads."}) \
     DECLARE(UInt64, max_network_bandwidth, 0, R"(
 Limits the speed of the data exchange over the network in bytes per second. This setting applies to every query.
 
@@ -5526,6 +5538,37 @@ Connection pool size for each connection settings string in ODBC bridge.
     DECLARE(Bool, odbc_bridge_use_connection_pooling, true, R"(
 Use connection pooling in ODBC bridge. If set to false, a new connection is created every time.
 )", 0) \
+    \
+    DECLARE(String, obfuscate_seed, "", R"(
+Seed for the `obfuscate` table function. Arbitrary string — the seed for each column is derived from it and the column name, so the same seed always produces the same obfuscation. Empty string means a random seed is generated for each query.
+
+The seed is an ordinary setting, not a secret: its value is stored and shown in plain text like any other setting, for example in `system.query_log` and `system.settings`. Do not use a password or another secret as the seed. If the obfuscated outputs of different queries must not be correlatable with each other, keep the default empty value (a fresh random seed per query) instead of setting a fixed seed.
+)", 0, \
+        {"26.10", "", "", "New setting: seed string for the obfuscate table function."}) \
+    DECLARE(UInt64, obfuscate_markov_order, 5, R"(
+Maximum context-buffer size used by the legacy Markov model for the `obfuscate` table function. The model records contexts shorter than this value, preserving the semantics of the standalone `clickhouse obfuscator` tool. Must be in the range `[1, 1000]`.
+)", 0, \
+        {"26.10", 5, 5, "New setting: maximum context-buffer size for the obfuscate table function's legacy Markov model."}) \
+    DECLARE(UInt64, obfuscate_markov_frequency_cutoff, 5, R"(
+Frequency cutoff for the Markov model used by the `obfuscate` table function: buckets with count less than this value are discarded.
+)", 0, \
+        {"26.10", 5, 5, "New setting: frequency cutoff for the obfuscate table function's Markov model."}) \
+    DECLARE(UInt64, obfuscate_markov_num_buckets_cutoff, 0, R"(
+Cutoff for the number of different possible continuations for a context in the `obfuscate` table function's Markov model: histograms with fewer buckets than this are discarded.
+)", 0, \
+        {"26.10", 0, 0, "New setting: number-of-buckets cutoff for the obfuscate table function's Markov model."}) \
+    DECLARE(UInt64, obfuscate_markov_frequency_add, 0, R"(
+Constant added to every count in the `obfuscate` table function's Markov model to lower probability distribution skew.
+)", 0, \
+        {"26.10", 0, 0, "New setting: constant added to every frequency count in the obfuscate table function's Markov model."}) \
+    DECLARE(Float, obfuscate_markov_frequency_desaturate, 0.0, R"(
+Value in `[0, 1]` that moves every frequency in the `obfuscate` table function's Markov model towards the average to lower probability distribution skew.
+)", 0, \
+        {"26.10", 0.0, 0.0, "New setting: frequency desaturation factor in [0,1] for the obfuscate table function's Markov model."}) \
+    DECLARE(UInt64, obfuscate_markov_determinator_sliding_window_size, 8, R"(
+Size of the sliding window in the source string that is hashed to seed the RNG in the `obfuscate` table function's Markov model.
+)", 0, \
+        {"26.10", 8, 8, "New setting: sliding-window size used to seed the RNG in the obfuscate table function's Markov model."}) \
     \
     DECLARE(Seconds, distributed_replica_error_half_life, DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_DECREASE_ERROR_PERIOD, R"(
 - Type: seconds
@@ -6803,7 +6846,7 @@ If true, mutations (UPDATEs and DELETEs) which are not materialized in data part
 )", 0) \
     DECLARE_WITH_ALIAS(Bool, enable_lightweight_update, true, R"(
 Allow to use lightweight updates.
-)", BETA, allow_experimental_lightweight_update, \
+)", 0, allow_experimental_lightweight_update, \
         {"25.8", false, true, "Lightweight updates were moved to Beta. Added an alias for setting 'allow_experimental_lightweight_update'."}, \
         {"25.5", false, false, "A new setting. At the time the setting was named `allow_experimental_lightweight_update`, which is now an alias of it."}) \
     DECLARE(Bool, apply_patch_parts, true, R"(
@@ -9399,6 +9442,13 @@ Ratio threshold of NULL values to execute functions with Nullable arguments only
 When the ratio of rows containing NULL values to the total number of rows exceeds this threshold, these rows containing NULL values will not be evaluated.
 )", 0, \
         {"25.1", 1.0, 1.0, "Ratio threshold of NULL values to execute functions with Nullable arguments only on rows with non-NULL values in all arguments. Applies when setting short_circuit_function_evaluation_for_nulls is enabled."}) \
+    DECLARE(Bool, short_circuit_function_evaluation_reorder_arguments, true, R"(
+Allows changing the order in which the arguments of the [and](/reference/functions/regular-functions/logical-functions#and) and [or](/reference/functions/regular-functions/logical-functions#or) functions are evaluated with [short-circuit evaluation](#short_circuit_function_evaluation), when it does not change the result and does not introduce exceptions.
+
+- If the first argument is computationally heavy and another argument is cheap, the cheap argument is evaluated first, and the heavy one is evaluated only on the rows where the result is not yet decided. For example, in `WHERE JSONExtractString(json, 'a') = 'x' AND id < 100` the JSON is parsed only for the rows with `id < 100`.
+- The arguments that are evaluated lazily and cannot throw an exception are evaluated in the order of increasing time per row they decide, as measured on the previous blocks. The arguments that can throw an exception keep all the arguments that precede them in front of them, so that, for example, `x != 0 AND intDiv(1, x) > 0` never divides by zero.
+)", 0, \
+        {"26.10", false, true, "New setting."}) \
     DECLARE(Int64, prefer_warmed_unmerged_parts_seconds, 0, R"(
 Only has an effect in ClickHouse Cloud. If a merged part is less than this many seconds old and is not pre-warmed (see [cache_populated_by_fetch](/reference/settings/merge-tree-settings/cache-populated-by-fetch#cache_populated_by_fetch)), but all its source parts are available and pre-warmed, SELECT queries will read from those parts instead. Only for Replicated-/SharedMergeTree. Note that this only checks whether CacheWarmer processed the part; if the part was fetched into cache by something else, it'll still be considered cold until CacheWarmer gets to it; if it was warmed, then evicted from cache, it'll still be considered warm.
 )", 0) \
@@ -9525,6 +9575,14 @@ Enable automatic switching to execution with parallel replicas based on collecte
 0 - disabled, 1 - enabled, 2 - only statistics collection is enabled (switching to execution with parallel replicas is disabled).
 )", EXPERIMENTAL, \
         {"25.12", 0, 0, "New setting"}) \
+    DECLARE(Bool, automatic_parallel_replicas_remember_boundary, true, R"(
+Lets automatic parallel replicas remember, per query plan, where the replicas' share of the work ends, so that a
+repeated query whose statistics decline parallel replicas is decided without building the plan with parallel
+replicas.
+
+Disable it to make every query pay the full cost of the decision, e.g. when benchmarking that cost.
+)", 0, \
+        {"26.10", false, true, "New setting. Automatic parallel replicas now remembers the boundary of the replicas' share of the work per query plan; previously every query built the plan with parallel replicas to find it."}) \
     DECLARE(Float, automatic_parallel_replicas_max_duplicated_read_ratio, 0.5, R"(
 How much of a query's read volume may be read by every replica instead of being split between them, as a
 fraction of the whole, before automatic parallel replicas declines the query.
@@ -10481,6 +10539,10 @@ Allows creation of tables with the `UNIQUE KEY` clause on MergeTree-family engin
 Enables the `ALP` compression codec.
 )", BETA, \
         {"26.8", false, false, "New setting to enable the experimental `ALP` compression codec individually, without the `allow_experimental_codecs`."}) \
+    DECLARE(Bool, enable_pco_codec, false, R"(
+Enables the `PCO` compression codec.
+)", BETA, \
+        {"26.10", false, false, "New setting to enable the beta `PCO` compression codec."}) \
     DECLARE(Bool, enable_quantized_codec, false, R"(
 Enables the `Quantized` compression codec.
 )", EXPERIMENTAL, \
@@ -10766,8 +10828,8 @@ An explicit `SETTINGS` clause in the query still takes precedence.
         {"26.10", false, false, "The `trino` dialect was moved to Beta."}, \
         {"26.9", false, false, "New setting to enable the `trino` value of the `dialect` setting, which translates Trino SQL syntax and maps Trino function names to ClickHouse equivalents."}) \
     DECLARE(Bool, enable_adaptive_memory_spill_scheduler, false, R"(
-Trigger processor to spill data into external storage adaptively. Hash joins that can spill are supported at present, both
-`grace_hash` and the adaptive `hash` / `parallel_hash` path.
+Adaptively spill eligible aggregation, sorting, `DISTINCT`, and hash-join processors to external storage under query memory pressure.
+Supported hash joins include `grace_hash` and the adaptive `hash` / `parallel_hash` path.
 )", EXPERIMENTAL, \
         {"25.2", false, false, "New setting. Enable spill memory data into external storage adaptively."}) \
     DECLARE_WITH_ALIAS(Bool, allow_delta_kernel_rs, true, R"(
@@ -10897,6 +10959,10 @@ order. Only shapes where no exchange survives between the read and the sort are 
 Serialize the distributed query plan for execution at replicas.
 )", PRIVATE_PREVIEW, \
         {"26.4", false, false, "New setting to serialize distributed plan for replicas"}) \
+    DECLARE(Bool, distributed_plan_join_runtime_filters, false, R"(
+With `make_distributed_plan`, send join runtime filters built in one stage to the stages that read the probe side, so those stages filter rows before sending them. If a filter does not arrive, rows pass unfiltered. Requires `enable_join_runtime_filters`.
+)", EXPERIMENTAL, \
+        {"26.10", false, false, "New experimental setting."}) \
     DECLARE(UInt64, distributed_plan_max_buffered_log_rows, 100000, R"(
 When `send_logs_level` forwards stateless-worker task logs to the coordinator, each worker task buffers at most this many log lines between status polls. Lines beyond the bound are dropped and their count is reported to the client. `0` means unbounded (never drops, but a stalled status poll can grow the buffer without limit).
 )", EXPERIMENTAL, \
