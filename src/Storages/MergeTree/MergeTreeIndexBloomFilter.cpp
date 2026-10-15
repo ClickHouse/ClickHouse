@@ -692,6 +692,98 @@ bool compareSupportedConstant(
     return false;
 }
 
+bool compareFixedWidthArrayConstant(
+    const ActionsDAG::Node & left,
+    const ActionsDAG::Node & right,
+    ExpressionMatchBudget & budget)
+{
+    if (!left.column || !right.column || left.is_runtime_filter_id || right.is_runtime_filter_id
+        || left.is_masked_secret || right.is_masked_secret
+        || !left.is_deterministic_constant || !right.is_deterministic_constant
+        || isArrayOfStringType(left.result_type) || isArrayOfStringType(right.result_type))
+        return false;
+
+    const auto * left_constant = typeid_cast<const ColumnConst *>(left.column.get());
+    const auto * right_constant = typeid_cast<const ColumnConst *>(right.column.get());
+    return left_constant && right_constant
+        && compareFixedWidthArrayStorage(
+            left.result_type,
+            right.result_type,
+            left_constant->getDataColumn(),
+            right_constant->getDataColumn(),
+            budget);
+}
+
+bool isColumnConst(const ActionsDAG::Node & node)
+{
+    return node.column && typeid_cast<const ColumnConst *>(node.column.get());
+}
+
+bool hasSafeFixedWidthArrayConstantSubtree(const ActionsDAG::Node * root, ExpressionMatchBudget & budget)
+{
+    std::vector<const ActionsDAG::Node *> pending{root};
+    std::unordered_set<const ActionsDAG::Node *> visited;
+
+    while (!pending.empty())
+    {
+        const auto * node = pending.back();
+        pending.pop_back();
+        if (!node || !budget.consume())
+            return false;
+
+        if (!visited.emplace(node).second)
+            continue;
+
+        /// Check markers before following aliases: normalization otherwise hides tags on alias nodes.
+        if (!node->is_deterministic_constant || node->is_runtime_filter_id || node->is_masked_secret)
+            return false;
+
+        switch (node->type)
+        {
+            case ActionsDAG::ActionType::COLUMN:
+                if (!node->children.empty() || !isColumnConst(*node))
+                    return false;
+                break;
+            case ActionsDAG::ActionType::ALIAS:
+                if (node->children.size() != 1 || !node->children[0] || !budget.consume()
+                    || !sameType(node->result_type, node->children[0]->result_type, budget))
+                    return false;
+                pending.push_back(node->children[0]);
+                break;
+            case ActionsDAG::ActionType::FUNCTION:
+            {
+                const auto & function = node->function_base;
+                if (!isColumnConst(*node) || !function || node->is_function_compiled
+                    || !function->isSuitableForConstantFolding() || function->isStateful()
+                    || !function->isDeterministic() || !function->isDeterministicInScopeOfQuery()
+                    || function->hasObservableSideEffects()
+                    || !sameType(function->getResultType(), node->result_type, budget))
+                    return false;
+
+                const auto & argument_types = function->getArgumentTypes();
+                if (argument_types.size() != node->children.size()
+                    || !budget.consume(argument_types.size()) || !budget.consume(node->children.size()))
+                    return false;
+
+                for (size_t i = 0; i < node->children.size(); ++i)
+                {
+                    const auto * child = node->children[i];
+                    if (!child || !sameType(argument_types[i], child->result_type, budget))
+                        return false;
+                    pending.push_back(child);
+                }
+                break;
+            }
+            case ActionsDAG::ActionType::INPUT:
+            case ActionsDAG::ActionType::ARRAY_JOIN:
+            case ActionsDAG::ActionType::PLACEHOLDER:
+                return false;
+        }
+    }
+
+    return true;
+}
+
 const FunctionCreator * getCanonicalArrayFunctionHandle(const String & function_name)
 {
     static const auto handles = []
@@ -865,6 +957,20 @@ bool structurallyMatchesIndexedExpression(
         const auto * right = normalizeExpressionNode(pair.index_node, budget);
         if (!left || !right)
             return false;
+
+        if (mode == ExpressionMatchMode::ArrayJoinWrapper
+            && isSupportedBloomFilterArrayType(left->result_type) && isSupportedBloomFilterArrayType(right->result_type)
+            && !isArrayOfStringType(left->result_type) && !isArrayOfStringType(right->result_type)
+            && isColumnConst(*left) && isColumnConst(*right))
+        {
+            if (!hasSafeFixedWidthArrayConstantSubtree(pair.query_node, budget)
+                || !hasSafeFixedWidthArrayConstantSubtree(pair.index_node, budget)
+                || !sameType(left->result_type, right->result_type, budget)
+                || !compareFixedWidthArrayConstant(*left, *right, budget))
+                return false;
+            continue;
+        }
+
         if (!visited.emplace(ExpressionNodePair{left, right}).second)
             continue;
 
