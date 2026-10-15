@@ -6024,7 +6024,7 @@ Possible values:
 - 0 — Optimization disabled.
 - 1 — Optimization enabled.
 )", 0, \
-        {"26.10", false, true, "New setting to read only the requested subcolumns of columns exported by subqueries and CTEs instead of the whole columns."}) \
+        {"26.11", false, true, "New setting to read only the requested subcolumns of columns exported by subqueries and CTEs instead of the whole columns."}) \
     DECLARE(Bool, optimize_using_constraints, false, R"(
 Use [constraints](/reference/statements/create/table#constraints) for query optimization. The default is `false`.
 
