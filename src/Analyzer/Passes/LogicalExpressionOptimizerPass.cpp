@@ -890,7 +890,7 @@ static AddComparisonFilterResult addComparisonFilter(
     auto expr_type = removeLowCardinality(raw_type);
 
     new_filter.converted_value = tryConvertToColumnType(new_filter.constant_node, expr_type);
-    /// A string ordered against an `Enum` constant compares by value, not in the order of the converted name.
+    /// A string ordered against an `Enum` constant compares by value, not by the converted name.
     if (new_filter.function != ComparisonFunction::EQUALS && new_filter.function != ComparisonFunction::NOT_EQUALS
         && isStringOrFixedString(expr_type) && isEnum(removeLowCardinality(new_filter.constant_node->getResultType())))
         new_filter.converted_value.reset();

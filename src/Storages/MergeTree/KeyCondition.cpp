@@ -2244,10 +2244,7 @@ static bool tryNormalizeTextConstantForZonelessDateTimeInput(
     return true;
 }
 
-/// Identifies a `FixedString` constant, including an active `Variant` or `Dynamic` member.
-/// The column holds the constant's single data row, without a `ColumnConst` wrapper. A string `Field`
-/// is non-NULL, so an erased constant must have an active member type. `ColumnDynamic::getTypeAt` also
-/// resolves types stored in the shared variant. Other value types do not use padded string comparison.
+/// The type of a non-NULL constant's value, with the active member of a `Variant` or `Dynamic`.
 static DataTypePtr getConstantValueType(const IColumn & column, const DataTypePtr & type)
 {
     DataTypePtr value_type = type;
@@ -2267,6 +2264,10 @@ static DataTypePtr getConstantValueType(const IColumn & column, const DataTypePt
     return removeLowCardinalityAndNullable(value_type);
 }
 
+/// Identifies a `FixedString` constant, including an active `Variant` or `Dynamic` member.
+/// The column holds the constant's single data row, without a `ColumnConst` wrapper. A string `Field`
+/// is non-NULL, so an erased constant must have an active member type. `ColumnDynamic::getTypeAt` also
+/// resolves types stored in the shared variant. Other value types do not use padded string comparison.
 static bool isFixedStringConstant(
     const Field & value, const IColumn & column, const DataTypePtr & type)
 {
@@ -5596,7 +5597,7 @@ std::vector<KeyCondition::ComparisonAtomCandidate> KeyCondition::collectComparis
 
     std::vector<ComparisonAtomCandidate> candidates;
 
-    /// A string ordered against an `Enum` constant compares by value, which neither a string key nor its transforms follow.
+    /// A string ordered against an `Enum` constant compares by value, not in the order of a string key.
     if (func_name != "equals" && func_name != "notEquals"
         && isStringOrFixedString(removeLowCardinalityAndNullable(key_arg.getDAGNode()->result_type))
         && isEnum(getConstantValueType(*constant_for_transform.column, const_type)))
