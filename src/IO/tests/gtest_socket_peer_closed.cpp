@@ -10,10 +10,23 @@
 #if USE_SSL
 #include <Common/tests/gtest_ephemeral_certificate.h>
 
+#include <base/scope_guard.h>
+
+#include <Poco/Net/SecureServerSocket.h>
+#include <Poco/Net/SecureStreamSocket.h>
+#include <Poco/Net/SecureStreamSocketImpl.h>
+#include <Poco/Timespan.h>
+
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 
 #include <fcntl.h>
+
+#include <atomic>
+#include <exception>
+#include <string>
+#include <thread>
+#include <vector>
 #endif
 
 using DB::SocketState;
@@ -302,6 +315,100 @@ TEST(SocketPeerClosed, SecureAbruptCloseIsClosed)
 
     EXPECT_EQ(SocketState::Closed, getSSLSocketState(p.client));
     EXPECT_TRUE(isSSLPeerClosed(p.client));
+}
+
+/// The probe of a Poco secure socket may run concurrently with the socket's own I/O, like the HTTP
+/// progress callback that checks for a client disconnect on pipeline threads while the response is
+/// written. It must hold the socket's SSL lock, so that neither the `SSL` object nor the blocking mode
+/// is changed under a concurrent `sendBytes`, which would corrupt the stream or fail the write.
+TEST(SocketPeerClosed, SecureProbeConcurrentWithWrites)
+{
+    EphemeralCert cert;
+    auto server_context = cert.makeContext(Poco::Net::Context::SERVER_USE);
+    auto client_context = cert.makeContext(Poco::Net::Context::CLIENT_USE);
+
+    Poco::Net::SecureServerSocket server_socket(Poco::Net::SocketAddress("127.0.0.1", 0), 1, server_context);
+    const Poco::Net::SocketAddress server_address("127.0.0.1", server_socket.address().port());
+    const Poco::Timespan timeout(30, 0);
+
+    constexpr size_t num_chunks = 2000;
+    constexpr size_t chunk_size = 1024;
+    std::string chunk(chunk_size, '\0');
+    for (size_t i = 0; i < chunk_size; ++i)
+        chunk[i] = static_cast<char>('a' + i % 26);
+
+    std::exception_ptr client_exception;
+    size_t client_received = 0;
+    bool client_data_intact = true;
+    std::jthread client_thread([&]
+    {
+        try
+        {
+            Poco::Net::SecureStreamSocket client(server_address, client_context);
+            client.setReceiveTimeout(timeout);
+            client.setSendTimeout(timeout);
+            std::string buf(chunk_size, '\0');
+            while (client_received < num_chunks * chunk_size)
+            {
+                const int n = client.receiveBytes(buf.data(), static_cast<int>(buf.size()));
+                if (n <= 0)
+                    break;
+                for (int i = 0; i < n; ++i)
+                    if (buf[i] != chunk[(client_received + i) % chunk_size])
+                        client_data_intact = false;
+                client_received += n;
+            }
+            client.close();
+        }
+        catch (...)
+        {
+            client_exception = std::current_exception();
+        }
+    });
+
+    Poco::Net::StreamSocket accepted = server_socket.acceptConnection();
+    accepted.setSendTimeout(timeout);
+    accepted.setReceiveTimeout(timeout);
+    auto * accepted_impl = static_cast<Poco::Net::SecureStreamSocketImpl *>(accepted.impl());
+    ASSERT_EQ(accepted_impl->completeHandshake(), 1);
+    ASSERT_TRUE(accepted.getBlocking());
+
+    std::atomic<bool> writing_done = false;
+    std::atomic<size_t> num_closed = 0;
+    std::vector<std::jthread> probes;
+    /// Stop the probes even if an assertion below returns early.
+    SCOPE_EXIT({
+        writing_done = true;
+        probes.clear();
+    });
+    for (size_t i = 0; i < 4; ++i)
+    {
+        probes.emplace_back([&]
+        {
+            while (!writing_done.load())
+                if (getSocketState(accepted) == SocketState::Closed)
+                    ++num_closed;
+        });
+    }
+
+    for (size_t i = 0; i < num_chunks; ++i)
+        ASSERT_EQ(accepted.sendBytes(chunk.data(), static_cast<int>(chunk.size())), static_cast<int>(chunk.size()));
+
+    writing_done = true;
+    probes.clear();
+    client_thread.join();
+    if (client_exception)
+        std::rethrow_exception(client_exception);
+
+    EXPECT_EQ(num_closed.load(), 0);
+    EXPECT_EQ(client_received, num_chunks * chunk_size);
+    EXPECT_TRUE(client_data_intact);
+    /// The probes restored the blocking mode.
+    EXPECT_TRUE(accepted.getBlocking());
+
+    /// The client has disconnected: once its `close_notify` arrives, the probe reports it.
+    ASSERT_TRUE(accepted.poll(timeout, Poco::Net::Socket::SELECT_READ));
+    EXPECT_EQ(SocketState::Closed, getSocketState(accepted));
 }
 
 #endif

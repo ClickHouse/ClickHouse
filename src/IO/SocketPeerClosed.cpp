@@ -162,6 +162,12 @@ SocketState getSocketState(const Poco::Net::StreamSocket & socket)
 #if USE_SSL
     if (auto * secure = dynamic_cast<Poco::Net::SecureStreamSocketImpl *>(socket.impl()))
     {
+        /// Another thread may use the same connection at the same time (e.g. the HTTP progress
+        /// callback runs on pipeline threads while the response is written), and an `SSL` object
+        /// must not be used concurrently. Hold the socket's own SSL lock for the whole probe,
+        /// including the blocking-mode changes, as `sendBytes` and `receiveBytes` do.
+        auto ssl_lock = secure->lockSSL();
+
         /// A connected secure socket has a live `SSL` object; the null case (handshake not yet
         /// performed) has no TLS state to inspect, so fall back to the raw file-descriptor check.
         if (auto * ssl = secure->ssl())
