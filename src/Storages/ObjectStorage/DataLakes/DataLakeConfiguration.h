@@ -36,6 +36,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Databases/DataLake/DatabaseDataLake.h>
@@ -51,6 +52,11 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int PATH_ACCESS_DENIED;
+}
+
+namespace Setting
+{
+    extern const SettingsBool iceberg_delete_data_on_drop;
 }
 
 namespace DataLakeStorageSetting
@@ -374,8 +380,11 @@ public:
         return getMetadata()->getColumnMapperForCurrentSchema(storage_metadata_snapshot, context);
     }
 
-    void checkCanBeDropped(ContextPtr query_context) const override
+    void checkCanBeDropped(ObjectStoragePtr object_storage, ContextPtr query_context) override
     {
+        /// A catalog table is loaded lazily, and its catalog purges the files on `DROP`: check them before that.
+        if (isIcebergConfiguration() && Context::getGlobalContextInstance()->getSettingsRef()[Setting::iceberg_delete_data_on_drop])
+            lazyInitializeIfNeeded(object_storage, query_context);
         if (auto metadata = tryGetMetadata())
             metadata->checkCanBeDropped(query_context);
     }

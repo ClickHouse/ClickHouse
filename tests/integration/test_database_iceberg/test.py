@@ -10,6 +10,7 @@ from datetime import datetime
 
 import avro.schema as avro_schema
 import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
 import requests
 import pytz
@@ -1762,6 +1763,37 @@ def test_drop_table_purge(started_cluster):
         assert not catalog.table_exists(f"{root_namespace}.{table_name}")
         assert data_files(table_name) == ([] if purge else files)
         node.wait_for_log_line(rf"tables/{table_name}\?purgeRequested={str(purge).lower()}")
+
+
+def test_drop_table_purge_requires_write_grant_on_external_files(started_cluster):
+    # The catalog purges the files outside the table directory too, so `DROP` must check the `WRITE` grant on them first.
+    node = started_cluster.instances["node2"]
+    catalog = load_catalog_impl(started_cluster)
+
+    test_ref = f"test_drop_purge_external_{uuid.uuid4().hex}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    external_key = f"{test_ref}_external/data.parquet"
+    user = f"{test_ref}_user"
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x Int32)")
+
+    buffer = io.BytesIO()
+    pq.write_table(pa.table({"x": pa.array([7], pa.int32())}, schema=pa.schema([pa.field("x", pa.int32(), nullable=False)])), buffer)
+    _put_s3_object_bytes(started_cluster.minio_client, "warehouse-rest", external_key, buffer.getvalue())
+    catalog.load_table(f"{root_namespace}.{table_name}").add_files([f"s3://warehouse-rest/{external_key}"])
+    assert node.query(f"SELECT x FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "7\n"
+
+    node.query(f"CREATE USER {user}")
+    node.query(f"GRANT DROP TABLE ON {CATALOG_NAME}.* TO {user}")
+    error = node.query_and_get_error(f"DROP TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`", user=user)
+    assert "Not enough privileges to drop the Iceberg table" in error, error
+    assert catalog.table_exists(f"{root_namespace}.{table_name}")
+    assert list_s3_objects(started_cluster.minio_client, "warehouse-rest", f"{test_ref}_external/") == ["data.parquet"]
+
+    node.query(f"DROP USER {user}")
+    drop_clickhouse_iceberg_table(node, root_namespace, table_name)
 
 
 def test_create_table_order_by(started_cluster):

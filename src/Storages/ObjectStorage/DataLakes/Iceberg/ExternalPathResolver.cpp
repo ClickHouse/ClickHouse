@@ -839,9 +839,25 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
             if (access_check != nullptr)
                 return std::nullopt;
 
+            /// A credential rotation publishes new connection parameters of the base storage; evict clients built from older ones.
+            /// The cached clone keeps the credential object alive, so its address cannot be reused by a newer credential.
+            SipHash auth_hash;
+            auth_hash.update(conn_params.endpoint.storage_account_url);
+            auth_hash.update(conn_params.endpoint.account_name);
+            auth_hash.update(conn_params.endpoint.account_key);
+            auth_hash.update(conn_params.endpoint.sas_auth);
+            auth_hash.update(conn_params.endpoint.additional_params);
+            auth_hash.update(conn_params.auth_method.index());
+            std::visit([&]<typename T>(const T & auth)
+            {
+                if constexpr (!std::is_same_v<T, AzureBlobStorage::ConnectionString>)
+                    auth_hash.update(reinterpret_cast<uintptr_t>(auth.get()));
+            }, conn_params.auth_method);
+            const std::string supersedes_prefix = cache_key + "#auth=";
+
             /// Clone connection parameters to preserve SAS and workload identity authentication, which config cannot express.
             return getOrCreateStorage(
-                cache_key,
+                supersedes_prefix + std::to_string(auth_hash.get64()),
                 target_decomposed.key,
                 external_storages,
                 [&](const std::string & storage_name) -> ObjectStoragePtr
@@ -861,7 +877,8 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
                         /// `getServiceEndpoint` would expose the SAS token in the storage description.
                         params.getConnectionURL(),
                         /*common_key_prefix*/ "");
-                });
+                },
+                supersedes_prefix);
         }
     }
 #endif
