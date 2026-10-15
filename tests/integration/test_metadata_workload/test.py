@@ -163,6 +163,10 @@ def test_metadata_statements_exempt_when_disabled() -> None:
         run_times_out(node_off, "alter table t modify query select 1 as x", workload="regular")
         run_times_out(node_off, "system prewarm mark cache t", workload="regular")
         run_times_out(node_off, "system load primary key t", workload="regular")
+        # Attaching loads the existing data of the table.
+        run(node_off, "detach table t sync", workload="regular")
+        run_times_out(node_off, "attach table t", workload="regular")
+    run(node_off, "attach table t")
 
 
 def test_metadata_statements_use_metadata_workload_when_enabled() -> None:
