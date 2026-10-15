@@ -13,6 +13,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionsLogical.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/Context.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -29,7 +30,6 @@ namespace Setting
     extern const SettingsBool apply_patch_parts;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 select_sequential_consistency;
-    extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_support_projection;
     extern const SettingsUInt64 max_projection_rows_to_use_projection_index;
     extern const SettingsUInt64 min_table_rows_to_use_projection_index;
@@ -79,7 +79,8 @@ std::expected<void, std::string> canUseProjectionForReadingStep(ReadFromMergeTre
 
     if (reading->isParallelReadingEnabled())
     {
-        bool support_projection = query_settings[Setting::parallel_replicas_local_plan]
+        /// The replicas leave what a projection answers without reading to the initiator's local plan.
+        bool support_projection = ClusterProxy::canUseLocalPlanForParallelReplicas(reading->getContext())
             && query_settings[Setting::parallel_replicas_support_projection];
 
         if (!support_projection)
