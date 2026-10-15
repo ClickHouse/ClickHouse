@@ -417,7 +417,6 @@ static void tryApply(
             return;
         witness_filter.emplace(witness_dag->getOutputs().front(), context, /*boolean_context=*/ true);
         witness_condition.emplace(*witness_filter, context, primary_key);
-        witness_condition->relaxRangeAtomsOverNaNHidingTupleColumns(primary_key.data_types);
         if (witness_condition->isRelaxed())
             return;
     }
