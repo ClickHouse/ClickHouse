@@ -44,6 +44,7 @@
 #include <Common/MemoryPressureMonitor.h>
 #include <Common/MemoryTracker.h>
 #include <Common/PerCPUMemory.h>
+#include <Server/DistributedQuery/StreamingExchangeProtocol.h>
 #include <Common/logger_useful.h>
 
 #include <Common/DNSResolver.h>
@@ -3879,6 +3880,10 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
              {std::to_string(HTTPConnectionPools::instance().getSocketBufferSizes(HTTPConnectionGroupType::HTTP).rcvbuf), ChangeableWithoutRestart::Yes}},
             {"http_connections_sndbuf",
              {std::to_string(HTTPConnectionPools::instance().getSocketBufferSizes(HTTPConnectionGroupType::HTTP).sndbuf), ChangeableWithoutRestart::Yes}},
+            {"streaming_exchange_sndbuf",
+             {std::to_string(StreamingExchangeProtocol::getSocketBufferSizes().sndbuf), ChangeableWithoutRestart::Yes}},
+            {"streaming_exchange_rcvbuf",
+             {std::to_string(StreamingExchangeProtocol::getSocketBufferSizes().rcvbuf), ChangeableWithoutRestart::Yes}},
     };
 
     if (context->areBackgroundExecutorsInitialized())

@@ -375,5 +375,13 @@ void setSocketBufferSizes(UInt64 sndbuf, UInt64 rcvbuf)
     socket_rcvbuf.store(rcvbuf, std::memory_order_relaxed);
 }
 
+SocketBufferSizes getSocketBufferSizes()
+{
+    SocketBufferSizes sizes;
+    sizes.sndbuf = socket_sndbuf.load(std::memory_order_relaxed);
+    sizes.rcvbuf = socket_rcvbuf.load(std::memory_order_relaxed);
+    return sizes;
+}
+
 }
 }
