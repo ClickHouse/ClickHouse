@@ -12,16 +12,22 @@
     <create_query>SYSTEM STOP MERGES timeseries_insert_db.`.inner_id.tags.7e5a0000-0000-4000-8000-000000000001`</create_query>
     <create_query>SYSTEM STOP MERGES timeseries_insert_db.`.inner_id.samples.7e5a0000-0000-4000-8000-000000000002`</create_query>
     <create_query>SYSTEM STOP MERGES timeseries_insert_db.`.inner_id.tags.7e5a0000-0000-4000-8000-000000000002`</create_query>
-    <!-- STOP MERGES ignores a missing table, so fail if an inner table name has changed. -->
+    <!-- Tables of TimeSeries version 8 and later also have a time ranges table. -->
+    <create_query>SYSTEM STOP MERGES timeseries_insert_db.`.inner_id.timeranges.7e5a0000-0000-4000-8000-000000000001`</create_query>
+    <create_query>SYSTEM STOP MERGES timeseries_insert_db.`.inner_id.timeranges.7e5a0000-0000-4000-8000-000000000002`</create_query>
+    <!-- STOP MERGES ignores a missing table, so fail if an inner table that takes inserts is not in the list above. -->
     <create_query>
-        SELECT throwIf(count() != 5, 'timeseries_insert: an inner table name changed, so merges are not stopped on it')
-        FROM system.tables
-        WHERE database = 'timeseries_insert_db' AND name IN (
+        SELECT throwIf(5 > count() OR countIf(name NOT IN (
             '.inner_id.samples.7e5a0000-0000-4000-8000-000000000001',
             '.inner_id.recentsamples.7e5a0000-0000-4000-8000-000000000001',
             '.inner_id.tags.7e5a0000-0000-4000-8000-000000000001',
+            '.inner_id.timeranges.7e5a0000-0000-4000-8000-000000000001',
             '.inner_id.samples.7e5a0000-0000-4000-8000-000000000002',
-            '.inner_id.tags.7e5a0000-0000-4000-8000-000000000002')
+            '.inner_id.tags.7e5a0000-0000-4000-8000-000000000002',
+            '.inner_id.timeranges.7e5a0000-0000-4000-8000-000000000002')) != 0,
+            'timeseries_insert: an inner table name changed, so merges are not stopped on it')
+        FROM system.tables
+        WHERE database = 'timeseries_insert_db' AND name LIKE '.inner_id.%' AND name NOT LIKE '.inner_id.metric%'
     </create_query>
 
     <substitutions>
