@@ -281,6 +281,71 @@ TEST(RendezvousHashing, DoesNotDeduplicateSamePathFromDifferentReadSources)
     ASSERT_EQ(actual, (std::set<size_t>{0, 1}));
 }
 
+TEST(RendezvousHashing, WaitsForOwnerBeforeTakingItsFiles)
+{
+    auto iterator = makeIterator();
+    std::vector<std::string> replicas = {"replica2", "replica1"};
+    const auto wait_for_owner = std::chrono::milliseconds(200);
+    StorageObjectStorageStableTaskDistributor distributor(iterator, std::move(replicas), false, wait_for_owner);
+
+    std::vector<std::string> paths;
+    ASSERT_TRUE(extractNForReplica(distributor, paths, 0, 6));
+    ASSERT_TRUE(checkHead(paths, {1, 5, 6, 7, 8, 9}));
+
+    const auto start = std::chrono::steady_clock::now();
+    std::vector<std::string> stolen_paths;
+    ASSERT_TRUE(extractNForReplica(distributor, stolen_paths, 0, 4));
+    ASSERT_GE(std::chrono::steady_clock::now() - start, wait_for_owner);
+    ASSERT_TRUE(checkHead(stolen_paths, {0, 2, 3, 4}));
+    ASSERT_EQ(distributor.getNextTask(0), nullptr);
+}
+
+TEST(RendezvousHashing, DoesNotWaitForConnectedOwner)
+{
+    auto iterator = makeIterator();
+    std::vector<std::string> replicas = {"replica2", "replica1"};
+    StorageObjectStorageStableTaskDistributor distributor(iterator, std::move(replicas), false, std::chrono::hours(1));
+
+    std::vector<std::string> paths1;
+    ASSERT_TRUE(extractNForReplica(distributor, paths1, 1, 1));
+
+    std::vector<std::string> paths0;
+    ASSERT_TRUE(extractNForReplica(distributor, paths0, 0, 9));
+    paths0.insert(paths0.end(), paths1.begin(), paths1.end());
+    ASSERT_TRUE(checkHead(paths0, {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}));
+}
+
+TEST(RendezvousHashing, TakesFilesOfReplicaWithMostRemainingBytes)
+{
+    std::vector<RelativePathWithMetadata> paths;
+    for (size_t i = 0; i < 10; ++i)
+    {
+        ObjectMetadata metadata;
+        metadata.size_bytes = (i == 1 || i == 5 || i == 7 || i == 8) ? 100 : 1;
+        paths.emplace_back(makePath(i), metadata);
+    }
+
+    auto iterator = std::make_shared<TestIterator>(paths);
+    std::vector<std::string> replicas = {"replica0", "replica1", "replica2"};
+    StorageObjectStorageStableTaskDistributor distributor(iterator, std::move(replicas), false);
+
+    std::vector<std::string> paths1;
+    ASSERT_TRUE(extractNForReplica(distributor, paths1, 1, 1));
+    ASSERT_TRUE(checkHead(paths1, {0}));
+
+    std::vector<std::string> paths2;
+    ASSERT_TRUE(extractNForReplica(distributor, paths2, 2, 1));
+    ASSERT_TRUE(checkHead(paths2, {1}));
+
+    std::vector<std::string> paths0;
+    ASSERT_TRUE(extractNForReplica(distributor, paths0, 0, 2));
+    ASSERT_TRUE(checkHead(paths0, {6, 9}));
+
+    std::vector<std::string> stolen_paths;
+    ASSERT_TRUE(extractNForReplica(distributor, stolen_paths, 0, 3));
+    ASSERT_TRUE(checkHead(stolen_paths, {5, 7, 8}));
+}
+
 TEST(RelativePathWithMetadata, FileNameKeepsObjectKeyByDefault)
 {
     RelativePathWithMetadata object_path("dir/part?.parquet#fragment");

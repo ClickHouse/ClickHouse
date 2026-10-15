@@ -3220,7 +3220,7 @@ static StoragePtr tryDispatchURLEngineByScheme(const StorageFactory::Arguments &
 /// parameter named like a credential (`access_token`, Azure SAS `sig`, ...). Returns whether anything was masked.
 static bool maskURLCredentials(String & url)
 {
-    bool changed = maskURIPassword(&url);
+    bool changed = maskURIPassword(&url, URI_AUTHORITY_TERMINATORS);
     changed |= maskPresignedURLParameters(url);
     String masked = maskSensitiveQueryParametersInURI(url);
     if (masked != url)
