@@ -12,17 +12,13 @@ doc_type: 'reference'
 データベースコメントを、以前に設定されていたかどうかにかかわらず、追加、変更、または削除します。コメントの変更は、[`system.databases`](/ja/reference/system-tables/databases)
 と `SHOW CREATE DATABASE` クエリの両方に反映されます。
 
-<div id="syntax">
-  ## 構文
-</div>
+## 構文 {#syntax}
 
 ```sql
 ALTER DATABASE [db].name [ON CLUSTER cluster] MODIFY COMMENT 'Comment'
 ```
 
-<div id="examples">
-  ## 例
-</div>
+## 例 {#examples}
 
 コメントを付けて`DATABASE`を作成するには:
 
@@ -72,9 +68,7 @@ WHERE  name = 'database_with_comment';
 └─────────┘
 ```
 
-<div id="related-content">
-  ## 関連コンテンツ
-</div>
+## 関連コンテンツ {#related-content}
 
 * [`COMMENT`](/ja/reference/statements/create/table#comment-clause)句
 * [`ALTER TABLE ... MODIFY COMMENT`](/ja/reference/statements/alter/comment)
