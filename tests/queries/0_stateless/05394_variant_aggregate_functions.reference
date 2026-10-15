@@ -5,6 +5,7 @@
 12.5
 \N
 6	[1,-2,NULL,3.5,NULL,10]	Variant(Float64, Int32, UInt8)
+Variant(Float64, Int32, UInt8)	Array(Variant(Float64, Int32, UInt8))	Nullable(UInt8)	Nullable(Float64)
 0	-1
 1	13.5
 0	0	\N	\N

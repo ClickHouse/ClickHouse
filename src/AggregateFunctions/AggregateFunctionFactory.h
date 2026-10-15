@@ -102,25 +102,9 @@ public:
     FunctionDocumentation getDocumentation(const String & name) const;
 
 private:
-    /// The part of `get` after removing LowCardinality, without applying `AggregateFunctionVariantAdapter`.
-    AggregateFunctionPtr getWithoutVariantAdapter(
-        const String & name,
-        NullsAction action,
-        const DataTypes & types_without_low_cardinality,
-        const Array & parameters,
-        AggregateFunctionProperties & out_properties,
-        AggregateFunctionStateVariant state_variant) const;
-
-    /// Creates the nested function of a combinator, applying `AggregateFunctionVariantAdapter` to it
-    /// only if it cannot be applied around the combinator, because its own arguments have no `Variant`.
-    AggregateFunctionPtr getNested(
-        const String & nested_name,
-        NullsAction action,
-        const DataTypes & argument_types,
-        const DataTypes & nested_argument_types,
-        const Array & nested_parameters,
-        AggregateFunctionProperties & out_properties,
-        AggregateFunctionStateVariant state_variant) const;
+    /// Whether the function, possibly with combinators, does not support some of its `Variant` arguments
+    /// according to `AggregateFunctionProperties::variant_arguments_conversion` and needs `AggregateFunctionVariantAdapter`.
+    bool needsVariantArgumentsConversion(const String & name, NullsAction action, const DataTypes & argument_types) const;
 
     AggregateFunctionPtr getImpl(
         const String & name,

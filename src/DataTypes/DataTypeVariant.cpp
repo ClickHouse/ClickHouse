@@ -867,7 +867,7 @@ SELECT v, length(v) FROM test ORDER BY v::String NULLS LAST;
 ## Aggregate functions with Variant arguments {#aggregate-functions-with-variant-arguments}
 
 Some aggregate functions, such as `count`, `any`, `groupArray` and the `uniq` family, handle `Variant` arguments natively.
-Other aggregate functions, such as `sum`, `avg`, `min`, `max` and `quantile`, are applied to the least common supertype of the alternatives, wrapped in `Nullable`:
+Aggregate functions that work only with values of specific types, such as `sum`, `avg`, `min`, `max`, `quantile`, the statistical functions, and the `val` argument of `argMin` and `argMax`, are applied to the least common supertype of the alternatives, wrapped in `Nullable`:
 
 ```text
 f(variant) == f(CAST(variant AS Nullable(supertype(T1, ..., TN))))

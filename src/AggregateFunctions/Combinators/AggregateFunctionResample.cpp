@@ -30,6 +30,11 @@ public:
         return DataTypes(arguments.begin(), arguments.end() - 1);
     }
 
+    bool needsVariantArgumentsConversion(const DataTypes & arguments) const override
+    {
+        return !arguments.empty() && isVariant(arguments.back());
+    }
+
     Array transformParameters(const Array & params) const override
     {
         if (params.size() < 3)

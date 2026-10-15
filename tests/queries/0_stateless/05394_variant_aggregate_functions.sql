@@ -15,6 +15,8 @@ SELECT sum(v) FROM t_variant_agg WHERE v IS NULL;
 
 -- Functions that support Variant natively are not affected.
 SELECT count(v), groupArray(v), toTypeName(any(v)) FROM t_variant_agg;
+-- Only the arguments that are not supported are converted: the first argument of argMax and topKWeighted is processed natively.
+SELECT toTypeName(argMax(v, k)), toTypeName(topKWeighted(v, k)), toTypeName(argMax(k, v)), toTypeName(argMax(v, v)) FROM t_variant_agg;
 
 -- Window functions.
 SELECT DISTINCT k, sum(v) OVER (PARTITION BY k) FROM t_variant_agg ORDER BY k;

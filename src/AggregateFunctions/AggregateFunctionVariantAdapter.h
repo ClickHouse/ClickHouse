@@ -14,7 +14,7 @@ namespace DB
   *
   * The NULL values of the `Variant` become NULL values of `Nullable` and are skipped as usual.
   * The adapter shares the state of the nested function, which is created for the converted argument types.
-  * It is applied by `AggregateFunctionFactory` only when the function rejects the original `Variant` arguments.
+  * It is applied by `AggregateFunctionFactory` according to `AggregateFunctionProperties::variant_arguments_conversion`.
   */
 class AggregateFunctionVariantAdapter final : public IAggregateFunctionHelper<AggregateFunctionVariantAdapter>
 {
