@@ -5,12 +5,17 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # A web terminal session closed while a query is running must not leave the
-# output buffers of the embedded client neither finalized nor canceled.
+# output buffers of the embedded client neither finalized nor canceled,
+# and must not write the end of the result into the canceled output.
 
 MARKER="webterminal_close_${CLICKHOUSE_DATABASE}"
 START=$(${CLICKHOUSE_CLIENT} --query "SELECT toUnixTimestamp(now())")
 
-python3 - "${CLICKHOUSE_HOST}" "${CLICKHOUSE_PORT_HTTP}" "${MARKER}" <<'PYEOF'
+# Runs the query in a web terminal session and closes the session
+# the given number of seconds after the terminal output contains the needle.
+function close_during()
+{
+python3 - "${CLICKHOUSE_HOST}" "${CLICKHOUSE_PORT_HTTP}" "$1" "$2" "$3" <<'PYEOF'
 import base64
 import json
 import os
@@ -19,7 +24,7 @@ import struct
 import sys
 import time
 
-host, port, marker = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+host, port, query, needle, delay = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4].encode(), float(sys.argv[5])
 
 
 def recv_exact(sock, n):
@@ -90,21 +95,22 @@ assert response.startswith(b"HTTP/1.1 101"), response
 send_frame(sock, 0x01, json.dumps({"type": "auth", "user": "default", "password": ""}).encode())
 read_until(sock, b":) ", 60)
 
-query = (
-    "SELECT count() FROM numbers(100) WHERE NOT ignore(sleepEachRow(0.5)) "
-    f"SETTINGS max_block_size = 1, log_comment = '{marker}'\r"
-)
-send_frame(sock, 0x02, query.encode())
-read_until(sock, b"Progress:", 60)
+send_frame(sock, 0x02, (query + "\r").encode())
+read_until(sock, needle, 60)
+time.sleep(delay)
 
 # Close the connection abruptly while the query is running.
 sock.close()
 print("closed during the query")
 PYEOF
+}
 
-# The query leaves the process list once the session of the embedded client is torn down.
+close_during "SELECT count() FROM numbers(100) WHERE NOT ignore(sleepEachRow(0.5)) SETTINGS max_block_size = 1, log_comment = '${MARKER}'" "Progress:" 0
+close_during "SELECT number, sleepEachRow(0.1) FROM numbers(100) SETTINGS max_block_size = 1, log_comment = '${MARKER}_json' FORMAT JSON" '"number"' 0.5
+
+# The queries leave the process list once the sessions of the embedded client are torn down.
 for _ in {1..60}; do
-    running=$(${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.processes WHERE Settings['log_comment'] = '${MARKER}'")
+    running=$(${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.processes WHERE Settings['log_comment'] IN ('${MARKER}', '${MARKER}_json')")
     [ "$running" = "0" ] && break
     sleep 1
 done
@@ -117,3 +123,8 @@ ${CLICKHOUSE_CLIENT} --query "
         AND logger_name = 'WriteBuffer'
         AND message LIKE '%neither finalized nor canceled%'
         AND message LIKE '%ClientEmbeddedRunner%'"
+${CLICKHOUSE_CLIENT} --query "
+    SELECT count() FROM system.errors
+    WHERE name = 'LOGICAL_ERROR'
+        AND last_error_time >= toDateTime(${START})
+        AND last_error_message LIKE '%Cannot write to canceled buffer%'"

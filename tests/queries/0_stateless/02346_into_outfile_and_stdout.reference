@@ -19,3 +19,15 @@ performing test: union_all
 3	4
 1	2
 3	4
+performing test: closed_stdout
+exit code: 75
+write error reported
+0
+performing test: full_file
+exit code: 75
+write error reported
+0
+performing test: full_file_gzip
+exit code: 75
+write error reported
+0
