@@ -29,4 +29,5 @@ ${DDL_CLIENT} --query "
     BACKUP TABLE t_backup TO Memory('${CLICKHOUSE_TEST_UNIQUE_NAME}') FORMAT Null;
     SET mysql_datatypes_support_level = 'decimal';
     RESTORE TABLE t_backup AS t_restored FROM Memory('${CLICKHOUSE_TEST_UNIQUE_NAME}') FORMAT Null;"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 't_restored'"
 settings_of t_restored
