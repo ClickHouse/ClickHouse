@@ -33,7 +33,7 @@ namespace Setting
 namespace DB::QueryPlanOptimizations
 {
 
-/// PROTOTYPE: skip granules that cannot contain `max(k)` or `min(k)` for any group of `GROUP BY <keys>`, where `k`
+/// Skip granules that cannot contain `max(k)` or `min(k)` for any group of `GROUP BY <keys>`, where `k`
 /// is a sorting key column and every key depends only on the sorting key columns before `k` (the prefix).
 ///
 /// Within a part, rows are sorted by `(<prefix>, k)`, so each value of the prefix forms a run of rows sorted by `k`.
