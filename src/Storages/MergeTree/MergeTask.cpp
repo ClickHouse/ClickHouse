@@ -3672,8 +3672,6 @@ MergeAlgorithm MergeTask::ExecuteAndFinalizeHorizontalPart::chooseMergeAlgorithm
     }
     if (global_ctx->future_part->part_format.part_type != MergeTreeDataPartType::Wide)
         return MergeAlgorithm::Horizontal;
-    if (global_ctx->future_part->part_format.storage_type != MergeTreeDataPartStorageType::Full)
-        return MergeAlgorithm::Horizontal;
 
     if (!(*merge_tree_settings)[MergeTreeSetting::allow_vertical_merges_from_compact_to_wide_parts])
     {
