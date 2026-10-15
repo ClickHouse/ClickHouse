@@ -160,6 +160,25 @@ struct ReplaceRegexpImpl
         return result.is_trivial && result.required_substring_is_prefix && result.required_substring == needle;
     }
 
+    /// The literal that every match of `searcher` must start the haystack with, e.g. `http` for
+    /// '^https?://', or an empty string if there is none. A haystack without it cannot match, so it
+    /// passes through unchanged for both `replaceRegexpOne` and `replaceRegexpAll`.
+    static String getRequiredPrefix(const re2::RE2 & searcher)
+    {
+        String prefix;
+        bool foldcase = false;
+        re2::Regexp * suffix = nullptr;
+        /// `^` is `kRegexpBeginText` here (`one_line` is ignored without `posix_syntax`), so it anchors at
+        /// the start of the haystack rather than of a line.
+        if (!searcher.Regexp()->RequiredPrefix(&prefix, &foldcase, &suffix))
+            prefix.clear();
+        if (suffix)
+            suffix->Decref();
+        if (foldcase)
+            prefix.clear();
+        return prefix;
+    }
+
     /// Returns whether at least one match was found.
     static bool processString(
         const char * haystack_data,
@@ -376,6 +395,10 @@ struct ReplaceRegexpImpl
     /// first and rejected rows are copied through directly, at the cost of the plain loop. While the cache
     /// is enabled, rejects are cached like matches, so repeats of a rejecting value skip the re-check; only
     /// after the distinct-ratio guard disables the cache do rejected rows bypass hashing entirely.
+    /// A row that does not start with `required_prefix` (see `getRequiredPrefix`) cannot match, so it is
+    /// copied through ahead of everything else and left out of the window statistics: the heuristics then
+    /// judge only the rows that can match, and a few long matching rows among many prefix rejects are not
+    /// scanned twice by the pre-check.
     /// `get_haystack(i)` must stay valid for the whole call.
     template <typename GetHaystack>
     static void processStringsDeduplicated(
@@ -385,6 +408,7 @@ struct ReplaceRegexpImpl
         ColumnString::Offsets & res_offsets,
         ColumnString::Offset & res_offset,
         const re2::RE2 & searcher,
+        std::string_view required_prefix,
         int num_captures,
         const Instructions & instructions,
         CancellationBudget & budget)
@@ -413,6 +437,7 @@ struct ReplaceRegexpImpl
 
         bool precheck_non_matching = false;
         size_t rows_in_window = 0;
+        size_t rows_in_distinct_window = 0;
         size_t matched_in_window = 0;
         size_t cache_size_at_distinct_check = 0;
 
@@ -455,15 +480,25 @@ struct ReplaceRegexpImpl
 
             const std::string_view haystack = get_haystack(i);
 
-            /// The checkpoint runs ahead of every fast path below, so every row advances it and no
-            /// `continue` can starve it: a block of pre-check rejects, of adjacent duplicates, or of
-            /// cache-disabled rows all keep re-evaluating the heuristics on schedule. The match ratio
+            if (!haystack.starts_with(required_prefix))
+            {
+                res_data.resize(res_data.size() + haystack.size());
+                memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], haystack.data(), haystack.size());
+                res_offset += haystack.size();
+                budget.charge(haystack.size());
+                res_offsets[i] = res_offset;
+                continue;
+            }
+
+            /// The checkpoint runs ahead of every fast path below, so every row past the prefix check
+            /// advances it and no `continue` can starve it: a block of pre-check rejects, of adjacent
+            /// duplicates, or of cache-disabled rows all keep re-evaluating the heuristics on schedule. The match ratio
             /// covers only the last window, so the pre-check follows a shift between rejecting and
             /// matching runs within at most two windows regardless of the block's shape.
             if (rows_in_window == ratio_check_window)
             {
                 precheck_non_matching = matched_in_window * 20 < ratio_check_window;
-                if (i % distinct_ratio_window == 0)
+                if (rows_in_distinct_window == distinct_ratio_window)
                 {
                     /// While the cache is enabled every row either reaches it or is an adjacent duplicate
                     /// (a repeat the caching strategy serves), so the insertions since the previous check
@@ -485,6 +520,7 @@ struct ReplaceRegexpImpl
 
                     if (!map_enabled)
                         sample_haystack = haystack;
+                    rows_in_distinct_window = 0;
                 }
                 rows_in_window = 0;
                 matched_in_window = 0;
@@ -498,7 +534,7 @@ struct ReplaceRegexpImpl
             /// would otherwise end before the recurrence could be acted on. The distinct ratio of the
             /// window the rebuilt cache runs into judges it again, so a wrong re-enable costs a window of
             /// lookups, while a cycle of a few values keeps the cache for good.
-            const size_t offset_in_distinct_window = i % distinct_ratio_window;
+            const size_t offset_in_distinct_window = rows_in_distinct_window++;
             if (!map_enabled && offset_in_distinct_window != 0 && offset_in_distinct_window <= sample_probe_rows
                 && haystack == sample_haystack)
                 map_enabled = true;
@@ -689,7 +725,7 @@ struct ReplaceRegexpImpl
                     reinterpret_cast<const char *>(haystack_data.data() + from),
                     static_cast<size_t>(haystack_offsets[i] - from));
             },
-            input_rows_count, res_data, res_offsets, res_offset, searcher, num_captures, instructions, budget);
+            input_rows_count, res_data, res_offsets, res_offset, searcher, getRequiredPrefix(searcher), num_captures, instructions, budget);
     }
 
     static void vectorVectorConstant(
@@ -913,7 +949,7 @@ struct ReplaceRegexpImpl
 
         processStringsDeduplicated(
             [&](size_t i) { return std::string_view(reinterpret_cast<const char *>(haystack_data.data() + i * n), n); },
-            input_rows_count, res_data, res_offsets, res_offset, searcher, num_captures, instructions, budget);
+            input_rows_count, res_data, res_offsets, res_offset, searcher, getRequiredPrefix(searcher), num_captures, instructions, budget);
     }
 };
 
