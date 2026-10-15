@@ -13,7 +13,7 @@ rm -rf "${TABLE_PATH}"
 ${CLICKHOUSE_CLIENT} --query "
     SET allow_experimental_insert_into_iceberg = 1;
     SET max_insert_threads = 1;
-    CREATE TABLE t_null_map_bytes_iceberg (id UInt64, e Nullable(String))
+    CREATE TABLE t_null_map_bytes_iceberg (id Int64, e Nullable(String))
     ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet') ORDER BY (id);
     INSERT INTO t_null_map_bytes_iceberg SELECT number, if(toUInt8((number % 3) * 2), NULL, 'x') FROM numbers(30);
 "
