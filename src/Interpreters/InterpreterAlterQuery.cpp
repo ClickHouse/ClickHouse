@@ -5,6 +5,7 @@
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Access/Common/SQLSecurityDefs.h>
+#include <Access/ContextAccess.h>
 #include <Access/User.h>
 #include <Backups/BackupsWorker.h>
 #include <Common/typeid_cast.h>
@@ -785,6 +786,17 @@ InterpreterAlterQuery::RowExistsColumnKind InterpreterAlterQuery::getRowExistsCo
     /// `CREATE TABLE` query alone, without the virtual columns of the engine, so it would hide the
     /// marker and turn `_row_exists = 0` into a regular update. Every caller is about to mutate the
     /// table or a mutation of it, so ask the real storage.
+    /// But this runs before the access check, and materializing starts the engine, which a user without
+    /// any mutation privilege on the table must not cause, nor see its initialization errors. Such a user
+    /// cannot pass the check with any classification, so the fail-closed `Unknown` is enough for them.
+    if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()); proxy && proxy->isLazyStandIn() && !proxy->tryGetNested())
+    {
+        const auto storage_id = storage->getStorageID();
+        const auto access = context_->getAccess();
+        if (!access->isGranted(AccessType::ALTER_DELETE, storage_id.database_name, storage_id.table_name)
+            && !access->isGranted(AccessType::ALTER_UPDATE, storage_id.database_name, storage_id.table_name))
+            return RowExistsColumnKind::Unknown;
+    }
     const auto metadata_snapshot = resolveStorageProxyLoading(storage)->getInMemoryMetadataPtr(context_, false);
     return metadata_snapshot->isVirtualColumn(RowExistsColumn::name)
         ? RowExistsColumnKind::LightweightDeleteMarker
