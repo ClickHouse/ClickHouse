@@ -55,11 +55,10 @@ bool isExchangeEndpointStep(const IQueryPlanStep & step)
 }
 
 /// A fragment is a stage of the executor, so it always has a plan.
-const QueryPlan & checkNotEmpty(const QueryPlan & plan, const String & stage_name)
+void checkNotEmpty(const QueryPlan & plan, const String & stage_name)
 {
     if (!plan.getRootNode())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The plan of stage {} is empty", stage_name);
-    return plan;
 }
 
 const String * tryGetReceiveExchangeId(const IQueryPlanStep & step)
@@ -315,7 +314,8 @@ FragmentGraph buildFragmentGraph(const DistributedQueryPlan & distributed_plan)
         fragment.stage_name = stage_name;
         fragment.role = stage_name == main_stage_name ? QueryFragment::Role::Initiator : QueryFragment::Role::Worker;
         fragment.tasks = stage.tasks.size();
-        fragment.plan = &checkNotEmpty(stage.query_plan_fragment, stage_name);
+        checkNotEmpty(stage.query_plan_fragment, stage_name);
+        fragment.plan = &stage.query_plan_fragment;
         graph.fragments.push_back(std::move(fragment));
     }
     std::sort(graph.fragments.begin(), graph.fragments.end(), [](const auto & lhs, const auto & rhs) { return lhs.id < rhs.id; });
@@ -388,7 +388,8 @@ FragmentGraph buildSingleFragmentGraph(const QueryPlan & plan, std::optional<Str
     fragment.location = QueryFragment::ExecutionLocation::SingleNode;
     fragment.fallback_reason = std::move(fallback_reason);
     fragment.tasks = 1;
-    fragment.plan = &checkNotEmpty(plan, fragment.stage_name);
+    checkNotEmpty(plan, fragment.stage_name);
+    fragment.plan = &plan;
     graph.fragments.push_back(std::move(fragment));
     return graph;
 }

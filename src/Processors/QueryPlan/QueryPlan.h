@@ -360,11 +360,11 @@ struct ExchangeDescription
     /// Name of the logical exchange step this exchange was cut from (`ShuffleExchange`, `ScatterExchange`,
     /// `BroadcastExchange`, `GatherExchange`). Kept for `EXPLAIN`; not sent to workers. Empty for `final_result`,
     /// which is not cut from a logical exchange step.
-    String exchange_step_name;
+    String exchange_step_name = {};
     /// Hash keys of a shuffle or scatter exchange; empty for `any` distribution, broadcast and gather.
-    Names keys;
+    Names keys = {};
     /// Sort order a gather exchange maintains when merging, if any.
-    std::optional<SortDescription> sort_description;
+    std::optional<SortDescription> sort_description = {};
 };
 
 using ExchangeDescriptions = std::unordered_map<String, ExchangeDescription>;
