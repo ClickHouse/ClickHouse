@@ -297,14 +297,17 @@ ActionsDAG makeAboveReadDAG(
     ActionsDAG dag(read_header.getColumnsWithTypeAndName());
     const auto inputs = dag.getInputs();
 
+    std::vector<bool> is_consumed(inputs.size(), false);
+    for (size_t position : consumed_positions)
+        is_consumed.at(position) = true;
+
+    /// The columns the read had before come first, in their order, and only get appended to.
     auto & outputs = dag.getOutputs();
     outputs.clear();
     for (size_t position = 0; position < inputs.size(); ++position)
-        if (std::ranges::find(consumed_positions, position) == consumed_positions.end())
+        if (!is_consumed[position])
             outputs.push_back(inputs[position]);
-
-    /// The columns the read had before, in their order.
-    const ActionsDAG::NodeRawConstPtrs kept = outputs;
+    const size_t kept_columns = outputs.size();
 
     if (!index_name.empty())
     {
@@ -325,7 +328,13 @@ ActionsDAG makeAboveReadDAG(
     }
 
     for (const auto & copy : copies)
-        outputs.push_back(&dag.addAlias(*kept.at(copy.position), copy.name));
+    {
+        if (copy.position >= kept_columns)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Lazy materialization copies column {} of the {} columns of a read as {}", copy.position, kept_columns, copy.name);
+        const auto * column = outputs[copy.position];
+        outputs.push_back(&dag.addAlias(*column, copy.name));
+    }
 
     return dag;
 }
@@ -416,8 +425,6 @@ public:
         if (merged.sources.size() < 2)
             return false;
 
-        collectNodes();
-
         const auto & outputs = merged.getOutputs();
         for (size_t position : sort_key_positions)
             sort_key_nodes.insert(outputs[position]);
@@ -479,9 +486,14 @@ public:
         /// What the chain hands over: the sort keys and the copies of the values crossing the `LIMIT`. The header of the
         /// chain is the outputs of the merged DAG.
         std::vector<size_t> unneeded;
+        auto next_sort_key = sort_key_positions.begin();
         for (size_t position = 0; position < merged.getOutputs().size(); ++position)
-            if (!std::ranges::binary_search(sort_key_positions, position))
+        {
+            if (next_sort_key != sort_key_positions.end() && *next_sort_key == position)
+                ++next_sort_key;
+            else
                 unneeded.push_back(position);
+        }
         auto assembled = assemble(unneeded, nodes);
         auto & main_plan = assembled.plan;
 
@@ -497,17 +509,20 @@ public:
             const auto inputs = projection.getInputs();
 
             /// The chain keeps the columns of its former header it did not drop, in their order, so a sort key is found where
-            /// it was, less the dropped positions before it. A copy of a carried value and a row index have names of their
-            /// own.
+            /// it was, less the dropped positions before it. Both are in order, so they are followed at once. A copy of a
+            /// carried value and a row index have names of their own.
             const auto & dropped = assembled.dropped_positions;
+            auto next_dropped = dropped.begin();
             auto & projection_outputs = projection.getOutputs();
             projection_outputs.clear();
             for (size_t position : sort_key_positions)
             {
-                if (std::ranges::binary_search(dropped, position))
+                while (next_dropped != dropped.end() && *next_dropped < position)
+                    ++next_dropped;
+                if (next_dropped != dropped.end() && *next_dropped == position)
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Lazy materialization lost the sort key {} below the LIMIT", outputs[position]->result_name);
-                const auto dropped_before = std::ranges::lower_bound(dropped, position) - dropped.begin();
+                const auto dropped_before = next_dropped - dropped.begin();
                 projection_outputs.push_back(inputs.at(position - dropped_before));
                 slots.push_back(outputs[position]);
                 slot_indexes.emplace_back();
@@ -657,11 +672,12 @@ private:
         LazyObjectStorageFileRegistryPtr row_index_registry;
     };
 
-    /// Records the nodes between `chain_top` and the sources, the ones the walk building the merged DAG entered, top-down,
-    /// the sources included, with the right subtree of a node before the left one, so that in reverse they come
-    /// bottom-up, left to right.
-    void collectNodes()
+    /// The nodes between `chain_top` and the sources, the ones the walk building the merged DAG entered, top-down, the
+    /// sources included, with the right subtree of a node before the left one, so that in reverse they come bottom-up,
+    /// left to right.
+    std::vector<QueryPlan::Node *> collectNodes() const
     {
+        std::vector<QueryPlan::Node *> top_down_nodes;
         std::vector<QueryPlan::Node *> stack{chain_top};
         while (!stack.empty())
         {
@@ -675,6 +691,7 @@ private:
             for (auto * child : node->children)
                 stack.push_back(child);
         }
+        return top_down_nodes;
     }
 
     /// Picks the columns each source reads lazily. A column the frontier wants read lazily that something
@@ -875,6 +892,8 @@ private:
     /// `unneeded` is what is not needed of `chain_top`.
     Assembled assemble(const std::vector<size_t> & unneeded, QueryPlan::Nodes & nodes)
     {
+        const auto top_down_nodes = collectNodes();
+
         /// A node a value is carried from keeps the column it is copied from.
         std::unordered_map<const QueryPlan::Node *, std::vector<size_t>> unneeded_of{{chain_top, unneeded}};
         for (auto * node : top_down_nodes)
@@ -928,11 +947,11 @@ private:
             if (carrying.node != node || carrying.step_node)
                 continue;
 
-            if (std::ranges::binary_search(dropped_positions, carrying.position))
+            const auto first_not_before = std::ranges::lower_bound(dropped_positions, carrying.position);
+            if (first_not_before != dropped_positions.end() && *first_not_before == carrying.position)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                     "Lazy materialization lost the carried value {} of {}", carrying.value->result_name, node->step->getName());
-            const auto dropped_before = std::ranges::lower_bound(dropped_positions, carrying.position) - dropped_positions.begin();
-            copies.push_back({carrying.position - dropped_before, carrying.name});
+            copies.push_back({carrying.position - (first_not_before - dropped_positions.begin()), carrying.name});
         }
         return copies;
     }
@@ -1012,11 +1031,17 @@ private:
             /// The read drops what nothing below the `LIMIT` needs, and hands the columns read lazily to a lazy read.
             static const std::vector<size_t> no_positions;
             const auto & lazy_positions = lazy ? lazy->positions : no_positions;
+            /// Both in order, so they are followed at once.
+            auto next_unneeded = unneeded.begin();
             for (size_t position : lazy_positions)
-                if (!std::ranges::binary_search(unneeded, position))
+            {
+                while (next_unneeded != unneeded.end() && *next_unneeded < position)
+                    ++next_unneeded;
+                if (next_unneeded == unneeded.end() || *next_unneeded != position)
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Column {} of source {} is read lazily, but needed below the LIMIT",
                         plan.getCurrentHeader()->getByPosition(position).name, source);
+            }
 
             auto [pruned, lazy_reading] = merge_tree->removeUnusedColumnsAndCreateLazyReadStep(unneeded, lazy_positions);
             result.dropped_positions = std::move(pruned.dropped_output_positions);
@@ -1139,8 +1164,6 @@ private:
 
     QueryPlan::Node * chain_top = nullptr;
     std::unordered_map<const QueryPlan::Node *, size_t> source_numbers;
-    /// The nodes from `chain_top` to the sources, top-down, see `collectParents`.
-    std::vector<QueryPlan::Node *> top_down_nodes;
     NodeSet sort_key_nodes;
     std::map<size_t, LazySource> lazy_by_source;
     /// The steps this rebuild adds right above a step - the row index and the copies of the carried values - to be

@@ -6802,10 +6802,16 @@ ReadFromMergeTree::RemoveUnusedColumnsResult ReadFromMergeTree::applyColumnPruni
     if (!changes_filters && pruning.dropped_storage_positions.empty())
         return {};
 
+    /// Both in order, so they are followed at once.
     Names new_column_names;
+    auto next_dropped = pruning.dropped_storage_positions.begin();
     for (size_t pos = 0; pos < all_column_names.size(); ++pos)
-        if (!std::ranges::binary_search(pruning.dropped_storage_positions, pos))
+    {
+        if (next_dropped != pruning.dropped_storage_positions.end() && *next_dropped == pos)
+            ++next_dropped;
+        else
             new_column_names.push_back(all_column_names[pos]);
+    }
     all_column_names = std::move(new_column_names);
 
     const size_t former_output_column_count = output_header->columns();
@@ -6878,11 +6884,15 @@ ReadFromMergeTree::removeUnusedColumnsAndCreateLazyReadStep(
     if (lazy_output_positions.empty())
         return {applyColumnPruning(pruning), nullptr};
 
+    /// The lazily readable positions and the lazy ones are both in order, so they are followed at once.
     const auto readable = getLazilyReadablePositions(pruning);
+    auto next_readable = readable.begin();
     std::vector<size_t> lazy_storage_positions;
     for (size_t position : lazy_output_positions)
     {
-        if (!std::ranges::binary_search(readable, position))
+        while (next_readable != readable.end() && *next_readable < position)
+            ++next_readable;
+        if (next_readable == readable.end() || *next_readable != position)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Column {} of the read cannot be read lazily", output_header->getByPosition(position).name);
         lazy_storage_positions.push_back(*pruning.storage_position_of_output.at(position));
