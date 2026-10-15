@@ -235,8 +235,11 @@ private:
     /// In comparison to std::vector, plain array is cheaper by one indirection.
     Values lut[DATE_LUT_SIZE + 1]; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - fully assigned in constructor
 
-    /// Same as above but with dates < 1970-01-01 saturated to 1970-01-01.
-    Values lut_saturated[DATE_LUT_SIZE + 1]; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - fully assigned in constructor
+    /// Start of the first day that begins at or after 1970-01-01 00:00:00 UTC. Results for unsigned `Date` and
+    /// `DateTime` are clamped to it, because those types cannot represent earlier days.
+    Time first_non_negative_date;
+
+    Time saturated(Time t) const { return std::max(t, first_non_negative_date); }
 
     /// Year number after DATE_LUT_MIN_YEAR -> LUTIndex in lut for start of year.
     LUTIndex years_lut[DATE_LUT_YEARS];
@@ -616,7 +619,7 @@ public:
 
         const LUTIndex i = toLUTIndex(v);
         if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
-            return lut_saturated[i - (lut[i].day_of_week - 1)].date;
+            return saturated(lut[i - (lut[i].day_of_week - 1)].date);
         else
             return lut[i - (lut[i].day_of_week - 1)].date;
     }
@@ -645,7 +648,7 @@ public:
 
         const LUTIndex i = toLUTIndex(v);
         if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
-            return lut_saturated[i + (7 - lut[i].day_of_week)].date;
+            return saturated(lut[i + (7 - lut[i].day_of_week)].date);
         else
             return lut[i + (7 - lut[i].day_of_week)].date;
     }
@@ -674,7 +677,7 @@ public:
 
         const LUTIndex i = toLUTIndex(v);
         if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
-            return lut_saturated[i - (lut[i].day_of_month - 1)].date;
+            return saturated(lut[i - (lut[i].day_of_month - 1)].date);
         else
             return lut[i - (lut[i].day_of_month - 1)].date;
     }
@@ -706,7 +709,7 @@ public:
 
         const LUTIndex i = toLUTIndex(v);
         if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
-            return lut_saturated[i + (lut[i].days_in_month - lut[i].day_of_month)].date;
+            return saturated(lut[i + (lut[i].days_in_month - lut[i].day_of_month)].date);
         else
             return lut[i + (lut[i].days_in_month - lut[i].day_of_month)].date;
     }
@@ -996,7 +999,7 @@ public:
       *  because the same calendar day starts/ends at different timestamps in different time zones)
       */
 
-    Time fromDayNum(DayNum d) const { return lut_saturated[toLUTIndex(d)].date; }
+    Time fromDayNum(DayNum d) const { return saturated(lut[toLUTIndex(d)].date); }
     Time fromDayNum(ExtendedDayNum d) const
     {
         if (unlikely(isOutOfLUTRange(d)))
@@ -1012,7 +1015,7 @@ public:
                 return outOfRangeValues(v).date;
 
         if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
-            return lut_saturated[toLUTIndex(v)].date;
+            return saturated(lut[toLUTIndex(v)].date);
         else
             return lut[toLUTIndex(v)].date;
     }
@@ -1663,7 +1666,7 @@ public:
         const Int64 max_daynum = max_representable_day_index - static_cast<Int64>(daynum_offset_epoch);
         const auto index = ExtendedDayNum(static_cast<Int32>(std::clamp(rounded_day_num, min_daynum, max_daynum)));
         if constexpr (std::is_same_v<Date, DayNum>)
-            return lut_saturated[toLUTIndex(index)].date;
+            return saturated(lut[toLUTIndex(index)].date);
         else
             return lut[toLUTIndex(index)].date;
     }

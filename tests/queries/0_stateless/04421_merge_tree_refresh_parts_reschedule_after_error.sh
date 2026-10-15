@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-random-settings, no-object-storage, no-replicated-database, no-shared-merge-tree
+# Tags: no-parallel, no-random-settings, no-object-storage, no-replicated-database, no-shared-merge-tree, no-fasttest
 # Tag no-parallel: SYSTEM ENABLE FAILPOINT toggles server-global state.
 # Tags no-random-settings, no-object-storage, no-replicated-database, no-shared-merge-tree: mirror
 #   03362_merge_tree_with_background_refresh, the plain_rewritable read-only refresh test this is based on.
