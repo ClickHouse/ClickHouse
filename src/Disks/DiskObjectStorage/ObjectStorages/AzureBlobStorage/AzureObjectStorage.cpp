@@ -615,6 +615,7 @@ void AzureObjectStorage::removeObjectsBatchIfExists(
 
         size_t avg_elapsed_us = watch.elapsedMicroseconds() / object_batch.size();
         std::exception_ptr throw_at_end;
+        std::exception_ptr changed_generation_error;
         for (const auto [object, deferred_response] : std::views::zip(object_batch, responses))
         {
             try
@@ -638,24 +639,27 @@ void AzureObjectStorage::removeObjectsBatchIfExists(
                 {
                     add_log_entry(object, avg_elapsed_us, static_cast<Int32>(e.StatusCode), e.Message);
 
-                    if (!throw_at_end)
+                    /// The precondition did not hold: the blob is not the generation the caller
+                    /// selected, and it stays in place. Reported as by `removeObjectImpl`.
+                    if (!object.etag.empty() && e.StatusCode == Azure::Core::Http::HttpStatusCode::PreconditionFailed)
                     {
-                        /// The precondition did not hold: the blob is not the generation the caller
-                        /// selected, and it stays in place. Reported as by `removeObjectImpl`.
-                        if (!object.etag.empty() && e.StatusCode == Azure::Core::Http::HttpStatusCode::PreconditionFailed)
-                            throw_at_end = std::make_exception_ptr(Exception(
+                        if (!changed_generation_error)
+                            changed_generation_error = std::make_exception_ptr(Exception(
                                 ErrorCodes::FILE_CHANGED_DURING_READ,
                                 "Object {} was not deleted: it changed after it was selected (its `ETag` is no longer {})",
                                 object.remote_path, object.etag));
-                        else
-                            throw_at_end = std::current_exception();
                     }
+                    else if (!throw_at_end)
+                        throw_at_end = std::current_exception();
 
                     continue;
                 }
             }
         }
 
+        /// A changed object must not look like an ordinary failure, which the caller may skip.
+        if (changed_generation_error)
+            std::rethrow_exception(changed_generation_error);
         if (throw_at_end)
             std::rethrow_exception(throw_at_end);
     }
@@ -685,7 +689,11 @@ void AzureObjectStorage::removeObjectsIfExist( /// NOLINT
             catch (const Exception & e)
             {
                 if (e.code() != ErrorCodes::FILE_CHANGED_DURING_READ)
+                {
+                    if (throw_at_end)
+                        std::rethrow_exception(throw_at_end);
                     throw;
+                }
                 if (!throw_at_end)
                     throw_at_end = std::current_exception();
             }

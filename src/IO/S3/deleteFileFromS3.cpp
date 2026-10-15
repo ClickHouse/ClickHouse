@@ -328,7 +328,12 @@ void deleteFilesFromS3(
                     }
 
                     if (other_error)
+                    {
+                        /// A changed object must not look like an ordinary failure, which the caller may skip.
+                        if (changed_generation_error)
+                            std::rethrow_exception(changed_generation_error);
                         std::rethrow_exception(other_error);
+                    }
                 }
             }
             else
@@ -354,6 +359,8 @@ void deleteFilesFromS3(
                 }
                 else
                 {
+                    if (changed_generation_error)
+                        std::rethrow_exception(changed_generation_error);
                     throw S3Exception(err.GetErrorType(), "{} (Code: {}) while removing objects with paths [{}] from S3",
                                       err.GetMessage(), static_cast<size_t>(err.GetErrorType()), comma_separated_keys);
                 }
@@ -385,7 +392,11 @@ void deleteFilesFromS3(
             /// The same rule as for a batch: the other objects are deleted first, and the one that
             /// was written over is reported once.
             if (e.code() != ErrorCodes::FILE_CHANGED_DURING_READ)
+            {
+                if (changed_generation_error)
+                    std::rethrow_exception(changed_generation_error);
                 throw;
+            }
             if (!changed_generation_error)
                 changed_generation_error = std::current_exception();
             continue;
