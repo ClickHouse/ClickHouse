@@ -322,10 +322,9 @@ Block ArrayJoinResultIterator::next()
         }
         else if (enable_lazy_columns_replication && isLazyReplicationUseful(current.column))
         {
-            /// Indexes point into the whole block, no need to cut.
             if (!indexes_for_lazy_replication)
-                indexes_for_lazy_replication = convertOffsetsToIndexes(cut_any_array->getOffsets(), current_row);
-            current.column = ColumnReplicated::create(current.column, indexes_for_lazy_replication);
+                indexes_for_lazy_replication = convertOffsetsToIndexes(cut_any_array->getOffsets());
+            current.column = ColumnReplicated::create(current.column->cut(current_row, window_rows), indexes_for_lazy_replication);
         }
         else
             current.column = current.column->cut(current_row, window_rows)->replicate(cut_any_array->getOffsets());
@@ -481,11 +480,11 @@ Block ArrayJoinResultIterator::nextWithElementFilter()
             {
                 if (!indexes)
                 {
-                    indexes = convertOffsetsToIndexes(win_offsets, current_row);
+                    indexes = convertOffsetsToIndexes(win_offsets);
                     if (!all_survive)
                         indexes = indexes->filter(mask, survivors);
                 }
-                current.column = ColumnReplicated::create(current.column, indexes);
+                current.column = ColumnReplicated::create(current.column->cut(current_row, window_rows), indexes);
             }
             else
                 current.column = current.column->cut(current_row, window_rows)->replicate(get_result_offsets());
