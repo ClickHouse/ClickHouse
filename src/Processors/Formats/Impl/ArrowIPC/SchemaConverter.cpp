@@ -26,6 +26,7 @@
 #include <IO/SeekableReadBuffer.h>
 #include <IO/NetUtils.h>
 #include <Common/PODArray.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wimplicit-int-conversion"
@@ -349,6 +350,34 @@ ArrowType parseType(const flatbuf::Field & field)
     return type;
 }
 
+/// Arrow allows several top-level fields with the same name, but the columns of a table must have unique names.
+/// A repeated name gets the first free numeric suffix (`ints`, `ints_1`, `ints_2`), skipping the names of other
+/// fields, so that every field can be inferred, requested and matched by its own name.
+void makeFieldNamesUnique(ArrowFields & fields)
+{
+    UnorderedSetWithMemoryTracking<std::string> original_names;
+    for (const ArrowField & field : fields)
+        original_names.insert(field.name);
+    if (original_names.size() == fields.size())
+        return;
+
+    UnorderedSetWithMemoryTracking<std::string> used_names;
+    for (ArrowField & field : fields)
+    {
+        if (used_names.insert(field.name).second)
+            continue;
+        for (size_t suffix = 1;; ++suffix)
+        {
+            std::string candidate = fmt::format("{}_{}", field.name, suffix);
+            if (!original_names.contains(candidate) && used_names.insert(candidate).second)
+            {
+                field.name = std::move(candidate);
+                break;
+            }
+        }
+    }
+}
+
 }
 
 ArrowSchema parseSchema(const flatbuf::Schema & schema)
@@ -385,6 +414,7 @@ ArrowSchema parseSchema(const flatbuf::Schema & schema)
             result.fields.push_back(std::move(f));
         }
     }
+    makeFieldNamesUnique(result.fields);
 
     result.custom_metadata = parseMetadata(schema.custom_metadata());
     return result;
