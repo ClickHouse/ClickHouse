@@ -1,0 +1,5 @@
+90
+-- the join-stage build read all 100 keys on the transported path
+1
+-- one merge tree was planned
+1
