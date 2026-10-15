@@ -83,7 +83,7 @@ private:
     void classifyVirtualColumns();
     void fillColumn(IColumn & column, const PostingList & postings, size_t row_offset, size_t num_rows);
     /// Returns the postings folded by the index analysis for the query of the column, if they answer it
-    /// completely (no postings of the query are read per mark), and nullptr otherwise.
+    /// completely (no postings of the query are read per mark) and lazy mode is off, and nullptr otherwise.
     const PostingList * getFoldedPostings(size_t column_idx) const;
     /// Fills rows [row_offset, row_offset + num_rows) from `postings` of the whole part.
     void fillColumnFromPostings(IColumn & column, const PostingList & postings, size_t row_offset, size_t num_rows);

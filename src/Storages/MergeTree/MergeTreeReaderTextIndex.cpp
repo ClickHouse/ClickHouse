@@ -798,7 +798,7 @@ void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const PostingList & 
 
 const PostingList * MergeTreeReaderTextIndex::getFoldedPostings(size_t column_idx) const
 {
-    if (is_always_true[column_idx] || use_fallback[column_idx])
+    if (use_lazy_mode || is_always_true[column_idx] || use_fallback[column_idx])
         return nullptr;
 
     const auto & search_query = search_queries[column_idx];

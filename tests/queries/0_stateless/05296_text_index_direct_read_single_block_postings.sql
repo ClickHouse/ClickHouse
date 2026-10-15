@@ -1,4 +1,3 @@
--- { echo }
 -- Direct read from a text index when every search token has a single posting list block: results match evaluation
 -- without the index for dense and sparse ranges of rows, granules crossing and spanning 65536-row ranges, lazy mode,
 -- several parts and arrays.
@@ -33,23 +32,30 @@ INSERT INTO tab SELECT number, concat(
 
 SET use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
 
+SELECT 'One token';
 SELECT count(), sum(cityHash64(id)) FROM tab WHERE hasToken(s, 'a');
 SELECT count(), sum(cityHash64(id)) FROM tab WHERE hasToken(s, 'x');
 SELECT count(), sum(cityHash64(id)) FROM tab WHERE hasToken(s, 'r');
 SELECT count(), sum(cityHash64(id)) FROM tab WHERE hasToken(s, 'y');
 SELECT count(), sum(cityHash64(id)) FROM tab WHERE hasToken(s, 'm');
 SELECT count(), sum(cityHash64(id)) FROM tab WHERE hasToken(s, 'z');
+
+SELECT 'Several tokens';
 SELECT count(), sum(cityHash64(id)) FROM tab WHERE hasAnyTokens(s, ['x', 'r']);
 SELECT count(), sum(cityHash64(id)) FROM tab WHERE hasAnyTokens(s, ['m', 'q', 'y']);
 SELECT count(), sum(cityHash64(id)) FROM tab WHERE hasAllTokens(s, ['a', 'b', 'c']);
 SELECT count(), sum(cityHash64(id)) FROM tab WHERE hasAllTokens(s, ['a', 'r']);
 SELECT count(), sum(cityHash64(id)) FROM tab WHERE hasAllTokens(s, ['a', 'absent']);
 SELECT count(), sum(cityHash64(id)) FROM tab WHERE hasAnyTokens(s, ['absent1', 'absent2']);
+
+SELECT 'Combined predicates';
 SELECT count(), sum(cityHash64(id)) FROM tab WHERE NOT hasToken(s, 'a');
 SELECT count(), sum(cityHash64(id)) FROM tab WHERE hasToken(s, 'x') OR hasToken(s, 'r');
 SELECT count(), sum(cityHash64(id)) FROM tab WHERE hasToken(s, 'c') AND id BETWEEN 30000 AND 30500;
 SELECT count(), sum(cityHash64(id)) FROM tab WHERE s LIKE '% x %';
 SELECT count(), sum(cityHash64(id)) FROM tab PREWHERE hasToken(s, 'b') WHERE id >= 1000;
+
+SELECT 'Reverse order and partial granules';
 SELECT count(), sum(cityHash64(id)) FROM (SELECT id FROM tab WHERE hasToken(s, 'y') ORDER BY id DESC LIMIT 1000000) SETTINGS optimize_read_in_order = 1;
 SELECT count(), sum(cityHash64(id)) FROM tab WHERE hasAnyTokens(s, ['a', 'x']) SETTINGS max_threads = 3, max_block_size = 777, merge_tree_min_rows_for_concurrent_read = 1024, merge_tree_min_bytes_for_concurrent_read = 1;
 SELECT count(), sum(cityHash64(id)) FROM tab WHERE hasToken(s, 'c') SETTINGS max_block_size = 1024;
@@ -65,6 +71,7 @@ SETTINGS index_granularity = 3001, index_granularity_bytes = 0, min_bytes_for_wi
 
 INSERT INTO tab_odd SELECT * FROM tab;
 
+SELECT 'Granules of 3001 rows';
 SELECT count(), sum(cityHash64(id)) FROM tab_odd WHERE hasToken(s, 'a');
 SELECT count(), sum(cityHash64(id)) FROM tab_odd WHERE hasToken(s, 'x');
 SELECT count(), sum(cityHash64(id)) FROM tab_odd WHERE hasToken(s, 'r');
@@ -84,6 +91,7 @@ SETTINGS index_granularity = 100000, index_granularity_bytes = 0, min_bytes_for_
 
 INSERT INTO tab_wide SELECT * FROM tab;
 
+SELECT 'Granules of 100000 rows';
 SELECT count(), sum(cityHash64(id)) FROM tab_wide WHERE hasToken(s, 'c');
 SELECT count(), sum(cityHash64(id)) FROM tab_wide WHERE hasToken(s, 'x');
 SELECT count(), sum(cityHash64(id)) FROM tab_wide WHERE hasToken(s, 'y');
@@ -99,6 +107,7 @@ SETTINGS index_granularity = 1024, index_granularity_bytes = 0, min_bytes_for_wi
 
 INSERT INTO tab_pfor SELECT * FROM tab;
 
+SELECT 'Lazy mode';
 SELECT count(), sum(cityHash64(id)) FROM tab_pfor WHERE hasToken(s, 'a') SETTINGS text_index_posting_list_apply_mode = 'lazy';
 SELECT count(), sum(cityHash64(id)) FROM tab_pfor WHERE hasToken(s, 'x') SETTINGS text_index_posting_list_apply_mode = 'lazy';
 SELECT count(), sum(cityHash64(id)) FROM tab_pfor WHERE hasToken(s, 'y') SETTINGS text_index_posting_list_apply_mode = 'lazy';
@@ -119,6 +128,7 @@ INSERT INTO tab_parts SELECT * FROM tab WHERE id < 70000;
 INSERT INTO tab_parts SELECT * FROM tab WHERE id >= 70000 AND id < 140000;
 INSERT INTO tab_parts SELECT * FROM tab WHERE id >= 140000;
 
+SELECT 'Several parts';
 SELECT count(), sum(cityHash64(id)) FROM tab_parts WHERE hasToken(s, 'y') SETTINGS max_threads = 3;
 SELECT count(), sum(cityHash64(id)) FROM tab_parts WHERE hasAnyTokens(s, ['x', 'r']) SETTINGS max_threads = 3;
 
@@ -133,6 +143,7 @@ SETTINGS index_granularity = 1024, index_granularity_bytes = 0, min_bytes_for_wi
 
 INSERT INTO tab_arr SELECT id, splitByChar(' ', s) FROM tab;
 
+SELECT 'Arrays';
 SELECT count(), sum(cityHash64(id)) FROM tab_arr WHERE has(tags, 'a');
 SELECT count(), sum(cityHash64(id)) FROM tab_arr WHERE hasAny(tags, ['x', 'r']);
 
@@ -147,11 +158,13 @@ SETTINGS index_granularity = 1024, index_granularity_bytes = 0, min_bytes_for_wi
 
 INSERT INTO tab_blocks SELECT * FROM tab;
 
+SELECT 'Several posting list blocks';
 SELECT count(), sum(cityHash64(id)) FROM tab_blocks WHERE hasToken(s, 'a');
 SELECT count(), sum(cityHash64(id)) FROM tab_blocks WHERE hasAnyTokens(s, ['a', 'x']);
 
 -- Rows are filled directly from the posting lists read during the index analysis only when every search token has one
--- posting list block.
+-- posting list block, and not in lazy mode.
+SELECT 'Filled from the posting lists of the index analysis';
 SELECT count(), sum(cityHash64(id)) FROM tab WHERE hasToken(s, 'a')
     SETTINGS use_query_condition_cache = 0, log_comment = 'single_block_postings_tab';
 SELECT count(), sum(cityHash64(id)) FROM tab_pfor WHERE hasToken(s, 'a')
