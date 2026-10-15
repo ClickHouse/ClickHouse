@@ -71,7 +71,6 @@ namespace ErrorCodes
 StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
     const StorageID & table_id_,
     LoadingStrictnessLevel mode,
-    bool is_fresh_definition,
     const String & remote_database_name,
     const String & remote_table_name_,
     const postgres::ConnectionInfo & connection_info,
@@ -103,7 +102,6 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
             connection_info,
             getContext(),
             is_attach,
-            is_fresh_definition,
             *replication_settings,
             /* is_materialized_postgresql_database */false);
 
@@ -766,6 +764,7 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
 
         if (has_settings)
             postgresql_replication_settings->loadFromQuery(*args.storage_def);
+        postgresql_replication_settings->applyDefaultsForNewOrExistingObject(*args.storage_def, args.mode >= LoadingStrictnessLevel::ATTACH);
 
         /// For the table engine the user declares the column types explicitly, so this setting cannot
         /// affect anything (it would be a silent no-op). It is only meaningful for the database engine,
@@ -779,8 +778,7 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
                             "Declare the desired `Date`/`DateTime` or `Date32`/`DateTime64` types directly in the table definition.");
 
         return std::make_shared<StorageMaterializedPostgreSQL>(
-                args.table_id, args.mode, isFreshEngineDefinition(args.mode, args.query.attach_short_syntax),
-                configuration.database, configuration.table_or_query.getTableName(), connection_info,
+                args.table_id, args.mode, configuration.database, configuration.table_or_query.getTableName(), connection_info,
                 metadata, args.getContext(),
                 std::move(postgresql_replication_settings));
     };

@@ -32,6 +32,11 @@ namespace ErrorCodes
     DECLARE(UInt64, materialized_postgresql_backoff_max_ms, 10000, "Poll backoff max point", 0) \
     DECLARE(UInt64, materialized_postgresql_backoff_factor, 2, "Poll backoff factor", 0) \
     DECLARE(Bool, materialized_postgresql_use_unique_replication_consumer_identifier, false, "Should a unique consumer be registered for table replication", 0) \
+    DECLARE(Bool, materialized_postgresql_use_unique_replication_consumer_identifier_mixed_with_server_uuid, true, \
+        "Mix the server UUID into the unique replication consumer identifier, so that the replication slot and the publication " \
+        "are unique per server, which is needed for objects created with `ON CLUSTER`. Has effect only together with " \
+        "`materialized_postgresql_use_unique_replication_consumer_identifier`. An object that was created without this setting " \
+        "in its definition (by an older version) behaves as if it is set to 0.", 0) \
     DECLARE(Bool, materialized_postgresql_use_extended_date_and_time_types, true, \
         "Map PostgreSQL `date` and `timestamp`/`timestamptz` types to ClickHouse `Date32` and `DateTime64` " \
         "(which cover the wider PostgreSQL value range). When disabled, the narrower `Date` and `DateTime` types are used.", 0) \
@@ -85,6 +90,31 @@ void MaterializedPostgreSQLSettings::loadFromQuery(ASTStorage & storage_def)
         settings_ast->is_standalone = false;
         storage_def.set(storage_def.settings, settings_ast);
     }
+}
+
+void MaterializedPostgreSQLSettings::applyDefaultsForNewOrExistingObject(ASTStorage & storage_def, bool is_attach)
+{
+    /// The setting changes the names of the replication slot and the publication on the PostgreSQL side.
+    /// New objects get it by default, and it is written into the definition explicitly to be preserved on restart.
+    /// Objects created by older versions do not have it in their definition and continue to use the old names.
+    auto & mixed_with_server_uuid = (*this)[MaterializedPostgreSQLSetting::materialized_postgresql_use_unique_replication_consumer_identifier_mixed_with_server_uuid];
+    if (mixed_with_server_uuid.changed)
+        return;
+
+    if (is_attach)
+    {
+        mixed_with_server_uuid = false;
+        return;
+    }
+
+    if (!storage_def.settings)
+    {
+        auto settings_ast = make_intrusive<ASTSetQuery>();
+        settings_ast->is_standalone = false;
+        storage_def.set(storage_def.settings, settings_ast);
+    }
+    storage_def.settings->changes.emplace_back("materialized_postgresql_use_unique_replication_consumer_identifier_mixed_with_server_uuid", Field(true));
+    mixed_with_server_uuid = true;
 }
 
 bool MaterializedPostgreSQLSettings::hasBuiltin(std::string_view name)
