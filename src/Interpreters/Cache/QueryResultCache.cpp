@@ -7,6 +7,7 @@
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ExpandedASTBudget.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/misc.h>
 #include <Access/ContextAccess.h>
@@ -516,6 +517,15 @@ std::optional<UInt128> computeTableModificationHashForConsistency(const StorageI
     return per_table.get128();
 }
 
+/// Substitutes the CTEs into `ast` in place, the same way the interpreter does. The context-aware
+/// expansion applies each subquery's own `SETTINGS`, so a CTE is not substituted into a subquery that
+/// does not see it (`enable_global_with_statement = 0`): there the name refers to a real table.
+static void expandCommonTableExpressions(ASTPtr & ast, const ContextPtr & context)
+{
+    ExpandedASTBudget budget(context->getSettingsRef()[Setting::max_expanded_ast_elements], *ast);
+    ApplyWithSubqueryVisitor::visit(ast, context, budget);
+}
+
 static std::optional<UInt128> computeReferencedTablesModificationHashImpl(ASTPtr ast, ContextPtr context)
 {
     /// Expand CTEs first, the same way the interpreter does, so that in
@@ -524,7 +534,7 @@ static std::optional<UInt128> computeReferencedTablesModificationHashImpl(ASTPtr
     /// actually read. The caller passes a throwaway copy of the AST, so in-place expansion is fine.
     try
     {
-        ApplyWithSubqueryVisitor::visit(ast, context->getSettingsRef()[Setting::max_expanded_ast_elements]);
+        expandCommonTableExpressions(ast, context);
     }
     catch (...)
     {
@@ -697,7 +707,7 @@ static bool collectNamesMatchableByAdditionalTableFiltersImpl(ASTPtr ast, const 
     /// not resolved as a table.
     try
     {
-        ApplyWithSubqueryVisitor::visit(ast, context->getSettingsRef()[Setting::max_expanded_ast_elements]);
+        expandCommonTableExpressions(ast, context);
     }
     catch (...)
     {
