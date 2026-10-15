@@ -6,6 +6,7 @@
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/JoinNode.h>
+#include <Analyzer/LambdaNode.h>
 #include <Analyzer/Utils.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/NaNUtils.h>
@@ -1795,8 +1796,8 @@ public:
     /// a conjunct over these can't leave ON, and full_sorting_merge rejects it there
     TableExpressionNodes preserved_join_tables;
 
-    /// Whether `node` reads at least one column and all of them come from `preserved_join_tables`.
-    /// Like the planner's split of ON by side, only columns under function arguments count: lambdas and subqueries are skipped.
+    /// Whether `node` reads at least one table column and all of them come from `preserved_join_tables`.
+    /// Columns a lambda captures count, as the join reads them like any other input; lambda arguments do not.
     bool readsOnlyPreservedJoinTables(const QueryTreeNodePtr & node) const
     {
         if (preserved_join_tables.empty())
@@ -1811,7 +1812,10 @@ public:
 
             if (const auto * column = current->as<ColumnNode>())
             {
-                if (!std::ranges::contains(preserved_join_tables, column->getColumnSourceOrNull()))
+                auto source = column->getColumnSourceOrNull();
+                if (source && source->getNodeType() == QueryTreeNodeType::LAMBDA_ARGS)
+                    continue;
+                if (!std::ranges::contains(preserved_join_tables, source))
                     return false;
                 has_column = true;
             }
@@ -1819,6 +1823,10 @@ public:
             {
                 for (const auto & argument : function->getArguments().getNodes())
                     nodes_to_process.push_back(argument.get());
+            }
+            else if (const auto * lambda = current->as<LambdaNode>())
+            {
+                nodes_to_process.push_back(lambda->getExpression().get());
             }
         }
         return has_column;

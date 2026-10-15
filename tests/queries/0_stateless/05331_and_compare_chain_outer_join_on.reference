@@ -38,6 +38,10 @@ expression with a lambda
 0	10
 1	0
 2	0
+lambda capturing the preserved side
+0	10
+1	0
+2	0
 contradiction with a skipped bound
 0	0
 1	0
