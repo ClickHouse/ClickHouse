@@ -209,7 +209,7 @@ def _mac_runner_pool(
         runner_type=["pr-macos-m2"],
         key_name="awswork",
         user_data_file="./ci/infra/scripts/user_data_macos.txt",
-        root_volume_size_gb=100,
+        root_volume_size_gb=150,
         root_volume_type="gp3",
         root_volume_encrypted=True,
         # The generated instance role gets the same project S3/SSM the Linux

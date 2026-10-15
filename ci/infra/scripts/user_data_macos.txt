@@ -16,6 +16,12 @@ USER=ec2-user
 export HOME="/Users/$USER"
 cd "$HOME"
 
+# macOS does not grow the APFS container when the EBS root volume is larger than the AMI snapshot.
+APFS_CONTAINER=$(diskutil list physical external | awk '/Apple_APFS/ {print $NF; exit}')
+yes | diskutil repairDisk "$(diskutil list physical external | awk 'NR==1 {print $1}')" || echo "repairDisk failed"
+# Not fatal: a failure here would reboot the host in a loop via the EXIT trap.
+diskutil apfs resizeContainer "$APFS_CONTAINER" 0 || echo "resizeContainer $APFS_CONTAINER failed"
+
 # Install Homebrew if not already installed
 if ! sudo -u "$USER" -i command -v brew &> /dev/null; then
   echo "Installing Homebrew..."
