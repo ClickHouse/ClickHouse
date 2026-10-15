@@ -54,6 +54,7 @@ def clean():
             drop view if exists v sync;
             drop view if exists v2 sync;
             drop function if exists f;
+            drop function if exists endpoint;
             drop workload if exists w2;
             drop workload if exists regular;
             drop workload if exists mdwl;
@@ -123,6 +124,7 @@ def test_server_setting_reflects_config() -> None:
 def test_metadata_statements_exempt_when_disabled() -> None:
     setup_workloads(node_off)
     run(node_off, "create table t (x UInt64) engine=MergeTree order by x")
+    run(node_off, "create function endpoint as () -> (select 'http://localhost:8123/?query=select+1')")
     with SlotHolder(node_off, "regular"):
         # The slot of 'regular' is taken: a regular query cannot be admitted.
         run_times_out(node_off, "select 1", workload="regular")
@@ -154,6 +156,7 @@ def test_metadata_statements_exempt_when_disabled() -> None:
         run_times_out(node_off, "alter table t freeze", workload="regular")
         run_times_out(node_off, "alter table t update x = x + 1 where 1", workload="regular")
         run_times_out(node_off, "create table t2 (x UInt64) engine=URL((select 'http://localhost:8123/?query=select+1'), 'TSV')", workload="regular")
+        run_times_out(node_off, "create table t2 (x UInt64) engine=URL(endpoint(), 'TSV')", workload="regular")
         # Admission comes before execution, so the target does not need to be a materialized view.
         run_times_out(node_off, "alter table t modify query select 1 as x", workload="regular")
         run_times_out(node_off, "system prewarm mark cache t", workload="regular")
