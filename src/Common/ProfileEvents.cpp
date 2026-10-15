@@ -443,6 +443,7 @@
     \
     M(CompileFunction, "Number of times a compilation of generated LLVM code (to create fused function for complex expressions) was initiated.", ValueType::Number) \
     M(CompiledFunctionExecute, "Number of times a compiled function was executed.", ValueType::Number) \
+    M(ShortCircuitArgumentsReordered, "Number of blocks on which the `and` or `or` function evaluated its arguments in an order different from the order in the query: a cheap argument before a heavy one, or according to the statistics collected on the previous blocks (setting `short_circuit_function_evaluation_reorder_arguments`). The reordering of the AND chain atoms in `WHERE` / `HAVING`, which is decided once when `FilterStep` builds its pipeline, is not counted.", ValueType::Number) \
     M(CompileExpressionsMicroseconds, "Total time spent for compilation of expressions to LLVM code.", ValueType::Microseconds) \
     M(CompileExpressionsBytes, "Number of bytes used for expressions compilation.", ValueType::Bytes) \
     M(CompileRegexpFunction, "Number of times a regular expression was JIT-compiled to machine code.", ValueType::Number) \
@@ -1767,6 +1768,14 @@ The server successfully detected this situation and will download merged part fr
     M(RuntimeFilterRowsChecked, "Number of rows checked by JOIN Runtime Filters", ValueType::Number) \
     M(RuntimeFilterRowsPassed, "Number of rows that passed (not filtered out by) JOIN Runtime Filters", ValueType::Number) \
     M(RuntimeFilterRowsSkipped, "Number of rows in blocks that were skipped by JOIN Runtime Filters", ValueType::Number) \
+    M(RuntimeFilterStatesSent, "Number of JOIN Runtime Filter states queued for sending to other tasks of a distributed query plan, one per destination stream, including deliveries abandoned later", ValueType::Number) \
+    M(RuntimeFilterStateBytesSent, "Bytes of serialized JOIN Runtime Filter states sent to other tasks of a distributed query plan, counted once per destination stream", ValueType::Bytes) \
+    M(RuntimeFilterStatesReceived, "Number of serialized JOIN Runtime Filter states received from other tasks of a distributed query plan", ValueType::Number) \
+    M(RuntimeFilterStateBytesReceived, "Bytes of serialized JOIN Runtime Filter states received from other tasks of a distributed query plan", ValueType::Bytes) \
+    M(RuntimeFilterOversizedStatesRejected, "Number of JOIN Runtime Filter states not used or not sent because they exceeded the size limit; rows pass unfiltered", ValueType::Number) \
+    M(RuntimeFilterDeliveriesAbandoned, "Number of JOIN Runtime Filter deliveries abandoned because the receiver disconnected or stopped reading; the affected destination gets no filter and its rows pass unfiltered", ValueType::Number) \
+    M(RuntimeFilterReceivesAbandoned, "Number of JOIN Runtime Filter streams whose sender disconnected after the connection was established, before the end of the stream; if the sender's state had not arrived, the affected filter is not used and rows pass unfiltered", ValueType::Number) \
+    M(RuntimeFilterReceiveBranchFailures, "Number of tasks that failed to receive a JOIN Runtime Filter from another task; that task does not use the filter and rows pass unfiltered", ValueType::Number) \
     M(RuntimeFilterBloomFilterBuildsSkipped, "Number of JOIN Runtime Filter Bloom filter builds skipped because the build-side key count from the hash table statistics predicted that the filter would exceed the maximal ratio of set bits", ValueType::Number) \
     M(RuntimeFilterIndexAnalysisReads, "Number of reads set up to prune granules with a JOIN runtime filter at read time. Counted when the read reaches its pipeline carrying the descriptors and has a primary key or skip index to prune them with, whether or not a granule is later examined, so it shows that the descriptors survived every rebuild of the read step.", ValueType::Number) \
     M(RuntimeFilterGranulesConsidered, "Number of granules examined for read time pruning by JOIN Runtime Filters", ValueType::Number) \

@@ -848,6 +848,8 @@ private:
 
     void initRightBlockStructure(Block & saved_block_sample);
 
+    class ContinuationResult;
+
     JoinResultPtr runJoinDispatch(ScatteredBlock block);
 
     bool preferUseMapsAll() const;
