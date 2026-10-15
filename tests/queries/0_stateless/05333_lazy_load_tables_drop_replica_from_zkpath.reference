@@ -1,0 +1,9 @@
+stand-ins	t_explicit	TableProxy
+stand-ins	t_macros	TableProxy
+There is a local table default_lazy.t_explicit
+There is a local table default_lazy.t_macros
+does not look like a table path
+still stand-ins	t_explicit	TableProxy
+still stand-ins	t_macros	TableProxy
+loaded	t_explicit	0
+loaded	t_macros	0

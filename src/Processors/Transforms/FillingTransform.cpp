@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/FunctionDateOrDateTimeAddInterval.h>
+#include <Functions/IFunction.h>
 #include <Common/FieldVisitorScale.h>
 #include <Common/FieldVisitorSum.h>
 #include <Common/FieldVisitorToString.h>
@@ -437,11 +438,30 @@ bool FillingTransform::isCancelledOrTimeLimitExceeded()
     return false;
 }
 
+void FillingTransform::onCancel() noexcept
+{
+    ISimpleTransform::onCancel();
+    if (interpolate_actions)
+    {
+        for (const auto & node : interpolate_actions->getNodes())
+        {
+            if (node.type == ActionsDAG::ActionType::FUNCTION && node.function)
+                node.function->cancelExecution();
+        }
+    }
+}
+
 void FillingTransform::interpolate(const MutableColumns & result_columns, Block & interpolate_block)
 {
     if (interpolate_description)
     {
         interpolate_block.clear();
+
+        /// The query is being cancelled and the result is discarded anyway, so do not start evaluating
+        /// the `INTERPOLATE` expressions: the cancellation flag passed to `execute` is checked only after
+        /// each action completes. An empty `interpolate_block` makes `insertFromFillingRow` insert defaults.
+        if (isCancelled())
+            return;
 
         if (!input_positions.empty())
         {
@@ -464,13 +484,18 @@ void FillingTransform::interpolate(const MutableColumns & result_columns, Block 
 
                 interpolate_block.insert({std::move(column), name_type.type, name_type.name});
             }
-            interpolate_actions->execute(interpolate_block);
+            interpolate_actions->execute(interpolate_block, false, false, &getCancellationFlag());
         }
         else /// all INTERPOLATE expressions are constants
         {
             size_t n = 1;
-            interpolate_actions->execute(interpolate_block, n);
+            interpolate_actions->execute(interpolate_block, n, false, false, &getCancellationFlag());
         }
+
+        /// If `execute` stopped early because of cancellation, the block does not have the structure
+        /// of the `INTERPOLATE` result, so it must not be inserted into the result columns.
+        if (isCancelled())
+            interpolate_block.clear();
     }
 }
 
@@ -879,6 +904,18 @@ void FillingTransform::transformRange(
 }
 
 void FillingTransform::transform(Chunk & chunk)
+{
+    transformImpl(chunk);
+
+    /// On a hard cancellation (`KILL QUERY`, Ctrl+C) the loops above only stop generating rows, and an
+    /// interrupted `INTERPOLATE` makes `insertFromFillingRow` insert defaults, so the chunk may hold partial
+    /// or default-filled rows of the cancelled range. Drop it instead of publishing it.
+    /// A soft `timeout_overflow_mode = 'break'` timeout keeps the partial result.
+    if (isCancelled())
+        chunk.clear();
+}
+
+void FillingTransform::transformImpl(Chunk & chunk)
 {
     logDebug("new chunk rows", chunk.getNumRows());
     logDebug("all chunks processed", all_chunks_processed);
