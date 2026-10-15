@@ -7,42 +7,42 @@
       "versionId": "9b3345383ff3389c6681dbde6573112bd992f08e5b332453425e342f66849919",
       "translations": {
         "ja": {
-          "updatedAt": "2026-10-15T21:32:33.763Z",
+          "updatedAt": "2026-10-15T23:39:49.494Z",
           "fileName": "docs.json",
           "postProcessHash": "d2425a5cc73289475c14c1bc9518f44553d73a54ad8b79f0cd7af6beaa99481c"
         },
         "pt-BR": {
-          "updatedAt": "2026-10-15T21:32:33.961Z",
+          "updatedAt": "2026-10-15T23:39:49.711Z",
           "fileName": "docs.json",
           "postProcessHash": "d2425a5cc73289475c14c1bc9518f44553d73a54ad8b79f0cd7af6beaa99481c"
         },
         "ar": {
-          "updatedAt": "2026-10-15T21:32:34.269Z",
+          "updatedAt": "2026-10-15T23:39:50.020Z",
           "fileName": "docs.json",
           "postProcessHash": "d2425a5cc73289475c14c1bc9518f44553d73a54ad8b79f0cd7af6beaa99481c"
         },
         "ko": {
-          "updatedAt": "2026-10-15T21:32:33.863Z",
+          "updatedAt": "2026-10-15T23:39:49.600Z",
           "fileName": "docs.json",
           "postProcessHash": "d2425a5cc73289475c14c1bc9518f44553d73a54ad8b79f0cd7af6beaa99481c"
         },
         "ru": {
-          "updatedAt": "2026-10-15T21:32:34.069Z",
+          "updatedAt": "2026-10-15T23:39:49.813Z",
           "fileName": "docs.json",
           "postProcessHash": "d2425a5cc73289475c14c1bc9518f44553d73a54ad8b79f0cd7af6beaa99481c"
         },
         "es": {
-          "updatedAt": "2026-10-15T21:32:33.638Z",
+          "updatedAt": "2026-10-15T23:39:49.384Z",
           "fileName": "docs.json",
           "postProcessHash": "d2425a5cc73289475c14c1bc9518f44553d73a54ad8b79f0cd7af6beaa99481c"
         },
         "zh": {
-          "updatedAt": "2026-10-15T21:32:34.170Z",
+          "updatedAt": "2026-10-15T23:39:49.912Z",
           "fileName": "docs.json",
           "postProcessHash": "d2425a5cc73289475c14c1bc9518f44553d73a54ad8b79f0cd7af6beaa99481c"
         },
         "fr": {
-          "updatedAt": "2026-10-15T21:32:34.376Z",
+          "updatedAt": "2026-10-15T23:39:50.121Z",
           "fileName": "docs.json",
           "postProcessHash": "d2425a5cc73289475c14c1bc9518f44553d73a54ad8b79f0cd7af6beaa99481c"
         }
@@ -98719,51 +98719,50 @@
     },
     {
       "fileId": "8e753ff22284fc0367e02605f881a7fb8d2a9e5a0cdecaaf61b5a9eb9f8bf1a3",
-      "versionId": "58c9caf8b1b91a4fae2cdae34cef8aa80ba64b969d33e9591459637e77de96ac",
+      "versionId": "20131ea846b422080eed33c40b470f4532e910df57f823fd3b467dc466fea869",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:08.620Z",
-          "fileName": "es/products/cloud/guides/infrastructure/deployment-options/clickhouse-private.mdx",
-          "postProcessHash": "35e54ee058c9f2f8eed75f9c5d7a4c6522397624503e2587728fdfeb1b20c7dd"
-        },
         "ja": {
-          "updatedAt": "2026-08-14T10:41:08.620Z",
+          "updatedAt": "2026-10-15T23:39:52.565Z",
           "fileName": "ja/products/cloud/guides/infrastructure/deployment-options/clickhouse-private.mdx",
-          "postProcessHash": "8b0fe6ff00137bb0a4edf4293cc8247c0423c7ee1db1658971de20033df13576"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:08.620Z",
-          "fileName": "ko/products/cloud/guides/infrastructure/deployment-options/clickhouse-private.mdx",
-          "postProcessHash": "17b1c51eddaa09eff826218189fe5090e45e012b44b74c8dc1671ea8bfc2b9ac"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:08.620Z",
-          "fileName": "pt-BR/products/cloud/guides/infrastructure/deployment-options/clickhouse-private.mdx",
-          "postProcessHash": "a80c2747ad22151eaf41a917ffde423141e3a7b3395351ac7c038fd890ffc2d0"
+          "postProcessHash": "83494b1c99ef53c491f5c7e8abce9a7584a6013de49ac6a30805fa3cda6b29bc"
         },
         "ru": {
-          "updatedAt": "2026-08-14T10:41:08.620Z",
+          "updatedAt": "2026-10-15T23:39:52.566Z",
           "fileName": "ru/products/cloud/guides/infrastructure/deployment-options/clickhouse-private.mdx",
-          "postProcessHash": "515a0921e79472c855915b675bf8ae28b2b2798c7f8c0ef15e7f49a48aaf5320"
+          "postProcessHash": "190be84e73dc23f9834cb18e693af86e37b49223b704368e9ab9e16b41b29d68"
         },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:08.620Z",
-          "fileName": "zh/products/cloud/guides/infrastructure/deployment-options/clickhouse-private.mdx",
-          "postProcessHash": "f1641928352ccafd506d8803cc40e0576df82455fb85bd6ef979d1db027f124d"
+        "pt-BR": {
+          "updatedAt": "2026-10-15T23:39:52.567Z",
+          "fileName": "pt-BR/products/cloud/guides/infrastructure/deployment-options/clickhouse-private.mdx",
+          "postProcessHash": "a25b3b2a30bb6794323f16170eebf88c327b008f6437daa03ad3d968ee36c5cb"
         },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:08.620Z",
-          "fileName": "ar/products/cloud/guides/infrastructure/deployment-options/clickhouse-private.mdx",
-          "postProcessHash": "23dc5cd3cd43742e32cdc0ed7b8356ff94e366340239b339d401a027ef7d4620"
+        "ko": {
+          "updatedAt": "2026-10-15T23:39:52.567Z",
+          "fileName": "ko/products/cloud/guides/infrastructure/deployment-options/clickhouse-private.mdx",
+          "postProcessHash": "dd0b20775c8906d30e1cc653f70388092c3beae1c05bfee02d9e517a3b1f8cb5"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:08.620Z",
+          "updatedAt": "2026-10-15T23:39:52.568Z",
           "fileName": "fr/products/cloud/guides/infrastructure/deployment-options/clickhouse-private.mdx",
-          "postProcessHash": "a0bef64061ef14e7a91e2c53b2b44203370593fa0ae5d728d2ab417989d5976c"
+          "postProcessHash": "ea8b4e9be0e008c05a7997686b4b10753923e8978595705b691d53679e8eab26"
+        },
+        "zh": {
+          "updatedAt": "2026-10-15T23:39:52.568Z",
+          "fileName": "zh/products/cloud/guides/infrastructure/deployment-options/clickhouse-private.mdx",
+          "postProcessHash": "db15d1555ce8c016023253a91f4a8c14dce2ccb2bd309ec353f06195eedade58"
+        },
+        "ar": {
+          "updatedAt": "2026-10-15T23:39:52.569Z",
+          "fileName": "ar/products/cloud/guides/infrastructure/deployment-options/clickhouse-private.mdx",
+          "postProcessHash": "763b1b37f5a634a8852ae64ba4812c12d45be51e4f1f942046ceb3c51673d658"
+        },
+        "es": {
+          "updatedAt": "2026-10-15T23:39:52.569Z",
+          "fileName": "es/products/cloud/guides/infrastructure/deployment-options/clickhouse-private.mdx",
+          "postProcessHash": "3ee6caba919d891c90e28032a2b32237cee34df757d76d84d1b30d1d0ecce1f5"
         }
       },
-      "fileName": "products/cloud/guides/infrastructure/deployment-options/clickhouse-private.mdx",
-      "staged": false
+      "fileName": "products/cloud/guides/infrastructure/deployment-options/clickhouse-private.mdx"
     },
     {
       "fileId": "16923ed338425149faa8d165782ca77fd69b0fa9208374f3cc3893e7cfaa1642",
