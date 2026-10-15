@@ -1990,11 +1990,9 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
         /// Converting query to AST because types might be different in the source table.
         /// Need to resolve types again.
         auto ast = modified_query_info.query_tree->toAST();
-        /// The analyzer substitutes the inserted block of a materialized view for its source table only when given it.
         InterpreterSelectQueryAnalyzer interpreter(ast,
             modified_context,
-            child_select_query_options,
-            modified_context->isViewInnerQuery() ? nullptr : modified_context->getViewSource());
+            child_select_query_options);
 
         auto & planner = interpreter.getPlanner();
         planner.buildQueryPlanIfNeeded();
