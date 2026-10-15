@@ -2468,12 +2468,14 @@ bool Aggregator::executeOnBlock(Columns columns,
             aggregator_tracker ? result.memory_tracker.get() : nullptr);
     }
     else if (adaptive && adaptive->isLearning() && result.isConvertibleToTwoLevel() && !all_keys_are_const
-             && result.sizeWithoutOverflowRow() + (row_end - row_begin) > params.adaptive_aggregator_freeze_threshold)
+             && result.sizeWithoutOverflowRow() + (row_end - row_begin) > params.adaptive_aggregator_freeze_threshold
+             && adaptiveLearningSlices(*adaptive))
     {
         /// The learning adaptive path, taken when this block can push the table past the freeze
-        /// threshold: the same aggregation as below, but in slices, so the crossing is detected
-        /// inside the block instead of overshooting by up to a block of new keys - everything
-        /// above the threshold is state the frozen table would replicate on every worker. The
+        /// threshold and the table still slices its blocks (see `adaptiveLearningSlices`): the
+        /// same aggregation as below, but in slices, so the crossing is detected inside the
+        /// block instead of overshooting by up to a block of new keys - everything above the
+        /// threshold is state the frozen table would replicate on every worker. The
         /// slicer only reports the boundary; the transition is decided here. A const block
         /// stays on the baseline path: it adds at most one key, and the between-blocks check
         /// handles it. The admission gate rules out the dropping overflow modes and the
@@ -2523,7 +2525,8 @@ bool Aggregator::executeOnBlock(Columns columns,
     {
         std::optional<MemoryTrackerSwitcher> scope;
         aggregator_scope(scope);
-        stays_adaptive = advanceAdaptiveProducer(result, *adaptive, worth_convert_to_two_level, current_memory_usage);
+        stays_adaptive
+            = advanceAdaptiveProducer(result, *adaptive, row_end - row_begin, worth_convert_to_two_level, current_memory_usage);
     }
     if (stays_adaptive)
     {

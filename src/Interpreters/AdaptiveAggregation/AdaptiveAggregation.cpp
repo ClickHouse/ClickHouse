@@ -174,6 +174,7 @@ AdaptiveAggregationSessionPtr Aggregator::createAdaptiveSession(size_t producers
 bool Aggregator::advanceAdaptiveProducer(
     AggregatedDataVariants & result,
     AdaptiveAggregationProducer & adaptive,
+    size_t rows,
     bool worth_convert_to_two_level,
     Int64 current_memory_usage) const
 {
@@ -194,9 +195,21 @@ bool Aggregator::advanceAdaptiveProducer(
     /// The freeze replaces the baseline's two-level conversion: from now on the local table only updates the keys it
     /// already holds, so it stays single-level and bounded by the freeze bounds, and the frozen kernel pairs it with
     /// its two-level twin.
-    if (adaptive.isLearning() && adaptiveFreezeBoundReached(result, worth_convert_to_two_level))
-        freezeAdaptive(result, adaptive);
+    if (adaptive.isLearning())
+    {
+        std::get<AdaptiveAggregationProducer::LearningState>(adaptive.phase).rows += rows;
+        if (adaptiveFreezeBoundReached(result, worth_convert_to_two_level))
+            freezeAdaptive(result, adaptive);
+    }
     return true;
+}
+
+bool Aggregator::adaptiveLearningSlices(const AdaptiveAggregationProducer & adaptive) const
+{
+    /// `<=` keeps the first block sliced even under a zero threshold, where the slicer freezes the table at its
+    /// first row.
+    return std::get<AdaptiveAggregationProducer::LearningState>(adaptive.phase).rows
+        <= adaptive_learning_slicing_row_multiple * params.adaptive_aggregator_freeze_threshold;
 }
 
 bool Aggregator::adaptiveFreezeBoundReached(const AggregatedDataVariants & result, bool worth_convert_to_two_level) const

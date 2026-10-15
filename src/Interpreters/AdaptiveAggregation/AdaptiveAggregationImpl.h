@@ -24,6 +24,14 @@ namespace DB
 {
 
 /// Tuning of the adaptive aggregation.
+/// A learning table slices its blocks so that it freezes exactly at the key-count threshold (see
+/// `Aggregator::executeImplUntilAdaptiveFreeze`), until it has taken more than this many times the threshold in rows.
+/// A table still below the threshold by then gains on average fewer than one key per this many rows, so a block of
+/// 65,536 rows that crosses it overshoots by about 4,096 keys, as many as `adaptive_learning_slice_rows` already
+/// allows. Its blocks are then aggregated whole, and the check between blocks still freezes it. A table that never
+/// reaches the threshold, such as one of few groups or one held to its K best keys by the `GROUP BY` top-K, would
+/// otherwise slice every block, and the extra calls cost a few percent of the aggregation.
+constexpr size_t adaptive_learning_slicing_row_multiple = 16;
 /// The probe bypass decides after this many post-freeze rows per thread. It must be reachable
 /// by every stream: at 64 threads a thread sees 1/64th of the input, so a filtered ~13M-row
 /// aggregation still leaves ~200K rows per thread.
@@ -340,6 +348,9 @@ struct AdaptiveAggregationProducer
     /// under memory pressure learns again from empty.
     struct LearningState
     {
+        /// Rows that the table took while learning, which end the slicing of its blocks (see
+        /// `adaptive_learning_slicing_row_multiple`).
+        size_t rows = 0;
     };
 
     /// The adaptive phase proper: the local table only updates the keys it already holds

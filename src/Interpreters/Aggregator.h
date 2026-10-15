@@ -882,17 +882,23 @@ private:
 
     /// Advances an adaptive producer's phase between blocks, in place of the baseline's conversion: writes its staged
     /// records to disk over the external-aggregation threshold, thaws a frozen table whose staged stream repeats, and
-    /// freezes a learning table at its bounds. `worth_convert_to_two_level` is the baseline's conversion condition, a
-    /// bound of the freeze. Returns false once the producer is on the baseline path, whose checks then apply.
+    /// freezes a learning table at its bounds. A learning table counts the block's `rows` toward the end of its slicing
+    /// (see `adaptiveLearningSlices`). `worth_convert_to_two_level` is the baseline's conversion condition, a bound of
+    /// the freeze. Returns false once the producer is on the baseline path, whose checks then apply.
     bool advanceAdaptiveProducer(
         AggregatedDataVariants & result,
         AdaptiveAggregationProducer & adaptive,
+        size_t rows,
         bool worth_convert_to_two_level,
         Int64 current_memory_usage) const;
 
     /// Whether a learning table reached a bound of the freeze: the key count, its own footprint, or the condition of
     /// the baseline's two-level conversion.
     bool adaptiveFreezeBoundReached(const AggregatedDataVariants & result, bool worth_convert_to_two_level) const;
+
+    /// Whether a learning table still slices its blocks to freeze exactly at the key-count threshold: until it has
+    /// taken more than `adaptive_learning_slicing_row_multiple` times the threshold in rows.
+    bool adaptiveLearningSlices(const AdaptiveAggregationProducer & adaptive) const;
 
     /// Whether a producer over the external-aggregation threshold holds enough staged records to write them to disk.
     bool adaptiveStagingWorthSpilling(const AdaptiveAggregationProducer & adaptive) const;
