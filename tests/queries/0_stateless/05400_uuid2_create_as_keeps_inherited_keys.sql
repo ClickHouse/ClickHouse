@@ -1,3 +1,6 @@
+-- Tags: no-replicated-database
+-- Tag no-replicated-database: `CREATE CLONE AS is not supported with Replicated databases`
+
 -- `CREATE TABLE ... AS` and `CLONE AS` under `uuid_type_version = 2` inherit the storage definition of the source
 -- table as it is stored: a bare `UUID` in its keys keeps denoting the historical `UUID` type.
 -- See https://github.com/ClickHouse/ClickHouse/pull/110084
