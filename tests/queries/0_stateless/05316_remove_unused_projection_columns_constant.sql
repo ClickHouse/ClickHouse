@@ -2,6 +2,7 @@
 -- so only the columns needed by its other clauses are read, or the cheapest column of the table.
 
 DROP VIEW IF EXISTS v_nested;
+DROP TABLE IF EXISTS a_smallest;
 DROP TABLE IF EXISTS t_smallest;
 DROP TABLE IF EXISTS t_nested;
 DROP TABLE IF EXISTS t_num;
@@ -52,6 +53,12 @@ SELECT count() FROM (SELECT [id] AS a, id FROM t_smallest ORDER BY id WITH FILL 
 SETTINGS query_plan_remove_unused_columns = 0, enable_parallel_replicas = 1, max_parallel_replicas = 3, parallel_replicas_local_plan = 0,
     cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_for_non_replicated_merge_tree = 1;
 
+-- An `Alias` keeps the column.
+CREATE TABLE a_smallest ENGINE = Alias('t_smallest');
+SELECT count() > 0 FROM (EXPLAIN header = 1 SELECT count() FROM (SELECT s, id FROM a_smallest LIMIT 100000) SETTINGS query_plan_remove_unused_columns = 0)
+WHERE explain ILIKE '% s String%';
+
+DROP TABLE a_smallest;
 DROP VIEW v_nested;
 DROP TABLE t_smallest;
 DROP TABLE t_nested;
