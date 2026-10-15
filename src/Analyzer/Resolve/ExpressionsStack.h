@@ -60,7 +60,6 @@ public:
         --aggregate_or_grouping_functions_counter;
     }
 
-    /// Makes `hasAggregateOrGroupingFunction` true without a node, to resolve expressions as arguments of an aggregate function.
     void enterAggregateFunctionArguments() { ++aggregate_or_grouping_functions_counter; }
     void leaveAggregateFunctionArguments() { --aggregate_or_grouping_functions_counter; }
 

@@ -380,7 +380,6 @@ private:
     /// The query whose clauses the `REPLACE` transformers of the expressions being resolved again must not rewrite a second time.
     const IQueryTreeNode * query_with_replace_transformer_rewrite_done = nullptr;
 
-    /// The arguments of a lambda call before resolution, by call node.
     std::unordered_map<QueryTreeNodePtr, QueryTreeNodePtr> unresolved_lambda_call_arguments;
 
     /// True while arguments of a table function are resolved. Table functions are resolved

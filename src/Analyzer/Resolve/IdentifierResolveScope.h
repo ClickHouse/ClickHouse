@@ -145,9 +145,7 @@ struct IdentifierResolveScope
     /// Argument can be expression like constant, column, function or table expression
     std::unordered_map<std::string, QueryTreeNodePtr> expression_argument_name_to_node;
 
-    /** Arguments of a lambda call resolved as arguments of an aggregate function, so GROUP BY keys keep
-      * their type with `group_by_use_nulls`. Used where the lambda body uses them inside an aggregate or `grouping` function.
-      */
+    /// Arguments resolved as arguments of an aggregate function, where GROUP BY keys keep their type with `group_by_use_nulls`.
     std::unordered_map<std::string, QueryTreeNodePtr> expression_argument_name_to_node_inside_aggregate_function;
 
     /** Names from `expression_argument_name_to_node` that are temporarily invisible.

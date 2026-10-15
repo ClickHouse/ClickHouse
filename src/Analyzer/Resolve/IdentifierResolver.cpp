@@ -518,7 +518,6 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromCompoundExpression(
     return wrapExpressionNodeInSubcolumn(compound_expression, std::string(nested_path.getFullName()), scope.context);
 }
 
-/// Whether the lookup started inside an aggregate or `grouping` function of the body of the lambda that owns `lambda_scope`.
 /// A use inside a subquery of the body is a correlated reference to the value after aggregation.
 static bool isLookupInsideAggregateFunctionOfLambdaBody(
     const IdentifierResolveScope & lambda_scope, const IdentifierResolveContext & identifier_resolve_context)
