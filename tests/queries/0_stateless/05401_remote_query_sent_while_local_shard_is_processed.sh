@@ -13,7 +13,7 @@ ${CLICKHOUSE_CLIENT} --query_id="$query_id" -q "
     SETTINGS max_threads = 1, max_block_size = 1, prefer_localhost_replica = 1, async_query_sending_for_remote = 1"
 ${CLICKHOUSE_CLIENT} -q "
     SYSTEM FLUSH LOGS query_log;
-    SELECT dateDiff('millisecond', initial_query_start_time_microseconds, query_start_time_microseconds) < 5000
+    SELECT dateDiff('millisecond', initial_query_start_time_microseconds, query_start_time_microseconds) BETWEEN 0 AND 2999
     FROM system.query_log
     WHERE event_date >= yesterday() AND event_time >= now() - 600 AND initial_query_id = '$query_id'
         AND NOT is_initial_query AND type = 'QueryFinish'"
