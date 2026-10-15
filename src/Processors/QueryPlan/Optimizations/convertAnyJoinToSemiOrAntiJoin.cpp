@@ -9,6 +9,7 @@
 #include <Common/Logger.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Joins.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/JoinOperator.h>
@@ -158,7 +159,7 @@ ActionsDAG getPreFilterActionsDAG(QueryPlan::Node * join_node, JoinStepLogical *
 };
 
 /// Outputs of `join` holding a column of the `matched_side` input which is not NULL in a matched row: either its type
-/// is not `Nullable` (only `join_use_nulls` makes the output `Nullable`), or the `ON` clause proves it, e.g. `r.k` for `ON l.k = r.k`.
+/// cannot contain NULL (only `join_use_nulls` makes the output `Nullable`), or the `ON` clause proves it, e.g. `r.k` for `ON l.k = r.k`.
 NameSet notNullOutputsOfMatchedRows(const JoinStepLogical & join, JoinTableSide matched_side)
 {
     NameSet left;
@@ -171,7 +172,7 @@ NameSet notNullOutputsOfMatchedRows(const JoinStepLogical & join, JoinTableSide 
     {
         const auto * node = skipAliasAndToNullable(output);
         if (node->type != ActionsDAG::ActionType::INPUT
-            || (isNullableOrLowCardinalityNullable(node->result_type) && !null_rejected_inputs.contains(node->result_name)))
+            || (canContainNull(*node->result_type) && !null_rejected_inputs.contains(node->result_name)))
             continue;
 
         JoinActionRef input(node, join.getExpressionActions());

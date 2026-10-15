@@ -13,12 +13,14 @@ CREATE TABLE l (k UInt64) ENGINE = Memory;
 CREATE TABLE r (k UInt64) ENGINE = Memory;
 CREATE TABLE ln (k Nullable(UInt64), x Int64) ENGINE = Memory;
 CREATE TABLE rn (k Nullable(UInt64)) ENGINE = Memory;
+CREATE TABLE rd (k UInt64, d Dynamic) ENGINE = Memory;
 
 -- Keys 0..4 of `l` match two rows of `r` each, keys 5..9 match nothing.
 INSERT INTO l SELECT number FROM numbers(10);
 INSERT INTO r SELECT number % 5 FROM numbers(10);
 INSERT INTO ln SELECT if(number = 0, NULL, number), number FROM numbers(10);
 INSERT INTO rn SELECT if(number < 5, number, NULL) FROM numbers(10);
+INSERT INTO rd VALUES (1, NULL), (2, 42);
 
 SET join_use_nulls = 1;
 
@@ -47,3 +49,7 @@ SELECT groupArray(x) FROM (SELECT ln.x AS x FROM ln LEFT JOIN rn ON ln.k = rn.k 
 SELECT '-- <=> matches NULL keys, so it is not converted';
 SELECT trimBoth(explain) FROM (EXPLAIN actions = 1 SELECT ln.x FROM ln LEFT JOIN rn ON ln.k <=> rn.k WHERE rn.k IS NULL) WHERE explain ILIKE '%Strictness:%';
 SELECT groupArray(x) FROM (SELECT ln.x AS x FROM ln LEFT JOIN rn ON ln.k <=> rn.k WHERE rn.k IS NULL ORDER BY x);
+
+SELECT '-- Dynamic holds NULL without being Nullable, so it is not converted';
+SELECT trimBoth(explain) FROM (EXPLAIN actions = 1 SELECT l.k FROM l LEFT JOIN rd ON l.k = rd.k WHERE rd.d IS NULL) WHERE explain ILIKE '%Strictness:%';
+SELECT groupArray(k) FROM (SELECT l.k AS k FROM l LEFT JOIN rd ON l.k = rd.k WHERE rd.d IS NULL ORDER BY k);
