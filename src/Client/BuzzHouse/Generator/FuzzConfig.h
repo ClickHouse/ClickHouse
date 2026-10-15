@@ -365,6 +365,7 @@ public:
     bool enable_sync_settings = false;
     bool enable_backups = true;
     bool enable_renames = true;
+    bool enable_failpoints = true;
     bool allow_nasty_identifiers = false;
 
     uint64_t seed = 0;
@@ -384,7 +385,8 @@ public:
     uint32_t max_views = 5;
     uint32_t max_dictionaries = 5;
     uint32_t max_policies = 8;
-    uint32_t max_hypotheticals = 8;
+    uint32_t max_hypothetical_indexes = 4;
+    uint32_t max_hypothetical_projections = 4;
     uint32_t max_columns = 5;
     uint32_t time_to_run = 0;
     uint32_t port = 9000;
@@ -461,6 +463,12 @@ public:
     String getRandomIcebergHistoryValue(const String & property);
 
     String getRandomFileSystemCacheValue();
+
+    static String getRandomFuzzedPartName(uint64_t rand_val);
+
+    static String getRandomFuzzedPartitionValue(uint64_t rand_val);
+
+    static String getRandomFuzzedPartitionId(uint64_t rand_val);
 
     bool tableHasPartitions(bool detached, const String & database, const String & table);
 

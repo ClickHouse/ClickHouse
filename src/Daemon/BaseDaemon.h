@@ -29,7 +29,7 @@ class SignalListener;
 ///
 /// \code
 /// # Some possible command line options:
-/// #    --config-file, -C or --config - path to configuration file. By default - config.xml in the current directory.
+/// #    --config-file, -C or --config - path to configuration file. By default - config.xml, config.yaml or config.yml in the current directory.
 /// #    --log-file
 /// #    --errorlog-file
 /// #    --daemon - run as daemon; without this option, the program will be attached to the terminal and also output logs to stderr.
@@ -153,6 +153,9 @@ protected:
 
     virtual std::string getDefaultCorePath() const;
 
+    /// The name of the configuration file to use when `--config-file` is not specified. The extension is
+    /// only the preferred one: the file is looked up with every supported extension, see
+    /// `getConfigPathForAnySupportedFormat`.
     virtual std::string getDefaultConfigFileName() const;
 
     std::optional<DB::StatusFile> pid_file;
