@@ -2767,7 +2767,7 @@ void ReadFromMergeTree::buildIndexes(
                 return KeyCondition{
                     wrapped, query_context, minmax_columns.getNames(), minmax_expression_actions,
                     /* single_point_ = */ false,
-                    /* skip_analysis_ = */ skip_partition_pruning_ || !query_context->getSettingsRef()[Setting::use_partition_pruning] || !query_context->getSettingsRef()[Setting::use_skip_indexes]};
+                    /* skip_analysis_ = */ skip_partition_pruning_ || !query_context->getSettingsRef()[Setting::use_partition_pruning]};
             };
             indexes->minmax_idx_condition = std::make_shared<ConditionTemplate<KeyCondition>>(filter_dag_ptr, std::move(key_condition_factory), metadata_snapshot, query_context, skip_constant_folding);
         }

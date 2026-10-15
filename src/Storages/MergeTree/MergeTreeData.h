@@ -2086,6 +2086,8 @@ protected:
     std::mutex refresh_parts_mutex;
 
     BackgroundSchedulePoolTaskHolder refresh_stats_task;
+    /// Set before `refresh_stats_task` is deactivated, so that a running `refreshStatistics` returns between parts.
+    std::atomic_bool refresh_stats_cancelled = false;
 
     mutable std::mutex stats_mutex;
     ConditionSelectivityEstimatorPtr cached_estimator;

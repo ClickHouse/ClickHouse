@@ -267,7 +267,6 @@ namespace Setting
     extern const SettingsBool use_statistics_cache;
     extern const SettingsBool use_partition_pruning;
     extern const SettingsBool use_constant_folding_in_index_analysis;
-    extern const SettingsBool use_skip_indexes;
 }
 
 namespace MergeTreeSetting
@@ -3243,9 +3242,13 @@ void MergeTreeData::startStatisticsCache()
     const auto settings = getSettings();
     UInt64 refresh_statistics_seconds = (*settings)[MergeTreeSetting::refresh_statistics_interval].totalSeconds();
     if (refresh_stats_task)
+    {
+        refresh_stats_cancelled = true;
         refresh_stats_task->deactivate();
+    }
     if (refresh_statistics_seconds)
     {
+        refresh_stats_cancelled = false;
         LOG_INFO(log, "Start to refresh statistics");
         refresh_stats_task = getContext()->getSchedulePool()->createTask(
             getStorageID(), "MergeTreeData::refreshStatistics",
@@ -3399,6 +3402,8 @@ try
     ConditionSelectivityEstimatorBuilder estimator_builder(getContext());
     for (const DataPartPtr & data_part : data_parts)
     {
+        if (refresh_stats_cancelled)
+            return;
         auto parts_lock = readLockParts();
         auto stats = data_part->loadStatistics();
         estimator_builder.markDataPart(data_part);
@@ -3435,7 +3440,10 @@ MergeTreeData::~MergeTreeData()
         if (refresh_parts_task)
             refresh_parts_task->deactivate();
         if (refresh_stats_task)
+        {
+            refresh_stats_cancelled = true;
             refresh_stats_task->deactivate();
+        }
     }
     catch (...)
     {
@@ -10728,7 +10736,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
                     wrapped, query_context, minmax_columns.getNames(),
                     MergeTreeData::getMinMaxExpr(metadata_snapshot->getPartitionKey(), data_settings, ExpressionActionsSettings(query_context)),
                     /*single_point=*/false,
-                    /*skip_analysis=*/!query_context->getSettingsRef()[Setting::use_partition_pruning] || !query_context->getSettingsRef()[Setting::use_skip_indexes]};
+                    /*skip_analysis=*/!query_context->getSettingsRef()[Setting::use_partition_pruning]};
             };
             auto inverted_dag = std::make_shared<ActionsDAGWithInversionPushDown>(filter_dag->getOutputs().front(), query_context, /* boolean_context */ true);
             minmax_idx_condition = std::make_shared<ConditionTemplate<KeyCondition>>(inverted_dag, std::move(key_condition_factory), metadata_snapshot, query_context, /*skip_folding_=*/!query_context->getSettingsRef()[Setting::use_constant_folding_in_index_analysis]);
