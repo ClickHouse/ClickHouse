@@ -16,6 +16,9 @@
 -- list is inlined by the analyzer and a named subquery rewritten into the `FROM` before either reaches the
 -- rewrite, and a `FINAL` query is not run by parallel replicas at all.
 
+-- Disable force_primary_key_reverse_order: the test checks `Read type: InOrder`, which becomes `InReverseOrder` with a reversed sorting key
+SET force_primary_key_reverse_order = 0;
+
 DROP TABLE IF EXISTS t_pr_rewrite_shapes;
 DROP TABLE IF EXISTS d_pr_rewrite_shapes;
 DROP VIEW IF EXISTS v_join_pr_rewrite_shapes;
