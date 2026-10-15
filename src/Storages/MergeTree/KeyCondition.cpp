@@ -3350,9 +3350,6 @@ std::optional<KeyCondition::SetIndexAnalysisResult> KeyCondition::tryAnalyzePred
     return result;
 }
 
-/// False only when casting the KEY into `set_element_type` -- the direction runtime membership takes -- keeps distinct
-/// key values apart; any other cast may map two keys onto one set value. `plain_column` marks a key that `Set::execute`
-/// gets as a non-`Nullable` column of its own, not inside a composite.
 static bool keyToSetConversionMayCollapse(const DataTypePtr & key_type, const DataTypePtr & set_element_type, bool plain_column)
 {
     auto key_unwrapped = removeLowCardinalityAndNullable(key_type);
@@ -3369,14 +3366,12 @@ static bool keyToSetConversionMayCollapse(const DataTypePtr & key_type, const Da
     if (set_which.isNothing() || key_unwrapped->equals(*set_unwrapped))
         return false;
 
-    /// The lookup cast ignores the query settings: `Dynamic` keeps the value under its own type, and a `Variant` does
-    /// so only when that type is one of its alternatives; any other cast into a `Variant` throws.
+    /// The lookup cast ignores query settings: `Dynamic` keeps the value as is, a `Variant` only as one of its alternatives, else throws.
     if (set_which.isDynamic())
         return false;
     if (set_which.isVariant())
         return !assert_cast<const DataTypeVariant &>(*set_unwrapped).tryGetVariantDiscriminator(key_unwrapped->getName());
 
-    /// Elements are cast one by one.
     if (key_which.isArray() && set_which.isArray())
         return keyToSetConversionMayCollapse(
             assert_cast<const DataTypeArray &>(*key_unwrapped).getNestedType(),
@@ -3400,8 +3395,7 @@ static bool keyToSetConversionMayCollapse(const DataTypePtr & key_type, const Da
         const auto & key_elements = key_tuple.getElements();
         const auto & set_elements = set_tuple.getElements();
 
-        /// Named tuples sharing an element name are cast by name, and a key element without a
-        /// counterpart is dropped, which merges keys that differ only in it.
+        /// Named tuples sharing a name are cast by name; a key element without a counterpart is dropped, merging keys.
         if (key_tuple.hasExplicitNames() && set_tuple.hasExplicitNames())
         {
             const auto & key_names = key_tuple.getElementNames();
@@ -3433,8 +3427,7 @@ static bool keyToSetConversionMayCollapse(const DataTypePtr & key_type, const Da
     if (key_which.isStringOrFixedString())
         return !set_which.isString();
 
-    /// Integers and floats are cast exactly or not at all. A number is cast into an `Enum` by `static_cast`, so an
-    /// `Enum8` element of value 1 matches both 1 and 257.
+    /// Integers and floats are cast exactly or not at all, but a number is cast into an `Enum` by `static_cast`.
     if ((key_which.isInteger() || key_which.isFloat()) && (set_which.isInteger() || set_which.isFloat()))
         return false;
 
@@ -3449,30 +3442,26 @@ static bool keyToSetConversionMayCollapse(const DataTypePtr & key_type, const Da
     if (key_which.isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64()
         && set_which.isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64())
     {
-        /// Only widenings keep every key: a day keeps its number, a time gains sub-second digits. A day does not
-        /// keep its midnight, because a time zone can skip a day (`Pacific/Apia` skipped 2011-12-30).
+        /// Only widenings keep every key; a day is not its midnight, as a time zone can skip a day (`Pacific/Apia`, 2011-12-30).
         if (key_which.isDate())
             return !set_which.isDate32();
         if (key_which.isDateTime())
             return !set_which.isDateTime64();
         if (key_which.isTime())
             return !set_which.isTime64();
-        /// `Set::execute` drops the sub-second keys only of a plain `DateTime64` column; a tuple `IN` and
-        /// `transform_null_in` pass a `Nullable` key as is, and an element is truncated.
+        /// `Set::execute` drops the sub-second keys only of a `plain_column` (non-`Nullable`, not in a composite); it truncates others.
         if (key_which.isDateTime64() && set_which.isDateTime())
             return !plain_column && *key_scale > 0;
         const bool same_family = (key_which.isDateTime64() && set_which.isDateTime64()) || (key_which.isTime64() && set_which.isTime64());
         return !same_family || *set_scale < *key_scale;
     }
 
-    /// A scaled key is cast through `DecimalUtils::convertToImpl`, which rejects only on range overflow.
     if (key_scale)
     {
         if (set_scale)
             return *set_scale < *key_scale;
         if (set_which.isInteger())
             return *key_scale > 0;
-        /// A float keeps `digits10` significant decimal digits apart.
         if (set_which.isFloat())
         {
             const UInt32 exact_digits = set_which.isFloat64() ? std::numeric_limits<Float64>::digits10
@@ -3482,7 +3471,6 @@ static bool keyToSetConversionMayCollapse(const DataTypePtr & key_type, const Da
         }
     }
 
-    /// Otherwise only a strictly monotonic cast keeps values apart, such as an `Enum` into an integer that holds all its values.
     return !conversionPreservesOrder(*key_unwrapped, *set_unwrapped);
 }
 
@@ -3497,7 +3485,6 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
 
     Columns new_columns;
     DataTypes new_types;
-    /// A set of one `Tuple` column is unpacked below, while `IN` hands the key tuple to `Set::execute` whole.
     const bool set_is_packed = set_columns.size() < candidate.args_count;
     while (set_columns.size() < candidate.args_count) /// If we have a packed tuple inside, we unpack it
     {
@@ -3585,8 +3572,6 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
                 && !element_type->equals(*predicate_column_type))
                 return false;
 
-            /// A cast that merges distinct keys, such as `DateTime` into `Date`, leaves the set holding one of
-            /// them, and a relaxed atom would still prune the rest.
             if (keyToSetConversionMayCollapse(
                     predicate_column_type,
                     element_type,
