@@ -169,6 +169,7 @@ def test_metadata_statements_exempt_when_disabled() -> None:
         # Attaching loads the existing data of the table.
         run(node_off, "detach table t sync", workload="regular")
         run_times_out(node_off, "attach table t", workload="regular")
+        run_times_out(node_off, "undrop table t2", workload="regular")
     run(node_off, "attach table t")
 
 
@@ -193,3 +194,4 @@ def test_metadata_statements_use_metadata_workload_when_enabled() -> None:
         run(node_on, "create function f as (x) -> x + 1", workload="regular", metadata_workload="mdwl")
         run_times_out(node_on, "optimize table t final", workload="regular", metadata_workload="mdwl")
         run_times_out(node_on, "alter table t update x = x + 1 where 1", workload="regular", metadata_workload="mdwl")
+        run_times_out(node_on, "undrop table t2", workload="regular", metadata_workload="mdwl")

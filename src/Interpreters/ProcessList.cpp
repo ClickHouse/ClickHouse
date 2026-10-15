@@ -370,7 +370,6 @@ bool isMetadataQuery(const IAST * ast)
     switch (ast->getQueryKind())
     {
         case IAST::QueryKind::Drop: /// Also DETACH and TRUNCATE
-        case IAST::QueryKind::Undrop:
         case IAST::QueryKind::Rename:
         case IAST::QueryKind::Move: /// MOVE of access entities
         case IAST::QueryKind::Grant:
@@ -422,6 +421,9 @@ bool isMetadataQuery(const IAST * ast)
             }
             return true;
         }
+        /// Like `ATTACH`, loads the existing data of the table.
+        case IAST::QueryKind::Undrop:
+            return false;
         default:
             return false;
     }
