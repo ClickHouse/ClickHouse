@@ -1,5 +1,6 @@
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/IQueryTreeNode.h>
+#include <Analyzer/TableNode.h>
 
 #include <typeinfo>
 #include <unordered_map>
@@ -289,10 +290,27 @@ QueryTreeNodePtr IQueryTreeNode::cloneAndReplace(const ReplacementMap & replacem
         node_clone->parenthesized = node_to_clone->parenthesized;
         node_clone->children = node_to_clone->children;
 
+        /// A materialized CTE body stays shared, so a clone of an outer query does not copy it.
+        const auto * materialized_table = node_to_clone->as<TableNode>();
+        const IQueryTreeNode * shared_body = nullptr;
+        if (materialized_table && materialized_table->isMaterializedCTE())
+            shared_body = materialized_table->getMaterializedCTESubquery().get();
+
         for (auto & child : node_clone->children)
         {
             if (!child)
                 continue;
+
+            if (shared_body && child.get() == shared_body)
+            {
+                if (const auto * table_expression = child->asTableExpression())
+                {
+                    auto it = replacement_map.find(table_expression);
+                    if (it != replacement_map.end())
+                        child = it->second;
+                }
+                continue;
+            }
 
             nodes_to_clone.emplace_back(child.get(), &child);
         }

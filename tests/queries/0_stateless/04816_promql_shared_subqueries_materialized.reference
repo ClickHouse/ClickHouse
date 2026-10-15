@@ -32,26 +32,22 @@
 0
 -- empty right vector leaves unless left unchanged
 1	4
--- or: each operand is named once: two samples reads, nothing is materialized
-2	0
+-- or: the left side is evaluated once: two samples reads in total (left materialized + right inlined)
+2	1
 -- and uses a compact per-step presence mask
 1	1
 -- or uses a compact per-step presence mask
 1	1
 -- unless uses a compact per-step presence mask
 1	1
--- or on() has one match group, so the presence window needs no partition sort; the one Sorting step is the final ORDER BY
-1
--- or with tags in the match key partitions the presence window, so it adds one Sorting step
-2
 -- subqueries referenced once stay inlined: plain sum(rate(...)) reads the samples table once, nothing is materialized
 1	0
 -- subqueries referenced once stay inlined: a binary operator reads each of its two operands once, nothing is materialized
 2	0
 -- topk: the operand grid is read by two steps, so it is materialized; one samples read
 1	1
--- disabling materialized CTEs does not read the left side of or a second time
-2	0
+-- explicitly disabling the setting restores the inlined plan: the left side of `or` is read twice again
+3	0
 -- three-term or on(test_case) keeps the earliest sample at each step
 [('__name__','or_chain_a'),('test_case','chain')]	[('1970-01-01 00:01:40.000',1)]
 [('__name__','or_chain_b'),('test_case','chain')]	[('1970-01-01 00:01:50.000',2)]
@@ -73,5 +69,6 @@
 -- wide identical series or matches the left operand
 1
 1	1
--- thirteen-term or names each operand once
+-- thirteen-term or names each operand once in the shared body
 1	1
+-- thirteen-term or with materialization disabled exceeds the query tree limit

@@ -48,12 +48,19 @@ void assertNoArrayJoinOutside(const QueryTreeNodePtr & node,
     int exception_code,
     std::string_view exception_place_message);
 
+/// `nodes` excludes materialized CTE bodies. `shared_bodies` lists those bodies once.
+struct QueryTreeSizeEntry
+{
+    size_t nodes = 0;
+    std::vector<QueryTreeNodePtr> shared_bodies;
+};
+
 /** Validate tree size. If size of tree is greater than max size throws exception.
   * Additionally for each node in tree, update node to tree size map.
   */
 void validateTreeSize(const QueryTreeNodePtr & node,
     size_t max_size,
-    std::unordered_map<QueryTreeNodePtr, size_t> & node_to_tree_size);
+    std::unordered_map<QueryTreeNodePtr, QueryTreeSizeEntry> & node_to_tree_size);
 
 void validateSubqueryDepth(const QueryTreeNodePtr & node, size_t initial_subquery_depth, size_t max_subquery_depth);
 

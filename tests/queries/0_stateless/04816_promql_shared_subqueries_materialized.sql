@@ -2,10 +2,10 @@
 -- Tag no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
 -- Tag no-parallel-replicas: the test asserts on the query plan shape (the number of reads of the samples table).
 
--- A named subquery referenced more than once must be marked AS MATERIALIZED and evaluated once.
--- The topk/bottomk/limitk operand grid is referenced by the group-selecting aggregation and the
--- value-masking join. PromQL `or` names each operand once, so an `or` chain stays inlined.
--- Subqueries referenced once stay inlined and must not be materialized.
+-- The SQL generated from a PromQL query may reference a named subquery more than once: the left side of `or`
+-- feeds both the per-group presence-mask step and the final merge join, and the topk/bottomk/limitk operand grid
+-- feeds both the group-selecting aggregation and the value-masking join. Such subqueries must be marked
+-- AS MATERIALIZED and evaluated once, while subqueries referenced once must stay inlined and must not be materialized.
 
 DROP TABLE IF EXISTS tags_table;
 DROP TABLE IF EXISTS samples_table;
@@ -120,7 +120,7 @@ FROM prometheusQueryRange(
     'last_over_time(dense_unless_left[10]) unless last_over_time(missing_metric[10])',
     100, 130, 10);
 
-SELECT '-- or: each operand is named once: two samples reads, nothing is materialized';
+SELECT '-- or: the left side is evaluated once: two samples reads in total (left materialized + right inlined)';
 SELECT countIf(explain LIKE '%ReadFromMergeTree%samples_table%') AS samples_table_reads,
        countIf(explain LIKE '%MaterializingCTEs%') > 0 AS uses_materialized_cte
 FROM (EXPLAIN SELECT * FROM prometheusQueryRange('prometheus', 'last_over_time(m[10]) or last_over_time(n[10])', 100, 130, 10));
@@ -140,14 +140,6 @@ SELECT countIf(explain LIKE '%groupBitOrForEach%') > 0 AS uses_presence_mask,
        countIf(explain LIKE '%countForEach%') = 0 AS avoids_count_aggregate
 FROM (EXPLAIN SELECT * FROM prometheusQueryRange('prometheus', 'last_over_time(m[10]) unless last_over_time(n[10])', 100, 130, 10));
 
-SELECT '-- or on() has one match group, so the presence window needs no partition sort; the one Sorting step is the final ORDER BY';
-SELECT countIf(explain LIKE '%Sorting%') AS sorting_steps
-FROM (EXPLAIN SELECT * FROM prometheusQueryRange('prometheus', 'last_over_time(m[10]) or on() last_over_time(n[10])', 100, 130, 10));
-
-SELECT '-- or with tags in the match key partitions the presence window, so it adds one Sorting step';
-SELECT countIf(explain LIKE '%Sorting%') AS sorting_steps
-FROM (EXPLAIN SELECT * FROM prometheusQueryRange('prometheus', 'last_over_time(m[10]) or last_over_time(n[10])', 100, 130, 10));
-
 SELECT '-- subqueries referenced once stay inlined: plain sum(rate(...)) reads the samples table once, nothing is materialized';
 SELECT countIf(explain LIKE '%ReadFromMergeTree%samples_table%') AS samples_table_reads,
        countIf(explain LIKE '%MaterializingCTEs%') > 0 AS uses_materialized_cte
@@ -165,7 +157,7 @@ SELECT countIf(explain LIKE '%ReadFromMergeTree%samples_table%') AS samples_tabl
        countIf(explain LIKE '%MaterializingCTEs%') > 0 AS uses_materialized_cte
 FROM (EXPLAIN SELECT * FROM prometheusQueryRange('prometheus', 'topk(2, last_over_time(m[10]))', 100, 130, 10));
 
-SELECT '-- disabling materialized CTEs does not read the left side of or a second time';
+SELECT '-- explicitly disabling the setting restores the inlined plan: the left side of `or` is read twice again';
 SET enable_materialized_cte = 0;
 SET send_logs_level = 'error';
 SELECT countIf(explain LIKE '%ReadFromMergeTree%samples_table%') AS samples_table_reads,
@@ -254,13 +246,23 @@ WHERE event_date >= yesterday()
   AND current_database = currentDatabase()
   AND log_comment IN ('promql_or_wide_on', 'promql_or_wide_identical');
 
-SELECT '-- thirteen-term or names each operand once';
+SELECT '-- thirteen-term or names each operand once in the shared body';
 SELECT sum(countMatches(explain, '"v1"')) AS v1_mentions,
        sum(countMatches(explain, '"v13"')) AS v13_mentions
 FROM (EXPLAIN AST SELECT * FROM prometheusQuery(
     'prometheus',
     'label_replace(vector(1), "k", "v1", "", "") or label_replace(vector(2), "k", "v2", "", "") or label_replace(vector(3), "k", "v3", "", "") or label_replace(vector(4), "k", "v4", "", "") or label_replace(vector(5), "k", "v5", "", "") or label_replace(vector(6), "k", "v6", "", "") or label_replace(vector(7), "k", "v7", "", "") or label_replace(vector(8), "k", "v8", "", "") or label_replace(vector(9), "k", "v9", "", "") or label_replace(vector(10), "k", "v10", "", "") or label_replace(vector(11), "k", "v11", "", "") or label_replace(vector(12), "k", "v12", "", "") or label_replace(vector(13), "k", "v13", "", "")',
     100));
+
+SELECT '-- thirteen-term or with materialization disabled exceeds the query tree limit';
+SET send_logs_level = 'none';
+SELECT count()
+FROM prometheusQuery(
+    'prometheus',
+    'label_replace(vector(1), "k", "v1", "", "") or label_replace(vector(2), "k", "v2", "", "") or label_replace(vector(3), "k", "v3", "", "") or label_replace(vector(4), "k", "v4", "", "") or label_replace(vector(5), "k", "v5", "", "") or label_replace(vector(6), "k", "v6", "", "") or label_replace(vector(7), "k", "v7", "", "") or label_replace(vector(8), "k", "v8", "", "") or label_replace(vector(9), "k", "v9", "", "") or label_replace(vector(10), "k", "v10", "", "") or label_replace(vector(11), "k", "v11", "", "") or label_replace(vector(12), "k", "v12", "", "") or label_replace(vector(13), "k", "v13", "", "")',
+    100)
+SETTINGS enable_materialized_cte = 0; -- { serverError BAD_ARGUMENTS }
+SET send_logs_level = 'warning';
 
 DROP TABLE prometheus;
 DROP TABLE tags_table;

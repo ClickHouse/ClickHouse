@@ -1,11 +1,8 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyBinaryOperatorOr.h>
 
-#include <Core/Field.h>
-#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTWindowDefinition.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyBinaryOperatorSet.h>
@@ -15,242 +12,6 @@
 
 namespace DB::PrometheusQueryToSQL
 {
-
-namespace
-{
-
-constexpr const char * leftValuesColumn = "left_values";
-constexpr const char * rightValuesColumn = "right_values";
-constexpr const char * leftJoinGroupColumn = "left_join_group";
-constexpr const char * rightJoinGroupColumn = "right_join_group";
-constexpr const char * seriesGroupColumn = "series_group";
-
-String storeSubquery(ASTPtr query, ConverterContext & context)
-{
-    context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(query), SQLSubqueryType::TABLE});
-    return context.subqueries.back().name;
-}
-
-ASTPtr id(const char * name)
-{
-    return make_intrusive<ASTIdentifier>(name);
-}
-
-ASTPtr col(const String & table, const char * name)
-{
-    return make_intrusive<ASTIdentifier>(Strings{table, name});
-}
-
-ASTPtr lambda1(const char * arg, ASTPtr body)
-{
-    return makeASTFunction(
-        "lambda",
-        makeASTFunction("tuple", id(arg)),
-        std::move(body));
-}
-
-ASTPtr lambda2(const char * arg1, const char * arg2, ASTPtr body)
-{
-    return makeASTFunction(
-        "lambda",
-        makeASTFunction("tuple", id(arg1), id(arg2)),
-        std::move(body));
-}
-
-ASTPtr emptyValues()
-{
-    return makeASTFunction(
-        "CAST",
-        make_intrusive<ASTLiteral>(Array{}),
-        make_intrusive<ASTLiteral>("Array(Nullable(Float64))"));
-}
-
-ASTPtr valueOrEmpty(ASTPtr values)
-{
-    return makeASTFunction("ifNull", std::move(values), emptyValues());
-}
-
-/// One match group needs no PARTITION BY, and without it the window needs no sort.
-void setWindowPartition(ASTPtr function, ASTPtr partition_expr)
-{
-    auto * function_node = function->as<ASTFunction>();
-    function_node->setIsWindowFunction(true);
-    function_node->setKind(ASTFunction::Kind::WINDOW_FUNCTION);
-
-    auto window = make_intrusive<ASTWindowDefinition>();
-    if (partition_expr)
-    {
-        auto partition_by = make_intrusive<ASTExpressionList>();
-        partition_by->children.push_back(std::move(partition_expr));
-        window->partition_by = partition_by;
-        window->children.push_back(std::move(partition_by));
-    }
-    window->frame_is_default = false;
-    window->frame_type = WindowFrame::FrameType::ROWS;
-    window->frame_begin_type = WindowFrame::BoundaryType::Unbounded;
-    window->frame_begin_preceding = true;
-    window->frame_end_type = WindowFrame::BoundaryType::Unbounded;
-    window->frame_end_preceding = false;
-
-    function_node->window_definition = window;
-    function_node->children.push_back(std::move(window));
-}
-
-/// Right samples stay only at steps where no left series in the match group has a value.
-/// An empty presence means the match group has no left series, so the right values pass through.
-ASTPtr maskValues(ASTPtr presence, ASTPtr values)
-{
-    auto presence_for_empty = presence->clone();
-    auto values_passthrough = values->clone();
-    return makeASTFunction(
-        "if",
-        makeASTFunction("empty", std::move(presence_for_empty)),
-        std::move(values_passthrough),
-        makeASTFunction(
-            "arrayMap",
-            lambda2(
-                "x",
-                "y",
-                makeASTFunction(
-                    "if",
-                    makeASTFunction("equals", id("x"), make_intrusive<ASTLiteral>(0u)),
-                    id("y"),
-                    make_intrusive<ASTLiteral>(Field{}))),
-            std::move(presence),
-            std::move(values)));
-}
-
-ASTPtr preferLeft(ASTPtr left_values, ASTPtr right_values)
-{
-    return makeASTFunction(
-        "arrayMap",
-        lambda2(
-            "a",
-            "b",
-            makeASTFunction(
-                "if",
-                makeASTFunction("isNotNull", id("a")),
-                id("a"),
-                id("b"))),
-        std::move(left_values),
-        std::move(right_values));
-}
-
-/// The match key is a column of one side. The two sides use different names so a join cannot mix them.
-ASTPtr makeKeyedSide(const String & side, ASTPtr join_group, const char * key_name)
-{
-    SelectQueryBuilder builder;
-    builder.select_list.push_back(id(ColumnNames::Group));
-    builder.select_list.push_back(id(ColumnNames::Values));
-    join_group->setAlias(key_name);
-    builder.select_list.push_back(std::move(join_group));
-    builder.from_table = side;
-    return builder.getSelectQuery();
-}
-
-ASTPtr makeJoinedSelect(const String & left, const String & right)
-{
-    SelectQueryBuilder builder;
-
-    auto left_values = valueOrEmpty(col(left, ColumnNames::Values));
-    builder.select_list.push_back(makeASTFunction(
-        "if",
-        makeASTFunction("empty", left_values->clone()),
-        col(right, ColumnNames::Group),
-        col(left, ColumnNames::Group)));
-    builder.select_list.back()->setAlias(seriesGroupColumn);
-
-    builder.select_list.push_back(std::move(left_values));
-    builder.select_list.back()->setAlias(leftValuesColumn);
-
-    builder.select_list.push_back(valueOrEmpty(col(right, ColumnNames::Values)));
-    builder.select_list.back()->setAlias(rightValuesColumn);
-
-    builder.select_list.push_back(col(left, leftJoinGroupColumn));
-    builder.select_list.push_back(col(right, rightJoinGroupColumn));
-
-    builder.from_table = left;
-    builder.join_kind = JoinKind::Full;
-    builder.join_strictness = JoinStrictness::All;
-    builder.join_table = right;
-    builder.join_on = makeASTFunction(
-        "equals",
-        col(left, ColumnNames::Group),
-        col(right, ColumnNames::Group));
-
-    /// The row count threshold undervalues grid rows, which carry one array per series.
-    builder.settings.push_back(SettingChange{"parallel_hash_join_threshold", Field{0u}});
-
-    return builder.getSelectQuery();
-}
-
-/// A missing FULL JOIN side stores 0, and 0 is the empty-tag group.
-ASTPtr matchKey()
-{
-    return makeASTFunction(
-        "if",
-        makeASTFunction("empty", id(leftValuesColumn)),
-        id(rightJoinGroupColumn),
-        id(leftJoinGroupColumn));
-}
-
-ASTPtr makePresenceWindow(bool one_match_group)
-{
-    /// A right-only row has empty left values and adds nothing to the mask.
-    auto bits = makeASTFunction(
-        "arrayMap",
-        lambda1("x", makeASTFunction("isNotNull", id("x"))),
-        id(leftValuesColumn));
-
-    auto function = makeASTFunction("groupBitOrForEach", std::move(bits));
-    setWindowPartition(function, one_match_group ? nullptr : matchKey());
-    function->setAlias(ColumnNames::JoinPresence);
-    return function;
-}
-
-ASTPtr makeWindowSelect(const String & joined, bool one_match_group)
-{
-    SelectQueryBuilder builder;
-    builder.select_list.push_back(id(seriesGroupColumn));
-    builder.select_list.push_back(id(leftValuesColumn));
-    builder.select_list.push_back(id(rightValuesColumn));
-    builder.select_list.push_back(id(leftJoinGroupColumn));
-    builder.select_list.push_back(id(rightJoinGroupColumn));
-    builder.select_list.push_back(makePresenceWindow(one_match_group));
-    builder.from_table = joined;
-    return builder.getSelectQuery();
-}
-
-/// multiIf is short-circuit: the mask runs only on right rows and the merge only where both sides have a row.
-ASTPtr outputValues()
-{
-    auto masked_right = maskValues(id(ColumnNames::JoinPresence), id(rightValuesColumn));
-    auto masked_right_only = masked_right->clone();
-    return makeASTFunction(
-        "multiIf",
-        makeASTFunction("empty", id(rightValuesColumn)),
-        id(leftValuesColumn),
-        makeASTFunction("empty", id(leftValuesColumn)),
-        std::move(masked_right_only),
-        preferLeft(id(leftValuesColumn), std::move(masked_right)));
-}
-
-ASTPtr makeMergedSelect(const String & presence)
-{
-    SelectQueryBuilder builder;
-
-    builder.select_list.push_back(id(seriesGroupColumn));
-    builder.select_list.back()->setAlias(ColumnNames::Group);
-
-    builder.select_list.push_back(outputValues());
-    builder.select_list.back()->setAlias(ColumnNames::Values);
-
-    builder.from_table = presence;
-    return builder.getSelectQuery();
-}
-
-}
-
 
 SQLQueryPiece applyBinaryOperatorOr(
     const PrometheusQueryTree::BinaryOperator * operator_node,
@@ -276,39 +37,170 @@ SQLQueryPiece applyBinaryOperatorOr(
     }
 
     left_argument = toVectorGrid(std::move(left_argument), context);
-    String left = storeSubquery(std::move(left_argument.select_query), context);
+    /// The left grid is read twice - by the per-group presence step (Step 1) and by the final merge join (Step 3) -
+    /// so it's added as a materialized CTE to be evaluated once.
+    context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(left_argument.select_query), SQLSubqueryType::MATERIALIZED_TABLE});
+    String left = context.subqueries.back().name;
 
     right_argument = toVectorGrid(std::move(right_argument), context);
-    String right = storeSubquery(std::move(right_argument.select_query), context);
+    context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(right_argument.select_query), SQLSubqueryType::TABLE});
+    String right = context.subqueries.back().name;
 
-    /// Each grid is a table expression once. The join matches series ids.
-    /// The match key is a column of that side, so empty on() does not put a constant in JOIN ON.
-    bool left_metric_name_dropped = left_argument.metric_name_dropped;
-    ASTPtr left_join_group = transformGroupASTForBinaryOperator(
-        operator_node,
-        id(ColumnNames::Group),
-        /*drop_metric_name=*/ true,
-        left_metric_name_dropped);
-    const bool one_match_group = isZeroGroupAST(left_join_group);
-    String left_keyed = storeSubquery(makeKeyedSide(left, std::move(left_join_group), leftJoinGroupColumn), context);
+    /// Step 1: Build the per-step presence mask per `join_group` on the left side.
+    ///
+    /// SELECT timeSeriesRemoveAllTagsExcept(group, on_tags) AS join_group,
+    ///        groupBitOrForEach(arrayMap(x -> isNotNull(x), values)) AS join_presence
+    /// GROUP BY join_group
+    /// FROM left
+    ///
+    String step1;
+    {
+        SelectQueryBuilder builder;
 
-    bool right_metric_name_dropped = right_argument.metric_name_dropped;
-    String right_keyed = storeSubquery(
-        makeKeyedSide(
+        bool left_metric_name_dropped = left_argument.metric_name_dropped;
+        builder.select_list.push_back(transformGroupASTForBinaryOperator(
+            operator_node,
+            make_intrusive<ASTIdentifier>(ColumnNames::Group),
+            /*drop_metric_name=*/ true,
+            left_metric_name_dropped));
+        builder.select_list.back()->setAlias(ColumnNames::JoinGroup);
+
+        builder.select_list.push_back(makePresenceMask(make_intrusive<ASTIdentifier>(ColumnNames::Values)));
+        builder.select_list.back()->setAlias(ColumnNames::JoinPresence);
+
+        builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::JoinGroup));
+
+        builder.from_table = left;
+
+        ASTPtr step1_ast = builder.getSelectQuery();
+        context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(step1_ast), SQLSubqueryType::TABLE});
+        step1 = context.subqueries.back().name;
+    }
+
+    /// Step 2: For each row from the right side, replace values with NULLs at timestamps
+    /// where the left side has any value with the matching `join_group`.
+    /// Rows whose `join_group` is absent from the left side pass through unchanged.
+    ///
+    /// SELECT group,
+    ///        if(notEmpty(join_presence), arrayMap(x, y -> if(x = 0, y, NULL), join_presence, values), values) AS values
+    /// FROM step1 RIGHT ANY JOIN right
+    /// ON join_group == timeSeriesRemoveAllTagsExcept(group, on_tags)
+    ///
+    String step2;
+    {
+        bool right_metric_name_dropped = right_argument.metric_name_dropped;
+        ASTPtr right_join_key = makeJoinKeyColumn(
             right,
             transformGroupASTForBinaryOperator(
                 operator_node,
-                id(ColumnNames::Group),
+                make_intrusive<ASTIdentifier>(ColumnNames::Group),
                 /*drop_metric_name=*/ true,
                 right_metric_name_dropped),
-            rightJoinGroupColumn),
-        context);
+            context);
 
-    String joined = storeSubquery(makeJoinedSelect(left_keyed, right_keyed), context);
-    String presence = storeSubquery(makeWindowSelect(joined, one_match_group), context);
+        SelectQueryBuilder builder;
+
+        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+
+        builder.select_list.push_back(makeASTFunction(
+            "if",
+            makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(ColumnNames::JoinPresence)),
+            makeASTFunction(
+                "arrayMap",
+                makeASTFunction(
+                    "lambda",
+                    makeASTFunction("tuple", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTIdentifier>("y")),
+                    makeASTFunction(
+                        "if",
+                        makeASTFunction("equals", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTLiteral>(0u)),
+                        make_intrusive<ASTIdentifier>("y"),
+                        make_intrusive<ASTLiteral>(Field{} /* NULL */))),
+                make_intrusive<ASTIdentifier>(ColumnNames::JoinPresence),
+                make_intrusive<ASTIdentifier>(ColumnNames::Values)),
+            make_intrusive<ASTIdentifier>(ColumnNames::Values)));
+
+        builder.select_list.back()->setAlias(ColumnNames::Values);
+
+        builder.from_table = step1;
+        builder.join_kind = JoinKind::Right;
+        builder.join_strictness = JoinStrictness::Any;
+        builder.join_table = right;
+
+        builder.join_on = makeASTFunction(
+            "equals",
+            make_intrusive<ASTIdentifier>(Strings{step1, ColumnNames::JoinGroup}),
+            std::move(right_join_key));
+
+        ASTPtr step2_ast = builder.getSelectQuery();
+        context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(step2_ast), SQLSubqueryType::TABLE});
+        step2 = context.subqueries.back().name;
+    }
+
+    /// Step 3: Merge the original left rows with the filtered right rows from step 2,
+    /// picking element-wise non-NULL where both sides have a row.
+    ///
+    /// SELECT
+    ///   if(notEmpty(left.values), left.group, step2.group) AS group,
+    ///   multiIf(
+    ///     notEmpty(left.values) AND notEmpty(step2.values),
+    ///        arrayMap((a, b) -> if(isNotNull(a), a, b), left.values, step2.values),
+    ///     notEmpty(left.values),
+    ///        left.values,
+    ///     step2.values) AS values
+    /// FROM left FULL ALL JOIN step2
+    /// ON left.group == step2.group
+    ///
+    ASTPtr step3;
+    {
+        SelectQueryBuilder builder;
+
+        builder.select_list.push_back(makeASTFunction(
+            "if",
+            makeASTFunction("empty", make_intrusive<ASTIdentifier>(Strings{left, ColumnNames::Values})),
+            make_intrusive<ASTIdentifier>(Strings{step2, ColumnNames::Group}),
+            make_intrusive<ASTIdentifier>(Strings{left, ColumnNames::Group})));
+        builder.select_list.back()->setAlias(ColumnNames::Group);
+
+        builder.select_list.push_back(makeASTFunction(
+            "multiIf",
+            makeASTFunction(
+                "and",
+                makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(Strings{left, ColumnNames::Values})),
+                makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(Strings{step2, ColumnNames::Values}))),
+            makeASTFunction(
+                "arrayMap",
+                makeASTFunction(
+                    "lambda",
+                    makeASTFunction("tuple", make_intrusive<ASTIdentifier>("a"), make_intrusive<ASTIdentifier>("b")),
+                    makeASTFunction(
+                        "if",
+                        makeASTFunction("isNotNull", make_intrusive<ASTIdentifier>("a")),
+                        make_intrusive<ASTIdentifier>("a"),
+                        make_intrusive<ASTIdentifier>("b"))),
+                make_intrusive<ASTIdentifier>(Strings{left, ColumnNames::Values}),
+                make_intrusive<ASTIdentifier>(Strings{step2, ColumnNames::Values})),
+            makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(Strings{left, ColumnNames::Values})),
+            make_intrusive<ASTIdentifier>(Strings{left, ColumnNames::Values}),
+            make_intrusive<ASTIdentifier>(Strings{step2, ColumnNames::Values})));
+        builder.select_list.back()->setAlias(ColumnNames::Values);
+
+        /// If the left grid is not materialized (the setting `enable_materialized_cte` is disabled), it's evaluated
+        /// here a second time, which is still correct because group ids are the same within one query.
+        builder.from_table = left;
+        builder.join_kind = JoinKind::Full;
+        builder.join_strictness = JoinStrictness::All;
+        builder.join_table = step2;
+
+        builder.join_on = makeASTFunction(
+            "equals",
+            make_intrusive<ASTIdentifier>(Strings{left, ColumnNames::Group}),
+            make_intrusive<ASTIdentifier>(Strings{step2, ColumnNames::Group}));
+
+        step3 = builder.getSelectQuery();
+    }
 
     SQLQueryPiece res{operator_node, ResultType::INSTANT_VECTOR, StoreMethod::VECTOR_GRID};
-    res.select_query = makeMergedSelect(presence);
+    res.select_query = std::move(step3);
     res.metric_name_dropped = left_argument.metric_name_dropped && right_argument.metric_name_dropped;
 
     res.start_time = left_argument.start_time;
