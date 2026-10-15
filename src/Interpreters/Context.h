@@ -1044,6 +1044,8 @@ public:
     UInt64 getCPUSlotQuantum() const;
     UInt64 getCPUSlotPreemptionTimeout() const;
     void setCPUSlotPreemption(bool cpu_slot_preemption, UInt64 cpu_slot_quantum_ns, UInt64 cpu_slot_preemption_timeout_ms);
+    bool getCPUSlotParking() const;
+    void setCPUSlotParking(bool value);
     UInt64 getConcurrentThreadsSoftLimitNum() const;
     UInt64 getConcurrentThreadsSoftLimitRatioToCores() const;
     String getConcurrentThreadsScheduler() const;
@@ -2122,7 +2124,7 @@ public:
 
     /** There are multiple conditions that have to be met to be able to use parallel replicas */
     /// Whether parallel replicas are enabled, in any `parallel_replicas_mode`. Use it rather than reading
-    /// `enable_parallel_replicas`: in `read_tasks` mode `automatic_parallel_replicas_mode` decides instead, so they do
+    /// `enable_parallel_replicas`: in `read_tasks` mode `automatic_parallel_replicas_mode` decides instead on the initiator, so they do
     /// not count as enabled there, although the setting stays on for cluster engines.
     bool isParallelReplicasEnabled() const;
     /// `automatic_parallel_replicas_mode`, except that forcing parallel replicas (`enable_parallel_replicas = 2`) turns the
@@ -2179,7 +2181,7 @@ public:
 private:
     /// `ignore_automatic_parallel_replicas` is for cluster engines (`s3`, `url`, a table of a data lake catalog, ...):
     /// `automatic_parallel_replicas_mode` only decides for `MergeTree` reads, so they use parallel replicas whenever
-    /// they are enabled.
+    /// they are enabled. It is also set for a follower, which reads the way the initiator decided.
     bool canUseTaskBasedParallelReplicasImpl(bool ignore_automatic_parallel_replicas) const;
 
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> getSettingsConstraintsAndCurrentProfilesWithLock() const;
