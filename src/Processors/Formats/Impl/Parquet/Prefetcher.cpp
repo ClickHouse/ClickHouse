@@ -54,9 +54,7 @@ Prefetcher::~Prefetcher()
 
 void Prefetcher::determineReadModeAndFileSize(ReadBuffer * reader_, const ReadOptions & options)
 {
-    /// `input_format_allow_seeks`. When seeks are disallowed we read the whole file sequentially
-    /// below instead of fetching the footer and the needed column ranges.
-    if (options.format.seekable_read)
+    if (options.seekable_read)
     {
         bool has_file_size = isBufferWithFileSize(*reader_);
         auto * seekable = dynamic_cast<SeekableReadBuffer *>(reader_);

@@ -612,7 +612,7 @@ DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name_arg, 
         {
             return DataTypeFactory::instance().get("Geometry");
         }
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Using geometry/geography types is not allowed without enabled allow_geo_types_in_iceberg flag");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Using geometry/geography types is not allowed without enabled allow_experimental_geo_types_in_iceberg flag");
     }
     if (type_name == f_uuid)
         return std::make_shared<DataTypeUUID>();
@@ -989,22 +989,12 @@ std::unordered_set<String> IcebergSchemaProcessor::collectIcebergOptionalPaths(P
     return result;
 }
 
-void IcebergSchemaProcessor::updateLastColumnId(Int32 last_column_id_)
-{
-    Int64 current = last_column_id.load();
-    while (last_column_id_ > current && !last_column_id.compare_exchange_weak(current, last_column_id_))
-        ;
-}
-
 ColumnMapperPtr IcebergSchemaProcessor::getColumnMapperById(Int32 id) const
 {
     auto schema = getIcebergTableSchemaById(id);
     if (!schema)
         return nullptr;
-    auto column_mapper = createColumnMapper(schema);
-    if (Int64 known_last_column_id = last_column_id.load(); known_last_column_id >= 0)
-        column_mapper->setLastAssignedFieldId(known_last_column_id);
-    return column_mapper;
+    return createColumnMapper(schema);
 }
 
 ColumnMapperPtr createColumnMapperFromFields(Poco::JSON::Array::Ptr fields)

@@ -90,37 +90,3 @@ def test_dictionary_from_s3(started_cluster):
         node_s3.query("SELECT tokens('日本語の形態素解析エンジン', 'japanese')").strip()
         == "['日本語','の','形態','素','解析','エンジン']"
     )
-
-
-def test_text_index_repeated_values(started_cluster):
-    skip_if_no_mecab(node)
-    node.query("DROP TABLE IF EXISTS jp_repeated")
-    node.query(
-        """
-        CREATE TABLE jp_repeated (id UInt32, s String, lc LowCardinality(String), arr Array(LowCardinality(String)),
-            INDEX idx_s s TYPE text(tokenizer = 'japanese'),
-            INDEX idx_lc lc TYPE text(tokenizer = 'japanese'),
-            INDEX idx_arr arr TYPE text(tokenizer = 'japanese'))
-        ENGINE = MergeTree ORDER BY id
-        """
-    )
-    # Neighbouring rows hold equal values; each row must be indexed in full.
-    node.query(
-        """
-        INSERT INTO jp_repeated SELECT number, v, v, [v]
-        FROM (SELECT number, ['日本語の形態素解析エンジン', 'これはテストの文章です'][intDiv(number, 2) % 2 + 1] AS v FROM numbers(1000))
-        """
-    )
-    full_scan = " SETTINGS use_skip_indexes = 0, query_plan_direct_read_from_text_index = 0"
-    for column in ["lc", "arr"]:
-        for token in ["エンジン", "文章"]:
-            query = f"SELECT count() FROM jp_repeated WHERE hasAnyTokens({column}, '{token}', 'japanese')"
-            assert node.query(query) == node.query(query + full_scan) == "500\n", (column, token)
-            cardinality = f"SELECT sum(cardinality) FROM mergeTreeTextIndex(currentDatabase(), jp_repeated, idx_{column}) WHERE token = '{token}'"
-            assert node.query(cardinality) == "500\n", (column, token)
-
-    # Two search strings of the same length, one after another.
-    query = "SELECT count() FROM jp_repeated WHERE hasAnyTokens(s, 'エンジン', 'japanese') AND hasAnyTokens(s, '形態解析', 'japanese')"
-    assert node.query(query) == node.query(query + full_scan) == "500\n"
-
-    node.query("DROP TABLE jp_repeated")

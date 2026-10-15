@@ -1,5 +1,0 @@
-http_requests	counter	requests	Total HTTP requests
-http_requests_total	http_requests	counter
-metric_family_name	type	unit	help
-String	LowCardinality(String)	LowCardinality(String)	String
-http_requests	counter	requests	Total HTTP requests

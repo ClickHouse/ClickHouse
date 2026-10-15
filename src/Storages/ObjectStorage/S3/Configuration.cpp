@@ -110,7 +110,6 @@ static const std::unordered_set<std::string_view> optional_configuration_keys =
     "partition_columns_in_data_file",
     "storage_class_name",
     "storage_class", /// Interchangeable alias for `storage_class_name`, see issue #68551
-    "upload_checksum_algorithm",
     /// Private configuration options
     "role_arn", /// for extra_credentials
     "role_session_name", /// for extra_credentials
@@ -126,12 +125,7 @@ static const std::unordered_set<std::string_view> optional_configuration_keys =
 
 String StorageS3Configuration::getDataSourceDescription() const
 {
-    return getDataSourceDescriptionForNamespace(url.bucket);
-}
-
-String StorageS3Configuration::getDataSourceDescriptionForNamespace(const String & object_namespace) const
-{
-    return std::filesystem::path(url.uri.getHost() + std::to_string(url.uri.getPort())) / object_namespace;
+    return std::filesystem::path(url.uri.getHost() + std::to_string(url.uri.getPort())) / url.bucket;
 }
 
 std::string StorageS3Configuration::getPathInArchive() const
@@ -146,7 +140,7 @@ void StorageS3Configuration::check(ContextPtr context)
 {
     validateNamespace(url.bucket);
     context->getGlobalContext()->getRemoteHostFilter().checkURL(url.uri);
-    context->getGlobalContext()->getHTTPHeaderFilter().checkHeaders(headers_from_ast);
+    context->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers_from_ast);
     StorageObjectStorageConfiguration::check(context);
 }
 
@@ -175,21 +169,26 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
     assertInitialized();
 
     if (!headers_from_ast.empty())
-        s3_settings->auth_settings.headers.append(headers_from_ast);
+    {
+        s3_settings->auth_settings.headers.insert(
+            s3_settings->auth_settings.headers.end(),
+            headers_from_ast.begin(), headers_from_ast.end());
+    }
 
     auto client = getClient(
         url, *s3_settings, context, /* for_disk_s3 */ false, /*opt_disk_name*/ {}, /*refresh_credentials_callback*/ std::nullopt,
         is_loading_from_existing_metadata, force_anonymous_load_fallback);
 
-    auto client_refresher = [refresh_credentials_callback, this, context_ = Context::createCopy(context)] () -> std::unique_ptr<S3::Client>
+    S3ObjectStorage::S3CredentialsRefreshCallback client_refresher;
+    if (refresh_credentials_callback)
     {
-        if (!refresh_credentials_callback)
-            return nullptr;
-        auto new_client = getClient(
-            url, *s3_settings, context_, /* for_disk_s3 */ false, /*opt_disk_name*/ {}, refresh_credentials_callback,
-            is_loading_from_existing_metadata, force_anonymous_load_fallback);
-        return new_client;
-    };
+        client_refresher = [refresh_credentials_callback, this, context_ = Context::createCopy(context)] () -> std::unique_ptr<S3::Client>
+        {
+            return getClient(
+                url, *s3_settings, context_, /* for_disk_s3 */ false, /*opt_disk_name*/ {}, refresh_credentials_callback,
+                is_loading_from_existing_metadata, force_anonymous_load_fallback);
+        };
+    }
     return std::make_shared<S3ObjectStorage>(
         std::move(client),
         std::make_unique<S3Settings>(*s3_settings),
