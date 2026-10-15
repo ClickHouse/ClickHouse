@@ -7696,8 +7696,6 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         }
     }
 
-    expandLimitByAll(query_node_typed);
-
     if (query_node_typed.hasLimitByLimit())
     {
         resolveExpressionNode(query_node_typed.getLimitByLimit(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
@@ -7711,11 +7709,13 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     }
 
     if (query_node_typed.hasLimitBy())
-    {
         replaceNodesWithPositionalArguments(query_node_typed.getLimitByNode(), query_node_typed.getProjection().getNodes(), scope);
 
+    /// After the positional arguments: the projection expressions `ALL` expands to are not positions.
+    expandLimitByAll(query_node_typed);
+
+    if (query_node_typed.hasLimitBy())
         resolveExpressionNodeList(query_node_typed.getLimitByNode(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-    }
 
     if (query_node_typed.hasLimit())
     {
