@@ -65,13 +65,22 @@ DROP TABLE t_repl_05228_sample SYNC;
 -- An `ALIAS` or `EPHEMERAL` column over a non-deterministic virtual column is computed on read, so reading it
 -- in a mutation reads the virtual column too.
 DROP TABLE IF EXISTS t_repl_05228_alias SYNC;
-CREATE TABLE t_repl_05228_alias (key Int, value String, v String ALIAS _table, w String ALIAS concat(v, 'x'), e String EPHEMERAL _database)
+CREATE TABLE t_repl_05228_alias (key Int, value String, v String ALIAS _table, w String ALIAS concat(v, 'x'), e String EPHEMERAL _database, a Tuple(s String) ALIAS tuple(_table))
     ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test_05228/t_alias', 'r1') ORDER BY key;
 INSERT INTO t_repl_05228_alias (key, value) VALUES (1, 'a'), (2, 'b');
 ALTER TABLE t_repl_05228_alias DELETE WHERE v != ''; -- { serverError BAD_ARGUMENTS }
 ALTER TABLE t_repl_05228_alias UPDATE value = w WHERE key = 1; -- { serverError BAD_ARGUMENTS }
 ALTER TABLE t_repl_05228_alias DELETE WHERE t_repl_05228_alias.v != ''; -- { serverError BAD_ARGUMENTS }
 ALTER TABLE t_repl_05228_alias DELETE WHERE e != ''; -- { serverError BAD_ARGUMENTS }
+-- Reading only a subcolumn of such a column reads the virtual column too.
+ALTER TABLE t_repl_05228_alias UPDATE value = a.s WHERE 1; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE t_repl_05228_alias UPDATE value = t_repl_05228_alias.a.s WHERE 1; -- { serverError BAD_ARGUMENTS }
+-- A lambda parameter only shadows identifiers in its own scope: not a qualified reference to the table
+-- column, and not the identifiers in the definition of an `ALIAS` column, which belong to the table scope.
+ALTER TABLE t_repl_05228_alias UPDATE value = arrayElement(arrayMap(_table -> CAST(t_repl_05228_alias._table AS String), ['ignored']), 1) WHERE 1; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE t_repl_05228_alias UPDATE value = arrayElement(arrayMap(_table -> v, ['ignored']), 1) WHERE 1; -- { serverError BAD_ARGUMENTS }
+-- A lambda parameter named like an `ALIAS` column is bound to the parameter, not to the column.
+ALTER TABLE t_repl_05228_alias DELETE WHERE arrayExists(v -> v = 'x', ['']) SETTINGS mutations_sync = 2;
 ALTER TABLE t_repl_05228_alias DELETE WHERE v = 't_repl_05228_alias' AND key = 2 SETTINGS allow_nondeterministic_mutations = 1, mutations_sync = 2;
 SELECT key, value FROM t_repl_05228_alias ORDER BY key;
 DROP TABLE t_repl_05228_alias SYNC;

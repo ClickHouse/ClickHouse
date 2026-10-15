@@ -44,7 +44,10 @@ public:
         /// Inside the definition of an `ALIAS` or `EPHEMERAL` column only virtual columns are looked for:
         /// non-deterministic functions there were never refused and are out of scope of this check.
         bool only_virtual_columns = false;
-        FirstNonDeterministicFunctionResult result;
+        /// Parameters of the enclosing lambdas: an identifier whose first part is one of them is bound
+        /// to the parameter, not to a column of the table.
+        NameSet lambda_parameters = {};
+        FirstNonDeterministicFunctionResult result = {};
     };
 
     static bool isLambda(const ASTPtr & node)
@@ -55,38 +58,70 @@ public:
 
     static bool needChildVisit(const ASTPtr & node, const ASTPtr & /*child*/)
     {
-        /// The body of a lambda is visited separately in `visit`, with the lambda parameters masked.
+        /// The body of a lambda is visited separately in `visit`, with the lambda parameters bound.
         return !isLambda(node);
     }
 
-    /// Returns the column name that `identifier` refers to in the mutated table: the short name when
-    /// the identifier is qualified with the mutated table (`t._table`, `db.t._table`), the name itself
-    /// otherwise. A qualifier which does not name the mutated table (e.g. a tuple element access)
-    /// leaves the full compound name, which is not a virtual column name. A compound identifier which
-    /// names a real column or its subcolumn (`b._table` for a column `b Tuple(_table String)` of table `b`)
-    /// is resolved to that column, like the analyzer does, so it is not stripped either.
-    static const String & getColumnName(const ASTIdentifier & identifier, const StorageID * storage_id, const ColumnsDescription * columns)
+    static String joinParts(const Strings & parts, size_t begin, size_t end)
     {
-        if (!storage_id || !identifier.compound())
-            return identifier.name();
-
-        const auto & parts = identifier.name_parts;
-        if (columns && columns->hasColumnOrSubcolumn(GetColumnsOptions::All, identifier.name()))
-            return identifier.name();
-
-        if (parts.size() == 2 && parts[0] == storage_id->table_name)
-            return parts[1];
-        if (parts.size() == 3 && parts[0] == storage_id->database_name && parts[1] == storage_id->table_name)
-            return parts[2];
-        return identifier.name();
+        String name = parts[begin];
+        for (size_t i = begin + 1; i < end; ++i)
+            name += "." + parts[i];
+        return name;
     }
 
-    static void visitDefinition(const ASTPtr & expression, const NameSet & nondeterministic_virtual_columns, Data & data)
+    static String joinParts(const Strings & parts, size_t begin) { return joinParts(parts, begin, parts.size()); }
+
+    /// Returns the storage column named by `parts` starting at `begin` or, for a subcolumn (`a.s`),
+    /// its parent column (`a`), if any.
+    static const ColumnDescription * tryGetStorageColumn(const Strings & parts, size_t begin, const ColumnsDescription & columns)
     {
-        Data definition_data{data.context, nondeterministic_virtual_columns, data.storage_id, data.columns, data.only_virtual_columns, {}};
+        if (auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, joinParts(parts, begin)))
+            return columns.tryGet(column->getNameInStorage());
+
+        /// Subcolumns of `ALIAS` columns are not registered, they are extracted after evaluating the alias.
+        for (size_t end = parts.size() - 1; end > begin; --end)
+        {
+            const auto * column = columns.tryGet(joinParts(parts, begin, end));
+            if (column && column->default_desc.kind == ColumnDefaultKind::Alias
+                && column->type->tryGetSubcolumnType(joinParts(parts, end)))
+                return column;
+        }
+        return nullptr;
+    }
+
+    /// Returns the index of the first part of `identifier` that names a column of the mutated table:
+    /// the qualifier of the mutated table (`t._table`, `db.t.a.s`) is skipped, like the analyzer does.
+    /// A compound identifier which names a real column or its subcolumn (`b._table` for a column
+    /// `b Tuple(_table String)` of table `b`) is resolved to that column, so it is not stripped.
+    static size_t getColumnPartsBegin(const ASTIdentifier & identifier, const Data & data)
+    {
+        const auto & parts = identifier.name_parts;
+        if (!data.storage_id || parts.size() < 2)
+            return 0;
+
+        auto names_column = [&](size_t begin)
+        {
+            return data.nondeterministic_virtual_columns.contains(joinParts(parts, begin))
+                || (data.columns && tryGetStorageColumn(parts, begin, *data.columns));
+        };
+
+        if (names_column(0))
+            return 0;
+        if (parts.size() >= 3 && parts[0] == data.storage_id->database_name && parts[1] == data.storage_id->table_name && names_column(2))
+            return 2;
+        if (parts[0] == data.storage_id->table_name && names_column(1))
+            return 1;
+        return 0;
+    }
+
+    /// Visits `expression` with the given lambda parameters bound and stores the result into `data`.
+    static void visitScope(const ASTPtr & expression, NameSet lambda_parameters, bool only_virtual_columns, Data & data)
+    {
+        Data scope_data{data.context, data.nondeterministic_virtual_columns, data.storage_id, data.columns, only_virtual_columns, std::move(lambda_parameters)};
         ASTPtr expression_copy = expression;
-        InDepthNodeVisitor<FirstNonDeterministicFunctionMatcher, true>(definition_data).visit(expression_copy);
-        data.result = std::move(definition_data.result);
+        InDepthNodeVisitor<FirstNonDeterministicFunctionMatcher, true>(scope_data).visit(expression_copy);
+        data.result = std::move(scope_data.result);
     }
 
     static void visit(const ASTPtr & node, Data & data)
@@ -106,15 +141,15 @@ public:
         else if (const auto * function = typeid_cast<const ASTFunction *>(node.get()))
         {
             /// Property of being deterministic for lambda expression is completely determined
-            /// by the contents of its definition, so we just proceed to it. Its parameters shadow
-            /// the virtual columns with the same names inside the body.
+            /// by the contents of its definition, so we just proceed to it. Its parameters are
+            /// bound inside the body and shadow the columns with the same names there.
             if (function->name == "lambda")
             {
-                NameSet masked_virtual_columns = data.nondeterministic_virtual_columns;
+                NameSet lambda_parameters = data.lambda_parameters;
                 for (const auto & name : RequiredSourceColumnsMatcher::extractNamesFromLambda(*function))
-                    masked_virtual_columns.erase(name);
+                    lambda_parameters.insert(name);
 
-                visitDefinition(function->arguments->children[1], masked_virtual_columns, data);
+                visitScope(function->arguments->children[1], std::move(lambda_parameters), data.only_virtual_columns, data);
             }
             else
             {
@@ -127,29 +162,34 @@ public:
         }
         else if (const auto * identifier = node->as<ASTIdentifier>())
         {
+            const auto & parts = identifier->name_parts;
+            if (data.lambda_parameters.contains(parts[0]))
+                return;
+
             /// A virtual column such as `_table` or `_database` is a constant on one server, but replicas
             /// of the same table may have different local names, so it is as non-deterministic as `hostName`.
-            const auto & column_name = getColumnName(*identifier, data.storage_id, data.columns);
+            size_t begin = getColumnPartsBegin(*identifier, data);
+            String column_name = joinParts(parts, begin);
             if (data.nondeterministic_virtual_columns.contains(column_name))
             {
-                data.result.nondeterministic_virtual_column_name = column_name;
+                data.result.nondeterministic_virtual_column_name = std::move(column_name);
                 return;
             }
 
             /// `ALIAS` and `EPHEMERAL` columns are computed on read from their definitions, which may
-            /// reference such virtual columns (`v String ALIAS _table`), so follow them. `DEFAULT` and
-            /// `MATERIALIZED` columns cannot reference `_table` and similar virtual columns at all.
+            /// reference such virtual columns (`v String ALIAS _table`), so follow them, also when only
+            /// their subcolumn is read (`a.s`). `DEFAULT` and `MATERIALIZED` columns cannot reference
+            /// `_table` and similar virtual columns at all.
             if (!data.columns || data.nondeterministic_virtual_columns.empty())
                 return;
-            const auto * column = data.columns->tryGet(column_name);
+            const auto * column = tryGetStorageColumn(parts, begin, *data.columns);
             if (column && column->default_desc.expression
                 && (column->default_desc.kind == ColumnDefaultKind::Alias || column->default_desc.kind == ColumnDefaultKind::Ephemeral))
             {
-                /// Column definitions cannot reference each other cyclically, so the recursion terminates.
-                bool only_virtual_columns = data.only_virtual_columns;
-                data.only_virtual_columns = true;
-                visitDefinition(column->default_desc.expression, data.nondeterministic_virtual_columns, data);
-                data.only_virtual_columns = only_virtual_columns;
+                /// The definition is resolved in the scope of the table, where the lambda parameters of
+                /// the mutation are not visible. Column definitions cannot reference each other cyclically,
+                /// so the recursion terminates.
+                visitScope(column->default_desc.expression, {}, /*only_virtual_columns=*/ true, data);
             }
         }
     }
@@ -232,7 +272,7 @@ FirstNonDeterministicFunctionResult findFirstNonDeterministicFunction(
     const StorageID * storage_id,
     const ColumnsDescription * columns)
 {
-    FirstNonDeterministicFunctionMatcher::Data finder_data{context, nondeterministic_virtual_columns, storage_id, columns, false, {}};
+    FirstNonDeterministicFunctionMatcher::Data finder_data{context, nondeterministic_virtual_columns, storage_id, columns};
 
     switch (command.type)
     {

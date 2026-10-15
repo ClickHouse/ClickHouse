@@ -27,10 +27,10 @@ struct FirstNonDeterministicFunctionResult
 /// virtual columns; pass the virtual columns of the storage that are declared non-deterministic
 /// and are not shadowed by a real column of the table. When `storage_id` of the mutated table is
 /// given, identifiers qualified with it (`t._table`, `db.t._table`) are matched by their short name.
-/// Lambda parameters shadow the virtual columns with the same names inside the lambda body.
+/// Identifiers bound to lambda parameters inside the lambda body do not refer to columns of the table.
 /// When `columns` of the mutated table are given, a qualified identifier naming a real column or its
-/// subcolumn is not stripped, and the definitions of `ALIAS` and `EPHEMERAL` columns are searched for
-/// the non-deterministic virtual columns as well.
+/// subcolumn is not stripped, and the definitions of `ALIAS` and `EPHEMERAL` columns (also when only
+/// their subcolumn is read) are searched for the non-deterministic virtual columns in the table scope.
 FirstNonDeterministicFunctionResult findFirstNonDeterministicFunction(
     const MutationCommand & command,
     ContextPtr context,
