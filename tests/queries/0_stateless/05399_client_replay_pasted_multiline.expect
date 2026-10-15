@@ -28,6 +28,14 @@ proc submit {text} {
     send -- "\r"
 }
 
+# Waits for the line break of the Enter, so the paste is typed into a running query: an Enter that
+# arrives in the same read as the paste is a newline of the paste.
+proc run_slow_query {} {
+    submit {SELECT sleep(2) FORMAT Null}
+    expect -ex "\r\n"
+    sleep 0.5
+}
+
 set history_file $CLICKHOUSE_TMP/$basename.history
 spawn bash -c {
     source "$1/../shell_config.sh"
@@ -37,11 +45,11 @@ expect ":) "
 
 # The paste arrives while this query runs. The second line is what makes the statement a different one: alone it
 # is a syntax error, and without it the statement counts all 7 rows.
-submit {SELECT sleep(2) FORMAT Null}
-send -- "SELECT count() FROM numbers(7)\rWHERE number = 3 FORMAT TabSeparatedRaw;\r"
+run_slow_query
+send -- "SELECT concat('rows-', toString(count())) FROM numbers(7)\rWHERE number = 3 FORMAT TabSeparatedRaw;\r"
 
 expect_before -re {(?i)syntax error} { exit 1 }
-expect -re {\r\n1\r\n}
+expect -ex "rows-1\r\n"
 expect ":) "
 
 # Nothing was left over: the prompt takes the next statement.
@@ -50,9 +58,9 @@ expect -ex {next-05399}
 expect ":) "
 
 # The same with CRLF line ends, which some terminals send for a paste.
-submit {SELECT sleep(2) FORMAT Null}
-send -- "SELECT count() FROM numbers(9)\r\nWHERE number < 4 FORMAT TabSeparatedRaw;\r"
-expect -re {\r\n4\r\n}
+run_slow_query
+send -- "SELECT concat('rows-', toString(count())) FROM numbers(9)\r\nWHERE number < 4 FORMAT TabSeparatedRaw;\r"
+expect -ex "rows-4\r\n"
 expect ":) "
 
 send -- "\4"
