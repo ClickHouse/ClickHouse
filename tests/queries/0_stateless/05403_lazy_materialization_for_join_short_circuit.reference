@@ -24,18 +24,3 @@
 10	l10	0	
 11	l11	0	
 1
--- sleepEachRow of a row of one side, which the join repeats 100 times
-x	0	0
-x	0	1
-x	0	10
-x	0	0
-x	0	1
-x	0	10
-1
--- the same in a lambda
-x	[0]	0
-x	[0]	1
-x	[0]	10
-x	[0]	0
-x	[0]	1
-x	[0]	10

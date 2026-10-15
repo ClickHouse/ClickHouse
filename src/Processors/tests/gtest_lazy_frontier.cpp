@@ -260,6 +260,36 @@ TEST(LazyFrontier, ComputesAnUnusedNonDeterministicValueWhereThePlanDoes)
     EXPECT_EQ(frontier.at(random_in_merged), Placement::Carried);
 }
 
+/// A value with observable side effects is computed where the plan computes it and crosses the LIMIT as a column, even
+/// where nothing below the LIMIT uses it: computed above it, `sleepEachRow` would run for every row a join repeats
+/// instead of the rows the plan runs it for. The function is only placed here, never run.
+TEST(LazyFrontier, ComputesAValueWithSideEffectsWhereThePlanDoes)
+{
+    tryRegisterFunctions();
+    const Block header{column("a"), column("b"), column("heavy")};
+
+    TestPlan plan;
+    auto & source = plan.addSource(header);
+
+    ActionsDAG dag(header.getColumnsWithTypeAndName());
+    const auto * a = dag.getOutputs()[0];
+    const auto * heavy = dag.getOutputs()[2];
+    const auto seconds_type = std::make_shared<DataTypeFloat64>();
+    const auto & seconds = dag.addColumn(seconds_type->createColumnConst(1, 0.0), seconds_type, "0");
+    const auto & sleep = addFunction(dag, "sleepEachRow", {&seconds});
+    dag.getOutputs() = {a, &dag.addAlias(sleep, "z"), heavy};
+
+    auto & expression = plan.addStep(std::make_unique<ExpressionStep>(source.step->getOutputHeader(), std::move(dag)), source);
+
+    const auto merged = buildMergedPlanDAG(expression);
+
+    const auto frontier = chooseLazyFrontier(merged, {outputPosition(merged, "a")}, {true});
+
+    const auto * sleep_in_merged = findNodeContaining(merged, "sleepEachRow");
+    ASSERT_TRUE(sleep_in_merged != nullptr);
+    EXPECT_EQ(frontier.at(sleep_in_merged), Placement::Carried);
+}
+
 /// Values a join can pad: `a + b` and `intDiv(heavy, b)` are computed from one side of an outer join,
 /// and the result reads both above the LIMIT. Recomputing one there under the join's mask evaluates it
 /// on the padded rows too, which only a value that cannot throw survives.
