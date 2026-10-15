@@ -31,8 +31,9 @@ chain() {
 }
 
 # JIT compilation names an expression by its full text, which grows exponentially here (issue #123724),
-# and so does planning the first query with `join_use_nulls = 1`.
-settings="SETTINGS join_use_nulls = 0, compile_expressions = 0, ast_fuzzer_runs = 0"
+# and so does planning the first query with `join_use_nulls = 1`. The hash table statistics key of the join
+# hashes the filter once per path, too.
+settings="SETTINGS join_use_nulls = 0, compile_expressions = 0, collect_hash_table_stats_during_joins = 0, ast_fuzzer_runs = 0"
 
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ($(chain 'LEFT JOIN')) AS g INNER JOIN (SELECT 0 AS val) AS k ON g.a${LEVELS}_${STEPS} >= k.val $settings"
 
