@@ -2164,6 +2164,7 @@ public:
 
     /// See `getEffectiveMaxThreads`. `nullptr` if this is not a query context.
     const QueryMaxThreadsSnapshotPtr & getQueryMaxThreadsSnapshot() const;
+    void setQueryMaxThreadsSnapshot(const QueryMaxThreadsSnapshotPtr & snapshot);
 
     void setPartitionIdToMaxBlock(const UUID & table_uuid, PartitionIdToMaxBlockPtr partitions);
     PartitionIdToMaxBlockPtr getPartitionIdToMaxBlock(const UUID & table_uuid) const;

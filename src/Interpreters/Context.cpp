@@ -9734,6 +9734,11 @@ const QueryMaxThreadsSnapshotPtr & Context::getQueryMaxThreadsSnapshot() const
     return query_max_threads_snapshot;
 }
 
+void Context::setQueryMaxThreadsSnapshot(const QueryMaxThreadsSnapshotPtr & snapshot)
+{
+    query_max_threads_snapshot = snapshot;
+}
+
 UInt64 Context::getClientProtocolVersion() const
 {
     return client_protocol_version;
