@@ -322,6 +322,8 @@ void JoinStepLogical::swapInputs()
     expression_actions.swapExpressionSources();
 
     std::swap(left_relation, right_relation);
+    if (chosen_input_rows)
+        std::swap(chosen_input_rows->first, chosen_input_rows->second);
 }
 
 std::vector<std::pair<String, String>> JoinStepLogical::describeJoinProperties() const
@@ -3080,6 +3082,13 @@ std::optional<UInt64> JoinStepLogical::getInputRowsEstimation(JoinTableSide side
         return left_relation.estimated_rows;
     else
         return right_relation.estimated_rows;
+}
+
+std::optional<UInt64> JoinStepLogical::getChosenInputRowsEstimation(JoinTableSide side) const
+{
+    if (!chosen_input_rows)
+        return getInputRowsEstimation(side);
+    return side == JoinTableSide::Left ? chosen_input_rows->first : chosen_input_rows->second;
 }
 
 void registerJoinStep(QueryPlanStepRegistry & registry);

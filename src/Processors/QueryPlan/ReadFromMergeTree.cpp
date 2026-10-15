@@ -3007,6 +3007,11 @@ void ReadFromMergeTree::addJoinRuntimeFilterIndexAnalysisOnDataRead(const String
     if (!is_primary_key_column && !has_applicable_skip_index)
         return;
 
+    /// The same filter is found again when the plan is optimized again or the read is copied.
+    for (const auto & descr : join_runtime_filters_for_index_analysis)
+        if (descr.filter_id == filter_id && descr.key_column_name == column_name)
+            return;
+
     join_runtime_filters_for_index_analysis.push_back({filter_id, column_name, column_type});
     LOG_DEBUG(log, "Registered join runtime filter {} on column {} (primary_key={}, skip_index={})",
         filter_id, column_name, is_primary_key_column, has_applicable_skip_index);

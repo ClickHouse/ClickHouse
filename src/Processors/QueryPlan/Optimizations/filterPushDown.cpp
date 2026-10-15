@@ -43,6 +43,8 @@
 #include <Interpreters/TableJoin.h>
 #include <fmt/format.h>
 
+#include <unordered_set>
+
 namespace DB::ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -1256,12 +1258,33 @@ static bool mayFixColumn(const ActionsDAG::Node * conjunct)
     return false;
 }
 
+/// Whether the conjunct gives the same result for a row wherever the row is: an exchange splits and merges streams,
+/// so a function that depends on the block or is not deterministic within the query must not move across it.
+static bool isDeterministicAcrossStreams(const ActionsDAG::Node * conjunct)
+{
+    std::vector<const ActionsDAG::Node *> stack{conjunct};
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+        if (!visited.insert(node).second)
+            continue;
+        if (node->type == ActionsDAG::ActionType::ARRAY_JOIN)
+            return false;
+        if (node->type == ActionsDAG::ActionType::FUNCTION
+            && (!node->function_base || !node->function_base->isDeterministicInScopeOfQuery()))
+            return false;
+        for (const auto * child : node->children)
+            stack.push_back(child);
+    }
+    return true;
+}
+
 size_t tryPushDownRuntimeFilterOverExchange(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes)
 {
-    const auto * filter = typeid_cast<const FilterStep *>(parent_node->step.get());
-    if (!filter || parent_node->children.size() != 1)
-        return 0;
-    if (findAppliedRuntimeFilters(filter->getExpression(), filter->getFilterColumnName()).empty())
+    auto * filter = typeid_cast<FilterStep *>(parent_node->step.get());
+    if (!filter || parent_node->children.size() != 1 || isFilterColumnConst(*filter))
         return 0;
 
     QueryPlan::Node * exchange_node = parent_node->children.front();
@@ -1269,12 +1292,29 @@ size_t tryPushDownRuntimeFilterOverExchange(QueryPlan::Node * parent_node, Query
     if (!exchange || exchange_node->children.size() != 1)
         return 0;
 
+    const auto * predicate = filter->getExpression().tryFindInOutputs(filter->getFilterColumnName());
+    if (!predicate || predicate->type == ActionsDAG::ActionType::COLUMN)
+        return 0;
+
+    /// Only the runtime filter conjuncts move: the other conjuncts stay where the optimizer placed them.
+    ActionsDAG::NodeRawConstPtrs to_push;
+    for (const auto * conjunct : ActionsDAG::extractConjunctionAtoms(predicate))
+        if (containsJoinRuntimeFilter(conjunct) && isDeterministicAcrossStreams(conjunct))
+            to_push.push_back(conjunct);
+    if (to_push.empty())
+        return 0;
+
+    auto split = filter->getExpression().splitActionsForFilterPushDown(
+        filter->getFilterColumnName(), filter->removesFilterColumn(), to_push,
+        exchange->getInputHeaders().front()->getColumnsWithTypeAndName());
+    if (!split)
+        return 0;
+    materializeFilterColumnIfNeededAfterPushDown(*filter, /*was_filter_const_before=*/ false, split->is_filter_const_after_push_down);
+
     /// The filter below the exchange keeps the estimate of its input: it removes only rows the join drops anyway.
     const auto input_estimation = exchange_node->children.front()->cost_estimation;
-    Names allowed_inputs = exchange->getOutputHeader()->getNames();
-    const size_t updated_steps = tryAddNewFilterStep(parent_node, /*step_changes_the_number_of_rows=*/ true, nodes, allowed_inputs);
-    if (updated_steps)
-        exchange_node->children.front()->cost_estimation = input_estimation;
+    const size_t updated_steps = addNewFilterStepOrThrow(parent_node, nodes, std::move(*split));
+    exchange_node->children.front()->cost_estimation = input_estimation;
     return updated_steps;
 }
 

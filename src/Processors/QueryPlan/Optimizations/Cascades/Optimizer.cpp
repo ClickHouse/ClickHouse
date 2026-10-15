@@ -1,5 +1,7 @@
 #include <Common/ThreadStatus.h>
 #include <Processors/QueryPlan/JoinGraphStep.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/RelationEstimateInfo.h>
 #include <functional>
 #include <map>
 #include <Processors/QueryPlan/Optimizations/Cascades/Optimizer.h>
@@ -564,6 +566,19 @@ QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, Exp
         else
         {
             auto step = cloneStepForBestPlan(*frame.expression);
+            /// The runtime filters are placed on the chosen plan, so they must see its input estimates, not the ones
+            /// the join order optimizer stored for another order (or none, for a join made by a rewrite).
+            if (auto * join_step = typeid_cast<JoinStepLogical *>(step.get()); join_step && frame.expression->inputs.size() == 2)
+            {
+                auto input_rows = [&](size_t input) -> std::optional<UInt64>
+                {
+                    const auto & input_statistics = *memo.getGroup(frame.expression->inputs[input].group_id)->statistics;
+                    if (input_statistics.rows_unknown)
+                        return std::nullopt;
+                    return roundToRowCount(input_statistics.estimated_row_count);
+                };
+                join_step->setChosenInputRowsEstimation(input_rows(0), input_rows(1));
+            }
             for (size_t i = 0; i < frame.child_plans.size(); ++i)
                 addConvertingExpression(*frame.child_plans[i], step->getInputHeaders().at(i));
             result = std::make_unique<QueryPlan>();

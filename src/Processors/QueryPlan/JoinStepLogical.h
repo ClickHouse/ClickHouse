@@ -206,6 +206,14 @@ public:
     bool hasImpreciseEstimate() const { return imprecise_estimate; }
     const std::unordered_map<String, ColumnStats> & getResultColumnStats() const { return result_column_stats; }
     std::optional<UInt64> getInputRowsEstimation(JoinTableSide side) const;
+    /// The input rows of the plan an optimizer chose for this join (Cascades), which can differ from the estimates
+    /// the join order optimizer stored in the relations; unknown stays unknown. Not serialized.
+    void setChosenInputRowsEstimation(std::optional<UInt64> left_rows, std::optional<UInt64> right_rows)
+    {
+        chosen_input_rows = {left_rows, right_rows};
+    }
+    /// The input rows of the chosen plan if they were set, otherwise the stored estimate of the relation.
+    std::optional<UInt64> getChosenInputRowsEstimation(JoinTableSide side) const;
 
     void setOptimized(
         std::optional<UInt64> estimated_rows_ = {},
@@ -347,6 +355,7 @@ protected:
 
     RelationEstimateInfo left_relation;
     RelationEstimateInfo right_relation;
+    std::optional<std::pair<std::optional<UInt64>, std::optional<UInt64>>> chosen_input_rows;
 
     static void setRelationEstimate(RelationEstimateInfo & relation, const RelationEstimateInfo & estimate)
     {

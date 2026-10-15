@@ -358,7 +358,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
 
     if (optimization_settings.join_runtime_filter_min_probe_rows > 0)
     {
-        auto probe_size = join_step->getInputRowsEstimation(JoinTableSide::Left);
+        auto probe_size = join_step->getChosenInputRowsEstimation(JoinTableSide::Left);
         if (probe_size && *probe_size <= optimization_settings.join_runtime_filter_min_probe_rows)
         {
             join_step->setRuntimeFilterDeclinedForSmallProbe();
@@ -686,6 +686,12 @@ void collectAppliedJoinRuntimeFilters(const Stack & stack)
     auto * read_step = typeid_cast<ReadFromMergeTree *>(frame.node->step.get());
     if (!read_step)
         return;
+
+    /// The filters already in the read's PREWHERE: a filter the coordinator placed reaches a task there, and the
+    /// task places no filter of its own for a join it does not run.
+    if (const auto & prewhere_info = read_step->getPrewhereInfo(); prewhere_info && prewhere_info->need_filter)
+        for (const auto & descr : findAppliedRuntimeFilters(prewhere_info->prewhere_actions, prewhere_info->prewhere_column_name))
+            read_step->addJoinRuntimeFilterIndexAnalysisOnDataRead(descr.filter_id, descr.key_column_name, descr.key_column_type);
 
     /// Walk up from the reading step composing the filters through the expression steps,
     /// exactly like optimizePrimaryKeyConditionAndLimit does for the index analysis, so a
