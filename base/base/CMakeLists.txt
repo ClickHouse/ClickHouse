@@ -13,7 +13,6 @@ set (SRCS
     demangle.cpp
     Decimal.cpp
     getAvailableMemoryAmount.cpp
-    getDataTLBEntries.cpp
     getFQDNOrHostName.cpp
     getL2CacheSize.cpp
     getMemoryAmount.cpp

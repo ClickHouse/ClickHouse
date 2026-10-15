@@ -7,7 +7,6 @@
 #include <base/types.h>
 #include <base/PackedStringRef.h>
 #include <base/unaligned.h>
-#include <base/getDataTLBEntries.h>
 #include <base/getL2CacheSize.h>
 #include <Common/CacheLine.h>
 #include <Common/Exception.h>
@@ -340,15 +339,12 @@ const RowDataStore::FieldLayout & RowDataStore::getFieldLayout(size_t input_col_
 
 static constexpr UInt64 MIN_BYTES_IN_BATCH = 32 * 1024;
 static constexpr UInt64 MAX_BYTES_IN_BATCH = 512 * 1024;
-static constexpr size_t MIN_ROWS_IN_BATCH = 256;
-static constexpr size_t MAX_ROWS_IN_BATCH = 2048;
 
 size_t rowStoreBatchSize(size_t row_length)
 {
     chassert(row_length != 0);
     const size_t batch_bytes = std::clamp<size_t>(getL2CacheSize() / 4, MIN_BYTES_IN_BATCH, MAX_BYTES_IN_BATCH);
-    const size_t max_batch_rows = std::clamp<size_t>(getDataTLBEntries() / 4, MIN_ROWS_IN_BATCH, MAX_ROWS_IN_BATCH);
-    return std::clamp<size_t>(batch_bytes / std::max<size_t>(row_length, CH_CACHE_LINE_SIZE), 1, max_batch_rows);
+    return std::max<size_t>(1, batch_bytes / std::max<size_t>(row_length, CH_CACHE_LINE_SIZE));
 }
 
 bool isRowStorageUseful(const ColumnPtr & column, Float64 avg_value_bytes)
