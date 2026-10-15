@@ -47,6 +47,12 @@ namespace
             if (left.grant_option != right.grant_option)
                 return right.grant_option; /// if left is without grant option, and right is with grant option, we assume left < right
 
+            /// Exact table name (`ON db.t`) before wildcard (`ON db.t*`). Otherwise two ProtoElements can
+            /// differ only by `wildcard` while sharing the same `full_name` and `access_flags` (e.g. two INSERT
+            /// rows), and `std::sort` would reorder them in an undefined way (flaky `toString()`).
+            if (left.wildcard != right.wildcard)
+                return left.wildcard < right.wildcard;
+
             return (left.access_flags < right.access_flags);
         }
 

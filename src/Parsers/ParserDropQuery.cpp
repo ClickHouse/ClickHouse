@@ -371,6 +371,56 @@ DROP HANDLER [IF EXISTS] name [ON CLUSTER cluster]
 CREATE HANDLER my_handler URL '/my_handler' AS SELECT version();
 DROP HANDLER my_handler;
 ```
+
+## DROP ENDPOINT {#drop-endpoint}
+
+Deletes a SQL cluster catalog endpoint. Requires [`cluster_metadata`](/guides/oss/deployment-and-scaling/sql-clusters#configuration). The endpoint must not be referenced by any SQL shard.
+
+**Syntax**
+
+```sql
+DROP ENDPOINT [IF EXISTS] name [SYNC]
+```
+
+**Example**
+
+```sql
+DROP ENDPOINT IF EXISTS replica_01;
+```
+
+## DROP SHARD {#drop-shard}
+
+Deletes a SQL cluster catalog shard. Requires [`cluster_metadata`](/guides/oss/deployment-and-scaling/sql-clusters#configuration). The shard must not be referenced by any SQL cluster.
+
+**Syntax**
+
+```sql
+DROP SHARD [IF EXISTS] name [ON CLUSTER cluster_name] [SYNC]
+```
+
+**Example**
+
+```sql
+DROP SHARD IF EXISTS shard_01;
+```
+
+## DROP CLUSTER {#drop-cluster}
+
+Deletes a SQL-managed cluster definition. Requires [`cluster_metadata`](/guides/oss/deployment-and-scaling/sql-clusters#configuration).
+
+**Syntax**
+
+```sql
+DROP CLUSTER [IF EXISTS] name [ON CLUSTER cluster_name] [SYNC]
+```
+
+**Example**
+
+```sql
+DROP CLUSTER IF EXISTS analytics;
+```
+
+See also: [SQL clusters](/guides/oss/deployment-and-scaling/sql-clusters).
 )DOCS_MD",
         .syntax = R"(
 DROP DATABASE [IF EXISTS] db [ON CLUSTER cluster] [SYNC]
@@ -386,6 +436,9 @@ DROP [SETTINGS] PROFILE [IF EXISTS] name [,...] [ON CLUSTER cluster_name] [FROM 
 DROP FUNCTION [IF EXISTS] function_name [ON CLUSTER cluster]
 DROP NAMED COLLECTION [IF EXISTS] name [ON CLUSTER cluster]
 DROP HANDLER [IF EXISTS] name [ON CLUSTER cluster]
+DROP ENDPOINT [IF EXISTS] name [SYNC]
+DROP SHARD [IF EXISTS] name [ON CLUSTER cluster_name] [SYNC]
+DROP CLUSTER [IF EXISTS] name [ON CLUSTER cluster_name] [SYNC]
 )",
         .related = {"DETACH", "TRUNCATE", "UNDROP", "CREATE"},
     };

@@ -40,6 +40,14 @@
 #include <Parsers/ASTAlterNamedCollectionQuery.h>
 #include <Parsers/ASTCreateHandlerQuery.h>
 #include <Parsers/ASTDropHandlerQuery.h>
+#include <Parsers/ASTCreateEndpointQuery.h>
+#include <Parsers/ASTAlterEndpointQuery.h>
+#include <Parsers/ASTDropEndpointQuery.h>
+#include <Parsers/ASTCreateClusterCatalogQuery.h>
+#include <Parsers/ASTAlterShardQuery.h>
+#include <Parsers/ASTDropClusterCatalogQuery.h>
+#include <Parsers/ASTAlterClusterQuery.h>
+#include <Parsers/ASTShowCreateClusterCatalogQuery.h>
 #include <Parsers/ASTTransactionControl.h>
 #include <Parsers/ASTUpdateQuery.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
@@ -219,6 +227,10 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     {
         interpreter_name = "InterpreterExistsQuery";
     }
+    else if (query->as<ASTShowCreateClusterCatalogQuery>())
+    {
+        interpreter_name = "InterpreterShowCreateClusterCatalogQuery";
+    }
     else if (query->as<ASTShowCreateTableQuery>() || query->as<ASTShowCreateViewQuery>() || query->as<ASTShowCreateDatabaseQuery>() || query->as<ASTShowCreateDictionaryQuery>())
     {
         interpreter_name = "InterpreterShowCreateQuery";
@@ -246,6 +258,10 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     else if (query->as<ASTAlterNamedCollectionQuery>())
     {
         interpreter_name = "InterpreterAlterNamedCollectionQuery";
+    }
+    else if (query->as<ASTAlterEndpointQuery>())
+    {
+        interpreter_name = "InterpreterAlterEndpointQuery";
     }
     else if (query->as<ASTCheckTableQuery>() || query->as<ASTCheckAllTablesQuery>() || query->as<ASTCheckDatabaseQuery>())
     {
@@ -295,9 +311,25 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     {
         interpreter_name = "InterpreterMoveAccessEntityQuery";
     }
+    else if (query->as<ASTDropClusterCatalogQuery>())
+    {
+        interpreter_name = "InterpreterDropClusterCatalogQuery";
+    }
+    else if (query->as<ASTAlterShardQuery>())
+    {
+        interpreter_name = "InterpreterAlterShardQuery";
+    }
+    else if (query->as<ASTAlterClusterQuery>())
+    {
+        interpreter_name = "InterpreterAlterClusterQuery";
+    }
     else if (query->as<ASTDropNamedCollectionQuery>())
     {
         interpreter_name = "InterpreterDropNamedCollectionQuery";
+    }
+    else if (query->as<ASTDropEndpointQuery>())
+    {
+        interpreter_name = "InterpreterDropEndpointQuery";
     }
     else if (query->as<ASTGrantQuery>())
     {
@@ -358,6 +390,14 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     else if (query->as<ASTCreateIndexQuery>())
     {
         interpreter_name = "InterpreterCreateIndexQuery";
+    }
+    else if (query->as<ASTCreateEndpointQuery>())
+    {
+        interpreter_name = "InterpreterCreateEndpointQuery";
+    }
+    else if (query->as<ASTCreateClusterCatalogQuery>())
+    {
+        interpreter_name = "InterpreterCreateClusterCatalogQuery";
     }
     else if (query->as<ASTCreateNamedCollectionQuery>())
     {

@@ -10,9 +10,11 @@ doc_type: 'guide'
 
 ClickHouse's Cluster Discovery feature simplifies cluster configuration by allowing nodes to automatically discover and register themselves without the need for explicit definition in the configuration files. This is especially beneficial in cases where the manual definition of each node becomes cumbersome.
 
+To manage cluster topology with SQL DDL instead of XML (or in addition to it), see [SQL clusters](/guides/oss/deployment-and-scaling/sql-clusters).
+
 <Note>
 
-Cluster Discovery requires [ClickHouse Keeper](/guides/sre/keeper/clickhouse-keeper) or ZooKeeper to be configured.
+Cluster Discovery requires [ClickHouse Keeper](/guides/oss/deployment-and-scaling/keeper) or ZooKeeper to be configured.
 In older versions, it was an experimental feature that had to be enabled with the `allow_experimental_cluster_discovery` setting in the configuration file.
 This setting is now obsolete and has no effect.
 </Note>

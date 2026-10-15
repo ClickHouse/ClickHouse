@@ -943,6 +943,25 @@ The `SHOW CREATE MASKING POLICY` statement shows parameters which were used at [
 ```sql title="Syntax"
 SHOW CREATE MASKING POLICY name ON [database.]table
 ```
+
+## SHOW CREATE SHARD | CLUSTER {#show-create-shard--cluster}
+
+Returns the `CREATE` statement for a SQL catalog shard or cluster. Requires [`cluster_metadata`](/guides/oss/deployment-and-scaling/sql-clusters#configuration) and the corresponding `SHOW CREATE SHARD` or `SHOW CREATE CLUSTER` privilege.
+
+### Syntax {#syntax-show-create-shard-cluster}
+
+```sql title="Syntax"
+SHOW CREATE SHARD name
+SHOW CREATE CLUSTER name
+```
+
+### Example {#example-show-create-cluster}
+
+```sql
+SHOW CREATE CLUSTER analytics;
+```
+
+See also: [SQL clusters](/guides/oss/deployment-and-scaling/sql-clusters).
 )DOCS_MD",
         .syntax = R"(
 SHOW [CREATE] TABLE | DICTIONARY | VIEW | DATABASE [db.]name [INTO OUTFILE filename] [FORMAT format]
@@ -954,6 +973,7 @@ SHOW [EXTENDED] {INDEX | INDEXES | INDICES | KEYS } {FROM | IN} <table> [{FROM |
 SHOW PROCESSLIST [INTO OUTFILE filename] [FORMAT format]
 SHOW GRANTS [FOR user1 [, user2 ...]] [WITH IMPLICIT] [FINAL]
 SHOW [CREATE] USER | ROLE | ROW POLICY | MASKING POLICY | QUOTA | [SETTINGS] PROFILE ...
+SHOW CREATE SHARD | CLUSTER name
 SHOW USERS | ROLES | PROFILES | POLICIES | QUOTAS | QUOTA | ACCESS
 SHOW [SETTINGS] PROFILES
 SHOW CLUSTER '<name>' | CLUSTERS [[NOT] LIKE|ILIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]

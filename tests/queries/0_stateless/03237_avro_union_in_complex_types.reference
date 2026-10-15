@@ -24,21 +24,21 @@ alpha	bravo	\N	3.1415926535	charlie	delta	2.7182818284	echo	42	-3.1415926535	[1.
 golf	\N	hotel	india	1.6180339887	3.1415926535	juliet	7.38906	kilo	1000	[-1.6180339887,0,'lima']	{'key3':'mike','key4':1e-9}
 november	oscar	\N	10000000000	papa	\N	\N	-5000000	1.7320508	quebec	[2.7182818284,1729,'romeo']	{'key5':-2.7182818284,'key6':'sierra'}
 tango	\N	uniform	-1.4142135623	-1.6180339887	0.00001	victor	whiskey	-987654340	\N	[-3.1415926535,'xray',31415926535]	{'key7':'yankee','key8':-987.654}
-zulu	alpha1	bravo1	2.718281828	charlie1	\N	-1.7320508075	1000000	delta1	-1.6180339887	[-2.7182818284,123456789,'echo1']	{'key9':9223372036854775807,'key10':NULL}
+zulu	alpha1	bravo1	2.718281828	charlie1	\N	-1.7320508075	1000000	delta1	-1.6180339887	[-2.7182818284,123456789,'echo1']	{'key10':NULL,'key9':9223372036854775807}
 
 == SELECT * WITH CustomSchema ==
 alpha	bravo	\N	3.1415926535	charlie	delta	2.7182818284	echo	42	-3.1415926535	[1.4142135623,'foxtrot',-100]	{'key1':3.1415926535,'key2':NULL}
 golf	\N	hotel	india	1.6180339887	3.1415926535	juliet	7.38906	kilo	1000	[-1.6180339887,0,'lima']	{'key3':'mike','key4':1e-9}
 november	oscar	\N	10000000000	papa	\N	\N	-5000000	1.7320508	quebec	[2.7182818284,1729,'romeo']	{'key5':-2.7182818284,'key6':'sierra'}
 tango	\N	uniform	-1.4142135623	-1.6180339887	0.00001	victor	whiskey	-987654340	\N	[-3.1415926535,'xray',31415926535]	{'key7':'yankee','key8':-987.654}
-zulu	alpha1	bravo1	2.718281828	charlie1	\N	-1.7320508075	1000000	delta1	-1.6180339887	[-2.7182818284,123456789,'echo1']	{'key9':9223372036854775807,'key10':NULL}
+zulu	alpha1	bravo1	2.718281828	charlie1	\N	-1.7320508075	1000000	delta1	-1.6180339887	[-2.7182818284,123456789,'echo1']	{'key10':NULL,'key9':9223372036854775807}
 
 == SELECT * WITH CustomSchema SwappedFirstLastVariant ==
 alpha	bravo	\N	3.1415926535	charlie	delta	2.7182818284	echo	42	-3.1415926535	[1.4142135623,'foxtrot',-100]	{'key1':3.1415926535,'key2':NULL}
 golf	\N	hotel	india	1.6180339887	3.1415926535	juliet	7.38906	kilo	1000	[-1.6180339887,0,'lima']	{'key3':'mike','key4':1e-9}
 november	oscar	\N	10000000000	papa	\N	\N	-5000000	1.7320508	quebec	[2.7182818284,1729,'romeo']	{'key5':-2.7182818284,'key6':'sierra'}
 tango	\N	uniform	-1.4142135623	-1.6180339887	0.00001	victor	whiskey	-987654340	\N	[-3.1415926535,'xray',31415926535]	{'key7':'yankee','key8':-987.654}
-zulu	alpha1	bravo1	2.718281828	charlie1	\N	-1.7320508075	1000000	delta1	-1.6180339887	[-2.7182818284,123456789,'echo1']	{'key9':9223372036854775807,'key10':NULL}
+zulu	alpha1	bravo1	2.718281828	charlie1	\N	-1.7320508075	1000000	delta1	-1.6180339887	[-2.7182818284,123456789,'echo1']	{'key10':NULL,'key9':9223372036854775807}
 
 == SELECT * WITH CustomSchema Float32 instead of Float64 ==
 2
@@ -58,7 +58,7 @@ alpha	bravo	\N	3.1415926535	charlie	delta	2.7182818284	echo	42	-3.1415926535	[1.
 golf	\N	hotel	india	1.6180339887	3.1415926535	juliet	7.38906	kilo	1000	[-1.6180339887,0,'lima']	{'key3':'mike','key4':1e-9}
 november	oscar	\N	10000000000	papa	\N	\N	-5000000	1.7320508	quebec	[2.7182818284,1729,'romeo']	{'key5':-2.7182818284,'key6':'sierra'}
 tango	\N	uniform	-1.4142135623	-1.6180339887	0.00001	victor	whiskey	-987654340	\N	[-3.1415926535,'xray',31415926535]	{'key7':'yankee','key8':-987.654}
-zulu	alpha1	bravo1	2.718281828	charlie1	\N	-1.7320508075	1000000	delta1	-1.6180339887	[-2.7182818284,123456789,'echo1']	{'key9':9223372036854775807,'key10':NULL}
+zulu	alpha1	bravo1	2.718281828	charlie1	\N	-1.7320508075	1000000	delta1	-1.6180339887	[-2.7182818284,123456789,'echo1']	{'key10':NULL,'key9':9223372036854775807}
 
 == TRUNCATE TABLE avro_union_test_03237 ==
 
@@ -69,7 +69,7 @@ alpha	bravo	\N	3.1415926535	charlie	delta	2.7182818284	echo	42	-3.1415926535	[1.
 golf	\N	hotel	india	1.6180339887	3.1415926535	juliet	7.38906	kilo	1000	[-1.6180339887,0,'lima']	{'key3':'mike','key4':1e-9}
 november	oscar	\N	10000000000	papa	\N	\N	-5000000	1.7320508	quebec	[2.7182818284,1729,'romeo']	{'key5':-2.7182818284,'key6':'sierra'}
 tango	\N	uniform	-1.4142135623	-1.6180339887	0.00001	victor	whiskey	-987654340	\N	[-3.1415926535,'xray',31415926535]	{'key7':'yankee','key8':-987.654}
-zulu	alpha1	bravo1	2.718281828	charlie1	\N	-1.7320508075	1000000	delta1	-1.6180339887	[-2.7182818284,123456789,'echo1']	{'key9':9223372036854775807,'key10':NULL}
+zulu	alpha1	bravo1	2.718281828	charlie1	\N	-1.7320508075	1000000	delta1	-1.6180339887	[-2.7182818284,123456789,'echo1']	{'key10':NULL,'key9':9223372036854775807}
 
 == insert into table function file('union_in_complex_types_2.avro') select * from file('union_in_complex_types.avro') ==
 
@@ -78,4 +78,4 @@ alpha	bravo	\N	3.1415926535	charlie	delta	2.7182818284	echo	42	-3.1415926535	[1.
 golf	\N	hotel	india	1.6180339887	3.1415926535	juliet	7.38906	kilo	1000	[-1.6180339887,0,'lima']	{'key3':'mike','key4':1e-9}
 november	oscar	\N	10000000000	papa	\N	\N	-5000000	1.7320508	quebec	[2.7182818284,1729,'romeo']	{'key5':-2.7182818284,'key6':'sierra'}
 tango	\N	uniform	-1.4142135623	-1.6180339887	0.00001	victor	whiskey	-987654340	\N	[-3.1415926535,'xray',31415926535]	{'key7':'yankee','key8':-987.654}
-zulu	alpha1	bravo1	2.718281828	charlie1	\N	-1.7320508075	1000000	delta1	-1.6180339887	[-2.7182818284,123456789,'echo1']	{'key9':9223372036854775807,'key10':NULL}
+zulu	alpha1	bravo1	2.718281828	charlie1	\N	-1.7320508075	1000000	delta1	-1.6180339887	[-2.7182818284,123456789,'echo1']	{'key10':NULL,'key9':9223372036854775807}

@@ -1823,8 +1823,8 @@ public:
 
     void startClusterDiscovery();
 
-    /// Sets custom cluster, but doesn't update configuration
-    void setCluster(const String & cluster_name, const std::shared_ptr<Cluster> & cluster);
+    void removeCluster(const String & cluster_name) const;
+
     void reloadClusterConfig() const;
 
     bool isDistributedCacheServer() const;
@@ -2255,9 +2255,6 @@ private:
     DiskSelectorPtr getDiskSelector(std::lock_guard<std::mutex> & lock) const;
 
     DisksMap getDisksMap(std::lock_guard<std::mutex> & lock) const;
-
-    /// Expect lock for shared->clusters_mutex
-    std::shared_ptr<Clusters> getClustersImpl(std::lock_guard<std::mutex> & lock) const;
 
     WasmModuleManager * initWasmModuleManager();
 

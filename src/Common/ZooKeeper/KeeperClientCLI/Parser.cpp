@@ -100,11 +100,15 @@ bool parseKeeperArg(IParser::Pos & pos, Expected & expected, String & result)
         }
 
         /// Regular tokens that can be part of a bare path or argument.
+        /// ErrorWrongNumber appears for segments like "901e-bc9728110b28" in UUIDs:
+        /// the SQL lexer starts parsing scientific notation at "901e-" and then rejects
+        /// the rest because of the hyphen.
         if (pos->type == TokenType::BareWord
             || pos->type == TokenType::Slash
             || pos->type == TokenType::Dot
             || pos->type == TokenType::Number
-            || pos->type == TokenType::Minus)
+            || pos->type == TokenType::Minus
+            || pos->type == TokenType::ErrorWrongNumber)
         {
             result.append(pos->begin, pos->end);
             last_end = pos->end;

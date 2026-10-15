@@ -97,7 +97,10 @@ public:
     /// the server configuration from values any user could have set with SQL.
     SourceId getSourceId() const { return source_id; }
 
-    virtual String getCreateStatement(bool /*show_secrects*/) { return  {}; }
+    /// Render the `CREATE NAMED COLLECTION` statement that reconstructs this collection.
+    ///
+    /// * `show_secrets` — if false, replace sensitive values with `[HIDDEN]` for user display.
+    virtual String getCreateStatement(bool /*show_secrets*/) { return {}; }
 
     virtual void update(const ASTAlterNamedCollectionQuery & query);
 
@@ -130,7 +133,7 @@ class NamedCollectionFromSQL final : public NamedCollection
 public:
     static MutableNamedCollectionPtr create(const ASTCreateNamedCollectionQuery & query);
 
-    String getCreateStatement(bool show_secrects) override;
+    String getCreateStatement(bool show_secrets) override;
 
     void update(const ASTAlterNamedCollectionQuery & query) override;
 
@@ -150,7 +153,7 @@ public:
         const std::string & collection_path,
         const Keys & keys);
 
-    String getCreateStatement(bool /*show_secrects*/) override { return {}; }
+    String getCreateStatement(bool /*show_secrets*/) override { return {}; }
 
     void update(const ASTAlterNamedCollectionQuery & /*query*/) override { NamedCollection::assertMutable(); }
 
