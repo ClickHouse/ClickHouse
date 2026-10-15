@@ -2538,7 +2538,7 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0, \
-        {"26.10", false, false, "New setting to evaluate minmax skip indexes in vectorized chunks."}) \
+        {"26.11", false, false, "New setting to evaluate minmax skip indexes in vectorized chunks."}) \
     DECLARE(Float, max_streams_to_max_threads_ratio, 1, R"(
 Allows you to use more sources than the number of threads - to more evenly distribute work across threads. It is assumed that this is a temporary solution since it will be possible in the future to make the number of sources equal to the number of threads, but for each source to dynamically select available work for itself.
 )", 0) \
