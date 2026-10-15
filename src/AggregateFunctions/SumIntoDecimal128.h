@@ -86,7 +86,6 @@ ALWAYS_INLINE inline Decimal128 sumIntoDecimal128(const Value * __restrict ptr, 
     static constexpr size_t rows_per_step = lanes / words_per_row;
     static constexpr size_t unroll_steps = sizeof(Value) == sizeof(Int32) ? 8 : 4;
 
-    /// The vector loop processes whole steps; the remaining rows, fewer than one step, are added one by one.
     const size_t vector_rows = count / rows_per_step * rows_per_step;
 
     UInt128Native result = 0;
@@ -126,13 +125,13 @@ ALWAYS_INLINE inline Decimal128 sumIntoDecimal128(const Value * __restrict ptr, 
 
         if constexpr (sizeof(Value) == sizeof(Int32))
         {
-            result += static_cast<UInt128Native>(static_cast<__int128>(static_cast<Int64>(__builtin_reduce_add(s))));
+            result += static_cast<UInt128Native>(static_cast<Int64>(__builtin_reduce_add(s)));
         }
         else if constexpr (sizeof(Value) == sizeof(Int64))
         {
             const Int64 sum_upper = static_cast<Int64>(__builtin_reduce_add(a));
             const UInt64 sum_lower = __builtin_reduce_add(s) - (static_cast<UInt64>(sum_upper) << 32);
-            result += sum_lower + (static_cast<UInt128Native>(static_cast<__int128>(sum_upper)) << 32);
+            result += sum_lower + (static_cast<UInt128Native>(sum_upper) << 32);
         }
         else
         {
@@ -148,13 +147,15 @@ ALWAYS_INLINE inline Decimal128 sumIntoDecimal128(const Value * __restrict ptr, 
         }
     }
 
+    /// Fewer rows than one step: do not let the compiler unroll or vectorize this loop.
+#pragma clang loop vectorize(disable) unroll(disable)
     for (size_t i = vector_rows; i < count; ++i)
     {
         UInt128Native x;
         if constexpr (sizeof(Value) == sizeof(Int128))
             x = __builtin_bit_cast(UInt128Native, ptr[i]);
         else
-            x = static_cast<UInt128Native>(static_cast<__int128>(ptr[i].value));
+            x = static_cast<UInt128Native>(ptr[i].value);
 
         if constexpr (has_condition)
             x &= -static_cast<UInt128Native>((condition_map[i] == 0) == add_if_zero);
