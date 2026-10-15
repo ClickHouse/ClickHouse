@@ -34,12 +34,13 @@ $CLICKHOUSE_CLIENT -q "DROP TABLE ${db}.ns.t2"
 $CLICKHOUSE_CLIENT -q "EXISTS TABLE ${db}.\`ns.t2\`"
 
 echo '-- errors, setting off'
-$CLICKHOUSE_CLIENT -q "USE ${db}.ns" 2>&1 | grep -oF 'Code: 344' | head -n1
-$CLICKHOUSE_CLIENT -q "SHOW TABLES FROM ${db}.ns" 2>&1 | grep -oF 'Code: 344' | head -n1
-$CLICKHOUSE_CLIENT -q "SHOW TABLES FROM \`${db}.ns\`" 2>&1 | grep -oF 'Code: 81' | head -n1
-$CLICKHOUSE_CLIENT -q "SELECT * FROM ${db}.\`ns.x\`.t" 2>&1 | grep -oF 'Code: 62' | head -n1
-$CLICKHOUSE_CLIENT --param_p=ns -q "SELECT * FROM ${db}.{p:Identifier}.t" 2>&1 | grep -oF 'Code: 62' | head -n1
-$CLICKHOUSE_CLIENT -q "SELECT ${db}.ns.t.x FROM ${db}.ns.t SETTINGS enable_analyzer = 1" 2>&1 | grep -oF 'Code: 47' | head -n1
+$CLICKHOUSE_CLIENT -q "USE ${db}.ns" 2>&1 | grep -oE 'Code: [0-9]+' | head -n1
+$CLICKHOUSE_CLIENT -q "SHOW TABLES FROM ${db}.ns" 2>&1 | grep -oE 'Code: [0-9]+' | head -n1
+$CLICKHOUSE_CLIENT -q "SHOW DICTIONARIES FROM ${db}.ns" 2>&1 | grep -oE 'Code: [0-9]+' | head -n1
+$CLICKHOUSE_CLIENT -q "SHOW TABLES FROM \`${db}.ns\`" 2>&1 | grep -oE 'Code: [0-9]+' | head -n1
+$CLICKHOUSE_CLIENT -q "SELECT * FROM ${db}.\`ns.x\`.t" 2>&1 | grep -oE 'Code: [0-9]+' | head -n1
+$CLICKHOUSE_CLIENT --param_p=ns -q "SELECT * FROM ${db}.{p:Identifier}.t" 2>&1 | grep -oE 'Code: [0-9]+' | head -n1
+$CLICKHOUSE_CLIENT -q "SELECT ${db}.ns.t.x FROM ${db}.ns.t SETTINGS enable_analyzer = 1" 2>&1 | grep -oE 'Code: [0-9]+' | head -n1
 
 echo '-- HTTP'
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT x FROM ${db}.ns.t"
@@ -47,7 +48,7 @@ ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT x FROM ${db}.ns.t SETTINGS
 
 echo '-- setting on'
 $CLICKHOUSE_CLIENT --allow_experimental_table_namespaces=1 -q "SELECT x FROM ${db}.ns.t"
-$CLICKHOUSE_CLIENT --allow_experimental_table_namespaces=1 -q "USE ${db}.ns" 2>&1 | grep -oF 'Code: 48' | head -n1
-$CLICKHOUSE_CLIENT --allow_experimental_table_namespaces=1 -q "SHOW TABLES FROM ${db}.ns" 2>&1 | grep -oF 'Code: 48' | head -n1
+$CLICKHOUSE_CLIENT --allow_experimental_table_namespaces=1 -q "USE ${db}.ns" 2>&1 | grep -oE 'Code: [0-9]+' | head -n1
+$CLICKHOUSE_CLIENT --allow_experimental_table_namespaces=1 -q "SHOW TABLES FROM ${db}.ns" 2>&1 | grep -oE 'Code: [0-9]+' | head -n1
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE ${db}.\`ns.t\`"

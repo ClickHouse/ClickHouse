@@ -54,7 +54,8 @@ CurrentDatabaseInfo InterpreterShowTablesQuery::getFromInfo() const
     {
         if (!getContext()->getSettingsRef()[Setting::allow_experimental_table_namespaces])
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Table namespaces are an experimental feature; enable allow_experimental_table_namespaces to use `SHOW TABLES FROM {}`",
+                "Table namespaces are an experimental feature; enable allow_experimental_table_namespaces to use `{} FROM {}`",
+                query.dictionaries ? "SHOW DICTIONARIES" : "SHOW TABLES",
                 identifier->name());
         return CurrentDatabaseInfo(identifier->name());
     }
