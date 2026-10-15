@@ -292,21 +292,32 @@ static void forEachAggregateStateLeaf(
         /// matters for row-expanding carriers such as `Array` and `Map`: their default row has no nested
         /// elements, so their aggregate-state leaves already begin with the first serialized value.
         const auto & original_values = sparse_column->getValuesPtr();
+        /// The cut below copies the whole payload of `values` - every non-default string of a
+        /// `ColumnSparse(String)`, say - and this runs for every column of every chunk, sampled or not. So
+        /// look for the leaves on the original column first, which allocates nothing, and leave a sparse
+        /// column without aggregate states alone. The cut preserves the structure, so the original values
+        /// column has the same leaves in the same order; pair them up positionally to recover each leaf's
+        /// share of the carrier's `byteSize`.
+        const bool values_are_state_leaf = typeid_cast<const ColumnAggregateFunction *>(original_values.get()) != nullptr;
+        std::vector<size_t> original_leaf_bytes;
+        if (!values_are_state_leaf)
+        {
+            original_values->forEachSubcolumnRecursively(
+                [&](const IColumn & subcolumn)
+                {
+                    if (const auto * aggregate_column = typeid_cast<const ColumnAggregateFunction *>(&subcolumn))
+                        original_leaf_bytes.push_back(aggregate_column->byteSize());
+                });
+            if (original_leaf_bytes.empty())
+                return;
+        }
+
         const auto values = original_values->cut(1, original_values->size() - 1);
         if (const auto * aggregate_column = typeid_cast<const ColumnAggregateFunction *>(values.get()))
         {
             callback(*aggregate_column, 0, values, original_values->byteSize());
             return;
         }
-        /// The cut preserves the structure, so the original values column has the same leaves in the same
-        /// order; pair them up positionally to recover each leaf's share of the carrier's `byteSize`.
-        std::vector<size_t> original_leaf_bytes;
-        original_values->forEachSubcolumnRecursively(
-            [&](const IColumn & subcolumn)
-            {
-                if (const auto * aggregate_column = typeid_cast<const ColumnAggregateFunction *>(&subcolumn))
-                    original_leaf_bytes.push_back(aggregate_column->byteSize());
-            });
         size_t leaf_index = 0;
         values->forEachSubcolumnRecursively(
             [&](const IColumn & subcolumn)
