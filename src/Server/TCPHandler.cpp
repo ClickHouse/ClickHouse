@@ -2008,7 +2008,9 @@ void TCPHandler::sendInsertProfileEvents(QueryState & state, bool final_report)
     /// server while it sends the data, so the periodic reports could fill the socket buffers on both sides
     /// and deadlock. But it waits for the end of the query after sending all the data, and charges the
     /// final report to the quotas over profile events of the initiating user.
-    if (query_kind != ClientInfo::QueryKind::INITIAL_QUERY && !final_report)
+    /// Older initiators do not expect even the final report and fail on it.
+    if (query_kind != ClientInfo::QueryKind::INITIAL_QUERY
+        && (!final_report || client_tcp_protocol_version < DBMS_MIN_PROTOCOL_VERSION_WITH_PROFILE_EVENTS_IN_SECONDARY_INSERT))
         return;
 
     sendProfileEvents(state);
