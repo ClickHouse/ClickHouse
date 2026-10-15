@@ -8,6 +8,8 @@
 #if defined(OS_LINUX)
 #include <deque>
 #include <unordered_set>
+
+struct inotify_event;
 #elif defined(OS_DARWIN)
 #include <Storages/FileLog/DarwinDirectoryWatchState.h>
 
@@ -31,7 +33,8 @@ class DirectoryWatcherBase : WithContext
     /// events.
     ///
     /// The directory is watched by the `DirectoryWatchReactor`, one thread for all watchers, and events are
-    /// reported in the context of that thread. On Linux the reactor watches the inotify descriptor of the watcher.
+    /// reported in the context of that thread. On Linux the directory is a watch of the one inotify descriptor of
+    /// the reactor.
     /// macOS has no inotify, so the watcher diffs snapshots of the directory, and the reactor wakes it up with the
     /// events of the `kqueue` and by a timer.
     ///
@@ -121,11 +124,15 @@ private:
     uint32_t watchMask() const;
 
     /// Called by the `DirectoryWatchReactor` thread only.
-    /// Decodes the `size` bytes of events that the reactor has read and hands them to `owner` as soon as every
-    /// rename in them is complete. Returns true if it does not, then the reactor calls `onPairingTimeout` unless
-    /// the rest of the events come in time.
-    bool onEvents(const char * data, size_t size);
+    /// `onEvent` decodes one event of the directory, and `onReadEnd` is called once after all the events of the
+    /// directory that one read of the inotify descriptor has brought. It hands the events to `owner` as soon as
+    /// every rename in them is complete. Returns true if it does not, then the reactor calls `onPairingTimeout`
+    /// unless the rest of the events come in time.
+    void onEvent(const inotify_event & event);
+    bool onReadEnd();
     void onPairingTimeout();
+    /// The kernel has dropped the watch of the directory (`IN_IGNORED`), because it was deleted or unmounted.
+    void onWatchRemoved();
     void commitEvents();
 #elif defined(OS_DARWIN)
     /// The callbacks below are called by the `DirectoryWatchReactor` thread only.

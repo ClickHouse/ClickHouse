@@ -10,6 +10,8 @@
 
 #if defined(OS_LINUX)
 #include <Common/Epoll.h>
+
+struct inotify_event;
 #elif defined(OS_DARWIN)
 #include <sys/event.h>
 #endif
@@ -32,10 +34,12 @@ class DirectoryWatcherBase;
 /// A single thread that multiplexes all `DirectoryWatcherBase` objects, so that the number of threads does not
 /// depend on the number of `FileLog` tables.
 ///
-/// On Linux the reactor watches the inotify descriptors of the watchers with `epoll`. It owns the inotify
-/// descriptor of a watcher: it creates it in `add` and closes it in `remove`. It reads the events into one buffer
-/// that all watchers share and the watchers decode them. The callbacks of a watcher (`DirectoryWatcherBase::onEvents`
-/// and `DirectoryWatcherBase::onPairingTimeout`) run on the reactor thread, one at a time, and must not block.
+/// On Linux the reactor owns one inotify descriptor, which it waits on with `epoll`, so that the number of inotify
+/// instances does not depend on the number of tables either (`fs.inotify.max_user_instances` is only 128 by default).
+/// The directory of each watcher is a watch of that descriptor: `add` adds it and `remove` removes it. The kernel
+/// gives the watchers of the same directory the same watch, and the reactor hands its events to each of them. The
+/// callbacks of a watcher (`DirectoryWatcherBase::onEvent`, `DirectoryWatcherBase::onReadEnd` and
+/// `DirectoryWatcherBase::onPairingTimeout`) run on the reactor thread, one at a time, and must not block.
 ///
 /// On macOS the reactor owns one `kqueue`. It registers the directory descriptor of a watcher in it in `add`, and the
 /// watchers register the descriptors of their files (`watchVnode`), with the registration of the watcher as the user
@@ -73,8 +77,8 @@ public:
     DirectoryWatchReactor(const DirectoryWatchReactor &) = delete;
     DirectoryWatchReactor & operator=(const DirectoryWatchReactor &) = delete;
 
-    /// Starts watching the directory of `watcher`: on Linux it creates an inotify descriptor that watches
-    /// it for the events of the watcher, on macOS it registers the descriptor of the directory that the watcher has
+    /// Starts watching the directory of `watcher`: on Linux it adds a watch of the directory to the inotify
+    /// descriptor of the reactor, on macOS it registers the descriptor of the directory that the watcher has
     /// opened, and the reactor thread makes the first scan of the directory right after, once `add` has returned.
     /// Waits until the reactor thread has done it, and throws what it failed with.
     void add(DirectoryWatcherBase & watcher);
@@ -128,23 +132,38 @@ private:
     struct WatcherRegistration
     {
         explicit WatcherRegistration(DirectoryWatcherBase & watcher_) : watcher(&watcher_) {}
-        ~WatcherRegistration();
 
         WatcherRegistration(const WatcherRegistration &) = delete;
         WatcherRegistration & operator=(const WatcherRegistration &) = delete;
 
         DirectoryWatcherBase * watcher;
-        int fd = -1;
+        /// The watch of the directory in `inotify_fd`, shared by all watchers of the directory. -1 once the kernel has
+        /// dropped it.
+        int wd = -1;
+        /// Its callback has failed in the current read, and it is removed at the end of it.
+        bool failed = false;
+        /// It has got events in the current read, and `onReadEnd` is to be called.
+        bool touched = false;
     };
 
     void runLoop();
     void attachWatcher(DirectoryWatcherBase & watcher, std::unique_ptr<WatcherRegistration> registration);
-    void detachWatcher(DirectoryWatcherBase & watcher, WatcherRegistration & registration);
-    void dispatch(WatcherRegistration & registration);
+    void detachWatcher(WatcherRegistration & registration);
+    /// Reads the events of `inotify_fd` and hands them to the watchers.
+    void dispatchEvents();
+    /// Hands one event to the watchers of its watch, and adds those to `touched`.
+    void dispatchEvent(const inotify_event & event, std::vector<WatcherRegistration *> & touched);
+    void failWatcher(WatcherRegistration & registration);
+    void removeFailedWatchers();
     void flushPairingTimeout();
 
     const std::chrono::milliseconds pairing_timeout;
     Epoll epoll;
+    int inotify_fd = -1;
+
+    /// The registrations of the watchers of each watch of `inotify_fd`.
+    std::unordered_map<int, std::vector<WatcherRegistration *>> registrations_by_wd;
+    std::vector<DirectoryWatcherBase *> failed_watchers;
 
     std::unordered_set<WatcherRegistration *> waiting_for_pairing;
     /// The events are read here and decoded at once, so one buffer serves all the watchers.
@@ -165,7 +184,7 @@ private:
 
     void runLoop();
     void attachWatcher(DirectoryWatcherBase & watcher, std::unique_ptr<WatcherRegistration> registration);
-    void detachWatcher(DirectoryWatcherBase & watcher, WatcherRegistration & registration);
+    void detachWatcher(DirectoryWatcherBase & watcher);
     /// Registers `fd` in the kqueue for the vnode events `fflags`, with `registration` as the user data.
     void registerVnode(WatcherRegistration & registration, int fd, uint32_t fflags);
     void dispatch(WatcherRegistration & registration, int fd, uint32_t fflags);

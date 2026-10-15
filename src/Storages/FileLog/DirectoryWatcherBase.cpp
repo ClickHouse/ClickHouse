@@ -121,70 +121,64 @@ uint32_t DirectoryWatcherBase::watchMask() const
     return mask;
 }
 
-bool DirectoryWatcherBase::onEvents(const char * data, size_t size)
+void DirectoryWatcherBase::onEvent(const inotify_event & event)
 {
-    ssize_t n = size;
-    int i = 0;
-    while (n > 0)
+    const inotify_event * p_event = &event;
+    if (p_event->len == 0)
+        return;
+
+    if ((p_event->mask & IN_CREATE) && (eventMask() & DirectoryWatcherBase::DW_ITEM_ADDED))
     {
-        const struct inotify_event * p_event = reinterpret_cast<const struct inotify_event *>(data + i);
-
-        if (p_event->len > 0)
+        DirectoryWatcherBase::DirectoryEvent ev(p_event->name, DirectoryWatcherBase::DW_ITEM_ADDED);
+        owner.onItemAdded(ev);
+    }
+    if ((p_event->mask & IN_DELETE) && (eventMask() & DirectoryWatcherBase::DW_ITEM_REMOVED))
+    {
+        DirectoryWatcherBase::DirectoryEvent ev(p_event->name, DirectoryWatcherBase::DW_ITEM_REMOVED);
+        owner.onItemRemoved(ev);
+    }
+    if ((p_event->mask & IN_MODIFY) && (eventMask() & DirectoryWatcherBase::DW_ITEM_MODIFIED))
+    {
+        DirectoryWatcherBase::DirectoryEvent ev(p_event->name, DirectoryWatcherBase::DW_ITEM_MODIFIED);
+        owner.onItemModified(ev);
+    }
+    if ((p_event->mask & IN_MOVED_FROM) && (eventMask() & DirectoryWatcherBase::DW_ITEM_MOVED_FROM))
+    {
+        unpaired_move_cookies.push_back(p_event->cookie);
+        if (unpaired_move_cookies.size() > max_unpaired_move_cookies)
+            unpaired_move_cookies.pop_front();
+        DirectoryWatcherBase::DirectoryEvent ev(p_event->name, DirectoryWatcherBase::DW_ITEM_MOVED_FROM, p_event->cookie);
+        owner.onItemMovedFrom(ev);
+    }
+    if (p_event->mask & IN_MOVED_TO)
+    {
+        /// Only a rename inside the directory delivers both halves. An item moved in from elsewhere
+        /// is new here, even if it has the inode of a file just deleted from the directory.
+        auto paired = std::find(unpaired_move_cookies.begin(), unpaired_move_cookies.end(), p_event->cookie);
+        if (paired != unpaired_move_cookies.end())
         {
-            if ((p_event->mask & IN_CREATE) && (eventMask() & DirectoryWatcherBase::DW_ITEM_ADDED))
+            unpaired_move_cookies.erase(paired);
+            if (eventMask() & DirectoryWatcherBase::DW_ITEM_MOVED_TO)
             {
-                DirectoryWatcherBase::DirectoryEvent ev(p_event->name, DirectoryWatcherBase::DW_ITEM_ADDED);
-                owner.onItemAdded(ev);
+                DirectoryWatcherBase::DirectoryEvent ev(p_event->name, DirectoryWatcherBase::DW_ITEM_MOVED_TO, p_event->cookie);
+                owner.onItemMovedTo(ev);
             }
-            if ((p_event->mask & IN_DELETE) && (eventMask() & DirectoryWatcherBase::DW_ITEM_REMOVED))
-            {
-                DirectoryWatcherBase::DirectoryEvent ev(p_event->name, DirectoryWatcherBase::DW_ITEM_REMOVED);
-                owner.onItemRemoved(ev);
-            }
-            if ((p_event->mask & IN_MODIFY) && (eventMask() & DirectoryWatcherBase::DW_ITEM_MODIFIED))
-            {
-                DirectoryWatcherBase::DirectoryEvent ev(p_event->name, DirectoryWatcherBase::DW_ITEM_MODIFIED);
-                owner.onItemModified(ev);
-            }
-            if ((p_event->mask & IN_MOVED_FROM) && (eventMask() & DirectoryWatcherBase::DW_ITEM_MOVED_FROM))
-            {
-                unpaired_move_cookies.push_back(p_event->cookie);
-                if (unpaired_move_cookies.size() > max_unpaired_move_cookies)
-                    unpaired_move_cookies.pop_front();
-                DirectoryWatcherBase::DirectoryEvent ev(p_event->name, DirectoryWatcherBase::DW_ITEM_MOVED_FROM, p_event->cookie);
-                owner.onItemMovedFrom(ev);
-            }
-            if (p_event->mask & IN_MOVED_TO)
-            {
-                /// Only a rename inside the directory delivers both halves. An item moved in from elsewhere
-                /// is new here, even if it has the inode of a file just deleted from the directory.
-                auto paired = std::find(unpaired_move_cookies.begin(), unpaired_move_cookies.end(), p_event->cookie);
-                if (paired != unpaired_move_cookies.end())
-                {
-                    unpaired_move_cookies.erase(paired);
-                    if (eventMask() & DirectoryWatcherBase::DW_ITEM_MOVED_TO)
-                    {
-                        DirectoryWatcherBase::DirectoryEvent ev(p_event->name, DirectoryWatcherBase::DW_ITEM_MOVED_TO, p_event->cookie);
-                        owner.onItemMovedTo(ev);
-                    }
-                }
-                else if (eventMask() & DirectoryWatcherBase::DW_ITEM_ADDED)
-                {
-                    DirectoryWatcherBase::DirectoryEvent ev(p_event->name, DirectoryWatcherBase::DW_ITEM_ADDED);
-                    owner.onItemAdded(ev);
-                }
-            }
-
-            if (p_event->mask & IN_MOVED_FROM)
-                unpaired_moves.insert(p_event->cookie);
-            if (p_event->mask & IN_MOVED_TO)
-                unpaired_moves.erase(p_event->cookie);
         }
-
-        i += sizeof(inotify_event) + p_event->len;
-        n -= sizeof(inotify_event) + p_event->len;
+        else if (eventMask() & DirectoryWatcherBase::DW_ITEM_ADDED)
+        {
+            DirectoryWatcherBase::DirectoryEvent ev(p_event->name, DirectoryWatcherBase::DW_ITEM_ADDED);
+            owner.onItemAdded(ev);
+        }
     }
 
+    if (p_event->mask & IN_MOVED_FROM)
+        unpaired_moves.insert(p_event->cookie);
+    if (p_event->mask & IN_MOVED_TO)
+        unpaired_moves.erase(p_event->cookie);
+}
+
+bool DirectoryWatcherBase::onReadEnd()
+{
     /// The IN_MOVED_FROM and IN_MOVED_TO of one rename can come in two reads (see inotify(7)): hold the events back
     /// until every IN_MOVED_FROM has its IN_MOVED_TO, or until the reactor gives up waiting for it.
     if (!unpaired_moves.empty())
@@ -198,6 +192,11 @@ void DirectoryWatcherBase::onPairingTimeout()
 {
     unpaired_moves.clear();
     commitEvents();
+}
+
+void DirectoryWatcherBase::onWatchRemoved()
+{
+    owner.onError(Exception(ErrorCodes::IO_SETUP_ERROR, "Directory {} is not watched anymore: it was deleted or unmounted", path));
 }
 
 void DirectoryWatcherBase::commitEvents()
