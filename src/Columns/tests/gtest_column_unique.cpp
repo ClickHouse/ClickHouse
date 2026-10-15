@@ -244,18 +244,19 @@ TEST(ColumnUnique, NullableViewIsRestoredWhenItsReconstructionHitsMemoryLimit)
         /// The callback itself succeeds, but every allocation after it fails, so the
         /// re-creation of the nullable view after the callback hits the memory limit.
         /// The exception must propagate instead of calling `std::terminate`.
+        int error_code = 0;
         try
         {
             column_unique->forEachMutableSubcolumn([](IColumn::WrappedPtr &)
             {
                 total_memory_tracker.setHardLimit(total_memory_tracker.get());
             });
-            FAIL() << "Expected MEMORY_LIMIT_EXCEEDED";
         }
         catch (const Exception & e)
         {
-            ASSERT_EQ(e.code(), ErrorCodes::MEMORY_LIMIT_EXCEEDED);
+            error_code = e.code();
         }
+        ASSERT_EQ(error_code, ErrorCodes::MEMORY_LIMIT_EXCEEDED);
     }
 
     /// The nullable view and `reverse_index` must be valid after the exception.
