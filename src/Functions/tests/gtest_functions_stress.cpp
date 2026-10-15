@@ -2363,7 +2363,12 @@ String formatStackTrace(const StackTrace & stack_trace)
         const void * frame = stack_trace.getFramePointers()[i];
         const auto resolved = StackTrace::tryResolveAddress(frame);
         const SymbolIndex::Symbol * symbol = symbol_index ? symbol_index->findSymbol(frame) : nullptr;
-        res += fmt::format("\n{}. {} {}", i, resolved ? resolved->address : frame, symbol ? demangle(symbol->name) : "?");
+        String suffix;
+        if (resolved && resolved->kind == StackTrace::AddressKind::OtherObject)
+            suffix = fmt::format(" in {}", resolved->object);
+        else if (resolved && resolved->kind == StackTrace::AddressKind::UnknownMapping)
+            suffix = " in <unknown>";
+        res += fmt::format("\n{}. {}{} {}", i, resolved ? resolved->address : frame, suffix, symbol ? demangle(symbol->name) : "?");
     }
     return res;
 }
@@ -2540,8 +2545,10 @@ TEST(FunctionsStress, stress)
                 age = fmt::format(" for {:.1f}s", std::chrono::duration<double>(std::chrono::steady_clock::now() - stuck_operation->iteration_start_time).count());
             LOG_ERROR(logger, "Thread is stuck{} while {}", age, stuck_operation->describe());
 #if defined(OS_LINUX)
-            if (stuck_stack)
+            if (stuck_stack && stuck_stack->getSize() > stuck_stack->getOffset())
                 LOG_ERROR(logger, "Stack trace of the stuck thread:{}", formatStackTrace(*stuck_stack));
+            else if (stuck_stack)
+                LOG_ERROR(logger, "Could not unwind the stack of the stuck thread");
             else if (stack_requested)
                 LOG_ERROR(logger, "The stuck thread did not answer the stack trace request within 10 seconds");
 #endif
