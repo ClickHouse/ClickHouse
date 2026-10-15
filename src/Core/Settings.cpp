@@ -696,7 +696,7 @@ When greater than `1`, the matching files are listed by walking the "directory" 
 
 A value of `1` (the default) keeps the previous serial listing behavior. Recursive globs (`**`) always use serial listing.
 )", 0, \
-        {"26.10", 1, 1, "New setting to list globbed paths on S3-compatible object storage (the `s3` and `s3Cluster` table functions, the `S3` table engine, and their `gcs`, `cosn`, `oss` aliases) with several concurrent `ListObjects` requests by walking the common-prefix tree in parallel."}) \
+        {"26.11", 1, 1, "New setting to list globbed paths on S3-compatible object storage (the `s3` and `s3Cluster` table functions, the `S3` table engine, and their `gcs`, `cosn`, `oss` aliases) with several concurrent `ListObjects` requests by walking the common-prefix tree in parallel."}) \
     DECLARE(Bool, s3_use_adaptive_timeouts, S3::DEFAULT_USE_ADAPTIVE_TIMEOUTS, R"(
 When set to `true` than for all s3 requests first two attempts are made with low send and receive timeouts.
 When set to `false` than all attempts are made with identical timeouts.
