@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# All spellings of an `information_schema` view (lowercase and UPPERCASE, in both databases)
-# are predefined tables, so RESTORE must skip them instead of comparing their definition
-# with the one recorded in the backup: server-owned view definitions change between versions,
-# and a mismatch would otherwise fail the whole RESTORE with CANNOT_RESTORE_TABLE.
-# The backup metadata is edited on disk to simulate a backup taken on a different version.
+set -e
+
+# `BACKUP DATABASE` includes every `information_schema` view under both name casings
+# in both databases. `RESTORE DATABASE` must treat each view as predefined even when
+# its saved definition differs from the current version; otherwise a newer view
+# definition would fail the whole `RESTORE` with `CANNOT_RESTORE_TABLE`.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -23,22 +24,27 @@ cat > "${CONFIG}" <<EOF
 EOF
 
 ${CLICKHOUSE_LOCAL} --config-file "${CONFIG}" --path "${WORK_DIR}/data" -q "
-BACKUP TABLE information_schema.user_privileges, TABLE information_schema.USER_PRIVILEGES,
-       TABLE INFORMATION_SCHEMA.user_privileges, TABLE INFORMATION_SCHEMA.USER_PRIVILEGES
+BACKUP DATABASE information_schema, DATABASE INFORMATION_SCHEMA
 TO File('${WORK_DIR}/backups/b1') FORMAT Null;
 "
 
-# Simulate a backup taken on a version with a different view definition
-# (the replacement preserves the file size recorded in the backup metadata).
-sed -i "s/'def'/'dex'/" "${WORK_DIR}"/backups/b1/metadata/information_schema/*.sql "${WORK_DIR}"/backups/b1/metadata/INFORMATION_SCHEMA/*.sql
-# Guard against the test silently degrading into restoring an unmodified backup:
-grep -q "'dex'" "${WORK_DIR}"/backups/b1/metadata/information_schema/user_privileges.sql || echo "sed did not change the view definition"
+# Simulate changed view definitions without changing the sizes recorded in the backup.
+metadata_files=("${WORK_DIR}"/backups/b1/metadata/{information_schema,INFORMATION_SCHEMA}/*.sql)
+if [ "${#metadata_files[@]}" -ne 56 ]; then
+    echo "Expected 56 view definitions, found ${#metadata_files[@]}" >&2
+    exit 1
+fi
+for metadata_file in "${metadata_files[@]}"; do
+    if ! grep -q 'SQL SECURITY INVOKER' "$metadata_file"; then
+        echo "Missing SQL SECURITY INVOKER in $metadata_file" >&2
+        exit 1
+    fi
+    sed -i 's/SQL SECURITY INVOKER/SQL SECURITY DEFINER/' "$metadata_file"
+done
 
 ${CLICKHOUSE_LOCAL} --config-file "${CONFIG}" --path "${WORK_DIR}/data_restored" -q "
-RESTORE TABLE information_schema.user_privileges FROM File('${WORK_DIR}/backups/b1') FORMAT Null;
-RESTORE TABLE information_schema.USER_PRIVILEGES FROM File('${WORK_DIR}/backups/b1') FORMAT Null;
-RESTORE TABLE INFORMATION_SCHEMA.user_privileges FROM File('${WORK_DIR}/backups/b1') FORMAT Null;
-RESTORE TABLE INFORMATION_SCHEMA.USER_PRIVILEGES FROM File('${WORK_DIR}/backups/b1') FORMAT Null;
+RESTORE DATABASE information_schema, DATABASE INFORMATION_SCHEMA
+FROM File('${WORK_DIR}/backups/b1') FORMAT Null;
 SELECT 'OK';
 "
 
