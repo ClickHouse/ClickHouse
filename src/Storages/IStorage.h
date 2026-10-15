@@ -445,6 +445,14 @@ public:
     /// both storages must stand for the same table.
     void takeTableLocksFrom(const IStorage & other);
 
+    /// Whether `table` is held by nobody but the reference passed here, e.g. a detached or dropped
+    /// table that may now be destroyed, or another instance of which may now be attached.
+    ///
+    /// For a lazily loaded table that has been loaded, the storage it stands for must not be held by
+    /// anybody but the proxy either: a query may have switched from the proxy to that storage while
+    /// the database still held the proxy, and the catalog only tracks the object it held.
+    static bool isTableNotInUse(const StoragePtr & table);
+
     /** Returns stage to which query is going to be processed in read() function.
       * (Normally, the function only reads the columns from the list, but in other cases,
       *  for example, the request can be partially processed on a remote server, or an aggregate projection.)

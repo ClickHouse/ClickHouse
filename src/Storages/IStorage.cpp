@@ -22,6 +22,8 @@
 #include <Backups/IBackup.h>
 #include <Planner/collectSelectedColumnsFromTable.h>
 
+#include <base/isSharedPtrUnique.h>
+
 #include <algorithm>
 
 
@@ -184,6 +186,16 @@ void IStorage::takeTableLocksFrom(const IStorage & other)
     is_dropped.flag = other.is_dropped.flag;
     is_detached.flag = other.is_detached.flag;
     is_being_restarted.flag = other.is_being_restarted.flag;
+}
+
+bool IStorage::isTableNotInUse(const StoragePtr & table)
+{
+    if (!isSharedPtrUnique(table))
+        return false;
+
+    /// The proxy holds one reference to the storage it stands for, and `loaded` is the other one.
+    auto loaded = table->getLoadedLazyTable();
+    return !loaded || loaded.use_count() == 2;
 }
 
 TableExclusiveLockHolder IStorage::lockExclusively(const String & query_id, const Poco::Timespan & acquire_timeout)
