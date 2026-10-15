@@ -3225,8 +3225,8 @@ void KeyCondition::analyzeKeyExpressionForSetIndex(const RPNBuilderTreeNode & ar
 }
 
 /// True when casting the KEY into `set_element_type` -- the direction runtime membership takes --
-/// can map two distinct key values onto one set value silently. Detects only the classes below, and
-/// the callers consult it only for a `Nullable` set element. `is_element` marks a pair nested in a composite.
+/// can map two distinct key values onto one set value silently. Detects only the classes below.
+/// `is_element` marks a pair nested in a composite.
 static bool keyToSetConversionMayCollapse(const DataTypePtr & key_type, const DataTypePtr & set_element_type, bool is_element)
 {
     auto key_unwrapped = removeLowCardinalityAndNullable(key_type);
@@ -3430,6 +3430,11 @@ static bool tryPrepareSetColumnsForIndex(
             if (isStringOrFixedString(predicate_column_type) && !isString(element_type) && !isNothing(element_type)
                 && !element_type->equals(*predicate_column_type))
                 return false;
+
+            /// A cast that merges distinct keys, such as `DateTime` into `Date`, leaves the set holding one of
+            /// them, and a relaxed atom would still prune the rest.
+            if (keyToSetConversionMayCollapse(predicate_column_type, element_type, /*is_element=*/ false))
+                return false;
         }
 
         if (set_transforming_dags[indexes_mapping_index].has_value())
@@ -3437,12 +3442,6 @@ static bool tryPrepareSetColumnsForIndex(
             ColumnPtr transformed_set_column;
             DataTypePtr transformed_set_type;
             const auto & set_transforming_dag = *set_transforming_dags[indexes_mapping_index];
-
-            /// Membership casts the column the transform reads, not the key, into the set's type.
-            if (isNullableOrLowCardinalityNullable(set_element_type)
-                && keyToSetConversionMayCollapse(set_transforming_dag.input_type, set_element_type, /*is_element=*/ false))
-                return false;
-
             bool dag_cast_is_exact = true;
             if (!applyDeterministicDagToColumn(
                     set_column,
@@ -3487,12 +3486,6 @@ static bool tryPrepareSetColumnsForIndex(
             }
 
             set_element_type = removeNullable(set_element_type);
-
-            /// A key-to-set cast that maps two distinct keys onto one set value makes the pruning set
-            /// an UNDER-approximation, which `relaxed` cannot repair: it only ever forces
-            /// `can_be_false = true` and never widens `can_be_true`.
-            if (keyToSetConversionMayCollapse(key_column_type, set_element_type, /*is_element=*/ false))
-                return false;
 
             const auto * source_nullable_column = typeid_cast<const ColumnNullable *>(transformed_set_columns[set_element_index].get());
             if (!source_nullable_column)
