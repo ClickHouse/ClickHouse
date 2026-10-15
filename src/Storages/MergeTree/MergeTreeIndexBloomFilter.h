@@ -120,7 +120,8 @@ private:
         const DataTypePtr & type,
         const ColumnPtr & column,
         RPNElement & out,
-        const ActionsDAG & indexed_expression_dag);
+        const ActionsDAG & indexed_expression_dag,
+        size_t & work_remaining);
 
     bool traverseTreeEquals(
         const String & function_name,

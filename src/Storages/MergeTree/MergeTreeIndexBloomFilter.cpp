@@ -225,7 +225,9 @@ struct ExpressionMatchBudget
     static constexpr size_t max_constant_bytes = 4096;
     static constexpr size_t max_array_elements = 256;
 
-    size_t remaining = max_work;
+    size_t & remaining;
+
+    explicit ExpressionMatchBudget(size_t & remaining_) : remaining(remaining_) {}
 
     bool consume(size_t amount = 1)
     {
@@ -692,98 +694,6 @@ bool compareSupportedConstant(
     return false;
 }
 
-bool compareFixedWidthArrayConstant(
-    const ActionsDAG::Node & left,
-    const ActionsDAG::Node & right,
-    ExpressionMatchBudget & budget)
-{
-    if (!left.column || !right.column || left.is_runtime_filter_id || right.is_runtime_filter_id
-        || left.is_masked_secret || right.is_masked_secret
-        || !left.is_deterministic_constant || !right.is_deterministic_constant
-        || isArrayOfStringType(left.result_type) || isArrayOfStringType(right.result_type))
-        return false;
-
-    const auto * left_constant = typeid_cast<const ColumnConst *>(left.column.get());
-    const auto * right_constant = typeid_cast<const ColumnConst *>(right.column.get());
-    return left_constant && right_constant
-        && compareFixedWidthArrayStorage(
-            left.result_type,
-            right.result_type,
-            left_constant->getDataColumn(),
-            right_constant->getDataColumn(),
-            budget);
-}
-
-bool isColumnConst(const ActionsDAG::Node & node)
-{
-    return node.column && typeid_cast<const ColumnConst *>(node.column.get());
-}
-
-bool hasSafeFixedWidthArrayConstantSubtree(const ActionsDAG::Node * root, ExpressionMatchBudget & budget)
-{
-    std::vector<const ActionsDAG::Node *> pending{root};
-    std::unordered_set<const ActionsDAG::Node *> visited;
-
-    while (!pending.empty())
-    {
-        const auto * node = pending.back();
-        pending.pop_back();
-        if (!node || !budget.consume())
-            return false;
-
-        if (!visited.emplace(node).second)
-            continue;
-
-        /// Check markers before following aliases: normalization otherwise hides tags on alias nodes.
-        if (!node->is_deterministic_constant || node->is_runtime_filter_id || node->is_masked_secret)
-            return false;
-
-        switch (node->type)
-        {
-            case ActionsDAG::ActionType::COLUMN:
-                if (!node->children.empty() || !isColumnConst(*node))
-                    return false;
-                break;
-            case ActionsDAG::ActionType::ALIAS:
-                if (node->children.size() != 1 || !node->children[0] || !budget.consume()
-                    || !sameType(node->result_type, node->children[0]->result_type, budget))
-                    return false;
-                pending.push_back(node->children[0]);
-                break;
-            case ActionsDAG::ActionType::FUNCTION:
-            {
-                const auto & function = node->function_base;
-                if (!isColumnConst(*node) || !function || node->is_function_compiled
-                    || !function->isSuitableForConstantFolding() || function->isStateful()
-                    || !function->isDeterministic() || !function->isDeterministicInScopeOfQuery()
-                    || function->hasObservableSideEffects()
-                    || !sameType(function->getResultType(), node->result_type, budget))
-                    return false;
-
-                const auto & argument_types = function->getArgumentTypes();
-                if (argument_types.size() != node->children.size()
-                    || !budget.consume(argument_types.size()) || !budget.consume(node->children.size()))
-                    return false;
-
-                for (size_t i = 0; i < node->children.size(); ++i)
-                {
-                    const auto * child = node->children[i];
-                    if (!child || !sameType(argument_types[i], child->result_type, budget))
-                        return false;
-                    pending.push_back(child);
-                }
-                break;
-            }
-            case ActionsDAG::ActionType::INPUT:
-            case ActionsDAG::ActionType::ARRAY_JOIN:
-            case ActionsDAG::ActionType::PLACEHOLDER:
-                return false;
-        }
-    }
-
-    return true;
-}
-
 const FunctionCreator * getCanonicalArrayFunctionHandle(const String & function_name)
 {
     static const auto handles = []
@@ -957,20 +867,6 @@ bool structurallyMatchesIndexedExpression(
         const auto * right = normalizeExpressionNode(pair.index_node, budget);
         if (!left || !right)
             return false;
-
-        if (mode == ExpressionMatchMode::ArrayJoinWrapper
-            && isSupportedBloomFilterArrayType(left->result_type) && isSupportedBloomFilterArrayType(right->result_type)
-            && !isArrayOfStringType(left->result_type) && !isArrayOfStringType(right->result_type)
-            && isColumnConst(*left) && isColumnConst(*right))
-        {
-            if (!hasSafeFixedWidthArrayConstantSubtree(pair.query_node, budget)
-                || !hasSafeFixedWidthArrayConstantSubtree(pair.index_node, budget)
-                || !sameType(left->result_type, right->result_type, budget)
-                || !compareFixedWidthArrayConstant(*left, *right, budget))
-                return false;
-            continue;
-        }
-
         if (!visited.emplace(ExpressionNodePair{left, right}).second)
             continue;
 
@@ -1035,6 +931,57 @@ bool matchesIndexedOutput(
     return structurallyMatchesIndexedExpression(query_node, outputs[position], mode, budget);
 }
 
+bool findMatchingArrayJoinOutputByPosition(
+    const ActionsDAG::Node * query_node,
+    const ActionsDAG & indexed_expression_dag,
+    const Block & header,
+    String & column_name,
+    ExpressionMatchBudget & budget)
+{
+    const auto & outputs = indexed_expression_dag.getOutputs();
+    if (!query_node || !query_node->result_type
+        || !typeid_cast<const DataTypeArray *>(query_node->result_type.get())
+        || !isSupportedBloomFilterArrayType(query_node->result_type)
+        || outputs.size() != header.columns())
+        return false;
+
+    for (size_t position = 0; position < outputs.size(); ++position)
+    {
+        if (!budget.consume())
+            return false;
+
+        const auto & header_column = header.getByPosition(position);
+        if (!budget.consume(header_column.name.size()))
+            return false;
+
+        const auto * header_array_type = header_column.type
+            ? typeid_cast<const DataTypeArray *>(header_column.type.get()) : nullptr;
+        const auto * output = outputs[position];
+        if (!header_array_type || !isSupportedBloomFilterArrayType(header_column.type)
+            || !output || !output->result_type
+            || !typeid_cast<const DataTypeArray *>(output->result_type.get())
+            || !isSupportedBloomFilterArrayType(output->result_type))
+            continue;
+
+        /// Preserve the exact header/output positional association even if a malformed header repeats a name.
+        if (header.getPositionByName(header_column.name) != position)
+            continue;
+
+        if (matchesIndexedOutput(
+                query_node, indexed_expression_dag, header, header_column.name,
+                ExpressionMatchMode::ArrayJoinWrapper, budget))
+        {
+            column_name = header_column.name;
+            return true;
+        }
+
+        if (budget.remaining == 0)
+            return false;
+    }
+
+    return false;
+}
+
 bool getDirectArrayJoinIndexColumn(
     const RPNBuilderTreeNode & tree_node,
     const Block & header,
@@ -1050,7 +997,12 @@ bool getDirectArrayJoinIndexColumn(
 
     column_name = tree_node.getColumnName();
     if (!header.has(column_name))
-        return false;
+    {
+        /// Query DAG and stored-index sample-block names can differ across analyzer paths.
+        /// Only the array-join wrapper path may recover by matching aligned outputs structurally.
+        return findMatchingArrayJoinOutputByPosition(
+            tree_node.getDAGNode(), indexed_expression_dag, header, column_name, budget);
+    }
 
     const DataTypePtr & index_type = header.getByPosition(header.getPositionByName(column_name)).type;
     return typeid_cast<const DataTypeArray *>(index_type.get())
@@ -1606,7 +1558,10 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(
                 if (prepared_set->hasExplicitSetElements())
                 {
                     const auto prepared_info = getPreparedSetInfo(prepared_set);
-                    if (traverseTreeIn(function_name, lhs_argument, prepared_set, prepared_info.type, prepared_info.column, out, indexed_expression_dag))
+                    size_t expression_match_work_remaining = ExpressionMatchBudget::max_work;
+                    if (traverseTreeIn(
+                            function_name, lhs_argument, prepared_set, prepared_info.type, prepared_info.column,
+                            out, indexed_expression_dag, expression_match_work_remaining))
                         return true;
                 }
             }
@@ -1667,11 +1622,15 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
     const DataTypePtr & type,
     const ColumnPtr & column,
     RPNElement & out,
-    const ActionsDAG & indexed_expression_dag)
+    const ActionsDAG & indexed_expression_dag,
+    size_t & work_remaining)
 {
+    ExpressionMatchBudget expression_match_budget(work_remaining);
+    if (!expression_match_budget.consume())
+        return false;
+
     const auto key_node = unwrapLosslessConversion(wrapped_key_node);
     auto key_node_column_name = key_node.getColumnName();
-    ExpressionMatchBudget expression_match_budget;
 
     if (header.has(key_node_column_name)
         && matchesIndexedOutput(
@@ -1766,8 +1725,14 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
             const auto & sub_data_types = tuple_data_type->getElements();
 
             for (size_t index = 0; index < key_node_function_arguments_size; ++index)
+            {
+                if (work_remaining == 0)
+                    break;
+
                 match_with_subtype |= traverseTreeIn(
-                    function_name, key_node_function.getArgumentAt(index), nullptr, sub_data_types[index], sub_columns[index], out, indexed_expression_dag);
+                    function_name, key_node_function.getArgumentAt(index), nullptr, sub_data_types[index], sub_columns[index],
+                    out, indexed_expression_dag, work_remaining);
+            }
 
             return match_with_subtype;
         }

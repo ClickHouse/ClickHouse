@@ -46,3 +46,9 @@ UUID array wrapper selective needle preserves typed rows	1
 UUID array wrapper selective needle prunes 1/16	1
 UUID array wrapper mismatch preserves complete typed rows	1
 UUID array wrapper mismatch declines named index, reads 16/16	1
+FixedString(4) constant append preserves typed padded rows	1
+FixedString(4) constant append prunes 1/16	1
+FixedString(4) unequal-byte append preserves all typed rows	1
+FixedString(4) unequal-byte append declines index and reads 16/16	1
+FixedString(4) embedded-NUL unequal suffix preserves all typed rows	1
+FixedString(4) embedded-NUL unequal suffix declines index and reads 16/16	1

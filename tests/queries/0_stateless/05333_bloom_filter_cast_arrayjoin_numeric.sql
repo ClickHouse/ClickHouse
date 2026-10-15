@@ -458,8 +458,10 @@ CREATE TABLE t_bf_fixed_array_wrappers
     id UInt64,
     dt_values Array(DateTime64(3, 'UTC')),
     uuid_values Array(UUID),
+    fixed_values Array(FixedString(4)),
     INDEX idx_fixed_dt64_values arrayConcat(arrayDistinct(dt_values), [toDateTime64('2020-01-01 00:00:00.999', 3, 'UTC')]) TYPE bloom_filter(0.000001) GRANULARITY 1,
-    INDEX idx_fixed_uuid_values arrayConcat(arrayDistinct(uuid_values), [toUUID('00000000-0000-0000-0000-000000000999')]) TYPE bloom_filter(0.000001) GRANULARITY 1
+    INDEX idx_fixed_uuid_values arrayConcat(arrayDistinct(uuid_values), [toUUID('00000000-0000-0000-0000-000000000999')]) TYPE bloom_filter(0.000001) GRANULARITY 1,
+    INDEX idx_fixed_string_values arrayConcat(arrayDistinct(fixed_values), [toFixedString('Z', 4)]) TYPE bloom_filter(0.000001) GRANULARITY 1
 )
 ENGINE = MergeTree
 ORDER BY id
@@ -472,7 +474,10 @@ SELECT toUInt64(number + 1),
           [toDateTime64('2020-01-01 00:00:00.000', 3, 'UTC'), toDateTime64('2020-01-01 00:00:00.000', 3, 'UTC')]),
        if(number = 2,
           [toUUID('00000000-0000-0000-0000-000000000103'), toUUID('00000000-0000-0000-0000-000000000103')],
-          [toUUID('00000000-0000-0000-0000-000000000000'), toUUID('00000000-0000-0000-0000-000000000000')])
+          [toUUID('00000000-0000-0000-0000-000000000000'), toUUID('00000000-0000-0000-0000-000000000000')]),
+       if(number = 2,
+          [toFixedString('A', 4), toFixedString('A', 4)],
+          [toFixedString('B', 4), toFixedString('B', 4)])
 FROM numbers(16);
 
 WITH
@@ -584,6 +589,130 @@ FROM (EXPLAIN indexes = 1 SELECT id, value FROM t_bf_fixed_array_wrappers
       WHERE value IN (toUUID('00000000-0000-0000-0000-000000000998'))
       SETTINGS query_plan_lower_array_join_function = 1, query_plan_enable_optimizations = 1,
                query_plan_fuse_filter_into_array_join = 1, max_rows_to_read = 16);
+
+WITH
+    (SELECT arraySort(groupArray((toUInt64(id), value, hex(value), toTypeName(value))))
+     FROM t_bf_fixed_array_wrappers
+     ARRAY JOIN arrayConcat(arrayDistinct(fixed_values), [toFixedString('Z', 4)]) AS value
+     WHERE value IN (toFixedString('A', 4))
+     SETTINGS query_plan_lower_array_join_function = 1,
+              query_plan_enable_optimizations = 1,
+              query_plan_fuse_filter_into_array_join = 1,
+              use_skip_indexes = 0,
+              max_rows_to_read = 128) AS full_scan,
+    (SELECT arraySort(groupArray((toUInt64(id), value, hex(value), toTypeName(value))))
+     FROM t_bf_fixed_array_wrappers
+     ARRAY JOIN arrayConcat(arrayDistinct(fixed_values), [toFixedString('Z', 4)]) AS value
+     WHERE value IN (toFixedString('A', 4))
+     SETTINGS query_plan_lower_array_join_function = 1,
+              query_plan_enable_optimizations = 1,
+              query_plan_fuse_filter_into_array_join = 1,
+              use_skip_indexes = 1,
+              max_rows_to_read = 128) AS indexed
+SELECT 'FixedString(4) constant append preserves typed padded rows',
+       toUInt8(indexed = full_scan
+       AND full_scan = [(toUInt64(3), toFixedString('A', 4), '41000000', 'FixedString(4)')]);
+
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_fixed_string_values') > 0, plan) AS name_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, name_row + 1, 128)) AS granules_row,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'FixedString(4) constant append prunes 1/16', toUInt8(name_row > 0 AND selected = 1 AND total = 16)
+FROM (EXPLAIN indexes = 1
+      SELECT id, value
+      FROM t_bf_fixed_array_wrappers
+      ARRAY JOIN arrayConcat(arrayDistinct(fixed_values), [toFixedString('Z', 4)]) AS value
+      WHERE value IN (toFixedString('A', 4))
+      SETTINGS query_plan_lower_array_join_function = 1,
+               query_plan_enable_optimizations = 1,
+               query_plan_fuse_filter_into_array_join = 1,
+               max_rows_to_read = 128);
+
+WITH
+    (SELECT arraySort(groupArray((toUInt64(id), value, hex(value), toTypeName(value))))
+     FROM t_bf_fixed_array_wrappers
+     ARRAY JOIN arrayConcat(arrayDistinct(fixed_values), [toFixedString('Y', 4)]) AS value
+     WHERE value IN (toFixedString('Y', 4))
+     SETTINGS query_plan_lower_array_join_function = 1,
+              query_plan_enable_optimizations = 1,
+              query_plan_fuse_filter_into_array_join = 1,
+              use_skip_indexes = 0,
+              max_rows_to_read = 128) AS full_scan,
+    (SELECT arraySort(groupArray((toUInt64(id), value, hex(value), toTypeName(value))))
+     FROM t_bf_fixed_array_wrappers
+     ARRAY JOIN arrayConcat(arrayDistinct(fixed_values), [toFixedString('Y', 4)]) AS value
+     WHERE value IN (toFixedString('Y', 4))
+     SETTINGS query_plan_lower_array_join_function = 1,
+              query_plan_enable_optimizations = 1,
+              query_plan_fuse_filter_into_array_join = 1,
+              use_skip_indexes = 1,
+              max_rows_to_read = 128) AS indexed
+SELECT 'FixedString(4) unequal-byte append preserves all typed rows',
+       toUInt8(indexed = full_scan
+       AND full_scan = arrayMap(x -> (toUInt64(x), toFixedString('Y', 4), '59000000', 'FixedString(4)'), range(1, 17)));
+
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_fixed_string_values') > 0, plan) AS name_row,
+    arrayFirstIndex(x -> position(x, 'PrimaryKey') > 0, plan) AS primary_key_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, primary_key_row + 1, 128)) AS granules_row,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'FixedString(4) unequal-byte append declines index and reads 16/16',
+       toUInt8(name_row = 0 AND primary_key_row > 0 AND selected = 16 AND total = 16)
+FROM (EXPLAIN indexes = 1
+      SELECT id, value
+      FROM t_bf_fixed_array_wrappers
+      ARRAY JOIN arrayConcat(arrayDistinct(fixed_values), [toFixedString('Y', 4)]) AS value
+      WHERE value IN (toFixedString('Y', 4))
+      SETTINGS query_plan_lower_array_join_function = 1,
+               query_plan_enable_optimizations = 1,
+               query_plan_fuse_filter_into_array_join = 1,
+               max_rows_to_read = 128);
+
+WITH
+    (SELECT arraySort(groupArray((toUInt64(id), value, hex(value), toTypeName(value))))
+     FROM t_bf_fixed_array_wrappers
+     ARRAY JOIN arrayConcat(arrayDistinct(fixed_values), [toFixedString(unhex('5A0051'), 4)]) AS value
+     WHERE value IN (toFixedString(unhex('5A0051'), 4))
+     SETTINGS query_plan_lower_array_join_function = 1,
+              query_plan_enable_optimizations = 1,
+              query_plan_fuse_filter_into_array_join = 1,
+              use_skip_indexes = 0,
+              max_rows_to_read = 128) AS full_scan,
+    (SELECT arraySort(groupArray((toUInt64(id), value, hex(value), toTypeName(value))))
+     FROM t_bf_fixed_array_wrappers
+     ARRAY JOIN arrayConcat(arrayDistinct(fixed_values), [toFixedString(unhex('5A0051'), 4)]) AS value
+     WHERE value IN (toFixedString(unhex('5A0051'), 4))
+     SETTINGS query_plan_lower_array_join_function = 1,
+              query_plan_enable_optimizations = 1,
+              query_plan_fuse_filter_into_array_join = 1,
+              use_skip_indexes = 1,
+              max_rows_to_read = 128) AS indexed
+SELECT 'FixedString(4) embedded-NUL unequal suffix preserves all typed rows',
+       toUInt8(indexed = full_scan
+       AND full_scan = arrayMap(x -> (toUInt64(x), toFixedString(unhex('5A0051'), 4), '5A005100', 'FixedString(4)'), range(1, 17)));
+
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_fixed_string_values') > 0, plan) AS name_row,
+    arrayFirstIndex(x -> position(x, 'PrimaryKey') > 0, plan) AS primary_key_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, primary_key_row + 1, 128)) AS granules_row,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'FixedString(4) embedded-NUL unequal suffix declines index and reads 16/16',
+       toUInt8(name_row = 0 AND primary_key_row > 0 AND selected = 16 AND total = 16)
+FROM (EXPLAIN indexes = 1
+      SELECT id, value
+      FROM t_bf_fixed_array_wrappers
+      ARRAY JOIN arrayConcat(arrayDistinct(fixed_values), [toFixedString(unhex('5A0051'), 4)]) AS value
+      WHERE value IN (toFixedString(unhex('5A0051'), 4))
+      SETTINGS query_plan_lower_array_join_function = 1,
+               query_plan_enable_optimizations = 1,
+               query_plan_fuse_filter_into_array_join = 1,
+               max_rows_to_read = 128);
 
 DROP TABLE t_bf_signedzero;
 DROP TABLE t_bf_enum_shared;
