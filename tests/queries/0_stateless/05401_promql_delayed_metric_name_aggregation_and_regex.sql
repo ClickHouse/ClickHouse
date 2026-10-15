@@ -44,3 +44,25 @@ SELECT tags, value FROM prometheusQuery('prometheus', 'sum by (__name__) (foo or
 SELECT tags, value FROM prometheusQuery('prometheus', 'quantile by (__name__) (1, foo or (foo + 1))', 100) ORDER BY tags;
 
 DROP TABLE prometheus;
+
+CREATE TABLE prometheus ENGINE = TimeSeries;
+
+INSERT INTO prometheus (metric_name, tags, samples) VALUES
+    ('foo', map('job', 'a'), [(toDateTime64(900, 3), 10), (toDateTime64(1800, 3), 20)]);
+
+SELECT '-- a range counts every sample of one series when only some samples dropped the metric name';
+SELECT tags, value FROM prometheusQuery('prometheus', 'count_over_time(((foo and on() (vector(time()) > 900)) or (foo + 1))[30m:15m])', 1800) ORDER BY tags;
+
+DROP TABLE prometheus;
+
+CREATE TABLE prometheus ENGINE = TimeSeries;
+
+INSERT INTO prometheus (metric_name, tags, samples)
+SELECT 'foo', map('job', toString(number)), [(toDateTime64(100, 3), toFloat64(number + 1))]
+FROM numbers(20);
+
+SELECT '-- limitk selects the same series when a name rewrite only changes the pending drop';
+SELECT tags, value FROM prometheusQuery('prometheus', 'limitk(3, foo)', 100) ORDER BY tags;
+SELECT tags, value FROM prometheusQuery('prometheus', 'label_replace(limitk(3, foo + 0), "__name__", "$1", "__name__", "(.*)")', 100) ORDER BY tags;
+
+DROP TABLE prometheus;

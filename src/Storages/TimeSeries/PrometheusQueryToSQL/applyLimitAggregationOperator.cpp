@@ -191,7 +191,7 @@ SQLQueryPiece applyLimitAggregationOperator(
 
     /// Step 1: choose up to k series to keep at each time step within each aggregation group.
     ///
-    ///   SELECT timeSeries<TopK|BottomK|LimitK>Masks(<k>, group[, timeSeriesGroupToSamplingKey(group)], values) AS selected_groups
+    ///   SELECT timeSeries<TopK|BottomK|LimitK>Masks(<k>, group[, timeSeriesGroupToSamplingKey(timeSeriesRemoveTag(group, ''))], values) AS selected_groups
     ///   FROM <vector_grid>
     ///   [GROUP BY <by_tags_expr>]
     ///
@@ -206,7 +206,14 @@ SQLQueryPiece applyLimitAggregationOperator(
             aggregate_function = makeASTFunction(impl_info->aggregate_function_name,
                 std::move(k),
                 make_intrusive<ASTIdentifier>(ColumnNames::Group),
-                makeASTFunction("timeSeriesGroupToSamplingKey", make_intrusive<ASTIdentifier>(ColumnNames::Group)),
+                /// The hash skips the pending metric-name drop. The group argument above still carries it,
+                /// so selection and the output rows use the marked series.
+                makeASTFunction(
+                    "timeSeriesGroupToSamplingKey",
+                    makeASTFunction(
+                        "timeSeriesRemoveTag",
+                        make_intrusive<ASTIdentifier>(ColumnNames::Group),
+                        make_intrusive<ASTLiteral>(kDroppedMetricNameMarker))),
                 make_intrusive<ASTIdentifier>(ColumnNames::Values));
         else
             aggregate_function = makeASTFunction(impl_info->aggregate_function_name,

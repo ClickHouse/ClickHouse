@@ -14,3 +14,12 @@
 -- an or operand with an all-NULL grid does not drop the metric name
 [('__name__','foo')]	10
 [('__name__','foo')]	10
+-- a range counts every sample of one series when only some samples dropped the metric name
+[('job','a')]	2
+-- limitk selects the same series when a name rewrite only changes the pending drop
+[('__name__','foo'),('job','11')]	12
+[('__name__','foo'),('job','17')]	18
+[('__name__','foo'),('job','4')]	5
+[('__name__','foo'),('job','11')]	12
+[('__name__','foo'),('job','17')]	18
+[('__name__','foo'),('job','4')]	5
