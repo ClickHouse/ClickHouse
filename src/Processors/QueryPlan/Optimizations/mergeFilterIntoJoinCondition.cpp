@@ -321,8 +321,8 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
             if ((lhs_side == ExpressionSide::LEFT && rhs_side == ExpressionSide::RIGHT)
              || (lhs_side == ExpressionSide::RIGHT && rhs_side == ExpressionSide::LEFT))
             {
-                /// Such a key matches NULLs that `equals` does not, so the condition also stays in the filter.
-                if (JoinCommon::keyMatchesNullAsValue(lhs->result_type) || JoinCommon::keyMatchesNullAsValue(rhs->result_type))
+                /// Such a key matches pairs `equals` rejects, so the condition also stays in the filter.
+                if (JoinCommon::keyMatchesValuesEqualsRejects(lhs->result_type) || JoinCommon::keyMatchesValuesEqualsRejects(rhs->result_type))
                 {
                     if (join_condition_names.insert(conjunct->result_name).second)
                         result.emplace_back(ActionsDAG::cloneSubDAG({ conjunct }, true));
