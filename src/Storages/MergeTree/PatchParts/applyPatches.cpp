@@ -53,9 +53,14 @@ bool canApplyPatchInplace(const IColumn & column)
     return column.isFixedAndContiguous();
 }
 
+String getDataVersionColumnName(const String & column_name)
+{
+    return PartDataVersionColumn::name + "_" + column_name;
+}
+
 IColumn::Versions & addDataVersionForColumn(Block & block, const String & column_name, UInt64 num_rows, UInt64 data_version)
 {
-    String data_version_name = PartDataVersionColumn::name + "_" + column_name;
+    String data_version_name = getDataVersionColumnName(column_name);
     if (block.has(data_version_name))
         return getColumnUInt64Data(block, data_version_name);
 

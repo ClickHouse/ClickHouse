@@ -382,12 +382,15 @@ NameSet IMergeTreeReader::getDefaultsDependingOn(const NameSet & candidates, con
         return name;
     };
 
-    /// The columns whose value differs from the one the `DEFAULT` expressions were evaluated with:
-    /// the changed ones, and the ones the part does not store whose `DEFAULT` reads one of them.
-    NameSet affected;
+    /// The columns that differ from the values the `DEFAULT` expressions were evaluated with.
+    NameSet changed;
     for (const auto & name : changed_columns)
-        affected.insert(get_name_in_storage(name));
+        changed.insert(get_name_in_storage(name));
 
+    /// The columns the part does not store whose `DEFAULT` reads a changed column, directly or through
+    /// another such column. A changed column may be one of them too: a patch may have overwritten only
+    /// some of its rows, and the others still hold the value of its `DEFAULT`.
+    NameSet depending;
     auto defaults = combined_columns.getDefaults();
     bool added = true;
     while (added)
@@ -395,7 +398,7 @@ NameSet IMergeTreeReader::getDefaultsDependingOn(const NameSet & candidates, con
         added = false;
         for (const auto & [name, default_desc] : defaults)
         {
-            if (!default_desc.expression || affected.contains(name) || columns_in_part.has(name))
+            if (!default_desc.expression || depending.contains(name) || columns_in_part.has(name))
                 continue;
 
             /// Only the source columns the expression reads, not the formals of its lambdas or its aliases.
@@ -404,9 +407,14 @@ NameSet IMergeTreeReader::getDefaultsDependingOn(const NameSet & candidates, con
             RequiredSourceColumnsVisitor(columns_context).visit(expression);
             for (const auto & identifier : columns_context.requiredColumns())
             {
-                if (affected.contains(identifier) || affected.contains(get_name_in_storage(identifier)))
+                auto identifier_in_storage = get_name_in_storage(identifier);
+                if (identifier_in_storage == name)
+                    continue;
+
+                if (changed.contains(identifier) || depending.contains(identifier)
+                    || changed.contains(identifier_in_storage) || depending.contains(identifier_in_storage))
                 {
-                    affected.insert(name);
+                    depending.insert(name);
                     added = true;
                     break;
                 }
@@ -416,7 +424,7 @@ NameSet IMergeTreeReader::getDefaultsDependingOn(const NameSet & candidates, con
 
     for (const auto & name : candidates)
     {
-        if (!changed_columns.contains(name) && affected.contains(get_name_in_storage(name)))
+        if (depending.contains(get_name_in_storage(name)))
             result.insert(name);
     }
 

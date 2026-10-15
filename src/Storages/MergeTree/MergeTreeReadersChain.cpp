@@ -8,6 +8,9 @@
 #include <fmt/ranges.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSparse.h>
+#include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Storages/MergeTree/PatchParts/applyPatches.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Functions/IFunction.h>
 
@@ -446,7 +449,8 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
     {
         /// Apply patches without min version for new columns because
         /// if column is read on this step, it is not used by previous steps.
-        return applyPatches(
+        Block patched_rows;
+        auto patched_columns = applyPatches(
             result_header,
             read_columns,
             result.patch_versions_block,
@@ -454,10 +458,19 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
             patch_max_version,
             columns_for_patches,
             {order},
-            result.columns_for_patches);
+            result.columns_for_patches,
+            result.columns_filled_by_defaults,
+            patched_rows);
+
+        forgetPatchedRows(result, patched_rows);
+        return patched_columns;
     };
 
-    apply_patches(ColumnForPatch::Order::BeforeConversions);
+    /// The sort-key columns of `MergeOnKey` patches missing in the part were already filled with
+    /// their defaults by `executeSortingKeyExpressions`, before any patch was applied.
+    NameSet columns_filled_before_patches = result.columns_filled_by_defaults;
+
+    auto columns_patched_before_defaults = apply_patches(ColumnForPatch::Order::BeforeConversions);
 
     /// Apply alter conversions for columns read by this step.
     ///
@@ -527,13 +540,12 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
         }
     }
 
-    apply_patches(ColumnForPatch::Order::AfterConversions);
+    auto columns_patched_after_conversions = apply_patches(ColumnForPatch::Order::AfterConversions);
+    columns_patched_before_defaults.insert(columns_patched_after_conversions.begin(), columns_patched_after_conversions.end());
 
     /// If some columns absent in part, then evaluate default values
     std::vector<size_t> positions_filled_by_defaults;
 
-    /// The sort-key columns of `MergeOnKey` patches missing in the part were already filled with
-    /// their defaults by `executeSortingKeyExpressions`, before any patch was applied.
     if (!result.columns_filled_by_defaults.empty())
     {
         for (size_t pos = 0; pos < read_columns.size(); ++pos)
@@ -555,6 +567,13 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
         evaluateMissingDefaults(range_reader, result, previous_header, read_columns);
     }
 
+    /// The patches applied below are tracked for these columns row by row.
+    if (!patch_readers.empty())
+    {
+        for (size_t pos : positions_filled_by_defaults)
+            result.columns_filled_by_defaults.insert(result_header.getByPosition(pos).name);
+    }
+
     auto columns_patched_after_defaults = apply_patches(ColumnForPatch::Order::AfterEvaluatingDefaults);
 
     /** A column the part does not store comes into existence only in the pass above, so a patch for it
@@ -562,11 +581,14 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
       * was computed from the value the default gave rather than from the patched one. For
       * `a UInt64, z UInt64 DEFAULT a + 1000` with neither column stored in the part, a lightweight
       * `UPDATE a = 5` left `z` at `1000`, where `ALTER TABLE ... UPDATE a = 5` gives `1005`.
+      * The same holds for the sort-key columns filled before any patch was applied, also when the
+      * column their `DEFAULT` reads is stored and was patched before the pass above.
       *
-      * Evaluate the defaults once more, now that the patches are applied. The columns a patch produced
-      * keep their patched values, and so do the ones whose expression does not read a patched column
+      * Evaluate the defaults once more, now that the patches are applied. The rows a patch overwrote
+      * keep their patched values, and so do the columns whose expression does not read a patched column
       * (a non-deterministic `DEFAULT` such as `rand()` must not change because an unrelated column was
-      * updated); the rest are dropped so that the pass recomputes them.
+      * updated); the rest are recomputed. Which rows a patch overwrote is tracked row by row, so that the
+      * result does not depend on which rows are read together in one block.
       *
       * `columns_patched_after_defaults` holds the columns the pass above did patch: a patch whose data
       * version is above this step's `patch_max_version` (a lightweight `UPDATE` later than a pending
@@ -574,31 +596,142 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
       * now and stays in `columns_filled_by_defaults`; `applyPatchesAfterReader` applies the patch at the
       * step boundary and evaluates the dependents again from the patched value.
       */
-    if (!positions_filled_by_defaults.empty() && !patch_readers.empty())
+    if (positions_filled_by_defaults.empty() || patch_readers.empty())
+        return;
+
+    auto * reader = range_reader.getReader();
+    auto columns_to_reevaluate = reader->getDefaultsDependingOn(result.columns_filled_by_defaults, columns_patched_after_defaults);
+
+    NameSet columns_patched_in_step = columns_patched_before_defaults;
+    columns_patched_in_step.insert(columns_patched_after_defaults.begin(), columns_patched_after_defaults.end());
+
+    NameSet candidates_filled_before_patches;
+    for (const auto & name : columns_filled_before_patches)
     {
+        if (result.columns_filled_by_defaults.contains(name))
+            candidates_filled_before_patches.insert(name);
+    }
+
+    auto columns_filled_before_to_reevaluate = reader->getDefaultsDependingOn(candidates_filled_before_patches, columns_patched_in_step);
+    columns_to_reevaluate.insert(columns_filled_before_to_reevaluate.begin(), columns_filled_before_to_reevaluate.end());
+
+    while (!columns_to_reevaluate.empty())
+    {
+        Block previous;
         for (size_t pos : positions_filled_by_defaults)
         {
-            const auto & name = result_header.getByPosition(pos).name;
-            if (!columns_patched_after_defaults.contains(name))
-                result.columns_filled_by_defaults.insert(name);
-        }
-
-        auto columns_to_reevaluate = range_reader.getReader()->getDefaultsDependingOn(
-            result.columns_filled_by_defaults, columns_patched_after_defaults);
-
-        bool has_columns_to_reevaluate = false;
-        for (size_t pos : positions_filled_by_defaults)
-        {
-            if (columns_to_reevaluate.contains(result_header.getByPosition(pos).name))
+            const auto & column = result_header.getByPosition(pos);
+            if (columns_to_reevaluate.contains(column.name))
             {
+                previous.insert({read_columns[pos], column.type, column.name});
                 read_columns[pos] = nullptr;
-                has_columns_to_reevaluate = true;
             }
         }
 
-        if (has_columns_to_reevaluate)
-            evaluateMissingDefaults(range_reader, result, previous_header, read_columns);
+        if (previous.empty())
+            break;
+
+        evaluateMissingDefaults(range_reader, result, previous_header, read_columns);
+
+        Block evaluated;
+        for (size_t pos : positions_filled_by_defaults)
+        {
+            const auto & column = result_header.getByPosition(pos);
+            if (columns_to_reevaluate.contains(column.name))
+                evaluated.insert({read_columns[pos], column.type, column.name});
+        }
+
+        auto columns_with_patched_rows = keepPatchedRows(result, previous, evaluated);
+        if (columns_with_patched_rows.empty())
+            break;
+
+        for (size_t pos : positions_filled_by_defaults)
+        {
+            const auto & name = result_header.getByPosition(pos).name;
+            if (columns_with_patched_rows.contains(name))
+                read_columns[pos] = evaluated.getByName(name).column;
+        }
+
+        /// The pass above computed the columns that read one of these from its `DEFAULT` rather than
+        /// from the patched rows, so they are evaluated again from the combined value.
+        NameSet rest;
+        for (const auto & name : columns_to_reevaluate)
+        {
+            if (!columns_with_patched_rows.contains(name))
+                rest.insert(name);
+        }
+
+        columns_to_reevaluate = reader->getDefaultsDependingOn(rest, columns_with_patched_rows);
     }
+}
+
+void MergeTreeReadersChain::forgetPatchedRows(ReadResult & result, const Block & patched_rows)
+{
+    for (const auto & patched : patched_rows)
+    {
+        if (!result.columns_filled_by_defaults.contains(patched.name))
+            continue;
+
+        const auto & patched_data = assert_cast<const ColumnUInt8 &>(*patched.column).getData();
+
+        MutableColumnPtr mask;
+        if (auto * existing = result.rows_filled_by_defaults.findByName(patched.name))
+            mask = IColumn::mutate(std::move(existing->column));
+        else
+            mask = ColumnUInt8::create(patched_data.size(), static_cast<UInt8>(1));
+
+        auto & mask_data = assert_cast<ColumnUInt8 &>(*mask).getData();
+        chassert(mask_data.size() == patched_data.size());
+
+        bool has_rows_filled_by_defaults = false;
+        for (size_t row = 0; row < mask_data.size(); ++row)
+        {
+            if (patched_data[row])
+                mask_data[row] = 0;
+            has_rows_filled_by_defaults |= mask_data[row] != 0;
+        }
+
+        if (!has_rows_filled_by_defaults)
+        {
+            result.columns_filled_by_defaults.erase(patched.name);
+            if (result.rows_filled_by_defaults.has(patched.name))
+                result.rows_filled_by_defaults.erase(patched.name);
+        }
+        else if (auto * existing = result.rows_filled_by_defaults.findByName(patched.name))
+        {
+            existing->column = std::move(mask);
+        }
+        else
+        {
+            result.rows_filled_by_defaults.insert({std::move(mask), patched.type, patched.name});
+        }
+    }
+}
+
+NameSet MergeTreeReadersChain::keepPatchedRows(const ReadResult & result, const Block & previous, Block & evaluated)
+{
+    NameSet columns_with_patched_rows;
+    for (auto & column : evaluated)
+    {
+        const auto * mask = result.rows_filled_by_defaults.findByName(column.name);
+        if (!mask)
+            continue;
+
+        const auto & mask_data = assert_cast<const ColumnUInt8 &>(*mask->column).getData();
+        auto new_values = removeSpecialRepresentations(column.column->convertToFullColumnIfConst());
+        auto old_values = removeSpecialRepresentations(previous.getByName(column.name).column->convertToFullColumnIfConst());
+        chassert(new_values->size() == mask_data.size() && old_values->size() == mask_data.size());
+
+        auto combined = new_values->cloneEmpty();
+        combined->reserve(mask_data.size());
+        for (size_t row = 0; row < mask_data.size(); ++row)
+            combined->insertFrom(mask_data[row] ? *new_values : *old_values, row);
+
+        column.column = std::move(combined);
+        columns_with_patched_rows.insert(column.name);
+    }
+
+    return columns_with_patched_rows;
 }
 
 void MergeTreeReadersChain::forgetColumnsOverwrittenByStep(ReadResult & result, const MergeTreeRangeReader & range_reader)
@@ -615,22 +748,21 @@ void MergeTreeReadersChain::forgetColumnsOverwrittenByStep(ReadResult & result, 
     for (const auto * output : prewhere_info->actions->getActionsDAG().getOutputs())
     {
         if (output->type != ActionsDAG::ActionType::INPUT)
+        {
             result.columns_filled_by_defaults.erase(output->result_name);
+            if (result.rows_filled_by_defaults.has(output->result_name))
+                result.rows_filled_by_defaults.erase(output->result_name);
+        }
     }
 }
 
 void MergeTreeReadersChain::reevaluateDefaultsAfterPatches(ReadResult & result, size_t reader_index, const NameSet & patched_columns) const
 {
-    if (patched_columns.empty())
-        return;
-
-    for (const auto & name : patched_columns)
-        result.columns_filled_by_defaults.erase(name);
-
-    if (result.columns_filled_by_defaults.empty())
+    if (patched_columns.empty() || result.columns_filled_by_defaults.empty())
         return;
 
     const auto & result_header = range_readers[reader_index].getSampleBlock();
+    auto * reader = range_readers[reader_index].getReader();
 
     /// The result, followed by the columns the steps projected out of it. A `DEFAULT` column may
     /// live in either place, and so may the columns its expression reads.
@@ -641,35 +773,68 @@ void MergeTreeReadersChain::reevaluateDefaultsAfterPatches(ReadResult & result, 
             block.insert(column);
     }
 
-    /// Only the `DEFAULT` columns that read a patched column change.
-    auto names_to_evaluate = range_readers[reader_index].getReader()->getDefaultsDependingOn(
-        result.columns_filled_by_defaults, patched_columns);
-
-    if (names_to_evaluate.empty())
-        return;
-
-    /// The requested-column entries carry what `evaluateDefaults` needs for a subcolumn.
-    NamesAndTypesList columns_to_evaluate;
-    NameSet added;
-    for (size_t i = 0; i <= reader_index; ++i)
-    {
-        for (const auto & column : range_readers[i].getReader()->getColumns())
-        {
-            if (names_to_evaluate.contains(column.name) && block.has(column.name) && added.emplace(column.name).second)
-                columns_to_evaluate.push_back(column);
-        }
-    }
-
-    if (columns_to_evaluate.empty())
-        return;
-
-    LOG_TEST(log, "Evaluating defaults of columns {} again after applying patches to columns {}",
-        columns_to_evaluate.toString(), fmt::join(patched_columns, ", "));
-
     /// For the `DEFAULT` expressions that read no column at all.
     addDummyColumnWithRowCount(block, result.num_rows);
 
-    range_readers[reader_index].getReader()->evaluateDefaults(block, columns_to_evaluate);
+    /// Only the `DEFAULT` columns that read a patched column change.
+    auto names_to_evaluate = reader->getDefaultsDependingOn(result.columns_filled_by_defaults, patched_columns);
+    bool evaluated_any = false;
+
+    while (!names_to_evaluate.empty())
+    {
+        /// The requested-column entries carry what `evaluateDefaults` needs for a subcolumn.
+        NamesAndTypesList columns_to_evaluate;
+        NameSet added;
+        for (size_t i = 0; i <= reader_index; ++i)
+        {
+            for (const auto & column : range_readers[i].getReader()->getColumns())
+            {
+                if (names_to_evaluate.contains(column.name) && block.has(column.name) && added.emplace(column.name).second)
+                    columns_to_evaluate.push_back(column);
+            }
+        }
+
+        if (columns_to_evaluate.empty())
+            break;
+
+        LOG_TEST(log, "Evaluating defaults of columns {} again after applying patches to columns {}",
+            columns_to_evaluate.toString(), fmt::join(patched_columns, ", "));
+
+        Block previous;
+        for (const auto & column : columns_to_evaluate)
+            previous.insert(block.getByName(column.name));
+
+        reader->evaluateDefaults(block, columns_to_evaluate);
+        evaluated_any = true;
+
+        Block evaluated;
+        for (const auto & column : columns_to_evaluate)
+            evaluated.insert(block.getByName(column.name));
+
+        auto columns_with_patched_rows = keepPatchedRows(result, previous, evaluated);
+        if (columns_with_patched_rows.empty())
+            break;
+
+        for (const auto & column : evaluated)
+        {
+            if (columns_with_patched_rows.contains(column.name))
+                block.getByName(column.name).column = column.column;
+        }
+
+        /// The pass above computed the columns that read one of these from its `DEFAULT` rather than
+        /// from the patched rows, so they are evaluated again from the combined value.
+        NameSet rest;
+        for (const auto & name : added)
+        {
+            if (!columns_with_patched_rows.contains(name))
+                rest.insert(name);
+        }
+
+        names_to_evaluate = reader->getDefaultsDependingOn(rest, columns_with_patched_rows);
+    }
+
+    if (!evaluated_any)
+        return;
 
     for (size_t pos = 0; pos < result.columns.size(); ++pos)
         result.columns[pos] = block.getByPosition(pos).column;
@@ -965,6 +1130,7 @@ void MergeTreeReadersChain::applyPatchesAfterReader(ReadResult & result, size_t 
     using enum ColumnForPatch::Order;
     std::set<ColumnForPatch::Order> suitable_orders = {AfterConversions, AfterEvaluatingDefaults};
 
+    Block patched_rows;
     auto patched_columns = applyPatches(
         result_header,
         result.columns,
@@ -973,7 +1139,11 @@ void MergeTreeReadersChain::applyPatchesAfterReader(ReadResult & result, size_t 
         max_version,
         columns_for_patches,
         suitable_orders,
-        result.columns_for_patches);
+        result.columns_for_patches,
+        result.columns_filled_by_defaults,
+        patched_rows);
+
+    forgetPatchedRows(result, patched_rows);
 
     /// A step's action may have projected a column out of the result into `additional_columns`,
     /// where it is kept for the `DEFAULT` expressions of later steps (an on-fly `UPDATE w = 8`
@@ -985,6 +1155,7 @@ void MergeTreeReadersChain::applyPatchesAfterReader(ReadResult & result, size_t 
         auto additional_columns = result.additional_columns.getColumns();
         auto columns_for_patches_additional = getColumnsForPatches(additional_header, additional_columns);
 
+        Block patched_additional_rows;
         auto patched_additional_columns = applyPatches(
             additional_header,
             additional_columns,
@@ -993,9 +1164,12 @@ void MergeTreeReadersChain::applyPatchesAfterReader(ReadResult & result, size_t 
             max_version,
             columns_for_patches_additional,
             suitable_orders,
-            result.columns_for_patches);
+            result.columns_for_patches,
+            result.columns_filled_by_defaults,
+            patched_additional_rows);
 
         result.additional_columns.setColumns(additional_columns);
+        forgetPatchedRows(result, patched_additional_rows);
         patched_columns.insert(patched_additional_columns.begin(), patched_additional_columns.end());
     }
 
@@ -1012,7 +1186,9 @@ NameSet MergeTreeReadersChain::applyPatches(
     std::optional<UInt64> max_version,
     const ColumnsForPatches & columns_for_patches,
     const std::set<ColumnForPatch::Order> & suitable_orders,
-    const Block & additional_columns) const
+    const Block & additional_columns,
+    const NameSet & columns_to_track,
+    Block & patched_rows) const
 {
     NameSet patched_columns;
     if (patch_readers.empty() || result_columns.empty())
@@ -1067,7 +1243,51 @@ NameSet MergeTreeReadersChain::applyPatches(
 
     /// A patch block read for this range may still update none of its rows, so the patched
     /// columns are the ones in which a row was actually updated, not the ones a patch covers.
+    /// The versions of a column grow in the rows a patch overwrites. A column without versions yet gets
+    /// them filled with `source_data_version` when a patch is applied to it.
+    std::vector<std::pair<String, std::optional<IColumn::Versions>>> versions_before;
+    for (const auto & column : result_block)
+    {
+        if (!column.column || !columns_to_track.contains(column.name))
+            continue;
+
+        auto version_name = getDataVersionColumnName(column.name);
+        if (versions_block.has(version_name))
+        {
+            const auto & versions = getColumnUInt64Data(versions_block, version_name);
+            versions_before.emplace_back(column.name, IColumn::Versions(versions.begin(), versions.end()));
+        }
+        else
+        {
+            versions_before.emplace_back(column.name, std::nullopt);
+        }
+    }
+
     applyPatchesToBlock(result_block, versions_block, additional_columns, patch_read_results, source_data_version, &patched_columns);
+
+    for (const auto & [name, before] : versions_before)
+    {
+        auto version_name = getDataVersionColumnName(name);
+        if (!patched_columns.contains(name) || !versions_block.has(version_name))
+            continue;
+
+        const auto & after = getColumnUInt64Data(versions_block, version_name);
+        auto mask = ColumnUInt8::create(after.size(), static_cast<UInt8>(0));
+        auto & mask_data = mask->getData();
+
+        bool has_patched_rows = false;
+        for (size_t row = 0; row < after.size(); ++row)
+        {
+            if (after[row] != (before ? (*before)[row] : source_data_version))
+            {
+                mask_data[row] = 1;
+                has_patched_rows = true;
+            }
+        }
+
+        if (has_patched_rows)
+            patched_rows.insert({std::move(mask), std::make_shared<DataTypeUInt8>(), name});
+    }
 
     result_columns = result_block.getColumns();
     result_columns.resize(result_header.columns());

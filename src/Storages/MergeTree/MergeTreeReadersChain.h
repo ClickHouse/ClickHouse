@@ -98,12 +98,24 @@ private:
     /// their value is the action's, not their `DEFAULT`'s, and must not be evaluated again.
     static void forgetColumnsOverwrittenByStep(ReadResult & result, const MergeTreeRangeReader & range_reader);
 
+    /// Takes the rows of `patched_rows` (see `applyPatches`) out of `result.rows_filled_by_defaults`:
+    /// a patched row keeps its patched value. A column none of whose rows holds its `DEFAULT` any more
+    /// leaves `result.columns_filled_by_defaults`.
+    static void forgetPatchedRows(ReadResult & result, const Block & patched_rows);
+
+    /// Combines the value `evaluated` again from its `DEFAULT` with the `previous` one of a column:
+    /// the rows of `result.rows_filled_by_defaults` take the new value, the patched ones keep the old.
+    /// Returns the names of the columns in which some rows kept the previous value.
+    static NameSet keepPatchedRows(const ReadResult & result, const Block & previous, Block & evaluated);
+
     /// Evaluates the `DEFAULT` expressions of the columns in `result.columns_filled_by_defaults`
     /// once more, after patches were applied to `patched_columns` of the result accumulated up to
-    /// the reader `reader_index`. A patched column leaves the set and keeps its patched value.
+    /// the reader `reader_index`. The rows a patch overwrote, already taken out by `forgetPatchedRows`,
+    /// keep their patched value.
     void reevaluateDefaultsAfterPatches(ReadResult & result, size_t reader_index, const NameSet & patched_columns) const;
 
-    /// Returns the names of the columns to which a patch was applied.
+    /// Returns the names of the columns to which a patch was applied. For those of them in `columns_to_track`,
+    /// adds to `patched_rows` a `UInt8` column with the same name and 1 in the rows a patch overwrote.
     NameSet applyPatches(
         const Block & result_header,
         Columns & result_columns,
@@ -112,7 +124,9 @@ private:
         std::optional<UInt64> max_version,
         const ColumnsForPatches & columns_for_patches,
         const std::set<ColumnForPatch::Order> & suitable_orders,
-        const Block & additional_columns) const;
+        const Block & additional_columns,
+        const NameSet & columns_to_track,
+        Block & patched_rows) const;
 
     RangeReaders range_readers;
     MergeTreePatchReaders patch_readers;

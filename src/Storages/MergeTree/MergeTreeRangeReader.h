@@ -391,6 +391,11 @@ public:
         /// See `MergeTreeReadersChain::reevaluateDefaultsAfterPatches`.
         NameSet columns_filled_by_defaults;
 
+        /// For a column of `columns_filled_by_defaults` in some rows of which a patch part wrote a value:
+        /// a `UInt8` column with its name, with 1 in the rows that still hold the value of its `DEFAULT`.
+        /// Only those rows are evaluated again; a column absent here holds its `DEFAULT` in every row.
+        Block rows_filled_by_defaults;
+
         /// Track newly initiated granule ranges during startReadingChain. Does not contain the range started in previous read.
         /// Used to compute _part_offset and align continueReadingChain streams accordingly.
         RangesInfo started_ranges;

@@ -94,6 +94,8 @@ void applyPatchesToBlock(
 const PaddedPODArray<UInt64> & getColumnUInt64Data(const Block & block, const String & column_name);
 PaddedPODArray<UInt64> & getColumnUInt64Data(Block & block, const String & column_name);
 bool canApplyPatchInplace(const IColumn & column);
+/// The name of the column of a versions block with the data versions of `column_name`.
+String getDataVersionColumnName(const String & column_name);
 IColumn::Versions & addDataVersionForColumn(Block & block, const String & column_name, UInt64 num_rows, UInt64 data_version);
 Block getUpdatedHeader(const PatchesIndices & patches);
 /// Adds to `patched_columns` the columns of `result_block` with data that `patches` update in at least one row.
