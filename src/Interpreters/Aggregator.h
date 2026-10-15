@@ -430,9 +430,9 @@ public:
     /// adaptive path is written as over the external-aggregation threshold, and its producer learns again; a table on
     /// the baseline path is spilled as with the feature off. The staged records go first: the merge reads them back
     /// unit by unit, while a written table takes the whole merge external. Unlike the writes over the threshold, these
-    /// skip the floors of `adaptive_spill_min_bytes` and `adaptive_frozen_spill_min_hits`: the scheduler asks for
-    /// memory now, in amounts of at least `min_bytes_to_spill`, while the floors keep a query that stays over the
-    /// threshold from writing on every block. Returns the released bytes.
+    /// skip the floor of `adaptive_spill_min_bytes`: the scheduler asks for memory now, in amounts of at least
+    /// `min_bytes_to_spill`, while the floor keeps a query that stays over the threshold from writing on every block.
+    /// Returns the released bytes.
     size_t spillAdaptiveProducer(
         AggregatedDataVariants & result, AdaptiveAggregationProducer & adaptive, bool no_more_keys, size_t at_least_bytes) const;
 
@@ -904,8 +904,7 @@ private:
     bool adaptiveStagingWorthSpilling(const AdaptiveAggregationProducer & adaptive) const;
 
     /// Whether writing a frozen table to disk over the external-aggregation threshold frees enough memory: its states
-    /// grew past the floor of `adaptive_spill_min_bytes` in its arenas since the freeze, or they own heap memory and
-    /// the table absorbed `adaptive_frozen_spill_min_hits` rows since then.
+    /// grew past the floor of `adaptive_spill_min_bytes` since the freeze, in its tracked memory or in its arenas.
     bool adaptiveFrozenTableWorthSpilling(
         const AggregatedDataVariants & result, const AdaptiveAggregationProducer & adaptive) const;
 

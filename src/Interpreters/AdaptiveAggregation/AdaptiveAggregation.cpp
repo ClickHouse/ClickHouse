@@ -242,19 +242,18 @@ bool Aggregator::adaptiveFrozenTableWorthSpilling(
 {
     /// A frozen table admits no new keys, so it grows only through states that keep growing after the freeze. A table
     /// that did not grow is never written: it would learn its keys again up to the same bounds, so the write frees
-    /// nothing. The states' growth in the arenas must pass the floor, so a table that was just written, learned its
-    /// keys again and froze again is not written on every block while the query stays over the threshold. The growth
-    /// is measured in the bytes the states took, not in the bytes the arenas allocated: those grow by whole chunks of
-    /// doubling size, so a table that froze just after taking a large chunk would not show its growth until it fills
-    /// the chunk. Growth in heap memory owned by the states does not show in the arenas, so a table with such states
-    /// is also written once it absorbed enough rows since its freeze. Constant-key blocks can keep updating retained
-    /// states even after per-row probes are bypassed.
+    /// nothing. The growth must pass the floor, so a table that was just written, learned its keys again and froze
+    /// again is not written on every block while the query stays over the threshold. The growth shows in the table's
+    /// tracked memory, which counts the heap memory that the states own and the chunks that the arenas take. The arenas
+    /// take whole chunks of doubling size, so a table that froze just after taking a large chunk fills it without
+    /// growing its tracked memory: the bytes that the states took in the arenas count as growth as well.
     const auto & frozen = std::get<AdaptiveAggregationProducer::FrozenState>(adaptive.phase);
+    const size_t min_growth = adaptiveSpillMinBytes(params);
     const size_t used_arena_bytes = result.usedArenaBytes();
     /// Nothing frees what the arenas held at the freeze: the frozen kernel builds its lookup keys in a scratch arena.
     chassert(used_arena_bytes >= frozen.used_arena_bytes_at_freeze);
-    return used_arena_bytes - frozen.used_arena_bytes_at_freeze > adaptiveSpillMinBytes(params)
-        || (!all_aggregates_has_trivial_destructor && frozen.absorbed_rows >= adaptive_frozen_spill_min_hits);
+    return result.memoryUsage() > frozen.memory_usage_at_freeze + min_growth
+        || used_arena_bytes - frozen.used_arena_bytes_at_freeze > min_growth;
 }
 
 void Aggregator::freezeAdaptive(AggregatedDataVariants & result, AdaptiveAggregationProducer & adaptive) const
@@ -272,7 +271,8 @@ void Aggregator::freezeAdaptive(AggregatedDataVariants & result, AdaptiveAggrega
     /// A zero key-count threshold or byte pressure can freeze a table before its first group is inserted.
     /// Without a measured per-key allocation cost, the aggregate state size supplies a lower bound
     /// that excludes hash-table and arena overhead.
-    adaptive.freeze(result.usedArenaBytes(), keys ? result.allocatedBytes() / keys : total_size_of_aggregate_states);
+    adaptive.freeze(
+        result.usedArenaBytes(), result.memoryUsage(), keys ? result.allocatedBytes() / keys : total_size_of_aggregate_states);
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationLocalFreezes);
     LOG_TRACE(log, "Adaptive aggregation: local table frozen at {} keys", keys);
 }
