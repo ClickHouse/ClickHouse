@@ -312,7 +312,7 @@ void FileCacheSettings::validate()
     }
 
     /// With an SLRU policy, a file segment must fit whole into each SLRU queue
-    /// (of the data part with `use_split_cache`: the system part keeps small files).
+    /// (of both the data and the system part with `use_split_cache`).
     const auto policy = settings[FileCacheSetting::cache_policy].value;
     if (policy == FileCachePolicy::SLRU || policy == FileCachePolicy::SLRU_OVERCOMMIT)
     {
@@ -323,11 +323,17 @@ void FileCacheSettings::validate()
         };
 
         const size_t max_size = settings[FileCacheSetting::max_size];
-        const size_t data_size = settings[FileCacheSetting::use_split_cache]
-            ? get_ratio(max_size, 1 - settings[FileCacheSetting::split_cache_ratio])
-            : max_size;
         const double ratio = settings[FileCacheSetting::slru_size_ratio];
-        const size_t smallest_queue_size = std::min(get_ratio(data_size, ratio), get_ratio(data_size, 1 - ratio));
+        auto get_smallest_queue_size = [&](size_t size) { return std::min(get_ratio(size, ratio), get_ratio(size, 1 - ratio)); };
+
+        size_t smallest_queue_size = get_smallest_queue_size(max_size);
+        if (settings[FileCacheSetting::use_split_cache])
+        {
+            const double system_ratio = settings[FileCacheSetting::split_cache_ratio];
+            smallest_queue_size = std::min(
+                get_smallest_queue_size(get_ratio(max_size, 1 - system_ratio)),
+                get_smallest_queue_size(get_ratio(max_size, system_ratio)));
+        }
 
         if (settings[FileCacheSetting::max_file_segment_size] > smallest_queue_size)
             throw Exception(

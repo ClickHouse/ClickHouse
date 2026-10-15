@@ -23,14 +23,15 @@ SETTINGS disk = disk(type = cache, name = 'cache_05397_lru', path = 'cache_05397
     max_size = '1Mi', cache_policy = 'LRU', max_file_segment_size = '512Ki', boundary_alignment = '512Ki');
 DROP TABLE t_05397;
 
--- With a split cache only its data part is checked: half of 1 MiB here, so the probationary queue is 209715 bytes.
+-- With a split cache both parts are checked. The system part is 10% of 1 MiB here,
+-- so its probationary queue is 41943 bytes, while the data part would fit 64 KiB segments.
 CREATE TABLE t_05397 (key UInt64) ENGINE = MergeTree ORDER BY key
 SETTINGS disk = disk(type = cache, name = 'cache_05397_split_large', path = 'cache_05397_split_large', disk = 'local_disk',
-    max_size = '1Mi', use_split_cache = 1, split_cache_ratio = 0.5, max_file_segment_size = '256Ki', boundary_alignment = '256Ki'); -- { serverError BAD_ARGUMENTS }
+    max_size = '1Mi', use_split_cache = 1, max_file_segment_size = '64Ki', boundary_alignment = '64Ki'); -- { serverError BAD_ARGUMENTS }
 
 CREATE TABLE t_05397 (key UInt64) ENGINE = MergeTree ORDER BY key
 SETTINGS disk = disk(type = cache, name = 'cache_05397_split_fits', path = 'cache_05397_split_fits', disk = 'local_disk',
-    max_size = '1Mi', use_split_cache = 1, split_cache_ratio = 0.5, max_file_segment_size = '128Ki', boundary_alignment = '128Ki');
+    max_size = '1Mi', use_split_cache = 1, max_file_segment_size = '32Ki', boundary_alignment = '32Ki');
 DROP TABLE t_05397;
 
 SELECT cache_name, max_file_segment_size
