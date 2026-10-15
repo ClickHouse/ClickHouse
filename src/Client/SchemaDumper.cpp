@@ -55,7 +55,7 @@
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/StorageURL.h>
-#include <Storages/TimeSeries/TimeSeriesVersion.h>
+#include <Parsers/Prometheus/TimeSeriesVersion.h>
 #include <Storages/TimeSeries/createTimeSeriesInnerTable.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <base/EnumReflection.h>
