@@ -450,7 +450,7 @@ public:
         if constexpr (std::is_same_v<DataLakeMetadata, IcebergMetadata>)
             return true;
 #endif
-#if USE_PARQUET
+#if USE_PARQUET && USE_DELTA_KERNEL_RS
         if constexpr (std::is_same_v<DataLakeMetadata, DeltaLakeMetadata>)
             return true;
 #endif
