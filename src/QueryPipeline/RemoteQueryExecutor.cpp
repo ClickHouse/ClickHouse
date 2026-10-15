@@ -78,6 +78,7 @@ namespace FailPoints
 {
     extern const char remote_query_executor_cancel_before_send[];
     extern const char remote_query_executor_cancel_and_drain_in_receive_window[];
+    extern const char remote_query_executor_cancel_in_finish_drain[];
 }
 
 ThrottlerPtr getThrottler(const ContextPtr & context)
@@ -599,7 +600,7 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
 
     const auto & settings = context->getSettingsRef();
     const bool replica_unavailable = isReplicaUnavailable();
-    if (replica_unavailable || needToSkipUnavailableShard())
+    if (replica_unavailable || shouldSkipUnavailableShard())
     {
         /// To avoid sending the query again in the read(), we need to update the following flags:
         was_cancelled = true;
@@ -618,7 +619,10 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
         if (replica_unavailable)
             finishFragmentSpanForUnavailableReplica();
         else
+        {
             finishFragmentSpanForSkippedShard("Shard is unavailable: no replicas to connect to (skipped because of `skip_unavailable_shards`)");
+            reportShardSkipped();
+        }
         return;
     }
 
@@ -842,7 +846,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
         read_context->resume();
 
         const bool replica_unavailable = isReplicaUnavailable();
-        if (replica_unavailable || needToSkipUnavailableShard())
+        if (replica_unavailable || shouldSkipUnavailableShard())
         {
             /// We need to tell the coordinator not to wait for this replica.
             /// But at this point it may lead to an incomplete result set, because
@@ -858,7 +862,10 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
             if (replica_unavailable)
                 finishFragmentSpanForUnavailableReplica();
             else
+            {
                 finishFragmentSpanForSkippedShard("Shard is unavailable: lost all replica connections (skipped because of `skip_unavailable_shards`)");
+                reportShardSkipped();
+            }
             return ReadResult(Block());
         }
 
@@ -925,12 +932,11 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
                         connections->dumpAddresses(),
                         packet.exception->displayText());
 
-                reportShardSkipped();
-
                 /// The server terminated the query with this exception and will not send `EndOfStream`,
                 /// so mark the executor finished to signal end of data.
                 finished = true;
                 finishFragmentSpanForSkippedShard(packet.exception->message());
+                reportShardSkipped();
                 return ReadResult(Block{});
             }
 
@@ -1068,6 +1074,14 @@ void RemoteQueryExecutor::processMergeTreeInitialReadAnnouncement(InitialAllRang
 
 void RemoteQueryExecutor::finish()
 {
+    {
+        std::lock_guard gate(finish_gate_mutex);
+        ++finish_in_progress;
+    }
+    /// Declared before `guard` so the decrement runs after `was_cancelled_mutex` is released: the gate
+    /// must never be taken while that mutex is held.
+    SCOPE_EXIT({ std::lock_guard gate(finish_gate_mutex); --finish_in_progress; });
+
     /// An exception thrown while cancelling or draining the connections is this fragment's failure.
     SCOPE_FAIL({ failFragmentSpan(); });
     LockAndBlocker guard(was_cancelled_mutex);
@@ -1156,6 +1170,11 @@ void RemoteQueryExecutor::finishUnlocked()
         return;
     }
 
+    /// This thread holds `was_cancelled_mutex` across the blocking drain below, which is the state in
+    /// which `cancel` must return instead of waiting for that mutex. Injected on this thread rather
+    /// than parking it for an outside cancel: `finish` runs from `RemoteSource::work`.
+    fiu_do_on(FailPoints::remote_query_executor_cancel_in_finish_drain, { cancel(); });
+
     /// Get the remaining packets so that there is no out of sync in the connections to the replicas.
     /// We do this manually instead of calling drain() because we want to process Log, ProfileEvents and Progress
     /// packets that had been sent before the connection is fully finished in order to have final statistics of what
@@ -1181,12 +1200,11 @@ void RemoteQueryExecutor::finishUnlocked()
                             connections->dumpAddresses(),
                             packet.exception->displayText());
 
-                    reportShardSkipped();
-
                     /// The server terminated the query with this exception.
                     /// Record it before `finish` closes the span as cancelled: the first outcome wins.
                     finished = true;
                     finishFragmentSpanForSkippedShard(packet.exception->message());
+                    reportShardSkipped();
                     break;
                 }
 
@@ -1225,10 +1243,20 @@ void RemoteQueryExecutor::finishUnlocked()
 
 void RemoteQueryExecutor::cancel()
 {
+    /// `finish` can hold `was_cancelled_mutex` across an unbounded blocking read, and this runs from a
+    /// sweep that must not stall, so it must not wait for that mutex. Taking it while still holding the
+    /// gate is what makes the check meaningful: a `finish` that owns it already incremented the counter.
+    UniqueLock gate(finish_gate_mutex);
+    if (finish_in_progress)
+        return;
+
     /// Failing to deliver the cancel (e.g. over a broken connection) ends the fragment
     /// abnormally: record it as ERROR instead of leaving it as a benign cancel.
     SCOPE_FAIL({ failFragmentSpan(); });
     LockAndBlocker guard(was_cancelled_mutex);
+    /// Released before `cancelUnlocked`, whose `tryCancel` does socket writes: holding the gate across
+    /// them would make every concurrent `finish` wait for that I/O here instead.
+    gate.unlock();
     cancelUnlocked();
 }
 
@@ -1421,14 +1449,18 @@ void RemoteQueryExecutor::setProfileInfoCallback(ProfileInfoCallback callback)
     profile_info_callback = std::move(callback);
 }
 
+bool RemoteQueryExecutor::shouldSkipUnavailableShard() const
+{
+    return context->getSettingsRef()[Setting::skip_unavailable_shards] && (0 == connections->size());
+}
+
 bool RemoteQueryExecutor::needToSkipUnavailableShard()
 {
-    if (context->getSettingsRef()[Setting::skip_unavailable_shards] && (0 == connections->size()))
-    {
-        reportShardSkipped();
-        return true;
-    }
-    return false;
+    if (!shouldSkipUnavailableShard())
+        return false;
+
+    reportShardSkipped();
+    return true;
 }
 
 void RemoteQueryExecutor::reportShardSkipped()
@@ -1443,7 +1475,7 @@ void RemoteQueryExecutor::reportShardSkipped()
     /// `max_skip_unavailable_shards_ratio` limits are exceeded, so the safety bounds apply to every
     /// silently skipped shard regardless of why it was skipped (no connections or an ignored exception).
     if (unavailable_shard_tracker)
-        unavailable_shard_tracker->onShardSkipped();
+        unavailable_shard_tracker->onShardSkipped(got_data_from_replica);
 }
 
 bool RemoteQueryExecutor::processParallelReplicaPacketIfAny()

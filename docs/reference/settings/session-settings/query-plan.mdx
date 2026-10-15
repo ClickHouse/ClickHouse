@@ -28,6 +28,23 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 
+## query_plan_aggregation_having_prefilter {#query_plan_aggregation_having_prefilter}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "New setting to toggle the plan optimization that skips a group's key materialization while a two-level bucket of a final aggregation is converted, when a HAVING bound on that aggregation's own no-argument count() already rejects the group. A skipped group is neither filtered nor finalized, so a HAVING conjunct written before the bound, and a sibling aggregate's finalization, stop being evaluated on the groups the bound rejects. A query that raised an exception from one of those can now succeed; `compatibility` below 26.10 keeps the previous behavior."}]}]}/>
+
+Toggles a query-plan-level optimization for `HAVING count() <comparison> <constant>` over a `GROUP BY`. While a two-level bucket of the aggregation result is converted to chunks, a group whose count cannot satisfy the bound is skipped before its key columns are materialized, instead of being materialized and then discarded by the filter above. Speeds up "groups above a threshold" queries over a high-cardinality `GROUP BY`, where most groups are discarded and the discarded keys are most of the conversion.
+
+A skipped group is neither filtered nor finalized, so this is not only a performance toggle: a `HAVING` conjunct written before the bound, and a sibling aggregate's finalization, stop being evaluated on the groups the bound rejects. A query that raised an exception from one of those can return rows instead, for example `HAVING throwIf(cnt = 3) = 0 AND count() > 3` over a `count() AS cnt`. Setting this to 0, or `compatibility` to a version below `26.10`, keeps the previous behavior.
+
+Only takes effect if setting [query_plan_enable_optimizations](/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) is 1.
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+
 ## query_plan_convert_any_join_to_semi_or_anti_join {#query_plan_convert_any_join_to_semi_or_anti_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -163,11 +180,17 @@ This is an expert-level setting which should only be used for debugging by devel
 
 ## query_plan_join_shard_by_pk_ranges {#query_plan_join_shard_by_pk_ranges}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "0"},{"label": "New setting"}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Enabled by default. A `full_sorting_merge` or `parallel_full_sorting_merge` JOIN of two MergeTree tables whose keys contain a prefix of both primary keys now runs as independent merge joins over primary-key ranges in parallel, instead of a single-threaded merge join. Hash joins are affected only when neither join runtime filters nor spilling to disk are in effect."}]}, {"id": "row-2","items": [{"label": "25.4"},{"label": "0"},{"label": "New setting"}]}]}/>
 
-Apply sharding for JOIN if join keys contain a prefix of PRIMARY KEY for both tables. Supported for hash, parallel_hash, full_sorting_merge and parallel_full_sorting_merge algorithms. Usually does not speed up queries but may lower memory consumption.
+Execute a JOIN of two MergeTree tables as independent joins over primary-key ranges when the join keys contain a prefix of the primary key of both tables. Both tables are split into the same ranges by the values of that prefix (the same way `FINAL` splits parts into non-intersecting layers), so equal keys land in the same range, and each range is joined on its own thread.
+
+For `full_sorting_merge` and `parallel_full_sorting_merge`, this replaces a single-threaded merge join over both tables with one streaming merge join per range, running in parallel, which is typically several times faster and uses several times less memory.
+
+For `hash` and `parallel_hash`, each range gets its own hash table. It applies only when neither join runtime filters (`enable_join_runtime_filters`) nor spilling to disk (`max_bytes_ratio_before_external_join`, `max_bytes_before_external_join`) are in effect, since both make the join opaque to this optimization; then it usually does not speed up queries but may lower memory consumption. Ranges are assigned to threads statically, so a filter that is selective only in some part of the primary key range leaves some threads idle.
+
+Not applied to `FINAL`, `ASOF`, joins with several disjuncts in `ON`, or when reading with parallel replicas.
 
 ## query_plan_join_swap_table {#query_plan_join_swap_table}
 

@@ -493,10 +493,8 @@ class Runner:
             "NOTE: job truncated by a docker daemon failure - "
             "labeling as infrastructure error for auto-retry"
         )
-        # Append the bare label string, not the dict set_label() would store:
-        # retry_infra_failures.yml matches with `any(. == "infra")`, which only
-        # sees a plain string. The other readers (_label_name, json.html
-        # normalizeLabels, gh.py) already accept the string form.
+        # Append the bare label string rather than the dict `set_label` stores:
+        # every reader of `ext["labels"]` accepts the string form.
         labels = result.ext.setdefault("labels", [])
         if Result.Label.INFRA not in labels:
             labels.append(Result.Label.INFRA)
@@ -1054,6 +1052,11 @@ class Runner:
                     file=f,
                 )
 
+        # Before the CIDB insert: it serializes result.info eagerly, so a
+        # traceback lifted afterwards lands in the report but not in CIDB.
+        if env.TRACEBACKS:
+            result.set_info("===\n" + "---\n".join(env.TRACEBACKS))
+
         ci_db = None
         if workflow.enable_cidb and not Settings.SECRET_CI_DB_CONNECTION:
             # Clear, non-fatal message instead of a cryptic
@@ -1105,8 +1108,6 @@ class Runner:
                 print(f"ERROR: {error}")
                 env.add_workflow_error(error)
 
-        if env.TRACEBACKS:
-            result.set_info("===\n" + "---\n".join(env.TRACEBACKS))
         result.dump()
 
         # always in the end
