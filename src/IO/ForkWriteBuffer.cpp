@@ -39,6 +39,10 @@ void ForkWriteBuffer::nextImpl()
         set(sources.front()->buffer().begin(), sources.front()->buffer().size());
         secondary_buffer_offset = source_buffer->offset();
         nextimpl_working_buffer_offset = secondary_buffer_offset;
+        /// The primary may retain an unwritten suffix (see WriteBufferFromFileDescriptor) that
+        /// stays in the working buffer. WriteBuffer::next() adds the whole flushed size to
+        /// `bytes`, so subtract the retained part to avoid counting it twice in count().
+        bytes -= secondary_buffer_offset;
     }
     catch (Exception & exception)
     {

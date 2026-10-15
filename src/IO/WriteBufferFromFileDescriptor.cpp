@@ -177,12 +177,16 @@ void WriteBufferFromFileDescriptor::nextImpl()
         const size_t bytes_left = offset() - bytes_written;
 
         /// WriteBuffer::next() restores pos to nextimpl_working_buffer_offset after this
-        /// method returns. Preserve at least one byte of capacity: otherwise a completely full
-        /// buffer would make the following WriteBuffer::write() spin with zero bytes to copy.
-        if (bytes_left == working_buffer.size())
+        /// method returns. Keep at least as much free capacity as the retained suffix occupies:
+        /// with too little room (e.g. a single byte) every following WriteBuffer::write() would
+        /// fill it at once and come back here for another poll() timeout, so appending to a
+        /// stuck sink would progress by a few bytes per timeout and delay the caller (e.g. the
+        /// client sending the first-stage `Cancel`) for a very long time. Doubling the capacity
+        /// makes the number of such timeouts logarithmic in the amount of retained data.
+        if (bytes_left * 2 > working_buffer.size())
         {
             String unwritten_data(working_buffer.begin() + bytes_written, bytes_left);
-            resize(bytes_left + 1);
+            resize(bytes_left * 2);
             std::memcpy(working_buffer.begin(), unwritten_data.data(), bytes_left);
         }
         else
@@ -191,6 +195,14 @@ void WriteBufferFromFileDescriptor::nextImpl()
         }
 
         nextimpl_working_buffer_offset = bytes_left;
+
+        /// WriteBuffer::next() will add the whole flushed size to `bytes`, but the retained
+        /// suffix is still in the working buffer and is counted again by count() through the
+        /// restored offset. Account only for the bytes that actually left the buffer, so that
+        /// count() stays the number of bytes written into this buffer (formats such as ORC and
+        /// Parquet use it as the file offset). Unsigned wrap-around here is intentional and
+        /// is undone by that addition.
+        bytes -= bytes_left;
     };
     while (bytes_written != offset())
     {

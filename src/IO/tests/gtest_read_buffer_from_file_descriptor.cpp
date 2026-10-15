@@ -1,11 +1,13 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <thread>
 #include <fcntl.h>
 #include <unistd.h>
 
 #include <base/types.h>
 #include <Common/filesystemHelpers.h>
+#include <Common/Stopwatch.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromString.h>
@@ -110,12 +112,15 @@ TEST(WriteBufferFromFileDescriptor, PreservesUnwrittenDataAfterInterruption)
 
     interrupted = true;
     out.next();
+    /// The retained suffix must not be counted twice.
+    EXPECT_EQ(data.size(), out.count());
 
     String result(data.size(), '\0');
     ASSERT_EQ(4096, ::read(pipe_fds[0], result.data(), 4096));
 
     interrupted = false;
     out.finalize();
+    EXPECT_EQ(data.size(), out.count());
     ASSERT_EQ(4096, ::read(pipe_fds[0], result.data() + 4096, 4096));
     EXPECT_EQ(data, result);
 
@@ -140,6 +145,7 @@ TEST(WriteBufferFromFileDescriptor, PreservesFullBufferAfterInterruption)
     out.next();
 
     EXPECT_GT(out.available(), 0);
+    EXPECT_EQ(preserved.size(), out.count());
 
     String result(filler.size(), '\0');
     ASSERT_EQ(static_cast<ssize_t>(result.size()), ::read(pipe_fds[0], result.data(), result.size()));
@@ -155,6 +161,7 @@ TEST(WriteBufferFromFileDescriptor, PreservesFullBufferAfterInterruption)
     const String appended = " appended";
     writeString(appended, out);
     out.finalize();
+    EXPECT_EQ(preserved.size() + appended.size(), out.count());
 
     result.resize(appended.size());
     ASSERT_EQ(static_cast<ssize_t>(result.size()), ::read(pipe_fds[0], result.data(), result.size()));
@@ -162,6 +169,46 @@ TEST(WriteBufferFromFileDescriptor, PreservesFullBufferAfterInterruption)
 
     ASSERT_EQ(0, ::close(pipe_fds[0]));
     ASSERT_EQ(0, ::close(pipe_fds[1]));
+}
+
+TEST(WriteBufferFromFileDescriptor, AppendsPromptlyToStuckSinkAfterInterruption)
+{
+    std::array<int, 2> pipe_fds{};
+    ASSERT_EQ(0, ::pipe(pipe_fds.data()));
+    ASSERT_EQ(4096, ::fcntl(pipe_fds[1], F_SETPIPE_SZ, 4096));
+
+    const String filler(4096, 'f');
+    ASSERT_EQ(static_cast<ssize_t>(filler.size()), ::write(pipe_fds[1], filler.data(), filler.size()));
+
+    /// The reader stays paused while much more data than the buffer holds is appended. Every
+    /// flush waits for one poll() timeout and retains the data, so this must not degrade into
+    /// one timeout per few appended bytes.
+    WriteBufferFromFileDescriptor out(pipe_fds[1], 4096);
+    out.setCancellationHook([] { return false; }, [] { return true; });
+
+    const String data(64 * 1024, 'd');
+    Stopwatch watch;
+    writeString(data, out);
+    out.next();
+    EXPECT_LT(watch.elapsedMilliseconds(), 10000);
+    EXPECT_EQ(data.size(), out.count());
+
+    /// Drain the pipe concurrently while finalizing and check that nothing was lost.
+    out.setCancellationHook({});
+    String result;
+    std::thread reader([&]
+    {
+        std::array<char, 4096> chunk{};
+        ssize_t res = 0;
+        while ((res = ::read(pipe_fds[0], chunk.data(), chunk.size())) > 0)
+            result.append(chunk.data(), res);
+    });
+    out.finalize();
+    ASSERT_EQ(0, ::close(pipe_fds[1]));
+    reader.join();
+    EXPECT_EQ(filler + data, result);
+
+    ASSERT_EQ(0, ::close(pipe_fds[0]));
 }
 
 TEST(ForkWriteBuffer, DoesNotReplayPreservedPrimarySuffixToSecondary)
@@ -184,6 +231,7 @@ TEST(ForkWriteBuffer, DoesNotReplayPreservedPrimarySuffixToSecondary)
     const String preserved = "preserved suffix";
     writeString(preserved, fork);
     fork.next();
+    EXPECT_EQ(preserved.size(), fork.count());
 
     String drained(filler.size(), '\0');
     ASSERT_EQ(static_cast<ssize_t>(drained.size()), ::read(pipe_fds[0], drained.data(), drained.size()));
@@ -192,6 +240,7 @@ TEST(ForkWriteBuffer, DoesNotReplayPreservedPrimarySuffixToSecondary)
     const String appended = " plus new data";
     writeString(appended, fork);
     fork.finalize();
+    EXPECT_EQ(preserved.size() + appended.size(), fork.count());
 
     EXPECT_EQ(preserved + appended, mirrored);
 
