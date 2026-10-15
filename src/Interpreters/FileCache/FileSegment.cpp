@@ -1001,8 +1001,9 @@ void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key
     LOG_TEST(getLog(),"Shrinking file segment {} -> {} (downloaded size: {})",
              range().size(), result_size, downloaded_size.load());
 
+    const size_t old_range_size = range().size();
     segment_range.right = segment_range.left + result_size - 1;
-    onRangeShrunk();
+    onRangeShrunk(old_range_size);
 
     if (downloaded_size == result_size)
     {
@@ -1560,7 +1561,7 @@ void FileSegment::markRead(size_t offset, size_t size)
         return;
 
     if (!efficiency)
-        efficiency = std::make_unique<FileSegmentEfficiency>();
+        efficiency = std::make_unique<FileSegmentEfficiency>(range().size());
     efficiency->markRead(
         cache_efficiency, ByteRange{range().left, range().size()}, ByteRange{offset, size}, static_cast<Int64>(reserved_size.load()),
         size_class.large);
@@ -1603,7 +1604,7 @@ void FileSegment::onLoadedIntoCache()
     counted_in_segment_sizes = true;
 }
 
-void FileSegment::onRangeShrunk()
+void FileSegment::onRangeShrunk(size_t old_range_size)
 {
     if (!cache || is_unbound)
         return;
@@ -1615,8 +1616,8 @@ void FileSegment::onRangeShrunk()
         cache->getSegmentSizes().add(size_class, -1, -bytes);
         cache->getSegmentSizes().add(new_class, 1, bytes);
     }
-    if (efficiency && new_class.large != size_class.large)
-        efficiency->moveToClass(cache->getEfficiency(), range().size(), bytes, new_class.large);
+    if (efficiency)
+        efficiency->shrink(cache->getEfficiency(), old_range_size, range().size(), bytes, size_class.large, new_class.large);
     size_class = new_class;
 }
 

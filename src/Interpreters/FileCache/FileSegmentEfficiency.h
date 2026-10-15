@@ -19,10 +19,14 @@ public:
     /// The last granule is cut at the end of the file segment.
     static constexpr size_t GRANULE_SIZE = 64 * 1024;
 
+    /// Allocates the granules here, so that no allocation follows a change of the cache counters.
+    explicit FileSegmentEfficiency(size_t range_size);
+
     void markRead(FileCacheEfficiency & cache_efficiency, ByteRange range, ByteRange read, Int64 reserved_bytes, bool large);
 
     void addReservedBytes(FileCacheEfficiency & cache_efficiency, Int64 delta, bool large) const;
-    void moveToClass(FileCacheEfficiency & cache_efficiency, size_t range_size, Int64 reserved_bytes, bool large) const;
+    /// The range shrank from `old_range_size`: the last granule is cut at the new end, and the size class may change.
+    void shrink(FileCacheEfficiency & cache_efficiency, size_t old_range_size, size_t range_size, Int64 reserved_bytes, bool was_large, bool large) const;
     void remove(FileCacheEfficiency & cache_efficiency, size_t range_size, Int64 reserved_bytes, bool large) const;
 
     FileSegmentEfficiencyInfo getInfo(FileCacheEfficiency::Window current_window, size_t range_size, size_t downloaded_size) const;

@@ -22,6 +22,11 @@ size_t lastGranuleSize(size_t size)
 
 }
 
+FileSegmentEfficiency::FileSegmentEfficiency(size_t range_size)
+    : active_granules(lastGranuleNumber(range_size) + 1, false)
+{
+}
+
 void FileSegmentEfficiency::markRead(
     FileCacheEfficiency & cache_efficiency, ByteRange range, ByteRange read, Int64 reserved_bytes, bool large)
 {
@@ -47,17 +52,30 @@ void FileSegmentEfficiency::addReservedBytes(FileCacheEfficiency & cache_efficie
     cache_efficiency.addPassiveBytes(window, delta, large);
 }
 
-void FileSegmentEfficiency::moveToClass(FileCacheEfficiency & cache_efficiency, size_t range_size, Int64 reserved_bytes, bool large) const
+void FileSegmentEfficiency::shrink(
+    FileCacheEfficiency & cache_efficiency, size_t old_range_size, size_t range_size, Int64 reserved_bytes, bool was_large, bool large) const
 {
     /// The same bytes that `remove` subtracts later, so the classes stay exact.
+    const auto old_active = static_cast<Int64>(getActiveBytes(old_range_size));
     const auto active = static_cast<Int64>(getActiveBytes(range_size));
-    cache_efficiency.moveToClass(window, active, reserved_bytes - active, large);
+    auto delta = FileCacheEfficiency::Delta::of(active - old_active, old_active - active, /*large=*/false);
+    if (was_large)
+    {
+        delta.large_active -= old_active;
+        delta.large_passive -= reserved_bytes - old_active;
+    }
+    if (large)
+    {
+        delta.large_active += active;
+        delta.large_passive += reserved_bytes - active;
+    }
+    cache_efficiency.apply(window, delta);
 }
 
 void FileSegmentEfficiency::remove(FileCacheEfficiency & cache_efficiency, size_t range_size, Int64 reserved_bytes, bool large) const
 {
-    cache_efficiency.addPassiveBytes(window, -reserved_bytes, large);
-    cache_efficiency.moveToActive(window, -static_cast<Int64>(getActiveBytes(range_size)), large);
+    const auto active = static_cast<Int64>(getActiveBytes(range_size));
+    cache_efficiency.apply(window, FileCacheEfficiency::Delta::of(-active, active - reserved_bytes, large));
 }
 
 FileSegmentEfficiencyInfo FileSegmentEfficiency::getInfo(
@@ -126,7 +144,8 @@ void FileSegmentEfficiency::startWindow(FileCacheEfficiency::Window new_window, 
         previous_hit_window = window;
         previous_active_bytes = getActiveBytes(range_size);
     }
-    active_granules.assign(lastGranuleNumber(range_size) + 1, false);
+    /// The range never grows, so the granules allocated in the constructor are enough.
+    std::fill(active_granules.begin(), active_granules.end(), false);
     window = new_window;
 }
 

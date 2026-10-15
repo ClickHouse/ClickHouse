@@ -90,28 +90,15 @@ void FileCacheEfficiency::addPassiveBytes(Window segment_window, Int64 bytes, bo
         large_stats.passive += bytes;
 }
 
-void FileCacheEfficiency::moveToActive(Window segment_window, Int64 bytes, bool large)
+void FileCacheEfficiency::apply(Window segment_window, const Delta & delta)
 {
     std::lock_guard lock(mutex);
     if (segment_window != window)
         return;
-    stats.active += bytes;
-    stats.passive -= bytes;
-    if (large)
-    {
-        large_stats.active += bytes;
-        large_stats.passive -= bytes;
-    }
-}
-
-void FileCacheEfficiency::moveToClass(Window segment_window, Int64 active, Int64 passive, bool large)
-{
-    std::lock_guard lock(mutex);
-    if (segment_window != window)
-        return;
-    const Int64 sign = large ? 1 : -1;
-    large_stats.active += sign * active;
-    large_stats.passive += sign * passive;
+    stats.active += delta.active;
+    stats.passive += delta.passive;
+    large_stats.active += delta.large_active;
+    large_stats.passive += delta.large_passive;
 }
 
 FileCacheEfficiency::Window FileCacheEfficiency::countRead(const SegmentRead & read)

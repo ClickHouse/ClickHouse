@@ -298,7 +298,7 @@ private:
     void onLoadedIntoCache();
     void onRemovedFromCache(const FileSegmentGuard::Lock &);
     /// Moves the file segment to the size class of its new range.
-    void onRangeShrunk();
+    void onRangeShrunk(size_t old_range_size);
     FileSegmentEfficiencyInfo getEfficiencyInfo(const FileSegmentGuard::Lock &) const;
 
     /// In release builds returns a single shared logger; in debug builds a per-segment one.

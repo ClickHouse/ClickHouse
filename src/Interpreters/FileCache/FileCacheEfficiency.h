@@ -42,11 +42,21 @@ public:
     /// Rotates if the current window ended.
     Window currentWindow();
 
+    /// A change of the bytes of one file segment, for all and for large file segments.
+    struct Delta
+    {
+        Int64 active = 0;
+        Int64 passive = 0;
+        Int64 large_active = 0;
+        Int64 large_passive = 0;
+
+        static Delta of(Int64 active, Int64 passive, bool large) { return {active, passive, large ? active : 0, large ? passive : 0}; }
+    };
+
     /// No-op unless `segment_window` is the current window.
     void addPassiveBytes(Window segment_window, Int64 bytes, bool large);
-    void moveToActive(Window segment_window, Int64 bytes, bool large);
-    /// A file segment became large or not large.
-    void moveToClass(Window segment_window, Int64 active, Int64 passive, bool large);
+    /// Under one lock, so that a rotation sees all of `delta` or none of it. No-op unless `segment_window` is the current window.
+    void apply(Window segment_window, const Delta & delta);
 
     /// `reserved_bytes` become passive if the read starts a new window for the file segment.
     struct SegmentRead

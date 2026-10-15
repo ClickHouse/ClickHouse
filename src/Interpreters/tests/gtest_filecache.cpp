@@ -4888,6 +4888,43 @@ TEST_F(FileCacheTest, EfficiencyShrinkWithinWindow)
     EXPECT_EQ(snapshot.passive_bytes, G);
 }
 
+TEST_F(FileCacheTest, EfficiencyShrinkAfterTailHit)
+{
+    DB::ThreadStatus thread_status;
+    auto query_scope_holder = DB::QueryScope::create(makeEfficiencyQueryContext("efficiency_shrink_tail_test"));
+    /// Alignment 1 makes the shrink exact.
+    auto settings = efficiencyCacheSettings(W);
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::reserve_granularity] = 0;
+    auto cache = DB::FileCache("efficiency_shrink_tail", settings);
+    cache.initialize();
+    const auto & user = FileCache::getCommonOrigin();
+
+    /// The hit counts a whole granule, which becomes the cut last granule when the segment shrinks to its
+    /// 100 downloaded bytes.
+    auto key = FileCacheKey::fromPath("efficiency_shrink_tail_key");
+    {
+        auto holder = cache.getOrSet(key, 0, S, /*file_size=*/4 * S, {}, 0, user);
+        auto segment = get(holder, 0);
+        ASSERT_EQ(segment->getOrSetDownloader(), FileSegment::getCallerId());
+        std::string failure_reason;
+        ASSERT_TRUE(segment->reserve(G, 1000, failure_reason));
+        auto key_str = key.toString();
+        fs::create_directories(fs::path(cache_base_path) / key_str.substr(0, 3) / key_str);
+        std::string data(100, '0');
+        segment->write(data.data(), data.size(), segment->getCurrentWriteOffset());
+        segment->markRead(0, 100);
+    }
+
+    /// The removal takes back what the hit and the shrink left, so the empty cache has no active bytes.
+    cache.removeAllReleasable(user.user_id);
+    cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(W));
+    const auto snapshot = cache.getEfficiency().getSnapshot();
+    EXPECT_EQ(snapshot.active_bytes, 0);
+    EXPECT_EQ(snapshot.passive_bytes, 0);
+    EXPECT_EQ(snapshot.idle_bytes, 0);
+}
+
 TEST(FileCacheSegmentSizes, Buckets)
 {
     const FileCacheSegmentSizes sizes(4_MiB);
