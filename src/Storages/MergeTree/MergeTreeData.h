@@ -2266,8 +2266,8 @@ protected:
 
     /// Protects the `refresh_stats_task` holder itself (it is reassigned by `startStatisticsCache`, which
     /// can run concurrently with `stopStatisticsCache` when a table startup or an `ALTER` races with a
-    /// shutdown), `refresh_stats_stopped` and the pause state. The task callback reads the holder without this
-    /// mutex: it only runs while the task is active, and the holder is reassigned only after deactivating it.
+    /// shutdown) and `refresh_stats_stopped`. The task callback reads the holder without this mutex: it
+    /// only runs while the task is active, and the holder is reassigned only after deactivating it.
     std::mutex refresh_stats_task_mutex;
     BackgroundSchedulePoolTaskHolder refresh_stats_task;
     /// Set by `stopStatisticsCache`, after which `startStatisticsCache` does not arm the task anymore.
@@ -2286,6 +2286,7 @@ protected:
     /// Idempotent. Called on shutdown.
     void stopStatisticsCache();
     /// Waits for a running statistics refresh and keeps the task inactive until the guard is destroyed.
+    /// Held while renaming parts in place: the refresh reads part paths without any lock.
     [[nodiscard]] scope_guard pauseStatisticsCache();
     void refreshStatistics(UInt64 interval_seconds);
 

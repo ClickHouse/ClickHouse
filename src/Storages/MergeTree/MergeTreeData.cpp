@@ -5305,7 +5305,6 @@ void MergeTreeData::rename(const String & new_table_path, const StorageID & new_
             throw Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS, "Target path already exists: {}", fullPath(disk, new_table_path));
     }
 
-    /// The paths of all parts change, and the statistics refresh reads them without any table lock.
     auto statistics_cache_pause = pauseStatisticsCache();
 
     for (const auto & disk : disks)

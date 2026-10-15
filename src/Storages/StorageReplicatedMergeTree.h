@@ -327,8 +327,7 @@ public:
     /// Restores table metadata if ZooKeeper lost it.
     /// Used only on restarted readonly replicas (not checked). All active (Active) parts are moved to detached/
     /// folder and attached. Parts in all other states are just moved to detached/ folder.
-    /// `lock_out_readers`, if set, returns exclusive locks on the table objects that readers lock (a lazily
-    /// loaded table's stand-in and its nested storage); they are held while the parts are moved.
+    /// `lock_out_readers`, if set, returns table locks that are held while the parts are moved.
     void restoreMetadataInZooKeeper(
         const ZooKeeperRetriesInfo & zookeeper_retries_info,
         bool is_called_during_attach,

@@ -7619,7 +7619,6 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(
 
     waitForOutdatedPartsToBeLoaded();
 
-    /// The parts are renamed in place below, so nobody may read them meanwhile.
     std::vector<TableExclusiveLockHolder> readers_locks;
     if (lock_out_readers)
         readers_locks = lock_out_readers();
