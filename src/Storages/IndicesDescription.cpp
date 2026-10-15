@@ -256,10 +256,8 @@ IndexDescription IndexDescription::getIndexFromAST(
         identity.update(where_hash.low64);
         identity.update(where_hash.high64);
         identity.update(result.where_settings_salt);
-        /// What the functions of the condition captured from the server settings, as the query side compares it.
-        for (const auto & node : result.where_expression->getActionsDAG().getNodes())
-            if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base)
-                node.function_base->updateHash(identity);
+        /// The analysed condition the writer runs: each step with its result type and the state its function captured.
+        result.where_expression->getActionsDAG().updateHash(identity);
         identity.update(result.type);
         if (result.arguments)
         {
@@ -270,6 +268,7 @@ IndexDescription IndexDescription::getIndexFromAST(
         const auto expression_hash = result.expression_list_ast->getTreeHash(/*ignore_aliases=*/ true);
         identity.update(expression_hash.low64);
         identity.update(expression_hash.high64);
+        result.selected_rows_expression->getActionsDAG().updateHash(identity);
         identity.update(result.granularity);
         result.where_identity = identity.get128();
     }
