@@ -53,6 +53,10 @@ struct ChunkInfoRowNumbers : public ChunkInfo
 /// Structure for storing information about buckets that IInputFormat needs to read.
 struct FileBucketInfo
 {
+    FileBucketInfo() = default;
+    FileBucketInfo(const FileBucketInfo &) = default;
+    FileBucketInfo & operator=(const FileBucketInfo &) = default;
+
     virtual void serialize(WriteBuffer & buffer, size_t protocol_version) const = 0;
     virtual void deserialize(ReadBuffer & buffer, size_t protocol_version) = 0;
     virtual String getIdentifier() const = 0;
