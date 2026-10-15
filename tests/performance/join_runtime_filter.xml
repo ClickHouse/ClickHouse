@@ -163,6 +163,46 @@
         SETTINGS enable_join_runtime_filters=1
     </query>
 
+    <!-- ASOF JOIN: same tables and ON condition as the mixed equi + non-equi case above,
+         just as an ASOF INNER JOIN instead of a regular JOIN. The runtime filter is built on
+         the equality key only, skipping the mandatory closest-match (non-equality) condition.
+         Since each c_custkey has a single matching row here, the closest-match lookup itself
+         is trivial and the queries only measure the effect of the equality-key runtime filter. -->
+
+    <!-- 1 element in filter (ETHIOPIA): equality key filters ~99.999% of probe rows -->
+    <query>
+        SELECT avg(o_totalprice)
+        FROM orders
+        ASOF INNER JOIN (SELECT * FROM customer JOIN nation ON c_nationkey = n_nationkey WHERE n_name = 'ETHIOPIA') AS cn
+        ON c_custkey = o_custkey AND o_totalprice > c_nationkey * 100
+        SETTINGS enable_join_runtime_filters=0
+    </query>
+
+    <query>
+        SELECT avg(o_totalprice)
+        FROM orders
+        ASOF INNER JOIN (SELECT * FROM customer JOIN nation ON c_nationkey = n_nationkey WHERE n_name = 'ETHIOPIA') AS cn
+        ON c_custkey = o_custkey AND o_totalprice > c_nationkey * 100
+        SETTINGS enable_join_runtime_filters=1
+    </query>
+
+    <!-- 10000 elements in filter (GERMANY): equality key filters ~90% of probe rows -->
+    <query>
+        SELECT avg(o_totalprice)
+        FROM orders
+        ASOF INNER JOIN (SELECT * FROM customer JOIN nation ON c_nationkey = n_nationkey WHERE n_name = 'GERMANY') AS cn
+        ON c_custkey = o_custkey AND o_totalprice > c_nationkey * 100
+        SETTINGS enable_join_runtime_filters=0
+    </query>
+
+    <query>
+        SELECT avg(o_totalprice)
+        FROM orders
+        ASOF INNER JOIN (SELECT * FROM customer JOIN nation ON c_nationkey = n_nationkey WHERE n_name = 'GERMANY') AS cn
+        ON c_custkey = o_custkey AND o_totalprice > c_nationkey * 100
+        SETTINGS enable_join_runtime_filters=1
+    </query>
+
     <drop_query>DROP TABLE orders</drop_query>
     <drop_query>DROP TABLE customer</drop_query>
     <drop_query>DROP TABLE nation</drop_query>
