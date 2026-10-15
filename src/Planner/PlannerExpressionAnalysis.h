@@ -44,6 +44,8 @@ struct AggregationAnalysisResult
 struct WindowAnalysisResult
 {
     ActionsAndProjectInputsFlagPtr before_window_actions;
+    /// The projection expressions that are computed right before the window functions, can be null.
+    ActionsAndProjectInputsFlagPtr before_window_projection_actions;
     std::vector<WindowDescription> window_descriptions;
 };
 

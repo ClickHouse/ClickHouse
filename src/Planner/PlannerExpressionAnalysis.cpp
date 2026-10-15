@@ -3,6 +3,7 @@
 #include <stack>
 #include <Planner/PlannerExpressionAnalysis.h>
 
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/FilterDescription.h>
 
@@ -15,8 +16,11 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
+#include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ConstantNode.h>
+#include <Analyzer/LambdaNode.h>
+#include <Analyzer/ListNode.h>
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/Utils.h>
 #include <Analyzer/WindowNode.h>
@@ -330,6 +334,86 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
     return aggregation_analysis_result;
 }
 
+/** Whether the expression can be computed before the window functions instead of after them.
+  * The window step keeps every row and only changes the order of rows and their split into blocks,
+  * so an expression evaluated row by row has the same value on either side of it.
+  * `depends_on_columns` is set if the expression reads a column or an aggregate function result.
+  */
+bool canBeComputedBeforeWindow(const QueryTreeNodePtr & node, const ColumnNodePtrWithHashSet & correlated_columns_set, bool & depends_on_columns)
+{
+    switch (node->getNodeType())
+    {
+        case QueryTreeNodeType::CONSTANT:
+            return true;
+        case QueryTreeNodeType::COLUMN:
+        {
+            depends_on_columns = true;
+            return !correlated_columns_set.contains(std::static_pointer_cast<ColumnNode>(node));
+        }
+        case QueryTreeNodeType::LIST:
+        {
+            for (const auto & child : node->as<ListNode &>().getNodes())
+                if (!canBeComputedBeforeWindow(child, correlated_columns_set, depends_on_columns))
+                    return false;
+            return true;
+        }
+        case QueryTreeNodeType::LAMBDA:
+            return canBeComputedBeforeWindow(node->as<LambdaNode &>().getExpression(), correlated_columns_set, depends_on_columns);
+        case QueryTreeNodeType::FUNCTION:
+        {
+            const auto & function_node = node->as<FunctionNode &>();
+            if (function_node.isWindowFunction())
+                return false;
+
+            /// The result of an aggregate function is an input column of the actions after aggregation.
+            if (function_node.isAggregateFunction())
+            {
+                depends_on_columns = true;
+                return true;
+            }
+
+            /// `arrayJoin` in the projection multiplies the rows only after the window functions are computed.
+            if (function_node.getFunctionName() == "arrayJoin")
+                return false;
+
+            /// Stateful functions (`rowNumberInBlock`, `runningDifference`, ...) depend on the order of rows and on blocks.
+            if (auto function = function_node.getFunction(); function && function->isStateful())
+                return false;
+
+            return canBeComputedBeforeWindow(function_node.getArgumentsNode(), correlated_columns_set, depends_on_columns);
+        }
+        default:
+            /// Subqueries.
+            return false;
+    }
+}
+
+/** Collect the largest subexpressions of the projection that can be computed before the window functions.
+  * Window functions buffer their input, so computing the projection expressions before them lets the window step
+  * buffer the results of these expressions instead of the columns they read, which are usually larger.
+  * An expression that does not read any column is not collected: computing it earlier only adds a column to the buffer.
+  */
+void collectExpressionsComputableBeforeWindow(
+    const QueryTreeNodePtr & node,
+    const ColumnNodePtrWithHashSet & correlated_columns_set,
+    QueryTreeNodes & result)
+{
+    auto * function_node = node->as<FunctionNode>();
+    if (!function_node || !function_node->isOrdinaryFunction())
+        return;
+
+    bool depends_on_columns = false;
+    if (canBeComputedBeforeWindow(node, correlated_columns_set, depends_on_columns))
+    {
+        if (depends_on_columns)
+            result.push_back(node);
+        return;
+    }
+
+    for (const auto & argument : function_node->getArguments().getNodes())
+        collectExpressionsComputableBeforeWindow(argument, correlated_columns_set, result);
+}
+
 /** Construct window analysis result if query tree has window functions.
   * Actions before window functions are added into actions chain, if result is not null optional.
   */
@@ -450,13 +534,78 @@ std::optional<WindowAnalysisResult> analyzeWindow(
         for (auto & window_function : window_description.window_functions)
             window_functions_additional_columns.emplace_back(nullptr, window_function.aggregate_function->getResultType(), window_function.column_name);
 
-    auto before_window_step = std::make_unique<ActionsChainStep>(before_window_actions,
-        true /*use_actions_nodes_as_output_columns*/,
-        window_functions_additional_columns);
-    actions_chain.addStep(std::move(before_window_step));
+    /// With `QUALIFY`, the projection is computed only for the rows that pass the filter after the window functions.
+    QueryTreeNodes expressions_before_window;
+    const auto & query_node = query_tree->as<const QueryNode &>();
+    if (!query_node.hasQualify())
+    {
+        for (const auto & projection_node : query_node.getProjection().getNodes())
+            collectExpressionsComputableBeforeWindow(projection_node, correlated_columns_set, expressions_before_window);
+    }
 
     WindowAnalysisResult result;
+
+    if (expressions_before_window.empty())
+    {
+        actions_chain.addStep(std::make_unique<ActionsChainStep>(before_window_actions,
+            true /*use_actions_nodes_as_output_columns*/,
+            window_functions_additional_columns));
+
+        result.before_window_actions = std::move(before_window_actions);
+        result.window_descriptions = std::move(window_descriptions);
+        return result;
+    }
+
+    actions_chain.addStep(std::make_unique<ActionsChainStep>(before_window_actions, true /*use_actions_nodes_as_output_columns*/));
+
+    /** The projection expressions are computed in a separate step, which is executed on the initiator together with
+      * the window functions, while the "Before WINDOW" actions may be executed on the shards.
+      * Keeping them separate keeps the header of the blocks sent by the shards the same as without this step.
+      */
+    auto before_window_projection_actions = std::make_shared<ActionsAndProjectInputsFlag>();
+    before_window_projection_actions->dag = ActionsDAG(actions_chain.getLastStepAvailableOutputColumns());
+
+    auto & before_window_projection_outputs = before_window_projection_actions->dag.getOutputs();
+    before_window_projection_outputs.clear();
+
+    std::unordered_set<std::string_view> before_window_projection_output_node_names;
+
+    std::unordered_map<std::string_view, const ActionsDAG::Node *> before_window_projection_inputs_by_name;
+    for (const auto * input_node : before_window_projection_actions->dag.getInputs())
+        before_window_projection_inputs_by_name.emplace(input_node->result_name, input_node);
+
+    /// The columns read by the window step.
+    for (const auto * before_window_output_node : before_window_actions->dag.getOutputs())
+    {
+        if (!before_window_projection_output_node_names.insert(before_window_output_node->result_name).second)
+            continue;
+
+        before_window_projection_outputs.push_back(before_window_projection_inputs_by_name.at(before_window_output_node->result_name));
+    }
+
+    for (const auto & expression : expressions_before_window)
+    {
+        auto [expression_dag_nodes, correlated_subtrees] = actions_visitor.visit(before_window_projection_actions->dag, expression);
+        correlated_subtrees.assertEmpty("in projection computed before window functions");
+
+        for (const auto * expression_dag_node : expression_dag_nodes)
+        {
+            if (expression_dag_node->column && isColumnConst(*expression_dag_node->column))
+                continue;
+
+            if (!before_window_projection_output_node_names.insert(expression_dag_node->result_name).second)
+                continue;
+
+            before_window_projection_outputs.push_back(expression_dag_node);
+        }
+    }
+
+    actions_chain.addStep(std::make_unique<ActionsChainStep>(before_window_projection_actions,
+        true /*use_actions_nodes_as_output_columns*/,
+        window_functions_additional_columns));
+
     result.before_window_actions = std::move(before_window_actions);
+    result.before_window_projection_actions = std::move(before_window_projection_actions);
     result.window_descriptions = std::move(window_descriptions);
 
     return result;
