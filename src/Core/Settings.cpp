@@ -10253,7 +10253,7 @@ Minimum estimated ratio of join output rows to build-side rows to enable transfo
     DECLARE(UInt64, min_string_column_bytes_for_hash_join_row_store, 8_MiB, R"(
 Minimum estimated size of a build-side `String` column, the estimated number of rows multiplied by the average value size from statistics, to store it in the hash join row store. 0 means the size is not checked.
 )", 0, \
-        {"26.11", 0, 8_MiB, "New setting to control the minimum estimated size of a build-side `String` column to store it in the hash join row store."}) \
+        {"26.11", 8_MiB, 8_MiB, "New setting to control the minimum estimated size of a build-side `String` column to store it in the hash join row store."}) \
     \
     /* ####################################################### */ \
     /* AI function settings */ \
