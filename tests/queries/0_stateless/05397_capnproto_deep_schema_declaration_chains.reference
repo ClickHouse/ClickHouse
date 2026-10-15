@@ -4,6 +4,8 @@ application_chain
 1
 nested_suffix_chains
 1
+alias_chain
+1
 const_chain
 1
 struct_chain_with_defaults

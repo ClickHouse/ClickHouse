@@ -51,6 +51,7 @@ n_suffix = 200000
 schema('member_chain', 'struct M { data @0 :Int32' + '.a' * n_suffix + '; }\n')
 schema('application_chain', 'struct M { data @0 :Int32' + '()' * n_suffix + '; }\n')
 schema('nested_suffix_chains', 'struct M { data @0 :' + 'List(' * 10 + 'Int32' + (')' + '.a' * 200) * 10 + '; }\n')
+schema('alias_chain', 'struct M { data @0 :A0; }\n' + alias_chain(n))
 schema('const_chain', message + const_chain(n))
 schema('struct_chain_with_defaults', message + struct_chain_with_defaults(n))
 schema('enum_annotation_chain', message + enum_annotation_chain(n))
@@ -58,7 +59,7 @@ schema('shallow_chains', 'struct M { data @0 :A0; s @1 :S0; e @2 :E0; }\n'
        + alias_chain(2) + const_chain(2) + struct_chain_with_defaults(2) + enum_annotation_chain(2))
 PY
 
-for name in member_chain application_chain nested_suffix_chains const_chain struct_chain_with_defaults enum_annotation_chain
+for name in member_chain application_chain nested_suffix_chains alias_chain const_chain struct_chain_with_defaults enum_annotation_chain
 do
     echo "${name}"
     ${CLICKHOUSE_LOCAL} --logger.console=0 --query "
