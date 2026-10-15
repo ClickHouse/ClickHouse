@@ -36,11 +36,21 @@ SELECT x FROM t_hash WHERE x IN (SELECT toDecimal32(1.23, 2)) ORDER BY x;
 CREATE TABLE t_skip (d DateTime('UTC'), INDEX i d TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
 INSERT INTO t_skip VALUES ('2023-02-01 12:00:01'), ('2023-02-03 13:00:00');
 SELECT count() FROM t_skip WHERE d IN (SELECT toDate('2023-02-01')) SETTINGS use_skip_indexes_on_data_read = 0;
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_skip WHERE d IN (SELECT toDateTime('2023-02-01 12:00:01', 'UTC')) SETTINGS use_skip_indexes_on_data_read = 0) WHERE explain ILIKE '%Granules: 1/2%';
 
 CREATE TABLE t_stat (d DateTime('Asia/Tokyo'), b String) ENGINE = MergeTree ORDER BY tuple()
 SETTINGS add_minmax_index_for_string_columns = 1, auto_statistics_types = 'minmax';
-INSERT INTO t_stat VALUES (0, 'two');
+INSERT INTO t_stat SETTINGS materialize_statistics_on_insert = 1 VALUES (0, 'two');
 SELECT count() FROM t_stat WHERE (d, b) IN (SELECT toDate('1970-01-01'), 'two') SETTINGS use_statistics_for_part_pruning = 1, use_skip_indexes_on_data_read = 0;
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT b FROM t_stat WHERE (d, b) IN (SELECT toDateTime(1, 'Asia/Tokyo'), 'two') SETTINGS use_statistics_for_part_pruning = 1, use_skip_indexes_on_data_read = 0) WHERE explain ILIKE '%Parts: 0/1%';
+
+CREATE TABLE t_bool (x UInt8) ENGINE = MergeTree ORDER BY x SETTINGS index_granularity = 1;
+INSERT INTO t_bool VALUES (0), (2);
+SELECT count() FROM t_bool WHERE x IN (SELECT true);
+
+CREATE TABLE t_float (x Float64) ENGINE = MergeTree ORDER BY x SETTINGS index_granularity = 1;
+INSERT INTO t_float VALUES (1.234), (2);
+SELECT count() FROM t_float WHERE x IN (SELECT toDecimal32(1.23, 2));
 
 -- A set whose cast merges nothing keeps pruning.
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dt WHERE d IN (SELECT toDateTime('2023-02-01 12:00:01', 'UTC'))) WHERE explain ILIKE '%Granules: 1/2%';
@@ -48,6 +58,9 @@ SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dt WHERE toDate(d) 
 CREATE TABLE t_date (d Date) ENGINE = MergeTree ORDER BY d SETTINGS index_granularity = 1;
 INSERT INTO t_date VALUES ('2023-02-01'), ('2023-02-03');
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_date WHERE d IN (SELECT toDateTime('2023-02-01 00:00:00', 'UTC'))) WHERE explain ILIKE '%Granules: 1/2%';
+CREATE TABLE t_dec9 (d Decimal(9, 0)) ENGINE = MergeTree ORDER BY d SETTINGS index_granularity = 1;
+INSERT INTO t_dec9 VALUES (1), (2);
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dec9 WHERE d IN (SELECT toFloat64(1))) WHERE explain ILIKE '%Granules: 1/2%';
 
 DROP TABLE t_dt;
 DROP TABLE t_dt64;
@@ -59,3 +72,6 @@ DROP TABLE t_hash;
 DROP TABLE t_skip;
 DROP TABLE t_stat;
 DROP TABLE t_date;
+DROP TABLE t_bool;
+DROP TABLE t_float;
+DROP TABLE t_dec9;

@@ -3411,6 +3411,14 @@ static bool keyToSetConversionMayCollapse(const DataTypePtr & key_type, const Da
         return false;
     }
 
+    /// `Bool` takes every nonzero value to `true`.
+    if (isBool(set_unwrapped) && !isBool(key_unwrapped))
+        return true;
+
+    /// A float is cast into a scaled type by truncating the digits below the scale.
+    if (key_which.isFloat() && tryGetDecimalScale(*set_unwrapped))
+        return true;
+
     /// A text key is equality-preserving only against the same text type: `FixedString` padding and
     /// text-to-numeric parsing both merge distinct keys. A `FixedString` key cast into `String` only
     /// loses its trailing zero bytes, which is injective at a fixed width.
@@ -3446,9 +3454,15 @@ static bool keyToSetConversionMayCollapse(const DataTypePtr & key_type, const Da
         /// An integer target keeps only the whole part; at scale 0 that division is the identity.
         else if (set_which.isInteger() && *key_scale > 0)
             return true;
-        /// A float target loses mantissa precision at any scale.
+        /// A float target keeps `digits10` significant decimal digits apart, so only a wider key can collapse.
         else if (set_which.isFloat())
-            return true;
+        {
+            const UInt32 exact_digits = set_which.isFloat64() ? std::numeric_limits<Float64>::digits10
+                : set_which.isFloat32()                       ? std::numeric_limits<Float32>::digits10
+                                                              : 0;
+            if (getDecimalPrecision(*key_unwrapped) > exact_digits)
+                return true;
+        }
         /// `Set::execute` drops the sub-second keys of a top-level `DateTime64` column only, so an
         /// element is truncated to the second.
         else if (is_element && key_which.isDateTime64() && set_which.isDateTime() && *key_scale > 0)
