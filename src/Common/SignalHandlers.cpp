@@ -637,7 +637,8 @@ try
     LOG_FATAL(log, "(version {}{}, build id: {}, git hash: {}, architecture: {}) (from thread {}) Received signal {} ({})",
               VERSION_STRING, VERSION_OFFICIAL, build_id_if_already_known(), GIT_HASH, Poco::Environment::osArchitecture(),
               thread_num, sig,
-              info.si_pid == getpid() ? "internal" : fmt::format("signal sent by pid {} from user {}", info.si_pid, info.si_uid));
+              /// `si_pid` and `si_uid` are set only for signals sent by a process; for a fault they overlap `si_addr`.
+              info.si_code > 0 || info.si_pid == getpid() ? "internal" : fmt::format("signal sent by pid {} from user {}", info.si_pid, info.si_uid));
 
     std::string signal_description = "Unknown signal";
 

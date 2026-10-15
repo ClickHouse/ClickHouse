@@ -397,7 +397,7 @@ resolveAddressImpl(const DB::SymbolIndex & symbol_index, const void * virtual_ad
 /// Defined by the linker at the runtime address of the executable's ELF header.
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wreserved-identifier"
-extern "C" const ElfW(Ehdr) __ehdr_start;
+extern "C" const ElfW(Ehdr) __ehdr_start; // NOLINT(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
 #pragma clang diagnostic pop
 
 namespace
