@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Tags: no-parallel-replicas, no-random-detach
 # no-random-detach: test checks mutation state
 # no-parallel-replicas: The EXPLAIN output is completely different
