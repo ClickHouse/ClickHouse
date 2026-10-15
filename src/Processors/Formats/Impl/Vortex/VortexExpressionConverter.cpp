@@ -584,6 +584,14 @@ VortexExpressionPtr VortexExpressionConverter::convertIn(const RPNBuilderFunctio
     if (set_elements.size() != 1 || set_types.size() != 1)
         return nullptr;
 
+    /// `Set::execute` converts the column to the type of the keys, while the literals below convert
+    /// the keys to the type of the column. The two agree only when the conversion is invertible,
+    /// which a parse between a string and anything else is not: a numeric row `1` is looked up as
+    /// the string `'1'` and does not match the key `'01'`, yet `'01'` parses to the literal `1`.
+    if (isStringOrFixedString(removeLowCardinalityAndNullable(set_types.front()))
+        != isStringOrFixedString(removeLowCardinalityAndNullable(column->cmp_type)))
+        return nullptr;
+
     const IColumn & elements = *set_elements.front();
     VortexExpressionPtr result;
     for (size_t i = 0, elements_size = elements.size(); i < elements_size; ++i)

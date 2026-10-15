@@ -1,0 +1,14 @@
+input_format_vortex_filter_push_down = 0
+u IN (SELECT k FROM string_keys): 0
+u NOT IN (SELECT k FROM string_keys): 1
+f IN (SELECT k FROM string_keys): 0
+f NOT IN (SELECT k FROM string_keys): 1
+s IN (SELECT k FROM number_keys): 1
+s NOT IN (SELECT k FROM number_keys): 0
+input_format_vortex_filter_push_down = 1
+u IN (SELECT k FROM string_keys): 0
+u NOT IN (SELECT k FROM string_keys): 1
+f IN (SELECT k FROM string_keys): 0
+f NOT IN (SELECT k FROM string_keys): 1
+s IN (SELECT k FROM number_keys): 1
+s NOT IN (SELECT k FROM number_keys): 0
