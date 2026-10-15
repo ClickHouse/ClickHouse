@@ -1169,6 +1169,9 @@ Block materializeBlock(const Block & block, bool remove_special_column_represent
     for (size_t i = 0; i < columns; ++i)
     {
         auto & element = res.getByPosition(i);
+        /// Plan-derived headers may declare a column by type only; instantiate it before use.
+        if (!element.column)
+            element.column = element.type->createColumn();
         element.column = element.column->convertToFullColumnIfConst();
         if (remove_special_column_representations)
             element.column = removeSpecialRepresentations(element.column);
@@ -1181,9 +1184,13 @@ void materializeBlockInplace(Block & block, bool remove_special_column_represent
 {
     for (size_t i = 0; i < block.columns(); ++i)
     {
-        block.getByPosition(i).column = block.getByPosition(i).column->convertToFullColumnIfConst();
+        auto & element = block.getByPosition(i);
+        /// Plan-derived headers may declare a column by type only; instantiate it before use.
+        if (!element.column)
+            element.column = element.type->createColumn();
+        element.column = element.column->convertToFullColumnIfConst();
         if (remove_special_column_representations)
-            block.getByPosition(i).column = removeSpecialRepresentations(block.getByPosition(i).column);
+            element.column = removeSpecialRepresentations(element.column);
     }
 }
 
