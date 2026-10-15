@@ -60,7 +60,8 @@ enum class CompressionMethodByte : uint8_t
     SZ3             = 0x9d,
     Quantized       = 0x9e,
     ZXC             = 0x9f,
-    ByteReverse     = 0xa0,
+    PCO             = 0xa0,
+    ByteReverse     = 0xa1,
 };
 
 }
