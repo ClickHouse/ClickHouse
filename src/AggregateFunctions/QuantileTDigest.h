@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <vector>
 #include <Common/Exception.h>
 #include <Common/RadixSort.h>
 #include <Common/PODArray.h>
@@ -306,7 +305,7 @@ public:
         tmp.count = count;
         tmp.unmerged = unmerged;
         tmp.compress();
-        std::vector<Value> means;
+        PODArray<Value> means;
         means.reserve(tmp.centroids.size());
         for (const auto & centroid : tmp.centroids)
             means.push_back(centroid.mean);
