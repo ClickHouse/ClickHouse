@@ -7708,27 +7708,22 @@ void StorageReplicatedMergeTree::restoreMetadataVersionFromBackup(Int32 metadata
     /// The table's metadata version is the version of the /metadata znode.
     /// Bump it by re-setting the same content. CAS protects against concurrent ALTERs
     /// and other replicas restoring the same table.
+    /// Every committed bump is done in the same transaction as the creation of an ALTER_METADATA log entry
+    /// for the version it reaches, so an interrupted restore never leaves /metadata ahead of the log, and
+    /// exactly one entry is produced per bump even with concurrent RESTORE ON CLUSTER.
+    /// A transaction makes up to `MULTI_BATCH_SIZE` consecutive bumps to limit the number of log entries.
     Coordination::Stat metadata_stat;
     String metadata_str = zookeeper->get(table_metadata_path, &metadata_stat);
 
-    while (metadata_stat.version < metadata_version - 1)
+    while (metadata_stat.version < metadata_version)
     {
-        /// Every step of this loop is one ZooKeeper write, and the number of steps comes from the backup,
-        /// so make it interruptible instead of hammering ZooKeeper until it finishes.
+        /// The number of bumps comes from the backup, so make it interruptible.
         if (process_list_element)
             process_list_element->checkTimeLimit();
 
-        auto code = zookeeper->trySet(table_metadata_path, metadata_str, metadata_stat.version);
-        if (code != Coordination::Error::ZOK && code != Coordination::Error::ZBADVERSION)
-            throw zkutil::KeeperException::fromPath(code, table_metadata_path);
-        metadata_str = zookeeper->get(table_metadata_path, &metadata_stat);
-    }
+        const Int32 target_version = static_cast<Int32>(
+            std::min<Int64>(metadata_version, static_cast<Int64>(metadata_stat.version) + zkutil::MULTI_BATCH_SIZE));
 
-    /// Atomically do the final bump and create the ALTER_METADATA log entry so that exactly
-    /// one entry is produced even with concurrent RESTORE ON CLUSTER, and there is no window
-    /// where peers see the bumped /metadata version without a log entry to reload their metadata.
-    if (metadata_stat.version < metadata_version)
-    {
         String columns_str = zookeeper->get(table_columns_path);
 
         ReplicatedMergeTreeLogEntryData alter_entry;
@@ -7736,11 +7731,12 @@ void StorageReplicatedMergeTree::restoreMetadataVersionFromBackup(Int32 metadata
         alter_entry.source_replica = replica_name;
         alter_entry.metadata_str = metadata_str;
         alter_entry.columns_str = columns_str;
-        alter_entry.alter_version = metadata_version;
+        alter_entry.alter_version = target_version;
         alter_entry.create_time = time(nullptr);
 
         Coordination::Requests ops;
-        ops.emplace_back(zkutil::makeSetRequest(table_metadata_path, metadata_str, metadata_stat.version));
+        for (Int32 version = metadata_stat.version; version < target_version; ++version)
+            ops.emplace_back(zkutil::makeSetRequest(table_metadata_path, metadata_str, version));
         ops.emplace_back(zkutil::makeCreateRequest(
             fs::path(zookeeper_path) / "log/log-", alter_entry.toString(), zkutil::CreateMode::PersistentSequential));
 
@@ -7750,10 +7746,12 @@ void StorageReplicatedMergeTree::restoreMetadataVersionFromBackup(Int32 metadata
             throw zkutil::KeeperException(code);
         if (code == Coordination::Error::ZOK)
         {
-            const String & path_created = dynamic_cast<const Coordination::CreateResponse &>(*responses[1]).path_created;
+            const String & path_created = dynamic_cast<const Coordination::CreateResponse &>(*responses.back()).path_created;
             LOG_INFO(log, "Created ALTER_METADATA log entry {} to propagate metadata version {} to all replicas",
-                     path_created, metadata_version);
+                     path_created, target_version);
         }
+
+        metadata_str = zookeeper->get(table_metadata_path, &metadata_stat);
     }
 
     /// This replica has the same structure, so mark the version as applied by it.
