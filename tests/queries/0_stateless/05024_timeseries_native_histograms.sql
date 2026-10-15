@@ -50,8 +50,9 @@ SELECT t.metric_name, t.tags['job'], count()
     JOIN timeSeriesTags(ts_hist) AS t ON h.id = t.id
     GROUP BY t.metric_name, t.tags['job'];
 
-SELECT '-- min_time and max_time in the tags table come from histogram timestamps too';
-SELECT min(min_time), max(max_time) FROM timeSeriesTags(ts_hist) WHERE metric_name = 'test_histogram_seconds';
+SELECT '-- min_time and max_time in the time ranges table come from histogram timestamps too';
+SELECT min(min_time), max(max_time) FROM timeSeriesTimeRanges(ts_hist)
+    WHERE id IN (SELECT id FROM timeSeriesTags(ts_hist) WHERE metric_name = 'test_histogram_seconds');
 
 SELECT '-- histograms without a metric name are rejected';
 INSERT INTO ts_hist (metric_name, tags, histograms) VALUES ('', map(), [('2024-01-01 00:00:03.000', 0, 0, 0., 1, 1, 0, [], [], [], [], [], 1, 0, [], [])]); -- { serverError INCORRECT_DATA }

@@ -1,0 +1,96 @@
+bare key, rollup	true
+bare key, rollup	\N
+if, rollup	true
+if, rollup	\N
+if, cube	true
+if, cube	\N
+if false branch, rollup	true
+if false branch, rollup	\N
+multiIf, rollup	true
+multiIf, rollup	\N
+multiIf kept, rollup	true
+multiIf kept, rollup	\N
+nested if, rollup	true
+nested if, rollup	\N
+multiIf condition, rollup	true
+multiIf condition, rollup	\N
+correlated, collapsed column repeated	true
+correlated, collapsed column repeated	\N
+if, rollup, grouping()	true	0
+if, rollup, grouping()	\N	1
+two if keys, cube	true	false
+two if keys, cube	true	\N
+two if keys, cube	\N	false
+two if keys, cube	\N	\N
+reported query	true	1
+reported query	\N	1
+if, rollup, UInt8	1
+if, rollup, UInt8	\N
+if, rollup, UInt64	1
+if, rollup, UInt64	\N
+if, rollup, String	x
+if, rollup, String	\N
+if, rollup, Nullable	true
+if, rollup, Nullable	\N
+if and bare key, rollup	true
+if and bare key, rollup	\N
+if and bare key, rollup	\N
+if, totals	true
+
+if, totals	\N
+if, rollup, setting off	false
+if, rollup, setting off	true
+collapsed column repeated	x	1
+collapsed column repeated	\N	1
+collapsed column repeated, written sub-key	x	1
+collapsed column repeated, written sub-key	\N	1
+collapsed column repeated, written sub-key	\N	1
+nested, collapsed column repeated	x	1
+nested, collapsed column repeated	\N	1
+nested, collapsed column repeated	\N	1
+other branch not a key	x	1
+other branch not a key	\N	1
+nested, other branch not a key	x	1
+nested, other branch not a key	\N	1
+collapses to another key, rollup			3	1
+collapses to another key, rollup	x		1	1
+collapses to another key, rollup	x	x	0	1
+collapses to another key, cube			1
+collapses to another key, cube		x	1
+collapses to another key, cube	x		1
+collapses to another key, cube	x	x	1
+collapses to another key, grouping sets		x	1
+collapses to another key, grouping sets	x		1
+collapses to another key, rollup, nulls	x	x	1
+collapses to another key, rollup, nulls	x	\N	1
+collapses to another key, rollup, nulls	\N	\N	1
+collapses to another key, rollup, nulls, multiIf	x	x	1
+collapses to another key, rollup, nulls, multiIf	x	\N	1
+collapses to another key, rollup, nulls, multiIf	\N	\N	1
+if chain, rollup, nulls, multiIf	p	pz	1
+if chain, rollup, nulls, multiIf	q	qz	1
+if chain, rollup, nulls, multiIf	r	rz	1
+if chain, rollup, nulls, multiIf	\N	\N	3
+if chain of other keys, rollup, nulls, multiIf	x	w	x	1
+if chain of other keys, rollup, nulls, multiIf	x	w	\N	1
+if chain of other keys, rollup, nulls, multiIf	x	\N	\N	1
+if chain of other keys, rollup, nulls, multiIf	\N	\N	\N	1
+collapses to another key, other sources, cube			1
+collapses to another key, other sources, cube		x	1
+collapses to another key, other sources, cube	x		1
+collapses to another key, other sources, cube	x	x	1
+collapses to columns of other sources, rollup	0	1
+collapses to columns of other sources, rollup	1	1
+collapses to columns of other sources, rollup	1	1
+subquery of a query with a key that collapses to another key	1	1
+subquery of a query with a key that collapses to another key	1	1
+subquery of a query with a key that collapses to another key	\N	1
+subquery of a query with a key that collapses to another key	\N	1
+subquery of a query with a key that collapses to another key	\N	2
+keys collapse together, grouping sets	1
+keys collapse together, grouping sets, setting off	0	1
+keys collapse together, grouping sets, setting off	1	1
+dictionary condition, rollup	true
+dictionary condition, rollup	\N
+nested dictionary condition, rollup	true
+nested dictionary condition, rollup	\N
