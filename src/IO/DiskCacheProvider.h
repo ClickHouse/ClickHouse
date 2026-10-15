@@ -28,7 +28,8 @@ public:
         ByteRange range_in_file,
         size_t object_file_offset_,
         ThrottlerPtr local_throttler_,
-        ReaderAnchorCache * anchors_);
+        ReaderAnchorCache * anchors_,
+        bool counts_hits_ = true);
     ~DiskCacheReader() override;
 
     ByteRange range() const override { return hit_range; }
@@ -46,6 +47,7 @@ private:
     ReaderAnchorCache * anchors = nullptr;
     /// Whether this reader served any bytes; the destructor then bumps the segment's cache priority.
     bool served = false;
+    bool counts_hits = true;
     LoggerPtr log = getLogger("DiskCacheReader");
 };
 
@@ -68,6 +70,7 @@ public:
     ChainedBuffers read(ByteRange subrange) override;
     FillRole takeFillRole() override;
     ChainedBuffers waitAndRead(ByteRange subrange) override;
+    std::function<void()> takeDropAfterPass() override;
 
 private:
     bool tryWriteToSegment(FileSegment & file_segment, char * data, size_t size, size_t offset);
@@ -83,6 +86,8 @@ private:
     ByteRange aligned_range;
     /// One state per writer: it owns a single append-only segment.
     FileCacheReserveAhead reserve_ahead;
+    /// Whether this writer filled the segment from its start; a drop candidate in the temporary-cache mode.
+    bool filled_from_start = false;
     LoggerPtr log = getLogger("DiskCacheWriter");
 };
 

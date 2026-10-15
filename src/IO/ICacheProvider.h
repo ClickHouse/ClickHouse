@@ -137,6 +137,10 @@ public:
     /// downloader commits `subrange`, then serve those bytes from this writer's own held segments. On
     /// a timeout the read can be short. Default: plain read (no wait).
     virtual ChainedBuffers waitAndRead(ByteRange subrange) { return read(subrange); }
+
+    /// What to run once the reader has passed this writer's range and released its cells: a writer in the
+    /// temporary-cache mode drops the segment it filled, unless another reader holds it. Default: nothing.
+    virtual std::function<void()> takeDropAfterPass() { return {}; }
 };
 
 using CacheReaderPtr = std::unique_ptr<CacheReader>;

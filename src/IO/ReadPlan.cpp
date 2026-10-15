@@ -184,12 +184,23 @@ void ReadPlan::dropBefore(size_t offset)
     if (offset <= range_start)
         return;
     range_start = std::min(offset, range_end);
+    /// The actions of the writers the cursor passed run after their cells release the segments.
+    VectorWithMemoryTracking<std::function<void()>> after_pass;
+    for (auto & tier : tiers)
+    {
+        for (auto & cell : tier.cells)
+            if (cell.writer && cell.range.end() <= range_start)
+                if (auto action = cell.writer->takeDropAfterPass())
+                    after_pass.push_back(std::move(action));
+    }
     dropCellsOutsideRange();
     if (!memory.empty())
     {
         const size_t mend = memory.range().end();
         memory = range_start < mend ? memory.slice(ByteRange{range_start, mend - range_start}) : ChainedBuffers{};
     }
+    for (auto & action : after_pass)
+        action();
 }
 
 void ReadPlan::dropAfter(size_t offset)
