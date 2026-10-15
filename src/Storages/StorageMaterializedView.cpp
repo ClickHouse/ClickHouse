@@ -625,7 +625,7 @@ void StorageMaterializedView::drop()
     /// Sync flag and the setting make sense for Atomic databases only.
     /// However, with Atomic databases, IStorage::drop() can be called only from a background task in DatabaseCatalog.
     /// Running synchronous DROP from that task leads to deadlock.
-    /// Usually this is a no-op, because `dropInnerTableIfAny` drops the inner table before the MV is enqueued for the drop.
+    /// Usually this is a no-op, because the database drops the inner table with `dropInnerTableIfAny` before it drops the MV.
     /// No DDL guard is taken here, so the drop task does not wait for DDL queries.
     dropInnerTables(/* sync */ false, getContext(), /* need_ddl_guard */ false);
 }
