@@ -1,0 +1,53 @@
+-- a set in the subquery
+0	1
+1	1
+0	0
+1	0
+-- dictGet with and without the rewrite into a set
+0	1
+1	1
+0	1
+1	1
+-- a step above the aggregate
+0	1
+1	0
+0	1
+1	0
+0	1
+1	1
+0	1
+1	1
+0	0
+1	0
+-- no row over an empty input
+0	0
+1	1
+0	0
+1	1
+-- layouts of the decorrelated plan
+0	1	0
+1	1	0
+2	1	1
+0	1	0
+1	1	0
+2	1	1
+0	1	0
+1	1	0
+2	1	1
+0	1	0
+1	1	0
+2	1	1
+0	1	0
+1	1	0
+2	1	1
+-- the restored groups do not count against max_rows_to_group_by
+0	0
+1	1
+2	0
+0	0
+1	1
+2	0
+-- two UNION arms that read the outer rows
+0	1
+1	1
+2	0

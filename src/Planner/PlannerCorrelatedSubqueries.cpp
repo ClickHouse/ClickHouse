@@ -1058,9 +1058,9 @@ QueryPlan decorrelateQueryPlan(
         /// An aggregate without user keys yields one row per outer row even over an empty input (see
         /// addMissingCorrelatedGroupsToAggregateInput). With `empty_result_for_aggregation_by_empty_set` the
         /// user asked for no row over an empty input, which is what the plain `GROUP BY correlated_columns`
-        /// already produces. Only `LATERAL` joins restore the groups: for a scalar subquery the missing
-        /// group is rendered as NULL and for `EXISTS` as false, and that behaviour predates this code.
-        bool restore_empty_groups = context.correlated_subquery.kind == CorrelatedSubqueryKind::LATERAL_JOIN
+        /// already produces. A scalar subquery does not restore the groups: its missing group is rendered as NULL.
+        bool restore_empty_groups = (context.correlated_subquery.kind == CorrelatedSubqueryKind::LATERAL_JOIN
+                || context.correlated_subquery.kind == CorrelatedSubqueryKind::EXISTS)
             && original_aggregator_params.keys.empty()
             && !original_aggregator_params.empty_result_for_aggregation_by_empty_set;
         if (restore_empty_groups)
@@ -1119,12 +1119,13 @@ QueryPlan decorrelateQueryPlan(
         /// The correlated columns are hidden keys: the user's `max_rows_to_group_by` would count groups over all
         /// outer rows at once instead of within one evaluation of the subquery.
         /// Without user keys one evaluation has exactly one group, so the limit can never be exceeded there and is
-        /// dropped: a `LATERAL` subquery without `GROUP BY` must not throw or be truncated because of the outer rows.
+        /// dropped: a `LATERAL` or restored `EXISTS` subquery without `GROUP BY` must not throw or be truncated
+        /// because of the outer rows.
         /// With a user `GROUP BY` the limit is not enforced per correlated-key partition. With `throw` it bounds the
         /// total number of groups of all evaluations, which can only throw earlier than a per-evaluation limit and
         /// never changes the result. `any` / `break` would silently drop groups of unrelated outer rows, so they are
         /// rejected.
-        if (context.correlated_subquery.kind == CorrelatedSubqueryKind::LATERAL_JOIN)
+        if (restore_empty_groups || context.correlated_subquery.kind == CorrelatedSubqueryKind::LATERAL_JOIN)
         {
             if (original_aggregator_params.keys.empty())
             {
