@@ -705,7 +705,8 @@ private:
             temporary_columns[1] = {col1_contents[i], type1.getElements()[i], {}};
             temporary_columns[2] = {col2_contents[i], type2.getElements()[i], {}};
 
-            tuple_columns[i] = executeImpl(temporary_columns, tuple_result.getElements()[i], input_rows_count);
+            /// The result for one element can be constant (for example NULL in both branches), a tuple element cannot.
+            tuple_columns[i] = executeImpl(temporary_columns, tuple_result.getElements()[i], input_rows_count)->convertToFullColumnIfConst();
         }
 
         return ColumnTuple::create(tuple_columns);
@@ -1385,10 +1386,12 @@ public:
     {
         ColumnsWithTypeAndName arguments = args;
         executeShortCircuitArguments(arguments);
-        ColumnPtr res;
-        if (   (res = executeForConstAndNullableCondition(arguments, result_type, input_rows_count))
-            || (res = executeForNullThenElse(arguments, result_type, input_rows_count))
-            || (res = executeForNullableThenElse(arguments, result_type, input_rows_count)))
+        ColumnPtr res = executeForConstAndNullableCondition(arguments, result_type, input_rows_count);
+        if (!res)
+            res = executeForNullThenElse(arguments, result_type, input_rows_count);
+        if (!res)
+            res = executeForNullableThenElse(arguments, result_type, input_rows_count);
+        if (res)
             return res;
 
         const ColumnWithTypeAndName & arg_cond = arguments[0];
@@ -1477,15 +1480,20 @@ public:
 
         /// TODO optimize for map type
         /// TODO optimize for nullable type
-        if (!(callOnBasicTypes<true, true, true, false>(left_id, right_id, call)
-            || (res = executeTyped<UUID, UUID>(cond_col, arguments, result_type, input_rows_count))
-            || (res = executeString(cond_col, arguments, result_type))
-            || (res = executeGenericArray(cond_col, arguments, result_type))
-            || (res = executeTuple(arguments, result_type, input_rows_count))
-            || (res = executeMap(arguments, result_type, input_rows_count))))
-        {
+        if (callOnBasicTypes<true, true, true, false>(left_id, right_id, call))
+            return res;
+
+        res = executeTyped<UUID, UUID>(cond_col, arguments, result_type, input_rows_count);
+        if (!res)
+            res = executeString(cond_col, arguments, result_type);
+        if (!res)
+            res = executeGenericArray(cond_col, arguments, result_type);
+        if (!res)
+            res = executeTuple(arguments, result_type, input_rows_count);
+        if (!res)
+            res = executeMap(arguments, result_type, input_rows_count);
+        if (!res)
             return executeGeneric(cond_col, arguments, result_type, input_rows_count);
-        }
 
         return res;
     }

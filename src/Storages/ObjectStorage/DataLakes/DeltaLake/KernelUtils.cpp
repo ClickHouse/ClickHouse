@@ -187,6 +187,20 @@ ffi::EngineError * KernelUtils::allocateError(ffi::KernelError etype, ffi::Kerne
     }
 }
 
+std::string appendToLogicalPath(const std::string & logical_path, const std::string & field_name)
+{
+    std::string result = logical_path;
+    if (!result.empty())
+        result += '.';
+    for (char c : field_name)
+    {
+        if (c == '.' || c == '\\')
+            result += '\\';
+        result += c;
+    }
+    return result;
+}
+
 std::optional<std::string> tryGetPhysicalName(const std::string & name, const DB::NameToNameMap & physical_names_map)
 {
     if (physical_names_map.empty())
