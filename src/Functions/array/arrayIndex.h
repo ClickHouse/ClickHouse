@@ -794,7 +794,6 @@ private:
         return executeInCommonType(arguments, result_type);
     }
 
-    /// Casts both arguments to the type the array elements and the searched value meet in.
     ColumnPtr executeInCommonType(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
     {
         const auto & element_type = assert_cast<const DataTypeArray &>(*arguments[0].type).getNestedType();
@@ -811,7 +810,7 @@ private:
     }
 
     /// A constant array is searched by comparing `Field`s, and the `Field` of an `Enum` value is its number,
-    /// while `equals` and the non-constant path compare it with a `String` by name, in their common type.
+    /// while the non-constant path compares it with a `String` by name, in their common type.
     /// Cast before `executeArrayImpl` splits a `Nullable` needle: its `NULL` rows hold `0`, maybe not an enum value.
     ColumnPtr executeEnumNeedleInConstantStrings(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
     {
