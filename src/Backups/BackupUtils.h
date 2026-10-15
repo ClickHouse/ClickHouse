@@ -3,7 +3,6 @@
 #include <Parsers/ASTBackupQuery.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/IStorage_fwd.h>
-#include <Core/UUID.h>
 
 
 namespace DB
