@@ -10,7 +10,7 @@ Partial pressure mixes spilled and in-memory records
 1
 Frozen tables of growing states spill as ordinary parts
 1
-Tables frozen at the two-level condition spill exactly
+Learning tables spill exactly
 1
 Sparsely populated buckets under pressure
 1

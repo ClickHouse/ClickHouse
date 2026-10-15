@@ -5,9 +5,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # The adaptive aggregator freezes a thread's local table at whichever of the key-count and the
-# byte thresholds is reached first, or at the two-level condition, which the cells below put out of
-# reach. Each query pins both thresholds explicitly, because the runner's settings randomization
-# must not move the freeze point. The no-freeze cell runs
+# byte thresholds is reached first. Each query pins both thresholds explicitly, because the
+# runner's settings randomization must not move the freeze point. The no-freeze cell runs
 # first, while the freeze counter is still zero, so every assertion can test the counter's
 # absolute value instead of a delta. Everything runs in one clickhouse-local process, so the
 # counters in `system.events` belong to these queries alone. The hash-table statistics are
@@ -51,9 +50,8 @@ SELECT 'exact', count(), sum(c), sum(k % 1000 = 0 ? c : 0) FROM (
 # outgrow the bound). A table pre-sized from the hint would instead freeze at its first
 # between-blocks check with about one block of keys, failing the size assertion; a table the
 # hint initialized two-level could never freeze at all, failing the count assertion. The
-# two-level threshold is pinned above the freeze size, so that the byte bound decides the freeze,
-# and below the sum of the recorded sizes, so that the two-level initialization stays reachable
-# from them.
+# two-level threshold is pinned below the sum of the recorded sizes, so that the two-level
+# initialization stays reachable from them.
 # The four UNION ALL branches are four streams of 500000 rows, one per table, so every table
 # outgrows the bound however the threads are scheduled (numbers_mt hands out blocks from a shared cursor).
 # The last check makes sure the warm run found the hint, so the cell cannot pass with two cold runs.

@@ -27,9 +27,10 @@ SELECT sum(c) FROM (SELECT number AS g, count() AS c FROM numbers_mt(400000) GRO
 -- Repeat-dominated stream past the freeze: the thaw sampler fires and the tables thaw.
 SELECT sum(c) FROM (SELECT toUInt64(number % 20000) AS g, count() AS c FROM numbers_mt(3000000) GROUP BY g) FORMAT Null;
 
--- Few groups whose states own heap memory: the tables freeze at the two-level condition, and under constant
--- memory pressure the frozen tables are written to disk.
-SELECT sum(u) FROM (SELECT toUInt64(number % 50) AS g, uniqExact(number) AS u FROM numbers_mt(2000000) GROUP BY g SETTINGS group_by_two_level_threshold_bytes = 1000000, max_bytes_before_external_group_by = 1) FORMAT Null;
+-- Few groups whose states own heap memory: one block of sets takes a table over the byte bound of the freeze, so
+-- it freezes before the constant memory pressure writes it as a learning table, and the frozen tables are written
+-- to disk as their states keep growing.
+SELECT sum(u) FROM (SELECT toUInt64(number % 50) AS g, uniqExact(number) AS u FROM numbers_mt(2000000) GROUP BY g SETTINGS adaptive_aggregator_freeze_threshold_bytes = 10000, max_bytes_before_external_group_by = 1) FORMAT Null;
 
 -- Constant memory pressure: the frozen producers spill their staged records.
 SELECT sum(c) FROM (SELECT number % 100000 AS g, count() AS c FROM numbers_mt(400000) GROUP BY g SETTINGS max_bytes_before_external_group_by = 1) FORMAT Null;

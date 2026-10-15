@@ -10,8 +10,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # the external-aggregation threshold such a table is written to disk as a part of the ordinary external
 # aggregation, its producer learns the keys again from empty and freezes anew, and the merge goes external,
 # reading the parts next to the staged records. A table whose states do not grow (`sum`, `count`) is never
-# written; only its staged records are. The tables freeze at the two-level condition, a megabyte of tracked
-# memory, when few groups hold them, and at a thousand keys otherwise. Every shape compares its result with
+# written; only its staged records are. Where few groups hold the tables, their tracked memory freezes them at
+# ten kilobytes, which one block of their wide states crosses, so a table freezes before the constant pressure
+# writes it as a learning table; elsewhere they freeze at a thousand keys. Every shape compares its result with
 # the same query with the feature off and no forced spilling; a threshold of one byte keeps the query over
 # it on every block. The thresholds are pinned because the runner randomizes them, and each shape runs in
 # its own clickhouse-local process, so the counters in `system.events` belong to it alone.
@@ -24,9 +25,9 @@ function run_shape()
     SET max_threads = 4;
     SET max_block_size = 8192;
     SET adaptive_aggregator_freeze_threshold = 1000;
-    SET adaptive_aggregator_freeze_threshold_bytes = 0;
+    SET adaptive_aggregator_freeze_threshold_bytes = 10000;
     SET group_by_two_level_threshold = 100000000;
-    SET group_by_two_level_threshold_bytes = 1000000;
+    SET group_by_two_level_threshold_bytes = 500000000;
     SET collect_hash_table_stats_during_aggregation = 0;
     SET max_bytes_before_external_group_by = 0;
     SET max_bytes_ratio_before_external_group_by = 0;
