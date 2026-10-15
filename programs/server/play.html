@@ -3578,10 +3578,17 @@ class QueryResultElement extends HTMLElement
                 }
 
                 /* A real-time preview of the query result (the "preview" packets, see
-                   updatePreview) is visually muted until the real result replaces it. */
+                   updatePreview) is visually muted until the real result replaces it,
+                   and shown in full color while hovered, to make it easier to read. */
                 #data-table.preview
                 {
                     opacity: 0.6;
+                    transition: opacity 0.1s;
+                }
+
+                #data-table.preview:hover
+                {
+                    opacity: 1;
                 }
 
                 #data-table.fixed
