@@ -488,10 +488,12 @@ void optimizeTreeSecondPass(
     /// Lazy materialization for plans with joins works on the join expressions, so it runs while the joins
     /// are still logical. That is after PREWHERE optimization, which needs a filter right above the read,
     /// and before reading in order, which would turn the full sorting it starts from into a partial one.
-    /// Not for a plan whose parts run elsewhere, since the lazy read has to run where the main one does.
+    /// Not for a plan whose parts run elsewhere, since the lazy read has to run where the main one does. That is asked of
+    /// the setting rather than of this pass, as the other lazy materialization does: a plan that has its exchanges
+    /// already, optimized again, is still distributed, and its lazy steps could not be sent to the workers.
     bool lazy_materialization_applied = false;
     if (optimization_settings.optimize_lazy_materialization && optimization_settings.lazy_materialization_for_join
-        && !optimization_settings.enable_parallel_replicas && !make_distributed_plan)
+        && !optimization_settings.enable_parallel_replicas && !optimization_settings.make_distributed_plan)
     {
         chassert(stack.empty());
         stack.push_back({.node = &root});
