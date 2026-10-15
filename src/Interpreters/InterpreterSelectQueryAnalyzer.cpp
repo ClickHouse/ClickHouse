@@ -147,7 +147,7 @@ ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOpti
 
     const auto & settings = result_context->getSettingsRef();
     // If `automatic_parallel_replicas_mode` is not zero, the heuristic for automatic parallel replicas decides whether
-    // `MergeTree` reads use parallel replicas: `canUseTaskBasedParallelReplicas` is false while it is set, so
+    // `MergeTree` reads use parallel replicas: `canUseTaskBasedParallelReplicas` is false on the initiator while it is set, so
     // `enable_parallel_replicas` is not an enforcement for them. It is kept as is, because cluster engines are not
     // covered by the heuristic and still follow it (see `canReplaceClusterEngineWithClusterVariant`). Code that asks
     // whether parallel replicas are enabled uses `Context::isParallelReplicasEnabled`, which accounts for the automatic mode.
