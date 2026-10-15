@@ -21,6 +21,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <DataTypes/TypeTree.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -48,6 +49,7 @@
 #include <Storages/IStorage.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/castColumn.h>
 
 #include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/ColumnNode.h>
@@ -556,11 +558,17 @@ static ASTPtr convertIntoTableExpressionAST(
 
         const auto & sample_size_ratio = table_expression_modifiers->getSampleSizeRatio();
         if (sample_size_ratio.has_value())
+        {
             result_table_expression->sample_size = make_intrusive<ASTSampleRatio>(*sample_size_ratio);
+            result_table_expression->children.push_back(result_table_expression->sample_size);
+        }
 
         const auto & sample_offset_ratio = table_expression_modifiers->getSampleOffsetRatio();
         if (sample_offset_ratio.has_value())
+        {
             result_table_expression->sample_offset = make_intrusive<ASTSampleRatio>(*sample_offset_ratio);
+            result_table_expression->children.push_back(result_table_expression->sample_offset);
+        }
 
         const auto & stream_settings = table_expression_modifiers->getStreamSettings();
         if (stream_settings.has_value())
@@ -1169,6 +1177,31 @@ QueryTreeNodePtr foldConstantCast(const QueryTreeNodePtr & cast_node)
         ConstantValue{column_const->getPtr(), std::move(result_type)}, cast_node, is_deterministic);
 }
 
+ColumnPtr tryGetScalarConstantColumn(const QueryTreeNodePtr & node, const ContextPtr & context)
+{
+    const auto * get_scalar_function_node = node->as<FunctionNode>();
+    if (!get_scalar_function_node || get_scalar_function_node->getFunctionName() != "__getScalar")
+        return nullptr;
+
+    const auto * get_scalar_const_arg = get_scalar_function_node->getArguments().getNodes().at(0)->as<ConstantNode>();
+    if (!get_scalar_const_arg || !context->hasQueryContext())
+        return nullptr;
+
+    auto query_context = context->getQueryContext();
+    auto scalar_string = fieldToString(get_scalar_const_arg->getValue());
+    if (!query_context->hasScalar(scalar_string))
+        return nullptr;
+
+    auto scalar = query_context->getScalar(scalar_string);
+    const auto & scalar_column = scalar.getByPosition(0).column;
+    /// The column comes from the scalars map while the type comes from the resolved node, and the
+    /// two disagree when the overload resolver wrapped the node's result type (a Nullable name).
+    if (scalar_column->size() != 1 || !columnMatchesType(*scalar_column, *get_scalar_function_node->getResultType()))
+        return nullptr;
+
+    return ColumnConst::create(scalar_column, 1);
+}
+
 void resolveOrdinaryFunctionNodeByName(FunctionNode & function_node, const String & function_name, const ContextPtr & context)
 {
     auto function = FunctionFactory::instance().get(function_name, context);
@@ -1697,13 +1730,15 @@ Field getFieldFromColumnForASTLiteral(const ColumnPtr & column, size_t row, cons
 
 /// True if a value of this type cannot be printed as a plain literal and re-parsed into the same type:
 /// a static `Decimal`/`DateTime64`/`Time64` anywhere (all scaled decimals), a `Variant` anywhere (a literal
-/// does not keep the active member type), or a `Dynamic` whose value's type is not visible in the type.
+/// does not keep the active member type), a `Dynamic` whose value's type is not visible in the type, or a
+/// `QBit`, whose `Field` is its internal tuple of bit planes.
 bool typeNeedsExactLiteralSerialization(const IDataType & type)
 {
     return anyInTypeTree(type, [](const IDataType & nested)
     {
         WhichDataType which(nested);
-        return which.isDecimal() || which.isDateTime64() || which.isTime64() || which.isVariant() || which.isDynamic();
+        return which.isDecimal() || which.isDateTime64() || which.isTime64() || which.isVariant() || which.isDynamic()
+            || which.isQBit();
     });
 }
 
@@ -1810,6 +1845,24 @@ ASTPtr columnConstantToExactLiteralASTImpl(const ColumnPtr & column, size_t row,
             return makeASTFunction(
                 "_CAST", make_intrusive<ASTLiteral>(decimalFieldToText((*column)[row])),
                 make_intrusive<ASTLiteral>(type->getName()));
+        case TypeIndex::QBit:
+        {
+            /// A QBit `Field` is its tuple of bit planes, which does not cast back to QBit. The bit patterns of its elements do,
+            /// exactly (NaN sign and payload included) and whatever the byte order of either server.
+            const auto & element_type = assert_cast<const DataTypeQBit &>(*type).getElementType();
+            const auto elements = castColumn({column->cut(row, 1), type, ""}, std::make_shared<DataTypeArray>(element_type));
+            const auto & values = assert_cast<const ColumnArray &>(*elements).getData();
+            Array bit_patterns;
+            bit_patterns.reserve(values.size());
+            for (size_t i = 0; i < values.size(); ++i)
+                bit_patterns.push_back(values.get64(i));
+            auto patterns = makeASTFunction(
+                "_CAST", make_intrusive<ASTLiteral>(std::move(bit_patterns)),
+                make_intrusive<ASTLiteral>(fmt::format("Array(UInt{})", 8 * element_type->getSizeOfValueInMemory())));
+            auto bytes = makeASTFunction("reinterpret", std::move(patterns), make_intrusive<ASTLiteral>("String"));
+            auto array = makeASTFunction("reinterpret", std::move(bytes), make_intrusive<ASTLiteral>("Array(" + element_type->getName() + ")"));
+            return makeASTFunction("_CAST", std::move(array), make_intrusive<ASTLiteral>(type->getName()));
+        }
         case TypeIndex::DateTime64:
         case TypeIndex::Time64:
             /// DateTime64/Time64 are backed by a scaled decimal. Serialize the exact (UTC-based) decimal

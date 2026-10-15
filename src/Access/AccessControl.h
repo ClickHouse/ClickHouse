@@ -221,6 +221,10 @@ public:
     void setThrowOnInvalidReplicatedAccessEntities(bool enable) { throw_on_invalid_replicated_access_entities = enable; }
     bool shouldThrowOnInvalidReplicatedAccessEntities() const { return throw_on_invalid_replicated_access_entities; }
 
+    /// Sets whether `SET ROLE` is refused when the session or the query is readonly.
+    void setReadonlyRestrictsSetRole(bool enable) { readonly_restricts_set_role = enable; }
+    bool doesReadonlyRestrictSetRole() const { return readonly_restricts_set_role; }
+
     /// Forbid SQL-created quotas/row policies/masking policies/settings profiles from targeting users.xml users.
     void setForbidSQLAccessEntitiesTargetingUsersConfig(bool enable) { forbid_sql_access_entities_targeting_users_config = enable; }
     bool doesForbidSQLAccessEntitiesTargetingUsersConfig() const { return forbid_sql_access_entities_targeting_users_config; }
@@ -363,6 +367,7 @@ private:
     std::atomic_bool enable_user_name_access_type = true;
     std::atomic_bool enable_read_write_grants = false;
     std::atomic_bool allow_impersonate_user = false;
+    std::atomic_bool readonly_restricts_set_role = false;
 };
 
 }
