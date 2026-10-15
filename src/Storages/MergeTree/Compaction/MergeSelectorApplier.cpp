@@ -370,16 +370,20 @@ bool predictVerticalMerge(const ChooseContext & ctx, PartsRangeView range, bool 
     size_t sum_rows = 0;
     size_t sum_bytes = 0;
     UInt32 max_level = 0;
+    MergeTreeDataPartType part_type;
     for (const auto & part : range)
     {
         sum_rows += part.rows;
         sum_bytes += part.size_uncompressed;
         max_level = std::max(max_level, part.info.level);
+        part_type = std::min(part_type, part.part_type);
     }
 
-    /// The same choice as `FutureMergedMutatedPart` makes for the result of the merge.
+    /// The same choice as `FutureMergedMutatedPart::assign` makes for the result of the merge, including that
+    /// the result is never of a more compact type than a source part.
     const auto part_format = ctx.data.choosePartFormat(sum_bytes, sum_rows, max_level + 1, /*projection=*/nullptr);
-    if (part_format.part_type != MergeTreeDataPartType::Wide || part_format.storage_type != MergeTreeDataPartStorageType::Full)
+    part_type = std::min(part_type, part_format.part_type);
+    if (part_type != MergeTreeDataPartType::Wide || part_format.storage_type != MergeTreeDataPartStorageType::Full)
         return false;
 
     if (removes_expired_values && !rangeCanMergeVerticallyWhileRemovingExpiredValues(ctx, range))
@@ -536,9 +540,12 @@ size_t getAffordablePartsToMergeProjection(const ChooseContext & ctx, const Proj
     if (num_columns < num_key_columns + settings[MergeTreeSetting::vertical_merge_algorithm_min_columns_to_activate])
         return affordable_horizontal;
 
+    /// Like `FutureMergedMutatedPart::assign` on the projection parts: by their own levels and types, not those
+    /// of the parent parts.
     size_t sum_rows = 0;
     size_t sum_bytes = 0;
     UInt32 max_level = 0;
+    MergeTreeDataPartType part_type;
     for (const auto & part : range)
     {
         auto it = part.projection_sizes.find(projection.name);
@@ -546,11 +553,13 @@ size_t getAffordablePartsToMergeProjection(const ChooseContext & ctx, const Proj
             return affordable_horizontal;
         sum_rows += it->second.rows;
         sum_bytes += it->second.size_uncompressed;
-        max_level = std::max(max_level, part.info.level);
+        max_level = std::max(max_level, it->second.level);
+        part_type = std::min(part_type, it->second.part_type);
     }
 
     const auto part_format = ctx.data.choosePartFormat(sum_bytes, sum_rows, max_level + 1, &projection);
-    if (part_format.part_type != MergeTreeDataPartType::Wide || part_format.storage_type != MergeTreeDataPartStorageType::Full)
+    part_type = std::min(part_type, part_format.part_type);
+    if (part_type != MergeTreeDataPartType::Wide || part_format.storage_type != MergeTreeDataPartStorageType::Full)
         return affordable_horizontal;
 
     if (sum_rows < settings[MergeTreeSetting::vertical_merge_algorithm_min_rows_to_activate]

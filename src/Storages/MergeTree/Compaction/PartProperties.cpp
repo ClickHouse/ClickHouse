@@ -118,6 +118,8 @@ std::map<std::string, PartProperties::ProjectionPartSize> getProjectionSizes(con
             projection_sizes.emplace(name, PartProperties::ProjectionPartSize{
                 .rows = projection_part->rows_count,
                 .size_uncompressed = projection_part->getTotalColumnsSize().data_uncompressed,
+                .level = projection_part->info.level,
+                .part_type = projection_part->getType(),
             });
 
     return projection_sizes;
@@ -159,6 +161,7 @@ PartProperties buildPartProperties(
         .is_in_volume_where_merges_avoid = !part->shallParticipateInMerges(storage_policy),
         .size = part->getExistingBytesOnDisk(),
         .size_uncompressed = part->getTotalColumnsSize().data_uncompressed,
+        .part_type = part->getType(),
         .age = current_time - part->modification_time,
         .rows = part->rows_count,
         .has_lightweight_delete = part->hasLightweightDelete(),

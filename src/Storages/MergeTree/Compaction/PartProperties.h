@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 
 #include <Disks/IStoragePolicy.h>
@@ -36,10 +37,15 @@ struct PartProperties
     /// The size of every projection part among `projection_names`. A merge that keeps a projection every source
     /// part has merges the projection parts in a child merge of its own, which runs after the parent merge and
     /// chooses its algorithm by these sizes, see `MergeTask::MergeProjectionsStage::prepareProjections`.
+    /// The child merge predicts the format of its result from the levels and the types of the projection parts,
+    /// not of the parent parts, see `FutureMergedMutatedPart::assign`: a merged projection part has the level
+    /// of `MergeListElement::FAKE_RESULT_PART_FOR_PROJECTION`, which is zero.
     struct ProjectionPartSize
     {
         const size_t rows = 0;
         const size_t size_uncompressed = 0;
+        const UInt32 level = 0;
+        const MergeTreeDataPartType part_type = {};
     };
     const std::map<std::string, ProjectionPartSize> projection_sizes = {};
 
@@ -59,6 +65,11 @@ struct PartProperties
     /// Uncompressed size of the columns of the part in bytes, as used by `MergeTask` and
     /// `MergeTreeData::choosePartFormat` to choose the merge algorithm and the format of the result.
     const size_t size_uncompressed = 0;
+
+    /// The format of the part. A merge never produces a part of a more compact type than any of its source parts:
+    /// `FutureMergedMutatedPart::assign` takes the minimum of the type chosen by the thresholds and the types of the
+    /// source parts, so merging existing `Wide` parts keeps the result `Wide`. Unknown when not filled.
+    const MergeTreeDataPartType part_type = {};
 
     /// How old this data part in seconds.
     const time_t age = 0;
