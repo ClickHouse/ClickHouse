@@ -7265,7 +7265,7 @@ The inner tables of the hidden `TimeSeries` table behind a materialized view wit
 the original key, because their definitions are not persisted in the definition of the view and are regenerated
 on restore from a backup.
 )", 0, \
-        {"26.10", false, false, "New testing setting that forces all ORDER BY columns to DESC for stress-testing reverse key functionality"}) \
+        {"26.11", false, false, "New testing setting that forces all ORDER BY columns to DESC for stress-testing reverse key functionality"}) \
     DECLARE(Bool, optimize_rewrite_sum_if_to_count_if, true, R"(
 Rewrite sumIf() and sum(if()) function countIf() function when logically equivalent
 )", 0, \
