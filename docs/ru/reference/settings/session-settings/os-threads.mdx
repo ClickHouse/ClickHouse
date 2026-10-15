@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются из [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="os_threads_nice_value_materialized_view">
-  ## os_threads_nice_value_materialized_view
-</div>
+## os_threads_nice_value_materialized_view {#os_threads_nice_value_materialized_view}
 
 <SettingsInfoBlock type="Int32" default_value="0" />
 
@@ -27,19 +25,17 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Возможные значения: от -20 до 19.
 
-<div id="os_threads_nice_value_query">
-  ## os_threads_nice_value_query
-</div>
+## os_threads_nice_value_query {#os_threads_nice_value_query}
 
 **Псевдонимы**: `os_thread_priority`
 
 <SettingsInfoBlock type="Int32" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "0"},{"label": "Новая настройка."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "0"},{"label": "Новая настройка с псевдонимом `os_thread_priority`."}]}]} />
 
 Значение `nice` в Linux для потоков обработки запросов. Чем ниже значение, тем выше приоритет CPU.
 
-Требуется привилегия `CAP_SYS_NICE`, иначе настройка не действует.
+Требуется привилегия CAP&#95;SYS&#95;NICE, иначе настройка не имеет эффекта.
 
 Возможные значения: от -20 до 19.
 
