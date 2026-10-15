@@ -10,6 +10,8 @@ import string
 from helpers.cluster import ClickHouseCluster, get_docker_compose_path
 from helpers.test_tools import TSV
 
+from .flight_sql_client import FlightSQLClient
+
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 DOCKER_COMPOSE_PATH = get_docker_compose_path()
 
@@ -575,6 +577,76 @@ def test_doget_cmd_select_arrow_format():
     assert actual.schema == expected_schema
     assert actual.column("id").equals(expected_ids)
     assert actual.column("name").equals(expected_names)
+
+
+def test_doget_sparse_columns():
+    node.query(
+        "CREATE TABLE mytable (id UInt64, x UInt64, n Nullable(Int64), s Nullable(String), t Tuple(a UInt64, b String)) "
+        "ENGINE = MergeTree ORDER BY id "
+        "SETTINGS ratio_of_defaults_for_sparse_serialization = 0.5, nullable_serialization_version = 'allow_sparse'"
+    )
+    node.query(
+        "INSERT INTO mytable SELECT number, if(number % 10 = 0, number, 0), if(number % 10 = 0, number, NULL), "
+        "if(number % 10 = 0, toString(number), NULL), (if(number % 10 = 0, number, 0), if(number % 10 = 0, toString(number), '')) "
+        "FROM numbers(100)"
+    )
+    assert node.query(
+        "SELECT column, serialization_kind, subcolumns.serializations FROM system.parts_columns "
+        "WHERE database = currentDatabase() AND table = 'mytable' AND active ORDER BY column"
+    ) == TSV(
+        [
+            ["id", "Default", "[]"],
+            ["n", "Sparse", "[]"],
+            ["s", "Sparse", "['Sparse']"],
+            ["t", "Default", "['Sparse','Sparse','Sparse']"],
+            ["x", "Sparse", "[]"],
+        ]
+    )
+
+    # No ORDER BY: sorting would materialize the sparse columns before they reach the Arrow Flight server.
+    query = "SELECT id, x, n, s, s.null, s.size, t FROM mytable"
+    client, options = get_client()
+    raw = client.do_get(flight.Ticket(query.encode()), options).read_all()
+    flight_info = client.get_flight_info(
+        flight.FlightDescriptor.for_command(query), options
+    )
+    via_info = pa.concat_tables(
+        [client.do_get(e.ticket, options).read_all() for e in flight_info.endpoints]
+    )
+
+    with open(os.path.join(SCRIPT_DIR, "certs/ca-cert.pem"), "rb") as file:
+        tls_root_certs = file.read()
+    sql_client = FlightSQLClient(
+        host=node.ip_address,
+        port=8888,
+        tls_root_certs=tls_root_certs,
+        override_hostname=SSL_HOST,
+        username="user1",
+        password="qwe123",
+    )
+    poll = sql_client.poll_flight_info(flight.FlightDescriptor.for_command(query))
+    while poll.flight_descriptor is not None:
+        poll = sql_client.poll_flight_info(poll.flight_descriptor)
+    via_poll = pa.concat_tables(
+        [sql_client.do_get(e.ticket).read_all() for e in poll.info.endpoints]
+    )
+
+    rows = range(100)
+    expected = {
+        "id": list(rows),
+        "x": [i if i % 10 == 0 else 0 for i in rows],
+        "n": [i if i % 10 == 0 else None for i in rows],
+        "s": [str(i) if i % 10 == 0 else None for i in rows],
+        "s.null": [0 if i % 10 == 0 else 1 for i in rows],
+        "s.size": [len(str(i)) if i % 10 == 0 else None for i in rows],
+        "t": [
+            {"a": i if i % 10 == 0 else 0, "b": str(i) if i % 10 == 0 else ""}
+            for i in rows
+        ],
+    }
+    assert raw.sort_by("id").to_pydict() == expected
+    assert via_info.sort_by("id").to_pydict() == expected
+    assert via_poll.sort_by("id").to_pydict() == expected
 
 
 # A type with no Arrow mapping (here `JSON`) is served as an opaque column holding one serialized value
