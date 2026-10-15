@@ -31,6 +31,14 @@ with engine.connect() as conn:
     print(version)
 ```
 
+استخدم صيغ URL الصريحة هذه عند تثبيت `clickhouse-sqlalchemy` أيضًا.
+لا يؤثر استيراد `clickhouse_connect.cc_sqlalchemy` في تسجيل `clickhouse://`
+الخاص بتلك الحزمة، إذ يبقى كما هو. وإذا منع مزوّد آخر مثبَّت تسجيل الاسم البديل
+الخاص بنا، يُصدر الاستيراد تحذيرًا من نوع `UserWarning` يوصي باستخدام URL صريح
+خاص بـ ClickHouse Connect. أما التسجيلات القائمة وقت التشغيل فتبقى دون تغيير ودون
+إصدار أي تحذير. وإذا لم يكن `clickhouse://` محجوزًا لأي مزوّد آخر، فإن هذا الاستيراد يجعله
+متاحًا بوصفه اسمًا بديلًا للتوافق مع ClickHouse Connect.
+
 ### معرّفات جلسات ClickHouse {#sqlalchemy-session-ids}
 
 افتراضيًا، يُنشئ كل اتصال ضمن مجمّع الاتصالات معرّف جلسة ClickHouse خاصًا به، سواء في اللهجة المتزامنة أو غير المتزامنة. وعندما تصل طلبات هذا الاتصال إلى عملية خادم ClickHouse نفسها، تظل الإعدادات المُغيَّرة باستخدام `SET` والجداول المؤقتة محفوظة لهذا الاتصال. وتجدر الإشارة إلى أن حالة الجلسة المسمّاة وعمليات فحص التداخل ضمن الجلسة نفسها تقتصر على العملية الواحدة. ففي عملية خادم واحدة، يُرفض فورًا أي طلب متداخل للمستخدم نفسه ومعرّف الجلسة نفسه برمز الخادم 373 بدلًا من وضعه في قائمة انتظار. وإذا هيّأت قيمة ثابتة لـ `session_id`، فاستخدم `pool_size=1, max_overflow=0` أو اجعل الوصول تسلسليًا قبل أن تصل الطلبات إلى ClickHouse. أما في ClickHouse Cloud أو غيرها من البيئات التي تعتمد على موازنة الحمل، فقد تصل الطلبات التي تحمل معرّف الجلسة نفسه إلى خوادم مختلفة، لذا لا تعتمد على قيمة ثابتة لـ `session_id` بوصفها حالة موزّعة أو قفل استبعاد متبادل (mutex) موزّعًا.
@@ -134,6 +142,8 @@ with engine.connect() as conn:
 ### معالجة الأخطاء {#sqlalchemy-error-handling}
 
 تستخدم الأخطاء التي يُطلقها المشغّل عبر اتصال SQLAlchemy أصنافَ DB-API المُصدَّرة من `clickhouse_connect.dbapi`. وهذه الأصناف هي كائنات الأصناف نفسها المقابلة لها في `clickhouse_connect.driver.exceptions`، ولذلك يغلّفها SQLAlchemy في الفئة الفرعية المطابقة من `sqlalchemy.exc.DBAPIError`. أما `StreamFailureError` فهو من نوع `OperationalError`، ويُغلَّف على هيئة `sqlalchemy.exc.OperationalError`.
+
+يخضع تنفيذ SQL لـ[سياسة إعادة المحاولة عبر HTTP](/ar/integrations/language-clients/python/driver-api#http-retries) الخاصة بالمشغّل، بينما تعتمد عمليات الإدراج المجمّع بتنسيق Native على [سياسة إعادة محاولة الإدراج](/ar/integrations/language-clients/python/advanced-inserting#insert-retries-and-deduplication).
 
 إذا كان الإلغاء من جهة المستدعي قد يقاطع استدعاءً صريحًا لـ `AsyncConnection.invalidate()`، فشغّل عملية الإبطال ضمن مهمة تملكها، وانتظر اكتمالها قبل تمرير الإلغاء. يتيح ذلك لـ SQLAlchemy إكمال عمليات تتبّع سجلات الاتصال:
 
@@ -432,6 +442,8 @@ ranked = cte(sa_select(book.c.book_id), "ranked", materialized=True)
 
 يوفّر ClickHouse Connect أنواع بيانات ClickHouse، ومحركات الجداول، وبُنى القواميس، وDDL لقواعد البيانات، واستكشاف بنية الجداول.
 
+تقبل الدالتان `Nullable()` و`LowCardinality()` من `clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes` صنف نوع SQLAlchemy خاصًا بـ ClickHouse أو مثيلًا منه، وتحافظان على نوعه الفعلي لكي تتعرّف عليه أدوات التحقق من الأنواع. على سبيل المثال، تُعيد `Nullable(String)` مثيلًا من `String` يمكن تمريره مباشرةً إلى `Column`. وتستنتج أدوات التحقق من الأنواع النوع `list[String]` للتعبير `[Nullable(String)]`. وإذا كانت القائمة تحتوي أيضًا على أنواع ClickHouse أخرى، فحدّد نوعها صراحةً بالتعليق التوضيحي `list[ChSqlaType]` واستورد `ChSqlaType` من `clickhouse_connect.cc_sqlalchemy.datatypes.base`.
+
 تُستكشف أعمدة `Variant` المستقلة (standalone) عبر نوع SQLAlchemy داخلي، ويحافظ التوليد التلقائي في Alembic على أسماء أنواعها الخام القياسية دون تغييرات متكررة في الأنواع. أما أعمدة `Geometry` و`MultiPoint` فتُستكشف كأنواع SQLAlchemy عامة.
 
 ```python
@@ -460,7 +472,24 @@ with engine.connect() as conn:
     assert reflected.engine is not None
 ```
 
-تحمل الأعمدة المسترجعة `server_default` لتعبيرات `DEFAULT`، وسمات خاصة بكل dialect مثل `clickhouse_codec` و`clickhouse_ttl` و`clickhouse_materialized` و`clickhouse_alias` إن وُجدت.
+تحمل الأعمدة المنعكسة `server_default` لتعبيرات `DEFAULT`. وتستخدم كائنات
+SQLAlchemy المنعكسة خيارات خاصة بكل لهجة مثل `clickhousedb_codec`
+و`clickhousedb_ttl` و`clickhousedb_materialized` و`clickhousedb_alias` إن وُجدت.
+أما القواميس العامة التي يُرجعها `Inspector.get_columns()` فتحتفظ
+بمفاتيح `clickhouse_*` المقابلة.
+
+استخدم `clickhousedb_*` في تعريفات الجداول والأعمدة الجديدة، فهذه هي الأسماء التي تستخدمها البيانات الوصفية
+التي يولّدها المشغّل ومراجعات Alembic. كما يقرأ ClickHouse Connect
+خيارات `clickhouse_*` القديمة المحددة صراحةً، إلا أن SQLAlchemy يتحقق من صحتها وفق
+اللهجة التي تملك `clickhouse`. وفي حالة التثبيت المختلط، قد تُطلق خيارات ClickHouse Connect
+مثل `clickhouse_engine` و`clickhouse_ttl` و`clickhouse_settings`
+و`clickhouse_table_type` و`clickhouse_dictionary_*` الخطأ `ArgumentError`.
+لذا أعد تسميتها إلى `clickhousedb_*`.
+
+لا يقرأ ClickHouse Connect القيم الافتراضية إلا من `clickhousedb`. سجّلها باستخدام
+`Table.argument_for("clickhousedb", ...)` أو
+`Column.argument_for("clickhousedb", ...)`. أما وسائط عمليات Alembic مثل
+`op.add_column(..., clickhouse_settings={...})` فتحتفظ بأسمائها الحالية.
 
 تستخدم قيم السلاسل النصية في عبارات `DEFAULT` و`MATERIALIZED` و`ALIAS` و`TTL` إفلات السلاسل النصية في ClickHouse. وينطبق الإفلات نفسه على تعليقات الجداول والقواميس والأعمدة، بما في ذلك التعليقات التي يصدرها Alembic.
 
@@ -477,7 +506,7 @@ engine_clause = SummingMergeTree("id", columns=("delta", "n_tx"))
 # Sum delta and n_tx for rows with the same id.
 ```
 
-مرّر سلسلة نصية، أو عمود SQLAlchemy، أو سمة عمود مُعيَّن (mapped)، أو قائمة أو صفًّا (tuple) غير فارغ من هذه القيم. تُحاط عناصر السلاسل النصية في القوائم والصفوف بعلامات الاقتباس بوصفها معرّفات. أما السلسلة النصية المفردة فتُمرَّر بوصفها SQL خامًا، مثل `"delta"` أو `"(delta, n_tx)"`. ويتطلب الخادم معرّفات لهذه الأعمدة. احذف `columns` لتترك لـ ClickHouse تحديد الأعمدة المراد جمعها. ويحافظ استكشاف البنية والتوليد التلقائي في Alembic على قائمة الأعمدة المحددة صراحةً.
+مرّر سلسلة نصية، أو عمود SQLAlchemy، أو سمة عمود مُعيَّن (mapped)، أو قائمة أو صفًّا (Tuple) غير فارغ من هذه القيم. تُحاط عناصر السلاسل النصية في القوائم والصفوف بعلامات الاقتباس بوصفها معرّفات. أما السلسلة النصية المفردة فتُمرَّر بوصفها SQL خامًا، مثل `"delta"` أو `"(delta, n_tx)"`. ويتطلب الخادم معرّفات لهذه الأعمدة. احذف `columns` لتترك لـ ClickHouse تحديد الأعمدة المراد جمعها. ويحافظ استكشاف البنية والتوليد التلقائي في Alembic على قائمة الأعمدة المحددة صراحةً.
 
 ## عمليات الإدراج واستخدام ORM الأساسي {#sqlalchemy-inserts}
 
@@ -550,6 +579,10 @@ alembic init -t async alembic
 يستخدم ملف `alembic.ini` المُولَّد الإعداد `script_location = %(here)s/alembic`. أبقِ على هذا الإعداد إذا كان اسم دليل الترحيل `alembic`، وإلا فحدّثه ليشير إلى الدليل الذي مرّرته إلى `alembic init`. استبدل `alembic/env.py` بـ [مثال `env.py` غير المتزامن لـ Alembic](https://github.com/ClickHouse/clickhouse-connect/blob/main/examples/alembic_async/env.py) المُضمَّن في المستودع، ثم اضبط `sqlalchemy.url` في `alembic.ini`.
 
 استورد `clickhouse_connect.cc_sqlalchemy.alembic` في ملف `env.py` الخاص بـ Alembic لتسجيل تكامل اللهجة. يدعم التوليد التلقائي تغييرات الجداول الشائعة، بما في ذلك إنشاء الجداول وإزالتها، وإضافة الأعمدة وتعديلها وحذفها، والقيم الافتراضية، والتعليقات. استخدم العمليات اليدوية لإعادة تسمية الجداول والأعمدة. راجع كل عملية ترحيل مولَّدة قبل تطبيقها.
+
+عندما تُغفل البيانات الوصفية إصدار الحالة لـ `AggregateFunction`، يقبل التوليد التلقائي الإصدار المنعكس الموجود. على سبيل المثال، يتطابق `AggregateFunction(uniq, UInt32)` مع `AggregateFunction(1, uniq, UInt32)` المنعكس. وينطبق ذلك أيضًا داخل الأنواع المتداخلة. أما التغييرات على الدالة التجميعية أو معاملاتها أو أنواع وسيطاتها فلا تزال تُنتج تغييرًا في النوع.
+
+يجب أن يتطابق الإصدار الصريح في البيانات الوصفية مع الإصدار المنعكس. وتتطابق الأنواع المنعكسة القديمة التي لا تحمل إصدارًا مع الإصدار الصريح `0`. ولا يؤدي إغفال الإصدار إلى طلب ترقية صيغة الحالة الموجودة بعد ترقية الخادم. حدّد إصدارًا صريحًا عندما تعتزم تغيير صيغة الحالة.
 
 تظل دوال الترحيل في Alembic متزامنة. إذ تُنشئ البيئة غير المتزامنة كائن `AsyncEngine`، وتفتح `AsyncConnection`، ثم تمرّر دالة الترحيل المتزامنة إلى `await connection.run_sync(...)`. أما الترحيلات دون اتصال فتستدعي `context.configure(url=..., literal_binds=True, dialect_opts={"paramstyle": "named"})` مباشرةً دون إنشاء محرك. ويتضمن [مثال `env.py` غير المتزامن لـ Alembic](https://github.com/ClickHouse/clickhouse-connect/blob/main/examples/alembic_async/env.py) المُضمَّن في المستودع كلا المسارين، ويقرأ URL الاتصال من تهيئة `sqlalchemy.url` القياسية في Alembic. كما يحتفظ بخطافات Alembic وخياراتها الخاصة بـ ClickHouse الواردة في المثال العملي، بما في ذلك `include_object` و`make_include_name(...)` و`clickhouse_writer` و`version_table`. لا تستخدم `engine.sync_engine` لتشغيل الترحيلات غير المتزامنة أو التخلص منها.
 
