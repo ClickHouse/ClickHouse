@@ -3551,6 +3551,11 @@ Collect OpenTelemetry spans for processors.
 Collect OpenTelemetry spans for workload preemptive CPU scheduling.
 )", 0, \
         {"25.8", false, false, "New setting to trace `cpu_slot_preemption` feature."}) \
+    DECLARE(Bool, opentelemetry_trace_stateless_worker_discovery, false, R"(
+Only has an effect in ClickHouse Cloud. For a query that is itself being traced, collect OpenTelemetry spans for the stateless-worker discovery-service requests it makes to provision (lease) workers.
+The spans are named `StatelessWorkerDiscovery.<action>` and carry the attributes `clickhouse.discovery.action` and `clickhouse.discovery.status`.
+)", 0, \
+        {"26.10", false, false, "New setting to collect OpenTelemetry spans for the stateless-worker discovery-service requests a query makes to provision workers."}) \
     DECLARE(Bool, prefer_column_name_to_alias, false, R"(
 Enables or disables using the original column names instead of aliases in query expressions and clauses. It especially matters when alias is the same as the column name, see [Expression Aliases](/reference/syntax#notes-on-usage). Enable this setting to make aliases syntax rules in ClickHouse more compatible with most other database engines.
 
@@ -8386,7 +8391,7 @@ Hard lower limit on the task size (even when the number of granules is low and t
 )", 0, \
         {"24.10", 8, 8, "New setting"}) \
     DECLARE(UInt64, merge_tree_compact_parts_min_granules_to_multibuffer_read, 16, R"(
-Only has an effect in ClickHouse Cloud. Number of granules in stripe of compact part of MergeTree tables to use multibuffer reader, which supports parallel reading and prefetch. In case of reading from remote fs using of multibuffer reader increases number of read request. A part is read with a single buffer when it contains both fewer granules than this threshold and fewer granules than the number of columns being read, because in that case the single buffer reader issues fewer read requests than the multibuffer reader.
+Only has an effect in ClickHouse Cloud. Number of granules in stripe of compact part of MergeTree tables to use multibuffer reader, which supports parallel reading and prefetch. In case of reading from remote fs using of multibuffer reader increases number of read request.
 )", 0) \
     \
     DECLARE(Bool, send_table_structure_on_insert_with_inline_data, true, R"(
@@ -10848,6 +10853,10 @@ Allow to execute `insert` queries into iceberg.
         {"25.7", false, false, "New setting."}) \
     DECLARE(Bool, allow_experimental_cleanup_old_data_files_compaction, false, R"(
 Allow to clean up old data files during Iceberg compaction.
+
+The cleanup runs `iceberg_compaction_data_cleanup` after a compaction. It expires the snapshots the compaction made obsolete, the same
+way as `expire_snapshots`: removes them from the table metadata and deletes the files that no other snapshot references. For a table
+of the format version 1 or behind a transactional catalog it only deletes the files, and the snapshots stay in the metadata.
 )", EXPERIMENTAL, \
         {"26.5", false, false, "New setting"}) \
     DECLARE(Bool, allow_experimental_iceberg_compaction, false, R"(
