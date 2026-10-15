@@ -3,6 +3,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMaterializationUtils.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
 #include <Core/Block.h>
 #include <Core/Field.h>
 #include <Core/ProtocolDefines.h>
@@ -159,4 +160,45 @@ TEST(NativeAutomaticLowCardinality, RoundTripThroughCurrentRevision)
         for (size_t i = 0; i < num_rows; ++i)
             ASSERT_EQ(String(full->getDataAt(i)), "val_" + std::to_string(i % 4)) << "row " << i;
     }
+}
+
+TEST(NativeAutomaticLowCardinality, TupleElementThroughOlderRevision)
+{
+    /// The `LOW_CARDINALITY` kind of an encoded `Tuple` element is only in the info of the element,
+    /// not in the kind stack of the outer column, but it must be materialized for an old peer as well.
+    static constexpr UInt64 old_revision = DBMS_MIN_REVISION_WITH_AUTOMATIC_LOW_CARDINALITY_SERIALIZATION - 1;
+    static constexpr size_t num_rows = 1000;
+
+    auto tuple_type = DataTypeFactory::instance().get("Tuple(String)");
+
+    Block block;
+    {
+        auto element = makeAutomaticallyEncodedColumn(num_rows);
+        block.insert(ColumnWithTypeAndName(ColumnTuple::create(Columns{element.column}), tuple_type, "t"));
+    }
+
+    Block plain_block;
+    {
+        auto full = DataTypeFactory::instance().get("String")->createColumn();
+        for (size_t i = 0; i < num_rows; ++i)
+            full->insert(Field("val_" + std::to_string(i % 4)));
+        plain_block.insert(ColumnWithTypeAndName(ColumnTuple::create(Columns{std::move(full)}), tuple_type, "t"));
+    }
+
+    auto [serialization, info, result_column] = NativeWriter::getSerializationAndColumn(old_revision, block.getByName("t"));
+    ASSERT_NE(info, nullptr);
+    EXPECT_FALSE(info->hasCustomSerialization());
+    EXPECT_FALSE(typeid_cast<const ColumnTuple &>(*result_column).getColumn(0).lowCardinality());
+
+    auto serialize = [](const Block & to_write)
+    {
+        String result;
+        WriteBufferFromString out(result);
+        NativeWriter writer(out, old_revision, std::make_shared<const Block>(to_write.cloneEmpty()));
+        writer.write(to_write);
+        writer.flush();
+        return result;
+    };
+
+    EXPECT_EQ(serialize(block), serialize(plain_block));
 }

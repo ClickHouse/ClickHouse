@@ -110,24 +110,18 @@ std::tuple<SerializationPtr, SerializationInfoPtr, ColumnPtr> NativeWriter::getS
                 result_column = recursiveRemoveSparse(result_column);
         }
 
+        /// The peer knows custom serializations, but not the `LOW_CARDINALITY` kind, so every non-native
+        /// LowCardinality column is materialized before the serialization info is computed. It has to be
+        /// done on the column rather than by checking the outer kind stack: the kind can also appear only
+        /// in the infos of nested elements (e.g. a `Tuple(String)` with an encoded element).
+        if (client_revision < DBMS_MIN_REVISION_WITH_AUTOMATIC_LOW_CARDINALITY_SERIALIZATION)
+            result_column = recursiveRemoveNonNativeLowCardinality(result_column);
+
         /// The size-stream String layout follows the peer revision and needs no per-column wire marker.
         auto info = column.type->getSerializationInfo(
             *result_column,
             SerializationInfoSettings::enableAllSupportedSerializations(
                 client_revision >= DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION));
-        if (client_revision < DBMS_MIN_REVISION_WITH_AUTOMATIC_LOW_CARDINALITY_SERIALIZATION
-            && ISerialization::hasKind(info->getKindStack(), ISerialization::Kind::LOW_CARDINALITY))
-        {
-            /// The peer knows custom serializations, but not this kind, so the column is materialized.
-            /// The serialization info has to be recomputed from the materialized column rather than
-            /// dropped: the peer still expects the serialization-kind byte, and the serialization of
-            /// the declared type still depends on the negotiated revision (the `String` size stream).
-            result_column = recursiveRemoveNonNativeLowCardinality(recursiveRemoveSparse(result_column));
-            info = column.type->getSerializationInfo(
-                *result_column,
-                SerializationInfoSettings::enableAllSupportedSerializations(
-                    client_revision >= DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION));
-        }
         return {column.type->getSerialization(*info), info, result_column};
     }
 
