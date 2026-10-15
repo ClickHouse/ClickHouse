@@ -186,10 +186,15 @@ std::string TrustStoreFingerprint(std::string const& ca_location) {
       result += "|-|";
       continue;
     }
+#if defined(__APPLE__)
+    auto const& mtime = st.st_mtimespec;
+#else
+    auto const& mtime = st.st_mtim;
+#endif
     result += "|" + std::to_string(st.st_dev) + ":" + std::to_string(st.st_ino) +
               ":" + std::to_string(st.st_size) + ":" +
-              std::to_string(st.st_mtim.tv_sec) + "." +
-              std::to_string(st.st_mtim.tv_nsec) + "|";
+              std::to_string(mtime.tv_sec) + "." +
+              std::to_string(mtime.tv_nsec) + "|";
   }
   return result;
 }
