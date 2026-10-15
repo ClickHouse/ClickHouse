@@ -381,6 +381,7 @@ set (CMAKE_C_STANDARD_REQUIRED ON)
 
 # Align functions and loops to reduce performance sensitivity to code layout changes,
 # providing more stable benchmarks.
+# -falign-loops applies only to non-LTO builds; ThinLTO builds pass the loop alignment to the linker below.
 set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=64 -falign-loops=32")
 
 # Put each function and data item into its own section so that the linker can
@@ -567,7 +568,7 @@ if (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE)
 
     if(LINKER_NAME MATCHES "lld")
         set(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -Wl,--lto-whole-program-visibility")
-        # -falign-loops is a code generator option that is not stored in the IR, so with ThinLTO it has to be given to the linker.
+        # ThinLTO generates code in the linker, which does not see -falign-loops.
         set(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -Wl,-mllvm,-align-loops=32")
     endif()
 
