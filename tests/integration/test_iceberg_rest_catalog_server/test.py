@@ -587,6 +587,27 @@ def test_clickhouse_client_creates_table(started_cluster):
         assert result["metadata"]["properties"] == {"write.metadata.compression-codec": "gzip"}
         assert result["metadata-location"].endswith(".gz.metadata.json")
         assert node.query(f"SELECT count() FROM {db}.`{ns}.zipped`") == "0\n"
+
+        # PARTITION BY becomes the partition spec and ORDER BY becomes the sort order of the create request.
+        node.query(
+            f"CREATE TABLE {db}.`{ns}.sorted` (id Int64, name String) ENGINE = IcebergS3 PARTITION BY name ORDER BY id",
+            settings=create_settings,
+        )
+        metadata = catalog_request("GET", tables_url(ns, "sorted")).json()["metadata"]
+        spec_fields = metadata["partition-specs"][0]["fields"]
+        assert [(f["source-id"], f["field-id"], f["transform"]) for f in spec_fields] == [(2, 1000, "identity")]
+        assert metadata["default-spec-id"] == 0
+        order_fields = metadata["sort-orders"][0]["fields"]
+        assert [(f["source-id"], f["transform"], f["direction"]) for f in order_fields] == [(1, "identity", "asc")]
+        assert metadata["default-sort-order-id"] == 1
+
+        # Iceberg has no equivalent of PRIMARY KEY or SAMPLE BY.
+        for clause in ("PRIMARY KEY id", "SAMPLE BY id"):
+            error = node.query_and_get_error(
+                f"CREATE TABLE {db}.`{ns}.unsupported` (id Int64, name String) ENGINE = IcebergS3 ORDER BY id {clause}",
+                settings=create_settings,
+            )
+            assert "PRIMARY KEY and SAMPLE BY clauses are not supported" in error, error
     finally:
         node.query(f"DROP DATABASE IF EXISTS {db}")
 
