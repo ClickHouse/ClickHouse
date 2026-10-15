@@ -280,6 +280,31 @@ endif ()
 # Optionally split binaries and debug symbols.
 option(DISABLE_ALL_DEBUG_SYMBOLS "Disable debug symbols, independently of which build type is used" OFF)
 option(SPLIT_DEBUG_SYMBOLS "Split binaries and debug symbols" OFF)
+set(SYMBOL_SECTIONS "symtab" CACHE STRING "Symbol table format retained in packaged binaries")
+set_property(CACHE SYMBOL_SECTIONS PROPERTY STRINGS symtab gnu_debugdata)
+
+if (NOT SYMBOL_SECTIONS STREQUAL "symtab" AND NOT SYMBOL_SECTIONS STREQUAL "gnu_debugdata")
+    message(FATAL_ERROR "Unsupported SYMBOL_SECTIONS value '${SYMBOL_SECTIONS}'. Expected 'symtab' or 'gnu_debugdata'.")
+endif()
+
+if (SYMBOL_SECTIONS STREQUAL "gnu_debugdata")
+    # `.gnu_debugdata` is an ELF section, and `SymbolIndex` reads it only on ELF targets.
+    if (NOT (OS_LINUX OR OS_FREEBSD))
+        message(FATAL_ERROR "SYMBOL_SECTIONS=gnu_debugdata is supported only for ELF targets (Linux, FreeBSD)")
+    endif()
+
+    if (NOT SPLIT_DEBUG_SYMBOLS)
+        message(FATAL_ERROR "SYMBOL_SECTIONS=gnu_debugdata requires SPLIT_DEBUG_SYMBOLS=ON")
+    endif()
+
+    ch_find_program(XZ_PATH NAMES "xz")
+    if (XZ_PATH)
+        message(STATUS "Using xz: ${XZ_PATH}")
+    else()
+        message(FATAL_ERROR "Cannot find xz required by SYMBOL_SECTIONS=gnu_debugdata")
+    endif()
+endif()
+
 if (SPLIT_DEBUG_SYMBOLS)
     message(STATUS "Will split binaries and debug symbols")
     set(SPLIT_DEBUG_SYMBOLS_DIR "stripped" CACHE STRING "A separate directory for stripped information")
@@ -707,6 +732,14 @@ endif ()
 # Not on Darwin (no '-z' options in ld64) and not on WebAssembly (no ELF segments).
 if (NOT OS_DARWIN AND NOT OS_WASM)
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,separate-code")
+endif ()
+
+# Keep the static initializers (`.text.startup`) and the code the compiler marks cold (`.text.unlikely`) in
+# their own groups instead of next to their translation units all over `.text`. Startup then reads a few
+# hundred contiguous pages instead of thousands scattered over the binary, which matters most when the
+# binary is not in the page cache. Supported by lld and mold; same exclusions as above.
+if (NOT OS_DARWIN AND NOT OS_WASM)
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,keep-text-section-prefix")
 endif ()
 
 if (ENABLE_TESTS)
