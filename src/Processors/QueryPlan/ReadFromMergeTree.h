@@ -127,6 +127,8 @@ using LazyMaterializingRowsPtr = std::shared_ptr<LazyMaterializingRows>;
 
 /// `DistributedReadBucket` and `buildDistributedFinalPipe` live in `MergeTreeFinalMerge.h`.
 
+struct HypotheticalProjection;
+
 /// This step is created to read from MergeTree* table.
 /// For now, it takes a list of parts and creates source from it.
 class ReadFromMergeTree final : public SourceStepWithFilter
@@ -211,6 +213,8 @@ public:
         UInt64 total_marks_pk = 0;
         UInt64 selected_rows = 0;
         bool has_exact_ranges = false;
+        /// `ranges` exclude `exact_ranges`: their rows are counted from the primary key without being read.
+        bool exact_ranges_excluded = false;
         std::atomic<bool> exceeded_row_limits = false;
 
         AnalysisResult() = default;
@@ -232,6 +236,7 @@ public:
             , total_marks_pk(other.total_marks_pk)
             , selected_rows(other.selected_rows)
             , has_exact_ranges(other.has_exact_ranges)
+            , exact_ranges_excluded(other.exact_ranges_excluded)
             , exceeded_row_limits(other.exceeded_row_limits.load())
         {}
 
@@ -252,6 +257,7 @@ public:
             , total_marks_pk(other.total_marks_pk)
             , selected_rows(other.selected_rows)
             , has_exact_ranges(other.has_exact_ranges)
+            , exact_ranges_excluded(other.exact_ranges_excluded)
             , exceeded_row_limits(other.exceeded_row_limits.load())
         {}
 
@@ -601,6 +607,10 @@ public:
 
     bool isSelectedForTopKFilterOptimization() const { return top_k_filter_info.has_value(); }
     const std::optional<TopKFilterInfo> & getTopKFilterInfo() const { return top_k_filter_info; }
+
+    /// a hypothetical projection that the projection optimization also weighs
+    void setHypotheticalProjection(std::shared_ptr<HypotheticalProjection> projection) { hypothetical_projection = std::move(projection); }
+    const std::shared_ptr<HypotheticalProjection> & getHypotheticalProjection() const { return hypothetical_projection; }
     bool isTopKPrewhereQueryConditionCacheAllowed() const { return allow_top_k_prewhere_query_condition_cache; }
     bool isQueryConditionCacheAllowed() const { return allow_query_condition_cache; }
 
@@ -869,6 +879,7 @@ private:
     std::optional<size_t> number_of_current_replica;
 
     std::optional<TopKFilterInfo> top_k_filter_info;
+    std::shared_ptr<HypotheticalProjection> hypothetical_projection;
 
     /// See enableSealGatedReading.
     struct SealGatedReading
