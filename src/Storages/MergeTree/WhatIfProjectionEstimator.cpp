@@ -2,7 +2,6 @@
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
-#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnSparse.h>
 #include <Common/FailPoint.h>
 #include <Common/HashTable/Hash.h>
@@ -86,88 +85,11 @@ struct ProjectionPartData
     size_t format_bytes = 0;
     /// per-row bytes, only filled for adaptive granularity
     PaddedPODArray<UInt32> row_bytes;
-    /// the columns with a `LowCardinality` dictionary in read order, the writer sizes them for each block
-    ColumnsWithTypeAndName dictionary_columns;
-    /// those the part stores, a merge or an insert can give them to the writer with the dictionary of their source
-    NameSet stored_dictionaries;
-    /// some stored column has values of different sizes, or a dictionary that a sample does not show
+    /// some stored column has values of different sizes
     bool variable_width = false;
 };
 
-/// a dictionary column has no size for each row, its size depends on the rows of the block
-/// a column of a type such as `Variant` or `Dynamic` can hold a dictionary column at any depth
-bool hasDictionary(const IColumn & column)
-{
-    bool found = column.lowCardinality();
-    column.forEachSubcolumnRecursively([&](const IColumn & subcolumn) { found |= subcolumn.lowCardinality(); });
-    return found;
-}
-
-/// the key expression computes a dictionary column from a dictionary column
-/// the source that gave the writer that column can give the result a dictionary of any size, and the part does not record it
-bool keyFromDictionary(const ActionsDAG & dag)
-{
-    for (const auto * output : dag.getOutputs())
-    {
-        if (output->type == ActionsDAG::ActionType::INPUT || !hasDictionary(*output->result_type->createColumn()))
-            continue;
-        std::vector<const ActionsDAG::Node *> nodes{output};
-        while (!nodes.empty())
-        {
-            const auto * node = nodes.back();
-            nodes.pop_back();
-            if (node->type == ActionsDAG::ActionType::INPUT && hasDictionary(*node->result_type->createColumn()))
-                return true;
-            nodes.insert(nodes.end(), node->children.begin(), node->children.end());
-        }
-    }
-    return false;
-}
-
-/// how a writer block holds the stored dictionary columns
-enum class StoredDictionaries : uint8_t
-{
-    /// the block has its own dictionaries, as an insert that parses its data or a merge that mixes its sources
-    Own,
-    /// a source shares its dictionaries, so the writer counts only the indexes
-    Shared,
-    /// the same, but each index has the widest type, a source can keep a wide index for a few values that a filter leaves
-    SharedWidestIndex,
-};
-
-/// the bytes of a column if a source shares its dictionaries at any depth, `byteSize` leaves out a shared dictionary
-size_t bytesWithSharedDictionaries(const IColumn & column, bool widest_index)
-{
-    size_t bytes = column.byteSize();
-    auto share = [&](const IColumn & subcolumn)
-    {
-        const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(&subcolumn);
-        if (!low_cardinality)
-            return;
-        if (!low_cardinality->isSharedDictionary())
-            bytes -= low_cardinality->getDictionary().byteSize();
-        if (widest_index)
-            bytes += low_cardinality->size() * sizeof(UInt64) - low_cardinality->getIndexes().byteSize();
-    };
-    share(column);
-    column.forEachSubcolumnRecursively(share);
-    return bytes;
-}
-
-/// an empty column takes a shared dictionary from the first range it gets, give each dictionary its own copy
-void ownDictionaries(IColumn & column)
-{
-    auto own = [](IColumn & subcolumn)
-    {
-        if (auto * low_cardinality = typeid_cast<ColumnLowCardinality *>(&subcolumn))
-            if (low_cardinality->isSharedDictionary())
-                low_cardinality->compactDictionaryInplace();
-    };
-    own(column);
-    column.forEachMutableSubcolumnRecursively(own);
-}
-
-/// per-row version of `getBlockSizeForGranularity`, without the dictionary columns
+/// per-row version of `getBlockSizeForGranularity`
 void appendRowSizes(PaddedPODArray<UInt32> & row_bytes, bool & variable_width, const Block & block)
 {
     const size_t rows = block.rows();
@@ -179,12 +101,6 @@ void appendRowSizes(PaddedPODArray<UInt32> & row_bytes, bool & variable_width, c
     {
         if (!elem.column)
             continue;
-        /// a sample does not show the dictionary of the rows it does not read, as with values of different sizes
-        if (hasDictionary(*elem.column))
-        {
-            variable_width = true;
-            continue;
-        }
         if (elem.column->valuesHaveFixedSize())
             fixed += static_cast<UInt32>(elem.column->sizeOfValueIfFixed());
         else
@@ -300,8 +216,6 @@ bool buildProjectionPart(
     PullingPipelineExecutor executor(pipeline);
 
     MutableColumns key_columns;
-    /// the dictionary columns of the whole part, in read order
-    std::map<String, std::pair<DataTypePtr, MutableColumnPtr>> dictionary_columns;
     Block block;
     while (executor.pull(block))
     {
@@ -327,9 +241,6 @@ bool buildProjectionPart(
 
         /// the writer chooses the part format before the key expression and sizes the granules after it
         out.format_bytes += block.bytes();
-        for (const auto & elem : block)
-            if (hasDictionary(*elem.column))
-                out.stored_dictionaries.insert(elem.name);
         /// `required_columns` can skip a subcolumn the key needs, add it back like the writer does
         for (const auto & required : proj_key.expression->getRequiredColumns())
             if (!block.has(required))
@@ -337,21 +248,7 @@ bool buildProjectionPart(
         proj_key.expression->execute(block);
         out.bytes += getBlockSizeForGranularity(block);
         if (need_row_bytes)
-        {
             appendRowSizes(out.row_bytes, out.variable_width, block);
-            for (const auto & elem : block)
-            {
-                if (!hasDictionary(*elem.column))
-                    continue;
-                auto & [type, whole] = dictionary_columns[elem.name];
-                if (!whole)
-                {
-                    type = elem.type;
-                    whole = elem.type->createColumn();
-                }
-                whole->insertRangeFrom(*elem.column, 0, elem.column->size());
-            }
-        }
 
         if (key_columns.empty())
             for (const auto & name : proj_key.column_names)
@@ -366,13 +263,6 @@ bool buildProjectionPart(
 
     if (key_columns.empty() || key_columns[0]->empty())
         return true;
-
-    for (auto & [name, column] : dictionary_columns)
-    {
-        /// the blocks built from this column then get their own dictionaries, as in the writer
-        ownDictionaries(*column.second);
-        out.dictionary_columns.emplace_back(std::move(column.second), column.first, name);
-    }
 
     out.rows = key_columns[0]->size();
     /// projection indexes also store the parent offset
@@ -396,8 +286,6 @@ struct PartFromSample
     size_t rows;
     /// bytes of the part rows before the first one each sample row stands for
     std::vector<UInt64> bytes_before_sample_row;
-    /// the dictionary columns of the part as one block, spread over the rows to cut blocks by bytes
-    UInt64 dictionary_bytes = 0;
 
     PartFromSample(const ProjectionPartData & sample_, size_t rows_)
         : sample(sample_), rows(rows_), bytes_before_sample_row(sample.rows + 1)
@@ -407,7 +295,6 @@ struct PartFromSample
             const size_t part_rows_covered = firstPartRow(sample_row + 1) - firstPartRow(sample_row);
             bytes_before_sample_row[sample_row + 1] = bytes_before_sample_row[sample_row] + sampleRowBytes(sample_row) * part_rows_covered;
         }
-        dictionary_bytes = blockBytes(0, rows, StoredDictionaries::Own) - rowBytesBefore(rows);
     }
 
     size_t sampleRow(size_t part_row) const { return static_cast<size_t>(UInt128(part_row) * sample.rows / rows); }
@@ -426,44 +313,14 @@ struct PartFromSample
 
     UInt64 bytesBefore(size_t part_row) const
     {
-        return rowBytesBefore(part_row) + static_cast<UInt64>(UInt128(dictionary_bytes) * part_row / rows);
-    }
-
-    /// the bytes of a writer block, with the dictionary columns as the block holds them
-    UInt64 blockBytes(size_t begin, size_t end, StoredDictionaries stored) const
-    {
-        UInt64 result = rowBytesBefore(end) - rowBytesBefore(begin);
-        const size_t first = firstSampleRowFrom(begin);
-        const size_t last = firstSampleRowFrom(end);
-        for (const auto & column : sample.dictionary_columns)
-        {
-            /// a fresh column, its index grows with its dictionary as in the writer
-            auto block_column = column.type->createColumn();
-            for (size_t sample_row = first; sample_row < last; ++sample_row)
-                block_column->insertFrom(*column.column, sample.order[sample_row]);
-            const UInt64 column_bytes = stored != StoredDictionaries::Own && sample.stored_dictionaries.contains(column.name)
-                ? bytesWithSharedDictionaries(*block_column, stored == StoredDictionaries::SharedWidestIndex)
-                : block_column->byteSize();
-            /// each sample row stands for several part rows
-            result += last > first ? static_cast<UInt64>(UInt128(column_bytes) * (end - begin) / (last - first)) : 0;
-        }
-        return result;
-    }
-
-    UInt64 rowBytesBefore(size_t part_row) const
-    {
         const size_t sample_row = sampleRow(part_row);
         if (sample_row == sample.rows)
-            return bytes_before_sample_row.back();
+            return bytes();
         return bytes_before_sample_row[sample_row] + sampleRowBytes(sample_row) * (part_row - firstPartRow(sample_row));
     }
+
+    UInt64 bytes() const { return bytes_before_sample_row.back(); }
     UInt64 formatBytes() const { return static_cast<UInt64>(UInt128(sample.format_bytes) * rows / sample.rows); }
-    /// the bytes of the key columns that the part does not store
-    UInt64 keyBytes() const
-    {
-        const size_t key_bytes = sample.bytes > sample.format_bytes ? sample.bytes - sample.format_bytes : 0;
-        return static_cast<UInt64>(UInt128(key_bytes) * rows / sample.rows);
-    }
 };
 
 /// end of the block a writer gets at `row`: at most `rows_limit` rows and `bytes_limit` bytes, but at least one row
@@ -485,8 +342,7 @@ std::vector<size_t> simulateWriterMarks(
     const MergeTreeSettings & mt_settings,
     bool adaptive_marks,
     size_t block_rows_limit,
-    size_t block_bytes_limit,
-    const std::function<UInt64(size_t, size_t)> & bytes_of_block)
+    size_t block_bytes_limit)
 {
     const size_t granularity_bytes = mt_settings[MergeTreeSetting::index_granularity_bytes];
     const size_t fixed_granularity_rows = mt_settings[MergeTreeSetting::index_granularity];
@@ -497,7 +353,7 @@ std::vector<size_t> simulateWriterMarks(
     {
         const size_t end = blockEnd(part, row, block_rows_limit, block_bytes_limit);
         const size_t block_rows = end - row;
-        const size_t block_bytes = bytes_of_block(row, end);
+        const size_t block_bytes = part.bytesBefore(end) - part.bytesBefore(row);
         row = end;
 
         const size_t granule_rows = computeIndexGranularity(
@@ -564,48 +420,22 @@ std::pair<std::vector<MergeTreeDataPartPtr>, size_t> buildSyntheticProjectionPar
     const size_t merge_bytes = mt_settings[MergeTreeSetting::merge_max_block_size_bytes];
     /// one granule of bytes is the finest block size that matters
     const size_t granule_bytes = mt_settings[MergeTreeSetting::index_granularity_bytes];
-    /// the rows and bytes of the blocks, and how they hold the stored dictionaries
-    std::vector<std::tuple<size_t, size_t, StoredDictionaries>> chunkings;
+    std::vector<std::pair<size_t, size_t>> chunkings;
     size_t primary = 0;
-    chunkings.emplace_back(whole_part.rows, 0, StoredDictionaries::Own);
+    chunkings.emplace_back(whole_part.rows, 0);
     if (granularity_per_block)
     {
-        chunkings.emplace_back(merge_rows, merge_bytes, StoredDictionaries::Own);
-        chunkings.emplace_back(merge_rows, granule_bytes, StoredDictionaries::Own);
+        chunkings.emplace_back(merge_rows, merge_bytes);
+        chunkings.emplace_back(merge_rows, granule_bytes);
         /// the writer writes a level-zero part in one block and a merged part in merge blocks
         /// when the row widths differ, the merge also cuts a block at each source
         if (parent_part->info.level > 0)
-            primary = uneven_rows ? 2 : 1;
-    }
-    /// a merge can give the writer the blocks of a source as they are, an insert can read a table, both keep the source dictionary
-    if (!data.stored_dictionaries.empty())
-    {
-        const auto [likeliest_rows, likeliest_bytes, likeliest_stored] = chunkings[primary];
-        chunkings.emplace_back(whole_part.rows, 0, StoredDictionaries::Shared);
-        /// a merged part does not record the index width of that dictionary, so the layouts go from the narrowest to the widest index
-        if (parent_part->info.level > 0)
-            chunkings.emplace_back(likeliest_rows, likeliest_bytes, StoredDictionaries::SharedWidestIndex);
+            primary = uneven_rows ? chunkings.size() - 1 : chunkings.size() - 2;
     }
 
     std::vector<std::vector<size_t>> layouts;
-    for (const auto & [rows_limit, bytes_limit, stored] : chunkings)
-        layouts.push_back(simulateWriterMarks(
-            whole_part, part_type, mt_settings, adaptive_marks, rows_limit, bytes_limit,
-            [&](size_t begin, size_t end) { return whole_part.blockBytes(begin, end, stored); }));
-
-    /// an insert can give the writer a dictionary that keeps values its rows do not use, and the part does not record them
-    /// a level-zero part comes from one insert block, and the granules of the parent part measure the bytes of that block
-    /// the projection stores some of the columns of that block, so its block has at most those bytes and its key columns
-    const auto & parent_granularity_info = parent_part->index_granularity_info;
-    if (parent_part->info.level == 0 && !data.stored_dictionaries.empty() && parent_granularity_info.mark_type.adaptive
-        && parent_granularity_info.index_granularity_bytes != 0)
-    {
-        const size_t parent_granule_rows = std::max<size_t>(parent_part->index_granularity->getMarkRows(0), 1);
-        const UInt64 insert_block_bytes
-            = (parent_part->rows_count / parent_granule_rows + 1) * parent_granularity_info.index_granularity_bytes + whole_part.keyBytes();
-        layouts.push_back(simulateWriterMarks(
-            whole_part, part_type, mt_settings, adaptive_marks, whole_part.rows, 0, [&](size_t, size_t) { return insert_block_bytes; }));
-    }
+    for (const auto & [rows_limit, bytes_limit] : chunkings)
+        layouts.push_back(simulateWriterMarks(whole_part, part_type, mt_settings, adaptive_marks, rows_limit, bytes_limit));
 
     auto build = [&](const std::vector<size_t> & rows_per_mark) -> MergeTreeDataPartPtr
     {
@@ -733,10 +563,10 @@ struct SampledPart
     MergeTreeDataPartPtr synthetic;
 };
 
-/// scenario 0 has every part in its likeliest layout, scenarios 1 to 5 have every part in one layout each
+/// scenario 0 has every part in its likeliest layout, scenarios 1 to 3 have every part in one layout each
 struct Scenarios
 {
-    std::array<HypotheticalProjectionPtr, 6> scenarios;
+    std::array<HypotheticalProjectionPtr, 4> scenarios;
     bool layouts_differ = false;
     UInt64 scanned_parts = 0;
     UInt64 scanned_marks = 0;
@@ -768,7 +598,6 @@ bool buildScenarios(
 
     for (auto & scenario : out.scenarios)
         scenario = std::make_shared<HypotheticalProjection>(projection.clone());
-    const bool key_from_dictionary = keyFromDictionary(projection.metadata->getSortingKey().expression->getActionsDAG());
 
     for (size_t part_idx = 0; part_idx < baseline_parts.size(); ++part_idx)
     {
@@ -807,7 +636,7 @@ bool buildScenarios(
             const auto [narrowest, widest] = std::minmax_element(part_data.row_bytes.begin(), part_data.row_bytes.end());
             uneven_rows = *narrowest != *widest;
         }
-        if (uneven_rows || (adaptive && key_from_dictionary))
+        if (uneven_rows)
             ++out.uneven_width_parts;
         /// no key rows from a non-empty part: the key needs a column we don't read, e.g. `_part_offset`
         if (part_data.rows == 0 && part->rows_count > 0)
@@ -950,7 +779,7 @@ void setVerdict(
     {
         result.verdict = "too close to call";
         result.verdict_reason = fmt::format(
-            "{} against {} from the base table, and a part does not record the blocks that its writer got, so the "
+            "{} against {} from the base table, and the layout a merge would leave is not recorded in a part, so the "
             "comparison comes out both ways over `marks_span`",
             marks_text(projection_marks),
             baseline_marks);
