@@ -996,7 +996,8 @@ ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::getFileInfo()
     if (file_info)
         return *file_info;
 
-    if (method != Poco::Net::HTTPRequest::HTTP_GET)
+    /// A HEAD cannot describe what a POST returns; a HEAD buffer still asks for its metadata.
+    if (method != Poco::Net::HTTPRequest::HTTP_GET && method != Poco::Net::HTTPRequest::HTTP_HEAD)
     {
         file_info = HTTPFileInfo{};
         return *file_info;
