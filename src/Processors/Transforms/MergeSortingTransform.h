@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/QueryResultPreview.h>
+#include <Processors/SpillableAdapter.h>
 #include <Processors/Transforms/SortingTransform.h>
 #include <Common/Logger.h>
 #include <Core/SortDescription.h>
@@ -18,6 +19,7 @@ namespace ProfileEvents
 namespace DB
 {
 
+class BufferingToFileSink;
 class IVolume;
 using VolumePtr = std::shared_ptr<IVolume>;
 class IMergingTransformBase;
@@ -81,6 +83,11 @@ public:
 
     QueryResultPreviewsControl * getQueryResultPreviewsControl() override;
 
+    std::span<ISpillable * const> getSpillables() override { return {&spillable_ptr, 1}; }
+    ProcessorMemoryStats getMemoryStats() const;
+    size_t spill(size_t at_least_bytes);
+    const TemporaryDataOnDiskScope * getSpillScope() const { return tmp_data.get(); }
+
 protected:
     void consume(Chunk chunk) override;
     void serialize() override;
@@ -89,6 +96,8 @@ protected:
     PipelineUpdate updatePipeline() override;
 
 private:
+    SpillableAdapter<MergeSortingTransform> spillable{*this};
+    ISpillable * const spillable_ptr = &spillable;
     size_t max_bytes_before_remerge;
     double remerge_lowered_memory_bytes_ratio;
     size_t max_bytes_in_block_before_external_sort;
@@ -109,7 +118,12 @@ private:
     /// Merge all accumulated blocks to keep no more than limit rows.
     void remerge();
 
+    /// Prepare the same sorted run for pipeline-driven or synchronous spilling.
+    std::shared_ptr<BufferingToFileSink> prepareSpill();
+
     MergingTransformPtr external_merging_sorted;
+    /// Readers of synchronously written runs, attached at the next pipeline update.
+    Processors spilled_sources;
 
     TopKThresholdTrackerPtr threshold_tracker;
 

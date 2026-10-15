@@ -15,7 +15,7 @@ import { Image } from "/snippets/fr/components/Image.jsx";
 
 <Steps>
   <Step title="Installer Docker" id="install-docker">
-    Vous aurez besoin de Docker pour exécuter LibreChat et le serveur MCP. Pour installer Docker :
+    Vous aurez besoin de Docker pour exécuter LibreChat et le serveur MCP. Pour installer Docker :
 
     1. Rendez-vous sur [docker.com](https://www.docker.com/products/docker-desktop)
     2. Téléchargez Docker Desktop pour votre système d’exploitation
@@ -29,7 +29,7 @@ import { Image } from "/snippets/fr/components/Image.jsx";
 
   <Step title="Cloner le dépôt LibreChat" id="clone-librechat-repo">
     Ouvrez un terminal (invite de commandes, terminal ou PowerShell) et clonez le
-    dépôt LibreChat à l’aide de la commande suivante :
+    dépôt LibreChat à l’aide de la commande suivante :
 
     ```bash
     git clone https://github.com/danny-avila/LibreChat.git
@@ -38,7 +38,7 @@ import { Image } from "/snippets/fr/components/Image.jsx";
   </Step>
 
   <Step title="Créez et modifiez le fichier .env" id="create-and-edit-env-file">
-    Copiez le fichier de configuration d’exemple `.env.example` dans `.env` :
+    Copiez le fichier de configuration d’exemple `.env.example` dans `.env` :
 
     ```bash
     cp .env.example .env
@@ -46,7 +46,7 @@ import { Image } from "/snippets/fr/components/Image.jsx";
 
     Ouvrez le fichier `.env` dans votre éditeur de texte préféré. Vous verrez des sections pour
     de nombreux fournisseurs de LLM courants, dont OpenAI, Anthropic, AWS bedrock, etc., par
-    exemple :
+    exemple :
 
     ```text title=".venv" highlight={4}
     #============#
@@ -69,7 +69,7 @@ import { Image } from "/snippets/fr/components/Image.jsx";
   </Step>
 
   <Step title="Créez un fichier librechat.yaml" id="create-librechat-yaml-file">
-    Exécutez la commande suivante pour créer un fichier `librechat.yaml` :
+    Exécutez la commande suivante pour créer un fichier `librechat.yaml` :
 
     ```bash
     cp librechat.example.yaml librechat.yaml
@@ -83,7 +83,7 @@ import { Image } from "/snippets/fr/components/Image.jsx";
     afin que le LLM puisse interagir avec le
     [ClickHouse SQL playground](https://sql.clickhouse.com/).
 
-    Créez un fichier nommé `docker-compose.override.yml` et ajoutez-y la configuration suivante :
+    Créez un fichier nommé `docker-compose.override.yml` et ajoutez-y la configuration suivante :
 
     ```yml title="docker-compose.override.yml"
     services:
@@ -108,13 +108,13 @@ import { Image } from "/snippets/fr/components/Image.jsx";
     Si vous souhaitez explorer vos propres données, vous pouvez le faire à l’aide de l’[hôte, du nom d’utilisateur et du mot de passe](/fr/get-started/setup/cloud#connect-with-your-app)
     de votre service ClickHouse Cloud.
 
-    <Card title="Premiers pas avec ClickHouse Cloud" href="https://cloud.clickhouse.com/" icon="cloud">
-      Si vous n’avez pas encore de compte Cloud, lancez-vous avec ClickHouse Cloud dès aujourd’hui et recevez 300 $ de crédits. À la fin de votre essai gratuit de 30 jours, passez à une tarification à l’usage, ou contactez-nous pour en savoir plus sur nos remises en fonction du volume. Consultez notre page de tarification pour plus de détails.
+    <Card title="Premiers pas avec ClickHouse Cloud" href="https://clickhouse.cloud/signUp?loc=docs-guides-use-cases-ai-ml-mcp-librechat" icon="cloud">
+      Si vous n’avez pas encore de compte Cloud, lancez-vous avec ClickHouse Cloud dès aujourd’hui et recevez 300 $ de crédits. À la fin de votre essai gratuit de 30 jours, passez à une tarification à l’usage, ou contactez-nous pour en savoir plus sur nos remises en fonction du volume. Consultez notre page de tarification pour plus de détails.
     </Card>
   </Step>
 
   <Step title="Configurer le serveur MCP dans librechat.yaml" id="configure-mcp-server-in-librechat-yaml">
-    Ouvrez `librechat.yaml` et ajoutez la configuration suivante à la fin du fichier :
+    Ouvrez `librechat.yaml` et ajoutez la configuration suivante à la fin du fichier :
 
     ```yml
     mcpServers:
@@ -125,13 +125,13 @@ import { Image } from "/snippets/fr/components/Image.jsx";
 
     Cela configure LibreChat pour qu’il se connecte au serveur MCP s’exécutant dans Docker.
 
-    Repérez la ligne suivante :
+    Repérez la ligne suivante :
 
     ```text title="librechat.yaml"
     socialLogins: ['github', 'google', 'discord', 'openid', 'facebook', 'apple', 'saml']
     ```
 
-    Pour simplifier, nous allons pour l’instant supprimer l’obligation de s’authentifier :
+    Pour simplifier, nous allons pour l’instant supprimer l’obligation de s’authentifier :
 
     ```text title="librechat.yaml"
     socialLogins: []
@@ -139,11 +139,11 @@ import { Image } from "/snippets/fr/components/Image.jsx";
   </Step>
 
   <Step title="Ajouter un LLM local avec Ollama (facultatif)" id="add-local-llm-using-ollama">
-    ### Installer Ollama
+### Installer Ollama {#install-ollama}
 
     Rendez-vous sur le [site d’Ollama](https://ollama.com/download) et installez Ollama pour votre système.
 
-    Une fois l’installation terminée, vous pouvez exécuter un modèle comme ceci :
+    Une fois l’installation terminée, vous pouvez exécuter un modèle comme ceci :
 
     ```bash
     ollama run qwen3:32b
@@ -153,9 +153,9 @@ import { Image } from "/snippets/fr/components/Image.jsx";
 
     Pour obtenir une liste des modèles, consultez la [bibliothèque Ollama](https://ollama.com/library)
 
-    ### Configurer Ollama dans librechat.yaml
+### Configurer Ollama dans librechat.yaml {#configure-ollama-in-librechat-yaml}
 
-    Une fois le modèle téléchargé, configurez-le dans `librechat.yaml` :
+    Une fois le modèle téléchargé, configurez-le dans `librechat.yaml` :
 
     ```text title="librechat.yaml"
     custom:
@@ -178,7 +178,7 @@ import { Image } from "/snippets/fr/components/Image.jsx";
   </Step>
 
   <Step title="Démarrer tous les services" id="start-all-services">
-    Depuis la racine du dossier du projet LibreChat, exécutez la commande suivante pour démarrer les services :
+    Depuis la racine du dossier du projet LibreChat, exécutez la commande suivante pour démarrer les services :
 
     ```bash
     docker compose up
@@ -194,11 +194,11 @@ import { Image } from "/snippets/fr/components/Image.jsx";
     désormais voir l’interface de LibreChat connectée au ClickHouse MCP server et, éventuellement,
     à votre LLM local.
 
-    Dans l’interface de chat, sélectionnez `clickhouse-playground` comme serveur MCP :
+    Dans l’interface de chat, sélectionnez `clickhouse-playground` comme serveur MCP :
 
     <Image img="/images/use-cases/AI_ML/MCP/librechat.webp" alt="Sélectionnez votre serveur MCP" size="md" />
 
-    Vous pouvez maintenant demander au LLM d’explorer les jeux de données d’exemple de ClickHouse. Essayez :
+    Vous pouvez maintenant demander au LLM d’explorer les jeux de données d’exemple de ClickHouse. Essayez :
 
     ```text title="Prompt"
     What datasets do you have access to?

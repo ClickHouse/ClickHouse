@@ -2,6 +2,7 @@
 #include <Processors/ISimpleTransform.h>
 #include <Processors/Transforms/ExceptionKeepingTransform.h>
 #include <Core/Block_fwd.h>
+#include <Interpreters/SetSpillable.h>
 
 #include <vector>
 
@@ -37,6 +38,7 @@ public:
         RuntimeDataflowStatisticsCacheUpdaterPtr updater_ = nullptr);
 
     String getName() const override { return "ExpressionTransform"; }
+    std::span<ISpillable * const> getSpillables() override { return set_spillables.get(); }
 
     /// Stateless with respect to preview chunks (see `QueryResultPreview.h`).
     bool supportsQueryResultPreviews() const override { return true; }
@@ -50,6 +52,7 @@ protected:
 
 private:
     ExpressionActionsPtr expression;
+    SetSpillables set_spillables;
 
     /// Mapping from required input slot to input-header position, precomputed once (the input header is fixed).
     /// Lets transform() run the expression positionally without rebuilding a Block name index per chunk.
@@ -66,6 +69,7 @@ public:
         ExpressionActionsPtr expression_);
 
     String getName() const override { return "ConvertingTransform"; }
+    std::span<ISpillable * const> getSpillables() override { return set_spillables.get(); }
 
 protected:
     void onCancel() noexcept override;
@@ -80,6 +84,7 @@ protected:
 
 private:
     ExpressionActionsPtr expression;
+    SetSpillables set_spillables;
     Chunk cur_chunk;
 };
 
