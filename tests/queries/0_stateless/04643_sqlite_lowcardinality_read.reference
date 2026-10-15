@@ -1,0 +1,6 @@
+LowCardinality columns over the SQLite storage engine:
+abc	1.5	7
+abc	\N	8
+xyz	-2.25	9
+The read keeps the declared LowCardinality types:
+LowCardinality(String)	LowCardinality(Nullable(Float64))	LowCardinality(Int64)

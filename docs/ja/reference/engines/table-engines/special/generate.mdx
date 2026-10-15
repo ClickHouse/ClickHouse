@@ -15,24 +15,29 @@ GenerateRandom テーブルエンジンは、指定したテーブルスキー�
 * テストで再現可能な大規模テーブルを生成するために使用します。
 * ファジングテスト用のランダムな入力を生成します。
 
-<div id="usage-in-clickhouse-server">
-  ## ClickHouse Server での利用
-</div>
+## ClickHouseサーバーでの使用方法 {#usage-in-clickhouse-server}
 
 ```sql
 ENGINE = GenerateRandom([random_seed [,max_string_length [,max_array_length]]])
+[SETTINGS null_ratio = ..., max_json_depth = ..., max_json_keys_per_object = ...]
 ```
 
-`max_array_length` と `max_string_length` パラメータは、生成されるデータ内のすべての
-array または map 型のカラムと文字列の最大長を、それぞれ指定します。
+`max_array_length` および `max_string_length` パラメータは、生成されるデータにおけるすべての
+Array カラムまたは Map カラムの最大長、および文字列の最大長をそれぞれ指定します。
 
-Generate テーブルエンジンは `SELECT` クエリのみをサポートします。
+`SETTINGS` 句は、`Nullable`、`Variant`、`Dynamic`、`JSON` の値の生成方法を制御します。
+`null_ratio` (デフォルト `0.0625`) は、値が `NULL` になる確率であり、同時に `JSON` のキーが行に含まれない基本確率でもあります。ただし、一部のスパースなキーは、これより数倍高い頻度で
+欠落します。`max_json_depth` (デフォルト `3`) は生成される `JSON` オブジェクトのネストの深さの上限を、
+`max_json_keys_per_object` (デフォルト `8`) はオブジェクトの 1 階層あたりに生成されるキー数の上限を指定します。
+[`generateRandom`](/ja/reference/functions/table-functions/generate) テーブル関数でも
+同じ設定を使用できます。
 
-`AggregateFunction` を除き、テーブルに格納できるすべての [DataTypes](/ja/reference/data-types/index) をサポートします。
+Generate テーブルエンジンがサポートするのは `SELECT` クエリのみです。
 
-<div id="example">
-  ## 例
-</div>
+`AggregateFunction`、`Interval`、`Nothing`、`QBit` を除き、テーブルに格納可能なすべての [DataTypes](/ja/reference/data-types/index) を
+サポートしています。
+
+## 例 {#example}
 
 **1.** `generate_engine_table` テーブルを作成します:
 
@@ -54,9 +59,7 @@ SELECT * FROM generate_engine_table LIMIT 3
 └──────┴────────────┘
 ```
 
-<div id="details-of-implementation">
-  ## 実装の詳細
-</div>
+## 実装の詳細 {#details-of-implementation}
 
 * サポート対象外:
   * `ALTER`
