@@ -4,7 +4,6 @@
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <QueryPipeline/DistributedPlanExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <IO/WriteBufferFromOStream.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <Common/OpenTelemetryTraceContext.h>
@@ -85,11 +84,9 @@ String doSendTask(const String & endpoint_uri, const String & task_id, std::func
         uri.addQueryParameter("collect", collectors.toString());
     addSchedulingParameters(uri, task_description);
 
-    auto write_body_callback = [&task_serializer] (std::ostream & os)
+    auto write_body_callback = [&task_serializer] (WriteBuffer & out)
     {
-        WriteBufferFromOStream buf(os);
-        task_serializer(buf);
-        buf.finalize();
+        task_serializer(out);
     };
 
     auto in = BuilderRWBufferFromHTTP(uri)
