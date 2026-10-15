@@ -74,7 +74,60 @@ SELECT 'timeSeriesExtractTag:';
 SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'http_requests_count') AS group,
        timeSeriesExtractTag(group, '__name__'),
        timeSeriesExtractTag(group, 'env'),
-       timeSeriesExtractTag(group, 'instance');
+       timeSeriesExtractTag(group, 'instance'),
+       isNotNull(timeSeriesExtractTag(group, '__name__')),
+       isNull(timeSeriesExtractTag(group, 'instance'));
+
+SELECT '';
+SELECT 'timeSeriesExtractTag mixed rows:';
+
+WITH
+    (
+        SELECT groupArray(group)
+        FROM
+        (
+            SELECT number,
+                   if(number % 2 = 0,
+                      timeSeriesTagsToGroup([('env', 'dev')]),
+                      timeSeriesTagsToGroup([])) AS group
+            FROM numbers(4)
+            ORDER BY number
+        )
+    ) AS groups
+SELECT countIf(isNull(value)),
+       countIf(isNull(value) AND number % 2 = 1),
+       countIf(isNotNull(value) AND number % 2 = 0)
+FROM
+(
+    SELECT number,
+           timeSeriesExtractTag(groups[number + 1], 'env') AS value
+    FROM numbers(4)
+);
+
+SELECT '';
+SELECT 'timeSeriesGroupToSamplingKey:';
+
+WITH
+    (
+        SELECT groupArray(timeSeriesGroupToSamplingKey(group))
+        FROM
+        (
+            SELECT number,
+                   multiIf(number % 3 = 0,
+                           timeSeriesTagsToGroup([('env', 'dev')]),
+                           number % 3 = 1,
+                           timeSeriesTagsToGroup([('env', 'prod')]),
+                           timeSeriesTagsToGroup([])) AS group
+            FROM numbers(6)
+            ORDER BY number
+        )
+    ) AS keys
+SELECT [keys[1] = keys[4],
+        keys[2] = keys[5],
+        keys[3] = keys[6],
+        keys[1] != keys[2],
+        keys[1] != keys[3],
+        keys[2] != keys[3]];
 
 SELECT '';
 SELECT 'timeSeriesCopyTag:';

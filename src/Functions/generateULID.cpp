@@ -39,6 +39,7 @@ public:
     bool isVariadic() const override { return true; }
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return false; }
+    bool useDefaultImplementationForNothing() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -52,7 +53,13 @@ public:
         return std::make_shared<DataTypeFixedString>(ULID_LENGTH);
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    /// `useDefaultImplementationForConstants` is deliberately not enabled: with a constant argument
+    /// it would generate one identifier and stamp it onto every row, which is the opposite of what
+    /// the argument is for - it exists to get an independent identifier per call.
+    ///
+    /// The argument is ignored, so it does not take part in null propagation either: `generateULID(NULL)`
+    /// generates an identifier, the way `generateUUIDv4(NULL)` and `generateSnowflakeID(NULL)` do.
+    bool useDefaultImplementationForNulls() const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & /*arguments*/, const DataTypePtr &, size_t input_rows_count) const override
     {

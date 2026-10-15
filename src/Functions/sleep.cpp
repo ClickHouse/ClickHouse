@@ -78,6 +78,10 @@ public:
 
     String getName() const override { return function_name; }
     bool isSuitableForConstantFolding() const override { return false; } /// Do not sleep during query analysis.
+    /// What the function does is observable outside of its return value - it spends time, it can throw
+    /// `TOO_SLOW`, and it accounts `SleepFunctionCalls` / `SleepFunctionMicroseconds` - and how much of
+    /// that happens depends on how many times and on how many rows it is evaluated.
+    bool hasObservableSideEffects() const override { return true; }
     size_t getNumberOfArguments() const override { return 1; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
@@ -195,9 +199,9 @@ However, it can be useful in the following scenarios:
 2. **Debugging**: If you need to examine the state of the system or the execution of a query at a specific point in time, you can use `sleep()` to introduce a pause, allowing you to inspect or collect relevant information.
 3. **Simulation**: In some cases, you may want to simulate real-world scenarios where delays or pauses occur, such as network latency or external system dependencies.
 
-:::warning
+<Warning>
 It's important to use the `sleep()` function judiciously and only when necessary, as it can potentially impact the overall performance and responsiveness of your ClickHouse system.
-:::
+</Warning>
 
 For security reasons, the function can only be executed in the default user profile (with `allow_sleep` enabled).
 )";
@@ -239,9 +243,9 @@ It allows you to simulate delays or introduce pauses in the processing of each r
 2. **Debugging**: If you need to examine the state of the system or the execution of a query for each row processed, you can use `sleepEachRow()` to introduce pauses, allowing you to inspect or collect relevant information.
 3. **Simulation**: In some cases, you may want to simulate real-world scenarios where delays or pauses occur for each row processed, such as when dealing with external systems or network latencies.
 
-:::warning
+<Warning>
 Like the `sleep()` function, it's important to use `sleepEachRow()` judiciously and only when necessary, as it can significantly impact the overall performance and responsiveness of your ClickHouse system, especially when dealing with large result sets.
-:::
+</Warning>
 )";
     FunctionDocumentation::Syntax syntax_sleepEachRow = "sleepEachRow(seconds)";
     FunctionDocumentation::Arguments arguments_sleepEachRow = {

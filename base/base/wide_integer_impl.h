@@ -307,6 +307,74 @@ constexpr uint64_t divide_128_by_64(uint64_t high, uint64_t low, uint64_t diviso
     return static_cast<uint64_t>(dividend / divisor);
 }
 
+/// A divisor prepared for repeated division: normalized so that its high bit is set, together with the
+/// shift that normalized it and the reciprocal of the result. Building the reciprocal is itself a
+/// 128 / 64 division, so it pays off only when reused; for a compile-time divisor it costs nothing.
+struct invariant_divisor
+{
+    uint64_t divisor;
+    uint64_t normalized;
+    uint64_t reciprocal;
+    unsigned shift;
+};
+
+constexpr invariant_divisor prepare_divisor(uint64_t divisor)
+{
+    const unsigned shift = static_cast<unsigned>(std::countl_zero(divisor));
+    const uint64_t normalized = divisor << shift;
+    const unsigned __int128 reciprocal
+        = ~static_cast<unsigned __int128>(0) / normalized - (static_cast<unsigned __int128>(1) << 64);
+    return {divisor, normalized, static_cast<uint64_t>(reciprocal), shift};
+}
+
+/// Divides `high` : `low` by the divisor `prepared` was built from, using its reciprocal in place of a
+/// division, for a quotient known to fit in a limb; requires `high` below that divisor. Moller and
+/// Granlund, "Improved division by invariant integers", algorithm 4, over the normalized divisor.
+constexpr uint64_t
+divide_128_by_64_preinv(uint64_t high, uint64_t low, const invariant_divisor & prepared, uint64_t & remainder)
+{
+    /// `high < divisor` gives `high << shift <= normalized - 2^shift`, and the bits shifted in from
+    /// `low` are below `2^shift`, so the normalized high word stays below the normalized divisor.
+    uint64_t numerator_high = high << prepared.shift;
+    if (prepared.shift != 0)
+        numerator_high |= low >> (64 - prepared.shift);
+    const uint64_t numerator_low = low << prepared.shift;
+
+    unsigned __int128 estimate = static_cast<unsigned __int128>(prepared.reciprocal) * numerator_high;
+    estimate += (static_cast<unsigned __int128>(numerator_high + 1) << 64) | numerator_low;
+
+    uint64_t quotient = static_cast<uint64_t>(estimate >> 64);
+    const uint64_t estimate_low = static_cast<uint64_t>(estimate);
+    uint64_t rest = numerator_low - quotient * prepared.normalized;
+
+    /// The estimate is at most one too large, and what detects that is a comparison against the low
+    /// product word rather than against the divisor. The second correction is possible but rare.
+    const uint64_t correction = -static_cast<uint64_t>(rest > estimate_low);
+    quotient += correction;
+    rest += correction & prepared.normalized;
+    if (rest >= prepared.normalized)
+    {
+        rest -= prepared.normalized;
+        ++quotient;
+    }
+
+    remainder = rest >> prepared.shift;
+    return quotient;
+}
+
+/// Divides `high` : `low` by the divisor `prepared` was built from, for a quotient known to fit in a
+/// limb; requires `high` below that divisor. Prefer this over the three-argument form wherever the
+/// same divisor serves many divisions, and keep the argument `constexpr` where the divisor is.
+constexpr uint64_t divide_128_by_64(uint64_t high, uint64_t low, const invariant_divisor & prepared, uint64_t & remainder)
+{
+#if defined(__x86_64__)
+    /// A single `divq` outperforms the reciprocal here, so the prepared form is only the portable route.
+    if (!std::is_constant_evaluated())
+        return divide_128_by_64(high, low, prepared.divisor, remainder);
+#endif
+    return divide_128_by_64_preinv(high, low, prepared, remainder);
+}
+
 /// Divides `numerator` (`m` limbs, little-endian) by the single limb `denominator`.
 /// Writes `m` quotient limbs into `quotient` and returns the remainder.
 ///
@@ -627,6 +695,7 @@ struct integer<Bits, Signed>::_impl
         // Calculate remainder: t - floor(alpha) * max_int
         // On platforms with >64-bit mantissa, round the multiplication to 64-bit precision
         // to match x86's 80-bit extended behavior
+        using std::floor;
         T remainder_subtrahend = floor(alpha) * static_cast<T>(max_int);
 #if (LDBL_MANT_DIG > 64)
         if constexpr (std::is_same_v<T, FromDoubleIntermediateType>)

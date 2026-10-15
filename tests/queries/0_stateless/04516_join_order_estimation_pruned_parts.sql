@@ -132,8 +132,7 @@ LEFT JOIN read_in_order_dim_04516 AS d ON f.id = d.id
 ORDER BY f.id
 LIMIT 1
 SETTINGS use_statistics = 1, use_statistics_cache = 0,
-    optimize_read_in_order = 1, query_plan_read_in_order = 1,
-    query_plan_read_in_order_through_join = 1, read_in_order_use_virtual_row = 1,
+    optimize_read_in_order = 1, query_plan_read_in_order_through_join = 1, read_in_order_use_virtual_row = 1,
     query_plan_join_swap_table = 0, query_plan_optimize_join_order_limit = 10,
     max_rows_to_read = 100, read_overflow_mode = 'throw', max_block_size = 10,
     collect_hash_table_stats_during_joins = 0, enable_join_runtime_filters = 0;

@@ -3,7 +3,6 @@
 #include <Access/ContextAccess.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
-#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTExpressionList.h>
@@ -11,7 +10,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ExpressionElementParsers.h>
-#include <Parsers/FunctionSecretArgumentsFinder.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/NamedCollectionsHelpers.h>
 
@@ -23,11 +21,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_named_collection_override_by_default;
-}
-
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -152,11 +145,22 @@ namespace
         return evaluated_literal->value.safeGet<String>();
     }
 
-    /// Rebuilds an `extra_credentials(...)` keeping only its non-secret keys, or `nullptr` if none are
-    /// left. `role_arn` and `role_session_name` only name the role to assume, which grants nothing
-    /// without the server's own identity and a matching trust policy, so `isNonSecretExtraCredentialsKey`
-    /// keeps them -- the same predicate that keeps them visible in a logged query. `external_id` is the
-    /// shared secret of the triple, and anything unclassifiable is dropped.
+    /// The `extra_credentials(...)` keys that the `<base_backup>` locator keeps in the `.backup` metadata:
+    /// the role identifiers `role_arn` and `role_session_name`. Every backup of a chain must be able to
+    /// reopen its base with the stored locator alone, and a trust policy may pin the session name through
+    /// `sts:RoleSessionName`, so dropping it would break such restores (see #116223). This deliberately
+    /// differs from the logged query text, where `role_session_name` is masked and only `role_arn` stays
+    /// visible (`isNonSecretExtraCredentialsKey`): the metadata file lives
+    /// in the user's own backup bucket, next to the data it protects. `external_id` is the shared secret
+    /// of the triple and is dropped, as is anything unclassifiable.
+    bool isBaseBackupRoleIdentifierKey(std::string_view key)
+    {
+        return key == "role_arn" || key == "role_session_name";
+    }
+
+    /// Rebuilds an `extra_credentials(...)` keeping only its role identifiers, or `nullptr` if none are
+    /// left. They only name the role to assume and its session, which grants nothing without the server's
+    /// own identity and a matching trust policy.
     ASTPtr withoutSecretExtraCredentials(const ASTPtr & function_arg, const ContextPtr & context)
     {
         const auto * func = function_arg->as<const ASTFunction>();
@@ -168,7 +172,7 @@ namespace
         for (const auto & child : func->arguments->children)
         {
             auto key = getEffectiveKeyValueArgName(child, context);
-            if (!key || !FunctionSecretArgumentsFinder::isNonSecretExtraCredentialsKey(*key))
+            if (!key || !isBaseBackupRoleIdentifierKey(*key))
                 continue;
             /// The value is only classified, not rewritten: an expression the open path resolves stays as
             /// it was written, so a locator that loses nothing serializes byte for byte.
@@ -286,7 +290,7 @@ BackupInfo BackupInfo::fromAST(const IAST & ast)
 {
     const auto * func = ast.as<const ASTFunction>();
     if (!func)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected function, got {}", ast.formatForErrorMessage());
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a function as the backup locator");
 
     BackupInfo res;
     res.backup_engine_name = func->name;
@@ -295,7 +299,7 @@ BackupInfo BackupInfo::fromAST(const IAST & ast)
     {
         const auto * list = func->arguments->as<const ASTExpressionList>();
         if (!list)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected list, got {}", func->arguments->formatForErrorMessage());
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected an argument list in the backup locator");
 
         size_t index = 0;
         if (!list->children.empty())
@@ -329,7 +333,7 @@ BackupInfo BackupInfo::fromAST(const IAST & ast)
                     res.function_arg = elem;
                     break;
                 }
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected literal, got {}", elem->formatForErrorMessage());
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a literal argument in the backup locator");
             }
             res.args.push_back(lit->value);
         }
@@ -418,9 +422,10 @@ BackupInfo BackupInfo::withoutS3Credentials(ContextPtr context) const
 
     /// S3(collection, secret_access_key = '...') -> S3(collection)
     /// The keys are the `S3` authentication arguments consumed by `registerBackupEngineS3`
-    /// and `S3StorageParsedArguments::collectCredentials`, minus the non-secret role identifiers, which
-    /// stay so that a role-authenticated base backup remains openable. The key is resolved with the
-    /// context, so that an expression key (e.g. concat('secret_', 'access_key')) is recognized as well.
+    /// and `S3StorageParsedArguments::collectCredentials`, minus the role identifiers (`role_arn`,
+    /// `role_session_name`), which stay so that a role-authenticated base backup remains openable (see
+    /// isBaseBackupRoleIdentifierKey). The key is resolved with the context, so that an expression key
+    /// (e.g. concat('secret_', 'access_key')) is recognized as well.
     res.kv_args.erase(
         std::remove_if(
             res.kv_args.begin(),
@@ -504,15 +509,9 @@ NamedCollectionPtr BackupInfo::getNamedCollection(ContextPtr context) const
     {
         auto mutable_collection = collection->duplicate();
         auto params_from_query = getParamsMapFromAST(kv_args, context);
-        const auto allow_override_by_default = context->getSettingsRef()[Setting::allow_named_collection_override_by_default];
         for (const auto & [key, value] : params_from_query)
         {
-            /// Enforce the same override permission as the table-function/storage paths
-            /// (`tryGetNamedCollectionWithOverrides`): a non-overridable key (e.g. an operator-static endpoint or
-            /// credentials) must not be redirected from the query, otherwise the collection's static credentials
-            /// could be reused against a user-chosen endpoint under the S3 credential restriction.
-            if (!mutable_collection->isOverridable(key, allow_override_by_default))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", key);
+            checkNamedCollectionOverride(*collection, key, context);
             /// Marked before the value is written so the mark remembers the replaced stored value.
             mutable_collection->markQueryOverridden(key);
             mutable_collection->setOrUpdate<String>(key, fieldToString(value), {});

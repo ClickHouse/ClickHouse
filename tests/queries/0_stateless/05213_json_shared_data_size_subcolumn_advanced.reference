@@ -1,0 +1,6 @@
+-- fixture check: the path with the arrays must be in shared data
+['zz']
+-- both array levels of a shared data path, read as subcolumns alone
+[2]	[[2,1]]
+-- the same sizes extracted in memory, by requesting the whole path alongside
+[[[1,2],[3]]]	[2]	[[2,1]]
