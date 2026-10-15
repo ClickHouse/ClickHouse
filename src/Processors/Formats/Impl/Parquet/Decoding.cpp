@@ -827,12 +827,18 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
             int read_count = bit_reader.GetBatch(bits_per_delta, out_values, static_cast<int>(n));
             chassert(read_count == int(n));
 
+            /// Keep the running sum in locals: `out_values` may alias the members (both can be
+            /// UInt64), which would otherwise force a store and reload of `current_value` through
+            /// memory on every value of this loop-carried dependency (~5x slower).
+            UInt64 value = current_value;
+            const UInt64 delta_base = min_delta;
             for (size_t i = 0; i < n; ++i)
             {
-                current_value += min_delta + UInt64(*out_values);
-                *out_values = func(T(current_value));
+                value += delta_base + UInt64(*out_values);
+                *out_values = func(T(value));
                 ++out_values;
             }
+            current_value = value;
         }
     }
 };
