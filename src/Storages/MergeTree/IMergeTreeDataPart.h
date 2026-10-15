@@ -241,6 +241,10 @@ public:
     SerializationPtr getSerialization(const String & column_name) const;
     SerializationPtr tryGetSerialization(const String & column_name) const;
 
+    /// A static subcolumn's serialization from the part's shared serializations;
+    /// see `PartSerializations::tryGetSubcolumnSerialization` for when it returns nothing.
+    SerializationPtr tryGetSubcolumnSerialization(const String & subcolumn_name) const;
+
     void remove();
 
     ColumnsStatistics loadStatistics() const;
