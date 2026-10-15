@@ -7,6 +7,7 @@
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Core/Field.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
@@ -408,7 +409,7 @@ ColumnPtr TimeSeriesSink::calculateId(const Block & tags_block) const
 
 
 std::unique_ptr<TimeSeriesSink::TargetPipeline> TimeSeriesSink::createTargetPipeline(
-    ViewTarget::Kind kind, const Block & header, bool parallel)
+    ViewTarget::Kind kind, const Block & header, bool parallel, bool delay_commit)
 {
     auto pipeline = std::make_unique<TargetPipeline>();
 
@@ -423,13 +424,21 @@ std::unique_ptr<TimeSeriesSink::TargetPipeline> TimeSeriesSink::createTargetPipe
     insert_query->columns = columns_ast;
 
     pipeline->context = Context::createCopy(getContext());
-    pipeline->context->setCurrentQueryId(fmt::format("{}:{}", getContext()->getCurrentQueryId(), kind));
+    pipeline->context->setCurrentQueryId(
+        fmt::format("{}:{}:{}", getContext()->getCurrentQueryId(), kind, ++target_pipeline_sequence));
 
     if (parallel)
     {
         /// The outer insert already applied the minimum block size, so the inner squash only enforces the strict maximum.
         pipeline->context->setSetting("min_insert_block_size_rows", Field(UInt64(0)));
         pipeline->context->setSetting("min_insert_block_size_bytes", Field(UInt64(0)));
+    }
+
+    if (delay_commit)
+    {
+        /// A pushed block stays uncommitted until finish, including when the outer insert commits each block early.
+        pipeline->context->setSetting("input_format_max_block_wait_ms", Field(UInt64(0)));
+        pipeline->context->setSetting("wait_for_part_commit_in_dependent_materialized_views", Field(UInt64(0)));
     }
 
     InterpreterInsertQuery interpreter(
@@ -631,7 +640,8 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
             tags_header.insert(column);
     }
 
-    tags_pipeline = createTargetPipeline(ViewTarget::Tags, tags_header, /* parallel= */ false);
+    tags_pipeline_header = tags_header;
+    tags_pipeline = createTargetPipeline(ViewTarget::Tags, tags_pipeline_header, /* parallel= */ false);
     tags_deduplication_cache = time_series_storage.getTagsDeduplicationCache();
 
     /// The time ranges table (if any) receives the time range of every time series with samples.
@@ -643,7 +653,8 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
         time_ranges_header.insert(ColumnWithTypeAndName{id_type, TimeSeriesColumnNames::ID});
         time_ranges_header.insert(ColumnWithTypeAndName{timestamp_type, TimeSeriesColumnNames::MinTime});
         time_ranges_header.insert(ColumnWithTypeAndName{timestamp_type, TimeSeriesColumnNames::MaxTime});
-        time_ranges_pipeline = createTargetPipeline(ViewTarget::TimeRanges, time_ranges_header, /* parallel= */ false);
+        time_ranges_pipeline_header = time_ranges_header;
+        time_ranges_pipeline = createTargetPipeline(ViewTarget::TimeRanges, time_ranges_pipeline_header, /* parallel= */ false);
     }
 
     /// Build source header for samples block.
@@ -651,11 +662,7 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
     samples_header.insert(ColumnWithTypeAndName{id_type, TimeSeriesColumnNames::ID});
     samples_header.insert(ColumnWithTypeAndName{timestamp_type, TimeSeriesColumnNames::Timestamp});
     samples_header.insert(ColumnWithTypeAndName{value_type, TimeSeriesColumnNames::Value});
-    samples_pipeline = createTargetPipeline(ViewTarget::Samples, samples_header, /* parallel= */ true);
-
-    /// The recent samples table (if any) receives a copy of every samples block.
-    if (time_series_storage.hasTarget(ViewTarget::RecentSamples))
-        recent_samples_pipeline = createTargetPipeline(ViewTarget::RecentSamples, samples_header, /* parallel= */ true);
+    samples_pipeline_header = std::move(samples_header);
 }
 
 
@@ -794,16 +801,21 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
         tags_block = tags_deduplication_cache->filterOutWrittenRows(
             tags_block, /* key_column_index = */ tags_block.getPositionByName(TimeSeriesColumnNames::ID), pending_tags);
 
-    /// Tags are pushed first. The samples block waits until the tags pipeline finishes.
+    /// Tags are pushed first. Samples wait until this block's tags pipeline and time ranges pipeline commit.
     if (tags_block.rows())
+    {
+        ensureTagsPipeline();
         tags_pipeline->push(std::move(tags_block));
+        tags_pipeline_dirty = true;
+    }
 
     /// Step 5. Assemble and push the time ranges block.
     /// The time ranges are pushed before the samples: a time range without samples is harmless (the samples
     /// are filtered by their timestamps anyway), while samples outside of the stored time range of their
     /// time series would be invisible to queries filtering time series by time.
-    if (time_ranges_pipeline && total_samples)
+    if (!time_ranges_pipeline_header.empty() && total_samples)
     {
+        ensureTimeRangesPipeline();
         auto time_ranges_id_column = id_type->createColumn();
         auto min_time_column_for_time_ranges = timestamp_type->createColumn();
         auto max_time_column_for_time_ranges = timestamp_type->createColumn();
@@ -822,9 +834,10 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
         time_ranges_block.insert(ColumnWithTypeAndName{std::move(max_time_column_for_time_ranges), timestamp_type, TimeSeriesColumnNames::MaxTime});
 
         time_ranges_pipeline->push(std::move(time_ranges_block));
+        time_ranges_pipeline_dirty = true;
     }
 
-    /// Step 6. Assemble the samples block. `onFinish` writes it after the tags pipeline and the time ranges pipeline finish.
+    /// Step 6. Write this block's samples before `consume` returns, so a dependent view does not see a failed block.
     if (total_samples)
     {
         /// Build columns for the samples block.
@@ -848,7 +861,74 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
         samples_block.insert(ColumnWithTypeAndName{std::move(timestamp_column), timestamp_type, TimeSeriesColumnNames::Timestamp});
         samples_block.insert(ColumnWithTypeAndName{std::move(value_column), value_type, TimeSeriesColumnNames::Value});
 
-        stashed_samples_blocks.push_back(std::move(samples_block));
+        commitTagsAndTimeRanges();
+        writeSamplesAndRecent(std::move(samples_block));
+    }
+}
+
+
+void TimeSeriesSink::ensureTagsPipeline()
+{
+    if (!tags_pipeline)
+        tags_pipeline = createTargetPipeline(ViewTarget::Tags, tags_pipeline_header, /* parallel= */ false);
+}
+
+void TimeSeriesSink::ensureTimeRangesPipeline()
+{
+    if (!time_ranges_pipeline)
+        time_ranges_pipeline = createTargetPipeline(ViewTarget::TimeRanges, time_ranges_pipeline_header, /* parallel= */ false);
+}
+
+void TimeSeriesSink::commitTagsAndTimeRanges()
+{
+    if (tags_pipeline && tags_pipeline_dirty)
+    {
+        tags_pipeline->finish();
+        /// The pending rows are in the table for sure now.
+        if (tags_deduplication_cache && !pending_tags.empty())
+            tags_deduplication_cache->markRowsAsWritten(std::move(pending_tags));
+        tags_pipeline.reset();
+        tags_pipeline_dirty = false;
+    }
+    if (time_ranges_pipeline && time_ranges_pipeline_dirty)
+    {
+        time_ranges_pipeline->finish();
+        time_ranges_pipeline.reset();
+        time_ranges_pipeline_dirty = false;
+    }
+}
+
+void TimeSeriesSink::writeSamplesAndRecent(Block samples_block)
+{
+    const auto & settings = getContext()->getSettingsRef();
+    const auto max_rows = settings.get("max_insert_block_size").safeGet<UInt64>();
+    const auto max_bytes = settings.get("max_insert_block_size_bytes").safeGet<UInt64>();
+    /// One sink consume commits on finish. A larger block is split, and the next piece commits the previous one.
+    const bool fits_one_block = samples_block.rows() <= max_rows && (max_bytes == 0 || samples_block.bytes() <= max_bytes);
+
+    auto samples = createTargetPipeline(ViewTarget::Samples, samples_pipeline_header, /* parallel= */ true);
+    std::unique_ptr<TargetPipeline> recent;
+    if (time_series_storage.hasTarget(ViewTarget::RecentSamples))
+        recent = createTargetPipeline(
+            ViewTarget::RecentSamples, samples_pipeline_header, /* parallel= */ true, /* delay_commit= */ fits_one_block);
+
+    if (fits_one_block && recent)
+    {
+        samples->push(samples_block);
+        recent->push(samples_block);
+        /// Samples commit first. If this throws, `recent` is destroyed without `finish` and does not commit.
+        samples->finish();
+        recent->finish();
+    }
+    else
+    {
+        samples->push(samples_block);
+        samples->finish();
+        if (recent)
+        {
+            recent->push(std::move(samples_block));
+            recent->finish();
+        }
     }
 }
 
@@ -926,38 +1006,7 @@ void TimeSeriesSink::consumeMetricFamilies(const Block & block)
 
 void TimeSeriesSink::onFinish()
 {
-    if (tags_pipeline)
-    {
-        tags_pipeline->finish();
-        /// The pending rows are in the table for sure now.
-        if (tags_deduplication_cache && !pending_tags.empty())
-            tags_deduplication_cache->markRowsAsWritten(std::move(pending_tags));
-    }
-    if (time_ranges_pipeline)
-        time_ranges_pipeline->finish();
-    if (samples_pipeline)
-    {
-        while (!stashed_samples_blocks.empty())
-        {
-            Block block = std::move(stashed_samples_blocks.front());
-            stashed_samples_blocks.pop_front();
-
-            /// The samples and recent samples tables are written together when their pipelines
-            /// run in the background. The copy is cheap: a Block copy only copies column pointers.
-            if (recent_samples_pipeline)
-            {
-                samples_pipeline->push(block);
-                recent_samples_pipeline->push(std::move(block));
-            }
-            else
-            {
-                samples_pipeline->push(std::move(block));
-            }
-        }
-        samples_pipeline->finish();
-    }
-    if (recent_samples_pipeline)
-        recent_samples_pipeline->finish();
+    commitTagsAndTimeRanges();
     if (metric_families_pipeline)
     {
         metric_families_pipeline->finish();

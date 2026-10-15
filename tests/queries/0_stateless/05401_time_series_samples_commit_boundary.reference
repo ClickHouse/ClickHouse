@@ -1,0 +1,19 @@
+--- a failed samples write leaves no recent rows and no view rows ---
+1
+0
+0
+0
+ok
+--- max_threads = 1 ---
+0
+0
+0
+--- Memory engine recent samples stay empty when samples fail ---
+0
+0
+--- a later block failure leaves no recent rows for that block ---
+1
+1
+1
+1
+0
