@@ -7,18 +7,12 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
-#include <Interpreters/Context.h>
-#include <Core/Settings.h>
+#include <Interpreters/Context_fwd.h>
 #include <Common/CurrentThread.h>
 
 
 namespace DB
 {
-
-namespace Setting
-{
-    extern const SettingsBool data_lake_delete_data_on_drop;
-}
 
 namespace ErrorCodes
 {
@@ -187,13 +181,7 @@ public:
             nested->drop();
     }
 
-    void prepareForDrop(ContextPtr query_context) override
-    {
-        /// A requested purge has to reach the data even if the table function has not been resolved yet.
-        auto storage = query_context->getSettingsRef()[Setting::data_lake_delete_data_on_drop] ? getNestedImpl() : nestedIfResolved();
-        if (storage)
-            storage->prepareForDrop(query_context);
-    }
+    void prepareForDrop(ContextPtr query_context) override;
 
     /// File-like table functions rebuild the nested storage from the current external schema and
     /// ignore the columns cached at DDL time, while `read()` below hands PREWHERE to the nested
