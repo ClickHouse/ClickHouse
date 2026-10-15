@@ -1740,7 +1740,7 @@ void IcebergMetadata::drop(ContextPtr context)
             return;
         }
 
-        auto files = listFiles(*object_storage, persistent_components.table_path, persistent_components.table_path, "");
+        auto files = listFiles(*object_storage, persistent_components.table_path, "", "");
         for (const auto & file : files)
             object_storage->removeObjectIfExists(StoredObject(file));
     }
