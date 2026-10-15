@@ -2220,7 +2220,7 @@ private:
     bool isCurrentUserDefinedInConfigWithLock() const;
     void checkRemovedSettings(const std::shared_ptr<const IAccessEntity> & old_entity, const std::shared_ptr<const IAccessEntity> & new_entity) const;
 
-    void setCurrentDatabaseWithLock(const CurrentDatabaseInfo & database_info, const std::lock_guard<ContextSharedMutex> & lock);
+    void setCurrentDatabaseWithLock(CurrentDatabaseInfo database_info, const std::lock_guard<ContextSharedMutex> & lock);
 
     /// Keep the `database` setting in sync with an out-of-band change of the current database.
     /// Must be called with the context mutex held.

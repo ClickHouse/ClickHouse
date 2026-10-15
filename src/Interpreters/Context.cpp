@@ -2306,7 +2306,9 @@ void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_
     auto default_roles = user->granted_roles.findGranted(user->default_roles);
     auto enabled_roles = access_control.getEnabledRolesInfo(default_roles, {});
     auto enabled_profiles = access_control.getEnabledSettingsInfo(user_id_, user->settings, enabled_roles->enabled_roles, enabled_roles->settings_from_enabled_roles);
-    const auto & database = user->default_database;
+    auto database = CurrentDatabaseInfo(user->default_database);
+    if (!database.empty())
+        DatabaseCatalog::instance().assertDatabaseAndNamespacesExist(database);
 
     /// Retroactively enforce constraints when applying a user's stored profiles at login: a user whose
     /// SQL-defined settings or SQL-defined profiles violate the constraints (or `allow_feature_tier`)
@@ -2349,25 +2351,23 @@ void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_
         }
     }
 
-    {
-        /// Apply user's profiles, constraints, settings, roles.
-        std::lock_guard lock(mutex);
+    /// Apply user's profiles, constraints, settings, roles.
+    std::lock_guard lock(mutex);
 
-        setUserIDWithLock(user_id_, lock);
+    setUserIDWithLock(user_id_, lock);
 
-        setCurrentProfilesWithLock(*enabled_profiles, /* check_constraints= */ false, lock);
+    setCurrentProfilesWithLock(*enabled_profiles, /* check_constraints= */ false, lock);
 
-        setCurrentRolesWithLock(default_roles, lock);
-        setExternalRolesWithLock(external_roles_, lock);
-        setAuthenticationGrantsWithLock(authentication_grants_, lock);
-        setAuthenticationValidUntilWithLock(authentication_valid_until_, lock);
-    }
+    setCurrentRolesWithLock(default_roles, lock);
+    setExternalRolesWithLock(external_roles_, lock);
+    setAuthenticationGrantsWithLock(authentication_grants_, lock);
+    setAuthenticationValidUntilWithLock(authentication_valid_until_, lock);
 
     /// It's optional to specify the DEFAULT DATABASE in the user's definition.
     /// A dotted name may select a namespace; validate it with the user's own profiles
     /// already applied, and never under the mutex (the validation may query a catalog).
     if (!database.empty())
-        setCurrentDatabase(database);
+        setCurrentDatabaseWithLock(std::move(database), lock);
 }
 
 std::shared_ptr<const User> Context::getUser() const
@@ -4124,13 +4124,13 @@ void Context::setCurrentDatabaseNameInGlobalContext(const String & name)
 
 /// Existence is checked by the callers before they take `mutex`: the check resolves typo hints,
 /// which read this same `mutex`.
-void Context::setCurrentDatabaseWithLock(const CurrentDatabaseInfo & database_info, const std::lock_guard<ContextSharedMutex> &)
+void Context::setCurrentDatabaseWithLock(CurrentDatabaseInfo database_info, const std::lock_guard<ContextSharedMutex> &)
 {
     if (database_info.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Database name cannot be empty");
 
-    current_database = database_info;
-    mirrorCurrentDatabaseIntoSetting(database_info.getFullName());
+    current_database = std::move(database_info);
+    mirrorCurrentDatabaseIntoSetting(current_database.getFullName());
     need_recalculate_access = true;
 }
 
