@@ -15,7 +15,7 @@
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/StringUtils.h>
 #include <Common/ZooKeeper/IKeeper.h>
-#include <base/hex.h>
+#include <Common/Hex.h>
 #include <base/scope_guard.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
@@ -901,6 +901,31 @@ void KeeperStorage::nodeLoadedFromSnapshot(std::string_view path, const KeeperNo
         ttl_paths.insert(std::string{path});
     if (stats.isContainer())
         container_paths.insert(std::string{path});
+}
+
+void KeeperStorage::nodeRemovedFromSnapshot(std::string_view path, const KeeperNodeStats & stats)
+{
+    if (stats.isEphemeral())
+    {
+        auto ephemerals_it = committed_ephemerals.find(stats.getEphemeralOwner());
+        if (ephemerals_it != committed_ephemerals.end())
+        {
+            if (ephemerals_it->second.erase(std::string{path}) > 0)
+                --committed_ephemeral_nodes;
+            if (ephemerals_it->second.empty())
+                committed_ephemerals.erase(ephemerals_it);
+        }
+    }
+    if (stats.isTTL())
+    {
+        if (auto ttl_it = ttl_paths.find(path); ttl_it != ttl_paths.end())
+            ttl_paths.erase(ttl_it);
+    }
+    if (stats.isContainer())
+    {
+        if (auto container_it = container_paths.find(path); container_it != container_paths.end())
+            container_paths.erase(container_it);
+    }
 }
 
 void KeeperStorage::clearDeadWatches(int64_t session_id)
