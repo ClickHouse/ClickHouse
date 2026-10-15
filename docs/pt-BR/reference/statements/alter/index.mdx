@@ -54,7 +54,30 @@ Estas instruções `ALTER` modificam entidades relacionadas ao Controle de Acess
 | [ALTER DATABASE ... MODIFY COMMENT](/pt-BR/reference/statements/alter/database-comment) | Adiciona, modifica ou remove comentários no banco de dados, independentemente de já terem sido definidos ou não. |
 | [ALTER NAMED COLLECTION](/pt-BR/reference/statements/alter/named-collection)            | Modifica [coleções nomeadas](/pt-BR/concepts/features/configuration/server-config/named-collections).                  |
 
-## Mutações
+## Combinando ações em um único `ALTER` {#combining-actions}
+
+Uma única instrução `ALTER TABLE` aceita várias ações separadas por vírgulas. Assim, o que exigiria uma sequência de instruções pode ser feito em uma só:
+
+```sql
+ALTER TABLE visits DROP COLUMN browser, DROP COLUMN referrer;
+```
+
+As ações não precisam ser do mesmo tipo e são aplicadas da esquerda para a direita. Assim, uma ação pode usar o que outra ação anterior adicionou:
+
+```sql
+-- a new column and an index over it
+ALTER TABLE visits ADD COLUMN duration UInt32, ADD INDEX idx_duration duration TYPE minmax GRANULARITY 4;
+
+-- a type change together with a new column
+ALTER TABLE visits MODIFY COLUMN browser LowCardinality(String), ADD COLUMN page_id UInt64;
+
+-- three actions in one statement
+ALTER TABLE visits DROP COLUMN page_id, MODIFY COLUMN duration UInt64, ADD COLUMN region_id UInt32;
+```
+
+Quando um cliente aguarda a conclusão de uma instrução `ALTER`, a configuração que controla essa espera depende da ação executada, não da instrução em si: ações que seguem o caminho de execução de mutações, como `MATERIALIZE INDEX`, são controladas por [`mutations_sync`](/pt-BR/reference/settings/session-settings/mutations#mutations_sync), enquanto ações sobre metadados são controladas por [`alter_sync`](/pt-BR/reference/settings/session-settings/alter#alter_sync). Portanto, combinar esses dois tipos de ação não faz com que sejam controlados pela mesma configuração. Consulte [Sincronia das consultas ALTER](#synchronicity-of-alter-queries) para saber quais ações cada configuração abrange e [Combinação de cláusulas `MATERIALIZE INDEX`](#combining-materialize-index-clauses) para entender a restrição imposta a uma instrução que combina esses tipos de ação em um banco de dados `Replicated`.
+
+## Mutações {#mutations}
 
 Consultas `ALTER` destinadas a manipular dados de tabelas são implementadas por meio de um mecanismo chamado &quot;mutações&quot;, principalmente [ALTER TABLE ... DELETE](/pt-BR/reference/statements/alter/delete) e [ALTER TABLE ... UPDATE](/pt-BR/reference/statements/alter/update). Elas são processos assíncronos em segundo plano, semelhantes às mesclagens em tabelas [MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/index), que produzem novas versões &quot;mutadas&quot; das partes.
 
@@ -67,13 +90,26 @@ Uma consulta de mutação retorna imediatamente após a entrada da mutação ser
 
 As entradas de mutações concluídas não são excluídas imediatamente (o número de entradas preservadas é determinado pelo parâmetro do motor de armazenamento `finished_mutations_to_keep`). Entradas de mutação mais antigas são excluídas.
 
-## Sincronia das consultas `ALTER`
+## Custo de execução e conclusão {#execution-cost-and-completion}
 
-Para tabelas não replicadas, todas as consultas `ALTER` são executadas de forma síncrona. Para tabelas replicadas, a consulta apenas adiciona instruções para as ações apropriadas ao `ZooKeeper`, e as próprias ações são executadas assim que possível. No entanto, a consulta pode aguardar a conclusão dessas ações em todas as réplicas.
+Ao planejar um `ALTER TABLE`, diferencie uma alteração de metadados do trabalho necessário sobre as partes de dados existentes. Se o cliente aguarda ou não a conclusão depende da operação: [`alter_sync`](/pt-BR/reference/settings/session-settings/alter#alter_sync) controla operações de metadados e `MODIFY COLUMN`, incluindo conversões de tipos que reescrevem dados; [`mutations_sync`](/pt-BR/reference/settings/session-settings/mutations#mutations_sync) controla mutações em segundo plano, como `UPDATE`, `DELETE` e `MATERIALIZE ...`. Não use durações fixas como referência operacional: o custo depende do volume de metadados, das partes e bytes afetados, do custo de conversão e da carga atual em segundo plano.
 
-Para consultas `ALTER` que criam mutações (por exemplo, entre elas `UPDATE`, `DELETE`, `MATERIALIZE INDEX`, `MATERIALIZE PROJECTION`, `MATERIALIZE COLUMN`, `APPLY DELETED MASK`, `APPLY PATCHES`, `CLEAR STATISTIC`, `MATERIALIZE STATISTIC`), a sincronia é definida pela configuração [mutations&#95;sync](/pt-BR/reference/settings/session-settings/mutations#mutations_sync).
+| Operação                                                                    | Trabalho sobre dados existentes                                                                    | Comportamento padrão de conclusão                                                | Principais fatores de custo                                           |
+| --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `ADD COLUMN`                                                                | Sem reescrita; as partes antigas fornecem o valor default no momento da leitura.                   | A espera pelos metadados segue `alter_sync`.                                     | Tamanho dos metadados e disponibilidade das réplicas.                 |
+| `RENAME COLUMN`                                                             | Sem reescrita de linhas, mas funciona como barreira de ordenação em relação a mutações anteriores. | A espera pelos metadados segue `alter_sync`.                                     | Mutações anteriores e disponibilidade das réplicas.                   |
+| `DROP COLUMN`                                                               | Remove arquivos de coluna; não é uma alteração puramente de metadados.                             | Aplica-se a ordenação de metadados e de mutações.                                | Número e tamanho dos arquivos de coluna.                              |
+| `MODIFY COLUMN` de default, comentário ou tipo que preserva a representação | Sem reescrita imediata.                                                                            | A espera pelos metadados segue `alter_sync`.                                     | Tamanho dos metadados e disponibilidade das réplicas.                 |
+| Outras alterações de tipo com `MODIFY COLUMN`                               | Uma mutação `READ_COLUMN` reescreve a coluna afetada nas partes existentes.                        | O comportamento de espera segue `alter_sync` (padrão `1`; no Cloud, padrão `0`). | Partes e bytes afetados, custo de conversão e carga em segundo plano. |
+| `UPDATE`, `DELETE` e `MATERIALIZE ...`                                      | Mutações em segundo plano reescrevem as partes afetadas.                                           | Assíncronas por padrão; `mutations_sync` controla a espera.                      | Partes e bytes afetados e carga em segundo plano.                     |
 
-Para outras consultas `ALTER` que apenas modificam os metadados, você pode usar a configuração [alter&#95;sync](/pt-BR/reference/settings/session-settings/alter#alter_sync) para configurar a espera.
+## Sincronia das consultas `ALTER` {#synchronicity-of-alter-queries}
+
+Por padrão, as consultas `ALTER` em tabelas não replicadas aguardam a conclusão do trabalho. Com `alter_sync = 0`, uma consulta `ALTER` que executa trabalho em segundo plano pode retornar antes que esse trabalho termine. Para tabelas replicadas, a consulta adiciona instruções para as ações apropriadas ao `ZooKeeper`, e as próprias ações são executadas assim que possível. A consulta pode aguardar a conclusão dessas ações em todas as réplicas.
+
+Para consultas `ALTER` que criam mutações pelo caminho de execução de mutações (incluindo, entre outras, `UPDATE`, `DELETE`, `MATERIALIZE INDEX`, `MATERIALIZE PROJECTION`, `MATERIALIZE COLUMN`, `APPLY DELETED MASK`, `APPLY PATCHES`, `CLEAR STATISTIC` e `MATERIALIZE STATISTIC`), a sincronia é definida pela configuração [mutations&#95;sync](/pt-BR/reference/settings/session-settings/mutations#mutations_sync).
+
+Para outras consultas `ALTER`, incluindo reescritas com `MODIFY COLUMN`, a configuração [alter&#95;sync](/pt-BR/reference/settings/session-settings/alter#alter_sync) controla a espera.
 
 Você pode especificar por quanto tempo (em segundos) aguardar que réplicas inativas executem todas as consultas `ALTER` com a configuração [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/pt-BR/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout).
 
@@ -81,17 +117,17 @@ Você pode especificar por quanto tempo (em segundos) aguardar que réplicas ina
   Para todas as consultas `ALTER`, se `alter_sync = 2` e algumas réplicas permanecerem inativas por mais tempo do que o especificado na configuração `replication_wait_for_inactive_replica_timeout`, uma exceção `UNFINISHED` será lançada. Com `alter_sync = 3`, não se aguarda pelas réplicas inativas, portanto nenhuma exceção é lançada.
 </Note>
 
-### Atribuição simultânea de `ALTER` em uma tabela
+### Atribuição simultânea de `ALTER` em uma tabela {#concurrent-alter-assignment-on-one-table}
 
 Em tabelas replicadas, enviar várias instruções `ALTER` separadas para a mesma tabela em rápida sucessão pode falhar com `CANNOT_ASSIGN_ALTER` (código 517). O caminho de replicação gera esse erro quando a réplica ainda não aplicou alguns `ALTER`s anteriores (a versão dos metadados ainda está defasada em relação aos metadados comuns — o servidor pode informar que a réplica &quot;ainda não aplicou alguns dos alters anteriores&quot; ou &quot;Provavelmente há muitos alters sendo executados simultaneamente&quot;). Essa condição pode persistir mesmo depois que um `ALTER` anterior já tiver sido atribuído. Trata-se de uma condição **geral de `ALTER` de metadados / mutação simultâneos** — não se limita a instruções que envolvem apenas mutações. Alterações simultâneas comuns de metadados (`ADD` / `DROP` / `MODIFY` e similares) podem gerar o mesmo código passível de nova tentativa (consulte, por exemplo, o caminho de nova tentativa abordado em `tests/queries/0_stateless/03518_alter_logical_race.sh`).
 
 Abordagens para evitar a condição de corrida:
 
-* Combine operações de metadados independentes em um **único** `ALTER` com várias cláusulas quando a gramática permitir (por exemplo, várias cláusulas `ADD INDEX`).
+* Combine operações de metadados independentes em um **único** `ALTER` com várias cláusulas quando a gramática permitir (por exemplo, várias cláusulas `ADD INDEX`), conforme descrito em [Combinando ações em um único `ALTER`](#combining-actions).
 * Serialize as instruções `ALTER` e tente novamente ao receber o código 517 até que os `ALTER`s anteriores tenham sido aplicados na réplica.
 * Para `ALTER`s que geram mutações, aguarde a conclusão da mutação anterior usando um indicador documentado, como [`mutations_sync`](/pt-BR/reference/settings/session-settings/mutations#mutations_sync) ou `is_done` em [`system.mutations`](/pt-BR/reference/system-tables/mutations), antes de enviar o próximo.
 
-### Combinação de cláusulas `MATERIALIZE INDEX`
+### Combinação de cláusulas `MATERIALIZE INDEX` {#combining-materialize-index-clauses}
 
 Várias cláusulas `MATERIALIZE INDEX` podem aparecer em um único `ALTER`. O caso coberto no repositório é combinar várias cláusulas `ADD INDEX` com `MATERIALIZE INDEX` para esses mesmos novos índices em uma única instrução (consulte `tests/queries/0_stateless/02911_add_index_and_materialize_index.sql`). Essa forma combinada de `ADD INDEX` + `MATERIALIZE INDEX` mistura um segmento `AlterCommand` com um segmento `MutationCommand`; portanto, **é rejeitada por `DatabaseReplicated`** com `QUERY_IS_PROHIBITED` (`InterpreterAlterQuery::validateReplicatedDatabaseSegments`). Considere o exemplo `02911` válido para bancos de dados comuns (não `DatabaseReplicated`); em `DatabaseReplicated`, mantenha as alterações de metadados e as mutações de materialização em instruções separadas.
 
@@ -99,7 +135,7 @@ Na implementação atual, cada cláusula `MATERIALIZE INDEX` é resolvida com ba
 
 Se precisar que as mutações sejam aplicadas em ordem, ainda é possível emitir um `MATERIALIZE INDEX` por instrução e aguardar usando [`mutations_sync`](/pt-BR/reference/settings/session-settings/mutations#mutations_sync).
 
-## Conteúdo relacionado
+## Conteúdo relacionado {#related-content}
 
 * Blog: [Como lidar com atualizações e exclusões no ClickHouse](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)
 
