@@ -28,7 +28,9 @@ slower_queries = 0
 unstable_queries = 0
 very_unstable_queries = 0
 unstable_backward_incompatible_queries = 0
-benchmarks = {"clickbench", "tpch", "tpcds"}
+# The Iceberg TPC-H twins run the same SF10 queries as tpch.xml and need the
+# same per-query budget, whether their dataset is local or on job-local S3.
+benchmarks = {"clickbench", "tpch", "tpcds", "iceberg_suite_local_tpch", "iceberg_suite_s3_tpch"}
 
 # max seconds to run one query by itself, not counting preparation
 # by default it's 2 seconds, but for benchmarks it's 8 seconds
@@ -358,6 +360,9 @@ def add_errors_explained():
 
 if args.report == "main":
     print((header_template.format()))
+
+    if os.path.exists("run-warnings.tsv"):
+        addSimpleTable("Warnings", ["Warning"], tsvRows("run-warnings.tsv"))
 
     add_tested_commits()
 
@@ -725,7 +730,8 @@ if args.report == "main":
         # embedded here and recomputes the final Praktika status. In
         # `master_head` mode the performance dashboard's per-query verdict is
         # the gate; the "N slower" message below is reparsed only for the
-        # cumulative `release_base` mode, so the effective gate lives there.
+        # cumulative `release_base` mode and for a `master_head` shard the
+        # dashboard could not judge, so the effective gate lives there.
         if slower_queries > 10:
             status = "failure"
         message_array.append(str(slower_queries) + " slower")

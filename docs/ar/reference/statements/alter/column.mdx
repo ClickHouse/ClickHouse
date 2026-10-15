@@ -16,8 +16,16 @@ doc_type: 'reference'
 ALTER [TEMPORARY] TABLE [db].name [ON CLUSTER cluster] ADD|DROP|RENAME|CLEAR|COMMENT|{MODIFY|ALTER}|MATERIALIZE COLUMN ...
 ```
 
-في الاستعلام، حدِّد قائمة تضم إجراءً واحدًا أو أكثر، مفصولة بفواصل.
+في الاستعلام، حدِّد قائمة تضم إجراءً واحدًا أو أكثر، مفصولة بفواصل.
 كل إجراء هو عملية تُجرى على عمود.
+
+على سبيل المثال، يمكن لعبارة واحدة أن تحذف عمودًا وتضيف عمودًا آخر:
+
+```sql
+ALTER TABLE visits DROP COLUMN browser, ADD COLUMN referrer String;
+```
+
+يتوقف رجوع هذا الاستعلام قبل انتهاء عمله على البيانات الموجودة أو عدمه على الإعداد [`alter_sync`](/ar/reference/settings/session-settings/alter#alter_sync)، الذي يشمل أيضًا عملية التعديل التي يُنشئها `DROP COLUMN` أو تغيير النوع عبر `MODIFY COLUMN`؛ أما [`mutations_sync`](/ar/reference/settings/session-settings/mutations#mutations_sync) فيسري على [MATERIALIZE COLUMN](#materialize-column)، الذي يُنفَّذ عبر مسار التعديل. ويَرِد وصف كليهما في [تزامن استعلامات ALTER](/ar/reference/statements/alter/index#synchronicity-of-alter-queries).
 
 الإجراءات التالية مدعومة:
 
@@ -31,12 +39,10 @@ ALTER [TEMPORARY] TABLE [db].name [ON CLUSTER cluster] ADD|DROP|RENAME|CLEAR|COM
 * [MODIFY COLUMN MODIFY SETTING](#modify-column-modify-setting) - يغيّر إعدادات العمود.
 * [MODIFY COLUMN RESET SETTING](#modify-column-reset-setting) - يعيد تعيين إعدادات العمود.
 * [MODIFY COLUMN ADD ENUM VALUES](#modify-column-add-enum-values) - يضيف قيمًا جديدة إلى Enum.
-* [MATERIALIZE COLUMN](#materialize-column) — يُجسِّد العمود في الأجزاء التي يكون فيها العمود مفقودًا.
+* [MATERIALIZE COLUMN](#materialize-column) — يُجسِّد العمود في الأجزاء التي يكون فيها العمود مفقودًا.
   يَرِد وصف هذه الإجراءات بالتفصيل أدناه.
 
-<div id="add-column">
-  ## ADD COLUMN
-</div>
+## ADD COLUMN {#add-column}
 
 ```sql
 ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [COMMENT 'comment for column'] [codec] [STATISTICS] [TTL] [settings] [AFTER name_after | FIRST]
@@ -72,9 +78,7 @@ ToDrop  UInt32
 Added3  UInt32
 ```
 
-<div id="drop-column">
-  ## DROP COLUMN
-</div>
+## DROP COLUMN {#drop-column}
 
 ```sql
 DROP COLUMN [IF EXISTS] name
@@ -94,9 +98,7 @@ DROP COLUMN [IF EXISTS] name
 ALTER TABLE visits DROP COLUMN browser
 ```
 
-<div id="rename-column">
-  ## RENAME COLUMN
-</div>
+## RENAME COLUMN {#rename-column}
 
 ```sql
 RENAME COLUMN [IF EXISTS] name to new_name
@@ -112,9 +114,7 @@ RENAME COLUMN [IF EXISTS] name to new_name
 ALTER TABLE visits RENAME COLUMN webBrowser TO browser
 ```
 
-<div id="clear-column">
-  ## CLEAR COLUMN
-</div>
+## CLEAR COLUMN {#clear-column}
 
 ```sql
 CLEAR COLUMN [IF EXISTS] name IN PARTITION partition_name
@@ -130,9 +130,7 @@ CLEAR COLUMN [IF EXISTS] name IN PARTITION partition_name
 ALTER TABLE visits CLEAR COLUMN browser IN PARTITION tuple()
 ```
 
-<div id="comment-column">
-  ## COMMENT COLUMN
-</div>
+## COMMENT COLUMN {#comment-column}
 
 ```sql
 COMMENT COLUMN [IF EXISTS] name 'Text comment'
@@ -150,9 +148,7 @@ COMMENT COLUMN [IF EXISTS] name 'Text comment'
 ALTER TABLE visits COMMENT COLUMN browser 'This column shows the browser used for accessing the site.'
 ```
 
-<div id="modify-column">
-  ## MODIFY COLUMN
-</div>
+## MODIFY COLUMN {#modify-column}
 
 ```sql
 MODIFY COLUMN [IF EXISTS] name
@@ -163,7 +159,7 @@ ALTER COLUMN [IF EXISTS] name
     | ADD ENUM VALUES ( 'name' [= number] [, ...] )
 ```
 
-يمكن كتابة المُعدِّلات التي تلي النوع بأي ترتيب، على ألا يتكرر أيٌّ منها أكثر من مرة — راجع [وصف العمود](/ar/reference/statements/create/table#with-explicit-schema).
+يمكن كتابة المُعدِّلات التي تلي النوع بأي ترتيب، على ألا يتكرر أيٌّ منها أكثر من مرة — راجع [وصف العمود](/ar/reference/statements/create/table#with-explicit-schema).
 
 يُغيّر هذا الاستعلام خصائص العمود `name`:
 
@@ -187,7 +183,7 @@ ALTER COLUMN [IF EXISTS] name
 
 إذا تم تحديد العبارة `IF EXISTS`، فلن يُرجع الاستعلام خطأً إذا لم يكن العمود موجودًا.
 
-عند تغيير النوع، تُحوَّل القيم كما لو كانت دوال [toType](/ar/reference/functions/regular-functions/type-conversion-functions) قد طُبِّقت عليها. وإذا جرى تغيير التعبير الافتراضي فقط، فلن ينفّذ الاستعلام أي عمليات معقدة، ويكتمل تقريبًا على الفور.
+عند تغيير النوع، تُحوَّل القيم كما لو كانت دوال [toType](/ar/reference/functions/regular-functions/type-conversion-functions) قد طُبِّقت عليها. وإذا جرى تغيير التعبير الافتراضي فقط، فلن يغيّر الاستعلام سوى البيانات الوصفية.
 
 مثال:
 
@@ -195,7 +191,9 @@ ALTER COLUMN [IF EXISTS] name
 ALTER TABLE visits MODIFY COLUMN browser Array(String)
 ```
 
-يُعدّ تغيير نوع العمود الإجراء المعقّد الوحيد، إذ يغيّر محتويات الملفات التي تتضمن البيانات. وقد يستغرق ذلك وقتًا طويلًا في الجداول الكبيرة.
+بعض تغييرات النوع تقتصر على البيانات الوصفية فقط، لأن تمثيلها على القرص لا يتغير. ويشمل ذلك توسيع enum والتحويلات بين `Date` و`UInt16` أو بين `DateTime` و`UInt32`؛ وتنطبق القاعدة نفسها بشكل تعاودي داخل الأنواع `Array` و`Nullable`. كما يمكن لبعض تغييرات تلميحات أنواع JSON وإضافة عناصر مسمّاة إلى الـ tuple أن تتجنّب إعادة الكتابة الفورية عند تفعيل الإعدادات المقابلة.
+
+أما تغييرات النوع الأخرى فتُنشئ تعديلًا من نوع `READ_COLUMN` يعيد كتابة العمود المتأثر في أجزاء البيانات الموجودة. ويخضع سلوك الانتظار للإعداد [`alter_sync`](/ar/reference/settings/session-settings/alter#alter_sync)، وقيمته الافتراضية `1` في ClickHouse و`0` في ClickHouse Cloud. راقب التقدّم عبر [`system.mutations`](/ar/reference/system-tables/mutations).
 
 يمكن للاستعلام أيضًا تغيير ترتيب الأعمدة باستخدام العبارة `FIRST | AFTER`، راجع وصف [ADD COLUMN](#add-column)، ولكن يكون تحديد نوع العمود إلزاميًا في هذه الحالة.
 
@@ -233,15 +231,13 @@ DESCRIBE users;
 
 استعلام `ALTER` ذري. وبالنسبة إلى جداول MergeTree، فهو أيضًا يعمل من دون أقفال.
 
-استعلام `ALTER` الخاص بتغيير الأعمدة مُكرَّر. تُحفَظ التعليمات في ZooKeeper، ثم تطبّقها كل نسخة متماثلة. وتُنفَّذ جميع استعلامات `ALTER` بالترتيب نفسه. وينتظر الاستعلام حتى تكتمل الإجراءات المناسبة على النسخ المتماثلة الأخرى. ومع ذلك، يمكن مقاطعة استعلام تغيير الأعمدة في جدول مُكرَّر، وستُنفَّذ جميع الإجراءات بشكل غير متزامن.
+استعلام `ALTER` الخاص بتغيير الأعمدة مُكرَّر. تُحفَظ التعليمات في ZooKeeper، ثم تطبّقها كل نسخة متماثلة. وتُنفَّذ جميع استعلامات `ALTER` بالترتيب نفسه. وينتظر الاستعلام حتى تكتمل الإجراءات المناسبة على النسخ المتماثلة الأخرى. ومع ذلك، يمكن مقاطعة استعلام تغيير الأعمدة في جدول مُكرَّر، وستُنفَّذ جميع الإجراءات بشكل غير متزامن.
 
 <Note>
-  يُرجى توخّي الحذر عند تغيير عمود من نوع Nullable إلى Non-Nullable. تأكّد من أنه لا يحتوي على أي قيم NULL، وإلا فسيتسبب ذلك في مشكلات عند القراءة منه. في هذه الحالة، يكون الحل البديل هو إيقاف الـ mutation بالقوة ثم إعادة العمود إلى النوع Nullable.
+  يُرجى توخّي الحذر عند تغيير عمود من نوع Nullable إلى Non-Nullable. تأكّد من أنه لا يحتوي على أي قيم NULL، وإلا فسيتسبب ذلك في مشكلات عند القراءة منه. في هذه الحالة، يكون الحل البديل هو إيقاف التعديل بالقوة ثم إعادة العمود إلى النوع Nullable.
 </Note>
 
-<div id="modify-column-remove">
-  ## MODIFY COLUMN REMOVE
-</div>
+## MODIFY COLUMN REMOVE {#modify-column-remove}
 
 يزيل إحدى خصائص العمود التالية: `DEFAULT`, `ALIAS`, `MATERIALIZED`, `CODEC`, `COMMENT`, `TTL`, `SETTINGS`.
 
@@ -263,9 +259,7 @@ ALTER TABLE table_with_ttl MODIFY COLUMN column_ttl REMOVE TTL;
 
 * [REMOVE TTL](/ar/reference/statements/alter/ttl).
 
-<div id="modify-column-modify-setting">
-  ## MODIFY COLUMN MODIFY SETTING
-</div>
+## MODIFY COLUMN MODIFY SETTING {#modify-column-modify-setting}
 
 عدِّل إعدادات العمود.
 
@@ -283,9 +277,7 @@ ALTER TABLE table_name MODIFY COLUMN column_name MODIFY SETTING name=value,...;
 ALTER TABLE table_name MODIFY COLUMN column_name MODIFY SETTING max_compress_block_size = 1048576;
 ```
 
-<div id="modify-column-reset-setting">
-  ## MODIFY COLUMN RESET SETTING
-</div>
+## MODIFY COLUMN RESET SETTING {#modify-column-reset-setting}
 
 أعد ضبط إعداد العمود، ويؤدي ذلك أيضًا إلى إزالة تعريف الإعداد من تعبير العمود في استعلام CREATE الخاص بالجدول.
 
@@ -303,9 +295,7 @@ ALTER TABLE table_name MODIFY COLUMN column_name RESET SETTING name,...;
 ALTER TABLE table_name MODIFY COLUMN column_name RESET SETTING max_compress_block_size;
 ```
 
-<div id="modify-column-add-enum-values">
-  ## MODIFY COLUMN ADD ENUM VALUES
-</div>
+## MODIFY COLUMN ADD ENUM VALUES {#modify-column-add-enum-values}
 
 يضيف قيماً جديدة إلى عمود من النوع `Enum` أو `Enum8` أو `Enum16` أو `Nullable(Enum)` أو `Nullable(Enum8)` أو `Nullable(Enum16)`
 
@@ -323,9 +313,7 @@ ALTER TABLE table_name MODIFY COLUMN enum_column_name ADD ENUM VALUES ('EnumName
 ALTER TABLE table_name MODIFY COLUMN enum_column_name ADD ENUM VALUES ('Hundred' = 100, 'HundredOne');
 ```
 
-<div id="materialize-column">
-  ## MATERIALIZE COLUMN
-</div>
+## MATERIALIZE COLUMN {#materialize-column}
 
 يُجسِّد العمود إلى عمود مادي باستخدام تعبير قيمة `DEFAULT` أو `MATERIALIZED`. عند إضافة عمود مادي باستخدام `ALTER TABLE table_name ADD COLUMN column_name MATERIALIZED`، لا تُملأ تلقائيًا الصفوف الحالية التي لا تحتوي على قيم مادية. ويمكن استخدام التعليمة `MATERIALIZE COLUMN` لإعادة كتابة بيانات العمود الحالية بعد إضافة تعبير `DEFAULT` أو `MATERIALIZED` أو تحديثه (إذ لا يؤدّي ذلك إلا إلى تحديث البيانات الوصفية، من دون تغيير البيانات الحالية). لاحظ أن تحويل عمود ضمن مفتاح الفرز إلى عمود مادي عملية غير صالحة، لأنها قد تؤدي إلى كسر ترتيب الفرز.
 ويُنفَّذ ذلك على هيئة [mutation](/ar/reference/statements/alter/index#mutations).
@@ -396,9 +384,7 @@ SELECT groupArray(x), groupArray(s) FROM tmp;
 * [MATERIALIZED](/ar/reference/statements/create/view#materialized-view).
 * [MATERIALIZE INDEX](/ar/reference/statements/alter/skipping-index#materialize-index).
 
-<div id="limitations">
-  ## القيود
-</div>
+## القيود {#limitations}
 
 يتيح لك استعلام `ALTER` إنشاء العناصر المنفصلة (الأعمدة) وحذفها داخل بُنى البيانات المتداخلة، لكنه لا يدعم إنشاء بُنى البيانات المتداخلة أو حذفها بالكامل. ولإضافة بنية بيانات متداخلة، يمكنك إضافة أعمدة باسم مثل `name.nested_name` وبنوع `Array(T)`. وتُعد بنية البيانات المتداخلة مكافئة لعدة أعمدة مصفوفات تشترك أسماؤها في البادئة نفسها قبل النقطة.
 
