@@ -56,8 +56,11 @@ def start_cluster():
         for i in range(2, 5):
             node.query(
                 f"INSERT INTO prometheus_tags VALUES ('00000000-0000-0000-0000-00000000000{i}',"
-                f" 'foo', {{'instance':'host{i}'}}, toDateTime64(1699999000, 3, 'UTC'),"
-                " toDateTime64(1700001000, 3, 'UTC'))"
+                f" 'foo', {{'instance':'host{i}'}})"
+            )
+            node.query(
+                f"INSERT INTO prometheus_time_ranges VALUES ('00000000-0000-0000-0000-00000000000{i}',"
+                " toDateTime64(1699999000, 3, 'UTC'), toDateTime64(1700001000, 3, 'UTC'))"
             )
             node.query(
                 "INSERT INTO prometheus_data VALUES"
