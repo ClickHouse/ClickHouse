@@ -391,9 +391,10 @@ def test_text_index_corrupted_positions(started_cluster):
         ENGINE = MergeTree ORDER BY k
         -- min_bytes_for_full_part_storage=0: the test edits the raw skp_idx_txt.pos.idx file, which a
         -- packed part keeps inside data.packed instead of on disk.
+        -- Without a posting list codec the phrase is evaluated on the column and never reads .pos.
         SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 100,
                  replace_long_file_name_to_hash = 0, min_bytes_for_full_part_storage = 0,
-                 allow_experimental_text_index_phrase_search = 1
+                 allow_experimental_text_index_phrase_search = 1, text_index_posting_list_codec = 'pfor'
         """,
         settings={"enable_full_text_index": 1},
     )
@@ -467,7 +468,7 @@ def test_text_index_corrupted_postings_rank_cursor(started_cluster):
         ENGINE = MergeTree ORDER BY k
         SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 100,
                  replace_long_file_name_to_hash = 0, min_bytes_for_full_part_storage = 0,
-                 allow_experimental_text_index_phrase_search = 1, text_index_posting_list_codec = 'bitpacking'
+                 allow_experimental_text_index_phrase_search = 1, text_index_posting_list_codec = 'pfor'
         """,
         settings={"enable_full_text_index": 1},
     )
@@ -525,7 +526,7 @@ def test_text_index_corrupted_postings_rank_cursor(started_cluster):
         segment_4 = 0
         for _ in range(4):
             segment_4 = segment_end(segment_4)
-        assert data[segment_4 : segment_4 + 4] == [1, 34, 128, 2]
+        assert data[segment_4 : segment_4 + 4] == [2, 20, 128, 2]
 
         # Segment 4 is loaded, so a count off the segment size is rejected.
         patch_file(node1, pst, pst_backup, segment_4 + 2, "\\xff\\x01")

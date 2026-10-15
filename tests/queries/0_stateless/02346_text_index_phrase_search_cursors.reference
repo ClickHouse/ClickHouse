@@ -1,5 +1,6 @@
-Cursor and bitmap candidates match a scan
+Cursor candidates match a scan
 Cursors need the block index of a posting list codec
+Without a codec the phrase is evaluated on the column
 hello in 16 segments, needle in 2, unicorn embedded
 needle clickhouse
 256	8070932900065757614
@@ -41,6 +42,6 @@ hello clickhouse world
 2730	9382398775103070376
 2730	9382398775103070376
 2730	9382398775103070376
-Cursors run only with leapfrog
-02346_cursors_bruteforce	0	10
-02346_cursors_leapfrog	10	10
+Every search walks cursors, or falls back without a codec
+02346_cursors	10	0	10
+02346_cursors_none	0	10	10
