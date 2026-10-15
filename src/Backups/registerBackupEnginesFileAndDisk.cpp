@@ -67,11 +67,14 @@ namespace
     /// Checks that a path specified as parameters of Disk() is valid.
     void checkPath(const String & disk_name, const DiskPtr & disk, fs::path & path)
     {
+        /// `has_root_path` rather than `is_absolute`/`is_relative`: on Windows `/x` (root directory,
+        /// no drive) and `D:x` (drive, no root directory) are not absolute, yet either of them
+        /// replaces the root of the disk path it is appended to. On POSIX the checks are the same.
         path = path.lexically_normal();
-        if (!path.is_relative() && (disk->getDataSourceDescription().type == DataSourceType::Local))
+        if (path.has_root_path() && (disk->getDataSourceDescription().type == DataSourceType::Local))
             path = path.lexically_proximate(pathFromString(disk->getPath()));
 
-        bool path_ok = path.empty() || (path.is_relative() && (*path.begin() != ".."));
+        bool path_ok = path.empty() || (!path.has_root_path() && (*path.begin() != ".."));
         if (!path_ok)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path '{}' to backup must be inside the specified disk '{}'",
                             quoteString(pathToGenericString(path)), quoteString(disk_name));
@@ -112,8 +115,11 @@ namespace
             allowed_path = allowed_path.lexically_normal();
             if (!allowed_path.has_filename())
                 allowed_path = allowed_path.parent_path();
+            /// `lexically_proximate` returns the path unchanged when it cannot relate it to `allowed_path`,
+            /// which on Windows (a different drive, e.g. `D:x` against `C:/allowed`) is still relative,
+            /// so require the result to have no root at all rather than just to be relative.
             auto rel = path.lexically_proximate(allowed_path);
-            bool path_ok = rel.empty() || (rel.is_relative() && (*rel.begin() != ".."));
+            bool path_ok = rel.empty() || (!rel.has_root_path() && (*rel.begin() != ".."));
             if (!path_ok)
                 continue;
             size_t depth = std::distance(allowed_path.begin(), allowed_path.end());

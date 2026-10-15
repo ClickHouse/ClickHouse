@@ -146,8 +146,11 @@ void extractPacked(const DiskPtr & disk_in, const String & input_file, const Dis
     {
         /// File names come from the archive index, so a crafted archive could contain an absolute path
         /// or `..` components to escape output_dir. Reject those before writing anything to disk_out.
+        /// Check `has_root_path` rather than `is_absolute`: on Windows `/x` (root directory, no drive)
+        /// and `D:x` (drive, no root directory) are not absolute, yet `operator/` lets either of them
+        /// replace the root of `output_dir`. On POSIX the two checks are the same.
         const fs::path entry_path = pathFromString(file_name);
-        if (entry_path.is_absolute())
+        if (entry_path.has_root_path())
             throw Exception(ErrorCodes::INCORRECT_DATA, "Packed archive entry has an absolute path: {}", file_name);
         for (const auto & component : entry_path)
             if (component == "..")
