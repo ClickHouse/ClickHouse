@@ -29,6 +29,7 @@
 
 #include <map>
 #include <optional>
+#include <set>
 #include <tuple>
 #include <unordered_set>
 
@@ -41,11 +42,6 @@ extern const Event AutomaticParallelReplicasDecidedWithoutBuildingPlan;
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-extern const int LOGICAL_ERROR;
-}
 
 namespace
 {
@@ -684,8 +680,38 @@ bool transplantAnalysisToAllReads(QueryPlan::Node & single_node_root, QueryPlan:
 /// on the parallel-replicas side - inside the local branch under `ReadFromLocalParallelReplicaStep`,
 /// which is not a child node. A set missed here is not adopted from the single-replica plan and its
 /// subquery runs a second time at execution, which is exactly what this transplant exists to avoid.
-void moveSetsFromLocalPlanToReplicasPlan(const QueryPlan & single_replica_plan, const QueryPlan & parallel_replicas_plan)
+///
+/// Sets are paired by hash, and nothing guarantees that the two plans hash a set the same way: the
+/// parallel-replicas plan is built from the query tree shipped to the replicas, and a set may be keyed
+/// by something that differs between two builds of a plan (`convertJoinToIn` keys its set by a random
+/// UUID). Returns false, leaving both plans untouched, when a set of the parallel-replicas plan has no
+/// counterpart; the caller then keeps the single-replica plan.
+bool moveSetsFromLocalPlanToReplicasPlan(const QueryPlan & single_replica_plan, const QueryPlan & parallel_replicas_plan)
 {
+    std::set<FutureSet::Hash> single_replica_hashes;
+    forEachSubquerySet(
+        &single_replica_plan,
+        [&](FutureSetFromSubquery & future_set)
+        {
+            if (future_set.getSetAndKey())
+                single_replica_hashes.insert(future_set.getHash());
+            return true;
+        });
+
+    bool all_sets_paired = true;
+    forEachSubquerySet(
+        &parallel_replicas_plan,
+        [&](FutureSetFromSubquery & future_set)
+        {
+            if (!single_replica_hashes.contains(future_set.getHash()))
+                all_sets_paired = false;
+            /// Mirrors the walk below, which does not descend into a set it pairs.
+            return false;
+        });
+
+    if (!all_sets_paired)
+        return false;
+
     std::map<FutureSet::Hash, SetAndKeyPtr> sets_map;
 
     // Create a map: set_key -> set
@@ -703,17 +729,14 @@ void moveSetsFromLocalPlanToReplicasPlan(const QueryPlan & single_replica_plan, 
         &parallel_replicas_plan,
         [&](FutureSetFromSubquery & future_set)
         {
-            auto it = sets_map.find(future_set.getHash());
-            if (it == sets_map.end())
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR, "Cannot find a matching set in the map of sets from single-replica plan");
-
-            future_set.replaceSetAndKey(it->second);
+            future_set.replaceSetAndKey(sets_map.at(future_set.getHash()));
             /// The set is built now, so this plan will not run and the sets nested in it will never be
             /// created. The single-replica plan has no counterparts for them either - its own nested
             /// sources are long gone by this point - so descending would only fail the lookup above.
             return false;
         });
+
+    return true;
 }
 }
 
@@ -1204,7 +1227,14 @@ static bool decideAtBoundary(
                 /// is worth knowing about: the reads would then be carrying ranges selected for another
                 /// read's predicates.
                 chassert(reads->in_replicas_plan->getAnalyzedResult() == analysis);
-                moveSetsFromLocalPlanToReplicasPlan(query_plan, *plan_with_parallel_replicas);
+                if (!moveSetsFromLocalPlanToReplicasPlan(query_plan, *plan_with_parallel_replicas))
+                {
+                    LOG_DEBUG(
+                        getLogger("optimizeTree"),
+                        "A set of the plan with parallel replicas has no counterpart in the single-replica plan. "
+                        "Skipping optimization");
+                    return false;
+                }
                 query_plan.replaceNodeWithPlan(query_plan.getRootNode(), std::move(*plan_with_parallel_replicas));
                 return false;
             }
