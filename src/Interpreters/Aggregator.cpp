@@ -2244,7 +2244,7 @@ void NO_INLINE Aggregator::mergeOnIntervalWithoutKey(
 
 
 void Aggregator::prepareAggregateInstructions(
-    Columns columns,
+    const Columns & columns,
     AggregateColumns & aggregate_columns,
     Columns & materialized_columns,
     AggregateFunctionInstructions & aggregate_functions_instructions,
@@ -2264,8 +2264,15 @@ void Aggregator::prepareAggregateInstructions(
         for (size_t j = 0; j < aggregate_columns[i].size(); ++j)
         {
             const auto pos = aggregates_positions[i][j];
-            materialized_columns.push_back(columns.at(pos)->convertToFullColumnIfConst()->convertToFullColumnIfReplicated());
-            aggregate_columns[i][j] = materialized_columns.back().get();
+            aggregate_columns[i][j] = columns.at(pos).get();
+
+            /// Only the converted columns have to be held here, the original ones are held by the caller.
+            auto converted_column = columns.at(pos)->convertToFullColumnIfConst()->convertToFullColumnIfReplicated();
+            if (converted_column.get() != aggregate_columns[i][j])
+            {
+                materialized_columns.push_back(std::move(converted_column));
+                aggregate_columns[i][j] = materialized_columns.back().get();
+            }
 
             /// Sparse columns without defaults may be handled incorrectly.
             if (aggregate_columns[i][j]->isSparse()

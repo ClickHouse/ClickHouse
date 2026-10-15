@@ -1472,11 +1472,20 @@ namespace
         }
     }
 
-    void setNullDictionarySourceIfExternal(ASTCreateQuery & create_query)
+    void setNullDictionarySourceIfExternal(ASTCreateQuery & create_query, const ContextPtr & context)
     {
+        /// Nothing to replace: a definition without a source is rejected later by `getDictionaryConfigurationFromAST`.
+        if (!create_query.dictionary || !create_query.dictionary->source)
+            return;
+
         ASTDictionary & dict = *create_query.dictionary;
         if (Poco::toLower(dict.source->name) == "clickhouse")
         {
+            /// `getDictionaryConfigurationFromAST` rejects functions, so evaluate constants such as `currentDatabase()` first.
+            NormalizeAndEvaluateConstantsVisitor::Data visitor_data{context};
+            NormalizeAndEvaluateConstantsVisitor visitor(visitor_data);
+            visitor.visit(dict.source->ptr());
+
             auto config = getDictionaryConfigurationFromAST(create_query, Context::getGlobalContextInstance());
             auto info = getInfoIfClickHouseDictionarySource(config, Context::getGlobalContextInstance());
             if (info && info->is_local)
@@ -1554,7 +1563,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
     }
 
     if (create.is_dictionary && getContext()->getSettingsRef()[Setting::restore_replace_external_dictionary_source_to_null])
-        setNullDictionarySourceIfExternal(create);
+        setNullDictionarySourceIfExternal(create, getContext());
 
     if (create.is_dictionary || create.is_ordinary_view)
         return;
@@ -2588,7 +2597,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                 backQuoteIfNeed(create.getTable()));
         }
     }
-    else if (!create.attach)
+    else if (!create.attach || (!create.attach_short_syntax && !database->canReattachTableWithFullDefinition()))
     {
         /// Checking that table may exists in detached/detached permanently state
         try
