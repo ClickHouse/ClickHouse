@@ -108,10 +108,12 @@ void FunctionNameNormalizer::visitImpl(IAST * ast, bool for_comparison)
     /// An `APPLY` transformer carries its function in the non-child `func_name` string, and its
     /// `parameters` and `lambda` are not in `children` either, so the walk above does not reach
     /// them. Stored table definitions are compared as ASTs, so `APPLY SUM` and `APPLY sum` (or a
-    /// lambda spelled `x -> SuM(x)`) must compare as the same definition. This only runs on the
-    /// comparison path (see `visitForComparison`): the persisted definition keeps the transformer
-    /// as written, because older replicas compare the serialized `projections` field
-    /// byte-for-byte and the canonical form of an older version is the definition as written.
+    /// lambda spelled `x -> SuM(x)`) must compare as the same definition: the physical
+    /// projection columns are named after the canonical function name in both forms (`sum(b)`).
+    /// This only runs on the comparison path (see `visitForComparison`): the persisted
+    /// definition keeps the transformer as written, because older replicas compare the
+    /// serialized `projections` field byte-for-byte and the canonical form of an older version
+    /// is the definition as written.
     if (!for_comparison)
         return;
 
@@ -143,7 +145,12 @@ void FunctionNameNormalizer::visitImpl(IAST * ast, bool for_comparison)
                 apply_transformer->func_name = canonical_name;
         }
 
-        visitImpl(apply_transformer->parameters.get(), for_comparison);
+        /// The `parameters` are deliberately left as written. Unlike the function name and the
+        /// lambda, their spelling leaks into the physical projection columns verbatim:
+        /// `APPLY quantile(ABS(-0.9))` produces `quantile(ABS(-0.9))(b)`, and
+        /// `APPLY quantile(abs(-0.9))` produces `quantile(abs(-0.9))(b)`. Treating the two as the
+        /// same definition would admit parts whose projection columns the other side does not
+        /// know, and forced projection reads of them would return wrong results.
         visitImpl(apply_transformer->lambda.get(), for_comparison);
     }
 }
