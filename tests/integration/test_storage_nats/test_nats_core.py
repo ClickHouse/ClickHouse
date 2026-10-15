@@ -1669,3 +1669,26 @@ def test_hiding_credentials(nats_cluster):
     message = instance.query(f"SELECT message FROM system.text_log WHERE message ILIKE '%CREATE TABLE test.{table_name}%'")
     assert "nats_password = \\'[HIDDEN]\\'" in  message
     assert "nats_credential_file = \\'[HIDDEN]\\'" in  message
+
+def test_nats_empty_subjects_rejected(nats_cluster):
+    # Empty, blank and separator-only subject lists must be rejected at CREATE time
+    # instead of crashing the server on a later INSERT.
+    for subjects in ["", " ", ","]:
+        error = instance.query_and_get_error(
+            """
+            CREATE TABLE nats_empty_subjects (key UInt64, value UInt64)
+                ENGINE = NATS
+                SETTINGS nats_url = 'localhost:4222',
+                         nats_subjects = '{}',
+                         nats_format = 'JSONEachRow';
+            """.format(subjects)
+        )
+        assert "BAD_ARGUMENTS" in error
+        assert "must contain at least one subject" in error
+
+    # The server must still be alive and the table must not exist.
+    assert instance.query("SELECT 1").strip() == "1"
+    assert instance.query(
+        "SELECT count() FROM system.tables WHERE name = 'nats_empty_subjects'"
+    ).strip() == "0"
+
