@@ -73,6 +73,9 @@ Java Client was developed far back in 2015. Its codebase became very hard to mai
 |Variant                |✔                    |✗                    |
 |Dynamic                |✔                    |✗                    |
 |JSON                   |✔                    |✗                    |
+|MultiPoint             |✔                    |✗                    |
+|BFloat16               |✔                    |✗                    |
+|QBit                   |✔                    |✗                    |
 
 [ClickHouse Data Types](/reference/data-types/index)
 
@@ -97,10 +100,10 @@ Table of features of the clients:
 | Name                                         | Client V2 | Client V1 | Comments
 |----------------------------------------------|:---------:|:---------:|:---------:|
 | Http Connection                              |✔       |✔      | |
-| Http Compression (LZ4)                       |✔       |✔      | |
+| Http Compression                             |✔       |✔      | |
 | Application Controlled Compression           |✔       |✗      | |
-| Server Response Compression - LZ4            |✔       |✔      | |
-| Client Request Compression - LZ4             |✔       |✔      | |
+| Server Response Compression - LZ4, ZSTD      |✔       |✗      | |
+| Client Request Compression - LZ4, ZSTD       |✔       |✔      | |
 | HTTPS                                        |✔       |✔      | |
 | Client SSL Cert (mTLS)                       |✔       |✔      | |
 | Http Proxy                                   |✔       |✔      | |
@@ -115,7 +118,8 @@ Table of features of the clients:
 | Session Roles                                |✔       |✔      | |
 | SSL Client Authentication                    |✔       |✔      | |
 | SNI Configuration                            |✔       |✗      | |
-| Session timezone                             |✔       |✔      | |
+| Sessions                                     |✔       |✔      | |
+| Telemetry (tracing, metrics)                 |✔       |✗      | |
 
 JDBC Drive inherits same features as underlying client implementation. Other JDBC features are listed on its [page](/integrations/language-clients/java/jdbc).
 
