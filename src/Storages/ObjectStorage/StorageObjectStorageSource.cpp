@@ -2601,6 +2601,7 @@ ObjectInfoPtr StorageObjectStorageSource::ArchiveIterator::next(size_t processor
                     archive_object->setObjectMetadata(object_storage->getObjectMetadata(archive_object->relative_path_with_metadata, /*with_tags=*/ false));
 
                 archive_reader = createArchiveReader(archive_object);
+                archive_has_unnamed_entry = false;
                 file_enumerator = archive_reader->firstFile();
                 if (!file_enumerator)
                     continue;
@@ -2615,6 +2616,18 @@ ObjectInfoPtr StorageObjectStorageSource::ArchiveIterator::next(size_t processor
             LOG_TEST(log, "Path in archive: {}", path_in_archive);
             if (!filter(path_in_archive))
                 continue;
+
+            /// Entries are reopened by name, so two entries without a name cannot be told apart.
+            if (path_in_archive.empty())
+            {
+                if (archive_has_unnamed_entry)
+                    throw Exception(
+                        ErrorCodes::CANNOT_UNPACK_ARCHIVE,
+                        "Cannot read archive {}: it has more than one entry without a name",
+                        archive_object->getPath());
+                archive_has_unnamed_entry = true;
+            }
+
             current_file_info = file_enumerator->getFileInfo();
         }
         else

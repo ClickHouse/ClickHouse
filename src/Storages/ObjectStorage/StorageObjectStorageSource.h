@@ -382,6 +382,8 @@ private:
     const LoggerPtr log;
     /// Current file inside the archive.
     std::string path_in_archive = {};
+    /// Whether the current archive has already given an entry without a name.
+    bool archive_has_unnamed_entry = false;
     /// Read keys of files inside archives.
     ObjectInfos * read_keys;
     /// Object pointing to archive (NOT path within archive).
