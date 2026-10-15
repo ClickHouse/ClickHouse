@@ -3422,13 +3422,14 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationDropWorkloadWhileAllocat
     ResourceTest t;
 
     t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
-    t.query("CREATE WORKLOAD A SETTINGS max_memory = 100");
+    t.query("CREATE WORKLOAD A SETTINGS max_memory = 100, max_waiting_queries = 0");
 
     ClassifierPtr c_a = t.manager->acquire("A");
     ResourceLink link = c_a->get("memory");
 
-    // Keep inserting allocations into `A`'s queue while `A` is dropped: the rejections after the purge read the
-    // queue's workload name while the workload node is being destroyed, which lets TSan check that overlap.
+    // Keep inserting allocations into `A`'s queue while `A` is dropped. Every one is rejected and the rejection reads
+    // the workload's name: by `max_waiting_queries` before the purge, as an unusable queue after it. This lets TSan
+    // check those reads against the drop and the destruction of the workload node.
     std::atomic<bool> dropped{false};
     std::atomic<size_t> rejected{0};
     std::thread allocator([&]
@@ -3437,7 +3438,7 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationDropWorkloadWhileAllocat
         {
             try
             {
-                TestAllocation allocation(link, "racer", 0);
+                TestAllocation allocation(link, "racer", 10);
             }
             catch (const Exception &)
             {

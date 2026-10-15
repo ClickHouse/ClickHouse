@@ -464,6 +464,7 @@ protected:
     struct QueueOrChildrenBranch
     {
         NodePtr queue; /// RequestQueue or AllocationQueue node is used if there are no children
+        bool queue_dropped = false; /// `queue` has been purged by `purgeDroppedQueue`
         ChildrenBranch branch; /// Used if there is at least one child
         WorkloadSettings settings;
         CostUnit unit = CostUnit::IOByte;
@@ -522,7 +523,7 @@ protected:
         /// versions reference it.
         void purgeDroppedQueue()
         {
-            if (!queue)
+            if (!queue || std::exchange(queue_dropped, true))
                 return;
             detach(queue);
             Traits::purgeQueue(queue);
@@ -676,7 +677,7 @@ public:
     {
         /// Queues and constraints outlive this node while older versions are still referenced by classifiers.
         /// The queue clears its own pointer in `purgeQueue` under its mutex, because query threads read it there.
-        impl.branch.purgeDroppedQueue();
+        purgeQueue(); // No-op if the workload was dropped through `purgeQueue` already
         forEachSchedulerNode([this](ISchedulerNode * node)
         {
             if (node != impl.branch.queue.get())
@@ -759,6 +760,11 @@ public:
             for (auto & [_1, child] : branch.children)
                 child->addRawPointerNodes(nodes);
         }
+    }
+
+    void purgeQueue() final
+    {
+        impl.branch.purgeDroppedQueue();
     }
 
     bool hasWorkloadChildren() const final
