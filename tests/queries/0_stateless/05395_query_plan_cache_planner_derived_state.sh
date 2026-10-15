@@ -7,8 +7,7 @@
 #      A hit carries only the folded constant, so tightening the limit must not reuse that entry.
 #   2. The planner exempts a single read of `system.one` from quotas and result limits. Both the miss
 #      and the hit must keep the exemption.
-#   3. `ReadFromTableStep` does not serialize the `STREAM` modifier, so a streaming read must not be
-#      cached: a hit would silently become an ordinary snapshot read.
+# The streaming read case lives in `05401_query_plan_cache_streaming_queries_read.sh`.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -35,18 +34,3 @@ run --max_bytes_in_set 1 --query "SELECT 3 IN (1, 3)"
 echo "-- 2. result limits exemption for system.one"
 run --max_result_bytes 1 --query "SELECT repeat('x', 100)"
 run --max_result_bytes 1 --query "SELECT repeat('x', 100)"
-
-echo "-- 3. streaming read"
-$CLICKHOUSE_CLIENT --query "
-    DROP TABLE IF EXISTS t_stream;
-    CREATE TABLE t_stream (k UInt64) ENGINE = MergeTree ORDER BY k
-    SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
-    SYSTEM STOP MERGES t_stream;
-    INSERT INTO t_stream SELECT number FROM numbers(5);
-    INSERT INTO t_stream SELECT number FROM numbers(5, 5);
-"
-STREAM_QUERY="SELECT countIf(1) FROM t_stream STREAM BOUNDED CURSOR {'all': {'block_number': 1000000}}"
-run --enable_streaming_queries 1 --query "$STREAM_QUERY"
-run --enable_streaming_queries 1 --query "$STREAM_QUERY"
-
-$CLICKHOUSE_CLIENT --query "DROP TABLE t_stream"
