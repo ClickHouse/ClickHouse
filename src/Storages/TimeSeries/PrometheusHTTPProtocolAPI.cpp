@@ -69,6 +69,7 @@ namespace Setting
     extern const SettingsOverflowMode join_overflow_mode;
     extern const SettingsDouble limit;
     extern const SettingsUInt64 max_bytes_in_join;
+    extern const SettingsUInt64 max_bytes_in_set;
     extern const SettingsUInt64 max_bytes_to_read;
     extern const SettingsUInt64 max_bytes_to_read_leaf;
     extern const SettingsUInt64 max_bytes_to_sort;
@@ -77,9 +78,11 @@ namespace Setting
     extern const SettingsUInt64 max_execution_speed_bytes;
     extern const SettingsSeconds max_execution_time;
     extern const SettingsSeconds max_execution_time_leaf;
+    extern const SettingsUInt64 max_network_bytes;
     extern const SettingsUInt64 max_result_bytes;
     extern const SettingsUInt64 max_result_rows;
     extern const SettingsUInt64 max_rows_in_join;
+    extern const SettingsUInt64 max_rows_in_set;
     extern const SettingsUInt64 max_rows_to_group_by;
     extern const SettingsUInt64 max_rows_to_read;
     extern const SettingsUInt64 max_rows_to_read_leaf;
@@ -364,10 +367,11 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
             || settings[Setting::limit] != 0 || settings[Setting::offset] != 0
             || !settings[Setting::select].value.empty() || !settings[Setting::order].value.empty()
             || !settings[Setting::sort].value.empty() || !settings[Setting::filter].value.empty();
-        /// A GROUP BY, sorting or JOIN limit would see one chunk at a time, a read, speed or leaf time limit would start again for each chunk,
+        /// A GROUP BY, sorting, JOIN or set limit would see one chunk at a time, a read, network, speed or leaf time limit would start again for each chunk,
         /// and a time limit with `timeout_overflow_mode = 'break'` would stop elsewhere, so they don't let the query be split either.
         const bool has_whole_query_limits = settings[Setting::max_rows_to_group_by] || settings[Setting::max_rows_to_sort]
             || settings[Setting::max_bytes_to_sort] || settings[Setting::max_rows_in_join] || settings[Setting::max_bytes_in_join]
+            || settings[Setting::max_rows_in_set] || settings[Setting::max_bytes_in_set] || settings[Setting::max_network_bytes]
             || settings[Setting::max_rows_to_read] || settings[Setting::max_bytes_to_read]
             || settings[Setting::max_rows_to_read_leaf] || settings[Setting::max_bytes_to_read_leaf]
             || settings[Setting::max_execution_time_leaf].totalMicroseconds() != 0
@@ -535,8 +539,9 @@ void PrometheusHTTPProtocolAPI::executeRangeQueryInChunks(
     }
 
     writeQueryResponseHeader(response, PrometheusQueryResultType::RANGE_VECTOR);
-    writeQueryResponseRangeVectorChunks(
-        response, chunks, [&] { limits.checkTimeLimit(watch.elapsedNanoseconds(), OverflowMode::THROW); });
+    auto check_time_limit = [&] { limits.checkTimeLimit(watch.elapsedNanoseconds(), OverflowMode::THROW); };
+    writeQueryResponseRangeVectorChunks(response, chunks, check_time_limit);
+    check_time_limit();
     writeQueryResponseFooter(response);
 
     if (query_finish_callback)
@@ -575,8 +580,6 @@ void PrometheusHTTPProtocolAPI::writeQueryResponseRangeVectorChunks(
         if (!min_chunk)
             break;
 
-        check_time_limit();
-
         const Block & min_block = chunks[*min_chunk][positions[*min_chunk].block];
         const size_t min_row = positions[*min_chunk].row;
         const auto & min_tags = get_tags(*min_chunk);
@@ -597,6 +600,7 @@ void PrometheusHTTPProtocolAPI::writeQueryResponseRangeVectorChunks(
             if ((position.block == chunks[i].size()) || (get_tags(i).compareAt(position.row, min_row, min_tags, 1) != 0))
                 continue;
 
+            check_time_limit();
             writeSamples(response, chunks[i][position.block], position.row, need_comma);
 
             if (++position.row == chunks[i][position.block].rows())

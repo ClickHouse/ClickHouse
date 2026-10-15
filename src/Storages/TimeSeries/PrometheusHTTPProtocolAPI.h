@@ -128,7 +128,7 @@ private:
     void writeQueryResponse(WriteBuffer & response, PullingAsyncPipelineExecutor & pulling_executor, PrometheusQueryResultType result_type);
 
     /// Writes the series of the chunks of a range query, each sorted by tags, joining the samples of a series in chunk order.
-    /// `check_time_limit` is called before each series.
+    /// `check_time_limit` is called before the samples of each chunk are written.
     void writeQueryResponseRangeVectorChunks(
         WriteBuffer & response, const std::vector<Blocks> & chunks, const std::function<void()> & check_time_limit);
 

@@ -273,7 +273,7 @@ def test_group_by_sort_and_join_limits_disable_splitting(query, params):
     assert (response.status_code, response.text) == (expected.status_code, expected.text)
 
 
-# The read, speed and leaf time limits are loose enough for the whole query, but each chunk would start them again, so the query is executed at once.
+# The set, read, network, speed and leaf time limits are loose enough for the whole query, but each chunk would start them again, so the query is executed at once.
 @pytest.mark.parametrize(
     "params",
     [
@@ -282,6 +282,9 @@ def test_group_by_sort_and_join_limits_disable_splitting(query, params):
         {"max_rows_to_read_leaf": 1000000000},
         {"max_bytes_to_read_leaf": 1000000000000},
         {"max_execution_time_leaf": 1000},
+        {"max_rows_in_set": 1000000000},
+        {"max_bytes_in_set": 1000000000000},
+        {"max_network_bytes": 1000000000000},
         {"max_estimated_execution_time": 1000000},
         {"min_execution_speed": 1},
         {"min_execution_speed_bytes": 1},
