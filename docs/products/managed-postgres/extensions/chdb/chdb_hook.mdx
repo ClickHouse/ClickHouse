@@ -136,9 +136,7 @@ The format of URLs varies by the target.
 #### File {#file}
 
 <Important>
-The `file://` scheme may not be supported on all systems, such as cloud
-platforms, where the administrator compiles `chdb_hook` to prevent it (via
-the `NO_FILE_SCHEME` option to `make`).
+The `file://` scheme is not supported on ClickHouse Cloud.
 </Important>
 
 Must be an absolute path on the Postgres server. A relative path results in an
@@ -320,7 +318,7 @@ file name. Supported values:
 Request timeout in milliseconds. Applies to HTTP, S3, GCS, and Azure URLs.
 Defaults to `30000` (30s).
 
-#### `encoding_check`
+#### `encoding_check` {#encoding_check}
 
 Defines how to to handle invalid characters under the [database encoding] when
 converting chDB String and JSON values. One of:

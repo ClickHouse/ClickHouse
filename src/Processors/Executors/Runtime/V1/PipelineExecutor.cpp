@@ -1,5 +1,6 @@
 #include <memory>
 #include <IO/WriteBufferFromString.h>
+#include <Common/Scheduler/CostUnit.h>
 #include <Common/Scheduler/MemoryReservation.h>
 #include <Common/ISlotControl.h>
 #include <Common/ThreadPool.h>
@@ -13,10 +14,12 @@
 #include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadGroupSwitcher.h>
+#include <Common/ThreadStatus.h>
 #include <Common/logger_useful.h>
 #include <Processors/Executors/Runtime/V1/ExecutionThreadContext.h>
 #include <Processors/Executors/Runtime/V1/PipelineExecutor.h>
 #include <Processors/Executors/Runtime/V1/ExecutingGraph.h>
+#include <Common/MemorySpillScheduler.h>
 #include <QueryPipeline/printPipeline.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Processors/ISource.h>
@@ -127,7 +130,8 @@ PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> processors, Query
     }
     try
     {
-        graph = std::make_unique<ExecutingGraph>(processors, profile_processors);
+        graph = std::make_unique<ExecutingGraph>(
+            processors, profile_processors, process_list_element ? process_list_element->getMemoryReservation() : nullptr);
     }
     catch (Exception & exception)
     {
@@ -153,8 +157,16 @@ PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> processors, Query
 
 PipelineExecutor::~PipelineExecutor()
 {
+    detachSpillables();
     if (process_list_element)
         process_list_element->removePipelineExecutor(this);
+}
+
+void PipelineExecutor::detachSpillables()
+{
+    if (auto * reservation = process_list_element ? process_list_element->getMemoryReservation() : nullptr)
+        reservation->removeSpillListener(tasks);
+    graph->detachSpillables();
 }
 
 void PipelineExecutor::cancel(IProcessor::CancelReason reason)
@@ -185,6 +197,8 @@ void PipelineExecutor::finish()
 
 void PipelineExecutor::execute(size_t num_threads, bool concurrency_control)
 {
+    /// `QueryStatus` may release its reservation before this executor is destroyed.
+    SCOPE_EXIT({ detachSpillables(); });
     if (process_list_element && !process_list_element->checkTimeLimit())
         cancel(IProcessor::CancelReason::CancelledByTimeout);
 
@@ -213,6 +227,11 @@ void PipelineExecutor::execute(size_t num_threads, bool concurrency_control)
 
 bool PipelineExecutor::executeUntil(std::atomic_bool * yield_flag)
 {
+    const auto uncaught_exceptions = std::uncaught_exceptions();
+    SCOPE_EXIT({
+        if (tasks.isFinished() || std::uncaught_exceptions() > uncaught_exceptions)
+            detachSpillables();
+    });
     if (!is_execution_initialized)
     {
         initializeExecution(1, true);
@@ -251,12 +270,18 @@ void PipelineExecutor::setStepProfiler(StepProfilerPtr step_profiler_)
 
 void PipelineExecutor::finalizeExecution()
 {
-    single_thread_cpu_slot.reset();
-    tasks.freeCPU();
-    {
-        std::lock_guard lock(spawn_mutex);
-        cpu_slots.reset();
-    }
+    /// The output formats write their epilogue in `onPipelineFinished` below, and for some of them (`Parquet`,
+    /// `ORC`, the parallel formatting) that is a substantial amount of work with its own memory, which used
+    /// to be done by the executor threads. It stays within the resource accounting of the query: the CPU slots
+    /// are released only after the hooks have run, on every exit path.
+    SCOPE_EXIT({
+        single_thread_cpu_slot.reset();
+        tasks.freeCPU();
+        {
+            std::lock_guard lock(spawn_mutex);
+            cpu_slots.reset();
+        }
+    });
 
     for (size_t thread_num = 0; thread_num < tasks.getNumThreads(); ++thread_num)
         tasks.getThreadContext(thread_num).flushWorkIntervals();
@@ -264,31 +289,59 @@ void PipelineExecutor::finalizeExecution()
     if (process_list_element)
         process_list_element->checkTimeLimit();
 
-    if (cancel_reason.load() != IProcessor::CancelReason::NotCancelled)
+    const auto reason = cancel_reason.load();
+    if (reason != IProcessor::CancelReason::NotCancelled && reason != IProcessor::CancelReason::CancelledByTimeout)
         return;
 
-    if (!graph->isAllFinished())
+    /// `checkTimeLimit` above has not thrown, so with `timeout_overflow_mode = 'break'` the partial result
+    /// is returned to the client as a success, and the pipeline has to be finalized as usual - in particular,
+    /// the output format has to write its epilogue, otherwise the response would be truncated. The only
+    /// difference is that the processors were stopped in the middle of the execution, so not all of them are
+    /// finished, and the "pipeline stuck" check does not apply.
+    const bool stopped_in_the_middle = reason == IProcessor::CancelReason::CancelledByTimeout;
+
+    if (!stopped_in_the_middle && !graph->isAllFinished())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline stuck. Current state:\n{}\n{}", graph->dump(), tasks.dump());
-
-    if (!read_progress_callback)
-        return;
 
     for (const auto & processor : graph->getProcessors())
     {
         /// Some executors might have reported progress as part of their finish() call
-        if (auto read_progress = processor->getReadProgress())
+        /// For example, when reading from parallel replicas the coordinator will cancel the queries as soon as it
+        /// enough data (on LIMIT), but as the progress report is asynchronous it might not be reported until the
+        /// connection is cancelled and all packets drained
+        /// To cover these cases we check if there is any pending progress in the processors to report
+        if (read_progress_callback)
         {
-            if (read_progress->counters.total_rows_approx)
-                read_progress_callback->addTotalRowsApprox(read_progress->counters.total_rows_approx);
+            if (auto read_progress = processor->getReadProgress())
+            {
+                if (read_progress->counters.total_rows_approx)
+                    read_progress_callback->addTotalRowsApprox(read_progress->counters.total_rows_approx);
 
-            if (read_progress->counters.total_bytes)
-                read_progress_callback->addTotalBytes(read_progress->counters.total_bytes);
+                if (read_progress->counters.total_bytes)
+                    read_progress_callback->addTotalBytes(read_progress->counters.total_bytes);
 
-            /// We are finalizing the execution, so no need to call onProgress if there is nothing to report
-            if (read_progress->counters.read_rows || read_progress->counters.read_bytes)
-                read_progress_callback->onProgress(read_progress->counters.read_rows, read_progress->counters.read_bytes, read_progress->limits);
+                /// We are finalizing the execution, so no need to call onProgress if there is nothing to report
+                if (read_progress->counters.read_rows || read_progress->counters.read_bytes)
+                    read_progress_callback->onProgress(read_progress->counters.read_rows, read_progress->counters.read_bytes, read_progress->limits);
+            }
         }
     }
+
+    /// Everything that can still fail the query is checked before the output formats write their epilogue:
+    /// once a format has committed its footer, a late exception could not be reported through the format
+    /// any more (it is already finalized), and the client would get a complete-looking successful response
+    /// for a failed query. The memory reservation is synced with the memory tracker one last time here, as
+    /// the executor threads do after every processor, so that `MEMORY_RESERVATION_KILLED` is still reported
+    /// as a failure; the time limit was checked above. The allocations of the epilogues themselves are still
+    /// limited by the memory tracker of the query, which throws from within the format, before it is marked
+    /// as finalized.
+    WorkloadResources resources(nullptr, process_list_element);
+    if (resources.isMemorySyncNeeded())
+        resources.syncMemory();
+
+    /// The whole progress of the query is known at this point, so the output formats can write their epilogue.
+    for (const auto & processor : graph->getProcessors())
+        processor->onPipelineFinished();
 }
 
 void PipelineExecutor::executeSingleThread(size_t thread_num, WorkloadResources && resources)
@@ -315,17 +368,24 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
     WorkloadResources resources(std::move(resources_));
 
     auto & context = tasks.getThreadContext(thread_num);
-    bool yield = false;
 
-    while (!tasks.isFinished() && !yield)
+    while (!tasks.isFinished())
     {
-        /// First, find any processor to execute.
-        while (!tasks.isFinished() && !context.hasTask())
+        if (resources.reservation && tasks.takeSpillNotification())
+        {
+            Queue spill_queue;
+            graph->scheduleSpills(spill_queue);
+            tasks.pushSpillTasks(spill_queue, thread_num);
+        }
+
+        /// A locally assigned task bypasses the queue, but still checks spill notifications above.
+        if (!tasks.isFinished() && !context.hasTask())
             tasks.tryGetTask(context);
 
-        while (!tasks.isFinished() && context.hasTask() && !yield)
+        if (!tasks.isFinished() && context.hasTask())
         {
-            if (!context.executeTask())
+            auto * spill_target = resources.reservation ? graph->getSpillTarget(*context.getTask()) : nullptr;
+            if (!context.executeTask(spill_target))
                 cancel(IProcessor::CancelReason::Exception);
 
             if (tasks.isFinished())
@@ -362,6 +422,12 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
                 /// Push other tasks to global queue.
                 if (updated)
                     spawn_count = tasks.pushTasks(queue, async_queue, context);
+                else
+                {
+                    /// The execution is being cancelled, maybe by a thread that has not finished the tasks yet. The task
+                    /// has been prepared again, so it must not be executed again unless the graph schedules it.
+                    context.setTask(nullptr);
+                }
             }
 
 #ifndef NDEBUG
@@ -425,7 +491,6 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
                     if (!resources.renewCPULease())
                     {
                         tasks.downscale(resources.getCPULeaseSlotId());
-                        yield = true;
                         break; // Downscaling. Unable to renew the lease - thread should stop (but could be rerun later).
                     }
                 }
@@ -456,7 +521,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
 
             /// We have executed single processor. Check if we need to yield execution.
             if (yield_flag && *yield_flag)
-                yield = true;
+                break;
         }
     }
 
@@ -593,8 +658,11 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
     /// Starting from 1 instead of 0 is to tackle the single thread scenario, where no upscale() will
     /// be invoked but actually 1 thread used.
 
-    tasks.init(num_threads, 1, cpu_slots, profile_processors, trace_processors, read_progress_callback.get(), step_profiler.get());
+    tasks.init(num_threads, 1, cpu_slots, profile_processors, trace_processors,
+        read_progress_callback.get(), step_profiler.get(), process_list_element.get());
     const size_t initial_parallel = tasks.fill(queue, async_queue);
+    if (auto * reservation = process_list_element ? process_list_element->getMemoryReservation() : nullptr)
+        reservation->addSpillListener(tasks);
 
     /// Initial queued parallelism never routes through `pushTasks`, so size setMax here to
     /// cover it. For multi-source pipelines (e.g. UNION ALL of N subqueries) this prevents
