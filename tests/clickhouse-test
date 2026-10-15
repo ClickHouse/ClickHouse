@@ -288,6 +288,14 @@ CGROUP_VERSION = detect_cgroup_version()
 
 BASH = "/bin/bash"
 
+# The interpreter for each non-SQL test extension, matching the shebang the style check requires for it. See where
+# it is used for why tests are not executed directly.
+TEST_INTERPRETERS = {
+    ".sh": "/usr/bin/env bash",
+    ".py": "/usr/bin/env python3",
+    ".expect": "/usr/bin/expect -f",
+}
+
 # Appended to output rescued from a timed-out command: the dump is incomplete.
 TRUNCATED_ON_TIMEOUT_MARKER = "[output truncated: command timed out]"
 
@@ -4146,6 +4154,15 @@ class TestCase:
                 "{client} --send_logs_level={logs_level} {secure} --multiquery {options} < "
                 + pattern
             )
+        else:
+            # Do not execute the test file itself, pass it to its interpreter. On macOS the first exec of every new
+            # or modified executable blocks on a Gatekeeper/XProtect security scan (`syspolicyd`, `XprotectService`).
+            # The CI checkout is fresh in every job, so on the Darwin fast test runners every test paid about 100 ms
+            # for that scan. An interpreter only reads the file, which is not scanned.
+            if self.ext not in TEST_INTERPRETERS:
+                raise TestException(f"Unknown test file extension: {self.case_file}")
+            params["interpreter"] = TEST_INTERPRETERS[self.ext]
+            pattern = "{interpreter} " + pattern
 
         command = pattern.format(**params)
 
