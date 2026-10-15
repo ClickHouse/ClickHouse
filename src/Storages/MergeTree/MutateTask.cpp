@@ -816,7 +816,7 @@ static void splitAndModifyMutationCommands(
         {
             if (indices_being_dropped.contains(index.name))
                 continue;
-            if (!part->hasSecondaryIndex(index.name, metadata_snapshot, /*check_partial_marker=*/ false))
+            if (!part->hasSecondaryIndex(index.name, metadata_snapshot))
                 continue;
 
             for (const auto & column : index.getRequiredColumns())
@@ -2572,6 +2572,8 @@ struct MutationContext
     /// Skip-index files on disk but missing from `checksums.txt`, so no checksums-based resolver
     /// sees them. Merged into `files_to_skip` so the hardlink loop drops them.
     NameSet orphan_skip_index_files;
+    /// Standalone files of partial indexes of names the metadata does not declare as partial indexes, dropped by the mutation.
+    NameSet foreign_partial_index_files;
     ColumnsStatistics stats_to_recalc;
     /// The statistics objects the mutation must compute from the blocks it writes. This is a
     /// subset of `all_gathered_data.statistics`: the remaining entries were loaded from the
@@ -3092,6 +3094,73 @@ void PartMergerWriter::finalize()
         temporary_text_index_storage->removeRecursive();
 }
 
+/// A mutation that changes data drops the files of partial indexes the metadata cannot read, as they could describe old data
+/// under a definition restored later. A mutation that only renames columns changes no data, so it keeps them.
+static bool keepsUnreadablePartialIndexes(const MutationCommands & commands)
+{
+    return std::ranges::all_of(commands, [](const MutationCommand & command) { return command.type == MutationCommand::RENAME_COLUMN; });
+}
+
+/// The part has files of the partial index `index`, but their marker is for another definition.
+static bool hasUnreadablePartialIndex(const MergeTreeDataPartPtr & part, const IndexDescription & index, const StorageMetadataPtr & metadata)
+{
+    if (!index.where_expression)
+        return false;
+
+    const String file_name = getIndexFileName(index.name, metadata->escape_index_filenames);
+    const bool has_files = part->getStreamNameOrHashResolved(file_name, ".idxp")
+        || IMergeTreeDataPart::getStreamNameOrHash(file_name, IMergeTreeIndex::PARTIAL_INDEX_MARKER_EXTENSION, part->checksums);
+    return has_files && !part->hasSecondaryIndex(index.name, metadata);
+}
+
+/// The files of partial indexes whose name is not declared as a partial index now (it was dropped, or declared ordinary, while
+/// the part was detached): standalone ones into `files`, members of the packed archive into `archive_files`.
+static void collectForeignPartialIndexFiles(
+    const MergeTreeDataPartPtr & part, const StorageMetadataPtr & metadata, const String & mrk_extension, NameSet & files, NameSet & archive_files)
+{
+    const std::array<String, 2> extensions = {".idxp", IMergeTreeIndex::PARTIAL_INDEX_MARKER_EXTENSION};
+    const auto & checksums = part->checksums;
+
+    NameSet declared_bases;
+    for (const auto & index : metadata->getSecondaryIndices())
+    {
+        if (!index.where_expression)
+            continue;
+        const String file_name = getIndexFileName(index.name, metadata->escape_index_filenames);
+        for (const auto & extension : extensions)
+            if (auto base = IMergeTreeDataPart::getStreamNameOrHash(file_name, extension, checksums))
+                declared_bases.insert(*base);
+    }
+
+    /// The marker of a partial index is always a standalone file, so it finds the indexes inside the packed archive too.
+    NameSet foreign_bases;
+    for (const auto & [name, _] : checksums.files)
+        for (const auto & extension : extensions)
+            if (name.ends_with(extension) && !declared_bases.contains(name.substr(0, name.size() - extension.size())))
+                foreign_bases.insert(name.substr(0, name.size() - extension.size()));
+
+    const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&part->getDataPartStorage());
+    auto exists_in_archive = [&](const String & name) { return disk_storage && disk_storage->isFileInPackedSkipIndicesArchive(name); };
+
+    for (const auto & base : foreign_bases)
+    {
+        Names candidates = {base + extensions[0], base + extensions[1]};
+        /// The marks have the same name as the ones of an ordinary index of the same name, which keeps them.
+        const bool has_ordinary = checksums.files.contains(base + ".idx") || checksums.files.contains(base + ".idx2")
+            || exists_in_archive(base + ".idx") || exists_in_archive(base + ".idx2");
+        if (!has_ordinary)
+            candidates.push_back(base + mrk_extension);
+
+        for (const auto & candidate : candidates)
+        {
+            if (checksums.files.contains(candidate))
+                files.insert(candidate);
+            else if (exists_in_archive(candidate))
+                archive_files.insert(candidate);
+        }
+    }
+}
+
 /// Is `index` resolvable from `checksums.txt` (or from the packed archive) using only files it
 /// actually owns? `getAllSubstreamsInPart` probes speculative extensions, so with
 /// `escape_index_filenames` = 0 that probe can land on a sibling's file, and a sibling's file is not
@@ -3151,7 +3220,7 @@ static bool hasAnyIndexFileOnDisk(
     const String & index_name,
     const String & mrk_extension)
 {
-    if (source_part->hasSecondaryIndex(index_name, metadata_snapshot, /*check_partial_marker=*/ false))
+    if (source_part->hasSecondaryIndex(index_name, metadata_snapshot))
         return true;
 
     const auto & storage = source_part->getDataPartStorage();
@@ -3369,6 +3438,10 @@ private:
             if (ctx->indices_to_drop_names.contains(idx.name))
                 continue;
 
+            if (!ctx->materialized_indices.contains(idx.name) && !keepsUnreadablePartialIndexes(ctx->commands_for_part)
+                && hasUnreadablePartialIndex(ctx->source_part, idx, ctx->metadata_snapshot))
+                continue;
+
             auto index_ptr = MergeTreeIndexFactory::instance().get(ctx->metadata_snapshot, idx, *ctx->data->getSettings());
 
             /// Inert indices (a removed index type kept only for attach compatibility) have no data
@@ -3389,7 +3462,7 @@ private:
             /// For compact parts we need to recalculate indices because rewrite of compact part may produce a little bit different data part
             /// with different number of marks.
             bool need_recalculate = ctx->materialized_indices.contains(idx.name)
-                || (!is_full_wide_part && ctx->source_part->hasSecondaryIndex(idx.name, ctx->metadata_snapshot, /*check_partial_marker=*/ false))
+                || (!is_full_wide_part && ctx->source_part->hasSecondaryIndex(idx.name, ctx->metadata_snapshot))
                 || ctx->source_part->isSkipIndexInPackedArchive(*index_ptr)
                 || index_checksums_missing;
 
@@ -3890,6 +3963,8 @@ private:
             remove_per_substream_checksums(index);
         for (const auto & index : ctx->text_indices_to_recalc)
             remove_per_substream_checksums(index);
+        for (const auto & file : ctx->foreign_partial_index_files)
+            ctx->new_data_part->checksums.remove(file);
 
         /// When DROP INDEX targets an index that lives inside skp_idx.packed there is no
         /// mutations pipeline (DROP INDEX commands never produce one), so no writer will
@@ -4471,6 +4546,16 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
             ctx->indices_to_drop_names.insert(cmd.column_name);
     }
 
+    if (!keepsUnreadablePartialIndexes(ctx->commands_for_part))
+    {
+        for (const auto & index : indices)
+            if (!ctx->materialized_indices.contains(index.name) && hasUnreadablePartialIndex(source_part, index, metadata_snapshot))
+                ctx->indices_to_drop_names.insert(index.name);
+
+        collectForeignPartialIndexFiles(
+            source_part, metadata_snapshot, ctx->mrk_extension, ctx->foreign_partial_index_files, ctx->dropped_skip_index_archive_file_names);
+    }
+
     for (const auto & index : indices)
     {
         if (ctx->indices_to_drop_names.contains(index.name))
@@ -4480,7 +4565,7 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
         }
 
         bool need_recalculate = ctx->materialized_indices.contains(index.name)
-            || (!is_full_part_storage && source_part->hasSecondaryIndex(index.name, ctx->metadata_snapshot, /*check_partial_marker=*/ false));
+            || (!is_full_part_storage && source_part->hasSecondaryIndex(index.name, ctx->metadata_snapshot));
 
         if (need_recalculate)
         {
@@ -5171,6 +5256,7 @@ bool MutateTask::prepare()
         /// Skip the corrupted-part orphan files (see `MutationContext::orphan_skip_index_files`);
         /// `collectFilesToSkip` cannot reach them since they are absent from `checksums.txt`.
         ctx->files_to_skip.insert(ctx->orphan_skip_index_files.begin(), ctx->orphan_skip_index_files.end());
+        ctx->files_to_skip.insert(ctx->foreign_partial_index_files.begin(), ctx->foreign_partial_index_files.end());
 
         /// A declaration that could not be analyzed has no `ProjectionDescription`, so nothing above can decide
         /// whether its data still matches the rows this mutation rewrites. Leave it out of the new part when a

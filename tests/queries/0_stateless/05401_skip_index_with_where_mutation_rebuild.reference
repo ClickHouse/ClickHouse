@@ -20,6 +20,10 @@ Delete mutation, which changes the granules
 1
 1
 1
-Update of another column keeps the index, which is valid again after the rename back
+Update of another column drops the index of the old name
+1
+1
+1
+A rename and its reverse change no data and keep the index
 1
 1

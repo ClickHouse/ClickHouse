@@ -1,7 +1,7 @@
 -- Tags: no-random-settings, no-random-merge-tree-settings, no-parallel-replicas
 
--- A partial index whose marker is for another definition (here after a rename of its condition column) is not read,
--- but a mutation of its columns must still rebuild it: carried over, it would describe old data once renamed back.
+-- A partial index whose marker is for another definition (here after a rename of its condition column) is not read, and
+-- a mutation that changes data drops it: carried over, it would describe old data once the column is renamed back.
 
 SET allow_experimental_partial_skip_indexes = 1;
 SET use_query_condition_cache = 0;
@@ -13,6 +13,7 @@ DROP TABLE IF EXISTS t_compact;
 DROP TABLE IF EXISTS t_expr;
 DROP TABLE IF EXISTS t_delete;
 DROP TABLE IF EXISTS t_other;
+DROP TABLE IF EXISTS t_rename;
 
 SELECT 'Wide part, index in the packed archive';
 CREATE TABLE t_packed (id UInt64, p UInt8, INDEX i id TYPE minmax WHERE p = 1)
@@ -72,7 +73,7 @@ SELECT count() FROM t_delete WHERE id = 4 AND p = 1 SETTINGS use_skip_indexes = 
 SELECT count() FROM t_delete WHERE id = 4 AND p = 1 SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0;
 SELECT count() FROM t_delete WHERE id = 4 AND p = 1 SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 1;
 
-SELECT 'Update of another column keeps the index, which is valid again after the rename back';
+SELECT 'Update of another column drops the index of the old name';
 CREATE TABLE t_other (id UInt64, p UInt8, v UInt8, INDEX i id TYPE minmax GRANULARITY 1 WHERE p = 1)
 ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0, index_granularity = 1;
 INSERT INTO t_other SELECT number, number % 2, 0 FROM numbers(10);
@@ -80,7 +81,17 @@ ALTER TABLE t_other RENAME COLUMN p TO pp SETTINGS mutations_sync = 2;
 ALTER TABLE t_other UPDATE v = 1 WHERE id = 3 SETTINGS mutations_sync = 2;
 ALTER TABLE t_other RENAME COLUMN pp TO p SETTINGS mutations_sync = 2;
 SELECT count() FROM t_other WHERE p = 1 AND id = 3 SETTINGS use_skip_indexes = 0;
-SELECT count() FROM t_other WHERE p = 1 AND id = 3
+SELECT count() FROM t_other WHERE p = 1 AND id = 3 SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0;
+SELECT count() FROM t_other WHERE p = 1 AND id = 3 SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 1;
+
+SELECT 'A rename and its reverse change no data and keep the index';
+CREATE TABLE t_rename (id UInt64, p UInt8, INDEX i id TYPE minmax GRANULARITY 1 WHERE p = 1)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0, index_granularity = 1;
+INSERT INTO t_rename SELECT number, number % 2 FROM numbers(10);
+ALTER TABLE t_rename RENAME COLUMN p TO pp SETTINGS mutations_sync = 2;
+ALTER TABLE t_rename RENAME COLUMN pp TO p SETTINGS mutations_sync = 2;
+SELECT count() FROM t_rename WHERE p = 1 AND id = 3 SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_rename WHERE p = 1 AND id = 3
 SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0, force_data_skipping_indices = 'i', max_rows_to_read = 1;
 
 DROP TABLE t_packed;
@@ -89,3 +100,4 @@ DROP TABLE t_compact;
 DROP TABLE t_expr;
 DROP TABLE t_delete;
 DROP TABLE t_other;
+DROP TABLE t_rename;
