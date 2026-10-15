@@ -253,7 +253,26 @@ void StorageObjectStorageCluster::mutate(const MutationCommands & commands, Cont
 {
     updateExternalDynamicMetadataIfExists(context);
     auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
-    configuration->mutate(commands, context, shared_from_this(), getStorageID(), metadata_snapshot, catalog, format_settings);
+    /// The mutation's read query has no table expression, which `IStorageCluster::read` cannot distribute, so read locally.
+    auto read_storage = std::make_shared<StorageObjectStorage>(
+        configuration,
+        object_storage,
+        context,
+        getStorageID(),
+        metadata_snapshot->getColumns(),
+        metadata_snapshot->getConstraints(),
+        /* comment */ "",
+        format_settings,
+        LoadingStrictnessLevel::CREATE,
+        catalog,
+        /* if_not_exists */ true,
+        /* is_datalake_query */ true,
+        /* distributed_processing */ false,
+        /* partition_by */ nullptr,
+        /* order_by */ nullptr,
+        /* is_table_function */ true,
+        /* lazy_init */ true);
+    configuration->mutate(commands, context, read_storage, getStorageID(), metadata_snapshot, catalog, format_settings);
 }
 
 void StorageObjectStorageCluster::checkMutationIsPossible(const MutationCommands & commands, const Settings & /*settings*/) const
