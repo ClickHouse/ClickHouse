@@ -1,9 +1,6 @@
 from praktika import Job
 from praktika.utils import Utils
 
-from ci.defs.functional_test_selection import targeted_variants
-from ci.jobs.scripts.test_selection_config import SELECTION_CONFIG
-
 from ci.defs.defs import (
     ASAN_IT_NUM_BATCHES,
     LLVM_ARTIFACTS_LIST,
@@ -21,8 +18,7 @@ LIMITED_MEM = Utils.physical_memory() - 2 * 1024**3
 # Using nearly all host RAM for the outer container can starve the host runner
 # and lead to "runner lost communication". Reserve a larger margin on the host
 # by capping Keeper to ~70% of physical memory.
-# Whole GiB: docker_in_docker.sh compares it with the page-granular memory.max.
-KEEPER_DIND_MEM = Utils.physical_memory() * 70 // 100 // 1024**3 * 1024**3
+KEEPER_DIND_MEM = Utils.physical_memory() * 70 // 100
 
 # Integration tests run a nested Docker daemon, so `docker_in_docker.sh` splits the job's
 # `--memory` into capped cgroup leaves. `/init`'s cap is a ceiling rather than a share, so the
@@ -50,49 +46,42 @@ INTEGRATION_DIND_INIT_RESERVE = 8 * 1024**3
 # concurrency rather than staying at the daemon's own footprint. An absolute floor, never a
 # fraction of the job limit: too small and the daemons cannot boot at all.
 INTEGRATION_DIND_DAEMON_RESERVE = 2 * 1024**3
-
-
-def dind_containment_env(job_mem):
-    """`run_in_docker` flags that make `docker_in_docker.sh` split `job_mem` into capped cgroup leaves."""
-    # What the nested test containers may collectively use. Also bounds xdist worker concurrency, so
-    # scheduling and containment agree on one number. Clamped at zero because a negative reads to
-    # `docker_in_docker.sh`'s validator as a malformed variable rather than a host too small.
-    nested_budget = max(
-        job_mem
-        - INTEGRATION_DIND_ROOT_RESERVE
-        - INTEGRATION_DIND_INIT_RESERVE
-        - INTEGRATION_DIND_DAEMON_RESERVE,
-        0,
-    )
-    # `/init`'s ceiling, not its share: its peak is one test's host-side client fan-out plus the page
-    # cache of the logs it reads and archives, and neither is bounded by the reserve above. It
-    # overlaps `/docker`, so this cap alone is within the job limit but the three together are not -
-    # which is what lets the reserve shrink without `/init` losing any room it actually uses.
-    init_limit = max(
-        job_mem - INTEGRATION_DIND_ROOT_RESERVE - INTEGRATION_DIND_DAEMON_RESERVE,
-        INTEGRATION_DIND_INIT_RESERVE,
-    )
-    # `/dockerd`'s ceiling, not its share, for the same reason `/init` has one: an image pull writes
-    # every layer through this leaf, so the leaf also holds that page cache, and a dirty page cannot be
-    # reclaimed until its writeback completes. The reserve stays the daemons' own anon footprint, which
-    # is what the other leaves must leave room for. Overlaps `/docker` exactly as `/init` does.
-    daemon_limit = max(
-        job_mem - INTEGRATION_DIND_ROOT_RESERVE - INTEGRATION_DIND_INIT_RESERVE,
-        INTEGRATION_DIND_DAEMON_RESERVE,
-    )
-    return (
-        "+--env=CI_DIND_REQUIRE_CGROUP_CONTAINMENT=1"
-        f"+--env=CI_DIND_JOB_MEM={job_mem}"
-        f"+--env=CI_DIND_ROOT_RESERVE={INTEGRATION_DIND_ROOT_RESERVE}"
-        f"+--env=CI_DIND_INIT_RESERVE={INTEGRATION_DIND_INIT_RESERVE}"
-        f"+--env=CI_DIND_INIT_LIMIT={init_limit}"
-        f"+--env=CI_DIND_DAEMON_RESERVE={INTEGRATION_DIND_DAEMON_RESERVE}"
-        f"+--env=CI_DIND_DAEMON_LIMIT={daemon_limit}"
-        f"+--env=CI_DIND_NESTED_BUDGET={nested_budget}"
-    )
-
-
-integration_dind_env = dind_containment_env(LIMITED_MEM)
+# What the nested test containers may collectively use. Also bounds xdist worker concurrency, so
+# scheduling and containment agree on one number. Clamped at zero because a negative reads to
+# `docker_in_docker.sh`'s validator as a malformed variable rather than a host too small.
+INTEGRATION_NESTED_BUDGET = max(
+    LIMITED_MEM
+    - INTEGRATION_DIND_ROOT_RESERVE
+    - INTEGRATION_DIND_INIT_RESERVE
+    - INTEGRATION_DIND_DAEMON_RESERVE,
+    0,
+)
+# `/init`'s ceiling, not its share: its peak is one test's host-side client fan-out plus the page
+# cache of the logs it reads and archives, and neither is bounded by the reserve above. It
+# overlaps `/docker`, so this cap alone is within the job limit but the three together are not -
+# which is what lets the reserve shrink without `/init` losing any room it actually uses.
+INTEGRATION_DIND_INIT_LIMIT = max(
+    LIMITED_MEM - INTEGRATION_DIND_ROOT_RESERVE - INTEGRATION_DIND_DAEMON_RESERVE,
+    INTEGRATION_DIND_INIT_RESERVE,
+)
+# `/dockerd`'s ceiling, not its share, for the same reason `/init` has one: an image pull writes
+# every layer through this leaf, so the leaf also holds that page cache, and a dirty page cannot be
+# reclaimed until its writeback completes. The reserve stays the daemons' own anon footprint, which
+# is what the other leaves must leave room for. Overlaps `/docker` exactly as `/init` does.
+INTEGRATION_DIND_DAEMON_LIMIT = max(
+    LIMITED_MEM - INTEGRATION_DIND_ROOT_RESERVE - INTEGRATION_DIND_INIT_RESERVE,
+    INTEGRATION_DIND_DAEMON_RESERVE,
+)
+integration_dind_env = (
+    "+--env=CI_DIND_REQUIRE_CGROUP_CONTAINMENT=1"
+    f"+--env=CI_DIND_JOB_MEM={LIMITED_MEM}"
+    f"+--env=CI_DIND_ROOT_RESERVE={INTEGRATION_DIND_ROOT_RESERVE}"
+    f"+--env=CI_DIND_INIT_RESERVE={INTEGRATION_DIND_INIT_RESERVE}"
+    f"+--env=CI_DIND_INIT_LIMIT={INTEGRATION_DIND_INIT_LIMIT}"
+    f"+--env=CI_DIND_DAEMON_RESERVE={INTEGRATION_DIND_DAEMON_RESERVE}"
+    f"+--env=CI_DIND_DAEMON_LIMIT={INTEGRATION_DIND_DAEMON_LIMIT}"
+    f"+--env=CI_DIND_NESTED_BUDGET={INTEGRATION_NESTED_BUDGET}"
+)
 
 BINARY_DOCKER_COMMAND = (
     "clickhouse/binary-builder+--network=host"
@@ -183,25 +172,10 @@ common_ft_job_config = Job.Config(
         include_paths=[
             "./ci/jobs/functional_tests.py",
             "./ci/jobs/scripts/clickhouse_proc.py",
-            # clickhouse_proc.py's "No such key" check runs this script, and so does
-            # check_logs_for_critical_errors in tests/docker_scripts/stress_tests.lib.
-            "./ci/jobs/scripts/s3_key_lifecycle.py",
             "./ci/jobs/scripts/log_cluster.py",
             "./ci/jobs/scripts/server_cleanup.py",
             "./ci/jobs/scripts/functional_tests_results.py",
             "./ci/jobs/scripts/log_export.py",
-            # `find_tests.py` selects which tests this job runs, so the digest
-            # must cover it.
-            "./ci/jobs/scripts/find_tests.py",
-            # The selector modules decide which tests a targeted job runs.
-            "./ci/jobs/scripts/coverage_selection.py",
-            "./ci/jobs/scripts/test_selection_config.py",
-            "./ci/jobs/scripts/test_selection_manifest.py",
-            "./ci/defs/functional_test_selection.py",
-            # `find_tests.py` selects the targeted tests from CIDB and reads
-            # `Info`, so both modules decide which tests this job runs.
-            "./ci/praktika/cidb.py",
-            "./ci/praktika/info.py",
             "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
             "./tests/queries",
             "./tests/clickhouse-test",
@@ -238,7 +212,6 @@ common_stress_job_config = Job.Config(
             "./ci/jobs/stress_job.py",
             # stress_runner.sh drives the log export through clickhouse_proc.py
             "./ci/jobs/scripts/clickhouse_proc.py",
-            "./ci/jobs/scripts/s3_key_lifecycle.py",
             "./ci/jobs/scripts/log_cluster.py",
             "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
             "./ci/jobs/scripts/stress/stress.py",
@@ -265,13 +238,6 @@ common_integration_test_job_config = Job.Config(
         include_paths=[
             "./ci/jobs/integration_test_job.py",
             "./ci/jobs/scripts/integration_tests_configs.py",
-            "./ci/jobs/scripts/integration_coverage_export.py",
-            # The selector modules decide which tests a targeted job runs.
-            "./ci/jobs/scripts/find_tests.py",
-            "./ci/jobs/scripts/coverage_selection.py",
-            "./ci/jobs/scripts/test_selection_config.py",
-            "./ci/praktika/cidb.py",
-            "./ci/praktika/info.py",
             "./ci/jobs/scripts/job_hooks/promql_compliance_upload_hook.py",
             "./ci/jobs/scripts/job_hooks/promql_compliance_s3.py",
             "./ci/jobs/promql_compliance_job.py",
@@ -299,10 +265,7 @@ class JobConfigs:
         runs_on=RunnerLabels.ARM_TINY,
         command="python3 ./ci/jobs/check_style.py",
         run_in_docker="clickhouse/style-test",
-        enable_gh_auth=True,
-        post_hooks=[
-            "python3 ./ci/jobs/scripts/job_hooks/set_sync_status_awaiting_hook.py"
-        ],
+        enable_commit_status=True,
     )
     code_review = Job.Config(
         name=JobNames.CODE_REVIEW,
@@ -310,6 +273,9 @@ class JobConfigs:
         command="python3 ./ci/jobs/copilot_review_job.py --codex",
         allow_failure=True,
         enable_gh_auth=True,
+        post_hooks=[
+            "python3 ./ci/jobs/scripts/job_hooks/set_sync_status_awaiting_hook.py"
+        ],
     )
     fast_test = Job.Config(
         name=JobNames.FAST_TEST,
@@ -633,28 +599,6 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_LARGE,
         ),
     )
-    # tests/fuzz/build.sh runs as a POST_BUILD step of the `fuzzers` target and
-    # stages the .options files, a source-derived fallback all.dict, and seed
-    # corpora repacked from tests/queries/0_stateless/*.sql into the build
-    # output (see ArtifactConfigs.fuzzers), so the produced artifact also
-    # depends on the inputs under tests/fuzz and on the stateless test queries,
-    # which the shared build digest does not cover. Extend the digest of the
-    # fuzzers build only, so that a dictionary generation or corpus change
-    # cannot cache-hit a stale artifact while the other builds are unaffected.
-    special_build_jobs = [
-        (
-            job.set_digest_config(
-                Job.CacheDigestConfig(
-                    include_paths=build_digest_config.include_paths
-                    + ["./tests/fuzz/", "./tests/queries/0_stateless/"],
-                    with_git_submodules=True,
-                )
-            )
-            if job.parameter == BuildTypes.AMD_FUZZERS
-            else job
-        )
-        for job in special_build_jobs
-    ]
     # The standalone WebAssembly build of the SQL parser (utils/wasm-parser). It cross-compiles to
     # `wasm32-wasip1` with a wasi-sdk toolchain, which cannot be mixed into a tree configured for
     # the host, so it is a CMake project of its own driven by its own script in its own image -
@@ -703,7 +647,7 @@ class JobConfigs:
                 "./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py",
             ],
         ),
-        timeout=1800,
+        timeout=900,
         # Unpacking the packages needs ~4.4 GB, so reclaim another job's leftover
         # images before installing, not just afterwards. Best-effort: praktika does
         # not propagate a hook's exit code to the job status.
@@ -742,7 +686,7 @@ class JobConfigs:
                 "./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py",
             ],
         ),
-        timeout=1800,
+        timeout=900,
         # See install_check_jobs above.
         pre_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
         post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
@@ -802,6 +746,58 @@ class JobConfigs:
             parameter="arm_asan_ubsan, targeted",
             runs_on=RunnerLabels.ARM_LARGE,
             requires=[ArtifactNames.CH_ARM_ASAN_UBSAN],
+        ),
+    )
+    # Most sanitizer flavors of the functional tests for pull requests. They run only
+    # the tests selected for the change (`selected tests`, see
+    # `SELECTED_TESTS_OPTION` in `ci/jobs/functional_tests.py`) and replace the
+    # full-suite sanitizer jobs of `functional_tests_jobs`, which the master
+    # workflow keeps running in every flavor. What is left in a pull request is
+    # the full suite in the debug and plain binary flavors, plus the stress
+    # tests, which run the functional tests under every sanitizer with heavy
+    # concurrency and randomized settings and find more than a plain functional
+    # run does. See ClickHouse/ClickHouse#114725.
+    #
+    # The selection is a few hundred tests, so the batches of the full-suite jobs
+    # are collapsed into a single job per flavor. The runner labels and the
+    # timeout are kept as they are for the corresponding full-suite jobs: the
+    # test runner sizes its worker pool from the CPU count, and a sanitizer
+    # flavor that needs a large-memory runner for the full suite needs it for a
+    # subset as well. If test selection cannot be fetched, the job fails instead
+    # of silently running a weaker unbatched fallback configuration.
+    # The selection is computed from PR-local state (including failed tests
+    # from earlier jobs).
+    selected_ft_job_config = common_ft_job_config.copy()
+    stateless_tests_selected_pr_jobs = selected_ft_job_config.parametrize(
+        Job.ParamSet(
+            parameter="amd_asan_ubsan, distributed plan, parallel, selected tests",
+            runs_on=RunnerLabels.AMD_LARGE,
+            requires=[ArtifactNames.CH_AMD_ASAN_UBSAN],
+        ),
+        Job.ParamSet(
+            parameter="amd_asan_ubsan, db disk, distributed plan, sequential, selected tests",
+            runs_on=RunnerLabels.AMD_SMALL_MEM,
+            requires=[ArtifactNames.CH_AMD_ASAN_UBSAN],
+        ),
+        Job.ParamSet(
+            parameter="amd_tsan, parallel, selected tests",
+            runs_on=RunnerLabels.AMD_LARGE,
+            requires=[ArtifactNames.CH_AMD_TSAN],
+        ),
+        Job.ParamSet(
+            parameter="amd_tsan, sequential, selected tests",
+            runs_on=RunnerLabels.AMD_SMALL,
+            requires=[ArtifactNames.CH_AMD_TSAN],
+        ),
+        Job.ParamSet(
+            parameter="amd_tsan, s3 storage, parallel, selected tests",
+            runs_on=RunnerLabels.AMD_MEDIUM,
+            requires=[ArtifactNames.CH_AMD_TSAN],
+        ),
+        Job.ParamSet(
+            parameter="amd_tsan, s3 storage, sequential, selected tests",
+            runs_on=RunnerLabels.AMD_SMALL_MEM,
+            requires=[ArtifactNames.CH_AMD_TSAN],
         ),
     )
     # --root/--privileged/--cgroupns=host is required for clickhouse-test --memory-limit
@@ -1073,7 +1069,7 @@ class JobConfigs:
                 runs_on=RunnerLabels.AMD_SMALL,
                 requires=[ArtifactNames.CH_AMD_PER_TEST_COVERAGE_BUILD],
             )
-            for total_batches in (SELECTION_CONFIG.coverage_shards,)
+            for total_batches in (8,)
             for batch in range(1, total_batches + 1)
         ]
     )
@@ -1280,12 +1276,12 @@ class JobConfigs:
                 "./ci/jobs/stress_job.py",
                 "./ci/jobs/scripts/stress/stress.py",
                 "./tests/docker_scripts/",
-                "./ci/jobs/scripts/s3_key_lifecycle.py",
                 "./ci/docker/stress-test",
                 "./ci/jobs/scripts/log_parser.py",
-                # upgrade_runner.sh symlinks and runs both of these
-                "./ci/tools/get_previous_release_tag.py",
-                "./ci/tools/download_release_packages.py",
+                # upgrade_runner.sh symlinks and runs both of these, and ./ci does
+                # not cover ./tests/ci.
+                "./tests/ci/get_previous_release_tag.py",
+                "./tests/ci/download_release_packages.py",
             ]
         ),
         timeout=3600 * 2,
@@ -1400,26 +1396,6 @@ class JobConfigs:
         )
     )
 
-    # Per-module coverage for test selection: each server records its coverage under
-    # the name of the test module, exported into the CIDB tables of the stateless
-    # per-test coverage (see `ci/jobs/scripts/integration_coverage_export.py`).
-    integration_test_per_test_coverage_jobs = (
-        common_integration_test_job_config.parametrize(
-            *[
-                Job.ParamSet(
-                    parameter=f"{BuildTypes.PER_TEST_COVERAGE}, per_test_coverage, {batch}/{total_batches}",
-                    runs_on=RunnerLabels.AMD_MEDIUM,
-                    requires=[ArtifactNames.CH_AMD_PER_TEST_COVERAGE_BUILD],
-                )
-                for total_batches in (LLVM_IT_NUM_BATCHES,)
-                for batch in range(1, total_batches + 1)
-            ],
-        )
-    )
-    # Each night must collect afresh even when the build is cached.
-    for job in integration_test_per_test_coverage_jobs:
-        job.digest_config = None
-
     # Jobs that run only the tests normally disabled under LLVM coverage.
     # They use a regular binary (no coverage instrumentation) since these
     # tests are too slow or problematic under coverage.
@@ -1441,13 +1417,12 @@ class JobConfigs:
         )
     )
 
-    # PR replacement for the full integration runs: one job per configuration runs once
-    # the changed test modules, the modules covering the changed lines (per-module
-    # coverage from `integration_test_per_test_coverage_jobs`) and the tests that failed
-    # in the PR before.
-    integration_test_targeted_pr_jobs = targeted_variants(
-        integration_test_jobs_required + integration_test_jobs_non_required,
-        allow_failure=False,
+    integration_test_targeted_pr_jobs = common_integration_test_job_config.parametrize(
+        Job.ParamSet(
+            parameter="amd_asan_ubsan, targeted",
+            runs_on=RunnerLabels.AMD_MEDIUM,
+            requires=[ArtifactNames.CH_AMD_ASAN_UBSAN],
+        )
     )
     # Keeper stress job config — shared by PR and nightly workflows.
     # Mode (PR vs nightly faults vs nightly no-faults) is determined inside the job
@@ -1458,8 +1433,7 @@ class JobConfigs:
         command="python3 ./ci/jobs/keeper_stress_job.py",
         run_in_docker=(
             f"clickhouse/integration-tests-runner+root+--memory={KEEPER_DIND_MEM}+--privileged+--dns-search='.'+"
-            f"--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--cgroupns=private+--ulimit nofile=262144:262144"
-            f"{dind_containment_env(KEEPER_DIND_MEM)}"
+            f"--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--ulimit nofile=262144:262144"
         ),
         digest_config=Job.CacheDigestConfig(
             include_paths=[
@@ -1968,24 +1942,11 @@ class JobConfigs:
         # artifact download and corpus upload. Praktika's default is exactly
         # five hours, which would kill the job mid-run.
         timeout=5.5 * 3600,
-        # The release binary is used to generate the fuzzer dictionary (all.dict)
-        # from the actual set of functions, data types and keywords. It has to be the
-        # binary for the arch this job runs the fuzzers on.
-        requires=[
-            ArtifactNames.AMD_FUZZERS,
-            ArtifactNames.FUZZERS_CORPUS,
-            ArtifactNames.CH_AMD_RELEASE,
-        ],
+        requires=[ArtifactNames.AMD_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/libfuzzer_test_check.py",
                 "./tests/fuzz/runner.py",
-                "./tests/fuzz/update_dict.sh",
-                # `update_dict.sh` shells out to the source-derived extractor for
-                # the source-vs-binary coverage check, so a change confined to the
-                # extractor has to re-run this job rather than take a cache hit.
-                "./tests/fuzz/generate_source_dict.sh",
-                "./tests/fuzz/dictionaries/old.dict",
             ],
         ),
     )
@@ -2045,7 +2006,12 @@ class JobConfigs:
         result_name_for_cidb="Tests",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
+                "./ci/defs/defs.py",
+                "./ci/defs/job_configs.py",
+                "./.github/workflows/pull_request.yml",
                 "./ci/jobs/parser_memory_check.py",
+                "./ci/jobs/scripts/workflow_hooks/store_data.py",
+                "./ci/workflows/pull_request.py",
                 "./utils/parser-memory-profiler/",
             ],
         ),
@@ -2059,8 +2025,13 @@ class JobConfigs:
         result_name_for_cidb="Tests",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
-                "./ci/jobs/storage_memory_check.py",
+                "./ci/defs/defs.py",
+                "./ci/defs/job_configs.py",
+                "./.github/workflows/pull_request.yml",
                 "./ci/jobs/parser_memory_check.py",
+                "./ci/jobs/scripts/workflow_hooks/store_data.py",
+                "./ci/jobs/storage_memory_check.py",
+                "./ci/workflows/pull_request.py",
                 "./utils/storage-memory-profiler/",
             ],
         ),
@@ -2142,7 +2113,6 @@ class JobConfigs:
                 "./ci/jobs/llvm_coverage_job.py",
                 "./ci/jobs/scripts/merge_llvm_coverage.sh",
                 "./ci/jobs/scripts/generate_diff_coverage_report.sh",
-                "./ci/jobs/scripts/coverage_ignore_paths.sh",
                 "./ci/jobs/scripts/print_uncovered_code.py",
                 "./ci/jobs/scripts/dedup_lcov_instantiations.py",
                 "./ci/jobs/scripts/job_hooks/llvm_coverage_hook.py",
@@ -2199,40 +2169,3 @@ class JobConfigs:
             provides=[ArtifactNames.CH_ARM_DARWIN_SIGNED],
         ),
     )
-
-    # Every PR stateless environment is derived from these concrete configurations.
-    # Targeted sanitizer jobs combine shards and execution flavors per configuration.
-    # The ASan configuration exists only as sequential `db disk` shards, whose
-    # small runner cannot hold the parallel distributed-plan workload that the
-    # targeted job also runs. Use the runner of the parallel distributed-plan job.
-    stateless_tests_sanitizer_pr_jobs = [
-        (
-            job.set_runs_on(RunnerLabels.AMD_LARGE)
-            if job.parameter.startswith("amd_asan_ubsan,")
-            else job
-        )
-        for job in targeted_variants(
-            [
-                job
-                for job in functional_tests_jobs
-                if job.parameter.startswith(
-                    (
-                        "amd_asan_ubsan, db disk, distributed plan,",
-                        "amd_tsan, s3 storage,",
-                    )
-                )
-            ],
-            allow_failure=False,
-        )
-    ]
-    functional_tests_pr_jobs = [
-        job
-        for job in functional_tests_jobs
-        if not any(
-            sanitizer in job.parameter for sanitizer in ("asan_ubsan", "tsan", "msan")
-        )
-    ] + stateless_tests_sanitizer_pr_jobs
-
-    # Randomized executions must remain independent even when the build is cached.
-    for job in functional_tests_jobs_coverage:
-        job.digest_config = None

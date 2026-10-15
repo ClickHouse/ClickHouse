@@ -35,7 +35,7 @@ UInt64 BackupReaderMemory::getFileSize(const String & file_name)
     return backup_in_memory->getFileSize(file_name);
 }
 
-std::unique_ptr<ReadBufferFromFileBase> BackupReaderMemory::readFile(const String & file_name)
+std::unique_ptr<ReadBufferFromFileBase> BackupReaderMemory::readFile(const String & file_name, std::optional<size_t> /*expected_file_size*/)
 {
     return backup_in_memory->readFile(file_name);
 }

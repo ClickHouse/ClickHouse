@@ -1,6 +1,7 @@
 #pragma once
 
 #include <IO/ICacheProvider.h>
+#include <IO/IntervalSet.h>
 #include <IO/ReadSettings.h>
 #include <Interpreters/FileCache/FileCache.h>
 
@@ -81,6 +82,8 @@ private:
     FilesystemCacheSettings cache_settings;
     FileSegmentsHolderSharedPtr segment_holder;
     ByteRange aligned_range;
+    /// One state per writer: it owns a single append-only segment.
+    FileCacheReserveAhead reserve_ahead;
     LoggerPtr log = getLogger("DiskCacheWriter");
 };
 

@@ -1191,20 +1191,6 @@ NamesAndTypesList widenTemporalColumns(const NamesAndTypesList & columns)
     return result;
 }
 
-/// Every analysis of a stored TTL expression uses the server settings, as CREATE and table loading do,
-/// on a copy of the caller's context, so the caller's user and current database still apply.
-ContextPtr getTTLExpressionContext(const ContextPtr & context)
-{
-    const auto global_context = context->getGlobalContext();
-    const auto & global_settings = global_context->getSettingsRef();
-    if (context->getSettingsRef() == global_settings)
-        return context;
-
-    auto ttl_context = Context::createCopy(context);
-    ttl_context->setSettings(global_settings);
-    return ttl_context;
-}
-
 }
 
 TTLDescription::TTLDescription(const TTLDescription & other)
@@ -1425,7 +1411,7 @@ ExpressionAndSets TTLDescription::buildExpression(const ContextPtr & context) co
         checkTTLExpressionPreservesRowCount(set_part.expression, /*ast=*/ nullptr, /*expression_kind=*/ "GROUP BY SET ");
 
     auto ast = expression_ast->clone();
-    return buildExpressionAndSets(ast, expression_source_columns, getTTLExpressionContext(context));
+    return buildExpressionAndSets(ast, expression_source_columns, context);
 }
 
 ExpressionAndSets TTLDescription::buildWhereExpression(const ContextPtr & context) const
@@ -1437,7 +1423,7 @@ ExpressionAndSets TTLDescription::buildWhereExpression(const ContextPtr & contex
         auto ast = where_expression_ast->clone();
         /// Only the TTL timestamp expression needs widening. The `DELETE WHERE`
         /// predicate must keep the table's original static column types.
-        return buildExpressionAndSets(ast, where_expression_source_columns, getTTLExpressionContext(context), nullptr, false);
+        return buildExpressionAndSets(ast, where_expression_source_columns, context, nullptr, false);
     }
 
     return {};
@@ -1450,8 +1436,6 @@ TTLDescription TTLDescription::getTTLFromAST(
     const KeyDescription & primary_key,
     TTLValidationMode validation_mode)
 {
-    const auto expression_context = getTTLExpressionContext(context);
-
     TTLDescription result;
     const auto * ttl_element = definition_ast->as<ASTTTLElement>();
 
@@ -1477,7 +1461,7 @@ TTLDescription TTLDescription::getTTLFromAST(
         build_strictness.emplace(/*variant_throw_on_type_mismatch=*/ false, /*dynamic_throw_on_type_mismatch=*/ false);
 
     auto ttl_ast = result.expression_ast->clone();
-    auto expression = buildExpressionAndSets(ttl_ast, columns.getAllPhysical(), expression_context, &result.expression_source_columns).expression;
+    auto expression = buildExpressionAndSets(ttl_ast, columns.getAllPhysical(), context, &result.expression_source_columns).expression;
     result.expression_columns = expression->getRequiredColumnsWithTypes();
 
     result.result_column = expression->getSampleBlock().safeGetByPosition(0).name;
@@ -1505,7 +1489,7 @@ TTLDescription TTLDescription::getTTLFromAST(
                 ASTPtr ast = where_expr_ast->clone();
                 where_expression
                 = buildExpressionAndSets(
-                    ast, columns.getAllPhysical(), expression_context, &result.where_expression_source_columns, /*widen_temporal_columns=*/ false).expression;
+                    ast, columns.getAllPhysical(), context, &result.where_expression_source_columns, /*widen_temporal_columns=*/ false).expression;
                 result.where_expression_columns = where_expression->getRequiredColumnsWithTypes();
                 result.where_result_column = where_expression->getSampleBlock().safeGetByPosition(0).name;
             }
@@ -1514,45 +1498,15 @@ TTLDescription TTLDescription::getTTLFromAST(
         {
             const auto & pk_columns = primary_key.column_names;
 
-            auto is_primary_key_prefix = [&pk_columns](const ASTs & keys)
-            {
-                if (keys.size() > pk_columns.size())
-                    return false;
-                for (size_t i = 0; i < keys.size(); ++i)
-                    if (keys[i]->getColumnName() != pk_columns[i])
-                        return false;
-                return true;
-            };
-
-            /// `GROUP BY (a, b, c)` parses as a single `tuple(a, b, c)` expression, but it means the same list
-            /// of keys as `GROUP BY a, b, c`, exactly as `ORDER BY (a, b, c)` means the same key as
-            /// `ORDER BY a, b, c`. Unwrap it here rather than in the parser: the parsed AST is what gets
-            /// formatted back, and rewriting it there would make formatting non-idempotent, because the
-            /// formatted `GROUP BY a, b, c` would be unwrapped again on the next parse.
-            ///
-            /// The spelling is ambiguous when the first primary key element is itself a tuple: with
-            /// `ORDER BY ((a, b), c)`, the single key `GROUP BY (a, b)` already matches the primary key
-            /// prefix as an intact tuple, and such tables exist and must keep attaching. So the intact
-            /// interpretation wins whenever it is a prefix of the primary key, and only otherwise do we
-            /// fall back to reading the parentheses as a key list. An empty `GROUP BY ()` unwraps to
-            /// nothing, which would pass the prefix check vacuously, so it keeps the `tuple()` in place
-            /// and is rejected as before.
-            ASTs group_by_key = ttl_element->group_by_key;
-            if (group_by_key.size() == 1 && !is_primary_key_prefix(group_by_key))
-            {
-                if (auto unwrapped = extractKeyExpressionList(group_by_key.front())->children; !unwrapped.empty())
-                    group_by_key = std::move(unwrapped);
-            }
-
-            if (group_by_key.size() > pk_columns.size())
+            if (ttl_element->group_by_key.size() > pk_columns.size())
                 throw Exception(ErrorCodes::BAD_TTL_EXPRESSION, "TTL Expression GROUP BY key should be a prefix of primary key");
 
             NameSet aggregation_columns_set;
 
-            for (size_t i = 0; i < group_by_key.size(); ++i)
+            for (size_t i = 0; i < ttl_element->group_by_key.size(); ++i)
             {
-                if (group_by_key[i]->getColumnName() != pk_columns[i])
-                    throw Exception(ErrorCodes::BAD_TTL_EXPRESSION, "TTL Expression GROUP BY key should be a prefix of primary key {} {}", group_by_key[i]->getColumnName(), pk_columns[i]);
+                if (ttl_element->group_by_key[i]->getColumnName() != pk_columns[i])
+                    throw Exception(ErrorCodes::BAD_TTL_EXPRESSION, "TTL Expression GROUP BY key should be a prefix of primary key {} {}", ttl_element->group_by_key[i]->getColumnName(), pk_columns[i]);
             }
 
             std::vector<std::pair<String, ASTPtr>> aggregations;
@@ -1569,7 +1523,7 @@ TTLDescription TTLDescription::getTTLFromAST(
                     "Invalid expression for assignment of column {}. Should contain an aggregate function", assignment.column_name);
 
                 if (!skip_validation)
-                    checkTTLGroupBySetForAggregateFunctions(ass_expression, columns.getAllPhysical(), expression_context);
+                    checkTTLGroupBySetForAggregateFunctions(ass_expression, columns.getAllPhysical(), context);
 
                 ass_expression = addTypeConversionToAST(std::move(ass_expression), columns.getPhysical(assignment.column_name).type->getName());
                 aggregations.emplace_back(assignment.column_name, std::move(ass_expression));
@@ -1579,12 +1533,12 @@ TTLDescription TTLDescription::getTTLFromAST(
             if (aggregation_columns_set.size() != ttl_element->group_by_assignments.size())
                 throw Exception(ErrorCodes::BAD_TTL_EXPRESSION, "Multiple aggregations set for one column in TTL Expression");
 
-            result.group_by_keys = Names(pk_columns.begin(), pk_columns.begin() + group_by_key.size());
+            result.group_by_keys = Names(pk_columns.begin(), pk_columns.begin() + ttl_element->group_by_key.size());
 
             for (auto [name, value] : aggregations)
             {
-                auto syntax_result = TreeRewriter(expression_context).analyze(value, columns.getAllPhysical(), {}, {}, true);
-                auto expr_analyzer = ExpressionAnalyzer(value, syntax_result, expression_context);
+                auto syntax_result = TreeRewriter(context).analyze(value, columns.getAllPhysical(), {}, {}, true);
+                auto expr_analyzer = ExpressionAnalyzer(value, syntax_result, context);
 
                 TTLAggregateDescription set_part;
                 set_part.column_name = name;

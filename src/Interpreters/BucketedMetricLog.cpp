@@ -45,13 +45,6 @@ std::string getMetricName(size_t global_index)
     return fmt::format("CurrentMetric_{}", CurrentMetrics::getName(CurrentMetrics::Metric(global_index - ProfileEvents::end())));
 }
 
-std::string getMetricDocumentation(size_t global_index)
-{
-    if (global_index < ProfileEvents::end())
-        return std::string(ProfileEvents::getDocumentation(ProfileEvents::Event(global_index)));
-    return std::string(CurrentMetrics::getDocumentation(CurrentMetrics::Metric(global_index - ProfileEvents::end())));
-}
-
 }
 
 ColumnsDescription BucketedMetricLogElement::getColumnsDescription()
@@ -106,10 +99,7 @@ NamesAndAliases BucketedMetricLogElement::getNamesAndAliases()
             ? DataTypePtr(std::make_shared<DataTypeUInt64>())
             : DataTypePtr(std::make_shared<DataTypeInt64>());
         auto expression = fmt::format("metrics['{}']", name);
-        /// The alias columns are the per-metric interface of this table, so they carry the
-        /// documentation of the metric, the same way the columns of the `wide` schema do.
-        auto comment = getMetricDocumentation(i);
-        result.emplace_back(std::move(name), std::move(type), std::move(expression), std::move(comment));
+        result.emplace_back(std::move(name), std::move(type), std::move(expression));
     }
 
     return result;

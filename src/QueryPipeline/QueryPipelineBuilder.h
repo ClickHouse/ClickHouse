@@ -91,9 +91,6 @@ public:
 
     /// Forget about current totals and extremes. It is needed before aggregation, cause they will be calculated again.
     void dropTotalsAndExtremes();
-    /// Forget about current extremes, keeping totals. Needed before a join, whose inputs' extremes
-    /// say nothing about the join result; they are recalculated above the join if they are wanted.
-    void dropExtremes();
 
     void addMergingAggregatedMemoryEfficientTransform(
         AggregatingTransformParamsPtr params, size_t num_merging_processors, bool should_produce_results_in_order_of_bucket_number);
@@ -247,8 +244,6 @@ public:
     bool getReadStreamCountWasReduced() const { return read_stream_count_was_reduced; }
 
     void addResources(const QueryPlanResourceHolder & resources_) { resources.append(resources_); }
-    /// Read access to what this pipeline keeps alive, e.g. to tell whether it reads a given table.
-    const QueryPlanResourceHolder & getResources() const { return resources; }
     void setQueryIdHolder(std::shared_ptr<QueryIdHolder> query_id_holder) { resources.query_id_holders.emplace_back(std::move(query_id_holder)); }
     void addContext(ContextPtr context) { resources.interpreter_context.emplace_back(std::move(context)); }
 

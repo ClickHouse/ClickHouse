@@ -52,12 +52,10 @@ echo -n 'scalar over nested union, coordinators: '
 coordinators_for "SELECT (SELECT count() FROM (SELECT a FROM t_pr_scalar UNION ALL SELECT a FROM t_pr_scalar))" union
 
 # Control: a top-level query over the same data still uses parallel replicas. Expect > 0.
-# Pinned to the query-based implementation for now: a UNION whose branches read the same table
-# is left local by the plan-based one on purpose (collectReadsToDistribute), because the coordinator
-# drives every read of a shipped fragment and cannot tell duplicate announcements for one table
-# apart - the very failure this test guards. Removing this pin requires a protocol / coordinator
-# change rather than a local cleanup. The assertions above are not pinned and hold for both
-# implementations.
+# Pinned to the query-based implementation: the plan-based one refuses to distribute a UNION whose
+# branches read the same table (collectReadsToDistribute), because the coordinator cannot tell the
+# duplicate announcements apart - the very failure this test guards. The assertions above are not
+# pinned and hold for both implementations.
 echo -n 'top-level query uses parallel replicas: '
 top_id="04337_${CLICKHOUSE_DATABASE}_top"
 ${CLICKHOUSE_CLIENT} --query_id "$top_id" --query "SELECT count() FROM (SELECT a FROM t_pr_scalar UNION ALL SELECT a FROM t_pr_scalar) $pr_settings, parallel_replicas_plan_based = 0" >/dev/null 2>&1

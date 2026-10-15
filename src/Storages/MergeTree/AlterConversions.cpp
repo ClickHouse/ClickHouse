@@ -115,13 +115,6 @@ static MutationCommand createLightweightDeleteCommand(const MutationCommand & co
     if (!mutation_command)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to parse command {}", alter_command->formatForErrorMessage());
 
-    /// The rewritten command stands for the same mutation, so it carries its version - as
-    /// `createCommandWithUpdatedColumns` does for its own rewrite. Without it the on-fly stage built
-    /// from this command has no version bound, `getMaxPatchVersionForStep` returns none, and the
-    /// patch-visibility window of the stage is unbounded above: a patch part created *after* this
-    /// `DELETE` would be applied before its predicate is evaluated.
-    mutation_command->mutation_version = command.mutation_version;
-
     return *mutation_command;
 }
 
@@ -181,6 +174,27 @@ bool AlterConversions::isSupportedMetadataMutation(MutationCommand::Type type)
         || type == MutationCommand::DROP_COLUMN;
 }
 
+void AlterConversions::addUpdatedColumns(const MutationCommand & command, NameSet & updated_columns)
+{
+    using enum MutationCommand::Type;
+
+    if (command.type == READ_COLUMN)
+    {
+        /// This is needed to ignore skip indices that use the column as it's changing its type and no longer applies
+        /// Note that data_type is only set on ADD_COLUMN and MODIFY_COLUMN commands
+        if (command.data_type)
+            updated_columns.insert(command.column_name);
+    }
+    else if (command.type == UPDATE || command.type == DELETE)
+    {
+        if (auto alter = command.ast(); alter && alter->update_assignments)
+        {
+            for (const auto & child : alter->update_assignments->children)
+                updated_columns.insert(child->as<ASTAssignment &>().column_name);
+        }
+    }
+}
+
 void AlterConversions::addMutationCommand(const MutationCommand & command, const ContextPtr & context)
 {
     using enum MutationCommand::Type;
@@ -220,11 +234,7 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
     {
         ++number_of_alter_mutations;
         version_of_alter_mutation = command.mutation_version;
-
-        /// This is needed to ignore skip indices that use the column as it's changing its type and no longer applies
-        /// Note that data_type is only set on ADD_COLUMN and MODIFY_COLUMN commands
-        if (command.data_type)
-            all_updated_columns.insert(command.column_name);
+        addUpdatedColumns(command, all_updated_columns);
     }
     else if (command.type == UPDATE || command.type == DELETE)
     {
@@ -238,12 +248,7 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
                 "ALTER UPDATE/ALTER DELETE statements with nondeterministic deterministic functions cannot be applied on fly. "
                 "Function '{}' is non-deterministic", *result.nondeterministic_function_name);
 
-        if (auto alter = command.ast(); alter && alter->update_assignments)
-        {
-            for (const auto & child : alter->update_assignments->children)
-                all_updated_columns.insert(child->as<ASTAssignment &>().column_name);
-        }
-
+        addUpdatedColumns(command, all_updated_columns);
         mutation_commands.push_back(command);
     }
 }
