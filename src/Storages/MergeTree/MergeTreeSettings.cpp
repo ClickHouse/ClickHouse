@@ -2424,7 +2424,7 @@ Possible values:
 When enabled, min-max (skipping) indices are added for all numeric columns
 of the table.
 )", 0, \
-        {"26.10", false, true, "Automatic min-max skipping indices on numeric columns can speed up range-filter queries; the trade-off is some additional storage and ingestion overhead, which may be noticeable on very wide or high-ingest tables. Set to false to revert to the previous behavior."}, \
+        {"26.11", false, true, "Automatic min-max skipping indices on numeric columns can speed up range-filter queries; the trade-off is some additional storage and ingestion overhead, which may be noticeable on very wide or high-ingest tables. Set to false to revert to the previous behavior."}, \
         {"25.1", false, false, "New setting"}) \
     DECLARE(Bool, add_minmax_index_for_string_columns, false, R"(
 When enabled, min-max (skipping) indices are added for all string columns of the table.
