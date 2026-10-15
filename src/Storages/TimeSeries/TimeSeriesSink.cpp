@@ -25,6 +25,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
@@ -305,13 +306,12 @@ namespace
         return count;
     }
 
-    size_t delayedStreamLimit(const StoragePtr & storage, const Settings & settings)
+    size_t delayedStreamLimit(const MergeTreeData & merge_tree, const Settings & settings)
     {
         if (settings[Setting::max_insert_delayed_streams_for_parallel_write].changed)
             return settings[Setting::max_insert_delayed_streams_for_parallel_write];
 
-        const auto * merge_tree = typeid_cast<const MergeTreeData *>(storage.get());
-        if (merge_tree && merge_tree->getStoragePolicy()->getAnyDisk()->supportParallelWrite())
+        if (merge_tree.getStoragePolicy()->getAnyDisk()->supportParallelWrite())
             return DEFAULT_DELAYED_STREAMS_FOR_PARALLEL_WRITE;
         return 0;
     }
@@ -321,11 +321,12 @@ namespace
     {
         if (storage->getName() == "Buffer")
             return true;
-        if (!storage->isMergeTree())
+        auto merge_tree = castStorage<MergeTreeData>(storage, DeferredTable::Load);
+        if (!merge_tree)
             return false;
 
-        const size_t limit = delayedStreamLimit(storage, context->getSettingsRef());
-        auto metadata = storage->getInMemoryMetadataPtr(context, false);
+        const size_t limit = delayedStreamLimit(*merge_tree, context->getSettingsRef());
+        auto metadata = merge_tree->getInMemoryMetadataPtr(context, false);
         Block block_for_parts = block;
         const auto parts = MergeTreeDataWriter::splitBlockIntoParts(std::move(block_for_parts), /* max_parts= */ 0, metadata, context);
         if (parts.size() < 2)
