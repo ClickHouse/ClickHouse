@@ -15,6 +15,7 @@
 
 #include <Poco/Process.h>
 
+#include <base/alignedAlloc.h>
 #include <base/getMemoryAmount.h>
 #include <base/lgamma_r.h>
 
@@ -289,6 +290,38 @@ void terminationRequestSignalsTheEventTheServerWaitsOn()
     CloseHandle(event);
 }
 
+/// The global `operator new` replacements allocate through `base/alignedAlloc.h`, and on Windows
+/// that is `_aligned_malloc`, which fails for zero bytes - while `operator new(0)` must succeed.
+/// Memory tracking learns the size freed by an (always unsized, on Windows) `operator delete` from
+/// `alignedAllocationSize`, so it has to report the size the block was requested with.
+void alignedAllocationsOfZeroBytesSucceedAndReportTheirSize()
+{
+    void * ptr = DB::alignedMalloc(0);
+    check(ptr != nullptr, "`alignedMalloc(0)` succeeds");
+    check(ptr && DB::alignedAllocationSize(ptr, DB::DEFAULT_MALLOC_ALIGNMENT) == 1, "a zero-byte `alignedMalloc` block counts as one byte");
+    DB::alignedFree(ptr);
+
+    ptr = DB::alignedAlloc(64, 0);
+    check(ptr != nullptr, "`alignedAlloc(64, 0)` succeeds");
+    DB::alignedFree(ptr);
+
+    ptr = DB::alignedCalloc(0, 8);
+    check(ptr != nullptr, "`alignedCalloc(0, 8)` succeeds");
+    DB::alignedFree(ptr);
+
+    ptr = nullptr;
+    check(DB::alignedPosixMemalign(&ptr, 64, 0) == 0 && ptr != nullptr, "`alignedPosixMemalign` of zero bytes succeeds");
+    DB::alignedFree(ptr);
+
+    ptr = DB::alignedMalloc(12345);
+    check(ptr && DB::alignedAllocationSize(ptr, DB::DEFAULT_MALLOC_ALIGNMENT) == 12345, "`alignedAllocationSize` reports the requested size");
+    DB::alignedFree(ptr);
+
+    ptr = DB::alignedAlloc(256, 1024);
+    check(ptr && DB::alignedAllocationSize(ptr, 256) == 1024, "`alignedAllocationSize` reports the requested size of an over-aligned block");
+    DB::alignedFree(ptr);
+}
+
 /// mingw-w64's `signgam` is a process-global variable, so a `lgamma_r` built on `lgamma` races on it.
 /// Threads computing arguments of both signs at once, including one that overflows, must each get
 /// their own sign back, and `signgam` itself must not be touched.
@@ -366,6 +399,7 @@ int main(int, char **)
     terminationRequestSignalsTheEventTheServerWaitsOn();
     passphrasePromptDecisions();
     lgammaRIsReentrant();
+    alignedAllocationsOfZeroBytesSucceedAndReportTheirSize();
 
     std::cout << (failures ? "FAILED: " + std::to_string(failures) + " check(s)\n" : "OK\n");
     return failures ? 1 : 0;

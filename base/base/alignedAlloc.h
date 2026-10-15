@@ -18,6 +18,9 @@
 /// Always release with `alignedFree` what this family returned; never mix with `free`.
 ///
 /// `alignment` must be a power of two and a multiple of `sizeof(void *)`.
+///
+/// A request for zero bytes is served with a one-byte block on Windows, because `_aligned_malloc`
+/// fails for size zero, while `malloc(0)` and `operator new(0)` must succeed on any platform.
 
 #if defined(OS_WINDOWS)
 #include <cerrno>
@@ -38,7 +41,7 @@ inline int alignedPosixMemalign(void ** out, size_t alignment, size_t size)
 #if defined(OS_WINDOWS)
     /// `_aligned_malloc` rejects a non-power-of-two alignment with EINVAL, matching
     /// `posix_memalign`, but reports it through `errno` rather than the return value.
-    void * ptr = ::_aligned_malloc(size, alignment);
+    void * ptr = ::_aligned_malloc(size ? size : 1, alignment);
     if (!ptr)
         return errno == EINVAL ? EINVAL : ENOMEM;
     *out = ptr;
@@ -52,7 +55,7 @@ inline int alignedPosixMemalign(void ** out, size_t alignment, size_t size)
 inline void * alignedAlloc(size_t alignment, size_t size)
 {
 #if defined(OS_WINDOWS)
-    return ::_aligned_malloc(size, alignment);
+    return ::_aligned_malloc(size ? size : 1, alignment);
 #else
     return ::aligned_alloc(alignment, size);
 #endif
@@ -61,7 +64,7 @@ inline void * alignedAlloc(size_t alignment, size_t size)
 inline void * alignedMalloc(size_t size)
 {
 #if defined(OS_WINDOWS)
-    return ::_aligned_malloc(size, DEFAULT_MALLOC_ALIGNMENT);
+    return ::_aligned_malloc(size ? size : 1, DEFAULT_MALLOC_ALIGNMENT);
 #else
     return ::malloc(size);
 #endif
@@ -75,7 +78,7 @@ inline void * alignedCalloc(size_t nmemb, size_t size)
     if (nmemb != 0 && size > static_cast<size_t>(-1) / nmemb)
         return nullptr;
     const size_t bytes = nmemb * size;
-    void * ptr = ::_aligned_malloc(bytes, DEFAULT_MALLOC_ALIGNMENT);
+    void * ptr = ::_aligned_malloc(bytes ? bytes : 1, DEFAULT_MALLOC_ALIGNMENT);
     if (ptr)
         ::memset(ptr, 0, bytes);
     return ptr;
@@ -104,5 +107,16 @@ inline void alignedFree(void * ptr) noexcept
     ::free(ptr);
 #endif
 }
+
+#if defined(OS_WINDOWS)
+/// The size of the block `ptr` points to, as it was requested from `_aligned_malloc` (a request
+/// for zero bytes counts as one, see above). `alignment` must be the one it was allocated with.
+/// This is the Windows counterpart of `malloc_usable_size`, which memory tracking uses to learn
+/// the size freed by an unsized `operator delete`.
+inline size_t alignedAllocationSize(void * ptr, size_t alignment) noexcept
+{
+    return ::_aligned_msize(ptr, alignment, 0);
+}
+#endif
 
 }
