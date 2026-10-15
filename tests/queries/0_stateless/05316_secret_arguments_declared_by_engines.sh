@@ -70,7 +70,7 @@ SELECT * FROM azureBlobStorage(azure_conf, container = headers('Authorization' =
 SELECT * FROM azureBlobStorage(azure_conf, connection_string = 'AccountName=account;AccountKey=plain_account_key', storage_account_url = 'AccountName=account;AccountKey=plain_account_key_2')
 SELECT * FROM azureBlobStorageCluster('cluster', azure_conf, connection_string = concat('AccountName=account;AccountKey=', 'plain_account_key'), connection_string = 'AccountName=account;AccountKey=plain_account_key_2')
 CREATE TABLE test_azure (key UInt64) ENGINE = AzureBlobStorage('https://account.blob.core.windows.net/container/blob.csv', 'sp=r&sig=plain_sas_signature', partition_strategy = 'none')
-CREATE TABLE test_azure (key UInt64) ENGINE = AzureBlobStorage('https://account.blob.core.windows.net', 'container', 'blob', 'CSV', extra_credentials(client_id = 'id', client_secret = 'plain_client_secret'))
+CREATE TABLE test_azure (key UInt64) ENGINE = AzureBlobStorage('https://account.blob.core.windows.net', 'container', 'blob', 'CSV', extra_credentials(client_id = 'id', client_secret = 'plain_client_secret', role_arn = 'plain_role_arn'))
 CREATE TABLE test_azure (key UInt64) ENGINE = AzureBlobStorage(azure_conf, sas_token = 'plain_sas_signature')
 CREATE TABLE test_azure (key UInt64) ENGINE = AzureBlobStorage('https://account.blob.core.windows.net/container/blob.csv', 'sp=r&sig=plain_sas_signature' = 'x')
 CREATE TABLE test_azure_queue (key UInt64) ENGINE = AzureQueue('https://account.blob.core.windows.net', 'container', '*', 'account', 'plain_account_key' = 'x')
@@ -88,6 +88,10 @@ CREATE DICTIONARY test_dict (key UInt64, value String) PRIMARY KEY key SOURCE(HT
 CREATE DICTIONARY test_dict (key UInt64, value String) PRIMARY KEY key SOURCE(MONGODB(URI format('mongodb://user:{}@localhost/db', 'plain_password') COLLECTION 'c')) LIFETIME(0) LAYOUT(FLAT())
 CREATE DICTIONARY test_dict (key UInt64, value String) PRIMARY KEY key SOURCE(YTSAURUS(HTTP_PROXY_URLS 'http://localhost:8000' CYPRESS_PATH '//tmp/t' OAUTH_TOKEN 'plain_token')) LIFETIME(0) LAYOUT(FLAT())
 EOF
+
+# The query tree hides an argument masked whole, not only the right side of a comparison.
+$CLICKHOUSE_CLIENT -q "SELECT countIf(explain LIKE '%plain_sas_signature%'), countIf(explain LIKE '%[HIDDEN]%') FROM (EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM azureBlobStorage('https://account.blob.core.windows.net/container/blob.csv', 'sp=r&sig=plain_sas_signature' = 'x'))"
+$CLICKHOUSE_CLIENT -q "SELECT countIf(explain LIKE '%plain_sas_signature%'), countIf(explain LIKE '%[HIDDEN]%') FROM (EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM azureBlobStorage(azure_conf, 'sp=r&sig=plain_sas_signature' = 'x'))"
 
 # A dictionary source key that is only partly secret still makes the logged query masked.
 $CLICKHOUSE_CLIENT -q "CREATE DICTIONARY ${CLICKHOUSE_DATABASE}.dict_mongodb_uri (key UInt64, value String) PRIMARY KEY key SOURCE(MONGODB(URI 'mongodb://user:plain_mongodb_password@localhost:27017/db' COLLECTION 'c')) LIFETIME(0) LAYOUT(FLAT())"
