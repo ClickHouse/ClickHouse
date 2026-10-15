@@ -7,7 +7,6 @@
 -- materialises every comparison as its own `UInt8` column, so no chain pattern exists for the pass
 -- to rewrite. `oracle` and `keyed` must agree.
 
-SET enable_analyzer = 1;
 SET allow_suspicious_variant_types = 1;
 SET use_variant_default_implementation_for_comparisons = 0;
 SET optimize_redundant_comparisons = 1;
@@ -140,6 +139,14 @@ FROM (SELECT (v >= 'zz'::String) AS g0, (v <= 'ab'::String) AS g1 FROM v_str_u);
 SELECT 'cost3_folded', count() FROM (EXPLAIN QUERY TREE run_passes = 1
     SELECT count() FROM v_str_u WHERE v >= 'zz'::String AND v <= 'ab'::String)
 WHERE explain ILIKE '%constant_value: UInt64_0%';
+
+-- With pruning disabled the chain is still checked for contradicting `equals` through the same
+-- converted constants.
+SET optimize_redundant_comparisons = 0;
+
+SELECT 'off1', countIf(g0 AND g1) AS oracle,
+       (SELECT count() FROM v_fs_u WHERE v = 'ab'::FixedString(4) AND v = 'ab'::FixedString(2)) AS keyed
+FROM (SELECT (v = 'ab'::FixedString(4)) AS g0, (v = 'ab'::FixedString(2)) AS g1 FROM v_fs_u);
 
 DROP TABLE v_fs_u;
 DROP TABLE v_single;
