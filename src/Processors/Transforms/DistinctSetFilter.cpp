@@ -26,6 +26,13 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace FailPoints
+{
+extern const char distinct_transform_pause[];
+extern const char distinct_transform_null_pause[];
+extern const char distinct_transform_lc_pause[];
+}
+
 namespace
 {
 
