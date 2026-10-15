@@ -61,8 +61,12 @@ public:
     {
         hash.update(format_settings_hash);
         /// The argument names are the field names of the row.
+        hash.update(arguments_column_names.size());
         for (const auto & name : arguments_column_names)
+        {
+            hash.update(name.size());
             hash.update(name);
+        }
     }
 
     size_t getNumberOfArguments() const override { return 0; }

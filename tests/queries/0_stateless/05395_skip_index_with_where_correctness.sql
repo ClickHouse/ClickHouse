@@ -14,6 +14,8 @@ DROP TABLE IF EXISTS t_patch;
 DROP TABLE IF EXISTS t_tuple_type;
 DROP TABLE IF EXISTS t_format_row;
 DROP TABLE IF EXISTS t_format_row_alias;
+DROP TABLE IF EXISTS t_format_row_names;
+DROP TABLE IF EXISTS t_format_row_marker;
 DROP TABLE IF EXISTS t_legacy_time;
 DROP TABLE IF EXISTS t_json_tuple;
 DROP TABLE IF EXISTS t_array;
@@ -180,6 +182,24 @@ SELECT count() FROM t_format_row_alias WHERE k = 1 AND formatRow('JSONEachRow', 
 SELECT count() FROM t_format_row_alias WHERE k = 1 AND formatRow('JSONEachRow', n AS x) = '{"x":1}\n' SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0;
 SELECT count() FROM t_format_row_alias WHERE k = 1 AND formatRow('JSONEachRow', n AS x) = '{"x":1}\n' SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 1;
 
+SELECT 'formatRow field names whose bytes run together the same way';
+CREATE TABLE t_format_row_names (k UInt64, ab UInt8, c UInt8, INDEX idx k TYPE minmax WHERE formatRow('JSONEachRow', ab, c) = '{"a":1,"bc":2}\n') ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_format_row_names VALUES (1, 1, 2);
+SELECT count() FROM t_format_row_names WHERE k = 1 AND formatRow('JSONEachRow', ab AS a, c AS bc) = '{"a":1,"bc":2}\n' SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_format_row_names WHERE k = 1 AND formatRow('JSONEachRow', ab AS a, c AS bc) = '{"a":1,"bc":2}\n' SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0;
+SELECT count() FROM t_format_row_names WHERE k = 1 AND formatRow('JSONEachRow', ab AS a, c AS bc) = '{"a":1,"bc":2}\n' SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 1;
+
+SELECT 'formatRow field names in the marker of a part attached under another definition';
+CREATE TABLE t_format_row_marker (k UInt64, ab UInt8, c UInt8, INDEX idx k TYPE minmax WHERE formatRow('JSONEachRow', ab, c) = '{"a":1,"bc":2}\n') ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_format_row_marker VALUES (1, 1, 2);
+ALTER TABLE t_format_row_marker DETACH PARTITION tuple();
+ALTER TABLE t_format_row_marker DROP INDEX idx;
+ALTER TABLE t_format_row_marker ADD INDEX idx k TYPE minmax WHERE formatRow('JSONEachRow', ab AS a, c AS bc) = '{"a":1,"bc":2}\n';
+ALTER TABLE t_format_row_marker ATTACH PARTITION tuple();
+SELECT count() FROM t_format_row_marker WHERE k = 1 AND formatRow('JSONEachRow', ab AS a, c AS bc) = '{"a":1,"bc":2}\n' SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_format_row_marker WHERE k = 1 AND formatRow('JSONEachRow', ab AS a, c AS bc) = '{"a":1,"bc":2}\n' SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0;
+SELECT count() FROM t_format_row_marker WHERE k = 1 AND formatRow('JSONEachRow', ab AS a, c AS bc) = '{"a":1,"bc":2}\n' SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 1;
+
 SELECT 'setting read from the query that writes the part: use_legacy_to_time';
 SET enable_time_time64_type = 1;
 CREATE TABLE t_legacy_time (k UInt64, dt DateTime('UTC'), INDEX idx k TYPE minmax WHERE toString(toTime(dt)) = '10:00:00') ENGINE = MergeTree ORDER BY tuple();
@@ -258,6 +278,8 @@ DROP TABLE t_patch;
 DROP TABLE t_tuple_type;
 DROP TABLE t_format_row;
 DROP TABLE t_format_row_alias;
+DROP TABLE t_format_row_names;
+DROP TABLE t_format_row_marker;
 DROP TABLE t_legacy_time;
 DROP TABLE t_json_tuple;
 DROP TABLE t_array;
