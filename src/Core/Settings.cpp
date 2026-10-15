@@ -6036,7 +6036,7 @@ Possible values:
 
 - true, false
 )", 0, \
-        {"26.10", false, true, "New setting to push a subcolumn read through a subquery or a CTE, so that the subquery projects the subcolumn itself instead of the whole column. previous_value=false so `compatibility` with versions below 26.10 restores the pre-existing behavior (no push down)."})                                                                                                                                            \
+        {"26.11", false, true, "New setting to push a subcolumn read through a subquery or a CTE, so that the subquery projects the subcolumn itself instead of the whole column. previous_value=false so `compatibility` with versions below 26.11 restores the pre-existing behavior (no push down)."})                                                                                                                                            \
     DECLARE(Bool, optimize_substitute_columns, false, R"(
 Use [constraints](/reference/statements/create/table#constraints) for column substitution. The default is `false`.
 
