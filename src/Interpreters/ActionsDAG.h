@@ -135,6 +135,9 @@ public:
             bool build_independent = false,
             const Block * input_header = nullptr,
             bool with_variable_size_constant_values = true) const;
+        /// What `updateHash` mixes in for this node itself, without its children.
+        void updateOwnHash(
+            SipHash & hash_state, bool build_independent, const Block * input_header, bool with_variable_size_constant_values) const;
     };
 
     /// NOTE: std::list is an implementation detail.
@@ -170,6 +173,9 @@ public:
     /// and `greater(__table2.x, 5_UInt8)` in the plan enclosing it, while this is equal in both. Output
     /// position is not usable here - the same expression can sit at a different index in the two builds.
     UInt64 getOutputIdentity(const std::string & name, const Block * input_header = nullptr) const;
+    /// Build-independent hash of what the outputs compute, in order: `ALIAS` nodes are looked through, and an `INPUT` is
+    /// identified as `writeCacheKeyColumnName` identifies a column of `input_header`.
+    UInt64 getComputedOutputsHash(const Block & input_header) const;
     /// Output nodes can contain any column returned from DAG. You may manually change it if needed.
     NodeRawConstPtrs & getOutputs() { return outputs; }
 

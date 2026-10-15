@@ -130,11 +130,10 @@ bool sameByteLayout(const Block & lhs, const Block & rhs)
     return true;
 }
 
-/// A step is transparent for the cache key - it contributes nothing - when it changes neither the row
-/// count nor the byte layout. This is the loose, header-only test, and it stays that way: it decides
-/// only whether a step adds anything of its own to a key, where being wrong costs a slightly-off
-/// estimate. Deciding that a step can be *skipped over* is a stricter question, answered by
-/// `isPassthroughExpressionWithRenames` below.
+/// A step that changes neither the row count nor the byte layout adds to the key at most what an `ExpressionStep`
+/// computes or permutes, never its serialized form. This is the loose, header-only test, and it stays that way:
+/// being wrong costs a slightly-off estimate. Deciding that a step can be *skipped over* is a stricter question,
+/// answered by `isPassthroughExpressionWithRenames` below.
 bool isByteTransparentTransform(const ITransformingStep & transform)
 {
     return transform.getTransformTraits().preserves_number_of_rows
@@ -205,6 +204,14 @@ UInt64 calculateHashFromStep(const ITransformingStep & transform)
                         permutation_hash.update(index);
                     return permutation_hash.get64();
                 }
+            }
+            else
+            {
+                /// A computing step: hash what it computes, which is the same whether or not a rename was merged into it.
+                SipHash computed_hash;
+                computed_hash.update("computed columns");
+                computed_hash.update(expression->getExpression().getComputedOutputsHash(*transform.getInputHeaders().front()));
+                return computed_hash.get64();
             }
         }
         return 0;

@@ -28,6 +28,7 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/SetSerialization.h>
+#include <IO/SipHashingWriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Core/SortDescription.h>
@@ -302,6 +303,14 @@ UInt64 ActionsDAG::Node::getHash() const
 void ActionsDAG::Node::updateHash(
     SipHash & hash_state, bool build_independent, const Block * input_header, bool with_variable_size_constant_values) const
 {
+    updateOwnHash(hash_state, build_independent, input_header, with_variable_size_constant_values);
+    for (const auto & child : children)
+        child->updateHash(hash_state, build_independent, input_header, with_variable_size_constant_values);
+}
+
+void ActionsDAG::Node::updateOwnHash(
+    SipHash & hash_state, bool build_independent, const Block * input_header, bool with_variable_size_constant_values) const
+{
     hash_state.update(type);
 
     /// A derived node's name is a label this build chose, not part of what the node computes - the type,
@@ -439,9 +448,6 @@ void ActionsDAG::Node::updateHash(
             }
         }
     }
-
-    for (const auto & child : children)
-        child->updateHash(hash_state, build_independent, input_header, with_variable_size_constant_values);
 }
 
 UInt64 ActionsDAG::getOutputIdentity(const std::string & name, const Block * input_header) const
@@ -464,6 +470,63 @@ UInt64 ActionsDAG::getOutputIdentity(const std::string & name, const Block * inp
         hash.update("<no such output>");
         hash.update(normalizeGeneratedTableQualifiers(name));
     }
+    return hash.get64();
+}
+
+UInt64 ActionsDAG::getComputedOutputsHash(const Block & input_header) const
+{
+    std::unordered_map<const Node *, UInt64> node_hashes;
+    std::vector<std::pair<const Node *, size_t>> stack;
+    for (const auto * output : outputs)
+    {
+        if (!node_hashes.contains(output))
+            stack.emplace_back(output, 0);
+
+        while (!stack.empty())
+        {
+            auto & [node, next_child] = stack.back();
+            if (next_child < node->children.size())
+            {
+                const auto * child = node->children[next_child++];
+                if (!node_hashes.contains(child))
+                    stack.emplace_back(child, 0);
+                continue;
+            }
+
+            UInt64 node_hash = 0;
+            if (node->type == ActionType::ALIAS)
+            {
+                chassert(node->children.size() == 1);
+                node_hash = node_hashes.at(node->children.front());
+            }
+            else if (node->type == ActionType::INPUT)
+            {
+                SipHash hash;
+                hash.update(node->type);
+                char window[64];
+                SipHashingWriteBuffer out(hash, sizeof(window), window);
+                writeCacheKeyColumnName(node->result_name, &input_header, out);
+                out.finalize();
+                node_hash = hash.get64();
+            }
+            else
+            {
+                SipHash hash;
+                node->updateOwnHash(hash, /*build_independent=*/true, &input_header, /*with_variable_size_constant_values=*/false);
+                for (const auto * child : node->children)
+                    hash.update(node_hashes.at(child));
+                node_hash = hash.get64();
+            }
+
+            node_hashes[node] = node_hash;
+            stack.pop_back();
+        }
+    }
+
+    SipHash hash;
+    hash.update(outputs.size());
+    for (const auto * output : outputs)
+        hash.update(node_hashes.at(output));
     return hash.get64();
 }
 
