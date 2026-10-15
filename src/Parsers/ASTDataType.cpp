@@ -129,11 +129,13 @@ bool substituteBareUUIDInTypeNameLiteral(ASTFunction & function, std::string_vie
     if (!type_argument_index)
         return false;
 
+    /// Fold a copy, so that an argument is replaced by a literal only when the type name in it is rewritten.
     auto & type_argument = arguments[*type_argument_index];
-    if (!foldConstantStringExpression(type_argument))
+    ASTPtr folded_type_argument = type_argument->clone();
+    if (!foldConstantStringExpression(folded_type_argument))
         return false;
 
-    auto * type_literal = type_argument->as<ASTLiteral>();
+    auto * type_literal = folded_type_argument->as<ASTLiteral>();
     if (!type_literal || type_literal->value.getType() != Field::Types::String)
         return false;
 
@@ -154,6 +156,7 @@ bool substituteBareUUIDInTypeNameLiteral(ASTFunction & function, std::string_vie
         return false;
 
     type_literal->value = type_ast->formatWithSecretsOneLine();
+    type_argument = std::move(folded_type_argument);
     return true;
 }
 
@@ -329,7 +332,9 @@ bool foldFunctionArgumentsToStrings(ASTFunction & function, std::vector<String> 
     values.reserve(function.arguments->children.size());
     for (auto & child : function.arguments->children)
     {
-        if (!foldConstantStringExpression(child))
+        /// An alias inside the folded expression can be referenced elsewhere in the query, and the folded literal
+        /// cannot keep it.
+        if (!child->tryGetAlias().empty() || !foldConstantStringExpression(child))
             return false;
         const auto * literal = child->as<ASTLiteral>();
         if (literal->value.getType() != Field::Types::String)
@@ -372,11 +377,24 @@ String replaceSubstring(const String & haystack, const String & needle, const St
   * needs) is not available. An expression outside the whitelist is left alone, and the carrier is then not
   * materialized - the same as for any other dynamically built type name, which the setting deliberately does
   * not chase.
+  *
+  * The alias of the folded expression is kept on the resulting literal. An expression with an alias nested inside it
+  * is not folded, because that alias can be referenced elsewhere in the query.
+  *
+  * The callers fold a copy of the argument and replace the original only when they rewrite the folded literal, so that
+  * an expression without a bare `UUID` is left as written.
   */
 bool foldConstantStringExpression(ASTPtr & argument)
 {
     if (argument->as<ASTLiteral>())
         return true;
+
+    const auto make_literal = [&](String value)
+    {
+        auto literal = make_intrusive<ASTLiteral>(Field(std::move(value)));
+        literal->setAlias(argument->tryGetAlias());
+        argument = std::move(literal);
+    };
 
     auto * function = argument->as<ASTFunction>();
     if (!function || !function->arguments || function->parameters)
@@ -393,7 +411,7 @@ bool foldConstantStringExpression(ASTPtr & argument)
         String result;
         for (const auto & value : values)
             result += value;
-        argument = make_intrusive<ASTLiteral>(Field(std::move(result)));
+        make_literal(std::move(result));
         return true;
     }
 
@@ -401,7 +419,7 @@ bool foldConstantStringExpression(ASTPtr & argument)
     {
         if (!foldFunctionArgumentsToStrings(*function, values) || values.size() != 3)
             return false;
-        argument = make_intrusive<ASTLiteral>(Field(replaceSubstring(values[0], values[1], values[2], !is("replaceOne"))));
+        make_literal(replaceSubstring(values[0], values[1], values[2], !is("replaceOne")));
         return true;
     }
 
@@ -418,7 +436,7 @@ bool foldConstantStringExpression(ASTPtr & argument)
             else if (!to_upper && c >= 'A' && c <= 'Z')
                 c = static_cast<char>(c - 'A' + 'a');
         }
-        argument = make_intrusive<ASTLiteral>(Field(std::move(values[0])));
+        make_literal(std::move(values[0]));
         return true;
     }
 
@@ -432,8 +450,16 @@ bool substituteBareUUIDInTableFunction(ASTFunction & table_function, std::string
     bool substituted = false;
     for (auto * structure_argument : getTableFunctionStructureArguments(table_function))
     {
-        if (structure_argument && foldConstantStringExpression(*structure_argument))
-            substituted |= substituteBareUUIDInColumnsListLiteral(*(*structure_argument)->as<ASTLiteral>(), replacement);
+        if (!structure_argument)
+            continue;
+        /// Fold a copy, so that an argument is replaced by a literal only when the schema in it is rewritten.
+        ASTPtr folded_structure_argument = (*structure_argument)->clone();
+        if (foldConstantStringExpression(folded_structure_argument)
+            && substituteBareUUIDInColumnsListLiteral(*folded_structure_argument->as<ASTLiteral>(), replacement))
+        {
+            *structure_argument = std::move(folded_structure_argument);
+            substituted = true;
+        }
     }
     return substituted;
 }
@@ -450,9 +476,13 @@ bool substituteBareUUIDInColumnsListLiteralArgument(ASTFunction & function, std:
             continue;
         if (candidate.argument_index >= arguments.size())
             return false;
-        if (!foldConstantStringExpression(arguments[candidate.argument_index]))
+        /// Fold a copy, so that the argument is replaced by a literal only when the schema in it is rewritten.
+        ASTPtr folded_argument = arguments[candidate.argument_index]->clone();
+        if (!foldConstantStringExpression(folded_argument)
+            || !substituteBareUUIDInColumnsListLiteral(*folded_argument->as<ASTLiteral>(), replacement))
             return false;
-        return substituteBareUUIDInColumnsListLiteral(*arguments[candidate.argument_index]->as<ASTLiteral>(), replacement);
+        arguments[candidate.argument_index] = std::move(folded_argument);
+        return true;
     }
 
     return false;
