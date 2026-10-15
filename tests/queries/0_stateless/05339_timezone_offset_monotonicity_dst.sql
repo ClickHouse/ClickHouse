@@ -45,7 +45,7 @@ CREATE TABLE t_out_of_lut (dt DateTime64(0, 'UTC')) ENGINE = MergeTree ORDER BY 
 INSERT INTO t_out_of_lut SELECT fromUnixTimestamp64Second(toInt64(253402297200 + number * 3600), 'UTC') FROM numbers(72);
 SELECT 'out_of_lut = 05:00', (SELECT count() FROM t_out_of_lut WHERE toTimeWithFixedDate(dt) = toDateTime('1970-01-02 05:00:00', 'UTC')), (SELECT countIf(toTimeWithFixedDate(dt) = toDateTime('1970-01-02 05:00:00', 'UTC')) FROM t_out_of_lut);
 
--- Two rows 0.5 s apart just before the fall-back of 1969-10-26; before the epoch, `toTimeWithFixedDate` truncates the second one to 01:00:00 -05:00.
+-- Two rows 0.5 s apart just before the fall-back of 1969-10-26; before the epoch, the fractional part is rounded down, so both are at 01:59:59 -04:00.
 CREATE TABLE t_fall64 (dt DateTime64(3, 'America/New_York')) ENGINE = MergeTree ORDER BY dt SETTINGS index_granularity = 1, index_granularity_bytes = '10Mi';
 INSERT INTO t_fall64 VALUES (toDateTime64('1969-10-26 05:59:59.000', 3, 'UTC')), (toDateTime64('1969-10-26 05:59:59.500', 3, 'UTC'));
 SELECT 'fall64 = 01:59:59', (SELECT count() FROM t_fall64 WHERE toTimeWithFixedDate(dt) = toDateTime('1970-01-02 01:59:59', 'America/New_York')), (SELECT countIf(toTimeWithFixedDate(dt) = toDateTime('1970-01-02 01:59:59', 'America/New_York')) FROM t_fall64);
