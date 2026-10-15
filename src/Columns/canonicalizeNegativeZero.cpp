@@ -463,6 +463,11 @@ void updateHashWithRawValue(const IColumn & column, size_t n, SipHash & hash)
             updateHashWithRawValue(variant_column.getVariantByGlobalDiscriminator(discr), variant_column.offsetAt(n), hash);
         }
     }
+    else if (const auto * column_object = typeid_cast<const ColumnObject *>(&column))
+    {
+        /// The same order of the paths and the same framing as in `ColumnObject::updateHashWithValue`.
+        column_object->updateHashWithValue(n, hash, &updateHashWithRawValue);
+    }
     else
     {
         column.updateHashWithValue(n, hash);

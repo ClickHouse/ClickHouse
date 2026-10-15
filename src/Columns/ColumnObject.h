@@ -145,6 +145,9 @@ public:
     std::optional<size_t> getSerializedValueSize(size_t, const IColumn::SerializationSettings *) const override { return std::nullopt; }
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
+    /// The same, but the values of the paths are hashed with `update_hash_with_value`.
+    using UpdateHashWithValueFunction = void (*)(const IColumn & column, size_t n, SipHash & hash);
+    void updateHashWithValue(size_t n, SipHash & hash, UpdateHashWithValueFunction update_hash_with_value) const;
 
     /// Used for deduplication: hashes the raw in-memory representation of typed paths,
     /// dynamic paths and shared data. The hash is the same for the same INSERT data,

@@ -1294,8 +1294,13 @@ void ColumnObject::deserializeDynamicPathsAndSharedDataFromArena(ReadBuffer & in
 
 void ColumnObject::updateHashWithValue(size_t n, SipHash & hash) const
 {
+    updateHashWithValue(n, hash, [](const IColumn & column, size_t row, SipHash & value_hash) { column.updateHashWithValue(row, value_hash); });
+}
+
+void ColumnObject::updateHashWithValue(size_t n, SipHash & hash, UpdateHashWithValueFunction update_hash_with_value) const
+{
     for (auto path : sorted_typed_paths)
-        typed_paths.find(path)->second->updateHashWithValue(n, hash);
+        update_hash_with_value(*typed_paths.find(path)->second, n, hash);
 
     /// The hash of the object in row should not depend on the way we store paths (in dynamic paths or in shared data)
     /// and should be the same for the same objects. To support it we update hash with path and its value (if not null) in
@@ -1315,7 +1320,7 @@ void ColumnObject::updateHashWithValue(size_t n, SipHash & hash) const
             if (!dynamic_column->isNullAt(n))
             {
                 hash.update(*dynamic_paths_it);
-                dynamic_column->updateHashWithValue(n, hash);
+                update_hash_with_value(*dynamic_column, n, hash);
             }
             ++dynamic_paths_it;
         }
@@ -1341,7 +1346,7 @@ void ColumnObject::updateHashWithValue(size_t n, SipHash & hash) const
         hash.update(type_name);
         auto tmp_column = value_type->createColumn();
         getDataTypesCache().getSerialization(type_name, value_type)->deserializeBinary(*tmp_column, buf, getFormatSettings());
-        tmp_column->updateHashWithValue(0, hash);
+        update_hash_with_value(*tmp_column, 0, hash);
     }
 
     /// Iterate over all remaining paths in dynamic paths.
@@ -1351,7 +1356,7 @@ void ColumnObject::updateHashWithValue(size_t n, SipHash & hash) const
         if (!dynamic_column->isNullAt(n))
         {
             hash.update(*dynamic_paths_it);
-            dynamic_column->updateHashWithValue(n, hash);
+            update_hash_with_value(*dynamic_column, n, hash);
         }
     }
 }
