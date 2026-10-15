@@ -161,6 +161,8 @@ RECENT_ISSUE_WINDOW = 100
 # Parallel jobs hitting one new fingerprint must file one issue: the lookup and the
 # creation run under an S3 lock. A holder that died loses it after the lease.
 ISSUE_LOCK_LEASE_SEC = 600
+# The holder stops writing and releasing this long before the lease ends.
+ISSUE_LOCK_MARGIN_SEC = 120
 ISSUE_LOCK_WAIT_SEC = 900
 ISSUE_LOCK_POLL_SEC = 10
 # Provenance line of an issue filed by triage of a PR run. Such an issue records
@@ -1167,6 +1169,8 @@ def _issue_lock(repo_name, fingerprint, deadline):
     The lock is an S3 object created with `If-None-Match: *`, so one job holds it at
     a time. One left by a holder that died is taken over with `If-Match` once it is
     older than `ISSUE_LOCK_LEASE_SEC`. Waiting stops at `deadline` at the latest.
+    Yields the deadline of the work done under the lock: `deadline`, or the end of
+    the lease minus `ISSUE_LOCK_MARGIN_SEC` if that comes first.
     """
     if not Settings.CACHE_S3_PATH:
         raise RuntimeError("no CACHE_S3_PATH for the issue lock")
@@ -1177,36 +1181,43 @@ def _issue_lock(repo_name, fingerprint, deadline):
     with tempfile.NamedTemporaryFile("w", suffix=".lock") as token:
         token.write(f"{datetime.now(timezone.utc).isoformat()}\n")
         token.flush()
-        while not S3.put(
-            s3_path=path, local_path=token.name, text=True, if_none_matched=True
-        ):
+        while True:
+            # Sent no later than S3 stamps `LastModified`, which other jobs time the lease from.
+            sent = time.monotonic()
+            if S3.put(
+                s3_path=path, local_path=token.name, text=True, if_none_matched=True
+            ):
+                break
             head = S3.head_object(path)
-            if (
-                head
-                and _lock_age_sec(head) > ISSUE_LOCK_LEASE_SEC
-                and S3.put(
+            if head and _lock_age_sec(head) > ISSUE_LOCK_LEASE_SEC:
+                sent = time.monotonic()
+                if S3.put(
                     s3_path=path,
                     local_path=token.name,
                     text=True,
                     if_match=head.ETag,
                     no_strict=True,
-                )
-            ):
-                print(f"AI fuzz triage: took over the expired issue lock {path}")
-                break
+                ):
+                    print(f"AI fuzz triage: took over the expired issue lock {path}")
+                    break
             if time.monotonic() > wait_until:
                 raise TimeoutError(f"issue lock {path} still held")
             if head:  # Otherwise it was released meanwhile: retry at once.
                 time.sleep(
                     max(0, min(ISSUE_LOCK_POLL_SEC, wait_until - time.monotonic()))
                 )
-    acquired = time.monotonic()
+    # Ours until this point, with a margin for clock skew between runners: nobody can take it over before.
+    owned_until = sent + ISSUE_LOCK_LEASE_SEC - ISSUE_LOCK_MARGIN_SEC
+    head = S3.head_object(path)
+    etag = head.ETag if head else None
     try:
-        yield
+        yield min(deadline, owned_until)
     finally:
-        # Past the lease another job may hold it now, so it is left to expire.
-        if time.monotonic() - acquired < ISSUE_LOCK_LEASE_SEC:
-            S3.delete(path)
+        # Only this job's instance, and only while nobody can have taken it over: past that it is left to expire.
+        if etag and time.monotonic() < owned_until:
+            head = S3.head_object(path)
+            if head and head.ETag == etag:
+                S3.delete(path)
 
 
 def _track_issue(
@@ -1219,7 +1230,8 @@ def _track_issue(
     All of it stops at `deadline`, the end of the triage budget.
     """
     _remaining_sec(deadline)
-    with _issue_lock(repo_name, fingerprint, deadline):
+    with _issue_lock(repo_name, fingerprint, deadline) as locked_deadline:
+        # Bounded by the lease too: no write may land after another job can take the lock over.
         return _find_or_file_issue(
             repo_name,
             fingerprint,
@@ -1228,7 +1240,7 @@ def _track_issue(
             job_kind,
             found_in,
             pr_url,
-            deadline,
+            locked_deadline,
         )
 
 
