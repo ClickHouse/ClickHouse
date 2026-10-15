@@ -494,6 +494,22 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     return collection_copy;
 }
 
+std::vector<String> getNamedCollectionsReferencedByDictionaryConfig(
+    const Poco::Util::AbstractConfiguration & config, const std::string & key_in_config)
+{
+    std::vector<String> collection_names;
+    const auto source_prefix = key_in_config + ".source";
+    Poco::Util::AbstractConfiguration::Keys source_types;
+    config.keys(source_prefix, source_types);
+    for (const auto & source_type : source_types)
+    {
+        auto collection_name = config.getString(source_prefix + "." + source_type + ".name", "");
+        if (!collection_name.empty())
+            collection_names.push_back(std::move(collection_name));
+    }
+    return collection_names;
+}
+
 HTTPHeaderEntries getHeadersFromNamedCollection(const NamedCollection & collection)
 {
     HTTPHeaderEntries headers;

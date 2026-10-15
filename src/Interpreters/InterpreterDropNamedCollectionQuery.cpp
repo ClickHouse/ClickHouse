@@ -10,6 +10,7 @@
 #include <Interpreters/removeOnClusterClauseIfNeeded.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Storages/IStorage.h>
+#include <Storages/NamedCollectionsHelpers.h>
 
 #include <algorithm>
 
@@ -68,14 +69,8 @@ std::vector<String> getDictionariesReferencingCollection(const ContextPtr & cont
             continue;
 
         const auto & config = *load_result.config->config;
-        const auto source_prefix = load_result.config->key_in_config + ".source";
-        Poco::Util::AbstractConfiguration::Keys source_types;
-        config.keys(source_prefix, source_types);
-        const bool references_collection = std::any_of(
-            source_types.begin(),
-            source_types.end(),
-            [&](const auto & source_type) { return config.getString(source_prefix + "." + source_type + ".name", "") == collection_name; });
-        if (!references_collection)
+        const auto referenced_collections = getNamedCollectionsReferencedByDictionaryConfig(config, load_result.config->key_in_config);
+        if (std::find(referenced_collections.begin(), referenced_collections.end(), collection_name) == referenced_collections.end())
             continue;
 
         /// The loader keys a dictionary created with DDL by its UUID, if any, so name it by the

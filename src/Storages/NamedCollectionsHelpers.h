@@ -97,6 +97,12 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     const std::string & config_prefix,
     ContextPtr context);
 
+/// The named collections the source of a dictionary definition references by its `name` key.
+/// `key_in_config` is the root of the definition (e.g. "dictionary"). The definition is inspected
+/// without loading the dictionary, so this works for a dictionary that has never been loaded.
+std::vector<String> getNamedCollectionsReferencedByDictionaryConfig(
+    const Poco::Util::AbstractConfiguration & config, const std::string & key_in_config);
+
 /// Parses the ast as a key-value pair.
 /// Throws an exception if the key cannot be parsed as a string literal.
 /// If the value cannot be parsed as a literal or interpreted as a constant expression,
