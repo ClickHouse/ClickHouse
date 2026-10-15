@@ -80,8 +80,7 @@ void ExecutionThreadContext::wait(std::atomic_bool & finished)
 
     wake_flag = false;
 
-    /// Release the context mutex before park_guard's destructor unparks, so the unpark also runs
-    /// with no context mutex held.
+    /// Do not hold mutex during unparking
     lock.unlock();
 }
 
