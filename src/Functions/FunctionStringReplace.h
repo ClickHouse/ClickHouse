@@ -8,7 +8,7 @@
 #include <Functions/CancellationBudget.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/ReplaceRegexpModeHint.h>
+#include <Functions/ReplaceRegexpModeController.h>
 #include <Interpreters/Context.h>
 
 #include <functional>
@@ -106,7 +106,7 @@ public:
             auto & res_offsets = col_res->getOffsets();
             /// Only impls that opt in (currently `ReplaceRegexpImpl`) take the JIT compile-count threshold
             /// and the mode hint.
-            if constexpr (requires { Impl::vectorConstantConstant(col_haystack->getChars(), col_haystack->getOffsets(), needle, replacement, res_chars, res_offsets, input_rows_count, regexp_jit_min_count, &regexp_mode_hint, check_cancellation); })
+            if constexpr (has_mode_hint)
                 Impl::vectorConstantConstant(
                     col_haystack->getChars(), col_haystack->getOffsets(), needle, replacement,
                     res_chars, res_offsets, input_rows_count, regexp_jit_min_count, &regexp_mode_hint, check_cancellation);
@@ -157,26 +157,17 @@ public:
         }
         else if (col_haystack_fixed && col_needle_const && col_replacement_const)
         {
-            if constexpr (requires { Impl::vectorFixedConstantConstant(col_haystack_fixed->getChars(), col_haystack_fixed->getN(), String{}, String{}, col_res->getChars(), col_res->getOffsets(), input_rows_count, &regexp_mode_hint, check_cancellation); })
+            const String needle = col_needle_const->getValue<String>();
+            const String replacement = col_replacement_const->getValue<String>();
+            auto & chars = col_haystack_fixed->getChars();
+            const size_t n = col_haystack_fixed->getN();
+            if constexpr (has_mode_hint)
                 Impl::vectorFixedConstantConstant(
-                    col_haystack_fixed->getChars(),
-                    col_haystack_fixed->getN(),
-                    col_needle_const->getValue<String>(),
-                    col_replacement_const->getValue<String>(),
-                    col_res->getChars(),
-                    col_res->getOffsets(),
-                    input_rows_count,
-                    &regexp_mode_hint,
-                    check_cancellation);
+                    chars, n, needle, replacement, col_res->getChars(), col_res->getOffsets(), input_rows_count,
+                    &regexp_mode_hint, check_cancellation);
             else
                 Impl::vectorFixedConstantConstant(
-                    col_haystack_fixed->getChars(),
-                    col_haystack_fixed->getN(),
-                    col_needle_const->getValue<String>(),
-                    col_replacement_const->getValue<String>(),
-                    col_res->getChars(),
-                    col_res->getOffsets(),
-                    input_rows_count,
+                    chars, n, needle, replacement, col_res->getChars(), col_res->getOffsets(), input_rows_count,
                     check_cancellation);
         }
         else
@@ -194,8 +185,9 @@ public:
 private:
     /// Compile-count threshold for JIT-compiling regular expressions, or `size_t(-1)` to disable.
     size_t regexp_jit_min_count = std::numeric_limits<size_t>::max();
+    static constexpr bool has_mode_hint = requires { typename Impl::ModeHint; };
     /// Carries the per-block decisions of `ReplaceRegexpImpl` over to the next block.
-    mutable ReplaceRegexpModeHint regexp_mode_hint;
+    mutable ReplaceRegexpModeController::Hint regexp_mode_hint;
 };
 
 }

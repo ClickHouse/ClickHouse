@@ -1,8 +1,5 @@
--- A constant pattern may run the regexp once per distinct haystack of a block and copy the cached result for the
--- repeats, switching between that and the plain loop by the measured cost of each, so which path a row takes
--- depends on timing. A per-row pattern always takes the plain path, which makes it the reference to compare
--- against, and the shapes below cover runs, cycles and changes of shape within and across blocks.
--- The JIT implementation processes every row directly, so it is kept out of the way.
+-- A constant pattern may cache results per distinct haystack, depending on measured timing; a per-row pattern
+-- never does, so it is the reference. The JIT implementation does not cache, so it is kept out of the way.
 SET min_count_to_compile_regular_expression = 1000000;
 
 -- Non-adjacent repeats.

@@ -3,11 +3,10 @@
 #include <Columns/ColumnString.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/OptimizedRegularExpression.h>
-#include <Common/Stopwatch.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/re2.h>
 #include <Functions/Regexps.h>
-#include <Functions/ReplaceRegexpModeHint.h>
+#include <Functions/ReplaceRegexpModeController.h>
 #include <Functions/ReplaceStringImpl.h>
 #include <Interpreters/JIT/CompileRegexp.h>
 #include <base/types.h>
@@ -64,6 +63,8 @@ enum class ReplaceRegexpTraits : uint8_t
 template <typename Name, ReplaceRegexpTraits replace>
 struct ReplaceRegexpImpl
 {
+    using ModeHint = ReplaceRegexpModeController::Hint;
+
     static constexpr auto name = Name::name;
 
     struct Instruction
@@ -162,16 +163,12 @@ struct ReplaceRegexpImpl
         return result.is_trivial && result.required_substring_is_prefix && result.required_substring == needle;
     }
 
-    /// The literal that every match of `searcher` must start the haystack with, e.g. `http` for
-    /// '^https?://', or an empty string if there is none. A haystack without it cannot match, so it
-    /// passes through unchanged for both `replaceRegexpOne` and `replaceRegexpAll`.
+    /// The literal every match must start the haystack with, e.g. `http` for '^https?://', or empty.
     static String getRequiredPrefix(const re2::RE2 & searcher)
     {
         String prefix;
         bool foldcase = false;
         re2::Regexp * suffix = nullptr;
-        /// `^` is `kRegexpBeginText` here (`one_line` is ignored without `posix_syntax`), so it anchors at
-        /// the start of the haystack rather than of a line.
         if (!searcher.Regexp()->RequiredPrefix(&prefix, &foldcase, &suffix))
             prefix.clear();
         if (suffix)
@@ -181,11 +178,8 @@ struct ReplaceRegexpImpl
         return prefix;
     }
 
-    /// Whether every match of `searcher` must start at the beginning of the haystack (the same shapes
-    /// as RE2's own `IsAnchorStart`). For such a pattern with capturing groups, RE2 skips its DFA on a
-    /// short haystack and runs OnePass or BitState right away, which are slower to reject a non-matching
-    /// haystack than the DFA that a capture-free existence check runs. An unanchored match runs the DFA
-    /// first anyway, so for it the check would only scan every matching haystack twice.
+    /// Mirrors RE2's `IsAnchorStart`. For an anchored pattern with captures RE2 skips its DFA, so a
+    /// capture-free existence check rejects faster; otherwise RE2 runs the DFA first anyway.
     static bool isAnchoredAtStart(const re2::RE2 & searcher)
     {
         re2::Regexp * re = searcher.Regexp();
@@ -417,27 +411,9 @@ struct ReplaceRegexpImpl
         }
     }
 
-    /// Haystacks are often repetitive (e.g. URLs), so the regexp can run once per distinct value and the
-    /// cached result be copied for repeats. Only worth considering for RE2 matches: a JIT-compiled match is
-    /// about as cheap as the hash table probe it would save, which is why the JIT loop processes every row
-    /// directly. Even for RE2, whether the cache pays depends on how the cost of the regexp compares with
-    /// hashing the haystack, which neither the pattern nor the share of repeats tells reliably: a cheap
-    /// reject such as '^[a-z]' over long haystacks loses to the plain loop even when most rows repeat, while
-    /// a full scan such as '[0-9]{50}' wins with few repeats. So the rows are processed in windows, the time
-    /// of a window per byte is measured, and the cheaper of the cached and the plain mode is kept. The other
-    /// mode is probed again at exponentially growing intervals, so that a block whose shape changes midway
-    /// is followed, while a block that keeps its shape pays for little more than the first probes.
-    /// The measurement only selects between two ways to compute the same result, so the result never
-    /// depends on it.
-    /// For a pattern anchored at the start with capturing groups (see `isAnchoredAtStart`), once a window
-    /// proves to be almost entirely non-matching, a capture-free existence check runs first and rejected
-    /// rows are copied through directly. In the cached mode the check runs after the lookup, so rejects are
-    /// cached like matches and repeats of a rejecting value skip the re-check.
-    /// A row that does not start with `required_prefix` (see `getRequiredPrefix`) cannot match, so it is
-    /// copied through ahead of everything else and left out of the match ratio: the pre-check then judges
-    /// only the rows that can match, and a few long matching rows among many prefix rejects are not scanned
-    /// twice by it.
-    /// `get_haystack(i)` must stay valid for the whole call.
+    /// Like calling `processString` for every row, but may run the regexp once per distinct haystack and copy
+    /// the cached result for repeats; `ReplaceRegexpModeController` decides when that pays.
+    /// Rows without the required prefix cannot match and are copied through directly.
     template <typename GetHaystack>
     static void processStringsDeduplicated(
         GetHaystack && get_haystack,
@@ -446,11 +422,9 @@ struct ReplaceRegexpImpl
         ColumnString::Offsets & res_offsets,
         ColumnString::Offset & res_offset,
         const re2::RE2 & searcher,
-        std::string_view required_prefix,
-        bool use_precheck,
         int num_captures,
         const Instructions & instructions,
-        ReplaceRegexpModeHint * mode_hint,
+        ReplaceRegexpModeController::Hint * mode_hint,
         CancellationBudget & budget)
     {
         struct CachedResult
@@ -460,75 +434,23 @@ struct ReplaceRegexpImpl
             bool matched;
         };
 
-        HashMap<std::string_view, CachedResult> results_cache;
-
-        /// The match ratio and the mode are re-evaluated once per window of rows that pass the prefix check.
-        /// The window is small so that even a block far shorter than the default `max_block_size` gets
-        /// measured, and so that a wrong decision is corrected within a bounded number of rows.
-        static constexpr size_t window_rows_count = 32;
-        /// The per-row cost of a window, independent of the haystack length, expressed in bytes for the
-        /// normalization of the window time, so that windows of short and of long haystacks compare fairly.
-        static constexpr size_t row_cost_in_bytes = 64;
-        /// The cached mode has to be this much cheaper to be chosen: on a tie the plain mode is kept,
-        /// as it does not grow the cache.
-        static constexpr double cache_advantage_required = 0.9;
-        static constexpr size_t initial_probe_interval = 4;
-        static constexpr size_t max_probe_interval = 256;
-        /// A phase is measured over several windows, as the cost of a single window follows whichever
-        /// run of cheap or expensive rows it happens to cover.
-        static constexpr size_t measured_probe_windows = 2;
-        /// A probe of the cached mode spends its first window refilling the cache, which the plain mode
-        /// does not update, and measures the following ones.
-        auto probe_windows = [](bool cache) { return cache ? measured_probe_windows + 1 : measured_probe_windows; };
-
-        bool precheck_non_matching = false;
-        size_t rows_in_window = 0;
-        size_t matched_in_window = 0;
-
-        /// The mode of the current window, the mode chosen as cheaper, and whether the current phase
-        /// measures the other mode.
-        bool use_cache = true;
-        bool cache_is_cheaper = true;
-        bool probing = true;
-        size_t windows_left_in_phase = probe_windows(true);
-        size_t probe_interval = initial_probe_interval;
-        /// The time per byte of the last phase in each mode, or a negative value while it is unknown.
-        double cost_cached = -1;
-        double cost_plain = -1;
-        /// The time and the normalized bytes of the measured windows of the current phase.
-        UInt64 phase_ns = 0;
-        size_t phase_units = 0;
-
-        /// Continue the schedule of the previous block, so that probes stay as rare as they had become.
-        bool decided = false;
-        if (mode_hint && mode_hint->known.load(std::memory_order_relaxed))
-        {
-            decided = true;
-            cache_is_cheaper = mode_hint->cache_is_cheaper.load(std::memory_order_relaxed);
-            use_cache = cache_is_cheaper;
-            probing = false;
-            probe_interval = std::clamp<size_t>(
-                mode_hint->probe_interval.load(std::memory_order_relaxed), initial_probe_interval, max_probe_interval);
-            windows_left_in_phase = std::clamp<size_t>(
-                mode_hint->windows_until_probe.load(std::memory_order_relaxed), 1, max_probe_interval);
-        }
-
-        UInt64 window_start_ns = clock_gettime_ns(CLOCK_MONOTONIC);
-        size_t window_bytes = 0;
-        size_t window_all_rows = 0;
+        HashMapWithSavedHash<std::string_view, CachedResult> results_cache;
+        const String required_prefix = getRequiredPrefix(searcher);
+        ReplaceRegexpModeController controller(mode_hint, isAnchoredAtStart(searcher) && num_captures > 1);
+        /// Copied out of the controller so that the row loop keeps them in registers.
+        ReplaceRegexpModeController::Window window = controller.carriedWindow();
+        bool use_cache = controller.useCache();
+        bool use_precheck = controller.usePrecheck();
 
         std::string_view prev_haystack;
         bool has_prev_haystack = false;
         CachedResult prev_result{0, 0, false};
 
-        /// `haystack_bytes_read` is the size of the haystack the compare or lookup scanned to find the
-        /// entry. Charging only the copied result would let a run of repeated multi-megabyte haystacks
-        /// with a tiny cached result advance the budget by little more than the per-row unit.
+        /// Charges the haystack the compare or lookup read as well as the copy.
         auto copy_cached = [&](const CachedResult & cached, size_t haystack_bytes_read)
         {
             res_data.resize(res_data.size() + cached.length);
-            /// Plain memcpy: the gap to the source region can be smaller than the 15 bytes of
-            /// slack that memcpySmallAllowReadWriteOverflow15 requires.
+            /// Not `memcpySmallAllowReadWriteOverflow15`: the source may end less than 15 bytes before the destination.
             if (cached.length)
                 memcpy(&res_data[res_offset], &res_data[cached.start], cached.length);
             res_offset += cached.length;
@@ -542,59 +464,20 @@ struct ReplaceRegexpImpl
             res_offset += haystack.size();
         };
 
-        /// Called at the end of every window: records the cost of the window and selects the mode of the next one.
-        auto finish_window = [&]
+        /// Returns whether the row matched.
+        auto process_row = [&](std::string_view haystack)
         {
-            const UInt64 now_ns = clock_gettime_ns(CLOCK_MONOTONIC);
-            /// The first window of a probe of the cached mode refills the cache and is not representative.
-            const bool measured = !(probing && use_cache && windows_left_in_phase == probe_windows(true));
-            if (measured)
+            if (use_precheck)
             {
-                phase_ns += now_ns - window_start_ns;
-                phase_units += window_bytes + window_all_rows * row_cost_in_bytes;
-            }
-            window_start_ns = now_ns;
-            window_bytes = 0;
-            window_all_rows = 0;
-
-            if (--windows_left_in_phase != 0)
-                return;
-
-            if (phase_units)
-                (use_cache ? cost_cached : cost_plain) = static_cast<double>(phase_ns) / static_cast<double>(phase_units);
-            phase_ns = 0;
-            phase_units = 0;
-
-            if (probing && (cost_cached < 0 || cost_plain < 0))
-            {
-                /// The first probes measure both modes before anything is chosen.
-                use_cache = !use_cache;
-                windows_left_in_phase = probe_windows(use_cache);
-                return;
-            }
-
-            if (probing)
-            {
-                const bool cheaper = cost_cached < cost_plain * cache_advantage_required;
-                if (cheaper != cache_is_cheaper)
+                budget.charge(haystack.size());
+                if (!searcher.Match(haystack, 0, haystack.size(), re2::RE2::Anchor::UNANCHORED, nullptr, 0))
                 {
-                    cache_is_cheaper = cheaper;
-                    probe_interval = initial_probe_interval;
+                    copy_unchanged(haystack);
+                    budget.charge();
+                    return false;
                 }
-                else
-                    probe_interval = std::min(probe_interval * 2, max_probe_interval);
-
-                probing = false;
-                decided = true;
-                use_cache = cache_is_cheaper;
-                windows_left_in_phase = probe_interval;
             }
-            else
-            {
-                probing = true;
-                use_cache = !cache_is_cheaper;
-                windows_left_in_phase = probe_windows(use_cache);
-            }
+            return processString(haystack.data(), haystack.size(), res_data, res_offset, searcher, num_captures, instructions, budget);
         };
 
         for (size_t i = 0; i < input_rows_count; ++i)
@@ -602,8 +485,7 @@ struct ReplaceRegexpImpl
             budget.charge();
 
             const std::string_view haystack = get_haystack(i);
-            window_bytes += haystack.size();
-            ++window_all_rows;
+            window.units += haystack.size() + ReplaceRegexpModeController::row_cost_in_bytes;
 
             if (!haystack.starts_with(required_prefix))
             {
@@ -613,37 +495,31 @@ struct ReplaceRegexpImpl
                 continue;
             }
 
-            /// The checkpoint runs ahead of every fast path below, so every row past the prefix check
-            /// advances it and no `continue` can starve it. The match ratio covers only the last window,
-            /// so the pre-check follows a shift between rejecting and matching runs within at most two
-            /// windows regardless of the block's shape.
-            if (rows_in_window == window_rows_count)
+            if (window.rows == ReplaceRegexpModeController::window_rows_count)
             {
-                precheck_non_matching = use_precheck && matched_in_window * 20 < window_rows_count;
-                finish_window();
-                rows_in_window = 0;
-                matched_in_window = 0;
+                controller.finishWindow(window);
+                window = {};
+                use_cache = controller.useCache();
+                use_precheck = controller.usePrecheck();
             }
-            ++rows_in_window;
-
-            const UInt64 result_start = res_offset;
-            bool row_matched = false;
+            ++window.rows;
 
             if (use_cache)
             {
-                /// Ahead of the lookup: an adjacent duplicate is served by a compare against a value that
-                /// is still cache-hot, which costs about as much as the copy both paths pay, while hashing
-                /// the haystack reads all of it again. A distinct row loses only a compare that exits at
-                /// the first differing byte (or at the length check).
+                /// Cheaper than hashing for runs of equal values. Not in the plain mode: there it costs more
+                /// than a regexp that decides after a few bytes. The previous value may be older than the
+                /// previous row, which is fine, as equal haystacks have equal results.
                 if (has_prev_haystack && haystack == prev_haystack)
                 {
                     copy_cached(prev_result, haystack.size());
-                    matched_in_window += prev_result.matched;
+                    window.matched += prev_result.matched;
                     res_offsets[i] = res_offset;
                     continue;
                 }
 
-                typename HashMap<std::string_view, CachedResult>::LookupResult it;
+                const UInt64 result_start = res_offset;
+                bool row_matched = false;
+                typename HashMapWithSavedHash<std::string_view, CachedResult>::LookupResult it;
                 bool inserted = false;
                 results_cache.emplace(haystack, it, inserted);
                 if (!inserted)
@@ -653,75 +529,23 @@ struct ReplaceRegexpImpl
                 }
                 else
                 {
-                    /// Hashing the key read the whole haystack before any of the paths below charge for it.
                     budget.chargeUnits(haystack.size() / CancellationBudget::bytes_per_unit);
-                    /// A rejected row is cached exactly like a processed one: it produces the same
-                    /// output either way, and caching it is what spares its later repeats the reject.
-                    /// The reject runs here rather than ahead of the lookup so that non-adjacent repeats
-                    /// of a rejecting value are served by the cache instead of re-running a reject that
-                    /// may have to scan the whole haystack.
-                    /// The check scans the haystack whichever way it goes, and a hit then scans it a
-                    /// second time inside `processString`, which charges only what it copies. Charged
-                    /// ahead of the outcome so that a matching row does not advance the budget by less
-                    /// than a rejected one and postpone the cancellation checkpoint by a whole scan.
-                    bool precheck_rejected = false;
-                    if (precheck_non_matching)
-                    {
-                        budget.charge(haystack.size());
-                        precheck_rejected
-                            = !searcher.Match(haystack, 0, haystack.size(), re2::RE2::Anchor::UNANCHORED, nullptr, 0);
-                    }
-
-                    if (precheck_rejected)
-                    {
-                        copy_unchanged(haystack);
-                        budget.charge();
-                        row_matched = false;
-                    }
-                    else
-                        row_matched = processString(haystack.data(), haystack.size(), res_data, res_offset, searcher, num_captures, instructions, budget);
+                    row_matched = process_row(haystack);
                     it->getMapped() = {result_start, res_offset - result_start, row_matched};
                 }
+
+                window.matched += row_matched;
+                prev_haystack = haystack;
+                has_prev_haystack = true;
+                prev_result = {result_start, res_offset - result_start, row_matched};
             }
             else
-            {
-                /// No compare against the previous value here: even a run of equal values does not pay for
-                /// it when the regexp rejects or matches after a few bytes, as the compare reads the whole
-                /// haystack. A rejected row plus the copy is exactly the plain loop's cost. It is
-                /// non-matching by definition, so leaving `matched_in_window` untouched counts it correctly.
-                /// The attempt is charged ahead of its outcome, as on the cached path above.
-                bool precheck_rejected = false;
-                if (precheck_non_matching)
-                {
-                    budget.charge(haystack.size());
-                    precheck_rejected
-                        = !searcher.Match(haystack, 0, haystack.size(), re2::RE2::Anchor::UNANCHORED, nullptr, 0);
-                }
+                window.matched += process_row(haystack);
 
-                if (precheck_rejected)
-                {
-                    copy_unchanged(haystack);
-                    budget.charge();
-                }
-                else
-                    row_matched = processString(haystack.data(), haystack.size(), res_data, res_offset, searcher, num_captures, instructions, budget);
-            }
-
-            matched_in_window += row_matched;
-            prev_haystack = haystack;
-            has_prev_haystack = true;
-            prev_result = {result_start, res_offset - result_start, row_matched};
             res_offsets[i] = res_offset;
         }
 
-        if (mode_hint && decided)
-        {
-            mode_hint->cache_is_cheaper.store(cache_is_cheaper, std::memory_order_relaxed);
-            mode_hint->probe_interval.store(static_cast<UInt32>(probe_interval), std::memory_order_relaxed);
-            /// A probe cut short by the end of the block is repeated at the start of the next one.
-            mode_hint->windows_until_probe.store(probing ? 0 : static_cast<UInt32>(windows_left_in_phase), std::memory_order_relaxed);
-            mode_hint->known.store(true, std::memory_order_relaxed);
-        }
+        controller.finish(window);
     }
 
     static void vectorConstantConstant(
@@ -733,7 +557,7 @@ struct ReplaceRegexpImpl
         ColumnString::Offsets & res_offsets,
         size_t input_rows_count,
         size_t regexp_jit_min_count = std::numeric_limits<size_t>::max(),
-        ReplaceRegexpModeHint * mode_hint = nullptr,
+        ReplaceRegexpModeController::Hint * mode_hint = nullptr,
         const std::function<void()> & check_cancellation = {})
     {
         CancellationBudget budget(check_cancellation);
@@ -815,8 +639,7 @@ struct ReplaceRegexpImpl
                     reinterpret_cast<const char *>(haystack_data.data() + from),
                     static_cast<size_t>(haystack_offsets[i] - from));
             },
-            input_rows_count, res_data, res_offsets, res_offset, searcher, getRequiredPrefix(searcher),
-            isAnchoredAtStart(searcher) && num_captures > 1, num_captures, instructions, mode_hint, budget);
+            input_rows_count, res_data, res_offsets, res_offset, searcher, num_captures, instructions, mode_hint, budget);
     }
 
     static void vectorVectorConstant(
@@ -1007,7 +830,7 @@ struct ReplaceRegexpImpl
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets,
         size_t input_rows_count,
-        ReplaceRegexpModeHint * mode_hint = nullptr,
+        ReplaceRegexpModeController::Hint * mode_hint = nullptr,
         const std::function<void()> & check_cancellation = {})
     {
         CancellationBudget budget(check_cancellation);
@@ -1041,8 +864,7 @@ struct ReplaceRegexpImpl
 
         processStringsDeduplicated(
             [&](size_t i) { return std::string_view(reinterpret_cast<const char *>(haystack_data.data() + i * n), n); },
-            input_rows_count, res_data, res_offsets, res_offset, searcher, getRequiredPrefix(searcher),
-            isAnchoredAtStart(searcher) && num_captures > 1, num_captures, instructions, mode_hint, budget);
+            input_rows_count, res_data, res_offsets, res_offset, searcher, num_captures, instructions, mode_hint, budget);
     }
 };
 

@@ -1,6 +1,5 @@
--- A constant pattern carries what it learned about caching per distinct haystack from one block to the next,
--- and shares it between the threads that execute the function. The per-row pattern is the reference.
--- Keep the RE2 path: the JIT-compiled matcher processes every row directly.
+-- The caching decision of a constant pattern is carried across blocks and shared between threads.
+-- The per-row pattern is the reference. The JIT implementation does not cache, so it is kept out of the way.
 SET min_count_to_compile_regular_expression = 1000000000;
 
 -- Blocks alternate between all-distinct and a cycle of three values.
