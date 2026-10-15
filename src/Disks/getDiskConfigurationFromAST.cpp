@@ -22,6 +22,7 @@
 #include <boost/algorithm/string/predicate.hpp>
 
 #include <algorithm>
+#include <unordered_set>
 #include <vector>
 #include <boost/algorithm/string/trim.hpp>
 
@@ -137,6 +138,17 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
             || k == "google_adc_client_secret" || k == "google_adc_refresh_token" || k == "google_adc_token_uri";
     };
 
+    /// The checks below read one value per key, while `Poco::Util::XMLConfiguration` resolves duplicate
+    /// siblings to the first one, so a repeated key (e.g. `no_sign_request = 0, no_sign_request = 1`) would let
+    /// them reason about a value the disk does not use. Reject repeats of every key they inspect.
+    auto is_singleton_key = [&](const std::string & k)
+    {
+        return k == "type" || k == "object_storage_type" || k == "access_key_id" || k == "secret_access_key"
+            || k == "no_sign_request" || k == "http_client" || k == "use_environment_credentials" || k == "role_arn"
+            || k == "service_account_key_file" || k == "_server_credentials_allowed" || is_gcs_credential_field(k);
+    };
+    std::unordered_set<std::string> seen_singleton_keys;
+
     for (const auto & arg : disk_args)
     {
         const auto * setting_function = arg->as<const ASTFunction>();
@@ -156,6 +168,9 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
             throwBadConfiguration("expected the key (key=value) to be identifier");
 
         std::string key = key_identifier->name();
+        if (is_singleton_key(key) && !seen_singleton_keys.insert(key).second)
+            throwBadConfiguration(fmt::format("the key `{}` is specified more than once", key));
+
         Poco::AutoPtr<Poco::XML::Element> key_element(xml_document->createElement(key));
         root->appendChild(key_element);
 
