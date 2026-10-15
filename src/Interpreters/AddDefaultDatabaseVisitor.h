@@ -4,7 +4,6 @@
 #include <Common/typeid_cast.h>
 #include <Analyzer/TableNode.h>
 #include <Core/QualifiedTableName.h>
-#include <Core/Settings.h>
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
@@ -43,13 +42,6 @@ extern const int UNKNOWN_TABLE;
 
 }
 
-namespace Setting
-{
-
-extern const SettingsBool allow_experimental_table_namespaces;
-
-}
-
 /// Visitors consist of functions with unified interface 'void visit(Cast & x, ASTPtr & y)', there x is y, successfully cast to Cast.
 /// Both types and function could have const specifiers. The second argument is used by visitor to replaces AST node (y) if needed.
 
@@ -66,6 +58,7 @@ public:
         , current_database(database_name_)
         , only_replace_current_database_function(only_replace_current_database_function_)
         , only_replace_in_join(only_replace_in_join_)
+        , allow_table_namespaces(getAllowTableNamespaces(context_))
     {
         if (!context->isGlobalContext())
         {
@@ -192,6 +185,10 @@ private:
 
     bool only_replace_current_database_function = false;
     bool only_replace_in_join = false;
+
+    const bool allow_table_namespaces = false;
+
+    static bool getAllowTableNamespaces(const ContextPtr & context);
 
     void visitTableExpressionsImpl(IAST & ast) const
     {
@@ -680,7 +677,7 @@ private:
         /// Already has database.
         if (identifier.compound())
         {
-            if (!context->getSettingsRef()[Setting::allow_experimental_table_namespaces])
+            if (!allow_table_namespaces)
                 return;
 
             auto table_node = IdentifierResolver::tryResolveTableIdentifier(Identifier(identifier.name()), context);
