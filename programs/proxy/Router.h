@@ -28,6 +28,9 @@ public:
         bool authorized_key_matched = false;   /// The pool was chosen by a rule that matched an SSH key allowlist.
         bool dynamic_backends_exhausted = false;   /// A rule matched, but `max_dynamic_backends` is reached.
         bool user_unknown = false;   /// The user name is empty, but the rule to decide on matches on it.
+        /// Identifies the routing target among all pools: the name of a configured pool, or the resolved
+        /// endpoint of a dynamic backend (dynamic pools created from one template share a display name).
+        String target_identity;
     };
 
     /// May run hooks (shell commands) and wait for backends; call only from a fiber.
@@ -79,8 +82,9 @@ private:
 
     /// Coordination of first-seen hooks: the first connection runs the hook,
     /// concurrent connections with the same name wait for its completion.
-    /// The keys are (pool name, user or database name): the same name routed to different pools
-    /// (e.g. different tenants) is a different name for the purpose of provisioning.
+    /// The keys are (routing target, user or database name), see `Decision::target_identity`: the same
+    /// name routed to different pools or dynamic backends (e.g. different tenants) is a different name
+    /// for the purpose of provisioning.
     /// The value is whether the hook has completed successfully; a failed hook removes the entry,
     /// so a later connection retries it. The keys come from clients, so the maps are bounded:
     /// when one is full, the completed entries are forgotten (the hooks are required to be idempotent).
@@ -93,12 +97,13 @@ private:
 
     LoggerPtr log;
 
-    void runFirstSeenHook(const String & command, const char * kind, const String & pool_name, const String & value,
+    void runFirstSeenHook(const String & command, const char * kind, const String & target_identity, const String & value,
         std::map<SeenKey, bool> & seen, const RouteAttributes & attributes);
     bool runHook(const String & command, const char * kind, const RouteAttributes & attributes);
-    /// Fills `pool`, `authorized_key_matched`, `dynamic_backends_exhausted` and `user_unknown` of the decision.
+    /// Fills `pool`, `target_identity`, `authorized_key_matched`, `dynamic_backends_exhausted` and `user_unknown` of the decision.
     Decision resolvePool(const RouteAttributes & attributes, const ListenerConfig & listener);
-    BackendPoolPtr poolForDynamicBackend(const BackendConfig & backend_config, const ListenerConfig & listener);
+    /// Sets @p identity to the key that identifies the dynamic backend.
+    BackendPoolPtr poolForDynamicBackend(const BackendConfig & backend_config, const ListenerConfig & listener, String & identity);
 };
 
 }

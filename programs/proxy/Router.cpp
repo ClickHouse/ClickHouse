@@ -133,13 +133,13 @@ bool Router::runHook(const String & command, const char * kind, const RouteAttri
     }
 }
 
-void Router::runFirstSeenHook(const String & command, const char * kind, const String & pool_name, const String & value,
+void Router::runFirstSeenHook(const String & command, const char * kind, const String & target_identity, const String & value,
     std::map<SeenKey, bool> & seen, const RouteAttributes & attributes)
 {
     if (command.empty() || value.empty())
         return;
 
-    const SeenKey key{pool_name, value};
+    const SeenKey key{target_identity, value};
 
     {
         std::unique_lock lock(first_seen_mutex);
@@ -186,7 +186,7 @@ void Router::runFirstSeenHook(const String & command, const char * kind, const S
     first_seen_finished.notify_all();
 }
 
-BackendPoolPtr Router::poolForDynamicBackend(const BackendConfig & backend_config, const ListenerConfig & listener)
+BackendPoolPtr Router::poolForDynamicBackend(const BackendConfig & backend_config, const ListenerConfig & listener, String & identity)
 {
     /// Dynamic pools may only be shared by configurations with identical behavior.
     /// Length-prefix strings so that delimiters in names, hosts, or credentials cannot alias.
@@ -213,6 +213,7 @@ BackendPoolPtr Router::poolForDynamicBackend(const BackendConfig & backend_confi
     append(toString(listener.protocol));
     append(listener.port);
     append(backendPortFor(listener.protocol, backend_config, listener.port));
+    identity = "dynamic:" + key;
 
     std::lock_guard lock(dynamic_mutex);
     auto it = dynamic_pools.find(key);
@@ -269,7 +270,7 @@ Router::Decision Router::resolvePool(const RouteAttributes & attributes, const L
         decision.authorized_key_matched = target->authorized_key_matched;
         if (target->backend)
         {
-            decision.pool = poolForDynamicBackend(*target->backend, listener);
+            decision.pool = poolForDynamicBackend(*target->backend, listener, decision.target_identity);
             decision.dynamic_backends_exhausted = !decision.pool;
             return decision;
         }
@@ -277,11 +278,15 @@ Router::Decision Router::resolvePool(const RouteAttributes & attributes, const L
         auto it = pools.find(target->pool_name);
         chassert(it != pools.end());    /// Pool names are validated when the configuration is loaded.
         decision.pool = it->second;
+        decision.target_identity = "pool:" + target->pool_name;
         return decision;
     }
 
     if (!listener.default_pool.empty())
+    {
         decision.pool = pools.at(listener.default_pool);
+        decision.target_identity = "pool:" + listener.default_pool;
+    }
 
     return decision;
 }
@@ -342,8 +347,8 @@ Router::Decision Router::route(const RouteAttributes & attributes, const Listene
     /// so unroutable traffic with arbitrary names has no side effects.
     if (backend)
     {
-        runFirstSeenHook(hooks.on_first_seen_user, "first_seen_user", pool->name(), attributes.user, seen_users, attributes);
-        runFirstSeenHook(hooks.on_first_seen_database, "first_seen_database", pool->name(), attributes.database, seen_databases, attributes);
+        runFirstSeenHook(hooks.on_first_seen_user, "first_seen_user", decision.target_identity, attributes.user, seen_users, attributes);
+        runFirstSeenHook(hooks.on_first_seen_database, "first_seen_database", decision.target_identity, attributes.database, seen_databases, attributes);
     }
 
     decision.backend = backend;
