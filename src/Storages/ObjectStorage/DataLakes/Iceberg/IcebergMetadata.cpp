@@ -1626,7 +1626,7 @@ void IcebergMetadata::addDeleteTransformers(
             /// get header of delete file
             Block delete_file_header;
 
-            auto [delete_storage_to_use, resolved_delete_key] = resolveObjectStorageForPath(
+            auto [delete_storage_to_use, resolved_delete_key] = iceberg_object_info->resolveDeleteFileStorage(
                 persistent_components.table_location, delete_file.file_path, object_storage, *external_storages, local_context,
                 persistent_components.path_resolver);
 

@@ -199,6 +199,19 @@ std::optional<String> IcebergDataObjectInfo::getExternalLocalPath() const
     return std::nullopt;
 }
 
+std::pair<ObjectStoragePtr, String> IcebergDataObjectInfo::resolveDeleteFileStorage(
+    const String & table_location,
+    const String & file_path,
+    const ObjectStoragePtr & base_storage,
+    ExternalStorageCache & external_storages,
+    const ContextPtr & context,
+    const Iceberg::IcebergPathResolver & path_resolver) const
+{
+    if (auto it = info.delete_file_keys_in_base_storage.find(file_path); it != info.delete_file_keys_in_base_storage.end())
+        return {base_storage, it->second};
+    return resolveObjectStorageForPath(table_location, file_path, base_storage, external_storages, context, path_resolver);
+}
+
 #endif
 
 void IcebergObjectSerializableInfo::serializeForClusterFunctionProtocol(WriteBuffer & out, size_t protocol_version) const
@@ -466,6 +479,18 @@ void IcebergObjectSerializableInfo::deserializeForClusterFunctionProtocol(ReadBu
             readStringBinary(name, in);
             identity_partition_columns.emplace_back(std::move(name), readFieldBinary(in));
         }
+    }
+
+    /// Older initiators send delete files as keys in the base storage.
+    if (protocol_version < DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_ABSOLUTE_PATH)
+    {
+        delete_file_keys_in_base_storage.clear();
+        for (const auto & pos_delete_obj : position_deletes_objects)
+            delete_file_keys_in_base_storage.emplace(pos_delete_obj.file_path, pos_delete_obj.file_path);
+        if (deletion_vector.has_value())
+            delete_file_keys_in_base_storage.emplace(deletion_vector->file_path, deletion_vector->file_path);
+        for (const auto & eq_delete_obj : equality_deletes_objects)
+            delete_file_keys_in_base_storage.emplace(eq_delete_obj.file_path, eq_delete_obj.file_path);
     }
 }
 

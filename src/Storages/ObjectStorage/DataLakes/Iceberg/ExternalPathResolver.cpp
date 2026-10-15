@@ -737,6 +737,9 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
     #endif
 
     #if USE_HDFS
+    /// `HDFSObjectStorage` resolves a relative key against the user's home directory, so the key keeps the leading `/`.
+    const std::string hdfs_key = "/" + target_decomposed.key;
+
     if (target_scheme_normalized == "hdfs")
     {
         bool use_base_storage = false;
@@ -768,7 +771,7 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
         }
 
         if (use_base_storage)
-            return std::make_pair(base_storage, target_decomposed.key);
+            return std::make_pair(base_storage, hdfs_key);
     }
     #endif
 
@@ -908,7 +911,7 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
     {
         return getOrCreateStorage(
             cache_key,
-            target_decomposed.key,
+            hdfs_key,
             external_storages,
             [&](const std::string & storage_name) -> ObjectStoragePtr
             {

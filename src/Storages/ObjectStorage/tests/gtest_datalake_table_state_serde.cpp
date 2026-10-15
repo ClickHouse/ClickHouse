@@ -229,4 +229,8 @@ TEST(DatalakeStateSerde, IcebergObjectSerializableInfoDeleteFileKeysSentBeforeAb
     ASSERT_EQ(deserialized.position_deletes_objects[0].file_path, "table/deletes/pos1.parquet");
     ASSERT_TRUE(deserialized.deletion_vector.has_value());
     ASSERT_EQ(deserialized.deletion_vector->file_path, "deletes/dv.puffin");
+    /// A newer worker must open the received keys in the base storage instead of resolving them as metadata paths.
+    ASSERT_EQ(deserialized.delete_file_keys_in_base_storage.size(), 2);
+    ASSERT_EQ(deserialized.delete_file_keys_in_base_storage.at("table/deletes/pos1.parquet"), "table/deletes/pos1.parquet");
+    ASSERT_EQ(deserialized.delete_file_keys_in_base_storage.at("deletes/dv.puffin"), "deletes/dv.puffin");
 }

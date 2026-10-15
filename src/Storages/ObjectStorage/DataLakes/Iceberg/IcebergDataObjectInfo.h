@@ -41,8 +41,8 @@ struct IcebergObjectSerializableInfo
 
     bool requires_external_storage = false;
 
-    /// Delete file paths mapped to their keys in the base storage. Not serialized: workers before
-    /// `DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_ABSOLUTE_PATH` receive these keys instead of the paths.
+    /// Delete file paths mapped to their keys in the base storage. Not serialized: before
+    /// `DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_ABSOLUTE_PATH`, these keys are exchanged instead of the paths.
     std::unordered_map<String, String> delete_file_keys_in_base_storage{};
 
     bool hasPositionDeletes() const { return deletion_vector.has_value() || !position_deletes_objects.empty(); }
@@ -119,6 +119,15 @@ struct IcebergDataObjectInfo : public ObjectInfo, std::enable_shared_from_this<I
     }
 
     std::optional<String> getExternalLocalPath() const override;
+
+    /// A delete file with a known key in the base storage is opened by that key, without resolving its path again.
+    std::pair<ObjectStoragePtr, String> resolveDeleteFileStorage(
+        const String & table_location,
+        const String & file_path,
+        const ObjectStoragePtr & base_storage,
+        ExternalStorageCache & external_storages,
+        const ContextPtr & context,
+        const Iceberg::IcebergPathResolver & path_resolver) const;
 
     std::shared_ptr<ObjectInfo> clone() const override { return std::make_shared<IcebergDataObjectInfo>(*this); }
 

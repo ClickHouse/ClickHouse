@@ -77,7 +77,7 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
             continue;
         }
 
-        auto [delete_storage_to_use, resolved_key] = resolveObjectStorageForPath(
+        auto [delete_storage_to_use, resolved_key] = iceberg_object_info->resolveDeleteFileStorage(
             path_resolver.getTableLocation(), position_deletes_object.file_path, object_storage, *external_storages, context,
             path_resolver);
 
@@ -205,7 +205,7 @@ void IcebergBitmapPositionDeleteTransform::initialize()
 {
     if (const auto & deletion_vector_object = iceberg_object_info->info.deletion_vector)
     {
-        auto [deletion_vector_storage, resolved_key] = resolveObjectStorageForPath(
+        auto [deletion_vector_storage, resolved_key] = iceberg_object_info->resolveDeleteFileStorage(
             path_resolver.getTableLocation(), deletion_vector_object->file_path, object_storage, *external_storages, context,
             path_resolver);
 
