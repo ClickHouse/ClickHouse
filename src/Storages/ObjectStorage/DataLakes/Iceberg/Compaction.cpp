@@ -329,6 +329,8 @@ static void writeDataFiles(
     CompressionMethod write_compression_method)
 {
     ColumnMapperPtr column_mapper;
+    /// The data files are read by field id, so that they are decoded the same way as by SELECT.
+    ColumnMapperPtr read_column_mapper;
     {
         auto current_schema_id = initial_plan.initial_metadata_object->getValue<Int64>(Iceberg::f_current_schema_id);
         auto schemas = initial_plan.initial_metadata_object->getArray(Iceberg::f_schemas);
@@ -338,6 +340,10 @@ static void writeDataFiles(
             if (schema_object->getValue<Int32>(Iceberg::f_schema_id) == current_schema_id)
             {
                 column_mapper = createColumnMapper(schema_object);
+                read_column_mapper = createColumnMapper(schema_object);
+                const auto & metadata_object = initial_plan.initial_metadata_object;
+                if (metadata_object->has(Iceberg::f_last_column_id) && !metadata_object->isNull(Iceberg::f_last_column_id))
+                    read_column_mapper->setLastAssignedFieldId(metadata_object->getValue<Int64>(Iceberg::f_last_column_id));
                 break;
             }
         }
@@ -382,7 +388,7 @@ static void writeDataFiles(
             8192,
             format_settings,
             parser_shared_resources,
-            std::make_shared<FormatFilterInfo>(nullptr, context, nullptr, nullptr, nullptr),
+            std::make_shared<FormatFilterInfo>(nullptr, context, read_column_mapper, nullptr, nullptr),
             true /* is_remote_fs */,
             chooseCompressionMethod(data_file->data_object_info->getPath(), toContentEncodingName(write_compression_method)),
             false);

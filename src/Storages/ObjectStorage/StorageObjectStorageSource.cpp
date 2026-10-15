@@ -1502,19 +1502,26 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 }
             }
 
+            /// There is no shared mapper when the table's configured format is not Parquet, but its
+            /// Parquet data files still have to be resolved by field id.
+            ColumnMapperPtr column_mapper = format_filter_info->column_mapper;
+            if (!column_mapper)
+                column_mapper = configuration->getColumnMapperForObject(object_info);
+
             if (!format_supports_prewhere)
                 return std::make_shared<FormatFilterInfo>(
                     format_filter_info->filter_actions_dag,
                     format_filter_info->context.lock(),
-                    format_filter_info->column_mapper,
+                    column_mapper,
                     nullptr, nullptr);
 
-            if (filters_substituted || (format_filter_info->top_k_filter && !top_k_filter_allowed))
+            if (filters_substituted || (format_filter_info->top_k_filter && !top_k_filter_allowed)
+                || column_mapper != format_filter_info->column_mapper)
             {
                 auto result = std::make_shared<FormatFilterInfo>(
                     format_filter_info->filter_actions_dag,
                     format_filter_info->context.lock(),
-                    format_filter_info->column_mapper,
+                    column_mapper,
                     row_level_filter, prewhere_info);
                 if (top_k_filter_allowed)
                     result->top_k_filter = format_filter_info->top_k_filter;

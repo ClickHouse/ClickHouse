@@ -146,8 +146,9 @@ private:
     void processSubtreeTuple(TraversalNode & node);
     bool processSubtreeDynamic(TraversalNode & node);
 
+    /// `time_as_stored_integer`: decode a TIME(MICROS) INT64 column as the plain stored integer.
     void processPrimitiveColumn(
-        const parq::SchemaElement & element, DataTypePtr type_hint,
+        const parq::SchemaElement & element, DataTypePtr type_hint, bool time_as_stored_integer,
         PageDecoderInfo & out_decoder, DataTypePtr & out_decoded_type,
         DataTypePtr & out_inferred_type, std::optional<GeoColumnMetadata> geo_metadata) const;
 
