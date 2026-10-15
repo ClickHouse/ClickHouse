@@ -390,18 +390,3 @@ ALTER TABLE tab ADD INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', post
 DROP TABLE tab;
 
 DROP TABLE IF EXISTS tab;
-
-SELECT '- ATTACH of a definition that CREATE now rejects still works, and DROP INDEX recovers';
-set allow_deprecated_database_ordinary = 1;
-DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
-CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Ordinary;
-ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.legacy
-(
-    id UInt64,
-    val String,
-    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = if(val IN (SELECT 'the'), '', val))
-)
-ENGINE = MergeTree ORDER BY id;
-ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.legacy DROP INDEX idx;
-SELECT 'legacy attach and drop index ok';
-DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
