@@ -4,6 +4,8 @@
 right
 k	v	v_named.k	v_named.v
 1	left	1	right
+[(1,0,1,0)]
+[(1,0,1,0)]
 -- parameterized view
 1	left
 right

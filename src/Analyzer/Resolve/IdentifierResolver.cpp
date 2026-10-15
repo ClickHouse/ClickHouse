@@ -1211,10 +1211,20 @@ static QueryTreeNodePtr getUnaliasedSubqueryOrTableFunctionTableExpression(const
             return nullptr;
     }
 
-    /// An inlined view is a subquery named by the view.
-    if (auto it = scope.table_expression_node_to_data.find(static_pointer_cast<ITableExpressionNode>(table_expression));
-        it != scope.table_expression_node_to_data.end() && !it->second.table_name.empty())
-        return nullptr;
+    /// An inlined view is a subquery named by the view. The table expression data is kept in the query scope that owns
+    /// the table expression, while the active scope can be a nested one (e.g. a lambda scope), so look through the
+    /// enclosing scopes.
+    const auto table_expression_key = static_pointer_cast<ITableExpressionNode>(table_expression);
+    for (const auto * current_scope = &scope; current_scope; current_scope = current_scope->parent_scope)
+    {
+        if (auto it = current_scope->table_expression_node_to_data.find(table_expression_key);
+            it != current_scope->table_expression_node_to_data.end())
+        {
+            if (!it->second.table_name.empty())
+                return nullptr;
+            break;
+        }
+    }
 
     return table_expression;
 }

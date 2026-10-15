@@ -26,6 +26,9 @@ SELECT k, v FROM t_named_left INNER JOIN v_named ON t_named_left.k = v_named.k S
 SELECT k, v FROM t_named_left INNER JOIN v_named ON t_named_left.k = v_named.k SETTINGS analyzer_inline_views = 0;
 SELECT v_named.v FROM t_named_left INNER JOIN v_named ON t_named_left.k = v_named.k SETTINGS analyzer_inline_views = 1;
 SELECT * FROM t_named_left INNER JOIN v_named ON t_named_left.k = v_named.k SETTINGS analyzer_inline_views = 1 FORMAT TSVWithNames;
+-- A matcher inside a lambda is validated in the lambda scope; the inlined view keeps its name there too.
+SELECT arrayMap(x -> tuple(* REPLACE (0 AS v)), [1]) FROM v_named, t_named_left SETTINGS analyzer_inline_views = 1;
+SELECT arrayMap(x -> tuple(* REPLACE (0 AS v)), [1]) FROM v_named, t_named_left SETTINGS analyzer_inline_views = 0;
 
 SELECT '-- parameterized view';
 SELECT k, v FROM t_named_left INNER JOIN pv_named(p = 1) ON t_named_left.k = pv_named.k;
