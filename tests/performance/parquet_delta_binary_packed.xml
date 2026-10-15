@@ -18,7 +18,7 @@
                        column_encoding='DELTA_BINARY_PACKED', data_page_version='2.0',
                        row_group_size=1 << 20, max_rows_per_page=1 << 20, data_page_size=1 << 30)
 
-    Each query decodes the file 10 times to get a run time well above the noise.
+    Each query decodes the file 10 times (`loop` with `LIMIT`) to get a run time well above the noise.
 -->
 <test>
     <settings>
@@ -28,25 +28,8 @@
     <query>
         SELECT sum(toUnixTimestamp64Micro(ts)) FROM
         (
-            SELECT ts FROM file('parquet_delta_binary_packed.parquet')
-            UNION ALL
-            SELECT ts FROM file('parquet_delta_binary_packed.parquet')
-            UNION ALL
-            SELECT ts FROM file('parquet_delta_binary_packed.parquet')
-            UNION ALL
-            SELECT ts FROM file('parquet_delta_binary_packed.parquet')
-            UNION ALL
-            SELECT ts FROM file('parquet_delta_binary_packed.parquet')
-            UNION ALL
-            SELECT ts FROM file('parquet_delta_binary_packed.parquet')
-            UNION ALL
-            SELECT ts FROM file('parquet_delta_binary_packed.parquet')
-            UNION ALL
-            SELECT ts FROM file('parquet_delta_binary_packed.parquet')
-            UNION ALL
-            SELECT ts FROM file('parquet_delta_binary_packed.parquet')
-            UNION ALL
-            SELECT ts FROM file('parquet_delta_binary_packed.parquet')
+            SELECT ts FROM loop(file('parquet_delta_binary_packed.parquet'))
+            LIMIT 60000000
         )
         FORMAT Null
     </query>
@@ -54,25 +37,8 @@
     <query>
         SELECT sum(i32) FROM
         (
-            SELECT i32 FROM file('parquet_delta_binary_packed.parquet')
-            UNION ALL
-            SELECT i32 FROM file('parquet_delta_binary_packed.parquet')
-            UNION ALL
-            SELECT i32 FROM file('parquet_delta_binary_packed.parquet')
-            UNION ALL
-            SELECT i32 FROM file('parquet_delta_binary_packed.parquet')
-            UNION ALL
-            SELECT i32 FROM file('parquet_delta_binary_packed.parquet')
-            UNION ALL
-            SELECT i32 FROM file('parquet_delta_binary_packed.parquet')
-            UNION ALL
-            SELECT i32 FROM file('parquet_delta_binary_packed.parquet')
-            UNION ALL
-            SELECT i32 FROM file('parquet_delta_binary_packed.parquet')
-            UNION ALL
-            SELECT i32 FROM file('parquet_delta_binary_packed.parquet')
-            UNION ALL
-            SELECT i32 FROM file('parquet_delta_binary_packed.parquet')
+            SELECT i32 FROM loop(file('parquet_delta_binary_packed.parquet'))
+            LIMIT 60000000
         )
         FORMAT Null
     </query>
