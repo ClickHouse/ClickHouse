@@ -1,0 +1,17 @@
+s = 'abc'	1	1	2	Condition: and((substring(s, 1, 2) in ['ab', 'ab']), (s in ['abc', 'abc']))
+s IN ('abc', 'xyz')	2	2	5
+s LIKE 'ab%'	5	5	9
+startsWith(s, 'ab')	5	5	9
+match(s, '^ab')	5	5	9
+match(s, '^(abc|abd)')	2	2	9
+s NOT LIKE 'ab%'	7	7	8
+s LIKE 'ab%z'	2	2	9
+s LIKE '%ab'	1	1	12
+has(['abc', 'xyz'], s)	2	2	5	Condition: and((substring(s, 1, 2) in 2-element set), (s in 2-element set))
+'ab' < s	9	9	11
+empty(s)	1	1	5
+notEmpty(s)	11	11	12
+s = 'a'	1	1	2	Condition: (cityHash64(s) in [2603192927274642682, 2603192927274642682])
+s != 'a'	3	3	4
+s IN ('b', 'e')	2	2	3	Condition: and((cityHash64(s) in 2-element set), (s in 2-element set))
+has(['b', 'e'], s)	2	2	3
