@@ -378,24 +378,33 @@ void BufferedShardByHashTransform::reclaimPortResidentChunks()
         if (!port_resident_charges[shard])
             continue;
 
-        /// Whether the chunk is still parked decides who owns its charge, so it is checked before
-        /// `isFinished()`: a finished port with no data means the downstream pulled the chunk and only then
-        /// closed the input, not that the chunk was discarded. That order really happens - a
-        /// `MergingSortedTransform` keeps a pulled chunk in `IMergingTransformBase`'s retained input state (and
-        /// afterwards in the algorithm's current inputs), and closes all of its inputs as soon as its own
-        /// output finishes - so releasing on `isFinished()` alone would stop charging bytes that are still
-        /// resident downstream.
-        if (!output_it->hasData())
+        /// A finished port with no data means the downstream pulled the chunk and only then closed the input,
+        /// not that the chunk was discarded. That order really happens - a `MergingSortedTransform` keeps a
+        /// pulled chunk in `IMergingTransformBase`'s retained input state (and afterwards in the algorithm's
+        /// current inputs), and closes all of its inputs as soon as its own output finishes - so releasing on
+        /// `isFinished()` alone would stop charging bytes that are still resident downstream.
+        ///
+        /// `isFinished()` and `hasData()` are two separate reads of the port state, and the downstream can pull
+        /// and close concurrently with them (`budget->mutex` serializes the scatters, not the downstream port
+        /// operations). So the order of the reads matters: `isFinished()` goes first. Once the downstream has
+        /// closed the input it no longer pulls, so `hasData()` read afterwards is stable and tells a discarded
+        /// parked chunk from a pulled one. Reading `hasData()` first would race: it could see the chunk still
+        /// parked, then the downstream pulls and closes, and `isFinished()` would make a chunk that is live
+        /// downstream look discarded. If the port is not finished yet, a later `hasData() == false` is a pull
+        /// regardless of whether the downstream closed in between.
+        if (output_it->isFinished())
+        {
+            /// A finished output still reporting data has discarded that parked chunk. The ChunkInfo remains
+            /// attached until the port is torn down, so release its shared charge explicitly now. Otherwise the
+            /// chunk was pulled before the close and its ChunkInfo keeps the charge.
+            if (output_it->hasData())
+                port_resident_charges[shard]->releaseUnlocked();
+            port_resident_charges[shard].reset();
+        }
+        else if (!output_it->hasData())
         {
             /// The downstream pulled the chunk. Its ChunkInfo now keeps the charge until the downstream
             /// processor releases its retained input.
-            port_resident_charges[shard].reset();
-        }
-        else if (output_it->isFinished())
-        {
-            /// A finished output still reporting data has discarded that parked chunk. The ChunkInfo remains
-            /// attached until the port is torn down, so release its shared charge explicitly now.
-            port_resident_charges[shard]->releaseUnlocked();
             port_resident_charges[shard].reset();
         }
     }
