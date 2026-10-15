@@ -78,6 +78,22 @@ INNER JOIN t_nd ON t_nc.k = t_nd.k AND ifNull(t_na.flag, 0) = 0
 ORDER BY ALL
 SETTINGS join_use_nulls = 1;
 
+SELECT '-- constant false conjunct above RIGHT JOIN';
+SELECT t_a.k, t_a.flag, t_b.k, t_c.k, t_d.k
+FROM t_a INNER JOIN t_b ON t_a.k = t_b.k
+RIGHT JOIN t_c ON t_a.k = t_c.k
+INNER JOIN t_d ON t_c.k = t_d.k AND 0
+ORDER BY ALL;
+
+-- The ON clause does not reference `t_d`, so the step is applied where all of its relations are
+-- present, not where `t_a.flag = t_b.flag` could first be evaluated.
+SELECT '-- ON clause above RIGHT JOIN not referencing the joined table';
+SELECT t_a.k, t_a.flag, t_b.k, t_c.k, t_d.k
+FROM t_a INNER JOIN t_b ON t_a.k = t_b.k
+RIGHT JOIN t_c ON t_a.k = t_c.k
+INNER JOIN t_d ON t_a.flag = t_b.flag
+ORDER BY ALL;
+
 -- The inner join step above `RIGHT JOIN` reads `t_rd` from its padded side through `dw % 2 = cy`,
 -- so it may not pull `t_rd` out of `t_rb JOIN t_rd` and join it first: the condition `bk = dk`
 -- would then remove the padded rows of `t_ra`. The large `t_rb` makes that order look cheapest.

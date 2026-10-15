@@ -278,8 +278,13 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Join condition {} refers to join step {}, but there are only {}",
                     i, op_index, operators.size());
             dpsub_data.edge_operator[i] = op_index;
-            if (!dpsub_data.edge_pinned[i])
-                dpsub_data.edge_defer_mask[i] = relations_to_wait_for(dpsub_data.edge_source_mask[i], op_index);
+            if (dpsub_data.edge_pinned[i])
+                continue;
+            /// A constant conjunct reads no relation, but it filters the result of its own step: it
+            /// waits for all relations of the step, so it is neither applied below a join nested
+            /// under the step nor to relations outside of it.
+            const UInt32 sources = dpsub_data.edge_source_mask[i];
+            dpsub_data.edge_defer_mask[i] = sources ? relations_to_wait_for(sources, op_index) : operators[op_index].relations;
         }
         LOG_TRACE(log, "DPsub: using {} conflict detector over {} captured join operators",
                   toString(query_graph.conflict_detector), dpsub_data.conflict_operators.size());

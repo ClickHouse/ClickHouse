@@ -74,13 +74,13 @@ struct ConflictOperator
 
     /// Whether the operator is applied where `left` and `right` are joined: its ON clause is complete
     /// there and spans the two sides, which happens at exactly one join of a plan. An operator whose
-    /// ON clause does not span its inputs is applied where all of its relations first come together.
+    /// ON clause does not span its inputs (degenerate) is applied where all of its relations first
+    /// come together; its ON clause may be complete, and even span a split, well inside one input.
     bool isAppliedAt(UInt32 left, UInt32 right) const
     {
         const UInt32 joined = left | right;
-        if ((nel & ~joined) == 0 && (nel & left) && (nel & right))
-            return true;
-        return degenerate && (relations & ~joined) == 0 && (relations & left) && (relations & right);
+        const UInt32 located_by = degenerate ? relations : nel;
+        return (located_by & ~joined) == 0 && (located_by & left) && (located_by & right);
     }
 
     /// The relations whose rows the operator pads with defaults or `NULL`, or drops: the right side
