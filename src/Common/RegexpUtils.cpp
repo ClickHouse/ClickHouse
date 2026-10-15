@@ -178,8 +178,7 @@ const char * findEndOfPureFlagGroup(const char * pos, const char * end)
 
     auto is_flag_char = [](char c) { return c == 'i' || c == 'm' || c == 's' || c == 'U' || c == 'u' || c == '-'; };
 
-    const char * flags_begin = pos + 2;
-    const char * it = flags_begin;
+    const char * it = pos + 2;
     while (it < end && is_flag_char(*it))
         ++it;
 

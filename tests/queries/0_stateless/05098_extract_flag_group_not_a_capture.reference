@@ -32,5 +32,6 @@ an empty flag group
 bcd
 bcd
 1
+1	1
 SELECT extract(materialize(\'abcd\'), \'(?)(b)\') AS `extract(materialize(\'abcd\'), \'(?)(b).*$\')`
 FROM system.one AS __table1

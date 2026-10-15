@@ -50,7 +50,7 @@ SELECT count() FROM t_prefix_flag_group WHERE match(s, '^abc');
 SELECT count() FROM t_prefix_flag_group WHERE match(s, '^zz');
 
 SELECT 'an empty flag group is zero-width too';
-SELECT count() FROM t_prefix_flag_group WHERE match(s, '^ab(?)*c');
+SELECT count() FROM t_prefix_flag_group WHERE match(s, '^ab(?)*c') SETTINGS force_primary_key = 1;
 SELECT countIf(match(s, '^ab(?)*c')) FROM t_prefix_flag_group;
 
 DROP TABLE t_prefix_flag_group;
@@ -62,6 +62,7 @@ INSERT INTO t_prefix_utf8 VALUES ('c'), ('éc'), ('ééc'), ('aéc'), ('ac'), ('
 
 SELECT 'a quantifier over a multi-byte literal';
 SELECT match('c', '^é*c'), match('c', '^é(?m)*c'), match('c', '^é\Q\E*c');
+SELECT match('abcdx', 'abcdé?x'), match('abcdx', 'abcdé(?)?x');
 SELECT count() FROM t_prefix_utf8 WHERE match(s, '^é*c');
 SELECT countIf(match(s, '^é*c')) FROM t_prefix_utf8;
 SELECT count() FROM t_prefix_utf8 WHERE match(s, '^é?c');
