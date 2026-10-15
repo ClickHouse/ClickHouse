@@ -1112,19 +1112,15 @@ StoragePtr DatabaseDataLake::maybeCreateTableInExternalCatalog(ContextPtr contex
     else
     {
         auto table_metadata = tryGetNewTableMetadata(settings, *catalog, name);
-        if (!table_metadata)
+        if (!table_metadata && catalog->assignsLocationToNewNamespaces())
         {
             /// The namespace location appears only once the namespace exists.
-            if (!catalog->assignsLocationToNewNamespaces())
-                throw cannotTellNewTableLocation(name);
-
             catalog->createNamespaceIfNotExists(namespace_name);
             table_metadata = tryGetNewTableMetadata(settings, *catalog, name);
-            if (!table_metadata)
-                throw cannotTellNewTableLocation(name);
         }
 
-        checkStorageTypeMatchesEngine(name, *engine_storage_type, table_metadata->getStorageType());
+        if (table_metadata)
+            checkStorageTypeMatchesEngine(name, *engine_storage_type, table_metadata->getStorageType());
     }
 
     auto storage_settings = std::make_shared<DataLakeStorageSettings>();
