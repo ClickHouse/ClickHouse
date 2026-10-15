@@ -6679,7 +6679,10 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             {
                 if (column.default_desc.kind != ColumnDefaultKind::Materialized || !column.default_desc.expression)
                     continue;
-                if (!ast_uses_changed_subcolumn(column.default_desc.expression))
+                /// Expand matchers and `ALIAS` columns with stored-expression semantics first, so the probe
+                /// does not depend on session settings such as `asterisk_include_alias_columns`.
+                if (!ast_uses_changed_subcolumn(
+                        cloneAndExpandColumnDefaultExpressionWithAliases(column.default_desc, old_columns_desc, local_context)))
                     continue;
 
                 throw Exception(
