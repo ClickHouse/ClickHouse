@@ -401,10 +401,10 @@ void optimizeTreeSecondPass(
 
     /// Join runtime filters are registered and found in the lookup of the thread's query context, so they need a query.
     /// When Cascades distributes the plan, every task optimizes its fragment again and places the runtime filters of
-    /// the joins it runs; a filter placed here would arrive there without its lookup key and do nothing, while its
-    /// steps would still take part in the Cascades search.
+    /// the joins it runs. A filter placed here reaches another task only if `distributed_plan_join_runtime_filters`
+    /// sends it; otherwise it would arrive without its lookup key and do nothing.
     const bool add_join_runtime_filters = optimization_settings.enable_join_runtime_filters && CurrentThread::tryGetQueryContext()
-        && !cascades_will_run;
+        && (!cascades_will_run || optimization_settings.distributed_plan_join_runtime_filters);
     bool join_runtime_filters_were_added = false;
     traverseQueryPlan(stack, root,
         [&](auto & frame_node)

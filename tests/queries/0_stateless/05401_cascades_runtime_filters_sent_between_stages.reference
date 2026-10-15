@@ -1,0 +1,7 @@
+-- the initiator plan builds and applies the filter
+JoinLogical (Shuffle HashJoin )
+((Apply runtime join filter + Change column names to column identifiers))
+BuildRuntimeFilter (Build runtime join filter on __table2.k)
+-- the result is right
+49504500
+49504500
