@@ -38,7 +38,8 @@ SELECT timestamp, flags, schema, zero_threshold, count, sum, zero_count, positiv
     count_int, zero_count_int, positive_values_int, negative_values_int
     FROM timeSeriesHistograms(ts_dst) ORDER BY timestamp;
 SELECT count() FROM timeSeriesSamples(ts_dst);
-SELECT min(min_time), max(max_time) FROM timeSeriesTags(ts_dst) WHERE metric_name = 'test_histogram_seconds';
+SELECT min(min_time), max(max_time) FROM timeSeriesTimeRanges(ts_dst)
+    WHERE id IN (SELECT id FROM timeSeriesTags(ts_dst) WHERE metric_name = 'test_histogram_seconds');
 
 SELECT '-- a table without the histograms target has no histograms column';
 CREATE TABLE ts_plain ENGINE = TimeSeries;

@@ -21,9 +21,9 @@ using TimeSeriesSettingsPtr = std::shared_ptr<const TimeSeriesSettings>;
 ///
 /// CREATE TABLE ts ENGINE = TimeSeries()
 /// -OR-
-/// CREATE TABLE ts ENGINE = TimeSeries() SAMPLES [db].table1 TAGS [db].table2 METRIC FAMILIES [db].table3
+/// CREATE TABLE ts ENGINE = TimeSeries() SAMPLES [db].table1 TAGS [db].table2 TIME RANGES [db].table3 METRIC FAMILIES [db].table4
 /// -OR-
-/// CREATE TABLE ts ENGINE = TimeSeries() SAMPLES ENGINE = MergeTree TAGS ENGINE = ReplacingMergeTree METRIC FAMILIES ENGINE = ReplacingMergeTree
+/// CREATE TABLE ts ENGINE = TimeSeries() SAMPLES ENGINE = MergeTree TAGS ENGINE = ReplacingMergeTree TIME RANGES ENGINE = AggregatingMergeTree METRIC FAMILIES ENGINE = ReplacingMergeTree
 /// -OR-
 /// CREATE TABLE ts ENGINE = TimeSeries()
 ///    SETTINGS tags_to_columns = {'instance': 'instance', 'job': 'job'}
@@ -59,14 +59,14 @@ public:
     bool isInnerTable(ViewTarget::Kind target_kind) const;
     bool hasInnerTables() const { return has_inner_tables; }
 
-    /// Whether this table has a target of the given kind (the RecentSamples and Histograms targets are optional).
+    /// Whether this table has a target of the given kind (the recent samples, histograms and time ranges targets are optional).
     bool hasTarget(ViewTarget::Kind target_kind) const;
 
-    /// Returns all possible target kinds: Samples, RecentSamples, Histograms, Tags, and MetricFamilies.
-    /// A concrete table can have no RecentSamples or Histograms target (see hasTarget).
-    static constexpr std::array<ViewTarget::Kind, 5> getTargetKinds()
+    /// Returns all possible target kinds: Samples, RecentSamples, Histograms, Tags, TimeRanges, and MetricFamilies.
+    /// A concrete table can have no recent samples, histograms or time ranges target (see hasTarget).
+    static constexpr std::array<ViewTarget::Kind, 6> getTargetKinds()
     {
-        return {ViewTarget::Samples, ViewTarget::RecentSamples, ViewTarget::Histograms, ViewTarget::Tags, ViewTarget::MetricFamilies};
+        return {ViewTarget::Samples, ViewTarget::RecentSamples, ViewTarget::Histograms, ViewTarget::Tags, ViewTarget::TimeRanges, ViewTarget::MetricFamilies};
     }
 
     /// Return the caches used to skip the rows already written to the "tags" and "metric families" tables,
