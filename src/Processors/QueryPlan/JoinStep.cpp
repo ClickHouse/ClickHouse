@@ -607,12 +607,4 @@ void FilledJoinStep::describeActions(JSONBuilder::JSONMap & map) const
         map.add(name, value);
 }
 
-InputConsumption JoinStep::getInputConsumption(size_t input_index) const
-{
-    const size_t build_side_index = swap_streams ? 0 : 1;
-    if (input_index != build_side_index)
-        return {};
-    return {InputConsumption::Kind::WholeInput, "build side of " + getName()};
-}
-
 }

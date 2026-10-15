@@ -73,57 +73,28 @@ const String * tryGetReceiveExchangeId(const IQueryPlanStep & step)
     return nullptr;
 }
 
-/// Finds the receive step of `exchange_name` in `plan` and walks from it towards the output of the fragment
-/// to the first step which needs the whole input it is reached through (`IQueryPlanStep::getInputConsumption`),
-/// keeping the input position at every parent. Streaming when there is no such step.
-InputConsumption findConsumption(const QueryPlan & plan, const String & stage_name, const String & exchange_name)
+/// Checks that `plan` has exactly one receive step of `exchange_name`: a dependency of the cut plan without one is
+/// an inconsistent cut.
+void checkReceiveStep(const QueryPlan & plan, const String & stage_name, const String & exchange_name)
 {
-    const auto * root = plan.getRootNode();
-    if (!root)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The plan fragment of stage {} is empty", stage_name);
-
-    /// Node -> (parent, index of the node among the children of the parent).
-    std::unordered_map<const QueryPlan::Node *, std::pair<const QueryPlan::Node *, size_t>> parents;
-    const QueryPlan::Node * receive_node = nullptr;
-
-    std::vector<const QueryPlan::Node *> stack{root};
+    size_t receive_steps = 0;
+    std::vector<const QueryPlan::Node *> stack{plan.getRootNode()};
     while (!stack.empty())
     {
         const auto * node = stack.back();
         stack.pop_back();
 
         if (const auto * exchange_id = tryGetReceiveExchangeId(*node->step); exchange_id && *exchange_id == exchange_name)
-        {
-            if (receive_node)
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Stage {} has more than one receive step for exchange {}", stage_name, exchange_name);
-            receive_node = node;
-        }
-
-        for (size_t i = 0; i < node->children.size(); ++i)
-        {
-            parents[node->children[i]] = {node, i};
-            stack.push_back(node->children[i]);
-        }
+            ++receive_steps;
+        stack.insert(stack.end(), node->children.begin(), node->children.end());
     }
 
-    if (!receive_node)
+    if (receive_steps == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Stage {} depends on exchange {}, but has no receive step for it", stage_name, exchange_name);
-
-    const QueryPlan::Node * current = receive_node;
-    while (true)
-    {
-        auto it = parents.find(current);
-        if (it == parents.end())
-            return {}; /// No step up to the output of the fragment needs the whole input: the rows stream through.
-
-        const auto [parent, child_index] = it->second;
-        auto consumption = parent->step->getInputConsumption(child_index);
-        if (consumption.kind == InputConsumption::Kind::WholeInput)
-            return consumption;
-        current = parent;
-    }
+    if (receive_steps > 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Stage {} has more than one receive step for exchange {}", stage_name, exchange_name);
 }
 
 /// The estimated number of rows a producer fragment sends: the estimate of its root node,
@@ -200,29 +171,6 @@ const FragmentExchange & FragmentGraph::getExchange(UInt32 id) const
     if (it == exchanges.end() || it->id != id)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Exchange {} is not found in the fragment graph", id);
     return *it;
-}
-
-FragmentExchange::Type classifyDependency(
-    const InputConsumption & consumption, FragmentExchange::Kind kind, FragmentExchange::Mode mode, String & reason)
-{
-    reason.clear();
-
-    if (kind == FragmentExchange::Kind::SetValues)
-    {
-        reason = "set must be complete";
-        return FragmentExchange::Type::Blocking;
-    }
-
-    if (mode == FragmentExchange::Mode::Materialised)
-    {
-        reason = "materialised exchange";
-        return FragmentExchange::Type::Blocking;
-    }
-
-    if (consumption.kind == InputConsumption::Kind::Streaming)
-        return FragmentExchange::Type::Streaming;
-    reason = consumption.reason;
-    return FragmentExchange::Type::Blocking;
 }
 
 namespace
@@ -409,8 +357,7 @@ FragmentGraph buildFragmentGraph(const DistributedQueryPlan & distributed_plan)
             exchange.statistics.estimated_rows = getEstimatedRows(*find_fragment(producer_id).plan);
 
             auto & consumer = find_fragment(consumer_id);
-            auto consumption = findConsumption(*consumer.plan, consumer_stage, exchange_name);
-            exchange.type = classifyDependency(consumption, exchange.kind, exchange.mode, exchange.reason);
+            checkReceiveStep(*consumer.plan, consumer_stage, exchange_name);
             consumer.children.push_back(exchange.id);
 
             graph.exchanges.push_back(std::move(exchange));
@@ -467,9 +414,7 @@ String dumpFragmentGraph(const FragmentGraph & graph)
         for (size_t i = 0; i < fragment.children.size(); ++i)
         {
             const auto & exchange = graph.getExchange(fragment.children[i]);
-            fmt::format_to(out, "{}F{} via {} ({})", i == 0 ? "  needs " : ", ",
-                exchange.from, exchange.name,
-                exchange.type == FragmentExchange::Type::Blocking ? "blocking: " + exchange.reason : "streaming");
+            fmt::format_to(out, "{}F{} via {}", i == 0 ? "  needs " : ", ", exchange.from, exchange.name);
         }
         if (fragment.fallback_reason)
             fmt::format_to(out, "  not distributed: {}", *fragment.fallback_reason);

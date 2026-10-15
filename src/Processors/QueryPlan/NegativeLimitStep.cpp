@@ -139,10 +139,4 @@ void registerNegativeLimitStep(QueryPlanStepRegistry & registry)
     registry.registerStep("NegativeLimit", NegativeLimitStep::deserialize);
 }
 
-InputConsumption NegativeLimitStep::getInputConsumption(size_t /*input_index*/) const
-{
-    /// The last rows are known only when all the input has arrived.
-    return {InputConsumption::Kind::WholeInput, "negative limit"};
-}
-
 }

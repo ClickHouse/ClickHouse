@@ -2976,18 +2976,4 @@ void registerJoinStep(QueryPlanStepRegistry & registry)
 }
 
 
-InputConsumption JoinStepLogical::getInputConsumption(size_t input_index) const
-{
-    /// `IEJoin` sorts both inputs before it produces a row. The physical algorithm is chosen on the executing
-    /// node, but `ie_join` listed first with two inequality conditions is decided by the logical step alone,
-    /// with the same `isIEJoinPreferred` that `buildPhysicalJoin` uses. Not predicted here: the `IEJoin` chosen
-    /// when no equality keys are found (`tryExtractIEJoinDescription`), and the sort-based algorithms
-    /// (`FullSortingMergeJoin::isSupported`); both depend on the `TableJoin` built on the executing node.
-    if (isIEJoinPreferred(join_operator, join_settings))
-        return {InputConsumption::Kind::WholeInput, "both inputs of IEJoin"};
-    if (input_index != 1)
-        return {};
-    return {InputConsumption::Kind::WholeInput, "build side of " + getName()};
-}
-
 }

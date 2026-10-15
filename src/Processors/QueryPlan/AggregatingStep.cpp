@@ -1543,12 +1543,4 @@ void registerAggregatingStep(QueryPlanStepRegistry & registry)
 }
 
 
-InputConsumption AggregatingStep::getInputConsumption(size_t /*input_index*/) const
-{
-    /// An aggregation in order emits a key once it is complete; a hash aggregation emits after all the input.
-    if (inOrder())
-        return {};
-    return {InputConsumption::Kind::WholeInput, "hash aggregation"};
-}
-
 }

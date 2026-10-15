@@ -15,7 +15,6 @@ public:
     IntersectOrExceptStep(SharedHeaders input_headers_, Operator operator_, size_t max_threads_ = 0);
 
     String getName() const override { return "IntersectOrExcept"; }
-    InputConsumption getInputConsumption(size_t input_index) const override;
 
     Operator getOperator() const { return current_operator; }
 

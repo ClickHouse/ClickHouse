@@ -26,7 +26,6 @@ public:
         bool memory_bound_merging_of_aggregation_results_enabled_);
 
     String getName() const override { return "MergingAggregated"; }
-    InputConsumption getInputConsumption(size_t input_index) const override;
     const Aggregator::Params & getParams() const { return params; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
@@ -39,7 +38,6 @@ public:
     const SortDescription & getGroupBySortDescription() const { return group_by_sort_description; }
 
     bool memoryBoundMergingWillBeUsed() const;
-    bool isMemoryEfficientAggregation() const { return memory_efficient_aggregation; }
 
     bool isGroupingSets() const { return !grouping_sets_params.empty(); }
     const auto & getGroupingSetsParamsList() const { return grouping_sets_params; }

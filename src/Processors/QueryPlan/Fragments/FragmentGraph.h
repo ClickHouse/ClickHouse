@@ -4,7 +4,6 @@
 #include <Core/SortDescription.h>
 #include <Core/Types.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/IQueryPlanStep.h>
 
 #include <optional>
 #include <vector>
@@ -84,14 +83,6 @@ struct FragmentExchange
         Materialised,
     };
 
-    enum class Type : uint8_t
-    {
-        /// The consumer processes the rows of the producer as they arrive.
-        Streaming,
-        /// The consumer cannot produce output until the producer has finished.
-        Blocking,
-    };
-
     /// The exchange id assigned by the cutter, N for `exchange_N`.
     UInt32 id = 0;
     /// The executor's exchange name, e.g. `exchange_1`, for log and trace joins.
@@ -108,9 +99,6 @@ struct FragmentExchange
     Mode mode = Mode::Pipelined;
     size_t source_buckets = 0;
     size_t destination_buckets = 0;
-    Type type = Type::Streaming;
-    /// Why the exchange is blocking, e.g. "build side of JoinLogical"; empty for a streaming exchange.
-    String reason;
     ExchangeStatistics statistics;
 };
 
@@ -143,14 +131,6 @@ void validateFragmentGraph(const FragmentGraph & graph);
 /// Fragment ids by topological level, ascending within a level: the first level are the leaves, the last the root.
 /// A fragment is one level above its deepest producer. Computed on demand for the renderers; validates the graph.
 std::vector<std::vector<UInt32>> computeLevels(const FragmentGraph & graph);
-
-/// Pure classification of one exchange; `reason` is set for a blocking exchange and cleared otherwise.
-/// A `SetValues` exchange is always blocking (the set must be complete), then a `Materialised` exchange,
-/// otherwise `consumption`: how the consumer fragment uses the rows of the exchange, i.e. the first step on the way
-/// from the receive step to the output of the fragment that needs the whole input it is reached through.
-/// Exposed for tests.
-FragmentExchange::Type classifyDependency(
-    const InputConsumption & consumption, FragmentExchange::Kind kind, FragmentExchange::Mode mode, String & reason);
 
 /// Multi-line debug text of the model (for `LOG_TEST` and tests).
 String dumpFragmentGraph(const FragmentGraph & graph);

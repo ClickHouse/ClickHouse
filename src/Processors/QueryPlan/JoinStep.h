@@ -45,7 +45,6 @@ public:
         bool use_join_disjunctions_push_down_ = false);
 
     String getName() const override { return "Join"; }
-    InputConsumption getInputConsumption(size_t input_index) const override;
 
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &) override;
 

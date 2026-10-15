@@ -99,7 +99,6 @@ public:
         bool always_read_till_end_ = false);
 
     String getName() const override { return "Sorting"; }
-    InputConsumption getInputConsumption(size_t input_index) const override;
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 

@@ -406,13 +406,4 @@ void registerMergingAggregatedStep(QueryPlanStepRegistry & registry)
     registry.registerStep("MergingAggregated", MergingAggregatedStep::deserialize);
 }
 
-InputConsumption MergingAggregatedStep::getInputConsumption(size_t /*input_index*/) const
-{
-    /// Memory-efficient and memory-bound merging go bucket by bucket and emit a bucket once every input has sent
-    /// it, instead of merging all the input into one table first.
-    if (isMemoryEfficientAggregation() || memoryBoundMergingWillBeUsed())
-        return {};
-    return {InputConsumption::Kind::WholeInput, "merge of aggregation states"};
-}
-
 }

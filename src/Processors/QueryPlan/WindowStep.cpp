@@ -411,14 +411,4 @@ void registerWindowStep(QueryPlanStepRegistry & registry)
     registry.registerStep("Window", WindowStep::deserialize);
 }
 
-InputConsumption WindowStep::getInputConsumption(size_t /*input_index*/) const
-{
-    /// Without `PARTITION BY` and `ORDER BY` all the rows are one partition and one peer group, so nothing is
-    /// emitted before the end of the input. Otherwise the planner sorts the input before this step, or keeps the order
-    /// of the sort of an earlier window, and rows are emitted partition by partition.
-    if (!window_description.partition_by.empty() || !window_description.order_by.empty())
-        return {};
-    return {InputConsumption::Kind::WholeInput, "window over the whole input"};
-}
-
 }

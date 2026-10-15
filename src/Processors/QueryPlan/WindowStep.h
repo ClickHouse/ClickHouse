@@ -17,7 +17,6 @@ public:
             bool streams_fan_out_);
 
     String getName() const override { return "Window"; }
-    InputConsumption getInputConsumption(size_t input_index) const override;
 
     bool hasCorrelatedExpressions() const override
     {
