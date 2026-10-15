@@ -851,7 +851,6 @@ bool astContainsSubqueryImpl(const ASTPtr & ast, UnorderedSetWithMemoryTracking<
                 return true;
         }
 
-        /// Each body is walked at most once, so that a cycle among them cannot make this recurse forever.
         auto udf_body = UserDefinedSQLFunctionFactory::instance().tryGet(function->name);
         if (udf_body && visited_udfs.insert(function->name).second && astContainsSubqueryImpl(udf_body, visited_udfs))
             return true;
@@ -915,7 +914,6 @@ ASTPtr parseAdditionalTableFilter(const IStorage & storage, const String & table
 
 bool hiddenFilterMayReadTable(const IStorage & storage, const String & table_expression_alias, const ContextPtr & context)
 {
-    /// A hidden filter is analyzed in the reader's context, so under a materialized view its subqueries may read the inserted block.
     if (auto row_policy_filter = getEffectiveRowPolicyFilter(storage, context);
         row_policy_filter && astContainsSubquery(row_policy_filter->expression))
         return true;
