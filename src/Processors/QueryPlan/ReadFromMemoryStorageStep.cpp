@@ -521,6 +521,10 @@ protected:
 
         for (const auto & [block_index, rows_in_block] : block_rows)
         {
+            /// The range can span many blocks, so stop rereading them as soon as the query is cancelled.
+            if (isCancelled())
+                return {};
+
             const Block & src = (*data)[block_index];
 
             Columns block_columns;
