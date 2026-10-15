@@ -90,6 +90,8 @@ struct ProjectionPartData
     PaddedPODArray<UInt32> row_bytes;
     /// some stored column has values of different sizes
     bool variable_width = false;
+    /// for a sample of a projection that drops rows: the rows that the projection keeps of each granule read
+    std::vector<UInt32> granule_rows;
 };
 
 /// per-row version of `getBlockSizeForGranularity`
@@ -200,6 +202,7 @@ bool buildProjectionPart(
     const ProjectionDescription & projection,
     const DataPartPtr & part,
     const MarkRanges & ranges,
+    bool sampled,
     ReadFromMergeTree * read_step,
     const SizeLimits & read_limits,
     bool need_row_bytes,
@@ -209,7 +212,13 @@ bool buildProjectionPart(
 {
     const auto & proj_key = projection.metadata->getSortingKey();
 
-    Pipe pipe = makePartPipe(part, ranges, projection.required_columns, read_step, context);
+    /// a projection part keeps only the rows that exist, `calculate` drops the deleted ones by this column
+    Names columns_to_read = projection.required_columns;
+    const bool has_delete_mask = part->hasLightweightDelete();
+    if (has_delete_mask)
+        columns_to_read.push_back(RowExistsColumn::name);
+
+    Pipe pipe = makePartPipe(part, ranges, columns_to_read, read_step, context);
     QueryPipeline pipeline(std::move(pipe));
     pipeline.setProcessListElement(context->getProcessListElement());
     pipeline.setProgressCallback(context->getProgressCallback());
@@ -220,7 +229,9 @@ bool buildProjectionPart(
 
     /// the source gives one block for each granule, and each `calculate` builds an interpreter, so call it for each batch
     /// the filter of the projection works row by row, so the size of the batch does not change the result
-    const size_t batch_limit = context->getSettingsRef()[Setting::max_block_size];
+    /// a sample keeps the granule of each projection row, so the scan calculates a projection that drops rows for each granule
+    const bool per_granule = sampled && (projection.where_clause_ast || has_delete_mask);
+    const size_t batch_limit = per_granule ? 1 : context->getSettingsRef()[Setting::max_block_size];
     Blocks batch;
     size_t batch_rows = 0;
     MutableColumns key_columns;
@@ -232,6 +243,8 @@ bool buildProjectionPart(
         auto projected = projection.calculate(concatenateBlocks(batch), out.read_rows - batch_rows, context);
         batch.clear();
         batch_rows = 0;
+        if (per_granule)
+            out.granule_rows.push_back(static_cast<UInt32>(projected.rows()));
 
         /// the writer chooses the part format before the key expression and sizes the granules after it
         out.format_bytes += projected.bytes();
@@ -628,7 +641,8 @@ bool buildScenarios(
         const MarkRanges & ranges = plan.ranges[part_idx];
         ProjectionPartData part_data;
         if (!buildProjectionPart(
-                part_data, projection, part, ranges, read_step, read_limits, adaptive, total_rows_read, total_bytes_read, context))
+                part_data, projection, part, ranges, plan.sample_step > 1, read_step, read_limits, adaptive, total_rows_read,
+                total_bytes_read, context))
         {
             result.empirical_unsupported_reason
                 = "The projection scan hit the read limit of the query (max_rows_to_read / max_bytes_to_read)";
@@ -657,7 +671,18 @@ bool buildScenarios(
             ++out.uneven_width_parts;
         /// no row passes the filter of the projection, so the writer writes no projection part
         if (part_data.rows == 0)
+        {
+            /// a sample shows only that the granules it read have no such row
+            if (part_data.read_rows < part->rows_count)
+            {
+                result.empirical_unsupported_reason = fmt::format(
+                    "No row of the sample of part {} passes the filter of the projection, so the sample cannot show its projection "
+                    "part (see projection_scan_budget_rows)",
+                    part->name);
+                return false;
+            }
             continue;
+        }
 
         /// a sample stands for the whole part, and the filter of the projection keeps the same share of its rows
         const size_t part_rows = plan.sample_step > 1
@@ -706,11 +731,14 @@ void widenForSamples(
         for (const auto & range : sampled.ranges_read)
             for (size_t mark = range.begin; mark < range.end; ++mark)
             {
+                const auto granule = static_cast<UInt32>(sampled_granule_rows.size());
                 sampled_granule_rows.push_back(parent_granularity.getMarkRows(mark));
-                granule_of_row.resize(
-                    granule_of_row.size() + sampled_granule_rows.back(), static_cast<UInt32>(sampled_granule_rows.size() - 1));
+                const size_t kept_rows = sample.granule_rows.empty() ? sampled_granule_rows.back() : sample.granule_rows[granule];
+                granule_of_row.resize(granule_of_row.size() + kept_rows, granule);
             }
         chassert(granule_of_row.size() == sample.rows);
+        /// the projection keeps this share of the rows read
+        const double kept_share = static_cast<double>(sample.rows) / static_cast<double>(sample.read_rows);
 
         size_t same_granule_neighbours = 0;
         for (size_t pos = 1; pos < sample.rows; ++pos)
@@ -731,8 +759,9 @@ void widenForSamples(
             for (size_t sample_row = sample_begin; sample_row < sample_end; ++sample_row)
                 ++selected_rows[granule_of_row[sample.order[sample_row]]];
         }
+        /// a share of the projection rows, as the marks of the projection part count them
         for (size_t i = 0; i < sampled_granule_rows.size(); ++i)
-            granule_shares.push_back(static_cast<double>(selected_rows[i]) / static_cast<double>(sampled_granule_rows[i]));
+            granule_shares.push_back(static_cast<double>(selected_rows[i]) / (static_cast<double>(sampled_granule_rows[i]) * kept_share));
     }
     widen(marks_low, marks_high, range_end_spread);
 
