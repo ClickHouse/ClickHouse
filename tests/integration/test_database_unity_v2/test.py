@@ -509,6 +509,10 @@ EXTERNAL_TABLE = "external_delta"
 # Must match `ESCAPED_NAME` in mock_servers/uc_proxy.py, which serves `managed_delta` under it.
 ESCAPED_NAME = "a?b#c%41/é"
 
+# Must match `REPLACED_TABLE` in mock_servers/uc_proxy.py, which gives it a new `table_id` on
+# every lookup.
+REPLACED_TABLE = "replaced_delta"
+
 
 def create_delta_table(node, db_name, schema_name, table_name):
     """`DeltaLakeLocal` stores the table in the container's filesystem, so the write
@@ -580,6 +584,17 @@ def assert_managed_table_insert_is_rejected(node, creating_db, managed_db):
     )
     assert "only external tables can be written" in error
     assert len(delta_log_commits(node, managed_location)) == 2
+
+    # The name refers to another table by the time the write is checked. That table is external,
+    # but the write would go to the table the INSERT resolved, so it is refused.
+    replaced_location = create_delta_table(node, creating_db, schema_name, REPLACED_TABLE)
+    replaced = f"{managed_db}.`{schema_name}.{REPLACED_TABLE}`"
+    assert node.query(f"SELECT count() FROM {replaced}").strip() == "0"
+    error = node.query_and_get_error(
+        f"INSERT INTO {replaced} VALUES (5)", settings=DELTA_WRITE_SETTINGS
+    )
+    assert "TABLE_UUID_MISMATCH" in error
+    assert len(delta_log_commits(node, replaced_location)) == 1
 
     return schema_name
 

@@ -325,7 +325,9 @@ public:
 
     /// Checks that this table's log may be committed directly, without the catalog mediating the
     /// commit (the DeltaLake `_delta_log` path). Catalogs that own their tables' data refuse here.
-    virtual void checkDirectCommitIsAllowed(const std::string & /*namespace_name*/, const std::string & /*table_name*/) const {}
+    /// `table_uuid` is the table the write was resolved to.
+    virtual void checkDirectCommitIsAllowed(
+        const std::string & /*namespace_name*/, const std::string & /*table_name*/, const DB::UUID & /*table_uuid*/) const {}
 
     virtual CredentialsRefreshCallback getCredentialsConfigurationCallback(
         const DB::StorageID & /*storage_id*/, const TableMetadata & /*table_metadata*/)

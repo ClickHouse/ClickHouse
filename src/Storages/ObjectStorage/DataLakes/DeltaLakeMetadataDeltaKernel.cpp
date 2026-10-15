@@ -775,7 +775,7 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
     if (catalog)
     {
         const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
-        catalog->checkDirectCommitIsAllowed(namespace_name, table_name);
+        catalog->checkDirectCommitIsAllowed(namespace_name, table_name, table_id.uuid);
     }
 
     const auto snapshot_version = getSnapshotVersion(context->getSettingsRef());

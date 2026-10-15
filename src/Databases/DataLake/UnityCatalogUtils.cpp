@@ -6,6 +6,8 @@
 #include <unordered_set>
 #include <Common/Exception.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Poco/URI.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
 
@@ -13,6 +15,7 @@ namespace DB::ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
+    extern const int TABLE_UUID_MISMATCH;
 }
 
 namespace DataLake
@@ -125,8 +128,19 @@ Poco::JSON::Object::Ptr buildUnityCreateTableBody(
 /// Shallow clones are not readable through either Unity implementation, so they are not writable either.
 static const std::unordered_set<std::string> DIRECTLY_WRITABLE_TABLE_TYPES = {"EXTERNAL"};
 
-void checkUnityDirectCommitIsAllowed(const Poco::JSON::Object::Ptr & table_json, const String & full_table_name)
+void checkUnityDirectCommitIsAllowed(const Poco::JSON::Object::Ptr & table_json, const String & full_table_name, const DB::UUID & table_uuid)
 {
+    String table_id;
+    if (table_json && table_json->has("table_id") && !table_json->isNull("table_id"))
+        table_id = table_json->getValue<String>("table_id");
+
+    DB::UUID current_uuid = DB::UUIDHelpers::Nil;
+    if (table_uuid == DB::UUIDHelpers::Nil || !DB::tryParse(current_uuid, table_id) || current_uuid != table_uuid)
+        throw DB::Exception(
+            DB::ErrorCodes::TABLE_UUID_MISMATCH,
+            "INSERT into Unity Catalog table `{}` is refused: the catalog now reports table_id '{}', but the table was resolved as '{}'",
+            full_table_name, table_id, table_uuid);
+
     String table_type;
     if (table_json && table_json->has("table_type") && !table_json->isNull("table_type"))
         table_type = table_json->getValue<String>("table_type");

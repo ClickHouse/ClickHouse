@@ -10,7 +10,7 @@ For the tables in `PATCHED_TABLE_TYPES` it reports a `table_type` other than
 `EXTERNAL` (or none at all), which the open-source server has no notion of.
 
 It also serves `managed_delta` under `ESCAPED_NAME`, a name the open-source server
-would not accept.
+would not accept, and gives `REPLACED_TABLE` a new `table_id` on every lookup.
 
 It also emulates Databricks authentication:
 
@@ -54,6 +54,9 @@ PATCHED_TABLE_TYPES = {
 ESCAPED_NAME = "a?b#c%41/é"
 ESCAPED_NAME_TARGET = "managed_delta"
 TABLE_ROUTE = "/unity-catalog/tables/"
+
+# As if another table took this name after each lookup of it.
+REPLACED_TABLE = "replaced_delta"
 
 # The lookahead makes this a no-op on an already-well-formed `file:///tmp/...`.
 SINGLE_SLASH_SCHEME = re.compile(r"file:/(?=tmp/marksheet_uniform)")
@@ -101,6 +104,8 @@ def patch_table(table):
             table.pop("table_type", None)
         else:
             table["table_type"] = PATCHED_TABLE_TYPES[name]
+    if name == REPLACED_TABLE:
+        table["table_id"] = str(uuid.uuid4())
     return table
 
 
