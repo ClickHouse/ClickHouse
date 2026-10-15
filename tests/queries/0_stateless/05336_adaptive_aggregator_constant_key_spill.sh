@@ -5,7 +5,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # Constant-key blocks look up one key for all their rows. Hits can grow heap or arena states even
-# after per-row probing is bypassed, so they count toward the frozen-table spill guard. Each shape
+# after per-row probing is bypassed, and the frozen-table spill guard sees that growth. Each shape
 # compares its result with ordinary aggregation and reports whether a frozen table was spilled.
 # Fixed states and key-only tables keep their data in memory because their hits do not grow it.
 function run_shape()

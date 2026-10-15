@@ -1,11 +1,11 @@
-Few groups of heap states
-matches the baseline	1
-frozen tables written to disk	1
-staged records written to disk	0
 Few rows of wide arena states
 matches the baseline	1
 frozen tables written to disk	1
 staged records written to disk	1
+Few rows of wide heap states
+matches the baseline	1
+frozen tables written to disk	1
+staged records written to disk	0
 Hot keys of arena states next to staged cold keys
 matches the baseline	1
 frozen tables written to disk	1
