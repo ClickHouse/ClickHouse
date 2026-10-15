@@ -1,5 +1,5 @@
 -- A constant array of strings searched for an `Enum` value matches by the name of the enum value,
--- as `equals`, `hasAny` and the same search over a non-constant array do.
+-- as `hasAny` and the same search over a non-constant array do.
 
 SELECT 'constant needle';
 WITH CAST('a', 'Enum8(\'a\' = 1, \'b\' = 2, \'c\' = 3)') AS e
@@ -43,5 +43,8 @@ SELECT count() FROM t_enum_needle WHERE has(['zzz'], e) SETTINGS use_skip_indexe
 SELECT count() FROM t_enum_needle WHERE has(['zzz'], e) SETTINGS use_skip_indexes = 0;
 SELECT count() FROM t_enum_needle WHERE has([toFixedString('b', 2)], e) SETTINGS use_skip_indexes = 1;
 SELECT count() FROM t_enum_needle WHERE has([toFixedString('b', 2)], e) SETTINGS use_skip_indexes = 0;
+-- The index is used and keeps only the granules that hold the name.
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') FROM (EXPLAIN indexes = 1 SELECT id FROM t_enum_needle WHERE has(['a'], e)) WHERE explain LIKE '%Name:%' OR explain LIKE '%Granules:%';
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') FROM (EXPLAIN indexes = 1 SELECT id FROM t_enum_needle WHERE has([toFixedString('b', 2)], e)) WHERE explain LIKE '%Name:%' OR explain LIKE '%Granules:%';
 
 DROP TABLE t_enum_needle;
