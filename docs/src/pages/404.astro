@@ -7,7 +7,7 @@ import { withBase } from "../lib/base";
 
 <BaseLayout title={`Page not found · ${config.title}`} description="The page you're looking for doesn't exist.">
   <div class="flex flex-col min-h-screen">
-    <Header />
+    <Header showAskAi={false} />
     <main id="main-content" tabindex="-1" class="flex-1 mx-auto max-w-2xl w-full px-6 py-24 text-center">
       <p class="text-sm font-medium text-muted-foreground">404</p>
       <h1

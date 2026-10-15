@@ -29,12 +29,14 @@ interface Props {
   activeLocales?: string[];
   /** Use the authored homepage's full-width logo and product navigation. */
   homepage?: boolean;
+  /** Show the AI assistant action on compact, non-sidebar pages. */
+  showAskAi?: boolean;
 }
 
 // `entryId` is part of Props as a forward-compat hook (the version-switcher
 // recipe reads it) but the base Header doesn't use it — leave it off the
 // destructure to avoid an unused-var warning.
-const { showSidebar = true, currentLocale, activeLocales, homepage = false } = Astro.props;
+const { showSidebar = true, currentLocale, activeLocales, homepage = false, showAskAi = true } = Astro.props;
 const homepagePrefix = currentLocale && currentLocale.toLowerCase() !== "en"
   ? `/${currentLocale.toLowerCase()}`
   : "";
@@ -69,7 +71,7 @@ const homepageHref = (href: string) => withBase(`${homepagePrefix}${href === "/"
           <div class="flex items-center gap-2 lg:hidden">
             {activeLocales && activeLocales.length > 0 && <LocaleSwitcher currentLocale={currentLocale} activeLocales={activeLocales} />}
             {!showSidebar && config.search !== false && <SearchTrigger />}
-            {!showSidebar && <AskAiButton />}
+            {!showSidebar && showAskAi && <AskAiButton />}
             <ThemeToggle />
           </div>
           <HomepageNavbarCta />
