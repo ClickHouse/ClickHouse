@@ -1,0 +1,44 @@
+min	0	0	3
+min	0	0	3
+avg	1.6666666666666667	1.6666666666666667
+avg	1.6666666666666667	1.6666666666666667
+uniq	2	2
+uniq	2	2
+distinct	2	2
+distinct	2	2
+fuse	27	9
+fuse	27	9
+expr	25	3	1
+expr	25	3	1
+fold	0	0	3	3
+fold	0	0	3	3
+types	0		7	2	[[],[],[1]]	
+types	0		7	2	[[],[],[1]]	
+having	10
+having	11
+having	10
+having	11
+where	1	2
+where	1	2
+filter	1
+filter	1
+filter	2
+filter	2
+rows	[(1,5,5),(10,0,0),(11,0,0)]
+rows	[(1,5,5),(10,0,0),(11,0,0)]
+rows expr	[(1,6),(10,1),(11,1)]
+rows expr	[(1,6),(10,1),(11,1)]
+rows null	[(1,0),(10,1),(11,1)]
+rows null	[(1,0),(10,1),(11,1)]
+null	1	0
+null	10	1
+null	11	1
+null	1	0
+null	10	1
+null	11	1
+key	1	6	1
+key	10	1	1
+key	11	1	1
+complete	0	0	2
+buffer	0	0	3
+buffer fuse	47	15.666666666666666

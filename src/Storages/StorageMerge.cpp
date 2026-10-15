@@ -1182,6 +1182,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 throw Exception(ErrorCodes::SAMPLING_NOT_SUPPORTED, "Illegal SAMPLE: table {} doesn't support sampling", storage->getStorageID().getNameForLogs());
 
             Aliases aliases;
+            std::unordered_map<String, QueryTreeNodePtr> missing_column_defaults;
             RowPolicyDataOpt row_policy_data_opt;
             auto storage_metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
 
@@ -1330,7 +1331,10 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             else
             {
                 modified_query_info
-                    = getModifiedQueryInfo(modified_context, table, nested_storage_snapshot, real_column_names, column_names_as_aliases, is_smallest_column_requested, aliases);
+                    = getModifiedQueryInfo(modified_context, table, nested_storage_snapshot, real_column_names, column_names_as_aliases, is_smallest_column_requested, aliases, missing_column_defaults);
+
+                if (!missing_column_defaults.empty())
+                    modified_context->setQueryTreeAlreadyOptimized(true);
 
                 if (can_cache)
                 {
@@ -1421,6 +1425,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                     nested_storage_snapshot,
                     merge_storage_snapshot->metadata->getColumns(),
                     aliases,
+                    missing_column_defaults,
                     row_policy_data_opt,
                     context,
                     child,
@@ -1493,6 +1498,43 @@ public:
 private:
     TableExpressionNodePtr replacement_table_expression;
 };
+
+/// Inside aggregate arguments the default is wrapped into `identity`, which is neither foldable nor injective, so the
+/// child's own analysis keeps the aggregate unchanged.
+void replaceMissingColumnsWithDefaults(
+    QueryTreeNodePtr & node,
+    const QueryTreeNodePtr & table_expression,
+    const std::unordered_map<String, QueryTreeNodePtr> & defaults,
+    const ContextPtr & context,
+    bool inside_aggregate = false)
+{
+    if (const auto * column = node->as<ColumnNode>(); column && column->getColumnSourceOrNull() == table_expression)
+    {
+        if (auto it = defaults.find(column->getColumnName()); it != defaults.end())
+        {
+            node = it->second->clone();
+            if (inside_aggregate)
+            {
+                auto identity_node = std::make_shared<FunctionNode>("identity");
+                identity_node->getArguments().getNodes().push_back(std::move(node));
+                identity_node->resolveAsFunction(FunctionFactory::instance().get("identity", context));
+                node = std::move(identity_node);
+            }
+            return;
+        }
+    }
+
+    if (auto * function = node->as<FunctionNode>(); function && function->isAggregateFunction())
+    {
+        /// Argument subtrees may be shared with positions outside the aggregate, which must stay unwrapped.
+        function->getArgumentsNode() = function->getArgumentsNode()->clone();
+        inside_aggregate = true;
+    }
+
+    for (auto & child : node->getChildren())
+        if (child && child->getNodeType() != QueryTreeNodeType::QUERY && child->getNodeType() != QueryTreeNodeType::UNION)
+            replaceMissingColumnsWithDefaults(child, table_expression, defaults, context, inside_aggregate);
+}
 
 QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
     QueryTreeNodePtr query,
@@ -1638,7 +1680,8 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
     Names required_column_names,
     Names & column_names_as_aliases,
     bool & is_smallest_column_requested,
-    Aliases & aliases) const
+    Aliases & aliases,
+    std::unordered_map<String, QueryTreeNodePtr> & missing_column_defaults) const
 {
     const auto & [database_name, storage, storage_lock, table_name] = storage_with_lock_and_name;
     const StorageID current_storage_id = storage->getStorageID();
@@ -1725,7 +1768,10 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
                 default_value = (*subcolumn)[0];
             }
 
-            column_name_to_node.emplace(column_name, std::make_shared<ConstantNode>(std::move(default_value), merge_column->type));
+            auto default_node = std::make_shared<ConstantNode>(std::move(default_value), merge_column->type);
+            if (common_processed_stage > QueryProcessingStage::FetchColumns)
+                missing_column_defaults.emplace(column_name, default_node);
+            column_name_to_node.emplace(column_name, std::move(default_node));
         }
 
         bool with_aliases = /* common_processed_stage == QueryProcessingStage::FetchColumns && */ !storage_columns.getAliases().empty();
@@ -1808,6 +1854,10 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
                 is_smallest_column_requested = true;
             }
         }
+
+        if (!missing_column_defaults.empty())
+            replaceMissingColumnsWithDefaults(
+                modified_query_info.query_tree, replacement_table_expression, missing_column_defaults, modified_context);
 
         if (!column_name_to_node.empty())
         {
@@ -2300,6 +2350,7 @@ void ReadFromMerge::convertAndFilterSourceStream(
     const StorageSnapshotPtr & snapshot,
     const ColumnsDescription & merge_columns,
     const Aliases & aliases,
+    const std::unordered_map<String, QueryTreeNodePtr> & missing_column_defaults,
     const RowPolicyDataOpt & row_policy_data_opt,
     ContextPtr local_context,
     ChildPlan & child,
@@ -2361,8 +2412,22 @@ void ReadFromMerge::convertAndFilterSourceStream(
         /// The translation between an `ALIAS` column's own name and its inlined expression is read from
         /// the outer query tree and its planner context: those are what the expected `header` is named
         /// after, and the child's derived planner context holds no column identifiers of its own.
+        std::function<QueryTreeNodePtr(const QueryTreeNodePtr &)> rewrite_for_child;
+        if (!missing_column_defaults.empty())
+            rewrite_for_child = [&](const QueryTreeNodePtr & node)
+            {
+                auto rewritten = node->clone();
+                replaceMissingColumnsWithDefaults(rewritten, outer_query_info.table_expression, missing_column_defaults, local_context);
+                return rewritten;
+            };
+
         if (auto fan_out_actions_dag = buildShardCollapseFanOut(
-                outer_query_info.query_tree, outer_query_info.planner_context, *child.plan.getCurrentHeader(), header))
+                outer_query_info.query_tree,
+                outer_query_info.planner_context,
+                *child.plan.getCurrentHeader(),
+                header,
+                /*duplicate_to_representative=*/nullptr,
+                rewrite_for_child))
         {
             auto fan_out_step = std::make_unique<ExpressionStep>(child.plan.getCurrentHeader(), std::move(*fan_out_actions_dag));
             fan_out_step->setStepDescription("Reconstruct deduplicated duplicate-ALIAS columns");

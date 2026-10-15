@@ -411,7 +411,8 @@ static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     /// because it can lead to a changed header.
     if (select_query_options.ignore_ast_optimizations
         || select_query_options.is_create_view
-        || context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+        || context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
+        || context->isQueryTreeAlreadyOptimized())
         query_tree_pass_manager.runOnlyResolve(query_tree);
     else
         query_tree_pass_manager.run(query_tree);
