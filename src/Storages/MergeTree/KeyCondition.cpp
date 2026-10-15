@@ -2190,28 +2190,59 @@ bool KeyCondition::isFunctionReallyMonotonic(const IFunctionBase & func, const I
 /// Converts a text constant into the type a key transform reads, when that type is a `DateTime`/`DateTime64`
 /// with no time zone in its name: such a type holds the zone it was built with, while the comparison this atom
 /// stands for parses text through the type's serialization, which resolves the session's zone.
+/// Tuple elements are converted by position, as the comparison pairs them.
 static bool tryNormalizeTextConstantForZonelessDateTimeInput(
     const DataTypePtr & transform_input_type, Field & value, DataTypePtr & value_type)
 {
-    if (!transform_input_type || !isStringOrFixedString(removeLowCardinalityAndNullable(value_type)))
+    if (!transform_input_type)
         return true;
 
     const auto input_type = removeLowCardinalityAndNullable(transform_input_type);
-    bool input_time_zone_is_implicit = false;
-    if (const auto * date_time = typeid_cast<const DataTypeDateTime *>(input_type.get()))
-        input_time_zone_is_implicit = !date_time->hasExplicitTimeZone();
-    else if (const auto * date_time64 = typeid_cast<const DataTypeDateTime64 *>(input_type.get()))
-        input_time_zone_is_implicit = !date_time64->hasExplicitTimeZone();
+    const auto constant_type = removeLowCardinalityAndNullable(value_type);
+    if (isStringOrFixedString(constant_type))
+    {
+        bool input_time_zone_is_implicit = false;
+        if (const auto * date_time = typeid_cast<const DataTypeDateTime *>(input_type.get()))
+            input_time_zone_is_implicit = !date_time->hasExplicitTimeZone();
+        else if (const auto * date_time64 = typeid_cast<const DataTypeDateTime64 *>(input_type.get()))
+            input_time_zone_is_implicit = !date_time64->hasExplicitTimeZone();
 
-    if (!input_time_zone_is_implicit)
+        if (!input_time_zone_is_implicit)
+            return true;
+
+        Field converted = tryConvertFieldToType(value, *input_type);
+        if (converted.isNull())
+            return false;
+
+        value = std::move(converted);
+        value_type = input_type;
+        return true;
+    }
+
+    const auto * constant_tuple = typeid_cast<const DataTypeTuple *>(constant_type.get());
+    const auto * input_tuple = typeid_cast<const DataTypeTuple *>(input_type.get());
+    if (!constant_tuple || !input_tuple || value.getType() != Field::Types::Tuple)
         return true;
 
-    Field converted = tryConvertFieldToType(value, *input_type);
-    if (converted.isNull())
-        return false;
+    auto & elements = value.safeGet<Tuple>();
+    DataTypes element_types = constant_tuple->getElements();
+    if (elements.size() != element_types.size() || element_types.size() != input_tuple->getElements().size())
+        return true;
 
-    value = std::move(converted);
-    value_type = input_type;
+    bool changed = false;
+    for (size_t i = 0; i < elements.size(); ++i)
+    {
+        DataTypePtr element_type = element_types[i];
+        if (!tryNormalizeTextConstantForZonelessDateTimeInput(input_tuple->getElements()[i], elements[i], element_type))
+            return false;
+        changed |= element_type != element_types[i];
+        element_types[i] = std::move(element_type);
+    }
+
+    if (changed)
+        value_type = constant_tuple->hasExplicitNames()
+            ? std::make_shared<DataTypeTuple>(element_types, constant_tuple->getElementNames())
+            : std::make_shared<DataTypeTuple>(element_types);
     return true;
 }
 
