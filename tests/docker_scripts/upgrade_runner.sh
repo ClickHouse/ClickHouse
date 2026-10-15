@@ -177,6 +177,8 @@ timeout 10m clickhouse-client --query="SELECT 'Tables count:', count() FROM syst
 (
     echo "thread apply all backtrace (on select tables count)" >> /test_output/gdb.log
     timeout 30m gdb -batch -ex 'thread apply all backtrace' -p "$(cat /var/run/clickhouse-server/clickhouse-server.pid)" | ts '%Y-%m-%d %H:%M:%S' >> /test_output/gdb.log
+    # Announces the kill below, so that the job does not read its SIGKILL as an OOM.
+    echo -e "Warning: tables count query hung, server force stopped (see gdb.log)$OK" >> /test_output/test_results.tsv
     clickhouse stop --force
 )
 

@@ -44,6 +44,8 @@ NON_OOM_FINDING_MARKERS = (
     "sanitizer",
     "lost forever",
     "no such key",
+    # A data-preparation statement that hung past its wall-clock bound (`stress_runner.sh`).
+    "stateful data preparation statement exceeded",
 )
 
 
@@ -59,17 +61,27 @@ def _names_a_non_oom_finding(results: List[Result]) -> bool:
 # else - no `Logical error`, no sanitizer report - so it is the only in-log evidence of one.
 KILL_LINE = " <Fatal> Application: Child process was terminated by signal 9"
 
-# The harness sends the same SIGKILL itself when a server ignores SIGTERM (`stop_server` in
-# `tests/docker_scripts/stress_tests.lib` ends in `clickhouse stop --force`), and records
-# each such kill as a `Warning: server did not stop yet` row before sending it. The watchdog
-# cannot tell the two senders apart, so the rows are the way to discount the harness's own
-# kills from the kill lines.
-HARNESS_KILL_MARKER = "server did not stop yet"
+# The harness sends the same SIGKILL itself with `clickhouse stop --force`, and records each
+# such kill as a row before sending it. The watchdog cannot tell the two senders apart, so the
+# rows are the way to discount the harness's own kills from the kill lines. One marker per
+# force-stopping path, matched case-insensitively against the result name.
+HARNESS_KILL_MARKERS = (
+    # `stop_server` in `tests/docker_scripts/stress_tests.lib`, a server that ignored SIGTERM
+    "server did not stop yet",
+    # `run_prep_statement` in `tests/docker_scripts/stress_runner.sh`
+    "stateful data preparation statement exceeded",
+    # the `system.tables` probe in `tests/docker_scripts/upgrade_runner.sh`
+    "server force stopped",
+)
 
 
 def count_harness_kills(results: List[Result]) -> int:
     """How many SIGKILLs the harness itself sent, as recorded in the results."""
-    return sum(1 for r in results if HARNESS_KILL_MARKER in (r.name or "").lower())
+    return sum(
+        1
+        for r in results
+        if any(marker in (r.name or "").lower() for marker in HARNESS_KILL_MARKERS)
+    )
 
 
 def _live_log_stem(name: str) -> str:
@@ -554,6 +566,17 @@ def select_replica_failures(
                 # may still hold the crash this run would otherwise be downgraded past.
                 if memory_limit_result is None:
                     memory_limit_result = (name, description, files)
+                # The cap is a query error the server recovers from, so it explains no
+                # `<Fatal>` the same replica logged: that one is crash evidence and outranks it.
+                unnamed_fatals = log_parser.find_unnamed_fatals()
+                if unnamed_fatals and fatal_result is None:
+                    fatal_result = (
+                        FuzzerLogParser.UNKNOWN_ERROR,
+                        f"{description}Unclassified fatal:\n"
+                        + "\n".join(unnamed_fatals)
+                        + "\n",
+                        files,
+                    )
                 continue
             if name != FuzzerLogParser.UNKNOWN_ERROR:
                 if log_parser.is_generic_fatal:

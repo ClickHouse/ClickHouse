@@ -126,3 +126,83 @@ def test_unknown_error_when_nothing_classified(tmp_path):
 
     assert len(results) == 1
     assert results[0][0] == FuzzerLogParser.UNKNOWN_ERROR
+
+
+_MEMORY_LIMIT_LOG = (
+    "2026.09.04 00:44:57.900000 [ 1068 ] {q} <Error> executeQuery: Code: 241. "
+    "DB::Exception: (total) memory limit exceeded: would use 10.00 GiB. (MEMORY_LIMIT_EXCEEDED)\n"
+    "2026.09.04 00:44:58.000000 [ 1068 ] {} <Information> Application: shutting down\n"
+)
+
+
+def test_memory_limit_alone_is_the_memory_limit_tier(tmp_path):
+    failures = select_replica_failures(
+        [_pair(tmp_path, "main", server_text=_MEMORY_LIMIT_LOG)]
+    )
+
+    assert failures.memory_limit and not failures.crash_named
+    assert failures.results[0][0] == FuzzerLogParser.MEMORY_LIMIT_ERROR
+
+
+def test_memory_limit_does_not_explain_a_later_fatal(tmp_path):
+    # A recovered query over its cap, then an unrelated `<Fatal>` on the same replica: the
+    # fatal is crash evidence, so the run must not be passed as an out-of-memory one.
+    failures = select_replica_failures(
+        [_pair(tmp_path, "main", server_text=_MEMORY_LIMIT_LOG + _GENERIC_FATAL_LOG)]
+    )
+
+    assert failures.crash_named and not failures.memory_limit
+    assert "transient generic fatal" in failures.results[0][1]
+    assert not failures.reports_oom(server_died=True)
+
+
+def _kill_logs(tmp_path, kills):
+    logs = tmp_path / "server_log"
+    logs.mkdir()
+    (logs / "clickhouse-server.err.log").write_text(
+        "2026.09.04 00:44:58.000000 [ 1 ] {} <Fatal> Application: Child process was "
+        "terminated by signal 9 (KILL). If it is not done by 'forcestop' command or "
+        "manually, the possible cause is OOM Killer\n" * kills,
+        encoding="utf-8",
+    )
+    return logs
+
+
+def test_every_force_stop_path_is_a_harness_kill():
+    from ci.jobs.stress_job import count_harness_kills
+    from ci.praktika.result import Result
+
+    rows = [
+        Result(name="Warning: server did not stop yet", status=Result.Status.OK),
+        Result(
+            name="Stateful data preparation statement exceeded 900s (see gdb.log)",
+            status=Result.Status.FAIL,
+        ),
+        Result(
+            name="Warning: tables count query hung, server force stopped (see gdb.log)",
+            status=Result.Status.OK,
+        ),
+        Result(name="Check failed", status=Result.Status.FAIL),
+    ]
+
+    assert count_harness_kills(rows) == 3
+
+
+def test_preparation_timeout_kill_is_not_an_oom(tmp_path):
+    from ci.jobs.stress_job import oom_explains_failure, server_log_reports_oom
+    from ci.praktika.result import Result
+
+    timeout = Result(
+        name="Stateful data preparation statement exceeded 900s (see gdb.log)",
+        status=Result.Status.FAIL,
+    )
+    check_failed = Result(name="Check failed", status=Result.Status.FAIL)
+    logs = _kill_logs(tmp_path, kills=1)
+
+    # The one kill line is the harness's own force stop.
+    assert not server_log_reports_oom(logs, [timeout, check_failed])
+    # And even beside a real OOM, the hung statement is a finding of its own.
+    assert not oom_explains_failure(True, False, [timeout, check_failed])
+    # Control: an unannounced kill still reads as an OOM that explains a failed check.
+    assert server_log_reports_oom(logs, [check_failed])
+    assert oom_explains_failure(True, False, [check_failed])
