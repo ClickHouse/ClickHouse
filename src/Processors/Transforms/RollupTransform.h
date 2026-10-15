@@ -21,6 +21,8 @@ protected:
 
     MutableColumnPtr getColumnWithDefaults(size_t key, size_t n) const;
 
+    void makeKeysNullableIfNeeded(Columns & columns) const;
+
     AggregatingTransformParamsPtr params;
 
     bool use_nulls;

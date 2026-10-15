@@ -186,14 +186,18 @@ void GroupByModifierTransform::mergeConsumed()
 
     size_t rows = current_chunk.getNumRows();
     auto columns = current_chunk.getColumns();
-    if (use_nulls)
-    {
-        for (auto key : keys)
-            columns[key] = makeNullableOrLowCardinalityNullableSafe(columns[key]);
-    }
+    makeKeysNullableIfNeeded(columns);
     current_chunk = Chunk{ columns, rows };
 
     consumed_chunks.clear();
+}
+
+void GroupByModifierTransform::makeKeysNullableIfNeeded(Columns & columns) const
+{
+    if (!use_nulls)
+        return;
+    for (auto key : keys)
+        columns[key] = makeNullableOrLowCardinalityNullableSafe(columns[key]);
 }
 
 Chunk GroupByModifierTransform::merge(Chunks && chunks, bool is_input, bool final)
@@ -233,9 +237,9 @@ Chunk RollupTransform::generate()
     {
         if (input_merge_is_redundant)
         {
-            /// The input is the output of an aggregating or a merge-aggregating step, so every group
-            /// key occurs in exactly one input chunk and merging the input can only copy it. Rebuild
-            /// each chunk so that the emitted set carries no chunk info, as a merged one would not.
+            /// Each group key is in exactly one input chunk, as the input comes from an aggregating step, so
+            /// merging it would only copy it; and the gate admits only exactly commutative merges, so merging
+            /// the coarser levels' states in input order cannot change a result. Chunk info is dropped as on merge.
 
             /// `mergeConsumed()` passes a single chunk through unmerged too, so one chunk is no skip.
             if (consumed_chunks.size() > 1)
@@ -245,11 +249,7 @@ Chunk RollupTransform::generate()
             {
                 auto num_rows = chunk.getNumRows();
                 auto columns = chunk.detachColumns();
-                if (use_nulls)
-                {
-                    for (auto key : keys)
-                        columns[key] = makeNullableOrLowCardinalityNullableSafe(columns[key]);
-                }
+                makeKeysNullableIfNeeded(columns);
                 gen_chunks.emplace_back(std::move(columns), num_rows);
             }
             consumed_chunks.clear();
