@@ -3,6 +3,7 @@
 #if defined(__x86_64__)
 #    include <cpuid.h>
 #elif defined(OS_LINUX) && defined(__aarch64__)
+#    include <cstdint>
 #    include <cstdlib>
 #    include <fstream>
 #    include <string>
@@ -89,7 +90,7 @@ namespace
         if (!(file >> value))
             return 0;
 
-        const unsigned long midr = std::strtoul(value.c_str(), nullptr, 16);
+        const uint64_t midr = std::strtoull(value.c_str(), nullptr, 16);
         const unsigned implementer = (midr >> 24) & 0xFFu;
         const unsigned part = (midr >> 4) & 0xFFFu;
         if (implementer != 0x41) /// Arm Ltd.
