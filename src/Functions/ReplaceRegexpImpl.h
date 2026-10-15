@@ -485,10 +485,11 @@ struct ReplaceRegexpImpl
             budget.charge();
 
             const std::string_view haystack = get_haystack(i);
-            window.units += haystack.size() + ReplaceRegexpModeController::row_cost_in_bytes;
+            const size_t row_units = haystack.size() + ReplaceRegexpModeController::row_cost_in_bytes;
 
             if (!haystack.starts_with(required_prefix))
             {
+                window.units += row_units;
                 copy_unchanged(haystack);
                 budget.charge(haystack.size());
                 res_offsets[i] = res_offset;
@@ -502,6 +503,7 @@ struct ReplaceRegexpImpl
                 use_cache = controller.useCache();
                 use_precheck = controller.usePrecheck();
             }
+            window.units += row_units;
             ++window.rows;
 
             if (use_cache)

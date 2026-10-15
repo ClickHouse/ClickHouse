@@ -86,7 +86,7 @@ public:
     }
 
     bool useCache() const { return state.use_cache; }
-    bool usePrecheck() const { return state.precheck; }
+    bool usePrecheck() const { return precheck_allowed && state.precheck; }
 
     void finishWindow(const Window & window)
     {
