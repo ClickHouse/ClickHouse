@@ -176,7 +176,6 @@ void MergeSortingTransform::consume(Chunk chunk)
                         limit,
                         /*always_read_till_end_=*/ false,
                         /*out_row_sources_buf=*/ nullptr,
-                        /*filter_column_name=*/ std::nullopt,
                         use_average_block_sizes,
                         apply_virtual_row,
                         /*virtual_row_prefetch_window=*/ 0,

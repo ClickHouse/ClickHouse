@@ -83,7 +83,6 @@ size_t getFirstChunkSize(
         strategy,
         0,
         nullptr,
-        std::nullopt,
         use_average_block_size);
 
     IMergingAlgorithm::Inputs inputs(num_inputs);
@@ -130,7 +129,6 @@ size_t getFirstLowCardinalityChunkSize(SortingQueueStrategy strategy, size_t max
         strategy,
         0,
         nullptr,
-        std::nullopt,
         false);
 
     IMergingAlgorithm::Inputs inputs(2);
@@ -198,7 +196,6 @@ size_t getFirstAggregateFunctionChunkSize(SortingQueueStrategy strategy)
         strategy,
         0,
         nullptr,
-        std::nullopt,
         false);
 
     std::vector<UInt64> first_keys;

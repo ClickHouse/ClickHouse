@@ -16,11 +16,8 @@ CREATE TABLE t_lwd_merge_proj
 ) ENGINE = MergeTree ORDER BY id
 SETTINGS lightweight_mutation_projection_mode = 'rebuild',
          min_bytes_for_wide_part = 0,
-         -- Force a vertical lightweight-delete merge so _row_exists is carried into the
-         -- block that calculateProjections reads (MergeTask.cpp isVerticalLightweightDelete
-         -- requires chosen_merge_algorithm == Vertical). In a horizontal merge the deleted-row
-         -- mask is applied before calculateProjections, so the _row_exists propagation that
-         -- this test guards would not be exercised.
+         -- Force a vertical merge: it drops the lightweight-deleted rows per part, so the
+         -- projection rebuild reads a block that never had them.
          vertical_merge_algorithm_min_rows_to_activate = 1,
          vertical_merge_algorithm_min_columns_to_activate = 1;
 

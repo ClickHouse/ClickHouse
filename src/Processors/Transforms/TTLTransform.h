@@ -10,6 +10,7 @@ namespace DB
 {
 
 class Block;
+class WriteBuffer;
 
 class TTLTransform final : public IAccumulatingTransform
 {
@@ -23,7 +24,7 @@ public:
         const NamesAndTypesList & expired_columns_,
         time_t current_time,
         bool force_,
-        bool ttl_delete_applied_by_merge_ = false
+        WriteBuffer * ttl_kept_rows_ = nullptr
     );
 
     String getName() const override { return "TTL"; }
@@ -45,8 +46,8 @@ private:
     std::vector<TTLAlgorithmPtr> algorithms;
     const TTLDeleteAlgorithm * delete_algorithm = nullptr;
     bool all_data_dropped = false;
-    /// The merging algorithm already dropped the expired rows, so `delete_algorithm` counts none.
-    const bool ttl_delete_applied_by_merge = false;
+    /// If set, `consume` writes one byte per input row to it: 1 if kept, 0 if dropped.
+    WriteBuffer * const ttl_kept_rows;
 
     PreparedSets::Subqueries subqueries_for_sets;
 
