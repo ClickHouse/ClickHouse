@@ -234,6 +234,11 @@ void FilterTransform::removeFilterIfNeed(Columns & columns) const
         columns.erase(columns.begin() + filter_column_position);
 }
 
+bool FilterTransform::supportsQueryResultPreviews() const
+{
+    return !expression || canEvaluateOnQueryResultPreviews(expression->getActionsDAG());
+}
+
 void FilterTransform::onCancel() noexcept
 {
     ISimpleTransform::onCancel();

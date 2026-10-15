@@ -1,6 +1,10 @@
 #include <Processors/QueryResultPreview.h>
 
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnFunction.h>
 #include <Core/Settings.h>
+#include <Functions/IFunction.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Common/Stopwatch.h>
 
 namespace DB
@@ -35,6 +39,55 @@ UInt64 getQueryResultPreviewSequenceNumber(const Chunk & chunk)
 {
     auto info = chunk.getChunkInfos().get<QueryResultPreviewInfo>();
     return info ? info->sequence_number : 0;
+}
+
+bool canEvaluateOnQueryResultPreviews(const ActionsDAG & expression)
+{
+    for (const auto & node : expression.getNodes())
+    {
+        switch (node.type)
+        {
+            case ActionsDAG::ActionType::INPUT:
+            case ActionsDAG::ActionType::ALIAS:
+                break;
+
+            case ActionsDAG::ActionType::COLUMN:
+            {
+                if (!node.column)
+                    break;
+
+                const IColumn * data = node.column.get();
+                if (const auto * column_const = typeid_cast<const ColumnConst *>(data))
+                    data = &column_const->getDataColumn();
+
+                if (typeid_cast<const ColumnFunction *>(data))
+                    return false;
+                break;
+            }
+
+            case ActionsDAG::ActionType::FUNCTION:
+            {
+                const auto & function = *node.function_base;
+                if (function.isStateful() || function.hasObservableSideEffects())
+                    return false;
+
+                DataTypesWithConstInfo arguments;
+                arguments.reserve(node.children.size());
+                for (const auto * child : node.children)
+                    arguments.push_back({child->result_type, child->column != nullptr});
+
+                if (function.canThrow(arguments))
+                    return false;
+                break;
+            }
+
+            case ActionsDAG::ActionType::ARRAY_JOIN:
+            case ActionsDAG::ActionType::PLACEHOLDER:
+                return false;
+        }
+    }
+
+    return true;
 }
 
 QueryResultPreviewsSettings QueryResultPreviewsSettings::fromSettings(const Settings & settings)

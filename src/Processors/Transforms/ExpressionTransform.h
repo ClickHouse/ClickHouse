@@ -40,8 +40,9 @@ public:
     String getName() const override { return "ExpressionTransform"; }
     std::span<ISpillable * const> getSpillables() override { return set_spillables.get(); }
 
-    /// Stateless with respect to preview chunks (see `QueryResultPreview.h`).
-    bool supportsQueryResultPreviews() const override { return true; }
+    /// Applies to a preview chunk like to ordinary data, if the expression can neither change the
+    /// result of the query nor fail it on a preview (see `canEvaluateOnQueryResultPreviews`).
+    bool supportsQueryResultPreviews() const override;
 
     static Block transformHeader(const Block & header, const ActionsDAG & expression);
 

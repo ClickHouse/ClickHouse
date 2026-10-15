@@ -12,6 +12,7 @@ namespace DB
 {
 
 struct Settings;
+class ActionsDAG;
 
 /** Marks a chunk as a preview of the query result (see the `query_result_previews` setting).
   *
@@ -51,6 +52,18 @@ void markAsQueryResultPreview(Chunk & chunk);
 
 /// The sequence number of a preview chunk, or 0 for a chunk which is not a preview.
 UInt64 getQueryResultPreviewSequenceNumber(const Chunk & chunk);
+
+/// Whether an expression can be evaluated on preview chunks, which hold intermediate values that
+/// the result of the query never has (for example, a partial `count()` that is zero). The
+/// expression must not change the result of the query and must not fail it:
+/// - no stateful function (`isStateful`): it carries its state from a preview to the real data,
+///   e.g. `rowNumberInAllBlocks` would count the rows of the previews;
+/// - no function with observable side effects;
+/// - no function that can throw on its arguments (`canThrow`), e.g. `intDiv(1, c - 32768)` would
+///   fail the query on a preview, while the final value of `c` is valid;
+/// - no `arrayJoin` and no constant-folded lambda, whose functions are not checked here.
+/// The check is fail-close: an expression that it rejects keeps the preview emitters dormant.
+bool canEvaluateOnQueryResultPreviews(const ActionsDAG & expression);
 
 /// Thresholds extracted from the query settings. All frequency limits must pass for a preview
 /// to be emitted: at least `min_interval_ms`/`min_rows`/`min_bytes` processed since the previous

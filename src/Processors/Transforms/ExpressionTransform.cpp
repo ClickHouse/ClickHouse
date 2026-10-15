@@ -5,6 +5,7 @@
 #include <memory>
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
+#include <Processors/QueryResultPreview.h>
 
 
 namespace DB
@@ -73,6 +74,11 @@ void ExpressionTransform::transform(Chunk & chunk)
         num_rows = 0;
     }
     chunk.setColumns(std::move(columns), num_rows);
+}
+
+bool ExpressionTransform::supportsQueryResultPreviews() const
+{
+    return canEvaluateOnQueryResultPreviews(expression->getActionsDAG());
 }
 
 void ExpressionTransform::onCancel() noexcept

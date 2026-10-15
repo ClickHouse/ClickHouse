@@ -43,9 +43,11 @@ public:
     String getName() const override { return "FilterTransform"; }
     std::span<ISpillable * const> getSpillables() override { return set_spillables.get(); }
 
-    /// The filter (e.g. `HAVING`) applies to a preview chunk like to ordinary data; a preview that
-    /// it empties is still delivered, as an empty preview (see `QueryResultPreview.h`).
-    bool supportsQueryResultPreviews() const override { return true; }
+    /// The filter (e.g. `HAVING`) applies to a preview chunk like to ordinary data, if its
+    /// expression can neither change the result of the query nor fail it on a preview (see
+    /// `canEvaluateOnQueryResultPreviews`); a preview that it empties is still delivered, as an
+    /// empty preview (see `QueryResultPreview.h`).
+    bool supportsQueryResultPreviews() const override;
 
     Status prepare() override;
 
