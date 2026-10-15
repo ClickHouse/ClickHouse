@@ -115,7 +115,6 @@ struct RowGroupSelection
     bool contains(size_t row_group_idx, const parq::RowGroup & meta) const;
 
     static UInt64 rowGroupStartOffset(const parq::RowGroup & meta);
-    static UInt64 rowGroupCompressedSize(const parq::RowGroup & meta);
 };
 
 struct Reader

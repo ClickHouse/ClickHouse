@@ -687,29 +687,15 @@ bool Reader::spatialBboxStatsHaveNoNulls(const parq::RowGroup & meta, size_t spa
 
 UInt64 RowGroupSelection::rowGroupStartOffset(const parq::RowGroup & meta)
 {
-    if (meta.__isset.file_offset && meta.file_offset > 0)
-        return UInt64(meta.file_offset);
-    UInt64 start = std::numeric_limits<UInt64>::max();
-    for (const auto & col : meta.columns)
-    {
-        Int64 offset = col.meta_data.data_page_offset;
-        if (col.meta_data.__isset.dictionary_page_offset && col.meta_data.dictionary_page_offset > 0)
-            offset = std::min(offset, col.meta_data.dictionary_page_offset);
-        if (offset >= 0)
-            start = std::min(start, UInt64(offset));
-    }
-    return start == std::numeric_limits<UInt64>::max() ? 0 : start;
-}
-
-UInt64 RowGroupSelection::rowGroupCompressedSize(const parq::RowGroup & meta)
-{
-    if (meta.__isset.total_compressed_size && meta.total_compressed_size > 0)
-        return UInt64(meta.total_compressed_size);
-    UInt64 size = 0;
-    for (const auto & col : meta.columns)
-        if (col.meta_data.total_compressed_size > 0)
-            size += UInt64(col.meta_data.total_compressed_size);
-    return size;
+    if (meta.columns.empty())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Row group has no column chunks");
+    const auto & column = meta.columns.front().meta_data;
+    Int64 offset = column.data_page_offset;
+    if (column.__isset.dictionary_page_offset && column.dictionary_page_offset > 0 && column.dictionary_page_offset < offset)
+        offset = column.dictionary_page_offset;
+    if (offset < 0)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Negative column chunk offset in row group: {}", offset);
+    return UInt64(offset);
 }
 
 bool RowGroupSelection::contains(size_t row_group_idx, const parq::RowGroup & meta) const
@@ -718,9 +704,8 @@ bool RowGroupSelection::contains(size_t row_group_idx, const parq::RowGroup & me
         return false;
     if (byte_range.has_value())
     {
-        UInt64 midpoint = rowGroupStartOffset(meta) + rowGroupCompressedSize(meta) / 2;
-        if (midpoint < byte_range->first || midpoint >= byte_range->first + byte_range->second)
-            return false;
+        UInt64 start = rowGroupStartOffset(meta);
+        return byte_range->first <= start && start - byte_range->first < byte_range->second;
     }
     return true;
 }
