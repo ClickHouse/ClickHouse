@@ -351,10 +351,10 @@ std::vector<std::pair<std::string, std::string>> getAzureBuilderOptions(
 
             if (!tenant || !client || !token_file)
                 throw DB::Exception(
-                    DB::ErrorCodes::NOT_IMPLEMENTED,
-                    "Azure workload identity is not configured for the delta-kernel path: "
-                    "AZURE_TENANT_ID, AZURE_CLIENT_ID and AZURE_FEDERATED_TOKEN_FILE must be set "
-                    "(tenant/client id may instead be passed via extra_credentials)");
+                    DB::ErrorCodes::BAD_ARGUMENTS,
+                    "Azure workload identity is not fully configured for the delta-kernel path: "
+                    "tenant_id and client_id must be passed via extra_credentials or set as "
+                    "AZURE_TENANT_ID / AZURE_CLIENT_ID, and AZURE_FEDERATED_TOKEN_FILE must be set");
 
             set_option("azure_tenant_id", tenant);
             set_option("azure_client_id", client);

@@ -25,7 +25,7 @@
 
 #include "delta_kernel_ffi.hpp"
 
-namespace DB { namespace ErrorCodes { extern const int NOT_IMPLEMENTED; } }
+namespace DB { namespace ErrorCodes { extern const int NOT_IMPLEMENTED; extern const int BAD_ARGUMENTS; } }
 
 class DeltaKernelTest : public testing::Test
 {
@@ -401,11 +401,11 @@ TEST(DeltaLakeAzureKernelHelper, WorkloadIdentityRequiresConfiguration)
     try
     {
         (void)DeltaLake::getAzureBuilderOptions(params);
-        FAIL() << "expected NOT_IMPLEMENTED when workload identity env is missing";
+        FAIL() << "expected BAD_ARGUMENTS when workload identity env is missing";
     }
     catch (const DB::Exception & e)
     {
-        EXPECT_EQ(e.code(), DB::ErrorCodes::NOT_IMPLEMENTED);
+        EXPECT_EQ(e.code(), DB::ErrorCodes::BAD_ARGUMENTS);
         EXPECT_NE(std::string(e.message()).find("AZURE_FEDERATED_TOKEN_FILE"), std::string::npos);
     }
 }
@@ -430,11 +430,11 @@ TEST(DeltaLakeAzureKernelHelper, WorkloadIdentityRequiresTokenFileWithExplicitId
     try
     {
         (void)DeltaLake::getAzureBuilderOptions(params);
-        FAIL() << "expected NOT_IMPLEMENTED when AZURE_FEDERATED_TOKEN_FILE is missing";
+        FAIL() << "expected BAD_ARGUMENTS when AZURE_FEDERATED_TOKEN_FILE is missing";
     }
     catch (const DB::Exception & e)
     {
-        EXPECT_EQ(e.code(), DB::ErrorCodes::NOT_IMPLEMENTED);
+        EXPECT_EQ(e.code(), DB::ErrorCodes::BAD_ARGUMENTS);
         EXPECT_NE(std::string(e.message()).find("AZURE_FEDERATED_TOKEN_FILE"), std::string::npos);
     }
 }
