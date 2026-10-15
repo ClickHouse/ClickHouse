@@ -455,7 +455,7 @@ public:
             const auto * value = carried_values[number];
             const auto & origin = merged.getOrigin(value);
 
-            Carrying carrying{.value = value, .node = origin.plan_node, .name = makeCarriedName(number)};
+            Carrying carrying{.value = value, .name = makeCarriedName(number)};
             const auto & values = merged.step_outputs.at(origin.plan_node);
             if (const auto it = std::ranges::find(values, value); it != values.end())
                 carrying.position = it - values.begin();
@@ -467,7 +467,8 @@ public:
                 return false;
 
             added_names.insert(carrying.name);
-            carryings.push_back(std::move(carrying));
+            carried_copies.emplace_back(value, carrying.name);
+            carryings[origin.plan_node].push_back(std::move(carrying));
         }
 
         return true;
@@ -479,9 +480,10 @@ public:
     {
         /// An expression or a filter computing a carried value it does not output outputs a copy of it last. The steps
         /// above it still have its former header, which the copy comes after, as the other columns this rebuild adds.
-        for (const auto & carrying : carryings)
-            if (carrying.step_node)
-                appendOutputToStep(*carrying.node->step, *carrying.step_node, carrying.name);
+        for (const auto & [node, node_carryings] : carryings)
+            for (const auto & carrying : node_carryings)
+                if (carrying.step_node)
+                    appendOutputToStep(*node->step, *carrying.step_node, carrying.name);
 
         /// What the chain hands over: the sort keys and the copies of the values crossing the `LIMIT`. The header of the
         /// chain is the outputs of the merged DAG.
@@ -527,10 +529,10 @@ public:
                 slots.push_back(outputs[position]);
                 slot_indexes.emplace_back();
             }
-            for (const auto & carrying : carryings)
+            for (const auto & [value, name] : carried_copies)
             {
-                projection_outputs.push_back(inputs.at(header.getPositionByName(carrying.name)));
-                slots.push_back(carrying.value);
+                projection_outputs.push_back(inputs.at(header.getPositionByName(name)));
+                slots.push_back(value);
                 slot_indexes.emplace_back();
             }
             for (const auto & [source, index_name] : index_names)
@@ -899,9 +901,10 @@ private:
         for (auto * node : top_down_nodes)
         {
             auto & node_unneeded = unneeded_of.at(node);
-            for (const auto & carrying : carryings)
-                if (carrying.node == node && !carrying.step_node)
-                    std::erase(node_unneeded, carrying.position);
+            if (const auto it = carryings.find(node); it != carryings.end())
+                for (const auto & carrying : it->second)
+                    if (!carrying.step_node)
+                        std::erase(node_unneeded, carrying.position);
 
             if (source_numbers.contains(node))
                 continue;
@@ -942,9 +945,13 @@ private:
     std::vector<ColumnCopy> copiesOfCarriedColumns(const QueryPlan::Node * node, const std::vector<size_t> & dropped_positions) const
     {
         std::vector<ColumnCopy> copies;
-        for (const auto & carrying : carryings)
+        const auto it = carryings.find(node);
+        if (it == carryings.end())
+            return copies;
+
+        for (const auto & carrying : it->second)
         {
-            if (carrying.node != node || carrying.step_node)
+            if (carrying.step_node)
                 continue;
 
             const auto first_not_before = std::ranges::lower_bound(dropped_positions, carrying.position);
@@ -1170,18 +1177,21 @@ private:
     /// merged into the step above when that can take it.
     std::unordered_set<const IQueryPlanStep *> steps_above_child;
 
-    /// A value crossing the `LIMIT` besides the sort keys, carried from `node` as a copy under `name`: of the column at
+    /// A value crossing the `LIMIT` besides the sort keys, carried from a node as a copy under `name`: of the column at
     /// `position` of its header, or, without such a column, of `step_node` of its step, which outputs it last.
     struct Carrying
     {
         const ActionsDAG::Node * value = nullptr;
-        const QueryPlan::Node * node = nullptr;
         String name;
         size_t position = 0;
         const ActionsDAG::Node * step_node = nullptr;
     };
 
-    std::vector<Carrying> carryings;
+    /// By the node each value is carried from, in the order of the values.
+    std::unordered_map<const QueryPlan::Node *, std::vector<Carrying>> carryings;
+    /// Each carried value and the name of its copy, in the order of the values, which is the order the copies cross the
+    /// `LIMIT` in: the same every time, unlike the order of the nodes in `carryings`.
+    std::vector<std::pair<const ActionsDAG::Node *, String>> carried_copies;
 
     /// The row index of every source that has one, either for a lazy read or for a mask.
     std::map<size_t, String> index_names;
