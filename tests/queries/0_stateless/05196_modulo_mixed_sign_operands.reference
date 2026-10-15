@@ -22,7 +22,11 @@
 0	\N
 -- control: gcd and lcm were never affected
 2	12
--- control: the minimal-signed-number guard fires on the same inputs as before
+-- the minimal signed number modulo -1 is 0
+0
+0
+0
+0
 0	0
 -- regression: a same-width unsigned operand near the signed maximum overflowed the first fix
 37528

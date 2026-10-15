@@ -1,0 +1,31 @@
+-- the most negative divisor
+7	-7	0
+104	-104	1696	-7
+-- the minimal signed number modulo -1 is 0
+0	0	0
+0	0	0
+0	0
+0	0	0
+-- the same for wide and mixed types, in all four constness shapes
+0	0	0	0
+0	0	0	0
+0	0	0	0
+0	0	0	0
+-- division by zero still throws
+-- constant and column divisors agree
+Int64 % Int8(-128)	0
+Int64 % Int8(-1)	0
+Int64 % Int16(-32768)	0
+Int64 % Int16(-1)	0
+Int64 % Int32(-2147483648)	0
+Int64 % Int32(-1)	0
+Int64 % Int64(-9223372036854775808)	0
+Int64 % Int64(-1)	0
+Int32 % Int8(-128)	0
+Int32 % Int8(-1)	0
+Int32 % Int16(-32768)	0
+Int32 % Int16(-1)	0
+Int32 % Int32(-2147483648)	0
+Int32 % Int32(-1)	0
+Int32 % Int64(-9223372036854775808)	0
+Int32 % Int64(-1)	0

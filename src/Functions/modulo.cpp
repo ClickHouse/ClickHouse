@@ -98,11 +98,16 @@ struct ModuloByConstantImpl
         if (static_cast<A>(b) == 0) [[unlikely]]
             throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division by zero");
 
-        /// Division by min negative value.
-        if constexpr (std::is_signed_v<B>)
+        /// The most negative divisor: `-b` does not fit `B`, but `|b|` is a power of two
+        /// whose mask is the maximum of `B`, so take the power-of-two path directly.
+        /// If `A` is narrower than `B`, this divisor is below the range of `A` and was handled above.
+        if constexpr (std::is_signed_v<B> && sizeof(A) >= sizeof(B))
         {
             if (b == std::numeric_limits<B>::lowest()) [[unlikely]]
-                throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division by the most negative number");
+            {
+                vectorPowerOfTwo(src, std::numeric_limits<B>::max(), dst, size);
+                return;
+            }
         }
 
         /// Modulo of division by negative number is the same as the positive number.
@@ -133,26 +138,28 @@ struct ModuloByConstantImpl
             }
         }
         else
-        {
-            /// Power-of-two: a single AND is cheaper than libdivide's multiply-shift
-            auto mask = b - 1;
-            for (size_t i = 0; i < size; ++i)
-            {
-                A a = src[i];
-                ResultType r = static_cast<ResultType>(a & mask);
-                if constexpr (std::is_signed_v<A> && std::is_signed_v<ResultType>)
-                {
-                    /// Sign-extend the result to match the behavior of %, to make the const and non-const
-                    /// versions of the modulo function behave the same way.
-                    ResultType sign_ext = static_cast<ResultType>(-static_cast<ResultType>((a < 0) & (r != 0)));
-                    r |= sign_ext & ~static_cast<ResultType>(mask);
-                }
-                dst[i] = r;
-            }
-        }
+            vectorPowerOfTwo(src, static_cast<A>(b - 1), dst, size);
     }
 
 private:
+    /// Power-of-two divisor: a single AND is cheaper than libdivide's multiply-shift.
+    static void ALWAYS_INLINE NO_SANITIZE_UNDEFINED vectorPowerOfTwo(const A * __restrict src, A mask, ResultType * __restrict dst, size_t size)
+    {
+        for (size_t i = 0; i < size; ++i)
+        {
+            A a = src[i];
+            ResultType r = static_cast<ResultType>(a & mask);
+            if constexpr (std::is_signed_v<A> && std::is_signed_v<ResultType>)
+            {
+                /// Sign-extend the result to match the behavior of %, to make the const and non-const
+                /// versions of the modulo function behave the same way.
+                ResultType sign_ext = static_cast<ResultType>(-static_cast<ResultType>((a < 0) & (r != 0)));
+                r |= sign_ext & ~static_cast<ResultType>(mask);
+            }
+            dst[i] = r;
+        }
+    }
+
     template <OpCase op_case>
     static void apply(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t i)
     {
@@ -212,8 +219,7 @@ inputs is a floating-point number, the result type is Float64.
 The remainder is computed like in C++. Truncated division is used for
 negative numbers.
 
-An exception is thrown when dividing by zero or when dividing a minimal
-negative number by minus one.
+An exception is thrown when dividing by zero.
     )";
     FunctionDocumentation::Syntax syntax = "modulo(a, b)";
     FunctionDocumentation::Argument argument1 = {"a", "The dividend"};

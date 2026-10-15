@@ -1,0 +1,29 @@
+-- `modulo` must give the same result whether or not the divisor is a constant.
+-- https://github.com/ClickHouse/ClickHouse/issues/119739
+
+SELECT '-- the most negative divisor';
+SELECT modulo(materialize(toInt64(7)), toInt64(-9223372036854775808)), modulo(materialize(toInt64(-7)), toInt64(-9223372036854775808)), modulo(materialize(toInt64(-9223372036854775808)), toInt64(-9223372036854775808));
+SELECT modulo(materialize(toInt64(1000)), toInt8(-128)), modulo(materialize(toInt64(-1000)), toInt8(-128)), modulo(materialize(toInt32(100000)), toInt16(-32768)), modulo(materialize(toInt32(-7)), toInt32(-2147483648));
+
+SELECT '-- the minimal signed number modulo -1 is 0';
+SELECT modulo(toInt64(-9223372036854775808), toInt64(-1)), modulo(materialize(toInt64(-9223372036854775808)), toInt64(-1)), modulo(materialize(toInt64(-9223372036854775808)), materialize(toInt64(-1)));
+SELECT modulo(toInt8(-128), toInt8(-1)), modulo(materialize(toInt16(-32768)), toInt16(-1)), modulo(materialize(toInt32(-2147483648)), materialize(toInt64(-1)));
+SELECT modulo(toInt128('-170141183460469231731687303715884105728'), toInt128(-1)), modulo(toInt256('-57896044618658097711785492504343953926634992332820282019728792003956564819968'), toInt256(-1));
+SELECT -9223372036854775808 % -1, positiveModulo(toInt64(-9223372036854775808), toInt64(-1)), moduloOrZero(toInt64(-9223372036854775808), toInt64(-1));
+
+SELECT '-- the same for wide and mixed types, in all four constness shapes';
+{% for a, b in [("CAST('-57896044618658097711785492504343953926634992332820282019728792003956564819968', 'Int256')", 'toInt8(-1)'), ("CAST('-170141183460469231731687303715884105728', 'Int128')", 'toInt64(-1)'), ('toInt8(-128)', 'toInt128(-1)'), ('toInt8(-128)', 'toInt256(-1)')] -%}
+SELECT modulo(materialize({{ a }}), materialize({{ b }})), modulo({{ a }}, materialize({{ b }})), modulo(materialize({{ a }}), {{ b }}), modulo(identity({{ a }}), identity({{ b }}));
+{% endfor -%}
+
+SELECT '-- division by zero still throws';
+SELECT modulo(materialize(toInt64(-9223372036854775808)), toInt64(0)); -- { serverError ILLEGAL_DIVISION }
+SELECT modulo(materialize(toInt64(-9223372036854775808)), materialize(toInt64(0))); -- { serverError ILLEGAL_DIVISION }
+
+SELECT '-- constant and column divisors agree';
+{% for a, a_min, b, b_min in [('Int64', '-9223372036854775808', 'Int8', '-128'), ('Int64', '-9223372036854775808', 'Int16', '-32768'), ('Int64', '-9223372036854775808', 'Int32', '-2147483648'), ('Int64', '-9223372036854775808', 'Int64', '-9223372036854775808'), ('Int32', '-2147483648', 'Int8', '-128'), ('Int32', '-2147483648', 'Int16', '-32768'), ('Int32', '-2147483648', 'Int32', '-2147483648'), ('Int32', '-2147483648', 'Int64', '-9223372036854775808')] -%}
+{% for d in [b_min, '-1'] -%}
+SELECT '{{ a }} % {{ b }}({{ d }})', countIf(modulo(x, to{{ b }}({{ d }})) != modulo(x, materialize(to{{ b }}({{ d }}))))
+FROM (SELECT x FROM generateRandom('x {{ a }}', 42) LIMIT 10000 UNION ALL SELECT arrayJoin([to{{ a }}({{ a_min }}), to{{ a }}(-1), to{{ a }}(0), to{{ a }}(1)]) AS x);
+{% endfor -%}
+{% endfor -%}

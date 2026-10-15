@@ -78,8 +78,8 @@ inline bool integerDivisionLeadsToFPE(A a, B b)
 /// is treated as the null case (matching `divideOrNull`). The plain `divisionLeadsToFPE(a, b)` cannot
 /// be used for floating operands because `Float32`/`Float64` are signed and
 /// `std::numeric_limits<Float>::min()` is the smallest positive value, so it would wrongly flag e.g.
-/// `moduloOrNull(toFloat32(1.17549435e-38), toFloat32(-1))`. Integer modulo keeps the full check
-/// because the `idiv` instruction computes the quotient too, so `INT_MIN % -1` raises just like division.
+/// `moduloOrNull(toFloat32(1.17549435e-38), toFloat32(-1))`. Integer modulo keeps the full check:
+/// the `*OrNull` functions document `NULL` for `INT_MIN % -1`, even though `modulo` returns `0` there.
 template <typename A, typename B>
 inline bool moduloLeadsToFPE(A a, B b)
 {
@@ -225,7 +225,10 @@ struct ModuloImpl
                 if (isNaN(b) || b > std::numeric_limits<IntegerBType>::max() || b < std::numeric_limits<IntegerBType>::lowest())
                     throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Cannot perform integer division on infinite or too large floating point numbers");
 
-            throwIfDivisionLeadsToFPE(IntegerAType(a), IntegerBType(b));
+            /// Only a zero divisor fails. Signed operands are reduced to unsigned magnitudes below,
+            /// so `INT_MIN % -1` never reaches a signed division and is just `0`.
+            if (IntegerBType(b) == 0) [[unlikely]]
+                throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division by zero");
 
             using CastA = std::conditional_t<std::is_same_v<IntegerAType, UInt8>, uint8_t, IntegerAType>;
             using CastB = std::conditional_t<std::is_same_v<IntegerBType, UInt8>, uint8_t, IntegerBType>;

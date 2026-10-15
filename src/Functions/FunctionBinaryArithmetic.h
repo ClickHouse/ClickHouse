@@ -3169,9 +3169,9 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
     ///    with the same operand casts as `DivideIntegralImpl::apply` (so mixed signed/unsigned
     ///    operands such as `Int8(-128) / UInt8(255)` are handled like the actual division);
     ///  - modulo (`moduloOrNull`, `positiveModuloOrNull`): for integer modulo, division by zero and
-    ///    signed `INT_MIN / -1` (the `idiv` instruction computes the quotient too, so the overflow
-    ///    raises just like division); for floating modulo, only division by zero, because the float
-    ///    modulo path never raises (`INT_MIN % -1` is a finite remainder). See `moduloLeadsToFPE`.
+    ///    signed `INT_MIN % -1` (documented as `NULL`, although plain `modulo` returns `0` there);
+    ///    for floating modulo, only division by zero, because the float modulo path never raises
+    ///    (`INT_MIN % -1` is a finite remainder). See `moduloLeadsToFPE`.
     template <typename A, typename B>
     static bool divisionOrNullLeadsToNull(A a, B b)
     {
