@@ -43,7 +43,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_table_namespaces;
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsBool enable_trino_dialect;
     extern const SettingsString database;
@@ -223,7 +222,6 @@ void LocalConnection::sendQuery(
     const bool parse_time_allow_settings_after_format_in_insert = parse_time_settings[Setting::allow_settings_after_format_in_insert];
     const bool parse_time_implicit_select = parse_time_settings[Setting::implicit_select];
     const bool parse_time_enable_trino_dialect = parse_time_settings[Setting::enable_trino_dialect];
-    const bool parse_time_allow_experimental_table_namespaces = parse_time_settings[Setting::allow_experimental_table_namespaces];
     const String parse_time_promql_database = parse_time_settings[Setting::promql_database];
     const String parse_time_promql_table = parse_time_settings[Setting::promql_table];
     const Field parse_time_promql_evaluation_time = Field{parse_time_settings[Setting::promql_evaluation_time]};
@@ -327,7 +325,6 @@ void LocalConnection::sendQuery(
     state->allow_settings_after_format_in_insert = parse_time_allow_settings_after_format_in_insert;
     state->implicit_select = parse_time_implicit_select;
     state->enable_trino_dialect = parse_time_enable_trino_dialect;
-    state->allow_experimental_table_namespaces = parse_time_allow_experimental_table_namespaces;
     state->promql_database = parse_time_promql_database;
     state->promql_table = parse_time_promql_table;
     state->promql_evaluation_time = parse_time_promql_evaluation_time;
@@ -471,8 +468,7 @@ void LocalConnection::sendQuery(
                     /*allow_multi_statements*/ false,
                     state->max_query_size,
                     state->max_parser_depth,
-                    state->max_parser_backtracks,
-                    state->allow_experimental_table_namespaces);
+                    state->max_parser_backtracks);
         }
 
         if (const auto * insert = parsed_query->as<ASTInsertQuery>())

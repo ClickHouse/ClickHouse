@@ -504,7 +504,7 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     auto element_parser = std::make_unique<ParserIdentifier>(allow_query_parameter, highlight_type);
     std::vector<std::pair<ParserPtr, SpecialDelimiter>> delimiter_parsers;
     /// JSON subcolumn delimiters make no sense in table path, leave them unconsumed
-    if (!(table_name_with_optional_uuid && pos.allow_multipart_table_paths))
+    if (!table_name_with_optional_uuid)
     {
         delimiter_parsers.emplace_back(std::make_unique<ParserTokenSequence>(std::vector<TokenType>{TokenType::Dot, TokenType::Colon}), SpecialDelimiter::JSON_PATH_DYNAMIC_TYPE);
         delimiter_parsers.emplace_back(std::make_unique<ParserTokenSequence>(std::vector<TokenType>{TokenType::Dot, TokenType::Caret}), SpecialDelimiter::JSON_PATH_PREFIX);
@@ -539,8 +539,7 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
             parts.push_back(getIdentifierName(element));
             /// Check if we have Array of JSON subcolumn additioon after identifier
             /// and replace it with corresponding type subcolumn.
-            if (!is_first && !(table_name_with_optional_uuid && pos.allow_multipart_table_paths)
-                && array_of_json_identifier_addition.check(pos, expected))
+            if (!is_first && !table_name_with_optional_uuid && array_of_json_identifier_addition.check(pos, expected))
                 parts.push_back(array_of_json_identifier_addition.getLastArrayOfJSONSubcolumnIdentifier());
         }
 
@@ -585,10 +584,7 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
 
         if (parts.size() > 2)
         {
-            /// hierarchical table path: fold db.ns1.ns2.table into
-            /// (db, `ns1.ns2.table`), two-part form db.`ns.t` stays as written
-            if (!pos.allow_multipart_table_paths)
-                return false;
+            /// fold db.ns1.ns2.table into (db, `ns1.ns2.table`), the same as the quoted form db.`ns1.ns2.table`
             /// no query parameters inside a path, and no quoted components with a
             /// literal dot, a substituted or quoted dot would alias another path
             for (size_t i = 1; i < parts.size(); ++i)

@@ -43,7 +43,7 @@ bool ParserShowColumnsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     const auto * table_id = from1->as<ASTIdentifier>();
     if (!table_id)
         return false;
-    if (table_id->compound() && table_id->name_parts.size() > 2 && pos.allow_multipart_table_paths)
+    if (table_id->compound() && table_id->name_parts.size() > 2)
     {
         /// a quoted component with a literal dot would alias another path, reject
         const auto & parts = table_id->name_parts;

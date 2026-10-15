@@ -61,7 +61,6 @@ namespace ErrorCodes
 
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_table_namespaces;
     extern const SettingsUInt64 max_query_size;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
@@ -1581,8 +1580,7 @@ arrow::Status ArrowFlightServer::DoAction(
                 parser, substituted_query,
                 query_context->getSettingsRef()[Setting::max_query_size],
                 query_context->getSettingsRef()[Setting::max_parser_depth],
-                query_context->getSettingsRef()[Setting::max_parser_backtracks],
-                query_context->getSettingsRef()[Setting::allow_experimental_table_namespaces]);
+                query_context->getSettingsRef()[Setting::max_parser_backtracks]);
             ARROW_RETURN_NOT_OK(checkNoCustomFormat(ast));
 
             LOG_DEBUG(log, "CreatePreparedStatement request: query={}", ast->formatForLogging());

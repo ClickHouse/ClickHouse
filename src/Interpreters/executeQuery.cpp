@@ -178,7 +178,6 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool enable_json_ast_dialect;
-    extern const SettingsBool allow_experimental_table_namespaces;
     extern const SettingsBool allow_experimental_polyglot_dialect;
     extern const SettingsBool allow_experimental_kusto_dialect;
     extern const SettingsBool allow_experimental_prql_dialect;
@@ -576,8 +575,7 @@ String formatQueryForLogging(const String & query, const Settings & settings)
         settings[Setting::max_query_size],
         settings[Setting::max_parser_depth],
         settings[Setting::max_parser_backtracks],
-        /*skip_insignificant*/ true,
-        settings[Setting::allow_experimental_table_namespaces]);
+        /*skip_insignificant*/ true);
     return ast ? ast->formatForLogging(settings[Setting::log_queries_cut_to_length]) : "";
 }
 
@@ -2557,7 +2555,7 @@ static BlockIO executeQueryImpl(
         {
             ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
             /// TODO: parser should fail early when max_query_size limit is reached.
-            out_ast = parseQuery(parser, begin, end, "", max_query_size_for_query_text, max_parser_depth_for_query_text, max_parser_backtracks_for_query_text, settings[Setting::allow_experimental_table_namespaces]);
+            out_ast = parseQuery(parser, begin, end, "", max_query_size_for_query_text, max_parser_depth_for_query_text, max_parser_backtracks_for_query_text);
 
 #ifndef NDEBUG
             try
@@ -2602,8 +2600,7 @@ static BlockIO executeQueryImpl(
                         "",
                         new_max_query_size,
                         max_parser_depth_for_query_text,
-                        max_parser_backtracks_for_query_text,
-                        settings[Setting::allow_experimental_table_namespaces]);
+                        max_parser_backtracks_for_query_text);
                 }
                 catch (const Exception & e)
                 {

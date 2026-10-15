@@ -134,7 +134,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 return false;
 
             /// hierarchical table path db.ns1.ns2.table -> (db, `ns1.ns2.table`)
-            if (pos.allow_multipart_table_paths && s_dot.checkWithoutMoving(pos, expected))
+            if (s_dot.checkWithoutMoving(pos, expected))
             {
                 String table_path = getIdentifierName(table);
                 if (getIdentifierName(database).find('.') != String::npos

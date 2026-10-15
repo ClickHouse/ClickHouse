@@ -484,8 +484,7 @@ private:
                         settings[Setting::max_parser_depth],
                         settings[Setting::max_parser_backtracks],
                         settings[Setting::allow_settings_after_format_in_insert],
-                        settings[Setting::implicit_select],
-                        /*allow_multipart_table_paths*/ true);
+                        settings[Setting::implicit_select]);
 
                     if (!parse_res.second)
                         throw Exception(ErrorCodes::BAD_ARGUMENTS,

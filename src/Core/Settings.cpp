@@ -9788,9 +9788,10 @@ unqualified name under `USE db.namespace` resolves inside the selected namespace
 A two-part name `a.b` in a table expression may mean table `b` of database `a` or
 table `a.b` of the current database; the query fails with `AMBIGUOUS_IDENTIFIER` when
 both exist. Statements that do not support namespaces fail with an error while a
-namespace is selected. When disabled, multipart paths are syntax errors and no
-namespace interpretation happens anywhere; quoted dotted table names
-(`db.` `` `ns.table` ``) keep working.
+namespace is selected. When disabled, no namespace interpretation happens anywhere:
+a dotted path such as `db.ns.table` is only shorthand for the quoted name
+``db.`ns.table` ``, and `USE db.namespace` and `SHOW TABLES FROM db.namespace` fail
+with `SUPPORT_IS_DISABLED`.
 )", EXPERIMENTAL, \
         {"26.10", false, false, "New experimental setting gating hierarchical table paths and USE db.namespace scoping."}) \
     DECLARE_WITH_ALIAS(Bool, allow_database_unity_catalog, false, R"(

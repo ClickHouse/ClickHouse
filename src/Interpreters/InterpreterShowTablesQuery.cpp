@@ -25,8 +25,14 @@
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_table_namespaces;
+}
+
 namespace ErrorCodes
 {
+    extern const int SUPPORT_IS_DISABLED;
     extern const int SYNTAX_ERROR;
     extern const int UNKNOWN_DATABASE;
 }
@@ -45,7 +51,13 @@ CurrentDatabaseInfo InterpreterShowTablesQuery::getFromInfo() const
     /// `FROM db.ns`, the parser guarantees dot-free parts, so the first dot is the split
     if (const auto * identifier = query.from ? query.from->as<ASTIdentifier>() : nullptr;
         identifier && identifier->name_parts.size() > 1)
+    {
+        if (!getContext()->getSettingsRef()[Setting::allow_experimental_table_namespaces])
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Table namespaces are an experimental feature; enable allow_experimental_table_namespaces to use `SHOW TABLES FROM {}`",
+                identifier->name());
         return CurrentDatabaseInfo(identifier->name());
+    }
 
     /// a single (possibly quoted) part is always an exact database name
     if (const auto from = query.getFrom(); !from.empty())

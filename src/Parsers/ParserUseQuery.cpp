@@ -44,7 +44,7 @@ bool ParserUseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
     }
 
-    if (pos.allow_multipart_table_paths && s_dot.ignore(pos, expected))
+    if (s_dot.ignore(pos, expected))
     {
         String first_part;
 

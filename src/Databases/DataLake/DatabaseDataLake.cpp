@@ -2160,9 +2160,9 @@ The following settings are supported:
 :::note
 Table namespaces are an experimental feature, disabled by default. Enable them
 with `SET allow_experimental_table_namespaces = 1`. While the setting is off,
-everything below is unavailable and multipart paths are rejected (`SHOW COLUMNS`
-and `SHOW INDEXES` keep their historical interpretation of a multipart operand);
-the quoted form `` catalog_name.`namespace.table` `` always works.
+`USE catalog_name.namespace` and `SHOW TABLES FROM catalog_name.namespace` fail with
+`SUPPORT_IS_DISABLED`, and a dotted path such as `catalog_name.namespace.table` is only
+shorthand for the quoted form `` catalog_name.`namespace.table` ``, which always works.
 :::
 
 Data lake catalogs organize tables into namespaces, which can be nested to
@@ -2174,13 +2174,13 @@ and it can always be referenced by quoting that name as a single identifier:
 SELECT * FROM catalog_name.`namespace.table`;
 ```
 
-With `allow_experimental_table_namespaces` enabled, you can also spell out
-every part with dots:
+You can also spell out every part with dots:
 
 - `db.ns.table` (three or more parts) always means the table path `ns.table`
   inside database `db`.
-- A two-part name `a.b` in a table expression is resolved both as table `b` of
-  database `a` and as table `a.b` of the current database. Database `a` must
+- With `allow_experimental_table_namespaces` enabled, a two-part name `a.b` in a
+  table expression is resolved both as table `b` of database `a` and as table
+  `a.b` of the current database. Database `a` must
   exist; when only one of the two tables exists it is used, and when both exist
   the query fails with `AMBIGUOUS_IDENTIFIER`. Other statements (`EXISTS`,
   `DESCRIBE`, `INSERT`, `SHOW CREATE TABLE`, DDL) always read `a.b` as

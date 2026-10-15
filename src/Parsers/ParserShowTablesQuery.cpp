@@ -181,7 +181,7 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             /// in `FROM db.namespace` keep the parts separate so
             /// interpreter sees the structure
             ParserToken dot(TokenType::Dot);
-            if (pos.allow_multipart_table_paths && dot.ignore(pos, expected))
+            if (dot.ignore(pos, expected))
             {
                 String first_part;
                 /// substituted or quoted dot would alias another path
