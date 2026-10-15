@@ -483,8 +483,9 @@ def test_nocache_bypasses_query_cache():
     assert json.loads(extract_data_from_http_api_response(response))["result"][0]["value"][1] == "3"
 
     # `nocache=1` wins over `use_query_cache=1` in the same request.
+    # Another time keeps the cache key apart from query_cache_user's entry, which blocks this user's insert.
     def get_default_user_value(extra_params):
-        params = [("query", "nocache_metric"), ("time", "1010"), ("use_query_cache", "1"), ("query_cache_nondeterministic_function_handling", "save")]
+        params = [("query", "nocache_metric"), ("time", "1011"), ("use_query_cache", "1"), ("query_cache_nondeterministic_function_handling", "save")]
         response = requests.get(f"http://{node.ip_address}:9093/api/v1/query", params=params + extra_params)
         return json.loads(extract_data_from_http_api_response(response))["result"][0]["value"][1]
 
