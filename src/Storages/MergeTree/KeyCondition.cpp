@@ -3615,8 +3615,7 @@ bool KeyCondition::setElementsContainNaN(const Columns & set_columns, const SetA
 /// representation of the set element type carries the same semantics as the key type. Counter-examples
 /// (see `03916_has_to_in`): `DateTime` stores seconds while `Date` stores days, so
 /// `has([toDateTime(...)], date_key)` is false at runtime while the cast maps the element onto the
-/// matching `Date`; a `String` element never equals an `Enum` value even when it names one of its
-/// labels; the cast pads a `FixedString` with zero bytes. An exact set atom built from such a pair
+/// matching `Date`; the cast pads a `FixedString` with zero bytes. An exact set atom built from such a pair
 /// prunes rows that satisfy the predicate under `notHas`. Allow only pairs where the raw comparison
 /// provably matches the cast:
 ///   - identical types (after stripping `Nullable` and `LowCardinality`);

@@ -129,10 +129,10 @@ SELECT COUNT(*) FROM (
     EXPLAIN actions=1,header=1 SELECT has([toDateTime('2026-01-10 12:34:56')], materialize(toDate('2026-01-10')))
     ) t WHERE explain like '%FUNCTION in%';
 
--- Enum vs String: has() returns 0 (Field-level Enum integer vs String), in() would return 1.
-SELECT has(['a', 'b'], CAST('a' AS Enum8('a' = 1, 'b' = 2)));
+-- Enum vs String: has() compares the label, so it returns 0 for '1', while in() converts '1' to the code 1 and would return 1.
+SELECT has(['1', '2'], CAST('a' AS Enum8('a' = 1, 'b' = 2)));
 SELECT COUNT(*) FROM (
-    EXPLAIN actions=1,header=1 SELECT has(['a', 'b'], materialize(CAST('a' AS Enum8('a' = 1, 'b' = 2))))
+    EXPLAIN actions=1,header=1 SELECT has(['1', '2'], materialize(CAST('a' AS Enum8('a' = 1, 'b' = 2))))
     ) t WHERE explain like '%FUNCTION in%';
 
 -- IPv4 vs UInt32: in() throws on type mismatch, has() works. Rewrite would change behavior.
