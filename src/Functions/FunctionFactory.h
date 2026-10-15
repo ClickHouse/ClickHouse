@@ -86,6 +86,7 @@ public:
     FunctionDocumentation getDocumentation(const std::string & name) const;
 
     const SecretArgumentsSpec * tryGetSecretArgumentsSpec(const std::string & name) const;
+    bool hasArgumentSecretsIgnoringCase(const std::string & name) const;
 
     /// Returns nullptr if the function does not take named arguments.
     const FunctionNamedArguments * tryGetNamedArguments(const std::string & name) const;

@@ -102,6 +102,12 @@ const FunctionNamedArguments * FunctionFactory::tryGetNamedArguments(const std::
     return it == named_arguments.end() ? nullptr : &it->second;
 }
 
+bool FunctionFactory::hasArgumentSecretsIgnoringCase(const std::string & name) const
+{
+    return std::ranges::any_of(secret_arguments, [&](const auto & entry)
+        { return Poco::icompare(entry.first, name) == 0 && entry.second.hasArgumentSecrets(); });
+}
+
 FunctionOverloadResolverPtr FunctionFactory::getImpl(
     const std::string & name,
     ContextPtr context) const
