@@ -463,6 +463,10 @@ void ReadFromMemoryStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
         pipe = Pipe(std::make_shared<NullSource>(output_header));
     }
 
+    /// Add storage limits.
+    for (const auto & processor : pipe.getProcessors())
+        processor->setStorageLimits(query_info.storage_limits);
+
     pipeline.init(std::move(pipe));
 }
 
