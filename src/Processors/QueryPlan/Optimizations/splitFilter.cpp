@@ -68,6 +68,11 @@ size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes, const Op
     if (split.second.trivial())
         return 0;
 
+    /// The filter node may have been renamed by the split to avoid clashing with an input of the same name.
+    std::string split_filter_name = split.split_nodes_mapping.at(filter_dag_node)->result_name;
+
+    /// A renamed filter column reaches the second half as an input under the new name, with an alias back to the old
+    /// one, and removeUnusedResult removes the alias together with the input.
     bool remove_filter = false;
     if (filter_step->removesFilterColumn())
         remove_filter = split.second.removeUnusedResult(filter_column_name);
@@ -77,9 +82,6 @@ size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes, const Op
     auto & filter_node = nodes.emplace_back();
     node->children.swap(filter_node.children);
     node->children.push_back(&filter_node);
-
-    /// The filter node may have been renamed by the split to avoid clashing with an input of the same name.
-    std::string split_filter_name = split.split_nodes_mapping.at(filter_dag_node)->result_name;
 
     filter_node.step = std::make_unique<FilterStep>(
             filter_node.children.at(0)->step->getOutputHeader(),

@@ -29,9 +29,7 @@ import ChangingTLSSettings from '/snippets/ar/clickpipes/_changing_tls_settings.
 
 يمكن نشر MongoDB ClickPipes وإدارته يدويًا باستخدام ClickPipes UI، وكذلك برمجيًا باستخدام [OpenAPI](/ar/integrations/clickpipes/programmatic-access/openapi) و[Terraform](/ar/integrations/clickpipes/programmatic-access/terraform).
 
-<div id="prerequisites">
-  ## المتطلبات الأساسية
-</div>
+## المتطلبات الأساسية {#prerequisites}
 
 للبدء، عليك أولًا التأكد من أن قاعدة بيانات MongoDB المصدر مُعَدّة بشكل صحيح للنسخ المتماثل. وتعتمد خطوات الإعداد على طريقة نشر MongoDB، لذا يُرجى اتباع الدليل المناسب أدناه:
 
@@ -43,11 +41,9 @@ import ChangingTLSSettings from '/snippets/ar/clickpipes/_changing_tls_settings.
 
 بعد إعداد قاعدة بيانات MongoDB المصدر، يمكنك متابعة إنشاء ClickPipe.
 
-<div id="create-your-clickpipe">
-  ## أنشئ ClickPipe الخاص بك
-</div>
+## أنشئ ClickPipe الخاص بك {#create-your-clickpipe}
 
-تأكد من أنك مسجّل الدخول إلى حساب ClickHouse Cloud الخاص بك. إذا لم يكن لديك حساب بعد، يمكنك التسجيل [هنا](https://cloud.clickhouse.com/).
+تأكد من أنك مسجّل الدخول إلى حساب ClickHouse Cloud الخاص بك. إذا لم يكن لديك حساب بعد، يمكنك التسجيل [هنا](https://clickhouse.cloud/signUp?loc=docs-integrations-clickpipes-mongodb).
 
 1. في وحدة تحكم ClickHouse Cloud، انتقل إلى خدمة ClickHouse Cloud الخاصة بك.
 
@@ -61,9 +57,7 @@ import ChangingTLSSettings from '/snippets/ar/clickpipes/_changing_tls_settings.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-tile.webp" alt="اختيار MongoDB" size="lg" border />
 
-<div id="add-your-source-mongodb-database-connection">
-  ### أضِف اتصال قاعدة بيانات MongoDB المصدر
-</div>
+### أضِف اتصال قاعدة بيانات MongoDB المصدر {#add-your-source-mongodb-database-connection}
 
 4. املأ تفاصيل الاتصال لقاعدة بيانات MongoDB المصدر التي أعددتها في خطوة المتطلبات الأساسية.
 
@@ -74,15 +68,11 @@ import ChangingTLSSettings from '/snippets/ar/clickpipes/_changing_tls_settings.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-connection-details.webp" alt="املأ تفاصيل الاتصال" size="lg" border />
 
-<div id="optional-changing-tls-settings">
-  #### (اختياري) تعديل إعدادات TLS
-</div>
+#### (اختياري) تعديل إعدادات TLS {#optional-changing-tls-settings}
 
 <ChangingTLSSettings />
 
-<div id="optional-set-up-ssh-tunneling">
-  #### (اختياري) إعداد نفق SSH
-</div>
+#### (اختياري) إعداد نفق SSH {#optional-set-up-ssh-tunneling}
 
 يمكنك تحديد تفاصيل نفق SSH إذا كانت قاعدة بيانات MongoDB المصدر لديك غير متاحة عبر الإنترنت العام.
 
@@ -102,9 +92,7 @@ import ChangingTLSSettings from '/snippets/ar/clickpipes/_changing_tls_settings.
 
 بعد إدخال تفاصيل الاتصال، انقر على `Next`.
 
-<div id="advanced-settings">
-  #### تكوين الإعدادات المتقدمة
-</div>
+#### تكوين الإعدادات المتقدمة {#advanced-settings}
 
 يمكنك تكوين الإعدادات المتقدمة عند الحاجة. يرد أدناه وصف موجز لكل إعداد:
 
@@ -112,9 +100,7 @@ import ChangingTLSSettings from '/snippets/ar/clickpipes/_changing_tls_settings.
 * **حجم دفعة السحب**: عدد الصفوف التي سيتم جلبها في دفعة واحدة. هذا إعداد يُطبَّق على أساس أفضل جهد، وقد لا يُلتزم به في جميع الحالات.
 * **عدد الجداول في اللقطة الأولية بالتوازي**: هذا هو عدد الجداول التي سيتم جلبها بالتوازي أثناء اللقطة الأولية. ويكون ذلك مفيدًا عندما يكون لديك عدد كبير من الجداول وتريد التحكم في عدد الجداول التي يتم جلبها بالتوازي.
 
-<div id="configure-the-tables">
-  ### إعداد الجداول
-</div>
+### إعداد الجداول {#configure-the-tables}
 
 5. هنا يمكنك تحديد قاعدة البيانات الوجهة لـ ClickPipe. يمكنك إما تحديد قاعدة بيانات موجودة أو إنشاء قاعدة بيانات جديدة.
 
@@ -122,23 +108,17 @@ import ChangingTLSSettings from '/snippets/ar/clickpipes/_changing_tls_settings.
 
 6. يمكنك تحديد الجداول التي تريد نسخها من قاعدة بيانات MongoDB المصدر. وأثناء تحديد الجداول، يمكنك أيضًا اختيار إعادة تسمية الجداول في قاعدة بيانات ClickHouse الوجهة.
 
-<div id="review-permissions-and-start-the-clickpipe">
-  ### راجع الأذونات وابدأ ClickPipe
-</div>
+### راجع الأذونات وابدأ ClickPipe {#review-permissions-and-start-the-clickpipe}
 
 7. اختر دور «الوصول الكامل» من القائمة المنسدلة للأذونات، ثم انقر على «إكمال الإعداد».
 
    <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg" alt="مراجعة الأذونات" size="lg" border />
 
-<div id="whats-next">
-  ## ما التالي؟
-</div>
+## ما التالي؟ {#whats-next}
 
 بعد إعداد ClickPipe لنسخ البيانات من MongoDB إلى ClickHouse Cloud، يمكنك التركيز على كيفية الاستعلام عن بياناتك ونمذجتها لتحقيق أفضل أداء.
 
-<div id="caveats">
-  ## ملاحظات مهمة
-</div>
+## ملاحظات مهمة {#caveats}
 
 فيما يلي بعض الملاحظات المهمة التي ينبغي الانتباه إليها عند استخدام هذا الموصل:
 
