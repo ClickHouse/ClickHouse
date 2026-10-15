@@ -135,10 +135,13 @@ public:
             readVarUInt(error, rb);
         }
 
+        /// The weights are modular (see `insert`), so `count` may be less than `error`.
+        UInt64 countMinusError() const { return common::subIgnoreOverflow(count, error); }
+
         // greater() taking error into account
         bool operator> (const Counter & b) const
         {
-            return ((count - error) > (b.count - b.error)) || ((count - error) == (b.count - b.error) && count > b.count);
+            return (countMinusError() > b.countMinusError()) || (countMinusError() == b.countMinusError() && count > b.count);
         }
 
         TKey key{};
@@ -429,7 +432,7 @@ protected:
             for (size_t i = requested_capacity; i < counter_list.size(); ++i)
             {
                 size_t pos = counter_list[i].hash & alpha_mask;
-                alpha_map[pos] = std::min(common::addIgnoreOverflow(alpha_map[pos], counter_list[i].count - counter_list[i].error), MAX_ALPHA_VALUE);
+                alpha_map[pos] = std::min(common::addIgnoreOverflow(alpha_map[pos], counter_list[i].countMinusError()), MAX_ALPHA_VALUE);
                 arena.free(counter_list[i].key);
             }
 

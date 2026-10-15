@@ -323,7 +323,8 @@ private:
         ::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.first < b.first; });
         std::partial_sum(array, array + size, array,
             [](const Pair & acc, const Pair & p) { return Pair(p.first, common::addIgnoreOverflow(acc.second, p.second)); });
-        return array[size - 1].second - 1;
+        /// The weights are summed modulo 2^64, so a total of exactly 2^64 wraps to zero.
+        return common::subIgnoreOverflow(array[size - 1].second, Weight(1));
     }
 
     /// getFloat implementation with interpolation

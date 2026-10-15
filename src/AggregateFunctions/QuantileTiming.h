@@ -347,7 +347,7 @@ namespace detail
         {
             writeBinaryLittleEndian(count, buf);
 
-            if (count * 2 > SMALL_THRESHOLD + BIG_SIZE)
+            if (common::mulIgnoreOverflow(count, 2) > SMALL_THRESHOLD + BIG_SIZE)
             {
                 /// Simple serialization for a heavily dense case.
                 buf.write(reinterpret_cast<const char *>(this) + sizeof(count), SIZE_OF_LARGE_WITHOUT_COUNT);
@@ -383,7 +383,7 @@ namespace detail
         {
             readBinaryLittleEndian(count, buf);
 
-            if (count * 2 > SMALL_THRESHOLD + BIG_SIZE)
+            if (common::mulIgnoreOverflow(count, 2) > SMALL_THRESHOLD + BIG_SIZE)
             {
                 buf.readStrict(reinterpret_cast<char *>(this) + sizeof(count), SIZE_OF_LARGE_WITHOUT_COUNT);
             }

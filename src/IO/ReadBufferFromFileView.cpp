@@ -160,7 +160,7 @@ void ReadBufferFromFileView::resizeWorkingBuffer()
     if (file_offset_of_buffer_end > getRightBound())
     {
         size_t extra_bytes = file_offset_of_buffer_end - getRightBound();
-        size_t new_size = std::max(static_cast<Int64>(working_buffer.size() - extra_bytes), static_cast<Int64>(0));
+        size_t new_size = working_buffer.size() > extra_bytes ? working_buffer.size() - extra_bytes : 0;
 
         working_buffer.resize(new_size);
         file_offset_of_buffer_end = getRightBound();

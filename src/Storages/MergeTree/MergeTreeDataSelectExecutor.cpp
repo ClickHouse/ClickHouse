@@ -1093,9 +1093,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 if (r_is_vectorsimilarity)
                     r_index_priority = 0;
 #endif
-                // negated since we want to prioritize coarser indexes
-                const auto neg_l_granularity = -static_cast<Int64>(l_index->getGranularity());
-                const auto neg_r_granularity = -static_cast<Int64>(r_index->getGranularity());
+                // reversed since we want to prioritize coarser indexes; `UInt64` keeps the full domain of the granularity
+                const UInt64 neg_l_granularity = std::numeric_limits<UInt64>::max() - l_index->getGranularity();
+                const UInt64 neg_r_granularity = std::numeric_limits<UInt64>::max() - r_index->getGranularity();
 
                 const auto l_size = idx_sizes[l];
                 const auto r_size = idx_sizes[r];

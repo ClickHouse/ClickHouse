@@ -2124,11 +2124,14 @@ void TrivialStringConverter::convertColumn(std::span<const char> chars, const UI
         col_str.getChars().insert(chars.data() + offsets[-1], chars.data() + offsets[static_cast<ssize_t>(num_values) - 1]);
 
         auto & out_offsets = col_str.getOffsets();
-        UInt64 diff = out_offsets.back() - offsets[-1]; // (wrapping overflow is ok)
+        /// Rebase the offsets without wrap-around: `offsets[-1]` may exceed `out_offsets.back()`
+        /// when a page is split across output columns.
+        UInt64 out_base = out_offsets.back();
+        UInt64 in_base = offsets[-1];
         size_t prev_count = out_offsets.size();
         out_offsets.resize(prev_count + num_values);
         for (size_t i = 0; i < num_values; ++i)
-            out_offsets[prev_count + i] = offsets[i] + diff; // (wrapping overflow is ok)
+            out_offsets[prev_count + i] = out_base + (offsets[i] - in_base);
     }
     else
     {
