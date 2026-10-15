@@ -31,7 +31,7 @@ proc submit {text} {
 set history_file $CLICKHOUSE_TMP/$basename.history
 spawn bash -c {
     source "$1/../shell_config.sh"
-    ${CLICKHOUSE_CLIENT_BINARY} ${CLICKHOUSE_CLIENT_EXPECT_OPT} --enable-progress-table-toggle=0 --history_file="$2"
+    ${CLICKHOUSE_CLIENT_BINARY} ${CLICKHOUSE_CLIENT_EXPECT_OPT} --history_file="$2"
 } bash $basedir $history_file
 expect ":) "
 
