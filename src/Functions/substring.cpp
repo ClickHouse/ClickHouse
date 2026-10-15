@@ -150,6 +150,9 @@ public:
         if (column_length_const)
             length = column_length_const->getInt(0);
 
+        if (column_offset_const && offset == 1 && !column_length && isString(arguments[0].type))
+            return column_string;
+
         if (is_utf8)
         {
             if (const ColumnString * col = checkAndGetColumn<ColumnString>(column_string.get()))

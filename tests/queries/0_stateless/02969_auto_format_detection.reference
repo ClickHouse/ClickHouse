@@ -7,7 +7,7 @@ ORC
 a	Nullable(Int64)					
 b	Nullable(String)					
 c	Array(Nullable(Int64))					
-d	Tuple(\n    a Nullable(Int64),\n    b Nullable(String))					
+d	Nullable(Tuple(a Nullable(Int64), b Nullable(String)))					
 Arrow
 a	UInt64					
 b	String					
@@ -32,7 +32,7 @@ BSONEachRow
 a	Nullable(Int64)					
 b	Nullable(String)					
 c	Array(Nullable(Int64))					
-d	Tuple(\n    a Nullable(Int64),\n    b Nullable(String))					
+d	Nullable(Tuple(a Nullable(Int64), b Nullable(String)))					
 JSONCompact
 a	UInt64					
 b	String					
@@ -42,7 +42,7 @@ Values
 c1	Nullable(UInt64)					
 c2	Nullable(String)					
 c3	Array(Nullable(UInt64))					
-c4	Tuple(Nullable(UInt64), Nullable(String))					
+c4	Nullable(Tuple(Nullable(UInt64), Nullable(String)))					
 TSKV
 a	Nullable(String)					
 b	Nullable(String)					
@@ -52,17 +52,17 @@ JSONObjectEachRow
 a	Nullable(UInt64)					
 b	Nullable(String)					
 c	Array(Nullable(UInt64))					
-d	Tuple(\n    a Nullable(UInt64),\n    b Nullable(String))					
+d	Nullable(Tuple(a Nullable(UInt64), b Nullable(String)))					
 JSONColumns
 a	Nullable(UInt64)					
 b	Nullable(String)					
 c	Array(Nullable(UInt64))					
-d	Tuple(\n    a Nullable(UInt64),\n    b Nullable(String))					
+d	Nullable(Tuple(a Nullable(UInt64), b Nullable(String)))					
 JSONCompactColumns
 c1	Nullable(UInt64)					
 c2	Nullable(String)					
 c3	Array(Nullable(UInt64))					
-c4	Tuple(\n    a Nullable(UInt64),\n    b Nullable(String))					
+c4	Nullable(Tuple(a Nullable(UInt64), b Nullable(String)))					
 JSONCompact
 a	UInt64					
 b	String					
@@ -77,7 +77,7 @@ TSV
 c1	Nullable(UInt64)					
 c2	Nullable(String)					
 c3	Array(Nullable(UInt64))					
-c4	Tuple(Nullable(UInt64), Nullable(String))					
+c4	Nullable(Tuple(Nullable(UInt64), Nullable(String)))					
 CSV
 c1	Nullable(UInt64)					
 c2	Nullable(String)					
@@ -87,7 +87,7 @@ c5	Nullable(String)
 a	Nullable(UInt64)					
 b	Nullable(String)					
 c	Array(Nullable(UInt64))					
-d	Tuple(\n    a Nullable(UInt64),\n    b Nullable(String))					
+d	Nullable(Tuple(a Nullable(UInt64), b Nullable(String)))					
 a	UInt64					
 b	String					
 c	Array(UInt64)					
@@ -95,29 +95,29 @@ d	Tuple(\n    a UInt64,\n    b String)
 a	Nullable(UInt64)					
 b	Nullable(String)					
 c	Array(Nullable(UInt64))					
-d	Tuple(\n    a Nullable(UInt64),\n    b Nullable(String))					
+d	Nullable(Tuple(a Nullable(UInt64), b Nullable(String)))					
 a	Nullable(UInt64)					
 b	Nullable(String)					
 c	Array(Nullable(UInt64))					
-d	Tuple(\n    a Nullable(UInt64),\n    b Nullable(String))					
+d	Nullable(Tuple(a Nullable(UInt64), b Nullable(String)))					
 a	Nullable(UInt64)					
 b	Nullable(String)					
 c	Array(Nullable(UInt64))					
-d	Tuple(\n    a Nullable(UInt64),\n    b Nullable(String))					
+d	Nullable(Tuple(a Nullable(UInt64), b Nullable(String)))					
 a	Nullable(UInt64)					
 b	Nullable(String)					
 c	Array(Nullable(UInt64))					
-d	Tuple(\n    a Nullable(UInt64),\n    b Nullable(String))					
+d	Nullable(Tuple(a Nullable(UInt64), b Nullable(String)))					
 a	Nullable(UInt64)					
 b	Nullable(String)					
 c	Array(Nullable(UInt64))					
-d	Tuple(\n    a Nullable(UInt64),\n    b Nullable(String))					
+d	Nullable(Tuple(a Nullable(UInt64), b Nullable(String)))					
 1
 a	Nullable(UInt64)					
 b	Nullable(String)					
 c	Array(Nullable(UInt64))					
-d	Tuple(\n    a Nullable(UInt64),\n    b Nullable(String))					
+d	Nullable(Tuple(a Nullable(UInt64), b Nullable(String)))					
 a	Nullable(UInt64)					
 b	Nullable(String)					
 c	Array(Nullable(UInt64))					
-d	Tuple(\n    a Nullable(UInt64),\n    b Nullable(String))					
+d	Nullable(Tuple(a Nullable(UInt64), b Nullable(String)))					

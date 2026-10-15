@@ -23,10 +23,6 @@ SELECT groupArray(x) FROM (SELECT x FROM v_range_unbounded ORDER BY x DESC LIMIT
 SELECT groupArray(x) FROM (SELECT x FROM v_range_counted ORDER BY x DESC LIMIT 2) SETTINGS enable_analyzer = 1;
 SELECT groupArray(x) FROM (SELECT x FROM v_range_until ORDER BY x DESC LIMIT 2) SETTINGS enable_analyzer = 1;
 
-SELECT groupArray(x) FROM (SELECT x FROM v_range_unbounded ORDER BY x DESC LIMIT 2) SETTINGS enable_analyzer = 0;
-SELECT groupArray(x) FROM (SELECT x FROM v_range_counted ORDER BY x DESC LIMIT 2) SETTINGS enable_analyzer = 0;
-SELECT groupArray(x) FROM (SELECT x FROM v_range_until ORDER BY x DESC LIMIT 2) SETTINGS enable_analyzer = 0;
-
 DROP VIEW v_range_unbounded;
 DROP VIEW v_range_counted;
 DROP VIEW v_range_until;

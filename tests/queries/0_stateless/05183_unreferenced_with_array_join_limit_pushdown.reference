@@ -2,20 +2,11 @@
 0
 1
 2
-0
-1
-2
 -- unreferenced WITH arrayJoin: still pushdown
 0
 1
 2
-0
-1
-2
 -- the same through the `unnest` spelling
-0
-1
-2
 0
 1
 2

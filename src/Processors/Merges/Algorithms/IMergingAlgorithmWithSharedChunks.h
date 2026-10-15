@@ -1,5 +1,7 @@
 #pragma once
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
+#include <Processors/Merges/Algorithms/RowFilterInfo.h>
 #include <Processors/Merges/Algorithms/RowRef.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
 #include <Core/Block_fwd.h>
@@ -39,9 +41,9 @@ protected:
     };
 
     /// Sources currently being merged.
-    using Sources = std::vector<Source>;
+    using Sources = VectorWithMemoryTracking<Source>;
     Sources sources;
-    std::vector<size_t> sources_origin_merge_tree_part_level;
+    VectorWithMemoryTracking<size_t> sources_origin_merge_tree_part_level;
 
     /// The batch queue identifies how many consecutive rows can be taken from the front
     /// cursor in one go (see `SortingQueueImpl::updateBatchSize`), so consuming rows one by
@@ -77,6 +79,15 @@ protected:
     std::unique_ptr<MergedData> merged_data;
 
     using RowRef = detail::RowRefWithOwnedChunk;
+
+    /// A rejected row still writes its row source entry, left skipped, so the gather stage stays
+    /// in step with the rows that were read.
+    bool isRowFiltered(const RowRef & row) const
+    {
+        const auto * mask = row.owned_chunk->row_filter_mask;
+        return mask && !(*mask)[row.row_num];
+    }
+
     void setRowRef(RowRef & row, SortCursor & cursor) { row.set(cursor, sources[cursor.impl->order].chunk); }
     bool skipLastRowFor(size_t input_number) const { return sources[input_number].skip_last_row; }
     bool rowsHaveDifferentSortColumns(const RowRef & lhs, const RowRef & rhs)

@@ -674,13 +674,31 @@
     /// surfaces convey the same status. Known badges get a descriptive label; any other `*Badge` (the
     /// website adds new ones over time) falls back to its name with the camel case split (e.g.
     /// `CommunityMaintainedBadge` -> `Community Maintained`).
-    function badgeLabel(name) {
+    function cloudOnlyBadgeLabel(attributes) {
+        const match = /(?:^|\s)supported\s*=\s*\{?\s*\[([^\]]*)\]/.exec(attributes || '');
+        const supported = match
+            ? Array.from(match[1].matchAll(/"([^"]*)"/g), (item) => item[1])
+            : ['cloud', 'private', 'BYOC'];
+        const platforms = supported.map((platform) => ({
+            cloud: 'ClickHouse Cloud',
+            private: 'ClickHouse Private',
+            BYOC: 'BYOC',
+        })[platform] || platform);
+        const names = platforms.length === 1
+            ? platforms[0]
+            : platforms.length === 2
+                ? platforms.join(' and ')
+                : platforms.slice(0, -1).join(', ') + ', and ' + platforms[platforms.length - 1];
+        return 'Available in ' + names;
+    }
+
+    function badgeLabel(name, attributes) {
         switch (name) {
             case 'ExperimentalBadge': return 'Experimental';
             case 'BetaBadge': return 'Beta';
             case 'CloudNotSupportedBadge': return 'Not supported in ClickHouse Cloud';
             case 'CloudAvailableBadge': return 'Available in ClickHouse Cloud';
-            case 'CloudOnlyBadge': return 'ClickHouse Cloud only';
+            case 'CloudOnlyBadge': return cloudOnlyBadgeLabel(attributes);
             case 'PrivatePreviewBadge': return 'Private Preview';
             case 'ScalePlanFeatureBadge': return 'Scale plan feature';
             case 'EnterprisePlanFeatureBadge': return 'Enterprise plan feature';
@@ -801,7 +819,7 @@
                 if (closing)
                     return '';
                 const payload = badgePayload(name, attributes);
-                return '**[' + badgeLabel(name) + ']**' + (payload ? ' ' + payload : '');
+                return '**[' + badgeLabel(name, attributes) + ']**' + (payload ? ' ' + payload : '');
             });
 
         /// Likewise strip any remaining *self-closing* PascalCase component that was neither imported

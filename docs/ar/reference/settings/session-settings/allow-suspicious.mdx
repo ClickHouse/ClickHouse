@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings) وهي مُولَّدة تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="allow_suspicious_codecs">
-  ## allow_suspicious_codecs
-</div>
+## allow_suspicious_codecs {#allow_suspicious_codecs}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -23,27 +21,23 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 إذا ضُبط هذا الإعداد على true، فسيُسمح بتحديد خوارزميات ضغط غير مجدية.
 
-<div id="allow_suspicious_fixed_string_types">
-  ## allow_suspicious_fixed_string_types
-</div>
+## allow_suspicious_fixed_string_types {#allow_suspicious_fixed_string_types}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 في عبارة CREATE TABLE، يسمح بإنشاء أعمدة من النوع FixedString(n) عندما تكون n &gt; 256. ويُعد استخدام FixedString بطول &gt;= 256 أمرًا مريبًا، وعلى الأرجح يشير إلى استخدام غير صحيح
 
-<div id="allow_suspicious_indices">
-  ## allow_suspicious_indices
-</div>
+## allow_suspicious_indexes {#allow_suspicious_indexes}
+
+**الأسماء البديلة**: `allow_suspicious_indices`
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.4"},{"label": "0"},{"label": "إذا كانت القيمة true، يمكن تعريف الفهرس بتعبيرات متطابقة"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "تمت إضافة اسم بديل للإعداد `allow_suspicious_indices`."}]}, {"id": "row-2","items": [{"label": "23.4"},{"label": "0"},{"label": "إذا كانت القيمة true، يمكن تعريف الفهرس بتعبيرات متطابقة"}]}]} />
 
 رفض الفهارس الأساسية/الثانوية ومفاتيح الترتيب ذات التعبيرات المتطابقة
 
-<div id="allow_suspicious_low_cardinality_types">
-  ## allow_suspicious_low_cardinality_types
-</div>
+## allow_suspicious_low_cardinality_types {#allow_suspicious_low_cardinality_types}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -62,9 +56,7 @@ Possible values:
 * 1 — لا يكون استخدام `LowCardinality` مقيّدًا.
 * 0 — يكون استخدام `LowCardinality` مقيّدًا.
 
-<div id="allow_suspicious_primary_key">
-  ## allow_suspicious_primary_key
-</div>
+## allow_suspicious_primary_key {#allow_suspicious_primary_key}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -72,9 +64,7 @@ Possible values:
 
 السماح باستخدام `PRIMARY KEY`/`ORDER BY` المريبة في MergeTree (أي SimpleAggregateFunction).
 
-<div id="allow_suspicious_ttl_expressions">
-  ## allow_suspicious_ttl_expressions
-</div>
+## allow_suspicious_ttl_expressions {#allow_suspicious_ttl_expressions}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -82,9 +72,7 @@ Possible values:
 
 يرفض تعبيرات TTL التي لا تعتمد على أيٍّ من أعمدة الجدول. ويشير ذلك في معظم الحالات إلى خطأ من المستخدم.
 
-<div id="allow_suspicious_types_in_group_by">
-  ## allow_suspicious_types_in_group_by
-</div>
+## allow_suspicious_types_in_group_by {#allow_suspicious_types_in_group_by}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -92,9 +80,7 @@ Possible values:
 
 يتيح هذا الإعداد استخدام النوعين [Variant](/ar/reference/data-types/variant) و[Dynamic](/ar/reference/data-types/dynamic) في مفاتيح GROUP BY أو يقيّده.
 
-<div id="allow_suspicious_types_in_order_by">
-  ## allow_suspicious_types_in_order_by
-</div>
+## allow_suspicious_types_in_order_by {#allow_suspicious_types_in_order_by}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -102,9 +88,7 @@ Possible values:
 
 يسمح باستخدام النوعين [Variant](/ar/reference/data-types/variant) و[Dynamic](/ar/reference/data-types/dynamic) في مفاتيح ORDER BY أو يقيّده.
 
-<div id="allow_suspicious_variant_types">
-  ## allow_suspicious_variant_types
-</div>
+## allow_suspicious_variant_types {#allow_suspicious_variant_types}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
