@@ -176,12 +176,14 @@ ReplicatedMergeTreeSink::ReplicatedMergeTreeSink(
     /// verdict is carried to `commitPart` and thrown only for a part that is not a duplicate, so that
     /// retrying an INSERT which was already written stays a no-op even once the database is full.
     /// `ATTACH` is checked for the whole batch in `StorageReplicatedMergeTree::attachPartitionImpl`,
-    /// which passes its verdict through `setDatabaseRowsLimitException`.
+    /// which passes its verdict through `setDatabaseRowsLimitException`, and `RESTORE` before attaching,
+    /// so attach sinks are not checked here: replica metadata recovery can run in the table startup,
+    /// where counting the rows would wait for the database startup, which waits for this table.
     const bool defer_database_rows_limit = deduplicate && !is_attach;
     try
     {
         storage.delayInsertOrThrowIfNeeded(
-            nullptr, context, /*allow_throw=*/ true, /*allow_delay=*/ false, /*check_database_rows_limit=*/ !defer_database_rows_limit);
+            nullptr, context, /*allow_throw=*/ true, /*allow_delay=*/ false, /*check_database_rows_limit=*/ !deduplicate && !is_attach);
     }
     catch (...)
     {
