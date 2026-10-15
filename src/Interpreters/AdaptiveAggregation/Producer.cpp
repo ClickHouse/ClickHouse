@@ -6,12 +6,12 @@
 #include <limits>
 
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Columns/ColumnSparse.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/ProfileEvents.h>
 #include <Common/memcpySmall.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/AdaptiveAggregation/AdaptiveAggregationImpl.h>
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/RowDataStore.h>
@@ -112,7 +112,7 @@ void NO_INLINE Aggregator::executeFrozenImpl(
     size_t row_begin,
     size_t row_end,
     ColumnRawPtrs & key_columns,
-    AggregateFunctionInstruction *,
+    AggregateFunctionInstruction * aggregate_instructions,
     AdaptiveAggregationProducer & adaptive,
     bool all_keys_are_const,
     MemoryTracker *) const
@@ -139,7 +139,8 @@ void NO_INLINE Aggregator::executeFrozenImpl(
     auto & misses = adaptive.misses;
     const auto stage_misses = [&]
     {
-        accountStagedBatch(columns, adaptive, appendDelayedRecords<RecordKey>(columns, adaptive, local_find_state, scratch_pool));
+        accountStagedBatch(
+            columns, adaptive, appendDelayedRecords<RecordKey>(aggregate_instructions, adaptive, local_find_state, scratch_pool));
     };
 
     if (all_keys_are_const)
@@ -387,7 +388,8 @@ void NO_INLINE Aggregator::executeFrozenImpl(
     auto & misses = adaptive.misses;
     const auto stage_misses = [&]
     {
-        accountStagedBatch(columns, adaptive, appendDelayedRecords<RecordKey>(columns, adaptive, local_find_state, scratch_pool));
+        accountStagedBatch(
+            columns, adaptive, appendDelayedRecords<RecordKey>(aggregate_instructions, adaptive, local_find_state, scratch_pool));
     };
 
     if (all_keys_are_const)
@@ -533,7 +535,7 @@ void NO_INLINE Aggregator::executeFrozenImpl(
 
 template <typename RecordKey, typename State>
 AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
-    const Columns & columns,
+    const AggregateFunctionInstruction * aggregate_instructions,
     AdaptiveAggregationProducer & adaptive,
     State & local_find_state,
     Arena & scratch_pool) const
@@ -604,22 +606,42 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
     {
         const auto & argument_layout = *adaptive_argument_layout;
 
-        /// The arguments are staged in the form the drain rebuilds and the instructions consume: the representation
-        /// wrappers stripped recursively, then `LowCardinality` (see `AdaptiveArgumentLayout::build`).
-        Columns arguments(argument_layout.num_positions);
-        const auto normalize_argument = [&](size_t position) -> const IColumn &
+        /// The arguments are staged in the form the drain rebuilds and the instructions consume (see
+        /// `AdaptiveArgumentLayout::build`): the instructions' `arguments`, which `prepareAggregateInstructions` built
+        /// for the whole block with constant, replicated and `LowCardinality` columns materialized. They hold whole
+        /// rows, unlike the `batch_arguments` that an `-Array` combinator unnests: the drain rebuilds the instructions
+        /// from the staged rows and unnests them again. Building them again from the block's own columns would copy
+        /// each such column once more, however few rows miss. Of a column that several aggregates read, a dense form
+        /// that one of them prepared is preferred to a sparse one.
+        std::vector<const IColumn *> arguments(argument_layout.num_positions);
+        for (size_t i = 0; i < params.aggregates_size; ++i)
+            for (size_t j = 0; j < aggregates_positions[i].size(); ++j)
+            {
+                const IColumn *& argument = arguments[aggregates_positions[i][j]];
+                if (!argument || argument->isSparse())
+                    argument = aggregate_instructions[i].arguments[j];
+            }
+
+        /// Only a sparse column, which an aggregate of one argument consumes as it is, is densified for the record
+        /// writer.
+        Columns densified_arguments;
+        const auto densify_argument = [&](size_t position)
         {
-            arguments[position] = recursiveRemoveLowCardinality(columns[position]->convertToFullIfWrapped());
-            return *arguments[position];
+            const IColumn *& argument = arguments[position];
+            if (argument->isSparse())
+                argument = densified_arguments.emplace_back(recursiveRemoveSparse(argument->getPtr())).get();
         };
 
         for (const auto & field : argument_layout.fixed_fields)
-            normalize_argument(field.position);
+            densify_argument(field.position);
 
         std::vector<const IColumn *> variable_sources;
         variable_sources.reserve(argument_layout.variable_fields.size());
         for (const auto & field : argument_layout.variable_fields)
-            variable_sources.push_back(&normalize_argument(field.position));
+        {
+            densify_argument(field.position);
+            variable_sources.push_back(arguments[field.position]);
+        }
 
         /// A value whose serialized size cannot be computed in advance is serialized into a scratch arena first and
         /// copied from there. The values of one row form one contiguous range, which is rolled back once the record is

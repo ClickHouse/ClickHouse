@@ -1004,12 +1004,16 @@ private:
 
     /// Appends the producer's batch of misses to its partitions in the format `visitStagedRecordFormat` selects. Each
     /// record carries a key and either a multiplicity (an aggregation by a lone `count`), no payload (no aggregates), or
-    /// the row's aggregate arguments laid out by `adaptive_argument_layout`. Variable-size records also carry a hash and
-    /// lengths; fixed-size records recover the hash from the key when drained. Returns what it staged for the
-    /// accounting of the batch (see `accountStagedBatch`).
+    /// the row's aggregate arguments laid out by `adaptive_argument_layout`, read from the argument columns of the
+    /// block's `aggregate_instructions`. Variable-size records also carry a hash and lengths; fixed-size records
+    /// recover the hash from the key when drained. Returns what it staged for the accounting of the batch (see
+    /// `accountStagedBatch`).
     template <typename RecordKey, typename State>
     AdaptiveStagedBytes appendDelayedRecords(
-        const Columns & columns, AdaptiveAggregationProducer & adaptive, State & local_find_state, Arena & scratch_pool) const;
+        const AggregateFunctionInstruction * aggregate_instructions,
+        AdaptiveAggregationProducer & adaptive,
+        State & local_find_state,
+        Arena & scratch_pool) const;
 
     /// Accounts the producer's batch of misses, which `appendDelayedRecords` staged with `staged`, then clears the
     /// batch: adds the batch's rows to the count bins, its records to the merge-work estimate and to the profile events,
