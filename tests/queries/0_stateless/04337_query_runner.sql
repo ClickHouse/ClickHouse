@@ -21,7 +21,7 @@ CREATE TABLE bad (query LowCardinality(String)) ENGINE = QueryRunner; -- { serve
 CREATE TABLE bad (query String) ENGINE = QueryRunner SETTINGS scheduler = 'non-existent-value'; -- { serverError BAD_ARGUMENTS }
 CREATE TABLE bad (query String) ENGINE = QueryRunner SETTINGS scheduler = 'fibers'; -- { serverError BAD_ARGUMENTS }
 CREATE TABLE bad (query String) ENGINE = QueryRunner SETTINGS cluster = 'test_shard_localhost', scheduler = 'fibers', threads = 2; -- { serverError BAD_ARGUMENTS }
-CREATE TABLE bad (query String) ENGINE = QueryRunner SETTINGS max_concurrent_remote_queries_per_replica = 0; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE bad (query String) ENGINE = QueryRunner SETTINGS connection_pool_size = 0; -- { serverError BAD_ARGUMENTS }
 
 SELECT * FROM runner; -- { serverError NOT_IMPLEMENTED }
 ALTER TABLE runner ADD COLUMN extra String; -- { serverError NOT_IMPLEMENTED }

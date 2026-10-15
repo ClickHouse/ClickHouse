@@ -268,7 +268,7 @@ def test_wait_query_runner(location, node_target, scheduler):
     "location, node_target, scheduler, extra_settings",
     [
         ("local", node_query_runner, "threads", ""),
-        ("cluster", node_cluster, "fibers", ", max_concurrent_remote_queries_per_replica = 32"),
+        ("cluster", node_cluster, "fibers", ", connection_pool_size = 32"),
     ],
     ids=["threads", "fibers"],
 )

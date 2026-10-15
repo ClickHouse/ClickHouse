@@ -20,7 +20,7 @@ namespace ErrorCodes
     DECLARE(QueryRunnerMode, mode, QueryRunnerMode::ASYNCHRONOUS, "If 'synchronous', INSERT returns after all queries of the inserted batch have finished. If 'asynchronous', INSERT returns as soon as the queries are queued.", 0) \
     DECLARE(QueryRunnerScheduler, scheduler, QueryRunnerScheduler::THREADS, "If 'threads', the queries run on a thread pool. If 'fibers', the queries run on fibers; requires the cluster mode, a build with silk, and the 'enable_silk_runtime' server setting - otherwise an error is thrown.", 0) \
     DECLARE(NonZeroUInt64, threads, 4, "Number of background threads executing the queries. Threads only.", 0) \
-    DECLARE(UInt64, max_concurrent_remote_queries_per_replica, 100, "Maximum number of queries executing concurrently on each replica. It is the size of the connection pool of each replica.", 0) \
+    DECLARE(UInt64, connection_pool_size, 100, "Size of the connection pool to each replica. A pool is kept per replica and per distinct `database` value.", 0) \
     DECLARE_WITH_ALIAS(UInt64, max_pending_queries, 1000, "Maximum number of queries submitted but not yet finished, 0 means unlimited. When it is exceeded, newly inserted queries are discarded, and an error is logged.", 0, max_queue_size) \
 
 DECLARE_SETTINGS_TRAITS(QueryRunnerSettingsTraits, QUERY_RUNNER_SETTINGS, QUERY_RUNNER_SETTINGS_SUPPORTED_TYPES)

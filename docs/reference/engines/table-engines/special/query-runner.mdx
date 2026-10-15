@@ -48,7 +48,7 @@ The column `query` is mandatory, and the other columns are optional.
 | `mode` | `'asynchronous'` | In the `synchronous` mode, INSERT returns after all queries of the inserted batch have finished. In the `asynchronous` mode, INSERT returns as soon as the queries are queued. |
 | `scheduler` | `'threads'` | With `'threads'`, the queries run on a thread pool. With `'fibers'`, the queries run on [Silk](https://github.com/ClickHouse/silk) fibers — see [Fibers](#fibers). |
 | `threads` | `4` | Number of background threads executing the queries. Works in the `scheduler = 'threads'` mode only. |
-| `max_concurrent_remote_queries_per_replica` | `100` | Maximum number of queries executing concurrently on each replica. It is the size of the connection pool of each replica. |
+| `connection_pool_size` | `100` | Size of the connection pool to each replica. A pool is kept per replica and per distinct `database` value. |
 | `max_pending_queries` | `1000` | Maximum number of queries submitted but not yet finished, `0` means unlimited. When it is exceeded, newly inserted queries are discarded, and an error is logged. |
 
 ## Details {#details}
@@ -108,7 +108,7 @@ In the cluster mode, dispatching a query mostly means waiting for the remote ser
 operating-system thread for the lifetime of each query limits concurrency unnecessarily. With
 `scheduler = 'fibers'`, the engine runs each query on a lightweight
 [Silk](https://github.com/ClickHouse/silk) fiber instead: up to `max_pending_queries` queries can be in
-flight at once, using up to `max_concurrent_remote_queries_per_replica` connections to each replica.
+flight at once, using up to `connection_pool_size` connections to each replica per `database` value.
 
 The `'fibers'` scheduler requires the cluster mode, a build with silk, and the experimental silk runtime
 enabled on the server (the `enable_silk_runtime` server setting); otherwise both `CREATE` and

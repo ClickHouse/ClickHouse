@@ -84,7 +84,7 @@ namespace Setting
 namespace QueryRunnerSetting
 {
     extern const QueryRunnerSettingsString cluster;
-    extern const QueryRunnerSettingsUInt64 max_concurrent_remote_queries_per_replica;
+    extern const QueryRunnerSettingsUInt64 connection_pool_size;
     extern const QueryRunnerSettingsUInt64 max_pending_queries;
     extern const QueryRunnerSettingsQueryRunnerMode mode;
     extern const QueryRunnerSettingsQueryRunnerScheduler scheduler;
@@ -684,11 +684,11 @@ public:
         ShardSelector shard_selector_,
         UInt64 num_threads_,
         UInt64 max_pending_queries_,
-        UInt64 max_concurrent_remote_queries_per_replica_,
+        UInt64 connection_pool_size_,
         LoggerPtr log_)
         : QueryRunnerDispatcher(global_context_, cluster_name_, shard_selector_, log_)
         , max_pending_queries(max_pending_queries_)
-        , max_concurrent_remote_queries_per_replica(max_concurrent_remote_queries_per_replica_)
+        , connection_pool_size(connection_pool_size_)
         , pool(
               CurrentMetrics::QueryRunnerThreads,
               CurrentMetrics::QueryRunnerThreadsActive,
@@ -724,7 +724,7 @@ private:
     ConnectionPoolPtr createConnectionPool(const Cluster::Address & address, const String & database) override
     {
         return ConnectionPoolFactory::instance().get(
-            static_cast<unsigned>(max_concurrent_remote_queries_per_replica),
+            static_cast<unsigned>(connection_pool_size),
             address.host_name,
             address.port,
             database.empty() ? address.default_database : database,
@@ -743,7 +743,7 @@ private:
     }
 
     const size_t max_pending_queries;
-    const size_t max_concurrent_remote_queries_per_replica;
+    const size_t connection_pool_size;
     ThreadPool pool;
 };
 
@@ -757,11 +757,11 @@ public:
         const String & cluster_name_,
         ShardSelector shard_selector_,
         UInt64 max_pending_queries_,
-        UInt64 max_concurrent_remote_queries_per_replica_,
+        UInt64 connection_pool_size_,
         LoggerPtr log_)
         : QueryRunnerDispatcher(global_context_, cluster_name_, shard_selector_, log_)
         , max_pending_queries(max_pending_queries_)
-        , max_concurrent_remote_queries_per_replica(max_concurrent_remote_queries_per_replica_)
+        , connection_pool_size(connection_pool_size_)
     {
     }
 
@@ -830,7 +830,7 @@ private:
     ConnectionPoolPtr createConnectionPool(const Cluster::Address & address, const String & database) override
     {
         return std::make_shared<Silk::ConnectionPool>(
-            static_cast<unsigned>(max_concurrent_remote_queries_per_replica),
+            static_cast<unsigned>(connection_pool_size),
             address.host_name,
             address.port,
             database.empty() ? address.default_database : database,
@@ -850,7 +850,7 @@ private:
     }
 
     const UInt64 max_pending_queries;
-    const UInt64 max_concurrent_remote_queries_per_replica;
+    const UInt64 connection_pool_size;
 
     std::mutex futures_mutex;
     std::list<silk::FiberFuture> futures TSA_GUARDED_BY(futures_mutex);
@@ -997,7 +997,7 @@ StorageQueryRunner::StorageQueryRunner(
             cluster_name,
             parseShardSelector(settings[QueryRunnerSetting::shard]),
             settings[QueryRunnerSetting::max_pending_queries],
-            settings[QueryRunnerSetting::max_concurrent_remote_queries_per_replica],
+            settings[QueryRunnerSetting::connection_pool_size],
             log);
 #else
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The 'fibers' scheduler of the QueryRunner engine requires a build with silk");
@@ -1010,7 +1010,7 @@ StorageQueryRunner::StorageQueryRunner(
             parseShardSelector(settings[QueryRunnerSetting::shard]),
             settings[QueryRunnerSetting::threads],
             settings[QueryRunnerSetting::max_pending_queries],
-            settings[QueryRunnerSetting::max_concurrent_remote_queries_per_replica],
+            settings[QueryRunnerSetting::connection_pool_size],
             log);
 }
 
@@ -1181,9 +1181,9 @@ void registerStorageQueryRunner(StorageFactory & factory)
                     cluster->getShardsInfo().size(), cluster_name, shard_selector.fixed_shard_num);
         }
 
-        if (settings[QueryRunnerSetting::max_concurrent_remote_queries_per_replica] < 1)
+        if (settings[QueryRunnerSetting::connection_pool_size] < 1)
             throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "The 'max_concurrent_remote_queries_per_replica' setting of the QueryRunner engine must be at least 1");
+                ErrorCodes::BAD_ARGUMENTS, "The 'connection_pool_size' setting of the QueryRunner engine must be at least 1");
 
         if (settings[QueryRunnerSetting::scheduler] == QueryRunnerScheduler::FIBERS && settings[QueryRunnerSetting::threads].changed)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'threads' setting of the QueryRunner engine does not apply to the 'fibers' scheduler");
