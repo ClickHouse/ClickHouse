@@ -3625,6 +3625,9 @@ try
         /// and so loadMarkedAsDroppedTables() will find it and try to add, and UUID will overlap.
         database_catalog.loadMarkedAsDroppedTables();
         database_catalog.createBackgroundTasks();
+        /// The tables can depend on the dictionaries from the configuration files, so register them before
+        /// loading the databases. They start loading later, in `loadOrReloadDictionaries`.
+        global_context->registerDictionariesBeforeLoadingMetadata(config());
         /// Then, load remaining databases (some of them maybe be loaded asynchronously)
         load_metadata_tasks = loadMetadata(global_context, default_database, server_settings[ServerSetting::async_load_databases]);
         /// If we need to convert database engines, disable async tables loading
