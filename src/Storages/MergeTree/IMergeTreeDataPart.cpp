@@ -1186,6 +1186,18 @@ void IMergeTreeDataPart::removeIfNeeded()
             }
         }
 
+        /// The source of a part moved to another disk is removed only when its last reader releases
+        /// it, which can be long after the move. Under `leader_election` this node may have lost the
+        /// lease in between, and the new leader may have taken over with this very copy as the active
+        /// one (it still existed at the takeover scan), so removing it here would leave that leader
+        /// reading a deleted path. Only the lease holder may remove it; otherwise the copy is kept and
+        /// is reconciled like any other duplicate when the parts are loaded again.
+        if (state == MergeTreeDataPartState::DeleteOnDestroy && !storage.mayMutateSharedStorage())
+        {
+            LOG_WARNING(storage.log, "Keeping part {} at its old location {}: this node does not hold the leader lease", name, path);
+            return;
+        }
+
         remove();
 
         if (state == MergeTreeDataPartState::DeleteOnDestroy)
