@@ -410,16 +410,22 @@ std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
 /// entries of all such tables with the same format, compression and structure share one namespace
 /// (see `QueryConditionCache::getTableIdForFileEntries`), so the path is qualified by the storage it
 /// is in (endpoint, bucket, container, ...) instead. The
-/// connection info can carry secrets (a signed URL, userinfo in an HDFS URI), and the `part_name` is
-/// visible in `system.query_condition_cache` and in the logs, so only a hash of the qualified path
-/// goes into the key. The hash has a fixed length at the end, so the key stays unambiguous.
+/// connection info can carry secrets (a signed URL, userinfo in an HDFS URI), and so can the path itself
+/// (a web index can link to `data.parquet?token=...`), while the `part_name` is visible in
+/// `system.query_condition_cache` and in the logs. So the key is the path without its query and fragment,
+/// for readability only, followed by a hash of the complete identifier and the qualified path. The hash
+/// has a fixed length at the end, so the key stays unambiguous.
 std::optional<String> StorageObjectStorageSource::makeQueryConditionCacheKey(
     const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, const UUID & table_uuid)
 {
     String identifier = object_info.getIdentifier(/*include_file_bucket_info=*/false);
     if (table_uuid == UUIDHelpers::Nil)
-        identifier += "#storage="
-            + sipHash128String(getUniqueStoragePathIdentifier(configuration, object_info, /*include_connection_info=*/true));
+    {
+        const String qualified_path = getUniqueStoragePathIdentifier(configuration, object_info, /*include_connection_info=*/true);
+        /// NUL cannot occur in a path, so it separates the two unambiguously.
+        const String hashed = sipHash128String(identifier + '\0' + qualified_path);
+        identifier = identifier.substr(0, identifier.find_first_of("?#")) + "#storage=" + hashed;
+    }
     return makeQueryConditionCacheKey(identifier, object_info, configuration.isDataLakeConfiguration());
 }
 
