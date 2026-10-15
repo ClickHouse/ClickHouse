@@ -94,8 +94,10 @@ public:
     /// would cost more than the copy. Everything else, including the exceptions, is in `writeSlow`.
     void write(const char * from, size_t n)
     {
-        /// The same unsigned comparison as `available`: for a constant `n` it is a single `cmp`.
-        if (n <= available() && !closed) [[likely]]
+        /// `closed` is checked first: after `finalize` some buffers reset their storage to null (`set(nullptr, 0)`),
+        /// and the pointer arithmetic in `available` must not be evaluated then.
+        /// The comparison is unsigned as in `available`: for a constant `n` it is a single `cmp`.
+        if (!closed && n <= available()) [[likely]]
         {
             copyBytes(pos, from, n);
             pos += n;
@@ -106,7 +108,7 @@ public:
 
     void write(char x)
     {
-        if (hasPendingData() && !closed) [[likely]]
+        if (!closed && hasPendingData()) [[likely]]
         {
             *pos = x;
             ++pos;
