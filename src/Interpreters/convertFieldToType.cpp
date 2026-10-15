@@ -2,6 +2,7 @@
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 
 #include <DataTypes/DataTypeArray.h>
@@ -28,6 +29,7 @@
 
 #include <Functions/DateTimeTransforms.h>
 
+#include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
 #include <Common/DateLUTImpl.h>
@@ -1041,15 +1043,37 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
                 /// (`FormatImpl` in `FunctionsConversion.h`), so `date_time_output_format` or
                 /// `decimal_trailing_zeros` do not apply to them, and it serializes every other type
                 /// with the query's format settings, so `bool_true_representation` does apply. Mirror
-                /// that split, or the set would hold a text that `CAST` never produces.
+                /// that split, or the set would hold a text that `CAST` never produces. The one setting
+                /// that `CAST` does apply to the fixed text is
+                /// `date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands`, for
+                /// `DateTime64` and `Time64`.
                 static const FormatSettings fixed_text_format_settings;
+                static const FormatSettings fixed_text_cut_trailing_zeros_format_settings = []
+                {
+                    FormatSettings settings;
+                    settings.date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands = true;
+                    return settings;
+                }();
                 WhichDataType which_hint(*unwrapped_hint);
                 bool fixed_text = (which_hint.isNumber() && unwrapped_hint->getName() != "Bool")
                     || which_hint.isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64();
+                bool cut_trailing_zeros = format_settings.date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands;
 
                 WriteBufferFromOwnString out;
-                unwrapped_hint->getDefaultSerialization()->serializeText(
-                    *column, 0, out, fixed_text ? fixed_text_format_settings : format_settings);
+                if (cut_trailing_zeros && which_hint.isTime64())
+                {
+                    /// `SerializationTime64::serializeText` ignores the setting, so write it as `CAST` does.
+                    const auto & time64_type = assert_cast<const DataTypeTime64 &>(*unwrapped_hint);
+                    writeTime64TextCutTrailingZerosAlignToGroupOfThousands(
+                        assert_cast<const DataTypeTime64::ColumnType &>(*column).getElement(0), time64_type.getScale(), out);
+                }
+                else
+                {
+                    const FormatSettings & settings_for_text = !fixed_text
+                        ? format_settings
+                        : (cut_trailing_zeros ? fixed_text_cut_trailing_zeros_format_settings : fixed_text_format_settings);
+                    unwrapped_hint->getDefaultSerialization()->serializeText(*column, 0, out, settings_for_text);
+                }
                 return convertFieldToTypeImpl(out.str(), type, nullptr, format_settings, strict, convert_inexact_floats);
             }
         }

@@ -3,6 +3,8 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/normalizeDivision.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Interpreters/convertColumnToType.h>
+#include <Core/ConstantValue.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
 #include <Parsers/TokenIterator.h>
@@ -664,9 +666,13 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     /// Try to evaluate single expression if other parsers don't work
     buf->position() = const_cast<char *>((*token_iterator)->begin);
 
-    std::pair<Field, DataTypePtr> value_raw = evaluateConstantExpression(ast, context);
-
-    Field & expression_value = value_raw.first;
+    /// Keep the evaluated column: a `Field` read from it loses the alternatives of `Variant` / `Dynamic`
+    /// members and the types of the paths of a `JSON` value, so a conversion from the `Field` alone does
+    /// not render such a value to `String` as `CAST` does (and as the `values` table function does).
+    const ConstantValue expression = evaluateConstantExpressionAsColumn(ast, context);
+    const DataTypePtr & expression_type = expression.getType();
+    const Field evaluated_value = (*expression.getColumn())[0];
+    Field expression_value = evaluated_value;
 
     if (format_settings.null_as_default)
         tryToReplaceNullFieldsInComplexTypesWithDefaultValues(expression_value, type);
@@ -675,7 +681,19 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     /// to the nearest representable floating-point value like CAST, consistent with the streaming
     /// literal path and the `values` table function (issue #43144). This is not a pruning/comparison
     /// path, so the lossy float conversion is safe here. See `convert_inexact_floats` in the header.
-    Field value = convertFieldToType(expression_value, type, value_raw.second.get(), format_settings, /*strict=*/false, /*convert_inexact_floats=*/true);
+    Field value;
+    if (expression_value == evaluated_value)
+    {
+        ColumnPtr converted = convertColumnToTypeOrNull(
+            *expression.getColumn(), expression_type, type.getPtr(), format_settings, /*strict=*/false, /*convert_inexact_floats=*/true);
+        if (converted)
+            value = (*converted)[0];
+    }
+    else
+    {
+        /// `NULL` members were replaced with defaults, so the column no longer holds this value.
+        value = convertFieldToType(expression_value, type, expression_type.get(), format_settings, /*strict=*/false, /*convert_inexact_floats=*/true);
+    }
 
     /// Check that we are indeed allowed to insert a NULL.
     if (value.isNull() && !canContainNull(type))
@@ -696,8 +714,8 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     /// Instead try to create a column with single element and cast it to the destination type.
     if (type.hasDynamicStructure())
     {
-        ColumnPtr const_column = value_raw.second->createColumnConst(1, expression_value);
-        auto casted_column = castColumn(ColumnWithTypeAndName(const_column, value_raw.second, ""), type.getPtr(), nullptr);
+        ColumnPtr const_column = expression_type->createColumnConst(1, expression_value);
+        auto casted_column = castColumn(ColumnWithTypeAndName(const_column, expression_type, ""), type.getPtr(), nullptr);
         column.insertFrom(*casted_column->convertToFullColumnIfConst(), 0);
     }
     else
