@@ -13267,27 +13267,50 @@ void MergeTreeData::Transaction::undoPublishedRenames()
     /// under `leader_election` (`getPostfixForTempPartName`), so restoring them cannot collide
     /// with the new leader's own work. A rollback failure is a command failure too: swallowing it
     /// would claim the command was rejected while leaving a persistent part for the next leader.
+    ///
+    /// Each entry is consumed as soon as it is handled, and only the entries whose undo failed stay in
+    /// the journal for a retry (e.g. by the transaction rollback after `validateCommitPreconditions`
+    /// rethrows). A retry must not see an entry that was already restored: its part would then be at
+    /// its recorded source, and `renameTo` with `remove_new_dir_if_exists` removes the destination
+    /// before moving, i.e. it would delete the restored part (for `ATTACH PARTITION`, the detached
+    /// input of the command). For the same reason an entry whose part is already at its recorded
+    /// source is dropped without renaming: entries are journaled before the publishing rename, which
+    /// can fail without moving the part.
     std::exception_ptr first_exception;
-    for (auto it = published_parts_pending_commit.rbegin(); it != published_parts_pending_commit.rend(); ++it)
+    std::vector<std::pair<MutableDataPartPtr, String>> failed_entries;
+    while (!published_parts_pending_commit.empty())
     {
+        auto entry = std::move(published_parts_pending_commit.back());
+        published_parts_pending_commit.pop_back();
+
+        /// Compare whole paths: the recorded source is relative to the table root (`detached/attaching_...`),
+        /// while after a rename `getPartDirectory` holds only the last component.
+        const auto current_path = fs::path(entry.first->getDataPartStorage().getRelativePath()).lexically_normal();
+        const auto source_path = (fs::path(data.relative_data_path) / entry.second / "").lexically_normal();
+        if (current_path == source_path)
+            continue;
+
         try
         {
-            LOG_DEBUG(data.log, "Renaming part {} back to {}: the batch was aborted", it->first->name, it->second);
-            it->first->renameTo(it->second, true);
+            LOG_DEBUG(data.log, "Renaming part {} back to {}: the batch was aborted", entry.first->name, entry.second);
+            entry.first->renameTo(entry.second, true);
         }
         catch (...)
         {
-            tryLogCurrentException(data.log, "Cannot rename part " + it->first->name + " back to " + it->second);
+            tryLogCurrentException(data.log, "Cannot rename part " + entry.first->name + " back to " + entry.second);
 
             if (!first_exception)
                 first_exception = std::current_exception();
+            failed_entries.push_back(std::move(entry));
         }
     }
 
+    /// Keep the journal order (the undo walks it backwards).
+    published_parts_pending_commit.assign(
+        std::make_move_iterator(failed_entries.rbegin()), std::make_move_iterator(failed_entries.rend()));
+
     if (first_exception)
         std::rethrow_exception(first_exception);
-
-    published_parts_pending_commit.clear();
 }
 
 void MergeTreeData::Transaction::validateCommitPreconditions()
