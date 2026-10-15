@@ -26,6 +26,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 cluster_table_function_buckets_batch_size;
+    extern const SettingsBool cluster_table_function_split_by_split_offsets;
 }
 
 static ExpressionActionsPtr getExpressionActions(
@@ -165,10 +166,14 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
                 }
             }
 
-            size_t bucket_size = getContext()->getSettingsRef()[Setting::cluster_table_function_buckets_batch_size];
+            const auto & settings = getContext()->getSettingsRef();
+            size_t bucket_size = settings[Setting::cluster_table_function_buckets_batch_size];
             std::vector<FileBucketInfoPtr> file_bucket_infos;
-            if (auto file_size = last_object_info->getFileSizeHint())
-                file_bucket_infos = splitter->splitByByteRanges(bucket_size, *file_size, last_object_info->getSplitOffsetsHint());
+            if (settings[Setting::cluster_table_function_split_by_split_offsets] && !has_cache_entry)
+            {
+                if (auto file_size = last_object_info->getFileSizeHint())
+                    file_bucket_infos = splitter->splitByByteRanges(bucket_size, *file_size, last_object_info->getSplitOffsetsHint());
+            }
             if (file_bucket_infos.empty())
             {
                 auto buffer = createReadBuffer(last_object_info->relative_path_with_metadata, object_storage, getContext(), log);

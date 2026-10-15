@@ -404,6 +404,7 @@ def test_cluster_table_function_bucket_split_by_split_offsets(started_cluster_ic
                 settings={
                     "cluster_table_function_split_granularity": "bucket",
                     "cluster_table_function_buckets_batch_size": batch_size,
+                    "cluster_table_function_split_by_split_offsets": 1,
                 },
             )
             == expected

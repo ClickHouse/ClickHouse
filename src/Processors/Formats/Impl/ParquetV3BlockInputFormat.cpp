@@ -296,7 +296,8 @@ void ParquetFileBucketInfo::serialize(WriteBuffer & buffer, size_t protocol_vers
     if (byte_range.has_value() && protocol_version < DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_FILE_BUCKET_BYTE_RANGE)
         throw Exception(
             ErrorCodes::UNKNOWN_PROTOCOL,
-            "Byte range buckets of Parquet files are supported since cluster processing protocol version {}, got: {}",
+            "Byte range buckets of Parquet files are supported since cluster processing protocol version {}, got: {}. "
+            "Disable `cluster_table_function_split_by_split_offsets` until all servers of the cluster are upgraded",
             DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_FILE_BUCKET_BYTE_RANGE,
             protocol_version);
 
