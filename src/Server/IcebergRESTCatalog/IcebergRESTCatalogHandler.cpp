@@ -276,8 +276,15 @@ void IcebergRESTCatalogHandler::handleRequest(HTTPServerRequest & request, HTTPS
         std::vector<std::string> segments;
         try
         {
-            uri = Poco::URI(request.getURI());
+            /// Split before decoding, so that an encoded `/` (`%2F`) stays inside its segment.
+            uri = Poco::URI(request.getURI(), /* enable_url_encoding */ false);
             uri.getPathSegments(segments);
+            for (auto & segment : segments)
+            {
+                String decoded;
+                Poco::URI::decode(segment, decoded);
+                segment = std::move(decoded);
+            }
         }
         catch (const Poco::Exception &)
         {
