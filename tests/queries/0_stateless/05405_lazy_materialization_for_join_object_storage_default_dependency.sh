@@ -29,7 +29,7 @@ ${CLICKHOUSE_CLIENT} --query "
 # the LIMIT keeps is not known, so the result checks what holds for any of them.
 QUERY="SELECT count(), min(payload = toString(k)), groupArray(heavy) FROM (
     SELECT o.k AS k, o.payload AS payload, m.k AS mk, m.heavy AS heavy FROM o CROSS JOIN m ORDER BY m.k LIMIT 3)"
-SETTINGS="query_plan_max_limit_for_lazy_materialization = 100, query_plan_optimize_lazy_materialization_for_object_storage = 1, enable_join_runtime_filters = 0, query_plan_join_swap_table = 0, query_plan_optimize_join_order_limit = 0, cross_to_inner_join_rewrite = 0"
+SETTINGS="query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 100, query_plan_optimize_lazy_materialization_for_object_storage = 1, enable_join_runtime_filters = 0, query_plan_join_swap_table = 0, query_plan_optimize_join_order_limit = 0, cross_to_inner_join_rewrite = 0"
 
 ${CLICKHOUSE_CLIENT} --query "${QUERY} SETTINGS ${SETTINGS}, query_plan_lazy_materialization_for_join = 1"
 ${CLICKHOUSE_CLIENT} --query "${QUERY} SETTINGS ${SETTINGS}, query_plan_lazy_materialization_for_join = 0"
