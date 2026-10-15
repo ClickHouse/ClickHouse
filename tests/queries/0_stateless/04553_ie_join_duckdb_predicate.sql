@@ -1,3 +1,5 @@
+-- Tags: no-old-analyzer
+
 -- Port of DuckDB test/sql/join/iejoin/test_iejoin_predicate.test (previously skipped: every
 -- query needs a third arbitrary predicate). One-second bands make each row overlap only itself,
 -- and the tail predicate `l.k100 + r.k100 < 10` keeps ids 0..4: INNER emits the diagonal,

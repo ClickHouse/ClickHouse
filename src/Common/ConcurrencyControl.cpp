@@ -198,7 +198,6 @@ void ConcurrencyControlRoundRobinScheduler::free(Allocation * allocation)
     auto [amount, waiter] = allocation->cancel();
 
     state.cur_concurrency -= amount;
-    --state.allocations;
     if (waiter)
         removeWaiterLocked(allocation);
     parent.schedule(lock);
@@ -437,7 +436,6 @@ void ConcurrencyControlFairRoundRobinScheduler::free(Allocation * allocation)
     auto [amount, waiter] = allocation->cancel();
 
     state.cur_concurrency -= amount;
-    --state.allocations;
     if (waiter)
         removeWaiterLocked(allocation);
     parent.schedule(lock);
@@ -663,7 +661,6 @@ void ConcurrencyControlMaxMinFairScheduler::free(Allocation * allocation)
     auto [amount, is_waiting] = allocation->cancel();
 
     state.cur_concurrency -= amount;
-    --state.allocations;
     if (is_waiting)
         removeWaiterLocked(allocation);
     parent.schedule(lock);
@@ -763,22 +760,15 @@ ConcurrencyControl & ConcurrencyControl::instance()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ConcurrencyControl: invalid allocation requirements");
 
     std::unique_lock lock{state.mutex};
-    SlotAllocationPtr allocation;
     switch (scheduler)
     {
         case Scheduler::RoundRobin:
-            allocation = round_robin.allocate(lock, min, max);
-            break;
+            return round_robin.allocate(lock, min, max);
         case Scheduler::FairRoundRobin:
-            allocation = fair_round_robin.allocate(lock, min, max);
-            break;
+            return fair_round_robin.allocate(lock, min, max);
         case Scheduler::MaxMinFair:
-            allocation = max_min_fair.allocate(lock, min, max);
-            break;
+            return max_min_fair.allocate(lock, min, max);
     }
-    /// Decremented in `free` of the scheduler, which is called from the destructor of the allocation.
-    ++state.allocations;
-    return allocation;
 }
 
 void ConcurrencyControl::setMaxConcurrency(SlotCount value)
@@ -787,14 +777,6 @@ void ConcurrencyControl::setMaxConcurrency(SlotCount value)
     state.max_concurrency = std::max<SlotCount>(1, value); // never allow max_concurrency to be zero
     state.max_concurrency_metric.changeTo(state.max_concurrency == UnlimitedSlots ? 0 : state.max_concurrency);
     schedule(lock);
-}
-
-SlotCount ConcurrencyControl::getFairShare() const
-{
-    std::unique_lock lock{state.mutex};
-    if (state.max_concurrency == UnlimitedSlots)
-        return UnlimitedSlots;
-    return std::max<SlotCount>(1, state.max_concurrency / (state.allocations + 1));
 }
 
 bool ConcurrencyControl::setScheduler(const String & value)

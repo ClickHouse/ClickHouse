@@ -10,9 +10,13 @@ integration:
   - category: 'clickpipes'
 ---
 
-## Kafka ClickPipes に関するよくある質問 {#faq}
+<div id="faq">
+  ## Kafka ClickPipes に関するよくある質問
+</div>
 
-### 一般 {#general}
+<div id="general">
+  ### 一般
+</div>
 
 <Accordion title="Kafka 向け ClickPipes はどのように動作しますか？">
   ClickPipes は、Kafka Consumer API を使用する専用アーキテクチャによって指定したトピックからデータを読み取り、そのデータを特定の ClickHouse Cloud サービス上の ClickHouse テーブルに挿入します。
@@ -44,15 +48,15 @@ integration:
   はい。streaming 向けの ClickPipes は、水平方向と垂直方向の両方にスケーリングできます。
   水平スケーリングではスループットを高めるためにレプリカを追加し、垂直スケーリングでは、より高負荷の workload に対応するために各レプリカに割り当てるリソース (CPU と RAM) を増やします。
   これは ClickPipe の作成時、または **Settings** -&gt; **Advanced Settings** -&gt; **Scaling** からいつでも設定できます。
-
-  ClickPipe が AWS PrivateLink のリバースプライベートエンドポイントを使用している場合、そのエンドポイントを共有するすべての ClickPipes のレプリカ数の合計には上限があります。詳しくは、[リバースプライベートエンドポイントごとのレプリカ上限](/ja/integrations/clickpipes/networking/aws-privatelink#rpe-replica-limit) を参照してください。
 </Accordion>
 
 <Accordion title="ClickPipes のセットアップ UI に Kafka トピックの一部が表示されません。なぜですか？">
   ClickPipes のトピック検出 UI には、デフォルトで最大 1,500 件のトピックが表示されます。Kafka クラスターに 1,500 件を超えるトピックがある場合、一部のトピックはドロップダウンに表示されないことがあります。対象のトピックが存在することを確認するには、同じ認証情報を使用して Kafka クライアントから直接確認してください。存在が確認でき、一覧表示の上限を 1,500 件より大きくする必要がある場合は、ClickHouse Support にお問い合わせください。
 </Accordion>
 
-### Azure Event Hubs {#azure-eventhubs}
+<div id="azure-eventhubs">
+  ### Azure Event Hubs
+</div>
 
 <Accordion title="Kafka surface なしでも Azure Event Hubs ClickPipe は動作しますか？">
   いいえ。ClickPipes では、Event Hubs のネームスペースで Kafka surface が有効になっている必要があります。これは **Basic** より上位のティアでのみ利用できます。詳細については、[Azure Event Hubs のドキュメント](https://learn.microsoft.com/en-us/azure/event-hubs/event-hubs-quickstart-kafka-enabled-event-hubs?tabs=passwordless#create-an-azure-event-hubs-namespace)を参照してください。

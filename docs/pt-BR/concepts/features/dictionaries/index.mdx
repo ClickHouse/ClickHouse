@@ -17,7 +17,9 @@ Os dicionários são úteis para:
 
 <Image img="/images/dictionary/dictionary-use-cases.webp" size="lg" alt="Casos de uso do Dicionário no ClickHouse" />
 
-## Acelerando junções usando um Dicionário {#speeding-up-joins-using-a-dictionary}
+<div id="speeding-up-joins-using-a-dictionary">
+  ## Acelerando junções usando um Dicionário
+</div>
 
 Dicionários podem ser usados para acelerar um tipo específico de `JOIN`: o tipo [`LEFT ANY`](/pt-BR/reference/statements/select/join#supported-types-of-join), em que a chave da junção precisa corresponder ao atributo-chave do armazenamento subjacente de chave-valor.
 
@@ -264,13 +266,11 @@ LIMIT 5
 Peak memory usage: 248.84 MiB.
 ```
 
-## Enriquecimento no momento da indexação {#index-time-enrichment}
+<div id="index-time-enrichment">
+  ## Enriquecimento no momento da indexação
+</div>
 
-No exemplo acima, usamos um dicionário em tempo de consulta para eliminar uma junção. Os dicionários também podem ser usados para enriquecer linhas no momento da inserção. Isso normalmente é apropriado se o valor do enriquecimento não muda e está em uma fonte externa que pode ser usada para preencher o dicionário. Nesse caso, enriquecer a linha no momento da inserção evita a consulta no dicionário em tempo de consulta.
-
-<Note>
-  Evite layouts de dicionário baseados em cache para o enriquecimento no momento da inserção quando latência previsível e disponibilidade da fonte forem importantes. Cada servidor mantém seu próprio cache local, e uma reinicialização ou substituição o deixa vazio, fazendo com que os inserts dependam de consultas com cache frio na fonte do dicionário. O autoscaling e a substituição gerenciada de nós no ClickHouse Cloud tornam essa situação mais provável. Escolha um layout que carregue o dicionário completo em cada servidor. Consulte [Dicionários de cache em caminhos de ingestão](/pt-BR/concepts/features/dictionaries/best-practices#cache-dictionaries-in-ingestion-path).
-</Note>
+No exemplo acima, usamos um dicionário em tempo de consulta para eliminar um join. Os dicionários também podem ser usados para enriquecer linhas no momento da inserção. Isso normalmente é apropriado se o valor do enriquecimento não muda e está em uma fonte externa que pode ser usada para preencher o dicionário. Nesse caso, enriquecer a linha no momento da inserção evita a busca no dicionário em tempo de consulta.
 
 Vamos supor que a `Location` de um usuário no Stack Overflow nunca mude (na prática, muda) — especificamente, a coluna `Location` da tabela `users`. Suponha que queremos fazer uma consulta analítica na tabela de posts por localização. Ela contém um `UserId`.
 
@@ -362,7 +362,9 @@ Para origens de banco de dados, como ClickHouse e Postgres, você pode configura
 
 O ClickHouse também oferece suporte a dicionários [Hierárquicos](/pt-BR/reference/statements/create/dictionary/layouts/hierarchical), [Polygon](/pt-BR/reference/statements/create/dictionary/layouts/polygon) e de [Expressão Regular](/pt-BR/reference/statements/create/dictionary/layouts/regexp-tree).
 
-### Leitura adicional {#more-reading}
+<div id="more-reading">
+  ### Leitura adicional
+</div>
 
 * [Boas práticas de dicionário](/pt-BR/concepts/features/dictionaries/best-practices) — seleção de layout, dicionários vs junções, monitoramento
 * [Usando Dicionários para Acelerar Consultas](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse)

@@ -80,7 +80,6 @@ FROM bits;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionBitXor>(documentation);
-    factory.registerAlias("bitwise_xor", "bitXor", FunctionFactory::Case::Insensitive);
 }
 
 }

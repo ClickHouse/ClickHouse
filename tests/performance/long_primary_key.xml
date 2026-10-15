@@ -22,18 +22,14 @@
         SETTINGS index_granularity = 4;
     </create_query>
 
-    <!-- The filler key columns are computed from `pad`, which the filter does not reference, so index
-         analysis of the long keys uses only `dt` and `key`. Filler computed from `key` would be constrained
-         by `key = '1'` too, see the setting `analyze_index_with_multiple_key_columns_per_condition`. -->
     <create_query>
         CREATE TABLE test_pk_long
         (
             `dt` DateTime,
-            `key` String,
-            `pad` String
+            `key` String
         )
         ENGINE = MergeTree
-        ORDER BY (dt, key, pad || 'a', pad || 'b', pad || 'c', pad || 'd', pad || 'e', pad || 'f', pad || 'g', pad || 'h', pad || 'i', pad || 'j', pad || 'k', pad || 'l', pad || 'm', pad || 'n', pad || 'o', pad || 'p', pad || 'q', pad || 'r', pad || 's', pad || 't')
+        ORDER BY (dt, key, key || 'a', key || 'b', key || 'c', key || 'd', key || 'e', key || 'f', key || 'g', key || 'h', key || 'i', key || 'j', key || 'k', key || 'l', key || 'm', key || 'n', key || 'o', key || 'p', key || 'q', key || 'r', key || 's', key || 't')
         SETTINGS index_granularity = 4;
     </create_query>
 
@@ -41,11 +37,10 @@
         CREATE TABLE test_pk_long_back
         (
             `dt` DateTime,
-            `key` String,
-            `pad` String
+            `key` String
         )
         ENGINE = MergeTree
-        ORDER BY (dt, pad || 'a', pad || 'b', pad || 'c', pad || 'd', pad || 'e', pad || 'f', pad || 'g', pad || 'h', pad || 'i', pad || 'j', pad || 'k', pad || 'l', pad || 'm', pad || 'n', pad || 'o', pad || 'p', pad || 'q', pad || 'r', pad || 's', pad || 't', key)
+        ORDER BY (dt, key || 'a', key || 'b', key || 'c', key || 'd', key || 'e', key || 'f', key || 'g', key || 'h', key || 'i', key || 'j', key || 'k', key || 'l', key || 'm', key || 'n', key || 'o', key || 'p', key || 'q', key || 'r', key || 's', key || 't', key)
         SETTINGS index_granularity = 4;
     </create_query>
 
@@ -54,11 +49,11 @@
     </create_query>
 
     <create_query>
-        INSERT INTO test_pk_long SELECT toDateTime('2001-01-01') + number, number % 16, number % 16 FROM numbers_mt(1000000);
+        INSERT INTO test_pk_long SELECT toDateTime('2001-01-01') + number, number % 16 FROM numbers_mt(1000000);
     </create_query>
 
     <create_query>
-        INSERT INTO test_pk_long_back SELECT toDateTime('2001-01-01') + number, number % 16, number % 16 FROM numbers_mt(1000000);
+        INSERT INTO test_pk_long_back SELECT toDateTime('2001-01-01') + number, number % 16 FROM numbers_mt(1000000);
     </create_query>
 
     <query><![CDATA[

@@ -1,6 +1,0 @@
--- no FILE grant: CREATE is refused, nothing is left behind
-ACCESS_DENIED
-0
--- READ and WRITE on FILE: CREATE and SELECT work
-owned_marker
-secret_payload

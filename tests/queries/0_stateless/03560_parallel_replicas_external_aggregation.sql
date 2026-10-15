@@ -1,4 +1,3 @@
--- Tags: no-parallel, no-fasttest
 DROP TABLE IF EXISTS t_proj_external_agg;
 
 CREATE TABLE t_proj_external_agg
