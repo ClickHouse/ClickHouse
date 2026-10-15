@@ -1348,7 +1348,7 @@ Compression method for Parquet output format. Supported codecs: snappy, lz4, bro
     DECLARE(Bool, output_format_parquet_json_as_variant, false, R"(
 Write `JSON` columns as `Parquet` `VARIANT` instead of `Parquet` `JSON`.
 )", 0, \
-        {"26.10", false, false, "New setting to write `JSON` columns as `Parquet` `VARIANT` with the native writer."}) \
+        {"26.11", false, false, "New setting to write `JSON` columns as `Parquet` `VARIANT` with the native writer."}) \
     DECLARE(Bool, output_format_parquet_parallel_encoding, true, R"(
 Do Parquet encoding in multiple threads.
 )", 0) \
