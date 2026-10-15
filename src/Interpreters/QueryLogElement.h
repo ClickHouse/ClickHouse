@@ -100,7 +100,6 @@ struct QueryLogElement
     std::set<String> spilled_to_disk;
 
     Int32 exception_code{}; // because ErrorCodes are int
-    Int8 cancel_reason{}; // Reason the query was cancelled (see CancelReason). 0 = UNDEFINED.
     String exception;
     String stack_trace;
     std::string_view exception_format_string{};
