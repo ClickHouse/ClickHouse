@@ -366,7 +366,7 @@ Possible values:
 
 This setting is only effective when `serialization_info_version` is set to "with_types" or newer.
 )", 0, \
-        {"26.10", "basic", "basic", "New value `compact_null_map`"}, \
+        {"26.11", "basic", "basic", "New value `compact_null_map`"}, \
         {"25.12", "basic", "basic", "New setting"}) \
     DECLARE(MergeTreeObjectSerializationVersion, object_serialization_version, "v3", R"(
 Serialization version for JSON data type. Required for compatibility.
