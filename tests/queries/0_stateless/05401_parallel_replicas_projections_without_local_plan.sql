@@ -24,11 +24,19 @@ ORDER BY event_time_microseconds DESC LIMIT 1;
 ALTER TABLE t_pr_no_local_plan ADD PROJECTION agg (SELECT b, sum(x) GROUP BY b), ADD PROJECTION p (SELECT * ORDER BY b);
 INSERT INTO t_pr_no_local_plan SELECT 200000 + number, number % 100 FROM numbers(100000);
 
-SELECT 'exact count', count() FROM t_pr_no_local_plan WHERE x < 70000 SETTINGS max_parallel_replicas = 3;
-SELECT 'exact count, one replica', count() FROM t_pr_no_local_plan WHERE x < 70000 SETTINGS max_parallel_replicas = 1;
-SELECT 'minmax', min(x), max(x), count() FROM t_pr_no_local_plan SETTINGS max_parallel_replicas = 3;
-SELECT 'projection beside parts without it', b, sum(x) FROM t_pr_no_local_plan WHERE b < 3 GROUP BY b ORDER BY b SETTINGS max_parallel_replicas = 3;
-SELECT 'normal projection beside parts without it', count(), sum(x) FROM t_pr_no_local_plan WHERE b = 7 SETTINGS max_parallel_replicas = 3;
+SELECT 'exact count', count() FROM t_pr_no_local_plan WHERE x < 70000 SETTINGS max_parallel_replicas = 3, log_comment = '05401_exact_count';
+SELECT 'exact count, one replica', count() FROM t_pr_no_local_plan WHERE x < 70000 SETTINGS max_parallel_replicas = 1, log_comment = '05401_exact_count_one';
+SELECT 'minmax', min(x), max(x), count() FROM t_pr_no_local_plan SETTINGS max_parallel_replicas = 3, log_comment = '05401_minmax';
+SELECT 'projection beside parts without it', b, sum(x) FROM t_pr_no_local_plan WHERE b < 3 GROUP BY b ORDER BY b SETTINGS max_parallel_replicas = 3, log_comment = '05401_agg_proj';
+SELECT 'normal projection beside parts without it', count(), sum(x) FROM t_pr_no_local_plan WHERE b = 7 SETTINGS max_parallel_replicas = 3, log_comment = '05401_normal_proj';
+
+SYSTEM FLUSH LOGS query_log;
+SELECT 'parallel replicas used', log_comment, min(ProfileEvents['ParallelReplicasUsedCount'] > 0)
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND is_initial_query
+    AND log_comment IN ('05401_rows', '05401_exact_count', '05401_exact_count_one', '05401_minmax', '05401_agg_proj', '05401_normal_proj')
+GROUP BY log_comment
+ORDER BY log_comment;
 
 -- With a local plan the exact count is still answered from the primary key.
 SELECT 'exact count with a local plan', count() > 0
