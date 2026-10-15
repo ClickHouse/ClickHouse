@@ -3315,11 +3315,13 @@ def main():
         dashboard_link = (
             f"{PERF_DASHBOARD_URL}/runs?scope=master&q={(info.sha or '')[:12]}"
         )
-    result.set_label(
-        "Performance dashboard",
-        link=dashboard_link,
-        hint="Combined performance dashboard for this run (all shards, amd + arm)",
-    )
+    # The dashboard does not list nightly runs.
+    if not nightly:
+        result.set_label(
+            "Performance dashboard",
+            link=dashboard_link,
+            hint="Combined performance dashboard for this run (all shards, amd + arm)",
+        )
     result.complete_job()
 
 
