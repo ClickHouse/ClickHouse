@@ -295,7 +295,7 @@ SELECT a.datasource AS server1, b.datasource AS server2, b.name AS db
 FROM jdbc('mysql-dev?datasource_column', 'show databases') a
 INNER JOIN jdbc('self?datasource_column', 'show databases') b ON a.Database = b.name
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, xdbcSecretArguments());
 }
 
 void registerTableFunctionODBC(TableFunctionFactory & factory)
@@ -406,6 +406,6 @@ SELECT * FROM odbc('DSN=mysqlconn', 'test', 'test')
 
 - [ODBC dictionaries](/reference/statements/create/dictionary/sources/odbc)
 - [ODBC table engine](/reference/engines/table-engines/integrations/odbc).
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, xdbcSecretArguments());
 }
 }

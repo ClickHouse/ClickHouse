@@ -12,12 +12,12 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <IO/Operators.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/JSONBuilder.h>
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/ProfileEvents.h>
-#include <Common/formatReadable.h>
-#include <Common/logger_useful.h>
 #include <Core/SortDescription.h>
 
 namespace ProfileEvents
@@ -47,6 +47,7 @@ namespace Setting
     extern const SettingsUInt64 min_free_disk_space_for_temporary_data;
     extern const SettingsString temporary_files_codec;
     extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
+    extern const SettingsBool enable_adaptive_memory_spill_scheduler;
 }
 
 namespace QueryPlanSerializationSetting
@@ -65,7 +66,6 @@ namespace QueryPlanSerializationSetting
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
 }
@@ -73,46 +73,6 @@ namespace ErrorCodes
 bool preliminaryDistinctIsUseful(size_t max_threads)
 {
     return max_threads > 1;
-}
-
-/// Combines enabled absolute and ratio thresholds by taking their minimum.
-static size_t getMaxBytesBeforeExternalDistinct(size_t max_bytes_before_external_distinct, double max_bytes_ratio_before_external_distinct)
-{
-    std::optional<size_t> threshold;
-    if (max_bytes_before_external_distinct != 0)
-        threshold = max_bytes_before_external_distinct;
-
-    if (max_bytes_ratio_before_external_distinct != 0.)
-    {
-        double ratio = max_bytes_ratio_before_external_distinct;
-        if (ratio < 0 || ratio >= 1.)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "Setting max_bytes_ratio_before_external_distinct should be >= 0 and < 1 ({})", ratio);
-
-        auto available_system_memory = getMostStrictAvailableSystemMemory();
-        if (available_system_memory.has_value())
-        {
-            /// Zero disables spilling, so an enabled ratio must produce at least a one-byte threshold.
-            const size_t ratio_in_bytes = std::max<size_t>(1, static_cast<size_t>(static_cast<double>(*available_system_memory) * ratio));
-            if (threshold)
-                threshold = std::min(threshold.value(), ratio_in_bytes);
-            else
-                threshold = ratio_in_bytes;
-
-            LOG_TRACE(
-                getLogger("DistinctStep"),
-                "Adjusting memory limit before external DISTINCT with {} (ratio: {}, available system memory: {})",
-                formatReadableSizeWithBinarySuffix(ratio_in_bytes),
-                ratio,
-                formatReadableSizeWithBinarySuffix(*available_system_memory));
-        }
-        else
-        {
-            LOG_TRACE(getLogger("DistinctStep"), "No system memory limits configured. Ignoring max_bytes_ratio_before_external_distinct");
-        }
-    }
-
-    return threshold.value_or(0);
 }
 
 DistinctStep::Settings::Settings(const DB::Settings & settings_)
@@ -236,10 +196,16 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
         return;
     }
 
-    const size_t external_threshold = getMaxBytesBeforeExternalDistinct(
-        settings.max_bytes_before_external_distinct, settings.max_bytes_ratio_before_external_distinct);
+    const size_t external_threshold = getMaxBytesBeforeExternalProcessing(
+        settings.max_bytes_before_external_distinct,
+        settings.max_bytes_ratio_before_external_distinct,
+        "max_bytes_ratio_before_external_distinct");
+    const auto & query_status = build_settings.process_list_element;
+    const bool scheduler_spilling = query_status && build_settings.temp_data_on_disk
+        && (query_status->getMemoryReservation()
+            || query_status->getContext()->getSettingsRef()[Setting::enable_adaptive_memory_spill_scheduler]);
     /// Constant keys produce at most one row and need no external storage.
-    if (!pre_distinct && external_threshold
+    if (!pre_distinct && (external_threshold || scheduler_spilling)
         && !calculateDistinctKeyColumnsPositions(*pipeline.getSharedHeader(), columns).empty())
     {
         if (!build_settings.temp_data_on_disk)
@@ -292,7 +258,7 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
 
             return std::make_shared<DistinctTransform>(
                 header, settings.set_size_limits, limit_hint, columns,
-                allow_abandoning, /*skip_null_keys_=*/ false, pass_through_threshold);
+                allow_abandoning, /*skip_null_keys_=*/ false, pass_through_threshold, /*allow_spilling_=*/ pre_distinct && limit_hint == 0);
         });
 }
 
@@ -355,7 +321,7 @@ void DistinctStep::serialize(Serialization & ctx) const
 
     writeVarUInt(columns.size(), ctx.out);
     for (const auto & column : columns)
-        writeStringBinary(column, ctx.out);
+        ctx.writeColumnName(column);
 
     if (ctx.step_version >= 1 && !ctx.for_cache_key)
         writeBinary(preserve_input_order, ctx.out);
