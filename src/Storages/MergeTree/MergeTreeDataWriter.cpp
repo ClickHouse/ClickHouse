@@ -1231,6 +1231,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         gathered_data,
         sync_this_part);
 
+    new_data_part->pending_fsync_after_insert = temp_part->needs_fsync_on_finish;
     temp_part->part = new_data_part;
     temp_part->streams.emplace_back(MergeTreeTemporaryPart::Stream{.stream = std::move(out), .finalizer = std::move(finalizer)});
 
