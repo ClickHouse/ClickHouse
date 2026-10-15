@@ -289,56 +289,73 @@ void MetadataStorageInMemoryTransaction::recordFileBefore(const std::string & pa
         return;
     auto it = metadata_storage.files.find(path);
     if (it == metadata_storage.files.end())
-        files_undo.emplace(path, std::nullopt);
+        files_undo.emplace(path, MetadataStorageInMemory::FileEntry{nullptr});
     else
         files_undo.emplace(path, it->second);
 }
 
 void MetadataStorageInMemoryTransaction::recordBlobGroupBefore(const std::shared_ptr<MetadataStorageInMemory::BlobGroup> & group)
 {
-    if (!group)
+    if (!group || blob_group_undo.contains(group.get()))
         return;
-    auto [it, inserted] = blob_group_undo.try_emplace(group.get());
-    if (inserted)
-        it->second = BlobGroupSnapshot{group, *group};
+    /// Copy the content before publishing the journal entry: the copy allocates and can throw,
+    /// and `rollback` must never see an entry without its snapshot.
+    BlobGroupSnapshot snapshot{group, *group};
+    blob_group_undo.emplace(group.get(), std::move(snapshot));
 }
 
 void MetadataStorageInMemoryTransaction::recordDirBefore(const std::string & dir)
 {
     /// Capture the pre-transaction state once (first touch wins), mirroring `recordFileBefore`.
-    /// `nullopt` records that the directory did not exist before the transaction started, so a
-    /// later insert is rolled back by erasing; a stored timestamp restores both the directory's
-    /// existence and its original mtime.
-    if (dirs_undo.contains(dir))
+    /// A directory that did not exist before the transaction started is rolled back by erasing;
+    /// a stored timestamp restores both the directory's existence and its original mtime.
+    if (dirs_undo.contains(dir) || dirs_undo_absent.contains(dir))
         return;
     auto it = metadata_storage.directories.find(dir);
     if (it == metadata_storage.directories.end())
-        dirs_undo.emplace(dir, std::nullopt);
+        dirs_undo_absent.insert(dir);
     else
         dirs_undo.emplace(dir, it->second);
 }
 
 void MetadataStorageInMemoryTransaction::rollback()
 {
+    /// Nothing here allocates: the journal already holds complete entries, and they are moved back
+    /// as whole container nodes. Erasing never allocates either.
+
     /// Restore in-place `BlobGroup` content first, so subsequent file restoration
     /// re-attaches entries to groups whose `ref_count`/`objects` are already correct.
     for (auto & [ptr, snap] : blob_group_undo)
         *snap.alive = std::move(snap.snapshot);
 
-    for (auto & [path, opt_entry] : files_undo)
-    {
-        if (opt_entry)
-            metadata_storage.files[path] = std::move(*opt_entry);
-        else
+    /// Erase the paths created by this transaction before re-inserting the erased original ones:
+    /// then `files` never holds more entries than before the transaction, its bucket array (which
+    /// never shrinks) is already large enough for that, and re-inserting a node cannot rehash.
+    for (const auto & [path, entry] : files_undo)
+        if (!entry.blob_group)
             metadata_storage.files.erase(path);
+
+    while (!files_undo.empty())
+    {
+        auto node = files_undo.extract(files_undo.begin());
+        if (!node.mapped().blob_group)
+            continue;
+        if (auto it = metadata_storage.files.find(node.key()); it != metadata_storage.files.end())
+            it->second = std::move(node.mapped());
+        else
+            metadata_storage.files.insert(std::move(node));
     }
 
-    for (const auto & [dir, opt_timestamp] : dirs_undo)
+    for (const auto & dir : dirs_undo_absent)
+        metadata_storage.directories.erase(dir);
+
+    while (!dirs_undo.empty())
     {
-        if (opt_timestamp)
-            metadata_storage.directories[dir] = *opt_timestamp;
+        auto node = dirs_undo.extract(dirs_undo.begin());
+        if (auto it = metadata_storage.directories.find(node.key()); it != metadata_storage.directories.end())
+            it->second = node.mapped();
         else
-            metadata_storage.directories.erase(dir);
+            metadata_storage.directories.insert(std::move(node));
     }
 }
 

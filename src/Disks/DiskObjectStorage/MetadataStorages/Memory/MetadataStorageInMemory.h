@@ -11,6 +11,7 @@
 #include <mutex>
 #include <optional>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace DB
 {
@@ -103,7 +104,11 @@ private:
         std::shared_ptr<BlobGroup> blob_group;
 
         FileEntry() : blob_group(std::make_shared<BlobGroup>()) {}
+        explicit FileEntry(std::shared_ptr<BlobGroup> blob_group_) : blob_group(std::move(blob_group_)) {}
     };
+
+    using Files = std::unordered_map<std::string, FileEntry>;
+    using Directories = std::map<std::string, Poco::Timestamp>;
 
     FileEntry * findFile(const std::string & path) const;
 
@@ -114,11 +119,11 @@ private:
     const std::string root_path;
 
     /// File metadata: path -> FileEntry
-    mutable std::unordered_map<std::string, FileEntry> files;
+    mutable Files files;
     /// Known directories, each mapped to its modification time. `MergeTree` reads a part
     /// directory's mtime as the part `modification_time` (`DataPartStorageOnDiskBase::getLastModified`),
     /// so directories must carry timestamps just like files instead of reporting the epoch.
-    mutable std::map<std::string, Poco::Timestamp> directories;
+    mutable Directories directories;
 
     mutable std::mutex removed_objects_mutex;
     StoredObjectSet objects_to_remove TSA_GUARDED_BY(removed_objects_mutex);
@@ -186,9 +191,15 @@ private:
     /// Adds `objects_to_remove` to the removal set of the storage with the strong exception guarantee.
     void publishObjectsToRemove();
 
-    /// Pre-mutation snapshot of every file entry touched by this transaction.
-    /// `nullopt` means the path did not exist before the transaction started.
-    std::unordered_map<std::string, std::optional<MetadataStorageInMemory::FileEntry>> files_undo;
+    /// The undo containers below hold complete pre-transaction entries, so that `rollback` only
+    /// moves already allocated nodes back into the storage and never allocates: it runs exactly
+    /// when an allocation has just failed, and a failure inside it would leave the storage half
+    /// restored (original entries missing, entries of the failed transaction still published).
+
+    /// Pre-mutation snapshot of every file entry touched by this transaction. It has the same type
+    /// as `MetadataStorageInMemory::files`, so `rollback` can transfer its nodes there. An entry
+    /// with a null `blob_group` means the path did not exist before the transaction started.
+    MetadataStorageInMemory::Files files_undo;
     /// Pre-mutation content of every `BlobGroup` mutated in place. The `shared_ptr` copy
     /// in `BlobGroupSnapshot::alive` keeps the group alive across the whole transaction:
     /// without it, a group whose only reference is erased mid-transaction can be freed,
@@ -200,10 +211,12 @@ private:
         MetadataStorageInMemory::BlobGroup snapshot;
     };
     std::unordered_map<MetadataStorageInMemory::BlobGroup *, BlobGroupSnapshot> blob_group_undo;
-    /// Pre-mutation timestamp of every directory entry touched by this transaction.
-    /// `nullopt` means the directory did not exist before the transaction started
-    /// (rollback: erase); a value restores the directory entry with its original mtime.
-    std::unordered_map<std::string, std::optional<Poco::Timestamp>> dirs_undo;
+    /// Pre-mutation timestamp of every directory that existed before the transaction started and
+    /// was touched by it (rollback restores the directory entry with its original mtime). Same
+    /// type as `MetadataStorageInMemory::directories`, so `rollback` can transfer its nodes there.
+    MetadataStorageInMemory::Directories dirs_undo;
+    /// Every touched directory that did not exist before the transaction started (rollback: erase).
+    std::unordered_set<std::string> dirs_undo_absent;
 
     MetadataStorageInMemory & metadata_storage;
 };

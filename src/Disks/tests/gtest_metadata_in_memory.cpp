@@ -8,7 +8,12 @@
 #include <Disks/DiskObjectStorage/Replication/ClusterConfiguration.h>
 #include <Disks/DiskObjectStorage/Replication/ObjectStorageRouter.h>
 
+#include <Common/CurrentMemoryTracker.h>
+#include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
+#include <Common/MemoryTracker.h>
 #include <Common/ObjectStorageKey.h>
+#include <Common/scope_guard_safe.h>
 #include <Common/ObjectStorageKeyGenerator.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -714,6 +719,139 @@ TEST_F(MetadataInMemoryTest, TestEmptyAppendCreatesFileWithoutPhantomBlob)
     ASSERT_EQ(metadata->getStorageObjects("file").size(), 1);
     EXPECT_EQ(metadata->getStorageObjects("file")[0].remote_path, "real");
     EXPECT_EQ(metadata->getFileSize("file"), 42);
+}
+
+namespace
+{
+
+/// Everything observable about the given paths, to compare the whole state before and after a transaction.
+std::string dumpState(const DB::MetadataStorageInMemory & metadata, const std::vector<std::string> & paths, bool with_mtime = true)
+{
+    std::string result;
+    for (const auto & path : paths)
+    {
+        result += path + ":";
+        if (metadata.existsFile(path))
+        {
+            result += " file size=" + std::to_string(metadata.getFileSize(path))
+                + " links=" + std::to_string(metadata.getHardlinkCount(path))
+                + " inline=" + metadata.readInlineDataToString(path) + " objects=";
+            for (const auto & object : metadata.getStorageObjects(path))
+                result += object.remote_path + "/" + std::to_string(object.bytes_size) + ",";
+        }
+        if (metadata.existsDirectory(path))
+        {
+            result += " directory";
+            /// A directory created by the transaction gets the current time, which differs between runs.
+            if (with_mtime)
+                result += " mtime=" + std::to_string(metadata.getLastModified(path).epochMicroseconds());
+        }
+        result += "\n";
+    }
+    return result;
+}
+
+}
+
+/// A commit can fail on an allocation at any point, and its rollback runs while memory is still exhausted,
+/// so the rollback must not allocate. Fail the commit at every allocation in turn (by limiting the memory
+/// available to it) and check that every failed commit leaves exactly the pre-transaction state, including
+/// files and directories it had already erased and the `BlobGroup` snapshot it was copying.
+TEST_F(MetadataInMemoryTest, TestRollbackOnAllocationFailureRestoresEverything)
+{
+    DB::MainThreadStatus::getInstance();
+
+    const std::vector<std::string> paths
+        = {"d", "d/a", "d/a_link", "d/b", "d/b2", "d/sub", "d/sub/c", "e", "e/x"};
+
+    auto seed = [](DB::MetadataStorageInMemory & metadata)
+    {
+        auto transaction = metadata.createTransaction();
+        transaction->createDirectory("d");
+        transaction->createDirectory("d/sub");
+        transaction->createMetadataFile(
+            "d/a", {DB::StoredObject(DB::ObjectStorageKey::createAsAbsolute("k1").serialize(), "d/a", 100)});
+        transaction->createHardLink("d/a", "d/a_link");
+        transaction->writeStringToFile("d/b", std::string(1000, 'b'));
+        transaction->createMetadataFile(
+            "d/sub/c", {DB::StoredObject(DB::ObjectStorageKey::createAsAbsolute("k3").serialize(), "d/sub/c", 300)});
+        transaction->commit(DB::NoCommitOptions{});
+    };
+
+    auto make_transaction = [](DB::MetadataStorageInMemory & metadata)
+    {
+        auto transaction = metadata.createTransaction();
+        transaction->unlinkFile("d/a", /* if_exists= */ false, /* should_remove_objects= */ true);
+        transaction->moveFile("d/b", "d/b2");
+        transaction->writeStringToFile("d/a_link", "rewritten");
+        transaction->createDirectory("e");
+        transaction->removeRecursive("d/sub", [](const std::string &) { return true; });
+        transaction->createMetadataFile(
+            "e/x", {DB::StoredObject(DB::ObjectStorageKey::createAsAbsolute("k4").serialize(), "e/x", 400)});
+        return transaction;
+    };
+
+    std::string expected_after;
+    {
+        auto metadata = getMetadataStorage();
+        seed(*metadata);
+        make_transaction(*metadata)->commit(DB::NoCommitOptions{});
+        expected_after = dumpState(*metadata, paths, /* with_mtime= */ false);
+    }
+
+    size_t failed_commits = 0;
+    bool committed = false;
+    for (Int64 slack = 0; slack < 1'000'000 && !committed; slack += 16)
+    {
+        auto metadata = getMetadataStorage();
+        seed(*metadata);
+        const std::string before = dumpState(*metadata, paths);
+        auto transaction = make_transaction(*metadata);
+
+        bool threw = false;
+        {
+            const Int64 prev_untracked_limit = DB::CurrentThread::get().untracked_memory_limit;
+            const Int64 prev_hard_limit = total_memory_tracker.getHardLimit();
+            const UInt64 prev_min_alloc_to_throw = CurrentMemoryTracker::getMinAllocationSizeBytesToThrow();
+            SCOPE_EXIT_SAFE({
+                total_memory_tracker.setHardLimit(prev_hard_limit);
+                DB::CurrentThread::get().untracked_memory_limit = prev_untracked_limit;
+                CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(prev_min_alloc_to_throw);
+            });
+
+            /// Every allocation must reach the tracker and be checked against the limit: the throwing
+            /// `operator new` ignores the limit for allocations below this size (by default all of them),
+            /// and the per-thread untracked-memory buffer would hide small allocations.
+            CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(1);
+            DB::CurrentThread::get().untracked_memory_limit = 0;
+            DB::CurrentThread::flushUntrackedMemory();
+            total_memory_tracker.setHardLimit(total_memory_tracker.get() + slack);
+            try
+            {
+                transaction->commit(DB::NoCommitOptions{});
+            }
+            catch (const DB::Exception &)
+            {
+                threw = true;
+            }
+        }
+
+        if (threw)
+        {
+            ++failed_commits;
+            ASSERT_EQ(dumpState(*metadata, paths), before) << "slack: " << slack;
+            EXPECT_FALSE(metadata->hasPendingRemovalBlobs(
+                {DB::StoredObject(DB::ObjectStorageKey::createAsAbsolute("k1").serialize(), "d/a", 100)}));
+        }
+        else
+        {
+            committed = true;
+            EXPECT_EQ(dumpState(*metadata, paths, /* with_mtime= */ false), expected_after);
+        }
+    }
+
+    EXPECT_TRUE(committed);
+    EXPECT_GT(failed_commits, 0);
 }
 
 /// A `DiskObjectStorage` over `MetadataStorageInMemory`, to exercise inline-only files through the
