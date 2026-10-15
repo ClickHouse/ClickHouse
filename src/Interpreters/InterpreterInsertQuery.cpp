@@ -855,8 +855,7 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
         return {};
 
     /// Create a context with automatic_parallel_replicas_mode disabled upfront.
-    /// INSERT SELECT should use parallel replicas regardless of automatic mode,
-    /// and followers need automatic_parallel_replicas_mode == 0 to participate in coordinated reading.
+    /// INSERT SELECT should use parallel replicas regardless of automatic mode.
     auto context = Context::createCopy(getContext());
     context->setSetting("automatic_parallel_replicas_mode", Field{0});
 
