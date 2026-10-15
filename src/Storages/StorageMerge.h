@@ -200,9 +200,11 @@ public:
 
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(InputOrderInfoPtr order_info_, size_t query_limit = 0);
-    /// Whether `requestReadingInOrder` accepts `direction`: every reading step of every child plan has to be
-    /// a `ReadFromMergeTree` that accepts it (see `ReadFromMergeTree::canReadInReverseOrder`). Creates the child plans.
-    bool canReadInOrder(int direction);
+    /// Whether `requestReadingInOrder` accepts `order_info_`: every reading step of every child plan has to be a `ReadFromMergeTree`
+    /// that reads in its direction (see `ReadFromMergeTree::canReadInReverseOrder`) and is sorted like its table on the prefix.
+    /// With `allow_shorter_read_key`, a read whose sorting key is shorter than the prefix passes: it refuses the request itself.
+    /// Creates the child plans.
+    bool canReadInOrder(const InputOrderInfo & order_info_, bool allow_shorter_read_key = false);
     const InputOrderInfoPtr & getInputOrder() const { return order_info; }
 
     /// Whether the child plans have been created (`filterTablesAndCreateChildrenPlans`).

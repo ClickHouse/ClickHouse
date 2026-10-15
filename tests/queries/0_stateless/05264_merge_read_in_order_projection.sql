@@ -9,6 +9,8 @@ DROP TABLE IF EXISTS t_partial;
 DROP TABLE IF EXISTS t_merge;
 DROP TABLE IF EXISTS t_agree;
 DROP TABLE IF EXISTS t_desc;
+DROP TABLE IF EXISTS t_right;
+DROP TABLE IF EXISTS t_short;
 
 CREATE TABLE t_proj (a Int32, b Int32, PROJECTION p (SELECT a, b ORDER BY b)) ENGINE = MergeTree ORDER BY a;
 INSERT INTO t_proj SELECT number % 10, number FROM numbers(100000);
@@ -70,6 +72,29 @@ SELECT groupArray(a) FROM (SELECT a FROM merge(currentDatabase(), '^t_desc$') WH
 SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT groupArray(a) FROM (SELECT a FROM merge(currentDatabase(), '^t_desc$') WHERE b < 5000 ORDER BY a DESC LIMIT 12)
     SETTINGS prefer_optimize_projection = 1, force_optimize_projection_name = 'p', explain_query_plan_default = 'pretty') WHERE explain ILIKE '%Read type: Default%';
 
+-- `topKThroughJoin` does not defer to a read in order that the `Merge` read declines: it adds its own Sort + Limit.
+CREATE TABLE t_right (a Int32) ENGINE = Memory;
+INSERT INTO t_right SELECT number FROM numbers(10);
+SET query_plan_top_k_through_join = 1, query_plan_read_in_order_through_join = 1, join_algorithm = 'hash',
+    query_plan_join_swap_table = false, query_plan_max_limit_for_top_k_optimization = 0,
+    enable_join_runtime_filters = 0, enable_lazy_columns_replication = 0, query_plan_optimize_lazy_materialization = 0,
+    enable_parallel_replicas = 0, max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0;
+SELECT countIf(explain LIKE '%Sorting%'), countIf(explain LIKE '%Limit%') FROM (EXPLAIN actions = 0
+    SELECT l.a FROM merge(currentDatabase(), '^t_proj$') AS l LEFT JOIN t_right AS r ON r.a = l.a WHERE l.b < 5000 ORDER BY l.a LIMIT 12
+    SETTINGS force_optimize_projection_name = 'p');
+-- Without the projection it defers.
+SELECT countIf(explain LIKE '%Sorting%'), countIf(explain LIKE '%Limit%') FROM (EXPLAIN actions = 0
+    SELECT l.a FROM merge(currentDatabase(), '^t_proj$') AS l LEFT JOIN t_right AS r ON r.a = l.a WHERE l.b < 5000 ORDER BY l.a LIMIT 12
+    SETTINGS optimize_use_projections = 0);
+-- Nor to a read whose projection key is shorter than the requested prefix.
+CREATE TABLE t_short (a Int32, b Int32, PROJECTION p (SELECT a, b ORDER BY a)) ENGINE = MergeTree ORDER BY (a, b);
+INSERT INTO t_short SELECT number % 10, number FROM numbers(1000);
+SELECT countIf(explain LIKE '%Sorting%'), countIf(explain LIKE '%Limit%') FROM (EXPLAIN actions = 0
+    SELECT l.a FROM merge(currentDatabase(), '^t_short$') AS l LEFT JOIN t_right AS r ON r.a = l.a ORDER BY l.a, l.b LIMIT 12
+    SETTINGS prefer_optimize_projection = 1, force_optimize_projection_name = 'p');
+
+DROP TABLE t_short;
+DROP TABLE t_right;
 DROP TABLE t_desc;
 DROP TABLE t_agree;
 DROP TABLE t_merge;

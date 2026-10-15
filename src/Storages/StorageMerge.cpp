@@ -2574,19 +2574,31 @@ const ReadFromMerge::StorageListWithLocks & ReadFromMerge::getSelectedTables()
     return selected_tables;
 }
 
-bool ReadFromMerge::canReadInOrder(int direction)
+bool ReadFromMerge::canReadInOrder(const InputOrderInfo & order_info_, bool allow_shorter_read_key)
 {
     filterTablesAndCreateChildrenPlans();
 
-    auto can_read_in_direction = [direction](ReadFromMergeTree & read_from_merge_tree)
-    {
-        return direction == 1 || read_from_merge_tree.canReadInReverseOrder();
-    };
-
+    auto table_it = selected_tables.begin();
     for (const auto & child_plan : *child_plans)
+    {
+        const auto table_metadata = std::get<StoragePtr>(*table_it++)->getInMemoryMetadataPtr(context, false);
+        auto can_read = [&](ReadFromMergeTree & read_from_merge_tree)
+        {
+            if (order_info_.direction != 1 && !read_from_merge_tree.canReadInReverseOrder())
+                return false;
+
+            /// The prefix counts columns of each table's sorting key, while a child read may be sorted by another key (a projection's).
+            const auto read_metadata = read_from_merge_tree.getStorageMetadata();
+            const auto & read_key = read_metadata->getSortingKey();
+            size_t prefix_size = order_info_.used_prefix_of_sorting_key_size;
+            if (allow_shorter_read_key)
+                prefix_size = std::min(prefix_size, read_key.column_names.size());
+            return sortingKeysSharePrefix(read_key, table_metadata->getSortingKey(), prefix_size);
+        };
         if (child_plan.plan.isInitialized()
-            && !recursivelyApplyToReadingSteps(child_plan.plan.getRootNode(), can_read_in_direction))
+            && !recursivelyApplyToReadingSteps(child_plan.plan.getRootNode(), can_read))
             return false;
+    }
 
     return true;
 }
@@ -2604,28 +2616,8 @@ bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_, size_t 
     filterTablesAndCreateChildrenPlans();
 
     /// Ask every reading step first: the loop below switches the children one by one.
-    if (!canReadInOrder(order_info_->direction))
+    if (!canReadInOrder(*order_info_, /*allow_shorter_read_key=*/ true))
         return false;
-
-    /// The prefix counts columns of each table's sorting key, while a child read may be sorted by another key (a projection's).
-    /// A read whose key is shorter than the prefix refuses the request itself.
-    auto table_it = selected_tables.begin();
-    for (const auto & child_plan : *child_plans)
-    {
-        const auto table_metadata = std::get<StoragePtr>(*table_it++)->getInMemoryMetadataPtr(context, false);
-        auto agrees_with_table_key = [&](ReadFromMergeTree & read_from_merge_tree)
-        {
-            const auto read_metadata = read_from_merge_tree.getStorageMetadata();
-            const auto & read_key = read_metadata->getSortingKey();
-            return sortingKeysSharePrefix(
-                read_key,
-                table_metadata->getSortingKey(),
-                std::min(order_info_->used_prefix_of_sorting_key_size, read_key.column_names.size()));
-        };
-        if (child_plan.plan.isInitialized()
-            && !recursivelyApplyToReadingSteps(child_plan.plan.getRootNode(), agrees_with_table_key))
-            return false;
-    }
 
     auto request_read_in_order = [order_info_, query_limit](ReadFromMergeTree & read_from_merge_tree)
     {
