@@ -387,7 +387,8 @@ bool ParserProjectionExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expecte
 {
     return ParserList(
         std::make_unique<ParserProjectionSelectElement>(),
-        std::make_unique<ParserToken>(TokenType::Comma))
+        std::make_unique<ParserToken>(TokenType::Comma),
+        /*allow_empty_*/ false)
         .parse(pos, node, expected);
 }
 

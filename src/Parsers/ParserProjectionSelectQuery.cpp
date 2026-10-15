@@ -97,9 +97,12 @@ bool ParserProjectionSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
             expressions->children.push_back(element);
     }
 
+    if (expressions->children.empty())
+        return false;
+
     select_query->setExpression(ASTProjectionSelectQuery::Expression::WITH, std::move(with_expression_list));
     select_query->setExpression(ASTProjectionSelectQuery::Expression::SELECT, std::move(expressions));
-    select_query->setExpression(ASTProjectionSelectQuery::Expression::SKIP_INDICES, skip_indices->children.size() > 0 ? std::move(skip_indices): nullptr);
+    select_query->setExpression(ASTProjectionSelectQuery::Expression::SKIP_INDICES, !skip_indices->children.empty() ? std::move(skip_indices): nullptr);
     select_query->setExpression(ASTProjectionSelectQuery::Expression::WHERE, std::move(where_expression));
     select_query->setExpression(ASTProjectionSelectQuery::Expression::GROUP_BY, std::move(group_expression_list));
     select_query->setExpression(ASTProjectionSelectQuery::Expression::ORDER_BY, std::move(order_expression));

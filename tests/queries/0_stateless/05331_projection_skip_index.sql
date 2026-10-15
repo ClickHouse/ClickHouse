@@ -137,6 +137,13 @@ CREATE TABLE t_proj_text (a UInt64, s String) ENGINE = MergeTree ORDER BY a;
 ALTER TABLE t_proj_text ADD PROJECTION p (SELECT s, INDEX ix (s) TYPE text(tokenizer = 'splitByNonAlpha') ORDER BY s); -- { serverError ILLEGAL_INDEX }
 DROP TABLE t_proj_text;
 
+-- The projection SELECT list must not be empty.
+CREATE TABLE t_bad (a UInt64, PROJECTION p (SELECT)) ENGINE = MergeTree ORDER BY a; -- { clientError SYNTAX_ERROR }
+
+-- The projection SELECT list must contain at least one column, not only INDEX declarations,
+-- even when ORDER BY would make the projection store its sorting column implicitly.
+CREATE TABLE t_bad (a UInt64, PROJECTION p (SELECT INDEX ix a TYPE minmax GRANULARITY 1 ORDER BY a)) ENGINE = MergeTree ORDER BY a; -- { clientError SYNTAX_ERROR }
+
 ------------------------------------------------------------------------------
 -- 3. Index on an expression, built on INSERT and on merge
 ------------------------------------------------------------------------------
