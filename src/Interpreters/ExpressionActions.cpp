@@ -459,22 +459,13 @@ static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions
     return lazy_executed_nodes;
 }
 
-/// True if the node and all its descendants are deterministic functions which cannot throw an exception on invalid input values.
+/// True if the function of the node (if any) is deterministic and cannot throw an exception on invalid input values.
+/// The descendants are checked separately.
 static bool isSafeForEagerExecutionNode(const ActionsDAG::Node * node)
 {
-    if (node->type == ActionsDAG::ActionType::FUNCTION)
-    {
-        if (!node->function_base->isNoExcept() || !node->function_base->isDeterministic())
-            return false;
-    }
-
-    for (const auto * child : node->children)
-    {
-        if (!isSafeForEagerExecutionNode(child))
-            return false;
-    }
-
-    return true;
+    if (node->type != ActionsDAG::ActionType::FUNCTION)
+        return true;
+    return node->function_base->isNoExcept() && node->function_base->isDeterministic();
 }
 
 /// Can the node be executed on more rows than it is executed on now, with no difference but the time?
@@ -651,10 +642,12 @@ void ExpressionActions::linearizeActions(
         }
 
         node_to_action_pos[node] = actions.size();
-        auto & action = actions.emplace_back(Action{node, arguments, free_position, lazy_executed_nodes.contains(node)});
-        /// `is_no_except` is only used by AdaptiveExpressionActions, and its calculation is not free,
-        /// so do not pay for it when the adaptive mode is disabled.
-        action.is_no_except = settings.enable_adaptive_short_circuit_lazy_execution && isSafeForEagerExecutionNode(node);
+        auto & action = actions.emplace_back(Action{node, arguments, free_position, lazy_executed_nodes.contains(node), false, {}});
+        /// `is_no_except` is only used by AdaptiveExpressionActions, so do not pay for it when the adaptive mode is disabled.
+        /// The actions of the arguments are already created (the order is topological), so the result for the
+        /// descendants is taken from them: every node is checked once, even if it is shared by many parents.
+        action.is_no_except = settings.enable_adaptive_short_circuit_lazy_execution && isSafeForEagerExecutionNode(node)
+            && std::ranges::all_of(node->children, [&](const Node * child) { return actions[node_to_action_pos.at(child)].is_no_except; });
         if (reorderable_short_circuit_arguments.contains(node))
             action.short_circuit_argument_statistics = std::make_shared<ShortCircuitArgumentStatistics>();
         if (auto it = short_circuit_eager_arguments.find(node); it != short_circuit_eager_arguments.end())
