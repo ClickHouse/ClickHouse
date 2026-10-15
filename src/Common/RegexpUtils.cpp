@@ -168,7 +168,7 @@ bool isZeroAllowingQuantifier(const char * pos, const char * end)
     return *pos == '{' && pos + 1 < end && pos[1] == '0';
 }
 
-/// The position after a pure inline flag group - `(?i)`, `(?-i)`, `(?ims)` - which RE2 treats as a
+/// The position after a pure inline flag group - `(?i)`, `(?-i)`, `(?ims)`, or `(?)` with no flags - which RE2 treats as a
 /// zero-width operator. Returns nullptr when `pos` does not point at such a group; `(?i:x)` and `()`
 /// are groups with a body instead, and a quantifier after those applies to the group itself.
 const char * findEndOfPureFlagGroup(const char * pos, const char * end)
@@ -183,7 +183,7 @@ const char * findEndOfPureFlagGroup(const char * pos, const char * end)
     while (it < end && is_flag_char(*it))
         ++it;
 
-    if (it == flags_begin || it == end || *it != ')')
+    if (it == end || *it != ')')
         return nullptr;
 
     return it + 1;

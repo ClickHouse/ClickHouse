@@ -43,3 +43,11 @@ EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT extract(materialize('abcd'
 -- ... and that it does not fire without a capture group.
 EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT extract(materialize('aBcd'), '(?i)b.*$');
 EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT extract(materialize('aBcd'), '(?i:b).*$');
+
+SELECT 'an empty flag group';
+SELECT extract(materialize('abcd'), '(?)b.*$');
+SELECT extract(materialize('abcd'), '(?:(?))b.*$');
+-- re2 reads `abcd(?)?e` as `abcd?e`, so `abcd` is not a required substring.
+SELECT match(materialize('abce'), 'abcd(?)?e');
+-- A capture group after `(?)` still allows the rewrite.
+EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT extract(materialize('abcd'), '(?)(b).*$');

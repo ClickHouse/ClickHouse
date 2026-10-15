@@ -412,8 +412,8 @@ const char * analyzeImpl(
                     {
                         return x == '-' || x == 'i' || x == 'm' || x == 's' || x == 'U' || x == 'u';
                     };
-                    /// Check for case-insensitive flag.
-                    if (pos + 2 < end && pos[1] == '?' && is_flag_char(pos[2]))
+                    /// A flag group, `(?flags)` or `(?flags:regex)`. re2 also accepts an empty flag list, `(?)`.
+                    if (pos + 2 < end && pos[1] == '?' && (is_flag_char(pos[2]) || pos[2] == ')'))
                     {
                         size_t offset = 2;
                         for (; pos + offset < end; ++offset)
