@@ -5968,7 +5968,7 @@ This setting has no effect while `optimize_if_transform_strings_to_enum` is enab
 
 While this setting is enabled, `optimize_if_chain_to_multiif` does not rewrite `if` chains with the old analyzer (`enable_analyzer = 0`). That rewrite is purely syntactic there, so it would turn the plain `String` of an `if` chain into the `LowCardinality(String)` of a `multiIf` and make the result type depend on `enable_analyzer`.
 )", 0, \
-        {"26.10", false, false, "New setting to allow optimizing results of const branches from `if`/`multiIf`/`transform` into `LowCardinality`. Disabled by default."}) \
+        {"26.11", false, false, "New setting to allow optimizing results of const branches from `if`/`multiIf`/`transform` into `LowCardinality`. Disabled by default."}) \
     DECLARE(Bool, optimize_if_transform_strings_to_enum, false, R"(
 Replaces string-type arguments in If and Transform to enum. Disabled by default cause it could make inconsistent change in distributed query that would lead to its fail.
 )", 0) \
