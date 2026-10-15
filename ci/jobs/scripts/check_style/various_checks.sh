@@ -120,6 +120,7 @@ FUNCTIONS_CONTEXT_PTR_EXCEPTIONS=(
     -e /generateSerialID.cpp
     -e /evalMLMethod.cpp
     -e /FunctionNaiveBayesClassifier.cpp
+    -e /FunctionPredictXGBoost.cpp
     -e /FunctionBinaryArithmetic.h
     -e /FunctionUnaryArithmetic.h
     -e /ITupleFunction.h
@@ -259,6 +260,13 @@ for test_case in "${curl_flush_logs_tests[@]}"; do
     if [ "$has_retry" = false ]; then
         echo "$test_case uses curl and SYSTEM FLUSH LOGS without a retry loop. Add a retry loop to handle the race between HTTP response and log entry writing. See https://github.com/ClickHouse/ClickHouse/issues/84364"
     fi
+done
+
+# `clickhouse-test` passes non-SQL tests to the interpreter for their extension (`TEST_INTERPRETERS`), so the shebang
+# must name that interpreter.
+for ext_shebang in "sh:#!/usr/bin/env bash" "py:#!/usr/bin/env python3" "expect:#!/usr/bin/expect -f"; do
+    awk -v shebang="${ext_shebang#*:}" 'FNR == 1 && $0 != shebang {print FILENAME ": the first line must be \"" shebang "\""}' \
+        "$ROOT_PATH"/tests/queries/0_stateless/*."${ext_shebang%%:*}"
 done
 
 # CLICKHOUSE_URL already includes "?"

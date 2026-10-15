@@ -2,6 +2,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/SecretArgumentsSpec.h>
 #include <Interpreters/StorageID.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -23,6 +24,11 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }
+
+/// The `SecretArgumentsSpec` of the MySQL and PostgreSQL families (and `Remote` databases): `password` at
+/// `password_slot` of the explicit form, and as an override with the TLS credentials given as the contents
+/// of a certificate or a key file (see `credentialsPathKeyFor`).
+SecretArgumentsSpec mysqlPostgreSQLSecretArguments(size_t password_slot);
 
 /// Throws `BAD_ARGUMENTS` if `key` replaces a stored key (including an alias) that is `NOT OVERRIDABLE`.
 /// Does not check privileges. Used where the override was already authorized when the object was created,

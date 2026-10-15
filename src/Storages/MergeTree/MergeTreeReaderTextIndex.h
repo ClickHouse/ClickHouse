@@ -3,7 +3,8 @@
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
-#include <Storages/MergeTree/MergeTreeIndexTextPostingListCursor.h>
+#include <Storages/MergeTree/MergeTreeReadTask.h>
+#include <Storages/MergeTree/PostingListCursor.h>
 #include <Storages/MergeTree/TextIndexPositionCodec.h>
 #include <Storages/MergeTree/TextIndexBlockedPositionsCodec.h>
 #include <Storages/MergeTree/TextIndexCache.h>
@@ -31,7 +32,7 @@ class MergeTreeReaderTextIndex : public IMergeTreeReader
 public:
     MergeTreeReaderTextIndex(
         const IMergeTreeReader * main_reader_,
-        MergeTreeIndexWithCondition index_,
+        IndexReadTask index_read_task_,
         NamesAndTypesList columns_,
         MergeTreeIndexGranulePtr index_granule_);
 
@@ -118,7 +119,7 @@ private:
 
     using TextIndexGranulePtr = std::shared_ptr<const MergeTreeIndexGranuleText>;
 
-    MergeTreeIndexWithCondition index;
+    IndexReadTask index_read_task;
     bool can_read_incomplete_granules = false;
     std::shared_ptr<MergeTreeIndexConditionText> condition_text;
     std::vector<TextSearchQueryPtr> search_queries;
@@ -142,7 +143,7 @@ private:
     /// Stream for position data (.pos file) used for phrase queries.
     std::unique_ptr<MergeTreeReaderStream> positions_stream;
     /// Per-reader memo of phrase results (shared via the postings cache) so repeated readRows calls skip the cache lookup.
-    absl::flat_hash_map<UInt128, FlatPostingsPtr> phrase_search_doc_ids;
+    absl::flat_hash_map<UInt128, PaddedPODArrayPtr> phrase_search_doc_ids;
 
     /// Current row position used when continuing reads across multiple calls.
     size_t current_row = 0;
@@ -175,7 +176,7 @@ private:
 
 MergeTreeReaderPtr createMergeTreeReaderTextIndex(
     const IMergeTreeReader * main_reader,
-    const MergeTreeIndexWithCondition & index,
+    const IndexReadTask & index_read_task,
     const NamesAndTypesList & columns_to_read,
     MergeTreeIndexGranulePtr index_granule);
 
