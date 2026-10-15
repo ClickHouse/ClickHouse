@@ -40,6 +40,7 @@ struct NATSConfiguration
 };
 
 using NATSOptionsPtr = std::unique_ptr<natsOptions, decltype(&natsOptions_Destroy)>;
+using NATSStatisticsPtr = std::unique_ptr<natsStatistics, decltype(&natsStatistics_Destroy)>;
 
 /// Loads the TLS material into `options`. Both calls parse the files immediately, so one which
 /// cannot be read or parsed is reported here instead of at connect time.
@@ -69,7 +70,19 @@ public:
     natsConnection * getConnection() { return connection.get(); }
     int getReconnectWait() const { return configuration.reconnect_wait; }
 
+    /// How many times the client has re-established this connection. The client restores a
+    /// subscription itself, but only its `SUB` line, so anything a subscription was waiting for on
+    /// the broker is gone: whoever needs it back has to notice this count changing.
+    UInt64 getReconnectCount();
+
     String connectionInfoForLog() const;
+
+    /// The error the client library recorded last on the connection, `Authorization Violation`
+    /// for a connection it closed for good after the server rejected the credentials twice. The
+    /// library keeps it on a closed connection, which lets the table report why it lost the one it
+    /// is replacing; the asynchronous error handler below cannot do that, because it only knows the
+    /// connection, not the table.
+    String lastErrorForLog();
 
 private:
     bool isConnectedImpl(const Lock & connection_lock) const;
@@ -82,11 +95,13 @@ private:
 
     static void disconnectedCallback(natsConnection * nc, void * connection);
     static void reconnectedCallback(natsConnection * nc, void * connection);
+    static void errorCallback(natsConnection * nc, natsSubscription * subscription, natsStatus status, void * connection);
 
     NATSConfiguration configuration;
     LoggerPtr log;
 
     NATSOptionsPtr options;
+    NATSStatisticsPtr statistics;
     std::unique_ptr<natsConnection, decltype(&natsConnection_Destroy)> connection;
 
     std::mutex mutex;

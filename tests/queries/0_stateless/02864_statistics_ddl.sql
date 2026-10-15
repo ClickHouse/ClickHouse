@@ -16,6 +16,9 @@ SET allow_statistics = 1;
 -- Error case: Unknown statistics types are rejected
 CREATE TABLE tab (col Float64 STATISTICS(no_statistics_type)) Engine = MergeTree() ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
 
+-- Error case: A statistics type written as an expression is rejected as an unknown type
+CREATE TABLE tab (col Float64 STATISTICS(trim(BOTH '' FROM 'x'))) Engine = MergeTree() ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
+
 -- Error case: The same statistics type can't exist more than once on a column
 CREATE TABLE tab (col Float64 STATISTICS(tdigest, tdigest)) Engine = MergeTree() ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
 

@@ -69,8 +69,8 @@ void ASTTTLElement::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases
 void ASTTTLElement::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "TTLElement");
-    w.writeString("mode", std::string(magic_enum::enum_name(mode)));
-    w.writeString("destination_type", std::string(magic_enum::enum_name(destination_type)));
+    w.writeString("mode", magic_enum::enum_name(mode));
+    w.writeString("destination_type", magic_enum::enum_name(destination_type));
 
     if (!destination_name.empty())
         w.writeString("destination_name", destination_name);
@@ -113,12 +113,12 @@ void ASTTTLElement::readJSON(const Poco::JSON::Object & json)
     destination_name = r.getString("destination_name");
     if_exists = r.getBool("if_exists");
 
-    auto ttl_child = r.readChild("ttl_expr");
+    auto ttl_child = r.readExpressionChild("ttl_expr");
     if (!ttl_child)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Required field 'ttl_expr' is missing in JSON AST for TTLElement");
     setTTL(std::move(ttl_child));
 
-    auto where_child = r.readChild("where_expr");
+    auto where_child = r.readExpressionChild("where_expr");
     if (where_child)
         setWhere(std::move(where_child));
 

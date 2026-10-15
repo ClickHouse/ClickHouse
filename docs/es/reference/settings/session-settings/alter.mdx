@@ -13,17 +13,13 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estas configuraciones están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="alter_move_to_space_execute_async">
-  ## alter_move_to_space_execute_async
-</div>
+## alter_move_to_space_execute_async {#alter_move_to_space_execute_async}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Ejecutar ALTER TABLE MOVE ... TO [DISK|VOLUME] de forma asíncrona
 
-<div id="alter_partition_verbose_result">
-  ## alter_partition_verbose_result
-</div>
+## alter_partition_verbose_result {#alter_partition_verbose_result}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -58,32 +54,28 @@ ALTER TABLE test FREEZE SETTINGS alter_partition_verbose_result = 1;
 └──────────────┴──────────────┴──────────────┴─────────────┴───────────────────────────────┴─────────────────────────────────────────────────────────────┘
 ```
 
-<div id="alter_sync">
-  ## alter_sync
-</div>
+## alter_sync {#alter_sync}
 
 **Aliases**: `replication_alter_partitions_sync`
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
 
-Permite especificar el comportamiento de espera para las acciones que deben ejecutarse en las réplicas mediante consultas [`ALTER`](/es/reference/statements/alter/index), [`OPTIMIZE`](/es/reference/statements/optimize) o [`TRUNCATE`](/es/reference/statements/truncate).
+Permite especificar cómo esperan las consultas [`ALTER`](/es/reference/statements/alter/index), [`OPTIMIZE`](/es/reference/statements/optimize) o [`TRUNCATE`](/es/reference/statements/truncate) a que se completen sus operaciones.
 
 Valores posibles:
 
 * `0` — No esperar.
 * `1` — Esperar a la ejecución propia.
 * `2` — Esperar a todas.
-* `3` - Esperar solo a las réplicas activas.
+* `3` - Esperar solo a las réplicas activas. Las réplicas inactivas aplican el cambio cuando pasan a estar activas.
 
 Valor predeterminado en Cloud: `0`.
 
 <Note>
-  `alter_sync` solo se aplica a tablas `Replicated` y `SharedMergeTree`; no tiene ningún efecto al modificar tablas que no sean `Replicated` ni `Shared`.
+  `alter_sync` se aplica a las consultas `ALTER` sobre tablas de la familia `MergeTree`. Los valores `2` y `3` esperan a las réplicas solo en tablas `ReplicatedMergeTree` y `SharedMergeTree`.
 </Note>
 
-<div id="alter_update_mode">
-  ## alter_update_mode
-</div>
+## alter_update_mode {#alter_update_mode}
 
 <SettingsInfoBlock type="AlterUpdateMode" default_value="heavy" />
 

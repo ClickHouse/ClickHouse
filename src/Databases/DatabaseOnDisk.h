@@ -30,6 +30,15 @@ std::pair<String, StoragePtr> createTableFromAST(
   */
 String getObjectDefinitionFromCreateQuery(const ASTPtr & query);
 
+/** Repair the unqualified table names that a definition read back from metadata written before the
+  * names were qualified at CREATE time can contain, resolving them against `database_name` — the
+  * database owning the table. Applied both when the definition is attached
+  * (`createTableFromAST`) and when the dependency graphs are built out of it
+  * (`TablesLoader::buildDependencyGraph`), so that the graphs describe the very same names the
+  * attached storage will use.
+  */
+void qualifyNamesFromLegacyMetadata(ASTCreateQuery & ast_create_query, const String & database_name, ContextPtr context);
+
 
 /* Class to provide basic operations with tables when metadata is stored on disk in .sql files.
  */

@@ -9,6 +9,13 @@ node = cluster.add_instance(
     user_configs=["configs/users.xml"],
     stay_alive=True,
     with_zookeeper=True,
+    # Transactions refuse to start unless Keeper advertises these.
+    keeper_required_feature_flags=[
+        "filtered_list",
+        "multi_read",
+        "list_with_stat_and_data",
+        "check_stat",
+    ],
 )
 
 
@@ -66,7 +73,7 @@ def test_rollback_unfinished_on_restart1(start_cluster):
     )
     node.query("insert into mt values (1, 10), (2, 20)")
     # INSERT_1
-    tid0 = "(1,1,'00000000-0000-0000-0000-000000000000')"
+    tid0 = "(1,1,'00000000-0000-0000-0000-000000000000',0)"
 
     # it will hold a snapshot and avoid parts cleanup
     tx(0, "begin transaction")
@@ -151,7 +158,7 @@ def test_rollback_unfinished_on_restart1(start_cluster):
         is_active=1,
         creation_tid="tid0",  # Created by INSERT_1
         creation_csn="csn1_",  # Committed with Tx::NonTransactionalCSN = 1
-        removal_tid="(0,0,'00000000-0000-0000-0000-000000000000')",  # Was being replaced by 0_2_2_0_7 by ALTER_2 in tid3 (not committed before restarting) -> the remove_tid is reset to Tx::Empty after restarting
+        removal_tid="(0,0,'00000000-0000-0000-0000-000000000000',0)",  # Was being replaced by 0_2_2_0_7 by ALTER_2 in tid3 (not committed before restarting) -> the remove_tid is reset to Tx::Empty after restarting
         removal_csn="csn0_",  # No removal_csn, tid3 was not committed yet.
     )
     expect_part_info(
@@ -164,7 +171,7 @@ def test_rollback_unfinished_on_restart1(start_cluster):
         # In the previous test version, the `removal_tid` is Tx::NonTransactionalLocalTID (tid0).
         # Because in `MergeTreeData::preparePartForRemoval`, it sets the removal lock to `Tx::NonTransactionalLocalTID``, and `removal_tid` is updated accordingly.
         # In this version, `removal_tid` is not updated when it locks the object for removal.
-        removal_tid="(0,0,'00000000-0000-0000-0000-000000000000')",  # No transaction attempted to remove this part
+        removal_tid="(0,0,'00000000-0000-0000-0000-000000000000',0)",  # No transaction attempted to remove this part
         removal_csn="csn0_",  # No transaction attempted to remove this part
     )
     expect_part_info(
@@ -174,7 +181,7 @@ def test_rollback_unfinished_on_restart1(start_cluster):
         is_active=1,  # Created by ALTER_2 in tid3 (not committed before restarting) -> is_active = 0, creation_tid = tid3
         creation_tid="tid2",  # Created by  INSERT_2 in tid2
         creation_csn="csn_2",  # tid2 was commited
-        removal_tid="(0,0,'00000000-0000-0000-0000-000000000000')",  # No transaction attempted to remove this part
+        removal_tid="(0,0,'00000000-0000-0000-0000-000000000000',0)",  # No transaction attempted to remove this part
         removal_csn="csn0_",  # No transaction attempted to remove this part
     )
     expect_part_info(
@@ -187,7 +194,7 @@ def test_rollback_unfinished_on_restart1(start_cluster):
         # In the previous test version, the `removal_tid` is Tx::NonTransactionalLocalTID (tid0).
         # Because in `MergeTreeData::preparePartForRemoval`, it sets the removal lock to `Tx::NonTransactionalLocalTID``, and `removal_tid` is updated accordingly.
         # In this version, `removal_tid` is not updated when it locks the object for removal.
-        removal_tid="(0,0,'00000000-0000-0000-0000-000000000000')",  # No transaction attempted to remove this part
+        removal_tid="(0,0,'00000000-0000-0000-0000-000000000000',0)",  # No transaction attempted to remove this part
         removal_csn="csn0_",  # No transaction attempted to remove this part
     )
     expect_part_info(
@@ -200,7 +207,7 @@ def test_rollback_unfinished_on_restart1(start_cluster):
         # In the previous test version, the `removal_tid` is Tx::NonTransactionalLocalTID (tid0).
         # Because in `MergeTreeData::preparePartForRemoval`, it sets the removal lock to `Tx::NonTransactionalLocalTID``, and `removal_tid` is updated accordingly.
         # In this version, `removal_tid` is not updated when it locks the object for removal.
-        removal_tid="(0,0,'00000000-0000-0000-0000-000000000000')",  # No transaction attempted to remove this part
+        removal_tid="(0,0,'00000000-0000-0000-0000-000000000000',0)",  # No transaction attempted to remove this part
         removal_csn="csn0_",  # No transaction attempted to remove this part
     )
     expect_part_info(
@@ -220,7 +227,7 @@ def test_rollback_unfinished_on_restart1(start_cluster):
         is_active=1,
         creation_tid="tid2",  # Created by INSERT_2 in tid2
         creation_csn="csn_2",  # tid2 was commited with csn_2
-        removal_tid="(0,0,'00000000-0000-0000-0000-000000000000')",  # No transaction attempted to remove this part
+        removal_tid="(0,0,'00000000-0000-0000-0000-000000000000',0)",  # No transaction attempted to remove this part
         removal_csn="csn0_",  # No transaction attempted to remove this part
     )
     expect_part_info(
@@ -233,7 +240,7 @@ def test_rollback_unfinished_on_restart1(start_cluster):
         # In the previous test version, the `removal_tid` is Tx::NonTransactionalLocalTID (tid0).
         # Because in `MergeTreeData::preparePartForRemoval`, it sets the removal lock to `Tx::NonTransactionalLocalTID``, and `removal_tid` is updated accordingly.
         # In this version, `removal_tid` is not updated when it locks the object for removal.
-        removal_tid="(0,0,'00000000-0000-0000-0000-000000000000')",  # No transaction attempted to remove this part
+        removal_tid="(0,0,'00000000-0000-0000-0000-000000000000',0)",  # No transaction attempted to remove this part
         removal_csn="csn0_",  # No transaction attempted to remove this part
     )
     expect_part_info(
@@ -243,7 +250,7 @@ def test_rollback_unfinished_on_restart1(start_cluster):
         is_active=1,
         creation_tid="tid6",  # Created by INSERT_3 in tid6
         creation_csn="csn_6",  # tid6 was commited with csn_6
-        removal_tid="(0,0,'00000000-0000-0000-0000-000000000000')",  # No transaction attempted to remove this part
+        removal_tid="(0,0,'00000000-0000-0000-0000-000000000000',0)",  # No transaction attempted to remove this part
         removal_csn="csn0_",  # No transaction attempted to remove this part
     )
     expect_part_info(
@@ -256,7 +263,7 @@ def test_rollback_unfinished_on_restart1(start_cluster):
         # In the previous test version, the `removal_tid` is Tx::NonTransactionalLocalTID (tid0).
         # Because in `MergeTreeData::preparePartForRemoval`, it sets the removal lock to `Tx::NonTransactionalLocalTID``, and `removal_tid` is updated accordingly.
         # In this version, `removal_tid` is not updated when it locks the object for removal.
-        removal_tid="(0,0,'00000000-0000-0000-0000-000000000000')",  # No transaction attempted to remove this part
+        removal_tid="(0,0,'00000000-0000-0000-0000-000000000000',0)",  # No transaction attempted to remove this part
         removal_csn="csn0_",  # No transaction attempted to remove this part
     )
     expect_part_info(
@@ -269,7 +276,7 @@ def test_rollback_unfinished_on_restart1(start_cluster):
         # In the previous test version, the `removal_tid` is Tx::NonTransactionalLocalTID (tid0).
         # Because in `MergeTreeData::preparePartForRemoval`, it sets the removal lock to `Tx::NonTransactionalLocalTID``, and `removal_tid` is updated accordingly.
         # In this version, `removal_tid` is not updated when it locks the object for removal.
-        removal_tid="(0,0,'00000000-0000-0000-0000-000000000000')",  # No transaction attempted to remove this part
+        removal_tid="(0,0,'00000000-0000-0000-0000-000000000000',0)",  # No transaction attempted to remove this part
         removal_csn="csn0_",  # No transaction attempted to remove this part
     )
     node.query("DROP TABLE IF EXISTS mt SYNC")
@@ -282,7 +289,7 @@ def test_rollback_unfinished_on_restart2(start_cluster):
     )
     # INSERT_1
     node.query("insert into mt2 values (1, 10), (2, 20)")
-    tid0 = "(1,1,'00000000-0000-0000-0000-000000000000')"
+    tid0 = "(1,1,'00000000-0000-0000-0000-000000000000',0)"
 
     # it will hold a snapshot and avoid parts cleanup
     tx(0, "begin transaction")
@@ -358,7 +365,7 @@ def test_rollback_unfinished_on_restart2(start_cluster):
         is_active=1,
         creation_tid="tid0",  # Created by INSERT_1
         creation_csn="csn1_",  # Committed with Tx::NonTransactionalCSN = 1
-        removal_tid="(0,0,'00000000-0000-0000-0000-000000000000')",  # Was being replaced by 0_2_2_0_7 by ALTER_1 in tid4 (not committed before restarting) -> the remove_tid is reset to Tx::Empty after restarting
+        removal_tid="(0,0,'00000000-0000-0000-0000-000000000000',0)",  # Was being replaced by 0_2_2_0_7 by ALTER_1 in tid4 (not committed before restarting) -> the remove_tid is reset to Tx::Empty after restarting
         removal_csn="csn0_",  # No removal_csn, tid3 was not committed yet.
     )
     expect_part_info(
@@ -371,7 +378,7 @@ def test_rollback_unfinished_on_restart2(start_cluster):
         # In the previous test version, the `removal_tid` is Tx::NonTransactionalLocalTID (tid0).
         # Because in `MergeTreeData::preparePartForRemoval`, it sets the removal lock to `Tx::NonTransactionalLocalTID``, and `removal_tid` is updated accordingly.
         # In this version, `removal_tid` is not updated when it locks the object for removal.
-        removal_tid="(0,0,'00000000-0000-0000-0000-000000000000')",  # No transaction attempted to remove this part
+        removal_tid="(0,0,'00000000-0000-0000-0000-000000000000',0)",  # No transaction attempted to remove this part
         removal_csn="csn0_",  # No transaction attempted to remove this part
     )
     expect_part_info(
@@ -381,7 +388,7 @@ def test_rollback_unfinished_on_restart2(start_cluster):
         is_active=1,
         creation_tid="tid2",  # Created by INSERT_2
         creation_csn="csn_2",  # tid2 was commited with csn_2
-        removal_tid="(0,0,'00000000-0000-0000-0000-000000000000')",  # No transaction attempted to remove this part
+        removal_tid="(0,0,'00000000-0000-0000-0000-000000000000',0)",  # No transaction attempted to remove this part
         removal_csn="csn0_",  # No transaction attempted to remove this part
     )
     expect_part_info(
@@ -394,7 +401,7 @@ def test_rollback_unfinished_on_restart2(start_cluster):
         # In the previous test version, the `removal_tid` is Tx::NonTransactionalLocalTID (tid0).
         # Because in `MergeTreeData::preparePartForRemoval`, it sets the removal lock to `Tx::NonTransactionalLocalTID``, and `removal_tid` is updated accordingly.
         # In this version, `removal_tid` is not updated when it locks the object for removal.
-        removal_tid="(0,0,'00000000-0000-0000-0000-000000000000')",  # No transaction attempted to remove this part
+        removal_tid="(0,0,'00000000-0000-0000-0000-000000000000',0)",  # No transaction attempted to remove this part
         removal_csn="csn0_",  # No transaction attempted to remove this part
     )
     expect_part_info(
@@ -414,7 +421,7 @@ def test_rollback_unfinished_on_restart2(start_cluster):
         is_active=1,
         creation_tid="tid2",  # Created by INSERT_2
         creation_csn="csn_2",  # tid2 was commited with csn_2
-        removal_tid="(0,0,'00000000-0000-0000-0000-000000000000')",  # No transaction attempted to remove this part
+        removal_tid="(0,0,'00000000-0000-0000-0000-000000000000',0)",  # No transaction attempted to remove this part
         removal_csn="csn0_",  # No transaction attempted to remove this part
     )
 
@@ -522,7 +529,7 @@ def test_removal_metadata_persisted_after_restart(start_cluster):
 
     # Verify removal metadata before restart
     removal_info = node.query(
-        "SELECT removal_csn > 1, removal_tid != (0,0,'00000000-0000-0000-0000-000000000000')"
+        "SELECT removal_csn > 1, removal_tid != (0,0,'00000000-0000-0000-0000-000000000000',0)"
         " FROM system.parts"
         " WHERE database='default' AND table='mt_persist'"
         "   AND removal_csn > 1"
@@ -534,7 +541,7 @@ def test_removal_metadata_persisted_after_restart(start_cluster):
 
     # After restart, the removed part must still show the correct removal metadata
     removal_info_after = node.query(
-        "SELECT removal_csn > 1, removal_tid != (0,0,'00000000-0000-0000-0000-000000000000')"
+        "SELECT removal_csn > 1, removal_tid != (0,0,'00000000-0000-0000-0000-000000000000',0)"
         " FROM system.parts"
         " WHERE database='default' AND table='mt_persist'"
         "   AND removal_csn > 1"
@@ -571,7 +578,7 @@ def test_rollback_clears_removal_tid(start_cluster):
     # After rollback the part must be active again with empty removal metadata
     info = node.query(
         "SELECT active,"
-        "       removal_tid = (0,0,'00000000-0000-0000-0000-000000000000'),"
+        "       removal_tid = (0,0,'00000000-0000-0000-0000-000000000000',0),"
         "       removal_csn = 0"
         " FROM system.parts"
         " WHERE database='default' AND table='mt_rollback_removal'"
@@ -639,7 +646,7 @@ def test_non_txn_merge_metadata(start_cluster):
     non-transactional inserts.
 
     The merged source parts must get:
-      - removal_tid = NonTransactionalTID = (1,1,'00000000-0000-0000-0000-000000000000')
+      - removal_tid = NonTransactionalTID = (1,1,'00000000-0000-0000-0000-000000000000',0)
       - removal_csn = NonTransactionalCSN = 1
 
     The merged result must have:
@@ -670,7 +677,7 @@ def test_non_txn_merge_metadata(start_cluster):
         " FROM system.parts"
         " WHERE database='default' AND table='mt_merge_txn'"
         "   AND active=0"
-        "   AND removal_tid = (1,1,'00000000-0000-0000-0000-000000000000')"
+        "   AND removal_tid = (1,1,'00000000-0000-0000-0000-000000000000',0)"
         "   AND removal_csn = 1"
     ).strip()
     assert source_removal == "2", (
@@ -683,7 +690,7 @@ def test_non_txn_merge_metadata(start_cluster):
         " FROM system.parts"
         " WHERE database='default' AND table='mt_merge_txn'"
         "   AND active=1"
-        "   AND creation_tid = (1,1,'00000000-0000-0000-0000-000000000000')"
+        "   AND creation_tid = (1,1,'00000000-0000-0000-0000-000000000000',0)"
         "   AND creation_csn = 1"
     ).strip()
     assert merged_creation == "1", (
@@ -739,7 +746,7 @@ def test_removal_csn_concurrent_rollback_stress(start_cluster):
             " FROM system.parts"
             " WHERE database='default' AND table='mt_race_stress'"
             "   AND active=1"
-            "   AND (removal_tid != (0,0,'00000000-0000-0000-0000-000000000000')"
+            "   AND (removal_tid != (0,0,'00000000-0000-0000-0000-000000000000',0)"
             "        OR removal_csn != 0)"
         ).strip()
         assert bad_parts == "0", (

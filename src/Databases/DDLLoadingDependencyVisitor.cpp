@@ -8,6 +8,7 @@
 #endif
 #include <Interpreters/Context.h>
 #include <Interpreters/misc.h>
+#include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -23,11 +24,12 @@ namespace DB
 
 using TableLoadingDependenciesVisitor = DDLLoadingDependencyVisitor::Visitor;
 
-TableNamesSet getLoadingDependenciesFromCreateQuery(ContextPtr global_context, const QualifiedTableName & table, const ASTPtr & ast, bool can_throw)
+TableNamesSet getLoadingDependenciesFromCreateQuery(ContextPtr global_context, const QualifiedTableName & table, const ASTPtr & ast, const String & current_database, bool can_throw)
 {
     chassert(global_context == global_context->getGlobalContext());
     TableLoadingDependenciesVisitor::Data data;
     data.default_database = global_context->getCurrentDatabase();
+    data.current_database = current_database;
     data.create_query = ast;
     data.global_context = global_context;
     data.table_name = table;
@@ -47,6 +49,8 @@ void DDLLoadingDependencyVisitor::visit(const ASTPtr & ast, Data & data)
         visit(*dict_source, data);
     else if (const auto * storage = ast->as<ASTStorage>())
         visit(*storage, data);
+    else if (const auto * constraint = ast->as<ASTConstraintDeclaration>())
+        visit(*constraint, data);
 }
 
 bool DDLMatcherBase::needChildVisit(const ASTPtr & node, const ASTPtr & child)
@@ -129,6 +133,54 @@ void DDLLoadingDependencyVisitor::visit(const ASTFunctionWithKeyValueArguments &
         /// We need to find all tables used in this select query and add them to dependencies.
         auto select_query_dependencies = getDependenciesFromDictionaryNestedSelectQuery(data.global_context, data.table_name, data.create_query, info->query, data.default_database, data.can_throw);
         data.dependencies.merge(select_query_dependencies);
+    }
+}
+
+void DDLLoadingDependencyVisitor::visit(const ASTConstraintDeclaration & constraint, Data & data)
+{
+    if (!constraint.expr)
+        return;
+
+    /// Attaching a table analyzes its constraints (`InterpreterCreateQuery::getConstraintsDescription`),
+    /// and the analysis executes the scalar subqueries of a constraint expression, so the tables which
+    /// such a subquery reads have to be loaded before this table.
+    addDependenciesOfExecutedSubqueries(constraint.expr->ptr(), data);
+}
+
+void DDLLoadingDependencyVisitor::addDependenciesOfExecutedSubqueries(const ASTPtr & ast, Data & data)
+{
+    if (ast->as<ASTSubquery>())
+    {
+        /// The subquery is executed as a whole, so everything it reads is a dependency.
+        auto subquery_dependencies = getDependenciesFromCreateQuery(data.global_context, data.table_name, ast, data.current_database);
+        data.dependencies.merge(subquery_dependencies.dependencies);
+        return;
+    }
+
+    /// A subquery in the right argument of `IN` and the argument of `exists` is not executed during
+    /// the analysis, see `ExecuteScalarSubqueriesMatcher::visit`. What it reads is needed only when
+    /// the constraint is checked, so the table attaches fine without it.
+    const auto * function = ast->as<ASTFunction>();
+    std::optional<size_t> not_executed_argument;
+    if (function)
+    {
+        if (functionIsInOrGlobalInOperator(function->name))
+            not_executed_argument = 1;
+        else if (function->name == "exists")
+            not_executed_argument = 0;
+    }
+
+    for (const auto & child : ast->children)
+    {
+        if (function && child == function->arguments)
+        {
+            const auto & arguments = child->children;
+            for (size_t i = 0; i < arguments.size(); ++i)
+                if (not_executed_argument != i || !arguments[i]->as<ASTSubquery>())
+                    addDependenciesOfExecutedSubqueries(arguments[i], data);
+        }
+        else
+            addDependenciesOfExecutedSubqueries(child, data);
     }
 }
 
@@ -229,8 +281,15 @@ void DDLLoadingDependencyVisitor::extractTableNameFromArgument(const ASTFunction
 
     if (qualified_name.database.empty())
     {
-        /// It can be table/dictionary from default database or XML dictionary, but we cannot distinguish it here.
-        qualified_name.database = data.default_database;
+        /// It can be table/dictionary from the database against which the unqualified names of this
+        /// CREATE query resolve, or an XML dictionary, but we cannot distinguish it here. When the
+        /// definition is read back from metadata written before the names were qualified at CREATE
+        /// time, that database is the one owning the table, which is what
+        /// `qualifyNamesFromLegacyMetadata` resolves the very same name to when the definition is
+        /// attached — the graph must not disagree with the attached storage. Note that this is not
+        /// the default database of the server: that one is only for a nested query executed with
+        /// the global context rather than with the context of the CREATE query.
+        qualified_name.database = data.current_database;
     }
     data.dependencies.emplace(std::move(qualified_name));
 }

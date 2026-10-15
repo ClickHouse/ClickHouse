@@ -4,9 +4,7 @@ title: Cloud でサポートされていない機能
 
 以下の表に、ClickHouse Cloud でサポート対象外とされている機能およびセルフマネージド環境での手順を示します。各エントリには、リンク先のページでサポート対象の機能も扱われている場合でも、サポート対象外の具体的な機能を記載しています。
 
-<div id="unsupported-managed-infrastructure-and-operations">
-  ### マネージドインフラストラクチャと運用
-</div>
+### マネージドインフラストラクチャと運用 {#unsupported-managed-infrastructure-and-operations}
 
 | サポートされていない機能                                | ドキュメント                                                                                                                                 |
 | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
@@ -16,9 +14,7 @@ title: Cloud でサポートされていない機能
 | セルフマネージド環境でのハードウェア性能テストの実行                | [ガイド](/ja/concepts/features/performance/troubleshoot/performance-test)                                                                    |
 | セルフマネージド環境向けの運用に関する推奨事項の適用                | [ガイド](/ja/guides/oss/best-practices/tips)                                                                                                 |
 
-<div id="unsupported-authentication-and-security">
-  ### 認証とセキュリティ
-</div>
+### 認証とセキュリティ {#unsupported-authentication-and-security}
 
 | サポートされていない機能     | ドキュメント                                                                                                                     |
 | ---------------- | -------------------------------------------------------------------------------------------------------------------------- |
@@ -27,9 +23,7 @@ title: Cloud でサポートされていない機能
 | LDAP 認証とロールマッピング | [設定](/ja/concepts/features/security/configuring-ldap), [認証器](/ja/concepts/features/security/external-authenticators/ldap)        |
 | X.509 証明書認証      | [ユーザー認証](/ja/concepts/features/security/ssl-user-auth), [外部認証器](/ja/concepts/features/security/external-authenticators/ssl-x509) |
 
-<div id="unsupported-interfaces-and-integrations">
-  ### インターフェイスとインテグレーション
-</div>
+### インターフェイスとインテグレーション {#unsupported-interfaces-and-integrations}
 
 | サポートされていない機能                          | ドキュメント                                                                                                                                                                                                                                                                                                                                                 |
 | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -40,9 +34,7 @@ title: Cloud でサポートされていない機能
 | MinIO の S3 互換オブジェクトストレージインテグレーション     | [ガイド](/ja/integrations/connectors/data-ingestion/s3-minio)                                                                                                                                                                                                                                                                                                |
 | Tigris の S3 互換オブジェクトストレージインテグレーション    | [ガイド](/ja/integrations/connectors/data-ingestion/s3-tigris)                                                                                                                                                                                                                                                                                               |
 
-<div id="unsupported-database-and-table-engines">
-  ### サポートされていないデータベースおよびテーブルエンジン
-</div>
+### サポートされていないデータベースおよびテーブルエンジン {#unsupported-database-and-table-engines}
 
 | サポートされていない機能                                       | ドキュメント                                                                                                                                                                                                                                                 |
 | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -57,9 +49,7 @@ title: Cloud でサポートされていない機能
 | `YTsaurus` テーブルエンジン                                | [リファレンス](/ja/reference/engines/table-engines/integrations/ytsaurus)                                                                                                                                                                                       |
 | `Log`ファミリーのテーブルエンジン (`Log`、`StripeLog`、`TinyLog`)  | [ファミリーの概要](/ja/reference/engines/table-engines/log-family)、[`Log`](/ja/reference/engines/table-engines/log-family/log)、[`StripeLog`](/ja/reference/engines/table-engines/log-family/stripelog)、[`TinyLog`](/ja/reference/engines/table-engines/log-family/tinylog) |
 
-<div id="unsupported-dictionaries-and-server-configuration">
-  ### Dictionary とサーバー設定
-</div>
+### Dictionary とサーバー設定 {#unsupported-dictionaries-and-server-configuration}
 
 | サポートされていない機能                                                                | ドキュメント                                                                                                                                                                                                               |
 | --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -70,9 +60,7 @@ title: Cloud でサポートされていない機能
 | `YTsaurus` Dictionary ソース                                                   | [リファレンス](/ja/reference/statements/create/dictionary/sources/ytsaurus)                                                                                                                                                   |
 | サーバーで設定された日本語トークナイザー Dictionary                                             | [リファレンス](/ja/reference/engines/table-engines/mergetree-family/textindexes#japanese-tokenizer-dictionary)                                                                                                                |
 
-<div id="unsupported-data-formats-and-codecs">
-  ### サポート対象外のデータフォーマットとコーデック
-</div>
+### サポート対象外のデータフォーマットとコーデック {#unsupported-data-formats-and-codecs}
 
 | サポートされていない機能                                                            | ドキュメント                                                                                                                                                                                   |
 | --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -80,24 +68,19 @@ title: Cloud でサポートされていない機能
 | サーバー側のスキーマファイルを使用する `Protobuf`、`ProtobufList`、`ProtobufSingle` フォーマット | [ガイド](/ja/guides/clickhouse/data-formats/binary#protocol-buffers)、[`ProtobufList`](/ja/reference/formats/Protobuf/ProtobufList)、[`ProtobufSingle`](/ja/reference/formats/Protobuf/ProtobufSingle) |
 | 廃止された `ZSTD_QAT` および `DEFLATE_QPL` コーデック                              | [`ZSTD_QAT`](/ja/reference/statements/create/table#zstd_qat)、[`DEFLATE_QPL`](/ja/reference/statements/create/table#deflate_qpl)                                                                |
 
-<div id="unsupported-functions-and-experimental-features">
-  ### 関数および実験的機能
-</div>
+### 関数および実験的機能 {#unsupported-functions-and-experimental-features}
 
 | サポートされていない機能                                  | ドキュメント                                                                                                                                                                                                                                                                                                                    |
 | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 実験的な自然言語処理関数                                  | [リファレンス](/ja/reference/functions/regular-functions/nlp-functions)                                                                                                                                                                                                                                                            |
 | commit および rollback を伴う実験的なマルチステートメントトランザクション | [ガイド](/ja/concepts/features/operations/insert/transactions#transactions-commit-and-rollback)                                                                                                                                                                                                                                 |
 | 実験的なトランザクションイントロスペクション関数                      | [`transactionID`](/ja/reference/functions/regular-functions/other-functions#transactionID), [`transactionLatestSnapshot`](/ja/reference/functions/regular-functions/other-functions#transactionLatestSnapshot), [`transactionOldestSnapshot`](/ja/reference/functions/regular-functions/other-functions#transactionOldestSnapshot) |
-| `WindowView` 用の時間ウィンドウ関数                      | [リファレンス](/ja/reference/functions/regular-functions/time-window-functions)                                                                                                                                                                                                                                                    |
-| 実験的な `WindowView`                             | [リファレンス](/ja/reference/statements/create/view#window-view)                                                                                                                                                                                                                                                                   |
+| 時間ウィンドウ関数                                     | [リファレンス](/ja/reference/functions/regular-functions/time-window-functions)                                                                                                                                                                                                                                                    |
 | WebAssembly ユーザー定義関数                          | [概要](/ja/reference/functions/regular-functions/udf#webassembly-user-defined-functions), [ガイド](/ja/reference/functions/regular-functions/wasm_udf)                                                                                                                                                                               |
 | ドライバーを利用する実行可能なユーザー定義関数                       | [リファレンス](/ja/reference/functions/regular-functions/udf#driver-based-executable-user-defined-functions)                                                                                                                                                                                                                       |
 | サーバーローカルのファイルに対する `filesystem` テーブル関数         | [リファレンス](/ja/reference/functions/table-functions/filesystem)                                                                                                                                                                                                                                                                 |
 
-<div id="unsupported-administration-and-access-control">
-  ### 管理とアクセス制御
-</div>
+### 管理とアクセス制御 {#unsupported-administration-and-access-control}
 
 | サポートされていない機能                                 | ドキュメント                                                                                                                                              |
 | -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |

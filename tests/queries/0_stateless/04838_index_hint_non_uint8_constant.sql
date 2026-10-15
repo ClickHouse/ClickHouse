@@ -120,6 +120,37 @@ SELECT 'and branch', count() FROM t_index_hint WHERE (id >= 1 AND id <= 3) AND t
 SELECT 'and branch', count() FROM t_index_hint WHERE (id >= 1 AND id <= 3) AND 0.5;
 SELECT 'and branch falsy', count() FROM t_index_hint WHERE (id >= 1 AND id <= 3) AND 0;
 
+-- `indexHint` is row-level TRUE, so `NOT indexHint(...)` is row-level FALSE and only the other
+-- disjunct can match. Index analysis has to claim no more than that: the hint's own condition, left
+-- un-inverted, made granules it matches look like definite matches, and the exact-count
+-- optimization then counted their rows without reading them.
+SELECT 'negated hint', count() FROM t_index_hint WHERE NOT indexHint('x') OR (id >= 1 AND id <= 3);
+SELECT 'negated hint', count() FROM t_index_hint WHERE (NOT indexHint('x')) = 1;
+SELECT 'negated hint', count() FROM t_index_hint WHERE NOT indexHint(id) OR (id >= 1 AND id <= 3)
+SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1;
+-- The inversion also reaches the hint through De Morgan, with no `NOT indexHint` in the text.
+SELECT 'negated hint', count() FROM t_index_hint WHERE NOT (indexHint(id) AND id > 500)
+SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1;
+-- An inverted hint has to contribute a constant false, not merely be dropped: `or(false, <key atom>)`
+-- still prunes on the real conjunct, while a dropped hint leaves the whole condition unknown, which
+-- `force_primary_key` rejects.
+SELECT 'negated hint forces pk', count() FROM t_index_hint
+WHERE NOT indexHint(id) OR (id >= 1 AND id <= 3)
+SETTINGS force_primary_key = 1;
+-- The same inversion push-down serves readers with no granules: `numbers()` builds a key condition
+-- over `number`, and a blank range set there means no rows at all, with no row-level filter left to
+-- correct it.
+SELECT 'negated hint numbers', count() FROM numbers(10) WHERE NOT indexHint('x');
+SELECT 'negated hint numbers', count() FROM numbers(10) WHERE NOT indexHint('x') OR number < 3;
+-- Ranges extracted there are also taken as exact, which is what lets `LIMIT` stop an endless source.
+-- The row limit is the assertion: three rows are read when the range set is exact, a whole block
+-- otherwise.
+SELECT 'negated hint numbers limit', count() FROM (
+    SELECT number FROM system.numbers WHERE NOT indexHint('x') OR number < 3 LIMIT 5)
+SETTINGS max_rows_to_read = 100;
+-- Two inversions cancel before any leaf, so this hint keeps its condition and every row matches.
+SELECT 'negated hint twice', count() FROM t_index_hint WHERE NOT NOT indexHint('x') OR (id >= 1 AND id <= 3);
+
 -- Every analyzer has to read an argument the same way, otherwise adding an index to a table
 -- changes the answer. The primary key, a `minmax` index and a `bloom_filter` index go through
 -- `KeyCondition`; a `set` index has its own evaluator, which used to read a wide integer as false

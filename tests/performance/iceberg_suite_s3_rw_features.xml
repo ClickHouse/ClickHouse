@@ -1,0 +1,83 @@
+<test requires_s3="1">
+    <settings>
+        <allow_insert_into_iceberg>1</allow_insert_into_iceberg>
+        <iceberg_metadata_log_level>none</iceberg_metadata_log_level>
+        <iceberg_delete_data_on_drop>1</iceberg_delete_data_on_drop>
+    </settings>
+    <!-- S3 Iceberg schema, partition, mutation and manifest workloads in isolated namespaces. -->
+    <substitutions>
+        <substitution>
+            <name>database</name>
+            <values><value>iceberg_suite_s3_rw_features</value></values>
+        </substitution>
+        <substitution>
+            <name>engine_function_add_column</name>
+            <values><value>IcebergS3(perf_s3, filename = 'iceberg_suite_s3_rw_features/evo_add_' || toString(toUnixTimestamp64Micro(now64(6))) || '/')</value></values>
+        </substitution>
+        <substitution>
+            <name>engine_function_drop_column</name>
+            <values><value>IcebergS3(perf_s3, filename = 'iceberg_suite_s3_rw_features/evo_drop_' || toString(toUnixTimestamp64Micro(now64(6))) || '/')</value></values>
+        </substitution>
+        <substitution>
+            <name>engine_function_rename_column</name>
+            <values><value>IcebergS3(perf_s3, filename = 'iceberg_suite_s3_rw_features/evo_rename_' || toString(toUnixTimestamp64Micro(now64(6))) || '/')</value></values>
+        </substitution>
+        <substitution>
+            <name>engine_function_partition_identity</name>
+            <values><value>IcebergS3(perf_s3, filename = 'iceberg_suite_s3_rw_features/part_identity_' || toString(toUnixTimestamp64Micro(now64(6))) || '/')</value></values>
+        </substitution>
+        <substitution>
+            <name>engine_function_partition_bucket</name>
+            <values><value>IcebergS3(perf_s3, filename = 'iceberg_suite_s3_rw_features/part_bucket_' || toString(toUnixTimestamp64Micro(now64(6))) || '/')</value></values>
+        </substitution>
+        <substitution>
+            <name>engine_function_update_partition_key_move</name>
+            <values><value>IcebergS3(perf_s3, filename = 'iceberg_suite_s3_rw_features/upd_part_' || toString(toUnixTimestamp64Micro(now64(6))) || '/')</value></values>
+        </substitution>
+        <substitution>
+            <name>engine_function_sort_order_minmax_read</name>
+            <values><value>IcebergS3(perf_s3, filename = 'iceberg_suite_s3_rw_features/sorted_li_' || toString(toUnixTimestamp64Micro(now64(6))) || '/')</value></values>
+        </substitution>
+        <substitution>
+            <name>engine_function_nested_types_write_read</name>
+            <values><value>IcebergS3(perf_s3, filename = 'iceberg_suite_s3_rw_features/nested_t_' || toString(toUnixTimestamp64Micro(now64(6))) || '/')</value></values>
+        </substitution>
+        <substitution>
+            <name>engine_function_many_small_data_files</name>
+            <values><value>IcebergS3(perf_s3, filename = 'iceberg_suite_s3_rw_features/small_files_' || toString(toUnixTimestamp64Micro(now64(6))) || '/')</value></values>
+        </substitution>
+        <substitution>
+            <name>engine_function_update_every_file</name>
+            <values><value>IcebergS3(perf_s3, filename = 'iceberg_suite_s3_rw_features/upd_files_' || toString(toUnixTimestamp64Micro(now64(6))) || '/')</value></values>
+        </substitution>
+        <substitution>
+            <name>engine_function_modify_column</name>
+            <values><value>IcebergS3(perf_s3, filename = 'iceberg_suite_s3_rw_features/evo_promote_' || toString(toUnixTimestamp64Micro(now64(6))) || '/')</value></values>
+        </substitution>
+        <substitution>
+            <name>engine_function_read_after_type_promotion</name>
+            <values><value>IcebergS3(perf_s3, filename = 'iceberg_suite_s3_rw_features/evo_promoted_' || toString(toUnixTimestamp64Micro(now64(6))) || '/')</value></values>
+        </substitution>
+        <substitution>
+            <name>engine_function_delete_position_deletes</name>
+            <values><value>IcebergS3(perf_s3, filename = 'iceberg_suite_s3_rw_features/del_pos_' || toString(toUnixTimestamp64Micro(now64(6))) || '/')</value></values>
+        </substitution>
+        <substitution>
+            <name>engine_function_mor_read_position_deletes</name>
+            <values><value>IcebergS3(perf_s3, filename = 'iceberg_suite_s3_rw_features/del_read_' || toString(toUnixTimestamp64Micro(now64(6))) || '/')</value></values>
+        </substitution>
+        <substitution>
+            <name>engine_function_optimize_manifests</name>
+            <values><value>IcebergS3(perf_s3, filename = 'iceberg_suite_s3_rw_features/many_manifests_' || toString(toUnixTimestamp64Micro(now64(6))) || '/')</value></values>
+        </substitution>
+        <substitution>
+            <name>engine_function_deep_history_scan</name>
+            <values><value>IcebergS3(perf_s3, filename = 'iceberg_suite_s3_rw_features/deep_history_' || toString(toUnixTimestamp64Micro(now64(6))) || '/')</value></values>
+        </substitution>
+        <substitution>
+            <name>engine_function_manifest_grid</name>
+            <values><value>IcebergS3(perf_s3, filename = 'iceberg_suite_s3_rw_features/manifest_grid_' || toString(toUnixTimestamp64Micro(now64(6))) || '/')</value></values>
+        </substitution>
+    </substitutions>
+    <include file="iceberg_suite_shared_rw_features.xml.inc"/>
+</test>

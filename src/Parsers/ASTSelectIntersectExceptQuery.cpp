@@ -145,11 +145,17 @@ void ASTSelectIntersectExceptQuery::readJSON(const Poco::JSON::Object & json)
     /// `formatImpl` would still print it with the operator separator. Reject foreign children
     /// from malformed `clickhouse_json` so the AST cannot format as different SQL than it means.
     for (const auto & child : children)
+    {
         if (!child
             || !(child->as<ASTSelectQuery>()
                  || child->as<ASTSelectWithUnionQuery>()
                  || child->as<ASTSelectIntersectExceptQuery>()))
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Expected only select operands in `SelectIntersectExceptQuery` during AST JSON deserialization");
+        /// `ParserQueryWithOutput` attaches output options to the outermost query only.
+        if (hasQueryOutputOptions(child.get()))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "A set operation element cannot carry query output options during AST JSON deserialization");
+    }
 }
 }

@@ -1,4 +1,5 @@
 import argparse
+import re
 from pathlib import Path
 
 from pip._vendor.packaging.version import Version
@@ -54,6 +55,38 @@ def process_glibc_check():
     return ok
 
 
+def process_pie_check():
+    # Nothing in the build fails when the binary comes out position dependent: -fPIC only makes the
+    # code relocatable, and whether the executable itself is position independent is the linker's
+    # decision, so it is checked on the packaged binary instead.
+    header = Shell.get_output(
+        f"readelf -h --wide {temp_path}/clickhouse", verbose=True, strict=True
+    )
+    elf_type = re.search(r"^\s*Type:\s+(\w+)", header, re.MULTILINE)
+    if not elf_type:
+        print(f"FAILED: no ELF type in the header:\n{header}")
+        return False
+
+    ok = True
+    if elf_type.group(1) != "DYN":
+        print(
+            f"FAILED: ELF type is [{elf_type.group(1)}], a position independent executable is [DYN]"
+        )
+        ok = False
+
+    # A shared library is `DYN` as well, so the type alone does not say that this is a position
+    # independent *executable*. `DF_1_PIE` is what the linker sets for `-pie` and nothing else.
+    dynamic = Shell.get_output(
+        f"readelf -d --wide {temp_path}/clickhouse", verbose=True, strict=True
+    )
+    flags = re.search(r"^.*\(FLAGS_1\)\s+Flags:(.*)$", dynamic, re.MULTILINE)
+    if not flags or "PIE" not in flags.group(1).split():
+        print(f"FAILED: DF_1_PIE is not set: [{flags.group(0).strip() if flags else 'no FLAGS_1'}]")
+        ok = False
+
+    return ok
+
+
 def parse_args():
     parser = argparse.ArgumentParser("Check compatibility with old distributions")
     parser.add_argument("--check-name", required=False)
@@ -94,6 +127,13 @@ def main():
                 command=process_glibc_check,
             )
         )
+
+    test_results.append(
+        Result.from_commands_run(
+            name="position independent executable",
+            command=process_pie_check,
+        )
+    )
 
     if check_old_distributions:
         test_results.append(

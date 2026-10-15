@@ -26,3 +26,27 @@ TEST(QuoteString, PostgreSQL)
     /// the payload must come back as one literal, not as a literal followed by statements.
     EXPECT_EQ(quoteStringPostgreSQL("public'; DROP TABLE t; -- "), "'public''; DROP TABLE t; -- '");
 }
+
+/// `doubleQuoteStringPostgreSQL` is what the PostgreSQL identifier positions embed
+/// attacker-influenced names with (relation, schema, column, publication, replication slot). Inside a
+/// PostgreSQL quoted identifier the only escape is a doubled `"`; a backslash means nothing. So the
+/// property is that `"` is doubled and every other byte, backslash included, is passed through, which
+/// is where `doubleQuoteString` differs: its `\"` ends the identifier and leaves the rest as SQL.
+TEST(QuoteString, PostgreSQLIdentifier)
+{
+    EXPECT_EQ(doubleQuoteStringPostgreSQL("plain"), "\"plain\"");
+    EXPECT_EQ(doubleQuoteStringPostgreSQL("a\"b"), "\"a\"\"b\"");
+
+    /// A backslash is an ordinary byte here, so it must not be doubled the way `doubleQuoteString`
+    /// doubles it: PostgreSQL would then look up a relation whose name has two backslashes.
+    EXPECT_EQ(doubleQuoteStringPostgreSQL("a\\b"), "\"a\\b\"");
+
+    /// The shape from the `MaterializedPostgreSQL(...)` remote-table-name injection: the payload must
+    /// come back as one identifier, not as a truncated identifier followed by statements.
+    EXPECT_EQ(
+        doubleQuoteStringPostgreSQL("a\"; CREATE TABLE injected_marker(x integer); --"),
+        "\"a\"\"; CREATE TABLE injected_marker(x integer); --\"");
+
+    /// A trailing backslash stays literal, so the closing quote still closes the identifier.
+    EXPECT_EQ(doubleQuoteStringPostgreSQL("a\\"), "\"a\\\"");
+}

@@ -1,0 +1,13 @@
+3	3	c
+3	3	c
+3
+3
+suffix still stripped
+1
+1
+1
+1
+suffix kept when the pattern disables dot-all
+33
+33
+1
