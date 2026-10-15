@@ -369,6 +369,11 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
 
     auto & context = tasks.getThreadContext(thread_num);
 
+    /// Kept between the executed tasks, so that memory is not allocated after executing every task.
+    Queue queue;
+    Queue async_queue;
+    ExecutingGraph::UpdateNodeBuffers update_node_buffers;
+
     while (!tasks.isFinished())
     {
         if (resources.reservation && tasks.takeSpillNotification())
@@ -404,20 +409,30 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
             /// Try to execute neighbour processor.
             size_t spawn_count = 0;
             {
-                Queue queue;
-                Queue async_queue;
+                /// The queues are emptied by `pushTasks`, unless it was not called or stopped because the execution is finished.
+                while (!queue.empty())
+                    queue.pop();
+                while (!async_queue.empty())
+                    async_queue.pop();
 
                 /// Prepare processor after execution.
                 bool updated = false;
                 try
                 {
-                    updated = graph->updateNode(*context.getTask(), queue, async_queue) == ExecutingGraph::UpdateNodeStatus::Done;
+                    updated = graph->updateNode(*context.getTask(), queue, async_queue, update_node_buffers) == ExecutingGraph::UpdateNodeStatus::Done;
                 }
                 catch (...)
                 {
                     context.setException(std::current_exception());
                     cancel(IProcessor::CancelReason::Exception);
                 }
+
+                /// Release the buffers of `updateNode` now if they have grown too large,
+                /// because this thread may wait for the next task for a long time.
+                update_node_buffers.reset();
+
+                /// The queues are drained by `pushTasks` but keep their capacity; release it if they have grown too large.
+                bool release_queues = queue.size() + async_queue.size() > ExecutingGraph::UpdateNodeBuffers::max_kept_capacity;
 
                 /// Push other tasks to global queue.
                 if (updated)
@@ -427,6 +442,12 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
                     /// The execution is being cancelled, maybe by a thread that has not finished the tasks yet. The task
                     /// has been prepared again, so it must not be executed again unless the graph schedules it.
                     context.setTask(nullptr);
+                }
+
+                if (release_queues)
+                {
+                    queue = Queue();
+                    async_queue = Queue();
                 }
             }
 
