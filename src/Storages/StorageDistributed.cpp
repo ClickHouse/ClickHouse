@@ -3285,7 +3285,7 @@ The target may also be a table function, e.g. `Remote('127.0.0.1', numbers(10))`
         .related = {"Distributed"}});
 }
 
-bool StorageDistributed::initializeDiskOnConfigChange(const std::set<String> & new_added_disks)
+bool StorageDistributed::initializeDiskOnConfigChange(const std::set<String> & /*new_added_disks*/)
 {
     if (!storage_policy || !data_volume)
         return true;
@@ -3309,14 +3309,23 @@ bool StorageDistributed::initializeDiskOnConfigChange(const std::set<String> & n
                 "keeping the previous storage policy for table {}",
                 disk->getName(), getStorageID().getNameForLogs());
 
-    /// A newly added disk may already hold queued `N.bin` files. Advance `file_names_increment` past
-    /// them before the new policy is published, as `startup` does, so that the next async INSERT
-    /// cannot reuse a number that is already taken on that disk.
-    for (const DiskPtr & disk : new_data_volume->getDisks())
-    {
-        if (!new_added_disks.contains(disk->getName()))
-            continue;
+    /// `new_added_disks` lists the disks that are new to the whole server, but a disk that another
+    /// policy already uses can be newly added to this table's volume as well, and it may already hold
+    /// this table's queued blocks. So compare against the previous volume of this table instead.
+    std::set<String> previous_disk_names;
+    for (const DiskPtr & disk : std::atomic_load(&data_volume)->getDisks())
+        previous_disk_names.insert(disk->getName());
 
+    Disks disks_entering_volume;
+    for (const DiskPtr & disk : new_data_volume->getDisks())
+        if (!previous_disk_names.contains(disk->getName()))
+            disks_entering_volume.push_back(disk);
+
+    /// A disk entering the volume may already hold queued `N.bin` files. Advance `file_names_increment`
+    /// past them and start sending them before the new policy is published, as `startup` does, so that
+    /// the next async INSERT cannot reuse a number that is already taken on that disk.
+    for (const DiskPtr & disk : disks_entering_volume)
+    {
         const String path = disk->getPath() + relative_data_path;
         if (!fs::exists(path))
             continue;
@@ -3328,16 +3337,11 @@ bool StorageDistributed::initializeDiskOnConfigChange(const std::set<String> & n
         }
     }
 
+    for (const DiskPtr & disk : disks_entering_volume)
+        initializeDirectoryQueuesForDisk(disk);
+
     std::atomic_store(&storage_policy, new_storage_policy);
     std::atomic_store(&data_volume, new_data_volume);
-
-    for (auto & disk : data_volume->getDisks())
-    {
-        if (new_added_disks.contains(disk->getName()))
-        {
-            initializeDirectoryQueuesForDisk(disk);
-        }
-    }
 
     return true;
 }
