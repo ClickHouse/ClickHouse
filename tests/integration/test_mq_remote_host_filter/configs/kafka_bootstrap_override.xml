@@ -1,0 +1,5 @@
+<clickhouse>
+    <kafka>
+        <bootstrap_servers>localhost:9999</bootstrap_servers>
+    </kafka>
+</clickhouse>

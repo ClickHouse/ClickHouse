@@ -1,75 +1,19 @@
 #pragma once
 
-#include <algorithm>
-#include <cmath>
 #include <cstddef>
-#include <limits>
 #include <optional>
 #include <utility>
 
-#include <Common/Exception.h>
-#include <Common/NaNUtils.h>
 #include <Common/VectorWithMemoryTracking.h>
-#include <base/sort.h>
 
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesBase.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesSamples.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesSlidingSum.h>
+#include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesSortedValues.h>
 
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
-/// The order of the values inside a window: NaN samples are kept and ordered before every real value, like Prometheus'
-/// `vectorByValueHeap.Less`. It is a strict weak ordering (all NaNs are equivalent), which plain `<` on floats is not.
-template <typename ValueType>
-bool timeseriesQuantileLess(ValueType lhs, ValueType rhs)
-{
-    if (isNaN(lhs))
-        return !isNaN(rhs);
-    return !isNaN(rhs) && lhs < rhs;
-}
-
-/// R-7 (quantileExactInclusive) quantile of `sorted_values`, which must be ordered by `timeseriesQuantileLess`, with the
-/// Prometheus edge cases of the level: NaN gives NaN, a level below 0 gives -Inf and a level above 1 gives +Inf.
-template <typename ValueType>
-std::optional<Float64> computeTimeseriesQuantile(const VectorWithMemoryTracking<ValueType> & sorted_values, Float64 phi)
-{
-    if (sorted_values.empty())
-        return std::nullopt;
-
-    if (std::isnan(phi))
-        return std::numeric_limits<Float64>::quiet_NaN();
-    if (phi < 0.0)
-        return -std::numeric_limits<Float64>::infinity();
-    if (phi > 1.0)
-        return std::numeric_limits<Float64>::infinity();
-
-    const size_t n = sorted_values.size();
-    if (n == 1)
-        return static_cast<Float64>(sorted_values[0]);
-
-    /// rank = phi * (n - 1), interpolated between the neighbouring values.
-    const Float64 rank = phi * static_cast<Float64>(n - 1);
-    const size_t lower = static_cast<size_t>(std::floor(rank));
-    const size_t upper = static_cast<size_t>(std::ceil(rank));
-
-    /// An exact rank gives the sample itself. Prometheus has no such shortcut and computes `lower * 1 + upper * 0`,
-    /// which is NaN when either sample is infinite.
-    if (lower == upper)
-        return static_cast<Float64>(sorted_values[lower]);
-
-    /// The weighted form of Prometheus (`lower * (1 - weight) + upper * weight`) rather than `lower + weight * (upper - lower)`,
-    /// so that infinite samples give the infinity instead of `Inf - Inf = NaN`.
-    const Float64 weight = rank - static_cast<Float64>(lower);
-    const Float64 result = static_cast<Float64>(sorted_values[lower]) * (1.0 - weight) + static_cast<Float64>(sorted_values[upper]) * weight;
-    return result;
-}
 
 template <typename TimestampType_, typename ValueType_>
 struct AggregateFunctionTimeseriesQuantileToGridTraits
@@ -91,59 +35,8 @@ struct AggregateFunctionTimeseriesQuantileToGridTraits
     /// The bucket stores raw samples: the timestamps are needed to collapse duplicate timestamps into one sample.
     using Bucket = Samples;
 
-    /// The values of one bucket, or of the whole window, sorted by `timeseriesQuantileLess`. Merging two summaries is
-    /// a merge of two sorted runs, and a merged summary can be taken out again by a pass over both sorted runs, so the
-    /// `SlidingSum` keeps one running summary of the window and every quantile is read from it without sorting.
-    struct Summary
-    {
-        VectorWithMemoryTracking<ValueType> values;
-
-        /// Adds values in any order.
-        void add(VectorWithMemoryTracking<ValueType> && new_values)
-        {
-            ::sort(new_values.begin(), new_values.end(), timeseriesQuantileLess<ValueType>);
-            if (values.empty())
-            {
-                values = std::move(new_values);
-                return;
-            }
-
-            const size_t old_size = values.size();
-            values.insert(values.end(), new_values.begin(), new_values.end());
-            std::inplace_merge(values.begin(), values.begin() + old_size, values.end(), timeseriesQuantileLess<ValueType>);
-        }
-
-        void merge(const Summary & other)
-        {
-            if (other.values.empty())
-                return;
-
-            const size_t old_size = values.size();
-            values.insert(values.end(), other.values.begin(), other.values.end());
-            std::inplace_merge(values.begin(), values.begin() + old_size, values.end(), timeseriesQuantileLess<ValueType>);
-        }
-
-        /// Removes the values of `leaving`, which was merged before: every value of `leaving` drops one equivalent value.
-        void unmerge(const Summary & leaving, const Summary * /*new_first*/)
-        {
-            size_t kept = 0;
-            size_t leaving_index = 0;
-            for (size_t i = 0; i < values.size(); ++i)
-            {
-                if (leaving_index < leaving.values.size() && !timeseriesQuantileLess(values[i], leaving.values[leaving_index]))
-                {
-                    ++leaving_index;
-                    continue;
-                }
-                values[kept++] = values[i];
-            }
-
-            if (leaving_index != leaving.values.size())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot remove values from the window of timeSeriesQuantileToGrid: they were not added");
-
-            values.resize(kept);
-        }
-    };
+    /// The sorted values of the window, so every quantile is read from them without sorting.
+    using Summary = AggregateFunctionTimeseriesSortedValues<ValueType>;
 
     /// Sliding aggregator: keeps the sorted values of the window and reads the phi-quantile (R-7, inclusive) from them.
     struct Aggregator
@@ -175,7 +68,7 @@ struct AggregateFunctionTimeseriesQuantileToGridTraits
 
         std::optional<ResultType> getResult(GridScaleTimestampType /*grid_timestamp*/, Float64 phi) const
         {
-            return computeTimeseriesQuantile(sliding_sum.getCurrentSum().values, phi);
+            return sliding_sum.getCurrentSum().quantile(phi);
         }
     };
 

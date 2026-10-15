@@ -9,6 +9,7 @@
 
 #include <emmintrin.h>
 
+#include <base/defines.h>
 #include <Common/getMappedArea.h>
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
@@ -42,8 +43,13 @@ namespace
 #    define NO_PROFILE_INSTRUMENTATION
 #endif
 
+/** The two below read and write the return address at a fixed offset from `%rsp`. A
+  * `-fstack-protector-strong` canary sits between the locals and the return address and moves it, so
+  * `8(%rsp)` would then find the canary. Neither has locals today, so neither is instrumented; the
+  * attribute pins that down rather than trusting the heuristic.
+  */
 /// NOLINTNEXTLINE(cert-dcl50-cpp)
-NO_PROFILE_INSTRUMENTATION __attribute__((__noinline__)) int64_t our_syscall(...)
+NO_PROFILE_INSTRUMENTATION NO_STACK_PROTECTOR __attribute__((__noinline__)) int64_t our_syscall(...)
 {
     __asm__ __volatile__ (R"(
         movq %%rdi,%%rax;
@@ -60,7 +66,7 @@ NO_PROFILE_INSTRUMENTATION __attribute__((__noinline__)) int64_t our_syscall(...
 }
 
 
-NO_PROFILE_INSTRUMENTATION __attribute__((__noinline__)) void remapToHugeStep3(void * scratch, size_t size, size_t offset)
+NO_PROFILE_INSTRUMENTATION NO_STACK_PROTECTOR __attribute__((__noinline__)) void remapToHugeStep3(void * scratch, size_t size, size_t offset)
 {
     /// The function should not use the stack, otherwise various optimizations, including "omit-frame-pointer" may break the code.
 

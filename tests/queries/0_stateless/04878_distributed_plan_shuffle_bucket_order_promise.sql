@@ -14,6 +14,9 @@ CREATE TABLE t_shuffle_bucket_order (k UInt64, v UInt64) ENGINE = MergeTree ORDE
 INSERT INTO t_shuffle_bucket_order SELECT number % 50000, number FROM numbers(200000);
 
 SET make_distributed_plan = 1;
+-- This test reads the plan of the rule-based distributed rewrite; the stress runner turns the
+-- Cascades optimizer on for every query, and its plans are pinned by 05210 instead.
+SET enable_cascades_optimizer = 0;
 SET distributed_plan_execute_locally = 1;
 SET distributed_plan_default_shuffle_join_bucket_count = 2;
 -- No statistics, so the strategy choice does not depend on an estimated group count.

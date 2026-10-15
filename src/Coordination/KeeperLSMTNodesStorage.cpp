@@ -3,12 +3,22 @@
 #include <Coordination/Storage/NodeStream.h>
 #include <Coordination/KeeperSnapshotManager.h>
 
+#include <Common/Exception.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
+
+#include <fmt/ranges.h>
+
 #include <shared_mutex>
 
 using namespace Coordination::Storage;
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int CORRUPTED_DATA;
+}
 
 KeeperLSMTNodesStorage::KeeperLSMTNodesStorage(KeeperContextPtr keeper_context_, SharedMutex * storage_mutex_)
     : KeeperNodesStorage(keeper_context_, storage_mutex_), state(keeper_context_, storage_mutex_)
@@ -213,6 +223,52 @@ void KeeperLSMTNodesStorage::loadNodesFromSnapshot(KeeperSnapshotReader & reader
     }
 
     reader.finishStreams(std::move(streams));
+
+    /// Validate the loaded tree the same way `KeeperMemNodesStorage::loadNodesFromSnapshot` does.
+    /// A root-less snapshot must never be accepted: `KeeperStorage::loadFromSnapshot` would call
+    /// `initializeSystemNodes` afterwards and silently recreate `"/"`, so Keeper would start with a
+    /// damaged (possibly empty) database instead of failing with an actionable error.
+    if (!state.getCommittedNode(NodePath("/").withCalculatedHash()))
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA,
+            "Snapshot is missing the root node '/'. Refusing to load it: Keeper would start with a damaged database. "
+            "Restore Keeper from a valid snapshot or from the changelog");
+
+    /// Orphaned nodes (nodes whose parent is absent from the snapshot) mean the snapshot lost part
+    /// of the tree. Automatic cleanup (`keeper_server.remove_orphaned_nodes_on_startup`) is
+    /// implemented only by the in-memory nodes storage (the combination with `use_lsmt_storage` is
+    /// rejected in `KeeperContext::initialize`), so here any orphan is a hard error.
+    size_t orphaned_nodes = 0;
+    std::vector<std::string> orphan_examples;
+    SnapshotWriterNodeStream node_stream(state);
+    while (true)
+    {
+        node_stream.next();
+        if (node_stream.at_end)
+            break;
+
+        const std::string_view path = node_stream.node.path.str();
+        if (path == "/")
+            continue;
+
+        if (!state.getCommittedNode(NodePath(Coordination::parentNodePath(path)).withCalculatedHash()))
+        {
+            ++orphaned_nodes;
+            if (orphan_examples.size() < 10)
+                orphan_examples.emplace_back(path);
+        }
+    }
+
+    if (orphaned_nodes != 0)
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA,
+            "Found {} orphaned nodes (nodes whose parent is absent) in snapshot, e.g. [{}]. Automatic removal "
+            "('keeper_server.remove_orphaned_nodes_on_startup') is only supported by the in-memory nodes storage. "
+            "To recover, set 'keeper_server.coordination_settings.use_lsmt_storage' to false, "
+            "'keeper_server.remove_orphaned_nodes_on_startup' to true and 'keeper_server.digest_enabled' to false, then restart; "
+            "'use_lsmt_storage' can be re-enabled after a successful startup",
+            orphaned_nodes,
+            fmt::join(orphan_examples, ", "));
 }
 
 struct KeeperLSMTNodesStorage::NodesReadView final : public KeeperNodesReadView
