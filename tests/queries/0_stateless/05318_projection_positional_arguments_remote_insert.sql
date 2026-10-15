@@ -1,3 +1,6 @@
+-- Tags: no-random-detach
+-- no-random-detach: `ATTACH` analyzes the projection with the server settings, where `enable_positional_arguments_for_projections`
+-- is disabled, so the positional `GROUP BY 1` makes it fail and the table cannot be attached back.
 -- A projection whose `GROUP BY` uses positional arguments must be calculated correctly when the data
 -- comes from a remote `INSERT`, which is executed on the receiving server as a `SECONDARY_QUERY`.
 -- The Analyzer does not resolve positional arguments of a secondary query by itself, because it
