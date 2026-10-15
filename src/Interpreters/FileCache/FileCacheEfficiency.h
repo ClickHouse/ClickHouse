@@ -63,10 +63,15 @@ public:
         }
     };
 
-    /// No-op unless `segment_window` is the current window.
-    void addPassiveBytes(Window segment_window, Int64 bytes, bool large);
-    /// Under one lock, so that a rotation sees all of `delta` or none of it. No-op unless `segment_window` is the current window.
-    void apply(Window segment_window, const Delta & delta);
+    /// Changes the sizes that `get_bytes` and `get_large_bytes` return. It runs under the lock of the counter update,
+    /// so that a rotation sees the new sizes and the new counters together, and it runs even if the window is stale.
+    using UpdateSizes = std::function<void()>;
+
+    /// No-op unless `segment_window` is the current window, except `update_sizes`.
+    void addPassiveBytes(Window segment_window, Int64 bytes, bool large, const UpdateSizes & update_sizes = {});
+    /// Under one lock, so that a rotation sees all of `delta` or none of it. No-op unless `segment_window` is the current
+    /// window, except `update_sizes`.
+    void apply(Window segment_window, const Delta & delta, const UpdateSizes & update_sizes = {});
 
     /// `reserved_bytes` become passive if the read starts a new window for the file segment.
     struct SegmentRead

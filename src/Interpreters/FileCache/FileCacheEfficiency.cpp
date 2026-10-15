@@ -80,9 +80,11 @@ void FileCacheEfficiency::rotateIfNeeded(Window now_window)
     window = now_window;
 }
 
-void FileCacheEfficiency::addPassiveBytes(Window segment_window, Int64 bytes, bool large)
+void FileCacheEfficiency::addPassiveBytes(Window segment_window, Int64 bytes, bool large, const UpdateSizes & update_sizes)
 {
     std::lock_guard lock(mutex);
+    if (update_sizes)
+        update_sizes();
     if (segment_window != window)
         return;
     stats.passive += bytes;
@@ -90,9 +92,11 @@ void FileCacheEfficiency::addPassiveBytes(Window segment_window, Int64 bytes, bo
         large_stats.passive += bytes;
 }
 
-void FileCacheEfficiency::apply(Window segment_window, const Delta & delta)
+void FileCacheEfficiency::apply(Window segment_window, const Delta & delta, const UpdateSizes & update_sizes)
 {
     std::lock_guard lock(mutex);
+    if (update_sizes)
+        update_sizes();
     if (segment_window != window)
         return;
     stats.active += delta.active;

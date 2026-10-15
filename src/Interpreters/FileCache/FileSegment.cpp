@@ -1588,10 +1588,15 @@ void FileSegment::addReservedSize(Int64 delta)
     apply();
     if (removed_from_cache)
         return;
-    cache->getSegmentSizes().add(size_class, counted_in_segment_sizes ? 0 : 1, delta);
-    counted_in_segment_sizes = true;
+    auto update_sizes = [&sizes = cache->getSegmentSizes(), segment_class = size_class, new_segments = counted_in_segment_sizes ? 0 : 1, delta]
+    {
+        sizes.add(segment_class, new_segments, delta);
+    };
     if (efficiency)
-        efficiency->addReservedBytes(cache->getEfficiency(), delta, size_class.large);
+        efficiency->addReservedBytes(cache->getEfficiency(), delta, size_class.large, update_sizes);
+    else
+        update_sizes();
+    counted_in_segment_sizes = true;
 }
 
 void FileSegment::onLoadedIntoCache()
@@ -1611,13 +1616,17 @@ void FileSegment::onRangeShrunk(size_t old_range_size)
     std::lock_guard lock(efficiency_mutex);
     const auto new_class = cache->getSegmentSizes().getClass(range().size());
     const auto bytes = static_cast<Int64>(reserved_size.load());
-    if (counted_in_segment_sizes)
+    auto update_sizes = [&sizes = cache->getSegmentSizes(), counted = counted_in_segment_sizes, old_class = size_class, new_class, bytes]
     {
-        cache->getSegmentSizes().add(size_class, -1, -bytes);
-        cache->getSegmentSizes().add(new_class, 1, bytes);
-    }
+        if (!counted)
+            return;
+        sizes.add(old_class, -1, -bytes);
+        sizes.add(new_class, 1, bytes);
+    };
     if (efficiency)
-        efficiency->shrink(cache->getEfficiency(), old_range_size, range().size(), bytes, size_class.large, new_class.large);
+        efficiency->shrink(cache->getEfficiency(), old_range_size, range().size(), bytes, size_class.large, new_class.large, update_sizes);
+    else
+        update_sizes();
     size_class = new_class;
 }
 
@@ -1627,11 +1636,17 @@ void FileSegment::onRemovedFromCache(const FileSegmentGuard::Lock &)
         return;
     std::lock_guard lock(efficiency_mutex);
     removed_from_cache = true;
-    if (counted_in_segment_sizes)
-        cache->getSegmentSizes().add(size_class, -1, -static_cast<Int64>(reserved_size.load()));
-    counted_in_segment_sizes = false;
+    const auto bytes = static_cast<Int64>(reserved_size.load());
+    auto update_sizes = [&sizes = cache->getSegmentSizes(), counted = counted_in_segment_sizes, segment_class = size_class, bytes]
+    {
+        if (counted)
+            sizes.add(segment_class, -1, -bytes);
+    };
     if (efficiency)
-        efficiency->remove(cache->getEfficiency(), range().size(), static_cast<Int64>(reserved_size.load()), size_class.large);
+        efficiency->remove(cache->getEfficiency(), range().size(), bytes, size_class.large, update_sizes);
+    else
+        update_sizes();
+    counted_in_segment_sizes = false;
 }
 
 bool FileSegment::wasServedFromCache() const

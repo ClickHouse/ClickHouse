@@ -24,10 +24,15 @@ public:
 
     void markRead(FileCacheEfficiency & cache_efficiency, ByteRange range, ByteRange read, Int64 reserved_bytes, bool large);
 
-    void addReservedBytes(FileCacheEfficiency & cache_efficiency, Int64 delta, bool large) const;
+    /// `update_sizes` changes the sizes of the file segment in the cache under the same lock as the counters.
+    void addReservedBytes(FileCacheEfficiency & cache_efficiency, Int64 delta, bool large, const FileCacheEfficiency::UpdateSizes & update_sizes) const;
     /// The range shrank from `old_range_size`: the last granule is cut at the new end, and the size class may change.
-    void shrink(FileCacheEfficiency & cache_efficiency, size_t old_range_size, size_t range_size, Int64 reserved_bytes, bool was_large, bool large) const;
-    void remove(FileCacheEfficiency & cache_efficiency, size_t range_size, Int64 reserved_bytes, bool large) const;
+    void shrink(
+        FileCacheEfficiency & cache_efficiency, size_t old_range_size, size_t range_size, Int64 reserved_bytes, bool was_large, bool large,
+        const FileCacheEfficiency::UpdateSizes & update_sizes) const;
+    void remove(
+        FileCacheEfficiency & cache_efficiency, size_t range_size, Int64 reserved_bytes, bool large,
+        const FileCacheEfficiency::UpdateSizes & update_sizes) const;
 
     FileSegmentEfficiencyInfo getInfo(FileCacheEfficiency::Window current_window, size_t range_size, size_t downloaded_size) const;
 
