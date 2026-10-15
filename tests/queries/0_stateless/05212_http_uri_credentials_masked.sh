@@ -106,4 +106,24 @@ else
     echo "body_not_overmasked: FAIL mangled"
 fi
 
+# 7. A bearer token that the remote server reflects in its error body must be scrubbed. The URL
+#    authenticates through its parameters, which take precedence over the 'Authorization' header, so the
+#    remote runs the query and throwIf echoes the token; concat() keeps the token out of the URI, so the
+#    body is its only carrier. Also covers the scheme spellings an HTTP peer accepts: a leading space and
+#    lower case. Grep the "Received error from remote server" line: the client echoes the submitted query.
+TOK="tok${CLICKHOUSE_TEST_UNIQUE_NAME}"
+for CASE in "plain|Bearer" "leading_space| Bearer" "lower_case|bearer"; do
+    LABEL="${CASE%%|*}"
+    SCHEME="${CASE#*|}"
+    T_OUT=$(${CLICKHOUSE_CLIENT} --query "SELECT * FROM url('http://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/?user=default&query=SELECT+throwIf(1,concat(''tok'',''${CLICKHOUSE_TEST_UNIQUE_NAME}''))', 'CSV', 'x UInt8', headers('Authorization' = '${SCHEME} ${TOK}')) SETTINGS http_max_tries = 1" 2>&1 \
+        | grep -F 'Received error from remote server')
+    if echo "$T_OUT" | grep -qF "$TOK"; then
+        echo "bearer_body_scrubbed_${LABEL}: FAIL cleartext"
+    elif echo "$T_OUT" | grep -qF '[HIDDEN]'; then
+        echo "bearer_body_scrubbed_${LABEL}: OK"
+    else
+        echo "bearer_body_scrubbed_${LABEL}: FAIL no reflected body"
+    fi
+done
+
 ${CLICKHOUSE_CLIENT} --query "DROP DICTIONARY IF EXISTS dict_uri_leak"
