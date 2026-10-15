@@ -4,6 +4,7 @@
 #include <Common/typeid_cast.h>
 #include <Analyzer/TableNode.h>
 #include <Core/QualifiedTableName.h>
+#include <Core/Settings.h>
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
@@ -39,6 +40,13 @@ namespace ErrorCodes
 
 extern const int NOT_IMPLEMENTED;
 extern const int UNKNOWN_TABLE;
+
+}
+
+namespace Setting
+{
+
+extern const SettingsBool allow_experimental_table_namespaces;
 
 }
 
@@ -671,7 +679,24 @@ private:
     {
         /// Already has database.
         if (identifier.compound())
+        {
+            if (!context->getSettingsRef()[Setting::allow_experimental_table_namespaces])
+                return;
+
+            auto table_node = IdentifierResolver::tryResolveTableIdentifier(Identifier(identifier.name()), context);
+            if (!table_node)
+                throw Exception(ErrorCodes::UNKNOWN_TABLE, "Unknown table {} in the query", identifier.name());
+            auto storage_id = table_node->getStorageID();
+
+            auto qualified_identifier = make_intrusive<ASTTableIdentifier>(
+                storage_id.getDatabaseName(),
+                storage_id.getTableName());
+
+            if (!identifier.alias.empty())
+                qualified_identifier->setAlias(identifier.alias);
+            ast = qualified_identifier;
             return;
+        }
         /// A parameterized name is only known when the view is called, and it has no
         /// resolvable name to qualify here.
         if (identifier.isParam())
@@ -683,14 +708,9 @@ private:
         if (isWithAlias(identifier.name()))
             return;
 
-        auto table_node = IdentifierResolver::tryResolveTableIdentifier(Identifier(identifier.name()), context);
-        if (!table_node)
-            throw Exception(ErrorCodes::UNKNOWN_TABLE, "Unknown table {} in the query", identifier.name());
-        auto storage_id = table_node->getStorageID();
+        auto [database_name, table_name] = current_database.rebase(identifier.name());
 
-        auto qualified_identifier = make_intrusive<ASTTableIdentifier>(
-            storage_id.getDatabaseName(),
-            storage_id.getTableName());
+        auto qualified_identifier = make_intrusive<ASTTableIdentifier>(database_name, table_name);
         if (!identifier.alias.empty())
             qualified_identifier->setAlias(identifier.alias);
         ast = qualified_identifier;
