@@ -42,6 +42,7 @@
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ErrnoException.h>
+#include <Common/FailPoint.h>
 #include <Common/assert_cast.h>
 #include <Common/computeMaxTableNameLength.h>
 #include <Common/escapeForFileName.h>
@@ -89,6 +90,12 @@ namespace ErrorCodes
     extern const int TOO_MANY_TABLES;
     extern const int BAD_ARGUMENTS;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    extern const char database_remove_detached_permanently_flag_fail[];
 }
 
 
@@ -358,6 +365,10 @@ void DatabaseOnDisk::removeDetachedPermanentlyFlag(ContextPtr, const String & ta
     try
     {
         fs::path detached_permanently_flag(table_metadata_path + detached_suffix);
+        fiu_do_on(FailPoints::database_remove_detached_permanently_flag_fail,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected fault: failed to remove the permanent-detach flag");
+        });
         db_disk->removeFileIfExists(detached_permanently_flag);
     }
     catch (Exception & e)

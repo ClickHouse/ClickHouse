@@ -2782,8 +2782,12 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 
         /// The table is permanent, so it must hold its named collection (if any) the same way a table
         /// engine does: `DROP NAMED COLLECTION` is blocked while the table exists.
+        /// The table function looked the collection up without registering a dependency, so a concurrent
+        /// `DROP NAMED COLLECTION` may have removed it since then. Re-check its existence atomically with
+        /// the registration (under the same mutex as the final check of the drop): otherwise the create
+        /// could commit metadata that references a collection which no longer exists.
         if (const auto collection_name = table_function->getUsedNamedCollectionName(); !collection_name.empty())
-            NamedCollectionFactory::instance().addDependency(collection_name, res->getStorageID());
+            NamedCollectionFactory::instance().getAndAddDependency(collection_name, /*throw_unknown_collection=*/ true, res->getStorageID());
         /// A nested table function target, e.g. `remote('addr', url(nc, ...))`, is persisted along with
         /// the outer function and can reference collections of its own.
         if (const auto * table_function_node = table_function_ast->as<ASTFunction>())
@@ -2864,7 +2868,18 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         attach_from_lock
             = res->lockExclusively(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
 
-    database->createTable(getContext(), create.getTable(), res, query_ptr);
+    try
+    {
+        database->createTable(getContext(), create.getTable(), res, query_ptr);
+    }
+    catch (...)
+    {
+        /// An exception does not prove that the table was not published: e.g. `DatabaseOnDisk::createTable`
+        /// commits the table and only then removes the permanent-detach flag, which can throw. A table that
+        /// is in the database keeps its metadata, so it must keep its named collection dependencies.
+        committed = database->isTableExist(create.getTable(), getContext());
+        throw;
+    }
     committed = true;
 
     /// Move table data to the proper place. Wo do not move data earlier to avoid situations

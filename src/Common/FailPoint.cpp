@@ -396,6 +396,7 @@ static struct InitFiu
     ONCE(drop_database_fail_before_drop) \
     ONCE(attach_database_fail_after_load) \
     PAUSEABLE_ONCE(create_table_pause_before_commit) \
+    ONCE(database_remove_detached_permanently_flag_fail) \
     PAUSEABLE_ONCE(rename_database_after_dependency_check) \
     PAUSEABLE_ONCE(create_or_replace_before_rename) \
     REGULAR(atomic_populate_fail_before_subscription) \
