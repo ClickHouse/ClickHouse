@@ -251,6 +251,9 @@ namespace Net
         void setMutex(std::unique_ptr<SecureSocketImpl::RecursiveMutex> mutex);
         /// Replace the lock guarding SSL operations on the underlying impl.
 
+        void setIndependentReadWrite(bool flag);
+        /// See `SecureSocketImpl::setIndependentReadWrite`.
+
 
     protected:
         void acceptSSL();

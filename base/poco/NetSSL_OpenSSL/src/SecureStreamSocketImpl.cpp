@@ -279,4 +279,10 @@ void SecureStreamSocketImpl::setMutex(std::unique_ptr<SecureSocketImpl::Recursiv
 }
 
 
+void SecureStreamSocketImpl::setIndependentReadWrite(bool flag)
+{
+    _impl.setIndependentReadWrite(flag);
+}
+
+
 } } // namespace Poco::Net

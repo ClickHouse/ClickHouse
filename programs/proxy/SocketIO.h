@@ -92,6 +92,12 @@ public:
 
     void setTimeouts(UInt64 receive_ms, UInt64 send_ms);
 
+    /// Prepare the socket to be read by one fiber while another one writes to it, as a relay does.
+    /// On a TLS-terminated socket, a read waiting for data otherwise holds the lock of the TLS session,
+    /// so a write from the other direction cannot proceed until the read returns, and a read would be
+    /// bounded by the send timeout. The socket must not be closed while either fiber still uses it.
+    void enableFullDuplex();
+
     /// Bound the whole handshake of an accepted connection by @p timeout_ms (see `HandshakeDeadline`).
     void armHandshakeDeadline(UInt64 timeout_ms);
     /// The handshake is over: the connection is no longer bounded by the handshake deadline.

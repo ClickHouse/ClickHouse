@@ -197,6 +197,17 @@ void FiberSocket::setTimeouts(UInt64 receive_ms, UInt64 send_ms)
     socket.setSendTimeout(ms(send_ms));
 }
 
+void FiberSocket::enableFullDuplex()
+{
+#if USE_SSL
+    if (is_plaintext)
+        return;
+    auto * impl = dynamic_cast<Poco::Net::SecureStreamSocketImpl *>(socket.impl());
+    chassert(impl);
+    impl->setIndependentReadWrite(true);
+#endif
+}
+
 void FiberSocket::close()
 {
     disarmHandshakeDeadline();

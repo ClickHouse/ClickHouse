@@ -211,6 +211,9 @@ void runRelay(
     client.disarmHandshakeDeadline();
     client.setTimeouts(/*receive_ms=*/ 0, send_timeout_ms);
     backend_socket.setTimeouts(/*receive_ms=*/ 0, send_timeout_ms);
+    /// The two directions below read and write each socket concurrently.
+    client.enableFullDuplex();
+    backend_socket.enableFullDuplex();
 
     /// Handshake bytes the proxy already parsed live in user space; forward them with a normal write.
     if (!initial_to_backend.empty())
