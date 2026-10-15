@@ -45,5 +45,5 @@ cat "$DATA/example_cdf1.nc" | $CLICKHOUSE_LOCAL -q "SELECT sum(temp) FROM table"
 
 echo "--- errors"
 $CLICKHOUSE_LOCAL -q "SELECT * FROM file('$DATA/netcdf4.nc', NetCDF)" 2>&1 | grep -c "NetCDF-4"
-$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$DATA/example_cdf1.nc', NetCDF, 'no_such_variable Int32')" 2>&1 | grep -c "THERE_IS_NO_COLUMN"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$DATA/example_cdf1.nc', NetCDF, 'no_such_variable Int32') SETTINGS input_format_netcdf_allow_missing_columns = 0" 2>&1 | grep -c "THERE_IS_NO_COLUMN"
 echo -n "not a netcdf file at all" | $CLICKHOUSE_LOCAL -q "SELECT * FROM table" --input-format NetCDF --structure "x Int32" 2>&1 | grep -c "INCORRECT_DATA"

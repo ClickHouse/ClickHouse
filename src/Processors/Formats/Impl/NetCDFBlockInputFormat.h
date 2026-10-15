@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/BlockMissingValues.h>
 #include <Core/NamesAndTypes.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/NetCDF.h>
