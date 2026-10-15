@@ -311,6 +311,10 @@ private:
     {
         QueryPlan plan;
         QueryProcessingStage::Enum stage;
+        /// Set for a child aggregated by keys of other types than the `Merge` table.
+        bool forget_aggregation_buckets = false;
+        /// Set when the child's plan was built by the interpreter, which applies the child's row policy itself.
+        bool applies_row_policy = false;
     };
 
     /// Answer of `getExpandableReads`, unset until it is asked for. The parallel-replicas pass asks first
@@ -359,7 +363,8 @@ private:
         const RowPolicyDataOpt & row_policy_data_opt,
         ContextPtr context,
         ChildPlan & child,
-        bool is_smallest_column_requested);
+        bool is_smallest_column_requested,
+        const Names & column_names_read);
 
     StorageMerge::StorageListWithLocks getSelectedTables(
         ContextPtr query_context) const;

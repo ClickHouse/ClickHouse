@@ -11,6 +11,8 @@
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/Prometheus/CreateQueryTimeSeriesSettings.h>
+#include <Parsers/Prometheus/TimeSeriesVersion.h>
 #include <Parsers/stripQuerySettings.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
@@ -55,9 +57,6 @@
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Storages/StorageTimeSeries.h>
-#include <Storages/TimeSeries/TimeSeriesSettings.h>
-#include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
 
 #include <Interpreters/Context.h>
@@ -113,6 +112,8 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 
+#include "config.h"
+
 
 namespace CurrentMetrics
 {
@@ -126,6 +127,8 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsUInt64 max_expanded_ast_elements;
+    extern const SettingsBool enable_xgboost;
     extern const SettingsBool allow_experimental_database_materialized_postgresql;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool allow_statistics;
@@ -173,6 +176,7 @@ namespace FailPoints
     extern const char atomic_populate_pause_after_view_publication[];
     extern const char atomic_populate_pause_before_source_guard[];
     extern const char atomic_populate_pause_before_population[];
+    extern const char attach_from_path_pause_before_relocation[];
 }
 
 namespace ErrorCodes
@@ -229,14 +233,9 @@ size_t getNumberOfTablesToCreate(const ASTCreateQuery & create, LoadingStrictnes
 
     if (create.is_time_series_table)
     {
-        for (auto target_kind : StorageTimeSeries::getTargetKinds())
-        {
-            /// The recent samples target exists only if the create query has a `RECENT SAMPLES` clause.
-            if ((target_kind == ViewTarget::RecentSamples) && (!create.targets || !create.targets->tryGetTarget(target_kind)))
-                continue;
-            if (!create.hasTargetTableID(target_kind))
-                ++result;
-        }
+        /// The query must be already normalized here (see getTablePropertiesAndNormalizeCreateQuery).
+        chassert(hasExplicitTimeSeriesVersion(create));
+        result += countTimeSeriesInnerTables(create);
     }
 
     return result;
@@ -1821,7 +1820,9 @@ void addTableDependencies(const ASTCreateQuery & create, const ASTPtr & query_pt
 void checkTableCanBeAddedWithNoCyclicDependencies(const ASTCreateQuery & create, const ASTPtr & query_ptr, const ContextPtr & context)
 {
     QualifiedTableName qualified_name{create.getDatabase(), create.getTable()};
-    auto ref_dependencies = getDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase(), /*can_throw*/true);
+    auto ref_dependencies = getDependenciesFromCreateQuery(
+        context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase(), /*can_throw*/true,
+        /*validate_current_database*/true, context->getSettingsRef()[Setting::max_expanded_ast_elements]);
     auto loading_dependencies = getLoadingDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase(), /*can_throw*/true);
     DatabaseCatalog::instance().checkTableCanBeAddedWithNoCyclicDependencies(qualified_name, ref_dependencies.dependencies, loading_dependencies);
 }
@@ -1832,6 +1833,26 @@ bool isReplicated(const ASTStorage & storage)
         return false;
     const auto & storage_name = storage.engine->name;
     return storage_name.starts_with("Replicated") || storage_name.starts_with("Shared");
+}
+
+/// Blocks dictionary creation in case `enable_xgboost` is disabled, or when ClickHouse wasn't built
+/// with XGBoost support
+void checkXGBoostLayoutIsAllowed(const ASTCreateQuery & create, [[maybe_unused]] const ContextPtr & context)
+{
+    if (!(create.is_dictionary && create.dictionary && create.dictionary->layout
+          && Poco::toLower(create.dictionary->layout->layout_type) == "xgboost"))
+        return;
+
+#if USE_XGBOOST
+    if (!context->getSettingsRef()[Setting::enable_xgboost])
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "The XGBOOST dictionary layout is experimental. Set `enable_xgboost = 1` to enable it");
+#else
+    throw Exception(
+        ErrorCodes::SUPPORT_IS_DISABLED,
+        "The XGBOOST dictionary layout is unavailable, because ClickHouse was built without XGBoost support");
+#endif
 }
 
 /// The drop privilege matching the kind of an existing table.
@@ -1868,6 +1889,12 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     bool is_secondary_query = getContext()->getZooKeeperMetadataTransaction() && !getContext()->getZooKeeperMetadataTransaction()->isInitialQuery();
     auto mode = getLoadingStrictnessLevel(create.attach, /*force_attach*/ false, /*has_force_restore_data_flag*/ false, is_secondary_query || is_restore_from_backup);
+
+    /// A full-definition `ATTACH DICTIONARY` is user input as well, so it is gated like `CREATE DICTIONARY`.
+    /// A short `ATTACH` carries no layout here (the stored definition is read below), and a restore or a
+    /// replay on a secondary replica runs under `SECONDARY_CREATE`, so both stay exempt.
+    if (isFreshTableDefinition(mode, create.attach_short_syntax))
+        checkXGBoostLayoutIsAllowed(create, getContext());
 
     if (!create.sql_security && create.supportSQLSecurity() && (create.refresh_strategy || !getContext()->getServerSettings()[ServerSetting::ignore_empty_sql_security_in_create_view_query]))
         create.set(create.sql_security, make_intrusive<ASTSQLSecurity>());
@@ -2064,7 +2091,17 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                 create.is_materialized_view ? "MATERIALIZED VIEW" : "VIEW");
 
         // Expand CTE before filling default database
-        ApplyWithSubqueryVisitor::visit(*create.select);
+        /// A definition replayed from metadata or restored from a backup was bounded when it was created.
+        /// A full `ATTACH ... AS SELECT` is user input, so it is bounded as well, and so is a fresh `CREATE`
+        /// executed on a follower replica of a `Replicated` database: it carries the settings of the initial
+        /// query, and no earlier pass on this replica has expanded it.
+        const bool is_fresh_secondary_create = mode == LoadingStrictnessLevel::SECONDARY_CREATE && is_secondary_query
+            && !is_restore_from_backup && !getContext()->isRecoveryFromStoredMetadata();
+        ApplyWithSubqueryVisitor::visit(
+            *create.select,
+            isFreshTableDefinition(mode, create.attach_short_syntax) || is_fresh_secondary_create
+                ? getContext()->getSettingsRef()[Setting::max_expanded_ast_elements].value
+                : 0);
         AddDefaultDatabaseVisitor visitor(getContext(), current_database);
         visitor.visit(*create.select);
     }
@@ -2754,12 +2791,23 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         }
     }
 
+    /// rename() requires the exclusive lock, and createTable() makes the table visible to other queries.
+    TableExclusiveLockHolder attach_from_lock;
+    if (from_path)
+        attach_from_lock
+            = res->lockExclusively(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
+
     database->createTable(getContext(), create.getTable(), res, query_ptr);
 
     /// Move table data to the proper place. Wo do not move data earlier to avoid situations
     /// when data directory moved, but table has not been created due to some error.
     if (from_path)
+    {
+        FailPointInjection::pauseFailPoint(FailPoints::attach_from_path_pause_before_relocation);
         res->rename(actual_data_path, {create.getDatabase(), create.getTable(), create.uuid});
+    }
+    /// Released before startup(), which is not part of the rename contract.
+    attach_from_lock.release();
 
     /// We must call "startup" and "shutdown" while holding DDLGuard.
     /// Because otherwise method "shutdown" (from InterpreterDropQuery) can be called before startup
@@ -3256,6 +3304,17 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTemporaryTable(ASTCreateQuery &
     return fillTableIfNeeded(create);
 }
 
+namespace
+{
+/// The population's own `SETTINGS` are reapplied on top of its context under the names they were written with.
+constexpr std::array<std::string_view, 3> settings_sending_population_to_other_servers
+{
+    "allow_experimental_parallel_reading_from_replicas",
+    "enable_parallel_replicas",
+    "parallel_distributed_insert_select",
+};
+}
+
 BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create, const String & published_table_name)
 {
     /// A non-empty `published_table_name` means `create.getTable()` is the internal temporary name of
@@ -3271,10 +3330,22 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create,
         insert->table_id = {create.getDatabase(), create.getTable(), create.uuid};
         insert->select = create.select->clone();
 
+        ContextMutablePtr insert_context = getContext();
+        /// Every replica of a `Replicated` database executes this entry and fills its own copy of the table, so the population
+        /// must neither read through parallel replicas nor be sent to other servers as a distributed `INSERT`.
+        if (getContext()->getZooKeeperMetadataTransaction())
+        {
+            auto local_context = Context::createCopy(getContext());
+            local_context->setSetting("parallel_distributed_insert_select", Field{0});
+            local_context->setSetting("enable_parallel_replicas", Field{0});
+            removeSettingsFromQuery(insert->select, settings_sending_population_to_other_servers);
+            insert_context = local_context;
+        }
+
         InterpreterInsertQuery interpreter(
             insert,
-            getContext(),
-            getContext()->getSettingsRef()[Setting::insert_allow_materialized_columns],
+            insert_context,
+            insert_context->getSettingsRef()[Setting::insert_allow_materialized_columns],
             /* no_squash */ false,
             /* no_destination */ false,
             /* async_isnert */ false);
@@ -3368,6 +3439,20 @@ bool InterpreterCreateQuery::shouldPopulateMaterializedViewAtomically(const ASTC
             backQuoteIfNeed(create.getDatabase()), backQuoteIfNeed(create.getTable()));
         return false;
     }
+
+#if CLICKHOUSE_CLOUD
+    /// In a Shared database the view is committed to the catalog only after the population, so no replica can
+    /// subscribe to it in time and the local cut cannot deliver rows exactly once.
+    if (SharedDatabaseCatalog::isInitialQuery(getContext()))
+    {
+        LOG_INFO(getLogger("InterpreterCreateQuery"),
+            "Populating materialized view {}.{} non-atomically because it is created in a Shared database, "
+            "where the population cannot be cut consistently across replicas. "
+            "Rows inserted into the source during the population may be missed.",
+            backQuoteIfNeed(create.getDatabase()), backQuoteIfNeed(create.getTable()));
+        return false;
+    }
+#endif
 
     return true;
 }
@@ -3695,8 +3780,8 @@ void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, Cont
 
     /// With an old DDL entry format the query is shipped un-normalized, so hosts running different releases
     /// of ClickHouse would pin different latest versions. Pin the initiator's one here, like the UUIDs above.
-    if (create.is_time_series_table && !hasExplicitTimeSeriesSettingVersion(create))
-        setTimeSeriesSettingVersion(create, TimeSeriesVersion::LATEST);
+    if (create.is_time_series_table && !hasExplicitTimeSeriesVersion(create))
+        setTimeSeriesVersion(create, TimeSeriesVersion::LATEST);
 
     /// For cross-replication cluster we cannot use UUID in replica path.
     String cluster_name_expanded = local_context->getMacros()->expand(cluster_name);
