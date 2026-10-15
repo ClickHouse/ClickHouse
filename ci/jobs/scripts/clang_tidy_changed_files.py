@@ -43,7 +43,9 @@ RESULT_NAME = "Clang-tidy"
 # What the tidy build analyzes, and therefore what this check analyzes - the two
 # have to agree, or this check would report diagnostics the full one never does
 # and fail the merge queue on findings nobody introduced:
-#  * the four roots whose `CMakeLists.txt` set `CMAKE_CXX_CLANG_TIDY`,
+#  * the directories whose `CMakeLists.txt` set `CMAKE_CXX_CLANG_TIDY`, all of
+#    them in these four roots, see `tidy_enabled_dirs` - `base/poco` and the
+#    other siblings of `base/base` do not, so their sources are not analyzed,
 #  * C++ sources only, since `CMAKE_C_CLANG_TIDY` is never set,
 #  * headers that `HeaderFilterRegex` in `.clang-tidy` matches, i.e. the ones
 #    ending in `h` or `hpp` (a `.inl` is compiled but never reported).
@@ -125,6 +127,12 @@ GENERATOR_INPUTS = {
     ".fbs": ("_generated.h",),
     ".h.in": (".h",),
 }
+# `configure_file` templates of translation units: `GitHash.cpp.in` becomes
+# `GitHash.generated.cpp`, `config_version.cpp.in` becomes `config_version.cpp`,
+# both in the build directory and compiled by targets the full check analyzes.
+# A change to such a template is covered by analyzing the generated translation
+# unit itself, see `template_translation_units`.
+SOURCE_TEMPLATE_SUFFIXES = tuple(f"{suffix}.in" for suffix in SOURCE_SUFFIXES)
 # Generated headers whose name does not follow from the name of an input: the
 # generator, its script, or the directory of its inputs (a submodule shows up in
 # the changed files as the bare submodule path), mapped to the headers generated
@@ -225,9 +233,12 @@ SELF_TEST_GENERATOR_INPUT = "src/Common/config.h.in"
 SELF_TEST_CHANGED_FRAGMENT = "src/Dictionaries/RangeHashedDictionaryGetItemsImpl.txx"
 # A header whose nearest translation unit is four include hops away:
 # `NotificationStrategy.h` -> `DefaultStrategy.h` -> `BasicEvent.h` ->
-# `EventChannel.h` -> `EventChannel.cpp`.
+# `EventChannel.h` -> `EventChannel.cpp`. Poco is not analyzed by the full
+# check, so the translation unit is not in the filtered compilation database:
+# this case exercises only the search over the include graph.
 SELF_TEST_DISTANT_HEADER = "base/poco/Foundation/include/Poco/NotificationStrategy.h"
 SELF_TEST_DISTANT_TRANSLATION_UNIT = "base/poco/Foundation/src/EventChannel.cpp"
+SELF_TEST_SOURCE_TEMPLATE = "src/Common/config_version.cpp.in"
 
 # Upper bound on the translation units one run analyzes, so that a sweeping
 # change cannot turn the merge-queue gate back into a multi-hour build. Beyond
@@ -361,6 +372,50 @@ def is_selectable_path(path):
 
 
 _TIDY_OPT_OUT_RE = re.compile(r'\bCXX_CLANG_TIDY\s+""')
+_TIDY_OPT_IN_RE = re.compile(r'\bCMAKE_CXX_CLANG_TIDY\s+"\$\{CLANG_TIDY_PATH\}"')
+
+
+def cmake_dirs_matching(repo_dir, pattern):
+    """Directories under the analyzed roots whose `CMakeLists.txt` matches `pattern`."""
+    found = []
+    for root in ANALYZED_ROOTS:
+        for dir_path, _, file_names in os.walk(f"{repo_dir}/{root}"):
+            if "CMakeLists.txt" not in file_names:
+                continue
+            with open(
+                f"{dir_path}/CMakeLists.txt", "r", encoding="utf-8"
+            ) as cmake_lists:
+                if pattern.search(cmake_lists.read()):
+                    found.append(os.path.relpath(dir_path, repo_dir))
+    return tuple(sorted(found))
+
+
+@functools.lru_cache(maxsize=None)
+def tidy_enabled_dirs(repo_dir):
+    """Repo-relative directories whose targets the full check analyzes.
+
+    `CMAKE_CXX_CLANG_TIDY` is set per directory (`src`, `programs`, `utils`,
+    `base/base`, ...) and inherited by the subdirectories cmake enters from
+    there, so a target is analyzed when the directory defining it lies in one
+    of these. `base/CMakeLists.txt` does not set it, so `base/poco` and the
+    other siblings of `base/base` are compiled without clang-tidy. Read from the
+    repository rather than listed here, so that a new opt-in cannot be missed.
+    """
+    return cmake_dirs_matching(repo_dir, _TIDY_OPT_IN_RE)
+
+
+def is_under_any(path, directories):
+    return any(
+        path == directory or path.startswith(f"{directory}/")
+        for directory in directories
+    )
+
+
+def is_tidy_enabled_dir(path, repo_dir):
+    """True for a repo-relative path where the full check analyzes the targets."""
+    return is_under_any(path, tidy_enabled_dirs(repo_dir)) and not is_under_any(
+        path, tidy_disabled_dirs(repo_dir)
+    )
 
 
 @functools.lru_cache(maxsize=None)
@@ -377,25 +432,12 @@ def tidy_disabled_dirs(repo_dir):
     directory is excluded. Read from the repository rather than listed here, so
     that a new opt-out cannot be missed.
     """
-    disabled = []
-    for root in ANALYZED_ROOTS:
-        for dir_path, _, file_names in os.walk(f"{repo_dir}/{root}"):
-            if "CMakeLists.txt" not in file_names:
-                continue
-            with open(
-                f"{dir_path}/CMakeLists.txt", "r", encoding="utf-8"
-            ) as cmake_lists:
-                if _TIDY_OPT_OUT_RE.search(cmake_lists.read()):
-                    disabled.append(os.path.relpath(dir_path, repo_dir))
-    return tuple(sorted(disabled))
+    return cmake_dirs_matching(repo_dir, _TIDY_OPT_OUT_RE)
 
 
 def is_tidy_disabled_path(path, repo_dir):
     """True for a repo-relative path inside a target that opts out of clang-tidy."""
-    return any(
-        path == directory or path.startswith(f"{directory}/")
-        for directory in tidy_disabled_dirs(repo_dir)
-    )
+    return is_under_any(path, tidy_disabled_dirs(repo_dir))
 
 
 def is_tidy_config_path(path):
@@ -417,10 +459,17 @@ def is_suffix_generator_input(path):
     return root in ANALYZED_ROOTS and path.endswith(tuple(GENERATOR_INPUTS))
 
 
+def is_source_template(path):
+    """True for a template of a translation unit, see `SOURCE_TEMPLATE_SUFFIXES`."""
+    root = path.split("/", 1)[0]
+    return root in ANALYZED_ROOTS and path.endswith(SOURCE_TEMPLATE_SUFFIXES)
+
+
 def is_generator_input(path):
     """True for an input of a code generator that produces C++ clang-tidy parses."""
     return (
-        generator_input_path_entry(path) is not None
+        is_source_template(path)
+        or generator_input_path_entry(path) is not None
         or generator_input_path_entry(path, GENERATOR_INPUT_INCLUDED_THROUGH)
         is not None
         or is_suffix_generator_input(path)
@@ -440,7 +489,11 @@ def analyzable_changed_files(changed_files, repo_dir):
     be analyzed and is dropped. A header or fragment that no longer exists is
     kept: the translation units that still include it by its old path now fail
     to compile, and finding them is the point of selecting it. A file of a
-    target that opts out of clang-tidy is dropped, see `tidy_disabled_dirs`.
+    target that opts out of clang-tidy is dropped, see `tidy_disabled_dirs`, and
+    so is a translation unit outside the directories whose targets the full
+    check analyzes, see `tidy_enabled_dirs`. A header there is kept: the full
+    check reports its diagnostics through the analyzed translation units
+    including it.
     """
     return sorted(
         path
@@ -449,7 +502,10 @@ def analyzable_changed_files(changed_files, repo_dir):
         and not is_tidy_disabled_path(path, repo_dir)
         and (
             not path.endswith(SOURCE_SUFFIXES)
-            or os.path.isfile(f"{repo_dir}/{path}")
+            or (
+                os.path.isfile(f"{repo_dir}/{path}")
+                and is_tidy_enabled_dir(path, repo_dir)
+            )
         )
     )
 
@@ -541,23 +597,59 @@ def load_compile_commands(build_dir, repo_dir):
     database has ~18k entries and `os.path.realpath` on each of them costs
     seconds of syscalls for paths cmake already writes absolute.
 
-    The translation units of targets that opt out of clang-tidy are left out:
-    the full check does not analyze them, so they must not be picked to cover a
-    changed header either.
+    Only the translation units of targets the full check analyzes are kept,
+    see `is_tidy_enabled_dir`: the others must not be selected, nor picked to
+    cover a changed header. A target is told by the directory defining it,
+    which is where its object files go (`base/poco/Foundation/CMakeFiles/...`),
+    rather than by the path of the source, which for a generated translation
+    unit lies in the build directory.
     """
     with open(f"{build_dir}/compile_commands.json", "r", encoding="utf-8") as db:
         entries = json.load(db)
-    disabled = [
-        os.path.normpath(f"{repo_dir}/{directory}")
-        for directory in tidy_disabled_dirs(repo_dir)
-    ]
     compile_commands = {}
     for entry in entries:
-        path = os.path.normpath(entry["file"])
-        if any(path.startswith(f"{directory}/") for directory in disabled):
+        if not is_tidy_enabled_dir(target_directory(entry, build_dir), repo_dir):
             continue
-        compile_commands[path] = entry
+        compile_commands[os.path.normpath(entry["file"])] = entry
     return compile_commands
+
+
+def target_directory(entry, build_dir):
+    """The source directory, repo-relative, of the cmake target compiling `entry`.
+
+    cmake writes object files to `<directory>/CMakeFiles/<target>.dir/` of the
+    build directory, with the path of the directory defining the target.
+    """
+    output = os.path.normpath(entry.get("output", ""))
+    if os.path.isabs(output):
+        output = os.path.relpath(output, os.path.normpath(build_dir))
+    directory, separator, _ = f"/{output}".partition("/CMakeFiles/")
+    if not separator:
+        raise RuntimeError(
+            f"Cannot tell which cmake target builds {entry['file']} from its "
+            f"object path [{entry.get('output')}]"
+        )
+    return directory.lstrip("/")
+
+
+def template_translation_units(templates, build_dir, compile_commands):
+    """The translation units generated from the source `templates`, as database keys.
+
+    `configure_file` writes them to the build directory as `Foo.cpp` or
+    `Foo.generated.cpp` for a template `Foo.cpp.in`.
+    """
+    names = set()
+    for path in templates:
+        for template_suffix, suffix in zip(SOURCE_TEMPLATE_SUFFIXES, SOURCE_SUFFIXES):
+            if path.endswith(template_suffix):
+                stem = os.path.basename(path)[: -len(template_suffix)]
+                names.update({f"{stem}{suffix}", f"{stem}.generated{suffix}"})
+    prefix = os.path.normpath(build_dir) + os.sep
+    return sorted(
+        path
+        for path in compile_commands
+        if path.startswith(prefix) and os.path.basename(path) in names
+    )
 
 
 _INCLUDE_SPELLING_RE = re.compile(r'^\s*#\s*include\s*[<"](?P<spelling>[^">]+)[">]')
@@ -940,6 +1032,19 @@ def relevant_diagnostics(
     return relevant
 
 
+def timeout_output(timeout):
+    """The partial output of a timed-out run, as text.
+
+    `TimeoutExpired` carries the captured streams as bytes even when the run
+    was given `text=True`.
+    """
+    return "".join(
+        stream.decode("utf-8", errors="replace") if isinstance(stream, bytes) else stream
+        for stream in (timeout.stdout, timeout.stderr)
+        if stream
+    )
+
+
 def run_one(
     translation_unit,
     tidy,
@@ -980,7 +1085,7 @@ def run_one(
         output = completed.stdout + completed.stderr
         returncode = completed.returncode
     except subprocess.TimeoutExpired as timeout:
-        output = (timeout.stdout or "") + (timeout.stderr or "")
+        output = timeout_output(timeout)
         with open(log_file, "w", encoding="utf-8") as log:
             log.write(output)
         return Result(
@@ -1116,24 +1221,44 @@ def self_test(repo_dir, build_dir, compile_commands):
 
     # The search for includers is not cut off at some depth: a header reaching
     # its only built translation unit through several other headers is covered.
-    distant_entry = lookup_translation_unit(
-        SELF_TEST_DISTANT_TRANSLATION_UNIT, repo_dir, compile_commands
+    distant_file = os.path.normpath(f"{repo_dir}/{SELF_TEST_DISTANT_TRANSLATION_UNIT}")
+    expect(
+        os.path.isfile(distant_file),
+        f"{SELF_TEST_DISTANT_TRANSLATION_UNIT} does not exist",
+    )
+    units, notes = select_translation_units(
+        [SELF_TEST_DISTANT_HEADER],
+        repo_dir,
+        {distant_file: {"file": distant_file}},
     )
     expect(
-        distant_entry is not None,
-        f"{SELF_TEST_DISTANT_TRANSLATION_UNIT} is not in the compilation database",
+        units == [distant_file] and not notes,
+        f"`select_translation_units` did not cover {SELF_TEST_DISTANT_HEADER} "
+        f"through {SELF_TEST_DISTANT_TRANSLATION_UNIT}: {units}, {notes}",
     )
-    if distant_entry is not None:
-        units, notes = select_translation_units(
-            [SELF_TEST_DISTANT_HEADER],
-            repo_dir,
-            {os.path.normpath(distant_entry["file"]): distant_entry},
+
+    # The sources of targets that never enable clang-tidy are neither selected
+    # nor used to cover a changed header.
+    expect(
+        not analyzable_changed_files([SELF_TEST_DISTANT_TRANSLATION_UNIT], repo_dir)
+        and lookup_translation_unit(
+            SELF_TEST_DISTANT_TRANSLATION_UNIT, repo_dir, compile_commands
         )
-        expect(
-            units == [distant_entry["file"]] and not notes,
-            f"`select_translation_units` did not cover {SELF_TEST_DISTANT_HEADER} "
-            f"through {SELF_TEST_DISTANT_TRANSLATION_UNIT}: {units}, {notes}",
-        )
+        is None,
+        f"{SELF_TEST_DISTANT_TRANSLATION_UNIT} of a target without clang-tidy "
+        f"would be analyzed",
+    )
+
+    # A template of a translation unit is covered by the generated translation unit.
+    template = SELF_TEST_SOURCE_TEMPLATE
+    expect(
+        changed_generator_inputs([template]) == [template],
+        f"{template} is not recognized as a generator input",
+    )
+    expect(
+        template_translation_units([template], build_dir, compile_commands),
+        f"No translation unit generated from {template} is in the compilation database",
+    )
 
     # A changed C++ fragment is covered through the translation units including it.
     fragment = SELF_TEST_CHANGED_FRAGMENT
@@ -1320,6 +1445,16 @@ def self_test(repo_dir, build_dir, compile_commands):
         "A warning is taken for an infrastructure error",
     )
 
+    expect(
+        timeout_output(
+            subprocess.TimeoutExpired("clang-tidy", 1, output=b"out\n", stderr=b"err")
+        )
+        == "out\nerr"
+        and timeout_output(subprocess.TimeoutExpired("clang-tidy", 1, stderr=b"err"))
+        == "err",
+        "`timeout_output` did not decode the partial output of a timeout",
+    )
+
     return Result(
         name="Self-test",
         status=Result.Status.FAIL if failures else Result.Status.OK,
@@ -1374,18 +1509,33 @@ def run(changed_files, repo_dir, build_dir, temp_dir):
         lambda path: is_coverable(path, repo_dir, compile_commands),
     )
     print(f"Files including headers generated from changed inputs: {consumers}")
-    # The consumers are selected and reported as if they had changed: `master`
-    # is clean under the full check, so a diagnostic located in them is one the
-    # regenerated header introduced.
-    changed = sorted(set(changed) | set(consumers))
+    templates = [path for path in generator_inputs if is_source_template(path)]
+    header_inputs = [path for path in generator_inputs if not is_source_template(path)]
+    # Spelled relative to the repository, like the other changed files, so that
+    # they are looked up, selected and reported the same way.
+    regenerated_units = [
+        os.path.relpath(unit, repo_dir)
+        for unit in template_translation_units(templates, build_dir, compile_commands)
+    ]
+    print(f"Translation units generated from changed templates: {regenerated_units}")
+    # The consumers and the regenerated translation units are selected and
+    # reported as if they had changed: `master` is clean under the full check,
+    # so a diagnostic located in them is one the regenerated file introduced.
+    changed = sorted(set(changed) | set(consumers) | set(regenerated_units))
     translation_units, notes = select_translation_units(
         changed, repo_dir, compile_commands, config_changed, pinned
     )
-    if generator_inputs and not consumers:
+    if header_inputs and not consumers:
         notes.append(
             "No translation unit in the build covers a file including the headers "
             "generated from these changed inputs, so they are covered only by the "
-            "full clang-tidy check: " + ", ".join(generator_inputs)
+            "full clang-tidy check: " + ", ".join(header_inputs)
+        )
+    if templates and not regenerated_units:
+        notes.append(
+            "No translation unit in the build is generated from these changed "
+            "templates, so they are covered only by the full clang-tidy check: "
+            + ", ".join(templates)
         )
     for note in notes:
         print(f"NOTE: {note}")
