@@ -13,6 +13,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 $CLICKHOUSE_CLIENT -m -q "
 DROP TABLE IF EXISTS mv_merge;
 DROP TABLE IF EXISTS mv_merge_in;
+DROP TABLE IF EXISTS mv_merge_not_in_table;
 DROP TABLE IF EXISTS mv_loop;
 DROP TABLE IF EXISTS dst;
 DROP TABLE IF EXISTS dist;
@@ -41,6 +42,12 @@ CREATE MATERIALIZED VIEW mv_merge_in TO dst AS
          WHERE x >= 100 AND x IN (SELECT n.number FROM numbers(200) AS n JOIN src AS s ON n.number = s.x)) AS value
     FROM src;
 
+-- So does a table on the right of NOT IN.
+CREATE MATERIALIZED VIEW mv_merge_not_in_table TO dst AS
+    SELECT 'merge_not_in_table' AS name, count() AS block_rows,
+        (SELECT count() FROM merge(${CLICKHOUSE_DATABASE}, '^(src|dist)\$') WHERE x >= 100 AND x NOT IN src) AS value
+    FROM src;
+
 CREATE MATERIALIZED VIEW mv_loop TO dst AS
     SELECT 'loop' AS name, count() AS block_rows,
         (SELECT max(x) FROM (SELECT x FROM loop(${CLICKHOUSE_DATABASE}, src) WHERE x > 0 LIMIT 25)) AS value
@@ -52,6 +59,7 @@ SELECT * FROM dst ORDER BY name;
 
 DROP TABLE mv_merge;
 DROP TABLE mv_merge_in;
+DROP TABLE mv_merge_not_in_table;
 DROP TABLE mv_loop;
 DROP TABLE dst;
 DROP TABLE dist;
