@@ -1,0 +1,7 @@
+analyze and execute header names match
+header name: UNIQUE(__subquery_<hash>)
+UNIQUE(__subquery_<hash>)	UNIQUE(__subquery_<hash>)
+1	0
+header name is independent of the boolean result
+1
+1

@@ -2368,6 +2368,30 @@ public:
     }
 };
 
+class UniqueLayer : public Layer
+{
+public:
+    UniqueLayer() : Layer(/*allow_alias*/ true, /*allow_alias_without_as_keyword*/ true) {}
+
+    bool parse(IParser::Pos & pos, Expected & expected, Action & /*action*/) override
+    {
+        ASTPtr node;
+
+        if (!ParserSelectWithUnionQuery().parse(pos, node, expected))
+            return false;
+
+        if (!ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+            return false;
+
+        auto subquery = make_intrusive<ASTSubquery>(std::move(node));
+        elements = {makeASTOperator("__unique", subquery)};
+
+        finished = true;
+
+        return true;
+    }
+};
+
 class TrimLayer : public Layer
 {
 public:
@@ -3194,7 +3218,71 @@ static bool isFirstIdentifier(ParserExpressionImpl::Layers & layers)
     return layers.size() == 1 && dynamic_cast<ExpressionLayer *>(layers.front().get()) != nullptr;
 }
 
-static std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool is_table_function, bool is_first_identifier, bool allow_function_parameters_ = true)
+/// Whether the argument of a function call looks like a single subquery, possibly wrapped in parentheses:
+/// `SELECT ...`, `WITH ...`, `FROM ... SELECT ...`, `(SELECT ...)`, `((SELECT ...)) UNION ALL ...`.
+/// It is a cheap lookahead (no recursive parsing), used to recognize syntax sugar such as `UNIQUE(subquery)`
+/// without reserving the function name for every other call shape.
+/// A parenthesized subquery is accepted only when it is the whole argument or is followed by a set operation,
+/// so that `unique((SELECT 1), 2)` or `unique((SELECT 1) + 1)` stay regular function calls with a scalar subquery.
+static bool isSubqueryArgument(IParser::Pos pos)
+{
+    size_t num_opening_brackets = 0;
+    IParser::Pos first_bracket = pos;
+    while (pos->type == TokenType::OpeningRoundBracket)
+    {
+        ++num_opening_brackets;
+        ++pos;
+    }
+
+    Expected expected;
+    if (!ParserKeyword(Keyword::SELECT).ignore(pos, expected)
+        && !ParserKeyword(Keyword::WITH).ignore(pos, expected)
+        && !ParserKeyword(Keyword::FROM).ignore(pos, expected))
+        return false;
+
+    /// A lone keyword is an identifier argument, e.g. `unique(from)` or `unique(select, 1)`.
+    if (pos->type == TokenType::ClosingRoundBracket || pos->type == TokenType::Comma)
+        return false;
+
+    /// An unparenthesized subquery extends to the closing bracket of the function call.
+    if (num_opening_brackets == 0)
+        return true;
+
+    /// Find the bracket that closes the first opening one and look at what follows it.
+    pos = first_bracket;
+    size_t depth = 0;
+    while (pos.isValid())
+    {
+        if (pos->type == TokenType::OpeningRoundBracket || pos->type == TokenType::OpeningSquareBracket)
+        {
+            ++depth;
+        }
+        else if (pos->type == TokenType::ClosingRoundBracket || pos->type == TokenType::ClosingSquareBracket)
+        {
+            if (depth == 0)
+                return false;
+            --depth;
+            if (depth == 0)
+            {
+                ++pos;
+                break;
+            }
+        }
+        ++pos;
+    }
+
+    if (depth != 0 || !pos.isValid())
+        return false;
+
+    return pos->type == TokenType::ClosingRoundBracket
+        || ParserKeyword(Keyword::UNION).checkWithoutMoving(pos, expected)
+        || ParserKeyword(Keyword::EXCEPT).checkWithoutMoving(pos, expected)
+        || ParserKeyword(Keyword::INTERSECT).checkWithoutMoving(pos, expected);
+}
+
+/// `pos` points right after the opening bracket of the function call.
+static std::unique_ptr<Layer> getFunctionLayer(
+    ASTPtr identifier, IParser::Pos pos, bool is_table_function, bool is_first_identifier, bool allow_function_parameters_ = true)
 {
     /// Special cases for expressions that look like functions but contain some syntax sugar:
 
@@ -3259,6 +3347,10 @@ static std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool is_table_
         return std::make_unique<PositionLayer>();
     if (function_name_lowercase == "exists")
         return std::make_unique<ExistsLayer>();
+    /// `UNIQUE(subquery)` is a predicate, but `unique` stays a regular name for any other call shape,
+    /// such as a user-defined function `unique(1)` or a parameterized view `FROM unique(x = 1)`.
+    if (function_name_lowercase == "unique" && !(is_table_function && is_first_identifier) && isSubqueryArgument(pos))
+        return std::make_unique<UniqueLayer>();
     if (function_name_lowercase == "trim")
         return std::make_unique<TrimLayer>(false, false);
     if (function_name_lowercase == "ltrim")
@@ -3429,7 +3521,7 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (ParserFunctionName().parse(pos, identifier, expected)
         && ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
     {
-        auto start = getFunctionLayer(identifier, is_table_function, /*is_first_identifier=*/true, allow_function_parameters);
+        auto start = getFunctionLayer(identifier, pos, is_table_function, /*is_first_identifier=*/true, allow_function_parameters);
         start->is_table_function = is_table_function;
         if (ParserExpressionImpl().parse(std::move(start), pos, node, expected))
             return true;
@@ -3728,7 +3820,7 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
             if (function_name_parser.parse(pos, tmp, expected)
                 && ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
             {
-                layers.push_back(getFunctionLayer(tmp, layers.front()->is_table_function, isFirstIdentifier(layers)));
+                layers.push_back(getFunctionLayer(tmp, pos, layers.front()->is_table_function, isFirstIdentifier(layers)));
                 return Action::OPERAND;
             }
             return Action::NONE;
@@ -3994,7 +4086,7 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
         if (function_name_parser.parse(pos, tmp, expected) && pos->type == TokenType::OpeningRoundBracket)
         {
             ++pos;
-            layers.push_back(getFunctionLayer(tmp, layers.front()->is_table_function, isFirstIdentifier(layers)));
+            layers.push_back(getFunctionLayer(tmp, pos, layers.front()->is_table_function, isFirstIdentifier(layers)));
             return Action::OPERAND;
         }
         pos = old_pos;
