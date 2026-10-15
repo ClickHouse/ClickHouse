@@ -3350,9 +3350,8 @@ std::optional<KeyCondition::SetIndexAnalysisResult> KeyCondition::tryAnalyzePred
     return result;
 }
 
-/// True when casting the KEY into `set_element_type` -- the direction runtime membership takes --
-/// can map two distinct key values onto one set value silently. Detects only the classes below.
-/// `is_element` marks a pair nested in a composite.
+/// False only when casting the KEY into `set_element_type` -- the direction runtime membership takes -- keeps distinct
+/// key values apart; any other cast may map two keys onto one set value. `is_element` marks a pair nested in a composite.
 static bool keyToSetConversionMayCollapse(const DataTypePtr & key_type, const DataTypePtr & set_element_type, bool is_element)
 {
     auto key_unwrapped = removeLowCardinalityAndNullable(key_type);
@@ -3361,19 +3360,36 @@ static bool keyToSetConversionMayCollapse(const DataTypePtr & key_type, const Da
     auto key_which = WhichDataType(key_unwrapped);
     auto set_which = WhichDataType(set_unwrapped);
 
-    /// A shape mismatch is not itself a collapse, so it falls through rather than declining.
+    /// `Bool` takes every nonzero value to `true`, and `equals` does not tell it from `UInt8`.
+    if (isBool(set_unwrapped) && !isBool(key_unwrapped))
+        return true;
+
+    /// An all-NULL element names no value.
+    if (set_which.isNothing() || key_unwrapped->equals(*set_unwrapped))
+        return false;
+
+    /// The lookup cast ignores the query settings: `Dynamic` keeps the value under its own type, and a `Variant` does
+    /// so only when that type is one of its alternatives; any other cast into a `Variant` throws.
+    if (set_which.isDynamic())
+        return false;
+    if (set_which.isVariant())
+        return !assert_cast<const DataTypeVariant &>(*set_unwrapped).tryGetVariantDiscriminator(key_unwrapped->getName());
+
+    /// Elements are cast one by one.
     if (key_which.isArray() && set_which.isArray())
         return keyToSetConversionMayCollapse(
             assert_cast<const DataTypeArray &>(*key_unwrapped).getNestedType(),
             assert_cast<const DataTypeArray &>(*set_unwrapped).getNestedType(),
             /*is_element=*/ true);
 
-    if (key_which.isMap() && set_which.isMap())
+    /// `CAST` turns an array of pairs into a `Map` pair by pair, by position, and keeps repeated keys.
+    if (key_which.isArray() && set_which.isMap())
     {
-        const auto & key_map = assert_cast<const DataTypeMap &>(*key_unwrapped);
+        const auto * pair = typeid_cast<const DataTypeTuple *>(assert_cast<const DataTypeArray &>(*key_unwrapped).getNestedType().get());
         const auto & set_map = assert_cast<const DataTypeMap &>(*set_unwrapped);
-        return keyToSetConversionMayCollapse(key_map.getKeyType(), set_map.getKeyType(), /*is_element=*/ true)
-            || keyToSetConversionMayCollapse(key_map.getValueType(), set_map.getValueType(), /*is_element=*/ true);
+        return !pair || pair->getElements().size() != 2
+            || keyToSetConversionMayCollapse(pair->getElements()[0], set_map.getKeyType(), /*is_element=*/ true)
+            || keyToSetConversionMayCollapse(pair->getElements()[1], set_map.getValueType(), /*is_element=*/ true);
     }
 
     if (key_which.isTuple() && set_which.isTuple())
@@ -3411,65 +3427,59 @@ static bool keyToSetConversionMayCollapse(const DataTypePtr & key_type, const Da
         return false;
     }
 
-    /// `Bool` takes every nonzero value to `true`.
-    if (isBool(set_unwrapped) && !isBool(key_unwrapped))
-        return true;
+    /// `FixedString` padding and the parse into any other type both merge distinct text keys.
+    if (key_which.isStringOrFixedString())
+        return !set_which.isString();
 
-    /// A float is cast into a scaled type by truncating the digits below the scale.
-    if (key_which.isFloat() && tryGetDecimalScale(*set_unwrapped))
-        return true;
+    /// Integers and floats are cast exactly or not at all. A number is cast into an `Enum` by `static_cast`, so an
+    /// `Enum8` element of value 1 matches both 1 and 257.
+    if ((key_which.isInteger() || key_which.isFloat()) && (set_which.isInteger() || set_which.isFloat()))
+        return false;
 
-    /// A text key is equality-preserving only against the same text type: `FixedString` padding and
-    /// text-to-numeric parsing both merge distinct keys. A `FixedString` key cast into `String` only
-    /// loses its trailing zero bytes, which is injective at a fixed width.
-    if (key_which.isStringOrFixedString() && !key_unwrapped->equals(*set_unwrapped)
-        && !(key_which.isFixedString() && set_which.isString()))
-        return true;
+    /// A value has one spelling, except a local `DateTime`, which repeats when the clocks go back.
+    if (set_which.isString())
+        return !(key_which.isNumber() || key_which.isEnum() || key_which.isDateOrDate32() || key_which.isTimeOrTime64()
+            || key_which.isUUID() || key_which.isIPv4() || key_which.isIPv6());
 
-    /// A temporal target that cannot represent a component the key carries merges every key sharing
-    /// the surviving component, and no round-trip check rejects it.
+    const auto key_scale = tryGetDecimalScale(*key_unwrapped);
+    const auto set_scale = tryGetDecimalScale(*set_unwrapped);
+
     if (key_which.isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64()
         && set_which.isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64())
     {
-        auto carries_date = [](const WhichDataType & which)
-        { return which.isDateOrDate32() || which.isDateTimeOrDateTime64(); };
-        auto carries_time_of_day = [](const WhichDataType & which)
-        { return which.isTimeOrTime64() || which.isDateTimeOrDateTime64(); };
-
-        if ((carries_date(key_which) && !carries_date(set_which))
-            || (carries_time_of_day(key_which) && !carries_time_of_day(set_which)))
-            return true;
+        /// Only widenings keep every key: a day becomes its midnight, a time gains sub-second digits.
+        if (key_which.isDate())
+            return !(set_which.isDate32() || set_which.isDateTimeOrDateTime64());
+        if (key_which.isDate32() || key_which.isDateTime())
+            return !set_which.isDateTime64();
+        if (key_which.isTime())
+            return !set_which.isTime64();
+        /// `Set::execute` drops the sub-second keys of a top-level `DateTime64` column only, so an element is truncated.
+        if (key_which.isDateTime64() && set_which.isDateTime())
+            return is_element && *key_scale > 0;
+        const bool same_family = (key_which.isDateTime64() && set_which.isDateTime64()) || (key_which.isTime64() && set_which.isTime64());
+        return !same_family || *set_scale < *key_scale;
     }
 
-    /// A scaled key is cast through `DecimalUtils::convertToImpl`, which rejects only on range
-    /// overflow, so each branch below loses a different part of the value silently.
-    if (auto key_scale = tryGetDecimalScale(*key_unwrapped))
+    /// A scaled key is cast through `DecimalUtils::convertToImpl`, which rejects only on range overflow.
+    if (key_scale)
     {
-        /// Coarser target scale divides the extra digits away.
-        if (auto set_scale = tryGetDecimalScale(*set_unwrapped))
-        {
-            if (*key_scale > *set_scale)
-                return true;
-        }
-        /// An integer target keeps only the whole part; at scale 0 that division is the identity.
-        else if (set_which.isInteger() && *key_scale > 0)
-            return true;
-        /// A float target keeps `digits10` significant decimal digits apart, so only a wider key can collapse.
-        else if (set_which.isFloat())
+        if (set_scale)
+            return *set_scale < *key_scale;
+        if (set_which.isInteger())
+            return *key_scale > 0;
+        /// A float keeps `digits10` significant decimal digits apart.
+        if (set_which.isFloat())
         {
             const UInt32 exact_digits = set_which.isFloat64() ? std::numeric_limits<Float64>::digits10
                 : set_which.isFloat32()                       ? std::numeric_limits<Float32>::digits10
                                                               : 0;
-            if (getDecimalPrecision(*key_unwrapped) > exact_digits)
-                return true;
+            return getDecimalPrecision(*key_unwrapped) > exact_digits;
         }
-        /// `Set::execute` drops the sub-second keys of a top-level `DateTime64` column only, so an
-        /// element is truncated to the second.
-        else if (is_element && key_which.isDateTime64() && set_which.isDateTime() && *key_scale > 0)
-            return true;
     }
 
-    return false;
+    /// Otherwise only a strictly monotonic cast keeps values apart, such as an `Enum` into an integer that holds all its values.
+    return !conversionPreservesOrder(*key_unwrapped, *set_unwrapped);
 }
 
 bool KeyCondition::tryPrepareSetColumnsForIndex(
