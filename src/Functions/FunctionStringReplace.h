@@ -159,7 +159,7 @@ public:
         {
             const String needle = col_needle_const->getValue<String>();
             const String replacement = col_replacement_const->getValue<String>();
-            auto & chars = col_haystack_fixed->getChars();
+            const auto & chars = col_haystack_fixed->getChars();
             const size_t n = col_haystack_fixed->getN();
             if constexpr (has_mode_hint)
                 Impl::vectorFixedConstantConstant(
