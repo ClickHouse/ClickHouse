@@ -72,6 +72,14 @@ Int64 trackedSize([[maybe_unused]] ZSTD_CCtx * cctx)
 #endif
 }
 
+/// Charges the query for a pooled context while it uses it; the global tracker already counts the pool, so it takes the charge back.
+void chargeQuery(Int64 bytes)
+{
+    std::ignore = bytes > 0 ? CurrentMemoryTracker::allocNoThrow(bytes) : CurrentMemoryTracker::free(-bytes);
+    MemoryTrackerBlockerInThread blocker(VariableContext::Global);
+    total_memory_tracker.adjustWithUntrackedMemory(-bytes);
+}
+
 }
 
 UInt32 CompressionCodecZSTD::doCompressData(const char * source, UInt32 source_size, char * dest) const
@@ -90,9 +98,9 @@ UInt32 CompressionCodecZSTD::doCompressData(const char * source, UInt32 source_s
         return new ZstdCCtxPtr(std::move(ctx));
     });
     ZSTD_CCtx * cctx = holder->get();
-    /// A pooled context is charged to the query while it is used; a new one is charged by its own allocations.
-    const Int64 charged = created ? 0 : trackedSize(cctx);
-    std::ignore = CurrentMemoryTracker::allocNoThrow(charged);
+    /// A new context is charged to the query by its own allocations.
+    if (!created)
+        chargeQuery(trackedSize(cctx));
     /// The previous user may have set other parameters or failed mid-frame.
     ZSTD_CCtx_reset(cctx, ZSTD_reset_session_and_parameters);
     ZSTD_CCtx_setParameter(cctx, ZSTD_c_compressionLevel, level);
@@ -108,15 +116,8 @@ UInt32 CompressionCodecZSTD::doCompressData(const char * source, UInt32 source_s
         delete holder.release();
         --num_contexts;
     }
-    const Int64 pooled = holder ? trackedSize(cctx) : 0;
-    std::ignore = CurrentMemoryTracker::free(pooled);
-    /// The global tracker counts the pool all the time, so it takes back what it got from the charges above;
-    /// under a blocker it only corrects its amount.
-    if (pooled != charged)
-    {
-        MemoryTrackerBlockerInThread blocker(VariableContext::Global);
-        total_memory_tracker.adjustWithUntrackedMemory(pooled - charged);
-    }
+    else
+        chargeQuery(-trackedSize(cctx));
 
     if (ZSTD_isError(compressed_size))
         throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with ZSTD codec: {}", ZSTD_getErrorName(compressed_size));
