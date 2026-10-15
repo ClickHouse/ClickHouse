@@ -96,7 +96,6 @@ public:
     /// `Dynamic` / `JSON` values), which are copied into every output row.
     bool copies_aggregate_states = false;
 
-    /// The memory tracker of the thread that last checked the memory limit in `computeReadyRows`, and its amount then.
     const MemoryTracker * memory_tracker_at_last_check = nullptr;
     Int64 memory_at_last_check = 0;
 

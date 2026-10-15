@@ -363,8 +363,7 @@ void WindowTransform::computeReadyRows()
             // Write out the aggregation results.
             writeOutCurrentRow();
 
-            /// A copied state may allocate with `operator new` or `malloc`, which the memory tracker counts but does not
-            /// refuse. Check the limit whenever this thread's allocations have reached the tracker since the last check.
+            /// A copied state may allocate with `operator new` or `malloc`, which the memory tracker counts but does not refuse.
             if (copies_aggregate_states)
             {
                 const MemoryTracker * thread_memory_tracker = CurrentThread::getMemoryTracker();
