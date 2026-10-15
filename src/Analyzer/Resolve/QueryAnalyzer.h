@@ -118,7 +118,7 @@ struct Settings;
 class QueryAnalyzer
 {
 public:
-    explicit QueryAnalyzer(bool only_analyze_);
+    explicit QueryAnalyzer(bool only_analyze_, bool positional_arguments_already_resolved_ = false);
     ~QueryAnalyzer();
 
     void resolve(QueryTreeNodePtr & node, const TableExpressionNodePtr & table_expression, ContextPtr context);
@@ -367,6 +367,9 @@ private:
     std::map<IQueryTreeNode::Hash, FunctionBasePtr> functions_cache;
 
     const bool only_analyze;
+
+    /// Unlike the context flag, not inherited by the other queries analyzed with copies of the query context.
+    const bool positional_arguments_already_resolved;
 
     /// True while resolving a cloned AND/OR expression to infer its real result type and detect
     /// semantic carriers. Scalar subqueries are analyzed without execution, and the regular early

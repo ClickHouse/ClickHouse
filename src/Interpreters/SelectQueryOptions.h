@@ -70,6 +70,9 @@ struct SelectQueryOptions
     /// only on remote pipes, so a `ColumnBLOB` would reach the parent pipeline as is.
     bool is_local_plan_for_distributed_query = false;
 
+    /// The query is printed from a resolved query tree, so its integer constants are not positional arguments.
+    bool positional_arguments_already_resolved = false;
+
     size_t max_step_description_length = 0;
 
     bool force_materialize_cte = false;

@@ -403,9 +403,10 @@ void hideLambdaArgumentsShadowingAliasExpression(
 
 }
 
-QueryAnalyzer::QueryAnalyzer(bool only_analyze_)
+QueryAnalyzer::QueryAnalyzer(bool only_analyze_, bool positional_arguments_already_resolved_)
     : identifier_resolver(node_to_projection_name)
     , only_analyze(only_analyze_)
+    , positional_arguments_already_resolved(positional_arguments_already_resolved_)
 {}
 
 QueryAnalyzer::~QueryAnalyzer() = default;
@@ -915,13 +916,25 @@ void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_
     const auto & settings = scope.context->getSettingsRef();
     if (!settings[Setting::enable_positional_arguments])
         return;
-    /// The query was printed from an already resolved query tree (a local shard plan).
-    if (scope.context->isPositionalArgumentsAlreadyResolved())
+    /// Also inside a view body: the query itself was printed from a resolved query tree.
+    if (positional_arguments_already_resolved)
         return;
-    /// A remote shard gets the outer query resolved by the initiator, but expands views itself.
-    /// Contexts that never set the kind (NO_QUERY), e.g. a Replicated database DDL worker, resolve it too.
-    if (!scope.context->isViewInnerQuery() && scope.context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
-        return;
+    const bool is_view_inner = scope.context->isViewInnerQuery();
+    if (!is_view_inner)
+    {
+        /// Skip resolution on distributed/parallel-replicas local plan nodes: the initiator
+        /// already resolved positional arguments in the outer query. View-inner contexts are
+        /// exempt because views are expanded on the local node and were never resolved by the
+        /// initiator.
+        if (scope.context->isPositionalArgumentsAlreadyResolved())
+            return;
+        /// Skip only on remote shard execution (SECONDARY_QUERY): the initiator already
+        /// resolved positional arguments. Do not skip for contexts that never set the kind
+        /// (NO_QUERY), e.g. a Replicated database DDL worker running CREATE ... AS SELECT,
+        /// which must resolve positional arguments itself.
+        if (scope.context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+            return;
+    }
 
     auto & node_list_typed = node_list->as<ListNode &>();
 

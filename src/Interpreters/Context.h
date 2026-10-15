@@ -641,8 +641,8 @@ protected:
     /// enable_positional_arguments would otherwise be skipped (views are expanded on remote nodes,
     /// not on the initiator).
     bool is_view_inner_query = false;
-    /// True when the positional arguments of the analyzed query are already resolved: it was built from a resolved
-    /// query tree (a local shard plan, a `Merge` child). Inherited by context copies; reset for other queries.
+    /// Set by local shard plans, whose query is printed from a resolved query tree. Inherited by context copies and
+    /// ignored in view bodies; `withUnresolvedPositionalArguments` resets it for other queries.
     bool positional_arguments_already_resolved = false;
     /// Which join statistics EXPLAIN ANALYZE needs. It is a context field rather than a setting on
     /// purpose: only Interpreter may turn it on, but it must reach every join of the
@@ -1956,13 +1956,7 @@ public:
     void setRecoveryFromStoredMetadata(bool value) { is_recovery_from_stored_metadata = value; }
 
     bool isViewInnerQuery() const { return is_view_inner_query; }
-    /// A view body is parsed from scratch, so its positional arguments are not resolved yet.
-    void setIsViewInnerQuery(bool value)
-    {
-        is_view_inner_query = value;
-        if (value)
-            positional_arguments_already_resolved = false;
-    }
+    void setIsViewInnerQuery(bool value) { is_view_inner_query = value; }
 
     bool isPositionalArgumentsAlreadyResolved() const { return positional_arguments_already_resolved; }
     void setPositionalArgumentsAlreadyResolved(bool value) { positional_arguments_already_resolved = value; }

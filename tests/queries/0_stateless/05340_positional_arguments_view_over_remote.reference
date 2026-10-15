@@ -61,6 +61,9 @@ obfuscate order by
 1970-01-04
 obfuscate group by
 4
+index analysis predicate
+[(2,4)]
+[(2,4)]
 merge
 3	4	0
 3	4	0

@@ -8,6 +8,7 @@ DROP TABLE IF EXISTS t_pos;
 DROP TABLE IF EXISTS t_pos_m1;
 DROP TABLE IF EXISTS t_pos_d;
 DROP TABLE IF EXISTS t_pos_merge;
+DROP TABLE IF EXISTS t_pos_idx;
 DROP VIEW IF EXISTS v_pos;
 
 CREATE TABLE t_pos (k Int64, src Int64) ENGINE = MergeTree ORDER BY k;
@@ -58,6 +59,16 @@ SETTINGS prefer_localhost_replica = 1, enable_positional_arguments = 1, obfuscat
 SELECT 'obfuscate group by';
 SELECT count() FROM (SELECT * FROM remote('127.0.0.1', obfuscate(SELECT number % 2 AS k, count() AS c FROM numbers(4) GROUP BY 1)) LIMIT 4)
 SETTINGS prefer_localhost_replica = 1, enable_positional_arguments = 1, obfuscate_seed = '05340';
+-- And the predicate of `mergeTreeAnalyzeIndexes`, also inside a view.
+CREATE TABLE t_pos_idx (k UInt64) ENGINE = MergeTree ORDER BY k
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO t_pos_idx SELECT number FROM numbers(4);
+SELECT 'index analysis predicate';
+SELECT ranges FROM remote('127.0.0.1', mergeTreeAnalyzeIndexes(currentDatabase(), t_pos_idx, k IN (SELECT number FROM numbers(4) ORDER BY 1 DESC LIMIT 1)))
+SETTINGS prefer_localhost_replica = 1, enable_positional_arguments = 1;
+SELECT ranges FROM view(SELECT ranges FROM remote('127.0.0.1', mergeTreeAnalyzeIndexes(currentDatabase(), t_pos_idx, k IN (SELECT number FROM numbers(4) ORDER BY 1 DESC LIMIT 1))))
+SETTINGS prefer_localhost_replica = 1, enable_positional_arguments = 1;
+DROP TABLE t_pos_idx;
 
 CREATE TABLE t_pos_m1 (k Int64, src Int64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO t_pos_m1 SELECT number, 4 - number FROM numbers(5);
