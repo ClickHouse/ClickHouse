@@ -66,6 +66,7 @@ using RightRowsMatchCounterPtr = std::shared_ptr<RightRowsMatchCounter>;
 /// First input is for data from left table.
 /// Second input has empty header and is connected with FillingRightJoinSide.
 /// We can process left table only when Join is filled. Second input is used to signal that FillingRightJoinSide is finished.
+/// An optional third input carries the delayed joined blocks, forwarded after the left table and the non-joined rows.
 class JoiningTransform final : public IProcessor
 {
 public:
@@ -91,6 +92,8 @@ public:
 
     OutputPort & getFinishedSignal();
 
+    InputPort & addDelayedBlocksInput();
+
     Status prepare() override;
     void work() override;
 
@@ -106,6 +109,10 @@ private:
     bool process_non_joined = true;
     bool is_drained = false;
     bool is_last_drained = false;
+
+    InputPort * build_finished_input = nullptr;
+    InputPort * delayed_blocks_input = nullptr;
+    bool delayed_blocks_checked = false;
 
     JoinPtr join;
     SetSpillables set_spillables;
@@ -219,6 +226,7 @@ public:
 
     String getName() const override { return "DelayedJoinedBlocksTransform"; }
     std::span<ISpillable * const> getSpillables() override { return set_spillables.get(); }
+    bool requiresAllOutputsPushable() const override { return true; }
 
     Status prepare() override;
     void work() override;
