@@ -147,7 +147,7 @@ std::optional<Field> deserializeDecimalBound(const String & str, UInt32 scale, b
     if (compensate_rounding && scale)
     {
         /// Rounding a value that fits the precision to its integral part gives at most `10^max_precision`.
-        /// A bound beyond that describes values outside the precision, which then bounds nothing.
+        /// A bound beyond that comes from values outside the precision or a malformed manifest.
         const NativeType rounding_limit = DecimalUtils::scaleMultiplier<NativeType>(DecimalUtils::max_precision<DecimalType>);
         if (unscaled_value > rounding_limit || unscaled_value < -rounding_limit)
             return std::nullopt;
@@ -157,8 +157,7 @@ std::optional<Field> deserializeDecimalBound(const String & str, UInt32 scale, b
             scaler *= 10;
 
         /// Widening can leave the type: a `Decimal(38, 38)` bound of magnitude above roughly 0.7
-        /// needs almost `2 * 10^38` while `Int128` holds `1.7 * 10^38`. The extreme of the type is
-        /// outside every value the type can hold.
+        /// needs almost `2 * 10^38` while `Int128` holds `1.7 * 10^38`.
         NativeType widened_value;
         if (common::addOverflow(unscaled_value, scaler, widened_value))
             widened_value = lower_bound ? std::numeric_limits<NativeType>::min() : std::numeric_limits<NativeType>::max();
