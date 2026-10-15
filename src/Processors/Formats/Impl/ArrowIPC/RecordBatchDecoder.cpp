@@ -1028,6 +1028,11 @@ ColumnPtr RecordBatchDecoder::decodeInner(
             return readOffsetsAndChild(
                 field, rows, /*large=*/type.kind == TypeKind::LargeList, arrayElementHint(effective_hint), path,
                 list_depth, invisible_rows);
+        case TypeKind::ListView:
+        case TypeKind::LargeListView:
+            return readListViewAndChild(
+                field, rows, /*large=*/type.kind == TypeKind::LargeListView, arrayElementHint(effective_hint), path,
+                list_depth, invisible_rows);
         case TypeKind::FixedSizeList:
         {
             /// Each row owns `list_size` child elements; the layout pass validates their total count.
@@ -1233,6 +1238,118 @@ ColumnPtr RecordBatchDecoder::readOffsetsAndChild(
     if (const auto filt = emptyInvisibleSlots(offs, child_slice->size(), invisible_rows))
         child_slice = child_slice->filter(*filt, -1);
     return ColumnArray::create(child_slice, std::move(offsets_col));
+}
+
+ColumnPtr RecordBatchDecoder::readListViewAndChild(
+    const ArrowField & field, size_t rows, bool large, const DataTypePtr & target_hint, const String & path,
+    size_t list_depth, const InvisibleRowsMask * invisible_rows)
+{
+    const Slice offsets_slice = nextBuffer();
+    const Slice sizes_slice = nextBuffer();
+    auto read_value = [&](const Slice & slice, size_t i) -> Int64
+    {
+        if (large)
+            return reinterpret_cast<const Int64 *>(slice.ptr)[i];
+        return reinterpret_cast<const Int32 *>(slice.ptr)[i];
+    };
+
+    const ArrowField & child_field = field.type.children.at(0);
+    const size_t child_rows = peekNodeRows();
+
+    /// Read the range of every visible row and build the ClickHouse array offsets (cumulative sizes). The
+    /// offset and size of an invisible row are undefined, so it is an empty array.
+    auto offsets_col = ColumnUInt64::create(rows);
+    auto & offs = offsets_col->getData();
+    PaddedPODArray<UInt64> starts(rows);
+    UInt64 total = 0;
+    /// Whether the ranges are laid out like a List (each one starting where the previous one ended), so that
+    /// the child can be used as is instead of gathering the ranges.
+    bool contiguous = true;
+    std::optional<UInt64> first_start;
+    for (size_t i = 0; i < rows; ++i)
+    {
+        UInt64 size = 0;
+        if (!isInvisible(invisible_rows, i))
+        {
+            const Int64 offset = read_value(offsets_slice, i);
+            const Int64 view_size = read_value(sizes_slice, i);
+            if (offset < 0 || view_size < 0 || static_cast<UInt64>(view_size) > child_rows
+                || static_cast<UInt64>(offset) > child_rows - static_cast<UInt64>(view_size))
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Arrow IPC list view row {} references child rows from {} of size {}, but the child has {} rows",
+                    i, offset, view_size, child_rows);
+            starts[i] = static_cast<UInt64>(offset);
+            size = static_cast<UInt64>(view_size);
+            if (size != 0)
+            {
+                if (!first_start)
+                    first_start = starts[i];
+                else if (starts[i] != *first_start + total)
+                    contiguous = false;
+            }
+        }
+        if (__builtin_add_overflow(total, size, &total))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC list view of field '{}' references too many child rows", field.name);
+        offs[i] = total;
+    }
+
+    /// A child determined by its size alone is built for the referenced rows only (see `readOffsetsAndChild`).
+    if (isSizeDeterminedSubtree(child_field))
+    {
+        ColumnPtr child = buildSizeDeterminedColumn(child_field, total, target_hint, path, list_depth + 1);
+        return ColumnArray::create(child, std::move(offsets_col));
+    }
+
+    checkRowCountWithinBody(child_rows, "list view child");
+
+    /// Child rows that no visible row references hold undefined bytes and must not be value-validated. The
+    /// coverage of the (possibly overlapping) ranges is counted with a difference array.
+    std::optional<InvisibleRowsMask> child_invisible;
+    {
+        PaddedPODArray<Int64> coverage(child_rows + 1, 0);
+        for (size_t i = 0; i < rows; ++i)
+        {
+            const UInt64 size = offs[i] - (i == 0 ? 0 : offs[i - 1]);
+            if (size == 0)
+                continue;
+            ++coverage[starts[i]];
+            --coverage[starts[i] + size];
+        }
+        InvisibleRowsMask mask(child_rows);
+        Int64 covered = 0;
+        bool any_invisible = false;
+        for (size_t row = 0; row < child_rows; ++row)
+        {
+            covered += coverage[row];
+            mask[row] = covered == 0;
+            any_invisible |= covered == 0;
+        }
+        if (any_invisible)
+            child_invisible = std::move(mask);
+    }
+
+    ColumnPtr child = decodeField(
+        child_field, /*allow_low_cardinality=*/false, target_hint, path, list_depth + 1, maskPtr(child_invisible));
+
+    if (contiguous)
+    {
+        const size_t begin = first_start.value_or(0);
+        if (!(begin == 0 && total == child->size()))
+            child = child->cut(begin, total);
+        return ColumnArray::create(child, std::move(offsets_col));
+    }
+
+    auto indexes = ColumnUInt64::create();
+    auto & index_data = indexes->getData();
+    index_data.reserve(total);
+    for (size_t i = 0; i < rows; ++i)
+    {
+        const UInt64 size = offs[i] - (i == 0 ? 0 : offs[i - 1]);
+        for (UInt64 k = 0; k < size; ++k)
+            index_data.push_back(starts[i] + k);
+    }
+    return ColumnArray::create(child->index(*indexes, 0), std::move(offsets_col));
 }
 
 bool RecordBatchDecoder::isSizeDeterminedSubtree(const ArrowField & field) const
@@ -1810,6 +1927,17 @@ void RecordBatchDecoder::advanceField(const ArrowField & field, bool validate_le
                 expectNextNodeLength(fixedSizeListChildRows(type, rows), "fixed-size-list child");
             advanceField(type.children.at(0), validate_lengths);
             break;
+        case TypeKind::ListView:
+        case TypeKind::LargeListView:
+        {
+            /// One offset and one size per row (no trailing offset); the child length is checked against the
+            /// referenced ranges when the column is decoded.
+            const size_t width = type.kind == TypeKind::LargeListView ? sizeof(Int64) : sizeof(Int32);
+            consume_buffer(rows, width, "list view offsets");
+            consume_buffer(rows, width, "list view sizes");
+            advanceField(type.children.at(0), validate_lengths);
+            break;
+        }
         case TypeKind::Struct:
             for (const ArrowField & child : type.children)
             {
@@ -1822,14 +1950,6 @@ void RecordBatchDecoder::advanceField(const ArrowField & field, bool validate_le
         case TypeKind::Union:
             break; /// These layouts are handled before the validity buffer.
         case TypeKind::Unsupported:
-            /// List views can be skipped when unrequested; their values are not supported by the decoder.
-            if (type.skip_layout == ArrowType::SkipLayout::ListView)
-            {
-                nextBuffer();
-                nextBuffer();
-                advanceField(type.children.at(0), validate_lengths);
-                break;
-            }
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,
                 "Native Arrow IPC reader cannot skip the unsupported Arrow type {} of field '{}'",
@@ -2336,6 +2456,8 @@ void RecordBatchDecoder::collectDictionaryUses(
         case TypeKind::List:
         case TypeKind::LargeList:
         case TypeKind::FixedSizeList:
+        case TypeKind::ListView:
+        case TypeKind::LargeListView:
             collectDictionaryUses(
                 type.children.at(0), arrayElementHint(effective_hint), path, list_depth + 1, lookup_types, uses);
             break;

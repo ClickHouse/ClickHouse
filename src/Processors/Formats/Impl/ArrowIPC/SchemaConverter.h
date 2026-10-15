@@ -48,6 +48,9 @@ enum class TypeKind : UInt8
     List,
     LargeList,
     FixedSizeList,
+    /// Lists described by an offset and a size per row: the ranges can overlap and come in any order.
+    ListView,
+    LargeListView,
     Struct,
     Map,
     Union,
@@ -102,7 +105,6 @@ struct ArrowType
     enum class SkipLayout : UInt8
     {
         Unknown,        /// cannot be skipped
-        ListView,       /// validity + offsets + sizes buffers, then one child (same buffer count for LargeListView)
         RunEndEncoded,  /// no buffers (not even validity), then two children (run_ends, values)
     };
     SkipLayout skip_layout = SkipLayout::Unknown;
