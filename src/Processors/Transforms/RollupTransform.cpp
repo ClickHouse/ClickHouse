@@ -21,10 +21,8 @@ namespace DB
 namespace
 {
 
-/// Aggregates whose state merge is exactly associative and commutative: merging the same multiset
-/// of states in a different order gives the same state. No aggregate-function property expresses
-/// that, so the set lists registered names, and a name that is absent - including every other
-/// combinator spelling - counts as order-sensitive.
+/// Aggregates whose state merge is exactly associative and commutative. Any other name, including
+/// another combinator spelling, counts as order-sensitive.
 const std::unordered_set<std::string_view> exactly_commutative_merges
 {
     "count", "countIf",
@@ -38,8 +36,7 @@ const std::unordered_set<std::string_view> exactly_commutative_merges
 };
 
 /// Floating-point addition and comparison are not associative, so the merges above stay exact only
-/// for these argument types. The set is enumerated instead of rejecting floats, because a float can
-/// also sit inside an Array, Tuple, Map or Variant argument.
+/// for these argument types.
 bool isExactMergeArgumentType(const DataTypePtr & type)
 {
     switch (removeLowCardinalityAndNullable(type)->getTypeId())
@@ -229,19 +226,15 @@ RollupTransform::RollupTransform(SharedHeader header, AggregatingTransformParams
 
 Chunk RollupTransform::generate()
 {
-    /// The grouping set to emit, as the chunks it is spread over. After the first call it is always
-    /// the single chunk the previous call's merge produced.
+    /// The grouping set to emit; a single chunk after the first call.
     Chunks gen_chunks;
 
     if (!consumed_chunks.empty())
     {
         if (input_merge_is_redundant)
         {
-            /// Each group key is in exactly one input chunk, as the input comes from an aggregating step, so
-            /// merging it would only copy it; and the gate admits only exactly commutative merges, so merging
-            /// the coarser levels' states in input order cannot change a result. Chunk info is dropped as on merge.
-
-            /// `mergeConsumed()` passes a single chunk through unmerged too, so one chunk is no skip.
+            /// The input comes from an aggregating step, so each group key is in exactly one chunk and
+            /// merging would only copy it. The coarser levels' merges are exact in any order.
             if (consumed_chunks.size() > 1)
                 ProfileEvents::increment(ProfileEvents::AggregationRollupSkippedInputMerges);
 
