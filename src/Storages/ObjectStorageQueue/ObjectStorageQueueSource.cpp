@@ -771,6 +771,18 @@ ObjectStorageQueueSource::FileIterator::takeForeignProcessingRechecksToInherit()
         return result;
     }
 
+    /// Ordered mode: an invalidated iterator (lost bucket lock) stops early and may still hold
+    /// unclaimed smaller files of a domain in `keys_cache_per_bucket`, `objects_to_retry` or its
+    /// unfinished listing. An inherited later file could then be committed before the next
+    /// listing pass reaches them and advance the `processed` pointer past them. Inherit nothing:
+    /// the next listing pass rechecks every file in order.
+    if (iterator_invalidated)
+    {
+        foreign_processing_files_to_recheck.clear();
+        inherited_foreign_processing_rechecks.clear();
+        return result;
+    }
+
     /// Ordered mode: the next iterator knows the unprocessed files of a domain below its listing
     /// position only from the inherited ones. A domain is inherited only if this iterator knows
     /// nothing else unprocessed in it:
