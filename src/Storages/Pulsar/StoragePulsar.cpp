@@ -68,6 +68,7 @@ namespace PulsarSetting
     extern const PulsarSettingsString pulsar_schema;
     extern const PulsarSettingsString pulsar_service_url;
     extern const PulsarSettingsUInt64 pulsar_skip_broken_messages;
+    extern const PulsarSettingsString pulsar_subscription_initial_position;
     extern const PulsarSettingsString pulsar_topic_list;
 }
 
@@ -172,6 +173,18 @@ private:
 
 namespace
 {
+
+pulsar::InitialPosition parseSubscriptionInitialPosition(const String & value)
+{
+    if (value == "earliest")
+        return pulsar::InitialPositionEarliest;
+    if (value == "latest")
+        return pulsar::InitialPositionLatest;
+    throw Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "Invalid `pulsar_subscription_initial_position` '{}': it must be `earliest` or `latest`",
+        value);
+}
 
 /// The engine opens outbound connections to the brokers listed in `pulsar_service_url`, so the
 /// address must pass the server's outbound allowlist (`remote_url_allow_hosts`), like every other
@@ -515,6 +528,8 @@ void StoragePulsar::createConsumer(pulsar::Consumer & consumer)
     config.setConsumerType(pulsar::ConsumerType::ConsumerShared);
     /// NOLINTNEXTLINE(google-runtime-int)
     config.setBatchReceivePolicy({static_cast<int>(getPollMaxBatchSize()), 0, static_cast<long>(getPollTimeoutMilliseconds())});
+    /// The client defaults to `InitialPositionLatest`, which would silently skip the backlog of a non-empty topic.
+    config.setSubscriptionInitialPosition(parseSubscriptionInitialPosition((*pulsar_settings)[PulsarSetting::pulsar_subscription_initial_position].value));
 
     auto result = pulsar_client.subscribe(topics, group_name, config, consumer);
     if (result != pulsar::ResultOk)
@@ -913,6 +928,8 @@ void registerStoragePulsar(StorageFactory & factory)
         if ((*pulsar_settings)[PulsarSetting::pulsar_max_rows_per_message].value < 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The setting `pulsar_max_rows_per_message` must be at least 1");
 
+        parseSubscriptionInitialPosition((*pulsar_settings)[PulsarSetting::pulsar_subscription_initial_position].value);
+
         /// The mode is accepted by the generic `StreamingHandleErrorMode` parser but not implemented
         /// by this engine, so reject any freshly supplied definition (CREATE or full ATTACH) up front
         /// instead of failing on the first broken message.
@@ -966,7 +983,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     [pulsar_flush_interval_ms = N,]
     [pulsar_handle_error_mode = 'default',]
     [pulsar_max_rows_per_message = 1,]
-    [pulsar_commit_on_select = false]
+    [pulsar_commit_on_select = false,]
+    [pulsar_subscription_initial_position = 'earliest']
 ```
 
 Required parameters:
@@ -988,6 +1006,7 @@ Optional parameters:
 - `pulsar_handle_error_mode` – How to handle errors for the Pulsar engine. Possible values: `default` (the exception will be thrown if we fail to parse a message), `stream` (the exception message and raw message will be saved in the virtual columns `_error` and `_raw_message`).
 - `pulsar_max_rows_per_message` – The maximum number of rows written in one Pulsar message for row-based formats. Default: `1`.
 - `pulsar_commit_on_select` – Acknowledge polled messages when a direct `SELECT` query is made from the table. Default: `false`.
+- `pulsar_subscription_initial_position` – Where a subscription that does not exist yet starts reading: `earliest` (the whole backlog of the topics) or `latest` (only messages published after the subscription is created). It has no effect when the subscription named by `pulsar_group_name` already exists on the broker. Default: `earliest`.
 
 ## Description {#description}
 

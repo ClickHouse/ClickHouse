@@ -316,6 +316,47 @@ def test_produce_consume_via_materialized_view(pulsar_cluster):
     wait_query_result(expected, "SELECT key, value FROM test.view ORDER BY key")
 
 
+def test_new_subscription_reads_backlog(pulsar_cluster):
+    # Messages published before the table exists must be consumed: a fresh
+    # subscription starts at the earliest position by default.
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    instance.query(pulsar_table("test.pulsar_writer", "backlog_topic", "backlog_writer_group"))
+    num_rows = 20
+    instance.query(
+        f"INSERT INTO test.pulsar_writer SELECT number, number FROM numbers({num_rows})"
+    )
+
+    instance.query(pulsar_table("test.pulsar_reader", "backlog_topic", "backlog_group"))
+    instance.query(
+        """
+        CREATE TABLE test.view (key UInt64, value UInt64)
+        ENGINE = MergeTree ORDER BY key
+        """
+    )
+    instance.query(
+        """
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+        SELECT key, value FROM test.pulsar_reader
+        """
+    )
+
+    expected = "\n".join(f"{i}\t{i}" for i in range(num_rows))
+    wait_query_result(expected, "SELECT key, value FROM test.view ORDER BY key")
+
+
+def test_invalid_subscription_initial_position_rejected(pulsar_cluster):
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    error = instance.query_and_get_error(
+        pulsar_table(
+            "test.pulsar_reader",
+            "initial_position_topic",
+            "initial_position_group",
+            extra_settings=", pulsar_subscription_initial_position = 'middle'",
+        )
+    )
+    assert "BAD_ARGUMENTS" in error
+
+
 def wait_failpoint_paused(failpoint, timeout=120):
     # `SYSTEM WAIT FAILPOINT ... PAUSE` blocks until a thread parks at the failpoint,
     # so run it on a worker thread: a failpoint that is never reached must fail the
@@ -497,8 +538,6 @@ def test_streaming_resumes_after_broker_restart(pulsar_cluster):
 
 def test_direct_select(pulsar_cluster):
     instance.query("CREATE DATABASE IF NOT EXISTS test")
-    # The subscription is created together with the table, so only messages
-    # published after this point are delivered to it.
     instance.query(
         pulsar_table(
             "test.pulsar_reader",
