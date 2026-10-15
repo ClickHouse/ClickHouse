@@ -1,19 +1,19 @@
 --- QCC starts empty
 0
---- Same TopK plan re-runs reuse the same QCC entry
-1
-1
---- Different LIMIT writes a separate entry
+--- Same TopK plan re-runs reuse the same QCC entries
 2
---- Different sort direction writes a separate entry
-3
---- Different sort column writes a separate entry
+2
+--- Different LIMIT writes separate entries
 4
+--- Different sort direction writes separate entries
+6
+--- Different sort column writes separate entries
+8
 
 --- Focused assertions for NULLS direction ---
 0
---- Same NULLS direction re-runs reuse the same QCC entry
-1
-1
---- Different NULLS direction writes a separate entry
+--- Same NULLS direction re-runs reuse the same QCC entries
 2
+2
+--- Different NULLS direction writes separate entries
+4

@@ -12,7 +12,6 @@ MY_CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT \
     --enable_analyzer 1 \
     --use_skip_indexes_on_data_read 1 \
     --query_plan_remove_unused_columns 1 \
-    --query_plan_optimize_prewhere 1 \
     --optimize_move_to_prewhere 1 \
     --query_plan_direct_read_from_text_index 1 \
     --query_plan_text_index_add_hint 1 \
@@ -179,7 +178,7 @@ function run()
         $query SETTINGS use_skip_indexes = 1;
         SELECT trim(explain) FROM
         (
-            EXPLAIN actions = 1, indexes = 1 $query SETTINGS use_skip_indexes_on_data_read = 1, query_plan_direct_read_from_text_index = 1, query_plan_text_index_add_hint = 1, query_plan_optimize_prewhere = 1, optimize_move_to_prewhere = 1
+            EXPLAIN actions = 1, indexes = 1 $query SETTINGS use_skip_indexes_on_data_read = 1, query_plan_direct_read_from_text_index = 1, query_plan_text_index_add_hint = 1, optimize_move_to_prewhere = 1
         )
         WHERE explain LIKE '%INPUT%\_\_text_index%' OR explain ILIKE '%name: inv_idx%';
     "

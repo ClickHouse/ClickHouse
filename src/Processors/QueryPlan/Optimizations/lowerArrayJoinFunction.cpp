@@ -26,15 +26,11 @@ size_t tryLowerArrayJoinFunction(QueryPlan::Node * parent_node, QueryPlan::Nodes
     if (!dag.hasArrayJoin())
         return 0;
 
-    /// Extraction changes block boundaries, so bail if a stateful function is above (as mergeExpressions does).
-    if (dag.hasStatefulFunctions())
+    /// a stateful function sees other blocks after the step
+    if (settings.legacy_array_join_function_nondeterministic_evaluation && dag.hasStatefulFunctions())
         return 0;
 
-    /// How often rand() is drawn relative to the expansion depends on the shape today; lowering must not change it.
-    if (dag.hasNonDeterministic())
-        return 0;
-
-    auto extracted = dag.extractFirstArrayJoin();
+    auto extracted = dag.extractFirstArrayJoin(settings.legacy_array_join_function_nondeterministic_evaluation);
     if (!extracted)
         return 0;
 

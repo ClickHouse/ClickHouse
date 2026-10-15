@@ -235,7 +235,9 @@ protected:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument to {} must be a constant string describing type. "
                 "Instead there is non-constant column of type {}", getName(), arguments.back().type->getName());
 
-        const auto * type_col = checkAndGetColumnConst<ColumnString>(column.get());
+        /// The type name can arrive wrapped, e.g. from `CAST(x, toLowCardinality('String'))`.
+        const auto full_column = column->convertToFullColumnIfLowCardinality();
+        const auto * type_col = checkAndGetColumnConst<ColumnString>(full_column.get());
         if (!type_col)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument to {} must be a constant string describing type. "
                 "Instead there is a column with the following structure: {}", getName(), column->dumpStructure());
@@ -424,6 +426,8 @@ Converts a value to a specified data type.
 Like [`accurateCast`](#accurateCast), but returns `NULL` instead of throwing an exception if the conversion cannot be performed accurately.
 
 This function combines the safety of [`accurateCast`](#accurateCast) with graceful error handling.
+
+The syntax `TRY_CAST(x AS T)`, as in the SQL dialects of Trino, Spark, Snowflake, and SQL Server, is the same as `accurateCastOrNull(x, 'T')`.
     )";
     FunctionDocumentation::Syntax accurateCastOrNull_syntax = "accurateCastOrNull(x, T)";
     FunctionDocumentation::Arguments accurateCastOrNull_arguments = {

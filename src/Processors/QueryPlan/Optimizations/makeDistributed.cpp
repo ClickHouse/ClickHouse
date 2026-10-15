@@ -30,6 +30,7 @@
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
+#include <Processors/QueryPlan/Optimizations/RuntimeFilterExchangeWiring.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/Optimizations/keyTypeBreaksHashSharding.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
@@ -245,8 +246,10 @@ std::optional<PreformattedMessage> getReasonStepCannotBeDistributed(const IQuery
 /// `_part_starting_offset`. Done at planning time so it fails cleanly before the pipeline is built.
 std::optional<PreformattedMessage> getReasonReadCannotBeDistributed(const ReadFromMergeTree * read)
 {
-    /// Only the old interpreter (query_plan_read_in_order = 0) sets the read order this early; it is
-    /// the read half of the FinishSorting rejected in getReasonNodeCannotBeDistributed.
+    /// The read-in-order optimization is skipped while a distributed plan is being made, so a read
+    /// that already carries an order was ordered before this pass (for example, a child plan that was
+    /// optimized on its own). It is the read half of the FinishSorting rejected in
+    /// getReasonNodeCannotBeDistributed.
     if (read->getQueryInfo().input_order_info)
         return std::make_optional(PreformattedMessage::create("make_distributed_plan does not support a read-in-order distributed read"));
 
@@ -261,6 +264,11 @@ std::optional<PreformattedMessage> getReasonReadCannotBeDistributed(const ReadFr
     if (read->getQueryInfo().isStream())
         return std::make_optional(
             PreformattedMessage::create("make_distributed_plan does not support a distributed read with the STREAM modifier"));
+
+    /// TODO(unique-key): support distributed plans.
+    if (read->getStorageMetadata()->hasUniqueKey())
+        return std::make_optional(
+            PreformattedMessage::create("make_distributed_plan does not support a distributed read of a UNIQUE KEY table"));
 
     for (const auto & column : read->getAllColumnNames())
         if (column == "_part_index" || column == "_part_starting_offset")
@@ -383,9 +391,9 @@ getReasonNodeCannotBeDistributed(QueryPlan::Node & node, const QueryPlanOptimiza
     }
 
     /// A FinishSorting expects rows already sorted by the read below it. This optimizer creates one
-    /// only from a Full sorting, and only when no exchange separates the read from the sort. The old
-    /// interpreter (query_plan_read_in_order = 0) puts one in the plan up front, unchecked, so a
-    /// scatter inserted below it would break the order it relies on.
+    /// only from a Full sorting, and only when no exchange separates the read from the sort. A
+    /// FinishSorting that is already in the plan was created without that check, so a scatter
+    /// inserted below it would break the order it relies on.
     if (const auto * sorting = typeid_cast<const SortingStep *>(&step);
         sorting && (sorting->getType() == SortingStep::Type::FinishSorting || sorting->getType() == SortingStep::Type::PartitionedFinishSorting))
         return PreformattedMessage::create("make_distributed_plan does not support a read-in-order distributed read");
@@ -421,7 +429,7 @@ std::optional<PreformattedMessage> getReasonChildPlanSetsCannotBeShipped(QueryPl
                 return reason;
         for (auto * child : node->children)
             stack.push_back(child);
-        for (auto * child_plan : node->step->getChildPlans())
+        for (auto * child_plan : node->step->getChildPlans(/*for_explain=*/ false))
             if (child_plan && child_plan->getRootNode())
                 stack.push_back(child_plan->getRootNode());
     }
@@ -453,7 +461,7 @@ getReasonPlanCannotBeDistributed(QueryPlan::Node & root, const QueryPlanOptimiza
         /// while it still carries the caller's `make_distributed_plan=1`. Hence, each child
         /// can run make optimization decision for itself whether or not to run the subplan in distributed way
         /// (i.e. 04367_distributed_plan_merge_scatter_multishard).
-        const auto child_plans = node->step->getChildPlans();
+        const auto child_plans = node->step->getChildPlans(/*for_explain=*/ false);
 
         if (auto reason = getReasonNodeCannotBeDistributed(*node, optimization_settings); reason.has_value())
             return reason;
@@ -1166,7 +1174,8 @@ static void tryPushWindowBelowSortedGather(QueryPlan::Node & node, const QueryPl
     /// exists to re-parallelize downstream work on a single node; in the distributed shape that
     /// parallelism comes from the buckets themselves.
     auto bucket_window = std::make_unique<WindowStep>(
-        sorting_node->step->getOutputHeader(), window_description, window_step->getWindowFunctions(), /*streams_fan_out_=*/false);
+        sorting_node->step->getOutputHeader(), window_description, window_step->getWindowFunctions(), /*streams_fan_out_=*/false,
+        window_step->getSortSettings());
     bucket_window->setStepDescription(*window_step);
 
     /// Move the gather above the window; the children links already form the target chain.
@@ -1415,6 +1424,23 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
     /// The cap can be raised once the planner sizes bucket counts from statistics, available nodes
     /// and memory (see the TODO at the bucket_count reads) instead of using the raw setting value.
     validateDistributedPlanBucketCounts(optimization_settings);
+
+    if (optimization_settings.distributed_plan_join_runtime_filters)
+    {
+        /// Stamp build-side row estimates before the cut. After the cut a build that is another
+        /// stage's output ends at an exchange source and has nothing to estimate from.
+        std::vector<QueryPlan::Node *> annotation_stack{root};
+        while (!annotation_stack.empty())
+        {
+            auto * node = annotation_stack.back();
+            annotation_stack.pop_back();
+            if (auto * build_step = typeid_cast<BuildRuntimeFilterStep *>(node->step.get()); build_step && !node->children.empty())
+                build_step->setEstimatedBuildRows(
+                    estimateReadRowsCount(*node->children.front(), nullptr, /*for_runtime_filter_transport=*/true).estimated_rows);
+            for (auto * child : node->children)
+                annotation_stack.push_back(child);
+        }
+    }
 
     size_t exchange_id = 0;
 
@@ -1758,6 +1784,14 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
         distributed_plan.stages["main"] = std::move(stage);
         distributed_plan.stage_depends_on["main"] = main_stage_depends_on;
     }
+
+    /// Add exchanges for runtime filters whose build and apply sites are in different stages.
+    if (optimization_settings.distributed_plan_join_runtime_filters)
+        wireRuntimeFilterExchangeTopology(
+            distributed_plan,
+            exchange_id,
+            optimization_settings.distributed_plan_force_exchange_kind == "Persisted" ? ExchangeDescription::Kind::Persisted
+                                                                                      : ExchangeDescription::Kind::Streaming);
 
     return distributed_plan;
 }

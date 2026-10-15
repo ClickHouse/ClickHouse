@@ -1,0 +1,14 @@
+99990000
+99990000
+cached columns of the table:
+b	10000
+user granted b sees:
+b
+99990000
+99990000
+cached columns of the table after re-adding a:
+b	10000
+user granted the new a sees:
+0
+user granted b still sees:
+b

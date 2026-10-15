@@ -1,3 +1,4 @@
+-- Tags: no-parallel, no-fasttest
 -- Regression test for plan-based parallel replicas over a branching fragment. With
 -- parallel_replicas_allow_view_over_mergetree a view that expands to UNION ALL over MergeTree yields
 -- a fragment with multiple sources. The fragment builder must clone the subtree structurally
