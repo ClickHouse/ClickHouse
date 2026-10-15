@@ -11,6 +11,8 @@
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/Prometheus/CreateQueryTimeSeriesSettings.h>
+#include <Parsers/Prometheus/TimeSeriesVersion.h>
 #include <Parsers/stripQuerySettings.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
@@ -55,9 +57,6 @@
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Storages/StorageTimeSeries.h>
-#include <Storages/TimeSeries/TimeSeriesSettings.h>
-#include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
 
 #include <Interpreters/Context.h>
@@ -234,14 +233,9 @@ size_t getNumberOfTablesToCreate(const ASTCreateQuery & create, LoadingStrictnes
 
     if (create.is_time_series_table)
     {
-        for (auto target_kind : StorageTimeSeries::getTargetKinds())
-        {
-            /// The recent samples target exists only if the create query has a `RECENT SAMPLES` clause.
-            if ((target_kind == ViewTarget::RecentSamples) && (!create.targets || !create.targets->tryGetTarget(target_kind)))
-                continue;
-            if (!create.hasTargetTableID(target_kind))
-                ++result;
-        }
+        /// The query must be already normalized here (see getTablePropertiesAndNormalizeCreateQuery).
+        chassert(hasExplicitTimeSeriesVersion(create));
+        result += countTimeSeriesInnerTables(create);
     }
 
     return result;
@@ -1478,11 +1472,20 @@ namespace
         }
     }
 
-    void setNullDictionarySourceIfExternal(ASTCreateQuery & create_query)
+    void setNullDictionarySourceIfExternal(ASTCreateQuery & create_query, const ContextPtr & context)
     {
+        /// Nothing to replace: a definition without a source is rejected later by `getDictionaryConfigurationFromAST`.
+        if (!create_query.dictionary || !create_query.dictionary->source)
+            return;
+
         ASTDictionary & dict = *create_query.dictionary;
         if (Poco::toLower(dict.source->name) == "clickhouse")
         {
+            /// `getDictionaryConfigurationFromAST` rejects functions, so evaluate constants such as `currentDatabase()` first.
+            NormalizeAndEvaluateConstantsVisitor::Data visitor_data{context};
+            NormalizeAndEvaluateConstantsVisitor visitor(visitor_data);
+            visitor.visit(dict.source->ptr());
+
             auto config = getDictionaryConfigurationFromAST(create_query, Context::getGlobalContextInstance());
             auto info = getInfoIfClickHouseDictionarySource(config, Context::getGlobalContextInstance());
             if (info && info->is_local)
@@ -1560,7 +1563,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
     }
 
     if (create.is_dictionary && getContext()->getSettingsRef()[Setting::restore_replace_external_dictionary_source_to_null])
-        setNullDictionarySourceIfExternal(create);
+        setNullDictionarySourceIfExternal(create, getContext());
 
     if (create.is_dictionary || create.is_ordinary_view)
         return;
@@ -2594,7 +2597,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                 backQuoteIfNeed(create.getTable()));
         }
     }
-    else if (!create.attach)
+    else if (!create.attach || (!create.attach_short_syntax && !database->canReattachTableWithFullDefinition()))
     {
         /// Checking that table may exists in detached/detached permanently state
         try
@@ -3786,8 +3789,8 @@ void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, Cont
 
     /// With an old DDL entry format the query is shipped un-normalized, so hosts running different releases
     /// of ClickHouse would pin different latest versions. Pin the initiator's one here, like the UUIDs above.
-    if (create.is_time_series_table && !hasExplicitTimeSeriesSettingVersion(create))
-        setTimeSeriesSettingVersion(create, TimeSeriesVersion::LATEST);
+    if (create.is_time_series_table && !hasExplicitTimeSeriesVersion(create))
+        setTimeSeriesVersion(create, TimeSeriesVersion::LATEST);
 
     /// For cross-replication cluster we cannot use UUID in replica path.
     String cluster_name_expanded = local_context->getMacros()->expand(cluster_name);

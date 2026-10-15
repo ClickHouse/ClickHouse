@@ -49,6 +49,8 @@ public:
     void setStepProfiler(StepProfilerPtr step_profiler_) override;
 
 private:
+    /// Outlives graph registrations, including when construction fails.
+    QueryStatusPtr process_list_element;
     ExecutingGraphPtr graph;
 
     ExecutorTasks tasks;
@@ -88,8 +90,6 @@ private:
 
     LoggerPtr log = getLogger("PipelineExecutor");
 
-    QueryStatusPtr process_list_element;
-
     ReadProgressCallbackPtr read_progress_callback;
     StepProfilerPtr step_profiler;
 
@@ -105,6 +105,7 @@ private:
     void executeStepImpl(size_t thread_num, WorkloadResources && resources, std::atomic_bool * yield_flag = nullptr);
     void executeSingleThread(size_t thread_num, WorkloadResources && resources);
     void finish();
+    void detachSpillables();
 
     // Methods for CPU scheduling
     SlotAllocationPtr allocateCPU(size_t num_threads, bool concurrency_control, bool lazy_allocation);
