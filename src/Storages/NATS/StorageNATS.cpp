@@ -950,7 +950,13 @@ void registerStorageNATS(StorageFactory & factory)
     auto creator_fn = [](const StorageFactory::Arguments & args)
     {
         auto nats_settings = std::make_unique<NATSSettings>();
-        if (auto named_collection = tryGetNamedCollectionWithOverrides(args.engine_args, args.getLocalContext(), true, nullptr, &args.table_id))
+        if (auto named_collection = tryGetNamedCollectionWithOverrides(
+                args.engine_args,
+                args.getLocalContext(),
+                /*throw_unknown_collection=*/ true,
+                /*complex_args=*/ nullptr,
+                &args.table_id,
+                args.storage_def->settings))
         {
             nats_settings->loadFromNamedCollection(named_collection);
         }
