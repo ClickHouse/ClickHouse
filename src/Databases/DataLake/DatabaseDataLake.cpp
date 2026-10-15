@@ -129,6 +129,7 @@ namespace DataLakeStorageSetting
     extern const DataLakeStorageSettingsString iceberg_metadata_file_path;
     extern const DataLakeStorageSettingsBool iceberg_use_version_hint;
     extern const DataLakeStorageSettingsBool allow_experimental_iceberg_compaction;
+    extern const DataLakeStorageSettingsString disk;
 }
 
 namespace ServerSetting
@@ -547,6 +548,19 @@ std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfigur
     /// Iceberg REST catalog, so route them to that arm; the legacy catalog never reports Iceberg.
     if (catalog_type == DatabaseDataLakeCatalogType::UNITY && table_format == DataLake::DataLakeTableFormat::ICEBERG)
         catalog_type = DatabaseDataLakeCatalogType::ICEBERG_REST;
+
+#if USE_AWS_S3 && USE_GOOGLE_CLOUD
+    /// Catalogs report a `gs://` location as `S3` storage, but a native GCS disk is not an S3 backend:
+    /// the S3 configuration cannot be built from it, so an Iceberg table on such a disk uses the native
+    /// GCS configuration, like the `Iceberg` table engine does.
+    if (type == DatabaseDataLakeStorageType::S3 && table_format == DataLake::DataLakeTableFormat::ICEBERG
+        && (*storage_settings)[DataLakeStorageSetting::disk].changed)
+    {
+        auto disk = Context::getGlobalContextInstance()->getDisk((*storage_settings)[DataLakeStorageSetting::disk].value);
+        if (disk->getObjectStorage()->getType() == ObjectStorageType::GCS)
+            return std::make_shared<StorageGCSIcebergConfiguration>(storage_settings);
+    }
+#endif
 
     switch (catalog_type)
     {
