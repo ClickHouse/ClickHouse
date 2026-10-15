@@ -567,7 +567,7 @@ The wait time for reading from RabbitMQ before retry.
     DECLARE(Milliseconds, pulsar_max_wait_ms, 5000, R"(
 The wait time for reading from Pulsar before retry.
 )", 0, \
-        {"26.10", 5000, 5000, "New setting for the Pulsar storage engine: the wait time for reading from Pulsar before retry."}) \
+        {"26.11", 5000, 5000, "New setting for the Pulsar storage engine: the wait time for reading from Pulsar before retry."}) \
     DECLARE(UInt64, poll_interval, DBMS_DEFAULT_POLL_INTERVAL, R"(
 Block at the query wait loop on the server for the specified number of seconds.
 )", 0) \
@@ -10520,7 +10520,7 @@ Allows creation of tables with the `Pulsar` table engine. Possible values:
 - 0 — the `Pulsar` table engine is disabled.
 - 1 — the `Pulsar` table engine is enabled.
 )", EXPERIMENTAL, \
-        {"26.10", false, false, "New setting to gate the new experimental `Pulsar` table engine."}) \
+        {"26.11", false, false, "New setting to gate the new experimental `Pulsar` table engine."}) \
     DECLARE(UInt64, unique_key_max_encoded_size, 256, R"(
 Maximum size (in bytes) of the order-preserving binary encoding of a single `UNIQUE KEY` row.
 )", EXPERIMENTAL, \
