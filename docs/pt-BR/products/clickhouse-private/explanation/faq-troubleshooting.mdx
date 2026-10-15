@@ -1,0 +1,111 @@
+---
+noindex: true
+title: "FAQ / Solução de problemas"
+sidebarTitle: "FAQ"
+description: "Se este erro aparecer nos logs do ClickHouse Operator, isso significa que ele não consegue concluir a reconciliação do cluster do ClickHouse porque o operador"
+---
+
+<div id="zone-details-couldnt-be-found-for-any-pv">
+  ## não foi possível encontrar detalhes da zona para nenhum PV?
+</div>
+
+Se esse erro aparecer nos logs do ClickHouse Operator, isso significa que ele não consegue concluir a reconciliação do cluster do ClickHouse porque o operador espera que afinidades de nó com reconhecimento de topologia sejam preenchidas automaticamente nos PersistentVolumes. Especificamente, o operador procura afinidades de nó com base no rótulo `topology.kubernetes.io/zone`. Normalmente, isso é tratado por provisionadores de volume com reconhecimento de topologia (por exemplo, ao usar o provisionador de volume AWS EBS).
+
+No entanto, para determinados provedores de Cloud (por exemplo, IBM) ou ambientes on-premise, isso não será preenchido automaticamente, ou serão usados rótulos fora do padrão. Para garantir que o operador ainda possa continuar operando, recomenda-se adicionar as afinidades de nó à classe de armazenamento, como por exemplo:
+
+```yaml
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local-nvme-sc
+allowVolumeExpansion: true
+parameters:
+  path: /nvme/disk
+provisioner: rancher.io/local-path
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowedTopologies:
+  - matchLabelExpressions:
+      - key: topology.kubernetes.io/zone
+        values:
+          - <your_cluster_name>-keeper
+          - <your_host_1>
+          - <your_host_2>
+          - <your_host_3>
+          - <your_host_4>
+          - <your_host_5>
+          - <your_host_6>
+      - key: directpv.min.io/zone
+        values:
+          - default
+```
+
+Isso garantirá que os volumes de armazenamento sejam criados com as afinidades de nós corretas. Por exemplo:
+
+```yaml
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  ...
+spec:
+  accessModes:
+    - ReadWriteOnce
+  ...
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: directpv.min.io/zone
+              operator: In
+              values:
+                - default
+  ...
+```
+
+Se forem usados rótulos não padrão para gerenciar a topologia, o operador expõe uma propriedade `additionalZoneLabelRegexes`. Por exemplo, se você estiver usando o Chart do Helm para instalar o operador, poderá definir o valor do helm `operator.additionalZoneLabelRegexes` como `directpv.*zone` para corresponder ao PersistentVolume acima.
+
+<div id="what-does-the-loadbalancertype-field-on-the-clickhousecluster-crd-do">
+  ## O que o campo `loadBalancerType` faz na CRD ClickHouseCluster?
+</div>
+
+Na prática, o `loadBalancerType` não adiciona anotações de balanceador de carga ao Service do cluster ClickHouse. Atualmente, o ClickHouse Operator não oferece suporte à criação de um balanceador de carga para o cluster ClickHouse. Esse campo só é útil no ClickHouse Cloud, onde é usado para ajudar a criar usuários para o Cloud SQL Console.
+
+<div id="do-i-have-to-use-a-nvme-attached-instance-what-purpose-does-the-nvme-disk-serve">
+  ## Preciso usar uma instância com NVMe anexado? Para que serve o disco NVMe?
+</div>
+
+O disco NVMe é usado pelo ClickHouse Operator para montar um volume de cache nos pods do servidor ClickHouse. Esse volume de cache é usado para armazenar em cache os dados vindos do S3 (ou de armazenamentos de objetos equivalentes). O ClickHouse Operator configura automaticamente os disks na configuração do servidor ClickHouse:
+
+```yaml
+s3diskWithCache:
+    type: cache
+    disk: s3disk
+    path: /mnt/clickhouse-cache/sharedS3DiskCache
+    max_size:
+    '@from_env': CONFIG_DISK_CACHE_SIZE
+    cache_on_write_operations: 1
+```
+
+Observe que, ao usar o SharedMergeTree, o ClickHouse na verdade não armazena dados localmente. Não há outra finalidade além de otimizar o desempenho das consultas executadas no SharedMergeTree.
+
+É possível usar outros dispositivos de armazenamento, como, por exemplo, o AWS EBS ao usar instâncias EC2. Isso altera algumas etapas no guia de onboarding:
+
+* Você precisa garantir que os discos estejam anexados às instâncias usadas para agendar os pods do Kubernetes do servidor ClickHouse
+* O modelo de inicialização deve ser alterado para refletir as mudanças na arquitetura de disco. Ainda é possível criar um disco RAID &amp; formatá-lo como ext4 ou xfs, mas, obviamente, os dispositivos devem ser listados com outra ferramenta (por exemplo, `lsblk`).
+* Se os discos não estiverem montados em `/nvme/disk`, como no modelo de inicialização de exemplo, o `hostPathBaseDirectory` no Chart do Helm do ClickHouseCluster deve ser definido como o ponto de montagem real.
+
+Observe que, dependendo das escolhas feitas, você pode afetar o desempenho das consultas.
+
+<div id="can-i-deploy-multiple-clickhouseclusters-in-the-same-namespace">
+  ## Posso implantar vários ClickHouseClusters no mesmo espaço de nomes?
+</div>
+
+Não. O operador pressupõe exatamente um `ClickHouseCluster` por espaço de nomes. Implantar várias instâncias no mesmo espaço de nomes causará conflitos de reconciliação. O Chart do Helm `onprem-clickhouse-cluster` impõe isso por padrão por meio de uma `ResourceQuota`, que limita o espaço de nomes a um único recurso `ClickHouseCluster`. Se você precisar de vários clusters, implante cada um em seu próprio espaço de nomes.
+
+<div id="i-use-s3-compatible-storage-but-region-information-isnt-required-or-causes-issues">
+  ## Uso armazenamento compatível com S3, mas as informações de região não são necessárias (ou causam problemas)
+</div>
+
+Por padrão, o operador exige informações de região na conexão com o S3. Esse é o comportamento recomendado para armazenamento de objetos na nuvem, mas, se você estiver usando armazenamento de objetos on-premise (por exemplo, MinIO), as informações de região podem causar problemas.
+
+O operador pode desativar essa exigência de região por cluster definindo `spec.isOnPremiseInstance` como `true` no recurso personalizado `ClickHouseCluster`. Quando isso é definido, o operador torna opcionais as informações de região na conexão com o S3 -- se nenhuma região for informada, o campo de região será removido completamente da configuração.

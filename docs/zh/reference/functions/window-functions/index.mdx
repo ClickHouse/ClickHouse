@@ -1,6 +1,6 @@
 ---
 description: '窗口函数概述页面'
-sidebarTitle: '概述'
+sidebarTitle: '窗口函数'
 slug: /sql-reference/window-functions/
 title: '窗口函数'
 doc_type: 'reference'
@@ -24,13 +24,13 @@ ClickHouse 支持窗口和窗口函数的标准 SQL 语法。
 | `ROWS` 窗口帧                                                          | ✅   |                                                                                                                                                                                                                                                                                               |
 | `RANGE` 窗口帧                                                         | ✅   | 未显式指定窗口帧时，默认使用它 (`RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`) 。                                                                                                                                                                                                                       |
 | `DateTime` `RANGE OFFSET` 窗口帧的 `INTERVAL` 语法                        | ❌   | 请改为直接指定秒数 (`RANGE` 适用于任何数值类型) 。                                                                                                                                                                                                                                                               |
-| `GROUPS` 窗口帧                                                        | ✅   | 窗口帧边界按完整的对等组 (即在 `ORDER BY` 键上相等的行) 计数；`N PRECEDING` 和 `N FOLLOWING` 分别计算当前行所在对等组之前和之后的 `N` 个对等组。                                                                                                                                                                                 |
+| `GROUPS` 窗口帧                                                        | ❌   |                                                                                                                                                                                                                                                                                               |
 | 在窗口帧上计算聚合函数 (`sum(value) OVER (ORDER BY time)`)                     | ✅   | 支持所有聚合函数。                                                                                                                                                                                                                                                                                     |
 | `rank()`, `dense_rank()`/`denseRank()`, `row_number()`              | ✅   |                                                                                                                                                                                                                                                                                               |
 | `percent_rank()`/`percentRank()`                                    | ✅   | 可高效计算某个值在分区内的相对排名。它可替代更冗长且计算开销更高的手动 SQL 写法：`ifNull((rank() OVER (PARTITION BY x ORDER BY y) - 1) / nullif(count(1) OVER (PARTITION BY x) - 1, 0), 0)`。                                                                                                                                        |
 | `cume_dist()`                                                       | ✅   | 计算某个值在一组值中的累计分布。返回值小于或等于当前行值的行所占的百分比。                                                                                                                                                                                                                                                         |
 | `lag/lead(value, offset)`                                           | ✅   | 你也可以使用以下任一变通方法：<br /> 1) `any(value) OVER (... ROWS BETWEEN <offset> PRECEDING AND <offset> PRECEDING)`，或者对于 `lead`，使用 `FOLLOWING` 替代 `PRECEDING` <br /> 2) `lagInFrame/leadInFrame`，它们与前者类似，但会遵循窗口帧。若要获得与 `lag/lead` 完全相同的行为，请使用 `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`。 |
-| [`ntile(buckets)`](/zh/reference/functions/window-functions/ntile)     | ✅   | 例如，可将窗口指定为 `(PARTITION BY x ORDER BY y ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)`。                                                                                                                                                                                            |
+| `ntile(buckets)`                                                    | ✅   | 例如，可将窗口指定为 `(PARTITION BY x ORDER BY y ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)`。                                                                                                                                                                                            |
 
 <div id="syntax">
   ## 语法
@@ -39,18 +39,18 @@ ClickHouse 支持窗口和窗口函数的标准 SQL 语法。
 ```text
 aggregate_function (column_name)
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column] 
-        [ROWS, RANGE, or GROUPS expression_to_bound_rows_within_the_group]] | [window_name])
+        [ROWS or RANGE expression_to_bound_rows_within_the_group]] | [window_name])
 FROM table_name
 WINDOW window_name as ([
   [PARTITION BY grouping_column]
   [ORDER BY sorting_column]
-  [ROWS, RANGE, or GROUPS expression_to_bound_rows_within_the_group]
+  [ROWS or RANGE expression_to_bound_rows_within_the_group]
 ])
 ```
 
 * `PARTITION BY` - 定义如何将结果集划分为多个组。
 * `ORDER BY` - 定义在计算 aggregate&#95;function 时，如何对组内的行进行排序。
-* `ROWS`、`RANGE` 或 `GROUPS` - 定义窗口帧的边界，aggregate&#95;function 在窗口帧内进行计算。`ROWS` 按物理行计数，`RANGE` 按 `ORDER BY` 值计数，`GROUPS` 按对等组计数 (即 `ORDER BY` 键值相等的行) 。
+* `ROWS or RANGE` - 定义窗口帧的边界，aggregate&#95;function 在窗口帧内进行计算。
 * `WINDOW` - 允许多个表达式使用同一个窗口定义。
 
 ```text
@@ -84,13 +84,8 @@ WINDOW window_name as ([
 | [`nth_value(x, offset)`](/zh/reference/functions/window-functions/nth_value)                                                                   | 返回其有序窗口帧中第 n 行 (偏移量) 对应计算结果里的第一个非 NULL 值。                            |
 | [`rank()`](/zh/reference/functions/window-functions/rank)                                                                                      | 对当前行在其分区内进行排名，排名中会有空缺。                                               |
 | [`dense_rank()`](/zh/reference/functions/window-functions/dense_rank)                                                                          | 对当前行在其分区内进行排名，排名中没有空缺。                                               |
-| [`percent_rank()`](/zh/reference/functions/window-functions/percent_rank)                                                                      | 计算当前行在其分区内的相对排名，结果是介于 0 和 1 之间的值。                                    |
-| [`cume_dist()`](/zh/reference/functions/window-functions/cume_dist)                                                                            | 计算某个值在一组值中的累计分布。                                                     |
-| [`lag(x, offset)`](/zh/reference/functions/window-functions/lag)                                                                               | 返回分区内当前行之前偏移若干行处计算出的值。                                               |
-| [`lead(x, offset)`](/zh/reference/functions/window-functions/lead)                                                                             | 返回分区内当前行之后偏移若干行处计算出的值。                                               |
 | [`lagInFrame(x)`](/zh/reference/functions/window-functions/lagInFrame)                                                                         | 返回其有序窗口帧中位于当前行之前指定物理偏移位置的行所计算出的值。                                    |
 | [`leadInFrame(x)`](/zh/reference/functions/window-functions/leadInFrame)                                                                       | 返回其有序窗口帧中位于当前行之后偏移若干行的位置所计算出的值。                                      |
-| [`ntile(buckets)`](/zh/reference/functions/window-functions/ntile)                                                                             | 将分区内的有序行划分为给定数量的桶，并返回当前行所在的桶编号。                                      |
 | [`nonNegativeDerivative(metric_column, timestamp_column[, INTERVAL X UNITS])`](/zh/reference/functions/window-functions/nonNegativeDerivative) | 计算 `metric_column` 相对于 `timestamp_column` 的非负导数。这是 ClickHouse 特有的函数。 |
 
 <div id="examples">
@@ -526,44 +521,6 @@ ORDER BY
 │ [2,3,4,5]      │            3 │
 └────────────────┴──────────────┘
 ```
-
-<div id="groups-frame">
-  ### GROUPS 窗口帧
-</div>
-
-`GROUPS` 窗口帧以完整的*对等组*为单位计数——即 `ORDER BY` 键相同的行集合——而非物理行 (`ROWS`) 或 `ORDER BY` 值 (`RANGE`) 。`N PRECEDING` 和 `N FOLLOWING` 分别表示当前行所属对等组之前和之后的 `N` 个对等组；每个纳入窗口的对等组均包含其所有行。
-
-以下查询针对 `ROWS`、`RANGE` 和 `GROUPS` 窗口帧，均使用相同的 `1 PRECEDING AND 1 FOLLOWING` 边界。`order` 列包含重复且不连续的值，因此这三种模式覆盖的行各不相同：
-
-```sql
-CREATE TABLE wf_frame_groups (`order` UInt64, value UInt64) ENGINE = Memory;
-INSERT INTO wf_frame_groups FORMAT Values (10, 1), (10, 2), (20, 3), (30, 4), (30, 5);
-
-SELECT
-    order,
-    value,
-    groupArray(value) OVER (ORDER BY order ROWS   BETWEEN 1 PRECEDING AND 1 FOLLOWING) AS rows_frame,
-    groupArray(value) OVER (ORDER BY order RANGE  BETWEEN 1 PRECEDING AND 1 FOLLOWING) AS range_frame,
-    groupArray(value) OVER (ORDER BY order GROUPS BETWEEN 1 PRECEDING AND 1 FOLLOWING) AS groups_frame
-FROM wf_frame_groups
-ORDER BY order, value;
-```
-
-```response
-┌─order─┬─value─┬─rows_frame─┬─range_frame─┬─groups_frame─┐
-│    10 │     1 │ [1,2]      │ [1,2]       │ [1,2,3]      │
-│    10 │     2 │ [1,2,3]    │ [1,2]       │ [1,2,3]      │
-│    20 │     3 │ [2,3,4]    │ [3]         │ [1,2,3,4,5]  │
-│    30 │     4 │ [3,4,5]    │ [4,5]       │ [3,4,5]      │
-│    30 │     5 │ [4,5]      │ [4,5]       │ [3,4,5]      │
-└───────┴───────┴────────────┴─────────────┴──────────────┘
-```
-
-每种模式对边界的解释方式不同：
-
-* `ROWS` 按物理行计数，因此窗口帧最多包含三个相邻行：当前行及其前后各一行。
-* `RANGE` 按 `order` 值计数，因此 `1 PRECEDING` 和 `1 FOLLOWING` 覆盖与当前行 `order` 值相差不超过 1 的行。当间隔为 10 时，没有相邻行符合条件，因此窗口帧仅包含与当前行具有相同 `order` 值的行。
-* `GROUPS` 按对等组计数，因此 `1 PRECEDING` 和 `1 FOLLOWING` 始终完整包含相邻组，无论 `order` 值之间的间隔有多大。
 
 <div id="real-world-examples">
   ## 真实场景示例

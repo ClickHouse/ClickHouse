@@ -315,17 +315,17 @@ std::optional<UInt64> DiskLocal::getUnreservedSpace() const
 
 bool DiskLocal::existsFileOrDirectory(const String & path) const
 {
-    return existsOrFileNameTooLong([&] { return fs::exists(fs::path(disk_path) / path); });
+    return fs::exists(fs::path(disk_path) / path);
 }
 
 bool DiskLocal::existsFile(const String & path) const
 {
-    return existsOrFileNameTooLong([&] { return fs::is_regular_file(fs::path(disk_path) / path); });
+    return fs::is_regular_file(fs::path(disk_path) / path);
 }
 
 bool DiskLocal::existsDirectory(const String & path) const
 {
-    return existsOrFileNameTooLong([&] { return fs::is_directory(fs::path(disk_path) / path); });
+    return fs::is_directory(fs::path(disk_path) / path);
 }
 
 size_t DiskLocal::getFileSize(const String & path) const
@@ -777,21 +777,17 @@ void registerDiskLocal(DiskFactory & factory, bool global_skip_access_check)
         const String & config_prefix,
         ContextPtr context,
         const DisksMap & map,
-        bool attach,
-        bool custom_disk) -> DiskPtr
+        bool, bool) -> DiskPtr
     {
         String path;
         UInt64 keep_free_space_bytes = 0;
         loadDiskLocalConfig(name, config, config_prefix, context, path, keep_free_space_bytes);
 
-        if (custom_disk && !attach)
-            checkCustomLocalDiskPath(path, context);
-
         for (const auto & [disk_name, disk_ptr] : map)
             if (path == disk_ptr->getPath())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk {} and disk {} cannot have the same path ({})", name, disk_name, path);
 
-        bool skip_access_check = config.getBool(config_prefix + ".skip_access_check", false) || global_skip_access_check;
+        bool skip_access_check = global_skip_access_check || config.getBool(config_prefix + ".skip_access_check", false);
         std::shared_ptr<IDisk> disk
             = std::make_shared<DiskLocal>(name, path, keep_free_space_bytes, context, config, config_prefix);
         disk->startup(skip_access_check);
