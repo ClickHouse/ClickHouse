@@ -3,10 +3,16 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionFactory.h>
+#include <Compression/CompressionInfo.h>
+#include <Compression/ICompressionCodec.h>
 #include <IO/ReadBuffer.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
+
+#include <base/unaligned.h>
+#include <city.h>
 
 #include <algorithm>
 #include <unordered_set>
@@ -34,13 +40,48 @@ void readSnapshotString(std::string & s, ReadBuffer & in)
     readStringBinaryGrowing(s, in, MAX_SNAPSHOT_STRING_SIZE);
 }
 
+/// The size of the uncompressed blocks the snapshot is written in.
+constexpr size_t SNAPSHOT_BLOCK_SIZE = 1024 * 1024;
+
+/// `CompressedReadBuffer` takes the sizes of a block from its header and allocates the memory for the compressed block and
+/// for the decompressed data before it reads the block and verifies its checksum, up to 1 GiB each. The header is not
+/// trusted: every block must be written by `writePlainRewritableSnapshot` with `ZSTD`, be completely present in `data`,
+/// and decompress to at most `SNAPSHOT_BLOCK_SIZE` bytes. Then a block is decompressed right from `data`, and a corrupted
+/// snapshot file fails to parse rather than allocate a huge amount of memory.
+void validateSnapshotBlocks(std::string_view data)
+{
+    constexpr size_t checksum_size = sizeof(CityHash_v1_0_2::uint128);
+    constexpr size_t header_size = COMPRESSED_BLOCK_HEADER_SIZE;
+
+    while (!data.empty())
+    {
+        if (data.size() < checksum_size + header_size)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Truncated header of a compressed block in the plain_rewritable snapshot file");
+
+        const char * header = data.data() + checksum_size;
+        const UInt8 method = ICompressionCodec::readMethod(header);
+        /// Both sizes include the header.
+        const size_t compressed_size = unalignedLoadLittleEndian<UInt32>(header + 1);
+        const size_t decompressed_size = unalignedLoadLittleEndian<UInt32>(header + 5);
+
+        if (method != static_cast<UInt8>(CompressionMethodByte::ZSTD))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected compression method 0x{:02x} of a block in the plain_rewritable snapshot file", static_cast<UInt32>(method));
+        if (compressed_size < header_size || compressed_size > data.size() - checksum_size)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid size {} of a compressed block in the plain_rewritable snapshot file", compressed_size);
+        if (decompressed_size == 0 || decompressed_size > SNAPSHOT_BLOCK_SIZE)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid decompressed size {} of a block in the plain_rewritable snapshot file", decompressed_size);
+
+        data.remove_prefix(checksum_size + compressed_size);
+    }
+}
+
 }
 
 void writePlainRewritableSnapshot(const PlainRewritableRemoteLayout & layout, WriteBuffer & out)
 {
     writeVarUInt(SNAPSHOT_FORMAT_VERSION, out);
 
-    CompressedWriteBuffer compressed(out, CompressionCodecFactory::instance().get("ZSTD", {}));
+    CompressedWriteBuffer compressed(out, CompressionCodecFactory::instance().get("ZSTD", {}), SNAPSHOT_BLOCK_SIZE);
 
     try
     {
@@ -94,7 +135,13 @@ PlainRewritableRemoteLayout readPlainRewritableSnapshot(ReadBuffer & in)
     if (version != SNAPSHOT_FORMAT_VERSION)
         throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown version {} of the plain_rewritable snapshot file, expected {}", version, SNAPSHOT_FORMAT_VERSION);
 
-    CompressedReadBuffer compressed(in);
+    /// The data grows as its bytes are actually read, so the memory is proportional to the size of the file.
+    std::string compressed_data;
+    readStringUntilEOF(compressed_data, in);
+    validateSnapshotBlocks(compressed_data);
+
+    ReadBufferFromString compressed_in(compressed_data);
+    CompressedReadBuffer compressed(compressed_in);
 
     PlainRewritableRemoteLayout layout;
 

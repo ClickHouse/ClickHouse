@@ -26,7 +26,7 @@ using PlainRewritableRemoteLayout = std::unordered_map<std::string, DirectoryRem
   * The format is:
   * - a `VarUInt` format version (`SNAPSHOT_FORMAT_VERSION`), written as is;
   * - the rest of the file is compressed with `ZSTD` in the native ClickHouse framing
-  *   (`CompressedWriteBuffer`, checksummed blocks) and contains:
+  *   (`CompressedWriteBuffer`, checksummed blocks of at most 1 MiB of uncompressed data) and contains:
   *   - `VarUInt` number of directories, then for every directory, ordered by path:
   *     - `String` logical path (normalized, `""` for the root), `String` remote path, `String` ETag of `prefix.path`,
   *       `Int64` last modification time, `UInt8` whether `prefix.path` lists the files explicitly (see `PrefixPath.h`);

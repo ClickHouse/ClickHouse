@@ -1,7 +1,9 @@
+#include <Compression/CompressionInfo.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorage.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/PlainRewritableSnapshotFile.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/PrefixPath.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Disks/WriteMode.h>
@@ -9,6 +11,10 @@
 #include <IO/ReadSettings.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/Operators.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 
 #include <Core/ServerUUID.h>
 
@@ -39,6 +45,7 @@ using namespace DB;
 namespace DB::ErrorCodes
 {
     extern const int CORRUPTED_DATA;
+    extern const int INCORRECT_DATA;
 }
 
 namespace ProfileEvents
@@ -2811,6 +2818,67 @@ TEST_F(MetadataPlainRewritableDiskTest, ReaderListsWithMalformedMarker)
     EXPECT_TRUE(reader.existsFile("A/later"));
     reader.refresh(0);
     EXPECT_TRUE(reader.existsFile("A/later"));
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, SnapshotWithMalformedBlockIsNotRead)
+{
+    /// A snapshot file with a single compressed block whose header declares the given sizes, followed by `payload_size` bytes.
+    auto make_snapshot = [](UInt32 compressed_size, UInt32 decompressed_size, size_t payload_size)
+    {
+        std::string data;
+        WriteBufferFromString out(data);
+        writeVarUInt(SNAPSHOT_FORMAT_VERSION, out);
+        out.write(std::string(16, '\0').data(), 16); /// The checksum.
+        writeBinary(static_cast<UInt8>(CompressionMethodByte::ZSTD), out);
+        writeBinaryLittleEndian(compressed_size, out);
+        writeBinaryLittleEndian(decompressed_size, out);
+        out.write(std::string(payload_size, '\0').data(), payload_size);
+        out.finalize();
+        return data;
+    };
+
+    auto expect_rejected = [](const std::string & data, const std::string & reason)
+    {
+        ReadBufferFromString in(data);
+        try
+        {
+            readPlainRewritableSnapshot(in);
+            FAIL() << "The malformed snapshot was read";
+        }
+        catch (const Exception & e)
+        {
+            /// Rejected by the header of the block, before any memory is allocated for it.
+            EXPECT_EQ(e.code(), ErrorCodes::INCORRECT_DATA) << e.message();
+            EXPECT_THAT(e.message(), testing::HasSubstr(reason));
+        }
+    };
+
+    const auto huge_compressed_block = make_snapshot(512 * 1024 * 1024, 1, 0);
+    expect_rejected(huge_compressed_block, "Invalid size 536870912 of a compressed block");
+    expect_rejected(make_snapshot(9 + 10, 512 * 1024 * 1024, 10), "Invalid decompressed size 536870912");
+
+    /// A reader does not use such a snapshot and lists the object storage.
+    const std::string test = "SnapshotWithMalformedBlockIsNotRead";
+    auto writer = getMetadataStorage(test);
+    auto object_storage = getObjectStorage(test);
+    {
+        auto tx = writer->createTransaction();
+        tx->createDirectory("A");
+        size_t size = writeObject(object_storage, tx->generateObjectKeyForPath("A/file").serialize(), "test");
+        tx->createMetadataFile("A/file", {StoredObject("A/file", "A/file", size)});
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    const auto snapshot_key = fmt::format("{}/__meta/{}", object_storage->getCommonKeyPrefix(), PlainRewritableLayout::SNAPSHOT_FILE_NAME);
+    {
+        WriteBufferFromFile out(snapshot_key);
+        out.write(huge_compressed_block.data(), huge_compressed_block.size());
+        out.finalize();
+    }
+
+    auto reader_storage = std::make_shared<LocalObjectStorage>(LocalObjectStorageSettings("reader", object_storage->getCommonKeyPrefix(), /*read_only_=*/ true));
+    MetadataStorageFromPlainRewritableObjectStorage reader(reader_storage, "", hard_links_enabled);
+    EXPECT_EQ(reader.listDirectory("A"), std::vector<std::string>({"file"}));
 }
 
 TEST_F(MetadataPlainRewritableDiskTest, WriterWithSnapshotsDisabledRemovesSnapshot)
