@@ -302,8 +302,33 @@ static std::optional<ComparisonFunction> toComparisonFunction(const String & nam
     return it->second;
 }
 
+/// Inserts the function nodes and the subqueries in `node`. Column nodes are left out: they are shared with the rest of the query.
+static void insertFunctionsAndSubqueries(const QueryTreeNodePtr & node, std::unordered_set<QueryTreeNodePtr> & nodes)
+{
+    std::vector<QueryTreeNodePtr> nodes_to_process{node};
+    while (!nodes_to_process.empty())
+    {
+        auto current = std::move(nodes_to_process.back());
+        nodes_to_process.pop_back();
+
+        const auto node_type = current->getNodeType();
+        if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
+        {
+            nodes.insert(current);
+            continue;
+        }
+
+        if (node_type == QueryTreeNodeType::FUNCTION && !nodes.insert(current).second)
+            continue;
+
+        for (const auto & child : current->getChildren())
+            if (child)
+                nodes_to_process.push_back(child);
+    }
+}
+
 /// The comparison and `and` nodes of `query_node`, outside of its subqueries, that are equal to one of its `GROUP BY` keys,
-/// or under `group_by_use_nulls` to the `Nullable` shape of a key that the analyzer puts after `GROUP BY`.
+/// or under `group_by_use_nulls` to the `Nullable` shape of a key that the analyzer puts after `GROUP BY`, with the functions below them.
 /// Collected before the query is rewritten, because the rewrites change `or`/`and` nodes inside a key in place.
 static std::unordered_set<QueryTreeNodePtr> collectGroupByKeyNodes(const QueryNode & query_node, bool group_by_use_nulls)
 {
@@ -359,14 +384,15 @@ static std::unordered_set<QueryTreeNodePtr> collectGroupByKeyNodes(const QueryNo
 
         for (const auto & child : node->getChildren())
         {
-            if (!child || child->getNodeType() == QueryTreeNodeType::QUERY || child->getNodeType() == QueryTreeNodeType::UNION)
+            if (!child || child->getNodeType() == QueryTreeNodeType::QUERY || child->getNodeType() == QueryTreeNodeType::UNION
+                || result.contains(child))
                 continue;
 
             if (is_candidate(child)
                 && std::ranges::any_of(keys, [&](const QueryTreeNodePtr & key) { return compareGroupByKeys(child, key); }))
-                result.insert(child);
-
-            nodes_to_process.push_back(child.get());
+                insertFunctionsAndSubqueries(child, result);
+            else
+                nodes_to_process.push_back(child.get());
         }
     }
 
@@ -1901,14 +1927,17 @@ public:
     /// a conjunct over these can't leave ON, and full_sorting_merge rejects it there
     TableExpressionNodes preserved_join_tables;
 
-    /// For each enclosing query, the nodes `collectGroupByKeyNodes` returned for it: they are read from the aggregation
-    /// result, so the chain rewrites keep them as written. The first set is for an expression outside of any query.
+    /// For each enclosing query, the nodes `collectGroupByKeyNodes` returned for it: a copy of a key is read from the
+    /// aggregation result, so these nodes are kept as written. The first set is for an expression outside of any query.
     std::vector<std::unordered_set<QueryTreeNodePtr>> group_by_key_nodes_stack{1};
 
-    bool isGroupByKey(const QueryTreeNodePtr & node) const { return group_by_key_nodes_stack.back().contains(node); }
+    bool isInGroupByKey(const QueryTreeNodePtr & node) const { return group_by_key_nodes_stack.back().contains(node); }
 
     bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child)
     {
+        if (isInGroupByKey(child))
+            return false;
+
         const auto * join_node = parent->as<JoinNode>();
         if (!join_node || child != join_node->getJoinExpression())
             return true;
@@ -1954,7 +1983,7 @@ public:
             return;
 
         /// Each copy of a key must stay equal to the key, and a rewrite can treat the copies differently.
-        if (isGroupByKey(node))
+        if (isInGroupByKey(node))
             return;
 
         if (function_node->getFunctionName() == "or")
@@ -2064,7 +2093,7 @@ private:
                 : std::nullopt;
 
             /// Not a comparison, or a GROUP BY key, keep as-is.
-            if (!comparison_func || isGroupByKey(argument))
+            if (!comparison_func || isInGroupByKey(argument))
             {
                 all_operands.emplace_back(argument_index, argument);
                 ++argument_index;
@@ -2408,7 +2437,7 @@ private:
             /// `x != 3`) has to stay plain so the next pass folds the AND to `false`.
             const auto valid_functions = std::unordered_set<std::string>{
                 "less", "greater", "lessOrEquals", "greaterOrEquals", "equals", "notEquals"};
-            if (!argument_function || !valid_functions.contains(argument_function->getFunctionName()) || isGroupByKey(argument))
+            if (!argument_function || !valid_functions.contains(argument_function->getFunctionName()) || isInGroupByKey(argument))
                 continue;
 
             const auto function_name = argument_function->getFunctionName();
@@ -2683,7 +2712,7 @@ private:
         for (const auto & argument : function_node.getArguments())
         {
             auto * argument_function = argument->as<FunctionNode>();
-            if (!argument_function || argument_function->getFunctionName() != "equals" || isGroupByKey(argument))
+            if (!argument_function || argument_function->getFunctionName() != "equals" || isInGroupByKey(argument))
             {
                 or_operands.push_back(argument);
                 continue;

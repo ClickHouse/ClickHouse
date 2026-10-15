@@ -25,6 +25,8 @@ SELECT ((x != 1) = 1) AND ((x != 2) = 1) AND ((x != 3) = 1) AS e, count() FROM (
 SELECT ((x > 1.5) = 1) AND ((x < 2.5) = 1) AS e, count() FROM (SELECT number % 4 AS x FROM numbers(8)) GROUP BY (x > 1.5) = 1, (x < 2.5) = 1 ORDER BY ALL;
 SELECT (x < y) AND (y < 5) AS e, count() FROM (SELECT number % 4 AS x, number % 6 AS y FROM numbers(12)) GROUP BY ROLLUP((x < y) AND (y < 5)) ORDER BY e SETTINGS group_by_use_nulls = 1;
 SELECT (x = 1) AND (x = 2) AS e, count() FROM (SELECT number % 4 AS x FROM numbers(8)) GROUP BY ROLLUP((x = 1) AND (x = 2)) ORDER BY e SETTINGS group_by_use_nulls = 1;
+SELECT (((x < y) AND (y < 5)) = 1) AND (x < 3) AS e, count() FROM (SELECT number % 4 AS x, number % 6 AS y FROM numbers(12)) GROUP BY (((x < y) AND (y < 5)) = 1) AND (x < 3) ORDER BY ALL;
+SELECT countIf(e), count() FROM (SELECT x, y, (((x < y) AND (y < 5)) = 1) AND (x < 3) AS e FROM (SELECT number % 4 AS x, number % 6 AS y FROM numbers(12)) GROUP BY ROLLUP(x, y, (((x < y) AND (y < 5)) = 1) AND (x < 3)) ORDER BY ALL);
 
 SELECT 'still rewritten';
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT (x = 1) OR (x = 2) OR (x = 3), count() FROM (SELECT number % 4 AS x, number % 3 AS y FROM numbers(12)) GROUP BY x, y = 0) WHERE explain ILIKE '%function_name: in,%';
