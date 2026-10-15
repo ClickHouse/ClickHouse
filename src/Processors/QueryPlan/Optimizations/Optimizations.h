@@ -49,7 +49,7 @@ struct Optimization
         VectorSearchFilterStrategy vector_search_filter_strategy{};
 
         /// Other settings
-        size_t use_index_for_in_with_subqueries_max_values{};
+        FutureSetSettings set_settings;
         SizeLimits network_transfer_limits;
         bool optimize_prewhere{};
         bool remove_unused_columns{};
@@ -72,12 +72,11 @@ struct Optimization
         bool enable_group_by_top_k_optimization{};
         UInt64 top_k_optimization_observation_rows{};
         bool top_k_optimization_shared_boundary{};
+        bool enable_group_by_top_k_dynamic_filtering{};
+        bool use_query_condition_cache_for_top_k{};
         bool is_explain{};
 
         size_t max_block_size{};
-
-        // parallel replicas
-        bool parallel_replicas_filter_pushdown = false;
 
         /// Mirrors `QueryPlanOptimizationSettings::push_down_volume_reducing_functions`.
         /// `tryExecuteFunctionsAfterSorting` consults it to avoid pinging volume-reducing
@@ -237,9 +236,6 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
 /// so that index pruning (MergeTree primary key) on the other side picks them up
 size_t tryPropagatePredicateAcrossEquiJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
 
-/// Try to prune LHS table granules using JoinRuntimeFilter & index analysis
-void registerLeftSideIndexAnalysisSecondPass(QueryPlan::Node & node, const QueryPlanOptimizationSettings & optimization_settings);
-
 /// Optimize ORDER BY ... LIMIT n query by using skip index or Prewhere threshold filtering
 size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
 
@@ -253,6 +249,9 @@ size_t tryPushHavingPrefilterIntoAggregation(QueryPlan::Node * parent_node, Quer
 /// columns from the side preserved by the join (LEFT/RIGHT). Restricts how many rows
 /// the preserved-side input must produce before joining.
 size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
+
+/// Let a format source answer key-less, unfiltered `min` / `max` of its columns from format statistics.
+size_t tryMinMaxFromFormatStatistics(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
 
 /// Whether the plan-based parallel replicas may make this `MergeTree` read part of a shipped fragment.
 bool mergeTreeReadCanBeShipped(const ReadFromMergeTree & read);
@@ -291,6 +290,7 @@ inline const auto & getOptimizations()
          &QueryPlanOptimizationSettings::convert_any_join_to_semi_or_anti_join},
         {tryOptimizeTopK, "tryOptimizeTopK", &QueryPlanOptimizationSettings::try_use_top_k_optimization},
         {tryTopKThroughJoin, "topKThroughJoin", &QueryPlanOptimizationSettings::top_k_through_join},
+        {tryMinMaxFromFormatStatistics, "minMaxFromFormatStatistics", &QueryPlanOptimizationSettings::min_max_from_files},
     });
 
     return optimizations;
@@ -306,6 +306,8 @@ using Stack = std::vector<Frame>;
 
 /// Second pass optimizations
 void optimizePrimaryKeyConditionAndLimit(const Stack & stack);
+/// Register the applied `__applyFilter` conjuncts on the reading step at the top of the stack.
+void collectAppliedJoinRuntimeFilters(const Stack & stack);
 void processAndOptimizeTextIndexFunctions(
     const Stack & stack, QueryPlan::Nodes & nodes, bool direct_read_from_text_index, const Optimization::ExtraSettings & settings);
 void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
@@ -316,6 +318,10 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
 void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void optimizeJoinByShards(QueryPlan::Node & root);
+/// Mark hash joins with a probe-side MergeTree read prunable by the join's runtime filter:
+/// the reading is then gated on the build completion seal which delivers the filter for
+/// primary key range pruning (see SealGatedReadTransform).
+void markSealGatedReading(QueryPlan::Node & root);
 void optimizeParallelFullSortingMergeJoin(QueryPlan::Node & root, size_t num_shards);
 void optimizeDistinctInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void optimizeLimitForAggregationInOrder(QueryPlan::Node & root);
