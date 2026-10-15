@@ -34,10 +34,9 @@ public:
 
     OutputPort & getOutputPort();
 
-    /// Adds an input before registration is closed with `setHaveAllInputs`. Its header may differ
-    /// from the output header when the algorithm changes the column layout.
-    void addInput(const Block & input_header);
-    /// Closes input registration when constructed with `have_all_inputs_` set to false.
+    /// Methods to add additional input port. It is possible to do only before the first call of `prepare`.
+    void addInput();
+    /// Need to be called after all inputs are added. (only if have_all_inputs was not specified).
     void setHaveAllInputs();
 
     Status prepare() override;
@@ -56,10 +55,6 @@ protected:
         bool need_data = false;
         bool no_data = false;
         size_t next_input_to_read = 0;
-
-        /// Inputs to ask for data without waiting for it (read-ahead for sources
-        /// deferred behind virtual rows). See `IMergingAlgorithm::Status::sources_to_prefetch`.
-        std::vector<size_t> inputs_to_prefetch;
 
         IMergingAlgorithm::Inputs init_chunks;
     };
@@ -132,19 +127,10 @@ public:
             algorithm.consume(state.input_chunk, state.next_input_to_read);
             state.has_input = false;
         }
-        else if (state.no_data)
+        else if (state.no_data && empty_chunk_on_finish)
         {
-            if (empty_chunk_on_finish)
-            {
-                IMergingAlgorithm::Input current_input;
-                algorithm.consume(current_input, state.next_input_to_read);
-            }
-            else
-            {
-                /// The required source finished without data. Let the algorithm release any
-                /// per-source bookkeeping (e.g. a read-ahead slot held for a deferred source).
-                algorithm.onSourceExhausted(state.next_input_to_read);
-            }
+            IMergingAlgorithm::Input current_input;
+            algorithm.consume(current_input, state.next_input_to_read);
             state.no_data = false;
         }
 
@@ -162,10 +148,6 @@ public:
             state.next_input_to_read = status.required_source;
             state.need_data = true;
         }
-
-        if (!status.sources_to_prefetch.empty())
-            state.inputs_to_prefetch.insert(
-                state.inputs_to_prefetch.end(), status.sources_to_prefetch.begin(), status.sources_to_prefetch.end());
 
         if (status.is_finished)
         {
@@ -205,7 +187,7 @@ protected:
         }
         else
         {
-            LOG_DEBUG(log, "{}, {} blocks, {} rows, {} bytes in {:.3f} sec., {:.3f} rows/sec., {}/sec.",
+            LOG_DEBUG(log, "{}, {} blocks, {} rows, {} bytes in {} sec., {} rows/sec., {}/sec.",
                 transform_message, stats.blocks, stats.rows, stats.bytes,
                 seconds, static_cast<double>(stats.rows) / seconds, ReadableSize(static_cast<double>(stats.bytes) / seconds));
         }

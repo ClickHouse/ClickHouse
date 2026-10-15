@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cassert>
 #include <random>
 
 namespace DB
@@ -26,12 +27,9 @@ public:
     {
     }
 
-    void consider(RangesIterator range_it, PartsIterator begin, PartsIterator end, size_t sum_size, size_t sum_rows, size_t min_age, size_t size_prev_at_left, const SimpleMergeSelector::Settings & settings)
+    void consider(RangesIterator range_it, PartsIterator begin, PartsIterator end, size_t sum_size, size_t sum_rows, size_t size_prev_at_left, const SimpleMergeSelector::Settings & settings)
     {
-        const bool should_remove_small_parts_at_right = settings.enable_heuristic_to_remove_small_parts_at_right
-            && (!settings.merge_selector_min_age_to_disable_right_tail_heuristic
-                || min_age < settings.merge_selector_min_age_to_disable_right_tail_heuristic);
-        if (should_remove_small_parts_at_right)
+        if (settings.enable_heuristic_to_remove_small_parts_at_right)
         {
             size_t size_delta = 0;
             size_t rows_delta = 0;
@@ -146,7 +144,6 @@ bool allow(
     double sum_size,
     double max_size,
     double min_age,
-    double min_partition_age,
     double partition_size,
     double min_size_to_lower_base_log,
     double max_size_to_lower_base_log,
@@ -160,10 +157,6 @@ bool allow(
 
     if (settings.min_age_to_force_merge && min_age >= static_cast<double>(settings.min_age_to_force_merge))
         return true;
-
-    if (settings.min_partition_age_to_force_merge && min_partition_age > 0)
-        if (min_partition_age >= static_cast<double>(settings.min_partition_age_to_force_merge))
-            return true;
 
     const size_t size = end - begin;
 
@@ -232,10 +225,6 @@ void selectWithinPartsRange(
     if (parts_count <= 1)
         return;
 
-    double min_partition_age = 0;
-    if (settings.partitions_stats)
-        min_partition_age = static_cast<double>(settings.partitions_stats->at(parts.front().info.getPartitionId()).min_age);
-
     /// If the parts in the parts vector are sorted by block number,
     /// it may not be ideal to only select parts for merging from the first N ones.
     /// This is because if there are more than N parts in the partition,
@@ -257,10 +246,10 @@ void selectWithinPartsRange(
     /// Enable heuristic for lowering selected merge ranges. This can increase number of
     /// concurrently running merges and thus increase the merge speed.
     size_t max_parts_to_merge_at_once = settings.max_parts_to_merge_at_once;
-    if (settings.max_parts_to_merge_at_once && settings.enable_heuristic_to_lower_max_parts_to_merge_at_once)
+    if (settings.enable_heuristic_to_lower_max_parts_to_merge_at_once)
     {
-        chassert(settings.partitions_stats);
-        chassert(range_it->size() > 1);
+        assert(settings.partitions_stats);
+        assert(range_it->size() > 1);
         const auto & partition_stats = settings.partitions_stats->at(range_it->front().info.getPartitionId());
 
         if (static_cast<double>(partition_stats.part_count) < settings.base)
@@ -281,8 +270,6 @@ void selectWithinPartsRange(
                 (static_cast<double>(max_parts_to_merge_at_once) - settings.base) * (1.0 - std::pow((static_cast<double>(partition_stats.part_count) - settings.base) / (static_cast<double>(settings.parts_to_throw_insert) - settings.base), exponent))
             );
         }
-
-        max_parts_to_merge_at_once = std::min(max_parts_to_merge_at_once, settings.max_parts_to_merge_at_once);
     }
 
     for (; begin < parts_count; ++begin)
@@ -294,7 +281,7 @@ void selectWithinPartsRange(
 
         for (size_t end = begin + 2; end <= parts_count; ++end)
         {
-            chassert(end > begin);
+            assert(end > begin);
             if (max_parts_to_merge_at_once && end - begin > max_parts_to_merge_at_once)
                 break;
 
@@ -320,7 +307,6 @@ void selectWithinPartsRange(
                     static_cast<double>(sum_size),
                     static_cast<double>(max_size),
                     static_cast<double>(min_age),
-                    min_partition_age,
                     static_cast<double>(parts_count),
                     min_size_to_lower_base_log,
                     max_size_to_lower_base_log,
@@ -334,7 +320,6 @@ void selectWithinPartsRange(
                     range_end,
                     sum_size,
                     sum_rows,
-                    min_age,
                     begin == 0 ? 0 : parts[begin - 1].size,
                     settings);
         }

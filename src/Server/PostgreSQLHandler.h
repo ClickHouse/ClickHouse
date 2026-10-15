@@ -1,12 +1,10 @@
 #pragma once
 
 #include <Common/CurrentMetrics.h>
-#include <Common/ProfileEvents.h>
+#include "config.h"
 #include <Core/PostgreSQLProtocol.h>
 #include <Poco/Net/TCPServerConnection.h>
 #include <Server/IServer.h>
-
-#include "config.h"
 
 #if USE_SSL
 #    include <Poco/Net/SSLManager.h>
@@ -40,8 +38,7 @@ public:
         bool ssl_enabled_,
         bool secure_required_,
         Int32 connection_id_,
-        std::optional<String> default_session_user_,
-        VectorWithMemoryTracking<std::shared_ptr<PostgreSQLProtocol::PGAuthentication::AuthenticationMethod>> & auth_methods_,
+        std::vector<std::shared_ptr<PostgreSQLProtocol::PGAuthentication::AuthenticationMethod>> & auth_methods_,
         const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
         const ProfileEvents::Event & write_event_ = ProfileEvents::end());
 
@@ -74,9 +71,6 @@ private:
 
     /// Emit one `ReadyForQuery` at the next protocol boundary.
     bool need_ready_for_query = false;
-
-    /// If set, overrides the `default_session_user` server setting for this listener.
-    std::optional<String> default_session_user;
 
     /// Discard extended-query messages through the next `Sync`.
     bool ignore_until_sync = false;
@@ -133,13 +127,6 @@ private:
     void processCloseQuery();
     void processSyncQuery();
 
-    /// Reports a failed statement to the client with `ErrorResponse`. Must be called from within a
-    /// `catch` block: a failed write to the client (for example, it went away in the middle of the
-    /// result) cancels `out`, and nothing can be written into a canceled buffer any more. There is
-    /// nobody to deliver `ErrorResponse` to in that case, so the exception being handled is
-    /// rethrown to tear the connection down instead.
-    void sendErrorResponseOrRethrow(const Exception & e);
-
     void recoverFromRejectedMessage();
 
     std::function<void(const Progress&)> createProgressCallback(
@@ -154,9 +141,6 @@ private:
 
     static bool isEmptyQuery(const String & query);
     static Int32 parseNumberColumns(const std::vector<char> & output);
-
-    void initializeSystemTables(ContextMutablePtr query_context);
-    bool should_init_system_tables = true;
 };
 
 }

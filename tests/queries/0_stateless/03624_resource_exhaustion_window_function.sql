@@ -1,5 +1,3 @@
-SET optimize_trivial_insert_select = 0;
-
 CREATE TABLE  table_test
 (
     `c1` Int32,

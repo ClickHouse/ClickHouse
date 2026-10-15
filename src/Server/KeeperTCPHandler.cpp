@@ -1,6 +1,5 @@
 #include <Server/KeeperTCPHandler.h>
 #include <Common/ErrnoException.h>
-#include <Common/saturatedWaitDuration.h>
 
 #if USE_NURAFT
 
@@ -35,8 +34,6 @@
 
 #    include <boost/algorithm/string/trim.hpp>
 
-#    include <sys/socket.h>
-
 
 #    ifdef POCO_HAVE_FD_EPOLL
 #        include <sys/epoll.h>
@@ -47,11 +44,6 @@
 namespace ProfileEvents
 {
     extern const Event KeeperTotalElapsedMicroseconds;
-    extern const Event KeeperPacketsSent;
-    extern const Event KeeperPacketsReceived;
-    extern const Event KeeperRequestTotal;
-    extern const Event KeeperRequestTotalWithSubrequests;
-    extern const Event KeeperLatency;
 }
 
 namespace DB
@@ -225,7 +217,7 @@ struct SocketInterruptablePollWrapper
         result.has_requests = socket_ready;
         if (fd_ready)
         {
-            UInt8 dummy = 0;
+            UInt8 dummy;
             readIntBinary(dummy, response_in);
             result.responses_count = 1;
             auto available = response_in.available();
@@ -258,14 +250,8 @@ KeeperTCPHandler::KeeperTCPHandler(
     , log(getLogger("KeeperTCPHandler"))
     , keeper_dispatcher(keeper_dispatcher_)
     , keeper_context(keeper_dispatcher->getKeeperContext())
-    /// Poco::Timespan counts microseconds, so the ms value is multiplied by 1000. Saturate that
-    /// product: this value is the session TTL and is reported to the client, so its magnitude is
-    /// preserved up to the full Poco::Timespan::TimeDiff (Int64) range rather than clamped to a
-    /// wait bound. The wait itself is bounded inside KeeperDispatcher::getSessionID.
-    , min_session_timeout(saturatedMicrosecondsFromMilliseconds(
-          config_ref.getInt64("keeper_server.coordination_settings.min_session_timeout_ms", Coordination::DEFAULT_MIN_SESSION_TIMEOUT_MS)))
-    , max_session_timeout(saturatedMicrosecondsFromMilliseconds(
-          config_ref.getInt64("keeper_server.coordination_settings.session_timeout_ms", Coordination::DEFAULT_MAX_SESSION_TIMEOUT_MS)))
+    , min_session_timeout(config_ref.getInt64("keeper_server.coordination_settings.min_session_timeout_ms", Coordination::DEFAULT_MIN_SESSION_TIMEOUT_MS) * 1000)
+    , max_session_timeout(config_ref.getInt64("keeper_server.coordination_settings.session_timeout_ms", Coordination::DEFAULT_MAX_SESSION_TIMEOUT_MS) * 1000)
     , poll_wrapper(std::make_shared<SocketInterruptablePollWrapper>(socket_))
     , send_timeout(send_timeout_)
     , receive_timeout(receive_timeout_)
@@ -273,25 +259,12 @@ KeeperTCPHandler::KeeperTCPHandler(
     , last_op(std::make_unique<LastOp>(EMPTY_LAST_OP))
 {
     KeeperTCPHandler::registerConnection(this);
-
-    /// A handler accepted while the listener is stopping can register after the shutdown sweep.
-    if (keeper_dispatcher->isTCPConnectionDrainStarted() || keeper_dispatcher->isShuttingDown())
-    {
-        try
-        {
-            socket().shutdown();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, "Failed to close late Keeper connection during TCP drain");
-        }
-    }
 }
 
-void KeeperTCPHandler::sendHandshake(HandshakeResult result, bool & use_compression)
+void KeeperTCPHandler::sendHandshake(bool has_leader, bool & use_compression)
 {
     Coordination::write(Coordination::SERVER_HANDSHAKE_LENGTH, *out);
-    if (result != HandshakeResult::Rejected)
+    if (has_leader)
     {
         if (expect_opentelemetry_tracing_context)
             Coordination::write(Coordination::ZOOKEEPER_PROTOCOL_VERSION_WITH_TRACING, *out);
@@ -310,11 +283,8 @@ void KeeperTCPHandler::sendHandshake(HandshakeResult result, bool & use_compress
         Coordination::write(Coordination::KEEPER_PROTOCOL_VERSION_CONNECTION_REJECT, *out);
     }
 
-    /// A zero timeout with a zero session id tells a ZooKeeper client that its session has expired.
-    const bool expired = result == HandshakeResult::SessionExpired;
-    Coordination::write(expired ? int32_t{0} : static_cast<int32_t>(session_timeout.totalMilliseconds()), *out);
-    /// A rejected client has no session, and would send any non-zero id back as the session to continue.
-    Coordination::write(result == HandshakeResult::Accepted ? session_id : int64_t{0}, *out);
+    Coordination::write(static_cast<int32_t>(session_timeout.totalMilliseconds()), *out);
+    Coordination::write(session_id, *out);
     std::array<char, Coordination::PASSWORD_LENGTH> passwd{};
     Coordination::write(passwd, *out);
     out->next();
@@ -327,9 +297,10 @@ void KeeperTCPHandler::run()
 
 Poco::Timespan KeeperTCPHandler::receiveHandshake(int32_t handshake_length, bool & use_compression)
 {
-    int32_t protocol_version = 0;
-    int64_t last_zxid_seen = 0;
-    int32_t timeout_ms = 0;
+    int32_t protocol_version;
+    int64_t last_zxid_seen;
+    int32_t timeout_ms;
+    int64_t previous_session_id = 0;    /// We don't support session restore. So previous session_id is always zero.
     std::array<char, Coordination::PASSWORD_LENGTH> passwd {};
 
     if (!isHandShake(handshake_length))
@@ -406,7 +377,7 @@ Poco::Timespan KeeperTCPHandler::receiveHandshake(int32_t handshake_length, bool
             throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Wrong password specified, authentication failed");
     }
 
-    int8_t readonly = 0;
+    int8_t readonly;
     if (handshake_length == Coordination::CLIENT_HANDSHAKE_LENGTH_WITH_READONLY)
         Coordination::read(readonly, *in);
 
@@ -427,18 +398,15 @@ void KeeperTCPHandler::runImpl()
     compressed_in.reset();
     compressed_out.reset();
 
-    if (keeper_dispatcher->isTCPConnectionDrainStarted() || keeper_dispatcher->isShuttingDown())
-        return;
-
     bool use_compression = false;
 
     if (in->eof())
     {
-        LOG_INFO(log, "Client has not sent any data. peer address = {} address = {}", socket().peerAddress().toString(), socket().address().toString());
+        LOG_WARNING(log, "Client has not sent any data. peer address = {}  address = {}", socket().peerAddress().toString(), socket().address().toString());
         return;
     }
 
-    int32_t header = 0;
+    int32_t header;
     try
     {
         Coordination::read(header, *in);
@@ -476,17 +444,6 @@ void KeeperTCPHandler::runImpl()
         return;
     }
 
-    if (keeper_dispatcher->isTCPConnectionDrainStarted() || keeper_dispatcher->isShuttingDown())
-        return;
-
-    /// Keeper cannot restore sessions, and a new session in place of the old one would go unnoticed by the client.
-    if (previous_session_id != 0)
-    {
-        LOG_INFO(log, "Client asked to continue session {}, which cannot be restored, replying that it has expired", previous_session_id);
-        sendHandshake(HandshakeResult::SessionExpired, use_compression);
-        return;
-    }
-
     if (keeper_dispatcher->isServerActive())
     {
         try
@@ -498,25 +455,17 @@ void KeeperTCPHandler::runImpl()
         catch (const Exception & e)
         {
             LOG_WARNING(log, "Cannot receive session id {}", e.displayText());
-            sendHandshake(HandshakeResult::Rejected, use_compression);
+            sendHandshake(/* has_leader */ false, use_compression);
             return;
 
         }
 
-        if (keeper_dispatcher->isTCPConnectionDrainStarted() || keeper_dispatcher->isShuttingDown())
-        {
-            keeper_dispatcher->registerSession(
-                session_id,
-                [](const Coordination::ZooKeeperResponsePtr &, Coordination::ZooKeeperRequestPtr) { return false; });
-            return;
-        }
-
-        sendHandshake(HandshakeResult::Accepted, use_compression);
+        sendHandshake(/* has_leader */ true, use_compression);
     }
     else
     {
         LOG_WARNING(log, "Ignoring user request, because the server is not active yet");
-        sendHandshake(HandshakeResult::Rejected, use_compression);
+        sendHandshake(/* has_leader */ false, use_compression);
         return;
     }
 
@@ -526,28 +475,21 @@ void KeeperTCPHandler::runImpl()
         compressed_out.emplace(*out, CompressionCodecFactory::instance().get("LZ4",{}));
     }
 
+    max_request_size = static_cast<UInt64>(keeper_context->getCoordinationSettings()[CoordinationSetting::max_request_size]);
+
     auto response_callback = [my_responses = this->responses, my_poll_wrapper = this->poll_wrapper](
-                                 const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request) -> bool
+                                 const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request)
     {
         if (request)
-            request->spans.maybeInitialize(KeeperSpan::SendResponse, request->tracing_context.get());
+            ZooKeeperOpentelemetrySpans::maybeInitialize(request->spans.send_response, request->tracing_context);
 
         if (!my_responses->push(RequestWithResponse{response, std::move(request)}))
-        {
-            if (!my_responses->isFinished())
-                throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push response with xid {} and zxid {}", response->xid, response->zxid);
-            return false;
-        }
+            throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push response with xid {} and zxid {}", response->xid, response->zxid);
 
         UInt8 single_byte = 1;
         [[maybe_unused]] ssize_t result = write(my_poll_wrapper->getResponseFD(), &single_byte, sizeof(single_byte));
-
-        return true; // will call onResponseDeallocated on dequeue
     };
     keeper_dispatcher->registerSession(session_id, response_callback);
-
-    if (keeper_dispatcher->isTCPConnectionDrainStarted() || keeper_dispatcher->isShuttingDown())
-        return;
 
     Stopwatch logging_stopwatch;
     auto operation_max_ms = keeper_context->getCoordinationSettings()[CoordinationSetting::log_slow_connection_operation_threshold_ms];
@@ -563,32 +505,6 @@ void KeeperTCPHandler::runImpl()
     connected.store(true, std::memory_order_release);
     bool close_received = false;
 
-    SCOPE_EXIT({
-        responses->finish();
-
-        /// If the session is closed by shutdown, don't report it to keeper_dispatcher.
-        /// It has separate logic to send Close requests for remaining sessions on shutdown.
-        if (!closing_for_shutdown.load(std::memory_order_acquire)
-            && !keeper_dispatcher->isTCPConnectionDrainStarted()
-            && !keeper_dispatcher->isShuttingDown())
-        {
-            try
-            {
-                keeper_dispatcher->finishSession(session_id);
-            }
-            catch (...)
-            {
-                tryLogCurrentException("KeeperTCPHandler");
-            }
-        }
-
-        RequestWithResponse request_with_response;
-        while (responses->tryPop(request_with_response))
-        {
-            keeper_dispatcher->onResponseDeallocated(*request_with_response.response);
-        }
-    });
-
     try
     {
         while (true)
@@ -597,9 +513,9 @@ void KeeperTCPHandler::runImpl()
 
             PollResult result = poll_wrapper->poll(session_timeout, *in);
 
-            if (keeper_dispatcher->isTCPConnectionDrainStarted() || keeper_dispatcher->isShuttingDown())
+            if (keeper_dispatcher->isShuttingDown())
             {
-                LOG_DEBUG(log, "Keeper TCP drain started, closing session #{}", session_id);
+                LOG_DEBUG(log, "Server shutting down, closing session #{}", session_id);
                 break;
             }
 
@@ -612,6 +528,7 @@ void KeeperTCPHandler::runImpl()
                 if (in->eof())
                 {
                     LOG_DEBUG(log, "Client closed connection, session id #{}", session_id);
+                    keeper_dispatcher->finishSession(session_id);
                     break;
                 }
 
@@ -646,9 +563,6 @@ void KeeperTCPHandler::runImpl()
                 if (!responses->tryPop(request_with_response))
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "We must have ready response, but queue is empty. It's a bug.");
 
-                /// (Not quite deallocated yet, but close enough for our purposes.)
-                keeper_dispatcher->onResponseDeallocated(*request_with_response.response);
-
                 auto & response = request_with_response.response;
                 auto & request = request_with_response.request;
 
@@ -663,13 +577,13 @@ void KeeperTCPHandler::runImpl()
                 updateStats(response, request_with_response.request);
                 packageSent();
 
-                const auto maybe_finalize_opentelemetry_span = [&](OpenTelemetry::SpanStatus status, const std::string & error_message)
+                const auto maybe_finalize_opentelemetery_span = [&](OpenTelemetry::SpanStatus status, const std::string & error_message)
                 {
                     if (!request)
                         return;
 
-                    request->spans.maybeFinalize(
-                        KeeperSpan::SendResponse,
+                    ZooKeeperOpentelemetrySpans::maybeFinalize(
+                        request->spans.send_response,
                         [&]
                         {
                             return std::vector<OpenTelemetry::SpanAttribute>{
@@ -689,16 +603,17 @@ void KeeperTCPHandler::runImpl()
                 }
                 catch (...)
                 {
-                    maybe_finalize_opentelemetry_span(OpenTelemetry::SpanStatus::ERROR, getCurrentExceptionMessage(true));
+                    maybe_finalize_opentelemetery_span(OpenTelemetry::SpanStatus::ERROR, getCurrentExceptionMessage(true));
                     throw;
                 }
 
-                maybe_finalize_opentelemetry_span(OpenTelemetry::SpanStatus::OK, "");
+                maybe_finalize_opentelemetery_span(OpenTelemetry::SpanStatus::OK, "");
 
                 log_long_operation("Sending response");
                 if (response->error == Coordination::Error::ZSESSIONEXPIRED)
                 {
                     LOG_DEBUG(log, "Session #{} expired because server shutting down or quorum is not alive", session_id);
+                    keeper_dispatcher->finishSession(session_id);
                     return;
                 }
 
@@ -711,6 +626,7 @@ void KeeperTCPHandler::runImpl()
             if (session_stopwatch.elapsedMicroseconds() > static_cast<UInt64>(session_timeout.totalMicroseconds()))
             {
                 LOG_DEBUG(log, "Session #{} expired", session_id);
+                keeper_dispatcher->finishSession(session_id);
                 break;
             }
         }
@@ -722,6 +638,7 @@ void KeeperTCPHandler::runImpl()
         LOG_TRACE(log, "Has {} responses in the queue", responses->size());
         LOG_INFO(log, "Got exception processing session #{}: {}", session_id, getExceptionMessage(ex, true));
         cancelWriteBuffer();
+        keeper_dispatcher->finishSession(session_id);
     }
 }
 
@@ -757,15 +674,7 @@ bool KeeperTCPHandler::tryExecuteFourLetterWordCmd(int32_t command, ReadBuffer &
 
     try
     {
-        String res;
-        if (!keeper_dispatcher->tryBeginFourLetterCommand())
-            return false;
-
-        {
-            SCOPE_EXIT({ keeper_dispatcher->finishFourLetterCommand(); });
-
-            res = maybe_argument ? command_ptr->runWithArgument(*maybe_argument) : command_ptr->run();
-        }
+        String res = maybe_argument ? command_ptr->runWithArgument(*maybe_argument) : command_ptr->run();
         out->write(res.data(), res.size());
         out->next();
     }
@@ -817,8 +726,6 @@ std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveReque
 {
     const UInt64 receive_start_time = ZooKeeperOpentelemetrySpans::now();
 
-    const size_t max_request_size = static_cast<size_t>(keeper_context->getCoordinationSettings()[CoordinationSetting::max_request_size]);
-
     std::optional<LimitReadBuffer> limited_buffer_holder;
     /// Wrap regular read buffer with LimitReadBuffer to apply max_request_size
     /// (this should be done on per-request basis)
@@ -830,22 +737,22 @@ std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveReque
         return *limited_buffer_holder;
     };
     auto & read_buffer = get_read_buffer_with_limit();
-    int32_t length = 0;
+    int32_t length;
     Coordination::read(length, read_buffer);
     if (length < 0 || (max_request_size > 0 && static_cast<uint32_t>(length) > max_request_size))
         throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Request size {} is too big request (limit: {})", length, max_request_size);
 
-    int64_t xid = 0;
+    int64_t xid;
     if (use_xid_64)
         Coordination::read(xid, read_buffer);
     else
     {
-        int32_t read_xid = 0;
+        int32_t read_xid;
         Coordination::read(read_xid, read_buffer);
         xid = read_xid;
     }
 
-    Coordination::OpNum opnum = {};
+    Coordination::OpNum opnum;
     Coordination::read(opnum, read_buffer);
 
     Coordination::ZooKeeperRequestPtr request = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
@@ -869,17 +776,17 @@ std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveReque
 
     if (expect_opentelemetry_tracing_context)
     {
-        uint8_t has_tracing_context = 0;
+        uint8_t has_tracing_context;
         Coordination::read(has_tracing_context, read_buffer);
 
         if (has_tracing_context)
         {
-            request->tracing_context = std::make_shared<OpenTelemetry::TracingContext>();
+            request->tracing_context.emplace();
             request->tracing_context->deserialize(read_buffer);
 
-            request->spans.maybeInitialize(KeeperSpan::ReceiveRequest, request->tracing_context.get(), receive_start_time);
-            request->spans.maybeFinalize(
-                KeeperSpan::ReceiveRequest,
+            ZooKeeperOpentelemetrySpans::maybeInitialize(request->spans.receive_request, request->tracing_context, receive_start_time);
+            ZooKeeperOpentelemetrySpans::maybeFinalize(
+                request->spans.receive_request,
                 [&]
                 {
                     return std::vector<OpenTelemetry::SpanAttribute>{
@@ -904,14 +811,12 @@ void KeeperTCPHandler::packageSent()
 {
     conn_stats.incrementPacketsSent();
     keeper_dispatcher->incrementPacketsSent();
-    ProfileEvents::increment(ProfileEvents::KeeperPacketsSent);
 }
 
 void KeeperTCPHandler::packageReceived()
 {
     conn_stats.incrementPacketsReceived();
     keeper_dispatcher->incrementPacketsReceived();
-    ProfileEvents::increment(ProfileEvents::KeeperPacketsReceived);
 }
 
 void KeeperTCPHandler::updateStats(Coordination::ZooKeeperResponsePtr & response, const Coordination::ZooKeeperRequestPtr & request)
@@ -941,13 +846,10 @@ void KeeperTCPHandler::updateStats(Coordination::ZooKeeperResponsePtr & response
                 subrequest_count = static_cast<const Coordination::ZooKeeperMultiRequest &>(*request).requests.size();
         }
 
-        conn_stats.updateLatency(elapsed_ms);
+        conn_stats.updateLatency(elapsed_ms, subrequest_count);
 
         operations.erase(response->xid);
-        keeper_dispatcher->updateKeeperStatLatency(elapsed_ms);
-        ProfileEvents::increment(ProfileEvents::KeeperLatency, elapsed_ms);
-        ProfileEvents::increment(ProfileEvents::KeeperRequestTotal);
-        ProfileEvents::increment(ProfileEvents::KeeperRequestTotalWithSubrequests, subrequest_count);
+        keeper_dispatcher->updateKeeperStatLatency(elapsed_ms, subrequest_count);
 
         last_op.set(std::make_unique<LastOp>(LastOp{
             .name = Coordination::toString(response->getOpNum()),
@@ -1041,28 +943,6 @@ void KeeperTCPHandler::unregisterConnection(KeeperTCPHandler * conn)
 {
     std::lock_guard lock(conns_mutex);
     connections.erase(conn);
-}
-
-/// A TLS socket serialises every SSL-level operation, StreamSocket::shutdown() included, on a mutex that
-/// the handler thread holds for the whole of a blocking read, so the SSL path cannot interrupt that read.
-/// Shutting the descriptor down needs no lock, at the cost of closing TLS abortively: no close_notify.
-static void shutdownSocketDescriptor(const Poco::Net::StreamSocket & socket)
-{
-    const auto fd = socket.impl()->sockfd();
-    if (fd == POCO_INVALID_SOCKET)
-        return;
-
-    [[maybe_unused]] const int rc = ::shutdown(fd, SHUT_RDWR);
-}
-
-void KeeperTCPHandler::closeAllConnections()
-{
-    std::lock_guard lock(conns_mutex);
-    for (auto * conn : connections)
-    {
-        conn->closing_for_shutdown.store(true, std::memory_order_release);
-        shutdownSocketDescriptor(conn->socket());
-    }
 }
 
 void KeeperTCPHandler::dumpConnections(WriteBufferFromOwnString & buf, bool brief)
