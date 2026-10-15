@@ -48,6 +48,8 @@ class ExecutorTasks : public ISpillRequestListener
     /// So we have a separate queue specifically for them.
     TaskQueue<IProcessor> fast_task_queue;
     std::atomic_bool has_fast_tasks = false; // Required only to enable local task optimization
+    /// Whether `async_task_queue` has tasks. Written under `mutex`; read without it by `pushTasks`.
+    std::atomic_bool has_async_tasks = false;
     std::atomic_bool spill_requested = false;
 
     /// Queue which stores tasks where processors returned Async status after prepare.

@@ -3,6 +3,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Common/Exception.h>
+#include <Common/Stopwatch.h>
 
 namespace DB
 {
@@ -121,8 +122,10 @@ void ExecutorTasks::tryGetTask(ExecutionThreadContext & context)
         if (num_threads == 1)
         {
             auto res = async_task_queue.tryGetReadyTask(lock);
+            context.last_async_poll_ns = clock_gettime_ns(CLOCK_MONOTONIC_COARSE);
             if (res)
             {
+                has_async_tasks.store(!async_task_queue.empty(), std::memory_order_relaxed);
                 context.setTask(static_cast<IProcessor *>(res.data));
                 return;
             }
@@ -177,6 +180,8 @@ void ExecutorTasks::tryGetTask(ExecutionThreadContext & context)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty task was returned from async task queue");
             }
 
+            has_async_tasks.store(!async_task_queue.empty(), std::memory_order_relaxed);
+            context.last_async_poll_ns = clock_gettime_ns(CLOCK_MONOTONIC_COARSE);
             context.setTask(static_cast<IProcessor *>(res.data));
             return;
         }
@@ -193,7 +198,9 @@ size_t ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, ExecutionThr
 {
     /// Take local task from queue if has one.
     if (!queue.empty() && !has_fast_tasks.load(std::memory_order_relaxed)
-        && context.num_scheduled_local_tasks < ExecutionThreadContext::max_scheduled_local_tasks)
+        && context.num_scheduled_local_tasks < ExecutionThreadContext::max_scheduled_local_tasks
+        && !(num_threads == 1 && (!async_queue.empty() || has_async_tasks.load(std::memory_order_relaxed))
+            && clock_gettime_ns(CLOCK_MONOTONIC_COARSE) - context.last_async_poll_ns >= ExecutionThreadContext::max_ns_without_async_poll))
     {
         ++context.num_scheduled_local_tasks;
         context.setTask(queue.front());
@@ -221,6 +228,7 @@ size_t ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, ExecutionThr
             async_task_queue.addTask(context.thread_number, async_queue.front(), fd, events, timeout_ms);
             async_queue.pop();
         }
+        has_async_tasks.store(!async_task_queue.empty(), std::memory_order_relaxed);
 #endif
 
         while (!queue.empty() && !finished)
@@ -297,6 +305,7 @@ size_t ExecutorTasks::fill(Queue & queue, [[maybe_unused]] Queue & async_queue)
         if (next_thread >= use_threads)
             next_thread = 0;
     }
+    has_async_tasks.store(!async_task_queue.empty(), std::memory_order_relaxed);
 #endif
 
     while (!queue.empty())
