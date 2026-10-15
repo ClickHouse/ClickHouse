@@ -1571,6 +1571,8 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
             interpolate_actions_dag.removeUnusedActions();
         }
 
+        appendSetsFromActionsDAG(interpolate_actions_dag, useful_sets);
+
         Aliases empty_aliases;
         interpolate_description = std::make_shared<InterpolateDescription>(std::move(interpolate_actions_dag), empty_aliases);
     }
