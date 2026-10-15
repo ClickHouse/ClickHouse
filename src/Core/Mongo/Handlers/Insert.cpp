@@ -2,6 +2,10 @@
 #include <Core/Mongo/Handlers/HandlerRegistry.h>
 #include <Core/Mongo/Handlers/Insert.h>
 
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 #include <Parsers/Mongo/MongoConstants.h>
@@ -14,6 +18,7 @@
 #include <Common/DateLUT.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
+#include <Common/typeid_cast.h>
 
 #include <rapidjson/document.h>
 #include <rapidjson/stringbuffer.h>
@@ -42,8 +47,8 @@ std::optional<String> getSimpleTypeField(const rapidjson::Value & document)
         return "int";
     if (document.IsInt64())
         return "Int64";
-    if (document.IsFloat())
-        return "float";
+    /// A BSON double is a `Float64`. `IsFloat` only says that the value is within the range of a
+    /// `Float32`, not that a `Float32` holds it exactly, so it must not narrow the column.
     if (document.IsDouble())
         return "double";
     if (document.IsString())
@@ -59,21 +64,39 @@ using Mongo::convertMongoExtendedJSONWrapper;
 using Mongo::convertMongoExtendedJSONWrappersDeep;
 using Mongo::isMongoExtendedJSONWrapper;
 
+/// The scale of the `Decimal128(<scale>)` type a `$numberDecimal` wrapper converts into, or nothing
+/// for any other type.
+std::optional<UInt32> getWrapperDecimalScale(const String & type)
+{
+    UInt32 scale = 0;
+    ReadBufferFromMemory buffer(type.data(), type.size());
+    if (!checkString("Decimal128(", buffer) || !tryReadText(scale, buffer) || !checkString(")", buffer) || !buffer.eof())
+        return std::nullopt;
+    return scale;
+}
+
 /// The widest of two decimal types when both are decimal, so that an array of `$numberDecimal`
 /// values of different scales still becomes one decimal column: every value fits a scale that is
 /// the maximum of the individual ones, only padded with zeros. Nothing when either type is not a
 /// decimal - such a pair has no common type here.
 std::optional<String> mergeDecimalTypes(const String & left, const String & right)
 {
-    UInt32 left_scale = 0;
-    UInt32 right_scale = 0;
-    ReadBufferFromMemory left_buffer(left.data(), left.size());
-    ReadBufferFromMemory right_buffer(right.data(), right.size());
-    if (!checkString("Decimal128(", left_buffer) || !tryReadText(left_scale, left_buffer) || !checkString(")", left_buffer)
-        || !left_buffer.eof() || !checkString("Decimal128(", right_buffer) || !tryReadText(right_scale, right_buffer)
-        || !checkString(")", right_buffer) || !right_buffer.eof())
+    auto left_scale = getWrapperDecimalScale(left);
+    auto right_scale = getWrapperDecimalScale(right);
+    if (!left_scale || !right_scale)
         return std::nullopt;
-    return fmt::format("Decimal128({})", std::max(left_scale, right_scale));
+    return fmt::format("Decimal128({})", std::max(*left_scale, *right_scale));
+}
+
+/// Records that the field `name` holds a decimal of the scale of `type`, see `checkDecimalScales`.
+void recordDecimalScale(const String & name, const String & type, std::map<String, UInt32> & decimal_scales)
+{
+    if (auto scale = getWrapperDecimalScale(type))
+    {
+        auto [it, inserted] = decimal_scales.emplace(name, *scale);
+        if (!inserted)
+            it->second = std::max(it->second, *scale);
+    }
 }
 
 /** Converts the Extended JSON wrappers among the elements of an array. When every element is a
@@ -82,7 +105,11 @@ std::optional<String> mergeDecimalTypes(const String & left, const String & righ
   * their converted serializations and the column type is inferred from them as usual.
   */
 std::optional<String> convertWrappersInArray(
-    const rapidjson::Value & array, const String & field_name, rapidjson::Value & out, rapidjson::Document::AllocatorType & allocator)
+    const rapidjson::Value & array,
+    const String & field_name,
+    rapidjson::Value & out,
+    rapidjson::Document::AllocatorType & allocator,
+    std::map<String, UInt32> & decimal_scales)
 {
     std::optional<String> common_type;
     bool all_wrappers = true;
@@ -92,6 +119,7 @@ std::optional<String> convertWrappersInArray(
         if (isMongoExtendedJSONWrapper(element))
         {
             auto [type, value] = convertMongoExtendedJSONWrapper(element, field_name, allocator);
+            recordDecimalScale(field_name, type, decimal_scales);
             if (!common_type)
                 common_type = std::move(type);
             else if (*common_type != type)
@@ -122,13 +150,17 @@ std::optional<String> convertWrappersInArray(
   *
   * Both the inferred schema and the inserted rows are derived from this flattened form, so a
   * document can never produce a value for a column that is not in the schema.
+  *
+  * `decimal_scales` collects the largest scale of the `$numberDecimal` values of every field,
+  * including the elements of an array, see `checkDecimalScales`.
   */
 void flattenDocument(
     const rapidjson::Value & document,
     const String & prefix,
     rapidjson::Value & out,
     rapidjson::Document::AllocatorType & allocator,
-    std::map<String, String> & wrapper_types)
+    std::map<String, String> & wrapper_types,
+    std::map<String, UInt32> & decimal_scales)
 {
     if (!document.IsObject())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a document, got a scalar value");
@@ -145,6 +177,7 @@ void flattenDocument(
         if (isMongoExtendedJSONWrapper(it->value))
         {
             auto [type, value] = convertMongoExtendedJSONWrapper(it->value, full_name, allocator);
+            recordDecimalScale(full_name, type, decimal_scales);
             wrapper_types[full_name] = std::move(type);
             rapidjson::Value key(full_name.c_str(), static_cast<rapidjson::SizeType>(full_name.size()), allocator);
             out.AddMember(key, value, allocator);
@@ -162,14 +195,14 @@ void flattenDocument(
                     "The field '{}' is an empty embedded document, which is not supported: a nested document is stored as one column "
                     "per field, so an empty one names no column",
                     full_name);
-            flattenDocument(it->value, full_name, out, allocator, wrapper_types);
+            flattenDocument(it->value, full_name, out, allocator, wrapper_types, decimal_scales);
             continue;
         }
 
         if (it->value.IsArray())
         {
             rapidjson::Value converted(rapidjson::kArrayType);
-            if (auto element_type = convertWrappersInArray(it->value, full_name, converted, allocator))
+            if (auto element_type = convertWrappersInArray(it->value, full_name, converted, allocator, decimal_scales))
                 wrapper_types[full_name] = fmt::format("Array({})", *element_type);
             rapidjson::Value key(full_name.c_str(), static_cast<rapidjson::SizeType>(full_name.size()), allocator);
             out.AddMember(key, converted, allocator);
@@ -259,6 +292,85 @@ std::vector<InsertHandler::DocumentField> inferSchema(const rapidjson::Value & f
             InsertHandler::DocumentField{.full_name = it->name.GetString(), .type = fmt::format("Array({})", element_type)});
     }
     return fields;
+}
+
+/** A decimal column keeps a fixed number of fractional digits and reading a value with more of
+  * them silently drops the rest, while a `$numberDecimal` is supposed to be stored exactly. The
+  * column of a decimal field is the one of the first document that had the field - in this batch
+  * or in an earlier insert - so a later value of a larger scale is rejected here, before anything
+  * is written, rather than rounded. The types are read from `system.columns`, which shows only the
+  * columns the user may see; a decimal field without a visible column cannot be checked, so it is
+  * an error as well.
+  */
+void checkDecimalScales(
+    const CollectionRef & collection, std::shared_ptr<QueryExecutor> executor, const std::map<String, UInt32> & decimal_scales)
+{
+    if (decimal_scales.empty())
+        return;
+
+    WriteBufferFromOwnString names;
+    for (auto it = decimal_scales.begin(); it != decimal_scales.end(); ++it)
+        names << (it == decimal_scales.begin() ? "" : ", ") << quoteString(it->first);
+
+    auto output = executor->execute(fmt::format(
+        "SELECT name, type FROM system.columns WHERE database = {} AND table = {} AND name IN ({}) FORMAT JSONCompactEachRow",
+        quoteString(collection.database),
+        quoteString(collection.collection),
+        names.str()));
+
+    std::map<String, String> column_types;
+    size_t line_begin = 0;
+    while (line_begin < output.size())
+    {
+        size_t line_end = output.find('\n', line_begin);
+        if (line_end == String::npos)
+            line_end = output.size();
+        if (line_end > line_begin)
+        {
+            rapidjson::Document row;
+            row.Parse(output.data() + line_begin, line_end - line_begin);
+            if (row.HasParseError() || !row.IsArray() || row.Size() != 2 || !row[0].IsString() || !row[1].IsString())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS, "Unexpected row in the list of the columns of '{}'", collection.getQualifiedName());
+            column_types.emplace(
+                String(row[0].GetString(), row[0].GetStringLength()), String(row[1].GetString(), row[1].GetStringLength()));
+        }
+        line_begin = line_end + 1;
+    }
+
+    for (const auto & [name, scale] : decimal_scales)
+    {
+        auto it = column_types.find(name);
+        if (it == column_types.end())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The field '{}' holds a decimal value, but the collection '{}.{}' has no visible column of that name to check its scale "
+                "against",
+                name,
+                collection.database,
+                collection.collection);
+
+        /// The decimal inside the wrappers that do not change its values.
+        DataTypePtr type = DataTypeFactory::instance().get(it->second);
+        while (true)
+        {
+            type = removeLowCardinalityAndNullable(type);
+            if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
+                type = array_type->getNestedType();
+            else
+                break;
+        }
+
+        if (isDecimal(type) && getDecimalScale(*type) < scale)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The field '{}' holds a decimal value with {} fractional digits, more than the scale {} of its column of the type {}: "
+                "the value cannot be stored exactly",
+                name,
+                scale,
+                getDecimalScale(*type),
+                it->second);
+    }
 }
 
 }
@@ -376,12 +488,13 @@ std::vector<Document> InsertHandler::handle(const std::vector<OpMessageSection> 
 
     WriteBufferFromOwnString data;
     bool table_prepared = false;
+    std::map<String, UInt32> decimal_scales;
 
     for (const auto & doc : to_insert)
     {
         rapidjson::Value flattened(rapidjson::kObjectType);
         std::map<String, String> wrapper_types;
-        flattenDocument(doc.getRapidJSONRepresentation(), "", flattened, allocator, wrapper_types);
+        flattenDocument(doc.getRapidJSONRepresentation(), "", flattened, allocator, wrapper_types, decimal_scales);
 
         /// The schema comes from the first document only, as in Mongo a collection has no
         /// schema of its own.
@@ -398,6 +511,8 @@ std::vector<Document> InsertHandler::handle(const std::vector<OpMessageSection> 
         data << buffer.GetString() << "\n";
     }
 
+    checkDecimalScales(collection, executor, decimal_scales);
+
     /** The whole batch is one `INSERT`, and it is written all or nothing. Mongo writes the documents
       * of an ordered batch one by one and keeps the ones before a failing document; here a document
       * that does not fit - an unknown field, a value of a wrong type - fails the whole command
@@ -406,13 +521,16 @@ std::vector<Document> InsertHandler::handle(const std::vector<OpMessageSection> 
       * is at most `MAX_WRITE_BATCH_SIZE` documents (see `getWriteBatch`), which fits into a single
       * block, and the settings below keep it from being split into several blocks, each written
       * on its own, or from being deferred by an asynchronous insert whose error the reply would
-      * not see.
+      * not see. A profile that tolerates malformed rows must not apply either: the skipped row
+      * would be acknowledged as written.
       */
     SettingsChanges insert_settings;
     insert_settings.setSetting("max_insert_block_size", Field(UInt64(MAX_WRITE_BATCH_SIZE)));
     insert_settings.setSetting("max_insert_block_size_bytes", Field(UInt64(0)));
     insert_settings.setSetting("input_format_parallel_parsing", Field(false));
     insert_settings.setSetting("async_insert", Field(false));
+    insert_settings.setSetting("input_format_allow_errors_num", Field(UInt64(0)));
+    insert_settings.setSetting("input_format_allow_errors_ratio", Field(0.0));
 
     executor->execute(
         fmt::format(
