@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
+#include <DataTypes/TypeTree.h>
 #include <Functions/FunctionsComparison.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -162,6 +163,10 @@ bool atomSafelySubstitutable(const ActionsDAG::Node * node, const SubstitutionMa
             /// Substituting a column of another type would change the atom, and `FunctionIn`
             /// rejects a left argument that does not match the type the set was built with
             if (!it->second.type->equals(*child->result_type))
+                return false;
+            /// `IN` looks a float up by its bits, while a merge-based JOIN matches `-0.0` with `0.0`, so a
+            /// set check can disagree between two rows the JOIN pairs
+            if (is_set_check && anyInTypeTree(*it->second.type, [](const IDataType & type) { return isFloat(type); }))
                 return false;
             ++substituted_keys;
         }

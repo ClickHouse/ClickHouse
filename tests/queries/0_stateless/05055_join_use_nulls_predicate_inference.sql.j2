@@ -213,3 +213,19 @@ SELECT l.k, r.p, l.x
 FROM (SELECT 5 :: Nullable(UInt64) AS k, 1 AS x) AS l FULL JOIN (SELECT materialize(5 :: Nullable(UInt64)) AS k, 7 AS p) AS r
 ON l.k = r.k WHERE r.k = 5 AND isConstant(r.k) = 0
 SETTINGS join_use_nulls = 1;
+
+-- The pass copying a predicate that is already below one input onto the other input must decline `IN` on a
+-- float key as well: the set check misses the `-0.0` that a merge join pairs with `0.0`.
+DROP TABLE IF EXISTS t_infer_f_src; DROP TABLE IF EXISTS t_infer_f_dst;
+CREATE TABLE t_infer_f_src (k Float64, t Tuple(Float64, UInt64)) ENGINE = MergeTree ORDER BY (k, t);
+CREATE TABLE t_infer_f_dst (k Float64, t Tuple(Float64, UInt64), p UInt64) ENGINE = MergeTree ORDER BY (k, t);
+INSERT INTO t_infer_f_src SELECT 0.0, (0.0, 1);
+INSERT INTO t_infer_f_dst SELECT -0.0, (-0.0, 1), 7;
+SELECT '-- IN on a float key below the join, LEFT then RIGHT on a nested float: the -0.0 match survives';
+{% for jun, propagate in product([1, 0], [1, 0]) -%}
+SELECT r.p FROM (SELECT * FROM t_infer_f_src WHERE k IN (0.0, 2.0)) AS l LEFT JOIN t_infer_f_dst AS r ON l.k = r.k
+SETTINGS join_use_nulls = {{ jun }}, join_algorithm = 'full_sorting_merge', query_plan_propagate_predicate_across_join = {{ propagate }};
+SELECT l.p FROM t_infer_f_dst AS l RIGHT JOIN (SELECT * FROM t_infer_f_src WHERE t IN ((0.0, 1), (2.0, 1))) AS r ON l.t = r.t
+SETTINGS join_use_nulls = {{ jun }}, join_algorithm = 'full_sorting_merge', query_plan_propagate_predicate_across_join = {{ propagate }};
+{% endfor -%}
+DROP TABLE t_infer_f_src; DROP TABLE t_infer_f_dst;
