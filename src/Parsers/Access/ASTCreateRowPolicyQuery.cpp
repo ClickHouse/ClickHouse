@@ -12,13 +12,13 @@ namespace
 {
     void formatRenameTo(const String & new_short_name, WriteBuffer & ostr, const IAST::FormatSettings &)
     {
-        ostr << " RENAME TO " << backQuoteIfNeed(new_short_name);
+        ostr << " RENAME TO " << backQuote(new_short_name);
     }
 
 
     void formatAsRestrictiveOrPermissive(bool is_restrictive, WriteBuffer & ostr, const IAST::FormatSettings &)
     {
-        ostr << " AS " << (is_restrictive ? "RESTRICTIVE" : "PERMISSIVE");
+        ostr << " AS " << (is_restrictive ? "restrictive" : "permissive");
     }
 
 
@@ -169,7 +169,7 @@ void ASTCreateRowPolicyQuery::formatImpl(WriteBuffer & ostr, const FormatSetting
                     << backQuoteIfNeed(storage_name);
 
     formatOnCluster(ostr, settings);
-    chassert(names->cluster.empty());
+    assert(names->cluster.empty());
 
     if (!new_short_name.empty())
         formatRenameTo(new_short_name, ostr, settings);

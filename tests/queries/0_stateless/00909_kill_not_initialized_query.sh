@@ -12,7 +12,7 @@ $CLICKHOUSE_CLIENT -q "CREATE TABLE cannot_kill_query (x UInt64) ENGINE = MergeT
 $CLICKHOUSE_CLIENT -q "INSERT INTO cannot_kill_query SELECT * FROM numbers(10000000)" &> /dev/null
 
 # This SELECT query will run for a long time. It's used as bloker for ALTER query. It will be killed with SYNC kill.
-query_for_pending="SELECT x FROM cannot_kill_query WHERE NOT ignore(sleep(1)) SETTINGS max_threads = 1, max_block_size = 1 FORMAT Null"
+query_for_pending="SELECT count() FROM cannot_kill_query WHERE NOT ignore(sleep(1)) SETTINGS max_threads = 1, max_block_size = 1"
 $CLICKHOUSE_CLIENT -q "$query_for_pending" &>/dev/null &
 
 sleep 1 # queries should be in strict order
@@ -30,12 +30,12 @@ $CLICKHOUSE_CLIENT -q "$query_to_kill" &>/dev/null &
 sleep 1 # just to be sure that kill of $query_to_kill will be executed after $query_to_kill.
 
 # Kill $query_to_kill with ASYNC kill. We will check that information about KILL is not lost.
-$CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query='$query_to_kill' ASYNC SETTINGS kill_throw_if_noop = false" &>/dev/null
+$CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query='$query_to_kill' ASYNC" &>/dev/null
 
 sleep 1
 
 # Kill $query_for_pending SYNC. This query is not blocker, so it should be killed fast.
-timeout 20 ${CLICKHOUSE_CLIENT} -q "KILL QUERY WHERE query='$query_for_pending' SYNC SETTINGS kill_throw_if_noop = false" &>/dev/null
+timeout 20 ${CLICKHOUSE_CLIENT} -q "KILL QUERY WHERE query='$query_for_pending' SYNC" &>/dev/null
 
 # Both queries have to be killed, doesn't matter with SYNC or ASYNC kill
 for _ in {1..15}

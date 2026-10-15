@@ -10,7 +10,7 @@
    Copyright (c) 2000      Clark Cooper <coopercc@users.sourceforge.net>
    Copyright (c) 2002      Karl Waclawek <karl@waclawek.net>
    Copyright (c) 2002      Fred L. Drake, Jr. <fdrake@users.sourceforge.net>
-   Copyright (c) 2017-2026 Sebastian Pipping <sebastian@pipping.org>
+   Copyright (c) 2017-2025 Sebastian Pipping <sebastian@pipping.org>
    Licensed under the MIT license:
 
    Permission is hereby granted, free of charge, to any person obtaining
@@ -31,8 +31,6 @@
    DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
    OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
    USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-   SPDX-License-Identifier: MIT
 */
 
 #ifndef XmlRole_INCLUDED
@@ -112,8 +110,8 @@ enum {
 };
 
 typedef struct prolog_state {
-  int (*handler)(struct prolog_state *state, int tok, const char *ptr,
-                 const char *end, const ENCODING *enc);
+  int(PTRCALL *handler)(struct prolog_state *state, int tok, const char *ptr,
+                        const char *end, const ENCODING *enc);
   unsigned level;
   int role_none;
 #  ifdef XML_DTD

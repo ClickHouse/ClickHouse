@@ -17,9 +17,6 @@
 
 #include <boost/noncopyable.hpp>
 
-#include <algorithm>
-#include <concepts>
-#include <limits>
 #include <utility>
 #include <math.h>
 #include <string.h>
@@ -75,7 +72,7 @@ struct HashTableNoState
   * Otherwise the invariants in hash table probing do not met when NaNs are present.
   */
 template <typename T>
-inline ALWAYS_INLINE bool bitEquals(T a, T b)
+inline bool bitEquals(T a, T b)
 {
     if constexpr (is_floating_point<T>)
         /// Note that memcmp with constant size is a compiler builtin.
@@ -176,9 +173,9 @@ struct HashTableCell
     static const Key & getKey(const value_type & value) { return value; }  /// NOLINT(bugprone-return-const-ref-from-parameter)
 
     /// Are the keys at the cells equal?
-    bool ALWAYS_INLINE keyEquals(const Key & key_) const { return bitEquals(key, key_); }
-    bool ALWAYS_INLINE keyEquals(const Key & key_, size_t /*hash_*/) const { return bitEquals(key, key_); }
-    bool ALWAYS_INLINE keyEquals(const Key & key_, size_t /*hash_*/, const State & /*state*/) const { return bitEquals(key, key_); }
+    bool keyEquals(const Key & key_) const { return bitEquals(key, key_); }
+    bool keyEquals(const Key & key_, size_t /*hash_*/) const { return bitEquals(key, key_); }
+    bool keyEquals(const Key & key_, size_t /*hash_*/, const State & /*state*/) const { return bitEquals(key, key_); }
 
     /// If the cell can remember the value of the hash function, then remember it.
     void setHash(size_t /*hash_value*/) {}
@@ -333,116 +330,6 @@ public:
 
 static_assert(sizeof(HashTableGrowerWithPrecalculation<>) == DB::CH_CACHE_LINE_SIZE);
 
-/** Like `HashTableGrowerWithPrecalculation`, but adapts to large hash tables.
-  *
-  * For large hash tables, random memory access is the main bottleneck, not the computations.
-  * When the buffer reaches 2^robin_hood_size_degree cells, the grower switches the hash table to the Robin Hood mode:
-  * the max load factor is increased from 0.5 to robin_hood_max_load_factor_percent / 100 (the hash table becomes up to two times smaller),
-  * and the elements inside collision resolution chains are ordered by their optimal positions,
-  * so a lookup of a missing key can stop early instead of walking to the end of the chain.
-  *
-  * The memory layout is the same in both modes, and switching happens in place, without growing the buffer.
-  * Hash tables check the mode only if the grower has the `isRobinHood` method (see `GrowerWithRobinHood`),
-  * so there is no cost for other growers.
-  *
-  * Requirements to the cell: obtaining the hash value with `getHash` must be cheap (the hash is saved or cheap to compute),
-  * and the hash table must not keep pointers to cells while inserting other elements,
-  * because an insertion may move other elements along the collision resolution chain.
-  */
-template <size_t initial_size_degree = 8, size_t max_size_degree_quadratic = 23, size_t robin_hood_size_degree = 16, size_t robin_hood_max_load_factor_percent = 90>
-class alignas(DB::CH_CACHE_LINE_SIZE) HashTableGrowerWithPrecalculationAndRobinHood
-{
-    static_assert(initial_size_degree >= 1);
-    static_assert(robin_hood_max_load_factor_percent > 50 && robin_hood_max_load_factor_percent < 100);
-
-    UInt8 size_degree = initial_size_degree;
-    bool robin_hood = false;
-    size_t precalculated_mask = (1ULL << initial_size_degree) - 1;
-    size_t precalculated_max_fill = 1ULL << (initial_size_degree - 1);
-
-    void setSizeDegree(UInt8 size_degree_, bool robin_hood_)
-    {
-        size_degree = size_degree_;
-        robin_hood = robin_hood_;
-        precalculated_mask = (1ULL << size_degree) - 1;
-        precalculated_max_fill = robin_hood
-            ? (1ULL << size_degree) / 100 * robin_hood_max_load_factor_percent
-                + (1ULL << size_degree) % 100 * robin_hood_max_load_factor_percent / 100
-            : 1ULL << (size_degree - 1);
-    }
-
-public:
-    UInt8 sizeDegree() const { return size_degree; }
-    bool isRobinHood() const { return robin_hood; }
-
-    void increaseSizeDegree(UInt8 delta)
-    {
-        UInt8 new_size_degree = size_degree + delta;
-        setSizeDegree(new_size_degree, robin_hood || new_size_degree > robin_hood_size_degree);
-    }
-
-    static constexpr auto initial_count = 1ULL << initial_size_degree;
-
-    /// If collision resolution chains are contiguous, we can implement erase operation by moving the elements.
-    static constexpr auto performs_linear_probing_with_single_step = true;
-
-    /// The size of the hash table in the cells.
-    size_t bufSize() const { return 1ULL << size_degree; }
-
-    /// From the hash value, get the cell number in the hash table.
-    size_t place(size_t x) const { return x & precalculated_mask; }
-
-    /// The next cell in the collision resolution chain.
-    size_t next(size_t pos) const { return (pos + 1) & precalculated_mask; }
-
-    /// Whether the hash table is sufficiently full. You need to increase the size of the hash table, or remove something unnecessary from it.
-    bool overflow(size_t elems) const { return elems > precalculated_max_fill; }
-
-    /// Increase the size of the hash table, or switch it to the Robin Hood mode without changing the size.
-    void increaseSize()
-    {
-        if (!robin_hood && size_degree >= robin_hood_size_degree)
-            setSizeDegree(size_degree, true);
-        else
-            increaseSizeDegree(robin_hood || size_degree >= max_size_degree_quadratic ? 1 : 2);
-    }
-
-    /// Set the buffer size by the number of elements in the hash table. Used when deserializing a hash table.
-    void set(size_t num_elems)
-    {
-        size_t new_size_degree = initial_size_degree;
-        if (num_elems > 1)
-            new_size_degree = std::max(new_size_degree, static_cast<size_t>(log2(num_elems - 1)) + 2);
-
-        if (new_size_degree <= robin_hood_size_degree)
-        {
-            setSizeDegree(static_cast<UInt8>(new_size_degree), false);
-            return;
-        }
-
-        /// Take the smallest size that fits the elements with the higher load factor.
-        new_size_degree = robin_hood_size_degree;
-        setSizeDegree(static_cast<UInt8>(new_size_degree), true);
-        while (overflow(num_elems))
-            setSizeDegree(static_cast<UInt8>(++new_size_degree), true);
-    }
-
-    void setBufSize(size_t buf_size_)
-    {
-        UInt8 new_size_degree = static_cast<UInt8>(log2(buf_size_ - 1) + 1);
-        setSizeDegree(new_size_degree, new_size_degree > robin_hood_size_degree);
-    }
-};
-
-static_assert(sizeof(HashTableGrowerWithPrecalculationAndRobinHood<>) == DB::CH_CACHE_LINE_SIZE);
-
-/// A grower that can switch a hash table to the Robin Hood mode, see `HashTableGrowerWithPrecalculationAndRobinHood`.
-template <typename Grower>
-concept GrowerWithRobinHood = Grower::performs_linear_probing_with_single_step && requires(const Grower & grower)
-{
-    { grower.isRobinHood() } -> std::same_as<bool>;
-};
-
 /** When used as a Grower, it turns a hash table into something like a lookup table.
   * It remains non-optimal - the cells store the keys.
   * Also, the compiler can not completely remove the code of passing through the collision resolution chain, although it is not needed.
@@ -472,11 +359,11 @@ template <bool need_zero_value_storage, typename Cell>
 struct ZeroValueStorage;
 
 template <typename Cell>
-struct ZeroValueStorage<true, Cell> // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - `zero_value_storage` is raw storage for placement new, only written when `has_zero` becomes true
+struct ZeroValueStorage<true, Cell>
 {
 private:
     bool has_zero = false;
-    alignas(Cell) std::byte zero_value_storage[sizeof(Cell)];
+    alignas(Cell) std::byte zero_value_storage[sizeof(Cell)]; /// Storage of element with zero key.
 
 public:
     bool hasZero() const { return has_zero; }
@@ -584,228 +471,6 @@ protected:
         return place_value;
     }
 
-    /// Whether the hash table is in the Robin Hood mode, see `HashTableGrowerWithPrecalculationAndRobinHood`.
-    bool ALWAYS_INLINE isRobinHood() const
-    {
-        if constexpr (GrowerWithRobinHood<Grower>)
-            return grower.isRobinHood();
-        else
-            return false;
-    }
-
-    /// The distance of the element in the cell at place_value from its optimal position.
-    size_t ALWAYS_INLINE distanceFromOptimalPosition(const Cell & cell, size_t place_value) const
-    {
-        return grower.place(place_value - grower.place(cell.getHash(*this)));
-    }
-
-    /** Find a cell with the same key, or the place where the key has to be inserted, in the Robin Hood mode.
-      * The elements in a collision resolution chain are ordered by their optimal positions,
-      * so the search stops at the first element that is closer to its optimal position than the searched key would be.
-      * The returned cell can be non-empty even if the key is not found - then the key has to be inserted before it.
-      */
-    size_t ALWAYS_INLINE findCellRobinHood(const Key & x, size_t hash_value, size_t place_value, bool & found) const
-    {
-        for (size_t distance = 0;; ++distance)
-        {
-            const Cell & cell = buf[place_value];
-            if (cell.isZero(*this))
-            {
-                found = false;
-                return place_value;
-            }
-            if (cell.keyEquals(x, hash_value, *this))
-            {
-                found = true;
-                return place_value;
-            }
-            /// The element at the optimal position of the key cannot be closer to its own optimal position, so do not compute its hash.
-            if (distance && distanceFromOptimalPosition(cell, place_value) < distance)
-            {
-                found = false;
-                return place_value;
-            }
-            place_value = grower.next(place_value);
-#ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
-            ++collisions;
-#endif
-        }
-    }
-
-    /// Same as `findCellRobinHood`, but for a key that is known to be absent.
-    size_t ALWAYS_INLINE findInsertionPlaceRobinHood(size_t place_value) const
-    {
-        for (size_t distance = 0;; ++distance)
-        {
-            const Cell & cell = buf[place_value];
-            if (cell.isZero(*this) || (distance && distanceFromOptimalPosition(cell, place_value) < distance))
-                return place_value;
-            place_value = grower.next(place_value);
-        }
-    }
-
-    /// Find the cell with the key (it must not be zero). Return nullptr if the key is not found.
-    Cell * ALWAYS_INLINE findNonZeroCell(const Key & x, size_t hash_value) const
-    {
-        size_t place_value = grower.place(hash_value);
-        if (isRobinHood())
-        {
-            bool found = false;
-            place_value = findCellRobinHood(x, hash_value, place_value, found);
-            return found ? &buf[place_value] : nullptr;
-        }
-
-        place_value = findCell(x, hash_value, place_value);
-        return !buf[place_value].isZero(*this) ? &buf[place_value] : nullptr;
-    }
-
-    /// Make the cell at place_value empty by moving it and the following elements of the collision resolution chain one cell to the right.
-    /// Not inlined to keep the code of inserts small.
-    void NO_INLINE shiftCellsRight(size_t place_value)
-    {
-        size_t empty_place = findEmptyCell(place_value);
-
-        if (empty_place < place_value)
-        {
-            /// The chain wraps around the end of the buffer.
-            size_t last_place = grower.bufSize() - 1;
-            memmove(static_cast<void *>(&buf[1]), static_cast<const void *>(&buf[0]), empty_place * sizeof(Cell));
-            memcpy(static_cast<void *>(&buf[0]), static_cast<const void *>(&buf[last_place]), sizeof(Cell));
-            empty_place = last_place;
-        }
-
-        memmove(static_cast<void *>(&buf[place_value + 1]), static_cast<const void *>(&buf[place_value]), (empty_place - place_value) * sizeof(Cell));
-        buf[place_value].setZero();
-    }
-
-    /** Reorder the elements in every collision resolution chain by their optimal positions, as required in the Robin Hood mode.
-      * Used after the elements were placed by the ordinary linear probing: on resize, or when switching to the Robin Hood mode.
-      * It is an insertion sort, which is fast for the chains that are already almost ordered.
-      */
-    void orderCollisionResolutionChains()
-    {
-        if (empty())
-            return;
-
-        size_t buf_size = grower.bufSize();
-
-        /// Start from an empty cell, so that no chain crosses the starting point.
-        size_t start = 0;
-        while (!buf[start].isZero(*this))
-            ++start;
-
-        alignas(Cell) std::byte tmp[sizeof(Cell)];
-
-        for (size_t i = 1; i < buf_size; ++i)
-        {
-            size_t place_value = grower.place(start + i);
-            if (buf[place_value].isZero(*this))
-                continue;
-
-            /// Find the new place of the element: before all elements whose optimal positions are after its own.
-            size_t distance = distanceFromOptimalPosition(buf[place_value], place_value);
-            size_t new_place = place_value;
-            while (distance > 0)
-            {
-                size_t prev_place = grower.place(new_place - 1);
-                if (buf[prev_place].isZero(*this) || distanceFromOptimalPosition(buf[prev_place], prev_place) + 1 >= distance)
-                    break;
-                new_place = prev_place;
-                --distance;
-            }
-
-            if (new_place == place_value)
-                continue;
-
-            memcpy(static_cast<void *>(tmp), static_cast<const void *>(&buf[place_value]), sizeof(Cell));
-            for (size_t pos = place_value; pos != new_place;)
-            {
-                size_t prev_pos = grower.place(pos - 1);
-                memcpy(static_cast<void *>(&buf[pos]), static_cast<const void *>(&buf[prev_pos]), sizeof(Cell));
-                pos = prev_pos;
-            }
-            memcpy(static_cast<void *>(&buf[new_place]), static_cast<const void *>(tmp), sizeof(Cell));
-        }
-    }
-
-    /// Remove the element at place_value without calling its destructor, moving the following elements of the collision resolution chain to keep them reachable.
-    void eraseCellAt(size_t erased_key_position)
-    {
-        /// We need to guarantee loop termination because there will be empty position
-        chassert(m_size < grower.bufSize());
-
-        size_t next_position = erased_key_position;
-
-        /**
-         * During element deletion there is a possibility that the search will be broken for one
-         * of the following elements, because this place erased_key_position is empty. We will check
-         * next_element. Consider a sequence from (erased_key_position, next_element], if the
-         * optimal_position of next_element falls into it, then removing erased_key_position
-         * will not break search for next_element.
-         * If optimal_position of the element does not fall into the sequence (erased_key_position, next_element]
-         * then deleting a erased_key_position will break search for it, so we need to move next_element
-         * to erased_key_position. Now we have empty place at next_element, so we apply the identical
-         * procedure for it.
-         * If an empty element is encountered then means that there is no more next elements for which we can
-         * break the search so we can exit.
-         *
-         * In the Robin Hood mode, the elements of a chain are ordered by their optimal positions,
-         * and this procedure moves them one cell to the left, keeping the order.
-        */
-
-        /// Walk to the right through collision resolution chain and move elements to better positions
-        while (true)
-        {
-            next_position = grower.next(next_position);
-
-            /// If there's no more elements in the chain
-            if (buf[next_position].isZero(*this))
-                break;
-
-            /// The optimal position of the element in the cell at next_position
-            size_t optimal_position = grower.place(buf[next_position].getHash(*this));
-
-            /// If position of this element is already optimal - proceed to the next element.
-            if (optimal_position == next_position)
-                continue;
-
-            /// Cannot move this element because optimal position is after the freed place
-            /// The second condition is tricky - if the chain was overlapped before erased_key_position,
-            ///  and the optimal position is actually before in collision resolution chain:
-            ///
-            /// [*xn***----------------***]
-            ///   ^^-next elem          ^
-            ///   |                     |
-            ///   erased elem           the optimal position of the next elem
-            ///
-            /// so, the next elem should be moved to position of erased elem
-
-            /// The case of non overlapping part of chain
-            if (next_position > erased_key_position
-               && (optimal_position > erased_key_position) && (optimal_position < next_position))
-            {
-                continue;
-            }
-
-            /// The case of overlapping chain
-            if (next_position < erased_key_position
-                /// Cannot move this element because optimal position is after the freed place
-                && ((optimal_position > erased_key_position) || (optimal_position < next_position)))
-            {
-                continue;
-            }
-
-            /// Move the element to the freed place
-            memcpy(static_cast<void *>(&buf[erased_key_position]), static_cast<void *>(&buf[next_position]), sizeof(Cell));
-
-            /// Now we have another freed place
-            erased_key_position = next_position;
-        }
-
-        buf[erased_key_position].setZero();
-        --m_size;
-    }
-
     static size_t allocCheckOverflow(size_t buffer_size)
     {
         size_t size = 0;
@@ -852,12 +517,7 @@ protected:
         if (for_num_elems)
         {
             new_grower.set(for_num_elems);
-            /// The higher load factor of the Robin Hood mode may fit the elements without growing the buffer,
-            /// then the hash table switches to the Robin Hood mode in place.
-            bool switches_to_robin_hood = false;
-            if constexpr (GrowerWithRobinHood<Grower>)
-                switches_to_robin_hood = new_grower.bufSize() == old_size && !grower.isRobinHood() && new_grower.isRobinHood();
-            if (new_grower.bufSize() <= old_size && !switches_to_robin_hood)
+            if (new_grower.bufSize() <= old_size)
                 return;
         }
         else if (for_buf_size)
@@ -869,13 +529,12 @@ protected:
         else
             new_grower.increaseSize();
 
-        /// Expand the space. The size does not change if the grower only switches to the Robin Hood mode.
+        /// Expand the space.
         size_t old_buffer_size = getBufferSizeInBytes();
-        if (new_grower.bufSize() != old_size)
-            buf = reinterpret_cast<Cell *>(Allocator::realloc(buf, old_buffer_size, allocCheckOverflow(new_grower.bufSize())));
+        buf = reinterpret_cast<Cell *>(Allocator::realloc(buf, old_buffer_size, allocCheckOverflow(new_grower.bufSize())));
         grower = new_grower;
 
-        if (!empty() && grower.bufSize() != old_size)
+        if (!empty())
         {
             /** Now some items may need to be moved to a new location.
               * The element can stay in place, or move to a new location "on the right",
@@ -899,9 +558,6 @@ protected:
                 reinsert(buf[i], buf[i].getHash(*this));
         }
 
-        if (isRobinHood())
-            orderCollisionResolutionChains();
-
 #ifdef DBMS_HASH_MAP_DEBUG_RESIZES
         watch.stop();
         std::cerr << std::fixed << std::setprecision(3)
@@ -913,7 +569,6 @@ protected:
 
     /** Paste into the new buffer the value that was in the old buffer.
       * Used when increasing the buffer size.
-      * It uses the ordinary linear probing, and in the Robin Hood mode the order of the elements has to be restored afterwards.
       */
     void reinsert(Cell & x, size_t hash_value)
     {
@@ -1418,59 +1073,9 @@ protected:
             }
 
             // The hash table was rehashed, so we have to re-find the key.
-            it = findNonZeroCell(key, hash_value);
-            chassert(it);
-        }
-    }
-
-    /// Same as `emplaceNonZero`, but in the Robin Hood mode.
-    /// It must be inlined: if the arguments are passed by reference to a function that is not inlined,
-    /// the key, the iterator and the flag have to be kept in memory instead of registers in the ordinary linear probing as well,
-    /// and inserts into the hash tables that are not in the Robin Hood mode become up to 15% slower.
-    template <typename KeyHolder>
-    void ALWAYS_INLINE emplaceNonZeroRobinHood(KeyHolder && key_holder, LookupResult & it,
-                                               bool & inserted, size_t hash_value)
-    {
-        bool found = false;
-        size_t place_value = findCellRobinHood(keyHolderGetKey(key_holder), hash_value, grower.place(hash_value), found);
-        it = &buf[place_value];
-
-        if (found)
-        {
-            keyHolderDiscardKey(key_holder);
-            inserted = false;
-            return;
-        }
-
-        keyHolderPersistKey(key_holder);
-        const auto & key = keyHolderGetKey(key_holder);
-
-        /// The elements that are farther from their optimal positions go first.
-        if (!buf[place_value].isZero(*this))
-            shiftCellsRight(place_value);
-
-        new (&buf[place_value]) Cell(key, *this);
-        buf[place_value].setHash(hash_value);
-        inserted = true;
-        ++m_size;
-
-        if (unlikely(grower.overflow(m_size)))
-        {
-            try
-            {
-                resize();
-            }
-            catch (...)
-            {
-                /// Remove the key with uninitialized mapped-value, see `emplaceNonZeroImpl`.
-                eraseCellAt(place_value);
-                inserted = false;
-                keyHolderDiscardKey(key_holder);
-                throw;
-            }
-
-            it = findNonZeroCell(key, hash_value);
-            chassert(it);
+            size_t new_place = findCell(key, hash_value, grower.place(hash_value));
+            assert(!buf[new_place].isZero(*this));
+            it = &buf[new_place];
         }
     }
 
@@ -1479,38 +1084,21 @@ protected:
     void ALWAYS_INLINE emplaceNonZero(KeyHolder && key_holder, LookupResult & it,
                                       bool & inserted, size_t hash_value)
     {
-        if (isRobinHood())
-        {
-            emplaceNonZeroRobinHood(key_holder, it, inserted, hash_value);
-            return;
-        }
-
         const auto & key = keyHolderGetKey(key_holder);
         size_t place_value = findCell(key, hash_value, grower.place(hash_value));
         emplaceNonZeroImpl(place_value, key_holder, it, inserted, hash_value);
     }
 
-public:
     void ALWAYS_INLINE prefetchByHash(size_t hash_key) const
     {
         const auto place = grower.place(hash_key);
         __builtin_prefetch(&buf[place]);
     }
 
-    bool ALWAYS_INLINE isEmptyCell(size_t hash_key) const
-    {
-        const auto place = grower.place(hash_key);
-        return buf[place].isZero(*this);
-    }
-
-    /// A reservation of zero must be a no-op: the parameterless `resize` below is the
-    /// grow-one-step primitive, so forwarding zero would double the buffer instead. Repeated
-    /// zero reservations (e.g. `reserve(size() + additional)` with both terms zero) would then
-    /// grow an empty table without bound.
+public:
     void reserve(size_t num_elements)
     {
-        if (num_elements)
-            resize(num_elements);
+        resize(num_elements);
     }
 
     /// Insert a value. In the case of any more complex values, it is better to use the `emplace` function.
@@ -1557,9 +1145,6 @@ public:
         const auto & key = keyHolderGetKey(key_holder);
         const auto key_hash = hash(key);
         prefetchByHash(key_hash);
-        /// Release any temporary key memory held by the holder (e.g. `SerializedKeyHolder` rolls back the Arena allocation).
-        /// Without this, every prefetch would leak the serialized key bytes in the aggregation pool.
-        keyHolderDiscardKey(key_holder);
     }
 
     /** Insert the key.
@@ -1597,15 +1182,7 @@ public:
     /// Copy the cell from another hash table. It is assumed that the cell is not zero, and also that there was no such key in the table yet.
     void ALWAYS_INLINE insertUniqueNonZero(const Cell * cell, size_t hash_value)
     {
-        size_t place_value = grower.place(hash_value);
-        if (isRobinHood())
-        {
-            place_value = findInsertionPlaceRobinHood(place_value);
-            if (!buf[place_value].isZero(*this))
-                shiftCellsRight(place_value);
-        }
-        else
-            place_value = findEmptyCell(place_value);
+        size_t place_value = findEmptyCell(grower.place(hash_value));
 
         memcpy(static_cast<void*>(&buf[place_value]), cell, sizeof(*cell));
         ++m_size;
@@ -1619,7 +1196,9 @@ public:
         if (Cell::isZero(x, *this))
             return this->hasZero() ? this->zeroValue() : nullptr;
 
-        return findNonZeroCell(x, hash(x));
+        size_t hash_value = hash(x);
+        size_t place_value = findCell(x, hash_value, grower.place(hash_value));
+        return !buf[place_value].isZero(*this) ? &buf[place_value] : nullptr;
     }
 
     ConstLookupResult ALWAYS_INLINE find(const Key & x) const
@@ -1632,7 +1211,8 @@ public:
         if (Cell::isZero(x, *this))
             return this->hasZero() ? this->zeroValue() : nullptr;
 
-        return findNonZeroCell(x, hash_value);
+        size_t place_value = findCell(x, hash_value, grower.place(hash_value));
+        return !buf[place_value].isZero(*this) ? &buf[place_value] : nullptr;
     }
 
     ConstLookupResult ALWAYS_INLINE find(const Key & x, size_t hash_value) const
@@ -1671,13 +1251,83 @@ public:
             return false;
         }
 
-        Cell * erased_cell = findNonZeroCell(x, hash_value);
+        size_t erased_key_position = findCell(x, hash_value, grower.place(hash_value));
 
         /// Key is not found
-        if (!erased_cell)
+        if (buf[erased_key_position].isZero(*this))
             return false;
 
-        eraseCellAt(erased_cell - buf);
+        /// We need to guarantee loop termination because there will be empty position
+        assert(m_size < grower.bufSize());
+
+        size_t next_position = erased_key_position;
+
+        /**
+         * During element deletion there is a possibility that the search will be broken for one
+         * of the following elements, because this place erased_key_position is empty. We will check
+         * next_element. Consider a sequence from (erased_key_position, next_element], if the
+         * optimal_position of next_element falls into it, then removing erased_key_position
+         * will not break search for next_element.
+         * If optimal_position of the element does not fall into the sequence (erased_key_position, next_element]
+         * then deleting a erased_key_position will break search for it, so we need to move next_element
+         * to erased_key_position. Now we have empty place at next_element, so we apply the identical
+         * procedure for it.
+         * If an empty element is encountered then means that there is no more next elements for which we can
+         * break the search so we can exit.
+        */
+
+        /// Walk to the right through collision resolution chain and move elements to better positions
+        while (true)
+        {
+            next_position = grower.next(next_position);
+
+            /// If there's no more elements in the chain
+            if (buf[next_position].isZero(*this))
+                break;
+
+            /// The optimal position of the element in the cell at next_position
+            size_t optimal_position = grower.place(buf[next_position].getHash(*this));
+
+            /// If position of this element is already optimal - proceed to the next element.
+            if (optimal_position == next_position)
+                continue;
+
+            /// Cannot move this element because optimal position is after the freed place
+            /// The second condition is tricky - if the chain was overlapped before erased_key_position,
+            ///  and the optimal position is actually before in collision resolution chain:
+            ///
+            /// [*xn***----------------***]
+            ///   ^^-next elem          ^
+            ///   |                     |
+            ///   erased elem           the optimal position of the next elem
+            ///
+            /// so, the next elem should be moved to position of erased elem
+
+            /// The case of non overlapping part of chain
+            if (next_position > erased_key_position
+               && (optimal_position > erased_key_position) && (optimal_position < next_position))
+            {
+                continue;
+            }
+
+            /// The case of overlapping chain
+            if (next_position < erased_key_position
+                /// Cannot move this element because optimal position is after the freed place
+                && ((optimal_position > erased_key_position) || (optimal_position < next_position)))
+            {
+                continue;
+            }
+
+            /// Move the element to the freed place
+            memcpy(static_cast<void *>(&buf[erased_key_position]), static_cast<void *>(&buf[next_position]), sizeof(Cell));
+
+            /// Now we have another freed place
+            erased_key_position = next_position;
+        }
+
+        buf[erased_key_position].setZero();
+        --m_size;
+
         return true;
     }
 
@@ -1686,7 +1336,9 @@ public:
         if (Cell::isZero(x, *this))
             return this->hasZero();
 
-        return findNonZeroCell(x, hash(x)) != nullptr;
+        size_t hash_value = hash(x);
+        size_t place_value = findCell(x, hash_value, grower.place(hash_value));
+        return !buf[place_value].isZero(*this);
     }
 
 
@@ -1695,7 +1347,8 @@ public:
         if (Cell::isZero(x, *this))
             return this->hasZero();
 
-        return findNonZeroCell(x, hash_value) != nullptr;
+        size_t place_value = findCell(x, hash_value, grower.place(hash_value));
+        return !buf[place_value].isZero(*this);
     }
 
     bool ALWAYS_INLINE contains(const Key & x) const
@@ -1823,41 +1476,6 @@ public:
     size_t getBufferSizeInBytes() const
     {
         return grower.bufSize() * sizeof(Cell);
-    }
-
-    /// Estimates the additional memory charged while inserting this many new keys. Each resize charges
-    /// its replacement before releasing the old buffer's accounting, even when allocation grows in place.
-    /// Capacity gained by preceding resizes remains charged throughout subsequent resizes.
-    /// Saturates at the maximum of `size_t` when the projected capacity or memory is not representable.
-    size_t estimateGrowthMemory(size_t additional_keys) const noexcept
-    {
-        auto projected_grower = grower;
-        const size_t initial_bytes = getBufferSizeInBytes();
-        constexpr size_t max_size = std::numeric_limits<size_t>::max();
-        size_t projected_size = 0;
-        if (common::addOverflow(m_size, additional_keys, projected_size))
-            return max_size;
-        size_t buffer_bytes = initial_bytes;
-        size_t peak_extra_bytes = 0;
-        while (projected_grower.overflow(projected_size))
-        {
-            /// The largest representable power-of-two capacity cannot grow further.
-            if (projected_grower.bufSize() > max_size / 2)
-                return max_size;
-            size_t prev_buf_size = projected_grower.bufSize();
-            projected_grower.increaseSize();
-            /// Switching to the Robin Hood mode does not allocate.
-            if (projected_grower.bufSize() == prev_buf_size)
-                continue;
-            size_t next_bytes = 0;
-            size_t extra_bytes = 0;
-            if (common::mulOverflow(projected_grower.bufSize(), sizeof(Cell), next_bytes)
-                || common::addOverflow(buffer_bytes - initial_bytes, next_bytes, extra_bytes))
-                return max_size;
-            peak_extra_bytes = std::max(peak_extra_bytes, extra_bytes);
-            buffer_bytes = next_bytes;
-        }
-        return peak_extra_bytes;
     }
 
     size_t getBufferSizeInCells() const

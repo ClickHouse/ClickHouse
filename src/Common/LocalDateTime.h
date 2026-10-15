@@ -16,12 +16,12 @@
 class LocalDateTime
 {
 private:
-    unsigned short m_year{}; /// NOLINT
-    unsigned char m_month{};
-    unsigned char m_day{};
-    unsigned char m_hour{};
-    unsigned char m_minute{};
-    unsigned char m_second{};
+    unsigned short m_year; /// NOLINT
+    unsigned char m_month;
+    unsigned char m_day;
+    unsigned char m_hour;
+    unsigned char m_minute;
+    unsigned char m_second;
 
     /// For struct to fill 8 bytes and for safe invocation of memcmp.
     /// NOTE We may use attribute packed instead, but it is less portable.

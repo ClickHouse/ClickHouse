@@ -200,7 +200,7 @@ std::string KeyPair::publicKey() const
     if (!PEM_write_bio_PUBKEY(bio.get(), key))
         throw Exception(ErrorCodes::OPENSSL_ERROR, "PEM_write_bio_PUBKEY failed: {}", getOpenSSLErrors());
 
-    char * data = nullptr;
+    char * data;
     uint64_t len = BIO_get_mem_data(bio.get(), &data);
     std::string result(data, len);
 
@@ -217,7 +217,7 @@ std::string KeyPair::privateKey() const
     if (!PEM_write_bio_PrivateKey(bio.get(), key, nullptr, nullptr, 0, nullptr, nullptr))
         throw Exception(ErrorCodes::OPENSSL_ERROR, "PEM_write_bio_PrivateKey failed: {}", getOpenSSLErrors());
 
-    char * data = nullptr;
+    char * data;
     uint64_t len = BIO_get_mem_data(bio.get(), &data);
     std::string result(data, len);
 

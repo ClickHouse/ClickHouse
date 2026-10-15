@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel, no-flaky-check
+# Tags: no-fasttest, no-parallel
 # no-parallel: dealing with an SQLite database makes concurrent SHOW TABLES queries fail sporadically with the "database is locked" error.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -91,7 +91,7 @@ ${CLICKHOUSE_CLIENT} --query="DROP DATABASE IF EXISTS ${CURR_DATABASE}"
 
 ${CLICKHOUSE_CLIENT} --query="select 'create table engine with table3'";
 ${CLICKHOUSE_CLIENT} --query='DROP TABLE IF EXISTS sqlite_table3'
-${CLICKHOUSE_CLIENT} --query="CREATE TABLE sqlite_table3 (col1 Nullable(String), col2 Int32) ENGINE = SQLite('${DB_PATH}', 'table3')"
+${CLICKHOUSE_CLIENT} --query="CREATE TABLE sqlite_table3 (col1 String, col2 Int32) ENGINE = SQLite('${DB_PATH}', 'table3')"
 
 ${CLICKHOUSE_CLIENT} --query='SHOW CREATE TABLE sqlite_table3;' | sed -r 's/(.*SQLite)(.*)/\1/'
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO sqlite_table3 VALUES ('line\'6', 6);"
