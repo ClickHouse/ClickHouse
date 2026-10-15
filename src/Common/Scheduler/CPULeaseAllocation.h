@@ -418,9 +418,7 @@ private:
     /// Introspection
     CurrentMetrics::Increment acquired_increment;
     CurrentMetrics::Increment scheduled_increment;
-    /// Current number of threads parked for a non-CPU wait. A member Increment (not a raw
-    /// metric add/sub) so a residual is auto-subtracted if the allocation is destroyed while
-    /// threads are still parked (query cancelled mid-wait).
+    /// Current number of threads parked for a non-CPU wait
     CurrentMetrics::Increment parked_increment;
     /// Stable counters for wait_timer. We cannot use CurrentThread::getProfileEvents() in
     /// schedule() because it returns the calling thread's counters, which may be destroyed
