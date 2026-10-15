@@ -267,8 +267,6 @@ def test_read_in_order_through_merge_table(started_cluster_iceberg_with_spark, s
     spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (1,'a'), (3, 'c')")
     spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (2,'d'), (4, 'f')")
 
-    patch_metadata(TABLE_NAME)
-
     default_upload_directory(
         started_cluster_iceberg_with_spark,
         storage_type,
