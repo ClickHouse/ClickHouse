@@ -17,9 +17,7 @@ import PrettyFormatSettings from '/snippets/fr/common-pretty-format-settings.mdx
 | ------ | ------ | ----- |
 | ✗      | ✔      |       |
 
-<div id="description">
-  ## Description
-</div>
+## Description {#description}
 
 Le format `Pretty` affiche les données sous forme de tableaux en Unicode,
 en utilisant des séquences d&#39;échappement ANSI pour afficher les couleurs dans le terminal.
@@ -29,11 +27,9 @@ Cela est nécessaire pour que les blocs puissent être affichés sans mise en m�
 
 [NULL](/fr/reference/syntax) s&#39;affiche sous la forme `ᴺᵁᴸᴸ`.
 
-<div id="example-usage">
-  ## Exemple d&#39;utilisation
-</div>
+## Exemple d&#39;utilisation {#example-usage}
 
-Exemple (pour le format [`PrettyCompact`](/fr/reference/formats/Pretty/PrettyCompact)) :
+Exemple (pour le format [`PrettyCompact`](/fr/reference/formats/Pretty/PrettyCompact)) :
 
 ```sql title="Query"
 SELECT * FROM t_null
@@ -45,17 +41,30 @@ SELECT * FROM t_null
 └───┴──────┘
 ```
 
-Les lignes ne sont pas échappées dans les formats `Pretty`. L’exemple suivant est donné pour le format [`PrettyCompact`](/fr/reference/formats/Pretty/PrettyCompact) :
+Les lignes ne sont pas échappées dans les formats `Pretty`. Les caractères de contrôle non imprimables (contrôles C0 `0x00`-`0x1F` et `DEL` `0x7F`) présents dans les valeurs et dans les noms de colonnes sont en revanche affichés par défaut sous la forme des « Control Pictures » Unicode correspondantes (`U+2400`-`U+2421`), afin qu’ils restent visibles et ne déforment pas la table. Par exemple, un caractère NUL est affiché sous la forme `␀` :
 
 ```sql title="Query"
-SELECT 'String with \'quotes\' and \t character' AS Escaping_test
+SELECT 'String with a NUL \0 character' AS Escaping_test FORMAT PrettyCompact
 ```
 
 ```response title="Response"
-┌─Escaping_test────────────────────────┐
-│ String with 'quotes' and      character │
-└──────────────────────────────────────┘
+┌─Escaping_test─────────────────┐
+│ String with a NUL ␀ character │
+└───────────────────────────────┘
 ```
+
+`TAB`, le saut de ligne et `ESC` font exception : ils sont toujours affichés tels quels, car un terminal les interprète au lieu de les ignorer — une tabulation fait avancer le curseur jusqu’au taquet de tabulation suivant, et c’est grâce à une séquence d’échappement ANSI que les données peuvent embarquer une visualisation. Un saut de ligne continue lui aussi de provoquer un retour à la ligne : à l’intérieur d’une cellule de table lorsque [`output_format_pretty_multiline_fields`](/fr/reference/settings/formats#output_format_pretty_multiline_fields) est activé, et tel quel dans le cas contraire. Les noms de colonnes constituent l’exception à cette exception : l’en-tête et le pied de table tiennent sur une seule ligne, si bien qu’un saut de ligne dans un nom est remplacé comme n’importe quel autre caractère de contrôle.
+
+Pour afficher à la place les caractères de contrôle tels quels, désactivez [`output_format_pretty_display_control_characters`](/fr/reference/settings/formats#output_format_pretty_display_control_characters) :
+
+```sql title="Query"
+SELECT 'String with a NUL \0 character' AS Escaping_test FORMAT PrettyCompact
+SETTINGS output_format_pretty_display_control_characters = 0
+```
+
+La réponse contient alors l’octet `NUL` brut. Un terminal l’absorbe : le caractère
+est donc invisible et la ligne dépasse d’une position la bordure calculée pour elle — d’où
+la table déformée que l’affichage du Control Picture permet d’éviter.
 
 Pour éviter d’afficher trop de données dans le terminal, seules les `10,000` premières lignes sont imprimées.
 Si le nombre de lignes est supérieur ou égal à `10,000`, le message &quot;Showed first 10 000&quot; s’affiche.
@@ -66,7 +75,7 @@ Si le nombre de lignes est supérieur ou égal à `10,000`, le message &quot;Sho
 
 Le format Pretty prend en charge l’affichage des totaux (lors de l’utilisation de `WITH TOTALS`) et des valeurs extrêmes (lorsque &#39;extremes&#39; est défini sur 1).
 Dans ces cas, les totaux et les valeurs extrêmes sont affichés après les données principales, dans des tables distinctes.
-Ceci est illustré dans l’exemple suivant, qui utilise le format [`PrettyCompact`](/fr/reference/formats/Pretty/PrettyCompact) :
+Ceci est illustré dans l’exemple suivant, qui utilise le format [`PrettyCompact`](/fr/reference/formats/Pretty/PrettyCompact) :
 
 ```sql title="Query"
 SELECT EventDate, count() AS c 
@@ -100,9 +109,7 @@ Extremes:
 └────────────┴─────────┘
 ```
 
-<div id="format-settings">
-  ## Paramètres de format
-</div>
+## Paramètres de format {#format-settings}
 
 <PrettyFormatSettings />
 
