@@ -175,7 +175,8 @@ public:
     IndexSizeByNameConstPtr getSecondaryIndexSizes() const;
 
     /// Returns true if there is materialized index with specified name in part.
-    bool hasSecondaryIndex(const String & index_name, const StorageMetadataPtr & metadata) const;
+    /// With `check_partial_marker` = false, a partial index counts even if its marker is for another definition.
+    bool hasSecondaryIndex(const String & index_name, const StorageMetadataPtr & metadata, bool check_partial_marker = true) const;
 
     /// True iff any of @index's substreams (base plus side streams like .dct/.pst for text indices)
     /// is stored inside this part's skp_idx.packed archive. Probing every substream, not just

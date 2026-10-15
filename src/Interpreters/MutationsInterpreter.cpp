@@ -505,9 +505,9 @@ bool MutationsInterpreter::Source::materializeTTLRecalculateOnly() const
     return data && (*data->getSettings())[MergeTreeSetting::materialize_ttl_recalculate_only];
 }
 
-bool MutationsInterpreter::Source::hasSecondaryIndex(const String & name, StorageMetadataPtr metadata) const
+bool MutationsInterpreter::Source::hasSecondaryIndex(const String & name, StorageMetadataPtr metadata, bool check_partial_marker) const
 {
-    return part && part->hasSecondaryIndex(name, metadata);
+    return part && part->hasSecondaryIndex(name, metadata, check_partial_marker);
 }
 
 bool MutationsInterpreter::Source::hasProjection(const String & name) const
@@ -1013,7 +1013,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             return source.hasProjection(name);
 
         if (kind == ColumnDependency::SKIP_INDEX)
-            return source.hasSecondaryIndex(name, metadata_snapshot);
+            return source.hasSecondaryIndex(name, metadata_snapshot, /*check_partial_marker=*/ false);
 
         return true;
     };
@@ -1746,7 +1746,8 @@ void MutationsInterpreter::prepare(bool dry_run)
 
     for (const auto & index : metadata_snapshot->getSecondaryIndices())
     {
-        if (!source.hasSecondaryIndex(index.name, metadata_snapshot) || dropped_indices.contains(index.name))
+        /// A partial index whose marker is for another definition is still rebuilt or dropped here, never carried over stale.
+        if (!source.hasSecondaryIndex(index.name, metadata_snapshot, /*check_partial_marker=*/ false) || dropped_indices.contains(index.name))
             continue;
 
         if (need_rebuild_indexes_for_update_delete || need_rebuild_indexes)

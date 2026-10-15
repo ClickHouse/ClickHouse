@@ -3603,7 +3603,7 @@ IndexSize IMergeTreeDataPart::getTotalSecondaryIndicesSize() const
     return total_secondary_indices_size;
 }
 
-bool IMergeTreeDataPart::hasSecondaryIndex(const String & index_name, const StorageMetadataPtr & metadata) const
+bool IMergeTreeDataPart::hasSecondaryIndex(const String & index_name, const StorageMetadataPtr & metadata, bool check_partial_marker) const
 {
     auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::hasSecondaryIndex");
 
@@ -3620,6 +3620,10 @@ bool IMergeTreeDataPart::hasSecondaryIndex(const String & index_name, const Stor
 
         if (!declared.where_expression)
             return has_ordinary;
+
+        /// Mutations ask this way: files that cannot be read must still be rebuilt when their columns change.
+        if (!check_partial_marker)
+            return has_partial;
 
         /// Granules of another condition (or built in another environment) do not count as the index being
         /// there, so that rebuilding commands such as MATERIALIZE INDEX replace them.

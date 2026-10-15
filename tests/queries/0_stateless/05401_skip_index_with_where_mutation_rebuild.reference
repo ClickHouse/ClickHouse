@@ -1,0 +1,25 @@
+Wide part, index in the packed archive
+1
+1
+1
+1
+1
+Wide part, index in its own files
+1
+1
+1
+Compact part
+1
+1
+1
+Update of the indexed column
+1
+1
+1
+Delete mutation, which changes the granules
+1
+1
+1
+Update of another column keeps the index, which is valid again after the rename back
+1
+1

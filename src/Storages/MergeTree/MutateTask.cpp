@@ -816,7 +816,7 @@ static void splitAndModifyMutationCommands(
         {
             if (indices_being_dropped.contains(index.name))
                 continue;
-            if (!part->hasSecondaryIndex(index.name, metadata_snapshot))
+            if (!part->hasSecondaryIndex(index.name, metadata_snapshot, /*check_partial_marker=*/ false))
                 continue;
 
             for (const auto & column : index.getRequiredColumns())
@@ -3151,7 +3151,7 @@ static bool hasAnyIndexFileOnDisk(
     const String & index_name,
     const String & mrk_extension)
 {
-    if (source_part->hasSecondaryIndex(index_name, metadata_snapshot))
+    if (source_part->hasSecondaryIndex(index_name, metadata_snapshot, /*check_partial_marker=*/ false))
         return true;
 
     const auto & storage = source_part->getDataPartStorage();
@@ -3389,7 +3389,7 @@ private:
             /// For compact parts we need to recalculate indices because rewrite of compact part may produce a little bit different data part
             /// with different number of marks.
             bool need_recalculate = ctx->materialized_indices.contains(idx.name)
-                || (!is_full_wide_part && ctx->source_part->hasSecondaryIndex(idx.name, ctx->metadata_snapshot))
+                || (!is_full_wide_part && ctx->source_part->hasSecondaryIndex(idx.name, ctx->metadata_snapshot, /*check_partial_marker=*/ false))
                 || ctx->source_part->isSkipIndexInPackedArchive(*index_ptr)
                 || index_checksums_missing;
 
@@ -4480,7 +4480,7 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
         }
 
         bool need_recalculate = ctx->materialized_indices.contains(index.name)
-            || (!is_full_part_storage && source_part->hasSecondaryIndex(index.name, ctx->metadata_snapshot));
+            || (!is_full_part_storage && source_part->hasSecondaryIndex(index.name, ctx->metadata_snapshot, /*check_partial_marker=*/ false));
 
         if (need_recalculate)
         {
