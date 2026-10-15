@@ -1500,15 +1500,12 @@ ColumnsStatistics IMergeTreeDataPart::loadStatistics(const NameSet & required_co
         StatisticsCache::MappedPtr cell;
         if (cache)
         {
-            /// The loaded statistics outlive the query in the server-wide cache, so they are not charged
-            /// to the query or the user, like the marks and the primary index in their caches.
-            auto load_to_cache = [&]
-            {
-                MemoryTrackerBlockerInThread not_charged_to_the_query;
-                return load();
-            };
+            /// The loaded statistics and the bookkeeping of the cache outlive the query in the server-wide
+            /// cache, so they are not charged to the query or the user, like the marks and the primary index
+            /// in their caches. The merged statistics of the query are built by the caller and still charged.
+            MemoryTrackerBlockerInThread not_charged_to_the_query;
             const auto key = StatisticsCache::hash(part_path, column_desc->name);
-            cell = cache->getOrSet(key, load_to_cache);
+            cell = cache->getOrSet(key, load);
             /// `clearCaches` sets the flag before it removes the entries, so if it ran concurrently
             /// with the insertion above, either its removal comes after the insertion or the flag is
             /// already visible here.
