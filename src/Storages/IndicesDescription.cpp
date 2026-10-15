@@ -3,6 +3,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Storages/IndicesDescription.h>
@@ -245,6 +246,10 @@ IndexDescription IndexDescription::getIndexFromAST(
         identity.update(where_hash.low64);
         identity.update(where_hash.high64);
         identity.update(result.where_settings_salt);
+        /// What the functions of the condition captured from the server settings, as the query side compares it.
+        for (const auto & node : result.where_expression->getActionsDAG().getNodes())
+            if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base)
+                node.function_base->updateHash(identity);
         identity.update(result.type);
         if (result.arguments)
         {

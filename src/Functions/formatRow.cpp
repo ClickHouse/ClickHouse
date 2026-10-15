@@ -57,7 +57,13 @@ public:
     String getName() const override { return function_name; }
 
     /// The row is formatted with the settings captured above: they decide the value, see `IFunctionBase::updateHash`.
-    void updateHash(SipHash & hash) const override { hash.update(format_settings_hash); }
+    void updateHash(SipHash & hash) const override
+    {
+        hash.update(format_settings_hash);
+        /// The argument names are the field names of the row.
+        for (const auto & name : arguments_column_names)
+            hash.update(name);
+    }
 
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForNulls() const override { return false; }
