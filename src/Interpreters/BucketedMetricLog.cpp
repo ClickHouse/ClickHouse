@@ -1,4 +1,5 @@
 #include <base/getFQDNOrHostName.h>
+#include <Common/config_version.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
@@ -44,6 +45,13 @@ std::string getMetricName(size_t global_index)
     return fmt::format("CurrentMetric_{}", CurrentMetrics::getName(CurrentMetrics::Metric(global_index - ProfileEvents::end())));
 }
 
+std::string getMetricDocumentation(size_t global_index)
+{
+    if (global_index < ProfileEvents::end())
+        return std::string(ProfileEvents::getDocumentation(ProfileEvents::Event(global_index)));
+    return std::string(CurrentMetrics::getDocumentation(CurrentMetrics::Metric(global_index - ProfileEvents::end())));
+}
+
 }
 
 ColumnsDescription BucketedMetricLogElement::getColumnsDescription()
@@ -51,6 +59,8 @@ ColumnsDescription BucketedMetricLogElement::getColumnsDescription()
     ColumnsDescription result;
 
     result.add({"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Hostname of the server executing the query."});
+    result.add({"clickhouse_version", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Version of the ClickHouse server that produced the row."});
+    result.add({"system_processor", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "CPU architecture of the ClickHouse server that produced the row."});
     result.add({"event_date", std::make_shared<DataTypeDate>(), "Event date."});
     result.add({"event_time", std::make_shared<DataTypeDateTime>(), "Event time."});
     result.add({"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "Event time with microseconds resolution."});
@@ -96,7 +106,10 @@ NamesAndAliases BucketedMetricLogElement::getNamesAndAliases()
             ? DataTypePtr(std::make_shared<DataTypeUInt64>())
             : DataTypePtr(std::make_shared<DataTypeInt64>());
         auto expression = fmt::format("metrics['{}']", name);
-        result.emplace_back(std::move(name), std::move(type), std::move(expression));
+        /// The alias columns are the per-metric interface of this table, so they carry the
+        /// documentation of the metric, the same way the columns of the `wide` schema do.
+        auto comment = getMetricDocumentation(i);
+        result.emplace_back(std::move(name), std::move(type), std::move(expression), std::move(comment));
     }
 
     return result;
@@ -108,6 +121,8 @@ void BucketedMetricLogElement::appendToBlock(MutableColumns & columns) const
     size_t column_idx = 0;
 
     columns[column_idx++]->insert(getFQDNOrHostName());
+    columns[column_idx++]->insert(VERSION_STRING);
+    columns[column_idx++]->insert(SYSTEM_PROCESSOR);
     columns[column_idx++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[column_idx++]->insert(event_time);
     columns[column_idx++]->insert(event_time_microseconds);

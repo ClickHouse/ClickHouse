@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-replicated-database
+-- Tags: no-parallel, no-replicated-database, no-fasttest
 -- - no-parallel - due to usage of fail points, and `materialized_views_populate_atomically` is on by
 --   default, so a concurrent `CREATE MATERIALIZED VIEW ... POPULATE` of another test would hit them too.
 -- - no-replicated-database - in a `Replicated` database the `CREATE` is an entry of the replicated DDL log

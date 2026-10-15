@@ -296,6 +296,12 @@ public:
         update(bucket, rank);
     }
 
+    void ALWAYS_INLINE prefetch(Value value) const
+    {
+        const auto bucket = extractBitSequence(getHash(value), 0, precision);
+        __builtin_prefetch(rank_store.getSerializableState().data() + static_cast<size_t>(bucket) * rank_width / 8);
+    }
+
     UInt64 size() const
     {
         /// Normalizing factor for harmonic mean.

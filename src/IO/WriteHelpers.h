@@ -57,11 +57,45 @@ inline void writeChar(char c, size_t n, WriteBuffer & buf)
     }
 }
 
+/// Write a non-zero number of bytes to buffer. Mirrors readNBytes.
+inline void writeNBytes(const char * input, size_t size, WriteBuffer & buf)
+{
+    /// WriteBuffer::write is defined out of line and copies a run-time size, while __builtin_memcpy
+    /// of a size the caller knows at compile time lowers to a couple of stores.
+    if (size <= buf.available()) [[likely]]
+    {
+        __builtin_memcpy(buf.position(), input, size);
+        buf.position() += size;
+    }
+    else
+    {
+        buf.write(input, size);
+    }
+}
+
+/// Largest value for which __builtin_memcpy still beats a call. Above it clang emits a memcpy call
+/// anyway, so the inline path would only add branches.
+constexpr size_t MAX_INLINE_WRITE_SIZE = 64;
+
 /// Write POD-type in native format. It's recommended to use only with packed (dense) data types.
 template <typename T>
 inline void writePODBinary(const T & x, WriteBuffer & buf)
 {
-    buf.write(reinterpret_cast<const char *>(&x), sizeof(x)); /// NOLINT
+    if constexpr (sizeof(T) <= MAX_INLINE_WRITE_SIZE)
+        writeNBytes(reinterpret_cast<const char *>(&x), sizeof(x), buf); /// NOLINT
+    else
+        buf.write(reinterpret_cast<const char *>(&x), sizeof(x)); /// NOLINT
+}
+
+/// Same, into raw memory holding at least sizeof(T) bytes, advancing the cursor past it, just as the
+/// WriteBuffer overloads advance theirs. Restricted to trivially serializable types, for which
+/// `writeBinary` is `writePODBinary`, so a caller cannot pick up a different encoding than the
+/// WriteBuffer overloads produce.
+template <is_trivially_serializable T>
+inline void writePODBinary(const T & x, char * & dst)
+{
+    __builtin_memcpy(dst, reinterpret_cast<const char *>(&x), sizeof(x)); /// NOLINT
+    dst += sizeof(x);
 }
 
 inline void writeUUIDBinary(const UUID & x, WriteBuffer & buf)
@@ -190,9 +224,44 @@ inline void writeString(std::string_view ref, WriteBuffer & buf)
  */
 inline void writeJSONString(const char * begin, const char * end, WriteBuffer & buf, const FormatSettings & settings)
 {
-    writeChar('"', buf);
-    for (const char * it = begin; it != end; ++it)
+    /// A byte with a nonzero entry never gets copied verbatim; it always reaches the switch below.
+    /// 0xE2 needs an entry because it leads U+2028 and U+2029: a bulk copy would swallow the lead byte and
+    /// emit the sequence raw. Their continuation bytes need none, being written unchanged either way.
+    static constexpr auto stop_tables = []
     {
+        std::array<std::array<UInt8, 256>, 2> tables{};
+        for (auto & table : tables)
+        {
+            for (size_t i = 0; i <= 0x1F; ++i)
+                table[i] = 1;
+            table['"'] = 1;
+            table['\\'] = 1;
+            table[0xE2] = 1;
+        }
+        tables[true]['/'] = 1;
+        return tables;
+    }();
+    const auto & stop = stop_tables[settings.json.escape_forward_slashes];
+
+    writeChar('"', buf);
+
+    const char * it = begin;
+
+    while (true)
+    {
+        const char * run_end = it;
+        while (run_end != end && !stop[static_cast<UInt8>(*run_end)])
+            ++run_end;
+
+        if (run_end != it)
+        {
+            buf.write(it, static_cast<size_t>(run_end - it));
+            it = run_end;
+        }
+
+        if (it == end)
+            break;
+
         switch (*it)
         {
             case '\b':
@@ -261,7 +330,10 @@ inline void writeJSONString(const char * begin, const char * end, WriteBuffer & 
                 else
                     writeChar(*it, buf);
         }
+
+        ++it;
     }
+
     writeChar('"', buf);
 }
 
@@ -642,6 +714,34 @@ inline void writeQuotedStringSQLite(std::string_view ref, WriteBuffer & buf)
     writeChar('\'', buf);
 }
 
+/// SQLite identifiers: a " is escaped by doubling it; every other byte, backslash included, is literal.
+inline void writeDoubleQuotedStringSQLite(std::string_view ref, WriteBuffer & buf)
+{
+    writeChar('"', buf);
+    for (char c : ref)
+    {
+        if (c == '"')
+            writeChar('"', buf);
+        writeChar(c, buf);
+    }
+    writeChar('"', buf);
+}
+
+/// PostgreSQL quoted identifiers: a `"` is escaped by doubling it, and every other byte, backslash
+/// included, is literal. `writeDoubleQuotedString` instead emits an embedded `"` as `\"`, which
+/// PostgreSQL reads as the end of the identifier followed by SQL, and doubles a real backslash.
+inline void writeDoubleQuotedStringPostgreSQL(std::string_view ref, WriteBuffer & buf)
+{
+    writeChar('"', buf);
+    for (char c : ref)
+    {
+        if (c == '"')
+            writeChar('"', buf);
+        writeChar(c, buf);
+    }
+    writeChar('"', buf);
+}
+
 inline void writeDoubleQuotedString(const String & s, WriteBuffer & buf)
 {
     writeAnyQuotedString<'"'>(s, buf);
@@ -666,11 +766,27 @@ inline void writeBackQuotedStringMySQL(std::string_view s, WriteBuffer & buf)
     writeChar('`', buf);
 }
 
+/// Outputs a string in backquotes with SQLite identifier escaping. Unlike MySQL-style formatting, control
+/// characters and backslashes stay literal; only an embedded backquote is escaped by doubling it.
+inline void writeBackQuotedStringSQLite(std::string_view s, WriteBuffer & buf)
+{
+    writeChar('`', buf);
+    for (char c : s)
+    {
+        if (c == '`')
+            writeChar('`', buf);
+        writeChar(c, buf);
+    }
+    writeChar('`', buf);
+}
+
 
 /// Write quoted if the string doesn't look like and identifier.
 void writeProbablyBackQuotedString(std::string_view s, WriteBuffer & buf);
 void writeProbablyDoubleQuotedString(std::string_view s, WriteBuffer & buf);
+void writeProbablyDoubleQuotedStringPostgreSQL(std::string_view s, WriteBuffer & buf);
 void writeProbablyBackQuotedStringMySQL(std::string_view s, WriteBuffer & buf);
+void writeProbablyBackQuotedStringSQLite(std::string_view s, WriteBuffer & buf);
 
 
 /** Outputs the string in for the CSV format.
@@ -1206,6 +1322,11 @@ inline void writeTimeTextCutTrailingZerosAlignToGroupOfThousands(Time64 time64, 
 template <is_trivially_serializable T>
 inline void writeBinary(const T & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
+/// Same, into raw memory holding at least sizeof(T) bytes, advancing the cursor past it. Lets one
+/// body serialize a value to either destination.
+template <is_trivially_serializable T>
+inline void writeBinary(const T & x, char * & dst) { writePODBinary(x, dst); }
+
 inline void writeBinary(const String & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
 inline void writeBinary(std::string_view x, WriteBuffer & buf) { writeStringBinary(x, buf); }
 
@@ -1580,17 +1701,18 @@ inline void writeNullTerminatedString(const String & s, WriteBuffer & buffer)
     buffer.write(s.c_str(), s.size() + 1);
 }
 
-template <std::endian endian, typename T>
-inline void writeBinaryEndian(T x, WriteBuffer & buf)
+/// `out` is either a WriteBuffer or a raw `char *` cursor holding at least sizeof(T) bytes.
+template <std::endian endian, typename T, typename Out>
+inline void writeBinaryEndian(T x, Out & out)
 {
     transformEndianness<endian>(x);
-    writeBinary(x, buf);
+    writeBinary(x, out);
 }
 
-template <typename T>
-inline void writeBinaryLittleEndian(T x, WriteBuffer & buf)
+template <typename T, typename Out>
+inline void writeBinaryLittleEndian(T x, Out & out)
 {
-    writeBinaryEndian<std::endian::little>(x, buf);
+    writeBinaryEndian<std::endian::little>(x, out);
 }
 
 template <typename T>

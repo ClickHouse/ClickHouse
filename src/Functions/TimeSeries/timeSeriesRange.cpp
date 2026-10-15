@@ -4,19 +4,28 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/TimezoneMixin.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnsCommon.h>
 #include <Core/DecimalFunctions.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 #include <base/arithmeticOverflow.h>
-
 
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsUInt64 function_range_max_elements_in_block;
+}
+
 namespace ErrorCodes
 {
+    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int BAD_ARGUMENTS;
     extern const int DECIMAL_OVERFLOW;
     extern const int ILLEGAL_COLUMN;
@@ -35,7 +44,17 @@ class FunctionTimeSeriesRange final : public IFunction
 public:
     static constexpr auto name = with_values ? "timeSeriesFromGrid" : "timeSeriesRange";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTimeSeriesRange<with_values>>(); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTimeSeriesRange<with_values>>(std::move(context)); }
+
+    explicit FunctionTimeSeriesRange(ContextPtr context)
+        : max_elements(context->getSettingsRef()[Setting::function_range_max_elements_in_block])
+    {
+    }
+
+    /// Like `range`: the result is built point by point, so without this bound a huge range (e.g. a start
+    /// timestamp of 1970 from a failed conversion and a sub-second step) runs for minutes before the
+    /// memory limit stops it.
+    const size_t max_elements;
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return with_values ? 4 : 3; }
@@ -60,7 +79,12 @@ public:
 
         DataTypePtr timestamp_type;
         if (timestamp_scale > 0)
-            timestamp_type = std::make_shared<DataTypeDateTime64>(timestamp_scale);
+        {
+            if (const auto * timezone = dynamic_cast<const TimezoneMixin *>(start_timestamp_type.get()))
+                timestamp_type = std::make_shared<DataTypeDateTime64>(timestamp_scale, *timezone);
+            else
+                timestamp_type = std::make_shared<DataTypeDateTime64>(timestamp_scale);
+        }
         else
             timestamp_type = start_timestamp_type;
 
@@ -185,12 +209,12 @@ public:
     }
 
     template <typename TimestampType>
-    static ColumnPtr doExecute(const IColumn & start_timestamp_column, Int64 start_timestamp_multiplier,
+    ColumnPtr doExecute(const IColumn & start_timestamp_column, Int64 start_timestamp_multiplier,
                                const IColumn & end_timestamp_column, Int64 end_timestamp_multiplier,
                                const IColumn & step_column, Int64 step_multiplier, bool step_is_uint64,
                                const IColumn * values_column, bool values_are_nullable,
                                const DataTypePtr & result_type,
-                               size_t num_rows)
+                               size_t num_rows) const
     {
         const IColumn * values = nullptr;
         const IColumn::Offsets * values_offsets = nullptr;
@@ -248,6 +272,7 @@ public:
 
         auto res_offsets = ColumnArray::ColumnOffsets::create();
         res_offsets->reserve(num_rows);
+        size_t total_points = 0;
 
         for (size_t i = 0; i != num_rows; ++i)
         {
@@ -300,12 +325,49 @@ public:
             }
 
             size_t values_base_offset = 0;
+            bool row_has_no_nulls = true;
+            /// The number of array elements this row appends: `timeSeriesFromGrid` skips the NULL values.
+            size_t row_points = num_steps;
             if constexpr (with_values)
             {
                 values_base_offset = (*values_offsets)[i - 1];
                 size_t num_values = (*values_offsets)[i] - values_base_offset;
                 if (num_values != num_steps)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Number of values ({}) doesn't match number of steps ({})", num_values, num_steps);
+
+                row_has_no_nulls = !null_map
+                    || memoryIsZero(null_map->data(), values_base_offset, values_base_offset + num_steps);
+                if (!row_has_no_nulls)
+                    row_points = num_steps - countBytesInFilter(null_map->data() + values_base_offset, 0, num_steps);
+            }
+
+            /// Bounded like `range`: the sum over the block of the array sizes, checked for overflow.
+            const size_t points_before = total_points;
+            total_points += row_points;
+            if (total_points < points_before)
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                    "A call to function {} overflows, investigate the values of arguments you are passing", name);
+            if (total_points > max_elements)
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                    "A call to function {} would produce {} array elements, which is greater than the allowed maximum of {} "
+                    "(setting 'function_range_max_elements_in_block')",
+                    name, total_points, max_elements);
+
+            if constexpr (with_values)
+            {
+
+                if (row_has_no_nulls)
+                {
+                    res_values->insertRangeFrom(*values, values_base_offset, num_steps);
+                    for (size_t j = 0; j != num_steps; ++j)
+                    {
+                        TimestampType timestamp = static_cast<TimestampType>(static_cast<Int64>(static_cast<UInt64>(start_timestamp) + j * step));
+                        res_timestamps->insert(timestamp);
+                    }
+
+                    res_offsets->insert(res_timestamps->size());
+                    continue;
+                }
             }
 
             for (size_t j = 0; j != num_steps; ++j)

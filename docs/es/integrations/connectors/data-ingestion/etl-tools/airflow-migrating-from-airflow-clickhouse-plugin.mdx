@@ -1,0 +1,511 @@
+---
+sidebarTitle: 'Migrar desde airflow-clickhouse-plugin'
+slug: /integrations/airflow/migrating-from-airflow-clickhouse-plugin
+description: 'Traslada los DAG de Airflow existentes desde el plugin comunitario airflow-clickhouse-plugin al provider oficial apache-airflow-providers-clickhousedb'
+title: 'Migrar de airflow-clickhouse-plugin al provider de ClickHouse'
+doc_type: 'guide'
+keywords: ['Apache Airflow', 'airflow-clickhouse-plugin', 'migration', 'clickhouse-driver', 'clickhouse-connect', 'SQLExecuteQueryOperator', 'ClickHouseHook', 'SqlSensor']
+---
+
+Antes de que existiera el [provider oficial de ClickHouse](/es/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse), la mayoría de los usuarios de Airflow se conectaban a
+ClickHouse mediante el package comunitario
+[airflow-clickhouse-plugin](https://github.com/bryzgaloff/airflow-clickhouse-plugin). Esta guía
+explica cómo migrar un despliegue existente a `apache-airflow-providers-clickhousedb`. Para conocer el funcionamiento del
+provider en sí, consulta [Conectar Apache Airflow a ClickHouse](/es/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse).
+
+## ¿Por qué un provider nativo? {#why-a-native-provider}
+
+Los providers son la forma en que Airflow se integra con sistemas de terceros. Se publican, se prueban y
+se documentan junto con el resto del ecosistema de Airflow, y de este en concreto se encarga la
+comunidad de Airflow junto con el ClickHouse team. Está construido sobre
+[clickhouse-connect](/es/integrations/language-clients/python/index), el Python client que ClickHouse desarrolla y
+mantiene, y no sobre un driver mantenido por la comunidad. Así, las nuevas funcionalidades y correcciones del servidor
+llegan a los usuarios de Airflow por una vía con soporte. Pasar al provider te aporta un package con un
+hogar oficial, los operators y sensores estándar de `common.sql` y un tipo de connection que aparece
+en la UI de Airflow igual que el de cualquier otra base de datos.
+
+Los dos packages se diferencian en algo más que en las rutas de import. El plugin se comunica con ClickHouse mediante el
+**protocolo TCP nativo** usando `clickhouse-driver`. El provider lo hace por **HTTP(S)** usando
+`clickhouse-connect` y se integra con los operators genéricos de `common.sql` en lugar de incluir
+operators específicos de ClickHouse.
+
+<Note>
+  Lee la guía completa una vez antes de cambiar nada. El cambio de connection, en particular, afecta
+  a todos los DAG a la vez.
+</Note>
+
+## De un vistazo {#at-a-glance}
+
+|                                   | `airflow-clickhouse-plugin`                                                                    | `apache-airflow-providers-clickhousedb`                                                                                                                                 |
+| --------------------------------- | ---------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Raíz de importación               | `airflow_clickhouse_plugin`                                                                    | `airflow.providers.clickhousedb`                                                                                                                                        |
+| Driver                            | `clickhouse-driver`                                                                            | `clickhouse-connect`                                                                                                                                                    |
+| Protocolo / puerto predeterminado | TCP nativo, `9000` (`9440` con TLS)                                                            | HTTP, `8123` (`8443` con TLS)                                                                                                                                           |
+| Tipo de conexión                  | Ninguno registrado; funciona con cualquier tipo                                                | `clickhouse`                                                                                                                                                            |
+| Extras de conexión                | Se pasan tal cual a `clickhouse_driver.Client`                                                 | Conjunto fijo de claves; consulte [Opciones de conexión adicionales](/es/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse#extra-connection-options) |
+| Operadores y sensores             | `ClickHouseOperator`, `ClickHouseSensor` y envolturas de `common.sql` con prefijo `ClickHouse` | Los operadores y sensores de `common.sql` usados directamente                                                                                                           |
+| Hook                              | `ClickHouseHook` (`BaseHook`) y `ClickHouseDbApiHook` (`DbApiHook`)                            | Un único `ClickHouseHook` (`DbApiHook`)                                                                                                                                 |
+| Airflow mínimo                    | 2.0                                                                                            | 2.11                                                                                                                                                                    |
+
+## Paso 1: comprobar los prerequisites e instalar {#step-1-check-prerequisites-and-install}
+
+El provider requiere Airflow 2.11 o posterior y `apache-airflow-providers-common-sql` 1.32.0 o
+posterior. Si utiliza una release anterior, actualice primero Airflow.
+
+```bash
+pip install apache-airflow-providers-clickhousedb
+```
+
+Los dos paquetes residen en espacios de nombres de Python distintos, por lo que pueden instalarse en paralelo mientras
+migra DAG por DAG. Elimine el plugin cuando ya nada lo importe:
+
+```bash
+pip uninstall airflow-clickhouse-plugin clickhouse-driver
+```
+
+## Paso 2: Actualizar las conexiones {#step-2-update-connections}
+
+Este es el paso que hace que todo falle si lo omite. Todas las conexiones de ClickHouse existentes apuntan al
+puerto nativo, y el provider necesita el puerto HTTP.
+
+| Campo               | Plugin                                     | Provider     |
+| ------------------- | ------------------------------------------ | ------------ |
+| Tipo de conexión    | Cualquiera (a menudo `sqlite` o `generic`) | `clickhouse` |
+| Puerto, sin cifrado | `9000`                                     | `8123`       |
+| Puerto, TLS         | `9440`                                     | `8443`       |
+| Login               | Valor predeterminado del driver: `default` | Igual        |
+| Esquema             | Base de datos                              | Igual        |
+
+Si ClickHouse se encuentra detrás de un firewall o de un balanceador de carga, asegúrese de que el puerto HTTP sea accesible desde
+los workers antes de realizar el cambio. Compruebe que la interfaz HTTP esté habilitada en el servidor (`http_port` o
+`https_port` en la configuración del servidor). [ClickHouse Cloud](/es/products/cloud/getting-started/intro) expone HTTPS únicamente en
+`8443`.
+
+Las conexiones almacenadas como URI (`clickhouse://user:pass@host:9000/db?secure=true`) ya tienen el
+tipo de conexión `clickhouse`, porque Airflow lo deduce del scheme del URI. En su caso solo cambian el puerto y las
+claves adicionales; los valores de la cadena de consulta se analizan como JSON, por lo que `secure=true` sigue siendo un
+valor booleano.
+
+### Extras de conexión {#connection-extras}
+
+El plugin pasaba cada clave de `extra` directamente a `clickhouse_driver.Client`, por lo que las conexiones pueden
+llevar cualquier keyword argument de `clickhouse-driver`. El provider solo lee un conjunto fijo de claves y
+reenvía todo lo demás mediante `client_kwargs`. Haz la equivalencia de la siguiente manera:
+
+| Extra del plugin (`clickhouse-driver`)                                                                                                     | Extra del provider                                            | Notas                                                                                                                                                                    |
+| ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `secure`                                                                                                                                   | `secure`                                                      | Sin cambios. Recuerda cambiar también el puerto.                                                                                                                         |
+| `verify`                                                                                                                                   | `verify`                                                      | Sin cambios.                                                                                                                                                             |
+| `settings`                                                                                                                                 | `session_settings`                                            | Mismo contenido, clave nueva.                                                                                                                                            |
+| `compression`                                                                                                                              | `compress`                                                    | Boolean. Los algoritmos con nombre difieren entre drivers; `true` es la opción segura.                                                                                   |
+| `connect_timeout`                                                                                                                          | `connect_timeout`                                             | Sin cambios.                                                                                                                                                             |
+| `send_receive_timeout`                                                                                                                     | `send_receive_timeout`                                        | Sin cambios.                                                                                                                                                             |
+| `client_name`                                                                                                                              | `client_name`                                                 | Cambia la semántica. El provider siempre envía `apache-airflow/<version> apache-airflow-providers-clickhousedb/<version>` y añade tu valor como label.                   |
+| `ca_certs`                                                                                                                                 | `client_kwargs.ca_cert`                                       | Ruta al CA bundle.                                                                                                                                                       |
+| `certfile` / `keyfile`                                                                                                                     | `client_kwargs.client_cert` / `client_kwargs.client_cert_key` | Mutual TLS.                                                                                                                                                              |
+| `server_hostname`                                                                                                                          | `client_kwargs.server_host_name`                              | SNI override de TLS.                                                                                                                                                     |
+| `alt_hosts`, `round_robin`                                                                                                                 | Sin equivalente                                               | El client se conecta al único host de la conexión. Si dependías de la lista de failover, apunta la conexión a tu balanceador de carga o al endpoint de ClickHouse Cloud. |
+| `sync_request_timeout`, `tcp_keepalive`, `compress_block_size`                                                                             | Descartar                                                     | Solo para el protocolo nativo.                                                                                                                                           |
+| `ssl_version`, `ciphers`, `use_numpy`, `client_revision`, `settings_is_important`, `opentelemetry_traceparent`, `opentelemetry_tracestate` | Descartar                                                     | Sin equivalente en `clickhouse-connect`.                                                                                                                                 |
+
+Antes:
+
+```json
+{
+    "conn_type": "sqlite",
+    "host": "ch.example.com",
+    "port": 9440,
+    "login": "airflow",
+    "password": "secret",
+    "schema": "analytics",
+    "extra": {
+        "secure": true,
+        "settings": {"max_execution_time": 300},
+        "compression": true
+    }
+}
+```
+
+Después:
+
+```json
+{
+    "conn_type": "clickhouse",
+    "host": "ch.example.com",
+    "port": 8443,
+    "login": "airflow",
+    "password": "secret",
+    "schema": "analytics",
+    "extra": {
+        "secure": true,
+        "session_settings": {"max_execution_time": 300},
+        "compress": true
+    }
+}
+```
+
+Verifique cada connection migrada antes de modificar los DAG:
+
+```bash
+airflow connections test clickhouse_default
+```
+
+## Paso 3: Reemplazar los imports {#step-3-replace-imports}
+
+| Clase del plugin                                                                         | Reemplazo en el provider                                             |
+| ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `airflow_clickhouse_plugin.hooks.clickhouse.ClickHouseHook`                              | `airflow.providers.clickhousedb.hooks.clickhouse.ClickHouseHook`     |
+| `airflow_clickhouse_plugin.hooks.clickhouse_dbapi.ClickHouseDbApiHook`                   | `airflow.providers.clickhousedb.hooks.clickhouse.ClickHouseHook`     |
+| `airflow_clickhouse_plugin.operators.clickhouse.ClickHouseOperator`                      | `airflow.providers.common.sql.operators.sql.SQLExecuteQueryOperator` |
+| `airflow_clickhouse_plugin.sensors.clickhouse.ClickHouseSensor`                          | `airflow.providers.common.sql.sensors.sql.SqlSensor`                 |
+| `airflow_clickhouse_plugin.operators.clickhouse_dbapi.ClickHouseSQLExecuteQueryOperator` | `airflow.providers.common.sql.operators.sql.SQLExecuteQueryOperator` |
+| `...clickhouse_dbapi.ClickHouseSQLCheckOperator`                                         | `...common.sql.operators.sql.SQLCheckOperator`                       |
+| `...clickhouse_dbapi.ClickHouseSQLValueCheckOperator`                                    | `...common.sql.operators.sql.SQLValueCheckOperator`                  |
+| `...clickhouse_dbapi.ClickHouseSQLIntervalCheckOperator`                                 | `...common.sql.operators.sql.SQLIntervalCheckOperator`               |
+| `...clickhouse_dbapi.ClickHouseSQLThresholdCheckOperator`                                | `...common.sql.operators.sql.SQLThresholdCheckOperator`              |
+| `...clickhouse_dbapi.ClickHouseSQLColumnCheckOperator`                                   | `...common.sql.operators.sql.SQLColumnCheckOperator`                 |
+| `...clickhouse_dbapi.ClickHouseSQLTableCheckOperator`                                    | `...common.sql.operators.sql.SQLTableCheckOperator`                  |
+| `...clickhouse_dbapi.ClickHouseBranchSQLOperator`                                        | `...common.sql.operators.sql.BranchSQLOperator`                      |
+| `airflow_clickhouse_plugin.sensors.clickhouse_dbapi.ClickHouseSqlSensor`                 | `airflow.providers.common.sql.sensors.sql.SqlSensor`                 |
+
+Las envolturas de `common.sql` con el prefijo `ClickHouse` solo existían para inyectar el hook del plugin. El
+provider registra el tipo de connection `clickhouse`, de modo que las clases de `common.sql` sin prefijo resuelven
+el hook a partir de la connection por sí solas. Si usabas esas envolturas, la migración se reduce normalmente a cambiar la
+línea de import, quitar el prefijo `ClickHouse` y pasar `conn_id` de forma explícita (véase el
+[paso 7](#step-7-the-commonsql-wrapper-family)).
+
+## Paso 4: de `ClickHouseOperator` a `SQLExecuteQueryOperator` {#step-4-clickhouseoperator-to-sqlexecutequeryoperator}
+
+| argumento de `ClickHouseOperator`           | equivalente en `SQLExecuteQueryOperator`                | Notas                                                                                                                                                                                                                                                                                                                              |
+| ------------------------------------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sql`                                       | `sql`                                                   | Una cadena, una lista de cadenas o la ruta de un archivo `.sql`. Admite plantillas en ambos casos.                                                                                                                                                                                                                                 |
+| `clickhouse_conn_id`                        | `conn_id`                                               | El plugin usaba `clickhouse_default` de forma predeterminada. `SQLExecuteQueryOperator` no tiene valor predeterminado: pase `conn_id` en cada tarea o defínalo una sola vez en `default_args`.                                                                                                                                     |
+| `database`                                  | `database`                                              | Sin cambios.                                                                                                                                                                                                                                                                                                                       |
+| `parameters` para `SELECT`                  | `parameters`                                            | Los placeholders `%(name)s` siguen funcionando. También está disponible la vinculación del lado del servidor con `{name:Type}`.                                                                                                                                                                                                    |
+| `parameters` para `INSERT` (lista de filas) | `SQLInsertRowsOperator`                                 | Pase las filas (o un XCom) como `rows`, nombre las columnas con `columns` y defina `insert_args={"executemany": True}` para que `clickhouse-connect` use su insert nativo. Como alternativa, llame a `ClickHouseHook.bulk_insert_rows` desde un `@task`; consulte el [paso 5](#step-5-clickhousehookexecute-to-dbapihook-methods). |
+| `settings`                                  | `hook_params={"session_settings": {...}}`               | Admite plantillas a través de `hook_params`. Los valores se combinan por encima de los `session_settings` de la connection.                                                                                                                                                                                                        |
+| `do_xcom_push`                              | `do_xcom_push`                                          | El mismo indicador, con una forma distinta en tareas con varias sentencias. El plugin enviaba únicamente el resultado de la última sentencia. Con una lista de sentencias, el provider envía una lista con una entrada por sentencia. Consulte [Resultados de varias sentencias](#multi-statement-results).                        |
+| `query_id`                                  | `hook_params={"session_settings": {"query_id": "..."}}` | Admite plantillas a través de `hook_params`. Igual que con el plugin, se envía el mismo id para todas las sentencias de una tarea con varias sentencias. Si no se define, `clickhouse-connect` genera un id único por sentencia; un `handler` puede leer el último en `cursor.summary[-1]["query_id"]`.                            |
+| `with_column_types`                         | `handler`                                               | Pase un handler que lea `cursor.description` junto con las filas. Consulte [Conservar los column types](#keeping-column-types).                                                                                                                                                                                                    |
+| `external_tables`                           | `ClickHouseHook.get_client()`                           | Use `clickhouse_connect.driver.external.ExternalData` con `client.query`.                                                                                                                                                                                                                                                          |
+| `columnar`                                  | `ClickHouseHook.get_client()`                           | `client.query(...).result_columns`.                                                                                                                                                                                                                                                                                                |
+| `types_check`                               | Elimínelo                                               | Solo para el protocolo nativo.                                                                                                                                                                                                                                                                                                     |
+
+Antes:
+
+```python
+from airflow_clickhouse_plugin.operators.clickhouse import ClickHouseOperator
+
+update_income_aggregate = ClickHouseOperator(
+    task_id="update_income_aggregate",
+    clickhouse_conn_id="clickhouse_test",
+    database="default",
+    sql=(
+        """
+        INSERT INTO aggregate
+        SELECT eventDt, sum(price * qty) AS income FROM sales
+        WHERE eventDt = '{{ ds }}' GROUP BY eventDt
+        """,
+        """
+        SELECT sum(income) FROM aggregate
+        WHERE eventDt BETWEEN
+            '{{ data_interval_start | ds }}' AND '{{ data_interval_end | ds }}'
+        """,
+    ),
+    settings={"max_execution_time": 600},
+)
+```
+
+Después:
+
+```python
+from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
+
+update_income_aggregate = SQLExecuteQueryOperator(
+    task_id="update_income_aggregate",
+    conn_id="clickhouse_test",
+    database="default",
+    sql=[
+        """
+        INSERT INTO aggregate
+        SELECT eventDt, sum(price * qty) AS income FROM sales
+        WHERE eventDt = '{{ ds }}' GROUP BY eventDt
+        """,
+        """
+        SELECT sum(income) FROM aggregate
+        WHERE eventDt BETWEEN
+            '{{ data_interval_start | ds }}' AND '{{ data_interval_end | ds }}'
+        """,
+    ],
+    hook_params={"session_settings": {"max_execution_time": 600}},
+)
+```
+
+### Resultados de múltiples sentencias {#multi-statement-results}
+
+El plugin enviaba a XCom el resultado de la **última** sentencia. `SQLExecuteQueryOperator` devuelve
+un resultado por sentencia cuando `sql` es una lista, por lo que el ejemplo anterior envía `[[], [(12345.0,)]]`
+mientras que el plugin enviaba `[(12345.0,)]`. Elige una de estas opciones:
+
+* Modifica el `xcom_pull` posterior para que tome el último elemento.
+* Pasa las sentencias como una única cadena separada por `;` y establece `split_statements=True`. Con
+  el valor predeterminado `return_last=True`, el operator enviará entonces solo las filas de la última sentencia, igual que
+  el plugin.
+
+```python
+SQLExecuteQueryOperator(
+    task_id="update_income_aggregate",
+    conn_id="clickhouse_test",
+    sql="""
+        INSERT INTO aggregate
+        SELECT eventDt, sum(price * qty) AS income FROM sales
+        WHERE eventDt = '{{ ds }}' GROUP BY eventDt;
+        SELECT sum(income) FROM aggregate WHERE eventDt = '{{ ds }}'
+    """,
+    split_statements=True,
+)
+```
+
+Un `ClickHouseOperator` que insertaba una lista de filas mediante `parameters` pasa a ser un
+`SQLInsertRowsOperator`:
+
+```python
+from airflow.providers.common.sql.operators.sql import SQLInsertRowsOperator
+
+load_rows = SQLInsertRowsOperator(
+    task_id="load_rows",
+    conn_id="clickhouse_default",
+    table_name="some_ch_table",
+    columns=["id", "name"],
+    rows=extract_task.output,
+    insert_args={"executemany": True},
+)
+```
+
+Pasa siempre `columns`; sin él, el operator busca la table mediante SQLAlchemy.
+
+### Conservar los tipos de columna {#keeping-column-types}
+
+`with_column_types=True` devolvía `(rows, [(name, type), ...])`. Puede reproducirlo con un handler; el cursor de
+`clickhouse-connect` expone los nombres de tipo de ClickHouse en `cursor.description`:
+
+```python
+def fetch_with_column_types(cursor):
+    return cursor.fetchall(), [(col[0], col[1]) for col in cursor.description]
+
+
+SQLExecuteQueryOperator(
+    task_id="typed_query",
+    conn_id="clickhouse_default",
+    sql="SELECT id, name FROM users LIMIT 10",
+    handler=fetch_with_column_types,
+)
+```
+
+## Paso 5: de `ClickHouseHook.execute` a los métodos de `DbApiHook` {#step-5-clickhousehookexecute-to-dbapihook-methods}
+
+El hook del plugin exponía un único método, `execute`, que replicaba `clickhouse_driver.Client.execute`. El
+hook del provider es un `DbApiHook`, por lo que dispone de los métodos estándar que tiene cualquier otro provider SQL:
+`run`, `get_records`, `get_first`, `get_pandas_df`, `get_df`, `insert_rows` y `test_connection`.
+Los argumentos del constructor `clickhouse_conn_id` y `database` no cambian.
+
+| Plugin                                                               | Provider                                                          |
+| -------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `hook.execute("SELECT ...")`                                         | `hook.get_records("SELECT ...")`                                  |
+| `hook.execute("SELECT ...", params={"d": ds})`                       | `hook.get_records("SELECT ...", parameters={"d": ds})`            |
+| `hook.execute("SELECT count() ...")[0][0]`                           | `hook.get_first("SELECT count() ...")[0]`                         |
+| `hook.execute("INSERT INTO t VALUES", rows)`                         | `hook.bulk_insert_rows("t", rows, column_names=[...])`            |
+| `hook.execute(["SET ...", "INSERT ...", "SELECT ..."])`              | `hook.run([...], handler=fetch_all_handler, return_last=True)`    |
+| `hook.execute(..., settings={...})`                                  | `ClickHouseHook(session_settings={...})`                          |
+| `hook.execute(..., external_tables=..., columnar=..., query_id=...)` | `hook.get_client().query(...)`                                    |
+| `hook.get_conn()` que devuelve `clickhouse_driver.Client`            | `hook.get_client()` que devuelve `Client` de `clickhouse_connect` |
+
+`fetch_all_handler` y los demás handler se importan desde
+`airflow.providers.common.sql.hooks.handlers`.
+
+El uso más habitual del hook en el código de la época del plugin es el bulk insert. No puede hacerse con una simple llamada a `run`,
+porque el cursor DB-API intentaría formatear las filas dentro de la cadena SQL. Utiliza en su lugar el insert nativo:
+
+Antes:
+
+```python
+from airflow_clickhouse_plugin.hooks.clickhouse import ClickHouseHook
+
+
+def sqlite_to_clickhouse():
+    records = SqliteHook().get_records("SELECT id, name FROM some_sqlite_table")
+    ClickHouseHook().execute("INSERT INTO some_ch_table VALUES", records)
+```
+
+Después:
+
+```python
+from airflow.providers.clickhousedb.hooks.clickhouse import ClickHouseHook
+
+
+def sqlite_to_clickhouse():
+    records = SqliteHook().get_records("SELECT id, name FROM some_sqlite_table")
+    ClickHouseHook().bulk_insert_rows(
+        "some_ch_table", records, column_names=["id", "name"], batch_size=100_000
+    )
+```
+
+`bulk_insert_rows` requiere `column_names`. `batch_size` es opcional y limita el uso de memoria con
+entradas muy grandes. El método genérico `insert_rows(table, rows, target_fields=[...], executemany=True)`
+también termina en un insert nativo, pero solo con `executemany=True`; por defecto envía un HTTP request por
+fila.
+
+Para todo lo que la superficie DB-API no cubre, `get_client()` devuelve el client sin procesar de `clickhouse-connect`,
+configurado a partir de la connection de Airflow. Es el reemplazo de todos los argumentos
+específicos de `clickhouse-driver` que exponía el plugin:
+
+```python
+from clickhouse_connect.driver.external import ExternalData
+
+hook = ClickHouseHook()
+with hook.get_client() as client:
+    ext = ExternalData(file_name="ids", structure="id UInt64", data=b"1\n2\n3\n")
+    result = client.query(
+        "SELECT * FROM events WHERE id IN ids",
+        external_data=ext,
+        settings={"query_id": "my-traceable-id"},
+    )
+    columns = result.result_columns
+```
+
+## Paso 6: de `ClickHouseSensor` a `SqlSensor` {#step-6-clickhousesensor-to-sqlsensor}
+
+Este es el único reemplazo en el que cambia la entrada del invocable.
+
+|                      | `ClickHouseSensor`                                                             | `SqlSensor`                                                                              |
+| -------------------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
+| Invocable de éxito   | `is_success(result)`                                                           | `success(cell)`                                                                          |
+| Invocable de fallo   | `is_failure(result)`                                                           | `failure(cell)`                                                                          |
+| El invocable recibe  | El resultado completo de la última sentencia, una `list` de tuplas de filas    | La primera columna de la primera fila de forma predeterminada (`selector=itemgetter(0)`) |
+| Éxito predeterminado | `bool(result)`, true cuando se devolvió alguna fila                            | `bool(first cell)` cuando se devolvieron filas, `False` cuando no                        |
+| `sql`                | String o lista de sentencias, más todos los argumentos de `ClickHouseOperator` | Un único string. Use `hook_params` para la database y las session settings.              |
+| Id de connection     | `clickhouse_conn_id`, predeterminado `clickhouse_default`                      | `conn_id`, obligatorio                                                                   |
+| Sin filas devueltas  | `is_success([])`, `False` con el valor predeterminado                          | `False`, o un error con `fail_on_empty=True`                                             |
+
+Como el plugin entregaba el result set completo, el código de sensor existente lo indexa. Elimine
+esa indexación al migrar:
+
+Antes:
+
+```python
+from airflow_clickhouse_plugin.sensors.clickhouse import ClickHouseSensor
+
+ClickHouseSensor(
+    task_id="poke_events_count",
+    database="monitor",
+    sql="SELECT count() FROM warnings WHERE eventDate = '{{ ds }}'",
+    is_success=lambda result: result[0][0] > 10000,
+)
+```
+
+Después:
+
+```python
+from airflow.providers.common.sql.sensors.sql import SqlSensor
+
+SqlSensor(
+    task_id="poke_events_count",
+    conn_id="clickhouse_default",
+    hook_params={"database": "monitor"},
+    sql="SELECT count() FROM warnings WHERE eventDate = '{{ ds }}'",
+    success=lambda cnt: cnt > 10000,
+)
+```
+
+Si tu invocable necesita la fila completa, pasa `selector=lambda row: row`. Si necesita todas las filas, escribe
+la comprobación en SQL para que la consulta devuelva un único valor booleano o un recuento.
+
+## Paso 7: La familia de envolturas `common.sql` {#step-7-the-commonsql-wrapper-family}
+
+El código que usaba `ClickHouseSQLExecuteQueryOperator`, `ClickHouseSqlSensor` y las demás
+envolturas con prefijo `ClickHouse` es el que requiere menos trabajo:
+
+* Cambia el import al módulo `common.sql` y elimina el prefijo `ClickHouse` del nombre de la
+  class.
+* Pasa `conn_id` de forma explícita. Las envolturas interpretaban un `conn_id` ausente o `None` como
+  `clickhouse_default`; las clases de `common.sql` no tienen valor predeterminado y fallan si no se indica.
+  `default_args={"conn_id": "clickhouse_default"}` cubre todo un DAG.
+* `database=` en los operadores y `hook_params={"schema": ...}` en el sensor siguen funcionando; el
+  hook del provider trata `schema` como un alias de `database`.
+* `ClickHouseDbApiHook` pasa a ser `ClickHouseHook`. Su argumento de constructor `schema` se sigue
+  aceptando como alias; `database` es la forma nativa de ClickHouse y tiene precedencia cuando se
+  indican ambos.
+* La conexión sigue necesitando los cambios de puerto y de extras del paso 2. Las envolturas también
+  usaban el protocolo nativo.
+
+## Diferencias de comportamiento a revisar {#behavior-differences-to-review}
+
+Incluso después de que el código compile, hay algunos aspectos que se comportan de forma distinta en tiempo de ejecución.
+
+**Valor de XCom de las tareas INSERT.** El plugin enviaba lo que devolviera `clickhouse-driver`, que en el caso de una inserción `VALUES` con parámetros era el número de filas insertadas. El provider envía un conjunto de resultados vacío para las sentencias que no devuelven filas. Las tareas posteriores que lean el número de filas desde XCom deberán obtenerlo de otra manera, por ejemplo con un `SELECT count()` posterior.
+
+**Settings de sesión frente a sentencias `SET`.** Ambos paquetes ejecutan una lista de varias sentencias sobre una única conexión, y `clickhouse-connect` crea una sesión por cliente de forma predeterminada, por lo que una sentencia `SET` al principio de la lista debería seguir aplicándose a las sentencias posteriores. Aun así, conviene usar `session_settings`: es explícito y admite plantillas, y funciona igual tanto si el servidor o un proxy intermedio mantiene la sesión como si no. Confirma el comportamiento en tu entorno si tus DAG dependen de `SET`.
+
+**Excepciones.** Los errores ahora son `clickhouse_connect.driver.exceptions.DatabaseError`, `OperationalError` o `ProgrammingError` en lugar de `clickhouse_driver.errors.ServerException` y `NetworkError`. Actualiza las cláusulas `except`, el código de `on_failure_callback` y la lógica de reintentos que inspeccione los tipos de excepción.
+
+**Compresión.** `clickhouse-driver` dejaba la compresión desactivada salvo que se estableciera `compression`; `clickhouse-connect` habilita la compresión de las respuestas HTTP de forma predeterminada y negocia el algoritmo con el servidor. Establece `"compress": false` en el campo extra de la conexión para restaurar el comportamiento anterior. El paquete `clickhouse-cityhash` que el plugin necesitaba para la compresión nativa ya no hace falta; `lz4` sigue instalado como dependencia de `clickhouse-connect`.
+
+**Correspondencia de tipos.** Ambos drivers devuelven tipos nativos de Python, pero se trata de bases de código distintas. Revisa las tareas que dependan de tipos exactos para `DateTime64` con zonas horarias, `Decimal`, `UUID`, columnas `Nullable` y valores anidados de `Array` o `Map`, sobre todo cuando el resultado se envía a XCom y se consume más adelante.
+
+**Identificación de consultas en `system.query_log`.** Las consultas ahora llegan a través de la interfaz HTTP, por lo que aparecen con `interface = 2` en lugar de `1`, y la columna `http_user_agent` de [`system.query_log`](/es/reference/system-tables/query_log) incluye las versiones de Airflow y del provider, además del extra `client_name` si está definido. Habrá que actualizar cualquier monitorización que filtrara por el protocolo nativo o por el nombre de cliente de `clickhouse-driver`. Un `SELECT` que no devuelve filas produce una segunda entrada: el cursor DB-API ejecuta `SELECT * FROM (...) LIMIT 0` para recuperar los metadatos de las columnas.
+
+**Timeouts sobre HTTP.** `send_receive_timeout` es ahora el timeout de lectura HTTP, y cualquier proxy o balanceador de carga situado entre los workers y ClickHouse aplica su propio idle timeout a la petición. Las sentencias que se ejecutaban durante muchos minutos sobre el protocolo nativo pueden requerir que se eleven esos límites.
+
+**Gestión de conexiones.** El hook crea un cliente de `clickhouse-connect` por cada llamada a `run` o `get_client`, igual que el plugin abría una nueva conexión nativa por cada `execute`. Los clientes comparten un grupo de conexiones HTTP a nivel de proceso, por lo que llamar a `close()` en un cliente obtenido con `get_client()` es una buena práctica más que un requisito; el grupo se libera cuando el proceso de la tarea termina. El cliente es un gestor de contexto, así que `with hook.get_client() as client:` es la forma más limpia.
+
+## Lista de comprobación {#checklist}
+
+1. Airflow es 2.11 o posterior.
+2. El puerto HTTP es accesible desde los workers; los certificados TLS son válidos para el endpoint HTTP.
+3. Cada ClickHouse connection: tipo `clickhouse`, puerto `8123` o `8443`, extras traducidos según
+   el paso 2 y verificados con `airflow connections test`.
+4. Imports reemplazados según el paso 3; prefijos `ClickHouse` eliminados de las envolturas de `common.sql`.
+5. `clickhouse_conn_id` renombrado a `conn_id` en los operators y sensors, y `conn_id` establecido en cada
+   task que dependía del valor predeterminado del plugin.
+6. `settings=` trasladado a `hook_params={"session_settings": ...}`.
+7. `hook.execute("INSERT ... VALUES", rows)` reemplazado por `bulk_insert_rows`;
+   `ClickHouseOperator(parameters=rows)` reemplazado por `SQLInsertRowsOperator`.
+8. Callables de los sensors ajustados de `result[0][0]` al valor de la celda sin más.
+9. Usos de `with_column_types`, `external_tables`, `columnar`, `query_id` y `types_check`
+   reescritos con un `handler` o `get_client()`.
+10. Revisados los consumidores posteriores de XComs procedentes de tasks con múltiples sentencias y de INSERT.
+11. Actualizado el código que captura excepciones de `clickhouse_driver`.
+12. `airflow-clickhouse-plugin` y `clickhouse-driver` desinstalados.
+
+## Uso de un asistente de programación con IA {#using-an-ai-coding-assistant}
+
+La correspondencia anterior es deliberadamente mecánica, de modo que un asistente de programación pueda aplicarla a un repositorio de DAG. Un prompt que ha dado buenos resultados:
+
+```text
+Migrate this repository from airflow-clickhouse-plugin to
+apache-airflow-providers-clickhousedb following
+https://clickhouse.com/docs/integrations/airflow/migrating-from-airflow-clickhouse-plugin
+
+- Replace every airflow_clickhouse_plugin import per the class mapping table.
+- Rename clickhouse_conn_id to conn_id on operators and sensors, not on hooks; add
+  conn_id="clickhouse_default" wherever a task relied on the plugin's default.
+- Move settings= into hook_params={"session_settings": ...}.
+- Replace hook.execute(...) with get_records, get_first, run or bulk_insert_rows
+  according to the hook table; never pass a list of rows as parameters. Replace
+  ClickHouseOperator(parameters=<rows>) with SQLInsertRowsOperator.
+- Rewrite sensor callables to receive the first cell instead of the full result.
+- Flag, but do not silently rewrite, any use of with_column_types, external_tables,
+  columnar, query_id or types_check, and any XCom consumer of an INSERT task.
+- List every Airflow connection that must change port and extras; do not edit
+  connections yourself.
+Show the diff and a summary of items flagged for human review.
+```
+
+Revise el diff. Los cambios en la connection, la semántica de los sensores y los consumers de XCom son los puntos donde las reescrituras automatizadas suelen fallar.
+
+## Contenido relacionado {#related-content}
+
+* [Conectar Apache Airflow a ClickHouse](/es/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse)
+* [Client de Python `clickhouse-connect`](/es/integrations/language-clients/python/index)
+* [Documentación de referencia de `apache-airflow-providers-clickhousedb`](https://airflow.apache.org/docs/apache-airflow-providers-clickhousedb/)
+* [airflow-clickhouse-plugin en GitHub](https://github.com/bryzgaloff/airflow-clickhouse-plugin)

@@ -52,6 +52,10 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
+    /// row references it, and `0` is not a valid H3 index, so executing on the whole dictionary would
+    /// fail on entirely valid data.
+    bool canBeExecutedOnDefaultArguments() const override { return !validator.throw_on_error; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
@@ -142,10 +146,10 @@ REGISTER_FUNCTION(H3ToGeo)
     FunctionDocumentation::Description description = R"(
 Returns the centroid latitude and longitude corresponding to the provided [H3](https://h3geo.org/docs/core-library/h3Indexing/) index.
 
-:::note
+<Note>
 In ClickHouse v24.12 or older, `h3ToGeo()` accepts arguments in the order `(lon, lat)`. As per ClickHouse v25.1, the returned values are ordered `(lat, lon)`.
 The previous behavior can be restored using setting `h3togeo_lon_lat_result_order = true`.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax = "h3ToGeo(h3Index)";
     FunctionDocumentation::Arguments arguments = {
@@ -160,9 +164,10 @@ The previous behavior can be restored using setting `h3togeo_lon_lat_result_orde
             "Get coordinates from H3 index",
             "SELECT h3ToGeo(644325524701193974) AS coordinates",
             R"(
-┌─coordinates───────────────────────────┐
-│ (55.71290243145667,37.79506616830249) │
-└───────────────────────────────────────┘
+┌─coordinates────────────────────────────┐
+├──────────latitude─┬──────────longitude─┤
+│ 55.71290243145667 │ 37.795066168302505 │
+└───────────────────┴────────────────────┘
             )"
         }
     };

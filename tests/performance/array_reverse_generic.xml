@@ -1,0 +1,28 @@
+<test>
+    <!--
+        arrayReverse uses a generic per-element insertFrom loop for element types without a
+        specialized path, such as Tuple and nested Array. The substitutions also benchmark the
+        Decimal and wide integer numeric paths.
+    -->
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>type</name>
+            <values>
+                <value>Decimal64(3)</value>
+                <value>Int128</value>
+                <value>UInt128</value>
+                <value>Int256</value>
+                <value>UInt256</value>
+                <value>Decimal256(3)</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <query>SELECT arrayReverse(materialize(range(32)::Array({type}))) FROM numbers(2000000) FORMAT Null</query>
+    <query>SELECT arrayReverse(materialize(arrayMap(x -> (x, x), range(32)))) FROM numbers(2000000) FORMAT Null</query>
+    <query>SELECT arrayReverse(materialize(arrayMap(x -> [x, x], range(32)))) FROM numbers(2000000) FORMAT Null</query>
+</test>

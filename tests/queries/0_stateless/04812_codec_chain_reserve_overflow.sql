@@ -45,14 +45,16 @@ CREATE TABLE t_codec_chain_overflow (x Float32 CODEC(FPC,FPC,FPC,FPC,FPC,FPC,FPC
 -- stage 105. A smaller block wraps later, which would make the next arm accept its chain.
 CREATE TABLE t_codec_chain_fpc_max (i UInt32, x Float32 CODEC(FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC)) ENGINE = MergeTree ORDER BY i
     SETTINGS index_granularity = 8192, index_granularity_bytes = 0,
-             min_compress_block_size = 20000, max_compress_block_size = 20000;
+             min_compress_block_size = 20000, max_compress_block_size = 20000,
+             ratio_of_defaults_for_sparse_serialization = 1.0;
 INSERT INTO t_codec_chain_fpc_max SELECT number, number / 7 FROM numbers(5000);
 SELECT count(), countIf(x != toFloat32(i / 7)) FROM t_codec_chain_fpc_max;
 
 -- One stage more, on the same fixture, is the first chain that is rejected.
 CREATE TABLE t_codec_chain_fpc_over (i UInt32, x Float32 CODEC(FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC)) ENGINE = MergeTree ORDER BY i
     SETTINGS index_granularity = 8192, index_granularity_bytes = 0,
-             min_compress_block_size = 20000, max_compress_block_size = 20000;
+             min_compress_block_size = 20000, max_compress_block_size = 20000,
+             ratio_of_defaults_for_sparse_serialization = 1.0;
 INSERT INTO t_codec_chain_fpc_over SELECT number, number / 7 FROM numbers(5000); -- { serverError CANNOT_COMPRESS }
 SELECT count() FROM t_codec_chain_fpc_over;
 
@@ -67,7 +69,8 @@ SELECT count() FROM t_codec_chain_gorilla_wide;
 -- longest that still fits; it must keep working too.
 CREATE TABLE t_codec_chain_gorilla_max (i UInt32, x Float32 CODEC(Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla)) ENGINE = MergeTree ORDER BY i
     SETTINGS index_granularity = 8192, index_granularity_bytes = 0,
-             min_compress_block_size = 20000, max_compress_block_size = 20000;
+             min_compress_block_size = 20000, max_compress_block_size = 20000,
+             ratio_of_defaults_for_sparse_serialization = 1.0;
 INSERT INTO t_codec_chain_gorilla_max SELECT number, number / 7 FROM numbers(5000);
 SELECT count(), countIf(x != toFloat32(i / 7)) FROM t_codec_chain_gorilla_max;
 
@@ -76,7 +79,8 @@ SELECT count(), countIf(x != toFloat32(i / 7)) FROM t_codec_chain_gorilla_max;
 -- formulas, so that rejection cannot silently narrow to FPC alone.
 CREATE TABLE t_codec_chain_gorilla_over (i UInt32, x Float32 CODEC(Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla)) ENGINE = MergeTree ORDER BY i
     SETTINGS index_granularity = 8192, index_granularity_bytes = 0,
-             min_compress_block_size = 20000, max_compress_block_size = 20000;
+             min_compress_block_size = 20000, max_compress_block_size = 20000,
+             ratio_of_defaults_for_sparse_serialization = 1.0;
 INSERT INTO t_codec_chain_gorilla_over SELECT number, number / 7 FROM numbers(5000); -- { serverError CANNOT_COMPRESS }
 SELECT count() FROM t_codec_chain_gorilla_over;
 
@@ -85,26 +89,30 @@ SELECT count() FROM t_codec_chain_gorilla_over;
 -- left the process.
 CREATE TABLE t_codec_chain_gorilla64_max (i UInt32, d Float64 CODEC(Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla)) ENGINE = MergeTree ORDER BY i
     SETTINGS index_granularity = 8192, index_granularity_bytes = 0,
-             min_compress_block_size = 20000, max_compress_block_size = 20000;
+             min_compress_block_size = 20000, max_compress_block_size = 20000,
+             ratio_of_defaults_for_sparse_serialization = 1.0;
 INSERT INTO t_codec_chain_gorilla64_max SELECT number, number / 7 FROM numbers(2500);
 SELECT count(), countIf(d != i / 7) FROM t_codec_chain_gorilla64_max;
 
 CREATE TABLE t_codec_chain_gorilla64_over (i UInt32, d Float64 CODEC(Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla)) ENGINE = MergeTree ORDER BY i
     SETTINGS index_granularity = 8192, index_granularity_bytes = 0,
-             min_compress_block_size = 20000, max_compress_block_size = 20000;
+             min_compress_block_size = 20000, max_compress_block_size = 20000,
+             ratio_of_defaults_for_sparse_serialization = 1.0;
 INSERT INTO t_codec_chain_gorilla64_over SELECT number, number / 7 FROM numbers(2500); -- { serverError CANNOT_COMPRESS }
 SELECT count() FROM t_codec_chain_gorilla64_over;
 
 -- DoubleDelta reserves more per stage still: 13 is the longest chain that fits, 14 is rejected.
 CREATE TABLE t_codec_chain_dd_max (i UInt32, x Float32 CODEC(DoubleDelta,DoubleDelta,DoubleDelta,DoubleDelta,DoubleDelta,DoubleDelta,DoubleDelta,DoubleDelta,DoubleDelta,DoubleDelta,DoubleDelta,DoubleDelta,DoubleDelta)) ENGINE = MergeTree ORDER BY i
     SETTINGS index_granularity = 8192, index_granularity_bytes = 0,
-             min_compress_block_size = 20000, max_compress_block_size = 20000;
+             min_compress_block_size = 20000, max_compress_block_size = 20000,
+             ratio_of_defaults_for_sparse_serialization = 1.0;
 INSERT INTO t_codec_chain_dd_max SELECT number, number / 7 FROM numbers(5000);
 SELECT count(), countIf(x != toFloat32(i / 7)) FROM t_codec_chain_dd_max;
 
 CREATE TABLE t_codec_chain_dd_over (i UInt32, x Float32 CODEC(DoubleDelta,DoubleDelta,DoubleDelta,DoubleDelta,DoubleDelta,DoubleDelta,DoubleDelta,DoubleDelta,DoubleDelta,DoubleDelta,DoubleDelta,DoubleDelta,DoubleDelta,DoubleDelta)) ENGINE = MergeTree ORDER BY i
     SETTINGS index_granularity = 8192, index_granularity_bytes = 0,
-             min_compress_block_size = 20000, max_compress_block_size = 20000;
+             min_compress_block_size = 20000, max_compress_block_size = 20000,
+             ratio_of_defaults_for_sparse_serialization = 1.0;
 INSERT INTO t_codec_chain_dd_over SELECT number, number / 7 FROM numbers(5000); -- { serverError CANNOT_COMPRESS }
 SELECT count() FROM t_codec_chain_dd_over;
 

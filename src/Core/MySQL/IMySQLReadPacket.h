@@ -23,6 +23,9 @@ public:
 
 protected:
     virtual void readPayloadImpl(ReadBuffer & buf) = 0;
+
+    /// `payload` has to end where the packet ends.
+    void readPayloadFrom(ReadBuffer & payload);
 };
 
 class LimitedReadPacket : public IMySQLReadPacket
