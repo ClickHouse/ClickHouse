@@ -330,6 +330,7 @@ public:
     void restoreMetadataInZooKeeper(const ZooKeeperRetriesInfo & zookeeper_retries_info, bool is_called_during_attach);
 
     /// Makes the table's metadata version in ZooKeeper and in memory at least `metadata_version`.
+    /// Throws if this replica does not have the structure the table has at that version.
     /// Used by RESTORE to apply the metadata version saved in a backup, so that restored parts
     /// with a non-zero metadata version don't block merges. Never decreases the version.
     /// Reaching the target version takes one ZooKeeper write per version, so `process_list_element`

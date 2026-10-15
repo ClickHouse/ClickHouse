@@ -1,0 +1,7 @@
+--- metadata versions of the replicas: r2 lags behind on the RENAME ---
+t_r1	1
+t_r2	0
+--- the backup has metadata version 2, which r2 cannot be marked with ---
+1
+--- no parts were restored ---
+0

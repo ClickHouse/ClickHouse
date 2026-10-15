@@ -405,6 +405,11 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                 flags |= AccessType::INSERT;
             }
 
+            /// Restoring into an existing replicated table can raise its metadata version on all its replicas
+            /// (see `StorageReplicatedMergeTree::restoreMetadataVersionFromBackup`), which is a write to the table.
+            if (!flags && backup->fileExists(BackupUtils::getMetadataVersionPathInBackup(table_info.metadata_path_in_backup)))
+                flags = AccessType::INSERT;
+
             if (!flags)
             {
                 if (create.is_dictionary)
