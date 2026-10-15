@@ -25,9 +25,28 @@ INSERT INTO t_chain_outer VALUES (1, '2020-01-01 00:00:01'), (2, '2020-01-01 00:
 SELECT l.id, r.id FROM t_chain_outer AS l LEFT JOIN t_chain_outer AS r ON l.id = r.id AND l.ts = r.ts AND r.ts < toDateTime('2020-01-01 00:00:02', 'UTC') ORDER BY l.id;
 DROP TABLE t_chain_outer;
 
+SELECT 'expression over a nested join';
+SELECT a.number, c.number FROM numbers(3) AS a INNER JOIN numbers(3) AS b ON a.number = b.number LEFT JOIN numbers(3) AS c ON a.number + b.number = c.number AND c.number < 2 ORDER BY a.number;
+
+SELECT 'full join using key';
+SELECT id, c.k FROM (SELECT number AS id FROM numbers(3)) AS a FULL JOIN (SELECT number AS id FROM numbers(3)) AS b USING (id) LEFT JOIN (SELECT number AS k FROM numbers(3)) AS c ON id = c.k AND c.k < 2 ORDER BY id;
+
+SELECT 'expression over array join';
+SELECT l.number, x, r.number FROM numbers(2) AS l ARRAY JOIN [0, 1] AS x LEFT JOIN numbers(3) AS r ON l.number + x = r.number AND r.number < 2 ORDER BY l.number, x;
+
+SELECT 'contradiction with a skipped bound';
+SELECT l.number, r.number FROM numbers(3) AS l LEFT JOIN (SELECT number, number AS b FROM numbers(10)) AS r ON l.number = r.number AND r.number < 2 AND l.number = r.b AND r.b > 5 ORDER BY l.number SETTINGS optimize_redundant_comparisons = 0;
+
+SELECT 'impossible bound';
+SELECT l.x, r.y FROM (SELECT toUInt8(number) AS x FROM numbers(3)) AS l LEFT JOIN (SELECT toUInt16(number) AS y FROM numbers(3)) AS r ON l.x = r.y AND r.y > 300 ORDER BY l.x SETTINGS optimize_redundant_comparisons = 0;
+
+SELECT 'contradiction on the preserved side';
+SELECT l.k, r.number FROM (SELECT number AS k, number AS x, number AS z FROM numbers(3)) AS l LEFT JOIN numbers(3) AS r ON l.k = r.number AND l.x < 2 AND l.x = l.z AND l.z > 5 ORDER BY l.k SETTINGS optimize_redundant_comparisons = 1;
+
 -- 2 if the chain derives a bound in ON, 1 if not
 SELECT 'derived bounds';
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT 1 FROM numbers(3) AS l INNER JOIN numbers(3) AS r ON l.number = r.number AND r.number < 2) WHERE explain LIKE '%function_name: less,%';
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT 1 FROM numbers(3) AS l LEFT JOIN numbers(3) AS r ON l.number = r.number AND l.number < 2) WHERE explain LIKE '%function_name: less,%';
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT 1 FROM numbers(3) AS l LEFT SEMI JOIN numbers(3) AS r ON l.number = r.number AND r.number < 2) WHERE explain LIKE '%function_name: less,%';
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT 1 FROM numbers(3) AS l FULL JOIN numbers(3) AS r ON l.number = r.number AND l.number < 2) WHERE explain LIKE '%function_name: less,%';
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT 1 FROM numbers(3) AS a INNER JOIN numbers(3) AS b ON a.number = b.number INNER JOIN numbers(3) AS c ON a.number + b.number = c.number AND c.number < 2) WHERE explain LIKE '%function_name: less,%';

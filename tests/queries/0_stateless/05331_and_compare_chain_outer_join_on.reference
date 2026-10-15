@@ -21,8 +21,34 @@ preserved side has array join
 datetime64
 1	1
 2	0
+expression over a nested join
+0	0
+1	0
+2	0
+full join using key
+0	0
+1	1
+2	0
+expression over array join
+0	0	0
+0	1	1
+1	0	1
+1	1	0
+contradiction with a skipped bound
+0	0
+1	0
+2	0
+impossible bound
+0	0
+1	0
+2	0
+contradiction on the preserved side
+0	0
+1	0
+2	0
 derived bounds
 2
 2
 2
 1
+2

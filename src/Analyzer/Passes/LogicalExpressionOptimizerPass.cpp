@@ -1,5 +1,6 @@
 #include <Analyzer/Passes/LogicalExpressionOptimizerPass.h>
 
+#include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/HashUtils.h>
@@ -1794,6 +1795,38 @@ public:
     /// a conjunct over these can't leave ON, and full_sorting_merge rejects it there
     TableExpressionNodes preserved_join_tables;
 
+    /// Whether `node` reads at least one column and all of them come from `preserved_join_tables`.
+    bool readsOnlyPreservedJoinTables(const QueryTreeNodePtr & node) const
+    {
+        if (preserved_join_tables.empty())
+            return false;
+
+        bool has_column = false;
+        std::vector<const IQueryTreeNode *> nodes_to_process{node.get()};
+        while (!nodes_to_process.empty())
+        {
+            const auto * current = nodes_to_process.back();
+            nodes_to_process.pop_back();
+
+            if (const auto * column = current->as<ColumnNode>())
+            {
+                if (!std::ranges::contains(preserved_join_tables, column->getColumnSourceOrNull()))
+                    return false;
+                has_column = true;
+            }
+            else if (const auto * function = current->as<FunctionNode>())
+            {
+                for (const auto & argument : function->getArguments().getNodes())
+                    nodes_to_process.push_back(argument.get());
+            }
+            else if (!current->as<ConstantNode>())
+            {
+                return false;
+            }
+        }
+        return has_column;
+    }
+
     bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child)
     {
         const auto * join_node = parent->as<JoinNode>();
@@ -2477,7 +2510,11 @@ private:
                                 ErrorCodes::LOGICAL_ERROR,
                                 "Inferred comparison {} has an inconsistent order domain",
                                 compare_function_name);
-                        if (!existing_plain_conjuncts.contains(QueryTreeNodePtr(and_node)))
+                        /// A bound over the preserved side of an outer join can't leave ON, so it is derived only
+                        /// to expose a contradiction with a conjunct already written on that expression.
+                        const bool preserved_only = readsOnlyPreservedJoinTables(left.node);
+                        if (!existing_plain_conjuncts.contains(QueryTreeNodePtr(and_node))
+                            && (!preserved_only || derived_conjunct_filters.contains(left.node)))
                         {
                             /// Do not append a derived conjunct implied by an existing or already-derived
                             /// one; contradictions are appended so the next pass folds the AND to `false`.
@@ -2491,8 +2528,7 @@ private:
                                 existing_plain_conjuncts.emplace(and_node);
                                 function_node.getArguments().getNodes().push_back(and_node);
                             }
-                            else if (add_result != AddComparisonFilterResult::ALWAYS_TRUE
-                                     && !std::ranges::contains(preserved_join_tables, getExpressionSource(left.node).first))
+                            else if (add_result != AddComparisonFilterResult::ALWAYS_TRUE && !preserved_only)
                             {
                                 if (left.crosses_source)
                                 {
