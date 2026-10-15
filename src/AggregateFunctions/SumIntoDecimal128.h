@@ -63,7 +63,9 @@ ALWAYS_INLINE inline void loadRowMasks(const UInt8 * __restrict flags, UInt64Lan
 /// `sum` and `avg` accumulate all these types in `Decimal128`, and adding to a `wide::integer<128>` is a scalar add-with-carry
 /// chain. Here every value is split at bit 32 instead, and the parts are summed in 64-bit vector lanes (clang vector
 /// extensions, so the same code is compiled to SSE, AVX2, AVX-512 or NEON). A 64-bit lane cannot overflow from adding
-/// 32-bit parts within `max_rows_per_chunk` rows; the lanes are combined into a 128-bit value after each chunk.
+/// 32-bit parts within `max_rows_per_chunk` rows; the lanes are combined into a 128-bit value after each chunk. The remaining
+/// rows, fewer than one step, are added to that value directly, so short ranges (e.g. from window frames) do not pay for the
+/// vector part.
 ///  - `Decimal32`: the values are sign-extended to 64 bits, and their sum fits into 64 bits.
 ///  - `Decimal64`: the lanes accumulate `s = sum(x) mod 2^64` and `a = sum(x >> 32)`. With `x = lower + (x >> 32) * 2^32`,
 ///    the true `sum(lower)` is below 2^64, so it equals `s - a * 2^32 mod 2^64`, and the exact sum is `sum(lower) + a * 2^32`.
@@ -77,28 +79,25 @@ template <summable_into_decimal128 Value, bool has_condition = false, bool add_i
 ALWAYS_INLINE inline Decimal128 sumIntoDecimal128(const Value * __restrict ptr, const UInt8 * __restrict condition_map, size_t count)
 {
     using namespace SumIntoDecimal128Impl;
+    using UInt128Native = unsigned __int128;
 
     static constexpr size_t max_rows_per_chunk = 1ULL << 32;
     static constexpr size_t words_per_row = sizeof(Value) == sizeof(Int128) ? 2 : 1;
     static constexpr size_t rows_per_step = lanes / words_per_row;
 
-    auto row_mask = [&](size_t row) ALWAYS_INLINE -> UInt64
-    {
-        if constexpr (has_condition)
-            return -static_cast<UInt64>((condition_map[row] == 0) == add_if_zero);
-        else
-            return ~0ULL;
-    };
+    /// The vector loop processes whole steps; the remaining rows, fewer than one step, are added one by one.
+    const size_t vector_rows = count / rows_per_step * rows_per_step;
 
-    Int128 result = 0;
-    for (size_t chunk_begin = 0; chunk_begin < count; chunk_begin += max_rows_per_chunk)
+    UInt128Native result = 0;
+    for (size_t chunk_begin = 0; chunk_begin < vector_rows; chunk_begin += max_rows_per_chunk)
     {
-        const size_t chunk_end = std::min(count, chunk_begin + max_rows_per_chunk);
+        const size_t chunk_end = std::min(vector_rows, chunk_begin + max_rows_per_chunk);
         UInt64Lanes s{};
         UInt64Lanes a{};
 
-        size_t i = chunk_begin;
-        for (; i + rows_per_step <= chunk_end; i += rows_per_step)
+        /// Four independent steps in flight hide the latency of the additions to `s` and `a`.
+#pragma clang loop unroll_count(4)
+        for (size_t i = chunk_begin; i < chunk_end; i += rows_per_step)
         {
             UInt64Lanes x;
             if constexpr (sizeof(Value) == sizeof(Int32))
@@ -126,23 +125,13 @@ ALWAYS_INLINE inline Decimal128 sumIntoDecimal128(const Value * __restrict ptr, 
 
         if constexpr (sizeof(Value) == sizeof(Int32))
         {
-            Int64 sum = static_cast<Int64>(__builtin_reduce_add(s));
-            for (; i < chunk_end; ++i)
-                sum += static_cast<Int64>(ptr[i].value) & static_cast<Int64>(row_mask(i));
-            result += sum;
+            result += static_cast<UInt128Native>(static_cast<__int128>(static_cast<Int64>(__builtin_reduce_add(s))));
         }
         else if constexpr (sizeof(Value) == sizeof(Int64))
         {
-            UInt64 sum = __builtin_reduce_add(s);
-            Int64 sum_upper = static_cast<Int64>(__builtin_reduce_add(a));
-            for (; i < chunk_end; ++i)
-            {
-                const Int64 x = ptr[i].value & static_cast<Int64>(row_mask(i));
-                sum += static_cast<UInt64>(x);
-                sum_upper += x >> 32;
-            }
-            const UInt64 sum_lower = sum - (static_cast<UInt64>(sum_upper) << 32);
-            result += Int128(sum_lower) + (Int128(sum_upper) << 32);
+            const Int64 sum_upper = static_cast<Int64>(__builtin_reduce_add(a));
+            const UInt64 sum_lower = __builtin_reduce_add(s) - (static_cast<UInt64>(sum_upper) << 32);
+            result += sum_lower + (static_cast<UInt128Native>(static_cast<__int128>(sum_upper)) << 32);
         }
         else
         {
@@ -150,22 +139,28 @@ ALWAYS_INLINE inline Decimal128 sumIntoDecimal128(const Value * __restrict ptr, 
             static constexpr size_t low_word = Int128::_impl::little(0);
             static constexpr size_t high_word = Int128::_impl::little(1);
 
-            UInt64 sum_low_words = __builtin_reduce_add(__builtin_shufflevector(s, s, low_word, low_word + 2, low_word + 4, low_word + 6));
-            UInt64 sum_upper = __builtin_reduce_add(__builtin_shufflevector(a, a, low_word, low_word + 2, low_word + 4, low_word + 6));
-            UInt64 sum_high_words = __builtin_reduce_add(__builtin_shufflevector(s, s, high_word, high_word + 2, high_word + 4, high_word + 6));
-            for (; i < chunk_end; ++i)
-            {
-                const UInt64 mask = row_mask(i);
-                const UInt64 w = ptr[i].value.items[low_word] & mask;
-                sum_low_words += w;
-                sum_upper += w >> 32;
-                sum_high_words += ptr[i].value.items[high_word] & mask;
-            }
+            const UInt64 sum_upper = __builtin_reduce_add(__builtin_shufflevector(a, a, low_word, low_word + 2, low_word + 4, low_word + 6));
+            const UInt64 sum_low_words = __builtin_reduce_add(__builtin_shufflevector(s, s, low_word, low_word + 2, low_word + 4, low_word + 6));
+            const UInt64 sum_high_words = __builtin_reduce_add(__builtin_shufflevector(s, s, high_word, high_word + 2, high_word + 4, high_word + 6));
             const UInt64 sum_lower = sum_low_words - (sum_upper << 32);
-            result += Int128(sum_lower) + (Int128(sum_upper) << 32) + (Int128(sum_high_words) << 64);
+            result += sum_lower + (static_cast<UInt128Native>(sum_upper) << 32) + (static_cast<UInt128Native>(sum_high_words) << 64);
         }
     }
-    return Decimal128(result);
+
+    for (size_t i = vector_rows; i < count; ++i)
+    {
+        UInt128Native x;
+        if constexpr (sizeof(Value) == sizeof(Int128))
+            x = __builtin_bit_cast(UInt128Native, ptr[i]);
+        else
+            x = static_cast<UInt128Native>(static_cast<__int128>(ptr[i].value));
+
+        if constexpr (has_condition)
+            x &= -static_cast<UInt128Native>((condition_map[i] == 0) == add_if_zero);
+        result += x;
+    }
+
+    return Decimal128(__builtin_bit_cast(Int128, result));
 }
 
 }
