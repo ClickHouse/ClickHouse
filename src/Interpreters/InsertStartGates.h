@@ -28,7 +28,18 @@ class InsertStartGate
 public:
     void run(const std::function<void()> & check)
     {
-        std::lock_guard lock(mutex);
+        std::unique_lock lock(mutex);
+
+        /// The gate was merged into another one by a group write before any sink ran the check through it,
+        /// see `InsertStartGates::get`. The decision is made (or has been made) by that gate. The lock of this
+        /// gate is released first, so that no thread ever holds the locks of two gates while running a check.
+        if (forward_to)
+        {
+            auto target = forward_to;
+            lock.unlock();
+            target->run(check);
+            return;
+        }
 
         if (!done)
         {
@@ -47,17 +58,16 @@ public:
             std::rethrow_exception(exception);
     }
 
-    /// Whether the check ran and rejected the write.
-    bool failed()
-    {
-        std::lock_guard lock(mutex);
-        return done && exception;
-    }
-
 private:
+    friend class InsertStartGates;
+
     std::mutex mutex;
     bool done = false;
     std::exception_ptr exception;
+
+    /// Set only while the gate is not `done`: from then on every sink holding this gate observes the
+    /// decision of `forward_to` instead. Never changes once set.
+    std::shared_ptr<InsertStartGate> forward_to;
 };
 
 using InsertStartGatePtr = std::shared_ptr<InsertStartGate>;
@@ -123,9 +133,22 @@ public:
         for (auto * registry : lock_order)
             locks.emplace_back(registry->mutex);
 
+        /// The group write has already handed out a gate for the table, so its own later sinks - e.g. the
+        /// parallel branches created during the write - observe the same decision, a rejection included.
+        if (auto it = gates.find(table_id); it != gates.end() && it->second)
+            return it->second;
+
         /// A participant that already holds a gate for the table lends it to the group: that query has
         /// already made (or is making) its pre-write decision for the table, and this write must
-        /// observe that decision instead of re-entering the check.
+        /// observe that decision instead of re-entering the check. A decision that was already made
+        /// takes precedence over a pending one.
+        ///
+        /// Several participants may hold different gates, and the sinks of those queries may already
+        /// hold them while their `onStart` has not run yet: `InsertDependenciesBuilder` hands the gates
+        /// out while building the pipeline. Replacing the registry entries would not reach these sinks,
+        /// so every other pending gate is merged into the chosen one instead - its sinks observe the
+        /// decision of the chosen gate. Otherwise a query whose rows are written by this group write could
+        /// later run the check again through its own pending gate and count the parts this write created.
         ///
         /// A gate that rejected a write is not lent, though. The write it rejected did not happen, and
         /// its rows are still in the buffer, waiting to be written by a later flush - the one asking
@@ -135,28 +158,100 @@ public:
         /// would be rejected as well. The rejection stays with the query it was made for: its own sinks
         /// keep observing it through their registry, while a write on behalf of its buffered rows is a
         /// new write that decides anew.
+        ///
+        /// The gates are locked at once, in the order of their addresses, which is global as well. A gate
+        /// may be shared with registries that are not locked here, so another group write can merge one
+        /// of them concurrently; in that case the gates are collected again.
         InsertStartGatePtr gate;
-        for (auto * registry : registries)
+        while (true)
         {
-            auto it = registry->gates.find(table_id);
-            if (it != registry->gates.end() && it->second && !it->second->failed())
+            std::vector<InsertStartGatePtr> candidates;
+            for (auto * registry : registries)
             {
-                gate = it->second;
-                break;
+                auto it = registry->gates.find(table_id);
+                if (it == registry->gates.end() || !it->second)
+                    continue;
+                if (std::find(candidates.begin(), candidates.end(), it->second) == candidates.end())
+                    candidates.push_back(it->second);
             }
-        }
 
-        if (!gate)
-            gate = std::make_shared<InsertStartGate>();
+            std::vector<InsertStartGate *> gate_lock_order;
+            gate_lock_order.reserve(candidates.size());
+            for (const auto & candidate : candidates)
+                gate_lock_order.push_back(candidate.get());
+            std::sort(gate_lock_order.begin(), gate_lock_order.end());
 
-        /// A participant holding a gate that rejected a write keeps it - see above - and does not
-        /// adopt the new one: the rejection is the pre-write decision of that query, and the write on
-        /// behalf of its rows must not be mistaken for a decision the query itself made.
-        for (auto * registry : registries)
-        {
-            auto & existing = registry->gates[table_id];
-            if (!existing)
-                existing = gate;
+            std::vector<std::unique_lock<std::mutex>> gate_locks;
+            gate_locks.reserve(gate_lock_order.size());
+            for (auto * candidate : gate_lock_order)
+                gate_locks.emplace_back(candidate->mutex);
+
+            /// Follow the gates that are already merged into other ones to their targets: those are the
+            /// gates that decide. A target is locked in the next iteration.
+            bool retry = false;
+            for (auto & candidate : candidates)
+            {
+                if (candidate->forward_to)
+                {
+                    InsertStartGatePtr target = candidate->forward_to;
+                    for (auto * registry : registries)
+                    {
+                        auto it = registry->gates.find(table_id);
+                        if (it != registry->gates.end() && it->second == candidate)
+                            it->second = target;
+                    }
+                    retry = true;
+                }
+            }
+            if (retry)
+                continue;
+
+            for (const auto & candidate : candidates)
+            {
+                if (candidate->done && !candidate->exception)
+                {
+                    gate = candidate;
+                    break;
+                }
+            }
+
+            if (!gate)
+            {
+                for (const auto & candidate : candidates)
+                {
+                    if (!candidate->done)
+                    {
+                        gate = candidate;
+                        break;
+                    }
+                }
+            }
+
+            if (!gate)
+                gate = std::make_shared<InsertStartGate>();
+
+            std::vector<InsertStartGatePtr> merged;
+            for (const auto & candidate : candidates)
+            {
+                if (candidate != gate && !candidate->done)
+                {
+                    candidate->forward_to = gate;
+                    merged.push_back(candidate);
+                }
+            }
+
+            /// A participant holding a gate that rejected a write keeps it - see above - and does not
+            /// adopt the new one: the rejection is the pre-write decision of that query, and the write on
+            /// behalf of its rows must not be mistaken for a decision the query itself made. The same
+            /// holds for a different gate that has already accepted a write of that query.
+            for (auto * registry : registries)
+            {
+                auto & existing = registry->gates[table_id];
+                if (!existing || std::find(merged.begin(), merged.end(), existing) != merged.end())
+                    existing = gate;
+            }
+
+            break;
         }
 
         return gate;
