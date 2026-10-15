@@ -7,8 +7,7 @@
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/Prometheus/CreateQueryTimeSeriesSettings.h>
-#include <Parsers/Prometheus/TimeSeriesVersion.h>
+#include <Parsers/ASTSetQuery.h>
 
 
 namespace DB
@@ -48,23 +47,39 @@ namespace
         {
             return ViewTarget::Tags;
         }
-        /// "Metrics" is the old name of the `MetricFamilies` kind (see toString()).
-        else if ((str == "metrics") || (str == "Metrics"))
+        else if (str == "metrics")
         {
-            return ViewTarget::MetricFamilies;
+            return ViewTarget::Metrics;
         }
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected view target's kind {}", str);
     }
+
+    /// Whether SETTINGS carries a non-zero `recent_samples_ttl_seconds`; the normalization pins the default there before UUIDs are made.
+    bool hasTimeSeriesRecentSamplesTable(const ASTCreateQuery & query)
+    {
+        if (!query.storage || !query.storage->settings)
+            return false;
+        const auto * value = query.storage->settings->changes.tryGet("recent_samples_ttl_seconds");
+        if (!value)
+            return false;
+        switch (value->getType())
+        {
+            case Field::Types::UInt64:
+                return value->safeGet<UInt64>() != 0;
+            case Field::Types::Int64:
+                return value->safeGet<Int64>() != 0;
+            default:
+                /// Non-numeric values are rejected later when the setting is actually parsed.
+                return false;
+        }
+    }
 }
 
 
-CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_random, bool for_restore)
+CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_random, bool force_random)
 {
-    if (query.is_time_series_table)
-        time_series_version = getTimeSeriesVersion(query);
-
-    if (!generate_random || !for_restore)
+    if (!generate_random || !force_random)
     {
         uuid = query.uuid;
         if (query.targets)
@@ -97,7 +112,7 @@ CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_r
             /// If destination table (to_table_id) is not specified for materialized view,
             /// then MV will create inner table. We should generate UUID of inner table here.
             /// An exception is refreshable MV that replaces inner table by renaming, changing UUID on each refresh.
-            if (query.is_materialized_view && !(query.refresh_strategy && !query.refresh_strategy->isAppend()))
+            if (query.is_materialized_view && !(query.refresh_strategy && !query.refresh_strategy->append))
                 generate_target_uuid(ViewTarget::To);
 
 
@@ -114,13 +129,9 @@ CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_r
             {
                 generate_target_uuid(ViewTarget::Samples);
                 generate_target_uuid(ViewTarget::Tags);
-                generate_target_uuid(ViewTarget::MetricFamilies);
-
-                if (isTimeSeriesRecentSamplesTargetEnabled(query, for_restore))
+                generate_target_uuid(ViewTarget::Metrics);
+                if (hasTimeSeriesRecentSamplesTable(query))
                     generate_target_uuid(ViewTarget::RecentSamples);
-
-                if (isTimeSeriesTimeRangesTargetEnabled(query, for_restore))
-                    generate_target_uuid(ViewTarget::TimeRanges);
             }
         }
     }
@@ -153,11 +164,7 @@ String CreateQueryUUIDs::toString() const
         add_name_and_uuid_to_string("uuid", uuid);
     for (const auto & [kind, inner_uuid] : targets_inner_uuids)
     {
-        if (inner_uuid == UUIDHelpers::Nil)
-            continue;
-        if ((kind == ViewTarget::MetricFamilies) && time_series_version && (*time_series_version < TimeSeriesVersion::MIN_WITH_METRIC_FAMILIES_TARGET_NAME))
-            add_name_and_uuid_to_string("Metrics", inner_uuid);
-        else
+        if (inner_uuid != UUIDHelpers::Nil)
             add_name_and_uuid_to_string(magic_enum::enum_name(kind), inner_uuid);
     }
     out << "}";

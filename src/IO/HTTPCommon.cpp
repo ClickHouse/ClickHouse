@@ -1,7 +1,7 @@
 #include <IO/HTTPCommon.h>
 
-#include <IO/ReadHelpers.h>
 #include <Server/HTTP/HTTPServerResponse.h>
+#include <Poco/StreamCopier.h>
 #include <Common/Exception.h>
 
 #include "config.h"
@@ -60,15 +60,7 @@ HTTPSessionPtr makeHTTPSession(
     return connection_pool->getConnection(timeouts, connect_time);
 }
 
-bool isRedirect(const Poco::Net::HTTPResponse::HTTPStatus status)
-{
-    return status == Poco::Net::HTTPResponse::HTTP_MOVED_PERMANENTLY
-        || status == Poco::Net::HTTPResponse::HTTP_FOUND
-        || status == Poco::Net::HTTPResponse::HTTP_SEE_OTHER
-        || status == Poco::Net::HTTPResponse::HTTP_TEMPORARY_REDIRECT
-        /// `308 Permanent Redirect` (RFC 9110, 15.4.9) keeps the method and the body like `307`.
-        || status == Poco::Net::HTTPResponse::HTTP_PERMANENT_REDIRECT;
-}
+bool isRedirect(const Poco::Net::HTTPResponse::HTTPStatus status) { return status == Poco::Net::HTTPResponse::HTTP_MOVED_PERMANENTLY  || status == Poco::Net::HTTPResponse::HTTP_FOUND || status == Poco::Net::HTTPResponse::HTTP_SEE_OTHER  || status == Poco::Net::HTTPResponse::HTTP_TEMPORARY_REDIRECT; }
 
 bool isRetriableHTTPError(const Poco::Net::HTTPResponse::HTTPStatus http_status) noexcept
 {
@@ -85,22 +77,21 @@ bool isRetriableHTTPError(const Poco::Net::HTTPResponse::HTTPStatus http_status)
         non_retriable_errors.begin(), non_retriable_errors.end(), [&](const auto status) { return http_status != status; });
 }
 
-std::unique_ptr<HTTPResponseReadBuffer> receiveResponse(
+std::istream * receiveResponse(
     Poco::Net::HTTPClientSession & session, const Poco::Net::HTTPRequest & request, Poco::Net::HTTPResponse & response, const bool allow_redirects)
 {
-    auto body = receiveHTTPResponse(session, response);
-    assertResponseIsOk(request.getURI(), response, *body, allow_redirects);
-    return body;
+    auto & istr = session.receiveResponse(response);
+    assertResponseIsOk(request.getURI(), response, istr, allow_redirects);
+    return &istr;
 }
 
-void assertResponseIsOk(const String & uri, Poco::Net::HTTPResponse & response, ReadBuffer & body, const bool allow_redirects)
+void assertResponseIsOk(const String & uri, Poco::Net::HTTPResponse & response, std::istream & istr, const bool allow_redirects)
 {
     auto status = response.getStatus();
 
     if (!(status == Poco::Net::HTTPResponse::HTTP_OK
         || status == Poco::Net::HTTPResponse::HTTP_CREATED
         || status == Poco::Net::HTTPResponse::HTTP_ACCEPTED
-        || status == Poco::Net::HTTPResponse::HTTP_NO_CONTENT /// Success without a body, e.g. Iceberg REST DropTable.
         || status == Poco::Net::HTTPResponse::HTTP_PARTIAL_CONTENT /// Reading with Range header was successful.
         || (isRedirect(status) && allow_redirects)))
     {
@@ -108,10 +99,10 @@ void assertResponseIsOk(const String & uri, Poco::Net::HTTPResponse & response, 
             ? ErrorCodes::RECEIVED_ERROR_TOO_MANY_REQUESTS
             : ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
 
-        std::string body_text;
-        readStringUntilEOF(body_text, body);
+        std::string body;
+        Poco::StreamCopier::copyToString(istr, body);
 
-        throw HTTPException(code, uri, status, response.getReason(), body_text);
+        throw HTTPException(code, uri, status, response.getReason(), body);
     }
 }
 
