@@ -37,8 +37,8 @@ macro(clickhouse_split_debug_symbols)
        set(COMPACT_SYMBOLS_BLOB "${STRIP_DESTINATION_DIR}/bin/${STRIP_TARGET}.symbols")
        list(APPEND COMPACT_SYMBOLS_COMMANDS
            COMMAND "${COMPACT_SYMBOLS_TOOL}" "${STRIP_DESTINATION_DIR}/bin/${STRIP_TARGET}" "${COMPACT_SYMBOLS_BLOB}"
+           # Remove only the symbol table: `--strip-all` would also remove other non-allocated sections, such as `.clickhouse.hash`.
            COMMAND "${OBJCOPY_PATH}"
-               "--strip-all"
                "--add-section=.clickhouse.symbols=${COMPACT_SYMBOLS_BLOB}"
                "--remove-section=.symtab"
                "--remove-section=.strtab"
