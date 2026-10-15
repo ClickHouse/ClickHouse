@@ -95,7 +95,7 @@ HINT_RE = re.compile(r"\{\s*(serverError|clientError|error)\b")
 # The list of the error codes or names of the hint, separated by commas, as `TestHint` parses it.
 ERROR_HINT_RE = re.compile(r"\{\s*(?:serverError|clientError|error)\b([^}]*)\}")
 INSERT_RE = re.compile(r"\s*(EXPLAIN|INSERT)\b", re.IGNORECASE)
-FORMAT_RE = re.compile(r"\bFORMAT\s+(\w+)\b", re.IGNORECASE)
+FORMAT_RE = re.compile(r"FORMAT\s+(\w+)\b", re.IGNORECASE)
 HEREDOC_RE = re.compile(r"\$([A-Za-z_][A-Za-z0-9_]*)?\$")
 
 
@@ -145,7 +145,6 @@ def split_queries(text):
     queries = []
     begin = 0
     pos = 0
-    line_begin = 0
     has_tokens = False
     while pos < len(text):
         char = text[pos]
@@ -165,23 +164,14 @@ def split_queries(text):
             pos = finish_query(text, begin, pos, queries, has_tokens)
             begin = pos
             has_tokens = False
-        elif char == "\n":
-            # The data of an `INSERT ... FORMAT <not Values>` starts after the format name and ends
-            # at an empty line, regardless of semicolons in it.
-            insert_format = has_tokens and FORMAT_RE.search(text, line_begin, pos)
-            if (
-                insert_format
-                and insert_format.group(1) != "Values"
-                and INSERT_RE.match(strip_comments(text[begin:pos]))
-            ):
-                end = text.find("\n\n", pos)
-                end = len(text) if end == -1 else end
-                queries.append((text[begin:end].strip(), ""))
-                begin = pos = end
-                has_tokens = False
-            else:
-                pos += 1
-            line_begin = pos
+        elif (insert_format := match_insert_format(text, begin, pos)) is not None:
+            # The data of an `INSERT ... FORMAT <not Values>` starts right after the format name, on
+            # the same line or the next ones, and ends at an empty line, regardless of semicolons in it.
+            end = text.find("\n\n", insert_format)
+            end = len(text) if end == -1 else end
+            queries.append((text[begin:end].strip(), ""))
+            begin = pos = end
+            has_tokens = False
         else:
             if not char.isspace():
                 has_tokens = True
@@ -189,6 +179,26 @@ def split_queries(text):
     if has_tokens:
         queries.append((text[begin:].strip(), ""))
     return queries
+
+
+def match_insert_format(text, begin, pos):
+    """If the `FORMAT <name>` of an `INSERT` with inline data in a format other than `Values` starts at
+    `pos`, return the position after the format name, like `ParserInsertQuery`, otherwise `None`."""
+    if pos > 0 and (text[pos - 1].isalnum() or text[pos - 1] == "_"):
+        return None
+    insert_format = FORMAT_RE.match(text, pos)
+    if not insert_format or insert_format.group(1) == "Values":
+        return None
+    # A `;` right after the format name is a syntax error the server reports.
+    if text.startswith(";", insert_format.end()):
+        return None
+    statement = text[begin:pos]
+    if not INSERT_RE.match(strip_comments(statement)):
+        return None
+    # The rows of `INSERT ... SELECT` and `INSERT ... FROM INFILE` do not follow the format name.
+    if any(word in ("SELECT", "INFILE") for word in top_level_words(statement)):
+        return None
+    return insert_format.end()
 
 
 def finish_query(text, begin, pos, queries, has_tokens):
@@ -404,7 +414,9 @@ def setup_queries(settings, params):
 
 
 class HTTPClient(QueryClient):
-    native_settings = True
+    # The settings and the database of a request override those of the session, so they are set once
+    # with `SET` and `USE`, and the `SET` and `USE` of the test persist, as with `clickhouse-client`.
+    # The query parameters are passed with every query, as `clickhouse-client` does.
     native_params = True
 
     def __init__(self, args, secure):
@@ -416,6 +428,9 @@ class HTTPClient(QueryClient):
         self.session_id = str(uuid.uuid4())
         self.connection = None
 
+    def setup_queries(self):
+        return [f"USE `{self.database}`"] + super().setup_queries()
+
     def connect(self):
         if self.secure:
             self.connection = http.client.HTTPSConnection(
@@ -425,23 +440,54 @@ class HTTPClient(QueryClient):
             self.connection = http.client.HTTPConnection(self.host, self.port, timeout=SOCKET_TIMEOUT)
 
     def execute(self, query):
-        params = [("database", self.database), ("session_id", self.session_id)]
-        params += self.settings
+        params = [("session_id", self.session_id)]
         params += [(f"param_{name}", value) for name, value in self.params]
         url = "/?" + urllib.parse.urlencode(params)
         body = query.encode("utf-8", errors="surrogateescape")
+        incomplete = False
         try:
             self.connection.request("POST", url, body=body, headers={"X-ClickHouse-User": self.user})
             response = self.connection.getresponse()
-            data = response.read()
+            try:
+                data = response.read()
+            except http.client.IncompleteRead as e:
+                # The server may break the response after an exception in the middle of it.
+                data = e.partial
+                incomplete = True
+                self.connection.close()
         except (http.client.HTTPException, OSError):
             # Do not leave a connection broken in the middle of a request for the next query.
             self.connection.close()
             raise
-        if response.status != 200:
-            code = response.getheader("X-ClickHouse-Exception-Code")
+        code = response.getheader("X-ClickHouse-Exception-Code")
+        if response.status != 200 or code:
             raise QueryError(data.decode("utf-8", errors="replace"), int(code) if code else None)
+        # An exception after the response has started (with `http_wait_end_of_query = 0` or a small
+        # `http_response_buffer_size`) is appended to the data as a block tagged with the tag from the
+        # headers (`WriteBufferFromHTTPServerResponse::cancelWithException`).
+        tag = response.getheader("X-ClickHouse-Exception-Tag")
+        if tag and (message := self.tagged_exception(data, tag.encode())) is not None:
+            raise QueryError(message)
+        if incomplete:
+            raise QueryError(f"Incomplete HTTP response without an exception: {data[-1024:]!r}")
         return data
+
+    @staticmethod
+    def tagged_exception(data, tag):
+        """Return the message of the exception block at the end of the data, if there is one:
+        `__exception__\\r\\n<tag>\\r\\n<message>\\n<message size> <tag>\\r\\n__exception__\\r\\n`."""
+        header = b"__exception__\r\n" + tag + b"\r\n"
+        trailer = b" " + tag + b"\r\n__exception__\r\n"
+        if not data.endswith(trailer):
+            return None
+        start = data.rfind(header)
+        if start == -1:
+            raise QueryError(f"Malformed exception block in the HTTP response: {data[-1024:]!r}")
+        message, _, size = data[start + len(header) : -len(trailer)].rpartition(b"\n")
+        message += b"\n"
+        if not size.isdigit() or int(size) != len(message):
+            raise QueryError(f"Malformed exception block in the HTTP response: {data[-1024:]!r}")
+        return message.decode("utf-8", errors="replace")
 
 
 class MySQLClient(QueryClient):
@@ -671,7 +717,10 @@ class PostgreSQLClient(QueryClient):
 
 
 class GRPCClient(QueryClient):
-    native_settings = True
+    # As with HTTP, the settings and the database of a request override those of the session.
+
+    def setup_queries(self):
+        return [f"USE `{self.database}`"] + super().setup_queries()
 
     def connect(self):
         sys.path.append(
@@ -690,12 +739,9 @@ class GRPCClient(QueryClient):
         self.session_id = str(uuid.uuid4())
 
     def execute(self, query):
-        settings = dict(self.settings)
         result = self.stub.ExecuteQuery(
             self.pb2.QueryInfo(
                 query=query,
-                settings=settings,
-                database=self.database,
                 session_id=self.session_id,
                 user_name=self.user,
                 output_format="TabSeparated",
@@ -788,6 +834,9 @@ class WebTerminal:
     and waits for the prompt after every query, like a person at the browser would."""
 
     PROMPT = b":) "
+    # Replxx enables the bracketed paste mode each time it starts reading a new line, right before it
+    # prints the prompt. It distinguishes the prompt from `:) ` in the echoed queries and their results.
+    PROMPT_START = b"\x1b[?2004h"
     # A bracketed paste keeps the text as is, line breaks included, and the line break after it
     # submits the whole text. The client splits it into queries and applies the test hints itself.
     PASTE_START = b"\x1b[200~"
@@ -881,14 +930,17 @@ class WebTerminal:
         return payload
 
     def wait_for_prompt(self):
-        """Read the output until the next prompt, return the output."""
+        """Read the output until the next prompt, return the output before the prompt."""
         output = bytearray()
-        while self.PROMPT not in output[-1024:]:
+        while True:
+            start = output.rfind(self.PROMPT_START)
+            # Nothing follows the prompt until the next input.
+            if start != -1 and output.endswith(self.PROMPT) and b"\n" not in output[start:]:
+                return output[:start]
             data = self.read_output()
             if data is None:
                 raise QueryError("The web terminal session ended before the prompt")
             output += data
-        return output
 
     def run(self, queries):
         """Run the queries, return whether all of them succeeded or failed as their hints expect."""
@@ -899,10 +951,11 @@ class WebTerminal:
                 self.sock.close()
                 return False
         self.send_frame(0x2, b"exit\r")
-        while self.read_output() is not None:
-            pass
+        output = bytearray()
+        while (data := self.read_output()) is not None:
+            output += data
         self.sock.close()
-        return True
+        return not self.ERROR_RE.search(output)
 
 
 def run_webterminal(args, text):
