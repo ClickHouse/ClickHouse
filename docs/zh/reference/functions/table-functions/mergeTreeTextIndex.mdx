@@ -13,17 +13,13 @@ doc_type: 'reference'
 返回标记及其倒排列表元数据。
 可用于查看内部信息。
 
-<div id="syntax">
-  ## 语法
-</div>
+## 语法 {#syntax}
 
 ```sql
 mergeTreeTextIndex(database, table, index_name)
 ```
 
-<div id="arguments">
-  ## 参数
-</div>
+## 参数 {#arguments}
 
 | 参数           | 描述               |
 | ------------ | ---------------- |
@@ -31,15 +27,13 @@ mergeTreeTextIndex(database, table, index_name)
 | `table`      | 要读取其中文本索引的表名称。   |
 | `index_name` | 要读取的文本索引名称。      |
 
-<div id="returned-value">
-  ## 返回值
-</div>
+## 返回值 {#returned-value}
 
 一个包含标记及其倒排列表元数据的表。
 
-<div id="usage-example">
-  ## 使用示例
-</div>
+如果索引使用 `keyValuePairs` 分词器，则每个标记都是 `Map` 列中的一个 `(key, value)` 键值对，结果还会包含 `token_key` 和 `token_value` 两列，分别存储该标记解码后的两个组成部分。
+
+## 使用示例 {#usage-example}
 
 ```sql title="Query"
 CREATE TABLE tab
