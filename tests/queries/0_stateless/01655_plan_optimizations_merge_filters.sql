@@ -2,7 +2,6 @@ SET explain_query_plan_default = 'legacy';
 set optimize_syntax_fuse_functions = 0;
 set query_plan_merge_filters=1;
 set optimize_respect_aliases = 1;
-set query_plan_optimize_prewhere = 1;
 set enable_optimize_predicate_expression = 1; -- CI may inject False; prevents key=7 from being rewritten as bitAnd(number,15)=7 and pushed down through GROUP BY
 
 set enable_analyzer=1;

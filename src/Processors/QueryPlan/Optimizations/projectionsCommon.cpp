@@ -6,6 +6,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/Optimizations/projectionsCommon.h>
+#include <Storages/MergeTree/HypotheticalProjection.h>
 
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -44,24 +45,9 @@ namespace QueryPlanOptimizations
 
 std::expected<void, std::string> canUseProjectionForReadingStep(ReadFromMergeTree * reading)
 {
-    /// Reading through a projection part bypasses the parent table's
-    /// delete-bitmap filter, so logically-deleted rows would resurface. Decline
-    /// the projection for a unique-key table that carries one (CREATE/ALTER
-    /// reject the combination, but SECONDARY_CREATE/ATTACH load it); the
-    /// optimizer then falls back to the correctly-filtered base-table read, and
-    /// an actual projection-part read is hard-rejected downstream in
-    /// MergeTreeDataSelectExecutor. A unique-key table with no projection is
-    /// unaffected.
-    /// TODO(unique-key): support reading via projections on UNIQUE KEY tables.
-    /// TODO(unique-key): count shortcuts that bypass the delete bitmap — the
-    /// implicit _minmax_count_projection here and the trivial-count path
-    /// (supportsTrivialCountOptimization -> totalRows) — are deferred to the
-    /// read+delete work, which makes count() delete-bitmap-aware.
-    {
-        const auto metadata = reading->getStorageMetadata();
-        if (metadata->hasUniqueKey() && metadata->hasProjections())
-            return std::unexpected("the table has a UNIQUE KEY");
-    }
+    /// TODO(unique-key): support projections, `_minmax_count_projection` included.
+    if (reading->getStorageMetadata()->hasUniqueKey())
+        return std::unexpected("the table has a UNIQUE KEY");
 
     if (reading->getAnalyzedResult() && reading->getAnalyzedResult()->readFromProjection())
         return std::unexpected("the read is already served by a projection");
@@ -379,9 +365,48 @@ static bool projectionPartHasRequiredColumns(
     return true;
 }
 
+/// Pending metadata mutations (`RENAME COLUMN` / `DROP COLUMN`) are applied at read time by the
+/// `AlterConversions` of the parent part only; a projection part is read without them. So until such a
+/// mutation rewrites the part, its projection part may still carry a column the metadata no longer has
+/// under that name: after `DROP COLUMN c, ADD COLUMN c` the projection would return the old values of
+/// `c` instead of the new column's default. Such a part is read from the parent part instead.
+/// Only the mutations touching a column the projection holds or the read needs (for `RENAME COLUMN`,
+/// both the old and the new name) matter: a pending drop of an unrelated column keeps the projection usable.
+static bool partHasPendingMetadataMutationsOnColumns(
+    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+    const MergeTreeData::DataPartPtr & part,
+    const ProjectionDescription & projection,
+    const Names & required_column_names)
+{
+    if (!mutations_snapshot->hasMetadataMutations())
+        return false;
+
+    auto is_affected = [&](const String & name)
+    {
+        if (name.empty())
+            return false;
+        return std::find(projection.required_columns.begin(), projection.required_columns.end(), name) != projection.required_columns.end()
+            || projection.sample_block.has(name)
+            || std::find(required_column_names.begin(), required_column_names.end(), name) != required_column_names.end();
+    };
+
+    /// Only the mutations newer than the part apply to it: the snapshot may also hold finished ones.
+    for (const auto & command : mutations_snapshot->getOnFlyMutationCommandsForPart(part))
+    {
+        if (!AlterConversions::isSupportedMetadataMutation(command.type))
+            continue;
+
+        if (is_affected(command.column_name) || is_affected(command.rename_to))
+            return true;
+    }
+
+    return false;
+}
+
 bool analyzeProjectionCandidate(
     ProjectionCandidate & candidate,
     const MergeTreeDataSelectExecutor & reader,
+    const MergeTreeData::MutationsSnapshotPtr & parent_mutations_snapshot,
     MergeTreeData::MutationsSnapshotPtr empty_mutations_snapshot,
     const Names & required_column_names,
     const StorageMetadataPtr & parent_metadata,
@@ -390,7 +415,8 @@ bool analyzeProjectionCandidate(
     const std::optional<TopKFilterInfo> & top_k_filter_info,
     bool allow_query_condition_cache,
     bool allow_top_k_prewhere_query_condition_cache,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    const HypotheticalProjection * hypothetical_projection)
 {
     RangesInDataParts projection_parts;
     size_t parent_parts_sum_marks = 0;
@@ -398,12 +424,19 @@ bool analyzeProjectionCandidate(
     {
         const auto & created_projections = part_with_ranges.data_part->getProjectionParts();
         auto it = created_projections.find(candidate.projection->name);
-        if (it != created_projections.end() && !it->second->is_broken
+        MergeTreeDataPartPtr projection_part = it != created_projections.end() && !it->second->is_broken ? it->second : nullptr;
+        if (!projection_part && hypothetical_projection && candidate.projection == &hypothetical_projection->projection)
+            projection_part = hypothetical_projection->findPart(part_with_ranges.data_part->name);
+        /// A projection part returns every matching row of its part, so it cannot replace a read cut by exact counting.
+        if (projection_part
+            && !(parent_reading_select_result.exact_ranges_excluded && !part_with_ranges.exact_ranges.empty())
             && projectionPartHasRequiredColumns(
-                *it->second, *part_with_ranges.data_part, *candidate.projection, parent_metadata, required_column_names))
+                *projection_part, *part_with_ranges.data_part, *candidate.projection, parent_metadata, required_column_names)
+            && !partHasPendingMetadataMutationsOnColumns(
+                parent_mutations_snapshot, part_with_ranges.data_part, *candidate.projection, required_column_names))
         {
             projection_parts.push_back(RangesInDataPart(
-                it->second,
+                projection_part,
                 part_with_ranges.data_part,
                 part_with_ranges.part_index_in_query,
                 part_with_ranges.part_starting_offset_in_query));
@@ -491,7 +524,9 @@ void filterPartsAndCollectProjectionCandidates(
         auto it = created_projections.find(projection.name);
         if (it != created_projections.end() && !it->second->is_broken
             && projectionPartHasRequiredColumns(
-                *it->second, *part_with_ranges.data_part, projection, parent_metadata, filter_required_columns))
+                *it->second, *part_with_ranges.data_part, projection, parent_metadata, filter_required_columns)
+            && !partHasPendingMetadataMutationsOnColumns(
+                reading.getMutationsSnapshot(), part_with_ranges.data_part, projection, filter_required_columns))
         {
             RangesInDataPart projection_part(
                 it->second,
