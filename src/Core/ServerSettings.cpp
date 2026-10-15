@@ -975,6 +975,11 @@ A value of `0` means no limitation.
 <max_named_collection_num_to_throw>400</max_named_collection_num_to_throw>
 ```
 )", 0) \
+    DECLARE(Bool, ai_function_allow_sql_named_collections, true, R"(
+Allows AI functions (such as `aiGenerate`, `aiEmbed`, `aiSimilarity`) to use named collections created with `CREATE NAMED COLLECTION`.
+When disabled, AI functions accept only named collections defined in the server configuration file, and using any other collection throws an exception.
+This applies both to the `credentials` parameter and to the `ai_function_text_default_credentials` and `ai_function_embedding_default_credentials` settings.
+)", 0) \
     DECLARE(UInt64, max_table_num_to_throw, 0lu, R"(
 If number of tables is greater than this value, server will throw an exception.
 
@@ -1993,6 +1998,9 @@ The server will not exit if IPv6 or IPv4 networks are unavailable while trying t
     DECLARE(Bool, postgresql_require_secure_transport, false, R"(If set to true, secure communication is required with clients over [postgresql_port](/reference/settings/server-settings/settings/postgresql#postgresql_port). Connection with option `<sslmode=disable>` will be refused. Use it with [OpenSSL](/reference/settings/server-settings/settings/other#openssl) settings.)", 0) \
     DECLARE(Bool, skip_check_for_incorrect_settings, false, R"(
 If set to true, server settings will not be checked for correctness.
+
+It also disables the check of the definitions of disks in `storage_configuration`, where an element
+that no disk of this type reads is reported as `UNKNOWN_ELEMENT_IN_CONFIG` instead of being ignored.
 
 **Example**
 

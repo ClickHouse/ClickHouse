@@ -29,7 +29,7 @@
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
-#include <Storages/TimeSeries/TimeSeriesVersion.h>
+#include <Parsers/Prometheus/TimeSeriesVersion.h>
 
 #include <fmt/ranges.h>
 

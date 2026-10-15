@@ -29,7 +29,7 @@
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
-#include <Storages/TimeSeries/TimeSeriesVersion.h>
+#include <Storages/TimeSeries/checkTimeSeriesVersion.h>
 #include <Storages/TimeSeries/resolvePrometheusQueryTarget.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 
