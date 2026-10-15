@@ -2174,3 +2174,40 @@ PrometheusQueryTree(INSTANT_VECTOR):
             __name__ EQ 'up'
 )");
 }
+
+
+TEST(PromQLParser, StandaloneStepRangeFunctions)
+{
+    for (const auto * query :
+         {"step()", "range()", "range() - step()", "step\n()", "range # comment\r()", "step # comment\n()"})
+    {
+        PrometheusQueryTree tree{query};
+        EXPECT_EQ(tree.getResultType(), PrometheusQueryTree::ResultType::SCALAR) << query;
+        expectRoundTrip(query, tree.toString());
+    }
+
+    /// These names remain valid metric names when they are not called as functions.
+    for (const auto * query : {"step", "range", R"(step{job="x"})", R"(range{job="x"})", R"(up{step="x",range="y"})"})
+    {
+        PrometheusQueryTree tree{query};
+        EXPECT_EQ(tree.getResultType(), PrometheusQueryTree::ResultType::INSTANT_VECTOR) << query;
+        expectRoundTrip(query, tree.toString());
+    }
+}
+
+
+TEST(PromQLParser, InvalidStandaloneStepRangeFunctions)
+{
+    for (const auto * query : {"step(1)", "range(1)", "step(1, 2)"})
+    {
+        PrometheusQueryTree tree;
+        String error_message;
+        size_t error_pos = 0;
+        EXPECT_FALSE(tree.tryParse(query, 3, &error_message, &error_pos)) << query;
+        EXPECT_FALSE(error_message.empty()) << query;
+    }
+
+    /// Function names are case-sensitive, so these call unknown functions, which the converter rejects.
+    EXPECT_NE(parse("STEP()").find("Function(STEP)"), String::npos);
+    EXPECT_NE(parse("RANGE()").find("Function(RANGE)"), String::npos);
+}

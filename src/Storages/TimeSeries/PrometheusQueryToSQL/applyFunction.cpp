@@ -16,6 +16,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyOneArgumentMathFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyRoundFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fromFunctionPi.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/fromFunctionStepRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fromFunctionTime.h>
 
 
@@ -34,12 +35,13 @@ namespace
     /// Prometheus functions which are not implemented here yet.
     constexpr std::string_view not_implemented_functions[] = {
         "double_exponential_smoothing", "end", "histogram_avg", "histogram_count", "histogram_fraction", "histogram_quantiles",
-        "histogram_stddev", "histogram_stdvar", "histogram_sum", "info", "integral", "range", "sort",
-        "sort_by_label", "sort_by_label_desc", "sort_desc", "start", "start_timestamp", "step"};
+        "histogram_stddev", "histogram_stdvar", "histogram_sum", "info", "integral", "sort",
+        "sort_by_label", "sort_by_label_desc", "sort_desc", "start", "start_timestamp"};
 
     bool isKnownFunction(std::string_view function_name)
     {
         return isFunctionVector(function_name) || isFunctionScalar(function_name) || isFunctionTime(function_name)
+            || isFunctionStepRange(function_name)
             || isFunctionAbsent(function_name) || isDateTimeFunction(function_name) || isOneArgumentMathFunction(function_name)
             || isClampFunction(function_name) || isMinMaxOfFunction(function_name) || isRoundFunction(function_name)
             || isFunctionPi(function_name) || isLabelManipulationFunction(function_name) || isFunctionPredictLinear(function_name)
@@ -71,6 +73,9 @@ SQLQueryPiece applyFunction(
 
     if (isFunctionScalar(function_name))
         return applyFunctionScalar(function_node, std::move(arguments), context);
+
+    if (isFunctionStepRange(function_name))
+        return fromFunctionStepRange(function_node, std::move(arguments), context);
 
     if (isFunctionTime(function_name))
         return fromFunctionTime(function_node, std::move(arguments), context);

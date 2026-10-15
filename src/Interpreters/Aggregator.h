@@ -1466,8 +1466,9 @@ private:
     /// at single level.
     bool isTypeFixedSize(const ManyAggregatedDataVariants & data_variants) const;
 
+    /// The columns must be alive while the instructions are used.
     void prepareAggregateInstructions(
-        Columns columns,
+        const Columns & columns,
         AggregateColumns & aggregate_columns,
         Columns & materialized_columns,
         AggregateFunctionInstructions & instructions,
