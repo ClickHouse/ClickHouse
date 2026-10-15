@@ -263,8 +263,9 @@ def execute_spark_query(node, query_text, retry_on_timeout=False):
     # idempotent or read-only: blindly re-running a multi-statement batch that
     # already committed an earlier statement would fail on "already exists" or
     # duplicate INSERT data. Callers set retry_on_timeout=True only after making
-    # their batch idempotent (CREATE ... IF NOT EXISTS, INSERT OVERWRITE) or for
-    # read-only queries. Only the hang is retried, real errors are re-raised.
+    # their batch idempotent (CREATE ... IF NOT EXISTS, INSERT OVERWRITE, a Delta
+    # txnAppId/txnVersion pair) or for read-only queries. Only the hang is
+    # retried, real errors are re-raised.
     if retry_on_timeout:
         max_attempts = SPARK_QUERY_MAX_ATTEMPTS
         attempt_timeout = SPARK_QUERY_RETRY_ATTEMPT_TIMEOUT
@@ -329,8 +330,9 @@ def execute_spark_query(node, query_text, retry_on_timeout=False):
 
 def execute_multiple_spark_queries(node, queries_list, retry_on_timeout=False):
     # retry_on_timeout must only be set when every statement in queries_list is
-    # idempotent (CREATE ... IF NOT EXISTS, INSERT OVERWRITE) so that a
-    # fresh-JVM retry after a partial commit converges to the same final state.
+    # idempotent (CREATE ... IF NOT EXISTS, INSERT OVERWRITE, a Delta
+    # txnAppId/txnVersion pair) so that a fresh-JVM retry after a partial commit
+    # converges to the same final state.
     return execute_spark_query(
         node, ";".join(queries_list), retry_on_timeout=retry_on_timeout
     )
@@ -808,8 +810,17 @@ def test_snapshot_version(started_cluster, use_v2):
 
     schema_name = f"schema_{table_name}"
 
+    def idempotent_insert(txn_version, insert_query):
+        # Delta skips a write whose txnAppId/txnVersion pair is already in the log,
+        # so a retry after a hang cannot add a commit to the history asserted below.
+        return [
+            f"SET spark.databricks.delta.write.txnAppId={table_name}",
+            f"SET spark.databricks.delta.write.txnVersion={txn_version}",
+            insert_query,
+        ]
+
     schema = "event_date DATE, data STRING"
-    create_query = f"""CREATE TABLE {schema_name}.{table_name} ({schema})
+    create_query = f"""CREATE TABLE IF NOT EXISTS {schema_name}.{table_name} ({schema})
 USING Delta location '{table_path}'
 TBLPROPERTIES (
   delta.enableChangeDataFeed = true
@@ -818,11 +829,12 @@ TBLPROPERTIES (
     # Spark invocation to avoid multiple slow JVM startups.
     execute_multiple_spark_queries(
         node1,
-        [
-            f"CREATE SCHEMA {schema_name}",
-            create_query,
+        [f"CREATE SCHEMA IF NOT EXISTS {schema_name}", create_query]
+        + idempotent_insert(
+            1,
             f"insert into {schema_name}.{table_name} SELECT to_date('2024-10-01', 'yyyy-MM-dd'), 'hello'",
-        ],
+        ),
+        retry_on_timeout=True,
     )
 
     # Create table with columns `event_date`, `data`
@@ -851,9 +863,13 @@ settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, us
     assert data_v1[2] == "1"
 
     # Commit new data at version 2
-    execute_spark_query(
+    execute_multiple_spark_queries(
         node1,
-        f"insert into {schema_name}.{table_name} SELECT to_date('2024-10-02', 'yyyy-MM-dd'), 'world'",
+        idempotent_insert(
+            2,
+            f"insert into {schema_name}.{table_name} SELECT to_date('2024-10-02', 'yyyy-MM-dd'), 'world'",
+        ),
+        retry_on_timeout=True,
     )
 
     # Check what commit versions we have now
@@ -894,10 +910,16 @@ FROM {db_name}.`{schema_name}.{table_name}`
     assert data_v2[2] == "2"
 
     # Commit new data at version 3
-    execute_spark_query(
+    execute_multiple_spark_queries(
         node1,
-        f"insert into {schema_name}.{table_name} SELECT to_date('2024-10-03', 'yyyy-MM-dd'), 'from', 'Pepe' as name",
+        idempotent_insert(
+            3,
+            f"insert into {schema_name}.{table_name} SELECT to_date('2024-10-03', 'yyyy-MM-dd'), 'from', 'Pepe' as name",
+        ),
+        retry_on_timeout=True,
     )
+
+    assert get_table_versions() == ["0", "1", "2", "3"]
 
     # Validate data between versions 1 and 2
     data_raw = node1.query(

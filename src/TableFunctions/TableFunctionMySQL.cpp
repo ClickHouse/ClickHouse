@@ -19,6 +19,7 @@
 
 #include <Databases/MySQL/DatabaseMySQL.h>
 #include <Common/parseRemoteDescription.h>
+#include <Storages/NamedCollectionsHelpers.h>
 
 
 namespace DB
@@ -199,7 +200,7 @@ Arguments also can be passed using [named collections](/concepts/features/config
 
 Simple `WHERE` clauses such as `=, !=, >, >=, <, <=` are currently executed on the MySQL server.
 
-The rest of the conditions and the `LIMIT` sampling constraint are executed in ClickHouse only after the query to MySQL finishes.
+The rest of the conditions are executed in ClickHouse after the query to MySQL finishes. The `LIMIT` sampling constraint is pushed to MySQL only when it is safe and [external_storage_push_down_limit](/reference/settings/session-settings/external-storage#external_storage_push_down_limit) is enabled; otherwise, it is executed in ClickHouse.
 
 ## TLS/SSL {#tls-ssl}
 
@@ -222,6 +223,14 @@ Instead of a table name, the third argument can be a `SELECT` query that is pass
 ```sql
 SELECT * FROM mysql('localhost:3306', 'test', (SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0), 'user', 'password');
 SELECT * FROM mysql('localhost:3306', 'test', query('SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0'), 'user', 'password');
+```
+
+Passing a query is supported starting from version 26.7. ClickHouse wraps the query into `SELECT ... FROM (<query>)` before sending it to MySQL, so it must not end with a semicolon.
+
+With a [named collection](/concepts/features/configuration/server-config/named-collections) such as `creds` from the [examples](#examples), pass the query in the `query` key instead of `table`, either in the collection itself or as a key-value argument. `query` and `table` cannot be specified together:
+
+```sql
+SELECT * FROM mysql(creds, query = 'SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0');
 ```
 
 This is useful to push down joins, aggregations or any other processing to MySQL. Such a table is read-only: `INSERT` into it is not allowed. The same syntax is supported by the [`MySQL`](/reference/engines/table-engines/integrations/mysql) table engine.
@@ -376,7 +385,7 @@ WHERE id > (SELECT max(id) FROM mysql_copy);
 - [mysql_map_fixed_string_to_text_in_show_columns](/reference/settings/session-settings/mysql-map#mysql_map_fixed_string_to_text_in_show_columns)
 - [mysql_map_string_to_text_in_show_columns](/reference/settings/session-settings/mysql-map#mysql_map_string_to_text_in_show_columns)
 - [mysql_max_rows_to_insert](/reference/settings/session-settings/mysql#mysql_max_rows_to_insert)
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, mysqlPostgreSQLSecretArguments(4));
 }
 
 }
