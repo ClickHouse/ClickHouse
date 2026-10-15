@@ -771,12 +771,22 @@ def _run_agent(prompt, deadline, cap_sec, effort, output_file, load):
     raise RuntimeError(f"triage failed after {MAX_ATTEMPTS} attempts: {last_error}")
 
 
-def _robot_gh(*args):
+def _remaining_sec(deadline):
+    """Seconds left before `deadline` (`time.monotonic()`); raises once none are."""
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutError("the triage budget is used up")
+    return remaining
+
+
+def _robot_gh(*args, deadline=None):
     """Run a `gh` command as a robot and return its stdout.
 
     Fuzz-style jobs run without `enable_gh_auth`, so a bare `gh` in the job is
-    unauthenticated. Raises on any failure.
+    unauthenticated. The command gets at most what is left before `deadline`.
+    Raises on any failure.
     """
+    timeout = 120 if deadline is None else min(120, _remaining_sec(deadline))
     with tempfile.TemporaryDirectory() as gh_config_dir:
         gh_auth_with_robot_token(gh_config_dir, random.choice(ROBOT_NAMES))
         return subprocess.run(
@@ -784,7 +794,7 @@ def _robot_gh(*args):
             env={**os.environ, "GH_CONFIG_DIR": gh_config_dir},
             capture_output=True,
             text=True,
-            timeout=120,
+            timeout=timeout,
             check=True,
         ).stdout
 
@@ -978,7 +988,7 @@ def _write_pr_diff(info, repo_name):
     PR_DIFF_FILE.write_text(diff, encoding="utf-8")
 
 
-def _culprit_pr(repo_name, commit):
+def _culprit_pr(repo_name, commit, deadline):
     """The PR that merged `commit`, or "" when there is none or it cannot be read."""
     if not COMMIT_SHA_RE.match(commit):
         return ""
@@ -988,6 +998,7 @@ def _culprit_pr(repo_name, commit):
             f"repos/{repo_name}/commits/{commit}/pulls",
             "--jq",
             ".[0].html_url // empty",
+            deadline=deadline,
         ).strip()
     except Exception as e:  # noqa: BLE001 - the attribution is a convenience
         print(f"WARNING: AI fuzz triage: cannot map {commit} to its PR: {e}")
@@ -995,7 +1006,7 @@ def _culprit_pr(repo_name, commit):
     return url if PR_URL_RE.match(url) else ""
 
 
-def _fingerprint_issues(repo_name, fingerprint):
+def _fingerprint_issues(repo_name, fingerprint, deadline):
     """The issues carrying the fingerprint marker, oldest first.
 
     It also finds issues this triage filed itself, so it must not feed the
@@ -1017,6 +1028,7 @@ def _fingerprint_issues(repo_name, fingerprint):
             "30",
             "--json",
             fields,
+            deadline=deadline,
         )
         or "[]"
     )
@@ -1034,6 +1046,7 @@ def _fingerprint_issues(repo_name, fingerprint):
             str(RECENT_ISSUE_WINDOW),
             "--json",
             fields,
+            deadline=deadline,
         )
         or "[]"
     )
@@ -1041,10 +1054,17 @@ def _fingerprint_issues(repo_name, fingerprint):
     return sorted(by_url.values(), key=lambda i: i["number"])
 
 
-def _comment_once(repo_name, issue, job_kind, found_in):
+def _comment_once(repo_name, issue, job_kind, found_in, deadline):
     """Link this job from `issue`: one comment per job kind, not one per job."""
     output = _robot_gh(
-        "issue", "view", str(issue["number"]), "--repo", repo_name, "--json", "comments"
+        "issue",
+        "view",
+        str(issue["number"]),
+        "--repo",
+        repo_name,
+        "--json",
+        "comments",
+        deadline=deadline,
     )
     comments = json.loads(output).get("comments") or []
     if any(job_kind in (c.get("body") or "") for c in comments):
@@ -1057,6 +1077,7 @@ def _comment_once(repo_name, issue, job_kind, found_in):
         repo_name,
         "--body",
         f"Also hit by {job_kind} in CI: {found_in}",
+        deadline=deadline,
     )
 
 
@@ -1091,19 +1112,19 @@ def _lock_age_sec(head):
 
 
 @contextlib.contextmanager
-def _issue_lock(repo_name, fingerprint):
+def _issue_lock(repo_name, fingerprint, deadline):
     """Hold the lock on filing the issue for `fingerprint`, shared by all CI runners.
 
     The lock is an S3 object created with `If-None-Match: *`, so one job holds it at
     a time. One left by a holder that died is taken over with `If-Match` once it is
-    older than `ISSUE_LOCK_LEASE_SEC`.
+    older than `ISSUE_LOCK_LEASE_SEC`. Waiting stops at `deadline` at the latest.
     """
     if not Settings.CACHE_S3_PATH:
         raise RuntimeError("no CACHE_S3_PATH for the issue lock")
     path = (
         f"{Settings.CACHE_S3_PATH}/ai_fuzz_triage/issue_locks/{repo_name}/{fingerprint}"
     )
-    deadline = time.monotonic() + ISSUE_LOCK_WAIT_SEC
+    wait_until = min(time.monotonic() + ISSUE_LOCK_WAIT_SEC, deadline)
     with tempfile.NamedTemporaryFile("w", suffix=".lock") as token:
         token.write(f"{datetime.now(timezone.utc).isoformat()}\n")
         token.flush()
@@ -1124,12 +1145,12 @@ def _issue_lock(repo_name, fingerprint):
             ):
                 print(f"AI fuzz triage: took over the expired issue lock {path}")
                 break
-            if time.monotonic() > deadline:
-                raise TimeoutError(
-                    f"issue lock {path} still held after {ISSUE_LOCK_WAIT_SEC} s"
-                )
+            if time.monotonic() > wait_until:
+                raise TimeoutError(f"issue lock {path} still held")
             if head:  # Otherwise it was released meanwhile: retry at once.
-                time.sleep(ISSUE_LOCK_POLL_SEC)
+                time.sleep(
+                    max(0, min(ISSUE_LOCK_POLL_SEC, wait_until - time.monotonic()))
+                )
     acquired = time.monotonic()
     try:
         yield
@@ -1139,20 +1160,40 @@ def _issue_lock(repo_name, fingerprint):
             S3.delete(path)
 
 
-def _track_issue(repo_name, fingerprint, verdict, failures, job_kind, found_in, pr_url):
+def _track_issue(
+    repo_name, fingerprint, verdict, failures, job_kind, found_in, pr_url, deadline
+):
     """Find or file the issue tracking `fingerprint`; returns the verdict's issue fields.
 
     The lookup and the creation run under `_issue_lock`, so two jobs that hit the
     same new fingerprint at once file one issue, and the second one comments on it.
+    All of it stops at `deadline`, the end of the triage budget.
     """
-    with _issue_lock(repo_name, fingerprint):
+    _remaining_sec(deadline)
+    with _issue_lock(repo_name, fingerprint, deadline):
         return _find_or_file_issue(
-            repo_name, fingerprint, verdict, failures, job_kind, found_in, pr_url
+            repo_name,
+            fingerprint,
+            verdict,
+            failures,
+            job_kind,
+            found_in,
+            pr_url,
+            deadline,
         )
 
 
+def _tracking_issues(issues):
+    """The open issues with the `fuzz` label among `_fingerprint_issues`."""
+    return [
+        i
+        for i in issues
+        if (i.get("state") or "").upper() == "OPEN" and _has_fuzz_label(i)
+    ]
+
+
 def _find_or_file_issue(
-    repo_name, fingerprint, verdict, failures, job_kind, found_in, pr_url
+    repo_name, fingerprint, verdict, failures, job_kind, found_in, pr_url, deadline
 ):
     """An open issue with the `fuzz` label tracks `fingerprint`.
 
@@ -1160,14 +1201,10 @@ def _find_or_file_issue(
     lookup's reach, so either gets a comment and a new issue that links it.
     `pr_url` is empty on post-merge runs.
     """
-    issues = _fingerprint_issues(repo_name, fingerprint)
-    tracking = [
-        i
-        for i in issues
-        if (i.get("state") or "").upper() == "OPEN" and _has_fuzz_label(i)
-    ]
+    issues = _fingerprint_issues(repo_name, fingerprint, deadline)
+    tracking = _tracking_issues(issues)
     if tracking:
-        _comment_once(repo_name, tracking[0], job_kind, found_in)
+        _comment_once(repo_name, tracking[0], job_kind, found_in, deadline)
         return {
             "issue_url": tracking[0]["url"],
             "issue_created": False,
@@ -1175,7 +1212,7 @@ def _find_or_file_issue(
         }
     related = issues[-1]["url"] if issues else ""
     if issues:
-        _comment_once(repo_name, issues[-1], job_kind, found_in)
+        _comment_once(repo_name, issues[-1], job_kind, found_in, deadline)
     title, body = _issue_text(
         verdict,
         failures,
@@ -1188,11 +1225,23 @@ def _find_or_file_issue(
     create = ("issue", "create", "--repo", repo_name, "--title", title, "--body", body)
     label_applied = True
     try:
-        output = _robot_gh(*create, "--label", "fuzz")
+        output = _robot_gh(*create, "--label", "fuzz", deadline=deadline)
     except subprocess.CalledProcessError as e:
-        # Tracking the bug matters more than the label; the report flags the gap.
         print(f"WARNING: AI fuzz triage: issue create with `fuzz` failed: {e.stderr}")
-        output = _robot_gh(*create)
+        # GitHub may have filed it and only the response failed: look again first.
+        tracking = _tracking_issues(
+            _fingerprint_issues(repo_name, fingerprint, deadline)
+        )
+        if tracking:
+            return {
+                "issue_url": tracking[0]["url"],
+                "issue_created": True,
+                "label_applied": True,
+            }
+        # Only a refused label is worth an unlabelled issue; the report flags the gap.
+        if "label" not in (e.stderr or "").lower():
+            raise
+        output = _robot_gh(*create, deadline=deadline)
         label_applied = False
     issue_url = (output.strip().splitlines() or [""])[-1]
     if not ISSUE_URL_RE.match(issue_url):
@@ -1204,7 +1253,7 @@ def _find_or_file_issue(
     }
 
 
-def _track_other_signatures(repo_name, failures, job_kind, found_in):
+def _track_other_signatures(repo_name, failures, job_kind, found_in, deadline):
     """`_track_issue` for each of `other_signatures`; a failure only skips its own."""
     tracked = []
     for signature, group in other_signatures(failures).items():
@@ -1213,7 +1262,7 @@ def _track_other_signatures(repo_name, failures, job_kind, found_in):
         draft = {"signature": signature, "issue_title": "", "issue_body": ""}
         try:
             other |= _track_issue(
-                repo_name, fingerprint, draft, group, job_kind, found_in, ""
+                repo_name, fingerprint, draft, group, job_kind, found_in, "", deadline
             )
         except Exception as e:  # noqa: BLE001 - the report says it is untracked
             print(
@@ -1224,7 +1273,7 @@ def _track_other_signatures(repo_name, failures, job_kind, found_in):
     return tracked
 
 
-def _post_repro(issue_url, repro):
+def _post_repro(issue_url, repro, deadline):
     fence = "````" if "```" in repro else "```"
     _robot_gh(
         "issue",
@@ -1233,6 +1282,7 @@ def _post_repro(issue_url, repro):
         "--body",
         f"Reduced reproducer, reproduced with the tested build by AI triage:\n\n"
         f"{fence}\n{repro[:MAX_ISSUE_BODY_CHARS]}\n{fence}\n",
+        deadline=deadline,
     )
 
 
@@ -1574,7 +1624,7 @@ def triage_and_apply(
             )
             if not pr_mode and verdict["verdict"] == "related":
                 verdict["culprit_pr"] = _culprit_pr(
-                    repo_name, verdict["culprit_commit"]
+                    repo_name, verdict["culprit_commit"], deadline
                 )
             found_in = _report_url(info) or info.pr_url or info.commit_url
             if fingerprint and (not pr_mode or verdict["verdict"] == "unrelated"):
@@ -1588,6 +1638,7 @@ def triage_and_apply(
                             job_kind,
                             found_in,
                             info.pr_url if pr_mode else "",
+                            deadline,
                         )
                     )
                 except Exception as e:  # noqa: BLE001 - the report says it is untracked
@@ -1596,7 +1647,7 @@ def triage_and_apply(
                     verdict["issue_error"] = f"{type(e).__name__}: {e}"
             if not pr_mode:
                 verdict["other_issues"] = _track_other_signatures(
-                    repo_name, failures, job_kind, found_in
+                    repo_name, failures, job_kind, found_in, deadline
                 )
             if _needs_repro(verdict):
                 verdict.update(
@@ -1615,7 +1666,7 @@ def triage_and_apply(
                     "reproduced"
                 ):
                     try:
-                        _post_repro(verdict["issue_url"], verdict["repro"])
+                        _post_repro(verdict["issue_url"], verdict["repro"], deadline)
                     except Exception as e:  # noqa: BLE001 - the report still has it
                         print(f"WARNING: AI fuzz triage: cannot post reproducer: {e}")
         _apply_verdict(
