@@ -50,7 +50,17 @@ public:
         Int64 large_active = 0;
         Int64 large_passive = 0;
 
-        static Delta of(Int64 active, Int64 passive, bool large) { return {active, passive, large ? active : 0, large ? passive : 0}; }
+        /// `bytes` move from passive to active (negative: back); the bytes of each class stay the same.
+        static Delta move(Int64 bytes, bool large) { return {bytes, -bytes, large ? bytes : 0, large ? -bytes : 0}; }
+        /// The bytes of a file segment join the classes.
+        static Delta enroll(Int64 active, Int64 passive, bool large) { return {active, passive, large ? active : 0, large ? passive : 0}; }
+        /// The bytes of a file segment leave the classes.
+        static Delta dismiss(Int64 active, Int64 passive, bool large) { return enroll(-active, -passive, large); }
+
+        Delta operator+(const Delta & other) const
+        {
+            return {active + other.active, passive + other.passive, large_active + other.large_active, large_passive + other.large_passive};
+        }
     };
 
     /// No-op unless `segment_window` is the current window.

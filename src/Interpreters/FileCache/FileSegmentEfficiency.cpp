@@ -58,24 +58,21 @@ void FileSegmentEfficiency::shrink(
     /// The same bytes that `remove` subtracts later, so the classes stay exact.
     const auto old_active = static_cast<Int64>(getActiveBytes(old_range_size));
     const auto active = static_cast<Int64>(getActiveBytes(range_size));
-    auto delta = FileCacheEfficiency::Delta::of(active - old_active, old_active - active, /*large=*/false);
-    if (was_large)
+    if (was_large == large)
     {
-        delta.large_active -= old_active;
-        delta.large_passive -= reserved_bytes - old_active;
+        cache_efficiency.apply(window, FileCacheEfficiency::Delta::move(active - old_active, large));
+        return;
     }
-    if (large)
-    {
-        delta.large_active += active;
-        delta.large_passive += reserved_bytes - active;
-    }
-    cache_efficiency.apply(window, delta);
+    /// The file segment leaves its old size class with the old active bytes and joins the new one with the new ones.
+    cache_efficiency.apply(window,
+        FileCacheEfficiency::Delta::dismiss(old_active, reserved_bytes - old_active, was_large)
+            + FileCacheEfficiency::Delta::enroll(active, reserved_bytes - active, large));
 }
 
 void FileSegmentEfficiency::remove(FileCacheEfficiency & cache_efficiency, size_t range_size, Int64 reserved_bytes, bool large) const
 {
     const auto active = static_cast<Int64>(getActiveBytes(range_size));
-    cache_efficiency.apply(window, FileCacheEfficiency::Delta::of(-active, active - reserved_bytes, large));
+    cache_efficiency.apply(window, FileCacheEfficiency::Delta::dismiss(active, reserved_bytes - active, large));
 }
 
 FileSegmentEfficiencyInfo FileSegmentEfficiency::getInfo(

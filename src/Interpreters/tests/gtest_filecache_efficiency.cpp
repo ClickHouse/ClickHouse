@@ -43,7 +43,7 @@ TEST(FileCacheEfficiency, SnapshotOfLastFullWindow)
     const auto window = t.efficiency.currentWindow();
     EXPECT_EQ(window, 0);
     t.efficiency.addPassiveBytes(window, 200, /*large=*/false);
-    t.efficiency.apply(window, FileCacheEfficiency::Delta::of(50, -50, /*large=*/false));
+    t.efficiency.apply(window, FileCacheEfficiency::Delta::move(50, /*large=*/false));
 
     /// The live window is not visible until it ends.
     expectSnapshot(t.efficiency.getSnapshot(), 0, 0, 0);
@@ -60,7 +60,7 @@ TEST(FileCacheEfficiency, StaleWindowUpdatesAreIgnored)
     t.advance(W);
     EXPECT_EQ(t.efficiency.currentWindow(), 1);
     t.efficiency.addPassiveBytes(/*segment_window=*/0, 100, /*large=*/false);
-    t.efficiency.apply(/*segment_window=*/0, FileCacheEfficiency::Delta::of(100, -100, /*large=*/false));
+    t.efficiency.apply(/*segment_window=*/0, FileCacheEfficiency::Delta::move(100, /*large=*/false));
 
     t.advance(W);
     expectSnapshot(t.efficiency.getSnapshot(), 0, 0, 100);
@@ -120,7 +120,7 @@ TEST(FileCacheEfficiency, NegativeAndInconsistentValuesAreClamped)
     t.used_size = 50;
     const auto window = t.efficiency.currentWindow();
     t.efficiency.addPassiveBytes(window, 10, /*large=*/false);
-    t.efficiency.apply(window, FileCacheEfficiency::Delta::of(30, -30, /*large=*/false));   /// more than passive: passive < 0, clamp it to 0
+    t.efficiency.apply(window, FileCacheEfficiency::Delta::move(30, /*large=*/false));   /// more than passive: passive < 0, clamp it to 0
     t.advance(W);
     expectSnapshot(t.efficiency.getSnapshot(), 30, 0, 20);
 
@@ -148,11 +148,12 @@ TEST(FileCacheEfficiency, LargeSegments)
 
     const auto window = t.efficiency.currentWindow();
     t.efficiency.addPassiveBytes(window, 150, /*large=*/true);
-    t.efficiency.apply(window, FileCacheEfficiency::Delta::of(30, -30, /*large=*/true));
+    t.efficiency.apply(window, FileCacheEfficiency::Delta::move(30, /*large=*/true));
     t.efficiency.addPassiveBytes(window, 50, /*large=*/false);
-    t.efficiency.apply(window, FileCacheEfficiency::Delta::of(20, -20, /*large=*/false));
+    t.efficiency.apply(window, FileCacheEfficiency::Delta::move(20, /*large=*/false));
     /// A large file segment with 10 active and 40 passive bytes shrinks and is not large anymore.
-    t.efficiency.apply(window, FileCacheEfficiency::Delta{.active = 0, .passive = 0, .large_active = -10, .large_passive = -40});
+    t.efficiency.apply(
+        window, FileCacheEfficiency::Delta::dismiss(10, 40, /*large=*/true) + FileCacheEfficiency::Delta::enroll(10, 40, /*large=*/false));
 
     t.advance(W);
     auto snapshot = t.efficiency.getSnapshot();
