@@ -165,8 +165,8 @@ CREATE WORKLOAD all SETTINGS max_concurrent_threads = 100
 
 当线程未被阻塞且正在执行 CPU 密集型任务时，就会消耗 CPU 时间。出于调度需要，这里区分两类线程：
 
-* Master thread — 开始执行查询或 merge、变更等后台活动的第一个线程。
-* Worker thread — 可由 master 派生出的额外线程，用于执行 CPU 密集型任务。
+* Master thread — 开始执行查询或合并、变更等后台活动的第一个线程。
+* 工作线程 — 可由 master 派生出的额外线程，用于执行 CPU 密集型任务。
 
 为了获得更好的响应性，可能需要将 master 线程和工作线程使用的资源分开。当查询设置 `max_threads` 的值较高时，大量工作线程很容易独占 CPU 资源。这样一来，新到达的查询就只能阻塞，等待为其 master 线程分配一个 CPU 插槽后才能开始执行。为避免这种情况，可以使用以下配置：
 
@@ -176,7 +176,7 @@ CREATE RESOURCE master_cpu (MASTER THREAD)
 CREATE WORKLOAD all SETTINGS max_concurrent_threads = 100 FOR worker_cpu, max_concurrent_threads = 1000 FOR master_cpu
 ```
 
-这将对 master 线程和 worker 线程分别设置限制。即使 100 个 worker CPU 插槽全都处于忙碌状态，只要还有可用的 master CPU 插槽，新查询就不会被阻塞。它们将先以单线程开始执行。之后，如果 worker CPU 插槽可用，此类查询就可以扩展并派生出 worker 线程。另一方面，这种方法不会将插槽总数限制在 CPU 处理器数量以内，而运行过多并发线程会影响性能。
+这将对 master 线程和工作线程分别设置限制。即使 100 个 worker CPU 插槽全都处于忙碌状态，只要还有可用的 master CPU 插槽，新查询就不会被阻塞。它们将先以单线程开始执行。之后，如果 worker CPU 插槽可用，此类查询就可以扩展并派生出工作线程。另一方面，这种方法不会将插槽总数限制在 CPU 处理器数量以内，而运行过多并发线程会影响性能。
 
 限制 master 线程的并发度，并不会限制并发查询的数量。CPU 插槽可能会在查询执行过程中途被释放，然后被其他线程重新获取。例如，在 master 线程并发限制为 2 的情况下，4 个并发查询仍然可以全部并行执行。在这种情况下，每个查询将获得一个 CPU 处理器 50% 的处理能力。要限制并发查询的数量，应使用单独的逻辑，而工作负载目前尚不支持这一点。
 
@@ -199,8 +199,10 @@ CPU 调度目前尚不支持合并和变更。
 
 为了让工作负载获得公平的资源分配，需要在查询执行期间进行抢占和缩容。可通过 `cpu_slot_preemption` 服务器设置启用抢占。如果启用，每个线程都会定期续用其 CPU 插槽 (根据 `cpu_slot_quantum_ns` 服务器设置) 。如果 CPU 过载，这种续用可能会阻塞执行。当执行被阻塞较长时间时 (参见 `cpu_slot_preemption_timeout_ms` 服务器设置) ，查询会缩容，并且并发运行的线程数会动态减少。请注意，工作负载之间的 CPU 时间公平性可以得到保证，但在同一工作负载内部，不同查询之间的公平性在某些边缘情况下可能无法保证。
 
+线程持有 CPU 插槽时并不总是在使用 CPU，但默认情况下，即使线程未在使用 CPU，插槽也会一直被占用——因此即便 CPU 处于空闲状态，其他查询也无法使用它。启用 `cpu_slot_parking` 服务器设置后，线程可以在某些不占用 CPU 的等待期间释放 (“停放”) 其 CPU 插槽，并在恢复 CPU 工作时重新获取插槽。这些等待包括：无任务可运行的空闲工作线程、等待远程或异步数据源的线程、正在从存储拉取数据的已缓存读取，以及因读取带宽限流而暂停的线程。并非所有非 CPU 等待都会释放插槽，例如普通的本地文件读取就不会。这样，在某个查询停滞期间，其他查询便可利用释放出来的 CPU 容量，从而在过载情况下提升 CPU 利用率并降低查询延迟。仅当 `cpu_slot_preemption` 已启用，且由单个 CPU 资源同时定义 `MASTER THREAD` 和 `WORKER THREAD` (如上文 `CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)` 示例所示) 时，停放机制才会生效；在其他配置下则不起作用。
+
 <Warning>
-  Slot 调度提供了一种控制[查询并发](/zh/reference/settings/session-settings/max-threads#max_threads)的方法，但除非将服务器设置 `cpu_slot_preemption` 设为 `true`，否则无法保证 CPU 时间分配的公平性；否则，只能基于竞争工作负载之间获得 CPU 插槽 分配次数的多少来实现公平。这并不意味着各方获得的 CPU 秒数相同，因为在没有抢占的情况下，CPU 插槽 可能会被无限期占用。线程会在开始时获取一个 slot，并在工作完成后释放它。
+  插槽调度提供了一种控制[查询并发度](/zh/reference/settings/session-settings/max-threads#max_threads)的方式，但除非将服务器设置 `cpu_slot_preemption` 设为 `true`，否则无法保证 CPU 时间的公平分配；此时，公平性仅基于竞争工作负载之间 CPU 插槽的分配次数来实现。这并不意味着各工作负载获得的 CPU 秒数相等，因为在没有抢占的情况下，CPU 插槽可能被无限期持有。线程在开始时获取插槽，并在工作完成后将其释放。
 </Warning>
 
 <Note>

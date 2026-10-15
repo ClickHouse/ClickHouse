@@ -3,7 +3,7 @@ slug: /cloud/managed-postgres/monitoring/metrics
 sidebarTitle: '指标参考'
 title: 'ClickHouse Managed Postgres 指标参考'
 description: 'ClickHouse Managed Postgres Prometheus 端点提供的完整指标列表'
-keywords: ['Managed Postgres', '指标', 'Prometheus', '参考', '可观测性']
+keywords: ['Managed Postgres', '指标', 'Prometheus', '参考', '可观测性', '等待事件', '锁等待']
 doc_type: 'reference'
 ---
 
@@ -26,7 +26,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 | `postgres_service`      | Postgres 服务 ID |
 | `postgres_service_name` | Postgres 服务名称  |
 
-有些指标还会添加一个标记，用于表示其细分维度 (例如 CPU 指标中的 `mode`、连接中的 `state`，以及数据库大小中的 `database`) 。这些都会在对应的各项指标中列出。
+有些指标还会添加一个标记，用于表示其细分维度 (例如 CPU 指标中的 `mode`、连接中的 `state`、数据库大小中的 `database`，以及等待事件中的 `wait`) 。这些都会在对应的各项指标中列出。
 
 ## 信息指标 {#information-metric}
 
@@ -119,10 +119,30 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 | `PostgresServer_CacheHitRatio`     | gauge |            | 缓冲区缓存命中率：以百分比表示由缓存提供的块数占访问块总数的比例。                  |
 | `PostgresServer_DatabaseSizeBytes` | gauge | `database` | 每个数据库的磁盘大小，单位为字节。包括默认的 `postgres` 数据库以及任何用户创建的数据库。 |
 
+## 等待事件 {#wait-events}
+
+这些 Gauge 指标来自 ClickHouse Managed Postgres 每 30 秒在主节点上采集的等待样本。它们与
+[查询洞察中的等待图表](/zh/products/managed-postgres/monitoring/query-insights#wait-charts)基于相同的样本。
+只有存在可报告的数据时，才会出现相应的数据系列：空闲的
+服务不会有等待数据系列，而 `PostgresServer_LockWaitMaxSeconds`
+仅在有会话被锁阻塞时才会出现。
+
+| 指标                                    | 类型    | 额外标记   | 描述                                                                                                                            |
+| ------------------------------------- | ----- | ------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| `PostgresServer_ActiveSessionsByWait` | gauge | `wait` | 处于各等待事件中的活跃会话数，取报告了该事件的最近样本的平均值。`wait` 表示等待事件，格式为 `type:event`，例如 `Lock:relation` 或 `IO:WalSync`；对于正在运行且没有等待事件的会话，其值为 `None`。 |
+| `PostgresServer_LockWaitMaxSeconds`   | gauge |        | 会话被锁阻塞的最长时间，单位为秒。                                                                                                             |
+
+要统计被锁阻塞的会话数，请对 `Lock` 类等待事件求和：
+
+```promql
+sum by (postgres_service_name) (PostgresServer_ActiveSessionsByWait{wait=~"Lock:.*"})
+```
+
 ## 相关页面 {#related}
 
 * [Prometheus 端点] — 配置、身份验证和抓取
 * [仪表板](/zh/products/managed-postgres/monitoring/dashboard) — Cloud Console 内置图表
+* [查询洞察](/zh/products/managed-postgres/monitoring/query-insights#wait-charts) — Cloud Console 中的等待图表和 Waits 表
 * [OpenAPI 指南](/zh/products/managed-postgres/openapi) — 创建 API key
   以及查询组织和服务 ID
 

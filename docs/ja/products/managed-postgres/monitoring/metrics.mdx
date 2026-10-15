@@ -3,7 +3,7 @@ slug: /cloud/managed-postgres/monitoring/metrics
 sidebarTitle: 'メトリクス リファレンス'
 title: 'ClickHouse Managed Postgres メトリクス リファレンス'
 description: 'ClickHouse Managed Postgres Prometheus エンドポイントで公開されるメトリクスの完全な一覧'
-keywords: ['managed postgres', 'メトリクス', 'prometheus', 'reference', 'オブザーバビリティ']
+keywords: ['managed postgres', 'メトリクス', 'prometheus', 'reference', 'オブザーバビリティ', '待機イベント', 'ロック待機']
 doc_type: 'reference'
 ---
 
@@ -27,8 +27,8 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 | `postgres_service_name` | Postgres service名   |
 
 一部のメトリクスには、分類する次元を表すラベルも追加されます (例:
-CPUメトリクスの`mode`、connectionsの`state`、データベース
-サイズの`database`) 。これらは各メトリクスの説明に併記されています。
+CPUメトリクスの`mode`、接続の`state`、データベース
+サイズの`database`、待機イベントの`wait`) 。これらは各メトリクスの説明に併記されています。
 
 ## 情報メトリクス {#information-metric}
 
@@ -119,10 +119,30 @@ CPU使用率をパーセンテージで計算するには、
 | `PostgresServer_CacheHitRatio`     | gauge |            | バッファcacheヒット率。アクセスされたblocks全体に占める、cacheから提供されたblocksの割合を百分率で示します。      |
 | `PostgresServer_DatabaseSizeBytes` | gauge | `database` | 各データベースのディスクサイズ (バイト単位) 。デフォルトの `postgres` と、ユーザーが作成したすべてのデータベースを含みます。 |
 
+## 待機イベント {#wait-events}
+
+ClickHouse Managed Postgres がプライマリ上で 30 秒ごとに取得する待機サンプルに基づく Gauge です。これらは
+[クエリインサイトの待機チャート](/ja/products/managed-postgres/monitoring/query-insights#wait-charts)のデータ元と同じサンプルです。
+系列は報告すべき内容がある間のみ表示されます。アイドル状態の
+サービスには待機系列がなく、`PostgresServer_LockWaitMaxSeconds`
+はセッションがロック待ちでブロックされている間のみ表示されます。
+
+| メトリクス                                 | 種別     | 追加ラベル  | 説明                                                                                                                                                          |
+| ------------------------------------- | ----- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PostgresServer_ActiveSessionsByWait` | gauge | `wait` | 待機イベントごとのアクティブなセッション数で、そのイベントが報告された直近のサンプルの平均値です。`wait` は `type:event` 形式の待機イベント (例: `Lock:relation` や `IO:WalSync`) で、待機イベントなしで実行中のセッションの場合は `None` になります。 |
+| `PostgresServer_LockWaitMaxSeconds`   | gauge |        | セッションがロック待ちでブロックされている最長時間 (秒) です。                                                                                                                           |
+
+ロック待ちでブロックされているセッション数を求めるには、`Lock` 待機イベントを合計します:
+
+```promql
+sum by (postgres_service_name) (PostgresServer_ActiveSessionsByWait{wait=~"Lock:.*"})
+```
+
 ## 関連ページ {#related}
 
 * [Prometheus エンドポイント] — 設定、認証、スクレイピング
 * [ダッシュボード](/ja/products/managed-postgres/monitoring/dashboard) — 組み込みのクラウドコンソールのチャート
+* [クエリインサイト](/ja/products/managed-postgres/monitoring/query-insights#wait-charts) — クラウドコンソールの待機チャートと Waits テーブル
 * [OpenAPI ガイド](/ja/products/managed-postgres/openapi) — API key の作成
   および organization ID と service ID の確認
 

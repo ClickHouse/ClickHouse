@@ -152,9 +152,9 @@ SELECT count() FROM my_table WHERE value = 13 SETTINGS workload = 'development'
 
 É possível atribuir uma configuração `workload` a atividades em segundo plano. Merges e mutações usam as configurações do servidor `merge_workload` e `mutation_workload`, respectivamente. Esses valores também podem ser substituídos para tabelas específicas usando as configurações do MergeTree `merge_workload` e `mutation_workload`.
 
-## Escalonamento de CPU {#cpu_scheduling}
+## Agendamento de CPU {#cpu_scheduling}
 
-Para habilitar o escalonamento de CPU para cargas de trabalho, crie um recurso de CPU e defina um limite para o número de threads concorrentes:
+Para habilitar o agendamento de CPU para cargas de trabalho, crie um recurso de CPU e defina um limite para o número de threads concorrentes:
 
 ```sql
 CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)
@@ -165,7 +165,7 @@ Quando o servidor ClickHouse executa muitas consultas simultâneas com [múltipl
 
 O tempo de CPU é consumido pelas threads quando elas não estão bloqueadas e executam tarefas intensivas em CPU. Para fins de agendamento, distinguem-se dois tipos de threads:
 
-* Thread principal — a primeira thread que começa a trabalhar em uma consulta ou em uma atividade em segundo plano, como um merge ou uma mutação.
+* Thread principal — a primeira thread que começa a trabalhar em uma consulta ou em uma atividade em segundo plano, como uma mesclagem ou uma mutação.
 * Thread de trabalho — as threads adicionais que a thread principal pode gerar para executar tarefas intensivas em CPU.
 
 Pode ser desejável usar recursos separados para threads principais e threads de trabalho para obter melhor capacidade de resposta. Um número elevado de threads de trabalho pode facilmente monopolizar os recursos de CPU quando são usados valores altos da configuração de consulta `max_threads`. Nesse caso, as consultas recebidas precisam ficar bloqueadas e aguardar um slot de CPU para que suas threads principais iniciem a execução. Para evitar isso, a configuração a seguir pode ser usada:
@@ -176,9 +176,9 @@ CREATE RESOURCE master_cpu (MASTER THREAD)
 CREATE WORKLOAD all SETTINGS max_concurrent_threads = 100 FOR worker_cpu, max_concurrent_threads = 1000 FOR master_cpu
 ```
 
-Isso criará limites separados para threads master e worker. Mesmo que todos os 100 slots de CPU de worker estejam ocupados, novas consultas não serão bloqueadas enquanto houver slots de CPU de master disponíveis. Elas iniciarão a execução com uma thread. Depois, se slots de CPU de worker ficarem disponíveis, essas consultas poderão escalar e criar suas threads de worker. Por outro lado, essa abordagem não relaciona o número total de slots ao número de processadores de CPU, e executar threads concorrentes em excesso afetará o desempenho.
+Isso criará limites separados para threads principais e de trabalho. Mesmo que todos os 100 slots de CPU de worker estejam ocupados, novas consultas não serão bloqueadas enquanto houver slots de CPU de master disponíveis. Elas iniciarão a execução com uma thread. Depois, se slots de CPU de worker ficarem disponíveis, essas consultas poderão escalar e criar suas threads de trabalho. Por outro lado, essa abordagem não relaciona o número total de slots ao número de processadores de CPU, e executar threads concorrentes em excesso afetará o desempenho.
 
-Limitar a concorrência das threads master não limitará o número de consultas concorrentes. Os slots de CPU podem ser liberados no meio da execução da consulta e readquiridos por outras threads. Por exemplo, 4 consultas concorrentes com limite de 2 threads master concorrentes podem ser executadas em paralelo. Nesse caso, cada consulta receberá 50% de um processador de CPU. Uma lógica separada deve ser usada para limitar o número de consultas concorrentes, e isso atualmente não é compatível com cargas de trabalho.
+Limitar a concorrência das threads principais não limitará o número de consultas concorrentes. Os slots de CPU podem ser liberados no meio da execução da consulta e readquiridos por outras threads. Por exemplo, 4 consultas concorrentes com limite de 2 threads principais concorrentes podem ser executadas em paralelo. Nesse caso, cada consulta receberá 50% de um processador de CPU. Uma lógica separada deve ser usada para limitar o número de consultas concorrentes, e isso atualmente não é compatível com cargas de trabalho.
 
 Limites separados de concorrência de threads podem ser usados para cargas de trabalho:
 
@@ -195,12 +195,14 @@ Este exemplo de configuração fornece pools independentes de slots de CPU para 
 
 Para excluir uma consulta do agendamento de CPU, defina a configuração de consulta [use&#95;concurrency&#95;control](/pt-BR/reference/settings/session-settings/use#use_concurrency_control) como 0.
 
-O agendamento de CPU ainda não é compatível com merges e mutações.
+O agendamento de CPU ainda não é compatível com mesclagens e mutações.
 
 Para fornecer alocações justas para as cargas de trabalho, é necessário realizar preempção e redução de escala durante a execução da consulta. A preempção é habilitada com a configuração de servidor `cpu_slot_preemption`. Se ela estiver habilitada, cada thread renova periodicamente seu slot de CPU (de acordo com a configuração de servidor `cpu_slot_quantum_ns`). Essa renovação pode bloquear a execução se a CPU estiver sobrecarregada. Quando a execução fica bloqueada por muito tempo (consulte a configuração de servidor `cpu_slot_preemption_timeout_ms`), a consulta reduz o número de threads em execução, que diminui dinamicamente. Observe que a distribuição justa de tempo de CPU é garantida entre cargas de trabalho, mas, entre consultas dentro da mesma carga de trabalho, isso pode falhar em alguns casos extremos.
 
+Enquanto uma thread mantém um slot de CPU, ela nem sempre usa a CPU e, por padrão, o slot permanece retido mesmo quando não está em uso — de modo que outras consultas não podem utilizá-lo, ainda que a CPU esteja ociosa. Habilitar a configuração do servidor `cpu_slot_parking` permite que uma thread libere (&quot;estacione&quot;) seu slot de CPU em determinadas esperas em que não está usando a CPU — um worker idle sem tarefa para executar, uma thread aguardando uma fonte remota ou assíncrona, uma leitura armazenada em cache obtendo dados do armazenamento ou uma thread pausada por throttling de largura de banda de leitura — e volte a adquirir um slot ao retomar o trabalho de CPU. Nem toda espera que não envolve CPU libera o slot; uma leitura comum de arquivo local, por exemplo, não o libera. Com isso, outras consultas podem usar a capacidade de CPU liberada enquanto uma consulta está parada, o que melhora a utilização da CPU e a latência das consultas em situações de sobrecarga. O estacionamento só se aplica quando `cpu_slot_preemption` está habilitado e um único recurso de CPU define tanto `MASTER THREAD` quanto `WORKER THREAD` (como no exemplo `CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)` acima); em outras configurações, não tem efeito.
+
 <Warning>
-  O agendamento de slots oferece uma forma de controlar a [concorrência de consultas](/pt-BR/reference/settings/session-settings/max-threads#max_threads), mas não garante uma alocação justa do tempo de CPU, a menos que a configuração de servidor `cpu_slot_preemption` esteja definida como `true`; caso contrário, a justiça é fornecida com base no número de alocações de slots de CPU entre cargas de trabalho concorrentes. Isso não implica a mesma quantidade de segundos de CPU porque, sem preempção, um slot de CPU pode ser mantido indefinidamente. Uma thread adquire um slot no início e o libera quando o trabalho é concluído.
+  O agendamento de slots oferece uma forma de controlar a [concorrência de consultas](/pt-BR/reference/settings/session-settings/max-threads#max_threads), mas não garante uma alocação justa de tempo de CPU, a menos que a configuração do servidor `cpu_slot_preemption` esteja definida como `true`; caso contrário, a justiça é baseada no número de alocações de slots de CPU entre as cargas de trabalho concorrentes. Isso não implica uma quantidade igual de segundos de CPU, pois, sem preempção, um slot de CPU pode ser mantido indefinidamente. Uma thread adquire um slot no início e o libera quando o trabalho é concluído.
 </Warning>
 
 <Note>
