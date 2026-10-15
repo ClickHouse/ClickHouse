@@ -48,6 +48,7 @@ with NativeSessionClient() as admin:
 
         admin.query(f"CREATE USER {USER}")
         admin.query(f"GRANT CREATE TEMPORARY TABLE ON *.* TO {USER}")
+        admin.query(f"GRANT TABLE ENGINE ON Memory TO {USER}")
         with NativeSessionClient(user=USER) as client:
             dirty(client)
             admin.query(f"ALTER USER {USER} SETTINGS database = 'system' READONLY")

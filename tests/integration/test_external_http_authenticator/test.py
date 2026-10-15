@@ -172,6 +172,7 @@ def test_reset_session_replays_profile_and_preserves_state_on_failure(started_cl
         "CREATE USER reset_profile_user IDENTIFIED WITH HTTP SERVER 'basic_server' SCHEME 'BASIC'"
     )
     instance.query("GRANT CREATE TEMPORARY TABLE ON *.* TO reset_profile_user")
+    instance.query("GRANT TABLE ENGINE ON Memory TO reset_profile_user")
     try:
         with NativeSessionClient(
             user="reset_profile_user",
