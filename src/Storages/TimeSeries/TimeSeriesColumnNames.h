@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Storages/TimeSeries/TimeSeriesVersion.h>
+#include <Parsers/Prometheus/TimeSeriesVersion.h>
 
 
 namespace DB
@@ -23,7 +23,8 @@ struct TimeSeriesColumnNames
     /// store only non-column tags without the metric name, so reading must handle both cases).
     static constexpr const char * Tags = "tags";
 
-    /// Contains the time range of a time series.
+    /// The "time ranges" table contains the time range of each time series
+    /// (tables of earlier versions kept these columns in the "tags" table):
     static constexpr const char * MinTime = "min_time";
     static constexpr const char * MaxTime = "max_time";
 
