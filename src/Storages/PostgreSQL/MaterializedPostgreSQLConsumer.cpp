@@ -944,7 +944,9 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
             if (!relation_id_to_name.contains(relation_id))
                 relation_id_to_name[relation_id] = table_name;
 
-            if (!isSyncAllowed(relation_id, relation_name))
+            /// `deleted_tables` and `waiting_list` are keyed by the ClickHouse table name, which includes
+            /// the PostgreSQL schema in the multi-schema modes, as for the other message types.
+            if (!isSyncAllowed(relation_id, table_name))
                 return;
 
             auto storage_iter = storages.find(table_name);
