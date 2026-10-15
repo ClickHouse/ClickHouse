@@ -74,6 +74,7 @@ namespace ErrorCodes
     DECLARE(NonZeroUInt64, idle_client_eviction_threads, 4, "Maximum number of threads used to purge idle clients' cache. Only meaningful when `idle_client_ttl_sec` is non-zero.", 0) \
     DECLARE(Bool, expose_prometheus_eviction_metrics, false, "Expose Prometheus metrics for filesystem cache eviction activity (`filesystem_cache_evictions_total` etc.). Off by default. Can be toggled at runtime via `SYSTEM RELOAD CONFIG`.", 0) \
     DECLARE(Bool, expose_prometheus_eviction_metrics_per_user, false, "Additionally expose per-user-id eviction metrics. Requires `expose_prometheus_eviction_metrics`. Cardinality grows with distinct evicting users.", 0) \
+    DECLARE(Bool, use_real_disk_size, false, "Account cached file reservations of this cache in filesystem block-aligned units (an approximation of the physical on-disk size, not the exact allocated size) instead of reserved bytes. This affects `current_size` of this cache. The process-wide `FilesystemCacheSize` metric and the eviction-size profile events sum over all caches, so they uniformly reflect the reservation footprint only when all caches use the same mode. Restart is required to change this setting.", 0) \
     DECLARE(NonZeroUInt64, drop_cache_threads, FILECACHE_DEFAULT_DROP_CACHE_THREADS, "Maximum number of threads used to remove cache keys in parallel on `SYSTEM DROP FILESYSTEM CACHE`. Value 1 means the removal is performed by the query thread alone", 0) \
     DECLARE(UInt64, efficiency_window_sec, 600, "Length of the cache efficiency window in seconds. In each window the cache splits its bytes into active (served from the cache in the window), passive (not served, in file segments with a cache hit in the window) and idle (in file segments with no cache hit in the window). 0 disables the tracking and the `FilesystemCacheEvictedNoHitBytes` event. Takes effect only after a server restart. Only bytes served from the cache count; a read that fills the cache does not. A hit counts the bytes that the cache fills into the read buffer (one buffer, `prefetch_buffer_size` by default, cut at the end of the read), not the bytes that the query decompresses.", 0) \
 
@@ -142,7 +143,14 @@ ColumnsDescription FileCacheSettings::getColumnsDescription()
 
     result.add(
         ColumnDescription(
-            "current_size", std::make_shared<DataTypeUInt64>(), "Current cache size"));
+            "current_size",
+            std::make_shared<DataTypeUInt64>(),
+            "Current cache size: the space currently charged to or held by the cache priority queue. "
+            "It consists of the reserved sizes of the cache file segments plus the space temporarily held "
+            "while a reservation or an eviction is in progress, so it can momentarily exceed the sum over "
+            "the file segments in `system.filesystem_cache`. "
+            "If `use_real_disk_size` is enabled for this cache, the reservations are accounted in filesystem "
+            "block-aligned units instead, so the value approximates the space the cache occupies on disk"));
     result.add(
         ColumnDescription(
             "current_elements_num", std::make_shared<DataTypeUInt64>(), "Current cache elements (file segments) number"));
@@ -230,6 +238,13 @@ void FileCacheSettings::loadFromConfig(
             continue;
         impl->set(key, config.getString(config_prefix + "." + key));
     }
+
+    /// Every setting of the cache is an element this section supports, even if it is absent now:
+    /// some of them are changed later by a configuration reload (see `FileCacheFactory::updateSettingsFromConfig`),
+    /// which does not go through the disk. Look them up, so that a configuration tracking the read keys
+    /// (`ConfigurationWithUsageTracking`, used for a definition of a disk) knows about them as well.
+    for (const auto & setting : impl->all())
+        config.has(config_prefix + "." + setting.getName());
 
     if ((*this)[FileCacheSetting::path].changed)
     {
