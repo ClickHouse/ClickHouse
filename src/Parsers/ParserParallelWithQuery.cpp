@@ -58,7 +58,7 @@ Allows to execute multiple statements in parallel.
 statement1 PARALLEL WITH statement2 [PARALLEL WITH statement3 ...]
 ```
 
-Executes statements `statement1`, `statement2`, `statement3`, ... in parallel with each other. The output of those statements is discarded.
+Executes statements `statement1`, `statement2`, `statement3`, ... in parallel with each other. Only statements that neither return a result set nor expect input data can be combined, see [Restrictions](#restrictions).
 
 Executing statements in parallel may be faster than just a sequence of the same statements in many cases. For example, `statement1 PARALLEL WITH statement2 PARALLEL WITH statement3` is likely to be faster than `statement1; statement2; statement3`.
 
@@ -80,6 +80,22 @@ PARALLEL WITH
 DROP TABLE table2;
 ```
 
+## Restrictions {#restrictions}
+
+Statements such as `CREATE`, `DROP` or `INSERT INTO ... SELECT` can be combined. A statement that returns a result set, such as `SELECT`, or that expects input data is rejected with the `INCORRECT_QUERY` error.
+
+A DDL statement executed [`ON CLUSTER`](/reference/statements/distributed-ddl) or in a [`Replicated`](/reference/engines/database-engines/replicated) database returns a table with its status on each host, so it is rejected as well. It is rejected only after it has been sent to the hosts, so it is executed there anyway. Such a statement returns no result set, and can be combined, if [distributed_ddl_output_mode](/reference/settings/session-settings/distributed-ddl#distributed_ddl_output_mode) is `none` or `none_only_active`, or if [distributed_ddl_task_timeout](/reference/settings/session-settings/distributed-ddl#distributed_ddl_task_timeout) is `0`. With `distributed_ddl_output_mode = 'none'`, the query still waits for the hosts and rethrows an exception from them if any:
+
+```sql
+SET distributed_ddl_output_mode = 'none';
+
+CREATE TABLE table1 ON CLUSTER default (x Int32) ENGINE = MergeTree ORDER BY tuple()
+PARALLEL WITH
+CREATE TABLE table2 ON CLUSTER default (y String) ENGINE = MergeTree ORDER BY tuple();
+```
+
+The statements are not executed atomically: if one of them fails, the statements that have already been executed are not rolled back.
+
 ## Settings {#settings}
 
 Setting [max_threads](/reference/settings/session-settings/max-threads#max_threads) controls how many threads are spawned.
@@ -88,8 +104,7 @@ Setting [max_threads](/reference/settings/session-settings/max-threads#max_threa
 
 The `PARALLEL WITH` clause is a bit similar to [UNION](/reference/statements/select/union), which also executes its operands in parallel. However there are some differences:
 - `PARALLEL WITH` doesn't return any results from executing its operands, it can only rethrow an exception from them if any;
-- `PARALLEL WITH` doesn't require its operands to have the same set of result columns;
-- `PARALLEL WITH` can execute any statements (not just `SELECT`).
+- `PARALLEL WITH` combines statements that neither return a result set nor expect input data, while `UNION` combines `SELECT` queries.
 )DOCS_MD",
         .syntax = R"(
 statement1 PARALLEL WITH statement2 [PARALLEL WITH statement3 ...]
