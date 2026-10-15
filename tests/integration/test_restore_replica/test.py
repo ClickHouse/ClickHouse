@@ -63,9 +63,10 @@ def zk_rmr_with_retries(zk, path):
 
 
 # Retry only when clickhouse-client was refused by this node's own endpoint (the query reached
-# no server); a remote refusal names another address and is re-raised, so nothing is resubmitted.
+# no server); a server-returned refusal is re-raised, so nothing is resubmitted.
 def query_with_connect_retry(node, sql, retries=20, sleep_time=0.5, **kwargs):
     endpoint = f"{node.ip_address}:9000"
+    refusals = (f"Connection refused ({endpoint})", f"Connection refused: {endpoint}")
     for attempt in range(retries):
         try:
             return node.query(sql, **kwargs)
@@ -73,8 +74,8 @@ def query_with_connect_retry(node, sql, retries=20, sleep_time=0.5, **kwargs):
             error = str(ex)
             if (
                 ex.returncode == 210
-                and "Connection refused" in error
-                and endpoint in error
+                and "Received from" not in error
+                and any(refusal in error for refusal in refusals)
                 and attempt + 1 < retries
             ):
                 print(f"Connection refused from {node.name}, retry {attempt + 1}: {ex}")
