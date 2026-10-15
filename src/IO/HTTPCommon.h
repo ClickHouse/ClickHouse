@@ -29,12 +29,13 @@ public:
         const std::string & uri,
         Poco::Net::HTTPResponse::HTTPStatus http_status_,
         const std::string & reason,
-        const std::string & body
-    )
-        : Exception(makeExceptionMessage(code, uri, http_status_, reason, body))
+        const std::string & body,
+        bool hide_body = false)
+        : Exception(makeExceptionMessage(code, uri, http_status_, reason, body, hide_body))
         , http_status(http_status_)
         , response_body(body)
-    {}
+    {
+    }
 
     HTTPException * clone() const override { return new HTTPException(*this); }
     void rethrow() const override { throw *this; } /// NOLINT(bugprone-exception-copy-constructor-throws,cert-err60-cpp)
@@ -52,7 +53,8 @@ private:
         const std::string & uri,
         Poco::Net::HTTPResponse::HTTPStatus http_status,
         const std::string & reason,
-        const std::string & body);
+        const std::string & body,
+        bool hide_body);
 
     const char * name() const noexcept override { return "DB::HTTPException"; }
     const char * className() const noexcept override { return "DB::HTTPException"; }
@@ -85,6 +87,6 @@ std::unique_ptr<HTTPResponseReadBuffer> receiveResponse(
     Poco::Net::HTTPClientSession & session, const Poco::Net::HTTPRequest & request, Poco::Net::HTTPResponse & response, bool allow_redirects);
 
 void assertResponseIsOk(
-    const String & uri, Poco::Net::HTTPResponse & response, ReadBuffer & body, bool allow_redirects = false);
+    const String & uri, Poco::Net::HTTPResponse & response, ReadBuffer & body, bool allow_redirects = false, bool hide_body = false);
 
 }

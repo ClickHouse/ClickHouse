@@ -1,4 +1,5 @@
 #include <IO/HTTPCommon.h>
+#include <Common/maskURIPassword.h>
 
 #include <IO/ReadHelpers.h>
 #include <Server/HTTP/HTTPServerResponse.h>
@@ -89,11 +90,12 @@ std::unique_ptr<HTTPResponseReadBuffer> receiveResponse(
     Poco::Net::HTTPClientSession & session, const Poco::Net::HTTPRequest & request, Poco::Net::HTTPResponse & response, const bool allow_redirects)
 {
     auto body = receiveHTTPResponse(session, response);
-    assertResponseIsOk(request.getURI(), response, *body, allow_redirects);
+    assertResponseIsOk(request.getURI(), response, *body, allow_redirects, request.has("Authorization") || request.has("Cookie"));
     return body;
 }
 
-void assertResponseIsOk(const String & uri, Poco::Net::HTTPResponse & response, ReadBuffer & body, const bool allow_redirects)
+void assertResponseIsOk(
+    const String & uri, Poco::Net::HTTPResponse & response, ReadBuffer & body, const bool allow_redirects, const bool hide_body)
 {
     auto status = response.getStatus();
 
@@ -104,14 +106,13 @@ void assertResponseIsOk(const String & uri, Poco::Net::HTTPResponse & response, 
         || status == Poco::Net::HTTPResponse::HTTP_PARTIAL_CONTENT /// Reading with Range header was successful.
         || (isRedirect(status) && allow_redirects)))
     {
-        int code = status == Poco::Net::HTTPResponse::HTTP_TOO_MANY_REQUESTS
-            ? ErrorCodes::RECEIVED_ERROR_TOO_MANY_REQUESTS
-            : ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
+        int code = status == Poco::Net::HTTPResponse::HTTP_TOO_MANY_REQUESTS ? ErrorCodes::RECEIVED_ERROR_TOO_MANY_REQUESTS
+                                                                             : ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
 
         std::string body_text;
         readStringUntilEOF(body_text, body);
 
-        throw HTTPException(code, uri, status, response.getReason(), body_text);
+        throw HTTPException(code, uri, status, response.getReason(), body_text, hide_body);
     }
 }
 
@@ -120,13 +121,25 @@ Exception HTTPException::makeExceptionMessage(
     const std::string & uri,
     Poco::Net::HTTPResponse::HTTPStatus http_status,
     const std::string & reason,
-    const std::string & body)
+    const std::string & body,
+    bool hide_body)
 {
-    return Exception(code,
+    auto diagnostic_uri = uri;
+    hide_body |= maskURIUserinfo(diagnostic_uri);
+    const bool has_query = maskURIQuery(diagnostic_uri);
+    hide_body |= has_query;
+    /// A remote server can echo credentials in its response. Preserve the body separately
+    /// for structured error handling, but omit it from diagnostics for authenticated requests.
+    return Exception(
+        code,
         "Received error from remote server {}. "
         "HTTP status code: {} '{}', "
         "body length: {} bytes, body: '{}'",
-        uri, static_cast<int>(http_status), reason, body.length(), body);
+        diagnostic_uri,
+        static_cast<int>(http_status),
+        hide_body ? "[HIDDEN]" : reason,
+        body.length(),
+        hide_body ? "[HIDDEN]" : body);
 }
 
 }

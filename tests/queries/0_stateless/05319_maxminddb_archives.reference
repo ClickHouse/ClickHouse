@@ -1,0 +1,16 @@
+A	FR
+1
+A
+Unchanged archives use metadata only
+Both archives refreshed to B
+B
+Archive empty rejected
+Archive ambiguous rejected
+Archive unsafe rejected
+Archive invalid rejected
+Archive oversized rejected
+Archive corrupt rejected
+HTTP exception hides URL credential
+HTTP transport hides reflected URL credential
+A
+A

@@ -70,6 +70,9 @@ DirectKeyValueJoin::DirectKeyValueJoin(std::shared_ptr<TableJoin> table_join_,
     , right_sample_block(right_sample_block_)
     , log(getLogger("DirectKeyValueJoin"))
 {
+    if (auto snapshot = storage->getLookupSnapshot())
+        storage = std::move(snapshot);
+
     if (!table_join->oneDisjunct() ||
         table_join->getOnlyClause().key_names_left.size() != 1 ||
         table_join->getOnlyClause().key_names_right.size() != 1)
