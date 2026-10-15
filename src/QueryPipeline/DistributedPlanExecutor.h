@@ -178,6 +178,8 @@ protected:
     virtual void startStage(const String & stage_name, const DistributedQueryStage & stage) = 0;
     virtual bool waitForStage(const String & stage_name, std::optional<UInt64> timeout_ms) = 0;
 
+    virtual bool waitsForFilterOnlyStages() const { return false; }
+
     void checkCancelled() const;
 
     const UUID unique_query_id;
