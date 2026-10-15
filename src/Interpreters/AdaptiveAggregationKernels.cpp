@@ -377,6 +377,14 @@ void NO_INLINE Aggregator::executeFrozenImpl(
             adaptive.miss_key_sizes.push_back(adaptiveStagedKeyBytes(key).size());
     };
 
+    /// The keys of the rows before `row_begin` (the part of the block aggregated before freezing) are not needed.
+    /// If all keys are const, only row 0 is used.
+    if constexpr (requires { local_find_state.skipRowsBefore(row_begin); })
+    {
+        if (!all_keys_are_const)
+            local_find_state.skipRowsBefore(row_begin);
+    }
+
     if (all_keys_are_const)
     {
         auto && key_holder = local_find_state.getKeyHolder(0, scratch_pool);
@@ -468,6 +476,14 @@ void NO_INLINE Aggregator::executeFrozenImpl(
         }
     };
     const bool bypass_local_probe = frozen.bypass_local_probe;
+
+    /// The keys of the rows before `row_begin` (the part of the block aggregated before freezing) are not needed.
+    /// If all keys are const, only row 0 is used.
+    if constexpr (requires { local_find_state.skipRowsBefore(row_begin); })
+    {
+        if (!all_keys_are_const)
+            local_find_state.skipRowsBefore(row_begin);
+    }
 
     if (all_keys_are_const)
     {

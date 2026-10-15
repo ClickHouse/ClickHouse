@@ -151,6 +151,7 @@ public:
         scatter_partitions = partitions;
     }
 
+    /// Sorts the main streams, or only the totals stream if `sort_totals` is set.
     static void fullSortStreams(
         QueryPipelineBuilder & pipeline,
         const Settings & sort_settings,
@@ -158,6 +159,7 @@ public:
         UInt64 limit_,
         bool skip_partial_sort = false,
         TopKThresholdTrackerPtr threshold_tracker = nullptr,
+        bool sort_totals = false,
         const QueryResultPreviewsSettings * query_result_previews_settings = nullptr);
 
     void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;
@@ -201,6 +203,7 @@ private:
         const SortDescription & result_sort_desc,
         UInt64 limit_,
         TopKThresholdTrackerPtr threshold_tracker,
+        bool sort_totals,
         const QueryResultPreviewsSettings * query_result_previews_settings);
 
     void mergingSorted(
