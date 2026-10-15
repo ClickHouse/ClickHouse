@@ -375,21 +375,20 @@ struct AdaptiveAggregationProducer
         /// size as a lower bound. This excludes staged records, other workers' memory and allocations owned
         /// directly by aggregate states, matching `AggregatedDataVariants::allocatedBytes`.
         size_t estimated_table_bytes_per_key;
-        size_t absorbed_rows = 0;
+        size_t sampled_hits = 0;
         size_t sampled_rows = 0;
         bool bypass_local_probe = false;
 
-        /// Records the rows represented by local lookups and returns whether per-row probing was just bypassed.
-        /// Constant-key blocks retain a single lookup after the sample ends, so their hits continue to count
-        /// toward state growth while the hit-rate sample stays closed.
+        /// Records the rows represented by local lookups and the hits among them, and returns whether per-row probing
+        /// was just bypassed. Nothing is recorded once it is.
         bool recordLocalProbeResults(size_t hits, size_t probe_rows)
         {
-            absorbed_rows += hits;
             if (bypass_local_probe)
                 return false;
+            sampled_hits += hits;
             sampled_rows += probe_rows;
             if (sampled_rows >= adaptive_bypass_sample_rows
-                && absorbed_rows * adaptive_bypass_hit_rate_inverse < sampled_rows)
+                && sampled_hits * adaptive_bypass_hit_rate_inverse < sampled_rows)
             {
                 bypass_local_probe = true;
                 return true;
