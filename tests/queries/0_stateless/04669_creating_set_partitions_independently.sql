@@ -18,6 +18,9 @@ SET max_block_size = 6540;
 -- so the assertions below match plain `Pre-distinct: 1` lines.
 SET explain_query_plan_default = 'legacy';
 
+-- Keep the many `INSERT ... SELECT` setup statements synchronous; async inserts only slow this test down.
+SET async_insert = 0;
+
 -- { echo }
 
 -- partition key equals the subquery output column

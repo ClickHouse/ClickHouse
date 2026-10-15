@@ -24,6 +24,9 @@ public:
     static UInt128 getHash(const SerializationPtr & nested_, bool use_default_null_map_);
     static SerializationPtr create(const SerializationPtr & nested_, bool use_default_null_map_ = false);
 
+    /// Whether a resolved subcolumn is really the null map, which its name alone cannot tell.
+    static bool isNullMapSubcolumn(const SubstreamPath & path);
+
     bool supportsPooling() const override { return nested->supportsPooling(); }
 
     const SerializationPtr & getNested() const { return nested; }

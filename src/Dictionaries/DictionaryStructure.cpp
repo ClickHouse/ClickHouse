@@ -408,7 +408,7 @@ void DictionaryStructure::parseRangeConfiguration(const Poco::Util::AbstractConf
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Dictionary structure 'range_min' and 'range_max' should have same type, "
-            "'range_min' type: {},"
+            "'range_min' type: {}, "
             "'range_max' type: {}",
             range_min_type->getName(),
             range_max_type->getName());

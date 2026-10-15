@@ -14,7 +14,7 @@
 -- and then the query results.
 
 SET enable_analyzer = 1;
-SET allow_experimental_correlated_subqueries = 1;
+SET allow_correlated_subqueries = 1;
 SET correlated_subqueries_substitute_equivalent_expressions = 1;
 SET explain_query_plan_default = 'legacy';
 SET query_plan_optimize_join_order_randomize = 0;
@@ -23,7 +23,7 @@ SET correlated_subqueries_default_join_kind = 'left';
 SET enable_parallel_replicas = 0;
 -- Pinned because filter-to-Prewhere relocation, filter merging, and the join-order conversion
 -- change which step descriptions are visible to the plan probes below.
-SET query_plan_optimize_prewhere = 1, optimize_move_to_prewhere = 1;
+SET optimize_move_to_prewhere = 1;
 SET query_plan_merge_filters = 1;
 SET query_plan_optimize_join_order_limit = 10;
 -- Pinned off to isolate the guarded float case 12 (and case 24 in part 2) from issue #116358: under the default,
