@@ -431,6 +431,17 @@ UInt64 ColumnStatistics::getNullCount() const
     return 0;
 }
 
+std::optional<Float64> ColumnStatistics::getAvgStringBytes() const
+{
+    if (auto it = stats.find(StatisticsType::Basic); it != stats.end())
+    {
+        const auto & basic = assert_cast<const StatisticsBasic &>(*it->second);
+        if (basic.hasStringLengthAvg())
+            return static_cast<Float64>(basic.getStringLengthAvg());
+    }
+    return std::nullopt;
+}
+
 UInt64 ColumnStatistics::getNonNullRowCount() const
 {
     if (hasNullCount())
@@ -495,8 +506,6 @@ Estimate ColumnStatistics::getEstimate() const
             info.estimated_null_count = basic_stats.getNullCount();
         if (basic_stats.hasDefaultCount())
             info.estimated_default_count = basic_stats.getDefaultCount();
-        if (basic_stats.hasStringLengthAvg())
-            info.estimated_avg_string_bytes = static_cast<Float64>(basic_stats.getStringLengthAvg());
     }
     else if (auto minmax_it = stats.find(StatisticsType::MinMax); minmax_it != stats.end())
     {
