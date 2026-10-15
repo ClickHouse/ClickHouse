@@ -95,7 +95,7 @@ const ActionsDAG::Node & addMasked(
 bool isPaddedRecomputation(const MergedPlanDAG & merged, const LazyFrontier & frontier, const ActionsDAG::Node * node)
 {
     return (node->type == ActionsDAG::ActionType::FUNCTION || node->type == ActionsDAG::ActionType::COLUMN)
-        && !WhichDataType(node->result_type).isFunction() && frontier.at(node).above == Placement::Above::Recomputed
+        && !WhichDataType(node->result_type).isFunction() && isComputedAbove(frontier.at(node))
         && merged.getNearestPaddedSide(node) != nullptr;
 }
 
@@ -116,7 +116,7 @@ NodeSet findMaskedValues(const MergedPlanDAG & merged, const LazyFrontier & fron
     std::vector<const ActionsDAG::Node *> stack(merged.getOutputs().begin(), merged.getOutputs().end());
     for (const auto & node : merged.getDAG().getNodes())
     {
-        if (frontier.at(&node).above != Placement::Above::Recomputed)
+        if (!isComputedAbove(frontier.at(&node)))
             continue;
         for (const auto * child : node.children)
             if (readsAsJoinLeftIt(merged, &node, child))
@@ -127,7 +127,7 @@ NodeSet findMaskedValues(const MergedPlanDAG & merged, const LazyFrontier & fron
     {
         const auto * node = stack.back();
         stack.pop_back();
-        if (frontier.at(node).above != Placement::Above::Recomputed || !masked.insert(node).second)
+        if (node->type == ActionsDAG::ActionType::INPUT || !isComputedAbove(frontier.at(node)) || !masked.insert(node).second)
             continue;
         if (node->type == ActionsDAG::ActionType::ALIAS)
             stack.push_back(node->children.front());
@@ -436,7 +436,7 @@ public:
                 continue;
 
             const auto it = frontier.placement.find(&node);
-            if (kept_by_read.contains(&node) || (it != frontier.placement.end() && it->second.above == Placement::Above::Crossing))
+            if (kept_by_read.contains(&node) || (it != frontier.placement.end() && it->second == Placement::Carried))
                 carried_values.push_back(&node);
         }
 
@@ -700,8 +700,7 @@ private:
                 std::vector<size_t> unneeded;
                 for (size_t position = 0; position < inputs.size(); ++position)
                 {
-                    const auto placed = frontier.at(inputs[position]);
-                    if (!placed.computed_below && placed.above != Placement::Above::Crossing)
+                    if (!isComputedBelow(frontier.at(inputs[position])))
                         unneeded.push_back(position);
                 }
 
@@ -717,7 +716,7 @@ private:
                         ++next_readable;
 
                     const auto * input = inputs[position];
-                    if (frontier.at(input).above != Placement::Above::LazyRead)
+                    if (!isComputedAbove(frontier.at(input)))
                         continue;
 
                     if (is_readable)
@@ -738,12 +737,12 @@ private:
             for (const auto * input : merged.sources[source].inputs)
             {
                 const auto placed = frontier.at(input);
-                if (placed.above == Placement::Above::LazyRead && !placed.computed_below)
+                if (placed == Placement::Deferred)
                     candidates.push_back(input);
                 else
                 {
                     lazy.eager_names.insert(input->result_name);
-                    if (placed.above == Placement::Above::LazyRead)
+                    if (placed == Placement::Recomputed)
                         kept_by_read.insert(input);
                 }
             }
@@ -787,8 +786,7 @@ private:
             bool is_any_needed_below = false;
             for (const auto * input : side_inputs)
             {
-                const auto placed = frontier.at(input);
-                if (placed.computed_below || placed.above == Placement::Above::Crossing || kept_by_read.contains(input))
+                if (isComputedBelow(frontier.at(input)) || kept_by_read.contains(input))
                 {
                     is_any_needed_below = true;
                     break;

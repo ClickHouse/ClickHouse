@@ -59,10 +59,10 @@ const ActionsDAG::Node * findNodeContaining(const MergedPlanDAG & merged, const 
     return nullptr;
 }
 
-size_t countCrossing(const LazyFrontier & frontier)
+size_t countCarried(const LazyFrontier & frontier)
 {
     return std::ranges::count_if(
-        frontier.placement, [](const auto & entry) { return entry.second.above == Placement::Above::Crossing; });
+        frontier.placement, [](const auto & entry) { return entry.second == Placement::Carried; });
 }
 
 size_t outputPosition(const MergedPlanDAG & merged, const String & name)
@@ -111,8 +111,7 @@ TEST(LazyFrontier, ReusesAValueTheFilterAlreadyUsedWithoutAJoin)
     const auto * sum_in_merged = findNodeContaining(merged, "plus(");
     ASSERT_TRUE(sum_in_merged != nullptr);
     EXPECT_FALSE(merged.hasJoinAbove(sum_in_merged));
-    EXPECT_EQ(frontier.at(sum_in_merged).above, Placement::Above::Crossing);
-    EXPECT_TRUE(frontier.at(sum_in_merged).computed_below);
+    EXPECT_EQ(frontier.at(sum_in_merged), Placement::Carried);
 
     /// The heavy column is still read for the surviving rows only, and `b` is not read a second time.
     const auto * a_input = merged.sources.front().inputs[0];
@@ -155,17 +154,17 @@ TEST(LazyFrontier, RecomputesTheSameValueBelowAJoin)
 
     const auto * sum_in_merged = findNodeContaining(merged, "plus(");
     ASSERT_TRUE(sum_in_merged != nullptr);
-    EXPECT_EQ(frontier.at(sum_in_merged).above, Placement::Above::Recomputed);
-    EXPECT_TRUE(frontier.at(sum_in_merged).computed_below);
+    EXPECT_EQ(frontier.at(sum_in_merged), Placement::Recomputed);
 
-    /// Which means reading `b` again for the surviving rows, rather than carrying the sum past the join.
+    /// Which means reading `b` again for the surviving rows, rather than carrying the sum past the join: `b` is computed
+    /// below, for the sum there, and again above.
     const auto * b_input = merged.sources.front().inputs[1];
-    EXPECT_EQ(frontier.at(b_input).above, Placement::Above::LazyRead);
+    EXPECT_EQ(frontier.at(b_input), Placement::Recomputed);
     EXPECT_EQ(collectLazyReads(merged, frontier)[0].size(), 2u);
 
     /// Only the sort key crosses.
-    EXPECT_EQ(countCrossing(frontier), 1u);
-    EXPECT_EQ(frontier.at(merged.sources.front().inputs[0]).above, Placement::Above::Crossing);
+    EXPECT_EQ(countCarried(frontier), 1u);
+    EXPECT_EQ(frontier.at(merged.sources.front().inputs[0]), Placement::Carried);
 }
 
 /// A value that does not answer the same twice crosses instead, even where the rule would rather
@@ -203,9 +202,8 @@ TEST(LazyFrontier, CarriesANonDeterministicValueBelowAJoin)
     const auto * mixed_in_merged = findNodeContaining(merged, "plus(");
     ASSERT_TRUE(random_in_merged != nullptr);
     ASSERT_TRUE(mixed_in_merged != nullptr);
-    EXPECT_EQ(frontier.at(random_in_merged).above, Placement::Above::Crossing);
-    EXPECT_TRUE(frontier.at(random_in_merged).computed_below);
-    EXPECT_EQ(frontier.at(mixed_in_merged).above, Placement::Above::Recomputed);
+    EXPECT_EQ(frontier.at(random_in_merged), Placement::Carried);
+    EXPECT_EQ(frontier.at(mixed_in_merged), Placement::Recomputed);
 
     /// The heavy column has nothing to do with it and is still read for the surviving rows only.
     const auto * heavy_input = merged.sources.front().inputs[2];
@@ -231,7 +229,7 @@ TEST(LazyFrontier, KeepsEverythingEagerWithoutALazySource)
 
     /// Every column crosses the LIMIT as a column of its own, computed below it as before.
     for (const auto * output : merged.getOutputs())
-        EXPECT_EQ(frontier.at(output).above, Placement::Above::Crossing);
+        EXPECT_EQ(frontier.at(output), Placement::Carried);
 }
 
 /// A non-deterministic value is computed where the plan computes it and crosses the LIMIT as a column, even where
@@ -259,8 +257,7 @@ TEST(LazyFrontier, ComputesAnUnusedNonDeterministicValueWhereThePlanDoes)
 
     const auto * random_in_merged = findNodeContaining(merged, "rand64");
     ASSERT_TRUE(random_in_merged != nullptr);
-    EXPECT_EQ(frontier.at(random_in_merged).above, Placement::Above::Crossing);
-    EXPECT_TRUE(frontier.at(random_in_merged).computed_below);
+    EXPECT_EQ(frontier.at(random_in_merged), Placement::Carried);
 }
 
 /// Values a join can pad: `a + b` and `intDiv(heavy, b)` are computed from one side of an outer join,
@@ -303,16 +300,15 @@ TEST(LazyFrontier, RecomputesAGatedValueOnlyUnderAMaskAndWhenItCannotThrow)
     /// With no mask, neither can be recomputed: both are computed below the LIMIT, where the join pads them.
     {
         const auto frontier = chooseLazyFrontier(merged, sort_keys, {true});
-        EXPECT_EQ(frontier.at(sum_in_merged).above, Placement::Above::Crossing);
-        EXPECT_EQ(frontier.at(quotient_in_merged).above, Placement::Above::Crossing);
+        EXPECT_EQ(frontier.at(sum_in_merged), Placement::Carried);
+        EXPECT_EQ(frontier.at(quotient_in_merged), Placement::Carried);
     }
 
-    /// With a mask, the sum is recomputed, reading `b` lazily, and the division still crosses, since it
+    /// With a mask, the sum is computed above only, reading `b` lazily, and the division still crosses, since it
     /// throws for a padded row where `b` is zero.
     {
         const auto frontier = chooseLazyFrontier(merged, sort_keys, {true}, {&padded_side});
-        EXPECT_EQ(frontier.at(sum_in_merged).above, Placement::Above::Recomputed);
-        EXPECT_EQ(frontier.at(quotient_in_merged).above, Placement::Above::Crossing);
-        EXPECT_TRUE(frontier.at(quotient_in_merged).computed_below);
+        EXPECT_EQ(frontier.at(sum_in_merged), Placement::Deferred);
+        EXPECT_EQ(frontier.at(quotient_in_merged), Placement::Carried);
     }
 }

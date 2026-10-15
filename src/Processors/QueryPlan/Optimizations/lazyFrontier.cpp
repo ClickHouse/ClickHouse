@@ -14,16 +14,12 @@ Placement LazyFrontier::at(const ActionsDAG::Node * node) const
     if (const auto it = placement.find(node); it != placement.end())
         return it->second;
 
-    return {};
+    return Placement::None;
 }
 
 bool LazyFrontier::defersAnything() const
 {
-    return std::ranges::any_of(placement, [](const auto & entry)
-    {
-        const auto above = entry.second.above;
-        return above == Placement::Above::LazyRead || above == Placement::Above::Recomputed;
-    });
+    return std::ranges::any_of(placement, [](const auto & entry) { return isComputedAbove(entry.second); });
 }
 
 namespace
@@ -117,15 +113,28 @@ public:
     {
         /// Stopping at what is marked already is what keeps this linear over the whole run: a value is
         /// marked once, and only a value being marked has its own children looked at.
-        const auto is_marked = [this](const ActionsDAG::Node * node) { return frontier.at(node).computed_below; };
+        const auto is_marked = [this](const ActionsDAG::Node * node) { return isComputedBelow(frontier.at(node)); };
 
         for (const auto * node : findReachableNodes(roots, is_marked))
-            frontier.placement[node].computed_below = true;
+        {
+            auto & placed = frontier.placement[node];
+            if (placed == Placement::None)
+                placed = Placement::Below;
+            else if (placed == Placement::Deferred)
+                placed = Placement::Recomputed;
+        }
+    }
+
+    /// The branch above the `LIMIT` has the value of its own: reads it lazily, or computes it.
+    void computeAbove(const ActionsDAG::Node * node)
+    {
+        auto & placed = frontier.placement[node];
+        placed = isComputedBelow(placed) ? Placement::Recomputed : Placement::Deferred;
     }
 
     /// Values the main branch has to hand over anyway, the sort keys above all: they are part of the
     /// block the `LIMIT` produces whatever this decides, so taking them costs nothing.
-    void markAlreadyCrossing(const ActionsDAG::NodeRawConstPtrs & nodes) { already_crossing.insert(nodes.begin(), nodes.end()); }
+    void markAlreadyCarried(const ActionsDAG::NodeRawConstPtrs & nodes) { already_carried.insert(nodes.begin(), nodes.end()); }
 
     /// Places `node` and everything it reads. Every value can be placed: what cannot be had above the
     /// `LIMIT` is computed below it and crosses, which is what the plan did anyway.
@@ -148,7 +157,7 @@ public:
             if (frame.next_child == 0)
             {
                 /// Another value that reads it may have placed it already.
-                if (frontier.at(node).above != Placement::Above::No)
+                if (const auto placed = frontier.at(node); placed == Placement::Carried || isComputedAbove(placed))
                 {
                     stack.pop_back();
                     continue;
@@ -157,9 +166,9 @@ public:
                 if (const auto decision = decide(node); decision != Decision::Recompute)
                 {
                     if (decision == Decision::LazyRead)
-                        frontier.placement[node].above = Placement::Above::LazyRead;
+                        computeAbove(node);
                     else
-                        cross(node);
+                        carry(node);
 
                     stack.pop_back();
                     continue;
@@ -174,7 +183,7 @@ public:
                 continue;
             }
 
-            frontier.placement[node].above = Placement::Above::Recomputed;
+            computeAbove(node);
             stack.pop_back();
         }
     }
@@ -184,7 +193,7 @@ public:
 private:
     enum class Decision : uint8_t
     {
-        Cross,      /// the main branch computes it and hands it over
+        Carry,      /// the main branch computes it and hands it over
         LazyRead,   /// a second read of its source returns it
         Recompute,  /// computed again above the `LIMIT`, once what it reads is placed
     };
@@ -201,7 +210,7 @@ private:
             : node->type != ActionsDAG::ActionType::INPUT && node->type != ActionsDAG::ActionType::ARRAY_JOIN;
 
         if (!can_be_had_above)
-            return Decision::Cross;
+            return Decision::Carry;
 
         /// A lambda is not a column a step can hand over. It is placed only for the higher-order function that reads it,
         /// which is recomputed only when the lambda can be as well, see `canBeRecomputed`.
@@ -211,8 +220,8 @@ private:
         /// A short-circuit function evaluates its branches for some rows only, which a function in them that crossed on
         /// its own would lose: computed for every row as a column of its own, it could throw at a row its branch skips.
         /// Such a function crosses as a whole instead, computed where the plan computes it, with its branches.
-        if (hasBranchThatWouldCross(node))
-            return Decision::Cross;
+        if (hasBranchThatWouldBeCarried(node))
+            return Decision::Carry;
 
         /// How to have it above, once the rest of this settles whether to: a source column is read a
         /// second time, anything else is computed a second time.
@@ -227,7 +236,7 @@ private:
             if (const auto * padded_side = merged.getNearestPaddedSide(node))
                 if (!masked_padded_sides.contains(padded_side)
                     || (node->type == ActionsDAG::ActionType::FUNCTION && !canEvaluateOnPaddedRows(node)))
-                    return Decision::Cross;
+                    return Decision::Carry;
         }
 
         /// A value that does not answer the same twice is computed where the plan computes it, and crosses as a column.
@@ -235,22 +244,22 @@ private:
         /// computed for the rows there - one value per row a join then repeats, a number that counts the rows before the
         /// `LIMIT`. What is computed from it may still be recomputed above, since that gives the same answer.
         if (!canBeRecomputed(node))
-            return Decision::Cross;
+            return Decision::Carry;
 
         /// Nothing below the `LIMIT` computes it, so there is nothing to hand over or to agree with.
-        if (!frontier.at(node).computed_below)
+        if (!isComputedBelow(frontier.at(node)))
             return have_it_above;
 
         /// The main branch hands this one over regardless, so there is nothing to weigh up.
-        if (already_crossing.contains(node))
-            return Decision::Cross;
+        if (already_carried.contains(node))
+            return Decision::Carry;
 
-        return preferRecomputing(node) ? have_it_above : Decision::Cross;
+        return preferRecomputing(node) ? have_it_above : Decision::Carry;
     }
 
     /// Whether a function would cross on its own for a reason of its own rather than of how the rest is placed: it
     /// cannot be recomputed, or a join can pad it and it cannot be recomputed under a mask.
-    bool wouldCross(const ActionsDAG::Node * node) const
+    bool wouldBeCarried(const ActionsDAG::Node * node) const
     {
         if (!canBeRecomputed(node))
             return true;
@@ -262,7 +271,7 @@ private:
     }
 
     /// Whether `node` is a short-circuit function, and a function in its arguments would cross on its own.
-    bool hasBranchThatWouldCross(const ActionsDAG::Node * node) const
+    bool hasBranchThatWouldBeCarried(const ActionsDAG::Node * node) const
     {
         if (node->type != ActionsDAG::ActionType::FUNCTION)
             return false;
@@ -282,7 +291,7 @@ private:
 
             /// A lambda answers for its body through its capture function; a constant or a column computes nothing.
             if (argument->type == ActionsDAG::ActionType::FUNCTION && !WhichDataType(argument->result_type).isFunction()
-                && wouldCross(argument))
+                && wouldBeCarried(argument))
                 return true;
 
             stack.insert(stack.end(), argument->children.begin(), argument->children.end());
@@ -309,17 +318,17 @@ private:
     /// estimate belongs once there is one to ask.
     bool preferRecomputing(const ActionsDAG::Node * node) const { return merged.hasJoinAbove(node); }
 
-    /// A crossing value is computed below the `LIMIT`, so everything it reads is computed there too.
-    void cross(const ActionsDAG::Node * node)
+    /// A carried value is computed below the `LIMIT`, so everything it reads is computed there too.
+    void carry(const ActionsDAG::Node * node)
     {
         markComputedBelow({node});
-        frontier.placement[node].above = Placement::Above::Crossing;
+        frontier.placement[node] = Placement::Carried;
     }
 
     const MergedPlanDAG & merged;
     const std::vector<bool> & lazy_sources;
     const std::unordered_set<const MergedPlanDAG::PaddedSide *> & masked_padded_sides;
-    NodeSet already_crossing;
+    NodeSet already_carried;
     LazyFrontier frontier;
 };
 
@@ -341,15 +350,15 @@ LazyFrontier chooseLazyFrontier(
     computed_below_roots.append_range(merged.join_condition_nodes);
     computed_below_roots.append_range(merged.step_read_nodes);
 
-    ActionsDAG::NodeRawConstPtrs already_crossing;
+    ActionsDAG::NodeRawConstPtrs already_carried;
     for (size_t position : eager_output_positions)
     {
         computed_below_roots.push_back(outputs[position]);
-        already_crossing.push_back(outputs[position]);
+        already_carried.push_back(outputs[position]);
     }
 
     chooser.markComputedBelow(computed_below_roots);
-    chooser.markAlreadyCrossing(already_crossing);
+    chooser.markAlreadyCarried(already_carried);
 
     for (const auto * output : outputs)
         chooser.place(output);
@@ -363,7 +372,7 @@ std::vector<NodeSet> collectLazyReads(const MergedPlanDAG & merged, const LazyFr
 
     for (const auto & [node, placed] : frontier.placement)
     {
-        if (placed.above != Placement::Above::LazyRead)
+        if (node->type != ActionsDAG::ActionType::INPUT || !isComputedAbove(placed))
             continue;
 
         const auto & node_sources = merged.getSources(node);
