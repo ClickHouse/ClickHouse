@@ -1537,6 +1537,20 @@ public:
 
         if (element.isArray())
         {
+            /// Positional fill from an array is only meaningful for unnamed tuples:
+            /// for named tuples, which array element lands in which field would
+            /// depend on the declaration order. Named tuples read from objects only
+            /// (like the scalar extraction path and the JSON input formats under
+            /// `input_format_json_named_tuples_as_objects`), unless the historical
+            /// positional behavior is requested via the setting. Only the JSON
+            /// functions set it, so the JSON data type keeps the positional fill.
+            if (!name_to_index_map.empty() && format_settings.json.extract_named_tuples_as_objects)
+            {
+                error = "cannot read named Tuple value from JSON array. You can disable setting "
+                        "json_extract_named_tuples_as_objects to fill named tuples from arrays positionally";
+                return false;
+            }
+
             auto array = element.getArray();
             auto it = array.begin();
 
@@ -2087,13 +2101,16 @@ public:
             {
                 /// Serialize value directly into shared data chars.
                 WriteBufferFromVector<ColumnString::Chars> value_buf(shared_data_values_chars, AppendModeTag(), format_settings.json_max_string_column_growth_step);
-                if (!insertIntoSharedData(value_buf, value, insert_settings, format_settings, error, tmp_dynamic_column))
+                bool inserted = insertIntoSharedData(value_buf, value, insert_settings, format_settings, error, tmp_dynamic_column);
+                /// Finalize the buffer before `restoreColumnObject`: finalizing resizes the chars to the
+                /// buffer position, so doing it after the restore would bring back the popped values.
+                value_buf.finalize();
+                if (!inserted)
                 {
                     error += fmt::format(" (while reading path {})", path);
                     SerializationObject::restoreColumnObject(column_object, prev_size);
                     return false;
                 }
-                value_buf.finalize();
                 shared_data_values_offsets.push_back(shared_data_values_chars.size());
                 shared_data_paths->insertData(path.data(), path.size());
             }

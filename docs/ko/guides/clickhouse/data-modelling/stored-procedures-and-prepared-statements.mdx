@@ -10,9 +10,7 @@ doc_type: 'guide'
 기존 관계형 데이터베이스에 익숙하다면 ClickHouse에서 저장 프로시저와 prepared statements를 찾고 있을 수 있습니다.
 이 가이드에서는 이러한 개념에 대한 ClickHouse의 접근 방식을 설명하고, 권장되는 대안을 소개합니다.
 
-<div id="alternatives-to-stored-procedures">
-  ## ClickHouse의 저장 프로시저 대안
-</div>
+## ClickHouse의 저장 프로시저 대안 {#alternatives-to-stored-procedures}
 
 ClickHouse는 제어 흐름 로직(`IF`/`ELSE`, 루프 등)이 포함된 전통적인 저장 프로시저를 지원하지 않습니다.
 이는 분석형 데이터베이스인 ClickHouse의 아키텍처를 기반으로 한 의도적인 설계 결정입니다.
@@ -26,15 +24,11 @@ ClickHouse는 다음과 같은 작업에 최적화되어 있습니다.
 
 절차적 로직이 포함된 저장 프로시저는 이러한 최적화 방향과 맞지 않습니다. 대신 ClickHouse는 이러한 강점에 부합하는 대안을 제공합니다.
 
-<div id="user-defined-functions">
-  ### 사용자 정의 함수(UDFs)
-</div>
+### 사용자 정의 함수(UDFs) {#user-defined-functions}
 
 사용자 정의 함수를 사용하면 제어 흐름 없이 재사용 가능한 로직을 캡슐화할 수 있습니다. ClickHouse는 2가지 타입을 지원합니다:
 
-<div id="lambda-based-udfs">
-  #### 람다 기반 UDF
-</div>
+#### 람다 기반 UDF {#lambda-based-udfs}
 
 SQL 표현식과 람다 구문을 사용해 함수를 만듭니다:
 
@@ -107,9 +101,7 @@ SELECT format_phone('5551234567');
 
 전체 구문은 [`CREATE FUNCTION`](/ko/reference/statements/create/function)에서 확인하십시오.
 
-<div id="executable-udfs">
-  #### 실행형 UDF
-</div>
+#### 실행형 UDF {#executable-udfs}
 
 더 복잡한 로직이 필요하면 외부 프로그램을 호출하는 실행형 UDF를 사용합니다:
 
@@ -141,9 +133,7 @@ FROM customer_reviews;
 
 자세한 내용은 [실행형 UDF](/ko/reference/functions/regular-functions/udf)를 참조하십시오.
 
-<div id="parameterized-views">
-  ### 매개변수화된 뷰
-</div>
+### 매개변수화된 뷰 {#parameterized-views}
 
 매개변수화된 뷰는 데이터셋을 반환하는 함수처럼 작동합니다.
 동적 필터링이 필요한 재사용 가능한 쿼리에 적합합니다:
@@ -198,9 +188,7 @@ FROM sales_by_date(start_date='2024-01-01', end_date='2024-01-31')
 WHERE product_id = 12345;
 ```
 
-<div id="common-use-cases">
-  #### 일반적인 사용 사례
-</div>
+#### 일반적인 사용 사례 {#common-use-cases}
 
 * 동적 날짜 범위 필터링
 * 사용자별 데이터 세분화
@@ -245,9 +233,7 @@ SELECT * FROM top_products_by_category(
 
 자세한 내용은 [매개변수화된 뷰](/ko/reference/statements/create/view#parameterized-view) 섹션을 참고하십시오.
 
-<div id="materialized-views">
-  ### Materialized views
-</div>
+### Materialized views {#materialized-views}
 
 Materialized views는 일반적으로 저장 프로시저에서 처리하는 비용이 큰 집계를 미리 계산하는 데 적합합니다. 기존 데이터베이스에 익숙하다면 materialized view를, 데이터가 원본 테이블에 삽입될 때 이를 자동으로 변환하고 집계하는 **INSERT trigger**라고 생각하면 됩니다:
 
@@ -300,9 +286,7 @@ WHERE date BETWEEN '2024-01-01' AND '2024-01-31'
 GROUP BY user_id;
 ```
 
-<div id="refreshable-materialized-views">
-  #### 갱신 가능 materialized view
-</div>
+#### 갱신 가능 materialized view {#refreshable-materialized-views}
 
 야간 저장 프로시저와 같은 예약된 일괄 처리 작업에는:
 
@@ -328,16 +312,12 @@ WHERE month = toStartOfMonth(today());
 
 고급 활용 패턴은 [Cascading Materialized Views](/ko/concepts/features/materialized-views/cascading-materialized-views)를 참조하십시오.
 
-<div id="external-orchestration">
-  ### 외부 오케스트레이션
-</div>
+### 외부 오케스트레이션 {#external-orchestration}
 
 복잡한 비즈니스 로직, ETL 워크플로, 또는 여러 단계로 이루어진 프로세스는 언제든지 언어 클라이언트를 사용해
 ClickHouse 외부에서 구현할 수 있습니다.
 
-<div id="using-application-code">
-  #### 애플리케이션 코드 사용
-</div>
+#### 애플리케이션 코드 사용 {#using-application-code}
 
 다음은 MySQL 저장 프로시저를 ClickHouse에서 애플리케이션 코드로 구현하는 방식을 나란히 비교한 것입니다:
 
@@ -570,12 +550,10 @@ ClickHouse 외부에서 구현할 수 있습니다.
 
 <br />
 
-<div id="key-differences">
-  #### 주요 차이점
-</div>
+#### 주요 차이점 {#key-differences}
 
 1. **제어 흐름** - MySQL 저장 프로시저는 `IF/ELSE`, `WHILE` 루프를 사용합니다. ClickHouse에서는 이 로직을 애플리케이션 코드(Python, Java 등)에서 구현합니다
-2. **트랜잭션** - MySQL은 ACID 트랜잭션을 위해 `BEGIN/COMMIT/ROLLBACK`를 지원합니다. ClickHouse는 트랜잭션 업데이트가 아니라 추가 전용 워크로드에 최적화된 분석용 데이터베이스입니다
+2. **트랜잭션** - MySQL은 ACID 트랜잭션을 위해 `BEGIN/COMMIT/ROLLBACK`를 지원합니다. ClickHouse는 트랜잭션 업데이트가 아니라 추가 전용 워크로드에 최적화된 분석형 데이터베이스입니다
 3. **업데이트** - MySQL은 `UPDATE` SQL 문을 사용합니다. ClickHouse는 변경 가능한 데이터를 처리할 때 [ReplacingMergeTree](/ko/reference/engines/table-engines/mergetree-family/replacingmergetree) 또는 [CollapsingMergeTree](/ko/reference/engines/table-engines/mergetree-family/collapsingmergetree)와 함께 `INSERT`를 사용하는 방식을 선호합니다
 4. **변수와 상태** - MySQL 저장 프로시저는 변수(`DECLARE v_discount`)를 선언할 수 있습니다. ClickHouse에서는 상태를 애플리케이션 코드에서 관리합니다
 5. **오류 처리** - MySQL은 `SIGNAL` 및 예외 처리기를 지원합니다. 애플리케이션 코드에서는 사용하는 언어의 네이티브 오류 처리(try/catch)를 사용합니다
@@ -583,14 +561,12 @@ ClickHouse 외부에서 구현할 수 있습니다.
 <Tip>
   **각 접근 방식을 언제 사용해야 하는가:**
 
-  * **OLTP 워크로드** (주문, 결제, 사용자 계정) → 저장 프로시저와 함께 MySQL/PostgreSQL을 사용하세요
+  * **OLTP 워크로드** (주문, 결제, 사용자 계정) → 애플리케이션 트랜잭션과 저장 프로시저에는 MySQL 또는 PostgreSQL을 사용하세요. [ClickHouse Managed Postgres](/ko/products/managed-postgres/overview)는 ClickHouse Cloud에서 사용할 수 있습니다.
   * **분석 워크로드** (보고, 집계, 시계열) → 애플리케이션 오케스트레이션과 함께 ClickHouse를 사용하세요
-  * **Hybrid 아키텍처** → 둘 다 사용하세요! 분석을 위해 OLTP의 트랜잭션 데이터를 ClickHouse로 스트리밍하세요
+  * **Hybrid 아키텍처** → 애플리케이션 트랜잭션은 Postgres에 유지하고, 커밋된 변경 사항을 분석용으로 ClickHouse에 복제하세요. [Postgres와 ClickHouse가 함께 동작하는 방식](/ko/products/managed-postgres/overview#transactions-and-analytics)과 [통합 quickstart](/ko/products/managed-postgres/quickstart#part-2)를 참고하세요.
 </Tip>
 
-<div id="using-workflow-orchestration-tools">
-  #### 워크플로 오케스트레이션 도구 사용
-</div>
+#### 워크플로 오케스트레이션 도구 사용 {#using-workflow-orchestration-tools}
 
 * **Apache Airflow** - ClickHouse 쿼리로 구성된 복잡한 DAG의 실행 일정을 관리하고 모니터링합니다
 * **dbt** - SQL 기반 워크플로를 사용해 데이터를 변환합니다
@@ -606,21 +582,15 @@ ClickHouse 외부에서 구현할 수 있습니다.
 * 모니터링 및 알림
 * 더 유연한 일정 관리
 
-<div id="alternatives-to-prepared-statements-in-clickhouse">
-  ## ClickHouse에서 prepared statements의 대안
-</div>
+## ClickHouse에서 prepared statements의 대안 {#alternatives-to-prepared-statements-in-clickhouse}
 
 ClickHouse는 RDBMS의 전통적인 &quot;prepared statements&quot;를 지원하지는 않지만, 같은 목적을 하는 **쿼리 매개변수**를 제공합니다. 즉, SQL 인젝션을 방지하는 안전한 매개변수화 쿼리를 사용할 수 있습니다.
 
-<div id="query-parameters-syntax">
-  ### 구문
-</div>
+### 구문 {#query-parameters-syntax}
 
 쿼리 매개변수는 다음 두 가지 방법으로 정의할 수 있습니다.
 
-<div id="method-1-using-set">
-  #### 메서드 1: `SET` 사용
-</div>
+#### 메서드 1: `SET` 사용 {#method-1-using-set}
 
 <Accordion title="예시 테이블과 데이터">
   ```sql
@@ -670,9 +640,7 @@ WHERE user_id = {user_id: UInt64}
 GROUP BY event_name;
 ```
 
-<div id="method-2-using-cli-parameters">
-  #### 방법 2: CLI 매개변수 사용
-</div>
+#### 방법 2: CLI 매개변수 사용 {#method-2-using-cli-parameters}
 
 ```bash
 clickhouse-client \
@@ -684,18 +652,14 @@ clickhouse-client \
              AND event_date BETWEEN {start_date: Date} AND {end_date: Date}"
 ```
 
-<div id="parameter-syntax">
-  ### 매개변수 구문
-</div>
+### 매개변수 구문 {#parameter-syntax}
 
 매개변수는 다음 구문을 사용해 참조합니다: `{parameter_name: DataType}`
 
 * `parameter_name` - 매개변수의 이름(`param_` 접두사 제외)
 * `DataType` - 매개변수를 변환할 ClickHouse 데이터 타입
 
-<div id="data-type-examples">
-  ### 데이터 타입 예시
-</div>
+### 데이터 타입 예시 {#data-type-examples}
 
 <Accordion title="예시에 사용할 테이블 및 샘플 데이터">
   ```sql
@@ -810,9 +774,7 @@ clickhouse-client \
 [language clients](/ko/integrations/language-clients/index)에서 쿼리 매개변수를 사용하는 방법은
 사용하려는 언어 클라이언트의 문서를 참조하십시오.
 
-<div id="limitations-of-query-parameters">
-  ### 쿼리 매개변수의 제한 사항
-</div>
+### 쿼리 매개변수의 제한 사항 {#limitations-of-query-parameters}
 
 쿼리 매개변수는 **범용 텍스트 치환이 아닙니다**. 다음과 같은 명확한 제한이 있습니다.
 
@@ -852,9 +814,7 @@ ALTER TABLE {table: Identifier} ADD COLUMN new_col String;  -- 지원되지 않�
 {statements: String};  -- 지원되지 않음
 ```
 
-<div id="security-best-practices">
-  ### 보안 모범 사례
-</div>
+### 보안 모범 사례 {#security-best-practices}
 
 **사용자 입력에는 항상 쿼리 매개변수를 사용하세요:**
 
@@ -890,9 +850,7 @@ def get_user_orders(user_id: int, start_date: str):
     )
 ```
 
-<div id="mysql-protocol-prepared-statements">
-  ### MySQL 프로토콜 prepared statements
-</div>
+### MySQL 프로토콜 prepared statements {#mysql-protocol-prepared-statements}
 
 ClickHouse의 [MySQL 인터페이스](/ko/concepts/features/interfaces/mysql)에는 prepared statements(`COM_STMT_PREPARE`, `COM_STMT_EXECUTE`, `COM_STMT_CLOSE`)에 대한 최소한의 지원이 포함되어 있습니다. 이는 주로 쿼리를 prepared statements로 감싸는 Tableau Online과 같은 도구의 연결을 가능하게 하기 위한 것입니다.
 
@@ -922,13 +880,9 @@ EXECUTE stmt USING @user_id;  -- 매개변수 바인딩은 지원되지 않습�
 
 자세한 내용은 [MySQL 인터페이스 문서](/ko/concepts/features/interfaces/mysql)와 [ClickHouse의 MySQL 지원에 관한 블로그 게시물](https://clickhouse.com/blog/mysql-support-in-clickhouse-the-journey)을 참조하세요.
 
-<div id="summary">
-  ## 요약
-</div>
+## 요약 {#summary}
 
-<div id="summary-stored-procedures">
-  ### 저장 프로시저의 ClickHouse 대안
-</div>
+### 저장 프로시저의 ClickHouse 대안 {#summary-stored-procedures}
 
 | 기존 저장 프로시저 패턴      | ClickHouse 대안                                 |
 | ------------------ | --------------------------------------------- |
@@ -939,9 +893,7 @@ EXECUTE stmt USING @user_id;  -- 매개변수 바인딩은 지원되지 않습�
 | 복잡한 다단계 ETL        | 체인된 materialized view 또는 외부 오케스트레이션(Python, Airflow, dbt) |
 | 제어 흐름이 포함된 비즈니스 로직 | 애플리케이션 코드                                     |
 
-<div id="summary-query-parameters">
-  ### 쿼리 매개변수 사용
-</div>
+### 쿼리 매개변수 사용 {#summary-query-parameters}
 
 쿼리 매개변수는 다음과 같은 용도로 사용할 수 있습니다.
 
@@ -950,9 +902,7 @@ EXECUTE stmt USING @user_id;  -- 매개변수 바인딩은 지원되지 않습�
 * 애플리케이션에서의 동적 필터링
 * 재사용 가능한 쿼리 템플릿
 
-<div id="related-documentation">
-  ## 관련 문서
-</div>
+## 관련 문서 {#related-documentation}
 
 * [`CREATE FUNCTION`](/ko/reference/statements/create/function) - 사용자 정의 함수
 * [`CREATE VIEW`](/ko/reference/statements/create/view) - 매개변수화된 뷰와 materialized view를 비롯한 뷰

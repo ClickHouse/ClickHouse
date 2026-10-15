@@ -401,6 +401,7 @@ message ExprInType {
         ExprList tuple = 3;
         ExplainQuery sel = 4;
         bool empty_list = 5;
+        ExprSchemaTable tbl = 6;
     }
 }
 
@@ -1130,8 +1131,11 @@ message LimitByStatement {
 }
 
 message LimitStatement {
-    required Expr limit = 1;
+    optional Expr limit = 1;
     optional bool with_ties = 2;
+    optional Expr limit_after = 3;
+    optional bool after_all = 4;
+    optional Expr limit_until = 5;
 }
 
 message FetchStatement {
@@ -1758,6 +1762,7 @@ enum SQLObject {
     ROW_POLICY = 6;
     MASKING_POLICY = 7;
     HYPOTHETICAL_INDEX = 8;
+    HYPOTHETICAL_PROJECTION = 9;
 }
 
 message SQLObjectName {
@@ -1767,6 +1772,7 @@ message SQLObjectName {
         SQLIdentifier function = 3;
         SQLIdentifier policy = 4;
         SQLIdentifier index = 5;
+        SQLIdentifier projection = 6;
     }
 }
 
@@ -1781,7 +1787,7 @@ message Drop {
     optional ExprSchemaTable target = 8;
     optional bool sync = 9;
     optional SettingValues setting_values = 10;
-    /// DROP ALL HYPOTHETICAL INDEXES
+    /// DROP ALL HYPOTHETICAL INDEXES, DROP ALL HYPOTHETICAL PROJECTIONS
     optional bool all = 11;
 }
 
@@ -2056,6 +2062,7 @@ message RefreshableView {
     optional DependsList depends = 5;
     optional SettingValues setting_values = 6;
     optional bool append = 7;
+    optional bool incremental = 8;
 }
 
 message CreateMatViewTo {
@@ -2677,6 +2684,12 @@ message CreateHypotheticalIndex {
     optional bool if_not_exists = 3;
 }
 
+message CreateHypotheticalProjection {
+    required ProjectionDef create_def = 1;
+    required ExprSchemaTable est = 2;
+    optional bool if_not_exists = 3;
+}
+
 message SQLQueryInner {
     oneof query_inner_oneof {
         TopSelect select = 1;
@@ -2706,6 +2719,7 @@ message SQLQueryInner {
         CreatePolicy create_policy = 25;
         SnapshotQuery snapshot_query = 26;
         CreateHypotheticalIndex create_hypo_index = 27;
+        CreateHypotheticalProjection create_hypo_projection = 28;
     }
 }
 

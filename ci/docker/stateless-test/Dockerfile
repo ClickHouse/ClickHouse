@@ -93,7 +93,7 @@ ENV NUM_TRIES=1
 
 # Keep SEAWEEDFS_VERSION in sync with the default in setup_seaweedfs.sh
 # to have the same binaries for local running scenario
-ARG SEAWEEDFS_VERSION=4.42
+ARG SEAWEEDFS_VERSION=4.48
 ARG TARGETARCH
 
 # Download SeaweedFS (the S3 server for stateless tests); the weed binary is a

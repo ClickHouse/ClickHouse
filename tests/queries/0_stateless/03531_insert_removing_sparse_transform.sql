@@ -1,5 +1,6 @@
--- Tags: no-asan, no-tsan, no-msan, no-ubsan, no-sanitize-coverage, no-parallel-replicas, no-flaky-check
+-- Tags: no-asan, no-tsan, no-msan, no-ubsan, no-sanitize-coverage, no-parallel-replicas, no-flaky-check, no-async-insert
 -- - no-parallel-replicas - has --replace-log-memory-with-mergetree switch
+-- no-async-insert: the queue route adds `AsyncInsertQueueTransform` to the pipeline.
 
 drop table if exists t_log;
 drop table if exists t_mt;

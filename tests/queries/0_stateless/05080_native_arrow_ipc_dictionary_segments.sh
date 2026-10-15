@@ -66,7 +66,7 @@ for fmt, writer_type in (("Arrow", ipc.new_file), ("ArrowStream", ipc.new_stream
 
             queries.append(
                 f"SELECT ifNull(toJSONString(c), 'null') FROM file('{path}', '{fmt}', 'c {ch_type}') "
-                f"FORMAT TSVRaw SETTINGS allow_experimental_nullable_tuple_type={int(shape == 'nullable_tuple')};")
+                f"FORMAT TSVRaw SETTINGS enable_nullable_tuple_type={int(shape == 'nullable_tuple')};")
             checks.append((f"OK {fmt} {shape} {'nullable' if nullable else 'non-nullable'}", expected))
 
 result = subprocess.run(local + [
