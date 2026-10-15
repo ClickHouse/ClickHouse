@@ -158,3 +158,29 @@ SELECT 'the top rows, without the index', groupArray(b) FROM (SELECT b FROM t_05
 SETTINGS use_skip_indexes = 0);
 
 DROP TABLE t_05200_read;
+
+-- The conversion on read happens even when the pending `MODIFY COLUMN` is not in the mutations snapshot:
+-- with on-the-fly application disabled, and after the mutation is killed before it materialized. The
+-- part still stores the old type, so its statistics must not be used.
+
+DROP TABLE IF EXISTS t_05200_type;
+CREATE TABLE t_05200_type (x Float64 STATISTICS(basic), s String) ENGINE = MergeTree ORDER BY tuple();
+
+SYSTEM STOP MERGES t_05200_type;
+INSERT INTO t_05200_type VALUES (10.5, 'a'), (11.5, 'b');
+
+ALTER TABLE t_05200_type MODIFY COLUMN x Int64 SETTINGS mutations_sync = 0, alter_sync = 0;
+
+SELECT 'without on-the-fly mutations', count() FROM t_05200_type WHERE x = 10
+SETTINGS apply_mutations_on_fly = 0, apply_patch_parts = 0;
+SELECT 'without on-the-fly mutations, without pruning', count() FROM t_05200_type WHERE x = 10
+SETTINGS apply_mutations_on_fly = 0, apply_patch_parts = 0, use_statistics_for_part_pruning = 0;
+
+KILL MUTATION WHERE database = currentDatabase() AND table = 't_05200_type' SYNC FORMAT Null;
+
+SELECT 'after the mutation was killed', groupArray(x) FROM (SELECT x FROM t_05200_type ORDER BY x);
+SELECT 'after the mutation was killed, a filter', count() FROM t_05200_type WHERE x = 10;
+SELECT 'after the mutation was killed, without pruning', count() FROM t_05200_type WHERE x = 10
+SETTINGS use_statistics_for_part_pruning = 0;
+
+DROP TABLE t_05200_type;

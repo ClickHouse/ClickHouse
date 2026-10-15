@@ -26,3 +26,8 @@ the re-added column, without the cache	100
 a filter, with the refiner	11
 the top rows, with a threshold	[206,205,204]
 the top rows, without the index	[206,205,204]
+without on-the-fly mutations	1
+without on-the-fly mutations, without pruning	1
+after the mutation was killed	[10,11]
+after the mutation was killed, a filter	1
+after the mutation was killed, without pruning	1

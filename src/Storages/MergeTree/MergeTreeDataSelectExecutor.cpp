@@ -878,6 +878,21 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
     for (const auto & part : parts)
     {
         auto estimates = part.data_part->getEstimates();
+
+        /// The statistics describe the values as they are stored in the part. When the part stores a
+        /// column with a type different from the current metadata, a read converts the values to the
+        /// current type (`IMergeTreeReader::performRequiredConversions`), so the statistics do not
+        /// describe what the query sees. This happens independently of the mutations snapshot: e.g.
+        /// with `apply_mutations_on_fly = 0` the pending `MODIFY COLUMN` is not in the snapshot, and
+        /// after `KILL MUTATION` it is gone, while the conversion on read still happens.
+        const auto & metadata_columns = metadata_snapshot->getColumns();
+        std::erase_if(estimates, [&](const auto & estimate)
+        {
+            auto part_column = part.data_part->tryGetColumn(estimate.first);
+            auto metadata_column = metadata_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, estimate.first);
+            return !part_column || !metadata_column || !part_column->type->equals(*metadata_column->type);
+        });
+
         try
         {
             if (!statistics_pruner.checkPartCanMatch(estimates).can_be_true)
