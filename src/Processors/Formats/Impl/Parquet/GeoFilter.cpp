@@ -14,6 +14,10 @@
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
 #include <Core/ColumnsWithTypeAndName.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
@@ -27,6 +31,26 @@ namespace DB::Parquet
 
 namespace
 {
+
+/// Whether the requested type of a geometry column keeps the coordinates as they are in the file:
+/// raw WKB bytes, or geo types with `Float64` coordinates. Otherwise the conversion to the requested
+/// type (e.g. `Tuple(UInt8, UInt8)`) can move a geometry out of the bounding box from the
+/// statistics, and the bounding box cannot be used for pruning.
+bool typeKeepsCoordinates(const DataTypePtr & type, bool is_top_level = true)
+{
+    const DataTypePtr nested = removeLowCardinalityAndNullable(type);
+    if (is_top_level && isString(nested))
+        return true;
+    if (WhichDataType(nested).isFloat64())
+        return true;
+    if (const auto * array = typeid_cast<const DataTypeArray *>(nested.get()))
+        return typeKeepsCoordinates(array->getNestedType(), false);
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(nested.get()))
+        return std::ranges::all_of(tuple->getElements(), [](const auto & element) { return typeKeepsCoordinates(element, false); });
+    if (const auto * variant = typeid_cast<const DataTypeVariant *>(nested.get()))
+        return std::ranges::all_of(variant->getVariants(), [](const auto & element) { return typeKeepsCoordinates(element, false); });
+    return false;
+}
 
 /// Extractor callback for the shared conjunctive collection template.
 /// Returns an optional SpatialFilter when the node is a spatial predicate
@@ -51,7 +75,10 @@ std::optional<SpatialFilter> tryExtractSpatialFilterFromNode(const ActionsDAG::N
             return std::nullopt;
         col_node = child;
     }
-    if (!col_node || !sample_block.has(col_node->result_name))
+    if (!col_node)
+        return std::nullopt;
+    const auto * sample_column = sample_block.findByName(col_node->result_name);
+    if (!sample_column || !typeKeepsCoordinates(sample_column->type))
         return std::nullopt;
 
     double xmin = std::numeric_limits<double>::infinity();
