@@ -26,9 +26,7 @@ keywords: ['WHERE']
   `PREWHERE` 절을 명시적으로 지정하지 않아도 기본적으로 활성화됩니다.
 </Info>
 
-<div id="testing-for-null">
-  ## `NULL` 검사하기
-</div>
+## `NULL` 검사하기 {#testing-for-null}
 
 값이 [`NULL`](/ko/reference/syntax#null)인지 확인해야 하는 경우 다음을 사용합니다:
 
@@ -37,9 +35,7 @@ keywords: ['WHERE']
 
 그렇지 않으면 `NULL`이 포함된 표현식은 절대 조건을 만족하지 않습니다.
 
-<div id="filtering-data-with-logical-operators">
-  ## 논리 연산자를 사용한 데이터 필터링
-</div>
+## 논리 연산자를 사용한 데이터 필터링 {#filtering-data-with-logical-operators}
 
 여러 조건을 결합할 때는 `WHERE` 절과 함께 다음 [논리 함수](/ko/reference/functions/regular-functions/logical-functions#and)를 사용할 수 있습니다:
 
@@ -48,54 +44,49 @@ keywords: ['WHERE']
 * [`or()`](/ko/reference/functions/regular-functions/logical-functions#or) 또는 `NOT`
 * [`xor()`](/ko/reference/functions/regular-functions/logical-functions#xor)
 
-<div id="using-uint8-columns-as-a-condition">
-  ## 조건으로 UInt8 컬럼 사용하기
-</div>
+## 조건으로 UInt8 컬럼 사용하기 {#using-uint8-columns-as-a-condition}
 
 ClickHouse에서는 `UInt8` 컬럼을 불리언 조건으로 직접 사용할 수 있습니다. 이때 `0`은 `false`이고, 0이 아닌 모든 값(일반적으로 `1`)은 `true`입니다.
 이에 대한 예시는 [아래](#example-uint8-column-as-condition) 섹션에 있습니다.
 
-<div id="using-comparison-operators">
-  ## 비교 연산자 사용
-</div>
+## 비교 연산자 사용 {#using-comparison-operators}
 
 다음 [비교 연산자](/ko/reference/operators/index#comparison-operators)를 사용할 수 있습니다:
 
-| 연산자                     | 함수                      | 설명              | 예시                              |
-| ----------------------- | ----------------------- | --------------- | ------------------------------- |
-| `a = b`                 | `equals(a, b)`          | 같음              | `price = 100`                   |
-| `a == b`                | `equals(a, b)`          | 같음(대체 구문)       | `price == 100`                  |
-| `a != b`                | `notEquals(a, b)`       | 같지 않음           | `category != 'Electronics'`     |
-| `a <> b`                | `notEquals(a, b)`       | 같지 않음(대체 구문)    | `category <> 'Electronics'`     |
-| `a < b`                 | `less(a, b)`            | 작음              | `price < 200`                   |
-| `a <= b`                | `lessOrEquals(a, b)`    | 작거나 같음          | `price <= 200`                  |
-| `a > b`                 | `greater(a, b)`         | 큼               | `price > 500`                   |
-| `a >= b`                | `greaterOrEquals(a, b)` | 크거나 같음          | `price >= 500`                  |
-| `a LIKE s`              | `like(a, b)`            | 패턴 매칭(대소문자 구분)  | `name LIKE '%top%'`             |
-| `a NOT LIKE s`          | `notLike(a, b)`         | 패턴 불일치(대소문자 구분) | `name NOT LIKE '%top%'`         |
-| `a ILIKE s`             | `ilike(a, b)`           | 패턴 매칭(대소문자 미구분) | `name ILIKE '%LAPTOP%'`         |
-| `a BETWEEN b AND c`     | `a >= b AND a <= c`     | 범위 확인(경계값 포함)   | `price BETWEEN 100 AND 500`     |
-| `a NOT BETWEEN b AND c` | `a < b OR a > c`        | 범위 밖 확인         | `price NOT BETWEEN 100 AND 500` |
+| 연산자                     | 함수                      | 설명                     | 예시                                |
+| ----------------------- | ----------------------- | ---------------------- | --------------------------------- |
+| `a = b`                 | `equals(a, b)`          | 같음                     | `price = 100`                     |
+| `a == b`                | `equals(a, b)`          | 같음(대체 구문)              | `price == 100`                    |
+| `a != b`                | `notEquals(a, b)`       | 같지 않음                  | `category != 'Electronics'`       |
+| `a <> b`                | `notEquals(a, b)`       | 같지 않음(대체 구문)           | `category <> 'Electronics'`       |
+| `a < b`                 | `less(a, b)`            | 작음                     | `price < 200`                     |
+| `a <= b`                | `lessOrEquals(a, b)`    | 작거나 같음                 | `price <= 200`                    |
+| `a > b`                 | `greater(a, b)`         | 큼                      | `price > 500`                     |
+| `a >= b`                | `greaterOrEquals(a, b)` | 크거나 같음                 | `price >= 500`                    |
+| `a LIKE s`              | `like(a, b)`            | 패턴 매칭(대소문자 구분)         | `name LIKE '%top%'`               |
+| `a NOT LIKE s`          | `notLike(a, b)`         | 패턴 불일치(대소문자 구분)        | `name NOT LIKE '%top%'`           |
+| `a ILIKE s`             | `ilike(a, b)`           | 패턴 매칭(대소문자 미구분)        | `name ILIKE '%LAPTOP%'`           |
+| `a SIMILAR TO s`        | `similarTo(a, b)`       | SQL 표준 패턴 매칭(대소문자 구분)  | `name SIMILAR TO 'Lap(top)?'`     |
+| `a NOT SIMILAR TO s`    | `notSimilarTo(a, b)`    | SQL 표준 패턴 불일치(대소문자 구분) | `name NOT SIMILAR TO 'Lap(top)?'` |
+| `a BETWEEN b AND c`     | `a >= b AND a <= c`     | 범위 확인(경계값 포함)          | `price BETWEEN 100 AND 500`       |
+| `a NOT BETWEEN b AND c` | `a < b OR a > c`        | 범위 밖 확인                | `price NOT BETWEEN 100 AND 500`   |
 
-<div id="pattern-matching-and-conditional-expressions">
-  ## 패턴 매칭과 조건 표현식
-</div>
+## 패턴 매칭과 조건 표현식 {#pattern-matching-and-conditional-expressions}
 
 비교 연산자 외에도 `WHERE` 절에서 패턴 매칭과 조건 표현식을 사용할 수 있습니다.
 
-| 기능          | 구문                             | 대소문자 구분 | 성능   | 적합한 용도               |
-| ----------- | ------------------------------ | ------- | ---- | -------------------- |
-| `LIKE`      | `col LIKE '%pattern%'`         | 예       | 빠름   | 대소문자를 구분하는 정확한 패턴 매칭 |
-| `ILIKE`     | `col ILIKE '%pattern%'`        | 아니요     | 더 느림 | 대소문자를 구분하지 않는 검색     |
-| `if()`      | `if(cond, a, b)`               | 해당 없음   | 빠름   | 단순한 이진 조건            |
-| `multiIf()` | `multiIf(c1, r1, c2, r2, def)` | 해당 없음   | 빠름   | 여러 조건                |
-| `CASE`      | `CASE WHEN ... THEN ... END`   | 해당 없음   | 빠름   | SQL 표준 조건 처리         |
+| 기능           | 구문                             | 대소문자 구분 | 성능   | 적합한 용도                   |
+| ------------ | ------------------------------ | ------- | ---- | ------------------------ |
+| `LIKE`       | `col LIKE '%pattern%'`         | 예       | 빠름   | 대소문자를 구분하는 정확한 패턴 매칭     |
+| `ILIKE`      | `col ILIKE '%pattern%'`        | 아니요     | 더 느림 | 대소문자를 구분하지 않는 검색         |
+| `SIMILAR TO` | `col SIMILAR TO 'p[ab]+%'`     | 예       | 더 느림 | 정규식 메타문자를 사용하는 SQL 표준 패턴 |
+| `if()`       | `if(cond, a, b)`               | 해당 없음   | 빠름   | 단순한 이진 조건                |
+| `multiIf()`  | `multiIf(c1, r1, c2, r2, def)` | 해당 없음   | 빠름   | 여러 조건                    |
+| `CASE`       | `CASE WHEN ... THEN ... END`   | 해당 없음   | 빠름   | SQL 표준 조건 처리             |
 
 사용 예시는 [&quot;패턴 매칭과 조건 표현식&quot;](#examples-pattern-matching-and-conditional-expressions)을 참조하십시오.
 
-<div id="expressions-with-literals-columns-subqueries">
-  ## 리터럴, 컬럼 또는 서브쿼리가 있는 표현식
-</div>
+## 리터럴, 컬럼 또는 서브쿼리가 있는 표현식 {#expressions-with-literals-columns-subqueries}
 
 `WHERE` 절 뒤에 오는 표현식에는 [리터럴](/ko/reference/syntax#literals), 컬럼 또는 서브쿼리도 포함될 수 있습니다. 서브쿼리는 조건에 사용할 값을 반환하는 중첩된 `SELECT` SQL 문입니다.
 
@@ -125,13 +116,9 @@ WHERE (price > 100 OR category IN (SELECT category FROM featured))
   AND name LIKE '%Special%'
 ```
 
-<div id="examples">
-  ## 예시
-</div>
+## 예시 {#examples}
 
-<div id="examples-testing-for-null">
-  ### `NULL` 검사하기
-</div>
+### `NULL` 검사하기 {#examples-testing-for-null}
 
 `NULL` 값이 포함된 쿼리:
 
@@ -152,9 +139,7 @@ SELECT * FROM t_null WHERE y != 0;
 └───┴───┘
 ```
 
-<div id="example-filtering-with-logical-operators">
-  ### 논리 연산자를 사용한 데이터 필터링
-</div>
+### 논리 연산자를 사용한 데이터 필터링 {#example-filtering-with-logical-operators}
 
 다음 테이블과 데이터를 살펴보겠습니다:
 
@@ -271,9 +256,7 @@ WHERE and(or(category = 'Electronics', price > 100), in_stock);
 
 SQL 키워드 구문(`AND`, `OR`, `NOT`, `XOR`)이 일반적으로 가독성이 더 좋지만, 함수 구문은 복잡한 표현식이나 동적 쿼리를 작성할 때 유용할 수 있습니다.
 
-<div id="example-uint8-column-as-condition">
-  ### 조건으로 UInt8 컬럼 사용하기
-</div>
+### 조건으로 UInt8 컬럼 사용하기 {#example-uint8-column-as-condition}
 
 앞선 [예시](#example-filtering-with-logical-operators)의 테이블을 사용하면 컬럼 이름 자체를 조건으로 직접 사용할 수 있습니다:
 
@@ -291,9 +274,7 @@ WHERE in_stock
    └────┴─────────┴────────┴─────────────┴──────────┘
 ```
 
-<div id="example-using-comparison-operators">
-  ### 비교 연산자 사용
-</div>
+### 비교 연산자 사용 {#example-using-comparison-operators}
 
 아래 예시에서는 위의 [예시](#example-filtering-with-logical-operators)에 있는 테이블과 데이터를 사용합니다. 간결성을 위해 결과는 생략합니다.
 
@@ -368,15 +349,11 @@ SELECT * FROM products
 WHERE category = 'Electronics' AND in_stock = true;
 ```
 
-<div id="examples-pattern-matching-and-conditional-expressions">
-  ### 패턴 매칭과 조건 표현식
-</div>
+### 패턴 매칭과 조건 표현식 {#examples-pattern-matching-and-conditional-expressions}
 
 아래 예시에서는 위의 [예시](#example-filtering-with-logical-operators)에서 사용한 테이블과 데이터를 사용합니다. 간단히 보여주기 위해 결과는 생략했습니다.
 
-<div id="like-examples">
-  #### LIKE 예시
-</div>
+#### LIKE 예시 {#like-examples}
 
 ```sql
 -- 이름에 'o'가 포함된 제품 찾기
@@ -392,9 +369,7 @@ SELECT * FROM products WHERE name LIKE '____';
 -- 결과: Desk, Lamp
 ```
 
-<div id="ilike-examples">
-  #### ILIKE 예시
-</div>
+#### ILIKE 예시 {#ilike-examples}
 
 ```sql
 -- 'LAPTOP'에 대한 대소문자를 구분하지 않는 검색
@@ -406,9 +381,39 @@ SELECT * FROM products WHERE name ILIKE 'l%';
 -- 결과: Laptop, Lamp
 ```
 
-<div id="if-examples">
-  #### IF 예시
-</div>
+#### SIMILAR TO 예시 {#similar-to-examples}
+
+`SIMILAR TO` 패턴은 `LIKE`와 달리 정규식 메타문자 `|`, `*`, `+`, `?`, `{`, `}`, `(`, `)`, `[`, `]`도 사용할 수 있으며, `LIKE`와 마찬가지로 값 전체와 일치해야 합니다:
+
+```sql
+-- Alternation: either of two names
+SELECT * FROM products WHERE name SIMILAR TO 'Desk|Lamp';
+-- Result: Desk, Lamp
+
+-- A bracket expression combined with the LIKE wildcard `%`
+SELECT * FROM products WHERE name SIMILAR TO '[LM]%';
+-- Result: Laptop, Mouse, Monitor, Lamp
+
+-- Repetition: a name of five or more characters
+SELECT * FROM products WHERE name SIMILAR TO '_{5,}';
+-- Result: Laptop, Mouse, Chair, Monitor
+
+-- Negation
+SELECT * FROM products WHERE name NOT SIMILAR TO '(Desk|Lamp)';
+-- Result: Laptop, Mouse, Chair, Monitor
+```
+
+`ESCAPE` 절로 사용자 정의 이스케이프 문자를 지정할 수 있으며, 이 방식은 `LIKE`, `ILIKE`, `NOT LIKE`, `NOT ILIKE`, `NOT SIMILAR TO`에서도 동일하게 사용할 수 있습니다:
+
+```sql
+-- `#%` denotes a literal `%`, so this matches names containing a percent sign
+SELECT * FROM products WHERE name SIMILAR TO '%#%%' ESCAPE '#';
+-- Result: (none)
+```
+
+전체 패턴 문법은 [`SIMILAR TO` 연산자 문서](/ko/reference/operators/index#similarto-function)를 참조하십시오.
+
+#### IF 예시 {#if-examples}
 
 ```sql
 -- 카테고리별 다른 가격 임계값
@@ -424,9 +429,7 @@ WHERE if(in_stock, price > 100, true);
 -- ($100 초과 재고 보유 항목 OR 재고 없는 모든 항목)
 ```
 
-<div id="multiif-examples">
-  #### multiIf 예시
-</div>
+#### multiIf 예시 {#multiif-examples}
 
 ```sql
 -- 여러 카테고리 기반 조건
@@ -449,9 +452,7 @@ WHERE multiIf(
 -- 결과: Laptop, Chair, Monitor, Lamp
 ```
 
-<div id="case-examples">
-  #### CASE 예시
-</div>
+#### CASE 예시 {#case-examples}
 
 **단순한 CASE:**
 

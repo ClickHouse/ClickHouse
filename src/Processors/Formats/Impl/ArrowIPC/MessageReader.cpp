@@ -190,6 +190,9 @@ void MessageReader::readBody(
     std::sort(ranges.begin(), ranges.end());
 
     auto * seekable = dynamic_cast<SeekableReadBuffer *>(&in);
+    /// `ReadBufferFromFileDescriptor` also wraps pipes, which do not support `seek`.
+    if (seekable && !seekable->checkIfActuallySeekable())
+        seekable = nullptr;
     auto skip = [&](Int64 n)
     {
         if (n <= 0)
