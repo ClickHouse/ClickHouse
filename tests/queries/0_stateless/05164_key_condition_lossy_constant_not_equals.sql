@@ -21,11 +21,11 @@ SELECT count() FROM t_lossy_const_key WHERE d != toDateTime64('2023-02-01 12:00:
 SELECT count() FROM t_lossy_const_key WHERE d = toDateTime64('2023-02-01 12:00:00.000', 3, 'UTC');
 
 -- A `String` constant is not a value in its own domain: the comparison converts the spelling into the
--- type of the column and compares there, so a spelling that renders back differently - `12:00:00.000`
--- comes back as `12:00:00` - still names exactly one key point and keeps its pruning.
+-- type of the column and compares there, so a spelling that renders back differently - the `T` of
+-- `2023-02-01T12:00:00` comes back as a space - still names exactly one key point and keeps its pruning.
 SELECT 'a String spelling of the same point';
-SELECT count() FROM t_lossy_const_key WHERE d != '2023-02-01 12:00:00.000';
-SELECT countIf(d != '2023-02-01 12:00:00.000') FROM t_lossy_const_key;
+SELECT count() FROM t_lossy_const_key WHERE d != '2023-02-01T12:00:00';
+SELECT countIf(d != '2023-02-01T12:00:00') FROM t_lossy_const_key;
 
 -- Reporting a lossless normalization as lossy would silently disable pruning, which no answer can
 -- show. `max_rows_to_read` pins it: with the part holding the excluded key point pruned, the query
@@ -37,7 +37,7 @@ SELECT count() FROM t_lossy_const_key WHERE d != toDateTime64('2023-02-01 12:00:
 SELECT count() FROM t_lossy_const_key WHERE d != toDateTime64('2023-02-01 12:00:00', 0, 'UTC')
     SETTINGS max_rows_to_read = 1, use_statistics_for_part_pruning = 0, use_query_condition_cache = 0,
         enable_parallel_replicas = 0;
-SELECT count() FROM t_lossy_const_key WHERE d != '2023-02-01 12:00:00.000'
+SELECT count() FROM t_lossy_const_key WHERE d != '2023-02-01T12:00:00'
     SETTINGS max_rows_to_read = 1, use_statistics_for_part_pruning = 0, use_query_condition_cache = 0,
         enable_parallel_replicas = 0;
 SELECT count() FROM t_lossy_const_key WHERE d != '2023-02-01 12:00:00'

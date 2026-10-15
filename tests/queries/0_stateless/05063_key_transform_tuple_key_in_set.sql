@@ -179,13 +179,14 @@ SELECT extract(explain, '(?:Condition|Parts): .*') FROM (
 
 -- 18. `toString` of a `DateTime64` past `9999-12-31` saturates, so the two rows below render alike and the atom
 -- must stay relaxed: an exact one answers `2` for `IN` when counted from the index, and `0` for `NOT IN` and `NOT has`.
+-- Parallel replicas are off: such a constant sent to a replica is rendered as text, which saturates the same way.
 CREATE TABLE t_dt64 (k Tuple(DateTime64(0, 'UTC'), UInt8)) ENGINE = MergeTree ORDER BY toString(k);
 SYSTEM STOP MERGES t_dt64;
 INSERT INTO t_dt64 SELECT tuple(toDateTime64('9999-12-31 23:59:59', 0, 'UTC') + 1, 1);
 INSERT INTO t_dt64 SELECT tuple(toDateTime64('9999-12-31 23:59:59', 0, 'UTC') + 2, 1);
-SELECT count() FROM t_dt64 WHERE k IN (SELECT toDateTime64('9999-12-31 23:59:59', 0, 'UTC') + 1, toUInt8(1));
-SELECT count() FROM t_dt64 WHERE k NOT IN (SELECT toDateTime64('9999-12-31 23:59:59', 0, 'UTC') + 1, toUInt8(1));
-SELECT count() FROM t_dt64 WHERE NOT has([tuple(toDateTime64('9999-12-31 23:59:59', 0, 'UTC') + 1, toUInt8(1))], k) SETTINGS optimize_rewrite_has_to_in = 0;
+SELECT count() FROM t_dt64 WHERE k IN (SELECT toDateTime64('9999-12-31 23:59:59', 0, 'UTC') + 1, toUInt8(1)) SETTINGS enable_parallel_replicas = 0;
+SELECT count() FROM t_dt64 WHERE k NOT IN (SELECT toDateTime64('9999-12-31 23:59:59', 0, 'UTC') + 1, toUInt8(1)) SETTINGS enable_parallel_replicas = 0;
+SELECT count() FROM t_dt64 WHERE NOT has([tuple(toDateTime64('9999-12-31 23:59:59', 0, 'UTC') + 1, toUInt8(1))], k) SETTINGS optimize_rewrite_has_to_in = 0, enable_parallel_replicas = 0;
 
 DROP TABLE t_str;
 DROP TABLE t_float;
