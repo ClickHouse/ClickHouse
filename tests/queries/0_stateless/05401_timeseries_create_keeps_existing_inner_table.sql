@@ -15,6 +15,7 @@ CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.ts ENGINE = TimeSeries; -- { ser
 
 -- The existing table keeps its rows, and the `samples` inner table that the failed `CREATE` created is dropped.
 SELECT x FROM {CLICKHOUSE_DATABASE_1:Identifier}.`.inner.tags.ts`;
-SELECT name FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String} ORDER BY name;
+-- `CLICKHOUSE_DATABASE_1` is the name of the test database with `_1` appended.
+SELECT name FROM system.tables WHERE database = currentDatabase() || '_1' ORDER BY name;
 
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
