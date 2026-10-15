@@ -683,15 +683,17 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
     const auto dictionary_substream = getSubstream(state.index, MergeTreeIndexSubstream::Type::TextIndexDictionary);
     constexpr size_t dictionary_buffer_size = 16 * 1024;
 
-    /// Blocks are visited in token-cardinality order (and in ranges for patterns), not in file order,
-    /// so ask the page cache for one block at a time instead of a lookahead the next seek abandons.
+    /// Blocks of search tokens are visited in token-cardinality order, not in file order, so ask the
+    /// page cache for one block at a time instead of a lookahead the next seek abandons.
+    /// Blocks of patterns are visited in ascending ranges, in file order, so a condition with only
+    /// patterns keeps the normal lookahead.
     auto dictionary_stream = makeTextIndexInputStream(
         state.part_info,
         state.index.getFileName(),
         dictionary_substream,
         state.reader_settings,
         dictionary_buffer_size,
-        /*use_page_cache_lookahead=*/ false);
+        /*use_page_cache_lookahead=*/ condition_text.getAllSearchTokens().empty());
 
     analyzeDictionaryForTokens(text_index_header->sparse_index, *dictionary_stream, state);
     analyzeDictionaryForPatterns(text_index_header->sparse_index, *dictionary_stream, state);
