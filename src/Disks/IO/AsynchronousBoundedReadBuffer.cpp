@@ -427,7 +427,7 @@ off_t AsynchronousBoundedReadBuffer::seek(off_t offset, int whence)
     * Note: we read in range [file_offset_of_buffer_end, read_until_position).
     */
     if (!impl->isSeekCheap() && file_offset_of_buffer_end && read_until_position && new_pos < *read_until_position
-        && new_pos > file_offset_of_buffer_end && new_pos < file_offset_of_buffer_end + min_bytes_for_seek)
+        && new_pos > file_offset_of_buffer_end && new_pos - file_offset_of_buffer_end < min_bytes_for_seek)
     {
         ProfileEvents::increment(ProfileEvents::RemoteFSLazySeeks);
         bytes_to_ignore = new_pos - file_offset_of_buffer_end;
