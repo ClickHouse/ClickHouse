@@ -3183,6 +3183,10 @@ static void addSubcolumnsRefreshFromParentsTransform(QueryPipelineBuilder & buil
     std::unordered_map<String, std::pair<String, String>> stale;
     for (const auto & column : header)
     {
+        /// A physical column named like a subcolumn (`a.size0` next to `a`) is a column of its own, not a subcolumn.
+        if (ctx->metadata_snapshot->getColumns().hasPhysical(column.name))
+            continue;
+
         for (auto [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(column.name))
         {
             const auto * parent = header.findByName(column_name);
