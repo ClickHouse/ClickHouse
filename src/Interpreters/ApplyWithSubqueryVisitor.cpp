@@ -45,24 +45,7 @@ ContextPtr getSubqueryContext(const ASTPtr & settings_ast, const ContextPtr & co
 
     const auto & set_query = settings_ast->as<const ASTSetQuery &>();
     auto subquery_context = Context::createCopy(context);
-
-    /// One change at a time, so that each is clamped against the context as the preceding changes left it.
-    for (const auto & change : set_query.changes)
-    {
-        SettingsChanges single_change{change};
-        subquery_context->clampToSettingsConstraints(single_change, SettingSource::QUERY);
-        subquery_context->applySettingsChanges(single_change);
-    }
-
-    if (!set_query.default_settings.empty())
-    {
-        auto allowed_resets = set_query.default_settings;
-        SettingsChanges clamped_resets;
-        subquery_context->clampSettingsConstraintsForSettingsReset(allowed_resets, clamped_resets, SettingSource::QUERY);
-        subquery_context->resetSettingsToDefaultValue(allowed_resets);
-        subquery_context->applySettingsChanges(clamped_resets);
-    }
-
+    subquery_context->applyNestedQuerySettingsClamped(set_query.changes, set_query.default_settings);
     return subquery_context;
 }
 

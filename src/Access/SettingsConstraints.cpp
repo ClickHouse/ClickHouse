@@ -499,7 +499,22 @@ void SettingsConstraints::clampResetToDefault(
             checkOrClamp(current_settings, reset_as_change, CLAMP_ON_VIOLATION, source);
 
             if (reset_as_change.empty())
+            {
+                /// The reset was either refused or does not change the value. The latter is not a no-op for an
+                /// explicitly assigned `Settings` setting: the reset clears the assignment, and under an active
+                /// `compatibility` the setting then takes the value of that version. So decide it by the
+                /// constraints alone, which refuse it again if it was refused above.
+                if (Settings::hasBuiltin(name) && current_settings.isChanged(name))
+                {
+                    std::string_view setting_name = Settings::resolveName(name);
+                    SettingChange change{name, default_value};
+                    if (access_control->isSettingNameAllowed(setting_name)
+                        && getChecker(current_settings, setting_name).check(change, settingCastValueUtil(name, default_value), CLAMP_ON_VIOLATION, source)
+                        && change.value == default_value)
+                        allowed_resets.push_back(name);
+                }
                 continue;
+            }
 
             if (reset_as_change.front().value == default_value)
                 allowed_resets.push_back(name);
@@ -546,19 +561,24 @@ void SettingsConstraints::check(const MergeTreeSettings & current_settings, cons
         check(current_settings, change);
 }
 
-void SettingsConstraints::clamp(const Settings & current_settings, SettingsChanges & changes, SettingSource source) const
+void SettingsConstraints::clamp(const Settings & current_settings, SettingsChanges & changes, SettingSource source, bool keep_unchanged_settings) const
 {
-    checkOrClamp(current_settings, changes, CLAMP_ON_VIOLATION, source);
+    checkOrClamp(current_settings, changes, CLAMP_ON_VIOLATION, source, keep_unchanged_settings);
 }
 
-void SettingsConstraints::checkOrClamp(const Settings & current_settings, SettingsChanges & changes, ReactionOnViolation reaction, SettingSource source) const
+void SettingsConstraints::checkOrClamp(
+    const Settings & current_settings,
+    SettingsChanges & changes,
+    ReactionOnViolation reaction,
+    SettingSource source,
+    bool keep_unchanged_settings) const
 {
     /// If we filter out settings that match the current default here, `compatibility` will silently override them.
     /// So when `compatibility` is present, we keep unchanged settings so they are applied after `compatibility`.
-    bool has_compatibility_setting = changes.tryGet("compatibility") != nullptr;
+    bool ignore_unchanged_settings = keep_unchanged_settings || changes.tryGet("compatibility") != nullptr;
     std::erase_if(changes, [&](SettingChange & change)
     {
-        return !checkImpl(current_settings, change, reaction, source, /*ignore_unchanged_settings=*/has_compatibility_setting);
+        return !checkImpl(current_settings, change, reaction, source, ignore_unchanged_settings);
     });
 }
 
