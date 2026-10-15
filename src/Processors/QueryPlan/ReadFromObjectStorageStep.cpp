@@ -291,6 +291,16 @@ std::shared_ptr<ObjectStorageTopKQueryConditionCacheKey> ReadFromObjectStorageSt
     if (is_data_lake && configuration->getDataLakeSettings()[DataLakeStorageSetting::paimon_incremental_read])
         return {};
 
+    /// The members of an archive make no key (see `ObjectIteratorListingAllForTopKQueryConditionCache`),
+    /// and listing them ahead would keep a reader of the archive open for each of them.
+    if (configuration->isArchive())
+        return {};
+
+    /// The tags of an object can change without changing its `ETag` or the snapshot of a data lake,
+    /// so neither the key of the files nor the hash of the filter describes them.
+    if (info.requested_virtual_columns.contains("_tags"))
+        return {};
+
     /// The rows the reader drops besides those of the TopN filter must be dropped by a condition the
     /// key covers, and so must the rows the filter drops after the format, which do not make the threshold.
     /// So the key covers the whole filter of the step and a PREWHERE collected with it, not only the part

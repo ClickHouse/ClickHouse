@@ -42,6 +42,21 @@
 100997
 100996
 100995
+--- a predicate on the tags of the objects
+100999
+100998
+100997
+100996
+100995
+100994
+100993
+100999
+100998
+100997
+100996
+100995
+100994
+100993
 --- use_query_condition_cache_for_top_k = 0
 100999
 100998
@@ -68,5 +83,7 @@ rewritten_where_1	1	0
 rewritten_nowhere_2	1	1
 unpinned_1	0	0
 unpinned_2	0	0
+tags_1	0	0
+tags_2	0	0
 gate_1	0	0
 gate_2	0	0
