@@ -4176,3 +4176,107 @@ def test_rabbitmq_block_ends_when_prefetch_is_used_up(rabbitmq_cluster, db, uniq
     connection = pika.BlockingConnection(parameters)
     connection.channel().queue_delete(queue=unique)
     connection.close()
+
+
+def _rabbitmq_connection(rabbitmq_cluster):
+    credentials = pika.PlainCredentials("root", "clickhouse")
+    return pika.BlockingConnection(
+        pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials)
+    )
+
+
+def _prequeue(rabbitmq_cluster, queue, bodies):
+    connection = _rabbitmq_connection(rabbitmq_cluster)
+    channel = connection.channel()
+    channel.queue_delete(queue=queue)  # Left over from an earlier run under the same name.
+    channel.queue_declare(queue=queue, durable=True)
+    for body in bodies:
+        channel.basic_publish(exchange="", routing_key=queue, body=body)
+    connection.close()
+
+
+def _select_until(query, done, settings=None):
+    # A direct SELECT returns at once while nothing is delivered yet; each one runs the event loop for a while.
+    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
+    while time.monotonic() < deadline:
+        out, err = instance.query_and_get_answer_with_error(
+            query, settings={"stream_like_engine_allow_direct_select": 1, **(settings or {})}
+        )
+        if done(out, err):
+            return
+        time.sleep(0.05)
+    pytest.fail(f"{query} did not return the expected result in {DEFAULT_TIMEOUT_SEC} s")
+
+
+def _attach_view_and_check(rabbitmq_cluster, db, queue, expected, query):
+    instance.query(f"CREATE MATERIALIZED VIEW {db}.consumer TO {db}.view AS SELECT key FROM {db}.rabbitmq")
+    try:
+        check_expected_result_polling(expected, query)
+        instance.query(f"DROP TABLE {db}.rabbitmq SYNC", timeout=60)
+    except BaseException:
+        # Restart, so a table stuck in a block cannot affect the following tests.
+        instance.stop_clickhouse(kill=True)
+        instance.start_clickhouse()
+        raise
+    finally:
+        connection = _rabbitmq_connection(rabbitmq_cluster)
+        connection.channel().queue_delete(queue=queue)
+        connection.close()
+
+
+@pytest.mark.parametrize("commit_on_select", [0, 1], ids=["no_commit", "failed_select"])
+def test_rabbitmq_view_acks_messages_a_select_left_unacked(rabbitmq_cluster, db, unique, commit_on_select):
+    # A direct SELECT leaves the message it read unacked (rabbitmq_commit_on_select = 0, or it failed). That message
+    # held one of the consumer's 65535 prefetch slots, so with rabbitmq_flush_interval_ms = 0 the view's block waited
+    # forever for a full window. Two windows, so the view's ack after the first one has to reach the broker.
+    num_messages = 2 * 65535
+    # The first message parses only with input_format_json_read_bools_as_numbers (the default).
+    bodies = [json.dumps({"key": True})] + [json.dumps({"key": i}) for i in range(1, num_messages)]
+    _prequeue(rabbitmq_cluster, unique, bodies)
+    instance.query(
+        f"""
+        CREATE TABLE {db}.rabbitmq (key UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_queue_consume = 1,
+                     rabbitmq_queue_base = '{unique}',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_commit_on_select = {commit_on_select},
+                     rabbitmq_max_block_size = 200000,
+                     rabbitmq_flush_interval_ms = 0;
+        CREATE TABLE {db}.view (key UInt64) ENGINE = MergeTree ORDER BY key;
+        """
+    )
+    # A SELECT reads one message per consumer (one here), the first one.
+    query = f"SELECT key FROM {db}.rabbitmq"
+    if commit_on_select:
+        # Fails while parsing, before the SELECT can ack.
+        _select_until(query, lambda out, err: "INCORRECT_DATA" in err or "CANNOT_PARSE" in err,
+                      {"input_format_json_read_bools_as_numbers": 0})
+    else:
+        _select_until(query, lambda out, err: out == "1\n")
+
+    # The view acks the SELECT's message with its first block, without inserting it (as on master).
+    _attach_view_and_check(rabbitmq_cluster, db, unique, num_messages - 1, f"SELECT count() FROM {db}.view")
+
+
+def test_rabbitmq_view_acks_a_window_selects_left_unacked(rabbitmq_cluster, db, unique):
+    # Direct SELECTs read a whole prefetch window without acking it (empty messages, then key 0). The broker then
+    # delivered nothing more to that consumer, and a view attached later never got a message to ack.
+    _prequeue(rabbitmq_cluster, unique, [""] * 65534 + [json.dumps({"key": i}) for i in range(2)])
+    instance.query(
+        f"""
+        CREATE TABLE {db}.rabbitmq (key UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_queue_consume = 1,
+                     rabbitmq_queue_base = '{unique}',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_flush_interval_ms = 500;
+        CREATE TABLE {db}.view (key UInt64) ENGINE = MergeTree ORDER BY key;
+        """
+    )
+    # Each SELECT continues where the previous one stopped; key 0 is the last message of the window.
+    _select_until(f"SELECT key FROM {db}.rabbitmq", lambda out, err: out == "0\n")
+
+    _attach_view_and_check(rabbitmq_cluster, db, unique, 1, f"SELECT countIf(key = 1) FROM {db}.view")

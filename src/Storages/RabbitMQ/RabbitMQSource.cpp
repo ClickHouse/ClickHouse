@@ -303,6 +303,9 @@ Chunk RabbitMQSource::generateImpl()
             {
                 consumed = true;
                 ++total_messages;
+                /// Delivery tags are per channel: what was read on a replaced channel can no longer be acked.
+                if (consumer->currentMessage().channel_id != commit_info.channel_id)
+                    commit_info = {.delivery_tag = 0, .channel_id = consumer->currentMessage().channel_id, .failed_delivery_tags = {}};
                 try
                 {
                     if (!consumer->currentMessage().message.empty())
@@ -418,8 +421,17 @@ Chunk RabbitMQSource::generateImpl()
         else if (!consumed && total_rows == 0)
         {
             /// Empty first poll: self-drive the loop instead of returning empty. See driveLoopUntilMessage.
-            if (drive_loop_on_worker && !consumer->isConsumerStopped() && driveLoopUntilMessage())
+            if (drive_loop_on_worker && !consumer->isConsumerStopped() && !consumer->isWindowHeld() && driveLoopUntilMessage())
                 continue;
+            /// Earlier readers (a direct SELECT) hold the whole window, so nothing more arrives: ack what they read with
+            /// this block, as the next block would if the broker could still deliver.
+            if (consumer->isWindowHeld())
+            {
+                chassert(!commit_info.delivery_tag && commit_info.failed_delivery_tags.empty());
+                const auto & message = consumer->currentMessage();
+                commit_info.channel_id = message.channel_id;
+                commit_info.delivery_tag = message.delivery_tag;
+            }
             break;
         }
 
@@ -438,7 +450,9 @@ Chunk RabbitMQSource::generateImpl()
         }
 
         /// The prefetch window is used up and drained: the broker waits for our ack, so waiting here would only stall.
-        const bool prefetch_exhausted = total_messages >= consumer->getPrefetchCount() && !consumer->hasPendingMessages();
+        /// The block's own count also covers messages of a replaced channel.
+        const bool prefetch_exhausted
+            = (consumer->isWindowFull() || total_messages >= consumer->getPrefetchCount()) && !consumer->hasPendingMessages();
         if (total_rows >= max_block_size || prefetch_exhausted || consumer->isConsumerStopped() || is_time_limit_exceeded)
         {
             break;

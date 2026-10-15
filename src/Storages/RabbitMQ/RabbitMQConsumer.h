@@ -58,6 +58,11 @@ public:
 
     const MessageData & currentMessage() { return current; }
     const String & getChannelID() const { return channel_id; }
+    /// Messages read and not acked, also by earlier readers of this consumer, use up the prefetch window. Conservative:
+    /// individually rejected messages and several queues per channel only make it true earlier.
+    bool isWindowFull() const;
+    /// Earlier readers (a direct SELECT) hold the whole window, and acking the last message read settles it.
+    bool isWindowHeld() const;
     UInt16 getPrefetchCount() const { return prefetch_count; }
 
     /// Return read buffer containing next available message
@@ -140,6 +145,7 @@ private:
     MessageData current;
 
     UInt64 last_commited_delivery_tag = 0;
+    UInt64 last_rejected_delivery_tag = 0;
 
     std::condition_variable cv;
     std::mutex mutex;
