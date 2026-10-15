@@ -1,6 +1,7 @@
+#include <algorithm>
+#include <Common/StringUtils.h>
 #include <Access/Common/AuthenticationType.h>
 #include <Common/Exception.h>
-#include <boost/algorithm/string/case_conv.hpp>
 
 
 namespace DB
@@ -16,7 +17,7 @@ const AuthenticationTypeInfo & AuthenticationTypeInfo::get(AuthenticationType ty
     static constexpr auto make_info = [](Keyword keyword_, bool is_password_ = false)
     {
         String init_name = String(toStringView(keyword_));
-        boost::to_lower(init_name);
+        toLowerASCII(init_name);
         return AuthenticationTypeInfo{keyword_, std::move(init_name), is_password_};
     };
 
@@ -91,6 +92,21 @@ const AuthenticationTypeInfo & AuthenticationTypeInfo::get(AuthenticationType ty
             break;
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown authentication type: {}", static_cast<int>(type_));
+}
+
+
+bool authenticationTypeIsVerifiedLocally(AuthenticationType type_)
+{
+    switch (type_)
+    {
+        case AuthenticationType::LDAP:
+        case AuthenticationType::KERBEROS:
+        case AuthenticationType::HTTP:
+        case AuthenticationType::JWT:
+            return false;
+        default:
+            return true;
+    }
 }
 
 }

@@ -5,6 +5,8 @@
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
 
+#include <filesystem>
+
 
 namespace DB
 {
@@ -14,6 +16,15 @@ class ReadBuffer;
 class SeekableReadBuffer;
 class WriteBuffer;
 enum class WriteMode : uint8_t;
+
+/// fsync the contents of an already-written local file by re-opening it: a natively copied file
+/// (`fs::copy`, `IDisk::copyFile`) leaves no buffer to call `sync` on. Increments `FileSync`.
+void fsyncBackupFileContents(const std::filesystem::path & path);
+
+/// fsync a directory so that the entries of the files created inside it are persisted. Unlike
+/// `LocalDirectorySyncGuard` this throws on failure, so a backup cannot report success while its
+/// durability guarantee silently failed. Increments `DirectorySync`.
+void fsyncBackupDirectory(const std::filesystem::path & path);
 
 /// Represents operations of loading from disk or downloading for reading a backup.
 class BackupReaderDefault : public IBackupReader
@@ -28,6 +39,12 @@ public:
     /// `encrypted_in_backup` specify if this file is encrypted in the backup, so it shouldn't be encrypted again while restoring to an encrypted disk.
     void copyFileToDisk(const String & path_in_backup, size_t file_size, bool encrypted_in_backup,
                         DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) override;
+
+    /// Buffered ranged copy, inherited by every reader that has no native ranged copy. `file_size` is unused:
+    /// reading through buffers has no size precondition.
+    void copyFileRangeToDisk(const String & path_in_backup, size_t offset, size_t size, size_t file_size,
+                             bool encrypted_in_backup, DiskPtr destination_disk, const String & destination_path,
+                             WriteMode write_mode) override;
 
     const ReadSettings & getReadSettings() const override { return read_settings; }
     const WriteSettings & getWriteSettings() const override { return write_settings; }
@@ -62,10 +79,9 @@ public:
     const WriteSettings & getWriteSettings() const override { return write_settings; }
     size_t getWriteBufferSize() const override { return write_buffer_size; }
 
-protected:
-    /// Here readFile() is used only to implement fileContentsEqual().
-    virtual std::unique_ptr<ReadBuffer> readFile(const String & file_name, size_t expected_file_size) = 0;
+    std::unique_ptr<ReadBuffer> readFile(const String & file_name, size_t expected_file_size) override = 0;
 
+protected:
     LoggerPtr const log;
 
     /// The read settings are used to read from the source disk in copyFileFromDisk().

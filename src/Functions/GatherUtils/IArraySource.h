@@ -23,6 +23,8 @@ struct IArraySource
     virtual size_t getColumnSize() const = 0;
     virtual bool isConst() const { return false; }
     virtual bool isNullable() const { return false; }
+    /// True for ReplicatedSource: the source reads a lazily replicated array (ColumnReplicated)
+    virtual bool isReplicated() const { return false; }
 
     virtual void accept(ArraySourceVisitor &)
     {

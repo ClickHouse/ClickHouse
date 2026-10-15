@@ -138,8 +138,17 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
     size_t bytes_read = result.size - result.offset;
     file_offset_of_buffer_end = result.file_offset_of_buffer_end;
 
+    /// The local read throttler exists to keep the load on the block device within the configured
+    /// budget, so the data that was copied from the OS page cache must not consume its tokens.
+    /// The other throttlers that can be combined here (for backups, merges and mutations) limit
+    /// the amount of work regardless of where the data came from, and still account it.
     if (throttler)
-        throttler->throttle(result.size);
+    {
+        if (result.from_os_page_cache)
+            throttler->throttleOSPageCacheRead(result.size);
+        else
+            throttler->throttle(result.size);
+    }
 
     if (bytes_read)
     {
@@ -279,7 +288,12 @@ off_t AsynchronousReadBufferFromFileDescriptor::seek(off_t offset, int whence)
                         "Logical error in AsynchronousReadBufferFromFileDescriptor, bytes_to_ignore ({}"
                         ") >= internal_buffer.size() ({})", bytes_to_ignore, internal_buffer.size());
 
-    return seek_pos;
+    /// Return the position we are actually at, not `seek_pos`. With O_DIRECT (`required_alignment > 1`)
+    /// `seek_pos` is `new_pos` rounded down to the alignment, and the difference is accounted for by
+    /// `bytes_to_ignore` (which `getPosition` includes), so the buffer is positioned at `new_pos`.
+    /// Returning `seek_pos` would break callers that take the returned value as the new position
+    /// (see `ReadBufferFromEncryptedFile`).
+    return static_cast<off_t>(new_pos);
 }
 
 

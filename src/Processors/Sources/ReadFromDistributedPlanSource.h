@@ -22,15 +22,24 @@ public:
         SharedHeader header_,
         const UUID & unique_query_id_,
         DistributedQueryPlan distributed_query_plan_,
-        TaskToHostMapPtr task_to_host_map_)
+        TaskToHostMapPtr task_to_host_map_,
+        DistributedQueryCancellationPtr cancellation_)
         : ISource(std::move(header_))
         , unique_query_id(unique_query_id_)
         , distributed_query_plan(std::move(distributed_query_plan_))
         , task_to_host_map(std::move(task_to_host_map_))
+        , cancellation(std::move(cancellation_))
     {
     }
 
     String getName() const override { return "ReadFromDistributedPlanSource"; }
+
+    Status prepare() override;
+
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+    std::tuple<int, uint32_t, Int64> scheduleForEvent() override;
+    void onAsyncJobReady() override;
+#endif
 
 private:
     std::optional<Chunk> tryGenerate() override;
@@ -50,8 +59,26 @@ private:
     bool started = false;
     bool cleaned_up = false;
 
-    /// Set from `onCancel` (and observed by the executor) to stop remote work promptly.
-    std::shared_ptr<std::atomic<bool>> cancellation_flag = std::make_shared<std::atomic<bool>>(false);
+    /// Set from `onCancel` (and observed by the executor) to stop remote work promptly. Records the
+    /// failures of the tasks and of the source reading the result, so `tryGenerate` reports the
+    /// query's failure instead of a plain cancellation. Its wakeup wakes a parked source at once.
+    const DistributedQueryCancellationPtr cancellation;
+
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+    /// This source only dispatches the plan's stages and waits for them; the query result arrives
+    /// through a second source of the same pipeline. On a streaming exchange nothing runs until
+    /// that second source connects to the `main` task's sink, and a sink without a connection does
+    /// not ask its input for data, so the whole plan is blocked on it. Waiting inside `work` would
+    /// hold an execution thread, and a pipeline that has only one of them would never reach the
+    /// result source. So park in the executor's async queue instead and let it re-dispatch us.
+    ///
+    /// The park ends on `stage_wakeup`, and this interval is only a backstop for a state change that
+    /// does not notify it.
+    static constexpr Int64 stage_poll_interval_ms = 100;
+    /// True while the last `tryGenerate` left the stages running, i.e. there is nothing to do until
+    /// the wake-up arrives. Reset in `onAsyncJobReady`, right before the re-dispatch calls `work`.
+    bool waiting_for_stages = false;
+#endif
 };
 
 }

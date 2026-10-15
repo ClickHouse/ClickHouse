@@ -32,3 +32,15 @@ GROUP BY GROUPING SETS
         (number % 2, number % 3),
         (number / 2, number / 3)
     );
+
+-- A single-set GROUPING SETS ((...)) never produces a non-member row: it is collapsed to an
+-- ordinary GROUP BY before these passes run, so every output row still carries the key and the
+-- rewrite is safe. Both passes must still fire (redundant/injective keys removed), not be blocked
+-- by the GROUPING SETS guard added for the multi-set case in #110715.
+EXPLAIN QUERY TREE run_passes=1
+SELECT sum(number) FROM numbers(1000)
+GROUP BY GROUPING SETS ((number, number % 2));
+
+EXPLAIN QUERY TREE run_passes=1
+SELECT count() FROM numbers(1000)
+GROUP BY GROUPING SETS ((toString(number), number));

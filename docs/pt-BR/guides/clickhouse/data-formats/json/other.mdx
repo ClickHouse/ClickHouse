@@ -47,7 +47,7 @@ INSERT INTO people FORMAT JSONEachRow
 
 ```response
 Ok.
-1 linha no Set. Elapsed: 0.002 sec.
+1 row in set. Elapsed: 0.002 sec.
 ```
 
 Podemos selecionar a coluna `tags` e ver que o JSON foi inserido como string:
@@ -62,7 +62,7 @@ FROM people
 │ {"hobby":"Databases","holidays":[{"year":2024,"location":"Azores, Portugal"}],"car":{"model":"Tesla","year":2023}} │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 
-1 linha no Set. Elapsed: 0.001 sec.
+1 row in set. Elapsed: 0.001 sec.
 ```
 
 As funções [`JSONExtract`](/pt-BR/reference/functions/regular-functions/json-functions#jsonextract-functions) podem ser usadas para extrair valores desse JSON. Considere o exemplo simples abaixo:
@@ -76,7 +76,7 @@ SELECT JSONExtractString(tags, 'holidays') AS holidays FROM people
 │ [{"year":2024,"location":"Azores, Portugal"}] │
 └───────────────────────────────────────────────┘
 
-1 linha no Set. Elapsed: 0.002 sec.
+1 row in set. Elapsed: 0.002 sec.
 ```
 
 Observe que as funções exigem tanto uma referência à coluna `String` `tags` quanto um path no JSON a ser extraído. Paths aninhados exigem o aninhamento das funções, por exemplo, `JSONExtractUInt(JSONExtractString(tags, 'car'), 'year')`, que extrai a coluna `tags.car.year`. A extração de paths aninhados pode ser simplificada por meio das funções [`JSON_QUERY`](/pt-BR/reference/functions/regular-functions/json-functions#JSON_QUERY) e [`JSON_VALUE`](/pt-BR/reference/functions/regular-functions/json-functions#JSON_VALUE).
@@ -94,11 +94,11 @@ Para inserir nesse esquema, precisamos usar o formato `JSONAsString`:
 
 ```sql
 INSERT INTO arxiv SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz', 'JSONAsString')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz', NOSIGN, 'JSONAsString')
 ```
 
 ```response
-0 rows in Set. Elapsed: 25.186 sec. Processed 2.52 million rows, 1.38 GB (99.89 thousand rows/s., 54.79 MB/s.)
+0 rows in set. Elapsed: 25.186 sec. Processed 2.52 million rows, 1.38 GB (99.89 thousand rows/s., 54.79 MB/s.)
 ```
 
 Suponha que desejamos contar o número de artigos publicados por ano. Compare a consulta a seguir, usando apenas String, com a versão [estruturada](/pt-BR/guides/clickhouse/data-formats/json/inference#creating-tables) do esquema:
@@ -582,7 +582,7 @@ Uma versão mais completa dos dados acima está disponível em um bucket públic
 
 ```sql
 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', 'JSONEachRow')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', NOSIGN, 'JSONEachRow')
 LIMIT 1
 FORMAT PrettyJSONEachRow
 
@@ -600,7 +600,7 @@ FORMAT PrettyJSONEachRow
 ```
 
 ```response
-1 linha no Set. Elapsed: 0.312 sec.
+1 row in set. Elapsed: 0.312 sec.
 ```
 
 Dadas as restrições e o formato de entrada do JSON, inserimos este conjunto de dados de exemplo com a seguinte consulta. Aqui, definimos `flatten_nested=0`.
@@ -610,7 +610,7 @@ A instrução a seguir insere 10 milhões de linhas, portanto pode levar alguns 
 ```sql
 INSERT INTO http
 SELECT `@timestamp` AS `timestamp`, clientip, [request], status,
-size FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz',
+size FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', NOSIGN,
 'JSONEachRow');
 ```
 
@@ -657,7 +657,7 @@ Para inserir dados nesta tabela, precisamos estruturar o JSON como uma lista de 
 SELECT
     arrayMap(x -> (x.1), JSONExtractKeysAndValues(json, 'String')) AS keys,
     arrayMap(x -> (x.2), JSONExtractKeysAndValues(json, 'String')) AS values
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', 'JSONAsString')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', NOSIGN, 'JSONAsString')
 LIMIT 1
 FORMAT Vertical
 ```
@@ -668,7 +668,7 @@ Row 1:
 keys:   ['@timestamp','clientip','request','status','size']
 values: ['893964617','40.135.0.0','{"method":"GET","path":"/images/hm_bg.jpg","version":"HTTP/1.0"}','200','24736']
 
-1 linha no Set. Elapsed: 0.416 sec.
+1 row in set. Elapsed: 0.416 sec.
 ```
 
 Observe como a coluna request continua sendo uma estrutura aninhada representada como uma string. Podemos inserir novas chaves na raiz livremente. Também podemos ter diferenças arbitrárias no próprio JSON. Para inserir na nossa tabela local, execute o seguinte:
@@ -678,11 +678,11 @@ INSERT INTO http_with_arrays
 SELECT
     arrayMap(x -> (x.1), JSONExtractKeysAndValues(json, 'String')) AS keys,
     arrayMap(x -> (x.2), JSONExtractKeysAndValues(json, 'String')) AS values
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', 'JSONAsString')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', NOSIGN, 'JSONAsString')
 ```
 
 ```response
-0 rows in Set. Elapsed: 12.121 sec. Processed 10.00 million rows, 107.30 MB (825.01 thousand rows/s., 8.85 MB/s.)
+0 rows in set. Elapsed: 12.121 sec. Processed 10.00 million rows, 107.30 MB (825.01 thousand rows/s., 8.85 MB/s.)
 ```
 
 Para consultar essa estrutura, é preciso usar a função [`indexOf`](/pt-BR/reference/functions/regular-functions/array-functions#indexOf) para identificar o índice da chave necessária (que deve ser consistente com a ordem dos valores). Isso pode ser usado para acessar a coluna de array `values`, ou seja, `values[indexOf(keys, 'status')]`. Ainda precisamos de um método de parsing de JSON para a coluna `request` — neste caso, `simpleJSONExtractString`.
@@ -706,6 +706,6 @@ GROUP BY method, status ORDER BY c DESC LIMIT 5;
 │    400 │ GET    │    81 │
 └────────┴────────┴───────┘
 
-5 rows in Set. Elapsed: 0.383 sec. Processed 8.22 million rows, 1.97 GB (21.45 million rows/s., 5.15 GB/s.)
+5 rows in set. Elapsed: 0.383 sec. Processed 8.22 million rows, 1.97 GB (21.45 million rows/s., 5.15 GB/s.)
 Peak memory usage: 51.35 MiB.
 ```

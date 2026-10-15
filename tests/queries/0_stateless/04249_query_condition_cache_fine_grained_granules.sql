@@ -1,13 +1,10 @@
--- Tags: no-parallel, no-parallel-replicas
+-- Tags: no-parallel
 -- Tag no-parallel: Messes with internal cache
 
--- Does additional QCC lookups that the test doesn't expect
-SET automatic_parallel_replicas_mode = 0, enable_parallel_replicas = 0;
 SET parallel_replicas_local_plan = 1;
 
 SET allow_experimental_analyzer = 1;
 SET optimize_move_to_prewhere = 1;
-SET query_plan_optimize_prewhere = 1;
 
 -- Prove that the query condition cache now records unmatched granules at individual-granule
 -- granularity, even within batches that partially pass PREWHERE.

@@ -160,6 +160,7 @@ IProcessor::Status StrictResizeProcessor::prepare(const UpdatedInputPorts & upda
             if (state.status != OutputStatus::NeedData)
             {
                 state.status = OutputStatus::NeedData;
+                state.is_waiting = true;
                 waiting_outputs.push(output_port);
             }
         }
@@ -185,7 +186,22 @@ IProcessor::Status StrictResizeProcessor::prepare(const UpdatedInputPorts & upda
                 state.status = InputStatus::Finished;
                 ++num_finished_inputs;
 
-                waiting_outputs.push(state.waiting_output);
+                /// Release the output this input was paired with, so that it can be handed to
+                /// another input or closed. Only an output that is free right now may be released:
+                /// an output in the `NotActive` state still holds a chunk that the downstream
+                /// processor has not consumed yet, and handing it to another input would break the
+                /// invariant checked below. Such an output is enqueued by the loop over
+                /// `updated_outputs` above as soon as it becomes pushable again. An input that was
+                /// never paired with an output has no output to release.
+                if (state.waiting_output)
+                {
+                    auto & released_state = output_port_state.at(state.waiting_output);
+                    if (released_state.status == OutputStatus::NeedData && !released_state.is_waiting)
+                    {
+                        released_state.is_waiting = true;
+                        waiting_outputs.push(state.waiting_output);
+                    }
+                }
             }
             continue;
         }
@@ -211,6 +227,10 @@ IProcessor::Status StrictResizeProcessor::prepare(const UpdatedInputPorts & upda
 
         auto * waiting_output = input_state.waiting_output;
         auto & output_state = output_port_state.at(waiting_output);
+
+        /// The pairing is consumed by this chunk. If the pointer were kept, a later `isFinished`
+        /// on this input would release an output that has meanwhile been handed to another input.
+        input_state.waiting_output = nullptr;
 
         if (output_state.status == OutputStatus::NotActive)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid status NotActive for associated output");
@@ -240,12 +260,20 @@ IProcessor::Status StrictResizeProcessor::prepare(const UpdatedInputPorts & upda
         return Status::Finished;
     }
 
+    /// `waiting_outputs` is a lazy queue: an output may have finished after it was enqueued (the
+    /// loop over `updated_outputs` above flips its status but cannot remove it from the middle of
+    /// the queue), so every consumer below re-checks the current status and skips stale entries.
+
     /// Process abandoned chunks if any.
     while (!abandoned_chunks.empty() && !waiting_outputs.empty())
     {
         auto * waiting_output = waiting_outputs.front();
         auto & output_state = output_port_state.at(waiting_output);
         waiting_outputs.pop();
+        output_state.is_waiting = false;
+
+        if (output_state.status != OutputStatus::NeedData)
+            continue;
 
         waiting_output->pushData(std::move(abandoned_chunks.back()));
         abandoned_chunks.pop_back();
@@ -254,17 +282,36 @@ IProcessor::Status StrictResizeProcessor::prepare(const UpdatedInputPorts & upda
     }
 
     /// Enable more inputs if needed.
+    /// `disabled_input_ports` is a lazy queue as well: an input may finish while it is sitting in
+    /// the queue, because an upstream output is allowed to `finish` even when the peer input is not
+    /// needed. The loop over `updated_inputs` above flips such an input to `Finished` but cannot
+    /// remove it from the middle of the queue, so stale entries are skipped here. Pairing an output
+    /// with an already finished input would strand the output forever and could deadlock the
+    /// processor, and it would also let the input be counted as finished twice.
     while (!disabled_input_ports.empty() && !waiting_outputs.empty())
     {
         auto * input_port = disabled_input_ports.front();
         auto & input_state = input_port_state.at(input_port);
+
+        if (input_state.status == InputStatus::Finished)
+        {
+            disabled_input_ports.pop();
+            continue;
+        }
+
+        auto * waiting_output = waiting_outputs.front();
+        auto & output_state = output_port_state.at(waiting_output);
+        waiting_outputs.pop();
+        output_state.is_waiting = false;
+
+        if (output_state.status != OutputStatus::NeedData)
+            continue;
+
         disabled_input_ports.pop();
 
         input_port->setNeeded();
         input_state.status = InputStatus::NeedData;
-        input_state.waiting_output = waiting_outputs.front();
-
-        waiting_outputs.pop();
+        input_state.waiting_output = waiting_output;
     }
 
     /// Close all other waiting for data outputs (there is no corresponding input for them).
@@ -273,6 +320,7 @@ IProcessor::Status StrictResizeProcessor::prepare(const UpdatedInputPorts & upda
         auto * output_port = waiting_outputs.front();
         auto & output_state = output_port_state.at(output_port);
         waiting_outputs.pop();
+        output_state.is_waiting = false;
 
         if (output_state.status != OutputStatus::Finished)
            ++num_finished_outputs;

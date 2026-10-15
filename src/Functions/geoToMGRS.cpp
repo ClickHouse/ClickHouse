@@ -108,7 +108,7 @@ The string is `<zone><band><100km square><easting><northing>`, for example `31UD
     FunctionDocumentation::Examples examples = {
         {"Basic usage", "SELECT geoToMGRS(2.294497, 48.858222)", "31UDQ4825111935"},
         {"Lower precision (100 m)", "SELECT geoToMGRS(2.294497, 48.858222, 3)", "31UDQ482119"}};
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 8};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 7};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 

@@ -1,4 +1,8 @@
 <clickhouse>
+    <nats>
+        <user>clickhouse</user>
+        <password>ClickHouse_NATS_P@ssw0rd</password>
+    </nats>
     <openSSL>
         <client>
             <verificationMode>none</verificationMode>

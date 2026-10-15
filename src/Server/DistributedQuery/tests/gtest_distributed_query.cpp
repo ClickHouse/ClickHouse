@@ -1,5 +1,7 @@
 #include <cstddef>
+#include <vector>
 #include <memory>
+#include <mutex>
 #include <boost/core/noncopyable.hpp>
 #include <gtest/gtest.h>
 #include <Common/CurrentThread.h>
@@ -27,6 +29,7 @@
 #include <Formats/NativeWriter.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/JoinOperator.h>
@@ -48,13 +51,17 @@
 #include <QueryPipeline/DistributedPlanExecutor.h>
 #include <base/defines.h>
 
-#include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/Executors/Runtime/V1/PipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sources/SourceFromChunks.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/QueryPlan/ShuffleExchangeStep.h>
 #include <Processors/QueryPlan/GatherExchangeStep.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Server/StatelessWorker/StatelessWorkerTaskSerialization.h>
+#include <Common/Exception.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/IParameterLookup.h>
 
@@ -468,17 +475,23 @@ void registerBuildRuntimeFilterStep(QueryPlanStepRegistry & registry);
 
 void registerPlanSteps()
 {
-    QueryPlanStepRegistry & registry = QueryPlanStepRegistry::instance();
+    /// The registry is process-wide and rejects a second registration of the same step, so register
+    /// once for the whole binary instead of per test.
+    static std::once_flag registered;
+    std::call_once(registered, []
+    {
+        QueryPlanStepRegistry & registry = QueryPlanStepRegistry::instance();
 
-    registerReadFromFileStep(registry);
-    registerShuffleSendStep(registry);
-    registerShuffleReceiveStep(registry);
-    registerJoinStep(registry);
-    registerGatherSendStep(registry);
-    registerGatherReceiveStep(registry);
-    registerPrintTSVStep(registry);
-    registerFilterStep(registry);
-    registerBuildRuntimeFilterStep(registry);
+        registerReadFromFileStep(registry);
+        registerShuffleSendStep(registry);
+        registerShuffleReceiveStep(registry);
+        registerJoinStep(registry);
+        registerGatherSendStep(registry);
+        registerGatherReceiveStep(registry);
+        registerPrintTSVStep(registry);
+        registerFilterStep(registry);
+        registerBuildRuntimeFilterStep(registry);
+    });
 }
 
 
@@ -507,6 +520,9 @@ try
     CurrentThread::attachToGroup(thread_group);
 
     query_context->setSetting("distributed_plan_force_exchange_kind", exchangeKind);
+
+    /// Each task runs its own pipeline; 4 is the shuffle bucket count the other pipelines use.
+    query_context->setSetting("max_threads", 4);
 
     {
         /// Create JOIN query plan
@@ -543,15 +559,16 @@ try
     auto cleanup = makeTemporaryFilesCleaner(object_storage, path, all_temporary_files_for_cleanup);
 
     query_context->setSetting("distributed_plan_execute_locally", 1);
-    auto cancellation_flag = std::make_shared<std::atomic<bool>>(false);
+    auto cancellation = std::make_shared<DistributedQueryCancellation>();
 
     /// Just execute the distributed query plan without checking the result
-    auto executor = createDistributedQueryExecutor(query_uuid, distributed_query_plan, nullptr, query_context, cancellation_flag);
+    auto executor = createDistributedQueryExecutor(
+        query_uuid, distributed_query_plan, nullptr, query_context, cancellation, std::make_shared<WakeupFd>());
 
     try
     {
         executor->start();
-        while (!executor->execute());
+        while (!executor->execute(/*poll_timeout_ms=*/ 100));
         executor->cleanup();
     }
     catch (...)
@@ -572,18 +589,134 @@ TEST_F(DistributedQueryTest, ShuffleHashJoin)
     executeTestWithExchangeKind("Streaming");
 }
 
-/// v1 for legacy-port-only sources (rolling-upgrade safe); v2 once a per-replica port appears.
-TEST(DistributedTaskSerializationVersion, LowersToV1ForLegacyPorts)
+/// A stream with no columns (case of `SELECT count()`) carries only row counts, so its chunks are
+/// told apart from the end-of-data marker by the row count alone.
+TEST_F(DistributedQueryTest, InMemoryExchangeStreamWithoutColumns)
 {
-    const UInt64 server_exchange_port = 9000;
+    auto context = Context::createCopy(getContext().context);
+    context->setSetting("distributed_plan_execute_locally", true);
 
-    ExchangeStreamSources sources;
-    EXPECT_EQ(chooseTaskSerializationVersion(sources, server_exchange_port), UInt64(1));
+    /// In-memory exchanges are kept per query id for the whole process, so a fixed id would make a
+    /// repeated run read the exchange the previous run already used.
+    auto exchange_lookup = createExchangeLookup(
+        toString(UUIDHelpers::generateV4()), ExchangeDescriptions{}, ExchangeStreamSources{}, /*temporary_files_=*/ nullptr, context,
+        /*execute_locally=*/true, /*cancellation=*/ nullptr);
 
-    sources.stream_hosts["s1"] = {"host1", 9000};
-    sources.stream_hosts["s2"] = {"host2", 9000};
-    EXPECT_EQ(chooseTaskSerializationVersion(sources, server_exchange_port), UInt64(1));
+    auto header = std::make_shared<const Block>();
+    const ExchangeStreamId stream_id("test_exchange", 0, 0);
 
-    sources.stream_hosts["s3"] = {"host3", 9224};
-    EXPECT_EQ(chooseTaskSerializationVersion(sources, server_exchange_port), UInt64(2));
+    Chunks chunks;
+    chunks.emplace_back(Columns{}, 3);
+    chunks.emplace_back(Columns{}, 4);
+
+    {
+        QueryPipelineBuilder builder;
+        builder.init(Pipe(std::make_shared<SourceFromChunks>(header, std::move(chunks))));
+        builder.setSinks([&](const SharedHeader & sink_header, Pipe::StreamType) -> ProcessorPtr
+        {
+            return exchange_lookup->createSink(sink_header, stream_id, /*advisory*/ false);
+        });
+        auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
+        CompletedPipelineExecutor executor(pipeline);
+        executor.execute();
+    }
+
+    size_t total_rows = 0;
+    {
+        QueryPipeline pipeline(
+            Pipe(exchange_lookup->createSource(header, stream_id, /*output_is_serialized=*/ false, /*advisory=*/ false)));
+        PullingPipelineExecutor executor(pipeline);
+        Chunk chunk;
+        while (executor.pull(chunk))
+            total_rows += chunk.getNumRows();
+    }
+
+    EXPECT_EQ(total_rows, 7u);
+}
+
+namespace DB::ErrorCodes
+{
+extern const int INCORRECT_DATA;
+}
+
+namespace
+{
+
+RuntimeFilterReceiveDescriptor makeDescriptor(const String & key, const DataTypePtr & type, const ExchangeStreamId & stream)
+{
+    RuntimeFilterReceiveDescriptor descriptor;
+    descriptor.filter_key = key;
+    descriptor.filter_name = "filter_" + key;
+    descriptor.key_column_type = type;
+    descriptor.geometry = RuntimeFilterGeometry{
+        .exact_values_limit = 100,
+        .exact_bytes_limit = 4096,
+        .bloom_filter_bytes = 2048,
+        .bloom_filter_hash_functions = 4,
+        .pass_ratio_threshold_for_disabling = 0.55,
+        .blocks_to_skip_before_reenabling = 7,
+        .max_ratio_of_set_bits_in_bloom_filter = 0.4,
+    };
+    descriptor.stream = stream;
+    return descriptor;
+}
+
+String serializeTaskWithDescriptors(std::vector<RuntimeFilterReceiveDescriptor> descriptors)
+{
+    DistributedQueryTaskDescription description;
+    description.serialization_version = DBMS_MIN_DISTRIBUTED_TASK_SERIALIZATION_VERSION_WITH_RUNTIME_FILTERS;
+    description.initial_query_id = "q1";
+    description.task.task_id = "t0";
+    description.task.runtime_filter_descriptors = std::move(descriptors);
+    WriteBufferFromOwnString out;
+    serializeTask(description, out);
+    return out.str();
+}
+
+}
+
+/// The restored task serializes to the same bytes, so no field of a descriptor is lost on the way.
+TEST(DistributedTaskSerialization, RuntimeFilterDescriptorsRoundTrip)
+{
+    auto first = makeDescriptor("key_a", std::make_shared<DataTypeUInt64>(), ExchangeStreamId("ex1", "1", "0"));
+    auto second = makeDescriptor("key_b", std::make_shared<DataTypeString>(), ExchangeStreamId("ex2", "0", "1"));
+    second.geometry.pass_ratio_threshold_for_disabling = 0.25;
+    second.geometry.max_ratio_of_set_bits_in_bloom_filter = 0.15;
+    const String bytes = serializeTaskWithDescriptors({first, second});
+
+    ReadBufferFromString in(bytes);
+    DistributedQueryTaskDescription restored;
+    deserializeTask(restored, in);
+
+    ASSERT_EQ(restored.task.runtime_filter_descriptors.size(), 2u);
+    EXPECT_EQ(restored.task.runtime_filter_descriptors[1].filter_key, "key_b");
+    EXPECT_EQ(serializeTaskWithDescriptors(restored.task.runtime_filter_descriptors), bytes);
+}
+
+/// `deserializeTask` rejects descriptors that a correct initiator never sends.
+TEST(DistributedTaskSerialization, InvalidRuntimeFilterDescriptorsAreRejected)
+{
+    auto valid = makeDescriptor("key_a", std::make_shared<DataTypeUInt64>(), ExchangeStreamId("ex", "0", "0"));
+    auto without_key = valid;
+    without_key.filter_key.clear();
+
+    const std::vector<std::pair<const char *, std::vector<RuntimeFilterReceiveDescriptor>>> cases = {
+        {"an empty filter key", {without_key}},
+        {"a duplicate filter key", {valid, valid}},
+    };
+    for (const auto & [what, descriptors] : cases)
+    {
+        const String bytes = serializeTaskWithDescriptors(descriptors);
+        ReadBufferFromString in(bytes);
+        DistributedQueryTaskDescription restored;
+        try
+        {
+            deserializeTask(restored, in);
+            ADD_FAILURE() << what << " was accepted";
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::INCORRECT_DATA) << what;
+        }
+    }
 }

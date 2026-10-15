@@ -107,7 +107,7 @@ LIMIT 10;
 <Image img="/images/starter_guides/joins/outer_join.webp" alt="OUTER JOIN" />
 
 <Note>
-  ClickHouse можно [настроить](/ru/reference/settings/session-settings#join_use_nulls) так, чтобы он возвращал [NULL](/ru/reference/syntax#null) вместо значений по умолчанию (однако по [соображениям производительности](/ru/reference/data-types/nullable#storage-features) это не рекомендуется).
+  ClickHouse можно [настроить](/ru/reference/settings/session-settings/join#join_use_nulls) так, чтобы он возвращал [NULL](/ru/reference/syntax#null) вместо значений по умолчанию (однако по [соображениям производительности](/ru/reference/data-types/nullable#storage-features) это не рекомендуется).
 </Note>
 
 Этот запрос находит все фильмы без жанра: он выбирает все строки из таблицы `movies`, для которых нет совпадений в таблице `genres`, и поэтому они получают (во время выполнения запроса) значение по умолчанию 0 для столбца `movie_id`:
@@ -232,7 +232,7 @@ LIMIT 10;
 └─────────────────────────────────────────────┘
 ```
 
-В синтаксически оптимизированной версии запроса `CROSS JOIN` предложение `INNER JOIN` содержит ключевое слово `ALL`, явно добавленное для сохранения семантики декартова произведения `CROSS JOIN` даже при переписывании в `INNER JOIN`, для которого декартово произведение можно [отключить](/ru/reference/settings/session-settings#join_default_strictness).
+В синтаксически оптимизированной версии запроса `CROSS JOIN` предложение `INNER JOIN` содержит ключевое слово `ALL`, явно добавленное для сохранения семантики декартова произведения `CROSS JOIN` даже при переписывании в `INNER JOIN`, для которого декартово произведение можно [отключить](/ru/reference/settings/session-settings/join#join_default_strictness).
 
 ```sql
 ALL

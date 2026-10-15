@@ -63,7 +63,7 @@ doc_type: 'guide'
     `Parquet`ファイルからデータセットを読み込むには、次のSQLステートメントを実行します。
 
     ```sql
-    INSERT INTO hackernews SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/hackernews-miniLM/hackernews_part_1_of_1.parquet');
+    INSERT INTO hackernews SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/hackernews-miniLM/hackernews_part_1_of_1.parquet', NOSIGN);
     ```
 
     テーブルに2,874万行を挿入するには、数分かかります。
@@ -101,11 +101,11 @@ doc_type: 'guide'
   </Step>
 
   <Step title="検索クエリの埋め込みを生成する" id="generating-embeddings-for-search-query">
-    [Sentence Transformers](https://www.sbert.net/) は、文や段落のセマンティックな意味を捉えるための、ローカルで手軽に使える埋め込みモデルを提供します。
+    [Sentence Transformers](https://www.sbert.net/) は、文や段落の意味を捉えるための、ローカルで手軽に使える埋め込みモデルを提供します。
 
     このHackerNewsデータセットには、[all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2)モデルによって生成されたベクトル埋め込みが含まれています。
 
-    以下に、`sentence_transformers` Pythonパッケージを使用して埋め込みベクトルをプログラム的に生成する方法を示すPythonスクリプトの例を示します。検索用の埋め込みベクトルは、`SELECT&#96; クエリ内の [`cosineDistance()&#96;](/reference/functions/regular-functions/distance-functions#cosineDistance) 関数に引数として渡されます。
+    以下に、`sentence_transformers` Pythonパッケージを使用して埋め込みベクトルをプログラムで生成する方法を示す Python スクリプトの例を示します。検索用の埋め込みベクトルは、`SELECT` クエリ内の [`cosineDistance()`](/ja/reference/functions/regular-functions/distance-functions#cosineDistance) 関数に引数として渡されます。
 
     ```python
     from sentence_transformers import SentenceTransformer
@@ -212,7 +212,7 @@ doc_type: 'guide'
 
     上記の例では、ClickHouse を使用したセマンティック検索とドキュメントの取得を実演しました。
 
-    非常にシンプルながら高いポテンシャルを持つGenerative AIのサンプルアプリケーションを次に紹介します。
+    非常にシンプルながら大きな可能性を秘めたGenerative AIのサンプルアプリケーションを次に紹介します。
 
     アプリケーションは以下の手順を実行します：
 
@@ -222,7 +222,7 @@ doc_type: 'guide'
     4. `LangChain` と OpenAI `gpt-3.5-turbo` Chat API を使用して、ステップ #3 で取得した内容を**要約**します。
        ステップ #3 で取得した投稿/コメントは、Chat API に *コンテキスト* として渡され、Generative AI における重要なつながりとなります。
 
-    要約アプリケーションの実行例を以下に示し、その後に要約アプリケーションのコードを掲載します。アプリケーションを実行するには、環境変数 `OPENAI_API_KEY` にOpenAI APIキーを設定する必要があります。OpenAI APIキーは、https://platform.openai.com に登録後に取得できます。
+    要約アプリケーションの実行例をまず以下に示し、その後に要約アプリケーションのコードを掲載します。アプリケーションを実行するには、環境変数 `OPENAI_API_KEY` に OpenAI の API キーを設定する必要があります。OpenAI の API キーは https://platform.openai.com に登録して取得できます。
 
     このアプリケーションは、顧客感情分析、テクニカルサポートの自動化、ユーザー会話のマイニング、法的文書、医療記録、会議の議事録、財務諸表など、複数のエンタープライズ領域に適用できるGenerative AIのユースケースを示しています。
 

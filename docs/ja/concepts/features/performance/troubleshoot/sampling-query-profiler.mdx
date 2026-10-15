@@ -13,6 +13,8 @@ ClickHouse では、クエリ実行を分析するためのサンプリングプ
 ClickHouse Cloud では、クエリプロファイラは自動的に有効になります。
 次のクエリ例では、関数名とソースコード上の位置を解決したうえで、プロファイル対象のクエリで最も頻出するスタックトレースを特定します。
 
+デフォルトでは、プロファイラは収集時にスタックトレースをシンボル化し、結果を [`system.trace_log`](/ja/reference/system-tables/trace_log) の `symbols` および `lines` カラムに保存します。そのため、以下の例ではこれらのカラムを直接読み取り、イントロスペクション関数は必要ありません。シンボル化は `trace_log` サーバー設定セクションの `symbolize` 設定によって制御されます (デフォルトで有効)。ELF プラットフォーム (Linux など) および macOS でサポートされています。FreeBSD では `symbols` および `lines` カラムは常に空です。`symbols` 内の関数名はバイナリのシンボルテーブルから取得され、デフォルトで利用できます。`lines` 内のソースコード上の位置はベストエフォートで提供されます。デバッグ情報が必要であり (macOS ではバイナリの隣にある `.dSYM` バンドル)、ELF プラットフォームではメインの ClickHouse バイナリ内のフレームのみが解決されるため、解決できないフレーム (共有ライブラリ内のフレームなど) のエントリは空のままとなります。シンボル化が無効な場合は、`trace` カラム内の生のアドレスを解決するために、`addressToSymbol`、`demangle`、`addressToLine` の[イントロスペクション関数](/ja/reference/functions/regular-functions/introspection)を使用してください。これらの関数はシンボル化と同じプラットフォーム (Linux などの ELF プラットフォームおよび macOS) で利用できます。FreeBSD ではこれらもコンパイルされていないため、`trace` 内のアドレスはサーバー外部で解決する必要があります。
+
 <Tip>
   `query_id` の値は、プロファイルしたいクエリの ID に置き換えてください。
 </Tip>
@@ -26,13 +28,12 @@ ClickHouse Cloud では、クエリプロファイラは自動的に有効にな
     ```sql
     SELECT
         count(),
-        arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym
+        arrayStringConcat(arrayMap((symbol, line) -> concat(symbol, '\n    ', line), any(symbols), any(lines)), '\n') AS sym
     FROM clusterAllReplicas(default, system.trace_log)
     WHERE query_id = '<query_id>' AND trace_type = 'CPU' AND event_date = today()
     GROUP BY trace
     ORDER BY count() DESC
     LIMIT 10
-    SETTINGS allow_introspection_functions = 1
     ```
   </Tab>
 
@@ -40,13 +41,12 @@ ClickHouse Cloud では、クエリプロファイラは自動的に有効にな
     ```sql
     SELECT
         count(),
-        arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym
+        arrayStringConcat(arrayMap((symbol, line) -> concat(symbol, '\n    ', line), any(symbols), any(lines)), '\n') AS sym
     FROM system.trace_log
     WHERE query_id = '<query_id>' AND trace_type = 'CPU' AND event_date = today()
     GROUP BY trace
     ORDER BY count() DESC
     LIMIT 10
-    SETTINGS allow_introspection_functions = 1
     ```
   </Tab>
 </Tabs>
@@ -68,11 +68,11 @@ ClickHouse Cloud では、クエリプロファイラは自動的に有効にな
   </Step>
 
   <Step title="サーバー設定を確認する" id="server-config">
-    [サーバー設定ファイル](/ja/concepts/features/configuration/server-config/configuration-files)の [`trace_log`](/ja/reference/settings/server-settings/settings#trace_log) セクションが設定されていることを確認してください。これはデフォルトで有効です。
+    [サーバー設定ファイル](/ja/concepts/features/configuration/server-config/configuration-files)の [`trace_log`](/ja/reference/settings/server-settings/settings/other#trace_log) セクションが設定されていることを確認してください。これはデフォルトで有効です。
 
     ```xml
-    <!-- トレースログ。クエリプロファイラによって収集されたスタックトレースを保存します。
-         query_profiler_real_time_period_ns および query_profiler_cpu_time_period_ns 設定を参照してください。 -->
+    <!-- Trace log. Stores stack traces collected by query profilers.
+         See query_profiler_real_time_period_ns and query_profiler_cpu_time_period_ns settings. -->
     <trace_log>
         <database>system</database>
         <table>trace_log</table>
@@ -82,19 +82,25 @@ ClickHouse Cloud では、クエリプロファイラは自動的に有効にな
         <max_size_rows>1048576</max_size_rows>
         <reserved_size_rows>8192</reserved_size_rows>
         <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
-        <!-- クラッシュ時にログをディスクへダンプするかどうかを示します -->
+        <!-- Indication whether logs should be dumped to the disk in case of a crash -->
         <flush_on_crash>false</flush_on_crash>
         <symbolize>true</symbolize>
     </trace_log>
     ```
 
     このセクションでは、プロファイラの動作結果を含む [trace&#95;log](/ja/reference/system-tables/trace_log) システムテーブルを設定します。
-    このテーブル内のデータは、サーバーの稼働中にのみ有効である点に注意してください。
-    サーバーを再起動しても ClickHouse はこのテーブルをクリーンアップしないため、保存されている仮想メモリアドレスはすべて無効になる可能性があります。
+    デフォルトで有効な `symbolize` オプションを指定すると、ClickHouse は収集時に各スタックフレームを解決し、デマングルされた関数名とソースコード上の位置を `symbols` および `lines` カラムに保存します。
+    `symbols` の関数名はシンボルテーブルから取得され、デフォルトで利用できます。一方、`lines` のソースコード上の位置にはデバッグ情報 (macOS では `.dSYM` バンドル) が必要です。ELF プラットフォームでは、メインの ClickHouse バイナリ内のフレームに対してのみ解決され、解決できないフレームの `lines` エントリは空になります。
+
+    `trace` カラム内の生のアドレスは、あらかじめシンボル化されたカラムに比べて、再起動やアップグレードをまたいだ安定性が低い点に注意してください。
+    FreeBSD を除く ELF プラットフォームでは、メインの ClickHouse バイナリ内のフレームは物理ファイルオフセットとして保存されるため、バイナリが変更されない限り、再起動後も解決可能です。一方、macOS および FreeBSD では、再起動後に無効になる可能性がある実行時仮想アドレスとして保存されます。
+    メインバイナリ外のフレーム (たとえば共有ライブラリ内のフレーム) は常に実行時仮想アドレスとして保存され、再起動後に無効になる可能性があります。また、コードレイアウトが変わるため、バイナリのアップグレード後はすべての生のアドレスを解決できなくなります。
+    ClickHouse は再起動時にテーブルをクリーンアップしないため、古い生のアドレスが残る場合があります。
+    一方、あらかじめシンボル化された `symbols` および `lines` カラムは、再起動やアップグレード後も有効なままであるため、履歴データを分析する際はこれらを優先してください。
   </Step>
 
   <Step title="プロファイラのタイマーを設定する" id="configure-profile-timers">
-    [`query_profiler_cpu_time_period_ns`](/ja/reference/settings/session-settings#query_profiler_cpu_time_period_ns) または [`query_profiler_real_time_period_ns`](/ja/reference/settings/session-settings#query_profiler_real_time_period_ns) を設定します。
+    [`query_profiler_cpu_time_period_ns`](/ja/reference/settings/session-settings/query-profiler#query_profiler_cpu_time_period_ns) または [`query_profiler_real_time_period_ns`](/ja/reference/settings/session-settings/query-profiler#query_profiler_real_time_period_ns) を設定します。
     これら 2 つの設定は同時に使用できます。
 
     これらの設定により、プロファイラのタイマーを構成できます。
@@ -106,7 +112,12 @@ ClickHouse Cloud では、クエリプロファイラは自動的に有効にな
   </Step>
 
   <Step title={<>`trace_log` システムテーブルを分析する</>} id="analyze-trace-log-system-table">
-    `trace_log` システムテーブルを分析するには、[`allow_introspection_functions`](/ja/reference/settings/session-settings#allow_introspection_functions) 設定で イントロスペクション関数 を有効にします。
+    特定のクエリのプロファイルを取得するには、`trace_log` テーブルのデータを集計する必要があります。
+    データは個々の関数単位でも、スタックトレース全体単位でも集計できます。
+
+    シンボル化が有効な場合 (デフォルト) 、復元された関数名とソースコード内の位置はすでに `symbols` および `lines` カラムで利用できるため、追加のセットアップは必要ありません。FreeBSD ではシンボル化はサポートされておらず、これらのカラムは常に空です。デバッグ情報がないフレームや、メインの ClickHouse バイナリの範囲外にあるフレームでは、`lines` エントリが空になる場合があります ([上記](#server-config)を参照) 。
+
+    シンボル化が無効になっている場合、または `trace` カラム内の生のアドレスをオンザフライで解決する場合 (たとえば、インラインフレームを展開するため) は、[`allow_introspection_functions`](/ja/reference/settings/session-settings/allow#allow_introspection_functions) 設定でイントロスペクション関数を有効にします。
 
     ```sql
     SET allow_introspection_functions=1
@@ -116,9 +127,7 @@ ClickHouse Cloud では、クエリプロファイラは自動的に有効にな
       セキュリティ上の理由により、イントロスペクション関数はデフォルトで無効になっています
     </Note>
 
-    `addressToLine`、`addressToLineWithInlines`、`addressToSymbol`、`demangle` の [イントロスペクション関数](/ja/reference/functions/regular-functions/introspection) を使用すると、関数名と ClickHouse コード内での位置を取得できます。
-    特定のクエリのプロファイルを取得するには、`trace_log` テーブルのデータを集計する必要があります。
-    データは個々の関数単位でも、スタックトレース全体単位でも集計できます。
+    `addressToLine`、`addressToLineWithInlines`、`addressToSymbol`、`demangle` の [イントロスペクション関数](/ja/reference/functions/regular-functions/introspection) を使用すると、関数名と ClickHouse コード内での位置を取得できます。シンボル化と同様に、これらの関数は Linux などの ELF プラットフォームおよび macOS で利用できますが、FreeBSD では利用できません。
 
     <Tip>
       `trace_log` の情報を可視化する必要がある場合は、[フレームグラフ](/ja/integrations/connectors/tools/gui#clickhouse-flamegraph) と [speedscope](https://www.speedscope.app) を試してください。
@@ -308,16 +317,16 @@ clickhouse client --allow_introspection_functions=1 \
 
 以下のコードスニペットでは、次の処理を行います。
 
-* `trace_log` データを、クエリ識別子と当日の日付で絞り込みます。
-* スタックトレースごとに集計します。
-* イントロスペクション関数を使用して、次の内容を含むレポートを取得します。
-  * シンボル名と、それに対応するソースコード関数名。
-  * それらの関数のソースコード上の位置。
+* `trace_log` データをクエリ ID と当日の日付でフィルタリングします。
+* あらかじめシンボル化された `symbols` および `lines` カラムを読み取り、以下を含むレポートを作成します。
+  * シンボル名と対応するソースコード関数。
+  * これらの関数のソースコード上の位置。
+* 生のスタックトレース (`trace` カラム) で集計します。シンボル化されたカラムは表示のみに使用するため、ベストエフォートのシンボル化によって異なるスタックトレースが統合されることはありません。
 
 ```sql
 SELECT
     count(),
-    arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym
+    arrayStringConcat(arrayMap((symbol, line) -> concat(symbol, '\n    ', line), any(symbols), any(lines)), '\n') AS sym
 FROM system.trace_log
 WHERE (query_id = '<query_id>') AND (event_date = today())
 GROUP BY trace

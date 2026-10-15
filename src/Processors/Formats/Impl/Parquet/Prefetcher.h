@@ -29,6 +29,10 @@ public:
     /// Waits for in-progress reads to complete, cancels queued reads that haven't started yet.
     ~Prefetcher();
 
+    /// Same handshake as the destructor. After this returns, no background task reads through the
+    /// ReadBuffer passed to init() anymore, so that buffer may be destroyed. Idempotent.
+    void shutdownTasks();
+
     /// Not thread safe.
     /// All ranges must be registered before any reading happens (except direct readSync).
     /// Ranges are allowed to overlap a little, but this decreases the effectiveness of range
@@ -62,6 +66,7 @@ public:
     void readSync(char * to, size_t n, size_t offset);
 
     size_t getFileSize() const { return file_size; }
+    bool isLocalFile() const { return is_local_file; }
 
 private:
     friend class PrefetchHandle;
@@ -176,6 +181,7 @@ private:
     PaddedPODArray<char> entire_file;
 
     size_t file_size{};
+    bool is_local_file = false;
     size_t min_bytes_for_seek{};
     size_t bytes_per_read_task{};
 

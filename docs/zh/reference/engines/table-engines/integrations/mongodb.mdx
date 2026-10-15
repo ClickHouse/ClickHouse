@@ -137,7 +137,7 @@ SELECT count() FROM sample_oid WHERE another_oid_column = '67bf6cc40000000000ea4
 
 仅支持包含简单表达式的查询 (例如，`WHERE field = <constant> ORDER BY field2 LIMIT <constant>`) 。
 这类表达式会被转换为 MongoDB 查询语言，并在服务器端执行。
-你可以使用 [mongodb&#95;throw&#95;on&#95;unsupported&#95;query](/zh/reference/settings/session-settings#mongodb_throw_on_unsupported_query) 关闭这些限制。
+你可以使用 [mongodb&#95;throw&#95;on&#95;unsupported&#95;query](/zh/reference/settings/session-settings/other#mongodb_throw_on_unsupported_query) 关闭这些限制。
 在这种情况下，ClickHouse 会尽力转换查询，但这可能导致全表扫描，并在 ClickHouse 端处理。
 
 <Note>

@@ -292,6 +292,11 @@ For query statements, the response may include:
 
 If schema inference fails for a valid query (for example, when replacing placeholders with `NULL` is not valid for that query), ClickHouse still creates the prepared statement and returns the handle without `dataset_schema`.
 
+`dataset_schema` is a best guess, as the Flight SQL specification intends — it states that the result schema may depend on the parameters, that the server should give its best guess, and that clients must not assume the schema is accurate. Do not rely on it; execute the statement to obtain the schema that describes the data. In ClickHouse it can differ from what is served for two reasons:
+
+- Inference replaces each `?` with `NULL`, so a placeholder that determines a result column is typed from that `NULL` rather than from the value you later bind. `SELECT ? AS x` infers a column of type `Nothing`, but binding `5` serves a `UInt8`. A placeholder used only in a predicate, as in `SELECT id, name FROM t WHERE id = ?`, does not have this problem, because the result types come from the table.
+- A column with no Arrow equivalent takes its Arrow type from [`output_format_arrow_unsupported_types`](/reference/settings/formats/output-format), which every call resolves from the session that makes it. Because a handle belongs to the user rather than to one session, a later call may resolve it differently and serve `binary` where `utf8` was advertised, or the reverse. Setting the mode inside the prepared query itself pins it for both.
+
 Prepared statements are owned by the authenticated user, not by a single session. If you open multiple sessions as the same user, you can execute, re-bind, and close the same statement handle from any of those sessions.
 
 Other users cannot execute, bind, or close a statement handle they did not create.
@@ -396,7 +401,30 @@ for endpoint in info.endpoints:
 
 All data is transferred in Apache Arrow IPC format. Only the `Arrow` format is supported — specifying other ClickHouse formats (e.g., `FORMAT JSON`, `FORMAT CSV`) results in an error.
 
-ClickHouse data types are mapped to Arrow types during serialization. The setting `output_format_arrow_unsupported_types_as_binary` controls whether unsupported ClickHouse types are serialized as binary blobs.
+ClickHouse data types are mapped to Arrow types during serialization. Arrow Flight always uses the canonical Arrow mapping and, unlike the `Arrow` and `ArrowStream` output formats, does **not** follow the `output_format_arrow_*` settings that change how a type is represented — `output_format_arrow_string_as_string`, `output_format_arrow_low_cardinality_as_dictionary`, `output_format_arrow_date_as_uint16`, `output_format_arrow_fixed_string_as_fixed_byte_array` and the dictionary index settings have no effect here. The same query can therefore produce a different schema over Arrow Flight than over `FORMAT Arrow`, by design, for two reasons:
+
+- Flight SQL fixes the schema of its metadata responses. `CommandGetTables`, for example, must return `catalog_name: utf8, db_schema_name: utf8, table_name: utf8 not null, table_type: utf8 not null, table_schema: bytes not null`. Letting a session setting turn those `utf8` columns into `binary` would make ClickHouse non-conforming for every Flight SQL driver, and would also change the per-table schema ClickHouse advertises inside `table_schema`.
+- A Flight client fetches the schema and the data in separate calls (`GetFlightInfo` or `GetSchema`, then `DoGet`). Any setting able to change the schema is a way for the advertised schema and the delivered stream to disagree if the session changes in between.
+
+The one exception is a type with no Arrow equivalent at all, such as `JSON`, `Dynamic`, `QBit` or `AggregateFunction`. There is no canonical mapping to pin to, so ClickHouse must choose a representation, and [`output_format_arrow_unsupported_types`](/reference/settings/formats/output-format) lets you say which:
+
+| Value              | Behavior                                                                                          |
+|--------------------|---------------------------------------------------------------------------------------------------|
+| `throw`            | The query is rejected.                                                                              |
+| `text`             | One value per row in its text form, as an Arrow `Utf8` column — what `CAST(col AS String)` returns. |
+| `binary` (default) | One value per row in its binary form, as an Arrow `Binary` column — the encoding `RowBinary` uses.  |
+
+An `AggregateFunction` column is the one type that stays an Arrow `Binary` column even in `text` mode: its text form is the raw aggregate state, which is not valid UTF-8, and an Arrow `Utf8` column must hold valid UTF-8. Use `finalizeAggregation` if you want a readable value.
+
+For the same reason, ClickHouse replaces every invalid UTF-8 sequence in a `text` value with U+FFFD (`�`) before writing it into the `Utf8` column. A `Dynamic` holding a `String` serializes those bytes verbatim, and they can be arbitrary, so without this the column would violate the Arrow specification and could be rejected by a strict client. Only values that are already not valid text change. Use `binary` mode where the bytes have to be preserved exactly.
+
+`output_format_arrow_string_as_string` never applies to these columns, in `FORMAT Arrow` either — it governs only real `String` and `FixedString` columns. So the Arrow type of a `clickhouse.opaque` column always states which encoding it holds: `Utf8` for the text form, `Binary` for the binary one.
+
+This is why an aggregate state held in a `Dynamic` is lossy in `text` mode, even though an `AggregateFunction` column is not. The column is typed from `Dynamic`, which says nothing about what its rows hold, and the schema is fixed before any value is seen, so the state cannot be given a `Binary` column of its own. Use `binary` mode to keep it. A `Variant` lists its alternatives, so an `AggregateFunction` among them does get its own `Binary` child and is unaffected.
+
+Such a column is otherwise indistinguishable from a genuine `Utf8`/`Binary` one, so it is declared an Arrow extension type: the field metadata holds `ARROW:extension:name` = `clickhouse.opaque` and the original ClickHouse type name in `ARROW:extension:metadata`. A client that does not recognize the extension name sees the plain storage type, as the Arrow specification prescribes. Nested columns are tagged on their own field, so the child of an `Array(JSON)` carries the tag, and so does the key of a `Map(JSON, ...)`, rather than the container itself.
+
+The older boolean `output_format_arrow_unsupported_types_as_binary` still works and is equivalent to `throw` when `0` and `binary` when `1`. It is only consulted while `output_format_arrow_unsupported_types` is left at its default.
 
 ## Compatibility {#compatibility}
 

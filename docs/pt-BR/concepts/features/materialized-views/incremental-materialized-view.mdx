@@ -9,9 +9,7 @@ doc_type: 'guide'
 
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
-<div id="background">
-  ## Contexto
-</div>
+## Contexto {#background}
 
 Visões materializadas incrementais (visões materializadas) permitem transferir o custo da computação do momento da consulta para o momento da inserção, resultando em consultas `SELECT` mais rápidas.
 
@@ -622,24 +620,24 @@ WHERE DisplayName = 'brand_new_user'
 Observe, no entanto, que esse resultado está incorreto.
 
 <div id="join-best-practices">
-  ### Boas práticas para JOINs em visões materializadas
+  ### Boas práticas para junções em visões materializadas
 </div>
 
-* **Use a tabela mais à esquerda como gatilho.** Apenas a tabela no lado esquerdo da instrução `SELECT` aciona a view materializada. Alterações nas tabelas do lado direito não disparam atualizações.
+* **Use a tabela mais à esquerda como gatilho.** Apenas a tabela no lado esquerdo da instrução `SELECT` aciona a visão materializada. Alterações nas tabelas do lado direito não disparam atualizações.
 
-* **Insira antes os dados das tabelas associadas.** Garanta que os dados nas tabelas associadas existam antes de inserir linhas na tabela de origem. O JOIN é avaliado no momento da inserção, portanto, dados ausentes resultarão em linhas sem correspondência ou valores nulos.
+* **Faça insert antes dos dados das tabelas associadas.** Garanta que os dados nas tabelas associadas existam antes de fazer insert de linhas na tabela de origem. A junção é avaliada no momento do insert, portanto, dados ausentes resultarão em linhas sem correspondência ou valores nulos.
 
-* **Limite as colunas extraídas dos JOINs.** Selecione apenas as colunas necessárias das tabelas associadas para minimizar o uso de memória e reduzir a latência no momento da inserção (veja abaixo).
+* **Limite as colunas extraídas das junções.** Selecione apenas as colunas necessárias das tabelas associadas para minimizar o uso de memória e reduzir a latência no momento do insert (veja abaixo).
 
-* **Avalie o desempenho no momento da inserção.** JOINs aumentam o custo das inserções, especialmente com tabelas grandes no lado direito. Faça benchmark das taxas de inserção usando dados representativos de produção.
+* **Avalie o desempenho no momento do insert.** Junções aumentam o custo dos inserts, especialmente com tabelas grandes no lado direito. Faça benchmark das taxas de insert usando dados representativos de produção.
 
-* **Prefira Dictionaries para lookups simples**. Use [Dictionaries](/pt-BR/concepts/features/dictionaries/index) para lookups de chave-valor (por exemplo, de ID de usuário para nome) e evite operações de JOIN custosas.
+* **Prefira Dicionários para lookups simples**. Use [Dicionários](/pt-BR/concepts/features/dictionaries/index) para lookups de chave-valor (por exemplo, de ID de usuário para nome) e evite operações de junção custosas. Use um layout de Dicionário totalmente carregado para garantir lookups confiáveis no momento do insert; com [layouts baseados em cache](/pt-BR/concepts/features/dictionaries/best-practices#cache-dictionaries-in-ingestion-path), a ingestão pode passar a depender de um cache local já aquecido.
 
 * **Alinhe `GROUP BY` e `ORDER BY` para eficiência na mesclagem.** Ao usar `SummingMergeTree` ou `AggregatingMergeTree`, garanta que `GROUP BY` corresponda à cláusula `ORDER BY` na tabela de destino para permitir a mesclagem eficiente de linhas.
 
 * **Use aliases de coluna explícitos.** Quando as tabelas tiverem nomes de coluna sobrepostos, use aliases para evitar ambiguidades e garantir resultados corretos na tabela de destino.
 
-* **Considere o volume e a frequência de inserção.** JOINs funcionam bem em workloads moderados de inserção. Para ingestão com alta vazão, considere usar tabelas de staging, pré-junções ou outras abordagens, como Dictionaries e [visões materializadas atualizáveis](/pt-BR/concepts/features/materialized-views/refreshable-materialized-view).
+* **Considere o volume e a frequência de insert.** Junções funcionam bem em workloads moderados de insert. Para ingestão com alta vazão, considere usar tabelas de staging, pré-junções ou outras abordagens, como Dicionários e [visões materializadas atualizáveis](/pt-BR/concepts/features/materialized-views/refreshable-materialized-view).
 
 <div id="using-source-table-in-filters-and-joins-in-materialized-views">
   ### Como usar a tabela de origem em filtros e junções
@@ -1047,11 +1045,9 @@ GROUP BY UserId
 1 row in set. Elapsed: 0.006 sec.
 ```
 
-<div id="materialized-views-parallel-vs-sequential">
-  ## Processamento paralelo vs. sequencial
-</div>
+## Processamento paralelo vs. sequencial {#materialized-views-parallel-vs-sequential}
 
-Como mostrado no exemplo anterior, uma tabela pode atuar como origem para várias visões materializadas. A ordem em que elas são executadas depende da configuração [`parallel_view_processing`](/pt-BR/reference/settings/session-settings#parallel_view_processing).
+Como mostrado no exemplo anterior, uma tabela pode atuar como origem para várias visões materializadas. A ordem em que elas são executadas depende da configuração [`parallel_view_processing`](/pt-BR/reference/settings/session-settings/parallel#parallel_view_processing).
 
 Por padrão, essa configuração é igual a `0` (`false`), o que significa que as visões materializadas são executadas sequencialmente, na ordem de `uuid`.
 
@@ -1100,9 +1096,9 @@ AS SELECT
 FROM source;
 ```
 
-Observe que cada uma das views faz uma pausa de 1 segundo antes de inserir suas linhas na tabela `target`, incluindo também seu nome e o horário da inserção.
+Observe que cada uma das VIEWs faz uma pausa de 1 segundo antes de inserir suas linhas na tabela `target`, incluindo também seu nome e o horário da inserção.
 
-Inserir uma linha na tabela `source` leva ~3 segundos, com cada view sendo executada em sequência:
+Inserir uma linha na tabela `source` leva ~3 segundos, com cada VIEW sendo executada em sequência:
 
 ```sql
 INSERT INTO source VALUES ('test')
@@ -1112,7 +1108,7 @@ INSERT INTO source VALUES ('test')
 1 row in set. Elapsed: 3.786 sec.
 ```
 
-Podemos confirmar com um `SELECT` a chegada das linhas de cada linha:
+Podemos confirmar a chegada das linhas de cada VIEW com um `SELECT`:
 
 ```sql
 SELECT
@@ -1133,7 +1129,7 @@ ORDER BY now ASC
 3 rows in set. Elapsed: 0.015 sec.
 ```
 
-Isso corresponde ao `uuid` das views:
+Isso corresponde ao `uuid` das VIEWs:
 
 ```sql
 SELECT
@@ -1154,7 +1150,7 @@ ORDER BY uuid ASC
 3 rows in set. Elapsed: 0.004 sec.
 ```
 
-Por outro lado, considere o que acontece se inserirmos uma linha com `parallel_view_processing=1` ativado. Com essa opção ativada, as views são executadas em paralelo, sem garantia da ordem em que as linhas chegam à tabela de destino:
+Por outro lado, considere o que acontece se inserirmos uma linha com `parallel_view_processing=1` ativado. Com essa opção ativada, as VIEWs são executadas em paralelo, sem garantia da ordem em que as linhas chegam à tabela de destino:
 
 ```sql
 TRUNCATE target;
