@@ -128,4 +128,43 @@ PIVOT (if(v > 0, v, 0) FOR k IN ('a' AS a)); -- { serverError UNKNOWN_FUNCTION,U
 SELECT * FROM values('k String, v UInt64, ok UInt8', ('a', 1, 1))
 PIVOT (sumIf(v, ok) FOR k IN ('a' AS a)); -- { serverError ILLEGAL_AGGREGATION }
 
+-- Result column aliases can disambiguate a generated name from a grouping column.
+SELECT p.x, p.y
+FROM values('g String, k String, v UInt64', ('group', 'a', 1))
+PIVOT (sum(v) FOR k IN ('a' AS g)) AS p(x, y);
+
+-- The same override applies to multiple measures, including a qualified source column.
+SELECT p.group_key, p.total, p.cnt
+FROM values('a_total String, k String, v UInt64', ('group', 'a', 2)) AS s
+PIVOT (sum(s.v) AS total, count() AS cnt FOR s.k IN ('a' AS a)) AS p(group_key, total, cnt);
+
+-- Without an override, a qualified grouping column must still reject a measure-name collision.
+SELECT *
+FROM values('a_total String, k String, v UInt64', ('group', 'a', 2)) AS s
+PIVOT (sum(s.v) AS total, count() AS cnt FOR s.k IN ('a' AS a)); -- { serverError AMBIGUOUS_COLUMN_NAME }
+
+-- Validate the final names, not just the original PIVOT output names.
+SELECT *
+FROM values('g String, k String, v UInt64', ('group', 'a', 1))
+PIVOT (sum(v) FOR k IN ('a' AS a)) AS p(x, x); -- { serverError AMBIGUOUS_COLUMN_NAME }
+
+-- Keep the ordinary column-alias count error, even when the original names collide.
+SELECT *
+FROM values('g String, k String, v UInt64', ('group', 'a', 1))
+PIVOT (sum(v) FOR k IN ('a' AS g)) AS p(x); -- { serverError BAD_ARGUMENTS }
+
+-- The parser-only marker must not leak into JSON or change a formatted query's AST JSON.
+WITH $$SELECT * FROM values('k String, v UInt64', ('a', 1)) PIVOT (sum(v) FOR k IN ('a' AS a))$$ AS q
+SELECT
+    position(parseQueryToJSON(q), 'is_pivot_rewrite') = 0,
+    parseQueryToJSON(q) = parseQueryToJSON(formatQuerySingleLine(q));
+
+-- An injected marker is ignored, not read as public JSON AST state.
+WITH
+    parseQueryToJSON('SELECT 1') AS ast,
+    replaceOne(ast, '"type":"SelectQuery"', '"type":"SelectQuery","is_pivot_rewrite":[]') AS injected
+SELECT
+    position(injected, '"is_pivot_rewrite":[]') > 0,
+    formatQueryFromJSON(injected) = formatQueryFromJSON(ast);
+
 DROP TABLE pivot_static;
