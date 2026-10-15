@@ -252,8 +252,7 @@ void StorageObjectStorageCluster::mutate(const MutationCommands & commands, Cont
 {
     updateExternalDynamicMetadataIfExists(context);
     auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
-    /// The mutation reads the table with a query that has no table expression, which `IStorageCluster::read`
-    /// cannot send to the replicas, so it reads through a local storage of the same table.
+    /// The mutation's read query has no table expression, which `IStorageCluster::read` cannot distribute, so read locally.
     auto read_storage = std::make_shared<StorageObjectStorage>(
         configuration,
         object_storage,
