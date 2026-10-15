@@ -484,6 +484,9 @@ namespace FailPoints
     /// transient error (e.g. temporary disk unavailability). Used to test that the refresh task
     /// reschedules itself after such an error instead of stopping permanently.
     extern const char merge_tree_refresh_parts_throw_once[];
+    /// Pauses `getColumnDefaultnessStats` right after it captures the parts, so a test can complete
+    /// a pending metadata mutation before the defaultness stats of the captured parts are consumed.
+    extern const char mt_column_defaultness_stats_pause_after_parts_snapshot[];
     /// Throws a retryable error (`MEMORY_LIMIT_EXCEEDED`) while loading every outdated part in the
     /// background. Used to test that the loading is retried later instead of terminating the server.
     extern const char merge_tree_load_outdated_parts_retryable_error[];
@@ -8303,29 +8306,34 @@ MergeTreeData::getColumnDefaultnessStats(const String & column_name, ContextPtr 
 
     auto parts = getActivePartsForColumnDefaultnessStats(query_context);
 
+    FailPointInjection::pauseFailPoint(FailPoints::mt_column_defaultness_stats_pause_after_parts_snapshot);
+
     /// Pending metadata mutations (`RENAME COLUMN`, `DROP COLUMN` possibly followed by re-adding a
     /// column with the same name) are applied to reads on the fly, while `serialization.json`
     /// stays keyed by the on-disk column names. The counter looked up by the queried name would
     /// then describe a different column's data, or the data of a dropped column whose reads are
     /// already filled with the new default. Only the parts where such a mutation touches the
     /// requested column are affected.
-    MutationsSnapshotPtr mutations_snapshot;
-    if (getMutationCounters().num_metadata > 0)
+    ///
+    /// The snapshot is taken unconditionally and after the parts: a mutation can finish between
+    /// capturing the parts and this point, while the captured parts are still the unmutated ones.
+    /// The live counter of pending metadata mutations is zero then, so it must not gate the snapshot,
+    /// and `need_alter_mutations` makes `StorageMergeTree` include finished but not yet removed
+    /// mutations as well, the same way as the snapshot of a regular read does (see `createStorageSnapshot`).
+    /// The commands are still filtered by the data and metadata versions of each part.
+    auto parts_info = getPartsSnapshotInfo(parts);
+    IMutationsSnapshot::Params params
     {
-        auto parts_info = getPartsSnapshotInfo(parts);
-        IMutationsSnapshot::Params params
-        {
-            .metadata_version = metadata_snapshot->getMetadataVersion(),
-            .min_part_metadata_version = parts_info.min_metadata_version,
-            .min_part_data_versions = nullptr,
-            .max_mutation_versions = nullptr,
-            .need_data_mutations = false,
-            .need_alter_mutations = false,
-            .need_patch_parts = false,
-            .has_lightweight_delete_parts = parts_info.has_lightweight_delete_parts,
-        };
-        mutations_snapshot = getMutationsSnapshot(params);
-    }
+        .metadata_version = metadata_snapshot->getMetadataVersion(),
+        .min_part_metadata_version = parts_info.min_metadata_version,
+        .min_part_data_versions = std::move(parts_info.min_data_versions),
+        .max_mutation_versions = nullptr,
+        .need_data_mutations = false,
+        .need_alter_mutations = true,
+        .need_patch_parts = false,
+        .has_lightweight_delete_parts = parts_info.has_lightweight_delete_parts,
+    };
+    auto mutations_snapshot = getMutationsSnapshot(params);
 
     /// Two dotted column names overlap when they are equal, or when one is an ancestor of the other
     /// in the subcolumn hierarchy, e.g. a dropped `n` affects `n.a`.
@@ -8344,7 +8352,7 @@ MergeTreeData::getColumnDefaultnessStats(const String & column_name, ContextPtr 
         if (part->isEmpty())
             continue;
 
-        if (mutations_snapshot && mutations_snapshot->hasMetadataMutations())
+        if (mutations_snapshot->hasMetadataMutations())
         {
             auto alter_conversions = getAlterConversionsForPart(part, mutations_snapshot, query_context
 #if CLICKHOUSE_CLOUD
