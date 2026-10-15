@@ -107,6 +107,11 @@ if Utils.is_arm():
 else:
     docker_sock_mount = "--volume=/run:/run/host:ro"
 
+# Submodules with test data only. They do not affect the builds, so a bump of them must not rebuild the binaries.
+test_data_submodules = [
+    "./contrib/parquet-testing",
+]
+
 build_digest_config = Job.CacheDigestConfig(
     include_paths=[
         "./src",
@@ -128,6 +133,7 @@ build_digest_config = Job.CacheDigestConfig(
         "./utils/list-licenses",
         "./utils/self-extracting-executable",
     ],
+    exclude_paths=test_data_submodules,
     with_git_submodules=True,
 )
 
@@ -207,6 +213,8 @@ common_ft_job_config = Job.Config(
             "./ci/praktika/info.py",
             "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
             "./tests/queries",
+            # The tests read the test data from these submodules.
+            *test_data_submodules,
             "./tests/clickhouse-test",
             "./tests/config",
             "./tests/*.txt",
@@ -256,6 +264,8 @@ common_stress_job_config = Job.Config(
             # covered by `./tests/config` above.
             "./ci/jobs/scripts/log_export.py",
             "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
+            # The tests read the test data from these submodules.
+            *test_data_submodules,
         ],
     ),
     timeout=3600 * 3,
@@ -596,6 +606,11 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
+            parameter=BuildTypes.AMD_ILLUMOS,
+            provides=[ArtifactNames.CH_AMD_ILLUMOS],
+            runs_on=RunnerLabels.AMD_LARGE,
+        ),
+        Job.ParamSet(
             parameter=BuildTypes.PPC64LE,
             provides=[ArtifactNames.CH_PPC64LE],
             runs_on=RunnerLabels.ARM_LARGE,
@@ -656,6 +671,7 @@ class JobConfigs:
                 Job.CacheDigestConfig(
                     include_paths=build_digest_config.include_paths
                     + ["./tests/fuzz/", "./tests/queries/0_stateless/"],
+                    exclude_paths=build_digest_config.exclude_paths,
                     with_git_submodules=True,
                 )
             )
@@ -691,6 +707,7 @@ class JobConfigs:
                 "./contrib/",
                 "./.gitmodules",
             ],
+            exclude_paths=test_data_submodules,
             with_git_submodules=True,
         ),
         needs_submodules=True,
@@ -1176,11 +1193,15 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_LARGE,  # ~2h on medium
             requires=[ArtifactNames.CH_ARM_ASAN_UBSAN],
         ),
-        Job.ParamSet(
-            parameter="arm_asan_ubsan, azure, sequential",
-            runs_on=RunnerLabels.ARM_SMALL_MEM,
-            requires=[ArtifactNames.CH_ARM_ASAN_UBSAN],
-        ),
+        *[
+            Job.ParamSet(
+                parameter=f"arm_asan_ubsan, azure, sequential, {batch}/{total_batches}",
+                runs_on=RunnerLabels.ARM_SMALL_MEM,
+                requires=[ArtifactNames.CH_ARM_ASAN_UBSAN],
+            )
+            for total_batches in (2,)
+            for batch in range(1, total_batches + 1)
+        ],
     )
     # Per-arch Bugfix Validation Check (integration tests). See the rationale
     # and status-model comment above for `bugfix_validation_ft_pr_jobs`. Each
@@ -1248,6 +1269,7 @@ class JobConfigs:
                 "./programs",
                 "./rust",
             ],
+            exclude_paths=test_data_submodules,
             with_git_submodules=True,
         ),
         result_name_for_cidb="Tests",
@@ -2354,6 +2376,7 @@ class JobConfigs:
                 "./ci/jobs/sign_macos_binary.py",
                 "./ci/jobs/scripts/sign_macos_binary",
             ],
+            exclude_paths=build_digest_config.exclude_paths,
             with_git_submodules=True,
         ),
     ).parametrize(
