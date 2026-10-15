@@ -139,7 +139,7 @@ public:
     virtual ChainedBuffers waitAndRead(ByteRange subrange) { return read(subrange); }
 
     /// What to run once the reader has passed this writer's range and released its cells: a writer in the
-    /// temporary-cache mode drops the segment it filled, unless another reader used it. Default: nothing.
+    /// temporary-cache mode drops the segment it filled, unless another reader holds it. Default: nothing.
     virtual std::function<void()> takeDropAfterPass() { return {}; }
 };
 

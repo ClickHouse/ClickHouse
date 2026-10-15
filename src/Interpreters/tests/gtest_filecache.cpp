@@ -4380,12 +4380,6 @@ namespace
 {
 
 /// Without a holder: releasing one on the downloader's thread would complete the segment.
-size_t hitsOfFirstSegment(FileCache & cache, const FileCacheKey & key)
-{
-    const auto infos = cache.getFileSegmentInfos(key, FileCache::getCommonOrigin().user_id);
-    return infos.empty() ? 0 : infos.front().cache_hits;
-}
-
 ChainedBuffers bytesAt(size_t offset, const String & data)
 {
     auto block = std::make_shared<OwnedChainedBuffer>(data.size());
@@ -4397,69 +4391,10 @@ ChainedBuffers bytesAt(size_t offset, const String & data)
 
 }
 
-TEST_F(FileCacheTest, DiskCacheProviderCountsReadsOfOtherReaders)
-{
-    /// A reader that reads bytes another reader wrote counts a hit, also while the segment still downloads,
-    /// through its hit reader or through its writer. Reads of its own bytes count nothing.
-    ServerUUID::setRandomForUnitTests();
-    DB::ThreadStatus thread_status;
-    FileCacheSettings settings;
-    settings[FileCacheSetting::max_size] = 10_KiB;
-    settings[FileCacheSetting::max_file_segment_size] = 1_KiB;
-    settings[FileCacheSetting::boundary_alignment] = 1_KiB;
-    settings[FileCacheSetting::path] = cache_base_path;
-    settings[FileCacheSetting::load_metadata_asynchronously] = false;
-    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
-    auto cache = std::make_shared<FileCache>("disk_cache_provider_hits", settings);
-    cache->initialize();
-
-    const String data(1_KiB, 'x');
-    const StoredObject object("disk_cache_provider_hits_blob", "", data.size());
-    const auto key = FileCacheKey::fromPath(object.remote_path);
-    DiskCacheProvider provider(cache, FilesystemCacheSettings{});
-    auto resolve = [&] { return provider.resolve(object, 0, ByteRange{0, data.size()}); };
-
-    /// The cache tells the downloader by its thread, so another reader runs on its own thread.
-    auto on_other_thread = [](const std::function<void()> & read)
-    {
-        std::thread([&] { DB::ThreadStatus other_thread_status; read(); }).join();
-    };
-
-    /// The writer fills the first half and keeps the role: the segment is still downloading.
-    auto own_cells = resolve();
-    ASSERT_EQ(own_cells.size(), 1u);
-    CacheWriter & own = *own_cells[0].writer;
-    auto role = own.takeFillRole();
-    ASSERT_TRUE(role);
-    ASSERT_EQ(own.write(bytesAt(0, data.substr(0, 512)), role), 512u);
-
-    on_other_thread([&]
-    {
-        auto other_cells = resolve();   /// a hit reader for the written half, and a writer
-        ASSERT_EQ(other_cells.size(), 2u);
-        EXPECT_EQ(other_cells[0].reader->read(ByteRange{0, 512}).totalBytes(), 512u);
-    });
-    EXPECT_EQ(hitsOfFirstSegment(*cache, key), 1u);
-    on_other_thread([&]
-    {
-        auto other_cells = resolve();
-        ASSERT_EQ(other_cells.size(), 2u);
-        EXPECT_EQ(other_cells[1].writer->read(ByteRange{0, 512}).totalBytes(), 512u);
-    });
-    EXPECT_EQ(hitsOfFirstSegment(*cache, key), 2u);
-
-    /// The writer completes the segment and reads its own bytes: no hit.
-    ASSERT_EQ(own.write(bytesAt(512, data.substr(512)), role), 512u);
-    role.reset();
-    EXPECT_EQ(own.read(ByteRange{0, data.size()}).totalBytes(), data.size());
-    own_cells.clear();
-    EXPECT_EQ(hitsOfFirstSegment(*cache, key), 2u);
-}
-
 TEST_F(FileCacheTest, DiskCacheProviderTemporaryModeDropsUnusedSegments)
 {
     /// In the temporary-cache mode a segment that the reader filled from its start leaves the cache once the
-    /// reader passes it, unless another reader read it or still holds it.
+    /// reader passes it, unless another reader still holds it. A finished read of another reader does not keep it.
     ServerUUID::setRandomForUnitTests();
     DB::ThreadStatus thread_status;
     FileCacheSettings settings;
@@ -4509,7 +4444,7 @@ TEST_F(FileCacheTest, DiskCacheProviderTemporaryModeDropsUnusedSegments)
         EXPECT_EQ(cells.front().reader->read(ByteRange{0, data.size()}).totalBytes(), data.size());
     }
     drop();
-    EXPECT_TRUE(cached(read_by_other));
+    EXPECT_FALSE(cached(read_by_other));
 
     const StoredObject held_by_other("temporary_held_by_other", "", data.size());
     drop = fill(held_by_other);

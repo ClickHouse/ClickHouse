@@ -2595,7 +2595,7 @@ ZooKeeper path for zero-copy table-independent info.
 Run zero-copy in compatible mode during conversion process.
 )", EXPERIMENTAL) \
     DECLARE(Bool, cache_temporarily_for_merges, false, R"(
-Background merge and mutation reads use the filesystem cache as a temporary buffer: a miss is read into the cache, served from it, and dropped when the read passes it, unless another reader used it. Only the experimental `ReaderExecutor` supports it; other readers bypass the cache. `force_read_through_cache_for_merges` takes precedence.
+Background merge and mutation reads use the filesystem cache as a temporary buffer: a miss is read into the cache, served from it, and dropped when the read passes it, unless another reader holds it. Only the experimental `ReaderExecutor` supports it; other readers bypass the cache. `force_read_through_cache_for_merges` takes precedence.
 )", EXPERIMENTAL, \
         {"26.10", false, false, "New experimental setting."}) \
     DECLARE(Bool, force_read_through_cache_for_merges, false, R"(

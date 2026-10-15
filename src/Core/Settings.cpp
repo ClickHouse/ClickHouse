@@ -8437,7 +8437,7 @@ Emit `TEST`-level log messages for every filesystem cache buffer refill (state o
 )", 0, \
         {"26.8", false, false, "New setting gating the per-buffer-refill TEST-level log messages of the filesystem cache read buffer, which were previously emitted unconditionally once the log level allowed them."}) \
     DECLARE(Bool, read_from_filesystem_cache_if_exists_otherwise_cache_temporarily, false, R"(
-Use the filesystem cache as a temporary buffer for data that is not in it: a miss is read into the cache, served from it, and dropped when the reader passes it, unless another reader used it. Only the experimental `ReaderExecutor` supports it; other readers bypass the cache. `read_from_filesystem_cache_if_exists_otherwise_bypass_cache` takes precedence.
+Use the filesystem cache as a temporary buffer for data that is not in it: a miss is read into the cache, served from it, and dropped when the reader passes it, unless another reader holds it. Only the experimental `ReaderExecutor` supports it; other readers bypass the cache. `read_from_filesystem_cache_if_exists_otherwise_bypass_cache` takes precedence.
 )", EXPERIMENTAL, \
         {"26.10", false, false, "New experimental setting."}) \
     DECLARE(Bool, read_from_filesystem_cache_if_exists_otherwise_bypass_cache, false, R"(

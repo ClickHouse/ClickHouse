@@ -35,8 +35,8 @@ bool bypassesMisses(const FilesystemCacheSettings & settings)
     return settings.read_if_exists_otherwise_bypass && !settings.cache_temporarily;
 }
 
-/// Remove the segment from the cache if nobody else holds it and nobody read it.
-void removeIfUnused(const std::weak_ptr<FileSegment> & weak_segment)
+/// Remove the segment from the cache if nobody else holds it.
+void removeIfNotHeld(const std::weak_ptr<FileSegment> & weak_segment)
 {
     LockedKeyPtr locked_key;
     const FileSegment * expected = nullptr;
@@ -55,8 +55,7 @@ void removeIfUnused(const std::weak_ptr<FileSegment> & weak_segment)
         return;
     const auto segment_metadata = locked_key->tryGetByOffset(offset);
     if (!segment_metadata || segment_metadata->file_segment.get() != expected
-        || segment_metadata->isEvictingOrRemoved(*locked_key) || !segment_metadata->releasable()
-        || expected->getHitsCount() > 0)
+        || segment_metadata->isEvictingOrRemoved(*locked_key) || !segment_metadata->releasable())
         return;
     locked_key->removeFileSegment(offset, /*can_be_broken=*/false);
 }
@@ -340,7 +339,6 @@ size_t DiskCacheWriter::write(ChainedBuffers data, const FillRole & role)
         return 0;
 
     filled_from_start |= write_offset == seg_range.left;
-    modified = true;
     LOG_TRACE(log, "DiskCacheWriter::write: wrote {} bytes to [{}, {}] at offset {}",
         contiguous, seg_range.left, seg_range.right, write_offset);
     return contiguous;
@@ -356,7 +354,6 @@ ChainedBuffers DiskCacheWriter::read(ByteRange subrange)
     /// unthrottled, unanchored).
     readSegmentInto(result, segment(), sub_in_object, object_file_offset,
         /*local_throttler=*/nullptr, /*anchors=*/nullptr);
-    read_data_from_concurrent_writers |= !modified && !result.empty();
     return result;
 }
 
@@ -368,27 +365,13 @@ std::function<void()> DiskCacheWriter::takeDropAfterPass()
     {
         try
         {
-            removeIfUnused(weak_segment);
+            removeIfNotHeld(weak_segment);
         }
         catch (...)
         {
             tryLogCurrentException(logger, "Failed to drop a temporary cache segment");
         }
     };
-}
-
-DiskCacheWriter::~DiskCacheWriter()
-{
-    if (!read_data_from_concurrent_writers || !segment_holder)
-        return;
-    try
-    {
-        segment().increasePriority();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log, "Deferred priority bump failed", LogsLevel::debug);
-    }
 }
 
 size_t DiskCacheWriter::committed() const
@@ -532,13 +515,19 @@ bool DiskCacheWriter::tryWriteToSegment(FileSegment & file_segment, char * data,
 DiskCacheReader::~DiskCacheReader()
 {
     /// Deferred priority bump: if we served any bytes, raise the segment's priority so a hit next to
-    /// fresh inserts isn't aged below them. It also counts the hit while the segment still downloads.
-    /// The `segment_holder` member then completes the segment as it is destroyed.
+    /// fresh inserts isn't aged below them. A segment still DOWNLOADING (another thread fills its
+    /// tail) is skipped; the fill itself gives it insert priority. The `segment_holder` member then
+    /// completes the segment as it is destroyed.
     if (!served || !segment_holder || !counts_hits)
         return;
     try
     {
-        segment().increasePriority();
+        FileSegment & seg = segment();
+        const auto state = seg.state();
+        if (state == FileSegmentState::DOWNLOADED
+            || state == FileSegmentState::PARTIALLY_DOWNLOADED
+            || state == FileSegmentState::PARTIALLY_DOWNLOADED_NO_CONTINUATION)
+            seg.increasePriority();
     }
     catch (...)
     {
@@ -600,8 +589,8 @@ VectorWithMemoryTracking<ICacheProvider::CacheResolution> DiskCacheProvider::res
         ICacheProvider::CacheResolution hit;
         hit.kind = ICacheProvider::CacheResolution::Kind::Hit;
         hit.range = ByteRange{seg_left + object_file_offset, committed_end - seg_left};
-        /// In the temporary-cache mode the reader counts no hit and keeps no fd, so that our own segments
-        /// stay removable.
+        /// In the temporary-cache mode the reader counts no hit and keeps no open fd: the segments it reads
+        /// can be removed after the pass.
         hit.reader = std::make_unique<DiskCacheReader>(
             seg_holder, hit.range, object_file_offset, local_throttler,
             cache_settings.cache_temporarily ? nullptr : &reader_anchors, !cache_settings.cache_temporarily);
