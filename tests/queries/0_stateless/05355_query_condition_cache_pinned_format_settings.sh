@@ -40,5 +40,26 @@ ${CLICKHOUSE_CLIENT} --query "SELECT 'allow', sum(c) FROM ${DB}.t_allow WHERE b 
 ${CLICKHOUSE_CLIENT} --query "SELECT 'disallow', sum(c) FROM ${DB}.t_disallow WHERE b = 3 SETTINGS ${SETTINGS}" \
     >/dev/null 2>&1 || echo "disallow: exception"
 
+# The same for `input_format_null_as_default`: the file has a `NULL` in `a`, and the column of the tables
+# is not `Nullable`. Row group pruning is disabled in both tables, so they differ only in this setting.
+# A table that reads the `NULL` as the default records that no row group matches, and a table that must
+# throw for the `NULL` must not skip the file because of these entries.
+${CLICKHOUSE_CLIENT} --query "
+    INSERT INTO FUNCTION file('${DATA_DIR}/nulls.parquet') SELECT if(number = 500000, NULL, number * 2)::Nullable(UInt64) AS a FROM numbers(1000000)
+    SETTINGS output_format_parquet_row_group_size = 100000, engine_file_truncate_on_insert = 1"
+touch -d '2020-01-01 00:00:00' "${USER_FILES_PATH}/${DATA_DIR}/nulls.parquet"
+NO_PRUNING="input_format_parquet_filter_push_down = 0, input_format_parquet_bloom_filter_push_down = 0, input_format_parquet_page_filter_push_down = 0"
+${CLICKHOUSE_CLIENT} --query "
+    CREATE TABLE ${DB}.t_null_as_default (a UInt64) ENGINE = File(Parquet, '${DATA_DIR}/nulls.parquet')
+    SETTINGS ${NO_PRUNING}, input_format_null_as_default = 1"
+${CLICKHOUSE_CLIENT} --query "
+    CREATE TABLE ${DB}.t_null_not_default (a UInt64) ENGINE = File(Parquet, '${DATA_DIR}/nulls.parquet')
+    SETTINGS ${NO_PRUNING}, input_format_null_as_default = 0"
+
+${CLICKHOUSE_CLIENT} --query "SELECT 'null as default', count() FROM ${DB}.t_null_as_default WHERE a = 1 SETTINGS ${SETTINGS}"
+${CLICKHOUSE_CLIENT} --query "SELECT 'null as default', count() FROM ${DB}.t_null_as_default WHERE a = 1 SETTINGS ${SETTINGS}"
+${CLICKHOUSE_CLIENT} --query "SELECT 'null not default', count() FROM ${DB}.t_null_not_default WHERE a = 1 SETTINGS ${SETTINGS}" \
+    >/dev/null 2>&1 || echo "null not default: exception"
+
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${DB}"
 rm -rf "${USER_FILES_PATH:?}/${DATA_DIR}"
