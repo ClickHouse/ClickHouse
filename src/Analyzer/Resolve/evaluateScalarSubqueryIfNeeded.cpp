@@ -217,9 +217,10 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         addQueryTreePasses(query_tree_pass_manager, options.only_analyze);
         query_tree_pass_manager.run(query_tree);
 
-        /// The inner query of an ordinary view referenced by the view query reads the table itself,
+        /// The inner query of an ordinary view and the query of another engine, like `executable`, read the table itself,
         /// not the inserted block.
-        if (auto storage = subquery_context->getViewSource(); storage && !subquery_context->isViewInnerQuery())
+        if (auto storage = subquery_context->getViewSource();
+            storage && subquery_context->isViewSourceInSubqueries() && !subquery_context->isViewInnerQuery())
             replaceStorageInQueryTree(query_tree, subquery_context, storage);
         auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(query_tree, subquery_context, options);
 

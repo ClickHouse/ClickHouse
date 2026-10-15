@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 
 # Inside a materialized view query, the source table read through `merge`, `loop` or `executable` is the
-# table, like through `remote` or `Distributed`; only the view query itself reads the inserted block. The
-# values do not depend on whether the inserted rows are already in the table. The database name is
-# spelled out: `currentDatabase()` in the view query does not resolve to the test database during the push.
+# table, like through `remote` or `Distributed`, also in the IN and scalar subqueries of the `executable`
+# input query; only the view query itself, with its own subqueries, reads the inserted block. The values do
+# not depend on whether the inserted rows are already in the table. The database name is spelled out:
+# `currentDatabase()` in the view query does not resolve to the test database during the push.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -87,6 +88,18 @@ CREATE TABLE db_05389.dst (name String, block_rows UInt64, value UInt64) ENGINE 
 CREATE MATERIALIZED VIEW db_05389.mv_executable TO db_05389.dst AS
     SELECT 'executable' AS name, count() AS block_rows,
         (SELECT sum(x) FROM executable('echo_rows.sh', 'TSV', 'x UInt64', (SELECT x FROM db_05389.src WHERE x >= 100))) AS value
+    FROM db_05389.src;
+
+CREATE MATERIALIZED VIEW db_05389.mv_executable_in TO db_05389.dst AS
+    SELECT 'executable_in' AS name, count() AS block_rows,
+        (SELECT sum(x) FROM executable('echo_rows.sh', 'TSV', 'x UInt64',
+            (SELECT x FROM db_05389.src WHERE x >= 100 AND x IN (SELECT x FROM db_05389.src)))) AS value
+    FROM db_05389.src;
+
+CREATE MATERIALIZED VIEW db_05389.mv_executable_scalar TO db_05389.dst AS
+    SELECT 'executable_scalar' AS name, count() AS block_rows,
+        (SELECT sum(x) FROM executable('echo_rows.sh', 'TSV', 'x UInt64',
+            (SELECT (SELECT sum(x) FROM db_05389.src WHERE x >= 100) AS x))) AS value
     FROM db_05389.src;
 
 INSERT INTO db_05389.src VALUES (1), (2), (3);

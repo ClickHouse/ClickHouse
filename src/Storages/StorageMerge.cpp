@@ -1994,6 +1994,7 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
         /// unmarshalls its blocks, so `BlocksMarshallingStep` must not be added to it.
         auto child_select_query_options = SelectQueryOptions(processed_stage);
         child_select_query_options.is_local_plan_for_distributed_query = true;
+        child_select_query_options.keep_view_source_in_subqueries = true;
 
         /// Converting query to AST because types might be different in the source table.
         /// Need to resolve types again.

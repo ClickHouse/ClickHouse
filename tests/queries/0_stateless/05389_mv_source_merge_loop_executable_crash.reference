@@ -2,3 +2,5 @@ loop	3	109
 merge	3	1045
 merge_in	3	0
 executable	3	1045
+executable_in	3	1045
+executable_scalar	3	1045

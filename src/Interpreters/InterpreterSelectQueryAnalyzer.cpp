@@ -176,7 +176,10 @@ ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOpti
 ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOptions & select_query_options, const StoragePtr & storage)
 {
     auto result_context = buildContext(context, select_query_options);
-    result_context->setViewSourceSubstituted(storage && storage == result_context->getViewSource());
+    bool substituted = storage && storage == result_context->getViewSource();
+    result_context->setViewSourceSubstituted(substituted);
+    result_context->setViewSourceInSubqueries(
+        substituted || (select_query_options.keep_view_source_in_subqueries && context->isViewSourceInSubqueries()));
     return result_context;
 }
 

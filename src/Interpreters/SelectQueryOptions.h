@@ -70,6 +70,10 @@ struct SelectQueryOptions
     /// only on remote pipes, so a `ColumnBLOB` would reach the parent pipeline as is.
     bool is_local_plan_for_distributed_query = false;
 
+    /// The query is the enclosing query planned again for a `Merge` child, so its IN and scalar
+    /// subqueries read the view source if the enclosing query's do.
+    bool keep_view_source_in_subqueries = false;
+
     size_t max_step_description_length = 0;
 
     bool force_materialize_cte = false;
