@@ -69,7 +69,8 @@ private:
 
     AzureClientPtr getClient() const;
 
-    bool tryRefreshCredentials(const Azure::Core::RequestFailedException & e, const AzureClientPtr & used_client);
+    /// `refreshed_in_request` bounds refreshes to one per `execWithRetry` call.
+    bool tryRefreshCredentials(const Azure::Core::RequestFailedException & e, const AzureClientPtr & used_client, bool & refreshed_in_request);
 
     /// Returns true if not a single byte was written to the buffer
     bool isEmpty() const { return total_size == 0 && count() == 0 && hidden_size == 0 && offset() == 0; }
@@ -92,7 +93,6 @@ private:
 
     mutable std::mutex client_mutex;
     AzureClientPtr blob_container_client TSA_GUARDED_BY(client_mutex);
-    bool credentials_refreshed TSA_GUARDED_BY(client_mutex) = false;
 
     const AzureBlobStorage::ContainerClientRefreshCallback credentials_refresh_callback;
 

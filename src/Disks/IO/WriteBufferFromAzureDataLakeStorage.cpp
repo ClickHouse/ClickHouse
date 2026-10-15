@@ -147,9 +147,9 @@ WriteBufferFromAzureDataLakeStorage::~WriteBufferFromAzureDataLakeStorage()
     }
 }
 
-bool WriteBufferFromAzureDataLakeStorage::tryRefreshCredentials(const Azure::Core::RequestFailedException & e)
+bool WriteBufferFromAzureDataLakeStorage::tryRefreshCredentials(const Azure::Core::RequestFailedException & e, bool & refreshed_in_request)
 {
-    if (credentials_refreshed || !credentials_refresh_callback || !isAzureAccessTokenExpiredError(e))
+    if (refreshed_in_request || !credentials_refresh_callback || !isAzureAccessTokenExpiredError(e))
         return false;
 
     auto new_file_client = credentials_refresh_callback();
@@ -157,7 +157,7 @@ bool WriteBufferFromAzureDataLakeStorage::tryRefreshCredentials(const Azure::Cor
         return false;
 
     file_client = std::move(*new_file_client);
-    credentials_refreshed = true;
+    refreshed_in_request = true;
     LOG_DEBUG(log, "Refreshed Azure credentials for `{}` after an authentication failure", blob_path);
     return true;
 }
@@ -184,6 +184,7 @@ void WriteBufferFromAzureDataLakeStorage::runWithRetries(
 
     Stopwatch watch;
     size_t backoff_ms = 100;
+    bool credentials_refreshed = false;
     for (size_t attempt = 1; attempt < ADLFS_MAX_RETRIES; ++attempt)
     {
         LOG_TRACE(log, "ADLS Gen2 {} attempt {} for `{}`", what, attempt, blob_path);
@@ -196,8 +197,8 @@ void WriteBufferFromAzureDataLakeStorage::runWithRetries(
         }
         catch (const Azure::Core::RequestFailedException & e)
         {
-            /// Credentials are refreshed at most once, so the retry after it costs no attempt.
-            if (tryRefreshCredentials(e))
+            /// Credentials are refreshed at most once per request, so the retry after it costs no attempt.
+            if (tryRefreshCredentials(e, credentials_refreshed))
             {
                 --attempt;
                 continue;

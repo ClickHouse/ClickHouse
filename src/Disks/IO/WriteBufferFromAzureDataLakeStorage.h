@@ -54,7 +54,8 @@ private:
         BlobStorageLogElement::EventType event_type,
         size_t data_size);
 
-    bool tryRefreshCredentials(const Azure::Core::RequestFailedException & e);
+    /// `refreshed_in_request` bounds refreshes to one per `runWithRetries` call.
+    bool tryRefreshCredentials(const Azure::Core::RequestFailedException & e, bool & refreshed_in_request);
 
     LoggerPtr log;
 
@@ -64,7 +65,6 @@ private:
     const size_t max_unexpected_write_error_retries;
 
     const FileClientRefreshCallback credentials_refresh_callback;
-    bool credentials_refreshed = false;
 
     bool file_created = false;
     bool is_prefinalized = false;

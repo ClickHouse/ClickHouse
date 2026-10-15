@@ -2609,8 +2609,11 @@ void RestCatalog::cacheCredentials(
     if (refresh_after <= now)
         return;
 
-    if (credentials_cache.size() >= credentials_cache_cleanup_threshold)
+    if (credentials_cache.size() >= credentials_cache_next_cleanup_size)
+    {
         std::erase_if(credentials_cache, [&now](const auto & entry) { return now >= entry.second.expires_at.value(); });
+        credentials_cache_next_cleanup_size = std::max(credentials_cache_cleanup_threshold, 2 * credentials_cache.size());
+    }
     credentials_cache[{namespace_name, table_name}]
         = VendedStorageCredentials{parsed.credentials, parsed.endpoint, refresh_after, parsed.table_uuid, parsed.location};
 }

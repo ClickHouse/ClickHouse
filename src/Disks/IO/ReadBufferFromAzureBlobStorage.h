@@ -110,15 +110,14 @@ private:
 
     std::pair<ContainerClientPtr, BlobClientPtr> tryGetRefreshedClient(const Azure::Core::RequestFailedException & e) const;
 
-    /// Sequential reads only; refreshes at most once per buffer.
-    bool tryRefreshCredentials(const Azure::Core::RequestFailedException & e);
+    /// Sequential reads only; `refreshed_in_request` bounds refreshes to one per request retry loop.
+    bool tryRefreshCredentials(const Azure::Core::RequestFailedException & e, bool & refreshed_in_request);
 
     std::unique_ptr<Azure::Core::IO::BodyStream> data_stream;
     ContainerClientPtr blob_container_client;
     mutable BlobClientPtr blob_client;
     mutable std::once_flag blob_client_created;
     const AzureClientRefreshCallback credentials_refresh_callback;
-    bool credentials_refreshed = false;
 
     const String path;
     size_t max_single_read_retries;

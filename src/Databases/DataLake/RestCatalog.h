@@ -196,6 +196,8 @@ protected:
 
     mutable std::map<std::pair<std::string, std::string>, VendedStorageCredentials> credentials_cache
         TSA_GUARDED_BY(credentials_cache_mutex);
+    /// Cache size at which expired entries are purged; doubles with the live size to keep insertion amortized O(log n).
+    mutable size_t credentials_cache_next_cleanup_size TSA_GUARDED_BY(credentials_cache_mutex) = credentials_cache_cleanup_threshold;
 
     Poco::Net::HTTPBasicCredentials credentials{};
 

@@ -131,7 +131,7 @@ WriteBufferFromAzureBlobStorage::AzureClientPtr WriteBufferFromAzureBlobStorage:
 }
 
 bool WriteBufferFromAzureBlobStorage::tryRefreshCredentials(
-    const Azure::Core::RequestFailedException & e, const AzureClientPtr & used_client)
+    const Azure::Core::RequestFailedException & e, const AzureClientPtr & used_client, bool & refreshed_in_request)
 {
     if (!credentials_refresh_callback || !isAzureAccessTokenExpiredError(e))
         return false;
@@ -142,7 +142,7 @@ bool WriteBufferFromAzureBlobStorage::tryRefreshCredentials(
     if (blob_container_client != used_client)
         return true;
 
-    if (credentials_refreshed)
+    if (refreshed_in_request)
         return false;
 
     auto new_client = credentials_refresh_callback();
@@ -150,7 +150,7 @@ bool WriteBufferFromAzureBlobStorage::tryRefreshCredentials(
         return false;
 
     blob_container_client = std::move(new_client);
-    credentials_refreshed = true;
+    refreshed_in_request = true;
     LOG_DEBUG(log, "Refreshed Azure credentials for blob `{}` after an authentication failure", blob_path);
     return true;
 }
@@ -158,6 +158,7 @@ bool WriteBufferFromAzureBlobStorage::tryRefreshCredentials(
 void WriteBufferFromAzureBlobStorage::execWithRetry(std::function<void(size_t, const AzureClientPtr &)> func, size_t num_tries, size_t cost)
 {
     size_t sleep_time_with_backoff_milliseconds = 100;
+    bool credentials_refreshed = false;
     for (size_t i = 0; i < num_tries; ++i)
     {
         auto client_ptr = getClient();
@@ -170,8 +171,8 @@ void WriteBufferFromAzureBlobStorage::execWithRetry(std::function<void(size_t, c
         }
         catch (const Azure::Core::RequestFailedException & e)
         {
-            /// Credentials are refreshed at most once, so the retry after it costs no attempt.
-            if (tryRefreshCredentials(e, client_ptr))
+            /// Credentials are refreshed at most once per request, so the retry after it costs no attempt.
+            if (tryRefreshCredentials(e, client_ptr, credentials_refreshed))
             {
                 --i;
                 continue;
