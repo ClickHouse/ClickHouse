@@ -624,8 +624,6 @@ protected:
 
     /// A flag, used to distinguish between user query and internal query to a database engine (MaterializedPostgreSQL).
     bool is_internal_query = false;
-    /// When set, a materialized CTE reference keeps the original body instead of a clone.
-    bool share_materialized_cte_body = false;
     /// True for a query that originates from server-owned SQL text. It must be inherited by interpreters
     /// which serialize and reparse a part of that text.
     bool parse_server_owned_query_without_limits = false;
@@ -1954,9 +1952,6 @@ public:
 
     bool isInternalQuery() const { return is_internal_query; }
     void setInternalQuery(bool internal) { is_internal_query = internal; }
-
-    bool shareMaterializedCTEBody() const { return share_materialized_cte_body; }
-    void setShareMaterializedCTEBody(bool value) { share_materialized_cte_body = value; }
 
     bool shouldParseServerOwnedQueryWithoutLimits() const { return parse_server_owned_query_without_limits; }
     void setParseServerOwnedQueryWithoutLimits(bool value) { parse_server_owned_query_without_limits = value; }

@@ -260,7 +260,6 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     auto query_context = Context::createCopy(getContext());
     if (!getContext()->getSettingsRef()[Setting::enable_materialized_cte].changed)
         query_context->setSetting("enable_materialized_cte", true);
-    query_context->setShareMaterializedCTEBody(true);
 
     query_context->setSetting("empty_result_for_aggregation_by_empty_set", false);
 

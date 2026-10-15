@@ -1651,7 +1651,8 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromCTE(
             /// Create a TableNode with StorageDummy as placeholder. The subquery stays unresolved.
             /// Resolution and real storage creation happen later in resolveQueryJoinTreeNode.
             auto table_node = std::make_shared<TableNode>(full_name, cte_node, scope.context);
-            if (scope.context->shareMaterializedCTEBody())
+            /// PromQL names each shared step `prometheus_query_step_<index>`.
+            if (full_name.starts_with("prometheus_query_step_"))
                 table_node->setShareMaterializedCTEBody(true);
             table_node->setAlias(full_name);
 
