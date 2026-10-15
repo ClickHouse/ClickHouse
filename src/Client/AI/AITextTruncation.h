@@ -52,9 +52,9 @@ inline String escapeInvalidUTF8(std::string_view text)
         if (lead < 0x80)
             return 1;
 
-        size_t length;
-        UInt32 code_point;
-        UInt32 min_code_point;
+        size_t length = 0;
+        UInt32 code_point = 0;
+        UInt32 min_code_point = 0;
         if ((lead & 0xE0) == 0xC0)
         {
             length = 2;

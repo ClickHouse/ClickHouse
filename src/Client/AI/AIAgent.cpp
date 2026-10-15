@@ -102,7 +102,7 @@ String summarizeToolResult(const ai::ToolResult & result)
 
 /// Escapes the bytes that are not valid UTF-8 in every string of the value, keys included - see
 /// `escapeInvalidUTF8`. A tool result can carry the values of a `String` column as they are.
-void escapeInvalidUTF8InJson(ai::JsonValue & value)
+void escapeInvalidUTF8InJSON(ai::JsonValue & value)
 {
     if (value.is_string())
     {
@@ -112,15 +112,15 @@ void escapeInvalidUTF8InJson(ai::JsonValue & value)
     else if (value.is_array())
     {
         for (auto & element : value)
-            escapeInvalidUTF8InJson(element);
+            escapeInvalidUTF8InJSON(element);
     }
     else if (value.is_object())
     {
         ai::JsonValue escaped = ai::JsonValue::object();
-        for (auto & [key, element] : value.items())
+        for (auto it = value.begin(); it != value.end(); ++it)
         {
-            escapeInvalidUTF8InJson(element);
-            escaped[escapeInvalidUTF8(key)] = std::move(element);
+            escapeInvalidUTF8InJSON(it.value());
+            escaped[escapeInvalidUTF8(it.key())] = std::move(it.value());
         }
         value = std::move(escaped);
     }
@@ -303,7 +303,7 @@ void AIAgent::chat(const String & user_text)
 
             if (result.is_success())
             {
-                escapeInvalidUTF8InJson(result.result);
+                escapeInvalidUTF8InJSON(result.result);
                 result_parts.emplace_back(call.id, truncateOversizedToolResult(std::move(result.result)), false);
             }
             else
