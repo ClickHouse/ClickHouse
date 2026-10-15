@@ -486,8 +486,7 @@ def main():
     duringInsertScenario(0, "Hello")
     duringInsertScenario(5, "TablesStatusRequest")
     duringInsertScenario(13, "QueryPlan")
-    # The obsolete `IgnoredPartUUIDs` packet keeps its own message about the removed setting.
-    duringInsertScenario(8, "IgnoredPartUUIDs", expected_message="query deduplication")
+    duringInsertScenario(8, "IgnoredPartUUIDs")
 
     leftoverBytesScenario()
     queryPlanDuringDrainScenario()

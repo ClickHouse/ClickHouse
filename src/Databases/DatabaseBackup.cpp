@@ -6,9 +6,7 @@
 
 #include <Poco/Util/LayeredConfiguration.h>
 
-#include <Common/HiddenSecret.h>
 #include <Common/SipHash.h>
-#include <Common/quoteString.h>
 #include <Common/ThreadPool.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/setThreadName.h>
@@ -16,7 +14,6 @@
 #include <IO/ReadBufferFromFileBase.h>
 
 #include <Core/Settings.h>
-#include <Core/UUID.h>
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -31,14 +28,7 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
-#include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/FunctionSecretArgumentsFinder.h>
-#include <Interpreters/SecretArgumentsRegistry.h>
-
-#include <Storages/ObjectStorage/S3/S3SecretArguments.h>
-
-#include <Access/ContextAccess.h>
 
 #include <Backups/BackupFactory.h>
 
@@ -67,8 +57,6 @@ namespace Setting
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsSeconds lock_acquire_timeout;
-    extern const SettingsSetOperationMode except_default_mode;
-    extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsSetOperationMode union_default_mode;
 }
 
@@ -243,25 +231,7 @@ void DatabaseBackup::beforeLoadingMetadata(ContextMutablePtr local_context, Load
     backup_open_params.context = getContext();
     backup_open_params.backup_info = config.backup_info;
 
-    try
-    {
-        backup = BackupFactory::instance().createBackup(backup_open_params);
-    }
-    catch (...)
-    {
-        if (mode < LoadingStrictnessLevel::FORCE_ATTACH)
-            throw;
-
-        /// It's server startup: do not prevent the server from starting if the backup is
-        /// unavailable (e.g. the backup files were removed or the underlying storage is
-        /// inaccessible). The database is loaded without any tables; restart the server once
-        /// the backup becomes available again to access its tables.
-        tryLogCurrentException(
-            log,
-            fmt::format("Cannot open backup for database {}, it will be loaded without tables", backQuoteIfNeed(getDatabaseName())));
-        backup = nullptr;
-        return;
-    }
+    backup = BackupFactory::instance().createBackup(backup_open_params);
 
     auto storage_policy_name = buildStoragePolicyName(getDatabaseName(), config);
 
@@ -281,17 +251,10 @@ void DatabaseBackup::beforeLoadingMetadata(ContextMutablePtr local_context, Load
     });
 }
 
-void DatabaseBackup::loadTablesMetadata(ContextPtr local_context, ParsedTablesMetadata & metadata, bool is_startup)
+void DatabaseBackup::loadTablesMetadata(ContextPtr local_context, ParsedTablesMetadata & metadata, bool)
 {
     if (!backup)
-    {
-        /// The backup could not be opened on server startup (see beforeLoadingMetadata).
-        /// Load the database without any tables instead of failing the whole server.
-        if (is_startup)
-            return;
-
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not initialized");
-    }
 
     size_t prev_tables_count = metadata.parsed_tables.size();
     size_t prev_total_dictionaries = metadata.total_dictionaries;
@@ -383,14 +346,8 @@ void DatabaseBackup::loadTablesMetadata(ContextPtr local_context, ParsedTablesMe
 
             updateCreateQueryWithDatabaseBackupStoragePolicy(create_query, current_database_name, config);
 
-            {
-                SelectIntersectExceptQueryVisitor::Data data{local_context->getSettingsRef()[Setting::intersect_default_mode], local_context->getSettingsRef()[Setting::except_default_mode]};
-                SelectIntersectExceptQueryVisitor{data}.visit(ast);
-            }
-            {
-                NormalizeSelectWithUnionQueryVisitor::Data data{local_context->getSettingsRef()[Setting::union_default_mode]};
-                NormalizeSelectWithUnionQueryVisitor{data}.visit(ast);
-            }
+            NormalizeSelectWithUnionQueryVisitor::Data data{local_context->getSettingsRef()[Setting::union_default_mode]};
+            NormalizeSelectWithUnionQueryVisitor{data}.visit(ast);
 
             QualifiedTableName qualified_name{current_database_name, create_query->getTable()};
 
@@ -556,252 +513,6 @@ DatabaseBackup::Configuration parseArguments(ASTs engine_args, ContextPtr, bool 
 
 }
 
-void DatabaseBackup::parseAndAuthorizeLocator(const ASTs & engine_args, ContextPtr query_context)
-{
-    /** A locator that is not a function is refused right here rather than left to creation time.
-      *
-      * This preflight is the last point that still runs as the real user, and the creation it would
-      * otherwise rely on does not always run: `RESTORE DATABASE` issues `CREATE DATABASE IF NOT EXISTS`,
-      * which returns from `InterpreterCreateQuery::createDatabase` before `DatabaseFactory::get` when the
-      * target database already exists. With `allow_different_database_def = 1` the definition mismatch is
-      * waived as well, so a manifest an older server left holding a quoted locator would pass through the
-      * whole restore with its embedded source never authorized, while the function form of the same
-      * manifest is checked.
-      *
-      * Only `parseArguments` may formulate the refusal: the offending text can carry credentials and must
-      * not be echoed.
-      */
-    auto config = parseArguments(engine_args, query_context, /*allow_locator_in_string_literal=*/ false);
-    BackupFactory::instance().checkSourceAccess(config.backup_info, query_context, IBackup::OpenMode::READ);
-}
-
-namespace
-{
-
-void findBackupDatabaseSecretArguments(FunctionSecretArgumentsFinder & finder)
-{
-    const auto & function = finder.function;
-    auto & result = finder.result;
-
-    /// `Backup(database_name, locator)` is the only valid shape, a locator carrying credentials can be
-    /// written in either position, and the query is formatted for logging before validation rejects it.
-    if (function->arguments->size() != 2 || !function->arguments->at(0)->tryGetLiteralText(nullptr))
-    {
-        finder.maskEveryArgument();
-        return;
-    }
-
-    auto storage_arg = function->arguments->at(1);
-    auto storage_function = storage_arg->getFunction();
-
-    /// A locator that is not a function - a string literal holding its text, or an expression - carries
-    /// the destination as text this finder cannot parse, and that text can hold an access key, a secret
-    /// access key or a presigned URL. The engine accepts such a locator only while replaying its own
-    /// metadata, but a statement carrying it is formatted before the engine rejects it: by `PARALLEL WITH`,
-    /// by the distributed DDL queue, and by `query_log`. Hide it whole rather than let it through verbatim.
-    if (!storage_function)
-    {
-        result.start = 1;
-        result.count = 1;
-        result.replacement = HIDDEN_SECRET_LITERAL;
-        result.quote_replacement = false;
-        return;
-    }
-
-    /// The nested S3 destination is not recognized as an S3 engine when the formatter recurses into it,
-    /// so its secrets must be masked here. Handle both forms:
-    ///   Backup('', S3('url', 'access_key_id', 'secret_access_key' [, ...]))
-    ///   Backup('', S3(named_collection, ..., secret_access_key = '...', session_token = '...', ...))
-    /// by reconstructing the nested `S3(...)` with the secret arguments replaced by `[HIDDEN]`.
-    if (storage_function->name() != "S3")
-    {
-        /// Judged by the backup engine's own rules: a locator they find a secret in holds a credential no rule
-        /// below reconstructs, so it is hidden whole; its engine name and arity are not secrets.
-        if (!SecretArgumentsRegistry::instance().find(ASTFunction::Kind::BACKUP_NAME, *storage_function).hasSecrets())
-            return;
-
-        std::string replacement = backQuoteIfNeed(storage_function->name()) + "(";
-        for (size_t i = 0, size = storage_function->hasArguments() ? storage_function->arguments->size() : 0; i < size; ++i)
-        {
-            if (i > 0)
-                replacement += ", ";
-            replacement += HIDDEN_SECRET_LITERAL;
-        }
-        replacement += ")";
-
-        result.start = 1;
-        result.count = 1;
-        result.replacement = std::move(replacement);
-        result.quote_replacement = false;
-        return;
-    }
-
-    if (!storage_function->hasArguments())
-        return;
-
-    const auto & nested_args = *storage_function->arguments;
-    const bool is_named_collection = nested_args.size() >= 1 && nested_args.at(0)->isIdentifier();
-
-    /// Count the positional arguments first (everything that is not `key = value` or a nested map):
-    /// the visibility rule below depends on the total, mirroring `BackupInfo::fromAST`, which collects
-    /// positionals independently of named overrides.
-    size_t total_positionals = 0;
-    for (size_t i = 0; i < nested_args.size(); ++i)
-    {
-        const auto f = nested_args.at(i)->getFunction();
-        if (f && (f->name() == "extra_credentials"
-                  || (f->name() == "equals" && f->hasArguments() && f->arguments->size() == 2)))
-            continue;
-        ++total_positionals;
-    }
-
-    /// Named-collection locator: slot 0 is the collection and slot 1 the non-secret filename.
-    /// Explicit-url locator: valid signatures have one positional (the url) or three (url,
-    /// access_key_id, secret_access_key) with the secret at slot 2; any other count is invalid and
-    /// the intended slots are unknowable, so everything after the url is hidden (fail closed).
-    const size_t first_hidden_slot = (is_named_collection || total_positionals == 3) ? 2 : 1;
-
-    std::string replacement = "S3(";
-    bool has_secret = false;
-    size_t positional_slot = 0;
-    for (size_t i = 0; i < nested_args.size(); ++i)
-    {
-        if (i > 0)
-            replacement += ", ";
-
-        auto arg = nested_args.at(i);
-
-        /// Named argument `key = value`.
-        if (auto key_value = arg->getFunction();
-            key_value && key_value->name() == "equals" && key_value->hasArguments() && key_value->arguments->size() == 2)
-        {
-            String key;
-            if (key_value->arguments->at(0)->tryGetString(&key, /* allow_identifier= */ true))
-            {
-                const bool is_secret = isS3SecretKey(key);
-                replacement += key;
-                replacement += " = ";
-                String value;
-                if (is_secret)
-                {
-                    replacement += HIDDEN_SECRET_LITERAL;
-                    has_secret = true;
-                }
-                else if (key_value->arguments->at(1)->tryGetString(&value, /* allow_identifier= */ true))
-                {
-                    /// A `url` override can itself carry credentials (userinfo, presign parameters).
-                    has_secret |= maskS3URICredentials(value);
-                    replacement += quoteString(value);
-                }
-                else if (String literal_text; key_value->arguments->at(1)->tryGetLiteralText(&literal_text))
-                {
-                    /// A non-string scalar override, e.g. `use_environment_credentials = 1`.
-                    replacement += literal_text;
-                }
-                else
-                {
-                    /// Any remaining value is an expression, not a plain literal or identifier: a `url`
-                    /// built from pieces, or a nested `headers(...)` / `extra_credentials(...)` map or
-                    /// other function whose formatted text would carry its secrets verbatim (the parser
-                    /// evaluates it as a constant, so it is not masked as a nested map here). We cannot
-                    /// evaluate it, so hide it rather than leak. This counts as a secret: otherwise a
-                    /// replacement whose only hidden part is this value would be discarded below and the
-                    /// original expression formatted verbatim.
-                    replacement += HIDDEN_SECRET_LITERAL;
-                    has_secret = true;
-                }
-            }
-            else
-            {
-                /// The key is a constant expression the parser would evaluate, so it can name any
-                /// secret key; fail closed and hide the whole argument.
-                replacement += HIDDEN_SECRET_LITERAL;
-                has_secret = true;
-            }
-            continue;
-        }
-
-        /// Nested `extra_credentials(k = v, ...)` map: reconstruct with every value hidden. Build into
-        /// a temporary; if any inner key is not a plain literal (e.g. a constant expression the parser
-        /// still accepts), fail closed by hiding the whole map rather than emitting it verbatim.
-        if (auto extra_credentials_func = arg->getFunction();
-            extra_credentials_func && extra_credentials_func->name() == "extra_credentials" && extra_credentials_func->hasArguments())
-        {
-            std::string masked_map = "extra_credentials(";
-            bool reconstructed = true;
-            const auto & cred_args = *extra_credentials_func->arguments;
-            for (size_t j = 0; j < cred_args.size(); ++j)
-            {
-                String cred_key;
-                auto cred_kv = cred_args.at(j)->getFunction();
-                if (cred_kv && cred_kv->name() == "equals" && cred_kv->hasArguments() && cred_kv->arguments->size() == 2
-                    && cred_kv->arguments->at(0)->tryGetString(&cred_key, /* allow_identifier= */ true))
-                {
-                    if (j > 0)
-                        masked_map += ", ";
-                    String cred_value;
-                    if (isNonSecretExtraCredentialsKey(cred_key)
-                        && cred_kv->arguments->at(1)->tryGetString(&cred_value, /* allow_identifier= */ true))
-                        masked_map += cred_key + " = " + quoteString(cred_value);
-                    else
-                    {
-                        masked_map += cred_key + " = ";
-                        masked_map += HIDDEN_SECRET_LITERAL;
-                    }
-                }
-                else
-                {
-                    reconstructed = false;
-                    break;
-                }
-            }
-            masked_map += ")";
-            replacement += reconstructed ? std::string_view(masked_map) : HIDDEN_SECRET_LITERAL;
-            has_secret = true;
-            continue;
-        }
-
-        /// Positional argument: the slot is counted over positionals only, and its visibility follows
-        /// the signature rule computed above.
-        const size_t slot = positional_slot++;
-        if (slot >= first_hidden_slot)
-        {
-            replacement += HIDDEN_SECRET_LITERAL;
-            has_secret = true;
-            continue;
-        }
-
-        String arg_value;
-        if (arg->isIdentifier() && arg->tryGetString(&arg_value, /* allow_identifier= */ true))
-            replacement += arg_value; /// e.g. the named collection name, kept unquoted.
-        else if (arg->tryGetString(&arg_value, /* allow_identifier= */ true))
-        {
-            /// The url positional can itself carry credentials (userinfo, presign parameters).
-            has_secret |= maskS3URICredentials(arg_value);
-            replacement += quoteString(arg_value);
-        }
-        else
-        {
-            /// Fail closed: an argument we cannot reconstruct safely (e.g. an unsupported tail like
-            /// `headers(..)`, or a non-literal expression) must not be emitted verbatim. Hide it.
-            replacement += HIDDEN_SECRET_LITERAL;
-            has_secret = true;
-        }
-    }
-    replacement += ")";
-
-    if (!has_secret)
-        return;
-
-    result.start = 1;
-    result.count = 1;
-    result.replacement = std::move(replacement);
-    result.quote_replacement = false;
-}
-
-}
-
-void registerDatabaseBackup(DatabaseFactory & factory);
 void registerDatabaseBackup(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)
@@ -813,129 +524,29 @@ void registerDatabaseBackup(DatabaseFactory & factory)
         if (engine->arguments)
             engine_args = engine->arguments->children;
 
-        /// Authorize only a newly introduced definition: one read back from this server's metadata was
-        /// already validated, and a context with no user cannot be checked per user.
-        ///
-        /// Metadata is read back on three paths: the short `ATTACH DATABASE db`, a load under `force_restore_data`,
-        /// and the replay of the stored full `ATTACH DATABASE db ENGINE = Backup(...)` statement at server start.
-        /// The last one runs in plain `ATTACH` mode, so neither of the first two conditions covers it - and it is
-        /// exactly the path that has to load metadata an older server rewrote.
-        ///
-        /// The loader flag, not `internal`, is the discriminator: wrappers such as `PARALLEL WITH` run user
-        /// statements as internal ones, and a user's `ATTACH DATABASE ... ENGINE = Backup(...)` must neither
-        /// skip the source authorization nor get its locator accepted in the form the secret masker cannot redact.
-        const bool has_real_user = args.context->getAccess()->getUserID().has_value();
+        /** Whether the locator may be held in a string literal. Metadata an older server rewrote carries that
+          * form and has to keep loading, but a statement a user writes must spell the locator as the function it
+          * is, because that is the form `FunctionSecretArgumentsFinder` can redact.
+          *
+          * Metadata is read back on three paths: the short `ATTACH DATABASE db`, a load under `force_restore_data`,
+          * and the replay of the stored full `ATTACH DATABASE db ENGINE = Backup(...)` statement at server start.
+          * The last one runs in plain `ATTACH` mode, so neither of the first two conditions covers it - and it is
+          * exactly the path that has to load metadata an older server rewrote.
+          *
+          * The loader flag, not `internal`, is the discriminator: wrappers such as `PARALLEL WITH` run user
+          * statements as internal ones, and a user's `ATTACH DATABASE ... ENGINE = Backup(...)` must not get its
+          * locator accepted in the form the secret masker cannot redact.
+          */
         const bool is_internal_metadata_replay = args.is_metadata_replay && args.mode >= LoadingStrictnessLevel::ATTACH;
         const bool from_existing_metadata
             = isLoadingFromExistingMetadata(args.mode) || args.create_query.attach_short_syntax || is_internal_metadata_replay;
 
         auto config = parseArguments(engine_args, args.context, /*allow_locator_in_string_literal=*/ from_existing_metadata);
-        if (has_real_user && !from_existing_metadata)
-            BackupFactory::instance().checkSourceAccess(config.backup_info, args.context, IBackup::OpenMode::READ);
 
         return std::make_shared<DatabaseBackup>(args.database_name, args.metadata_path, config, args.context);
     };
 
-    factory.registerDatabase("Backup", create_fn, {.custom = findBackupDatabaseSecretArguments}, {.supports_arguments = true, .is_external = true}, Documentation{
-        .description = R"DOCS_MD(
-Database backup allows to instantly attach table/database from [backups](/concepts/features/backup-restore/overview) in read-only mode.
-
-Database backup works with both incremental and non-incremental backups.
-
-## Creating a database {#creating-a-database}
-
-```sql
-CREATE DATABASE backup_database
-ENGINE = Backup('database_name_inside_backup', Disk('disk_name', 'backup_name'))
-```
-
-The backup destination can be any valid backup [destination](/concepts/features/backup-restore/local-disk#configure-backup-destinations-for-disk), such as `Disk`, `S3`, or `File`. It is passed as a function, for example `Disk('disk_name', 'backup_name')`.
-
-**Engine Parameters**
-
-- `database_name_inside_backup` — Name of the database inside the backup.
-- `backup_destination` — Backup destination.
-
-## Usage example {#usage-example}
-
-Let's make an example with a `Disk` backup destination. Let's first setup backups disk in `storage.xml`:
-
-```xml
-<storage_configuration>
-    <disks>
-        <backups>
-            <type>local</type>
-            <path>/home/ubuntu/ClickHouseWorkDir/backups/</path>
-        </backups>
-    </disks>
-</storage_configuration>
-<backups>
-    <allowed_disk>backups</allowed_disk>
-    <allowed_path>/home/ubuntu/ClickHouseWorkDir/backups/</allowed_path>
-</backups>
-```
-
-Example of usage. Let's create test database, tables, insert some data and then create a backup:
-
-```sql
-CREATE DATABASE test_database;
-
-CREATE TABLE test_database.test_table_1 (id UInt64, value String) ENGINE=MergeTree ORDER BY id;
-INSERT INTO test_database.test_table_1 VALUES (0, 'test_database.test_table_1');
-
-CREATE TABLE test_database.test_table_2 (id UInt64, value String) ENGINE=MergeTree ORDER BY id;
-INSERT INTO test_database.test_table_2 VALUES (0, 'test_database.test_table_2');
-
-CREATE TABLE test_database.test_table_3 (id UInt64, value String) ENGINE=MergeTree ORDER BY id;
-INSERT INTO test_database.test_table_3 VALUES (0, 'test_database.test_table_3');
-
-BACKUP DATABASE test_database TO Disk('backups', 'test_database_backup');
-```
-
-So now we have `test_database_backup` backup, let's create database Backup:
-
-```sql
-CREATE DATABASE test_database_backup ENGINE = Backup('test_database', Disk('backups', 'test_database_backup'));
-```
-
-Now we can query any table from database:
-
-```sql
-SELECT id, value FROM test_database_backup.test_table_1;
-
-┌─id─┬─value──────────────────────┐
-│  0 │ test_database.test_table_1 │
-└────┴────────────────────────────┘
-
-SELECT id, value FROM test_database_backup.test_table_2;
-
-┌─id─┬─value──────────────────────┐
-│  0 │ test_database.test_table_2 │
-└────┴────────────────────────────┘
-
-SELECT id, value FROM test_database_backup.test_table_3;
-
-┌─id─┬─value──────────────────────┐
-│  0 │ test_database.test_table_3 │
-└────┴────────────────────────────┘
-```
-
-It is also possible to work with this database Backup as with any ordinary database. For example query tables in it:
-
-```sql
-SELECT database, name FROM system.tables WHERE database = 'test_database_backup';
-```
-
-```text
-┌─database─────────────┬─name─────────┐
-│ test_database_backup │ test_table_1 │
-│ test_database_backup │ test_table_2 │
-│ test_database_backup │ test_table_3 │
-└──────────────────────┴──────────────┘
-```
-)DOCS_MD",
-        .syntax = "ENGINE = Backup('database_name_inside_backup', Disk('disk_name', 'backup_name'))",
-        .related = {}});
+    factory.registerDatabase("Backup", create_fn, {.supports_arguments = true});
 }
 
 }

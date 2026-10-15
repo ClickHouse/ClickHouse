@@ -3,7 +3,6 @@
 #include <vector>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -12,16 +11,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
-}
-
-/// The Volnitsky multi-searcher used for a constant array of needles stores
-/// the matched needle index in a single byte, so it cannot handle more than 255 needles.
-inline void checkMultiSearchNeedlesLimit(std::string_view function_name, size_t needles_count)
-{
-    if (needles_count > std::numeric_limits<UInt8>::max())
-        throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
-            "Number of arguments for function {} doesn't match: passed {}, should be at most {}",
-            function_name, needles_count, std::to_string(std::numeric_limits<UInt8>::max()));
 }
 
 template <typename Name, typename Impl>
@@ -48,9 +37,12 @@ struct MultiSearchImpl
         size_t input_rows_count)
     {
         // For performance of Volnitsky search, it is crucial to save only one byte for pattern number.
-        checkMultiSearchNeedlesLimit(name, needles_arr.size());
+        if (needles_arr.size() > std::numeric_limits<UInt8>::max())
+            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
+                "Number of arguments for function {} doesn't match: passed {}, should be at most {}",
+                name, needles_arr.size(), std::to_string(std::numeric_limits<UInt8>::max()));
 
-        VectorWithMemoryTracking<std::string_view> needles;
+        std::vector<std::string_view> needles;
         needles.reserve(needles_arr.size());
         for (const auto & needle : needles_arr)
             needles.emplace_back(needle.safeGet<String>());
@@ -97,7 +89,7 @@ struct MultiSearchImpl
 
         const ColumnString & needles_data_string = checkAndGetColumn<ColumnString>(needles_data);
 
-        VectorWithMemoryTracking<std::string_view> needles;
+        std::vector<std::string_view> needles;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {

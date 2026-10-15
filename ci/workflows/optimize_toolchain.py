@@ -7,10 +7,9 @@ workflow = Workflow.Config(
     name="OptimizeToolchain",
     event=Workflow.Event.DISPATCH,
     branches=[BASE_BRANCH],
-    engine=Workflow.Engine.GH_ACTIONS,
     jobs=[
         *JobConfigs.toolchain_build_jobs,
-        JobConfigs.update_toolchain_dockerfile_job.set_run_after(
+        JobConfigs.update_toolchain_dockerfile_job.set_dependency(
             [j.name for j in JobConfigs.toolchain_build_jobs]
         ),
     ],
