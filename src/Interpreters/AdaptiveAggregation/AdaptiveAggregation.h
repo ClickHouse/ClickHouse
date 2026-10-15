@@ -22,12 +22,13 @@ namespace DB
 /// a fixed-width key costs less than storing and reading the extra bytes. Records never point into the
 /// source block, so the block is released.
 ///
-/// A table also freezes where the baseline would convert it to two-level, which catches the few
-/// groups whose states own heap memory (`uniqExact` per region): such a table never fills in keys
-/// or in its own footprint, and the adaptive merge gives it the bucket-parallel merge the conversion
-/// is for. A table that reaches no bound is small and keeps learning, like a small baseline table;
-/// a frozen one whose states keep growing is written to disk over the external-aggregation
-/// threshold and learns again from empty.
+/// The byte bound of the freeze measures the table's own tracked memory, which counts the heap
+/// memory its states own, so a few groups with growing states, such as `uniqExact` per region,
+/// freeze the table by its memory where its key count never would. Each table freezes on its own
+/// bounds alone: a bound on the memory of the whole aggregation would let the growth of some tables
+/// freeze the others. A table that reaches no bound is small and keeps learning, like a small
+/// baseline table; a frozen one whose states keep growing is written to disk over the
+/// external-aggregation threshold and learns again from empty.
 ///
 /// One guard hands the work back to the baseline path when freezing cannot pay: when a thread's
 /// staged stream proves to repeat the same keys over and over, the thread thaws its table. A key's

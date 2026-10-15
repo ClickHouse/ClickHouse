@@ -2372,8 +2372,9 @@ bool Aggregator::executeOnBlock(Columns columns,
     /// The staged records of an adaptive producer are not part of this table: the table's tracker measures what
     /// writing the table releases, so the staging runs under the aggregator's tracker instead. A thread reports its
     /// allocations to its tracker in batches, and the switch holds the unreported ones back until the scope ends. A
-    /// scope in which the table may freeze reports them to the table's tracker first: the freeze takes the table's
-    /// tracked memory as the base of its growth (see `adaptiveFrozenTableWorthSpilling`).
+    /// scope in which the table may freeze reports them to the table's tracker first: the freeze bound reads the
+    /// table's tracked memory, and the freeze takes it as the base of its growth (see `adaptiveFreezeBoundReached` and
+    /// `adaptiveFrozenTableWorthSpilling`).
     const auto aggregator_scope = [&](std::optional<MemoryTrackerSwitcher> & scope, bool table_may_freeze)
     {
         if (aggregator_tracker)
@@ -2532,14 +2533,6 @@ bool Aggregator::executeOnBlock(Columns columns,
     size_t result_size = result.sizeWithoutOverflowRow();
     Int64 current_memory_usage = getCurrentQueryMemoryUsage();
 
-    /// Here all the results in the sum are taken into account, from different threads.
-    Int64 result_size_bytes = aggregator_tracker && params.use_aggregation_memory_tracker
-        ? aggregator_tracker->get()
-        : current_memory_usage - memory_usage_before_aggregation;
-
-    bool worth_convert_to_two_level = worthConvertToTwoLevel(
-        params.group_by_two_level_threshold, result_size, params.group_by_two_level_threshold_bytes, result_size_bytes);
-
     /// An adaptive producer advances its phase in place of the conversion below, until it is on the baseline path. Like
     /// the baseline, it checks the limits after the transition and before its table goes to disk.
     bool stays_adaptive = false;
@@ -2547,8 +2540,7 @@ bool Aggregator::executeOnBlock(Columns columns,
     {
         std::optional<MemoryTrackerSwitcher> scope;
         aggregator_scope(scope, /*table_may_freeze=*/adaptive->isLearning());
-        stays_adaptive
-            = advanceAdaptiveProducer(result, *adaptive, row_end - row_begin, worth_convert_to_two_level, current_memory_usage);
+        stays_adaptive = advanceAdaptiveProducer(result, *adaptive, row_end - row_begin, current_memory_usage);
     }
     if (stays_adaptive)
     {
@@ -2556,15 +2548,24 @@ bool Aggregator::executeOnBlock(Columns columns,
         if (!checkLimits(result_size, no_more_keys))
             return false;
 
-        /// A learning table stays below every freeze bound, the two-level condition among them, so like a small
-        /// baseline table it neither converts nor spills. A frozen one is written to disk over the
-        /// external-aggregation threshold when its states grow, and its producer learns again.
+        /// Unlike the baseline's table below, the table does not convert to two-level: a learning table stays within
+        /// its freeze bounds, and the merge converts the tables of an aggregation in which a producer froze. A frozen
+        /// table is written to disk over the external-aggregation threshold when its states grow, and its producer
+        /// learns again.
         if (adaptive->isFrozen() && params.max_bytes_before_external_group_by
             && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by)
             && adaptiveFrozenTableWorthSpilling(result, *adaptive))
             spillAdaptiveTable(result, *adaptive, current_memory_usage + params.min_free_disk_space);
         return true;
     }
+
+    /// Here all the results in the sum are taken into account, from different threads.
+    Int64 result_size_bytes = aggregator_tracker && params.use_aggregation_memory_tracker
+        ? aggregator_tracker->get()
+        : current_memory_usage - memory_usage_before_aggregation;
+
+    bool worth_convert_to_two_level = worthConvertToTwoLevel(
+        params.group_by_two_level_threshold, result_size, params.group_by_two_level_threshold_bytes, result_size_bytes);
 
     /** Converting to a two-level data structure.
       * It allows you to make, in the subsequent, an effective merge - either economical from memory or parallel.

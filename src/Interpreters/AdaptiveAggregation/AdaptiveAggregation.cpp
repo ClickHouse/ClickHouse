@@ -175,7 +175,6 @@ bool Aggregator::advanceAdaptiveProducer(
     AggregatedDataVariants & result,
     AdaptiveAggregationProducer & adaptive,
     size_t rows,
-    bool worth_convert_to_two_level,
     Int64 current_memory_usage) const
 {
     const bool over_external_threshold = params.max_bytes_before_external_group_by
@@ -192,13 +191,13 @@ bool Aggregator::advanceAdaptiveProducer(
     if (adaptive.isBaseline())
         return false;
 
-    /// The freeze replaces the baseline's two-level conversion: from now on the local table only updates the keys it
-    /// already holds, so it stays single-level and bounded by the freeze bounds, and the frozen kernel pairs it with
-    /// its two-level twin.
+    /// In place of the baseline's two-level conversion, a learning table freezes at its own bounds: from then on it
+    /// only updates the keys it already holds, so it stays single-level and bounded, and the frozen kernel pairs it
+    /// with its two-level twin.
     if (adaptive.isLearning())
     {
         std::get<AdaptiveAggregationProducer::LearningState>(adaptive.phase).rows += rows;
-        if (adaptiveFreezeBoundReached(result, worth_convert_to_two_level))
+        if (adaptiveFreezeBoundReached(result))
             freezeAdaptive(result, adaptive);
     }
     return true;
@@ -212,21 +211,17 @@ bool Aggregator::adaptiveLearningSlices(const AdaptiveAggregationProducer & adap
         <= adaptive_learning_slicing_row_multiple * params.adaptive_aggregator_freeze_threshold;
 }
 
-bool Aggregator::adaptiveFreezeBoundReached(const AggregatedDataVariants & result, bool worth_convert_to_two_level) const
+bool Aggregator::adaptiveFreezeBoundReached(const AggregatedDataVariants & result) const
 {
-    /// The byte twin of the key-count bound is the table's own footprint, its hash-table buffer plus its arenas,
-    /// checked between blocks like the baseline's conversion thresholds. The mid-block freeze crossing checks only the
-    /// key count, so a byte-triggered freeze lands on a block boundary.
+    /// The byte twin of the key-count bound is the table's own tracked memory: its hash-table buffer, its arenas and
+    /// the heap memory that its states own, such as the sets of `uniqExact`, which a few groups can grow while the key
+    /// count stays low. It is checked between blocks, so a byte-triggered freeze lands on a block boundary; the
+    /// mid-block freeze crossing checks only the key count. The memory of the whole aggregation is no bound: it sums
+    /// the allocations of every thread, including the blocks they are processing, so the growth of some tables would
+    /// freeze the others.
     const bool freeze_bytes_reached = params.adaptive_aggregator_freeze_threshold_bytes
-        && result.allocatedBytes() >= params.adaptive_aggregator_freeze_threshold_bytes;
-    /// The condition on which the baseline converts its table to two-level freezes a learning table instead, so a
-    /// learning table never needs the conversion: the adaptive merge gives it the bucket-parallel merge the conversion
-    /// is for. It catches what the two bounds cannot see, a few groups whose states own heap memory (`uniqExact` per
-    /// region): the query's tracked memory, the measure of the conversion, counts that memory, and the table's own
-    /// footprint does not. Summed over every thread, it can freeze a table before the table reaches its own bounds,
-    /// which only stages more of its stream.
-    return (result.sizeWithoutOverflowRow() >= params.adaptive_aggregator_freeze_threshold || freeze_bytes_reached
-            || worth_convert_to_two_level)
+        && result.memoryUsage() >= params.adaptive_aggregator_freeze_threshold_bytes;
+    return (result.sizeWithoutOverflowRow() >= params.adaptive_aggregator_freeze_threshold || freeze_bytes_reached)
         && result.isConvertibleToTwoLevel();
 }
 

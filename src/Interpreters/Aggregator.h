@@ -883,18 +883,13 @@ private:
     /// Advances an adaptive producer's phase between blocks, in place of the baseline's conversion: writes its staged
     /// records to disk over the external-aggregation threshold, thaws a frozen table whose staged stream repeats, and
     /// freezes a learning table at its bounds. A learning table counts the block's `rows` toward the end of its slicing
-    /// (see `adaptiveLearningSlices`). `worth_convert_to_two_level` is the baseline's conversion condition, a bound of
-    /// the freeze. Returns false once the producer is on the baseline path, whose checks then apply.
+    /// (see `adaptiveLearningSlices`). Returns false once the producer is on the baseline path, whose checks then apply.
     bool advanceAdaptiveProducer(
-        AggregatedDataVariants & result,
-        AdaptiveAggregationProducer & adaptive,
-        size_t rows,
-        bool worth_convert_to_two_level,
-        Int64 current_memory_usage) const;
+        AggregatedDataVariants & result, AdaptiveAggregationProducer & adaptive, size_t rows, Int64 current_memory_usage) const;
 
-    /// Whether a learning table reached a bound of the freeze: the key count, its own footprint, or the condition of
-    /// the baseline's two-level conversion.
-    bool adaptiveFreezeBoundReached(const AggregatedDataVariants & result, bool worth_convert_to_two_level) const;
+    /// Whether a learning table reached a bound of the freeze: its key count or its own tracked memory, so the caller
+    /// reports the thread's unreported allocations to the table's tracker first (see `executeOnBlock`).
+    bool adaptiveFreezeBoundReached(const AggregatedDataVariants & result) const;
 
     /// Whether a learning table still slices its blocks to freeze exactly at the key-count threshold: until it has
     /// taken more than `adaptive_learning_slicing_row_multiple` times the threshold in rows.
