@@ -1,6 +1,7 @@
--- A correlated scalar subquery whose aggregate has a non-NULL empty-input value (count(), uniqExact(), ...)
--- must return that value (0), not NULL, when the correlated group is empty for an outer row. Other aggregates
--- (sum, min, max, avg) still return NULL for an empty correlated group. See #111615.
+-- A correlated scalar subquery whose projection is built from counting aggregates (count(), uniqExact(), ...)
+-- and constants must return its value over an empty group (count() -> 0), not NULL, when the correlated group
+-- is empty for an outer row. Other aggregates (sum, min, max, avg) still return NULL for an empty correlated
+-- group. See #111615.
 
 SET enable_analyzer = 1;
 SET allow_correlated_subqueries = 1;
@@ -27,11 +28,18 @@ ORDER BY o.k
 SETTINGS count_distinct_implementation = 'uniqCombined64', aggregate_functions_null_for_empty = 0;
 
 -- sum() empty group stays NULL, so `WHERE outer > (SELECT sum ...)` keeps filtering empty groups
--- (deliberate, see QueryNode::getResultType). Not restored here: this PR restores only the bare
--- returns_default_when_only_null aggregates.
+-- (deliberate, see QueryNode::getResultType).
 SELECT o.k, (SELECT sum(i.flag) FROM values('k UInt8, flag UInt8', (1, 0), (2, 1)) AS i WHERE i.k = o.k AND i.flag = 1) AS s
 FROM values('k UInt8, flag UInt8', (1, 0), (2, 1)) AS o
 ORDER BY o.k;
+
+-- -OrDefault asks for the default over an empty input, so its empty group is 0.
+SELECT o.k,
+    (SELECT sumOrDefault(i.flag) FROM values('k UInt8, flag UInt8', (1, 0), (2, 1)) AS i WHERE i.k = o.k AND i.flag = 1) AS s,
+    (SELECT avgOrDefault(i.flag) FROM values('k UInt8, flag UInt8', (1, 0), (2, 1)) AS i WHERE i.k = o.k AND i.flag = 1) AS a
+FROM values('k UInt8, flag UInt8', (1, 0), (2, 1)) AS o
+ORDER BY o.k
+SETTINGS aggregate_functions_null_for_empty = 0;
 
 -- min()/max() empty group stays NULL.
 SELECT o.k, (SELECT min(i.flag) FROM values('k UInt8, flag UInt8', (1, 0), (2, 1)) AS i WHERE i.k = o.k AND i.flag = 1) AS mn
@@ -46,17 +54,23 @@ SELECT o.k,
 FROM values('k UInt8', (1), (2), (9)) AS o
 ORDER BY o.k;
 
--- Wrapped projection (count() + 100) is not a bare aggregate, so the restore does not apply and the
--- empty group keeps the join's NULL. This asserts current behavior: `(SELECT count() + 100 FROM <empty>)`
--- is 100, so the NULL is a pre-existing decorrelation gap for non-bare projections, unchanged here.
-SELECT o.k, (SELECT count() + 100 FROM values('k UInt8, flag UInt8', (1, 0), (2, 1)) AS i WHERE i.k = o.k AND i.flag = 1) AS c
+-- An expression over counting aggregates gets its value over the empty group (count() + 100 -> 100). With any
+-- other aggregate it stays NULL. Without an aggregate there is no row for the empty group, so it stays NULL too.
+SELECT o.k,
+    (SELECT count() + 100 FROM values('k UInt8, flag UInt8', (1, 0), (2, 1)) AS i WHERE i.k = o.k AND i.flag = 1) AS c,
+    (SELECT toString(count() * 2 + uniqExact(i.flag)) FROM values('k UInt8, flag UInt8', (1, 0), (2, 1)) AS i WHERE i.k = o.k AND i.flag = 1) AS s,
+    (SELECT count() + sum(i.flag) FROM values('k UInt8, flag UInt8', (1, 0), (2, 1)) AS i WHERE i.k = o.k AND i.flag = 1) AS m,
+    (SELECT 100 FROM values('k UInt8, flag UInt8', (1, 0), (2, 1)) AS i WHERE i.k = o.k AND i.flag = 1) AS n
 FROM values('k UInt8, flag UInt8', (1, 0), (2, 1)) AS o
 ORDER BY o.k;
 
--- FunctionToSubcolumnsPass rewrites count(<Nullable column>) to sum(not(col.null)) before the planner
--- runs, and `sum` does not carry returns_default_when_only_null, so the rewritten form is not restored.
--- The restore therefore depends on optimize_functions_to_subcolumns for this spelling. Ground truth for
--- the empty group is 0; the rewritten form still returns NULL, asserted to track it.
+-- An expression that would throw over an empty group must not fail a query without empty groups.
+SELECT o.k, (SELECT intDiv(100, count()) FROM values('k UInt8', (1), (2)) AS i WHERE i.k = o.k) AS d
+FROM values('k UInt8', (1), (2)) AS o
+ORDER BY o.k;
+
+-- count(<Nullable column>) over a MergeTree table: optimize_functions_to_subcolumns would rewrite it to
+-- sum(not(col.null)), but not in a correlated subquery, so the empty group is 0 with either setting.
 DROP TABLE IF EXISTS t04630_inner;
 DROP TABLE IF EXISTS t04630_outer;
 CREATE TABLE t04630_inner (k UInt8, v Nullable(Int32)) ENGINE = MergeTree ORDER BY k;

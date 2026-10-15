@@ -2,10 +2,13 @@
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
+#include <Analyzer/AggregationUtils.h>
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ListNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
+#include <Analyzer/Utils.h>
 
 #include <Common/EquivalenceClasses.h>
 #include <Common/Exception.h>
@@ -119,48 +122,106 @@ void makeInternalDecorrelationJoinUnbounded(JoinStepLogical & join_step)
     join_settings.join_overflow_mode = OverflowMode::THROW;
 }
 
-/// True only for a bare aggregate projection with `returns_default_when_only_null` (or `uniqCombined*`), a Nullable result, no
-/// GROUP BY / HAVING / DISTINCT / LIMIT / OFFSET, and `empty_result_for_aggregation_by_empty_set` off. In that
-/// case the aggregate cannot produce NULL over a non-empty group, so a post-join NULL is exactly an empty group.
-bool scalarSubqueryRestoresEmptyGroupDefault(const QueryTreeNodePtr & query_tree)
+/// True for an aggregate that counts (`returns_default_when_only_null` or `uniqCombined*`) or has `-OrDefault`, with
+/// a non-Nullable number result. Its value over an empty input is the type default 0, and it is never NULL over a
+/// non-empty group. An already-Nullable aggregate may return a real NULL, and a composite result (Array/Tuple/etc.)
+/// has a structured empty value that is not its type default.
+bool aggregateCountsZeroOverEmptyInput(const FunctionNode & function_node)
 {
-    const auto * query_node = query_tree->as<QueryNode>();
-    if (!query_node)
+    auto result_type = function_node.getResultType();
+    if (result_type->isNullable() || !isNumber(result_type))
         return false;
 
-    if (query_node->hasGroupBy() || query_node->hasHaving() || query_node->isDistinct()
-        || query_node->hasLimit() || query_node->hasOffset())
-        return false;
-
-    /// The subquery node's own context, not the outer query's: a per-subquery
-    /// `SETTINGS empty_result_for_aggregation_by_empty_set = 1` must keep the empty group NULL.
-    if (query_node->getContext()->getSettingsRef()[Setting::empty_result_for_aggregation_by_empty_set])
-        return false;
-
-    const auto & projection_nodes = query_node->getProjection().getNodes();
-    if (projection_nodes.size() != 1)
-        return false;
-
-    const auto * function_node = projection_nodes.front()->as<FunctionNode>();
-    if (!function_node || !function_node->isAggregateFunction())
-        return false;
-
-    /// The restore substitutes the natural type's default (0). That equals the aggregate's empty-input value only
-    /// for a plain non-Nullable number: an already-Nullable aggregate may return a real NULL over a non-empty
-    /// group, and a composite result (Array/Tuple/etc.) has a structured empty value that is not its type default.
-    auto natural_type = function_node->getResultType();
-    if (natural_type->isNullable() || !isNumber(natural_type))
-        return false;
-
-    auto properties = AggregateFunctionFactory::instance().tryGetProperties(function_node->getFunctionName(), NullsAction::EMPTY);
+    auto properties = AggregateFunctionFactory::instance().tryGetProperties(function_node.getFunctionName(), NullsAction::EMPTY);
     if (properties && properties->returns_default_when_only_null)
         return true;
 
     /// `uniqCombined*` (`count_distinct_implementation` targets) lack the property, but also count 0 over an empty input.
-    auto base_function = function_node->getAggregateFunction();
-    while (base_function && base_function->getNestedFunction())
-        base_function = base_function->getNestedFunction();
-    return base_function && (base_function->getName() == "uniqCombined" || base_function->getName() == "uniqCombined64");
+    /// `-OrDefault` returns the default over an empty input by definition.
+    for (auto function = function_node.getAggregateFunction(); function; function = function->getNestedFunction())
+    {
+        const auto & name = function->getName();
+        if (name.ends_with("OrDefault") || ((name == "uniqCombined" || name == "uniqCombined64") && !function->getNestedFunction()))
+            return true;
+    }
+    return false;
+}
+
+/// Adds `node` to `dag` with every aggregate replaced by its empty-input value 0. Null if `node` holds anything
+/// but counting aggregates, constants and ordinary functions of them.
+const ActionsDAG::Node * addEmptyGroupValue(ActionsDAG & dag, const QueryTreeNodePtr & node)
+{
+    if (const auto * constant_node = node->as<ConstantNode>())
+        return &dag.addColumn(constant_node->getColumn(), constant_node->getResultType(), constant_node->getValueStringRepresentation());
+
+    const auto * function_node = node->as<FunctionNode>();
+    if (!function_node)
+        return nullptr;
+
+    if (function_node->isAggregateFunction())
+    {
+        if (!aggregateCountsZeroOverEmptyInput(*function_node))
+            return nullptr;
+
+        auto result_type = function_node->getResultType();
+        return &dag.addColumn(result_type->createColumnConst(1, result_type->getDefault()), result_type, "0");
+    }
+
+    /// `IN` needs a prepared set.
+    if (!function_node->isOrdinaryFunction() || isNameOfInFunction(function_node->getFunctionName()))
+        return nullptr;
+
+    ActionsDAG::NodeRawConstPtrs children;
+    for (const auto & argument : function_node->getArguments().getNodes())
+    {
+        const auto * child = addEmptyGroupValue(dag, argument);
+        if (!child)
+            return nullptr;
+        children.push_back(child);
+    }
+
+    return &dag.addFunction(*function_node, std::move(children), {});
+}
+
+/// The value of the scalar subquery over an empty correlated group, when the restore can substitute it for the
+/// join's NULL: no GROUP BY / HAVING / DISTINCT / LIMIT / OFFSET, `empty_result_for_aggregation_by_empty_set` off,
+/// and a non-Nullable projection over counting aggregates and constants. Such a projection is never NULL over a
+/// non-empty group, so a post-join NULL is exactly an empty group.
+std::optional<Field> tryGetScalarSubqueryEmptyGroupValue(const QueryTreeNodePtr & query_tree)
+{
+    const auto * query_node = query_tree->as<QueryNode>();
+    if (!query_node)
+        return {};
+
+    if (query_node->hasGroupBy() || query_node->hasHaving() || query_node->isDistinct()
+        || query_node->hasLimit() || query_node->hasOffset())
+        return {};
+
+    /// The subquery node's own context, not the outer query's: a per-subquery
+    /// `SETTINGS empty_result_for_aggregation_by_empty_set = 1` must keep the empty group NULL.
+    if (query_node->getContext()->getSettingsRef()[Setting::empty_result_for_aggregation_by_empty_set])
+        return {};
+
+    /// Without an aggregate there is no row over an empty group, so NULL is already the right value.
+    const auto & projection_nodes = query_node->getProjection().getNodes();
+    if (projection_nodes.size() != 1 || !hasAggregateFunctionNodes(projection_nodes.front())
+        || projection_nodes.front()->getResultType()->isNullable() || !query_node->getResultType()->isNullable())
+        return {};
+
+    /// A projection that throws over an empty group (e.g. `intDiv(1, count())`) keeps the NULL: a query
+    /// without empty groups must not fail.
+    try
+    {
+        ActionsDAG dag;
+        const auto * value = addEmptyGroupValue(dag, projection_nodes.front());
+        if (value && value->column && isColumnConst(*value->column))
+            return (*value->column)[0];
+        return {};
+    }
+    catch (const Exception &)
+    {
+        return {};
+    }
 }
 
 using CorrelatedPlanStepMap = std::unordered_map<QueryPlan::Node *, bool>;
@@ -1829,12 +1890,13 @@ void addStepForResultRenaming(
     correlated_subquery_plan.addStep(std::move(expression_step));
 }
 
-/// Replace the outer join's unmatched-row NULL with the aggregate's non-NULL empty-input value (`count`/
-/// `uniqExact` -> 0). Reached only when `scalarSubqueryRestoresEmptyGroupDefault` held, so a NULL here is
-/// always an empty group.
+/// Replace the outer join's unmatched-row NULL with the subquery's value over an empty group (`count()` -> 0,
+/// `count() + 100` -> 100). Reached only when `tryGetScalarSubqueryEmptyGroupValue` returned the value, so a NULL
+/// here is always an empty group.
 void restoreEmptyGroupDefaultForScalarSubquery(
     QueryPlan & query_plan,
     const CorrelatedSubquery & correlated_subquery,
+    const Field & empty_group_value,
     const PlannerContextPtr & planner_context)
 {
     const auto & header = query_plan.getCurrentHeader();
@@ -1843,9 +1905,8 @@ void restoreEmptyGroupDefaultForScalarSubquery(
     const auto & result_node = dag.findInOutputs(correlated_subquery.action_node_name);
     auto result_type = result_node.result_type;
 
-    /// The empty-group value is the non-nullable aggregate's default (0), wrapped in the result's Nullable type
-    /// so ifNull keeps the declared Nullable(T) result type the outer query expects.
-    auto default_column = result_type->createColumnConst(0, removeNullable(result_type)->getDefault());
+    /// Wrapped in the result's Nullable type so ifNull keeps the declared Nullable(T) result type the outer query expects.
+    auto default_column = result_type->createColumnConst(0, empty_group_value);
     const auto & default_node = dag.materializeNode(dag.addColumn(std::move(default_column), result_type, "__empty_group_default_" + correlated_subquery.action_node_name));
 
     auto if_null_function = FunctionFactory::instance().get("ifNull", planner_context->getQueryContext());
@@ -1920,7 +1981,7 @@ void buildQueryPlanForCorrelatedSubquery(
             buildRenamingForScalarSubquery(decorrelated_plan, correlated_subquery);
 
             /// Decide before the join consumes the tree (see the helper for the exact restorable case).
-            bool restore_empty_group_default = scalarSubqueryRestoresEmptyGroupDefault(correlated_subquery.query_tree);
+            auto empty_group_value = tryGetScalarSubqueryEmptyGroupValue(correlated_subquery.query_tree);
 
             /// Use LEFT OUTER JOIN to produce the result plan.
             query_plan = buildLogicalJoin(
@@ -1930,8 +1991,8 @@ void buildQueryPlanForCorrelatedSubquery(
                 correlated_subquery,
                 context.uses_in_memory_buffer);
 
-            if (restore_empty_group_default)
-                restoreEmptyGroupDefaultForScalarSubquery(query_plan, correlated_subquery, planner_context);
+            if (empty_group_value)
+                restoreEmptyGroupDefaultForScalarSubquery(query_plan, correlated_subquery, *empty_group_value, planner_context);
             break;
         }
         case CorrelatedSubqueryKind::EXISTS:
