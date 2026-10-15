@@ -26,6 +26,8 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Core/ProtocolDefines.h>
+#include <Formats/NativeWriter.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/Operators.h>
 #include <Interpreters/AggregationUtils.h>
@@ -333,15 +335,23 @@ Aggregator::CompressedStateSizeEstimate Aggregator::estimateSizeOfCompressedStat
     AggregatedDataVariants & result, ssize_t bucket, const CompressionCodecPtr & wire_codec) const
 {
     /// `NativeWriter` serializes the states through the `SerializationAggregateFunction` of the output
-    /// header's `DataTypeAggregateFunction` (see `prepareOutputBlockColumns`), which passes the type's
-    /// version to `IAggregateFunction::serialize`. Resolve the same versions here, so that states with
-    /// an explicit older version - e.g. `AggregateFunction(0, sumMap, ...)` on the merge path, where
-    /// `aggregate_state_types` preserves the input header's type - are measured in the format that is
-    /// actually sent, not in the default one.
+    /// header's `DataTypeAggregateFunction` (see `prepareOutputBlockColumns`), but before that it replaces
+    /// the type's versions with the ones announced to the receiving peer
+    /// (`NativeWriter::setAggregateFunctionStateVersions`): a versioned function is sent in the version of
+    /// the peer's revision even when the type carries an explicit older one - e.g.
+    /// `AggregateFunction(0, sumMap, ...)` on the merge path, where `aggregate_state_types` preserves the
+    /// input header's type, goes to a current initiator as version 1. Resolve the versions the same way for
+    /// an initiator of the current revision, so that the states are measured in the format that is
+    /// actually sent, neither in the type's local version nor in the function's default one.
     std::vector<std::optional<size_t>> state_versions(params.aggregates_size);
     for (size_t j = 0; j < params.aggregates_size; ++j)
-        if (const auto * state_type = typeid_cast<const DataTypeAggregateFunction *>(aggregate_state_types[j].get()))
-            state_versions[j] = state_type->getVersion();
+    {
+        if (!typeid_cast<const DataTypeAggregateFunction *>(aggregate_state_types[j].get()))
+            continue;
+        DataTypePtr wire_type = aggregate_state_types[j];
+        NativeWriter::setAggregateFunctionStateVersions(wire_type, DBMS_TCP_PROTOCOL_VERSION);
+        state_versions[j] = assert_cast<const DataTypeAggregateFunction &>(*wire_type).getVersion();
+    }
 
     auto estimate_size_of_compressed_state = [&](auto & table)
     {

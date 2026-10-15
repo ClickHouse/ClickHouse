@@ -221,7 +221,8 @@ public:
     struct SampledStateSizes
     {
         /// Serialized size of all states, extrapolated from the sample; the same figure as
-        /// `sampledSerializedStateBytes` returns for the same limit.
+        /// `sampledSerializedStateBytes` returns for the same limit, unless the wire version differs from
+        /// the column's own (see below).
         size_t bytes = 0;
         /// Serialized size of the sample itself.
         size_t sample_bytes = 0;
@@ -242,6 +243,9 @@ public:
     /// than one copy suggests (and not at all once a copy outgrows the codec's match window), so the
     /// compressed figure is measured on a repeated sample rather than scaled from one copy.
     /// `skip_rows` omits leading values not written by their carrier, such as `ColumnSparse`'s implicit default.
+    ///
+    /// The states are serialized in the version `NativeWriter` sends them to a peer of the current revision
+    /// in, which for a versioned function need not be the column's own version.
     ///
     /// `codec` is the codec the measured payload is compressed with - the interserver codec for a wire
     /// estimate - and decides both what the sample is compressed with and how far a copy can be matched

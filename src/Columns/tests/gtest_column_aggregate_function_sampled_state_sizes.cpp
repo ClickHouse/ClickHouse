@@ -3,8 +3,14 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnsNumber.h>
 #include <Compression/CompressionFactory.h>
+#include <Core/ProtocolDefines.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Formats/NativeWriter.h>
 #include <IO/WriteBufferFromString.h>
+#include <Common/assert_cast.h>
 #include <Common/tests/gtest_global_register.h>
 
 #include <gtest/gtest.h>
@@ -281,4 +287,67 @@ TEST(ColumnAggregateFunctionSampledStateSizes, EmptyColumn)
     EXPECT_EQ(sizes.bytes, 0u);
     EXPECT_EQ(sizes.sample_bytes, 0u);
     EXPECT_EQ(sizes.compressed_bytes, 0u);
+}
+
+/// The states go to the initiator in the version `NativeWriter` announces to it, not in the column's own:
+/// an explicit `AggregateFunction(0, sumMap, Array(UInt8), Array(Decimal(9, 2)))` holds 4-byte `Decimal32`
+/// values locally but is sent to a peer of the current revision as version 1, with 16-byte `Decimal128` ones.
+TEST(ColumnAggregateFunctionSampledStateSizes, MeasuresTheWireStateVersion)
+{
+    tryRegisterAggregateFunctions();
+
+    DataTypes argument_types
+        = {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt8>()),
+           std::make_shared<DataTypeArray>(std::make_shared<DataTypeDecimal<Decimal32>>(9, 2))};
+    AggregateFunctionProperties properties;
+    auto function = AggregateFunctionFactory::instance().get("sumMap", NullsAction::EMPTY, argument_types, Array{}, properties);
+    const DataTypePtr local_type = std::make_shared<DataTypeAggregateFunction>(function, argument_types, Array{}, /*version=*/0);
+
+    constexpr size_t rows = 3;
+    auto states = local_type->createColumn();
+    auto & column = assert_cast<ColumnAggregateFunction &>(*states);
+    auto map_keys = argument_types[0]->createColumn();
+    auto map_values = argument_types[1]->createColumn();
+    for (size_t row = 0; row < rows; ++row)
+    {
+        Array keys_array;
+        Array values_array;
+        for (size_t entry = 0; entry < 5; ++entry)
+        {
+            keys_array.emplace_back(UInt64(row * 5 + entry));
+            values_array.emplace_back(DecimalField<Decimal32>(Decimal32(static_cast<Int32>(1000 + row * 100 + entry)), 2));
+        }
+        map_keys->insert(keys_array);
+        map_values->insert(values_array);
+    }
+    const IColumn * arguments[2] = {map_keys.get(), map_values.get()};
+    for (size_t row = 0; row < rows; ++row)
+    {
+        column.insertDefault();
+        function->add(column.getData()[row], arguments, row, &column.createOrGetArena());
+    }
+
+    DataTypePtr wire_type = local_type;
+    NativeWriter::setAggregateFunctionStateVersions(wire_type, DBMS_TCP_PROTOCOL_VERSION);
+    const size_t wire_version = assert_cast<const DataTypeAggregateFunction &>(*wire_type).getVersion();
+
+    auto serialized_bytes = [&](std::optional<size_t> version)
+    {
+        size_t total = 0;
+        for (size_t row = 0; row < rows; ++row)
+        {
+            WriteBufferFromOwnString buf;
+            function->serialize(column.getData()[row], buf, version);
+            buf.finalize();
+            total += buf.str().size();
+        }
+        return total;
+    };
+    const size_t expected_wire_bytes = serialized_bytes(wire_version);
+    /// The regression is only observable while the versions serialize differently.
+    ASSERT_GT(expected_wire_bytes, serialized_bytes(0));
+
+    const auto sizes = column.sampledStateSizes(/*max_states_to_serialize=*/rows);
+    EXPECT_EQ(sizes.sample_bytes, expected_wire_bytes);
+    EXPECT_EQ(sizes.bytes, expected_wire_bytes);
 }

@@ -26,6 +26,7 @@
 #include <Common/assert_cast.h>
 #include <Common/iota.h>
 #include <Common/typeid_cast.h>
+#include <Core/ProtocolDefines.h>
 
 
 namespace DB
@@ -545,6 +546,14 @@ ColumnAggregateFunction::SampledStateSizes ColumnAggregateFunction::sampledState
 
     const CompressionCodecPtr & sample_codec = codec ? codec : CompressionCodecFactory::instance().getDefaultCodec();
 
+    /// `NativeWriter` replaces the state version with the one announced to the receiving peer before it
+    /// serializes the states (`NativeWriter::setAggregateFunctionStateVersions`): a versioned function goes
+    /// to a peer of the current revision in that revision's version, whatever version the column carries
+    /// locally - an explicit `AggregateFunction(0, sumMap, ...)` is sent as version 1. Measure the states in
+    /// that version, not in the column's.
+    const std::optional<size_t> wire_version
+        = func->isVersioned() ? std::optional<size_t>(func->getVersionFromRevision(DBMS_TCP_PROTOCOL_VERSION)) : version;
+
     /// The same periodic sample as in sampledSerializedStateBytes, serialized through a compression buffer
     /// so that the uncompressed figure and the compression ratio are measured on the same states.
     NullWriteBuffer null_buf;
@@ -555,7 +564,7 @@ ColumnAggregateFunction::SampledStateSizes ColumnAggregateFunction::sampledState
     size_t serialized_states = 0;
     for (size_t i = 0; i < rows; i += period)
     {
-        func->serialize(data[skip_rows + i], compressed_buf, version);
+        func->serialize(data[skip_rows + i], compressed_buf, wire_version);
         ++serialized_states;
     }
     compressed_buf.finalize();
@@ -614,7 +623,7 @@ ColumnAggregateFunction::SampledStateSizes ColumnAggregateFunction::sampledState
             CompressedWriteBuffer repeated_compressed_buf(repeated_null_buf, sample_codec);
             for (size_t repetition = 0; repetition < measured_repetitions; ++repetition)
                 for (size_t i = 0; i < rows; i += period)
-                    func->serialize(data[skip_rows + i], repeated_compressed_buf, version);
+                    func->serialize(data[skip_rows + i], repeated_compressed_buf, wire_version);
             repeated_compressed_buf.finalize();
             const size_t measured_compressed_bytes = repeated_null_buf.count();
 

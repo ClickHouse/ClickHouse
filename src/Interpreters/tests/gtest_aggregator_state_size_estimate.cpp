@@ -6,11 +6,13 @@
 #include <Columns/ColumnArray.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/Block.h>
+#include <Core/ProtocolDefines.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Formats/NativeWriter.h>
 #include <Functions/FunctionFactory.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Aggregator.h>
@@ -23,12 +25,12 @@ using namespace DB;
 namespace
 {
 
-/// `Aggregator::estimateSizeOfCompressedState` must serialize the sampled states with the version of the
-/// output header's `DataTypeAggregateFunction` - the version `NativeWriter` uses when the states are
-/// actually sent - and not with the function's default version. The difference is observable on the merge
-/// path, where `aggregate_state_types` preserves the input header's type: a `AggregateFunction(0, sumMap,
-/// Array(UInt8), Array(Decimal(9, 2)))` column keeps version 0 on the wire (4-byte `Decimal32` values),
-/// while the default version 1 promotes every value to a 16-byte `Decimal128`.
+/// `Aggregator::estimateSizeOfCompressedState` must serialize the sampled states in the version `NativeWriter`
+/// actually sends them in, and not in the local version of the output header's `DataTypeAggregateFunction`.
+/// The difference is observable on the merge path, where `aggregate_state_types` preserves the input header's
+/// type: a `AggregateFunction(0, sumMap, Array(UInt8), Array(Decimal(9, 2)))` column holds version 0 locally
+/// (4-byte `Decimal32` values), while `NativeWriter::setAggregateFunctionStateVersions` sends it to a peer of
+/// the current revision as version 1, which promotes every value to a 16-byte `Decimal128`.
 
 Aggregator::Params makeMergeParams(const Names & keys, const AggregateDescriptions & aggregates)
 {
@@ -70,6 +72,14 @@ size_t serializedStateSize(const IAggregateFunction & function, ConstAggregateDa
     function.serialize(place, buf, version);
     buf.finalize();
     return buf.str().size();
+}
+
+/// The version `NativeWriter` writes the states of `type` in to a peer of the current revision.
+size_t wireStateVersion(const DataTypePtr & type)
+{
+    DataTypePtr wire_type = type;
+    NativeWriter::setAggregateFunctionStateVersions(wire_type, DBMS_TCP_PROTOCOL_VERSION);
+    return assert_cast<const DataTypeAggregateFunction &>(*wire_type).getVersion();
 }
 
 struct VersionedStatesFixture
@@ -127,16 +137,16 @@ struct VersionedStatesFixture
 
 }
 
-TEST(AggregatorStateSizeEstimate, MergePathUsesExplicitStateVersion)
+TEST(AggregatorStateSizeEstimate, MergePathUsesWireStateVersion)
 {
     tryRegisterAggregateFunctions();
 
     VersionedStatesFixture fixture(/*rows_=*/3);
 
-    const size_t expected_v0_bytes = fixture.totalSerializedSize(0);
-    const size_t default_version_bytes = fixture.totalSerializedSize(std::nullopt);
+    const size_t local_v0_bytes = fixture.totalSerializedSize(0);
+    const size_t expected_wire_bytes = fixture.totalSerializedSize(wireStateVersion(fixture.state_type_v0));
     /// The regression is only observable while the versions serialize differently.
-    ASSERT_GT(default_version_bytes, expected_v0_bytes);
+    ASSERT_GT(expected_wire_bytes, local_v0_bytes);
 
     AggregateDescription description;
     description.function = fixture.function;
@@ -159,10 +169,10 @@ TEST(AggregatorStateSizeEstimate, MergePathUsesExplicitStateVersion)
     aggregator.mergeOnBlock(columns, fixture.rows, /*is_overflows=*/false, *variants, no_more_keys, is_cancelled);
 
     /// Every key is distinct, so each merged state equals its input state, and with three states the
-    /// sampling period is 1: the sample is exactly the version-0 serialization of all the states.
+    /// sampling period is 1: the sample is exactly the wire-version serialization of all the states.
     const auto estimate = aggregator.estimateSizeOfCompressedState(*variants, /*bucket=*/-1);
-    EXPECT_EQ(estimate.sample_bytes, expected_v0_bytes);
-    EXPECT_EQ(estimate.bytes, expected_v0_bytes);
+    EXPECT_EQ(estimate.sample_bytes, expected_wire_bytes);
+    EXPECT_EQ(estimate.bytes, expected_wire_bytes);
 }
 
 TEST(AggregatorStateSizeEstimate, BitmapFunctionPreservesExplicitStateVersion)
@@ -356,7 +366,7 @@ TEST(AggregatorStateSizeEstimate, SkewedStatesAreMeasuredExactly)
     EXPECT_EQ(estimate.sample_bytes, total_serialized_bytes);
 }
 
-TEST(AggregatorStateSizeEstimate, WithoutKeyUsesExplicitStateVersion)
+TEST(AggregatorStateSizeEstimate, WithoutKeyUsesWireStateVersion)
 {
     tryRegisterAggregateFunctions();
 
@@ -379,13 +389,14 @@ TEST(AggregatorStateSizeEstimate, WithoutKeyUsesExplicitStateVersion)
 
     ASSERT_NE(variants->without_key, nullptr);
     /// The single aggregate function's state offset is 0.
-    const size_t expected_v0_bytes = serializedStateSize(*fixture.function, variants->without_key, 0);
-    const size_t default_version_bytes = serializedStateSize(*fixture.function, variants->without_key, std::nullopt);
-    ASSERT_GT(default_version_bytes, expected_v0_bytes);
+    const size_t local_v0_bytes = serializedStateSize(*fixture.function, variants->without_key, 0);
+    const size_t expected_wire_bytes
+        = serializedStateSize(*fixture.function, variants->without_key, wireStateVersion(fixture.state_type_v0));
+    ASSERT_GT(expected_wire_bytes, local_v0_bytes);
 
     const auto estimate = aggregator.estimateSizeOfCompressedState(*variants, /*bucket=*/-1);
-    EXPECT_EQ(estimate.sample_bytes, expected_v0_bytes);
-    EXPECT_EQ(estimate.bytes, expected_v0_bytes);
+    EXPECT_EQ(estimate.sample_bytes, expected_wire_bytes);
+    EXPECT_EQ(estimate.bytes, expected_wire_bytes);
 }
 
 TEST(AggregatorStateSizeEstimate, CompressionFollowsTheWireCodec)
