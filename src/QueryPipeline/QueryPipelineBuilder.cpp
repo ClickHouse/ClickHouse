@@ -667,12 +667,17 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
             num_streams = max_streams;
         }
 
-        auto filling_finish_counter = std::make_shared<FinishCounter>(max_streams);
+        size_t fill_streams = max_streams;
+        if (const size_t cap = join->getMaxBuildThreads())
+            fill_streams = std::min(cap, max_streams);
 
-        right->resize(max_streams);
+        auto filling_finish_counter = std::make_shared<FinishCounter>(fill_streams);
+
+        right->resize(fill_streams);
         auto concurrent_right_filling_transform = [&](const OutputPortRawPtrs & outports)
         {
             Processors processors;
+            size_t next_stream = 0;
             if (min_block_size_rows > 0 || min_block_size_bytes > 0)
             {
                 for (const auto & outport : outports)
@@ -680,7 +685,8 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
                     auto squashing = std::make_shared<SimpleSquashingChunksTransform>(right->getSharedHeader(), min_block_size_rows, min_block_size_bytes);
                     connect(*outport, squashing->getInputs().front());
                     processors.emplace_back(squashing);
-                    auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(right->getSharedHeader(), join, filling_finish_counter);
+                    auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(
+                        right->getSharedHeader(), join, filling_finish_counter, JoinBuildContext::forStream(next_stream++, outports.size()));
                     if (wire_seal_gates)
                         filling_transforms_for_seal.push_back(adding_joined.get());
                     connect(squashing->getOutputPort(), adding_joined->getInputs().front());
@@ -691,7 +697,8 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
             {
                 for (const auto & outport : outports)
                 {
-                    auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(right->getSharedHeader(), join, filling_finish_counter);
+                    auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(
+                        right->getSharedHeader(), join, filling_finish_counter, JoinBuildContext::forStream(next_stream++, outports.size()));
                     if (wire_seal_gates)
                         filling_transforms_for_seal.push_back(adding_joined.get());
                     connect(*outport, adding_joined->getInputs().front());
@@ -708,7 +715,8 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         right->resize(1);
 
         auto filling_finish_counter = std::make_shared<FinishCounter>(1);
-        auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(right->getSharedHeader(), join, filling_finish_counter);
+        auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(
+            right->getSharedHeader(), join, filling_finish_counter, JoinBuildContext::serial());
         if (wire_seal_gates)
             filling_transforms_for_seal.push_back(adding_joined.get());
         InputPort * totals_port = nullptr;
@@ -956,7 +964,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesByShard
     {
         joins.push_back(join->cloneNoParallel(std::make_shared<TableJoin>(join->getTableJoin()), left->getSharedHeader(), header));
         auto finish_counter = std::make_shared<FinishCounter>(1);
-        return std::make_shared<FillingRightJoinSideTransform>(header, joins.back(), finish_counter);
+        return std::make_shared<FillingRightJoinSideTransform>(header, joins.back(), finish_counter, JoinBuildContext::serial());
     });
 
     auto lit = left->pipe.output_ports.begin();
@@ -1001,6 +1009,7 @@ void QueryPipelineBuilder::addCreatingSetsTransform(
     SetAndKeyPtr set_and_key,
     const SizeLimits & limits,
     PreparedSetsCachePtr prepared_sets_cache,
+    SetSpillSettings spill_settings,
     bool recoverable_build)
 {
     dropTotalsAndExtremes();
@@ -1012,6 +1021,7 @@ void QueryPipelineBuilder::addCreatingSetsTransform(
             std::move(set_and_key),
             limits,
             std::move(prepared_sets_cache),
+            std::move(spill_settings),
             recoverable_build);
 
     pipe.addTransform(std::move(transform));
