@@ -520,22 +520,22 @@ String GlueCatalog::getActualTimestampType(const String & column_name, const Tab
     {
         auto [object_storage, bucket_name, metadata_path] = createObjectStorageForEarlyTableAccess(metadata_uri, table_metadata);
         auto compression_method = DB::Iceberg::getCompressionMethodFromMetadataFile(metadata_uri);
-        auto metadata_object = DB::Iceberg::getMetadataJSONObject(
+        auto metadata_object = DB::Iceberg::getConstMetadataJSON(
             metadata_path, object_storage, nullptr, getContext(), log, compression_method, std::nullopt);
-        metadata_objects.set(metadata_uri, std::make_shared<Poco::JSON::Object::Ptr>(metadata_object));
+        metadata_objects.set(metadata_uri, metadata_object);
     }
 
-    auto metadata_object = *metadata_objects.get(metadata_uri);
-    return resolveTimestampTypeFromMetadata(metadata_object, column_name, glue_column_type);
+    auto metadata_object = metadata_objects.get(metadata_uri);
+    return resolveTimestampTypeFromMetadata(*metadata_object, column_name, glue_column_type);
 }
 
 String GlueCatalog::resolveTimestampTypeFromMetadata(
-    const Poco::JSON::Object::Ptr & metadata_object,
+    const Poco::JSON::Object & metadata_object,
     const String & column_name,
     const String & glue_column_type)
 {
-    auto current_schema_id = metadata_object->getValue<Int64>("current-schema-id");
-    auto schemas = metadata_object->getArray(DB::Iceberg::f_schemas);
+    auto current_schema_id = metadata_object.getValue<Int64>("current-schema-id");
+    auto schemas = metadata_object.getArray(DB::Iceberg::f_schemas);
     for (size_t i = 0; i < schemas->size(); ++i)
     {
         auto schema = schemas->getObject(static_cast<UInt32>(i));

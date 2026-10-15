@@ -333,7 +333,7 @@ void writeMessageToFile(
         /// Iceberg metadata snappy is always the Hadoop block format (`SnappyMode::Basic`),
         /// independent of the session `snappy_mode`. The wire format is not encoded in the
         /// `.snappy.metadata.json` suffix, so it must be deterministic for the read path (which
-        /// always decodes basic, see `getMetadataJSONObject`) to round-trip its own metadata and
+        /// always decodes basic, see `getRawMetadataJSON`) to round-trip its own metadata and
         /// stay interoperable with other Iceberg engines.
         auto compressed_buffer_metadata = wrapWriteBufferWithCompressionMethod(
             std::move(buffer_metadata),
@@ -594,7 +594,10 @@ std::string normalizeUuid(const std::string & uuid)
     return result;
 }
 
-Poco::JSON::Object::Ptr getMetadataJSONObject(
+namespace
+{
+
+MetadataJSONPtr getRawMetadataJSON(
     const String & metadata_file_path,
     ObjectStoragePtr object_storage,
     IcebergMetadataFilesCachePtr metadata_cache,
@@ -628,16 +631,40 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
         return json_str;
     };
 
-    String metadata_json_str;
     if (metadata_cache && table_uuid.has_value())
-        metadata_json_str = metadata_cache->getOrSetTableMetadata(
+        return metadata_cache->getOrSetTableMetadata(
             IcebergMetadataFilesCache::getKey(*table_uuid, metadata_file_path), create_fn);
-    else
-        metadata_json_str = create_fn();
+    return std::make_shared<const MetadataJSON>(create_fn());
+}
 
-    Poco::JSON::Parser parser; /// For some reason base/base/JSON.h can not parse this json file
-    Poco::Dynamic::Var json = parser.parse(metadata_json_str);
-    return json.extract<Poco::JSON::Object::Ptr>();
+}
+
+std::shared_ptr<const Poco::JSON::Object> getConstMetadataJSON(
+    const String & metadata_file_path,
+    ObjectStoragePtr object_storage,
+    IcebergMetadataFilesCachePtr metadata_cache,
+    const ContextPtr & local_context,
+    LoggerPtr log,
+    CompressionMethod compression_method,
+    const std::optional<String> & table_uuid)
+{
+    return getRawMetadataJSON(metadata_file_path, object_storage, metadata_cache, local_context, log, compression_method, table_uuid)
+        ->getConstMetadataJSON();
+}
+
+Poco::JSON::Object::Ptr getMutableMetadataJSON(
+    const String & metadata_file_path,
+    ObjectStoragePtr object_storage,
+    IcebergMetadataFilesCachePtr metadata_cache,
+    const ContextPtr & local_context,
+    LoggerPtr log,
+    CompressionMethod compression_method,
+    const std::optional<String> & table_uuid)
+{
+    auto metadata_json = getRawMetadataJSON(metadata_file_path, object_storage, metadata_cache, local_context, log, compression_method, table_uuid);
+    if (metadata_cache && table_uuid.has_value())
+        return metadata_json->getMutableMetadataJSON();
+    return metadata_json->getRawMutableMetadataJSON();
 }
 
 /// Iceberg stores a decimal as its unscaled value in two's-complement big-endian form, in the
@@ -1398,7 +1425,7 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
 
             if (need_all_metadata_files_parsing)
             {
-                auto metadata_file_object = getMetadataJSONObject(
+                auto metadata_file_object = getConstMetadataJSON(
                     metadata_file_path, object_storage, metadata_cache, local_context, log, compression_method, table_uuid);
                 if (table_uuid.has_value() && use_table_uuid_for_metadata_file_selection)
                 {
@@ -1709,16 +1736,16 @@ MetadataFileWithInfo getLatestMetadataFileAndVersionWithCatalog(
 }
 
 
-std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV2Method(const Poco::JSON::Object::Ptr & metadata_object)
+std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV2Method(const Poco::JSON::Object & metadata_object)
 {
     Poco::JSON::Object::Ptr schema;
-    if (!metadata_object->has(f_current_schema_id))
+    if (!metadata_object.has(f_current_schema_id))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: '{}' field is missing in metadata", f_current_schema_id);
-    auto current_schema_id = metadata_object->getValue<int>(f_current_schema_id);
-    if (!metadata_object->has(f_schemas))
+    auto current_schema_id = metadata_object.getValue<int>(f_current_schema_id);
+    if (!metadata_object.has(f_schemas))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: '{}' field is missing in metadata", f_schemas);
-    auto schemas = metadata_object->get(f_schemas).extract<Poco::JSON::Array::Ptr>();
+    auto schemas = metadata_object.get(f_schemas).extract<Poco::JSON::Array::Ptr>();
     if (schemas->size() == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: '{}' field is empty", f_schemas);
     for (uint32_t i = 0; i != schemas->size(); ++i)
@@ -1743,24 +1770,24 @@ std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV2Method(const Poco::J
     return {schema, current_schema_id};
 }
 
-std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV1Method(const Poco::JSON::Object::Ptr & metadata_object)
+std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV1Method(const Poco::JSON::Object & metadata_object)
 {
     /// we have two ways to get current schema id
     /// 1. check field schema, which is required in V1 format, and there is schema-id in schema
     /// 2. check "schemas" and "current-schema-id", which is required in V2 format, but can also exist in V1.
-    if (!metadata_object->has(f_schema))
+    if (!metadata_object.has(f_schema))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: '{}' field is missing in metadata", f_schema);
-    Poco::JSON::Object::Ptr schema = metadata_object->getObject(f_schema);
+    Poco::JSON::Object::Ptr schema = metadata_object.getObject(f_schema);
     if (!schema->has(f_schema_id))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: '{}' field is missing in schema", f_schema_id);
     auto current_schema_id = schema->getValue<int>(f_schema_id);
     return {schema, current_schema_id};
 }
 
-KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr metadata_object, const NamesAndTypesList & ch_schema, ContextPtr local_context)
+KeyDescription getSortingKeyDescriptionFromMetadata(const Poco::JSON::Object & metadata_object, const NamesAndTypesList & ch_schema, ContextPtr local_context)
 {
-    auto sort_order_id = metadata_object->getValue<Int64>(f_default_sort_order_id);
-    Poco::JSON::Array::Ptr sort_orders = metadata_object->getArray(f_sort_orders);
+    auto sort_order_id = metadata_object.getValue<Int64>(f_default_sort_order_id);
+    Poco::JSON::Array::Ptr sort_orders = metadata_object.getArray(f_sort_orders);
     std::unordered_map<Int64, String> source_id_to_column_name;
     auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
 

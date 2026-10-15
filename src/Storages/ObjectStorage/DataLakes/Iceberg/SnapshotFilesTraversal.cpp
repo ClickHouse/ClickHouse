@@ -63,14 +63,14 @@ namespace
 {
 
 void collectStatisticsPaths(
-    const Poco::JSON::Object::Ptr & metadata,
+    const Poco::JSON::Object & metadata,
     const char * field_name,
     const IcebergPathResolver & resolver,
     std::unordered_set<String> & out)
 {
-    if (!metadata->has(field_name))
+    if (!metadata.has(field_name))
         return;
-    auto arr = metadata->get(field_name).extract<Poco::JSON::Array::Ptr>();
+    auto arr = metadata.get(field_name).extract<Poco::JSON::Array::Ptr>();
     if (!arr)
         return;
     for (UInt32 j = 0; j < arr->size(); ++j)
@@ -89,7 +89,7 @@ void collectStatisticsPaths(
 /// statistics, partition-statistics, and version-hint files.
 void collectMetadataRootFiles(
     const String & metadata_path,
-    const Poco::JSON::Object::Ptr & metadata,
+    const Poco::JSON::Object & metadata,
     const IcebergPathResolver & resolver,
     std::unordered_set<String> & out)
 {
@@ -98,9 +98,9 @@ void collectMetadataRootFiles(
     /// version-hint.text is not a metadata path: it is a fixed object under the storage root.
     out.insert(std::filesystem::path(resolver.getTableRoot()) / "metadata" / "version-hint.text");
 
-    if (metadata->has(f_metadata_log))
+    if (metadata.has(f_metadata_log))
     {
-        auto metadata_log = metadata->get(f_metadata_log).extract<Poco::JSON::Array::Ptr>();
+        auto metadata_log = metadata.get(f_metadata_log).extract<Poco::JSON::Array::Ptr>();
         if (metadata_log)
         {
             for (UInt32 i = 0; i < metadata_log->size(); ++i)
@@ -144,7 +144,7 @@ ReachableFilesResult collectReachableFiles(
         persistent_table_components.metadata_compression_method,
         /* ignore_metadata_pointer_overrides */ true);
 
-    auto metadata = getMetadataJSONObject(
+    auto metadata = getConstMetadataJSON(
         metadata_path,
         object_storage,
         persistent_table_components.metadata_cache,
@@ -157,7 +157,7 @@ ReachableFilesResult collectReachableFiles(
     const auto & resolver = persistent_table_components.path_resolver;
 
     collectMetadataRootFiles(
-        metadata_path, metadata,
+        metadata_path, *metadata,
         resolver,
         reachable);
 

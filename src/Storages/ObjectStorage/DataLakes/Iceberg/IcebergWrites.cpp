@@ -1155,7 +1155,7 @@ IcebergStorageSink::IcebergStorageSink(
         persistent_table_components.metadata_compression_method,
         /* ignore_metadata_pointer_overrides */ true);
 
-    metadata = getMetadataJSONObject(
+    metadata = getMutableMetadataJSON(
         metadata_path,
         object_storage,
         persistent_table_components.metadata_cache,
@@ -1190,7 +1190,7 @@ IcebergStorageSink::IcebergStorageSink(
         }
     }
 
-    sort_description = Iceberg::getSortingKeyDescriptionFromMetadata(metadata, sample_block->getNamesAndTypesList(), context);
+    sort_description = Iceberg::getSortingKeyDescriptionFromMetadata(*metadata, sample_block->getNamesAndTypesList(), context);
 
     for (size_t i = 0; i < partitions_specs->size(); ++i)
     {
@@ -1489,7 +1489,7 @@ bool IcebergStorageSink::initializeMetadata()
             metadata_compression_method = compression_method;
             filename_generator.setVersion(last_version + 1);
 
-            metadata = getMetadataJSONObject(
+            metadata = getMutableMetadataJSON(
                 metadata_path,
                 object_storage,
                 persistent_table_components.metadata_cache,
