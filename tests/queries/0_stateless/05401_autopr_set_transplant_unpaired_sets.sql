@@ -61,17 +61,12 @@ SET automatic_parallel_replicas_mode = 0;
 
 SYSTEM FLUSH LOGS query_log;
 
-SYSTEM FLUSH LOGS text_log;
-
 -- Keeps the check honest: a query declined for another reason would pass the checks above without ever
 -- pairing the sets.
 SELECT
     log_comment,
     ProfileEvents['ParallelReplicasUsedCount'] > 0 AS switched,
-    query_id IN (
-        SELECT query_id FROM system.text_log
-        WHERE event_date >= yesterday() AND message LIKE '%has no counterpart in the single-replica plan%'
-    ) AS declined_on_unpaired_set
+    ProfileEvents['AutoParallelReplicasPlansNotComparable'] > 0 AS plans_not_comparable
 FROM system.query_log
 WHERE type = 'QueryFinish' AND is_initial_query AND current_database = currentDatabase()
     AND event_date >= yesterday() AND log_comment IN ('05401_long_second', '05401_all_second')
