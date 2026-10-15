@@ -1,0 +1,49 @@
+bool <=	3	6
+bool <= noidx	3	6
+bool =	3	6
+bool >=	6	21
+bool typed constant	3	6
+bool parameter	3	6
+nullable	3	6
+array	3	6
+tuple	3	6
+tuple noidx	3	6
+map	3	6
+nested json	3	6
+mixed <=	3	6
+mixed =	3	6
+array of json	3	6
+tuple of json	3	6
+map of json	3	6
+dynamic <=	3	6
+dynamic >=	6	21
+dynamic typed constant <=	3	6
+dynamic typed constant =	3	6
+dynamic typed constant noidx	3	6
+shared data	3	6
+uint8	3	6
+int typed constant	3	6
+low cardinality	3	6
+simple aggregate function	3	6
+nullable json <=	2	3
+nullable json <= noidx	2	3
+nullable json is null	1	3
+bool prunes	1
+dynamic prunes	1
+dynamic typed constant prunes	1
+int typed constant prunes	1
+partition fresh =	3	6
+partition reloaded =	3	6
+partition reloaded <=	3	6
+partition reloaded >=	6	21
+partition reloaded no pruning	3	6
+partition dynamic reloaded <=	3	6
+partition dynamic reloaded >=	6	21
+partition simple aggregate function reloaded <=	3	6
+partition prunes	1
+partition merged parts	1
+partition merged =	3	6
+partition merged reloaded =	3	6
+whatif dynamic	skip_ratio:   50.0%
+whatif dynamic typed constant	skip_ratio:   50.0%
+whatif bool	skip_ratio:   50.0%
