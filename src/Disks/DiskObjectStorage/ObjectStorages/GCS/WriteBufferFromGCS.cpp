@@ -9,6 +9,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 
+#include <google/cloud/storage/auto_finalize.h>
 #include <google/cloud/storage/object_metadata.h>
 
 namespace gcs = ::google::cloud::storage;
@@ -122,17 +123,20 @@ void WriteBufferFromGCS::openWriteStream()
     if (for_disk)
         ProfileEvents::increment(ProfileEvents::DiskGCSWriteObject);
 
+    /// By default the destructor of `ObjectWriteStream` finalizes the upload, which would commit a
+    /// truncated object when the buffer is canceled. The upload is finalized only by an explicit `Close`.
+    const auto auto_finalize = gcs::AutoFinalize(gcs::AutoFinalizeConfig::kDisabled);
     if (attributes && !attributes->empty())
     {
         gcs::ObjectMetadata object_metadata;
         for (const auto & [name, value] : *attributes)
             object_metadata.upsert_metadata(name, value);
         write_stream = std::make_unique<gcs::ObjectWriteStream>(
-            client->WriteObject(bucket, key, gcs::WithObjectMetadata(std::move(object_metadata)), precondition));
+            client->WriteObject(bucket, key, gcs::WithObjectMetadata(std::move(object_metadata)), precondition, auto_finalize));
     }
     else
     {
-        write_stream = std::make_unique<gcs::ObjectWriteStream>(client->WriteObject(bucket, key, precondition));
+        write_stream = std::make_unique<gcs::ObjectWriteStream>(client->WriteObject(bucket, key, precondition, auto_finalize));
     }
 }
 
