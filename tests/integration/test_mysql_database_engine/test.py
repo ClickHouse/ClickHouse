@@ -1,4 +1,5 @@
 import contextlib
+import itertools
 import time
 from string import Template
 import uuid
@@ -1456,8 +1457,9 @@ def test_permanent_detach_marker_preserved_after_remote_drop(started_cluster):
 
 
 def test_mysql_database_tables_use_connection_auto_close(started_cluster):
-    reads = 5
+    queries = 5
     users = ["auto_close_reuse", "auto_close_default"]
+    ids = itertools.count(2)
     with contextlib.closing(
         MySQLNodeInstance(
             started_cluster,
@@ -1474,13 +1476,19 @@ def test_mysql_database_tables_use_connection_auto_close(started_cluster):
             mysql_node.query(f"CREATE USER '{user}'@'%' IDENTIFIED BY '{mysql_pass}'")
             mysql_node.query(f"GRANT ALL PRIVILEGES ON test_auto_close.* TO '{user}'@'%'")
 
-        def opened_connections(database, user):
-            # The first read fills the table's pool; count the connections the next reads open.
-            assert clickhouse_node.query(f"SELECT id FROM {database}.t") == "1\n"
+        def select(database):
+            assert clickhouse_node.query(f"SELECT id FROM {database}.t WHERE id = 1") == "1\n"
+
+        def insert(database):
+            clickhouse_node.query(f"INSERT INTO {database}.t VALUES ({next(ids)})")
+
+        def opened_connections(database, user, run=select):
+            # The first query fills the table's pool; count the connections the next queries open.
+            run(database)
             accounts = f"SELECT SUM(TOTAL_CONNECTIONS) FROM performance_schema.accounts WHERE USER = '{user}'"
             before = int(mysql_node.query(accounts))
-            for _ in range(reads):
-                assert clickhouse_node.query(f"SELECT id FROM {database}.t") == "1\n"
+            for _ in range(queries):
+                run(database)
             return int(mysql_node.query(accounts)) - before
 
         try:
@@ -1491,8 +1499,9 @@ def test_mysql_database_tables_use_connection_auto_close(started_cluster):
                 f"CREATE DATABASE test_auto_close_default ENGINE = MySQL('mysql80:3306', 'test_auto_close', 'auto_close_default', '{mysql_pass}')"
             )
 
-            assert opened_connections("test_auto_close_default", "auto_close_default") == reads
-            assert opened_connections("test_auto_close_reuse", "auto_close_reuse") == 0
+            for run in (select, insert):
+                assert opened_connections("test_auto_close_default", "auto_close_default", run) == queries
+                assert opened_connections("test_auto_close_reuse", "auto_close_reuse", run) == 0
 
             clickhouse_node.query("DROP TABLE test_auto_close_reuse.t")
             clickhouse_node.query("ATTACH TABLE test_auto_close_reuse.t")
