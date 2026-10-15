@@ -237,15 +237,19 @@ ExecutingGraph::Edge & ExecutingGraph::addEdge(Edges & edges, Edge edge, const N
 {
     auto it = processors_map.find(to);
     if (it == processors_map.end())
+    {
+        /// `printPipeline` numbers processors by their position in the list, not by `processors_id`.
+        const auto dump_id = std::distance(processors->begin(), from.processor_iter);
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Processor {} is connected to an {} port of processor n{} {}, but it is not in the list of processors. "
             "See n{} in the pipeline dump",
             to->getUniqID(),
             edge.backward ? "input" : "output",
-            from.processors_id,
+            dump_id,
             from.processor()->getUniqID(),
-            from.processors_id);
+            dump_id);
+    }
 
     edge.to = it->second;
     auto & added_edge = edges.emplace_back(std::move(edge));
