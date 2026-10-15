@@ -7375,7 +7375,7 @@ Hash partitioning is not applied to globally sorted input because `DISTINCT` pre
 
 `DISTINCT` without `ORDER BY` has no defined row order, so this optimization may return the same distinct values in a different order. As a result, `LIMIT`, `OFFSET`, or `LIMIT BY` over unordered `DISTINCT` results may select a different subset of rows.
 )", 0, \
-        {"26.10", false, true, "New setting to evaluate final `DISTINCT` in parallel using hash partitioning."}) \
+        {"26.11", false, true, "New setting to evaluate final `DISTINCT` in parallel using hash partitioning."}) \
     DECLARE(Bool, allow_window_partitions_independently, true, R"(
 Enable independent evaluation of window functions per partition on separate threads when the partition expression of the `MergeTree` table is a deterministic function of the window `PARTITION BY` columns. Each partition is read through a separate stream, sorted independently by the window sort description, and processed by its own window transform, skipping the hash scatter that ordinarily reshuffles every row across threads. Beneficial when the number of partitions is close to the number of cores and partitions have roughly the same size; otherwise a cost heuristic skips it, see [max_number_of_partitions_for_independent_window](#max_number_of_partitions_for_independent_window) and [force_window_partitions_independently](#force_window_partitions_independently). Not applied with `FINAL` or parallel replicas.
 )", 0, \
