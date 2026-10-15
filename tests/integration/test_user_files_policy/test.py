@@ -25,14 +25,13 @@ node_s3 = cluster.add_instance(
     stay_alive=True,
 )
 
-# This node deliberately sets an unusable legacy `user_files_path` together with a
-# `user_files_policy`. The fact that the cluster starts at all proves the policy takes
-# precedence over the local path during startup (see the precedence test below).
-node_precedence = cluster.add_instance(
-    "node_precedence",
-    main_configs=["configs/config.d/storage_configuration_bad_local_path.xml"],
+# This node sets `user_files_path` to a directory inside the disk of `user_files_policy`
+# whose counterpart in the local filesystem is unusable (see the sub path test below).
+node_sub_path = cluster.add_instance(
+    "node_sub_path",
+    main_configs=["configs/config.d/storage_configuration_sub_path.xml"],
     tmpfs=[
-        "/test_user_files_disk_precedence:size=100M",
+        "/test_user_files_disk_sub_path:size=100M",
     ],
 )
 
@@ -998,34 +997,53 @@ def test_local_recursive_glob_middle_literal_suffix():
     assert result.strip() == "1\n2\n4", result
 
 
-def test_user_files_policy_precedence_over_bad_local_path():
-    """`user_files_policy` must take precedence over `user_files_path` during startup.
+def test_user_files_path_inside_policy_disk():
+    """With `user_files_policy`, `user_files_path` is a directory inside the disk of the policy.
 
-    `node_precedence` sets `user_files_path` to `/dev/null/user_files/` - a path under a
-    character device, so creating the legacy local directory would fail. The server must
-    still start (the policy's disk provides the user files location) and `file()` must
-    resolve against the policy disk, not the bogus local path. Without skipping the local
-    `user_files_path` setup when a policy is configured, `fs::create_directories` throws
-    during startup and the server never comes up."""
-    # The instance being up at all already proves startup did not fail on the unusable
-    # local path; this confirms the server is actually serving.
-    assert node_precedence.query("SELECT 1").strip() == "1"
+    `node_sub_path` sets `user_files_path` to `/dev/null/user_files/`. In the local filesystem
+    it is unusable (`/dev/null` is a character device), so the server starts only if it does not
+    create it as a local directory. On the disk it is `<disk>/dev/null/user_files/`, and `file`
+    must resolve all paths there and never reach the rest of the disk."""
+    disk_root = "/test_user_files_disk_sub_path"
+    user_files = f"{disk_root}/dev/null/user_files"
 
-    node_precedence.query(
-        "INSERT INTO FUNCTION file('precedence_test.csv', 'CSV', 'x UInt64') SELECT 555"
+    node_sub_path.query(
+        "INSERT INTO FUNCTION file('sub_path_test.csv', 'CSV', 'x UInt64') SELECT 555"
     )
     assert (
-        node_precedence.query(
-            "SELECT * FROM file('precedence_test.csv', 'CSV', 'x UInt64')"
+        node_sub_path.query(
+            "SELECT * FROM file('sub_path_test.csv', 'CSV', 'x UInt64')"
+        ).strip()
+        == "555"
+    )
+    output = node_sub_path.exec_in_container(
+        ["bash", "-c", f"cat {user_files}/sub_path_test.csv"]
+    )
+    assert "555" in output
+
+    # An absolute path inside the user files directory addresses the same file.
+    assert (
+        node_sub_path.query(
+            f"SELECT * FROM file('{user_files}/sub_path_test.csv', 'CSV', 'x UInt64')"
         ).strip()
         == "555"
     )
 
-    # The file must land on the policy disk, not under the bogus `/dev/null/...` path.
-    output = node_precedence.exec_in_container(
-        ["bash", "-c", "cat /test_user_files_disk_precedence/precedence_test.csv"]
+    # A file at the disk root is outside of the user files directory.
+    node_sub_path.exec_in_container(
+        ["bash", "-c", f"echo 666 > {disk_root}/outside.csv"]
     )
-    assert "555" in output
+    for path in [f"{disk_root}/outside.csv", "../../../outside.csv"]:
+        error = node_sub_path.query_and_get_error(
+            f"SELECT * FROM file('{path}', 'CSV', 'x UInt64')"
+        )
+        assert "DATABASE_ACCESS_DENIED" in error, error
+    assert (
+        node_sub_path.query(
+            "SELECT groupArray(x) FROM file('*.csv', 'CSV', 'x UInt64')"
+        ).strip()
+        == "[555]"
+    )
 
 
 def test_encrypted_disk_read_through_idisk_and_reject_local_consumers():

@@ -932,7 +932,8 @@ public:
     void setPath(const String & path);
     void setFlagsPath(const String & path);
     void setUserFilesPath(const String & path);
-    void setUserFilesPolicy(const String & policy_name);
+    /// `path_inside_disk` is the directory with user files inside the disk of the policy (the disk root if empty).
+    void setUserFilesPolicy(const String & policy_name, const String & path_inside_disk);
     void setUserScriptsPath(const String & path);
     void setDynamicUserDefinedExecutableFunctionsPath(const String & path);
 

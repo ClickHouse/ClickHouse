@@ -1713,10 +1713,16 @@ The directory with user files. Used in the table function [file()](/reference/fu
 ```xml
 <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
 ```
+
+If [`user_files_policy`](#user_files_policy) is set, this is a path inside the disk of that policy rather than a path in the local filesystem.
 )", 0) \
     DECLARE(String, user_files_policy, "", R"(
 Storage policy for user files directory. When set, user files reside on the disk configured in the specified policy.
-The policy must have exactly one volume containing exactly one disk. If set, this takes precedence over `user_files_path`.
+The policy must have exactly one volume containing exactly one disk.
+
+When this is set, [`user_files_path`](#user_files_path) is interpreted as a path inside that disk, with `/` denoting the root of the disk:
+both `/user_files/` and `user_files` refer to the directory `user_files` on the disk, and the default configuration value `/var/lib/clickhouse/user_files/`
+refers to the directory `var/lib/clickhouse/user_files` on the disk. The path must not point outside the disk. If `user_files_path` is not configured, user files are stored at the root of the disk.
 
 :::note
 Remote (non-plain-local) disks are supported only by the features that access user files through the disk interface: reading and writing whole files with the [file()](/sql-reference/table-functions/file) table function and the `File` table engine.
@@ -1755,6 +1761,7 @@ The `rename_files_after_processing` setting additionally requires the policy's d
 </storage_configuration>
 
 <user_files_policy>user_files_remote</user_files_policy>
+<user_files_path>/</user_files_path>
 </clickhouse>
 ```
 )", 0) \

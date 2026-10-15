@@ -72,6 +72,7 @@
 #include <Disks/DiskLocal.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Disks/SingleDiskVolume.h>
+#include <Disks/SubdirectoryDiskWrapper.h>
 #include <Disks/StoragePolicy.h>
 #include <Disks/IO/IOUringReader.h>
 #include <Disks/IO/getIOUringReader.h>
@@ -2181,8 +2182,21 @@ void Context::setUserFilesPath(const String & path)
     shared->user_files_path = path;
 }
 
-void Context::setUserFilesPolicy(const String & policy_name)
+void Context::setUserFilesPolicy(const String & policy_name, const String & path_inside_disk)
 {
+    /// `path_inside_disk` is rooted at the root of the disk: both `/user_files/` and `user_files`
+    /// denote the directory `user_files` on the disk, and an empty path denotes the disk root.
+    String sub_path = fs::path(path_inside_disk).lexically_normal().generic_string();
+    while (sub_path.starts_with('/'))
+        sub_path.erase(0, 1);
+    while (sub_path.ends_with('/'))
+        sub_path.pop_back();
+    if (sub_path == ".")
+        sub_path.clear();
+    if (sub_path == ".." || sub_path.starts_with("../"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The user files path `{}` must not point outside the disk of the user files policy `{}`", path_inside_disk, policy_name);
+
     StoragePolicyPtr policy;
     {
         std::lock_guard storage_policies_lock(shared->storage_policies_mutex);
@@ -2203,16 +2217,22 @@ void Context::setUserFilesPolicy(const String & policy_name)
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
             "Policy '{}' is used for user files, its volume must contain exactly one disk", policy_name);
 
-    const auto & disk = volume->getDisks().front();
+    DiskPtr disk = volume->getDisks().front();
     if (!disk)
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "User files disk is null");
+
+    if (!sub_path.empty())
+    {
+        disk = std::make_shared<SubdirectoryDiskWrapper>(disk, sub_path);
+        volume = std::make_shared<SingleDiskVolume>(volume->getName(), disk);
+    }
 
     String disk_path = disk->getPath();
     if (!disk_path.ends_with('/'))
         disk_path += '/';
 
     if (!disk->existsDirectory(""))
-        disk->createDirectory("");
+        disk->createDirectories("");
 
     std::lock_guard lock(shared->mutex);
     shared->user_files_volume = volume;

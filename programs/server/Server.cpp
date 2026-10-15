@@ -2108,12 +2108,9 @@ try
     /** Directory with user provided files that are usable by 'file' table function.
       */
     {
-        /// A configured `user_files_policy` takes precedence over the local
-        /// `user_files_path`: the policy's disk provides the user files location
-        /// (possibly on remote storage such as `s3_plain`) and is installed below
-        /// via `setUserFilesPolicy`. In that case do not canonicalize or create the
-        /// legacy local directory here — it is unused, and an empty/invalid/unwritable
-        /// `user_files_path` must not block startup.
+        /// With `user_files_policy`, `user_files_path` is a directory inside the disk of the policy
+        /// (possibly on remote storage such as `s3_plain`), installed below via `setUserFilesPolicy`.
+        /// In that case it is not a local path, so do not canonicalize or create it here.
         if (server_settings[ServerSetting::user_files_policy].value.empty())
         {
             const auto & user_files_path_setting = server_settings[ServerSetting::user_files_path];
@@ -3348,7 +3345,11 @@ try
     /// Storage policy for user files directory.
     if (!server_settings[ServerSetting::user_files_policy].value.empty())
     {
-        global_context->setUserFilesPolicy(server_settings[ServerSetting::user_files_policy]);
+        /// If `user_files_path` is not configured, the user files are at the root of the disk.
+        const auto & user_files_path_setting = server_settings[ServerSetting::user_files_path];
+        global_context->setUserFilesPolicy(
+            server_settings[ServerSetting::user_files_policy],
+            user_files_path_setting.changed ? String(user_files_path_setting.value) : String{});
     }
 
     /// Initialize access storages.
