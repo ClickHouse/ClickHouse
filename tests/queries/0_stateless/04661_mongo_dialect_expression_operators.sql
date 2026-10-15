@@ -8,7 +8,7 @@
 SET dialect='clickhouse';
 
 DROP TABLE IF EXISTS one;
-CREATE TABLE one (n Int32, m Int32, s String, t String, a Array(Int32), b Array(Int32), d DateTime) ENGINE = Memory;
+CREATE TABLE one (n Int32, m Int32, s String, t String, a Array(Int32), b Array(Int32), d DateTime('UTC')) ENGINE = Memory;
 INSERT INTO one VALUES (-7, 2, 'Hello World', 'o W', [3, 1, 2], [2, 4], '2013-07-15 10:20:30');
 
 SET allow_experimental_mongo_dialect = 1;
