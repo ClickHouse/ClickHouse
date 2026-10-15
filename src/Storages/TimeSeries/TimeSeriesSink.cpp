@@ -4,6 +4,7 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Core/Field.h>
@@ -440,8 +441,27 @@ ColumnPtr TimeSeriesSink::calculateId(const Block & tags_block) const
 }
 
 
+namespace
+{
+
+String contentHashForDedupToken(const Block & block)
+{
+    SipHash hash;
+    const size_t rows = block.rows();
+    for (const auto & column : block.getColumns())
+    {
+        auto dense = column->convertToFullIfWrapped();
+        dense->updateHashWithValueRange(0, rows, hash);
+    }
+    const auto value = hash.get128();
+    return fmt::format("{}_{}", value.items[0], value.items[1]);
+}
+
+}
+
+
 std::unique_ptr<TimeSeriesSink::TargetPipeline> TimeSeriesSink::createTargetPipeline(
-    ViewTarget::Kind kind, const Block & header, bool parallel, bool delay_commit)
+    ViewTarget::Kind kind, const Block & header, bool parallel, bool delay_commit, const Block * block)
 {
     auto pipeline = std::make_unique<TargetPipeline>();
 
@@ -459,11 +479,17 @@ std::unique_ptr<TimeSeriesSink::TargetPipeline> TimeSeriesSink::createTargetPipe
     pipeline->context->setCurrentQueryId(
         fmt::format("{}:{}:{}", getContext()->getCurrentQueryId(), kind, ++target_pipeline_sequence));
 
-    /// Each input block gets its own pipelines, so the token must differ per block and repeat on a retry.
-    const auto token = getContext()->getSettingsRef().get("insert_deduplication_token").safeGet<String>();
-    if (!token.empty())
+    const auto user_token = getContext()->getSettingsRef().get("insert_deduplication_token").safeGet<String>();
+    if (!user_token.empty())
     {
-        pipeline->context->setSetting("insert_deduplication_token", Field(fmt::format("{}_{}", token, input_block_index)));
+        pipeline->context->setSetting("insert_deduplication_token", Field(fmt::format("{}_{}", user_token, input_block_index)));
+    }
+    else if (block)
+    {
+        /// An empty user token still needs a per-block id because each pipeline starts its block counter at zero.
+        pipeline->context->setSetting(
+            "insert_deduplication_token",
+            Field(fmt::format("{}_{}", contentHashForDedupToken(*block), input_block_index)));
     }
 
     if (parallel)
@@ -682,7 +708,6 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
     }
 
     tags_pipeline_header = tags_header;
-    tags_pipeline = createTargetPipeline(ViewTarget::Tags, tags_pipeline_header, /* parallel= */ false);
     tags_deduplication_cache = time_series_storage.getTagsDeduplicationCache();
 
     /// The time ranges table (if any) receives the time range of every time series with samples.
@@ -695,7 +720,6 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
         time_ranges_header.insert(ColumnWithTypeAndName{timestamp_type, TimeSeriesColumnNames::MinTime});
         time_ranges_header.insert(ColumnWithTypeAndName{timestamp_type, TimeSeriesColumnNames::MaxTime});
         time_ranges_pipeline_header = time_ranges_header;
-        time_ranges_pipeline = createTargetPipeline(ViewTarget::TimeRanges, time_ranges_pipeline_header, /* parallel= */ false);
     }
 
     /// Build source header for samples block.
@@ -845,7 +869,7 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
     /// Tags are pushed first. Samples wait until this block's tags pipeline and time ranges pipeline commit.
     if (tags_block.rows())
     {
-        ensureTagsPipeline();
+        ensureTagsPipeline(tags_block);
         tags_pipeline->push(std::move(tags_block));
         tags_pipeline_dirty = true;
     }
@@ -856,7 +880,6 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
     /// time series would be invisible to queries filtering time series by time.
     if (!time_ranges_pipeline_header.empty() && total_samples)
     {
-        ensureTimeRangesPipeline();
         auto time_ranges_id_column = id_type->createColumn();
         auto min_time_column_for_time_ranges = timestamp_type->createColumn();
         auto max_time_column_for_time_ranges = timestamp_type->createColumn();
@@ -874,6 +897,7 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
         time_ranges_block.insert(ColumnWithTypeAndName{std::move(min_time_column_for_time_ranges), timestamp_type, TimeSeriesColumnNames::MinTime});
         time_ranges_block.insert(ColumnWithTypeAndName{std::move(max_time_column_for_time_ranges), timestamp_type, TimeSeriesColumnNames::MaxTime});
 
+        ensureTimeRangesPipeline(time_ranges_block);
         time_ranges_pipeline->push(std::move(time_ranges_block));
         time_ranges_pipeline_dirty = true;
     }
@@ -908,16 +932,17 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
 }
 
 
-void TimeSeriesSink::ensureTagsPipeline()
+void TimeSeriesSink::ensureTagsPipeline(const Block & block)
 {
     if (!tags_pipeline)
-        tags_pipeline = createTargetPipeline(ViewTarget::Tags, tags_pipeline_header, /* parallel= */ false);
+        tags_pipeline = createTargetPipeline(ViewTarget::Tags, tags_pipeline_header, /* parallel= */ false, /* delay_commit= */ false, &block);
 }
 
-void TimeSeriesSink::ensureTimeRangesPipeline()
+void TimeSeriesSink::ensureTimeRangesPipeline(const Block & block)
 {
     if (!time_ranges_pipeline)
-        time_ranges_pipeline = createTargetPipeline(ViewTarget::TimeRanges, time_ranges_pipeline_header, /* parallel= */ false);
+        time_ranges_pipeline = createTargetPipeline(
+            ViewTarget::TimeRanges, time_ranges_pipeline_header, /* parallel= */ false, /* delay_commit= */ false, &block);
 }
 
 void TimeSeriesSink::commitTagsAndTimeRanges()
@@ -947,7 +972,8 @@ void TimeSeriesSink::writeSamplesAndRecent(Block samples_block)
     /// One sink consume commits on finish. A larger block is split, and the next piece commits the previous one.
     const bool fits_one_block = samples_block.rows() <= max_rows && (max_bytes == 0 || samples_block.bytes() <= max_bytes);
 
-    auto samples = createTargetPipeline(ViewTarget::Samples, samples_pipeline_header, /* parallel= */ true);
+    auto samples = createTargetPipeline(
+        ViewTarget::Samples, samples_pipeline_header, /* parallel= */ true, /* delay_commit= */ false, &samples_block);
     std::unique_ptr<TargetPipeline> recent;
     bool recent_is_one_partition = false;
     if (time_series_storage.hasTarget(ViewTarget::RecentSamples))
@@ -955,7 +981,7 @@ void TimeSeriesSink::writeSamplesAndRecent(Block samples_block)
         auto recent_storage = time_series_storage.getTargetTable(ViewTarget::RecentSamples, getContext());
         recent_is_one_partition = blockIsOneMergeTreePartition(recent_storage, samples_block, getContext());
         recent = createTargetPipeline(
-            ViewTarget::RecentSamples, samples_pipeline_header, /* parallel= */ true, /* delay_commit= */ fits_one_block);
+            ViewTarget::RecentSamples, samples_pipeline_header, /* parallel= */ true, /* delay_commit= */ fits_one_block, &samples_block);
     }
 
     if (fits_one_block && recent && recent_is_one_partition)

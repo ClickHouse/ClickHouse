@@ -1,0 +1,9 @@
+--- three identical blocks without a token all land ---
+3
+[1,1,1]
+--- a different insert is not collapsed ---
+4
+[1,1,1,9]
+--- a retry of the first insert adds no rows ---
+4
+[1,1,1,9]

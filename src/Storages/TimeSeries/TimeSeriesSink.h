@@ -80,10 +80,10 @@ private:
     void initMetricFamiliesPipeline();
     /// `delay_commit` keeps pushed blocks uncommitted until `finish`.
     std::unique_ptr<TargetPipeline> createTargetPipeline(
-        ViewTarget::Kind kind, const Block & header, bool parallel, bool delay_commit = false);
+        ViewTarget::Kind kind, const Block & header, bool parallel, bool delay_commit = false, const Block * block = nullptr);
 
-    void ensureTagsPipeline();
-    void ensureTimeRangesPipeline();
+    void ensureTagsPipeline(const Block & block);
+    void ensureTimeRangesPipeline(const Block & block);
     /// Finishes the tags pipeline and the time ranges pipeline when they hold rows.
     void commitTagsAndTimeRanges();
     /// Commits the samples block, then the same block to recent samples.
