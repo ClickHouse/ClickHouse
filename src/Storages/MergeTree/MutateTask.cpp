@@ -59,6 +59,7 @@
 #include <Storages/Statistics/Statistics.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <Common/FailPoint.h>
+#include <Common/StringUtils.h>
 #include <Common/Jemalloc.h>
 #include <Common/ThreadStatus.h>
 #include <Common/thread_local_rng.h>
@@ -501,15 +502,16 @@ static bool codecDependsOnDefault(const ASTPtr & codec_ast)
     for (const auto & child : func->arguments->children)
     {
         /// `Default` is parsed as a bare identifier (it takes no arguments), but accept the function
-        /// form defensively as well.
+        /// form defensively as well. Compare case-insensitively like `CompressionCodecFactory::get` does:
+        /// the original AST (e.g. `CODEC(Delta, default)` of a heterogeneous `Tuple`) can reach here as is.
         if (const auto * identifier = child->as<ASTIdentifier>())
         {
-            if (identifier->name() == DEFAULT_CODEC_NAME)
+            if (equalsCaseInsensitive(identifier->name(), DEFAULT_CODEC_NAME))
                 return true;
         }
         else if (const auto * child_func = child->as<ASTFunction>())
         {
-            if (child_func->name == DEFAULT_CODEC_NAME)
+            if (equalsCaseInsensitive(child_func->name, DEFAULT_CODEC_NAME))
                 return true;
         }
     }
