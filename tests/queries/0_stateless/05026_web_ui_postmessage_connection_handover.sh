@@ -252,3 +252,14 @@ processors_profile=$(handover_body processors-profile | grep -qxF "            +
     && handover_body processors-profile | grep -qxF "            ++profileGeneration;" \
     && echo invalidated || echo kept)
 echo "handover dashboard=${dashboard} schema=${schema} jemalloc=${jemalloc} processors_profile=${processors_profile}"
+
+# A fragmentation report in `/jemalloc` is a sequence of requests, each catching its own failure so that
+# the next step still runs. Aborting the requests in flight is therefore not enough: every step has to be
+# bound to the signal of the connection the report started on, and an abort has to pass through the
+# nested catches, or the remaining steps query the new server with the previous server's filters.
+fragmentation_body=$(fetch_page jemalloc | sed -n '/^        async function renderFragmentationSummary(/,/^        async function getFragmentationFlameGraph(/p')
+fragmentation=$(echo "$fragmentation_body" | grep -qxF "            const options = { ...fetchOptions, signal: connectionAbortController.signal };" \
+    && [ "$(echo "$fragmentation_body" | grep -cF "if (error.name === 'AbortError') throw error;")" = 3 ] \
+    && ! echo "$fragmentation_body" | grep -qF "fetchOptions);" \
+    && echo bound || echo unbound)
+echo "jemalloc fragmentation=${fragmentation}"

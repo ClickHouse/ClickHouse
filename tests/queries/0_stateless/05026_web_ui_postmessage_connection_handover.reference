@@ -13,3 +13,4 @@ play derived_url_scheme=gated relay_target_guard=validated terminal_probe=live d
 schema credential_store=endpoint credential_retrieval=endpoint auto_probe=endpoint
 play initial_probe=endpoint
 handover dashboard=invalidated schema=invalidated jemalloc=invalidated processors_profile=invalidated
+jemalloc fragmentation=bound

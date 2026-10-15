@@ -2783,7 +2783,7 @@ SETTINGS jemalloc_enable_profiler = 1,
             return `SELECT DISTINCT arena, size_class FROM system.jemalloc_sampled_allocations WHERE age_ns > ${minAgeNs}`;
         }
 
-        async function renderFragmentationSummary(minAgeNs, minWaste, purposeCond) {
+        async function renderFragmentationSummary(minAgeNs, minWaste, purposeCond, options) {
             const summaryDiv = document.getElementById('frag-summary-result');
             /// One scan of the bins table per query so each group of terms comes from one
             /// stats snapshot. The breakdown is process-wide (active - allocated only
@@ -2797,7 +2797,7 @@ SETTINGS jemalloc_enable_profiler = 1,
                 greatest(sumIf(allocations - deallocations, large), 0) AS live_large,
                 minIf(slab_size, NOT large) AS page_size
                 FROM system.jemalloc_arena_bins`;
-            const response = await fetch(buildUrl(breakdownQuery), fetchOptions);
+            const response = await fetch(buildUrl(breakdownQuery), options);
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
@@ -2831,7 +2831,7 @@ SETTINGS jemalloc_enable_profiler = 1,
                     sumIf(waste, ${filterCond}) AS slab_waste_selected,
                     sumIf(waste, ${filterCond} AND (arena, index) IN (${fragmentationCoveredCellsSubquery(minAgeNs)})) AS slab_waste_covered
                     FROM system.jemalloc_arena_bins WHERE NOT large`;
-                const coverageResponse = await fetch(buildUrl(coverageQuery), fetchOptions);
+                const coverageResponse = await fetch(buildUrl(coverageQuery), options);
                 if (!coverageResponse.ok) {
                     throw new Error(`HTTP ${coverageResponse.status}: ${coverageResponse.statusText}`);
                 }
@@ -2845,6 +2845,7 @@ SETTINGS jemalloc_enable_profiler = 1,
                     sampling overhead, which grows with the number of live samples.
                 `;
             } catch (error) {
+                if (error.name === 'AbortError') throw error;
                 console.error('Error computing sampling coverage:', error);
                 coverageP.innerHTML = `<span class="error">Cannot compute sampling coverage: ${escapeHtml(error.message)}</span>`;
             }
@@ -2862,6 +2863,11 @@ SETTINGS jemalloc_enable_profiler = 1,
             const wasteDiv = document.getElementById('frag-waste-result');
             const pinnersDiv = document.getElementById('frag-pinners-result');
             const { minAgeNs, minWaste, excludeDedicated, purposeCond } = fragmentationParams();
+            /// The report is a sequence of requests, and every step catches its own failure so that
+            /// the next one still runs. Bind all of them to the connection the report started on:
+            /// once a handover aborts it, the remaining steps fail before sending anything instead of
+            /// querying the new server with the previous server's filters.
+            const options = { ...fetchOptions, signal: connectionAbortController.signal };
 
             button.disabled = true;
             button.textContent = 'Analyzing...';
@@ -2872,14 +2878,15 @@ SETTINGS jemalloc_enable_profiler = 1,
                 /// A summary failure must not suppress the profiler-independent waste
                 /// table below.
                 try {
-                    await renderFragmentationSummary(minAgeNs, minWaste, purposeCond);
+                    await renderFragmentationSummary(minAgeNs, minWaste, purposeCond, options);
                 } catch (error) {
+                    if (error.name === 'AbortError') throw error;
                     console.error('Error building fragmentation summary:', error);
                     document.getElementById('frag-summary-result').innerHTML = `<div class="error">Error: ${escapeHtml(error.message)}</div>`;
                 }
 
                 const wasteQuery = `SELECT arena, purpose, size, curslabs, curregs, round(util, 3) AS util, waste FROM system.jemalloc_arena_bins WHERE NOT large AND waste >= ${minWaste}${purposeCond} ORDER BY waste DESC LIMIT 100`;
-                const wasteResponse = await fetch(buildUrl(wasteQuery), fetchOptions);
+                const wasteResponse = await fetch(buildUrl(wasteQuery), options);
                 if (!wasteResponse.ok) {
                     throw new Error(`HTTP ${wasteResponse.status}: ${wasteResponse.statusText}`);
                 }
@@ -2926,7 +2933,7 @@ SETTINGS jemalloc_enable_profiler = 1,
                 try {
                     pinnersDiv.innerHTML = '<p>Attributing stacks...</p>';
                     const pinnerQuery = `SELECT b.arena, b.size, b.waste, round(s.est_old_objects) AS est_old_objects, s.stack FROM system.jemalloc_arena_bins AS b INNER JOIN (${fragmentationPinnersSubquery(minAgeNs)}) AS s ON s.size_class = b.index AND s.arena = b.arena WHERE b.large = 0 AND b.waste >= ${minWaste}${purposeCond} ORDER BY b.waste DESC, s.est_old_objects DESC LIMIT 100 SETTINGS allow_introspection_functions = 1`;
-                    const pinnerResponse = await fetch(buildUrl(pinnerQuery), fetchOptions);
+                    const pinnerResponse = await fetch(buildUrl(pinnerQuery), options);
                     if (!pinnerResponse.ok) {
                         throw new Error(`HTTP ${pinnerResponse.status}: ${pinnerResponse.statusText}`);
                     }
@@ -2960,10 +2967,13 @@ SETTINGS jemalloc_enable_profiler = 1,
                         </table>
                     `;
                 } catch (error) {
+                    if (error.name === 'AbortError') throw error;
                     console.error('Error attributing stacks:', error);
                     pinnersDiv.innerHTML = `<div class="error">Error: ${escapeHtml(error.message)}</div>`;
                 }
             } catch (error) {
+                /// The handover has cleared this report's panel already; there is nothing to show.
+                if (error.name === 'AbortError') return;
                 console.error('Error building fragmentation report:', error);
                 wasteDiv.innerHTML = `<div class="error">Error: ${escapeHtml(error.message)}</div>`;
                 pinnersDiv.innerHTML = '';
