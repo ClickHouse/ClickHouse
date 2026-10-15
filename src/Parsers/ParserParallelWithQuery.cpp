@@ -94,7 +94,7 @@ PARALLEL WITH
 CREATE TABLE table2 ON CLUSTER default (y String) ENGINE = MergeTree ORDER BY tuple();
 ```
 
-Partition operations in a `Replicated` database, such as `ALTER TABLE ... DROP PARTITION`, are not replicated through its DDL log, so they can be combined without these settings.
+Some partition operations, such as `ALTER TABLE ... DROP PARTITION`, are not replicated through the DDL log of a `Replicated` database (see [Specifics and recommendations](/reference/engines/database-engines/replicated#specifics-and-recommendations)), so they can be combined without these settings.
 
 The statements are not executed atomically: if one of them fails, the statements that have already been executed are not rolled back.
 
