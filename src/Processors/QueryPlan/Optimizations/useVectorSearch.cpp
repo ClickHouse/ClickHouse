@@ -599,11 +599,18 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
             expression.removeUnusedActions(); /// Removes the vector column INPUT node (it is no longer needed)
             const auto * distance_node = &expression.addInput("_distance",std::make_shared<DataTypeFloat32>());
 
-            const bool need_sqrt = vector_search_parameters->distance_function == "L2Distance";
-            if (need_sqrt) /// usearch returns L2 squared distance to save repeated sqrt computations.
+            const String & distance_function = vector_search_parameters->distance_function;
+            if (distance_function == "L2Distance") /// usearch returns L2 squared distance to save repeated sqrt computations.
             {
                 auto sqrt_function = FunctionFactory::instance().get("sqrt", read_from_mergetree_step->getContext());
                 distance_node = &expression.addFunction(sqrt_function, {distance_node}, {});
+            }
+            else if (distance_function == "dotProduct") /// usearch returns `1 - dotProduct`.
+            {
+                auto float64_type = std::make_shared<DataTypeFloat64>();
+                const auto & one_node = expression.addColumn(float64_type->createColumnConst(1, Field(1.0)), float64_type, "1.");
+                auto minus_function = FunctionFactory::instance().get("minus", read_from_mergetree_step->getContext());
+                distance_node = &expression.addFunction(minus_function, {&one_node, distance_node}, {});
             }
 
             if (!distance_node->result_type->equals(*result_type))
