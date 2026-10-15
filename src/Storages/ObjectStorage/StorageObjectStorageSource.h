@@ -11,6 +11,9 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
+#include <Storages/ObjectStorage/Utils.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ExternalPathResolver.h>
+#include <Formats/FormatParserSharedResources.h>
 #include <Formats/FormatFilterInfo.h>
 
 namespace DB
@@ -74,6 +77,12 @@ public:
 
     static std::string getUniqueStoragePathIdentifier(
         const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, bool include_connection_info = true);
+
+    static std::string getUniqueStoragePathIdentifier(
+        const StorageObjectStorageConfiguration & configuration,
+        const ObjectInfoPtr & object_info,
+        const ObjectStoragePtr & object_storage,
+        bool include_connection_info = true);
 
     /// Compose the Query Condition Cache key (`part_name`) for an object, or return nullopt when the
     /// object cannot be safely cached and caching must be skipped (fail-close). Exposed for testing:
@@ -165,7 +174,7 @@ protected:
 
     std::future<ReaderHolder> createReaderAsync();
 
-    void addNumRowsToCache(const ObjectInfo & object_info, size_t num_rows);
+    void addNumRowsToCache(const ObjectInfoPtr & object_info, size_t num_rows);
     void lazyInitialize();
 };
 
@@ -177,6 +186,7 @@ public:
         size_t max_threads_count,
         bool is_archive_,
         ObjectStoragePtr object_storage_,
+        const std::string & table_location_,
         ContextPtr context_);
 
     ObjectInfoPtr next(size_t) override;
@@ -189,11 +199,17 @@ private:
         const std::string & path_in_archive,
         std::optional<size_t> read_source_index);
 
+    void resolveObjectStorageIfNeeded(const ObjectInfoPtr & object);
+
     ClusterFunctionReadTaskCallback callback;
     ObjectInfos buffer;
     std::atomic_size_t index = 0;
     bool is_archive;
     ObjectStoragePtr object_storage;
+    std::string table_location;
+#if USE_AVRO
+    ExternalStorageCache external_storages;
+#endif
     /// path_to_archive -> archive reader.
     std::unordered_map<std::string, std::shared_ptr<IArchiveReader>> archive_readers;
     std::mutex archive_readers_mutex;

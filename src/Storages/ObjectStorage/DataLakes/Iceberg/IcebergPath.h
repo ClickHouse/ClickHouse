@@ -3,6 +3,9 @@
 #include <base/types.h>
 #include <fmt/format.h>
 
+#include <Common/maskSensitiveQueryParameters.h>
+
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage_fwd.h>
 #include <string_view>
 
 namespace DB
@@ -36,6 +39,9 @@ public:
     /// Also needed to get the file which corresponds to a line in the Chunk when used for position-delete algorithms.
     static IcebergPathFromMetadata deserialize(String path_) { return IcebergPathFromMetadata(std::move(path_)); }
 
+    /// Use resolved identity so URI aliases for the same object compare equal.
+    static IcebergPathFromMetadata makeStorageIdentity(const ObjectStoragePtr & storage, const String & key);
+
     /// Extract the raw path string for writing into Iceberg metadata files,
     /// serialization, cache keys, virtual column values, etc.
     const String & serialize() const { return raw_path; }
@@ -44,7 +50,6 @@ public:
 
     auto operator<=>(const IcebergPathFromMetadata & other) const { return raw_path <=> other.raw_path; }
     auto operator==(const IcebergPathFromMetadata & other) const { return raw_path == other.raw_path; }
-
 
 private:
     friend class DB::FileNamesGenerator;
@@ -171,8 +176,9 @@ struct std::hash<DB::Iceberg::IcebergPathFromMetadata>
 template <>
 struct fmt::formatter<DB::Iceberg::IcebergPathFromMetadata> : fmt::formatter<std::string>
 {
+    /// This formatter is only for diagnostics; I/O and hashing use the unmasked `serialize` result.
     auto format(const DB::Iceberg::IcebergPathFromMetadata & p, fmt::format_context & ctx) const
     {
-        return fmt::formatter<std::string>::format(p.serialize(), ctx);
+        return fmt::formatter<std::string>::format(DB::maskCredentialsInURI(p.serialize()), ctx);
     }
 };

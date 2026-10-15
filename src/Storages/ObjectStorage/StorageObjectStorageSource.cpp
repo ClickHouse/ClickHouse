@@ -51,6 +51,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ExternalPathResolver.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/operators.hpp>
@@ -79,7 +80,6 @@
 
 #include <Storages/MergeTree/MarkRange.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
-
 
 namespace fs = std::filesystem;
 namespace ProfileEvents
@@ -387,6 +387,25 @@ std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
     return result;
 }
 
+std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
+    const StorageObjectStorageConfiguration & configuration,
+    const ObjectInfoPtr & object_info,
+    const ObjectStoragePtr & object_storage,
+    bool include_connection_info)
+{
+    auto resolved_storage = object_info->getResolvedStorage(object_storage);
+    if (resolved_storage != object_storage)
+    {
+        /// Not joined as `fs::path`: a leading slash is a distinct part of the object key.
+        const auto & key = object_info->getPath();
+        if (include_connection_info)
+            return fmt::format("{}/{}/{}", resolved_storage->getDescription(), resolved_storage->getObjectsNamespace(), key);
+        return fmt::format("{}/{}", resolved_storage->getObjectsNamespace(), key);
+    }
+
+    return getUniqueStoragePathIdentifier(configuration, *object_info, include_connection_info);
+}
+
 /// The object identifier already uses the full path, so files that share a base name in
 /// different directories do not collide. For general (non-data-lake) remote objects the path
 /// alone is not a stable identity - an object can be overwritten in place under the same path -
@@ -402,7 +421,11 @@ std::optional<String> StorageObjectStorageSource::makeQueryConditionCacheKey(con
 {
     String identifier = object_info.getIdentifier(/*include_file_bucket_info=*/false);
     if (is_data_lake)
+    {
+        if (auto metadata_path = object_info.getPathInDataLakeMetadata())
+            return object_info.getIdentifierForPath(*metadata_path, /*include_file_bucket_info=*/false);
         return identifier;
+    }
     const auto & metadata = object_info.getObjectMetadata();
     if (!metadata || !metadata->isEtagUsableAsCacheKey())
         return std::nullopt;
@@ -433,11 +456,16 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     {
         const bool expect_whole_archive = !local_context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes];
 
+        std::string table_location = configuration->getPathForRead().path;
+        if (auto metadata = configuration->getExternalMetadata())
+            table_location = metadata->getTableLocation();
+
         auto distributed_iterator = std::make_unique<ReadTaskIterator>(
             local_context->getClusterFunctionReadTaskCallback(),
             local_context->getSettingsRef()[Setting::max_threads],
             /*is_archive_=*/is_archive && !expect_whole_archive,
             object_storage,
+            table_location,
             local_context);
 
         if (is_archive && expect_whole_archive)
@@ -821,6 +849,8 @@ Chunk StorageObjectStorageSource::generate()
                     read_context);
             }
 
+            std::string path_for_virtual_column = object_info->getPathInDataLakeMetadata().value_or(path);
+
             const String * iceberg_metadata_file_path = nullptr;
             std::optional<UInt64> last_updated_sequence_number;
             std::optional<UInt64> first_row_id;
@@ -846,7 +876,7 @@ Chunk StorageObjectStorageSource::generate()
                 chunk,
                 read_from_format_info.requested_virtual_columns,
                 {
-                    .path = path,
+                    .path = path_for_virtual_column,
                     .storage_id = storage_id,
                     .size = object_size,
                     .filename = &filename,
@@ -1076,7 +1106,7 @@ Chunk StorageObjectStorageSource::generate()
             && !format_filter_info->hasFilter()
             && !hasAttachedDeletes(*reader.getObjectInfo())
             && !reader.getObjectInfo()->rows_to_read)
-            addNumRowsToCache(*reader.getObjectInfo(), total_rows_in_file);
+            addNumRowsToCache(reader.getObjectInfo(), total_rows_in_file);
 
         total_rows_in_file = 0;
 
@@ -1098,7 +1128,7 @@ Chunk StorageObjectStorageSource::generate()
     return {};
 }
 
-void StorageObjectStorageSource::addNumRowsToCache(const ObjectInfo & object_info, size_t num_rows)
+void StorageObjectStorageSource::addNumRowsToCache(const ObjectInfoPtr & object_info, size_t num_rows)
 {
     /// The cache key does not include the compression method. Under an explicit `compression_method` the
     /// same object can decode differently (or fail) through another definition with a different codec,
@@ -1107,8 +1137,8 @@ void StorageObjectStorageSource::addNumRowsToCache(const ObjectInfo & object_inf
         return;
 
     const auto cache_key = getKeyForSchemaCache(
-        getUniqueStoragePathIdentifier(*configuration, object_info),
-        object_info.getFileFormat().value_or(configuration->format),
+        getUniqueStoragePathIdentifier(*configuration, object_info, object_storage),
+        object_info->getFileFormat().value_or(configuration->format),
         format_settings,
         read_context);
     schema_cache.addNumRows(cache_key, num_rows);
@@ -1207,9 +1237,11 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             auto metadata_object = object_info->relative_path_with_metadata;
             metadata_object.relative_path = path;
 
+            ObjectStoragePtr storage_to_use = object_info->getResolvedStorage(object_storage);
+
             if (query_settings.ignore_non_existent_file)
             {
-                auto metadata = object_storage->tryGetObjectMetadata(metadata_object, with_tags);
+                auto metadata = storage_to_use->tryGetObjectMetadata(metadata_object, with_tags);
                 if (!metadata)
                     return {};
 
@@ -1217,7 +1249,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             }
             else
             {
-                object_info->setObjectMetadata(object_storage->getObjectMetadata(metadata_object, with_tags));
+                object_info->setObjectMetadata(storage_to_use->getObjectMetadata(metadata_object, with_tags));
             }
         }
 
@@ -1286,7 +1318,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             return std::nullopt;
 
         const auto cache_key = getKeyForSchemaCache(
-            getUniqueStoragePathIdentifier(*configuration, *object_info),
+            getUniqueStoragePathIdentifier(*configuration, object_info, object_storage),
             object_info->getFileFormat().value_or(configuration->format),
             format_settings,
             context_);
@@ -1371,8 +1403,12 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             read_settings.remote_fs_settings.random_access
                 = FormatFactory::instance().checkIfFormatIsRandomAccessInput(format_name, context_, format_settings);
             read_buf = createReadBuffer(
-                object_info->relative_path_with_metadata, object_storage, context_, log,
-                read_settings, !headers_requested);
+                object_info->relative_path_with_metadata,
+                object_info->getResolvedStorage(object_storage),
+                context_,
+                log,
+                read_settings,
+                !headers_requested);
         }
 
         Block initial_header = read_from_format_info.format_header;
@@ -1858,7 +1894,6 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     bool use_page_cache = allow_page_cache && !use_distributed_cache && !use_filesystem_cache
         && effective_read_settings.page_cache_settings.cache && effective_read_settings.use_page_cache_for_object_storage;
 
-
     /// We need object metadata for a few use cases:
     /// 1. object size suggests whether we need to use prefetch
     /// 2. object etag suggests a cache key in case we use filesystem cache
@@ -2162,7 +2197,6 @@ ObjectInfoPtr StorageObjectStorageSource::GlobIterator::nextUnlocked(size_t /* p
     {
         ObjectInfos new_batch;
 
-
         while (new_batch.empty())
         {
             auto result = object_storage_iterator->getCurrentBatchAndScheduleNext();
@@ -2409,11 +2443,13 @@ StorageObjectStorageSource::ReadTaskIterator::ReadTaskIterator(
     size_t max_threads_count,
     bool is_archive_,
     ObjectStoragePtr object_storage_,
+    const std::string & table_location_,
     ContextPtr context_)
     : WithContext(context_)
     , callback(callback_)
     , is_archive(is_archive_)
     , object_storage(object_storage_)
+    , table_location(table_location_)
 {
     ThreadPool pool(
         CurrentMetrics::StorageObjectStorageThreads,
@@ -2439,8 +2475,18 @@ StorageObjectStorageSource::ReadTaskIterator::ReadTaskIterator(
     {
         auto object = object_future.get();
         if (object)
+        {
+            resolveObjectStorageIfNeeded(object);
             buffer.push_back(object);
+        }
     }
+}
+
+void StorageObjectStorageSource::ReadTaskIterator::resolveObjectStorageIfNeeded([[maybe_unused]] const ObjectInfoPtr & object)
+{
+#if USE_AVRO
+    resolveObjectStorageFromDataLakeMetadata(object, table_location, object_storage, external_storages, getContext());
+#endif
 }
 
 static size_t getKnownArchiveSize(const ObjectInfoPtr & object_info)
@@ -2469,7 +2515,9 @@ ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::next(size_t)
 
         if (!task || task->isEmpty())
             return nullptr;
+
         object_info = task->getObjectInfo();
+        resolveObjectStorageIfNeeded(object_info);
     }
     else
     {
@@ -2569,7 +2617,10 @@ StorageObjectStorageSource::ArchiveIterator::createArchiveReader(ObjectInfoPtr o
         /* path_to_archive */
         object_info->getPath(),
         /* archive_read_function */ [=, this]()
-        { return createReadBuffer(object_info->relative_path_with_metadata, object_storage, getContext(), log); },
+        {
+            auto storage = object_info->getResolvedStorage(object_storage);
+            return createReadBuffer(object_info->relative_path_with_metadata, storage, getContext(), log);
+        },
         /* archive_size */ size);
 }
 
@@ -2591,7 +2642,10 @@ ObjectInfoPtr StorageObjectStorageSource::ArchiveIterator::next(size_t processor
                 }
 
                 if (!archive_object->getObjectMetadata())
-                    archive_object->setObjectMetadata(object_storage->getObjectMetadata(archive_object->relative_path_with_metadata, /*with_tags=*/ false));
+                {
+                    ObjectStoragePtr storage_to_use = archive_object->getResolvedStorage(object_storage);
+                    archive_object->setObjectMetadata(storage_to_use->getObjectMetadata(archive_object->relative_path_with_metadata, /*with_tags=*/ false));
+                }
 
                 archive_reader = createArchiveReader(archive_object);
                 file_enumerator = archive_reader->firstFile();
@@ -2617,7 +2671,10 @@ ObjectInfoPtr StorageObjectStorageSource::ArchiveIterator::next(size_t processor
                 return {};
 
             if (!archive_object->getObjectMetadata())
-                archive_object->setObjectMetadata(object_storage->getObjectMetadata(archive_object->relative_path_with_metadata, /*with_tags=*/ false));
+            {
+                ObjectStoragePtr storage_to_use = archive_object->getResolvedStorage(object_storage);
+                archive_object->setObjectMetadata(storage_to_use->getObjectMetadata(archive_object->relative_path_with_metadata, /*with_tags=*/ false));
+            }
 
             archive_reader = createArchiveReader(archive_object);
             if (!archive_reader->fileExists(path_in_archive))
