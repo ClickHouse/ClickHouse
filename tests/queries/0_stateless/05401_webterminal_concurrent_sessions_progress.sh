@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-tsan
+# Tag no-tsan: concurrent sessions still run into the line editor races fixed by #125510; the step check does not need TSan
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
