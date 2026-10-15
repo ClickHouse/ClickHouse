@@ -3,6 +3,8 @@
 #include <Common/SipHash.h>
 #include <Common/StringUtils.h>
 
+#include <algorithm>
+#include <string_view>
 #include <utility>
 
 
@@ -40,6 +42,15 @@ bool canPrecedeUnarySign(const Token & prev)
         case TokenType::Spaceship:
         case TokenType::Concatenation:
             return true;
+        /// the lexer cannot tell a keyword from a column name, so this list is a heuristic
+        case TokenType::BareWord:
+        {
+            static constexpr std::string_view keywords[] = {
+                "SELECT", "DISTINCT", "WHERE", "PREWHERE", "HAVING", "QUALIFY", "AND", "OR", "NOT",
+                "WHEN", "THEN", "ELSE", "BY", "LIMIT", "OFFSET", "BETWEEN", "INTERVAL"};
+            std::string_view word(prev.begin, prev.size());
+            return std::ranges::any_of(keywords, [&](std::string_view keyword) { return equalsCaseInsensitive(word, keyword); });
+        }
         default:
             return false;
     }
