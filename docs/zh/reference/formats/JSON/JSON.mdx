@@ -15,9 +15,7 @@ doc_type: 'reference'
 | -- | -- | -- |
 | ✔  | ✔  |    |
 
-<div id="description">
-  ## 描述
-</div>
+## 描述 {#description}
 
 `JSON` 格式以 JSON 格式读取和输出数据。
 
@@ -40,14 +38,12 @@ doc_type: 'reference'
 * ASCII 控制字符会被转义：退格、换页、换行、回车和水平制表符分别替换为 `\b`、`\f`、`\n`、`\r`、`\t`，00-1F 范围内其余字节则使用 `\uXXXX` 序列表示。
 * 无效的 UTF-8 序列会被替换为替代字符 �，因此输出文本将仅包含有效的 UTF-8 序列。
 
-为兼容 JavaScript，Int64 和 UInt64 整数默认会用双引号括起来。
-如果要去掉引号，可以将配置参数 [`output_format_json_quote_64bit_integers`](/zh/reference/settings/formats/output-format#output_format_json_quote_64bit_integers) 设置为 `0`。
+64 位或更大的整数 (如 `Int64`、`UInt64` 或 `Int128`) 默认不加引号输出。
+为兼容 JavaScript，可以将配置参数 [`output_format_json_quote_64bit_integers`](/zh/reference/settings/formats/output-format#output_format_json_quote_64bit_integers) 设置为 `1`，使这些整数用双引号括起来。
 
 ClickHouse 支持 [NULL](/zh/reference/syntax)，在 JSON 输出中显示为 `null`。要在输出中启用 `+nan`、`-nan`、`+inf`、`-inf` 值，请将 [output&#95;format&#95;json&#95;quote&#95;denormals](/zh/reference/settings/formats/output-format#output_format_json_quote_denormals) 设置为 `1`。
 
-<div id="example-usage">
-  ## 示例用法
-</div>
+## 示例用法 {#example-usage}
 
 示例：
 
@@ -105,16 +101,12 @@ SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTA
 }
 ```
 
-<div id="format-settings">
-  ## 格式设置
-</div>
+## 格式设置 {#format-settings}
 
 对于 JSON 输入格式，如果将设置 [`input_format_json_validate_types_from_metadata`](/zh/reference/settings/formats/input-format#input_format_json_validate_types_from_metadata) 设为 `1`，
 则会将输入数据元数据中的类型与表中对应列的类型进行比对。
 
-<div id="see-also">
-  ## 另请参阅
-</div>
+## 另请参阅 {#see-also}
 
 * [JSONEachRow](/zh/reference/formats/JSON/JSONEachRow) 格式
 * [output&#95;format&#95;json&#95;array&#95;of&#95;rows](/zh/reference/settings/formats/output-format#output_format_json_array_of_rows) 设置

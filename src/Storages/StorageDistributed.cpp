@@ -166,6 +166,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsUInt64 max_expanded_ast_elements;
     extern const SettingsBool allow_nondeterministic_optimize_skip_unused_shards;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool async_query_sending_for_remote;
@@ -190,7 +191,6 @@ namespace Setting
     extern const SettingsUInt64 optimize_skip_unused_shards_limit;
     extern const SettingsUInt64 parallel_distributed_insert_select;
     extern const SettingsBool prefer_localhost_replica;
-    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool prefer_global_in_and_join;
     extern const SettingsBool skip_unavailable_shards;
     extern const SettingsBool enable_global_with_statement;
@@ -518,12 +518,12 @@ const ActionsDAG::Node * tryFindShardingKeyOutput(const ActionsDAG & sharding_ke
     return result;
 }
 
-size_t getClusterQueriedNodes(const Settings & settings, const ClusterPtr & cluster)
+size_t getClusterQueriedNodes(const ContextPtr & context, const ClusterPtr & cluster)
 {
     size_t num_local_shards = cluster->getLocalShardCount();
     size_t num_remote_shards = cluster->getRemoteShardCount();
-    UInt64 max_parallel_replicas = settings[Setting::allow_experimental_parallel_reading_from_replicas]
-        ? settings[Setting::max_parallel_replicas] : 1;
+    UInt64 max_parallel_replicas = context->isParallelReplicasEnabled()
+        ? context->getSettingsRef()[Setting::max_parallel_replicas] : 1;
 
     return (num_remote_shards + num_local_shards) * max_parallel_replicas;
 }
@@ -673,7 +673,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     const auto & settings = local_context->getSettingsRef();
     ClusterPtr cluster = getCluster();
 
-    size_t nodes = getClusterQueriedNodes(settings, cluster);
+    size_t nodes = getClusterQueriedNodes(local_context, cluster);
 
     query_info.cluster = cluster;
 
@@ -692,7 +692,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
                 cluster = optimized_cluster;
                 query_info.optimized_cluster = cluster;
 
-                nodes = getClusterQueriedNodes(settings, cluster);
+                nodes = getClusterQueriedNodes(local_context, cluster);
             }
             else
             {
@@ -1704,9 +1704,9 @@ std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInser
     {
         if (auto * select_query = select.list_of_selects->children.at(0)->as<ASTSelectQuery>())
         {
-            if (local_context->getSettingsRef()[Setting::enable_global_with_statement])
-                ApplyWithAliasVisitor::visit(select.list_of_selects->children.at(0));
-            ApplyWithSubqueryVisitor::visit(select.list_of_selects->children.at(0));
+            if (settings[Setting::enable_global_with_statement])
+                ApplyWithAliasVisitor::visit(select.list_of_selects->children.at(0), settings[Setting::max_expanded_ast_elements]);
+            ApplyWithSubqueryVisitor::visit(select.list_of_selects->children.at(0), settings[Setting::max_expanded_ast_elements]);
 
             JoinedTables joined_tables(Context::createCopy(local_context), *select_query);
 
