@@ -16,6 +16,8 @@
 #include <Interpreters/FileCache/IFileCachePriority.h>
 #include <Interpreters/FileCache/FileSegmentInfo.h>
 #include <Interpreters/FileCache/FileCache_fwd_internal.h>
+#include <Interpreters/FileCache/FileCacheSegmentSizes.h>
+#include <Common/ByteMutex.h>
 
 
 namespace Poco { class Logger; }
@@ -25,6 +27,7 @@ namespace DB
 
 class ReadBufferFromFileBase;
 struct FileCacheReserveStat;
+class FileSegmentEfficiency;
 
 /// Reserve-ahead state of one reader/writer: the first reservation is exact, then the reserve-ahead
 /// doubles up to `max_reserve_granularity` (the cache's `reserve_granularity`). Reset on a failed reservation.
@@ -199,6 +202,11 @@ public:
 
     void increasePriority();
 
+    /// Marks `[offset, offset + size)` as served from the cache. The caller must hold this file segment.
+    void markRead(size_t offset, size_t size);
+
+    bool wasServedFromCache() const;
+
     /**
      * ========== Methods used by `cache` ========================
      */
@@ -284,6 +292,15 @@ private:
     DownloadState & getOrCreateDownloadDataUnlocked(const FileSegmentGuard::Lock &);
     void resetDownloadDataUnlocked(const FileSegmentGuard::Lock &);
 
+    /// The only way to change `reserved_size` after construction.
+    void addReservedSize(Int64 delta);
+
+    void onLoadedIntoCache();
+    void onRemovedFromCache(const FileSegmentGuard::Lock &);
+    /// Moves the file segment to the size class of its new range.
+    void onRangeShrunk(size_t old_range_size);
+    FileSegmentEfficiencyInfo getEfficiencyInfo(const FileSegmentGuard::Lock &) const;
+
     /// In release builds returns a single shared logger; in debug builds a per-segment one.
     const LoggerPtr & getLog() const;
     bool isDownloaderUnlocked(const FileSegmentGuard::Lock & segment_lock) const;
@@ -358,6 +375,12 @@ private:
     std::condition_variable cv;
     /// Dedups concurrent increasePriority() calls; a pure try-lock, so an atomic flag is enough.
     std::atomic_flag increasing_priority;
+    /// A leaf lock for the fields below: only the mutex of `FileCacheEfficiency` is taken under it.
+    mutable ByteMutex efficiency_mutex;
+    bool removed_from_cache TSA_GUARDED_BY(efficiency_mutex) = false;
+    /// Whether `reserved_size` is counted in `FileCacheSegmentSizes`.
+    bool counted_in_segment_sizes TSA_GUARDED_BY(efficiency_mutex) = false;
+    FileCacheSegmentSizes::Class size_class TSA_GUARDED_BY(efficiency_mutex);
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
     /// Per-segment logger with a unique name; only in debug/sanitizer builds.
@@ -366,6 +389,9 @@ private:
 #endif
 
     std::atomic<size_t> hits_count = 0; /// cache hits.
+
+    /// Allocated at the first cache hit.
+    std::unique_ptr<FileSegmentEfficiency> efficiency TSA_GUARDED_BY(efficiency_mutex);
 
     /// Guarded by `segment_guard`. Set while dynamic-resize eviction is pending.
     bool on_delayed_removal = false;

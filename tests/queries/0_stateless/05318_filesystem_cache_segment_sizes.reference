@@ -1,0 +1,14 @@
+1. A scan fills the cache with long segments
+file_segments_by_size_eq_count=1	bytes_by_segment_size_eq_downloaded_size=1
+has_bytes=1
+2. Point reads
+file_segments_by_size_eq_count=1	bytes_by_segment_size_eq_downloaded_size=1
+3. Dropping the cache removes everything
+segments=0	bytes=0
+4. A scan larger than the cache evicts file segments; the counters stay consistent
+file_segments_by_size_eq_count=1	bytes_by_segment_size_eq_downloaded_size=1
+5. The asynchronous metrics have one key per bucket
+metric=FilesystemCacheBytesBySegmentSize	keys=['1048576','16777216','2097152','4194304','524288','8388608','inf']
+metric=FilesystemCacheFileSegmentsBySize	keys=['1048576','16777216','2097152','4194304','524288','8388608','inf']
+6. The asynchronous metrics count file segments and bytes
+segments_include_this_cache=1	segments_not_above_files=1	bytes_include_this_cache=1	bytes_not_above_cache_bytes=1

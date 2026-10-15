@@ -26,6 +26,41 @@ TEST(ByteRange, ZeroSize)
     EXPECT_EQ(r.end(), 0);
 }
 
+TEST(ByteRange, Intersect)
+{
+    const ByteRange r{100, 50};
+    auto expect = [](ByteRange got, size_t offset, size_t size)
+    {
+        EXPECT_EQ(got.offset, offset);
+        EXPECT_EQ(got.size, size);
+    };
+    expect(r.intersect({120, 10}), 120, 10);   /// inside
+    expect(r.intersect({90, 20}), 100, 10);    /// over the left end
+    expect(r.intersect({140, 20}), 140, 10);   /// over the right end
+    expect(r.intersect({0, 1000}), 100, 50);   /// covers it
+    expect(r.intersect({150, 10}), 0, 0);      /// touches it: empty
+    expect(r.intersect({0, 0}), 0, 0);
+}
+
+TEST(ByteRange, Subtract)
+{
+    const ByteRange r{100, 50};
+    auto expect = [](std::pair<ByteRange, ByteRange> got, ByteRange before, ByteRange after)
+    {
+        EXPECT_EQ(got.first.offset, before.offset);
+        EXPECT_EQ(got.first.size, before.size);
+        EXPECT_EQ(got.second.size, after.size);
+        if (after.size)
+            EXPECT_EQ(got.second.offset, after.offset);
+    };
+    expect(r.subtract({120, 10}), {100, 20}, {130, 20});   /// inside: both sides stay
+    expect(r.subtract({90, 20}), {100, 0}, {110, 40});     /// over the left end
+    expect(r.subtract({140, 20}), {100, 40}, {150, 0});    /// over the right end
+    expect(r.subtract({0, 1000}), {100, 0}, {150, 0});     /// covers it: nothing stays
+    expect(r.subtract({200, 10}), {100, 50}, {0, 0});      /// no overlap: all of it
+    expect(r.subtract({0, 0}), {100, 50}, {0, 0});
+}
+
 TEST(OwnedChainedBuffer, AllocateAndAccess)
 {
     auto buf = std::make_shared<OwnedChainedBuffer>(1024);
