@@ -1044,6 +1044,8 @@ public:
     UInt64 getCPUSlotQuantum() const;
     UInt64 getCPUSlotPreemptionTimeout() const;
     void setCPUSlotPreemption(bool cpu_slot_preemption, UInt64 cpu_slot_quantum_ns, UInt64 cpu_slot_preemption_timeout_ms);
+    bool getCPUSlotParking() const;
+    void setCPUSlotParking(bool value);
     UInt64 getConcurrentThreadsSoftLimitNum() const;
     UInt64 getConcurrentThreadsSoftLimitRatioToCores() const;
     String getConcurrentThreadsScheduler() const;
@@ -1323,6 +1325,9 @@ public:
     void checkSettingsConstraints(const SettingsChanges & changes, SettingSource source);
     void checkSettingsConstraints(SettingsChanges & changes, SettingSource source);
     void checkSettingsConstraintsForSettingsReset(const std::vector<String> & names, SettingSource source);
+    /// Clamping counterpart of `checkSettingsConstraintsForSettingsReset`: reduces `names` to the resets
+    /// allowed by the constraints and returns in `clamped_changes` the assignments replacing the clamped ones.
+    void clampSettingsConstraintsForSettingsReset(std::vector<String> & names, SettingsChanges & clamped_changes, SettingSource source);
     /// For the resets of a statement that also changes `profile`: `changes_applied_first` decides their constraints.
     void checkSettingsConstraintsForSettingsReset(const std::vector<String> & names, const SettingsChanges & changes_applied_first, SettingSource source);
     void clampToSettingsConstraints(SettingsChanges & changes, SettingSource source);
@@ -2118,7 +2123,17 @@ public:
     WriteSettings getWriteSettings() const;
 
     /** There are multiple conditions that have to be met to be able to use parallel replicas */
+    /// Whether parallel replicas are enabled, in any `parallel_replicas_mode`. Use it rather than reading
+    /// `enable_parallel_replicas`: in `read_tasks` mode `automatic_parallel_replicas_mode` decides instead on the initiator, so they do
+    /// not count as enabled there, although the setting stays on for cluster engines.
+    bool isParallelReplicasEnabled() const;
+    /// `automatic_parallel_replicas_mode`, except that forcing parallel replicas (`enable_parallel_replicas = 2`) turns the
+    /// automatic mode off. Read the mode through it rather than from the setting.
+    static UInt64 getAutomaticParallelReplicasMode(const Settings & settings_ref);
     bool canUseTaskBasedParallelReplicas() const;
+    /// Whether a cluster engine (`s3`, `url`, a table of a data lake catalog, ...) may be replaced by its `*Cluster`
+    /// variant over `cluster_for_parallel_replicas`, which ships the query text to the replicas.
+    bool canReplaceClusterEngineWithClusterVariant() const;
     bool canUseParallelReplicasOnInitiator() const;
     bool canUseParallelReplicasOnFollower() const;
     bool canUseParallelReplicasCustomKey() const;
@@ -2164,6 +2179,11 @@ public:
     ServerSettings getServerSettingsCopy() const;
 
 private:
+    /// `ignore_automatic_parallel_replicas` is for cluster engines (`s3`, `url`, a table of a data lake catalog, ...):
+    /// `automatic_parallel_replicas_mode` only decides for `MergeTree` reads, so they use parallel replicas whenever
+    /// they are enabled. It is also set for a follower, which reads the way the initiator decided.
+    bool canUseTaskBasedParallelReplicasImpl(bool ignore_automatic_parallel_replicas) const;
+
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> getSettingsConstraintsAndCurrentProfilesWithLock() const;
 
     void setCurrentProfileWithLock(const String & profile_name, bool check_constraints, const std::lock_guard<ContextSharedMutex> & lock);
