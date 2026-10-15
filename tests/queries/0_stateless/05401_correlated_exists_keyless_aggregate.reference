@@ -45,6 +45,19 @@
 1
 0	1
 1	1
+0	1
+1	1
+0	0
+1	1
+0	0
+1	1
+-- an always-NULL condition of an -If aggregate
+0	0
+1	0
+0	1
+1	1
+0	0	0
+1	0	1
 -- layouts of the decorrelated plan
 0	1	0	1
 1	1	0	1

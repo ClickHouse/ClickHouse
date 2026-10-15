@@ -23,6 +23,7 @@
 #include <DataTypes/getLeastSupertype.h>
 
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
 
 #include <Interpreters/ActionsDAG.h>
@@ -581,6 +582,13 @@ bool filterRejectsGroupWithoutRows(const FilterStep & filter_step, const Aggrega
     if (QueryPlanOptimizations::isSensitiveToEvaluationCount(dag))
         return false;
 
+    /// `count()` is passed as a constant column, so a function that can tell it from a full column is unknown.
+    for (const auto & node : dag.getNodes())
+    {
+        if (!allNodeFunctions(node, [](const IFunctionBase & function) { return function.isDeterministic(); }))
+            return false;
+    }
+
     ActionsDAG::IntermediateExecutionResult values;
 
     for (const auto & node : dag.getNodes())
@@ -1129,6 +1137,10 @@ QueryPlan decorrelateQueryPlan(
                 if (aggregate.function->getName().ends_with("If") && !aggregate.argument_names.empty())
                 {
                     const auto & filter_type = aggregate.function->getArgumentTypes().back();
+                    /// A condition that is always NULL already rejects the restored rows.
+                    if (filter_type->onlyNull())
+                        continue;
+
                     const auto & filter_node = filter_dag.findInOutputs(aggregate.argument_names.back());
                     const auto * combined = &filter_dag.addFunction(
                         FunctionFactory::instance().get("and", query_context), {&filter_node, marker_node}, {});

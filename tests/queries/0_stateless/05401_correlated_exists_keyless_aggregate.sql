@@ -97,6 +97,31 @@ WHERE explain ILIKE '%correlated_aggregate_input_marker%';
 SELECT o.number, EXISTS (
     SELECT * FROM (SELECT count() AS c FROM numbers(2) AS i WHERE i.number = o.number AND i.number = 1) WHERE c > o.t)
 FROM (SELECT number, toInt64(number) - 1 AS t FROM numbers(2)) AS o ORDER BY o.number;
+SELECT o.number, EXISTS (SELECT count() AS c FROM numbers(2) AS i WHERE i.number = o.number AND i.number = 1 HAVING isConstant(c) = 0)
+FROM numbers(2) AS o ORDER BY o.number;
+SELECT o.number, l.c
+FROM numbers(2) AS o
+INNER JOIN LATERAL (SELECT count() AS c FROM numbers(2) AS i WHERE i.number = o.number AND i.number = 1 HAVING isConstant(c) = 0) AS l ON true
+ORDER BY o.number
+SETTINGS allow_experimental_lateral_join = 1;
+SELECT o.number, l.c
+FROM numbers(2) AS o
+INNER JOIN LATERAL (
+    SELECT * FROM (SELECT count() AS c FROM numbers(2) AS i WHERE i.number = o.number AND i.number = 1) WHERE isConstant(c) = 0) AS l ON true
+ORDER BY o.number
+SETTINGS allow_experimental_lateral_join = 1;
+
+SELECT '-- an always-NULL condition of an -If aggregate';
+SELECT o.number, EXISTS (SELECT countIf(NULL) AS c FROM numbers(2) AS i WHERE i.number = o.number AND i.number = 1 HAVING c > 0)
+FROM numbers(2) AS o ORDER BY o.number;
+SELECT o.number, EXISTS (SELECT countIf(NULL) AS c FROM numbers(2) AS i WHERE i.number = o.number AND i.number = 1 HAVING c = 0)
+FROM numbers(2) AS o ORDER BY o.number;
+SELECT o.number, l.c, l.s
+FROM numbers(2) AS o
+INNER JOIN LATERAL (
+    SELECT countIf(NULL) AS c, sumIf(i.number, i.number > 0) AS s FROM numbers(2) AS i WHERE i.number = o.number AND i.number = 1) AS l ON true
+ORDER BY o.number
+SETTINGS allow_experimental_lateral_join = 1;
 
 SELECT '-- layouts of the decorrelated plan';
 SELECT
