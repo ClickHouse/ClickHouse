@@ -1503,11 +1503,13 @@ void DatabaseDataLake::createTable(
     const auto compression_method_str = context_->getSettingsRef()[Setting::iceberg_metadata_compression_method].value;
     const auto compression_method = chooseCompressionMethod(compression_method_str, compression_method_str);
 
-    if (compression_method != CompressionMethod::None)
+    if (!compression_method_str.empty())
     {
         /// A catalog that writes the first metadata file itself reads the codec from this property.
+        /// Key on the raw setting: an explicit `none` must reach a catalog that defaults to gzip.
+        const String codec_name = compression_method == CompressionMethod::None ? "none" : toContentEncodingName(compression_method);
         Poco::JSON::Object::Ptr properties = new Poco::JSON::Object;
-        properties->set("write.metadata.compression-codec", toContentEncodingName(compression_method));
+        properties->set("write.metadata.compression-codec", codec_name);
         metadata_content->set("properties", properties);
     }
 

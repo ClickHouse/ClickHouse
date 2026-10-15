@@ -1522,6 +1522,31 @@ def test_create_without_engine_arguments(started_cluster, engine_clause):
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
 
 
+def test_create_without_engine_explicit_none_metadata_codec(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_create_without_engine_explicit_none_metadata_codec_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    node.query(
+        f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (x String)",
+        settings={
+            "allow_experimental_database_iceberg": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+            "default_table_engine": "None",
+            "iceberg_metadata_compression_method": "none",
+        },
+    )
+
+    # An explicit `none` must reach the catalog, so that a catalog defaulting to gzip does not compress the metadata.
+    catalog = load_catalog_impl(started_cluster)
+    table = catalog.load_table(f"{root_namespace}.{table_name}")
+    assert table.properties.get("write.metadata.compression-codec") == "none", table.properties
+    assert not table.metadata_location.endswith(".gz.metadata.json"), table.metadata_location
+
+
 @pytest.mark.parametrize("engine_clause", [" ENGINE = Iceberg", ""])
 def test_create_requires_catalog_table_engine_grant(started_cluster, engine_clause):
     node = started_cluster.instances["node1"]
