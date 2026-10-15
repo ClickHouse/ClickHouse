@@ -239,6 +239,9 @@ void RabbitMQConsumer::updateChannel(RabbitMQConnection & connection)
     last_commited_delivery_tag = 0;
     last_rejected_delivery_tag = 0;
     current = {};
+    /// The broker requeues what the old channel delivered and nobody acked: without this every reconnect would add a
+    /// window to the queue.
+    received.clear();
 
     consumer_channel = connection.createChannel();
     consumer_channel->onReady([&]()
