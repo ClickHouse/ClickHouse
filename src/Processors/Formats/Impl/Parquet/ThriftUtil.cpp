@@ -1,6 +1,7 @@
 #include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
 
 #include <Common/Exception.h>
+#include <base/defines.h>
 #include <IO/WriteBuffer.h>
 
 #include <fmt/format.h>
@@ -125,8 +126,245 @@ size_t columnChunkNestedMemory(const parq::ColumnChunk & column_chunk)
     return total_size;
 }
 
+/// Skips compact protocol values on the raw bytes. Accepts, rejects and consumes the same input as
+/// `apache::thrift::protocol::skip` on `CompactProtocol` with the same size and recursion limits.
+class CompactValueSkipper
+{
+public:
+    CompactValueSkipper(const uint8_t * end_, int32_t size_limit_, uint32_t recursion_limit_)
+        : end(end_), size_limit(size_limit_), recursion_limit(recursion_limit_)
+    {
+    }
+
+    /// `depth` is the recursion depth of the struct itself, as counted by TInputRecursionTracker,
+    /// which also counts every field value one level deeper.
+    const uint8_t * skipStruct(const uint8_t * pos, uint32_t depth) const
+    {
+        if (depth > recursion_limit) [[unlikely]]
+            throwDepthLimit();
+        while (true)
+        {
+            need(pos, 1);
+            const uint8_t header = *pos++;
+            const uint8_t type = header & 0x0f;
+            if (type == STOP)
+                return pos;
+            if (depth >= recursion_limit) [[unlikely]]
+                throwDepthLimit();
+            /// A zero delta means that the field id follows as a varint.
+            if ((header >> 4) == 0)
+                pos = skipVarint(pos);
+            switch (type)
+            {
+                case BOOLEAN_TRUE:
+                case BOOLEAN_FALSE:
+                    /// The value of a bool field is in the field header.
+                    break;
+                case I16:
+                case I32:
+                case I64:
+                    pos = skipVarint(pos);
+                    break;
+                case BINARY:
+                    pos = skipBinary(pos);
+                    break;
+                default:
+                    pos = skipValue(pos, type, depth + 1);
+                    break;
+            }
+        }
+    }
+
+private:
+    enum : uint8_t
+    {
+        STOP = 0x00, BOOLEAN_TRUE = 0x01, BOOLEAN_FALSE = 0x02, BYTE = 0x03, I16 = 0x04, I32 = 0x05, I64 = 0x06,
+        DOUBLE = 0x07, BINARY = 0x08, LIST = 0x09, SET = 0x0A, MAP = 0x0B, STRUCT = 0x0C, UUID = 0x0D,
+    };
+
+    const uint8_t * const end;
+    const int32_t size_limit;
+    const uint32_t recursion_limit;
+
+    [[noreturn]] static NO_INLINE void throwInvalidData(const char * message)
+    {
+        throw apache::thrift::protocol::TProtocolException(apache::thrift::protocol::TProtocolException::INVALID_DATA, message);
+    }
+
+    [[noreturn]] static NO_INLINE void throwDepthLimit()
+    {
+        throw apache::thrift::protocol::TProtocolException(apache::thrift::protocol::TProtocolException::DEPTH_LIMIT);
+    }
+
+    [[noreturn]] static NO_INLINE void throwBadSize(bool negative)
+    {
+        throw apache::thrift::protocol::TProtocolException(
+            negative ? apache::thrift::protocol::TProtocolException::NEGATIVE_SIZE : apache::thrift::protocol::TProtocolException::SIZE_LIMIT);
+    }
+
+    [[noreturn]] static NO_INLINE void throwUnknownType(uint8_t type)
+    {
+        throw apache::thrift::TException(std::string("don't know what type: ") + static_cast<char>(type));
+    }
+
+    ALWAYS_INLINE void need(const uint8_t * pos, size_t bytes) const
+    {
+        if (static_cast<size_t>(end - pos) < bytes) [[unlikely]]
+            throwInvalidData("Unexpected end of Thrift data");
+    }
+
+    static ALWAYS_INLINE void checkType(uint8_t type)
+    {
+        if (type > UUID) [[unlikely]]
+            throwUnknownType(type);
+    }
+
+    ALWAYS_INLINE const uint8_t * skipVarint(const uint8_t * pos) const
+    {
+        /// Like TCompactProtocol::readVarint64: at most 10 bytes.
+        for (size_t i = 0; i < 10; ++i)
+        {
+            need(pos, 1);
+            if (!(*pos++ & 0x80))
+                return pos;
+        }
+        throwInvalidData("Variable-length int over 10 bytes.");
+    }
+
+    /// Like TCompactProtocol::readVarint32 and its callers: a varint of up to 10 bytes truncated to 32 bits.
+    ALWAYS_INLINE const uint8_t * readSize(const uint8_t * pos, int32_t & size) const
+    {
+        uint64_t value = 0;
+        for (size_t i = 0; i < 10; ++i)
+        {
+            need(pos, 1);
+            const uint8_t byte = *pos++;
+            value |= static_cast<uint64_t>(byte & 0x7f) << (7 * i);
+            if (!(byte & 0x80))
+            {
+                size = static_cast<int32_t>(static_cast<uint32_t>(value));
+                if (size < 0 || (size_limit > 0 && size > size_limit)) [[unlikely]]
+                    throwBadSize(size < 0);
+                return pos;
+            }
+        }
+        throwInvalidData("Variable-length int over 10 bytes.");
+    }
+
+    ALWAYS_INLINE const uint8_t * skipBinary(const uint8_t * pos) const
+    {
+        int32_t size = 0;
+        pos = readSize(pos, size);
+        need(pos, size_t(size));
+        return pos + size;
+    }
+
+    /// Skips `count` elements of a list or set, at `depth`.
+    const uint8_t * skipElements(const uint8_t * pos, uint8_t type, int32_t count, uint32_t depth) const
+    {
+        if (count == 0)
+            return pos;
+        if (type == STOP) [[unlikely]]
+            throwInvalidData("invalid TType");
+        if (depth > recursion_limit) [[unlikely]]
+            throwDepthLimit();
+        switch (type)
+        {
+            case BOOLEAN_TRUE:
+            case BOOLEAN_FALSE:
+            case BYTE:
+                need(pos, size_t(count));
+                return pos + count;
+            case I16:
+            case I32:
+            case I64:
+                for (int32_t i = 0; i < count; ++i)
+                    pos = skipVarint(pos);
+                return pos;
+            case BINARY:
+                for (int32_t i = 0; i < count; ++i)
+                    pos = skipBinary(pos);
+                return pos;
+            default:
+                for (int32_t i = 0; i < count; ++i)
+                    pos = skipValue(pos, type, depth);
+                return pos;
+        }
+    }
+
+    /// Skips a value of any type except STOP; the value is at `depth`.
+    const uint8_t * skipValue(const uint8_t * pos, uint8_t type, uint32_t depth) const
+    {
+        if (depth > recursion_limit) [[unlikely]]
+            throwDepthLimit();
+        switch (type)
+        {
+            case BOOLEAN_TRUE:
+            case BOOLEAN_FALSE:
+            case BYTE:
+                /// Only reached for elements of containers: a bool element takes one byte.
+                need(pos, 1);
+                return pos + 1;
+            case I16:
+            case I32:
+            case I64:
+                return skipVarint(pos);
+            case DOUBLE:
+                need(pos, 8);
+                return pos + 8;
+            case UUID:
+                need(pos, 16);
+                return pos + 16;
+            case BINARY:
+                return skipBinary(pos);
+            case STRUCT:
+                return skipStruct(pos, depth);
+            case LIST:
+            case SET:
+            {
+                need(pos, 1);
+                const uint8_t header = *pos++;
+                int32_t count = (header >> 4) & 0x0f;
+                if (count == 15)
+                    pos = readSize(pos, count);
+                else if (size_limit > 0 && count > size_limit) [[unlikely]]
+                    throwBadSize(false);
+                const uint8_t element_type = header & 0x0f;
+                checkType(element_type);
+                return skipElements(pos, element_type, count, depth + 1);
+            }
+            case MAP:
+            {
+                int32_t count = 0;
+                pos = readSize(pos, count);
+                if (count == 0)
+                    return pos;
+                need(pos, 1);
+                const uint8_t types = *pos++;
+                const uint8_t key_type = types >> 4;
+                const uint8_t value_type = types & 0x0f;
+                checkType(key_type);
+                checkType(value_type);
+                if (key_type == STOP || value_type == STOP) [[unlikely]]
+                    throwInvalidData("invalid TType");
+                if (depth >= recursion_limit) [[unlikely]]
+                    throwDepthLimit();
+                for (int32_t i = 0; i < count; ++i)
+                {
+                    pos = skipValue(pos, key_type, depth + 1);
+                    pos = skipValue(pos, value_type, depth + 1);
+                }
+                return pos;
+            }
+            default:
+                checkType(type);
+                throwInvalidData("invalid TType");
+        }
+    }
+};
+
 /// Hides the methods that the generated `FileMetaData::read` calls, to skip the elements of
-/// `RowGroup::columns` instead of reading them. `skip` is `TVirtualProtocol<CompactProtocol>::skip`,
+/// `RowGroup::columns` instead of reading them. The elements are skipped by `CompactValueSkipper`,
 /// so skipped values never come back here.
 class ColumnChunkSkippingProtocol : public CompactProtocol
 {
@@ -173,17 +411,23 @@ public:
             auto & row_group_offsets = offsets.back();
             row_group_offsets.clear();
             row_group_offsets.reserve(size + 1);
-            /// `skip` counts every value against the recursion limit, the generated reader only structs.
-            /// One level less accepts every column chunk that the generated reader accepts.
-            decrementInputRecursionDepth();
+            uint32_t available = 0;
+            const uint8_t * begin = trans_->borrow(nullptr, &available);
+            const UInt32 begin_position = position();
+            const CompactValueSkipper skipper(begin + available, sizeLimit(limit), getRecursionLimit());
+            const uint8_t * pos = begin;
             for (uint32_t i = 0; i < size; ++i)
             {
-                row_group_offsets.push_back(position());
+                row_group_offsets.push_back(begin_position + UInt32(pos - begin));
                 /// Read as a struct whatever the declared element type, like the generated reader.
-                bytes += skip(apache::thrift::protocol::T_STRUCT);
+                /// Depth 2, one less than the generated reader's: `skip` counts every value against the
+                /// recursion limit, the generated reader only structs.
+                pos = skipper.skipStruct(pos, /*depth=*/ 2);
             }
+            const auto skipped = UInt32(pos - begin);
+            trans_->consume(skipped);
+            bytes += skipped;
             row_group_offsets.push_back(position());
-            incrementInputRecursionDepth();
             size = 0;
         }
         return bytes;

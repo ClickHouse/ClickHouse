@@ -506,6 +506,87 @@ WriteFn chunkWithMisdeclaredEncodings()
     };
 }
 
+void writeRandomValue(Protocol & w, TType type, std::mt19937_64 & rng, size_t depth)
+{
+    static constexpr TType types[] = {TType::T_BOOL, TType::T_BYTE, TType::T_I16, TType::T_I32, TType::T_I64, TType::T_DOUBLE,
+        TType::T_STRING, TType::T_UUID, TType::T_STRUCT, TType::T_LIST, TType::T_SET, TType::T_MAP};
+    auto random_type = [&] { return types[rng() % (depth < 3 ? std::size(types) : 8)]; };
+    switch (type)
+    {
+        case TType::T_BOOL: w.writeBool(rng() % 2); break;
+        case TType::T_BYTE: w.writeByte(int8_t(rng())); break;
+        case TType::T_I16: w.writeI16(int16_t(rng())); break;
+        case TType::T_I32: w.writeI32(int32_t(rng())); break;
+        case TType::T_I64: w.writeI64(int64_t(rng() >> (rng() % 64))); break;
+        case TType::T_DOUBLE: w.writeDouble(1.5); break;
+        case TType::T_STRING: w.writeBinary(std::string(rng() % 20, 'x')); break;
+        case TType::T_UUID: w.writeUUID(apache::thrift::TUuid{}); break;
+        case TType::T_STRUCT:
+        {
+            w.writeStructBegin("");
+            for (size_t i = rng() % 4; i > 0; --i)
+            {
+                const TType field_type = random_type();
+                w.writeFieldBegin("", field_type, int16_t(rng() % 300));
+                writeRandomValue(w, field_type, rng, depth + 1);
+                w.writeFieldEnd();
+            }
+            w.writeFieldStop();
+            w.writeStructEnd();
+            break;
+        }
+        case TType::T_LIST:
+        case TType::T_SET:
+        {
+            const TType element_type = random_type();
+            const auto size = uint32_t(rng() % 20);
+            w.writeListBegin(element_type, size);
+            for (uint32_t i = 0; i < size; ++i)
+                writeRandomValue(w, element_type, rng, depth + 1);
+            w.writeListEnd();
+            break;
+        }
+        case TType::T_MAP:
+        {
+            const TType key_type = random_type();
+            const TType value_type = random_type();
+            const auto size = uint32_t(rng() % 3);
+            w.writeMapBegin(key_type, value_type, size);
+            for (uint32_t i = 0; i < size; ++i)
+            {
+                writeRandomValue(w, key_type, rng, depth + 1);
+                writeRandomValue(w, value_type, rng, depth + 1);
+            }
+            w.writeMapEnd();
+            break;
+        }
+        default: break;
+    }
+}
+
+/// `file_offset` plus fields that ColumnChunk does not have, of every type.
+WriteFn chunkWithUnknownFields(uint64_t seed)
+{
+    return [=](Protocol & w)
+    {
+        static constexpr TType field_types[] = {TType::T_BOOL, TType::T_STRUCT, TType::T_LIST, TType::T_SET, TType::T_MAP, TType::T_UUID};
+        std::mt19937_64 rng(seed); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp): deterministic seed for reproducible test
+        w.writeStructBegin("ColumnChunk");
+        w.writeFieldBegin("file_offset", TType::T_I64, 2);
+        w.writeI64(int64_t(seed % 1000));
+        w.writeFieldEnd();
+        for (int16_t id = 100; id < 112; ++id)
+        {
+            const TType type = field_types[rng() % std::size(field_types)];
+            w.writeFieldBegin("", type, int16_t(id + rng() % 2 * 200));
+            writeRandomValue(w, type, rng, 0);
+            w.writeFieldEnd();
+        }
+        w.writeFieldStop();
+        w.writeStructEnd();
+    };
+}
+
 }
 
 TEST(ParquetLazyColumnChunks, EquivalentToFullParse)
@@ -627,6 +708,19 @@ TEST(ParquetLazyColumnChunks, ListElementTypeIgnored)
     ASSERT_EQ(full.row_groups[0].sorting_columns.size(), 1);
     EXPECT_EQ(full.row_groups[1].columns[1], makeColumnChunk(1, 1));
     EXPECT_EQ(parseLazy(bytes), full);
+}
+
+TEST(ParquetLazyColumnChunks, UnknownFieldsOfEveryType)
+{
+    /// The generated reader skips unknown fields with `skip`, the skeleton skips whole column chunks.
+    for (uint64_t seed = 0; seed < 300; ++seed)
+    {
+        const std::string bytes = writeFileMetaData(
+            {{rowGroup({{chunkWithUnknownFields(seed), chunk(0, 1), chunkWithUnknownFields(seed + 1000)}})}});
+        const auto full = parseFull(bytes);
+        ASSERT_EQ(full.row_groups.at(0).columns.size(), 3);
+        ASSERT_EQ(parseLazy(bytes), full) << seed;
+    }
 }
 
 TEST(ParquetLazyColumnChunks, NestingLimit)
