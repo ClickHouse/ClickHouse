@@ -9,9 +9,11 @@ SET explain_query_plan_default = 'legacy';  -- for the Granules assertion
 SET parallel_replicas_local_plan = 1;       -- for explain with indexes
 SET session_timezone = 'UTC';               -- the zone the key types below are built with
 
-DROP TABLE IF EXISTS t_hash, t_element, t_nested, t_dt64, t_skip, t_explicit;
+DROP TABLE IF EXISTS t_hash, t_element, t_nested, t_dt64, t_skip, t_explicit, t_named, t_named_nested;
 
 CREATE TABLE t_hash (t Tuple(DateTime, UInt8)) ENGINE = MergeTree ORDER BY cityHash64(t) SETTINGS index_granularity = 1;
+CREATE TABLE t_named (t Tuple(d DateTime, n UInt8)) ENGINE = MergeTree ORDER BY cityHash64(t) SETTINGS index_granularity = 1;
+CREATE TABLE t_named_nested (t Tuple(k UInt8, p Tuple(d DateTime, n UInt8))) ENGINE = MergeTree ORDER BY cityHash64(t) SETTINGS index_granularity = 1;
 CREATE TABLE t_element (t Tuple(DateTime, UInt8)) ENGINE = MergeTree ORDER BY t.1 SETTINGS index_granularity = 1;
 CREATE TABLE t_nested (t Tuple(Tuple(DateTime, UInt8), UInt8)) ENGINE = MergeTree ORDER BY cityHash64(t) SETTINGS index_granularity = 1;
 CREATE TABLE t_dt64 (t Tuple(DateTime64(3), UInt8)) ENGINE = MergeTree ORDER BY cityHash64(t) SETTINGS index_granularity = 1;
@@ -25,6 +27,8 @@ INSERT INTO t_nested SELECT ((toDateTime('2026-01-01 12:00:00', 'America/New_Yor
 INSERT INTO t_dt64 SELECT (toDateTime64('2026-01-01 12:00:00', 3, 'America/New_York') + if(number < 8, 0, number * 3600), 1) FROM numbers(16);
 INSERT INTO t_skip SELECT number, (toDateTime('2026-01-01 12:00:00', 'America/New_York') + if(number < 8, 0, number * 3600), 1) FROM numbers(16);
 INSERT INTO t_explicit SELECT (toDateTime('2026-01-01 12:00:00', 'UTC') + if(number < 8, 0, number * 3600), 1) FROM numbers(16);
+INSERT INTO t_named SELECT (toDateTime('2026-01-01 12:00:00', 'America/New_York') + if(number < 8, 0, number * 3600), 1) FROM numbers(16);
+INSERT INTO t_named_nested SELECT (2, (toDateTime('2026-01-01 12:00:00', 'America/New_York') + if(number < 8, 0, number * 3600), 1)) FROM numbers(16);
 
 SET session_timezone = 'America/New_York';
 
@@ -43,8 +47,16 @@ SELECT countIf(t = ('2026-01-01 12:00:00', toUInt8(1))) FROM t_skip;
 SELECT count() FROM t_explicit WHERE t = ('2026-01-01 12:00:00', toUInt8(1));
 SELECT countIf(t = ('2026-01-01 12:00:00', toUInt8(1))) FROM t_explicit;
 
+-- The comparison pairs the elements of named tuples by position, whatever their names.
+SELECT count() FROM t_named WHERE t = CAST(('2026-01-01 12:00:00', 1), 'Tuple(d String, n UInt8)');
+SELECT countIf(t = CAST(('2026-01-01 12:00:00', 1), 'Tuple(d String, n UInt8)')) FROM t_named;
+SELECT count() FROM t_named WHERE t = CAST(('2026-01-01 12:00:00', 1), 'Tuple(n String, d UInt8)');
+SELECT countIf(t = CAST(('2026-01-01 12:00:00', 1), 'Tuple(n String, d UInt8)')) FROM t_named;
+SELECT count() FROM t_named_nested WHERE t = CAST((2, ('2026-01-01 12:00:00', 1)), 'Tuple(UInt8, Tuple(n String, d UInt8))');
+SELECT countIf(t = CAST((2, ('2026-01-01 12:00:00', 1)), 'Tuple(UInt8, Tuple(n String, d UInt8))')) FROM t_named_nested;
+
 -- The key still prunes the rows holding other instants.
 SELECT count() FROM (EXPLAIN indexes = 1 SELECT count() FROM t_hash WHERE t = ('2026-01-01 12:00:00', toUInt8(1)))
 WHERE explain ILIKE '%Granules: %/16' AND explain NOT ILIKE '%Granules: 16/16';
 
-DROP TABLE t_hash, t_element, t_nested, t_dt64, t_skip, t_explicit;
+DROP TABLE t_hash, t_element, t_nested, t_dt64, t_skip, t_explicit, t_named, t_named_nested;

@@ -2264,10 +2264,17 @@ static bool tryNormalizeTextFieldForZonelessDateTimeInput(
         element_types[i] = std::move(element_type);
     }
 
-    if (changed)
-        value_type = constant_tuple->hasExplicitNames()
-            ? std::make_shared<DataTypeTuple>(element_types, constant_tuple->getElementNames())
-            : std::make_shared<DataTypeTuple>(element_types);
+    if (!changed)
+        return true;
+
+    /// A cast between named tuples pairs elements by name, while the comparison pairs them by position.
+    if (constant_tuple->hasExplicitNames() && input_tuple->hasExplicitNames()
+        && constant_tuple->getElementNames() != input_tuple->getElementNames())
+        return false;
+
+    value_type = constant_tuple->hasExplicitNames()
+        ? std::make_shared<DataTypeTuple>(element_types, constant_tuple->getElementNames())
+        : std::make_shared<DataTypeTuple>(element_types);
     return true;
 }
 
