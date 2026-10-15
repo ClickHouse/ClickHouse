@@ -1300,13 +1300,16 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
     /// participates only when its own rows are among the flushed ones - when it merely evicts rows
     /// buffered by earlier queries, the eviction makes no pre-write decision for it, and the query's
     /// own first write still runs the check.
-    InsertStartGatesPtr gates_for_write;
-    if (!flushed_gates.empty())
-        gates_for_write = std::make_shared<InsertStartGates>(flushed_gates);
-
+    ///
+    /// The registry is constructed inside the `try` block below: when its allocation throws, the rows
+    /// have to return to the buffer as on any other failure of the write.
     Stopwatch watch;
     try
     {
+        InsertStartGatesPtr gates_for_write;
+        if (!flushed_gates.empty())
+            gates_for_write = std::make_shared<InsertStartGates>(flushed_gates);
+
         writeBlockToDestination(block_to_write, getDestinationTable(), gates_for_write);
     }
     catch (...)
@@ -1324,12 +1327,11 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
         /// this write was the one rejected by the `Too many parts` check, the gate that rejected it now
         /// sits in these registries; the next flush of the rows does not inherit that rejection - it
         /// runs the check anew - see `InsertStartGates::get`.
-        for (auto & gates : flushed_gates)
-        {
-            if (std::find(buffer.contributing_gates.begin(), buffer.contributing_gates.end(), gates)
-                == buffer.contributing_gates.end())
-                buffer.contributing_gates.push_back(gates);
-        }
+        ///
+        /// The buffer is locked during the write, so nothing has been recorded in `contributing_gates`
+        /// since it was taken, and the swap restores the record without allocating.
+        chassert(buffer.contributing_gates.empty());
+        buffer.contributing_gates.swap(flushed_gates);
 
         if (!buffer.first_write_time)
             buffer.first_write_time = current_time;
