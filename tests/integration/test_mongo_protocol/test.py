@@ -1360,6 +1360,59 @@ def test_insert_decimal_that_fits_no_decimal128_is_an_error(started_cluster):
         collection.insert_one({"id": 2, "d": Decimal128("NaN")})
 
 
+def test_insert_keeps_doubles_and_decimals_exact(started_cluster):
+    """A BSON double is a `Float64` column, even when the first value is within the range of a
+    `Float32`. A decimal of a larger scale than the one of its column - in the same batch or in
+    a later insert - is rejected rather than rounded. A profile that tolerates malformed rows
+    does not let an acknowledged insert drop one."""
+    from bson.decimal128 import Decimal128
+
+    node = cluster.instances["node"]
+    client = make_client()
+
+    doubles = client["db"]["insert_doubles"]
+    doubles.drop()
+    doubles.insert_one({"id": 1, "x": 1.23456789012345, "xs": [1.5, 1.23456789012345]})
+    assert list(doubles.find({}, {"_id": 0})) == [{"id": 1, "x": 1.23456789012345, "xs": [1.5, 1.23456789012345]}]
+    assert doubles.count_documents({"x": 1.23456789012345}) == 1
+
+    decimals = client["db"]["insert_decimal_scales"]
+    decimals.drop()
+    with pytest.raises(pymongo.errors.OperationFailure, match="fractional digits"):
+        decimals.insert_many([{"id": 1, "d": Decimal128("1.5")}, {"id": 2, "d": Decimal128("1.25")}])
+    decimals.insert_one({"id": 1, "d": Decimal128("1.5")})
+    with pytest.raises(pymongo.errors.OperationFailure, match="fractional digits"):
+        decimals.insert_one({"id": 2, "d": Decimal128("1.25")})
+    decimals.insert_one({"id": 3, "d": Decimal128("2")})
+    assert [doc["d"] for doc in sorted(decimals.find({}), key=lambda doc: doc["id"])] == [Decimal128("1.5"), Decimal128("2.0")]
+
+    node.query("DROP USER IF EXISTS mongo_tolerant", password="123")
+    node.query(
+        "CREATE USER mongo_tolerant IDENTIFIED WITH plaintext_password BY 'mongo_pass' "
+        "SETTINGS input_format_allow_errors_num = 10, input_format_allow_errors_ratio = 1",
+        password="123",
+    )
+    node.query("GRANT SELECT, INSERT, SHOW ON db.* TO mongo_tolerant", password="123")
+    typed = client["db"]["insert_tolerant"]
+    typed.drop()
+    typed.insert_one({"a": 0})
+    tolerant = make_client(user="mongo_tolerant", password="mongo_pass", database="db")["db"]["insert_tolerant"]
+    with pytest.raises(pymongo.errors.PyMongoError):
+        tolerant.insert_many([{"a": 1}, {"a": "bad"}, {"a": 3}])
+    assert typed.count_documents({}) == 1
+    node.query("DROP USER mongo_tolerant", password="123")
+
+
+def test_rename_of_a_subdocument_replaces_the_target(started_cluster):
+    """`$rename` of a subdocument replaces the target field as a whole, so a leaf of the target
+    that the source does not have goes back to its default."""
+    collection = make_client()["db"]["rename_replaces_target"]
+    collection.drop()
+    collection.insert_one({"id": 1, "profile": {"name": "alpha"}, "user": {"name": "old", "age": 99}})
+    collection.update_many({}, {"$rename": {"profile": "user"}})
+    assert wait_for(lambda: collection.find_one({}, {"_id": 0})["user"] == {"name": "alpha", "age": 0})
+
+
 def test_in_on_array_field_tests_the_elements(started_cluster):
     """Mongo applies `$in` to an array field by asking whether any element of it is among the
     candidates, and `$nin` is its negation. `$size` matches arrays only: a string of the right

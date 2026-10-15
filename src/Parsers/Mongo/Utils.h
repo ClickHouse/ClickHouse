@@ -7,6 +7,7 @@
 #include <rapidjson/document.h>
 
 #include <base/types.h>
+#include <Parsers/IAST_fwd.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -97,8 +98,25 @@ String makeFieldSubtreePattern(const std::vector<String> & paths);
 std::optional<rapidjson::Value>
 findField(const rapidjson::Value & value, const std::string & key, rapidjson::Document::AllocatorType & allocator);
 
-rapidjson::Value
-parseData(const char * begin, const char * end, rapidjson::Document::AllocatorType & allocator, bool wrap_into_array = true);
+/** A key of a Mongo sort. Mongo sorts an array by its smallest element in an ascending sort and
+  * by its largest one in a descending sort, while ClickHouse compares arrays lexicographically, so
+  * a sort on an array is rejected rather than answered in a different order. The rejection is a
+  * `throwIf` on the type name of the key, which is a constant, so it fails when the query is
+  * analyzed, and otherwise the condition folds away and leaves the key itself.
+  */
+ASTPtr makeMongoSortKey(ASTPtr key);
+
+/** An element of the `ORDER BY` of a Mongo sort, see `makeMongoSortKey`. Mongo orders `null`
+  * below every other value, so it comes first in an ascending sort and last in a descending one.
+  * The placement is marked as given explicitly, so that it survives formatting the query as text.
+  */
+ASTPtr makeMongoOrderByElement(ASTPtr key, int direction);
+
+/** Parses the JSON text of a query. A nesting deeper than `max_depth` - the `max_parser_depth` of
+  * the query, zero for no limit - is rejected before anything recursive walks the value.
+  */
+rapidjson::Value parseData(
+    const char * begin, const char * end, rapidjson::Document::AllocatorType & allocator, size_t max_depth, bool wrap_into_array = true);
 
 
 class MongoQueryKeyNameExtractor

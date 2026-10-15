@@ -4,7 +4,6 @@
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTQueryParameter.h>
 #include <Parsers/IAST_fwd.h>
 
@@ -37,11 +36,7 @@ bool ParserMongoOrderBy::parseImpl(ASTPtr & node)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The direction of the sort on '{}' must be 1 or -1", it->name.GetString());
 
         const int direction = static_cast<int>(it->value.GetInt64());
-        auto element = make_intrusive<ASTOrderByElement>();
-        element->direction = direction;
-        element->nulls_direction = direction;
-        element->children.push_back(make_intrusive<ASTIdentifier>(it->name.GetString()));
-        result->children.push_back(element);
+        result->children.push_back(makeMongoOrderByElement(make_intrusive<ASTIdentifier>(it->name.GetString()), direction));
     }
     node = result;
     return true;

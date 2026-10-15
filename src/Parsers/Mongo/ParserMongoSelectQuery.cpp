@@ -91,7 +91,8 @@ bool ParserMongoSelectQuery::parseImpl(ASTPtr & node)
     {
         ASTPtr order_by_node;
         auto order_by = *metadata->getOrderBy();
-        auto order_by_tree = parseData(order_by.data(), order_by.data() + order_by.size(), metadata->getAllocator(), false);
+        auto order_by_tree = parseData(
+            order_by.data(), order_by.data() + order_by.size(), metadata->getAllocator(), metadata->max_parser_depth, false);
         if (!ParserMongoOrderBy(std::move(order_by_tree), metadata, "").parseImpl(order_by_node))
         {
             return false;

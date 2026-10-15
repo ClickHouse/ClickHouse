@@ -25,7 +25,7 @@ run() {
         | head -1 | sed -e 's/^Received exception.*//' -e 's/ (version .*//' -e 's/\. ([A-Z_]*)$//' -e 's/DB::Exception: //'
 }
 
-mongo 'db.mongo_date_from_string_tz.aggregate([{"$project" : {"utc" : {"$dateFromString" : {"dateString" : "$s"}}, "newYork" : {"$dateFromString" : {"dateString" : "$s", "timezone" : "America/New_York"}}, "newYorkFormatted" : {"$dateFromString" : {"dateString" : "$s", "format" : "%Y-%m-%d %H:%i:%S", "timezone" : "America/New_York"}}}}]);'
+mongo 'db.mongo_date_from_string_tz.aggregate([{"$project" : {"utc" : {"$dateFromString" : {"dateString" : "$s"}}, "newYork" : {"$dateFromString" : {"dateString" : "$s", "timezone" : "America/New_York"}}, "newYorkFormatted" : {"$dateFromString" : {"dateString" : "$s", "format" : "%Y-%m-%d %H:%M:%S", "timezone" : "America/New_York"}}}}]);'
 
 run 'db.mongo_date_from_string_tz.aggregate([{"$project" : {"d" : {"$dateFromString" : {"dateString" : "$s", "onNull" : 0}}}}]);'
 run 'db.mongo_date_from_string_tz.aggregate([{"$project" : {"d" : {"$dateFromString" : {"dateString" : "$s", "onError" : 0}}}}]);'

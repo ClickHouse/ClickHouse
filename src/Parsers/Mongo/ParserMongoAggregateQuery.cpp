@@ -120,6 +120,7 @@ public:
     ASTPtr select_list;
     ASTPtr where;
     ASTPtr group_by;
+    ASTPtr having;
     ASTPtr order_by;
     ASTPtr limit;
     ASTPtr offset;
@@ -134,7 +135,7 @@ public:
 
     /// True when nothing but a `WHERE` has been collected, so a stage that produces the list of
     /// columns can be folded into the select being built.
-    bool onlyFiltered() const { return !select_list && !group_by && !order_by && !limit && !offset; }
+    bool onlyFiltered() const { return !select_list && !group_by && !having && !order_by && !limit && !offset; }
 
     void wrap()
     {
@@ -153,6 +154,7 @@ public:
         select_list = nullptr;
         where = nullptr;
         group_by = nullptr;
+        having = nullptr;
         order_by = nullptr;
         limit = nullptr;
         offset = nullptr;
@@ -217,6 +219,8 @@ public:
             select->setExpression(ASTSelectQuery::Expression::WHERE, where->clone());
         if (group_by)
             select->setExpression(ASTSelectQuery::Expression::GROUP_BY, group_by->clone());
+        if (having)
+            select->setExpression(ASTSelectQuery::Expression::HAVING, having->clone());
         if (order_by)
             select->setExpression(ASTSelectQuery::Expression::ORDER_BY, order_by->clone());
         if (limit)
@@ -260,6 +264,17 @@ UInt64 parseCount(const rapidjson::Value & value, std::string_view stage, bool p
 }
 
 ASTPtr translatePipeline(const rapidjson::Value & pipeline, ASTPtr source, const std::shared_ptr<QueryMetadata> & metadata);
+
+/** The aggregation of the whole stream into one document - a `$group` with a `_id` of `null`, a
+  * `$count` - produces no document at all when the stream is empty, while an aggregation without
+  * keys in ClickHouse produces one row of the default values. The `HAVING` drops that row, and it
+  * also makes the select an aggregation when it computes nothing but constants, so that a
+  * nonempty stream becomes one document rather than one per row.
+  */
+ASTPtr makeNonEmptyGroupCondition()
+{
+    return makeASTFunction("greater", makeASTFunction("count"), makeLiteral(Field(UInt64(0))));
+}
 
 void translateMatch(SelectChain & chain, const rapidjson::Value & stage, const std::shared_ptr<QueryMetadata> & metadata)
 {
@@ -306,6 +321,7 @@ void translateGroup(SelectChain & chain, const rapidjson::Value & stage)
     {
         /// `{"_id": null}` aggregates the whole stream into one document.
         select_list->children.push_back(withAlias(makeLiteral(Field()), "_id"));
+        chain.having = makeNonEmptyGroupCondition();
     }
     else
     {
@@ -464,7 +480,7 @@ void translateSet(SelectChain & chain, const rapidjson::Value & stage)
 
     /// `$set` keeps every field of the document and adds its own on top, so the select it produces
     /// starts from `*`; a field it replaces is dropped from that `*` first.
-    if (chain.select_list || chain.group_by || chain.order_by || chain.limit || chain.offset)
+    if (!chain.onlyFiltered())
         chain.wrap();
 
     chain.select_list_preserves_order_keys = true;
@@ -493,7 +509,13 @@ void translateSort(SelectChain & chain, const rapidjson::Value & stage)
     if (!stage.IsObject() || stage.MemberCount() == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The argument of '$sort' must be a non empty document");
 
-    if (chain.order_by || chain.limit || chain.offset)
+    /** The sort orders the documents the preceding stage produced. A stage that builds the list of
+      * columns - `$project`, `$set`, `$group` - may compute a field under the name of a column of
+      * its source, and in the same select the `ORDER BY` would name the source column, because the
+      * generated query prefers a column name to an alias (see `ParserMongoAggregateQuery::parseImpl`).
+      * So the sort runs on top of such a stage rather than next to it.
+      */
+    if (!chain.onlyFiltered())
         chain.wrap();
 
     auto order_by = make_intrusive<ASTExpressionList>();
@@ -506,11 +528,7 @@ void translateSort(SelectChain & chain, const rapidjson::Value & stage)
 
         const int direction = static_cast<int>(it->value.GetInt64());
         auto key = make_intrusive<ASTIdentifier>(String(stringView(it->name)));
-        auto element = make_intrusive<ASTOrderByElement>();
-        element->children.push_back(key);
-        element->direction = direction;
-        element->nulls_direction = direction;
-        order_by->children.push_back(std::move(element));
+        order_by->children.push_back(makeMongoOrderByElement(key, direction));
         order.keys.emplace_back(std::move(key), direction);
     }
 
@@ -531,6 +549,7 @@ void translateCount(SelectChain & chain, const rapidjson::Value & stage)
     auto select_list = make_intrusive<ASTExpressionList>();
     select_list->children.push_back(withAlias(makeASTFunction("count"), std::string(stringView(stage))));
     chain.select_list = std::move(select_list);
+    chain.having = makeNonEmptyGroupCondition();
 }
 
 void translateUnset(SelectChain & chain, const rapidjson::Value & stage)

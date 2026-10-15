@@ -4,6 +4,9 @@
 #include <optional>
 #include <string>
 
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTOrderByElement.h>
 #include <Common/StringUtils.h>
 
 namespace DB
@@ -12,6 +15,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int TOO_DEEP_RECURSION;
 }
 
 namespace Mongo
@@ -24,7 +28,14 @@ std::pair<const char *, const char *> getMetadataSubstring(const char * begin, c
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid query: can not parse metadata in query");
     }
-    return {begin, position};
+    /// The whitespace around the namespace is not part of it: a query sent as is to the server
+    /// may start with a line break, which must not become a part of the name of the database.
+    while (begin != position && isWhitespaceASCII(*begin))
+        ++begin;
+    const char * metadata_end = position;
+    while (metadata_end != begin && isWhitespaceASCII(*(metadata_end - 1)))
+        --metadata_end;
+    return {begin, metadata_end};
 }
 
 const char * findMatchingParenthesis(const char * begin, const char * end)
@@ -313,7 +324,36 @@ std::string normalizeQuotes(const std::string & input)
 
 }
 
-rapidjson::Value parseData(const char * begin, const char * end, rapidjson::Document::AllocatorType & allocator, bool wrap_into_array)
+namespace
+{
+
+/// The depth of the nesting is bounded before anything recursive - the copy below, the translation
+/// of a filter or an expression - walks the value, and this check itself recurses no deeper than
+/// the bound.
+void checkNestingDepth(const rapidjson::Value & value, size_t depth, size_t max_depth)
+{
+    if (depth > max_depth)
+        throw Exception(
+            ErrorCodes::TOO_DEEP_RECURSION,
+            "Maximum parse depth ({}) exceeded by the nesting of the Mongo query. Consider rising max_parser_depth parameter.",
+            max_depth);
+
+    if (value.IsObject())
+    {
+        for (const auto & member : value.GetObject())
+            checkNestingDepth(member.value, depth + 1, max_depth);
+    }
+    else if (value.IsArray())
+    {
+        for (const auto & element : value.GetArray())
+            checkNestingDepth(element, depth + 1, max_depth);
+    }
+}
+
+}
+
+rapidjson::Value
+parseData(const char * begin, const char * end, rapidjson::Document::AllocatorType & allocator, size_t max_depth, bool wrap_into_array)
 {
     std::string input(begin, end);
     if (wrap_into_array)
@@ -322,11 +362,39 @@ rapidjson::Value parseData(const char * begin, const char * end, rapidjson::Docu
 
     rapidjson::Document document;
 
-    if (document.Parse(input.data()).HasParseError())
+    /// The iterative parser does not recurse, so a deeply nested input cannot exhaust the stack
+    /// before its depth is checked.
+    if (document.Parse<rapidjson::kParseIterativeFlag>(input.data()).HasParseError())
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while parsing json in parseData {}", input);
     }
+    if (max_depth)
+        checkNestingDepth(document, 0, max_depth);
     return copyValue(document, allocator);
+}
+
+ASTPtr makeMongoSortKey(ASTPtr key)
+{
+    auto is_array = makeASTFunction(
+        "startsWith", makeASTFunction("toTypeName", key->clone()), make_intrusive<ASTLiteral>(Field(String("Array("))));
+    auto guard = makeASTFunction(
+        "throwIf",
+        std::move(is_array),
+        make_intrusive<ASTLiteral>(Field(String(
+            "A sort on an array is not supported: Mongo sorts an array by its smallest or its largest element, "
+            "and ClickHouse compares arrays element by element"))));
+    return makeASTFunction("if", std::move(guard), key->clone(), key);
+}
+
+ASTPtr makeMongoOrderByElement(ASTPtr key, int direction)
+{
+    auto element = make_intrusive<ASTOrderByElement>();
+    element->children.push_back(makeMongoSortKey(std::move(key)));
+    element->direction = direction;
+    /// `nulls_direction` equal to `direction` means `NULLS LAST`, the opposite one `NULLS FIRST`.
+    element->nulls_direction = -1;
+    element->nulls_direction_was_explicitly_specified = true;
+    return element;
 }
 
 std::optional<size_t> MongoQueryKeyNameExtractor::findPosition(const char * begin, const char * end)

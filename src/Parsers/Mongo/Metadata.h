@@ -21,6 +21,9 @@ class QueryMetadata
 public:
     bool add_data_to_query = true;
 
+    /// The `max_parser_depth` of the query, which bounds the nesting of every JSON text of it.
+    size_t max_parser_depth = 0;
+
     enum class QueryType : uint8_t
     {
         select = 0,

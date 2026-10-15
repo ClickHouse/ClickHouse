@@ -1,5 +1,7 @@
 #include <Parsers/Mongo/ParserMongoAggregateExpression.h>
 
+#include <algorithm>
+#include <cctype>
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
@@ -79,7 +81,6 @@ void requireArgumentCount(std::string_view operator_name, const std::vector<ASTP
 const std::unordered_map<std::string_view, std::string> direct_functions = {
     {"$toString", "toString"},
     {"$toLong", "toInt64"},
-    {"$toInt", "toInt32"},
     {"$toDouble", "toFloat64"},
     {"$toBool", "toBool"},
     {"$strLenBytes", "length"},
@@ -323,6 +324,221 @@ ASTPtr makeToDate(ASTPtr argument)
     return makeASTFunction("if", std::move(is_a_number), std::move(milliseconds), parsed(argument->clone()));
 }
 
+/** The lowering of `$toInt`. `toInt32` wraps a value outside the range of a 32-bit integer around,
+  * while Mongo rejects it, so the value is checked first; the fraction of a value in the range is
+  * truncated by both. The check reads the value as a `Float64`, which holds every integer of the
+  * range exactly and is `NaN` - out of every range - for a `NaN`. A `NULL` passes the check and
+  * converts to `NULL`, as it does in Mongo.
+  */
+ASTPtr makeToInt(ASTPtr argument)
+{
+    auto value = makeASTFunction("toFloat64", argument->clone());
+    auto in_range = makeASTFunction(
+        "and",
+        makeASTFunction("greater", value, makeLiteral(Field(Int64(-2147483649)))),
+        makeASTFunction("less", value->clone(), makeLiteral(Field(Int64(2147483648)))));
+    auto guard = makeASTFunction(
+        "throwIf",
+        makeASTFunction("not", std::move(in_range)),
+        makeLiteral(Field(String("The value of '$toInt' is out of the range of a 32-bit integer"))));
+    /// The condition is never true: it throws instead.
+    return makeASTFunction(
+        "if",
+        std::move(guard),
+        makeASTFunction("toInt32", makeLiteral(Field(UInt64(0)))),
+        makeASTFunction("toInt32", std::move(argument)));
+}
+
+/// The text of the `format` of a date operator, which has to be a constant string.
+std::string_view requireDateFormat(const rapidjson::Value & format, std::string_view operator_name)
+{
+    if (!format.IsString())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only a constant string is supported as the 'format' of '{}'", operator_name);
+    return stringView(format);
+}
+
+/** The lowering of `$dateToString`. Mongo's format specifiers differ from the ones of
+  * `formatDateTime` - Mongo's `%M` is the minute, while `formatDateTime` prints the name of the
+  * month for it - so the format is translated specifier by specifier. The specifiers that
+  * `formatDateTime` has no counterpart for become expressions of their own, concatenated with the
+  * formatted rest, and a specifier that cannot be translated is rejected rather than forwarded.
+  */
+ASTPtr makeDateToString(std::string_view format, const ASTPtr & date, const ASTPtr & timezone)
+{
+    std::vector<ASTPtr> parts;
+    std::string pending_format;
+
+    const auto with_timezone = [&](ASTPtr function)
+    {
+        if (timezone)
+            function->as<ASTFunction &>().arguments->children.push_back(timezone->clone());
+        return function;
+    };
+    const auto flush = [&]
+    {
+        if (pending_format.empty())
+            return;
+        parts.push_back(with_timezone(makeASTFunction("formatDateTime", date->clone(), makeLiteral(Field(pending_format)))));
+        pending_format.clear();
+    };
+    const auto zero_padded = [](ASTPtr number, UInt64 width)
+    {
+        return makeASTFunction(
+            "leftPad", makeASTFunction("toString", std::move(number)), makeLiteral(Field(width)), makeLiteral(Field(String("0"))));
+    };
+
+    for (size_t i = 0; i < format.size(); ++i)
+    {
+        if (format[i] != '%')
+        {
+            pending_format.push_back(format[i]);
+            continue;
+        }
+        if (i + 1 == format.size())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'format' of '$dateToString' must not end with a single '%'");
+
+        const char specifier = format[++i];
+        switch (specifier)
+        {
+            /// The same in both languages.
+            case 'b':
+            case 'd':
+            case 'G':
+            case 'H':
+            case 'j':
+            case 'm':
+            case 'S':
+            case 'u':
+            case 'V':
+            case 'Y':
+            case 'z':
+            case '%':
+                pending_format.push_back('%');
+                pending_format.push_back(specifier);
+                break;
+            /// The minute.
+            case 'M':
+                pending_format.append("%i");
+                break;
+            /// The milliseconds, `000` to `999`.
+            case 'L':
+                flush();
+                parts.push_back(zero_padded(makeASTFunction("toMillisecond", date->clone()), 3));
+                break;
+            /// The day of the week, from Sunday as 1 to Saturday as 7: the mode 3 of `toDayOfWeek`.
+            case 'w':
+                flush();
+                parts.push_back(makeASTFunction(
+                    "toString", with_timezone(makeASTFunction("toDayOfWeek", date->clone(), makeLiteral(Field(UInt64(3)))))));
+                break;
+            /// The week of the year, `00` to `53`, where the week 1 starts on the first Sunday of the
+            /// year: the mode 0 of `toWeek`.
+            case 'U':
+                flush();
+                parts.push_back(zero_padded(with_timezone(makeASTFunction("toWeek", date->clone(), makeLiteral(Field(UInt64(0))))), 2));
+                break;
+            default:
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The format specifier '%{}' of '$dateToString' is not supported", specifier);
+        }
+    }
+    flush();
+
+    if (parts.empty())
+        return makeLiteral(Field(String()));
+    if (parts.size() == 1)
+        return parts.front();
+    return makeFunction("concat", std::move(parts));
+}
+
+/** The format of `$dateFromString` in the language of `parseDateTime`, see `makeDateToString`.
+  * Only the specifiers that `parseDateTime` reads the same way are accepted.
+  */
+std::string translateDateFromStringFormat(std::string_view format)
+{
+    std::string result;
+    for (size_t i = 0; i < format.size(); ++i)
+    {
+        if (format[i] != '%')
+        {
+            result.push_back(format[i]);
+            continue;
+        }
+        if (i + 1 == format.size())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'format' of '$dateFromString' must not end with a single '%'");
+
+        const char specifier = format[++i];
+        switch (specifier)
+        {
+            case 'b':
+            case 'd':
+            case 'H':
+            case 'j':
+            case 'm':
+            case 'S':
+            case 'Y':
+            case 'z':
+            case '%':
+                result.push_back('%');
+                result.push_back(specifier);
+                break;
+            case 'M':
+                result.append("%i");
+                break;
+            default:
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The format specifier '%{}' of '$dateFromString' is not supported", specifier);
+        }
+    }
+    return result;
+}
+
+/** The lowering of `$dateTrunc`. Only `date` and `unit` are translated; an option that changes the
+  * result - a `binSize` other than 1, a `timezone`, a `startOfWeek` that is not the Monday that
+  * `dateTrunc` starts a week on - is rejected rather than ignored. Mongo starts a week on Sunday
+  * by default, so the unit `week` needs an explicit `startOfWeek` of Monday.
+  */
+ASTPtr makeDateTrunc(const rapidjson::Value & argument)
+{
+    constexpr std::string_view name = "$dateTrunc";
+    auto date = parseMongoAggregateExpression(requireMember(argument, "date", name));
+    const auto & unit = requireMember(argument, "unit", name);
+    if (!unit.IsString())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'unit' of '$dateTrunc' must be a string");
+
+    bool starts_week_on_monday = false;
+    for (const auto & member : argument.GetObject())
+    {
+        const auto member_name = stringView(member.name);
+        if (member_name == "date" || member_name == "unit")
+            continue;
+        if (member_name == "binSize")
+        {
+            if (!member.value.IsNumber() || member.value.GetDouble() != 1)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only a 'binSize' of 1 is supported in '$dateTrunc'");
+        }
+        else if (member_name == "startOfWeek")
+        {
+            if (!member.value.IsString())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'startOfWeek' of '$dateTrunc' must be a string");
+            String day(stringView(member.value));
+            std::transform(day.begin(), day.end(), day.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            if (day != "monday" && day != "mon")
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only a 'startOfWeek' of Monday is supported in '$dateTrunc'");
+            starts_week_on_monday = true;
+        }
+        else if (member_name == "timezone")
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The 'timezone' of '$dateTrunc' is not supported");
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown argument '{}' of '$dateTrunc'", member_name);
+    }
+
+    if (stringView(unit) == "week" && !starts_week_on_monday)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "The unit 'week' of '$dateTrunc' is only supported with a 'startOfWeek' of Monday: Mongo starts a week on Sunday by default");
+
+    return makeASTFunction("dateTrunc", makeLiteral(Field(String(stringView(unit)))), std::move(date));
+}
+
 ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
 {
     if (auto it = direct_functions.find(name); it != direct_functions.end())
@@ -466,12 +682,13 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
     }
 
     if (name == "$dateTrunc")
+        return makeDateTrunc(argument);
+
+    if (name == "$toInt")
     {
-        auto date = parseMongoAggregateExpression(requireMember(argument, "date", name));
-        const auto & unit = requireMember(argument, "unit", name);
-        if (!unit.IsString())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'unit' of '$dateTrunc' must be a string");
-        return makeASTFunction("dateTrunc", makeLiteral(Field(String(stringView(unit)))), date);
+        auto arguments = parseArguments(argument);
+        requireArgumentCount(name, arguments, 1);
+        return makeToInt(arguments[0]);
     }
 
     if (name == "$regexMatch")
@@ -526,9 +743,10 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
 
     if (name == "$trim" || name == "$ltrim" || name == "$rtrim")
     {
+        /// `FindMember` requires a document, so the argument is checked before it is searched.
+        auto input = parseMongoAggregateExpression(requireMember(argument, "input", name));
         if (argument.FindMember("chars") != argument.MemberEnd())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The 'chars' of '{}' is not supported", name);
-        auto input = parseMongoAggregateExpression(requireMember(argument, "input", name));
         const char * function = name == "$trim" ? "trimBoth" : (name == "$ltrim" ? "trimLeft" : "trimRight");
         return makeASTFunction(function, std::move(input));
     }
@@ -608,10 +826,22 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
     if (name == "$dateToString")
     {
         auto date = parseMongoAggregateExpression(requireMember(argument, "date", name));
-        auto format = parseMongoAggregateExpression(requireMember(argument, "format", name));
-        if (auto timezone_it = argument.FindMember("timezone"); timezone_it != argument.MemberEnd())
-            return makeASTFunction("formatDateTime", date, format, parseMongoAggregateExpression(timezone_it->value));
-        return makeASTFunction("formatDateTime", date, format);
+        ASTPtr timezone;
+        /// Mongo's default format, an ISO 8601 date in UTC with milliseconds.
+        std::string_view format = "%Y-%m-%dT%H:%M:%S.%LZ";
+        for (const auto & member : argument.GetObject())
+        {
+            auto member_name = stringView(member.name);
+            if (member_name == "format")
+                format = requireDateFormat(member.value, name);
+            else if (member_name == "timezone")
+                timezone = parseMongoAggregateExpression(member.value);
+            else if (member_name == "onNull")
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The 'onNull' of '{}' is not supported", name);
+            else if (member_name != "date")
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown argument '{}' of '{}'", member_name, name);
+        }
+        return makeDateToString(format, date, timezone);
     }
 
     if (name == "$dateFromString")
@@ -638,7 +868,10 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
 
         ASTPtr parsed;
         if (auto format_it = argument.FindMember("format"); format_it != argument.MemberEnd())
-            parsed = makeASTFunction("parseDateTime", text, parseMongoAggregateExpression(format_it->value), timezone);
+        {
+            auto format = translateDateFromStringFormat(requireDateFormat(format_it->value, name));
+            parsed = makeASTFunction("parseDateTime", text, makeLiteral(Field(std::move(format))), timezone);
+        }
         else
             parsed = makeASTFunction("parseDateTime64BestEffort", text, makeLiteral(Field(UInt64(3))), timezone);
 
@@ -774,12 +1007,19 @@ std::pair<ASTPtr, int> makeGroupOrderKey(const MongoGroupOrder & order, std::str
                 "The accumulator '{}' after a '$sort' whose keys do not share one direction is not supported",
                 accumulator);
 
-    if (order.keys.size() == 1)
-        return {order.keys.front().first->clone(), direction};
-
+    /** Every key is preceded by whether it is not `NULL`: Mongo orders `null` below every other
+      * value, so a `NULL` key compares as the smallest one. The keys are a tuple even when there is
+      * a single one, because a tuple is never `NULL` itself, and an aggregate function such as
+      * `argMin` skips the rows whose argument is `NULL`. An array key is rejected, see
+      * `makeMongoSortKey`.
+      */
     auto keys = makeASTFunction("tuple");
     for (const auto & key : order.keys)
-        keys->arguments->children.push_back(key.first->clone());
+    {
+        auto sort_key = makeMongoSortKey(key.first->clone());
+        keys->arguments->children.push_back(makeASTFunction("isNotNull", sort_key->clone()));
+        keys->arguments->children.push_back(std::move(sort_key));
+    }
     return {keys, direction};
 }
 
@@ -794,6 +1034,27 @@ ASTPtr makeOrderedGroupValues(ASTPtr value, const MongoGroupOrder & order, std::
     return makeASTFunction("arrayMap", makeLambda("x", std::move(element)), std::move(sorted));
 }
 
+/** An aggregate function skips the rows in which its argument is `NULL`, while Mongo's `$first`,
+  * `$last`, `$push` and the others keep a `null` value of a document as any other one. So the value
+  * is wrapped into a tuple, which is never `NULL` itself, and unwrapped from the result.
+  */
+ASTPtr wrapIntoTuple(ASTPtr value)
+{
+    return makeASTFunction("tuple", std::move(value));
+}
+
+ASTPtr unwrapFromTuple(ASTPtr aggregated)
+{
+    return makeASTFunction("tupleElement", std::move(aggregated), makeLiteral(Field(UInt64(1))));
+}
+
+/// The same for an aggregate function that collects the values into an array.
+ASTPtr unwrapArrayFromTuples(ASTPtr aggregated)
+{
+    auto element = makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>("x"), makeLiteral(Field(UInt64(1))));
+    return makeASTFunction("arrayMap", makeLambda("x", std::move(element)), std::move(aggregated));
+}
+
 }
 
 ASTPtr parseMongoAccumulator(const rapidjson::Value & value, const MongoGroupOrder & order)
@@ -804,16 +1065,22 @@ ASTPtr parseMongoAccumulator(const rapidjson::Value & value, const MongoGroupOrd
     const auto & member = *value.MemberBegin();
     auto name = stringView(member.name);
 
+    /// The accumulators that ignore a `null`, as the aggregate functions they map onto do.
     static const std::unordered_map<std::string_view, std::string> accumulators = {
         {"$avg", "avg"},
         {"$min", "min"},
         {"$max", "max"},
-        {"$first", "any"},
-        {"$last", "anyLast"},
-        {"$push", "groupArray"},
-        {"$addToSet", "groupUniqArray"},
         {"$stdDevPop", "stddevPop"},
         {"$stdDevSamp", "stddevSamp"},
+    };
+
+    /// The accumulators that keep a `null`, see `wrapIntoTuple`; the boolean says whether the
+    /// result is an array.
+    static const std::unordered_map<std::string_view, std::pair<std::string, bool>> null_preserving_accumulators = {
+        {"$first", {"any", false}},
+        {"$last", {"anyLast", false}},
+        {"$push", {"groupArray", true}},
+        {"$addToSet", {"groupUniqArray", true}},
     };
 
     if (name == "$count")
@@ -837,12 +1104,12 @@ ASTPtr parseMongoAccumulator(const rapidjson::Value & value, const MongoGroupOrd
 
         /// `groupArray(N)(x)` keeps the first N values of the group and `groupArrayLast(N)(x)` the
         /// last ones; the count is a parameter of the aggregate function rather than an argument.
-        auto function = makeASTFunction(name == "$firstN" ? "groupArray" : "groupArrayLast", std::move(input));
+        auto function = makeASTFunction(name == "$firstN" ? "groupArray" : "groupArrayLast", wrapIntoTuple(std::move(input)));
         auto parameters = make_intrusive<ASTExpressionList>();
         parameters->children.push_back(std::move(count));
         function->parameters = parameters;
         function->children.push_back(std::move(parameters));
-        return function;
+        return unwrapArrayFromTuples(std::move(function));
     }
 
     if (name == "$sum")
@@ -869,11 +1136,19 @@ ASTPtr parseMongoAccumulator(const rapidjson::Value & value, const MongoGroupOrd
 
         auto [key, direction] = makeGroupOrderKey(order, name);
         const bool takes_the_smallest_key = (name == "$first") == (direction == 1);
-        return makeASTFunction(takes_the_smallest_key ? "argMin" : "argMax", std::move(input), std::move(key));
+        return unwrapFromTuple(
+            makeASTFunction(takes_the_smallest_key ? "argMin" : "argMax", wrapIntoTuple(std::move(input)), std::move(key)));
     }
 
     if (auto it = accumulators.find(name); it != accumulators.end())
         return makeASTFunction(it->second, parseMongoAggregateExpression(member.value));
+
+    if (auto it = null_preserving_accumulators.find(name); it != null_preserving_accumulators.end())
+    {
+        const auto & [function, returns_array] = it->second;
+        auto aggregated = makeASTFunction(function, wrapIntoTuple(parseMongoAggregateExpression(member.value)));
+        return returns_array ? unwrapArrayFromTuples(std::move(aggregated)) : unwrapFromTuple(std::move(aggregated));
+    }
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The accumulator '{}' is not supported", name);
 }
