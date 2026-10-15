@@ -1828,7 +1828,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     /// Resolve identifier from current scope
 
     IdentifierResolveResult resolve_result;
-    resolve_result = identifier_resolver.tryResolveIdentifierFromExpressionArguments(identifier_lookup, scope);
+    resolve_result = identifier_resolver.tryResolveIdentifierFromExpressionArguments(identifier_lookup, scope, identifier_resolve_context);
 
     if (!resolve_result.resolved_identifier)
     {
@@ -2942,21 +2942,6 @@ static IdentifierResolveScope * findNearestScopeWithNonEmpty(IdentifierResolveSc
     return nullptr;
 }
 
-/// `ExpressionsStack` is per-scope, so an aggregate enclosing a lambda sits on a parent scope's stack.
-static bool isInAggregateOrGroupingFunctionScope(const IdentifierResolveScope & scope)
-{
-    for (const auto * scope_ptr = &scope; scope_ptr; scope_ptr = scope_ptr->parent_scope)
-    {
-        if (scope_ptr->expressions_in_resolve_process_stack.hasAggregateOrGroupingFunction())
-            return true;
-
-        if (scope_ptr->scope_node->getNodeType() == QueryTreeNodeType::QUERY)
-            break;
-    }
-
-    return false;
-}
-
 /** Resolve query tree matcher. Check MatcherNode.h for detailed matcher description. Check ColumnTransformers.h for detailed transformers description.
   *
   * 1. Populate matched expression nodes resolving qualified or unqualified matcher.
@@ -3053,6 +3038,31 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         return false;
     };
 
+    /// A lambda or SQL user defined function call decides the nullability of its arguments itself (see `resolveFunction`).
+    auto has_lambda_call_in_tree = [&](const IQueryTreeNode * root)
+    {
+        std::vector<const IQueryTreeNode *> nodes_to_process{root};
+        while (!nodes_to_process.empty())
+        {
+            const auto * subtree_node = nodes_to_process.back();
+            nodes_to_process.pop_back();
+
+            if (const auto * function = subtree_node->as<FunctionNode>(); function && !function->isWindowFunction())
+            {
+                const auto & function_name = function->getFunctionName();
+                if (tryResolveIdentifier({Identifier{function_name}, IdentifierLookupContext::FUNCTION}, scope).resolved_identifier
+                    || typeid_cast<const ASTCreateSQLFunctionQuery *>(UserDefinedSQLFunctionFactory::instance().tryGet(function_name).get()))
+                    return true;
+            }
+
+            for (const auto & child : subtree_node->getChildren())
+                if (child)
+                    nodes_to_process.push_back(child.get());
+        }
+
+        return false;
+    };
+
     bool has_aggregate_apply_transformer = false;
     for (const auto & transformer : matcher_node_typed.getColumnTransformers().getNodes())
     {
@@ -3068,7 +3078,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
             {
                 expr_to_check = apply->getExpressionNode().get();
             }
-            if (expr_to_check && has_aggregate_function_in_tree(expr_to_check))
+            if (expr_to_check && (has_aggregate_function_in_tree(expr_to_check) || has_lambda_call_in_tree(expr_to_check)))
             {
                 has_aggregate_apply_transformer = true;
                 break;
@@ -3078,7 +3088,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
 
     auto * group_by_keys_scope = findNearestScopeWithNonEmpty(scope, &IdentifierResolveScope::nullable_group_by_keys);
 
-    if (group_by_keys_scope && !isInAggregateOrGroupingFunctionScope(scope) && !has_aggregate_apply_transformer)
+    if (group_by_keys_scope && !scope.isInAggregateOrGroupingFunctionScope() && !has_aggregate_apply_transformer)
     {
         for (auto & [node, _] : matched_expression_nodes_with_names)
         {
@@ -3464,7 +3474,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         if (query_scope && query_scope->scope_node)
         {
             auto * query_node = query_scope->scope_node->as<QueryNode>();
-            if (query_node)
+            if (query_node && query_node != query_with_replace_transformer_rewrite_done)
             {
                 auto replace_identifiers_in_node = [&](QueryTreeNodePtr & node) -> void
                 {

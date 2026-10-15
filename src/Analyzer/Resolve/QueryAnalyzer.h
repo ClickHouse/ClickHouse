@@ -377,6 +377,12 @@ private:
     /// cardinality or value information. The optimization must then fall back to normal analysis.
     bool early_short_circuit_type_inference_failed = false;
 
+    /// The query whose clauses the `REPLACE` transformers of the expressions being resolved again must not rewrite a second time.
+    const IQueryTreeNode * query_with_replace_transformer_rewrite_done = nullptr;
+
+    /// The arguments of a lambda call before resolution, by call node.
+    std::unordered_map<QueryTreeNodePtr, QueryTreeNodePtr> unresolved_lambda_call_arguments;
+
     /// True while arguments of a table function are resolved. Table functions are resolved
     /// into storages even in only-analyze mode (the storage is required to infer the query
     /// header), so scalar subqueries in their arguments must be executed for real instead of
