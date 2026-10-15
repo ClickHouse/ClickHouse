@@ -3352,6 +3352,64 @@ def test_table_engine_retries_recoverable_attach_conflict(started_cluster):
         cursor.execute(f"SELECT pg_drop_replication_slot('{legacy_slot}')")
 
 
+def test_whole_schema_database_restart_after_new_postgresql_table(started_cluster):
+    # A table created in PostgreSQL after `CREATE DATABASE` is not replicated without an explicit
+    # `ATTACH TABLE`, so it has no nested table. On restart, the whole-schema database used to take
+    # the list of tables to replicate from the live PostgreSQL schema, failed on the missing nested
+    # table of the new one on every attempt, and never resumed replication of the other tables.
+    NUM_TABLES = 2
+    pg_manager.create_and_fill_postgres_tables(NUM_TABLES, numbers=10)
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_several_tables_are_synchronized(instance, NUM_TABLES)
+
+    # Not in the publication: created in PostgreSQL after the database.
+    new_table = "postgresql_replica_created_later"
+    # In the publication, but without a nested table, as for a table whose initial snapshot has failed.
+    published_table = "postgresql_replica_published_later"
+    for table in (new_table, published_table):
+        pg_manager.create_postgres_table(table)
+        instance.query(
+            f"INSERT INTO postgres_database.{table} SELECT number, number FROM numbers(5)"
+        )
+
+    instance.stop_clickhouse()
+    pg_manager.execute(
+        f"ALTER PUBLICATION postgres_database_ch_publication ADD TABLE {published_table}"
+    )
+    instance.start_clickhouse()
+
+    for i in range(NUM_TABLES):
+        instance.query(
+            f"INSERT INTO postgres_database.postgresql_replica_{i} SELECT number, number FROM numbers(10, 10)"
+        )
+    check_several_tables_are_synchronized(instance, NUM_TABLES)
+    assert (
+        instance.query(
+            f"SELECT count() FROM system.tables WHERE database = 'test_database' AND name IN ('{new_table}', '{published_table}')"
+        ).strip()
+        == "0"
+    )
+    assert instance.contains_in_log(
+        f"contains tables that are not replicated, because they were never materialized (for example, their initial snapshot has failed): {published_table}"
+    )
+
+    # Both tables are added to replication with `ATTACH TABLE`.
+    for table in (new_table, published_table):
+        instance.query(f"ATTACH TABLE test_database.{table}")
+        check_tables_are_synchronized(instance, table)
+
+    pg_manager.drop_materialized_db()
+    for table in (new_table, published_table):
+        pg_manager.execute(f"DROP TABLE {table}")
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")

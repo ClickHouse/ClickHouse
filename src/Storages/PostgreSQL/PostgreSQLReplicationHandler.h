@@ -45,7 +45,8 @@ public:
     void addStorage(const std::string & table_name, StorageMaterializedPostgreSQL * storage);
 
     /// Fetch list of tables which are going to be replicated. Used for database engine.
-    std::set<String> fetchRequiredTables();
+    /// `nested_tables_on_disk` are the tables that were already replicated before the restart (their nested tables exist).
+    std::set<String> fetchRequiredTables(const std::set<String> & nested_tables_on_disk);
 
     /// Start replication setup immediately.
     void startSynchronization(bool throw_on_error);

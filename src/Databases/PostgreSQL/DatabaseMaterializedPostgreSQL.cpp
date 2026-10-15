@@ -124,7 +124,13 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
     std::set<String> tables_to_replicate;
     try
     {
-        tables_to_replicate = replication_handler->fetchRequiredTables();
+        /// The tables that were already replicated before the restart: their nested tables exist.
+        std::set<String> nested_tables_on_disk;
+        if (is_attach)
+            for (auto iterator = getTablesIterator(getContext(), {}, /* skip_not_loaded */ false); iterator->isValid(); iterator->next())
+                nested_tables_on_disk.insert(iterator->name());
+
+        tables_to_replicate = replication_handler->fetchRequiredTables(nested_tables_on_disk);
     }
     catch (...)
     {

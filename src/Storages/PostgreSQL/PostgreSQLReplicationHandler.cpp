@@ -1014,6 +1014,20 @@ void PostgreSQLReplicationHandler::dropPublication(pqxx::nontransaction & tx)
 
 void PostgreSQLReplicationHandler::addTableToPublication(pqxx::nontransaction & ntx, const String & table_name)
 {
+    /// The table can be already published but not materialized, for example, if its initial snapshot has failed.
+    /// The relation is resolved the same way as in `ALTER PUBLICATION` below.
+    std::string check_query_str = fmt::format(
+        "SELECT exists (SELECT 1 FROM pg_publication_rel r JOIN pg_publication p ON p.oid = r.prpubid "
+        "WHERE p.pubname = {} AND r.prrelid = {}::regclass)",
+        quoteStringPostgreSQL(publication_name), quoteStringPostgreSQL(doubleQuoteWithSchema(table_name)));
+    pqxx::result check_result{ntx.exec(check_query_str)};
+    chassert(!check_result.empty());
+    if (check_result[0][0].as<std::string>() == "t")
+    {
+        LOG_TRACE(log, "Table {} is already in publication `{}`", doubleQuoteWithSchema(table_name), publication_name);
+        return;
+    }
+
     std::string query_str = fmt::format("ALTER PUBLICATION {} ADD TABLE ONLY {}", doubleQuoteStringPostgreSQL(publication_name), doubleQuoteWithSchema(table_name));
     ntx.exec(query_str);
     LOG_TRACE(log, "Added table {} to publication `{}`", doubleQuoteWithSchema(table_name), publication_name);
@@ -1205,7 +1219,7 @@ void PostgreSQLReplicationHandler::shutdownFinal()
 
 
 /// Used by MaterializedPostgreSQL database engine.
-std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
+std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables(const std::set<String> & nested_tables_on_disk)
 {
     postgres::Connection connection(connection_info);
     std::set<String> result_tables;
@@ -1346,6 +1360,45 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
                 {
                     pqxx::nontransaction tx(connection.getRef());
                     result_tables = fetchPostgreSQLTablesList(tx, schema_list.empty() ? postgres_schema : schema_list);
+                }
+
+                /// The tables of the PostgreSQL schema that do not have nested tables are not replicated:
+                /// they were created in PostgreSQL after this database (and are not in the publication),
+                /// or their initial snapshot has failed. Materializing them would fail on every attach
+                /// because the nested table does not exist, and the replication of the whole database would never resume.
+                /// The new tables are added to replication only by an explicit `ATTACH TABLE`.
+                /// If no nested table exists, the initial synchronization has not created anything yet, and all tables are used.
+                if (!nested_tables_on_disk.empty())
+                {
+                    std::set<String> published_tables;
+                    {
+                        pqxx::work tx(connection.getRef());
+                        published_tables = fetchTablesFromPublication(tx);
+                    }
+
+                    String published_but_not_materialized;
+                    for (auto it = result_tables.begin(); it != result_tables.end();)
+                    {
+                        if (nested_tables_on_disk.contains(*it))
+                        {
+                            ++it;
+                            continue;
+                        }
+
+                        if (published_tables.contains(*it))
+                        {
+                            if (!published_but_not_materialized.empty())
+                                published_but_not_materialized += ", ";
+                            published_but_not_materialized += *it;
+                        }
+                        it = result_tables.erase(it);
+                    }
+
+                    if (!published_but_not_materialized.empty())
+                        LOG_WARNING(log,
+                            "Publication {} contains tables that are not replicated, because they were never materialized "
+                            "(for example, their initial snapshot has failed): {}. To replicate them, run `ATTACH TABLE {}.<table>`",
+                            doubleQuoteString(publication_name), published_but_not_materialized, backQuoteIfNeed(current_database_name));
                 }
             }
             /// Check tables list from publication is the same as expected tables list.
