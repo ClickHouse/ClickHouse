@@ -16,7 +16,9 @@ import { Image } from "/snippets/components/Image.jsx";
 
 * You must have privileges to manage [service accounts](https://docs.cloud.google.com/iam/docs/service-account-overview) and [IAM roles](https://docs.cloud.google.com/iam/docs/roles-overview) in your GCP project, or get assistance from an administrator. We recommend creating a dedicated service account with the minimum required set of [permissions](/integrations/clickpipes/bigquery/overview#permissions) following the [official documentation](https://docs.cloud.google.com/iam/docs/service-accounts-create).
 
-* The initial load process requires a user-provided Google Cloud Storage (GCS) bucket for staging. We recommend creating a dedicated bucket for your ClickPipe following the [official documentation](https://docs.cloud.google.com/storage/docs/creating-buckets). In the future, the intermediary bucket will be provided and managed by ClickPipes.
+* An initial load requires a Google Cloud Storage (GCS) bucket for staging. We recommend creating a dedicated bucket for your ClickPipe following the [Google Cloud instructions](https://docs.cloud.google.com/storage/docs/creating-buckets).
+
+* For continuous replication, grant the service account the [BigQuery Read Session User role](/integrations/clickpipes/bigquery/overview#bigquery) on the project. Check the [requirements for your replication method](/integrations/clickpipes/bigquery/overview#cdc) before selecting tables.
 
 <Steps>
 <Step title="Select the data source" id="1-select-the-data-source">
@@ -31,37 +33,50 @@ import { Image } from "/snippets/components/Image.jsx";
 </Step>
 <Step title="Set up your ClickPipe connection" id="2-setup-your-clickpipe-connection">
 
-To set up a new ClickPipe, you must provide details on how to connect to and authenticate with your BigQuery data warehouse, as well as a staging GCS bucket.
+Provide the connection details for your BigQuery project. If you are running an initial load, provide a staging GCS bucket.
 
 **1.** Upload the `.json` key for the service account you created for ClickPipes. Ensure the service account has the minimum required set of [permissions](/integrations/clickpipes/bigquery/overview#permissions).
 
     <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step2.webp" alt="Upload service account key" size="lg" border/>    
 
-**2.** Select the **Replication method**. In Private Preview, the only supported option is [**Initial load only**](/integrations/clickpipes/bigquery/overview#initial-load).
+**2.** Select the **Replication mode**: [initial load only](/integrations/clickpipes/bigquery/overview#initial-load), **Initial load + CDC**, or **CDC only**. For a CDC mode, choose a [query based or events based method](/integrations/clickpipes/bigquery/overview#cdc).
 
-**3.** Provide the path to the GCS bucket for staging data during the initial load.
+    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/select-replication-mode.png" alt="BigQuery replication mode options: initial load only, initial load plus CDC, and CDC only" size="lg" border/>
+
+**3.** If you are running an initial load, provide the path to the GCS bucket for staging data.
 
 **4.** Click **Next** to validate.
 </Step>
 <Step title="Configure your ClickPipe" id="3-configure-your-clickpipe">
 
-Depending on the size of your BigQuery dataset, or the total size of the tables you want to sync, you might need to adjust the default ingestion settings for the ClickPipe.
+Set the following values for the phases you selected. Initial load settings apply only when the ClickPipe imports existing data; CDC settings apply only when it continues replicating changes.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/bigquery/configure-pipe.png" alt="BigQuery ClickPipe settings for sync interval, initial load, and CDC" size="lg" border/>
+
+| Setting | What it controls |
+|---------|------------------|
+| Sync interval (seconds) | How often ClickPipes checks each source table for new changes. |
+| Parallel threads for initial load | Maximum number of parts of one table that ClickPipes loads at the same time. |
+| Snapshot number of rows per partition | Target number of rows in each part of the initial load. ClickPipes may adjust this value for large tables. |
+| Snapshot number of tables in parallel | Maximum number of source tables ClickPipes loads at the same time. |
+| CDC number of tables in parallel | Maximum number of tables ClickPipes reads and sends to ClickHouse concurrently. |
+| CDC safety buffer (seconds) | How far behind the current BigQuery time ClickPipes ends each CDC query. This gives recent writes time to become available before ClickPipes reads them. |
+| CDC maximum single query window (seconds) | Maximum time range covered by one CDC query. ClickPipes splits longer periods into separate queries. For events based replication, keep this at or below 86,400 seconds, BigQuery's [one-day limit](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions). |
 </Step>
 <Step title="Configure tables" id="4-configure-tables">
 
 **1.** Select the ClickHouse database where you want the BigQuery tables to be replicated to. You can select an existing database or create a new one.
 
-**2.** Select the tables and, optionally, the columns you want to replicate. Only datasets that the provided service account has access to will be listed.
+**2.** Select the source tables. You can change each destination table name and choose which columns to replicate under **Column settings**. Only datasets that the service account can access appear in the list.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step3.webp" alt="Permissions" size="lg" border/>
+    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/select-table-settings.png" alt="Select a BigQuery source table and configure its destination name, CDC watermark, sorting key, and advanced settings" size="lg" border/>
 
-**3.** For each selected table, make sure to define a custom sorting key under **Advanced settings** > **Use a custom sorting key**. In the future, the sorting key will be automatically inferred based on existing clustering or partitioning keys in the upstream database.
+**3.** Set the CDC option for each table. The screenshot shows query based settings. Select a **CDC watermark column** of type `TIMESTAMP`, keep it among the replicated columns, and update its value whenever the row changes. With events based replication, select either [`APPENDS`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#appends) or [`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes) instead. [`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes) requires `enable_change_history = TRUE` on the source table.
 
-<Warning>
-    You **must** define a [sorting key](/concepts/best-practices/choosing-a-primary-key) for the replicated tables in order to optimize query performance in ClickHouse. Otherwise, the sorting key will be set as `tuple()`, which means no primary index will be created and ClickHouse will perform full table scans for all queries on the table.
-</Warning>
+**4.** Review the **Sorting key**. If rows can be updated or deleted, choose stable columns that identify each row. For [`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes), the source table must have a primary key or you must set a sorting key here. ClickHouse uses the sorting key to organize data for queries; without one, it uses `tuple()` and has no primary index.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step4.webp" alt="Permissions" size="lg" border/>
+**5.** Open **Advanced settings** to choose the ClickHouse table **Engine** or an optional partitioning key for the initial load. This partitioning key does not set the destination table's `PARTITION BY` expression.
+
 </Step>
 <Step title="Configure permissions" id="6-configure-permissions">
 
