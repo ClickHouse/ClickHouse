@@ -22,13 +22,13 @@ namespace DB
 struct StatisticsCacheCell
 {
     ColumnStatisticsPtr stats;
-    /// Uncompressed size of the serialized statistics, a close proxy for the in-memory size.
+    /// The memory retained by `stats` (see `ColumnStatistics::allocatedBytes`).
     size_t memory_bytes = 0;
 };
 
 struct StatisticsCacheWeightFunction
 {
-    /// The key in the hash map, the linked list nodes, the shared pointers, etc.
+    /// The cell, the key in the hash map, the linked list nodes, the control blocks of the shared pointers, etc.
     static constexpr size_t STATISTICS_CACHE_OVERHEAD = 128;
 
     size_t operator()(const StatisticsCacheCell & cell) const { return STATISTICS_CACHE_OVERHEAD + cell.memory_bytes; }

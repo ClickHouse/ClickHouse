@@ -1401,7 +1401,8 @@ std::shared_ptr<StatisticsCacheCell> IMergeTreeDataPart::loadStatisticsFile(
 
         auto cell = std::make_shared<StatisticsCacheCell>();
         cell->stats = ColumnStatistics::deserialize(compressed_buf, column_desc.type);
-        cell->memory_bytes = compressed_buf.count();
+        if (cell->stats)
+            cell->memory_bytes = cell->stats->allocatedBytes();
         return cell;
     }
     catch (Exception & e)
