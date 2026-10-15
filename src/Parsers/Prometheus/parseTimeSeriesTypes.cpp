@@ -227,6 +227,10 @@ namespace
 
         if constexpr (std::is_same_v<T, DateTime64>)
         {
+            /// Like Prometheus, a time with leading or trailing whitespace is an error.
+            if (!str.empty() && (isWhitespaceASCII(str.front()) || isWhitespaceASCII(str.back())))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse a timestamp from string {}: Leading or trailing whitespace", quoteString(str));
+
             if (PrometheusQueryParsingUtil::tryParseTimestamp(
                     str, scale, result, &error_message, &error_pos, /* allow_octal_literals */ false))
                 return result;

@@ -32,4 +32,13 @@ SELECT timestamp FROM prometheusQuery('ts', '1', '2023-11-14T22:13:20Z junk'); -
 SELECT timestamp FROM prometheusQuery('ts', '1', '1970-13-01'); -- { serverError BAD_ARGUMENTS }
 SELECT timestamp FROM prometheusQuery('ts', '1', '9223372036854775808'); -- { serverError BAD_ARGUMENTS }
 
+-- Like Prometheus, leading or trailing whitespace is an error, so a too-big number is never read as a date either.
+SELECT timeSeriesLastToGrid(' 9223372036854775808', ' 9223372036854775816', 1, 1)(toDateTime64(0, 3, 'UTC'), 1.0); -- { serverError BAD_ARGUMENTS }
+SELECT timeSeriesLastToGrid('\t9223372036854775808', '\t9223372036854775816', 1, 1)(toDateTime64(0, 3, 'UTC'), 1.0); -- { serverError BAD_ARGUMENTS }
+SELECT timeSeriesLastToGrid('9223372036854775808 ', '9223372036854775816 ', 1, 1)(toDateTime64(0, 3, 'UTC'), 1.0); -- { serverError BAD_ARGUMENTS }
+SELECT timeSeriesLastToGrid('- 9223372036854775809', '0', 1, 1)(toDateTime64(0, 3, 'UTC'), 1.0); -- { serverError BAD_ARGUMENTS }
+SELECT timestamp FROM prometheusQuery('ts', '1', ' 1700000000'); -- { serverError BAD_ARGUMENTS }
+SELECT timestamp FROM prometheusQuery('ts', '1', ' 2023-11-14T22:13:20Z'); -- { serverError BAD_ARGUMENTS }
+SELECT timestamp FROM prometheusQuery('ts', '1', 'Tue, 14 Nov 2023 22:13:20 GMT '); -- { serverError BAD_ARGUMENTS }
+
 DROP TABLE ts;

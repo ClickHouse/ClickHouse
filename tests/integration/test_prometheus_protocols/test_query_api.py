@@ -433,7 +433,7 @@ def test_rfc3339_times(path, unix_params, rfc3339_params):
 
 @pytest.mark.parametrize(
     "time",
-    ["2023-11-14T22:14:20z", "2023-11-14T22:14:20Z junk", "now", "abc"],
+    ["2023-11-14T22:14:20z", "2023-11-14T22:14:20Z junk", "2023-11-14T22:14:20Z ", " 1700000060", "now", "abc"],
 )
 def test_rfc3339_times_invalid(time):
     error = execute_query_via_http_api(
