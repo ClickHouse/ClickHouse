@@ -595,34 +595,23 @@ void SignalListener::onTerminate(std::string_view message, UInt32 thread_num) co
 /// the two are comparable and the printed value survives ASLR of a position-independent executable.
 ///
 /// This is the raw fallback that has to come out even when symbolization later fails, so it must not
-/// depend on the symbol index being buildable: if it has not been built yet (a fault at startup, or in
-/// the thread that was building it), the runtime address is printed as is, which `addr2line` can still
-/// use together with the load address from the core dump or the memory map. A daemon builds the index
-/// during initialization for its build id, so a server always gets the ASLR-independent form here.
+/// depend on the symbol index being buildable. Without the index (a fault at startup, in the thread that
+/// was building it, or in a program that is not a daemon) only addresses in the main executable resolve.
+/// An address that does not resolve to a loaded object has no such form and is not printed.
 static void writeResolvedAddress(const void * addr, WriteBuffer & out)
 {
-    const auto maybe_resolved = StackTrace::tryResolveAddress(addr);
-    if (!maybe_resolved)
+    const auto resolved = StackTrace::tryResolveAddress(addr);
+    if (!resolved.address)
     {
-        writePointerHex(addr, out);
+        writeString("<unknown>", out);
         return;
     }
 
-    const auto & resolved = *maybe_resolved;
     writePointerHex(resolved.address, out);
-
-    switch (resolved.kind)
+    if (resolved.kind == StackTrace::AddressKind::OtherObject)
     {
-        case StackTrace::AddressKind::OtherObject:
-            writeString(" in ", out);
-            writeString(resolved.object, out);
-            break;
-        case StackTrace::AddressKind::UnknownMapping:
-            writeString(" in <unknown>", out);
-            break;
-        case StackTrace::AddressKind::MainObject:
-        case StackTrace::AddressKind::Unsupported:
-            break;
+        writeString(" in ", out);
+        writeString(resolved.object, out);
     }
 }
 
