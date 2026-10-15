@@ -322,6 +322,21 @@ bool isOracleUnsafeFunctionName(String name)
     }
 }
 
+/// True if `name` resolves to a regular function or a user-defined function that is not deterministic.
+bool namesNonDeterministicRegularFunction(const String & name, const ContextPtr & context)
+{
+    if (const auto resolver = FunctionFactory::instance().tryGet(name, context))
+        if (!resolver->isDeterministic())
+            return true;
+    if (UserDefinedSQLFunctionFactory::instance().tryGet(name))
+        /// SQL UDF determinism is not introspectable — treat as non-deterministic.
+        return true;
+    if (const auto udf_exec = UserDefinedExecutableFunctionFactory::tryGet(name, context))
+        if (!udf_exec->isDeterministic())
+            return true;
+    return false;
+}
+
 /// Walk an AST tree and check whether any `ASTFunction` references something
 /// non-deterministic. The primary source of truth is `FunctionFactory` —
 /// every regular function exposes `isDeterministic`, so newly-added
@@ -395,17 +410,45 @@ bool hasNonDeterministicFunctionsImpl(const ASTPtr & ast, const ContextPtr & con
             return true;
 
         for (const auto & name : {std::cref(func->name), std::cref(stripped)})
-        {
-            if (const auto resolver = FunctionFactory::instance().tryGet(name.get(), context))
-                if (!resolver->isDeterministic())
-                    return true;
-            if (UserDefinedSQLFunctionFactory::instance().tryGet(name.get()))
-                /// SQL UDF determinism is not introspectable — treat as non-deterministic.
+            if (namesNonDeterministicRegularFunction(name.get(), context))
                 return true;
-            if (const auto udf_exec = UserDefinedExecutableFunctionFactory::tryGet(name.get(), context))
-                if (!udf_exec->isDeterministic())
+    }
+
+    /// A higher-order function accepts a function by its bare name instead of a lambda, e.g.
+    /// `arrayMap(generateUUIDv7, arr)`: the name is an `ASTIdentifier`, not an `ASTFunction`.
+    /// A column with the same name as a non-deterministic function only skips one more query, which is safe.
+    /// The fuzzer may also turn that name into a `{fuzz_param_N:Identifier}` placeholder: its name part
+    /// is empty in the AST, and the value is substituted only when the query text is executed, so look
+    /// the value up in the query parameters of the context. An unknown parameter skips the query.
+    if (const auto * identifier = ast->as<ASTIdentifier>(); identifier && !identifier->compound())
+    {
+        if (identifier->isParam())
+        {
+            const auto param = identifier->getParam();
+            const auto & params = context->getQueryParameters();
+            const auto it = params.find(param->as<ASTQueryParameter &>().name);
+            if (it == params.end() || namesNonDeterministicRegularFunction(it->second, context))
+                return true;
+        }
+        else if (namesNonDeterministicRegularFunction(identifier->name(), context))
+            return true;
+    }
+
+    /// `* APPLY(f)` and `* APPLY(x -> ...)` keep the function name, its parameters and the lambda
+    /// outside of `children`.
+    if (const auto * apply = ast->as<ASTColumnsApplyTransformer>())
+    {
+        if (!apply->func_name.empty())
+        {
+            if (isOracleUnsafeFunctionName(apply->func_name))
+                return true;
+            for (const auto & name : {apply->func_name, stripAggregateCombinators(apply->func_name)})
+                if (namesNonDeterministicRegularFunction(name, context))
                     return true;
         }
+        if (hasNonDeterministicFunctionsImpl(apply->parameters, context)
+            || hasNonDeterministicFunctionsImpl(apply->lambda, context))
+            return true;
     }
 
     for (const auto & child : ast->children)
