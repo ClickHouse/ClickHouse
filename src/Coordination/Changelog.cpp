@@ -610,6 +610,14 @@ private:
                     return !is_never_merged(changelog) && changelog->to_log_index - changelog->from_log_index + 1 < log_file_settings.rotate_interval;
                 };
 
+                /// A merged object whose sources are not removed yet must not be extended: if the removal fails and
+                /// the server restarts, the sources replay over the extended object and truncate it to their end.
+                const auto has_pending_sources = [&](const ChangelogFileDescriptionPtr & changelog)
+                {
+                    std::lock_guard relinked_sources_lock(relinked_sources_mutex);
+                    return std::ranges::any_of(relinked_sources, [&](const auto & relink) { return relink->merged == changelog; });
+                };
+
                 /// Skip the segments that are never merged, so they do not hold back the ones after them.
                 /// Also skip the sources of an interrupted merge that are listed after the merged object (see below):
                 /// they are covered by a segment the cursor has already passed.
@@ -624,7 +632,8 @@ private:
                     ++it;
                 }
 
-                if (it == existing_changelogs.end() || is_open_for_write(it->second))
+                /// Retried on a later wake-up, after the sources are removed.
+                if (it == existing_changelogs.end() || is_open_for_write(it->second) || has_pending_sources(it->second))
                     continue;
 
                 uint64_t current_from_index = it->second->from_log_index;
@@ -645,16 +654,21 @@ private:
                         break;
 
                     /// A crash after a merge was published but before its sources were removed leaves the sources
-                    /// listed after the merged object: startup removes only the one with the same start index. Their
-                    /// entries are already in the range being merged, so step over them instead of stopping here,
-                    /// otherwise the planner would pick the same range on every wake-up. They are not merged and stay
-                    /// listed, so the locations read from them on startup remain valid until retention removes them.
+                    /// listed after the merged object: startup removes only the one with the same start index. They
+                    /// stay listed, so the locations read from them on startup remain valid until retention removes
+                    /// them. Startup replays them over the merged object, truncating it to the end of each source, so
+                    /// they always have to end at the end of the object that covers them: never extend that object.
+                    /// The range is final, so the planner moves past it instead of picking it on every wake-up.
                     if (next_changelog->from_log_index > current_from_index && next_changelog->to_log_index <= current_to_index
                         && !is_never_merged(next_changelog))
                     {
-                        ++it;
-                        continue;
+                        range_is_final = true;
+                        break;
                     }
+
+                    /// Not final: the segment can be merged once its sources are removed.
+                    if (has_pending_sources(next_changelog))
+                        break;
 
                     if (next_changelog->from_log_index != current_to_index + 1)
                         break;
@@ -875,9 +889,15 @@ private:
                 if (!force && !relink->applied)
                     return false;
 
+                /// The sources are removed in order and the removal stops at the first failure, so the sources that
+                /// survive a crash always end at the end of the merged object: startup replays them over it, and a
+                /// surviving source followed by removed ones would truncate the entries after it.
                 bool all_removed = true;
                 for (const auto & [changelog, offset] : relink->sources)
                 {
+                    if (!all_removed)
+                        break;
+
                     LOG_INFO(log, "Removing merged S3 changelog: {}", changelog->path);
 
                     /// Go through the same fence as `Changelog::backgroundChangelogOperationsThread`: take the

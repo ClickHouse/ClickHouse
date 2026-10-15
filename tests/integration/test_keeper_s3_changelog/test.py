@@ -272,15 +272,16 @@ def test_compaction_after_interrupted_merge(started_cluster):
         started_cluster, node_logs, wait_complete_readiness=False
     )
 
-    def wait_for_merge_past(index):
+    def wait_for_merge_from(index):
         for _ in range(300):
             ranges = get_s3_changelog_ranges(started_cluster)
             if any(
-                from_index == 1 and to_index > index for from_index, to_index in ranges
+                from_index == index and to_index > index
+                for from_index, to_index in ranges
             ):
                 return ranges
             time.sleep(0.1)
-        assert False, f"no merged S3 changelog past index {index}: {ranges}"
+        assert False, f"no merged S3 changelog starting at index {index}: {ranges}"
 
     def create_nodes(count):
         node_zk = get_fake_zk("node_logs")
@@ -296,7 +297,7 @@ def test_compaction_after_interrupted_merge(started_cluster):
             stop_zk(node_zk)
 
     assert create_nodes(40) == 40
-    wait_for_merge_past(1)
+    wait_for_merge_from(1)
     node_logs.stop_clickhouse()
 
     # Recreate the state after a crash between publishing a merge and removing its
@@ -331,7 +332,18 @@ def test_compaction_after_interrupted_merge(started_cluster):
         started_cluster, node_logs, wait_complete_readiness=False
     )
 
-    # The objects published after the restart must still be merged with the
-    # recovered one instead of stalling the compaction on the leftover sources.
+    # The objects published after the restart must still be merged instead of
+    # stalling the compaction on the leftover sources. The recovered object is not
+    # extended: the leftover sources would replay over it on the next startup and
+    # truncate it to their end.
     assert create_nodes(40) == 80
-    wait_for_merge_past(merged_to)
+    wait_for_merge_from(merged_to + 1)
+    assert (1, merged_to) in get_s3_changelog_ranges(started_cluster)
+
+    # All acknowledged entries must survive another restart with the leftover
+    # sources still listed.
+    node_logs.restart_clickhouse()
+    keeper_utils.wait_until_connected(
+        started_cluster, node_logs, wait_complete_readiness=False
+    )
+    assert create_nodes(0) == 80
