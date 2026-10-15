@@ -18,6 +18,11 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
+void unknownFunctionArgumentName()
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown function argument name");
+}
+
 void FunctionNamedArguments::validate(const String & function_name) const
 {
     std::unordered_set<std::string_view> names; // STYLE_CHECK_ALLOW_STD_CONTAINERS

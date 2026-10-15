@@ -47,10 +47,10 @@ public:
     }
 
     /// For functions whose arguments can be passed by name: `f(name => value)`.
-    template <typename Function>
-    void registerFunction(FunctionDocumentation documentation, Case case_sensitiveness, FunctionNamedArguments named_arguments_)
+    template <typename Function, size_t N>
+    void registerFunction(FunctionDocumentation documentation, Case case_sensitiveness, const FunctionArgumentsSpec<N> & named_arguments_)
     {
-        registerNamedArguments(Function::name, std::move(named_arguments_), documentation.arguments);
+        registerNamedArguments(Function::name, named_arguments_.toNamedArguments(), documentation.arguments);
         registerFunction<Function>(Function::name, std::move(documentation), case_sensitiveness);
     }
 
