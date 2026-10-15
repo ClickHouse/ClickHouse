@@ -1,3 +1,5 @@
 file glob		hello
 s3 glob		hello
 s3Cluster glob		hello
+file two		hello
+file two		world
