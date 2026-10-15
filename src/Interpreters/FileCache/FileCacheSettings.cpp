@@ -70,9 +70,11 @@ namespace ErrorCodes
     DECLARE(Double, check_cache_probability, 0.001, "Works only for debug or sanitizer build. Checks cache correctness by going through all cache and checking state of each cache element", 0) \
     DECLARE(UInt64, idle_client_ttl_sec, 7 * 24 * 60 * 60, "If non-zero and the cache policy tracks per-client usage, all cache entries that belong to a client (user_id) which has not been accessed for this many seconds are fully removed from the cache. Each access by the client refreshes the timer. Default is 1 week. Used by the distributed cache server.", 0) \
     DECLARE(UInt64, idle_client_check_interval_sec, 0, "How often the idle client eviction task runs, in seconds. Only meaningful when `idle_client_ttl_sec` is non-zero. 0 means an automatic value (`max(1, idle_client_ttl_sec / 10)`).", 0) \
+    DECLARE(NonZeroUInt64, client_weight_persist_interval_sec, 300, "How often the per-client weights are written to disk, in seconds, so that a client which has not reconnected yet keeps its weight across a restart. The first write happens one interval after startup, and a clean shutdown writes them out as well. Only meaningful when the cache policy tracks per-client usage.", 0) \
     DECLARE(NonZeroUInt64, idle_client_eviction_threads, 4, "Maximum number of threads used to purge idle clients' cache. Only meaningful when `idle_client_ttl_sec` is non-zero.", 0) \
     DECLARE(Bool, expose_prometheus_eviction_metrics, false, "Expose Prometheus metrics for filesystem cache eviction activity (`filesystem_cache_evictions_total` etc.). Off by default. Can be toggled at runtime via `SYSTEM RELOAD CONFIG`.", 0) \
     DECLARE(Bool, expose_prometheus_eviction_metrics_per_user, false, "Additionally expose per-user-id eviction metrics. Requires `expose_prometheus_eviction_metrics`. Cardinality grows with distinct evicting users.", 0) \
+    DECLARE(Bool, use_real_disk_size, false, "Account cached file reservations of this cache in filesystem block-aligned units (an approximation of the physical on-disk size, not the exact allocated size) instead of reserved bytes. This affects `current_size` of this cache. The process-wide `FilesystemCacheSize` metric and the eviction-size profile events sum over all caches, so they uniformly reflect the reservation footprint only when all caches use the same mode. Restart is required to change this setting.", 0) \
     DECLARE(NonZeroUInt64, drop_cache_threads, FILECACHE_DEFAULT_DROP_CACHE_THREADS, "Maximum number of threads used to remove cache keys in parallel on `SYSTEM DROP FILESYSTEM CACHE`. Value 1 means the removal is performed by the query thread alone", 0) \
 
 DECLARE_SETTINGS_TRAITS(FileCacheSettingsTraits, LIST_OF_FILE_CACHE_SETTINGS, FILE_CACHE_SETTINGS_SUPPORTED_TYPES)
@@ -140,7 +142,14 @@ ColumnsDescription FileCacheSettings::getColumnsDescription()
 
     result.add(
         ColumnDescription(
-            "current_size", std::make_shared<DataTypeUInt64>(), "Current cache size"));
+            "current_size",
+            std::make_shared<DataTypeUInt64>(),
+            "Current cache size: the space currently charged to or held by the cache priority queue. "
+            "It consists of the reserved sizes of the cache file segments plus the space temporarily held "
+            "while a reservation or an eviction is in progress, so it can momentarily exceed the sum over "
+            "the file segments in `system.filesystem_cache`. "
+            "If `use_real_disk_size` is enabled for this cache, the reservations are accounted in filesystem "
+            "block-aligned units instead, so the value approximates the space the cache occupies on disk"));
     result.add(
         ColumnDescription(
             "current_elements_num", std::make_shared<DataTypeUInt64>(), "Current cache elements (file segments) number"));

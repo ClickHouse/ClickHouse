@@ -37,6 +37,7 @@ static struct InitFiu
     ONCE(nats_fail_resubscribe_within_query) \
     REGULAR(replicated_queue_unfail_entries) \
     REGULAR(executing_graph_add_node_fail) \
+    PAUSEABLE_ONCE(polling_queue_before_try_poll) \
     ONCE(replicated_merge_tree_insert_quorum_fail_0) \
     REGULAR(replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault) \
     REGULAR(rmt_dedup_conflict_part_name_missing) \
@@ -310,6 +311,7 @@ static struct InitFiu
     ONCE(backup_fail_reading_archive_size) \
     PAUSEABLE_ONCE(backup_pause_before_lock_file_creation) \
     PAUSEABLE_ONCE(backup_pause_after_lock_file_creation) \
+    PAUSEABLE(backup_pause_before_reading_file_contents) \
     PAUSEABLE(backup_from_snapshot_pause_holding_admin_lock) \
     PAUSEABLE(backup_from_snapshot_pause_after_admin_lock_release) \
     PAUSEABLE(backup_from_snapshot_pause_before_holder_multi) \
@@ -428,6 +430,7 @@ static struct InitFiu
     REGULAR(mt_mutate_task_can_skip_conversion_to_nullable_force_null_column_desc) \
     PAUSEABLE(iceberg_compaction_merge_pause_in_step) \
     PAUSEABLE_ONCE(iceberg_compaction_pause_before_metadata_commit) \
+    PAUSEABLE_ONCE(iceberg_reader_pause_before_next_file) \
     REGULAR(tcp_handler_fail_connection_setup) \
     REGULAR(distributed_plan_status_check_reenqueue_fault) \
     PAUSEABLE(keeper_changelog_read_plan_resolved) \
@@ -441,6 +444,10 @@ static struct InitFiu
     ONCE(keeper_changelog_preallocate_no_space) \
     ONCE(distributed_plan_record_failure_while_starting_tasks) \
     ONCE(distributed_plan_delay_root_cause_report) \
+    REGULAR(distributed_plan_runtime_filter_receive_branch_fails_before_connect) \
+    PAUSEABLE_ONCE(distributed_plan_runtime_filter_merge_pause_before_finalize) \
+    REGULAR(distributed_plan_runtime_filter_merge_fails_before_finalize) \
+    ONCE(distributed_plan_task_fail_before_start) \
     ONCE(zk_send_thread_request_window_throw) \
     ONCE(zk_send_thread_operations_insert_throw) \
     PAUSEABLE_ONCE(context_zookeeper_lock_acquired_pause) \
