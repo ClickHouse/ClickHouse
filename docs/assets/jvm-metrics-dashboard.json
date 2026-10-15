@@ -1,0 +1,170 @@
+{
+  "version": "0.1.0",
+  "name": "JVM Metrics Dashboard",
+  "tiles": [
+    {
+      "id": "4cjlg",
+      "x": 0,
+      "y": 0,
+      "w": 8,
+      "h": 10,
+      "config": {
+        "name": "Heap memory usage by pool",
+        "source": "Metrics",
+        "displayType": "line",
+        "numberFormat": {
+          "output": "byte",
+          "mantissa": 2,
+          "thousandSeparated": true,
+          "average": false,
+          "decimalBytes": false,
+          "factor": 1
+        },
+        "granularity": "auto",
+        "select": [
+          {
+            "aggFn": "avg",
+            "aggCondition": "Attributes['type'] = 'heap' AND Attributes['pool'] != ''",
+            "aggConditionLanguage": "sql",
+            "valueExpression": "Value",
+            "metricType": "gauge",
+            "metricName": "jvm.memory.used"
+          }
+        ],
+        "where": "",
+        "whereLanguage": "lucene",
+        "groupBy": "Attributes['pool']"
+      }
+    },
+    {
+      "id": "15bgo6",
+      "x": 8,
+      "y": 0,
+      "w": 8,
+      "h": 10,
+      "config": {
+        "name": "Garbage collection pause duration (seconds)",
+        "source": "Metrics",
+        "displayType": "line",
+        "granularity": "auto",
+        "select": [
+          {
+            "aggFn": "max",
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "Value",
+            "metricType": "sum",
+            "metricName": "jvm.gc.duration"
+          }
+        ],
+        "where": "",
+        "whereLanguage": "lucene",
+        "groupBy": "Attributes['gc']"
+      }
+    },
+    {
+      "id": "1mbf2n",
+      "x": 16,
+      "y": 0,
+      "w": 8,
+      "h": 10,
+      "config": {
+        "name": "Thread count by state",
+        "source": "Metrics",
+        "displayType": "stacked_bar",
+        "granularity": "auto",
+        "select": [
+          {
+            "aggFn": "avg",
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "Value",
+            "metricType": "gauge",
+            "metricName": "jvm.thread.count"
+          }
+        ],
+        "where": "",
+        "whereLanguage": "lucene",
+        "groupBy": "Attributes['state']"
+      }
+    },
+    {
+      "id": "12kvqf",
+      "x": 0,
+      "y": 10,
+      "w": 8,
+      "h": 10,
+      "config": {
+        "name": "Metaspace Usage",
+        "source": "Metrics",
+        "displayType": "line",
+        "granularity": "auto",
+        "select": [
+          {
+            "aggFn": "avg",
+            "aggCondition": "Attributes['pool'] = 'Metaspace'",
+            "aggConditionLanguage": "sql",
+            "valueExpression": "Value",
+            "metricType": "gauge",
+            "metricName": "jvm.memory.used"
+          }
+        ],
+        "where": "",
+        "whereLanguage": "lucene"
+      }
+    },
+    {
+      "id": "rdomh",
+      "x": 8,
+      "y": 10,
+      "w": 8,
+      "h": 10,
+      "config": {
+        "name": "CPU time (seconds)",
+        "source": "Metrics",
+        "displayType": "line",
+        "granularity": "auto",
+        "select": [
+          {
+            "aggFn": "avg",
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "Value",
+            "alias": "CPU time (seconds)",
+            "metricType": "gauge",
+            "metricName": "jvm.cpu.time"
+          }
+        ],
+        "where": "",
+        "whereLanguage": "lucene"
+      }
+    },
+    {
+      "id": "hr80r",
+      "x": 16,
+      "y": 10,
+      "w": 8,
+      "h": 10,
+      "config": {
+        "name": "Peak loaded classes",
+        "source": "Metrics",
+        "displayType": "number",
+        "granularity": "auto",
+        "select": [
+          {
+            "aggFn": "max",
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "Value",
+            "isDelta": false,
+            "metricType": "gauge",
+            "metricName": "jvm.class.count"
+          }
+        ],
+        "where": "",
+        "whereLanguage": "lucene"
+      }
+    }
+  ],
+  "filters": []
+}

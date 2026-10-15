@@ -2,7 +2,7 @@
 slug: /clickstack/observability/integration-examples/host-logs/ec2
 title: 'Monitoring EC2 host logs with ClickHouse Observability'
 sidebarTitle: 'EC2 host logs'
-description: 'Monitoring EC2 host logs with ClickHouse Observability setup and configuration for ClickHouse Observability and self-configured deployments.'
+description: 'Collect EC2 syslog files with OpenTelemetry and enrich them with instance metadata in ClickHouse Observability.'
 doc_type: 'guide'
 keywords: ['EC2', 'AWS', 'host logs', 'systemd', 'syslog', 'OTEL', 'ClickHouse Observability', 'system monitoring', 'cloud metadata']
 ---
@@ -10,341 +10,279 @@ keywords: ['EC2', 'AWS', 'host logs', 'systemd', 'syslog', 'OTEL', 'ClickHouse O
 import { Image } from "/snippets/components/Image.jsx";
 import { TrackedLink } from "/snippets/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
-<Tabs>
-<Tab title="ClickHouse Observability">
+Collect EC2 syslog files with an OpenTelemetry collector and send them to ClickHouse Observability with instance metadata. Use the [demo dataset](#demo-dataset) to try the integration without an EC2 instance.
 
-<Note>
-The ClickHouse Observability configuration for this guide is still being adapted. For the managed OTLP endpoint and authentication settings, see [Ingesting with OpenTelemetry](/clickstack/observability/ingesting-data/opentelemetry). The **Self configured** tab contains the existing self-configured instructions.
-</Note>
+## Prerequisites {#prerequisites}
 
-</Tab>
-<Tab title="Self configured">
+- A ClickHouse Observability service
+- For your own logs, a Linux EC2 instance with syslog files, access to its instance metadata service, and permission to install and run the collector
+- For the demo, Docker
+- `curl` to download the collector or sample
 
-<Info>
-**TL;DR**
+### Connection details {#connection-details}
 
-Collect and visualize EC2 system logs in ClickStack using the OpenTelemetry Collector with automatic EC2 metadata enrichment (instance ID, region, AZ, instance type). Includes a demo dataset and pre-built dashboard.
-</Info>
+For a managed service, open ClickHouse Observability and go to **Team Settings → Data → Managed Telemetry**. Copy your OTLP HTTP endpoint and API key. You can use **Copy connection details** to copy the configuration, or **Reveal key** to view the masked key.
 
-## Integration with existing EC2 instance {#existing-ec2-self-configured}
+<Image img="/images/clickstack/getting-started/observability-managed-telemetry.png" alt="Managed Telemetry connection details"/>
 
-This section covers installing OpenTelemetry Collector on your EC2 instances to collect system logs and send them to ClickStack with automatic EC2 metadata enrichment. This distributed architecture is production-ready and scales to multiple instances.
+For the OTLP exporter examples below, set these variables in the terminal where you will run the collector:
 
-<Info>
-**Running ClickStack on the same EC2 instance?**
+```bash
+export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+export OTEL_EXPORTER_OTLP_AUTHORIZATION='Bearer YOUR_API_KEY'
+```
 
-If ClickStack is running on the same EC2 instance whose logs you want to monitor, you can use the all-in-one approach similar to the [Generic Host Logs guide](/clickstack/integration-examples/host-logs). Mount `/var/log` into the ClickStack container and add the `resourcedetection` processor to your custom config to automatically capture EC2 metadata. This guide focuses on the more common distributed architecture for production deployments.
-</Info>
+Replace the placeholders with the exact endpoint, including its port, and API key from your service. Use the base HTTP endpoint without a `/v1/logs` suffix; the exporter appends the signal path.
 
-If you would like to test the EC2 host logs integration before configuring your production instance, you can test with our preconfigured setup and sample data in the ["Demo dataset"](/clickstack/integration-examples/host-logs/ec2#demo-dataset) section.
+For self-configured deployments, use your collector's reachable OTLP HTTP endpoint (for example, `http://YOUR_COLLECTOR_HOST:4318`) and authentication settings. If your collector does not require authentication, omit the exporter's `headers` block from the configurations below. See the [self-configured getting-started guide](/clickstack/self-configured/getting-started/managed) for setup guidance.
 
-##### Prerequisites {#prerequisites-self-configured}
-- ClickStack instance running (can be on-premises, cloud, or local)
-- EC2 instance running (Ubuntu, Amazon Linux, or other Linux distribution)
-- Network connectivity from EC2 instance to ClickStack's OTLP endpoint (port 4318 for HTTP or 4317 for gRPC)
-- EC2 instance metadata service accessible (enabled by default)
+Your EC2 instance must be able to reach the endpoint. For the Docker demo, a destination collector on your own computer is reachable at `http://host.docker.internal:4318`; the demo command includes the host mapping.
+
+## Integration with an existing EC2 instance {#existing-ec2}
+
+Run these steps on the EC2 instance whose logs you want to collect. If you already run a collector, see [Using an existing collector](#existing-collector).
 
 <Steps>
-<Step title="Verify EC2 metadata is accessible" id="verify-metadata-self-configured">
+<Step title="Verify instance metadata and syslog" id="verify-metadata">
 
-From your EC2 instance, verify the metadata service is accessible:
+Check that the instance metadata service is accessible using IMDSv2:
+
 ```bash
-# Get metadata token (IMDSv2)
-TOKEN=$(curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
-
-# Verify instance metadata
-curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-id
-curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/placement/region
-curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-type
+TOKEN=$(curl -fsS --connect-timeout 5 -X PUT \
+  -H 'X-aws-ec2-metadata-token-ttl-seconds: 300' \
+  http://169.254.169.254/latest/api/token)
+curl -fsS --connect-timeout 5 -H "X-aws-ec2-metadata-token: $TOKEN" \
+  http://169.254.169.254/latest/meta-data/instance-id
 ```
 
-You should see your instance ID, region, and instance type. If these commands fail, verify:
-- The instance metadata service is enabled
-- IMDSv2 isn't blocked by security groups or network ACLs
-- You're running these commands from the EC2 instance itself
+The response should contain your instance ID. The collector uses this metadata service to add instance ID, type, region, availability zone, and account ID to your logs. The configuration below does not collect EC2 tags.
 
-<Note>
-EC2 metadata is available at `http://169.254.169.254` from within the instance. The OpenTelemetry `resourcedetection` processor uses this endpoint to automatically enrich logs with cloud context.
-</Note>
-</Step>
-<Step title="Verify syslog files exist" id="verify-syslog-self-configured">
+Locate your syslog file and inspect its format:
 
-Verify that your EC2 instance is writing syslog files:
 ```bash
-# Ubuntu instances
-ls -la /var/log/syslog
-
-# Amazon Linux / RHEL instances
-ls -la /var/log/messages
-
-# View recent entries
+# Ubuntu/Debian
 tail -20 /var/log/syslog
-# or
+
+# Amazon Linux/RHEL
 tail -20 /var/log/messages
 ```
+
+Use the path that exists on your instance. If it writes only to the systemd journal, use the [Systemd/Journald guide](/clickstack/observability/integration-examples/systemd) for collection.
+
 </Step>
-<Step title="Install OpenTelemetry Collector" id="install-collector-self-configured">
+<Step title="Install the collector" id="install-collector">
 
-Install the OpenTelemetry Collector Contrib distribution on your EC2 instance:
+Download OpenTelemetry Collector Contrib `0.161.0` for your instance's architecture:
+
 ```bash
-# Download the latest release
-wget https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v0.114.0/otelcol-contrib_0.114.0_linux_amd64.tar.gz
-
-# Extract and install
-tar -xvf otelcol-contrib_0.114.0_linux_amd64.tar.gz
-sudo mv otelcol-contrib /usr/local/bin/
-
-# Verify installation
-otelcol-contrib --version
-```
-</Step>
-<Step title="Create collector configuration" id="create-config-self-configured">
-
-Create a configuration file for the OpenTelemetry Collector at `/etc/otelcol-contrib/config.yaml`:
-```bash
-sudo mkdir -p /etc/otelcol-contrib
+case "$(uname -m)" in
+  x86_64) ARCH=amd64 ;;
+  aarch64) ARCH=arm64 ;;
+  *) echo "Unsupported architecture"; exit 1 ;;
+esac
+curl -fLO "https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v0.161.0/otelcol-contrib_0.161.0_linux_${ARCH}.tar.gz"
+tar -xzf "otelcol-contrib_0.161.0_linux_${ARCH}.tar.gz" otelcol-contrib
+sudo install -m 755 otelcol-contrib /usr/local/bin/otelcol-contrib
+/usr/local/bin/otelcol-contrib --version
 ```
 
-Choose the configuration based on your Linux distribution:
+</Step>
+<Step title="Configure the collector" id="configure-collector">
+
+Save the matching configuration as `ec2-host-logs.yaml`. Choose by the timestamp format in your file and adjust `include` if your syslog path differs.
 
 <Tabs>
-<Tab title="Modern Linux (Ubuntu 24.04+)">
+<Tab title="ISO timestamps">
+
+For timestamps such as `2026-10-15T12:34:56.123456+00:00`:
 
 ```yaml
-sudo tee /etc/otelcol-contrib/config.yaml > /dev/null << 'EOF'
 receivers:
-  filelog/syslog:
-    include:
-      - /var/log/syslog
-      - /var/log/**/*.log
+  filelog/ec2:
+    include: [/var/log/syslog]
     start_at: end
     operators:
       - type: regex_parser
         regex: '^(?P<timestamp>\S+) (?P<hostname>\S+) (?P<unit>\S+?)(?:\[(?P<pid>\d+)\])?: (?P<message>.*)$'
-        parse_from: body
-        parse_to: attributes
-
-      - type: time_parser
-        parse_from: attributes.timestamp
-        layout_type: gotime
-        layout: '2006-01-02T15:04:05.999999-07:00'
-
+        timestamp:
+          parse_from: attributes.timestamp
+          layout_type: gotime
+          layout: '2006-01-02T15:04:05.999999999Z07:00'
+          location: UTC
       - type: add
         field: attributes.source
-        value: "ec2-host-logs"
+        value: ec2-host-logs
+      - type: add
+        field: resource["service.name"]
+        value: ec2-host-service
+      - type: copy
+        from: attributes.hostname
+        to: resource["host.name"]
 
 processors:
-  resourcedetection:
-    detectors: [ec2, system]
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 256
+    spike_limit_mib: 64
+  resourcedetection/ec2:
+    detectors: [ec2]
     timeout: 5s
     override: false
-    ec2:
-      tags:
-        - ^Name
-        - ^Environment
-        - ^Team
-
   batch:
-    timeout: 10s
-    send_batch_size: 10000
+    timeout: 5s
+    send_batch_size: 500
+    send_batch_max_size: 500
 
 exporters:
-  otlphttp:
-    endpoint: "http://YOUR_CLICKSTACK_HOST:4318"
+  otlp_http/observability:
+    endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
     headers:
-      authorization: "${env:CLICKSTACK_API_KEY}"
+      authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
 
 service:
   pipelines:
-    logs:
-      receivers: [filelog/syslog]
-      processors: [resourcedetection, batch]
-      exporters: [otlphttp]
-EOF
+    logs/ec2:
+      receivers: [filelog/ec2]
+      processors: [memory_limiter, resourcedetection/ec2, batch]
+      exporters: [otlp_http/observability]
 ```
 
 </Tab>
-<Tab title="Legacy Linux (Amazon Linux 2, RHEL, older Ubuntu)">
+<Tab title="Traditional syslog">
+
+For timestamps such as `Oct 15 12:34:56`:
 
 ```yaml
-sudo tee /etc/otelcol-contrib/config.yaml > /dev/null << 'EOF'
 receivers:
-  filelog/syslog:
-    include:
-      - /var/log/messages
-      - /var/log/**/*.log
+  filelog/ec2:
+    include: [/var/log/messages]
     start_at: end
     operators:
       - type: regex_parser
-        regex: '^(?P<timestamp>\w+ \d+ \d{2}:\d{2}:\d{2}) (?P<hostname>\S+) (?P<unit>\S+?)(?:\[(?P<pid>\d+)\])?: (?P<message>.*)$'
-        parse_from: body
-        parse_to: attributes
-
-      - type: time_parser
-        parse_from: attributes.timestamp
-        layout: '%b %d %H:%M:%S'
-
+        regex: '^(?P<timestamp>\w+\s+\d+ \d{2}:\d{2}:\d{2}) (?P<hostname>\S+) (?P<unit>\S+?)(?:\[(?P<pid>\d+)\])?: (?P<message>.*)$'
+        timestamp:
+          parse_from: attributes.timestamp
+          layout_type: gotime
+          layout: 'Jan _2 15:04:05'
+          location: UTC
       - type: add
         field: attributes.source
-        value: "ec2-host-logs"
+        value: ec2-host-logs
+      - type: add
+        field: resource["service.name"]
+        value: ec2-host-service
+      - type: copy
+        from: attributes.hostname
+        to: resource["host.name"]
 
 processors:
-  resourcedetection:
-    detectors: [ec2, system]
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 256
+    spike_limit_mib: 64
+  resourcedetection/ec2:
+    detectors: [ec2]
     timeout: 5s
     override: false
-    ec2:
-      tags:
-        - ^Name
-        - ^Environment
-        - ^Team
-
   batch:
-    timeout: 10s
-    send_batch_size: 10000
+    timeout: 5s
+    send_batch_size: 500
+    send_batch_max_size: 500
 
 exporters:
-  otlphttp:
-    endpoint: "http://YOUR_CLICKSTACK_HOST:4318"
+  otlp_http/observability:
+    endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
     headers:
-      authorization: "${env:CLICKSTACK_API_KEY}"
+      authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
 
 service:
   pipelines:
-    logs:
-      receivers: [filelog/syslog]
-      processors: [resourcedetection, batch]
-      exporters: [otlphttp]
-EOF
+    logs/ec2:
+      receivers: [filelog/ec2]
+      processors: [memory_limiter, resourcedetection/ec2, batch]
+      exporters: [otlp_http/observability]
 ```
+
+Traditional timestamps omit the year and time zone. The parser infers the year; set `location` to your host's IANA time zone if it does not log in UTC.
 
 </Tab>
 </Tabs>
-<br/>
 
-**Replace the following in the configuration:**
-- `YOUR_CLICKSTACK_HOST`: The hostname or IP address where ClickStack is running
-- For local testing, you can use an SSH tunnel (see the [Troubleshooting section](#troubleshooting-self-configured))
+The receiver retains the original log line and extracts hostname, unit, PID (when present), and message. The `resourcedetection/ec2` processor adds EC2 resource attributes. To collect instance tags as well, see the [EC2 detector configuration](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/v0.161.0/processor/resourcedetectionprocessor#aws-ec2) and its permission requirements.
 
-This configuration:
-- Reads system log files from standard locations (`/var/log/syslog` for Ubuntu, `/var/log/messages` for Amazon Linux/RHEL)
-- Parses syslog format to extract structured fields (timestamp, hostname, unit/service, PID, message)
-- **Automatically detects and adds EC2 metadata** using the `resourcedetection` processor
-- Optionally includes EC2 tags (Name, Environment, Team) if present
-- Sends logs to ClickStack via OTLP HTTP
-
-<Info>
-**EC2 Metadata Enrichment**
-
-The `resourcedetection` processor automatically adds these attributes to every log:
-- `cloud.provider`: "aws"
-- `cloud.platform`: "aws_ec2"
-- `cloud.region`: AWS region (e.g., "us-east-1")
-- `cloud.availability_zone`: AZ (e.g., "us-east-1a")
-- `cloud.account.id`: AWS account ID
-- `host.id`: EC2 instance ID (e.g., "i-1234567890abcdef0")
-- `host.type`: Instance type (e.g., "t3.medium")
-- `host.name`: Instance hostname
-</Info>
 </Step>
-<Step title="Set ClickStack API key" id="set-api-key-self-configured">
+<Step title="Run the collector" id="run-collector">
 
-Export your ClickStack API key as an environment variable:
+Set the [connection variables](#connection-details) in this terminal, then run from the directory containing the configuration. The collector needs permission to read the syslog file:
+
 ```bash
-export CLICKSTACK_API_KEY="your-api-key-here"
+sudo --preserve-env=OTEL_EXPORTER_OTLP_ENDPOINT,OTEL_EXPORTER_OTLP_AUTHORIZATION \
+  /usr/local/bin/otelcol-contrib --config="$(pwd)/ec2-host-logs.yaml"
 ```
 
-To make this persistent across reboots, add it to your shell profile:
-```bash
-echo 'export CLICKSTACK_API_KEY="your-api-key-here"' >> ~/.bashrc
-source ~/.bashrc
-```
+Keep the terminal open. The receiver uses `start_at: end`, so generate new activity that writes to the syslog file after startup. For ongoing collection, configure a service using your deployment process and supply the connection variables to that service.
+
 </Step>
-<Step title="Run the collector" id="run-collector-self-configured">
+<Step title="Verify logs" id="verify-logs">
 
-Start the OpenTelemetry Collector:
-```bash
-CLICKSTACK_API_KEY="your-api-key-here" /usr/local/bin/otelcol-contrib --config /etc/otelcol-contrib/config.yaml
-```
+Open **Search**, select your **Logs** source, filter for `ServiceName:ec2-host-service`, and select **Last 15 minutes**. Expand a record and check `cloud.provider`, `cloud.region`, `cloud.availability_zone`, `host.id`, and `host.type` in its resource attributes.
 
-<Info>
-**For production use**
-
-Configure the collector to run as a systemd service so it starts automatically on boot and restarts on failure. See the [OpenTelemetry Collector documentation](https://opentelemetry.io/docs/collector/deployment/) for details.
-</Info>
-</Step>
-<Step title="Verifying Logs in HyperDX" id="verifying-logs-self-configured">
-
-Once the collector is running, log into HyperDX and verify logs are flowing with EC2 metadata:
-
-1. Navigate to the search view
-2. Set source to `Logs`
-3. Filter by `source:ec2-host-logs`
-4. Click on a log entry to expand it
-5. Verify you see EC2 metadata in the resource attributes:
-   - `cloud.provider`
-   - `cloud.region`
-   - `host.id` (instance ID)
-   - `host.type` (instance type)
-   - `cloud.availability_zone`
-
-<Image img="/images/clickstack/host-logs/ec2/search-view.webp" alt="EC2 logs search view"/>
-<Image img="/images/clickstack/host-logs/ec2/log-view.webp" alt="EC2 log detail showing metadata"/>
 </Step>
 </Steps>
 
-## Demo dataset {#demo-dataset-self-configured}
+## Demo dataset {#demo-dataset}
 
-For users who want to test the EC2 host logs integration before configuring their production instances, we provide a sample dataset with simulated EC2 metadata.
+The sample contains 11,658 syslog lines covering 24 hours. The collector adds simulated EC2 metadata and refreshes the timestamps; no AWS account is needed.
 
 <Steps>
-<Step title="Download the sample dataset" id="download-sample-self-configured">
+<Step title="Download the sample" id="download-sample">
 
-Download the sample log file:
 ```bash
-curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/host-logs/journal.log
+mkdir -p ec2-demo
+cd ec2-demo
+curl -fLO https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/host-logs/journal.log
 ```
 
-The dataset includes:
-- System boot sequence
-- SSH login activity (successful and failed attempts)
-- Security incident (brute force attack with fail2ban response)
-- Scheduled maintenance (cron jobs, anacron)
-- Service restarts (rsyslog)
-- Kernel messages and firewall activity
-- Mix of normal operations and notable events
 </Step>
-<Step title="Create test collector configuration" id="test-config-self-configured">
+<Step title="Configure the demo collector" id="configure-demo-collector">
 
-Create a file named `ec2-host-logs-demo.yaml` with the following configuration:
+Save this as `ec2-host-logs-demo.yaml` in the download directory:
+
 ```yaml
-cat > ec2-host-logs-demo.yaml << 'EOF'
 receivers:
-  filelog/journal:
-    include:
-      - /tmp/host-demo/journal.log
+  filelog/ec2:
+    include: [/var/log/host/journal.log]
     start_at: beginning
     operators:
       - type: regex_parser
         regex: '^(?P<timestamp>\S+) (?P<hostname>\S+) (?P<unit>\S+?)(?:\[(?P<pid>\d+)\])?: (?P<message>.*)$'
-        parse_from: body
-        parse_to: attributes
-
-      - type: time_parser
-        parse_from: attributes.timestamp
-        layout: '%Y-%m-%dT%H:%M:%S%z'
-
+        timestamp:
+          parse_from: attributes.timestamp
+          layout: '%Y-%m-%dT%H:%M:%S%z'
+          location: UTC
       - type: add
         field: attributes.source
-        value: "ec2-demo"
+        value: ec2-demo
+      - type: add
+        field: resource["service.name"]
+        value: ec2-demo
+      - type: copy
+        from: attributes.hostname
+        to: resource["host.name"]
 
 processors:
-  # Simulate EC2 metadata for demo (no real EC2 instance required)
-  resource:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 256
+    spike_limit_mib: 64
+  transform/demo_timestamps:
+    error_mode: propagate
+    log_statements:
+      - context: log
+        statements:
+          - set(time, Now() - Duration("2m") - (Time("2025-11-11T23:59:01Z", "%Y-%m-%dT%H:%M:%SZ") - time))
+  resource/ec2_demo:
     attributes:
-      - key: service.name
-        value: "ec2-demo"
-        action: insert
       - key: cloud.provider
         value: "aws"
         action: insert
@@ -363,206 +301,112 @@ processors:
       - key: host.type
         value: "t3.medium"
         action: insert
-      - key: host.name
-        value: "prod-web-01"
-        action: insert
+  batch:
+    timeout: 5s
+    send_batch_size: 500
+    send_batch_max_size: 500
+
+exporters:
+  otlp_http/observability:
+    endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+    headers:
+      authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
 
 service:
   pipelines:
-    logs/ec2-demo:
-      receivers: [filelog/journal]
-      processors:
-        - resource
-        - memory_limiter
-        - transform
-        - batch
-      exporters:
-        - clickhouse
-EOF
+    logs/ec2:
+      receivers: [filelog/ec2]
+      processors: [memory_limiter, resource/ec2_demo, transform/demo_timestamps, batch]
+      exporters: [otlp_http/observability]
 ```
 
 <Note>
-For demo purposes, we manually add EC2 metadata using the `resource` processor. In production with real EC2 instances, use the `resourcedetection` processor which automatically queries the EC2 metadata API.
+The demo-only timestamp transform shifts the sample into roughly the past 24 hours, ending two minutes before ingestion. Use the [EC2 instance configuration](#existing-ec2) for your own logs to preserve their original timestamps.
 </Note>
-</Step>
-<Step title="Run ClickStack with demo configuration" id="run-demo-self-configured">
 
-Run ClickStack with the demo logs and configuration:
+</Step>
+<Step title="Run the demo collector" id="run-demo-collector">
+
+Set the [connection variables](#connection-details), then run from the download directory:
 
 ```bash
-docker run --name clickstack-demo \
-  -p 8080:8080 -p 4317:4317 -p 4318:4318 \
-  -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
-  -v "$(pwd)/ec2-host-logs-demo.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
-  -v "$(pwd)/journal.log:/tmp/host-demo/journal.log:ro" \
-  docker.hyperdx.io/hyperdx/hyperdx-all-in-one:latest
+docker run --rm --name ec2-demo-collector \
+  --add-host=host.docker.internal:host-gateway \
+  --memory=512m \
+  -e OTEL_EXPORTER_OTLP_ENDPOINT \
+  -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+  -v "$(pwd)/ec2-host-logs-demo.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+  -v "$(pwd):/var/log/host:ro" \
+  otel/opentelemetry-collector-contrib:0.161.0 \
+  --config=/etc/otelcol-contrib/config.yaml
 ```
+
+Keep the terminal open while the collector exports the sample, and check its output for errors. Starting a fresh container again can duplicate the sample logs.
+
 </Step>
-<Step title="Verify logs in HyperDX" id="verify-demo-logs-self-configured">
+<Step title="Verify the demo logs" id="verify-demo-logs">
 
-Once the collector is running:
+Open **Search**, select your **Logs** source, filter for `ServiceName:ec2-demo`, and select **Last 2 days**. Expand a log and check the simulated resource attributes: `cloud.region` is `us-east-1`, `host.id` is `i-0abc123def456789`, and `host.type` is `t3.medium`. Stop the collector with **Ctrl+C** after verifying the data.
 
-1. Open [HyperDX](http://localhost:8080/) and log in to your account (you may need to create an account first)
-2. Navigate to the search view and set the source to `Logs`
-3. Set the time range to **2025-11-10 00:00:00 - 2025-11-13 00:00:00**
-4. Filter by `source:ec2-demo`
-5. Expand a log entry to view EC2 metadata in the resource attributes
 
-<Image img="/images/clickstack/host-logs/ec2/search-view-demo.webp" alt="EC2 logs search view"/>
-<Image img="/images/clickstack/host-logs/ec2/log-view-demo.webp" alt="EC2 log detail with metadata"/>
+<Image img="/images/clickstack/observability-ec2-demo-logs.png" alt="EC2 demo logs in ClickHouse Observability Search"/>
 
-<Info>
-**Timezone display**
-
-HyperDX displays timestamps in your browser's local timezone. The demo data spans **2025-11-11 00:00:00 - 2025-11-12 00:00:00 (UTC)**. The wide time range ensures you'll see the demo logs regardless of your location. Once you see the logs, you can narrow the range to a 24-hour period for clearer visualizations.
-</Info>
-
-You should see logs with simulated EC2 context including:
-- Instance ID: `i-0abc123def456789`
-- Region: `us-east-1`
-- Availability Zone: `us-east-1a`
-- Instance Type: `t3.medium`
 </Step>
 </Steps>
 
-## Dashboards and visualization {#dashboards-self-configured}
+## Using an existing collector (optional) {#existing-collector}
 
-To help you get started monitoring EC2 host logs with ClickStack, we provide essential visualizations with cloud context.
+Add the `filelog/ec2` receiver and `resourcedetection/ec2` processor to the collector running on your EC2 instance. Include them in its logs pipeline while preserving its other receivers, processors, and exporter settings. Keep an existing ClickHouse exporter instead of adding the standalone OTLP exporter.
+
+For the demo, use a separate pipeline with the demo receiver, `resource/ec2_demo`, and `transform/demo_timestamps` so the simulated metadata and timestamp changes apply only to the sample.
+
+## Dashboards and visualization {#dashboards}
 
 <Steps>
-<Step title="Download the dashboard configuration" id="download-self-configured">
+<Step title={<TrackedLink href="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/host-logs-dashboard.json" download="host-logs-dashboard.json" eventName="docs.ec2_host_logs_monitoring.dashboard_download">Download the dashboard configuration</TrackedLink>} id="download-dashboard" />
+<Step title="Import the dashboard" id="import-dashboard">
 
-<TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/host-logs-dashboard.json'} download="host-logs-dashboard.json" eventName="docs.ec2_host_logs_monitoring.dashboard_download">Download the dashboard configuration file</TrackedLink>.
+1. Open **Dashboards** and click **Import** in the upper-right corner.
+2. Upload `host-logs-dashboard.json`.
+3. Map the charts to your **Logs** source and click **Finish Import**.
+
+<Image img="/images/clickstack/observability-import-dashboard.png" alt="Import dashboard button"/>
+
 </Step>
-<Step title="Import the pre-built dashboard" id="import-dashboard-self-configured">
+<Step title="View the dashboard" id="view-dashboard">
 
-1. Open HyperDX and navigate to the Dashboards section
-2. Click **Import Dashboard** in the upper right corner under the ellipses
+The imported dashboard displays your logs for the selected time range. To isolate the sample from other services, optionally filter for `ServiceName:ec2-demo`. Select **Last 2 days** to see the full sample. You can also filter by EC2 resource attributes such as `ResourceAttributes.cloud.region:us-east-1` or `ResourceAttributes.host.id:i-0abc123def456789`.
 
-<Image img="/images/clickstack/import-dashboard.webp" alt="Import dashboard button"/>
+The dashboard includes log volume, system units, SSH activity, firewall blocks, and service restarts. Severity is unset unless your ingestion pipeline supplies it.
 
-3. Upload the `host-logs-dashboard.json` file and click **Finish Import**
-
-<Image img="/images/clickstack/host-logs/import-dashboard.webp" alt="Finish import"/>
-</Step>
-<Step title="View the dashboard" id="created-dashboard-self-configured">
-
-The dashboard will be created with all visualizations pre-configured:
-
-<Image img="/images/clickstack/host-logs/host-logs-dashboard.webp" alt="EC2 logs dashboard"/>
-
-You can filter dashboard visualizations by EC2 context:
-- `cloud.region:us-east-1` - Show logs from specific region
-- `host.type:t3.medium` - Filter by instance type
-- `host.id:i-0abc123def456` - Logs from specific instance
+<Image img="/images/clickstack/observability-ec2-dashboard.png" alt="Host logs dashboard in ClickHouse Observability"/>
 
 <Note>
-For the demo dataset, set the time range to **2025-11-11 00:00:00 - 2025-11-12 00:00:00 (UTC)** (adjust based on your local timezone). The imported dashboard won't have a time range specified by default.
+If the SSH activity, Firewall blocks, or untitled security-events charts are empty after filtering for your EC2 service, remove `ServiceName = 'host-demo' AND` from their aggregation filters if present. Then use the dashboard's service-name filter to select your EC2 logs.
 </Note>
+
 </Step>
 </Steps>
 
-## Troubleshooting {#troubleshooting-self-configured}
+## Troubleshooting {#troubleshooting}
 
-### EC2 metadata not appearing in logs {#no-metadata-self-configured}
+### EC2 metadata is missing {#no-metadata}
 
-**Verify the EC2 metadata service is accessible:**
-```bash
-# Get metadata token
-TOKEN=$(curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+Run the metadata check from the EC2 instance. Ensure IMDS is enabled and local firewall or proxy settings allow requests to `169.254.169.254`. If you use a proxy, exclude that address with `NO_PROXY`. Check collector output for metadata detection errors. The demo uses simulated metadata and does not contact IMDS.
 
-# Test metadata endpoint
-curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-id
-```
+### No logs appearing {#no-logs}
 
-If this fails, verify:
-- The instance metadata service is enabled
-- IMDSv2 isn't blocked by security groups
-- You're running the collector on the EC2 instance itself
+- Confirm the path in `include` exists and the collector can read it.
+- Generate new log entries after startup; `start_at: end` skips existing content.
+- Check collector output for authentication or export errors and confirm the endpoint is reachable from the instance.
+- Verify the **Logs** source, service-name filter, and time range. Use **Last 2 days** for the demo.
 
-**Check collector logs for metadata errors:**
-```bash
-# If running as systemd service
-sudo journalctl -u otelcol-contrib -f | grep -i "ec2\|metadata\|resourcedetection"
+### Logs not parsing correctly {#logs-not-parsing}
 
-# If running in foreground, check stdout
-```
+Compare your file's timestamps with the selected configuration. For traditional syslog, set the correct host time zone. Only collect files matching the configured format.
 
-### No logs appearing in HyperDX {#no-logs-self-configured}
+## Next steps {#next-steps}
 
-**Verify syslog files exist and are being written:**
-```bash
-ls -la /var/log/syslog /var/log/messages
-tail -f /var/log/syslog
-```
-
-**Check collector can read the log files:**
-```bash
-cat /var/log/syslog | head -20
-```
-
-**Verify network connectivity to ClickStack:**
-```bash
-# Test OTLP endpoint
-curl -v http://YOUR_CLICKSTACK_HOST:4318/v1/logs
-
-# Should get a response (even if error, means endpoint is reachable)
-```
-
-**Check collector logs for errors:**
-```bash
-# If running in foreground
-# Look for error messages in stdout
-
-# If running as systemd service
-sudo journalctl -u otelcol-contrib -f | grep -i "error\|failed"
-```
-
-### Logs parsing incorrectly {#logs-not-parsing-self-configured}
-
-**Verify your syslog format:**
-
-For Ubuntu 24.04+:
-```bash
-# Should show ISO8601 format: 2025-11-17T20:55:44.826796+00:00
-tail -5 /var/log/syslog
-```
-
-For Amazon Linux 2 / Ubuntu 20.04:
-```bash
-# Should show traditional format: Nov 17 14:16:16
-tail -5 /var/log/messages
-```
-
-If your format doesn't match, use the appropriate configuration tab in the [Create collector configuration](#create-config-self-configured) section based on your distribution.
-
-### Collector not starting as systemd service {#systemd-issues-self-configured}
-
-**Check service status:**
-```bash
-sudo systemctl status otelcol-contrib
-```
-
-**View detailed logs:**
-```bash
-sudo journalctl -u otelcol-contrib -n 50
-```
-
-**Common issues:**
-- API key not set correctly in environment
-- Config file syntax errors
-- Permission issues reading log files
-
-## Next steps {#next-steps-self-configured}
-
-- Set up [alerts](/clickstack/features/alerts) for critical system events (service failures, authentication failures, disk warnings)
-- Filter by EC2 metadata attributes (region, instance type, instance ID) to monitor specific resources
-- Correlate EC2 host logs with application logs for comprehensive troubleshooting
-- Create custom dashboards for security monitoring (SSH attempts, sudo usage, firewall blocks)
-
-## Going to production {#going-to-production-self-configured}
-
-This guide installs the OpenTelemetry Collector directly on EC2 instances, which is the recommended production pattern for host-level monitoring. For managing collectors across many instances, consider using configuration management tools (Ansible, Chef, Puppet) or the OpenTelemetry Operator in Kubernetes environments. See [Sending OpenTelemetry data](/clickstack/ingesting-data/opentelemetry) for production configuration.
-
-</Tab>
-</Tabs>
+- Set up [alerts](/clickstack/observability/features/alerts) for authentication failures or service errors.
+- Filter by EC2 resource attributes to investigate an instance or region.
+- See [Sending OpenTelemetry data](/clickstack/observability/ingesting-data/opentelemetry) for deployment guidance.
