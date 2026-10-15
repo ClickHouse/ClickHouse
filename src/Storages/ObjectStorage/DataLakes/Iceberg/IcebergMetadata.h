@@ -209,7 +209,7 @@ public:
         ContextPtr local_context) const override;
 
     static bool deletesDataOnDrop();
-    void checkCanBeDropped(ContextPtr query_context) const override;
+    void checkCanBeDropped(ContextPtr query_context, bool catalog_purges_files) const override;
     void drop(ContextPtr context) override;
 
     static DataLakeMetadataPtr createWithDeserialization(
@@ -257,6 +257,8 @@ private:
 
     /// Files outside the table directory that `iceberg_delete_data_on_drop` deletes.
     std::vector<Iceberg::ExternalFile> collectExternalFilesToDeleteOnDrop(ContextPtr context) const;
+    /// Same, but returns nothing when the files cannot be enumerated for a reason that retrying does not fix.
+    std::vector<Iceberg::ExternalFile> tryCollectExternalFilesToDeleteOnDrop(ContextPtr context) const;
 
     LoggerPtr log;
     const ObjectStoragePtr object_storage;

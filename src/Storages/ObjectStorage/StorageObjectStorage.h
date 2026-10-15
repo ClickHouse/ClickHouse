@@ -101,7 +101,10 @@ public:
         ContextPtr local_context,
         TableExclusiveLockHolder &) override;
 
-    void checkTableCanBeDropped(ContextPtr query_context) const override { configuration->checkCanBeDropped(object_storage, query_context); }
+    void checkTableCanBeDropped(ContextPtr query_context) const override
+    {
+        configuration->checkCanBeDropped(object_storage, query_context, /* catalog_purges_files */ catalog != nullptr);
+    }
     void drop() override;
 
     bool supportsPartitionBy() const override { return true; }

@@ -133,6 +133,52 @@ def test_cluster_function_rejects_bare_local_delete_file_with_external_s3_data(s
     assert "cannot be read by a cluster function" in error
 
 
+def test_cluster_function_reads_local_data_with_external_s3_delete_file(started_cluster_iceberg_with_spark):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+
+    TABLE_NAME = f"test_cluster_local_data_s3_delete_{get_uuid_str()}"
+    host_path = f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}"
+    # The default bucket allows anonymous reads, so the replicas need no S3 credentials for it.
+    bucket = started_cluster_iceberg_with_spark.minio_bucket
+    minio_url = f"http://{started_cluster_iceberg_with_spark.minio_host}:{started_cluster_iceberg_with_spark.minio_port}"
+
+    spark.sql(
+        f"CREATE TABLE {TABLE_NAME} (id INT, value STRING) USING iceberg "
+        f"TBLPROPERTIES ('format-version'='2', 'write.delete.mode'='merge-on-read')")
+    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (1, 'alpha'), (2, 'beta'), (3, 'gamma')")
+    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id = 2")
+
+    # Data files stay in the table directory, delete files move to S3.
+    metadata_dir = os.path.join(host_path, "metadata")
+    delete_names = _delete_file_names(metadata_dir)
+    assert delete_names
+
+    def relocate(path):
+        name = os.path.basename(path)
+        if name in delete_names:
+            return f"{minio_url}/{bucket}/{TABLE_NAME}_deletes/{name}"
+        return path
+
+    for manifest in [f for f in find_files(metadata_dir, ".avro") if not os.path.basename(f).startswith("snap-")]:
+        modify_avro_file(manifest, ["data_file", "file_path"], relocate)
+
+    s3_uploader = S3Uploader(started_cluster_iceberg_with_spark.minio_client, bucket)
+    for f in find_files(os.path.join(host_path, "data"), ".parquet"):
+        name = os.path.basename(f)
+        if name in delete_names:
+            s3_uploader.upload_file(f, f"{TABLE_NAME}_deletes/{name}")
+            os.remove(f)
+
+    default_upload_directory(started_cluster_iceberg_with_spark, "local", f"/iceberg_data/default/{TABLE_NAME}/", f"/iceberg_data/default/{TABLE_NAME}/")
+    for node in ("node2", "node3"):
+        additional_upload_directory(started_cluster_iceberg_with_spark, node, "local", host_path, host_path)
+
+    assert instance.query(
+        f"SELECT * FROM icebergLocalCluster('cluster_simple', local, path = '{host_path}', format=Parquet) ORDER BY id "
+        f"SETTINGS s3_allow_server_credentials_in_user_queries = 1") == "1\talpha\n3\tgamma\n"
+
+
 def test_trivial_count_rejects_path_outside_user_files(started_cluster_iceberg_with_spark):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
 

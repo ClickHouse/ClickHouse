@@ -118,7 +118,7 @@ struct IcebergDataObjectInfo : public ObjectInfo, std::enable_shared_from_this<I
         return info.data_object_file_path_key.serialize();
     }
 
-    std::optional<String> getExternalLocalPath() const override;
+    std::optional<String> getExternalLocalPath() const override { return external_local_path; }
 
     /// A delete file with a known key in the base storage is opened by that key, without resolving its path again.
     std::pair<ObjectStoragePtr, String> resolveDeleteFileStorage(
@@ -140,15 +140,15 @@ struct IcebergDataObjectInfo : public ObjectInfo, std::enable_shared_from_this<I
 
     void setResolvedStorage(ObjectStoragePtr storage) { resolved_storage = std::move(storage); }
 
-    void setBaseStorageIsLocal(bool value) { base_storage_is_local = value; }
+    void setExternalLocalPath(String path) { external_local_path = std::move(path); }
 
     void addEqualityDeleteObject(const Iceberg::ProcessedManifestFileEntryPtr & equality_delete_object, const String & resolved_storage_path);
     Iceberg::IcebergObjectSerializableInfo info;
 
 private:
     ObjectStoragePtr resolved_storage;
-    /// Scheme-less absolute paths resolve against the table's base storage, whatever backend the data file uses.
-    bool base_storage_is_local = false;
+    /// A dependency resolved to a local storage other than the table's base storage.
+    std::optional<String> external_local_path;
 };
 
 using IcebergDataObjectInfoPtr = std::shared_ptr<IcebergDataObjectInfo>;

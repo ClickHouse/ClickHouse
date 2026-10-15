@@ -1765,12 +1765,17 @@ SinkToStoragePtr IcebergMetadata::write(
 std::vector<Iceberg::ExternalFile> IcebergMetadata::collectExternalFilesToDeleteOnDrop(ContextPtr context) const
 {
     /// `drop` runs after the catalog entry is removed, so use the configured metadata head, not an uncommitted higher version.
+    return Iceberg::collectReachableFiles(
+        object_storage, persistent_components, data_lake_settings, context, log, *external_storages,
+        /* catalog */ nullptr, /* table_identifier */ "", /* scan_metadata_log_history */ false,
+        /* ignore_explicit_metadata_file_path */ false).external_files;
+}
+
+std::vector<Iceberg::ExternalFile> IcebergMetadata::tryCollectExternalFilesToDeleteOnDrop(ContextPtr context) const
+{
     try
     {
-        return Iceberg::collectReachableFiles(
-            object_storage, persistent_components, data_lake_settings, context, log, *external_storages,
-            /* catalog */ nullptr, /* table_identifier */ "", /* scan_metadata_log_history */ false,
-            /* ignore_explicit_metadata_file_path */ false).external_files;
+        return collectExternalFilesToDeleteOnDrop(context);
     }
     catch (const Exception & e)
     {
@@ -1795,15 +1800,20 @@ bool IcebergMetadata::deletesDataOnDrop()
     return Context::getGlobalContextInstance()->getSettingsRef()[Setting::iceberg_delete_data_on_drop];
 }
 
-void IcebergMetadata::checkCanBeDropped(ContextPtr query_context) const
+void IcebergMetadata::checkCanBeDropped(ContextPtr query_context, bool catalog_purges_files) const
 {
     /// `drop` runs in the background with the global context, so the dropping user's grants are checked here.
     if (!Context::getGlobalContextInstance()->getSettingsRef()[Setting::iceberg_delete_data_on_drop].value
         || persistent_components.table_root_was_derived)
         return;
 
+    /// The catalog purges even the files that cannot be enumerated here, so their check must fail the `DROP`.
+    const auto global_context = Context::getGlobalContextInstance();
+    const auto external_files = catalog_purges_files ? collectExternalFilesToDeleteOnDrop(global_context)
+                                                     : tryCollectExternalFilesToDeleteOnDrop(global_context);
+
     std::unordered_set<String> authorized;
-    for (const auto & file : collectExternalFilesToDeleteOnDrop(Context::getGlobalContextInstance()))
+    for (const auto & file : external_files)
     {
         auto path = file.path.serialize();
         if (!isPathWriteGranted(persistent_components.table_location, path, object_storage, query_context))
@@ -1838,7 +1848,7 @@ void IcebergMetadata::drop(ContextPtr context)
 
     /// Enumerate external files before deleting the metadata needed to rediscover them on retry.
     /// Only the files checked by `checkCanBeDropped` are deleted: the metadata may have changed since then.
-    auto external_files = collectExternalFilesToDeleteOnDrop(context);
+    auto external_files = tryCollectExternalFilesToDeleteOnDrop(context);
     std::unordered_set<String> authorized;
     {
         std::lock_guard lock(external_files_drop_authorized_mutex);

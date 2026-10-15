@@ -353,7 +353,7 @@ public:
         return false;
     }
 
-    virtual void checkCanBeDropped(ObjectStoragePtr /*object_storage*/, ContextPtr /*query_context*/) {}
+    virtual void checkCanBeDropped(ObjectStoragePtr /*object_storage*/, ContextPtr /*query_context*/, bool /*catalog_purges_files*/) {}
     virtual void drop(ContextPtr) {}
 
     virtual bool isBackgroundExecutable() const

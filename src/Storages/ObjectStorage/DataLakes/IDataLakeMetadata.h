@@ -203,7 +203,8 @@ public:
     /// Whether `drop` deletes the table data.
     static bool deletesDataOnDrop() { return false; }
     /// Checks with the `DROP` query context what `drop` will do in the background with the global context.
-    virtual void checkCanBeDropped(ContextPtr /*query_context*/) const { }
+    /// `catalog_purges_files` means the catalog also deletes the table files, with its own credentials.
+    virtual void checkCanBeDropped(ContextPtr /*query_context*/, bool /*catalog_purges_files*/) const { }
     virtual void drop(ContextPtr) { }
 
     virtual ObjectStorageType getObjectStorageType() const { return ObjectStorageType::None; }

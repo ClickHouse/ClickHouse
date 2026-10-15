@@ -374,13 +374,13 @@ public:
         return getMetadata()->getColumnMapperForCurrentSchema(storage_metadata_snapshot, context);
     }
 
-    void checkCanBeDropped(ObjectStoragePtr object_storage, ContextPtr query_context) override
+    void checkCanBeDropped(ObjectStoragePtr object_storage, ContextPtr query_context, bool catalog_purges_files) override
     {
         /// A catalog table is loaded lazily, and its catalog purges the files on `DROP`: check them before that.
         if (DataLakeMetadata::deletesDataOnDrop())
             lazyInitializeIfNeeded(object_storage, query_context);
         if (auto metadata = tryGetMetadata())
-            metadata->checkCanBeDropped(query_context);
+            metadata->checkCanBeDropped(query_context, catalog_purges_files);
     }
 
     void drop(ContextPtr local_context) override

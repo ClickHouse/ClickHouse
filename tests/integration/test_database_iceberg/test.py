@@ -1796,6 +1796,66 @@ def test_drop_table_purge_requires_write_grant_on_external_files(started_cluster
     drop_clickhouse_iceberg_table(node, root_namespace, table_name)
 
 
+def _rewrite_s3_manifest_data_file_paths(minio_client, manifest_path, rewrite):
+    bucket, key = manifest_path[len("s3://") :].split("/", 1)
+    reader = DataFileReader(io.BytesIO(_get_s3_object_bytes(minio_client, bucket, key)), DatumReader())
+    schema = reader.meta["avro.schema"].decode()
+    codec = reader.meta.get("avro.codec", b"null").decode()
+    user_meta = {k: v for k, v in reader.meta.items() if not k.startswith("avro.")}
+    records = list(reader)
+    reader.close()
+
+    out = io.BytesIO()
+    writer = DataFileWriter(out, DatumWriter(), avro_schema.parse(schema), codec=codec)
+    for meta_key, value in user_meta.items():
+        writer.set_meta(meta_key, value)
+    for record in records:
+        record["data_file"]["file_path"] = rewrite(record["data_file"]["file_path"])
+        writer.append(record)
+    writer.flush()
+    _put_s3_object_bytes(minio_client, bucket, key, out.getvalue())
+
+
+def test_drop_table_purge_rejects_unresolvable_external_file(started_cluster):
+    # The catalog would purge a file that `DROP` cannot resolve, so its `WRITE` grant check must fail the `DROP`.
+    node = started_cluster.instances["node2"]
+    catalog = load_catalog_impl(started_cluster)
+
+    test_ref = f"test_drop_purge_unresolvable_{uuid.uuid4().hex}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    external_key = f"{test_ref}_external/data.parquet"
+    user = f"{test_ref}_user"
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x Int32)")
+
+    buffer = io.BytesIO()
+    pq.write_table(pa.table({"x": pa.array([7], pa.int32())}, schema=pa.schema([pa.field("x", pa.int32(), nullable=False)])), buffer)
+    _put_s3_object_bytes(started_cluster.minio_client, "warehouse-rest", external_key, buffer.getvalue())
+    table = catalog.load_table(f"{root_namespace}.{table_name}")
+    table.add_files([f"s3://warehouse-rest/{external_key}"])
+
+    # `file://` URIs with a remote host are rejected by ClickHouse.
+    for manifest in catalog.load_table(f"{root_namespace}.{table_name}").current_snapshot().manifests(table.io):
+        _rewrite_s3_manifest_data_file_paths(
+            started_cluster.minio_client,
+            manifest.manifest_path,
+            lambda p: p.replace("s3://warehouse-rest/", "file://other-host/") if p.endswith(external_key) else p,
+        )
+    node.query("SYSTEM DROP ICEBERG METADATA CACHE")
+
+    node.query(f"CREATE USER {user}")
+    node.query(f"GRANT DROP TABLE ON {CATALOG_NAME}.* TO {user}")
+    error = node.query_and_get_error(f"DROP TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`", user=user)
+    assert "refers to host 'other-host'" in error, error
+    assert catalog.table_exists(f"{root_namespace}.{table_name}")
+    assert list_s3_objects(started_cluster.minio_client, "warehouse-rest", f"{test_ref}_external/") == ["data.parquet"]
+
+    node.query(f"DROP USER {user}")
+    catalog.drop_table(f"{root_namespace}.{table_name}")
+
+
 def test_create_table_order_by(started_cluster):
     # `ORDER BY` must reach the catalog as the table's write order.
     node = started_cluster.instances["node1"]

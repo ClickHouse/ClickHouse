@@ -514,7 +514,6 @@ ObjectInfoPtr IcebergIterator::next(size_t)
             resolved_key);
 
         object_info->info.requires_external_storage = (storage_to_use != object_storage);
-        object_info->setBaseStorageIsLocal(object_storage->getType() == ObjectStorageType::Local);
 
         for (const auto & position_delete :
              defineDeletesSpan(manifest_file_entry, position_deletes_files, /* is_equality_delete */ false, logger))
@@ -584,34 +583,36 @@ ObjectInfoPtr IcebergIterator::next(size_t)
         }
 
         /// Only distributed tasks need compatibility checks, which resolve every delete-file path.
-        if (tasks_go_to_other_replicas && !object_info->info.requires_external_storage)
+        if (tasks_go_to_other_replicas)
         {
+            /// Replicas need not share the coordinator's filesystem, so the first local file outside the table is reported.
+            auto check_external_local = [&](const ObjectStoragePtr & storage, const String & file_path)
+            {
+                if (storage != object_storage && storage->getType() == ObjectStorageType::Local
+                    && !object_info->getExternalLocalPath())
+                    object_info->setExternalLocalPath(file_path);
+            };
+            check_external_local(storage_to_use, raw_metadata_path);
+
             /// Old workers open delete paths as keys in the base storage, so they receive the resolved keys.
             /// A delete file in another storage requires the new protocol.
-            auto needs_absolute_path_protocol = [&](const String & file_path)
+            auto resolve_delete_path = [&](const String & file_path)
             {
                 auto [del_storage, del_key] = resolveObjectStorageForPath(
                     persistent_components.table_location, file_path, object_storage, *external_storages, local_context,
                     persistent_components.path_resolver);
+                check_external_local(del_storage, file_path);
                 if (del_storage != object_storage)
-                    return true;
-                object_info->info.delete_file_keys_in_base_storage.emplace(file_path, std::move(del_key));
-                return false;
+                    object_info->info.requires_external_storage = true;
+                else
+                    object_info->info.delete_file_keys_in_base_storage.emplace(file_path, std::move(del_key));
             };
-            auto any_needs_protocol = [&](const auto & delete_objects)
-            {
-                for (const auto & del : delete_objects)
-                    if (needs_absolute_path_protocol(del.file_path))
-                        return true;
-                return false;
-            };
-
-            /// Data paths already travel as resolved keys at every protocol version; only delete paths need this check.
-            object_info->info.requires_external_storage =
-                any_needs_protocol(object_info->info.position_deletes_objects)
-                || any_needs_protocol(object_info->info.equality_deletes_objects)
-                || (object_info->info.deletion_vector.has_value()
-                    && needs_absolute_path_protocol(object_info->info.deletion_vector->file_path));
+            for (const auto & del : object_info->info.position_deletes_objects)
+                resolve_delete_path(del.file_path);
+            for (const auto & del : object_info->info.equality_deletes_objects)
+                resolve_delete_path(del.file_path);
+            if (object_info->info.deletion_vector.has_value())
+                resolve_delete_path(object_info->info.deletion_vector->file_path);
         }
 
         ProfileEvents::increment(ProfileEvents::IcebergMetadataReturnedObjectInfos);
