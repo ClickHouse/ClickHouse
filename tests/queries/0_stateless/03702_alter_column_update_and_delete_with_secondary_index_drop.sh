@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Tags: no-parallel-replicas, no-random-merge-tree-settings
 # no-parallel-replicas: The EXPLAIN output is completely different
 
