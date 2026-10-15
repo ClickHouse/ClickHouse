@@ -25,8 +25,8 @@ constexpr T sentinel(int direction)
 }
 
 template <typename T>
-TopKThresholdTrackerNumeric<T>::TopKThresholdTrackerNumeric(const SortColumnDescription & sort_desc_)
-    : ITopKThresholdTracker(sort_desc_)
+TopKThresholdTrackerNumeric<T>::TopKThresholdTrackerNumeric(const SortColumnDescription & sort_desc_, DataTypePtr data_type_)
+    : ITopKThresholdTracker(sort_desc_, std::move(data_type_))
     , threshold(sentinel<T>(sort_desc_.direction))
 {
 }
@@ -163,17 +163,17 @@ TopKThresholdTrackerPtr createTopKThresholdTracker(const SortColumnDescription &
         switch (data_type.getDefault().getType())
         {
             case Field::Types::UInt64:
-                return std::make_shared<TopKThresholdTrackerNumeric<UInt64>>(sort_desc);
+                return std::make_shared<TopKThresholdTrackerNumeric<UInt64>>(sort_desc, data_type.getPtr());
             case Field::Types::Int64:
-                return std::make_shared<TopKThresholdTrackerNumeric<Int64>>(sort_desc);
+                return std::make_shared<TopKThresholdTrackerNumeric<Int64>>(sort_desc, data_type.getPtr());
             case Field::Types::Float64:
-                return std::make_shared<TopKThresholdTrackerNumeric<Float64>>(sort_desc);
+                return std::make_shared<TopKThresholdTrackerNumeric<Float64>>(sort_desc, data_type.getPtr());
             default:
                 break;
         }
     }
 
-    return std::make_shared<TopKThresholdTrackerGeneric>(sort_desc);
+    return std::make_shared<TopKThresholdTrackerGeneric>(sort_desc, data_type.getPtr());
 }
 
 }

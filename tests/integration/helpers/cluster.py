@@ -5837,6 +5837,14 @@ class ClickHouseInstance:
 
         return error
 
+    def get_cache_size(self, cache_path) -> int:
+        exec_str = f"find {cache_path}  -mindepth 3 -maxdepth 3 -type f -print0 " + "| xargs --no-run-if-empty --null du -B 1 | cut -f 1 | awk 'BEGIN {s=0} {s+=$1} END {print s}'"
+        return int(self.exec_in_container(
+            (["bash", "-c", exec_str]),
+            privileged=True,
+            user="root",
+        ).rstrip())
+
     def append_hosts(self, name, ip):
         self.exec_in_container(
             (["bash", "-c", "echo '{}' {} >> /etc/hosts".format(ip, name)]),
@@ -6064,7 +6072,13 @@ class ClickHouseInstance:
                         raise
                     time.sleep(time_to_sleep)
 
-        raise Exception("Cannot start ClickHouse, see additional info in logs")
+        # Every attempt above fails the same way when docker removed the container's interface;
+        # say so, the CI job reports that as an infrastructure error.
+        lost_interface = self.describe_lost_network_interface()
+        raise Exception(
+            (f"{lost_interface} " if lost_interface else "")
+            + "Cannot start ClickHouse, see additional info in logs"
+        )
 
     def stop_clickhouse_client(self, signal="INT"):
         client_pid = self.get_process_pid("clickhouse client")
