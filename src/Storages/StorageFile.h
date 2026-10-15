@@ -546,7 +546,9 @@ private:
     /// separate sources. Otherwise the file is read by one source, whose reader may still use several
     /// threads, but that is much less efficient: the rest of the pipeline then starts with a single
     /// stream, and the reader can't keep as many threads busy as independent sources do.
-    StorageFileSource::SplitFilePtr trySplitSingleFile(const FormatFilterInfoPtr & format_filter_info) const;
+    /// Takes the read lock of the storage into `read_lock` before looking at the file, so that the
+    /// caller keeps it until the sources (which take their own read locks) are constructed.
+    StorageFileSource::SplitFilePtr trySplitSingleFile(const FormatFilterInfoPtr & format_filter_info, RWLockImpl::LockHolder & read_lock) const;
 
     std::shared_ptr<StorageFile> storage;
     const Strings paths_snapshot;

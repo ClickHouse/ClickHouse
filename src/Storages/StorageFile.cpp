@@ -2908,7 +2908,7 @@ StorageFileSource::TopKQueryConditionCacheKeyPtr ReadFromFile::makeTopKQueryCond
     return key;
 }
 
-StorageFileSource::SplitFilePtr ReadFromFile::trySplitSingleFile(const FormatFilterInfoPtr & format_filter_info) const
+StorageFileSource::SplitFilePtr ReadFromFile::trySplitSingleFile(const FormatFilterInfoPtr & format_filter_info, RWLockImpl::LockHolder & read_lock) const
 {
     const auto & context = getContext();
 
@@ -2932,6 +2932,10 @@ StorageFileSource::SplitFilePtr ReadFromFile::trySplitSingleFile(const FormatFil
     /// The buckets are read by seeking, which is not possible in a compressed file.
     if (chooseCompressionMethod(path, storage->compression_method) != CompressionMethod::None)
         return nullptr;
+
+    /// Wait for a concurrent `INSERT` to finish writing the file (including the footer) before reading
+    /// its metadata, as the sources do. The caller keeps the lock until the sources take their own.
+    read_lock = storage->lockRwlock(RWLockImpl::Read, context);
 
     /// A file that has disappeared is handled by the source, according to `engine_file_empty_if_not_exists`.
     struct stat file_stat{};
@@ -3035,7 +3039,9 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     format_filter_info->min_max_from_statistics = read_min_max_from_statistics && !filter_actions_dag
         && !query_info.prewhere_info && !query_info.row_level_filter;
 
-    auto split_file = trySplitSingleFile(format_filter_info);
+    /// Held until the sources are constructed, see `trySplitSingleFile`.
+    RWLockImpl::LockHolder split_file_read_lock;
+    auto split_file = trySplitSingleFile(format_filter_info, split_file_read_lock);
     if (split_file)
         num_streams = split_file->buckets.size();
 
