@@ -520,6 +520,18 @@ def test_partial_response_false_requires_all_shards():
     error = execute_query_via_http_api(node.ip_address, 9093, path, "dist_metric", timestamp=1010, params=params, expect_error=True)
     assert "Connection refused" in error
 
+    # It also wins over the Distributed table's own `skip_unavailable_shards = 1` for a user with the default `skip_unavailable_shards = 0`.
+    node.query("CREATE TABLE shard_data_skip AS shard_data")
+    node.query("CREATE TABLE dist_data_skip AS shard_data ENGINE=Distributed(unavailable_shard, default, shard_data_skip, 0) SETTINGS skip_unavailable_shards = 1")
+    node.query("CREATE TABLE prometheus_dist_skip ENGINE=TimeSeries DATA dist_data_skip")
+    node.query("INSERT INTO prometheus_dist_skip (metric_name, tags, samples) VALUES ('dist_metric', {}, [(toDateTime64(1000, 3), 7)])")
+    params = {"table": "prometheus_dist_skip"}
+    data = execute_query_via_http_api(node.ip_address, 9093, path, "dist_metric", timestamp=1010, params=params)
+    assert json.loads(data)["result"][0]["value"][1] == "7"
+    params["partial_response"] = "false"
+    error = execute_query_via_http_api(node.ip_address, 9093, path, "dist_metric", timestamp=1010, params=params, expect_error=True)
+    assert "Connection refused" in error
+
 
 # Tenancy filters must be rejected, never ignored.
 def test_tenancy_filters_rejected():

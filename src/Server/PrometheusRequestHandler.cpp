@@ -202,8 +202,8 @@ protected:
         return !reserved_param_names.contains(name);
     }
 
-    /// Adds the settings which the handler derives from its own parameters.
-    virtual void addSettingsFromParams(SettingsChanges & /* settings_changes */) const {}
+    /// Returns the settings which the handler derives from its own parameters.
+    virtual SettingsChanges getSettingsFromParams() const { return {}; }
 
     void makeContext(HTTPServerRequest & request)
     {
@@ -226,10 +226,13 @@ protected:
             }
         }
 
-        addSettingsFromParams(settings_changes);
-
         context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
         context->applySettingsChanges(settings_changes);
+
+        /// Applied last and even when unchanged, so neither the request nor a Distributed table's settings override them.
+        const SettingsChanges derived_changes = getSettingsFromParams();
+        context->checkSettingsConstraints(derived_changes, SettingSource::QUERY);
+        context->applySettingsChanges(derived_changes);
 
         /// Set the query id supplied by the user, if any, and also update the OpenTelemetry fields.
         String query_id = params->get("query_id", request.get("X-ClickHouse-Query-Id", ""));
@@ -472,7 +475,7 @@ public:
         if (name.empty())
             return false;
 
-        /// Parameters of other Prometheus-compatible servers; `nocache` and `partial_response=false` are mapped in addSettingsFromParams.
+        /// Parameters of other Prometheus-compatible servers; `nocache` and `partial_response=false` are mapped in getSettingsFromParams.
         static const NameSet ignored_param_names{"nocache", "trace", "round_digits", "partial_response", "dedup"};
         if (ignored_param_names.contains(name) || unsupported_param_names.contains(name))
             return false;
@@ -483,18 +486,14 @@ public:
         return !reserved_param_names.contains(name);
     }
 
-    void addSettingsFromParams(SettingsChanges & settings_changes) const override
+    SettingsChanges getSettingsFromParams() const override
     {
-        /// Drop the request's own value first: the constraint check removes a change equal to the current value.
-        auto force_off = [&](const String & setting_name)
-        {
-            std::erase_if(settings_changes, [&](const SettingChange & change) { return change.name == setting_name; });
-            settings_changes.push_back({setting_name, false});
-        };
+        SettingsChanges changes;
         if (hasParamValue("nocache", true))
-            force_off("use_query_cache");
+            changes.push_back({"use_query_cache", false});
         if (hasParamValue("partial_response", false))
-            force_off("skip_unavailable_shards");
+            changes.push_back({"skip_unavailable_shards", false});
+        return changes;
     }
 
     /// Parses the optional `limit` parameter of the metadata endpoints: the maximum number of returned items,
