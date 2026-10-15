@@ -8,6 +8,7 @@
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpandedASTBudget.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/replaceLegacyToTime.h>
 #include <Interpreters/InterpreterAlterQuery.h>
@@ -41,6 +42,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsUInt64 max_expanded_ast_elements;
     extern const SettingsBool enable_lightweight_update;
     extern const SettingsBool use_legacy_to_time;
     extern const SettingsUInt64 max_parser_depth;
@@ -158,11 +160,11 @@ BlockIO InterpreterUpdateQuery::execute()
 
         DDLQueryOnClusterParams params;
         params.access_to_check = std::move(required_access);
-        params.additional_access_check = [captured_query_ptr = query_ptr, context = getContext()](const String & cluster_default_database)
+        params.additional_access_check = [captured_query_ptr = query_ptr, context = getContext()](const String & cluster_default_database, bool throw_if_unresolved)
         {
             const auto & captured_update = captured_query_ptr->as<const ASTUpdateQuery &>();
             const auto default_database = captured_update.getDatabase().empty() ? cluster_default_database : captured_update.getDatabase();
-            checkNoRowPolicyForSetOperands(captured_query_ptr, default_database, context, /* throw_if_unresolved = */ true);
+            checkNoRowPolicyForSetOperands(captured_query_ptr, default_database, context, throw_if_unresolved);
         };
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
@@ -191,26 +193,26 @@ BlockIO InterpreterUpdateQuery::execute()
     {
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, database.get());
         guard->releaseTableLock();
-        return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {}, std::move(guard));
+        return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {.run_as_submitting_user = true}, std::move(guard));
     }
 
     /// Expand CTEs before filling the default database, otherwise a CTE alias is qualified as if it
     /// were a table. The context makes CTE expansion respect `enable_global_with_statement`: a CTE
     /// name a subquery does not see is a table name there, and has to be qualified.
+    /// The predicate and the assignments share one budget, so `max_expanded_ast_elements` bounds the whole query.
+    ExpandedASTBudget expansion_budget(settings[Setting::max_expanded_ast_elements], *query_ptr);
     if (update_query.predicate)
     {
         ASTPtr predicate = update_query.predicate->ptr();
-        ApplyWithSubqueryVisitor::visit(predicate, getContext());
+        ApplyWithSubqueryVisitor::visit(predicate, getContext(), expansion_budget);
     }
     if (update_query.assignments)
     {
         ASTPtr assignments = update_query.assignments->ptr();
-        ApplyWithSubqueryVisitor::visit(assignments, getContext());
+        ApplyWithSubqueryVisitor::visit(assignments, getContext(), expansion_budget);
     }
 
     /// Add default database to table identifiers that we can encounter in the update expression.
-    /// A separate visitor per expression: it remembers the names of the recursive common table
-    /// expressions it walked, and the two expressions have separate scopes.
     if (update_query.predicate)
     {
         AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());

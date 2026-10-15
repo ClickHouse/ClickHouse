@@ -79,13 +79,13 @@ SELECT uniqExact(x), uniqExact(x + toDate(0)) FROM t_narrow;
 DROP TABLE t_narrow;
 
 -- a Decimal constant rescales the varying operand: every multiple of 2^32 maps to one
--- Decimal(9, 1)
+-- Decimal(9, 1) when the operand is allowed to wrap (`decimal_check_overflow = 0`)
 DROP TABLE IF EXISTS t_decimal;
 CREATE TABLE t_decimal (x UInt64, v UInt32) ENGINE = MergeTree ORDER BY x PARTITION BY x;
 INSERT INTO t_decimal SELECT intDiv(number, 100) * 4294967296 AS x, number FROM numbers_mt(400);
-SELECT count() FROM (SELECT x + toDecimal32(0, 1) AS k, count() FROM t_decimal GROUP BY k) SETTINGS force_aggregate_partitions_independently = 1;
-SELECT count() FROM (SELECT x + toDecimal32(0, 1) AS k, count() FROM t_decimal GROUP BY k) SETTINGS allow_aggregate_partitions_independently = 0;
-SELECT uniqExact(x), uniqExact(x + toDecimal32(0, 1)) FROM t_decimal;
+SELECT count() FROM (SELECT x + toDecimal32(0, 1) AS k, count() FROM t_decimal GROUP BY k) SETTINGS force_aggregate_partitions_independently = 1, decimal_check_overflow = 0;
+SELECT count() FROM (SELECT x + toDecimal32(0, 1) AS k, count() FROM t_decimal GROUP BY k) SETTINGS allow_aggregate_partitions_independently = 0, decimal_check_overflow = 0;
+SELECT uniqExact(x), uniqExact(x + toDecimal32(0, 1)) FROM t_decimal SETTINGS decimal_check_overflow = 0;
 DROP TABLE t_decimal;
 
 -- two varying operands are not injective either: many pairs share one sum

@@ -13,37 +13,29 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estos ajustes están disponibles en [system.merge&#95;tree&#95;settings](/es/reference/system-tables/merge_tree_settings) y se generan automáticamente a partir del código fuente de ClickHouse.
 
-<div id="max_postpone_time_for_failed_mutations_ms">
-  ## max_postpone_time_for_failed_mutations_ms
-</div>
+## max_postpone_time_for_failed_mutations_ms {#max_postpone_time_for_failed_mutations_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="300000" />
 
-El tiempo máximo de aplazamiento para las mutaciones fallidas.
+Backoff exponencial máximo, en milisegundos, antes de reintentar una mutación fallida sobre la misma parte de datos. El retardo aumenta tras fallos sucesivos y nunca supera este valor. Establézcalo en `0` para reintentar sin aplazamiento.
 
-<div id="max_postpone_time_for_failed_replicated_fetches_ms">
-  ## max_postpone_time_for_failed_replicated_fetches_ms
-</div>
+## max_postpone_time_for_failed_replicated_fetches_ms {#max_postpone_time_for_failed_replicated_fetches_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="60000" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "60000"},{"label": "Se agregó una nueva configuración para permitir aplazar las tareas de fetch en la cola de replicación."}]}]} />
 
-El tiempo máximo de aplazamiento para los fetches replicados fallidos.
+Valor máximo del backoff exponencial, en milisegundos, antes de reintentar una tarea `GET_PART` fallida en una cola de replicación de `ReplicatedMergeTree`. El retraso aumenta con cada fallo sucesivo, hasta el límite que fija este valor. Establézcalo en `0` para desactivar el aplazamiento.
 
-<div id="max_postpone_time_for_failed_replicated_merges_ms">
-  ## max_postpone_time_for_failed_replicated_merges_ms
-</div>
+## max_postpone_time_for_failed_replicated_merges_ms {#max_postpone_time_for_failed_replicated_merges_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="60000" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "60000"},{"label": "Se añadió una nueva configuración para permitir posponer tareas de fusión en la cola de replicación."}]}]} />
 
-El tiempo máximo para posponer las fusiones replicadas fallidas.
+Tiempo máximo de espera, en milisegundos, del backoff exponencial antes de reintentar una tarea `MERGE_PARTS` fallida en una cola de replicación de `ReplicatedMergeTree`. El retraso aumenta con cada fallo sucesivo, sin superar este valor. Establézcalo en `0` para deshabilitar el aplazamiento.
 
-<div id="max_postpone_time_for_failed_replicated_tasks_ms">
-  ## max_postpone_time_for_failed_replicated_tasks_ms
-</div>
+## max_postpone_time_for_failed_replicated_tasks_ms {#max_postpone_time_for_failed_replicated_tasks_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="300000" />
 

@@ -6,7 +6,7 @@
 -- with `Column identifier ... is already registered`, a `LOGICAL_ERROR` that aborts a debug build.
 
 SET enable_analyzer = 1;
-SET allow_experimental_correlated_subqueries = 1;
+SET allow_correlated_subqueries = 1;
 
 DROP TABLE IF EXISTS t_corr_view_local;
 DROP TABLE IF EXISTS t_corr_view_dist;

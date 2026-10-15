@@ -44,7 +44,6 @@ SelectQueryInfo makeStreamingSelectQueryInfo(SelectQueryInfo info)
     info.filter_actions_dag.reset();
     info.row_level_filter.reset();
 
-    info.order_optimizer.reset();
     info.input_order_info.reset();
 
     info.trivial_limit = 0;

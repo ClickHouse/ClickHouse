@@ -3,12 +3,45 @@ import os
 import signal
 import subprocess as sp
 import tempfile
-from threading import Timer
+from threading import Lock, Timer
 
 import numpy as np
 import pandas as pd
 
 DEFAULT_QUERY_TIMEOUT = 600
+
+# One stack trace dump per server per test.
+_dumped_stacktraces = set()
+_dumped_stacktraces_lock = Lock()
+
+# Asked to explain a failed request whose cause is not in the client's own stderr, because
+# something outside the server broke the connection. Takes the address the request was
+# actually aimed at and the client's stderr, and returns the explanation to prepend, or an
+# empty string for the ordinary case, in which nothing about the request changes. Installed
+# by helpers/cluster.py at import time - see `describe_transport_error_for_host` there.
+#
+# It hangs off the module, rather than being handed to each `Client`, because the address is
+# the only thing that says which server a request reached. Tests build a `Client` straight
+# against a node's IP without going through the cluster, and `query(host=...)` re-aims an
+# existing client at another node for a single request. Keying on the address covers both -
+# and covers the clients written after this, which no audit of call sites could.
+_transport_error_describer = None
+
+
+def set_transport_error_describer(describer):
+    global _transport_error_describer
+    _transport_error_describer = describer
+
+
+def describe_transport_error(host, error_text):
+    """The cause of a failed request to `host` that the client cannot see, or "".
+
+    Answers "" whenever nothing is installed, so `helpers/client.py` stays usable on its
+    own - `helpers/keeper_utils.py` and a few tests drive it without a cluster.
+    """
+    if _transport_error_describer is None:
+        return ""
+    return _transport_error_describer(host, error_text)
 
 
 class Client:
@@ -19,7 +52,6 @@ class Client:
         command="/usr/bin/clickhouse-client",
         secure=False,
         config=None,
-        describe_transport_error=None,
     ):
         self.host = host
         self.port = port
@@ -35,28 +67,43 @@ class Client:
 
         self.command += ["--host", self.host, "--port", str(self.port), "--stacktrace"]
 
-        # Asked to explain a failed request whose cause is not in the client's own stderr,
-        # because something outside the server broke the connection. Returns the
-        # explanation to prepend, or an empty string for the ordinary case, in which
-        # nothing about the request changes. Supplied by whoever owns the connection - see
-        # `ClickHouseInstance.describe_transport_error` in helpers/cluster.py.
-        self.describe_transport_error = describe_transport_error
-
     def stacktraces_on_timeout_decorator(func):
         def wrap(self, *args, **kwargs):
             try:
                 return func(self, *args, **kwargs)
-            except sp.TimeoutExpired:
-                # I failed to make pytest print stacktraces using print(...) or logging.debug(...), so...
-                self.get_query_request(
-                    "INSERT INTO TABLE FUNCTION file('stacktraces_on_timeout.txt', 'TSVRaw', 'tn String, tid UInt64, qid String, st String') "
-                    "SELECT thread_name, thread_id, query_id, arrayStringConcat(arrayMap(x -> demangle(addressToSymbol(x)), trace), '\n') AS res FROM system.stack_trace "
-                    "SETTINGS allow_introspection_functions=1",
-                    timeout=60,
-                ).get_answer_and_error()
+            except (sp.TimeoutExpired, QueryTimeoutExceedException):
+                self.dump_stacktraces(kwargs.get("host"))
                 raise
 
         return wrap
+
+    def dump_stacktraces(self, host=None):
+        host = self.host if host is None else host
+        current_test = os.environ.get("PYTEST_CURRENT_TEST", "")
+        key = (current_test.rsplit(" ", 1)[0], host, self.port)
+        with _dumped_stacktraces_lock:
+            if key in _dumped_stacktraces:
+                return
+            _dumped_stacktraces.add(key)
+        try:
+            # I failed to make pytest print stacktraces using print(...) or logging.debug(...), so...
+            _, stderr = self.get_query_request(
+                "INSERT INTO TABLE FUNCTION file('stacktraces_on_timeout.txt', 'TSVRaw', 'test String, tn String, tid UInt64, qid String, st String') "
+                "SELECT getSetting('log_comment'), thread_name, thread_id, query_id, arrayStringConcat(arrayMap(x -> demangle(addressToSymbol(x)), trace), '\n') AS res FROM system.stack_trace "
+                "SETTINGS allow_introspection_functions=1",
+                settings={"log_comment": current_test},
+                host=host,
+                timeout=60,
+            ).get_answer_and_error()
+        except Exception as e:
+            stderr = repr(e)
+        if stderr:
+            logging.warning("Cannot dump the stack traces of %s: %s", host, stderr)
+        else:
+            logging.info(
+                "Dumped the stack traces of %s into user_files/stacktraces_on_timeout.txt",
+                host,
+            )
 
     @stacktraces_on_timeout_decorator
     def query(
@@ -135,13 +182,21 @@ class Client:
         if parse:
             command += ["--format=TabSeparatedWithNames"]
 
+        # The server this request will actually reach, which `host` may have just changed.
+        # Resolved per request rather than per client, so re-aiming one client at another
+        # node investigates the node that failed instead of the one the client was built
+        # for.
+        effective_host = self.host if host is None else host
+
         return CommandRequest(
             command,
             stdin,
             timeout,
             ignore_error,
             parse,
-            describe_transport_error=self.describe_transport_error,
+            describe_transport_error=lambda stderr: describe_transport_error(
+                effective_host, stderr
+            ),
         )
 
     @stacktraces_on_timeout_decorator
