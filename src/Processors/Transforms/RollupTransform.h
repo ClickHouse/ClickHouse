@@ -48,6 +48,7 @@ protected:
 
 private:
     const ColumnsMask aggregates_mask;
+    const bool input_merge_is_redundant;
 
     size_t last_removed_key = 0;
     size_t set_counter = 0;
