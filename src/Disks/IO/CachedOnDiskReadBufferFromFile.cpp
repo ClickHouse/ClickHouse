@@ -9,6 +9,7 @@
 #include <IO/BoundedReadBuffer.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromS3.h>
+#include <Common/Scheduler/CurrentCPULease.h>
 #include <IO/IReadBufferMetadataProvider.h>
 #include <Interpreters/Context.h>
 #include <Common/Hex.h>
@@ -669,8 +670,12 @@ CachedOnDiskReadBufferFromFile::createReadFromFileSegmentState(
                     return create(ReadType::CACHED);
                 }
 
-                download_state = file_segment.wait(
-                    offset, info_.cache_settings.wait_for_concurrent_download_timeout_milliseconds);
+                {
+                    /// Park the CPU lease while waiting for a concurrent download
+                    CPULeaseParkGuard cpu_park;
+                    download_state = file_segment.wait(
+                        offset, info_.cache_settings.wait_for_concurrent_download_timeout_milliseconds);
+                }
 
                 if (download_state == FileSegment::State::DOWNLOADING && !canStartFromCache(offset, file_segment))
                 {
@@ -1527,6 +1532,9 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
 
     const auto & current_read_range = file_segment.range();
     chassert(current_read_range.contains(offset));
+
+    /// Park the CPU lease during the read; a cache hit parks only briefly
+    CPULeaseParkGuard cpu_park;
 
     size_t size = 0;
     if (state.bytes_to_predownload)
