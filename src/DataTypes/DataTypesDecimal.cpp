@@ -158,6 +158,22 @@ bool fitsIntermediate(From value)
         return true;
 }
 
+/// The integers of type `From` whose product with the positive `multiplier` fits into `To`.
+template <typename From, typename To, typename Wide>
+std::pair<From, From> scaledSourceBounds(Wide multiplier)
+{
+    Wide min_value = static_cast<Wide>(std::numeric_limits<To>::min()) / multiplier;
+    Wide max_value = static_cast<Wide>(std::numeric_limits<To>::max()) / multiplier;
+    if constexpr (sizeof(From) < sizeof(To))
+    {
+        min_value = std::max(min_value, static_cast<Wide>(std::numeric_limits<From>::min()));
+        max_value = std::min(max_value, static_cast<Wide>(std::numeric_limits<From>::max()));
+    }
+    else if constexpr (is_unsigned_v<From>)
+        min_value = 0;
+    return {static_cast<From>(min_value), static_cast<From>(max_value)};
+}
+
 }
 
 template <typename FromDataType, typename ToDataType, typename ReturnType>
@@ -587,7 +603,9 @@ NO_SANITIZE_UNDEFINED void convertToDecimalBatch(
         }
         else
         {
-            const DecimalScaleBounds<WideType> bounds(DecimalUtils::scaleMultiplier<WideType>(scale));
+            const WideType multiplier = DecimalUtils::scaleMultiplier<WideType>(scale);
+            const auto [min_value, max_value] = scaledSourceBounds<FromFieldType, ToNativeType>(multiplier);
+            const auto to_multiplier = static_cast<ToNativeType>(multiplier);
             /// At x86-64-v3 with `__AVX2__` the loop and SLP vectorizers widen the per-row Int128
             /// stores into YMM/XMM packs (`vmovq`/`vpunpcklqdq`/`vmovdqu`) wrapping the BMI2
             /// `mulxq`, regressing `sum #16`/`decimal_casts #2` ~7-12%. Plain GPR stores keep the
@@ -597,23 +615,21 @@ NO_SANITIZE_UNDEFINED void convertToDecimalBatch(
 #endif
             for (size_t i = 0; i < size; ++i)
             {
-                WideType converted_value;
-                bool overflow = bounds.mulOverflow(static_cast<WideType>(from[i]), converted_value);
-
-                overflow |= !fitsIntermediate<WideType>(from[i])
-                         || converted_value < std::numeric_limits<ToNativeType>::min()
-                         || converted_value > std::numeric_limits<ToNativeType>::max();
+                bool overflow = from[i] > max_value;
+                if constexpr (is_signed_v<FromFieldType>)
+                    overflow |= from[i] < min_value;
+                ToNativeType converted_value = common::mulIgnoreOverflow(static_cast<ToNativeType>(from[i]), to_multiplier);
 
                 if constexpr (has_nullmap)
                 {
                     nullmap[i] = overflow;
-                    to[i] = overflow ? static_cast<ToNativeType>(0) : static_cast<ToNativeType>(converted_value);
+                    to[i] = overflow ? static_cast<ToNativeType>(0) : converted_value;
                 }
                 else
                 {
                     if (overflow)
                         throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "{} convert overflow", std::string(ToDataType::family_name));
-                    to[i] = static_cast<ToNativeType>(converted_value);
+                    to[i] = converted_value;
                 }
             }
         }
