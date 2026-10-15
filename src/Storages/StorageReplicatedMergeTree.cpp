@@ -8963,7 +8963,7 @@ void StorageReplicatedMergeTree::dropMutationInitialBytes(const String & mutatio
 
 std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsStatus() const
 {
-    UInt64 reader_generation;
+    UInt64 reader_generation = 0;
     {
         std::lock_guard initial_bytes_lock(mutation_initial_bytes_mutex);
         reader_generation = mutation_initial_bytes_next_reader++;
