@@ -16,7 +16,6 @@ namespace ErrorCodes
 namespace FileCacheSetting
 {
     extern const FileCacheSettingsString path;
-    extern const FileCacheSettingsUInt64 max_size;
 }
 
 FileCacheFactory::FileCacheData::FileCacheData(
@@ -260,7 +259,6 @@ void FileCacheFactory::loadDefaultCaches(const Poco::Util::AbstractConfiguration
             config_path,
             getPathPrefixForRelativeCachePath(context),
             /* default_cache_path */"");
-        settings.checkFileSegmentFitsSLRUQueues(settings[FileCacheSetting::max_size]);
 
         auto cache = getOrCreate(name, settings, config_path);
         cache->initialize();

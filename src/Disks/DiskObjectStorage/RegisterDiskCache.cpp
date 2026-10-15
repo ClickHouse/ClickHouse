@@ -22,7 +22,6 @@ namespace ErrorCodes
 namespace FileCacheSetting
 {
     extern const FileCacheSettingsString path;
-    extern const FileCacheSettingsUInt64 max_size;
 }
 
 static std::pair<FileCachePtr, FileCacheSettings> getCache(
@@ -110,9 +109,6 @@ static std::pair<FileCachePtr, FileCacheSettings> getCache(
                 cache_path_prefix_if_absolute, file_cache_settings[FileCacheSetting::path].value);
         }
     }
-
-    if (!is_attach)
-        file_cache_settings.checkFileSegmentFitsSLRUQueues(file_cache_settings[FileCacheSetting::max_size]);
 
     auto cache = FileCacheFactory::instance().getOrCreate(
         cache_name,

@@ -2866,10 +2866,6 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
     if (!is_initialized || shutdown || new_settings == actual_settings)
         return;
 
-    /// The resize below may not happen, so the new file segment size must fit with both sizes.
-    new_settings.checkFileSegmentFitsSLRUQueues(new_settings[FileCacheSetting::max_size]);
-    new_settings.checkFileSegmentFitsSLRUQueues(actual_settings[FileCacheSetting::max_size]);
-
     std::lock_guard lock(apply_settings_mutex);
 
     if (new_settings[FileCacheSetting::background_download_queue_size_limit] != actual_settings[FileCacheSetting::background_download_queue_size_limit]

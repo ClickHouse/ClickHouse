@@ -54,10 +54,6 @@ struct FileCacheSettings
 
     void validate();
 
-    /// With an SLRU policy, a file segment must fit whole into each SLRU queue of a cache of `cache_max_size`
-    /// (of its data part with `use_split_cache`). Not part of `validate`, because attached disks are not checked.
-    void checkFileSegmentFitsSLRUQueues(size_t cache_max_size) const;
-
     bool isPathRelativeInConfig() const { return is_path_relative_in_config; }
 
 private:
