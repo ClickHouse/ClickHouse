@@ -723,9 +723,15 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
         /// mode `max_length` is 0 (a script may legitimately exceed the per-query limit), but the
         /// polyglot parser consumes the whole remaining buffer as a single query and transpiles it,
         /// so the per-query size guard must stay active in every mode to reject an oversized query
-        /// on the client, before the transpiler runs.
+        /// on the client, before the transpiler runs. For the same reason the outer parse below gets
+        /// no lexer size cap (`max_length = 0`): with a cap, the lexical shortcut in `tryParseQuery`
+        /// would report the generic `Max query size exceeded` before the parser runs, hiding the
+        /// dedicated error that explains why inline `INSERT` data counts towards the limit here.
         else if (dialect == Dialect::polyglot)
+        {
+            max_length = 0;
             parser = std::make_unique<ParserPolyglotQuery>(settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], settings[Setting::polyglot_dialect], end, settings[Setting::allow_experimental_polyglot_dialect], settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
+        }
         else if (dialect == Dialect::logsql)
             parser = std::make_unique<ParserLogsQLQuery>(
                 settings[Setting::logsql_database], settings[Setting::logsql_table],
