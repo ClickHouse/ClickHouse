@@ -2716,9 +2716,9 @@ def test_use_database_with_namespace(started_cluster):
     )
     assert "BAD_ARGUMENTS" in error or "has no namespace" in error, f"Expected namespace validation error, got: {error}"
 
-    # while the setting is off, multipart USE stays a syntax error (master behavior)
+    # while the setting is off, multipart USE is rejected by the interpreter
     _, error = node.query_and_get_answer_with_error(f"USE {CATALOG_NAME}.{namespace}")
-    assert "SYNTAX_ERROR" in error or "Syntax error" in error, f"Expected syntax error with the setting off, got: {error}"
+    assert "SUPPORT_IS_DISABLED" in error, f"Expected SUPPORT_IS_DISABLED with the setting off, got: {error}"
 
 
 def test_three_part_identifier(started_cluster):
@@ -2783,11 +2783,10 @@ def test_three_part_identifier(started_cluster):
     except Exception as e:
         assert "doesn't exist" in str(e) or "UNKNOWN_TABLE" in str(e)
 
-    # without the setting, the multipart path stays a syntax error (master behavior)
-    _, err = node.query_and_get_answer_with_error(
-        f"SELECT count() FROM {CATALOG_NAME}.{namespace}.{table_name}"
-    )
-    assert "SYNTAX_ERROR" in err or "Syntax error" in err, f"Expected syntax error with the setting off, got: {err}"
+    # without the setting, the multipart path is shorthand for the quoted name
+    multipart = node.query(f"SELECT count() FROM {CATALOG_NAME}.{namespace}.{table_name}")
+    quoted = node.query(f"SELECT count() FROM {CATALOG_NAME}.`{namespace}.{table_name}`")
+    assert multipart == quoted, f"multipart path and quoted name differ: {multipart} vs {quoted}"
 
 
 def test_multi_level_namespace(started_cluster):
@@ -3238,9 +3237,7 @@ def test_namespace_show_tables_variants(started_cluster):
     assert "UNKNOWN_DATABASE" in err, f"SHOW DICTIONARIES FROM a namespace: {err}"
 
     _, err = node.query_and_get_answer_with_error(f"SHOW TABLES FROM {CATALOG_NAME}.{ns}")
-    assert (
-        "SYNTAX_ERROR" in err or "Syntax error" in err
-    ), f"SHOW TABLES FROM a namespace with the setting off: {err}"
+    assert "SUPPORT_IS_DISABLED" in err, f"SHOW TABLES FROM a namespace with the setting off: {err}"
 
 
 def test_namespace_scope_statement_gating(started_cluster):
