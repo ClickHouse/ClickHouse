@@ -18,6 +18,9 @@ DETACH TABLE IF EMPTY m_merge_if_empty;
 ATTACH TABLE m_merge_if_empty;
 DROP TABLE IF EMPTY m_merge_if_empty SETTINGS ignore_drop_queries_probability = 0;
 
+-- The source table itself does not know its row count, so `IF EMPTY` refuses to drop it.
+DROP TABLE IF EMPTY t_merge_if_empty_file SETTINGS ignore_drop_queries_probability = 0; -- { serverError TABLE_NOT_EMPTY }
+
 SELECT name FROM system.tables WHERE database = currentDatabase() AND name LIKE '%merge_if_empty%' ORDER BY name;
 SELECT count() FROM t_merge_if_empty_mt;
 SELECT count() FROM t_merge_if_empty_file;
