@@ -148,6 +148,10 @@ RUN mkdir -p \
         /output${DEFAULT_CONFIG_DIR} \
         /output${DEFAULT_DATA_DIR} \
         /output${DEFAULT_LOG_DIR} \
+    && chmod -R ugo+Xrw \
+        /output${DEFAULT_CONFIG_DIR} \
+        /output${DEFAULT_DATA_DIR} \
+        /output${DEFAULT_LOG_DIR} \
     && chmod 1777 /output/tmp \
     && { \
         printf 'root:x:0:0:root:/root:/sbin/nologin\n'; \
