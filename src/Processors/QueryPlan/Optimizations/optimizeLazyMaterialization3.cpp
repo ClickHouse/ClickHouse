@@ -18,7 +18,9 @@
 #include <Processors/QueryPlan/Optimizations/lazyFrontier.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
+#include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/Transforms/LazyMaterializingTransform.h>
 #include <Common/typeid_cast.h>
 
@@ -1229,9 +1231,35 @@ private:
     std::unordered_map<const MergedPlanDAG::PaddedSide *, size_t> mask_slots;
 };
 
+/// Whether a step can produce a block of totals: `WITH TOTALS`, or a remote read, whose query can have it. Such a block
+/// goes through the joins up to the `LIMIT` with no rows to read lazily, so it would reach the expression above the
+/// `LIMIT` without the columns read lazily; and a value computed below a join is that join's default in it, which
+/// recomputing the value above the `LIMIT` would not give.
+bool canProduceTotals(const IQueryPlanStep & step)
+{
+    return typeid_cast<const TotalsHavingStep *>(&step) || typeid_cast<const ReadFromRemote *>(&step)
+        || typeid_cast<const ReadFromParallelRemoteReplicasStep *>(&step);
+}
+
+/// Whether a step in the subtree of `node` can produce a block of totals, see `canProduceTotals`.
+bool subtreeCanProduceTotals(const QueryPlan::Node & node)
+{
+    std::vector<const QueryPlan::Node *> stack{&node};
+    while (!stack.empty())
+    {
+        const auto * current = stack.back();
+        stack.pop_back();
+        if (canProduceTotals(*current->step))
+            return true;
+        stack.insert(stack.end(), current->children.begin(), current->children.end());
+    }
+    return false;
+}
+
 /// A cheap look at the plan before the merged DAG is built: the steps its walk can go through hold a join, and a source
 /// they reach can be read lazily. The walk can stop higher up, so this only rules plans out. The columns this pass adds
-/// are found by name, so a name of this pass in a header of those steps or sources rules the plan out as well.
+/// are found by name, so a name of this pass in a header of those steps or sources rules the plan out as well, and so
+/// does a source that can produce a block of totals.
 bool mayDeferOverJoins(const QueryPlan::Node & chain_top, const QueryPlanOptimizationSettings & settings)
 {
     bool has_join = false;
@@ -1249,6 +1277,10 @@ bool mayDeferOverJoins(const QueryPlan::Node & chain_top, const QueryPlanOptimiz
 
         if (!canEnterStep(*node))
         {
+            /// A source the walk does not go into can hide anything below it.
+            if (subtreeCanProduceTotals(*node))
+                return false;
+
             has_lazy_source |= canReadLazily(*node, settings);
             continue;
         }
