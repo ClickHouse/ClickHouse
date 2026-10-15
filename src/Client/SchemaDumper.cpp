@@ -1219,13 +1219,16 @@ void collectFunctionArgumentReferences(
                     return;
                 /// The server folded these at CREATE time against its own session and machine, neither
                 /// of which the dump shares; rebinding them here would invent or miss a local edge.
-                for (size_t i = 1; i < std::min<size_t>(args.size(), 3); ++i)
-                    if (dependsOnUnstoredContext(*args[i], clusters.context))
+                auto check_name_argument = [&](const ASTPtr & arg)
+                {
+                    if (dependsOnUnstoredContext(*arg, clusters.context))
                         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                             "Cannot statically resolve the database/table arguments of {} for --dump-schema: "
                             "they read the session database or user, or a session setting, or a server "
                             "constant such as getMacro()/hostName(), none of which is stored with the object",
                             function->formatForErrorMessage());
+                };
+                check_name_argument(args[1]);
 
                 /// The server runs evaluateConstantExpressionOrIdentifierAsLiteral on these
                 /// positions: identifiers, string literals and constant expressions all name tables.
@@ -1281,6 +1284,8 @@ void collectFunctionArgumentReferences(
 
                 if (!dependency && !database_only.empty() && args.size() >= 3)
                 {
+                    /// Only after a bare database is the third argument a table name, not a user or a sharding key.
+                    check_name_argument(args[2]);
                     if (auto table = read_name(args[2]))
                         dependency = std::pair(database_only, *table);
                     else
@@ -2597,6 +2602,7 @@ struct ReplayGateNeeds
     bool url_wildcard = false;
     bool statistics = false;
     bool xgboost = false;
+    bool ipcrypt_functions = false;
     std::set<String> codec_gates; /// `enable_<family>_codec` of the codecs the statements name
     std::set<String> data_lake_catalog_gates; /// gates of the known `catalog_type`s; `data_lake_catalog_database` keeps all
 };
@@ -2764,7 +2770,21 @@ String nameTokens(const IAST & ast, const IAST * skip, bool with_types, std::vec
             if (table_functions.contains(&node))
             {
                 if (function->arguments)
-                    forEachNode(*function->arguments, [&](const IAST & argument) { add_types_in_string(argument, true); });
+                {
+                    /// `values` and `format` also take rows, which are data: only their structure argument is one.
+                    const auto & args = function->arguments->children;
+                    size_t begin = 0;
+                    size_t end = args.size();
+                    if (equalsCaseInsensitive(function->name, "values"))
+                        end = args.size() >= 2 ? 1 : 0;
+                    else if (equalsCaseInsensitive(function->name, "format"))
+                    {
+                        begin = args.size() == 3 ? 1 : 0;
+                        end = args.size() == 3 ? 2 : 0;
+                    }
+                    for (size_t i = begin; i < end; ++i)
+                        forEachNode(*args[i], [&](const IAST & argument) { add_types_in_string(argument, true); });
+                }
             }
             else
             {
@@ -2772,7 +2792,14 @@ String nameTokens(const IAST & ast, const IAST * skip, bool with_types, std::vec
                 const bool is_cast = equalsCaseInsensitive(function->name, "CAST") || equalsCaseInsensitive(function->name, "_CAST")
                     || function->name == "accurateCast" || function->name == "accurateCastOrNull";
                 if (is_cast && function->arguments && !function->arguments->children.empty())
-                    add_types_in_string(*function->arguments->children.back(), false);
+                {
+                    const auto & target = function->arguments->children.back();
+                    if (target->as<ASTLiteral>())
+                        add_types_in_string(*target, false);
+                    else if (validated_types)
+                        /// A computed target type is folded only by the server: an unbuildable type keeps every type gate.
+                        validated_types->push_back(target);
+                }
             }
         }
         else if (const auto * data_type = node.as<ASTDataType>(); data_type && with_types)
@@ -3198,6 +3225,7 @@ ReplayGateNeeds collectReplayGateNeeds(
         needs.hyperscan_functions |= hasToken(names, "multimatch", true) || hasToken(names, "multifuzzymatch", true);
         needs.time_series_aggregate_functions |= hasTimeSeriesFunction(names);
         needs.xgboost |= hasToken(names, "predictxgboost");
+        needs.ipcrypt_functions |= hasToken(names, "ipcrypt", true);
 
         /// Type gates come from `validateDataType` itself. `InterpreterCreateQuery` validates the stored columns except a
         /// view's; a materialized view's inner table validates them on its own CREATE.
@@ -3480,6 +3508,7 @@ String replaySettingsPrelude(
         {"allow_experimental_paimon_storage_engine", &ReplayGateNeeds::paimon_table},
         {"allow_statistics", &ReplayGateNeeds::statistics},
         {"enable_xgboost", &ReplayGateNeeds::xgboost},
+        {"enable_ipcrypt", &ReplayGateNeeds::ipcrypt_functions},
     };
     auto shared_needed = [&needs](const String & name)
     {
@@ -4069,6 +4098,9 @@ void dumpDatabaseSchema(
             }
             out << tables[i].create_query + ";\n\n";
         }
+        out.flush();
+        if (out.fail())
+            throw Exception(ErrorCodes::CANNOT_WRITE_TO_FILE, "Failed writing the schema dump to the output");
         return;
     }
 
