@@ -50,6 +50,7 @@ read_settings=(
     --use_uncompressed_cache 0
     --use_query_condition_cache 0
     --use_reader_executor 0
+    --enable_parallel_replicas 0
 )
 
 function query()
