@@ -11,6 +11,7 @@
 #include <Columns/ColumnVector.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <AggregateFunctions/SumIntoDecimal128.h>
 
 #include "config.h"
 #include <Common/TargetSpecific.h>
@@ -91,6 +92,10 @@ struct AggregateFunctionSumData
         Impl::add(sum, toAccumulateResult(value));
     }
 
+    /// `sum` and `avg` of `Decimal32`, `Decimal64` and `Decimal128` (and of `DateTime64` / `Time64`) accumulate in `Decimal128`.
+    template <typename Value>
+    static constexpr bool sums_into_decimal128 = std::is_same_v<T, Decimal128> && summable_into_decimal128<Value>;
+
     /// Vectorized version
     MULTITARGET_FUNCTION_X86_V4(
     MULTITARGET_FUNCTION_HEADER(
@@ -102,7 +107,12 @@ struct AggregateFunctionSumData
         size_t count = end - start;
         const auto * end_ptr = ptr + count;
 
-        if constexpr (is_floating_point<T>)
+        if constexpr (sums_into_decimal128<Value>)
+        {
+            Impl::add(sum, sumIntoDecimal128(ptr, nullptr, count));
+            return;
+        }
+        else if constexpr (is_floating_point<T>)
         {
             /// Compiler cannot unroll this loop, do it manually.
             /// (at least for floats, most likely due to the lack of -fassociative-math)
@@ -161,7 +171,12 @@ struct AggregateFunctionSumData
         size_t count = end - start;
         const auto * end_ptr = ptr + count;
 
-        if constexpr ((is_integer<T> || is_decimal<T>) && !is_over_big_int<T>)
+        if constexpr (sums_into_decimal128<Value>)
+        {
+            Impl::add(sum, sumIntoDecimal128<Value, true, add_if_zero>(ptr, condition_map, count));
+            return;
+        }
+        else if constexpr ((is_integer<T> || is_decimal<T>) && !is_over_big_int<T>)
         {
             /// For integers we can vectorize the operation if we replace the null check using a multiplication (by 0 for null, 1 for not null)
             /// https://quick-bench.com/q/MLTnfTvwC2qZFVeWHfOBR3U7a8I
