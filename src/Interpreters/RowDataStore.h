@@ -1,11 +1,11 @@
 #pragma once
 
 #include <Columns/IColumn_fwd.h>
+#include <Core/Names.h>
 #include <DataTypes/IDataType_fwd.h>
 #include <Common/PODArray.h>
 #include <base/types.h>
 
-#include <optional>
 #include <vector>
 
 
@@ -26,6 +26,8 @@ namespace DB
 ///
 /// The order of fields matches the order of source columns.
 class RowDataStore;
+class Block;
+class TableJoin;
 using RowDataStorePtr = std::shared_ptr<RowDataStore>;
 
 class RowDataStore
@@ -82,7 +84,9 @@ private:
     void gatherRows(const Columns & columns, size_t start, size_t length);
 };
 
-bool isRowStorageUseful(const ColumnPtr & column, Float64 avg_value_bytes);
+/// Right-side columns that qualify for the row store.
+NameSet computeRowStoreCandidateColumns(
+    const TableJoin & table_join, const Block & right_sample_block, UInt64 right_rows, UInt64 min_string_column_bytes);
 
 /// Derives optimal batch size for reading and writing into the row store based on L2 cache size.
 size_t rowStoreBatchSize(size_t row_length);

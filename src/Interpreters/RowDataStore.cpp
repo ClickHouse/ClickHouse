@@ -3,7 +3,9 @@
 #include <Interpreters/RowDataStore.h>
 #include <Columns/ColumnReplicated.h>
 #include <Columns/IColumn.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
+#include <Interpreters/TableJoin.h>
 #include <base/types.h>
 #include <base/PackedStringRef.h>
 #include <base/unaligned.h>
@@ -14,6 +16,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <optional>
 
 
 namespace ProfileEvents
@@ -347,16 +350,30 @@ size_t rowStoreBatchSize(size_t row_length)
     return std::max<size_t>(1, batch_bytes / std::max<size_t>(row_length, CH_CACHE_LINE_SIZE));
 }
 
-bool isRowStorageUseful(const ColumnPtr & column, Float64 avg_value_bytes)
+NameSet computeRowStoreCandidateColumns(
+    const TableJoin & table_join, const Block & right_sample_block, UInt64 right_rows, UInt64 min_string_column_bytes)
 {
-    const IColumn * check_col = column.get();
-    if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.get()))
-        check_col = column_nullable->getNestedColumnPtr().get();
+    /// ANY joins materialize eagerly and don't run the batched fill the row store accelerates.
+    if (table_join.kind() == JoinKind::Cross || table_join.strictness() == JoinStrictness::Any
+        || table_join.getClauses().empty() || table_join.getMixedJoinExpression())
+        return {};
 
-    /// The average comes from the statistics and includes the 8-byte offset. 0 means the average is unknown.
-    if (typeid_cast<const ColumnString *>(check_col))
-        return avg_value_bytes > 0 && avg_value_bytes <= UnhashedPackedStringRef::MAX_SMALL_LEN + sizeof(ColumnString::Offset);
-
-    return check_col->isFixedAndContiguous() && column->sizeOfValueIfFixed() <= 32;
+    NameSet columns;
+    for (const auto & column : right_sample_block)
+    {
+        const auto sample = column.type->createColumn();
+        const auto nested = removeNullable(column.type)->createColumn();
+        if (typeid_cast<const ColumnString *>(nested.get()))
+        {
+            /// The average comes from the statistics and includes the 8-byte offset. 0 means the average is unknown.
+            const Float64 avg_value_bytes = table_join.getRightColumnAvgBytes(column.name);
+            if (avg_value_bytes > 0 && avg_value_bytes <= UnhashedPackedStringRef::MAX_SMALL_LEN + sizeof(ColumnString::Offset)
+                && static_cast<Float64>(right_rows) * avg_value_bytes >= static_cast<Float64>(min_string_column_bytes))
+                columns.insert(column.name);
+        }
+        else if (nested->isFixedAndContiguous() && sample->sizeOfValueIfFixed() <= 32)
+            columns.insert(column.name);
+    }
+    return columns;
 }
 }

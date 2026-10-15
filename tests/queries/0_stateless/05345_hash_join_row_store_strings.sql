@@ -29,6 +29,7 @@ SET query_plan_join_swap_table = 0;
 SET query_plan_optimize_join_order_randomize = 0; -- Randomized statistics carry no average sizes
 SET use_statistics = 1; -- The admission of a `String` column reads its average size from the statistics
 SET min_rows_ratio_for_hash_join_row_store = 0;
+SET min_string_column_bytes_for_hash_join_row_store = 0;
 
 SELECT * FROM left l INNER JOIN right r ON l.k = r.k ORDER BY ALL
 SETTINGS log_comment = 'rs_short_strings';
@@ -39,6 +40,10 @@ SETTINGS log_comment = 'rs_mixed_strings';
 
 SELECT * FROM left l INNER JOIN right_long r ON l.k = r.k ORDER BY ALL
 SETTINGS log_comment = 'rs_long_strings';
+
+-- The estimated size of each `String` column is below the minimum.
+SELECT * FROM left l INNER JOIN right r ON l.k = r.k ORDER BY ALL
+SETTINGS log_comment = 'rs_gated_strings', min_string_column_bytes_for_hash_join_row_store = 1000000;
 
 SYSTEM FLUSH LOGS text_log, query_log;
 
@@ -59,6 +64,12 @@ FROM system.text_log
 WHERE event_date >= yesterday() AND query_id IN (
     SELECT query_id FROM system.query_log
     WHERE current_database = currentDatabase() AND log_comment = 'rs_long_strings' AND type = 'QueryFinish');
+
+SELECT 'rs_gated_strings', countIf(message LIKE 'Initialized Row store%') > 0
+FROM system.text_log
+WHERE event_date >= yesterday() AND query_id IN (
+    SELECT query_id FROM system.query_log
+    WHERE current_database = currentDatabase() AND log_comment = 'rs_gated_strings' AND type = 'QueryFinish');
 
 DROP TABLE right_long;
 DROP TABLE right_mixed;

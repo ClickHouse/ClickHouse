@@ -262,6 +262,7 @@ struct JoinAlgorithmParams
 
     bool enable_hash_join_row_store = true;
     Float64 min_rows_ratio_for_hash_join_row_store = 0;
+    UInt64 min_string_column_bytes_for_hash_join_row_store = 0;
 
     String initial_query_id;
     std::chrono::milliseconds lock_acquire_timeout{};
