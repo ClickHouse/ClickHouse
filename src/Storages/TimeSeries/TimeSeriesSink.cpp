@@ -459,6 +459,13 @@ std::unique_ptr<TimeSeriesSink::TargetPipeline> TimeSeriesSink::createTargetPipe
     pipeline->context->setCurrentQueryId(
         fmt::format("{}:{}:{}", getContext()->getCurrentQueryId(), kind, ++target_pipeline_sequence));
 
+    /// Each input block gets its own pipelines, so the token must differ per block and repeat on a retry.
+    const auto token = getContext()->getSettingsRef().get("insert_deduplication_token").safeGet<String>();
+    if (!token.empty())
+    {
+        pipeline->context->setSetting("insert_deduplication_token", Field(fmt::format("{}_{}", token, input_block_index)));
+    }
+
     if (parallel)
     {
         /// The outer insert already applied the minimum block size, so the inner squash only enforces the strict maximum.
@@ -552,6 +559,8 @@ void TimeSeriesSink::consume(Chunk & chunk)
 {
     if (!chunk.getNumRows())
         return;
+
+    ++input_block_index;
 
     Block block = getHeader().cloneWithColumns(chunk.getColumns());
 

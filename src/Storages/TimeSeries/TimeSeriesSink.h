@@ -127,6 +127,7 @@ private:
     bool tags_pipeline_dirty = false;
     bool time_ranges_pipeline_dirty = false;
     size_t target_pipeline_sequence = 0;
+    size_t input_block_index = 0;
 
     /// Skip the rows already written to the "tags" and "metric families" tables, null if the corresponding cache is disabled.
     TimeSeriesDeduplicationCachePtr tags_deduplication_cache;
