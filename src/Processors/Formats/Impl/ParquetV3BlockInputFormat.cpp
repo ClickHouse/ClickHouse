@@ -202,7 +202,7 @@ std::optional<std::pair<std::vector<size_t>, size_t>> ParquetV3BlockInputFormat:
         if (produced_rows)
             matched.push_back(row_group.row_group_idx);
     }
-    return std::make_pair(std::move(matched), reader->reader.file_metadata.row_groups.size());
+    return std::make_pair(std::move(matched), reader->reader.file_metadata().row_groups.size());
 }
 
 std::vector<std::pair<size_t, Field>> ParquetV3BlockInputFormat::getTopKBestValuesOfBuckets() const

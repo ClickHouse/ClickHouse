@@ -525,7 +525,8 @@ struct Reader
 
     std::shared_ptr<const FileFooter> file_footer;
     /// `file_footer->metadata`, without column chunks; see getColumnChunk.
-    parq::FileMetaData file_metadata;
+    const parq::FileMetaData & file_metadata() const { return file_footer ? file_footer->metadata : empty_file_metadata; }
+    static const parq::FileMetaData empty_file_metadata;
     std::deque<RowGroup> row_groups;
 
     /// Don't get confused in different column numberings (sorry there are so many):

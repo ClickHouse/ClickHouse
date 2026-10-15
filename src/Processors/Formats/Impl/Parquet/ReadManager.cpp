@@ -69,7 +69,7 @@ void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_, 
     reader.preparePrewhere();
 
     ProfileEvents::increment(ProfileEvents::ParquetReadRowGroups, reader.row_groups.size());
-    ProfileEvents::increment(ProfileEvents::ParquetPrunedRowGroups, reader.file_metadata.row_groups.size() - reader.row_groups.size());
+    ProfileEvents::increment(ProfileEvents::ParquetPrunedRowGroups, reader.file_metadata().row_groups.size() - reader.row_groups.size());
 
     size_t num_row_groups = reader.row_groups.size();
     for (size_t i = size_t(ReadStage::NotStarted) + 1; i < size_t(ReadStage::Deliver); ++i)

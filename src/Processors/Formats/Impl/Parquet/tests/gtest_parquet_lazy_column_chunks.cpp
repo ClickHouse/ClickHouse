@@ -675,7 +675,7 @@ TEST(ParquetLazyColumnChunks, ReaderParsesOnlyItsColumns)
         for (size_t i = 0; i < 3; ++i)
         {
             EXPECT_EQ(reader.numColumnChunks(i), 5);
-            EXPECT_TRUE(reader.file_metadata.row_groups[i].columns.empty());
+            EXPECT_TRUE(reader.file_metadata().row_groups[i].columns.empty());
             EXPECT_EQ(reader.getColumnChunk(i, 1), expected.row_groups[i].columns[1]);
             EXPECT_EQ(reader.getColumnChunk(i, 3), expected.row_groups[i].columns[3]);
         }
