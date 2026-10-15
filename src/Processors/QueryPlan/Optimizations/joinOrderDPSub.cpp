@@ -171,16 +171,11 @@ private:
         /// `restriction_by_rel`, which lets non-commutative outer and semi/anti joins be reordered.
         std::vector<ConflictOperator> conflict_operators;
 
-        /// An inner-join conjunct whose join step has conflict rules: its source relations and the
-        /// index of that step in `conflict_operators`. A conjunct is placed on its own, at the lowest
-        /// join where all of its relations are present, so the rules of its step have to be checked
-        /// wherever it is placed, and not only where the whole ON clause of the step is.
-        struct RuledConjunct
-        {
-            TUInt sources = 0;
-            size_t op_index = 0;
-        };
-        std::vector<RuledConjunct> ruled_conjuncts;
+        /// Per edge, with a conflict detector: the index in `conflict_operators` of the join step
+        /// whose ON clause it comes from, and, for an inner join's conjunct, the relations that must
+        /// be present before it may be placed besides its own. See `initDPsubScratch`.
+        std::vector<size_t> edge_operator;
+        std::vector<TUInt> edge_defer_mask;
     };
     DPsubMaskData<UInt32> dpsub_data;
 
@@ -228,7 +223,8 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
     ///    `isValidJoinOrderMaskConflict`. Handles inner/outer *and* semi/anti joins, with orientation.
     dpsub_data.restriction_by_rel.assign(num_relations, {});
     dpsub_data.conflict_operators.clear();
-    dpsub_data.ruled_conjuncts.clear();
+    dpsub_data.edge_operator.assign(n, 0);
+    dpsub_data.edge_defer_mask.assign(n, 0);
     if (useConflictDetector())
     {
         std::vector<ConflictOpMask> ops;
@@ -238,19 +234,40 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
 
         dpsub_data.conflict_operators = computeConflictOperators(ops, conflictDetectorKind(), log);
 
+        /// Where each condition is placed follows from the join step it comes from, see
+        /// `collectJoinEdgesMask`. An outer, semi or anti join's condition goes where that join is
+        /// applied. An inner join's ON clause is split into conjuncts, filters each placed at the lowest
+        /// join where it can be evaluated; a filter may go below a join nested under its join step
+        /// only onto that join's preserved side. A conjunct that reads the null-supplying side of a
+        /// nested join would otherwise remove rows before that join pads or matches them, so it waits
+        /// until all relations of the nested join are present.
         if (query_graph.edge_conflict_ops.size() != edges.size())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Join graph has {} conditions, but join steps are recorded for {} of them",
                 edges.size(), query_graph.edge_conflict_ops.size());
+
+        const auto & operators = dpsub_data.conflict_operators;
         for (size_t i = 0; i < edges.size(); ++i)
         {
-            if (!edges[i] || dpsub_data.edge_pinned[i])
+            if (!edges[i])
                 continue;
             const size_t op_index = query_graph.edge_conflict_ops[i];
-            if (op_index >= dpsub_data.conflict_operators.size())
+            if (op_index >= operators.size())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Join condition {} refers to join step {}, but there are only {}",
-                    i, op_index, dpsub_data.conflict_operators.size());
-            if (!dpsub_data.conflict_operators[op_index].rules.empty())
-                dpsub_data.ruled_conjuncts.push_back({dpsub_data.edge_source_mask[i], op_index});
+                    i, op_index, operators.size());
+            dpsub_data.edge_operator[i] = op_index;
+            if (dpsub_data.edge_pinned[i])
+                continue;
+
+            const UInt32 sources = dpsub_data.edge_source_mask[i];
+            const UInt32 step_relations = operators[op_index].relations;
+            UInt32 defer = 0;
+            for (const auto & nested : operators)
+            {
+                const bool is_nested = (nested.relations & ~step_relations) == 0 && nested.relations != step_relations;
+                if (is_nested && (sources & nested.nullSupplying()))
+                    defer |= nested.relations;
+            }
+            dpsub_data.edge_defer_mask[i] = defer;
         }
         LOG_TRACE(log, "DPsub: using {} conflict detector over {} captured join operators",
                   toString(query_graph.conflict_detector), dpsub_data.conflict_operators.size());
@@ -429,30 +446,10 @@ DPSubJoinOrderOptimizer::isValidJoinOrderMaskConflict(UInt32 left_mask, UInt32 r
     /// product, which is applied across the split while joining the sides on nothing.
     bool have_connecting_op = false;
 
-    /// A conjunct placed across this split is part of its join step applied here, so the conflict
-    /// rules of that step must hold even when the rest of its ON clause is placed higher up.
-    for (const auto & conjunct : dpsub_data.ruled_conjuncts)
-    {
-        if ((conjunct.sources & ~combined) || !(conjunct.sources & left_mask) || !(conjunct.sources & right_mask))
-            continue;
-        for (const auto & rule : dpsub_data.conflict_operators[conjunct.op_index].rules)
-            if ((rule.t1 & combined) && (rule.t2 & ~combined))
-                return std::nullopt;
-    }
-
     for (const auto & op : dpsub_data.conflict_operators)
     {
-        /// The operator is applied here when its ON-clause relations (nel) span the split and are all
-        /// present: a predicate that still references a not-yet-joined relation belongs to a higher
-        /// node. A predicate-less operator falls back to its relation set straddling the split.
-        const bool within = subset_of(op.relations, combined);
-        const bool nel_within = subset_of(op.nel, combined);
-        const bool nel_crosses = (op.nel & left_mask) && (op.nel & right_mask);
-        const bool rel_crosses = (op.relations & left_mask) && (op.relations & right_mask);
-        /// A degenerate operator (one-sided or absent predicate) has no crossing predicate, so it is
-        /// located by its relation set crossing the split with all of its relations present.
-        const bool involved = (nel_within && nel_crosses) || (op.degenerate && rel_crosses && within);
-        if (!involved)
+        /// The same notion places the operator's ON condition, see `collectJoinEdgesMask`.
+        if (!op.isAppliedAt(left_mask, right_mask))
             continue;
         any_involved = true;
 
@@ -539,7 +536,7 @@ bool DPSubJoinOrderOptimizer::hasInnerEdgeAcross(UInt32 left_mask, UInt32 right_
         if (dpsub_data.edge_pinned[i])
             continue;
         const UInt32 sources = dpsub_data.edge_source_mask[i];
-        if (sources & ~combined)
+        if ((sources | dpsub_data.edge_defer_mask[i]) & ~combined)
             continue;
         if ((sources & left_mask) && (sources & right_mask))
             return true;
@@ -575,6 +572,7 @@ const std::vector<JoinActionRef *> & DPSubJoinOrderOptimizer::collectJoinEdgesMa
 
     const UInt32 joined = left_mask | right_mask;
     const bool two_relations = std::popcount(joined) == 2;
+    const bool by_operator = useConflictDetector();
     auto & edges = query_graph.edges;
 
     for (size_t i = 0; i < edges.size(); ++i)
@@ -582,6 +580,16 @@ const std::vector<JoinActionRef *> & DPSubJoinOrderOptimizer::collectJoinEdgesMa
         auto & edge = edges[i];
         if (!edge)
             continue;
+
+        /// With a conflict detector, the ON condition of an outer, semi or anti join is placed exactly
+        /// where that join is applied, the join whose kind it fixes (see `isValidJoinOrderMaskConflict`),
+        /// and so it stays in that join's ON clause, whatever the search does around it.
+        if (by_operator && dpsub_data.edge_pinned[i])
+        {
+            if (dpsub_data.conflict_operators[dpsub_data.edge_operator[i]].isAppliedAt(left_mask, right_mask))
+                out.push_back(&edge);
+            continue;
+        }
 
         const UInt32 sources = dpsub_data.edge_source_mask[i];
         if (sources & ~joined) /// edge sources not proper subset of joined relations
@@ -597,8 +605,12 @@ const std::vector<JoinActionRef *> & DPSubJoinOrderOptimizer::collectJoinEdgesMa
         /// the join that brings in `t3`, not to `t2` as a base-table filter. Placing it by `sources`
         /// alone would push it below (or drop it from) that join, silently changing outer-join
         /// semantics, since `t2` may already have been NULL-extended (or default-filled) by an
-        /// earlier join.
-        const UInt32 pin = dpsub_data.edge_pinned[i] ? dpsub_data.edge_pin_mask[i] : 0;
+        /// earlier join. Without a conflict detector, a null-supplying side is a single relation, which
+        /// makes this placement exact. With one, the pin is unused, but an inner join's conjunct that
+        /// has to wait for a nested outer join is placed the same way (see `initDPsubScratch`).
+        const UInt32 pin = dpsub_data.edge_pinned[i] ? dpsub_data.edge_pin_mask[i] : dpsub_data.edge_defer_mask[i];
+        if (pin & ~joined)
+            continue;
         const UInt32 applicable = sources | pin;
 
         if (std::popcount(applicable) <= 1)

@@ -71,6 +71,29 @@ struct ConflictOperator
     bool freely_reorderable = true;
     /// CD-C conflict rules attached to this operator (always empty for CD-A).
     std::vector<ConflictRule> rules;
+
+    /// Whether the operator is applied where `left` and `right` are joined: its ON clause is complete
+    /// there and spans the two sides, which happens at exactly one join of a plan. An operator whose
+    /// ON clause does not span its inputs is applied where all of its relations first come together.
+    bool isAppliedAt(UInt32 left, UInt32 right) const
+    {
+        const UInt32 joined = left | right;
+        if ((nel & ~joined) == 0 && (nel & left) && (nel & right))
+            return true;
+        return degenerate && (relations & ~joined) == 0 && (relations & left) && (relations & right);
+    }
+
+    /// The relations whose rows the operator pads with defaults or `NULL`, or drops: the right side
+    /// of an outer, semi or anti join (normalized to `Left`), both sides of a `FULL` join, nothing
+    /// for an inner join.
+    UInt32 nullSupplying() const
+    {
+        if (isFull(kind))
+            return relations;
+        if (isLeft(kind))
+            return relations & ~left_relations;
+        return 0;
+    }
 };
 
 /// Compute the per-operator conflict descriptors from the operators of the original join tree,
