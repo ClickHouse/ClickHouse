@@ -396,7 +396,11 @@ bool isMetadataQuery(const IAST * ast)
             bool is_table = create->table != nullptr; /// Not a database
             bool infers_structure = is_table && !create->isView() && !create->is_dictionary && create->storage
                 && create->storage->engine && !has_columns && !create->select && create->as_table.empty();
-            return !has_select && !reads_table_function && !infers_structure && !create->is_populate && !create->is_clone_as
+            /// A dictionary may be loaded from its source by `CREATE`, and a replicating engine (e.g.
+            /// `MaterializedPostgreSQL`) copies the initial snapshot of its source.
+            bool populates = create->is_dictionary
+                || (create->storage && create->storage->engine && create->storage->engine->name.starts_with("Materialized"));
+            return !has_select && !reads_table_function && !infers_structure && !populates && !create->is_populate && !create->is_clone_as
                 && !create->has_attach_from_path;
         }
         case IAST::QueryKind::Alter:
