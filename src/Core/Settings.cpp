@@ -769,7 +769,7 @@ Possible values:
 - 0 — All the data is written into a single object.
 - Positive integer — The number of bytes after which a new object is started.
 )", 0, \
-        {"26.10", 0, 0, "New setting to split the data written into an S3 engine table or into the `s3` table function into multiple numbered objects of the specified size."}) \
+        {"26.11", 0, 0, "New setting to split the data written into an S3 engine table or into the `s3` table function into multiple numbered objects of the specified size."}) \
     DECLARE(Bool, s3_skip_empty_files, true, R"(
 Enables or disables skipping empty files in [S3](/reference/engines/table-engines/integrations/s3) engine tables.
 
@@ -804,7 +804,7 @@ Possible values:
 - 0 — All the data is written into a single blob.
 - Positive integer — The number of bytes after which a new blob is started.
 )", 0, \
-        {"26.10", 0, 0, "New setting to split the data written into an Azure Blob Storage engine table or into the `azureBlobStorage` table function into multiple numbered blobs of the specified size."}) \
+        {"26.11", 0, 0, "New setting to split the data written into an Azure Blob Storage engine table or into the `azureBlobStorage` table function into multiple numbered blobs of the specified size."}) \
     DECLARE(Bool, s3_check_objects_after_upload, false, R"(
 Check each uploaded object to s3 with head request to be sure that upload was successful
 )", 0) \
@@ -986,7 +986,7 @@ Possible values:
 - 0 — All the data is written into a single file.
 - Positive integer — The number of bytes after which a new file is started.
 )", 0, \
-        {"26.10", 0, 0, "New setting to split the data written into an HDFS engine table or into the `hdfs` table function into multiple numbered files of the specified size."}) \
+        {"26.11", 0, 0, "New setting to split the data written into an HDFS engine table or into the `hdfs` table function into multiple numbered files of the specified size."}) \
     DECLARE(Bool, hdfs_skip_empty_files, false, R"(
 Enables or disables skipping empty files in [HDFS](/reference/engines/table-engines/integrations/hdfs) engine tables.
 
@@ -7501,7 +7501,7 @@ Possible values:
 - 0 — All the data is written into a single file.
 - Positive integer — The number of bytes after which a new file is started.
 )", 0, \
-        {"26.10", 0, 0, "New setting to split the data written into a `File` engine table or into the `file` table function into multiple numbered files of the specified size."}) \
+        {"26.11", 0, 0, "New setting to split the data written into a `File` engine table or into the `file` table function into multiple numbered files of the specified size."}) \
     DECLARE(Bool, engine_file_skip_empty_files, false, R"(
 Enables or disables skipping empty files in [File](/reference/engines/table-engines/special/file) engine tables.
 
