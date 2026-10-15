@@ -15,15 +15,28 @@ main_configs = [
     "configs/cluster3.xml",
     "configs/replicated_access_storage.xml",
     "configs/replicated_user_defined_sql_objects.xml",
+    "configs/named_collections_storage.xml",
     "configs/backups_disk.xml",
     "configs/backups_allowed_path.xml",  # Needed by the File() destination of test_backup_on_cluster_internal_writer_fsyncs.
     "configs/query_thread_log.xml",  # The common integration config removes query_thread_log; that test needs it.
     "configs/lesser_timeouts.xml",  # Default timeouts are quite big (a few minutes), the tests don't need them to be that big.
 ]
 
+# node3 holds a different named-collections encryption key (and a different Keeper path), to model
+# a restore target without the key, see test_system_named_collections_key_mismatch.
+main_configs_other_nc_key = [
+    (
+        "configs/named_collections_storage_other_key.xml"
+        if config == "configs/named_collections_storage.xml"
+        else config
+    )
+    for config in main_configs
+]
+
 user_configs = [
     "configs/allow_database_types.xml",
     "configs/zookeeper_retries.xml",
+    "configs/named_collections_users.xml",
 ]
 
 node1 = cluster.add_instance(
@@ -47,7 +60,7 @@ node2 = cluster.add_instance(
 
 node3 = cluster.add_instance(
     "node3",
-    main_configs=main_configs,
+    main_configs=main_configs_other_nc_key,
     user_configs=user_configs,
     external_dirs=["/backups/"],
     macros={"replica": "node3", "shard": "shard1"},
@@ -74,6 +87,8 @@ def drop_after_test():
         node1.query("DROP DATABASE IF EXISTS mydb ON CLUSTER 'cluster3' SYNC")
         node1.query("DROP DATABASE IF EXISTS mydb2 ON CLUSTER 'cluster3' SYNC")
         node1.query("DROP USER IF EXISTS u1, u2 ON CLUSTER 'cluster3'")
+        node1.query("DROP NAMED COLLECTION IF EXISTS backup_nc")
+        node1.query("DROP NAMED COLLECTION IF EXISTS backup_nc_mismatch")
 
 
 backup_id_counter = 0
@@ -1064,6 +1079,109 @@ def test_system_functions():
 
     node1.query("DROP FUNCTION linear_equation")
     node1.query("DROP FUNCTION parity_str")
+
+
+def test_system_named_collections():
+    node1.query(
+        "CREATE NAMED COLLECTION backup_nc AS url = 'http://example.com/nc_secret_value' NOT OVERRIDABLE, format = 'CSV'"
+    )
+    assert_eq_with_retry(
+        node2,
+        "SELECT count() FROM system.named_collections WHERE name='backup_nc'",
+        "1\n",
+    )
+
+    backup_name = new_backup_name()
+    node1.query(
+        f"BACKUP TABLE system.named_collections ON CLUSTER 'cluster' TO {backup_name}"
+    )
+
+    # The collection is copied to the backup as the ciphertext the Keeper storage holds:
+    # no plaintext value appears anywhere in the backup.
+    entry_files = []
+    for dir_path, _, file_names in os.walk(get_path_to_backup(backup_name)):
+        for file_name in file_names:
+            file_path = os.path.join(dir_path, file_name)
+            with open(file_path, "rb") as f:
+                content = f.read()
+            assert b"nc_secret_value" not in content, file_path
+            if file_name.endswith(".sql.enc"):
+                entry_files.append(file_path)
+                assert content.startswith(b"ENC"), file_path
+    assert len(entry_files) == 1
+
+    node1.query("DROP NAMED COLLECTION backup_nc")
+    assert_eq_with_retry(
+        node2,
+        "SELECT count() FROM system.named_collections WHERE name='backup_nc'",
+        "0\n",
+    )
+
+    node1.query(
+        f"RESTORE TABLE system.named_collections ON CLUSTER 'cluster' FROM {backup_name}"
+    )
+
+    assert node1.query(
+        "SELECT mapKeys(collection) FROM system.named_collections WHERE name='backup_nc'"
+    ) == TSV([["['format','url']"]])
+    # Restored collections are visible on every host as soon as the RESTORE finishes, without
+    # waiting for the Keeper watch: each host reloads them synchronously before table creation
+    # (a table CREATE from the backup may resolve them), so no retry here.
+    assert (
+        node2.query("SELECT count() FROM system.named_collections WHERE name='backup_nc'")
+        == "1\n"
+    )
+
+    node1.query("DROP NAMED COLLECTION backup_nc")
+
+
+def test_system_named_collections_key_mismatch():
+    node1.query("CREATE NAMED COLLECTION backup_nc_mismatch AS key1 = 'value1'")
+
+    backup_name = new_backup_name()
+    node1.query(f"BACKUP TABLE system.named_collections TO {backup_name}")
+    node1.query("DROP NAMED COLLECTION backup_nc_mismatch")
+
+    # node3 does not hold the key the collections were encrypted with: the restore must fail
+    # before anything is restored, with both key fingerprints in the message.
+    expected_error = "encrypted with a key with fingerprint"
+    assert expected_error in node3.query_and_get_error(
+        f"RESTORE TABLE system.named_collections FROM {backup_name}"
+    )
+    assert (
+        node3.query(
+            "SELECT count() FROM system.named_collections WHERE name='backup_nc_mismatch'"
+        )
+        == "0\n"
+    )
+
+    # `restore_named_collections = false` is the escape hatch: the restore proceeds without them.
+    node3.query(
+        f"RESTORE TABLE system.named_collections FROM {backup_name} "
+        "SETTINGS restore_named_collections = false"
+    )
+    assert (
+        node3.query(
+            "SELECT count() FROM system.named_collections WHERE name='backup_nc_mismatch'"
+        )
+        == "0\n"
+    )
+
+    # A node holding the key restores the collection.
+    node2.query(f"RESTORE TABLE system.named_collections FROM {backup_name}")
+    assert (
+        node2.query(
+            "SELECT count() FROM system.named_collections WHERE name='backup_nc_mismatch'"
+        )
+        == "1\n"
+    )
+
+    assert_eq_with_retry(
+        node1,
+        "SELECT count() FROM system.named_collections WHERE name='backup_nc_mismatch'",
+        "1\n",
+    )
+    node1.query("DROP NAMED COLLECTION backup_nc_mismatch")
 
 
 def test_projection():

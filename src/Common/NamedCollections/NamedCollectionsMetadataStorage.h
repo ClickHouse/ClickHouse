@@ -34,6 +34,24 @@ public:
 
     bool isReplicated() const;
 
+    /// Names of the SQL-created collections present in the storage.
+    std::vector<std::string> listCollections() const;
+
+    /// Stored bytes of one collection, exactly as the storage holds them.
+    std::string readRaw(const std::string & collection_name) const;
+
+    /// Identifies the shared storage for backup coordination: the Keeper path holding the
+    /// collections. Only meaningful when isReplicated() is true.
+    std::string getReplicationId() const;
+
+    /// Whether the entries are encrypted at rest.
+    bool isEncrypted() const;
+
+    /// Turns stored bytes back into the `CREATE NAMED COLLECTION` statement, verifying the key
+    /// fingerprint of the entry's header against this storage's key for the `*_encrypted` storage
+    /// types.
+    std::string decryptStored(const std::string & stored) const;
+
 private:
     class INamedCollectionsStorage;
     class LocalStorage;
@@ -44,8 +62,6 @@ private:
     std::shared_ptr<INamedCollectionsStorage> storage;
 
     NamedCollectionsMetadataStorage(std::shared_ptr<INamedCollectionsStorage> storage_, ContextPtr context_);
-
-    std::vector<std::string> listCollections() const;
 
     ASTCreateNamedCollectionQuery readCreateQuery(const std::string & collection_name) const;
 

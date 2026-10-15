@@ -26,6 +26,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int CANNOT_RESTORE_TABLE;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -137,6 +138,8 @@ restoreUserDefinedSQLObjects(RestorerFromBackup & restorer, const String & data_
                     context->getSettingsRef()[Setting::max_parser_backtracks]);
                 break;
             }
+            case UserDefinedSQLObjectType::NamedCollection:
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Named collections are not restored as user-defined SQL objects");
         }
 
         res.emplace_back(std::move(object_name), ast);

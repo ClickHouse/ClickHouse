@@ -266,6 +266,9 @@ bool RestoreCoordinationOnCluster::acquireReplicatedSQLObjects(const String & lo
                 case UserDefinedSQLObjectType::Function:
                     path += "functions";
                     break;
+                case UserDefinedSQLObjectType::NamedCollection:
+                    path += "named_collections";
+                    break;
             }
 
             auto code = zk->tryCreate(path, "", zkutil::CreateMode::Persistent);

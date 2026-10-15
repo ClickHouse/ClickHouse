@@ -1,5 +1,6 @@
 #include <Core/Settings.h>
 #include <base/sleep.h>
+#include <base/sort.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/NamedCollections/NamedCollectionConfiguration.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
@@ -392,6 +393,43 @@ bool NamedCollectionFactory::usesReplicatedStorage()
     std::lock_guard lock(mutex);
     loadIfNot(lock);
     return metadata_storage->isReplicated();
+}
+
+NamedCollectionFactory::MetadataStorageProperties NamedCollectionFactory::getMetadataStorageProperties()
+{
+    std::lock_guard lock(mutex);
+    loadIfNot(lock);
+
+    MetadataStorageProperties properties;
+    properties.is_encrypted = metadata_storage->isEncrypted();
+    properties.is_replicated = metadata_storage->isReplicated();
+    if (properties.is_replicated)
+        properties.replication_id = metadata_storage->getReplicationId();
+    return properties;
+}
+
+std::vector<std::pair<std::string, std::string>> NamedCollectionFactory::getRawEntriesForBackup()
+{
+    std::lock_guard lock(mutex);
+    loadIfNot(lock);
+
+    /// The metadata storage holds exactly the SQL-created collections; the config-defined ones
+    /// exist only in memory and must be neither backed up nor restored.
+    auto collection_names = metadata_storage->listCollections();
+    ::sort(collection_names.begin(), collection_names.end());
+
+    std::vector<std::pair<std::string, std::string>> entries;
+    entries.reserve(collection_names.size());
+    for (const auto & collection_name : collection_names)
+        entries.emplace_back(collection_name, metadata_storage->readRaw(collection_name));
+    return entries;
+}
+
+std::string NamedCollectionFactory::decryptStoredEntry(const std::string & stored)
+{
+    std::lock_guard lock(mutex);
+    loadIfNot(lock);
+    return metadata_storage->decryptStored(stored);
 }
 
 void NamedCollectionFactory::updateFunc()

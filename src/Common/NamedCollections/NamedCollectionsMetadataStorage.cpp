@@ -12,6 +12,7 @@
 #include <Parsers/parseQuery.h>
 #include <base/sort.h>
 #include <boost/algorithm/hex.hpp>
+#include <Common/Hex.h>
 #include <Common/NamedCollections/NamedCollectionConfiguration.h>
 #include <Common/NamedCollections/NamedCollectionsMetadataStorage.h>
 #include <Common/ZooKeeper/IKeeper.h>
@@ -66,6 +67,9 @@ public:
 
     virtual std::string read(const std::string & path) const = 0;
 
+    /// The stored bytes as they are, without decryption (see `NamedCollectionsMetadataStorageEncrypted`).
+    virtual std::string readRaw(const std::string & path) const = 0;
+
     virtual void write(const std::string & path, const std::string & data, bool replace) = 0;
 
     virtual void remove(const std::string & path) = 0;
@@ -73,6 +77,15 @@ public:
     virtual bool removeIfExists(const std::string & path) = 0;
 
     virtual bool isReplicated() const = 0;
+
+    virtual std::string getReplicationId() const
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The storage for named collections is not replicated");
+    }
+
+    virtual bool isEncrypted() const { return false; }
+
+    virtual std::string decryptStored(const std::string & data) const { return data; }
 
     virtual bool waitUpdate(size_t /* timeout */) { return false; }
 };
@@ -127,10 +140,15 @@ public:
 
     std::string read(const std::string & file_name) const override
     {
+        return readHook(readRaw(file_name));
+    }
+
+    std::string readRaw(const std::string & file_name) const override
+    {
         ReadBufferFromFile in(getPath(file_name));
         std::string data;
         readStringUntilEOF(data, in);
-        return readHook(data);
+        return data;
     }
 
     virtual std::string readHook(const std::string & data) const
@@ -244,6 +262,8 @@ public:
 
     bool isReplicated() const override { return true; }
 
+    std::string getReplicationId() const override { return root_path; }
+
     /// Return true if children changed.
     bool waitUpdate(size_t timeout) override
     {
@@ -294,9 +314,13 @@ public:
 
     std::string read(const std::string & file_name) const override
     {
+        return readHook(readRaw(file_name));
+    }
+
+    std::string readRaw(const std::string & file_name) const override
+    {
         auto component_guard = Coordination::setCurrentComponent("NamedCollectionsMetadataStorage::read");
-        auto data = getClient()->get(getPath(file_name));
-        return readHook(data);
+        return getClient()->get(getPath(file_name));
     }
 
     virtual std::string readHook(const std::string & data) const
@@ -391,6 +415,34 @@ public:
         }
 
         algorithm = FileEncryption::parseAlgorithmFromString(config.getString("named_collections_storage.algorithm", "aes_128_ctr"));
+    }
+
+    bool isEncrypted() const override { return true; }
+
+    std::string decryptStored(const std::string & data) const override
+    {
+        FileEncryption::Header header;
+        try
+        {
+            ReadBufferFromString in(data);
+            header.read(in);
+        }
+        catch (Exception & e)
+        {
+            e.addMessage("While reading the header of an encrypted named collection entry");
+            throw;
+        }
+
+        /// `readHook` decrypts blindly and would hand back garbage with the wrong key.
+        if (header.key_fingerprint != key_fingerprint)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The named collection entry is encrypted with a key with fingerprint {}, "
+                "but the key of this storage for named collections has fingerprint {}",
+                getHexUIntLowercase(header.key_fingerprint),
+                getHexUIntLowercase(key_fingerprint));
+
+        return readHook(data);
     }
 
     std::string readHook(const std::string & data) const override
@@ -571,6 +623,26 @@ void NamedCollectionsMetadataStorage::writeCreateQuery(const String & collection
 bool NamedCollectionsMetadataStorage::isReplicated() const
 {
     return storage->isReplicated();
+}
+
+std::string NamedCollectionsMetadataStorage::readRaw(const std::string & collection_name) const
+{
+    return storage->readRaw(getFileName(collection_name));
+}
+
+std::string NamedCollectionsMetadataStorage::getReplicationId() const
+{
+    return storage->getReplicationId();
+}
+
+bool NamedCollectionsMetadataStorage::isEncrypted() const
+{
+    return storage->isEncrypted();
+}
+
+std::string NamedCollectionsMetadataStorage::decryptStored(const std::string & stored) const
+{
+    return storage->decryptStored(stored);
 }
 
 bool NamedCollectionsMetadataStorage::waitUpdate()
