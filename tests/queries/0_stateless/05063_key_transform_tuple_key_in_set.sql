@@ -18,6 +18,7 @@ DROP TABLE IF EXISTS t_hex;
 DROP TABLE IF EXISTS t_inj;
 DROP TABLE IF EXISTS t_time;
 DROP TABLE IF EXISTS t_qbit;
+DROP TABLE IF EXISTS t_dt64;
 
 -- 1. The set element is a String that itself parses as a tuple, so the bad cast used to succeed
 -- with an unrelated value and prune the matching granule: silent row loss, no error.
@@ -176,6 +177,16 @@ SELECT extract(explain, '(?:Condition|Parts): .*') FROM (
     EXPLAIN indexes = 1 SELECT * FROM t_inj WHERE NOT has([tuple(toInt64(1), 'a')], k) SETTINGS optimize_rewrite_has_to_in = 0
 ) WHERE explain ILIKE '%Condition:%' OR explain ILIKE '%Parts:%';
 
+-- 18. `toString` of a `DateTime64` past `9999-12-31` saturates, so the two rows below render alike and the atom
+-- must stay relaxed: an exact one answers `2` for `IN` when counted from the index, and `0` for `NOT IN` and `NOT has`.
+CREATE TABLE t_dt64 (k Tuple(DateTime64(0, 'UTC'), UInt8)) ENGINE = MergeTree ORDER BY toString(k);
+SYSTEM STOP MERGES t_dt64;
+INSERT INTO t_dt64 SELECT tuple(toDateTime64('9999-12-31 23:59:59', 0, 'UTC') + 1, 1);
+INSERT INTO t_dt64 SELECT tuple(toDateTime64('9999-12-31 23:59:59', 0, 'UTC') + 2, 1);
+SELECT count() FROM t_dt64 WHERE k IN (SELECT toDateTime64('9999-12-31 23:59:59', 0, 'UTC') + 1, toUInt8(1));
+SELECT count() FROM t_dt64 WHERE k NOT IN (SELECT toDateTime64('9999-12-31 23:59:59', 0, 'UTC') + 1, toUInt8(1));
+SELECT count() FROM t_dt64 WHERE NOT has([tuple(toDateTime64('9999-12-31 23:59:59', 0, 'UTC') + 1, toUInt8(1))], k) SETTINGS optimize_rewrite_has_to_in = 0;
+
 DROP TABLE t_str;
 DROP TABLE t_float;
 DROP TABLE t_null;
@@ -189,3 +200,4 @@ DROP TABLE t_hex;
 DROP TABLE t_inj;
 DROP TABLE t_time;
 DROP TABLE t_qbit;
+DROP TABLE t_dt64;

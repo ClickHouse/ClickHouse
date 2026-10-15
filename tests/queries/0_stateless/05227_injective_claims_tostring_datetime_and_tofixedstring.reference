@@ -37,7 +37,9 @@ an out-of-range Date32
 1
 1
 1
-an out-of-range Time and Time64
+an out-of-range DateTime64, Time and Time64
+1
+1
 1
 1
 1
