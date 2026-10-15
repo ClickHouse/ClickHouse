@@ -1953,6 +1953,10 @@ public:
         if (!function_node)
             return;
 
+        /// Each copy of a key must stay equal to the key, and a rewrite can treat the copies differently.
+        if (isGroupByKey(node))
+            return;
+
         if (function_node->getFunctionName() == "or")
         {
             tryReplaceOrEqualsChainWithIn(node);
