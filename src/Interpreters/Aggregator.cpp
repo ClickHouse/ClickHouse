@@ -1193,6 +1193,14 @@ void Aggregator::executeImpl(
     bool all_keys_are_const,
     AggregateDataPtr overflow_row) const
 {
+    /// The block may be aggregated in parts (e.g. the remainder after an adaptive aggregation split),
+    /// the keys of the rows before `row_begin` are not needed. If all keys are const, only row 0 is used.
+    if constexpr (requires { state.skipRowsBefore(row_begin); })
+    {
+        if (!all_keys_are_const)
+            state.skipRowsBefore(row_begin);
+    }
+
     if (params.top_k && !method.top_k_heap.frozen)
     {
         method.top_k_heap.initIfNeeded(
