@@ -658,15 +658,15 @@ void StorageJoin::publishBackup(const String & backup_file_path, ContextPtr cont
     catch (...)
     {
         /// The write lock is still held, so the partially updated state is replaced before any
-        /// reader can see it. The backup of the failed insert is excluded from the rebuild and
-        /// removed within the same publish critical section, so no concurrent rollback can
-        /// replay it either.
-        ///
+        /// reader can see it. The backup of the failed insert is discarded first, within the same
+        /// publish critical section, so neither this rebuild nor any later publish, rollback, or
+        /// rebuild of a lost state can replay it.
+        discardPromotedBackup(fs::path(backup_file_path).filename());
+
         /// The rollback builds a second copy of the table, so it can fail as well (for example,
         /// on memory limits). The partially updated state must not stay visible then: mark it as
         /// lost, so that readers get an exception instead of the rows of the failed insert, until
-        /// the next operation under the write lock rebuilds it from the backup files (the backup of
-        /// the failed insert is removed by `SetOrJoinSink::onException` in that case).
+        /// the next operation under the write lock rebuilds it from the backup files.
         live_state_lost = true;
         try
         {
@@ -685,7 +685,6 @@ void StorageJoin::publishBackup(const String & backup_file_path, ContextPtr cont
                 join = std::move(rebuilt_join);
             }
             live_state_lost = false;
-            disk->removeFileIfExists(backup_file_path);
         }
         catch (...)
         {

@@ -67,6 +67,11 @@ protected:
     /// `mutate_mutex`.
     std::unordered_set<String> discarded_backups;
 
+    /// Called under `mutate_mutex`, in the same critical section that promoted the backup of an
+    /// `INSERT` which then failed: removes the backup, or quarantines it if it cannot be removed,
+    /// so that no later publish, rollback, or restart replays its rows.
+    void discardPromotedBackup(const String & file_name) noexcept;
+
     /// Called under `mutate_mutex` when the promoted backup of a failed `INSERT` could not be
     /// removed. Moves it back to `tmp/`, which is never replayed (also not on restart), and if
     /// that fails as well, excludes it from replays for the lifetime of the table object.
@@ -85,8 +90,8 @@ protected:
 
     /// Apply the just-promoted backup file of an `INSERT` to the live state, with the strong
     /// exception guarantee: on failure the live state has been restored to what it was before and
-    /// the backup file has been removed, so a failed `INSERT` never publishes any rows. Called
-    /// under `mutate_mutex`.
+    /// the backup file has been discarded (`discardPromotedBackup`) before the exception leaves the
+    /// critical section, so a failed `INSERT` never publishes any rows. Called under `mutate_mutex`.
     virtual void publishBackup(const String & backup_file_path, ContextPtr context) = 0;
 
     void restoreFromFile(const String & file_path, ContextPtr context = nullptr);

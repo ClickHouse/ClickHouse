@@ -52,6 +52,7 @@ namespace FailPoints
 {
     extern const char set_or_join_sink_pause_before_publish[];
     extern const char set_or_join_sink_pause_before_replay[];
+    extern const char set_or_join_sink_pause_before_discard[];
     extern const char storage_set_pause_during_backup_replay[];
     extern const char storage_set_fail_during_backup_replay[];
     extern const char set_or_join_sink_fail_removing_promoted_backup[];
@@ -145,32 +146,29 @@ void SetOrJoinSink::discardStagedBackup() noexcept
     /// The buffers are cancelled above, so nothing writes to the file after this point. Cancelling
     /// leaves nothing behind on object storage (the metadata file is created on finalize), but a
     /// local disk keeps whatever was flushed, so remove the file explicitly in both cases.
-    try
+    if (backup_promoted)
     {
-        const auto backup_file_path = fs::path(backup_promoted ? backup_path : backup_tmp_path) / backup_file_name;
-        if (backup_promoted)
-        {
-            fiu_do_on(FailPoints::set_or_join_sink_fail_removing_promoted_backup,
-            {
-                throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while removing the promoted backup of a failed INSERT");
-            });
-        }
-        table.disk->removeFileIfExists(backup_file_path);
-    }
-    catch (...)
-    {
-        tryLogCurrentException(
-            getLogger("SetOrJoinSink"),
-            fmt::format(
-                "Cannot remove the staged backup file {} of table {} on disk {}",
-                fs::path(backup_promoted ? backup_path : backup_tmp_path) / backup_file_name,
-                table.getStorageID().getNameForLogs(),
-                table.disk->getName()));
-
         /// A promoted file left in the table directory would be replayed by the next publish and
-        /// restored on restart, bringing back the rows of this failed `INSERT`.
-        if (backup_promoted)
-            table.quarantineDiscardedBackup(backup_file_name);
+        /// restored on restart, bringing back the rows of this failed `INSERT`. Usually it is
+        /// already gone: `publishBackup` discards it before leaving the publish critical section.
+        table.discardPromotedBackup(backup_file_name);
+    }
+    else
+    {
+        try
+        {
+            table.disk->removeFileIfExists(fs::path(backup_tmp_path) / backup_file_name);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(
+                getLogger("SetOrJoinSink"),
+                fmt::format(
+                    "Cannot remove the staged backup file {} of table {} on disk {}",
+                    fs::path(backup_tmp_path) / backup_file_name,
+                    table.getStorageID().getNameForLogs(),
+                    table.disk->getName()));
+        }
     }
 
     backup_stream.reset();
@@ -180,16 +178,15 @@ void SetOrJoinSink::discardStagedBackup() noexcept
 
 void SetOrJoinSink::onException(std::exception_ptr)
 {
+    /// If the failure happened while `publishBackup` was replaying the promoted backup, the live
+    /// state has already been restored and the promoted file discarded (`publishBackup` gives the
+    /// strong exception guarantee), so only the file of an earlier failure remains to clean up.
+    FailPointInjection::pauseFailPoint(FailPoints::set_or_join_sink_pause_before_discard);
+
     /// The same critical section as the publish phase in `onFinish`: the rollback of a concurrently
     /// failed insert rebuilds the live state from the committed backup files, so removing the
     /// staged or promoted file must not interleave with it.
     std::lock_guard publish_lock(table.mutate_mutex);
-
-    /// If the failure happened while `publishBackup` was replaying the promoted backup, the live
-    /// state has already been restored and the promoted file removed (`publishBackup` gives the
-    /// strong exception guarantee), so only the file of an earlier failure remains to clean up.
-    /// If that restore failed as well, `StorageJoin` marks its live state as lost and keeps the
-    /// promoted file, which is removed here before the state is rebuilt from the backup files.
     discardStagedBackup();
 }
 
@@ -402,26 +399,10 @@ void StorageSet::publishBackup(const String & backup_file_path, ContextPtr conte
     catch (...)
     {
         /// The live state was never touched, so there is nothing to restore: only the backup of
-        /// this failed insert has to go, or a restart would restore its rows. It is removed while
+        /// this failed insert has to go, or a restart would restore its rows. It is discarded while
         /// still inside the publish critical section, so no concurrent publish or rollback can
         /// replay it either.
-        try
-        {
-            fiu_do_on(FailPoints::set_or_join_sink_fail_removing_promoted_backup,
-            {
-                throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while removing the backup of a failed INSERT");
-            });
-            disk->removeFileIfExists(backup_file_path);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(
-                getLogger("StorageSet"),
-                fmt::format(
-                    "Cannot remove the backup file {} of a failed INSERT into table {}",
-                    backup_file_path,
-                    getStorageID().getNameForLogs()));
-        }
+        discardPromotedBackup(fs::path(backup_file_path).filename());
         throw;
     }
 }
@@ -570,6 +551,31 @@ void StorageSetOrJoinBase::forEachBackupBlock(const std::function<void(const Blo
         forEachBlockInBackupFile(backup_files.top().second, callback);
         backup_files.pop();
     }
+}
+
+void StorageSetOrJoinBase::discardPromotedBackup(const String & file_name) noexcept
+{
+    try
+    {
+        fiu_do_on(FailPoints::set_or_join_sink_fail_removing_promoted_backup,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while removing the promoted backup of a failed INSERT");
+        });
+        disk->removeFileIfExists(fs::path(path) / file_name);
+        return;
+    }
+    catch (...)
+    {
+        tryLogCurrentException(
+            getLogger("StorageSetOrJoinBase"),
+            fmt::format(
+                "Cannot remove the backup file {} of a failed INSERT into table {} on disk {}",
+                fs::path(path) / file_name,
+                getStorageID().getNameForLogs(),
+                disk->getName()));
+    }
+
+    quarantineDiscardedBackup(file_name);
 }
 
 void StorageSetOrJoinBase::quarantineDiscardedBackup(const String & file_name) noexcept

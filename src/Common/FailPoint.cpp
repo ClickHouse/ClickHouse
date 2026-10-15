@@ -131,6 +131,7 @@ static struct InitFiu
     PAUSEABLE(remote_fs_gather_pause_in_read) \
     PAUSEABLE(set_or_join_sink_pause_before_publish) \
     PAUSEABLE(set_or_join_sink_pause_before_replay) \
+    PAUSEABLE(set_or_join_sink_pause_before_discard) \
     PAUSEABLE(storage_set_pause_during_backup_replay) \
     REGULAR(storage_set_fail_during_backup_replay) \
     REGULAR(set_or_join_sink_fail_removing_promoted_backup) \
