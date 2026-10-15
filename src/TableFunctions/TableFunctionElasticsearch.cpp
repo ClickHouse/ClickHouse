@@ -86,7 +86,7 @@ ColumnsDescription TableFunctionElasticsearch::getActualTableStructure(ContextPt
 
 void TableFunctionElasticsearch::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
-    if (!context->getSettingsRef()[Setting::enable_elasticsearch])
+    if (context->hasQueryContext() && !context->getSettingsRef()[Setting::enable_elasticsearch])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "The elasticsearch table function is experimental. Set `enable_elasticsearch` setting to enable it");
 
@@ -94,7 +94,7 @@ void TableFunctionElasticsearch::parseArguments(const ASTPtr & ast_function, Con
     if (!func_args.arguments)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' must have arguments", getName());
 
-    ASTs & args = func_args.arguments->children;
+    ASTs args = func_args.arguments->children;
 
     for (auto it = args.begin(); it != args.end(); ++it)
     {

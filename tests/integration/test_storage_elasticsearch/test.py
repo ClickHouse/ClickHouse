@@ -15,6 +15,12 @@ node = cluster.add_instance(
     user_configs=["configs/users.xml"],
     with_elasticsearch=True,
 )
+node_without_flag = cluster.add_instance(
+    "node_without_flag",
+    main_configs=["configs/named_collections.xml"],
+    user_configs=["configs/users_without_elasticsearch_flag.xml"],
+    stay_alive=True,
+)
 
 # ClickHouse runs inside the Docker network and reaches Elasticsearch by its compose service name.
 ELASTICSEARCH_URL_FOR_CLICKHOUSE = "http://elasticsearch1:9200"
@@ -494,6 +500,39 @@ def test_table_engine():
         f"INSERT INTO FUNCTION {elasticsearch_table_function('engine')} VALUES ('{new_document}')"
     )
     assert "not supported" in error
+
+
+def test_table_function_table_survives_restart():
+    create_index_with_documents("function_settings", [{"id": i} for i in range(5)])
+    elasticsearch_request(
+        "PUT", "/function_settings/_settings", json_body={"index": {"max_result_window": 3}}
+    )
+
+    error = node_without_flag.query_and_get_error(
+        f"SELECT count() FROM {elasticsearch_table_function('function_settings')}"
+    )
+    assert "SUPPORT_IS_DISABLED" in error
+
+    table_function = elasticsearch_table_function(
+        "function_settings", extra_arguments="SETTINGS page_size = 2, keep_alive = 30"
+    )
+    node_without_flag.query("DROP TABLE IF EXISTS es_function_settings")
+    node_without_flag.query(
+        f"CREATE TABLE es_function_settings AS {table_function}",
+        settings={"enable_elasticsearch": 1},
+    )
+
+    def check_table():
+        create_statement = node_without_flag.query("SHOW CREATE TABLE es_function_settings")
+        assert "page_size = 2" in create_statement
+        assert "keep_alive = 30" in create_statement
+        assert node_without_flag.query("SELECT count() FROM es_function_settings") == "5\n"
+
+    check_table()
+    node_without_flag.restart_clickhouse()
+    check_table()
+
+    node_without_flag.query("DROP TABLE es_function_settings")
 
 
 def test_insert_select_into_local():
