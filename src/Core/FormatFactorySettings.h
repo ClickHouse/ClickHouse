@@ -1500,6 +1500,12 @@ A column with the index has the name of its dimension when no variable and no ot
 The columns are added before the columns of the variables and have the type [UInt64](/sql-reference/data-types/int-uint.md).
 )", 0, \
         {"26.10", false, false, "New setting that makes the NetCDF format add a column with the index along every dimension that has no coordinate variable of the same name"}) \
+    DECLARE(Bool, input_format_netcdf_allow_missing_columns, true, R"(
+Allow reading a `NetCDF` file that has no variable for some of the requested columns. Such columns are filled with the default values of their types.
+
+This is what makes a schema inferred with `schema_inference_mode = 'union'` readable: it has the variables of all the files, and a file may lack some of them. When disabled, a requested column without a variable throws an exception.
+)", 0, \
+        {"26.10", true, true, "New setting that allows missing columns in NetCDF files"}) \
     DECLARE(GeoJSONUnsupportedGeometryHandling, input_format_geojson_unsupported_geometry_handling, FormatSettings::UnsupportedGeometryHandling::Throw, R"(
 Controls what happens when a valid `GeoJSON` geometry type that cannot be represented in ClickHouse's `Geometry` type (such as `GeometryCollection`) must be stored in the `geometry` column while reading `GeoJSON` input.
 

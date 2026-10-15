@@ -87,6 +87,8 @@ public:
 
     size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
 
+    const BlockMissingValues * getMissingValues() const override { return &block_missing_values; }
+
 protected:
     Chunk read() override;
 
@@ -94,6 +96,8 @@ private:
     /// A column of the result together with the state of reading the variable behind it.
     struct ColumnState
     {
+        /// Null for a requested column that the file has no variable for, which is filled with
+        /// the default values of its type.
         const NetCDFTableLayout::Column * column = nullptr;
 
         /// How much the index of the value changes when the index along a row dimension grows by one.
@@ -143,6 +147,7 @@ private:
     /// budget, so that a chunk of a few wide values does not take an unreasonable amount of memory.
     UInt64 max_chunk_rows = 0;
     size_t approx_bytes_read_for_chunk = 0;
+    BlockMissingValues block_missing_values;
 };
 
 class NetCDFSchemaReader final : public ISchemaReader

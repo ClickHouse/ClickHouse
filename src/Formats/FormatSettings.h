@@ -689,6 +689,7 @@ struct FormatSettings
     {
         bool fill_value_as_null = false;
         bool add_dimension_columns = false;
+        bool allow_missing_columns = true;
     } netcdf{};
 
     enum class UnsupportedGeometryHandling { Throw, Null };

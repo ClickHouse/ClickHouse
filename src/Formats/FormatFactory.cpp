@@ -405,6 +405,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.schema_inference_allow_nullable_tuple_type = settings[Setting::enable_nullable_tuple_type];
     format_settings.netcdf.fill_value_as_null = settings[Setting::input_format_netcdf_fill_value_as_null];
     format_settings.netcdf.add_dimension_columns = settings[Setting::input_format_netcdf_add_dimension_columns];
+    format_settings.netcdf.allow_missing_columns = settings[Setting::input_format_netcdf_allow_missing_columns];
     format_settings.geojson.unsupported_geometry_handling = settings[Setting::input_format_geojson_unsupported_geometry_handling];
     format_settings.geojson.validate_geometry = settings[Setting::format_geojson_validate_geometry];
     format_settings.mysql_dump.table_name = settings[Setting::input_format_mysql_dump_table_name];

@@ -37,6 +37,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int THERE_IS_NO_COLUMN;
     extern const int TOO_LARGE_ARRAY_SIZE;
+    extern const int TYPE_MISMATCH;
 }
 
 namespace
@@ -403,7 +404,7 @@ NetCDFTableLayout getNetCDFTableLayout(const NetCDFHeader & header, const Format
 
 
 NetCDFBlockInputFormat::NetCDFBlockInputFormat(ReadBuffer & in_, SharedHeader header_, const FormatSettings & format_settings_)
-    : IInputFormat(std::move(header_), &in_), format_settings(format_settings_)
+    : IInputFormat(std::move(header_), &in_), format_settings(format_settings_), block_missing_values(getPort().getHeader().columns())
 {
 }
 
@@ -413,6 +414,7 @@ void NetCDFBlockInputFormat::resetParser()
 
     is_initialized = false;
     states.clear();
+    block_missing_values.clear();
     layout = {};
     netcdf_header = {};
     content.clear();
@@ -484,8 +486,16 @@ void NetCDFBlockInputFormat::initialize()
     {
         auto it = columns_by_name.find(requested.name);
         if (it == columns_by_name.end())
-            throw Exception(ErrorCodes::THERE_IS_NO_COLUMN,
-                "The NetCDF file has no variable named {}", requested.name);
+        {
+            /// A schema that is inferred in the `union` mode of `schema_inference_mode` has the
+            /// variables of all the files, so a file may lack some of its columns.
+            if (!format_settings.netcdf.allow_missing_columns)
+                throw Exception(ErrorCodes::THERE_IS_NO_COLUMN,
+                    "The NetCDF file has no variable named {}", requested.name);
+
+            states.emplace_back();
+            continue;
+        }
 
         ColumnState state;
         state.column = it->second;
@@ -518,6 +528,9 @@ void NetCDFBlockInputFormat::initialize()
     UInt64 row_bytes = 0;
     for (const auto & state : states)
     {
+        if (!state.column)
+            continue;
+
         const auto & column = *state.column;
         UInt64 value_bytes = column.variable ? column.element_size : sizeof(UInt64);
         if (column.is_string)
@@ -872,6 +885,7 @@ Chunk NetCDFBlockInputFormat::read()
         return {};
 
     approx_bytes_read_for_chunk = 0;
+    block_missing_values.clear();
 
     UInt64 count = std::min<UInt64>(max_chunk_rows, layout.num_rows - current_row);
     const auto & result_header = getPort().getHeader();
@@ -884,6 +898,23 @@ Chunk NetCDFBlockInputFormat::read()
     for (size_t i = 0; i < states.size(); ++i)
     {
         auto & state = states[i];
+        const auto & requested_type = result_header.getByPosition(i).type;
+
+        if (!state.column)
+        {
+            if (format_settings.force_null_for_omitted_fields && !isNullableOrLowCardinalityNullable(requested_type))
+                throw Exception(ErrorCodes::TYPE_MISMATCH,
+                    "Cannot insert NULL value into a column `{}` of type '{}'",
+                    result_header.getByPosition(i).name, requested_type->getName());
+
+            auto column = requested_type->createColumn();
+            column->insertManyDefaults(count);
+            result.push_back(std::move(column));
+            if (format_settings.defaults_for_omitted_fields)
+                block_missing_values.setBits(i, count);
+            continue;
+        }
+
         getElementIndexes(state, current_row, count, indexes);
 
         if (state.column->variable)
@@ -916,7 +947,6 @@ Chunk NetCDFBlockInputFormat::read()
         column->reserve(count);
         fillColumn(state, *column, indexes);
 
-        const auto & requested_type = result_header.getByPosition(i).type;
         if (requested_type->equals(*state.column->type))
             result.push_back(std::move(column));
         else
@@ -1188,6 +1218,7 @@ an exception.
 |-----------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------|---------|
 | [`input_format_netcdf_fill_value_as_null`](/operations/settings/settings-formats#input_format_netcdf_fill_value_as_null)     | Read the values equal to the `_FillValue` or `missing_value` attribute of a variable as `NULL`. | `false` |
 | [`input_format_netcdf_add_dimension_columns`](/operations/settings/settings-formats#input_format_netcdf_add_dimension_columns) | Add a column with the index along every axis of the row space that has no coordinate variable. | `false` |
+| [`input_format_netcdf_allow_missing_columns`](/operations/settings/settings-formats#input_format_netcdf_allow_missing_columns) | Fill a requested column that the file has no variable for with the default values of its type. | `true` |
 )DOCS_MD",
         .introduced_in = {26, 10},
         .related = {"Npy", "Parquet"}});
