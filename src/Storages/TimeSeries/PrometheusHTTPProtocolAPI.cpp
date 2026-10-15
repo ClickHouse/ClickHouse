@@ -481,6 +481,8 @@ void PrometheusHTTPProtocolAPI::executeRangeQueryInChunks(
 
         /// These settings don't change the result of a chunk, so they must not be a part of its key in the query cache.
         auto query_context = makeQueryContext();
+        /// A chunk is its own query, so the tags it collects are freed when it finishes.
+        query_context->makeQueryContext();
         query_context->resetSettingsToDefaultValue({"promql_range_query_split_interval", "promql_range_query_cache_min_age"});
 
         /// A chunk uses the query cache only if it's eligible, even if the request sets `use_query_cache = 1`.
@@ -533,14 +535,16 @@ void PrometheusHTTPProtocolAPI::executeRangeQueryInChunks(
     }
 
     writeQueryResponseHeader(response, PrometheusQueryResultType::RANGE_VECTOR);
-    writeQueryResponseRangeVectorChunks(response, chunks);
+    writeQueryResponseRangeVectorChunks(
+        response, chunks, [&] { limits.checkTimeLimit(watch.elapsedNanoseconds(), OverflowMode::THROW); });
     writeQueryResponseFooter(response);
 
     if (query_finish_callback)
         query_finish_callback();
 }
 
-void PrometheusHTTPProtocolAPI::writeQueryResponseRangeVectorChunks(WriteBuffer & response, const std::vector<Blocks> & chunks)
+void PrometheusHTTPProtocolAPI::writeQueryResponseRangeVectorChunks(
+    WriteBuffer & response, const std::vector<Blocks> & chunks, const std::function<void()> & check_time_limit)
 {
     struct Position
     {
@@ -570,6 +574,8 @@ void PrometheusHTTPProtocolAPI::writeQueryResponseRangeVectorChunks(WriteBuffer 
 
         if (!min_chunk)
             break;
+
+        check_time_limit();
 
         const Block & min_block = chunks[*min_chunk][positions[*min_chunk].block];
         const size_t min_row = positions[*min_chunk].row;
