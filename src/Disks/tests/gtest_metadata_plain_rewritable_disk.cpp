@@ -2612,7 +2612,7 @@ TEST_F(MetadataPlainRewritableDiskTest, ParallelUnlinkOfDifferentLinksToSharedBl
 
     /// Besides unlinking its link, the first transaction may move it to another place and remove it from there: unlink it
     /// at the new path, or remove a directory that the link or its directory was moved into. The committed state has the
-    /// link at its old path, so the locks have to be found through the moves.
+    /// link at its old path, so the locks have to be found through the moves. Either transaction may be the held one.
     enum class Mode
     {
         Unlink,
@@ -2622,8 +2622,9 @@ TEST_F(MetadataPlainRewritableDiskTest, ParallelUnlinkOfDifferentLinksToSharedBl
     };
 
     for (const auto mode : {Mode::Unlink, Mode::MoveFileAndUnlink, Mode::MoveFileAndRemoveTargetDirectory, Mode::MoveDirectoryAndRemoveTargetDirectory})
+    for (const bool hold_a : {true, false})
     {
-        const std::string test = std::string("ParallelUnlinkOfDifferentLinksToSharedBlob") + std::to_string(static_cast<int>(mode));
+        const std::string test = fmt::format("ParallelUnlinkOfDifferentLinksToSharedBlob{}{}", static_cast<int>(mode), hold_a ? "A" : "B");
         SCOPED_TRACE(test);
 
         getMetadataStorage(test);
@@ -2666,10 +2667,13 @@ TEST_F(MetadataPlainRewritableDiskTest, ParallelUnlinkOfDifferentLinksToSharedBl
         auto tx_b = metadata->createTransaction();
         tx_b->unlinkFile("B/f1", /*if_exists=*/false, /*should_remove_objects=*/true);
 
-        std::thread thread_a([&]
+        auto & tx_held = hold_a ? tx_a : tx_b;
+        auto & tx_other = hold_a ? tx_b : tx_a;
+
+        std::thread thread_held([&]
         {
             holding_storage_role = 1;
-            tx_a->commit(DB::NoCommitOptions{});
+            tx_held->commit(DB::NoCommitOptions{});
         });
 
         /// Start the second commit only when the first one is held inside of its commit.
@@ -2678,18 +2682,24 @@ TEST_F(MetadataPlainRewritableDiskTest, ParallelUnlinkOfDifferentLinksToSharedBl
             object_storage->cv.wait(lock, [&] { return object_storage->held; });
         }
 
-        std::thread thread_b([&]
+        std::thread thread_other([&]
         {
             holding_storage_role = 2;
-            tx_b->commit(DB::NoCommitOptions{});
+            tx_other->commit(DB::NoCommitOptions{});
         });
 
-        thread_a.join();
-        thread_b.join();
+        thread_held.join();
+        thread_other.join();
 
-        EXPECT_TRUE(tx_a->getSubmittedForRemovalBlobs().empty());
-        ASSERT_EQ(tx_b->getSubmittedForRemovalBlobs().size(), 1u);
-        EXPECT_EQ(tx_b->getSubmittedForRemovalBlobs().front().remote_path, shared_remote_path);
+        /// The commit that waited for the held one removes the shared blob. The transactions may also remove the objects
+        /// of a removed directory.
+        auto submitted_shared_blob = [&](const auto & tx)
+        {
+            const auto & blobs = tx->getSubmittedForRemovalBlobs();
+            return std::ranges::count_if(blobs, [&](const auto & blob) { return blob.remote_path == shared_remote_path; });
+        };
+        EXPECT_EQ(submitted_shared_blob(tx_held), 0);
+        EXPECT_EQ(submitted_shared_blob(tx_other), 1);
         EXPECT_FALSE(object_storage->exists(StoredObject(shared_remote_path)));
 
         auto reloaded = restartMetadataStorage(test);
