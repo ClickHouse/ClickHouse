@@ -700,6 +700,10 @@ std::optional<MergeTreeWhereOptimizer::OptimizeResult> MergeTreeWhereOptimizer::
         if (!it->viable)
             break;
 
+        /// If any non-expensive conditions stay in WHERE then don't move expensive conditions to PREWHERE
+        if (it->expensive && std::ranges::any_of(where_conditions, [](const Condition & cond) { return !cond.expensive; }))
+            break;
+
         if (!where_optimizer_context.move_all_conditions_to_prewhere)
         {
             bool moved_enough = false;

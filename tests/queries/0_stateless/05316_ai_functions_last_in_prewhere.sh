@@ -78,6 +78,9 @@ ai_position 'AI inside OR' "(flag = 1 OR aiFilter(text, 'matches', ${CHAT})) AND
 # With no other condition the AI condition is still moved.
 ai_position 'AI condition alone' "aiFilter(text, 'matches', ${CHAT})"
 
+# A condition using every queried column is not moved, so the AI condition stays in WHERE behind it.
+ai_position 'AI behind a condition left in WHERE' "length(text) = flag + length(other) AND aiFilter(text, 'matches', ${CHAT})"
+
 # Without reordering the written order is kept, the AI condition included.
 ai_position 'Reordering disabled, AI written first' "aiFilter(text, 'matches', ${CHAT}) AND flag = 1" 0
 ai_position 'Reordering disabled, AI written last' "flag = 1 AND aiFilter(text, 'matches', ${CHAT})" 0
