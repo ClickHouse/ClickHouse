@@ -1,0 +1,4 @@
+<clickhouse>
+    <totp_strict_mode>1</totp_strict_mode>
+    <totp_strict_mode_keeper_path>/clickhouse/test_totp_auth/one_time_passwords/</totp_strict_mode_keeper_path>
+</clickhouse>

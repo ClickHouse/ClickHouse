@@ -129,6 +129,9 @@ For example if the primary password is `some_password` and the generated TOTP co
 Each code is accepted at most once, as required by [RFC 6238](https://datatracker.ietf.org/doc/html/rfc6238#section-5.2), so a user can successfully authenticate at most once per `period`.
 Keep this in mind for clients that authenticate on every request or connection (for example, scripts using the HTTP interface): each authentication needs a fresh code.
 
+By default, each server tracks the accepted codes on its own, so in a cluster a code accepted by one server is still accepted once by every other server.
+Enable the server setting `totp_strict_mode` to track the accepted codes in ZooKeeper or ClickHouse Keeper instead: the codes are then accepted at most once across all servers sharing the same Keeper, and the records survive server restarts.
+
 To enable TOTP authentication for a user, configure the `time_based_one_time_password` section in `users.xml`. This section defines the TOTP settings, such as secret, validity period, number of digits, and hash algorithm.
 
 **Example**

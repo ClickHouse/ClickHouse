@@ -15,6 +15,7 @@ namespace ErrorCodes
 
 class Credentials;
 class ExternalAuthenticators;
+class OneTimePasswordUsageTracker;
 class SettingsChanges;
 
 /// TODO: Try to move this checking to Credentials.
@@ -42,7 +43,11 @@ struct Authentication
     /// of the codes (RFC 6238, Section 5.2). Returns false if the code has already been used before.
     /// Must be called exactly once after the whole authentication succeeds, so that a failed attempt
     /// (e.g. a wrong password combined with a valid code) cannot consume the code.
-    static bool consumeOneTimePassword(const Credentials & credentials, const AuthenticationData & authentication_method);
+    static bool consumeOneTimePassword(
+        const Credentials & credentials,
+        const String & user_name,
+        const AuthenticationData & authentication_method,
+        OneTimePasswordUsageTracker & usage_tracker);
 
     // A signaling class used to communicate requirements for credentials.
     template <typename CredentialsType>
