@@ -2610,11 +2610,20 @@ TEST_F(MetadataPlainRewritableDiskTest, ParallelUnlinkOfDifferentLinksToSharedBl
         }
     };
 
-    /// With `move_first`, the first transaction moves its link to another directory and removes it from there. The
-    /// committed state has the link at its old path, so the locks have to be found through the move.
-    for (const bool move_first : {false, true})
+    /// Besides unlinking its link, the first transaction may move it to another place and remove it from there: unlink it
+    /// at the new path, or remove a directory that the link or its directory was moved into. The committed state has the
+    /// link at its old path, so the locks have to be found through the moves.
+    enum class Mode
     {
-        const std::string test = move_first ? "ParallelMoveAndUnlinkOfDifferentLinksToSharedBlob" : "ParallelUnlinkOfDifferentLinksToSharedBlob";
+        Unlink,
+        MoveFileAndUnlink,
+        MoveFileAndRemoveTargetDirectory,
+        MoveDirectoryAndRemoveTargetDirectory,
+    };
+
+    for (const auto mode : {Mode::Unlink, Mode::MoveFileAndUnlink, Mode::MoveFileAndRemoveTargetDirectory, Mode::MoveDirectoryAndRemoveTargetDirectory})
+    {
+        const std::string test = std::string("ParallelUnlinkOfDifferentLinksToSharedBlob") + std::to_string(static_cast<int>(mode));
         SCOPED_TRACE(test);
 
         getMetadataStorage(test);
@@ -2636,14 +2645,23 @@ TEST_F(MetadataPlainRewritableDiskTest, ParallelUnlinkOfDifferentLinksToSharedBl
         const auto shared_remote_path = metadata->getStorageObjects("A/f1").front().remote_path;
 
         auto tx_a = metadata->createTransaction();
-        if (move_first)
+        switch (mode)
         {
-            tx_a->moveFile("A/f1", "C/f1");
-            tx_a->unlinkFile("C/f1", /*if_exists=*/false, /*should_remove_objects=*/true);
-        }
-        else
-        {
-            tx_a->unlinkFile("A/f1", /*if_exists=*/false, /*should_remove_objects=*/true);
+            case Mode::Unlink:
+                tx_a->unlinkFile("A/f1", /*if_exists=*/false, /*should_remove_objects=*/true);
+                break;
+            case Mode::MoveFileAndUnlink:
+                tx_a->moveFile("A/f1", "C/f1");
+                tx_a->unlinkFile("C/f1", /*if_exists=*/false, /*should_remove_objects=*/true);
+                break;
+            case Mode::MoveFileAndRemoveTargetDirectory:
+                tx_a->moveFile("A/f1", "C/f1");
+                tx_a->removeRecursive("C", /*should_remove_objects=*/nullptr);
+                break;
+            case Mode::MoveDirectoryAndRemoveTargetDirectory:
+                tx_a->moveDirectory("A", "C/A");
+                tx_a->removeRecursive("C", /*should_remove_objects=*/nullptr);
+                break;
         }
         auto tx_b = metadata->createTransaction();
         tx_b->unlinkFile("B/f1", /*if_exists=*/false, /*should_remove_objects=*/true);
@@ -2678,8 +2696,11 @@ TEST_F(MetadataPlainRewritableDiskTest, ParallelUnlinkOfDifferentLinksToSharedBl
         EXPECT_FALSE(reloaded->existsFile("A/f1"));
         EXPECT_FALSE(reloaded->existsFile("B/f1"));
         EXPECT_FALSE(reloaded->existsFile("C/f1"));
+        EXPECT_FALSE(reloaded->existsFile("C/A/f1"));
+        /// The `prefix.path` objects of the directories that remain.
+        const size_t expected_directories = mode == Mode::Unlink || mode == Mode::MoveFileAndUnlink ? 3 : (mode == Mode::MoveFileAndRemoveTargetDirectory ? 2 : 1);
         const auto blobs = listAllBlobs(test);
-        EXPECT_EQ(blobs.size(), 3u);
+        EXPECT_EQ(blobs.size(), expected_directories);
         for (const auto & blob : blobs)
             EXPECT_EQ(fs::path(blob).filename(), "prefix.path") << blob;
     }

@@ -16,7 +16,6 @@
 #include <cstddef>
 #include <memory>
 #include <optional>
-#include <ranges>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -141,6 +140,28 @@ KeyLocks::Keys collectSharedBlobKeys(const FsSnapshot & snapshot, const std::vec
     }
 
     return keys;
+}
+
+/// The paths that the contents of `path` had before the first `moves_count` moves: the path itself, mapped back through
+/// the moves of it or of its ancestors, and the sources of the moves into its subtree (a file or a directory moved under
+/// `path`), mapped back through the earlier moves in the same way.
+void collectPathsBeforeMoves(
+    std::string path,
+    const std::vector<std::pair<std::string, std::string>> & moved_paths,
+    size_t moves_count,
+    std::vector<std::string> & result)
+{
+    for (size_t i = moves_count; i > 0; --i)
+    {
+        const auto & [moved_from, moved_to] = moved_paths[i - 1];
+        if (path == moved_to)
+            path = moved_from;
+        else if (path.starts_with(moved_to + "/"))
+            path = moved_from + path.substr(moved_to.size());
+        else if (moved_to.starts_with(path + "/"))
+            collectPathsBeforeMoves(moved_from, moved_paths, i - 1, result);
+    }
+    result.push_back(std::move(path));
 }
 
 /// The pages of one listing can only be fetched one after another, so enumerating a disk that holds
@@ -1241,19 +1262,15 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::addLinkRemovalP
     if (normalized_path.empty())
         return;
 
-    /// The committed snapshot, where the shared blobs are looked up, has the files that an earlier operation of this
-    /// transaction moved to this path (or under it) at their paths before the moves, so these paths are added too.
-    std::string original_path = normalized_path;
-    for (const auto & [moved_from, moved_to] : std::views::reverse(moved_paths))
-    {
-        if (original_path == moved_to)
-            original_path = moved_from;
-        else if (original_path.starts_with(moved_to + "/"))
-            original_path = moved_from + original_path.substr(moved_to.size());
-    }
+    /// The committed snapshot, where the shared blobs are looked up, has the files that the earlier operations of this
+    /// transaction moved to this path or into its subtree (directly or by moving one of their ancestors) at their paths
+    /// before the moves, so these paths are added too.
+    std::vector<std::string> original_paths;
+    collectPathsBeforeMoves(normalized_path, moved_paths, moved_paths.size(), original_paths);
 
-    if (original_path != normalized_path && !original_path.empty())
-        link_removal_paths.push_back(std::move(original_path));
+    for (auto & original_path : original_paths)
+        if (original_path != normalized_path && !original_path.empty())
+            link_removal_paths.push_back(std::move(original_path));
     link_removal_paths.push_back(std::move(normalized_path));
 }
 

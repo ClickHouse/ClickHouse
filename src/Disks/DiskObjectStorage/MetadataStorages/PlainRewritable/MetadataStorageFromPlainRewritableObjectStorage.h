@@ -173,7 +173,8 @@ protected:
     std::vector<std::pair<std::string, std::string>> moved_paths;
 
     void addAffectedPath(const std::string & path);
-    /// Adds a path to `link_removal_paths`, together with the path it had before the earlier moves of this transaction.
+    /// Adds a path to `link_removal_paths`, together with the paths that its contents had before the earlier moves of this
+    /// transaction, including the sources of the moves into its subtree.
     void addLinkRemovalPath(const std::string & path);
     /// Records a move, to be called after the paths of the move are added.
     void addMovedPath(const std::string & path_from, const std::string & path_to);
