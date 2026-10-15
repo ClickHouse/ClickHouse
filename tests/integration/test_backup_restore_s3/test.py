@@ -1353,8 +1353,8 @@ def test_backup_restore_s3_plain_backup_metadata_only(cluster):
     err = instance.query_and_get_error(f"BACKUP TABLE sample PARTITIONS 0 TO {new_backup_destination()}")
     assert "CANNOT_BACKUP_TABLE" in err and "Cannot backup specific partitions" in err, err
 
-    # The inner tables of a materialized view and a `TimeSeries` table on such a policy are not supported. A backup that
-    # leaves out their data doesn't need to tell, so it works.
+    # The inner tables of a materialized view and a `TimeSeries` table on such a policy are not supported: the flag is
+    # ignored for them with a warning, and they are backed up as usual.
     instance.query(
         f"""
         CREATE TABLE src (key Int) ENGINE = Null;
@@ -1370,10 +1370,13 @@ def test_backup_restore_s3_plain_backup_metadata_only(cluster):
         """,
         settings={"allow_experimental_time_series_table": 1},
     )
-    for table in ["mv", "ts"]:
-        err = instance.query_and_get_error(f"BACKUP TABLE {table} TO {new_backup_destination()}")
-        assert "NOT_IMPLEMENTED" in err and "on a storage policy marked backup_metadata_only" in err, err
-        instance.query(f"BACKUP TABLE {table} TO {new_backup_destination()} SETTINGS structure_only = 1")
+    for table, kind in [("mv", "materialized view"), ("ts", "TimeSeries table")]:
+        instance.query(f"BACKUP TABLE {table} TO {new_backup_destination()}")
+        assert instance.contains_in_log(
+            f"default.{table} (" + get_uuid(table)
+        ), f"no warning for {table}"
+        assert instance.contains_in_log(f"but it is a {kind} with the inner table"), f"no warning for {table}"
+
     instance.query("DROP TABLE ts SYNC")
     instance.query("DROP TABLE mv SYNC")
     instance.query("DROP TABLE src SYNC")

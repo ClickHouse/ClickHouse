@@ -1073,7 +1073,6 @@ void RestorerFromBackup::insertDataToTable(const QualifiedTableName & table_name
         create_table_query_from_backup = table_info.create_table_query;
     }
 
-    /// Throws for a materialized view or a `TimeSeries` table with an inner table on such a policy.
     if (BackupUtils::isDataOnBackupMetadataOnlyStoragePolicy(storage, context))
     {
         skipTableDataOnBackupMetadataOnlyStoragePolicy(table_name, storage, partitions, create_table_query_from_backup);

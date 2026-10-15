@@ -16,16 +16,9 @@
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
+#include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 
-
-namespace DB
-{
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-}
 
 namespace DB::BackupUtils
 {
@@ -170,68 +163,70 @@ bool isInnerTable(const String & /* database_name */, const String & table_name)
 namespace
 {
 
-/// Only a `MergeTreeData` keeps its data on a storage policy: `Alias`, `Distributed` and `StorageProxy` report one but keep no
-/// data of their own. Loads a lazily loaded table, whose `StorageTableProxy` reports no storage policy, but never runs the
-/// table function behind a `StorageTableFunctionProxy`, which is checked for every table backed up or restored.
-bool isMergeTreeOnBackupMetadataOnlyStoragePolicy(const StoragePtr & storage)
+/// The `MergeTreeData` behind `storage` if it is on a storage policy marked `backup_metadata_only`. Only a `MergeTreeData`
+/// keeps its data on a storage policy: `Alias`, `Distributed` and `StorageProxy` report one but keep no data of their own.
+/// Loads a lazily loaded table, whose `StorageTableProxy` reports no storage policy, but never runs the table function
+/// behind a `StorageTableFunctionProxy`, which is checked for every table backed up or restored.
+std::shared_ptr<MergeTreeData> getMergeTreeOnBackupMetadataOnlyStoragePolicy(const StoragePtr & storage)
 {
-    const auto resolved = resolveStorageProxyLoading(storage);
-    auto merge_tree = castStorage<MergeTreeData>(resolved, DeferredTable::Skip);
+    auto merge_tree = castStorage<MergeTreeData>(resolveStorageProxyLoading(storage), DeferredTable::Skip);
     if (!merge_tree)
-        return false;
+        return nullptr;
     auto policy = merge_tree->getStoragePolicy();
     if (!policy || !policy->isBackupMetadataOnly())
-        return false;
+        return nullptr;
+    return merge_tree;
+}
 
-    /// Only a table of the plain `MergeTree` family reopens the parts it finds on the storage. `RESTORE` creates a
-    /// `ReplicatedMergeTree` table in a mode that refuses them, and a `SharedMergeTree` table sees only the parts in Keeper.
-    if (!castStorage<StorageMergeTree>(resolved, DeferredTable::Skip))
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "{} is a {} table on a storage policy marked backup_metadata_only. BACKUP and RESTORE support such policies only "
-            "for tables of the MergeTree family that are neither replicated nor shared",
-            storage->getStorageID().getNameForLogs(),
-            merge_tree->getName());
-    return true;
+void warnBackupMetadataOnlyIgnored(const StoragePtr & storage, const String & reason)
+{
+    LOG_WARNING(
+        getLogger("BackupUtils"),
+        "{} is on a storage policy marked backup_metadata_only, which BACKUP and RESTORE support only for tables of the MergeTree "
+        "family that are neither replicated nor shared, but {}: its data is backed up and restored as usual",
+        storage->getStorageID().getNameForLogs(),
+        reason);
 }
 
 }
 
 bool isDataOnBackupMetadataOnlyStoragePolicy(const StoragePtr & storage, const ContextPtr & context)
 {
-    StoragePtr inner_table_on_policy;
+    /// Only a table of the plain `MergeTree` family reopens the parts it finds on the storage. `RESTORE` creates a
+    /// `ReplicatedMergeTree` table in a mode that refuses them, a `SharedMergeTree` table sees only the parts in Keeper,
+    /// and a view looks for the data of its inner tables in the backup. For the others the flag is ignored.
     if (const auto * materialized_view = typeid_cast<const StorageMaterializedView *>(storage.get()))
     {
         if (materialized_view->hasInnerTable())
         {
-            if (auto target = materialized_view->tryGetTargetTable(); target && isMergeTreeOnBackupMetadataOnlyStoragePolicy(target))
-                inner_table_on_policy = target;
+            if (auto target = materialized_view->tryGetTargetTable(); target && getMergeTreeOnBackupMetadataOnlyStoragePolicy(target))
+                warnBackupMetadataOnlyIgnored(storage, fmt::format("it is a materialized view with the inner table {}", target->getStorageID().getNameForLogs()));
         }
+        return false;
     }
-    else if (const auto * time_series = typeid_cast<const StorageTimeSeries *>(storage.get()))
+
+    if (const auto * time_series = typeid_cast<const StorageTimeSeries *>(storage.get()))
     {
         for (auto target_kind : StorageTimeSeries::getTargetKinds())
         {
             if (!time_series->isInnerTable(target_kind))
                 continue;
-            if (auto target = time_series->tryGetTargetTable(target_kind, context); target && isMergeTreeOnBackupMetadataOnlyStoragePolicy(target))
-                inner_table_on_policy = target;
+            if (auto target = time_series->tryGetTargetTable(target_kind, context); target && getMergeTreeOnBackupMetadataOnlyStoragePolicy(target))
+                warnBackupMetadataOnlyIgnored(storage, fmt::format("it is a TimeSeries table with the inner table {}", target->getStorageID().getNameForLogs()));
         }
+        return false;
     }
-    else
+
+    auto merge_tree = getMergeTreeOnBackupMetadataOnlyStoragePolicy(storage);
+    if (!merge_tree)
+        return false;
+
+    if (!castStorage<StorageMergeTree>(merge_tree, DeferredTable::Skip))
     {
-        return isMergeTreeOnBackupMetadataOnlyStoragePolicy(storage);
+        warnBackupMetadataOnlyIgnored(storage, fmt::format("it is a {} table", merge_tree->getName()));
+        return false;
     }
-
-    if (inner_table_on_policy)
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "{} has the inner table {} on a storage policy marked backup_metadata_only. BACKUP and RESTORE support such policies "
-            "only for tables that keep their data themselves, not for the inner tables of materialized views and TimeSeries tables",
-            storage->getStorageID().getNameForLogs(),
-            inner_table_on_policy->getStorageID().getNameForLogs());
-
-    return false;
+    return true;
 }
 
 bool isCreatedOnBackupMetadataOnlyStoragePolicy(const ASTCreateQuery & create_query, const ContextPtr & context)
@@ -257,13 +252,7 @@ bool isCreatedOnBackupMetadataOnlyStoragePolicy(const ASTCreateQuery & create_qu
     /// The same restriction as in `isDataOnBackupMetadataOnlyStoragePolicy`, for a table known only by its definition. The
     /// name is the only way to tell the engine here, as the replicated and shared engines have the same features.
     const auto & engine_name = storage->engine->name;
-    if (engine_name.starts_with("Replicated") || engine_name.starts_with("Shared"))
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "A {} table on a storage policy marked backup_metadata_only is not supported. BACKUP and RESTORE support such "
-            "policies only for tables of the MergeTree family that are neither replicated nor shared",
-            engine_name);
-    return true;
+    return !engine_name.starts_with("Replicated") && !engine_name.starts_with("Shared");
 }
 
 }

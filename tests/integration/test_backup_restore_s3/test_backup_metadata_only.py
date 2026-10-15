@@ -56,16 +56,14 @@ def test_partitions_of_table_not_created_on_replica(start_cluster):
         )
         assert "CANNOT_BACKUP_TABLE" in err and "Cannot backup specific partitions" in err, err
 
-        # A `ReplicatedMergeTree` table on such a policy is refused from its definition too, unless its data is left out.
+        # The flag is ignored for a `ReplicatedMergeTree` table known only by its definition too, which is backed up as usual.
         node1.query(
             f"CREATE TABLE rdb.t_replicated (key Int) ENGINE = ReplicatedMergeTree ORDER BY key SETTINGS storage_policy = '{policy}'",
             settings={"distributed_ddl_task_timeout": 0},
         )
         assert node2.query("SELECT count() FROM system.tables WHERE database = 'rdb' AND name = 't_replicated'") == "0\n"
         backup_destination = f"S3('http://minio1:9001/root/data/backups/{uuid.uuid4().hex}', 'minio', '{minio_secret_key}')"
-        err = node2.query_and_get_error(f"BACKUP TABLE rdb.t_replicated TO {backup_destination}")
-        assert "NOT_IMPLEMENTED" in err and "ReplicatedMergeTree table on a storage policy marked backup_metadata_only" in err, err
-        node2.query(f"BACKUP TABLE rdb.t_replicated TO {backup_destination} SETTINGS structure_only = 1")
+        node2.query(f"BACKUP TABLE rdb.t_replicated TO {backup_destination}")
     finally:
         node2.query("SYSTEM DISABLE FAILPOINT database_replicated_stop_entry_execution")
         for node in [node1, node2]:
@@ -93,9 +91,10 @@ def test_disk_made_writable_by_config_reload(start_cluster):
         node1.query("DROP TABLE IF EXISTS t_reload SYNC")
 
 
-def test_replicated_merge_tree_is_refused(start_cluster):
+def test_replicated_merge_tree_ignores_the_flag(start_cluster):
     # `RESTORE` creates a `ReplicatedMergeTree` table in a mode that refuses the parts it finds on the storage, so such a
-    # table on a storage policy marked `backup_metadata_only` couldn't be restored from a backup of its definition.
+    # table on a storage policy marked `backup_metadata_only` couldn't be restored from a backup of its definition: the flag
+    # is ignored for it with a warning, and it is backed up and restored as usual, with a new UUID.
     policy = "policy_s3_plain_backup_metadata_only"
     node1.query(
         f"""
@@ -105,8 +104,11 @@ def test_replicated_merge_tree_is_refused(start_cluster):
     )
     try:
         backup_destination = f"S3('http://minio1:9001/root/data/backups/{uuid.uuid4().hex}', 'minio', '{minio_secret_key}')"
-        err = node1.query_and_get_error(f"BACKUP TABLE t_replicated TO {backup_destination}")
-        assert "NOT_IMPLEMENTED" in err and "is a ReplicatedMergeTree table" in err, err
-        node1.query(f"BACKUP TABLE t_replicated TO {backup_destination} SETTINGS structure_only = 1")
+        node1.query(f"BACKUP TABLE t_replicated TO {backup_destination}")
+        assert node1.contains_in_log("but it is a ReplicatedMergeTree table: its data is backed up and restored as usual")
+        uuid_before = node1.query("SELECT uuid FROM system.tables WHERE name = 't_replicated'").strip()
+        node1.query("DROP TABLE t_replicated SYNC")
+        node1.query(f"RESTORE TABLE t_replicated FROM {backup_destination} SETTINGS structure_only = 1")
+        assert node1.query("SELECT uuid FROM system.tables WHERE name = 't_replicated'").strip() != uuid_before
     finally:
         node1.query("DROP TABLE IF EXISTS t_replicated SYNC")
