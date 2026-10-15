@@ -24,6 +24,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int SYSTEM_ERROR;
     extern const int UNEXPECTED_PACKET_FROM_SERVER;
 }
 
@@ -192,10 +193,17 @@ void RemoteInserter::onFinish()
     finished = true;
 }
 
-void RemoteInserter::processProfileEventsPacket(const Block & block)
+void RemoteInserter::processProfileEventsPacket(Block block)
 {
     if (process_list_element)
         process_list_element->addRemoteProfileEvents(block, /* from_insert = */ true);
+
+    /// Pass the profile events of the remote server to the client, as `RemoteQueryExecutor` does. When this
+    /// server executes a secondary `INSERT` itself (one more distributed hop), it is how the reports of the
+    /// servers further down reach the initiator and its quotas over profile events.
+    if (auto profile_queue = CurrentThread::getInternalProfileEventsQueue())
+        if (!profile_queue->emplace(std::move(block)))
+            throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push into profile queue");
 }
 
 RemoteInserter::~RemoteInserter()

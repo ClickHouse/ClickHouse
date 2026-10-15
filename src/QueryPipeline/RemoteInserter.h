@@ -51,7 +51,7 @@ public:
 private:
     /// Accounts the `ProfileEvents` packet of the remote server for the quotas over profile events of
     /// the query this insert is a part of, if any.
-    void processProfileEventsPacket(const Block & block);
+    void processProfileEventsPacket(Block block);
 
     const Settings & insert_settings;
     const ClientInfo & client_info;

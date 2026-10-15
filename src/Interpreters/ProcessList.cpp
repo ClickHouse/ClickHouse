@@ -1015,9 +1015,11 @@ void QueryStatus::addRemoteProfileEvents(const Block & block, bool from_insert)
         if (!event)
             continue;
 
-        /// These two are already incremented locally from the progress the remote servers report
-        /// (see `ReadProgressCallback`), so taking them from here as well would count them twice.
-        if (*event == ProfileEvents::SelectedRows || *event == ProfileEvents::SelectedBytes)
+        /// For a distributed `SELECT`, these two are already incremented locally from the progress the
+        /// remote servers report (see `ReadProgressCallback`), so taking them from here as well would count
+        /// them twice. A distributed `INSERT` ignores the progress of the remote servers (see `RemoteInserter`),
+        /// so what they read for it (e.g. a materialized view joining a table) is taken from here.
+        if (!from_insert && (*event == ProfileEvents::SelectedRows || *event == ProfileEvents::SelectedBytes))
             continue;
 
         /// The same for a distributed `INSERT`: the rows and bytes sent to the remote servers are counted
