@@ -299,9 +299,6 @@ Open **Search**, select your **Logs** source, filter for `ServiceName:host-demo`
 </Step>
 </Steps>
 
-## Using an existing collector (optional) {#existing-collector}
-
-Add the `filelog/host` receiver to your existing collector and include it in your logs pipeline, preserving the other receivers, processors, and exporter settings. Mount the log directory at the configured path. For the demo, use a separate logs pipeline containing `filelog/host` and `transform/demo_timestamps` so the transform only changes the sample timestamps. If the pipeline already exports to ClickHouse, keep that exporter instead of adding the standalone OTLP exporter.
 
 ## Dashboards and visualization {#dashboards}
 

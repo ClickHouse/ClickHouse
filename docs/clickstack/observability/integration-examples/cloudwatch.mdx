@@ -305,9 +305,6 @@ Open **Search**, select your **Logs** source, filter for `ServiceName:cloudwatch
 </Step>
 </Steps>
 
-## Using an existing collector (optional) {#existing-collector}
-
-If you already have a collector that includes the `awscloudwatch` receiver, add the receiver and a separate `logs/cloudwatch` pipeline using your existing exporter. Include `resource/cloudwatch` in that pipeline so it sets the service name only for CloudWatch logs. Preserve the collector's other pipelines and exporter settings, and make AWS credentials available through your deployment's authentication mechanism.
 
 ## Dashboards and visualization {#dashboards}
 

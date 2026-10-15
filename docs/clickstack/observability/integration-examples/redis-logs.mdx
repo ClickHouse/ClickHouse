@@ -276,12 +276,6 @@ Open **Search**, select **Logs**, filter for `ServiceName:redis-demo`, and selec
 </Step>
 </Steps>
 
-## Using an existing collector (optional) {#existing-collector}
-
-For a self-configured deployment, add the `filelog/redis` receiver and `transform/redis` processor to your existing collector. Include them in your logs pipeline while preserving its other receivers, processors, and ClickHouse exporter settings. Mount the log directory at the receiver's configured path and restart the collector using your deployment process.
-
-For the demo, also add `transform/demo_timestamps` before the batch processor. Omit the standalone OTLP exporter when your existing pipeline already exports to ClickHouse. See the [self-configured setup guide](/clickstack/self-configured/getting-started/managed).
-
 ## Dashboards and visualization {#dashboards}
 
 <Steps>

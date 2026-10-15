@@ -233,11 +233,6 @@ Import the dashboard in the [next section](#dashboards), filter for `ServiceName
 </Step>
 </Steps>
 
-## Using an existing collector (optional) {#existing-collector}
-
-For a self-configured deployment, add the `redis` receiver and `resource/redis` processor to your existing collector. Include them in your metrics pipeline while preserving its other receivers, processors, and ClickHouse exporter settings. Omit the standalone OTLP exporter when your existing pipeline already exports metrics to ClickHouse. Apply the configuration using your existing deployment process.
-
-If other services share the metrics pipeline, use a separate Redis pipeline so `resource/redis` does not overwrite their service names. See the [self-configured setup guide](/clickstack/self-configured/getting-started/managed).
 
 ## Dashboards and visualization {#dashboards}
 

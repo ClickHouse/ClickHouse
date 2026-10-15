@@ -40,7 +40,7 @@ Your EC2 instance must be able to reach the endpoint. For the Docker demo, a des
 
 ## Integration with an existing EC2 instance {#existing-ec2}
 
-Run these steps on the EC2 instance whose logs you want to collect. If you already run a collector, see [Using an existing collector](#existing-collector).
+Run these steps on the EC2 instance whose logs you want to collect.
 
 <Steps>
 <Step title="Verify instance metadata and syslog" id="verify-metadata">
@@ -354,11 +354,6 @@ Open **Search**, select your **Logs** source, filter for `ServiceName:ec2-demo`,
 </Step>
 </Steps>
 
-## Using an existing collector (optional) {#existing-collector}
-
-Add the `filelog/ec2` receiver and `resourcedetection/ec2` processor to the collector running on your EC2 instance. Include them in its logs pipeline while preserving its other receivers, processors, and exporter settings. Keep an existing ClickHouse exporter instead of adding the standalone OTLP exporter.
-
-For the demo, use a separate pipeline with the demo receiver, `resource/ec2_demo`, and `transform/demo_timestamps` so the simulated metadata and timestamp changes apply only to the sample.
 
 ## Dashboards and visualization {#dashboards}
 

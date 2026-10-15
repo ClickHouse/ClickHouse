@@ -10,232 +10,224 @@ keywords: ['Node.js', 'traces', 'OTEL', 'ClickHouse Observability', 'distributed
 import { Image } from "/snippets/components/Image.jsx";
 import { TrackedLink } from "/snippets/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
-<Tabs>
-<Tab title="ClickHouse Observability">
+Capture traces from your Node.js application with OpenTelemetry automatic instrumentation and send them to ClickHouse Observability. Use the [demo dataset](#demo-dataset) to try the integration without instrumenting an application.
 
-<Note>
-The ClickHouse Observability configuration for this guide is still being adapted. For the managed OTLP endpoint and authentication settings, see [Ingesting with OpenTelemetry](/clickstack/observability/ingesting-data/opentelemetry). The **Self configured** tab contains the existing self-configured instructions.
-</Note>
+## Prerequisites {#prerequisites}
 
-</Tab>
-<Tab title="Self configured">
+- A ClickHouse Observability service
+- For your application, Node.js 22 or newer and npm
+- For the demo, Docker and `curl`
 
-<Info>
-**TL;DR**
+### Connection details {#connection-details}
 
-Capture distributed traces from Node.js applications in ClickStack using OpenTelemetry automatic instrumentation. Includes a demo dataset and pre-built dashboard.
-</Info>
+For a managed service, open ClickHouse Observability and go to **Team Settings → Data → Managed Telemetry**. Copy your OTLP HTTP endpoint and API key. You can use **Copy connection details** to copy the configuration, or **Reveal key** to view the masked key.
 
-## Integration with existing Node.js application {#existing-nodejs-self-configured}
+<Image img="/images/clickstack/getting-started/observability-managed-telemetry.png" alt="Managed Telemetry connection details"/>
 
-This section covers adding distributed tracing to your existing Node.js application using OpenTelemetry automatic instrumentation.
+Set these connection variables in the terminal where you will run your application or demo collector:
 
-If you would like to test the integration before configuring your own existing setup, you can test with our preconfigured setup and sample data in the [demo dataset section](#demo-dataset-self-configured).
+```bash
+export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+export OTEL_EXPORTER_OTLP_AUTHORIZATION='Bearer YOUR_API_KEY'
+```
 
-##### Prerequisites {#prerequisites-self-configured}
-- ClickStack instance running with OTLP endpoints accessible (ports 4317/4318)
-- Existing Node.js application (Node.js 14 or higher)
-- npm or yarn package manager
-- ClickStack hostname or IP address
+Replace the placeholders with the exact endpoint, including its port, and API key from your service. Use the base HTTP endpoint without a `/v1/traces` suffix; the exporter appends the signal path.
+
+For self-configured deployments, use your collector's reachable OTLP HTTP endpoint (for example, `http://YOUR_COLLECTOR_HOST:4318`) and authentication settings. If your collector does not require authentication, omit the exporter's `headers` block from the configurations below. See the [self-configured getting-started guide](/clickstack/self-configured/getting-started/managed) for setup guidance.
+
+## Integration with an existing Node.js application {#existing-nodejs}
 
 <Steps>
-<Step title="Install and configure OpenTelemetry" id="install-configure-self-configured">
+<Step title="Install OpenTelemetry" id="install-instrumentation">
 
-Install the `@hyperdx/node-opentelemetry` package and initialize it at the start of your application. See the [Node.js SDK guide](/clickstack/ingesting-data/sdks/nodejs#getting-started) for detailed installation steps.
-</Step>
-<Step title="Get ClickStack API key" id="get-api-key-self-configured">
-
-An API key to send traces to ClickStack's OTLP endpoint.
-
-1. Open HyperDX at your ClickStack URL (e.g., http://localhost:8080)
-2. Create an account or log in if needed
-3. Navigate to **Team Settings → API Keys**
-4. Copy your **Ingestion API Key**
-
-<Image img="/images/clickstack/api-key.webp" alt="ClickStack API Key"/>
-</Step>
-<Step title="Run your application" id="run-application-self-configured">
-
-Start your Node.js application with the environment variables set:
+From your application's directory, install the instrumentation packages:
 
 ```bash
-export CLICKSTACK_API_KEY=your-api-key-here
-export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+npm install @opentelemetry/api @opentelemetry/auto-instrumentations-node@0.81.0
 ```
-</Step>
-<Step title="Generate some traffic" id="generate-traffic-self-configured">
 
-Make requests to your application to generate traces:
+These steps use [OpenTelemetry automatic instrumentation](https://opentelemetry.io/docs/zero-code/js/) for CommonJS applications. Native ES modules require the [ESM setup](https://github.com/open-telemetry/opentelemetry-js/blob/main/doc/esm-support.md). Use one instrumentation setup per application to avoid duplicate spans.
+
+</Step>
+<Step title="Configure tracing and start your application" id="run-application">
+
+In the terminal where you set the connection variables, run:
 
 ```bash
-# Simple requests
+export OTEL_SERVICE_NAME='nodejs-service'
+export OTEL_TRACES_EXPORTER='otlp'
+export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=${OTEL_EXPORTER_OTLP_AUTHORIZATION}"
+export OTEL_METRICS_EXPORTER='none'
+export OTEL_LOGS_EXPORTER='none'
+
+node --require @opentelemetry/auto-instrumentations-node/register app.js
+```
+
+Replace `app.js` with your application entry point. The preload initializes instrumentation before your application imports its libraries. For a self-configured endpoint without authentication, omit the headers export and run `unset OTEL_EXPORTER_OTLP_HEADERS`.
+
+The endpoint must be reachable from the application. If it runs in a container, `localhost` refers to that container.
+
+</Step>
+<Step title="Generate traffic" id="generate-traffic">
+
+Make requests to an endpoint your application serves. For an application listening on port `3000`:
+
+```bash
 curl http://localhost:3000/
-curl http://localhost:3000/api/users
-curl http://localhost:3000/api/products
-
-# Simulate load
-for i in {1..100}; do curl -s http://localhost:3000/ > /dev/null; done
 ```
+
+Allow a few seconds for the exporter to send the spans.
+
 </Step>
-<Step title="Verify traces in HyperDX" id="verify-traces-self-configured">
+<Step title="Verify traces" id="verify-traces">
 
-Once configured, log into HyperDX and verify traces are flowing. You should see something like this. If you don't see traces, try adjusting your time range:
+Open **Search**, select **Traces**, filter for `ServiceName:nodejs-service`, and select **Last 15 minutes**. Open a trace to inspect its spans, timing, and attributes.
 
-<Image img="/images/clickstack/nodejs/traces-search-view.webp" alt="Traces search view"/>
-
-Click on any trace to see the detailed view with spans, timing, and attributes:
-
-<Image img="/images/clickstack/nodejs/trace-view.webp" alt="Individual trace view"/>
 </Step>
 </Steps>
 
-## Demo dataset {#demo-dataset-self-configured}
+## Demo dataset {#demo-dataset}
 
-For users who want to test Node.js tracing with ClickStack before instrumenting their production applications, we provide a sample dataset of pre-generated Node.js application traces with realistic traffic patterns.
-
-<Steps>
-<Step title="Download the sample dataset" id="download-sample-self-configured">
-
-Download the sample traces file:
-
-```bash
-curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/nodejs/nodejs-traces-sample.json
-```
-</Step>
-<Step title="Start ClickStack" id="start-clickstack-self-configured">
-
-If you don't have ClickStack running yet, start it with:
-```bash
-docker run -d --name clickstack-demo \
-  -p 8080:8080 -p 4317:4317 -p 4318:4318 \
-  -e CLICKHOUSE_USER=default \
-  -e CLICKHOUSE_PASSWORD= \
-  clickhouse/clickstack-all-in-one:latest
-```
-</Step>
-<Step title="Get ClickStack API key" id="get-api-key-demo-self-configured">
-
-An API key to send traces to ClickStack's OTLP endpoint.
-
-1. Open HyperDX at your ClickStack URL (e.g., http://localhost:8080)
-2. Create an account or log in if needed
-3. Navigate to **Team Settings → API Keys**
-4. Copy your **Ingestion API Key**
-
-<Image img="/images/clickstack/api-key.webp" alt="ClickStack API Key"/>
-
-Set your API key as an environment variable:
-
-```bash
-export CLICKSTACK_API_KEY=your-api-key-here
-```
-</Step>
-<Step title="Send the traces to ClickStack" id="send-traces-self-configured">
-
-```bash
-curl -X POST http://localhost:4318/v1/traces \
-  -H "Content-Type: application/json" \
-  -H "Authorization: $CLICKSTACK_API_KEY" \
-  -d @nodejs-traces-sample.json
-```
-
-You should see a response like `{"partialSuccess":{}}` indicating the traces were successfully sent.
-</Step>
-<Step title="Verify traces in HyperDX" id="verify-demo-traces-self-configured">
-
-1. Open [HyperDX](http://localhost:8080/) and log in to your account (you may need to create an account first)
-2. Navigate to the **Search** view and set the source to **Traces**
-3. Set the time range to **2025-10-25 13:00:00 - 2025-10-28 13:00:00**
-
-<Image img="/images/clickstack/nodejs/traces-search-view.webp" alt="Traces search view"/>
-
-<Image img="/images/clickstack/nodejs/trace-view.webp" alt="Individual trace view"/>
-
-<Info>
-**Timezone Display**
-
-HyperDX displays timestamps in your browser's local timezone. The demo data spans **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)**. The wide time range ensures you'll see the demo traces regardless of your location. Once you see the traces, you can narrow the range to a 24-hour period for clearer visualizations.
-</Info>
-</Step>
-</Steps>
-
-## Dashboards and visualization {#dashboards-self-configured}
-
-To help you get started monitoring Node.js application performance, we provide a pre-built dashboard with essential trace visualizations.
+The sample contains 822 spans from `nodejs-demo-api`. You do not need a running Node.js application.
 
 <Steps>
-<Step title="Download the dashboard configuration" id="download-dashboard-self-configured">
+<Step title="Download the sample dataset" id="download-sample">
 
-<TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/nodejs-traces-dashboard.json'} download="nodejs-traces-dashboard.json" eventName="docs.node_traces_monitoring.dashboard_download">Download the dashboard configuration file</TrackedLink>.
+```bash
+curl -fLO https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/nodejs/nodejs-traces-sample.json
+```
+
 </Step>
-<Step title="Import the pre-built dashboard" id="import-dashboard-self-configured">
+<Step title="Configure the demo collector" id="configure-demo-collector">
 
-1. Open HyperDX and navigate to the **Dashboards** section
-2. Click **Import Dashboard** in the upper right corner (under the ellipses)
+Save the following as `nodejs-traces-demo.yaml` in the download directory:
 
-<Image img="/images/clickstack/import-dashboard.webp" alt="Import Dashboard"/>
+```yaml
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
 
-3. Upload the `nodejs-traces-dashboard.json` file and click **Finish Import**
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 256
+    spike_limit_mib: 64
+  transform/demo_timestamps:
+    error_mode: propagate
+    trace_statements:
+      - context: span
+        statements:
+          - set(cache["duration_ns"], end_time_unix_nano - start_time_unix_nano)
+          - >-
+            set(start_time,
+              Now() - Duration("2m") -
+              (Time("2025-10-27T17:59:15Z", "%Y-%m-%dT%H:%M:%SZ") - start_time)
+            )
+          - set(end_time_unix_nano, start_time_unix_nano + cache["duration_ns"])
+  batch:
+    timeout: 5s
+    send_batch_size: 1024
 
-<Image img="/images/clickstack/nodejs/finish-import.webp" alt="Finish import"/>
-</Step>
-<Step title="The dashboard will be created with all visualizations pre-configured" id="created-dashboard-self-configured">
+exporters:
+  otlp_http/observability:
+    endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+    headers:
+      authorization: "${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}"
 
-<Image img="/images/clickstack/nodejs/example-traces-dashboard.webp" alt="Example dashboard"/>
+service:
+  pipelines:
+    traces/nodejs-demo:
+      receivers: [otlp]
+      processors: [memory_limiter, transform/demo_timestamps, batch]
+      exporters: [otlp_http/observability]
+```
 
 <Note>
-For the demo dataset, set the time range to **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)** (adjust based on your local timezone). The imported dashboard won't have a time range specified by default.
+The demo-only `transform/demo_timestamps` processor shifts this sample into roughly the past 24 hours, ending two minutes before ingestion, while preserving span durations and the traffic pattern. Omit this processor for your own Node.js traces so their original timestamps are preserved. Sending the sample again can produce duplicate spans.
 </Note>
+
+</Step>
+<Step title="Run the demo collector" id="run-demo-collector">
+
+<Note>
+For a destination collector running on this computer, set `OTEL_EXPORTER_OTLP_ENDPOINT` to `http://host.docker.internal:4318`. The command below includes the Docker host mapping.
+</Note>
+
+Run OpenTelemetry Collector Contrib `0.161.0` from the directory containing the configuration, in the terminal where you set the connection variables. Keep this terminal open:
+
+```bash
+docker run --rm --name nodejs-traces-demo-collector \
+  --add-host=host.docker.internal:host-gateway \
+  --memory=512m \
+  -p 127.0.0.1:14318:4318 \
+  -e OTEL_EXPORTER_OTLP_ENDPOINT \
+  -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+  -v "$(pwd)/nodejs-traces-demo.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+  otel/opentelemetry-collector-contrib:0.161.0 \
+  --config=/etc/otelcol-contrib/config.yaml
+```
+
+The local receiver uses port `14318` to avoid conflicting with an existing collector on port `4318`. The collector forwards the traces to your configured endpoint using the authentication settings above.
+
+</Step>
+<Step title="Send the traces" id="send-traces">
+
+In another terminal, from the download directory, send the original sample to the local collector:
+
+```bash
+curl --fail-with-body -sS http://localhost:14318/v1/traces \
+  -H "Content-Type: application/json" \
+  --data-binary @nodejs-traces-sample.json
+```
+
+An empty success response such as `{}` or `{"partialSuccess":{}}` indicates the local collector accepted the request. Check the collector's output for export errors and allow a few seconds for the batch to reach your service. Stop the demo collector with **Ctrl+C** when finished.
+
+</Step>
+<Step title="Verify the demo traces" id="verify-demo-traces">
+
+Open **Search**, select **Traces**, filter for `ServiceName:nodejs-demo-api`, and select **Last 2 days** to include the full shifted dataset. Open a trace to inspect the HTTP attributes.
+
+<Image img="/images/clickstack/observability-nodejs-demo-traces.png" alt="Node.js demo traces in ClickHouse Observability Search"/>
 </Step>
 </Steps>
 
-## Troubleshooting {#troubleshooting-self-configured}
+## Dashboards and visualization {#dashboards}
 
-### Demo traces not appearing via curl {#demo-traces-not-appearing-self-configured}
+<Steps>
+<Step title={<TrackedLink href="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/nodejs-traces-dashboard.json" download="nodejs-traces-dashboard.json" eventName="docs.node_traces_monitoring.dashboard_download">Download the dashboard configuration</TrackedLink>} id="download-dashboard" />
+<Step title="Import the dashboard" id="import-dashboard">
 
-If you've sent traces via curl but don't see them in HyperDX, try sending the traces a second time:
+1. Open **Dashboards** and click **Import** in the upper-right corner.
+2. Upload `nodejs-traces-dashboard.json`.
+3. Map the charts to your **Traces** source and click **Finish Import**.
 
-```bash
-curl -X POST http://localhost:4318/v1/traces \
-  -H "Content-Type: application/json" \
-  -H "Authorization: $CLICKSTACK_API_KEY" \
-  -d @nodejs-traces-sample.json
-```
+<Image img="/images/clickstack/observability-import-dashboard.png" alt="Dashboards page with the Import button highlighted"/>
 
-This is a known issue that occurs when using the demo approach via curl and doesn't affect instrumented production applications.
+</Step>
+<Step title="View the dashboard" id="view-dashboard">
 
-### No traces appearing in HyperDX {#no-traces-self-configured}
+For the sample, select **Last 2 days** and optionally filter for `ServiceName:nodejs-demo-api`. For your application, select its service name and a time range covering your requests.
 
-**Verify environment variables are set:**
+The dashboard uses the sample's HTTP span attributes. Instrumentation versions can use different attribute names; adjust chart fields if your application's spans differ.
 
-```bash
-echo $CLICKSTACK_API_KEY
-# Should output your API key
+<Image img="/images/clickstack/observability-nodejs-traces-dashboard.png" alt="Node.js traces dashboard showing requests, latency, endpoints, HTTP status codes, methods, and database queries"/>
+</Step>
+</Steps>
 
-echo $OTEL_EXPORTER_OTLP_ENDPOINT
-# Should output http://localhost:4318 or your ClickStack host
-```
+## Troubleshooting {#troubleshooting}
 
-**Verify network connectivity:**
+### No application traces appear {#no-application-traces}
 
-```bash
-curl -v http://localhost:4318/v1/traces
-```
-Should connect successfully to the OTLP endpoint.
+Check application output for export errors. Verify the endpoint, protocol, and authentication settings. Load instrumentation before application libraries, generate requests, and check the service-name filter and time range. For native ES modules, follow the linked ESM setup.
 
-**Check application logs:**
-Look for OpenTelemetry initialization messages when your app starts. The HyperDX SDK should output confirmation that it's initialized.
+### Demo traces do not appear {#no-demo-traces}
 
-## Next steps {#next-steps-self-configured}
+Check the demo collector output for authentication or export errors. A successful `curl` response confirms local acceptance; allow a few seconds for forwarding to your service. Include `transform/demo_timestamps` in the pipeline and select **Last 2 days**. Resending the sample can create duplicates.
 
-- Set up [alerts](/clickstack/features/alerts) for critical metrics (error rates, latency thresholds)
-- Create additional dashboards for specific use cases (API monitoring, security events)
+## Next steps {#next-steps}
 
-## Going to production {#going-to-production-self-configured}
-
-This guide uses the HyperDX SDK which sends traces directly to ClickStack's OTLP endpoint. This works well for development, testing, and small-to-medium production deployments.
-For larger production environments or if you need additional control over telemetry data, consider deploying your own OpenTelemetry Collector as an agent.
-See [Ingesting with OpenTelemetry](/clickstack/ingesting-data/opentelemetry) for production deployment patterns and collector configuration examples.
-
-</Tab>
-</Tabs>
+- Set up [alerts](/clickstack/observability/features/alerts) for errors and latency.
+- Create additional [dashboards](/clickstack/observability/features/dashboards/overview).

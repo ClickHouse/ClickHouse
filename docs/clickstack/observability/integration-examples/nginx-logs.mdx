@@ -127,7 +127,6 @@ service:
 
 This configuration reads new JSON access-log entries, preserves their original timestamps, and sets `service.name` to `nginx`. It forwards logs to your OTLP HTTP endpoint using the authentication settings above. Nginx error logs require a separate parser and are not included.
 
-If you already run a collector, merge these components and the `logs/nginx` pipeline into its configuration.
 </Step>
 <Step title="Run the collector" id="load-custom">
 
@@ -267,13 +266,6 @@ Expand a log entry and select **Column Values** to inspect the parsed fields und
 </Step>
 </Steps>
 
-## Using an existing collector (optional) {#bundled-collector}
-
-For a self-configured deployment, you can add the `filelog/nginx` receiver from the relevant configuration above to your existing collector. Ensure its distribution includes the filelog receiver and that it can read the Nginx log files.
-
-Add `filelog/nginx` to the receivers in your existing logs pipeline, preserving its other receivers, processors, and ClickHouse exporter settings. For the demo, also add the `transform/demo_timestamps` processor definition and include it before the batch processor in that pipeline. Omit the standalone OTLP exporter configuration when your existing pipeline already exports to ClickHouse.
-
-Mount the log file or directory at the receiver's configured path, then restart the collector using your existing deployment process. See the [self-configured setup guide](/clickstack/self-configured/getting-started/managed) for collector configuration guidance.
 
 ## Dashboards and visualization {#dashboards}
 
