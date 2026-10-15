@@ -277,6 +277,11 @@ StorageMergeTree::StorageMergeTree(
             "The `leader_election` setting cannot be used with a table that has a `UNIQUE KEY`");
     }
 
+    /// Every disk of the policy is validated to be shared at the end of the constructor; keep using
+    /// exactly that policy, so that a configuration reload cannot add a non-shared disk to it.
+    if ((*getSettings())[MergeTreeSetting::leader_election])
+        pinned_storage_policy = getStoragePolicy();
+
     initializeDirectoriesAndFormatVersion(relative_data_path_, LoadingStrictnessLevel::ATTACH <= mode, date_column_name);
 
     loadDataParts(LoadingStrictnessLevel::FORCE_RESTORE <= mode, std::nullopt);
@@ -324,7 +329,8 @@ StorageMergeTree::StorageMergeTree(
         /// Validate every disk in the storage policy, not just the primary one. Otherwise a
         /// multi-volume policy could place parts on a non-shared disk via `TTL`-driven moves
         /// or a default-volume fallback, and the new leader after a failover would not see
-        /// those parts on a different node — silently breaking correctness.
+        /// those parts on a different node — silently breaking correctness. The policy is pinned
+        /// (`pinned_storage_policy`), so a configuration reload cannot add a disk to it later.
         for (const auto & disk : getDisks())
         {
             auto description = disk->getDataSourceDescription();

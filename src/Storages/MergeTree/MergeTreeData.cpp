@@ -1035,6 +1035,9 @@ VirtualColumnsDescription MergeTreeData::createVirtuals(const KeyDescription * p
 
 StoragePolicyPtr MergeTreeData::getStoragePolicy() const
 {
+    if (pinned_storage_policy)
+        return pinned_storage_policy;
+
     auto settings = getSettings();
     const auto & context = getContext();
 

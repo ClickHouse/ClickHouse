@@ -1054,6 +1054,15 @@ protected:
     /// returns `getVisibleDataPartsVector`; `StorageReplicatedMergeTree` overrides this
     /// to honor `select_sequential_consistency` the same way `totalRows` does.
     virtual DataPartsVector getActivePartsForColumnDefaultnessStats(ContextPtr query_context) const;
+
+    /// When set, `getStoragePolicy` returns this policy instead of looking up the current one in the
+    /// context. Set once in the constructor of a `leader_election` table, before anything runs
+    /// concurrently, and never changed afterwards: such a table requires every disk of its policy to
+    /// be shared, and that is validated only for the policy it starts with. A configuration reload
+    /// may add volumes and disks to a policy (`StoragePolicy::checkCompatibleWith`), e.g. a local
+    /// one, and parts reserved or moved there would be invisible to the next leader. A changed policy
+    /// takes effect, and is validated, when the table is attached again.
+    StoragePolicyPtr pinned_storage_policy;
 public:
 
     size_t getAllPartsCount() const;
