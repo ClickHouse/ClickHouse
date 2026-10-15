@@ -3734,6 +3734,16 @@ try
             return;
         }
     }
+    /// `rename` of a table in an `Ordinary` database changes the paths of the parts under the exclusive lock,
+    /// while loading the statistics reads them. Stop waiting if the task is deactivated.
+    auto table_lock = tryLockForShare(
+        RWLockImpl::NO_QUERY,
+        (*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations],
+        [this] { return refresh_stats_cancelled.load(); },
+        Poco::Timespan(0, 100'000));
+    if (!table_lock)
+        return;
+
     LOG_DEBUG(log, "Refreshing statistics");
     ConditionSelectivityEstimatorBuilder estimator_builder(getContext());
     for (const DataPartPtr & data_part : data_parts)
