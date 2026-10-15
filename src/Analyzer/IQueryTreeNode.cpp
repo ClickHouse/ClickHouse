@@ -290,10 +290,10 @@ QueryTreeNodePtr IQueryTreeNode::cloneAndReplace(const ReplacementMap & replacem
         node_clone->parenthesized = node_to_clone->parenthesized;
         node_clone->children = node_to_clone->children;
 
-        /// A materialized CTE body stays shared, so a clone of an outer query does not copy it.
+        /// A marked materialized CTE body stays shared, so a clone of an outer query does not copy it.
         const auto * materialized_table = node_to_clone->as<TableNode>();
         const IQueryTreeNode * shared_body = nullptr;
-        if (materialized_table && materialized_table->isMaterializedCTE())
+        if (materialized_table && materialized_table->isMaterializedCTE() && materialized_table->sharesMaterializedCTEBody())
             shared_body = materialized_table->getMaterializedCTESubquery().get();
 
         for (auto & child : node_clone->children)

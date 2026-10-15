@@ -528,7 +528,11 @@ void validateTreeSize(const QueryTreeNodePtr & node,
     size_t max_size,
     std::unordered_map<QueryTreeNodePtr, QueryTreeSizeEntry> & node_to_tree_size)
 {
-    /// A materialized CTE body is shared, so an ancestor stores the body once and the total adds it once.
+    /// A marked materialized CTE body is shared, so an ancestor stores that body once and the total adds it once.
+    auto shares_body = [](const TableNode * table_node)
+    {
+        return table_node && table_node->isMaterializedCTE() && table_node->sharesMaterializedCTEBody();
+    };
     std::vector<std::pair<QueryTreeNodePtr, bool>> nodes_to_process;
     nodes_to_process.emplace_back(node, false);
 
@@ -545,7 +549,7 @@ void validateTreeSize(const QueryTreeNodePtr & node,
             QueryTreeSizeEntry entry;
             entry.nodes = 1;
 
-            if (const auto * table_node = node_to_process->as<TableNode>(); table_node && table_node->isMaterializedCTE())
+            if (const auto * table_node = node_to_process->as<TableNode>(); shares_body(table_node))
             {
                 if (const auto & body = table_node->getMaterializedCTESubquery())
                     entry.shared_bodies.push_back(body);
@@ -559,7 +563,7 @@ void validateTreeSize(const QueryTreeNodePtr & node,
                 if (!child)
                     return;
 
-                if (const auto * child_table = child->as<TableNode>(); child_table && child_table->isMaterializedCTE())
+                if (const auto * child_table = child->as<TableNode>(); shares_body(child_table))
                 {
                     ++entry.nodes;
                     const auto & body = child_table->getMaterializedCTESubquery();

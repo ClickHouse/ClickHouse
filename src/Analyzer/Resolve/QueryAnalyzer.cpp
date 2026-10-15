@@ -214,11 +214,11 @@ bool isMaterializedCTEDefinition(const QueryTreeNodePtr & node)
     return false;
 }
 
-/// Each reference gets its own table node and shares the materialized CTE body.
+/// Each reference gets its own table node. A marked node keeps one shared body.
 QueryTreeNodePtr cloneMaterializedCTEReference(const QueryTreeNodePtr & node)
 {
     const auto * table_node = node->as<TableNode>();
-    if (!table_node || !table_node->isMaterializedCTE())
+    if (!table_node || !table_node->isMaterializedCTE() || !table_node->sharesMaterializedCTEBody())
         return node->clone();
 
     const auto & subquery = table_node->getMaterializedCTESubquery();
@@ -1651,6 +1651,8 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromCTE(
             /// Create a TableNode with StorageDummy as placeholder. The subquery stays unresolved.
             /// Resolution and real storage creation happen later in resolveQueryJoinTreeNode.
             auto table_node = std::make_shared<TableNode>(full_name, cte_node, scope.context);
+            if (scope.context->shareMaterializedCTEBody())
+                table_node->setShareMaterializedCTEBody(true);
             table_node->setAlias(full_name);
 
             cte_node = table_node;
@@ -6955,7 +6957,7 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
                     }
                 }
 
-                /// The body is shared, so only the first reference resolves it and creates the storage.
+                /// A shared body is resolved once. A cloned body is resolved at this reference.
                 if (!materialized_cte_ptr->isStorageInitialized())
                 {
                     auto & subquery = table_node->getMaterializedCTESubquery();
@@ -7002,7 +7004,7 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
                 }
                 else
                 {
-                    /// Another reference already resolved the shared body and created the storage.
+                    /// Storage already exists. Resolve this reference when its body is still a separate clone.
                     auto & subquery = table_node->getMaterializedCTESubquery();
                     const bool subquery_is_resolved = subquery->as<QueryNode>()
                         ? subquery->as<QueryNode>()->isResolved()

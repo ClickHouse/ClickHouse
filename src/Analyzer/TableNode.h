@@ -138,6 +138,17 @@ public:
         return children[materialized_cte_subquery_index] != nullptr;
     }
 
+    /// The subquery child is one shared body. A clone must not copy it.
+    bool sharesMaterializedCTEBody() const
+    {
+        return share_materialized_cte_body;
+    }
+
+    void setShareMaterializedCTEBody(bool value)
+    {
+        share_materialized_cte_body = value;
+    }
+
     const QueryTreeNodePtr & getMaterializedCTESubquery() const
     {
         return children[materialized_cte_subquery_index];
@@ -190,6 +201,7 @@ private:
     std::optional<TableExpressionModifiers> table_expression_modifiers;
     std::string temporary_table_name;
     MaterializedCTEPtr materialized_cte;
+    bool share_materialized_cte_body = false;
     /// Hash of the substituted inner query if `storage` is a parameterized view, see `isEqualImpl`.
     std::optional<IASTHash> parameterized_view_query_hash;
 
