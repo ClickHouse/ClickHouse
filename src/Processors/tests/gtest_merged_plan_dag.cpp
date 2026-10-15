@@ -164,14 +164,11 @@ TEST(MergedPlanDAG, LooksThroughARuntimeFilter)
         std::make_unique<BuildRuntimeFilterStep>(
             source.step->getOutputHeader(), "k", std::make_shared<DataTypeUInt64>(), "_runtime_filter_0", "key",
             RuntimeFilterBuildOptions{
-                .exact_values_limit = 100,
-                .bloom = {.bytes = 1024, .hash_functions = 3},
-                .max_ratio_of_set_bits = 0.7,
+                .geometry = {.exact_values_limit = 100, .bloom_filter_bytes = 1024, .bloom_filter_hash_functions = 3},
                 .polarity = RuntimeFilterPolarity::Contains,
                 .track_key_range = false,
                 .distinct_keys_hint = std::nullopt,
-                .distinct_keys_hint_matches_filter_key = false},
-            /*pass_ratio_threshold_for_disabling=*/0.7, /*blocks_to_skip_before_reenabling=*/30),
+                .distinct_keys_hint_matches_filter_key = false}),
         source);
 
     const auto merged = buildMergedPlanDAG(runtime_filter);
