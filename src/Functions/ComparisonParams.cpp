@@ -1,3 +1,5 @@
+#include <Functions/ComparisonParams.h>
+
 #include <Core/Settings.h>
 #include <Common/SipHash.h>
 #include <Formats/FormatFactory.h>

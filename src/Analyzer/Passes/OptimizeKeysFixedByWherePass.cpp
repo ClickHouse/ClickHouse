@@ -13,7 +13,8 @@
 #include <Analyzer/WindowNode.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <Formats/FormatFactory.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <Functions/ComparisonParams.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context.h>
@@ -40,17 +41,20 @@ std::string_view getRootName(const IQueryTreeNode & node)
     return {};
 }
 
-/// The expressions that WHERE fixes to a single value, with constants of their types to replace them.
-/// Aliases are ignored, as the planner ignores them when it matches expressions to aggregation keys:
-/// `GROUP BY tenant` must match `tenant AS t` in the projection. Then the columns of two table expressions
-/// that differ only in their aliases compare equal, so such queries are skipped.
-class FixedExpressions
+/// Maps expressions with a column or a function at the root to nodes, such as the expressions that WHERE fixes to
+/// constants of their types. Aliases are ignored, as the planner ignores them when it matches expressions to
+/// aggregation keys: `GROUP BY tenant` must match `tenant AS t` in the projection. Then the columns of two table
+/// expressions that differ only in their aliases compare equal, so such queries are skipped.
+class ExpressionMap
 {
 public:
-    void add(const QueryTreeNodePtr & expression, QueryTreeNodePtr constant)
+    void add(const QueryTreeNodePtr & expression, QueryTreeNodePtr node)
     {
-        root_names.emplace(getRootName(*expression));
-        replacements.emplace(expression, std::move(constant));
+        auto root_name = getRootName(*expression);
+        if (root_name.empty())
+            return;
+        root_names.emplace(root_name);
+        replacements.emplace(expression, std::move(node));
     }
 
     bool empty() const { return replacements.empty(); }
@@ -84,8 +88,9 @@ bool isExactEquality(const DataTypePtr & expression_type, const DataTypePtr & co
         return which_constant.isString();
     if (which_expression.isInteger())
         return which_constant.isInteger();
+    /// `equals` rescales the operand of the lower scale, which can overflow, so that has to be the constant.
     if (which_expression.isDecimal())
-        return which_constant.isIntegerOrDecimal();
+        return which_constant.isInteger() || (which_constant.isDecimal() && getDecimalScale(*constant) <= getDecimalScale(*expression));
     if (which_expression.isFixedString())
         return expression->equals(*constant);
     if (which_expression.isDateOrDate32OrDateTimeOrDateTime64() || which_expression.isEnum() || which_expression.isUUID()
@@ -118,7 +123,7 @@ bool isDeterministicExpression(const QueryTreeNodePtr & expression)
 }
 
 /// Collects the expressions that the conjuncts `expression = constant` of the condition fix.
-void collectFixedExpressions(const QueryTreeNodePtr & condition, const FormatSettings & format_settings, FixedExpressions & fixed_expressions)
+void collectFixedExpressions(const QueryTreeNodePtr & condition, const FormatSettings & format_settings, ExpressionMap & fixed_expressions)
 {
     QueryTreeNodes conjuncts{condition};
     while (!conjuncts.empty())
@@ -156,7 +161,7 @@ void collectFixedExpressions(const QueryTreeNodePtr & condition, const FormatSet
             continue;
 
         /// The replacement has the type of the expression, so the types of the query result do not change. A string is
-        /// parsed with the format settings `equals` uses, as `date_time_input_format = 'best_effort'` changes its value.
+        /// parsed with the format settings `equals` uses, as `cast_string_to_date_time_mode` changes its value.
         Field value = tryConvertFieldToTypeExact(constant->getValue(), *expression_type, constant_type.get(), format_settings);
         if (value.isNull())
             continue;
@@ -169,7 +174,10 @@ void collectFixedExpressions(const QueryTreeNodePtr & condition, const FormatSet
 /// like the column, is evaluated for each row: a function of a constant is folded while planning, so `intDiv(1, x)`
 /// would throw even when no row has `x = 0`. The arguments of aggregate functions are evaluated before the
 /// aggregation, and subqueries and the expressions of columns, such as those of `JOIN USING`, belong to other steps.
-void replaceFixedExpressions(QueryTreeNodePtr & node, const FixedExpressions & fixed_expressions, const ContextPtr & context)
+/// An expression equal to a remaining GROUP BY key reads the key, which is computed once with the aggregate arguments
+/// it shares, such as `arrayJoin`.
+void replaceFixedExpressions(
+    QueryTreeNodePtr & node, const ExpressionMap & fixed_expressions, const ExpressionMap & remaining_keys, const ContextPtr & context)
 {
     if (!node)
         return;
@@ -180,14 +188,15 @@ void replaceFixedExpressions(QueryTreeNodePtr & node, const FixedExpressions & f
         return;
     }
 
-    if (node->getNodeType() == QueryTreeNodeType::CONSTANT || node->getNodeType() == QueryTreeNodeType::COLUMN || isQueryOrUnionNode(node))
+    if (node->getNodeType() == QueryTreeNodeType::CONSTANT || node->getNodeType() == QueryTreeNodeType::COLUMN || isQueryOrUnionNode(node)
+        || remaining_keys.find(node) != nullptr)
         return;
 
     if (const auto * function = node->as<FunctionNode>(); function && function->isAggregateFunction())
         return;
 
     for (auto & child : node->getChildren())
-        replaceFixedExpressions(child, fixed_expressions, context);
+        replaceFixedExpressions(child, fixed_expressions, remaining_keys, context);
 }
 
 class OptimizeKeysFixedByWhereVisitor : public InDepthQueryTreeVisitorWithContext<OptimizeKeysFixedByWhereVisitor>
@@ -226,8 +235,8 @@ public:
             if (sort_node->as<SortNode &>().withFill())
                 return;
 
-        FixedExpressions fixed_expressions;
-        collectFixedExpressions(query->getWhere(), getFormatSettings(getContext()), fixed_expressions);
+        ExpressionMap fixed_expressions;
+        collectFixedExpressions(query->getWhere(), ComparisonParams(getContext()).format_settings, fixed_expressions);
         if (fixed_expressions.empty())
             return;
 
@@ -272,7 +281,7 @@ public:
 private:
     /// A fixed GROUP BY key is replaced with a constant, and its other uses with the same value. The planner removes
     /// constant keys, and returns an empty result for empty input if no key remains.
-    void optimizeGroupBy(QueryNode & query, const FixedExpressions & fixed_expressions)
+    void optimizeGroupBy(QueryNode & query, const ExpressionMap & fixed_expressions)
     {
         auto & keys = query.getGroupBy().getNodes();
         auto is_fixed = [&](const QueryTreeNodePtr & key) { return fixed_expressions.find(key) != nullptr; };
@@ -298,16 +307,17 @@ private:
                 return;
 
         /// A key that is a constant is removed by the planner.
+        ExpressionMap remaining_keys;
         for (auto & key : keys)
         {
             if (const auto * replacement = fixed_expressions.find(key))
                 key = replacement->clone();
             else
-                replaceFixedExpressions(key, fixed_expressions, getContext());
+                remaining_keys.add(key, key);
         }
 
         for (auto * expression : after_aggregation)
-            replaceFixedExpressions(*expression, fixed_expressions, getContext());
+            replaceFixedExpressions(*expression, fixed_expressions, remaining_keys, getContext());
     }
 };
 

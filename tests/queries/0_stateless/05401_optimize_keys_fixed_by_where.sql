@@ -21,6 +21,8 @@ SELECT concat(tenant, '-', toString(day)) AS s, count() FROM t WHERE tenant = 'x
 SELECT intDiv(1, number), count() FROM numbers(3) WHERE number = 0 GROUP BY number HAVING count() > 1;
 -- Every clause after the aggregation is rewritten.
 SELECT number, count() FROM numbers(3) WHERE number = 1 GROUP BY number LIMIT AFTER number = 1;
+-- A remaining key is not rewritten, so it is computed once with the aggregate argument it shares.
+SELECT arrayJoin([number, number + 1]) AS r, sum(arrayJoin([number, number + 1])), count() FROM numbers(3) WHERE number = 1 GROUP BY number, arrayJoin([number, number + 1]) ORDER BY r;
 
 -- PARTITION BY of a window function.
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT day, v, row_number() OVER (PARTITION BY tenant, day ORDER BY v) FROM t WHERE tenant = 'x' ORDER BY day, v;
@@ -43,13 +45,16 @@ CREATE TABLE types (lc LowCardinality(Nullable(String)), dt DateTime('UTC')) ENG
 INSERT INTO types VALUES ('a', '2024-01-01 00:00:00'), ('b', '2024-01-02 00:00:00');
 SELECT lc, dt, toTypeName(lc), toTypeName(dt), count() FROM types WHERE lc = 'a' AND dt = '2024-01-01 00:00:00' GROUP BY lc, dt;
 -- A string is parsed with the format settings of the comparison.
-SELECT dt, count() FROM types WHERE dt = '20240101' GROUP BY dt SETTINGS date_time_input_format = 'best_effort';
+SELECT dt, count() FROM types WHERE dt = '01/02/2024' GROUP BY dt SETTINGS cast_string_to_date_time_mode = 'best_effort_us', date_time_input_format = 'best_effort';
 
 -- Different floating-point values compare equal (`-0.0 = 0.0`), so the key is kept.
 DROP TABLE IF EXISTS floats;
 CREATE TABLE floats (x Float64, v UInt64) ENGINE = Memory;
 INSERT INTO floats VALUES (0, 1), (-0., 2);
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT x, sum(v) FROM floats WHERE x = 0 GROUP BY x;
+
+-- So do decimals when `equals` rescales the column, which can overflow.
+SELECT x, count() FROM values('x Decimal128(0)', 0, 332306998946228968225951765070086144) WHERE x = toDecimal128(0, 10) GROUP BY x ORDER BY x;
 
 -- In a self-join the columns differ only by the table alias, so the key of the other side is kept.
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT b.tenant, count() FROM t AS a JOIN t AS b ON a.day = b.day WHERE a.tenant = 'x' GROUP BY b.tenant;
