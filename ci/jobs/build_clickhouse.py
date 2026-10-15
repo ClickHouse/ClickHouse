@@ -501,7 +501,10 @@ def main():
     # the tree it generates only the sources the affected translation units are
     # built against and runs clang-tidy on those translation units. Everything
     # after this point - packaging, the unit tests, the profile upload - belongs
-    # to a real build, so the job is completed here.
+    # to a real build, so the job is completed here. Its verdict depends on the
+    # change's set of files as well as on the checkout, and the cache digest
+    # captures only the latter: two changes can produce the same merged tree with
+    # different files to analyze and report, so the result is not cached.
     if build_type == BuildTypes.ARM_TIDY_CHANGED_FILES:
         if res and JobStages.BUILD in stages:
             results.append(
@@ -512,7 +515,7 @@ def main():
                     temp_dir=temp_dir,
                 )
             )
-        Result.create_from(results=results).complete_job()
+        Result.create_from(results=results).complete_job(do_not_cache=True)
         return
 
     files = []
