@@ -50,7 +50,13 @@ std::unique_ptr<WriteBuffer> IBackupWriter::writeFileIfNotExists(const String & 
 
 void fsyncBackupFileContents(const fs::path & path)
 {
+#if defined(OS_WINDOWS)
+    /// `platformFDataSync` is `_commit`, i.e. `FlushFileBuffers`, which fails with access denied on
+    /// a handle without `GENERIC_WRITE`. POSIX lets a read-only descriptor flush the file it names.
+    int fd = platformOpenFile(pathToString(path), O_WRONLY | O_CLOEXEC);
+#else
     int fd = platformOpenFile(pathToString(path), O_RDONLY | O_CLOEXEC);
+#endif
     if (-1 == fd)
         ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, pathToString(path), "Cannot open file {} for fsync", pathToString(path));
 
