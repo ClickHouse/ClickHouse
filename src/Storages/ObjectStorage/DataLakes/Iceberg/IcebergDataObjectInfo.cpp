@@ -226,7 +226,7 @@ void IcebergObjectSerializableInfo::serializeForClusterFunctionProtocol(WriteBuf
     };
 
     /// Older workers open a delete path as a key in the base storage without resolving it.
-    auto delete_path_for_protocol = [&](const String & path) -> const String &
+    auto delete_path_for_protocol = [&](const String & path) -> String
     {
         if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_ABSOLUTE_PATH)
             return path;
