@@ -55,11 +55,26 @@ namespace
             is_digits(), make_intrusive<ASTLiteral>(1u),
             makeASTFunction("less", run(), make_intrusive<ASTLiteral>(String{"0"})), make_intrusive<ASTLiteral>(0u),
             make_intrusive<ASTLiteral>(2u));
-        auto number_length = makeASTFunction("if", is_digits(), makeASTFunction("length", without_leading_zeros()), make_intrusive<ASTLiteral>(0u));
+        auto number_length = [&] { return makeASTFunction("length", without_leading_zeros()); };
 
-        /// arrayMap(c -> (<run_class>, <number_length>, replaceRegexpOne(c, '^0+', '')), extractAll(<value>, '[0-9]+|[^0-9]+'))
+        /// Like Prometheus, digit runs above the Int64 range compare as plain strings; they sort after smaller numbers.
+        auto is_too_big = [&]
+        {
+            return makeASTFunction("and", is_digits(), makeASTFunction("or",
+                makeASTFunction("greater", number_length(), make_intrusive<ASTLiteral>(19u)),
+                makeASTFunction("and",
+                    makeASTFunction("equals", number_length(), make_intrusive<ASTLiteral>(19u)),
+                    makeASTFunction("greater", without_leading_zeros(), make_intrusive<ASTLiteral>(String{"9223372036854775807"})))));
+        };
+        auto run_order = makeASTFunction("multiIf",
+            is_too_big(), make_intrusive<ASTLiteral>(20u),
+            is_digits(), number_length(),
+            make_intrusive<ASTLiteral>(0u));
+        auto run_text = makeASTFunction("if", is_too_big(), run(), without_leading_zeros());
+
+        /// arrayMap(c -> (<run_class>, <run_order>, <run_text>), extractAll(<value>, '[0-9]+|[^0-9]+'))
         return makeASTFunction("arrayMap",
-            makeASTLambda({"c"}, makeASTFunction("tuple", std::move(run_class), std::move(number_length), without_leading_zeros())),
+            makeASTLambda({"c"}, makeASTFunction("tuple", std::move(run_class), std::move(run_order), std::move(run_text))),
             makeASTFunction("extractAll", std::move(label_value), make_intrusive<ASTLiteral>(String{"[0-9]+|[^0-9]+"})));
     }
 

@@ -44,6 +44,11 @@ INSERT INTO ts_tags VALUES
     ('00000000-0000-0000-0000-000000000025', 'net', {'instance':'hostA'}, toDateTime64(1699999000, 3, 'UTC'), toDateTime64(1700001000, 3, 'UTC')),
     ('00000000-0000-0000-0000-000000000026', 'net', {'instance':'host_1'}, toDateTime64(1699999000, 3, 'UTC'), toDateTime64(1700001000, 3, 'UTC'));
 
+-- 'big' has digit runs above the Int64 range, which Prometheus compares as plain strings.
+INSERT INTO ts_tags VALUES
+    ('00000000-0000-0000-0000-000000000031', 'big', {'instance':'host9999999999999999999'}, toDateTime64(1699999000, 3, 'UTC'), toDateTime64(1700001000, 3, 'UTC')),
+    ('00000000-0000-0000-0000-000000000032', 'big', {'instance':'host10000000000000000000'}, toDateTime64(1699999000, 3, 'UTC'), toDateTime64(1700001000, 3, 'UTC'));
+
 INSERT INTO ts_data VALUES
     ('00000000-0000-0000-0000-000000000001', toDateTime64(1700000000, 3, 'UTC'), 1),
     ('00000000-0000-0000-0000-000000000002', toDateTime64(1700000000, 3, 'UTC'), 2),
@@ -58,7 +63,9 @@ INSERT INTO ts_data VALUES
     ('00000000-0000-0000-0000-000000000023', toDateTime64(1700000000, 3, 'UTC'), 23),
     ('00000000-0000-0000-0000-000000000024', toDateTime64(1700000000, 3, 'UTC'), 24),
     ('00000000-0000-0000-0000-000000000025', toDateTime64(1700000000, 3, 'UTC'), 25),
-    ('00000000-0000-0000-0000-000000000026', toDateTime64(1700000000, 3, 'UTC'), 26);
+    ('00000000-0000-0000-0000-000000000026', toDateTime64(1700000000, 3, 'UTC'), 26),
+    ('00000000-0000-0000-0000-000000000031', toDateTime64(1700000000, 3, 'UTC'), 31),
+    ('00000000-0000-0000-0000-000000000032', toDateTime64(1700000000, 3, 'UTC'), 32);
 "
 
 promql_client()
@@ -83,6 +90,12 @@ promql_client -q "sort_by_label(net, 'instance')"
 
 echo "-- sort_by_label_desc(net, 'instance'): reverse of the above"
 promql_client -q "sort_by_label_desc(net, 'instance')"
+
+echo "-- sort_by_label(big, 'instance'): host10000000000000000000 first, as in Prometheus"
+promql_client -q "sort_by_label(big, 'instance')"
+
+echo "-- sort_by_label_desc(big, 'instance'): reverse of the above"
+promql_client -q "sort_by_label_desc(big, 'instance')"
 
 echo "-- abs(sort_by_label(mem, 'host')): abs() keeps the order fixed by sort_by_label()"
 promql_client -q "abs(sort_by_label(mem, 'host'))"

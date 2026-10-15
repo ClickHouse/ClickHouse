@@ -32,6 +32,12 @@
 [('__name__','net'),('instance','host-1')]	2023-11-14 22:13:20.000	22
 [('__name__','net'),('instance','host10')]	2023-11-14 22:13:20.000	23
 [('__name__','net'),('instance','host2')]	2023-11-14 22:13:20.000	21
+-- sort_by_label(big, 'instance'): host10000000000000000000 first, as in Prometheus
+[('__name__','big'),('instance','host10000000000000000000')]	2023-11-14 22:13:20.000	32
+[('__name__','big'),('instance','host9999999999999999999')]	2023-11-14 22:13:20.000	31
+-- sort_by_label_desc(big, 'instance'): reverse of the above
+[('__name__','big'),('instance','host9999999999999999999')]	2023-11-14 22:13:20.000	31
+[('__name__','big'),('instance','host10000000000000000000')]	2023-11-14 22:13:20.000	32
 -- abs(sort_by_label(mem, 'host')): abs() keeps the order fixed by sort_by_label()
 [('dc','us'),('host','a')]	2023-11-14 22:13:20.000	12
 [('dc','us'),('host','b')]	2023-11-14 22:13:20.000	11
