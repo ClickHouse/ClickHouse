@@ -8794,7 +8794,7 @@ Metadata statements change only metadata and do not read or write table data: DR
 
 A metadata statement wrapped by another statement (e.g. `EXECUTE AS <user> <stmt>` or `X PARALLEL WITH Y`) runs as an internal query: it skips query-slot and memory-reservation admission regardless of this setting, and its CPU and IO are scheduled under the `workload` of the wrapping statement.
 )", 0, \
-        {"26.10", "default", "default", "New setting naming the workload used to schedule metadata statements when the server setting use_metadata_workload is enabled."}) \
+        {"26.11", "default", "default", "New setting naming the workload used to schedule metadata statements when the server setting use_metadata_workload is enabled."}) \
     DECLARE(Double, weight, 1.0, R"(
 Base scheduling weight of the query within its workload, used by the `fair` workload scheduler (see the `scheduler` workload setting). Queries with a higher weight receive a proportionally larger share of a time-shared resource (CPU, IO) when they compete inside the same workload. Ignored by the default `fifo` scheduler. A non-positive value (`<= 0`) is meaningless for the fair share and is treated as the default `1.0`.
 )", 0, \
