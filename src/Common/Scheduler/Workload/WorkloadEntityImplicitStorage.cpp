@@ -31,9 +31,7 @@ std::string_view getImplicitEntitySetting(const String & entity_name)
         return "workloads_respect_server_cpu_limit";
     if (entity_name == IMPLICIT_MEMORY_RESOURCE_NAME)
         return "workloads_respect_server_memory_limit";
-    if (entity_name == DEFAULT_WORKLOAD_NAME)
-        return "implicit_default_workload";
-    return "workloads_respect_server_cpu_limit` or `workloads_respect_server_memory_limit"; // The root workload
+    return "implicit_default_workload";
 }
 
 /// Builds a normalized `CREATE RESOURCE` query, the same as the parser produces
@@ -59,6 +57,22 @@ ASTPtr makeWorkload(std::string_view workload_name, ASTCreateWorkloadQuery::Sett
     }
     query->changes = std::move(changes);
     return query;
+}
+
+/// The implicit entities defined by `config`, without the root workload
+WorkloadEntities makeImplicitEntities(const ImplicitWorkloadEntitiesConfig & config)
+{
+    WorkloadEntities entities;
+    if (config.respect_cpu_limit)
+        entities.emplace(WorkloadEntityKey{WorkloadEntityType::Resource, String(IMPLICIT_CPU_RESOURCE_NAME)},
+            makeResource(IMPLICIT_CPU_RESOURCE_NAME, {ResourceAccessMode::MasterThread, ResourceAccessMode::WorkerThread}));
+    if (config.respect_memory_limit)
+        entities.emplace(WorkloadEntityKey{WorkloadEntityType::Resource, String(IMPLICIT_MEMORY_RESOURCE_NAME)},
+            makeResource(IMPLICIT_MEMORY_RESOURCE_NAME, {ResourceAccessMode::MemoryReservation}));
+    if (config.implicit_default_workload)
+        entities.emplace(WorkloadEntityKey{WorkloadEntityType::Workload, String(DEFAULT_WORKLOAD_NAME)},
+            makeWorkload(DEFAULT_WORKLOAD_NAME, {}));
+    return entities;
 }
 
 }
@@ -97,24 +111,16 @@ void WorkloadEntityImplicitStorage::updateImplicitEntities(const ImplicitWorkloa
     auto lock = getLock();
     config = new_config;
 
-    std::unordered_map<String, ASTPtr> implicit_entities;
-    if (config.respect_cpu_limit)
-        implicit_entities.emplace(IMPLICIT_CPU_RESOURCE_NAME, makeResource(IMPLICIT_CPU_RESOURCE_NAME, {ResourceAccessMode::MasterThread, ResourceAccessMode::WorkerThread}));
-    if (config.respect_memory_limit)
-        implicit_entities.emplace(IMPLICIT_MEMORY_RESOURCE_NAME, makeResource(IMPLICIT_MEMORY_RESOURCE_NAME, {ResourceAccessMode::MemoryReservation}));
-    if (config.implicit_default_workload)
-        implicit_entities.emplace(DEFAULT_WORKLOAD_NAME, makeWorkload(DEFAULT_WORKLOAD_NAME, {}));
-
     // The root workload depends on the config as well, so it is recomputed even if own entities are the same
-    replaceOwnEntities(lock, std::move(implicit_entities));
+    replaceOwnEntities(lock, makeImplicitEntities(config));
 }
 
-void WorkloadEntityImplicitStorage::addDerivedEntities(std::unordered_map<String, ASTPtr> & visible_entities) const
+void WorkloadEntityImplicitStorage::addDerivedEntities(WorkloadEntities & visible_entities) const
 {
     String master_thread_resource;
     String worker_thread_resource;
     String memory_reservation_resource;
-    for (const auto & [entity_name, entity] : visible_entities)
+    for (const auto & [key, entity] : visible_entities)
     {
         auto * resource = typeid_cast<ASTCreateResourceQuery *>(entity.get());
         if (!resource)
@@ -122,11 +128,11 @@ void WorkloadEntityImplicitStorage::addDerivedEntities(std::unordered_map<String
         for (const auto & operation : resource->operations)
         {
             if (operation.mode == ResourceAccessMode::MasterThread)
-                master_thread_resource = entity_name;
+                master_thread_resource = key.name;
             else if (operation.mode == ResourceAccessMode::WorkerThread)
-                worker_thread_resource = entity_name;
+                worker_thread_resource = key.name;
             else if (operation.mode == ResourceAccessMode::MemoryReservation)
-                memory_reservation_resource = entity_name;
+                memory_reservation_resource = key.name;
         }
     }
 
@@ -142,7 +148,7 @@ void WorkloadEntityImplicitStorage::addDerivedEntities(std::unordered_map<String
         changes.emplace_back("max_memory", Field(static_cast<UInt64>(config.memory_bytes)), memory_reservation_resource);
 
     if (!changes.empty())
-        visible_entities.emplace("", makeWorkload("", std::move(changes)));
+        visible_entities.emplace(WorkloadEntityKey{WorkloadEntityType::Workload, ""}, makeWorkload("", std::move(changes)));
 }
 
 bool WorkloadEntityImplicitStorage::storeEntity(
@@ -160,19 +166,7 @@ bool WorkloadEntityImplicitStorage::storeEntity(
 bool WorkloadEntityImplicitStorage::definesEntity(const String & entity_name, WorkloadEntityType entity_type) const
 {
     auto lock = getLock();
-    if (entity_type == WorkloadEntityType::Resource)
-    {
-        if (entity_name == IMPLICIT_CPU_RESOURCE_NAME)
-            return config.respect_cpu_limit;
-        if (entity_name == IMPLICIT_MEMORY_RESOURCE_NAME)
-            return config.respect_memory_limit;
-        return false;
-    }
-    if (entity_name.empty())
-        return true; // The root workload
-    if (entity_name == DEFAULT_WORKLOAD_NAME)
-        return config.implicit_default_workload;
-    return false;
+    return makeImplicitEntities(config).contains({entity_type, entity_name});
 }
 
 bool WorkloadEntityImplicitStorage::removeEntity(
@@ -181,7 +175,7 @@ bool WorkloadEntityImplicitStorage::removeEntity(
     const String & entity_name,
     bool throw_if_not_exists)
 {
-    // An entity of this kind and name stored in an inner layer, visible or hidden, is dropped there
+    // An entity stored in an inner layer, visible or shadowed, is dropped there
     if (getNextStorage()->removeEntity(current_context, entity_type, entity_name, /* throw_if_not_exists = */ false))
         return true;
 

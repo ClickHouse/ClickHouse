@@ -60,10 +60,8 @@ private:
     /// Whether the server settings define an implicit entity of this kind and name, visible or shadowed
     bool definesEntity(const String & entity_name, WorkloadEntityType entity_type) const;
 
-    bool ownsImplicitEntities() const override { return true; }
-
     /// Adds the root workload
-    void addDerivedEntities(std::unordered_map<String, ASTPtr> & visible_entities) const override;
+    void addDerivedEntities(WorkloadEntities & visible_entities) const override;
 
     ImplicitWorkloadEntitiesConfig config; /// Guarded by the storage lock
 };

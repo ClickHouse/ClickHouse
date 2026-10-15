@@ -6,6 +6,8 @@
 
 #include <Poco/Util/AbstractConfiguration.h>
 
+#include <mutex>
+
 namespace DB
 {
 
@@ -34,6 +36,8 @@ private:
         WorkloadEntityType entity_type,
         const String & entity_name,
         bool throw_if_not_exists) override;
+
+    std::mutex load_mutex;
 };
 
 }

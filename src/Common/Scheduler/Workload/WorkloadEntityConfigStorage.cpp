@@ -13,23 +13,11 @@ WorkloadEntityConfigStorage::WorkloadEntityConfigStorage(const ContextPtr & glob
 
 void WorkloadEntityConfigStorage::loadEntities(const Poco::Util::AbstractConfiguration & config)
 {
+    // Loads are serialized (see "Locks" in IWorkloadEntityStorage.h)
+    std::lock_guard load_lock(load_mutex);
     LOG_DEBUG(log, "Refreshing workload entities from configuration");
-
-    std::vector<std::pair<String, ASTPtr>> new_entities;
-
-    // Load entities from the combined resources_and_workloads section
-    String sql = config.getString("resources_and_workloads", "");
-    if (!sql.empty())
-    {
-        auto parsed_entities = parseEntitiesFromString(sql, log);
-        for (const auto & [entity_name, ast] : parsed_entities)
-        {
-            new_entities.emplace_back(entity_name, ast);
-        }
-    }
-
-    // Update entities in memory and notify subscribers
-    setOwnEntities(new_entities, OnOwnConflict::Throw);
+    ASTs new_entities = parseEntitiesFromString(config.getString("resources_and_workloads", ""), log);
+    setOwnEntities(new_entities);
     LOG_DEBUG(log, "Loaded {} workload entities from configuration", new_entities.size());
 }
 

@@ -1,12 +1,7 @@
 #include <Common/Scheduler/Workload/WorkloadEntityKeeperStorage.h>
 #include <Interpreters/Context.h>
-#include <Parsers/ASTCreateWorkloadQuery.h>
-#include <Parsers/ASTCreateResourceQuery.h>
-#include <Parsers/ParserCreateWorkloadEntity.h>
-#include <Parsers/parseQuery.h>
 #include <base/sleep.h>
 #include <Common/Exception.h>
-#include <Common/StringUtils.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
@@ -33,7 +28,6 @@ extern const SettingsUInt64 max_parser_depth;
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int LOGICAL_ERROR;
 }
 
 WorkloadEntityKeeperStorage::WorkloadEntityKeeperStorage(
@@ -251,32 +245,7 @@ void WorkloadEntityKeeperStorage::refreshEntities(const zkutil::ZooKeeperPtr & z
         return;
 
     LOG_DEBUG(log, "Refreshing workload entities from keeper");
-    ASTs queries;
-    ParserCreateWorkloadEntity parser;
-    const char * begin = data.data(); /// begin of current query
-    const char * pos = begin; /// parser moves pos from begin to the end of current query
-    const char * end = begin + data.size();
-    while (pos < end)
-    {
-        queries.emplace_back(parseQueryAndMovePosition(parser, pos, end, "", true, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS));
-        while (isWhitespaceASCII(*pos) || *pos == ';')
-            ++pos;
-    }
-
-    /// Read and parse all SQL entities from data we just read from ZooKeeper
-    std::vector<std::pair<String, ASTPtr>> new_entities;
-    for (const auto & query : queries)
-    {
-        LOG_TRACE(log, "Read keeper entity definition: {}", query->formatForLogging());
-        if (auto * create_workload_query = query->as<ASTCreateWorkloadQuery>())
-            new_entities.emplace_back(create_workload_query->getWorkloadName(), query);
-        else if (auto * create_resource_query = query->as<ASTCreateResourceQuery>())
-            new_entities.emplace_back(create_resource_query->getResourceName(), query);
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid workload entity query in keeper storage: {}", query->getID());
-    }
-
-    setOwnEntities(new_entities, OnOwnConflict::Hide);
+    setOwnEntities(parseEntitiesFromString(data, log));
     current_version = version;
 
     LOG_DEBUG(log, "Workload entities refreshing is done");
