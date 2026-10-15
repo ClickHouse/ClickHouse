@@ -1,5 +1,5 @@
 -- Tags: no-parallel-replicas
--- https://github.com/ClickHouse/ClickHouse/issues/124502: a hint derived from a compare chain still prunes below GROUP BY and LIMIT BY
+-- https://github.com/ClickHouse/ClickHouse/issues/124502: a derived hint still prunes below GROUP BY and LIMIT BY
 
 SET optimize_and_compare_chain = 1;
 SET query_plan_filter_push_down = 1;
@@ -27,6 +27,7 @@ SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM (SELECT a, b FR
 SELECT count() FROM (SELECT a, b FROM t_chain_keys ORDER BY a, b LIMIT 1 BY a, b) WHERE (b < a AND a < 10) OR a = 500;
 
 -- a hint the OR-LIKE chain rewrite adds does not keep the OR above the aggregation
+SELECT countIf(explain LIKE '%multiSearchAny(%') > 0 AND countIf(explain LIKE '%indexHint(%') > 0 FROM (EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT a, b FROM t_chain_keys GROUP BY a, b HAVING (a < 10 AND (toString(b) LIKE '%1%' OR toString(b) LIKE '%2%' OR toString(b) LIKE '%3%' OR toString(b) LIKE '%4%')) OR a = 500);
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT a, b FROM t_chain_keys GROUP BY a, b HAVING (a < 10 AND (toString(b) LIKE '%1%' OR toString(b) LIKE '%2%' OR toString(b) LIKE '%3%' OR toString(b) LIKE '%4%')) OR a = 500) WHERE explain LIKE '%Granules: %/%';
 SELECT count() FROM (SELECT a, b FROM t_chain_keys GROUP BY a, b HAVING (a < 10 AND (toString(b) LIKE '%1%' OR toString(b) LIKE '%2%' OR toString(b) LIKE '%3%' OR toString(b) LIKE '%4%')) OR a = 500);
 
