@@ -623,6 +623,10 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     /// bind C-j to ENTER action.
     rx.bind_key(Replxx::KEY::control('J'), commit_action);
     rx.bind_key(Replxx::KEY::ENTER, commit_action);
+    /// A newline inside of the input that `addTypedInput` replays: it must stay in the edit buffer. `commit_action`
+    /// tells a pasted newline from a typed one by the bytes that are still queued in the TTY, and replayed bytes
+    /// have already been read from it.
+    rx.bind_key(Replxx::KEY::meta('J'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::NEW_LINE, code); });
 
     /// By default COMPLETE_NEXT/COMPLETE_PREV was bound to C-p/C-n, re-bind
     /// to M-P/M-N (that was used for HISTORY_COMMON_PREFIX_SEARCH before, but
@@ -1057,6 +1061,17 @@ void ReplxxLineReader::addTypedInput(const String & bytes)
         else if (c == 0x7F)
         {
             rx.emulate_key_press(Key::BACKSPACE);
+            ++i;
+        }
+        else if ((c == '\n' || c == '\r')
+                 && std::any_of(bytes.begin() + i + 1, bytes.end(), [](char next) { return next != '\n' && next != '\r'; }))
+        {
+            /// More input follows the newline, so it is a line of a pasted (or typed ahead) multi-line statement, not
+            /// the end of the input: keep it in the edit buffer, and commit at the last newline.
+            rx.emulate_key_press(Key::meta('J'));
+            /// A CRLF is one newline.
+            if (c == '\r' && bytes[i + 1] == '\n')
+                ++i;
             ++i;
         }
         else if (c < 0x20)

@@ -2,6 +2,7 @@
 
 #include <Access/AccessControl.h>
 #include <Client/NonInteractiveAuthentication.h>
+#include <Common/SSHAgent.h>
 #include <Client/ClientBase.h>
 #include <Client/Connection.h>
 #include <Client/InternalTextLogs.h>
@@ -885,6 +886,12 @@ struct BackgroundQueryManager::Impl
     {
         /// Nothing on this thread may ask the user, see `NonInteractiveAuthenticationScope`.
         NonInteractiveAuthenticationScope non_interactive_authentication;
+#if USE_SSH
+        /// An ssh-agent can leave a signing request pending (it waits for the user to confirm the key): the worker must
+        /// still notice cancellation and client exit, and must not wait forever.
+        SSHAgentWaitLimit ssh_agent_wait_limit(
+            [job] { return job->cancel_requested.load(std::memory_order_acquire); }, std::chrono::seconds(30));
+#endif
 
         std::unique_ptr<RedirectableStreamBuf> output_stream_buffer;
         std::unique_ptr<RedirectableStreamBuf> error_stream_buffer;
