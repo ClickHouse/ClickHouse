@@ -130,6 +130,8 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// result blocks can be shipped. A peer below it does not know the name and rejects the whole plan.
 /// Version 20 also adds `allow_block_nested_loop_join` to the join step settings. A peer below it does not
 /// know the name and has no block nested loop join: it rejects a join without equality keys by itself.
+/// Version 20 also registers the `MergeRuntimeFilters` step and adds the `join_runtime_filter_exact_bytes_limit`
+/// plan setting.
 ///
 /// Rules for this version:
 /// - Bump it at most once per release: the first change in a release that needs it bumps it, later changes
@@ -162,6 +164,10 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LEGACY_JOIN
 /// and a join that needs the block nested loop join is rejected there with `INVALID_JOIN_ON_EXPRESSION` rather
 /// than executed differently.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_BLOCK_NESTED_LOOP_JOIN = 20;
+/// First query-plan serialization version that knows `use_aggregation_memory_tracker`. Below it, the name is not
+/// written, because a strict named schema makes an older peer throw on an unknown name; that peer then runs the
+/// aggregation with its own two-level decision.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_AGGREGATION_MEMORY_TRACKER = 20;
 /// First query-plan serialization version that registers a "Window" step. Used to gate serializing a
 /// `WindowStep` for `make_distributed_plan`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_STEP = 4;
@@ -216,7 +222,10 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_GROUP_BY_TO
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 /// Version 3 added the error code of a failed task to its status reply.
-static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 3;
+/// Version 4 added runtime filter receive descriptors to the task.
+static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 4;
+/// First distributed-task serialization version that carries the runtime filter receive descriptors.
+static constexpr auto DBMS_MIN_DISTRIBUTED_TASK_SERIALIZATION_VERSION_WITH_RUNTIME_FILTERS = 4;
 
 static constexpr auto DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET = 54441;
 
@@ -330,6 +339,9 @@ static constexpr auto DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATI
 /// Version 1 of the `uniq` aggregate function state (64-bit hashes instead of 32-bit ones).
 static constexpr auto DBMS_MIN_REVISION_WITH_UNIQ_STATE_VERSION_1 = 54493;
 
+/// A `-Merge` aggregate function state takes the state version of the function it merges, instead of always 0.
+static constexpr auto DBMS_MIN_REVISION_WITH_MERGE_COMBINATOR_STATE_VERSION = 54494;
+
 
 /// Version of ClickHouse TCP protocol.
 ///
@@ -338,5 +350,5 @@ static constexpr auto DBMS_MIN_REVISION_WITH_UNIQ_STATE_VERSION_1 = 54493;
 /// NOTE: DBMS_TCP_PROTOCOL_VERSION has nothing common with VERSION_REVISION,
 /// later is just a number for server version (one number instead of commit SHA)
 /// for simplicity (sometimes it may be more convenient in some use cases).
-static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54493;
+static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54494;
 }

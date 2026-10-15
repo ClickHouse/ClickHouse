@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHi
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [code source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="async_insert">
-  ## async_insert
-</div>
+## async_insert {#async_insert}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -23,9 +21,7 @@ Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tab
 
 Si true, les données de la requête INSERT sont placées dans une file d&#39;attente, puis écrites dans la table en arrière-plan. Si wait&#95;for&#95;async&#95;insert est false, la requête INSERT est traitée presque instantanément ; sinon, le client attendra que les données soient écrites dans la table
 
-<div id="async_insert_busy_timeout_decrease_rate">
-  ## async_insert_busy_timeout_decrease_rate
-</div>
+## async_insert_busy_timeout_decrease_rate {#async_insert_busy_timeout_decrease_rate}
 
 <SettingsInfoBlock type="Double" default_value="0.2" />
 
@@ -33,9 +29,7 @@ Si true, les données de la requête INSERT sont placées dans une file d&#39;at
 
 Le taux exponentiel auquel diminue le délai d’expiration adaptatif des insertions asynchrones
 
-<div id="async_insert_busy_timeout_increase_rate">
-  ## async_insert_busy_timeout_increase_rate
-</div>
+## async_insert_busy_timeout_increase_rate {#async_insert_busy_timeout_increase_rate}
 
 <SettingsInfoBlock type="Double" default_value="0.2" />
 
@@ -43,9 +37,7 @@ Le taux exponentiel auquel diminue le délai d’expiration adaptatif des insert
 
 Le taux de croissance exponentielle appliqué à l&#39;augmentation du délai d&#39;expiration adaptatif de l&#39;insertion asynchrone
 
-<div id="async_insert_busy_timeout_max_ms">
-  ## async_insert_busy_timeout_max_ms
-</div>
+## async_insert_busy_timeout_max_ms {#async_insert_busy_timeout_max_ms}
 
 **Alias** : `async_insert_busy_timeout_ms`
 
@@ -57,9 +49,7 @@ Temps d&#39;attente maximal avant de vider les données collectées pour chaque 
 
 Valeur par défaut dans Cloud : `1000` (1s).
 
-<div id="async_insert_busy_timeout_min_ms">
-  ## async_insert_busy_timeout_min_ms
-</div>
+## async_insert_busy_timeout_min_ms {#async_insert_busy_timeout_min_ms}
 
 <SettingsInfoBlock type="Millisecondes" default_value="50" />
 
@@ -67,9 +57,7 @@ Valeur par défaut dans Cloud : `1000` (1s).
 
 Si l&#39;ajustement automatique est activé via async&#95;insert&#95;use&#95;adaptive&#95;busy&#95;timeout, temps d&#39;attente minimal avant le vidage des données collectées pour chaque requête à partir de l&#39;arrivée des premières données. Sert également de valeur initiale pour l&#39;algorithme adaptatif
 
-<div id="async_insert_deduplicate">
-  ## async_insert_deduplicate
-</div>
+## async_insert_deduplicate {#async_insert_deduplicate}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -77,9 +65,7 @@ Pour les requêtes INSERT asynchrones dans la table répliquée, indique si la d
 
 Ce paramètre ne prend effet que lorsque [`deduplicate_insert`](/fr/reference/settings/session-settings/deduplicate-insert#deduplicate_insert) est défini sur `backward_compatible_choice`.
 
-<div id="async_insert_max_data_size">
-  ## async_insert_max_data_size
-</div>
+## async_insert_max_data_size {#async_insert_max_data_size}
 
 <SettingsInfoBlock type="UInt64" default_value="10485760" />
 
@@ -89,18 +75,14 @@ Taille maximale, en octets, des données non analysées collectées pour chaque 
 
 Valeur par défaut dans Cloud : `104857600` (100 MiB).
 
-<div id="async_insert_max_query_number">
-  ## async_insert_max_query_number
-</div>
+## async_insert_max_query_number {#async_insert_max_query_number}
 
 <SettingsInfoBlock type="UInt64" default_value="450" />
 
 Nombre maximal de requêtes d’insertion avant qu’elles ne soient insérées.
 Ne prend effet que si le paramètre [`async_insert_deduplicate`](/fr/reference/settings/session-settings/async-insert#async_insert_deduplicate) vaut 1.
 
-<div id="async_insert_poll_timeout_ms">
-  ## async_insert_poll_timeout_ms
-</div>
+## async_insert_poll_timeout_ms {#async_insert_poll_timeout_ms}
 
 <SettingsInfoBlock type="Millisecondes" default_value="10" />
 
@@ -108,9 +90,15 @@ Ne prend effet que si le paramètre [`async_insert_deduplicate`](/fr/reference/s
 
 Délai d’expiration pour la scrutation des données de la file d’attente d’insertion asynchrone
 
-<div id="async_insert_use_adaptive_busy_timeout">
-  ## async_insert_use_adaptive_busy_timeout
-</div>
+## async_insert_select_as_async_insert {#async_insert_select_as_async_insert}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Active par défaut les insertions asynchrones pour les requêtes `INSERT ... SELECT`."}]}]} />
+
+Détermine si une requête `INSERT ... SELECT` lancée par l’utilisateur peut passer par la file d’attente des insertions asynchrones lorsque `async_insert` est activé et que la requête est éligible (un seul petit bloc à destination d’une table de la famille `MergeTree`, sans vues dépendantes). Lorsque ce paramètre est désactivé, `INSERT ... SELECT` s’exécute toujours de manière synchrone, quelle que soit la valeur de `async_insert`. Les insertions internes (vue matérialisée actualisable, `POPULATE`, `CREATE TABLE ... AS SELECT`) sont toujours synchrones et ne tiennent pas compte de ce paramètre.
+
+## async_insert_use_adaptive_busy_timeout {#async_insert_use_adaptive_busy_timeout}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
