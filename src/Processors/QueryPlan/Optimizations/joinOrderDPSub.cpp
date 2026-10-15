@@ -234,18 +234,41 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
 
         dpsub_data.conflict_operators = computeConflictOperators(ops, conflictDetectorKind(), log);
 
+        /// An inner join step does not fix the order of its inputs, and its ON clause is split into
+        /// conjuncts, filters placed each at the lowest join where it can be evaluated. Neither may
+        /// get ahead of a join nested under the step whose padded side it reads: below an outer,
+        /// semi or anti join, a filter may only go onto the preserved side, or it would remove rows
+        /// before that join pads or matches them. So the step, and each of its conjuncts, waits until
+        /// all relations of such a nested join are present.
+        auto & operators = dpsub_data.conflict_operators;
+        auto relations_to_wait_for = [&](UInt32 reads, size_t step) -> UInt32
+        {
+            const UInt32 step_relations = operators[step].relations;
+            UInt32 wait_for = 0;
+            for (const auto & nested : operators)
+            {
+                const bool is_nested = (nested.relations & ~step_relations) == 0 && nested.relations != step_relations;
+                if (is_nested && (reads & nested.nullSupplying()))
+                    wait_for |= nested.relations;
+            }
+            return wait_for;
+        };
+
+        /// The inner steps first, from the ON clauses as written: `nel` is where `isAppliedAt` puts them.
+        std::vector<UInt32> step_wait_for(operators.size(), 0);
+        for (size_t step = 0; step < operators.size(); ++step)
+            if (operators[step].freely_reorderable && !operators[step].degenerate)
+                step_wait_for[step] = relations_to_wait_for(operators[step].nel, step);
+        for (size_t step = 0; step < operators.size(); ++step)
+            operators[step].nel |= step_wait_for[step];
+
         /// Where each condition is placed follows from the join step it comes from, see
-        /// `collectJoinEdgesMask`. An outer, semi or anti join's condition goes where that join is
-        /// applied. An inner join's ON clause is split into conjuncts, filters each placed at the lowest
-        /// join where it can be evaluated; a filter may go below a join nested under its join step
-        /// only onto that join's preserved side. A conjunct that reads the null-supplying side of a
-        /// nested join would otherwise remove rows before that join pads or matches them, so it waits
-        /// until all relations of the nested join are present.
+        /// `collectJoinEdgesMask`: an outer, semi or anti join's condition goes where that join is
+        /// applied, an inner join's conjunct as low as its relations and the wait above allow.
         if (query_graph.edge_conflict_ops.size() != edges.size())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Join graph has {} conditions, but join steps are recorded for {} of them",
                 edges.size(), query_graph.edge_conflict_ops.size());
 
-        const auto & operators = dpsub_data.conflict_operators;
         for (size_t i = 0; i < edges.size(); ++i)
         {
             if (!edges[i])
@@ -255,19 +278,8 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Join condition {} refers to join step {}, but there are only {}",
                     i, op_index, operators.size());
             dpsub_data.edge_operator[i] = op_index;
-            if (dpsub_data.edge_pinned[i])
-                continue;
-
-            const UInt32 sources = dpsub_data.edge_source_mask[i];
-            const UInt32 step_relations = operators[op_index].relations;
-            UInt32 defer = 0;
-            for (const auto & nested : operators)
-            {
-                const bool is_nested = (nested.relations & ~step_relations) == 0 && nested.relations != step_relations;
-                if (is_nested && (sources & nested.nullSupplying()))
-                    defer |= nested.relations;
-            }
-            dpsub_data.edge_defer_mask[i] = defer;
+            if (!dpsub_data.edge_pinned[i])
+                dpsub_data.edge_defer_mask[i] = relations_to_wait_for(dpsub_data.edge_source_mask[i], op_index);
         }
         LOG_TRACE(log, "DPsub: using {} conflict detector over {} captured join operators",
                   toString(query_graph.conflict_detector), dpsub_data.conflict_operators.size());

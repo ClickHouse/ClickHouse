@@ -78,6 +78,41 @@ INNER JOIN t_nd ON t_nc.k = t_nd.k AND ifNull(t_na.flag, 0) = 0
 ORDER BY ALL
 SETTINGS join_use_nulls = 1;
 
+-- The inner join step above `RIGHT JOIN` reads `t_rd` from its padded side through `dw % 2 = cy`,
+-- so it may not pull `t_rd` out of `t_rb JOIN t_rd` and join it first: the condition `bk = dk`
+-- would then remove the padded rows of `t_ra`. The large `t_rb` makes that order look cheapest.
+DROP TABLE IF EXISTS t_ra;
+DROP TABLE IF EXISTS t_rb;
+DROP TABLE IF EXISTS t_rc;
+DROP TABLE IF EXISTS t_rd;
+CREATE TABLE t_ra (ak UInt32, ax UInt32) ENGINE = Memory;
+CREATE TABLE t_rb (bk UInt32, bv UInt32) ENGINE = Memory;
+CREATE TABLE t_rd (dk UInt32, dw UInt32) ENGINE = Memory;
+CREATE TABLE t_rc (cx UInt32, cy UInt32) ENGINE = Memory;
+INSERT INTO t_ra VALUES (1, 7), (2, 8), (3, 7), (4, 7);
+INSERT INTO t_rb SELECT number + 1, 0 FROM numbers(100000);
+INSERT INTO t_rd VALUES (1, 1), (2, 2), (9, 9);
+INSERT INTO t_rc VALUES (7, 0), (8, 1), (7, 1);
+
+SELECT '-- inner join step reading the padded side of a RIGHT JOIN';
+SELECT ak, bk, cx
+FROM t_rb JOIN t_rd ON bk = dk
+RIGHT JOIN t_ra ON ak = bk
+JOIN t_rc ON ax = cx AND dw % 2 = cy
+ORDER BY ALL
+SETTINGS query_plan_enable_optimizations = 1;
+
+SELECT '-- the same with a LEFT JOIN of a subquery';
+SELECT ak, s.bk, cx
+FROM t_ra LEFT JOIN (SELECT bk, dw FROM t_rb JOIN t_rd ON bk = dk) AS s ON ak = s.bk
+JOIN t_rc ON ax = cx AND dw % 2 = cy
+ORDER BY ALL
+SETTINGS query_plan_enable_optimizations = 1;
+
+DROP TABLE t_ra;
+DROP TABLE t_rb;
+DROP TABLE t_rc;
+DROP TABLE t_rd;
 DROP TABLE t_a;
 DROP TABLE t_b;
 DROP TABLE t_c;

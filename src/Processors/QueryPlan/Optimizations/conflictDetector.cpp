@@ -134,17 +134,18 @@ bool assocHolds(const NormOp & row, const NormOp & col, UInt32 shared)
     return false;
 }
 
-/// l-asscom(row, col); `e1` is row's left (shared) operand, `e3` the operand col brings in.
+/// l-asscom(row, col); `e1` is row's left (shared) operand.
 /// Conditional entries: (LeftOuter, FullOuter) needs row null-rejecting on `e1`; (FullOuter,
-/// LeftOuter) needs col on `e3`; (FullOuter, FullOuter) needs both on `e1`.
-bool lAsscomHolds(const NormOp & row, const NormOp & col, UInt32 e1, UInt32 e3)
+/// LeftOuter) needs col on `e1`, as `(e1 FULL e2) LEFT e3` pads `e1` with nulls before col reads it;
+/// (FullOuter, FullOuter) needs both on `e1`.
+bool lAsscomHolds(const NormOp & row, const NormOp & col, UInt32 e1)
 {
     if (lAsscom(row.category, col.category))
         return true;
     if (row.category == Category::LeftOuter && col.category == Category::FullOuter)
         return (row.nr_rels & e1) != 0;
     if (row.category == Category::FullOuter && col.category == Category::LeftOuter)
-        return (col.nr_rels & e3) != 0;
+        return (col.nr_rels & e1) != 0;
     if (row.category == Category::FullOuter && col.category == Category::FullOuter)
         return (row.nr_rels & e1) != 0 && (col.nr_rels & e1) != 0;
     return false;
@@ -216,7 +217,7 @@ computeConflictOperators(const std::vector<ConflictOpMask> & ops, ConflictDetect
                     if (cdc) rules.push_back({a.right, (a.left & fta) ? (a.left & fta) : a.left});
                     else     tes |= a.left;
                 }
-                if (!lAsscomHolds(a, b, a.left, b.right))
+                if (!lAsscomHolds(a, b, a.left))
                 {
                     if (cdc) rules.push_back({a.left, (a.right & fta) ? (a.right & fta) : a.right});
                     else     tes |= a.right;
