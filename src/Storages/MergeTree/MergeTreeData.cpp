@@ -13269,6 +13269,9 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
         chassert(!params.keep_metadata_version);
 
         dst_part_storage->beginTransaction();
+        /// A packed part rewrites the whole archive on commit of this transaction.
+        if (params_with_invalidated_columns.max_bytes_to_buffer_for_packed_part)
+            dst_part_storage->setTemporaryDataForTransaction(params.temporary_data, params_with_invalidated_columns.max_bytes_to_buffer_for_packed_part);
         auto out_metadata = dst_part_storage->writeFile(
             IMergeTreeDataPart::METADATA_VERSION_FILE_NAME,
             /*buf_size=*/ 4096,
