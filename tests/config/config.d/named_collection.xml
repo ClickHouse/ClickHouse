@@ -47,6 +47,8 @@
         </s3_conn_db>
         <cache_collection>
             <max_size>1Mi</max_size>
+            <max_file_segment_size>256Ki</max_file_segment_size>
+            <boundary_alignment>256Ki</boundary_alignment>
             <path>collection</path>
         </cache_collection>
         <url_override1>
