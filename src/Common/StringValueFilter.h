@@ -81,13 +81,49 @@ public:
     /// match, `replaced_bytes` is the total size of their data.
     void updateStats(size_t checked, size_t replaced, size_t replaced_bytes) const;
 
+    /// Same as `updateStats`, for values that were decided without a separate check of every value:
+    /// by a lookup in a precomputed mask (rows of a dictionary-encoded `Parquet` page, where every
+    /// distinct dictionary entry is checked once), or by a single scan of a buffer of concatenated
+    /// values (see `findBulkScanMatches`). Such values are cheap to filter even when they are short,
+    /// so they only participate in the selectivity rule, not in the minimum average size of skipped values.
+    void updateStatsWithoutPerValueChecks(size_t checked, size_t replaced, size_t replaced_bytes) const;
+
+    /// Same as `updateStats`, for the values of a bulk scan (see `findBulkScanMatches`), where
+    /// `checked_individually` of the found candidates were additionally checked one by one against
+    /// the other conditions (see `matchOtherConditions`). If there are such values, they participate in
+    /// the minimum average size of skipped values, and all bytes skipped by the scan are attributed to them,
+    /// because these bytes are what the checks of the candidates pay for.
+    void updateStatsOfBulkScan(size_t checked, size_t replaced, size_t replaced_bytes, size_t checked_individually) const;
+
+    /// Accounts the entries of a dictionary (of a dictionary-encoded `Parquet` column chunk) checked one by one
+    /// to build a mask, whose rows are then accounted by `updateStatsWithoutPerValueChecks`. The checks
+    /// participate in the minimum average size of skipped values, with the number of bytes that the mask is
+    /// expected to skip: when most entries are referenced by a single row, building the mask costs as much
+    /// as checking every row.
+    void updateStatsOfDictionaryEntries(size_t entries_checked, size_t estimated_bytes_skipped) const;
+
+    /// Returns true if the filter has conditions other than the bulk-scan one, so that `matchOtherConditions` checks something.
+    bool hasOtherConditions() const { return conditions.size() > (hasBulkScanCondition() ? 1 : 0); }
+
+    /// The decoders that check a long run of values one by one (e.g. a whole `Parquet` page) call `updateStats`
+    /// at least every this many checked values and stop applying the filter as soon as it is disabled.
+    /// Otherwise, when many pages are decoded in parallel, each of them would be checked entirely
+    /// before the filter has a chance to disable itself.
+    static constexpr size_t MAX_VALUES_BETWEEN_STATS_UPDATES = 8192;
+
     const std::vector<Condition> & getConditions() const { return conditions; }
 
 private:
-    /// After this many values are checked, the filter is disabled if less than half of them were replaced.
-    static constexpr size_t MIN_VALUES_TO_EVALUATE_SELECTIVITY = 65536;
+    /// After this many values are checked, the filter is disabled if less than half of them were replaced,
+    /// or if the replaced values are too short on average for skipping their data to pay off.
+    static constexpr size_t MIN_VALUES_TO_EVALUATE_SELECTIVITY = 8192;
+    /// The minimum average number of skipped bytes per individually checked value to keep the filter enabled.
+    /// Checking a value costs more than copying a few bytes, so replacing short values only slows the reading down.
+    static constexpr size_t MIN_AVG_BYTES_SKIPPED_PER_VALUE = 16;
 
     bool matchImpl(const char * data, size_t size, size_t skip_condition) const;
+    void updateStatsImpl(size_t checked, size_t replaced, size_t replaced_bytes, size_t checked_individually) const;
+    void updateStatsOfIndividualChecks(size_t checked_individually, size_t bytes_skipped) const;
 
     const std::vector<Condition> conditions;
     /// Searchers for Substring conditions (empty entries for other types).
@@ -99,6 +135,9 @@ private:
 
     mutable std::atomic<size_t> values_checked{0};
     mutable std::atomic<size_t> values_replaced{0};
+    /// Values checked one by one (see `updateStatsOfIndividualChecks`), and the size of the replaced values attributed to them.
+    mutable std::atomic<size_t> values_checked_individually{0};
+    mutable std::atomic<size_t> bytes_skipped_individually{0};
     mutable std::atomic<bool> disabled{false};
 };
 
