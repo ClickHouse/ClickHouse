@@ -98,13 +98,15 @@ void updateUsedProjectionIndexes(const QueryTreeNodePtr & query_or_union_node, s
 bool isLocalPhysicalTable(const StoragePtr & storage)
 {
     auto nested_storage = unwrapStorageProxy(storage);
-    return nested_storage && (nested_storage->isMergeTree() || nested_storage->getName() == "Memory");
+    return nested_storage && !nested_storage->readsFromOtherTables()
+        && (nested_storage->isMergeTree() || nested_storage->getName() == "Memory");
 }
 
 /// EXCEPT and INTERSECT compare the kept column, the next step of a recursive CTE reads it, INTERPOLATE refers to it
 /// by name, and it decides which ARRAY JOIN arrays are kept, whose sizes may differ. MergeTree and Memory return the
 /// same rows whatever columns are read, other storages may not: a view or a remote table may hide such an ARRAY JOIN,
 /// `TimeSeries` builds its query from the columns, and `input_format_allow_errors_num` skips rows by the parsed columns.
+/// `Alias` reports the engine of its target but resolves the target again when reading.
 bool canReplaceKeptColumnWithConstant(const QueryTreeNodePtr & query_or_union_node)
 {
     auto * union_node = query_or_union_node->as<UnionNode>();
