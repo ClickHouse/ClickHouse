@@ -200,7 +200,6 @@ struct DecorrelationContext
     /// Whether the optimizer will turn the referenced input subplan into an in-memory ChunkBuffer.
     /// Decided once here (see decorrelateQueryPlan); buildLogicalJoin uses it to pick the join kind.
     bool uses_in_memory_buffer = false;
-    /// Keyless aggregates whose groups without rows the filter right above them rejects.
     std::unordered_set<const QueryPlan::Node *> aggregates_with_rejected_empty_groups = {};
 };
 
@@ -575,7 +574,7 @@ bool canRestoreEmptyGroups(const DecorrelationContext & context, const Aggregato
         && !params.empty_result_for_aggregation_by_empty_set;
 }
 
-/// A group without rows has `count() = 0`; when the filter rejects such a row its group need not be restored.
+/// A group without rows has `count() = 0`; other aggregates and correlated values are unknown here.
 bool filterRejectsGroupWithoutRows(const FilterStep & filter_step, const AggregatingStep & aggregating_step)
 {
     const auto & dag = filter_step.getExpression();
@@ -584,7 +583,6 @@ bool filterRejectsGroupWithoutRows(const FilterStep & filter_step, const Aggrega
 
     ActionsDAG::IntermediateExecutionResult values;
 
-    /// A correlated value is unknown here.
     for (const auto & node : dag.getNodes())
     {
         if (node.type == ActionsDAG::ActionType::PLACEHOLDER)
@@ -1167,8 +1165,7 @@ QueryPlan decorrelateQueryPlan(
         /// The correlated columns are hidden keys: the user's `max_rows_to_group_by` would count groups over all
         /// outer rows at once instead of within one evaluation of the subquery.
         /// Without user keys one evaluation has exactly one group, so the limit can never be exceeded there and is
-        /// dropped: a `LATERAL` or restored `EXISTS` subquery without `GROUP BY` must not throw or be truncated
-        /// because of the outer rows.
+        /// dropped: a `LATERAL` or restored `EXISTS` subquery without `GROUP BY` must not throw or be truncated because of the outer rows.
         /// With a user `GROUP BY` the limit is not enforced per correlated-key partition. With `throw` it bounds the
         /// total number of groups of all evaluations, which can only throw earlier than a per-evaluation limit and
         /// never changes the result. `any` / `break` would silently drop groups of unrelated outer rows, so they are
