@@ -134,6 +134,11 @@ void HiveCatalog::executeWithRetry(Func && func) const
             {
                 reconnectUnlocked();
             }
+            catch (const DB::Exception &)
+            {
+                /// Non-transient (e.g. `UNACCEPTABLE_URL` from `remote_url_allow_hosts`), retrying cannot help.
+                throw;
+            }
             catch (const std::exception & ex)
             {
                 LOG_TRACE(
