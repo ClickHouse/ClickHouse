@@ -181,6 +181,7 @@
 #include <base/isSharedPtrUnique.h>
 #include <base/scope_guard.h>
 #include <base/sanitizer_defs.h>
+#include <base/arithmeticOverflow.h>
 
 #include <algorithm>
 #include <atomic>
@@ -9338,11 +9339,12 @@ void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const D
 
         auto log_subtract = [&](size_t & from, size_t value, const char * field)
         {
+            /// An incorrect subtraction is logged and kept modular, so that adding the same size back restores the total.
             if (value > from)
                 LOG_ERROR(log, "Possibly incorrect column size subtraction: {} - {} = {}, column: {}, field: {}",
-                    from, value, from - value, column.name, field);
+                    from, value, common::subIgnoreOverflow(from, value), column.name, field);
 
-            from -= value;
+            from = common::subIgnoreOverflow(from, value);
         };
 
         log_subtract(total_column_size.data_compressed, part_column_size.data_compressed, ".data_compressed");
@@ -9359,11 +9361,12 @@ void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const D
 
         auto log_subtract = [&](size_t & from, size_t value, const char * field)
         {
+            /// An incorrect subtraction is logged and kept modular, so that adding the same size back restores the total.
             if (value > from)
                 LOG_ERROR(log, "Possibly incorrect index size subtraction: {} - {} = {}, index: {}, field: {}",
-                    from, value, from - value, secondary_index_name, field);
+                    from, value, common::subIgnoreOverflow(from, value), secondary_index_name, field);
 
-            from -= value;
+            from = common::subIgnoreOverflow(from, value);
         };
 
         log_subtract(total_secondary_index_size.data_compressed, part_secondary_index_size.data_compressed, ".data_compressed");
