@@ -37,6 +37,7 @@ static struct InitFiu
     ONCE(nats_fail_resubscribe_within_query) \
     REGULAR(replicated_queue_unfail_entries) \
     REGULAR(executing_graph_add_node_fail) \
+    PAUSEABLE_ONCE(polling_queue_before_try_poll) \
     ONCE(replicated_merge_tree_insert_quorum_fail_0) \
     REGULAR(replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault) \
     REGULAR(rmt_dedup_conflict_part_name_missing) \
@@ -441,6 +442,9 @@ static struct InitFiu
     ONCE(keeper_changelog_preallocate_no_space) \
     ONCE(distributed_plan_record_failure_while_starting_tasks) \
     ONCE(distributed_plan_delay_root_cause_report) \
+    REGULAR(distributed_plan_runtime_filter_receive_branch_fails_before_connect) \
+    PAUSEABLE_ONCE(distributed_plan_runtime_filter_merge_pause_before_finalize) \
+    REGULAR(distributed_plan_runtime_filter_merge_fails_before_finalize) \
     ONCE(zk_send_thread_request_window_throw) \
     ONCE(zk_send_thread_operations_insert_throw) \
     PAUSEABLE_ONCE(context_zookeeper_lock_acquired_pause) \
