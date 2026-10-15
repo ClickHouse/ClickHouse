@@ -132,7 +132,7 @@ DROP TABLE t_rio_wrapped;
 -- `equals` compares a `Decimal` or `DateTime64` with a float in `Float64`, so `d = 1.0` matches both `1` and `1.000000000000000001`.
 -- The in-order optimizations must not treat `d` as fixed and skip ordering or grouping by the next key column.
 
-SET optimize_limit_by_in_order = 1;
+SET optimize_limit_by_in_order = 1, use_primary_key = 0, use_statistics_for_part_pruning = 0;
 
 DROP TABLE IF EXISTS t_rio_decimal_float;
 CREATE TABLE t_rio_decimal_float (d Decimal(38, 18), ts UInt32) ENGINE = MergeTree ORDER BY (d, ts);
