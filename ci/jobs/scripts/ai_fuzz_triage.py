@@ -173,11 +173,19 @@ FOUND_WHILE_TESTING_RE = re.compile(
 )
 # The issue lines lookups parse. Only this script writes them, so logs that
 # reach the agent's draft cannot plant a fingerprint of another failure.
+# The fingerprint groups failures by a lossy STID (top frames, names cut at `<`), so two bugs can share
+# it. This digest of the whole qualified stack is what lets an issue stand in for an agent verdict.
+STACK_DIGEST_FIELD = "Fuzz stack digest"
+STACK_DIGEST_LINE_RE = re.compile(
+    rf"^{STACK_DIGEST_FIELD}: ([0-9a-f]{{16}})\r?$", re.MULTILINE
+)
 MACHINE_LINE_RE = re.compile(
-    rf"^[\s`>*-]*({FINGERPRINT_FIELD}|{FOUND_WHILE_TESTING_FIELD}|Found by [^\n]*? in CI"
-    rf"|Caused by|Related):[^\n]*\n?",
+    rf"^[\s`>*-]*({FINGERPRINT_FIELD}|{STACK_DIGEST_FIELD}|{FOUND_WHILE_TESTING_FIELD}"
+    rf"|Found by [^\n]*? in CI|Caused by|Related):[^\n]*\n?",
     re.MULTILINE | re.IGNORECASE,
 )
+# Frames in the stack digest, below the exception machinery like the STID, but not cut short by it.
+STACK_DIGEST_MAX_FRAMES = 16
 
 # Values that differ between two runs of the same crash and so must not reach the
 # fingerprint. Order matters: addresses and UUIDs before the bare-number rule.
@@ -219,6 +227,46 @@ def _tracked_signature(failures):
     """The signature the fingerprint is built from, or "" when there is none."""
     names = sorted(n for n in (_stable_signature(name) for name, _ in failures) if n)
     return names[0] if names else ""
+
+
+def _qualified_frames(failure_info):
+    """The `DB::` frames of the parser's `Stack trace:` section, with template arguments, without arguments."""
+    _, sep, stack = (failure_info or "").rpartition("Stack trace:\n")
+    if not sep:
+        return []
+    frames = []
+    for line in stack.splitlines():
+        start = line.find("DB::")
+        if start == -1:
+            continue
+        name, depth = [], 0
+        for ch in line[start:].split(" @ ")[0]:
+            if ch == "(" and depth == 0:
+                break
+            depth += (ch == "<") - (ch == ">")
+            name.append(ch)
+        frames.append(" ".join("".join(name).split()))
+    # Like the STID (`get_stack_trace_id`): the frames that throw are not the bug.
+    for i, frame in enumerate(frames):
+        if "DB::Exception" in frame:
+            frames = frames[i + 1 :]
+            break
+    frames = [frame for frame in frames if "DB::Exception" not in frame]
+    return frames[:STACK_DIGEST_MAX_FRAMES]
+
+
+def stack_digest(failures):
+    """Digest of the qualified stacks of the tracked failures, or "" when one has no stack."""
+    stacks = {tuple(_qualified_frames(info)) for _, info in _tracked_failures(failures)}
+    if not stacks or () in stacks:
+        return ""
+    text = "\n\n".join("\n".join(stack) for stack in sorted(stacks))
+    return hashlib.sha1(text.encode("utf-8", "replace")).hexdigest()[:16]
+
+
+def _issue_stack_digest(issue):
+    found = STACK_DIGEST_LINE_RE.findall(issue.get("body") or "")
+    return found[0] if len(found) == 1 else ""
 
 
 def _tracked_failures(failures):
@@ -319,6 +367,8 @@ def _occurrences_note(fingerprint, occurrences, change, weight, regression_hint)
             f"- Known occurrences: these open issues carry this failure's fingerprint\n"
             f"  and were filed before this {change}, not by triage of a PR run, so the\n"
             f"  failure predates the {change}. That {weight}:\n{urls}"
+            f"  The fingerprint keeps only the names of the top stack frames, cut at `<`,\n"
+            f"  so two bugs can share it: check that the issue's stack is this one.\n"
         )
     if occurrences.fixed:
         urls = "".join(f"  - {url}\n" for url in occurrences.fixed)
@@ -849,6 +899,8 @@ class Occurrences(NamedTuple):
 
     older: list  # `independent_occurrences`
     fixed: list  # `fixed_occurrences`
+    # Among `older`, the issues whose stack digest matches this failure's: only they stand in for the agent.
+    exact: list = []
 
     @property
     def regression(self):
@@ -909,7 +961,7 @@ def independent_occurrences(issues, fingerprint, cutoff):
     return sorted(urls)
 
 
-def _prior_occurrences(info, repo_name, pr_mode, fingerprint):
+def _prior_occurrences(info, repo_name, pr_mode, fingerprint, digest):
     """`Occurrences` from GitHub, or None when they cannot be read.
 
     The cutoff is when the change came to exist: the PR's opening, or the
@@ -938,10 +990,13 @@ def _prior_occurrences(info, repo_name, pr_mode, fingerprint):
             "url,state,createdAt,body,labels",
         )
         issues = json.loads(output or "[]")
-        return Occurrences(
-            independent_occurrences(issues, fingerprint, cutoff),
-            fixed_occurrences(issues, fingerprint),
+        older = independent_occurrences(issues, fingerprint, cutoff)
+        exact = sorted(
+            issue["url"]
+            for issue in issues
+            if issue["url"] in older and digest and _issue_stack_digest(issue) == digest
         )
+        return Occurrences(older, fixed_occurrences(issues, fingerprint), exact)
     except Exception as e:  # noqa: BLE001 - no lookup means no evidence, never more
         print(f"WARNING: AI fuzz triage: cannot look up prior occurrences: {e}")
         return None
@@ -1138,13 +1193,16 @@ def _issue_text(
             f"{reported}\n\n</details>"
         )
     text = "\n\n".join(part for part in (draft, reported) if part)
+    digest = stack_digest(failures)
     lines = [
-        # Agent drafts and logs may quote any fingerprint; only the line below is ours.
+        # Agent drafts and logs may quote any fingerprint; only the lines below are ours.
         MACHINE_LINE_RE.sub("", text).strip(),
         "",
         f"{FINGERPRINT_FIELD}: {fingerprint}",
-        f"Found by {job_kind} in CI: {found_in}",
     ]
+    if digest:
+        lines.append(f"{STACK_DIGEST_FIELD}: {digest}")
+    lines.append(f"Found by {job_kind} in CI: {found_in}")
     if tested_pr:
         lines.append(f"{FOUND_WHILE_TESTING_FIELD}: {tested_pr}")
         lines.append("AI triage judged the failure unrelated to that PR.")
@@ -1552,17 +1610,18 @@ def known_issue_verdict(failures, uncovered, occurrences, pr_mode):
     """The verdict for a failure an independent open issue already tracks, or None.
 
     Such an issue settles relatedness without an agent: the failure predates the
-    change. It vouches only for the failures its fingerprint covers.
+    change. It vouches only for the failures its fingerprint covers, and only when it
+    records the same qualified stack: the fingerprint alone can be shared by two bugs.
     """
-    if uncovered or not occurrences or not occurrences.older:
+    if uncovered or not occurrences or not occurrences.exact:
         return None
-    issue_url = occurrences.older[0]
+    issue_url = occurrences.exact[0]
     change = "PR" if pr_mode else "commit"
     return {
         "verdict": "unrelated",
         "reasoning": (
             f"Known issue: {issue_url} is open, carries this failure's fingerprint "
-            f"and was filed before this {change}, not by triage of a PR run, so "
+            f"and stack, and was filed before this {change}, not by triage of a PR run, so "
             f"the failure predates the {change}. No agent was run."
         ),
         "signature": _tracked_signature(failures),
@@ -1654,7 +1713,9 @@ def triage_and_apply(
             )
         repo_name = _triage_repo(info)
         occurrences = (
-            _prior_occurrences(info, repo_name, pr_mode, fingerprint)
+            _prior_occurrences(
+                info, repo_name, pr_mode, fingerprint, stack_digest(failures)
+            )
             if fingerprint
             else Occurrences([], [])
         )
