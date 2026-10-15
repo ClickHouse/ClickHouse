@@ -7,6 +7,7 @@ rollup, two keys, small result	1	0	5849415	390	1	390
 rollup, two keys, small result	1	0	11690640	780	1	780
 rollup, two keys, small result	1	1	5841225	390	1	390
 many blocks = one block, three keys	1
+many blocks = one block, no aggregate functions	1
 many blocks = one block, null keys for sub-totals	1
 many blocks = one block, condition and low cardinality arguments	1
 many blocks = one block, a key repeated in the group by list	1

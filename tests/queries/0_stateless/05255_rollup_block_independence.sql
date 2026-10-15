@@ -40,14 +40,15 @@ INSERT INTO rollup_partitioned SELECT number % 8, number % 11, number FROM numbe
 -- `max_threads` and the two external-aggregation limits are pinned because the test runner
 -- randomizes them, and a comparison whose arms drew different values would not be one. The two
 -- `group_by_two_level_threshold*` settings are pinned so that only the per-query one below decides
--- whether the input is split, and `merge_tree_min_rows_for_concurrent_read` so that how many
--- threads read a table is decided by its part count alone.
+-- whether the input is split, and `merge_tree_min_rows_for_concurrent_read[_for_remote_filesystem]`
+-- so that how many threads read a table is decided by its part count alone, on any disk.
 SET max_threads = 4;
 SET enable_parallel_replicas = 0;
 SET max_bytes_before_external_group_by = 1000000000;
 SET max_bytes_ratio_before_external_group_by = 0;
 SET group_by_two_level_threshold_bytes = 0;
 SET merge_tree_min_rows_for_concurrent_read = 163840;
+SET merge_tree_min_rows_for_concurrent_read_for_remote_filesystem = 163840;
 
 SELECT 'rollup, three keys', count(), sum(cityHash64(toString((a, b, c, s, n))))
 FROM (
@@ -66,6 +67,16 @@ SELECT 'many blocks = one block, three keys', (
 ) = (
     SELECT sum(cityHash64(toString((a, b, c, s, n)))) FROM (
         SELECT a, b, c, sum(v) AS s, count() AS n FROM rollup_blocks GROUP BY a, b, c WITH ROLLUP
+        SETTINGS max_block_size = 1000000, group_by_two_level_threshold = 0)
+);
+
+SELECT 'many blocks = one block, no aggregate functions', (
+    SELECT sum(cityHash64(toString((a, b)))) FROM (
+        SELECT a, b FROM rollup_blocks GROUP BY a, b WITH ROLLUP
+        SETTINGS max_block_size = 100, group_by_two_level_threshold = 1)
+) = (
+    SELECT sum(cityHash64(toString((a, b)))) FROM (
+        SELECT a, b FROM rollup_blocks GROUP BY a, b WITH ROLLUP
         SETTINGS max_block_size = 1000000, group_by_two_level_threshold = 0)
 );
 
