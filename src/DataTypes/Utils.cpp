@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/TypeTree.h>
 
 namespace DB
 {
@@ -355,6 +356,11 @@ bool conversionPreservesOrder(const IDataType & from, const IDataType & to)
         return conversionPreservesOrder(*from_array->getNestedType(), *to_array->getNestedType());
 
     return false;
+}
+
+bool typeCanHideTheValueType(const IDataType & type)
+{
+    return anyInTypeTree(type, [](const IDataType & node) { return isVariant(node) || isDynamic(node) || isObject(node); });
 }
 
 }
