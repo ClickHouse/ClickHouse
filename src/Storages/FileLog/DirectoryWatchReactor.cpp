@@ -169,6 +169,12 @@ void DirectoryWatchReactor::removeWatcher(DirectoryWatcherBase & watcher)
 #endif
 }
 
+void DirectoryWatchReactor::failWatcher(WatcherRegistration & registration)
+{
+    registration.failed = true;
+    failed_watchers.push_back(registration.watcher);
+}
+
 #if defined(OS_LINUX)
 
 static constexpr size_t buffer_size = 4096;
@@ -346,6 +352,7 @@ void DirectoryWatchReactor::dispatchEvents()
             }
             catch (...)
             {
+                tryLogCurrentException(log, "Cannot process the events of a directory watcher, it is not watched anymore");
                 failWatcher(*registration);
             }
         }
@@ -386,6 +393,7 @@ void DirectoryWatchReactor::dispatchEvent(const inotify_event & event, std::vect
             }
             catch (...)
             {
+                tryLogCurrentException(log, "Cannot handle the removal of the watch of a directory watcher, it is not watched anymore");
                 failWatcher(*registration);
             }
         }
@@ -403,6 +411,7 @@ void DirectoryWatchReactor::dispatchEvent(const inotify_event & event, std::vect
         }
         catch (...)
         {
+            tryLogCurrentException(log, "Cannot process an event of a directory watcher, it is not watched anymore");
             failWatcher(*registration);
             continue;
         }
@@ -413,13 +422,6 @@ void DirectoryWatchReactor::dispatchEvent(const inotify_event & event, std::vect
             touched.push_back(registration);
         }
     }
-}
-
-void DirectoryWatchReactor::failWatcher(WatcherRegistration & registration)
-{
-    tryLogCurrentException(log, "Cannot process the events of a directory watcher, it is not watched anymore");
-    registration.failed = true;
-    failed_watchers.push_back(registration.watcher);
 }
 
 void DirectoryWatchReactor::removeFailedWatchers()
@@ -443,6 +445,7 @@ void DirectoryWatchReactor::flushPairingTimeout()
         }
         catch (...)
         {
+            tryLogCurrentException(log, "Cannot handle the pairing timeout of a directory watcher, it is not watched anymore");
             failWatcher(*registration);
         }
     }
@@ -594,8 +597,7 @@ void DirectoryWatchReactor::watcherScan(WatcherRegistration & registration)
     catch (...)
     {
         tryLogCurrentException(log, "Cannot scan the directory of a directory watcher, it is not watched anymore");
-        registration.failed = true;
-        failed_watchers.push_back(registration.watcher);
+        failWatcher(registration);
     }
 }
 
@@ -653,8 +655,7 @@ void DirectoryWatchReactor::dispatch(WatcherRegistration & registration, int fd,
     {
         tryLogCurrentException(log, "Cannot process the events of a directory watcher, it is not watched anymore");
         /// Not removed here: the rest of the batch can still have events with this registration as the user data.
-        registration.failed = true;
-        failed_watchers.push_back(registration.watcher);
+        failWatcher(registration);
     }
 }
 

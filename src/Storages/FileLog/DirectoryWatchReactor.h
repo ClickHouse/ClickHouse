@@ -111,6 +111,8 @@ private:
     void processCommands();
     void addWatcher(DirectoryWatcherBase & watcher);
     void removeWatcher(DirectoryWatcherBase & watcher);
+    /// Marks the watcher as failed, so it gets no more events and is removed by `removeFailedWatchers`.
+    void failWatcher(WatcherRegistration & registration);
 
     LoggerPtr log;
 
@@ -124,6 +126,7 @@ private:
 
     /// Used only by the reactor thread.
     std::unordered_map<DirectoryWatcherBase *, std::unique_ptr<WatcherRegistration>> registrations;
+    std::vector<DirectoryWatcherBase *> failed_watchers;
 
     std::unique_ptr<ThreadFromGlobalPool> thread;
 
@@ -153,7 +156,6 @@ private:
     void dispatchEvents();
     /// Hands one event to the watchers of its watch, and adds those to `touched`.
     void dispatchEvent(const inotify_event & event, std::vector<WatcherRegistration *> & touched);
-    void failWatcher(WatcherRegistration & registration);
     void removeFailedWatchers();
     void flushPairingTimeout();
 
@@ -163,7 +165,6 @@ private:
 
     /// The registrations of the watchers of each watch of `inotify_fd`.
     std::unordered_map<int, std::vector<WatcherRegistration *>> registrations_by_wd;
-    std::vector<DirectoryWatcherBase *> failed_watchers;
 
     std::unordered_set<WatcherRegistration *> waiting_for_pairing;
     /// The events are read here and decoded at once, so one buffer serves all the watchers.
@@ -194,7 +195,6 @@ private:
 
     int kqueue_fd = -1;
 
-    std::vector<DirectoryWatcherBase *> failed_watchers;
     /// `drainReadyEvents` has taken the wake-up of the control pipe, which is not reported again.
     bool commands_pending = false;
 #endif
