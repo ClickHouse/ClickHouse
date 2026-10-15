@@ -36,3 +36,12 @@ DETACH TABLE IF EMPTY tf_resolved_detach;
 SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'tf_resolved_detach';
 ATTACH TABLE tf_resolved_detach;
 SELECT count() FROM tf_resolved_detach;
+
+-- A resolved table function whose storage keeps the data on drop is dropped whatever it reads, even
+-- when that storage does not know its row count.
+INSERT INTO FUNCTION file(currentDatabase() || '_05385.tsv', TSVWithNames, 'x UInt64') SELECT number FROM numbers(3) SETTINGS engine_file_truncate_on_insert = 1;
+CREATE TABLE tf_resolved_file (x UInt64) AS file(currentDatabase() || '_05385.tsv', TSVWithNames);
+SELECT count() FROM tf_resolved_file;
+DROP TABLE IF EMPTY tf_resolved_file;
+SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'tf_resolved_file';
+SELECT count() FROM file(currentDatabase() || '_05385.tsv', TSVWithNames, 'x UInt64');

@@ -209,6 +209,20 @@ static void loadRowCountTargets(const StoragePtr & table, const ContextPtr & con
 /// catalog themselves, so the stand-ins of those targets are loaded too. `DETACH` of any of these
 /// wrappers only removes the wrapper and leaves its inner tables (and their rows) in place, so a
 /// detached wrapper holds no rows of its own.
+/// `TRUNCATE` of an `Alias` truncates its target, which checks the grant on the target only when it
+/// runs. Check it before the emptiness probe of `IF EMPTY` looks at the target (and loads it), and
+/// probe the authorized target itself. This applies to temporary aliases as well. An `Alias` is never
+/// a `lazy_load_tables` stand-in, and its target is never an `Alias`.
+static StoragePtr getTableToProbeIfEmpty(const StoragePtr & table, ASTDropQuery::Kind kind, const ContextPtr & context)
+{
+    if (kind == ASTDropQuery::Kind::Truncate)
+    {
+        if (const auto * alias = dynamic_cast<const StorageAlias *>(table.get()))
+            return alias->getTargetTable(StorageAlias::TargetAccess{context, AccessType::TRUNCATE});
+    }
+    return table;
+}
+
 bool InterpreterDropQuery::isTableEmpty(const StoragePtr & table_or_proxy, ASTDropQuery::Kind kind) const
 {
     const StoragePtr table = resolveStorageProxyLoading(table_or_proxy);
@@ -234,14 +248,17 @@ bool InterpreterDropQuery::isTableEmpty(const StoragePtr & table_or_proxy, ASTDr
     /// holds no rows of its own. Do not resolve it: that would instantiate the external storage and
     /// start it up. `TRUNCATE` would resolve it and truncate the external storage, and the unknown
     /// row count refuses that. Detaching a resolved table function also leaves the rows it reads
-    /// untouched, but dropping it forwards the drop to the resolved storage, which may delete the
-    /// data (an Iceberg table with `iceberg_delete_data_on_drop`), so it is judged as that storage.
+    /// untouched, and so does dropping it, except that the drop is forwarded to the resolved
+    /// storage: a data lake storage may delete the data on drop (an Iceberg table with
+    /// `iceberg_delete_data_on_drop`), so dropping a resolved data lake table function is judged as
+    /// that storage. Other storages behind a table function (`url`, `postgresql`, `merge`, ...) keep
+    /// the data on drop, so dropping them only removes the table from the catalog.
     if (const auto * table_function = typeid_cast<const StorageTableFunctionProxy *>(table.get()))
     {
         const StoragePtr nested = table_function->tryGetNested();
         if (!nested)
             return kind != ASTDropQuery::Kind::Truncate;
-        if (kind == ASTDropQuery::Kind::Detach)
+        if (kind == ASTDropQuery::Kind::Detach || (kind == ASTDropQuery::Kind::Drop && !nested->isDataLake()))
             return true;
         return isTableEmpty(nested, kind);
     }
@@ -318,17 +335,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             else
                 required_access = AccessType::DROP_TABLE;
             context_->checkAccess(required_access, table_id);
-            /// `TRUNCATE` of an `Alias` truncates its target, which checks the grant on the target
-            /// only when it runs. Check it before the emptiness probe looks at the target, and probe
-            /// the authorized target itself. An `Alias` is never a `lazy_load_tables` stand-in, and
-            /// its target is never an `Alias`.
-            StoragePtr table_to_probe = table;
-            if (query.kind == ASTDropQuery::Kind::Truncate)
-            {
-                if (const auto * alias = dynamic_cast<const StorageAlias *>(table.get()))
-                    table_to_probe = alias->getTargetTable(StorageAlias::TargetAccess{context_, AccessType::TRUNCATE});
-            }
-            if (!isTableEmpty(table_to_probe, query.kind))
+            if (!isTableEmpty(getTableToProbeIfEmpty(table, query.kind, context_), query.kind))
                 throw Exception(ErrorCodes::TABLE_NOT_EMPTY,
                     "Table {} is not empty or its storage does not know how many rows it has",
                     backQuoteIfNeed(table_id.table_name));
@@ -558,7 +565,7 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name,
     if (resolved_id)
     {
         StoragePtr table = DatabaseCatalog::instance().getTable(resolved_id, getContext());
-        if (if_empty && !isTableEmpty(table, kind))
+        if (if_empty && !isTableEmpty(getTableToProbeIfEmpty(table, kind, getContext()), kind))
             throw Exception(ErrorCodes::TABLE_NOT_EMPTY,
                 "Temporary table {} is not empty or its storage does not know how many rows it has",
                 backQuoteIfNeed(table_name));
