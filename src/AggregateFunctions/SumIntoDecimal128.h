@@ -26,6 +26,16 @@ inline constexpr size_t lanes = 8;
 using Int64Lanes = Vector<Int64, lanes>;
 using UInt64Lanes = Vector<UInt64, lanes>;
 
+/// The value as `unsigned __int128`; a signed `Decimal32` or `Decimal64` is sign-extended.
+template <typename T>
+ALWAYS_INLINE inline unsigned __int128 widenToUInt128(const T & x)
+{
+    if constexpr (sizeof(T) == sizeof(unsigned __int128))
+        return __builtin_bit_cast(unsigned __int128, x);
+    else
+        return static_cast<unsigned __int128>(x.value);
+}
+
 /// Sets all bits of the lanes of the selected rows, i.e. those with `(flags[i] == 0) == add_if_zero`, and clears the others.
 /// Every row takes `words_per_row` consecutive lanes.
 /// An output parameter, because returning a vector wider than the target registers changes the ABI (`-Wpsabi`).
@@ -151,12 +161,7 @@ ALWAYS_INLINE inline Decimal128 sumIntoDecimal128(const Value * __restrict ptr, 
 #pragma clang loop vectorize(disable) unroll(disable)
     for (size_t i = vector_rows; i < count; ++i)
     {
-        UInt128Native x;
-        if constexpr (sizeof(Value) == sizeof(Int128))
-            x = __builtin_bit_cast(UInt128Native, ptr[i]);
-        else
-            x = static_cast<UInt128Native>(ptr[i].value);
-
+        UInt128Native x = widenToUInt128(ptr[i]);
         if constexpr (has_condition)
             x &= -static_cast<UInt128Native>((condition_map[i] == 0) == add_if_zero);
         result += x;
