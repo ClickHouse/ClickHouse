@@ -52,6 +52,7 @@ The agent is the `codex` CLI; unlike `copilot_review_job.py` there is no
 Set `AI_FUZZ_TRIAGE=0` to disable triage entirely.
 """
 
+import contextlib
 import hashlib
 import http.client
 import http.server
@@ -65,7 +66,7 @@ import threading
 import time
 import traceback
 import urllib.parse
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import NamedTuple
 
@@ -78,6 +79,8 @@ from ci.jobs.scripts.agent import (
 )
 from ci.praktika.info import Info
 from ci.praktika.result import Result
+from ci.praktika.s3 import S3
+from ci.praktika.settings import Settings
 
 TRIAGE_DIR = Path("./ci/tmp/ai_fuzz_triage")
 VERDICT_FILE = TRIAGE_DIR / "verdict.json"
@@ -151,6 +154,11 @@ FINGERPRINT_FIELD = "Fuzz fingerprint"
 # newest-first window (REST). The window only needs to cover the concurrent jobs
 # on this commit, because that is the only case search can be too stale to see.
 RECENT_ISSUE_WINDOW = 100
+# Parallel jobs hitting one new fingerprint must file one issue: the lookup and the
+# creation run under an S3 lock. A holder that died loses it after the lease.
+ISSUE_LOCK_LEASE_SEC = 600
+ISSUE_LOCK_WAIT_SEC = 900
+ISSUE_LOCK_POLL_SEC = 10
 # Provenance line of an issue filed by triage of a PR run. Such an issue records
 # that run's verdict, not an observation of the failure on a branch.
 FOUND_WHILE_TESTING_FIELD = "Found while testing"
@@ -950,22 +958,22 @@ def _verify_issue_marker(issue_url, fingerprint, repo_name):
 
 
 def _write_pr_diff(info, repo_name):
-    try:
-        diff = _robot_gh("pr", "diff", str(info.pr_number), "--repo", repo_name)
-    except subprocess.CalledProcessError as e:
-        # E.g. over the 300-file limit of the diff API: the paths still narrow it down.
-        print(f"WARNING: AI fuzz triage: cannot fetch the PR diff: {e.stderr}")
-        files = _robot_gh(
-            "pr",
-            "view",
-            str(info.pr_number),
-            "--repo",
-            repo_name,
-            "--json",
-            "files",
-            "--jq",
-            ".files[].path",
+    """The PR diff at the tested head, not the live PR.
+
+    A commit pushed while the job ran, e.g. one removing the faulty change, must
+    not make the failing code look untouched by the PR.
+    """
+    if not info.base_branch or not COMMIT_SHA_RE.match(info.sha or ""):
+        raise ValueError(
+            f"no base branch or tested sha: {info.base_branch!r}, {info.sha!r}"
         )
+    compare = f"repos/{repo_name}/compare/{info.base_branch}...{info.sha}"
+    try:
+        diff = _robot_gh("api", compare, "-H", "Accept: application/vnd.github.diff")
+    except subprocess.CalledProcessError as e:
+        # E.g. a diff too large for the API: the paths still narrow it down.
+        print(f"WARNING: AI fuzz triage: cannot fetch the PR diff: {e.stderr}")
+        files = _robot_gh("api", compare, "--jq", ".files[].filename")
         diff = f"(the diff could not be fetched; the PR changes these files)\n{files}"
     PR_DIFF_FILE.write_text(diff, encoding="utf-8")
 
@@ -1075,12 +1083,82 @@ def _issue_text(
     return title[:MAX_ISSUE_TITLE_CHARS], "\n".join(lines)
 
 
+def _lock_age_sec(head):
+    modified = datetime.strptime(head.LastModified, "%a, %d %b %Y %H:%M:%S GMT")
+    return (
+        datetime.now(timezone.utc) - modified.replace(tzinfo=timezone.utc)
+    ).total_seconds()
+
+
+@contextlib.contextmanager
+def _issue_lock(repo_name, fingerprint):
+    """Hold the lock on filing the issue for `fingerprint`, shared by all CI runners.
+
+    The lock is an S3 object created with `If-None-Match: *`, so one job holds it at
+    a time. One left by a holder that died is taken over with `If-Match` once it is
+    older than `ISSUE_LOCK_LEASE_SEC`.
+    """
+    if not Settings.CACHE_S3_PATH:
+        raise RuntimeError("no CACHE_S3_PATH for the issue lock")
+    path = (
+        f"{Settings.CACHE_S3_PATH}/ai_fuzz_triage/issue_locks/{repo_name}/{fingerprint}"
+    )
+    deadline = time.monotonic() + ISSUE_LOCK_WAIT_SEC
+    with tempfile.NamedTemporaryFile("w", suffix=".lock") as token:
+        token.write(f"{datetime.now(timezone.utc).isoformat()}\n")
+        token.flush()
+        while not S3.put(
+            s3_path=path, local_path=token.name, text=True, if_none_matched=True
+        ):
+            head = S3.head_object(path)
+            if (
+                head
+                and _lock_age_sec(head) > ISSUE_LOCK_LEASE_SEC
+                and S3.put(
+                    s3_path=path,
+                    local_path=token.name,
+                    text=True,
+                    if_match=head.ETag,
+                    no_strict=True,
+                )
+            ):
+                print(f"AI fuzz triage: took over the expired issue lock {path}")
+                break
+            if time.monotonic() > deadline:
+                raise TimeoutError(
+                    f"issue lock {path} still held after {ISSUE_LOCK_WAIT_SEC} s"
+                )
+            if head:  # Otherwise it was released meanwhile: retry at once.
+                time.sleep(ISSUE_LOCK_POLL_SEC)
+    acquired = time.monotonic()
+    try:
+        yield
+    finally:
+        # Past the lease another job may hold it now, so it is left to expire.
+        if time.monotonic() - acquired < ISSUE_LOCK_LEASE_SEC:
+            S3.delete(path)
+
+
 def _track_issue(repo_name, fingerprint, verdict, failures, job_kind, found_in, pr_url):
     """Find or file the issue tracking `fingerprint`; returns the verdict's issue fields.
 
-    An open issue with the `fuzz` label tracks it. A closed one is a fixed bug that
-    came back, and an unlabelled one is out of the lookup's reach, so either gets a
-    comment and a new issue that links it. `pr_url` is empty on post-merge runs.
+    The lookup and the creation run under `_issue_lock`, so two jobs that hit the
+    same new fingerprint at once file one issue, and the second one comments on it.
+    """
+    with _issue_lock(repo_name, fingerprint):
+        return _find_or_file_issue(
+            repo_name, fingerprint, verdict, failures, job_kind, found_in, pr_url
+        )
+
+
+def _find_or_file_issue(
+    repo_name, fingerprint, verdict, failures, job_kind, found_in, pr_url
+):
+    """An open issue with the `fuzz` label tracks `fingerprint`.
+
+    A closed one is a fixed bug that came back, and an unlabelled one is out of the
+    lookup's reach, so either gets a comment and a new issue that links it.
+    `pr_url` is empty on post-merge runs.
     """
     issues = _fingerprint_issues(repo_name, fingerprint)
     tracking = [
