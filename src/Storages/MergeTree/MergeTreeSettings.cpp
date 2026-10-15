@@ -2880,12 +2880,12 @@ in the server-wide `merge_tree` section on a server that also has `ReplicatedMer
 attach on the next restart. Enable it per table in the `SETTINGS` clause instead (or override it back to `0` in the
 `replicated_merge_tree` section).
 )", EXPERIMENTAL, \
-        {"26.10", false, false, "New setting to enable leader election for non-replicated MergeTree tables on shared object storage"}) \
+        {"26.11", false, false, "New setting to enable leader election for non-replicated MergeTree tables on shared object storage"}) \
     DECLARE(Seconds, leader_election_heartbeat_interval, 10, R"(
 Interval in seconds between leader election heartbeats. The leader renews its lease at this interval,
 and followers check for an expired lease at this interval. Only takes effect when `leader_election` is enabled.
 )", EXPERIMENTAL, \
-        {"26.10", 10, 10, "New setting to control leader lease renewal interval"}) \
+        {"26.11", 10, 10, "New setting to control leader lease renewal interval"}) \
     DECLARE(Seconds, leader_election_session_timeout, 30, R"(
 Session timeout in seconds for leader election. If the leader does not renew its lease within this period,
 a follower will assume that the leader is dead and try to claim leadership. Must be at least 3x
@@ -2896,7 +2896,7 @@ synchronized. A node that has just started waits a full session timeout before i
 an orphaned lease. The lease records the session timeout of the node that wrote it, and if the nodes
 sharing the table use different values, a node waits for the longer of its own and the writer's.
 )", EXPERIMENTAL, \
-        {"26.10", 30, 30, "New setting to control leader lease expiry threshold"}) \
+        {"26.11", 30, 30, "New setting to control leader lease expiry threshold"}) \
     DECLARE(Bool, materialize_projections_on_insert, true, R"(
 When enabled, INSERTs create new parts with projections.
 Otherwise, they can be created by explicit [MATERIALIZE PROJECTION](/reference/statements/alter/projection#materialize-projection)
