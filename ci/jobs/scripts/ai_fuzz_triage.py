@@ -537,8 +537,9 @@ Write a single JSON object to `{REPRO_FILE.resolve()}`:
 
 
 def _report_url(info):
+    """This job's report at the tested sha: issues keep it, so it must not follow later pushes."""
     try:
-        return info.get_report_url(latest=True)
+        return info.get_job_report_url(latest=False)
     except Exception:  # noqa: BLE001 - the link is a convenience
         return ""
 
@@ -1426,6 +1427,9 @@ def _apply_verdict(
         # The only path that turns the job green, mirroring the established
         # OOM-downgrade pattern: overall status flips, sub-results stay as-is.
         result.set_status(Result.Status.OK)
+        # The verdict rests on the PR and the issue's state, which no digest input captures:
+        # a later run with the same digest must triage again, not reuse this as a success.
+        result.ext["do_not_cache"] = True
         lines.append(
             f"AI triage: failure judged UNRELATED to this PR - tracked in "
             f"{issue_url}{issue_note}"
