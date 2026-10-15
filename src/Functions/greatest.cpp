@@ -1,6 +1,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
 #include <Core/AccurateComparison.h>
+#include <Common/NaNUtils.h>
 #include <Functions/LeastGreatestGeneric.h>
 
 
@@ -17,8 +18,10 @@ struct GreatestBaseImpl
     template <typename Result = ResultType>
     static Result apply(A a, B b)
     {
-        return static_cast<Result>(a) > static_cast<Result>(b) ?
-               static_cast<Result>(a) : static_cast<Result>(b);
+        const auto x = static_cast<Result>(a);
+        const auto y = static_cast<Result>(b);
+        /// NaN loses against any number, as in the variadic `greatest`.
+        return (x > y || isNaN(y)) ? x : y;
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -28,8 +31,9 @@ struct GreatestBaseImpl
     {
         if (!left->getType()->isIntegerTy())
         {
-            /// Follows the IEEE-754 semantics for maxNum except for the handling of signaling NaNs. This matches the behavior of libc fmax.
-            return b.CreateMaxNum(left, right);
+            /// Same as `apply`.
+            auto * left_wins = b.CreateOr(b.CreateFCmpOGT(left, right), b.CreateFCmpUNO(right, right));
+            return b.CreateSelect(left_wins, left, right);
         }
 
         auto * compare_value = is_signed ? b.CreateICmpSGT(left, right) : b.CreateICmpUGT(left, right);
