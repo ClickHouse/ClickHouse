@@ -521,6 +521,28 @@ private:
     std::function<void()> on_flush_callback;
 };
 
+/// Sets the flag when the buffer is canceled, e.g. on a write error. Unlike `isCanceled`, the flag can be read
+/// while a background formatting thread may still write into the buffer.
+template <typename Base>
+class CancellationReportingWriteBuffer : public Base
+{
+public:
+    template <typename... Args>
+    explicit CancellationReportingWriteBuffer(std::atomic<bool> & canceled_flag_, Args &&... args)
+        : Base(std::forward<Args>(args)...), canceled_flag(canceled_flag_)
+    {
+    }
+
+private:
+    void cancelImpl() noexcept override
+    {
+        canceled_flag.store(true);
+        Base::cancelImpl();
+    }
+
+    std::atomic<bool> & canceled_flag;
+};
+
 ClientBase::~ClientBase() = default;
 
 ClientBase::ClientBase(
@@ -1018,6 +1040,8 @@ try
 {
     if (!output_format)
     {
+        output_buffer_canceled = false;
+
         /// Ignore all results when fuzzing as they can be huge.
         if (query_fuzzer_runs)
         {
@@ -1051,7 +1075,8 @@ try
         const bool output_goes_to_terminal = stdout_is_a_tty || !pager.empty();
 
         /// Use the flush callback wrapper to prevent progress flickering
-        std_out_wrapper = std::make_unique<FlushCallbackWriteBuffer>(
+        std_out_wrapper = std::make_unique<CancellationReportingWriteBuffer<FlushCallbackWriteBuffer>>(
+            output_buffer_canceled,
             underlying_buf,
             [this, output_goes_to_terminal]()
             {
@@ -1124,7 +1149,9 @@ try
 
                 chassert(out_file_buf.get() == nullptr);
 
-                auto file_buf = std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, flags);
+                /// A canceled compression buffer or ForkWriteBuffer above cancels the file too.
+                auto file_buf = std::make_unique<CancellationReportingWriteBuffer<WriteBufferFromFile>>(
+                    output_buffer_canceled, out_file, DBMS_DEFAULT_BUFFER_SIZE, flags);
                 if ((flags & O_APPEND) && file_buf->size() > 0)
                     non_empty_appended_file = out_file;
 
@@ -2399,7 +2426,8 @@ void ClientBase::resetOutput()
 
     try
     {
-        if (output_format)
+        /// The format takes no more writes once a buffer it writes into is canceled, e.g. after the terminal of the embedded client is gone.
+        if (output_format && !output_buffer_canceled)
             output_format->finalize();
     }
     catch (...)
@@ -2416,8 +2444,8 @@ void ClientBase::resetOutput()
     /// first to flush remaining data (e.g. the gzip footer) into std_out_wrapper.
     if (out_file_buf)
     {
-        if (out_file_buf->isCanceled())
-            out_file_buf.reset();
+        if (out_file_buf->isCanceled() || output_buffer_canceled)
+            out_file_buf->cancel();
         else
             out_file_buf->finalize();
     }
