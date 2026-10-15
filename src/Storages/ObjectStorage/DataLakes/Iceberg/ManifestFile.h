@@ -49,6 +49,7 @@ struct ColumnInfo
     std::optional<Int64> rows_count;
     std::optional<Int64> bytes_size;
     std::optional<Int64> nulls_count;
+    std::optional<Int64> nans_count;
 };
 
 struct PartitionSpecsEntry
