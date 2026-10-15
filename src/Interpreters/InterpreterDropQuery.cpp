@@ -469,10 +469,14 @@ BlockIO InterpreterDropQuery::executeToDatabase(const ASTDropQuery & query)
 {
     DatabasePtr database;
     std::vector<UUID> tables_to_wait;
+    /// The database DDL guard taken by `executeToDatabaseImpl`. It is kept here, so that the recovery of a
+    /// refused drop below still runs under it: otherwise another `DROP DATABASE` could start between the
+    /// failure and the recovery and have its own drop state consumed or overwritten by this one's recovery.
+    DDLGuardPtr ddl_guard;
     BlockIO res;
     try
     {
-        res = executeToDatabaseImpl(query, database, tables_to_wait);
+        res = executeToDatabaseImpl(query, database, tables_to_wait, ddl_guard);
     }
     catch (...)
     {
@@ -490,6 +494,7 @@ BlockIO InterpreterDropQuery::executeToDatabase(const ASTDropQuery & query)
                 tryLogCurrentException(__PRETTY_FUNCTION__, "Failed to recover the database after a refused DROP");
             }
         }
+        ddl_guard.reset();
 
         if (query.sync)
         {
@@ -498,6 +503,7 @@ BlockIO InterpreterDropQuery::executeToDatabase(const ASTDropQuery & query)
         }
         throw;
     }
+    ddl_guard.reset();
 
     if (query.sync)
     {
@@ -529,13 +535,13 @@ static bool matchesLikePattern(const String & haystack,
     return RE2::PartialMatch(haystack, re);
 }
 
-BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, DatabasePtr & database, std::vector<UUID> & uuids_to_wait)
+BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, DatabasePtr & database, std::vector<UUID> & uuids_to_wait, DDLGuardPtr & ddl_guard)
 {
     if (query.kind != ASTDropQuery::Kind::Detach && query.kind != ASTDropQuery::Kind::Drop && query.kind != ASTDropQuery::Kind::Truncate)
         return {};
 
     const auto & database_name = query.getDatabase();
-    auto ddl_guard = DatabaseCatalog::instance().getDDLGuard(database_name, "", nullptr);
+    ddl_guard = DatabaseCatalog::instance().getDDLGuard(database_name, "", nullptr);
 
     database = tryGetDatabase(database_name, query.if_exists);
     if (!database)

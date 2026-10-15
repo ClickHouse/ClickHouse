@@ -692,6 +692,38 @@ def test_rename_and_exchange_table_are_rejected_in_coordinated_mode(started_clus
     assert int(instance2.query("SELECT count() FROM test_database.test_table")) == 200
 
 
+def test_rename_database_is_rejected_when_keeper_path_uses_database_macro(started_cluster):
+    # The nested tables record the coordination path expanded with the database name, so a coordinated database
+    # whose `materialized_postgresql_keeper_path` uses `{database}` must refuse `RENAME DATABASE`: after the rename
+    # every startup would be rejected as a change of the coordination identity.
+    pg_manager.create_postgres_table("test_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(10)"
+    )
+    pg_manager.create_materialized_db(
+        ip=cluster.postgres_ip,
+        port=cluster.postgres_port,
+        settings=[
+            "materialized_postgresql_table_engine = 'ReplicatedReplacingMergeTree'",
+            "materialized_postgresql_keeper_path = '/clickhouse/mat_pg/{shard}/{database}'",
+            "materialized_postgresql_replica_name = '{replica}'",
+            "materialized_postgresql_tables_list = 'test_table'",
+        ],
+    )
+    check_tables_are_synchronized(instance, "test_table")
+
+    error = instance.query_and_get_error(
+        "RENAME DATABASE test_database TO test_database_renamed"
+    )
+    assert "RENAME DATABASE is not supported" in error
+    assert "test_database" in instance.query("SHOW DATABASES").split()
+
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(10, 10)"
+    )
+    check_tables_are_synchronized(instance, "test_table")
+
+
 def test_coordinated_create_adopts_publication_over_mismatching_tables_list(started_cluster):
     # A coordinated CREATE with an explicit `materialized_postgresql_tables_list` that disagrees with the
     # already-existing shared publication must not honor the local list: the publication is authoritative

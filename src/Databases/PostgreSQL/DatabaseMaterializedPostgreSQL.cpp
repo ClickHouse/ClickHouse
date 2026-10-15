@@ -972,9 +972,11 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
 
             /// The table is already out of the publication and the consumer, and the WAL that PostgreSQL
             /// sent past that point no longer carries its changes, so merely re-registering the consumer
-            /// state would lose data. Re-add through `addTableToReplication`: it reloads the surviving
-            /// nested table from a fresh snapshot (the `ReplacingMergeTree` collapses the re-inserted
-            /// rows) and restores the publication and the consumer state. On success the wrapper stays
+            /// state would lose data. Re-add through `addTableToReplication`: it clears the surviving nested
+            /// table and reloads it from a fresh snapshot, and restores the publication and the consumer
+            /// state. Appending the snapshot to the surviving rows would not be enough: a row deleted in
+            /// PostgreSQL while the table was out of the publication has no tombstone, so it would be
+            /// resurrected. If the reload fails, the table stays hidden. On success the wrapper stays
             /// published and the setting is restored, so the failed `DETACH` was a no-op and can be
             /// retried.
             bool table_readded = false;
@@ -984,7 +986,7 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
                 if (!replication_handler)
                     throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
                         "The replication handler is gone");
-                replication_handler->addTableToReplication(materialized_storage, table_name);
+                replication_handler->addTableToReplication(materialized_storage, table_name, /* clear_existing_data */ true);
                 table_readded = true;
             }
             catch (...)
@@ -1126,6 +1128,19 @@ void DatabaseMaterializedPostgreSQL::dropTable(ContextPtr local_context, const S
     /// path adopt a half-dead shared tree: a ghost replica that never answers part fetches, and stale block
     /// deduplication hashes.
     auto nested_context = StorageMaterializedPostgreSQL::makeNestedTableContext(local_context);
+
+    /// Record the intent to recover from a partially applied `DROP DATABASE` durably before the first nested
+    /// table is removed. Persisting it only in `recoverAfterRefusedDrop`, after the removal, would leave a
+    /// window in which a failed write followed by a server restart loses the decision: the reconstructed
+    /// database would take the steady-state attach path over the tables the refused drop has already removed.
+    /// A failure to write the marker refuses the drop before any data is removed.
+    if (drop_in_progress && local_context->isInternalQuery()
+        && !getDisk()->existsFile(getPartialDropRecoveryMarkerPath()))
+    {
+        persistPartialDropRecoveryMarker();
+        partial_drop_marker_written_by_drop = true;
+    }
+
     try
     {
         DatabaseAtomic::dropTable(nested_context, table_name, isCoordinated() || sync);
@@ -1141,6 +1156,21 @@ void DatabaseMaterializedPostgreSQL::dropTable(ContextPtr local_context, const S
         throw;
     }
     nested_table_removed_during_drop = true;
+}
+
+
+void DatabaseMaterializedPostgreSQL::renameDatabase(ContextPtr query_context, const String & new_name)
+{
+    /// Refuse before any metadata is changed: the nested tables keep the coordination path and the replica name
+    /// expanded with the old database name, so after the rename the next startup would expand them differently
+    /// and reject every attempt as a change of the coordination identity, leaving the replica unavailable.
+    if (PostgreSQLReplicationHandler::coordinationIdentityDependsOnDatabaseName(*settings))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "RENAME DATABASE is not supported for a coordinated MaterializedPostgreSQL database whose "
+            "materialized_postgresql_keeper_path or materialized_postgresql_replica_name uses the {{database}} macro: "
+            "the coordination identity of the replica would change");
+
+    DatabaseAtomic::renameDatabase(query_context, new_name);
 }
 
 
@@ -1206,6 +1236,7 @@ void DatabaseMaterializedPostgreSQL::beforeTruncateDatabase(ContextPtr local_con
 void DatabaseMaterializedPostgreSQL::beforeDropDatabase(ContextPtr)
 {
     nested_table_removed_during_drop = false;
+    partial_drop_marker_written_by_drop = false;
     shutdown_by_drop = false;
     drop_in_progress = true;
 
@@ -1441,6 +1472,23 @@ void DatabaseMaterializedPostgreSQL::onDropDatabaseFailed(ContextPtr)
     if (shutdown_by_drop.exchange(false) && !DatabaseCatalog::instance().isShuttingDown())
         shutdown_called = false;
 
+    /// `dropTable` writes the partial-drop recovery marker before it removes the first nested table. If that
+    /// removal then failed without removing anything, the drop left every table in place, so the marker must
+    /// not force a resnapshot after the next restart. Failing to remove it is not dangerous (it only forces
+    /// an unnecessary resnapshot), so just log it.
+    if (partial_drop_marker_written_by_drop.exchange(false) && !nested_table_removed_during_drop)
+    {
+        try
+        {
+            removePartialDropRecoveryMarker();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Could not remove the partial-drop recovery marker " + getPartialDropRecoveryMarkerPath()
+                + " written by a refused DROP DATABASE that has not removed any nested table");
+        }
+    }
+
     recoverAfterRefusedDrop(/* force_resnapshot */ nested_table_removed_during_drop);
 }
 
@@ -1523,6 +1571,17 @@ bool DatabaseMaterializedPostgreSQL::isTableVisibilityGated() const
 }
 
 
+bool DatabaseMaterializedPostgreSQL::isTableHiddenFromUserAccess(const String & table_name) const
+{
+    if (isTableVisibilityGated())
+        return !isCoordinatedTableAvailable(table_name);
+
+    std::lock_guard lock(tables_mutex);
+    auto it = materialized_tables.find(table_name);
+    return it != materialized_tables.end() && !it->second->as<StorageMaterializedPostgreSQL>()->hasNested();
+}
+
+
 bool DatabaseMaterializedPostgreSQL::isCoordinatedTableAvailable(const String & table_name) const
 {
     std::lock_guard lock(tables_mutex);
@@ -1541,9 +1600,10 @@ Exception DatabaseMaterializedPostgreSQL::makeCoordinatedTableNotAvailableExcept
 {
     if (!isCoordinated())
         return Exception(ErrorCodes::UNKNOWN_TABLE,
-            "Table {}.{} is not available: the database is recovering from a partially applied DROP DATABASE and its "
-            "nested tables are not consistent until replication is started again. Failing closed instead of reading "
-            "stale data. Retry the query once replication has been restarted",
+            "Table {}.{} is not available: its nested table does not hold a consistent snapshot of the PostgreSQL table "
+            "yet (the initial synchronization or a reload is in progress, or the database is recovering from a "
+            "partially applied DROP DATABASE). Failing closed instead of reading stale or partial data. Retry the query "
+            "once the table is available",
             backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(table_name));
 
     return Exception(ErrorCodes::UNKNOWN_TABLE,
@@ -1575,18 +1635,20 @@ StoragePtr DatabaseMaterializedPostgreSQL::getTableForRead(const String & table_
             if (it != materialized_tables.end() && it->second->as<StorageMaterializedPostgreSQL>()->hasNested())
                 return it->second;
 
-            /// In coordinated mode the nested table of a replicated table exists on this replica, but it has
-            /// not caught up with the initial snapshot yet (see tryGetTable). The callers (`StorageMerge`) skip
-            /// a table for which this method returns nothing, so a read over the database would silently
-            /// return a partial result. Fail closed instead.
+            /// The nested table of a replicated table exists, but it does not hold a consistent snapshot: in
+            /// coordinated mode this replica has not caught up with the initial snapshot yet, and in any mode
+            /// the table may still be loading or be cleared for a reload (e.g. by the create-style startup that
+            /// finishes the recovery from a partially applied `DROP DATABASE`), see tryGetTable. The callers
+            /// (`StorageMerge`) skip a table for which this method returns nothing, so a read over the database
+            /// would silently return a partial result. Fail closed instead.
             /// The exception is thrown after `tables_mutex` is released, because building its message takes the
             /// base class mutex (see the lock order note on `materialized_tables`).
-            if (it == materialized_tables.end() || !isCoordinated())
+            if (it == materialized_tables.end())
             {
-                /// The table is not replicated (or its nested table is not ready yet) - it is not visible
-                /// to user-facing lookups either, see tryGetTable.
+                /// The table is not replicated - it is not visible to user-facing lookups either, see tryGetTable.
                 return StoragePtr{};
             }
+            fail_closed = true;
         }
         else if (replication_stopped)
         {

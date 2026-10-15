@@ -117,6 +117,8 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
             /* table_overrides */ nullptr);
 
     is_standalone_coordinated = replication_handler->isCoordinated();
+    coordination_identity_depends_on_database_name
+        = PostgreSQLReplicationHandler::coordinationIdentityDependsOnDatabaseName(*replication_settings);
 
     replication_handler->addStorage(remote_table_name, this);
     replication_handler->startup(/* delayed */is_attach);
@@ -328,6 +330,19 @@ void StorageMaterializedPostgreSQL::shutdown(bool is_drop)
     auto nested = tryGetNested();
     if (nested)
         nested->shutdown();
+}
+
+
+void StorageMaterializedPostgreSQL::checkTableCanBeRenamedByDatabaseRename(const String & /*new_database_name*/) const
+{
+    /// The nested table keeps the coordination path and the replica name expanded with the old database name, so
+    /// after the rename the next startup would reject every attempt as a change of the coordination identity.
+    if (coordination_identity_depends_on_database_name)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "RENAME DATABASE is not supported for a database containing the coordinated MaterializedPostgreSQL table {} "
+            "whose materialized_postgresql_keeper_path or materialized_postgresql_replica_name uses the {{database}} macro: "
+            "the coordination identity of the replica would change",
+            getStorageID().getNameForLogs());
 }
 
 
@@ -952,6 +967,15 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(ColumnsDescription(ordinary_columns_and_types));
     storage_metadata.setConstraints(constraints);
+    /// The single-table engine takes the key of the nested table from its own metadata (see above). Keep it in the
+    /// replaced metadata: until `set` attaches the nested table's metadata - in coordinated mode, only once this
+    /// replica has caught up with the initial snapshot - the refused-drop recovery may have to recreate the nested
+    /// table from this metadata, and without a key it would fail on every retry.
+    if (!is_materialized_postgresql_database)
+    {
+        storage_metadata.primary_key = metadata_snapshot->getPrimaryKey();
+        storage_metadata.sorting_key = metadata_snapshot->getSortingKey();
+    }
     setInMemoryMetadata(storage_metadata);
 
     return create_table_query;

@@ -93,6 +93,10 @@ public:
     void checkTableCanBeDetached() const override;
     void checkTableCanBeDetachedPermanently() const override;
 
+    /// A coordinated single-table engine whose coordination identity expands `{database}` cannot move to another
+    /// database (see `PostgreSQLReplicationHandler::coordinationIdentityDependsOnDatabaseName`).
+    void checkTableCanBeRenamedByDatabaseRename(const String & new_database_name) const override;
+
     /// Same reasoning for DROP TABLE (and TRUNCATE) of an individual table: dropping the local nested
     /// `ReplicatedReplacingMergeTree` on one replica does not update the shared publication or the
     /// configured tables list, so the other replicas keep consuming a publication that still contains
@@ -228,6 +232,9 @@ private:
     /// Set for a single MaterializedPostgreSQL table engine that uses the Keeper-based coordination. Cached
     /// here because `replication_handler` is reset by DROP.
     bool is_standalone_coordinated = false;
+
+    /// Single-table engine only: the coordination identity expands `{database}`, so `RENAME DATABASE` is refused.
+    bool coordination_identity_depends_on_database_name = false;
 
     std::atomic<bool> database_replication_ready = false;
 

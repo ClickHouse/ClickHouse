@@ -9,6 +9,7 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
+#include <optional>
 
 
 namespace zkutil
@@ -113,6 +114,12 @@ public:
     /// True when this handler runs in coordinated mode (materialized_postgresql_keeper_path is set).
     bool isCoordinated() const { return coordination_enabled; }
 
+    /// Whether the coordination identity (`materialized_postgresql_keeper_path` / `materialized_postgresql_replica_name`)
+    /// of a coordinated setup expands the `{database}` macro. The nested tables record the expanded identity, so
+    /// `RENAME DATABASE` must be refused for such a setup: after the rename the identity would expand differently
+    /// and every startup would be rejected as an identity change.
+    static bool coordinationIdentityDependsOnDatabaseName(const MaterializedPostgreSQLSettings & replication_settings);
+
     /// Coordinated teardown that must run BEFORE the caller deletes this replica's local nested tables (from
     /// DatabaseMaterializedPostgreSQL::beforeDropDatabase for the database engine, and from
     /// StorageMaterializedPostgreSQL::dropInnerTableIfAny for the single-table engine). It makes the fail-close
@@ -162,7 +169,10 @@ public:
 
     ASTPtr getCreateNestedTableQuery(StorageMaterializedPostgreSQL * storage, const String & table_name);
 
-    void addTableToReplication(StorageMaterializedPostgreSQL * storage, const String & postgres_table_name);
+    /// `clear_existing_data` truncates the existing nested table before the snapshot is loaded into it. It is needed
+    /// when the table is re-added after it was removed from the publication: the changes made in the meantime
+    /// (deletions in particular) never reached the consumer, and appending a snapshot cannot undo stale rows.
+    void addTableToReplication(StorageMaterializedPostgreSQL * storage, const String & postgres_table_name, bool clear_existing_data = false);
 
     void removeTableFromReplication(const String & postgres_table_name);
 
@@ -220,6 +230,13 @@ private:
     /// Coordinated mode: mark the nested tables available on this replica once it holds the complete initial
     /// snapshot (the marker exists and the local replica has caught up). Returns whether all of them are.
     bool markCaughtUpNestedTablesAvailable();
+
+    /// The generation (the creation zxid) of the `snapshot_completed` marker that the tables published by
+    /// `markCaughtUpNestedTablesAvailable` caught up with. A different generation means that the snapshot was
+    /// redone (the marker was removed and created again) since then, possibly between two polls, so the
+    /// published tables must be hidden until they catch up with the new snapshot. Only accessed from the
+    /// coordination task.
+    std::optional<int64_t> available_snapshot_generation;
 
     /// Clear the (already existing) nested tables before redoing the initial snapshot after a
     /// mid-snapshot failover. Only used when coordination is enabled. The nested tables are

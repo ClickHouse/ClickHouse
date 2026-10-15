@@ -535,8 +535,9 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
             /// The nested table resolved by UUID exists on a coordinated replica before this replica holds the
             /// complete initial snapshot, so apply the same visibility gate as the name-based lookup does instead
             /// of wrapping it unconditionally (the wrapper built below is immediately readable).
-            /// The same applies while the database recovers from a partially applied `DROP DATABASE`.
-            if (mat_pg_database->isTableVisibilityGated() && !mat_pg_database->isCoordinatedTableAvailable(table_id.getTableName()))
+            /// The same applies while the database recovers from a partially applied `DROP DATABASE`, and to a table
+            /// whose nested table is being loaded or reloaded.
+            if (mat_pg_database->isTableHiddenFromUserAccess(table_id.getTableName()))
             {
                 if (exception)
                     exception->emplace(mat_pg_database->makeCoordinatedTableNotAvailableException(table_id.getTableName()));

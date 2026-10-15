@@ -84,6 +84,10 @@ public:
         ContextPtr local_context, const String & table_name, IDatabase & to_database,
         const String & to_table_name, bool exchange, bool dictionary) override;
 
+    /// Refuses the rename of a coordinated database whose coordination identity expands `{database}`
+    /// (see `PostgreSQLReplicationHandler::coordinationIdentityDependsOnDatabaseName`).
+    void renameDatabase(ContextPtr query_context, const String & new_name) override;
+
     /// Fail-close for DROP DATABASE in coordinated mode: called before the generic DROP path removes any
     /// nested table, it aborts the drop if Keeper is unreachable, so a Keeper outage can never delete the last
     /// local copy of the data while the shared slot/publication/marker survive (a later recreate would then
@@ -136,6 +140,13 @@ public:
     /// coordinated mode, and while the database recovers from a partially applied `DROP DATABASE`
     /// (see `partial_drop_recovery_in_progress`).
     bool isTableVisibilityGated() const;
+
+    /// Whether a user-facing lookup that resolves the nested table by UUID (`DatabaseCatalog::getTableImpl`) must not
+    /// wrap it: the cases of `isTableVisibilityGated` / `isCoordinatedTableAvailable`, and also a published wrapper
+    /// whose nested table does not hold a consistent snapshot - not loaded yet, or cleared for a reload (e.g. by the
+    /// create-style startup that finishes the recovery from a partially applied `DROP DATABASE`) - which the
+    /// name-based lookup hides as well.
+    bool isTableHiddenFromUserAccess(const String & table_name) const;
 
     Exception makeCoordinatedTableNotAvailableException(const String & table_name) const;
 
@@ -198,6 +209,11 @@ private:
     /// needs a fresh snapshot only in this case; otherwise attach-style recovery preserves the still-live
     /// publication and nested tables.
     std::atomic_bool nested_table_removed_during_drop{false};
+
+    /// Set when the current `DROP DATABASE` attempt has written the partial-drop recovery marker itself, before
+    /// it removed the first nested table (see `dropTable`). A refused drop that turns out not to have removed any
+    /// table removes the marker again in `onDropDatabaseFailed`; a marker left by an earlier attempt is kept.
+    std::atomic_bool partial_drop_marker_written_by_drop{false};
 
     /// Distinguishes the two states in which `materialized_tables` is empty. After `stopReplication`
     /// (server shutdown or `DROP DATABASE`) user-facing access legitimately falls back to the nested

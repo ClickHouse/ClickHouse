@@ -784,6 +784,16 @@ void validateMaterializedPostgreSQLCoordinationSettings(
 }
 
 
+bool PostgreSQLReplicationHandler::coordinationIdentityDependsOnDatabaseName(const MaterializedPostgreSQLSettings & replication_settings)
+{
+    const String & keeper_path = replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_keeper_path].value;
+    if (keeper_path.empty())
+        return false;
+    const String & replica_name = replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_replica_name].value;
+    return keeper_path.contains("{database}") || replica_name.contains("{database}");
+}
+
+
 PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     const String & postgres_database_,
     const String & postgres_table_,
@@ -1846,7 +1856,9 @@ void PostgreSQLReplicationHandler::ensureNestedTablesExist()
         /// A refused coordinated DROP leaves this replica's local nested table shut down but still in the
         /// catalog: `InterpreterDropQuery` shuts the nested (Replicated/Shared)ReplacingMergeTree down before
         /// it removes it, so if the removal is then refused (e.g. the last-replica teardown already ran and the
-        /// nested-table drop itself failed) the shut-down replica survives. A shut-down ReplicatedMergeTree
+        /// nested-table drop itself failed) the shut-down replica survives. `DROP DATABASE` also prepares every
+        /// table for shutdown up front, so the tables it did not reach before the failure survive only prepared
+        /// for shutdown, which leaves them just as dead. A shut-down ReplicatedMergeTree
         /// cannot be restarted in place - it stays permanently read-only - so the retrying startup that recovers
         /// such a drop must drop the dead local copy and recreate it below, or it would loop forever (e.g.
         /// `truncateNestedTables` during a redo-snapshot fails with TABLE_IS_READ_ONLY). The data on disk and
@@ -1978,19 +1990,33 @@ bool PostgreSQLReplicationHandler::markCaughtUpNestedTablesAvailable()
     /// previous active worker died mid-snapshot): it is removed before the shared nested tables are truncated and
     /// reloaded. The active worker hides its own tables in `truncateNestedTables`; a standby has to re-hide its
     /// already published tables here, because the truncation replicates to it as well.
-    if (!isInitialSnapshotCompleted())
+    /// The marker can also be removed and created again between two runs of this method. Then its absence is never
+    /// observed here, so the generation of the marker is compared as well: tables published for an earlier
+    /// generation are hidden and have to catch up with the new snapshot again.
+    auto hide_available_tables = [&]
     {
         for (const auto & [table_name, materialized_storage] : materialized_storages)
         {
             if (materialized_storage->hasNested())
             {
                 materialized_storage->resetNested();
-                LOG_INFO(log, "Nested table for `{}`.`{}` is not available until the initial snapshot is redone",
+                LOG_INFO(log, "Nested table for `{}`.`{}` is not available until it catches up with the redone initial snapshot",
                          postgres_database, table_name);
             }
         }
+    };
+
+    Coordination::Stat marker_stat;
+    if (!getContext()->getZooKeeper()->exists(coordination_keeper_path + "/snapshot_completed", &marker_stat))
+    {
+        hide_available_tables();
+        available_snapshot_generation.reset();
         return false;
     }
+
+    if (available_snapshot_generation && *available_snapshot_generation != marker_stat.czxid)
+        hide_available_tables();
+    available_snapshot_generation = marker_stat.czxid;
 
     /// Bound the wait per table, so the coordination task (which also supervises the consumer) is not
     /// blocked for long; a table that has not caught up yet is retried on the next run.
@@ -2326,6 +2352,16 @@ void PostgreSQLReplicationHandler::registerReplicaThenEnsureNestedTables()
     registerReplicaInKeeper();
     try
     {
+        /// The checks above ran before the registration, so they do not pin the setup they validated: while this
+        /// replica was not registered yet, the last replica of that setup could complete its whole teardown, and
+        /// a new setup with a different source or table set could be created on the same Keeper path. The
+        /// registration itself only checks that no teardown is in progress right now. Once this replica is
+        /// registered, the setup can no longer be torn down under it, so validate the shared contracts again
+        /// before any nested table is created. A failure undoes the registration below.
+        ensureCoordinatedNamingCompatible();
+        ensureCoordinatedSourceClusterCompatible();
+        ensureCoordinatedTableSetCompatible();
+
         ensureNestedTablesExist();
     }
     catch (...)
@@ -4322,7 +4358,7 @@ template
 PostgreSQLTableStructurePtr PostgreSQLReplicationHandler::fetchTableStructure(
         pqxx::nontransaction & tx, const std::string & table_name) const;
 
-void PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPostgreSQL * materialized_storage, const String & postgres_table_name)
+void PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPostgreSQL * materialized_storage, const String & postgres_table_name, bool clear_existing_data)
 {
     /// Adding a table mutates the shared publication and reloads data through a temporary slot, and it
     /// only takes effect on the replica executing it: the other replicas would neither create the nested
@@ -4367,6 +4403,24 @@ void PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPost
             auto nested = DatabaseCatalog::instance().tryGetTable(materialized_storage->getNestedStorageID(), materialized_storage->getNestedTableContext());
             if (!nested)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Internal table was not created");
+
+            if (clear_existing_data)
+            {
+                /// Hide the table until it holds the new snapshot again (`loadFromSnapshot` publishes it), so that
+                /// user-facing reads never observe it empty or partially reloaded. If the reload fails, it stays
+                /// hidden rather than exposing incomplete data.
+                materialized_storage->resetNested();
+
+                auto truncate_context = Context::createCopy(getContext());
+                truncate_context->makeQueryContext();
+                truncate_context->setInternalQuery(true);
+                TableExclusiveLockHolder table_lock;
+                auto metadata_snapshot = nested->getInMemoryMetadataPtr(truncate_context, false);
+                nested->truncate(nullptr, metadata_snapshot, truncate_context, table_lock);
+
+                LOG_DEBUG(log, "Truncated nested table for `{}` before reloading it from a new snapshot", postgres_table_name);
+            }
+            nested.reset();
 
             postgres::Connection tmp_connection(connection_info);
             nested_storage_info = loadFromSnapshot(tmp_connection, snapshot_name, postgres_table_name, materialized_storage);
