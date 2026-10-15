@@ -39,20 +39,6 @@ namespace FailPoints
 namespace Runtime::V1
 {
 
-namespace
-{
-
-/// Identify a processor in a malformed-graph diagnostic. `getUniqID` distinguishes repeated
-/// processor classes only while `CurrentThread` is initialized; outside a query thread every
-/// processor falls back to the `_0` suffix. The address keeps the two endpoints of the broken
-/// edge distinguishable in every context, and lets the reader match them against a pipeline dump.
-String describeProcessor(const IProcessor * processor)
-{
-    return fmt::format("{} at {}", processor->getUniqID(), static_cast<const void *>(processor));
-}
-
-}
-
 ExecutingGraph::ExecutingGraph(
     std::shared_ptr<Processors> processors_, bool profile_processors_, MemoryReservation * memory_reservation_)
     : processors(std::move(processors_))
@@ -247,16 +233,19 @@ ExecutingGraph::Node & ExecutingGraph::addNode(ProcessorPtr processor)
     return addNode(std::prev(processors->end()));
 }
 
-ExecutingGraph::Edge & ExecutingGraph::addEdge(Edges & edges, Edge edge, const IProcessor * from, const IProcessor * to)
+ExecutingGraph::Edge & ExecutingGraph::addEdge(Edges & edges, Edge edge, const Node & from, const IProcessor * to)
 {
     auto it = processors_map.find(to);
     if (it == processors_map.end())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Processor {} was found as {} for processor {}, but not found in list of processors",
-            describeProcessor(to),
+            "Processor {} is connected to an {} port of processor n{} {}, but it is not in the list of processors. "
+            "See n{} in the pipeline dump",
+            to->getUniqID(),
             edge.backward ? "input" : "output",
-            describeProcessor(from));
+            from.processors_id,
+            from.processor()->getUniqID(),
+            from.processors_id);
 
     edge.to = it->second;
     auto & added_edge = edges.emplace_back(std::move(edge));
@@ -277,7 +266,7 @@ ExecutingGraph::NewEdges ExecutingGraph::addEdges(Node & node)
 
         const IProcessor * to = &input.getOutputPort().getProcessor();
         Edge edge(nullptr, true, &input, &input.getOutputPort(), &node.post_updated_input_ports);
-        auto & added_edge = addEdge(node.back_edges, std::move(edge), from, to);
+        auto & added_edge = addEdge(node.back_edges, std::move(edge), node, to);
         input.setUpdateInfo(&added_edge.update_info);
         result.back.push_back(&added_edge);
     }
@@ -290,7 +279,7 @@ ExecutingGraph::NewEdges ExecutingGraph::addEdges(Node & node)
 
         const IProcessor * to = &output.getInputPort().getProcessor();
         Edge edge(nullptr, false, &output.getInputPort(), &output, &node.post_updated_output_ports);
-        auto & added_edge = addEdge(node.direct_edges, std::move(edge), from, to);
+        auto & added_edge = addEdge(node.direct_edges, std::move(edge), node, to);
         output.setUpdateInfo(&added_edge.update_info);
         result.direct.push_back(&added_edge);
     }
