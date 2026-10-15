@@ -218,6 +218,33 @@ ORDER BY t WITH FILL STEP {rounding:UInt32}
         },
         {
             { "dashboard", "Filesystem cache" },
+            { "title", "Cache efficiency in the last efficiency window" },
+            { "query", trim(R"EOQ(
+WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
+    toDateTimeOrDefault({to:String}, '', now()) AS to
+SELECT t,
+    Active / nullIf(Active + Passive, 0) AS Efficiency,
+    LargeActive / nullIf(LargeActive + LargePassive, 0) AS LargeSegmentsEfficiency,
+    (Active + Passive) / nullIf(Active + Passive + Idle, 0) AS Touched
+FROM
+(
+    SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
+        avgIf(value, metric = 'FilesystemCacheActiveBytes') AS Active,
+        avgIf(value, metric = 'FilesystemCachePassiveBytes') AS Passive,
+        avgIf(value, metric = 'FilesystemCacheIdleBytes') AS Idle,
+        avgIf(value, metric = 'FilesystemCacheLargeSegmentsActiveBytes') AS LargeActive,
+        avgIf(value, metric = 'FilesystemCacheLargeSegmentsPassiveBytes') AS LargePassive
+    FROM merge('system', '^asynchronous_metric_log')
+    WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
+        AND metric IN ('FilesystemCacheActiveBytes', 'FilesystemCachePassiveBytes', 'FilesystemCacheIdleBytes',
+            'FilesystemCacheLargeSegmentsActiveBytes', 'FilesystemCacheLargeSegmentsPassiveBytes')
+    GROUP BY t
+)
+ORDER BY t WITH FILL STEP {rounding:UInt32}
+)EOQ") }
+        },
+        {
+            { "dashboard", "Filesystem cache" },
             { "title", "Cache bytes by file segment size" },
             { "query", trim(R"EOQ(
 WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
