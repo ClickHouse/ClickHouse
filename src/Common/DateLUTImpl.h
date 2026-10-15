@@ -2128,8 +2128,7 @@ public:
     requires std::is_same_v<DateTime, UInt32> || std::is_same_v<DateTime, Int64> || std::is_same_v<DateTime, time_t>
     NO_SANITIZE_UNDEFINED Time addDays(DateTime t, Int64 delta) const
     {
-        /// The wall-clock round trip below maps an instant in the repeated hour after a backward offset change
-        /// to its first occurrence, so a zero delta returns t as is.
+        /// The wall-clock round trip below maps an instant in a repeated hour to the hour's first occurrence.
         if (delta == 0)
             return t;
 
