@@ -115,8 +115,9 @@ struct FragmentGraph
     const FragmentExchange & getExchange(UInt32 id) const;
 };
 
-/// Builds the graph from the stages of a cut distributed plan.
-/// `distributed_plan` must outlive the graph, because the fragments point to its plans.
+/// Builds the graph from the stages of a cut distributed plan. The merge stages of runtime filters (`filter_only`) and
+/// their dependencies are not part of the graph. `distributed_plan` must outlive the graph, because the fragments point
+/// to its plans.
 FragmentGraph buildFragmentGraph(const DistributedQueryPlan & distributed_plan);
 
 /// The one-fragment graph of a plan that was not cut (no exchanges, or the planner fell back to a single node).

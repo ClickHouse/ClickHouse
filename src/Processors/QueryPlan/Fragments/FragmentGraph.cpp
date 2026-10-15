@@ -307,8 +307,15 @@ FragmentGraph buildFragmentGraph(const DistributedQueryPlan & distributed_plan)
 {
     FragmentGraph graph;
 
+    /// The graph is the data flow of the query. The merge stages of runtime filters (`filter_only`, added by
+    /// `wireRuntimeFilterExchangeTopology`) produce no query data and are not cut from the plan, so they and the
+    /// dependencies on either side of them are left out. The steps that build and apply the filters stay in the plans
+    /// of the data fragments.
     for (const auto & [stage_name, stage] : distributed_plan.stages)
     {
+        if (stage.filter_only)
+            continue;
+
         QueryFragment fragment;
         fragment.id = stage.id;
         fragment.stage_name = stage_name;
@@ -335,10 +342,16 @@ FragmentGraph buildFragmentGraph(const DistributedQueryPlan & distributed_plan)
 
     for (const auto & [consumer_stage, producers] : distributed_plan.stage_depends_on)
     {
-        UInt32 consumer_id = findStage(distributed_plan, consumer_stage).id;
+        const auto & consumer_stage_description = findStage(distributed_plan, consumer_stage);
+        if (consumer_stage_description.filter_only)
+            continue;
+        UInt32 consumer_id = consumer_stage_description.id;
         for (const auto & [producer_stage, exchange_name] : producers)
         {
-            UInt32 producer_id = findStage(distributed_plan, producer_stage).id;
+            const auto & producer_stage_description = findStage(distributed_plan, producer_stage);
+            if (producer_stage_description.filter_only)
+                continue;
+            UInt32 producer_id = producer_stage_description.id;
             const auto & description = findDescription(distributed_plan, exchange_name);
 
             FragmentExchange exchange;
