@@ -100,10 +100,12 @@ void setWindowPartition(ASTPtr function, ASTPtr partition_expr)
 /// An empty presence means the match group has no left series, so the right values pass through.
 ASTPtr maskValues(ASTPtr presence, ASTPtr values)
 {
+    auto presence_for_empty = presence->clone();
+    auto values_passthrough = values->clone();
     return makeASTFunction(
         "if",
-        makeASTFunction("empty", presence->clone()),
-        values->clone(),
+        makeASTFunction("empty", std::move(presence_for_empty)),
+        std::move(values_passthrough),
         makeASTFunction(
             "arrayMap",
             lambda2(
@@ -223,12 +225,13 @@ ASTPtr makeWindowSelect(const String & joined, bool one_match_group)
 ASTPtr outputValues()
 {
     auto masked_right = maskValues(id(ColumnNames::JoinPresence), id(rightValuesColumn));
+    auto masked_right_only = masked_right->clone();
     return makeASTFunction(
         "multiIf",
         makeASTFunction("empty", id(rightValuesColumn)),
         id(leftValuesColumn),
         makeASTFunction("empty", id(leftValuesColumn)),
-        masked_right->clone(),
+        std::move(masked_right_only),
         preferLeft(id(leftValuesColumn), std::move(masked_right)));
 }
 
