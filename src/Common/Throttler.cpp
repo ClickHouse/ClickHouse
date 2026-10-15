@@ -71,7 +71,7 @@ void Throttler::sleep(UInt64 nanoseconds)
         return;
     }
 #endif
-    /// A real (non-fiber) sleep uses no CPU: park the CPU lease to free the slot for its duration.
+    /// Park the CPU lease while sleeping
     CPULeaseParkGuard park_guard;
     sleepForNanoseconds(nanoseconds);
 }

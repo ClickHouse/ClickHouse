@@ -257,7 +257,7 @@ bool AsynchronousBoundedReadBuffer::nextImpl()
     if (prefetch_future.valid())
     {
         {
-            /// Non-CPU wait on the async prefetch: park the CPU lease to free the slot.
+            /// Park the CPU lease while waiting for the prefetch
             CPULeaseParkGuard cpu_park;
             ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::AsynchronousRemoteReadWaitMicroseconds);
             CurrentMetrics::Increment metric_increment{CurrentMetrics::AsynchronousReadWait};
@@ -284,7 +284,7 @@ bool AsynchronousBoundedReadBuffer::nextImpl()
             memory.resize(buffer_size);
 
         {
-            /// Synchronous remote read (non-CPU wait): park the CPU lease.
+            /// Park the CPU lease during the remote read
             CPULeaseParkGuard cpu_park;
             ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::SynchronousRemoteReadWaitMicroseconds);
             result = readSync(memory.data(), buffer_size);

@@ -198,16 +198,14 @@ bool CPULeaseAllocation::RequestChain::cancel(std::unique_lock<std::mutex> & loc
         bool canceled = queue->cancelRequest(&*head);
         if (!canceled) // Request is currently processed by the scheduler thread, we have to wait
         {
-            // Multiple threads may wait here concurrently (parking workers), so wait for a detach
-            // generation change, not the reusable `enqueued` flag, so scheduled() can wake them all.
+            // Several parking threads can wait here, so wait for a new generation rather than `enqueued`
             const UInt64 gen = cancel_generation;
             cancel_cv.wait(lock, [this, gen] { return cancel_generation != gen; });
         }
         else
         {
             enqueued = false;
-            // Give back the master-slot bit that enqueue() consumed (mirrors finish()); otherwise
-            // the replacement request for a canceled master renewal would be sent to the worker queue.
+            // Return the master-slot bit taken by `enqueue`, as `finish` does
             if (head->is_master_slot)
                 request_master_slot = true;
         }
@@ -221,8 +219,7 @@ void CPULeaseAllocation::RequestChain::scheduled()
     // It is either executed (granted) or failed, but it is not enqueued anymore
     enqueued = false;
 
-    // Detach: bump the generation and wake all cancel() waiters. notify_one() + a single flag would
-    // strand all but one concurrent waiter (lost completion -> hung query).
+    // Wake all `cancel` waiters
     ++cancel_generation;
     cancel_cv.notify_all();
 }
@@ -230,9 +227,6 @@ void CPULeaseAllocation::RequestChain::scheduled()
 CPULeaseAllocation::CPULeaseAllocation(SlotCount max_threads_, ResourceLink master_link_, ResourceLink worker_link_, CPULeaseSettings settings_, SlotCount initial_max_slots_)
     : max_threads(max_threads_)
     , settings(std::move(settings_))
-    // Parking's give-back releases one scalar slot (requests.finish()) without attributing it to the
-    // master vs worker resource, so it is correct only when both share one resource (one semaphore);
-    // supported only when master_link == worker_link, and a no-op otherwise.
     , parking_supported(master_link_ && worker_link_ && master_link_ == worker_link_)
     , log(getLogger("CPULeaseAllocation"))
     , threads(max_threads)
@@ -307,7 +301,7 @@ void CPULeaseAllocation::free()
     std::unique_lock lock{mutex};
     if (exception)
         throw Exception(ErrorCodes::RESOURCE_ACCESS_DENIED, "CPU Resource request failed: {}", getExceptionMessage(exception, /* with_stacktrace = */ false));
-    // granted > 0 implies a free slot_id (see `granted`); upscale() enforces this and fails safe.
+    // granted > 0 implies a free slot_id (see `granted`)
     if (granted > 0)
         return acquireImpl(lock);
     return {};
@@ -348,8 +342,6 @@ size_t CPULeaseAllocation::upscale()
             return thread_num;
         }
     }
-    // Unreachable: granted > 0 guarantees a free slot (see `granted`). Fail safe instead of returning
-    // an out-of-range slot_id, which would index the executor's task arrays out of bounds.
     throw Exception(ErrorCodes::LOGICAL_ERROR, "CPULeaseAllocation::upscale(): no free slot while granted > 0 (accounting invariant violated)");
 }
 
@@ -414,8 +406,7 @@ void CPULeaseAllocation::resetPreempted(size_t thread_num)
 
 void CPULeaseAllocation::resumePreempted()
 {
-    // A parked thread keeps its leased slot but uses no CPU, so `granted + parked_count`
-    // (that is `allocated - running`) counts the allocated slots that no running thread uses.
+    // `granted + parked_count` equals `allocated - running`: slots not used by a running thread
     while (granted + static_cast<Int64>(threads.parked_count) > 0)
     {
         // We are trying to wake inactive thread with lowest thread number to increase utilization of lower threads
@@ -428,10 +419,7 @@ void CPULeaseAllocation::resumePreempted()
 
 void CPULeaseAllocation::setParked(size_t thread_num)
 {
-    // Move a running thread to parked (a non-CPU wait: I/O or idle). Lighter than setPreempted (no
-    // clock read, no waitForGrant), and it must NOT touch `granted`/`acquirable`: the parked thread
-    // keeps its leased slot, so the `granted` invariant holds; parkLease's give-back (requests.finish)
-    // is what frees a quantum for other leases.
+    // Unlike `setPreempted`, keeps `granted`: the parked thread still holds its leased slot
     chassert(threads.isRunning(thread_num));
     threads.parked.set(thread_num);
     ++threads.parked_count;
@@ -442,9 +430,7 @@ void CPULeaseAllocation::setParked(size_t thread_num)
 
 void CPULeaseAllocation::resetParked(size_t thread_num)
 {
-    // Symmetric with setParked: the resuming thread already holds its leased slot, so unparking must
-    // NOT touch `granted` (preserves the invariant). unparkLease re-requests the quantum the give-back
-    // released; until it is granted the thread runs on a borrow (granted < 0), reconciled by renew().
+    // Keeps `granted`, as `setParked` does
     chassert(threads.parked[thread_num]);
     threads.parked.reset(thread_num);
     --threads.parked_count;
@@ -457,13 +443,10 @@ bool CPULeaseAllocation::parkLease(Lease & lease)
 {
     std::unique_lock lock{mutex};
 
-    // Shutting down: free() has already finished all requests and the thread will stop at its next
-    // renew(). Park is a no-op during teardown; the caller must not unpark (park returns false).
+    // `free` has already finished all requests; the thread stops at its next `renew`
     if (shutdown)
         return false;
 
-    // Enforce the parking mode at the source, not only at the executor's publication gate (see
-    // parking_supported): a direct park() caller with parking off is a no-op (returns false, no unpark).
     if (!settings.parking_enabled || !parking_supported)
         return false;
 
@@ -474,10 +457,7 @@ bool CPULeaseAllocation::parkLease(Lease & lease)
 
     setParked(thread_num);
 
-    // Parking dropped this query's slot demand by one. If a resource request is still pending for a
-    // slot we no longer need (we already hold at least the reduced demand), cancel it -- an
-    // idle-bound thread should not keep asking for a slot. A concurrent grant may race the cancel;
-    // the give-back loop below then reclaims any slot that lands as a result.
+    // We already have one free slot (the parked thread's), cancel the pending request.
     if (requests.hasEnqueued() && allocated >= effectiveMaxSlots())
     {
         if (requests.cancel(lock)) // removed before the scheduler processed it -> drop schedule()'s enqueue
@@ -487,19 +467,8 @@ bool CPULeaseAllocation::parkLease(Lease & lease)
         }
     }
 
-    // Active clockless give-back: parking dropped this query's slot demand by one
-    // (effectiveMaxSlots() shrank), so if we still hold more quanta than that, finish one now to
-    // free its scheduler semaphore unit immediately for other queries -- no clock read, no waiting
-    // ~10 ms for another thread's consume(). A parker that was only borrowing holds no spare quantum
-    // (allocated already <= cap) and skips this. effectiveMaxSlots() is clamped at 0, so the first
-    // condition already implies allocated > 0.
-    // TODO(serxa): requested_ns only grows (in schedule()); the slot releases in this function do
-    // not retract it. The cancel above unwinds schedule()'s enqueue but leaves its `requested_ns +=
-    // cost`, and finish() below frees the oldest granted quantum without lowering requested_ns or
-    // the surviving request's max_consumed watermark. So a park -- especially a large downscale of
-    // many threads at once -- can leave the surviving thread with an inflated watermark, delaying
-    // its next renew() preemption by up to (parked count) * quantum. Freed slots are accounted
-    // correctly and the skew is one-time and self-correcting, so it is left as a known limitation.
+    // Return surplus quanta to the scheduler now instead of waiting for consume() of another thread.
+    // TODO(serxa): requested_ns is not lowered here, so the next preemption is delayed by up to one quantum per parked thread.
     while (allocated > effectiveMaxSlots())
     {
         --allocated;
@@ -509,12 +478,10 @@ bool CPULeaseAllocation::parkLease(Lease & lease)
         requests.finish();
     }
 
-    // The parked thread no longer uses its slot, so a preempted thread can run on it.
+    // A preempted thread can run on the parked thread's slot
     resumePreempted();
 
-    // Parking is purely scheduler-side: no executor/task-layer callback (unlike preemption's
-    // on_preempt). The parked thread keeps its task and executor slot; the freed scheduler unit is
-    // handed to a waiter by the scheduler, so total_slots/finish-detection are unaffected.
+    // Unlike preemption, there is no `on_preempt` callback: the parked thread keeps its task
     if (settings.trace_cpu_scheduling)
     {
         OpenTelemetry::SpanHolder park_span("CPU_LEASE_PARK");
@@ -539,7 +506,6 @@ void CPULeaseAllocation::unparkLease(Lease & lease)
 
     resetParked(thread_num);
 
-    // Trace unpark (matches the preceding CPU_LEASE_PARK span).
     if (settings.trace_cpu_scheduling)
     {
         OpenTelemetry::SpanHolder unpark_span("CPU_LEASE_UNPARK");
@@ -551,8 +517,7 @@ void CPULeaseAllocation::unparkLease(Lease & lease)
         unpark_span.addAttribute("parked", threads.parked_count);
     }
 
-    // Demand rose by one (effectiveMaxSlots() grew): kick one re-request so the borrowed slot is
-    // backed by a real quantum again (unless shutting down); the grant chain fills the rest.
+    // Re-request the quantum that the park gave back
     if (!shutdown && allocated < effectiveMaxSlots() && !requests.hasEnqueued())
     {
         try
@@ -562,13 +527,8 @@ void CPULeaseAllocation::unparkLease(Lease & lease)
         }
         catch (...)
         {
-            // unpark() runs from CPULeaseParkGuard's destructor and must not throw. Record the
-            // failure -- SERVER_OVERLOADED if the workload queue is full, or INVALID_SCHEDULER_NODE
-            // during queue teardown -- so the thread's next renew() surfaces it as a normal query
-            // error instead of hiding it and running on an unbacked borrow. schedule() threw before
-            // the request was enqueued, so failed() will never fire; wake any thread already blocked
-            // in waitForGrant() (the master path waits with no timeout and only re-checks `exception`
-            // on notification) so it observes the failure and stops instead of hanging.
+            // `unpark` runs in a destructor and must not throw. Keep the error for the next `renew`, and wake
+            // threads in `waitForGrant`: nothing was enqueued, so `failed` will not be called.
             if (!exception)
                 exception = std::current_exception();
             for (auto & cv : threads.wake)
@@ -682,9 +642,7 @@ bool CPULeaseAllocation::renew(Lease & lease)
 
     // Check if we need to decrease number of running threads (i.e. `acquired`).
     // We want number of `acquired` slots to be less than number of `allocated` slots.
-    // Difference `allocated - acquired` equals `granted`. Parked threads are still leased but not
-    // running, so add `parked_count` back to measure the running overcommit (`allocated - running`)
-    // rather than counting the parked debt. But we allow the result `== -1` for two reasons:
+    // `granted + parked_count` equals `allocated - running`. But we allow the result `== -1` for two reasons:
     //  1. To avoid preemption of master thread just after start.
     //     `acquire()` provides acquired slot "in credit" before it's granted to avoid delay.
     //  2. To avoid preemption of the last thread and allow 100% utilization with one "background" resource request.

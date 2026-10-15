@@ -69,13 +69,9 @@ struct WorkloadResources
     MemoryReservation * reservation;
     MemoryTracker * tracker;
 
-    // CurrentCPULease publication: this thread's lease is published as the current CPU lease for
-    // the lifetime of this object, so blocking I/O deep in a processor's work() and the executor's
-    // idle wait can park it via CPULeaseParkGuard. `prev_cpu_lease` restores any outer publication
-    // (a nested pipeline executor on the same thread); `publishes_lease` marks the single instance
-    // that owns the publication (transferred by the move constructor so the moved-from is inert).
+    // The previously published CPU lease, restored on destruction
     ISlotLease * prev_cpu_lease = nullptr;
-    bool publishes_lease = false;
+    bool publishes_lease = false; // moved to the new instance by the move constructor
 
     WorkloadResources(IAcquiredSlot * cpu_slot, const QueryStatusPtr & status)
         : lease(dynamic_cast<ISlotLease*>(cpu_slot))
@@ -88,14 +84,8 @@ struct WorkloadResources
             last_renew_ns = clock_gettime_ns();
         }
 
-        // Publish this executor's own lease as the current CPU lease so the park guards deep in
-        // work() and the idle wait find it. When there is no own lease (or parking is disabled),
-        // mask any lease published by an enclosing pipeline executor on this thread (a nested
-        // Pulling/PushingPipelineExecutor) with nullptr and restore it on destruction, so those
-        // guards do not park the outer lease. The masking cannot be gated on having a lease: a
-        // nested executor may have none (allocateCPU() can fall back to a non-lease allocation)
-        // while an outer lease is still published. With nothing published and no own lease, the
-        // thread-local is left untouched so a server with the feature off pays nothing.
+        // Publish own lease, or hide the outer executor's lease from a nested executor
+        // that does not park (it may have no lease at all)
         prev_cpu_lease = getCurrentCPULease();
         if (lease && lease->isParkingEnabled())
         {

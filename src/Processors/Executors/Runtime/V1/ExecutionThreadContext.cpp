@@ -60,15 +60,14 @@ void ExecutionThreadContext::wait(std::atomic_bool & finished)
 {
     std::unique_lock lock(mutex);
 
-    /// If a wake already arrived (or execution finished) we are not going to block, so we must not
-    /// park the CPU lease: parking and immediately unparking would churn the slot without sleeping.
+    /// Avoid excessive CPU lease parking
     if (finished || wake_flag)
     {
         wake_flag = false;
         return;
     }
 
-    /// About to block: park the CPU lease (context mutex released) so a sleeping worker frees its slot.
+    /// Park the CPU lease while sleeping, without holding the mutex
     lock.unlock();
     CPULeaseParkGuard park_guard;
     lock.lock();

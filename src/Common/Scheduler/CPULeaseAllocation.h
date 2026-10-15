@@ -47,9 +47,7 @@ struct CPULeaseSettings
     /// For debugging purposes, not used in production
     String workload;
 
-    /// Whether to park the lease during non-CPU waits (I/O or idle), from the `cpu_slot_parking`
-    /// server setting. When false the executor never publishes the lease as the current CPU
-    /// lease, so park/unpark are never invoked.
+    /// Park the lease during non-CPU waits (`cpu_slot_parking` server setting)
     bool parking_enabled = true;
 
     /// Enable OpenTelemetry tracing for CPU scheduling
@@ -214,23 +212,15 @@ private:
     /// Resume preempted threads while some allocated slot is not used by a running thread.
     void resumePreempted();
 
-    /// Park/unpark a thread that voluntarily stops using CPU for a non-CPU wait (I/O or idle).
-    /// `parkLease` moves the thread running -> parked (via `setParked`, mirroring `setPreempted`
-    /// but lighter: no clock read) and, since a parked thread lowers the query's slot demand,
-    /// actively gives one held quantum back to the scheduler so its semaphore unit frees at once.
-    /// Returns false (a no-op) if shutting down. `unparkLease` restores the thread (via
-    /// `resetParked`, borrowing a slot, never blocking) and kicks a re-request.
+    /// Park/unpark a thread for a non-CPU wait (I/O or idle). `parkLease` returns false if it did not park.
     bool parkLease(Lease & lease);
     void unparkLease(Lease & lease);
 
-    /// Parked thread set management (mirrors setPreempted/resetPreempted). `setParked` moves a
-    /// running thread to parked; `resetParked` borrows a slot back to make it running again.
+    /// Parked thread set management (mirrors setPreempted/resetPreempted)
     void setParked(size_t thread_num);
     void resetParked(size_t thread_num);
 
-    /// Max slots we should currently request from the scheduler: the pipeline ceiling
-    /// `current_max_slots` minus the number of parked threads (whose demand is temporarily gone).
-    /// Clamped at 0 (SlotCount is unsigned; `parked_count` can transiently exceed the ceiling).
+    /// Slots to request: `current_max_slots` minus parked threads, clamped at 0
     SlotCount effectiveMaxSlots() const
     {
         return threads.parked_count >= current_max_slots ? 0 : current_max_slots - threads.parked_count;
@@ -268,9 +258,8 @@ private:
     /// Configuration
     const SlotCount max_threads; /// Max number of threads (and allocated slots)
     const CPULeaseSettings settings;
-    /// Parking's give-back releases one scalar quantum from the shared queue, which is only correct
-    /// when the master and worker threads use the same resource. False (parking disabled, see
-    /// isParkingEnabled()) in any other configuration.
+    /// Parking gives back the oldest request, which may be a master or a worker one,
+    /// so it requires the master and worker threads to use the same resource
     const bool parking_supported;
     LoggerPtr log;
 
@@ -316,9 +305,7 @@ private:
         /// A thread is "running" (holds a slot and is on CPU) iff leased and neither preempted nor parked.
         bool isRunning(size_t thread_num) const { return leased[thread_num] && !preempted[thread_num] && !parked[thread_num]; }
 
-        /// Maintain running_count/last_running as a thread starts or stops running. The caller updates
-        /// the leased/preempted/parked bits first, so isRunning() already reflects the new state
-        /// (exitRunning rescans backwards for the new highest running thread).
+        /// Update running_count/last_running after the leased/preempted/parked bits are set
         void enterRunning(size_t thread_num)
         {
             if (++running_count == 1)
@@ -385,9 +372,7 @@ private:
         void finish();
         void granted();
         bool enqueue(ResourceCost cost, ResourceCost requested_ns_);
-        /// Returns true iff the pending request was removed before the scheduler processed it
-        /// (so the caller must unwind schedule()'s bookkeeping); false if nothing was enqueued or
-        /// the scheduler granted/failed it first (in which case that path already unwound it).
+        /// Returns true if the pending request was removed before the scheduler processed it
         bool cancel(std::unique_lock<std::mutex> & lock);
         void scheduled();
         ResourceCost getMaxConsumed() const { return tail->max_consumed; }
@@ -406,8 +391,7 @@ private:
         bool enqueued = false; /// True if the next request is already enqueued to the scheduler
         bool request_master_slot = true; /// The next request should use (true) master_link or (false) worker_link
 
-        // Cancellation of an enqueued request. Multiple threads can wait here at once (parking workers
-        // all cancel), so a detach is signalled by bumping this generation rather than a single flag.
+        // Bumped on every detach; several parking threads may wait in `cancel` at once
         std::condition_variable cancel_cv;
         UInt64 cancel_generation = 0;
     } requests;

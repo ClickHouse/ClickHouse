@@ -670,7 +670,7 @@ CachedOnDiskReadBufferFromFile::createReadFromFileSegmentState(
                 }
 
                 {
-                    /// Non-CPU wait for a concurrent download: park the CPU lease.
+                    /// Park the CPU lease while waiting for a concurrent download
                     CPULeaseParkGuard cpu_park;
                     download_state = file_segment.wait(
                         offset, info_.cache_settings.wait_for_concurrent_download_timeout_milliseconds);
@@ -1532,8 +1532,7 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
     const auto & current_read_range = file_segment.range();
     chassert(current_read_range.contains(offset));
 
-    /// Park the CPU lease for the blocking read (predownload + cache-file/remote fetch) at every
-    /// caller (nextImplStep, readBigAt); a cache hit parks only briefly.
+    /// Park the CPU lease during the read; a cache hit parks only briefly
     CPULeaseParkGuard cpu_park;
 
     size_t size = 0;
