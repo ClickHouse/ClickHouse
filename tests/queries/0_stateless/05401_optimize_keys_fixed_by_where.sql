@@ -30,12 +30,16 @@ SELECT tenant, count() FROM t WHERE tenant = 'z' GROUP BY tenant;
 -- Aggregation by constant keys would return a row here, so the key is kept.
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT tenant, count() FROM t WHERE tenant = 'z' GROUP BY tenant SETTINGS empty_result_for_aggregation_by_constant_keys_on_empty_set = 0;
 SELECT tenant, count() FROM t WHERE tenant = 'z' GROUP BY tenant SETTINGS empty_result_for_aggregation_by_constant_keys_on_empty_set = 0;
+-- Also when the other keys are constants.
+SELECT tenant, count() FROM t WHERE tenant = 'z' GROUP BY tenant, 'c' SETTINGS empty_result_for_aggregation_by_constant_keys_on_empty_set = 0;
 
 -- The constant takes the type of the key.
 DROP TABLE IF EXISTS types;
 CREATE TABLE types (lc LowCardinality(Nullable(String)), dt DateTime('UTC')) ENGINE = Memory;
 INSERT INTO types VALUES ('a', '2024-01-01 00:00:00'), ('b', '2024-01-02 00:00:00');
 SELECT lc, dt, toTypeName(lc), toTypeName(dt), count() FROM types WHERE lc = 'a' AND dt = '2024-01-01 00:00:00' GROUP BY lc, dt;
+-- A string is parsed with the format settings of the comparison.
+SELECT dt, count() FROM types WHERE dt = '20240101' GROUP BY dt SETTINGS date_time_input_format = 'best_effort';
 
 -- Different floating-point values compare equal (`-0.0 = 0.0`), so the key is kept.
 DROP TABLE IF EXISTS floats;

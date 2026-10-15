@@ -13,6 +13,7 @@
 #include <Analyzer/WindowNode.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <Formats/FormatFactory.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context.h>
@@ -117,7 +118,7 @@ bool isDeterministicExpression(const QueryTreeNodePtr & expression)
 }
 
 /// Collects the expressions that the conjuncts `expression = constant` of the condition fix.
-void collectFixedExpressions(const QueryTreeNodePtr & condition, FixedExpressions & fixed_expressions)
+void collectFixedExpressions(const QueryTreeNodePtr & condition, const FormatSettings & format_settings, FixedExpressions & fixed_expressions)
 {
     QueryTreeNodes conjuncts{condition};
     while (!conjuncts.empty())
@@ -154,8 +155,9 @@ void collectFixedExpressions(const QueryTreeNodePtr & condition, FixedExpression
             || !isDeterministicExpression(expression))
             continue;
 
-        /// The replacement has the type of the expression, so the types of the query result do not change.
-        Field value = tryConvertFieldToTypeExact(constant->getValue(), *expression_type, constant_type.get());
+        /// The replacement has the type of the expression, so the types of the query result do not change. A string is
+        /// parsed with the format settings `equals` uses, as `date_time_input_format = 'best_effort'` changes its value.
+        Field value = tryConvertFieldToTypeExact(constant->getValue(), *expression_type, constant_type.get(), format_settings);
         if (value.isNull())
             continue;
 
@@ -224,7 +226,7 @@ public:
                 return;
 
         FixedExpressions fixed_expressions;
-        collectFixedExpressions(query->getWhere(), fixed_expressions);
+        collectFixedExpressions(query->getWhere(), getFormatSettings(getContext()), fixed_expressions);
         if (fixed_expressions.empty())
             return;
 
@@ -272,12 +274,13 @@ private:
     void optimizeGroupBy(QueryNode & query, const FixedExpressions & fixed_expressions)
     {
         auto & keys = query.getGroupBy().getNodes();
-        size_t fixed_keys = std::ranges::count_if(keys, [&](const QueryTreeNodePtr & key) { return fixed_expressions.find(key) != nullptr; });
-        if (fixed_keys == 0)
+        auto is_fixed = [&](const QueryTreeNodePtr & key) { return fixed_expressions.find(key) != nullptr; };
+        if (std::ranges::none_of(keys, is_fixed))
             return;
 
         /// Without the setting, aggregation by constant keys returns a row for empty input, unlike the query.
-        if (fixed_keys == keys.size() && !getSettings()[Setting::empty_result_for_aggregation_by_constant_keys_on_empty_set])
+        if (!getSettings()[Setting::empty_result_for_aggregation_by_constant_keys_on_empty_set]
+            && std::ranges::all_of(keys, [&](const QueryTreeNodePtr & key) { return is_fixed(key) || key->getNodeType() == QueryTreeNodeType::CONSTANT; }))
             return;
 
         QueryTreeNodePtr * after_aggregation[] = {
