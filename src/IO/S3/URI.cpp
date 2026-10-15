@@ -229,13 +229,13 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax, bool keep_pre
     validateKey(key, uri);
 }
 
-void URI::checkRemoteHostFilter(const RemoteHostFilter & filter) const
+bool URI::checkRemoteHostFilter(const RemoteHostFilter & filter, bool throw_on_error) const
 {
     Poco::URI endpoint_uri(endpoint);
     if (filter.isBucketAllowed(endpoint_uri.getHost(), endpoint_uri.getPort(), bucket))
-        return;
+        return true;
 
-    filter.checkURL(uri);
+    return filter.checkURL(uri, throw_on_error);
 }
 
 void URI::addRegionToURI(const std::string &region)

@@ -735,8 +735,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// restart or `UNDROP TABLE`), security checks inside `getDiskConfigurationFromAST` are
         /// intentionally skipped because the disk configuration was already validated when the
         /// table was originally created.
-        /// User-initiated `ATTACH TABLE` queries use `LoadingStrictnessLevel::ATTACH` and must
-        /// still be subject to these checks.
+        /// User-initiated `ATTACH TABLE` queries, with a definition or in the short form, use
+        /// `LoadingStrictnessLevel::ATTACH` and must still be subject to these checks.
         storage_settings->loadFromQuery(*args.storage_def, args.getLocalContext(), isLoadingFromExistingMetadata(args.mode));
 
         /// What this query changes from the settings the server has in effect, which already include the

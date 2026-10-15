@@ -46,6 +46,10 @@ public:
         /// True only when the server replays a definition it stored itself, during startup metadata loading.
         /// A user statement never sets it, not even one a wrapper such as `PARALLEL WITH` runs internally.
         bool is_metadata_replay = false;
+
+        /// The server replays a definition it stored itself: startup metadata loading (`is_metadata_replay`,
+        /// which runs with mode `ATTACH`), `FORCE_ATTACH` or `FORCE_RESTORE`. Not a user `ATTACH DATABASE`.
+        bool isLoadingFromExistingMetadata() const;
     };
 
     struct EngineFeatures
