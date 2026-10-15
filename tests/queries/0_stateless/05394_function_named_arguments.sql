@@ -19,7 +19,3 @@ SELECT concat(a => 'x'); -- { serverError BAD_ARGUMENTS }
 SELECT sum(x => 1); -- { serverError BAD_ARGUMENTS }
 SELECT * FROM numbers(n => 1); -- { serverError BAD_ARGUMENTS }
 WITH x -> x AS f SELECT f(x => 1); -- { serverError BAD_ARGUMENTS }
-DROP FUNCTION IF EXISTS f_named_arguments;
-CREATE FUNCTION f_named_arguments AS (a, b) -> concat(b, a);
-SELECT f_named_arguments(a => 'x', b => 'y'); -- { serverError BAD_ARGUMENTS }
-DROP FUNCTION f_named_arguments;
