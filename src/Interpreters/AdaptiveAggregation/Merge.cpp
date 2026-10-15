@@ -1026,9 +1026,12 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
         /// Merges the source cells and the records of the unit that `filter` takes into the bucket's table: the records
         /// of the spill streams, then those in memory. A thread writes its staged records to the spill streams in the
         /// order it staged them and keeps only its latest ones in memory, so this order adds every thread's records to
-        /// the states in the order the thread staged them, which order-sensitive functions such as `deltaSumTimestamp`
-        /// rely on. The cells go first: a key a source holds is adopted with its state, so the records of that key
-        /// update the adopted state instead of creating one. Returns how many records `filter` skipped.
+        /// the states in the order the thread staged them, as the aggregation without staging adds each thread's rows:
+        /// `groupArray` lists the values that a thread staged for a key in the order of that thread's rows, unless the
+        /// thread thawed and took the key into its table. A function that needs the rows of each state in order does
+        /// not take the adaptive path at all (see `AggregateFunctionProperties::requires_ordered_rows_per_state`). The
+        /// cells go first: a key a source holds is adopted with its state, so the records of that key update the
+        /// adopted state instead of creating one. Returns how many records `filter` skipped.
         const auto merge_unit = [&](const auto & filter)
         {
             adoptSourceCells<Method>(table, cells, filter, task);

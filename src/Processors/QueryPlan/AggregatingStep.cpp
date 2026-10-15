@@ -2,6 +2,7 @@
 #include <cstddef>
 #include <memory>
 #include <unordered_set>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
@@ -416,6 +417,17 @@ const char * AggregatingStep::adaptiveAggregatorRejectionReason(const QueryPipel
 
     if (params.keys_size < 1)
         return "the aggregation has no keys";
+
+    /// The merge adds the staged rows of every thread to the same states, and a thawed table holds rows newer than the
+    /// records its thread staged before, so a state does not receive its rows in order. The factory gives a combinator
+    /// the properties of its nested function.
+    for (const auto & aggregate : params.aggregates)
+    {
+        const auto properties
+            = AggregateFunctionFactory::instance().tryGetProperties(aggregate.function->getName(), NullsAction::EMPTY);
+        if (properties && properties->requires_ordered_rows_per_state)
+            return "an aggregate function needs the rows of each state in order";
+    }
 
     if (!sort_description_for_merging.empty())
         return "the aggregation is in order";
