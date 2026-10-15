@@ -62,7 +62,7 @@ run_and_check "SELECT * FROM url('/other/file.csv', CSV, 'c String') SETTINGS ur
 run_and_check "SELECT * FROM url('data.csv', CSV, 'c String') SETTINGS url_base = 'http://base.invalid', $FAST" 'http://base.invalid/data.csv'
 
 # Query-only relative reference: ?x=1 with base http://base.invalid/dir/file.csv → http://base.invalid/dir/file.csv?x=1
-run_and_check "SELECT * FROM url('?x=1', CSV, 'c String') SETTINGS url_base = 'http://base.invalid/dir/file.csv', $FAST" 'http://base.invalid/dir/file.csv?x=1'
+run_and_check "SELECT * FROM url('?x=1', CSV, 'c String') SETTINGS url_base = 'http://base.invalid/dir/file.csv', $FAST" 'http://base.invalid/dir/file.csv?[HIDDEN]'
 
 # Fragment-only relative reference: #frag with base http://base.invalid/dir/file.csv.
 # The HTTP buffer strips the fragment before logging the URL, so we look for the URL without the fragment.
@@ -70,10 +70,10 @@ run_and_check "SELECT * FROM url('#frag', CSV, 'c String') SETTINGS url_base = '
 
 # Fragment-only reference with base that has a query string: query must be preserved.
 # The fragment is stripped before logging, so we expect the URL with query but without fragment.
-run_and_check "SELECT * FROM url('#frag', CSV, 'c String') SETTINGS url_base = 'http://base.invalid/dir/file.csv?token=abc', $FAST" 'http://base.invalid/dir/file.csv?token=abc'
+run_and_check "SELECT * FROM url('#frag', CSV, 'c String') SETTINGS url_base = 'http://base.invalid/dir/file.csv?token=abc', $FAST" 'http://base.invalid/dir/file.csv?[HIDDEN]'
 
 # Path-relative URL with embedded absolute URL in query parameter (should not be treated as absolute)
-run_and_check "SELECT * FROM url('data.csv?next=http://other.invalid/a', CSV, 'c String') SETTINGS url_base = 'http://base.invalid/dir/', $FAST" 'http://base.invalid/dir/data.csv?next=http://other.invalid/a'
+run_and_check "SELECT * FROM url('data.csv?next=http://other.invalid/a', CSV, 'c String') SETTINGS url_base = 'http://base.invalid/dir/', $FAST" 'http://base.invalid/dir/data.csv?[HIDDEN]'
 
 # Path-relative URL with dot-segment (../) — normalized per RFC 3986
 run_and_check "SELECT * FROM url('../a.csv', CSV, 'c String') SETTINGS url_base = 'http://base.invalid/dir/', $FAST" 'http://base.invalid/a.csv'
@@ -85,7 +85,7 @@ run_and_check "SELECT * FROM url('./a.csv', CSV, 'c String') SETTINGS url_base =
 run_and_check "SELECT * FROM url('../../a.csv', CSV, 'c String') SETTINGS url_base = 'http://base.invalid/a/b/c/', $FAST" 'http://base.invalid/a/a.csv'
 
 # Dot-segment with query parameter in the relative URL
-run_and_check "SELECT * FROM url('../a.csv?foo=bar', CSV, 'c String') SETTINGS url_base = 'http://base.invalid/dir/', $FAST" 'http://base.invalid/a.csv?foo=bar'
+run_and_check "SELECT * FROM url('../a.csv?foo=bar', CSV, 'c String') SETTINGS url_base = 'http://base.invalid/dir/', $FAST" 'http://base.invalid/a.csv?[HIDDEN]'
 
 # URL engine: path-relative URL with url_base should resolve correctly
 $CLICKHOUSE_CLIENT --send_logs_level=debug -n -q "
@@ -96,7 +96,7 @@ SELECT * FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_url;
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_url" 2>/dev/null
 
 # Empty relative reference: should return base without fragment
-run_and_check "SELECT * FROM url('', CSV, 'c String') SETTINGS url_base = 'http://base.invalid/dir/file.csv?token=abc#frag', $FAST" 'http://base.invalid/dir/file.csv?token=abc'
+run_and_check "SELECT * FROM url('', CSV, 'c String') SETTINGS url_base = 'http://base.invalid/dir/file.csv?token=abc#frag', $FAST" 'http://base.invalid/dir/file.csv?[HIDDEN]'
 
 # URL engine: resolved URL must be materialized into engine args so the table survives
 # DETACH/ATTACH (and server restart) after url_base is unset or changed.
@@ -179,3 +179,77 @@ $CLICKHOUSE_CLIENT --query "SELECT * FROM url('data.csv', CSV, 'c String') SETTI
 # query it was given, which is the caller's own input rather than something the message disclosed)
 $CLICKHOUSE_LOCAL --query "SELECT * FROM url('data.csv', CSV, 'c String') SETTINGS url_base = 'user:SEKRIT_PW@example.invalid/def/', $FAST" 2>&1 | grep -oF 'must contain a scheme' | head -1
 $CLICKHOUSE_LOCAL --query "SELECT * FROM url('data.csv', CSV, 'c String') SETTINGS url_base = 'user:SEKRIT_PW@example.invalid/def/', $FAST" 2>&1 | grep -c SEKRIT_PW ||:
+
+# Diagnostics intentionally redact URL query parameters. Verify that the full
+# query still reaches the HTTP transport with a local echo server instead of
+# relying on the (now redacted) diagnostic message.
+url_base_echo_port_file=$(mktemp)
+python3 -u - "$url_base_echo_port_file" > /dev/null 2>&1 <<'PY' &
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import unquote
+import sys
+
+
+class EchoHandler(BaseHTTPRequestHandler):
+    def respond(self):
+        payload = (unquote(self.path) + "\n").encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/csv")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        return payload
+
+    def do_HEAD(self):
+        self.respond()
+
+    def do_GET(self):
+        self.wfile.write(self.respond())
+
+    def log_message(self, format, *args):
+        pass
+
+
+server = ThreadingHTTPServer(("127.0.0.1", 0), EchoHandler)
+with open(sys.argv[1], "w", encoding="ascii") as port_file:
+    port_file.write(str(server.server_port))
+server.serve_forever()
+PY
+url_base_echo_pid=$!
+cleanup_url_base_echo() {
+    kill "$url_base_echo_pid" 2>/dev/null || true
+    wait "$url_base_echo_pid" 2>/dev/null || true
+    rm -f "$url_base_echo_port_file"
+}
+trap cleanup_url_base_echo EXIT
+
+for attempt in {1..100}; do
+    [[ -s "$url_base_echo_port_file" ]] && break
+    sleep 0.05
+done
+if [[ ! -s "$url_base_echo_port_file" ]]; then
+    echo "Failed to start URL query echo server" >&2
+    exit 1
+fi
+read -r url_base_echo_port < "$url_base_echo_port_file"
+
+check_query_on_wire() {
+    local relative_url="$1"
+    local base_url="$2"
+    local expected="$3"
+    local actual
+
+    if ! actual=$($CLICKHOUSE_CLIENT --send_logs_level=error --query "SELECT * FROM url('$relative_url', CSV, 'c String') SETTINGS url_base = '$base_url', $FAST" 2>&1); then
+        echo "HTTP query request failed for '$relative_url': $actual" >&2
+        return 1
+    fi
+    if [[ "$actual" != "$expected" ]]; then
+        echo "HTTP request target mismatch for '$relative_url': expected '$expected', got '$actual'" >&2
+        return 1
+    fi
+}
+
+check_query_on_wire '?x=1' "http://127.0.0.1:$url_base_echo_port/dir/file.csv" '/dir/file.csv?x=1' || exit 1
+check_query_on_wire '#frag' "http://127.0.0.1:$url_base_echo_port/dir/file.csv?token=abc" '/dir/file.csv?token=abc' || exit 1
+check_query_on_wire 'data.csv?next=http://other.invalid/a' "http://127.0.0.1:$url_base_echo_port/dir/" '/dir/data.csv?next=http://other.invalid/a' || exit 1
+check_query_on_wire '../a.csv?foo=bar' "http://127.0.0.1:$url_base_echo_port/dir/" '/a.csv?foo=bar' || exit 1
+check_query_on_wire '' "http://127.0.0.1:$url_base_echo_port/dir/file.csv?token=abc#frag" '/dir/file.csv?token=abc' || exit 1
