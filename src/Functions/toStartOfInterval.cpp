@@ -856,7 +856,7 @@ The second overload emulates TimescaleDB's `time_bucket()` function, respectivel
 The result has the same type as the `value` argument: `Date` for `Date`, `Date32` for `Date32`, `DateTime` for `DateTime`, and `DateTime64` of the same scale for `DateTime64`.
 A result that is below the range of `Date` or `DateTime` (for example, rounding `1970-01-01` down to a week) is clamped to its minimum value.
 With the setting [`to_start_of_interval_preserves_argument_type`](/reference/settings/session-settings#to_start_of_interval_preserves_argument_type) disabled, the result type depends on the interval unit instead,
-as in versions before 26.10: `Date` for `WEEK` and longer units, `DateTime` for `DAY` down to `SECOND`, and `DateTime64` of the unit's scale for the subsecond units.
+as in versions before 26.11: `Date` for `WEEK` and longer units, `DateTime` for `DAY` down to `SECOND`, and `DateTime64` of the unit's scale for the subsecond units.
 This applies to the overload without `origin`: the overload with `origin` keeps the type of the argument in this case too, except that for a `DateTime64` argument and a subsecond unit the result has the scale of the unit.
         )";
         FunctionDocumentation::Syntax syntax = R"(
