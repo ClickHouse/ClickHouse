@@ -1,5 +1,5 @@
 -- Tags: no-async-insert, no-random-settings, no-asan, no-msan, no-tsan
--- One hundred input blocks, each expanded to 8000 samples, must insert under a 40 MB limit.
+-- Eight input blocks, each expanded to 100000 samples, must insert under a 40 MB limit.
 
 SET allow_experimental_time_series_table = 1;
 SET max_memory_usage = 40000000;
@@ -13,8 +13,8 @@ DROP TABLE IF EXISTS ts_blocks;
 CREATE TABLE ts_blocks ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 864000;
 
 INSERT INTO ts_blocks (metric_name, tags, samples)
-SELECT 'm', map('n', toString(number)), arrayMap(x -> (toDateTime64('2026-01-01 00:00:00', 3), toFloat64(x)), range(8000))
-FROM numbers(100);
+SELECT 'm', map('n', toString(number)), arrayMap(x -> (toDateTime64('2026-01-01 00:00:00', 3), toFloat64(x)), range(100000))
+FROM numbers(8);
 
 SELECT count() FROM ts_blocks;
 

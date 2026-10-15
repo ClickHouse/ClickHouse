@@ -17,3 +17,11 @@ ok
 1
 1
 0
+--- a partitioned recent target keeps no rows when samples fail ---
+0
+0
+0
+--- a Buffer recent target keeps no rows when samples fail ---
+0
+0
+0

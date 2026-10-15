@@ -96,5 +96,90 @@ SELECT value FROM fail_samples ORDER BY value;
 SELECT value FROM fail_recent ORDER BY value;
 SELECT count() FROM fail_mv_dest WHERE metric_name = 'bad_block';
 
+SELECT '--- a partitioned recent target keeps no rows when samples fail ---';
+
+CREATE TABLE part_tags
+(
+    id Tuple(UInt64, UUID),
+    metric_name LowCardinality(String),
+    tags Map(LowCardinality(String), String),
+    min_time Nullable(DateTime64(3)),
+    max_time Nullable(DateTime64(3))
+) ENGINE = MergeTree ORDER BY (metric_name, id);
+
+CREATE TABLE part_samples
+(
+    id Tuple(UInt64, UUID),
+    timestamp DateTime64(3),
+    value Float64,
+    CONSTRAINT c CHECK sleepEachRow(1) = 0 AND value < 40
+) ENGINE = MergeTree ORDER BY (id, timestamp);
+
+CREATE TABLE part_recent
+(
+    id Tuple(UInt64, UUID),
+    timestamp DateTime64(3),
+    value Float64
+) ENGINE = MergeTree
+PARTITION BY toDate(timestamp)
+ORDER BY (id, timestamp)
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+CREATE TABLE ts_part ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 864000
+    DATA part_samples TAGS part_tags RECENT SAMPLES part_recent;
+
+INSERT INTO ts_part (metric_name, tags, samples)
+SETTINGS max_insert_delayed_streams_for_parallel_write = 0
+VALUES ('m', map('env', 'prod'), [(toDateTime64('2020-01-01 00:00:00', 3), 42.), (toDateTime64('2020-01-02 00:00:00', 3), 43.)]); -- { serverError VIOLATED_CONSTRAINT }
+
+SELECT count() FROM part_samples;
+SELECT count() FROM part_recent;
+SELECT count() FROM part_recent WHERE value = 42;
+
+SELECT '--- a Buffer recent target keeps no rows when samples fail ---';
+
+CREATE TABLE buf_tags
+(
+    id Tuple(UInt64, UUID),
+    metric_name LowCardinality(String),
+    tags Map(LowCardinality(String), String),
+    min_time Nullable(DateTime64(3)),
+    max_time Nullable(DateTime64(3))
+) ENGINE = MergeTree ORDER BY (metric_name, id);
+
+CREATE TABLE buf_samples
+(
+    id Tuple(UInt64, UUID),
+    timestamp DateTime64(3),
+    value Float64,
+    CONSTRAINT c CHECK value < 40
+) ENGINE = MergeTree ORDER BY (id, timestamp);
+
+CREATE TABLE buf_dest
+(
+    id Tuple(UInt64, UUID),
+    timestamp DateTime64(3),
+    value Float64
+) ENGINE = MergeTree ORDER BY (id, timestamp);
+
+CREATE TABLE buf_recent
+(
+    id Tuple(UInt64, UUID),
+    timestamp DateTime64(3),
+    value Float64
+) ENGINE = Buffer(currentDatabase(), buf_dest, 1, 86400, 86400, 10000000, 10000000, 100000000, 100000000);
+
+CREATE TABLE ts_buf ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 864000
+    DATA buf_samples TAGS buf_tags RECENT SAMPLES buf_recent;
+
+INSERT INTO ts_buf (metric_name, tags, samples)
+VALUES ('m', map('env', 'prod'), [(toDateTime64('2020-01-01 00:00:00', 3), 42.)]); -- { serverError VIOLATED_CONSTRAINT }
+
+SELECT count() FROM buf_samples;
+SELECT count() FROM buf_recent;
+SELECT count() FROM buf_recent WHERE value = 42;
+
 DROP VIEW fail_mv;
 DROP TABLE ts_fail, ts_fail_mem, fail_tags, fail_samples, fail_recent, fail_mv_dest, mem_tags, mem_samples, mem_recent;
+DROP TABLE ts_part, part_tags, part_samples, part_recent;
+DROP TABLE ts_buf, buf_tags, buf_samples, buf_recent, buf_dest;

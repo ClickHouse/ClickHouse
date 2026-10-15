@@ -23,6 +23,8 @@
 #include <Processors/Executors/PushingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
@@ -50,6 +52,11 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TIME_SERIES_TAGS;
     extern const int INCORRECT_DATA;
+}
+
+namespace Setting
+{
+    extern const SettingsUInt64 max_insert_delayed_streams_for_parallel_write;
 }
 
 
@@ -296,6 +303,48 @@ namespace
         }
 
         return count;
+    }
+
+    size_t delayedStreamLimit(const StoragePtr & storage, const Settings & settings)
+    {
+        if (settings[Setting::max_insert_delayed_streams_for_parallel_write].changed)
+            return settings[Setting::max_insert_delayed_streams_for_parallel_write];
+
+        const auto * merge_tree = typeid_cast<const MergeTreeData *>(storage.get());
+        if (merge_tree && merge_tree->getStoragePolicy()->getAnyDisk()->supportParallelWrite())
+            return DEFAULT_DELAYED_STREAMS_FOR_PARALLEL_WRITE;
+        return 0;
+    }
+
+    /// True when consume of this block can commit an earlier partition, or when the engine publishes inside consume.
+    bool targetCanCommitDuringConsume(const StoragePtr & storage, const Block & block, ContextPtr context)
+    {
+        if (storage->getName() == "Buffer")
+            return true;
+        if (!storage->isMergeTree())
+            return false;
+
+        const size_t limit = delayedStreamLimit(storage, context->getSettingsRef());
+        auto metadata = storage->getInMemoryMetadataPtr(context, false);
+        Block block_for_parts = block;
+        const auto parts = MergeTreeDataWriter::splitBlockIntoParts(std::move(block_for_parts), /* max_parts= */ 0, metadata, context);
+        if (parts.size() < 2)
+            return false;
+
+        /// Wide parts open one stream per column. A limit of zero flushes on the second partition.
+        const size_t streams = std::max<size_t>(block.columns(), 1);
+        size_t total_streams = 0;
+        for (size_t part = 0; part < parts.size(); ++part)
+        {
+            if (total_streams + streams > limit)
+            {
+                if (part > 0)
+                    return true;
+                total_streams = 0;
+            }
+            total_streams += streams;
+        }
+        return false;
     }
 
 }
@@ -908,11 +957,16 @@ void TimeSeriesSink::writeSamplesAndRecent(Block samples_block)
 
     auto samples = createTargetPipeline(ViewTarget::Samples, samples_pipeline_header, /* parallel= */ true);
     std::unique_ptr<TargetPipeline> recent;
+    bool recent_commits_during_consume = false;
     if (time_series_storage.hasTarget(ViewTarget::RecentSamples))
+    {
+        auto recent_storage = time_series_storage.getTargetTable(ViewTarget::RecentSamples, getContext());
+        recent_commits_during_consume = targetCanCommitDuringConsume(recent_storage, samples_block, getContext());
         recent = createTargetPipeline(
             ViewTarget::RecentSamples, samples_pipeline_header, /* parallel= */ true, /* delay_commit= */ fits_one_block);
+    }
 
-    if (fits_one_block && recent)
+    if (fits_one_block && recent && !recent_commits_during_consume)
     {
         samples->push(samples_block);
         recent->push(samples_block);
