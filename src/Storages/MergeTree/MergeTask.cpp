@@ -671,10 +671,12 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     }
 
     /// A part with rows but without a calculated rows TTL adds nothing to the aggregated bound,
-    /// so that bound must not decide that all merged rows have expired.
+    /// so that bound must not decide that all merged rows have expired. An epoch-only part has
+    /// zero bounds too, but its rows TTL is calculated: it carries `has_epoch_timestamps`, which
+    /// is propagated to the merged part and already disables the whole-part shortcuts.
     if (global_ctx->metadata_snapshot->hasRowsTTL()
         && std::ranges::any_of(global_ctx->future_part->parts, [](const auto & part)
-            { return !part->isEmpty() && part->ttl_infos.table_ttl.min == 0; }))
+            { return !part->isEmpty() && part->ttl_infos.table_ttl.min == 0 && !part->ttl_infos.table_ttl.has_epoch_timestamps; }))
         global_ctx->new_data_part->ttl_infos.table_ttl = {};
 
     const auto & local_part_min_ttl = global_ctx->new_data_part->ttl_infos.part_min_ttl;
