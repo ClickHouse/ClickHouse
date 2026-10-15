@@ -11,10 +11,11 @@
 namespace DB
 {
 
+/// `Decimal32`, `Decimal64`, `Decimal128` (and `DateTime64`, `Time64`), `Int128` and `UInt128`.
 template <typename T>
-concept summable_into_decimal128 = is_decimal<T> && sizeof(T) <= sizeof(Decimal128);
+concept summable_into_int128 = (is_decimal<T> && sizeof(T) <= sizeof(Int128)) || std::is_same_v<T, Int128> || std::is_same_v<T, UInt128>;
 
-namespace SumIntoDecimal128Impl
+namespace SumIntoInt128Impl
 {
 
 template <typename T, size_t size>
@@ -58,27 +59,27 @@ ALWAYS_INLINE inline void loadRowMasks(const UInt8 * __restrict flags, UInt64Lan
 
 }
 
-/// Sums `Decimal32`, `Decimal64` and `Decimal128` values into a `Decimal128`, wrapping modulo 2^128 like `Decimal128::addOverflow`.
+/// Sums values into a 128-bit integer, wrapping modulo 2^128 like `Decimal128::addOverflow` and `wide::integer<128>`.
 ///
-/// `sum` and `avg` accumulate all these types in `Decimal128`, and adding to a `wide::integer<128>` is a scalar add-with-carry
-/// chain. Here every value is split at bit 32 instead, and the parts are summed in 64-bit vector lanes (clang vector
-/// extensions, so the same code is compiled to SSE, AVX2, AVX-512 or NEON). A 64-bit lane cannot overflow from adding
-/// 32-bit parts within `max_rows_per_chunk` rows; the lanes are combined into a 128-bit value after each chunk. The remaining
-/// rows, fewer than one step, are added to that value directly, so short ranges (e.g. from window frames) do not pay for the
-/// vector part.
+/// `sum` and `avg` accumulate `Decimal32`, `Decimal64` and `Decimal128` in `Decimal128`, and `Int128` and `UInt128` in themselves,
+/// and adding to a `wide::integer<128>` is a scalar add-with-carry chain. Here every value is split at bit 32 instead, and the parts
+/// are summed in 64-bit vector lanes (clang vector extensions, so the same code is compiled to SSE, AVX2, AVX-512 or NEON). A 64-bit
+/// lane cannot overflow from adding 32-bit parts within `max_rows_per_chunk` rows; the lanes are combined into a 128-bit value
+/// after each chunk. The remaining rows, fewer than one step, are added to that value directly, so short ranges (e.g. from
+/// window frames) do not pay for the vector part.
 ///  - `Decimal32`: the values are sign-extended to 64 bits, and their sum fits into 64 bits.
 ///  - `Decimal64`: the lanes accumulate `s = sum(x) mod 2^64` and `a = sum(x >> 32)`. With `x = lower + (x >> 32) * 2^32`,
 ///    the true `sum(lower)` is below 2^64, so it equals `s - a * 2^32 mod 2^64`, and the exact sum is `sum(lower) + a * 2^32`.
-///  - `Decimal128`: the column is read as 64-bit words, and every word `w` is added to `s += w` and `a += w >> 32` (logical).
-///    For the low words, this is the same scheme with an unsigned split. The high words only matter modulo 2^64, so their
-///    `s` is enough.
+///  - `Decimal128`, `Int128` and `UInt128`: the column is read as 64-bit words, and every word `w` is added to `s += w` and
+///    `a += w >> 32` (logical). For the low words, this is the same scheme with an unsigned split. The high words only matter
+///    modulo 2^64, so their `s` is enough. Modulo 2^128, signed and unsigned values are added the same way.
 ///
 /// If `has_condition`, a row is added iff `(condition_map[i] == 0) == add_if_zero`. Rows are masked rather than skipped,
 /// so the loops stay branch-free.
-template <summable_into_decimal128 Value, bool has_condition = false, bool add_if_zero = false>
-ALWAYS_INLINE inline Decimal128 sumIntoDecimal128(const Value * __restrict ptr, const UInt8 * __restrict condition_map, size_t count)
+template <summable_into_int128 Value, bool has_condition = false, bool add_if_zero = false>
+ALWAYS_INLINE inline Int128 sumIntoInt128(const Value * __restrict ptr, const UInt8 * __restrict condition_map, size_t count)
 {
-    using namespace SumIntoDecimal128Impl;
+    using namespace SumIntoInt128Impl;
     using UInt128Native = unsigned __int128;
 
     static constexpr size_t max_rows_per_chunk = 1ULL << 32;
@@ -160,7 +161,7 @@ ALWAYS_INLINE inline Decimal128 sumIntoDecimal128(const Value * __restrict ptr, 
         result += x;
     }
 
-    return Decimal128(__builtin_bit_cast(Int128, result));
+    return __builtin_bit_cast(Int128, result);
 }
 
 }

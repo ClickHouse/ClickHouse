@@ -1,5 +1,5 @@
 -- `sum` and `avg` without keys add `Decimal32`, `Decimal64` and `Decimal128` columns into a `Decimal128` by summing 32-bit parts
--- in vector lanes (`sumIntoDecimal128`): plain, with a condition (`-If`) and skipping NULLs (`Nullable`).
+-- in vector lanes (`sumIntoInt128`): plain, with a condition (`-If`) and skipping NULLs (`Nullable`).
 
 SELECT 'full range';
 -- Random values over the whole range of each type, so every 32-bit part takes arbitrary values, including the sign.
