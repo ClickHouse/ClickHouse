@@ -9659,15 +9659,6 @@ If there is a larger number of tables, the schema will be inferred from the firs
 If enabled, validate enum literals in operators like `IN`, `NOT IN`, `==`, `!=` against the enum type and throw an exception if the literal is not a valid enum value.
 )", 0, \
         {"25.1", false, false, "A new setting"}) \
-    DECLARE(Bool, compare_enum_with_string_lexicographically, false, R"(
-This setting controls how the operators `<`, `>`, `<=` and `>=` compare an `Enum` with a `String` or `FixedString`.
-
-- `1` — ClickHouse converts the `Enum` value to its name and compares the two strings. DuckDB and MySQL use the same rule.
-- `0` — ClickHouse converts the string to the `Enum` type and compares the numeric values. `ORDER BY` uses the same order for an `Enum` column. PostgreSQL uses the same order for a string literal. If the string is not a valid `Enum` value, ClickHouse throws an exception.
-
-The result does not depend on whether the string is a constant. The operators `=` and `!=` give the same result with each value of this setting.
-)", 0, \
-        {"26.10", false, false, "New setting. Before, ClickHouse compared a non-constant string with an `Enum` by the `Enum` name. Now ClickHouse compares it by the numeric value, the same as a constant string."}) \
     \
     DECLARE(UInt64, max_autoincrement_series, 1000, R"(
 The limit on the number of series created by the `generateSerialID` function.

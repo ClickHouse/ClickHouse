@@ -719,7 +719,6 @@ private:
     bool date_time_overflow_behavior_ignore;
     /// Consulted only while extracting atoms, so the private copying constructor leaves it unset.
     bool validate_enum_literals_in_operators = true;
-    bool compare_enum_with_string_lexicographically = false;
 
     /// Holds whether the key columns are sorted in reverse (ORDER BY ... DESC) or not.
     KeyOrder key_order;

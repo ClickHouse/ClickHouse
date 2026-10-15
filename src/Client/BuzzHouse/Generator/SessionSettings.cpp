@@ -748,7 +748,6 @@ std::unordered_map<String, CHSetting> serverSettings = {
          false)},
     {"collect_hash_table_stats_during_aggregation", trueOrFalseSettingNoOracle},
     {"collect_hash_table_stats_during_joins", trueOrFalseSettingNoOracle},
-    {"compare_enum_with_string_lexicographically", trueOrFalseSettingNoOracle},
     {"compatibility_ignore_auto_increment_in_create_table", trueOrFalseSettingNoOracle},
     {"compatibility_ignore_collation_in_create_table", trueOrFalseSettingNoOracle},
     {"compatibility_s3_presigned_url_query_in_path", trueOrFalseSettingNoOracle},

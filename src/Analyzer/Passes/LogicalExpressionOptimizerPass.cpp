@@ -32,7 +32,6 @@ namespace Setting
     extern const SettingsBool optimize_and_compare_chain;
     extern const SettingsUInt64 optimize_and_compare_chain_max_hash_work;
     extern const SettingsBool optimize_redundant_comparisons;
-    extern const SettingsBool compare_enum_with_string_lexicographically;
 }
 
 namespace ErrorCodes
@@ -878,15 +877,10 @@ static AddComparisonFilterResult addComparisonFilter(
     auto expr_type = removeLowCardinality(raw_type);
 
     new_filter.converted_value = tryConvertToColumnType(new_filter.constant_node, expr_type);
-    /// An `Enum` and string ordering does not follow the order of the constant after its conversion to the expression type.
-    if (new_filter.function != ComparisonFunction::EQUALS && new_filter.function != ComparisonFunction::NOT_EQUALS)
-    {
-        const auto constant_type = removeLowCardinality(new_filter.constant_node->getResultType());
-        if (context->getSettingsRef()[Setting::compare_enum_with_string_lexicographically]
-                ? isEnum(expr_type) && isStringOrFixedString(constant_type)
-                : isStringOrFixedString(expr_type) && isEnum(constant_type))
-            new_filter.converted_value.reset();
-    }
+    /// A string ordered against an `Enum` constant compares by value, not in the order of the converted name.
+    if (new_filter.function != ComparisonFunction::EQUALS && new_filter.function != ComparisonFunction::NOT_EQUALS
+        && isStringOrFixedString(expr_type) && isEnum(removeLowCardinality(new_filter.constant_node->getResultType())))
+        new_filter.converted_value.reset();
 
     /// Step 2: for integer columns, try boundary folding / float-literal rewriting.
     if (enable_pruning)
@@ -2147,10 +2141,6 @@ private:
         const auto constant_type = removeLowCardinality(constant_side->getResultType());
         const auto other_type = removeLowCardinality(other_side->getResultType());
         if (!isStringOrFixedString(constant_type) || isStringOrFixedString(other_type) || other_type->isNullable())
-            return {};
-        /// Ordering by `Enum` name does not follow the order of the converted constant.
-        if (isEnum(other_type) && function_name != "equals"
-            && getContext()->getSettingsRef()[Setting::compare_enum_with_string_lexicographically])
             return {};
 
         const auto * constant_node = lhs_constant ? lhs_constant : rhs_constant;

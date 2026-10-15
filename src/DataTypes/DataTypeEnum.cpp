@@ -653,7 +653,7 @@ During `ORDER BY`, `GROUP BY`, `IN`, `DISTINCT` and so on, Enums behave the same
 You cannot compare an `Enum` value with a number. You can compare an `Enum` value with a `String` or a `FixedString`:
 
 - The operators `=` and `!=` compare the `Enum` name with the string. If a constant string is not a valid `Enum` value, the result is `0` for `=` and `1` for `!=`. If you enable the setting `validate_enum_literals_in_operators`, ClickHouse throws an exception instead.
-- The operators `<`, `>`, `<=` and `>=` convert the string to the `Enum` type and compare the numeric values. This is the same order that `ORDER BY` uses. If the string is not a valid `Enum` value, ClickHouse throws an exception. If you enable the setting `compare_enum_with_string_lexicographically`, these operators convert the `Enum` value to its name and compare the two strings, as DuckDB and MySQL do.
+- The operators `<`, `>`, `<=` and `>=` convert the string to the `Enum` type and compare the numeric values. This is the same order that `ORDER BY` uses. If the string is not a valid `Enum` value, ClickHouse throws an exception. To compare the names as strings, convert the `Enum` value with `toString`, for example `toString(e) < 'b'`.
 
 The IN operator is supported with the Enum on the left-hand side and a set of strings on the right-hand side. The strings are the values of the corresponding Enum.
 

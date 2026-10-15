@@ -40,7 +40,6 @@ namespace Setting
     extern const SettingsBool external_table_strict_query;
     extern const SettingsBool transform_null_in;
     extern const SettingsBool validate_enum_literals_in_operators;
-    extern const SettingsBool compare_enum_with_string_lexicographically;
 }
 
 namespace ErrorCodes
@@ -217,9 +216,8 @@ void removeConjunctsHoldingEnumConstants(QueryTreeNodePtr & filter, const Contex
 class PrepareForExternalDatabaseVisitor : public InDepthQueryTreeVisitor<PrepareForExternalDatabaseVisitor>
 {
 public:
-    PrepareForExternalDatabaseVisitor(GetSetElementParams set_params_, bool compare_enum_with_string_lexicographically_)
+    explicit PrepareForExternalDatabaseVisitor(GetSetElementParams set_params_)
         : set_params(set_params_)
-        , compare_enum_with_string_lexicographically(compare_enum_with_string_lexicographically_)
     {}
 
     void visitImpl(QueryTreeNodePtr & node) const
@@ -266,8 +264,8 @@ private:
         else if (name == "equals" || name == "notEquals" || name == "less" || name == "greater"
             || name == "lessOrEquals" || name == "greaterOrEquals")
         {
-            /// In the by-value mode, an ordering of an `Enum` constant and a string is not a string comparison.
-            const bool string_operand_allowed = compare_enum_with_string_lexicographically || name == "equals" || name == "notEquals";
+            /// An ordering of an `Enum` constant and a string compares by value, not as strings.
+            const bool string_operand_allowed = name == "equals" || name == "notEquals";
             for (size_t i = 0; i < 2; ++i)
                 if (auto constant = renderComparisonConstant(arguments[i], arguments[1 - i], string_operand_allowed))
                     arguments[i] = std::move(constant);
@@ -337,7 +335,6 @@ private:
     }
 
     GetSetElementParams set_params;
-    bool compare_enum_with_string_lexicographically;
 };
 
 }
@@ -351,7 +348,7 @@ ASTPtr getASTForExternalDatabaseFromQueryTree(ContextPtr context, const QueryTre
     PrepareForExternalDatabaseVisitor visitor(GetSetElementParams{
         .transform_null_in = settings[Setting::transform_null_in],
         .forbid_unknown_enum_values = settings[Setting::validate_enum_literals_in_operators],
-    }, settings[Setting::compare_enum_with_string_lexicographically]);
+    });
     visitor.visit(new_tree);
     auto * query_node = new_tree->as<QueryNode>();
 
