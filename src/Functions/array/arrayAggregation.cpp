@@ -140,7 +140,7 @@ static Float64 integerProduct(size_t size, GetElement && get_element)
 {
     T product = get_element(0);
     size_t i = 1;
-    for (T res; i < size; ++i)
+    for (T res{}; i < size; ++i)
     {
         if (productOverflows(product, get_element(i), res))
             break;
