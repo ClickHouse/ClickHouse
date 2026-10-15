@@ -1,12 +1,12 @@
-1 s < E
-a
-Query: SELECT `s` FROM `tbl` WHERE `s` < 'm'
-0 s < E
+s < E
 a,z
 Query: SELECT `s` FROM `tbl`
-0 E > s
+E > s
 a,z
 Query: SELECT `s` FROM `tbl`
-0 s = E
+s = E
 m
 Query: SELECT `s` FROM `tbl` WHERE `s` = 'm'
+toString(E) > s
+a
+Query: SELECT `s` FROM `tbl` WHERE 'm' > `s`

@@ -6,7 +6,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# in the by-value mode, an ordering of a string column and an Enum constant must stay local, not go to SQLite as a string comparison
+# a string column ordered against an Enum constant compares by value, so the condition stays local
 
 BASE="${USER_FILES_PATH}/05326_sqlite_enum_${CLICKHOUSE_DATABASE}"
 DB_PATH="${BASE}/data.sqlite"
@@ -33,15 +33,13 @@ E="CAST('m', 'Enum8(\\'z\\' = 1, \\'a\\' = 2, \\'m\\' = 3)')"
 # prints the rows, then the query sent to SQLite
 function check()
 {
-    echo "$1 $2"
-    ${CLICKHOUSE_CLIENT} --compare_enum_with_string_lexicographically "$1" \
-        --query "SELECT arrayStringConcat(groupArray(s), ',') FROM (SELECT s FROM t_05326 WHERE $3 ORDER BY s)"
-    ${CLICKHOUSE_CLIENT} --compare_enum_with_string_lexicographically "$1" --send_logs_level=trace \
-        --query "SELECT s FROM t_05326 WHERE $3 FORMAT Null" 2>&1 \
+    echo "$1"
+    ${CLICKHOUSE_CLIENT} --query "SELECT arrayStringConcat(groupArray(s), ',') FROM (SELECT s FROM t_05326 WHERE $2 ORDER BY s)"
+    ${CLICKHOUSE_CLIENT} --send_logs_level=trace --query "SELECT s FROM t_05326 WHERE $2 FORMAT Null" 2>&1 \
         | grep -oE 'Query: SELECT .* FROM `tbl`( WHERE .*)?$'
 }
 
-check 1 's < E' "s < $E"
-check 0 's < E' "s < $E"
-check 0 'E > s' "$E > s"
-check 0 's = E' "s = $E"
+check 's < E' "s < $E"
+check 'E > s' "$E > s"
+check 's = E' "s = $E"
+check 'toString(E) > s' "toString($E) > s"
