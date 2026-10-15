@@ -1,0 +1,22 @@
+1	99	1
+0	42
+\N	42
+\N	Nullable(UInt8)
+300	UInt16
+99	UInt8
+0	100
+1	101
+2	102
+0	0
+1	11
+0	10
+1	101
+0	200
+1	201
+one
+42
+missing
+missing
+x	String
+10
+1
