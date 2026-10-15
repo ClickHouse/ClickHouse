@@ -280,42 +280,35 @@ def _classify_genuine_failure(
     """
     if not logs:
         return None, False
-    paths_to_scan = " ".join(str(p) for p in logs)
-    # `-z` because rotation gzips all but the newest file, and a report in a `.gz` is
-    # exactly the one this looks for. The second `rg` filters the already-decompressed
-    # pipe, so it needs no `-z`.
-    # `-H` so the surviving lines name their file: which file matched is what the parser
-    # has to be pointed at, see below.
-    genuine_matches = Shell.get_output(
-        f"rg -z --text -H '{SANITIZER_NON_OOM_PATTERN}' {paths_to_scan}"
-        f" | rg --text -v '{SANITIZER_OOM_PATTERN}'"
-    )
-    if not genuine_matches:
+    # The parser's own scan, not a raw `rg`: it skips a match inside the query text a record
+    # quotes, e.g. "(in query: SELECT '<Fatal> not an error')", which is data, not a report.
+    # An OOM line is excluded the same way, so a log that holds only those is no signal.
+    # It reads `.gz` too, as rotation gzips all but the newest file.
+    scanner = FuzzerLogParser(server_logs=logs, fuzzer_log=fuzzer_out)
+    genuine_logs: list[Path] = []
+    for log in logs:
+        output, _, excluded_only = scanner.find_failure(
+            SANITIZER_NON_OOM_PATTERN, log, exclude_pattern=SANITIZER_OOM_PATTERN
+        )
+        if output and not excluded_only:
+            genuine_logs.append(log)
+    if not genuine_logs:
         return None, False
     print(info)
-    # Hand the parser only the files that survived the OOM filter. It defers the expected
-    # `Child process was terminated by signal 9 (KILL)` on its own now, but this filter is
-    # the wider net, so it still points the parser at the file holding the genuine report.
-    by_path = {str(p): p for p in logs}
-    genuine_logs: list[Path] = []
-    for line in genuine_matches.splitlines():
-        path = by_path.get(line.split(":", 1)[0])
-        if path is not None and path not in genuine_logs:
-            genuine_logs.append(path)
-    if not genuine_logs:
-        genuine_logs = logs
     # Every log is passed as `server_logs`: `parse_failure` searches `stderr_logs +
     # server_logs` for a sanitizer report either way, and the per-node pairing `stderr_logs`
     # would buy is meaningless for a list filtered down to the files that matched.
     # `fuzzer_out` is what the reproduce commands are built from, so it goes in here
     # exactly as `analyze_job_logs` passes it for a failure it reports itself.
-    # `genuine_matches` above already found a real report, so let an expected-only line
-    # name it if the parser's own patterns disagree with the filter, as before.
+    # The scan above already found a real report, so let an expected-only line name it if
+    # the parser's own patterns disagree with the scan, as before.
     name, description, files = FuzzerLogParser(
         server_logs=genuine_logs, fuzzer_log=fuzzer_out
     ).parse_failure(allow_expected_only=True)
-    if not name:
-        # Nothing nameable despite the signal - let the caller report its own error.
+    if name == FuzzerLogParser.UNKNOWN_ERROR:
+        # A genuine line the parser cannot name: not a verdict to report, but still a signal,
+        # so the caller reports its own error instead of letting an OOM pass the run. An
+        # unclassified `<Fatal>` record never gets here, `get_generic_fatal` names it.
         return None, True
     return (
         Result.create_from(
