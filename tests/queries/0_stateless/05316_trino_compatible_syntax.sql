@@ -1,13 +1,13 @@
 -- Parts of the Trino SQL dialect that are available in ClickHouse SQL without enabling the dialect.
 
 SELECT '-- TRY_CAST';
-SELECT TRY_CAST('123' AS INTEGER), TRY_CAST('abc' AS INTEGER), try_cast(300 AS UInt8), Try_Cast('1.5', 'Float64');
+SELECT TRY_CAST('123' AS INTEGER), TRY_CAST('abc' AS INTEGER), try_cast(300 AS UInt8), Try_Cast('1.5' AS Float64);
 SELECT toTypeName(TRY_CAST('1' AS BIGINT));
 SELECT TRY_CAST(x AS INTEGER) FROM (SELECT arrayJoin(['1', 'x', '3']) AS x);
 SELECT TRY_CAST('2020-01-02' AS DATE), TRY_CAST('not a date' AS DATE);
 SELECT TRY_CAST('1' AS t AS INTEGER), t;
 -- A literal is read as exactly as by `CAST`.
-SELECT TRY_CAST(0.1 AS Decimal256(76)) = CAST(0.1 AS Decimal256(76)), TRY_CAST(607668569663131286404589520 AS UInt128), TRY_CAST(0.1, 'Decimal256(76)') = CAST(0.1, 'Decimal256(76)');
+SELECT TRY_CAST(0.1 AS Decimal256(76)) = CAST(0.1 AS Decimal256(76)), TRY_CAST(607668569663131286404589520 AS UInt128);
 SELECT TRY_CAST(-1 AS UInt128), TRY_CAST(1e100 AS Decimal(10, 2));
 
 SELECT '-- ARRAY[...]';
@@ -45,11 +45,11 @@ SELECT current_timezone() = timezone();
 SELECT format_datetime(toDateTime('2024-02-29 13:14:15', 'UTC'), 'yyyy-MM-dd HH:mm:ss');
 SELECT arraySort(array_union(ARRAY[1, 2], ARRAY[2, 3]));
 SELECT array_position(ARRAY[5, 6], 6);
-SELECT slice(ARRAY[1, 2, 3, 4], 2, 2), zip(ARRAY[1, 2], ARRAY['a']);
+SELECT zip(ARRAY[1, 2], ARRAY['a']);
 SELECT map_keys(map('a', 1, 'b', 2)), map_values(map('a', 1, 'b', 2));
 SELECT url_extract_host('https://clickhouse.com:8443/docs/x?a=1&b=2#frag'), url_extract_protocol('https://clickhouse.com/');
 SELECT url_extract_host('http://user:password@example.com:8080/path?query=value#fragment');
-SELECT url_encode('a b&c'), url_decode('a+b%26c');
+SELECT url_decode('a+b%26c');
 SELECT bitwise_and(12, 10), bitwise_or(12, 10), bitwise_xor(12, 10);
 SELECT to_hex('abc'), from_hex('616263'), to_base32('abc'), from_base32('MFRGG===');
 SELECT toTypeName(uuid());

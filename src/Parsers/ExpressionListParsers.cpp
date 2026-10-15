@@ -1527,7 +1527,7 @@ public:
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
     {
         /// CAST(x [AS alias1], T [AS alias2]) or CAST(x [AS alias1] AS T)
-        /// TRY_CAST takes the same forms.
+        /// TRY_CAST only takes the latter form, see `hasCastArgumentsWithAsKeyword`.
         ///
         /// 0. Parse all the cases (-> 1)
         /// 1. Parse closing token (finished)
@@ -1627,8 +1627,7 @@ public:
                     type_literal && type_literal->value.getType() == Field::Types::String)
                     argument = exactArgument(argument, type_literal->value.safeGet<String>(), pos);
 
-                const String function_name = is_try ? "accurateCastOrNull" : toString(toStringView(Keyword::CAST));
-                elements = {makeASTFunction(function_name, std::move(argument), elements[1])};
+                elements = {makeASTFunction(toString(toStringView(Keyword::CAST)), std::move(argument), elements[1])};
                 finished = true;
                 return true;
             }
@@ -3194,7 +3193,47 @@ static bool isFirstIdentifier(ParserExpressionImpl::Layers & layers)
     return layers.size() == 1 && dynamic_cast<ExpressionLayer *>(layers.front().get()) != nullptr;
 }
 
-static std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool is_table_function, bool is_first_identifier, bool allow_function_parameters_ = true)
+/// Checks whether the arguments of a function, starting after its opening bracket, have the form `x AS T`:
+/// an `AS` keyword and no comma at the top level. `TRY_CAST(x AS T)` is the syntax of `TRY_CAST`, while
+/// an ordinary call such as `try_cast(x, y)` may be a call of a lambda or a SQL UDF with that name.
+static bool hasCastArgumentsWithAsKeyword(IParser::Pos pos)
+{
+    size_t depth = 0;
+    bool has_as_keyword = false;
+    for (; pos.isValid(); ++pos)
+    {
+        switch (pos->type)
+        {
+            case TokenType::OpeningRoundBracket:
+            case TokenType::OpeningSquareBracket:
+            case TokenType::OpeningCurlyBrace:
+                ++depth;
+                break;
+            case TokenType::ClosingRoundBracket:
+            case TokenType::ClosingSquareBracket:
+            case TokenType::ClosingCurlyBrace:
+                if (depth == 0)
+                    return has_as_keyword;
+                --depth;
+                break;
+            case TokenType::Comma:
+                if (depth == 0)
+                    return false;
+                break;
+            case TokenType::BareWord:
+                if (depth == 0 && equalsCaseInsensitive(std::string_view(pos->begin, pos->size()), "as"))
+                    has_as_keyword = true;
+                break;
+            default:
+                break;
+        }
+    }
+    return false;
+}
+
+/// `arguments_begin` is the position right after the opening bracket of the function.
+static std::unique_ptr<Layer> getFunctionLayer(
+    ASTPtr identifier, IParser::Pos arguments_begin, bool is_table_function, bool is_first_identifier, bool allow_function_parameters_ = true)
 {
     /// Special cases for expressions that look like functions but contain some syntax sugar:
 
@@ -3243,7 +3282,7 @@ static std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool is_table_
 
     if (function_name_lowercase == "cast")
         return std::make_unique<CastLayer>();
-    if (function_name_lowercase == "try_cast")
+    if (function_name_lowercase == "try_cast" && hasCastArgumentsWithAsKeyword(arguments_begin))
         return std::make_unique<CastLayer>(/*is_try*/ true);
     if (function_name_lowercase == "extract")
         return std::make_unique<ExtractLayer>();
@@ -3429,7 +3468,7 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (ParserFunctionName().parse(pos, identifier, expected)
         && ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
     {
-        auto start = getFunctionLayer(identifier, is_table_function, /*is_first_identifier=*/true, allow_function_parameters);
+        auto start = getFunctionLayer(identifier, pos, is_table_function, /*is_first_identifier=*/true, allow_function_parameters);
         start->is_table_function = is_table_function;
         if (ParserExpressionImpl().parse(std::move(start), pos, node, expected))
             return true;
@@ -3728,7 +3767,7 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
             if (function_name_parser.parse(pos, tmp, expected)
                 && ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
             {
-                layers.push_back(getFunctionLayer(tmp, layers.front()->is_table_function, isFirstIdentifier(layers)));
+                layers.push_back(getFunctionLayer(tmp, pos, layers.front()->is_table_function, isFirstIdentifier(layers)));
                 return Action::OPERAND;
             }
             return Action::NONE;
@@ -3994,7 +4033,7 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
         if (function_name_parser.parse(pos, tmp, expected) && pos->type == TokenType::OpeningRoundBracket)
         {
             ++pos;
-            layers.push_back(getFunctionLayer(tmp, layers.front()->is_table_function, isFirstIdentifier(layers)));
+            layers.push_back(getFunctionLayer(tmp, pos, layers.front()->is_table_function, isFirstIdentifier(layers)));
             return Action::OPERAND;
         }
         pos = old_pos;

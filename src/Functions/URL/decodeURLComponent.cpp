@@ -292,7 +292,6 @@ SELECT encodeURLFormComponent('http://127.0.0.1:8123/?query=SELECT 1 2+3') AS En
     FunctionDocumentation documentation_encodeURLFormComponent = {description_encodeURLFormComponent, syntax_encodeURLFormComponent, arguments_encodeURLFormComponent, {}, returned_value_encodeURLFormComponent, examples_encodeURLFormComponent, introduced_in_encodeURLFormComponent, category_encodeURLFormComponent};
 
     factory.registerFunction<FunctionEncodeURLFormComponent>(documentation_encodeURLFormComponent);
-    factory.registerAlias("url_encode", "encodeURLFormComponent", FunctionFactory::Case::Insensitive);
 }
 
 }

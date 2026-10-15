@@ -604,7 +604,19 @@ struct ByteEditDistanceImpl
     static ResultType process(const char * __restrict haystack, size_t haystack_size, const char * __restrict needle, size_t needle_size)
     {
         if (haystack_size == 0 || needle_size == 0)
-            return haystack_size + needle_size;
+        {
+            if constexpr (is_utf8)
+            {
+                /// The distance is the number of code points, not bytes, of the other string.
+                size_t code_points = 0;
+                auto count = [&](UInt32) { ++code_points; };
+                parseUTF8String(haystack, haystack_size, count);
+                parseUTF8String(needle, needle_size, count);
+                return code_points;
+            }
+            else
+                return haystack_size + needle_size;
+        }
 
         /// Safety threshold against DoS, since we use two arrays to calculate the distance.
         if (haystack_size > max_string_size || needle_size > max_string_size)
