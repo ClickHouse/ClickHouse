@@ -243,7 +243,7 @@ public:
 
     /// A static subcolumn's serialization from the part's shared serializations;
     /// see `PartSerializations::tryGetSubcolumnSerialization` for when it returns nothing.
-    SerializationPtr tryGetSubcolumnSerialization(const String & subcolumn_name) const;
+    SerializationPtr tryGetSubcolumnSerialization(const String & column_name, const String & subcolumn_name) const;
 
     void remove();
 

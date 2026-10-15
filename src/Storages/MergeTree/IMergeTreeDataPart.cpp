@@ -974,9 +974,9 @@ SerializationPtr IMergeTreeDataPart::tryGetSerialization(const String & column_n
     return serializations->tryGet(column_name);
 }
 
-SerializationPtr IMergeTreeDataPart::tryGetSubcolumnSerialization(const String & subcolumn_name) const
+SerializationPtr IMergeTreeDataPart::tryGetSubcolumnSerialization(const String & column_name, const String & subcolumn_name) const
 {
-    return serializations->tryGetSubcolumnSerialization(subcolumn_name);
+    return serializations->tryGetSubcolumnSerialization(column_name, subcolumn_name);
 }
 
 bool IMergeTreeDataPart::isMovingPart() const

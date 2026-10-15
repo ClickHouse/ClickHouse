@@ -85,19 +85,11 @@ public:
         return groups[it->second.first]->serializations[it->second.second];
     }
 
-    /// A static subcolumn's serialization by its full name, or nothing: dynamic subcolumns are not
-    /// stored, and a name that resolves to a column rather than a subcolumn is not returned here (a
-    /// subcolumn whose full name is also a column's name is shadowed by the column).
-    SerializationPtr tryGetSubcolumnSerialization(const String & name) const
-    {
-        auto it = name_to_slot->find(name);
-        if (it == name_to_slot->end())
-            return nullptr;
-        const auto [group_index, index_in_group] = it->second;
-        if (index_in_group == 0)
-            return nullptr;
-        return groups[group_index]->serializations[index_in_group];
-    }
+    /// The serialization of the static subcolumn `subcolumn_name` of the column `column_name`, or nothing
+    /// when `column_name` is not a column of the part or the subcolumn is not in its group. Dynamic
+    /// subcolumns are not stored, and the full name alone is ambiguous: it can be a column or a subcolumn
+    /// of another column (e.g. `n.b.t` of the column `n.b` and of a collected `Nested` column `n`).
+    SerializationPtr tryGetSubcolumnSerialization(const String & column_name, const String & subcolumn_name) const;
 
     bool empty() const { return groups.empty(); }
 

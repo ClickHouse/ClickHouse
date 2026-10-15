@@ -566,7 +566,7 @@ SerializationPtr IMergeTreeReader::tryGetSerializationFromPart(const NameAndType
     /// serialization below (a walk over all the column's substreams).
     if (column_in_part.isSubcolumn())
     {
-        if (auto serialization = data_part_info_for_read->tryGetSubcolumnSerialization(column_in_part.name))
+        if (auto serialization = data_part_info_for_read->tryGetSubcolumnSerialization(column_in_part.getNameInStorage(), column_in_part.getSubcolumnName()))
             return serialization->supportsPooling() ? serialization : nullptr;
     }
 
@@ -650,7 +650,7 @@ bool IMergeTreeReader::hasSubcolumnInPart(const String & name_in_part, const IDa
 {
     /// A hit means the subcolumn is present; a miss is inconclusive (a dynamic path is never in the
     /// part's subcolumns), so fall back to resolving it against the column's serialization.
-    if (data_part_info_for_read->tryGetSubcolumnSerialization(Nested::concatenateName(name_in_part, subcolumn_name)))
+    if (data_part_info_for_read->tryGetSubcolumnSerialization(name_in_part, subcolumn_name))
         return true;
 
     /// Resolved against the serialization the part holds for the column, when there is one, instead of building one.

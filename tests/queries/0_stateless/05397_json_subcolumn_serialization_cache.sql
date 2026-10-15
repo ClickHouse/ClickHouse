@@ -51,3 +51,18 @@ SELECT sum(data.n.x) FROM t_json_subcol_cache_compact FINAL;
 
 DROP TABLE t_json_subcol_cache_wide;
 DROP TABLE t_json_subcol_cache_compact;
+
+-- Wide parts read flattened `Nested` arrays as subcolumns of the collected `Nested` column, so `n.b.t` must
+-- not take the serialization the part holds for the subcolumn `t` of the column `n.b`.
+DROP TABLE IF EXISTS t_json_subcol_cache_nested;
+CREATE TABLE t_json_subcol_cache_nested (id UInt64, `n.a` Array(UInt64), `n.b` Array(JSON(t UInt64)))
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t_json_subcol_cache_nested VALUES (1, [1, 2], ['{"t":10}', '{"t":20}']), (2, [3], ['{"t":30}']);
+
+SELECT 'nested';
+SELECT id, n.a, n.b.t FROM t_json_subcol_cache_nested ORDER BY id;
+SELECT sum(arraySum(n.b.t)) FROM t_json_subcol_cache_nested;
+
+DROP TABLE t_json_subcol_cache_nested;
