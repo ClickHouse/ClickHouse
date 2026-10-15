@@ -36,6 +36,7 @@
 #include <Interpreters/StorageID.h>
 #include <Common/quoteString.h>
 #include <Common/StringUtils.h>
+#include <Poco/String.h>
 #include <Parsers/ASTLiteral.h>
 
 #include <base/unit.h>
@@ -1771,10 +1772,34 @@ void PrefixCapturingReadBuffer::captureFromCurrentBuffer()
         prefix_truncated = true;
 }
 
-PrefixCapturingReadBuffer::CapturedPrefix PrefixCapturingReadBuffer::getCapturedPrefix() const
+namespace
+{
+
+/// Whether every row of the format, except possibly the last row of the input, ends with a line break.
+bool formatEndsRowsWithLineBreak(const String & format_name)
+{
+    static constexpr std::string_view prefixes[] = {
+        "tabseparated", "tsv", "csv", "tskv", "customseparated", "jsoneachrow", "jsonlines", "ndjson",
+        "jsonstringseachrow", "jsoncompacteachrow", "jsoncompactstringseachrow", "lineasstring"};
+    String name = Poco::toLower(format_name);
+    return std::ranges::any_of(prefixes, [&](std::string_view prefix) { return name.starts_with(prefix); });
+}
+
+}
+
+PrefixCapturingReadBuffer::CapturedPrefix PrefixCapturingReadBuffer::getCapturedPrefix(const String & format_name) const
 {
     std::lock_guard lock(capture_mutex);
-    return {captured, prefix_truncated};
+    /// Unless the end of the input has been seen, the capture ends where the bytes buffered so far end,
+    /// which may be in the middle of a row: the parser can fail on an early field of a row before asking
+    /// for the rest of it. Such an unfinished final row would look like a complete but short row to
+    /// inference. In the formats with a row per line, a capture that does not end with a line break
+    /// therefore may end inside a row. In the other formats an unfinished row usually makes inference
+    /// fail instead, and a complete input commonly does not end with a line break there (`Values`,
+    /// `Form`, the binary formats), so it cannot be told from a cut one.
+    bool may_end_inside_row = !reached_end_of_input && !captured.empty() && captured.back() != '\n'
+        && formatEndsRowsWithLineBreak(format_name);
+    return {captured, prefix_truncated || may_end_inside_row};
 }
 
 bool PrefixCapturingReadBuffer::nextImpl()
@@ -1785,7 +1810,14 @@ bool PrefixCapturingReadBuffer::nextImpl()
     pos = in.position();
 
     if (res)
+    {
         captureFromCurrentBuffer();
+    }
+    else
+    {
+        std::lock_guard lock(capture_mutex);
+        reached_end_of_input = true;
+    }
 
     return res;
 }
@@ -1901,7 +1933,7 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
                 [captured_prefix_buffer, expected_header = header, format_name = resolved_format, context](
                     std::optional<size_t> rows_reached_by_parser) -> String
                 {
-                    const auto prefix = captured_prefix_buffer->getCapturedPrefix();
+                    const auto prefix = captured_prefix_buffer->getCapturedPrefix(format_name);
                     return getInsertDataSchemaMismatchDescription(
                         prefix.data,
                         format_name,

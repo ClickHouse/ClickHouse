@@ -135,8 +135,11 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method skipRow is not implemented for format reader");
     }
 
+    /// Skip the prefix before the header. Returns the number of skipped rows (lines skipped by
+    /// `input_format_*_skip_first_lines`), which the file segmentation engine counts as rows.
+    virtual size_t skipPrefixBeforeHeader() { return 0; }
+
     /// Skip delimiters, if any.
-    virtual void skipPrefixBeforeHeader() {}
     virtual void skipRowStartDelimiter() {}
     virtual void skipFieldDelimiter() {}
     virtual void skipRowEndDelimiter() {}

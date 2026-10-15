@@ -162,10 +162,15 @@ public:
     /// falls back to sampling the data without a row bound.
     virtual std::optional<size_t> getRowsReachedOnParseError() const { return std::nullopt; }
 
-    /// The number of header rows (column names, column types) read by `readPrefix`. They are not
-    /// counted as data rows by the parser, but the file segmentation engine of
+    /// The number of header rows (skipped first lines, column names, column types) read by `readPrefix`.
+    /// They are not counted as data rows by the parser, but the file segmentation engine of
     /// `ParallelParsingInputFormat` counts them in the row offsets of the later units.
     virtual size_t getNumberOfHeaderRows() const { return 0; }
+
+    /// How many of the rows passed to `setRowsReadBefore` were header rows rather than data rows
+    /// (see getNumberOfHeaderRows). The row numbers reported in parse errors exclude them, so they
+    /// match the numbers reported when the same data is parsed without `ParallelParsingInputFormat`.
+    virtual void setHeaderRowsReadBefore(size_t /*rows*/) {}
 
     /// TopN dynamic filtering with `FormatTopKFilterInfo::track_row_group_best_values`: for the buckets
     /// which returned rows, the best value of the sort column among these rows, in the query's order.

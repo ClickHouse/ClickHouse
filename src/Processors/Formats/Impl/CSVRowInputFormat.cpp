@@ -454,14 +454,16 @@ bool CSVFormatReader::readFieldOrDefault(DB::IColumn & column, const DB::DataTyp
     return false;
 }
 
-void CSVFormatReader::skipPrefixBeforeHeader()
+size_t CSVFormatReader::skipPrefixBeforeHeader()
 {
-    for (size_t i = 0; i != format_settings.csv.skip_first_lines; ++i)
+    size_t skipped_rows = 0;
+    for (; skipped_rows != format_settings.csv.skip_first_lines; ++skipped_rows)
     {
         if (buf->eof())
             break;
         readRow();
     }
+    return skipped_rows;
 }
 
 void CSVFormatReader::setReadBuffer(ReadBuffer & in_)

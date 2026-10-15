@@ -55,7 +55,7 @@ public:
     void skipTypes() override { skipRow(); }
     void skipRow() override;
 
-    void skipPrefixBeforeHeader() override;
+    size_t skipPrefixBeforeHeader() override;
     void skipRowStartDelimiter() override;
     void skipFieldDelimiter() override;
     void skipRowEndDelimiter() override;

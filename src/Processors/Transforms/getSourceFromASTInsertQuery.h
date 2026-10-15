@@ -123,9 +123,10 @@ class PrefixCapturingReadBuffer : public ReadBuffer, public ReadBufferWrapperBas
 public:
     PrefixCapturingReadBuffer(ReadBuffer & in_, size_t max_bytes_to_capture_);
 
-    /// The captured prefix together with whether more bytes streamed through than the cap allowed to
-    /// capture, i.e. the prefix is a truncated view of the data (see the `data_is_truncated` parameter
-    /// of getInsertDataSchemaMismatchDescription).
+    /// The captured prefix together with whether it may be a truncated view of the data (see the
+    /// `data_is_truncated` parameter of getInsertDataSchemaMismatchDescription): either more bytes
+    /// streamed through than the cap allowed to capture, or the end of the input has not been seen and
+    /// the capture may end inside a row of the format `format_name`.
     struct CapturedPrefix
     {
         String data;
@@ -136,7 +137,7 @@ public:
     /// segmentation thread while the parse-error diagnostic reads the capture from the thread that
     /// handles the exception, so the capture is taken under a lock and copied out: a `string_view` into
     /// the growing string would be read while another thread appends to it.
-    CapturedPrefix getCapturedPrefix() const;
+    CapturedPrefix getCapturedPrefix(const String & format_name) const;
 
     /// Keep diagnostics that inspect the buffer chain (e.g. the file name added to error messages)
     /// working as if the wrapper were not there.
@@ -161,6 +162,8 @@ private:
     mutable std::mutex capture_mutex;
     String captured TSA_GUARDED_BY(capture_mutex);
     bool prefix_truncated TSA_GUARDED_BY(capture_mutex) = false;
+    /// Whether the wrapped buffer reported the end of the input.
+    bool reached_end_of_input TSA_GUARDED_BY(capture_mutex) = false;
 };
 
 }

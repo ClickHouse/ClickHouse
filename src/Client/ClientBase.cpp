@@ -2734,7 +2734,8 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
                 /// from the message, which is the only place it is available here. It counts rows
                 /// from the beginning of the file even under parallel parsing, because
                 /// `ParallelParsingInputFormat` gives every unit's parser the number of rows read
-                /// before it (`setRowsReadBefore`), so the bound does not depend on how the read
+                /// before it (`setRowsReadBefore`) and how many of them were header rows that are not
+                /// counted (`setHeaderRowsReadBefore`), so the bound does not depend on how the read
                 /// happened to be parallelized. When the message carries no row number (e.g. the
                 /// error came from segmentation rather than from a row parser), sampling stays
                 /// unbounded.
@@ -2851,7 +2852,7 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
             [&capturing_buf, current_format, expected_header = sample, context = client_context](
                 std::optional<size_t> rows_reached_by_parser) -> String
             {
-                const auto prefix = capturing_buf->getCapturedPrefix();
+                const auto prefix = capturing_buf->getCapturedPrefix(current_format);
                 return getInsertDataSchemaMismatchDescription(
                     prefix.data,
                     current_format,

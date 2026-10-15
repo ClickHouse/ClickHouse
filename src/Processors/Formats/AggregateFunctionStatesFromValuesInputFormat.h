@@ -39,6 +39,7 @@ public:
     void setBucketsToRead(const FileBucketInfoPtr & buckets_to_read) override { underlying->setBucketsToRead(buckets_to_read); }
     const BlockMissingValues * getMissingValues() const override { return underlying->getMissingValues(); }
     void setRowsReadBefore(size_t rows) override { underlying->setRowsReadBefore(rows); }
+    void setHeaderRowsReadBefore(size_t rows) override { underlying->setHeaderRowsReadBefore(rows); }
     void setSerializationHints(const SerializationInfoByName & hints) override { underlying->setSerializationHints(hints); }
     size_t getApproxBytesReadForChunk() const override { return underlying->getApproxBytesReadForChunk(); }
     void needOnlyCount() override { underlying->needOnlyCount(); }
