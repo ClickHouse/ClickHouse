@@ -3,6 +3,8 @@
 -- The same holds when the `FixedString` is held by a `Variant` or `Dynamic` constant.
 
 SET optimize_read_in_order = 1;
+-- Keep `ORDER BY` as written, to check which columns read-in-order treats as fixed.
+SET optimize_keys_fixed_by_where = 0;
 
 DROP TABLE IF EXISTS t_rio_string;
 CREATE TABLE t_rio_string (k UInt8, s String) ENGINE = MergeTree ORDER BY (k, s);

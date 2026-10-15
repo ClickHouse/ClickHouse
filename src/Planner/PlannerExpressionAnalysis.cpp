@@ -1,6 +1,5 @@
 #include <memory>
 #include <optional>
-#include <stack>
 #include <Planner/PlannerExpressionAnalysis.h>
 
 #include <Columns/ColumnNullable.h>
@@ -95,55 +94,6 @@ std::optional<FilterAnalysisResult> analyzeFilter(
     return result;
 }
 
-bool canRemoveConstantFromGroupByKey(const ConstantNode & root)
-{
-    const auto & source_expression = root.getSourceExpression();
-    if (!source_expression)
-        return true;
-
-    std::stack<const IQueryTreeNode *> nodes;
-    nodes.push(source_expression.get());
-    while (!nodes.empty())
-    {
-        const auto * node = nodes.top();
-        nodes.pop();
-
-        if (node->getNodeType() == QueryTreeNodeType::QUERY)
-            /// Allow removing constants from scalar subqueries. We send them to all the shards.
-            continue;
-
-        const auto * constant_node = node->as<ConstantNode>();
-        const auto * function_node = node->as<FunctionNode>();
-        if (constant_node)
-        {
-            if (!canRemoveConstantFromGroupByKey(*constant_node))
-                return false;
-        }
-        else if (function_node)
-        {
-            if (!function_node->isOrdinaryFunction())
-            {
-                /// Non-ordinary functions (window, aggregate, lambda) cannot be server constants,
-                /// so it is safe to remove them from GROUP BY. We cannot call getFunctionOrThrow()
-                /// on them (it would throw), but we also don't need to — they won't produce
-                /// server-specific values. Skip examining their children.
-                continue;
-            }
-
-            /// Do not allow removing constants like `hostName()`
-            if (function_node->getFunctionOrThrow()->isServerConstant())
-                return false;
-
-            for (const auto & child : function_node->getArguments())
-                nodes.push(child.get());
-        }
-        // else
-        //     return false;
-    }
-
-    return true;
-}
-
 /** Construct aggregation analysis result if query tree has GROUP BY or aggregates.
   * Actions before aggregation are added into actions chain, if result is not null optional.
   */
@@ -202,7 +152,7 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
                     const auto * constant_key = grouping_set_key_node->as<ConstantNode>();
                     group_by_with_constant_keys |= (constant_key != nullptr);
 
-                    if (constant_key && !aggregates_descriptions.empty() && (!check_constants_for_group_by_key || canRemoveConstantFromGroupByKey(*constant_key)))
+                    if (constant_key && !aggregates_descriptions.empty() && (!check_constants_for_group_by_key || isConstantSameOnAllShards(*constant_key)))
                         continue;
 
                     auto [expression_dag_nodes, correlated_subtrees] = actions_visitor.visit(before_aggregation_actions->dag, grouping_set_key_node);
@@ -261,7 +211,7 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
                 group_by_with_constant_keys |= (constant_key != nullptr);
 
                 if (constant_key && !keep_constant_keys && !aggregates_descriptions.empty()
-                    && (!check_constants_for_group_by_key || canRemoveConstantFromGroupByKey(*constant_key)))
+                    && (!check_constants_for_group_by_key || isConstantSameOnAllShards(*constant_key)))
                     continue;
 
                 auto [expression_dag_nodes, correlated_subtrees] = actions_visitor.visit(before_aggregation_actions->dag, group_by_key_node);

@@ -1,17 +1,17 @@
 ComplexKeyHashed - plan
-SELECT\n    __table1.k1 AS k1,\n    __table1.k2 AS k2,\n    __table1.payload AS payload\nFROM default.f AS __table1\nWHERE and(equals(__table1.k1, _CAST(1, \'UInt64\')), equals(__table1.k2, \'a\'))\nORDER BY\n    __table1.k1 ASC,\n    __table1.k2 ASC,\n    __table1.payload ASC
+SELECT\n    __table1.k1 AS k1,\n    __table1.k2 AS k2,\n    __table1.payload AS payload\nFROM default.f AS __table1\nWHERE and(equals(__table1.k1, _CAST(1, \'UInt64\')), equals(__table1.k2, \'a\'))\nORDER BY __table1.payload ASC
 ComplexKeyHashed
 1	a	x
 ComplexKeyHashed, opt off
 1	a	x
 ComplexHashedArray - plan
-SELECT\n    __table1.k1 AS k1,\n    __table1.k2 AS k2,\n    __table1.payload AS payload\nFROM default.f AS __table1\nWHERE and(equals(__table1.k1, _CAST(1, \'UInt64\')), equals(__table1.k2, \'a\'))\nORDER BY\n    __table1.k1 ASC,\n    __table1.k2 ASC,\n    __table1.payload ASC
+SELECT\n    __table1.k1 AS k1,\n    __table1.k2 AS k2,\n    __table1.payload AS payload\nFROM default.f AS __table1\nWHERE and(equals(__table1.k1, _CAST(1, \'UInt64\')), equals(__table1.k2, \'a\'))\nORDER BY __table1.payload ASC
 ComplexHashedArray
 1	a	x
 ComplexHashedArray, opt off
 1	a	x
 ComplexKeySparseHashed - plan
-SELECT\n    __table1.k1 AS k1,\n    __table1.k2 AS k2,\n    __table1.payload AS payload\nFROM default.f AS __table1\nWHERE and(equals(__table1.k1, _CAST(1, \'UInt64\')), equals(__table1.k2, \'a\'))\nORDER BY\n    __table1.k1 ASC,\n    __table1.k2 ASC,\n    __table1.payload ASC
+SELECT\n    __table1.k1 AS k1,\n    __table1.k2 AS k2,\n    __table1.payload AS payload\nFROM default.f AS __table1\nWHERE and(equals(__table1.k1, _CAST(1, \'UInt64\')), equals(__table1.k2, \'a\'))\nORDER BY __table1.payload ASC
 ComplexKeySparseHashed
 1	a	x
 ComplexKeySparseHashed, opt off

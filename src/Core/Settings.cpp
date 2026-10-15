@@ -7683,6 +7683,12 @@ Example: `LIMIT 5 BY toString(x)` becomes `LIMIT 5 BY x`.
 Optimize GROUP BY when all keys in block are constant
 )", 0, \
         {"23.9", false, true, "Optimize group by constant keys by default"}) \
+    DECLARE(Bool, optimize_keys_fixed_by_where, true, R"(
+Removes the keys of `GROUP BY`, `ORDER BY` and the `PARTITION BY` of window functions that the `WHERE` clause fixes to a single value with an equality to a constant. At least one `ORDER BY` element is kept. For example, `SELECT tenant, day, count() FROM t WHERE tenant = 'x' GROUP BY tenant, day ORDER BY tenant, day` aggregates and sorts by `day` only, and returns the constant `'x'` for `tenant`.
+
+Equalities on floating-point, `Variant`, `Dynamic`, `JSON` and composite types are not used, because different values of these types can compare equal. The optimization is not applied to queries with `WITH TOTALS`, `ROLLUP`, `CUBE`, `GROUPING SETS` or `WITH FILL`.
+)", 0, \
+        {"26.10", false, true, "New setting to remove `GROUP BY`, `ORDER BY` and `PARTITION BY` keys that `WHERE` fixes to a constant."}) \
     DECLARE(Bool, legacy_column_name_of_tuple_literal, false, R"(
 List all names of element of large tuple literals in their column names instead of hash. This settings exists only for compatibility reasons. It makes sense to set to 'true', while doing rolling update of cluster from version lower than 21.7 to higher.
 )", 0, \

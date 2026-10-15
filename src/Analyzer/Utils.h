@@ -17,6 +17,7 @@ namespace DB
 {
 
 class FunctionNode;
+class ConstantNode;
 class ColumnNode;
 using ColumnNodePtr = std::shared_ptr<ColumnNode>;
 
@@ -98,6 +99,10 @@ QueryTreeNodePtr buildCastFunction(const QueryTreeNodePtr & expression,
 
 /// Try extract boolean constant from condition node
 std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr & condition_node);
+
+/// Returns false if the constant is computed from a server constant such as `hostName`, whose value can differ
+/// between the shards of a distributed query. Such a constant must not be removed from the GROUP BY keys.
+bool isConstantSameOnAllShards(const ConstantNode & root);
 
 /** Add table expression in tables in select query children.
   * If table expression node is not of identifier node, table node, query node, table function node, join node or array join node type throws logical error exception.

@@ -2,6 +2,7 @@
 
 #include <Functions/IFunction.h>
 
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
@@ -65,11 +66,16 @@ public:
                 return;
         }
 
-        /// Collect GROUP BY keys.
+        /// Collect GROUP BY keys. A constant key has a single value, so the order of the groups does not depend on it,
+        /// unless it is a server constant such as `hostName`, which differs between the shards of a distributed query.
         auto & group_by_nodes = query->getGroupBy().getNodes();
         QueryTreeNodePtrWithHashSet group_by_keys;
         for (auto & key : group_by_nodes)
-            group_by_keys.insert(QueryTreeNodePtrWithHash(key));
+        {
+            const auto * constant_key = key->as<ConstantNode>();
+            if (!constant_key || !isConstantSameOnAllShards(*constant_key))
+                group_by_keys.insert(QueryTreeNodePtrWithHash(key));
+        }
 
         if (group_by_keys.empty())
             return;

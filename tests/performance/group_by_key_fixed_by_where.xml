@@ -1,0 +1,10 @@
+<test>
+    <create_query>CREATE TABLE fixed_key (tenant String, k UInt32, v UInt64) ENGINE = MergeTree ORDER BY tuple()</create_query>
+
+    <fill_query>INSERT INTO fixed_key SELECT ['tenant_a', 'tenant_b'][number % 2 + 1], intHash32(number) % 1000000, number FROM numbers_mt(20000000)</fill_query>
+
+    <query>SELECT tenant, k, count() FROM fixed_key WHERE tenant = 'tenant_a' GROUP BY tenant, k FORMAT Null</query>
+    <query>SELECT max(rn) FROM (SELECT row_number() OVER (PARTITION BY tenant, k ORDER BY v) AS rn FROM fixed_key WHERE tenant = 'tenant_a') FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS fixed_key</drop_query>
+</test>

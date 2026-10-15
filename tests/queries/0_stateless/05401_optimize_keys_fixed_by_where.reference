@@ -1,0 +1,59 @@
+-- { echo }
+
+SET enable_analyzer = 1;
+SET optimize_keys_fixed_by_where = 1;
+DROP TABLE IF EXISTS t;
+CREATE TABLE t (tenant String, day Date, v UInt64) ENGINE = MergeTree ORDER BY (tenant, day);
+INSERT INTO t VALUES ('x', '2024-01-01', 1), ('x', '2024-01-01', 2), ('x', '2024-01-02', 3), ('y', '2024-01-01', 4);
+-- GROUP BY and ORDER BY: the key fixed by WHERE becomes a constant, which the planner drops from the aggregation keys.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT tenant, day, sum(v) FROM t WHERE tenant = 'x' GROUP BY tenant, day ORDER BY tenant, day;
+SELECT\n    \'x\' AS tenant,\n    __table1.day AS day,\n    sum(__table1.v) AS `sum(v)`\nFROM default.t AS __table1\nWHERE equals(__table1.tenant, \'x\')\nGROUP BY\n    \'x\',\n    __table1.day\nORDER BY __table1.day ASC
+SELECT tenant, day, sum(v) FROM t WHERE tenant = 'x' GROUP BY tenant, day ORDER BY tenant, day;
+x	2024-01-01	3
+x	2024-01-02	3
+-- At least one ORDER BY element is kept, so the rows are still read in the order of the table.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT day FROM t WHERE tenant = 'x' ORDER BY tenant;
+SELECT __table1.day AS day\nFROM default.t AS __table1\nWHERE equals(__table1.tenant, \'x\')\nORDER BY __table1.tenant ASC
+-- An expression of the key after the aggregation is replaced too.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT concat(tenant, '-', toString(day)) AS s, count() FROM t WHERE tenant = 'x' GROUP BY tenant, day ORDER BY s;
+SELECT\n    concat(\'x\', \'-\', toString(__table1.day)) AS s,\n    count() AS `count()`\nFROM default.t AS __table1\nWHERE equals(__table1.tenant, \'x\')\nGROUP BY\n    \'x\',\n    __table1.day\nORDER BY concat(\'x\', \'-\', toString(__table1.day)) ASC
+SELECT concat(tenant, '-', toString(day)) AS s, count() FROM t WHERE tenant = 'x' GROUP BY tenant, day ORDER BY s;
+x-2024-01-01	2
+x-2024-01-02	1
+-- PARTITION BY of a window function.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT day, v, row_number() OVER (PARTITION BY tenant, day ORDER BY v) FROM t WHERE tenant = 'x' ORDER BY day, v;
+SELECT\n    __table1.day AS day,\n    __table1.v AS v,\n    row_number() OVER (PARTITION BY __table1.day ORDER BY __table1.v ASC) AS `row_number() OVER (PARTITION BY tenant, day ORDER BY v ASC)`\nFROM default.t AS __table1\nWHERE equals(__table1.tenant, \'x\')\nORDER BY\n    __table1.day ASC,\n    __table1.v ASC
+SELECT day, v, row_number() OVER (PARTITION BY tenant, day ORDER BY v) FROM t WHERE tenant = 'x' ORDER BY day, v;
+2024-01-01	1	1
+2024-01-01	2	2
+2024-01-02	3	1
+-- ORDER BY is still truncated after the remaining GROUP BY keys.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT tenant, day, sum(v) FROM t WHERE tenant = 'x' GROUP BY tenant, day ORDER BY tenant, day, sum(v) SETTINGS optimize_truncate_order_by_after_group_by_keys = 1;
+SELECT\n    \'x\' AS tenant,\n    __table1.day AS day,\n    sum(__table1.v) AS `sum(v)`\nFROM default.t AS __table1\nWHERE equals(__table1.tenant, \'x\')\nGROUP BY\n    \'x\',\n    __table1.day\nORDER BY __table1.day ASC\nSETTINGS optimize_truncate_order_by_after_group_by_keys = 1
+-- Empty input gives no rows when every key is removed.
+SELECT tenant, count() FROM t WHERE tenant = 'z' GROUP BY tenant;
+-- Aggregation by constant keys would return a row here, so the key is kept.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT tenant, count() FROM t WHERE tenant = 'z' GROUP BY tenant SETTINGS empty_result_for_aggregation_by_constant_keys_on_empty_set = 0;
+SELECT\n    __table1.tenant AS tenant,\n    count() AS `count()`\nFROM default.t AS __table1\nWHERE equals(__table1.tenant, \'z\')\nGROUP BY __table1.tenant\nSETTINGS empty_result_for_aggregation_by_constant_keys_on_empty_set = 0
+SELECT tenant, count() FROM t WHERE tenant = 'z' GROUP BY tenant SETTINGS empty_result_for_aggregation_by_constant_keys_on_empty_set = 0;
+-- The constant takes the type of the key.
+DROP TABLE IF EXISTS types;
+CREATE TABLE types (lc LowCardinality(Nullable(String)), dt DateTime('UTC')) ENGINE = Memory;
+INSERT INTO types VALUES ('a', '2024-01-01 00:00:00'), ('b', '2024-01-02 00:00:00');
+SELECT lc, dt, toTypeName(lc), toTypeName(dt), count() FROM types WHERE lc = 'a' AND dt = '2024-01-01 00:00:00' GROUP BY lc, dt;
+a	2024-01-01 00:00:00	LowCardinality(Nullable(String))	DateTime(\'UTC\')	1
+-- Different floating-point values compare equal (`-0.0 = 0.0`), so the key is kept.
+DROP TABLE IF EXISTS floats;
+CREATE TABLE floats (x Float64, v UInt64) ENGINE = Memory;
+INSERT INTO floats VALUES (0, 1), (-0., 2);
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT x, sum(v) FROM floats WHERE x = 0 GROUP BY x;
+SELECT\n    __table1.x AS x,\n    sum(__table1.v) AS `sum(v)`\nFROM default.floats AS __table1\nWHERE equals(__table1.x, 0)\nGROUP BY __table1.x
+-- In a self-join the columns differ only by the table alias, so the key of the other side is kept.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT b.tenant, count() FROM t AS a JOIN t AS b ON a.day = b.day WHERE a.tenant = 'x' GROUP BY b.tenant;
+SELECT\n    __table2.tenant AS `b.tenant`,\n    count() AS `count()`\nFROM default.t AS __table1\nALL INNER JOIN default.t AS __table2 ON equals(__table1.day, __table2.day)\nWHERE equals(__table1.tenant, \'x\')\nGROUP BY __table2.tenant
+-- The totals have default values in place of the keys, so the key is kept.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT tenant, count() FROM t WHERE tenant = 'x' GROUP BY tenant WITH TOTALS;
+SELECT\n    __table1.tenant AS tenant,\n    count() AS `count()`\nFROM default.t AS __table1\nWHERE equals(__table1.tenant, \'x\')\nGROUP BY __table1.tenant\n    WITH TOTALS
+DROP TABLE floats;
+DROP TABLE types;
+DROP TABLE t;

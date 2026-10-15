@@ -69,6 +69,7 @@
 #include <Poco/String.h>
 
 #include <ranges>
+#include <stack>
 
 namespace DB
 {
@@ -453,6 +454,53 @@ std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr &
 
     auto predicate_value = static_cast<UInt8>(value.safeGet<UInt8>());
     return predicate_value > 0;
+}
+
+bool isConstantSameOnAllShards(const ConstantNode & root)
+{
+    const auto & source_expression = root.getSourceExpression();
+    if (!source_expression)
+        return true;
+
+    std::stack<const IQueryTreeNode *> nodes;
+    nodes.push(source_expression.get());
+    while (!nodes.empty())
+    {
+        const auto * node = nodes.top();
+        nodes.pop();
+
+        if (node->getNodeType() == QueryTreeNodeType::QUERY)
+            /// Allow removing constants from scalar subqueries. We send them to all the shards.
+            continue;
+
+        const auto * constant_node = node->as<ConstantNode>();
+        const auto * function_node = node->as<FunctionNode>();
+        if (constant_node)
+        {
+            if (!isConstantSameOnAllShards(*constant_node))
+                return false;
+        }
+        else if (function_node)
+        {
+            if (!function_node->isOrdinaryFunction())
+            {
+                /// Non-ordinary functions (window, aggregate, lambda) cannot be server constants,
+                /// so it is safe to remove them from GROUP BY. We cannot call getFunctionOrThrow()
+                /// on them (it would throw), but we also don't need to — they won't produce
+                /// server-specific values. Skip examining their children.
+                continue;
+            }
+
+            /// Do not allow removing constants like `hostName()`
+            if (function_node->getFunctionOrThrow()->isServerConstant())
+                return false;
+
+            for (const auto & child : function_node->getArguments())
+                nodes.push(child.get());
+        }
+    }
+
+    return true;
 }
 
 const Names & getColumnAliasesToRestore(const QueryTreeNodePtr & query_or_union_node)
