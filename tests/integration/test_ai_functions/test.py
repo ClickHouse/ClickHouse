@@ -2801,3 +2801,57 @@ def test_max_execution_time_break_stops_issuing_requests(started_cluster):
     )
     requests = _concurrency_stats()["requests"]
     assert requests < 40, f"the query kept sending requests past the time limit: {requests} of 400 were sent"
+
+
+AI_THREAD_POOL_CONFIG = "/etc/clickhouse-server/config.d/ai_thread_pool.xml"
+
+
+def _set_ai_thread_pool_size(size):
+    instance.replace_config(
+        AI_THREAD_POOL_CONFIG,
+        f"<clickhouse><ai_function_max_thread_pool_size>{size}</ai_function_max_thread_pool_size></clickhouse>",
+    )
+    instance.query("SYSTEM RELOAD CONFIG")
+
+
+def test_cancelled_query_does_not_wait_for_other_queries_requests(started_cluster):
+    """With a single pool thread, query A queues 64 requests. Query B's request queues behind them, and B
+    fails on `max_execution_time` before A's requests are served. Once A is killed, its queued requests
+    are not sent."""
+    _set_ai_thread_pool_size(1)
+    qid_a = unique_query_id("ai_backlog")
+    try:
+        _reset_concurrency()
+        request_a = instance.get_query_request(
+            f"SELECT {SLOW_CHAT_CALL} FROM numbers(400) FORMAT Null",
+            settings={"ai_function_max_concurrent_requests_per_thread": 64},
+            query_id=qid_a,
+        )
+        wait_condition(
+            _concurrency_stats, lambda stats: stats["requests"] >= 1, max_attempts=100, delay=0.1
+        )
+
+        error = instance.query_and_get_error(
+            f"SELECT {SLOW_CHAT_CALL} FROM numbers(1) FORMAT Null",
+            settings={"max_execution_time": 1},
+        )
+        assert "TIMEOUT_EXCEEDED" in error
+        served = _concurrency_stats()["requests"]
+        assert served < 64, f"the timed-out query waited for {served} requests of the other query"
+
+        instance.query(f"KILL QUERY WHERE query_id = '{qid_a}' SYNC")
+        assert "Query was cancelled" in request_a.get_error()
+        sent = _concurrency_stats()["requests"]
+        wait_condition(
+            lambda: instance.query(
+                "SELECT value FROM system.metrics WHERE metric = 'AIRequestThreadsScheduled'"
+            ).strip(),
+            lambda value: value == "0",
+            max_attempts=100,
+            delay=0.1,
+        )
+        # A request that passed its cancellation check before the kill may still arrive.
+        assert _concurrency_stats()["requests"] <= sent + 1
+    finally:
+        instance.query(f"KILL QUERY WHERE query_id = '{qid_a}' SYNC")
+        _set_ai_thread_pool_size(1000)

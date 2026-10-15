@@ -4,6 +4,7 @@
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
@@ -33,6 +34,7 @@ namespace ErrorCodes
 {
     extern const int AI_PROVIDER_RESPONSE_TRUNCATED;
     extern const int AI_PROVIDER_RESPONSE_INCOMPLETE;
+    extern const int CANNOT_SCHEDULE_TASK;
 }
 
 namespace
@@ -193,11 +195,10 @@ template <typename Response, typename Request>
 std::future<std::optional<Response>> submit(
     std::shared_ptr<IAIProvider> provider, Request request, AIRequestPolicy policy, AIQuotaTrackerPtr quota)
 {
-    /// move everything into task scope so nothing dangles if another thread throws
     auto task = [my_provider = std::move(provider),
                  my_request = std::move(request),
                  my_policy = std::move(policy),
-                 my_quota = std::move(quota)]
+                 my_quota = quota]
     {
         return runRequest<Response>(my_policy, *my_quota, [&]
         {
@@ -216,7 +217,31 @@ std::future<std::optional<Response>> submit(
         });
     };
 
-    return scheduleFromThreadPoolUnsafe<std::optional<Response>>(std::move(task), getAIRequestThreadPool().get(), ThreadName::AI_REQUEST);
+    using Task = detail::CallbackRunnerTask<std::optional<Response>, decltype(task)>;
+    auto runner_task = std::make_shared<Task>(getCurrentThreadGroup(), ThreadName::AI_REQUEST, std::move(task));
+    auto future = runner_task->promise.get_future();
+
+    /// Wait for a free slot in the queue in short steps, so a killed or timed-out query stops waiting.
+    constexpr Int64 wait_microseconds = 100'000;
+    auto & pool = getAIRequestThreadPool().get();
+    while (true)
+    {
+        Stopwatch watch;
+        try
+        {
+            pool.scheduleOrThrow([runner_task] { runner_task->run(); }, {}, wait_microseconds);
+            break;
+        }
+        catch (const Exception & e)
+        {
+            /// Only throw if we hit an unrelated error or it happened before the timeout
+            if (e.code() != ErrorCodes::CANNOT_SCHEDULE_TASK || watch.elapsedMicroseconds() < static_cast<UInt64>(wait_microseconds))
+                throw;
+        }
+        quota->throwIfCancelled();
+    }
+
+    return future;
 }
 
 }

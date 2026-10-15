@@ -23,6 +23,7 @@
 #include <Poco/URI.h>
 
 #include <algorithm>
+#include <chrono>
 #include <future>
 #include <limits>
 #include <optional>
@@ -177,6 +178,33 @@ AIParamSpecs FunctionBaseAI::allParams() const
 
 namespace
 {
+
+constexpr auto cancellation_check_interval = std::chrono::milliseconds(100);
+
+/// Waits for a submitted request. Throws once the query is killed or exceeds its time limit,
+/// so a request queued behind other queries' requests does not hold the query.
+template <typename Response>
+std::optional<Response> waitForRequest(std::future<std::optional<Response>> & request, const AIQuotaTracker & quota)
+{
+    while (request.wait_for(cancellation_check_interval) != std::future_status::ready)
+        quota.throwIfCancelled();
+    return request.get();
+}
+
+/// Waits for the submitted requests to finish, until the query is killed or exceeds its time limit.
+/// The tasks own everything they use, so they may outlive the query.
+template <typename Response>
+void drainRequests(VectorWithMemoryTracking<std::future<std::optional<Response>>> & requests, const AIQuotaTracker & quota)
+{
+    for (auto & request : requests)
+    {
+        if (!request.valid())
+            continue;
+        while (request.wait_for(cancellation_check_interval) != std::future_status::ready)
+            if (quota.isCancelled())
+                return;
+    }
+}
 
 const Field & getResolvedAIParam(const AIParamValues & values, std::string_view key)
 {
@@ -376,12 +404,8 @@ void FunctionBaseAI::embedTexts(
     wave.reserve(concurrency);
 
     /// Wait for all waves to complete on error, so that API-call and request counts are recorded
-    /// They were already dispatched and billed either way.
-    SCOPE_EXIT_SAFE({
-        for (auto & request : wave)
-            if (request.valid())
-                request.wait();
-    });
+    /// They were already dispatched and billed either way. A cancelled query does not wait.
+    SCOPE_EXIT_SAFE({ drainRequests(wave, *quota); });
 
     for (size_t wave_begin = 0; wave_begin < num_batches; wave_begin += concurrency)
     {
@@ -425,7 +449,7 @@ void FunctionBaseAI::embedTexts(
             /// `ai_function_throw_on_error` is disabled; either way its inputs stay empty.
             std::optional<AIEmbeddingResponse> ai_embedding_response;
             if (wave[k].valid())
-                ai_embedding_response = wave[k].get();
+                ai_embedding_response = waitForRequest(wave[k], *quota);
 
             if (!ai_embedding_response)
             {
@@ -510,12 +534,8 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     wave.reserve(concurrency);
 
     /// Wait for all waves to complete on error, so that API-call and request counts are recorded
-    /// They were already dispatched and billed either way.
-    SCOPE_EXIT_SAFE({
-        for (auto & request : wave)
-            if (request.valid())
-                request.wait();
-    });
+    /// They were already dispatched and billed either way. A cancelled query does not wait.
+    SCOPE_EXIT_SAFE({ drainRequests(wave, *quota_tracker); });
 
     for (size_t wave_begin = 0; wave_begin < input_rows_count; wave_begin += concurrency)
     {
@@ -563,7 +583,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
             /// keeps its default value.
             std::optional<AIResponse> ai_response;
             if (wave[k].valid())
-                ai_response = wave[k].get();
+                ai_response = waitForRequest(wave[k], *quota_tracker);
 
             if (!ai_response)
             {
