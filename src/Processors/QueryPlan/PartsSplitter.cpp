@@ -978,15 +978,10 @@ static RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataPart
         RangesInDataParts all_part_ranges(std::move(ranges_in_data_parts));
         for (auto & all_part_range : all_part_ranges)
         {
-            if (all_part_range.ranges_snapshot_after_pk_analysis)
-            {
-                all_part_range.ranges = *all_part_range.ranges_snapshot_after_pk_analysis;
-            }
-            else
-            {
-                const auto & index_granularity = all_part_range.data_part->index_granularity;
-                all_part_range.ranges = MarkRanges{{MarkRange{0, index_granularity->getMarksCountWithoutFinal()}}};
-            }
+            if (!all_part_range.ranges_snapshot_after_pk_analysis)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected ranges selected by primary key for part {}",
+                        all_part_range.data_part->name);
+            all_part_range.ranges = *all_part_range.ranges_snapshot_after_pk_analysis;
         }
         std::erase_if(all_part_ranges, [](const auto & part) { return part.ranges.empty(); });
         return all_part_ranges;

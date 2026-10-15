@@ -12,6 +12,7 @@ INSERT INTO t_skip_final_float_pk VALUES (1, 0.0, 1);
 INSERT INTO t_skip_final_float_pk VALUES (1, -0.0, 2);
 
 SELECT 'signed zeros';
+SELECT count() FROM (EXPLAIN indexes = 1 SELECT id FROM t_skip_final_float_pk FINAL WHERE toString(f) = '0') WHERE trimLeft(explain) = 'Granules: 1/2';
 SELECT id, f, v FROM t_skip_final_float_pk FINAL WHERE toString(f) = '0' SETTINGS force_data_skipping_indices = 'ix_f';
 SELECT id, f, v FROM t_skip_final_float_pk FINAL WHERE toString(f) = '-0';
 SELECT 'PrimaryKeyExpand for the float column, not for the integer one';
@@ -26,6 +27,7 @@ ENGINE = ReplacingMergeTree(v) ORDER BY (id, f);
 SYSTEM STOP MERGES t_skip_final_nan_pk;
 INSERT INTO t_skip_final_nan_pk VALUES (1, reinterpretAsFloat64(toUInt64(9221120237041090560)), 1);
 INSERT INTO t_skip_final_nan_pk VALUES (1, reinterpretAsFloat64(toUInt64(9221120237041090561)), 2);
+SELECT count() FROM (EXPLAIN indexes = 1 SELECT id FROM t_skip_final_nan_pk FINAL WHERE reinterpretAsUInt64(f) = 9221120237041090560) WHERE trimLeft(explain) = 'Granules: 1/2';
 SELECT id, reinterpretAsUInt64(f), v FROM t_skip_final_nan_pk FINAL WHERE reinterpretAsUInt64(f) = 9221120237041090560 SETTINGS force_data_skipping_indices = 'ix_f';
 DROP TABLE t_skip_final_nan_pk;
 
@@ -39,7 +41,8 @@ INSERT INTO t_skip_final_float_pk_ranges SELECT number, -0.0, 2 FROM numbers(100
 SELECT id, f, v FROM t_skip_final_float_pk_ranges FINAL WHERE id = 5000 AND toString(f) = '0' SETTINGS log_comment = '05401_pk_ranges_idx', force_data_skipping_indices = 'ix_f';
 SELECT id, f, v FROM t_skip_final_float_pk_ranges FINAL WHERE id = 5000 AND toString(f) = '0' SETTINGS log_comment = '05401_pk_ranges_noidx', use_skip_indexes = 0;
 SYSTEM FLUSH LOGS query_log;
-SELECT anyIf(read_rows, log_comment = '05401_pk_ranges_idx') = anyIf(read_rows, log_comment = '05401_pk_ranges_noidx')
+SELECT countIf(log_comment = '05401_pk_ranges_idx') > 0 AND countIf(log_comment = '05401_pk_ranges_noidx') > 0
+    AND anyIf(read_rows, log_comment = '05401_pk_ranges_idx') = anyIf(read_rows, log_comment = '05401_pk_ranges_noidx')
 FROM system.query_log
 WHERE event_date >= yesterday() AND current_database = currentDatabase() AND type = 'QueryFinish'
     AND log_comment IN ('05401_pk_ranges_idx', '05401_pk_ranges_noidx');
