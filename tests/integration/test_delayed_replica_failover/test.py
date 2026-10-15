@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import uuid
 
 import pytest
 
@@ -227,10 +228,24 @@ SELECT x FROM (SELECT * FROM distributed) WHERE x {} (SELECT y FROM ids) ORDER B
     load_balancing='in_order',
     max_replica_delay_for_distributed_queries=1,
     prefer_localhost_replica=1,
-    serialize_query_plan=0
+    serialize_query_plan=0,
+    allow_push_predicate_ast_for_distributed_subqueries=1
 """
-        assert node_1_1.query(query.format("GLOBAL IN")).split() == ["1", "4"]
-        assert node_1_1.query(query.format("GLOBAL NOT IN")).split() == ["2", "3"]
+        for op, function, expected in (
+            ("GLOBAL IN", "globalIn", ["1", "4"]),
+            ("GLOBAL NOT IN", "globalNotIn", ["2", "3"]),
+        ):
+            query_id = uuid.uuid4().hex
+            assert (
+                node_1_1.query(query.format(op), query_id=query_id).split() == expected
+            )
+            # Rows above + a pushed-down filter on the fresh replica mean it used the initiator's set.
+            node_1_2.query("SYSTEM FLUSH LOGS query_log")
+            shard_query = node_1_2.query(
+                "SELECT query FROM system.query_log WHERE type = 'QueryFinish' AND is_initial_query = 0 "
+                f"AND initial_query_id = '{query_id}' FORMAT TSVRaw"
+            )
+            assert f"{function}(" in shard_query, shard_query
     finally:
         node_1_1.query("SYSTEM START FETCHES replicated")
         for node in (node_1_1, node_1_2):
