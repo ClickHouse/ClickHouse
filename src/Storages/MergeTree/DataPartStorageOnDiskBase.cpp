@@ -755,7 +755,7 @@ void DataPartStorageOnDiskBase::rename(
     if (new_part_dir.ends_with('/'))
         new_part_dir.pop_back();
 
-    String to = pathToGenericString(fs::path(new_root_path) / new_part_dir / "");
+    String to = pathToGenericString(pathFromString(new_root_path) / pathFromString(new_part_dir) / "");
 
     if (volume->getDisk()->existsDirectory(to))
     {

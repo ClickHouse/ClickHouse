@@ -3076,11 +3076,11 @@ void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_
     }
 
     auto old_projection_root_path = getDataPartStorage().getRelativePath();
-    auto to = fs::path(relative_path) / new_relative_path;
+    auto to = pathFromString(relative_path) / pathFromString(new_relative_path);
 
     getDataPartStorage().rename(pathToGenericString(to.parent_path()), pathToGenericString(to.filename()), storage.log.load(), remove_new_dir_if_exists, fsync_dir);
 
-    auto new_projection_root_path = to.string();
+    auto new_projection_root_path = pathToGenericString(to);
 
     for (const auto & [_, part] : projection_parts)
         part->getDataPartStorage().changeRootPath(old_projection_root_path, new_projection_root_path);
