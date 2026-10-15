@@ -1201,8 +1201,14 @@ std::optional<UInt128> StorageMaterializedView::getModificationHash(const Storag
         /// `computeTableModificationHashForConsistency` checks the effective reader's `SELECT` access on the
         /// target table and folds its identity (including the UUID, so a re-created target is distinguished).
         /// Hash the same target table whose columns were checked against the caller above.
+        /// Inside the introspection scope, hash the target under the caller's own context: the target can
+        /// itself be a view-like storage (`outer_mv TO inner_mv`), and its own introspection checks must
+        /// run against the caller, not against this view's definer, or the caller would observe the churn
+        /// of a nested target's columns it cannot read. The caller can read every column of the target
+        /// (checked above), so this does not lose anything the caller may see.
         auto target_hash = computeTableModificationHashForConsistency(
-            caller_checked_target ? caller_checked_target->getStorageID() : getTargetTableId(), effective_context);
+            caller_checked_target ? caller_checked_target->getStorageID() : getTargetTableId(),
+            caller_checked_target ? query_context : effective_context);
         if (!target_hash)
             return {};
 
