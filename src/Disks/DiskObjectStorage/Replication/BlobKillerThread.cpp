@@ -270,8 +270,9 @@ BlobKillerThread::BlobKillerThread(
     task->deactivate();
 
     /// Scheduling does nothing while the task is deactivated, so the callback is harmless before `startup`
-    /// and after `shutdown`.
-    metadata_storage->setDeadBlobsQueuedCallback([this]() { task->schedule(); });
+    /// and after `shutdown`. It only wakes up an idle task: a round that is already pending (e.g. delayed by
+    /// `reschedule_interval_sec`) is not replaced, so ordinary asynchronous removals are still batched.
+    metadata_storage->setDeadBlobsQueuedCallback([this]() { task->scheduleAfter(0, /*overwrite=*/ false); });
 }
 
 BlobKillerThread::~BlobKillerThread()
