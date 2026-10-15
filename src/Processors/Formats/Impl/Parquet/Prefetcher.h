@@ -94,6 +94,9 @@ private:
         /// Whether this range can be piggy-backed to nearby other reads.
         std::atomic<bool> allow_incidental_read {true};
 
+        /// Whether the data of this range was handed out by getRangeData. To count used bytes once (introspection only).
+        std::atomic<bool> data_used {false};
+
         Task * task = nullptr; // if HasTask
         size_t range_set_idx = 0;
         size_t range_idx = UINT64_MAX;
@@ -201,6 +204,8 @@ private:
     std::mutex exception_mutex;
 
     void determineReadModeAndFileSize(ReadBuffer * reader_, const ReadOptions & options);
+    /// Reads from the underlying ReadBuffer, for readSync and for tasks.
+    void readImpl(char * to, size_t n, size_t offset);
     /// Creates and starts a Task covering this request and possibly other nearby ranges.
     ///
     /// If splitting, the request is being cancelled and replaced by a smaller range

@@ -68,6 +68,7 @@
 
 #include <fmt/ranges.h>
 #include <base/sleep.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ProfileEvents.h>
 #include <Core/SettingsEnums.h>
 #include <Core/Field.h>
@@ -89,6 +90,11 @@ namespace ProfileEvents
     extern const Event ObjectStorageGlobFilteredObjects;
     extern const Event ObjectStoragePredicateFilteredObjects;
     extern const Event ObjectStorageReadObjects;
+    extern const Event ObjectStorageMetadataFetchedForRead;
+    extern const Event ObjectStorageMetadataFetchMicroseconds;
+    extern const Event ObjectStorageReaderWaitMicroseconds;
+    extern const Event ObjectStorageQueryConditionCacheSkippedFiles;
+    extern const Event ObjectStorageQueryConditionCacheSkippedRowGroups;
 }
 
 namespace CurrentMetrics
@@ -1081,7 +1087,10 @@ Chunk StorageObjectStorageSource::generate()
         total_rows_in_file = 0;
 
         chassert(reader_future.valid());
-        reader = reader_future.get();
+        {
+            ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ObjectStorageReaderWaitMicroseconds);
+            reader = reader_future.get();
+        }
         current_file_index.reset();
 
         if (!reader)
@@ -1202,6 +1211,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             return {};
         if (!object_info->getObjectMetadata())
         {
+            ProfileEvents::increment(ProfileEvents::ObjectStorageMetadataFetchedForRead);
+            ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ObjectStorageMetadataFetchMicroseconds);
+
             bool with_tags = read_from_format_info.requested_virtual_columns.contains("_tags");
             const auto & path = object_info->isArchive() ? object_info->getPathToArchive() : object_info->getPath();
             auto metadata_object = object_info->relative_path_with_metadata;
@@ -1243,6 +1255,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                         matching_row_groups.push_back(i);
 
                 size_t dropped_row_groups = total_row_groups - matching_row_groups.size();
+                ProfileEvents::increment(ProfileEvents::ObjectStorageQueryConditionCacheSkippedRowGroups, dropped_row_groups);
                 LOG_DEBUG(log,
                     "Query condition cache has dropped {}/{} row groups for condition {} in file {}.",
                     dropped_row_groups,
@@ -1251,7 +1264,10 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     object_info->getFileName());
 
                 if (matching_row_groups.empty())
+                {
+                    ProfileEvents::increment(ProfileEvents::ObjectStorageQueryConditionCacheSkippedFiles);
                     continue;
+                }
 
                 auto file_bucket_info = FormatFactory::instance().getFileBucketInfo(
                     object_info->getFileFormat().value_or(configuration->format));
@@ -1259,7 +1275,10 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 {
                     auto filtered = file_bucket_info->filterByMatchingRowGroups(matching_row_groups);
                     if (!filtered)
+                    {
+                        ProfileEvents::increment(ProfileEvents::ObjectStorageQueryConditionCacheSkippedFiles);
                         continue;
+                    }
                     object_info->file_bucket_info = std::move(filtered);
                 }
             }
@@ -1873,16 +1892,23 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     else if (object_storage->getType() == ObjectStorageType::Azure)
         validate_etag_on_read = settings[Setting::azure_validate_etag_on_read];
 
+    auto fetch_metadata = [&]
+    {
+        ProfileEvents::increment(ProfileEvents::ObjectStorageMetadataFetchedForRead);
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ObjectStorageMetadataFetchMicroseconds);
+        object_info.metadata = object_storage->getObjectMetadata(object_info, /*with_tags=*/ false);
+    };
+
     if (!object_info.metadata)
     {
-        object_info.metadata = object_storage->getObjectMetadata(object_info, /*with_tags=*/ false);
+        fetch_metadata();
     }
     else if (!object_info.metadata->is_fetched && validate_etag_on_read)
     {
         /// Refresh the cluster function's skip_object_metadata placeholder to obtain its size + ETag for
         /// read-time validation (it carries no tags, so the with_tags=false HEAD drops nothing). A real fetch
         /// that merely lacks an ETag (e.g. GCS) has is_fetched=true and is left as-is - no extra HEAD.
-        object_info.metadata = object_storage->getObjectMetadata(object_info, /*with_tags=*/ false);
+        fetch_metadata();
     }
 
     if (use_page_cache && !object_info.metadata->isEtagUsableAsCacheKey())
