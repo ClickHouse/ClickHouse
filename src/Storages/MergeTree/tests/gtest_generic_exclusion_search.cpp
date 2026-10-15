@@ -114,7 +114,7 @@ TEST(GenericExclusionSearch, ExactRangesNotMergedAcrossSeekGap)
     for (size_t mark = 20; mark != 24; ++mark)
         matching[mark] = true;
 
-    for (size_t max_steps : {0, 1000})
+    for (size_t max_steps : {0, 199})
     {
         GenericExclusionSearchSettings settings{.coarse_index_granularity = 8, .max_steps = max_steps, .min_marks_for_seek = 7};
 
@@ -137,7 +137,7 @@ TEST(GenericExclusionSearch, MinMarksForSeekMergingForRes)
     distant_runs[5] = distant_runs[6] = true;
     distant_runs[11] = distant_runs[12] = true;
 
-    for (size_t max_steps : {0, 1000})
+    for (size_t max_steps : {0, 99})
     {
         GenericExclusionSearchSettings settings{.coarse_index_granularity = 8, .max_steps = max_steps, .min_marks_for_seek = 3};
 
@@ -160,7 +160,7 @@ TEST(GenericExclusionSearch, GapMergeAcrossInitialRanges)
 
     std::vector<bool> all_matching(10, true);
 
-    for (size_t max_steps : {0, 1000})
+    for (size_t max_steps : {0, 19})
     {
         GenericExclusionSearchSettings settings{.coarse_index_granularity = 8, .max_steps = max_steps, .min_marks_for_seek = 2};
 
@@ -252,7 +252,7 @@ TEST(GenericExclusionSearch, EqualSizeRangesCheckedLeftToRight)
         return oracleFromFlags(matching)(range);
     };
 
-    GenericExclusionSearchSettings settings{.coarse_index_granularity = 8, .max_steps = 100, .min_marks_for_seek = 0};
+    GenericExclusionSearchSettings settings{.coarse_index_granularity = 8, .max_steps = 31, .min_marks_for_seek = 0};
     auto result = genericExclusionSearch(makeRanges({{0, 8}, {100, 108}}), recording_oracle, settings, true);
 
     EXPECT_TRUE(result.ranges.empty());
@@ -532,7 +532,7 @@ TEST(GenericExclusionSearch, HugeLimitEqualsUnlimited)
         auto unlimited_result = genericExclusionSearch(makeRanges({{0, matching.size()}}), oracle, unlimited, true);
 
         /// The largest possible budget also checks that the budget gate arithmetic cannot overflow.
-        for (size_t max_steps : {size_t(1000000), std::numeric_limits<size_t>::max()})
+        for (size_t max_steps : {2 * matching.size() - 1, size_t(1000000), std::numeric_limits<size_t>::max()})
         {
             GenericExclusionSearchSettings huge{.coarse_index_granularity = 8, .max_steps = max_steps, .min_marks_for_seek = 2};
             auto huge_result = genericExclusionSearch(makeRanges({{0, matching.size()}}), oracle, huge, true);
@@ -545,6 +545,77 @@ TEST(GenericExclusionSearch, HugeLimitEqualsUnlimited)
     }
 }
 
+TEST(GenericExclusionSearch, BudgetCoveringExhaustiveSearchRunsIt)
+{
+    /// Alternating marks keep every multi-mark range ambiguous, so the full split tree of 64 marks
+    /// has 1 + 8 + 64 = 73 nodes. A budget of two steps per mark can never bind and runs the
+    /// exhaustive search, which checks left to right; one step less runs the step-limited search,
+    /// which checks the largest ranges first.
+    std::vector<bool> matching(64);
+    for (size_t mark = 0; mark < matching.size(); mark += 2)
+        matching[mark] = true;
+
+    auto checked_order = [&](size_t max_steps)
+    {
+        std::vector<MarkRange> order;
+        MarkRangeCheck recording_oracle = [&](const MarkRange & range)
+        {
+            order.push_back(range);
+            return oracleFromFlags(matching)(range);
+        };
+        GenericExclusionSearchSettings settings{.coarse_index_granularity = 8, .max_steps = max_steps, .min_marks_for_seek = 0};
+        auto result = genericExclusionSearch(makeRanges({{0, matching.size()}}), recording_oracle, settings, true);
+        EXPECT_EQ(result.ranges, runsOfMatchingMarks(matching, 0)) << "budget " << max_steps;
+        EXPECT_FALSE(result.reached_step_limit) << "budget " << max_steps;
+        return order;
+    };
+
+    auto exhaustive = checked_order(0);
+    EXPECT_EQ(checked_order(2 * matching.size()), exhaustive);
+    EXPECT_NE(checked_order(2 * matching.size() - 1), exhaustive);
+}
+
+TEST(GenericExclusionSearch, StepBudget)
+{
+    constexpr size_t max = std::numeric_limits<size_t>::max();
+
+    struct Case
+    {
+        size_t max_steps;
+        size_t rows_per_step;
+        size_t num_marks;
+        size_t rows_per_mark;
+        size_t expected;
+    };
+
+    for (const auto & c : std::vector<Case>{
+             {0, 0, 2000001, 1, 0},
+             {1000, 0, 2000001, 1, 1000},
+             {0, 64, 2000001, 1, 100000},
+             {0, 64, 1200000, 8, 150000},
+             {0, 64, 200000, 64, 200000},
+             {1000, 64, 2000001, 1, 1000},
+             {1000000, 64, 2000001, 1, 100000},
+             {0, 64, 10, 1, 100000},
+             {0, 1, max, max, max},
+             {0, max, 10, 10, 100000},
+         })
+    {
+        EXPECT_EQ(genericExclusionSearchStepBudget(c.max_steps, c.rows_per_step, c.num_marks, c.rows_per_mark), c.expected)
+            << c.max_steps << " " << c.rows_per_step << " " << c.num_marks << " " << c.rows_per_mark;
+    }
+
+    /// The budget never binds (`budget / 2 >= marks` runs the exhaustive search) for marks of at least 128 rows,
+    /// and for parts of up to 50000 marks.
+    for (size_t rows_per_mark : {128, 8192})
+        for (size_t num_marks : {1, 50001, 1000000, 100000000})
+            EXPECT_GE(genericExclusionSearchStepBudget(0, 64, num_marks, rows_per_mark) / 2, num_marks)
+                << num_marks << " marks of " << rows_per_mark << " rows";
+
+    for (size_t num_marks : {1, 50000})
+        EXPECT_GE(genericExclusionSearchStepBudget(0, 64, num_marks, 1) / 2, num_marks) << num_marks << " marks of 1 row";
+}
+
 TEST(GenericExclusionSearch, EdgeCases)
 {
     std::vector<bool> matching(64, true);
@@ -553,7 +624,7 @@ TEST(GenericExclusionSearch, EdgeCases)
     std::vector<bool> non_matching(64, false);
     auto none_match = oracleFromFlags(non_matching);
 
-    for (size_t max_steps : {0, 10})
+    for (size_t max_steps : {0, 3})
     {
         GenericExclusionSearchSettings settings{.coarse_index_granularity = 8, .max_steps = max_steps, .min_marks_for_seek = 0};
 

@@ -1938,13 +1938,21 @@ The budget is spent on the largest remaining mark ranges first. When it is exhau
 
 The number of steps the search made for each data part is reported in the trace level log messages of the query, and the `IndexGenericExclusionSearchStepLimitReached` and `TextIndexGenericExclusionSearchStepLimitReached` profile events count how many times the budget was exhausted.
 
-The (default) value 0 means unlimited steps.
+The value 0 (default) means no fixed limit; the analysis of the primary key is still bounded by [merge_tree_generic_exclusion_search_rows_per_step](#merge_tree_generic_exclusion_search_rows_per_step), and when both give a limit, the smaller one applies.
 
 Possible values:
 
-- 0 for unlimited steps, or any positive integer.
+- 0 for no fixed limit, or any positive integer.
 )", 0, \
         {"26.7", 0, 0, "New setting to limit the number of steps of the generic exclusion search over the primary key index."}) \
+    DECLARE(UInt64, merge_tree_generic_exclusion_search_rows_per_step, 64, R"(
+Limits the generic exclusion search over the primary key of a data part (see [merge_tree_generic_exclusion_search_max_steps](#merge_tree_generic_exclusion_search_max_steps)) to one step per this many rows of the analyzed marks, counting each mark as `index_granularity` rows, but never to fewer than 100000 steps. An exhaustive search of N marks makes fewer than 2N steps, so only parts with more than 50000 marks and an `index_granularity` below twice this value can reach the limit, for example tables with `index_granularity = 1`, where an index check costs more than reading the rows it can exclude. When the limit is reached, the remaining ranges are read as a whole, which never changes query results.
+
+Possible values:
+
+- 0 to disable the limit, or any positive integer.
+)", 0, \
+        {"26.10", 0, 64, "New setting to bound the analysis of the primary key by the size of the part: a filter on a key column that is not the first one could spend seconds on the analysis of a part with millions of small marks. The limit never changes query results, so it applies with any `compatibility`.", CompatibilitySetting::Ignore}) \
     DECLARE(UInt64, merge_tree_max_rows_to_use_cache, (128 * 8192), R"(
 If ClickHouse should read more than `merge_tree_max_rows_to_use_cache` rows in one query, it does not use the cache of uncompressed blocks.
 

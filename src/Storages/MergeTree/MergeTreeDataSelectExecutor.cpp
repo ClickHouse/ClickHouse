@@ -107,6 +107,7 @@ namespace Setting
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsUInt64 merge_tree_coarse_index_granularity;
     extern const SettingsUInt64 merge_tree_generic_exclusion_search_max_steps;
+    extern const SettingsUInt64 merge_tree_generic_exclusion_search_rows_per_step;
     extern const SettingsUInt64 merge_tree_min_bytes_for_seek;
     extern const SettingsUInt64 merge_tree_min_rows_for_seek;
     extern const SettingsBool use_lightweight_primary_key_index_analysis;
@@ -203,10 +204,14 @@ size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
         pk_to_minmax_slot = buildPrimaryKeyToMinMaxSlotMapping(metadata_snapshot, parts.front().data_part->storage.getSettings());
     const auto * pk_to_minmax_slot_ptr = pk_to_minmax_slot.empty() ? nullptr : &pk_to_minmax_slot;
 
+    /// The fraction of an absolute `SAMPLE` must not depend on the step budget derived from the rows of a part.
+    Settings estimate_settings = settings;
+    estimate_settings[Setting::merge_tree_generic_exclusion_search_rows_per_step] = 0;
+
     for (const auto & part : parts)
     {
         MarkRanges part_ranges = markRangesFromPKRange(
-            part, metadata_snapshot, key_condition, nullptr, nullptr, /*exact_ranges=*/nullptr, pk_to_minmax_slot_ptr, settings, log);
+            part, metadata_snapshot, key_condition, nullptr, nullptr, /*exact_ranges=*/nullptr, pk_to_minmax_slot_ptr, estimate_settings, log);
         for (const auto & range : part_ranges)
             rows_count += part.data_part->index_granularity->getRowsCountInRange(range);
     }
@@ -2720,7 +2725,11 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         GenericExclusionSearchSettings search_settings
         {
             .coarse_index_granularity = settings[Setting::merge_tree_coarse_index_granularity],
-            .max_steps = settings[Setting::merge_tree_generic_exclusion_search_max_steps],
+            .max_steps = genericExclusionSearchStepBudget(
+                settings[Setting::merge_tree_generic_exclusion_search_max_steps],
+                settings[Setting::merge_tree_generic_exclusion_search_rows_per_step],
+                part_ranges.getNumberOfMarks(),
+                part->index_granularity_info.fixed_index_granularity),
             .min_marks_for_seek = min_marks_for_seek,
         };
 

@@ -1,8 +1,10 @@
 #include <Storages/MergeTree/GenericExclusionSearch.h>
 
+#include <base/arithmeticOverflow.h>
 #include <base/defines.h>
 
 #include <algorithm>
+#include <limits>
 #include <queue>
 #include <tuple>
 #include <vector>
@@ -12,6 +14,8 @@ namespace DB
 
 namespace
 {
+
+constexpr size_t min_generic_exclusion_search_steps = 100000;
 
 /// Appends a range to a left-to-right sequence of accepted ranges, merging it into the last range
 /// when the gap between them is at most `max_gap` marks. The caller guarantees that `range` starts
@@ -178,6 +182,19 @@ void searchLimited(
 
 }
 
+size_t genericExclusionSearchStepBudget(size_t max_steps, size_t rows_per_step, size_t num_marks, size_t rows_per_mark)
+{
+    if (rows_per_step == 0)
+        return max_steps;
+
+    size_t rows = 0;
+    if (common::mulOverflow(num_marks, rows_per_mark, rows))
+        rows = std::numeric_limits<size_t>::max();
+
+    size_t bounded = std::max(min_generic_exclusion_search_steps, rows / rows_per_step);
+    return max_steps == 0 ? bounded : std::min(max_steps, bounded);
+}
+
 GenericExclusionSearchResult genericExclusionSearch(
     const MarkRanges & initial_ranges,
     const MarkRangeCheck & check_in_range,
@@ -190,7 +207,9 @@ GenericExclusionSearchResult genericExclusionSearch(
     assertSortedAndNonIntersecting(initial_ranges);
 #endif
 
-    if (search_settings.max_steps == 0)
+    /// An exhaustive search of N marks makes at most 2N - 1 checks, because every split makes at least two
+    /// subranges, so such a budget is never reached.
+    if (search_settings.max_steps == 0 || search_settings.max_steps / 2 >= initial_ranges.getNumberOfMarks())
         searchUnlimited(initial_ranges, check_in_range, search_settings, collect_exact_ranges, result);
     else
         searchLimited(initial_ranges, check_in_range, search_settings, collect_exact_ranges, result);

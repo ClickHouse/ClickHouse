@@ -1,0 +1,19 @@
+<test>
+    <!-- A filter on a key column that is not the first one must not spend seconds on the index analysis of a part with millions of marks. -->
+    <settings>
+        <use_query_condition_cache>0</use_query_condition_cache>
+    </settings>
+
+    <create_query>
+        CREATE TABLE t_exclusion_search_step_budget (c1 DateTime, c2 UInt8, c3 String)
+        ENGINE = MergeTree ORDER BY (c1, c2, c3)
+        SETTINGS index_granularity = 1
+    </create_query>
+
+    <fill_query>INSERT INTO t_exclusion_search_step_budget SELECT toDateTime('2026-01-01 00:00:00', 'UTC') + intDiv(number, 4), (number % 4) >= 2, toString(number % 97) FROM numbers(2000000) SETTINGS max_insert_threads = 1, max_block_size = 2000000, min_insert_block_size_rows = 2000000</fill_query>
+
+    <query>SELECT c1, c3 FROM t_exclusion_search_step_budget WHERE c2 LIMIT 0 FORMAT Null</query>
+    <query>SELECT sum(cityHash64(c1, c3)) FROM t_exclusion_search_step_budget WHERE c2 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS t_exclusion_search_step_budget</drop_query>
+</test>

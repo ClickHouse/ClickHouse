@@ -1,0 +1,6 @@
+1	1
+default	1
+unlimited	0
+9
+merge_tree_generic_exclusion_search_rows_per_step	64
+use_partition_minmax_for_primary_key_pruning	0
