@@ -515,7 +515,7 @@ bool Reader::topKShouldSkipRowGroup(const RowGroup & row_group) const
     return !tracker.isValueInsideThreshold(boundary);
 }
 
-std::optional<Chunk> Reader::readMinMaxFromStatistics(const std::optional<std::unordered_set<UInt64>> & row_groups_to_read) const
+std::optional<Chunk> Reader::readMinMaxFromStatistics(const RowGroupSelection & row_groups_to_read) const
 {
     /// Statistics cannot describe a subset of rows inside a row group.
     if (format_filter_info->rows_to_read)
@@ -559,7 +559,7 @@ std::optional<Chunk> Reader::readMinMaxFromStatistics(const std::optional<std::u
         const auto & meta = file_metadata.row_groups[row_group_idx];
         if (meta.num_rows < 0 || meta.columns.size() != total_primitive_columns_in_file)
             return std::nullopt;
-        if (meta.num_rows == 0 || (row_groups_to_read.has_value() && !row_groups_to_read->contains(row_group_idx)))
+        if (meta.num_rows == 0 || !row_groups_to_read.contains(row_group_idx, meta))
             continue;
         has_rows = true;
 
