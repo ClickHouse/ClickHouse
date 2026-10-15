@@ -123,6 +123,7 @@ namespace Setting
     extern const SettingsBool enable_memory_bound_merging_of_aggregation_results;
     extern const SettingsBool enable_reads_from_query_cache;
     extern const SettingsBool query_cache_for_subqueries;
+    extern const SettingsBool use_query_cache;
     extern const SettingsBool empty_result_for_aggregation_by_constant_keys_on_empty_set;
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
     extern const SettingsBool enable_group_by_top_k_optimization;
@@ -1570,6 +1571,8 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
             interpolate_actions_dag.removeUnusedActions();
         }
 
+        appendSetsFromActionsDAG(interpolate_actions_dag, useful_sets);
+
         Aliases empty_aliases;
         interpolate_description = std::make_shared<InterpolateDescription>(std::move(interpolate_actions_dag), empty_aliases);
     }
@@ -1960,14 +1963,14 @@ void addWindowSteps(QueryPlan & query_plan,
             need_sort = !sortDescriptionIsPrefix(window_description.full_sort_description, window_descriptions[i - 1].full_sort_description)
                 || (effective_max_threads != 1 && window_description.partition_by.size() != window_descriptions[i - 1].partition_by.size());
         }
+        SortingStep::Settings sort_settings(query_context->getSettingsRef());
+
+        /// Window functions require fully sorted input. Applying sort_overflow_mode = 'break'
+        /// would produce incomplete data and cause the pipeline to get stuck.
+        sort_settings.size_limits.overflow_mode = OverflowMode::THROW;
+
         if (need_sort)
         {
-            SortingStep::Settings sort_settings(query_context->getSettingsRef());
-
-            /// Window functions require fully sorted input. Applying sort_overflow_mode = 'break'
-            /// would produce incomplete data and cause the pipeline to get stuck.
-            sort_settings.size_limits.overflow_mode = OverflowMode::THROW;
-
             /// The sort scatters rows across threads by the hash of the partition columns it is given,
             /// but `WindowTransform` finds partition boundaries with `compareAt`. For key types where
             /// the two disagree the scatter would split one logical partition across threads, so such
@@ -2000,7 +2003,7 @@ void addWindowSteps(QueryPlan & query_plan,
             = settings[Setting::query_plan_enable_multithreading_after_window_functions] && ((i + 1) == window_descriptions_size);
 
         auto window_step
-            = std::make_unique<WindowStep>(query_plan.getCurrentHeader(), window_description, window_description.window_functions, streams_fan_out);
+            = std::make_unique<WindowStep>(query_plan.getCurrentHeader(), window_description, window_description.window_functions, streams_fan_out, sort_settings);
         window_step->setStepDescription("Window step for window '" + window_description.window_name + "'", max_step_description_length);
         query_plan.addStep(std::move(window_step));
     }
@@ -2479,6 +2482,254 @@ void Planner::buildQueryPlanIfNeeded()
     extendQueryContextAndStoragesLifetime(query_plan, planner_context);
 }
 
+/// Gate every Planner-level cache use by the query kind, so an explicit `SETTINGS use_query_cache`
+/// on a subquery cannot bypass the safety check that `executeQuery` performs for the outer query.
+/// Caching internal queries (e.g. background system queries) or non-initial queries (e.g. a
+/// `SECONDARY_QUERY` executed by a replica as part of a distributed query) would write/read
+/// per-replica or per-internal entries that the outer query already manages or that bypass the
+/// safety gate `executeQuery` applies via `Context::setCanUseQueryResultCache`.
+static bool isQueryKindEligibleForSubqueryCache(const ContextPtr & query_context)
+{
+    return !query_context->isInternalQuery()
+        && query_context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY;
+}
+
+/// Never use the cache in plans that are serialized for remote execution: logical plans are
+/// shipped to another node by parallel replicas with `serialize_query_plan = 1` (see
+/// `createRemotePlanForParallelReplicas`). The cache steps hold node-local state - a
+/// `QueryResultCacheWriter` or the cached chunks themselves - which has no serialized
+/// representation. The cache is populated and read by the plan the initiator executes itself.
+///
+/// Plan-based parallel replicas (`parallel_replicas_plan_based`) are another such case: the plan is
+/// built locally, and `QueryPlanOptimizations::applyParallelReplicas` later serializes a fragment of
+/// it - including the plans of `IN` subquery sets - for the replicas. A fragment holding a cache step
+/// is kept local instead, so the cache would silently disable parallel replicas, and on a warm cache
+/// the remote/local decision would depend on cache contents. The setting is checked on both the local
+/// and the query-level context, so a subquery cannot escape the ban with its own SETTINGS clause.
+///
+/// `make_distributed_plan` is not such a kind: whether the plan is really split into fragments is
+/// decided only later, by `QueryPlan::convertToDistributed`, which falls back to one local stage for
+/// a plan that has no exchange. The write path therefore stays enabled here - the fragment split
+/// drops `StreamInQueryResultCacheStep`, so nothing non-serializable reaches a worker, and the local
+/// fallback keeps the cache working. Only the read path is disabled for a distributed plan, see
+/// `shouldReadFromQueryCacheForSubquery`.
+static bool isPlanEligibleForSubqueryCache(const SelectQueryOptions & select_query_options, const ContextPtr & query_context)
+{
+    if (select_query_options.build_logical_plan)
+        return false;
+
+    const auto uses_plan_based_parallel_replicas = [](const ContextPtr & context)
+    {
+        return context->getSettingsRef()[Setting::parallel_replicas_plan_based] && context->canUseParallelReplicasOnInitiator();
+    };
+    return !uses_plan_based_parallel_replicas(query_context)
+        && !(query_context->hasQueryContext() && uses_plan_based_parallel_replicas(query_context->getQueryContext()));
+}
+
+/// Returns the explicit `use_query_cache` opt-in / opt-out carried by a node's own query-level
+/// `SETTINGS` clause, or `std::nullopt` when the clause does not mention the setting. `QueryNode`
+/// and `UnionNode` store the clause the same way, so a plain subquery and a `UNION` subquery are
+/// handled alike.
+///
+/// The clause is only inspected for the *presence* of the setting; the value is then read from the
+/// node's own context, which already has the whole clause applied in order (and clamped against the
+/// constraints). `ParserSetQuery` keeps every occurrence, so `SETTINGS use_query_cache = 1,
+/// use_query_cache = 0` - or an assignment followed by `= DEFAULT` - has a last-wins effective value,
+/// which the first entry of `settings_changes` does not report. Returning that first entry would make
+/// this path disagree with every other consumer of the setting, e.g. taking the cache path (and
+/// possibly raising `QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS`) for a query that opted out.
+static std::optional<bool> explicitUseQueryCacheSetting(
+    const SettingsChanges & settings_changes, const std::vector<String> & default_settings, const ContextPtr & node_context)
+{
+    bool mentioned_in_clause
+        = std::any_of(
+              settings_changes.begin(),
+              settings_changes.end(),
+              [](const auto & change) { return change.name == "use_query_cache"; })
+        || std::any_of(
+              default_settings.begin(),
+              default_settings.end(),
+              [](const auto & setting_name) { return setting_name == "use_query_cache"; });
+
+    if (!mentioned_in_clause)
+        return {};
+
+    return node_context->getSettingsRef()[Setting::use_query_cache];
+}
+
+/// Returns true if the Planner-level query result cache (with `is_subquery = true` key) should be used.
+/// For actual subqueries (is_subquery=true): explicit SETTINGS `use_query_cache` on the node wins.
+/// For all Planner invocations: `query_cache_for_subqueries` propagation from outer query.
+/// By default, `use_query_cache` does NOT propagate.
+static bool shouldUseQueryCacheForSubquery(
+    const QueryNode & query_node,
+    bool outer_can_use_cache,
+    const Settings & settings,
+    const SelectQueryOptions & select_query_options,
+    bool allow_propagation,
+    const ContextPtr & query_context)
+{
+    if (!isQueryKindEligibleForSubqueryCache(query_context) || !isPlanEligibleForSubqueryCache(select_query_options, query_context))
+        return false;
+
+    const bool is_subquery = select_query_options.is_subquery;
+
+    /// Only check explicit per-node `use_query_cache` for actual subqueries.
+    /// For the top-level query, this setting is handled by `executeQuery` (with `is_subquery = false` key).
+    if (is_subquery)
+    {
+        if (auto explicit_setting = explicitUseQueryCacheSetting(
+                query_node.getSettingsChanges(), query_node.getDefaultSettings(), query_node.getContext()))
+            return *explicit_setting;
+    }
+
+    /// `query_cache_for_subqueries` enables the Planner-level (`is_subquery = true`) cache
+    /// only for actual subqueries. The top-level query is cached separately by `executeQuery`
+    /// using the `is_subquery = false` key; allowing it through this path here would write
+    /// a duplicate entry under the subquery namespace.
+    if (is_subquery && allow_propagation && settings[Setting::query_cache_for_subqueries] && outer_can_use_cache)
+        return true;
+
+    return false;
+}
+
+/// Probes the Planner-level (`is_subquery = true`) query result cache and, on a hit, replaces the
+/// plan with a step reading the cached result. Returns true when the plan was served from the cache.
+/// If reads are enabled for both the in-memory and the on-disk cache, the (slower) on-disk cache is
+/// consulted only on a miss in memory.
+static bool tryAddReadFromQueryResultCacheStep(
+    QueryPlan & query_plan,
+    const ASTPtr & ast,
+    const ContextPtr & query_context,
+    const Settings & settings,
+    const Settings & settings_for_key,
+    const QueryResultCachePtr & query_result_cache,
+    const QueryResultCacheOnDiskPtr & query_result_cache_on_disk)
+{
+    const bool reads_from_memory = settings[Setting::enable_reads_from_query_cache];
+    const bool reads_from_disk = query_result_cache_on_disk && query_result_cache_on_disk->readsEnabled();
+    if (!reads_from_memory && !reads_from_disk)
+        return false;
+
+    QueryResultCache::Key key(ast, query_context->getCurrentDatabase(), settings_for_key, query_context->getCurrentQueryId(), query_context->getUserID(), query_context->getCurrentRoles(), /* is_subquery = */ true);
+
+    std::optional<QueryResultCacheReader> reader;
+    if (reads_from_memory)
+    {
+        reader.emplace(query_result_cache->createReader(key));
+        if (!reader->hasCacheEntryForKey())
+            reader.reset();
+    }
+    if (!reader && reads_from_disk)
+    {
+        reader.emplace(query_result_cache_on_disk->createReader(key));
+        if (!reader->hasCacheEntryForKey())
+            reader.reset();
+    }
+
+    QueryResultCacheReader::recordProbeResult(reader.has_value());
+
+    if (!reader)
+        return false;
+
+    addReadFromQueryResultCacheStep(query_plan, reader->getSource(), reader->getSourceTotals(), reader->getSourceExtremes());
+    return true;
+}
+
+/// If active (write) use of the query cache is enabled, appends a step which stores the result of
+/// `query_plan` in the Planner-level (`is_subquery = true`) query result cache.
+/// `skip_context_check` is for the explicit per-subquery opt-in, where the outer query did not set
+/// `use_query_cache` itself: the context flag check in `checkCanWriteQueryResultCache` is skipped
+/// while all the other safety checks still apply.
+static void addStreamInQueryResultCacheStepIfNeeded(
+    QueryPlan & query_plan,
+    const ASTPtr & ast,
+    const ContextPtr & query_context,
+    const Settings & settings,
+    const Settings & settings_for_key,
+    const QueryResultCachePtr & query_result_cache,
+    const QueryResultCacheOnDiskPtr & query_result_cache_on_disk,
+    bool skip_context_check)
+{
+    if (!checkCanWriteQueryResultCache(ast, query_context, query_result_cache_on_disk, skip_context_check))
+        return;
+
+    auto created_at = std::chrono::system_clock::now();
+    auto expires_at = saturatedSecondsFrom(created_at, settings[Setting::query_cache_ttl].totalSeconds());
+
+    QueryResultCache::Key key(
+        ast, query_context->getCurrentDatabase(), settings_for_key, query_plan.getRootNode()->step->getOutputHeader(),
+        query_context->getCurrentQueryId(), query_context->getUserID(), query_context->getCurrentRoles(),
+        settings[Setting::query_cache_share_between_users],
+        created_at, expires_at,
+        settings[Setting::query_cache_compress_entries],
+        /* is_subquery = */ true);
+
+    const size_t num_query_runs = settings[Setting::query_cache_min_query_runs] ? query_result_cache->recordQueryRun(key) : 1; /// try to avoid locking a mutex in recordQueryRun()
+    if (num_query_runs <= settings[Setting::query_cache_min_query_runs])
+    {
+        LOG_TRACE(getLogger("QueryResultCache"),
+                "Skipped insert because the query ran {} times but the minimum required number of query runs to cache the query result is {}",
+                num_query_runs, settings[Setting::query_cache_min_query_runs].value);
+        return;
+    }
+
+    const bool write_to_memory_cache = canWriteToQueryResultCacheInMemory(query_context);
+    QueryResultCacheOnDiskPtr write_to_on_disk_cache
+        = canWriteToQueryResultCacheOnDisk(query_context, query_result_cache_on_disk) ? query_result_cache_on_disk : nullptr;
+
+    if (!write_to_memory_cache && !write_to_on_disk_cache)
+        return;
+
+    auto query_result_cache_writer = std::make_shared<QueryResultCacheWriter>(query_result_cache->createWriter(
+                        key,
+                        std::chrono::milliseconds(settings[Setting::query_cache_min_query_duration].totalMilliseconds()),
+                        settings[Setting::query_cache_squash_partial_results],
+                        settings[Setting::max_block_size],
+                        settings[Setting::query_cache_max_size_in_bytes],
+                        settings[Setting::query_cache_max_entries],
+                        write_to_memory_cache,
+                        write_to_on_disk_cache));
+
+    auto stream_into_query_result_cache_step = std::make_unique<StreamInQueryResultCacheStep>(query_plan.getRootNode()->step->getOutputHeader(), query_result_cache_writer);
+    query_plan.addStep(std::move(stream_into_query_result_cache_step));
+}
+
+/// A cache hit replaces the whole subquery plan with a `ReadFromQueryResultCacheStep`, a node-local
+/// source of the cached chunks. Unlike the write step, it cannot be dropped when the plan is split
+/// into fragments - there is no subplan left behind it to run instead - so a hit would either fail
+/// serialization or make the query fall back to local execution depending on what the cache happens
+/// to hold. Do not read the cache while a distributed plan is being built, so the plan shape never
+/// depends on cache contents.
+///
+/// The ban is keyed to the sticky `building_distributed_plan` option rather than to the local
+/// `make_distributed_plan` setting: the subquery context applies the subquery's own SETTINGS
+/// changes (see `QueryTreeBuilder::buildSelectExpression`), so a subquery could otherwise escape
+/// the ban - and make the outer distributed plan's shape depend on cache contents again - just by
+/// specifying `SETTINGS make_distributed_plan = 0` while the outer query is still planned
+/// distributed.
+///
+/// There is no exception for the in-process local plans of a distributed query
+/// (`is_local_plan_for_distributed_query`, e.g. the local shard plan of a `Distributed` table): that
+/// flag only means nothing unmarshalls the blocks of the plan. The local plan is still united into
+/// the enclosing plan, which `QueryPlan::convertToDistributed` may split into fragments, so a cache
+/// hit there would make the shape of the outer plan depend on cache contents as well.
+///
+/// The sticky option only travels through `SelectQueryOptions::subquery`, but some storages plan a
+/// generated query with fresh options (e.g. `StorageView`, `loop`, `StorageExecutable`, `TimeSeries`
+/// and PromQL storages). So the setting of the query-level context is consulted as well: it is the
+/// one the outer interpreter optimizes the top-level plan under, and no SETTINGS clause of a subquery
+/// or of a generated query can change it.
+static bool shouldReadFromQueryCacheForSubquery(
+    const Settings & settings,
+    const SelectQueryOptions & select_query_options,
+    const ContextPtr & query_context)
+{
+    if (settings[Setting::make_distributed_plan] || select_query_options.building_distributed_plan)
+        return false;
+    return !query_context->hasQueryContext() || !query_context->getQueryContext()->getSettingsRef()[Setting::make_distributed_plan];
+}
+
 void Planner::buildPlanForUnionNode()
 {
     const auto & union_node = query_tree->as<UnionNode &>();
@@ -2502,6 +2753,49 @@ void Planner::buildPlanForUnionNode()
         return;
     }
 
+    const auto & query_context = planner_context->getQueryContext();
+    const auto & settings = query_context->getSettingsRef();
+
+    /// A `UNION` subquery opts into (or out of) the Planner-level query result cache with its own
+    /// query-level `SETTINGS use_query_cache`, exactly like a plain subquery does in
+    /// `buildPlanForQueryNode`. Only the explicit per-node setting is honored here: the
+    /// `query_cache_for_subqueries` propagation is already applied to every arm of the union, and
+    /// caching the union on top of that would only duplicate the same rows under a second key.
+    QueryResultCachePtr query_result_cache = planner_context->getMutableQueryContext()->getQueryResultCache();
+    bool can_use_query_result_cache = query_context->getCanUseQueryResultCache();
+    std::optional<bool> explicit_use_query_cache;
+    if (select_query_options.is_subquery)
+        explicit_use_query_cache = explicitUseQueryCacheSetting(
+            union_node.getSettingsChanges(), union_node.getDefaultSettings(), union_node.getContext());
+
+    bool should_cache = select_query_options.is_subquery && query_result_cache != nullptr
+        && isQueryKindEligibleForSubqueryCache(query_context)
+        && isPlanEligibleForSubqueryCache(select_query_options, query_context)
+        && explicit_use_query_cache.value_or(false);
+
+    /// An explicit opt-out covers the whole set operation: its arms must not be cached through the
+    /// outer `query_cache_for_subqueries` propagation either. Only the last arm carries the clause
+    /// itself, so without this the earlier arms would still populate and read the cache.
+    bool allow_propagation_to_arms = allow_query_cache_for_subqueries_propagation && explicit_use_query_cache.value_or(true);
+
+    /// The settings are internally modified in some places during query execution, which would make
+    /// the read and the write use different keys. Take a copy for both, as `buildPlanForQueryNode` does.
+    ASTPtr ast;
+    std::optional<Settings> settings_copy;
+    QueryResultCacheOnDiskPtr query_result_cache_on_disk;
+    if (should_cache)
+    {
+        ast = query_tree->toAST({.qualify_indentifiers_with_database = false});
+        settings_copy = settings;
+
+        /// The query result cache on disk (backed by a preconfigured filesystem cache), see setting `query_cache_on_disk_cache_name`.
+        query_result_cache_on_disk = QueryResultCacheOnDisk::getFromSettings(settings);
+
+        if (shouldReadFromQueryCacheForSubquery(settings, select_query_options, query_context)
+            && tryAddReadFromQueryResultCacheStep(query_plan, ast, query_context, settings, *settings_copy, query_result_cache, query_result_cache_on_disk))
+            return;
+    }
+
     const auto & union_queries_nodes = union_node.getQueries().getNodes();
     size_t queries_size = union_queries_nodes.size();
 
@@ -2520,6 +2814,8 @@ void Planner::buildPlanForUnionNode()
         /// siblings. Sticky options still travel downwards, because the copy carries them in.
         SelectQueryOptions branch_select_query_options = select_query_options;
         Planner query_planner(query_node, branch_select_query_options, planner_context->getGlobalPlannerContext());
+        if (!allow_propagation_to_arms)
+            query_planner.disableQueryCacheForSubqueriesPropagation();
 
         query_planner.buildQueryPlanIfNeeded();
         for (const auto & row_policy : query_planner.getUsedRowPolicies())
@@ -2539,9 +2835,7 @@ void Planner::buildPlanForUnionNode()
 
     Block union_common_header = buildCommonHeaderForUnion(
         query_plans_headers, union_mode, union_node.getContext()->getSettingsRef()[Setting::use_variant_as_common_type]);
-    const auto & query_context = planner_context->getQueryContext();
     addConvertingToCommonHeaderActionsIfNeeded(query_plans, union_common_header, query_plans_headers, query_context);
-    const auto & settings = query_context->getSettingsRef();
     auto max_threads = getEffectiveMaxThreads(settings);
 
     bool is_distinct = union_mode == SelectUnionMode::UNION_DISTINCT || union_mode == SelectUnionMode::INTERSECT_DISTINCT
@@ -2618,121 +2912,11 @@ void Planner::buildPlanForUnionNode()
         auto materialized_ctes = collectMaterializedCTEs(query_tree, select_query_options);
         addBuildSubqueriesForMaterializedCTEsIfNeeded(query_plan, select_query_options, materialized_ctes);
     }
-}
 
-/// Returns true if the Planner-level query result cache (with `is_subquery = true` key) should be used.
-/// For actual subqueries (is_subquery=true): explicit SETTINGS `use_query_cache` on the node wins.
-/// For all Planner invocations: `query_cache_for_subqueries` propagation from outer query.
-/// By default, `use_query_cache` does NOT propagate.
-///
-/// Regardless of opt-in, never use the cache for execution kinds where caching is unsafe:
-/// internal queries (e.g. background system queries) and non-initial queries (e.g. `SECONDARY_QUERY`
-/// executed by a replica as part of a distributed query). Caching in those kinds would write/read
-/// per-replica or per-internal entries that the outer query already manages or that bypass the
-/// safety gate `executeQuery` applies via `Context::setCanUseQueryResultCache`.
-///
-/// Also never use the cache in plans that are serialized for remote execution: logical plans are
-/// shipped to another node by parallel replicas with `serialize_query_plan = 1` (see
-/// `createRemotePlanForParallelReplicas`). The cache steps hold node-local state - a
-/// `QueryResultCacheWriter` or the cached chunks themselves - which has no serialized
-/// representation. The cache is populated and read by the plan the initiator executes itself.
-///
-/// Plan-based parallel replicas (`parallel_replicas_plan_based`) are another such case: the plan is
-/// built locally, and `QueryPlanOptimizations::applyParallelReplicas` later serializes a fragment of
-/// it - including the plans of `IN` subquery sets - for the replicas. A fragment holding a cache step
-/// is kept local instead, so the cache would silently disable parallel replicas, and on a warm cache
-/// the remote/local decision would depend on cache contents. The setting is checked on both the local
-/// and the query-level context, so a subquery cannot escape the ban with its own SETTINGS clause.
-///
-/// `make_distributed_plan` is not such a kind: whether the plan is really split into fragments is
-/// decided only later, by `QueryPlan::convertToDistributed`, which falls back to one local stage for
-/// a plan that has no exchange. The write path therefore stays enabled here - the fragment split
-/// drops `StreamInQueryResultCacheStep`, so nothing non-serializable reaches a worker, and the local
-/// fallback keeps the cache working. Only the read path is disabled for a distributed plan, see
-/// `shouldReadFromQueryCacheForSubquery`.
-static bool shouldUseQueryCacheForSubquery(
-    const QueryNode & query_node,
-    bool outer_can_use_cache,
-    const Settings & settings,
-    const SelectQueryOptions & select_query_options,
-    const ContextPtr & query_context)
-{
-    /// Gate every Planner-level cache use by the query kind, so explicit `SETTINGS use_query_cache`
-    /// on a subquery cannot bypass the safety check that `executeQuery` performs for the outer query.
-    if (query_context->isInternalQuery()
-        || query_context->getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
-        return false;
-
-    if (select_query_options.build_logical_plan)
-        return false;
-
-    const auto uses_plan_based_parallel_replicas = [](const ContextPtr & context)
-    {
-        return context->getSettingsRef()[Setting::parallel_replicas_plan_based] && context->canUseParallelReplicasOnInitiator();
-    };
-    if (uses_plan_based_parallel_replicas(query_context)
-        || (query_context->hasQueryContext() && uses_plan_based_parallel_replicas(query_context->getQueryContext())))
-        return false;
-
-    const bool is_subquery = select_query_options.is_subquery;
-
-    /// Only check explicit per-node `use_query_cache` for actual subqueries.
-    /// For the top-level query, this setting is handled by `executeQuery` (with `is_subquery = false` key).
-    if (is_subquery && query_node.hasSettingsChanges())
-    {
-        for (const auto & change : query_node.getSettingsChanges())
-        {
-            if (change.name == "use_query_cache")
-                return change.value.safeGet<bool>();
-        }
-    }
-
-    /// `query_cache_for_subqueries` enables the Planner-level (`is_subquery = true`) cache
-    /// only for actual subqueries. The top-level query is cached separately by `executeQuery`
-    /// using the `is_subquery = false` key; allowing it through this path here would write
-    /// a duplicate entry under the subquery namespace.
-    if (is_subquery && settings[Setting::query_cache_for_subqueries] && outer_can_use_cache)
-        return true;
-
-    return false;
-}
-
-/// A cache hit replaces the whole subquery plan with a `ReadFromQueryResultCacheStep`, a node-local
-/// source of the cached chunks. Unlike the write step, it cannot be dropped when the plan is split
-/// into fragments - there is no subplan left behind it to run instead - so a hit would either fail
-/// serialization or make the query fall back to local execution depending on what the cache happens
-/// to hold. Do not read the cache while a distributed plan is being built, so the plan shape never
-/// depends on cache contents.
-///
-/// The ban is keyed to the sticky `building_distributed_plan` option rather than to the local
-/// `make_distributed_plan` setting: the subquery context applies the subquery's own SETTINGS
-/// changes (see `QueryTreeBuilder::buildSelectExpression`), so a subquery could otherwise escape
-/// the ban - and make the outer distributed plan's shape depend on cache contents again - just by
-/// specifying `SETTINGS make_distributed_plan = 0` while the outer query is still planned
-/// distributed.
-///
-/// There is no exception for the in-process local plans of a distributed query
-/// (`is_local_plan_for_distributed_query`, e.g. the local shard plan of a `Distributed` table): that
-/// flag only means nothing unmarshalls the blocks of the plan. The local plan is still united into
-/// the enclosing plan, which `QueryPlan::convertToDistributed` may split into fragments, so a cache
-/// hit there would make the shape of the outer plan depend on cache contents as well.
-///
-/// The sticky option only travels through `SelectQueryOptions::subquery`, but some storages plan a
-/// generated query with fresh options (e.g. `StorageView`, `loop`, `StorageExecutable`, `TimeSeries`
-/// and PromQL storages). So the setting of the query-level context is consulted as well: it is the
-/// one the outer interpreter optimizes the top-level plan under, and no SETTINGS clause of a subquery
-/// or of a generated query can change it.
-static bool shouldReadFromQueryCacheForSubquery(
-    const Settings & settings,
-    const QueryResultCacheOnDiskPtr & query_result_cache_on_disk,
-    const SelectQueryOptions & select_query_options,
-    const ContextPtr & query_context)
-{
-    if (!settings[Setting::enable_reads_from_query_cache] && !(query_result_cache_on_disk && query_result_cache_on_disk->readsEnabled()))
-        return false;
-    if (settings[Setting::make_distributed_plan] || select_query_options.building_distributed_plan)
-        return false;
-    return !query_context->hasQueryContext() || !query_context->getQueryContext()->getSettingsRef()[Setting::make_distributed_plan];
+    if (should_cache)
+        addStreamInQueryResultCacheStepIfNeeded(
+            query_plan, ast, query_context, settings, *settings_copy, query_result_cache, query_result_cache_on_disk,
+            /* skip_context_check = */ !can_use_query_result_cache);
 }
 
 void Planner::buildPlanForQueryNode()
@@ -2763,7 +2947,7 @@ void Planner::buildPlanForQueryNode()
     /// 2. `query_cache_for_subqueries` propagates from outer query (applies to all Planner invocations)
     /// 3. By default, `use_query_cache` does NOT propagate from outer query to subqueries
     bool should_cache = shouldUseQueryCacheForSubquery(query_node, can_use_query_result_cache, settings,
-        select_query_options, query_context);
+        select_query_options, allow_query_cache_for_subqueries_propagation, query_context);
 
     /// Query result cache must actually exist
     if (should_cache && !query_result_cache)
@@ -2788,33 +2972,9 @@ void Planner::buildPlanForQueryNode()
         query_result_cache_on_disk = QueryResultCacheOnDisk::getFromSettings(settings);
 
     /// If it is a non-internal SELECT, and passive (read) use of the query cache is enabled, and the cache knows the query, then add a ReadFromQueryResultCacheStep instead of building the rest of the plan.
-    if (should_cache && shouldReadFromQueryCacheForSubquery(settings, query_result_cache_on_disk, select_query_options, query_context))
-    {
-        QueryResultCache::Key key(ast, query_context->getCurrentDatabase(), *settings_copy, query_context->getCurrentQueryId(), query_context->getUserID(), query_context->getCurrentRoles(), /* is_subquery = */ true);
-
-        std::optional<QueryResultCacheReader> reader;
-        if (settings[Setting::enable_reads_from_query_cache])
-        {
-            reader.emplace(query_result_cache->createReader(key));
-            if (!reader->hasCacheEntryForKey())
-                reader.reset();
-        }
-        /// If reads are enabled for both the in-memory and the on-disk cache, the (slower) on-disk cache is consulted only on a miss in memory.
-        if (!reader && query_result_cache_on_disk && query_result_cache_on_disk->readsEnabled())
-        {
-            reader.emplace(query_result_cache_on_disk->createReader(key));
-            if (!reader->hasCacheEntryForKey())
-                reader.reset();
-        }
-
-        QueryResultCacheReader::recordProbeResult(reader.has_value());
-
-        if (reader)
-        {
-            addReadFromQueryResultCacheStep(query_plan, reader->getSource(), reader->getSourceTotals(), reader->getSourceExtremes());
-            return;
-        }
-    }
+    if (should_cache && shouldReadFromQueryCacheForSubquery(settings, select_query_options, query_context)
+        && tryAddReadFromQueryResultCacheStep(query_plan, ast, query_context, settings, *settings_copy, query_result_cache, query_result_cache_on_disk))
+        return;
 
     StorageLimitsList current_storage_limits = storage_limits;
     select_query_info.local_storage_limits = buildStorageLimits(*query_context, select_query_options);
@@ -3426,52 +3586,10 @@ void Planner::buildPlanForQueryNode()
 
     /// If it is a non-internal SELECT query, and active (write) use of the query cache is enabled,
     /// then add a step which stores the result in the query cache.
-    /// When should_cache is true but the outer query didn't set use_query_cache (explicit subquery opt-in),
-    /// skip the context flag check in checkCanWriteQueryResultCache while still respecting safety checks.
-    bool skip_context_check = should_cache && !can_use_query_result_cache;
-    if (should_cache && checkCanWriteQueryResultCache(ast, query_context, query_result_cache_on_disk, skip_context_check))
-    {
-        auto created_at = std::chrono::system_clock::now();
-        auto expires_at = saturatedSecondsFrom(created_at, settings[Setting::query_cache_ttl].totalSeconds());
-
-        QueryResultCache::Key key(
-            ast, query_context->getCurrentDatabase(), *settings_copy, query_plan.getRootNode()->step->getOutputHeader(),
-            query_context->getCurrentQueryId(), query_context->getUserID(), query_context->getCurrentRoles(),
-            settings[Setting::query_cache_share_between_users],
-            created_at, expires_at,
-            settings[Setting::query_cache_compress_entries],
-            /* is_subquery = */ true);
-
-        const size_t num_query_runs = settings[Setting::query_cache_min_query_runs] ? query_result_cache->recordQueryRun(key) : 1; /// try to avoid locking a mutex in recordQueryRun()
-        if (num_query_runs <= settings[Setting::query_cache_min_query_runs])
-        {
-            LOG_TRACE(getLogger("QueryResultCache"),
-                    "Skipped insert because the query ran {} times but the minimum required number of query runs to cache the query result is {}",
-                    num_query_runs, settings[Setting::query_cache_min_query_runs].value);
-        }
-        else
-        {
-            const bool write_to_memory_cache = canWriteToQueryResultCacheInMemory(query_context);
-            QueryResultCacheOnDiskPtr write_to_on_disk_cache
-                = canWriteToQueryResultCacheOnDisk(query_context, query_result_cache_on_disk) ? query_result_cache_on_disk : nullptr;
-
-            if (write_to_memory_cache || write_to_on_disk_cache)
-            {
-                auto query_result_cache_writer = std::make_shared<QueryResultCacheWriter>(query_result_cache->createWriter(
-                                    key,
-                                    std::chrono::milliseconds(settings[Setting::query_cache_min_query_duration].totalMilliseconds()),
-                                    settings[Setting::query_cache_squash_partial_results],
-                                    settings[Setting::max_block_size],
-                                    settings[Setting::query_cache_max_size_in_bytes],
-                                    settings[Setting::query_cache_max_entries],
-                                    write_to_memory_cache,
-                                    write_to_on_disk_cache));
-
-                auto stream_into_query_result_cache_step = std::make_unique<StreamInQueryResultCacheStep>(query_plan.getRootNode()->step->getOutputHeader(), query_result_cache_writer);
-                query_plan.addStep(std::move(stream_into_query_result_cache_step));
-            }
-        }
-    }
+    if (should_cache)
+        addStreamInQueryResultCacheStepIfNeeded(
+            query_plan, ast, query_context, settings, *settings_copy, query_result_cache, query_result_cache_on_disk,
+            /* skip_context_check = */ !can_use_query_result_cache);
 
     query_node_to_plan_step_mapping[&query_node] = query_plan.getRootNode();
 }
