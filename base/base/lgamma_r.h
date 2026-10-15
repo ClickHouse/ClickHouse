@@ -5,14 +5,11 @@
 #if defined(OS_WINDOWS)
 
 /// `lgamma_r` is `lgamma` with the sign of the gamma function returned through a pointer instead
-/// of through the global `signgam`, which makes it thread-safe. It is a GNU extension; the Windows
-/// CRT has only `lgamma`, whose `signgam` is per-thread there rather than global - so the sign can
-/// be read back safely, and this wrapper is reentrant for the same reason the GNU one is.
-inline double lgamma_r(double x, int * signp)
-{
-    const double result = std::lgamma(x);
-    *signp = signgam;
-    return result;
-}
+/// of through the global `signgam`, which makes it thread-safe. It is a GNU extension that the
+/// Windows CRT lacks, and it cannot be emulated on top of `lgamma`: mingw-w64's `signgam` is a
+/// process-global variable, so concurrent calls race on it, and its `lgamma` reads that shared sign
+/// back for the overflow result as well. The implementation is musl's, compiled into `common` on
+/// Windows from `base/glibc-compatibility/musl/lgamma.c`; it never touches `signgam`.
+extern "C" double lgamma_r(double x, int * signgamp);
 
 #endif

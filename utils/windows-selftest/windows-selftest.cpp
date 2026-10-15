@@ -16,17 +16,22 @@
 #include <Poco/Process.h>
 
 #include <base/getMemoryAmount.h>
+#include <base/lgamma_r.h>
 
 #include <readpassphrase.h>
 #include <readpassphrase_win32.h>
 
 #include <Poco/UnWindows.h>
 
+#include <atomic>
+#include <cmath>
 #include <cstdint>
 #include <exception>
 #include <iostream>
 #include <optional>
 #include <string>
+#include <thread>
+#include <vector>
 
 
 namespace
@@ -284,6 +289,38 @@ void terminationRequestSignalsTheEventTheServerWaitsOn()
     CloseHandle(event);
 }
 
+/// mingw-w64's `signgam` is a process-global variable, so a `lgamma_r` built on `lgamma` races on it.
+/// Threads computing arguments of both signs at once, including one that overflows, must each get
+/// their own sign back, and `signgam` itself must not be touched.
+void lgammaRIsReentrant()
+{
+    signgam = 12345;
+    std::atomic<bool> wrong{false};
+    std::vector<std::thread> threads;
+    for (int t = 0; t < 4; ++t)
+    {
+        threads.emplace_back([t, &wrong]
+        {
+            /// Gamma is negative on (-1, 0), and `lgamma` overflows to +inf for huge arguments.
+            const double arg = (t % 2) ? -0.5 : 1e308;
+            const int expected_sign = (t % 2) ? -1 : 1;
+            for (int i = 0; i < 100000; ++i)
+            {
+                int sign = 0;
+                const double result = lgamma_r(arg, &sign);
+                const bool value_ok = (t % 2) ? std::abs(result - 1.2655121234846454) < 1e-12 : (std::isinf(result) && result > 0);
+                if (sign != expected_sign || !value_ok)
+                    wrong = true;
+            }
+        });
+    }
+    for (auto & thread : threads)
+        thread.join();
+
+    check(!wrong, "concurrent `lgamma_r` calls with arguments of both signs each return their own sign and value");
+    check(signgam == 12345, "`lgamma_r` does not touch the global `signgam`");
+}
+
 /// The passphrase prompt needs a real console, which no CI job has, so only its two decisions are
 /// checked here: where the prompt is written, and which console mode the read runs under.
 void passphrasePromptDecisions()
@@ -328,6 +365,7 @@ int main(int, char **)
     memoryAmountRespectsTheJobObject();
     terminationRequestSignalsTheEventTheServerWaitsOn();
     passphrasePromptDecisions();
+    lgammaRIsReentrant();
 
     std::cout << (failures ? "FAILED: " + std::to_string(failures) + " check(s)\n" : "OK\n");
     return failures ? 1 : 0;

@@ -48,6 +48,14 @@ if (NOT OS_WINDOWS)
     )
 endif ()
 
+if (OS_WINDOWS)
+    # The Windows CRT has no `lgamma_r`, and mingw-w64's `lgamma` keeps the sign in a
+    # process-global `signgam`, so take the reentrant implementation from musl. See `lgamma_r.h`.
+    list (APPEND SRCS ../glibc-compatibility/musl/lgamma.c)
+    # Third-party code, compiled as is: it has no prototype for `lgamma_r` and falls through `case`s.
+    set_source_files_properties (../glibc-compatibility/musl/lgamma.c PROPERTIES COMPILE_OPTIONS "-w")
+endif ()
+
 add_library (common ${SRCS})
 
 if (WITH_COVERAGE)
