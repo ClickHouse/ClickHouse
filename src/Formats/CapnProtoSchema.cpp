@@ -80,9 +80,6 @@ void checkCapnProtoSchemaNestingDepth(const String & schema_directory, const Str
         readStringUntilEOF(content, in);
 
         size_t depth = 0;
-        /// Depth of the expression tree the parser builds: every `.member` and `(...)` suffix adds a level.
-        struct ExpressionDepth { size_t current = 0; size_t finished = 0; };
-        std::vector<ExpressionDepth> expressions(1);
         /// The last identifier seen before the current position, to recognize `import "..."`.
         String last_word;
         /// Whether `last_word` has already been terminated by whitespace, a comment or a byte order mark,
@@ -171,35 +168,12 @@ void checkCapnProtoSchemaNestingDepth(const String & schema_directory, const Str
                     if (depth > DBMS_DEFAULT_MAX_PARSER_DEPTH)
                         throw Exception(ErrorCodes::CANNOT_PARSE_CAPN_PROTO_SCHEMA,
                             "The CapnProto schema is nested too deeply: the limit is {}", DBMS_DEFAULT_MAX_PARSER_DEPTH);
-                    expressions.emplace_back();
                 }
                 else if (c == ')' || c == ']' || c == '}')
                 {
                     if (depth > 0)
                         --depth;
-                    if (expressions.size() > 1)
-                    {
-                        const size_t inner = std::max(expressions.back().current, expressions.back().finished);
-                        expressions.pop_back();
-                        if (c == '}')
-                            expressions.back().current = 0;
-                        else
-                            expressions.back().current = std::max(expressions.back().current, inner) + 1;
-                    }
                 }
-                else if (c == '.')
-                {
-                    ++expressions.back().current;
-                }
-                else if (c == ',' || c == ';')
-                {
-                    expressions.back().finished = std::max(expressions.back().finished, expressions.back().current);
-                    expressions.back().current = 0;
-                }
-
-                if (expressions.back().current > DBMS_DEFAULT_MAX_PARSER_DEPTH)
-                    throw Exception(ErrorCodes::CANNOT_PARSE_CAPN_PROTO_SCHEMA,
-                        "The CapnProto schema is nested too deeply: the limit is {}", DBMS_DEFAULT_MAX_PARSER_DEPTH);
             }
         }
     }
