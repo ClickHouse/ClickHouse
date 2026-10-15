@@ -285,14 +285,14 @@ static bool canBeDeserializedFromFixed(const DataTypePtr & target_type, size_t f
     }
 }
 
-AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro::NodePtr & root_node, const DataTypePtr & target_type)
+AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro::NodePtr & root_node, const DataTypePtr & target_type, const String & path)
 {
     checkStackSize();
 
     if (target_type->lowCardinality())
     {
         const auto * lc_type = assert_cast<const DataTypeLowCardinality *>(target_type.get());
-        auto dict_deserialize = createDeserializeFn(root_node, lc_type->getDictionaryType());
+        auto dict_deserialize = createDeserializeFn(root_node, lc_type->getDictionaryType(), path);
         return [dict_deserialize](IColumn & column, avro::Decoder & decoder)
         {
             auto & lc_column = assert_cast<ColumnLowCardinality &>(column);
@@ -510,7 +510,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
             {
                 auto nested_source_type = root_node->leafAt(0);
                 auto nested_target_type = assert_cast<const DataTypeArray &>(*target_type).getNestedType();
-                auto nested_deserialize = createDeserializeFn(nested_source_type, nested_target_type);
+                auto nested_deserialize = createDeserializeFn(nested_source_type, nested_target_type, Nested::concatenateName(path, "element"));
                 return [nested_deserialize](IColumn & column, avro::Decoder & decoder)
                 {
                     ColumnArray & column_array = assert_cast<ColumnArray &>(column);
@@ -565,7 +565,11 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                     {
                         bool is_key = i == key_field_index;
                         field_deserializers.emplace_back(
-                            createDeserializeFn(items_node->leafAt(i), is_key ? keys_type : values_type), is_key);
+                            createDeserializeFn(
+                                items_node->leafAt(i),
+                                is_key ? keys_type : values_type,
+                                Nested::concatenateName(Nested::concatenateName(path, "element"), items_node->nameAt(i))),
+                            is_key);
                     }
 
                     return [field_deserializers](IColumn & column, avro::Decoder & decoder)
@@ -599,7 +603,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
         {
             if (root_node->leaves() == 1)
             {
-                auto nested_deserialize = createDeserializeFn(root_node->leafAt(0), target_type);
+                auto nested_deserialize = createDeserializeFn(root_node->leafAt(0), target_type, path);
                 return [nested_deserialize](IColumn & column, avro::Decoder & decoder)
                 {
                     decoder.decodeUnionIndex();
@@ -614,7 +618,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                 int non_null_union_index = root_node->leafAt(0)->type() == avro::AVRO_NULL ? 1 : 0;
                 if (target.isNullable())
                 {
-                    auto nested_deserialize = createDeserializeFn(root_node->leafAt(non_null_union_index), removeNullable(target_type));
+                    auto nested_deserialize = createDeserializeFn(root_node->leafAt(non_null_union_index), removeNullable(target_type), path);
                     return [non_null_union_index, nested_deserialize](IColumn & column, avro::Decoder & decoder)
                     {
                         ColumnNullable & col = assert_cast<ColumnNullable &>(column);
@@ -633,7 +637,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                 }
                 if (null_as_default)
                 {
-                    auto nested_deserialize = createDeserializeFn(root_node->leafAt(non_null_union_index), target_type);
+                    auto nested_deserialize = createDeserializeFn(root_node->leafAt(non_null_union_index), target_type, path);
                     return [non_null_union_index, nested_deserialize](IColumn & column, avro::Decoder & decoder)
                     {
                         int union_index = static_cast<int>(decoder.decodeUnionIndex());
@@ -667,6 +671,11 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
 
                 std::unordered_set<ColumnVariant::Discriminator> used_discriminators;
 
+                size_t non_null_size = 0;
+                for (size_t i = 0; i != root_node->leaves(); ++i)
+                    if (root_node->leafAt(static_cast<int>(i))->type() != avro::AVRO_NULL)
+                        ++non_null_size;
+
                 bool union_has_null = false;
                 for (size_t i = 0; i != root_node->leaves(); ++i)
                 {
@@ -678,13 +687,16 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                         union_index_to_global_discriminator.insert_or_assign(i, ColumnVariant::NULL_DISCRIMINATOR);
                         continue;
                     }
-                    const auto variant = AvroSchemaReader::avroNodeToDataType(avro_node);
+                    const auto branch_path = getAvroVariantAlternativePath(path, non_null_size, i);
+                    const auto variant = AvroSchemaReader::avroNodeToDataType(avro_node, /*allow_nullable_tuple_type=*/true, uuid2_paths, branch_path);
 
-                    /// The type of a branch is inferred without the `UUID2` paths of the file, so an Avro `uuid` is
-                    /// always `UUID`, and a destination alternative that has `UUID2` in its place is compatible too.
-                    /// Prefer an alternative that is not taken by a previous branch, so that the branches of
-                    /// `Variant(Tuple(x UUID), Tuple(x UUID2))`, which have the same inferred type, go to different
-                    /// alternatives in the order the writer emitted them, and an exact match over a `UUID2` one.
+                    /// The type of a branch is inferred with the `UUID2` paths of the file, the same way as by schema
+                    /// inference, so an exact match is the alternative the branch was written from. A file without the
+                    /// paths (written by another writer, or by an older version) has `UUID` for every Avro `uuid`, and a
+                    /// destination given explicitly can have the other UUID type, so an alternative that differs only by
+                    /// `UUID` and `UUID2` is compatible too. Prefer an alternative that is not taken by a previous branch,
+                    /// so that the branches of `Variant(Tuple(x UUID), Tuple(x UUID2))` from a file without the paths,
+                    /// which have the same inferred type, go to different alternatives, and an exact match over another one.
                     std::optional<ColumnVariant::Discriminator> exact_discriminator;
                     std::vector<ColumnVariant::Discriminator> compatible_discriminators;
                     for (size_t d = 0; d < nested_types.size(); ++d)
@@ -698,7 +710,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                         {
                             if (left->equals(*right))
                                 return left;
-                            if (isUUID(left) && isUUID2(right))
+                            if ((isUUID(left) && isUUID2(right)) || (isUUID2(left) && isUUID(right)))
                                 return right;
                             return nullptr;
                         });
@@ -725,7 +737,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                             variant_type.getName(),
                             variant->getName());
 
-                    nested_deserializers.emplace_back(createDeserializeFn(avro_node, nested_types[*corresponding_discriminator]));
+                    nested_deserializers.emplace_back(createDeserializeFn(avro_node, nested_types[*corresponding_discriminator], branch_path));
                     used_discriminators.insert(corresponding_discriminator.value());
                     union_index_to_global_discriminator.insert_or_assign(i, std::move(corresponding_discriminator.value()));
                 }
@@ -889,7 +901,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
             if (!symbolic_deserialize_guard.insert(sym_name).second)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Recursive Avro schema is not supported: type '{}' references itself", sym_name);
-            auto result = createDeserializeFn(avro::resolveSymbol(root_node), target_type);
+            auto result = createDeserializeFn(avro::resolveSymbol(root_node), target_type, path);
             symbolic_deserialize_guard.erase(sym_name);
             return result;
         }
@@ -908,7 +920,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                 {
                     const auto & name = root_node->nameAt(i);
                     size_t pos = tuple_type.getPositionByName(name);
-                    auto nested_deserializer = createDeserializeFn(root_node->leafAt(i), nested_types[pos]);
+                    auto nested_deserializer = createDeserializeFn(root_node->leafAt(i), nested_types[pos], Nested::concatenateName(path, name));
                     nested_deserializers.emplace_back(nested_deserializer, pos);
                 }
 
@@ -944,7 +956,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                     return true;
                 };
 
-                auto values_deserializer = createDeserializeFn(values_source_type, values_type);
+                auto values_deserializer = createDeserializeFn(values_source_type, values_type, Nested::concatenateName(path, "value"));
                 return [keys_deserializer, values_deserializer](IColumn & column, avro::Decoder & decoder)
                 {
                     ColumnMap & column_map = assert_cast<ColumnMap &>(column);
@@ -980,7 +992,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
 
     if (target.isNullable())
     {
-        auto nested_deserialize = createDeserializeFn(root_node, removeNullable(target_type));
+        auto nested_deserialize = createDeserializeFn(root_node, removeNullable(target_type), path);
         return [nested_deserialize](IColumn & column, avro::Decoder & decoder)
         {
             ColumnNullable & col = assert_cast<ColumnNullable &>(column);
@@ -1180,7 +1192,7 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
         const auto & column = header.getByPosition(target_column_idx);
         try
         {
-            AvroDeserializer::Action action(static_cast<int>(target_column_idx), createDeserializeFn(node, column.type));
+            AvroDeserializer::Action action(static_cast<int>(target_column_idx), createDeserializeFn(node, column.type, current_path));
             column_found[target_column_idx] = true;
             return action;
         }
@@ -1241,7 +1253,8 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
                 return AvroDeserializer::Action(createSkipFn(node));
             size_t nested_column_index = header.getPositionByName(Nested::concatenateName(current_path, name));
             column_found[nested_column_index] = true;
-            auto nested_deserializer = createDeserializeFn(nested_avro_node->leafAt(i), nested_types[name]);
+            auto nested_deserializer = createDeserializeFn(
+                nested_avro_node->leafAt(i), nested_types[name], Nested::concatenateName(Nested::concatenateName(current_path, "element"), name));
             nested_deserializers.emplace_back(nested_deserializer);
             nested_indexes.push_back(nested_column_index);
         }
@@ -1278,8 +1291,14 @@ AvroDeserializer::AvroDeserializer(DataTypePtr data_type, const std::string & co
 
 }
 
-AvroDeserializer::AvroDeserializer(const Block & header, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_)
-    : null_as_default(null_as_default_), settings(settings_)
+AvroDeserializer::AvroDeserializer(
+    const Block & header,
+    avro::ValidSchema schema,
+    bool allow_missing_fields,
+    bool null_as_default_,
+    const FormatSettings & settings_,
+    std::unordered_set<String> uuid2_paths_)
+    : null_as_default(null_as_default_), settings(settings_), uuid2_paths(std::move(uuid2_paths_))
 {
     const auto & schema_root = schema.root();
     if (schema_root->type() != avro::AVRO_RECORD)
@@ -1325,7 +1344,12 @@ void AvroRowInputFormat::readPrefix()
     file_reader_ptr = std::make_unique<avro::DataFileReaderBase>(
         std::make_unique<AvroInputStreamReadBufferAdapter>(*in), MAX_AVRO_SCHEMA_DEPTH);
     deserializer_ptr = std::make_unique<AvroDeserializer>(
-        output.getHeader(), file_reader_ptr->dataSchema(), format_settings.avro.allow_missing_fields, format_settings.null_as_default, format_settings);
+        output.getHeader(),
+        file_reader_ptr->dataSchema(),
+        format_settings.avro.allow_missing_fields,
+        format_settings.null_as_default,
+        format_settings,
+        AvroSchemaReader::readUUID2Paths(file_reader_ptr->metadata(), format_settings));
     file_reader_ptr->init();
 }
 
@@ -1465,24 +1489,7 @@ NamesAndTypesList AvroSchemaReader::readSchema()
         auto file_reader_ptr = std::make_unique<avro::DataFileReaderBase>(
             std::make_unique<AvroInputStreamReadBufferAdapter>(in), MAX_AVRO_SCHEMA_DEPTH);
         root_node = file_reader_ptr->dataSchema().root();
-
-        const auto & metadata = file_reader_ptr->metadata();
-        if (auto it = metadata.find(AVRO_UUID2_PATHS_METADATA_KEY); it != metadata.end())
-        {
-            ReadBufferFromMemory buf(reinterpret_cast<const char *>(it->second.data()), it->second.size());
-            assertChar('[', buf);
-            if (!checkChar(']', buf))
-            {
-                do
-                {
-                    String uuid2_path;
-                    readJSONString(uuid2_path, buf, format_settings.json);
-                    uuid2_paths.insert(std::move(uuid2_path));
-                } while (checkChar(',', buf));
-                assertChar(']', buf);
-            }
-            assertEOF(buf);
-        }
+        uuid2_paths = readUUID2Paths(file_reader_ptr->metadata(), format_settings);
     }
 
     if (root_node->type() != avro::Type::AVRO_RECORD)
@@ -1502,10 +1509,40 @@ NamesAndTypesList AvroSchemaReader::readSchema()
     return names_and_types;
 }
 
+std::unordered_set<String> AvroSchemaReader::readUUID2Paths(
+    const std::map<std::string, std::vector<uint8_t>> & metadata, const FormatSettings & format_settings)
+{
+    std::unordered_set<String> uuid2_paths;
+    auto it = metadata.find(AVRO_UUID2_PATHS_METADATA_KEY);
+    if (it == metadata.end())
+        return uuid2_paths;
+
+    ReadBufferFromMemory buf(reinterpret_cast<const char *>(it->second.data()), it->second.size());
+    assertChar('[', buf);
+    if (!checkChar(']', buf))
+    {
+        do
+        {
+            String uuid2_path;
+            readJSONString(uuid2_path, buf, format_settings.json);
+            uuid2_paths.insert(std::move(uuid2_path));
+        } while (checkChar(',', buf));
+        assertChar(']', buf);
+    }
+    assertEOF(buf);
+    return uuid2_paths;
+}
+
 DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node, bool allow_nullable_tuple_type)
 {
+    return avroNodeToDataType(node, allow_nullable_tuple_type, /*uuid2_paths=*/{}, /*path=*/{});
+}
+
+DataTypePtr AvroSchemaReader::avroNodeToDataType(
+    const avro::NodePtr & node, bool allow_nullable_tuple_type, const std::unordered_set<String> & uuid2_paths, const String & path)
+{
     std::unordered_set<std::string> seen_names;
-    return avroNodeToDataTypeImpl(node, seen_names, allow_nullable_tuple_type, /*uuid2_paths=*/{}, /*path=*/{});
+    return avroNodeToDataTypeImpl(node, seen_names, allow_nullable_tuple_type, uuid2_paths, path);
 }
 
 DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(
