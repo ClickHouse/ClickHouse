@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 
 #include <Columns/ColumnConst.h>
+#include <Storages/MergeTree/MergeTreeReadTask.h>
 
 
 namespace DB
@@ -21,9 +22,20 @@ namespace
 struct NodeInfo
 {
     NameSet required_columns;
+    /// The required columns read from the table, that is, not filled by an index reader.
+    NameSet required_table_columns;
+    /// Names of the indexes whose readers fill the virtual columns required to compute this node.
+    /// One reader fills all virtual columns of an index, so they count as one.
+    NameSet required_indexes;
     /// True if computing this node may throw an exception, so it must not be evaluated on rows
     /// that a preceding condition rejects.
     bool may_throw = false;
+
+    /// True if both nodes read the same columns and indexes, so their conditions may share a step.
+    bool readsSameColumns(const NodeInfo & other) const
+    {
+        return required_table_columns == other.required_table_columns && required_indexes == other.required_indexes;
+    }
 };
 
 /// Returns the argument types of a function node, as expected by
@@ -38,8 +50,31 @@ DataTypesWithConstInfo getArgumentTypesWithConstInfo(const ActionsDAG::NodeRawCo
     return types;
 }
 
+/// Fills the info of an input column. A virtual column of an index is resolved to the name of the index whose reader fills it.
+void resolveNodeInfo(NodeInfo & node_info, const String & column_name, const IndexReadTasks * index_read_tasks)
+{
+    node_info.required_columns.insert(column_name);
+
+    if (index_read_tasks)
+    {
+        for (const auto & [index_name, index_task] : *index_read_tasks)
+        {
+            if (std::ranges::any_of(index_task.columns, [&](const auto & column) { return column.name == column_name; }))
+            {
+                node_info.required_indexes.insert(index_name);
+                return;
+            }
+        }
+    }
+
+    node_info.required_table_columns.insert(column_name);
+}
+
 /// Fills the list of required columns for a node in the DAG.
-void fillRequiredColumns(const ActionsDAG::Node * node, std::unordered_map<const ActionsDAG::Node *, NodeInfo> & nodes_info)
+void fillRequiredColumns(
+    const ActionsDAG::Node * node,
+    std::unordered_map<const ActionsDAG::Node *, NodeInfo> & nodes_info,
+    const IndexReadTasks * index_read_tasks)
 {
     if (nodes_info.contains(node))
         return;
@@ -48,15 +83,17 @@ void fillRequiredColumns(const ActionsDAG::Node * node, std::unordered_map<const
 
     if (node->type == ActionsDAG::ActionType::INPUT)
     {
-        node_info.required_columns.insert(node->result_name);
+        resolveNodeInfo(node_info, node->result_name, index_read_tasks);
         return;
     }
 
     for (const auto & child : node->children)
     {
-        fillRequiredColumns(child, nodes_info);
+        fillRequiredColumns(child, nodes_info, index_read_tasks);
         const auto & child_info = nodes_info[child];
         node_info.required_columns.insert(child_info.required_columns.begin(), child_info.required_columns.end());
+        node_info.required_table_columns.insert(child_info.required_table_columns.begin(), child_info.required_table_columns.end());
+        node_info.required_indexes.insert(child_info.required_indexes.begin(), child_info.required_indexes.end());
         node_info.may_throw = node_info.may_throw || child_info.may_throw;
     }
 
@@ -233,7 +270,8 @@ bool tryBuildPrewhereSteps(
     const ExpressionActionsSettings & actions_settings,
     PrewhereExprInfo & prewhere,
     bool force_short_circuit_execution,
-    bool read_ahead_columns)
+    bool read_ahead_columns,
+    const IndexReadTasks * index_read_tasks)
 {
     if (!prewhere_info)
         return true;
@@ -271,15 +309,15 @@ bool tryBuildPrewhereSteps(
     std::unordered_map<const ActionsDAG::Node *, NodeInfo> nodes_info;
     for (const auto & node : condition_nodes)
     {
-        fillRequiredColumns(node, nodes_info);
+        fillRequiredColumns(node, nodes_info, index_read_tasks);
     }
 
     /// 3. Sort condition nodes by the number of columns used in them and the overall size of those columns
     /// TODO: not sorting for now because the conditions are already sorted by Where Optimizer
 
-    /// 4. Group adjacent conditions that read the same set of columns into a single step.
+    /// 4. Group adjacent conditions that read the same set of columns and indexes into a single step.
     /// A subcolumn is a separate column here, so a condition on a subcolumn and a condition on
-    /// the whole column get separate steps.
+    /// the whole column get separate steps, while conditions on virtual columns of one index share one.
     ///
     /// The condition list is the flattened conjunction, so a nested AND contributes its own conditions
     /// rather than a single opaque one. The flattening keeps the original left to right order, for the
@@ -319,8 +357,7 @@ bool tryBuildPrewhereSteps(
         if (is_first_unattributed)
             num_attributed_steps = condition_groups.size();
 
-        const bool same_columns = !condition_groups.empty()
-            && nodes_info[condition_groups.back().front()].required_columns == node_info.required_columns;
+        const bool same_columns = !condition_groups.empty() && nodes_info[condition_groups.back().front()].readsSameColumns(node_info);
 
         if (same_columns && !node_info.may_throw && !is_first_unattributed)
         {
