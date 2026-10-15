@@ -1048,6 +1048,7 @@ AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(const avro::NodePtr & ro
             }
             return [&skip_fn = it->second](avro::Decoder & decoder)
             {
+                checkStackSize();
                 skip_fn(decoder);
             };
         }
@@ -1390,9 +1391,8 @@ const AvroDeserializer & AvroConfluentRowInputFormat::getOrCreateDeserializer(Sc
             schema_id,
             format_settings.avro.schema_registry_timeouts,
             format_settings.avro.schema_registry_retry);
-        AvroDeserializer deserializer(
-            output.getHeader(), schema, format_settings.avro.allow_missing_fields, format_settings.null_as_default, format_settings);
-        it = deserializer_cache.emplace(schema_id, std::move(deserializer)).first;
+        it = deserializer_cache.try_emplace(
+            schema_id, output.getHeader(), schema, format_settings.avro.allow_missing_fields, format_settings.null_as_default, format_settings).first;
     }
     return it->second;
 }
