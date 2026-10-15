@@ -6,6 +6,7 @@
 #include <Processors/QueryPlan/Optimizations/conflictDetector.h>
 
 #include <Interpreters/JoinOperator.h>
+#include <Common/Exception.h>
 
 #include <algorithm>
 #include <bit>
@@ -15,6 +16,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 namespace
 {
@@ -164,6 +170,17 @@ private:
         /// these (per-operator required-set + conflict rules) instead of the per-relation
         /// `restriction_by_rel`, which lets non-commutative outer and semi/anti joins be reordered.
         std::vector<ConflictOperator> conflict_operators;
+
+        /// An inner-join conjunct whose join step has conflict rules: its source relations and the
+        /// index of that step in `conflict_operators`. A conjunct is placed on its own, at the lowest
+        /// join where all of its relations are present, so the rules of its step have to be checked
+        /// wherever it is placed, and not only where the whole ON clause of the step is.
+        struct RuledConjunct
+        {
+            TUInt sources = 0;
+            size_t op_index = 0;
+        };
+        std::vector<RuledConjunct> ruled_conjuncts;
     };
     DPsubMaskData<UInt32> dpsub_data;
 
@@ -211,6 +228,7 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
     ///    `isValidJoinOrderMaskConflict`. Handles inner/outer *and* semi/anti joins, with orientation.
     dpsub_data.restriction_by_rel.assign(num_relations, {});
     dpsub_data.conflict_operators.clear();
+    dpsub_data.ruled_conjuncts.clear();
     if (useConflictDetector())
     {
         std::vector<ConflictOpMask> ops;
@@ -219,6 +237,21 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
             ops.push_back(ConflictOpMask{toMask(op.left), toMask(op.right), toMask(op.nel), toMask(op.nr_rels), op.kind, op.strictness});
 
         dpsub_data.conflict_operators = computeConflictOperators(ops, conflictDetectorKind(), log);
+
+        if (query_graph.edge_conflict_ops.size() != edges.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Join graph has {} conditions, but join steps are recorded for {} of them",
+                edges.size(), query_graph.edge_conflict_ops.size());
+        for (size_t i = 0; i < edges.size(); ++i)
+        {
+            if (!edges[i] || dpsub_data.edge_pinned[i])
+                continue;
+            const size_t op_index = query_graph.edge_conflict_ops[i];
+            if (op_index >= dpsub_data.conflict_operators.size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Join condition {} refers to join step {}, but there are only {}",
+                    i, op_index, dpsub_data.conflict_operators.size());
+            if (!dpsub_data.conflict_operators[op_index].rules.empty())
+                dpsub_data.ruled_conjuncts.push_back({dpsub_data.edge_source_mask[i], op_index});
+        }
         LOG_TRACE(log, "DPsub: using {} conflict detector over {} captured join operators",
                   toString(query_graph.conflict_detector), dpsub_data.conflict_operators.size());
     }
@@ -395,6 +428,17 @@ DPSubJoinOrderOptimizer::isValidJoinOrderMaskConflict(UInt32 left_mask, UInt32 r
     /// Whether anything applied here actually ties the two sides together, as opposed to a cross
     /// product, which is applied across the split while joining the sides on nothing.
     bool have_connecting_op = false;
+
+    /// A conjunct placed across this split is part of its join step applied here, so the conflict
+    /// rules of that step must hold even when the rest of its ON clause is placed higher up.
+    for (const auto & conjunct : dpsub_data.ruled_conjuncts)
+    {
+        if ((conjunct.sources & ~combined) || !(conjunct.sources & left_mask) || !(conjunct.sources & right_mask))
+            continue;
+        for (const auto & rule : dpsub_data.conflict_operators[conjunct.op_index].rules)
+            if ((rule.t1 & combined) && (rule.t2 & ~combined))
+                return std::nullopt;
+    }
 
     for (const auto & op : dpsub_data.conflict_operators)
     {

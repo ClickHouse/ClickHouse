@@ -92,6 +92,11 @@ struct QueryGraph
 
     std::vector<JoinActionRef> edges;
 
+    /// For each of `edges`, the index in `conflict_ops` of the join step whose ON clause it comes
+    /// from. An inner join's ON clause is split into conjuncts placed on their own, and a conjunct
+    /// placed on its own still has to obey the conflict rules of its join step.
+    std::vector<size_t> edge_conflict_ops;
+
     /// Operators of the original join tree, in tree (not enumeration) order. Populated during
     /// `buildQueryGraph` and consumed by the conflict detector (CD-A/CD-C) when it is enabled; empty
     /// otherwise. See `ConflictJoinOp`.

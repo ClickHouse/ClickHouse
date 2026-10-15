@@ -288,6 +288,8 @@ struct QueryGraphBuilder
     std::vector<QueryPlan::Node *> inputs;
 
     std::vector<JoinActionRef> join_edges;
+    /// See QueryGraph::edge_conflict_ops
+    std::vector<size_t> join_edge_ops;
 
     /// Outer joined relation should be joined after all other relations involved in its join expressions.
     /// It is joined with specified join kind.
@@ -375,6 +377,9 @@ static void uniteGraphs(QueryGraphBuilder & lhs, QueryGraphBuilder rhs)
     lhs.inputs.append_range(std::move(rhs.inputs));
 
     lhs.join_edges.append_range(rhs_edges_raw | std::views::transform([&](auto p) { return JoinActionRef(p, lhs.expression_actions); }));
+    /// The operators of `rhs` are appended after those of `lhs` below.
+    const size_t op_shift = lhs.conflict_ops.size();
+    lhs.join_edge_ops.append_range(rhs.join_edge_ops | std::views::transform([&](size_t op) { return op + op_shift; }));
 
     for (auto & [id, restriction] : rhs.join_kinds)
     {
@@ -872,6 +877,8 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
         const auto & new_node_entry = node_mapping.try_emplace(old_node, old_node);
         const auto * new_node = new_node_entry.first->second;
         auto & edge = query_graph.join_edges.emplace_back(new_node, query_graph.expression_actions);
+        /// The operator of this join step, pushed to `conflict_ops` below.
+        query_graph.join_edge_ops.push_back(query_graph.conflict_ops.size());
 
         /// Collect all sources from join expressions
         join_expression_sources |= edge.getSourceRelations();
@@ -1016,6 +1023,7 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
     QueryGraph query_graph;
     query_graph.relation_stats = std::move(query_graph_builder.relation_stats);
     query_graph.edges = std::move(query_graph_builder.join_edges);
+    query_graph.edge_conflict_ops = std::move(query_graph_builder.join_edge_ops);
     query_graph.join_kinds = std::move(query_graph_builder.join_kinds);
     query_graph.outer_join_conditions = std::move(query_graph_builder.outer_join_conditions);
     query_graph.conflict_ops = std::move(query_graph_builder.conflict_ops);
