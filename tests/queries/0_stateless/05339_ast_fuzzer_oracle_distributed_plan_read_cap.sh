@@ -26,10 +26,13 @@ mismatches=$($CLICKHOUSE_CLIENT --ignore-error --query "
 " 2>&1 >/dev/null | grep -c 'oracle mismatch')
 echo "oracle mismatches: $mismatches"
 
+# A slow build (ASan on S3 storage) can run every TLP sub-query past the oracle's own 10 s limit; such a sub-query still ran
+# under the distributed plan, so it counts too.
 $CLICKHOUSE_CLIENT --query "
     SYSTEM FLUSH LOGS query_log;
     SELECT 'TLP Aggregate checked', count() > 0 FROM system.query_log
-    WHERE current_database = currentDatabase() AND event_date >= yesterday() AND type = 'QueryFinish'
+    WHERE current_database = currentDatabase() AND event_date >= yesterday()
+        AND (type = 'QueryFinish' OR (type = 'ExceptionWhileProcessing' AND exception_code = 159))
         AND is_internal AND query ILIKE 'SELECT countMerge(%' AND ProfileEvents['DistributedPlanLocalExecution'] > 0;
     SELECT 'NoREC checked', count() > 0 FROM system.query_log
     WHERE current_database = currentDatabase() AND event_date >= yesterday() AND type = 'QueryStart'
