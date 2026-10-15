@@ -550,22 +550,26 @@ void StorageTimeSeries::truncate(const ASTPtr &, const StorageMetadataPtr &, Con
                         getStorageID().getNameForLogs());
     }
 
-    /// The caches are cleared before the truncation: if it fails in the middle, the next insert writes its rows again instead of skipping them.
-    clearCaches();
-
+    /// All inner tables are resolved first, so a missing one fails the query before any of them is truncated.
+    std::vector<StorageID> inner_table_ids;
     for (auto target_kind : getTargetKinds())
     {
         /// We truncate only inner tables here.
         if (isInnerTable(target_kind))
-        {
-            auto inner_table_id = getTargetTableID(target_kind, local_context);
-            /// `propagate_metadata_transaction` is false because the transaction can only be consumed once, so the DDL worker
-            /// commits it after all the inner tables are truncated. If the server dies in between, the entry is executed
-            /// again, which is safe: TRUNCATE is idempotent.
-            InterpreterDropQuery::executeDropQuery(
-                ASTDropQuery::Kind::Truncate, getContext(), local_context, inner_table_id, /* sync= */ true,
-                /* ignore_sync_setting= */ false, /* need_ddl_guard= */ true, /* propagate_metadata_transaction= */ false);
-        }
+            inner_table_ids.push_back(getTargetTableID(target_kind, local_context));
+    }
+
+    /// The caches are cleared before the truncation: if it fails in the middle, the next insert writes its rows again instead of skipping them.
+    clearCaches();
+
+    for (const auto & inner_table_id : inner_table_ids)
+    {
+        /// `propagate_metadata_transaction` is false because the transaction can only be consumed once, so the DDL worker
+        /// commits it after all the inner tables are truncated. If the server dies in between, the entry is executed
+        /// again, which is safe: TRUNCATE is idempotent.
+        InterpreterDropQuery::executeDropQuery(
+            ASTDropQuery::Kind::Truncate, getContext(), local_context, inner_table_id, /* sync= */ true,
+            /* ignore_sync_setting= */ false, /* need_ddl_guard= */ true, /* propagate_metadata_transaction= */ false);
     }
 }
 
