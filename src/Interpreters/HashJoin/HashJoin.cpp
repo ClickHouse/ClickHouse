@@ -452,7 +452,7 @@ static HashJoin::Type chooseMethod(const ColumnRawPtrs & key_columns, Sizes & ke
         return Type::keys64;
     if (all_fixed && keys_bytes <= 16)
         return Type::keys128;
-    if (all_fixed && keys_bytes <= 32)
+    if (all_fixed && keys_bytes <= HashJoin::max_packed_keys_bytes)
         return Type::keys256;
 
     /// If there is single string key, use hash table of it's values.
