@@ -532,7 +532,8 @@ public:
     /// To avoid it, add inputs from `all_inputs` list,
     /// so actions `x, y, z -> z > 0, x, y, z` -(remove filter)-> `x, y, z` will not change columns order.
     ///
-    /// @param allow_index_hints - false for key steps like window: a hint prunes whole granules, which can leave a key with part of its rows
+    /// @param allow_index_hints - false for key steps like window: a hint prunes whole granules, which can leave a key with part of its rows.
+    ///     An implied hint (`FunctionIndexHint::isImplied`) is still allowed: the rows it prunes fail the filter anyway.
     std::optional<ActionsForFilterPushDown> splitActionsForFilterPushDown(
         const std::string & filter_name,
         bool removes_filter,

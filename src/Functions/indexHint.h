@@ -71,8 +71,13 @@ public:
     void setActions(ActionsDAG actions_) { actions = std::move(actions_); }
     const ActionsDAG & getActions() const { return actions; }
 
+    void setImplied(bool implied_) { implied = implied_; }
+    bool isImplied() const { return implied; }
+
 private:
     ActionsDAG actions;
+    /// The condition follows from the other conjuncts of the `and` that holds the hint.
+    bool implied = false;
 };
 
 }

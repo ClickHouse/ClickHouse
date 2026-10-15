@@ -17,6 +17,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/ComparisonOrderDomain.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/IFunctionAdaptors.h>
+#include <Functions/indexHint.h>
 #include <Formats/FormatFactory.h>
 #include <Interpreters/convertFieldToType.h>
 
@@ -2507,8 +2509,10 @@ private:
                                     /// so add it as `indexHint`: it still prunes, but does not execute.
                                     auto index_hint_node = std::make_shared<FunctionNode>("indexHint");
                                     index_hint_node->getArguments().getNodes().push_back(and_node);
+                                    auto index_hint = std::make_shared<FunctionIndexHint>();
+                                    index_hint->setImplied(true);
                                     index_hint_node->resolveAsFunction(
-                                        FunctionFactory::instance().get("indexHint", getContext()));
+                                        std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(index_hint)));
                                     function_node.getArguments().getNodes().push_back(index_hint_node);
                                 }
                             }

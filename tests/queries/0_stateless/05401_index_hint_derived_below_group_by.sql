@@ -1,0 +1,39 @@
+-- Tags: no-parallel-replicas
+-- https://github.com/ClickHouse/ClickHouse/issues/124502: a hint derived from a compare chain still prunes below GROUP BY and LIMIT BY
+
+SET optimize_and_compare_chain = 1;
+SET query_plan_filter_push_down = 1;
+SET use_query_condition_cache = 0;
+
+DROP TABLE IF EXISTS t_chain_keys;
+CREATE TABLE t_chain_keys (a UInt32, b UInt32) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 128, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0;
+INSERT INTO t_chain_keys SELECT intDiv(number, 100), number % 997 FROM numbers(100000);
+OPTIMIZE TABLE t_chain_keys FINAL;
+
+-- the derived `indexHint(a < 10)` is the only condition on the key
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT a, b FROM t_chain_keys GROUP BY a, b HAVING a < b AND b < 10) WHERE explain LIKE '%Granules: %/%';
+SELECT count() FROM (SELECT a, b FROM t_chain_keys GROUP BY a, b HAVING a < b AND b < 10);
+
+-- a derived hint inside an OR does not keep the OR above the aggregation
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT a, b FROM t_chain_keys GROUP BY a, b HAVING (b < a AND a < 10) OR a = 500) WHERE explain LIKE '%Granules: %/%';
+SELECT count() FROM (SELECT a, b FROM t_chain_keys GROUP BY a, b HAVING (b < a AND a < 10) OR a = 500);
+
+-- the conjuncts the hint is derived from cannot be pushed
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT a, max(b) AS m FROM t_chain_keys GROUP BY a HAVING a < m AND m < 120) WHERE explain LIKE '%Granules: %/%';
+SELECT count() FROM (SELECT a, max(b) AS m FROM t_chain_keys GROUP BY a HAVING a < m AND m < 120);
+
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM (SELECT a, b FROM t_chain_keys ORDER BY a, b LIMIT 1 BY a, b) WHERE (b < a AND a < 10) OR a = 500) WHERE explain LIKE '%Granules: %/%';
+SELECT count() FROM (SELECT a, b FROM t_chain_keys ORDER BY a, b LIMIT 1 BY a, b) WHERE (b < a AND a < 10) OR a = 500;
+
+DROP TABLE t_chain_keys;
+
+-- a user-written hint equal to a derived one still must not prune below GROUP BY
+DROP TABLE IF EXISTS t_hint_key;
+CREATE TABLE t_hint_key (k UInt32, v UInt32) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 4, index_granularity_bytes = '10Mi';
+INSERT INTO t_hint_key SELECT intDiv(number, 10), number % 10 FROM numbers(100);
+OPTIMIZE TABLE t_hint_key FINAL;
+
+SELECT count() FROM (SELECT k, v FROM t_hint_key GROUP BY k, v HAVING ((k < v AND v < 3) OR v = 7) AND indexHint(k < 3));
+SELECT count() FROM (SELECT k, v FROM t_hint_key GROUP BY k, v HAVING indexHint(k < 3) AND ((k < v AND v < 3) OR v = 7));
+
+DROP TABLE t_hint_key;
