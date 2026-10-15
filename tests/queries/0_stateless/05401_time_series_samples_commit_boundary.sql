@@ -136,6 +136,16 @@ SELECT count() FROM part_samples;
 SELECT count() FROM part_recent;
 SELECT count() FROM part_recent WHERE value = 42;
 
+SELECT '--- max_insert_delayed_streams_for_parallel_write = 6 ---';
+
+INSERT INTO ts_part (metric_name, tags, samples)
+SETTINGS max_insert_delayed_streams_for_parallel_write = 6
+VALUES ('m6', map('env', 'prod'), [(toDateTime64('2020-01-01 00:00:00', 3), 42.), (toDateTime64('2020-01-02 00:00:00', 3), 43.)]); -- { serverError VIOLATED_CONSTRAINT }
+
+SELECT count() FROM part_samples;
+SELECT count() FROM part_recent;
+SELECT count() FROM part_recent WHERE value = 42;
+
 SELECT '--- a Buffer recent target keeps no rows when samples fail ---';
 
 CREATE TABLE buf_tags
@@ -179,7 +189,86 @@ SELECT count() FROM buf_samples;
 SELECT count() FROM buf_recent;
 SELECT count() FROM buf_recent WHERE value = 42;
 
+SELECT '--- a recent target stores a default column ---';
+
+CREATE TABLE def_tags
+(
+    id Tuple(UInt64, UUID),
+    metric_name LowCardinality(String),
+    tags Map(LowCardinality(String), String),
+    min_time Nullable(DateTime64(3)),
+    max_time Nullable(DateTime64(3))
+) ENGINE = MergeTree ORDER BY (metric_name, id);
+
+CREATE TABLE def_samples
+(
+    id Tuple(UInt64, UUID),
+    timestamp DateTime64(3),
+    value Float64
+) ENGINE = MergeTree ORDER BY (id, timestamp);
+
+CREATE TABLE def_recent
+(
+    id Tuple(UInt64, UUID),
+    timestamp DateTime64(3),
+    value Float64,
+    extra UInt8 DEFAULT 7
+) ENGINE = MergeTree ORDER BY (id, timestamp);
+
+CREATE TABLE ts_def ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 864000
+    DATA def_samples TAGS def_tags RECENT SAMPLES def_recent;
+
+INSERT INTO ts_def (metric_name, tags, samples) VALUES ('m', map('env', 'prod'), [(toDateTime64('2020-01-01 00:00:00', 3), 1.)]);
+
+SELECT extra FROM def_recent;
+
+SELECT '--- a Distributed recent target keeps no rows when samples fail ---';
+
+CREATE TABLE dist_tags
+(
+    id Tuple(UInt64, UUID),
+    metric_name LowCardinality(String),
+    tags Map(LowCardinality(String), String),
+    min_time Nullable(DateTime64(3)),
+    max_time Nullable(DateTime64(3))
+) ENGINE = MergeTree ORDER BY (metric_name, id);
+
+CREATE TABLE dist_samples
+(
+    id Tuple(UInt64, UUID),
+    timestamp DateTime64(3),
+    value Float64,
+    CONSTRAINT c CHECK sleepEachRow(1) = 0 AND value < 40
+) ENGINE = MergeTree ORDER BY (id, timestamp);
+
+CREATE TABLE dist_recent_dest
+(
+    id Tuple(UInt64, UUID),
+    timestamp DateTime64(3),
+    value Float64
+) ENGINE = MergeTree ORDER BY (id, timestamp);
+
+CREATE TABLE dist_recent
+(
+    id Tuple(UInt64, UUID),
+    timestamp DateTime64(3),
+    value Float64
+) ENGINE = Distributed(test_shard_localhost, currentDatabase(), dist_recent_dest);
+
+CREATE TABLE ts_dist ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 864000
+    DATA dist_samples TAGS dist_tags RECENT SAMPLES dist_recent;
+
+INSERT INTO ts_dist (metric_name, tags, samples)
+SETTINGS insert_distributed_sync = 1
+VALUES ('m', map('env', 'prod'), [(toDateTime64('2020-01-01 00:00:00', 3), 42.)]); -- { serverError VIOLATED_CONSTRAINT }
+
+SELECT count() FROM dist_samples;
+SELECT count() FROM dist_recent_dest;
+SELECT count() FROM dist_recent_dest WHERE value = 42;
+
 DROP VIEW fail_mv;
 DROP TABLE ts_fail, ts_fail_mem, fail_tags, fail_samples, fail_recent, fail_mv_dest, mem_tags, mem_samples, mem_recent;
 DROP TABLE ts_part, part_tags, part_samples, part_recent;
 DROP TABLE ts_buf, buf_tags, buf_samples, buf_recent, buf_dest;
+DROP TABLE ts_def, def_tags, def_samples, def_recent;
+DROP TABLE ts_dist, dist_tags, dist_samples, dist_recent, dist_recent_dest;

@@ -24,7 +24,7 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/MergeTreeDataWriter.h>
+#include <Storages/MergeTree/MergeTreePartition.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
@@ -54,12 +54,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_TIME_SERIES_TAGS;
     extern const int INCORRECT_DATA;
 }
-
-namespace Setting
-{
-    extern const SettingsUInt64 max_insert_delayed_streams_for_parallel_write;
-}
-
 
 namespace
 {
@@ -306,46 +300,34 @@ namespace
         return count;
     }
 
-    size_t delayedStreamLimit(const MergeTreeData & merge_tree, const Settings & settings)
+    /// True when every row belongs to one partition of a MergeTree target.
+    /// One part does not commit an earlier part during consume.
+    bool blockIsOneMergeTreePartition(const StoragePtr & storage, const Block & block, ContextPtr context)
     {
-        if (settings[Setting::max_insert_delayed_streams_for_parallel_write].changed)
-            return settings[Setting::max_insert_delayed_streams_for_parallel_write];
-
-        if (merge_tree.getStoragePolicy()->getAnyDisk()->supportParallelWrite())
-            return DEFAULT_DELAYED_STREAMS_FOR_PARALLEL_WRITE;
-        return 0;
-    }
-
-    /// True when consume of this block can commit an earlier partition, or when the engine publishes inside consume.
-    bool targetCanCommitDuringConsume(const StoragePtr & storage, const Block & block, ContextPtr context)
-    {
-        if (storage->getName() == "Buffer")
-            return true;
         auto merge_tree = castStorage<MergeTreeData>(storage, DeferredTable::Load);
         if (!merge_tree)
             return false;
 
-        const size_t limit = delayedStreamLimit(*merge_tree, context->getSettingsRef());
         auto metadata = merge_tree->getInMemoryMetadataPtr(context, false);
-        Block block_for_parts = block;
-        const auto parts = MergeTreeDataWriter::splitBlockIntoParts(std::move(block_for_parts), /* max_parts= */ 0, metadata, context);
-        if (parts.size() < 2)
-            return false;
+        if (!metadata->hasPartitionKey())
+            return true;
 
-        /// Wide parts open one stream per column. A limit of zero flushes on the second partition.
-        const size_t streams = std::max<size_t>(block.columns(), 1);
-        size_t total_streams = 0;
-        for (size_t part = 0; part < parts.size(); ++part)
+        const auto adjusted_partition_key = MergeTreePartition::adjustPartitionKey(metadata, context);
+        for (const auto & required_column : adjusted_partition_key.expression->getRequiredColumns())
         {
-            if (total_streams + streams > limit)
-            {
-                if (part > 0)
-                    return true;
-                total_streams = 0;
-            }
-            total_streams += streams;
+            if (!block.has(required_column))
+                return false;
         }
-        return false;
+
+        Block block_copy = block;
+        const auto partition_columns = MergeTreePartition::executePartitionByExpression(metadata, block_copy, context);
+        for (const auto & element : partition_columns)
+        {
+            const auto & column = block_copy.getColumnOrSubcolumnByName(element.name).column;
+            if (!column->hasEqualValues())
+                return false;
+        }
+        return true;
     }
 
 }
@@ -958,16 +940,16 @@ void TimeSeriesSink::writeSamplesAndRecent(Block samples_block)
 
     auto samples = createTargetPipeline(ViewTarget::Samples, samples_pipeline_header, /* parallel= */ true);
     std::unique_ptr<TargetPipeline> recent;
-    bool recent_commits_during_consume = false;
+    bool recent_is_one_partition = false;
     if (time_series_storage.hasTarget(ViewTarget::RecentSamples))
     {
         auto recent_storage = time_series_storage.getTargetTable(ViewTarget::RecentSamples, getContext());
-        recent_commits_during_consume = targetCanCommitDuringConsume(recent_storage, samples_block, getContext());
+        recent_is_one_partition = blockIsOneMergeTreePartition(recent_storage, samples_block, getContext());
         recent = createTargetPipeline(
             ViewTarget::RecentSamples, samples_pipeline_header, /* parallel= */ true, /* delay_commit= */ fits_one_block);
     }
 
-    if (fits_one_block && recent && !recent_commits_during_consume)
+    if (fits_one_block && recent && recent_is_one_partition)
     {
         samples->push(samples_block);
         recent->push(samples_block);

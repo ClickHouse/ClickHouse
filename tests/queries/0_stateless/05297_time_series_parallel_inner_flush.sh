@@ -38,7 +38,9 @@ CREATE TABLE slow_recent
     timestamp DateTime64(3),
     value Float64,
     CONSTRAINT slow CHECK sleepEachRow(3) = 0
-) ENGINE = MergeTree ORDER BY (id, timestamp);
+) ENGINE = MergeTree
+PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))
+ORDER BY (id, timestamp);
 
 CREATE TABLE ts_speed ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 864000
     DATA slow_samples TAGS slow_tags RECENT SAMPLES slow_recent;
