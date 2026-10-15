@@ -37,14 +37,10 @@ FROM (EXPLAIN PIPELINE SELECT k, v FROM t_del FINAL SETTINGS make_distributed_pl
 
 DROP TABLE t_del;
 
--- The lazy FINAL rewrite replaces the reading step with reads that carry no per-bucket mark state, so
--- it must decline on a bucketed distributed read or every reader task returns the whole deduplicated
--- result. A larger table is needed here: on 80000 rows the FINAL read is not split into buckets, so
--- the arms below would pass without exercising the interaction at all.
--- `optimize_aggregation_in_order` is randomized by the test runner and makes the lazy FINAL rewrite
--- roughly two orders of magnitude slower on this shape (about 39s versus 0.2s here) without changing
--- any result. That is pre-existing behaviour of the rewrite and reproduces on master with
--- `make_distributed_plan = 0`, so pin it here to keep this file fast rather than assert around it.
+-- The lazy FINAL rewrite must decline on a bucketed distributed read, otherwise every reader task
+-- returns the whole deduplicated result.
+-- `optimize_aggregation_in_order` makes the lazy FINAL rewrite orders of magnitude slower on this shape
+-- without changing the result.
 SET optimize_aggregation_in_order = 0;
 
 DROP TABLE IF EXISTS t_lazy;
@@ -81,10 +77,7 @@ SETTINGS make_distributed_plan = 1, query_plan_optimize_lazy_final = 0;
 
 DROP TABLE t_lazy;
 
--- The guard keys on the bucket count and not on the setting, so a local FINAL must still be rewritten
--- by lazy FINAL. A small table is enough and is used deliberately: the rewrite reads every part twice
--- (once to build the primary-key set, once to read the surviving rows), so running it over the larger
--- table above would multiply this file's runtime for no extra coverage.
+-- A local FINAL must still be rewritten by lazy FINAL.
 DROP TABLE IF EXISTS t_lazy_local;
 CREATE TABLE t_lazy_local (k UInt64, v UInt64, ver UInt64) ENGINE = ReplacingMergeTree(ver) ORDER BY k SETTINGS index_granularity = 256;
 SYSTEM STOP MERGES t_lazy_local;
