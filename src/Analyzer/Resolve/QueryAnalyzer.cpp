@@ -918,7 +918,6 @@ void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_
     const auto & settings = scope.context->getSettingsRef();
     if (!settings[Setting::enable_positional_arguments])
         return;
-    /// Set only for the analysis of a query printed from a resolved query tree, e.g. one received from the initiator.
     if (positional_arguments_already_resolved)
         return;
     const bool is_view_inner = scope.context->isViewInnerQuery();
