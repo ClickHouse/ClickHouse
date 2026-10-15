@@ -1641,8 +1641,7 @@ void MergeTreeReaderWide::readData(
 
 std::unordered_map<String, std::vector<String>> MergeTreeReaderWide::getAllColumnsSubstreams()
 {
-    /// Only dynamic structures and non-basic `Map` serializations define their streams in the prefixes;
-    /// other prefixes can be large, e.g. `LowCardinality` dictionaries.
+    /// Prefixes of other columns are not needed to list the streams and can be large, e.g. `LowCardinality` dictionaries.
     const auto & infos = data_part_info_for_read->getSerializationInfos();
     if (std::ranges::any_of(columns_to_read, [&](const auto & column) { return streamsDependOnPrefixes(column, infos); }))
         deserializePrefixForAllColumns(columns_to_read.size(), 0);
