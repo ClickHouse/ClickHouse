@@ -473,7 +473,7 @@ const char * analyzeImpl(
                     /// or this group itself when it captures.
                     has_capture = has_capture || group_has_capture || !is_non_capturing_group;
 
-                    /// For ()? or ()* or (){0,1}, we can just ignore the whole group, also with zero-width constructs before the quantifier.
+                    /// For ()? or ()* or (){0,1}, we can just ignore the whole group.
                     if (DB::isZeroAllowingQuantifier(DB::skipZeroWidthConstructs(pos + 1, end), end))
                     {
                         finish_non_trivial_char();
