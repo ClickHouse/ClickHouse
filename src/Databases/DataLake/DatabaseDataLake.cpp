@@ -1106,9 +1106,26 @@ StoragePtr DatabaseDataLake::maybeCreateTableInExternalCatalog(ContextPtr contex
 
     /// Verify the engine and catalog have the same storage type. Without a catalog-wide location, the namespace location tells it.
     if (const auto catalog_storage_type = catalog->getStorageType())
+    {
         checkStorageTypeMatchesEngine(name, *engine_storage_type, *catalog_storage_type);
-    else if (const auto table_metadata = tryGetNewTableMetadata(settings, *catalog, name))
+    }
+    else
+    {
+        auto table_metadata = tryGetNewTableMetadata(settings, *catalog, name);
+        if (!table_metadata)
+        {
+            /// The namespace location appears only once the namespace exists.
+            if (!catalog->assignsLocationToNewNamespaces())
+                throw cannotTellNewTableLocation(name);
+
+            catalog->createNamespaceIfNotExists(namespace_name);
+            table_metadata = tryGetNewTableMetadata(settings, *catalog, name);
+            if (!table_metadata)
+                throw cannotTellNewTableLocation(name);
+        }
+
         checkStorageTypeMatchesEngine(name, *engine_storage_type, table_metadata->getStorageType());
+    }
 
     auto storage_settings = std::make_shared<DataLakeStorageSettings>();
     storage_settings->loadFromSettingsChanges(settings.allChanged());
