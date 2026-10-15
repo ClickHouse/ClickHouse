@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/VectorWithMemoryTracking.h>
+#include <Columns/ShortCircuitArgumentStatistics.h>
 #include <Common/Exception.h>
 #include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
@@ -8,6 +9,8 @@
 #include <Interpreters/ExpressionActionsSettings.h>
 
 #include <atomic>
+#include <optional>
+#include <unordered_map>
 
 namespace DB
 {
@@ -53,6 +56,15 @@ public:
         /// Determine if this action should be executed lazily. If it should and the node type is FUNCTION, then the function
         /// won't be executed and will be stored with it's arguments in ColumnFunction with isShortCircuitArgument() = true.
         bool is_lazy_executed;
+
+        /// Set for a lazy executed argument of `and`/`or` that can be executed before the arguments preceding it.
+        /// Passed to the ColumnFunction, see `ShortCircuitArgumentStatistics`.
+        ShortCircuitArgumentStatisticsPtr short_circuit_argument_statistics = nullptr;
+
+        /// Set for a short-circuit function with commutative arguments (`and`, `or`) if another argument than
+        /// the one from `arguments_with_disabled_lazy_execution` is executed first. Passed to the ColumnFunction
+        /// if the action is lazy executed.
+        std::optional<size_t> short_circuit_eager_argument = {};
 
         std::string toString() const;
         JSONBuilder::ItemPtr toTree() const;
@@ -154,7 +166,10 @@ private:
     ExpressionActions() = default;
     void checkLimits(const ColumnsWithTypeAndName & columns) const;
 
-    void linearizeActions(const std::unordered_set<const Node *> & lazy_executed_nodes);
+    void linearizeActions(
+        const std::unordered_set<const Node *> & lazy_executed_nodes,
+        const std::unordered_set<const Node *> & reorderable_short_circuit_arguments,
+        const std::unordered_map<const Node *, size_t> & short_circuit_eager_arguments);
 };
 
 namespace ExpressionActionsChainSteps

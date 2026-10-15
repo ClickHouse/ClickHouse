@@ -14,7 +14,7 @@ namespace DB
 struct SlidingIndex
 {
     VectorWithMemoryTracking<bool> partition_starts;
-    VectorWithMemoryTracking<bool> peer_group_starts;
+    VectorWithMemoryTracking<int64_t> peer_group_indexes;
 };
 
 class SlidingIndexes
@@ -28,6 +28,7 @@ private:
     const WindowTransformParams & params;
     std::optional<Columns> last_partition_key;
     std::optional<Columns> last_order_key;
+    int64_t last_peer_group_index = -1;
 };
 
 }
