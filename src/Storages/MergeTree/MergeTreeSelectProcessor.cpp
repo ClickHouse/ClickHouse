@@ -236,6 +236,10 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     , merge_tree_index_build_context(std::move(merge_tree_index_build_context_))
     , lazy_materializing_rows(std::move(lazy_materializing_rows_))
 {
+    for (const auto & step : prewhere_actions.steps)
+        if (step->actions)
+            set_spillables.add(step->actions->getActionsDAG());
+
     /// Determine the condition under which PREWHERE-filtered granules can be recorded in the query
     /// condition cache. A deterministic PREWHERE condition is cached under its own hash. A condition
     /// that is non-deterministic only because of folded current-time constants (e.g.
@@ -322,6 +326,74 @@ String MergeTreeSelectProcessor::getName() const
     return fmt::format("MergeTreeSelect(pool: {}, algorithm: {})", pool->getName(), algorithm->getName());
 }
 
+/// Inserts the steps that read the virtual columns of indexes, each right before the first step that uses them,
+/// so that an index is read only for the rows that passed the preceding steps. Columns that no step uses are read last.
+/// Those must be separate steps, one per index, because index readers cannot read physical columns from table.
+static void addIndexReadSteps(PrewhereExprSteps & steps, const IndexReadTasks & index_read_tasks, const ExpressionActionsSettings & actions_settings)
+{
+    if (index_read_tasks.empty())
+        return;
+
+    /// Virtual column of an index -> position of the first step that uses it.
+    /// Columns that no step uses are read after the last step.
+    std::unordered_map<String, size_t> first_step_using_column;
+    for (const auto & [_, index_task] : index_read_tasks)
+    {
+        for (const auto & column : index_task.columns)
+            first_step_using_column.emplace(column.name, steps.size());
+    }
+
+    for (size_t i = 0; i < steps.size(); ++i)
+    {
+        Names required_columns = steps[i]->actions
+            ? steps[i]->actions->getActionsDAG().getRequiredColumnsNames()
+            : Names{steps[i]->filter_column_name};
+
+        for (const auto & name : required_columns)
+        {
+            if (auto it = first_step_using_column.find(name); it != first_step_using_column.end())
+                it->second = std::min(it->second, i);
+        }
+    }
+
+    /// Position of the first step that uses the columns -> columns to read, one element per index read task.
+    std::vector<std::vector<NamesAndTypesList>> columns_to_read_by_step(steps.size() + 1, std::vector<NamesAndTypesList>(index_read_tasks.size()));
+
+    size_t task_idx = 0;
+    for (const auto & [_, index_task] : index_read_tasks)
+    {
+        for (const auto & column : index_task.columns)
+        {
+            size_t first_step_pos = first_step_using_column.at(column.name);
+            columns_to_read_by_step[first_step_pos][task_idx].emplace_back(column.name, column.type);
+        }
+
+        ++task_idx;
+    }
+
+    PrewhereExprSteps result;
+
+    for (size_t i = 0; i <= steps.size(); ++i)
+    {
+        for (const auto & columns : columns_to_read_by_step[i])
+        {
+            if (columns.empty())
+                continue;
+
+            auto index_read_step = std::make_shared<PrewhereExprStep>();
+            index_read_step->type = PrewhereExprStep::None;
+            index_read_step->actions = std::make_shared<ExpressionActions>(ActionsDAG(columns), actions_settings);
+            index_read_step->perform_alter_conversions = true;
+            result.push_back(std::move(index_read_step));
+        }
+
+        if (i < steps.size())
+            result.push_back(std::move(steps[i]));
+    }
+
+    steps = std::move(result);
+}
+
 PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
     const FilterDAGInfoPtr & row_level_filter,
     const PrewhereInfoPtr & prewhere_info,
@@ -351,19 +423,8 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
         prewhere_actions.steps.emplace_back(std::make_shared<PrewhereExprStep>(std::move(row_level_filter_step)));
     }
 
-    /// Add steps for reading virtual columns for indexes.
-    /// Those must be separate steps, because index readers
-    /// cannot read physical columns from table.
-    for (const auto & [_, index_task] : index_read_tasks)
-    {
-        auto index_read_step = std::make_shared<PrewhereExprStep>();
-        index_read_step->type = PrewhereExprStep::None;
-        index_read_step->actions = std::make_shared<ExpressionActions>(ActionsDAG(index_task.getNamesAndTypesList()), actions_settings);
-        prewhere_actions.steps.emplace_back(std::move(index_read_step));
-    }
-
     if (prewhere_info &&
-        (!enable_multiple_prewhere_read_steps || !tryBuildPrewhereSteps(prewhere_info, actions_settings, prewhere_actions, force_short_circuit_execution, columns, read_ahead_prewhere_columns)))
+        (!enable_multiple_prewhere_read_steps || !tryBuildPrewhereSteps(prewhere_info, actions_settings, prewhere_actions, force_short_circuit_execution, columns, read_ahead_prewhere_columns, &index_read_tasks)))
     {
         PrewhereExprStep prewhere_step
         {
@@ -380,6 +441,7 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
         prewhere_actions.steps.emplace_back(std::make_shared<PrewhereExprStep>(std::move(prewhere_step)));
     }
 
+    addIndexReadSteps(prewhere_actions.steps, index_read_tasks, actions_settings);
     return prewhere_actions;
 }
 
