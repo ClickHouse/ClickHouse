@@ -215,11 +215,11 @@ std::vector<StorageTimeSeries::Target> StorageTimeSeries::buildTargets(
                     ? create_query.getTargetInnerEngine(target.kind)->ptr()
                     : ASTPtr{});
             UInt64 version = getTimeSeriesVersion(create_query);
-            /// Registered before the creation: the inner `CREATE` can fail after the table is already attached
-            /// (e.g. in its `startup`), and dropping a table that was never created is harmless (`IF EXISTS`).
+            createTimeSeriesInnerTable(target.kind, target.table_id.uuid, *inner_columns, inner_engine, table_id, version, local_context);
+            /// Registered only after its `CREATE` succeeds: a table with this name that exists already (in an `Ordinary`
+            /// database the name does not depend on a UUID) makes the inner `CREATE` fail, and must not be dropped.
             created_inner_tables.emplace_back(
                 table_id.database_name, getTimeSeriesInnerTableName(target.kind, table_id, version), target.table_id.uuid);
-            createTimeSeriesInnerTable(target.kind, target.table_id.uuid, *inner_columns, inner_engine, table_id, version, local_context);
         }
     }
 
