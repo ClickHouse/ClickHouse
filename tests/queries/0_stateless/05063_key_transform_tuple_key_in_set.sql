@@ -169,6 +169,13 @@ INSERT INTO t_qbit SELECT tuple(CAST([reinterpretAsFloat32(toUInt32(2143289346))
 SELECT count() FROM t_qbit WHERE k IN (SELECT CAST([reinterpretAsFloat32(toUInt32(2143289345))], 'QBit(Float32, 1)'), toUInt8(1)) SETTINGS enable_parallel_replicas = 0;
 SELECT count() FROM t_qbit WHERE k NOT IN (SELECT CAST([reinterpretAsFloat32(toUInt32(2143289345))], 'QBit(Float32, 1)'), toUInt8(1)) SETTINGS enable_parallel_replicas = 0;
 
+-- 17. The same holds for `has`, whose array elements arrive packed already: `NOT has` prunes the part
+-- holding only the excluded value.
+SELECT count() FROM t_inj WHERE NOT has([tuple(toInt64(1), 'a')], k) SETTINGS optimize_rewrite_has_to_in = 0;
+SELECT extract(explain, '(?:Condition|Parts): .*') FROM (
+    EXPLAIN indexes = 1 SELECT * FROM t_inj WHERE NOT has([tuple(toInt64(1), 'a')], k) SETTINGS optimize_rewrite_has_to_in = 0
+) WHERE explain ILIKE '%Condition:%' OR explain ILIKE '%Parts:%';
+
 DROP TABLE t_str;
 DROP TABLE t_float;
 DROP TABLE t_null;
