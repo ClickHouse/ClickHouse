@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# Tags: no-fasttest, no-replicated-database
+# Tag no-fasttest: Depends on S3 (minio)
+# Tag no-replicated-database: named collections are server-global, not database-scoped
+
+# ClickHouse appends inferred `format` and `structure` values to the arguments of named collection engines and table
+# functions and parses them again. Replacing a stored `'auto'` value this way needs no secrets privilege.
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+set -e
+
+BUCKET_URL="http://localhost:11111/test"
+FILE="${CLICKHOUSE_TEST_UNIQUE_NAME}.tsv"
+nc="${CLICKHOUSE_TEST_UNIQUE_NAME}"
+user="${nc}_user"
+table="${CLICKHOUSE_DATABASE}.${nc}"
+
+function cleanup()
+{
+    ${CLICKHOUSE_CLIENT} --multiquery --query "
+        DROP TABLE IF EXISTS ${table}_url;
+        DROP USER IF EXISTS $user;
+        DROP NAMED COLLECTION IF EXISTS ${nc}_url_auto;
+        DROP NAMED COLLECTION IF EXISTS ${nc}_s3_auto;
+        DROP NAMED COLLECTION IF EXISTS ${nc}_locked;
+    "
+}
+trap cleanup EXIT
+cleanup
+
+${CLICKHOUSE_CLIENT} -q "INSERT INTO FUNCTION s3('${BUCKET_URL}/${FILE}', 'test', 'testtest', 'TSV', 'n UInt32, s String') SELECT number, concat('str_', toString(number)) FROM numbers(3) SETTINGS s3_truncate_on_insert = 1"
+
+${CLICKHOUSE_CLIENT} --multiquery --query "
+    CREATE NAMED COLLECTION ${nc}_url_auto AS
+        url = '${BUCKET_URL}/${FILE}', format = 'auto', structure = 'auto';
+    CREATE NAMED COLLECTION ${nc}_s3_auto AS
+        url = '${BUCKET_URL}/${FILE}', access_key_id = 'test', secret_access_key = 'testtest', format = 'auto', structure = 'auto';
+    CREATE NAMED COLLECTION ${nc}_locked AS
+        url = '${BUCKET_URL}/${FILE}', format = 'auto' NOT OVERRIDABLE;
+    CREATE USER $user;
+    GRANT S3, URL ON *.* TO $user;
+    GRANT CREATE TABLE, SELECT ON ${CLICKHOUSE_DATABASE}.* TO $user;
+    GRANT NAMED COLLECTION ON * TO $user;
+"
+
+echo 'Inferred format and structure replace a stored auto value without the secrets privilege'
+${CLICKHOUSE_CLIENT} --user "$user" --multiquery --query "
+    CREATE TABLE ${table}_url ENGINE = URL(${nc}_url_auto);
+"
+${CLICKHOUSE_CLIENT} --user "$user" --query "SHOW CREATE TABLE ${table}_url FORMAT TabSeparatedRaw" | grep -c "format = 'TSV'"
+${CLICKHOUSE_CLIENT} --user "$user" --query "SELECT count() FROM ${table}_url"
+${CLICKHOUSE_CLIENT} --user "$user" --query "SELECT count() FROM s3Cluster('test_cluster_two_shards_localhost', ${nc}_s3_auto)"
+${CLICKHOUSE_CLIENT} --user "$user" --query "SELECT count() FROM s3(${nc}_s3_auto)"
+${CLICKHOUSE_CLIENT} --user "$user" --query "SELECT count() FROM url(${nc}_url_auto)"
+
+echo 'A stored auto value that is not overridable stays locked'
+${CLICKHOUSE_CLIENT} --user "$user" --query "SELECT * FROM url(${nc}_locked, format = 'CSV')" 2>&1 | grep -o 'BAD_ARGUMENTS' | head -1
