@@ -374,7 +374,7 @@ void WindowTransform::computeReadyRows()
             prev_frame = frame.bounds();
 
             // Move to the next row. The frame will have to be recalculated.
-            peers.advanceCurrentRow(blocks);
+            peers.advanceCurrentRow(blocks, partition.bounds());
         }
 
         if (input_is_finished)

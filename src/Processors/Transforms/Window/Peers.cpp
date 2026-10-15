@@ -68,14 +68,15 @@ void Peers::advancePeerGroupBounds(const SlidingBlocks & blocks, const Partition
     }
 }
 
-void Peers::advanceCurrentRow(const SlidingBlocks & blocks)
+void Peers::advanceCurrentRow(const SlidingBlocks & blocks, const PartitionBounds & partition)
 {
     const SlidingBlock & block = blocks.blockAt(current_row.location.block);
     const int64_t row = current_row.location.row + 1;
     const int64_t row_index = current_row.row_index_in_partition + 1;
-    if (row == block.rows_count)
+    const int64_t rows_end = partition.end.location.block == block.block_number ? partition.end.location.row : block.rows_count;
+    if (row == rows_end)
     {
-        current_row.location = RowNumber{block.block_number + 1, 0};
+        current_row.location = row == block.rows_count ? RowNumber{block.block_number + 1, 0} : RowNumber{block.block_number, row};
         current_row.row_index_in_partition = row_index;
         return;
     }
@@ -87,7 +88,7 @@ void Peers::advanceCurrentRow(const SlidingBlocks & blocks)
 
     peers_bounds.start = RowPoint{.location = {block.block_number, row}, .row_index_in_partition = row_index, .peer_group_index_in_partition = group};
     peers_bounds.end = RowPoint{.location = {block.block_number, row}, .row_index_in_partition = row_index, .peer_group_index_in_partition = group};
-    peers_bounds.fully_visible = advancePeerGroupEndInBlock(block, group, block.rows_count, peers_bounds.end);
+    peers_bounds.fully_visible = advancePeerGroupEndInBlock(block, group, rows_end, peers_bounds.end);
 }
 
 const RowPoint & Peers::current() const
