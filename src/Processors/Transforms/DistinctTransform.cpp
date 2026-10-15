@@ -40,13 +40,15 @@ DistinctTransform::DistinctTransform(
     bool skip_null_keys_,
     const UInt64 max_bytes_before_pass_through_,
     DistinctSetMemoryTracker::SharedCounter shared_set_bytes_,
-    UInt64 coalesce_rows_)
+    UInt64 coalesce_rows_,
+    bool allow_spilling_)
     : ISimpleTransform(header_, header_, true)
     , set_memory(shared_set_bytes_)
     , distinct_set(std::in_place, *header_, columns_, set_size_limits_, skip_null_keys_)
     , limit_hint(limit_hint_)
     , max_bytes_before_pass_through(max_bytes_before_pass_through_)
     , coalesce_rows(coalesce_rows_)
+    , allow_spilling(allow_spilling_)
 {
     chassert(!shared_set_bytes_ || (!allow_abandoning_ && !set_size_limits_.hasLimits() && max_bytes_before_pass_through == 0));
     /// Coalescing would delay the memory snapshots attached to the output chunks.
@@ -99,6 +101,29 @@ void DistinctTransform::transform(Chunk & input_chunk, Chunk & output_chunk)
 
     transform(input_chunk);
     output_chunk.swap(input_chunk);
+}
+
+ProcessorMemoryStats DistinctTransform::getMemoryStats() const
+{
+    ProcessorMemoryStats res;
+    if (allow_spilling && distinct_set)
+    {
+        res.spillable_memory_bytes = distinct_set->getTotalByteCount();
+        res.need_reserved_memory_bytes = res.spillable_memory_bytes;
+    }
+    return res;
+}
+
+size_t DistinctTransform::spill(size_t /*at_least_bytes*/)
+{
+    const size_t bytes = getMemoryStats().spillable_memory_bytes;
+    if (!bytes)
+        return 0;
+
+    /// The downstream consumer still deduplicates exactly, including keys already emitted here.
+    distinct_set.reset();
+    ProfileEvents::increment(ProfileEvents::DistinctTransformsSwitchedToPassThrough);
+    return bytes;
 }
 
 void DistinctTransform::transform(Chunk & chunk)

@@ -27,7 +27,7 @@ public:
         UInt64 prefer_external_sort_block_bytes = DEFAULT_BLOCK_SIZE * 256;
 
         /// The pipeline combines these thresholds into the smaller enabled spill trigger.
-        /// Setting both to zero disables external `DISTINCT`.
+        /// Setting both to zero disables threshold-triggered spilling; the scheduler may still request it.
         UInt64 max_bytes_before_external_distinct = 0;
         double max_bytes_ratio_before_external_distinct = 0.;
 

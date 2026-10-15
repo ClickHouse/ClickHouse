@@ -30,15 +30,15 @@ import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
 
 ## المتطلبات والتوافق {#requirements-and-compatibility}
 
-| المكوّن    | الإصدارات المدعومة                                                                                        |
-| ---------- | --------------------------------------------------------------------------------------------------------- |
-| بايثون     | من 3.10 إلى 3.14. تُدعَم تجريبيًا إصدارات البناء الحرة متعددة الخيوط مثل 3.14t.                           |
-| ClickHouse | إصدارات ClickHouse المدعومة حاليًا. تُجرى اختبارات CI على أحدث إصدارات LTS والإصدارات المستقرة من الخادم. |
-| SQLAlchemy | ‏1.4.40 أو أحدث، وأقل من 3.0، للهجة المتزامنة. ‏2.0.44 أو أحدث، وأقل من 3.0، للهجة غير المتزامنة.         |
-| Pandas     | ‏2.x و3.x                                                                                                 |
-| Polars     | ‏1.0 أو أحدث                                                                                              |
-| aiohttp    | ‏3.9 أو أحدث                                                                                              |
-| المنصات    | Linux وmacOS وWindows على المعماريات التي تُنشر لها حزم wheel لكل إصدار من بايثون                         |
+| المكوّن    | الإصدارات المدعومة                                                                                                                                                                                          |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| بايثون     | من 3.10 إلى 3.14. تُدعَم تجريبيًا إصدارات البناء الحرة متعددة الخيوط مثل 3.14t.                                                                                                                             |
+| ClickHouse | إصدارات ClickHouse المدعومة حاليًا. تُجرى اختبارات CI على [سلاسل إصدارات LTS والإصدارات المستقرة المدرجة هنا](https://github.com/ClickHouse/clickhouse-connect/blob/main/.github/clickhouse-versions.json). |
+| SQLAlchemy | ‏1.4.40 أو أحدث، وأقل من 3.0، للهجة المتزامنة. ‏2.0.44 أو أحدث، وأقل من 3.0، للهجة غير المتزامنة.                                                                                                           |
+| Pandas     | ‏2.x و3.x                                                                                                                                                                                                   |
+| Polars     | ‏1.0 أو أحدث                                                                                                                                                                                                |
+| aiohttp    | ‏3.9 أو أحدث                                                                                                                                                                                                |
+| المنصات    | Linux وmacOS وWindows على المعماريات التي تُنشر لها حزم wheel لكل إصدار من بايثون                                                                                                                           |
 
 تتضمن الحزمة حزم wheel مُصرَّفة حيثما كانت متاحة، وتلجأ إلى تنفيذ ببايثون خالص عندما يتعذر بناء امتدادات Cython. ‏PyArrow مدعوم على بايثون من 3.10 إلى 3.14. يتطلب بايثون 3.14 إصدار PyArrow 22 أو أحدث.
 
@@ -61,7 +61,7 @@ pip install "clickhouse-connect[sqlalchemy]" # SQLAlchemy dialect
 pip install "clickhouse-connect[sqlalchemy-async]" # Async SQLAlchemy dialect
 pip install "clickhouse-connect[alembic]"    # SQLAlchemy and Alembic
 pip install "clickhouse-connect[chdb]"       # Embedded chDB backend
-pip install "clickhouse-connect[rust,arrow]" # Experimental Rust codec evaluation setup
+pip install "clickhouse-connect[rust]"       # Experimental Rust codec
 pip install "clickhouse-connect[tzdata]"     # IANA time zones on minimal systems
 ```
 
