@@ -25,7 +25,9 @@ namespace DB
   * - The leader periodically renews the lease using a conditional write (If-Match: current_etag).
   * - Followers periodically read the lease. If its ETag stayed unchanged for `session_timeout`
   *   of their own steady time, they try to claim leadership with a conditional write
-  *   (If-Match: stale_etag).
+  *   (If-Match: stale_etag). The lease records the writer's `session_timeout`, and a follower
+  *   waits for the longer of its own and the writer's, so nodes configured with different
+  *   timing settings for the same table cannot expire each other's leases early.
   * - If the lease file doesn't exist, any replica can create it with (If-None-Match: *).
   * - If a conditional write fails (PreconditionFailed), the writer lost the race and stays a follower.
   *
@@ -158,6 +160,8 @@ private:
     {
         String leader_id;
         time_t timestamp = 0;
+        /// `session_timeout` of the node that wrote the lease, 0 if the lease does not record it.
+        UInt64 writer_session_timeout_ms = 0;
         LeaseParseStatus status = LeaseParseStatus::ParseError;
     };
 

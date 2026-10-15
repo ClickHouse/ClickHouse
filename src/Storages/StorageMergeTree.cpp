@@ -75,6 +75,7 @@
 #include <Common/FailPoint.h>
 #include <Common/formatReadable.h>
 #include <Common/MemoryTracker.h>
+#include <Common/ObjectStorageKey.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
@@ -398,7 +399,13 @@ void StorageMergeTree::startup()
             auto heartbeat_ms = (*getSettings())[MergeTreeSetting::leader_election_heartbeat_interval].totalMilliseconds();
             auto session_timeout_ms = (*getSettings())[MergeTreeSetting::leader_election_session_timeout].totalMilliseconds();
 
-            String lease_path = getRelativeDataPath() + "leader_election";
+            /// The lease is accessed through the object storage directly, not through the disk's
+            /// metadata, so resolve its key inside the disk's configured key prefix the same way the
+            /// data objects are: otherwise a disk configured with an endpoint like `.../bucket/team-a/data/`
+            /// would keep its lease at the bucket root, outside the prefix its credentials may be
+            /// restricted to, and disks with different prefixes would share one lease namespace.
+            String lease_path = ObjectStorageKey::createAsRelative(
+                object_storage->getCommonKeyPrefix(), getRelativeDataPath() + "leader_election").serialize();
 
             leader_election_ptr = std::make_unique<MergeTreeLeaderElection>(
                 getStorageID(),

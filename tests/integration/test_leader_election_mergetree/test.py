@@ -4858,11 +4858,14 @@ def find_lease_object_key(uuid):
     """Locate the S3 key of a table's `leader_election` lease file.
 
     The lease is written through the disk's object storage with the table's relative data path
-    as the raw key - it is not remapped like the `plain_rewritable` part directories - so it is
-    identified by its `<uuid>/leader_election` suffix.
+    as the key - it is not remapped like the `plain_rewritable` part directories - so it is
+    identified by its `<uuid>/leader_election` suffix. It must stay inside the key prefix of the
+    disk's endpoint (`data/`), like the data objects, so only that prefix is searched.
     """
     suffix = f"/{uuid}/leader_election"
-    for obj in cluster.minio_client.list_objects(cluster.minio_bucket, recursive=True):
+    for obj in cluster.minio_client.list_objects(
+        cluster.minio_bucket, "data/", recursive=True
+    ):
         if obj.object_name.endswith(suffix):
             return obj.object_name
     return None
@@ -5384,6 +5387,62 @@ def test_lease_expiry_ignores_writer_wall_clock(started_cluster):
 
             wait_for_leader([node1], table_name=table)
             node1.query(f"INSERT INTO {table} VALUES ({row})")
+    finally:
+        try:
+            node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        except Exception:
+            pass
+
+
+SHARED_UUID_WRITER_SESSION_TIMEOUT = "12345678-abcd-abcd-abcd-12345678ab63"
+
+
+def test_lease_expiry_respects_writer_session_timeout(started_cluster):
+    """
+    Nodes may attach the same table with different `leader_election_session_timeout` values. A
+    follower must not expire a lease sooner than its writer may keep serving as the leader, which is
+    bounded by the writer's session timeout, not the follower's: otherwise a node with a short timeout
+    could take over the lease of a healthy leader with a long one and both would accept writes. The
+    lease records the writer's `session_timeout_ms`, and the reader waits for the longer of the two.
+
+    A foreign lease is written as if by a node with a 15 s session timeout. node1 (5 s) must respect
+    it for the full 15 s before reclaiming it.
+    """
+    ensure_node_up(node1)
+    table = "test_lease_writer_session_timeout"
+    try:
+        create_table_on_first_node(node1, table, SHARED_UUID_WRITER_SESSION_TIMEOUT)
+        wait_for_leader([node1], table_name=table)
+
+        lease = read_lease(SHARED_UUID_WRITER_SESSION_TIMEOUT)
+        assert lease["session_timeout_ms"] == 5000, lease
+
+        lease_key = find_lease_object_key(SHARED_UUID_WRITER_SESSION_TIMEOUT)
+        assert lease_key is not None, "The lease file of the table was not found"
+
+        fake_leader_id = "long-session-timeout-leader"
+        fake_lease = (
+            f'{{"version":1,"leader_id":"{fake_leader_id}","timestamp":{int(time.time())},'
+            f'"sequence":1,"session_timeout_ms":15000}}'
+        ).encode()
+        put_time = time.monotonic()
+        cluster.minio_client.put_object(
+            cluster.minio_bucket, lease_key, io.BytesIO(fake_lease), len(fake_lease)
+        )
+
+        deadline = put_time + 90
+        while read_lease(SHARED_UUID_WRITER_SESSION_TIMEOUT)["leader_id"] == fake_leader_id:
+            assert time.monotonic() < deadline, "node1 never reclaimed the foreign lease"
+            time.sleep(0.25)
+        reclaim_delay = time.monotonic() - put_time
+
+        # The first observation is after the put; leave a second for scheduling and rounding.
+        assert reclaim_delay >= 14, (
+            f"node1 claimed a lease written with a 15 s session timeout after {reclaim_delay:.1f} s"
+        )
+
+        wait_for_leader([node1], table_name=table)
+        node1.query(f"INSERT INTO {table} VALUES (1)")
     finally:
         try:
             node1.query(f"DROP TABLE IF EXISTS {table} SYNC")

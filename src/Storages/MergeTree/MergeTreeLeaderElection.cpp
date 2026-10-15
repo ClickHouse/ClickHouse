@@ -296,7 +296,11 @@ void MergeTreeLeaderElection::run()
                 observed_etag_since = steady_now;
             }
 
-            const auto session_timeout = std::chrono::milliseconds(session_timeout_ms);
+            /// A foreign lease is valid for as long as its writer may keep passing its own `isLeader`
+            /// check, which is bounded by the writer's `session_timeout`, not ours: nodes may run the
+            /// same table with different timing settings. So wait for the longer of the two. A lease
+            /// that does not record the writer's timeout is judged by ours.
+            const auto session_timeout = std::chrono::milliseconds(std::max(session_timeout_ms, parsed.writer_session_timeout_ms));
             const bool serving_as_leader = leadership_state.load(std::memory_order_acquire) != LeadershipState::Follower;
             const bool own_lease = parsed.status == LeaseParseStatus::Ok && parsed.leader_id == leader_id;
 
@@ -582,6 +586,10 @@ String MergeTreeLeaderElection::buildLeaseContent()
     writeIntText(time(nullptr), out);
     writeString(R"(,"sequence":)", out);
     writeIntText(++lease_write_sequence, out);
+    /// The validity interval this writer relies on: other nodes must not expire the lease sooner
+    /// than this, even if their own `session_timeout` is shorter (see `run`).
+    writeString(R"(,"session_timeout_ms":)", out);
+    writeIntText(session_timeout_ms, out);
     writeChar('}', out);
     return out.str();
 }
@@ -611,6 +619,8 @@ MergeTreeLeaderElection::ParsedLease MergeTreeLeaderElection::parseLeaseContent(
         ParsedLease result;
         result.leader_id = json["leader_id"].getString();
         result.timestamp = json["timestamp"].getInt();
+        if (json.has("session_timeout_ms"))
+            result.writer_session_timeout_ms = json["session_timeout_ms"].getUInt();
         result.status = LeaseParseStatus::Ok;
         return result;
     }
