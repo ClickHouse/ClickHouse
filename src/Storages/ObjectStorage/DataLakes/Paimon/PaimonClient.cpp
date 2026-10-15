@@ -144,7 +144,7 @@ ReadSettings PaimonTableClient::getPaimonMetadataReadSettings(bool disable_files
 std::pair<Int32, String> PaimonTableClient::getLatestTableSchemaInfo()
 {
     /// list all schema files
-    const auto schema_files = listFiles(
+    const auto schema_files = listFilesNonRecursive(
         *object_storage,
         table_location,
         PAIMON_SCHEMA_DIR,
@@ -262,7 +262,7 @@ std::optional<std::pair<Int64, String>> PaimonTableClient::getLatestTableSnapsho
     }
 
     // find real latest snapshot
-    auto snapshot_files = listFiles(
+    auto snapshot_files = listFilesNonRecursive(
         *object_storage,
         table_location,
         PAIMON_SNAPSHOT_DIR,
@@ -344,7 +344,7 @@ std::optional<Int64> PaimonTableClient::getEarliestSnapshotId()
     }
 
     /// The hint is missing, unusable or stale - the snapshot directory is the source of truth.
-    auto snapshot_files = listFiles(
+    auto snapshot_files = listFilesNonRecursive(
         *object_storage,
         table_location,
         PAIMON_SNAPSHOT_DIR,

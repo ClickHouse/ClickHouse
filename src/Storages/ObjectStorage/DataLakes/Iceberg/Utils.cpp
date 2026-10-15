@@ -1282,7 +1282,7 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
         std::vector<String> metadata_files;
         for (size_t attempt = 0; attempt < MAX_LIST_RETRIES; ++attempt)
         {
-            metadata_files = listFiles(*object_storage, table_path, "metadata", ".metadata.json");
+            metadata_files = listFilesNonRecursive(*object_storage, table_path, "metadata", ".metadata.json");
             if (!metadata_files.empty())
                 break;
             LOG_DEBUG(

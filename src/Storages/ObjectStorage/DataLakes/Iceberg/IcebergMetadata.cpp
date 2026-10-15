@@ -1027,7 +1027,7 @@ void IcebergMetadata::createInitial(
     }
     else
     {
-        std::vector<String> metadata_files = listFiles(*object_storage, configuration_ptr->getPathForRead().path, "metadata", ".metadata.json");
+        std::vector<String> metadata_files = listFilesNonRecursive(*object_storage, configuration_ptr->getPathForRead().path, "metadata", ".metadata.json");
         if (!metadata_files.empty())
         {
             if (if_not_exists)

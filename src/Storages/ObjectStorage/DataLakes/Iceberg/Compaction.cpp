@@ -1374,7 +1374,7 @@ static bool writeMetadataFiles(
 
 static std::vector<String> getOldFiles(ObjectStoragePtr object_storage, const String & table_path)
 {
-    auto metadata_files = listFiles(*object_storage, table_path, "metadata", "");
+    auto metadata_files = listFilesNonRecursive(*object_storage, table_path, "metadata", "");
     std::erase_if(metadata_files, [](const String & file)
     {
         return file.ends_with("metadata/version-hint.text");
