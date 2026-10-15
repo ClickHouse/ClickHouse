@@ -1,6 +1,6 @@
 -- Verify how query plans containing a Window step interact with the automatic parallel replicas
 -- optimization. Before the Window step supported dataflow statistics collection, any plan containing a
--- window function was rejected outright (`optimizeTree: Some steps in the plan don't support dataflow
+-- window function was rejected outright (`AutoParallelReplicas: Some steps in the plan don't support dataflow
 -- statistics collection ... Unsupported steps: Window_...`) and no statistics were gathered. Now the
 -- plan passes the "simple enough" gate, and statistics are collected at whichever boundary the two
 -- plans have in common, as long as that boundary can observe the bytes replicas would send to the
