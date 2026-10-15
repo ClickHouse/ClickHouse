@@ -23,7 +23,7 @@ from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.transforms import BucketTransform, IdentityTransform
 from pyiceberg.typedef import Record
-from pyiceberg.types import ListType, LongType, NestedField, StructType, TimeType
+from pyiceberg.types import ListType, LongType, MapType, NestedField, StructType, TimeType
 
 from helpers.config_cluster import minio_access_key, minio_secret_key
 from helpers.iceberg_utils import (
@@ -125,10 +125,10 @@ class Tables:
         return self.instance.query(query, settings={**SETTINGS, **settings}).strip()
 
 
-def write_parquet(table, name, arrow_table):
+def write_parquet(table, name, arrow_table, **write_options):
     path = f"{table.location()}/data/{name}-{uuid.uuid4()}.parquet"
     with table.io.new_output(path).create() as out:
-        pq.write_table(arrow_table, out)
+        pq.write_table(arrow_table, out, **write_options)
     return path, len(table.io.new_input(path))
 
 
@@ -171,23 +171,52 @@ def test_iceberg_time_column_reads_microseconds(started_cluster_iceberg_no_spark
 
     # A Parquet file without field ids, matched to the table schema by name.
     _, tadded, table = tables.create(
-        "time_added", schema=Schema(NestedField(1, "id", LongType(), required=True), NestedField(2, "t", TimeType()))
+        "time_added",
+        schema=Schema(
+            NestedField(1, "id", LongType(), required=True),
+            NestedField(2, "t", TimeType()),
+            NestedField(3, "s", StructType(NestedField(5, "tt", TimeType()))),
+            NestedField(4, "l", ListType(6, TimeType(), element_required=False)),
+            NestedField(7, "m", MapType(8, TimeType(), 9, LongType(), value_required=False)),
+        ),
     )
     path, _ = write_parquet(
         table,
         "added",
         pa.Table.from_pydict(
-            {"id": list(range(8)), "t": [time_of(i) for i in range(8)]},
-            schema=pa.schema([pa.field("id", pa.int64(), False), pa.field("t", pa.time64("us"))]),
+            {
+                "id": list(range(8)),
+                "t": [time_of(i) for i in range(8)],
+                "s": [{"tt": time_of(i)} for i in range(8)],
+                "l": [[time_of(i)] for i in range(8)],
+                "m": [[(time_of(i), i)] for i in range(8)],
+            },
+            schema=pa.schema(
+                [
+                    pa.field("id", pa.int64(), False),
+                    pa.field("t", pa.time64("us")),
+                    pa.field("s", pa.struct([pa.field("tt", pa.time64("us"))])),
+                    pa.field("l", pa.list_(pa.time64("us"))),
+                    pa.field("m", pa.map_(pa.time64("us"), pa.int64())),
+                ]
+            ),
         ),
     )
     table.add_files([path])
+    added_rows = "\n".join(
+        f"{i}\t{micros_of(i)}\t{micros_of(i)}\t[{micros_of(i)}]\t{{{micros_of(i)}:{i}}}" for i in range(8)
+    )
 
     matching = "1\n4\n7"
-    for key_prefix, nested in ((flat, True), (tpart, True), (tbucket, True), (tadded, False)):
+    nested_columns = "id, t, s.tt, l"
+    for key_prefix, columns, expected_rows in (
+        (flat, nested_columns, expected(range(8))),
+        (tpart, nested_columns, expected(range(8))),
+        (tbucket, nested_columns, expected(range(8))),
+        (tadded, f"{nested_columns}, m", added_rows),
+    ):
         source = tables.source(key_prefix)
-        columns = "id, t, s.tt, l" if nested else "id, t"
-        assert tables.query(f"SELECT {columns} FROM {source} ORDER BY id") == expected(range(8), nested), key_prefix
+        assert tables.query(f"SELECT {columns} FROM {source} ORDER BY id") == expected_rows, key_prefix
         for where in (f"t = {micros_of(1)}", "t >= 5400000000 AND t < 9000000000"):
             for settings in ({}, NO_PARQUET_PUSH_DOWN, {"use_iceberg_partition_pruning": 0}):
                 assert tables.query(f"SELECT id FROM {source} WHERE {where} ORDER BY id", settings) == matching, (
@@ -216,6 +245,38 @@ def test_iceberg_time_column_reads_microseconds(started_cluster_iceberg_no_spark
             f"SELECT id, t FROM {tables.source(key_prefix)} WHERE t = {micros_of(1)} ORDER BY id",
         )
         assert pruned == 2, (key_prefix, event, pruned)
+
+    # One file of three row groups with one distinct value each, committed without column bounds, so that
+    # only the Parquet row-group statistics can skip data.
+    _, tgroups, table = tables.create("time_row_groups")
+    path, size = write_parquet(table, "row-groups", rows([0, 3, 6, 1, 4, 7, 2, 5]), row_group_size=3)
+    with table.transaction() as tx:
+        with tx.update_snapshot().fast_append() as append:
+            append.append_data_file(
+                DataFile.from_args(
+                    _table_format_version=2,
+                    content=DataFileContent.DATA,
+                    file_path=path,
+                    file_format=FileFormat.PARQUET,
+                    partition=Record(),
+                    record_count=8,
+                    file_size_in_bytes=size,
+                    spec_id=0,
+                )
+            )
+    query_id = f"time_row_groups_{uuid.uuid4()}"
+    result = tables.instance.query(
+        f"SELECT id FROM {tables.source(tgroups)} WHERE t = {micros_of(1)} ORDER BY id",
+        settings={**SETTINGS, "use_iceberg_partition_pruning": 0},
+        query_id=query_id,
+    )
+    assert result.strip() == matching
+    tables.instance.query("SYSTEM FLUSH LOGS")
+    pruned_row_groups = tables.query(
+        f"SELECT ProfileEvents['ParquetPrunedRowGroups'] FROM system.query_log "
+        f"WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+    )
+    assert pruned_row_groups == "2", pruned_row_groups
 
 
 class DeleteManifestWriter(ManifestWriterV2):
