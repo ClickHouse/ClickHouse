@@ -27,8 +27,8 @@ class StorageTableFunctionProxy final : public StorageProxy
 {
 public:
     StorageTableFunctionProxy(const StorageID & table_id_, GetNestedStorageFunc get_nested_,
-            ColumnsDescription cached_columns, bool add_conversion_ = true)
-    : StorageProxy(table_id_), get_nested(std::move(get_nested_)), add_conversion(add_conversion_)
+            ColumnsDescription cached_columns, bool add_conversion_ = true, bool is_data_lake_ = false)
+    : StorageProxy(table_id_), get_nested(std::move(get_nested_)), add_conversion(add_conversion_), is_data_lake(is_data_lake_)
     {
         StorageInMemoryMetadata cached_metadata;
         cached_metadata.setColumns(std::move(cached_columns));
@@ -305,6 +305,7 @@ private:
     mutable GetNestedStorageFunc get_nested;
     mutable StoragePtr nested;
     const bool add_conversion;
+    const bool is_data_lake;
 };
 
 }

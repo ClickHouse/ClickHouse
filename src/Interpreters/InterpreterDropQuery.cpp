@@ -401,6 +401,10 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
             DatabaseCatalog::instance().removeDependencies(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
             NamedCollectionFactory::instance().removeDependencies(table_id);
+            /// Otherwise the inner tables would be dropped from `drop` with the global context, ignoring the settings
+            /// of this query (e.g. `data_lake_delete_data_on_drop`). `DatabaseAtomic::dropTable` does the same.
+            if (database->getUUID() == UUIDHelpers::Nil)
+                table->dropInnerTableIfAny(query.sync, context_);
             database->dropTable(context_, table_id.table_name, query.sync, query.if_exists);
 
             /// We have to clear mmapio cache when dropping table from Ordinary database
