@@ -835,7 +835,7 @@ void BackupImpl::readBackupMetadata()
     };
 
     /// `readBackupMetadata` runs under `mutex` (TSA_REQUIRES), and `on_file` is invoked synchronously from
-    /// `parseMemoryNP` below while that lock is held, so the guarded members are safe to touch here. TSA cannot
+    /// `parse` below while that lock is held, so the guarded members are safe to touch here. TSA cannot
     /// see through the lambda boundary, hence the explicit suppression.
     handler.on_file = [&](const BackupMetadataHandler::Fields & f) TSA_NO_THREAD_SAFETY_ANALYSIS
     {
