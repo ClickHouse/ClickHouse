@@ -142,6 +142,12 @@ endif ()
 target_link_libraries (clickhouse PRIVATE clickhouse_common_io ${HARMFUL_LIB})
 target_include_directories (clickhouse PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 
+if (OS_LINUX AND ENABLE_POSITION_INDEPENDENT_BINARY)
+    # The kernel aligns the random load address to the largest segment alignment, so with 2 MiB
+    # the position of the code relative to 2 MiB boundaries is the same at every start.
+    target_link_options (clickhouse PRIVATE -Wl,-z,max-page-size=0x200000)
+endif ()
+
 if (ENABLE_CLICKHOUSE_KEEPER)
     clickhouse_target_link_split_lib(clickhouse keeper)
 endif()

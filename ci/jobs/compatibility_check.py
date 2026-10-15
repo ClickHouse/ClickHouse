@@ -87,6 +87,25 @@ def process_pie_check():
     return ok
 
 
+def process_segment_alignment_check():
+    # Nothing in the build fails when the linker uses a smaller segment alignment, and the kernel aligns
+    # the load address to the largest one, so the largest alignment is checked on the packaged binary.
+    program_headers = Shell.get_output(
+        f"readelf -l --wide {temp_path}/clickhouse", verbose=True, strict=True
+    )
+    alignments = [
+        int(line.split()[-1], 16)
+        for line in program_headers.splitlines()
+        if line.split()[:1] == ["LOAD"]
+    ]
+    if not alignments or max(alignments) < 0x200000:
+        print(
+            f"FAILED: the largest LOAD segment alignment is less than 2 MiB: {[hex(a) for a in alignments]}"
+        )
+        return False
+    return True
+
+
 def parse_args():
     parser = argparse.ArgumentParser("Check compatibility with old distributions")
     parser.add_argument("--check-name", required=False)
@@ -132,6 +151,12 @@ def main():
         Result.from_commands_run(
             name="position independent executable",
             command=process_pie_check,
+        )
+    )
+    test_results.append(
+        Result.from_commands_run(
+            name="2 MiB segment alignment",
+            command=process_segment_alignment_check,
         )
     )
 
