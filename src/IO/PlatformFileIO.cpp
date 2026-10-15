@@ -144,14 +144,29 @@ int platformFDataSync(int fd)
 namespace
 {
 
+/// `flock` locks are advisory: they exclude other lockers and nothing else, and the holder (or
+/// anyone) can still read and write the file through any descriptor. `LockFileEx` locks are
+/// mandatory for the range they cover - even the locking process cannot access it through a
+/// second handle - so locking the whole file would make e.g. the client history, which is locked
+/// through one descriptor and read and written through streams, inaccessible to its own owner.
+/// Lock a single byte far beyond any real end of file instead (locking past the end is allowed):
+/// lockers still exclude each other, and no actual data is covered.
+OVERLAPPED lockRange()
+{
+    OVERLAPPED overlapped{};
+    overlapped.Offset = 0xFFFFFFFE;
+    overlapped.OffsetHigh = 0x7FFFFFFF;
+    return overlapped;
+}
+
 int lockFile(int fd, DWORD flags)
 {
     auto * handle = toHandle(fd);
     if (handle == INVALID_HANDLE_VALUE)
         return -1;
 
-    OVERLAPPED overlapped{};
-    if (!LockFileEx(handle, flags, 0, MAXDWORD, MAXDWORD, &overlapped))
+    OVERLAPPED overlapped = lockRange();
+    if (!LockFileEx(handle, flags, 0, 1, 0, &overlapped))
     {
         errno = GetLastError() == ERROR_LOCK_VIOLATION ? EWOULDBLOCK : EACCES;
         return -1;
@@ -177,8 +192,8 @@ int platformUnlockFile(int fd)
     if (handle == INVALID_HANDLE_VALUE)
         return -1;
 
-    OVERLAPPED overlapped{};
-    if (!UnlockFileEx(handle, 0, MAXDWORD, MAXDWORD, &overlapped))
+    OVERLAPPED overlapped = lockRange();
+    if (!UnlockFileEx(handle, 0, 1, 0, &overlapped))
     {
         errno = EACCES;
         return -1;
