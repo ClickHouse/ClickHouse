@@ -7792,13 +7792,26 @@ void StorageReplicatedMergeTree::restoreMetadataVersionFromBackup(Int32 metadata
     if (metadata_snapshot->getMetadataVersion() >= metadata_version)
         return;
 
-    /// This replica can be marked with the version only if it has the structure the table has at that version,
-    /// otherwise the parts restored next would get a metadata version their columns do not match.
-    /// /columns is read first: it changes only together with /metadata, so if /metadata is still of that version
-    /// afterwards, both are. Column comments are not compared, as they are not replicated.
-    auto columns_from_zk = ColumnsDescription::parse(zookeeper->get(table_columns_path));
-    metadata_str = zookeeper->get(table_metadata_path, &metadata_stat);
-    bool same_structure = metadata_stat.version == metadata_version && columns_from_zk == metadata_snapshot->getColumns();
+    /// This replica can be marked with the current version of the table in ZooKeeper, which is at least
+    /// `metadata_version`, only if it has the structure the table has at that version, otherwise the parts
+    /// restored next would get a metadata version their columns do not match. The current version is used
+    /// rather than `metadata_version`, because the versions saved by different hosts of one backup can differ
+    /// while the structure is the same, and another host may have already raised the table to a higher one.
+    /// /columns changes only together with /metadata, so if /metadata has the same version before and after
+    /// reading /columns, both are of that version. Column comments are not compared, as they are not replicated.
+    ColumnsDescription columns_from_zk;
+    Int32 version_before_columns;
+    do
+    {
+        zookeeper->get(table_metadata_path, &metadata_stat);
+        version_before_columns = metadata_stat.version;
+        columns_from_zk = ColumnsDescription::parse(zookeeper->get(table_columns_path));
+        metadata_str = zookeeper->get(table_metadata_path, &metadata_stat);
+    } while (metadata_stat.version != version_before_columns);
+
+    const Int32 new_metadata_version = metadata_stat.version;
+    chassert(new_metadata_version >= metadata_version);
+    bool same_structure = columns_from_zk == metadata_snapshot->getColumns();
     if (same_structure)
     {
         auto metadata_from_zk = ReplicatedMergeTreeTableMetadata::parseAndNormalize(
@@ -7815,23 +7828,23 @@ void StorageReplicatedMergeTree::restoreMetadataVersionFromBackup(Int32 metadata
             "Cannot apply metadata version {} from the backup to this replica of table {}: its structure (at metadata version {}) "
             "differs from the structure of the table at metadata version {} in ZooKeeper. The replica may be lagging behind on an ALTER "
             "or the table may have been altered concurrently. Wait for the replica to apply the ALTERs (SYSTEM SYNC REPLICA) and retry",
-            metadata_version, getStorageID().getNameForLogs(), metadata_snapshot->getMetadataVersion(), metadata_stat.version);
+            metadata_version, getStorageID().getNameForLogs(), metadata_snapshot->getMetadataVersion(), new_metadata_version);
 
     String replica_metadata_version_str;
     Coordination::Stat replica_metadata_version_stat;
     while (zookeeper->tryGet(replica_metadata_version_path, replica_metadata_version_str, &replica_metadata_version_stat)
-        && parse<Int32>(replica_metadata_version_str) < metadata_version)
+        && parse<Int32>(replica_metadata_version_str) < new_metadata_version)
     {
-        auto code = zookeeper->trySet(replica_metadata_version_path, toString(metadata_version), replica_metadata_version_stat.version);
+        auto code = zookeeper->trySet(replica_metadata_version_path, toString(new_metadata_version), replica_metadata_version_stat.version);
         if (code == Coordination::Error::ZOK)
             break;
         if (code != Coordination::Error::ZBADVERSION)
             throw zkutil::KeeperException::fromPath(code, replica_metadata_version_path);
     }
 
-    setInMemoryMetadata(metadata_snapshot->withMetadataVersion(metadata_version));
+    setInMemoryMetadata(metadata_snapshot->withMetadataVersion(new_metadata_version));
 
-    LOG_INFO(log, "Restored metadata version {} from backup", metadata_version);
+    LOG_INFO(log, "Restored metadata version {} from backup (version in the backup is {})", new_metadata_version, metadata_version);
 }
 
 void StorageReplicatedMergeTree::dropPartNoWaitNoThrow(const String & part_name)
