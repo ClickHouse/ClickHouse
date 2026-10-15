@@ -119,6 +119,7 @@ struct Estimate
     std::optional<Field> estimated_max;
     std::optional<UInt64> estimated_null_count;
     std::optional<UInt64> estimated_default_count;
+    std::optional<Float64> estimated_avg_string_bytes;
 };
 
 using Estimates = std::unordered_map<String, Estimate>;

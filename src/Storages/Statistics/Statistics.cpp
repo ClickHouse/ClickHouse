@@ -495,6 +495,8 @@ Estimate ColumnStatistics::getEstimate() const
             info.estimated_null_count = basic_stats.getNullCount();
         if (basic_stats.hasDefaultCount())
             info.estimated_default_count = basic_stats.getDefaultCount();
+        if (basic_stats.hasStringLengthAvg())
+            info.estimated_avg_string_bytes = static_cast<Float64>(basic_stats.getStringLengthAvg());
     }
     else if (auto minmax_it = stats.find(StatisticsType::MinMax); minmax_it != stats.end())
     {

@@ -179,6 +179,7 @@ private:
 
     /// Decision by the planner whether to enable row store tranformation or not.
     bool enable_row_store = false;
+    std::unordered_map<String, Float64> right_columns_avg_bytes;
 
     ASTs key_asts_left;
     ASTs key_asts_right;
@@ -355,6 +356,13 @@ public:
     bool joinRuntimeFilterFromFixedHashTable() const { return join_runtime_filter_from_fixed_hash_table; }
     void setRowStoreEnabled(bool value) { enable_row_store = value; }
     bool isRowStoreEnabled() const { return enable_row_store; }
+    void setRightColumnAvgBytes(const String & name, Float64 avg_bytes) { right_columns_avg_bytes[name] = avg_bytes; }
+    Float64 getRightColumnAvgBytes(const String & name) const
+    {
+        if (auto it = right_columns_avg_bytes.find(name); it != right_columns_avg_bytes.end())
+            return it->second;
+        return 0;
+    }
 
     const std::vector<SharedRuntimeFilterDescriptor> & getSharedRuntimeFilterDescriptors() const
     {
