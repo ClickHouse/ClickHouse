@@ -84,6 +84,7 @@ ALWAYS_INLINE inline Decimal128 sumIntoDecimal128(const Value * __restrict ptr, 
     static constexpr size_t max_rows_per_chunk = 1ULL << 32;
     static constexpr size_t words_per_row = sizeof(Value) == sizeof(Int128) ? 2 : 1;
     static constexpr size_t rows_per_step = lanes / words_per_row;
+    static constexpr size_t unroll_steps = sizeof(Value) == sizeof(Int32) ? 8 : 4;
 
     /// The vector loop processes whole steps; the remaining rows, fewer than one step, are added one by one.
     const size_t vector_rows = count / rows_per_step * rows_per_step;
@@ -95,8 +96,8 @@ ALWAYS_INLINE inline Decimal128 sumIntoDecimal128(const Value * __restrict ptr, 
         UInt64Lanes s{};
         UInt64Lanes a{};
 
-        /// Four independent steps in flight hide the latency of the additions to `s` and `a`.
-#pragma clang loop unroll_count(4)
+        /// Several steps in flight hide the latency of the additions to `s` and `a`; the narrow `Decimal32` steps need more.
+#pragma clang loop unroll_count(unroll_steps)
         for (size_t i = chunk_begin; i < chunk_end; i += rows_per_step)
         {
             UInt64Lanes x;
