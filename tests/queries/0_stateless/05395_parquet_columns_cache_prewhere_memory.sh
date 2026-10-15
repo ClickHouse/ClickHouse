@@ -35,7 +35,7 @@ for _ in {1..20}; do
     $CLICKHOUSE_CLIENT -q "${QUERY} FORMAT Null SETTINGS ${LIMITS},
         use_columns_cache = 1, enable_reads_from_columns_cache = 1, enable_writes_to_columns_cache = 1,
         columns_cache_max_bytes_to_write_to_cache = 0, columns_cache_max_estimated_bytes_to_write_to_cache = 0"
-    [ "$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.columns_cache WHERE endsWith(part, '/${FILE}')")" = "${ROW_GROUPS}" ] && break
+    [ "$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.columns_cache WHERE database = '' AND endsWith(part, '/${FILE}')")" = "${ROW_GROUPS}" ] && break
 done
 
 echo "--- without the cache"
@@ -43,6 +43,6 @@ $CLICKHOUSE_CLIENT -q "${QUERY} SETTINGS ${LIMITS}, max_memory_usage = '32Mi', u
 echo "--- from the cache"
 $CLICKHOUSE_CLIENT -q "${QUERY} SETTINGS ${LIMITS}, max_memory_usage = '32Mi',
     use_columns_cache = 1, enable_reads_from_columns_cache = 1, enable_writes_to_columns_cache = 0"
-$CLICKHOUSE_CLIENT -q "SELECT count() = ${ROW_GROUPS} FROM system.columns_cache WHERE endsWith(part, '/${FILE}')"
+$CLICKHOUSE_CLIENT -q "SELECT count() = ${ROW_GROUPS} FROM system.columns_cache WHERE database = '' AND endsWith(part, '/${FILE}')"
 
 rm -f "${FILE_PATH}"

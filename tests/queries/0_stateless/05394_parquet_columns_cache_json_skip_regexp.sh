@@ -28,7 +28,7 @@ $CLICKHOUSE_CLIENT -q "SYSTEM DROP COLUMNS CACHE"
 # The admission control of the cache can skip a write: read the file until the column of `v` is there.
 for _ in {1..20}; do
     $CLICKHOUSE_CLIENT -q "${QUERY} FORMAT Null SETTINGS ${CACHE}, type_json_use_partial_match_to_skip_paths_by_regexp = 1"
-    [ "$($CLICKHOUSE_CLIENT -q "SELECT count() > 0 FROM system.columns_cache WHERE endsWith(part, '/${FILE}') AND column = 'v'")" = 1 ] && break
+    [ "$($CLICKHOUSE_CLIENT -q "SELECT count() > 0 FROM system.columns_cache WHERE database = '' AND endsWith(part, '/${FILE}') AND column = 'v'")" = 1 ] && break
 done
 
 echo "--- partial match, from the cache"
