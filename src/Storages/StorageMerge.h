@@ -321,6 +321,8 @@ private:
         QueryProcessingStage::Enum stage;
         /// Set for a child aggregated by keys of other types than the `Merge` table.
         bool forget_aggregation_buckets = false;
+        /// Set when the child's plan was built by the interpreter, which applies the child's row policy itself.
+        bool applies_row_policy = false;
     };
 
     /// Answer of `getExpandableReads`, unset until it is asked for. The parallel-replicas pass asks first
