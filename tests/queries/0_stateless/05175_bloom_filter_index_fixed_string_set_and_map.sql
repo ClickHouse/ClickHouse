@@ -190,6 +190,36 @@ SELECT count() FROM t_bf_map_absent_erased WHERE m['absent'] = CAST(toFixedStrin
 SELECT count() FROM t_bf_map_absent_erased WHERE m['absent'] = CAST(toFixedString('', 1) AS Variant(FixedString(1), UInt8)) SETTINGS use_skip_indexes = 0;
 
 DROP TABLE t_bf_map_absent_erased;
+
+SELECT 'absent map key over Date32 values';
+-- A missing `Date32` value is the column default (`1970-01-01`), not `getDefault` (`1900-01-01`).
+DROP TABLE IF EXISTS t_bf_map_absent_date32;
+CREATE TABLE t_bf_map_absent_date32 (m Map(String, Date32), INDEX bf mapKeys(m) TYPE bloom_filter GRANULARITY 1)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
+INSERT INTO t_bf_map_absent_date32 VALUES (map('k', toDate32('2026-01-01'))), (map('other', toDate32('2026-01-02'))), (map());
+OPTIMIZE TABLE t_bf_map_absent_date32 FINAL;
+
+SELECT count() FROM t_bf_map_absent_date32 WHERE m['absent'] = toDate32('1970-01-01');
+SELECT count() FROM t_bf_map_absent_date32 WHERE m['absent'] = toDate32('1970-01-01') SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_bf_map_absent_date32 WHERE m['absent'] IN (SELECT toDate32('1970-01-01'));
+SELECT count() FROM t_bf_map_absent_date32 WHERE m['absent'] IN (SELECT toDate32('1970-01-01')) SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_bf_map_absent_date32 WHERE m['k'] = toDate32('2026-01-01');
+SELECT count() FROM t_bf_map_absent_date32 WHERE m['k'] = CAST(toDate32('2026-01-01') AS Dynamic);
+SELECT count() FROM t_bf_map_absent_date32 WHERE m['k'] = CAST(toDate32('2026-01-01') AS Dynamic) SETTINGS use_skip_indexes = 0;
+
+DROP TABLE t_bf_map_absent_date32;
+
+SELECT 'absent map key with a Dynamic Tuple(FixedString) constant';
+DROP TABLE IF EXISTS t_bf_map_absent_tuple;
+CREATE TABLE t_bf_map_absent_tuple (m Map(String, Tuple(String)), INDEX bf mapKeys(m) TYPE bloom_filter GRANULARITY 1)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
+INSERT INTO t_bf_map_absent_tuple VALUES (map('k', tuple('a'))), (map('other', tuple('b'))), (map());
+OPTIMIZE TABLE t_bf_map_absent_tuple FINAL;
+
+SELECT count() FROM t_bf_map_absent_tuple WHERE m['absent'] = CAST(tuple(toFixedString('', 1)) AS Dynamic);
+SELECT count() FROM t_bf_map_absent_tuple WHERE m['absent'] = CAST(tuple(toFixedString('', 1)) AS Dynamic) SETTINGS use_skip_indexes = 0;
+
+DROP TABLE t_bf_map_absent_tuple;
 DROP TABLE t_bf_map_uint8_set_source;
 DROP TABLE t_bf_set;
 DROP TABLE t_bf_map;

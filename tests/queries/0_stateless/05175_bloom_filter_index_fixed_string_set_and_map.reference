@@ -72,3 +72,14 @@ absent map key with a Variant or Dynamic FixedString constant
 3
 3
 3
+absent map key over Date32 values
+3
+3
+3
+3
+1
+1
+1
+absent map key with a Dynamic Tuple(FixedString) constant
+3
+3

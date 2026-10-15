@@ -670,6 +670,20 @@ static Field coerceConstantForBloomFilterHash(
     return convertFieldToType(value_field, *actual_type, value_type.get());
 }
 
+/// The value `arrayElement` yields for a missing map key: the column default (`insertDefault`), which is
+/// not always `getDefault` of the type (`Date32` has `1900-01-01` as the latter but zero, `1970-01-01`,
+/// as the former). `Enum` keeps `getDefault`, because its zero need not be a valid enum value; the
+/// callers check the zero of an `Enum` separately.
+static ColumnPtr createMissingMapValueColumn(const DataTypePtr & map_value_type)
+{
+    if (isEnum(removeLowCardinalityAndNullable(map_value_type)))
+        return map_value_type->createColumnConstWithDefaultValue(1);
+
+    auto column = map_value_type->createColumn();
+    column->insertDefault();
+    return ColumnConst::create(std::move(column), 1);
+}
+
 /// Whether `equals(<default of the map's value type>, constant)` holds, i.e. whether a row without
 /// the key can satisfy `m['k'] = constant`: `arrayElement` yields the value type's default for a
 /// missing key. The comparison is padding-aware for the string family (`'\0'` equals the
@@ -679,17 +693,17 @@ static Field coerceConstantForBloomFilterHash(
 static bool missingMapKeyMayCompareEqual(
     const DataTypePtr & map_value_type, const DataTypePtr & value_type, const Field & value_field, const ContextPtr & context)
 {
-    /// A `Variant` or `Dynamic` constant carries the nested padded value under its declared type, so
-    /// an active `FixedString` alternative would be rebuilt below as a `String` one, and `equals`
-    /// would answer for the wrong type (`''` equals `toFixedString('', 1)` but not `'\0'`).
-    /// Like `coerceConstantForBloomFilterHash`, assume the worst for a string constant there.
+    /// A `Variant` or `Dynamic` constant is rebuilt below from its `Field`, which loses its active type:
+    /// a `FixedString` becomes a `String` (`''` equals `toFixedString('', 1)` but not `'\0'`), also
+    /// nested in a `Tuple`, and a `Date32` becomes an `Int16`, which `equals` may even reject. So
+    /// `equals` would answer for the wrong types; assume the worst for every such constant.
     const WhichDataType which_constant(removeLowCardinalityAndNullable(value_type));
-    if ((which_constant.isVariant() || which_constant.isDynamic()) && value_field.getType() == Field::Types::String)
+    if (which_constant.isVariant() || which_constant.isDynamic())
         return true;
 
     ColumnsWithTypeAndName arguments
     {
-        {map_value_type->createColumnConstWithDefaultValue(1), map_value_type, "default"},
+        {createMissingMapValueColumn(map_value_type), map_value_type, "default"},
         {value_type->createColumnConst(1, value_field), value_type, "constant"},
     };
 
@@ -833,15 +847,16 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         /// set's element type before the membership check, exactly as at runtime. So probe the set
         /// with that default (e.g. `0` of `UInt8` matches the `String` set element `'0'`), and keep
         /// the probe with the set's own default so nothing that declined before starts using the index.
-        auto set_contains_default_of = [&](const DataTypePtr & default_type)
+        auto set_contains_default_of = [&](const ColumnPtr & default_column, const DataTypePtr & default_type)
         {
-            auto default_column_to_check = default_type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
-            ColumnsWithTypeAndName default_columns_with_type_to_check = {{default_column_to_check, default_type, ""}};
+            ColumnsWithTypeAndName default_columns_with_type_to_check = {{default_column->convertToFullColumnIfConst(), default_type, ""}};
             auto set_contains_default_value_predicate_column = prepared_set->execute(default_columns_with_type_to_check, false /*negative*/);
             return assert_cast<const ColumnUInt8 &>(*set_contains_default_value_predicate_column).getData()[0] != 0;
         };
 
-        if (set_contains_default_of(type) || set_contains_default_of(key_node.getDAGNode()->result_type))
+        const auto & map_value_type = key_node.getDAGNode()->result_type;
+        if (set_contains_default_of(type->createColumnConstWithDefaultValue(1), type)
+            || set_contains_default_of(createMissingMapValueColumn(map_value_type), map_value_type))
             return false;
 
         /// Over `Enum` map values `arrayElement` returns the zero of the underlying integer for a missing key,
