@@ -1110,7 +1110,8 @@ std::vector<PostingListCursorPtr> MergeTreeReaderTextIndex::makePhraseCursors(co
         }
         else
         {
-            cursors.push_back(std::make_shared<PostingListCursor>(getPostingsStream(token, token_info), token_info));
+            cursors.push_back(std::make_shared<PostingListCursor>(
+                getPostingsStream(token, token_info), token_info, condition_text->postingsCache().get(), granule->getIndexIdForCaches()));
         }
     }
     return cursors;
