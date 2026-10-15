@@ -1,6 +1,7 @@
 Cursor candidates match a scan
 Cursors need the block index of a posting list codec
 Without a codec the phrase is evaluated on the column
+Small marks split the phrase search into windows
 hello in 16 segments, needle in 2, unicorn embedded
 needle clickhouse
 256	8070932900065757614
@@ -42,6 +43,18 @@ hello clickhouse world
 2730	9382398775103070376
 2730	9382398775103070376
 2730	9382398775103070376
+Windows skipping marks
+38	14845700179987215295
+38	14845700179987215295
+2	11536393098866280656
+2	11536393098866280656
+262	3626627352781827314
+262	3626627352781827314
+Windows in reverse order
+[4085,4069,4053,4037,4021]
+[4085,4069,4053,4037,4021]
+[4094,4093,4091,4090,4088]
+[4094,4093,4091,4090,4088]
 Every search walks cursors, or falls back without a codec
 02346_cursors	10	0	10
 02346_cursors_none	0	10	10

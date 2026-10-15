@@ -107,17 +107,15 @@ private:
 
     PostingListCursorPtr makeLazyCursor(std::string_view token, const TokenPostingsInfo & token_info);
 
-    /// Fills a phrase virtual column from positional data (.pos), computing matching documents
-    /// via phrase intersection (cached per granule).
-    void applyPostingsPhrase(IColumn & column, const TextSearchQueryPtr & search_query, size_t row_offset, size_t num_rows);
+    /// Fills a phrase virtual column from positional data (.pos), matching only the rows of the window.
+    void applyPostingsPhrase(IColumn & column, size_t column_idx, size_t row_offset, size_t num_rows);
     void initializePositionsStream();
 
     struct PhraseTokens;
 
-    /// Finds the documents holding every phrase token, then decodes only the position blocks covering them.
-    PaddedPODArray<UInt32> phraseSearch(const TextSearchQuery & search_query);
-    /// Candidates from a leapfrog over the tokens' posting lists, which also yields their ranks.
-    PaddedPODArray<UInt32> phraseSearchBlockedCursors(const PhraseTokens & phrase, std::vector<PostingListCursorPtr> postings_cursors);
+    struct PhraseStream;
+
+    std::shared_ptr<PhraseStream> makePhraseStream(const TextSearchQuery & search_query);
     /// One cursor per unique token.
     std::vector<PostingListCursorPtr> makePhraseCursors(const PhraseTokens & phrase);
 
@@ -146,14 +144,11 @@ private:
 
     /// Stream for position data (.pos file) used for phrase queries.
     std::unique_ptr<MergeTreeReaderStream> positions_stream;
-    /// Per-reader memo of phrase results (shared via the postings cache) so repeated readRows calls skip the cache lookup.
-    absl::flat_hash_map<UInt128, PaddedPODArrayPtr> phrase_search_doc_ids;
 
     /// Current row position used when continuing reads across multiple calls.
     size_t current_row = 0;
     size_t current_mark = 0;
     PaddedPODArray<UInt32> indices_buffer;
-    TextIndexBlockedPositionsCodec::DecodeScratch blocked_positions_scratch;
 
     bool is_initialized = false;
     /// Virtual columns that are always true.
@@ -173,6 +168,9 @@ private:
 
     /// Per-column `ResolvedSearch`, built on the first granule. Dropped together with `lazy_cursors`.
     std::vector<std::optional<ResolvedSearch>> resolved_searches;
+
+    /// Per-column phrase search, built on the first window. Dropped together with `lazy_cursors`.
+    std::vector<std::shared_ptr<PhraseStream>> phrase_streams;
 
     /// Counters of the lazy intersections, added to the profile events when the reader is destroyed.
     LazyPostingsStats lazy_postings_stats;
