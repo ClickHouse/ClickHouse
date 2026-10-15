@@ -16,8 +16,11 @@
 #include <base/defines.h>
 #include <Common/AlignedBuffer.h>
 #include <Common/Arena.h>
+#include <Common/CurrentMemoryTracker.h>
+#include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
 #include <Common/HashTable/Hash.h>
+#include <Common/MemoryTracker.h>
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
 #include <Common/iota.h>
@@ -239,6 +242,10 @@ void ColumnAggregateFunction::ensureOwnership()
         Container new_data;
         new_data.resize_exact(size);
 
+        /// A copied state may allocate with `operator new` or `malloc`, which the memory tracker does not refuse.
+        const MemoryTracker * memory_tracker = CurrentThread::getMemoryTracker();
+        Int64 memory_at_last_check = memory_tracker ? memory_tracker->get() : 0;
+
         size_t rollback_pos = 0;
         try
         {
@@ -252,6 +259,12 @@ void ColumnAggregateFunction::ensureOwnership()
                     throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Failpoint triggered");
 
                 func->merge(new_data[i], data[i], &arena);
+
+                if (memory_tracker && memory_tracker->get() != memory_at_last_check)
+                {
+                    memory_at_last_check = memory_tracker->get();
+                    CurrentMemoryTracker::check();
+                }
             }
         }
         catch (...)

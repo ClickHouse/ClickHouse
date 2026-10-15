@@ -1,12 +1,16 @@
 #include <Processors/Transforms/WindowTransform.h>
 
 #include <Columns/ColumnAggregateFunction.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
 
 #include <Functions/FunctionHelpers.h>
 
 #include <Common/Arena.h>
+#include <Common/CurrentMemoryTracker.h>
+#include <Common/CurrentThread.h>
+#include <Common/MemoryTracker.h>
 
 #include <algorithm>
 #include <utility>
@@ -99,6 +103,9 @@ void WindowTransform::initWorkspaces(const std::vector<WindowFunctionDescription
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported window frame type for function '{}'", workspace.aggregate_function->getName());
 
         workspace.is_aggregate_function_state = workspace.aggregate_function->isState();
+        const auto & result_type = aggregate_function->getResultType();
+        if (hasAggregateFunctionType(result_type) || result_type->hasDynamicStructure())
+            copies_aggregate_states = true;
         workspace.aggregate_function_state.reset(
             aggregate_function->sizeOfData(),
             aggregate_function->alignOfData());
@@ -355,6 +362,21 @@ void WindowTransform::computeReadyRows()
 
             // Write out the aggregation results.
             writeOutCurrentRow();
+
+            /// A copied state may allocate with `operator new` or `malloc`, which the memory tracker counts but does not
+            /// refuse. Check the limit whenever this thread's allocations have reached the tracker since the last check.
+            if (copies_aggregate_states)
+            {
+                const MemoryTracker * thread_memory_tracker = CurrentThread::getMemoryTracker();
+                const Int64 thread_memory = thread_memory_tracker ? thread_memory_tracker->get() : 0;
+                if (!thread_memory_tracker || thread_memory_tracker != memory_tracker_at_last_check
+                    || thread_memory != memory_at_last_check)
+                {
+                    memory_tracker_at_last_check = thread_memory_tracker;
+                    memory_at_last_check = thread_memory;
+                    CurrentMemoryTracker::check();
+                }
+            }
 
             if (isCancelled())
             {
