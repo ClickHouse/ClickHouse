@@ -9,14 +9,15 @@ CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Ordinary;
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS refresh_statistics_interval = 300;
 INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.t SELECT number FROM numbers(10);
 
+-- A deactivated task stays listed while it is still queued.
 SELECT table, count() FROM system.background_schedule_pool
-WHERE database = {CLICKHOUSE_DATABASE_1:String} AND log_name = 'MergeTreeData::refreshStatistics'
+WHERE database = {CLICKHOUSE_DATABASE_1:String} AND log_name = 'MergeTreeData::refreshStatistics' AND deactivated = 0
 GROUP BY table ORDER BY table;
 
 RENAME TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t TO {CLICKHOUSE_DATABASE_1:Identifier}.t2;
 
 SELECT table, count() FROM system.background_schedule_pool
-WHERE database = {CLICKHOUSE_DATABASE_1:String} AND log_name = 'MergeTreeData::refreshStatistics'
+WHERE database = {CLICKHOUSE_DATABASE_1:String} AND log_name = 'MergeTreeData::refreshStatistics' AND deactivated = 0
 GROUP BY table ORDER BY table;
 
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
