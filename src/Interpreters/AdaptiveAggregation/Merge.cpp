@@ -56,9 +56,9 @@ namespace
     }
 
     /// The key holder (see `keyHolderGetKey`) of a staged key read back by `readStagedKey`. A string-like key points
-    /// into its record, which the merge frees only after converting the unit, unless `copy_keys`: a record read back
-    /// from a spill goes before, so the holder copies the key into `arena` when a table or a tracker of the best
-    /// groups keeps it.
+    /// into its record, which the merge frees only after converting the unit. With `copy_keys`, the record is in a
+    /// block read back from a spill, which the next block overwrites, so the holder copies the key into `arena` when
+    /// a table or a tracker of the best groups keeps it.
     template <bool copy_keys, typename Key>
     auto ALWAYS_INLINE stagedKeyHolder(const Key & key, [[maybe_unused]] DB::Arena * arena)
     {
