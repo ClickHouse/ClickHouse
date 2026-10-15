@@ -125,11 +125,15 @@ struct IcebergDataObjectInfo : public ObjectInfo, std::enable_shared_from_this<I
 
     void setResolvedStorage(ObjectStoragePtr storage) { resolved_storage = std::move(storage); }
 
+    void setBaseStorageIsLocal(bool value) { base_storage_is_local = value; }
+
     void addEqualityDeleteObject(const Iceberg::ProcessedManifestFileEntryPtr & equality_delete_object, const String & resolved_storage_path);
     Iceberg::IcebergObjectSerializableInfo info;
 
 private:
     ObjectStoragePtr resolved_storage;
+    /// Scheme-less absolute paths resolve against the table's base storage, whatever backend the data file uses.
+    bool base_storage_is_local = false;
 };
 
 using IcebergDataObjectInfoPtr = std::shared_ptr<IcebergDataObjectInfo>;

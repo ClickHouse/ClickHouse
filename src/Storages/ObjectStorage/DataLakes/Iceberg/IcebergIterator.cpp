@@ -514,6 +514,7 @@ ObjectInfoPtr IcebergIterator::next(size_t)
             resolved_key);
 
         object_info->info.requires_external_storage = (storage_to_use != object_storage);
+        object_info->setBaseStorageIsLocal(object_storage->getType() == ObjectStorageType::Local);
 
         for (const auto & position_delete :
              defineDeletesSpan(manifest_file_entry, position_deletes_files, /* is_equality_delete */ false, logger))

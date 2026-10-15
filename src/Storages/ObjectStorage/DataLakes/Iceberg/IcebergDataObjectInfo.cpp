@@ -175,14 +175,12 @@ std::optional<String> IcebergDataObjectInfo::getExternalLocalPath() const
     if (!info.requires_external_storage)
         return std::nullopt;
 
-    /// A scheme-less absolute path denotes a local file only on local storage; otherwise it is a bucket key.
-    const bool absolute_is_local = resolved_storage && resolved_storage->getType() == ObjectStorageType::Local;
-
+    /// A scheme-less absolute path denotes a local file only on local base storage; otherwise it is a bucket key.
     auto is_local = [&](const String & path)
     {
         SchemeAuthorityKey decomposed{path};
         return decomposed.scheme == "file"
-            || (absolute_is_local && decomposed.scheme.empty() && decomposed.key.starts_with('/'));
+            || (base_storage_is_local && decomposed.scheme.empty() && decomposed.key.starts_with('/'));
     };
 
     if (auto metadata_path = getPathInDataLakeMetadata(); metadata_path && is_local(*metadata_path))
