@@ -249,10 +249,9 @@ bool isCreatedOnBackupMetadataOnlyStoragePolicy(const ASTCreateQuery & create_qu
     if (!context->getStoragePolicy(policy_name->safeGet<String>())->isBackupMetadataOnly())
         return false;
 
-    /// The same restriction as in `isDataOnBackupMetadataOnlyStoragePolicy`, for a table known only by its definition. The
-    /// name is the only way to tell the engine here, as the replicated and shared engines have the same features.
-    const auto & engine_name = storage->engine->name;
-    return !engine_name.starts_with("Replicated") && !engine_name.starts_with("Shared");
+    /// Only the plain `MergeTree` family reopens the parts it finds on the storage, see `isDataOnBackupMetadataOnlyStoragePolicy`.
+    /// The replicated and shared engines are registered with `supports_replication`.
+    return !it->second.features.supports_replication;
 }
 
 }
