@@ -3,6 +3,14 @@
 version = 4
 
 [[package]]
+name = "_ch_rust_pco"
+version = "0.1.0"
+dependencies = [
+ "half",
+ "pco 1.0.2",
+]
+
+[[package]]
 name = "_ch_rust_polyglot"
 version = "0.1.0"
 dependencies = [
@@ -512,6 +520,10 @@ name = "beef"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a8241f3ebb85c056b509d4327ad0358fbbba6ffb340bf388f26350aeda225b1"
+
+[[package]]
+name = "better_io"
+version = "0.2.0"
 
 [[package]]
 name = "better_io"
@@ -1334,6 +1346,10 @@ dependencies = [
  "quote",
  "syn 3.0.6",
 ]
+
+[[package]]
+name = "dtype_dispatch"
+version = "0.2.1"
 
 [[package]]
 name = "dtype_dispatch"
@@ -2545,11 +2561,21 @@ checksum = "2ee67f1008b1ba2321834326597b8e186293b049a023cdef258527550b9935b4"
 [[package]]
 name = "pco"
 version = "1.0.2"
+dependencies = [
+ "better_io 0.2.0",
+ "dtype_dispatch 0.2.1",
+ "half",
+ "rand_xoshiro",
+]
+
+[[package]]
+name = "pco"
+version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "553ccdc7f6999785559af4998c79712a5ab820e26b68bad9146609c19587ec82"
 dependencies = [
- "better_io",
- "dtype_dispatch",
+ "better_io 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "dtype_dispatch 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "half",
  "rand_xoshiro",
 ]
@@ -3917,7 +3943,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f648cc222e782d8ca7781b27c892d54c2f63bdb1b1b726533e93322ea27a8866"
 dependencies = [
  "itertools 0.14.0",
- "pco",
+ "pco 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "rand 0.10.2",
  "vortex-alp",
  "vortex-array",
@@ -4268,7 +4294,7 @@ version = "0.84.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "adbf08d54af5e8e5fbf6716185297fa3666fe013b5033123d4651f0e6295f8af"
 dependencies = [
- "pco",
+ "pco 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "prost",
  "vortex-array",
  "vortex-buffer",

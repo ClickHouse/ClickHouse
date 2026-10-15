@@ -5,6 +5,7 @@ members = [
     "prql",
     "polyglot",
     "vortex",
+    "pco",
     "wasmtime",
 ]
 resolver = "2"
