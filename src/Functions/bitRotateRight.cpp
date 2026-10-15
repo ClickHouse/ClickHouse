@@ -22,7 +22,9 @@ struct BitRotateRightImpl
     using ResultType = typename NumberTraits::ResultOfBit<A, B>::Type;
     static const constexpr bool allow_fixed_string = false;
     static const constexpr bool allow_string_integer = false;
-    static constexpr auto signature =
+    /// Documentation-only: the legacy validator stays authoritative, including
+    /// the `IPv4`/`IPv6` casts the DSL can't express yet; see `bitAnd.cpp`.
+    static constexpr auto signature_documentation =
         /// Float arguments are rejected by the runtime (`valid_on_float_arguments=false`);
         /// see the matching comment in `bitAnd.cpp`.
         "(A : Integer, B : Integer) -> nativeNumber(maxBits(A, B), anySigned(A, B), 0)";

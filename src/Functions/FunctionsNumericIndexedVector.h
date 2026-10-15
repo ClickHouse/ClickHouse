@@ -130,12 +130,23 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
 
     /// Binary ops between two NumericIndexedVector sketches or a sketch and a
-    /// scalar. The runtime additionally enforces that both sketches share inner
-    /// index/value types (the DSL doesn't model the cross-argument equality).
+    /// scalar. Both sketches must share inner index/value types, which the DSL
+    /// doesn't model, so the signature is documentation-only.
     String getSignatureString() const override
     {
         return "(A : AggregateFunction('groupNumericIndexedVector', Any, Any), AggregateFunction('groupNumericIndexedVector', Any, Any)) -> A"
                " OR (A : AggregateFunction('groupNumericIndexedVector', Any, Any), Number) -> A";
+    }
+
+    /// Keep the `getReturnTypeImpl(DataTypes)` validator below authoritative: `executeImpl` selects
+    /// the implementation from the first argument and reinterprets the second state as the same
+    /// specialization, so mismatched inner types must be rejected here.
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        DataTypes data_types(arguments.size());
+        for (size_t i = 0; i < arguments.size(); ++i)
+            data_types[i] = arguments[i].type;
+        return getReturnTypeImpl(data_types);
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override

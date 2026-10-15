@@ -46,10 +46,10 @@ public:
     {
         if (allow_nonconst_timezone_arguments)
             return
-                "(const tz String) -> DateTime(tz)"
+                "(const tz StringOrFixedString) -> DateTime(tz)"
                 " OR ([StringOrFixedString]) -> DateTime";
         return
-            "(const tz String) -> DateTime(tz)"
+            "(const tz StringOrFixedString) -> DateTime(tz)"
             " OR () -> DateTime";
     }
 

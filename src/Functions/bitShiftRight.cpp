@@ -20,7 +20,9 @@ struct BitShiftRightImpl
     using ResultType = typename NumberTraits::ResultOfBit<A, B>::Type;
     static const constexpr bool allow_fixed_string = false;
     static const constexpr bool allow_string_integer = true;
-    static constexpr auto signature =
+    /// Documentation-only: the legacy validator stays authoritative, including
+    /// the `IPv4`/`IPv6` casts the DSL can't express yet; see `bitAnd.cpp`.
+    static constexpr auto signature_documentation =
         /// Float arguments are rejected by the runtime (`valid_on_float_arguments=false`);
         /// see the matching comment in `bitAnd.cpp`.
         /// The String / FixedString shift path only supports native-width shift counts
