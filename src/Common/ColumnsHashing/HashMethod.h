@@ -6,11 +6,11 @@
 #include <algorithm>
 #include <bit>
 #include <limits>
-#include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsCommon.h>
 #include <Interpreters/AggregationCommon.h>
 #include <base/types.h>
 

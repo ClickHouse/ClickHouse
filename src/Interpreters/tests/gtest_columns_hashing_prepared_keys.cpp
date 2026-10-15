@@ -1,8 +1,10 @@
 #include <gtest/gtest.h>
 
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/Arena.h>
 #include <Interpreters/AggregationCommon.h>
+#include <Interpreters/KeysNullMap.h>
 #include <Interpreters/SetVariants.h>
 
 using namespace DB;
@@ -24,6 +26,12 @@ using UnpreparedState = ColumnsHashing::SubRangeState<SetMethodKeysFixed<Clearab
 
 static_assert(!std::is_same_v<PreparedState, WholeBlockState>);
 static_assert(std::is_same_v<UnpreparedState, SetMethodKeysFixed<ClearableHashSet<UInt256, UInt256HashCRC32>>::State>);
+
+/// A nullable keys128 set: packed in clause order after the NULL bitmap.
+using NullableWholeBlockState = SetMethodKeysFixed<ClearableHashSet<UInt128, UInt128HashCRC32>, true>::State;
+using NullablePreparedState = ColumnsHashing::SubRangeState<NullableWholeBlockState>;
+
+static_assert(!std::is_same_v<NullablePreparedState, NullableWholeBlockState>);
 
 constexpr size_t num_rows = 64;
 /// Long enough to hold sub-ranges on both sides of `min_rows_to_batch_pack_sub_range`.
@@ -90,6 +98,55 @@ private:
         columns.push_back(holders.back().get());
         sizes.push_back(sizeof(Value));
     }
+};
+
+/// `Nullable(UInt32), UInt64`: rows [0, num_long_rows / 2) hold no NULL, every third row after them is NULL.
+/// The nested value stays non-zero under a NULL, so a NULL row packed without its bitmap gets another key.
+struct NullableKeyColumns
+{
+    Columns holders;
+    ColumnRawPtrs columns;
+    ColumnRawPtrs nested;
+    const UInt8 * null_map = nullptr;
+    Sizes sizes = {sizeof(UInt32), sizeof(UInt64)};
+
+    NullableKeyColumns()
+    {
+        auto values = ColumnUInt32::create();
+        auto nulls = ColumnUInt8::create();
+        auto other = ColumnUInt64::create();
+        values->getData().resize(num_long_rows);
+        nulls->getData().resize(num_long_rows);
+        other->getData().resize(num_long_rows);
+        for (size_t row = 0; row < num_long_rows; ++row)
+        {
+            values->getData()[row] = static_cast<UInt32>(row + 1);
+            nulls->getData()[row] = row >= num_long_rows / 2 && row % 3 == 0;
+            other->getData()[row] = (row + 1) * 7;
+        }
+
+        auto nullable = ColumnNullable::create(std::move(values), std::move(nulls));
+        const ColumnNullable * nullable_column = nullable.get();
+        null_map = nullable_column->getNullMapData().data();
+        nested.push_back(&nullable_column->getNestedColumn());
+        holders.emplace_back(std::move(nullable));
+        columns.push_back(holders.back().get());
+
+        nested.push_back(other.get());
+        holders.emplace_back(std::move(other));
+        columns.push_back(holders.back().get());
+    }
+
+    /// The per-row packer over the nested columns, with the bitmap computed from the null map.
+    UInt128 expected(size_t row) const
+    {
+        KeysNullMap<UInt128> bitmap{};
+        if (null_map[row] != 0)
+            bitmap[0] |= 1;
+        return packFixed<UInt128>(row, sizes.size(), nested, sizes, bitmap);
+    }
+
+    bool isNull(size_t row) const { return null_map[row] != 0; }
 };
 
 }
@@ -277,4 +334,77 @@ TEST(ColumnsHashingPreparedKeys, WiderKeyIsNotBatched)
 
     EXPECT_TRUE(state.prepared_keys.empty());
     EXPECT_FALSE(state.covers_sub_range);
+}
+
+/// A nullable whole block is batch-packed, and the bitmap bit of a NULL row is in the array itself.
+TEST(ColumnsHashingPreparedKeys, NullableWholeBlockIsBatched)
+{
+    const NullableKeyColumns keys;
+    Arena arena;
+
+    NullableWholeBlockState state(keys.columns, keys.sizes, nullptr);
+    NullablePreparedState explicit_whole(keys.columns, keys.sizes, nullptr, {0, num_long_rows});
+
+    ASSERT_EQ(state.prepared_keys.size(), num_long_rows);
+    ASSERT_EQ(explicit_whole.prepared_keys.size(), num_long_rows);
+    ASSERT_FALSE(explicit_whole.covers_sub_range);
+
+    size_t null_rows = 0;
+    for (size_t row = 0; row < num_long_rows; ++row)
+    {
+        ASSERT_EQ(state.getKeyHolder(row, arena), keys.expected(row)) << "row " << row;
+        ASSERT_EQ(explicit_whole.getKeyHolder(row, arena), keys.expected(row)) << "row " << row;
+        if (keys.isNull(row))
+        {
+            ++null_rows;
+            ASSERT_TRUE(reinterpret_cast<const UInt8 *>(&state.prepared_keys[row])[0] & 1) << "row " << row;
+        }
+    }
+    ASSERT_GT(null_rows, 0);
+    ASSERT_LT(null_rows, num_long_rows);
+}
+
+/// A long nullable sub-range is batch-packed over its own rows, and a row outside it is packed on its own.
+TEST(ColumnsHashingPreparedKeys, NullableLongSubRangeIsBatched)
+{
+    const NullableKeyColumns keys;
+    Arena arena;
+
+    for (const auto & range : {std::pair<size_t, size_t>{100, 400}, std::pair<size_t, size_t>{600, 900}})
+    {
+        const size_t begin = range.first;
+        const size_t end = range.second;
+        NullablePreparedState ranged(keys.columns, keys.sizes, nullptr, {begin, end});
+
+        const std::string range_name = std::to_string(begin) + ".." + std::to_string(end);
+        ASSERT_TRUE(ranged.covers_sub_range) << "range " << range_name;
+        ASSERT_EQ(ranged.prepared_keys.size(), end - begin) << "range " << range_name;
+        ASSERT_EQ(ranged.prepared_keys_begin, begin) << "range " << range_name;
+        for (size_t row = begin; row < end; ++row)
+            ASSERT_EQ(ranged.getKeyHolder(row, arena), keys.expected(row)) << "range " << range_name << " row " << row;
+        for (size_t row : {size_t{0}, begin - 1, end, num_long_rows - 1})
+            ASSERT_EQ(ranged.getKeyHolder(row, arena), keys.expected(row)) << "range " << range_name << " row " << row;
+    }
+}
+
+/// Pins the threshold's two sides for a nullable sub-range.
+TEST(ColumnsHashingPreparedKeys, NullableSubRangeShorterThanTheThresholdIsNotBatched)
+{
+    constexpr size_t range_begin = 600;
+
+    const NullableKeyColumns keys;
+    Arena arena;
+
+    NullablePreparedState at_threshold(keys.columns, keys.sizes, nullptr, {range_begin, range_begin + min_batched_rows});
+    NullablePreparedState below_threshold(keys.columns, keys.sizes, nullptr, {range_begin, range_begin + min_batched_rows - 1});
+
+    ASSERT_EQ(at_threshold.prepared_keys.size(), min_batched_rows);
+    ASSERT_TRUE(below_threshold.prepared_keys.empty());
+    ASSERT_TRUE(below_threshold.covers_sub_range);
+
+    for (size_t row = range_begin; row < range_begin + min_batched_rows - 1; ++row)
+    {
+        ASSERT_EQ(at_threshold.getKeyHolder(row, arena), keys.expected(row)) << "row " << row;
+        ASSERT_EQ(below_threshold.getKeyHolder(row, arena), keys.expected(row)) << "row " << row;
+    }
 }
