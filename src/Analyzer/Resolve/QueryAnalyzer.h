@@ -368,7 +368,7 @@ private:
 
     const bool only_analyze;
 
-    /// Not inherited by the nested analyzers: they analyze queries that were not printed from a resolved tree.
+    /// Not passed to the analyzers of inlined views and their row policies: those queries are not printed from a resolved tree.
     const bool positional_arguments_already_resolved;
 
     /// True while resolving a cloned AND/OR expression to infer its real result type and detect
