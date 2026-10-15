@@ -1,4 +1,4 @@
--- Tags: no-random-settings, no-parallel-replicas
+-- Tags: no-random-settings, no-parallel-replicas, no-replicated-database
 -- Partial skip indexes must never change query results. Each case compares the result without skip indexes
 -- with the results when the index is analysed before and during reading.
 

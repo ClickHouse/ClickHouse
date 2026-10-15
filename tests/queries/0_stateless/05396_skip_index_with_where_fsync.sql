@@ -1,4 +1,4 @@
--- Tags: no-parallel-replicas, no-random-settings, no-random-merge-tree-settings
+-- Tags: no-parallel-replicas, no-random-settings, no-random-merge-tree-settings, no-object-storage
 -- The marker file of a partial index is synchronized with the rest of the part when `fsync_after_insert` is on:
 -- the insert into a table with a partial index makes exactly one more `fsync` than the insert into a table with
 -- the same index without a condition (that is the marker).
