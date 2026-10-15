@@ -208,6 +208,7 @@ public:
         StorageMetadataPtr storage_metadata,
         ContextPtr local_context) const override;
 
+    static bool deletesDataOnDrop();
     void checkCanBeDropped(ContextPtr query_context) const override;
     void drop(ContextPtr context) override;
 

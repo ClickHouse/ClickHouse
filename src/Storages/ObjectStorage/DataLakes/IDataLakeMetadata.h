@@ -200,6 +200,8 @@ public:
         throwNotImplemented(fmt::format("EXECUTE {}", command_name));
     }
 
+    /// Whether `drop` deletes the table data.
+    static bool deletesDataOnDrop() { return false; }
     /// Checks with the `DROP` query context what `drop` will do in the background with the global context.
     virtual void checkCanBeDropped(ContextPtr /*query_context*/) const { }
     virtual void drop(ContextPtr) { }

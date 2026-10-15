@@ -1790,6 +1790,11 @@ std::vector<Iceberg::ExternalFile> IcebergMetadata::collectExternalFilesToDelete
     }
 }
 
+bool IcebergMetadata::deletesDataOnDrop()
+{
+    return Context::getGlobalContextInstance()->getSettingsRef()[Setting::iceberg_delete_data_on_drop];
+}
+
 void IcebergMetadata::checkCanBeDropped(ContextPtr query_context) const
 {
     /// `drop` runs in the background with the global context, so the dropping user's grants are checked here.
