@@ -1796,8 +1796,8 @@ public:
     /// a conjunct over these can't leave ON, and full_sorting_merge rejects it there
     TableExpressionNodes preserved_join_tables;
 
-    /// Whether every table column `node` reads, lambda captures included, comes from `preserved_join_tables`.
-    /// A column-less `node` qualifies too, as the join evaluates it with the left side; lambda arguments never count.
+    /// Whether every column the join reads for `node` comes from `preserved_join_tables`: lambda captures count, lambda and
+    /// `indexHint` arguments do not, and a column-less `node` qualifies, as the join evaluates it with the left side.
     bool readsOnlyPreservedJoinTables(const QueryTreeNodePtr & node) const
     {
         if (preserved_join_tables.empty())
@@ -1819,6 +1819,8 @@ public:
             }
             else if (const auto * function = current->as<FunctionNode>())
             {
+                if (function->getFunctionName() == "indexHint")
+                    continue;
                 for (const auto & argument : function->getArguments().getNodes())
                     nodes_to_process.push_back(argument.get());
             }
@@ -2540,10 +2542,11 @@ private:
                                     existing_plain_conjuncts.emplace(and_node);
                                     function_node.getArguments().getNodes().push_back(and_node);
                                 }
-                                else if (existing_hint_conjuncts.emplace(and_node).second)
+                                else if (preserved_join_tables.empty() && existing_hint_conjuncts.emplace(and_node).second)
                                 {
                                     /// Within one source it filters nothing beyond the original chain,
                                     /// so add it as `indexHint`: it still prunes, but does not execute.
+                                    /// Not in an outer join ON: the join evaluates the input-less `indexHint` with its left side.
                                     auto index_hint_node = std::make_shared<FunctionNode>("indexHint");
                                     index_hint_node->getArguments().getNodes().push_back(and_node);
                                     index_hint_node->resolveAsFunction(

@@ -43,6 +43,12 @@ SELECT a.number, c.v FROM numbers(3) AS a INNER JOIN numbers(3) AS b ON a.number
 SELECT 'column-less key';
 SELECT l.number, r.number FROM numbers(3) AS l LEFT JOIN numbers(3) AS r ON l.number = r.number AND materialize(0) < r.number AND r.number < 2 ORDER BY l.number;
 
+SELECT 'key with indexHint';
+SELECT l.number, r.number FROM numbers(3) AS l LEFT JOIN numbers(3) AS r ON l.number + indexHint(r.number < 2) = r.number AND r.number < 2 ORDER BY l.number;
+
+SELECT 'bound within the other side';
+SELECT l.number, r.b FROM numbers(3) AS l LEFT JOIN (SELECT number AS a, number + 1 AS b FROM numbers(3)) AS r ON l.number = r.a AND r.a < r.b AND r.b < 2 ORDER BY l.number;
+
 SELECT 'contradiction with a skipped bound';
 SELECT l.number, r.number FROM numbers(3) AS l LEFT JOIN (SELECT number, number AS b FROM numbers(10)) AS r ON l.number = r.number AND r.number < 2 AND l.number = r.b AND r.b > 5 ORDER BY l.number SETTINGS optimize_redundant_comparisons = 0;
 
