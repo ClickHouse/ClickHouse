@@ -271,6 +271,8 @@ namespace FailPoints
     extern const char rmt_mutation_prune_pause_before_analysis[];
     extern const char rmt_mutation_prune_pause_before_block_allocation[];
     extern const char rmt_mutation_prune_pause_before_zk_partition_list[];
+    extern const char rmt_restore_replica_pause_after_detaching_parts[];
+    extern const char rmt_restore_replica_pause_after_creating_table[];
     extern const char check_table_inject_retryable_zk_error[];
     extern const char check_table_inject_shutdown_abort[];
 }
@@ -282,6 +284,7 @@ namespace ErrorCodes
     extern const int NO_ZOOKEEPER;
     extern const int INCORRECT_DATA;
     extern const int INCOMPATIBLE_COLUMNS;
+    extern const int UNEXPECTED_NODE_IN_ZOOKEEPER;
     extern const int REPLICA_ALREADY_EXISTS;
     extern const int NO_REPLICA_HAS_PART;
     extern const int LOGICAL_ERROR;
@@ -7587,8 +7590,25 @@ bool StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(
     return true;
 }
 
+void StorageReplicatedMergeTree::checkDetachedPartDirectories(const Strings & part_names, size_t expected_count) const
+{
+    std::unordered_map<String, size_t> directories_by_name;
+    for (const auto & detached_part : getDetachedParts())
+        ++directories_by_name[detached_part.dir_name];
+
+    Strings mismatched;
+    for (const auto & part_name : part_names)
+        if (directories_by_name[part_name] != expected_count)
+            mismatched.push_back(part_name);
+
+    if (!mismatched.empty())
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Cannot restore the metadata of table {}: detached/ must have {} directory named after each of the parts {}",
+            getStorageID().getNameForLogs(), expected_count == 0 ? "no" : "exactly one", fmt::join(mismatched, ", "));
+}
+
 void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(
-    const ZooKeeperRetriesInfo & zookeeper_retries_info, bool is_called_during_attach)
+    const ZooKeeperRetriesInfo & zookeeper_retries_info, bool is_called_during_attach, const RestoreReplicaJournal * journal)
 {
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::restoreMetadataInZooKeeper");
     LOG_INFO(log, "Restoring replica metadata");
@@ -7626,6 +7646,35 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(
     /// We need to bump the ZK version to match so parts don't appear "from the future".
     int32_t max_parts_metadata_version = 0;
 
+    for (const auto & part : all_parts)
+    {
+        if (part->getState() == DataPartState::Active)
+        {
+            active_parts_names.push_back(part->name);
+            max_parts_metadata_version = std::max(max_parts_metadata_version, part->getMetadataVersion());
+        }
+    }
+
+    Strings parts_to_attach = active_parts_names;
+    if (journal)
+    {
+        /// Sorted, so that the parts of a partition get new block numbers in their original order.
+        std::map<MergeTreePartInfo, String> sorted_parts;
+        for (const auto & part_name : active_parts_names)
+            sorted_parts.emplace(MergeTreePartInfo::fromPartName(part_name, format_version), part_name);
+        for (const auto & part_name : journal->moved_by_interrupted_restore.part_names)
+            sorted_parts.emplace(MergeTreePartInfo::fromPartName(part_name, format_version), part_name);
+
+        parts_to_attach.clear();
+        for (const auto & [_, part_name] : sorted_parts)
+            parts_to_attach.push_back(part_name);
+        max_parts_metadata_version = std::max(max_parts_metadata_version, journal->moved_by_interrupted_restore.max_metadata_version);
+
+        /// Otherwise a part would be moved to `detached/<name>_tryN`, and `detached/<name>` attached instead.
+        checkDetachedPartDirectories(active_parts_names, 0);
+        journal->before_moving_parts({parts_to_attach, max_parts_metadata_version});
+    }
+
     /// Why all parts (not only Active) are moved to detached/:
     /// After ZK metadata restoration ZK resets sequential counters (including block number counters), so one may
     /// potentially encounter a situation that a part we want to attach already exists.
@@ -7633,8 +7682,6 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(
     {
         if (part->getState() == DataPartState::Active)
         {
-            active_parts_names.push_back(part->name);
-            max_parts_metadata_version = std::max(max_parts_metadata_version, part->getMetadataVersion());
             forcefullyMovePartToDetachedAndRemoveFromMemory(part);
         }
         else
@@ -7646,11 +7693,23 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(
         }
     }
 
+    /// A replicated detach forgets the part even if its rename failed.
+    if (journal)
+        checkDetachedPartDirectories(parts_to_attach, 1);
+
     LOG_INFO(log, "Moved all parts to detached/");
+    FailPointInjection::pauseFailPoint(FailPoints::rmt_restore_replica_pause_after_detaching_parts);
 
     const bool is_first_replica = createTableIfNotExists(metadata_snapshot, zookeeper_retries_info);
 
     LOG_INFO(log, "Created initial ZK nodes, replica is first: {}", is_first_replica);
+
+    if (journal && !is_first_replica)
+        throw Exception(ErrorCodes::UNEXPECTED_NODE_IN_ZOOKEEPER,
+            "Cannot restore the metadata of table {}: table {} was created in ZooKeeper concurrently",
+            getStorageID().getNameForLogs(), zookeeper_path);
+
+    FailPointInjection::pauseFailPoint(FailPoints::rmt_restore_replica_pause_after_creating_table);
 
     if (!is_first_replica)
         createReplica(metadata_snapshot, zookeeper_retries_info);
@@ -7673,6 +7732,9 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(
 
     LOG_INFO(log, "Created ZK nodes for table");
 
+    if (journal)
+        journal->after_creating_metadata();
+
     has_metadata_in_zookeeper = true;
 
     PartitionCommand command;
@@ -7681,7 +7743,7 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(
 
     if (is_first_replica)
     {
-        for (const auto & part_name : active_parts_names)
+        for (const auto & part_name : parts_to_attach)
         {
             command.partition = make_intrusive<ASTLiteral>(part_name);
             attachPartitionImpl(

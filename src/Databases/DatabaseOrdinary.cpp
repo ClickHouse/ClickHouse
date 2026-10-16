@@ -18,6 +18,7 @@
 #include <Databases/TablesLoader.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <IO/ReadBufferFromFile.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
@@ -77,6 +78,7 @@ namespace ServerSetting
 
 namespace ErrorCodes
 {
+    extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
     extern const int TABLE_ALREADY_EXISTS;
     extern const int UNFINISHED;
@@ -95,6 +97,42 @@ extern const DatabaseMetadataDiskSettingsUInt64 max_tables;
 
 
 static constexpr const char * const CONVERT_TO_REPLICATED_FLAG_NAME = "convert_to_replicated";
+/// Replaces the flag before the conversion moves any part to detached/, and lists the parts to attach.
+static constexpr const char * const CONVERT_TO_REPLICATED_PARTS_FILE_NAME = "convert_to_replicated_parts.txt";
+
+static void writeConvertToReplicatedParts(
+    const DiskPtr & disk, const String & path, const StorageReplicatedMergeTree::RestoredReplicaParts & parts, bool fsync_metadata)
+{
+    String content = fmt::format("metadata version: {}\n", parts.max_metadata_version);
+    for (const auto & part_name : parts.part_names)
+        content += part_name + "\n";
+
+    writeMetadataFile(disk, path + ".tmp", content, fsync_metadata);
+    disk->replaceFile(path + ".tmp", path);
+}
+
+static StorageReplicatedMergeTree::RestoredReplicaParts readConvertToReplicatedParts(const DiskPtr & disk, const String & path)
+{
+    StorageReplicatedMergeTree::RestoredReplicaParts parts;
+    if (!disk->existsFile(path))
+        return parts;
+
+    const String content = readMetadataFile(disk, path);
+    ReadBufferFromString in(content);
+    bool parsed = checkString("metadata version: ", in) && tryReadIntText(parts.max_metadata_version, in) && checkChar('\n', in);
+    while (parsed && !in.eof())
+    {
+        String part_name;
+        readString(part_name, in);
+        parsed = !part_name.empty() && checkChar('\n', in);
+        parts.part_names.push_back(std::move(part_name));
+    }
+
+    if (!parsed)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Cannot parse {}. Removing it cancels the conversion of the table to replicated", fullPath(disk, path));
+    return parts;
+}
 
 DatabaseOrdinary::DatabaseOrdinary(
     const String & name_, const String & metadata_path_, ContextPtr context_, DatabaseMetadataDiskSettings database_metadata_disk_settings_)
@@ -292,6 +330,11 @@ String DatabaseOrdinary::getConvertToReplicatedFlagPath(const ASTCreateQuery & c
 String DatabaseOrdinary::getConvertToReplicatedFlagPath(const String & table_name)
 {
     return fs::path(getTableDataPath(table_name)) / CONVERT_TO_REPLICATED_FLAG_NAME;
+}
+
+String DatabaseOrdinary::getConvertToReplicatedPartsPath(const String & table_name)
+{
+    return fs::path(getTableDataPath(table_name)) / CONVERT_TO_REPLICATED_PARTS_FILE_NAME;
 }
 
 void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const QualifiedTableName & qualified_name, const String & file_name)
@@ -792,10 +835,11 @@ void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr tab
     }
 
     auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(name.table);
+    auto convert_to_replicated_parts_path = getConvertToReplicatedPartsPath(name.table);
 
     auto storage_disks = storage_policy->getDisks();
     auto checking_disk = storage_disks.empty() ? getDisk() : storage_disks[0];
-    if (!checking_disk->existsFile(convert_to_replicated_flag_path))
+    if (!checking_disk->existsFile(convert_to_replicated_flag_path) && !checking_disk->existsFile(convert_to_replicated_parts_path))
         return;
 
     auto rmt = castStorage<StorageReplicatedMergeTree>(table, DeferredTable::Load);
@@ -810,25 +854,31 @@ void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr tab
         return;
     }
 
-    checking_disk->removeFileIfExists(convert_to_replicated_flag_path);
-    LOG_INFO
-    (
-        log,
-        "Removing convert to replicated flag for {}.",
-        backQuote(name.getFullName())
-    );
-
     auto has_metadata = rmt->hasMetadataInZooKeeper();
     if (!has_metadata.has_value())
     {
         LOG_WARNING
         (
             log,
-            "No connection to ZooKeeper, can't restore metadata for {} in ZooKeeper after conversion. Run SYSTEM RESTORE REPLICA while connected to ZooKeeper.",
+            "No connection to ZooKeeper, can't restore metadata for {} in ZooKeeper after conversion. The conversion runs on the next start.",
             backQuote(name.getFullName())
         );
+        return;
     }
-    else if (*has_metadata)
+
+    if (*has_metadata && checking_disk->existsFile(convert_to_replicated_parts_path))
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "The conversion of table {} to replicated was interrupted after the table was created in ZooKeeper, and the parts "
+            "it moved to detached/ are listed in {}. To resume the conversion, remove {} from ZooKeeper `{}` if no other replica "
+            "uses it, and restart the server. To keep the table as it is, remove {} and attach each listed part with "
+            "ALTER TABLE ... ATTACH PART",
+            backQuote(name.getFullName()),
+            fullPath(checking_disk, convert_to_replicated_parts_path),
+            rmt->getZooKeeperPath(),
+            rmt->getZooKeeperName(),
+            fullPath(checking_disk, convert_to_replicated_parts_path));
+
+    if (*has_metadata)
     {
         LOG_INFO
         (
@@ -836,17 +886,39 @@ void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr tab
             "Table {} already has metatada in ZooKeeper.",
             backQuote(name.getFullName())
         );
-    }
-    else
-    {
-        rmt->restoreMetadataInZooKeeper(/* zookeeper_retries_info = */ {}, false);
+        checking_disk->removeFileIfExists(convert_to_replicated_flag_path);
         LOG_INFO
         (
             log,
-            "Metadata in ZooKeeper for {} is restored.",
+            "Removing convert to replicated flag for {}.",
             backQuote(name.getFullName())
         );
+        return;
     }
+
+    StorageReplicatedMergeTree::RestoreReplicaJournal journal{
+        .moved_by_interrupted_restore = readConvertToReplicatedParts(checking_disk, convert_to_replicated_parts_path),
+        .before_moving_parts = [&](const StorageReplicatedMergeTree::RestoredReplicaParts & parts)
+        {
+            writeConvertToReplicatedParts(
+                checking_disk, convert_to_replicated_parts_path, parts, getContext()->getSettingsRef()[Setting::fsync_metadata]);
+            checking_disk->removeFileIfExists(convert_to_replicated_flag_path);
+            LOG_INFO(log, "Removing convert to replicated flag for {}, the parts to attach are listed in {}.",
+                backQuote(name.getFullName()), CONVERT_TO_REPLICATED_PARTS_FILE_NAME);
+        },
+        .after_creating_metadata = [&]
+        {
+            checking_disk->removeFileIfExists(convert_to_replicated_parts_path);
+            LOG_INFO(log, "Metadata in ZooKeeper for {} is created, attaching the parts.", backQuote(name.getFullName()));
+        },
+    };
+    rmt->restoreMetadataInZooKeeper(/* zookeeper_retries_info = */ {}, false, &journal);
+    LOG_INFO
+    (
+        log,
+        "Metadata in ZooKeeper for {} is restored.",
+        backQuote(name.getFullName())
+    );
 }
 
 LoadTaskPtr DatabaseOrdinary::startupTableAsync(

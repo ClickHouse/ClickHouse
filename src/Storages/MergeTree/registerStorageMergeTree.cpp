@@ -4704,6 +4704,7 @@ If you had a `MergeTree` table that was manually replicated, you can convert it 
 
 `MergeTree` table can be automatically converted on server restart if `convert_to_replicated` flag is set at the table's data directory (`/store/xxx/xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy/` for an `Atomic` database or `/data/database_name/table_name/` for an `Ordinary` database).
 Create empty `convert_to_replicated` file and the table will be loaded as replicated on next server restart.
+If the server stops before the table's metadata has been created in ZooKeeper, the conversion is resumed on the next start.
 
 This query can be used to get the table's data path. If table has many data paths, you have to use the first one.
 

@@ -324,10 +324,29 @@ public:
     const String & getReplicaName() const { return replica_name; }
     const String & getReplicaPath() const { return replica_path; }
 
+    struct RestoredReplicaParts
+    {
+        Strings part_names;
+        Int32 max_metadata_version = 0;
+    };
+
+    /// Lets the caller persist the progress of `restoreMetadataInZooKeeper`.
+    struct RestoreReplicaJournal
+    {
+        /// Parts that an interrupted restore moved to detached/ and did not attach.
+        RestoredReplicaParts moved_by_interrupted_restore;
+        /// Called with all parts to attach, before any part is moved.
+        std::function<void(const RestoredReplicaParts &)> before_moving_parts;
+        /// Called once the metadata is created in ZooKeeper, before the parts are attached.
+        std::function<void()> after_creating_metadata;
+    };
+
     /// Restores table metadata if ZooKeeper lost it.
     /// Used only on restarted readonly replicas (not checked). All active (Active) parts are moved to detached/
     /// folder and attached. Parts in all other states are just moved to detached/ folder.
-    void restoreMetadataInZooKeeper(const ZooKeeperRetriesInfo & zookeeper_retries_info, bool is_called_during_attach);
+    /// With a journal, the parts in `moved_by_interrupted_restore` are attached too, and the table must not exist yet.
+    void restoreMetadataInZooKeeper(
+        const ZooKeeperRetriesInfo & zookeeper_retries_info, bool is_called_during_attach, const RestoreReplicaJournal * journal = nullptr);
 
     /// Get throttler for replicated fetches
     ThrottlerPtr getFetchesThrottler() const
@@ -597,6 +616,9 @@ private:
       */
     void createNewZooKeeperNodes(const ZooKeeperRetriesInfo & zookeeper_retries_info);
     void createNewZooKeeperNodesAttempt() const;
+
+    /// Throws unless detached/ of all disks has `expected_count` (0 or 1) directories named after each of `part_names`.
+    void checkDetachedPartDirectories(const Strings & part_names, size_t expected_count) const;
 
     /// Returns the ZooKeeper retries info specified for the CREATE TABLE query which is creating and starting this table right now.
     ZooKeeperRetriesInfo getCreateQueryZooKeeperRetriesInfo() const;

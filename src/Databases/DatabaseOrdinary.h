@@ -176,6 +176,7 @@ private:
     /// resolves the path through the database's attached-table map.
     String getConvertToReplicatedFlagPath(const ASTCreateQuery & create_query);
     String getConvertToReplicatedFlagPath(const String & table_name);
+    String getConvertToReplicatedPartsPath(const String & table_name);
     StoragePolicyPtr getStoragePolicyFromCreateQuery(const ASTCreateQuery & create_query, bool create_custom_disk) const;
 };
 
