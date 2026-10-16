@@ -39,11 +39,10 @@ char asciiToLower(char c)
 }
 
 /// Decode a query-string component (a parameter name or value) the same way the server interprets it:
-/// HTMLForm::readQuery turns '+' into a space and percent-decodes ('%XX') the name. We must
-/// classify on this decoded form, otherwise an encoded name like "pass%77ord" (which the server
-/// accepts as "password") would slip past the match and leak its value. This is tolerant by
-/// design: a malformed escape is copied through verbatim (never throws) since this only feeds
-/// the sensitivity decision, never the logged output.
+/// HTMLForm::readQuery turns '+' into a space and percent-decodes ('%XX'). A name is classified on
+/// this decoded form, otherwise an encoded name like "pass%77ord" (which the server accepts as
+/// "password") would slip past the match and leak its value. Tolerant by design: a malformed escape
+/// is copied through verbatim and nothing throws, since the result is only matched against, never logged.
 std::string decodeQueryComponent(std::string_view name)
 {
     std::string decoded;
@@ -187,7 +186,17 @@ std::vector<std::string> presignedURLCredentials(std::string_view uri)
         {
             /// `<access key id>/<scope>`: the scope is not a secret, and the key id is echoed on its own.
             std::string decoded = decodeQueryComponent(value);
-            add(decoded.substr(0, decoded.find('/')));
+            std::string key_id = decoded.substr(0, decoded.find('/'));
+            /// As sent, the key id ends at the first '/' or at its escape "%2F".
+            size_t raw_end = value.find('/');
+            for (size_t i = 0; i + 2 < value.size() && i < raw_end; ++i)
+            {
+                if (value[i] == '%' && value[i + 1] == '2' && (value[i + 2] == 'F' || value[i + 2] == 'f'))
+                    raw_end = i;
+            }
+            if (const std::string_view raw_key_id = value.substr(0, raw_end); raw_key_id != key_id)
+                add(std::string(raw_key_id));
+            add(std::move(key_id));
         }
     }
     return credentials;

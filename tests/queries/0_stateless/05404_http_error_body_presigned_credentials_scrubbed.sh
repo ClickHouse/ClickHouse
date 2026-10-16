@@ -88,13 +88,14 @@ done
 
 U="${CLICKHOUSE_TEST_UNIQUE_NAME}"
 KEY_V4="AKIAV4${U}"
+KEY_V4_SENT="AKIA%564${U}"  # the same key id as sent, its 'V' percent-encoded
 SIG_V4="sigv4${U}"
 TOKEN="tokv4${U}"
 KEY_V2="AKIAV2${U}"
 SIG_V2="sigv2${U}"
 OVL="ovl${U}"
 BASE="http://127.0.0.1:${HTTP_PORT}/bucket/key.csv"
-URL_V4="${BASE}?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=${KEY_V4}%2F20261016%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20261016T000000Z&X-Amz-Expires=900&X-Amz-Security-Token=${TOKEN}%2Fp%2B2%3D&X-Amz-SignedHeaders=host&X-Amz-Signature=${SIG_V4}"
+URL_V4="${BASE}?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=${KEY_V4_SENT}%2F20261016%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20261016T000000Z&X-Amz-Expires=900&X-Amz-Security-Token=${TOKEN}%2Fp%2B2%3D&X-Amz-SignedHeaders=host&X-Amz-Signature=${SIG_V4}"
 URL_V2="${BASE}?AWSAccessKeyId=${KEY_V2}&Expires=1792200000&Signature=${SIG_V2}%2Bp%2F2%3D"
 # The signature is a prefix of the token and comes first: scrubbing it first would leave the token's tail visible.
 URL_OVL="${BASE}?X-Amz-Signature=${OVL}&X-Amz-Security-Token=${OVL}tail&X-Amz-Date=20261016T000000Z"
@@ -113,7 +114,7 @@ check() {
     echo "$label: OK"
 }
 
-V4=(-"$KEY_V4" -"$SIG_V4" -"$TOKEN"
+V4=(-"$KEY_V4" -"$KEY_V4_SENT" -"$SIG_V4" -"$TOKEN"
     +"<AWSAccessKeyId>[HIDDEN]</AWSAccessKeyId>" +"<SignatureProvided>[HIDDEN]</SignatureProvided>"
     +"&amp;X-Amz-Security-Token=[HIDDEN]&amp;"
     +"<Code>SignatureDoesNotMatch</Code>" +"&amp;X-Amz-Date=20261016T000000Z&amp;" +"<RequestId>probe-request-id</RequestId>")
@@ -140,5 +141,6 @@ ${CLICKHOUSE_CLIENT} --query "
     WHERE event_date >= yesterday() AND current_database = currentDatabase()
       AND (exception LIKE '%' || 'sigv4' || '${U}%' OR exception LIKE '%' || 'sigv2' || '${U}%'
         OR exception LIKE '%' || 'AKIAV4' || '${U}%' OR exception LIKE '%' || 'AKIAV2' || '${U}%'
-        OR exception LIKE '%' || 'tokv4' || '${U}%' OR exception LIKE '%' || 'ovl' || '${U}%')
+        OR exception LIKE '%' || 'tokv4' || '${U}%' OR exception LIKE '%' || 'ovl' || '${U}%'
+        OR position(exception, 'AKIA%564' || '${U}') > 0)
     FORMAT Vertical"
