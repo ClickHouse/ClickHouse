@@ -123,8 +123,9 @@ bool isDeterministicExpression(const QueryTreeNodePtr & expression)
 }
 
 /// Collects the expressions that the conjuncts `expression = constant` of the condition fix.
-void collectFixedExpressions(const QueryTreeNodePtr & condition, const FormatSettings & format_settings, ExpressionMap & fixed_expressions)
+void collectFixedExpressions(const QueryTreeNodePtr & condition, const ContextPtr & context, ExpressionMap & fixed_expressions)
 {
+    std::optional<ComparisonParams> comparison_params;
     QueryTreeNodes conjuncts{condition};
     while (!conjuncts.empty())
     {
@@ -162,7 +163,9 @@ void collectFixedExpressions(const QueryTreeNodePtr & condition, const FormatSet
 
         /// The replacement has the type of the expression, so the types of the query result do not change. A string is
         /// parsed with the format settings `equals` uses, as `cast_string_to_date_time_mode` changes its value.
-        Field value = tryConvertFieldToTypeExact(constant->getValue(), *expression_type, constant_type.get(), format_settings);
+        if (!comparison_params)
+            comparison_params.emplace(context);
+        Field value = tryConvertFieldToTypeExact(constant->getValue(), *expression_type, constant_type.get(), comparison_params->format_settings);
         if (value.isNull())
             continue;
 
@@ -236,7 +239,7 @@ public:
                 return;
 
         ExpressionMap fixed_expressions;
-        collectFixedExpressions(query->getWhere(), ComparisonParams(getContext()).format_settings, fixed_expressions);
+        collectFixedExpressions(query->getWhere(), getContext(), fixed_expressions);
         if (fixed_expressions.empty())
             return;
 
