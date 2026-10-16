@@ -251,7 +251,7 @@ If `input` has no text index, `hasTokenPrefix(input, prefix)` is equivalent to `
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 10};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 11};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
     FunctionDocumentation documentation = {description, syntax, commonArguments("prefix", "The token prefix to search for."), {}, returned_value, examples, introduced_in, category};
 
@@ -289,7 +289,7 @@ If `input` has no text index, `hasTokenLike(input, pattern)` is equivalent to `a
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 10};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 11};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
     FunctionDocumentation documentation = {description, syntax, commonArguments("pattern", "The `LIKE` pattern each token is matched against."), {}, returned_value, examples, introduced_in, category};
 
@@ -328,7 +328,7 @@ If `input` has no text index, `hasTokenMatch(input, regexp)` is equivalent to `a
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 10};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 11};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
     FunctionDocumentation documentation = {description, syntax, commonArguments("regexp", "The regular expression each token is matched against."), {}, returned_value, examples, introduced_in, category};
 
