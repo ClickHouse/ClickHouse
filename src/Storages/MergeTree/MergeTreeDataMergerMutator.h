@@ -69,8 +69,8 @@ public:
       * but if setting optimize_skip_merged_partitions is true than single part with level > 0
       * and without expired TTL won't be merged with itself.
       * awaited_merge_results - the result parts of the merges that OPTIMIZE FINAL waited for. If the partition
-      * consists only of one of them, it won't be merged with itself either, unless it has patch parts to apply
-      * or the table has TTL or is a GraphiteMergeTree.
+      * consists only of one of them, it won't be merged with itself either, unless it has patch parts to apply,
+      * or the table has TTL, is a GraphiteMergeTree, or is used in transactions.
       */
     std::expected<MergeSelectorChoices, SelectMergeFailure> selectAllPartsToMergeWithinPartition(
         const StorageMetadataPtr & metadata_snapshot,

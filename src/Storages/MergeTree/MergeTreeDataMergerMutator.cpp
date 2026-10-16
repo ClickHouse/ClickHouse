@@ -448,10 +448,12 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
     auto patch_parts = apply_patch_parts ? merge_predicate->getPatchesToApplyOnMerge(parts) : PartsRange{};
 
     /// If final and the partition consists only of the part made by a merge that OPTIMIZE waited for, merging it with itself
-    /// would only repeat that merge. Unless there are patch parts to apply, or the result of a merge depends on its time
-    /// (TTL, Graphite rollup): the awaited merge started earlier, and rows could expire since.
+    /// would only repeat that merge. Unless there are patch parts to apply, the result of a merge depends on its time
+    /// (TTL, Graphite rollup): the awaited merge started earlier, and rows could expire since, or the table is used in
+    /// transactions: a part with the same name may be made by a merge in a transaction that can still be rolled back.
     if (final && parts.size() == 1 && patch_parts.empty() && std::ranges::contains(awaited_merge_results, parts.front().info)
-        && !metadata_snapshot->hasAnyTTL() && data.merging_params.mode != MergeTreeData::MergingParams::Graphite)
+        && !metadata_snapshot->hasAnyTTL() && data.merging_params.mode != MergeTreeData::MergingParams::Graphite
+        && !data.transactions_enabled.load(std::memory_order_relaxed))
     {
         return std::unexpected(SelectMergeFailure{
             .reason = SelectMergeFailure::Reason::NOTHING_TO_MERGE,
