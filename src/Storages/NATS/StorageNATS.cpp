@@ -718,7 +718,7 @@ StorageNATS::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot,
                 "This NATS engine reads from multiple subjects. "
                 "You must specify `stream_like_engine_insert_queue` to choose the subject to write to");
         }
-	if (subjects.empty() || subjects[0].empty())
+        if (subjects.empty() || subjects[0].empty())
         {
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
