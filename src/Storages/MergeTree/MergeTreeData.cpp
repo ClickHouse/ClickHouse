@@ -10207,6 +10207,26 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
     UNREACHABLE();
 }
 
+/// The date part of a string that a conversion to `Date` or `Date32` reads, such as `toDate` or `CAST`. Like
+/// `ConvertThroughParsing::isAllRead`, they ignore what follows the date, without checking it, if it starts with a space
+/// or `T` and the string has the length of `YYYY-MM-DD hh:mm:ss`, optionally followed by a fraction of a second. So
+/// `toDate('2024-02-29 25:00:00')` is `2024-02-29`, while `toDate('2024-02-2/')` is an error.
+static std::string_view getDatePartOfDateText(std::string_view text)
+{
+    LocalDate date;
+    ReadBufferFromString in(text);
+    if (!tryReadDateText(date, in) || in.eof() || (*in.position() != ' ' && *in.position() != 'T'))
+        return text;
+
+    const size_t date_size = in.count();
+    if (text.size() == strlen("YYYY-MM-DD hh:mm:ss"))
+        return text.substr(0, date_size);
+    if (text.size() >= strlen("YYYY-MM-DD hh:mm:ss.x") && text[19] == '.'
+        && std::all_of(text.begin() + 20, text.end(), [](char c) { return isNumericASCII(c); }))
+        return text.substr(0, date_size);
+    return text;
+}
+
 /// Converts one field of a partition value to the type of the partition key column.
 ///
 /// Text parsing of the date and time types is lenient: a day or a time of day that does not exist rolls over
@@ -10223,11 +10243,14 @@ static Field convertPartitionFieldToType(const Field & value, const DataTypePtr 
     if (value.getType() != Field::Types::String || !which.isDateOrDate32OrDateTimeOrDateTime64())
         return convertFieldToTypeOrThrow(value, *type);
 
+    /// A time of day after a date is ignored the same way as by `toDate`.
+    const String & text = value.safeGet<String>();
+    const std::string_view literal = which.isDateOrDate32() ? getDatePartOfDateText(text) : std::string_view(text);
+
     FormatSettings format_settings;
     format_settings.date_time_overflow_behavior = FormatSettings::DateTimeOverflowBehavior::Throw;
-    Field converted = convertFieldToTypeOrThrow(value, *type, nullptr, format_settings);
+    Field converted = convertFieldToTypeOrThrow(Field(literal), *type, nullptr, format_settings);
 
-    const String & literal = value.safeGet<String>();
     auto column = nested_type->createColumn();
     column->insert(converted);
     WriteBufferFromOwnString parsed_text;
@@ -10294,7 +10317,7 @@ static Field convertPartitionFieldToType(const Field & value, const DataTypePtr 
     if (!spells_parsed_value)
         throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
                         "Partition value '{}' is not a valid value of type {}: it is read as {}",
-                        literal, type->getName(), parsed_text.str());
+                        text, type->getName(), parsed_text.str());
 
     return converted;
 }
@@ -10310,9 +10333,8 @@ struct SpelledDateTime
 };
 
 /// Unlike the readers of the conversions, this one does not roll a field over and does not skip characters, it only
-/// takes the fields apart; whether they exist is decided by comparing them with the converted value. Only the date is
-/// taken from a string that a conversion to `Date` or `Date32` reads, as such a conversion ignores the rest.
-static std::optional<SpelledDateTime> splitSpelledDateTime(std::string_view text, bool date_only)
+/// takes the fields apart; whether they exist is decided by comparing them with the converted value.
+static std::optional<SpelledDateTime> splitSpelledDateTime(std::string_view text)
 {
     size_t pos = 0;
     auto is_digit_at = [&](size_t at) { return at < text.size() && isNumericASCII(text[at]); };
@@ -10344,12 +10366,6 @@ static std::optional<SpelledDateTime> splitSpelledDateTime(std::string_view text
         return {};
 
     SpelledDateTime spelled;
-    if (date_only)
-    {
-        spelled.date_time = LocalDateTime(year, month, day, 0, 0, 0);
-        return spelled;
-    }
-
     UInt8 hour = 0;
     UInt8 minute = 0;
     UInt8 second = 0;
@@ -10404,20 +10420,13 @@ static std::optional<SpelledDateTime> splitSpelledDateTime(std::string_view text
     return spelled;
 }
 
-/// Whether `converted`, the value of a conversion to `type`, has the date, the time and the fraction of a second
-/// that are spelled. A rolled-over value does not: `'2024-02-29 25:00'` spells hour 25, but is read as
-/// `2024-03-01 01:00:00`.
+/// Whether `converted`, the value of a conversion to a `DateTime` or `DateTime64` `type`, has the date, the time and the
+/// fraction of a second that are spelled. A rolled-over value does not: `'2024-02-29 25:00'` spells hour 25, but is
+/// read as `2024-03-01 01:00:00`.
 static bool hasSpelledFields(const Field & converted, const DataTypePtr & type, const SpelledDateTime & spelled)
 {
     const DataTypePtr nested_type = removeLowCardinalityAndNullable(type);
     const DateLUTImpl & utc = DateLUT::instance("UTC");
-    if (WhichDataType(nested_type).isDate())
-        return converted.getType() == Field::Types::UInt64
-            && LocalDate(DayNum(static_cast<UInt16>(converted.safeGet<UInt64>())), utc) == spelled.date_time.toDate();
-    if (WhichDataType(nested_type).isDate32())
-        return converted.getType() == Field::Types::Int64
-            && LocalDate(ExtendedDayNum(static_cast<Int32>(converted.safeGet<Int64>())), utc) == spelled.date_time.toDate();
-
     Int64 seconds = 0;
     Int64 fraction = 0;
     UInt32 scale = 0;
@@ -10472,11 +10481,12 @@ static bool hasSpelledFields(const Field & converted, const DataTypePtr & type, 
 /// Checks a string that a conversion turns into a date or a time, given the value it was converted to. A tuple is
 /// checked element by element.
 ///
-/// A conversion reads more spellings than a partition literal, e.g. `'2024-02-29 12:00:00Z'`, and with another reader:
-/// a conversion to `DateTime` or `DateTime64` uses the one of `cast_string_to_date_time_mode`, which rolls an hour such
-/// as `25:00` over even in the `best_effort` mode. So the converted value is accepted only if it has the fields spelled
-/// in the string, or, for a spelling with no such fields such as a Unix timestamp, if it equals the value of the string
-/// read as a partition literal, which rejects a rolled-over value. Any other spelling is rejected.
+/// A conversion to `Date` or `Date32` reads the same spellings as a partition literal, which ignores a time of day the
+/// same way, so it is checked like one. A conversion to `DateTime` or `DateTime64` reads more spellings, e.g.
+/// `'2024-02-29 12:00:00Z'`, and with another reader: it uses the one of `cast_string_to_date_time_mode`, which rolls
+/// an hour such as `25:00` over even in the `best_effort` mode. So the converted value is accepted only if it has the
+/// fields spelled in the string, or, for a spelling with no such fields such as a Unix timestamp, if it equals the value
+/// of the string read as a partition literal, which rejects a rolled-over value. Any other spelling is rejected.
 static void checkDateTimeConversionArgument(
     const Field & value, const DataTypePtr & value_type, const Field & converted, const DataTypePtr & type)
 {
@@ -10486,6 +10496,13 @@ static void checkDateTimeConversionArgument(
         const WhichDataType which(nested_type);
         if (!which.isDateOrDate32OrDateTimeOrDateTime64())
             return;
+
+        /// `toDate('2024-02-29 25:00:00')` ignores the time, and so does a partition literal.
+        if (which.isDateOrDate32())
+        {
+            convertPartitionFieldToType(value, type);
+            return;
+        }
 
         const String & text = value.safeGet<String>();
         auto converted_text = [&]
@@ -10499,8 +10516,7 @@ static void checkDateTimeConversionArgument(
             return out.str();
         };
 
-        /// `toDate('2024-02-29 12:00:00')` ignores the time, so only the date is checked.
-        if (const auto spelled = splitSpelledDateTime(text, which.isDateOrDate32()))
+        if (const auto spelled = splitSpelledDateTime(text))
         {
             if (!hasSpelledFields(converted, type, *spelled))
                 throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
