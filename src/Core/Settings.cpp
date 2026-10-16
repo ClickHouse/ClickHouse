@@ -7349,7 +7349,7 @@ Possible values:
 
 - An empty string (no check) or a table engine name, for example `TimeSeries`.
 )", 0, \
-        {"26.10", "", "", "New setting: when not empty, an INSERT is refused unless the target table has exactly this engine."}) \
+        {"26.11", "", "", "New setting: when not empty, an INSERT is refused unless the target table has exactly this engine."}) \
     DECLARE(Map, insert_expected_column_types, "", R"(
 If not empty, an `INSERT` is refused unless the table it names declares these columns with exactly these types, checked with `insert_expected_table_engine` and consumed with it. A `Distributed` table forwards the setting to its shards instead of checking itself.
 
@@ -7361,7 +7361,7 @@ Remote write over a `Distributed` table sets it to the type of the samples colum
 INSERT INTO t SETTINGS insert_expected_column_types = {'samples': 'Array(Tuple(DateTime64(3), Float64))'} VALUES (...)
 ```
 )", 0, \
-        {"26.10", "", "", "New setting: when not empty, an INSERT is refused unless the target table declares exactly these column types."}) \
+        {"26.11", "", "", "New setting: when not empty, an INSERT is refused unless the target table declares exactly these column types."}) \
     \
     DECLARE(Bool, collect_hash_table_stats_during_aggregation, true, R"(
 Enable collecting hash table statistics to optimize memory allocation
