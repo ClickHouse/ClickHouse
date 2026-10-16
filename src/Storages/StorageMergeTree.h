@@ -160,7 +160,7 @@ private:
     std::map<DataPartPtr, Int64> currently_mutating_part_future_versions;
 
     /// Taggers of the currently running merges and mutations.
-    /// This set have to be used with `currently_processing_in_background_mutex`.
+    /// This set has to be used with `currently_processing_in_background_mutex`.
     std::unordered_set<const CurrentlyMergingPartsTagger *> currently_merging_mutating_taggers;
 
     /// current parts postpone reasons
