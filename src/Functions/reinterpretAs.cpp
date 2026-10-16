@@ -56,21 +56,31 @@ public:
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
+    /// The result type is the type named by the const second argument (`typeFromString`). The
+    /// override below is authoritative-but-examined: it delegates the type computation to the
+    /// declarative signature and only adds the source/destination memory-compatibility validation.
+    String getSignatureString() const override
+    {
+        return "(Any, const t String) -> typeFromString(t)";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        const auto & column = arguments.back().column;
-
-        DataTypePtr from_type = arguments[0].type;
-
-        const auto * type_col = checkAndGetColumnConst<ColumnString>(column.get());
+        const auto * type_col = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
         if (!type_col)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Second argument to {} must be a constant string describing type."
                 " Instead there is non-constant column of type {}",
                 getName(),
-                arguments.back().type->getName());
+                arguments[1].type->getName());
 
+        DataTypePtr from_type = arguments[0].type;
+
+        /// Resolve the query-provided type name outside the signature's factory-info suppression so
+        /// `query_log.used_data_type_families` records it. The signature validates the same type
+        /// expression, while the lookup below preserves the legacy query-log attribution.
         DataTypePtr to_type = DataTypeFactory::instance().get(type_col->getValue<String>());
+        IFunction::getReturnTypeImpl(arguments);
 
         WhichDataType result_reinterpret_type(to_type);
 
@@ -510,6 +520,30 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
+    /// `reinterpretAs<T>` accepts any type whose value fits unambiguously in a fixed-size
+    /// contiguous memory region — i.e. `canBeReinterpretedAsNumeric`-typed inputs plus
+    /// `String`/`FixedString`. Returns the requested target type. We can advertise a
+    /// signature when `ToDataType` is default-constructible (all the numeric/date/UUID
+    /// variants); `reinterpretAsFixedString` derives its `N` from the input's value size
+    /// so its signature is documentation-only.
+    String getSignatureString() const override
+    {
+        if constexpr (std::is_same_v<ToDataType, DataTypeFixedString>)
+            /// The FixedString length N is the source value's in-memory size.
+            return "(T : UnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion) -> FixedString(sizeOfValueInMemory(T))";
+        else if constexpr (std::is_same_v<ToDataType, DataTypeString>)
+            /// reinterpretAsString accepts any value laid out contiguously in memory.
+            return "(UnambiguouslyRepresentedInContiguousMemoryRegion) -> String";
+        else
+        {
+            /// The input matcher is exactly `canBeReinterpretedAsNumeric` plus String/FixedString.
+            static const String sig
+                = String("(Number | Date | DateTime | DateTime64 | UUID | StringOrFixedString) -> ")
+                + ToDataType{}.getName();
+            return sig;
+        }
+    }
+
     bool useDefaultImplementationForConstants() const override { return impl.useDefaultImplementationForConstants(); }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
@@ -550,11 +584,9 @@ public:
         return arguments_with_type;
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        auto arguments_with_type = addTypeColumnToArguments(arguments);
-        return impl.getReturnTypeImpl(arguments_with_type);
-    }
+    /// getReturnTypeImpl is intentionally not overridden: the declarative signature is
+    /// authoritative for every target (including FixedString, whose N is `sizeOfValueInMemory`).
+    /// The input matcher encodes exactly which source types can be reinterpreted.
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, size_t input_rows_count) const override
     {
