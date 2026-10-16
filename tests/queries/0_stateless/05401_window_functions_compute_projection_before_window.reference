@@ -86,3 +86,14 @@ remote
 1	3	6	4
 2	3	6	5
 2	3	6	6
+0	6
+0	6
+1	6
+1	6
+2	6
+2	6
+Window
+Projection before window functions
+toUInt64OrZero
+ReadFromRemote
+Header: __table1.s String

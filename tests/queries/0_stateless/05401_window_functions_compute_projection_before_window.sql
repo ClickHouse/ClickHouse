@@ -107,4 +107,22 @@ CREATE TABLE t_window_projection (s String) ENGINE = MergeTree ORDER BY s;
 INSERT INTO t_window_projection SELECT concat('p@', toString(number)) FROM numbers(3);
 SELECT toUInt64OrZero(splitByString('@', s)[2]) AS v, length(s) AS l, count() OVER () AS n, row_number() OVER (ORDER BY s) AS rn
 FROM remote('127.0.0.{1,2}', currentDatabase(), t_window_projection) ORDER BY rn;
+-- The expression is computed on the initiator in the step before the window step, while the shards send the column.
+SELECT toUInt64OrZero(splitByString('@', s)[2]) AS v, count() OVER () AS n
+FROM remote('127.0.0.{1,2}', currentDatabase(), t_window_projection) ORDER BY v;
+SELECT trimLeft(multiIf(
+    explain LIKE '%Window (%', 'Window',
+    explain LIKE '%Projection before window functions%', 'Projection before window functions',
+    explain LIKE '%FUNCTION toUInt64OrZero%', 'toUInt64OrZero',
+    explain LIKE '%ReadFromRemote%', 'ReadFromRemote',
+    explain))
+FROM
+(
+    EXPLAIN header = 1, actions = 1, compact = 0, pretty = 0
+    SELECT toUInt64OrZero(splitByString('@', s)[2]) AS v, count() OVER () AS n
+    FROM remote('127.0.0.{1,2}', currentDatabase(), t_window_projection) ORDER BY v
+    SETTINGS prefer_localhost_replica = 0
+)
+WHERE explain LIKE '%Window (%' OR explain LIKE '%Projection before window functions%' OR explain LIKE '%FUNCTION toUInt64OrZero%'
+    OR explain LIKE '%ReadFromRemote%' OR explain LIKE '%Header: \\_\\_table1.s String%';
 DROP TABLE t_window_projection;
