@@ -769,7 +769,7 @@ The segment that is still being written is uploaded with the `s3_in_progress_` p
 Snapshots are not affected and are still stored on `snapshot_storage_disk`.
 
 Current limitations:
-- `s3_log_disk` must be an object storage disk (for example, `s3` or `s3_plain`). Keeper relies on uploads to it being atomic.
+- `s3_log_disk` must be a disk of type `s3_plain`. Keeper relies on uploads to it being atomic and on the object key being the file identity, so a disk with local metadata such as `s3` is rejected.
 - `compress_logs` is not supported together with `s3_experimental_changelog`.
 - On startup only `s3_log_disk` and the disks listed in `keeper_server.old_log_storage_disk` are read. If `log_storage_disk` or `latest_log_storage_disk` still contains changelog files, Keeper refuses to start: declare that disk as `old_log_storage_disk` or move the files away. Migration of local changelogs to object storage is not implemented.
 - If `s3_log_disk` is configured while `s3_experimental_changelog` is disabled and that disk still contains changelog files, Keeper refuses to start as well: enable `s3_experimental_changelog` again, declare that disk as `old_log_storage_disk`, or move the files away.

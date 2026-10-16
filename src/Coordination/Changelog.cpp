@@ -370,7 +370,8 @@ public:
             /// resumed after a truncated copy of the old segment and published under the live path.
             current_file_description = nullptr;
             last_index_written.reset();
-            auto new_write_buffer = disk->writeFile(getInProgressPath(file_description->path));
+            auto new_in_progress_path = makeInProgressPath(file_description->path);
+            auto new_write_buffer = disk->writeFile(new_in_progress_path);
             try
             {
                 auto reader = disk->readFile(file_description->path, getReadSettings());
@@ -383,6 +384,7 @@ public:
             }
             current_file_description = std::move(file_description);
             write_buffer = std::move(new_write_buffer);
+            write_buffer_in_progress_path = std::move(new_in_progress_path);
         }
         else
         {
@@ -398,7 +400,8 @@ public:
                 current_file_description->to_log_index,
                 current_file_description->extension);
 
-            write_buffer = disk->writeFile(getInProgressPath(current_file_description->path));
+            write_buffer_in_progress_path = makeInProgressPath(current_file_description->path);
+            write_buffer = disk->writeFile(write_buffer_in_progress_path);
         }
 
         last_index_written.reset();
@@ -521,6 +524,9 @@ public:
 
 private:
     std::unique_ptr<WriteBufferFromFileBase> write_buffer;
+    /// The staging key `write_buffer` uploads to, published under the final name by `flushImpl`.
+    std::string write_buffer_in_progress_path;
+    std::atomic<uint64_t> in_progress_object_counter{0};
 
     std::unique_ptr<ThreadFromGlobalPool> s3_compaction_thread;
     std::atomic<bool> s3_compaction_shutdown;
@@ -725,7 +731,7 @@ private:
             /// writes straight to the final key, and startup keeps a single object per start index, so a merged
             /// object published before the sources are known to be unchanged could shadow the intact first
             /// source on the next startup. Startup ignores and removes in-progress objects.
-            const auto merged_in_progress_path = getInProgressPath(merged_changelog->path);
+            const auto merged_in_progress_path = makeInProgressPath(merged_changelog->path);
 
             try
             {
@@ -990,9 +996,14 @@ private:
         return ReadSettings{};
     }
 
-    static std::string getInProgressPath(const std::string & path)
+    /// Every upload gets its own staging key. The writer and the compaction thread can stage different versions
+    /// of the same segment at the same time (a merge into `changelog_1_16.bin` still uploading while `writeAt`
+    /// rewrites a published `changelog_1_16.bin`), and with a shared key the foreground flush could publish the
+    /// payload of the other upload. Startup removes every leftover in-progress object before the writer starts,
+    /// so a counter is enough to keep the keys of one process apart.
+    std::string makeInProgressPath(const std::string & path)
     {
-        return S3_IN_PROGRESS_PREFIX + path;
+        return fmt::format("{}{}_{}", S3_IN_PROGRESS_PREFIX, in_progress_object_counter.fetch_add(1), path);
     }
 
     void flushImpl(uint64_t new_start_log_index)
@@ -1023,7 +1034,7 @@ private:
             write_buffer.reset();
 
             auto disk = getDisk();
-            const auto in_progress_path = getInProgressPath(current_file_description->path);
+            const auto in_progress_path = write_buffer_in_progress_path;
 
             /// The upload to `new_path` is atomic (startup requires an object storage disk), so a failure here leaves
             /// either nothing at `new_path` or, when `new_path` is the path of the segment reopened by `writeAt`, its
@@ -1143,7 +1154,8 @@ private:
         current_file_description = new_s3_description;
 
         LOG_TRACE(log, "Open new s3 buffer with path {}", s3_cur_path);
-        write_buffer = getDisk()->writeFile(getInProgressPath(s3_cur_path));
+        write_buffer_in_progress_path = makeInProgressPath(s3_cur_path);
+        write_buffer = getDisk()->writeFile(write_buffer_in_progress_path);
 
         /// Every flush publishes a separate object, so compact once enough of them were published since the last merge.
         /// `rotate_interval` bounds the number of entries in a merged object, not the number of objects.
@@ -4620,12 +4632,16 @@ Changelog::Changelog(
             /// object that holds the previous version of the same segment (a rewrite by `writeAt`). That is crash-safe
             /// only because an object storage upload is atomic: a failed or interrupted upload never leaves a partial
             /// object visible, and a replaced object is either the old or the new one. A local disk gives neither.
-            if (!getS3LogDisk()->isRemote())
+            /// An object storage disk with local metadata (such as `s3`) does not either: the file is located through
+            /// a local metadata file that is truncated and rewritten in place, without a sync, so a crash can leave an
+            /// empty locator for an already durable segment. Only a plain object storage disk, where the object key is
+            /// the file identity, publishes a complete file atomically and durably.
+            if (!getS3LogDisk()->isRemote() || getS3LogDisk()->getDataSourceDescription().metadata_type != MetadataStorageType::Plain)
             {
                 throw DB::Exception(
                     DB::ErrorCodes::BAD_ARGUMENTS,
-                    "Disk '{}' configured as s3_log_disk is not an object storage disk. "
-                    "The experimental S3 changelog (s3_experimental_changelog) requires an object storage disk",
+                    "Disk '{}' configured as s3_log_disk is not a plain object storage disk. "
+                    "The experimental S3 changelog (s3_experimental_changelog) requires a disk of type `s3_plain`",
                     getS3LogDisk()->getName());
             }
 
