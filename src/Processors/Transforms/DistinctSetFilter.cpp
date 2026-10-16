@@ -36,14 +36,36 @@ extern const char distinct_transform_lc_pause[];
 namespace
 {
 
-/// The cancellation flag is polled once per this many processed rows (kept as a mask of the low
-/// bits), so a single plain atomic load per batch keeps the check off the hot path while bounding
-/// the latency of a loop to one batch of rows.
-constexpr size_t CANCELLATION_POLL_MASK = 0xFFF;
+/// The cancellation flag is polled once per this many processed rows, between blocks of rows.
+/// Keeping the poll out of the row loops leaves their per-row code exactly as it was before
+/// polling was added (no extra branch and no call per row) while bounding the latency of a loop
+/// to one block of rows.
+constexpr size_t CANCELLATION_POLL_ROWS = 0x1000;
 
 bool isCancelled(const std::atomic<bool> * cancellation_flag)
 {
     return cancellation_flag && cancellation_flag->load(std::memory_order_acquire);
+}
+
+/// Fires `failpoint` (unless it is `nullptr`) and reports whether the query has been cancelled,
+/// logging `cancel_message` when it has. Deliberately out of line: the `FailPointInjection` call,
+/// the logging and the exception-handling padding around them must not end up inside a per-row
+/// loop. When the check was written directly into a per-row lambda, the compiler stopped inlining
+/// that lambda and turned its body into a real function call - with a stack frame and a stack
+/// canary - executed once per processed row.
+NO_INLINE bool pollCancellation(
+    const std::atomic<bool> * cancellation_flag, const char * failpoint, const char * cancel_message)
+{
+    if (failpoint)
+        FailPointInjection::pauseFailPoint(failpoint);
+
+    if (isCancelled(cancellation_flag))
+    {
+        LOG_TEST(getLogger("DistinctSetFilter"), "{}", cancel_message);
+        return true;
+    }
+
+    return false;
 }
 
 }
@@ -185,24 +207,10 @@ std::pair<IColumn::Filter, size_t> DistinctLowCardinalityFilter::buildMask(
 
     IColumn::Filter mask;
 
-    /// Scans the whole index column for new dictionary entries. Returns `false` when the query was
-    /// cancelled at the polled batch, to stop the scan: the partially built mask keeps its unset
-    /// tail, whose rows are then treated as not-new, and the caller above drops the whole chunk
-    /// once it observes the same cancellation.
-    auto handle_index = [&](size_t idx, size_t row) -> bool
+    /// Scans the whole index column for new dictionary entries, setting `mask[row]` for the rows
+    /// that introduce one.
+    auto handle_index = [&](size_t idx, size_t row)
     {
-        if (0 == (row & CANCELLATION_POLL_MASK))
-        {
-            if (row)
-                FailPointInjection::pauseFailPoint(FailPoints::distinct_transform_lc_pause);
-
-            if (isCancelled(cancellation_flag))
-            {
-                LOG_TEST(getLogger("DistinctSetFilter"), "Cancelled while building the LowCardinality mask");
-                return false;
-            }
-        }
-
         chassert(idx < dict_size);
         if (!seen[idx])
         {
@@ -214,43 +222,41 @@ std::pair<IColumn::Filter, size_t> DistinctLowCardinalityFilter::buildMask(
 
             mask[row] = 1;
         }
-        return true;
+    };
+
+    /// The scan is polled for cancellation once per block of rows. On cancellation it stops early:
+    /// the partially built mask keeps its unset tail, whose rows are then treated as not-new, and
+    /// the caller above drops the whole chunk once it observes the same cancellation.
+    auto process = [&](const auto & col)
+    {
+        for (size_t begin = 0; begin < num_rows; begin += CANCELLATION_POLL_ROWS)
+        {
+            if (pollCancellation(
+                    cancellation_flag,
+                    begin ? FailPoints::distinct_transform_lc_pause : nullptr,
+                    "Cancelled while building the LowCardinality mask"))
+                return;
+
+            const size_t end = std::min(begin + CANCELLATION_POLL_ROWS, num_rows);
+            for (size_t row = begin; row < end; ++row)
+                handle_index(static_cast<size_t>(col[row]), row);
+        }
     };
 
     switch (index_type_size)
     {
         case sizeof(UInt8):
-        {
-            const auto & col = assert_cast<const ColumnUInt8 &>(indexes_column).getData();
-            for (size_t row = 0; row < num_rows; ++row)
-                if (!handle_index(static_cast<size_t>(col[row]), row))
-                    break;
+            process(assert_cast<const ColumnUInt8 &>(indexes_column).getData());
             break;
-        }
         case sizeof(UInt16):
-        {
-            const auto & col = assert_cast<const ColumnUInt16 &>(indexes_column).getData();
-            for (size_t row = 0; row < num_rows; ++row)
-                if (!handle_index(static_cast<size_t>(col[row]), row))
-                    break;
+            process(assert_cast<const ColumnUInt16 &>(indexes_column).getData());
             break;
-        }
         case sizeof(UInt32):
-        {
-            const auto & col = assert_cast<const ColumnUInt32 &>(indexes_column).getData();
-            for (size_t row = 0; row < num_rows; ++row)
-                if (!handle_index(static_cast<size_t>(col[row]), row))
-                    break;
+            process(assert_cast<const ColumnUInt32 &>(indexes_column).getData());
             break;
-        }
         case sizeof(UInt64):
-        {
-            const auto & col = assert_cast<const ColumnUInt64 &>(indexes_column).getData();
-            for (size_t row = 0; row < num_rows; ++row)
-                if (!handle_index(static_cast<size_t>(col[row]), row))
-                    break;
+            process(assert_cast<const ColumnUInt64 &>(indexes_column).getData());
             break;
-        }
         default:
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for LowCardinality column in DistinctLowCardinalityFilter");
@@ -281,56 +287,56 @@ void buildDistinctFilter(
 
     if (mask)
     {
-        for (size_t i = 0; i < rows; ++i)
+        for (size_t begin = 0; begin < rows; begin += CANCELLATION_POLL_ROWS)
         {
-            if (0 == (i & CANCELLATION_POLL_MASK))
+            if (pollCancellation(
+                    cancellation_flag,
+                    begin ? FailPoints::distinct_transform_pause : nullptr,
+                    "Cancelled while hashing rows with a mask"))
             {
-                if (i)
-                    FailPointInjection::pauseFailPoint(FailPoints::distinct_transform_pause);
+                /// Zero the unprocessed tail so the filter still holds exactly one `1` per row
+                /// inserted into the set below, keeping the `num_selected` accounting consistent.
+                std::fill(filter.begin() + begin, filter.end(), 0);
+                return;
+            }
 
-                if (isCancelled(cancellation_flag))
+            const size_t end = std::min(begin + CANCELLATION_POLL_ROWS, rows);
+            for (size_t i = begin; i < end; ++i)
+            {
+                if (!(*mask)[i])
                 {
-                    LOG_TEST(getLogger("DistinctSetFilter"), "Cancelled while hashing rows with a mask");
-                    /// Zero the unprocessed tail so the filter still holds exactly one `1` per row
-                    /// inserted into the set below, keeping the `num_selected` accounting consistent.
-                    std::fill(filter.begin() + i, filter.end(), 0);
-                    return;
+                    /// The row is excluded from the deduplication, skip insertion.
+                    filter[i] = 0;
+                    continue;
                 }
-            }
 
-            if (!(*mask)[i])
-            {
-                /// The row is excluded from the deduplication, skip insertion.
-                filter[i] = 0;
-                continue;
+                auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
+                filter[i] = emplace_result.isInserted();
             }
-
-            auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
-            filter[i] = emplace_result.isInserted();
         }
     }
     else
     {
-        for (size_t i = 0; i < rows; ++i)
+        for (size_t begin = 0; begin < rows; begin += CANCELLATION_POLL_ROWS)
         {
-            if (0 == (i & CANCELLATION_POLL_MASK))
+            if (pollCancellation(
+                    cancellation_flag,
+                    begin ? FailPoints::distinct_transform_pause : nullptr,
+                    "Cancelled while hashing rows without a mask"))
             {
-                if (i)
-                    FailPointInjection::pauseFailPoint(FailPoints::distinct_transform_pause);
-
-                if (isCancelled(cancellation_flag))
-                {
-                    LOG_TEST(getLogger("DistinctSetFilter"), "Cancelled while hashing rows without a mask");
-                    std::fill(filter.begin() + i, filter.end(), 0);
-                    return;
-                }
+                std::fill(filter.begin() + begin, filter.end(), 0);
+                return;
             }
 
-            auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
+            const size_t end = std::min(begin + CANCELLATION_POLL_ROWS, rows);
+            for (size_t i = begin; i < end; ++i)
+            {
+                auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
 
-            /// Emit the record if there is no such key in the current set yet.
-            /// Skip it otherwise.
-            filter[i] = emplace_result.isInserted();
+                /// Emit the record if there is no such key in the current set yet.
+                /// Skip it otherwise.
+                filter[i] = emplace_result.isInserted();
+            }
         }
     }
 }
@@ -380,25 +386,23 @@ void markLowCardinalityNullRows(
 
     auto process = [&](const auto & indexes)
     {
-        for (size_t row = 0; row < num_rows; ++row)
+        for (size_t begin = 0; begin < num_rows; begin += CANCELLATION_POLL_ROWS)
         {
-            if (0 == (row & CANCELLATION_POLL_MASK))
-            {
-                if (row)
-                    FailPointInjection::pauseFailPoint(FailPoints::distinct_transform_null_pause);
+            if (pollCancellation(
+                    cancellation_flag,
+                    begin ? FailPoints::distinct_transform_null_pause : nullptr,
+                    "Cancelled while marking LowCardinality NULL rows"))
+                return;
 
-                if (isCancelled(cancellation_flag))
+            const size_t end = std::min(begin + CANCELLATION_POLL_ROWS, num_rows);
+            for (size_t row = begin; row < end; ++row)
+            {
+                if (static_cast<size_t>(indexes[row]) == null_index)
                 {
-                    LOG_TEST(getLogger("DistinctSetFilter"), "Cancelled while marking LowCardinality NULL rows");
-                    return;
+                    if (keep.empty())
+                        keep.assign(num_rows, static_cast<UInt8>(1));
+                    keep[row] = 0;
                 }
-            }
-
-            if (static_cast<size_t>(indexes[row]) == null_index)
-            {
-                if (keep.empty())
-                    keep.assign(num_rows, static_cast<UInt8>(1));
-                keep[row] = 0;
             }
         }
     };
@@ -655,23 +659,21 @@ DistinctSetFilter::FilterResult DistinctSetFilter::filterImpl(Chunk chunk, const
         if (null_map && !memoryIsZero(null_map->data(), 0, num_rows))
         {
             keep.resize(num_rows);
-            for (size_t i = 0; i < num_rows; ++i)
+            for (size_t begin = 0; begin < num_rows; begin += CANCELLATION_POLL_ROWS)
             {
-                if (0 == (i & CANCELLATION_POLL_MASK))
+                if (pollCancellation(
+                        cancellation_flag,
+                        begin ? FailPoints::distinct_transform_null_pause : nullptr,
+                        "Cancelled while scanning the NULL map"))
                 {
-                    if (i)
-                        FailPointInjection::pauseFailPoint(FailPoints::distinct_transform_null_pause);
-
-                    if (isCancelled(cancellation_flag))
-                    {
-                        LOG_TEST(getLogger("DistinctSetFilter"), "Cancelled while scanning the NULL map");
-                        /// `keep` is local to this call, so the partially scanned filter can be
-                        /// dropped right away together with the rest of the chunk.
-                        return {{}, i};
-                    }
+                    /// `keep` is local to this call, so the partially scanned filter can be
+                    /// dropped right away together with the rest of the chunk.
+                    return {{}, begin};
                 }
 
-                keep[i] = !(*null_map)[i];
+                const size_t end = std::min(begin + CANCELLATION_POLL_ROWS, num_rows);
+                for (size_t i = begin; i < end; ++i)
+                    keep[i] = !(*null_map)[i];
             }
         }
 
