@@ -28,3 +28,15 @@ ${CLICKHOUSE_CLIENT} --enable_analyzer 1 --enable_materialized_cte 1 --convert_q
 
 explain_tree_lines=$(${CLICKHOUSE_CLIENT} --enable_analyzer 1 --enable_materialized_cte 1 --query "EXPLAIN QUERY TREE ${query}" | wc -l)
 ${CLICKHOUSE_CLIENT} --query "SELECT ${explain_tree_lines} < 2000"
+
+in_query="WITH prometheus_query_step_1 AS MATERIALIZED (SELECT 1 AS x)"
+for i in $(seq 2 20); do
+    prev=$((i - 1))
+    in_query+=", prometheus_query_step_${i} AS MATERIALIZED (SELECT x FROM prometheus_query_step_${prev} WHERE x IN (SELECT x FROM prometheus_query_step_${prev}))"
+done
+in_query+=" SELECT x FROM prometheus_query_step_20"
+
+${CLICKHOUSE_CLIENT} --enable_analyzer 1 --enable_materialized_cte 1 --query "${in_query}"
+
+explain_in_lines=$(${CLICKHOUSE_CLIENT} --enable_analyzer 1 --enable_materialized_cte 1 --query "EXPLAIN QUERY TREE dump_tree = 1, dump_ast = 0, passes = 1 ${in_query}" | wc -l)
+${CLICKHOUSE_CLIENT} --query "SELECT ${explain_in_lines} < 2000"
