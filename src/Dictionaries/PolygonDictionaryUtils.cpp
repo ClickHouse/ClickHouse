@@ -60,7 +60,6 @@ size_t FinalCell::getBytesAllocated() const
 
 FinalCellWithSlabs::FinalCellWithSlabs(const VectorWithMemoryTracking<size_t> & polygon_ids_, const VectorWithMemoryTracking<Polygon> & polygons_, const Box & box_, bool is_last_covered_)
 {
-    /// boost.geometry overlay on Float32 points drops crossing points and overflows above ~1.8e19, so clip in Float64.
     const BoxF64 extended = toBoxF64(box_, static_cast<Float64>(GridRoot<FinalCellWithSlabs>::kEps));
     PolygonF64 tmp_poly;
     bg::convert(extended, tmp_poly);
