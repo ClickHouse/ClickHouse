@@ -39,6 +39,14 @@ function __set_connection_args()
     )
 }
 
+# The client's --receive_timeout does not bound a query: after it fires the client cancels the
+# query and waits for the server to acknowledge it with no time limit.
+REMOTE_QUERY_TIMEOUT=90
+function remote_client()
+{
+    timeout --verbose --kill-after 10 "$REMOTE_QUERY_TIMEOUT" clickhouse-client "${CONNECTION_ARGS[@]:?}" "$@"
+}
+
 function __shadow_credentials()
 {
     # The function completely screws the output, it shouldn't be used in normal functions, only in ()
@@ -77,7 +85,7 @@ function check_logs_credentials()
     for attempt in 1 2 3; do
         # Catch both success and error to not fail on `set -e`. Capture stderr
         # so we can distinguish transient failures from permanent ones.
-        err=$(clickhouse-client "${CONNECTION_ARGS[@]:?}" --connect_timeout 3 -q 'SELECT 1 FORMAT Null' 2>&1) && return 0 || code=$?
+        err=$(remote_client --connect_timeout 3 -q 'SELECT 1 FORMAT Null' 2>&1) && return 0 || code=$?
         # Only transient failures are worth retrying; anything else will not
         # recover on retry, so stop immediately.
         if [[ "$err" != *"Connection reset by peer"* && "$err" != *"MEMORY_LIMIT_EXCEEDED"* ]]; then
@@ -88,6 +96,9 @@ function check_logs_credentials()
     done
     # END: logs-cluster connectivity probe loop
     echo 'Failed to connect to CI Logs cluster'
+    if [[ "$code" == 124 || "$code" == 137 ]]; then
+        echo "The CI Logs cluster did not answer within ${REMOTE_QUERY_TIMEOUT} seconds"
+    fi
     echo "$err"
     return "$code"
 }
@@ -173,10 +184,15 @@ function setup_logs_replication()
         # Even without comments, the `bucketed` schema of `metric_log` (the default)
         # has a `Map` keyed by an `Enum16` of every metric plus an `ALIAS` column per
         # metric, which is still larger than 256 KiB, so raise the limit as well.
-        echo "$statement" | clickhouse-client --max_query_size=$((16 * 1024 * 1024)) \
+        rc=0
+        echo "$statement" | remote_client --max_query_size=$((16 * 1024 * 1024)) \
             --database_replicated_initial_query_timeout_sec=10 \
-            --distributed_ddl_task_timeout=30 --distributed_ddl_output_mode=throw_only_active \
-            "${CONNECTION_ARGS[@]:?}" || continue
+            --distributed_ddl_task_timeout=30 --distributed_ddl_output_mode=throw_only_active || rc=$?
+        if [[ "$rc" == 124 || "$rc" == 137 ]]; then
+            echo "The CI Logs cluster did not answer within ${REMOTE_QUERY_TIMEOUT} seconds, the remaining tables are not exported" >&2
+            break
+        fi
+        [[ "$rc" == 0 ]] || continue
 
         echo "Creating table ${LOG_EXPORT_DATABASE}.${table}_sender" >&2
 
