@@ -1,0 +1,52 @@
+placeholder	1	[1,0]	0
+placeholder	2	[2,0]	2
+placeholder	3	[0]	1
+placeholder	4	[]	0
+string	1	0	1	0	0	0
+string	2	1	0	1	1	1
+string	3	0	1	0	0	0
+string	4	0	1	0	0	0
+first value	1	1	1	1
+first value	2	0	0	0
+first value	3	0	0	0
+first value	4	0	0	0
+FixedString	1	0
+FixedString	2	1
+FixedString	3	0
+FixedString	4	0
+Enum16	1	0	1
+Enum16	2	1	0
+Enum16	3	0	0
+Enum16	4	0	0
+Tuple	1	0	0
+Tuple	2	1	0
+Tuple	3	0	1
+Tuple	4	0	0
+Nullable(String) needle	1	1	2	1
+Nullable(String) needle	2	1	1	1
+Nullable(String) needle	3	0	0	0
+Nullable(String) needle	4	0	0	0
+Nullable(Enum) needle	1	0	0	0	0	0
+Nullable(Enum) needle	2	1	1	1	1	1
+Nullable(Enum) needle	3	1	1	1	1	1
+Nullable(Enum) needle	4	0	0	0	0	0
+mapContainsValue	1	0	0
+mapContainsValue	2	1	0
+mapContainsValue	3	0	1
+mapContainsValue	4	0	0
+mapContainsValue subcolumn	1	0	0
+mapContainsValue subcolumn	2	1	0
+mapContainsValue subcolumn	3	0	1
+mapContainsValue subcolumn	4	0	0
+arrayExists	1	0
+arrayExists	2	1
+arrayExists	3	0
+arrayExists	4	0
+IN	1	0	1
+IN	2	1	0
+IN	3	0	0
+IN	4	0	0
+join	1	0
+join	2	0
+join	3	1
+join	4	0
