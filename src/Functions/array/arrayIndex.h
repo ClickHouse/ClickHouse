@@ -22,6 +22,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsCommon.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Core/AccurateComparison.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -949,6 +950,25 @@ private:
         return {null_map_data, null_map_item};
     }
 
+    /// Under a NULL, the nested column of a `Nullable` argument holds an unspecified value: for an `Enum` it is usually 0,
+    /// which the enum may not declare, and casting it throws. Put the type's default there; the null map hides it.
+    static ColumnPtr getColumnWithDefaultsUnderNulls(const ColumnPtr & column, const NullMap * null_map, const DataTypePtr & type)
+    {
+        if (!null_map || type->isDefaultInsertTrivial() || memoryIsZero(null_map->data(), 0, null_map->size()))
+            return column;
+
+        auto patched = type->createColumn();
+        patched->reserve(column->size());
+        for (size_t row = 0; row < column->size(); ++row)
+        {
+            if ((*null_map)[row])
+                type->insertDefaultInto(*patched);
+            else
+                patched->insertFrom(*column, row);
+        }
+        return patched;
+    }
+
     struct ExecutionData
     {
         const IColumn & left;
@@ -1555,12 +1575,11 @@ private:
         const DataTypePtr & index_type = arguments[1].type;
 
         DataTypePtr common_type = getLeastSupertype(DataTypes{array_elements_type, arguments[1].type});
-        ColumnPtr col_nested = castColumn({ col_array->getDataPtr(), array_elements_type, "" }, common_type);
-        ColumnPtr item_arg = castColumn({ arguments[1].column, removeLowCardinality(index_type), "" }, common_type);
+        auto [null_map_data, null_map_item] = getNullMaps(arguments);
+        ColumnPtr col_nested = castColumn({ getColumnWithDefaultsUnderNulls(col_array->getDataPtr(), null_map_data, array_elements_type), array_elements_type, "" }, common_type);
+        ColumnPtr item_arg = castColumn({ getColumnWithDefaultsUnderNulls(arguments[1].column, null_map_item, index_type), removeLowCardinality(index_type), "" }, common_type);
 
         auto col_res = ResultColumnType::create();
-
-        auto [null_map_data, null_map_item] = getNullMaps(arguments);
 
         if (const auto * item_arg_const = checkAndGetColumn<ColumnConst>(item_arg.get()))
         {
