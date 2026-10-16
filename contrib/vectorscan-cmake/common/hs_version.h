@@ -32,12 +32,12 @@
 /**
  * A version string to identify this release of Hyperscan.
  */
-#define HS_VERSION_STRING "5.4.11 2024-07-04"
+#define HS_VERSION_STRING "5.4.13 2026-08-23"
 
 #define HS_VERSION_32BIT ((5 << 24) | (1 << 16) | (7 << 8) | 0)
 
 #define HS_MAJOR      5
 #define HS_MINOR      4
-#define HS_PATCH      11
+#define HS_PATCH      13
 
 #endif /* HS_VERSION_H_C6428FAF8E3713 */

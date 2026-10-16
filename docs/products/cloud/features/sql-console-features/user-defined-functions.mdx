@@ -442,7 +442,7 @@ resource "clickhouse_udf_attachment" "production" {
 }
 ```
 
-Beyond the required attributes shown above, the `clickhouse_udf` resource accepts `format`, `pool_size`, `max_command_execution_time`, `command_read_timeout`, `command_write_timeout`, `send_chunk_header`, `sandbox_type`, `sandbox_version`, `return_name`, and `fail_on_build_error`; see the [resource documentation](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf.md) for the full schema.
+Beyond the required attributes shown above, the `clickhouse_udf` resource accepts `format`, `pool_size`, `max_command_execution_time`, `command_read_timeout`, `command_write_timeout`, `send_chunk_header`, `sandbox_type`, `return_name`, and `fail_on_build_error`; see the [resource documentation](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf.md) for the full schema.
 
 To test a new version on a development service before it reaches production, let one attachment track the latest version and pin the other to a variable. The development attachment follows every new build automatically, while the production attachment moves only when you change `var.prod_udf_version`:
 

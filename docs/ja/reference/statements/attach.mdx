@@ -20,7 +20,7 @@ ATTACH TABLE|DICTIONARY|DATABASE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster] 
 
 テーブルが以前にデタッチされていた ([DETACH](/ja/reference/statements/detach)クエリ) 場合、つまりその構造が既知である場合は、構造を定義せずに短縮記法を使用できます。
 
-## 既存のテーブルをアタッチ
+## 既存のテーブルをアタッチ {#attach-existing-table}
 
 **構文**
 
@@ -32,9 +32,9 @@ ATTACH TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 
 テーブルが恒久的にデタッチされている場合、サーバーの起動時に再アタッチされることはないため、`ATTACH` クエリを明示的に実行する必要があります。
 
-## 新しいテーブルを作成してデータをアタッチする
+## 新しいテーブルを作成してデータをアタッチする {#create-new-table-and-attach-data}
 
-### テーブルデータへのパスを指定する場合
+### テーブルデータへのパスを指定する場合 {#with-specified-path-to-table-data}
 
 このクエリは、指定した構造で新しいテーブルを作成し、`user_files` 内の指定したディレクトリにあるテーブルデータをアタッチします。
 このクエリを実行するには、ユーザーに `READ ON FILE` および `WRITE ON FILE` 権限が必要です。ディレクトリを読み取り、それを新しいテーブルのデータパスに移動するためです。
@@ -60,7 +60,7 @@ SELECT * FROM test;
 └──────┴────┘
 ```
 
-### 指定したテーブル UUID を使用する
+### 指定したテーブル UUID を使用する {#with-specified-table-uuid}
 
 このクエリは、指定された 構造 を持つ新しいテーブルを作成し、指定した UUID を持つテーブルのデータをアタッチします。
 これは [Atomic](/ja/reference/engines/database-engines/atomic) データベースエンジンでサポートされています。
@@ -71,9 +71,11 @@ SELECT * FROM test;
 ATTACH TABLE name UUID '<uuid>' (col1 Type1, ...)
 ```
 
-## MergeTree テーブルを ReplicatedMergeTree として アタッチ
+## MergeTree テーブルを ReplicatedMergeTree として アタッチ {#attach-mergetree-table-as-replicatedmergetree}
 
 レプリケーションされていない MergeTree テーブルを ReplicatedMergeTree として アタッチ できます。ReplicatedMergeTree テーブルは、`default_replica_path` および `default_replica_name` Settings の値を使って作成されます。レプリケートされたテーブルを通常の MergeTree として アタッチ することも可能です。
+
+この変換は、`Atomic` および `Ordinary` データベース内のテーブルでサポートされています。`Ordinary` データベース内のテーブルには UUID がないため、変換時に UUID が生成されます。この UUID を用いて `default_replica_path` が一度だけ展開され、その結果得られたパスが変換後のテーブルのエンジン引数に明示的に保存されます。このようなテーブルにレプリカを追加するには、`ReplicatedMergeTree` エンジンの第 1 引数にこのパスを明示的に指定してください。このパスは `system.replicas` の `zookeeper_path` カラムで確認できます。保存されたパスには `{uuid}` マクロが含まれないため、このようなテーブルが所有する znode は、ロードのたびにパスを `default_replica_path` と改めて照合することで特定されます。このテンプレートとの照合ができない場合 (たとえば `{uuid}` が複数回展開される場合)、変換は拒否されます。なお、`default_replica_name` 内での `{uuid}` の使用は、いずれの変換でもサポートされていません。
 
 このクエリでは、ZooKeeper 内のテーブルデータには影響しない点に注意してください。つまり、アタッチ 後に `SYSTEM RESTORE REPLICA` を使用して ZooKeeper にメタデータを追加するか、`SYSTEM DROP REPLICA ... FROM ZKPATH ...` でクリアする必要があります。
 
@@ -115,7 +117,7 @@ ATTACH TABLE test AS NOT REPLICATED;
 SYSTEM DROP REPLICA 'r1' FROM ZKPATH '/clickhouse/tables/401e6a1f-9bf2-41a3-a900-abb7e94dff98/s1';
 ```
 
-## 既存のDictionaryをアタッチ
+## 既存のDictionaryをアタッチ {#attach-existing-dictionary}
 
 以前にデタッチされたDictionaryをアタッチします。
 
@@ -125,7 +127,7 @@ SYSTEM DROP REPLICA 'r1' FROM ZKPATH '/clickhouse/tables/401e6a1f-9bf2-41a3-a900
 ATTACH DICTIONARY [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
-## 既存のデータベースをアタッチ
+## 既存のデータベースをアタッチ {#attach-existing-database}
 
 以前にデタッチされたデータベースをアタッチします。
 
