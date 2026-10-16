@@ -186,7 +186,7 @@ StorageNATS::StorageNATS(
     , throw_on_startup_failure(mode <= LoadingStrictnessLevel::CREATE)
     , fresh_definition(fresh_definition_)
 {
-    if (throw_on_startup_failure
+    if (fresh_definition
         && (subjects.empty() || std::any_of(subjects.begin(), subjects.end(), [](const String & s) { return s.empty(); })))
     {
         throw Exception(
