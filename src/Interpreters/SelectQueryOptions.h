@@ -74,6 +74,9 @@ struct SelectQueryOptions
 
     bool force_materialize_cte = false;
 
+    /// The query is printed from a resolved query tree, so its integer constants are not positions.
+    bool positional_arguments_already_resolved = false;
+
     SelectQueryOptions( /// NOLINT(google-explicit-constructor)
         QueryProcessingStage::Enum stage = QueryProcessingStage::Complete,
         size_t subquery_depth_ = 0,
@@ -202,6 +205,12 @@ struct SelectQueryOptions
     SelectQueryOptions & forceMaterializeCTE(bool value = true)
     {
         force_materialize_cte = value;
+        return *this;
+    }
+
+    SelectQueryOptions & positionalArgumentsAlreadyResolved(bool value = true)
+    {
+        positional_arguments_already_resolved = value;
         return *this;
     }
 };

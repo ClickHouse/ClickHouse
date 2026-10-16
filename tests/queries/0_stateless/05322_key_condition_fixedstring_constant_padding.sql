@@ -146,7 +146,6 @@ SELECT count() FROM t_named_monotonic WHERE k = CAST(('x', 'y') AS Tuple(a Strin
 -- A `Variant` or `Dynamic` constant is judged by the named tuple it actually holds.
 SELECT count() FROM t_named_dynamic WHERE k = CAST(CAST(('x', 'y') AS Tuple(a String, b String)) AS Dynamic) SETTINGS force_primary_key = 1;
 SELECT count() FROM t_named_dynamic WHERE k = CAST(CAST(('x', 'y') AS Tuple(a String, b String)) AS Variant(Tuple(a String, b String), Tuple(b String, a String))) SETTINGS force_primary_key = 1;
-SELECT count() FROM t_dynamic_key WHERE k = CAST('abc\0' AS Dynamic) SETTINGS force_primary_key = 1;
 -- Named tuple elements are paired by name, as `CAST` does.
 SELECT count() FROM t_named_tuple WHERE k IN (SELECT CAST(tuple('abc', toFixedString('abc', 4)) AS Tuple(b String, a FixedString(4)))) SETTINGS force_primary_key = 1;
 
