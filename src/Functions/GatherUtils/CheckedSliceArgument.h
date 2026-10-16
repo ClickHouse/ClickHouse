@@ -2,8 +2,8 @@
 
 #include <Columns/ColumnNullable.h>
 #include <Columns/IColumn.h>
-#include <Common/typeid_cast.h>
 #include <Common/Exception.h>
+#include <Common/typeid_cast.h>
 #include <Core/TypeId.h>
 
 #include <limits>
