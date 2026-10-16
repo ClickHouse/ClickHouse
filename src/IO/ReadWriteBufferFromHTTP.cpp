@@ -6,6 +6,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
 #include <Common/NetException.h>
+#include <Common/maskURIPassword.h>
 #include <Poco/Net/NetException.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
 #include <Interpreters/Context.h>
@@ -41,6 +42,14 @@ Poco::URI getUriAfterRedirect(const Poco::URI & prev_uri, Poco::Net::HTTPRespons
     return resolved_uri;
 }
 
+/// A URI that ends up in a log line or an exception message must never carry credentials. Convenience
+/// overload for a `Poco::URI`: masks the userinfo and presigned-URL parameters via the shared helper.
+std::string maskedURI(const Poco::URI & uri)
+{
+    std::string masked = uri.toString();
+    DB::maskURICredentials(masked);
+    return masked;
+}
 }
 
 
@@ -185,7 +194,7 @@ bool ReadWriteBufferFromHTTP::checkIfActuallySeekable()
 
 String ReadWriteBufferFromHTTP::getFileName() const
 {
-    return initial_uri.toString();
+    return maskedURI(initial_uri);
 }
 
 void ReadWriteBufferFromHTTP::getHeadResponse(Poco::Net::HTTPResponse & response)
@@ -307,7 +316,7 @@ ReadWriteBufferFromHTTP::CallResult ReadWriteBufferFromHTTP::callImpl(
     /// buffer needs none of its own.
     auto response_body = receiveHTTPResponse(session, response, use_external_buffer ? 0 : buffer_size);
 
-    assertResponseIsOk(current_uri.toString(), response, *response_body, allow_redirects);
+    assertResponseIsOk(maskedURI(current_uri), response, *response_body, allow_redirects, requestCredentialSecrets(request));
 
     return response_body;
 }
@@ -336,7 +345,7 @@ ReadWriteBufferFromHTTP::CallResult ReadWriteBufferFromHTTP::callWithRedirects(
                 " You can {} redirects by changing the setting 'max_http_get_redirects'."
                 " Example: `SET max_http_get_redirects = 10`."
                 " Redirects are restricted to prevent possible attack when a malicious server redirects to an internal resource, bypassing the authentication or firewall.",
-                initial_uri.toString(), max_redirects ? "increase the allowed maximum number of" : "allow");
+                maskedURI(initial_uri), max_redirects ? "increase the allowed maximum number of" : "allow");
 
         if (redirect_callback)
             redirect_callback(current_uri, uri_redirect);
@@ -446,7 +455,7 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
                           "Failed to make request to '{}'{}. "
                           "Error: '{}'. "
                           "Failed at try {}/{}.",
-                          initial_uri.toString(), current_uri.toString() == initial_uri.toString() ? String() : fmt::format(" redirect to '{}'", current_uri.toString()),
+                          maskedURI(initial_uri), current_uri.toString() == initial_uri.toString() ? String() : fmt::format(" redirect to '{}'", maskedURI(current_uri)),
                           error_message,
                           attempt, read_settings.http_settings.max_tries);
 
@@ -485,7 +494,7 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
                          "Error: {}. "
                          "Failed at try {}/{}. "
                          "Will retry with current backoff wait is {}/{} ms.",
-                         initial_uri.toString(), current_uri.toString() == initial_uri.toString() ? String() : fmt::format(" redirect to '{}'", current_uri.toString()),
+                         maskedURI(initial_uri), current_uri.toString() == initial_uri.toString() ? String() : fmt::format(" redirect to '{}'", maskedURI(current_uri)),
                          error_message,
                          attempt + 1, read_settings.http_settings.max_tries,
                          milliseconds_to_wait, read_settings.http_settings.retry_max_backoff_ms);
@@ -516,7 +525,7 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
                     LOG_DEBUG(log,
                               "Stopped retrying the request to '{}'{} at try {}/{}, because the read was cancelled. "
                               "Error: '{}'.",
-                              initial_uri.toString(), current_uri.toString() == initial_uri.toString() ? String() : fmt::format(" redirect to '{}'", current_uri.toString()),
+                              maskedURI(initial_uri), current_uri.toString() == initial_uri.toString() ? String() : fmt::format(" redirect to '{}'", maskedURI(current_uri)),
                               attempt, read_settings.http_settings.max_tries,
                               error_message);
 
@@ -644,7 +653,7 @@ std::unique_ptr<ReadBuffer> ReadWriteBufferFromHTTP::initialize()
                 /// it is retriable error
                 throw HTTPException(
                     ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE,
-                    current_uri.toString(),
+                    maskedURI(current_uri),
                     Poco::Net::HTTPResponse::HTTP_REQUESTED_RANGE_NOT_SATISFIABLE,
                     response.getReason(),
                     explanation);
@@ -766,13 +775,13 @@ size_t ReadWriteBufferFromHTTP::readBigAt(char * to, size_t n, size_t offset, co
                 String explanation = fmt::format(
                     "When reading with readBigAt {}. "
                     "Cannot read with range: [{}, {}] (response status: {}, reason: {}), will retry",
-                    initial_uri.toString(),
+                    maskedURI(initial_uri),
                     *range.begin, *range.end,
                     toString(response.getStatus()), response.getReason());
 
                 throw HTTPException(
                     ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE,
-                    current_uri.toString(),
+                    maskedURI(current_uri),
                     Poco::Net::HTTPResponse::HTTP_REQUESTED_RANGE_NOT_SATISFIABLE,
                     response.getReason(),
                     explanation);
