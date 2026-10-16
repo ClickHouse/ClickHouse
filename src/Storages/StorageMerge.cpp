@@ -66,6 +66,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
+#include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/Sources/NullSource.h>
@@ -1726,7 +1727,10 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
                 default_value = (*subcolumn)[0];
             }
 
-            column_name_to_node.emplace(column_name, std::make_shared<ConstantNode>(std::move(default_value), merge_column->type));
+            /// The child re-analyzes the printed query, so the default must print as `_CAST` to keep its type and name.
+            auto default_node = foldConstantCast(createCastFunction(
+                std::make_shared<ConstantNode>(std::move(default_value), merge_column->type), merge_column->type, modified_context));
+            column_name_to_node.emplace(column_name, std::move(default_node));
         }
 
         bool with_aliases = /* common_processed_stage == QueryProcessingStage::FetchColumns && */ !storage_columns.getAliases().empty();
@@ -1878,6 +1882,8 @@ static bool recursivelyApplyToReadingSteps(
     /// files say so, so the reader has to be asked - a declared sorting key alone means nothing.
     else if (auto * read_from_object_storage = typeid_cast<ReadFromObjectStorageStep *>(node->step.get()))
         ok &= object_storage_func(*read_from_object_storage);
+    else if (node->children.empty() && !typeid_cast<ReadNothingStep *>(node->step.get()))
+        return false; /// Any other read does not promise an order.
 
     return ok;
 }
@@ -2001,7 +2007,7 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
 
         /// The child plan is united into this pipeline in the same process, where nothing
         /// unmarshalls its blocks, so `BlocksMarshallingStep` must not be added to it.
-        auto child_select_query_options = SelectQueryOptions(processed_stage);
+        auto child_select_query_options = SelectQueryOptions(processed_stage).positionalArgumentsAlreadyResolved();
         child_select_query_options.is_local_plan_for_distributed_query = true;
 
         /// Converting query to AST because types might be different in the source table.
