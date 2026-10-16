@@ -261,6 +261,17 @@ bool ActionsDAG::Node::isDeterministic() const
     return deterministic_if_func && deterministic_if_const;
 }
 
+const ActionsDAG::Node * ActionsDAG::Node::getWithoutAlias() const
+{
+    const auto * node = this;
+    while (node->type == ActionType::ALIAS)
+    {
+        chassert(node->children.size() == 1);
+        node = node->children.front();
+    }
+    return node;
+}
+
 void ActionsDAG::Node::toTree(JSONBuilder::JSONMap & map) const
 {
     map.add("Node Type", magic_enum::enum_name(type));
@@ -2088,6 +2099,8 @@ ColumnsWithTypeAndName ActionsDAG::evaluatePartialResult(
                             node_to_column[node] = executeActionForPartialResult(node, std::move(arguments), input_rows_count, true);
                         else if (params.allow_unknown_function_arguments)
                             node_to_column[node] = executeActionForPartialResult(node, std::move(arguments), input_rows_count, false);
+                        else /// Recorded as unknown, so that a node shared by several parents is walked once.
+                            node_to_column.try_emplace(node, ColumnWithTypeAndName{nullptr, node->result_type, node->result_name});
                     }
                 }
             }
