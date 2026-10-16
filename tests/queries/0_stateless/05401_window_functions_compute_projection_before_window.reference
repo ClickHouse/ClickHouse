@@ -63,6 +63,13 @@ QUALIFY
 1	0	2
 2	0	3
 4	0	5
+a grouping key is an input of its own type
+sipHash64
+Window
+Window
+length
+14055796082810512824	10
+20	10
 GROUP BY
 0	36	45	0_
 1	24	45	1_

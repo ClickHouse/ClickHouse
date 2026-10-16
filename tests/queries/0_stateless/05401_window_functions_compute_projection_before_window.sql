@@ -88,6 +88,24 @@ LIMIT UNTIL number = 1 SETTINGS max_block_size = 10, max_threads = 1;
 SELECT 'QUALIFY';
 SELECT number, throwIf(number = 3) AS t, row_number() OVER (ORDER BY number) AS rn FROM numbers(5) QUALIFY rn != 4 ORDER BY number;
 
+SELECT 'a grouping key is an input of its own type';
+-- The window step reads the `UInt32` key, not `s`, so the `UInt64` hash of it is computed after the window step.
+SELECT if(explain LIKE '%Window (%', 'Window', 'sipHash64') FROM
+(
+    EXPLAIN actions = 1, compact = 0, pretty = 0
+    SELECT sipHash64(toUInt32(s)) AS h, count() OVER () AS n FROM (SELECT toString(number) AS s FROM numbers(10)) GROUP BY toUInt32(s)
+)
+WHERE explain LIKE '%Window (%' OR explain LIKE '%FUNCTION sipHash64%';
+-- A `String` key is credited as the key itself.
+SELECT if(explain LIKE '%Window (%', 'Window', 'length') FROM
+(
+    EXPLAIN actions = 1, compact = 0, pretty = 0
+    SELECT length(concat(s, 'x')) AS l, count() OVER () AS n FROM (SELECT toString(number) AS s FROM numbers(10)) GROUP BY concat(s, 'x')
+)
+WHERE explain LIKE '%Window (%' OR explain LIKE '%FUNCTION length%';
+SELECT sum(h), any(n) FROM (SELECT sipHash64(toUInt32(s)) AS h, count() OVER () AS n FROM (SELECT toString(number) AS s FROM numbers(10)) GROUP BY toUInt32(s));
+SELECT sum(l), any(n) FROM (SELECT length(concat(s, 'x')) AS l, count() OVER () AS n FROM (SELECT toString(number) AS s FROM numbers(10)) GROUP BY concat(s, 'x'));
+
 SELECT 'GROUP BY';
 SELECT number % 3 AS k, sum(number) * 2 AS s, sum(sum(number)) OVER () AS total, toString(k) || '_' AS str
 FROM numbers(10) GROUP BY k ORDER BY k;

@@ -385,18 +385,34 @@ QueryTreeNodePtr resolveColumnExpression(QueryTreeNodePtr node)
     return node;
 }
 
+/// The grouping keys of a query with aggregation, which are, like the aggregate function results,
+/// the input columns of the actions after aggregation.
+struct AggregationKeys
+{
+    bool has_aggregation = false;
+    QueryTreeNodePtrWithHashSet keys;
+};
+
 /** Whether the expression can be computed before the window functions instead of after them.
   * The window step keeps every row and only changes the order of rows and their split into blocks,
   * so an expression evaluated row by row has the same value on either side of it.
-  * The columns and the aggregate function results that the expression reads and whose values have
-  * no maximum size, such as `String` or `Array`, are added to `unbounded_inputs`, except constant columns.
+  * The columns, the grouping keys and the aggregate function results that the expression reads and whose values
+  * have no maximum size, such as `String` or `Array`, are added to `unbounded_inputs`, except constant columns.
   * A column is added as the expression that computes it, see `resolveColumnExpression`.
   */
 bool canBeComputedBeforeWindow(
     const QueryTreeNodePtr & node,
     const ColumnNodePtrWithHashSet & correlated_columns_set,
+    const AggregationKeys & aggregation_keys,
     QueryTreeNodePtrWithHashSet & unbounded_inputs)
 {
+    if (aggregation_keys.keys.contains(node))
+    {
+        if (!node->getResultType()->haveMaximumSizeOfValue())
+            unbounded_inputs.insert(node);
+        return true;
+    }
+
     switch (node->getNodeType())
     {
         case QueryTreeNodeType::CONSTANT:
@@ -406,6 +422,12 @@ bool canBeComputedBeforeWindow(
             const auto & column_node = node->as<ColumnNode &>();
             auto column_source = column_node.getColumnSourceOrNull();
             bool is_lambda_argument = column_source && column_source->getNodeType() == QueryTreeNodeType::LAMBDA_ARGS;
+
+            /// After aggregation, a column is read only as a part of a grouping key or of an aggregate function,
+            /// so the expression could not be matched with the input columns of the actions.
+            if (aggregation_keys.has_aggregation && !is_lambda_argument)
+                return false;
+
             if (!is_lambda_argument && !column_node.getColumnType()->haveMaximumSizeOfValue())
             {
                 auto column_expression = resolveColumnExpression(node);
@@ -417,12 +439,12 @@ bool canBeComputedBeforeWindow(
         case QueryTreeNodeType::LIST:
         {
             for (const auto & child : node->as<ListNode &>().getNodes())
-                if (!canBeComputedBeforeWindow(child, correlated_columns_set, unbounded_inputs))
+                if (!canBeComputedBeforeWindow(child, correlated_columns_set, aggregation_keys, unbounded_inputs))
                     return false;
             return true;
         }
         case QueryTreeNodeType::LAMBDA:
-            return canBeComputedBeforeWindow(node->as<LambdaNode &>().getExpression(), correlated_columns_set, unbounded_inputs);
+            return canBeComputedBeforeWindow(node->as<LambdaNode &>().getExpression(), correlated_columns_set, aggregation_keys, unbounded_inputs);
         case QueryTreeNodeType::FUNCTION:
         {
             const auto & function_node = node->as<FunctionNode &>();
@@ -448,7 +470,7 @@ bool canBeComputedBeforeWindow(
                 function && (function->isStateful() || !function->isDeterministicInScopeOfQuery() || function->hasObservableSideEffects()))
                 return false;
 
-            return canBeComputedBeforeWindow(function_node.getArgumentsNode(), correlated_columns_set, unbounded_inputs);
+            return canBeComputedBeforeWindow(function_node.getArgumentsNode(), correlated_columns_set, aggregation_keys, unbounded_inputs);
         }
         default:
             /// Subqueries.
@@ -471,6 +493,7 @@ struct ExpressionBeforeWindowCandidate
 void collectExpressionsComputableBeforeWindow(
     const QueryTreeNodePtr & node,
     const ColumnNodePtrWithHashSet & correlated_columns_set,
+    const AggregationKeys & aggregation_keys,
     QueryTreeNodePtrWithHashSet & collected_nodes,
     std::vector<ExpressionBeforeWindowCandidate> & result)
 {
@@ -480,7 +503,7 @@ void collectExpressionsComputableBeforeWindow(
 
     QueryTreeNodePtrWithHashSet unbounded_inputs;
     const auto & result_type = function_node->getResultType();
-    if (canBeComputedBeforeWindow(node, correlated_columns_set, unbounded_inputs)
+    if (canBeComputedBeforeWindow(node, correlated_columns_set, aggregation_keys, unbounded_inputs)
         && !unbounded_inputs.empty()
         && result_type->haveMaximumSizeOfValue())
     {
@@ -504,19 +527,25 @@ void collectExpressionsComputableBeforeWindow(
                 || !short_circuit_settings.arguments_with_disabled_lazy_execution.contains(i)))
             continue;
 
-        collectExpressionsComputableBeforeWindow(arguments[i], correlated_columns_set, collected_nodes, result);
+        collectExpressionsComputableBeforeWindow(arguments[i], correlated_columns_set, aggregation_keys, collected_nodes, result);
     }
 }
 
-/** Collect the columns of tables and the aggregate function results from which the values of the expression
-  * are computed, following the columns of subqueries to their projection expressions and the columns with
-  * expressions (`ALIAS` columns) to their expressions. Two values can share memory (for example, if one is
-  * an identity `CAST` of the other) only if they are computed from common base columns.
+/** Collect the columns of tables, the grouping keys and the aggregate function results from which the values
+  * of the expression are computed, following the columns of subqueries to their projection expressions and
+  * the columns with expressions (`ALIAS` columns) to their expressions. Two values can share memory
+  * (for example, if one is an identity `CAST` of the other) only if they are computed from common base columns.
+  * The grouping keys are matched only in the expressions of the query itself, `aggregation_keys` is null
+  * for the expressions of subqueries.
   */
-void collectBaseColumns(const QueryTreeNodePtr & node, QueryTreeNodePtrWithHashSet & base_columns, size_t depth = 0)
+void collectBaseColumns(
+    const QueryTreeNodePtr & node,
+    const AggregationKeys * aggregation_keys,
+    QueryTreeNodePtrWithHashSet & base_columns,
+    size_t depth = 0)
 {
     static constexpr size_t max_depth = 100;
-    if (depth > max_depth)
+    if (depth > max_depth || (aggregation_keys && aggregation_keys->keys.contains(node)))
     {
         base_columns.insert(node);
         return;
@@ -533,7 +562,7 @@ void collectBaseColumns(const QueryTreeNodePtr & node, QueryTreeNodePtrWithHashS
 
         if (column_node->hasExpression())
         {
-            collectBaseColumns(column_node->getExpression(), base_columns, depth + 1);
+            collectBaseColumns(column_node->getExpression(), nullptr, base_columns, depth + 1);
             return;
         }
 
@@ -541,7 +570,7 @@ void collectBaseColumns(const QueryTreeNodePtr & node, QueryTreeNodePtrWithHashS
         if (column_expression.get() == node.get())
             base_columns.insert(node);
         else
-            collectBaseColumns(column_expression, base_columns, depth + 1);
+            collectBaseColumns(column_expression, nullptr, base_columns, depth + 1);
         return;
     }
 
@@ -553,7 +582,7 @@ void collectBaseColumns(const QueryTreeNodePtr & node, QueryTreeNodePtrWithHashS
 
     for (const auto & child : node->getChildren())
         if (child)
-            collectBaseColumns(child, base_columns, depth + 1);
+            collectBaseColumns(child, aggregation_keys, base_columns, depth + 1);
 }
 
 /** Collect the base columns (see `collectBaseColumns`) of the values that are read after the window step
@@ -563,14 +592,15 @@ void collectBaseColumns(const QueryTreeNodePtr & node, QueryTreeNodePtrWithHashS
 void collectBaseColumnsReadAfterWindow(
     const QueryTreeNodePtr & node,
     const QueryTreeNodePtrWithHashSet & expressions_before_window,
+    const AggregationKeys & aggregation_keys,
     QueryTreeNodePtrWithHashSet & base_columns)
 {
     if (!node || expressions_before_window.contains(node))
         return;
 
-    if (node->getNodeType() == QueryTreeNodeType::COLUMN)
+    if (node->getNodeType() == QueryTreeNodeType::COLUMN || aggregation_keys.keys.contains(node))
     {
-        collectBaseColumns(node, base_columns);
+        collectBaseColumns(node, &aggregation_keys, base_columns);
         return;
     }
 
@@ -581,7 +611,7 @@ void collectBaseColumnsReadAfterWindow(
     }
 
     for (const auto & child : node->getChildren())
-        collectBaseColumnsReadAfterWindow(child, expressions_before_window, base_columns);
+        collectBaseColumnsReadAfterWindow(child, expressions_before_window, aggregation_keys, base_columns);
 }
 
 /** Select the expressions worth computing before the window functions.
@@ -594,6 +624,7 @@ void collectBaseColumnsReadAfterWindow(
   */
 QueryTreeNodes selectExpressionsWorthComputingBeforeWindow(
     const QueryNode & query_node,
+    const AggregationKeys & aggregation_keys,
     std::vector<ExpressionBeforeWindowCandidate> candidates)
 {
     QueryTreeNodePtrWithHashSet candidate_nodes;
@@ -601,15 +632,13 @@ QueryTreeNodes selectExpressionsWorthComputingBeforeWindow(
         candidate_nodes.insert(candidate.node);
 
     QueryTreeNodePtrWithHashSet base_columns_read_after_window;
-    collectBaseColumnsReadAfterWindow(query_node.getProjectionNode(), candidate_nodes, base_columns_read_after_window);
-    collectBaseColumnsReadAfterWindow(query_node.getOrderByNode(), candidate_nodes, base_columns_read_after_window);
-    collectBaseColumnsReadAfterWindow(query_node.getInterpolate(), candidate_nodes, base_columns_read_after_window);
-    collectBaseColumnsReadAfterWindow(query_node.getLimitByNode(), candidate_nodes, base_columns_read_after_window);
+    for (const auto * node : {&query_node.getProjectionNode(), &query_node.getOrderByNode(), &query_node.getInterpolate(), &query_node.getLimitByNode()})
+        collectBaseColumnsReadAfterWindow(*node, candidate_nodes, aggregation_keys, base_columns_read_after_window);
 
     std::vector<QueryTreeNodePtrWithHashSet> candidates_base_columns(candidates.size());
     for (size_t i = 0; i < candidates.size(); ++i)
         for (const auto & input : candidates[i].unbounded_inputs)
-            collectBaseColumns(input.node, candidates_base_columns[i]);
+            collectBaseColumns(input.node, &aggregation_keys, candidates_base_columns[i]);
 
     QueryTreeNodes result;
     std::vector<bool> visited(candidates.size(), false);
@@ -650,7 +679,7 @@ QueryTreeNodes selectExpressionsWorthComputingBeforeWindow(
         for (const auto & input : group_inputs)
         {
             QueryTreeNodePtrWithHashSet input_base_columns;
-            collectBaseColumns(input.node, input_base_columns);
+            collectBaseColumns(input.node, &aggregation_keys, input_base_columns);
 
             /// A value without base columns, such as `materialize('a')`, may share memory with anything.
             bool can_be_freed = !input_base_columns.empty();
@@ -805,12 +834,30 @@ std::optional<WindowAnalysisResult> analyzeWindow(
     const auto & query_node = query_tree->as<const QueryNode &>();
     if (!query_node.hasQualify() && !query_node.hasLimit() && !query_node.hasLimitAfter() && !query_node.hasLimitUntil())
     {
+        AggregationKeys aggregation_keys;
+        aggregation_keys.has_aggregation = query_node.hasGroupBy() || hasAggregateFunctionNodes(query_tree);
+        if (query_node.hasGroupBy())
+        {
+            for (const auto & grouping_node : query_node.getGroupBy().getNodes())
+            {
+                if (query_node.isGroupByWithGroupingSets())
+                {
+                    for (const auto & key : grouping_node->as<ListNode &>().getNodes())
+                        aggregation_keys.keys.insert(key);
+                }
+                else
+                {
+                    aggregation_keys.keys.insert(grouping_node);
+                }
+            }
+        }
+
         QueryTreeNodePtrWithHashSet collected_nodes;
         std::vector<ExpressionBeforeWindowCandidate> candidates;
         for (const auto & projection_node : query_node.getProjection().getNodes())
-            collectExpressionsComputableBeforeWindow(projection_node, correlated_columns_set, collected_nodes, candidates);
+            collectExpressionsComputableBeforeWindow(projection_node, correlated_columns_set, aggregation_keys, collected_nodes, candidates);
 
-        expressions_before_window = selectExpressionsWorthComputingBeforeWindow(query_node, std::move(candidates));
+        expressions_before_window = selectExpressionsWorthComputingBeforeWindow(query_node, aggregation_keys, std::move(candidates));
     }
 
     WindowAnalysisResult result;
