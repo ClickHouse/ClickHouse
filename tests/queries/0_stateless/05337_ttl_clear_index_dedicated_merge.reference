@@ -1,0 +1,21 @@
+idx_s	0
+idx_v	0
+idx_w	1
+1
+1
+1
+0	1
+1	0
+0
+[100,2]
+[1,2]
+idx_a	0
+idx_b	1
+idx_a	0
+idx_b	0
+3	2
+ttl_clear_index_rename	all_1_1_1
+ttl_clear_index_packed	TTLClearIndexMerge	1
+ttl_clear_index_patch	TTLClearIndexMerge	1
+ttl_clear_index_rename	TTLClearIndexMerge	1
+ttl_clear_index_retarget	TTLClearIndexMerge	2

@@ -202,8 +202,9 @@ void MergeTreeDataMergerMutator::updateTTLMergeTimes(const MergeSelectorChoices 
         {
             case MergeType::Regular:
             case MergeType::TTLDrop:
+            case MergeType::TTLClearIndex:
             {
-                /// Do not update anything for regular and drop merges.
+                /// Do not update anything for regular, drop, and clear-index merges.
                 break;
             }
             case MergeType::TTLDelete:
@@ -258,6 +259,7 @@ void MergeTreeDataMergerMutator::rollbackTTLMergeTime(const String & partition_i
     {
         case MergeType::Regular:
         case MergeType::TTLDrop:
+        case MergeType::TTLClearIndex:
             break;
         case MergeType::TTLDelete:
             restore(next_delete_ttl_merge_times_by_partition, last_delete_ttl_merge_time_advance);
@@ -433,7 +435,7 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
         const PartProperties & part = parts.front();
 
         /// FIXME? Probably we should check expired ttls here, not only calculated.
-        if (part.info.level > 0 && (!metadata_snapshot->hasAnyTTL() || part.all_ttl_calculated_if_any))
+        if (part.info.level > 0 && (!metadata_snapshot->hasAnyTTL() || (part.all_ttl_calculated_if_any && !part.next_index_clear_ttl)))
         {
             return std::unexpected(SelectMergeFailure{
                 .reason = SelectMergeFailure::Reason::NOTHING_TO_MERGE,

@@ -59,6 +59,12 @@ struct PartProperties
         const time_t next_recompress_ttl;
     };
     const std::optional<RecompressTTLInfo> recompression_ttl_info = std::nullopt;
+
+    /// The earliest expired `CLEAR INDEX` TTL among the rules whose index files the part has, or 0 if none.
+    const time_t next_index_clear_ttl = 0;
+
+    /// Whether a `TTLClearIndex` merge may take the part.
+    const bool can_clear_indexes = false;
 };
 
 using PartsRange = std::vector<PartProperties>;

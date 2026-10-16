@@ -13,6 +13,7 @@ enum class TTLUpdateField : uint8_t
     MOVES_TTL,
     RECOMPRESSION_TTL,
     GROUP_BY_TTL,
+    INDEX_CLEAR_TTL,
 };
 
 /// Calculates new ttl_info and does nothing with data.

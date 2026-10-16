@@ -21,6 +21,8 @@ enum class MergeType : uint8_t
     TTLRecompress = 3,
     /// Merge assigned to drop parts completely
     TTLDrop = 4,
+    /// Merge that deletes the files of expired skip indexes from one part and hardlinks the rest of its files
+    TTLClearIndex = 5,
 };
 
 /// Check parsed merge_type from raw int and get enum value.
