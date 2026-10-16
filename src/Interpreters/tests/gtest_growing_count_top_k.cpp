@@ -104,3 +104,30 @@ TEST(GrowingCountTopK, KeepsACopyOfAPackedStringKey)
     EXPECT_EQ(static_cast<std::string_view>(top.getGroups()[0].key), key);
     EXPECT_EQ(top.getGroups()[0].count, 2);
 }
+
+/// Groups that overtake each other leave the top and enter it again, A, B, B, A, A with one entry: each change copies
+/// the new leader's key over the copy of the group it evicts, so the copies never outnumber the entries.
+TEST(GrowingCountTopK, ReusesTheCopyOfAnEntry)
+{
+    TopK<std::string_view> top(1);
+    std::string block;
+    UInt64 a = 0;
+    UInt64 b = 0;
+    const auto grow = [&](UInt64 & word, const std::string & key)
+    {
+        block = key;
+        ++word;
+        top.update<true>(word, block, 0);
+        /// The next block overwrites the bytes that the key viewed.
+        std::ranges::fill(block, 'x');
+    };
+    grow(a, "alpha");
+    const char * copy = top.getGroups()[0].key.data();
+    grow(b, "omega");
+    grow(b, "omega");
+    grow(a, "alpha");
+    grow(a, "alpha");
+
+    EXPECT_EQ(sortedGroups(top), (std::vector<std::pair<std::string_view, UInt64>>{{"alpha", 3}}));
+    EXPECT_EQ(top.getGroups()[0].key.data(), copy);
+}
