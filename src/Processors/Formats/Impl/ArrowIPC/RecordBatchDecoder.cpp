@@ -898,13 +898,13 @@ ColumnPtr RecordBatchDecoder::decodeInner(
                     const char * src = values.ptr + i * value_width + offset;
                     if (is_int64)
                     {
-                        Int64 count;
+                        Int64 count = 0;
                         memcpy(&count, src, sizeof(count));
                         data[i] = count;
                     }
                     else
                     {
-                        Int32 count;
+                        Int32 count = 0;
                         memcpy(&count, src, sizeof(count));
                         data[i] = count;
                     }
