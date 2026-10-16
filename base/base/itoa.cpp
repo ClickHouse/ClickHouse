@@ -7,6 +7,10 @@
 #include <base/itoa.h>
 #include <base/unaligned.h>
 
+#if defined(__aarch64__)
+#    include <arm_neon.h>
+#endif
+
 #if defined(__x86_64__)
 #    include <cpuid.h>
 #    include <immintrin.h>
@@ -150,6 +154,127 @@ char * itoa(UInt16 i, char * p)
 char * itoa(Int16 i, char * p)
 {
     return writeInt16Text(i, p);
+}
+
+/// ----------------------------------------------------------------------------------------------------
+/// 32 bits: as zmij (https://github.com/vitaut/zmij) does, with SWAR (SIMD within a register) and two small tables.
+/// ----------------------------------------------------------------------------------------------------
+
+namespace
+{
+/// Kendall Willets' digit count, as in {fmt}: indexed by the leading zeros of `n` as a 64-bit value, 32 to 64 (for 0),
+/// `(n + entry) >> 32` is the digit count of that bit length, plus one if `n` reaches the next power of ten.
+/// Together with `reading_order` in one object, so that one register holds the address of both.
+struct UInt32Tables
+{
+    std::array<UInt64, 33> digit_count_increments;
+    std::array<uint8_t, 26> reading_order;
+};
+
+constexpr std::array<UInt64, 33> makeDigitCountIncrements()
+{
+    std::array<UInt64, 33> table{};
+    for (UInt32 leading_zeros = 32; leading_zeros <= 64; ++leading_zeros)
+    {
+        UInt32 bit = leading_zeros == 64 ? 0 : 63 - leading_zeros;
+        UInt64 digits = 1;
+        UInt64 power = 10;
+        for (; power <= (UInt64(1) << bit); power *= 10)
+            ++digits;
+        table[leading_zeros - 32] = (digits << 32) + (power < (UInt64(1) << 32) ? (UInt64(1) << 32) - power : 0);
+    }
+    return table;
+}
+
+/// The digits come out of `writeUInt32Text` with digits 5 to 8 first, and reversed in each 32-bit lane on
+/// little-endian: d8 d7 d6 d5, d4 d3 d2 d1, d10 d9. 16 bytes of `reading_order` from offset `k` are the shuffle that
+/// puts them in reading order without the first `k`.
+constexpr UInt32Tables uint32_tables = {
+    makeDigitCountIncrements(),
+    std::endian::native == std::endian::little ? std::array<uint8_t, 26>{7, 6, 5, 4, 3, 2, 1, 0, 9, 8}
+                                               : std::array<uint8_t, 26>{4, 5, 6, 7, 0, 1, 2, 3, 10, 11}};
+
+using UInt8x16 = uint8_t __attribute__((vector_size(16)));
+
+/// `result[i] = bytes[order[i]]` with every `order[i]` below 16: a byte shuffle with a runtime mask, the one operation
+/// without a vector operator. Elsewhere than x86 and ARM, it is done one byte at a time.
+ALWAYS_INLINE inline UInt8x16 shuffleBytes(UInt8x16 bytes, UInt8x16 order)
+{
+#if defined(__SSSE3__)
+    return std::bit_cast<UInt8x16>(_mm_shuffle_epi8(std::bit_cast<__m128i>(bytes), std::bit_cast<__m128i>(order)));
+#elif defined(__aarch64__)
+    return std::bit_cast<UInt8x16>(vqtbl1q_u8(std::bit_cast<uint8x16_t>(bytes), std::bit_cast<uint8x16_t>(order)));
+#else
+    UInt8x16 result;
+    for (size_t i = 0; i < 16; ++i)
+        result[i] = bytes[order[i]];
+    return result;
+#endif
+}
+
+/// The value is split into groups of four, four and two digits, one per 32-bit lane, each lane into digit pairs,
+/// then each pair into digits, as zmij does. One shuffle puts the digits in reading order without the leading zeros,
+/// and one 16-byte store writes them.
+ALWAYS_INLINE inline char * writeUInt32Text(UInt32 value, char * p)
+{
+    UInt32 length = static_cast<UInt32>((value + uint32_tables.digit_count_increments[std::countl_zero(UInt64(value)) - 32]) >> 32);
+
+    using UInt64x2 = UInt64 __attribute__((vector_size(16)));
+    using UInt32x4 = UInt32 __attribute__((vector_size(16)));
+    using UInt32x8 = UInt32 __attribute__((vector_size(32)));
+    using UInt16x8 = UInt16 __attribute__((vector_size(16)));
+
+    /// The groups, from n / 100 and n / 10^6 computed at once in two 64-bit lanes (the constants clang uses for them):
+    /// next_four = n / 100 - 10000 * (n / 10^6), first_four = n / 10^6, last_two = n - 100 * (n / 100).
+    /// On big-endian, the high half of a 64-bit lane is the first 32-bit lane.
+    constexpr bool little_endian = std::endian::native == std::endian::little;
+    UInt64x2 wide = {value, value};
+    UInt32x4 quotients = std::bit_cast<UInt32x4>((wide * UInt64x2{0x51eb851f, 0x431bde83}) >> UInt64x2{37, 50});
+    UInt32x4 terms;
+    UInt32x4 subtracted;
+    /// Shuffles that are one instruction on x86 and ARM: the low halves of the 64-bit lanes of both vectors, and
+    /// the two 64-bit lanes swapped. The fourth lane gets `n`, which is never written out.
+    if constexpr (little_endian)
+    {
+        terms = __builtin_shufflevector(quotients, std::bit_cast<UInt32x4>(wide), 0, 2, 4, 6);
+        subtracted = __builtin_shufflevector(quotients, quotients, 2, 3, 0, 1);
+    }
+    else
+    {
+        terms = __builtin_shufflevector(quotients, std::bit_cast<UInt32x4>(wide), 1, 3, 5, 7);
+        subtracted = __builtin_shufflevector(quotients, quotients, 3, 2, 1, 0);
+    }
+    UInt32x4 groups = terms + subtracted * UInt32x4{static_cast<UInt32>(-10000), 0, static_cast<UInt32>(-100), 0};
+
+    /// A lane v < 10^4 becomes (v % 100) | (v / 100) << 16: v + (v / 100) * (2^16 - 100). The last lane is 0; the
+    /// different multipliers there make clang load each constant as a vector, instead of broadcasting one element
+    /// with an extra instruction.
+    UInt32x4 pairs = groups + ((groups * UInt32x4{5243, 5243, 5243, 0}) >> 19) * UInt32x4{65536 - 100, 65536 - 100, 65536 - 100, 0};
+    /// Each 16-bit pair p < 100 becomes the characters (p % 10) | (p / 10) << 8: p + (p / 10) * (2^8 - 10), with
+    /// p / 10 = (p * 6554) >> 16, the high half of a 16-bit multiplication.
+    UInt16x8 pair_lanes = std::bit_cast<UInt16x8>(pairs);
+    UInt16x8 tens = __builtin_convertvector((__builtin_convertvector(pair_lanes, UInt32x8) * 6554) >> 16, UInt16x8);
+    UInt8x16 text = std::bit_cast<UInt8x16>(pair_lanes + 0x3030 + tens * UInt16(256 - 10));
+
+    UInt8x16 order;
+    memcpy(&order, uint32_tables.reading_order.data() + 10 - length, 16);
+    text = shuffleBytes(text, order);
+    memcpy(p, &text, 16);
+    return p + length;
+}
+}
+
+char * itoa(UInt32 i, char * p)
+{
+    return writeUInt32Text(i, p);
+}
+
+char * itoa(Int32 i, char * p)
+{
+    UInt32 sign = static_cast<UInt32>(i >> 31);
+    *p = '-';
+    /// As for `Int8`, in unsigned arithmetic: the magnitude of `INT32_MIN` does not fit in `Int32`.
+    return writeUInt32Text((static_cast<UInt32>(i) ^ sign) - sign, p - static_cast<Int32>(sign));
 }
 
 /// ----------------------------------------------------------------------------------------------------
@@ -457,29 +582,29 @@ ALWAYS_INLINE inline char * writeLeadingMinus(char * pos)
 }
 
 /// ----------------------------------------------------------------------------------------------------
-/// 32 bits, and `long` where it is a distinct type
+/// `long` where it is a distinct type
 /// ----------------------------------------------------------------------------------------------------
 
-#define DEFAULT_ITOA(T) \
-    char * itoa(T i, char * p) \
-    { \
-        return jeaiii::to_text_from_integer(p, i); \
-    }
-
-#define FOR_MISSING_INTEGER_TYPES(M) \
-    M(UInt32) \
-    M(Int32)
-
-FOR_MISSING_INTEGER_TYPES(DEFAULT_ITOA)
-
-/// `long` is not covered by the list above where it is a distinct type.
 #if defined(LONG_IS_A_DISTINCT_TYPE)
-DEFAULT_ITOA(unsigned long)
-DEFAULT_ITOA(long)
-#endif
+/// The same as the fixed-width type of its size.
+char * itoa(unsigned long i, char * p)
+{
+    static_assert(sizeof(unsigned long) == 4 || sizeof(unsigned long) == 8);
+    if constexpr (sizeof(unsigned long) == 8)
+        return itoa(UInt64(i), p);
+    else
+        return itoa(UInt32(i), p);
+}
 
-#undef FOR_MISSING_INTEGER_TYPES
-#undef DEFAULT_ITOA
+char * itoa(long i, char * p)
+{
+    static_assert(sizeof(long) == 4 || sizeof(long) == 8);
+    if constexpr (sizeof(long) == 8)
+        return itoa(Int64(i), p);
+    else
+        return itoa(Int32(i), p);
+}
+#endif
 
 /// ----------------------------------------------------------------------------------------------------
 /// 64 bits
