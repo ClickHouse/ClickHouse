@@ -321,14 +321,14 @@ void NO_INLINE sliceFromRightConstantOffsetBounded(Source && src, Sink && sink, 
     }
 }
 
-/// Strings reject UInt64 arguments outside Int64 range, while arraySlice keeps its existing behavior.
+/// Array slicing keeps its existing semantics; string functions opt into checked UInt64 arguments.
 enum class SliceArgumentPolicy
 {
     PreserveLegacySemantics,
     RejectOutOfRangeUInt64,
 };
 
-template <SliceArgumentPolicy policy, typename Source, typename Sink>
+template <SliceArgumentPolicy policy = SliceArgumentPolicy::PreserveLegacySemantics, typename Source, typename Sink>
 void NO_INLINE sliceDynamicOffsetUnbounded(Source && src, Sink && sink, const IColumn & offset_column)
 {
     const bool is_null = offset_column.onlyNull();
@@ -374,7 +374,7 @@ void NO_INLINE sliceDynamicOffsetUnbounded(Source && src, Sink && sink, const IC
 }
 
 
-template <bool inverse, SliceArgumentPolicy policy, typename Source, typename Sink>
+template <bool inverse, SliceArgumentPolicy policy = SliceArgumentPolicy::PreserveLegacySemantics, typename Source, typename Sink>
 static void sliceDynamicOffsetBoundedImpl(Source && src, Sink && sink, const IColumn * offset_column, const IColumn * length_column)
 {
     const bool is_offset_null = !offset_column || offset_column->onlyNull();
@@ -486,14 +486,14 @@ static void sliceDynamicOffsetBoundedImpl(Source && src, Sink && sink, const ICo
 }
 
 
-template <SliceArgumentPolicy policy, typename Source, typename Sink>
+template <SliceArgumentPolicy policy = SliceArgumentPolicy::PreserveLegacySemantics, typename Source, typename Sink>
 void NO_INLINE sliceDynamicOffsetBounded(Source && src, Sink && sink, const IColumn & offset_column, const IColumn & length_column)
 {
     sliceDynamicOffsetBoundedImpl<false, policy>(std::forward<Source>(src), std::forward<Sink>(sink), &offset_column, &length_column);
 }
 
 /// Similar to above, but with no offset.
-template <SliceArgumentPolicy policy, typename Source, typename Sink>
+template <SliceArgumentPolicy policy = SliceArgumentPolicy::PreserveLegacySemantics, typename Source, typename Sink>
 void NO_INLINE sliceFromLeftDynamicLength(Source && src, Sink && sink, const IColumn & length_column)
 {
     sliceDynamicOffsetBoundedImpl<false, policy>(std::forward<Source>(src), std::forward<Sink>(sink), nullptr, &length_column);
@@ -502,8 +502,7 @@ void NO_INLINE sliceFromLeftDynamicLength(Source && src, Sink && sink, const ICo
 template <typename Source, typename Sink>
 void NO_INLINE sliceFromRightDynamicLength(Source && src, Sink && sink, const IColumn & length_column)
 {
-    sliceDynamicOffsetBoundedImpl<true, SliceArgumentPolicy::PreserveLegacySemantics>(
-        std::forward<Source>(src), std::forward<Sink>(sink), nullptr, &length_column);
+    sliceDynamicOffsetBoundedImpl<true>(std::forward<Source>(src), std::forward<Sink>(sink), nullptr, &length_column);
 }
 
 

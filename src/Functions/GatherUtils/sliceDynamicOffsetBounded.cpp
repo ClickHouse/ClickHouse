@@ -32,14 +32,11 @@ struct SliceDynamicOffsetBoundedSelectArraySource : public ArraySourceSelector<S
             NullableSink sink(result->getData(), result->getOffsets(), source.getColumnSize());
 
             if (is_const)
-                sliceDynamicOffsetBounded<SliceArgumentPolicy::PreserveLegacySemantics>(
-                    static_cast<ConstSource<NullableSource> &>(source), sink, offset_column, length_column);
+                sliceDynamicOffsetBounded(static_cast<ConstSource<NullableSource> &>(source), sink, offset_column, length_column);
             else if (source.isReplicated())
-                sliceDynamicOffsetBounded<SliceArgumentPolicy::PreserveLegacySemantics>(
-                    static_cast<ReplicatedSource<NullableSource> &>(source), sink, offset_column, length_column);
+                sliceDynamicOffsetBounded(static_cast<ReplicatedSource<NullableSource> &>(source), sink, offset_column, length_column);
             else
-                sliceDynamicOffsetBounded<SliceArgumentPolicy::PreserveLegacySemantics>(
-                    static_cast<NullableSource &>(source), sink, offset_column, length_column);
+                sliceDynamicOffsetBounded(static_cast<NullableSource &>(source), sink, offset_column, length_column);
         }
         else
         {
@@ -47,13 +44,11 @@ struct SliceDynamicOffsetBoundedSelectArraySource : public ArraySourceSelector<S
             Sink sink(result->getData(), result->getOffsets(), source.getColumnSize());
 
             if (is_const)
-                sliceDynamicOffsetBounded<SliceArgumentPolicy::PreserveLegacySemantics>(
-                    static_cast<ConstSource<SourceType> &>(source), sink, offset_column, length_column);
+                sliceDynamicOffsetBounded(static_cast<ConstSource<SourceType> &>(source), sink, offset_column, length_column);
             else if (source.isReplicated())
-                sliceDynamicOffsetBounded<SliceArgumentPolicy::PreserveLegacySemantics>(
-                    static_cast<ReplicatedSource<SourceType> &>(source), sink, offset_column, length_column);
+                sliceDynamicOffsetBounded(static_cast<ReplicatedSource<SourceType> &>(source), sink, offset_column, length_column);
             else
-                sliceDynamicOffsetBounded<SliceArgumentPolicy::PreserveLegacySemantics>(source, sink, offset_column, length_column);
+                sliceDynamicOffsetBounded(source, sink, offset_column, length_column);
         }
     }
 };
