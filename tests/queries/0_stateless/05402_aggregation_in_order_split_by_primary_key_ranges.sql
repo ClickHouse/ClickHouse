@@ -41,11 +41,9 @@ FROM (EXPLAIN PIPELINE SELECT k AS k2, sum(v), count() FROM t_agg_ranges GROUP B
 SELECT countIf(explain LIKE '%FilterSortedStreamByRange%') AS ranges
 FROM (EXPLAIN PIPELINE SELECT k, sum(v), count() FROM t_agg_ranges PREWHERE v > 100 WHERE ts > 10 GROUP BY k);
 
-SELECT '-- one thread or max_rows_to_group_by: no split';
+SELECT '-- one thread: no split';
 SELECT countIf(explain LIKE '%FilterSortedStreamByRange%') AS ranges
 FROM (EXPLAIN PIPELINE SELECT k, sum(v), count() FROM t_agg_ranges GROUP BY k SETTINGS max_threads = 1);
-SELECT countIf(explain LIKE '%FilterSortedStreamByRange%') AS ranges
-FROM (EXPLAIN PIPELINE SELECT k, sum(v), count() FROM t_agg_ranges GROUP BY k SETTINGS max_rows_to_group_by = 10, group_by_overflow_mode = 'any');
 
 SELECT '-- one part: results';
 SELECT k, sum(v), count() FROM t_agg_ranges GROUP BY k ORDER BY k LIMIT 3;

@@ -137,7 +137,7 @@ void tryApply(QueryPlan::Node & node)
     const auto & params = aggregating->getParams();
     if (!aggregating->inOrder() || aggregating->isMergingSkipped() || aggregating->explicitSortingRequired()
         || aggregating->isGroupingSets() || aggregating->memoryBoundMergingWillBeUsed()
-        || params.max_rows_to_group_by != 0 || params.overflow_row)
+        || params.overflow_row)
         return;
 
     ActionsDAG dag;

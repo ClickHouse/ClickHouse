@@ -8,8 +8,7 @@
 -- an alias of the key, PREWHERE and WHERE keep the split
 4
 4
--- one thread or max_rows_to_group_by: no split
-0
+-- one thread: no split
 0
 -- one part: results
 0	499500000	1000

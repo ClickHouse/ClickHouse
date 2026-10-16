@@ -5126,7 +5126,7 @@ Run an aggregation in order of the primary key (`optimize_aggregation_in_order`)
 
 Without this setting the streams of an in-order read cover consecutive key ranges of the parts and the final merge consumes them one after another, so the aggregation of a table with few parts runs on one thread. The granule on the border of two ranges is read twice and trimmed by a filter.
 
-Not applied to `FINAL`, `GROUPING SETS`, `max_rows_to_group_by`, reverse order, or when reading with parallel replicas.
+Not applied to `FINAL`, `GROUPING SETS`, reverse order, or when reading with parallel replicas.
 )", 0, \
         {"26.11", false, false, "New setting to run an aggregation in order of the primary key as independent aggregations over primary-key ranges."}) \
     DECLARE(UInt64, read_in_order_two_level_merge_threshold, 100, R"(
