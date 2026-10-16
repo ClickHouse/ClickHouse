@@ -10,6 +10,11 @@
 #    include <immintrin.h>
 #endif
 
+/// ----------------------------------------------------------------------------------------------------
+/// Shared by several sizes
+/// Digit pair tables, the jeaiii algorithm (16 to 64 bits, and 8 bits for now), fixed blocks of eight digits and the sign.
+/// ----------------------------------------------------------------------------------------------------
+
 namespace
 {
 ALWAYS_INLINE inline char * outOneDigit(char * p, uint8_t value)
@@ -307,50 +312,63 @@ ALWAYS_INLINE inline void writeEightFixedDigits(char * p, uint32_t z)
     outTwoDigits(p + 6, static_cast<uint8_t>(f6 >> 32));
 }
 
-char * writeFixedDigitsPortable(char * p, UInt64 value, UInt32 width)
+ALWAYS_INLINE inline char * writeLeadingMinus(char * pos)
 {
-    UInt32 rest = width;
-
-    while (rest > 8)
-    {
-        writeEightFixedDigits(p + rest - 8, static_cast<uint32_t>(value % 100000000ULL));
-        value /= 100000000ULL;
-        rest -= 8;
-
-        if (value == 0)
-        {
-            memset(p, '0', rest);
-            return p + width;
-        }
-    }
-
-    if (rest == 0)
-        return p;
-
-    if (rest <= 2)
-    {
-        if (rest == 2)
-            outTwoDigits(p, static_cast<uint8_t>(value % 100));
-        else
-            *p = static_cast<char>('0' + value % 10);
-        return p + width;
-    }
-
-    char tail[8];
-    writeEightFixedDigits(tail, static_cast<uint32_t>(value % 100000000ULL));
-
-    switch (rest)
-    {
-        case 8: memcpy(p, tail, 8); break;
-        case 7: memcpy(p, tail + 1, 7); break;
-        case 6: memcpy(p, tail + 2, 6); break;
-        case 5: memcpy(p, tail + 3, 5); break;
-        case 4: memcpy(p, tail + 4, 4); break;
-        default: memcpy(p, tail + 5, 3); break;
-    }
-    return p + width;
+    *pos = '-';
+    return pos + 1;
+}
 }
 
+/// ----------------------------------------------------------------------------------------------------
+/// 8 bits
+/// ----------------------------------------------------------------------------------------------------
+
+char * itoa(UInt8 i, char * p)
+{
+    return jeaiii::to_text_from_integer(p, uint8_t(i));
+}
+
+char * itoa(Int8 i, char * p)
+{
+    return jeaiii::to_text_from_integer(p, int8_t(i));
+}
+
+/// ----------------------------------------------------------------------------------------------------
+/// 16 and 32 bits, and `long` where it is a distinct type
+/// ----------------------------------------------------------------------------------------------------
+
+#define DEFAULT_ITOA(T) \
+    char * itoa(T i, char * p) \
+    { \
+        return jeaiii::to_text_from_integer(p, i); \
+    }
+
+#define FOR_MISSING_INTEGER_TYPES(M) \
+    M(uint8_t) \
+    M(UInt16) \
+    M(UInt32) \
+    M(int8_t) \
+    M(Int16) \
+    M(Int32)
+
+FOR_MISSING_INTEGER_TYPES(DEFAULT_ITOA)
+
+/// `long` is not covered by the list above where it is a distinct type.
+#if defined(LONG_IS_A_DISTINCT_TYPE)
+DEFAULT_ITOA(unsigned long)
+DEFAULT_ITOA(long)
+#endif
+
+#undef FOR_MISSING_INTEGER_TYPES
+#undef DEFAULT_ITOA
+
+/// ----------------------------------------------------------------------------------------------------
+/// 64 bits
+/// The AVX-512 IFMA path also serves `writeFixedDigits`.
+/// ----------------------------------------------------------------------------------------------------
+
+namespace
+{
 #if defined(__x86_64__)
 
 /// Champagne Gareau, J. and Lemire, D., "Converting an Integer to a Decimal String in Under
@@ -559,7 +577,27 @@ ALWAYS_INLINE inline char * writeUInt64Text(UInt64 value, char * p)
 #endif
     return jeaiii::to_text_from_integer(p, value);
 }
+}
 
+char * itoa(UInt64 i, char * p)
+{
+    return writeUInt64Text(i, p);
+}
+
+char * itoa(Int64 i, char * p)
+{
+    if (i < 0)
+        return writeUInt64Text(0 - static_cast<UInt64>(i), writeLeadingMinus(p));
+    return writeUInt64Text(static_cast<UInt64>(i), p);
+}
+
+/// ----------------------------------------------------------------------------------------------------
+/// 128 and 256 bits
+/// They share the signed path and the division by 10^18.
+/// ----------------------------------------------------------------------------------------------------
+
+namespace
+{
 constexpr uint64_t max_multiple_of_hundred_that_fits_in_64_bits = 1'00'00'00'00'00'00'00'00'00ull;
 static_assert(max_multiple_of_hundred_that_fits_in_64_bits % 100 == 0);
 
@@ -752,12 +790,6 @@ ALWAYS_INLINE inline char * writeUIntText(const UInt256 & _x, char * p)
     return writeUIntTextAbove128(_x, p);
 }
 
-ALWAYS_INLINE inline char * writeLeadingMinus(char * pos)
-{
-    *pos = '-';
-    return pos + 1;
-}
-
 /// Out of line: everything but the fast path needs a 256-bit local, which holds an array and so gets a
 /// `-fstack-protector-strong` canary.
 NO_INLINE char * writeSInt256TextSlow(const Int256 & x, char * pos)
@@ -814,16 +846,6 @@ ALWAYS_INLINE inline char * writeSIntText(const T & x, char * pos)
 }
 }
 
-char * itoa(UInt8 i, char * p)
-{
-    return jeaiii::to_text_from_integer(p, uint8_t(i));
-}
-
-char * itoa(Int8 i, char * p)
-{
-    return jeaiii::to_text_from_integer(p, int8_t(i));
-}
-
 char * itoa(UInt128 i, char * p)
 {
     return writeUIntText(i, p);
@@ -844,41 +866,55 @@ char * itoa(const Int256 & i, char * p)
     return writeSIntText(i, p);
 }
 
-#define DEFAULT_ITOA(T) \
-    char * itoa(T i, char * p) \
-    { \
-        return jeaiii::to_text_from_integer(p, i); \
+/// ----------------------------------------------------------------------------------------------------
+/// `writeFixedDigits`: the fractional part of `Decimal`
+/// ----------------------------------------------------------------------------------------------------
+
+namespace
+{
+char * writeFixedDigitsPortable(char * p, UInt64 value, UInt32 width)
+{
+    UInt32 rest = width;
+
+    while (rest > 8)
+    {
+        writeEightFixedDigits(p + rest - 8, static_cast<uint32_t>(value % 100000000ULL));
+        value /= 100000000ULL;
+        rest -= 8;
+
+        if (value == 0)
+        {
+            memset(p, '0', rest);
+            return p + width;
+        }
     }
 
-#define FOR_MISSING_INTEGER_TYPES(M) \
-    M(uint8_t) \
-    M(UInt16) \
-    M(UInt32) \
-    M(int8_t) \
-    M(Int16) \
-    M(Int32)
+    if (rest == 0)
+        return p;
 
-FOR_MISSING_INTEGER_TYPES(DEFAULT_ITOA)
+    if (rest <= 2)
+    {
+        if (rest == 2)
+            outTwoDigits(p, static_cast<uint8_t>(value % 100));
+        else
+            *p = static_cast<char>('0' + value % 10);
+        return p + width;
+    }
 
-/// `long` is not covered by the list above where it is a distinct type.
-#if defined(LONG_IS_A_DISTINCT_TYPE)
-DEFAULT_ITOA(unsigned long)
-DEFAULT_ITOA(long)
-#endif
+    char tail[8];
+    writeEightFixedDigits(tail, static_cast<uint32_t>(value % 100000000ULL));
 
-#undef FOR_MISSING_INTEGER_TYPES
-#undef DEFAULT_ITOA
-
-char * itoa(UInt64 i, char * p)
-{
-    return writeUInt64Text(i, p);
+    switch (rest)
+    {
+        case 8: memcpy(p, tail, 8); break;
+        case 7: memcpy(p, tail + 1, 7); break;
+        case 6: memcpy(p, tail + 2, 6); break;
+        case 5: memcpy(p, tail + 3, 5); break;
+        case 4: memcpy(p, tail + 4, 4); break;
+        default: memcpy(p, tail + 5, 3); break;
+    }
+    return p + width;
 }
-
-char * itoa(Int64 i, char * p)
-{
-    if (i < 0)
-        return writeUInt64Text(0 - static_cast<UInt64>(i), writeLeadingMinus(p));
-    return writeUInt64Text(static_cast<UInt64>(i), p);
 }
 
 char * writeFixedDigits(UInt64 value, UInt32 width, char * p)
@@ -972,6 +1008,10 @@ char * writeFixedDigits(const UInt256 & value, UInt32 width, char * p)
 
     return writeFixedDigitsAbove128(value, width, p);
 }
+
+/// ----------------------------------------------------------------------------------------------------
+/// Test hooks
+/// ----------------------------------------------------------------------------------------------------
 
 void setUseAVX512ItoaForTests([[maybe_unused]] bool value)
 {
