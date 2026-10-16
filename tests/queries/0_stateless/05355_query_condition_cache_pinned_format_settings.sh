@@ -61,5 +61,25 @@ ${CLICKHOUSE_CLIENT} --query "SELECT 'null as default', count() FROM ${DB}.t_nul
 ${CLICKHOUSE_CLIENT} --query "SELECT 'null not default', count() FROM ${DB}.t_null_not_default WHERE a = 1 SETTINGS ${SETTINGS}" \
     >/dev/null 2>&1 || echo "null not default: exception"
 
+# The same for `date_time_overflow_behavior`: the file has a `Date32` value out of the range of `Date` in `d`,
+# and the column of the tables is `Date`. A table that saturates the value records that no row group matches,
+# and a table that must throw for the value must not skip the file because of these entries. The query reads
+# another column `x`, so that the condition on `d` is moved to `PREWHERE`, which is what writes the entries.
+${CLICKHOUSE_CLIENT} --query "
+    INSERT INTO FUNCTION file('${DATA_DIR}/dates.parquet') SELECT if(number = 500000, toDate32('2200-01-01'), toDate32('2001-01-01') + number % 1000) AS d, toUInt8(1) AS x FROM numbers(1000000)
+    SETTINGS output_format_parquet_row_group_size = 100000, engine_file_truncate_on_insert = 1"
+touch -d '2020-01-01 00:00:00' "${USER_FILES_PATH}/${DATA_DIR}/dates.parquet"
+${CLICKHOUSE_CLIENT} --query "
+    CREATE TABLE ${DB}.t_date_saturate (d Date, x UInt8) ENGINE = File(Parquet, '${DATA_DIR}/dates.parquet')
+    SETTINGS ${NO_PRUNING}, input_format_parquet_dictionary_filter_push_down = 0, date_time_overflow_behavior = 'saturate'"
+${CLICKHOUSE_CLIENT} --query "
+    CREATE TABLE ${DB}.t_date_throw (d Date, x UInt8) ENGINE = File(Parquet, '${DATA_DIR}/dates.parquet')
+    SETTINGS ${NO_PRUNING}, input_format_parquet_dictionary_filter_push_down = 0, date_time_overflow_behavior = 'throw'"
+
+${CLICKHOUSE_CLIENT} --query "SELECT 'date saturate', sum(x) FROM ${DB}.t_date_saturate WHERE d = toDate('2000-01-01') SETTINGS ${SETTINGS}"
+${CLICKHOUSE_CLIENT} --query "SELECT 'date saturate', sum(x) FROM ${DB}.t_date_saturate WHERE d = toDate('2000-01-01') SETTINGS ${SETTINGS}"
+${CLICKHOUSE_CLIENT} --query "SELECT 'date throw', sum(x) FROM ${DB}.t_date_throw WHERE d = toDate('2000-01-01') SETTINGS ${SETTINGS}" 2>&1 \
+    | grep -q VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE && echo "date throw: exception"
+
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${DB}"
 rm -rf "${USER_FILES_PATH:?}/${DATA_DIR}"
