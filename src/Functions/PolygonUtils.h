@@ -29,6 +29,7 @@
 #include <vector>
 #include <iterator>
 #include <cmath>
+#include <limits>
 #include <algorithm>
 
 
@@ -47,6 +48,28 @@ inline constexpr Float64 max_abs_polygon_coordinate = 1e150;
 [[noreturn]] inline void throwPolygonCoordinateIsTooLarge()
 {
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Polygon is not valid: a coordinate exceeds {} in absolute value", max_abs_polygon_coordinate);
+}
+
+/// Exact sign of the orientation by boost's adaptive predicate, for the rare inputs the fast path cannot decide.
+[[gnu::cold]] NO_INLINE inline int orientationSignExact(Float64 ax, Float64 ay, Float64 bx, Float64 by, Float64 cx, Float64 cy)
+{
+    using Point = boost::geometry::model::d2::point_xy<Float64>;
+    using Side = boost::geometry::strategy::side::side_robust<Float64, boost::geometry::strategy::side::fp_equals_policy>;
+    return Side::apply(Point(ax, ay), Point(bx, by), Point(cx, cy));
+}
+
+/// Sign of the orientation of (cx, cy) relative to the line (ax, ay) -> (bx, by): positive on the left, 0 on the line.
+/// Exact unless products of coordinate differences overflow or underflow.
+inline int orientationSign(Float64 ax, Float64 ay, Float64 bx, Float64 by, Float64 cx, Float64 cy)
+{
+    Float64 left = (ax - cx) * (by - cy);
+    Float64 right = (ay - cy) * (bx - cx);
+    Float64 det = left - right;
+    /// Shewchuk's error bound of the rounded determinant: above it, its sign is exact.
+    constexpr Float64 epsilon = std::numeric_limits<Float64>::epsilon();
+    if (std::abs(det) >= (1.5 + 4 * epsilon) * epsilon * (std::abs(left) + std::abs(right)))
+        return det > 0 ? 1 : (det < 0 ? -1 : 0);
+    return orientationSignExact(ax, ay, bx, by, cx, cy);
 }
 
 namespace bgi = boost::geometry::index;
@@ -299,25 +322,23 @@ private:
 
     struct HalfPlane
     {
-        /// Left closed half-plane of the line through (x0, y0) with direction (dx, dy), evaluated relative to (x0, y0).
-        CoordinateType x0;
-        CoordinateType y0;
-        CoordinateType dx;
-        CoordinateType dy;
+        /// Closed left half-plane of the line from -> to.
+        CoordinateType from_x;
+        CoordinateType from_y;
+        CoordinateType to_x;
+        CoordinateType to_y;
 
         HalfPlane() = default;
 
-        /// Take left half-plane.
         HalfPlane(const Point & from, const Point & to)
         {
-            x0 = from.x();
-            y0 = from.y();
-            dx = to.x() - from.x();
-            dy = to.y() - from.y();
+            from_x = from.x();
+            from_y = from.y();
+            to_x = to.x();
+            to_y = to.y();
         }
 
-        /// Inner part of the HalfPlane is the left side of initialized vector.
-        bool contains(CoordinateType x, CoordinateType y) const { return dx * (y - y0) - dy * (x - x0) >= 0; }
+        bool contains(CoordinateType x, CoordinateType y) const { return orientationSign(from_x, from_y, to_x, to_y, x, y) >= 0; }
     };
 
     struct Cell
@@ -627,8 +648,7 @@ bool PointInPolygonWithGrid<CoordinateType>::crossesBox(
 template <typename CoordinateType>
 int PointInPolygonWithGrid<CoordinateType>::side(const Point & a, const Point & b, const Point & c)
 {
-    using Side = boost::geometry::strategy::side::side_robust<CoordinateType, boost::geometry::strategy::side::fp_equals_policy>;
-    return Side::apply(a, b, c);
+    return orientationSign(a.x(), a.y(), b.x(), b.y(), c.x(), c.y());
 }
 
 template <typename CoordinateType>
@@ -641,8 +661,13 @@ bool PointInPolygonWithGrid<CoordinateType>::isInside(const Polygon & poly, Coor
         {
             const Point & a = ring[i];
             const Point & b = ring[j];
-            if ((a.y() > y) != (b.y() > y) && x < (b.x() - a.x()) * (y - a.y()) / (b.y() - a.y()) + a.x())
-                inside = !inside;
+            if ((a.y() > y) != (b.y() > y))
+            {
+                /// The point is left of the edge directed upwards.
+                int point_side = side(a, b, Point(x, y));
+                if (b.y() > a.y() ? point_side > 0 : point_side < 0)
+                    inside = !inside;
+            }
         }
         return inside;
     };

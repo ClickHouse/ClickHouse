@@ -1,11 +1,11 @@
-bowtie 2-arg, dense	884	884	884
-bowtie 2-arg, lightweight	884	884	884
-bowtie 3-arg, dense	859	859
-bowtie 3-arg, lightweight	859	859
+bowtie 2-arg, dense	878	878	878
+bowtie 2-arg, lightweight	878	878	878
+bowtie 3-arg, dense	853	853
+bowtie 3-arg, lightweight	853	853
 lost rows	0
 extra rows	0
-invalid hole, dense	3754	3754
-invalid hole, lightweight	3754	3754
+invalid hole, dense	3748	3748
+invalid hole, lightweight	3748	3748
 invalid hole, lost rows	0
 hole outside shell, counts	4480	4480
 valid hole, dense	4480	4480
