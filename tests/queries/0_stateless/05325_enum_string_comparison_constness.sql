@@ -13,6 +13,10 @@ DROP TABLE IF EXISTS t_string_key;
 CREATE TABLE t_string_key (s String) ENGINE = MergeTree ORDER BY s PARTITION BY s SETTINGS index_granularity = 1;
 INSERT INTO t_string_key VALUES ('z'), ('a'), ('m');
 
+DROP TABLE IF EXISTS t_enum_name_key;
+CREATE TABLE t_enum_name_key (e Enum8('z' = 1, 'a' = 2, 'm' = 3)) ENGINE = MergeTree ORDER BY toString(e) SETTINGS index_granularity = 1;
+INSERT INTO t_enum_name_key VALUES ('z'), ('a'), ('m');
+
 DROP TABLE IF EXISTS t_string_derived_key;
 CREATE TABLE t_string_derived_key (s String) ENGINE = MergeTree ORDER BY (toString(s), s) SETTINGS index_granularity = 1;
 INSERT INTO t_string_derived_key VALUES ('z'), ('a'), ('m');
@@ -38,6 +42,8 @@ SELECT count() FROM t_enum_cmp WHERE e > 'm' AND e = 'z';
 SELECT count() FROM t_enum_cmp WHERE e >= 'm' AND e <= 'z';
 SELECT count() FROM t_enum_cmp WHERE toString(e) > 'm';
 SELECT count() FROM t_enum_chain WHERE x < e AND e < 'm';
+SELECT count() FROM t_enum_name_key WHERE e < 'm';
+SELECT count() FROM t_enum_name_key WHERE e > 'a';
 SELECT count() FROM t_string_key WHERE s < CAST('m', 'Enum8(''z'' = 1, ''a'' = 2, ''m'' = 3)');
 SELECT count() FROM t_string_key WHERE s < CAST('m', 'Enum8(''z'' = 1, ''a'' = 2, ''m'' = 3)') AND s = 'z';
 SELECT count() FROM t_string_derived_key WHERE s < CAST(CAST('m', 'Enum8(''z'' = 1, ''a'' = 2, ''m'' = 3)') AS Dynamic);
@@ -48,5 +54,6 @@ SELECT e < materialize('q') FROM t_enum_cmp; -- { serverError UNKNOWN_ELEMENT_OF
 
 DROP TABLE t_enum_cmp;
 DROP TABLE t_enum_chain;
+DROP TABLE t_enum_name_key;
 DROP TABLE t_string_key;
 DROP TABLE t_string_derived_key;
