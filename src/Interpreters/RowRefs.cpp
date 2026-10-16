@@ -103,7 +103,8 @@ public:
     using Entries = PODArrayWithStackMemory<Entry, sizeof(Entry)>;
     using RowRefs = PODArrayWithStackMemory<RowRef, sizeof(RowRef)>;
 
-    static constexpr bool is_descending = (inequality == ASOFJoinInequality::Greater || inequality == ASOFJoinInequality::GreaterOrEquals);
+    /// Greater and GreaterOrEquals take the last entry before the boundary found by `boundSearch`, the other two take the boundary itself.
+    static constexpr bool take_last = (inequality == ASOFJoinInequality::Greater || inequality == ASOFJoinInequality::GreaterOrEquals);
     /// Less and GreaterOrEquals need the first entry greater than the value, the other two the first entry not less than it.
     static constexpr bool use_upper_bound = (inequality == ASOFJoinInequality::Less || inequality == ASOFJoinInequality::GreaterOrEquals);
 
@@ -169,7 +170,7 @@ public:
         TKey k = column.getElement(row_num);
 
         size_t pos = boundSearch(k);
-        if constexpr (is_descending)
+        if constexpr (take_last)
         {
             /// The last entry before the boundary
             if (pos == 0)
