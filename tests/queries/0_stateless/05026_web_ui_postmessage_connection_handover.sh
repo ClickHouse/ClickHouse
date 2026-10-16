@@ -263,3 +263,16 @@ fragmentation=$(echo "$fragmentation_body" | grep -qxF "            const option
     && ! echo "$fragmentation_body" | grep -qF "fetchOptions);" \
     && echo bound || echo unbound)
 echo "jemalloc fragmentation=${fragmentation}"
+
+# `/dashboard` records the server and the user in a history entry, but not the password. The entry
+# has to name the connection the requests after it are sent to, so the connection is read from the
+# inputs before it is saved; otherwise a handover of server B while viewing server A records A. And
+# going Back or Forward to an entry of another server or user must not keep the current password, or
+# it would send the password handed over for B to A.
+content=$(fetch_page dashboard)
+history_save=$(echo "$content" | sed -n '/^function saveState() {$/,/^}$/p' | grep -qxF "    readConnection();" \
+    && echo bound || echo stale)
+history_restore=$(echo "$content" | sed -n '/^window.onpopstate = function(event) {$/,/^};$/p' \
+        | grep -qxF "    if (!sameServerAddress(host, previous_host) || user !== previous_user) password = '';" \
+    && echo cleared || echo kept)
+echo "dashboard history_save=${history_save} history_password=${history_restore}"

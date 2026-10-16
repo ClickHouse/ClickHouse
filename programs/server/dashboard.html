@@ -1446,10 +1446,17 @@ function cancelQueries() {
     query_controller = new AbortController();
 }
 
-async function doFetch(query, url_params = '') {
+/// Adopt the connection from its inputs: the user may have edited them, or a host page may have
+/// handed a connection over. Every request starts with this, and so does `saveState`, so that a
+/// history entry always names the server and the user the requests that follow it are sent to.
+function readConnection() {
     host = document.getElementById('url').value || host;
     user = document.getElementById('user').value;
     password = document.getElementById('password').value;
+}
+
+async function doFetch(query, url_params = '') {
+    readConnection();
 
     // The configured address can already carry a query string - `?database=db`, or a proxy route
     // selecting a cluster or a namespace - both when the user types it into the server URL field and
@@ -1796,6 +1803,7 @@ const decodeState = (x) => JSON.parse(LZString.decompressFromEncodedURIComponent
 const encodeState = (x) => LZString.compressToEncodedURIComponent(JSON.stringify(x));
 
 function saveState() {
+    readConnection();
     const state = { host, user, queries, params, search_query, customized };
     history.pushState(state, '',
         window.location.pathname + (window.location.search || '') + '#' + encodeState(state));
@@ -1853,9 +1861,17 @@ function regenerate() {
     }
 }
 
+/// A history entry stores the server and the user, but never the password. The current password
+/// belongs to the current server and user, so it is kept only while the entry names both of them;
+/// otherwise going Back after a handover would send the handed-over password to the previous server.
 window.onpopstate = function(event) {
     if (!event.state) { return; }
+    cancelQueries();
+    readConnection();
+    const previous_host = host;
+    const previous_user = user;
     ({host, user, queries, params, search_query, customized} = event.state);
+    if (!sameServerAddress(host, previous_host) || user !== previous_user) password = '';
     updateFromState();
     regenerate();
     drawAll();

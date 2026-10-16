@@ -14,3 +14,4 @@ schema credential_store=endpoint credential_retrieval=endpoint auto_probe=endpoi
 play initial_probe=endpoint
 handover dashboard=invalidated schema=invalidated jemalloc=invalidated processors_profile=invalidated
 jemalloc fragmentation=bound
+dashboard history_save=bound history_password=cleared
