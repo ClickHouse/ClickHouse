@@ -1,43 +1,4 @@
-# Review references
-
-Detailed procedures for triggered expansions that fire on a small fraction of PRs.
-Read the relevant section only when its trigger appears in the diff; the base checklist
-in `SKILL.md` names the trigger and points here.
-
-## Build flag that drops a global side-effect or weakens numeric semantics {#build-flags}
-
-Trigger: the diff changes compiler/build flags that remove a documented side-effect or relax
-FP behavior across many translation units — `-fno-math-errno` (libm stops setting `errno`),
-`-ffast-math` / `-ffp-contract=fast` / `-fassociative-math` / `-freciprocal-math` /
-`-fno-signed-zeros` (reordered/contracted/round-changed FP → non-reproducible results),
-`-fno-trapping-math`, strict-aliasing relaxation, and similar.
-
-The PR's implicit promise is "no code relying on the old behavior is affected"; treat that as
-the contract and verify it. A grep over the affected symbol is not proof, because a match only
-matters if it is **(a) compiled with the flag** and **(b) actually depends on the specific
-behavior the flag removes**, not merely mentions the symbol.
-
-- **(a) build graph (general):** a match in code not compiled with the flag cannot be affected —
-  `rust_vendor`/cargo crates, `EXCLUDE_FROM_ALL`, disabled `ENABLE_*` options, or an uncompiled
-  part of a contrib (e.g. a vendored DB's server backend when only its client library is built).
-- **(b) what a true consumer looks like is flag-specific** — work it out per flag, don't reuse
-  one flag's shape for another. For `-fno-math-errno` the affected behavior is `errno` after a
-  `<math.h>` call, so most matches are false: code that *sets* errno (a libm's own
-  `errno = EDOM` / `with_errno(...)`, an error-code table, `return ERANGE`) is not a consumer —
-  only a *read* after a math call is; and a read whose producer the flag does not touch
-  (`strtod`/`strtol`/`scanf`, a syscall) is unaffected. For reproducibility-affecting FP flags
-  (`-ffast-math`/contract/associative/signed-zeros) there is no "setter/reader" split at all —
-  the consumer is anything that assumes bit-identical results: cross-platform/cross-ISA
-  reproducibility, distributed-merge/aggregation consistency, and committed test references — so
-  the cost is acknowledged and reasoned about, not grep-audited.
-
-Also check **scope intent:** flags appended to `COMPILER_FLAGS` before `add_subdirectory(contrib …)`
-propagate into vendored libraries. Contrib coverage may be deliberate (often it is where the
-speedup lives) or unsafe, but it must be a conscious, stated decision with any exceptions carved
-out per target. A real consumer that silently loses the behavior is a correctness/compatibility
-**Blocker**; an unstated contrib-wide reproducibility change is at least a **Major**.
-
-## Access and privilege checks {#access-checks}
+# Access and privilege checks
 
 Trigger: the diff adds, moves, removes, or relies on an access check (`context->checkAccess`,
 `getAccess()->checkAccess*`, `checkAccessRights`, `AccessType::*`, row policies, readonly /
@@ -45,7 +6,7 @@ Trigger: the diff adds, moves, removes, or relies on an access check (`context->
 user may not be allowed to read — a table function or engine over another table, a system table,
 an introspection function, a new subcolumn, new `DESCRIBE` / `EXPLAIN` / `SHOW` output.
 
-### Completeness before granularity
+## Completeness before granularity
 
 Answer "is the check reached on every path, before anything is derived?" **before** "is the check
 the right shape?". Critiquing an `AccessType`, a column granularity, or a strictness choice reads
@@ -53,7 +14,7 @@ like a security finding and is easy to reach, but it leaves the prior question o
 that skips the check entirely is the worse defect. An author's "the strict check is intentional"
 answers the shape question only.
 
-### Entrypoint inventory
+## Entrypoint inventory
 
 A new surface has more entrypoints than the one the check was written for. For a table function
 that reads another ClickHouse object:
@@ -99,7 +60,7 @@ that reads another ClickHouse object:
 For a system table the analogue is per-row filtering in `fillData` **and** `read`; for a subcolumn
 or introspection function it is every path that can render the value.
 
-### Metadata and error text are protected information
+## Metadata and error text are protected information
 
 "No data leaked, the read is checked" is not a defence. Column names and types, the engine name,
 part names, sizes, row counts, existence, and the error code itself are all information about the
@@ -110,14 +71,14 @@ check tells an unprivileged user the engine of a table it cannot select from. Di
 `UNKNOWN_TABLE` from `ACCESS_DENIED` likewise discloses existence: follow what the surrounding
 code already does, but never let a new message be more specific than the check that guards it.
 
-### Tests: one negative case per entrypoint
+## Tests: one negative case per entrypoint
 
 Requiring a privilege is user-visible behavior, so each guarded path needs its own case: the read
 without the grant, the structure resolution (`DESCRIBE`) without the grant, a partial grant that
 must still be denied, and the full grant that must succeed. A check whose only test is the path it
 was written for proves nothing about the others; a check with no test is a **Major** on its own.
 
-### Sibling surfaces
+## Sibling surfaces
 
 Surfaces of one family are written from each other's template, so a defect in one is usually in all
 of them. Enumerate the family from the **registrations** — `factory.registerFunction` and
@@ -203,13 +164,13 @@ nodes means `ITableFunction::execute` is the only guard the planner assumes exis
 function naming a ClickHouse table in its arguments must check `SELECT` itself, and case 3 shows what
 happens when the surface is derived from a real table and nobody does.
 
-### Severity
+## Severity
 
 An entrypoint that reaches protected data **or metadata** without the check is a **Blocker**, even
 when no row data leaks. A check that is merely too coarse — it denies a grant that ought to suffice
 — is at most a **Major**, and is a legitimate design choice once documented and tested.
 
-### Worked example
+## Worked example
 
 `mergeTreeCodecBlockCounts` (https://github.com/ClickHouse/ClickHouse/pull/109623) checked `SELECT`
 on the source table in `StorageMergeTreeCodecBlockCounts::read` only. The review found that check
@@ -232,14 +193,3 @@ entrypoint rather than for coverage of the paths.
 The fix is https://github.com/ClickHouse/ClickHouse/pull/116647, still open at the time of writing,
 so the structure path is unguarded in `master` — which is why the function appears in the sibling
 list above rather than as a closed case.
-
-## Native protocol / native format spec sync {#spec-sync}
-
-Fires only when the diff changes the bytes on the wire: a new or changed packet type or handshake
-field, a `DBMS_TCP_PROTOCOL_VERSION` / `DBMS_MIN_REVISION_*` bump, or a new or changed column
-encoding in `NativeReader` / `NativeWriter`. Refactors, bug fixes that keep the layout, and edits to
-`TCPHandler` / `Connection` that do not change what is sent do not trigger it.
-
-When it fires, check that the matching spec is updated: `docs/reference/interfaces/specs/NativeProtocol.mdx`
-for the protocol, `docs/reference/interfaces/specs/NativeFormat.mdx` for the format. Third-party
-clients are built against these specs. A missing update is a **Major** finding naming what changed.
