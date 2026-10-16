@@ -222,11 +222,13 @@ def test_parked_query_still_renews_cpu_slot():
         "max_read_buffer_size_local_fs = 4096, min_bytes_to_use_direct_io = 1, local_filesystem_read_method = 'pread'"
     )
 
+    errors_a = []
+
     def run_query_a():
         try:
             node.query(query_a, query_id="parking_a", timeout=300)
-        except Exception:
-            pass  # Killed below once query `b` is done
+        except Exception as e:
+            errors_a.append(str(e))
 
     thread_a = threading.Thread(target=run_query_a)
     thread_a.start()
@@ -245,9 +247,14 @@ def test_parked_query_still_renews_cpu_slot():
             "select count() from numbers(10000000) where cityHash64(number) % 3 = 0 settings workload = 'b', max_threads = 1",
             query_id="parking_b",
         )
+        # `b` must have competed with a running `a`, or its short wait proves nothing
+        assert (
+            node.query("select count() from system.processes where query_id = 'parking_a'").strip() == "1"
+        ), "query a stopped before query b finished"
     finally:
         node.query("kill query where query_id = 'parking_a' sync")
         thread_a.join()
+    assert all("QUERY_WAS_CANCELLED" in e for e in errors_a), errors_a
     node.query("system flush logs")
 
     parks = int(
