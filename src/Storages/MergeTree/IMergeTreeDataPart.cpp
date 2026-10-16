@@ -166,7 +166,7 @@ namespace FailPoints
     extern const char merge_tree_load_statistics_throw[];
 }
 
-void IMergeTreeDataPart::MinMaxIndex::load(const IMergeTreeDataPart & part)
+void MergeTreePartMinMaxIndex::load(const IMergeTreeDataPart & part)
 {
     const auto metadata_snapshot = part.getMetadataSnapshot();
     const auto & partition_key = metadata_snapshot->getPartitionKey();
@@ -228,13 +228,13 @@ void IMergeTreeDataPart::MinMaxIndex::load(const IMergeTreeDataPart & part)
     initialized = true;
 }
 
-IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::store(
+MergeTreePartMinMaxIndex::WrittenFiles MergeTreePartMinMaxIndex::store(
     StorageMetadataPtr metadata_snapshot, IDataPartStorage & part_storage, Checksums & out_checksums, const MergeTreeSettingsPtr & storage_settings) const
 {
     return store(MergeTreeData::getMinMaxColumns(metadata_snapshot->getPartitionKey(), storage_settings), part_storage, out_checksums, storage_settings);
 }
 
-IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::store(
+MergeTreePartMinMaxIndex::WrittenFiles MergeTreePartMinMaxIndex::store(
     const NamesAndTypesList & columns_to_write,
     IDataPartStorage & part_storage,
     Checksums & out_checksums,
@@ -303,7 +303,7 @@ IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::s
     return written_files;
 }
 
-void IMergeTreeDataPart::MinMaxIndex::update(const Block & block, const NamesAndTypesList & columns_to_update)
+void MergeTreePartMinMaxIndex::update(const Block & block, const NamesAndTypesList & columns_to_update)
 {
     if (block.rows() == 0)
         return;
@@ -347,7 +347,7 @@ void IMergeTreeDataPart::MinMaxIndex::update(const Block & block, const NamesAnd
     initialized = true;
 }
 
-void IMergeTreeDataPart::MinMaxIndex::merge(const MinMaxIndex & other)
+void MergeTreePartMinMaxIndex::merge(const MergeTreePartMinMaxIndex & other)
 {
     if (!other.initialized)
         return;
@@ -394,7 +394,7 @@ void IMergeTreeDataPart::MinMaxIndex::merge(const MinMaxIndex & other)
 /// Once the chain has passed through a row-dropping mutation, rows may have been dropped and the row count
 /// of the original block is no longer recoverable, so the range is left as the whole universe, which does
 /// not prune but is not wrong either.
-void IMergeTreeDataPart::MinMaxIndex::repairInheritedBlockColumns(const IMergeTreeDataPart & source_part, const StorageMetadataPtr & metadata_snapshot)
+void MergeTreePartMinMaxIndex::repairInheritedBlockColumns(const IMergeTreeDataPart & source_part, const StorageMetadataPtr & metadata_snapshot)
 {
     const auto & source_info = source_part.info;
     if (!initialized || source_part.isProjectionPart() || source_info.isPatch())
@@ -430,7 +430,7 @@ void IMergeTreeDataPart::MinMaxIndex::repairInheritedBlockColumns(const IMergeTr
     }
 }
 
-Names IMergeTreeDataPart::MinMaxIndex::getProbablyWrittenFiles(const IMergeTreeDataPart & part) const
+Names MergeTreePartMinMaxIndex::getProbablyWrittenFiles(const IMergeTreeDataPart & part) const
 {
     if (hyperrectangle.empty())
         return {};
@@ -451,12 +451,12 @@ Names IMergeTreeDataPart::MinMaxIndex::getProbablyWrittenFiles(const IMergeTreeD
         | std::ranges::to<Names>();
 }
 
-String IMergeTreeDataPart::MinMaxIndex::getFileColumnName(const String & column_name, const MergeTreeSettingsPtr & storage_settings_, const IDataPartStorage & data_part_storage)
+String MergeTreePartMinMaxIndex::getFileColumnName(const String & column_name, const MergeTreeSettingsPtr & storage_settings_, const IDataPartStorage & data_part_storage)
 {
     return replaceFileNameToHashIfNeeded(escapeForFileName(column_name), *storage_settings_, &data_part_storage);
 }
 
-String IMergeTreeDataPart::MinMaxIndex::getFileColumnName(const String & column_name, const Checksums & checksums_)
+String MergeTreePartMinMaxIndex::getFileColumnName(const String & column_name, const Checksums & checksums_)
 {
     String stream_name = escapeForFileName(column_name);
     if (checksums_.files.contains("minmax_" + stream_name + ".idx"))

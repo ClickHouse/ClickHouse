@@ -28,6 +28,7 @@ public:
     Int64 getMinDataVersion() const override { unexpectedCall(); }
     Int64 getMaxDataVersion() const override { unexpectedCall(); }
     IndexPtr getIndexPtr() const override { unexpectedCall(); }
+    MergeTreePartMinMaxIndexPtr getMinMaxIndex() const override { unexpectedCall(); }
     DataPartStoragePtr getDataPartStorage() const override { return {}; }
     const NamesAndTypesList & getColumns() const override { unexpectedCall(); }
     const ColumnsDescription & getColumnsDescription() const override { unexpectedCall(); }
