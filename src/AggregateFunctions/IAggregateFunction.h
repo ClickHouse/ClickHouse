@@ -883,13 +883,14 @@ public:
     {
         /// The elements of a row all go to one state, so a long row is a single `addBatchSinglePlace`
         /// call, which reaches the specialized batch loops (the nested batch calls of `-Null` and `-If`,
-        /// vectorized `max`). For a short row that call costs more than it saves. When the rows average
-        /// less than one element, even the test of the length of each row costs more than it saves.
+        /// vectorized `max`). For a short row that call costs more than it saves. The path depends only
+        /// on the row itself, because the batch loop of a float `sum` may round differently; when no row
+        /// of the block can be long, the test of each row is skipped, as it costs more than an empty row.
         static constexpr size_t min_array_size_for_batch = 16;
         const auto * derived = static_cast<const Derived *>(this);
         size_t current_offset = offsets[static_cast<ssize_t>(row_begin) - 1];
         const bool use_batch = Derived::addBatchSinglePlaceForLongArrays()
-            && offsets[static_cast<ssize_t>(row_end) - 1] - current_offset >= row_end - row_begin
+            && offsets[static_cast<ssize_t>(row_end) - 1] - current_offset >= min_array_size_for_batch
             && derived->canOptimizeEqualKeysRanges();
 
         for (size_t i = row_begin; i < row_end; ++i)
