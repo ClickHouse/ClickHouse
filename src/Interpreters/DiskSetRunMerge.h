@@ -109,6 +109,7 @@ private:
                 if (!bytes)
                 {
                     in.reset(); /// Frees the buffers of the file that ended
+                    skip_first_key = false;
                     continue;
                 }
                 setBatch({buffer.data(), bytes / sizeof(Key)}); /// Fewer keys only at the end of the file
