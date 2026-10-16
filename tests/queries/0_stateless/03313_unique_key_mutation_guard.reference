@@ -2,6 +2,8 @@ alter_delete_uk
 alter_update_uk_column
 alter_update_row_exists
 lightweight_force_update_uk
+mutation_in_transaction_uk
+0
 materialize_uk_a
 materialize_uk_b
 clear_uk_a

@@ -1,6 +1,6 @@
 -- Tags: no-ordinary-database, no-async-insert, no-fasttest
 -- UNIQUE KEY: which mutations run on the table and which are rejected.
---   1. ALTER DELETE, ALTER UPDATE of a key column or of `_row_exists`, a forced lightweight UPDATE: rejected
+--   1. ALTER DELETE, ALTER UPDATE of a key column or of `_row_exists`, a forced lightweight UPDATE, a mutation in a transaction: rejected
 --   2. MATERIALIZE COLUMN: rejected for a key column; CLEAR COLUMN runs, a Nested group included; CLEAR IF EXISTS of a missing one is a no-op
 --   2a. part rewrites: APPLY DELETED MASK / PATCHES, MATERIALIZE PROJECTION are rejected
 --   2b. CLEAR / MATERIALIZE COLUMN, a type change, ALTER UPDATE: rejected when a MATERIALIZED key column is computed from the column, renamed in the same ALTER or a Nested group included; a MODIFY without a type runs, and CLEAR under a DEFAULT key column
@@ -32,6 +32,11 @@ ALTER TABLE uk_mut_guard UPDATE _row_exists = 0 WHERE a = 1; -- { serverError SU
 SELECT 'lightweight_force_update_uk' AS step;
 ALTER TABLE uk_mut_guard UPDATE d = 'z' WHERE a = 1
 SETTINGS alter_update_mode = 'lightweight_force', enable_lightweight_update = 1; -- { serverError SUPPORT_IS_DISABLED }
+
+-- Refused before the mutation is queued: the background task cannot run it, and the client would wait for good.
+SELECT 'mutation_in_transaction_uk' AS step;
+ALTER TABLE uk_mut_guard UPDATE d = 'z' WHERE 1 SETTINGS implicit_transaction = 1; -- { serverError SUPPORT_IS_DISABLED, NOT_IMPLEMENTED }
+SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 'uk_mut_guard' AND NOT is_done;
 
 -- 2. MATERIALIZE / CLEAR COLUMN: red if the mutation guard admits MATERIALIZE COLUMN of a key column
 -- or rejects CLEAR COLUMN.
