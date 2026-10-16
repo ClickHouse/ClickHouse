@@ -604,7 +604,7 @@ protected:
     /// transport dialect consistent with the outbound text even if a JSON `SET dialect=...` changed it.
     bool current_query_parsed_as_json_dialect = false;
 
-    /// The `dialect`, `enable_json_ast_dialect`, `enable_trino_dialect` and `allow_experimental_logsql_dialect`
+    /// The `dialect`, `enable_json_ast_dialect`, `enable_trino_dialect` and `enable_logsql_dialect`
     /// values the current query text was accepted with, kept only when the query's own `SETTINGS` clause changed them.
     /// `pinOutboundDialect` restores them for the outbound settings, so a query-local
     /// `SETTINGS dialect = ...` cannot change how this very query text is parsed on the other side.

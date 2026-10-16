@@ -1,9 +1,13 @@
 #include <optional>
+#include <utility>
 #include <Processors/Transforms/JoiningTransform.h>
 
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/TableJoin.h>
 #include <Interpreters/JoinUtils.h>
 #include <Processors/Port.h>
+#include <Processors/ISpillable.h>
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ProfileEvents.h>
@@ -58,6 +62,9 @@ JoiningTransform::JoiningTransform(
     , max_block_size(max_block_size_)
     , match_counter(std::move(match_counter_))
 {
+    if (const auto & actions = join->getTableJoin().getMixedJoinExpression())
+        set_spillables.add(actions->getActionsDAG());
+
     if (!join->isFilled())
         inputs.emplace_back(Block(), this); // Wait for FillingRightJoinSideTransform
 }
@@ -264,12 +271,7 @@ Block JoiningTransform::readExecute(Chunk & chunk)
     }
 
     auto data = join_result->next();
-    if (data.is_last && data.next_block)
-    {
-        data.next_block->filterBySelector();
-        auto next_block = std::move(*data.next_block).getSourceBlock();
-        chunk.setColumns(next_block.getColumns(), next_block.rows());
-    }
+    chassert(!data.next_block);
 
     if (data.is_last)
     {
@@ -280,10 +282,13 @@ Block JoiningTransform::readExecute(Chunk & chunk)
     return std::move(data.block);
 }
 
-FillingRightJoinSideTransform::FillingRightJoinSideTransform(SharedHeader input_header, JoinPtr join_, FinishCounterPtr finish_counter_)
-    : IProcessor({input_header}, {Block()}), join(std::move(join_)), finish_counter(std::move(finish_counter_))
+FillingRightJoinSideTransform::FillingRightJoinSideTransform(
+    SharedHeader input_header, JoinPtr join_, FinishCounterPtr finish_counter_, JoinBuildContext build_context_)
+    : IProcessor({input_header}, {Block()})
+    , join(std::move(join_))
+    , finish_counter(std::move(finish_counter_))
+    , build_context(build_context_)
 {
-    spillable = join->canSpillToDisk();
 }
 
 InputPort * FillingRightJoinSideTransform::addTotalsPort()
@@ -294,12 +299,45 @@ InputPort * FillingRightJoinSideTransform::addTotalsPort()
     return &inputs.emplace_back(inputs.front().getHeader(), this);
 }
 
+OutputPort * FillingRightJoinSideTransform::addSealPort(SealPayloadGetter seal_payload_getter_)
+{
+    if (seal_port)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Seal port was already added to FillingRightJoinSideTransform");
+
+    seal_payload_getter = std::move(seal_payload_getter_);
+    seal_port = &outputs.emplace_back(Block(), this);
+    return seal_port;
+}
+
+void FillingRightJoinSideTransform::finishSealPort(bool emit)
+{
+    if (!seal_port || seal_done)
+        return;
+    seal_done = true;
+
+    if (emit && completed_the_build)
+    {
+        /// One row with no columns: the seal port header is empty, and a chunk with no rows
+        /// at all would be indistinguishable from no data.
+        Chunk seal(Columns{}, 1);
+        auto info = std::make_shared<RuntimeFilterSealInfo>();
+        if (seal_payload_getter)
+            info->filter = seal_payload_getter();
+        seal.getChunkInfos().add(std::move(info));
+        seal_port->push(std::move(seal));
+    }
+
+    seal_port->finish();
+}
+
 IProcessor::Status FillingRightJoinSideTransform::prepare()
 {
     auto & output = outputs.front();
 
     if (post_build_phase)
     {
+        /// The post-build phase has been executed in work(): the join is ready to be probed.
+        finishSealPort(/*emit=*/ true);
         output.finish();
         return Status::Finished;
     }
@@ -307,6 +345,8 @@ IProcessor::Status FillingRightJoinSideTransform::prepare()
     /// Check can output.
     if (output.isFinished())
     {
+        /// Early termination: no seal is emitted, the gated consumers just see it finish.
+        finishSealPort(/*emit=*/ false);
         for (auto & input : inputs)
             input.close();
         return Status::Finished;
@@ -360,6 +400,7 @@ IProcessor::Status FillingRightJoinSideTransform::prepare()
 
     if (finish_counter->isLast())
     {
+        completed_the_build = true;
         join->onBuildPhaseFinish();
         if (join->hasPostBuildPhase())
         {
@@ -368,6 +409,9 @@ IProcessor::Status FillingRightJoinSideTransform::prepare()
         }
     }
 
+    /// Either this transform completed the whole build (and the join is ready to be probed,
+    /// there is no post-build phase), or another one will: its seal port just finishes.
+    finishSealPort(/*emit=*/ true);
     output.finish();
     return Status::Finished;
 }
@@ -390,33 +434,10 @@ void FillingRightJoinSideTransform::work()
     else
     {
         ProfileEvents::increment(ProfileEvents::JoinBuildTableRowCount, num_rows);
-        stop_reading = !join->addBlockToJoin(block, num_rows, true);
+        stop_reading = !join->addBlockToJoin(block, num_rows, build_context);
     }
 
     set_totals = for_totals;
-}
-
-ProcessorMemoryStats FillingRightJoinSideTransform::getMemoryStats()
-{
-    if (!spillable)
-        return {};
-
-    ProcessorMemoryStats res;
-    res.spillable_memory_bytes = static_cast<Int64>(join->getSpillableBytes());
-    // in case the hash table will resize which requires more than 2x additional memory.
-    // we must reserve enough memory.
-    res.need_reserved_memory_bytes = res.spillable_memory_bytes * 3;
-    return res;
-}
-
-bool FillingRightJoinSideTransform::spillOnSize(size_t bytes)
-{
-    if (spillable && join->getSpillableBytes() >= bytes)
-    {
-        join->requestSpill();
-        return true;
-    }
-    return false;
 }
 
 DelayedJoinedBlocksWorkerTransform::DelayedJoinedBlocksWorkerTransform(
@@ -554,6 +575,8 @@ DelayedJoinedBlocksTransform::DelayedJoinedBlocksTransform(size_t num_streams, J
     : IProcessor(InputPorts{}, OutputPorts(num_streams, Block()))
     , join(std::move(join_))
 {
+    if (const auto & actions = join->getTableJoin().getMixedJoinExpression())
+        set_spillables.add(actions->getActionsDAG());
 }
 
 void DelayedJoinedBlocksTransform::work()
