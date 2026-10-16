@@ -126,6 +126,72 @@ struct MemorySourceFilter
     {
         return fmt::format("{}_{:016x}_{}", generation, columns_hash, first_block_number + block_index);
     }
+
+    /// Returns the granules of a block that may have rows satisfying both conditions, or std::nullopt if nothing
+    /// is known. If `granules_skipped_by_filter_condition` is set, it receives the granules that the entry of the
+    /// filter of the query skips.
+    std::optional<QueryConditionCache::MatchingMarks> readMatchingGranules(
+        const String & part_name,
+        size_t num_granules,
+        bool increment_profile_events,
+        QueryConditionCache::MatchingMarks * granules_skipped_by_filter_condition) const
+    {
+        std::optional<QueryConditionCache::MatchingMarks> matching_granules;
+        for (const auto & condition_hash : {prewhere_condition_hash, filter_condition_hash})
+        {
+            if (!condition_hash)
+                continue;
+
+            auto entry = query_condition_cache->read(table_uuid, part_name, *condition_hash, increment_profile_events);
+            if (!entry)
+                continue;
+
+            if (entry->size() != num_granules)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "The query condition cache entry for block {} of a Memory table has {} granules instead of {}",
+                    part_name, entry->size(), num_granules);
+
+            if (granules_skipped_by_filter_condition && condition_hash == filter_condition_hash)
+            {
+                granules_skipped_by_filter_condition->resize(num_granules);
+                for (size_t granule = 0; granule < num_granules; ++granule)
+                    (*granules_skipped_by_filter_condition)[granule] = !(*entry)[granule];
+            }
+
+            if (!matching_granules)
+                matching_granules = std::move(entry);
+            else
+                for (size_t granule = 0; granule < num_granules; ++granule)
+                    (*matching_granules)[granule] = (*matching_granules)[granule] && (*entry)[granule];
+        }
+        return matching_granules;
+    }
+
+    /// The number of rows of the blocks that the source scans, i.e. without the granules skipped by the cache.
+    size_t countRowsToScan(const Blocks & blocks) const
+    {
+        size_t num_rows_to_scan = 0;
+        for (size_t block_index = 0; block_index < blocks.size(); ++block_index)
+        {
+            const size_t num_rows = blocks[block_index].rows();
+            const size_t num_granules = (num_rows + query_condition_cache_granule_rows - 1) / query_condition_cache_granule_rows;
+            if (!num_granules)
+                continue;
+
+            auto matching_granules = readMatchingGranules(
+                getQueryConditionCachePartName(block_index), num_granules, /*increment_profile_events=*/ false, nullptr);
+            if (!matching_granules)
+            {
+                num_rows_to_scan += num_rows;
+                continue;
+            }
+
+            for (size_t granule = 0; granule < num_granules; ++granule)
+                if ((*matching_granules)[granule])
+                    num_rows_to_scan += std::min(query_condition_cache_granule_rows, num_rows - granule * query_condition_cache_granule_rows);
+        }
+        return num_rows_to_scan;
+    }
 };
 
 using MemorySourceFilterPtr = std::shared_ptr<const MemorySourceFilter>;
@@ -406,35 +472,9 @@ private:
         {
             query_condition_cache_part_name = filter->getQueryConditionCachePartName(block_index);
 
-            /// The granules that may have rows satisfying both conditions, or std::nullopt if nothing is known.
-            std::optional<QueryConditionCache::MatchingMarks> matching_granules;
-            for (const auto & condition_hash : {filter->prewhere_condition_hash, filter->filter_condition_hash})
-            {
-                if (!condition_hash)
-                    continue;
-
-                auto entry = filter->query_condition_cache->read(filter->table_uuid, query_condition_cache_part_name, *condition_hash);
-                if (!entry)
-                    continue;
-
-                if (entry->size() != num_granules)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "The query condition cache entry for block {} of a Memory table has {} granules instead of {}",
-                        query_condition_cache_part_name, entry->size(), num_granules);
-
-                if (condition_hash == filter->filter_condition_hash && filter->write_prewhere_condition)
-                {
-                    granules_skipped_by_filter_condition.resize(num_granules);
-                    for (size_t granule = 0; granule < num_granules; ++granule)
-                        granules_skipped_by_filter_condition[granule] = !(*entry)[granule];
-                }
-
-                if (!matching_granules)
-                    matching_granules = std::move(entry);
-                else
-                    for (size_t granule = 0; granule < num_granules; ++granule)
-                        (*matching_granules)[granule] = (*matching_granules)[granule] && (*entry)[granule];
-            }
+            auto matching_granules = filter->readMatchingGranules(
+                query_condition_cache_part_name, num_granules, /*increment_profile_events=*/ true,
+                filter->write_prewhere_condition ? &granules_skipped_by_filter_condition : nullptr);
 
             if (matching_granules)
             {
@@ -1281,13 +1321,19 @@ Pipe ReadFromMemoryStorageStep::makePipe()
     auto parallel_execution_index = std::make_shared<std::atomic<size_t>>(0);
     auto block_start_rows = read_global_row_index ? makeBlockStartRows(*current_data) : nullptr;
 
+    /// `max_rows_to_read` with `read_overflow_mode = 'throw'` is checked against this estimate, so it leaves out
+    /// the granules skipped by the query condition cache, which the sources do not report as read.
+    const size_t total_rows_approx = source_filter && source_filter->query_condition_cache
+        ? source_filter->countRowsToScan(*current_data)
+        : snapshot_data.rows;
+
     for (size_t stream = 0; stream < num_streams; ++stream)
     {
         auto source = std::make_shared<MemorySource>(
             physical_columns, virtual_columns, current_data, parallel_execution_index, nullptr, nullptr, source_filter, output_header, block_start_rows,
             nested_arrays);
         if (stream == 0)
-            source->addTotalRowsApprox(snapshot_data.rows);
+            source->addTotalRowsApprox(total_rows_approx);
         pipes.emplace_back(std::move(source));
     }
     return Pipe::unitePipes(std::move(pipes));
