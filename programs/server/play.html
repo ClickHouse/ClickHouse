@@ -17965,7 +17965,12 @@ format_button.addEventListener('click', async (e) => {
     /// `start` and `end` of each statement span its significant tokens: from the first one to the
     /// last one before the `;`, so the delimiter and the surrounding comments are not sent.
     const statements = await splitAllQueries(original);
-    if (statements.length === 0) {
+
+    /// The first click loads the lexer, so the split can take a while: the connection, the tab or
+    /// the text could have changed meanwhile. Check before the request, so that the text is never
+    /// sent with the credentials of a connection selected after the click.
+    if (statements.length === 0 || generation !== connectionGeneration
+        || activeTabId !== tab_id || activeCell(getActiveTab()) !== cell || query_area.value !== original) {
         format_button.classList.remove('busy');
         return;
     }
@@ -19338,6 +19343,17 @@ async function splitAllQueries(text) {
             has_significant = true;
             statement_tokens.push(elem);
         }
+    }
+
+    /// The lexer stops at the first error (e.g. an unterminated string literal or comment), so the
+    /// tokens may cover only a prefix of the text. The unlexed remainder belongs to the last query:
+    /// it is sent to the server as is, which reports the error, instead of silently being dropped.
+    if (current_offset < text.length) {
+        if (!has_significant) {
+            first_significant_offset = current_offset;
+        }
+        last_significant_end = text.length;
+        has_significant = true;
     }
 
     /// Last query (no trailing semicolon)
