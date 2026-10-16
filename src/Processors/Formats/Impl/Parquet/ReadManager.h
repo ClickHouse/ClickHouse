@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/Formats/Impl/Parquet/Reader.h>
+#include <Common/SharedMutex.h>
 
 namespace DB::Parquet
 {
@@ -141,8 +142,8 @@ private:
     /// Whether ColumnData prefetches of schedulable row groups are started ahead of their decoding,
     /// up to the reader's share of `max_download_threads` (see readAheadColumnData).
     bool column_data_read_ahead = false;
-    /// Held while selecting and starting ColumnData prefetches, which mutate the column chunks.
-    std::mutex column_data_prefetch_mutex;
+    /// Held shared by ColumnData admission rounds and exclusively by readAheadColumnData, which never overlaps them.
+    SharedMutex column_data_prefetch_mutex;
     /// Row groups whose current ColumnData prefetches were started by read-ahead and whose decoding
     /// was not scheduled yet. Modified with column_data_prefetch_mutex locked.
     AtomicBitSet column_data_read_ahead_row_groups;

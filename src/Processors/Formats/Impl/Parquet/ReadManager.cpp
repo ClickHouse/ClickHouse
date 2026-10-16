@@ -720,10 +720,10 @@ void ReadManager::scheduleTasksIfNeeded(ReadStage stage_idx)
     MemoryUsageDiff diff(stage_idx);
     std::vector<Task> tasks;
 
-    /// The admission round and readAheadColumnData each pick row groups and publish their charges under this lock.
-    std::unique_lock<std::mutex> prefetch_lock;
+    /// Admission rounds run concurrently; readAheadColumnData waits until their charges are published.
+    std::shared_lock<SharedMutex> prefetch_lock;
     if (stage_idx == ReadStage::ColumnData && column_data_read_ahead)
-        prefetch_lock = std::unique_lock(column_data_prefetch_mutex);
+        prefetch_lock = std::shared_lock(column_data_prefetch_mutex);
 
     auto limits = SharedResourcesExt::getLimitsPerReader(*parser_shared_resources, stage.memory_target_fraction);
     size_t memory_usage = stage.memory_usage.load(std::memory_order_relaxed);
