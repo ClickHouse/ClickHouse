@@ -117,6 +117,10 @@ URL 的格式因目标 (target) 而异。
 
 #### File 表引擎 {#file}
 
+<Important>
+  ClickHouse Cloud 不支持 `file://` 协议。
+</Important>
+
 必须是 Postgres 服务器上的绝对路径，使用相对路径会报错。Postgres 用户必须根据实际需要属于 `pg_read_server_files` 或
 `pg_write_server_files` 角色，Postgres 系统用户也必须相应地具备该文件的读或写权限。对于 `COPY TO`，如果该
 路径不存在，chdb&#95;hook 会创建所有缺失的父目录，因此必须具备相应的文件系统权限。示例：
@@ -280,6 +284,17 @@ AWS 账户用户用于对请求进行身份验证的长期凭据。
 请求超时时间 (毫秒) 。适用于 HTTP、S3、GCS 和 Azure URL。
 默认值为 `30000` (30 秒) 。
 
+#### `encoding_check` {#encoding_check}
+
+指定在转换 chDB String 和 JSON 值时，如何处理[数据库编码][database encoding]下的无效字符。可选值如下：
+
+* `fail` (默认) ：引发错误
+* `remove`：移除无效字节
+* `replace`：在 UTF-8 编码下，将无效字节替换为
+  Unicode 替换字符 (`�`) ；对于其他编码，
+  其行为与 `remove` 相同
+* `truncate`：在第一个无效字节处截断文本
+
 ### 调试 {#debugging}
 
 出错时，chdb&#95;hook 的 `COPY` 命令会将其尝试执行的 [chDB] 查询包含在错误上下文中：
@@ -312,10 +327,11 @@ chdb&#95;hook 对查询参数使用 `{name:Type}` 形式的占位符，以防范
 
 chdb&#95;hook 同样对 [CREATE TABLE] 进行了挂接，使表能够从 URL 推导出自身的列，并加载其中的行。
 
-若要创建结构由 URL 推导而来的表，请在 `structure_from` 选项中传入该 URL，并将列清单留空：
+若要创建结构由 URL 推导而来的表，请在 `structure_from` 选项中传入该 URL，并将列清单留空 (注意：该公开数据文件包含 4100 万行) ：
 
 ```sql
 CREATE TABLE reviews () WITH (
+    encoding_check = 'replace',
     structure_from = 's3://datasets-documentation/amazon_reviews/amazon_reviews_2015.snappy.parquet'
 );
 ```
@@ -324,6 +340,7 @@ CREATE TABLE reviews () WITH (
 
 ```sql
 CREATE TABLE reviews () WITH (
+    encoding_check = 'replace',
     copy_from = 's3://datasets-documentation/amazon_reviews/amazon_reviews_2015.snappy.parquet'
 );
 ```
@@ -340,15 +357,18 @@ CREATE TABLE times (
 ) WITH (copy_from = 's3://datasets-documentation/my-test-bucket-768/some_prefix/some_file_1.csv');
 ```
 
-两种方式都支持与 `COPY` 相同的 [URL 协议](#url-schemes)和[选项](#options):credentials、format、压缩、timeout,乃至显式指定的[结构](#structure)均同样适用。Postgres 会保留其余的存储参数:
+当 `copy_from` 推断列时，会使用 `DESCRIBE` 返回的源 schema。
+因此，`Map`、`Tuple` 和 `Nested` 值会以文本 array 列的形式加载，
+而这些列无法体现其原始的 ClickHouse 类型。
+
+两种方式都支持与 `COPY` 相同的 [URL 协议](#url-schemes)和[选项](#options):凭证、format、压缩、timeout,乃至显式指定的[结构](#structure)均同样适用。Postgres 会保留其余的存储参数:
 
 ```sql
-CREATE TABLE users () WITH (
-    copy_from     = 's3://my-bucket/users.csv',
-    access_key    = 'AKIAIOSFODNN7EXAMPLE',
-    access_secret = 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY',
-    format        = 'CSVWithNames',
-    fillfactor    = 90
+CREATE TABLE logs () WITH (
+    copy_from  = 's3://chdb-lakedata-public/logs/logs-2026-08-26.csv',
+    format     = 'CSVWithNames',
+    timeout    = 60000,
+    fillfactor = 90
 );
 ```
 
@@ -360,20 +380,22 @@ CREATE TABLE users () WITH (
 由于一些已知问题以及 Postgres 与 chDB 之间数据类型行为的差异，chdb&#95;hook 存在以下限制：
 
 * 如果关系上存在适用于当前复制角色的 [row-level security] 策略，则无法对其执行 `COPY`。Postgres 会通过将 `COPY TO` 重写为查询来实施此类策略，而 chdb&#95;hook 不支持这种方式。
-* ClickHouse 没有 NULL 数组，因此 `COPY TO` 会将 `NULL` 存储为空数组 (`[]`) 。
-* ClickHouse 将与 `lseg`、`path` 或 `polygon` 等价的类型表示为数组；因此这些类型的 NULL 值经 `COPY TO` 后同样会输出为空数组 (`[]`) 。
+* 无法对带有 `WHERE` 子句的 URL 执行 `COPY FROM`。
+* chDB 没有 NULL array，因此 `COPY TO` 会将 NULL 存储为空 array (`[]`) 。
+* chDB 将与 `lseg`、`path` 或 `polygon` 等价的类型表示为 array；因此这些类型的 NULL 值经 `COPY TO` 后同样会输出为空 array (`[]`) 。
+* ClickHouse 没有 NULL array，因此 `COPY TO` 会将 `NULL` 存储为空 array (`[]`) 。
+* ClickHouse 将与 `lseg`、`path` 或 `polygon` 等价的类型表示为 array；因此这些类型的 NULL 值经 `COPY TO` 后同样会输出为空 array (`[]`) 。
 * 若指定的[结构](#structure)未将该列定义为 Nullable，则 NULL 值在输出时会变成其默认值。请始终在[结构](#structure)中显式定义可为空的列，以避免这种转换。
 * 若开放 `path` 的最后一个点与第一个点相同，则会输出为闭合路径。
-* Protobuf 的 repeated 字段中不存在 null，因此数组中的 NULL 值会被省略。
-* chDB 的 [JSON type] 仅支持 JSON 对象；仅当所有值都是 JSON 对象时，才可将 `json` 和 `jsonb` 的默认 `String` 映射覆盖为 `JSON`。 (ClickHouse/ClickHouse#68428) 
-* chDB 的 [JSON type] 会忽略 `null`；值为 NULL 的对象键在输出时会被省略。仅当对象值不为 `null`，或可以接受这些值丢失时，才将 `json` 和 `jsonb` 的默认 `String` 映射覆盖为 `JSON`。 (ClickHouse/ClickHouse#68428) 
+* Protobuf 的 repeated 字段中不存在 null，因此 array 中的 NULL 值会被省略。
+* chDB 的 [JSON type] 仅支持 JSON 对象；仅当所有值都是 JSON 对象时，才可将 `json` 和 `jsonb` 的默认 `String` 映射覆盖为 `JSON`。 (ClickHouse/ClickHouse#68428)
+* chDB 的 [JSON type] 会忽略 `null`；值为 NULL 的对象键在输出时会被省略。仅当对象值不为 `null`，或可以接受这些值丢失时，才将 `json` 和 `jsonb` 的默认 `String` 映射覆盖为 `JSON`。 (ClickHouse/ClickHouse#68428)
 * JSON、JSONCompact 和 JSONColumnsWithMetadata 格式始终会校验 UTF-8，因此输出的 bytea 值中会带有替换字符。
-* `COPY FROM` 会将包含空字符串或零的 Protobuf `Nullable` 字段读取为 `NULL`。 (chdb-io/chdb-core#152) 
-* `COPY TO` 为 Parquet 时，会丢弃 Nullable Tuple 自身 null map 中的 `NULL`。 (ClickHouse/ClickHouse#112427) 
+* `COPY FROM` 会将包含空字符串或零的 Protobuf `Nullable` 字段读取为 `NULL`。 (chdb-io/chdb-core#152)
+* `COPY TO` 为 Parquet 时，会丢弃 Nullable Tuple 自身 null map 中的 `NULL`。 (ClickHouse/ClickHouse#112427)
 * Parquet、Arrow、ArrowStream、ORC、Avro、Protobuf、ProtobufList、MsgPack 和 BSONEachRow 格式没有与 Postgres `time` 或 chDB `Time64` 对应的类型。请在显式[结构](#structure)中将 `time` 列配置为 `String`，以保留其值。
 * Protobuf 输出会将 timestamp 值截断到秒。
-* Protobuf 输出不支持早于 1970-01-01 的日期。请在显式[结构](#structure)中将 `time` 列配置为 `String`，以保留其值。 (ClickHouse/ClickHouse#111860) 
-* CSVWithNames 和 CSVWithNamesAndTypes 格式目前无法导入 `NULL` 的 box 或 circle 值。 (ClickHouse/ClickHouse#115523)
+* Protobuf 输出不支持早于 1970-01-01 的日期。请在显式[结构](#structure)中将 `time` 列配置为 `String`，以保留其值。 (ClickHouse/ClickHouse#111860)
 
 ## 数据类型 {#data-types}
 
@@ -383,61 +405,45 @@ Postgres 类型。
 
 ### Postgres 到 chDB {#postgres-to-chdb}
 
-若未显式指定 [structure](#structure) 选项，chdb&#95;hook 会将
-Postgres 类型映射为合理的 chDB 对应类型。如果这些类型不适合你的使用场景，
-可通过 [structure](#structure) 将自动生成的类型覆盖为你所需的类型。
+在未显式指定 [结构](#structure) 选项时，chdb&#95;hook 会将 Postgres 类型映射为合适的 chDB 等价类型。如果这些映射不符合您的使用场景，可指定 [结构](#structure)，用所需类型覆盖自动生成的类型。
 
-| Postgres    | chDB                                     | 说明                                      |
-| ----------- | ---------------------------------------- | --------------------------------------- |
-| boolean     | Bool                                     |                                         |
-| name        | String                                   |                                         |
-| text        | String                                   |                                         |
-| inet        | String                                   | 如果数据仅包含其中一种，可用 `IPv4` 或 `IPv6` 覆盖。      |
-| cidr        | String                                   |                                         |
-| macaddr     | String                                   |                                         |
-| macaddr8    | String                                   |                                         |
-| interval    | String                                   | 可用 `Interval` 单位 (例如 `IntervalDay`) 覆盖。 |
-| tsvector    | String                                   |                                         |
-| tsquery     | String                                   |                                         |
-| jsonpath    | String                                   |                                         |
-| money       | String                                   |                                         |
-| enum        | String                                   |                                         |
-| varchar     | String                                   |                                         |
-| varbit      | String                                   |                                         |
-| char        | FixedString                              |                                         |
-| bit         | FixedString                              |                                         |
-| bpchar      | String                                   |                                         |
-| int2        | Int16                                    |                                         |
-| int4        | Int32                                    |                                         |
-| int8        | Int64                                    |                                         |
-| oid         | UInt32                                   |                                         |
-| oid8        | UInt64                                   |                                         |
-| xid8        | UInt64                                   |                                         |
-| json        | String                                   | 如果数据仅包含对象，可用 `JSON` 覆盖。                 |
-| jsonb       | String                                   | 如果数据仅包含对象，可用 `JSON` 覆盖。                 |
-| float4      | Float32                                  |                                         |
-| float8      | Float64                                  |                                         |
-| date        | Date32                                   |                                         |
-| time        | Time64(6)                                | 对于不支持时间的格式，可用 `String` 覆盖。              |
-| timetz      | String                                   |                                         |
-| timestamp   | DateTime64(6)                            | 声明为 `UTC` 时区，由会话时区转换而来。                 |
-| timestamptz | DateTime64(6)                            | 声明为 `UTC` 时区。                           |
-| numeric     | Decimal                                  |                                         |
-| uuid        | UUID                                     |                                         |
-| point       | `Point`                                  | 与 Postgres 相同的两个坐标。                     |
-| lseg        | `LineString`                             | 恰好由两个点构成的线。                             |
-| path        | `LineString`                             | 闭合路径会重复其首个点。                            |
-| polygon     | `Ring`                                   | 与多边形一样，环会隐式闭合。                          |
-| box         | `Tuple(high Point, low Point)`           | 两个角点，排序方式与 Postgres 一致。                 |
-| circle      | `Tuple(center Point, radius Float64)`    |                                         |
-| line        | `Tuple(a Float64, b Float64, c Float64)` | 方程 `Ax + By + C = 0`。                   |
+| PostgreSQL       | chDB                                   | 说明                                     |
+| ---------------- | -------------------------------------- | -------------------------------------- |
+| boolean          | Bool                                   |                                        |
+| smallint         | Int16                                  |                                        |
+| integer          | Int32                                  |                                        |
+| bigint           | Int64                                  |                                        |
+| oid              | UInt32                                 |                                        |
+| xid8             | UInt64                                 |                                        |
+| oid8             | UInt64                                 |                                        |
+| real             | Float32                                |                                        |
+| double precision | Float64                                |                                        |
+| numeric          | Decimal256(38)                         | precision 超过 76 位时同样如此。                        |
+| numeric(12,6)    | Decimal(12,6)                          | 保留原有的 precision 和标度。                            |
+| text             | String                                 |                                        |
+| bytea            | String                                 |                                        |
+| date             | Date32                                 |                                        |
+| time             | Time64(6)                              | 对于不支持时间类型的格式，可用 `String` 覆盖。           |
+| timestamp        | DateTime64(6, &#39;UTC&#39;)           | 从会话时区转换而来。                             |
+| timestamptz      | DateTime64(6, &#39;UTC&#39;)           |                                        |
+| interval         | String                                 | 可用 `Interval` 单位 (如 `IntervalDay`) 覆盖。 |
+| uuid             | UUID                                   |                                        |
+| json             | String                                 | 如果数据仅包含对象，可用 `JSON` 覆盖。                |
+| jsonb            | String                                 | 如果数据仅包含对象，可用 `JSON` 覆盖。                |
+| inet             | String                                 | 如果数据仅包含其中一种地址，可用 `IPv4` 或 `IPv6` 覆盖。   |
+| point            | Point                                  | 与 Postgres 一样包含两个坐标。                   |
+| lseg             | LineString                             | 恰好由两个点组成的线。                            |
+| path             | LineString                             | 闭合路径会重复其第一个点。                          |
+| polygon          | Ring                                   | 与 polygon 一样，Ring 隐式闭合。                |
+| box              | Tuple(high Point, low Point)           | 两个角点，排序方式与 Postgres 相同。                |
+| circle           | Tuple(center Point, radius Float64)    |                                        |
+| line             | Tuple(a Float64, b Float64, c Float64) | 方程 `Ax + By + C = 0`。                  |
 
-数组类型会映射为相应元素类型的 `Array`。ClickHouse 以列为单位约束可空性，
-而 Postgres 以数组为单位约束，因此元素始终为 `Nullable`。
+此表中未列出的类型，例如 `name`、`varchar`、`char`、`bit`、`timetz`、`money` 以及枚举类型，均映射为 `String`。
 
-没有任何 Postgres 类型会映射为 `Map` 或 `Tuple`，但可以在 [structure](#structure)
-中指定这两种类型。`Map` 可转换为键值对数组，`Tuple` 可转换为数组。
-若需支持异构数据，请使用 `text[]`。
+array 类型映射为以映射后元素类型为元素的 `Array`。ClickHouse 按列约束可空性，而 Postgres 按 array 约束可空性，因此元素始终为 `Nullable`。
+
+没有任何 Postgres 类型直接映射到 `Map`、`Tuple` 或 `Nested`，但可以通过 [结构](#structure) 或源文件指定这些类型。`Tuple` 可以读取到 `text[]` 中 (每个元组字段对应一个元素) ，也可以读取到匹配的 [composite type] 中以保留字段类型。`Map` 或 `Nested` 可以读取到 `text[][]` 中 (每个键值对或嵌套元组对应一个内层 array) ，也可以读取到匹配复合类型的 array 中。示例请参见[手动类型映射](#manual-type-mappings)。
 
 ### 时间戳转换 {#timestamp-conversion}
 
@@ -471,76 +477,133 @@ Timestamp TZ 示例：
 
 ### chDB 到 Postgres {#chdb-to-postgres}
 
-chdb&#95;hook 会将 [`DESCRIBE`] 返回的 ClickHouse 类型映射为以下 Postgres
-类型：
+对于已有的表，值会被转换为所声明的列类型。
+其他标量类型会尽可能使用 PostgreSQL 的显式类型转换，
+array 元素则会被转换为所声明的元素类型。不支持的
+转换以及超出范围的值会引发错误。
 
-{/* 由 `make type-table` 生成的 TYPE-TABLE-BEGIN */}
+将 chDB 的 `Interval` 类型映射到 `smallint`、`integer` 或 `bigint`，即可按其单位数量进行读取和
+写入。例如，值为 `3` 的 `IntervalDay` 会映射
+为整数 `3`。将 `IntervalNanosecond` 映射到 `bigint` 可保留
+纳秒精度，而映射到 `interval` 则会截断至微秒。
 
-| chDB                | Postgres                    | 备注                      |
-| ------------------- | --------------------------- | ----------------------- |
-| Array(T)            | T[]                         | 每一层嵌套对应一种 PG 数组类型       |
-| BFloat16            | real                        | 写入时丢弃低位尾数比特             |
-| Bool                | boolean                     |                         |
-| Date                | date                        |                         |
-| Date32              | date                        |                         |
-| DateTime            | timestamp with time zone    |                         |
-| DateTime64(P)       | timestamp(P) with time zone | P 超过 6 时按 6 处理          |
-| Decimal(P,S)        | numeric(P,S)                |                         |
-| Decimal32(S)        | numeric(9,S)                |                         |
-| Decimal64(S)        | numeric(18,S)               |                         |
-| Decimal128(S)       | numeric(38,S)               |                         |
-| Decimal256(S)       | numeric(76,S)               |                         |
-| Enum8               | text                        |                         |
-| Enum16              | text                        |                         |
-| FixedString(N)      | text                        | N 在 CH 中按字节计，在 PG 中按字符计 |
-| Float32             | real                        |                         |
-| Float64             | double precision            |                         |
-| IPv4                | inet                        |                         |
-| IPv6                | inet                        |                         |
-| Int8                | smallint                    |                         |
-| Int16               | smallint                    |                         |
-| Int32               | integer                     |                         |
-| Int64               | bigint                      |                         |
-| Int128              | numeric(39,0)               |                         |
-| Int256              | numeric(77,0)               |                         |
-| IntervalDay         | interval                    |                         |
-| IntervalHour        | interval                    |                         |
-| IntervalMicrosecond | interval                    |                         |
-| IntervalMillisecond | interval                    |                         |
-| IntervalMinute      | interval                    |                         |
-| IntervalMonth       | interval                    |                         |
-| IntervalNanosecond  | interval                    | 截断到微秒                   |
-| IntervalQuarter     | interval                    |                         |
-| IntervalSecond      | interval                    |                         |
-| IntervalWeek        | interval                    |                         |
-| IntervalYear        | interval                    |                         |
-| JSON                | jsonb                       |                         |
-| LineString          | path                        |                         |
-| LowCardinality(T)   | T                           |                         |
-| Map(K,V)            | text[][]                    | 每个键值对对应一行文本项            |
-| MultiLineString     | path[]                      |                         |
-| MultiPolygon        | polygon[][]                 |                         |
-| Nullable(T)         | T                           | 将该列设置为可为空               |
-| Point               | point                       |                         |
-| Polygon             | polygon[]                   |                         |
-| Ring                | polygon                     |                         |
-| String              | text                        |                         |
-| Time                | time without time zone      |                         |
-| Time64(P)           | time(P) without time zone   | P 超过 6 时按 6 处理          |
-| Tuple(...)          | text[]                      | 各字段转换为文本项               |
-| UInt8               | smallint                    |                         |
-| UInt16              | integer                     |                         |
-| UInt32              | bigint                      |                         |
-| UInt64              | numeric(20,0)               |                         |
-| UInt128             | numeric(39,0)               |                         |
-| UInt256             | numeric(78,0)               |                         |
-| UUID                | uuid                        |                         |
+chdb&#95;hook 根据 [`DESCRIBE`] 返回的 ClickHouse 类型创建表时，会使用下表中的默认 Postgres 类型。额外的读取目标类型仅适用于
+显式声明的列，并包含 PostgreSQL 显式类型转换之外的转换。空白单元格表示仍可使用上述类型转换。这些目标类型仅针对读取；
+写入遵循另外的转换规则。
 
-{/* TYPE-TABLE-END */}
+| chDB                         | 默认 PostgreSQL 类型            | 其他可读取的目标类型                              | 说明                          |
+| ---------------------------- | --------------------------- | --------------------------------------- | --------------------------- |
+| Array(T)                     | T[]                         |                                         | 每层嵌套深度对应一个 PG 数组类型          |
+| BFloat16                     | real                        |                                         |                             |
+| Bool                         | boolean                     |                                         |                             |
+| Date                         | date                        |                                         |                             |
+| Date32                       | date                        |                                         |                             |
+| DateTime                     | timestamp with time zone    | time                                    |                             |
+| DateTime64(P)                | timestamp(P) with time zone | time                                    | P 大于 6 时截断为 6               |
+| Decimal(P,S)                 | numeric(P,S)                | xid8, oid8                              |                             |
+| Decimal32(S)                 | numeric(9,S)                | xid8, oid8                              |                             |
+| Decimal64(S)                 | numeric(18,S)               | xid8, oid8                              |                             |
+| Decimal128(S)                | numeric(38,S)               | xid8, oid8                              |                             |
+| Decimal256(S)                | numeric(76,S)               | xid8, oid8                              |                             |
+| Enum8                        | text                        | bytea；输入兼容的类型                           | 解码为标签；标签一致的 PG 枚举类型亦可作为目标类型 |
+| Enum16                       | text                        | bytea；输入兼容的类型                           | 解码为标签；标签一致的 PG 枚举类型亦可作为目标类型 |
+| FixedString(N)               | text                        | bytea；输入兼容的类型                           | 仅 bytea 会保留尾随的 NUL 字符       |
+| Float32                      | real                        |                                         |                             |
+| Float64                      | double precision            |                                         |                             |
+| IPv4                         | inet                        |                                         |                             |
+| IPv6                         | inet                        |                                         |                             |
+| Int8                         | smallint                    | boolean                                 | 零为 false，非零为 true           |
+| Int16                        | smallint                    | boolean                                 | 零为 false，非零为 true           |
+| Int32                        | integer                     |                                         |                             |
+| Int64                        | bigint                      |                                         |                             |
+| Int128                       | numeric(39,0)               | xid8, oid8                              |                             |
+| Int256                       | numeric(77,0)               | xid8, oid8                              |                             |
+| IntervalDay                  | interval                    | smallint, integer, bigint               | 整数类型接收的是单位数量                |
+| IntervalHour                 | interval                    | smallint, integer, bigint               | 整数类型接收的是单位数量                |
+| IntervalMicrosecond          | interval                    | smallint, integer, bigint               | 整数类型接收的是单位数量                |
+| IntervalMillisecond          | interval                    | smallint, integer, bigint               | 整数类型接收的是单位数量                |
+| IntervalMinute               | interval                    | smallint, integer, bigint               | 整数类型接收的是单位数量                |
+| IntervalMonth                | interval                    | smallint, integer, bigint               | 整数类型接收的是单位数量                |
+| IntervalNanosecond           | interval                    | smallint, integer, bigint               | 整数类型保留纳秒；interval 截断至微秒     |
+| IntervalQuarter              | interval                    | smallint, integer, bigint               | 整数类型接收的是单位数量                |
+| IntervalSecond               | interval                    | smallint, integer, bigint               | 整数类型接收的是单位数量                |
+| IntervalWeek                 | interval                    | smallint, integer, bigint               | 整数类型接收的是单位数量                |
+| IntervalYear                 | interval                    | smallint, integer, bigint               | 整数类型接收的是单位数量                |
+| JSON                         | jsonb                       | json, text, bytea; 输入兼容类型               | jsonb 会对文档进行规范化             |
+| LineString                   | path                        | lseg                                    | lseg 要求恰好两个点                |
+| LowCardinality(T)            | T                           |                                         |                             |
+| Map(K,V)                     | text[][]                    | composite[], T[][], text                | 每个键值对对应一行文本项                |
+| MultiLineString              | path[]                      |                                         |                             |
+| MultiPolygon                 | polygon[][]                 |                                         |                             |
+| Nested(...)                  | text[][]                    | composite[], T[][], text                | 每个嵌套行对应一行文本项                |
+| Nullable(T)                  | T                           |                                         | 将该列标记为可为空                   |
+| Point                        | point                       |                                         |                             |
+| Polygon                      | polygon[]                   |                                         |                             |
+| Ring                         | polygon                     | lseg                                    | lseg 要求恰好两个点                |
+| SimpleAggregateFunction(f,T) | T                           |                                         | 以 T 类型存储值                   |
+| String                       | text                        | bytea; 输入兼容类型                           | bytea 保留原始字节                |
+| Time                         | time without time zone      |                                         |                             |
+| Time64(P)                    | time(P) without time zone   |                                         | P 大于 6 时按 6 处理              |
+| Tuple(...)                   | text[]                      | composite, T[], text; box, circle, line | 各字段转为文本项                    |
+| UInt8                        | smallint                    | boolean                                 | 零为 false，非零为 true           |
+| UInt16                       | integer                     |                                         |                             |
+| UInt32                       | bigint                      |                                         |                             |
+| UInt64                       | numeric(20,0)               | xid8, oid8                              |                             |
+| UInt128                      | numeric(39,0)               | xid8, oid8                              |                             |
+| UInt256                      | numeric(78,0)               | xid8, oid8                              |                             |
+| UUID                         | uuid                        |                                         |                             |
 
-本表中未列出的所有 chDB 类型都会引发错误，其中包括 `Nested`、`Variant` 和 `Dynamic`。可使用将它们映射为 `String` 的[结构](#structure)，从而以文本形式读取。
+输入兼容的类型可以通过其 PostgreSQL input 函数读取字符串。
+复合类型的字段必须一一匹配且顺序一致。若要将元组读取为 array，每个字段都必须能够转换为该 array 的元素类型，且任何字段本身都不能是 array。
+
+以 array 形式读取时，`Map` 的每个键值对对应一行，`Nested` 的每个嵌套行对应一行。若要将元组读取为 `box`，需提供两个点；读取为 `circle` 时，需提供一个点和半径；读取为 `line` 时，需提供三个系数。
+
+本表中未列出的所有 chDB 类型都会引发错误，其中包括 `Variant`、`Dynamic` 和 `AggregateFunction`。可使用将它们映射为 `String` 的[结构](#structure)，从而以文本形式读取。
 
 其中有几种类型，Postgres 支持的取值范围比 chDB 更窄；因此，当 `Time` 或 `Time64` 超过 24 小时，或 `Date32` 超出 Postgres 的日期范围时，复制操作会引发错误。
+
+### 手动类型映射 {#manual-type-mappings}
+
+列推断会将枚举映射为 `text`，并将 `Tuple`、`Map`
+和 `Nested` 值映射为文本 array。如需保留字段类型或限制枚举的取值，请先创建
+PostgreSQL 枚举类型和复合类型，再使用这些类型声明列。
+可通过 [结构](#structure) 指定 chDB 类型，也可使用 `structure 'auto'`
+基于源数据 (而非 Postgres 表) 推断类型。例如，
+可使用这些类型加载事件状态、坐标、标签以及
+嵌套条目：
+
+```sql
+CREATE TYPE event_status AS ENUM ('new', 'done');
+CREATE TYPE event_point AS (x integer, y integer);
+CREATE TYPE event_label AS (key text, value bigint);
+CREATE TYPE event_item AS (id integer, name text);
+
+CREATE TABLE events (
+    status event_status,
+    point  event_point,
+    labels event_label[],
+    items  event_item[]
+);
+
+COPY events FROM 's3://chdb-lakedata-public/examples/events.parquet' (
+    structure $$
+        status Enum8('new' = 1, 'done' = 2),
+        point  Tuple(Int32, Int32),
+        labels Map(String, Int64),
+        items  Array(Tuple(id Int32, name String))
+    $$
+);
+```
+
+按照 chDB 中的字段顺序声明复合类型字段，并使用兼容的 PostgreSQL
+类型。对于 `Map` 值，先声明一个键字段，再声明一个值字段。每个
+`Tuple` 对应一个复合值；每个 `Map` 键值对或 `Nested` 行对应
+复合 array 中的一个元素。
+
+如果在 `structure` 中显式指定 `Nested`，chDB 会将其拆分为多个
+`Array` 列，每个字段对应一列。可以像上文示例那样使用 `Array(Tuple(...))`，将嵌套行读取到单个复合
+array 列中；如果 chDB 源格式本身包含类型信息，也可以
+使用 `structure 'auto'`。
 
 ### 文本编码 {#text-encoding}
 
@@ -555,8 +618,8 @@ ERROR:  invalid byte sequence for encoding "UTF8": 0x00
 复制到 `bytea` 可以保留 chDB 写入时的原始字节。请显式为这些列命名，因为 [CREATE TABLE](#create-table-overloading) 会为这些类型推导出 `text`：
 
 ```sql
-CREATE TABLE logs (id bigint, payload bytea) WITH (
-    copy_from = 's3://my-bucket/logs.parquet'
+CREATE TABLE logs (req_id numeric(20,0), resource bytea) WITH (
+    copy_from = 's3://chdb-lakedata-public/logs/logs-2026-08-26.parquet'
 );
 ```
 
@@ -684,6 +747,8 @@ Copyright (c) 2026, ClickHouse
 
 [ClickHouse data types]: https://clickhouse.com/docs/reference/data-types/index "ClickHouse 文档：ClickHouse 中的数据类型"
 
+[composite type]: https://www.postgresql.org/docs/current/rowtypes.html#ROWTYPES-DECLARING "PostgreSQL 文档：声明复合类型"
+
 [log_min_messages]: https://www.postgresql.org/docs/current/runtime-config-logging.html#GUC-LOG-MIN-MESSAGES "PostgreSQL 文档：log_min_messages"
 
 [`pg_get_loaded_modules()`]: https://pgpedia.info/g/pg_get_loaded_modules.html "pgPedia：pg_get_loaded_modules()"
@@ -693,3 +758,5 @@ Copyright (c) 2026, ClickHouse
 [`max_threads`]: https://clickhouse.com/docs/reference/settings/session-settings/max-threads "ClickHouse 文档：max_threads_* 会话设置"
 
 [`max_parsing_threads`]: https://clickhouse.com/docs/reference/settings/session-settings/max#max_parsing_threads "ClickHouse 文档：max_parsing_threads 会话设置"
+
+[database encoding]: https://www.postgresql.org/docs/current/multibyte.html "PostgreSQL 文档：字符集支持"

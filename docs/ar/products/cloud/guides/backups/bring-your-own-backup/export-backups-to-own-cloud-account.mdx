@@ -8,36 +8,34 @@ doc_type: 'guide'
 
 يدعم ClickHouse Cloud حفظ النسخ الاحتياطية في حسابك الخاص لدى موفر الخدمة السحابية (CSP) ‏(AWS S3 أو Google Cloud Storage أو Azure Blob Storage).
 للاطلاع على تفاصيل آلية عمل النسخ الاحتياطية في ClickHouse Cloud، بما في ذلك النسخ الاحتياطية &quot;الكاملة&quot; مقابل &quot;التزايدية&quot;، راجع وثائق [النسخ الاحتياطية](/ar/products/cloud/guides/backups/review-and-restore-backups). لاحظ أن
-النسخ الاحتياطية المُصدَّرة إلى حسابك السحابي الخاص تختلف عن نسخ Cloud الاحتياطية في مكانها من ناحية مهمة واحدة: إذ لا يمكنها استخدام النسخ الأصلي (راجع الملاحظة أدناه).
+النسخ الاحتياطية المُصدَّرة إلى حسابك السحابي الخاص تختلف عن نسخ Cloud الاحتياطية في مكانها من ناحية مهمة واحدة: إذ لا يمكنها استخدام النسخ الأصلي (راجع الملاحظة أدناه).
+
+لا يؤدي تصدير النسخ الاحتياطية إلى حسابك الخاص عادةً إلى تعطيل النسخ الاحتياطية المُدارة من قِبل ClickHouse، إذ لا يمكنك تعطيلها ذاتيًا. ويتطلب أي استثناء موافقة ClickHouse وإجراء تعديلات تعاقدية؛ تواصل مع [ClickHouse Support](https://clickhouse.com/support/program) لمناقشة متطلباتك.
 
 في هذا الدليل، نعرض أمثلة على كيفية إنشاء نسخ احتياطية كاملة وتزايدية في تخزين الكائنات على AWS وGCP وAzure، بالإضافة إلى كيفية الاستعادة منها.
 
 <Note>
-  أي استخدام تُصدَّر فيه النسخ الاحتياطية إلى منطقة مختلفة ضمن موفر الخدمة السحابية نفسه سيترتب عليه رسوم [نقل البيانات](/ar/products/cloud/reference/billing/network-data-transfer).
+  أي استخدام تُصدَّر فيه النسخ الاحتياطية إلى منطقة مختلفة ضمن موفر الخدمة السحابية نفسه سيترتب عليه رسوم [نقل البيانات](/ar/products/cloud/reference/billing/network-data-transfer).
 
   لا تُدعَم النسخ الاحتياطية عبر سُحب مختلفة إلا من خلال أوامر النسخ الاحتياطي/الاستعادة الموضحة في هذه الصفحة، وليس عبر UI.
 </Note>
 
 <Warning>
   **تأثير الأداء مقارنةً بالنسخ الاحتياطية في مكانها**
-  لا يمكن للنسخ الاحتياطية المُصدَّرة إلى الحاوية الخاصة بك استخدام النسخ الأصلي (على جانب الخادم). يتطلب النسخ الأصلي أن يشترك المصدر والوجهة في بيانات الاعتماد نفسها، وهو ما لا
+  لا يمكن للنسخ الاحتياطية المُصدَّرة إلى الحاوية الخاصة بك استخدام النسخ الأصلي (على جانب الخادم). يتطلب النسخ الأصلي أن يشترك المصدر والوجهة في بيانات الاعتماد نفسها، وهو ما لا
   ينطبق هنا: فالمصدر هو حاوية مُدارة من ClickHouse والوجهة هي الحاوية الخاصة بك، مع مصادقة باستخدام بيانات اعتماد منفصلة.
 
-  ولأن النسخ الأصلي غير متاح، تُنزَّل البيانات من المصدر ثم يُعاد رفعها إلى الحاوية الخاصة بك (&quot;النسخ عبر المخازن المؤقتة&quot;). ونتيجةً لذلك، يكون تصدير
+  ولأن النسخ الأصلي غير متاح، تُنزَّل البيانات من المصدر ثم يُعاد رفعها إلى الحاوية الخاصة بك (&quot;النسخ عبر المخازن المؤقتة&quot;). ونتيجةً لذلك، يكون تصدير
   النسخ الاحتياطية إلى الحاوية الخاصة بك أبطأ ويستهلك موارد أكثر من نسخ Cloud الاحتياطية القياسية في مكانها.
 </Warning>
 
-<div id="requirements">
-  ## المتطلبات
-</div>
+## المتطلبات {#requirements}
 
 قبل تشغيل أمر `BACKUP`، تأكد من أن مستخدم ClickHouse لديك يمتلك امتياز `BACKUP`. لا يتضمن `default_role` في ClickHouse Cloud هذا الامتياز. تواصل مع [ClickHouse Support](https://clickhouse.com/support/program) لطلبه قبل تصدير النسخ الاحتياطية.
 
 ستحتاج إلى التفاصيل التالية لتصدير النسخ الاحتياطية أو استعادتها إلى حاوية التخزين الخاصة بك لدى موفّر الخدمة السحابية (CSP).
 
-<div id="aws">
-  ### AWS
-</div>
+### AWS {#aws}
 
 1. عنوان نقطة نهاية AWS S3، بالتنسيق التالي:
 
@@ -62,17 +60,13 @@ doc_type: 'guide'
   لاستخدام المصادقة المستندة إلى الدور، يُرجى اتباع [إعداد S3 الآمن](/ar/products/cloud/guides/data-sources/accessing-s3-data-securely). بالإضافة إلى ذلك، ستحتاج إلى إضافة أذونات `s3:PutObject` و` s3:DeleteObject` إلى سياسة IAM الموضحة [هنا.](/ar/products/cloud/guides/data-sources/accessing-s3-data-securely#option-2-manually-create-iam-role)
 </Note>
 
-<div id="azure">
-  ### Azure
-</div>
+### Azure {#azure}
 
 1. سلسلة اتصال Azure Storage.
 2. اسم حاوية Azure في حساب التخزين.
 3. كائن Azure Blob داخل الحاوية.
 
-<div id="google-cloud-storage-gcs">
-  ### Google Cloud Storage (GCS)
-</div>
+### Google Cloud Storage (GCS) {#google-cloud-storage-gcs}
 
 1. نقطة نهاية GCS، بالصيغة التالية:
 
@@ -83,17 +77,11 @@ doc_type: 'guide'
 
 <hr />
 
-<div id="backup-restore">
-  ## النسخ الاحتياطي / الاستعادة
-</div>
+## النسخ الاحتياطي / الاستعادة {#backup-restore}
 
-<div id="backup--restore-to-aws-s3-bucket">
-  ## النسخ الاحتياطي / الاستعادة إلى حاوية AWS S3
-</div>
+## النسخ الاحتياطي / الاستعادة إلى حاوية AWS S3 {#backup--restore-to-aws-s3-bucket}
 
-<div id="take-a-db-backup">
-  ### إنشاء نسخة احتياطية لقاعدة بيانات
-</div>
+### إنشاء نسخة احتياطية لقاعدة بيانات {#take-a-db-backup}
 
 **نسخة احتياطية كاملة**
 
@@ -117,9 +105,7 @@ TO S3('https://testchbackups.s3.amazonaws.com/backups/<uuid>', '<key id>', '<key
 SETTINGS base_backup = S3('https://testchbackups.s3.amazonaws.com/backups/<base-backup-uuid>', '<key id>', '<key secret>')
 ```
 
-<div id="restore-from-a-backup">
-  ### الاستعادة من نسخة احتياطية
-</div>
+### الاستعادة من نسخة احتياطية {#restore-from-a-backup}
 
 ```sql
 RESTORE DATABASE test_backups 
@@ -129,13 +115,9 @@ FROM S3('https://testchbackups.s3.amazonaws.com/backups/<uuid>', '<key id>', '<k
 
 راجع: [إعداد BACKUP/RESTORE لاستخدام نقطة نهاية S3](/ar/concepts/features/backup-restore/s3-endpoint) لمزيد من التفاصيل.
 
-<div id="backup--restore-to-azure-blob-storage">
-  ## النسخ الاحتياطي / الاستعادة إلى Azure Blob Storage
-</div>
+## النسخ الاحتياطي / الاستعادة إلى Azure Blob Storage {#backup--restore-to-azure-blob-storage}
 
-<div id="take-a-db-backup">
-  ### إنشاء نسخة احتياطية لقاعدة بيانات
-</div>
+### إنشاء نسخة احتياطية لقاعدة بيانات {#take-a-db-backup-1}
 
 **نسخة احتياطية كاملة**
 
@@ -154,9 +136,7 @@ TO AzureBlobStorage('<AzureBlobStorage endpoint connection string>', '<container
 SETTINGS base_backup = AzureBlobStorage('<AzureBlobStorage endpoint connection string>', '<container>', '<blob>/<uuid>')
 ```
 
-<div id="restore-from-a-backup">
-  ### الاستعادة من نسخة احتياطية
-</div>
+### الاستعادة من نسخة احتياطية {#restore-from-a-backup-1}
 
 ```sql
 RESTORE DATABASE test_backups 
@@ -166,13 +146,9 @@ FROM AzureBlobStorage('<AzureBlobStorage endpoint connection string>', '<contain
 
 راجع: [تهيئة BACKUP/RESTORE لاستخدام نقطة نهاية AzureBlobStorage](/ar/concepts/features/backup-restore/azure-blob-storage#configuring-backuprestore-to-use-an-azureblobstorage-endpoint) لمزيد من التفاصيل.
 
-<div id="backup--restore-to-google-cloud-storage-gcs">
-  ## النسخ الاحتياطي / الاستعادة إلى Google Cloud Storage (GCS)
-</div>
+## النسخ الاحتياطي / الاستعادة إلى Google Cloud Storage (GCS) {#backup--restore-to-google-cloud-storage-gcs}
 
-<div id="take-a-db-backup">
-  ### إنشاء نسخة احتياطية لقاعدة بيانات
-</div>
+### إنشاء نسخة احتياطية لقاعدة بيانات {#take-a-db-backup-2}
 
 **نسخة احتياطية كاملة**
 
@@ -191,9 +167,7 @@ TO S3('https://storage.googleapis.com/test_gcs_backups/<uuid>/my_incremental', '
 SETTINGS base_backup = S3('https://storage.googleapis.com/test_gcs_backups/<uuid>', 'key', 'secret')
 ```
 
-<div id="restore-from-a-backup">
-  ### الاستعادة من نسخة احتياطية
-</div>
+### الاستعادة من نسخة احتياطية {#restore-from-a-backup-2}
 
 ```sql
 RESTORE DATABASE test_backups 
