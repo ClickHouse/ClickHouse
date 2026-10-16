@@ -155,6 +155,7 @@ def test_metadata_statements_exempt_when_disabled() -> None:
         run_times_out(node_off, "attach table t2 engine=URL('http://localhost:8123/?query=select+1', 'TSV')", workload="regular")
         run_times_out(node_off, "optimize table t final", workload="regular")
         run_times_out(node_off, "alter table t freeze", workload="regular")
+        run_times_out(node_off, "alter table t attach partition tuple()", workload="regular")
         run_times_out(node_off, "alter table t update x = x + 1 where 1", workload="regular")
         run_times_out(node_off, "create table t2 (x UInt64) engine=URL((select 'http://localhost:8123/?query=select+1'), 'TSV')", workload="regular")
         run_times_out(node_off, "create table t2 (x UInt64) engine=URL(endpoint(), 'TSV')", workload="regular")
@@ -195,3 +196,4 @@ def test_metadata_statements_use_metadata_workload_when_enabled() -> None:
         run_times_out(node_on, "optimize table t final", workload="regular", metadata_workload="mdwl")
         run_times_out(node_on, "alter table t update x = x + 1 where 1", workload="regular", metadata_workload="mdwl")
         run_times_out(node_on, "undrop table t2", workload="regular", metadata_workload="mdwl")
+        run_times_out(node_on, "alter table t attach partition tuple()", workload="regular", metadata_workload="mdwl")

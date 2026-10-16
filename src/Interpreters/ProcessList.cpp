@@ -328,7 +328,6 @@ static bool isMetadataAlterCommand(const ASTAlterCommand & command)
         case ASTAlterCommand::DROP_PARTITION:
         case ASTAlterCommand::DROP_DETACHED_PARTITION:
         case ASTAlterCommand::FORGET_PARTITION:
-        case ASTAlterCommand::ATTACH_PARTITION:
         case ASTAlterCommand::UNFREEZE_PARTITION:
         case ASTAlterCommand::UNFREEZE_ALL:
         case ASTAlterCommand::MODIFY_DATABASE_SETTING:
@@ -348,6 +347,8 @@ static bool isMetadataAlterCommand(const ASTAlterCommand & command)
         case ASTAlterCommand::UPDATE:
         case ASTAlterCommand::APPLY_DELETED_MASK:
         case ASTAlterCommand::APPLY_PATCHES:
+        /// Load detached parts (also their primary indexes) into the table.
+        case ASTAlterCommand::ATTACH_PARTITION:
         /// Copy parts (`REPLACE_PARTITION` is also `ATTACH PARTITION ... FROM`) or run synchronously. The new
         /// `SELECT` of `MODIFY QUERY` is analyzed, which may read the sources it selects from, also through views.
         case ASTAlterCommand::MODIFY_QUERY:
