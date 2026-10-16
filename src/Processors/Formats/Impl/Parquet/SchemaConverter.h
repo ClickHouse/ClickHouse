@@ -157,7 +157,7 @@ private:
     /// `uuid2_preferred` says the file-level key-value metadata marks this leaf column as written from
     /// the ClickHouse `UUID2` type; it only matters when there's no type hint (schema inference).
     void processPrimitiveColumn(
-        const parq::SchemaElement & element, DataTypePtr type_hint,
+        const parq::SchemaElement & element, DataTypePtr type_hint, bool time_as_stored_integer,
         PageDecoderInfo & out_decoder, DataTypePtr & out_decoded_type,
         DataTypePtr & out_inferred_type, std::optional<GeoColumnMetadata> geo_metadata,
         bool uuid2_preferred) const;
