@@ -1910,6 +1910,10 @@ def main():
                 # unconditionally (even when tests fail) and visible in the CI report.
                 if os.path.exists(merged_file):
                     R.files.append(merged_file)
+                    # The job's goal is only to collect coverage: once the
+                    # profile of a completed run is published, failed tests do
+                    # not make the job fail. They stay visible in sub-results.
+                    reset_success = True
                 else:
                     print(f"ERROR: coverage merge produced no profile:\n{merge_output}")
 
@@ -1917,7 +1921,7 @@ def main():
             print("No usable .profraw files found for coverage")
 
     if reset_success:
-        # coverage job ignores test failures
+        # coverage jobs ignore test failures
         R.set_success()
 
     R.complete_job(do_not_block_pipeline_on_failure=force_ok_exit)
