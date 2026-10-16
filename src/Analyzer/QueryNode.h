@@ -80,17 +80,14 @@ public:
         return context;
     }
 
-    /// Get mutable context
+    /// Get mutable context. Replace it with setContext() to update the query-context lifetime owner.
     const ContextMutablePtr & getMutableContext() const
     {
         return context;
     }
 
-    /// Get mutable context
-    ContextMutablePtr & getMutableContext()
-    {
-        return context;
-    }
+    /// Set mutable context and retain its canonical query context while this node uses it.
+    void setContext(ContextMutablePtr context_);
 
     /// Returns true if query node has settings changes, false otherwise
     bool hasSettingsChanges() const
@@ -780,6 +777,9 @@ private:
     NamesAndTypes projection_columns;
     Names projection_aliases_to_override;
     ContextMutablePtr context;
+    /// Query contexts are weakly referenced from Context copies. Keep the canonical owner alive
+    /// for the lifetime of this node, unless this node's context is itself the canonical context.
+    ContextMutablePtr query_context_lifetime;
     SettingsChanges settings_changes;
 
     static constexpr size_t with_child_index = 0;

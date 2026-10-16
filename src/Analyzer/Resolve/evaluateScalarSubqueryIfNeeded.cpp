@@ -169,7 +169,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         auto query_tree = node->clone();
         /// Update context for the QueryTree, because apparently Planner would use this context.
         if (auto * new_query_node = query_tree->as<QueryNode>())
-            new_query_node->getMutableContext() = subquery_context;
+            new_query_node->setContext(subquery_context);
         if (auto * new_union_node = query_tree->as<UnionNode>())
             new_union_node->getMutableContext() = subquery_context;
 
@@ -189,7 +189,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
             {
                 auto nested_context = Context::createCopy(nested_query_node->getContext());
                 nested_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-                nested_query_node->getMutableContext() = std::move(nested_context);
+                nested_query_node->setContext(std::move(nested_context));
             }
             else if (auto * nested_union_node = current->as<UnionNode>())
             {

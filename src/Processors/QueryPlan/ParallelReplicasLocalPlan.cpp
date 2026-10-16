@@ -157,7 +157,7 @@ std::shared_ptr<const QueryPlan> createRemotePlanForParallelReplicas(
                 auto node_context = Context::createCopy(query_node->getContext());
                 node_context->setPositionalArgumentsAlreadyResolved(true);
                 node_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-                query_node->getMutableContext() = std::move(node_context);
+                query_node->setContext(std::move(node_context));
             }
             else if (auto * union_node = current->as<UnionNode>())
             {
@@ -238,7 +238,7 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
                 auto node_context = Context::createCopy(query_node->getContext());
                 node_context->setPositionalArgumentsAlreadyResolved(true);
                 node_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-                query_node->getMutableContext() = std::move(node_context);
+                query_node->setContext(std::move(node_context));
             }
             else if (auto * union_node = current->as<UnionNode>())
             {
