@@ -25,3 +25,8 @@ numeric result types
 Float64	Float64	Float64	Float64	Float64
 bounded floating point batch reduction
 1
+floating point range
+1
+1
+Float64 input arithmetic
+1	1

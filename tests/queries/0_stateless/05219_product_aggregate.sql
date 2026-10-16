@@ -59,3 +59,11 @@ FROM numbers(3);
 
 SELECT 'bounded floating point batch reduction';
 SELECT product(if(number % 2 = 0, 2., 0.5)) = 1 FROM numbers(100000);
+
+SELECT 'floating point range';
+SELECT product(if(number % 2 = 0, 1e200, 1e-200)) = 1 FROM numbers(16) SETTINGS max_threads = 1;
+SELECT product(if(number % 2 = 0, 1e-200, 1e200)) = 1 FROM numbers(16) SETTINGS max_threads = 1;
+
+SELECT 'Float64 input arithmetic';
+SELECT product(x) > 0, arrayProduct(groupArray(x)) = 0
+FROM VALUES('x UInt64', (9223372036854775808), (2));
