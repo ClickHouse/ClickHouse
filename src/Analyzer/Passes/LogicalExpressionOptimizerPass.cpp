@@ -1796,9 +1796,9 @@ public:
     /// a conjunct over these can't leave ON, and full_sorting_merge rejects it there
     TableExpressionNodes preserved_join_tables;
 
-    /// Whether every column the join reads for `node` comes from `preserved_join_tables`: lambda captures count, lambda and
-    /// `indexHint` arguments do not, and a column-less `node` qualifies, as the join evaluates it with the left side.
-    bool readsOnlyPreservedJoinTables(const QueryTreeNodePtr & node) const
+    /// Whether the join may evaluate `node` with a preserved side: it reads a column of `preserved_join_tables` (constant folding in the
+    /// join can drop every other column), or no column outside lambda and `indexHint` arguments, as the join evaluates that on the left.
+    bool mayReadPreservedJoinTables(const QueryTreeNodePtr & node) const
     {
         if (preserved_join_tables.empty())
             return false;
@@ -1815,18 +1815,15 @@ public:
                 auto source = column->getColumnSourceOrNull();
                 if (source && source->getNodeType() == QueryTreeNodeType::LAMBDA_ARGS)
                     continue;
-                if (!std::ranges::contains(preserved_join_tables, source))
-                    reads_other_table = true;
+                if (std::ranges::contains(preserved_join_tables, source))
+                    return true;
+                reads_other_table = true;
             }
             else if (const auto * function = current->as<FunctionNode>())
             {
                 if (function->getFunctionName() == "indexHint")
                     continue;
-                const auto & arguments = function->getArguments().getNodes();
-                /// The join folds an `IN` whose constant set turns out empty, and what it feeds, to a constant.
-                if (isNameOfInFunction(function->getFunctionName()) && arguments.size() == 2 && arguments[1]->as<ConstantNode>())
-                    return true;
-                for (const auto & argument : arguments)
+                for (const auto & argument : function->getArguments().getNodes())
                     nodes_to_process.push_back(argument.get());
             }
             else if (const auto * lambda = current->as<LambdaNode>())
@@ -2520,11 +2517,11 @@ private:
                                 ErrorCodes::LOGICAL_ERROR,
                                 "Inferred comparison {} has an inconsistent order domain",
                                 compare_function_name);
-                        /// A bound over the preserved side of an outer join can't leave ON, so it is derived only
+                        /// A bound that may read the preserved side of an outer join can't leave ON, so it is derived only
                         /// to expose a contradiction with a conjunct already written on that expression.
-                        const bool preserved_only = readsOnlyPreservedJoinTables(left.node);
+                        const bool reads_preserved = mayReadPreservedJoinTables(left.node);
                         if (!existing_plain_conjuncts.contains(QueryTreeNodePtr(and_node))
-                            && (!preserved_only || derived_conjunct_filters.contains(left.node)))
+                            && (!reads_preserved || derived_conjunct_filters.contains(left.node)))
                         {
                             /// Do not append a derived conjunct implied by an existing or already-derived
                             /// one; contradictions are appended so the next pass folds the AND to `false`.
@@ -2538,7 +2535,7 @@ private:
                                 existing_plain_conjuncts.emplace(and_node);
                                 function_node.getArguments().getNodes().push_back(and_node);
                             }
-                            else if (add_result != AddComparisonFilterResult::ALWAYS_TRUE && !preserved_only)
+                            else if (add_result != AddComparisonFilterResult::ALWAYS_TRUE && !reads_preserved)
                             {
                                 if (left.crosses_source)
                                 {

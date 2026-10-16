@@ -54,6 +54,14 @@ key with a constant IN set
 0	10
 1	11
 2	0
+key with a folded conditional
+0	10
+1	11
+2	0
+key without columns under a lambda
+0	0
+1	11
+2	0
 bound within the other side
 0	1
 1	0
@@ -75,4 +83,5 @@ derived bounds
 2
 2
 1
+2
 2

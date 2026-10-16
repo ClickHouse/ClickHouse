@@ -47,7 +47,13 @@ SELECT 'key with indexHint';
 SELECT l.number, r.number FROM numbers(3) AS l LEFT JOIN numbers(3) AS r ON l.number + indexHint(r.number < 2) = r.number AND r.number < 2 ORDER BY l.number;
 
 SELECT 'key with a constant IN set';
-SELECT l.number, r.v FROM numbers(3) AS l LEFT JOIN (SELECT number AS k, number + 10 AS v FROM numbers(3)) AS r ON l.number + (r.k IN [] AND r.k > 0) = r.k AND r.k < 2 ORDER BY l.number;
+SELECT l.number, r.v FROM numbers(3) AS l LEFT JOIN (SELECT number AS k, number + 10 AS v FROM numbers(3)) AS r ON l.number + (r.k IN [] AND r.k > 0) = r.k AND r.k < 2 ORDER BY l.number SETTINGS query_plan_remove_unused_columns = 1;
+
+SELECT 'key with a folded conditional';
+SELECT l.number, r.v FROM numbers(3) AS l LEFT JOIN (SELECT number AS k, number + 10 AS v FROM numbers(3)) AS r ON l.number + multiIf(1, 0, r.k) = r.k AND r.k < 2 ORDER BY l.number SETTINGS optimize_multiif_to_if = 1, query_plan_remove_unused_columns = 1;
+
+SELECT 'key without columns under a lambda';
+SELECT l.number, r.v FROM numbers(3) AS l LEFT JOIN (SELECT number AS k, number + 10 AS v FROM numbers(3)) AS r ON l.number = r.k AND arraySum(x -> x, [indexHint(r.v > 0)]) = r.k AND r.k < 2 ORDER BY l.number;
 
 SELECT 'bound within the other side';
 SELECT l.number, r.b FROM numbers(3) AS l LEFT JOIN (SELECT number AS a, number + 1 AS b FROM numbers(3)) AS r ON l.number = r.a AND r.a < r.b AND r.b < 2 ORDER BY l.number;
@@ -68,3 +74,4 @@ SELECT count() FROM (EXPLAIN QUERY TREE SELECT 1 FROM numbers(3) AS l LEFT JOIN 
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT 1 FROM numbers(3) AS l LEFT SEMI JOIN numbers(3) AS r ON l.number = r.number AND r.number < 2) WHERE explain LIKE '%function_name: less,%';
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT 1 FROM numbers(3) AS l FULL JOIN numbers(3) AS r ON l.number = r.number AND l.number < 2) WHERE explain LIKE '%function_name: less,%';
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT 1 FROM numbers(3) AS a INNER JOIN numbers(3) AS b ON a.number = b.number INNER JOIN numbers(3) AS c ON a.number + b.number = c.number AND c.number < 2) WHERE explain LIKE '%function_name: less,%';
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT 1 FROM numbers(3) AS l LEFT JOIN numbers(3) AS r ON l.number = r.number AND arraySum(x -> x + r.number, [0]) = r.number AND r.number < 2) WHERE explain LIKE '%function_name: less,%';
