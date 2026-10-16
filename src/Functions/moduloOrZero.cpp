@@ -16,6 +16,9 @@ struct ModuloOrZeroImpl
     /// See the comment in ModuloImpl.
     static constexpr bool no_vectorize = !is_floating_point<ResultType>;
 
+    /// Documentation-only — see `PlusImpl::signature_documentation`.
+    static constexpr auto signature_documentation = "(Any, Any) -> Any";
+
     template <typename Result = ResultType>
     static Result apply(A a, B b)
     {
