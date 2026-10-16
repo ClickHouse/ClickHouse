@@ -618,7 +618,7 @@ protected:
                             }
                             // stopped_actions
                             else if (src_index == 43 && columns_mask[src_index])
-                                fillStoppedActions(res_columns, table.second, res_index);
+                                fillStoppedActions(res_columns, can_expose_metadata ? table.second : nullptr, res_index);
                             /// Fill the rest columns with defaults
                             else if (columns_mask[src_index])
                                 res_columns[res_index++]->insertDefault();
@@ -1069,7 +1069,7 @@ protected:
                 }
 
                 if (columns_mask[src_index++])
-                    fillStoppedActions(res_columns, table, res_index);
+                    fillStoppedActions(res_columns, can_expose_metadata ? table : nullptr, res_index);
             }
         }
         UInt64 num_rows = res_columns.at(0)->size();

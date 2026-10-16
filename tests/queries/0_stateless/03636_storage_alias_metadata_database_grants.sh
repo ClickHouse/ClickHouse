@@ -63,7 +63,8 @@ ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
              AND isNull(total_bytes)
              AND isNull(total_bytes_uncompressed)
              AND empty(data_paths)
-             AND empty(storage_policy))
+             AND empty(storage_policy)
+             AND empty(stopped_actions))
          FROM system.tables
          WHERE database = '${alias_database}' AND name = '${shortcut_alias_table}'),
         (SELECT count()
