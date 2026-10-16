@@ -1502,7 +1502,7 @@ size_t HashJoin::liveDistinctEstimate(size_t clause_idx) const
         std::lock_guard hll_lock(lane.hll_mutex);
         for (size_t other = 0; other < clauses.size(); ++other)
         {
-            auto & sketch = lane.hll[other];
+            const auto & sketch = lane.hll[other];
             if (incremental_merge)
             {
                 if (sketch.dirty)
