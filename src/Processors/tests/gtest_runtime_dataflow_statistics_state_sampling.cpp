@@ -23,12 +23,15 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Formats/NativeWriter.h>
 #include <IO/NullWriteBuffer.h>
+#include <IO/WriteBufferFromString.h>
 #include <Processors/Chunk.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Common/Arena.h>
+#include <Common/assert_cast.h>
 #include <Common/tests/gtest_global_register.h>
 
 #include <fmt/format.h>
@@ -1152,4 +1155,150 @@ TEST(RuntimeDataflowStatisticsStateSampling, WrappedSparseDefaultStateIsNotASeri
     ASSERT_TRUE(stats.has_value());
     EXPECT_GE(stats->output_bytes, exact_compressed_bytes / 2);
     EXPECT_LE(stats->output_bytes, exact_compressed_bytes * 2);
+}
+
+/// The components of a block - the state leaves and the plain payload next to them - are sampled
+/// independently: a state leaf serializes at most 1000 states, a plain column a prefix of up to 8192 rows.
+/// Their compression samples must be weighted by the bytes they represent before they are pooled into one
+/// ratio. Pooled raw, a 20000-row tuple of incompressible ~1 KiB states and compressible ~1 KiB strings
+/// gives the strings eight times the weight of the states in the ratio while both are half of the
+/// uncompressed total, which understates `output_bytes` several-fold.
+TEST(RuntimeDataflowStatisticsStateSampling, MixedOutputAboveStateCapNormalizesComponentSamples)
+{
+    tryRegisterAggregateFunctions();
+
+    constexpr size_t rows = 20000;
+    constexpr size_t elements_in_state = 128;
+    constexpr size_t string_size = 1024;
+
+    AggregateFunctionProperties properties;
+    auto function = AggregateFunctionFactory::instance().get(
+        "groupArray", NullsAction::EMPTY, DataTypes{std::make_shared<DataTypeUInt64>()}, Array{}, properties);
+    const auto state_type = std::make_shared<DataTypeAggregateFunction>(function, DataTypes{std::make_shared<DataTypeUInt64>()}, Array{});
+
+    /// Distinct pseudo-random values keep every state incompressible.
+    auto values = ColumnUInt64::create();
+    for (size_t i = 0; i < rows * elements_in_state; ++i)
+        values->insert(UInt64(i + 1) * 0x9E3779B97F4A7C15ULL);
+    const IColumn * arguments[1] = {values.get()};
+
+    auto states = ColumnAggregateFunction::create(function);
+    for (size_t row = 0; row < rows; ++row)
+    {
+        states->insertDefault();
+        for (size_t i = 0; i < elements_in_state; ++i)
+            function->add(states->getData()[row], arguments, row * elements_in_state + i, &states->createOrGetArena());
+    }
+
+    auto string_column = ColumnString::create();
+    const std::string value(string_size, 'a');
+    for (size_t row = 0; row < rows; ++row)
+        string_column->insertData(value.data(), value.size());
+
+    Columns tuple_elements;
+    tuple_elements.emplace_back(std::move(states));
+    tuple_elements.emplace_back(std::move(string_column));
+    ColumnPtr tuple = ColumnTuple::create(std::move(tuple_elements));
+    const auto tuple_type = std::make_shared<DataTypeTuple>(DataTypes{state_type, std::make_shared<DataTypeString>()});
+
+    const auto exact_compressed_bytes = compressedColumnSize({tuple, tuple_type, "state_and_string"});
+    /// The states dominate the compressed payload.
+    ASSERT_GT(exact_compressed_bytes, rows * elements_in_state * sizeof(UInt64) / 2);
+
+    const size_t cache_key = 0x111985 + 18;
+    {
+        RuntimeDataflowStatisticsCacheUpdater updater(std::make_shared<RuntimeDataflowStatisticsBlock>(cache_key, rows));
+        Block header;
+        header.insert(ColumnWithTypeAndName{nullptr, tuple_type, "state_and_string"});
+        updater.recordOutputChunk(Chunk(Columns{tuple}, rows), header);
+    }
+
+    const auto stats = getRuntimeDataflowStatisticsCache().getStats(cache_key);
+    ASSERT_TRUE(stats.has_value());
+    EXPECT_GE(stats->output_bytes, exact_compressed_bytes / 2);
+    EXPECT_LE(stats->output_bytes, exact_compressed_bytes * 2);
+}
+
+/// `NativeWriter` pins the state versions of the types in the block header to the peer's revision, but a
+/// `Dynamic` type has no type children to pin: `SerializationDynamic` writes its alternatives with the
+/// variant type the column carries. So a `Dynamic` value holding `AggregateFunction(0, sumMap, Array(UInt8),
+/// Array(Decimal(9, 2)))` states goes out in version 0, with 4-byte `Decimal32` values, and measuring it in
+/// the current revision's version 1 counts them as 16-byte `Decimal128` - several times the bytes sent.
+TEST(RuntimeDataflowStatisticsStateSampling, DynamicStatesKeepTheColumnStateVersion)
+{
+    tryRegisterAggregateFunctions();
+
+    constexpr size_t rows = 1000;
+    constexpr size_t entries_in_state = 50;
+
+    DataTypes argument_types
+        = {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt8>()),
+           std::make_shared<DataTypeArray>(std::make_shared<DataTypeDecimal<Decimal32>>(9, 2))};
+    AggregateFunctionProperties properties;
+    auto function = AggregateFunctionFactory::instance().get("sumMap", NullsAction::EMPTY, argument_types, Array{}, properties);
+    const DataTypePtr state_type = std::make_shared<DataTypeAggregateFunction>(function, argument_types, Array{}, /*version=*/0);
+
+    auto states = state_type->createColumn();
+    auto & states_column = assert_cast<ColumnAggregateFunction &>(*states);
+    auto map_keys = argument_types[0]->createColumn();
+    auto map_values = argument_types[1]->createColumn();
+    for (size_t row = 0; row < rows; ++row)
+    {
+        Array keys_array;
+        Array values_array;
+        for (size_t entry = 0; entry < entries_in_state; ++entry)
+        {
+            keys_array.emplace_back(UInt64(entry));
+            values_array.emplace_back(DecimalField<Decimal32>(Decimal32(static_cast<Int32>(row * 1000 + entry)), 2));
+        }
+        map_keys->insert(keys_array);
+        map_values->insert(values_array);
+    }
+    const IColumn * arguments[2] = {map_keys.get(), map_values.get()};
+    for (size_t row = 0; row < rows; ++row)
+    {
+        states_column.insertDefault();
+        function->add(states_column.getData()[row], arguments, row, &states_column.createOrGetArena());
+    }
+
+    /// `DataTypeVariant` sorts the alternatives by name: 0 = the state, 1 = "SharedVariant" (empty here).
+    const auto variant_type = std::make_shared<DataTypeVariant>(DataTypes{state_type, ColumnDynamic::getSharedVariantDataType()});
+    ASSERT_EQ(variant_type->getVariants()[0]->getName(), state_type->getName());
+    auto discriminators = ColumnVariant::ColumnDiscriminators::create();
+    auto offsets = ColumnVariant::ColumnOffsets::create();
+    for (size_t row = 0; row < rows; ++row)
+    {
+        discriminators->insertValue(0);
+        offsets->insertValue(row);
+    }
+    Columns variant_alternatives;
+    variant_alternatives.emplace_back(std::move(states));
+    variant_alternatives.emplace_back(ColumnDynamic::getSharedVariantDataType()->createColumn());
+    auto variant_column = ColumnVariant::create(std::move(discriminators), std::move(offsets), variant_alternatives);
+    ColumnPtr dynamic_column = ColumnDynamic::create(
+        variant_column->assumeMutable(), variant_type, /*max_dynamic_types_=*/2, /*global_max_dynamic_types_=*/2);
+
+    Block block;
+    block.insert(ColumnWithTypeAndName{dynamic_column, std::make_shared<DataTypeDynamic>(), "dynamic_state"});
+
+    /// Without compression the estimate is the uncompressed size, so the ground truth is what `NativeWriter`
+    /// writes for the block to a peer of the current revision.
+    const auto none = CompressionCodecFactory::instance().get("NONE", {});
+    WriteBufferFromOwnString wire;
+    NativeWriter writer(wire, DBMS_TCP_PROTOCOL_VERSION, std::make_shared<const Block>(block.cloneEmpty()));
+    writer.write(block);
+    wire.finalize();
+    const size_t wire_bytes = wire.str().size();
+
+    const size_t cache_key = 0x111985 + 19;
+    {
+        RuntimeDataflowStatisticsCacheUpdater updater(std::make_shared<RuntimeDataflowStatisticsBlock>(cache_key, rows, none));
+        Block header = block.cloneEmpty();
+        updater.recordOutputChunk(Chunk(Columns{dynamic_column}, rows), header);
+    }
+
+    const auto stats = getRuntimeDataflowStatisticsCache().getStats(cache_key);
+    ASSERT_TRUE(stats.has_value());
+    EXPECT_GE(stats->output_bytes * 5, wire_bytes * 4);
+    EXPECT_LE(stats->output_bytes * 4, wire_bytes * 5);
 }

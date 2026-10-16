@@ -537,7 +537,7 @@ size_t ColumnAggregateFunction::sampledSerializedStateBytes(size_t max_states_to
 }
 
 ColumnAggregateFunction::SampledStateSizes ColumnAggregateFunction::sampledStateSizes(
-    size_t max_states_to_serialize, size_t repetitions, size_t skip_rows, const CompressionCodecPtr & codec) const
+    size_t max_states_to_serialize, size_t repetitions, size_t skip_rows, const CompressionCodecPtr & codec, bool keep_column_version) const
 {
     SampledStateSizes res;
     const size_t rows = data.size() - skip_rows;
@@ -550,9 +550,11 @@ ColumnAggregateFunction::SampledStateSizes ColumnAggregateFunction::sampledState
     /// serializes the states (`NativeWriter::setAggregateFunctionStateVersions`): a versioned function goes
     /// to a peer of the current revision in that revision's version, whatever version the column carries
     /// locally - an explicit `AggregateFunction(0, sumMap, ...)` is sent as version 1. Measure the states in
-    /// that version, not in the column's.
-    const std::optional<size_t> wire_version
-        = func->isVersioned() ? std::optional<size_t>(func->getVersionFromRevision(DBMS_TCP_PROTOCOL_VERSION)) : version;
+    /// that version, not in the column's - unless the caller knows the states travel below a carrier whose
+    /// type is not rewritten that way.
+    const std::optional<size_t> wire_version = func->isVersioned() && !keep_column_version
+        ? std::optional<size_t>(func->getVersionFromRevision(DBMS_TCP_PROTOCOL_VERSION))
+        : version;
 
     /// The same periodic sample as in sampledSerializedStateBytes, serialized through a compression buffer
     /// so that the uncompressed figure and the compression ratio are measured on the same states.

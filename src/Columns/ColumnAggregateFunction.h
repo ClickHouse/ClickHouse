@@ -245,7 +245,9 @@ public:
     /// `skip_rows` omits leading values not written by their carrier, such as `ColumnSparse`'s implicit default.
     ///
     /// The states are serialized in the version `NativeWriter` sends them to a peer of the current revision
-    /// in, which for a versioned function need not be the column's own version.
+    /// in, which for a versioned function need not be the column's own version. With `keep_column_version`
+    /// they are serialized in the column's own version instead: that is how a carrier whose type
+    /// `NativeWriter::setAggregateFunctionStateVersions` cannot reach - `Dynamic` - sends them.
     ///
     /// `codec` is the codec the measured payload is compressed with - the interserver codec for a wire
     /// estimate - and decides both what the sample is compressed with and how far a copy can be matched
@@ -254,7 +256,8 @@ public:
         size_t max_states_to_serialize,
         size_t repetitions = 1,
         size_t skip_rows = 0,
-        const CompressionCodecPtr & codec = nullptr) const;
+        const CompressionCodecPtr & codec = nullptr,
+        bool keep_column_version = false) const;
 
     size_t byteSizeAt(size_t n) const override;
 

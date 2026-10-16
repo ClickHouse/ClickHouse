@@ -276,15 +276,22 @@ estimateRepeatedCompressedColumnSize(const ColumnWithTypeAndName & column, size_
 /// Callers that size the carrier's own payload as `column->byteSize()` minus the leaves must subtract this
 /// figure, otherwise the whole state payload stays behind as plain bytes and is counted a second time by
 /// the serialized-state measurement.
+///
+/// `below_dynamic` tells whether the leaf is an alternative of a `ColumnDynamic`. `NativeWriter` pins the
+/// state versions of the types in the block header to the peer's revision
+/// (`NativeWriter::setAggregateFunctionStateVersions`), but a `Dynamic` type has no type children to pin:
+/// `SerializationDynamic` serializes its alternatives with the variant type the column carries, so the
+/// states below it are sent in the column's own version.
 static void forEachAggregateStateLeaf(
     const IColumn & column,
-    const std::function<void(const ColumnAggregateFunction &, size_t skip_rows, const ColumnPtr & owner, size_t carrier_byte_size)> &
-        callback,
-    const ColumnPtr & owner = {})
+    const std::function<void(
+        const ColumnAggregateFunction &, size_t skip_rows, const ColumnPtr & owner, size_t carrier_byte_size, bool below_dynamic)> & callback,
+    const ColumnPtr & owner = {},
+    bool below_dynamic = false)
 {
     if (const auto * aggregate_column = typeid_cast<const ColumnAggregateFunction *>(&column))
     {
-        callback(*aggregate_column, 0, owner, aggregate_column->byteSize());
+        callback(*aggregate_column, 0, owner, aggregate_column->byteSize(), below_dynamic);
         return;
     }
     if (const auto * sparse_column = typeid_cast<const ColumnSparse *>(&column))
@@ -317,7 +324,7 @@ static void forEachAggregateStateLeaf(
         const auto values = original_values->cut(1, original_values->size() - 1);
         if (const auto * aggregate_column = typeid_cast<const ColumnAggregateFunction *>(values.get()))
         {
-            callback(*aggregate_column, 0, values, original_values->byteSize());
+            callback(*aggregate_column, 0, values, original_values->byteSize(), below_dynamic);
             return;
         }
         size_t leaf_index = 0;
@@ -326,7 +333,7 @@ static void forEachAggregateStateLeaf(
             {
                 if (const auto * aggregate_column = typeid_cast<const ColumnAggregateFunction *>(&subcolumn))
                 {
-                    callback(*aggregate_column, 0, values, original_leaf_bytes.at(leaf_index));
+                    callback(*aggregate_column, 0, values, original_leaf_bytes.at(leaf_index), below_dynamic);
                     ++leaf_index;
                 }
             });
@@ -336,13 +343,15 @@ static void forEachAggregateStateLeaf(
     /// by another carrier (`Tuple`, `Nullable`, `Variant`, ...) is intercepted by the branch above too:
     /// otherwise its leaf is reported with the implicit default row of `values` still present, and an
     /// all-default block would commit the empty default state as a serialized state value.
-    column.forEachSubcolumn([&](const IColumn::WrappedPtr & subcolumn) { forEachAggregateStateLeaf(*subcolumn, callback, owner); });
+    const bool subcolumns_below_dynamic = below_dynamic || typeid_cast<const ColumnDynamic *>(&column) != nullptr;
+    column.forEachSubcolumn([&](const IColumn::WrappedPtr & subcolumn)
+                            { forEachAggregateStateLeaf(*subcolumn, callback, owner, subcolumns_below_dynamic); });
 }
 
 static bool hasAggregateStateLeaf(const IColumn & column)
 {
     bool has_leaf = false;
-    forEachAggregateStateLeaf(column, [&](const ColumnAggregateFunction &, size_t, const ColumnPtr &, size_t) { has_leaf = true; });
+    forEachAggregateStateLeaf(column, [&](const ColumnAggregateFunction &, size_t, const ColumnPtr &, size_t, bool) { has_leaf = true; });
     return has_leaf;
 }
 
@@ -498,7 +507,7 @@ static void sampleNonStatePartsCompression(
     size_t leaves_byte_size = 0;
     forEachAggregateStateLeaf(
         *column,
-        [&](const ColumnAggregateFunction &, size_t, const ColumnPtr &, size_t carrier_byte_size)
+        [&](const ColumnAggregateFunction &, size_t, const ColumnPtr &, size_t carrier_byte_size, bool)
         { leaves_byte_size += carrier_byte_size; });
     const size_t carrier_bytes = (column->byteSize() - leaves_byte_size) * repetitions;
     sample_bytes += carrier_bytes;
@@ -574,10 +583,13 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
         ColumnPtr owner;
         size_t repetitions;
         size_t skip_rows;
+        bool below_dynamic;
     };
     std::vector<StateLeaf> state_leaves;
     /// Whether cols[i] contains (or is) an aggregate-state leaf.
     std::vector<UInt8> col_has_states(cols.size(), 0);
+    /// The bytes of cols[i] other than its aggregate-state leaves, as counted in `plain_bytes`.
+    std::vector<size_t> col_plain_bytes(cols.size(), 0);
     size_t plain_bytes = 0;
     for (size_t i = 0; i < cols.size(); ++i)
     {
@@ -594,15 +606,16 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
         size_t state_leaves_byte_size = 0;
         forEachAggregateStateLeaf(
             *column,
-            [&](const ColumnAggregateFunction & leaf, size_t skip_rows, const ColumnPtr & owner, size_t carrier_byte_size)
+            [&](const ColumnAggregateFunction & leaf, size_t skip_rows, const ColumnPtr & owner, size_t carrier_byte_size, bool below_dynamic)
             {
                 col_has_states[i] = 1;
-                state_leaves.emplace_back(&leaf, owner, repetitions, skip_rows);
+                state_leaves.emplace_back(&leaf, owner, repetitions, skip_rows, below_dynamic);
                 state_leaves_byte_size += carrier_byte_size;
             });
         /// The carrier's own payload (null maps, sibling tuple elements, array offsets, ...) is sized by
         /// `byteSize` like any plain column; the state leaves are sized from their serialized states below.
-        plain_bytes += (column->byteSize() - state_leaves_byte_size) * repetitions;
+        col_plain_bytes[i] = (column->byteSize() - state_leaves_byte_size) * repetitions;
+        plain_bytes += col_plain_bytes[i];
     }
     const bool has_aggregate_states = !state_leaves.empty();
 
@@ -610,9 +623,10 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
     /// arrays and maps contain a value per nested element, while a variant alternative can be empty.
     /// Count the values that the Native serialization writes, not outer rows.
     size_t block_state_values = 0;
-    for (const auto & [aggregate_column, owner, repetitions, skip_rows] : state_leaves)
+    for (const auto & [aggregate_column, owner, repetitions, skip_rows, below_dynamic] : state_leaves)
     {
         static_cast<void>(owner);
+        static_cast<void>(below_dynamic);
         block_state_values += (aggregate_column->size() - skip_rows) * repetitions;
     }
 
@@ -625,6 +639,21 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
     size_t serialized_state_bytes = 0;
     size_t sample_bytes = 0;
     size_t compressed_bytes = 0;
+    /// The pooled `sample_bytes / compressed_bytes` ratio is applied to the whole `bytes` total, so every
+    /// component must enter it with the weight it has in that total. The components are sampled
+    /// independently - a state leaf serializes at most `max_states_to_serialize` states, a plain column
+    /// `estimateCompressedColumnSize`'s own prefix - so their raw samples represent different fractions of
+    /// their bytes; pooled as they are, a component sampled more fully would dominate the ratio. Scale each
+    /// sample to the bytes it represents, keeping its compression ratio.
+    auto add_component_sample = [&](size_t represented_bytes, size_t component_sample_bytes, size_t component_compressed_bytes)
+    {
+        if (component_sample_bytes == 0)
+            return;
+        sample_bytes += represented_bytes;
+        compressed_bytes += static_cast<size_t>(
+            static_cast<double>(component_compressed_bytes) * static_cast<double>(represented_bytes)
+            / static_cast<double>(component_sample_bytes));
+    };
     /// Only output columns get here, and they model what a replica sends to the initiator rather than
     /// anything stored in a part, so there is no column `CODEC` to resolve as in `recordInputColumns`.
     /// The transfer codec is what `network_compression_method` resolves to, threaded in from the
@@ -654,8 +683,8 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
                 }
                 forEachAggregateStateLeaf(
                     *column,
-                    [&](const ColumnAggregateFunction & leaf, size_t skip_rows, const ColumnPtr & owner, size_t)
-                    { sorted_state_leaves.emplace_back(&leaf, owner ? owner : column, repetitions, skip_rows); });
+                    [&](const ColumnAggregateFunction & leaf, size_t skip_rows, const ColumnPtr & owner, size_t, bool below_dynamic)
+                    { sorted_state_leaves.emplace_back(&leaf, owner ? owner : column, repetitions, skip_rows, below_dynamic); });
             }
         }
     }
@@ -668,7 +697,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
         /// swings the extrapolation several-fold depending on whether the few giant states land on the
         /// sampled positions. Blocks of up to 1000 states are measured exactly.
         static constexpr size_t max_states_to_serialize = 1000;
-        for (const auto & [aggregate_column, owner, repetitions, skip_rows] : sampled_state_leaves)
+        for (const auto & [aggregate_column, owner, repetitions, skip_rows, below_dynamic] : sampled_state_leaves)
         {
             static_cast<void>(owner);
             /// One periodic sample yields both the uncompressed figure and the compression sample, so
@@ -683,11 +712,11 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
             /// instead of scaling the one-copy figures, which would keep the one-copy ratio.
             /// The states are compressed with the same codec as the rest of the output: the sample and the
             /// match window its repetitions are judged against must both describe the wire.
-            const auto sizes
-                = aggregate_column->sampledStateSizes(max_states_to_serialize, repetitions, skip_rows, codecs.generic);
+            /// A leaf below `Dynamic` is sent in the column's own state version, see `forEachAggregateStateLeaf`.
+            const auto sizes = aggregate_column->sampledStateSizes(
+                max_states_to_serialize, repetitions, skip_rows, codecs.generic, /*keep_column_version=*/below_dynamic);
             serialized_state_bytes += sizes.bytes;
-            sample_bytes += sizes.sample_bytes;
-            compressed_bytes += sizes.compressed_bytes;
+            add_component_sample(sizes.bytes, sizes.sample_bytes, sizes.compressed_bytes);
         }
     }
 
@@ -708,12 +737,15 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
             /// enter `plain_bytes`, and leaving them out would price them with the state-only ratio.
             if (col_has_states[i])
             {
-                sampleNonStatePartsCompression(sampled_cols[i].column, sampled_cols[i].type, 1, codecs, sample_bytes, compressed_bytes);
+                size_t non_state_sample_bytes = 0;
+                size_t non_state_compressed_bytes = 0;
+                sampleNonStatePartsCompression(
+                    sampled_cols[i].column, sampled_cols[i].type, 1, codecs, non_state_sample_bytes, non_state_compressed_bytes);
+                add_component_sample(col_plain_bytes[i], non_state_sample_bytes, non_state_compressed_bytes);
                 continue;
             }
             auto [sample, compressed] = estimateCompressedColumnSize(sampled_cols[i], codecs);
-            sample_bytes += sample;
-            compressed_bytes += compressed;
+            add_component_sample(col_plain_bytes[i], sample, compressed);
         }
     }
 
