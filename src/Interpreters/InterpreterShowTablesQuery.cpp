@@ -48,7 +48,7 @@ CurrentDatabaseInfo InterpreterShowTablesQuery::getFromInfo() const
 {
     const auto & query = query_ptr->as<ASTShowTablesQuery &>();
 
-    /// `FROM db.ns`, the parser guarantees dot-free parts, so the first dot is the split
+    /// `FROM db.ns`, the first part is the database, quoted so a dot in it does not split
     if (const auto * identifier = query.from ? query.from->as<ASTIdentifier>() : nullptr;
         identifier && identifier->name_parts.size() > 1)
     {
@@ -57,7 +57,10 @@ CurrentDatabaseInfo InterpreterShowTablesQuery::getFromInfo() const
                 "Table namespaces are an experimental feature; enable allow_experimental_table_namespaces to use `{} FROM {}`",
                 query.dictionaries ? "SHOW DICTIONARIES" : "SHOW TABLES",
                 identifier->name());
-        return CurrentDatabaseInfo(identifier->name());
+        String path = doubleQuoteString(identifier->name_parts[0]);
+        for (size_t i = 1; i < identifier->name_parts.size(); ++i)
+            path += "." + identifier->name_parts[i];
+        return CurrentDatabaseInfo(path);
     }
 
     /// a single (possibly quoted) part is always an exact database name

@@ -38,7 +38,6 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserKeyword s_where(Keyword::WHERE);
     ParserKeyword s_limit(Keyword::LIMIT);
     ParserStringLiteral like_p(Highlight::string_like);
-    ParserIdentifier name_p(true);
     ParserExpressionWithOptionalAlias exp_elem(false);
 
     ASTPtr like;
@@ -175,35 +174,10 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
         if (s_from.ignore(pos, expected) || s_in.ignore(pos, expected))
         {
-            if (!name_p.parse(pos, database, expected))
-                return false;
-
             /// in `FROM db.namespace` keep the parts separate so
             /// interpreter sees the structure
-            ParserToken dot(TokenType::Dot);
-            if (dot.ignore(pos, expected))
-            {
-                String first_part;
-                /// substituted or quoted dot would alias another path
-                if (!tryGetIdentifierNameInto(database, first_part) || first_part.empty()
-                    || first_part.find('.') != String::npos)
-                    return false;
-
-                std::vector<String> parts{first_part};
-                ParserIdentifier part_p;
-                do
-                {
-                    ASTPtr part;
-                    if (!part_p.parse(pos, part, expected))
-                        return false;
-                    const String part_name = getIdentifierName(part);
-                    if (part_name.empty() || part_name.find('.') != String::npos)
-                        return false;
-                    parts.push_back(part_name);
-                } while (dot.ignore(pos, expected));
-
-                database = make_intrusive<ASTIdentifier>(std::move(parts));
-            }
+            if (!ParserCompoundIdentifier({.allow_query_parameter = true, .allow_json_subcolumns = false}).parse(pos, database, expected))
+                return false;
         }
 
         if (s_not.ignore(pos, expected))

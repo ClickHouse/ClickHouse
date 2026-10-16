@@ -7,6 +7,7 @@
 #include <Common/SettingsChanges.h>
 #include <Common/SettingSource.h>
 #include <Common/typeid_cast.h>
+#include <Common/quoteString.h>
 #include <base/find_symbols.h>
 #include <Core/Settings.h>
 
@@ -21,6 +22,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNKNOWN_DATABASE;
 }
@@ -40,6 +42,12 @@ BlockIO InterpreterUseQuery::execute()
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "Table namespaces are an experimental feature; enable allow_experimental_table_namespaces to use `USE {}`",
                 logical_name);
+        /// the session scope is one dotted name, a dotted database part would split differently
+        if (identifier->name_parts[0].contains('.'))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "`USE {}`: the database part of a namespace path cannot contain a dot because the session scope is kept "
+                "as one dotted name; select the database with `USE {}` and qualify tables",
+                logical_name, backQuote(identifier->name_parts[0]));
         database_name = identifier->name_parts[0];
     }
 
