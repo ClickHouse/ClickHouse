@@ -131,6 +131,11 @@ public:
 
     bool allocatesMemoryInArena() const override { return false; }
 
+    /// For `Nullable`, `Dynamic` or `JSON` the bulk serialization in `addBatchSinglePlace` writes other bytes
+    /// than `add` row by row (separate streams, a prefix describing the whole column), so replacing one with
+    /// the other would make the result depend on how the rows are split into ranges.
+    bool canOptimizeEqualKeysRanges() const override { return false; }
+
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         const auto & column = columns[0];
