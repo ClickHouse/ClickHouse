@@ -23,6 +23,7 @@ public:
 
     void serialize(WriteBuffer & buf) override;
     void deserialize(ReadBuffer & buf, StatisticsFileVersion version) override;
+    std::optional<UInt64> getSerializedSize() const override;
 
     String getNameForLogs() const override { return "CMSketch"; }
 private:
