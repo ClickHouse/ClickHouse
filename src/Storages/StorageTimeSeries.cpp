@@ -517,8 +517,21 @@ void StorageTimeSeries::prewarmTagsDeduplicationCache(TimeSeriesDeduplicationCac
     if (!max_entries)
         return;
 
-    /// `getTable` waits until the tags table has started. Its inner table is not a loader dependency of this table.
-    const auto tags_table_id = getTargetTableID(ViewTarget::Tags, getContext());
+    /// A name lookup in `getTable` waits until the tags table has started.
+    /// Its inner table is not a loader dependency of this table.
+    const auto * target = tryGetTarget(ViewTarget::Tags);
+    if (!target)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "TimeSeries table {} has no tags target", getStorageID().getNameForLogs());
+
+    StorageID tags_table_id = target->table_id;
+    if (target->is_inner_table)
+    {
+        const auto time_series_id = getStorageID();
+        tags_table_id = StorageID{
+            time_series_id.getDatabaseName(),
+            getTimeSeriesInnerTableName(ViewTarget::Tags, time_series_id, getVersion())};
+    }
+
     DatabaseCatalog::instance().getTable(tags_table_id, getContext());
 
     /// The same columns, in the same order, as the block `TimeSeriesSink` passes to `filterOutWrittenRows`.
@@ -551,6 +564,8 @@ void StorageTimeSeries::prewarmTagsDeduplicationCache(TimeSeriesDeduplicationCac
     auto select_query = make_intrusive<ASTSelectQuery>();
     select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list));
     select_query->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
+    /// `LIMIT` then applies to distinct rows, so repeated rows of one series do not fill the cache.
+    select_query->distinct = true;
     select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, make_intrusive<ASTLiteral>(static_cast<UInt64>(max_entries)));
 
     auto list_of_selects = make_intrusive<ASTExpressionList>();

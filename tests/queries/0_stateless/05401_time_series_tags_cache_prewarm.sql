@@ -4,7 +4,7 @@
 
 SET allow_experimental_time_series_table = 1;
 
-DROP TABLE IF EXISTS ts_prewarm, ts_prewarm_cols;
+DROP TABLE IF EXISTS ts_prewarm, ts_prewarm_cols, ts_prewarm_dup, ts_prewarm_exp;
 
 SELECT '--- a restarted table skips the time series already stored ---';
 CREATE TABLE ts_prewarm ENGINE = TimeSeries TAGS INNER ENGINE = MergeTree ORDER BY (metric_name, id);
@@ -39,4 +39,26 @@ INSERT INTO ts_prewarm_cols (metric_name, tags, samples) VALUES
     ('http_requests', {'job': 'web'}, [(toDateTime64('2026-01-01 00:00:03', 3), 4.)]);
 SELECT count() FROM timeSeriesTags({CLICKHOUSE_DATABASE:Identifier}.ts_prewarm_cols);
 
-DROP TABLE ts_prewarm, ts_prewarm_cols;
+SELECT '--- three copies of one series and one other series preload both ---';
+CREATE TABLE ts_prewarm_dup ENGINE = TimeSeries SETTINGS tags_deduplication_cache_size_bytes = 0, tags_to_columns = {'series': 'series'} TAGS INNER ENGINE = MergeTree ORDER BY series;
+INSERT INTO ts_prewarm_dup (metric_name, tags, samples) VALUES
+    ('m', {'series': 'a'}, [(toDateTime64('2026-01-01 00:00:00', 3), 1.)]),
+    ('m', {'series': 'a'}, [(toDateTime64('2026-01-01 00:00:01', 3), 1.)]),
+    ('m', {'series': 'a'}, [(toDateTime64('2026-01-01 00:00:02', 3), 1.)]),
+    ('m', {'series': 'b'}, [(toDateTime64('2026-01-01 00:00:03', 3), 1.)]);
+OPTIMIZE TABLE ts_prewarm_dup FINAL;
+ALTER TABLE ts_prewarm_dup MODIFY SETTING tags_deduplication_cache_size_bytes = 432;
+DETACH TABLE ts_prewarm_dup;
+ATTACH TABLE ts_prewarm_dup;
+INSERT INTO ts_prewarm_dup (metric_name, tags, samples) VALUES ('m', {'series': 'b'}, [(toDateTime64('2026-01-01 00:00:04', 3), 1.)]);
+SELECT count() FROM timeSeriesTags({CLICKHOUSE_DATABASE:Identifier}.ts_prewarm_dup);
+
+SELECT '--- a large expiration still preloads the stored series ---';
+CREATE TABLE ts_prewarm_exp ENGINE = TimeSeries SETTINGS tags_deduplication_cache_expiration_seconds = 10000000001 TAGS INNER ENGINE = MergeTree ORDER BY (metric_name, id);
+INSERT INTO ts_prewarm_exp (metric_name, tags, samples) VALUES ('http_requests', {'job': 'api'}, [(toDateTime64('2026-01-01 00:00:00', 3), 1.)]);
+DETACH TABLE ts_prewarm_exp;
+ATTACH TABLE ts_prewarm_exp;
+INSERT INTO ts_prewarm_exp (metric_name, tags, samples) VALUES ('http_requests', {'job': 'api'}, [(toDateTime64('2026-01-01 00:00:01', 3), 2.)]);
+SELECT count() FROM timeSeriesTags({CLICKHOUSE_DATABASE:Identifier}.ts_prewarm_exp);
+
+DROP TABLE ts_prewarm, ts_prewarm_cols, ts_prewarm_dup, ts_prewarm_exp;

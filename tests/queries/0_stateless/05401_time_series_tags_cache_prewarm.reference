@@ -6,3 +6,7 @@
 4
 --- the same check with a tag stored in its own column ---
 2
+--- three copies of one series and one other series preload both ---
+4
+--- a large expiration still preloads the stored series ---
+1

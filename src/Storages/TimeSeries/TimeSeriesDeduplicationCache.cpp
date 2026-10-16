@@ -188,15 +188,28 @@ void TimeSeriesDeduplicationCache::addWrittenRows(const Block & block, size_t ke
     filter.resize_fill(block.rows(), true);
     auto hashed_rows = hashRows(block, key_column_index, filter);
 
+    auto now = std::chrono::steady_clock::now();
+
     /// An age of `expiration_seconds` is already expired, so the oldest remembered row is one second younger.
-    const UInt64 max_age_seconds = expiration_seconds ? expiration_seconds - 1 : 0;
+    /// The age is clamped to the largest second count `steady_clock` can subtract from `now`.
+    UInt64 max_age_seconds = expiration_seconds ? expiration_seconds - 1 : 0;
+    const auto max_duration_seconds = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::duration::max()).count();
+    const auto now_seconds = std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count();
+    for (const auto bound : {max_duration_seconds, now_seconds})
+    {
+        if (bound < 0)
+            max_age_seconds = 0;
+        else if (max_age_seconds > static_cast<UInt64>(bound))
+            max_age_seconds = static_cast<UInt64>(bound);
+    }
+
     pcg64 rng(randomSeed());
     std::uniform_int_distribution<UInt64> age_seconds(0, max_age_seconds);
-    auto now = std::chrono::steady_clock::now();
 
     for (const auto & hashed_row : hashed_rows)
     {
-        auto written_at = now - std::chrono::seconds(age_seconds(rng));
+        const auto age = static_cast<std::chrono::seconds::rep>(age_seconds(rng));
+        auto written_at = now - std::chrono::seconds(age);
         WrittenRow written_row{.row_hash = hashed_row.row_hash, .written_at = written_at};
         cache.set(hashed_row.key_hash, std::make_shared<WrittenRow>(written_row));
     }
