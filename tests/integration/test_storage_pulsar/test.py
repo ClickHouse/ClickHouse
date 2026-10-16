@@ -1,4 +1,5 @@
 import concurrent.futures
+import json
 import subprocess
 import time
 
@@ -316,6 +317,37 @@ def test_produce_consume_via_materialized_view(pulsar_cluster):
     wait_query_result(expected, "SELECT key, value FROM test.view ORDER BY key")
 
 
+def topic_publishers(pulsar_cluster, topic):
+    stats = subprocess.check_output(
+        [
+            "docker",
+            "exec",
+            pulsar_cluster.pulsar_docker_id,
+            "curl",
+            "-sf",
+            f"http://localhost:8080/admin/v2/persistent/public/default/{topic}/stats",
+        ]
+    )
+    return len(json.loads(stats).get("publishers", []))
+
+
+def test_insert_closes_producer(pulsar_cluster):
+    # Every `INSERT` creates its own producer on the connection kept by the table.
+    # Destroying it without `close` leaves the publisher registered on the broker,
+    # so repeated inserts would accumulate publishers until the connection closes.
+    topic = "close_producer_topic"
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    instance.query(pulsar_table("test.pulsar_writer", topic, "close_producer_writer_group"))
+
+    for i in range(5):
+        instance.query(f"INSERT INTO test.pulsar_writer VALUES ({i}, {i})")
+
+    deadline = time.monotonic() + 60
+    while topic_publishers(pulsar_cluster, topic) != 0 and time.monotonic() < deadline:
+        time.sleep(1)
+    assert topic_publishers(pulsar_cluster, topic) == 0
+
+
 def test_new_subscription_reads_backlog(pulsar_cluster):
     # Messages published before the table exists must be consumed: a fresh
     # subscription starts at the earliest position by default.
@@ -419,6 +451,91 @@ def test_view_dropped_during_streaming_cycle_keeps_messages(pulsar_cluster):
 
     expected = "\n".join(f"{i}\t{i}" for i in range(num_rows))
     wait_query_result(expected, "SELECT key, value FROM test.view ORDER BY key")
+
+
+def test_view_reattached_after_chain_resolution_keeps_messages(pulsar_cluster):
+    # A cycle that resolves the view chain while the only view is detached gets a
+    # null sink. Re-attaching the view afterwards makes it visible in the catalog
+    # again, but does not add it to the already resolved chain: the cycle must
+    # still be skipped instead of polling the messages into the null sink and
+    # acknowledging them.
+    before_insert = "pulsar_streaming_pause_before_insert"
+    after_resolution = "pulsar_streaming_pause_after_insert_resolution"
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    instance.query(pulsar_table("test.pulsar_reader", "reattach_view_topic", "reattach_view_group"))
+    instance.query(
+        pulsar_table("test.pulsar_writer", "reattach_view_topic", "reattach_view_writer_group")
+    )
+    instance.query(
+        """
+        CREATE TABLE test.view (key UInt64, value UInt64)
+        ENGINE = MergeTree ORDER BY key
+        """
+    )
+    instance.query(
+        """
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+        SELECT key, value FROM test.pulsar_reader
+        """
+    )
+
+    num_rows = 20
+    instance.query(f"SYSTEM ENABLE FAILPOINT {before_insert}")
+    try:
+        wait_failpoint_paused(before_insert)
+        instance.query("DETACH TABLE test.consumer")
+
+        # Resume the parked cycle: it resolves the chain without the view and parks again.
+        instance.query(f"SYSTEM ENABLE FAILPOINT {after_resolution}")
+        try:
+            instance.query(f"SYSTEM DISABLE FAILPOINT {before_insert}")
+            wait_failpoint_paused(after_resolution)
+
+            instance.query("ATTACH TABLE test.consumer")
+            instance.query(
+                f"INSERT INTO test.pulsar_writer SELECT number, number FROM numbers({num_rows})"
+            )
+        finally:
+            instance.query(f"SYSTEM DISABLE FAILPOINT {after_resolution}")
+    finally:
+        instance.query(f"SYSTEM DISABLE FAILPOINT {before_insert}")
+
+    # A guard that only re-checks the catalog would see the re-attached view, poll the
+    # messages into the null sink of the resolved chain and acknowledge them.
+    expected = "\n".join(f"{i}\t{i}" for i in range(num_rows))
+    wait_query_result(expected, "SELECT key, value FROM test.view ORDER BY key")
+
+
+def test_concurrent_subscriptions_from_separate_tables(pulsar_cluster):
+    # Every table has its own client, but the client library generates subscription
+    # names with shared state. Subscribing from several tables at once must not race
+    # on it (TSan builds terminate the server on such a race).
+    num_tables = 8
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    tables = [f"test.pulsar_concurrent_{i}" for i in range(num_tables)]
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=num_tables) as pool:
+            futures = [
+                pool.submit(
+                    instance.query,
+                    pulsar_table(
+                        table,
+                        f"concurrent_subscriptions_topic_{i % 2}",
+                        f"concurrent_subscriptions_group_{i}",
+                        extra_settings=", pulsar_num_consumers = 4",
+                    ),
+                )
+                for i, table in enumerate(tables)
+            ]
+            for future in futures:
+                future.result()
+
+        assert instance.query(
+            "SELECT count() FROM system.tables WHERE database = 'test' AND name LIKE 'pulsar_concurrent_%'"
+        ).strip() == str(num_tables)
+    finally:
+        for table in tables:
+            instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
 
 
 def test_attach_while_broker_down_recovers(pulsar_cluster):
@@ -691,6 +808,23 @@ def test_batch_size_zero_rejected(pulsar_cluster):
             )
         )
         assert "BAD_ARGUMENTS" in error
+
+
+def test_zero_poll_timeout_rejected(pulsar_cluster):
+    # The client arms the batch receive timer only for a positive timeout: with a zero
+    # one a poll of an idle topic waits for a full batch forever, blocking cancellation
+    # and table shutdown, so such a definition is rejected.
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    error = instance.query_and_get_error(
+        pulsar_table(
+            "test.pulsar_reader",
+            "zero_poll_timeout_topic",
+            "zero_poll_timeout_group",
+            extra_settings=", pulsar_poll_timeout_ms = 0",
+        )
+    )
+    assert "BAD_ARGUMENTS" in error
+    assert "pulsar_poll_timeout_ms" in error
 
 
 def test_batch_size_above_int_max_rejected(pulsar_cluster):

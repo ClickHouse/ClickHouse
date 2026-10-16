@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/InsertDependenciesBuilder.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -37,6 +38,7 @@
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
 
+#include <algorithm>
 #include <limits>
 
 namespace DB
@@ -75,6 +77,7 @@ namespace PulsarSetting
 namespace FailPoints
 {
     extern const char pulsar_streaming_pause_before_insert[];
+    extern const char pulsar_streaming_pause_after_insert_resolution[];
 }
 
 namespace ErrorCodes
@@ -244,6 +247,9 @@ pulsar::ClientConfiguration createClientConfiguration()
     /// Route the client library logs into the server logging (`setLogger` takes ownership).
     /// The default logger writes to stdout from the client's internal threads without synchronization.
     config.setLogger(new PulsarLoggerFactory());
+    /// The client verifies only the certificate chain of a `pulsar+ssl://` broker by default, so any
+    /// trusted certificate issued for another host would be accepted. Check the hostname as well.
+    config.setValidateHostName(true);
     /// The service URL is checked against `remote_url_allow_hosts` when the table is created, but
     /// the client also follows lookup responses and dials the returned broker addresses directly,
     /// so a redirecting broker could otherwise steer the server to a host outside the allowlist.
@@ -524,10 +530,18 @@ ProducerPtr StoragePulsar::createProducer()
 
 void StoragePulsar::createConsumer(pulsar::Consumer & consumer)
 {
+    const size_t poll_timeout_ms = getPollTimeoutMilliseconds();
+    /// A zero timeout would make `batchReceive` wait for a full batch without a timer, so a read from
+    /// an idle topic could block cancellation and `shutdown` forever.
+    if (poll_timeout_ms == 0)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The setting `pulsar_poll_timeout_ms` (or the inherited `stream_poll_timeout_ms`) must be positive");
+
     pulsar::ConsumerConfiguration config;
     config.setConsumerType(pulsar::ConsumerType::ConsumerShared);
     /// NOLINTNEXTLINE(google-runtime-int)
-    config.setBatchReceivePolicy({static_cast<int>(getPollMaxBatchSize()), 0, static_cast<long>(getPollTimeoutMilliseconds())});
+    config.setBatchReceivePolicy({static_cast<int>(getPollMaxBatchSize()), 0, static_cast<long>(poll_timeout_ms)});
     /// The client defaults to `InitialPositionLatest`, which would silently skip the backlog of a non-empty topic.
     config.setSubscriptionInitialPosition(parseSubscriptionInitialPosition((*pulsar_settings)[PulsarSetting::pulsar_subscription_initial_position].value));
 
@@ -751,12 +765,22 @@ bool StoragePulsar::streamToViews(UInt64 cycle_epoch)
         /* async_insert */ false);
     auto block_io = interpreter.execute();
 
+    /// Lets a test re-attach a view after the chain was resolved without it.
+    FailPointInjection::pauseFailPoint(FailPoints::pulsar_streaming_pause_after_insert_resolution);
+
     /// `streaming` checked the dependent views before this cycle, but `InterpreterInsertQuery::execute`
     /// has just resolved the view chain again. If the last view was dropped or detached in between,
     /// the chain ends in a `NullSinkToStorage`: the polled messages would be discarded and then
-    /// acknowledged below, so they would be lost. The chain built by `execute` keeps the resolved
-    /// storages alive, so a view removed after this point still receives (or rejects) the blocks.
-    if (DatabaseCatalog::instance().getDependentViews(table_id).empty() || !checkDependencies(table_id))
+    /// acknowledged below, so they would be lost. Inspect the dependencies captured by the resolved
+    /// chain itself rather than the catalog: a view re-attached after `execute` is visible in the
+    /// catalog but is not a part of this chain. The chain keeps the resolved storages alive, so a
+    /// view removed after this point still receives (or rejects) the blocks.
+    const auto & insert_dependencies = block_io.pipeline.getResources().insert_dependencies_holders;
+    const bool chain_has_views = std::any_of(
+        insert_dependencies.begin(),
+        insert_dependencies.end(),
+        [](const auto & dependencies) { return dependencies && dependencies->isViewsInvolved(); });
+    if (!chain_has_views)
     {
         LOG_DEBUG(log, "The dependent views of {} were dropped or detached while the streaming cycle was being prepared, skipping it", table_id.getNameForLogs());
         return true;
@@ -927,6 +951,21 @@ void registerStoragePulsar(StorageFactory & factory)
         /// would make an `INSERT` into a row-based format spin without ever consuming a row.
         if ((*pulsar_settings)[PulsarSetting::pulsar_max_rows_per_message].value < 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The setting `pulsar_max_rows_per_message` must be at least 1");
+
+        /// `batchReceive` arms its timer only for a positive timeout: with a zero one it waits for a full
+        /// batch, so on an idle topic neither cancellation nor table shutdown could interrupt it.
+        /// `createConsumer` re-checks the effective value for definitions loaded from metadata.
+        if (is_fresh_definition)
+        {
+            const auto & poll_timeout = (*pulsar_settings)[PulsarSetting::pulsar_poll_timeout_ms];
+            const auto effective_poll_timeout_ms = poll_timeout.changed
+                ? poll_timeout.totalMilliseconds()
+                : args.getContext()->getSettingsRef()[Setting::stream_poll_timeout_ms].totalMilliseconds();
+            if (effective_poll_timeout_ms == 0)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "The setting `pulsar_poll_timeout_ms` (or the inherited `stream_poll_timeout_ms`) must be positive");
+        }
 
         parseSubscriptionInitialPosition((*pulsar_settings)[PulsarSetting::pulsar_subscription_initial_position].value);
 

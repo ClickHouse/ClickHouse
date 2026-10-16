@@ -141,6 +141,7 @@ public:
 
     /// Existing resources are not released here, see move ctor for QueryPlanResourceHolder.
     void addResources(QueryPlanResourceHolder holder) { resources = std::move(holder); }
+    const QueryPlanResourceHolder & getResources() const { return resources; }
 
     /// Skip updating profile events.
     /// For merges in mutations it may need special logic, it's done inside ProgressCallback.

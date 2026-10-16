@@ -30,6 +30,15 @@ PulsarProducer::PulsarProducer(
     }
 }
 
+PulsarProducer::~PulsarProducer()
+{
+    /// Destroying the client's producer only unregisters it locally: without `close` the broker keeps
+    /// the publisher registered until the table's connection is closed, so every `INSERT` that failed
+    /// before `finish` would leave one behind. The result is ignored, there is nothing more to do here.
+    if (!closed)
+        producer->close();
+}
+
 void PulsarProducer::produce(const String & message, size_t /* rows_in_message */, const Columns & columns, size_t last_row)
 {
     pulsar::MessageBuilder builder;
@@ -67,6 +76,17 @@ void PulsarProducer::finish()
         throw Exception(
             ErrorCodes::CANNOT_CONNECT_PULSAR,
             "Failed to flush messages to Pulsar topic {}: {}",
+            topic,
+            pulsar::strResult(result));
+
+    /// Unregister the publisher on the broker: each `INSERT` creates its own producer
+    /// on the connection shared by the table, so an unclosed one would stay there.
+    closed = true;
+    result = producer->close();
+    if (result != pulsar::ResultOk)
+        throw Exception(
+            ErrorCodes::CANNOT_CONNECT_PULSAR,
+            "Failed to close the producer for Pulsar topic {}: {}",
             topic,
             pulsar::strResult(result));
 }

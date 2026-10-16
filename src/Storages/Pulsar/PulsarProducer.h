@@ -15,6 +15,7 @@ class PulsarProducer : public IMessageProducer
 {
 public:
     PulsarProducer(ProducerPtr producer_, const std::string & topic_, std::atomic<bool> & shutdown_called_, const Block & header);
+    ~PulsarProducer() override;
 
     void produce(const String & message, size_t rows_in_message, const Columns & columns, size_t last_row) override;
 
@@ -29,5 +30,8 @@ private:
     std::atomic<bool> & shutdown_called;
 
     std::optional<size_t> key_column_index;
+
+    /// Set once `finish` has closed the producer on the broker.
+    bool closed = false;
 };
 }
