@@ -344,6 +344,28 @@ class FuzzerLogParser:
                         return found
         return found
 
+    def genuine_non_oom_logs(self, logs=None):
+        """The logs - every log given to the parser by default - holding a genuine non-OOM
+        failure line, including one no pattern can name (e.g. `AddressSanitizer:DEADLYSIGNAL`).
+
+        `parse_failure` returns `UNKNOWN_ERROR` for such a line, so a caller about to explain
+        that verdict away with an expected line has to check here first. Unlike a raw `rg`, it
+        skips a match inside the query text a record quotes, and a log that holds only OOM
+        reports and the expected SIGKILL is no signal. `.gz` logs are read too.
+        """
+        if logs is None:
+            logs = list(dict.fromkeys([*self.stderr_logs, *self.server_logs]))
+        found = []
+        for log in logs:
+            if not log:
+                continue
+            output, _, excluded_only = self.find_failure(
+                SANITIZER_NON_OOM_PATTERN, log, exclude_pattern=SANITIZER_OOM_PATTERN
+            )
+            if output and not excluded_only:
+                found.append(log)
+        return found
+
     def failure_candidates(self, pattern, file):
         # (1-based line number, line) of every line in `file` matching `pattern` - or in
         # `stack_trace_str` without a file - capped: a genuine failure is not preceded by
@@ -1376,6 +1398,32 @@ class FuzzerLogParser:
         # This normalization ensures commands from both logs can be matched correctly.
         result = [re.sub(r"\s+", " ", line.strip()) for line in result]
         return result
+
+
+# Genuine (non-OOM) failure signals that veto the OOM-is-success downgrade, so a crash on
+# one node isn't hidden by a benign OOM on another. `is_memory_limit_exceeded` is excluded
+# (surviving the memory cap is itself benign), and bare signal numbers are excluded too (the
+# "Signal" pattern already requires the fatal handler's "(from thread N)" prefix). Any
+# `<Fatal>` record is included so a crash type with no signature here yet still vetoes;
+# `SANITIZER_OOM_PATTERN` strips the two expected "<Fatal>" lines (OOM report, end-of-run
+# SIGKILL) back out. The names are anchored to the line start like the parser's sanitizer
+# patterns, and the fatal to its record header, so query text in a log record never matches.
+# `RAW_REPORT_PATTERN` alone catches what no parser pattern names, e.g. `AddressSanitizer:DEADLYSIGNAL`.
+RAW_REPORT_PATTERN = (
+    "^(==[0-9]+==)?(AddressSanitizer|UndefinedBehaviorSanitizer|ThreadSanitizer"
+    "|MemorySanitizer|SIGSEGV|SIGABRT)"
+)
+SANITIZER_NON_OOM_PATTERN = "|".join(
+    [
+        RAW_REPORT_PATTERN,
+        FuzzerLogParser.GENERIC_FATAL_PATTERN,
+        *(
+            pattern
+            for _, flag_name, pattern in FuzzerLogParser.ERROR_PATTERNS
+            if flag_name != "is_memory_limit_exceeded"
+        ),
+    ]
+)
 
 
 if __name__ == "__main__":

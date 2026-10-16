@@ -548,6 +548,30 @@ def select_replica_failures(
     memory_limit_result: Optional[Finding] = None
     fallback_result: Optional[Finding] = None
 
+    def keep_unclassified(log_parser, description, files):
+        # `UNKNOWN_ERROR` and the memory limit say only that nothing worse was named. An
+        # unclassified `<Fatal>` record or a raw report no pattern names (e.g.
+        # `AddressSanitizer:DEADLYSIGNAL`) is still crash evidence and outranks them.
+        nonlocal fatal_result
+        if fatal_result is not None:
+            return
+        unnamed_fatals = log_parser.find_unnamed_fatals()
+        if unnamed_fatals:
+            evidence = "Unclassified fatal:\n" + "\n".join(unnamed_fatals) + "\n"
+        elif genuine := log_parser.genuine_non_oom_logs():
+            evidence = (
+                "Unclassified failure report in: "
+                + ", ".join(p.name for p in genuine)
+                + "\n"
+            )
+        else:
+            return
+        fatal_result = (
+            FuzzerLogParser.UNKNOWN_ERROR,
+            f"{description}{evidence}",
+            files,
+        )
+
     for replica_name, server_log_files, stderr_log_files in replica_log_pairs:
         log_parser = FuzzerLogParser(
             server_logs=server_log_files or None,
@@ -567,16 +591,8 @@ def select_replica_failures(
                 if memory_limit_result is None:
                     memory_limit_result = (name, description, files)
                 # The cap is a query error the server recovers from, so it explains no
-                # `<Fatal>` the same replica logged: that one is crash evidence and outranks it.
-                unnamed_fatals = log_parser.find_unnamed_fatals()
-                if unnamed_fatals and fatal_result is None:
-                    fatal_result = (
-                        FuzzerLogParser.UNKNOWN_ERROR,
-                        f"{description}Unclassified fatal:\n"
-                        + "\n".join(unnamed_fatals)
-                        + "\n",
-                        files,
-                    )
+                # failure report the same replica logged.
+                keep_unclassified(log_parser, description, files)
                 continue
             if name != FuzzerLogParser.UNKNOWN_ERROR:
                 if log_parser.is_generic_fatal:
@@ -589,18 +605,7 @@ def select_replica_failures(
                     seen_specific_names.add(name)
                     specific_results.append((name, description, files))
                 continue
-            # `UNKNOWN_ERROR` says only that no pattern got a genuine match. A `<Fatal>`
-            # record left unclassified is still crash evidence and has to outrank the
-            # expected lines.
-            unnamed_fatals = log_parser.find_unnamed_fatals()
-            if unnamed_fatals and fatal_result is None:
-                fatal_result = (
-                    name,
-                    f"{description}Unclassified fatal:\n"
-                    + "\n".join(unnamed_fatals)
-                    + "\n",
-                    files,
-                )
+            keep_unclassified(log_parser, description, files)
             name, description, files = log_parser.parse_failure(
                 allow_expected_only=True
             )

@@ -20,6 +20,7 @@ from ci.jobs.scripts import log_export
 from ci.jobs.scripts.clickhouse_service import ClickHouseService
 from ci.jobs.scripts.log_parser import (
     EXPECTED_KILL_PATTERN,
+    RAW_REPORT_PATTERN,
     SANITIZER_OOM_PATTERN,
     SANITIZER_OOM_REPORT_PATTERN,
     FuzzerLogParser,
@@ -1217,9 +1218,12 @@ fi
         # `RUNTIME_ERROR_PATTERN` the bare "runtime error:" lines UBSan prints without
         # naming itself. Matching on the literal "anitizer" instead used to drop the
         # latter, leaving the parser uncalled for a failure it can describe.
+        # `RAW_REPORT_PATTERN` keeps a raw report no parser pattern names (e.g.
+        # `AddressSanitizer:DEADLYSIGNAL`), which the "anitizer" scan did catch.
         sanitizer_pattern = (
             f"{FuzzerLogParser.SANITIZER_ERROR_PATTERN}|"
-            f"{FuzzerLogParser.RUNTIME_ERROR_PATTERN}"
+            f"{FuzzerLogParser.RUNTIME_ERROR_PATTERN}|"
+            f"{RAW_REPORT_PATTERN}"
         )
         # `stderr*.log*` with `rg -z`, not `stderr*.log`: the logger rotates and compresses
         # on every server open, so a report can survive only in `stderr.log.1.gz`.
@@ -1309,6 +1313,11 @@ fi
                             f" | rg --text -v '{SANITIZER_OOM_PATTERN}|{EXPECTED_KILL_PATTERN}'"
                         )
                     )
+                    # A raw report no pattern names (e.g. `AddressSanitizer:DEADLYSIGNAL`) is
+                    # "Unknown error" too, and an expected line elsewhere must not explain it away.
+                    unnamed_genuine = (
+                        log_parser.genuine_non_oom_logs() if expected_name else []
+                    )
                     # Of the expected lines only the end-of-run SIGKILL is routine here. A
                     # sanitizer out-of-memory report is expected in the jobs that drive the
                     # server to its memory limit on purpose, not in a functional test - and
@@ -1322,6 +1331,7 @@ fi
                         expected_name
                         and expected_name != FuzzerLogParser.UNKNOWN_ERROR
                         and not unexplained_fatal
+                        and not unnamed_genuine
                         and not oom_report
                     ):
                         results.append(
@@ -1332,7 +1342,12 @@ fi
                             )
                         )
                     else:
-                        if oom_report:
+                        if unnamed_genuine:
+                            description = (
+                                f"{description.rstrip()}\nUnclassified failure report in: "
+                                + ", ".join(p.name for p in unnamed_genuine)
+                            )
+                        elif oom_report:
                             # Report what the second pass named: the first pass deferred the
                             # report and left only "Unknown error" to fail the run with.
                             name, description, files = (

@@ -156,6 +156,46 @@ def test_memory_limit_does_not_explain_a_later_fatal(tmp_path):
     assert not failures.reports_oom(server_died=True)
 
 
+_DEADLYSIGNAL_STDERR = (
+    "AddressSanitizer:DEADLYSIGNAL\n"
+    "=================================================================\n"
+)
+_OOM_STDERR = (
+    "==2==ERROR: AddressSanitizer: out-of-memory (malloc(4294967296))\n"
+    "SUMMARY: AddressSanitizer: out-of-memory\n"
+)
+
+
+def test_unnamed_sanitizer_report_vetoes_another_replicas_oom(tmp_path):
+    # No pattern names `AddressSanitizer:DEADLYSIGNAL`, so the main replica parses as
+    # "Unknown error" - it must still outrank the other replica's OOM report.
+    failures = select_replica_failures(
+        [
+            _pair(
+                tmp_path,
+                "main",
+                server_text=_UNKNOWN_LOG,
+                stderr_text=_DEADLYSIGNAL_STDERR,
+            ),
+            _pair(tmp_path, "sc1", server_text=_UNKNOWN_LOG, stderr_text=_OOM_STDERR),
+        ]
+    )
+
+    assert failures.crash_named and not failures.reports_oom(server_died=True)
+    assert "Unclassified failure report in: stderr-main.log" in failures.results[0][1]
+
+
+def test_oom_report_alone_still_reports_oom(tmp_path):
+    failures = select_replica_failures(
+        [
+            _pair(tmp_path, "main", server_text=_UNKNOWN_LOG, stderr_text=""),
+            _pair(tmp_path, "sc1", server_text=_UNKNOWN_LOG, stderr_text=_OOM_STDERR),
+        ]
+    )
+
+    assert not failures.crash_named and failures.reports_oom(server_died=True)
+
+
 def _kill_logs(tmp_path, kills):
     logs = tmp_path / "server_log"
     logs.mkdir()

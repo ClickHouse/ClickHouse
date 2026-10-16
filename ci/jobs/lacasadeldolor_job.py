@@ -11,7 +11,7 @@ import traceback
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from ci.jobs.ast_fuzzer_job import analyze_job_logs, genuine_non_oom_logs
+from ci.jobs.ast_fuzzer_job import analyze_job_logs
 from ci.jobs.buzzhouse_job import generate_buzz_config
 from ci.jobs.ci_utils import is_extended_run
 from ci.jobs.scripts.clickhouse_service import ClickHouseService
@@ -278,9 +278,9 @@ def _classify_genuine_failure(
         return None, False
     # The parser's own scan, not a raw `rg`: it skips a match inside the query text a record
     # quotes, e.g. "(in query: SELECT '<Fatal> not an error')", which is data, not a report.
-    genuine_logs = genuine_non_oom_logs(
-        FuzzerLogParser(server_logs=logs, fuzzer_log=fuzzer_out), logs
-    )
+    genuine_logs = FuzzerLogParser(
+        server_logs=logs, fuzzer_log=fuzzer_out
+    ).genuine_non_oom_logs()
     if not genuine_logs:
         return None, False
     print(info)
