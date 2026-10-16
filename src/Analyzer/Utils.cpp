@@ -1864,11 +1864,19 @@ ASTPtr columnConstantToExactLiteralASTImpl(const ColumnPtr & column, size_t row,
             return makeASTFunction("_CAST", std::move(array), make_intrusive<ASTLiteral>(type->getName()));
         }
         case TypeIndex::DateTime64:
+        {
+            /// Reinterpreting the raw ticks round-trips every value, while a cast from a number or text
+            /// saturates outside the range of the type. The outer `_CAST` lets the receiver name the constant
+            /// like the initiator does.
+            const Int64 ticks = (*column)[row].safeGet<DecimalField<DateTime64>>().getValue().value;
+            auto ticks_ast
+                = makeASTFunction("_CAST", make_intrusive<ASTLiteral>(std::to_string(ticks)), make_intrusive<ASTLiteral>("Int64"));
+            auto value = makeASTFunction("reinterpret", std::move(ticks_ast), make_intrusive<ASTLiteral>(type->getName()));
+            return makeASTFunction("_CAST", std::move(value), make_intrusive<ASTLiteral>(type->getName()));
+        }
         case TypeIndex::Time64:
-            /// DateTime64/Time64 are backed by a scaled decimal. Serialize the exact (UTC-based) decimal
-            /// ticks via the carrier and cast back to the original type. Local date-time text would be
-            /// ambiguous across DST overlaps in non-UTC time zones (two UTC instants format alike, and
-            /// parsing picks one side), and a bare numeric literal would round through Float64.
+            /// Time64 is backed by a scaled decimal. Serialize the exact decimal ticks via the carrier and cast
+            /// back to the original type: a bare numeric literal would round through Float64.
             return makeASTFunction(
                 "_CAST", makeExactDecimalCarrierAST((*column)[row]), make_intrusive<ASTLiteral>(type->getName()));
         case TypeIndex::Array:
