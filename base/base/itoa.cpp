@@ -5,6 +5,7 @@
 #include <base/defines.h>
 #include <base/extended_types.h>
 #include <base/itoa.h>
+#include <base/unaligned.h>
 
 #if defined(__x86_64__)
 #    include <cpuid.h>
@@ -85,8 +86,75 @@ char * itoa(int8_t i, char * p)
 }
 
 /// ----------------------------------------------------------------------------------------------------
+/// 16 bits: SWAR (SIMD within a register), no table. The quotients of the value by 10000, 1000, 100 and 10 are
+/// computed in parallel, a byte apart in one register, and one multiplication turns them into digits.
+/// ----------------------------------------------------------------------------------------------------
+
+namespace
+{
+/// `value` is below 65536. One 8-byte store whatever the length.
+ALWAYS_INLINE inline char * writeUInt16Text(UInt32 value, char * p)
+{
+    /// [n / 10000][n / 1000][n / 100][n / 10][n], a byte apart, all computed from `n` directly. The larger quotients
+    /// overflow into the following bytes, so they are added, not OR-ed.
+    /// The first three in one vector multiplication. Each lane divides by multiplying with a rounded-up reciprocal,
+    /// as compilers do for a division by a constant (these are the constants clang emits for a 16-bit `n`):
+    /// d = 2^a * o with o odd, and n / d = ((n >> a) * m) >> b with m = ceil(2^b / o):
+    ///     10000 = 2^4 * 625: m = ceil(2^19 / 625) = 839
+    ///      1000 = 2^3 * 125: m = ceil(2^20 / 125) = 8389
+    ///       100 = 2^2 * 25:  m = ceil(2^17 / 25) = 5243
+    /// `b` is the smallest shift for which rounding `m` up stays exact for every `n` below 2^16, and all products fit
+    /// in 32 bits. The fourth lane is unused. Then one shuffle gathers the quotients a byte apart; `n / 100` is wider
+    /// than a byte, so it takes two.
+    using UInt32x4 = UInt32 __attribute__((vector_size(16)));
+    using UInt8x16 = uint8_t __attribute__((vector_size(16)));
+    UInt32x4 lanes = (UInt32x4{value, value, value, value} >> UInt32x4{4, 3, 2, 0}) * UInt32x4{839, 8389, 5243, 0}
+        >> UInt32x4{19, 20, 17, 0};
+    /// Only the first four bytes are used. A full 16-byte shuffle is one instruction (`pshufb`, `tbl`), extracting
+    /// four bytes is several on ARM.
+    UInt8x16 lane_bytes = std::bit_cast<UInt8x16>(lanes);
+    UInt8x16 gathered;
+    if constexpr (std::endian::native == std::endian::little)
+        gathered = __builtin_shufflevector(lane_bytes, lane_bytes, 0, 4, 8, 9, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1);
+    else
+        gathered = __builtin_shufflevector(lane_bytes, lane_bytes, 10, 11, 7, 3, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1);
+    UInt32 low_quotients = std::bit_cast<UInt32x4>(gathered)[0];
+    UInt64 quotients = low_quotients + (UInt64(value / 10) << 24) + (UInt64(value) << 32);
+    /// Subtracting ten times the previous quotient leaves one digit per byte, and the overflow cancels out:
+    /// byte k becomes (n / 10^(4 - k)) - 10 * (n / 10^(5 - k)), the digit, and the rest goes above byte 4.
+    UInt64 digits = quotients - 10 * (quotients << 8);
+    /// The leading zero digits, in parallel with the multiplication: the lowest nonzero quotient is in byte k when the
+    /// first k digits are zero, and it is at most 65 there, so its lowest set bit stays in that byte. In the low
+    /// 32 bits, so that no quotient is nonzero there for `n` below 10, including 0: 32 / 8 is 4 zeros.
+    UInt32 zeros = std::countr_zero(static_cast<UInt32>(quotients)) / 8;
+    UInt64 text = (digits + 0x3030303030) >> (8 * zeros);
+    /// The first digit is in the lowest byte of `text`.
+    unalignedStoreLittleEndian<UInt64>(p, text);
+    return p + 5 - zeros;
+}
+
+ALWAYS_INLINE inline char * writeInt16Text(Int32 value, char * p)
+{
+    Int32 sign = value >> 31;
+    *p = '-';
+    /// As for `Int8`.
+    return writeUInt16Text((value ^ sign) - sign, p - sign);
+}
+}
+
+char * itoa(UInt16 i, char * p)
+{
+    return writeUInt16Text(i, p);
+}
+
+char * itoa(Int16 i, char * p)
+{
+    return writeInt16Text(i, p);
+}
+
+/// ----------------------------------------------------------------------------------------------------
 /// Shared by several sizes
-/// Digit pair tables, the jeaiii algorithm (16 to 64 bits), fixed blocks of eight digits and the sign.
+/// Digit pair tables, the jeaiii algorithm (32 and 64 bits), fixed blocks of eight digits and the sign.
 /// ----------------------------------------------------------------------------------------------------
 
 namespace
@@ -198,8 +266,8 @@ template <class T>
 inline ALWAYS_INLINE char * to_text_from_integer(char * b, T i)
 {
     constexpr auto q = sizeof(T);
-    static_assert(q >= 2, "8-bit integers use their own table");
-    using U = cond<q <= sizeof(UInt16), UInt16, cond<q <= sizeof(UInt32), UInt32, UInt64>>;
+    static_assert(q >= 4, "8-bit and 16-bit integers have their own code");
+    using U = cond<q <= sizeof(UInt32), UInt32, UInt64>;
 
     // convert bool to int before test with unary + to silence warning if T happens to be bool
     U const n = +i < 0 ? *b++ = '-', U(0) - U(i) : U(i);
@@ -228,10 +296,7 @@ inline ALWAYS_INLINE char * to_text_from_integer(char * b, T i)
         }
         auto f0 = UInt64(10 * (1ull << 32ull) / 1e5 + 1) * n;
         *reinterpret_cast<pair *>(b) = digits.fd[f0 >> 32];
-        if constexpr (sizeof(U) == 2)
-            b -= 1;
-        else
-            b -= n < U(1e5);
+        b -= n < U(1e5);
         auto f2 = (f0 & mask32) * 100;
         *reinterpret_cast<pair *>(b + 2) = digits.dd[f2 >> 32];
         auto f4 = (f2 & mask32) * 100;
@@ -392,7 +457,7 @@ ALWAYS_INLINE inline char * writeLeadingMinus(char * pos)
 }
 
 /// ----------------------------------------------------------------------------------------------------
-/// 16 and 32 bits, and `long` where it is a distinct type
+/// 32 bits, and `long` where it is a distinct type
 /// ----------------------------------------------------------------------------------------------------
 
 #define DEFAULT_ITOA(T) \
@@ -402,9 +467,7 @@ ALWAYS_INLINE inline char * writeLeadingMinus(char * pos)
     }
 
 #define FOR_MISSING_INTEGER_TYPES(M) \
-    M(UInt16) \
     M(UInt32) \
-    M(Int16) \
     M(Int32)
 
 FOR_MISSING_INTEGER_TYPES(DEFAULT_ITOA)
