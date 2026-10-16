@@ -676,8 +676,7 @@ std::unordered_map<const QueryPlan::Node *, UInt64> calculateHashTableCacheKeys(
     return cache_keys;
 }
 
-/// A step that stops admitting keys at `max_rows_to_group_by` keeps fewer groups than without the cap,
-/// and so does every aggregation above it: the caps in the subtree are part of the key.
+/// A capped step keeps fewer groups, and so does every aggregation above it: all caps in the subtree are part of the key.
 static UInt64 mixGroupByCapsIntoKey(const QueryPlan::Node & aggregating_node, UInt64 key)
 {
     std::vector<std::pair<UInt64, UInt8>> caps;
