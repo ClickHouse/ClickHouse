@@ -3147,12 +3147,15 @@ def test_namespace_scope_reads_and_gating(started_cluster):
         or "INVALID_IDENTIFIER" in err
     ), f"multipart column qualifier must fail with the setting off: {err}"
 
-    _, err = node.query_and_get_answer_with_error(
-        f"SELECT * FROM {CATALOG_NAME}.`{ns}.child`.t2", settings=ns_settings
+    quoted_component = node.query(
+        f"SELECT count() FROM {CATALOG_NAME}.`{ns}.child`.t2", settings=ns_settings
+    )
+    multipart = node.query(
+        f"SELECT count() FROM {CATALOG_NAME}.{ns}.child.t2", settings=ns_settings
     )
     assert (
-        "SYNTAX_ERROR" in err or "Syntax error" in err
-    ), f"quoted dotted component inside a path must be a syntax error: {err}"
+        quoted_component == multipart
+    ), f"quoted dotted component and multipart path differ: {quoted_component} vs {multipart}"
 
     _, err = node.query_and_get_answer_with_error(
         scope + "SET allow_experimental_table_namespaces = 0", settings=ns_settings

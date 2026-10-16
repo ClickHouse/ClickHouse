@@ -2234,11 +2234,11 @@ views, the one-argument `merge` table function, and to disabling
 `allow_experimental_table_namespaces` itself. Switch to the plain database with
 `USE catalog_name` and use quoted canonical names for those operations.
 
-A path component cannot contain a literal dot: a back-quoted component like
-`` catalog_name.`a.b`.table `` is rejected, because after parsing it would be
-indistinguishable from `catalog_name.a.b.table`. Catalog objects whose native
-names contain literal dots remain visible in listings, but they cannot be
-addressed through a multipart path - only through the quoted canonical name.
+A back-quoted component containing a dot spells the same path as the separate
+parts, exactly as for column names: `` catalog_name.`a.b`.table ``,
+`catalog_name.a.b.table` and `` catalog_name.`a.b.table` `` denote the same
+table. Catalog objects whose native names contain literal dots cannot be told
+apart from nested paths, which is the catalog's own naming convention.
 
 Only `DataLakeCatalog` databases support namespaces: `USE db.namespace` and
 `SHOW TABLES FROM db.namespace` fail with `NOT_IMPLEMENTED` for other database
