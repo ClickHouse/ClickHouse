@@ -1,9 +1,9 @@
 -- Tags: no-ordinary-database, no-async-insert, no-fasttest
 -- UNIQUE KEY: which mutations run on the table and which are rejected.
 --   1. ALTER DELETE, ALTER UPDATE of a key column or of `_row_exists`, a forced lightweight UPDATE, a mutation in a transaction: rejected
---   2. MATERIALIZE COLUMN: rejected for a key column; CLEAR COLUMN runs, a Nested group included; CLEAR IF EXISTS of a missing one is a no-op
+--   2. MATERIALIZE COLUMN: rejected for a key column; CLEAR COLUMN runs, a Nested group included unless it holds a key column (DROP too); CLEAR IF EXISTS of a missing one is a no-op
 --   2a. part rewrites: APPLY DELETED MASK / PATCHES, MATERIALIZE PROJECTION are rejected
---   2b. CLEAR / MATERIALIZE COLUMN, a type change or a new MATERIALIZED expression, ALTER UPDATE: rejected when a MATERIALIZED key column is computed from the column, renamed in the same ALTER or a Nested group included; a MODIFY without a type runs, and CLEAR under a DEFAULT key column
+--   2b. CLEAR / MATERIALIZE / RENAME / MODIFY COLUMN, ALTER UPDATE: rejected for a column a MATERIALIZED key column reads, directly, through an ALIAS or as part of a Nested group; CLEAR under a DEFAULT key column runs
 --   3. row-preserving ALTERs run: DROP / RENAME / MODIFY / MATERIALIZE COLUMN, DROP / MATERIALIZE INDEX and STATISTICS, REWRITE PARTS, UPDATE
 --   4. plain table: the same operations still work without UNIQUE KEY
 -- no-async-insert: after an async INSERT, a CLEAR of a Nested group can leave the arrays in place, as on
@@ -87,9 +87,22 @@ SELECT id, n.x, n.y FROM uk_mut_nested ORDER BY id;
 
 DROP TABLE uk_mut_nested;
 
--- 2b. a column a key column is computed from: red if the guard admits a CLEAR, MATERIALIZE, UPDATE or type
--- change of it under a MATERIALIZED key column, or rejects a MODIFY without a type, or a CLEAR under a DEFAULT
--- key column, which the clear does not recompute.
+-- A Nested group that holds a key column: CLEAR or DROP of the group would leave the key without its column.
+DROP TABLE IF EXISTS uk_mut_nested_key;
+CREATE TABLE uk_mut_nested_key (s UInt32, `n.id` UInt64)
+ENGINE = MergeTree ORDER BY s UNIQUE KEY (`n.id`)
+SETTINGS share_nested_offsets = 1;
+
+SELECT 'clear_nested_group_with_key' AS step;
+ALTER TABLE uk_mut_nested_key CLEAR COLUMN n; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+SELECT 'drop_nested_group_with_key' AS step;
+ALTER TABLE uk_mut_nested_key DROP COLUMN n; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+
+DROP TABLE uk_mut_nested_key;
+
+-- 2b. a column a key column is computed from: red if the guard admits a CLEAR, MATERIALIZE, UPDATE, RENAME or
+-- MODIFY of it under a MATERIALIZED key column, or rejects a CLEAR under a DEFAULT key column, which the clear
+-- does not recompute.
 DROP TABLE IF EXISTS uk_mut_computed;
 CREATE TABLE uk_mut_computed (id UInt32, a UInt64 DEFAULT id * 10, k UInt64 MATERIALIZED a * 2)
 ENGINE = MergeTree ORDER BY id UNIQUE KEY (k);
@@ -97,9 +110,6 @@ INSERT INTO uk_mut_computed (id, a) VALUES (1, 1), (2, 2);
 
 SELECT 'clear_source_of_materialized_key' AS step;
 ALTER TABLE uk_mut_computed CLEAR COLUMN a; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
-
-SELECT 'clear_renamed_source_of_materialized_key' AS step;
-ALTER TABLE uk_mut_computed RENAME COLUMN a TO a2, CLEAR COLUMN a2; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 
 SELECT 'materialize_source_of_materialized_key' AS step;
 ALTER TABLE uk_mut_computed MATERIALIZE COLUMN a; -- { serverError SUPPORT_IS_DISABLED }
@@ -111,19 +121,35 @@ SELECT 'modify_type_source_of_materialized_key' AS step;
 ALTER TABLE uk_mut_computed MODIFY COLUMN a UInt32; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 
 -- A queued CLEAR or UPDATE would recompute the key from the new expression.
-SELECT 'materialized_expression_source_of_materialized_key' AS step;
+SELECT 'modify_expression_source_of_materialized_key' AS step;
 ALTER TABLE uk_mut_computed MODIFY COLUMN a MATERIALIZED id * 30; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
-ALTER TABLE uk_mut_computed MODIFY COLUMN a DEFAULT id * 20;
+ALTER TABLE uk_mut_computed MODIFY COLUMN a ALIAS id * 30; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 
--- Stock refuses a rename and a modify of one column in one ALTER, so the guard needs no rename lookup.
-SELECT 'modify_type_renamed_source_of_materialized_key' AS step;
-ALTER TABLE uk_mut_computed RENAME COLUMN a TO a2, MODIFY COLUMN a2 UInt32; -- { serverError NOT_IMPLEMENTED }
-
--- UPDATE is checked against the renamed columns; the RENAME before it still applies.
--- A Replicated database refuses ALTERs of different types in one query first.
-SELECT 'update_renamed_source_of_materialized_key' AS step;
-ALTER TABLE uk_mut_computed RENAME COLUMN a TO a2, UPDATE a2 = a2 + 1 WHERE 1; -- { serverError SUPPORT_IS_DISABLED, QUERY_IS_PROHIBITED }
+-- The ALTER's mutations are checked against the old names: a CLEAR or UPDATE of the new name in the same ALTER would pass.
+SELECT 'rename_source_of_materialized_key' AS step;
+ALTER TABLE uk_mut_computed RENAME COLUMN a TO a2; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 DROP TABLE uk_mut_computed;
+
+-- The key reads `a` through the ALIAS `x`: retargeting `x` would make a queued UPDATE of `b` rewrite the key.
+DROP TABLE IF EXISTS uk_mut_computed_alias;
+CREATE TABLE uk_mut_computed_alias (id UInt32, a UInt64, b UInt64, x UInt64 ALIAS a, k UInt64 MATERIALIZED x)
+ENGINE = MergeTree ORDER BY id UNIQUE KEY (k);
+
+SELECT 'modify_alias_source_of_materialized_key' AS step;
+ALTER TABLE uk_mut_computed_alias MODIFY COLUMN x ALIAS b; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+SELECT 'update_alias_source_of_materialized_key' AS step;
+ALTER TABLE uk_mut_computed_alias UPDATE a = a + 1 WHERE 1; -- { serverError SUPPORT_IS_DISABLED }
+DROP TABLE uk_mut_computed_alias;
+
+-- Without shared Nested offsets `n` and `n.a` are separate columns: reading `n.a` must not hide what `n` reads.
+DROP TABLE IF EXISTS uk_mut_computed_prefix;
+CREATE TABLE uk_mut_computed_prefix (id UInt32, b UInt64, n UInt64 MATERIALIZED b, `n.a` UInt64, k UInt64 MATERIALIZED n + `n.a`)
+ENGINE = MergeTree ORDER BY id UNIQUE KEY (k)
+SETTINGS share_nested_offsets = 0;
+
+SELECT 'update_source_behind_prefix_column' AS step;
+ALTER TABLE uk_mut_computed_prefix UPDATE b = b + 1 WHERE 1; -- { serverError SUPPORT_IS_DISABLED }
+DROP TABLE uk_mut_computed_prefix;
 
 DROP TABLE IF EXISTS uk_mut_computed_nested;
 CREATE TABLE uk_mut_computed_nested (id UInt32, n Nested(x UInt32, y UInt32), k UInt64 MATERIALIZED arraySum(n.x))

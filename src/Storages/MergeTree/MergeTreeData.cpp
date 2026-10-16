@@ -73,7 +73,7 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/MaterializedColumnDependencies.h>
+#include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadataOnDisk.h>
 #include <Interpreters/MutationsInterpreter.h>
@@ -5742,35 +5742,36 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     checkAlterEligibility(commands, local_context);
 }
 
-/// The MATERIALIZED UNIQUE KEY column computed from @column, directly or through other columns.
-/// A Nested group name stands for every column of the group.
-static std::optional<String> findUniqueKeyColumnComputedFrom(
-    const StorageInMemoryMetadata & metadata, const String & column, const ContextPtr & context)
+static NameSet getUniqueKeyDependencies(const StorageInMemoryMetadata & metadata)
 {
-    NameSet changed{column};
-    for (const auto & nested_column : metadata.getColumns().getNested(column))
-        changed.insert(nested_column.name);
+    const auto & columns = metadata.getColumns();
+    NameSet dependencies;
+    Names to_visit = metadata.unique_key.column_names;
+    while (!to_visit.empty())
+    {
+        String column = std::move(to_visit.back());
+        to_visit.pop_back();
+        if (!dependencies.insert(column).second)
+            continue;
 
-    const MaterializedColumnDependencies dependencies(metadata.getColumns(), context);
-    for (const auto & key_column : metadata.unique_key.column_names)
-        if (!dependencies.findColumnsToRecalculate(key_column, changed).empty())
-            return key_column;
-    return {};
-}
+        const auto column_default = columns.getDefault(column);
+        if (!column_default
+            || (column_default->kind != ColumnDefaultKind::Materialized && column_default->kind != ColumnDefaultKind::Alias))
+            continue;
+        for (const auto * identifier : IdentifiersCollector::collect(column_default->expression))
+            if (const auto source = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, identifier->name()))
+                to_visit.push_back(source->getNameInStorage());
+    }
 
-/// The UNIQUE KEY column a rewrite of @column changes: @column itself or one computed from it.
-static std::optional<String> findChangedUniqueKeyColumn(
-    const StorageInMemoryMetadata & metadata, const String & column, const ContextPtr & context)
-{
-    if (std::ranges::contains(metadata.unique_key.column_names, column))
-        return column;
-    return findUniqueKeyColumnComputedFrom(metadata, column, context);
+    for (const auto & column : Names(dependencies.begin(), dependencies.end()))
+        dependencies.insert(Nested::extractTableName(column));
+    return dependencies;
 }
 
 /// Only mutations that keep every row in place are allowed.
-static void checkUniqueKeyMutationCommands(
-    const MutationCommands & commands, const StorageInMemoryMetadata & metadata, const ContextPtr & context)
+static void checkUniqueKeyMutationCommands(const MutationCommands & commands, const StorageInMemoryMetadata & metadata)
 {
+    const NameSet key_dependencies = getUniqueKeyDependencies(metadata);
     for (const auto & command : commands)
     {
         switch (command.type)
@@ -5791,10 +5792,10 @@ static void checkUniqueKeyMutationCommands(
                 continue;
 
             case MutationCommand::MATERIALIZE_COLUMN:
-                if (auto key_column = findChangedUniqueKeyColumn(metadata, command.column_name, context))
+                if (key_dependencies.contains(command.column_name))
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                        "MATERIALIZE COLUMN {} is not supported on a UNIQUE KEY table: it changes key column {}",
-                        backQuoteIfNeed(command.column_name), backQuoteIfNeed(*key_column));
+                        "MATERIALIZE COLUMN {} is not supported on a UNIQUE KEY table: the key depends on it",
+                        backQuoteIfNeed(command.column_name));
                 continue;
 
             case MutationCommand::UPDATE:
@@ -5803,10 +5804,10 @@ static void checkUniqueKeyMutationCommands(
                     if (column == RowExistsColumn::name)
                         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                             "ALTER UPDATE of {} is not supported on a UNIQUE KEY table: use DELETE FROM", RowExistsColumn::name);
-                    if (auto key_column = findChangedUniqueKeyColumn(metadata, column, context))
+                    if (key_dependencies.contains(column))
                         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                            "ALTER UPDATE of column {} is not supported on a UNIQUE KEY table: it changes key column {}",
-                            backQuoteIfNeed(column), backQuoteIfNeed(*key_column));
+                            "ALTER UPDATE of column {} is not supported on a UNIQUE KEY table: the key depends on it",
+                            backQuoteIfNeed(column));
                 }
                 continue;
 
@@ -5862,13 +5863,13 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 "ADD PROJECTION is not supported on tables with UNIQUE KEY");
     }
 
-    /// Reject DROP/RENAME/MODIFY of UK columns and MODIFY ORDER BY. Must run
+    /// Reject DROP/RENAME/MODIFY of the columns the UK depends on and MODIFY ORDER BY. Must run
     /// before `columns_alter_type_forbidden` so error 524 with the UK message
     /// fires instead of error 47 from the sort-key re-check.
     if (old_metadata.hasUniqueKey())
     {
         const auto & uk_columns = old_metadata.unique_key.column_names;
-        NameSet uk_set(uk_columns.begin(), uk_columns.end());
+        const NameSet uk_dependencies = getUniqueKeyDependencies(old_metadata);
 
         auto uk_list_str = [&uk_columns]()
         {
@@ -5881,9 +5882,6 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             }
             return s;
         };
-
-        /// The old names of the columns this ALTER renames; stock refuses transitive renames.
-        std::unordered_map<String, String> renamed_from;
 
         for (const auto & command : commands)
         {
@@ -5901,30 +5899,6 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "Column TTL is not supported on tables with UNIQUE KEY");
 
-            if (command.type == AlterCommand::RENAME_COLUMN)
-                renamed_from[command.rename_to] = command.column_name;
-
-            if (command.type == AlterCommand::DROP_COLUMN && command.clear && !command.ignore)
-            {
-                const auto renamed = renamed_from.find(command.column_name);
-                const String & old_name = renamed == renamed_from.end() ? command.column_name : renamed->second;
-                if (auto key_column = findUniqueKeyColumnComputedFrom(old_metadata, old_name, local_context))
-                    throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                        "ALTER CLEAR COLUMN {} is forbidden: UNIQUE KEY column {} is computed from it.",
-                        backQuoteIfNeed(command.column_name), backQuoteIfNeed(*key_column));
-            }
-
-            /// A type change leaves a MATERIALIZED key column computed from the column stale. A new MATERIALIZED
-            /// expression changes what a queued mutation recomputes the key from.
-            const bool new_materialized = command.default_expression && command.default_kind == ColumnDefaultKind::Materialized;
-            if (command.type == AlterCommand::MODIFY_COLUMN && (command.data_type || new_materialized)
-                && !uk_set.contains(command.column_name))
-            {
-                if (auto key_column = findUniqueKeyColumnComputedFrom(old_metadata, command.column_name, local_context))
-                    throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                        "ALTER MODIFY COLUMN {} is forbidden: UNIQUE KEY column {} is computed from it.",
-                        backQuoteIfNeed(command.column_name), backQuoteIfNeed(*key_column));
-            }
 
             const bool affects_column =
                 command.type == AlterCommand::DROP_COLUMN
@@ -5934,15 +5908,15 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             if (!affects_column)
                 continue;
 
-            if (!uk_set.contains(command.column_name))
+            if (!uk_dependencies.contains(command.column_name))
                 continue;
 
-            const char * action_str = (command.type == AlterCommand::DROP_COLUMN) ? "DROP"
+            const char * action_str = (command.type == AlterCommand::DROP_COLUMN) ? (command.clear ? "CLEAR" : "DROP")
                 : (command.type == AlterCommand::RENAME_COLUMN) ? "RENAME"
                 : "MODIFY";
 
             throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                "ALTER {} COLUMN {} is forbidden: the column is part of the table's UNIQUE KEY ({}).",
+                "ALTER {} COLUMN {} is forbidden: the table's UNIQUE KEY ({}) depends on it.",
                 action_str,
                 backQuoteIfNeed(command.column_name),
                 uk_list_str());
@@ -5953,7 +5927,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             commands.getMutationCommands(
                 old_metadata, settings[Setting::materialize_ttl_after_modify], local_context,
                 /*with_alters*/ false, (*settings_from_storage)[MergeTreeSetting::share_nested_offsets]),
-            old_metadata, local_context);
+            old_metadata);
     }
 
     /// Must be collected before the commands are applied below: dropping a column used in a key has to
@@ -7124,7 +7098,7 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Mutations are not supported for immutable disk '{}'", disk->getName());
 
     if (auto uk_metadata = getInMemoryMetadataPtr(getContext(), false); uk_metadata->hasUniqueKey())
-        checkUniqueKeyMutationCommands(commands, *uk_metadata, getContext());
+        checkUniqueKeyMutationCommands(commands, *uk_metadata);
 
     const auto index_mode = (*getSettings())[MergeTreeSetting::alter_column_secondary_index_mode];
     auto secondary_indices_metadata = getInMemoryMetadataPtr(getContext(), false);
