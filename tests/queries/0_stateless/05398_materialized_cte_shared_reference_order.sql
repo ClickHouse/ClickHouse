@@ -63,3 +63,6 @@ WITH prometheus_query_step_1 AS MATERIALIZED
 )
 SELECT * FROM prometheus_query_step_1
 WHERE y = (SELECT max(y) FROM prometheus_query_step_1);
+
+WITH prometheus_query_step_1 AS MATERIALIZED (SELECT 1 AS x, 2 AS y)
+SELECT x FROM prometheus_query_step_1;

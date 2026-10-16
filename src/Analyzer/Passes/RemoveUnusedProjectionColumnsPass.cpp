@@ -13,6 +13,8 @@
 
 #include <Analyzer/traverseQueryTree.h>
 
+#include <Interpreters/MaterializedCTE.h>
+
 namespace DB
 {
 
@@ -150,8 +152,10 @@ void RemoveUnusedProjectionColumnsPass::run(QueryTreeNodePtr & query_tree_node, 
             if (auto it = node_to_used_columns.find(column_source_node); it != node_to_used_columns.end())
                 it->second.insert(column_name);
 
+            /// The temporary table already stores every projection column of an initialized body.
             const auto * source_table = column_source_node->as<TableNode>();
-            if (!source_table || !source_table->sharesMaterializedCTEBody())
+            if (!source_table || !source_table->sharesMaterializedCTEBody()
+                || source_table->getMaterializedCTE()->isStorageInitialized())
                 return;
 
             const auto & body = source_table->getMaterializedCTESubquery();
