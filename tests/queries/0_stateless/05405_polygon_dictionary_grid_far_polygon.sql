@@ -51,6 +51,25 @@ FROM
     FROM numbers(81 * 81)
 );
 
+-- A side of the bounding box overflows Float32.
+TRUNCATE TABLE polygons_grid;
+INSERT INTO polygons_grid VALUES
+    ([[[(-3e38, -3e38), (-1e38, -3e38), (-1e38, -1e38), (-3e38, -1e38)]]], 'a'),
+    ([[[(1e38, 1e38), (3e38, 1e38), (3e38, 3e38), (1e38, 3e38)]]], 'b');
+SYSTEM RELOAD DICTIONARY dict_grid_each; -- { serverError BAD_ARGUMENTS }
+SYSTEM RELOAD DICTIONARY dict_grid_cell; -- { serverError BAD_ARGUMENTS }
+
+-- Sides that fit in Float32 still load.
+TRUNCATE TABLE polygons_grid;
+INSERT INTO polygons_grid VALUES
+    ([[[(-1.5e38, -1.5e38), (-0.5e38, -1.5e38), (-0.5e38, -0.5e38), (-1.5e38, -0.5e38)]]], 'a'),
+    ([[[(0.5e38, 0.5e38), (1.5e38, 0.5e38), (1.5e38, 1.5e38), (0.5e38, 1.5e38)]]], 'b');
+SYSTEM RELOAD DICTIONARY dict_grid_each;
+SYSTEM RELOAD DICTIONARY dict_grid_cell;
+SELECT dictGet('dict_grid_each', 'name', (1.4e38, 1.4e38)), dictGet('dict_grid_each', 'name', (-1.4e38, -1.4e38)),
+    dictHas('dict_grid_each', (0., 0.)), dictGet('dict_grid_cell', 'name', (1.4e38, 1.4e38)),
+    dictGet('dict_grid_cell', 'name', (-1.4e38, -1.4e38)), dictHas('dict_grid_cell', (0., 0.));
+
 DROP DICTIONARY dict_grid_each;
 DROP DICTIONARY dict_grid_cell;
 DROP TABLE polygons_grid;

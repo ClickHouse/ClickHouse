@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/types.h>
+#include <Common/Exception.h>
 #include <Common/iota.h>
 #include <Common/ThreadPool.h>
 #include <Common/threadPoolCallbackRunner.h>
@@ -27,6 +28,11 @@ namespace CurrentMetrics
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 namespace bg = boost::geometry;
 
@@ -239,6 +245,10 @@ public:
             k_min_intersections(min_intersections_), k_max_depth(max_depth_), polygons(polygons_)
     {
         setBoundingBox();
+        /// Other points are routed by their position along each side of the bounding box, computed in Float32.
+        if (!hasZeroSide() && (!std::isfinite(max_x - min_x) || !std::isfinite(max_y - min_y)))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "PolygonDictionary polygons are too far apart for a grid index: a side of their bounding box exceeds the Float32 range");
         VectorWithMemoryTracking<size_t> order(polygons.size());
         iota(order.data(), order.size(), size_t(0));
 
@@ -289,13 +299,13 @@ private:
     /// Position of `v` in [0, 1] along the side [lo, hi) of the bounding box, monotone in `v`.
     static Coord toRatio(Coord v, Coord lo, Coord hi) { return (v - lo) / (hi - lo); }
 
+    /// `find` accepts no point when a side of the bounding box is zero.
+    bool hasZeroSide() const { return min_x == max_x || min_y == max_y; }
+
     /// The child index along one side that `find` picks for `v` in the `level`-th divided cell of its path (the root is 1).
     static size_t routedBin(Coord v, Coord lo, Coord hi, size_t level)
     {
         Coord ratio = toRatio(v, lo, hi);
-        /// NaN when the side's extent overflows Float32.
-        if (std::isnan(ratio))
-            return 0;
         int bin = 0;
         for (size_t i = 0; i < level; ++i)
             bin = DividedCell<ReturnCell>::route(ratio);
@@ -354,7 +364,7 @@ private:
         }
 #endif
         size_t intersections = possible_ids.size() - covered;
-        if (intersections <= k_min_intersections || depth++ == k_max_depth)
+        if (intersections <= k_min_intersections || depth++ == k_max_depth || hasZeroSide())
             return std::make_unique<ReturnCell>(possible_ids, polygons, current_box, covered);
         /// `depth` is now this cell's level, the root's is 1.
         const auto x_bounds = splitSide(current_min_x, current_max_x, min_x, max_x, depth);
