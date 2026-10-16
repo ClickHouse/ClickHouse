@@ -22,6 +22,11 @@ CREATE TABLE bad (query String) ENGINE = QueryRunner SETTINGS scheduler = 'non-e
 CREATE TABLE bad (query String) ENGINE = QueryRunner SETTINGS scheduler = 'fibers'; -- { serverError BAD_ARGUMENTS }
 CREATE TABLE bad (query String) ENGINE = QueryRunner SETTINGS cluster = 'test_shard_localhost', scheduler = 'fibers', threads = 2; -- { serverError BAD_ARGUMENTS }
 CREATE TABLE bad (query String) ENGINE = QueryRunner SETTINGS connection_pool_size = 0; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE bad (query String) ENGINE = QueryRunner SETTINGS connection_pool_size = 4294967296; -- { serverError BAD_ARGUMENTS }
+
+CREATE USER user_04337_definer;
+CREATE TABLE bad (query String) ENGINE = QueryRunner SETTINGS scheduler = 'fibers' DEFINER = user_04337_definer SQL SECURITY DEFINER; -- { serverError BAD_ARGUMENTS }
+DROP USER user_04337_definer;
 
 SELECT * FROM runner; -- { serverError NOT_IMPLEMENTED }
 ALTER TABLE runner ADD COLUMN extra String; -- { serverError NOT_IMPLEMENTED }

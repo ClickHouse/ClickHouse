@@ -40,6 +40,7 @@
 
 #include <atomic>
 #include <condition_variable>
+#include <limits>
 #include <list>
 #include <memory>
 #include <mutex>
@@ -87,7 +88,7 @@ namespace QueryRunnerSetting
     extern const QueryRunnerSettingsUInt64 connection_pool_size;
     extern const QueryRunnerSettingsUInt64 max_pending_queries;
     extern const QueryRunnerSettingsQueryRunnerMode mode;
-    extern const QueryRunnerSettingsQueryRunnerScheduler scheduler;
+    extern const QueryRunnerSettingsWorkerKind scheduler;
     extern const QueryRunnerSettingsString shard;
     extern const QueryRunnerSettingsNonZeroUInt64 threads;
 }
@@ -973,16 +974,13 @@ StorageQueryRunner::StorageQueryRunner(
                 "SQL SECURITY and DEFINER have no effect in the cluster mode and cannot be used together with the 'cluster' setting of the QueryRunner engine");
 
         storage_metadata.setSQLSecurity(sql_security_->as<ASTSQLSecurity &>());
-
-        if (storage_metadata.sql_security_type == SQLSecurityType::DEFINER)
-            DefinerDependencies::instance().addDependency(*storage_metadata.definer, table_id_);
     }
     else if (cluster_name.empty())
         storage_metadata.sql_security_type = SQLSecurityType::INVOKER;
 
     setInMemoryMetadata(storage_metadata);
 
-    if (settings[QueryRunnerSetting::scheduler] == QueryRunnerScheduler::FIBERS)
+    if (settings[QueryRunnerSetting::scheduler] == WorkerKind::FIBERS)
     {
         if (cluster_name.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'fibers' scheduler of the QueryRunner engine requires the 'cluster' setting");
@@ -1012,6 +1010,9 @@ StorageQueryRunner::StorageQueryRunner(
             settings[QueryRunnerSetting::max_pending_queries],
             settings[QueryRunnerSetting::connection_pool_size],
             log);
+
+    if (storage_metadata.sql_security_type == SQLSecurityType::DEFINER)
+        DefinerDependencies::instance().addDependency(*storage_metadata.definer, table_id_);
 }
 
 StorageQueryRunner::~StorageQueryRunner() = default;
@@ -1181,11 +1182,13 @@ void registerStorageQueryRunner(StorageFactory & factory)
                     cluster->getShardsInfo().size(), cluster_name, shard_selector.fixed_shard_num);
         }
 
-        if (settings[QueryRunnerSetting::connection_pool_size] < 1)
+        if (settings[QueryRunnerSetting::connection_pool_size] < 1 || settings[QueryRunnerSetting::connection_pool_size] > std::numeric_limits<unsigned>::max())
             throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "The 'connection_pool_size' setting of the QueryRunner engine must be at least 1");
+                ErrorCodes::BAD_ARGUMENTS,
+                "The 'connection_pool_size' setting of the QueryRunner engine must be in the range [1, {}], got {}",
+                std::numeric_limits<unsigned>::max(), settings[QueryRunnerSetting::connection_pool_size].value);
 
-        if (settings[QueryRunnerSetting::scheduler] == QueryRunnerScheduler::FIBERS && settings[QueryRunnerSetting::threads].changed)
+        if (settings[QueryRunnerSetting::scheduler] == WorkerKind::FIBERS && settings[QueryRunnerSetting::threads].changed)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'threads' setting of the QueryRunner engine does not apply to the 'fibers' scheduler");
 
         validateColumns(args.columns);
