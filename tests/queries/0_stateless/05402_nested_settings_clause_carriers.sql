@@ -21,6 +21,15 @@ SELECT * FROM
 );
 SET compatibility = '', use_variant_as_common_type = DEFAULT;
 
+-- `compatibility = DEFAULT` changes the values of the settings like an assignment of `compatibility` does.
+SET compatibility = '25.12';
+SELECT * FROM
+(
+    SELECT getSetting('use_variant_as_common_type')
+    SETTINGS use_variant_as_common_type = 0, compatibility = DEFAULT
+);
+SET compatibility = '';
+
 -- A trailing query-level `SETTINGS` clause of a set operation applies to every operand, also when
 -- `INTERSECT` / `EXCEPT` nests the last operand that carries it.
 SET obfuscate_markov_order = 0;
@@ -34,6 +43,31 @@ SELECT count() FROM
     SETTINGS obfuscate_markov_order = DEFAULT
 );
 SET obfuscate_markov_order = DEFAULT;
+
+-- A parenthesized set operation keeps its trailing clause to itself.
+SET transform_null_in = 0;
+SELECT n FROM
+(
+    SELECT NULL IN (NULL) AS n
+    UNION ALL
+    (SELECT NULL IN (NULL) AS n INTERSECT ALL SELECT NULL IN (NULL) AS n SETTINGS transform_null_in = 1)
+)
+ORDER BY n NULLS FIRST;
+SELECT n FROM
+(
+    SELECT NULL IN (NULL) AS n
+    UNION ALL
+    (SELECT NULL IN (NULL) AS n EXCEPT ALL SELECT 0 AS n SETTINGS transform_null_in = 1)
+)
+ORDER BY n NULLS FIRST;
+SELECT n FROM
+(
+    SELECT NULL IN (NULL) AS n
+    UNION ALL
+    (SELECT NULL IN (NULL) AS n UNION ALL SELECT NULL IN (NULL) AS n SETTINGS transform_null_in = 1)
+)
+ORDER BY n NULLS FIRST;
+SET transform_null_in = DEFAULT;
 
 -- Both query-level clauses of a union bind query parameters for every arm, in the order they are applied.
 SELECT {n:UInt8} AS x UNION ALL SELECT {n:UInt8} AS x SETTINGS param_n = '7' FORMAT TSV SETTINGS param_n = '9';
