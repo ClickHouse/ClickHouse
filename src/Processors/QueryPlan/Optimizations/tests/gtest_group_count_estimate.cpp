@@ -39,3 +39,21 @@ TEST(GroupCountEstimate, SharedFormula)
     EXPECT_EQ(unknown_rows.max_rows, std::nullopt);
 
 }
+
+TEST(GroupCountEstimate, MultiColumnDistinctModels)
+{
+    /// Three keys of 335, 5163 and 5000 values over 53M rows, the shape of TPC-DS Q38.
+    const std::vector<double> distinct_values = {335, 5163, 5000};
+    const double rows = 53'000'000;
+    EXPECT_DOUBLE_EQ(estimateDistinctCombinations(distinct_values, rows, MultiColumnDistinctModel::Largest), 5163);
+    /// 5163 * 5000 * 335 is above the rows, so the product is the rows.
+    EXPECT_DOUBLE_EQ(estimateDistinctCombinations(distinct_values, rows, MultiColumnDistinctModel::Product), rows);
+    EXPECT_DOUBLE_EQ(estimateDistinctCombinations(distinct_values, rows, MultiColumnDistinctModel::GeometricMean), std::sqrt(5163 * rows));
+    /// 5163 * 5000^(1/2) * 335^(1/4).
+    EXPECT_NEAR(estimateDistinctCombinations(distinct_values, rows, MultiColumnDistinctModel::Backoff), 1'561'882, 1);
+
+    /// Every model is at most the rows, and one key is its own NDV.
+    EXPECT_DOUBLE_EQ(estimateDistinctCombinations({100, 100}, 50, MultiColumnDistinctModel::Backoff), 50);
+    EXPECT_DOUBLE_EQ(estimateDistinctCombinations({100}, 1000, MultiColumnDistinctModel::Backoff), 100);
+    EXPECT_DOUBLE_EQ(estimateDistinctCombinations({}, 1000, MultiColumnDistinctModel::Product), 1);
+}

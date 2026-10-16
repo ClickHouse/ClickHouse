@@ -255,7 +255,7 @@ RelationStats estimateGroupStats(const Names & keys, const RelationStats & input
     aggregation_stats.imprecise_estimate = input_stats.imprecise_estimate;
     aggregation_stats.estimate_from_defaults = input_stats.estimate_from_defaults;
     aggregation_stats.source = input_stats.source;
-    std::vector<UInt64> key_distinct_values;
+    std::vector<GroupKey> group_keys;
     for (const auto & key : keys)
     {
         auto key_stats = input_stats.column_stats.find(key);
@@ -273,14 +273,19 @@ RelationStats estimateGroupStats(const Names & keys, const RelationStats & input
         }
         /// The key keeps its domain and width; its NDV is the input's.
         aggregation_stats.column_stats[key] = key_stats == input_stats.column_stats.end() ? ColumnStats{} : key_stats->second;
-        aggregation_stats.column_stats[key].num_distinct_values = distinct_values;
-        key_distinct_values.push_back(distinct_values);
+        auto & key_column_stats = aggregation_stats.column_stats[key];
+        key_column_stats.num_distinct_values = distinct_values;
+        group_keys.push_back({
+            .name = key,
+            .distinct_values = distinct_values,
+            .table_rows = key_column_stats.table_rows,
+            .table_selected_rows = key_column_stats.table_selected_rows});
     }
 
     if (keys.size() == 1)
         aggregation_stats.column_stats[keys.front()].unique = true;
 
-    auto groups = estimateGroupCount(key_distinct_values, input_stats.estimated_rows, input_stats.max_rows);
+    auto groups = estimateGroupCount(group_keys, input_stats.estimated_rows, input_stats.max_rows);
     /// Keys limited to constants by a filter below bound the groups by the product of their values.
     std::optional<UInt64> proven_groups = keys.empty() ? std::nullopt : std::optional<UInt64>(1);
     for (const auto & key : keys)

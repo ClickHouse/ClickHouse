@@ -17,6 +17,9 @@ struct ColumnStats
     /// NDV of the column in the whole relation it comes from, before any filter; zero when unknown.
     /// Two filtered sets of the column's values overlap in proportion to their shares of it.
     UInt64 domain_distinct_values = 0;
+    /// Rows of the table the column is read from, and the rows of it that the read selects; zero when unknown.
+    UInt64 table_rows = 0;
+    UInt64 table_selected_rows = 0;
     /// Average uncompressed size of one value; 0 means unknown.
     Float64 avg_bytes = 0;
     /// Value range from `basic`/`minmax` statistics; unset when unknown.

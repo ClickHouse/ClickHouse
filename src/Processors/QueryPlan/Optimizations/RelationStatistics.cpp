@@ -4,6 +4,8 @@
 #include <cmath>
 #include <functional>
 #include <limits>
+#include <map>
+#include <string_view>
 
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
@@ -15,21 +17,175 @@
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
 #include <Common/typeid_cast.h>
+#include <Common/CurrentThread.h>
+#include <Common/Exception.h>
+#include <Interpreters/Context.h>
 #include <Functions/IFunction.h>
+
+namespace DB::ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
+}
 
 namespace DB::QueryPlanOptimizations
 {
 
+MultiColumnDistinctModel getMultiColumnDistinctModel()
+{
+    const auto context = CurrentThread::tryGetQueryContext();
+    if (!context)
+        return MultiColumnDistinctModel::Default;
+    const auto & parameters = context->getQueryParameters();
+    const auto it = parameters.find("_internal_multi_column_distinct_model");
+    if (it == parameters.end() || it->second == "default")
+        return MultiColumnDistinctModel::Default;
+    if (it->second == "largest")
+        return MultiColumnDistinctModel::Largest;
+    if (it->second == "geometric_mean")
+        return MultiColumnDistinctModel::GeometricMean;
+    if (it->second == "backoff")
+        return MultiColumnDistinctModel::Backoff;
+    if (it->second == "product")
+        return MultiColumnDistinctModel::Product;
+    if (it->second == "per_table")
+        return MultiColumnDistinctModel::PerTable;
+    if (it->second == "postgres")
+        return MultiColumnDistinctModel::Postgres;
+    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+        "Unknown `_internal_multi_column_distinct_model` '{}', expected default, largest, geometric_mean, backoff, product, per_table or postgres",
+        it->second);
+}
+
+double estimateDistinctCombinations(std::vector<double> distinct_values, double rows, MultiColumnDistinctModel model)
+{
+    if (distinct_values.empty())
+        return 1.0;
+    std::sort(distinct_values.begin(), distinct_values.end(), std::greater<>());
+    const double largest = distinct_values.front();
+    double product = 1.0;
+    for (double values : distinct_values)
+        product = std::min(product * values, rows);
+    double combinations = largest;
+    switch (model)
+    {
+        case MultiColumnDistinctModel::Default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The default multi-column distinct model is not resolved");
+        case MultiColumnDistinctModel::Largest:
+        case MultiColumnDistinctModel::PerTable:
+            break;
+        case MultiColumnDistinctModel::GeometricMean:
+            combinations = std::sqrt(std::min(largest, rows) * product);
+            break;
+        case MultiColumnDistinctModel::Backoff:
+        {
+            double exponent = 1.0;
+            combinations = 1.0;
+            for (double values : distinct_values)
+            {
+                combinations = std::min(combinations * std::pow(values, exponent), rows);
+                exponent /= 2;
+            }
+            break;
+        }
+        case MultiColumnDistinctModel::Product:
+        case MultiColumnDistinctModel::Postgres:
+            combinations = product;
+            break;
+    }
+    return std::min(combinations, rows);
+}
+
 GroupCountEstimate estimateGroupCount(const std::vector<UInt64> & key_distinct_values, std::optional<UInt64> rows, std::optional<UInt64> max_rows)
 {
-    if (key_distinct_values.empty())
+    std::vector<GroupKey> keys;
+    for (UInt64 distinct_values : key_distinct_values)
+        keys.push_back({.name = {}, .distinct_values = distinct_values, .table_rows = 0, .table_selected_rows = 0});
+    return estimateGroupCount(keys, rows, max_rows);
+}
+
+namespace
+{
+
+std::string_view tableQualifier(std::string_view name)
+{
+    const auto dot = name.find('.');
+    return dot == std::string_view::npos ? name : name.substr(0, dot);
+}
+
+/// The combinations of the keys of one table, as `estimate_num_groups` of PostgreSQL finds them.
+double postgresTableCombinations(const std::vector<const GroupKey *> & keys)
+{
+    double largest = 0;
+    double product = 1;
+    UInt64 table_rows = 0;
+    UInt64 selected_rows = 0;
+    for (const auto * key : keys)
+    {
+        largest = std::max(largest, static_cast<double>(key->distinct_values));
+        product *= static_cast<double>(key->distinct_values);
+        table_rows = std::max(table_rows, key->table_rows);
+        selected_rows = std::max(selected_rows, key->table_selected_rows);
+    }
+    if (keys.size() < 2 || table_rows == 0)
+        return largest;
+    /// The columns of a table are probably correlated, by an unknown amount.
+    const double cap = std::min(static_cast<double>(table_rows), std::max(largest, 0.1 * static_cast<double>(table_rows)));
+    const UInt64 cap_after_filter = distinctValuesAfterFilter(roundToRowCount(cap), table_rows, selected_rows ? selected_rows : table_rows);
+    return std::min(product, std::max(largest, static_cast<double>(cap_after_filter)));
+}
+
+/// The largest NDV per table or the PostgreSQL combinations per table, multiplied over the tables.
+double perTableCombinations(const std::vector<GroupKey> & keys, MultiColumnDistinctModel model, double rows)
+{
+    std::map<std::string_view, std::vector<const GroupKey *>> keys_per_table;
+    for (const auto & key : keys)
+        keys_per_table[tableQualifier(key.name)].push_back(&key);
+    std::vector<double> distinct_values;
+    for (const auto & [_, table_keys] : keys_per_table)
+    {
+        if (model == MultiColumnDistinctModel::Postgres)
+            distinct_values.push_back(postgresTableCombinations(table_keys));
+        else
+            distinct_values.push_back(static_cast<double>(
+                (*std::ranges::max_element(table_keys, {}, [](const GroupKey * key) { return key->distinct_values; }))->distinct_values));
+    }
+    return estimateDistinctCombinations(distinct_values, rows, MultiColumnDistinctModel::Product);
+}
+
+}
+
+GroupCountEstimate estimateGroupCount(const std::vector<GroupKey> & keys, std::optional<UInt64> rows, std::optional<UInt64> max_rows)
+{
+    if (keys.empty())
         return GroupCountEstimate{.estimated_rows = 1, .max_rows = 1};
 
     GroupCountEstimate result;
-    const UInt64 largest = *std::max_element(key_distinct_values.begin(), key_distinct_values.end());
+    result.max_rows = max_rows;
+    const UInt64 largest = std::ranges::max_element(keys, {}, &GroupKey::distinct_values)->distinct_values;
     if (largest != 0)
         result.estimated_rows = rows ? std::min(largest, *rows) : largest;
-    result.max_rows = max_rows;
+
+    /// The other models need the NDV of every key and the rows.
+    auto model = getMultiColumnDistinctModel();
+    if (model == MultiColumnDistinctModel::Default)
+        model = MultiColumnDistinctModel::Largest;
+    const bool all_keys_known = std::ranges::none_of(keys, [](const GroupKey & key) { return key.distinct_values == 0; });
+    if (model == MultiColumnDistinctModel::Largest || keys.size() < 2 || !all_keys_known || !rows)
+        return result;
+
+    const double input_rows = static_cast<double>(*rows);
+    double combinations = 0;
+    if (model == MultiColumnDistinctModel::PerTable || model == MultiColumnDistinctModel::Postgres)
+        combinations = perTableCombinations(keys, model, input_rows);
+    else
+    {
+        std::vector<double> distinct_values;
+        for (const auto & key : keys)
+            distinct_values.push_back(static_cast<double>(key.distinct_values));
+        combinations = estimateDistinctCombinations(distinct_values, input_rows, model);
+    }
+    result.estimated_rows = static_cast<UInt64>(std::llround(combinations));
     return result;
 }
 

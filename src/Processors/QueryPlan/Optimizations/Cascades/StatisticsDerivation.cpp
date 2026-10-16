@@ -418,8 +418,11 @@ ExpressionStatistics StatisticsDerivation::deriveReadStatistics(const ReadFromMe
             statistics.source = RowEstimateSource::Statistics;
             for (const auto & [column_name, column_stats] : relation_profile.column_stats)
             {
-                statistics.column_statistics[column_name].num_distinct_values = column_stats.num_distinct_values;
-                statistics.column_statistics[column_name].max_distinct_values = column_stats.max_distinct_values;
+                auto & output_stats = statistics.column_statistics[column_name];
+                output_stats.num_distinct_values = column_stats.num_distinct_values;
+                output_stats.max_distinct_values = column_stats.max_distinct_values;
+                output_stats.table_rows = column_stats.table_rows;
+                output_stats.table_selected_rows = column_stats.table_selected_rows;
             }
             /// The profile carries no byte sizes; leaving the default 1 byte per row would make wide
             /// tables look nearly free to move over the network.

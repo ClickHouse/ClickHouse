@@ -160,11 +160,14 @@ static bool isCompatibleStatistics(const StorageMetadataPtr & metadata, const Co
 }
 
 /// The value range and NULL fraction describe the whole relation regardless of the filter.
-static ColumnStats makeColumnStats(UInt64 num_distinct_values, UInt64 domain_distinct_values, const ColumnStatisticsPtr & stats)
+static ColumnStats makeColumnStats(
+    UInt64 num_distinct_values, UInt64 domain_distinct_values, UInt64 table_rows, UInt64 selected_rows, const ColumnStatisticsPtr & stats)
 {
     ColumnStats result;
     result.num_distinct_values = num_distinct_values;
     result.domain_distinct_values = domain_distinct_values;
+    result.table_rows = table_rows;
+    result.table_selected_rows = selected_rows;
     if (!stats)
         return result;
 
@@ -277,7 +280,7 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
         /// measured value.
         const UInt64 domain = estimator.stats->hasCardinality() ? estimator.estimateCardinality() : 0;
         const UInt64 cardinality = domain ? QueryPlanOptimizations::distinctValuesAfterFilter(domain, total_rows, result.rows) : 0;
-        result.column_stats.emplace(column_name, makeColumnStats(cardinality, domain, estimator.stats));
+        result.column_stats.emplace(column_name, makeColumnStats(cardinality, domain, total_rows, result.rows, estimator.stats));
     }
     return result;
 }
@@ -289,7 +292,7 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile() const
     for (const auto & [column_name, estimator] : column_estimators)
     {
         const UInt64 domain = estimator.stats->hasCardinality() ? estimator.estimateCardinality() : 0;
-        result.column_stats.emplace(column_name, makeColumnStats(domain, domain, estimator.stats));
+        result.column_stats.emplace(column_name, makeColumnStats(domain, domain, total_rows, total_rows, estimator.stats));
     }
     return result;
 }

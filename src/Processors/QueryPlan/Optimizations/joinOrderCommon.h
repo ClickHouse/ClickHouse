@@ -85,9 +85,9 @@ struct JoinKeyEstimate
     /// Keys counted once each for a key of several columns, see `countIndependentKey`.
     size_t independent_keys = 0;
     bool independent_keys_from_statistics = true;
-    /// Product of the NDVs of the independent keys on each side.
-    double left_key_combinations = 1.0;
-    double right_key_combinations = 1.0;
+    /// The NDVs of the independent keys on each side.
+    std::vector<double> left_key_distinct_values = {};
+    std::vector<double> right_key_distinct_values = {};
     /// Hashes of the columns of the independent keys on each side.
     std::vector<UInt64> left_key_columns = {};
     std::vector<UInt64> right_key_columns = {};
@@ -110,8 +110,8 @@ struct JoinKeyEstimate
             independent_keys_from_statistics = false;
             return;
         }
-        left_key_combinations *= static_cast<double>(left.from_statistics);
-        right_key_combinations *= static_cast<double>(right.from_statistics);
+        left_key_distinct_values.push_back(static_cast<double>(left.from_statistics));
+        right_key_distinct_values.push_back(static_cast<double>(right.from_statistics));
     }
 
     /// For two or more independent keys with statistics: the geometric mean of the selectivity of the
@@ -120,14 +120,37 @@ struct JoinKeyEstimate
     /// counts too many rows when the other keys also filter, and the combinations too few when the key
     /// columns are correlated. The true size usually lies between the two, and the mean is then at most
     /// the square root of their ratio off either way.
+    ///
+    /// The query parameter `_internal_multi_column_distinct_model` replaces the mean for experiments: the
+    /// combinations of each side then follow `estimateDistinctCombinations`, and `largest` keeps the single key.
+    /// `postgres` multiplies the selectivities of the keys, as PostgreSQL does for the clauses of a join.
     std::optional<double> multiColumnSelectivity(double left_rows, double right_rows) const
     {
         if (independent_keys < 2 || !independent_keys_from_statistics)
             return {};
-        const double combinations = std::max(std::min(left_rows, left_key_combinations), std::min(right_rows, right_key_combinations));
+        const auto model = QueryPlanOptimizations::getMultiColumnDistinctModel();
+        if (model == QueryPlanOptimizations::MultiColumnDistinctModel::Largest
+            || model == QueryPlanOptimizations::MultiColumnDistinctModel::PerTable)
+            return {};
+        if (model == QueryPlanOptimizations::MultiColumnDistinctModel::Postgres)
+        {
+            double product_selectivity = 1.0;
+            for (size_t key = 0; key < left_key_distinct_values.size(); ++key)
+                product_selectivity /= std::max(left_key_distinct_values[key], right_key_distinct_values[key]);
+            /// At least one row of the join.
+            return std::min(statistics_selectivity, std::max(product_selectivity, 1.0 / std::max(1.0, left_rows * right_rows)));
+        }
+        const bool keep_mean = model == QueryPlanOptimizations::MultiColumnDistinctModel::Default
+            || model == QueryPlanOptimizations::MultiColumnDistinctModel::GeometricMean;
+        const auto side_model = keep_mean ? QueryPlanOptimizations::MultiColumnDistinctModel::Product : model;
+        const double combinations = std::max(
+            QueryPlanOptimizations::estimateDistinctCombinations(left_key_distinct_values, left_rows, side_model),
+            QueryPlanOptimizations::estimateDistinctCombinations(right_key_distinct_values, right_rows, side_model));
         if (combinations < 1.0)
             return {};
         const double combinations_selectivity = std::min(statistics_selectivity, 1.0 / combinations);
+        if (!keep_mean)
+            return combinations_selectivity;
         return std::sqrt(statistics_selectivity * combinations_selectivity);
     }
 
