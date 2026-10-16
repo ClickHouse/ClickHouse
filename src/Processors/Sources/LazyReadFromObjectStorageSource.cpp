@@ -155,6 +155,7 @@ LazyReadFromObjectStorageSource::LazyReadFromObjectStorageSource(
     ReadFromFormatInfo info_,
     ContextPtr context_,
     size_t max_block_size_,
+    std::shared_ptr<const StorageLimitsList> storage_limits_,
     ObjectStorageLazyMaterializingRowsPtr lazy_materializing_rows_)
     : IProcessor({}, {std::move(header)})
     , storage_id(std::move(storage_id_))
@@ -165,6 +166,7 @@ LazyReadFromObjectStorageSource::LazyReadFromObjectStorageSource(
     , info(std::move(info_))
     , context(std::move(context_))
     , max_block_size(max_block_size_)
+    , storage_limits(std::move(storage_limits_))
     , lazy_materializing_rows(std::move(lazy_materializing_rows_))
 {
 }
@@ -256,6 +258,7 @@ IProcessor::PipelineUpdate LazyReadFromObjectStorageSource::updatePipeline()
         parser_shared_resources,
         format_filter_info,
         /*need_only_count_=*/ false);
+    source->setStorageLimits(storage_limits);
 
     auto & source_output = source->getOutputs().front();
     inputs.emplace_back(source_output.getHeader(), this);

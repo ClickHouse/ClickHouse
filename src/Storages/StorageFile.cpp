@@ -2677,7 +2677,8 @@ std::unique_ptr<LazilyReadFromFile> ReadFromFile::keepOnlyRequiredColumnsAndCrea
         storage,
         std::move(*lazy_info),
         getContext(),
-        max_block_size);
+        max_block_size,
+        query_info.storage_limits);
 
     return lazy_step;
 }
