@@ -99,6 +99,11 @@ def start_cluster():
         node.query("CREATE DATABASE metrics")
 
         node.query("CREATE TABLE metrics.ts_local ENGINE=TimeSeries")
+        # What the read tests read, so that each of them passes on its own.
+        node.query(
+            "INSERT INTO metrics.ts_local (metric_name, tags, samples) VALUES "
+            f"('local_metric', map('host', 'h0'), [(toDateTime64({START_TIME}, 3), 1)])"
+        )
         # Same outer schema, wrong engine, under the name the probe connection resolves.
         node.query(
             "CREATE TABLE default.ts_local AS metrics.ts_local ENGINE = MergeTree ORDER BY tuple()"
@@ -210,11 +215,11 @@ def test_remote_write_checks_the_table_the_sink_writes():
     """The engine of `default.ts_local` says nothing about this write: the local shard's rows go
     to `metrics.ts_local`, so that is the table the probe has to verify."""
     send_protobuf_to_remote_write(
-        node.ip_address, 9093, f"/local/write{CALLER}", one_sample("local_metric")
+        node.ip_address, 9093, f"/local/write{CALLER}", one_sample("written_metric")
     )
     assert_eq_with_retry(
         node,
-        "SELECT count() FROM timeSeriesTags(metrics.ts_local) WHERE metric_name = 'local_metric'",
+        "SELECT count() FROM timeSeriesTags(metrics.ts_local) WHERE metric_name = 'written_metric'",
         "1",
     )
     assert int(node.query("SELECT count() FROM default.ts_local")) == 0
