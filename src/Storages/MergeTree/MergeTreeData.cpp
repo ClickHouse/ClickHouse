@@ -8373,6 +8373,22 @@ MergeTreeData::getColumnDefaultnessStats(const String & column_name, ContextPtr 
     };
     auto mutations_snapshot = getMutationsSnapshot(params);
 
+    /// A finished mutation can also be removed from the history (see `finished_mutations_to_keep`)
+    /// before the snapshot is taken, and then its commands are missing for the captured unmutated parts.
+    /// A mutation is marked as done, and becomes removable, only after every active part has a data version
+    /// that is not lower than the mutation version. So if a captured part is still active after the snapshot,
+    /// it was active when the snapshot was taken, and the snapshot has all the commands that are not yet
+    /// applied to it. Otherwise the part was replaced in the meantime, and its column identity cannot be
+    /// established, so the optimization is declined.
+    for (const auto & part : parts)
+    {
+        if (part->getState() != DataPartState::Active)
+        {
+            LOG_DEBUG(log, "No defaultness stats for column {}: part {} is no longer active", column_name, part->name);
+            return std::nullopt;
+        }
+    }
+
     /// Two dotted column names overlap when they are equal, or when one is an ancestor of the other
     /// in the subcolumn hierarchy, e.g. a dropped `n` affects `n.a`.
     auto overlaps_requested_column = [&](std::string_view name)
