@@ -44,11 +44,13 @@ SELECT ULIDNumToString(toString(number)) FROM numbers(0);
 SELECT ULIDStringToNum(toFixedString(toString(number), 26)) FROM numbers(0);
 SELECT ULIDNumToString(toFixedString(toString(number), 16)) FROM numbers(0);
 
--- Invalid input in an unselected branch must not throw.
-SELECT hex(if(number = 0, ULIDStringToNum(repeat('0', 26)), ULIDStringToNum(if(number = 0, 'invalid', '00000000000000000000000001'))))
-FROM numbers(2) SETTINGS short_circuit_function_evaluation = 'force_enable';
-SELECT if(number = 0, ULIDNumToString(repeat(char(0), 16)), ULIDNumToString(if(number = 0, 'invalid', unhex('00000000000000000000000000000001'))))
-FROM numbers(2) SETTINGS short_circuit_function_evaluation = 'force_enable';
+-- Normal short-circuit evaluation must skip invalid input in an unselected branch.
+SELECT hex(if(id = 0, toFixedString('', 16), ULIDStringToNum(ulid)))
+FROM values('id UInt8, ulid String', (0, 'invalid'), (1, '00000000000000000000000001'))
+SETTINGS short_circuit_function_evaluation = 'enable';
+SELECT if(id = 0, toFixedString(repeat('0', 26), 26), ULIDNumToString(bytes))
+FROM values('id UInt8, bytes String', (0, 'invalid'), (1, unhex('00000000000000000000000000000001')))
+SETTINGS short_circuit_function_evaluation = 'enable';
 
 -- Reject malformed text before calling the decoder, for both string representations.
 SELECT ULIDStringToNum(''); -- { serverError BAD_ARGUMENTS }
