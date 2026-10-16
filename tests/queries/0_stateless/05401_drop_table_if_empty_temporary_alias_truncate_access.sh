@@ -19,6 +19,8 @@ ${CLICKHOUSE_CLIENT} --query "
     INSERT INTO t_full VALUES (1);
     CREATE USER ${user} IDENTIFIED WITH no_password;
     GRANT CREATE ARBITRARY TEMPORARY TABLE ON *.* TO ${user};
+    -- Needed when the server requires a grant for table engines (table_engines_require_grant).
+    GRANT TABLE ENGINE ON Alias TO ${user};
     GRANT SHOW COLUMNS ON ${db}.t_full TO ${user};
     GRANT SHOW COLUMNS ON ${db}.t_empty TO ${user};
 "
