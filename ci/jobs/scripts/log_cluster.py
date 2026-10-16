@@ -385,13 +385,12 @@ class LogCluster:
         reason = f"exception {code}, {reason}"
         return (LogClusterUnavailable if transient else LogClusterQueryError)(reason)
 
-    def _probe_load_rejection(self):
-        """`LogClusterUnavailable` if the server rejected the last probe for its own load, else None."""
+    def _probe_verdict(self):
+        """`_classify` of the last failed probe's answer, or None if the server did not produce it."""
         answer = self._probe_answer
         if answer is None or self.EXCEPTION_CODE_HEADER not in answer.headers:
             return None
-        error = self._classify(answer)
-        return error if isinstance(error, LogClusterUnavailable) else None
+        return self._classify(answer)
 
     def _read_budget_spent(self):
         return self._read_deadline is not None and time.monotonic() >= self._read_deadline
@@ -424,6 +423,7 @@ class LogCluster:
         response = None
         probe_load = None
         probe_hard = False
+        probe_rejected = None
         post_attempted = False
         budget_spent = False
         for retry in range(retries):
@@ -453,11 +453,13 @@ class LogCluster:
                 traceback.print_exc()
                 ready = False
             if not ready:
-                load = self._probe_load_rejection()
-                if load is None:
-                    probe_hard = True
+                verdict = self._probe_verdict()
+                if isinstance(verdict, LogClusterUnavailable):
+                    probe_load = verdict
                 else:
-                    probe_load = load
+                    probe_hard = True
+                    if verdict is not None:
+                        probe_rejected = verdict
                 print("WARNING: LogCluster not ready")
                 time.sleep(5 * (retry + 1))
                 continue
@@ -491,6 +493,10 @@ class LogCluster:
                 print("WARNING: LogCluster select failed with exception")
                 traceback.print_exc()
                 time.sleep(5 * (retry + 1))
+        if post_attempted and probe_rejected is not None:
+            # A read saw only an outage, but the server rejected a probe for
+            # something other than its own load: that verdict decides.
+            raise probe_rejected
         if response is not None:
             print(
                 f"ERROR: Failed to select from LogCluster, query:\n {query}\n    reason:\n {response.text}"
