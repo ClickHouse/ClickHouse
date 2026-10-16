@@ -1,7 +1,0 @@
-<clickhouse>
-    <!-- The correction resets the global memory tracker to RSS, which does not yet include memory that was
-         allocated but not touched. That lets concurrent queries allocate more than `max_server_memory_usage`,
-         and the container is killed by the OOM killer before the server limit is reached. The test checks
-         that the server limit is enforced by the tracker alone. -->
-    <memory_worker_correct_memory_tracker>0</memory_worker_correct_memory_tracker>
-</clickhouse>
