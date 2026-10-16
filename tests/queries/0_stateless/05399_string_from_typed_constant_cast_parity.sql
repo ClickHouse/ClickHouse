@@ -26,3 +26,17 @@ INSERT INTO t_05399 VALUES (3, CAST('{"d":"2020-01-01"}', 'JSON'));
 SELECT n, s, s = CAST(CAST('{"d":"2020-01-01"}', 'JSON'), 'String') FROM t_05399 WHERE n != 2 ORDER BY n;
 SELECT n, s FROM t_05399 WHERE n = 2;
 DROP TABLE t_05399;
+
+-- With `input_format_null_as_default`, a `NULL` member replaced with the default does not make the
+-- other members lose their source types.
+DROP TABLE IF EXISTS t_05399_defaults;
+CREATE TABLE t_05399_defaults (n UInt8, v Tuple(String, UInt8), a Array(String), m Map(String, UInt8)) ENGINE = Memory;
+SET input_format_null_as_default = 1;
+SET input_format_values_deduce_templates_of_expressions = 0;
+INSERT INTO t_05399_defaults VALUES (1, (CAST('{"d":"2020-01-01"}', 'JSON'), NULL), [], {});
+INSERT INTO t_05399_defaults VALUES (2, ('x', 1), CAST([toDate('2020-01-01'), NULL], 'Array(Dynamic)'), {});
+INSERT INTO t_05399_defaults VALUES (3, ('x', 1), [], map(CAST(toDate('2020-01-01'), 'Dynamic'), NULL));
+SET input_format_values_deduce_templates_of_expressions = 1;
+INSERT INTO t_05399_defaults VALUES (4, (CAST('{"d":"2020-01-01"}', 'JSON'), NULL), [], {});
+SELECT * FROM t_05399_defaults ORDER BY n;
+DROP TABLE t_05399_defaults;
