@@ -5,11 +5,14 @@
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Functions/GatherUtils/Sources.h>
+#include <Functions/GatherUtils/CheckedSliceArgument.h>
 #include <Functions/GatherUtils/Sinks.h>
 #include <Core/AccurateComparison.h>
 #include <Functions/GatherUtils/GatherUtils.h>
 #include <Functions/GatherUtils/sliceEqualElements.h>
 #include <Functions/GatherUtils/sliceHasImplAnyAll.h>
+
+#include <optional>
 
 
 namespace DB::ErrorCodes
@@ -326,11 +329,15 @@ void NO_INLINE sliceDynamicOffsetUnbounded(Source && src, Sink && sink, const IC
     const ColumnUInt8::Container * null_map = nullable ? &nullable->getNullMapData() : nullptr;
     const IColumn * nested_column = nullable ? &nullable->getNestedColumn() : &offset_column;
 
+    std::optional<CheckedSliceArgument> offset_reader;
+    if (!is_null)
+        offset_reader.emplace(*nested_column, "offset");
+
     while (!src.isEnd())
     {
         auto row_num = src.rowNum();
         bool has_offset = !is_null && !(null_map && (*null_map)[row_num]);
-        Int64 offset = has_offset ? nested_column->getInt(row_num) : 1;
+        Int64 offset = has_offset ? offset_reader->get(row_num) : 1;
 
         if (offset != 0)
         {
@@ -375,13 +382,20 @@ static void sliceDynamicOffsetBoundedImpl(Source && src, Sink && sink, const ICo
         length_nested_column = length_nullable ? &length_nullable->getNestedColumn() : length_column;
     }
 
+    std::optional<CheckedSliceArgument> offset_reader;
+    std::optional<CheckedSliceArgument> length_reader;
+    if (!is_offset_null)
+        offset_reader.emplace(*offset_nested_column, "offset");
+    if (!is_length_null)
+        length_reader.emplace(*length_nested_column, "length");
+
     while (!src.isEnd())
     {
         size_t row_num = src.rowNum();
         bool has_offset = !is_offset_null && !(offset_null_map && (*offset_null_map)[row_num]);
         bool has_length = !is_length_null && !(length_null_map && (*length_null_map)[row_num]);
-        Int64 offset = has_offset ? offset_nested_column->getInt(row_num) : 1;
-        Int64 size = has_length ? length_nested_column->getInt(row_num) : static_cast<Int64>(src.getElementSize());
+        Int64 offset = has_offset ? offset_reader->get(row_num) : 1;
+        Int64 size = has_length ? length_reader->get(row_num) : static_cast<Int64>(src.getElementSize());
 
         if (size < 0)
         {

@@ -12,7 +12,7 @@ Returns a substring of string `s` with a specified `offset` starting from the le
     FunctionDocumentation::Syntax syntax = "left(s, offset)";
     FunctionDocumentation::Arguments arguments = {
         {"s", "The string to calculate a substring from.", {"String", "FixedString"}},
-        {"offset", "The number of bytes of the offset.", {"(U)Int*"}}
+        {"offset", "The number of bytes of the offset. UInt64 values above Int64::max() are rejected.", {"(U)Int*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {R"(
 Returns:
@@ -36,7 +36,7 @@ Returns a substring of a UTF-8-encoded string `s` with a specified `offset` star
     FunctionDocumentation::Syntax syntax_utf8 = "leftUTF8(s, offset)";
     FunctionDocumentation::Arguments arguments_utf8 = {
         {"s", "The UTF-8 encoded string to calculate a substring from.", {"String", "FixedString"}},
-        {"offset", "The number of bytes of the offset.", {"(U)Int*"}}
+        {"offset", "The number of bytes of the offset. UInt64 values above Int64::max() are rejected.", {"(U)Int*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_utf8 = {R"(
 Returns:
