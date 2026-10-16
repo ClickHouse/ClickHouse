@@ -410,6 +410,11 @@ size_t IQueryTreeNode::FormatState::getNodeId(const IQueryTreeNode * node)
     return it->second;
 }
 
+bool IQueryTreeNode::FormatState::enterSharedMaterializedCTEBody(const IQueryTreeNode * body)
+{
+    return entered_shared_bodies.insert(body).second;
+}
+
 void IQueryTreeNode::dumpTree(WriteBuffer & buffer) const
 {
     FormatState state;

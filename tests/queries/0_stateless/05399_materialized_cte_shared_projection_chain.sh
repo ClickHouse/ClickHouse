@@ -5,11 +5,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 query="WITH prometheus_query_step_1 AS MATERIALIZED (SELECT 1 AS x, 2 AS y)"
-for i in $(seq 2 22); do
+for i in $(seq 2 28); do
     prev=$((i - 1))
     query+=", prometheus_query_step_${i} AS MATERIALIZED (SELECT l.x AS x, r.y AS y FROM prometheus_query_step_${prev} AS l INNER JOIN prometheus_query_step_${prev} AS r ON l.x = r.x)"
 done
-query+=" SELECT x, y FROM prometheus_query_step_22"
+query+=" SELECT x, y FROM prometheus_query_step_28"
 
 ${CLICKHOUSE_CLIENT} --enable_analyzer 1 --enable_materialized_cte 1 --query "${query}"
 
@@ -22,4 +22,9 @@ SELECT p.x, q.y
 FROM prometheus_query_step_1 AS p
 CROSS JOIN prometheus_query_step_1 AS q"
 
-${CLICKHOUSE_CLIENT} --enable_analyzer 1 --enable_materialized_cte 1 --max_execution_time 30 --query "${query} WHERE x = (SELECT max(x) FROM prometheus_query_step_22)"
+${CLICKHOUSE_CLIENT} --enable_analyzer 1 --enable_materialized_cte 1 --max_execution_time 30 --query "${query} WHERE x = (SELECT max(x) FROM prometheus_query_step_28)"
+
+${CLICKHOUSE_CLIENT} --enable_analyzer 1 --enable_materialized_cte 1 --convert_query_to_cnf 1 --query "${query} WHERE x IN (SELECT x FROM prometheus_query_step_28)"
+
+explain_tree_lines=$(${CLICKHOUSE_CLIENT} --enable_analyzer 1 --enable_materialized_cte 1 --query "EXPLAIN QUERY TREE ${query}" | wc -l)
+${CLICKHOUSE_CLIENT} --query "SELECT ${explain_tree_lines} < 2000"
