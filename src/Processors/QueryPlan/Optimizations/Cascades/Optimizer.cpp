@@ -134,6 +134,7 @@ CascadesOptimizer::CascadesOptimizer(QueryPlan & query_plan_, const QueryPlanOpt
     if (memo.getContext().cascades_aggregation_pushdown)
         addRule(createAggregationPushdown());
     addRule(createAggregationImplementation());
+    addRule(createDistinctImplementation());
     addRule(createLocalReadImplementation());
     addRule(createParallelReadImplementation());
     addRule(createReplicatedReadImplementation());
