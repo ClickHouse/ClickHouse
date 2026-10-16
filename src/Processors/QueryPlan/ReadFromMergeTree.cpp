@@ -5618,6 +5618,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
 
     /// Use a callback to isolate MergeTreeReader from JoinRuntimeFilter
     MergeTreeSkipIndexReader::DynamicPredicateBuilder dynamic_predicate_builder;
+    MergeTreeSkipIndexReader::DynamicPredicatePendingCounter dynamic_predicate_pending_counter;
     MergeTreeSkipIndexReader::DynamicSkipIndexFilter dynamic_skip_index_filter;
     if (runtime_filter_lookup && !runtime_filters_for_data_read.empty())
     {
@@ -5627,6 +5628,8 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
             {
                 return buildRuntimeRangePredicate(*lookup, descriptors, dag, ctx);
             };
+        dynamic_predicate_pending_counter = [lookup = runtime_filter_lookup, descriptors = runtime_filters_for_data_read]
+            { return countPendingRuntimeFilters(*lookup, descriptors); };
 
         const UInt64 bloom_filter_in_cap = context->getSettingsRef()[Setting::join_runtime_filter_exact_values_limit] / 100;
         dynamic_skip_index_filter =
@@ -5672,6 +5675,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
                 context->getVectorSimilarityIndexCache(),
                 reader_settings,
                 dynamic_predicate_builder,
+                dynamic_predicate_pending_counter,
                 runtime_prune_primary_key,
                 runtime_skip_indexes,
                 dynamic_skip_index_filter,
@@ -5693,6 +5697,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
             context->getVectorSimilarityIndexCache(),
             reader_settings,
             dynamic_predicate_builder,
+            dynamic_predicate_pending_counter,
             runtime_prune_primary_key,
             runtime_skip_indexes,
             dynamic_skip_index_filter,
@@ -5712,6 +5717,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
             context->getVectorSimilarityIndexCache(),
             reader_settings,
             MergeTreeSkipIndexReader::DynamicPredicateBuilder{},
+            MergeTreeSkipIndexReader::DynamicPredicatePendingCounter{},
             /*prune_primary_key=*/false,
             MergeTreeIndices{},
             MergeTreeSkipIndexReader::DynamicSkipIndexFilter{},

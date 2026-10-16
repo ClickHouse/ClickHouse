@@ -475,4 +475,9 @@ const ActionsDAG::Node * buildRuntimeRangePredicate(
     ActionsDAG & dag,
     const ContextPtr & context);
 
+/// The number of descriptors whose filter is not registered or not ready yet. `buildRuntimeRangePredicate`
+/// leaves them out, and a later call can include them.
+size_t countPendingRuntimeFilters(
+    const IRuntimeFilterLookup & lookup, const std::vector<RuntimeFilterIndexAnalysisDescriptor> & descriptors);
+
 }

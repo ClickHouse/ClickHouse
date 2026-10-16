@@ -9,7 +9,9 @@
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 #include <Storages/MergeTree/KeyCondition.h>
 
+#include <atomic>
 #include <functional>
+#include <mutex>
 #include <roaring/roaring.hh>
 
 namespace DB
@@ -19,6 +21,38 @@ class IMergeTreeDataPart;
 using DataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 
 struct SkipIndexReadInput;
+
+/// Granule pruning by the JOIN runtime filters that were not ready when the index result of a part was built.
+/// A granule only changes from kept to dropped, so a reader that sees a stale flag reads the granule, which is
+/// correct, only slower.
+struct LateRuntimeFilterPruning
+{
+    LateRuntimeFilterPruning(
+        MergeTreeDataPartInfoForReaderPtr part_info_,
+        MarkRanges ranges_,
+        RangesInDataPartReadHints read_hints_,
+        size_t part_starting_offset_in_query_,
+        StorageMetadataPtr metadata_snapshot_,
+        NameSet all_updated_columns_,
+        size_t num_marks,
+        size_t num_pending_);
+
+    bool isDropped(size_t mark) const { return dropped[mark].load(std::memory_order_relaxed); }
+
+    /// The part and the granules left by the indexes and the filters that were ready.
+    const MergeTreeDataPartInfoForReaderPtr part_info;
+    const MarkRanges ranges;
+    const RangesInDataPartReadHints read_hints;
+    const size_t part_starting_offset_in_query;
+    const StorageMetadataPtr metadata_snapshot;
+    const NameSet all_updated_columns;
+
+    std::unique_ptr<std::atomic<bool>[]> dropped;
+    /// The number of filters that were not ready at the last pruning.
+    std::atomic<size_t> num_pending;
+    /// Held by the one task that prunes again.
+    std::mutex mutex;
+};
 
 struct SkipIndexReadResult
 {
@@ -40,6 +74,8 @@ struct SkipIndexReadResult
     bool may_skip_granules_besides_top_k_primary_key = true;
     /// Pre-computed index granules for indexes created for the whole part.
     IndexGranulesMap index_granules;
+    /// Set when some JOIN runtime filters were not ready when this result was built.
+    std::shared_ptr<LateRuntimeFilterPruning> late_runtime_filters;
 };
 
 using SkipIndexReadResultPtr = std::shared_ptr<SkipIndexReadResult>;
@@ -49,6 +85,9 @@ class MergeTreeSkipIndexReader
 public:
     /// Builds a predicate into the DAG to prune granules at read time, or nullptr for none.
     using DynamicPredicateBuilder = std::function<const ActionsDAG::Node *(ActionsDAG &)>;
+
+    /// The number of filters of the predicate that are not ready yet and so are left out of it.
+    using DynamicPredicatePendingCounter = std::function<size_t()>;
 
     /// Whether a dynamic skip index should be applied at read time.
     using DynamicSkipIndexFilter = std::function<bool(const IMergeTreeIndex &)>;
@@ -62,6 +101,7 @@ public:
         VectorSimilarityIndexCachePtr vector_similarity_index_cache_,
         MergeTreeReaderSettings reader_settings_,
         DynamicPredicateBuilder dynamic_predicate_builder_,
+        DynamicPredicatePendingCounter dynamic_predicate_pending_counter_,
         bool prune_primary_key_,
         MergeTreeIndices dynamic_skip_indexes_,
         DynamicSkipIndexFilter dynamic_skip_index_filter_,
@@ -74,9 +114,13 @@ public:
         const StorageMetadataPtr & metadata_snapshot,
         const NameSet & all_updated_columns);
 
-    /// Whether `read` prunes by JOIN runtime filters. It snapshots them once per part, fail-open,
-    /// so its result must not be built before the build side has published the filters.
+    /// Whether `read` prunes by JOIN runtime filters. It prunes with the filters that are ready, fail-open;
+    /// `pruneByLateRuntimeFilters` prunes the result again with the filters that became ready later.
     bool hasRuntimeFilters() const;
+
+    /// Prunes the granules of `result` with the JOIN runtime filters that became ready since it was built or last
+    /// pruned. Does nothing if there are none, or if another thread is already doing it.
+    void pruneByLateRuntimeFilters(const SkipIndexReadResult & result) const;
 
     /// Lets `canSkipMark` skip granules by the primary key against a top-K threshold that becomes known
     /// while reading (see `TopKThresholdTracker`): the threshold column is the primary key column at
@@ -94,7 +138,18 @@ private:
     VectorSimilarityIndexCachePtr vector_similarity_index_cache;
     MergeTreeReaderSettings reader_settings;
 
+    /// Prunes `ranges` with the dynamic predicate; `num_pending` is the number of its filters that were not ready.
+    MarkRanges pruneByDynamicPredicate(
+        const MergeTreeDataPartInfoForReaderPtr & part_info,
+        MarkRanges ranges,
+        const RangesInDataPartReadHints & read_hints,
+        size_t part_starting_offset_in_query,
+        const StorageMetadataPtr & metadata_snapshot,
+        const NameSet & all_updated_columns,
+        size_t & num_pending) const;
+
     DynamicPredicateBuilder dynamic_predicate_builder;
+    DynamicPredicatePendingCounter dynamic_predicate_pending_counter;
     bool prune_primary_key = false;
     MergeTreeIndices dynamic_skip_indexes;
     DynamicSkipIndexFilter dynamic_skip_index_filter;
@@ -271,6 +326,9 @@ public:
         const RangesInDataParts & projection_parts,
         const StorageMetadataPtr & metadata_snapshot,
         const NameSet & all_updated_columns);
+
+    /// Prunes a result of `getOrBuildIndexReadResult` again with the JOIN runtime filters that became ready later.
+    void pruneByLateRuntimeFilters(const MergeTreeIndexReadResult & result) const;
 
     /// Cleans up the cached MergeTreeIndexReadResult for a given part if it exists.
     /// Should be called when the last task for the part has finished.
