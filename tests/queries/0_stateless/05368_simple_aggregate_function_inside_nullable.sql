@@ -1,3 +1,4 @@
+-- Tags: no-fasttest
 -- SimpleAggregateFunction cannot be inside Nullable or LowCardinality, like AggregateFunction:
 -- merges apply the function only to a column whose outermost type is SimpleAggregateFunction.
 
@@ -29,5 +30,14 @@ SELECT (SELECT max(m) FROM t) AS x, toTypeName(x);
 SELECT (SELECT max(i.m) FROM t AS i WHERE i.k = o.k) AS x, toTypeName(x) FROM t AS o;
 SELECT (SELECT n FROM t) AS x, toTypeName(x), (SELECT i.n FROM t AS i WHERE i.k = o.k) AS y, toTypeName(y) FROM t AS o;
 SELECT sumSimpleStateIf(toNullable(number), number > 0) AS x, toTypeName(x), hex(sumSimpleStateIfState(toNullable(number), number > 0)) FROM numbers(3);
+SELECT sumSimpleStateIf(if(number < 5, NULL, toNullable(number)), number > 0) AS x, toTypeName(x), hex(sumSimpleStateIfState(if(number < 5, NULL, toNullable(number)), number > 0)) FROM numbers(3);
+SELECT argMax(m, toNullable(k)) AS x, toTypeName(x), argMax(m, if(k > 5, toNullable(k), NULL)) AS y, toTypeName(y) FROM t;
+SELECT (SELECT CAST(1, 'SimpleAggregateFunction(max, SimpleAggregateFunction(sum, UInt64))')) AS x, toTypeName(x);
+CREATE TABLE d AS t ENGINE = Distributed(test_cluster_two_shards_localhost, currentDatabase(), t, m);
+SELECT count() FROM d WHERE m = 40 SETTINGS optimize_skip_unused_shards = 1;
 SELECT nullIf(m, 0) FROM t; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT r.m FROM (SELECT 2 AS k) AS l LEFT JOIN t AS r ON l.k = r.k SETTINGS join_use_nulls = 1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+INSERT INTO FUNCTION file(currentDatabase() || '_05368.orc', 'ORC', 'a Nullable(Int128)') SELECT toInt128(number) FROM numbers(2) UNION ALL SELECT NULL SETTINGS engine_file_truncate_on_insert = 1;
+SELECT max(a), toTypeName(any(a)) FROM file(currentDatabase() || '_05368.orc', 'ORC', 'a SimpleAggregateFunction(max, Int128)') SETTINGS input_format_null_as_default = 1;
+INSERT INTO FUNCTION file(currentDatabase() || '_05368.arrow', 'Arrow', 'a Nullable(Int128)') SELECT toInt128(number) FROM numbers(2) UNION ALL SELECT NULL SETTINGS engine_file_truncate_on_insert = 1;
+SELECT max(a), toTypeName(any(a)) FROM file(currentDatabase() || '_05368.arrow', 'Arrow', 'a SimpleAggregateFunction(max, Int128)') SETTINGS input_format_null_as_default = 1;

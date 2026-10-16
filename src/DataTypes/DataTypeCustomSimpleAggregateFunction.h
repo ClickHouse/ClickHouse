@@ -50,8 +50,8 @@ public:
 
 DataTypePtr createSimpleAggregateFunctionType(const AggregateFunctionPtr & function, const DataTypes & argument_types, const Array & parameters);
 
-/// `SimpleAggregateFunction(f, T)` -> `T`, built the way the type's own storage is; any other type is returned unchanged.
-/// For steps that wrap a value in `Nullable`, which a `SimpleAggregateFunction` refuses.
+/// `SimpleAggregateFunction(f, T)` -> `T`, nested layers too, built the way the type's own storage is; any other type
+/// is returned unchanged. For steps that wrap a value in `Nullable`, which a `SimpleAggregateFunction` refuses.
 DataTypePtr removeSimpleAggregateFunction(const DataTypePtr & type);
 
 }

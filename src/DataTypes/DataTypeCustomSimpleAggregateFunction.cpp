@@ -204,9 +204,10 @@ DataTypePtr createSimpleAggregateFunctionType(const AggregateFunctionPtr & funct
 
 DataTypePtr removeSimpleAggregateFunction(const DataTypePtr & type)
 {
-    if (const auto * simple = typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(type->getCustomName()))
-        return DataTypeFactory::instance().get(simple->getArgumentsDataTypes()[0]->getName());
-    return type;
+    DataTypePtr result = type;
+    while (const auto * simple = typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(result->getCustomName()))
+        result = DataTypeFactory::instance().get(simple->getArgumentsDataTypes()[0]->getName());
+    return result;
 }
 
 void registerDataTypeDomainSimpleAggregateFunction(DataTypeFactory & factory)
