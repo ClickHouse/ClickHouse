@@ -317,11 +317,15 @@ public:
         /// constant, and functions that opt out of the default LowCardinality implementation (e.g. `arrayReduce`,
         /// `joinGet`, `tupleElement`) expect their constant string arguments as `Const(String)`, so keep plain
         /// `String` then.
+        /// Whether all branches are identical constants is checked last, once the branches are known to be
+        /// (possibly nullable) strings or NULLs: materializing other constants, e.g. large arrays, as `Field`
+        /// is expensive and may even throw.
         if (optimize_if_transform_const_strings_to_lowcardinality && const_branches_count == num_branches
-            && !is_selected_branch_decided_by_constants() && !are_all_branches_identical_constants())
+            && !is_selected_branch_decided_by_constants())
         {
+            DataTypePtr low_cardinality_type;
             if (string_branches_count == num_branches)
-                return std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+                low_cardinality_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
             /// A mix of (possibly nullable) string branches and only-NULL branches.
             /// Require at least one constant branch whose value is a non-NULL string: a mix of only-NULL
             /// branches without any string (e.g. `CASE WHEN ... THEN NULL ... END`) must keep its
@@ -331,7 +335,10 @@ public:
             else if (
                 non_null_string_value_branches_count > 0
                 && (only_null_branches_count + string_branches_count + nullable_string_branches_count) == num_branches)
-                return std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()));
+                low_cardinality_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()));
+
+            if (low_cardinality_type && !are_all_branches_identical_constants())
+                return low_cardinality_type;
         }
 
         if (signature_result_type)

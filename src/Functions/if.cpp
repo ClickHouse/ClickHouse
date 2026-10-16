@@ -1421,14 +1421,18 @@ public:
             || arguments[0].type->onlyNull();
         auto const are_branches_constant = arguments[1].column && arguments[2].column
             && isColumnConst(*arguments[1].column) && isColumnConst(*arguments[2].column);
-        auto const are_branches_identical = are_branches_constant && arguments[1].type->equals(*arguments[2].type)
-            && (*arguments[1].column)[0] == (*arguments[2].column)[0];
-        if (!is_condition_constant && !are_branches_identical && are_branches_constant)
+        if (is_condition_constant || !are_branches_constant)
+            return nullptr;
+
+        DataTypePtr result_type;
+        auto const is_string1 = isString(arguments[1].type);
+        auto const is_string2 = isString(arguments[2].type);
+        if (is_string1 && is_string2)
         {
-            auto const is_string1 = isString(arguments[1].type);
-            auto const is_string2 = isString(arguments[2].type);
-            if (is_string1 && is_string2)
-                return std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+            result_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+        }
+        else
+        {
             // Still, might be a mix of (possibly nullable) strings and NULLs, e.g. `if(cond, 'a', NULL)`
             // or `if(cond, CAST('a' AS Nullable(String)), CAST('b' AS Nullable(String)))`.
             // Require at least one constant branch whose value is a non-NULL string: `if(cond, NULL, NULL)`
@@ -1444,10 +1448,20 @@ public:
             auto const has_string_value1 = is_string1 || (is_nullable_string1 && !arguments[1].column->isNullAt(0));
             auto const has_string_value2 = is_string2 || (is_nullable_string2 && !arguments[2].column->isNullAt(0));
             if ((is_string_like1 || is_null1) && (is_string_like2 || is_null2) && (has_string_value1 || has_string_value2))
-                return std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()));
+                result_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()));
         }
 
-        return nullptr;
+        if (!result_type)
+            return nullptr;
+
+        /// Only compare the values once both branches are known to be (possibly nullable) strings or NULLs:
+        /// materializing other constants, e.g. large arrays, as `Field` is expensive and may even throw.
+        auto const are_branches_identical = arguments[1].type->equals(*arguments[2].type)
+            && (*arguments[1].column)[0] == (*arguments[2].column)[0];
+        if (are_branches_identical)
+            return nullptr;
+
+        return result_type;
     }
 
     /// The declarative signature cannot express `allow_lossy_numeric_supertype` (the `leastSupertype`
@@ -1457,20 +1471,25 @@ public:
     /// the constness of the arguments.
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (auto low_cardinality_type = tryGetLowCardinalityReturnType(arguments))
+        /// Validate the arguments in the same way regardless of the `LowCardinality` optimization.
+        DataTypePtr common_type;
+        if (!allow_lossy_numeric_supertype)
         {
-            checkConditionArgType(arguments[0].type);
-            return low_cardinality_type;
+            common_type = FunctionIfBase::getReturnTypeImpl(arguments);
+        }
+        else
+        {
+            DataTypes types;
+            types.reserve(arguments.size());
+            for (const auto & arg : arguments)
+                types.push_back(arg.type);
+            common_type = getReturnTypeImpl(types);
         }
 
-        if (!allow_lossy_numeric_supertype)
-            return FunctionIfBase::getReturnTypeImpl(arguments);
+        if (auto low_cardinality_type = tryGetLowCardinalityReturnType(arguments))
+            return low_cardinality_type;
 
-        DataTypes types;
-        types.reserve(arguments.size());
-        for (const auto & arg : arguments)
-            types.push_back(arg.type);
-        return getReturnTypeImpl(types);
+        return common_type;
     }
 
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
