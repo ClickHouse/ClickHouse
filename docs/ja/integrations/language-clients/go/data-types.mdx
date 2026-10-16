@@ -7,9 +7,7 @@ title: 'データ型'
 doc_type: 'reference'
 ---
 
-<div id="type-conversions">
-  ## 型変換
-</div>
+## 型変換 {#type-conversions}
 
 このクライアントは、挿入時とレスポンスのマーシャリング時の両方で、できるだけ柔軟にさまざまな変数型を受け入れられるよう設計されています。ほとんどの場合、ClickHouse のカラム型には対応する Golang の型が存在します。たとえば、[UInt64](/ja/reference/data-types/int-uint) には [uint64](https://pkg.go.dev/builtin#uint64) が対応します。こうした論理的な対応関係は常にサポートされるべきです。また、変数や受信データを事前に変換できるのであれば、カラムに挿入できる型やレスポンスの受け取りに使える型として、別の変数型を利用したい場合もあるでしょう。クライアントは、ユーザーが挿入前にデータ型を厳密に合わせるための変換を行わなくて済むようにし、さらにクエリ時の柔軟なマーシャリングを実現するため、これらの変換を透過的にサポートすることを目指しています。ただし、この透過的な変換では精度の損失は許容されません。たとえば、UInt64 カラムのデータを受け取る型として uint32 を使うことはできません。一方、datetime64 フィールドには、フォーマット要件を満たしていれば string を挿入できます。
 
@@ -19,13 +17,9 @@ doc_type: 'reference'
 
 標準の `database/sql` インターフェイスでは、ClickHouse API と同じ型がサポートされるはずです。いくつか例外はありますが、主に複雑な型に関するもので、以下のセクションで説明しています。ClickHouse API と同様に、このクライアントは、挿入時とレスポンスのマーシャリング時の両方で、できるだけ柔軟にさまざまな変数型を受け入れられるよう設計されています。
 
-<div id="complex-types">
-  ## 複合型
-</div>
+## 複合型 {#complex-types}
 
-<div id="datedatetime">
-  ### Date/DateTime
-</div>
+### Date/DateTime {#datedatetime}
 
 ClickHouse の Go クライアントは、`Date`、`Date32`、`DateTime`、`DateTime64` の日付/日時型をサポートしています。日付は、`2006-01-02` フォーマットの文字列、または Go ネイティブの `time.Time{}` や `sql.NullTime` を使って挿入できます。DateTime でも同様にこれらの型をサポートしていますが、文字列を渡す場合は `2006-01-02 15:04:05` フォーマットを使用し、必要に応じてタイムゾーンオフセット (例: `2006-01-02 15:04:05 +08:00`) を付ける必要があります。読み取り時も `time.Time{}` と `sql.NullTime` の両方がサポートされており、`sql.Scanner` インターフェイスを実装した任意の型も利用できます。
 
@@ -38,9 +32,7 @@ ClickHouse の Go クライアントは、`Date`、`Date32`、`DateTime`、`Date
   * **insert** 時には、日付を unix timestamp に変換する際に、その日付のタイムゾーンが考慮されます。つまり、Date 型は ClickHouse ではロケールを持たないため、日付として保存される前にタイムゾーン分のオフセットが適用されます。文字列の値でこれが指定されていない場合は、ローカルタイムゾーンが使用されます。
   * **select** 時には、`time.Time{}` または `sql.NullTime{}` のインスタンスにスキャンされた日付は、タイムゾーン情報なしで返されます。
 
-<div id="timetime64-types">
-  ### Time/Time64 型
-</div>
+### Time/Time64 型 {#timetime64-types}
 
 `Time` と `Time64` のカラム型は、日付部分を含まない時刻の値を格納します。どちらも Go の `time.Duration` にマッピングされます。
 
@@ -80,9 +72,7 @@ if err = conn.QueryRow(ctx, "SELECT * FROM example").Scan(&col1, &col2); err != 
 fmt.Printf("col1=%v, col2=%v\n", col1, col2)
 ```
 
-<div id="array">
-  ### Array
-</div>
+### Array {#array}
 
 Array はスライスとして挿入する必要があります。要素の型規則は [プリミティブ型](#type-conversions) の場合と同様で、可能であれば要素は変換されます。
 
@@ -133,9 +123,7 @@ rows.Close()
 
 [完全なサンプル](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/array.go)
 
-<div id="map">
-  ### Map
-</div>
+### Map {#map}
 
 Map は、[前述](#type-conversions)の型ルールに従ったキーと値を持つ Golang の map 型として挿入する必要があります。
 
@@ -191,9 +179,7 @@ rows.Close()
   [完全な例](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/map.go)
 </Note>
 
-<div id="tuples">
-  ### タプル
-</div>
+### タプル {#tuples}
 
 タプルは、任意の数のカラムをまとめたものです。カラムには明示的に名前を付けることも、型だけを指定することもできます。例えば
 
@@ -254,11 +240,9 @@ fmt.Printf("row: col1=%v, col2=%v, col3=%v\n", col1, col2, col3)
 
 注: 型付きのスライスとマップがサポートされています。ただし、named tuple 内のサブカラムはすべて同じ型である必要があります。
 
-<div id="nested">
-  ### Nested
-</div>
+### Nested {#nested}
 
-Nested フィールドは、名前付き タプル の Array に相当します。使い方は、ユーザーが [flatten&#95;nested](/ja/reference/settings/session-settings/other#flatten_nested) を 1 に設定しているか 0 に設定しているかによって異なります。
+Nested フィールドは、名前付き タプル の Array に相当します。使い方は、ユーザーが [flatten&#95;nested](/ja/reference/settings/session-settings#flatten_nested) を 1 に設定しているか 0 に設定しているかによって異なります。
 
 flatten&#95;nested を 0 に設定すると、Nested カラムは単一の タプル の Array のまま保持されます。これにより、挿入や取得に map のスライスを使用できるほか、任意のレベルでネストできます。以下の例に示すように、map のキーはカラム名と一致している必要があります。
 
@@ -357,7 +341,7 @@ for rows.Next() {
     }
     fmt.Printf("row: col1=%v, col2=%v\n", col1, col2)
 }
-// NOTE: Do not skip rows.Err() check
+// 注意: rows.Err() のチェックを省略しないこと
 if err := rows.Err(); err != nil {
     return err
 }
@@ -438,9 +422,7 @@ if err := batch.Send(); err != nil {
 
 インターフェイスがよりシンプルで、ネストも公式にサポートされているため、`flatten_nested=0` を推奨します。
 
-<div id="geo-types">
-  ### Geo 型
-</div>
+### Geo 型 {#geo-types}
 
 クライアントは、Point、Ring、LineString、Polygon、MultiPolygon、MultiLineString の各 Geo 型をサポートしています。これらの型は、Go では [github.com/paulmach/orb](https://github.com/paulmach/orb) パッケージで表現されます。
 
@@ -543,9 +525,7 @@ fmt.Printf("point=%v, ring=%v, lineString=%v, polygon=%v, mPolygon=%v, mLineStri
 
 [完全なサンプル](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/geo.go)
 
-<div id="uuid">
-  ### UUID
-</div>
+### UUID {#uuid}
 
 UUID 型は [github.com/google/uuid](https://github.com/google/uuid) パッケージでサポートされています。UUID は文字列として送信およびマーシャリングできるほか、`sql.Scanner` または `Stringify` を実装した任意の型として扱うこともできます。
 
@@ -590,9 +570,7 @@ if err = conn.QueryRow(ctx, "SELECT * FROM example").Scan(&col1, &col2); err != 
 
 [完全な例](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/uuid.go)
 
-<div id="decimal">
-  ### Decimal
-</div>
+### Decimal {#decimal}
 
 Go には組み込みの Decimal 型がないため、元のクエリを変更せずに Decimal 型をネイティブに扱うには、サードパーティ製パッケージ [github.com/shopspring/decimal](https://github.com/shopspring/decimal) の使用を推奨します。
 
@@ -651,9 +629,7 @@ fmt.Printf("col1=%v, col2=%v, col3=%v, col4=%v, col5=%v\n", col1, col2, col3, co
 
 [完全な例](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/decimal.go)
 
-<div id="nullable">
-  ### Nullable
-</div>
+### Nullable {#nullable}
 
 Go の値 `Nil` は、ClickHouse の `NULL` を表します。これは、フィールドが `Nullable` として宣言されている場合に使用できます。insert 時には、通常のカラムと `Nullable` カラムの両方に `Nil` を渡せます。前者では、その型のデフォルト値が保存されます。たとえば、`string` であれば空文字列です。`Nullable` 版では、ClickHouse に `NULL 値` が格納されます。
 
@@ -707,9 +683,7 @@ if err = conn.QueryRow(ctx, "SELECT * FROM example").Scan(&col1, &col2, &col3, &
 
 このクライアントは、`sql.NullInt64` などの `sql.Null*` 型にも対応しています。これらは対応する ClickHouse の型と互換性があります。
 
-<div id="big-ints">
-  ### Big Ints
-</div>
+### Big Ints {#big-ints}
 
 64ビットを超える数値型は、Go標準の [big](https://pkg.go.dev/math/big) パッケージで表現されます。
 
@@ -779,9 +753,7 @@ fmt.Printf("col1=%v, col2=%v, col3=%v, col4=%v, col5=%v, col6=%v, col7=%v\n", co
 
 [完全なサンプル](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/big_int.go)
 
-<div id="bfloat16">
-  ### BFloat16
-</div>
+### BFloat16 {#bfloat16}
 
 `BFloat16` は、機械学習のワークロードで使用される 16 ビットの brain float 型です。Go では、`BFloat16` の値は `float32` として挿入および読み取りが行われます。Nullable バリアントでは `sql.NullFloat64` を使用します。
 
@@ -814,9 +786,7 @@ fmt.Printf("Col1: %v, Col2: %v\n", col1, col2)
 
 [完全な例](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/bfloat16.go)
 
-<div id="qbit">
-  ### QBit
-</div>
+### QBit {#qbit}
 
 `QBit` は、ベクトル埋め込みをビットスライス形式で格納するための実験的なカラム型で、ベクトル類似度検索向けに最適化されています。使用するには、`allow_experimental_qbit_type` 設定を有効にする必要があります。
 

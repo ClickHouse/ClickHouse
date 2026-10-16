@@ -11,9 +11,7 @@ doc_type: 'reference'
 
 Permite conectarse a una base de datos [SQLite](https://www.sqlite.org/index.html) y ejecutar consultas `INSERT` y `SELECT` para intercambiar datos entre ClickHouse y SQLite.
 
-<div id="creating-a-database">
-  ## Crear una base de datos
-</div>
+## Crear una base de datos {#creating-a-database}
 
 ```sql
     CREATE DATABASE sqlite_database
@@ -26,19 +24,15 @@ Permite conectarse a una base de datos [SQLite](https://www.sqlite.org/index.htm
 
 <a id="data_types-support" />
 
-<div id="data-types-support">
-  ## Compatibilidad con tipos de datos
-</div>
+## Compatibilidad con tipos de datos {#data-types-support}
 
 La siguiente tabla muestra la asignación de tipos predeterminada cuando ClickHouse infiere automáticamente el esquema a partir de SQLite:
 
-| SQLite  | ClickHouse                              |
-| ------- | --------------------------------------- |
-| INTEGER | [Int32](/es/reference/data-types/int-uint) |
-| REAL    | [Float32](/es/reference/data-types/float)  |
-| TEXT    | [String](/es/reference/data-types/string)  |
-| TEXT    | [UUID](/es/reference/data-types/uuid)      |
-| BLOB    | [String](/es/reference/data-types/string)  |
+| Tipo declarado en SQLite               | ClickHouse                                |
+| -------------------------------------- | ----------------------------------------- |
+| El nombre del tipo contiene `INT`      | [`Int64`](/es/reference/data-types/int-uint) |
+| `REAL`, `FLOAT`, `DOUBLE`              | [`Float64`](/es/reference/data-types/float)  |
+| Otros tipos, incluidos `TEXT` y `BLOB` | [`String`](/es/reference/data-types/string)  |
 
 Cuando define explícitamente una tabla con tipos específicos de ClickHouse mediante el [motor de tabla SQLite](/es/reference/engines/table-engines/integrations/sqlite), los siguientes tipos de ClickHouse pueden interpretarse a partir de columnas TEXT de SQLite:
 
@@ -48,21 +42,17 @@ Cuando define explícitamente una tabla con tipos específicos de ClickHouse med
 * [Enum8, Enum16](/es/reference/data-types/enum)
 * [Decimal32, Decimal64, Decimal128, Decimal256](/es/reference/data-types/decimal)
 * [FixedString](/es/reference/data-types/fixedstring)
-* Todos los tipos enteros ([UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64](/es/reference/data-types/int-uint))
+* Todos los tipos enteros ([UInt8, UInt16, UInt32, UInt64, UInt128, UInt256, Int8, Int16, Int32, Int64, Int128, Int256](/es/reference/data-types/int-uint))
 * [Float32, Float64](/es/reference/data-types/float)
 
 SQLite tiene tipado dinámico, y sus funciones de acceso por tipo realizan conversiones automáticas de tipos. Por ejemplo, al leer una columna TEXT como un entero, devolverá 0 si el texto no puede interpretarse como un número. Esto significa que, si una tabla de ClickHouse se define con un tipo distinto al de la columna subyacente de SQLite, los valores pueden convertirse silenciosamente en lugar de provocar un error.
 
-<div id="specifics-and-recommendations">
-  ## Particularidades y recomendaciones
-</div>
+## Particularidades y recomendaciones {#specifics-and-recommendations}
 
 SQLite almacena toda la base de datos (definiciones, tablas, índices y los propios datos) en un único archivo multiplataforma en una máquina host. Durante la escritura, SQLite bloquea todo el archivo de la base de datos; por lo tanto, las operaciones de escritura se realizan de forma secuencial. Las operaciones de lectura pueden realizarse en paralelo.
 SQLite no requiere gestión de servicios (como scripts de arranque) ni control de acceso basado en `GRANT` y contraseñas. El control de acceso se gestiona mediante los permisos del sistema de archivos asignados al propio archivo de la base de datos.
 
-<div id="usage-example">
-  ## Ejemplo de uso
-</div>
+## Ejemplo de uso {#usage-example}
 
 Base de datos en ClickHouse conectada a SQLite:
 
