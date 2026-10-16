@@ -24,6 +24,12 @@ ClickHouse Cloud lets you authenticate connections to a service with JSON Web To
 
 You configure these JWKS providers yourself, per service, from **Settings → Security** in the ClickHouse Cloud console.
 
+<Tip>
+**Using Microsoft Entra ID?**
+
+Follow [JWT authentication with Microsoft Entra ID](/products/cloud/guides/security/cloud-access-management/jwt-authentication-entra-id) for the Entra ID configuration, the provider values to enter, and how to map Entra ID app roles to ClickHouse roles.
+</Tip>
+
 ## Before you begin {#before-you-begin}
 
 To configure JWT providers for a service, you need:
@@ -92,3 +98,4 @@ Deleting a JWT provider immediately stops accepting tokens issued for it, and an
 ## Related {#related}
 
 - [JWT Authentication](/concepts/features/security/external-authenticators/jwt) — token claims, ephemeral users, and client usage.
+- [JWT authentication with Microsoft Entra ID](/products/cloud/guides/security/cloud-access-management/jwt-authentication-entra-id) — configure Entra ID as a JWT provider.
