@@ -1,5 +1,6 @@
 #if defined(OS_LINUX) || defined(OS_DARWIN)
 
+#include <chrono>
 #include <functional>
 #include <optional>
 #include <thread>
@@ -11,12 +12,20 @@
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Net/StreamSocket.h>
 
+#include <Common/Epoll.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ThreadStatus.h>
 #include <Core/Block.h>
 #include <IO/WriteBufferFromString.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/ISource.h>
 #include <Processors/Port.h>
+#include <Processors/Sinks/EmptySink.h>
 #include <QueryPipeline/DistributedPlanExecutor.h>
+#include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipeline.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Server/DistributedQuery/StreamingExchangeProtocol.h>
 #include <Server/DistributedQuery/StreamingExchangeSource.h>
 #include <Server/DistributedQuery/tests/FakeExchangePeer.h>
@@ -251,6 +260,86 @@ TEST(StreamingExchangeSourceFailureReport, NoMoreDataNeededToGonePeerIsNotAFailu
     EXPECT_FALSE(cancellation->isCancelled());
     /// The peer never got the packet, so this is not an early close.
     EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::StreamingExchangeEarlyCloses], early_closes_before);
+}
+
+namespace
+{
+    /// Stands in for `ReadFromDistributedPlanSource`: waits in the executor's async queue on the query's
+    /// wakeup and reports the recorded failure once the query is cancelled.
+    class DrivingSource final : public ISource
+    {
+    public:
+        explicit DrivingSource(DistributedQueryCancellationPtr cancellation_)
+            : ISource(std::make_shared<const Block>()), cancellation(std::move(cancellation_))
+        {
+        }
+
+        String getName() const override { return "DrivingSource"; }
+
+        Status prepare() override
+        {
+            const auto status = ISource::prepare();
+            return status == Status::Ready && waiting ? Status::Async : status;
+        }
+
+        std::tuple<int, uint32_t, Int64> scheduleForEvent() override
+        {
+            return {cancellation->getWakeup()->fd(), EPOLLIN | EPOLLERR, -1};
+        }
+
+        void onAsyncJobReady() override
+        {
+            cancellation->getWakeup()->drain();
+            waiting = false;
+        }
+
+    private:
+        std::optional<Chunk> tryGenerate() override
+        {
+            if (!cancellation->isCancelled())
+            {
+                waiting = true;
+                return Chunk();
+            }
+            cancellation->markExecutionFinished();
+            cancellation->rethrowIfFailed();
+            return std::nullopt;
+        }
+
+        const DistributedQueryCancellationPtr cancellation;
+        bool waiting = false;
+    };
+}
+
+/// With one execution thread, a source waiting for a `SinkHello` holds the thread the driving source
+/// needs, so a failure recorded elsewhere in the query has to end the handshake.
+TEST(StreamingExchangeSourceFailureReport, FailureRecordedDuringTheHandshakeIsReportedPromptly)
+{
+    MainThreadStatus::getInstance();
+
+    auto cancellation = std::make_shared<DistributedQueryCancellation>();
+    Peer peer([&](Poco::Net::StreamSocket & socket)
+    {
+        ExchangeTest::receiveSourceHello(socket);
+        /// Lets the source start waiting for the `SinkHello`, which never comes.
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        recordFailure(*cancellation, ErrorCodes::MEMORY_LIMIT_EXCEEDED);
+        socket.poll(Poco::Timespan(60, 0), Poco::Net::Socket::SELECT_READ);
+    });
+
+    Pipes pipes;
+    pipes.emplace_back(makeSource(peer, cancellation));
+    pipes.emplace_back(std::make_shared<DrivingSource>(cancellation));
+    QueryPipelineBuilder builder;
+    builder.init(Pipe::unitePipes(std::move(pipes)));
+    builder.setSinks([](const SharedHeader & header, Pipe::StreamType) { return std::make_shared<EmptySink>(header); });
+    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
+    pipeline.setNumThreads(1);
+
+    const auto started = std::chrono::steady_clock::now();
+    CompletedPipelineExecutor executor(pipeline);
+    EXPECT_EQ(thrownCode([&] { executor.execute(); }), ErrorCodes::MEMORY_LIMIT_EXCEEDED);
+    EXPECT_LT(std::chrono::steady_clock::now() - started, std::chrono::seconds(StreamingExchangeProtocol::HELLO_TIMEOUT_SECONDS / 2));
 }
 
 #endif

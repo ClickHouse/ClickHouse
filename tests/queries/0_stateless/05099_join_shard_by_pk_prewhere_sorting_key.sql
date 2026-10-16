@@ -9,7 +9,6 @@ SET join_algorithm = 'full_sorting_merge';
 SET query_plan_join_shard_by_pk_ranges = 1;
 -- Either prewhere setting at 0 stops the PREWHERE move and makes every assertion below vacuous.
 SET optimize_move_to_prewhere = 1;
-SET query_plan_optimize_prewhere = 1;
 -- At 0 the filtered column is never pruned from the read output, so there is nothing to restore and
 -- most cells below pass vacuously; `compatibility` draws below 25.12 revert this setting.
 SET query_plan_remove_unused_columns = 1;

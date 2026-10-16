@@ -14,9 +14,7 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 이 설정들은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며, [source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)로부터 자동으로 생성됩니다.
 
-<div id="optimize_trivial_approximate_count_query">
-  ## optimize_trivial_approximate_count_query
-</div>
+## optimize_trivial_approximate_count_query {#optimize_trivial_approximate_count_query}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -27,9 +25,7 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 * 0 — 최적화가 비활성화됩니다.
   * 1 — 최적화가 활성화됩니다.
 
-<div id="optimize_trivial_count_query">
-  ## optimize_trivial_count_query
-</div>
+## optimize_trivial_count_query {#optimize_trivial_count_query}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -44,9 +40,7 @@ MergeTree의 메타데이터를 사용해 단순한 `SELECT count() FROM table` 
 
 * [optimize&#95;functions&#95;to&#95;subcolumns](/ko/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns)
 
-<div id="optimize_trivial_count_with_sparsity_filter">
-  ## optimize_trivial_count_with_sparsity_filter
-</div>
+## optimize_trivial_count_with_sparsity_filter {#optimize_trivial_count_with_sparsity_filter}
 
 <BetaBadge />
 
@@ -94,26 +88,26 @@ MergeTree가 이미 `serialization.json`에 유지하는 컬럼별 `num_defaults
 
 * [optimize&#95;trivial&#95;count&#95;query](/ko/reference/settings/session-settings/optimize-trivial#optimize_trivial_count_query)
 
-<div id="optimize_trivial_group_by_limit_query">
-  ## optimize_trivial_group_by_limit_query
-</div>
+## optimize_trivial_group_by_limit_query {#optimize_trivial_group_by_limit_query}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1"},{"label": "`SELECT key_expr FROM t GROUP BY key_expr LIMIT n` 쿼리에서 집계를 최대 `LIMIT`개의 고유 키로 제한하는 새로운 설정입니다."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1"},{"label": "`SELECT key_expr FROM t GROUP BY key_expr LIMIT n` 쿼리에서 집계 대상을 최대 LIMIT개의 고유 키로 제한하는 새로운 설정입니다."}]}]} />
 
-`max_rows_to_group_by = n + offset` 및 `group_by_overflow_mode = 'any'`를 설정하여 단순한 쿼리 `SELECT key_expr FROM table GROUP BY key_expr LIMIT n`의 최적화를 활성화하거나 비활성화합니다. 여기서 단순한 쿼리란 SELECT 항목에 집계 함수, 윈도우 함수 또는 `arrayJoin`이 없고, `HAVING`/`ORDER BY`/`QUALIFY`/`LIMIT BY`/`DISTINCT`/윈도우 절이 없으며, `GROUP BY` 수정자도 없는 쿼리를 의미합니다. `n + offset`개의 고유 키가 생성되면 집계가 중지됩니다.
+집계 대상을 최대 `n + offset`개의 고유 키로 제한하여 단순(trivial) 쿼리 `SELECT ... FROM table GROUP BY key_expr LIMIT n`(`HAVING`/`ORDER BY`/`QUALIFY`/`LIMIT BY`/`DISTINCT`/윈도우 절과 `GROUP BY` 수정자가 없는 경우)을 최적화하는 기능을 활성화하거나 비활성화합니다.
 
-사용자가 `group_by_overflow_mode`를 `any`가 아닌 값으로 명시적으로 설정한 경우(명시한 `throw`/`break` 동작을 유지하기 위해), 또는 이미 더 엄격한 `max_rows_to_group_by`를 설정한 경우(이 최적화는 no-op이므로)에는 이 최적화가 적용되지 않습니다.
+프로젝션에 집계 함수가 없으면 `max_rows_to_group_by = n + offset`과 `group_by_overflow_mode = 'any'`를 설정하는 방식으로 제한이 적용됩니다(이 형태는 분산 쿼리의 세그먼트에서도 적용됩니다). 프로젝션에 집계 함수가 있으면 서버가 전체 집계를 로컬에서 수행하는 경우에만 제한이 적용됩니다. 이때 집계 스레드 중 하나라도 제한을 초과하면 모든 스레드가 `n + offset`개의 키만 유지하는 하나의 공유 Set을 사용하도록 제한되므로, 반환되는 키의 집계 값은 정확하게 유지됩니다.
+
+다음과 같은 경우에는 이 최적화가 적용되지 않습니다. 사용자가 `group_by_overflow_mode`를 `any`가 아닌 값으로 명시적으로 설정한 경우(명시적으로 지정한 `throw`/`break` 동작을 보장하기 위함), 사용자가 이미 더 작은 `max_rows_to_group_by` 값을 설정한 경우, 그리고 [exact&#95;rows&#95;before&#95;limit](/ko/reference/settings/session-settings/other#exact_rows_before_limit)을 사용하는 경우(제한으로 인해 `rows_before_limit_at_least`가 최대 `n + offset`까지만 보고되기 때문)입니다.
+
+집계 함수 형태는 동일한 쿼리에서 [enable&#95;group&#95;by&#95;top&#95;k&#95;optimization](/ko/reference/settings/session-settings/enable#enable_group_by_top_k_optimization)의 `GROUP BY` top-K 힙과 함께 사용할 수 없습니다. 힙 방식이 더 빠르므로 이 제한은 힙이 적용되지 않을 때만 사용됩니다. 즉, 힙 최적화가 비활성화된 경우, `n + offset`이 [query&#95;plan&#95;max&#95;limit&#95;for&#95;top&#95;k&#95;optimization](/ko/reference/settings/session-settings/query-plan#query_plan_max_limit_for_top_k_optimization)을 초과하는 경우, `max_rows_to_group_by`가 설정된 경우, 또는 쿼리 계획이 직렬화되는 경우입니다.
 
 가능한 값:
 
-* 0 — 최적화가 비활성화됩니다.
-* 1 — 최적화가 활성화됩니다.
+* 0 — 최적화 비활성화.
+* 1 — 최적화 활성화.
 
-<div id="optimize_trivial_insert_select">
-  ## optimize_trivial_insert_select
-</div>
+## optimize_trivial_insert_select {#optimize_trivial_insert_select}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -121,9 +115,9 @@ MergeTree가 이미 `serialization.json`에 유지하는 컬럼별 `num_defaults
 
 단순한 &#39;INSERT INTO table SELECT ... FROM TABLES&#39; 쿼리를 최적화합니다
 
-<div id="optimize_trivial_view_pushdown_to_distributed">
-  ## optimize_trivial_view_pushdown_to_distributed
-</div>
+이 설정을 사용할 때는 `max_insert_threads` 설정도 명시적으로 지정하십시오. 이 최적화는 `SELECT`의 읽기 스레드 수를 최대 `max_insert_threads`개로 제한하므로 `SELECT`가 생성하는 블록 수가 달라집니다.
+
+## optimize_trivial_view_pushdown_to_distributed {#optimize_trivial_view_pushdown_to_distributed}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

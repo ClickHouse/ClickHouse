@@ -19,6 +19,7 @@
 #include <unordered_set>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <set>
 
 namespace DB
@@ -55,6 +56,8 @@ struct FormatSettings;
 struct NameAndTypePair;
 
 struct MergeTreeSettings;
+
+class StringValueFilter;
 
 /** Returns the separator byte that the HiveText output format uses at the given nesting level,
   * following Apache Hive's LazySimpleSerDe separator list: index 0 is the fields delimiter,
@@ -371,13 +374,21 @@ public:
         virtual ~ISubstreamsCacheElement() = default;
     };
 
-    using SubstreamsCache = std::unordered_map<String, std::unique_ptr<ISubstreamsCacheElement>>;
+    /// Keys of the substreams caches are hashes of the substream paths, see `getSubstreamsCacheKeyForStream`.
+    struct SubstreamsCacheKeyHash
+    {
+        size_t operator()(const UInt128 & key) const { return static_cast<size_t>(key.items[0]); }
+    };
+
+    using SubstreamsCache = std::unordered_map<UInt128, std::unique_ptr<ISubstreamsCacheElement>, SubstreamsCacheKeyHash>;
 
     using StreamCallback = std::function<void(const SubstreamPath &)>;
 
     struct EnumerateStreamsSettings
     {
         SubstreamPath path;
+        /// When resolving a subcolumn, serializers may omit streams that cannot contribute to its lookup.
+        std::optional<std::string_view> subcolumn_name;
         bool position_independent_encoding = true;
         /// If set to false, don't enumerate dynamic subcolumns
         /// (such as dynamic types in Dynamic column or dynamic paths in JSON column).
@@ -527,7 +538,8 @@ public:
         bool native_format = false;
         const FormatSettings * format_settings{};
 
-        bool object_and_dynamic_read_statistics = false;
+        /// Whether the stream contains statistics for `Dynamic`, `JSON`, and `Map`.
+        bool read_statistics = false;
 
         /// Callback that should be called when new dynamic subcolumns are discovered during prefix deserialization.
         StreamCallback dynamic_subcolumns_callback;
@@ -592,6 +604,12 @@ public:
         /// Used by `SerializationLowCardinality` as a cheap prefilter before
         /// it verifies a single-dictionary part from the `DictionaryKeys` stream.
         std::function<bool(const SubstreamPath &, size_t max_transitions)> has_uniform_marks_callback;
+
+        /// If set, string values that do not match the filter may be replaced with empty strings
+        /// during deserialization. It is extracted from a substring search condition in PREWHERE
+        /// which is guaranteed to filter out the rows with non-matching values, so the replacement
+        /// cannot change the query result. Used only by `SerializationString`.
+        std::shared_ptr<const StringValueFilter> string_value_filter;
     };
 
     /// Call before serializeBinaryBulkWithMultipleStreams chain to write something before first mark.
@@ -606,7 +624,7 @@ public:
         SerializeBinaryBulkSettings & /*settings*/,
         SerializeBinaryBulkStatePtr & /*state*/) const {}
 
-    using SubstreamsDeserializeStatesCache = std::unordered_map<String, DeserializeBinaryBulkStatePtr>;
+    using SubstreamsDeserializeStatesCache = std::unordered_map<UInt128, DeserializeBinaryBulkStatePtr, SubstreamsCacheKeyHash>;
 
     /// Call before before deserializeBinaryBulkWithMultipleStreams chain to get DeserializeBinaryBulkStatePtr.
     virtual void deserializeBinaryBulkStatePrefix(
@@ -759,7 +777,7 @@ public:
     static String getSubcolumnNameForStream(const SubstreamPath & path, bool) = delete;
 
     /// Key of a stream in SubstreamsCache and SubstreamsDeserializeStatesCache.
-    static String getSubstreamsCacheKeyForStream(const SubstreamPath & path);
+    static UInt128 getSubstreamsCacheKeyForStream(const SubstreamPath & path);
 
     static void addColumnWithNumReadRowsToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, ColumnPtr column, size_t num_read_rows);
     static std::optional<std::pair<ColumnPtr, size_t>> getColumnWithNumReadRowsFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path);

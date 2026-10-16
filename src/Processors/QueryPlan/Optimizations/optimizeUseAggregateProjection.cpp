@@ -306,6 +306,11 @@ static AggregateProjectionInfo getAggregatingProjectionInfo(
     const StorageMetadataPtr & metadata_snapshot,
     const Block & key_virtual_columns)
 {
+    Block source_block;
+    for (const auto & column : metadata_snapshot->getColumns().getByNames(
+             GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), projection.required_columns))
+        source_block.insert({column.type->createColumn(), column.type, column.name});
+
     /// This is a bad approach.
     /// We'd better have a separate interpreter for projections.
     /// Now it's not obvious we didn't miss anything here.
@@ -316,7 +321,7 @@ static AggregateProjectionInfo getAggregatingProjectionInfo(
     InterpreterSelectQuery interpreter(
         projection.query_ast,
         context,
-        Pipe(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(metadata_snapshot->getSampleBlockWithSubcolumns()))),
+        Pipe(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(source_block)))),
         SelectQueryOptions{QueryProcessingStage::WithMergeableState}.ignoreASTOptimizations().ignoreSettingConstraints());
 
     const auto & analysis_result = interpreter.getAnalysisResult();
@@ -645,8 +650,7 @@ static std::vector<StatisticsMinMaxAggregate> getStatisticsMinMaxAggregates(
     if (query_info.prewhere_info || query_info.row_level_filter || query_info.filter_actions_dag)
         return {};
 
-    /// TODO(unique-key): the delete bitmap of a unique-key table is applied at read time,
-    /// statistics don't reflect it.
+    /// TODO(unique-key): support statistics-based answers; they don't see the delete bitmap.
     if (metadata->hasUniqueKey())
         return {};
 
@@ -1267,6 +1271,7 @@ UseProjectionsResult optimizeUseAggregateProjections(
             /// store the remaining inexact ranges (not covered by exact analysis), to be used for for normal reading
             /// and count calculation.
             inexact_ranges_select_result = std::make_shared<ReadFromMergeTree::AnalysisResult>(*parent_reading_select_result);
+            inexact_ranges_select_result->exact_ranges_excluded = true;
             auto & parent_parts_with_ranges = inexact_ranges_select_result->parts_with_ranges;
             size_t exact_ranges_count = 0;
             size_t exact_ranges_parts = 0;
@@ -1383,12 +1388,15 @@ UseProjectionsResult optimizeUseAggregateProjections(
                 bool analyzed = analyzeProjectionCandidate(
                     candidate,
                     reader,
+                    reading->getMutationsSnapshot(),
                     empty_mutations_snapshot,
                     required_column_names,
                     metadata,
                     *parent_reading_select_result,
                     projection_query_info,
                     reading->getTopKFilterInfo(),
+                    reading->isQueryConditionCacheAllowed(),
+                    reading->isTopKPrewhereQueryConditionCacheAllowed(),
                     context);
 
                 if (!analyzed)
