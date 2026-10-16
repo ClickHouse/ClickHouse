@@ -80,6 +80,7 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
+    extern const int NO_ZOOKEEPER;
     extern const int TABLE_ALREADY_EXISTS;
     extern const int UNFINISHED;
     extern const int UNKNOWN_DATABASE_ENGINE;
@@ -857,6 +858,13 @@ void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr tab
     auto has_metadata = rmt->hasMetadataInZooKeeper();
     if (!has_metadata.has_value())
     {
+        if (checking_disk->existsFile(convert_to_replicated_parts_path))
+            throw Exception(ErrorCodes::NO_ZOOKEEPER,
+                "Cannot resume the conversion of table {} to replicated without a connection to ZooKeeper, the parts it moved "
+                "to detached/ are listed in {}. Restart the server once ZooKeeper is reachable",
+                backQuote(name.getFullName()),
+                fullPath(checking_disk, convert_to_replicated_parts_path));
+
         LOG_WARNING
         (
             log,

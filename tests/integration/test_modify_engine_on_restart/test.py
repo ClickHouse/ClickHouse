@@ -1,6 +1,7 @@
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.network import PartitionManager
 from test_modify_engine_on_restart.common import (
     check_flags_deleted,
     clear_failpoint,
@@ -224,6 +225,16 @@ def test_modify_engine_on_restart_resumes_after_kill(started_cluster):
     files = ls(ch1, table_path)
     assert JOURNAL in files
     assert "convert_to_replicated" not in files
+
+    # Without ZooKeeper the table is not served while its parts are in detached/, and the journal is kept.
+    with PartitionManager() as pm:
+        pm.drop_instance_zk_connections(ch1)
+        ch1.start_clickhouse(start_wait_sec=150)
+        error = ch1.query_and_get_error(f"SELECT count() FROM {database}.mt")
+        assert "NO_ZOOKEEPER" in error
+        assert JOURNAL in error
+        ch1.stop_clickhouse(kill=True)
+    assert JOURNAL in ls(ch1, table_path)
 
     ch1.start_clickhouse()
     check_converted(database, uuid, zk, 200)
