@@ -413,37 +413,37 @@ bool canBeComputedBeforeWindow(
     }
 }
 
-/** Collect the largest subexpressions of the projection that are worth computing before the window functions.
-  * Window functions buffer their input, so computing a projection expression before them lets the window step
-  * buffer its result instead of the columns it reads. This is done only if the result can not be larger than
-  * the smallest possible values of the columns of unbounded size that it reads.
+struct ExpressionBeforeWindowCandidate
+{
+    QueryTreeNodePtr node;
+    QueryTreeNodePtrWithHashSet unbounded_inputs;
+    size_t maximum_size_of_result = 0;
+};
+
+/** Collect the largest subexpressions of the projection that can be computed before the window functions,
+  * read columns of unbounded size and have a result of a bounded size.
   * The arguments of short-circuit functions that may be executed lazily are not collected, as computing them
   * before the window step would execute them for all rows.
   */
 void collectExpressionsComputableBeforeWindow(
     const QueryTreeNodePtr & node,
     const ColumnNodePtrWithHashSet & correlated_columns_set,
-    QueryTreeNodes & result)
+    QueryTreeNodePtrWithHashSet & collected_nodes,
+    std::vector<ExpressionBeforeWindowCandidate> & result)
 {
     auto * function_node = node->as<FunctionNode>();
     if (!function_node || !function_node->isOrdinaryFunction())
         return;
 
     QueryTreeNodePtrWithHashSet unbounded_inputs;
-    if (canBeComputedBeforeWindow(node, correlated_columns_set, unbounded_inputs))
+    const auto & result_type = function_node->getResultType();
+    if (canBeComputedBeforeWindow(node, correlated_columns_set, unbounded_inputs)
+        && !unbounded_inputs.empty()
+        && result_type->haveMaximumSizeOfValue())
     {
-        size_t minimum_size_of_inputs = 0;
-        for (const auto & input : unbounded_inputs)
-            minimum_size_of_inputs += getMinimumSizeOfUnboundedValue(*input.node->getResultType());
-
-        const auto & result_type = function_node->getResultType();
-        if (minimum_size_of_inputs > 0
-            && result_type->haveMaximumSizeOfValue()
-            && result_type->getMaximumSizeOfValueInMemory() <= minimum_size_of_inputs)
-        {
-            result.push_back(node);
-            return;
-        }
+        if (collected_nodes.insert(node).second)
+            result.push_back({node, std::move(unbounded_inputs), result_type->getMaximumSizeOfValueInMemory()});
+        return;
     }
 
     const auto & arguments = function_node->getArguments().getNodes();
@@ -461,8 +461,110 @@ void collectExpressionsComputableBeforeWindow(
                 || !short_circuit_settings.arguments_with_disabled_lazy_execution.contains(i)))
             continue;
 
-        collectExpressionsComputableBeforeWindow(arguments[i], correlated_columns_set, result);
+        collectExpressionsComputableBeforeWindow(arguments[i], correlated_columns_set, collected_nodes, result);
     }
+}
+
+/** Collect the columns and the aggregate function results that are read after the window step
+  * by anything except the expressions computed before it.
+  * It includes the arguments of window functions, which the window step buffers anyway.
+  */
+void collectInputsReadAfterWindow(
+    const QueryTreeNodePtr & node,
+    const QueryTreeNodePtrWithHashSet & expressions_before_window,
+    QueryTreeNodePtrWithHashSet & inputs)
+{
+    if (!node || expressions_before_window.contains(node))
+        return;
+
+    if (node->getNodeType() == QueryTreeNodeType::COLUMN)
+    {
+        inputs.insert(node);
+        return;
+    }
+
+    if (const auto * function_node = node->as<FunctionNode>(); function_node && function_node->isAggregateFunction() && !function_node->isWindowFunction())
+    {
+        inputs.insert(node);
+        return;
+    }
+
+    for (const auto & child : node->getChildren())
+        collectInputsReadAfterWindow(child, expressions_before_window, inputs);
+}
+
+/** Select the expressions worth computing before the window functions.
+  * Window functions buffer their input, so computing a projection expression before them lets the window step
+  * buffer its result instead of the columns it reads, but only the columns that nothing else reads after
+  * the window step are freed. The expressions that read common columns are selected or rejected together:
+  * only if the maximum size of their results is not larger than a lower bound of the size of the values they free,
+  * so the buffered rows can not become larger.
+  */
+QueryTreeNodes selectExpressionsWorthComputingBeforeWindow(
+    const QueryNode & query_node,
+    std::vector<ExpressionBeforeWindowCandidate> candidates)
+{
+    QueryTreeNodePtrWithHashSet candidate_nodes;
+    for (const auto & candidate : candidates)
+        candidate_nodes.insert(candidate.node);
+
+    QueryTreeNodePtrWithHashSet inputs_read_after_window;
+    collectInputsReadAfterWindow(query_node.getProjectionNode(), candidate_nodes, inputs_read_after_window);
+    collectInputsReadAfterWindow(query_node.getOrderByNode(), candidate_nodes, inputs_read_after_window);
+    collectInputsReadAfterWindow(query_node.getInterpolate(), candidate_nodes, inputs_read_after_window);
+    collectInputsReadAfterWindow(query_node.getLimitByNode(), candidate_nodes, inputs_read_after_window);
+
+    QueryTreeNodes result;
+    std::vector<bool> visited(candidates.size(), false);
+
+    for (size_t group_start = 0; group_start < candidates.size(); ++group_start)
+    {
+        if (visited[group_start])
+            continue;
+
+        /// The group of candidates connected by common inputs.
+        std::vector<size_t> group{group_start};
+        visited[group_start] = true;
+        QueryTreeNodePtrWithHashSet group_inputs = candidates[group_start].unbounded_inputs;
+
+        for (size_t i = 0; i < group.size(); ++i)
+        {
+            for (size_t other = 0; other < candidates.size(); ++other)
+            {
+                if (visited[other])
+                    continue;
+
+                bool has_common_inputs = false;
+                for (const auto & input : candidates[other].unbounded_inputs)
+                    if (candidates[group[i]].unbounded_inputs.contains(input))
+                        has_common_inputs = true;
+
+                if (!has_common_inputs)
+                    continue;
+
+                visited[other] = true;
+                group.push_back(other);
+                group_inputs.insert(candidates[other].unbounded_inputs.begin(), candidates[other].unbounded_inputs.end());
+            }
+        }
+
+        size_t minimum_size_of_freed_inputs = 0;
+        for (const auto & input : group_inputs)
+            if (!inputs_read_after_window.contains(input))
+                minimum_size_of_freed_inputs += getMinimumSizeOfUnboundedValue(*input.node->getResultType());
+
+        size_t maximum_size_of_results = 0;
+        for (size_t candidate_index : group)
+            maximum_size_of_results += candidates[candidate_index].maximum_size_of_result;
+
+        if (minimum_size_of_freed_inputs == 0 || maximum_size_of_results > minimum_size_of_freed_inputs)
+            continue;
+
+        for (size_t candidate_index : group)
+            result.push_back(candidates[candidate_index].node);
+    }
+
+    return result;
 }
 
 /** Construct window analysis result if query tree has window functions.
@@ -586,13 +688,17 @@ std::optional<WindowAnalysisResult> analyzeWindow(
             window_functions_additional_columns.emplace_back(nullptr, window_function.aggregate_function->getResultType(), window_function.column_name);
 
     /// With `QUALIFY`, the projection is computed only for the rows that pass the filter after the window functions,
-    /// and with `LIMIT` it may be computed only for the first blocks of the result.
+    /// and with `LIMIT`, `LIMIT AFTER` or `LIMIT UNTIL` it may be computed only for the first blocks of the result.
     QueryTreeNodes expressions_before_window;
     const auto & query_node = query_tree->as<const QueryNode &>();
-    if (!query_node.hasQualify() && !query_node.hasLimit())
+    if (!query_node.hasQualify() && !query_node.hasLimit() && !query_node.hasLimitAfter() && !query_node.hasLimitUntil())
     {
+        QueryTreeNodePtrWithHashSet collected_nodes;
+        std::vector<ExpressionBeforeWindowCandidate> candidates;
         for (const auto & projection_node : query_node.getProjection().getNodes())
-            collectExpressionsComputableBeforeWindow(projection_node, correlated_columns_set, expressions_before_window);
+            collectExpressionsComputableBeforeWindow(projection_node, correlated_columns_set, collected_nodes, candidates);
+
+        expressions_before_window = selectExpressionsWorthComputingBeforeWindow(query_node, std::move(candidates));
     }
 
     WindowAnalysisResult result;

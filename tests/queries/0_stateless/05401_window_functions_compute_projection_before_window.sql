@@ -50,9 +50,19 @@ SELECT toFixedString(s, 2048) AS r, count() OVER () AS n FROM (SELECT toString(n
 FORMAT Null SETTINGS max_memory_usage = '50M', max_block_size = 1024, max_threads = 1;
 SELECT 'ok';
 
+SELECT 'expressions are not computed before window functions if the columns they read are not freed';
+SELECT s, toUInt64OrZero(s), count() OVER () AS n FROM (SELECT toString(number % 10) AS s FROM numbers(2000000))
+FORMAT Null SETTINGS max_memory_usage = '80M', max_block_size = 1024, max_threads = 1;
+SELECT 'ok';
+SELECT length(s), sipHash64(s), cityHash64(s), xxHash64(s), count() OVER () AS n FROM (SELECT toString(number % 10) AS s FROM numbers(1000000))
+FORMAT Null SETTINGS max_memory_usage = '50M', max_block_size = 1024, max_threads = 1;
+SELECT 'ok';
+
 SELECT 'LIMIT';
 SELECT toUInt64(s) AS v, count() OVER () AS n FROM (SELECT if(number < 10, '1', 'x') AS s FROM numbers(100))
 LIMIT 1 SETTINGS max_block_size = 10, max_threads = 1;
+SELECT toUInt64(s) AS v, count() OVER () AS n FROM (SELECT number, if(number < 10, '1', 'x') AS s FROM numbers(100))
+LIMIT UNTIL number = 1 SETTINGS max_block_size = 10, max_threads = 1;
 
 SELECT 'QUALIFY';
 SELECT number, throwIf(number = 3) AS t, row_number() OVER (ORDER BY number) AS rn FROM numbers(5) QUALIFY rn != 4 ORDER BY number;

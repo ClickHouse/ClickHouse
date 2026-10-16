@@ -45,7 +45,11 @@ lazily executed arguments of short-circuit functions
 expressions with results that can be larger than their input are computed after window functions
 ok
 ok
+expressions are not computed before window functions if the columns they read are not freed
+ok
+ok
 LIMIT
+1	100
 1	100
 QUALIFY
 0	0	1
