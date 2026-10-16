@@ -10701,7 +10701,7 @@ cost as much as evaluating the predicate on the column with several threads, and
 
 Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
 )", 0, \
-        {"26.10", 20000, 20000, "New setting: abandon the text index dictionary scan of `hasAnyTokenLike` and `hasAllTokenLike` when their patterns match too many tokens, and evaluate them on the column. `LIKE`, `ILIKE`, `startsWith` and `endsWith` are not capped."}) \
+        {"26.11", 20000, 20000, "New setting: abandon the text index dictionary scan of `hasAnyTokenLike` and `hasAllTokenLike` when their patterns match too many tokens, and evaluate them on the column. `LIKE`, `ILIKE`, `startsWith` and `endsWith` are not capped."}) \
     DECLARE(Bool, use_text_index_tokens_cache, true, R"(
 Whether to cache deserialized text index token infos in memory.
 Using the text index tokens cache can significantly reduce latency and increase throughput when working with a large number of text index queries.
