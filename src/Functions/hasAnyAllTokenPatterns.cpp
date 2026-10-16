@@ -376,7 +376,7 @@ If `input` is not an array and has no text index, `hasAnyTokenLike(input, patter
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 10};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 11};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
     FunctionDocumentation documentation = {description, syntax, commonArguments("patterns", "The `LIKE` pattern, or an array of `LIKE` patterns, each token is matched against."), {}, returned_value, examples, introduced_in, category};
 
@@ -425,7 +425,7 @@ With several patterns, the text index selects the rows where some pattern matche
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 10};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 11};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
     FunctionDocumentation documentation = {description, syntax, commonArguments("patterns", "The `LIKE` pattern, or an array of `LIKE` patterns, that must each match a token."), {}, returned_value, examples, introduced_in, category};
 
