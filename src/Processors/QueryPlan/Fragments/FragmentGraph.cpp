@@ -120,16 +120,16 @@ FragmentExchange::Kind getExchangeKind(const ExchangeDescription & description)
         description.exchange_step_name, description.name);
 }
 
-FragmentExchange::Mode getExchangeMode(const ExchangeDescription & description)
+std::string_view formatExchangeMode(ExchangeDescription::Kind mode)
 {
-    switch (description.kind)
+    switch (mode)
     {
         case ExchangeDescription::Kind::Streaming:
-            return FragmentExchange::Mode::Streaming;
+            return "streaming";
         case ExchangeDescription::Kind::Persisted:
-            return FragmentExchange::Mode::Persisted;
+            return "persisted";
     }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected kind of exchange {}", description.name);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected exchange mode {}", static_cast<int>(mode));
 }
 
 String formatExchangeKind(const FragmentExchange & exchange)
@@ -233,7 +233,7 @@ TopologicalOrder sortTopologically(const FragmentGraph & graph)
     result.order.reserve(num_fragments);
     while (!ready.empty())
     {
-        size_t i = ready.top().second;
+        const auto [id, i] = ready.top();
         ready.pop();
         result.order.push_back(i);
         for (size_t consumer : consumers[i])
@@ -296,13 +296,16 @@ FragmentGraph buildFragmentGraph(const DistributedQueryPlan & distributed_plan)
         if (stage.filter_only)
             continue;
 
-        QueryFragment fragment;
-        fragment.id = stage.id;
-        fragment.stage_name = stage_name;
-        fragment.tasks = stage.tasks.size();
         checkNotEmpty(stage.query_plan_fragment, stage_name);
-        fragment.plan = &stage.query_plan_fragment;
-        graph.fragments.push_back(std::move(fragment));
+        graph.fragments.push_back(QueryFragment{
+            .id = stage.id,
+            .stage_name = stage_name,
+            .execution_mode = QueryFragment::ExecutionMode::Distributed,
+            .fallback_reason = {},
+            .description = {},
+            .tasks = stage.tasks.size(),
+            .plan = &stage.query_plan_fragment,
+        });
     }
     /// `stages` and `stage_depends_on` are unordered maps: sort for a deterministic order and for the lookups by id.
     /// Duplicate ids are left to `validateFragmentGraph`.
@@ -322,24 +325,22 @@ FragmentGraph buildFragmentGraph(const DistributedQueryPlan & distributed_plan)
             UInt32 producer_id = producer_stage_description.id;
             const auto & description = findDescription(distributed_plan, exchange_name);
 
-            FragmentExchange exchange;
-            exchange.id = description.id;
-            exchange.name = description.name;
-            exchange.from = producer_id;
-            exchange.to = consumer_id;
-            exchange.kind = getExchangeKind(description);
-            if (exchange.kind == FragmentExchange::Kind::Hash)
-                exchange.keys = description.keys;
-            if (exchange.kind == FragmentExchange::Kind::Gather)
-                exchange.merge_sort = description.sort_description;
-            exchange.mode = getExchangeMode(description);
-            exchange.source_buckets = description.source_bucket_count;
-            exchange.destination_buckets = description.destination_bucket_count;
-            exchange.statistics.estimated_rows = getEstimatedRows(*graph.getFragment(producer_id).plan);
-
+            const auto kind = getExchangeKind(description);
             checkReceiveStep(*graph.getFragment(consumer_id).plan, consumer_stage, exchange_name);
 
-            graph.exchanges.push_back(std::move(exchange));
+            graph.exchanges.push_back(FragmentExchange{
+                .id = description.id,
+                .name = description.name,
+                .from = producer_id,
+                .to = consumer_id,
+                .kind = kind,
+                .keys = kind == FragmentExchange::Kind::Hash ? description.keys : Names{},
+                .merge_sort = kind == FragmentExchange::Kind::Gather ? description.sort_description : std::nullopt,
+                .mode = description.kind,
+                .source_buckets = description.source_bucket_count,
+                .destination_buckets = description.destination_bucket_count,
+                .statistics = {.estimated_rows = getEstimatedRows(*graph.getFragment(producer_id).plan)},
+            });
         }
     }
 
@@ -353,15 +354,16 @@ FragmentGraph buildSingleFragmentGraph(const QueryPlan & plan, std::optional<Str
 {
     FragmentGraph graph;
 
-    QueryFragment fragment;
-    fragment.id = 0;
-    fragment.stage_name = String(main_stage_name);
-    fragment.location = QueryFragment::ExecutionLocation::SingleNode;
-    fragment.fallback_reason = std::move(fallback_reason);
-    fragment.tasks = 1;
-    checkNotEmpty(plan, fragment.stage_name);
-    fragment.plan = &plan;
-    graph.fragments.push_back(std::move(fragment));
+    checkNotEmpty(plan, String(main_stage_name));
+    graph.fragments.push_back(QueryFragment{
+        .id = 0,
+        .stage_name = String(main_stage_name),
+        .execution_mode = QueryFragment::ExecutionMode::SingleNode,
+        .fallback_reason = std::move(fallback_reason),
+        .description = {},
+        .tasks = 1,
+        .plan = &plan,
+    });
     return graph;
 }
 
@@ -379,7 +381,7 @@ String dumpFragmentGraph(const FragmentGraph & graph)
     {
         fmt::format_to(out, "  F{} {:<{}}  {:<11}  tasks={}",
             fragment.id, fragment.stage_name, stage_name_width,
-            fragment.location == QueryFragment::ExecutionLocation::Distributed ? "distributed" : "single node",
+            fragment.execution_mode == QueryFragment::ExecutionMode::Distributed ? "distributed" : "single node",
             fragment.tasks);
 
         bool first_input = true;
@@ -417,7 +419,7 @@ String dumpFragmentGraph(const FragmentGraph & graph)
             .name = exchange.name,
             .edge = fmt::format("F{} -> F{}", exchange.from, exchange.to),
             .kind = formatExchangeKind(exchange),
-            .mode = exchange.mode == FragmentExchange::Mode::Streaming ? "streaming" : "persisted",
+            .mode = String(formatExchangeMode(exchange.mode)),
             .buckets = fmt::format("{} -> {}", exchange.source_buckets, exchange.destination_buckets),
         };
         name_width = std::max(name_width, row.name.size());

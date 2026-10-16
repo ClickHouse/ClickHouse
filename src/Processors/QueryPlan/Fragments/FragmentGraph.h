@@ -17,7 +17,7 @@ namespace DB
 /// One stage of a distributed query plan.
 struct QueryFragment
 {
-    enum class ExecutionLocation : uint8_t
+    enum class ExecutionMode : uint8_t
     {
         /// A stage of a cut plan, run as tasks by the scheduler.
         Distributed,
@@ -26,12 +26,14 @@ struct QueryFragment
         SingleNode,
     };
 
-    /// The stage id assigned by the cutter: N for `stage_N`, the next number for `main`.
-    /// Ids ascend from the leaves to the root.
+    /// The stage id assigned by the cutter: N for `stage_N`, the next number for `main`. The cutter numbers the stages
+    /// in post-order over the plan, visiting the inputs of a step from left to right: a stage gets a higher id than
+    /// every stage it reads from, and every stage under an input of a step gets a lower id than every stage under the
+    /// next input (e.g. the left side of a join before the right side).
     UInt32 id = 0;
     /// The name of the stage in the executor, to join with logs and traces.
     String stage_name;
-    ExecutionLocation location = ExecutionLocation::Distributed;
+    ExecutionMode execution_mode = ExecutionMode::Distributed;
     /// `SingleNode` only: why the plan was not cut.
     std::optional<String> fallback_reason;
     /// What the fragment computes when its stage name does not tell, e.g. the set it fills: "k IN (SELECT k FROM small)".
@@ -67,16 +69,6 @@ struct FragmentExchange
         SetValues,
     };
 
-    enum class Mode : uint8_t
-    {
-        /// `ExchangeDescription::Kind::Streaming`: the data is sent over the network while it is produced; the producer
-        /// and the consumer run at the same time.
-        Streaming,
-        /// `ExchangeDescription::Kind::Persisted`: the data is written to temporary files, and the consumer starts only
-        /// after the producer has finished.
-        Persisted,
-    };
-
     /// The exchange id assigned by the cutter, N for `exchange_N`.
     UInt32 id = 0;
     /// The executor's exchange name, e.g. `exchange_1`, for log and trace joins.
@@ -90,7 +82,10 @@ struct FragmentExchange
     Names keys;
     /// The sort order a merging `Gather` exchange maintains.
     std::optional<SortDescription> merge_sort;
-    Mode mode = Mode::Streaming;
+    /// The executor's transport. `Streaming`: the data is sent over the network while it is produced; the producer
+    /// and the consumer run at the same time. `Persisted`: the data is written to temporary files, and the consumer
+    /// starts only after the producer has finished.
+    ExchangeDescription::Kind mode = ExchangeDescription::Kind::Streaming;
     size_t source_buckets = 0;
     size_t destination_buckets = 0;
     ExchangeStatistics statistics;
@@ -115,7 +110,7 @@ struct FragmentGraph
 FragmentGraph buildFragmentGraph(const DistributedQueryPlan & distributed_plan);
 
 /// The one-fragment graph of a plan that was not cut (no exchanges, or the planner fell back to a single node).
-/// The fragment has the `SingleNode` location and carries `fallback_reason`.
+/// The fragment has the `SingleNode` execution mode and carries `fallback_reason`.
 FragmentGraph buildSingleFragmentGraph(const QueryPlan & plan, std::optional<String> fallback_reason);
 
 /// Throws `LOGICAL_ERROR` unless the fragments and the exchanges are each in strictly ascending order of ids, every

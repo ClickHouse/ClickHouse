@@ -131,7 +131,7 @@ TEST(FragmentGraph, LevelsWithSetFragment)
     /// F0 (set source) -> F1 (fills the set on the initiator) -> F2 (reads the set) -> F3 (main).
     FragmentGraph graph;
     graph.fragments = {makeFragment(0, 8), makeFragment(1, 1), makeFragment(2, 8), makeFragment(3, 1, "main")};
-    graph.fragments[1].location = QueryFragment::ExecutionLocation::SingleNode;
+    graph.fragments[1].execution_mode = QueryFragment::ExecutionMode::SingleNode;
     graph.fragments[1].description = "k IN (SELECT k FROM small)";
     connect(graph, 0, 1);
     connect(graph, 1, 2);
@@ -227,7 +227,7 @@ TEST(FragmentGraph, DumpExchangeKinds)
     graph.exchanges[0].kind = FragmentExchange::Kind::Hash;
     graph.exchanges[0].keys = {"a", "b"};
     graph.exchanges[1].kind = FragmentExchange::Kind::Any;
-    graph.exchanges[1].mode = FragmentExchange::Mode::Persisted;
+    graph.exchanges[1].mode = ExchangeDescription::Kind::Persisted;
     graph.exchanges[2].merge_sort = makeSortDescription("k");
     graph.exchanges[3].kind = FragmentExchange::Kind::SetValues;
 
@@ -292,12 +292,12 @@ TEST(FragmentGraph, BuildFromDistributedPlan)
     ASSERT_EQ(graph.fragments.size(), 2u);
     const auto & main_fragment = graph.getFragment(1);
     EXPECT_EQ(main_fragment.stage_name, "main");
-    EXPECT_EQ(main_fragment.location, QueryFragment::ExecutionLocation::Distributed);
+    EXPECT_EQ(main_fragment.execution_mode, QueryFragment::ExecutionMode::Distributed);
     EXPECT_FALSE(main_fragment.description.has_value());
 
     const auto & stage_0 = graph.getFragment(0);
     EXPECT_EQ(stage_0.stage_name, "stage_0");
-    EXPECT_EQ(stage_0.location, QueryFragment::ExecutionLocation::Distributed);
+    EXPECT_EQ(stage_0.execution_mode, QueryFragment::ExecutionMode::Distributed);
     EXPECT_FALSE(stage_0.description.has_value());
     EXPECT_EQ(stage_0.tasks, 2u);
 
@@ -307,7 +307,7 @@ TEST(FragmentGraph, BuildFromDistributedPlan)
     EXPECT_EQ(exchange.to, 1u);
     EXPECT_EQ(exchange.kind, FragmentExchange::Kind::Hash);
     EXPECT_EQ(exchange.keys, (Names{"k"}));
-    EXPECT_EQ(exchange.mode, FragmentExchange::Mode::Streaming);
+    EXPECT_EQ(exchange.mode, ExchangeDescription::Kind::Streaming);
     EXPECT_EQ(exchange.source_buckets, 2u);
     EXPECT_EQ(exchange.destination_buckets, 4u);
     EXPECT_EQ(exchange.from, 0u);
@@ -316,7 +316,7 @@ TEST(FragmentGraph, BuildFromDistributedPlan)
     /// A persisted exchange is reported as persisted.
     distributed_plan.exchange_descriptions["exchange_0"].kind = ExchangeDescription::Kind::Persisted;
     auto persisted_graph = buildFragmentGraph(distributed_plan);
-    EXPECT_EQ(persisted_graph.getExchange(0).mode, FragmentExchange::Mode::Persisted);
+    EXPECT_EQ(persisted_graph.getExchange(0).mode, ExchangeDescription::Kind::Persisted);
 
     /// A dependency without a matching receive step is an inconsistent plan.
     distributed_plan.stage_depends_on["main"] = {{"stage_0", "exchange_7"}};
@@ -339,7 +339,7 @@ TEST(FragmentGraph, BuildSingleFragment)
 
     ASSERT_EQ(graph.fragments.size(), 1u);
     EXPECT_EQ(graph.fragments[0].plan, &plan);
-    EXPECT_EQ(graph.fragments[0].location, QueryFragment::ExecutionLocation::SingleNode);
+    EXPECT_EQ(graph.fragments[0].execution_mode, QueryFragment::ExecutionMode::SingleNode);
     EXPECT_EQ(graph.fragments[0].fallback_reason, "no exchanges");
     EXPECT_EQ(graph.fragments[0].tasks, 1u);
     EXPECT_EQ(dumpFragmentGraph(graph),
