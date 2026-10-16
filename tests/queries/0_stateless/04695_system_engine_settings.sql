@@ -50,7 +50,7 @@ WHERE (name LIKE 'format\_%' OR name LIKE 'input\_format\_%' OR name LIKE 'outpu
     OR (engine_name IN ('S3Queue', 'AzureQueue') AND name = 'keeper_path'))
     AND NOT (engine_name IN ('Kafka', 'FileLog', 'NATS', 'RabbitMQ')
         AND name IN ('input_format_csv_detect_header', 'input_format_tsv_detect_header', 'input_format_custom_detect_header'))
-    AND NOT (engine_name = 'Kafka'
+    AND NOT (engine_name IN ('Kafka', 'NATS', 'RabbitMQ')
         AND name IN ('input_format_skip_unknown_fields', 'input_format_allow_errors_ratio', 'input_format_allow_errors_num'));
 
 -- Verify settings a new table cannot use are not listed: MaterializedPostgreSQL's database engine settings and the

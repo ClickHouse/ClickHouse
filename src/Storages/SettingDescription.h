@@ -60,20 +60,53 @@ SettingDescriptions enumerateCompiledDefaultsExcept(ContextPtr context)
     return settings;
 }
 
+inline bool isHeaderDetectionSetting(std::string_view name)
+{
+    return name == "input_format_csv_detect_header" || name == "input_format_tsv_detect_header"
+        || name == "input_format_custom_detect_header";
+}
+
 /// The streaming engines (`Kafka`, `NATS`, `RabbitMQ`, `FileLog`) always disable the header detection of the `CSV`, `TSV`
 /// and `CustomSeparated` formats, whatever a table states: these settings show `0`, the value used, as `readonly`.
 inline void setHeaderDetectionDisabled(SettingDescriptions & settings)
 {
     for (auto & setting : settings)
     {
-        if (setting.name == "input_format_csv_detect_header" || setting.name == "input_format_tsv_detect_header"
-            || setting.name == "input_format_custom_detect_header")
+        if (isHeaderDetectionSetting(setting.name))
         {
             setting.value = "0";
             setting.changed = true;
             setting.readonly = true;
             setting.set_by_engine = true;
         }
+    }
+}
+
+/// `NATS` and `RabbitMQ`, as `Kafka`, skip unknown fields and allow no ratio of errors when a table does not state these
+/// format settings, and allow as many errors as `skip_broken_messages_name` with the default `handle_error_mode` (none with
+/// another mode): these settings show the values the engine uses with the default mode, and a table can state others.
+inline void setStreamingErrorHandlingDefaults(SettingDescriptions & settings, std::string_view skip_broken_messages_name)
+{
+    String skip_broken_messages;
+    for (const auto & setting : settings)
+        if (setting.name == skip_broken_messages_name)
+            skip_broken_messages = setting.value;
+
+    for (auto & setting : settings)
+    {
+        if (setting.name == "input_format_skip_unknown_fields")
+            setting.value = "1";
+        else if (setting.name == "input_format_allow_errors_ratio")
+            setting.value = "0";
+        else if (setting.name == "input_format_allow_errors_num")
+        {
+            setting.value = skip_broken_messages;
+            setting.comment += " For a table that does not state it, the value of `" + String(skip_broken_messages_name) + "`.";
+        }
+        else
+            continue;
+        setting.changed = true;
+        setting.set_by_engine = true;
     }
 }
 

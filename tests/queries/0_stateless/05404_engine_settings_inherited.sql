@@ -17,11 +17,11 @@ WHERE (engine_name = 'Kafka' AND name IN ('kafka_max_block_size', 'format_csv_de
     OR (engine_name = 'S3Queue' AND name = 'keeper_path')
 ORDER BY engine_name, name;
 
--- The format settings `Kafka` sets itself when a table does not state them.
-SELECT name, value, changed, readonly, inherited FROM system.engine_settings
-WHERE engine_name = 'Kafka'
+-- The format settings `Kafka`, `NATS` and `RabbitMQ` set themselves when a table does not state them.
+SELECT engine_name, name, value, changed, readonly, inherited FROM system.engine_settings
+WHERE engine_name IN ('Kafka', 'NATS', 'RabbitMQ')
     AND name IN ('input_format_skip_unknown_fields', 'input_format_allow_errors_ratio', 'input_format_allow_errors_num')
-ORDER BY name;
+ORDER BY engine_name, name;
 
 -- The header detection the streaming engines always disable.
 SELECT engine_name, name, value, changed, readonly, inherited FROM system.engine_settings
@@ -37,6 +37,11 @@ ORDER BY engine_name;
 -- No `MergeTree` row is inherited: they match `system.merge_tree_settings`.
 SELECT countIf(inherited) FROM system.engine_settings WHERE endsWith(engine_name, 'MergeTree');
 
--- `Set` and `Hive` do not list the format settings they never read.
+-- `Set`, `Hive` and `FileLog` do not list the format settings they never read; `FileLog` lists only the header detection.
 SELECT count() FROM system.engine_settings WHERE engine_name = 'Set' AND name LIKE '%format%';
 SELECT count() FROM system.engine_settings WHERE engine_name = 'Hive' AND name LIKE '%format%';
+SELECT count() FROM system.engine_settings WHERE engine_name = 'FileLog' AND name LIKE '%format%' AND name NOT LIKE '%detect\_header';
+
+-- `YTsaurus` does not list the settings only the YTsaurus dictionary sources take, which the table engine rejects.
+SELECT count() > 0, countIf(name IN ('lookup_throttler_max_requests_per_second', 'lookup_max_rows_per_query'))
+FROM system.engine_settings WHERE engine_name = 'YTsaurus';
