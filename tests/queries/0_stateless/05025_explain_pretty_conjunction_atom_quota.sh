@@ -24,10 +24,12 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --enable_analyzer 1"
 
 # Both prewhere settings are pinned because either one off leaves the condition in a Filter step,
-# where no runtime filter joins it and the query selects no rows at all.
+# where no runtime filter joins it and the query selects no rows at all. Statistics part pruning is
+# off for the same reason: the condition columns hold only defaults, so `u0 != 0` prunes the only part.
 join_settings="enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0,
                join_algorithm = 'parallel_hash', parallel_hash_join_threshold = 0,
                query_plan_join_swap_table = 0, enable_parallel_replicas = 0, use_statistics = 0,
+               use_statistics_for_part_pruning = 0,
                query_plan_optimize_join_order_limit = 0, query_plan_join_shard_by_pk_ranges = 0,
                query_plan_optimize_join_order_randomize = 0, optimize_move_to_prewhere = 1,
                query_plan_optimize_prewhere = 1, allow_reorder_prewhere_conditions = 0"
