@@ -1,5 +1,6 @@
 #include <Interpreters/SecretArgumentsRegistry.h>
 
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Backups/BackupFactory.h>
 #include <Common/HiddenSecret.h>
 #include <Databases/DatabaseFactory.h>
@@ -11,6 +12,19 @@
 
 namespace DB
 {
+
+namespace
+{
+
+bool differsOnlyInCaseFromFunctionWithSecrets(const String & name)
+{
+    if (!TableFunctionFactory::instance().hasArgumentSecretsIgnoringCase(name)
+        && !FunctionFactory::instance().hasArgumentSecretsIgnoringCase(name))
+        return false;
+    return !FunctionFactory::instance().has(name) && !AggregateFunctionFactory::instance().isAggregateFunctionName(name);
+}
+
+}
 
 const SecretArgumentsRegistry & SecretArgumentsRegistry::instance()
 {
@@ -37,8 +51,8 @@ SecretArgumentsResult SecretArgumentsRegistry::find(ASTFunction::Kind kind, cons
                 spec = FunctionFactory::instance().tryGetSecretArgumentsSpec(name);
                 generic_rules = false;
             }
-            /// Every table function has a spec, so an unknown function has no secrets.
-            if (!spec)
+            /// Every table function has a spec, so an unknown function has no secrets, unless it is one with secrets in the wrong case.
+            if (!spec && !differsOnlyInCaseFromFunctionWithSecrets(name))
                 return {};
             break;
         case ASTFunction::Kind::TABLE_ENGINE:
@@ -59,8 +73,8 @@ SecretArgumentsResult SecretArgumentsRegistry::find(ASTFunction::Kind kind, cons
     }
 
     FunctionSecretArgumentsFinder finder(function);
-    /// Not a registered engine (a typo, or a process that did not register that factory). The statement is
-    /// logged before validation rejects it, so fail closed.
+    /// Not a registered engine (a typo, or a process that did not register that factory), or a function name in the wrong
+    /// case. The statement is logged before validation rejects it, so fail closed.
     if (!spec)
         finder.maskEveryArgument();
     else

@@ -28,6 +28,14 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    /// Documentation-only — the result is the sum of `notEquals` results across
+    /// matched tuple elements, so its width depends on the input tuple size
+    /// (e.g. `Tuple` of 1 element → `UInt8`, 2 elements → `UInt16`, etc).
+    String getSignatureString() const override
+    {
+        return "(Tuple, Tuple) -> UInt";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         const auto * left_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
