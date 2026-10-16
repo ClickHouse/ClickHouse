@@ -48,6 +48,8 @@ EXCLUDE=(
     04045_delta_no_padding_3vals.parquet
     04045_delta_no_padding_5vals.parquet
     04045_delta_sample_93093.parquet
+    # `FILE` logical type fixture with raw binary `inline` values, tested by 05361.
+    file_logical_type_arrow_rs.parquet
     # Hand-crafted file for testing dictionary memory estimation with sparse nullables.
     04099_dict_nullable_string_memory.parquet
     # Schema fixtures for the 04757 schema-inference cache key test. The VARIANT one carries a

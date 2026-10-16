@@ -5,7 +5,7 @@
     "version": "1.0",
     "contact": {
       "name": "ClickHouse Support",
-      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1234548",
+      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1236355",
       "email": "support@clickhouse.com"
     }
   },
@@ -605,8 +605,8 @@
     },
     "/v1/organizations/{organizationId}/prometheus/discovery": {
       "get": {
-        "summary": "List Prometheus scrape targets",
-        "description": "Returns one Prometheus scrape target per service in the organization, in the [HTTP service discovery](https://prometheus.io/docs/prometheus/latest/http_sd/) (`http_sd`) format. Only services the API key is authorized to view are included; services that are being deleted or have been deleted are omitted.\n\nPoint an [`http_sd_configs`](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#http_sd_config) job at this endpoint to discover and scrape all services in the organization automatically. Prometheus refreshes the target list on every discovery poll, so newly created and deleted services are picked up without configuration changes.\n\nDiscovered targets scrape with `filtered_metrics=true` by default; pass `?filtered_metrics=false` to this endpoint to discover unfiltered targets. See the [Prometheus integration guide](https://clickhouse.com/docs/integrations/prometheus) for more on the exported metrics.",
+        "summary": "Get Prometheus service discovery targets",
+        "description": "Returns one Prometheus scrape target per service in the organization, in the [HTTP service discovery](https://prometheus.io/docs/prometheus/latest/http_sd/) (`http_sd`) format. Only services the API key is authorized to view are included; services that are being deleted or have been deleted are omitted.\n\nPoint an [`http_sd_configs`](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#http_sd_config) job at this endpoint to discover and scrape all services in the organization automatically. Prometheus refreshes the target list on every discovery poll, so newly created and deleted services are picked up without configuration changes.\n\nFilter targets in `relabel_configs` by `__meta_clickhouse_region`, `__meta_clickhouse_provider` or `__meta_clickhouse_tag_<key>`. Invalid label name characters in tag keys become `_`. `__meta_clickhouse_tagpresent_<key>` is `true` for every tag, including tags without a value.\n\nDiscovered targets scrape with `filtered_metrics=true` by default; pass `?filtered_metrics=false` to this endpoint to discover unfiltered targets. See the [Prometheus integration guide](https://clickhouse.com/docs/integrations/prometheus) for more on the exported metrics.",
         "operationId": "organizationPrometheusDiscoveryGet",
         "parameters": [
           {
@@ -701,7 +701,7 @@
           "Prometheus"
         ],
         "x-mint": {
-          "content": "Returns one Prometheus scrape target per service in the organization, in the [HTTP service discovery](https://prometheus.io/docs/prometheus/latest/http_sd/) (`http_sd`) format. Only services the API key is authorized to view are included; services that are being deleted or have been deleted are omitted.\n\nPoint an [`http_sd_configs`](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#http_sd_config) job at this endpoint to discover and scrape all services in the organization automatically. Prometheus refreshes the target list on every discovery poll, so newly created and deleted services are picked up without configuration changes.\n\nDiscovered targets scrape with `filtered_metrics=true` by default; pass `?filtered_metrics=false` to this endpoint to discover unfiltered targets. See the [Prometheus integration guide](https://clickhouse.com/docs/integrations/prometheus) for more on the exported metrics."
+          "content": "Returns one Prometheus scrape target per service in the organization, in the [HTTP service discovery](https://prometheus.io/docs/prometheus/latest/http_sd/) (`http_sd`) format. Only services the API key is authorized to view are included; services that are being deleted or have been deleted are omitted.\n\nPoint an [`http_sd_configs`](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#http_sd_config) job at this endpoint to discover and scrape all services in the organization automatically. Prometheus refreshes the target list on every discovery poll, so newly created and deleted services are picked up without configuration changes.\n\nFilter targets in `relabel_configs` by `__meta_clickhouse_region`, `__meta_clickhouse_provider` or `__meta_clickhouse_tag_<key>`. Invalid label name characters in tag keys become `_`. `__meta_clickhouse_tagpresent_<key>` is `true` for every tag, including tags without a value.\n\nDiscovered targets scrape with `filtered_metrics=true` by default; pass `?filtered_metrics=false` to this endpoint to discover unfiltered targets. See the [Prometheus integration guide](https://clickhouse.com/docs/integrations/prometheus) for more on the exported metrics."
         }
       }
     },
@@ -19582,7 +19582,7 @@
       "get": {
         "operationId": "savedQueryList",
         "summary": "List saved queries",
-        "description": "**Disclaimer:** This beta endpoint is evolving; the API contract may change. <br /><br /> Returns saved queries for the service.",
+        "description": "Returns saved queries for the service.",
         "tags": [
           "Saved queries"
         ],
@@ -19869,17 +19869,14 @@
             }
           }
         },
-        "x-badges": [
-          {
-            "name": "Beta",
-            "position": "after"
-          }
-        ]
+        "x-mint": {
+          "content": "Returns saved queries for the service.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:view` permission.\n\n</div>\n</div>"
+        }
       },
       "post": {
         "operationId": "savedQueryCreate",
         "summary": "Create a saved query",
-        "description": "**Disclaimer:** This beta endpoint is evolving; the API contract may change. <br /><br /> Creates a saved query.",
+        "description": "Creates a saved query.",
         "tags": [
           "Saved queries"
         ],
@@ -20154,19 +20151,16 @@
             }
           }
         },
-        "x-badges": [
-          {
-            "name": "Beta",
-            "position": "after"
-          }
-        ]
+        "x-mint": {
+          "content": "Creates a saved query.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage` permission.\n\n</div>\n</div>"
+        }
       }
     },
     "/v1/organizations/{organizationId}/services/{serviceId}/saved-queries/{queryId}": {
       "delete": {
         "operationId": "savedQueryDelete",
         "summary": "Delete a saved query",
-        "description": "**Disclaimer:** This beta endpoint is evolving; the API contract may change. <br /><br /> Deletes a saved query.",
+        "description": "Deletes a saved query.",
         "tags": [
           "Saved queries"
         ],
@@ -20440,17 +20434,14 @@
             }
           }
         },
-        "x-badges": [
-          {
-            "name": "Beta",
-            "position": "after"
-          }
-        ]
+        "x-mint": {
+          "content": "Deletes a saved query.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage` permission.\n\n</div>\n</div>"
+        }
       },
       "get": {
         "operationId": "savedQueryGet",
         "summary": "Get a saved query",
-        "description": "**Disclaimer:** This beta endpoint is evolving; the API contract may change. <br /><br /> Returns a saved query.",
+        "description": "Returns a saved query.",
         "tags": [
           "Saved queries"
         ],
@@ -20695,17 +20686,14 @@
             }
           }
         },
-        "x-badges": [
-          {
-            "name": "Beta",
-            "position": "after"
-          }
-        ]
+        "x-mint": {
+          "content": "Returns a saved query.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:view` permission.\n\n</div>\n</div>"
+        }
       },
       "put": {
         "operationId": "savedQueryUpdate",
         "summary": "Update a saved query",
-        "description": "**Disclaimer:** This beta endpoint is evolving; the API contract may change. <br /><br /> Updates a saved query.",
+        "description": "Updates a saved query.",
         "tags": [
           "Saved queries"
         ],
@@ -20992,12 +20980,9 @@
             }
           }
         },
-        "x-badges": [
-          {
-            "name": "Beta",
-            "position": "after"
-          }
-        ]
+        "x-mint": {
+          "content": "Updates a saved query.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage` permission.\n\n</div>\n</div>"
+        }
       }
     },
     "/v1/organizations/{organizationId}/udfUploads/url": {
@@ -25019,7 +25004,18 @@
           "clickhouse_discovery_service_name": {
             "description": "Service name.",
             "type": "string"
+          },
+          "__meta_clickhouse_region": {
+            "description": "Service region, for example `us-east-1`.",
+            "type": "string"
+          },
+          "__meta_clickhouse_provider": {
+            "description": "Cloud provider, for example `aws`.",
+            "type": "string"
           }
+        },
+        "additionalProperties": {
+          "type": "string"
         }
       },
       "PrometheusDiscoveryTargetGroup": {
@@ -27394,9 +27390,8 @@
             ]
           },
           "host": {
-            "description": "PostgreSQL server hostname or IP address. To use a reverse private endpoint, pass the endpoint hostname here.",
+            "description": "PostgreSQL server hostname or IP address. To use a reverse private endpoint, pass the endpoint hostname here. For Cloud SQL with SERVICE_ACCOUNT_WORKLOAD_IDENTITY authentication, pass the instance connection name (project:region:instance).",
             "type": "string",
-            "format": "hostname",
             "example": "my-postgres-server.example.com"
           },
           "port": {
@@ -27416,7 +27411,8 @@
             "type": "string",
             "enum": [
               "basic",
-              "IAM_ROLE"
+              "IAM_ROLE",
+              "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
             ],
             "example": "IAM_ROLE"
           },
@@ -27483,9 +27479,8 @@
             "$ref": "#/components/schemas/PLAIN"
           },
           "host": {
-            "description": "PostgreSQL server hostname or IP address. To use a reverse private endpoint, pass the endpoint hostname here.",
+            "description": "PostgreSQL server hostname or IP address. To use a reverse private endpoint, pass the endpoint hostname here. For Cloud SQL with SERVICE_ACCOUNT_WORKLOAD_IDENTITY authentication, pass the instance connection name (project:region:instance).",
             "type": "string",
-            "format": "hostname",
             "example": "my-postgres-server.example.com"
           },
           "port": {
@@ -27508,7 +27503,8 @@
             "type": "string",
             "enum": [
               "basic",
-              "IAM_ROLE"
+              "IAM_ROLE",
+              "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
             ],
             "example": "IAM_ROLE"
           },
@@ -27553,12 +27549,11 @@
             "$ref": "#/components/schemas/PLAIN"
           },
           "host": {
-            "description": "PostgreSQL server hostname or IP address. To use a reverse private endpoint, pass the endpoint hostname here.",
+            "description": "PostgreSQL server hostname or IP address. To use a reverse private endpoint, pass the endpoint hostname here. For Cloud SQL with SERVICE_ACCOUNT_WORKLOAD_IDENTITY authentication, pass the instance connection name (project:region:instance).",
             "type": [
               "string",
               "null"
             ],
-            "format": "hostname",
             "example": "my-postgres-server.example.com"
           },
           "port": {
@@ -27880,14 +27875,14 @@
               "mysql",
               "rdsmysql",
               "auroramysql",
+              "cloudsqlmysql",
               "mariadb",
               "rdsmariadb"
             ]
           },
           "host": {
-            "description": "MySQL server hostname or IP address. To use a reverse private endpoint, pass the endpoint hostname here.",
+            "description": "MySQL server hostname or IP address. To use a reverse private endpoint, pass the endpoint hostname here. For Cloud SQL with SERVICE_ACCOUNT_WORKLOAD_IDENTITY authentication, pass the instance connection name (project:region:instance).",
             "type": "string",
-            "format": "hostname",
             "example": "my-mysql-server.example.com"
           },
           "port": {
@@ -27902,7 +27897,8 @@
             "type": "string",
             "enum": [
               "basic",
-              "IAM_ROLE"
+              "IAM_ROLE",
+              "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
             ],
             "example": "basic"
           },
@@ -27968,6 +27964,7 @@
               "mysql",
               "rdsmysql",
               "auroramysql",
+              "cloudsqlmysql",
               "mariadb",
               "rdsmariadb"
             ]
@@ -27976,9 +27973,8 @@
             "$ref": "#/components/schemas/PLAIN"
           },
           "host": {
-            "description": "MySQL server hostname or IP address. To use a reverse private endpoint, pass the endpoint hostname here.",
+            "description": "MySQL server hostname or IP address. To use a reverse private endpoint, pass the endpoint hostname here. For Cloud SQL with SERVICE_ACCOUNT_WORKLOAD_IDENTITY authentication, pass the instance connection name (project:region:instance).",
             "type": "string",
-            "format": "hostname",
             "example": "my-mysql-server.example.com"
           },
           "port": {
@@ -27996,7 +27992,8 @@
             "type": "string",
             "enum": [
               "basic",
-              "IAM_ROLE"
+              "IAM_ROLE",
+              "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
             ],
             "example": "basic"
           },
@@ -28054,12 +28051,11 @@
             "$ref": "#/components/schemas/PLAIN"
           },
           "host": {
-            "description": "MySQL server hostname or IP address. To use a reverse private endpoint, pass the endpoint hostname here.",
+            "description": "MySQL server hostname or IP address. To use a reverse private endpoint, pass the endpoint hostname here. For Cloud SQL with SERVICE_ACCOUNT_WORKLOAD_IDENTITY authentication, pass the instance connection name (project:region:instance).",
             "type": [
               "string",
               "null"
             ],
-            "format": "hostname",
             "example": "my-mysql-server.example.com"
           },
           "port": {
@@ -28080,7 +28076,8 @@
             ],
             "enum": [
               "basic",
-              "IAM_ROLE"
+              "IAM_ROLE",
+              "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
             ],
             "example": "basic"
           },
@@ -39332,7 +39329,7 @@
             "$ref": "#/components/schemas/InstancePrivateEndpointsPatch"
           },
           "releaseChannel": {
-            "description": "Select fast if you want to get new ClickHouse releases as soon as they are available. You'll get new features faster, but with a higher risk of bugs. Select slow if you would like to defer releases to give yourself more time to test. This feature is only available for production services. default is the regular release channel.",
+            "description": "Select fast if you want to get new ClickHouse releases as soon as they are available. You'll get new features faster, but with a higher risk of bugs. Select slow if you would like to defer releases to give yourself more time to test. This feature is only available for production services. default is the regular release channel. All services in a warehouse share one release channel, so changing it on one service changes it for all of them. Changing it through a secondary service also requires the `control-plane:service:manage` permission on the warehouse's primary service.",
             "type": "string",
             "enum": [
               "slow",

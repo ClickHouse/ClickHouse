@@ -159,6 +159,39 @@ namespace Net
         /// obtain any data already read from the socket, but not
         /// yet processed.
 
+        int getCharRaw();
+        /// Returns the next byte of the message, or `eof` at the end of the connection.
+        ///
+        /// Buffered: it refills the internal buffer from the socket when needed, so parsing a
+        /// response line, a header block or a chunk header byte by byte costs one system call
+        /// per buffer, not one per byte. Bytes past the parsed part stay in the buffer and are
+        /// returned by the following `readRaw`.
+
+        int readRaw(char * buffer, std::streamsize length);
+        /// Reads up to `length` bytes, bypassing the iostream layer entirely.
+        ///
+        /// Returns the number of bytes read, which can be less than `length`,
+        /// or 0 when the peer has closed the connection. Data left over in the
+        /// internal buffer by header parsing is returned first, everything else
+        /// is read from the socket straight into `buffer`.
+        ///
+        /// Intended for clients that do their own buffering (in ClickHouse, the
+        /// `ReadBuffer` hierarchy) and want neither the extra copy nor the small
+        /// buffer of `HTTPBasicStreamBuf`.
+
+        int writeRaw(const char * buffer, std::streamsize length);
+        /// Writes up to `length` bytes to the socket, bypassing the iostream layer.
+        ///
+        /// Returns the number of bytes written, which can be less than `length`,
+        /// so callers have to loop. See `readRaw` for the motivation.
+
+        void writeAllRaw(const char * buffer, std::streamsize length);
+        /// Same as `writeRaw`, but loops until all `length` bytes are written.
+        /// Throws `MessageException` if the socket stops accepting data.
+
+        int buffered() const;
+        /// Returns the number of bytes in the buffer.
+
     protected:
         HTTPSession();
         /// Creates a HTTP session using an
@@ -202,9 +235,6 @@ namespace Net
 
         int receive(char * buffer, int length);
         /// Reads up to length bytes.
-
-        int buffered() const;
-        /// Returns the number of bytes in the buffer.
 
         void refill();
         /// Refills the internal buffer.
