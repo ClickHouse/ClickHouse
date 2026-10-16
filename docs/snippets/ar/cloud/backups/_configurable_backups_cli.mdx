@@ -54,7 +54,7 @@ clickhousectl cloud service backup-config get "$CH_ID" --json
 
 ## تغيير مدة الاحتفاظ والتكرار {#change-retention-and-frequency}
 
-يقبل الأمر `backup-config update` الإعدادات نفسها الموجودة في نموذج الـ Console — مدة الاحتفاظ (`--backup-retention-period-hours`)، والتكرار (`--backup-period-hours`)، ووقت البدء (`--backup-start-time`) — ثم يطبع الـ configuration الناتج. أما الـ flags التي لا تحددها فتبقى بقيمها الحالية:
+يقبل الأمر `backup-config update` الإعدادات نفسها الموجودة في نموذج الـ Console — مدة الاحتفاظ (`--backup-retention-period-hours`)، والتكرار (`--backup-period-hours`)، ووقت البدء (`--backup-start-time`) — ثم يطبع التهيئة الناتجة. أما الـ flags التي لا تحددها فتبقى بقيمها الحالية:
 
 ```bash
 clickhousectl cloud service backup-config update "$CH_ID" \
@@ -70,7 +70,9 @@ clickhousectl cloud service backup-config update "$CH_ID" \
 }
 ```
 
-يسري التغيير على الفور؛ أعد قراءة الـ configuration للتأكد من ذلك:
+يحدد التكرار أقصى عمر ممكن لأحدث نقطة استعادة (أي الـ RPO الخاص بك). أما مدة الاحتفاظ فتتحكم في المدة التي تُحفظ خلالها بيانات النسخ الاحتياطي، لكنها لا تجعل أحدث نقطة استعادة أقرب زمنيًا. على سبيل المثال، إذا كانت مدة الاحتفاظ 24 ساعة والتكرار كل 48 ساعة، فقد يبلغ عمر أحدث نقطة استعادة قرابة 48 ساعة.
+
+يسري التغيير على الفور؛ أعد قراءة التهيئة للتأكد من ذلك:
 
 ```bash
 clickhousectl cloud service backup-config get "$CH_ID" --json

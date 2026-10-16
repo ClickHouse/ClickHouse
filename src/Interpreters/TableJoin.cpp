@@ -1321,7 +1321,9 @@ bool allowHashJoinCacheKeys(
 
 bool TableJoin::preferParallelHashLayout(std::optional<UInt64> rhs_size_estimation, UInt64 parallel_hash_join_threshold) const
 {
+    /// Without an estimate, only the largest threshold keeps the serial layout, so `0` and the largest value pin a layout.
     return (isInnerOrLeft(kind()) || isRightOrFull(kind())) && !isSpecialStorage()
-        && (!rhs_size_estimation || *rhs_size_estimation >= parallel_hash_join_threshold);
+        && (rhs_size_estimation ? *rhs_size_estimation >= parallel_hash_join_threshold
+                                : parallel_hash_join_threshold != std::numeric_limits<UInt64>::max());
 }
 }

@@ -49,10 +49,8 @@ constexpr bool join_prefetch_supported = KeyGetter::has_cheap_key_calculation
 template <typename Map>
 ALWAYS_INLINE bool shouldUseJoinPrefetch(bool enable_prefetch, const Map * map)
 {
-    /// Two-level maps always prefetch: in the build, summing their buckets would race with the resizes other threads
-    /// do under their own slot locks, and in the probe prefetching them was measured faster even when they fit in L2.
     return enable_prefetch && map != nullptr
-        && (Map::NUM_BUCKETS > 1 || map->getBufferSizeInBytes() > getMinBytesForPrefetchInJoin());
+        && map->getBufferSizeInBytes() > getMinBytesForPrefetchInJoin();
 }
 
 template <typename Selector>
@@ -403,9 +401,11 @@ BuildResult HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertSlotRows(
     /// Software prefetch during the build phase.
     constexpr bool can_prefetch = join_prefetch_supported<KeyGetter, HashMap>;
 
+    /// A two-level map always prefetches here: summing its buckets would race with the resizes other threads do under
+    /// their own slot locks.
     bool use_prefetch = false;
     if constexpr (can_prefetch)
-        use_prefetch = shouldUseJoinPrefetch(join.enable_prefetch, &map);
+        use_prefetch = HashMap::NUM_BUCKETS > 1 ? join.enable_prefetch : shouldUseJoinPrefetch(join.enable_prefetch, &map);
 
     auto prefetcher = makeJoinPrefetcher(use_prefetch, rows,
         [&](size_t k) __attribute__((always_inline))

@@ -11,17 +11,13 @@ doc_type: 'reference'
 
 Permite processar arquivos de uma URL em paralelo a partir de vários nós em um cluster especificado. No nó initiator, ele cria uma conexão com todos os nós do cluster, expande o asterisco no path do arquivo da URL e distribui cada arquivo dinamicamente. No nó worker, ele consulta o initiator sobre a próxima task a ser processada e a processa. Isso se repete até que todas as tasks sejam concluídas.
 
-<div id="syntax">
-  ## Sintaxe
-</div>
+## Sintaxe {#syntax}
 
 ```sql
 urlCluster(cluster_name, URL, format, structure)
 ```
 
-<div id="arguments">
-  ## Argumentos
-</div>
+## Argumentos {#arguments}
 
 | Argumento      | Descrição                                                                                                                                               |
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -30,15 +26,11 @@ urlCluster(cluster_name, URL, format, structure)
 | `format`       | [Formato](/pt-BR/reference/formats/index) dos dados. Tipo: [String](/pt-BR/reference/data-types/string).                                                            |
 | `structure`    | Estrutura da tabela no formato `'UserID UInt64, Name String'`. Determina os nomes e os tipos das colunas. Tipo: [String](/pt-BR/reference/data-types/string). |
 
-<div id="returned-value">
-  ## Valor retornado
-</div>
+## Valor retornado {#returned-value}
 
 Uma tabela com o formato e a estrutura especificados, contendo dados da `URL` definida.
 
-<div id="examples">
-  ## Exemplos
-</div>
+## Exemplos {#examples}
 
 Obtendo as 3 primeiras linhas de uma tabela que contém colunas dos tipos `String` e [UInt32](/pt-BR/reference/data-types/int-uint) de um servidor HTTP que responde no formato [CSV](/pt-BR/reference/formats/CSV/CSV).
 
@@ -64,16 +56,14 @@ if __name__ == "__main__":
 SELECT * FROM urlCluster('cluster_simple','http://127.0.0.1:12345', CSV, 'column1 String, column2 UInt32')
 ```
 
-<div id="globs-in-url">
-  ## Globs em URL
-</div>
+## Globs em URL {#globs-in-url}
 
 Os padrões em `{ }` são usados para gerar um conjunto de shards ou para especificar endereços de failover. Para ver os tipos de padrão compatíveis e exemplos, consulte a descrição da função [remote](/pt-BR/reference/functions/table-functions/remote#globs-in-addresses).
 O caractere `|` dentro dos padrões é usado para especificar endereços de failover. Eles são percorridos na mesma ordem em que são listados no padrão. O número de endereços gerados é limitado pela configuração [glob&#95;expansion&#95;max&#95;elements](/pt-BR/reference/settings/session-settings/other#glob_expansion_max_elements).
 
-<div id="related">
-  ## Relacionados
-</div>
+Os endereços são gerados um a um à medida que as tarefas são distribuídas aos nós do cluster; portanto, `glob_expansion_max_elements` limita quantos endereços uma única consulta pode ler, e não o tamanho do padrão, conforme descrito para a função [url](/pt-BR/reference/functions/table-functions/url#globs-in-url). Um predicado em `_path` ou `_file` é aplicado a cada endereço à medida que ele é gerado, de modo que os endereços rejeitados também são gerados e contabilizados no limite; apenas os correspondentes são encaminhados.
+
+## Relacionados {#related}
 
 * [HDFS engine](/pt-BR/reference/engines/table-engines/integrations/hdfs)
 * [Função de tabela URL](/pt-BR/reference/engines/table-engines/special/url)
