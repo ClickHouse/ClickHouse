@@ -158,8 +158,6 @@ StatelessWorkersProviderPtr StatelessWorkersProviderRegistry::buildProvider(
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "Stateless worker client is not enabled in configuration");
 
-    /// Only the worker source is per-cluster; other settings are read from the top-level block and
-    /// shared across clusters.
     const String config_prefix = clusterConfigPrefix(cluster_name);
     const Strings sources = getWorkerSources(config, config_prefix);
     if (sources.size() != 1)
