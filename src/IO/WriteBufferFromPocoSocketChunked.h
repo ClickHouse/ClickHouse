@@ -12,6 +12,11 @@ class WriteBufferFromPocoSocketChunked: public WriteBufferFromPocoSocket
 public:
     explicit WriteBufferFromPocoSocketChunked(Poco::Net::Socket & socket_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);
     explicit WriteBufferFromPocoSocketChunked(Poco::Net::Socket & socket_, const ProfileEvents::Event & write_event_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);
+    WriteBufferFromPocoSocketChunked(
+        Poco::Net::Socket & socket_,
+        const ProfileEvents::Event & write_event_,
+        const ProfileEvents::Event & flush_event_,
+        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);
 
     void enableChunked();
     void finishChunk();
@@ -29,6 +34,7 @@ private:
     bool chunk_started = false;                 // chunk started flag
     UInt32 * chunk_size_ptr = nullptr;          // pointer to the chunk size holder in the buffer
     size_t finishing = sizeof(*chunk_size_ptr); // indicates not enough buffer for end-of-chunk marker
+    ProfileEvents::Event flush_event = ProfileEvents::end();
 };
 
 }

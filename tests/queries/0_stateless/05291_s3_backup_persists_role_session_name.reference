@@ -1,0 +1,20 @@
+-- archived Backup database definition keeps role_session_name (must be 1)
+1
+-- archived Backup database definition contains no [HIDDEN] (must be 0)
+0
+-- archived S3 table definition keeps role_session_name (must be 1)
+1
+-- archived S3 table definition keeps external_id (must be 1)
+1
+-- archived S3 table definition contains no [HIDDEN] (must be 0)
+0
+-- restored Backup database reads its source table (must be 10)
+10
+-- secret occurrences in SHOW CREATE DATABASE of the restored Backup database (must be 0)
+0
+-- [HIDDEN] present in SHOW CREATE DATABASE of the restored Backup database (must be 1)
+1
+-- secret occurrences in SHOW CREATE TABLE of the restored S3 table (must be 0)
+0
+-- [HIDDEN] present in SHOW CREATE TABLE of the restored S3 table (must be 1)
+1

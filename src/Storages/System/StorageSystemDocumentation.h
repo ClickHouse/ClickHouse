@@ -9,8 +9,8 @@ namespace DB
   * (functions, table engines, data types, etc.) into a single table.
   *
   * Every row corresponds to one entity and contains its name, the kind of the entity,
-  * and the full reference documentation rendered as Markdown (the same documentation
-  * that is published on the website and exposed by the per-kind `system.*` tables).
+  * and its embedded reference documentation rendered as Markdown. Website pages may
+  * add MDX-only content outside their generated bodies.
   *
   * It is meant to back the interactive `help` command of the client, but is useful on its own.
   */

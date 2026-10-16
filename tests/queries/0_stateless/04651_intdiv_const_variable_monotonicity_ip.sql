@@ -16,20 +16,20 @@
 
 SET use_query_condition_cache = 0;
 
-DROP TABLE IF EXISTS t_cv_neg SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS m_cv_neg SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS t_cv_span SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS m_cv_span SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS t_cv_ip1 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS m_cv_ip1 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS t_cv_ip8 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS m_cv_ip8 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS t_cv_ipv SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS m_cv_ipv SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS t_cv_ipwrap4 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS m_cv_ipwrap4 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS t_cv_ipwrap6 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS m_cv_ipwrap6 SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS t_cv_neg;
+DROP TABLE IF EXISTS m_cv_neg;
+DROP TABLE IF EXISTS t_cv_span;
+DROP TABLE IF EXISTS m_cv_span;
+DROP TABLE IF EXISTS t_cv_ip1;
+DROP TABLE IF EXISTS m_cv_ip1;
+DROP TABLE IF EXISTS t_cv_ip8;
+DROP TABLE IF EXISTS m_cv_ip8;
+DROP TABLE IF EXISTS t_cv_ipv;
+DROP TABLE IF EXISTS m_cv_ipv;
+DROP TABLE IF EXISTS t_cv_ipwrap4;
+DROP TABLE IF EXISTS m_cv_ipwrap4;
+DROP TABLE IF EXISTS t_cv_ipwrap6;
+DROP TABLE IF EXISTS m_cv_ipwrap6;
 
 -- ---------------------------------------------------------------------------------------------
 -- Case 9: non-numeric operands. `IPv4`/`IPv6` are substituted with `UInt32`/`UInt128`, and their
@@ -116,17 +116,17 @@ SET explain_query_plan_default = 'legacy';
 
 SELECT 'c8 live ip var', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_cv_ipv WHERE intDiv(a, 10) = 1677721) WHERE explain ILIKE '%Granules: 1/4%';
 
-DROP TABLE t_cv_neg SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE m_cv_neg SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE t_cv_span SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE m_cv_span SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE t_cv_ip1 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE m_cv_ip1 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE t_cv_ip8 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE m_cv_ip8 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE t_cv_ipv SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE m_cv_ipv SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE t_cv_ipwrap4 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE m_cv_ipwrap4 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE t_cv_ipwrap6 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE m_cv_ipwrap6 SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE t_cv_neg;
+DROP TABLE m_cv_neg;
+DROP TABLE t_cv_span;
+DROP TABLE m_cv_span;
+DROP TABLE t_cv_ip1;
+DROP TABLE m_cv_ip1;
+DROP TABLE t_cv_ip8;
+DROP TABLE m_cv_ip8;
+DROP TABLE t_cv_ipv;
+DROP TABLE m_cv_ipv;
+DROP TABLE t_cv_ipwrap4;
+DROP TABLE m_cv_ipwrap4;
+DROP TABLE t_cv_ipwrap6;
+DROP TABLE m_cv_ipwrap6;

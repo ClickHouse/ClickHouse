@@ -21,6 +21,7 @@ extern "C" void __llvm_profile_dump();  // NOLINT
 #if WITH_COVERAGE_DEPTH
 
 #include <algorithm>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -213,14 +214,6 @@ static void xrayHandler(int32_t func_id, XRayEntryType type)
 
 #endif // CLICKHOUSE_XRAY_INSTRUMENT_COVERAGE
 
-/// Stubs for -finstrument-functions (kept for link compatibility with builds that
-/// add the flag without XRay).
-extern "C" void __cyg_profile_func_enter(void *, void *) __attribute__((no_instrument_function));
-void __cyg_profile_func_enter(void *, void *) {}
-
-extern "C" void __cyg_profile_func_exit(void *, void *) __attribute__((no_instrument_function));
-void __cyg_profile_func_exit(void *, void *) {}
-
 
 std::vector<CovCounter> getCurrentCoveredNameRefs()
 {
@@ -357,6 +350,16 @@ std::vector<IndirectCallEntry> getCurrentIndirectCalls()
 }
 
 
+namespace
+{
+    std::atomic<void (*)() noexcept> g_dump_hook = nullptr;
+}
+
+void setCoverageDumpHook(void (*hook)() noexcept)
+{
+    g_dump_hook.store(hook);
+}
+
 void registerCoverageFlushCallback(CoverageFlushCallback cb)
 {
     std::lock_guard lock(g_coverage_mutex);
@@ -448,6 +451,10 @@ void dumpCoverageReportIfPossible()
     /// coverage flakiness. Both call sites already invoke this function for exactly that
     /// reason; previously it was a no-op unless WITH_COVERAGE_DEPTH was set, so the
     /// regular coverage build (which produces the reports) never actually flushed here.
+#if WITH_COVERAGE_DEPTH
+    if (auto * hook = g_dump_hook.load())
+        hook();
+#endif
     static std::mutex mutex;
     std::lock_guard lock(mutex);
     __llvm_profile_dump(); // NOLINT

@@ -1,0 +1,22 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>func</name>
+            <values>
+                <value>log</value>
+                <value>log2</value>
+                <value>log10</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>arg_positive</name>
+            <values>
+                <value>toFloat64(number + 1)</value>
+                <value>toFloat32(number + 1)</value>
+                <value>number + 1</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore({func}({arg_positive}))</query>
+</test>
