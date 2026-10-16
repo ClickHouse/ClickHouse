@@ -427,7 +427,9 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::mergeAndConvertOneBucketT
                 if (size <= PackedStringRef::MAX_SMALL_LEN)
                 {
                     char padded[PackedStringRef::MAX_SMALL_LEN + 8] = {};
-                    memcpy(padded, key.data(), size);
+                    /// An empty key is a null view, and `memcpy` requires a valid source even for zero bytes.
+                    if (size)
+                        memcpy(padded, key.data(), size);
                     return table.find(PackedStringRef::build(padded, size, PackedHash{}));
                 }
                 /// NOLINTNEXTLINE(bugprone-suspicious-stringview-data-usage): the size is passed alongside
