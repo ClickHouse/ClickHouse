@@ -4050,7 +4050,10 @@ void Context::applyNestedQuerySettingsClamped(const SettingsChanges & changes, c
     /// loses the batch's `compatibility` marker instead, so pass it explicitly: otherwise
     /// `SETTINGS use_variant_as_common_type = 1, compatibility = '25.12'` would drop the `1` as unchanged
     /// and let `compatibility` set the setting to the value of that version.
-    const bool has_compatibility_setting = changes.tryGet("compatibility") != nullptr;
+    /// `compatibility = DEFAULT` is parsed into `default_settings`, and it changes the values of the settings
+    /// that are not assigned explicitly just like an assignment of `compatibility` does.
+    const bool has_compatibility_setting = changes.tryGet("compatibility") != nullptr
+        || std::ranges::find(default_settings, "compatibility") != default_settings.end();
     for (const auto & change : changes)
     {
         SettingsChanges single_change{change};
