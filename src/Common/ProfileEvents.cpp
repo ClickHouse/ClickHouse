@@ -51,6 +51,7 @@
     M(ASTFuzzerSkippedBackupRestore, "Number of fuzzed BACKUP/RESTORE queries the server-side AST fuzzer skipped instead of executing.", ValueType::Number) \
     M(ASTFuzzerSkippedReplicatedDDLInternal, "Number of times the server-side AST fuzzer skipped fuzzing because an internal replicated-database DDL execution (a live ZooKeeperMetadataTransaction) was in flight on the context.", ValueType::Number) \
     M(ASTFuzzerSkippedCollaborativeWorker, "Number of times the server-side AST fuzzer skipped fuzzing because the context was executing as a collaborative worker for another node's query: a parallel replicas participant or a cluster function worker.", ValueType::Number) \
+    M(ASTFuzzerSkippedSecondaryQuery, "Number of times the server-side AST fuzzer skipped fuzzing because the query was a secondary query sent by another node.", ValueType::Number) \
     M(QueryTimeMicroseconds, "Total time of all queries.", ValueType::Microseconds) \
     M(SelectQueryTimeMicroseconds, "Total time of SELECT queries.", ValueType::Microseconds) \
     M(InsertQueryTimeMicroseconds, "Total time of INSERT queries.", ValueType::Microseconds) \
@@ -134,6 +135,16 @@
     M(IcebergMetadataReturnedObjectInfos, "Total number of returned object infos from iceberg iterator.", ValueType::Number) \
     M(IcebergMinMaxNonPrunedDeleteFiles, "Total number of accepted data files-position delete file pairs by minmax analysis from pairs suitable by partitioning and sequence number.", ValueType::Number) \
     M(IcebergMinMaxPrunedDeleteFiles, "Total number of accepted data files-position delete file pairs by minmax analysis from pairs suitable by partitioning and sequence number.", ValueType::Number) \
+    M(IcebergCompactionCleanupDeferredByReaders, "Number of times the removal of data files superseded by Iceberg compaction was postponed because a query on this or another replica was still reading a snapshot that references them.", ValueType::Number) \
+    M(IcebergCompactionCleanupDeferredBySnapshotLifetime, "Number of times the removal of data files superseded by Iceberg compaction was postponed because the compaction or a snapshot it superseded was fresher than `iceberg_outdated_snapshot_lifetime_seconds`.", ValueType::Number) \
+    M(ObjectStorageSharedLeasesAcquired, "Number of shared leases of keys, such as Iceberg snapshots being read, written to object storage when a query of this server acquired a key that was not leased by the server yet.", ValueType::Number) \
+    M(ObjectStorageSharedLeasesRenewed, "Number of shared leases rewritten in object storage by the renewal task while the queries of this server held the key.", ValueType::Number) \
+    M(ObjectStorageSharedLeasesRefused, "Number of attempts to lease a key in object storage refused because a cleaner condemned the key, such as an Iceberg snapshot about to be removed by the cleanup after a compaction.", ValueType::Number) \
+    M(ObjectStorageSharedLeaseWriteFailures, "Number of failed writes of shared leases to object storage, on acquisition or on renewal.", ValueType::Number) \
+    M(ObjectStorageSharedLeasesCondemned, "Number of keys condemned in object storage by a cleaner of this server, so that no replica leases them while it removes what they protect.", ValueType::Number) \
+    M(ObjectStorageExclusiveLeasesAcquired, "Number of exclusive leases of keys, such as the compaction of an Iceberg table, acquired in object storage by this server.", ValueType::Number) \
+    M(ObjectStorageExclusiveLeasesRefused, "Number of attempts to acquire an exclusive lease in object storage given up because another replica held a live lease of the key.", ValueType::Number) \
+    M(ObjectStorageExpiredLeasesRemoved, "Number of expired lease objects and condemned markers removed from object storage.", ValueType::Number) \
     M(DeltaLakeDeltaLogExistenceChecks, "Number of object-storage listings issued to check whether a DeltaLake `_delta_log` exists (e.g. during CREATE TABLE).", ValueType::Number) \
     M(OneLakeAccessTokenRequests, "Number of access token requests issued by the OneLake catalog via the Entra ID refresh token grant.", ValueType::Number) \
     M(OneLakeAccessTokenRequestFailures, "Number of failed access token requests issued by the OneLake catalog via the Entra ID refresh token grant (including expired or revoked refresh tokens).", ValueType::Number) \
@@ -957,6 +968,7 @@ The server successfully detected this situation and will download merged part fr
     M(FilesystemCacheCreatedKeyDirectories, "Number of created key directories", ValueType::Bytes) \
     M(FilesystemCacheEvictedFileSegments, "Number of file segments evicted from filesystem cache", ValueType::Number) \
     M(FilesystemCacheDowngradedFileSegments, "Number of file segments downgraded (moved) from the protected to the probationary queue in SLRU cache policy. This is an internal move within the cache, not an eviction.", ValueType::Number) \
+    M(FilesystemCachePromotedFileSegments, "Number of file segments promoted (moved) from the probationary to the protected queue in SLRU cache policy.", ValueType::Number) \
     M(FilesystemCacheBackgroundDownloadQueuePush, "Number of file segments sent for background download in filesystem cache", ValueType::Number) \
     M(FilesystemCacheEvictionSkippedFileSegments, "Number of file segments skipped for eviction because of being in unreleasable state", ValueType::Number) \
     M(FilesystemCacheEvictionSkippedEvictingFileSegments, "Number of file segments skipped for eviction because of being in evicting state", ValueType::Number) \
@@ -987,6 +999,8 @@ The server successfully detected this situation and will download merged part fr
     M(FilesystemCacheCheckCorrectnessMicroseconds, "How much time does FileCache::assertCacheCorrectness takes", ValueType::Microseconds) \
     M(FileSegmentWaitMicroseconds, "Wait on DOWNLOADING state", ValueType::Microseconds) \
     M(FileSegmentWaitTimeouts, "Number of times waiting on a DOWNLOADING file segment timed out (see `filesystem_cache_wait_for_concurrent_download_timeout_milliseconds`)", ValueType::Number) \
+    M(FileSegmentWaitWithoutData, "Number of times waiting on a DOWNLOADING file segment ended because the downloader released the segment before it downloaded the awaited offset", ValueType::Number) \
+    M(FileSegmentWaitWithoutDataMicroseconds, "Time spent in the waits counted by `FileSegmentWaitWithoutData`", ValueType::Microseconds) \
     M(FileSegmentCompleteMicroseconds, "Duration of FileSegment::complete() in filesystem cache", ValueType::Microseconds) \
     M(FileSegmentLockMicroseconds, "Lock file segment time", ValueType::Microseconds) \
     M(FileSegmentWriteMicroseconds, "File segment write() time", ValueType::Microseconds) \
@@ -1353,6 +1367,7 @@ The server successfully detected this situation and will download merged part fr
     \
     M(DistrCacheLockRegistryMicroseconds, "Distributed Cache registry event. Time spent to take DistributedCacheRegistry lock", ValueType::Microseconds) \
     M(DistrCacheRegistryUpdateMicroseconds, "Distributed Cache registry event. Time spent updating distributed cache registry", ValueType::Microseconds) \
+    M(DistrCacheRejectedRegistryRecords, "Distributed Cache registry event. The number of registry entries ignored because their certificate is not trusted, their signature does not match, or either is missing", ValueType::Number) \
     M(DistrCacheRegistryUpdates, "Distributed Cache registry event. Number of distributed cache registry updates", ValueType::Number) \
     M(DistrCacheHashRingRebuilds, "Distributed Cache registry event. Number of distributed cache hash ring rebuilds", ValueType::Number) \
     M(DistrCacheSuccessfulRegistryUpdates, "Distributed Cache registry event. The number of successful server registry updates", ValueType::Number) \
@@ -1378,6 +1393,8 @@ The server successfully detected this situation and will download merged part fr
     M(DistrCacheConnectAttempts, "Distributed Cache connection event. The number of connection attempts to distributed cache", ValueType::Number) \
     M(DistrCacheSuccessfulConnectAttempts, "Distributed Cache connection event. The number of successful connection attempts to distributed cache", ValueType::Number) \
     M(DistrCacheUnsuccessfulConnectAttempts, "Distributed Cache connection event. The number of unsuccessful connection attempts to distributed cache", ValueType::Number) \
+    M(DistrCacheUnexpectedServerCertificate, "Distributed Cache connection event. The number of times a distributed cache server presented a certificate whose key is not the one in its registry entry, so the client closed the connection and excluded the server", ValueType::Number) \
+    M(DistrCacheVerifiedServerCertificate, "Distributed Cache connection event. The number of times a distributed cache server presented a certificate with the key in its registry entry", ValueType::Number) \
     M(DistrCacheGetClientMicroseconds, "Distributed Cache connection event. Time spent getting client for distributed cache", ValueType::Microseconds) \
     \
     M(DistrCacheTemporaryFilesCreated, "Distributed Cache connection event. Number of temporary files created in distributed cache", ValueType::Number) \
@@ -1643,6 +1660,8 @@ The server successfully detected this situation and will download merged part fr
     M(ConcurrencyControlPreemptions, "Total number of CPU preemptions", ValueType::Number) \
     M(ConcurrencyControlUpscales, "Total number of CPU upscaling events", ValueType::Number) \
     M(ConcurrencyControlDownscales, "Total number of CPU downscaling events", ValueType::Number) \
+    M(ConcurrencyControlParks, "Total number of times a thread released (parked) its CPU slot for a non-CPU wait, such as blocking I/O or having no task to run.", ValueType::Number) \
+    M(ConcurrencyControlUnparks, "Total number of times a thread re-acquired its CPU slot after a non-CPU wait.", ValueType::Number) \
     \
     M(ConcurrentQuerySlotsAcquired, "Total number of query slots acquired", ValueType::Number) \
     M(ConcurrentQueryWaitMicroseconds, "Total time a query was waiting for a query slots", ValueType::Microseconds) \
@@ -1717,10 +1736,25 @@ The server successfully detected this situation and will download merged part fr
     M(IndexBinarySearchAlgorithm, "Number of times the binary search algorithm is used over the index marks", ValueType::Number) \
     M(IndexGenericExclusionSearchAlgorithm, "Number of times the generic exclusion search algorithm is used over the index marks", ValueType::Number) \
     M(IndexGenericExclusionSearchStepLimitReached, "Number of times the generic exclusion search over the index marks reached merge_tree_generic_exclusion_search_max_steps and accepted the remaining mark ranges without further splitting", ValueType::Number) \
-    M(ParallelReplicasQueryCount, "Number of (sub)queries executed using parallel replicas during a query execution", ValueType::Number) \
+    M(ParallelReplicasQueryCount, "Number of (sub)queries planned to be executed using parallel replicas during a query execution. Automatic parallel replicas also increments this for the plan it builds to make its decision, so a counted query may never have run with parallel replicas - see `AutoParallelReplicasApplied` and `ParallelReplicasUsedCount` for what was actually executed", ValueType::Number) \
     \
-    M(AutomaticParallelReplicasProbePlansBuilt, "Number of times automatic parallel replicas built a candidate plan with parallel replicas to compare against the single-node plan. Not every such plan is used: it is built to be costed, and is discarded when the single-node plan wins", ValueType::Number) \
-    M(AutomaticParallelReplicasDecidedWithoutBuildingPlan, "Number of times automatic parallel replicas decided against using parallel replicas at a boundary remembered from an earlier execution, without building a candidate plan to cost", ValueType::Number) \
+    M(AutoParallelReplicasSkippedDueToSettings, "Number of times automatic parallel replicas skipped a query before building the plan with parallel replicas, because of the settings it was given. The `AutoParallelReplicas` logger says which case it was. Settings that switch automatic parallel replicas off altogether are not counted: with `enable_parallel_replicas` disabled or forced, or `parallel_replicas_mode` other than `read_tasks`, the optimization does not run at all, as with `automatic_parallel_replicas_mode = 0`", ValueType::Number) \
+    M(AutoParallelReplicasSkippedDueToQuery, "Number of times automatic parallel replicas skipped a query before building the plan with parallel replicas, because the query has a feature it cannot handle, such as a join that cannot be read with parallel replicas or a step that cannot collect statistics. The `AutoParallelReplicas` logger says which case it was", ValueType::Number) \
+    M(AutomaticParallelReplicasProbePlansBuilt, "Number of times automatic parallel replicas built a plan with parallel replicas in order to decide whether it pays off", ValueType::Number) \
+    M(AutomaticParallelReplicasDecidedWithoutBuildingPlan, "Number of times automatic parallel replicas decided against using parallel replicas at a boundary remembered from an earlier execution, without building a candidate plan to cost. The event saying why, such as `AutoParallelReplicasRejectedByCostModel`, is counted beside it", ValueType::Number) \
+    M(AutoParallelReplicasOptimizationMicroseconds, "Time spent in the automatic parallel replicas optimization other than building the plan with parallel replicas", ValueType::Microseconds) \
+    M(AutoParallelReplicasPlanBuildMicroseconds, "Time spent building the plan with parallel replicas that automatic parallel replicas compares against the local plan", ValueType::Microseconds) \
+    M(AutoParallelReplicasPlansNotComparable, "Number of times automatic parallel replicas skipped a query after building the plan with parallel replicas, or at a boundary remembered from building it earlier, because it could not match that plan with the local one well enough to compare or use it: for example, it could not pair their reads, or tell which read the replicas would split. The `AutoParallelReplicas` logger says which case it was", ValueType::Number) \
+    M(AutoParallelReplicasPlanWithoutParallelReplicas, "Number of times automatic parallel replicas skipped a query after building the plan with parallel replicas, because the planner did not use parallel replicas in it, for example for too few rows per replica or a correlated subquery. The `Planner` logger says why", ValueType::Number) \
+    M(AutoParallelReplicasNoStatistics, "Number of times automatic parallel replicas had no statistics yet, so it collected them instead of deciding", ValueType::Number) \
+    M(AutoParallelReplicasStatisticsDrifted, "Number of times the rows read from storage differed from the cached statistics by more than 2x, so automatic parallel replicas recollected them instead of deciding", ValueType::Number) \
+    M(AutoParallelReplicasCostModelEvaluated, "Number of times automatic parallel replicas reached the cost model and compared the local plan against the parallel replicas plan", ValueType::Number) \
+    M(AutoParallelReplicasApplied, "Number of times automatic parallel replicas replaced the query plan with the parallel replicas one", ValueType::Number) \
+    M(AutoParallelReplicasSkippedEarly, "Number of times automatic parallel replicas did not even build the plan with parallel replicas, because index analysis already showed the largest read in the plan gives less than `automatic_parallel_replicas_min_bytes_per_replica` per replica", ValueType::Number) \
+    M(AutoParallelReplicasRejectedByThreshold, "Number of times automatic parallel replicas declined although the cost model favoured parallel replicas, because the read was below `automatic_parallel_replicas_min_bytes_per_replica`", ValueType::Number) \
+    M(AutoParallelReplicasRejectedByDuplicatedReads, "Number of times automatic parallel replicas declined although the cost model favoured parallel replicas, because too large a share of the bytes read would be read by every replica in full rather than split between them, above `automatic_parallel_replicas_max_duplicated_read_ratio`", ValueType::Number) \
+    M(AutoParallelReplicasRejectedByCostModel, "Number of times automatic parallel replicas declined because the cost model estimated the local plan to be at least as fast as the parallel replicas one", ValueType::Number) \
+    M(AutoParallelReplicasBytesPerReplica, "How many bytes per replica the read of this query gives, as automatic parallel replicas sized it - recorded whatever was decided, so the distribution covers both the queries `automatic_parallel_replicas_min_bytes_per_replica` turns away and the ones it lets through", ValueType::Bytes) \
     \
     M(DistributedConnectionReconnectCount, "Number of reconnects to other servers done during distributed query execution. It can happen when a stale connection has been acquired from connection pool", ValueType::Number) \
     M(DistributedConnectionConnectCount, "Number of connects to other servers done during distributed query execution. Happens when new connection is established instead of using existing from pool.", ValueType::Number) \
@@ -1756,6 +1790,8 @@ The server successfully detected this situation and will download merged part fr
     \
     M(RuntimeDataflowStatisticsInputBytes, "Collected statistics on the number of bytes replicas would read if the query was executed with parallel replicas", ValueType::Number) \
     M(RuntimeDataflowStatisticsOutputBytes, "Collected statistics on the number of bytes replicas would send to the initiator if the query was executed with parallel replicas", ValueType::Number) \
+    M(RuntimeDataflowStatisticsInputNanoseconds, "Time spent during query execution collecting statistics on the number of bytes replicas would read, for automatic parallel replicas", ValueType::Nanoseconds) \
+    M(RuntimeDataflowStatisticsOutputNanoseconds, "Time spent during query execution collecting statistics on the number of bytes replicas would send to the initiator, for automatic parallel replicas", ValueType::Nanoseconds) \
     \
     M(S3CachedCredentialsProvidersReused, "Total number of reused credentials provider from the cache", ValueType::Number) \
     M(S3CachedCredentialsProvidersAdded, "Total number of newly added credentials providers to the cache", ValueType::Number) \
