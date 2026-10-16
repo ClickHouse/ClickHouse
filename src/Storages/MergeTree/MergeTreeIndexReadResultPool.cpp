@@ -314,7 +314,7 @@ MarkRanges MergeTreeSkipIndexReader::pruneByDynamicPredicate(
 
 void MergeTreeSkipIndexReader::pruneByLateRuntimeFilters(const SkipIndexReadResult & result) const
 {
-    auto & late = result.late_runtime_filters;
+    const auto & late = result.late_runtime_filters;
     if (!late || is_cancelled)
         return;
 
