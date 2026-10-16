@@ -7,6 +7,8 @@ SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1, optimize_pr
 SET apply_string_filters_during_scan = 1;
 SET use_columns_cache = 1, enable_reads_from_columns_cache = 1, enable_writes_to_columns_cache = 1;
 SET allow_deprecated_database_ordinary = 1;
+-- The profile events of the reads are checked in the log entry of the query, not of the queries to the replicas.
+SET enable_parallel_replicas = 0;
 -- The warning about the deprecated `Ordinary` engine.
 SET send_logs_level = 'error';
 
