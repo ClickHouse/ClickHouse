@@ -64,6 +64,44 @@ SELECT 'floating point range';
 SELECT product(if(number % 2 = 0, 1e200, 1e-200)) = 1 FROM numbers(16) SETTINGS max_threads = 1;
 SELECT product(if(number % 2 = 0, 1e-200, 1e200)) = 1 FROM numbers(16) SETTINGS max_threads = 1;
 
+SELECT 'batch boundaries';
+SELECT isInfinite(product(if(number < 2, 1e200, 1e-200))) FROM numbers(4) SETTINGS max_threads = 1, max_block_size = 1;
+SELECT isInfinite(product(if(number < 2, 1e200, 1e-200))) FROM numbers(4) SETTINGS max_threads = 1, max_block_size = 2;
+SELECT isInfinite(product(if(number < 2, 1e200, 1e-200))) FROM numbers(4) SETTINGS max_threads = 1, max_block_size = 65536;
+
+SELECT 'decimal values';
+SELECT product(x) = 10.0
+FROM VALUES('x Decimal64(2)', (1.25), (2.00), (4.00));
+SELECT product(x) != toFloat64(toDecimal64('0.1', 1) * toDecimal64('0.2', 1))
+FROM VALUES('x Decimal64(1)', (0.1), (0.2));
+
 SELECT 'Float64 input arithmetic';
 SELECT product(x) > 0, arrayProduct(groupArray(x)) = 0
 FROM VALUES('x UInt64', (9223372036854775808), (2));
+
+DROP TABLE IF EXISTS product_sparse;
+CREATE TABLE product_sparse
+(
+    id UInt64,
+    x Float64
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS ratio_of_defaults_for_sparse_serialization = 0.1;
+
+INSERT INTO product_sparse
+SELECT number, if(number IN (0, 2), 1e300, 0.)
+FROM numbers(200);
+
+SELECT product(x) FROM product_sparse;
+SELECT if(id < 3, 0, 1), product(x) FROM product_sparse GROUP BY if(id < 3, 0, 1) ORDER BY if(id < 3, 0, 1);
+
+OPTIMIZE TABLE product_sparse FINAL;
+
+SELECT serialization_kind
+FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 'product_sparse' AND column = 'x' AND active;
+SELECT product(x) FROM product_sparse;
+SELECT if(id < 3, 0, 1), product(x) FROM product_sparse GROUP BY if(id < 3, 0, 1) ORDER BY if(id < 3, 0, 1);
+
+DROP TABLE product_sparse;

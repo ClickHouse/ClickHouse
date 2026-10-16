@@ -7,6 +7,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 
 #include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -77,12 +78,6 @@ private:
     using Data = AggregateFunctionProductData;
     using ColVecType = ColumnVectorOrDecimal<T>;
 
-    struct BatchResult
-    {
-        Float64 product = 1;
-        UInt8 has_value = 0;
-    };
-
     static Float64 toFloat64(const T & value, UInt32 scale)
     {
         if constexpr (is_decimal<T>)
@@ -93,56 +88,33 @@ private:
 
     static Float64 selectValueOrOne(const T & value, UInt8 keep, UInt32 scale)
     {
-        Float64 converted = toFloat64(value, scale);
-
-        if constexpr (is_floating_point<T>)
+        if constexpr (is_decimal<T>)
         {
-            /// Multiplying a discarded NaN or Inf by an arithmetic mask is not safe.
-            /// Select the bit pattern of the multiplicative identity instead.
-            UInt64 value_bits;
-            std::memcpy(&value_bits, &converted, sizeof(converted));
+            if (!keep)
+                return 1.0;
 
-            constexpr UInt64 identity_bits = 0x3ff0000000000000ULL;
-            const UInt64 mask = 0 - static_cast<UInt64>(keep != 0);
-            value_bits = (value_bits & mask) | (identity_bits & ~mask);
-
-            std::memcpy(&converted, &value_bits, sizeof(converted));
-            return converted;
+            return toFloat64(value, scale);
         }
-
-        return keep ? converted : 1.0;
-    }
-
-    template <typename Keep>
-    static BatchResult multiplyBatch(
-        const T * __restrict values,
-        size_t row_begin,
-        size_t row_end,
-        UInt32 scale,
-        const Keep & keep)
-    {
-        BatchResult result;
-        if (row_begin >= row_end)
-            return result;
-
-        Float64 local_product = 1;
-        for (size_t i = row_begin; i < row_end; ++i)
+        else
         {
-            const UInt8 keep_value = static_cast<UInt8>(keep(i) != 0);
-            result.has_value |= keep_value;
-            local_product *= selectValueOrOne(values[i], keep_value, scale);
-        }
+            Float64 converted = toFloat64(value, scale);
 
-        result.product = local_product;
-        return result;
-    }
+            if constexpr (is_floating_point<T>)
+            {
+                /// Multiplying a discarded NaN or Inf by an arithmetic mask is not safe.
+                /// Select the bit pattern of the multiplicative identity instead.
+                UInt64 value_bits;
+                std::memcpy(&value_bits, &converted, sizeof(converted));
 
-    static void applyBatch(Data & data, const BatchResult & batch)
-    {
-        if (batch.has_value)
-        {
-            data.product *= batch.product;
-            data.has_value = 1;
+                constexpr UInt64 identity_bits = 0x3ff0000000000000ULL;
+                const UInt64 mask = 0 - static_cast<UInt64>(keep != 0);
+                value_bits = (value_bits & mask) | (identity_bits & ~mask);
+
+                std::memcpy(&converted, &value_bits, sizeof(converted));
+                return converted;
+            }
+
+            return keep ? converted : 1.0;
         }
     }
 
@@ -154,7 +126,19 @@ private:
         size_t row_end,
         const Keep & keep) const
     {
-        applyBatch(this->data(place), multiplyBatch(values, row_begin, row_end, decimal_scale, keep));
+        auto & data = this->data(place);
+        Float64 product = data.product;
+        UInt8 has_value = data.has_value;
+
+        for (size_t i = row_begin; i < row_end; ++i)
+        {
+            const UInt8 keep_value = static_cast<UInt8>(keep(i) != 0);
+            has_value |= keep_value;
+            product *= selectValueOrOne(values[i], keep_value, decimal_scale);
+        }
+
+        data.product = product;
+        data.has_value = has_value;
     }
 
 public:
@@ -197,6 +181,40 @@ public:
         {
             addBatchWithKeep(place, values, row_begin, row_end, [](size_t) { return UInt8(1); });
         }
+    }
+
+    void addBatchSparse(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena) const override
+    {
+        const auto & column_sparse = assert_cast<const ColumnSparse &>(*columns[0]);
+        const auto * values = &column_sparse.getValuesColumn();
+        auto offset_it = column_sparse.getIterator(row_begin);
+
+        for (size_t row = row_begin; row < row_end; ++row, ++offset_it)
+        {
+            if (places[offset_it.getCurrentRow()])
+                add(places[offset_it.getCurrentRow()] + place_offset, &values, offset_it.getValueIndex(), arena);
+        }
+    }
+
+    void addBatchSparseSinglePlace(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        Arena * arena) const override
+    {
+        const auto & column_sparse = assert_cast<const ColumnSparse &>(*columns[0]);
+        const auto * values = &column_sparse.getValuesColumn();
+        auto offset_it = column_sparse.getIterator(row_begin);
+
+        for (size_t row = row_begin; row < row_end; ++row, ++offset_it)
+            add(place, &values, offset_it.getValueIndex(), arena);
     }
 
     void addBatchSinglePlaceNotNull(
@@ -291,7 +309,9 @@ Calculates the product of numeric values.
 
 The function aggregates rows directly and keeps a constant-size state. Input values are converted
 to `Float64` before multiplication. Floating-point results can depend on aggregation order when
-data is processed in parallel. If the input is already an array, use
+data is processed in parallel. For wide integer and Decimal input, results can differ from
+`arrayProduct(groupArray(x))` because that expression can use a wider intermediate type. If the
+input is already an array, use
 [`arrayProduct`](/reference/functions/regular-functions/array-functions#arrayProduct) instead.
     )";
     FunctionDocumentation::Syntax syntax = "product(x)";
