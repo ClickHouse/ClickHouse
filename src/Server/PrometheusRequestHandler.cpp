@@ -173,14 +173,21 @@ protected:
 
         QueryScope query_scope;
 
-        /// Start the root span before authentication, so that requests failing there are traced too.
-        auto trace_settings_context = session->sessionOrGlobalContext();
-        OpenTelemetry::TracingContextHolder thread_trace_context("PrometheusRequestHandler",
-            client_trace_context,
-            trace_settings_context->getSettingsRef(),
-            trace_settings_context->getOpenTelemetrySpanLog());
-        thread_trace_context.root_span.kind = OpenTelemetry::SpanKind::SERVER;
-        thread_trace_context.root_span.addAttribute("http.method", request.getMethod());
+        std::optional<OpenTelemetry::TracingContextHolder> thread_trace_context;
+        auto start_trace = [&](const ContextPtr & settings_context)
+        {
+            thread_trace_context.emplace("PrometheusRequestHandler",
+                client_trace_context,
+                settings_context->getSettingsRef(),
+                settings_context->getOpenTelemetrySpanLog());
+            thread_trace_context->root_span.kind = OpenTelemetry::SpanKind::SERVER;
+            thread_trace_context->root_span.addAttribute("http.method", request.getMethod());
+        };
+
+        /// A client trace starts before authentication, so that requests failing there are traced too.
+        /// Without one, sampling waits for the user's and the request's settings.
+        if (client_trace_context.isTraceEnabled())
+            start_trace(session->sessionOrGlobalContext());
 
         try
         {
@@ -197,6 +204,8 @@ protected:
             if (authenticateUser(request, response))
             {
                 makeContext(request);
+                if (!thread_trace_context)
+                    start_trace(context);
 
                 /// Apply `http_response_buffer_size` for the output buffer (0 means use the default).
                 auto buffer_size = context->getSettingsRef()[Setting::http_response_buffer_size].value;
@@ -207,7 +216,7 @@ protected:
                 query_scope = QueryScope::create(context);
                 handlingRequestWithContext(request, response);
                 if (handled_exception)
-                    thread_trace_context.root_span.addAttribute(*handled_exception);
+                    thread_trace_context->root_span.addAttribute(*handled_exception);
             }
 
             /// Finalize the response here, so that a failure in the final flush is recorded on the root span.
@@ -219,13 +228,17 @@ protected:
         }
         catch (...)
         {
-            thread_trace_context.root_span.addAttribute(std::current_exception());
-            /// The outer handler sends the error status for this exception code unless the response is already sent.
-            thread_trace_context.root_span.addAttribute("clickhouse.http_status",
-                response.sent() ? response.getStatus() : exceptionCodeToHTTPStatus(getCurrentExceptionCode()));
+            if (thread_trace_context)
+            {
+                thread_trace_context->root_span.addAttribute(std::current_exception());
+                /// The outer handler sends the error status for this exception code unless the response is already sent.
+                thread_trace_context->root_span.addAttribute("clickhouse.http_status",
+                    response.sent() ? response.getStatus() : exceptionCodeToHTTPStatus(getCurrentExceptionCode()));
+            }
             throw;
         }
-        thread_trace_context.root_span.addAttribute("clickhouse.http_status", response.getStatus());
+        if (thread_trace_context)
+            thread_trace_context->root_span.addAttribute("clickhouse.http_status", response.getStatus());
     }
 
     bool authenticateUser(HTTPServerRequest & request, HTTPServerResponse & response)

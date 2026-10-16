@@ -97,6 +97,19 @@ node = cluster.add_instance(
     handle_prometheus_remote_write=(9093, "/write"),
 )
 
+# The server's default profile samples every request here.
+node_sampled = cluster.add_instance(
+    "node_sampled",
+    main_configs=[
+        "configs/prometheus.xml",
+        "configs/config.d/opentelemetry_span_log.xml",
+    ],
+    user_configs=[
+        "configs/allow_experimental_time_series_table.xml",
+        "configs/opentelemetry_start_trace_probability.xml",
+    ],
+)
+
 
 def send_test_data_to_node():
     """Send minimal test data via remote write so a later PromQL query returns data."""
@@ -111,6 +124,13 @@ def start_cluster():
         cluster.start()
         node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
         send_test_data_to_node()
+        node.query(
+            "CREATE USER prometheus_traced_user SETTINGS opentelemetry_start_trace_probability = 1"
+        )
+        node.query(
+            "GRANT SELECT ON default.*, CREATE TEMPORARY TABLE ON *.* TO prometheus_traced_user"
+        )
+        node_sampled.query("CREATE TABLE prometheus ENGINE=TimeSeries")
         yield cluster
     finally:
         cluster.shutdown()
@@ -266,6 +286,76 @@ def test_query_api_bad_promql_records_exception_in_span_log():
         f"FROM system.opentelemetry_span_log "
         f"WHERE trace_id = '{trace_id}' AND operation_name = 'PrometheusRequestHandler'",
         "400\t1\n",
+    )
+
+
+def request_root_spans_sql(query_id):
+    return (
+        "SELECT count() FROM system.opentelemetry_span_log "
+        "WHERE operation_name = 'PrometheusRequestHandler' AND parent_span_id = 0 "
+        "AND attribute['clickhouse.http_status'] = '200' AND trace_id IN ("
+        "SELECT trace_id FROM system.opentelemetry_span_log "
+        f"WHERE attribute['clickhouse.query_id'] = '{query_id}')"
+    )
+
+
+@pytest.mark.parametrize(
+    "user, url_settings",
+    [
+        ("default", "&opentelemetry_start_trace_probability=1"),
+        ("prometheus_traced_user", ""),
+    ],
+)
+def test_query_api_without_traceparent_sampled_by_request_and_user_settings(
+    user, url_settings
+):
+    """
+    Without a traceparent header, opentelemetry_start_trace_probability from the URL
+    or from the user's settings should decide whether the request is traced.
+    """
+    query_id = f"prometheus-sampling-test-{uuid.uuid4()}"
+    url = f"http://{node.ip_address}:9093/api/v1/query?query=up&time=1753176757.89{url_settings}"
+    response = get_response_to_http_api(
+        url, headers={"X-ClickHouse-User": user, "X-ClickHouse-Query-Id": query_id}
+    )
+    extract_data_from_http_api_response(response)
+
+    node.query("SYSTEM FLUSH LOGS system.opentelemetry_span_log")
+    assert_eq_with_retry(node, request_root_spans_sql(query_id), "1\n")
+
+
+def test_query_api_without_traceparent_request_can_disable_sampling():
+    """
+    A request with opentelemetry_start_trace_probability=0 should not be traced
+    even when the server's default profile samples every request.
+    """
+    query_id = f"prometheus-sampling-test-{uuid.uuid4()}"
+    control_trace_id = str(uuid.uuid4())
+    url = f"http://{node_sampled.ip_address}:9093/api/v1/query?query=up&time=1753176757.89"
+    with requests.Session() as session:
+        session.get(
+            url + "&opentelemetry_start_trace_probability=0",
+            headers={"X-ClickHouse-Query-Id": query_id},
+        ).raise_for_status()
+        # On the same connection, this request starts after the first one has logged its spans.
+        session.get(
+            url,
+            headers={"traceparent": f"00-{control_trace_id.replace('-', '')}-{123:016x}-01"},
+        ).raise_for_status()
+
+    node_sampled.query("SYSTEM FLUSH LOGS system.opentelemetry_span_log")
+    assert_eq_with_retry(
+        node_sampled,
+        f"SELECT count() FROM system.opentelemetry_span_log "
+        f"WHERE trace_id = '{control_trace_id}' AND operation_name = 'PrometheusRequestHandler'",
+        "1\n",
+    )
+    assert (
+        node_sampled.query(
+            f"SELECT count() FROM system.opentelemetry_span_log "
+            f"WHERE attribute['clickhouse.query_id'] = '{query_id}'"
+        )
+        == "0\n"
     )
 
 
