@@ -1791,6 +1791,31 @@ public:
         return result;
     }
 
+    /// a conjunct over these can't leave ON, and full_sorting_merge rejects it there
+    TableExpressionNodes preserved_join_tables;
+
+    bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child)
+    {
+        const auto * join_node = parent->as<JoinNode>();
+        if (!join_node || child != join_node->getJoinExpression())
+            return true;
+
+        TableExpressionNodes tables;
+        /// semi join keeps only matched rows
+        if (join_node->getStrictness() != JoinStrictness::Semi)
+        {
+            if (isLeftOrFull(join_node->getKind()))
+                tables = extractTableExpressions(join_node->getLeftTableExpressionNodeTyped(), /*add_array_join=*/ true);
+            if (isRightOrFull(join_node->getKind()))
+                tables.append_range(extractTableExpressions(join_node->getRightTableExpressionNodeTyped(), /*add_array_join=*/ true));
+        }
+
+        std::swap(preserved_join_tables, tables);
+        visit(child);
+        std::swap(preserved_join_tables, tables);
+        return false;
+    }
+
     void enterImpl(QueryTreeNodePtr & node)
     {
         if (auto * join_node = node->as<JoinNode>())
@@ -1994,6 +2019,10 @@ private:
                 for (const auto & filter : entry.second.opaque_filters)
                     if (!filter.converted_value)
                         return;
+
+            /// A `Nothing` operand collapses the AND's own result type to `Nothing`, which holds no value.
+            if (isNothing(function_node.getResultType()))
+                return;
 
             node = std::make_shared<ConstantNode>(0u, function_node.getResultType());
             return;
@@ -2462,7 +2491,8 @@ private:
                                 existing_plain_conjuncts.emplace(and_node);
                                 function_node.getArguments().getNodes().push_back(and_node);
                             }
-                            else if (add_result != AddComparisonFilterResult::ALWAYS_TRUE)
+                            else if (add_result != AddComparisonFilterResult::ALWAYS_TRUE
+                                     && !std::ranges::contains(preserved_join_tables, getExpressionSource(left.node).first))
                             {
                                 if (left.crosses_source)
                                 {

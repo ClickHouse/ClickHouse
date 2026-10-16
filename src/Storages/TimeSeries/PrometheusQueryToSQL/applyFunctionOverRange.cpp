@@ -267,14 +267,21 @@ SQLQueryPiece applyFunctionOverRange(
     const auto * fixed_at_node = getFixedAtModifier(argument);
     const auto aggregation_range = getRangeAggregationRange(fixed_at_node, node_range, context);
 
-    /// The result is a vector grid (one row per series, the aggregate function is calculated `GROUP BY group`) if the
-    /// range vector holds series, and a scalar grid if it was made from a scalar.
-    const bool has_group = (argument.store_method == StoreMethod::VECTOR_GRID) || (argument.store_method == StoreMethod::RAW_DATA);
+    /// A range vector made from a scalar has no `group` column. The result is still a vector grid with one series without
+    /// tags, because the aggregate function returns NULL for a window without enough samples and only VECTOR_GRID can hold NULL.
+    const bool from_scalar = (argument.store_method != StoreMethod::VECTOR_GRID) && (argument.store_method != StoreMethod::RAW_DATA);
 
     SelectQueryBuilder builder;
 
-    if (has_group)
+    if (from_scalar)
+    {
+        builder.select_list.push_back(timeSeriesNoTagsGroupToAST());
+        builder.select_list.back()->setAlias(ColumnNames::Group);
+    }
+    else
+    {
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+    }
 
     /// <aggregate_function>(<timestamps>, <values>) AS values
     ASTPtr aggregate_values = addParametersToAggregateFunction(
@@ -299,7 +306,7 @@ SQLQueryPiece applyFunctionOverRange(
     builder.select_list.push_back(std::move(aggregate_values));
     builder.select_list.back()->setAlias(ColumnNames::Values);
 
-    if (has_group)
+    if (!from_scalar)
         builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
 
     if (argument.select_query)
@@ -315,13 +322,20 @@ SQLQueryPiece applyFunctionOverRange(
 
     res.select_query = builder.getSelectQuery();
     res.type = ResultType::INSTANT_VECTOR;
-    res.store_method = has_group ? StoreMethod::VECTOR_GRID : StoreMethod::SCALAR_GRID;
+    res.store_method = StoreMethod::VECTOR_GRID;
     res.start_time = start_time;
     res.end_time = end_time;
     res.step = step;
 
-    if (has_group && drop_metric_name.value_or(impl_info->drop_metric_name))
+    if (from_scalar)
+    {
+        /// A scalar has no metric name.
+        res.metric_name_dropped = true;
+    }
+    else if (drop_metric_name.value_or(impl_info->drop_metric_name))
+    {
         res = dropMetricName(std::move(res), context);
+    }
 
     return res;
 }
