@@ -42,6 +42,8 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    /// Reject invalid UInt64 arguments without evaluating values masked by NULL.
+    bool canBeExecutedOnDefaultArguments() const override { return false; }
 
     String getSignatureString() const override
     {
@@ -76,7 +78,7 @@ public:
                     throw Exception(ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX, "Indices in strings are 1-based");
             }
             else
-                sliceDynamicOffsetUnbounded(source, StringSink(*col_res, input_rows_count), *column_offset);
+                sliceDynamicOffsetUnbounded<true>(source, StringSink(*col_res, input_rows_count), *column_offset);
         }
         else
         {
@@ -90,7 +92,7 @@ public:
                     throw Exception(ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX, "Indices in strings are 1-based");
             }
             else
-                sliceDynamicOffsetBounded(source, StringSink(*col_res, input_rows_count), *column_offset, *column_length);
+                sliceDynamicOffsetBounded<true>(source, StringSink(*col_res, input_rows_count), *column_offset, *column_length);
         }
 
         return col_res;

@@ -321,7 +321,7 @@ void NO_INLINE sliceFromRightConstantOffsetBounded(Source && src, Sink && sink, 
     }
 }
 
-template <typename Source, typename Sink>
+template <bool check_uint64_range = false, typename Source, typename Sink>
 void NO_INLINE sliceDynamicOffsetUnbounded(Source && src, Sink && sink, const IColumn & offset_column)
 {
     const bool is_null = offset_column.onlyNull();
@@ -330,14 +330,24 @@ void NO_INLINE sliceDynamicOffsetUnbounded(Source && src, Sink && sink, const IC
     const IColumn * nested_column = nullable ? &nullable->getNestedColumn() : &offset_column;
 
     std::optional<CheckedSliceArgument> offset_reader;
-    if (!is_null)
-        offset_reader.emplace(*nested_column, "offset");
+    if constexpr (check_uint64_range)
+    {
+        if (!is_null)
+            offset_reader.emplace(*nested_column, "offset");
+    }
 
     while (!src.isEnd())
     {
         auto row_num = src.rowNum();
         bool has_offset = !is_null && !(null_map && (*null_map)[row_num]);
-        Int64 offset = has_offset ? offset_reader->get(row_num) : 1;
+        Int64 offset = 1;
+        if (has_offset)
+        {
+            if constexpr (check_uint64_range)
+                offset = offset_reader->get(row_num);
+            else
+                offset = nested_column->getInt(row_num);
+        }
 
         if (offset != 0)
         {
@@ -357,7 +367,7 @@ void NO_INLINE sliceDynamicOffsetUnbounded(Source && src, Sink && sink, const IC
 }
 
 
-template <bool inverse, typename Source, typename Sink>
+template <bool inverse, bool check_uint64_range = false, typename Source, typename Sink>
 static void sliceDynamicOffsetBoundedImpl(Source && src, Sink && sink, const IColumn * offset_column, const IColumn * length_column)
 {
     const bool is_offset_null = !offset_column || offset_column->onlyNull();
@@ -384,18 +394,36 @@ static void sliceDynamicOffsetBoundedImpl(Source && src, Sink && sink, const ICo
 
     std::optional<CheckedSliceArgument> offset_reader;
     std::optional<CheckedSliceArgument> length_reader;
-    if (!is_offset_null)
-        offset_reader.emplace(*offset_nested_column, "offset");
-    if (!is_length_null)
-        length_reader.emplace(*length_nested_column, "length");
+    if constexpr (check_uint64_range)
+    {
+        if (!is_offset_null)
+            offset_reader.emplace(*offset_nested_column, "offset");
+        if (!is_length_null)
+            length_reader.emplace(*length_nested_column, "length");
+    }
 
     while (!src.isEnd())
     {
         size_t row_num = src.rowNum();
         bool has_offset = !is_offset_null && !(offset_null_map && (*offset_null_map)[row_num]);
         bool has_length = !is_length_null && !(length_null_map && (*length_null_map)[row_num]);
-        Int64 offset = has_offset ? offset_reader->get(row_num) : 1;
-        Int64 size = has_length ? length_reader->get(row_num) : static_cast<Int64>(src.getElementSize());
+        Int64 offset = 1;
+        if (has_offset)
+        {
+            if constexpr (check_uint64_range)
+                offset = offset_reader->get(row_num);
+            else
+                offset = offset_nested_column->getInt(row_num);
+        }
+
+        Int64 size = static_cast<Int64>(src.getElementSize());
+        if (has_length)
+        {
+            if constexpr (check_uint64_range)
+                size = length_reader->get(row_num);
+            else
+                size = length_nested_column->getInt(row_num);
+        }
 
         if (size < 0)
         {
@@ -449,17 +477,17 @@ static void sliceDynamicOffsetBoundedImpl(Source && src, Sink && sink, const ICo
 }
 
 
-template <typename Source, typename Sink>
+template <bool check_uint64_range = false, typename Source, typename Sink>
 void NO_INLINE sliceDynamicOffsetBounded(Source && src, Sink && sink, const IColumn & offset_column, const IColumn & length_column)
 {
-    sliceDynamicOffsetBoundedImpl<false>(std::forward<Source>(src), std::forward<Sink>(sink), &offset_column, &length_column);
+    sliceDynamicOffsetBoundedImpl<false, check_uint64_range>(std::forward<Source>(src), std::forward<Sink>(sink), &offset_column, &length_column);
 }
 
 /// Similar to above, but with no offset.
-template <typename Source, typename Sink>
+template <bool check_uint64_range = false, typename Source, typename Sink>
 void NO_INLINE sliceFromLeftDynamicLength(Source && src, Sink && sink, const IColumn & length_column)
 {
-    sliceDynamicOffsetBoundedImpl<false>(std::forward<Source>(src), std::forward<Sink>(sink), nullptr, &length_column);
+    sliceDynamicOffsetBoundedImpl<false, check_uint64_range>(std::forward<Source>(src), std::forward<Sink>(sink), nullptr, &length_column);
 }
 
 template <typename Source, typename Sink>
