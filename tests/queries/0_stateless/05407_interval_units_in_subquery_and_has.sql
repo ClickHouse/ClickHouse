@@ -10,7 +10,7 @@ INSERT INTO t_interval_ns SELECT toIntervalNanosecond(number * 1000000000) FROM 
 
 SELECT 'ns key';
 SELECT count() FROM t_interval_ns WHERE time = INTERVAL 510 MINUTE;
-SELECT count() FROM t_interval_ns WHERE time IN (SELECT INTERVAL 510 MINUTE);
+SELECT count() FROM t_interval_ns WHERE time IN (SELECT INTERVAL 510 MINUTE) SETTINGS use_index_for_in_with_subqueries = 1, force_primary_key = 1;
 SELECT count() FROM t_interval_ns WHERE time IN (SELECT INTERVAL 510 MINUTE) SETTINGS use_index_for_in_with_subqueries = 0;
 SELECT count() FROM t_interval_ns WHERE time NOT IN (SELECT INTERVAL 510 MINUTE);
 SELECT count() FROM t_interval_ns WHERE has([INTERVAL 510 MINUTE], time);
@@ -20,17 +20,17 @@ CREATE TABLE t_interval_min (m IntervalMinute) ENGINE = MergeTree ORDER BY m;
 INSERT INTO t_interval_min SELECT toIntervalMinute(number) FROM numbers(1000);
 
 SELECT 'minute key, nanosecond set';
-SELECT count() FROM t_interval_min WHERE m IN (SELECT toIntervalNanosecond(30600000000000));
-SELECT count() FROM t_interval_min WHERE m IN (SELECT toIntervalNanosecond(30600000000001));
+SELECT count() FROM t_interval_min WHERE m IN (SELECT toIntervalNanosecond(30600000000000)) SETTINGS use_index_for_in_with_subqueries = 1, force_primary_key = 1;
+SELECT count() FROM t_interval_min WHERE m IN (SELECT toIntervalNanosecond(30600000000001)) SETTINGS use_index_for_in_with_subqueries = 1, force_primary_key = 1;
 SELECT count() FROM t_interval_min WHERE m NOT IN (SELECT toIntervalNanosecond(30600000000001));
 
 CREATE TABLE t_interval_month (m IntervalMonth) ENGINE = MergeTree ORDER BY m;
 INSERT INTO t_interval_month SELECT toIntervalMonth(number) FROM numbers(100);
 
 SELECT 'month key, day set';
-SELECT count() FROM t_interval_month WHERE m IN (SELECT INTERVAL 28 DAY);
+SELECT count() FROM t_interval_month WHERE m IN (SELECT INTERVAL 28 DAY) SETTINGS use_index_for_in_with_subqueries = 1, force_primary_key = 1;
 SELECT count() FROM t_interval_month WHERE m NOT IN (SELECT INTERVAL 28 DAY);
-SELECT count() FROM t_interval_month WHERE m IN (SELECT INTERVAL 2 YEAR);
+SELECT count() FROM t_interval_month WHERE m IN (SELECT INTERVAL 2 YEAR) SETTINGS use_index_for_in_with_subqueries = 1, force_primary_key = 1;
 
 SELECT 'IN';
 SELECT toIntervalSecond(90) IN (SELECT INTERVAL 1 MINUTE);
@@ -44,6 +44,12 @@ SELECT toIntervalSecond(90) IN (SELECT INTERVAL 1 MINUTE) SETTINGS transform_nul
 SELECT toNullable(toIntervalSecond(90)) IN (SELECT INTERVAL 1 MINUTE);
 SELECT toLowCardinality(toIntervalSecond(90)) IN (SELECT INTERVAL 1 MINUTE);
 SELECT (toIntervalSecond(90), 1) IN (SELECT INTERVAL 1 MINUTE, 1);
+SELECT (toIntervalSecond(120), 1) IN (SELECT (INTERVAL 2 MINUTE, 1));
+SELECT (toIntervalSecond(90), 1) IN (SELECT (INTERVAL 1 MINUTE, 1)); -- { serverError CANNOT_CONVERT_TYPE }
+SELECT [toIntervalSecond(120)] IN (SELECT [INTERVAL 2 MINUTE]);
+SELECT [toIntervalSecond(90)] IN (SELECT [INTERVAL 1 MINUTE]); -- { serverError CANNOT_CONVERT_TYPE }
+SELECT map(1, toIntervalSecond(120)) IN (SELECT map(1, INTERVAL 2 MINUTE));
+SELECT map(1, toIntervalSecond(90)) IN (SELECT map(1, INTERVAL 1 MINUTE)); -- { serverError CANNOT_CONVERT_TYPE }
 SELECT INTERVAL 13 MONTH IN (SELECT INTERVAL 1 YEAR);
 SELECT INTERVAL 28 DAY IN (SELECT INTERVAL 1 MONTH);
 SELECT toIntervalWeek(20000) IN (SELECT toIntervalNanosecond(-6350744073709551616));
