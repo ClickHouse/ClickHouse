@@ -3525,7 +3525,14 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
         Tokens tokens(this_query_begin, all_queries_end);
         IParser::Pos token_iterator(tokens, max_parser_depth, max_parser_backtracks);
         bool only_comments_left = !token_iterator.isValid();
-        if (client_context->getSettingsRef()[Setting::dialect] == Dialect::logsql)
+        if (client_context->getSettingsRef()[Setting::dialect] == Dialect::polyglot)
+        {
+            /// The text of a foreign dialect may start with a token which the ClickHouse lexer considers
+            /// erroneous, e.g. a BigQuery `#comment`. Only the real end of input ends the script; anything
+            /// else is handed to the polyglot parser, which consumes the whole remaining buffer.
+            only_comments_left = token_iterator->isEnd();
+        }
+        else if (client_context->getSettingsRef()[Setting::dialect] == Dialect::logsql)
         {
             /// LogsQL queries may start with tokens which the ClickHouse lexer considers erroneous,
             /// e.g. `~"regexp"` or `!error`, so additionally check the end of the input

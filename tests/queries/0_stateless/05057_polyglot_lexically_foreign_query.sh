@@ -43,4 +43,16 @@ $CLICKHOUSE_CLIENT -q "CREATE TABLE t (x Int32) ENGINE = MergeTree ORDER BY x"
 $CLICKHOUSE_CLIENT $POLY -q "INSERT INTO t VALUES (1), (2) #trailing comment"
 echo "--- inline INSERT with a foreign comment (expect: 3 2) ---"
 $CLICKHOUSE_CLIENT -q "SELECT sum(x), count() FROM t"
+
+# A foreign comment *before* the statement: the ClickHouse lexer returns an error token for it, which
+# must not be mistaken for the end of the script, so the statement is still parsed and executed.
+$CLICKHOUSE_CLIENT -q "TRUNCATE TABLE t"
+printf '#comment\nINSERT INTO t VALUES (1);\n' | $CLICKHOUSE_CLIENT $POLY --queries-file /dev/stdin
+printf '#comment\nINSERT INTO t VALUES (10);\n' > "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_leading_comment.sql"
+$CLICKHOUSE_CLIENT $POLY --queries-file "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_leading_comment.sql"
+echo "--- inline INSERT after a leading foreign comment (expect: 11 2) ---"
+$CLICKHOUSE_CLIENT -q "SELECT sum(x), count() FROM t"
+echo "--- clickhouse-local runs a script with a leading foreign comment (expect: 1) ---"
+printf '#comment\nSELECT 1 AS x;\n' | $CLICKHOUSE_LOCAL $POLY --queries-file /dev/stdin
+rm -f "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_leading_comment.sql"
 $CLICKHOUSE_CLIENT -q "DROP TABLE t"
