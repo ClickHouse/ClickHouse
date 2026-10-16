@@ -1,7 +1,7 @@
 -- Tests that a text index cannot be created on a multidimensional array with a String/FixedString
 -- base type. The runtime cannot correctly tokenize these columns, so they are rejected at validation
 -- for new CREATE and ALTER ADD INDEX.
--- (Legacy tables that already carry such an index still attach; see 05046_text_index_nested_array_attach.)
+-- (Legacy tables that already carry such an index still attach; see test_text_index_legacy_attach.)
 
 DROP TABLE IF EXISTS tab;
 
