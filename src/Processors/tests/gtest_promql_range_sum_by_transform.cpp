@@ -2,6 +2,7 @@
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesExtrapolatedValue.h>
+#include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
@@ -21,10 +22,13 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Common/Exception.h>
+#include <Common/AlignedBuffer.h>
+#include <base/scope_guard.h>
 #include <Common/assert_cast.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
 
+#include <bit>
 #include <cmath>
 #include <initializer_list>
 #include <limits>
@@ -183,13 +187,25 @@ AggregateFunctionPtr makeRateFunction(const DataTypePtr & samples_type)
         DataTypes{samples_type}, parameters, UInt32{0}, UInt32{20}, Int32{10}, Int32{20}, 0, 0);
 }
 
-AggregateFunctionPtr makeSumFunction(const AggregateFunctionPtr & rate_function)
+AggregateFunctionPtr makeSumFunction(const AggregateFunctionPtr & rate_function, const char * name = "sumForEach")
 {
     tryRegisterAggregateFunctions();
     AggregateFunctionProperties properties;
     return AggregateFunctionFactory::instance().get(
-        "sumForEach", NullsAction::EMPTY, DataTypes{rate_function->getResultType()}, {}, properties);
+        name, NullsAction::EMPTY, DataTypes{rate_function->getResultType()}, {}, properties);
 }
+
+class PromQLRangeSumByTransformTest : public ::testing::TestWithParam<const char *>
+{
+};
+
+class PromQLRangeSumByStepTest : public ::testing::TestWithParam<const char *>
+{
+};
+
+class PromQLPartialGroupMergeTransformTest : public ::testing::TestWithParam<const char *>
+{
+};
 
 QueryPipeline makePipeline(
     const SharedHeader & header,
@@ -201,7 +217,8 @@ QueryPipeline makePipeline(
     size_t max_output_groups = 1024,
     size_t max_output_block_size = 1024,
     PromQLGroupLimitPtr group_limit = nullptr,
-    size_t max_samples_per_series = 1024)
+    size_t max_samples_per_series = 1024,
+    bool emit_partial_state = false)
 {
     auto source = std::make_shared<ChunksSource>(header, std::move(chunks));
     auto transform = std::make_shared<PromQLRangeSumByTransform>(header,
@@ -212,7 +229,8 @@ QueryPipeline makePipeline(
         max_samples_per_series,
         max_output_groups,
         max_output_block_size,
-        std::move(group_limit));
+        std::move(group_limit),
+        emit_partial_state);
     Pipe pipe(source);
     pipe.addTransform(transform);
     return QueryPipeline(std::move(pipe));
@@ -233,6 +251,39 @@ Chunk makePartialGroupsChunk(
         values_column->insert(value);
 
     return Chunk(Columns{std::move(group_column), std::move(values_column)}, groups.size());
+}
+
+Chunk makePartialGroupStatesChunk(
+    const AggregateFunctionPtr & sum_function,
+    std::initializer_list<UInt64> groups,
+    std::initializer_list<std::vector<Array>> group_rows)
+{
+    EXPECT_EQ(groups.size(), group_rows.size());
+
+    auto group_column = ColumnUInt64::create();
+    for (UInt64 group : groups)
+        group_column->insertValue(group);
+
+    auto states_column = ColumnAggregateFunction::create(sum_function);
+    for (const auto & rows : group_rows)
+    {
+        Arena source_arena;
+        AlignedBuffer place(sum_function->sizeOfData(), sum_function->alignOfData());
+        sum_function->create(place.data());
+        SCOPE_EXIT({ sum_function->destroy(place.data()); });
+
+        auto values_column = sum_function->getArgumentTypes().front()->createColumn();
+        for (const auto & row : rows)
+            values_column->insert(row);
+        const IColumn * columns[] = {values_column.get()};
+        for (size_t row = 0; row < rows.size(); ++row)
+            sum_function->add(place.data(), columns, row, &source_arena);
+
+        /// Copy the complete state into the column's arena before the source state and arena are destroyed.
+        states_column->insertFrom(place.data());
+    }
+
+    return Chunk(Columns{std::move(group_column), std::move(states_column)}, groups.size());
 }
 
 QueryPipeline makePartialGroupMergePipeline(
@@ -339,13 +390,13 @@ void checkNullableArrayRow(
 
 }
 
-TEST(PromQLRangeSumByTransform, StreamsOneRateStateAndSumsProjectedGroups)
+TEST_P(PromQLRangeSumByTransformTest, StreamsOneRateStateAndSumsProjectedGroups)
 {
     const auto samples_type = makeSamplesType();
     const auto header = makeInputHeader(samples_type);
     const auto collector = makeCollector();
     const auto rate_function = makeRateFunction(samples_type);
-    const auto sum_function = makeSumFunction(rate_function);
+    const auto sum_function = makeSumFunction(rate_function, GetParam());
 
     Chunks chunks;
     chunks.emplace_back(makeSamplesChunk(samples_type, {1}, {{{0, 0.0}}}));
@@ -393,13 +444,13 @@ TEST(PromQLRangeSumByTransform, StreamsOneRateStateAndSumsProjectedGroups)
     ASSERT_FALSE(executor.pull(output));
 }
 
-TEST(PromQLRangeSumByTransform, DropsMetricNameBeforeByProjection)
+TEST_P(PromQLRangeSumByTransformTest, DropsMetricNameBeforeByProjection)
 {
     const auto samples_type = makeSamplesType();
     const auto header = makeInputHeader(samples_type);
     const auto collector = makeCollector();
     const auto rate_function = makeRateFunction(samples_type);
-    const auto sum_function = makeSumFunction(rate_function);
+    const auto sum_function = makeSumFunction(rate_function, GetParam());
 
     Chunks chunks;
     chunks.emplace_back(makeSamplesChunk(samples_type, {1}, {{{0, 0.0}}}));
@@ -422,13 +473,13 @@ TEST(PromQLRangeSumByTransform, DropsMetricNameBeforeByProjection)
     ASSERT_FALSE(executor.pull(output));
 }
 
-TEST(PromQLRangeSumByTransform, RejectsDecreasingIdentifiers)
+TEST_P(PromQLRangeSumByTransformTest, RejectsDecreasingIdentifiers)
 {
     const auto samples_type = makeSamplesType();
     const auto header = makeInputHeader(samples_type);
     const auto collector = makeCollector();
     const auto rate_function = makeRateFunction(samples_type);
-    const auto sum_function = makeSumFunction(rate_function);
+    const auto sum_function = makeSumFunction(rate_function, GetParam());
 
     Chunks chunks;
     chunks.emplace_back(makeSamplesChunk(samples_type, {2, 1}, {{{0, 0.0}, {10, 10.0}}, {{0, 0.0}, {10, 10.0}}}));
@@ -438,13 +489,13 @@ TEST(PromQLRangeSumByTransform, RejectsDecreasingIdentifiers)
     expectExceptionCode([&] { executor.pull(output); }, ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY);
 }
 
-TEST(PromQLRangeSumByTransform, EnforcesOutputGroupLimit)
+TEST_P(PromQLRangeSumByTransformTest, EnforcesOutputGroupLimit)
 {
     const auto samples_type = makeSamplesType();
     const auto header = makeInputHeader(samples_type);
     const auto collector = makeCollector();
     const auto rate_function = makeRateFunction(samples_type);
-    const auto sum_function = makeSumFunction(rate_function);
+    const auto sum_function = makeSumFunction(rate_function, GetParam());
 
     Chunks chunks;
     chunks.emplace_back(makeSamplesChunk(samples_type, {1, 3}, {{{0, 0.0}, {10, 10.0}, {20, 20.0}}, {{0, 0.0}, {10, 20.0}, {20, 40.0}}}));
@@ -455,13 +506,13 @@ TEST(PromQLRangeSumByTransform, EnforcesOutputGroupLimit)
     expectExceptionCode([&] { executor.pull(output); }, ErrorCodes::TOO_MANY_ROWS_OR_BYTES);
 }
 
-TEST(PromQLRangeSumByTransform, EnforcesPerSeriesSampleLimitAcrossChunks)
+TEST_P(PromQLRangeSumByTransformTest, EnforcesPerSeriesSampleLimitAcrossChunks)
 {
     const auto samples_type = makeSamplesType();
     const auto header = makeInputHeader(samples_type);
     const auto collector = makeCollector();
     const auto rate_function = makeRateFunction(samples_type);
-    const auto sum_function = makeSumFunction(rate_function);
+    const auto sum_function = makeSumFunction(rate_function, GetParam());
 
     Chunks chunks;
     chunks.emplace_back(makeSamplesChunk(samples_type, {1}, {{{0, 0.0}}}));
@@ -482,13 +533,13 @@ TEST(PromQLRangeSumByTransform, EnforcesPerSeriesSampleLimitAcrossChunks)
     expectExceptionCode([&] { executor.pull(output); }, ErrorCodes::TOO_MANY_ROWS_OR_BYTES);
 }
 
-TEST(PromQLRangeSumByTransform, CapsOutputBlockSize)
+TEST_P(PromQLRangeSumByTransformTest, CapsOutputBlockSize)
 {
     const auto samples_type = makeSamplesType();
     const auto header = makeInputHeader(samples_type);
     const auto collector = makeCollector();
     const auto rate_function = makeRateFunction(samples_type);
-    const auto sum_function = makeSumFunction(rate_function);
+    const auto sum_function = makeSumFunction(rate_function, GetParam());
 
     Chunks chunks;
     chunks.emplace_back(makeSamplesChunk(
@@ -520,13 +571,13 @@ TEST(PromQLRangeSumByTransform, CapsOutputBlockSize)
     EXPECT_LT(first_groups.getElement(0), second_groups.getElement(0));
 }
 
-TEST(PromQLRangeSumByTransform, UsesPopulatedTagsCollector)
+TEST_P(PromQLRangeSumByTransformTest, UsesPopulatedTagsCollector)
 {
     const auto samples_type = makeSamplesType();
     const auto header = makeInputHeader(samples_type);
     const auto collector = makeCollector();
     const auto rate_function = makeRateFunction(samples_type);
-    const auto sum_function = makeSumFunction(rate_function);
+    const auto sum_function = makeSumFunction(rate_function, GetParam());
 
     Chunks chunks;
     chunks.emplace_back(makeSamplesChunk(
@@ -555,13 +606,13 @@ TEST(ContextTimeSeriesTagsCollector, DetectsDifferentIdentifiersWithSameFullTags
     ASSERT_TRUE(makeCollector(/*duplicate_full_tags=*/true)->hasMultipleIdentifiersForSameTags());
 }
 
-TEST(PromQLRangeSumByStep, BuildsAndRunsSingleStreamPipeline)
+TEST_P(PromQLRangeSumByStepTest, BuildsAndRunsSingleStreamPipeline)
 {
     const auto samples_type = makeSamplesType();
     const auto header = makeInputHeader(samples_type);
     const auto collector = makeCollector();
     const auto rate_function = makeRateFunction(samples_type);
-    const auto sum_function = makeSumFunction(rate_function);
+    const auto sum_function = makeSumFunction(rate_function, GetParam());
 
     Chunks chunks;
     chunks.emplace_back(makeSamplesChunk(samples_type, {1, 2}, {{{0, 0.0}, {10, 10.0}}, {{0, 0.0}, {10, 10.0}}}));
@@ -591,13 +642,13 @@ TEST(PromQLRangeSumByStep, BuildsAndRunsSingleStreamPipeline)
     ASSERT_FALSE(executor.pull(output));
 }
 
-TEST(PromQLRangeSumByStep, MergesSortedInputStreamsBeforeNativeKernel)
+TEST_P(PromQLRangeSumByStepTest, MergesSortedInputStreamsBeforeNativeKernel)
 {
     const auto samples_type = makeSamplesType();
     const auto header = makeOrderedInputHeader(samples_type);
     const auto collector = makeCollector();
     const auto rate_function = makeRateFunction(samples_type);
-    const auto sum_function = makeSumFunction(rate_function);
+    const auto sum_function = makeSumFunction(rate_function, GetParam());
 
     auto execute = [&](int input_order)
     {
@@ -719,13 +770,13 @@ TEST(PromQLGroupLimit, BoundsDistinctOutputGroups)
     ASSERT_FALSE(limit.tryRegister(30));
 }
 
-TEST(PromQLRangeSumByStep, ParallelLanesShareOneOutputGroupAtLimit)
+TEST_P(PromQLRangeSumByStepTest, ParallelLanesShareOneOutputGroupAtLimit)
 {
     const auto samples_type = makeSamplesType();
     const auto header = makeOrderedInputHeader(samples_type);
     const auto collector = makeCollector();
     const auto rate_function = makeRateFunction(samples_type);
-    const auto sum_function = makeSumFunction(rate_function);
+    const auto sum_function = makeSumFunction(rate_function, GetParam());
 
     Pipes pipes;
     Chunks first_stream_chunks;
@@ -764,22 +815,22 @@ TEST(PromQLRangeSumByStep, ParallelLanesShareOneOutputGroupAtLimit)
     ASSERT_FALSE(executor.pull(output));
 }
 
-TEST(PromQLPartialGroupMergeTransform, MergesPartialGroupsAndSortsGroupKeys)
+TEST_P(PromQLPartialGroupMergeTransformTest, MergesPartialGroupsAndSortsGroupKeys)
 {
     const auto samples_type = makeSamplesType();
     const auto rate_function = makeRateFunction(samples_type);
-    const auto sum_function = makeSumFunction(rate_function);
-    const auto header = PromQLRangeSumByTransform::transformHeader(sum_function);
+    const auto sum_function = makeSumFunction(rate_function, GetParam());
+    const auto header = PromQLRangeSumByTransform::transformHeader(sum_function, /*emit_partial_state=*/true);
 
     Chunks chunks;
-    chunks.emplace_back(makePartialGroupsChunk(
-        header,
+    chunks.emplace_back(makePartialGroupStatesChunk(
+        sum_function,
         {20, 10},
-        {Array{Field{1.0}, Field{2.0}}, Array{Field{3.0}, Field{4.0}}}));
-    chunks.emplace_back(makePartialGroupsChunk(
-        header,
+        {{Array{Field{1.0}, Field{2.0}}}, {Array{Field{3.0}, Field{4.0}}}}));
+    chunks.emplace_back(makePartialGroupStatesChunk(
+        sum_function,
         {20, 30},
-        {Array{Field{5.0}, Field{6.0}}, Array{Field{7.0}, Field{8.0}}}));
+        {{Array{Field{5.0}, Field{6.0}}}, {Array{Field{7.0}, Field{8.0}}}}));
 
     auto pipeline = makePartialGroupMergePipeline(header, std::move(chunks), sum_function);
     PullingPipelineExecutor executor(pipeline);
@@ -798,16 +849,118 @@ TEST(PromQLPartialGroupMergeTransform, MergesPartialGroupsAndSortsGroupKeys)
     checkArrayRow(values, 2, {7.0, 8.0});
 }
 
-TEST(PromQLPartialGroupMergeTransform, EnforcesGlobalOutputGroupLimit)
+TEST(PromQLPartialGroupMergeTransform, KeepsCompensationAfterSourceStatesAreDestroyed)
+{
+    const auto rate_function = makeRateFunction(makeSamplesType());
+    const auto sum_function = makeSumFunction(rate_function, "sumPromQLForEach");
+    const auto header = PromQLRangeSumByTransform::transformHeader(sum_function, /*emit_partial_state=*/true);
+    const Float64 epsilon = 0x1p-53;
+
+    Chunks chunks;
+    chunks.emplace_back(makePartialGroupStatesChunk(sum_function, {10}, {{Array{1.0}, Array{epsilon}}}));
+    chunks.emplace_back(makePartialGroupStatesChunk(sum_function, {10}, {{Array{0.0}, Array{epsilon}}}));
+
+    auto pipeline = makePartialGroupMergePipeline(header, std::move(chunks), sum_function);
+    PullingPipelineExecutor executor(pipeline);
+    Chunk output;
+    ASSERT_TRUE(executor.pull(output));
+    ASSERT_EQ(output.getNumRows(), 1);
+    const auto & arrays = assert_cast<const ColumnArray &>(*output.getColumns().at(1));
+    const auto & nullable = assert_cast<const ColumnNullable &>(arrays.getData());
+    const auto & values = assert_cast<const ColumnFloat64 &>(nullable.getNestedColumn());
+    ASSERT_EQ(values.size(), 1);
+    ASSERT_EQ(nullable.getNullMapData()[0], 0);
+    EXPECT_EQ(std::bit_cast<UInt64>(values.getElement(0)), std::bit_cast<UInt64>(1.0 + 0x1p-52));
+    EXPECT_EQ(std::ceil(values.getElement(0)), 2.0);
+    ASSERT_FALSE(executor.pull(output));
+
+    /// Finalizing the first lane loses its compensation; adding the second lane then stays at one.
+    EXPECT_EQ(std::bit_cast<UInt64>(1.0 + epsilon), std::bit_cast<UInt64>(1.0));
+    EXPECT_EQ(std::ceil(1.0 + epsilon), 1.0);
+}
+
+TEST(PromQLRangeSumByTransform, EmittedStateSurvivesLanePipelineDestruction)
+{
+    const auto samples_type = makeSamplesType();
+    const auto input_header = makeInputHeader(samples_type);
+    const auto collector = makeCollector();
+    const auto rate_function = makeRateFunction(samples_type);
+    const auto sum_function = makeSumFunction(rate_function, "sumPromQLForEach");
+    const Float64 epsilon = 0x1p-53;
+
+    Chunk lane_output;
+    {
+        Chunks input;
+        input.emplace_back(makeSamplesChunk(
+            samples_type, {1, 2},
+            {{{0, 0.0}, {10, 10.0}, {20, 20.0}}, {{0, 0.0}, {10, 10.0 * epsilon}, {20, 20.0 * epsilon}}}));
+        auto pipeline = makePipeline(
+            input_header, std::move(input), collector, rate_function, sum_function, Strings{"namespace"},
+            1024, 1024, nullptr, 1024, /*emit_partial_state=*/true);
+        PullingPipelineExecutor executor(pipeline);
+        ASSERT_TRUE(executor.pull(lane_output));
+        ASSERT_EQ(lane_output.getNumRows(), 1);
+        ASSERT_NE(typeid_cast<const ColumnAggregateFunction *>(lane_output.getColumns().at(1).get()), nullptr);
+        Chunk tail;
+        ASSERT_FALSE(executor.pull(tail));
+    }
+
+    /// The producing transform and its arena are gone before the output is merged.
+    const auto group = assert_cast<const ColumnUInt64 &>(*lane_output.getColumns().at(0)).getElement(0);
+    Chunks partials;
+    partials.emplace_back(std::move(lane_output));
+    partials.emplace_back(makePartialGroupStatesChunk(sum_function, {group}, {{Array{Field{}, epsilon / 2, epsilon}}}));
+    auto pipeline = makePartialGroupMergePipeline(
+        PromQLRangeSumByTransform::transformHeader(sum_function, /*emit_partial_state=*/true), std::move(partials), sum_function);
+    PullingPipelineExecutor executor(pipeline);
+    Chunk output;
+    ASSERT_TRUE(executor.pull(output));
+    ASSERT_EQ(output.getNumRows(), 1);
+    const auto & arrays = assert_cast<const ColumnArray &>(*output.getColumns().at(1));
+    const auto & nullable = assert_cast<const ColumnNullable &>(arrays.getData());
+    const auto & values = assert_cast<const ColumnFloat64 &>(nullable.getNestedColumn());
+    ASSERT_EQ(values.size(), 3);
+    EXPECT_EQ(nullable.getNullMapData()[0], 1);
+    EXPECT_EQ(nullable.getNullMapData()[1], 0);
+    EXPECT_EQ(nullable.getNullMapData()[2], 0);
+    EXPECT_EQ(std::bit_cast<UInt64>(values.getElement(1)), std::bit_cast<UInt64>(0.5 + 0x1p-53));
+    EXPECT_EQ(std::bit_cast<UInt64>(values.getElement(2)), std::bit_cast<UInt64>(1.0 + 0x1p-52));
+    EXPECT_EQ(std::ceil(values.getElement(2)), 2.0);
+    ASSERT_FALSE(executor.pull(output));
+}
+
+TEST_P(PromQLPartialGroupMergeTransformTest, RejectsFinalizedGridInput)
+{
+    const auto rate_function = makeRateFunction(makeSamplesType());
+    const auto sum_function = makeSumFunction(rate_function, GetParam());
+    const auto header = PromQLRangeSumByTransform::transformHeader(sum_function);
+    expectExceptionCode(
+        [&] { PromQLPartialGroupMergeTransform transform(header, sum_function, 1024, 1024); }, ErrorCodes::BAD_ARGUMENTS);
+}
+
+TEST_P(PromQLPartialGroupMergeTransformTest, RejectsOtherModeStateHeader)
+{
+    const auto rate_function = makeRateFunction(makeSamplesType());
+    const auto producer_sum_function = makeSumFunction(rate_function, GetParam());
+    const auto merger_sum_function = makeSumFunction(
+        rate_function, producer_sum_function->getName() == "sumForEach" ? "sumPromQLForEach" : "sumForEach");
+    const auto header = PromQLRangeSumByTransform::transformHeader(producer_sum_function, /*emit_partial_state=*/true);
+
+    ASSERT_FALSE(header->getByName(TimeSeriesColumnNames::Values).type->equals(*merger_sum_function->getStateType()));
+    expectExceptionCode(
+        [&] { PromQLPartialGroupMergeTransform transform(header, merger_sum_function, 1024, 1024); }, ErrorCodes::BAD_ARGUMENTS);
+}
+
+TEST_P(PromQLPartialGroupMergeTransformTest, EnforcesGlobalOutputGroupLimit)
 {
     const auto samples_type = makeSamplesType();
     const auto rate_function = makeRateFunction(samples_type);
-    const auto sum_function = makeSumFunction(rate_function);
-    const auto header = PromQLRangeSumByTransform::transformHeader(sum_function);
+    const auto sum_function = makeSumFunction(rate_function, GetParam());
+    const auto header = PromQLRangeSumByTransform::transformHeader(sum_function, /*emit_partial_state=*/true);
 
     Chunks chunks;
-    chunks.emplace_back(makePartialGroupsChunk(header, {10}, {Array{Field{1.0}}}));
-    chunks.emplace_back(makePartialGroupsChunk(header, {20}, {Array{Field{2.0}}}));
+    chunks.emplace_back(makePartialGroupStatesChunk(sum_function, {10}, {{Array{Field{1.0}}}}));
+    chunks.emplace_back(makePartialGroupStatesChunk(sum_function, {20}, {{Array{Field{2.0}}}}));
 
     auto pipeline = makePartialGroupMergePipeline(header, std::move(chunks), sum_function, /*max_output_groups=*/1);
     PullingPipelineExecutor executor(pipeline);
@@ -815,18 +968,18 @@ TEST(PromQLPartialGroupMergeTransform, EnforcesGlobalOutputGroupLimit)
     expectExceptionCode([&] { executor.pull(output); }, ErrorCodes::TOO_MANY_ROWS_OR_BYTES);
 }
 
-TEST(PromQLPartialGroupMergeTransform, CapsOutputBlockSize)
+TEST_P(PromQLPartialGroupMergeTransformTest, CapsOutputBlockSize)
 {
     const auto samples_type = makeSamplesType();
     const auto rate_function = makeRateFunction(samples_type);
-    const auto sum_function = makeSumFunction(rate_function);
-    const auto header = PromQLRangeSumByTransform::transformHeader(sum_function);
+    const auto sum_function = makeSumFunction(rate_function, GetParam());
+    const auto header = PromQLRangeSumByTransform::transformHeader(sum_function, /*emit_partial_state=*/true);
 
     Chunks chunks;
-    chunks.emplace_back(makePartialGroupsChunk(
-        header,
+    chunks.emplace_back(makePartialGroupStatesChunk(
+        sum_function,
         {30, 10, 20},
-        {Array{Field{3.0}}, Array{Field{1.0}}, Array{Field{2.0}}}));
+        {{Array{Field{3.0}}}, {Array{Field{1.0}}}, {Array{Field{2.0}}}}));
     auto pipeline = makePartialGroupMergePipeline(
         header,
         std::move(chunks),
@@ -845,6 +998,13 @@ TEST(PromQLPartialGroupMergeTransform, CapsOutputBlockSize)
     }
     EXPECT_EQ(groups, (std::vector<UInt64>{10, 20, 30}));
 }
+
+INSTANTIATE_TEST_SUITE_P(
+    SumModes, PromQLRangeSumByTransformTest, ::testing::Values("sumForEach", "sumPromQLForEach"));
+INSTANTIATE_TEST_SUITE_P(
+    SumModes, PromQLRangeSumByStepTest, ::testing::Values("sumForEach", "sumPromQLForEach"));
+INSTANTIATE_TEST_SUITE_P(
+    SumModes, PromQLPartialGroupMergeTransformTest, ::testing::Values("sumForEach", "sumPromQLForEach"));
 
 TEST(PromQLRangeTopKByTransform, SelectsPerStepWithDeterministicPromQLSemantics)
 {

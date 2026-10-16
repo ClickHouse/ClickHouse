@@ -29,10 +29,11 @@ bool canBuildPromQLNativeVectorGridPlan(
     const PrometheusQueryEvaluationSettings & evaluation_settings,
     ContextPtr context);
 
-/// Builds and materializes the exact selector-id set used by a hybrid native fragment.
-/// Returns null when the fragment is unsupported or its selected identifiers do not satisfy
-/// the native one-identifier-per-full-tag-set invariant. The returned ready set is reused by
-/// the fragment plan, so admission and execution observe the same identifier snapshot.
+/// Builds and materializes the exact selector-id set for a full native plan or hybrid fragment.
+/// Returns null for unsupported fragments, typed-empty selector ranges, nonunique full-tag-set
+/// identifiers, or exceeded series/grid-cell admission limits. This happens before reading samples,
+/// but after reading selector metadata; it is not a peak-memory estimate. Exceptions are not converted to SQL replay.
+/// The ready set is reused, so admission and execution observe the same identifier snapshot.
 std::optional<PromQLNativeVectorGridPreparation> tryPreparePromQLNativeVectorGridPlan(
     SelectQueryInfo & query_info,
     ContextPtr context,

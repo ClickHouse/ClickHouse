@@ -1,0 +1,39 @@
+default	0
+default_sum	1	1	1	1
+default_fused_left	1	1	1	1
+default_fused_right	1	1	1	1
+default_sum_value	4
+default_fused_left_value	1
+default_fused_right_value	-1
+off_sum	1	1	1	1
+off_fused_left	1	1	1	1
+off_fused_right	1	1	1	1
+off_sum_value	4
+off_fused_left_value	1
+off_fused_right_value	-1
+on_sum	1	1	1	1
+on_fused_left	1	1	1	1
+on_fused_right	1	1	1	1
+on_sum_value	4
+on_fused_left_value	1
+on_fused_right_value	-1
+distributed_on_rejects_sum
+distributed_off_sum	1	1
+distributed_off_fused_left	1	1	1
+distributed_off_fused_right	1	1	1
+distributed_on_max	1	1
+distributed_on_fused_non_sum	1	1	1
+distributed_on_empty_sum	0
+distributed_on_empty_fused_left	0
+distributed_on_empty_fused_right	0
+distributed_on_schema_allowed
+serialized_on_rejects_sum
+serialized_off_sum	4
+serialized_off_fused_left	1
+serialized_off_fused_right	-1
+serialized_on_max	3
+serialized_on_fused_non_sum	2
+serialized_on_empty_sum	0
+serialized_on_empty_fused_left	0
+serialized_on_empty_fused_right	0
+serialized_on_schema_allowed

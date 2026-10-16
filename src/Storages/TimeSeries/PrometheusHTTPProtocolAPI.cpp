@@ -61,10 +61,13 @@ namespace ErrorCodes
 
 namespace Setting
 {
+    extern const SettingsBool enable_promql_compensated_sum;
     extern const SettingsBool enable_promql_native_plan;
     extern const SettingsBool enable_materialized_cte;
+    extern const SettingsBool make_distributed_plan;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_promql_query_block_size;
+    extern const SettingsBool serialize_query_plan;
 }
 
 namespace TimeSeriesSetting
@@ -265,7 +268,12 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
         evaluation_settings.step = parseTimeSeriesDuration(params.step_param, time_scale);
     }
 
-    PrometheusQueryToSQL::Converter converter{query_tree, evaluation_settings};
+    const auto & settings = getContext()->getSettingsRef();
+    const PrometheusQueryToSQL::ConverterOptions converter_options{
+        .use_compensated_sum = settings[Setting::enable_promql_compensated_sum],
+        .distributed_plan = settings[Setting::make_distributed_plan] || settings[Setting::serialize_query_plan],
+    };
+    PrometheusQueryToSQL::Converter converter{query_tree, evaluation_settings, {}, converter_options};
     ASTPtr sql_query;
 
     /// The table-function path owns native-plan selection and the SQL fallback. Keep custom
@@ -273,7 +281,7 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     const bool use_table_function = params.type == Type::Range
         && params.lookback_delta_param.empty()
         && evaluation_settings.time_series_version >= TimeSeriesVersion::MIN_WITH_BUCKETED_SAMPLES
-        && getContext()->getSettingsRef()[Setting::enable_promql_native_plan];
+        && settings[Setting::enable_promql_native_plan];
     if (use_table_function)
     {
         sql_query = makePrometheusQueryRangeTableFunctionQuery(

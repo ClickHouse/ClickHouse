@@ -38,8 +38,6 @@ namespace QueryPlanOptimizations
 namespace
 {
 
-constexpr size_t default_fused_two_range_rates_parallel_lanes = 4;
-
 struct PromQLRangeSumBySource
 {
     SortingStep * sorting = nullptr;
@@ -966,7 +964,7 @@ bool canSplitByID(const ReadFromMergeTree & reading)
 }
 
 template <typename PromQLStep>
-bool tryOptimize(QueryPlan::Node & node, PromQLStep & promql_step)
+bool tryOptimize(QueryPlan::Node & node, PromQLStep & promql_step, size_t execution_max_threads)
 {
     const auto log = getLogger("optimizePromQLRangeSumByShards");
     if (!promql_step.isParallelProcessingRequested() || promql_step.isParallelProcessingEnabled())
@@ -1078,17 +1076,12 @@ bool tryOptimize(QueryPlan::Node & node, PromQLStep & promql_step)
 
     const size_t configured_max_layers = promql_step.getMaxParallelLanes();
     size_t automatic_policy_max_layers = automatically_selected_max_layers;
-    if constexpr (std::is_same_v<PromQLStep, PromQLTwoRangeRatesStep>)
+    if (execution_max_threads)
     {
-        if (exact_two_rates_source)
-        {
-            /// A fused two-rate read already shares storage work across both logical inputs.
-            /// Additional primary-key layers duplicate boundary reads and own independent
-            /// transform state, so keep the automatic policy conservative. A positive setting
-            /// remains an explicit query-scoped override of this plan-specific default.
-            automatic_policy_max_layers
-                = std::min(automatic_policy_max_layers, default_fused_two_range_rates_parallel_lanes);
-        }
+        /// Read streams may exceed the execution budget. Reuse the limit captured by the planner
+        /// instead of sampling free memory again or applying a fixed plan-specific ceiling.
+        /// Zero leaves the read/work bound unchanged, as it does when building the query pipeline.
+        automatic_policy_max_layers = std::min(automatic_policy_max_layers, execution_max_threads);
     }
 
     const size_t max_layers = configured_max_layers
@@ -1097,14 +1090,17 @@ bool tryOptimize(QueryPlan::Node & node, PromQLStep & promql_step)
     LOG_DEBUG(
         log,
         "PromQL primary-key range sharding selected at most {} layers "
-        "(read_streams={}, selected_rows={}, read_block_rows={}, automatic_layers={}, automatic_policy_layers={}, configured_cap={})",
+        "(read_streams={}, selected_rows={}, read_block_rows={}, execution_max_threads={}, "
+        "automatic_layers={}, automatic_policy_layers={}, configured_cap={}, mode={})",
         max_layers,
         read_streams,
         rows_to_read,
         rows_per_read_block,
+        execution_max_threads,
         automatically_selected_max_layers,
         automatic_policy_max_layers,
-        configured_max_layers);
+        configured_max_layers,
+        configured_max_layers ? "manual" : "auto");
     auto split = splitIntersectingPartsRangesIntoLayers(
         analysis_result->parts_with_ranges,
         max_layers,
@@ -1164,7 +1160,7 @@ bool tryOptimize(QueryPlan::Node & node, PromQLStep & promql_step)
 
 }
 
-void optimizePromQLRangeSumByShards(QueryPlan::Node & root)
+void optimizePromQLRangeSumByShards(QueryPlan::Node & root, size_t execution_max_threads)
 {
     std::vector<QueryPlan::Node *> stack{&root};
     while (!stack.empty())
@@ -1173,11 +1169,11 @@ void optimizePromQLRangeSumByShards(QueryPlan::Node & root)
         stack.pop_back();
 
         if (auto * promql_step = typeid_cast<PromQLRangeSumByStep *>(node->step.get()))
-            tryOptimize(*node, *promql_step);
+            tryOptimize(*node, *promql_step, execution_max_threads);
         else if (auto * promql_rate_step = typeid_cast<PromQLRangeRateStep *>(node->step.get()))
-            tryOptimize(*node, *promql_rate_step);
+            tryOptimize(*node, *promql_rate_step, execution_max_threads);
         else if (auto * promql_two_rates_step = typeid_cast<PromQLTwoRangeRatesStep *>(node->step.get()))
-            tryOptimize(*node, *promql_two_rates_step);
+            tryOptimize(*node, *promql_two_rates_step, execution_max_threads);
 
         stack.insert(stack.end(), node->children.begin(), node->children.end());
     }

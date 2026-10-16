@@ -95,10 +95,6 @@ SQLQueryPiece applyFusedAggregationBinaryOperator(
     const auto * left_aggregation = static_cast<const AggregationOperatorNode *>(operator_node->getLeftArgument());
     const auto * right_aggregation = static_cast<const AggregationOperatorNode *>(operator_node->getRightArgument());
 
-    auto left_transform = getOneArgumentAggregationTransform(left_aggregation->operator_name);
-    auto right_transform = getOneArgumentAggregationTransform(right_aggregation->operator_name);
-    chassert(left_transform && right_transform);
-
     if (argument.type != ResultType::INSTANT_VECTOR)
     {
         throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
@@ -109,6 +105,10 @@ SQLQueryPiece applyFusedAggregationBinaryOperator(
 
     if (argument.store_method == StoreMethod::EMPTY)
         return SQLQueryPiece{operator_node, operator_node->result_type, StoreMethod::EMPTY};
+
+    auto left_transform = getOneArgumentAggregationTransform(left_aggregation->operator_name, context);
+    auto right_transform = getOneArgumentAggregationTransform(right_aggregation->operator_name, context);
+    chassert(left_transform && right_transform);
 
     argument = toVectorGrid(std::move(argument), context);
 

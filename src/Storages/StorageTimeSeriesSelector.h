@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Field.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
 #include <Common/Logger.h>
@@ -24,6 +25,12 @@ public:
     {
         Sliced,
         Raw,
+    };
+
+    struct SampleTimeBounds
+    {
+        Field min_time;
+        Field max_time;
     };
 
     struct Configuration
@@ -73,6 +80,13 @@ public:
 
     /// Return whether the selected samples table has the physical order required by an ordered native read.
     static bool canReadSamplesInOrder(const StoragePtr & samples_table, const StorageMetadataPtr & samples_table_metadata);
+
+    /// Return whether no timestamp of the table's type is in the configured range.
+    bool hasEmptyTimeRange() const;
+
+    /// Return inclusive bounds in the table's timestamp type, with the same rounding and domain clipping as the SQL read.
+    /// Returns no bounds when the configured range contains no representable timestamp.
+    std::optional<SampleTimeBounds> getSampleTimeBounds() const;
 
     /// Build the selector plan, optionally preserving the samples table's `(id, bucket)` order.
     /// Returns false when ordered mode is requested but the selected samples table cannot provide that order.

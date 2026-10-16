@@ -86,7 +86,8 @@ void PromQLRangeSumByStep::transformPipeline(QueryPipelineBuilder & pipeline, co
                     max_samples,
                     max_groups,
                     output_block_size,
-                    group_limit);
+                    group_limit,
+                    /*emit_partial_state=*/true);
             });
 
         pipeline.resize(1);

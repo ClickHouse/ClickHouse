@@ -27,10 +27,12 @@ struct ConverterContext
     const NodeEvaluationRangeGetter node_range_getter;
     SQLSubqueries subqueries;
     NativeFragmentDescriptions native_fragments;
+    const ConverterOptions options;
 
     ConverterContext(std::shared_ptr<const PrometheusQueryTree> promql_tree_,
                      const PrometheusQueryEvaluationSettings & settings_,
-                     NativeFragmentDescriptions native_fragments_ = {});
+                     NativeFragmentDescriptions native_fragments_ = {},
+                     ConverterOptions options_ = {});
 };
 
 }

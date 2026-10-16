@@ -318,6 +318,28 @@ StorageTimeSeriesSelector::StorageTimeSeriesSelector(
     setInMemoryMetadata(storage_metadata);
 }
 
+bool StorageTimeSeriesSelector::hasEmptyTimeRange() const
+{
+    return makeTableTimeRange(config.table_timestamp_type, config.min_time, config.max_time, config.time_scale).empty();
+}
+
+std::optional<StorageTimeSeriesSelector::SampleTimeBounds> StorageTimeSeriesSelector::getSampleTimeBounds() const
+{
+    const auto range = makeTableTimeRange(config.table_timestamp_type, config.min_time, config.max_time, config.time_scale);
+    if (range.empty())
+        return std::nullopt;
+
+    chassert(range.min_time && range.max_time);
+    if (isDateTime64(config.table_timestamp_type))
+    {
+        const auto scale = getDecimalScale(*config.table_timestamp_type);
+        return SampleTimeBounds{DecimalField<DateTime64>(*range.min_time, scale), DecimalField<DateTime64>(*range.max_time, scale)};
+    }
+
+    chassert(isDateTime(config.table_timestamp_type) || isUInt32(config.table_timestamp_type));
+    return SampleTimeBounds{UInt64(range.min_time->value), UInt64(range.max_time->value)};
+}
+
 VirtualColumnsDescription StorageTimeSeriesSelector::createVirtuals()
 {
     VirtualColumnsDescription desc;

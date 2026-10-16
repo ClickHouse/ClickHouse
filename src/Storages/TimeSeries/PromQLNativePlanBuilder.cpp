@@ -15,7 +15,6 @@
 #include <Interpreters/ContextTimeSeriesTagsCollector.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Set.h>
-#include <Interpreters/convertFieldToType.h>
 #include <Parsers/NullsAction.h>
 #include <Parsers/Prometheus/PrometheusQueryClassifier.h>
 #include <Parsers/Prometheus/stepsInTimeSeriesRange.h>
@@ -31,16 +30,25 @@
 #include <Storages/StorageSnapshot.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/StorageTimeSeriesSelector.h>
+#include <Storages/TimeSeries/PromQLNativeAdmission.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
 #include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <Storages/TimeSeries/getPromQLResultTimestampType.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
+#include <Common/ProfileEvents.h>
+#include <Common/logger_useful.h>
 #include <Common/re2.h>
 
-#include <base/arithmeticOverflow.h>
 #include <fmt/format.h>
 
+
+namespace ProfileEvents
+{
+extern const Event PromQLNativeAdmissionSeriesLimit;
+extern const Event PromQLNativeAdmissionGridCellLimit;
+extern const Event PromQLNativeAdmissionGridCellOverflow;
+}
 
 namespace DB
 {
@@ -52,6 +60,7 @@ extern const int LOGICAL_ERROR;
 
 namespace Setting
 {
+extern const SettingsBool enable_promql_compensated_sum;
 extern const SettingsBool enable_promql_native_parallel_processing;
 extern const SettingsBool enable_promql_native_raw_samples;
 extern const SettingsBool enable_promql_native_storage_fusion;
@@ -135,10 +144,17 @@ bool tryBuildPromQLRangeSelectorPlan(
     PrometheusQueryTree::DurationType window,
     bool enable_whole_metric_id_range_optimization,
     StorageTimeSeriesSelector::SamplesReadMode samples_read_mode = StorageTimeSeriesSelector::SamplesReadMode::Sliced,
-    const Names & exact_metric_names_for_whole_metric_id_range = {})
+    const Names & exact_metric_names_for_whole_metric_id_range = {},
+    StorageTimeSeriesSelector::SampleTimeBounds * sample_time_bounds = nullptr)
 {
     auto selector_config = makeRangeSelectorConfiguration(context, promql_query, evaluation_settings, matchers, window);
     auto selector_storage = makeRangeSelectorStorage(selector_config, samples_read_mode);
+
+    /// A typed-empty selector produces a SQL plan without an identifier set.
+    /// Decline native planning before initializing the selector or materializing identifiers.
+    auto table_time_bounds = selector_storage->getSampleTimeBounds();
+    if (!table_time_bounds)
+        return false;
 
     selector_storage->startup();
     auto selector_metadata = selector_storage->getInMemoryMetadataPtr(context, false);
@@ -173,6 +189,8 @@ bool tryBuildPromQLRangeSelectorPlan(
 
     selector_plan.addStorageHolder(selector_storage);
     selector_plan.addInterpreterContext(selector_context);
+    if (sample_time_bounds)
+        *sample_time_bounds = std::move(*table_time_bounds);
     return true;
 }
 
@@ -301,8 +319,10 @@ bool tryBuildPromQLRangeSumByPlan(
         evaluation_settings, range_sum_query.window, *native_plan.getCurrentHeader());
 
     AggregateFunctionProperties sum_properties;
+    const auto * sum_function_name
+        = context->getSettingsRef()[Setting::enable_promql_compensated_sum] ? "sumPromQLForEach" : "sumForEach";
     auto sum_function = AggregateFunctionFactory::instance().get(
-        "sumForEach", NullsAction::EMPTY, DataTypes{rate_function->getResultType()}, {}, sum_properties);
+        sum_function_name, NullsAction::EMPTY, DataTypes{rate_function->getResultType()}, {}, sum_properties);
 
     const auto max_samples_per_series = context->getSettingsRef()[Setting::max_promql_native_rate_samples_per_series];
     if (!max_samples_per_series)
@@ -337,6 +357,7 @@ bool tryBuildPromQLRangeRatePlan(
     BuiltSetsByHashPtr prepared_identifier_sets)
 {
     const bool reads_raw_samples = context->getSettingsRef()[Setting::enable_promql_native_raw_samples];
+    StorageTimeSeriesSelector::SampleTimeBounds sample_time_bounds;
     ContextPtr selector_context;
     if (!tryBuildPromQLRangeSelectorPlan(
             native_plan,
@@ -351,7 +372,9 @@ bool tryBuildPromQLRangeRatePlan(
             range_rate_query.matchers,
             range_rate_query.window,
             /* enable_whole_metric_id_range_optimization = */ true,
-            reads_raw_samples ? StorageTimeSeriesSelector::SamplesReadMode::Raw : StorageTimeSeriesSelector::SamplesReadMode::Sliced))
+            reads_raw_samples ? StorageTimeSeriesSelector::SamplesReadMode::Raw : StorageTimeSeriesSelector::SamplesReadMode::Sliced,
+            {},
+            reads_raw_samples ? &sample_time_bounds : nullptr))
         return false;
 
     if (!materializeIdentifierSet(native_plan, selector_context, prepared_identifier_sets) || !hasUniqueIdentifiersPerFullTagSet(context))
@@ -365,18 +388,8 @@ bool tryBuildPromQLRangeRatePlan(
     std::optional<Field> raw_max_time;
     if (reads_raw_samples)
     {
-        auto result_timestamp_type = getPromQLResultTimestampType(evaluation_settings.time_scale, evaluation_settings.time_zone);
-        const auto & table_timestamp_type = native_plan.getCurrentHeader()->getByName(TimeSeriesColumnNames::Samples).type;
-        const auto & tuple_type = typeid_cast<const DataTypeTuple &>(
-            *typeid_cast<const DataTypeArray &>(*table_timestamp_type).getNestedType());
-        raw_min_time = convertFieldToType(
-            DecimalField<DateTime64>(*evaluation_settings.start_time - range_rate_query.window + 1, evaluation_settings.time_scale),
-            *tuple_type.getElement(0),
-            result_timestamp_type.get());
-        raw_max_time = convertFieldToType(
-            DecimalField<DateTime64>(*evaluation_settings.end_time, evaluation_settings.time_scale),
-            *tuple_type.getElement(0),
-            result_timestamp_type.get());
+        raw_min_time = std::move(sample_time_bounds.min_time);
+        raw_max_time = std::move(sample_time_bounds.max_time);
     }
 
     native_plan.addStep(
@@ -407,6 +420,7 @@ bool tryBuildPromQLTwoRangeRatesPlan(
     BuiltSetsByHashPtr prepared_identifier_sets)
 {
     const bool reads_raw_samples = context->getSettingsRef()[Setting::enable_promql_native_raw_samples];
+    StorageTimeSeriesSelector::SampleTimeBounds sample_time_bounds;
     ContextPtr selector_context;
     if (!tryBuildPromQLRangeSelectorPlan(
             native_plan,
@@ -422,7 +436,8 @@ bool tryBuildPromQLTwoRangeRatesPlan(
             two_rates_query.rates[0].window,
             /* enable_whole_metric_id_range_optimization = */ true,
             reads_raw_samples ? StorageTimeSeriesSelector::SamplesReadMode::Raw : StorageTimeSeriesSelector::SamplesReadMode::Sliced,
-            Names{two_rates_query.rates[0].metric_name, two_rates_query.rates[1].metric_name}))
+            Names{two_rates_query.rates[0].metric_name, two_rates_query.rates[1].metric_name},
+            reads_raw_samples ? &sample_time_bounds : nullptr))
         return false;
 
     if (!materializeIdentifierSet(native_plan, selector_context, prepared_identifier_sets) || !hasUniqueIdentifiersPerFullTagSet(context))
@@ -438,18 +453,8 @@ bool tryBuildPromQLTwoRangeRatesPlan(
     std::optional<Field> raw_max_time;
     if (reads_raw_samples)
     {
-        auto result_timestamp_type = getPromQLResultTimestampType(evaluation_settings.time_scale, evaluation_settings.time_zone);
-        const auto & table_timestamp_type = native_plan.getCurrentHeader()->getByName(TimeSeriesColumnNames::Samples).type;
-        const auto & tuple_type = typeid_cast<const DataTypeTuple &>(
-            *typeid_cast<const DataTypeArray &>(*table_timestamp_type).getNestedType());
-        raw_min_time = convertFieldToType(
-            DecimalField<DateTime64>(*evaluation_settings.start_time - two_rates_query.rates[0].window + 1, evaluation_settings.time_scale),
-            *tuple_type.getElement(0),
-            result_timestamp_type.get());
-        raw_max_time = convertFieldToType(
-            DecimalField<DateTime64>(*evaluation_settings.end_time, evaluation_settings.time_scale),
-            *tuple_type.getElement(0),
-            result_timestamp_type.get());
+        raw_min_time = std::move(sample_time_bounds.min_time);
+        raw_max_time = std::move(sample_time_bounds.max_time);
     }
 
     native_plan.addStep(
@@ -586,19 +591,51 @@ std::optional<PromQLNativeVectorGridPreparation> tryPreparePromQLNativeVectorGri
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The materialized native PromQL identifier set is missing");
 
     const size_t selected_series = set_and_key->set->getTotalRowCount();
-    if (selected_series > context->getSettingsRef()[Setting::max_promql_native_rate_series])
-        return {};
-
+    const auto max_series = context->getSettingsRef()[Setting::max_promql_native_rate_series];
     const auto max_grid_cells = context->getSettingsRef()[Setting::max_promql_native_vector_grid_cells];
-    if (max_grid_cells.value)
+    std::optional<size_t> evaluation_points;
+    if (selected_series <= max_series.value && max_grid_cells.value)
     {
-        const size_t evaluation_points = PrometheusQueryToSQL::stepsInTimeSeriesRange(
+        evaluation_points = PrometheusQueryToSQL::stepsInTimeSeriesRange(
             *evaluation_settings.start_time, *evaluation_settings.end_time, *evaluation_settings.step);
-        UInt64 grid_cells = 0;
-        if (common::mulOverflow(static_cast<UInt64>(selected_series), static_cast<UInt64>(evaluation_points), grid_cells)
-            || grid_cells > max_grid_cells.value)
-            return {};
     }
+
+    const auto admission = evaluatePromQLNativeWorkloadAdmission(
+        static_cast<UInt64>(selected_series),
+        static_cast<UInt64>(evaluation_points.value_or(0)),
+        max_series.value,
+        max_grid_cells.value);
+    const char * reason = nullptr;
+    switch (admission.reason)
+    {
+        case PromQLNativeAdmissionReason::Admitted:
+            reason = "admitted";
+            break;
+        case PromQLNativeAdmissionReason::SeriesLimit:
+            reason = "series_limit";
+            ProfileEvents::increment(ProfileEvents::PromQLNativeAdmissionSeriesLimit);
+            break;
+        case PromQLNativeAdmissionReason::GridCellLimit:
+            reason = "grid_cell_limit";
+            ProfileEvents::increment(ProfileEvents::PromQLNativeAdmissionGridCellLimit);
+            break;
+        case PromQLNativeAdmissionReason::GridCellOverflow:
+            reason = "grid_cell_overflow";
+            ProfileEvents::increment(ProfileEvents::PromQLNativeAdmissionGridCellOverflow);
+            break;
+    }
+    LOG_DEBUG(
+        getLogger("PromQLNativePlanBuilder"),
+        "Native PromQL workload admission: reason={}, selected_series_count={}, evaluation_points={}, grid_cells={}, "
+        "max_series={}, max_grid_cells={}",
+        reason,
+        selected_series,
+        evaluation_points ? fmt::format("{}", *evaluation_points) : "not_evaluated",
+        admission.grid_cells ? fmt::format("{}", *admission.grid_cells) : "not_evaluated",
+        max_series.value,
+        max_grid_cells.value);
+    if (admission.reason != PromQLNativeAdmissionReason::Admitted)
+        return {};
 
     return PromQLNativeVectorGridPreparation{
         .identifier_sets = std::move(built_sets),

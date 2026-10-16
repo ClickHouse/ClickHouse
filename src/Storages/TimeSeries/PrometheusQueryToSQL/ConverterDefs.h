@@ -20,6 +20,12 @@ namespace DB::PrometheusQueryToSQL
     using ColumnNames = TimeSeriesColumnNames;
     constexpr const char * kMetricName = TimeSeriesTagNames::MetricName;
 
+    struct ConverterOptions
+    {
+        bool use_compensated_sum = false;
+        bool distributed_plan = false;
+    };
+
     /// Replaces one complete PromQL subtree with a query-scoped native fragment.
     /// Each fragment is exposed to the SQL analyzer as an ephemeral external table.
     struct NativeFragmentDescription

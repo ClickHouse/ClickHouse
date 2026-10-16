@@ -1,9 +1,11 @@
 #include <Processors/Transforms/PromQLRangeSumByTransform.h>
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
 #include <Common/Exception.h>
@@ -22,13 +24,13 @@ extern const int LOGICAL_ERROR;
 extern const int TOO_MANY_ROWS_OR_BYTES;
 }
 
-SharedHeader PromQLRangeSumByTransform::transformHeader(const AggregateFunctionPtr & sum_function)
+SharedHeader PromQLRangeSumByTransform::transformHeader(const AggregateFunctionPtr & sum_function, bool emit_partial_state)
 {
     if (!sum_function)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "PromQL native sum aggregate function is null");
 
     auto group_type = std::make_shared<DataTypeUInt64>();
-    auto values_type = sum_function->getResultType();
+    DataTypePtr values_type = emit_partial_state ? sum_function->getStateType() : sum_function->getResultType();
     return std::make_shared<const Block>(Block{
         ColumnWithTypeAndName(group_type->createColumn(), group_type, TimeSeriesColumnNames::Group),
         ColumnWithTypeAndName(values_type->createColumn(), values_type, TimeSeriesColumnNames::Values),
@@ -44,8 +46,9 @@ PromQLRangeSumByTransform::PromQLRangeSumByTransform(
     size_t max_samples_per_series_,
     size_t max_output_groups_,
     size_t max_output_block_size_,
-    PromQLGroupLimitPtr group_limit_)
-    : IAccumulatingTransform(input_header, transformHeader(sum_function_))
+    PromQLGroupLimitPtr group_limit_,
+    bool emit_partial_state_)
+    : IAccumulatingTransform(input_header, transformHeader(sum_function_, emit_partial_state_))
     , collector(std::move(collector_))
     , rate_function(std::move(rate_function_))
     , sum_function(std::move(sum_function_))
@@ -54,8 +57,9 @@ PromQLRangeSumByTransform::PromQLRangeSumByTransform(
     , max_output_groups(max_output_groups_)
     , max_output_block_size(max_output_block_size_)
     , group_limit(std::move(group_limit_))
+    , emit_partial_state(emit_partial_state_)
     , rate_place(rate_function ? rate_function->sizeOfData() : 0, rate_function ? rate_function->alignOfData() : 1)
-    , group_arena(std::make_unique<Arena>())
+    , group_arena(std::make_shared<Arena>())
 {
     if (!collector)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "PromQL native tags collector is null");
@@ -64,8 +68,11 @@ PromQLRangeSumByTransform::PromQLRangeSumByTransform(
     if (rate_function->getName() != "timeSeriesRateToGrid")
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "PromQL native range sum expects timeSeriesRateToGrid, got {}", rate_function->getName());
-    if (sum_function->getName() != "sumForEach")
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "PromQL native range sum expects sumForEach, got {}", sum_function->getName());
+    if (sum_function->getName() != "sumForEach" && sum_function->getName() != "sumPromQLForEach")
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "PromQL native range sum expects sumForEach or sumPromQLForEach, got {}",
+            sum_function->getName());
     if (rate_function->allocatesMemoryInArena())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "PromQL native range sum requires a rate state independent of Arena memory");
     if (max_samples_per_series == 0)
@@ -92,7 +99,8 @@ PromQLRangeSumByTransform::PromQLRangeSumByTransform(
     if (sum_arguments.size() != 1 || !sum_arguments.front()->equals(*rate_function->getResultType()))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "PromQL native range sum expects sumForEach({}), got {}",
+            "PromQL native range sum expects {}({}), got {}",
+            sum_function->getName(),
             rate_function->getResultType()->getName(),
             sum_arguments.empty() ? String{"<missing>"} : sum_arguments.front()->getName());
 
@@ -262,22 +270,50 @@ Chunk PromQLRangeSumByTransform::generate()
     const size_t output_rows = std::min(max_output_block_size, generated_groups.size() - next_generated_group);
 
     auto group_column = ColumnUInt64::create();
-    auto values_column = sum_function->getResultType()->createColumn();
+    DataTypePtr values_type = emit_partial_state ? sum_function->getStateType() : sum_function->getResultType();
+    auto values_column = values_type->createColumn();
     group_column->reserve(output_rows);
     values_column->reserve(output_rows);
+
+    /// Transfer only a complete lane output, so a retained chunk cannot pin states
+    /// belonging to other output blocks. Multi-block output keeps the owned-copy path.
+    const bool transfer_partial_states = emit_partial_state && generated_groups.size() <= max_output_block_size;
+    if (transfer_partial_states)
+        assert_cast<ColumnAggregateFunction &>(*values_column).addArena(group_arena);
+
     const size_t output_end = next_generated_group + output_rows;
     for (; next_generated_group < output_end; ++next_generated_group)
     {
         const Group group = generated_groups[next_generated_group];
         group_column->insertValue(group);
-        sum_function->insertResultInto(group_states.find(group)->getMapped(), *values_column, group_arena.get());
+        auto * group_state = group_states.find(group);
+        const auto group_place = group_state->getMapped();
+        if (emit_partial_state)
+        {
+            auto & state_column = assert_cast<ColumnAggregateFunction &>(*values_column);
+            if (transfer_partial_states)
+            {
+                /// The column retains the arena before taking state ownership. Its reserved
+                /// pointer array makes append non-throwing, followed immediately by disowning.
+                state_column.getData().push_back(group_place);
+                group_state->getMapped() = nullptr;
+            }
+            else
+            {
+                state_column.insertFrom(group_place);
+            }
+        }
+        else
+        {
+            sum_function->insertResultInto(group_place, *values_column, group_arena.get());
+        }
     }
 
     auto result = Chunk(Columns{std::move(group_column), std::move(values_column)}, output_rows);
     if (next_generated_group == generated_groups.size())
     {
         destroyStates();
-        group_arena = std::make_unique<Arena>();
+        group_arena = std::make_shared<Arena>();
     }
     return result;
 }

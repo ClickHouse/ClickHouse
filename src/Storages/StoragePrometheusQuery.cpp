@@ -48,6 +48,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
+    extern const SettingsBool enable_promql_compensated_sum;
     extern const SettingsBool enable_promql_native_plan;
     extern const SettingsBool enable_materialized_cte;
     extern const SettingsBool make_distributed_plan;
@@ -565,7 +566,11 @@ void StoragePrometheusQuery::readImpl(
         "Building {} to evaluate promql: {}",
         native_fragments.empty() ? "SQL" : "hybrid native-fragment/SQL plan",
         *config.promql_query);
-    PrometheusQueryToSQL::Converter converter{config.promql_query, config.evaluation_settings, std::move(native_fragments)};
+    const PrometheusQueryToSQL::ConverterOptions converter_options{
+        .use_compensated_sum = settings[Setting::enable_promql_compensated_sum],
+        .distributed_plan = settings[Setting::make_distributed_plan] || settings[Setting::serialize_query_plan],
+    };
+    PrometheusQueryToSQL::Converter converter{config.promql_query, config.evaluation_settings, std::move(native_fragments), converter_options};
     ASTPtr select_query = converter.getSQL();
 
     LOG_INFO(log, "Will execute query:\n{}", select_query->formatForLogging());

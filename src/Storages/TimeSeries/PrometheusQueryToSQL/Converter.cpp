@@ -167,10 +167,12 @@ namespace
 Converter::Converter(
     std::shared_ptr<const PrometheusQueryTree> promql_tree_,
     PrometheusQueryEvaluationSettings settings_,
-    NativeFragmentDescriptions native_fragments_)
+    NativeFragmentDescriptions native_fragments_,
+    ConverterOptions options_)
     : promql_tree(std::move(promql_tree_))
     , settings(std::move(settings_))
     , native_fragments(std::move(native_fragments_))
+    , options(options_)
     , result_type(DB::PrometheusQueryToSQL::getResultType(*promql_tree, settings))
 {
     if (native_fragments.size() > MAX_NATIVE_FRAGMENTS)
@@ -190,7 +192,7 @@ ColumnsDescription Converter::getResultColumns() const
 
 ASTPtr Converter::getSQL() const
 {
-    ConverterContext context{promql_tree, settings, native_fragments};
+    ConverterContext context{promql_tree, settings, native_fragments, options};
     auto query_piece = visitNode(promql_tree->getRoot(), context);
     query_piece.type = result_type;
     return finalizeSQL(std::move(query_piece), context);

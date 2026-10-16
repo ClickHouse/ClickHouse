@@ -1364,10 +1364,7 @@ Pipe ReadFromMergeTree::readByLayers(
             group_state));
     }
 
-    auto result = Pipe::unitePipes(std::move(pipes));
-    if (!result.empty())
-        result.resize(1);
-    return result;
+    return Pipe::unitePipes(std::move(pipes));
 }
 
 void ReadFromMergeTree::enablePromQLTwoRangeRatesFusion(

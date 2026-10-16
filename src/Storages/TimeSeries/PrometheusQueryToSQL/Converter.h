@@ -15,7 +15,8 @@ public:
     Converter(
         std::shared_ptr<const PrometheusQueryTree> promql_tree_,
         PrometheusQueryEvaluationSettings settings_,
-        NativeFragmentDescriptions native_fragments_ = {});
+        NativeFragmentDescriptions native_fragments_ = {},
+        ConverterOptions options_ = {});
 
     /// Returns the result type of the query. Takes into account the evaluation range and the query tree.
     ResultType getResultType() const { return result_type; }
@@ -30,6 +31,7 @@ private:
     const std::shared_ptr<const PrometheusQueryTree> promql_tree;
     const PrometheusQueryEvaluationSettings settings;
     const NativeFragmentDescriptions native_fragments;
+    const ConverterOptions options;
     const ResultType result_type;
 };
 

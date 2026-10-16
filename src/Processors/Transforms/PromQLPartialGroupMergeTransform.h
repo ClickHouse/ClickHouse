@@ -13,10 +13,12 @@
 namespace DB
 {
 
-/// Merges per-lane `sumForEach` states for the native PromQL range-sum path.
+/// Merges per-lane `sumPromQLForEach` states for the native PromQL range-sum path.
 ///
 /// The input contains one row per partial output group:
-/// `group UInt64, values <sumForEach result type>`. States are retained only
+/// `group UInt64, values AggregateFunction(sumPromQLForEach, Array(Nullable(Float64)))`.
+/// Complete states, including compensation, are merged before finalization.
+/// States are retained only
 /// for groups observed by this final merge and are emitted in group-key order.
 class PromQLPartialGroupMergeTransform final : public IAccumulatingTransform
 {
@@ -39,6 +41,8 @@ protected:
     Chunk generate() override;
 
 private:
+    friend class PromQLStateLifetimeTestAccess;
+
     AggregateDataPtr getOrCreateGroupState(UInt64 group);
     void destroyStates() noexcept;
 

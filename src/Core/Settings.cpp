@@ -10737,6 +10737,12 @@ Enables a native query plan for supported PromQL expressions instead of transpil
 )", PRIVATE_PREVIEW, \
         {"26.10", false, false, "New setting to enable native plans for supported PromQL expressions; disabled by default."}) \
     \
+    DECLARE(Bool, enable_promql_compensated_sum, false, R"(
+Enables exact accumulation for PromQL `sum` in generated SQL and native plans. Disabled preserves `sumForEach`. Enabled uses `sumPromQLForEach`, which sums finite `Float64` inputs exactly and rounds once to nearest, ties-to-even, independently of accumulation or merge order. Results may differ from the default aggregate. This does not make earlier PromQL operations exact. The setting name is retained for compatibility; it remains disabled by default.
+PromQL conversion rejects `sum` expressions that do not compile to an empty result when this setting is enabled and either `make_distributed_plan` or `serialize_query_plan` is requested, because the new aggregate state has no compatibility negotiation with older peers. Schema-only discovery is unaffected. This restriction does not cover explicit SQL calls to `sumPromQL`.
+)", PRIVATE_PREVIEW, \
+        {"26.10", false, false, "New opt-in setting for exact PromQL sum; disabled by default."}) \
+    \
     DECLARE(Bool, enable_promql_native_parallel_processing, false, R"(
 Enables primary-key range sharding for supported native PromQL plans. The samples table must be ordered by `(id, bucket)` so that every physical series is processed by exactly one parallel stream.
 )", PRIVATE_PREVIEW, \
@@ -10753,9 +10759,9 @@ Enables the experimental storage-layer fusion for supported native PromQL two-ra
         {"26.10", false, false, "New setting to fuse supported native PromQL two-rate fragments into the ordered storage read; disabled by default."}) \
     \
     DECLARE(UInt64, max_promql_native_parallel_lanes, 0, R"(
-Maximum number of primary-key ID range layers used by a native PromQL plan. Zero selects the number automatically from the read-stream budget, selected work, and the native plan shape. A positive value is an explicit hard cap that overrides a plan-specific automatic default. This setting does not change `max_threads`.
+Maximum number of primary-key ID range layers used by a native PromQL plan. Zero selects the number automatically from the read-stream budget, selected work, and the execution thread limit captured by the planner. A positive value is an explicit hard cap on the read/work bound instead of the automatic thread bound, not a forced lane count. Whole-ID range boundaries can reduce the actual number of lanes. This setting does not change `max_threads` or grant additional execution threads.
 )", PRIVATE_PREVIEW, \
-        {"26.10", 0, 0, "New setting to cap native PromQL primary-key range layers; zero selects from the read-stream budget, selected work, and native plan shape without changing `max_threads`, while a positive value overrides a plan-specific automatic default."}) \
+        {"26.10", 0, 0, "New setting to cap native PromQL primary-key range layers; zero selects from the read/work and captured execution thread bounds, while a positive value replaces the automatic thread bound without granting additional execution threads."}) \
     \
     DECLARE(UInt64, max_promql_query_block_size, 0, R"(
 Maximum number of rows in one block produced inside the query plan generated for PromQL evaluation. Zero uses `max_block_size`; a positive value caps the generated SQL and native fragment plans without changing the caller's outer query plan.

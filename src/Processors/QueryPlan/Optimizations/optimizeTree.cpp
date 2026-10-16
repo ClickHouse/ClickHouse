@@ -897,7 +897,7 @@ void optimizeTreeSecondPass(
     applyStreamDisjointness(optimization_settings, root);
 
     if (!optimization_settings.make_distributed_plan)
-        optimizePromQLRangeSumByShards(root);
+        optimizePromQLRangeSumByShards(root, query_plan.getMaxThreads());
 
     if (optimization_settings.query_plan_join_shard_by_pk_ranges)
         optimizeJoinByShards(root);

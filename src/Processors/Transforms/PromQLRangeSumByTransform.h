@@ -22,7 +22,7 @@ namespace DB
 ///
 /// Input must be ordered by `(id, bucket)`. Consecutive rows for one physical
 /// series are accumulated into one exact `timeSeriesRateToGrid` state. When the
-/// identifier changes, its grid is immediately folded into a `sumForEach`
+/// identifier changes, its grid is immediately folded into a `sumPromQLForEach`
 /// state for the projected output group, so rate state is bounded to one
 /// physical series while the output state is bounded to one grid per group.
 class PromQLRangeSumByTransform final : public IAccumulatingTransform
@@ -42,19 +42,23 @@ public:
         size_t max_output_groups_,
         size_t max_output_block_size_,
         /// Optional query-wide output-group limit shared by parallel lanes and their merge.
-        PromQLGroupLimitPtr group_limit_ = nullptr);
+        PromQLGroupLimitPtr group_limit_ = nullptr,
+        /// Parallel lanes emit owned aggregate states rather than finalized grids.
+        bool emit_partial_state_ = false);
 
     ~PromQLRangeSumByTransform() override;
 
     String getName() const override { return "PromQLRangeSumBy"; }
 
-    static SharedHeader transformHeader(const AggregateFunctionPtr & sum_function);
+    static SharedHeader transformHeader(const AggregateFunctionPtr & sum_function, bool emit_partial_state = false);
 
 protected:
     void consume(Chunk chunk) override;
     Chunk generate() override;
 
 private:
+    friend class PromQLStateLifetimeTestAccess;
+
     void startSeries(const IColumn & id_column, size_t row, Group full_group);
     void finishSeries();
     Group projectGroup(Group full_group);
@@ -69,6 +73,7 @@ private:
     const size_t max_output_groups;
     const size_t max_output_block_size;
     const PromQLGroupLimitPtr group_limit;
+    const bool emit_partial_state;
 
     size_t id_position = 0;
     size_t time_series_position = 0;
@@ -76,7 +81,7 @@ private:
     AlignedBuffer rate_place;
     MutableColumnPtr current_id;
     MutableColumnPtr rate_result;
-    std::unique_ptr<Arena> group_arena;
+    std::shared_ptr<Arena> group_arena;
     HashMap<Group, AggregateDataPtr, HashCRC32<Group>> group_states;
     PaddedPODArray<Group> full_groups;
     std::vector<Group> generated_groups;

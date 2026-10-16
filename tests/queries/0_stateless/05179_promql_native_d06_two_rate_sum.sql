@@ -1,5 +1,5 @@
 -- Tags: no-fasttest, no-parallel-replicas, no-replicated-database
--- Random settings limits: optimize_read_in_order=(1, 1); max_threads=(8, 8); max_block_size=(1, 1)
+-- Random settings limits: optimize_read_in_order=(1, 1); max_threads=(8, 8); max_block_size=(1, 1); max_threads_min_free_memory_per_thread=(0, 0); max_streams_to_max_threads_ratio=(1, 1); max_streams_for_merge_tree_reading=(0, 0); allow_asynchronous_read_from_io_pool_for_merge_tree=(0, 0)
 -- Tag no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
 -- Tag no-parallel-replicas: the query checks the local hybrid plan only.
 -- Tag no-replicated-database: deferred drops of `TimeSeries` inner tables are incompatible with replicated databases.
@@ -15,6 +15,10 @@ SET optimize_read_in_order = 1;
 -- Storage fusion splits selected primary-key ranges into at least two ordered
 -- layers; `max_threads = 1` intentionally disables that optimization.
 SET max_threads = 8;
+SET max_threads_min_free_memory_per_thread = 0;
+SET max_streams_to_max_threads_ratio = 1;
+SET max_streams_for_merge_tree_reading = 0;
+SET allow_asynchronous_read_from_io_pool_for_merge_tree = 0;
 -- The production policy avoids read lanes smaller than one ordinary block.
 -- This tiny fixture uses one row per block so it still exercises that path.
 SET max_block_size = 1;
@@ -349,9 +353,9 @@ SETTINGS
     enable_promql_native_parallel_processing = 1,
     max_promql_native_output_groups = 1;
 
--- Add enough matched physical series for the range splitter to expose all
--- eight read streams. These rows are inserted after the semantic checks above
--- and are used only to certify the lane-selection policy.
+-- Add enough matched physical series to expose more than four lanes. Whole-ID
+-- split points can still prevent eight lanes. These rows are inserted after
+-- the semantic checks above and are used only to check lane selection.
 INSERT INTO promql_native_d06_two_rate_sum (metric_name, tags, samples)
 SELECT
     if(number % 2 = 0, 'reads', 'writes'),
@@ -362,11 +366,11 @@ SELECT
     [(toDateTime64(300, 3), toFloat64(number)), (toDateTime64(360, 3), toFloat64(number + 1))]
 FROM numbers(16);
 
--- The fused two-rate automatic policy uses four layers even when the storage
--- read has eight streams. A positive `max_promql_native_parallel_lanes`
--- explicitly overrides that plan-specific default while remaining bounded by
--- the available read streams, selected work, and primary-key split points.
-SELECT countIf(explain LIKE '%PromQLTwoRangeRatesMergingTransform%') = 4
+-- The automatic policy is not fixed at four lanes, but remains within the
+-- eight-thread budget. Neither it nor a positive cap forces eight lanes when
+-- the available read/work bound and whole-ID split points permit fewer.
+SELECT sum(if(explain LIKE '%PromQLTwoRangeRatesMergingTransform%',
+    if(position(explain, '×') = 0, 1, toUInt64(extract(explain, '× ([0-9]+)'))), 0)) BETWEEN 5 AND 8
 FROM
 (
     EXPLAIN PIPELINE
@@ -381,7 +385,8 @@ FROM
         max_promql_native_parallel_lanes = 0
 );
 
-SELECT countIf(explain LIKE '%PromQLTwoRangeRatesMergingTransform%') > 4
+SELECT sum(if(explain LIKE '%PromQLTwoRangeRatesMergingTransform%',
+    if(position(explain, '×') = 0, 1, toUInt64(extract(explain, '× ([0-9]+)'))), 0)) BETWEEN 5 AND 8
 FROM
 (
     EXPLAIN PIPELINE
@@ -394,6 +399,68 @@ FROM
         enable_promql_native_plan = 1,
         enable_promql_native_parallel_processing = 1,
         max_promql_native_parallel_lanes = 8
+);
+
+-- Preserve the fused read streams for the first `sum by` aggregation. A
+-- single-stream aggregation here serializes work after the rate lanes.
+SELECT
+    arrayFirstIndex(x -> position(x, 'PromQLTwoRangeRatesMergingTransform') > 0, lines) > 0,
+    position(
+        arrayLast(
+            x -> position(x, 'AggregatingTransform') > 0,
+            arraySlice(lines, 1, arrayFirstIndex(x -> position(x, 'PromQLTwoRangeRatesMergingTransform') > 0, lines) - 1)),
+        'AggregatingTransform × ') > 0
+FROM
+(
+    SELECT groupArray(explain) AS lines
+    FROM
+    (
+        EXPLAIN PIPELINE
+        SELECT *
+        FROM prometheusQueryRange(
+            promql_native_d06_two_rate_sum,
+            'ceil(sum by(namespace,pod)(rate(reads[5m])+rate(writes[5m])))',
+            300, 420, 60)
+        SETTINGS
+            enable_promql_native_plan = 1,
+            enable_promql_native_parallel_processing = 1,
+            max_promql_native_parallel_lanes = 8
+    )
+);
+
+CREATE TEMPORARY TABLE d06_parallel_fused AS
+SELECT tags, samples
+FROM prometheusQueryRange(
+    promql_native_d06_two_rate_sum,
+    'ceil(sum by(namespace,pod)(rate(reads[5m])+rate(writes[5m])))',
+    300, 420, 60)
+SETTINGS
+    enable_promql_native_plan = 1,
+    enable_promql_native_parallel_processing = 1,
+    max_promql_native_parallel_lanes = 8;
+
+CREATE TEMPORARY TABLE d06_parallel_sql AS
+SELECT tags, samples
+FROM prometheusQueryRange(
+    promql_native_d06_two_rate_sum,
+    'ceil(sum by(namespace,pod)(rate(reads[5m])+rate(writes[5m])))',
+    300, 420, 60)
+SETTINGS enable_promql_native_plan = 0;
+
+SELECT count()
+FROM
+(
+    SELECT tags, samples FROM d06_parallel_fused
+    EXCEPT ALL
+    SELECT tags, samples FROM d06_parallel_sql
+);
+
+SELECT count()
+FROM
+(
+    SELECT tags, samples FROM d06_parallel_sql
+    EXCEPT ALL
+    SELECT tags, samples FROM d06_parallel_fused
 );
 
 DROP TABLE promql_native_d06_two_rate_sum;

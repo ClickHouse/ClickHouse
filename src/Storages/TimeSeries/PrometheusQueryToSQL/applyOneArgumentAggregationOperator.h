@@ -16,7 +16,7 @@ using OneArgumentAggregationTransform = ASTPtr (*)(ASTPtr && values);
 bool isOneArgumentAggregationOperator(std::string_view operator_name);
 
 /// Returns nullptr if `operator_name` is not a one-argument aggregation operator.
-OneArgumentAggregationTransform getOneArgumentAggregationTransform(std::string_view operator_name);
+OneArgumentAggregationTransform getOneArgumentAggregationTransform(std::string_view operator_name, const ConverterContext & context);
 
 /// Applies a one-argument aggregation operator.
 SQLQueryPiece applyOneArgumentAggregationOperator(

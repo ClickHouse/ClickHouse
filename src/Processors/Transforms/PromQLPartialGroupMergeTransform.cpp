@@ -1,10 +1,13 @@
 #include <Processors/Transforms/PromQLPartialGroupMergeTransform.h>
 
+#include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 
 #include <algorithm>
 #include <vector>
@@ -17,6 +20,11 @@ namespace ErrorCodes
 extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 extern const int TOO_MANY_ROWS_OR_BYTES;
+}
+
+namespace FailPoints
+{
+extern const char promql_partial_group_merge_after_consume[];
 }
 
 SharedHeader PromQLPartialGroupMergeTransform::transformHeader(const AggregateFunctionPtr & sum_function)
@@ -45,9 +53,11 @@ PromQLPartialGroupMergeTransform::PromQLPartialGroupMergeTransform(
     , group_limit(std::move(group_limit_))
     , group_arena(std::make_unique<Arena>())
 {
-    if (sum_function->getName() != "sumForEach")
+    if (sum_function->getName() != "sumForEach" && sum_function->getName() != "sumPromQLForEach")
         throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "PromQL partial group merge expects sumForEach, got {}", sum_function->getName());
+            ErrorCodes::BAD_ARGUMENTS,
+            "PromQL partial group merge expects sumForEach or sumPromQLForEach, got {}",
+            sum_function->getName());
     if (max_output_groups == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "PromQL partial group merge requires a positive output group limit");
     if (max_output_block_size == 0)
@@ -74,20 +84,21 @@ PromQLPartialGroupMergeTransform::PromQLPartialGroupMergeTransform(
             group_type->getName());
 
     const auto & values_type = input_header_->getByPosition(values_position).type;
-    if (!values_type->equals(*sum_function->getResultType()))
+    if (!values_type->equals(*sum_function->getStateType()))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "PromQL partial group merge expects {} to have type {}, got {}",
             TimeSeriesColumnNames::Values,
-            sum_function->getResultType()->getName(),
+            sum_function->getStateType()->getName(),
             values_type->getName());
 
     const auto & sum_arguments = sum_function->getArgumentTypes();
-    if (sum_arguments.size() != 1 || !sum_arguments.front()->equals(*values_type))
+    if (sum_arguments.size() != 1 || !sum_arguments.front()->equals(*sum_function->getResultType()))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "PromQL partial group merge expects sumForEach({}), got {}",
-            values_type->getName(),
+            "PromQL partial group merge expects {}({}), got {}",
+            sum_function->getName(),
+            sum_function->getResultType()->getName(),
             sum_arguments.empty() ? String{"<missing>"} : sum_arguments.front()->getName());
 }
 
@@ -110,12 +121,22 @@ void PromQLPartialGroupMergeTransform::consume(Chunk chunk)
             TimeSeriesColumnNames::Group,
             columns[group_position]->getName());
 
-    const IColumn * sum_arguments[] = {columns[values_position].get()};
+    const auto * states_column = typeid_cast<const ColumnAggregateFunction *>(columns[values_position].get());
+    if (!states_column)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "PromQL partial group merge expected {} to be an aggregate-state column, got {}",
+            TimeSeriesColumnNames::Values,
+            columns[values_position]->getName());
+
     for (size_t row = 0; row < chunk.getNumRows(); ++row)
     {
         AggregateDataPtr group_place = getOrCreateGroupState(group_column->getElement(row));
-        sum_function->add(group_place, sum_arguments, row, group_arena.get());
+        sum_function->merge(group_place, states_column->getData()[row], group_arena.get());
     }
+
+    if (FailPointInjection::hasAnyFailPointBeenRegistered())
+        FailPointInjection::pauseFailPoint(FailPoints::promql_partial_group_merge_after_consume);
 }
 
 AggregateDataPtr PromQLPartialGroupMergeTransform::getOrCreateGroupState(UInt64 group)
