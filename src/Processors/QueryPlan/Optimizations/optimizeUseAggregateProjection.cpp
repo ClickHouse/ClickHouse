@@ -35,6 +35,7 @@
 #include <Common/scope_guard_safe.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/StorageDummy.h>
@@ -439,15 +440,20 @@ static std::optional<AggregateFunctionMatches> matchAggregateFunctions(
                 if (mt == matches.end() || mt->second.node == nullptr)
                 {
                     /// Folding `isNull` on a non-nullable column can produce differently named constants.
-                    /// Only compare deterministic unsigned integer constants by value: other types may
-                    /// contain floating-point values whose representations `Field::operator==` does not distinguish.
+                    /// Only match projection constants from null checks on types that cannot contain null.
+                    /// These results are independent of the materialization context, unlike other deterministic
+                    /// folds (e.g. `toHour` depends on the session time zone). Require `UInt8` to preserve types.
                     /// See https://github.com/ClickHouse/ClickHouse/issues/68949
                     if (query_node->type == ActionsDAG::ActionType::COLUMN && query_node->column
                         && isColumnConst(*query_node->column) && query_node->isDeterministic()
                         && proj_node->type == ActionsDAG::ActionType::COLUMN && proj_node->column
                         && isColumnConst(*proj_node->column) && proj_node->isDeterministic()
+                        && proj_node->function_base
+                        && (proj_node->function_base->getName() == "isNull" || proj_node->function_base->getName() == "isNotNull")
+                        && proj_node->function_base->getArgumentTypes().size() == 1
+                        && !canContainNull(*proj_node->function_base->getArgumentTypes().front())
+                        && WhichDataType(proj_node->result_type).isUInt8()
                         && proj_node->result_type->equals(*query_node->result_type)
-                        && assert_cast<const ColumnConst &>(*query_node->column).getField().getType() == Field::Types::UInt64
                         && assert_cast<const ColumnConst &>(*proj_node->column).getField()
                             == assert_cast<const ColumnConst &>(*query_node->column).getField())
                     {

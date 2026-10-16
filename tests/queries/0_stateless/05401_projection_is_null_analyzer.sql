@@ -56,3 +56,34 @@ SELECT 1 / any([toFloat64('-0')])[1],
 FROM test_05401 SETTINGS prefer_optimize_projection = 1;
 
 DROP TABLE test_05401;
+
+SET session_timezone = 'UTC';
+
+CREATE TABLE test_05401
+(
+    type UInt8,
+    PROJECTION p_timezone (SELECT any(toHour(toDateTime(0)))),
+    PROJECTION p_dynamic (SELECT any(CAST(toUInt8(1), 'Dynamic'))),
+    PROJECTION p_variant (SELECT any(CAST(toDate(1), 'Variant(Date, UInt64)')))
+)
+ENGINE = MergeTree()
+ORDER BY type;
+
+INSERT INTO test_05401 VALUES (1), (2);
+
+SELECT any(toHour(toDateTime(0))) FROM test_05401
+SETTINGS session_timezone = 'Europe/Berlin', optimize_use_projections = 0;
+SELECT any(toHour(toDateTime(0))) FROM test_05401
+SETTINGS session_timezone = 'Europe/Berlin', prefer_optimize_projection = 1;
+
+SELECT dynamicType(any(CAST(toUInt64(1), 'Dynamic'))) FROM test_05401
+SETTINGS optimize_use_projections = 0;
+SELECT dynamicType(any(CAST(toUInt64(1), 'Dynamic'))) FROM test_05401
+SETTINGS prefer_optimize_projection = 1;
+
+SELECT variantType(any(CAST(toUInt64(1), 'Variant(Date, UInt64)'))) FROM test_05401
+SETTINGS optimize_use_projections = 0;
+SELECT variantType(any(CAST(toUInt64(1), 'Variant(Date, UInt64)'))) FROM test_05401
+SETTINGS prefer_optimize_projection = 1;
+
+DROP TABLE test_05401;
