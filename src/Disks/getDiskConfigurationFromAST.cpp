@@ -498,6 +498,7 @@ void validateResolvedAzureDiskCredentials(
         {
             .endpoint = AzureBlobStorage::processEndpoint(config, prefix),
             .auth_method = AzureBlobStorage::getAuthMethod(config, prefix),
+            .client_options = {},
             .forbid_implicit_credentials = true,
             .anonymous_fallback_for_server_credentials = is_loading_from_existing_metadata
                 && context->getGlobalContext()->getServerSettings()[ServerSetting::azure_load_table_anonymously_if_credentials_restricted],
