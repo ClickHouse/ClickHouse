@@ -5064,12 +5064,14 @@ bool MutateTask::prepare()
     /// executed in between can have invalidated that validation (e.g. a queued `RECOMPRESS COLUMN x`
     /// followed by `MODIFY COLUMN x CODEC(SZ3(...))` would otherwise rewrite `x` lossily while its
     /// dependents keep describing the old values). Re-run the guard against the same metadata
-    /// snapshot the recompression uses, restricted to the dependents this part actually has. A failure
+    /// snapshot the recompression uses, restricted to the dependents this part actually has or this task
+    /// builds (a task combining several mutations computes them from the pre-recompression values). A failure
     /// leaves the mutation failed and retried (visible in `system.mutations`); it proceeds once the
     /// metadata is fixed, or can be killed.
     for (const auto & command : ctx->commands_for_part)
         if (command.type == MutationCommand::Type::RECOMPRESS_COLUMN)
-            ctx->data->checkLossyRecompressionIsPossible(command.column_name, ctx->metadata_snapshot, ctx->source_part.get(), alter_conversions);
+            ctx->data->checkLossyRecompressionIsPossible(
+                command.column_name, ctx->metadata_snapshot, ctx->source_part.get(), alter_conversions, &ctx->commands_for_part);
 
     bool suitable_for_ttl_optimization = ctx->metadata_snapshot->hasOnlyRowsTTL() && (*ctx->data->getSettings())[MergeTreeSetting::ttl_only_drop_parts];
     NameSet columns_to_recompress;
@@ -5213,7 +5215,8 @@ bool MutateTask::prepare()
         {
             try
             {
-                ctx->data->checkLossyRecompressionIsPossible(column.name, ctx->metadata_snapshot, ctx->source_part.get(), alter_conversions);
+                ctx->data->checkLossyRecompressionIsPossible(
+                    column.name, ctx->metadata_snapshot, ctx->source_part.get(), alter_conversions, &ctx->commands_for_part);
             }
             catch (Exception & e)
             {

@@ -6923,7 +6923,8 @@ void MergeTreeData::checkLossyRecompressionIsPossible(
     const String & column_name,
     const StorageMetadataPtr & metadata_snapshot,
     const IMergeTreeDataPart * source_part,
-    const AlterConversionsPtr & alter_conversions) const
+    const AlterConversionsPtr & alter_conversions,
+    const MutationCommands * task_commands) const
 {
     const auto & columns = metadata_snapshot->getColumns();
 
@@ -6977,14 +6978,48 @@ void MergeTreeData::checkLossyRecompressionIsPossible(
         });
     };
 
+    /// The dependents that the mutation task running the recompression builds itself. Mutations
+    /// queued one after another can be executed by a single task, and such a task computes every
+    /// dependent it builds from the values as they were before the recompression, so a dependent
+    /// the part does not have yet still goes stale when it is built by the same task.
+    NameSet indices_built_by_task;
+    NameSet projections_built_by_task;
+    NameSet columns_built_by_task;
+    NameSet columns_updated_by_task;
+    if (task_commands)
+    {
+        for (const auto & command : *task_commands)
+        {
+            if (command.type == MutationCommand::Type::MATERIALIZE_INDEX)
+                indices_built_by_task.insert(command.index_name);
+            else if (command.type == MutationCommand::Type::MATERIALIZE_PROJECTION)
+                projections_built_by_task.insert(command.projection_name);
+            else if (command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
+                columns_built_by_task.insert(command.column_name);
+        }
+        columns_updated_by_task = task_commands->getAllUpdatedColumns();
+    }
+
+    /// An `UPDATE` rebuilds the dependents of the columns it assigns.
+    auto reads_column_updated_by_task = [&](const Names & required_columns)
+    {
+        return std::ranges::any_of(required_columns, [&](const String & required_column)
+        {
+            auto column_in_storage = Nested::tryGetColumnNameInStorage(required_column, storage_columns);
+            return column_in_storage && columns_updated_by_task.contains(*column_in_storage);
+        });
+    };
+
     /// When the check runs for a specific part at execution time, a projection or a skip index the
-    /// part does not have cannot go stale: the mutation does not build an absent dependent (it is
-    /// only built by `MATERIALIZE PROJECTION` / `MATERIALIZE INDEX` or by a merge, both of which read
-    /// the post-recompression values), so a dependent added to the metadata after the `ALTER` was
-    /// accepted must not wedge a recompression queued for the older parts.
+    /// part does not have cannot go stale unless the same task builds it: otherwise it is only built
+    /// by a later `MATERIALIZE PROJECTION` / `MATERIALIZE INDEX` or by a merge, both of which read the
+    /// post-recompression values, so a dependent added to the metadata after the `ALTER` was accepted
+    /// must not wedge a recompression queued for the older parts.
     for (const auto & projection : metadata_snapshot->getProjections())
     {
-        if (source_part && !source_part->hasProjection(projection.name))
+        if (source_part && !source_part->hasProjection(projection.name)
+            && !projections_built_by_task.contains(projection.name)
+            && !reads_column_updated_by_task(projection.getRequiredColumns()))
             continue;
 
         if (depends_on_recompressed_column(projection.getRequiredColumns()))
@@ -6999,7 +7034,9 @@ void MergeTreeData::checkLossyRecompressionIsPossible(
 
     for (const auto & index : metadata_snapshot->getSecondaryIndices())
     {
-        if (source_part && !source_part->hasSecondaryIndex(index.name, metadata_snapshot))
+        if (source_part && !source_part->hasSecondaryIndex(index.name, metadata_snapshot)
+            && !indices_built_by_task.contains(index.name)
+            && !reads_column_updated_by_task(index.expression->getRequiredColumns()))
             continue;
 
         if (depends_on_recompressed_column(index.expression->getRequiredColumns()))
@@ -7160,10 +7197,13 @@ void MergeTreeData::checkLossyRecompressionIsPossible(
             || dependent_column.name == column_name)
             continue;
 
-        if (source_part && !part_stores_column(dependent_column.name))
+        const auto dependency_columns = required_source_columns_expanded(dependent_column.default_desc.expression);
+        if (source_part && !part_stores_column(dependent_column.name)
+            && !columns_built_by_task.contains(dependent_column.name)
+            && !reads_column_updated_by_task(dependency_columns))
             continue;
 
-        if (depends_on_recompressed_column(required_source_columns_expanded(dependent_column.default_desc.expression)))
+        if (depends_on_recompressed_column(dependency_columns))
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "Cannot RECOMPRESS COLUMN `{}` with the lossy codec {}: the stored MATERIALIZED column "
                 "`{}` is computed from this column, and it is not recalculated by the recompression, so "

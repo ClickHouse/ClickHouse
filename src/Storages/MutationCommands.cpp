@@ -399,6 +399,14 @@ bool MutationCommands::containBarrierCommand() const
     return false;
 }
 
+bool MutationCommands::containGroupingBarrierCommand() const
+{
+    return std::ranges::any_of(*this, [](const auto & command)
+    {
+        return command.isBarrierCommand() || command.type == MutationCommand::Type::RECOMPRESS_COLUMN;
+    });
+}
+
 NameSet MutationCommands::getAllUpdatedColumns() const
 {
     NameSet res;

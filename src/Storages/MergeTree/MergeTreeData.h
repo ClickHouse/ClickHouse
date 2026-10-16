@@ -1197,12 +1197,17 @@ public:
     /// the part actually has are considered: the mutation never builds an absent one, so a dependent
     /// added to the metadata after the part was written does not describe its values. The same
     /// applies to the stored `MATERIALIZED` columns; `alter_conversions` maps their names back to
-    /// the names the part stores them under before its pending renames.
+    /// the names the part stores them under before its pending renames. `task_commands` are all the
+    /// commands of the mutation task that runs the recompression: a dependent the part does not have
+    /// is still considered when the same task builds it (`MATERIALIZE INDEX`, `MATERIALIZE
+    /// PROJECTION`, `MATERIALIZE COLUMN`, or an `UPDATE` of a column it reads), because the task
+    /// computes it from the values as they were before the recompression.
     void checkLossyRecompressionIsPossible(
         const String & column_name,
         const StorageMetadataPtr & metadata_snapshot,
         const IMergeTreeDataPart * source_part = nullptr,
-        const AlterConversionsPtr & alter_conversions = nullptr) const;
+        const AlterConversionsPtr & alter_conversions = nullptr,
+        const MutationCommands * task_commands = nullptr) const;
 
     /// Checks that partition name in all commands is valid
     void checkAlterPartitionIsPossible(
