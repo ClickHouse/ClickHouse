@@ -679,17 +679,7 @@ public:
             if (not_processed)
             {
                 auto res = not_processed->next();
-                if (res.is_last && res.next_block)
-                {
-                    res.next_block->filterBySelector();
-                    auto next_block = std::move(*res.next_block).getSourceBlock();
-                    if (next_block.rows() > 0)
-                    {
-                        auto new_res = hash_join->joinBlock(std::move(next_block));
-                        std::lock_guard lock(extra_block_mutex);
-                        not_processed_results.emplace_back(std::move(new_res));
-                    }
-                }
+                chassert(!res.next_block);
                 if (!res.is_last)
                 {
                     std::lock_guard lock(extra_block_mutex);
@@ -764,17 +754,7 @@ public:
         auto res = hash_join->joinBlock(block);
         auto next = res->next();
 
-        if (next.is_last && next.next_block)
-        {
-            next.next_block->filterBySelector();
-            auto next_block = std::move(*next.next_block).getSourceBlock();
-            if (next_block.rows() > 0)
-            {
-                auto new_res = hash_join->joinBlock(std::move(next_block));
-                std::lock_guard lock(extra_block_mutex);
-                not_processed_results.emplace_back(std::move(new_res));
-            }
-        }
+        chassert(!next.next_block);
         if (!next.is_last)
         {
             std::lock_guard lock(extra_block_mutex);
