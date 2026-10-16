@@ -20,21 +20,21 @@ SET automatic_parallel_replicas_mode = 0;
 DROP TABLE IF EXISTS ts;
 CREATE TABLE ts ENGINE = TimeSeries;
 
-INSERT INTO ts (metric_name, tags, time_series) VALUES ('m1', {'job': 'j1'}, [(1, 1.), (2, 2.)]), ('m2', {'job': 'j2'}, [(1, 3.)]);
+INSERT INTO ts (metric_name, tags, samples) VALUES ('m1', {'job': 'j1'}, [(1, 1.), (2, 2.)]), ('m2', {'job': 'j2'}, [(1, 3.)]);
 INSERT INTO ts (metric_family, type, unit, help) VALUES ('m1', 'gauge', '', 'help for m1'), ('m2', 'counter', '', 'help for m2');
 
--- The table name is not qualified, so it only resolves on the replicas if they are told which database
--- the query was written against.
+-- The table name is not qualified, so it only resolves on the replicas if the call is sent to them with
+-- the initiator's database filled in.
 SELECT '-- one-argument form';
 SELECT metric_name FROM timeSeriesTags(ts) ORDER BY metric_name;
 SELECT value FROM timeSeriesSamples(ts) ORDER BY value;
-SELECT metric_family_name, type FROM timeSeriesMetrics(ts) ORDER BY metric_family_name;
+SELECT metric_family, type FROM timeSeriesMetricFamilies(ts) ORDER BY metric_family;
 
 -- Each replica must read only its own share of the parts.
 SELECT '-- every row is returned once';
 SELECT count() FROM (SELECT * FROM timeSeriesTags(ts)) SETTINGS optimize_trivial_count_query = 0;
 SELECT count() FROM (SELECT * FROM timeSeriesSamples(ts)) SETTINGS optimize_trivial_count_query = 0;
-SELECT count() FROM (SELECT * FROM timeSeriesMetrics(ts)) SETTINGS optimize_trivial_count_query = 0;
+SELECT count() FROM (SELECT * FROM timeSeriesMetricFamilies(ts)) SETTINGS optimize_trivial_count_query = 0;
 
 SELECT '-- the same with a local plan';
 SELECT count() FROM (SELECT * FROM timeSeriesTags(ts)) SETTINGS optimize_trivial_count_query = 0, parallel_replicas_local_plan = 1;
@@ -76,8 +76,8 @@ SELECT count() FROM (SELECT * FROM timeSeriesTags(ts))
     SETTINGS optimize_trivial_count_query = 0, parallel_replicas_plan_based = 1, parallel_replicas_local_plan = 1;
 
 -- The custom-key modes fan out through a different path: it addresses the read by its own table id and
--- builds the remote context with a different helper, so neither the table identity nor the database
--- travelled with the read until both were fixed. The key has to be numeric, and `id` is a tuple.
+-- builds the query sent to the replicas separately, so it needs both the table identity and the qualified
+-- call too. The key has to be numeric, and `id` is a tuple.
 -- `serialize_query_plan` is pinned off because a custom key is refused outright when it is on, and the
 -- job that ships plans turns it on for every query.
 SELECT '-- custom key';
@@ -102,7 +102,7 @@ INSERT INTO mt VALUES (1), (2), (3);
 SELECT count() FROM mt AS l INNER JOIN timeSeriesSamples(ts) AS r ON l.x = toUInt64(r.value);
 SELECT count() FROM mt AS l INNER JOIN timeSeriesSelector(ts, 'm1', toDateTime64(0, 3), toDateTime64(10, 3)) AS r ON l.x = toUInt64(r.value);
 SELECT count() FROM mt AS l INNER JOIN prometheusQuery(ts, 'm1', toDateTime64(10, 3)) AS r ON l.x = toUInt64(r.value);
-SELECT count() FROM mt AS l INNER JOIN (SELECT toUInt64(arrayMax(x -> x.2, time_series)) AS x FROM prometheusQueryRange(ts, 'm1', toDateTime64(0, 3), toDateTime64(10, 3), INTERVAL 1 SECOND)) AS r ON l.x = r.x;
+SELECT count() FROM mt AS l INNER JOIN (SELECT toUInt64(arrayMax(x -> x.2, samples)) AS x FROM prometheusQueryRange(ts, 'm1', toDateTime64(0, 3), toDateTime64(10, 3), INTERVAL 1 SECOND)) AS r ON l.x = r.x;
 
 -- A parameterized view is also resolved as a table function node, but one carrying no `ITableFunction`
 -- and therefore no referenced table, so the gate above does not admit it as an anchor. It still reads with

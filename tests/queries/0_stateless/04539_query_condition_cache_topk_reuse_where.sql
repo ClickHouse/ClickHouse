@@ -51,7 +51,7 @@ SELECT
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600
     AND type = 'QueryFinish'
-    AND current_database = currentDatabase() AND is_initial_query
+    AND current_database = currentDatabase()
     AND log_comment IN ('04539_fwd_prime', '04539_fwd_topk')
 ORDER BY event_time_microseconds;
 
@@ -98,7 +98,7 @@ SELECT
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600
     AND type = 'QueryFinish'
-    AND current_database = currentDatabase() AND is_initial_query
+    AND current_database = currentDatabase()
     AND log_comment = '04539_rev_plain'
 ORDER BY event_time_microseconds;
 

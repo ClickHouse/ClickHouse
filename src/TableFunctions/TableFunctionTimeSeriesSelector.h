@@ -21,6 +21,8 @@ public:
 private:
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
+    std::optional<TableArgument> getTableArgument() const override { return TableArgument{config.time_series_storage_id, config.num_table_arguments}; }
+
     StoragePtr executeImpl(
         const ASTPtr & ast_function,
         ContextPtr context,

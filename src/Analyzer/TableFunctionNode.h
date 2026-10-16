@@ -118,6 +118,10 @@ public:
     /// `table_function`, because a cloned node does not carry the `ITableFunction` object.
     const StorageID & getReferencedTableID() const { return referenced_table_id; }
 
+    /// Rewrite the leading arguments that name a table to `'database', 'table'`, so the call resolves to the
+    /// same table on a server whose current database is different. See `ITableFunction::getTableArgument`.
+    void qualifyTableArgument();
+
     const VectorWithMemoryTracking<size_t> & getUnresolvedArgumentIndexes() const
     {
         return unresolved_arguments_indexes;
@@ -178,6 +182,8 @@ private:
     StoragePtr storage;
     StorageID storage_id;
     StorageID referenced_table_id = StorageID::createEmpty();
+    StorageID table_argument_id = StorageID::createEmpty();
+    size_t num_table_arguments = 0;
     StorageSnapshotPtr storage_snapshot;
     VectorWithMemoryTracking<size_t> unresolved_arguments_indexes;
     std::optional<TableExpressionModifiers> table_expression_modifiers;

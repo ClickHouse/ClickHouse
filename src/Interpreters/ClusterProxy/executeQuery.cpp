@@ -29,6 +29,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/stripQuerySettings.h>
 #include <Planner/Utils.h>
+#include <Planner/findQueryForParallelReplicas.h>
 #include <Processors/QueryPlan/MaterializingCTEStep.h>
 #include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -342,8 +343,7 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
     const StorageID & main_table,
     ASTPtr additional_filter_ast,
     LoggerPtr log,
-    const DistributedSettings * distributed_settings,
-    bool forward_current_database = false)
+    const DistributedSettings * distributed_settings)
 {
     ClientInfo new_client_info = context->getClientInfo();
     Settings new_settings {settings};
@@ -427,20 +427,6 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
     /// Strip the initiator-only settings (query-shaping and result-serialisation) so the
     /// inter-server `Settings` packet does not carry them; see `stripInitiatorOnlySettings`.
     stripInitiatorOnlySettings(new_settings);
-
-    /// `database` is stripped above because a `Distributed` shard has to resolve an unqualified remote
-    /// table against its own default database. A parallel-replicas fan-out is not a remapping - every
-    /// replica holds the same tables and the query is written against the initiator's current database -
-    /// so it asks for the database back, the same way `updateContextForParallelReplicas` does.
-    if (forward_current_database)
-    {
-        const auto & current_database = context->getCurrentDatabase();
-        if (!current_database.empty())
-        {
-            new_settings[Setting::database] = current_database;
-            new_settings[Setting::database].changed = true;
-        }
-    }
 
     new_settings[Setting::run_query_in_background] = false;
 
@@ -564,8 +550,7 @@ void executeQuery(
     const std::string & sharding_key_column_name,
     const DistributedSettings & distributed_settings,
     AdditionalShardFilterGenerator shard_filter_generator,
-    bool is_remote_function,
-    bool forward_current_database)
+    bool is_remote_function)
 {
     const Settings & settings = context->getSettingsRef();
 
@@ -579,7 +564,7 @@ void executeQuery(
 
     auto cluster = query_info.getCluster();
     auto new_context = updateSettingsAndClientInfoForCluster(*cluster, is_remote_function, context,
-        settings, main_table, query_info.additional_filter_ast, log, &distributed_settings, forward_current_database);
+        settings, main_table, query_info.additional_filter_ast, log, &distributed_settings);
     if (context->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas].value
         && context->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas].value
            != new_context->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas].value)
@@ -838,27 +823,9 @@ static ContextMutablePtr updateContextForParallelReplicas(const LoggerPtr & logg
     /// initiator and must not be re-applied per replica (which would re-shape the already-shaped
     /// per-replica query or break it, e.g. `format = 'Null'`). This mirrors the `Distributed`
     /// fan-out and the `*Cluster` table functions; see `stripInitiatorOnlySettings`.
-    ///
-    /// `database` is then put back, unlike in the `Distributed` fan-out. It is stripped there because
-    /// `rewriteSelectQuery` can leave the remote table unqualified (a `Distributed` table created with
-    /// an empty database argument), so a shard must resolve it against its own default database. Parallel
-    /// replicas have no such remapping: every replica holds the same tables, and the query is written
-    /// against the initiator's current database. Sending it makes every unqualified name in the
-    /// forwarded query resolve the way the user wrote it - a table function argument
-    /// (`timeSeriesSamples(ts)`, `merge('^tbl')`, `dictionary('dict')`) is not qualified by the
-    /// `QueryTree -> AST` conversion the way a table name is, so without this it would silently resolve
-    /// against the replica's `default` database.
     {
         Settings new_settings = context_mutable->getSettingsCopy();
         stripInitiatorOnlySettings(new_settings);
-
-        const auto & current_database = context->getCurrentDatabase();
-        if (!current_database.empty())
-        {
-            new_settings[Setting::database] = current_database;
-            new_settings[Setting::database].changed = true;
-        }
-
         context_mutable->setSettings(new_settings);
     }
 
@@ -1369,6 +1336,7 @@ void executeQueryWithParallelReplicas(
     inlineAliasColumns(modified_query_tree);
     rewriteJoinToGlobalJoin(modified_query_tree, context);
     modified_query_tree = buildQueryTreeForShard(planner_context, modified_query_tree, /*allow_global_join_for_right_table*/ true);
+    qualifyTableFunctionArguments(modified_query_tree);
 
     auto [header, new_planner_context]
         = InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext(modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());
@@ -1424,8 +1392,7 @@ void executeQueryWithParallelReplicasCustomKey(
         /*sharding_key_column_name=*/{},
         /*distributed_settings=*/{},
         shard_filter_generator,
-        /*is_remote_function=*/false,
-        /*forward_current_database=*/true);
+        /*is_remote_function=*/false);
 }
 
 void executeQueryWithParallelReplicasCustomKey(
@@ -1447,6 +1414,7 @@ void executeQueryWithParallelReplicasCustomKey(
     /// task-based parallel-replicas path runs for the same reason).
     auto modified_query_tree = query_tree->clone();
     createUniqueAliasesIfNecessary(modified_query_tree, context);
+    qualifyTableFunctionArguments(modified_query_tree);
 
     auto header
         = InterpreterSelectQueryAnalyzer::getSampleBlock(modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());
