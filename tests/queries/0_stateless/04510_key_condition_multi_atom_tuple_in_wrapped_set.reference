@@ -1,0 +1,5 @@
+(s, x) IN (('b', 5))	1	1	2	Condition: and((concat(s, '_x') in 1-element set), ((s, x) in 1-element set))
+(s, x) IN (('b', 5), ('d', 14))	2	2	6
+(s, x) NOT IN (('b', 5))	23	23	24	Condition: ((s, x) notIn 1-element set)
+(s, x) IN (('b', 5))	1	1	2	Condition: and((multiply(x, 2) in 1-element set), and((concat(s, '_x') in 1-element set), ((s, x) in 1-element set)))
+has([('b', 5), ('d', 14)], (s, x))	2	2	6
