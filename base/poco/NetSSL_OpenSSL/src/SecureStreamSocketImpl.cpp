@@ -285,4 +285,10 @@ void SecureStreamSocketImpl::setIndependentReadWrite(bool flag)
 }
 
 
+void SecureStreamSocketImpl::setPeerIsLocalHost(bool flag)
+{
+    _impl.setPeerIsLocalHost(flag);
+}
+
+
 } } // namespace Poco::Net

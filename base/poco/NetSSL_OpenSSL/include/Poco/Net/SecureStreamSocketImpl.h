@@ -254,6 +254,9 @@ namespace Net
         void setIndependentReadWrite(bool flag);
         /// See `SecureSocketImpl::setIndependentReadWrite`.
 
+        void setPeerIsLocalHost(bool flag);
+        /// See `SecureSocketImpl::setPeerIsLocalHost`.
+
 
     protected:
         void acceptSSL();

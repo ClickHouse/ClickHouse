@@ -123,6 +123,9 @@ FiberSocket FiberSocket::connectTLS(
     result.socket = Poco::Net::StreamSocket(impl);
     if (!sni.empty())
         impl->setPeerHostName(sni);
+    /// The relaxed certificate verification skips a local peer. Tell it from the address already resolved,
+    /// or it resolves the name again with a blocking DNS lookup inside the fiber.
+    impl->setPeerIsLocalHost(address.host().isLoopback());
     result.socket.connect(address, ms(timeout_ms));
     result.socket.setNoDelay(true);
     result.is_plaintext = false;
