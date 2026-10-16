@@ -1012,7 +1012,7 @@ inline bool isCaseInsensitiveSubstringSearch(std::string_view function_name)
 
 /// Returns one pattern, or nothing when the pattern is not eligible for a dictionary scan.
 std::vector<OptimizedRegularExpression>
-MergeTreeIndexConditionText::stringLikeToPatterns(const Field & field, bool case_insensitive, bool allow_arbitrary_patterns) const
+MergeTreeIndexConditionText::stringLikeToPatterns(const Field & field, bool case_insensitive, bool allow_arbitrary_patterns, bool ascii_case_folding) const
 {
     const String value = preprocessor->processConstant(field.safeGet<String>());
     if (value.empty())
@@ -1024,7 +1024,7 @@ MergeTreeIndexConditionText::stringLikeToPatterns(const Field & field, bool case
     /// equates U+212A with 'k'. The token keeps the raw bytes, so the scan cannot see such an occurrence and
     /// would prune a granule holding a matching row. Checked for the whole pattern, before any shape-specific
     /// branch below, because every shape is matched the same way.
-    if (case_insensitive && std::any_of(value.begin(), value.end(), UTF8::isASCIIReachableByCaseFolding))
+    if (case_insensitive && !ascii_case_folding && std::any_of(value.begin(), value.end(), UTF8::isASCIIReachableByCaseFolding))
         return {};
 
     auto compile_pattern = [&](const String & pattern)
@@ -1034,6 +1034,10 @@ MergeTreeIndexConditionText::stringLikeToPatterns(const Field & field, bool case
             patterns.emplace_back(Regexps::createRegexp<true, false, true, true>(pattern));
         else
             patterns.emplace_back(Regexps::createRegexp<true, false, true, false>(pattern));
+
+        /// Only a plain substring search folds ASCII letters alone; re2 folds the whole of Unicode.
+        if (ascii_case_folding && patterns.front().getRE2())
+            patterns.clear();
         return patterns;
     };
 
@@ -1041,7 +1045,7 @@ MergeTreeIndexConditionText::stringLikeToPatterns(const Field & field, bool case
     if (allow_arbitrary_patterns && tokenizer->getType() == ITokenizer::Type::Array)
     {
         /// A non-ASCII needle is unsafe: `match` folds case for ASCII only, `ilike` for the whole of UTF-8.
-        if (case_insensitive && !isAllASCII(reinterpret_cast<const UInt8 *>(value.data()), value.size()))
+        if (case_insensitive && !ascii_case_folding && !isAllASCII(reinterpret_cast<const UInt8 *>(value.data()), value.size()))
             return {};
 
         /// Wildcards do not count, and one literal character is required: the empty string has no token.
@@ -1242,7 +1246,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     const RPNBuilderTreeNode & argument_node,
     DataTypePtr value_type,
     Field value_field,
-    RPNElement & out) const
+    RPNElement & out,
+    bool ascii_case_folding) const
 {
     auto direct_read_mode = getDirectReadMode(function_name);
 
@@ -1763,7 +1768,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             return false;
 
         const auto & like_pattern = value_field.safeGet<String>();
-        auto patterns = stringLikeToPatterns(value_field, /*case_insensitive=*/ true, /*allow_arbitrary_patterns=*/ affix_patterns_allowed);
+        auto patterns = stringLikeToPatterns(value_field, /*case_insensitive=*/ true, /*allow_arbitrary_patterns=*/ affix_patterns_allowed, ascii_case_folding);
         const bool is_infix = isInfixPattern(like_pattern);
         if (patterns.size() == 1 && (is_infix || affix_patterns_allowed))
         {
@@ -1951,6 +1956,7 @@ bool MergeTreeIndexConditionText::traverseSubstringOccurrenceNode(const RPNBuild
     const auto search_function_name = search_function.getFunctionName();
 
     /// Case-insensitive functions give the same result as `ILIKE` for every needle `ILIKE` accepts.
+    /// The ASCII-only ones match like the dictionary scan does, so they also take needles `ILIKE` rejects.
     String like_function_name;
     if (isCaseSensitiveSubstringSearch(search_function_name))
         like_function_name = "like";
@@ -1958,6 +1964,8 @@ bool MergeTreeIndexConditionText::traverseSubstringOccurrenceNode(const RPNBuild
         like_function_name = "ilike";
     else
         return false;
+
+    const bool ascii_case_folding = search_function_name == "positionCaseInsensitive" || search_function_name == "countSubstringsCaseInsensitive";
 
     /// `LIKE` has no start position argument.
     if (search_function.getArgumentsSize() != 2)
@@ -1986,7 +1994,7 @@ bool MergeTreeIndexConditionText::traverseSubstringOccurrenceNode(const RPNBuild
 
     Field pattern("%" + escapeForLikePattern(needle_string) + "%");
     return traverseFunctionNode(
-        like_function_name, search_function.getArgumentAt(0), std::make_shared<DataTypeString>(), std::move(pattern), out);
+        like_function_name, search_function.getArgumentAt(0), std::make_shared<DataTypeString>(), std::move(pattern), out, ascii_case_folding);
 }
 
 /// Whether the sub-DAG may be evaluated on a default value to decide if a missing map key or JSON path

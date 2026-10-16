@@ -104,7 +104,7 @@ SELECT 'short needle', arraySort(groupArray(id)) FROM tab WHERE position(message
 SELECT 'short needle', arraySort(groupArray(id)) FROM tab WHERE position(message, 'bar') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
 SELECT 'short needle', arraySort(groupArray(id)) FROM tab WHERE position(message, 'bar') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
 
--- A needle with 'k' does not use the index, as for ILIKE.
+-- A needle with 'k' uses the index: these functions fold ASCII letters only, unlike ILIKE.
 SELECT 'case-insensitive with k', arraySort(groupArray(id)) FROM tab WHERE positionCaseInsensitive(message, 'KELVIN') > 0 SETTINGS use_skip_indexes = 0;
 SELECT 'case-insensitive with k', arraySort(groupArray(id)) FROM tab WHERE positionCaseInsensitive(message, 'KELVIN') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
 SELECT 'case-insensitive with k', arraySort(groupArray(id)) FROM tab WHERE positionCaseInsensitive(message, 'KELVIN') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
@@ -217,11 +217,76 @@ FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE position(message, 'lpha'
 SELECT countIf(explain LIKE '%\_\_text\_index\_%') > 0, countIf(explain LIKE '%FUNCTION position(%') > 0
 FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE position(message, 'foo bar baz') > 0);
 
-SELECT countIf(explain LIKE '%\_\_text\_index\_%') > 0
+-- A needle with 'k': the ASCII-only function is answered by the index, the UTF-8 one is not.
+SELECT countIf(explain LIKE '%\_\_text\_index\_%') > 0, countIf(explain LIKE '%FUNCTION positionCaseInsensitive(%') > 0
 FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE positionCaseInsensitive(message, 'KELVIN') > 0);
 
 SELECT countIf(explain LIKE '%\_\_text\_index\_%') > 0
+FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE positionCaseInsensitiveUTF8(message, 'KELVIN') > 0);
+
+SELECT countIf(explain LIKE '%\_\_text\_index\_%') > 0
 FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE position(message, 'lpha', 3) > 0);
+
+DROP TABLE tab;
+
+SELECT '-- The ASCII-only functions do not fold the Kelvin sign to k';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    message String,
+    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha)
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1;
+
+-- Row 3 starts with U+212A, the Kelvin sign, which ILIKE and the UTF-8 functions match with 'k'.
+INSERT INTO tab VALUES (1, 'kelvin scale'), (2, 'KELVIN SCALE'), (3, '\xE2\x84\xAAelvin scale'), (4, 'zz');
+
+SELECT 'kelvin sign', arraySort(groupArray(id)) FROM tab WHERE positionCaseInsensitive(message, 'kelvin') > 0 SETTINGS use_skip_indexes = 0;
+SELECT 'kelvin sign', arraySort(groupArray(id)) FROM tab WHERE positionCaseInsensitive(message, 'kelvin') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
+SELECT 'kelvin sign', arraySort(groupArray(id)) FROM tab WHERE positionCaseInsensitive(message, 'kelvin') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
+
+SELECT 'kelvin sign count', arraySort(groupArray(id)) FROM tab WHERE countSubstringsCaseInsensitive(message, 'KELVIN') > 0 SETTINGS use_skip_indexes = 0;
+SELECT 'kelvin sign count', arraySort(groupArray(id)) FROM tab WHERE countSubstringsCaseInsensitive(message, 'KELVIN') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
+SELECT 'kelvin sign count', arraySort(groupArray(id)) FROM tab WHERE countSubstringsCaseInsensitive(message, 'KELVIN') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
+
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes = 1
+    SELECT count() FROM tab WHERE positionCaseInsensitive(message, 'kelvin') > 0
+) WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
+LIMIT 2, 3;
+
+DROP TABLE tab;
+
+SELECT '-- Array tokenizer: the ASCII-only functions take a non-ASCII needle';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    message String,
+    INDEX idx(message) TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1;
+
+INSERT INTO tab VALUES (1, 'CAFÉ'), (2, 'café'), (3, 'CAFé'), (4, 'zz');
+
+-- 'É' and 'é' differ outside ASCII, so row 1 does not match.
+SELECT 'non-ASCII needle', arraySort(groupArray(id)) FROM tab WHERE positionCaseInsensitive(message, 'café') > 0 SETTINGS use_skip_indexes = 0;
+SELECT 'non-ASCII needle', arraySort(groupArray(id)) FROM tab WHERE positionCaseInsensitive(message, 'café') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
+SELECT 'non-ASCII needle', arraySort(groupArray(id)) FROM tab WHERE positionCaseInsensitive(message, 'café') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
+
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes = 1
+    SELECT count() FROM tab WHERE positionCaseInsensitive(message, 'café') > 0
+) WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
+LIMIT 2, 3;
+
+SELECT countIf(explain LIKE '%\_\_text\_index\_%') > 0
+FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE positionCaseInsensitiveUTF8(message, 'café') > 0);
 
 DROP TABLE tab;
 

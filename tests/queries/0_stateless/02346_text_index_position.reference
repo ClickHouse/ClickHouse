@@ -114,7 +114,26 @@ Granules: 2/15
 1	0
 1	0
 1	1
+1	0
 0
+0
+-- The ASCII-only functions do not fold the Kelvin sign to k
+kelvin sign	[1,2]
+kelvin sign	[1,2]
+kelvin sign	[1,2]
+kelvin sign count	[1,2]
+kelvin sign count	[1,2]
+kelvin sign count	[1,2]
+Description: text GRANULARITY 100000000
+Parts: 1/1
+Granules: 2/4
+-- Array tokenizer: the ASCII-only functions take a non-ASCII needle
+non-ASCII needle	[2,3]
+non-ASCII needle	[2,3]
+non-ASCII needle	[2,3]
+Description: text GRANULARITY 100000000
+Parts: 1/1
+Granules: 2/4
 0
 -- Nullable column
 position > 0	[1,5]
