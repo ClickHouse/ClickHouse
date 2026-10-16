@@ -56,8 +56,7 @@ void computeFixedRoutesImpl(const ColumnRawPtrs & key_columns, const Sizes & key
 template <HashJoin::Type type, typename Table>
 void computeRoutesForTable(const ColumnRawPtrs & key_columns, const Sizes & key_sizes, size_t rows, const UInt8 * skip, UInt16 * routes, DenseHyperLogLog & hll)
 {
-    /// The routing only reads keys, so the getter needs no `JoinUsedFlags` offset.
-    using KeyGetter = typename KeyGetterForType<type, Table, /*use_offset=*/false>::Type;
+    using KeyGetter = typename KeyGetterForType<type, Table>::Type;
     if constexpr (is_hash_join_table<Table>)
         computeRoutesImpl<KeyGetter, typename Table::hash_type>(key_columns, key_sizes, rows, skip, routes, hll);
     else
