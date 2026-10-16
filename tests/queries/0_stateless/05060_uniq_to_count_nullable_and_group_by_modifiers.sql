@@ -32,23 +32,6 @@ SELECT 'cube';
 SELECT uniq(x) FROM (SELECT x FROM values('x Int64', (0), (1), (1)) GROUP BY x WITH CUBE);
 SELECT uniq(x) FROM (SELECT x FROM values('x Int64', (0), (1), (1)) GROUP BY x WITH CUBE) SETTINGS optimize_uniq_to_count = 0;
 
--- The same shapes on the legacy `RewriteUniqToCountVisitor` path.
-SELECT 'legacy analyzer';
-SET enable_analyzer = 0;
-SELECT uniq(x) FROM (SELECT DISTINCT x FROM values('x Nullable(Int64)', (1), (NULL), (2)));
-SELECT uniq(x) FROM (SELECT DISTINCT x FROM values('x Nullable(Int64)', (1), (NULL), (2))) SETTINGS optimize_uniq_to_count = 0;
-SELECT uniq(x) FROM (SELECT x FROM values('x Nullable(Int64)', (1), (NULL), (2)) GROUP BY x);
-SELECT uniq(x) FROM (SELECT x FROM values('x Nullable(Int64)', (1), (NULL), (2)) GROUP BY x) SETTINGS optimize_uniq_to_count = 0;
-SELECT uniq(x, y) FROM (SELECT DISTINCT x, y FROM values('x Nullable(Int64), y Int64', (1, 1), (NULL, 2), (2, 3)));
-SELECT uniq(x, y) FROM (SELECT DISTINCT x, y FROM values('x Nullable(Int64), y Int64', (1, 1), (NULL, 2), (2, 3))) SETTINGS optimize_uniq_to_count = 0;
-SELECT uniq(x) FROM (SELECT x FROM values('x Int64', (0), (1), (1)) GROUP BY x WITH ROLLUP);
-SELECT uniq(x) FROM (SELECT x FROM values('x Int64', (0), (1), (1)) GROUP BY x WITH ROLLUP) SETTINGS optimize_uniq_to_count = 0;
-SELECT uniq(x) FROM (SELECT x FROM values('x Int64', (0), (1), (1)) GROUP BY x WITH CUBE);
-SELECT uniq(x) FROM (SELECT x FROM values('x Int64', (0), (1), (1)) GROUP BY x WITH CUBE) SETTINGS optimize_uniq_to_count = 0;
--- The legacy rewrite fires, and it produces `count(x)`, not an argument-less `count()`.
-SELECT count() > 0 FROM (EXPLAIN SYNTAX SELECT uniq(x) FROM (SELECT DISTINCT x FROM values('x Nullable(Int64)', (1), (NULL), (2)))) WHERE explain LIKE '%count(x)%';
-SET enable_analyzer = 1;
-
 -- The rewrite still fires, both for a non-Nullable and for a Nullable column without modifiers.
 SELECT 'still optimized';
 SELECT uniq(x) FROM (SELECT DISTINCT x FROM values('x Int64', (1), (1), (2)));

@@ -3,7 +3,7 @@
 -- generic SQL expressions that is also valid Trino SQL.
 -- Expected results verified against the .test files of the original tests.
 
-SET allow_experimental_trino_dialect = 1;
+SET enable_trino_dialect = 1;
 SET dialect = 'trino';
 
 

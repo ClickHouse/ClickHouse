@@ -1,4 +1,5 @@
 <clickhouse>
+    <path from_env="CLICKHOUSE_TEST_DATA_PATH"/>
     <filesystem_caches>
         <docker_relative_cache>
             <max_size>10000000</max_size>

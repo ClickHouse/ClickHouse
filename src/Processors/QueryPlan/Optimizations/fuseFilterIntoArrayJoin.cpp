@@ -14,7 +14,7 @@ namespace DB::QueryPlanOptimizations
 size_t tryFuseFilterIntoArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings & settings)
 {
     /// fused filter can't be read by older workers, and it's perf-only - skip if the plan may be shipped out
-    if (settings.make_distributed_plan || settings.serialize_query_plan)
+    if (settings.make_distributed_plan || settings.serialize_query_plan || settings.enable_parallel_replicas)
         return 0;
 
     auto & parent = parent_node->step;
@@ -34,6 +34,10 @@ size_t tryFuseFilterIntoArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node
         return 0;
 
     const auto & joined_columns = array_join->getColumns();
+
+    if (!expression.splitActionsBeforeArrayJoin(joined_columns).first.trivial())
+        return 0;
+
     NameSet joined_set(joined_columns.begin(), joined_columns.end());
 
     /// The filter may read row columns too (the step broadcasts them), but it must read at least one element.

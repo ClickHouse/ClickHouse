@@ -1,0 +1,43 @@
+query-level limit reset
+0
+1
+2
+3
+4
+limit kept without reset
+0
+1
+arm-local limit reset does not affect the union
+0
+1
+query-level offset reset
+0
+1
+2
+3
+4
+offset kept without reset
+3
+4
+arm-local offset reset does not affect the union
+3
+4
+query-level reset of both
+0
+1
+2
+3
+4
+arm-local filter reset does not affect the union
+3
+4
+query-level filter reset
+0
+1
+2
+3
+4
+arm-local order reset does not affect the union
+2
+1
+0

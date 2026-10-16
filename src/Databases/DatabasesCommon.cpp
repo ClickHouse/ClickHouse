@@ -4,6 +4,7 @@
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Core/Settings.h>
+#include <Common/ProfileEvents.h>
 #include <Core/UUID.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -39,6 +40,11 @@
 #include <Interpreters/SharedDatabaseCatalog.h>
 #endif
 
+
+namespace ProfileEvents
+{
+    extern const Event DatabaseTablesEnumerated;
+}
 
 namespace DB
 {
@@ -280,6 +286,11 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
 
     if (validate_new_create_query)
         validateCreateQuery(ast_create_query, metadata.virtuals, context);
+
+    /// These declarations are known not to be analyzable on this server, and `validateCreateQuery` analyzes every
+    /// projection it finds, so they can only be put back once it has run.
+    for (const auto & definition_ast : metadata.projections.getUnavailableDefinitions())
+        ast_create_query.columns_list->projections->children.push_back(definition_ast->clone());
 }
 
 
@@ -564,13 +575,17 @@ DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesIterator(ContextPt
     ensurePopulated();
     std::lock_guard lock(mutex);
     if (!filter_by_table_name)
+    {
+        ProfileEvents::increment(ProfileEvents::DatabaseTablesEnumerated, tables.size());
         return std::make_unique<DatabaseTablesSnapshotIterator>(tables, database_name);
+    }
 
     Tables filtered_tables;
     for (const auto & [table_name, storage] : tables)
         if (filter_by_table_name(table_name))
             filtered_tables.emplace(table_name, storage);
 
+    ProfileEvents::increment(ProfileEvents::DatabaseTablesEnumerated, filtered_tables.size());
     return std::make_unique<DatabaseTablesSnapshotIterator>(std::move(filtered_tables), database_name);
 }
 

@@ -171,6 +171,9 @@ struct StagedChunk
 
     bool countsOnly() const { return std::holds_alternative<CountPayload>(payload); }
 
+    /// The chunk's heap footprint: the key side plus the payload's arrays or columns.
+    size_t allocatedBytes() const;
+
     /// Debug-only structural invariants, checked at publication.
     bool wellFormed() const
     {
@@ -241,6 +244,9 @@ struct AdaptiveAggregationSession
         void recordDrained(size_t records) { undrained_records.fetch_sub(records, std::memory_order_relaxed); }
         size_t undrainedRecords() const { return undrained_records.load(std::memory_order_relaxed); }
 
+        /// The footprint of the chunks currently enqueued: registered chunks in, claimed chunks out.
+        size_t enqueuedBytes() const { return enqueued_bytes.load(std::memory_order_relaxed); }
+
         /// Retires a bucket's chunk references after its merge-and-convert completed: the
         /// borrow of staged key bytes ends at conversion. A chunk frees once the last bucket
         /// holding it retires.
@@ -268,6 +274,7 @@ struct AdaptiveAggregationSession
         SharedMutex registry_mutex;
 
         std::atomic<size_t> undrained_records{0};
+        std::atomic<size_t> enqueued_bytes{0};
     };
 
     StagedBacklog backlog;
@@ -281,12 +288,12 @@ struct AdaptiveAggregationSession
     /// initialization: the sweeps replace the table but never its type, and a producer reads
     /// this to size its chunks at publication without taking the coordinator lock.
     AggregatedDataVariants::Type drain_type = AggregatedDataVariants::Type::EMPTY;
-    /// What the drains into `early_drain_variants` were seen to allocate, as the sweeping
-    /// threads' memory trackers count them, summed since the table was last replaced. The
-    /// table's `allocatedBytes` sums its arenas and hash-table buffers; the heap that states
-    /// such as `uniqExact` or `groupBitmap` own outside the arenas is seen only here. Guarded
-    /// by `pressure_sweep_mutex`, like the table itself.
-    size_t early_drain_tracked_bytes = 0;
+    /// The drain table's footprint estimate: grows by each drain's tracked allocations and is
+    /// at least its `allocatedBytes`, which includes preallocated arenas and hash-table buffers.
+    /// Tracking also includes heap owned by states such as `uniqExact` and `groupBitmap`.
+    /// Writers hold `pressure_sweep_mutex`; the scheduler reads without inspecting the mutable table.
+    /// Reset when the table is replaced, so an empty replacement is not reported as reclaimable.
+    std::atomic<size_t> early_drain_tracked_bytes{0};
 
     /// Serializes pressure sweeps: one sweeper at a time sheds memory, and a single sweeper
     /// needs no per-bucket coordination; merge-time drains run after the finish barrier and
@@ -454,6 +461,8 @@ struct AdaptiveAggregationProducer
             /// The global thaw: the session-wide staged-key sample proved the whole stream
             /// repeat-dominated (see `publishDelayedRecords`).
             RepeatedStagedKeys,
+            /// The local table has to be flushed to disk, which only the baseline path can do.
+            MemoryPressure,
         };
         Reason reason;
     };
