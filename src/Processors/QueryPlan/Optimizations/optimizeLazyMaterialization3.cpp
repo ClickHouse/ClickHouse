@@ -1241,7 +1241,9 @@ bool canProduceTotals(const IQueryPlanStep & step)
         || typeid_cast<const ReadFromParallelRemoteReplicasStep *>(&step);
 }
 
-/// Whether a step in the subtree of `node` can produce a block of totals, see `canProduceTotals`.
+/// Whether a step in the subtree of `node` can produce a block of totals, see `canProduceTotals`. The plans a step owns
+/// count as well - the plan of a sealed view, the plans of the tables of a `Merge` table - as their totals come out of
+/// that step.
 bool subtreeCanProduceTotals(const QueryPlan::Node & node)
 {
     std::vector<const QueryPlan::Node *> stack{&node};
@@ -1252,6 +1254,9 @@ bool subtreeCanProduceTotals(const QueryPlan::Node & node)
         if (canProduceTotals(*current->step))
             return true;
         stack.insert(stack.end(), current->children.begin(), current->children.end());
+        for (const auto * child_plan : current->step->getChildPlans(/*for_explain=*/ false))
+            if (child_plan && child_plan->isInitialized())
+                stack.push_back(child_plan->getRootNode());
     }
     return false;
 }
