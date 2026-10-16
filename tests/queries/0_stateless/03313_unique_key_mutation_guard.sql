@@ -100,6 +100,19 @@ ALTER TABLE uk_mut_nested_key DROP COLUMN n; -- { serverError ALTER_OF_COLUMN_IS
 
 DROP TABLE uk_mut_nested_key;
 
+-- Every prefix of a dotted key column names a group that holds it.
+DROP TABLE IF EXISTS uk_mut_nested_prefix_key;
+CREATE TABLE uk_mut_nested_prefix_key (s UInt32, `n.a.id` UInt64)
+ENGINE = MergeTree ORDER BY s UNIQUE KEY (`n.a.id`)
+SETTINGS share_nested_offsets = 1;
+
+SELECT 'clear_inner_nested_group_with_key' AS step;
+ALTER TABLE uk_mut_nested_prefix_key CLEAR COLUMN `n.a`; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+SELECT 'drop_inner_nested_group_with_key' AS step;
+ALTER TABLE uk_mut_nested_prefix_key DROP COLUMN `n.a`; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+
+DROP TABLE uk_mut_nested_prefix_key;
+
 -- 2b. a column a key column is computed from: red if the guard admits a CLEAR, MATERIALIZE, UPDATE, RENAME or
 -- MODIFY of it under a MATERIALIZED key column, or rejects a CLEAR under a DEFAULT key column, which the clear
 -- does not recompute.

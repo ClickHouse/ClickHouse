@@ -5764,7 +5764,8 @@ static NameSet getUniqueKeyDependencies(const StorageInMemoryMetadata & metadata
     }
 
     for (const auto & column : Names(dependencies.begin(), dependencies.end()))
-        dependencies.insert(Nested::extractTableName(column));
+        for (size_t dot = column.find('.'); dot != String::npos; dot = column.find('.', dot + 1))
+            dependencies.insert(column.substr(0, dot));
     return dependencies;
 }
 

@@ -17,6 +17,8 @@ clear_nested_group
 2	[]	[]
 clear_nested_group_with_key
 drop_nested_group_with_key
+clear_inner_nested_group_with_key
+drop_inner_nested_group_with_key
 clear_source_of_materialized_key
 materialize_source_of_materialized_key
 update_source_of_materialized_key
