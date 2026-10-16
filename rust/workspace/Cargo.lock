@@ -20,6 +20,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "_ch_rust_pco"
+version = "0.1.0"
+dependencies = [
+ "half",
+ "pco",
+]
+
+[[package]]
 name = "_ch_rust_polyglot"
 version = "0.1.0"
 dependencies = [
@@ -569,6 +577,10 @@ name = "beef"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a8241f3ebb85c056b509d4327ad0358fbbba6ffb340bf388f26350aeda225b1"
+
+[[package]]
+name = "better_io"
+version = "0.2.0"
 
 [[package]]
 name = "bigdecimal"
@@ -2127,6 +2139,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "117240f60069e65410b3ae1bb213295bd828f707b5bec6596a1afc8793ce0cbc"
 
 [[package]]
+name = "dtype_dispatch"
+version = "0.2.1"
+
+[[package]]
 name = "dyn-clone"
 version = "1.0.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3431,7 +3447,7 @@ dependencies = [
  "hex",
  "rand 0.9.5",
  "rand_distr 0.5.1",
- "rand_xoshiro",
+ "rand_xoshiro 0.7.0",
  "random_word",
 ]
 
@@ -4354,6 +4370,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "pco"
+version = "1.0.2"
+dependencies = [
+ "better_io",
+ "dtype_dispatch",
+ "half",
+ "rand_xoshiro 0.6.0",
+]
+
+[[package]]
 name = "percent-encoding"
 version = "2.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4837,6 +4863,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "caa0f4137e1c0a72f4c651489402276c8e8e1cf081f3b0ba156d2cbeef09e86a"
 dependencies = [
  "rand_core 0.10.1",
+]
+
+[[package]]
+name = "rand_xoshiro"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6f97cdb2a36ed4183de61b2f824cc45c9f1037f28afe0a322e9fff4c108b5aaa"
+dependencies = [
+ "rand_core 0.6.4",
 ]
 
 [[package]]

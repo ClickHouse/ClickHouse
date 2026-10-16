@@ -9,6 +9,14 @@ fall_min 01:00 - 01:29	60	60
 fall_min = 01:55	2	2
 fall_min = -14400	120	120
 out_of_lut = 05:00	2	2
-fall64 = 01:59:59	1	1
+fall64 = 01:59:59	2	2
 one_day = -14400	2
 one_day = 03:00	1
+nullable = -14400	120	120
+nullable = -18000	180	180
+nullable toHour = 23	12	12
+nullable 01:00 - 01:29	8	8
+lc_nullable = -14400	120	120
+nullable64 = -14400	120	120
+one_day_nullable = -14400	2
+skip_nullable toHour = 23	12	12
