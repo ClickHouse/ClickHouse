@@ -36,7 +36,8 @@ public:
     /// The provider for `cluster_name` if it is already built, otherwise null.
     StatelessWorkersProviderPtr tryGetProvider(const String & cluster_name);
 
-    /// The providers built so far, by registry key (empty for the default cluster). Builds none.
+    /// The providers built so far, by cluster name (the default cluster's `default_cluster_name`, or empty
+    /// when it has none). Builds none.
     std::vector<std::pair<String, StatelessWorkersProviderPtr>> getBuiltProviders();
 
     /// On a config reload, retire providers whose cluster was removed or reconfigured (queries holding
@@ -72,7 +73,7 @@ private:
 
     /// A digest of the configuration `cluster_name` is built from; empty when it is no longer configured.
     /// A reload rebuilds only a cluster whose digest changed.
-    static String computeConfigSignature(const Poco::Util::AbstractConfiguration & config, const String & cluster_name);
+    static String computeConfigSignatureForCluster(const Poco::Util::AbstractConfiguration & config, const String & cluster_name);
 };
 
 using StatelessWorkersProviderRegistryPtr = std::shared_ptr<StatelessWorkersProviderRegistry>;

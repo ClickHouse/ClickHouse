@@ -378,6 +378,24 @@ TEST(StatelessWorkersProviderRegistry, ListsBuiltProvidersByCluster)
     EXPECT_FALSE(by_cluster.contains("b"));
 }
 
+/// The default cluster is reported under its `default_cluster_name`, not the registry's internal empty key.
+TEST(StatelessWorkersProviderRegistry, ListsDefaultClusterUnderItsName)
+{
+    applyStatelessWorkerConfig(R"(
+    <stateless_worker_client>
+        <enabled>1</enabled>
+        <default_cluster_name>main</default_cluster_name>
+        <host>default-host</host>
+    </stateless_worker_client>
+)");
+    StatelessWorkersProviderRegistry registry;
+    auto provider = registry.getProvider("main");
+    auto built = registry.getBuiltProviders();
+    ASSERT_EQ(built.size(), 1u);
+    EXPECT_EQ(built[0].first, "main");
+    EXPECT_EQ(built[0].second.get(), provider.get());
+}
+
 /// End-to-end: the registry resolves a named static cluster and allocates its workers (no discovery).
 TEST(StatelessWorkersProviderRegistry, SelectsNamedStaticClusterThroughRegistry)
 {

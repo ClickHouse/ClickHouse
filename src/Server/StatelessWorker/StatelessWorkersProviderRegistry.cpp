@@ -101,7 +101,7 @@ StatelessWorkersProviderPtr StatelessWorkersProviderRegistry::getProvider(const 
     /// Sign before building, so a reload published in between can only cause a rebuild, never keep a
     /// stale provider under a newer signature. Signing reads only the configuration, so it runs outside
     /// the lock and concurrent queries do not serialize on it.
-    String signature = computeConfigSignature(config, canonical);
+    String signature = computeConfigSignatureForCluster(config, canonical);
 
     std::lock_guard lock(mutex);
     if (auto it = providers.find(canonical); it != providers.end())
@@ -143,11 +143,16 @@ StatelessWorkersProviderPtr StatelessWorkersProviderRegistry::tryGetProvider(con
 
 std::vector<std::pair<String, StatelessWorkersProviderPtr>> StatelessWorkersProviderRegistry::getBuiltProviders()
 {
+    auto global_context = Context::getGlobalContextInstance();
+    const String default_cluster_name = global_context
+        ? global_context->getConfigRef().getString("stateless_worker_client.default_cluster_name", "")
+        : "";
+
     std::lock_guard lock(mutex);
     std::vector<std::pair<String, StatelessWorkersProviderPtr>> result;
     result.reserve(providers.size());
-    for (const auto & [name, entry] : providers)
-        result.emplace_back(name, entry.provider);
+    for (const auto & [key, entry] : providers)
+        result.emplace_back(key.empty() ? default_cluster_name : key, entry.provider);
     return result;
 }
 
@@ -167,7 +172,7 @@ StatelessWorkersProviderPtr StatelessWorkersProviderRegistry::buildProvider(
     return StatelessWorkersProviderFactory::instance().get(sources.front()).create(config, config_prefix);
 }
 
-String StatelessWorkersProviderRegistry::computeConfigSignature(const Poco::Util::AbstractConfiguration & config, const String & cluster_name)
+String StatelessWorkersProviderRegistry::computeConfigSignatureForCluster(const Poco::Util::AbstractConfiguration & config, const String & cluster_name)
 {
     if (!config.getBool("stateless_worker_client.enabled", false))
         return {};
@@ -194,7 +199,7 @@ void StatelessWorkersProviderRegistry::reloadConfig(const Poco::Util::AbstractCo
     {
         try
         {
-            if (computeConfigSignature(config, it->first) == it->second.config_signature)
+            if (computeConfigSignatureForCluster(config, it->first) == it->second.config_signature)
             {
                 /// Unchanged: refresh in place (e.g. re-read a token file).
                 it->second.provider->reloadConfig(config, clusterConfigPrefix(it->first));
