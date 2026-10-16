@@ -79,9 +79,13 @@ void forEachQueryParameterMemberOutsideChildren(IAST & ast, const std::function<
     else if (auto * backup = ast.as<ASTBackupQuery>())
     {
         for (auto & element : backup->elements)
+        {
             if (element.partitions)
+            {
                 for (auto & partition : *element.partitions)
                     f(partition);
+            }
+        }
     }
     else if (auto * show_tables = ast.as<ASTShowTablesQuery>())
     {

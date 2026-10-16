@@ -12,15 +12,17 @@ P="/hqp_${DB}"
 HCHECK="hqp_check_${DB}"
 HDISK="hqp_disk_${DB}"
 HSHOW="hqp_show_${DB}"
+HCOLS="hqp_cols_${DB}"
+HIDX="hqp_idx_${DB}"
 
 cleanup() {
-    $CLICKHOUSE_CLIENT -q "DROP HANDLER IF EXISTS \`$HCHECK\`; DROP HANDLER IF EXISTS \`$HDISK\`; DROP HANDLER IF EXISTS \`$HSHOW\`"
+    $CLICKHOUSE_CLIENT -q "DROP HANDLER IF EXISTS \`$HCHECK\`; DROP HANDLER IF EXISTS \`$HDISK\`; DROP HANDLER IF EXISTS \`$HSHOW\`; DROP HANDLER IF EXISTS \`$HCOLS\`; DROP HANDLER IF EXISTS \`$HIDX\`"
 }
 trap cleanup EXIT
 cleanup
 
 # BACKUP to Memory and its RESTORE must share a session.
-$CLICKHOUSE_CLIENT --param_col=b --param_p=1 --param_ty=local -q "
+$CLICKHOUSE_CLIENT --param_col=b --param_p=1 -q "
 CREATE TABLE t_dedup (a UInt8, b UInt8, c String) ENGINE = MergeTree ORDER BY a;
 INSERT INTO t_dedup VALUES (1, 1, 'x');
 INSERT INTO t_dedup VALUES (1, 2, 'x');
@@ -43,12 +45,17 @@ $CLICKHOUSE_CLIENT -q "CHECK TABLE t_part PARTITION {unset:UInt8}" 2>&1 | grep -
 
 $CLICKHOUSE_CLIENT -q "
 CREATE HANDLER \`$HCHECK\` URL '${P}/check' AS CHECK TABLE ${DB}.t_part PARTITION {p:UInt8} SETTINGS check_query_single_value_result = 0;
-CREATE HANDLER \`$HSHOW\` URL '${P}/show' AS SHOW TABLES FROM ${DB} WHERE name = {n:String};
+CREATE HANDLER \`$HSHOW\` URL '${P}/show' AS SHOW TABLES FROM ${DB} WHERE name = {n:String} LIMIT {l:UInt64};
+CREATE HANDLER \`$HCOLS\` URL '${P}/cols' AS SHOW COLUMNS FROM ${DB}.t_part WHERE field = {c:String} LIMIT {l:UInt64};
+CREATE HANDLER \`$HIDX\` URL '${P}/idx' AS SHOW INDEXES FROM ${DB}.t_part WHERE key_name = {k:String};
 CREATE HANDLER \`$HDISK\` URL '${P}/disk' AS EXPLAIN SYNTAX CREATE TABLE t_disk (a Int) ENGINE = MergeTree ORDER BY a
     SETTINGS disk = disk(type = {ty:String}, path = 'd/') FORMAT TSVRaw"
 
 ${CLICKHOUSE_CURL} -sS "${BASE}${P}/check?param_p=1" | cut -d_ -f1 | sort -u
-${CLICKHOUSE_CURL} -sS "${BASE}${P}/show?param_n=t_part"
+${CLICKHOUSE_CURL} -sS "${BASE}${P}/show?param_n=t_part&param_l=1"
+${CLICKHOUSE_CURL} -sS "${BASE}${P}/cols?param_c=x&param_l=1" | cut -f1
+${CLICKHOUSE_CURL} -sS "${BASE}${P}/idx?param_k=PRIMARY" | cut -f3
 ${CLICKHOUSE_CURL} -sS "${BASE}${P}/disk?param_ty=local" | grep -o "type = 'local'"
 
 $CLICKHOUSE_CLIENT --param_t=query_log -q "SYSTEM FLUSH LOGS {t:Identifier}" 2>&1 | grep -o -m1 'SYNTAX_ERROR'
+$CLICKHOUSE_CLIENT --param_f=CSV -q "INSERT INTO t_dedup FORMAT {f:Identifier} 1,1,x" 2>&1 | grep -o -m1 'SYNTAX_ERROR'

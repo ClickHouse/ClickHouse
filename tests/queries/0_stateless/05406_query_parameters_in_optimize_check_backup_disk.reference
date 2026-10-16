@@ -5,5 +5,8 @@ type = 'local'
 UNKNOWN_QUERY_PARAMETER
 1
 t_part
+x
+PRIMARY
 type = 'local'
+SYNTAX_ERROR
 SYNTAX_ERROR
