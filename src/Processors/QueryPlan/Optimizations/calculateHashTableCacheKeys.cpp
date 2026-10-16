@@ -219,8 +219,8 @@ UInt64 calculateHashFromStep(const ITransformingStep & transform)
 
     /// This serialized form is only ever hash input - nothing reads the bytes back - so it is
     /// hashed as it is produced rather than accumulated. With `for_cache_key` the actions DAGs are
-    /// written without their variable-size constant values, which can be arbitrarily large (a folded
-    /// scalar subquery); see `ActionsDAG::updateHash` for what that lets collide. The DAGs of a read
+    /// written without the values of constants that can be arbitrarily large (a folded scalar
+    /// subquery); see `ActionsDAG::updateHash` for what that lets collide. The DAGs of a read
     /// step and of a join are hashed with `updateHash` under the same contract.
     SipHash hash;
     SipHashingWriteBuffer wbuf(hash);
@@ -382,7 +382,7 @@ UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, 
 /// best-effort goal, not a guarantee: a few result-affecting inputs are deliberately not mixed in
 /// (e.g. the column-blind read hash on the input side, the join output column names - see the
 /// `JoinStep` case below for why hashing them would be strictly worse - or the values of
-/// variable-size constants, see `ActionsDAG::updateHash`). A resulting key
+/// large constants, see `ActionsDAG::updateHash`). A resulting key
 /// collision can only make Auto-PR reuse a slightly-off estimate and so enable/disable parallel
 /// replicas sub-optimally - it never changes query results. We trade that small estimation
 /// imprecision for a simpler, cheaper key.

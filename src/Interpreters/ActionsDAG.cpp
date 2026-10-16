@@ -3,6 +3,7 @@
 #include <Analyzer/TableQualifiers.h>
 
 #include <Analyzer/FunctionNode.h>
+#include <Columns/ColumnAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeFunction.h>
@@ -118,6 +119,22 @@ std::pair<ColumnsWithTypeAndName, bool> getFunctionArguments(const ActionsDAG::N
         arguments[i] = std::move(argument);
     }
     return { std::move(arguments), all_const };
+}
+
+/// A short value is kept even without a fixed size: a build-independent key has no names, so the value is all that tells
+/// `trimBoth(s, 'x')` from `trimBoth(s, 'y')`. `byteSize` can understate an aggregate state, so one is never kept, even
+/// inside a `Dynamic` value.
+bool isConstantValueInCacheKey(const ActionsDAG::Node & node)
+{
+    if (node.column->valuesHaveFixedSize())
+        return true;
+    WhichDataType which(node.result_type);
+    if (which.isSet() || which.isFunction() || node.column->byteSize() > 1024)
+        return false;
+    bool has_aggregate_state = false;
+    node.column->forEachSubcolumnRecursively(
+        [&](const IColumn & subcolumn) { has_aggregate_state |= typeid_cast<const ColumnAggregateFunction *>(&subcolumn) != nullptr; });
+    return !has_aggregate_state;
 }
 
 void tryFoldFunctionToConstant(
@@ -422,7 +439,7 @@ void ActionsDAG::Node::updateOwnHash(
         /// the DAG around them. Skipping only its value keeps the single-replica and parallel-replicas
         /// plan builds matching without dropping any other constant's value (it still serializes
         /// normally for distributed propagation).
-        if (!is_runtime_filter_id && (with_variable_size_constant_values || column->valuesHaveFixedSize()))
+        if (!is_runtime_filter_id && (with_variable_size_constant_values || isConstantValueInCacheKey(*this)))
             column->updateHashWithValue(0, hash_state);
 
         /// A `Const(Set)` needs its identity added rather than its value skipped: `ColumnSet` is a dummy
@@ -5446,14 +5463,14 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry,
 
         writeIntBinary(column_flags, out);
 
-        /// A cache key (`registry.for_cache_key`) leaves out a constant's value when it has no fixed
-        /// size, with the same contract as `updateHash` with `with_variable_size_constant_values = false`:
+        /// A cache key (`registry.for_cache_key`) leaves out a large constant value (`isConstantValueInCacheKey`),
+        /// with the same contract as `updateHash` with `with_variable_size_constant_values = false`:
         /// such a value can be arbitrarily large (a folded scalar subquery), and hashing it on every
         /// execution costs more than the rest of planning. It also leaves out the value of the
         /// runtime-filter id carrier, a volatile per-plan-build rendezvous key whose `result_name` is its
         /// stable identity. This output is hash-only and never deserialized; the transmission path
         /// (`for_cache_key == false`) always writes the value.
-        if (has_column && !(registry.for_cache_key && (node.is_runtime_filter_id || !node.column->valuesHaveFixedSize())))
+        if (has_column && !(registry.for_cache_key && (node.is_runtime_filter_id || !isConstantValueInCacheKey(node))))
             serializeConstant(*node.result_type, *node.column, out, registry, input_header);
 
         if (node.type == ActionType::INPUT)

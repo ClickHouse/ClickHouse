@@ -618,14 +618,14 @@ public:
     /// column names and prepared-set values - so the result identifies what the DAG computes rather
     /// than how this particular plan named it. See `Node::updateHash`.
     ///
-    /// With `with_variable_size_constant_values = false` a constant whose value has no fixed size
-    /// (`IColumn::valuesHaveFixedSize` is false: a string, an array, an aggregate function state) is
-    /// hashed by its name and type but not by its value, which can be arbitrarily large - a folded
-    /// scalar subquery can carry a `groupBitmap` state of millions of elements. Fixed-size values are
-    /// always hashed. Two such constants that share a name then collide even when their values differ,
-    /// e.g. a string passed through a subquery column (named `__table1.s`, not by its value) or a
-    /// heavy scalar subquery over changed data (named `__getScalar('<hash of the subquery>')`). Meant
-    /// for keys where a wrong match only costs a worse estimate, such as the hash-table-stats key.
+    /// With `with_variable_size_constant_values = false` a constant value that can be large is not
+    /// hashed: an aggregate function state (a folded scalar subquery can carry a `groupBitmap` state of
+    /// millions of elements), or another value without a fixed size, such as a string or an array,
+    /// over 1 KiB. Other values are hashed. Two constants whose values are not hashed and that share a
+    /// name then collide even when their values differ, and so do any two with `build_independent`,
+    /// which hashes no names of constants: e.g. a heavy scalar subquery over changed data (named
+    /// `__getScalar('<hash of the subquery>')`). Meant for keys where a wrong match only costs a worse
+    /// estimate, such as the hash-table-stats key.
     void updateHash(
         SipHash & hash_state,
         bool build_independent = false,

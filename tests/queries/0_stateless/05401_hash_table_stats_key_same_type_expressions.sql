@@ -17,11 +17,14 @@ SET max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_grou
 DROP TABLE IF EXISTS t_05401;
 DROP TABLE IF EXISTS t2_05401;
 DROP TABLE IF EXISTS s_05401;
+DROP TABLE IF EXISTS u_05401;
 CREATE TABLE t_05401 (a UInt64, n Nullable(UInt64)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_05401 SELECT number, number FROM numbers(1200000);
 -- The subquery shape reads its own table, so it cannot reuse an entry of the queries above.
 CREATE TABLE t2_05401 (a UInt64) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t2_05401 SELECT number FROM numbers(1200000);
+CREATE TABLE u_05401 (s String, d DateTime) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO u_05401 SELECT toString(number), toDateTime(number) FROM numbers(1200000);
 
 SELECT a + 1 AS k FROM t_05401 GROUP BY k FORMAT Null SETTINGS log_comment = 'q05401_plus_1';
 SELECT a + 1 AS k FROM t_05401 GROUP BY k FORMAT Null SETTINGS log_comment = 'q05401_plus_2';
@@ -33,6 +36,18 @@ SELECT intDiv(a, 1000000) AS k FROM t_05401 GROUP BY k FORMAT Null SETTINGS log_
 SELECT n + 1 AS k FROM t_05401 GROUP BY k FORMAT Null SETTINGS log_comment = 'q05401_nullable_plus_1';
 SELECT n + 1 AS k FROM t_05401 GROUP BY k FORMAT Null SETTINGS log_comment = 'q05401_nullable_plus_2';
 SELECT intDiv(n, 2) AS k FROM t_05401 GROUP BY k FORMAT Null SETTINGS log_comment = 'q05401_nullable_div2_1';
+
+-- Differ only in a string literal, in a step that keeps the column type and in one that changes it.
+SELECT trimBoth(s, 'x') AS k FROM u_05401 GROUP BY k FORMAT Null SETTINGS log_comment = 'q05401_string_trim_x_1';
+SELECT trimBoth(s, 'x') AS k FROM u_05401 GROUP BY k FORMAT Null SETTINGS log_comment = 'q05401_string_trim_x_2';
+SELECT trimBoth(s, '0123456789') AS k FROM u_05401 GROUP BY k FORMAT Null SETTINGS log_comment = 'q05401_string_trim_digits_1';
+SELECT formatDateTime(d, '%F %T') AS k FROM u_05401 GROUP BY k FORMAT Null SETTINGS log_comment = 'q05401_string_format_full_1';
+SELECT formatDateTime(d, '%F %T') AS k FROM u_05401 GROUP BY k FORMAT Null SETTINGS log_comment = 'q05401_string_format_full_2';
+SELECT formatDateTime(d, '%Y') AS k FROM u_05401 GROUP BY k FORMAT Null SETTINGS log_comment = 'q05401_string_format_year_1';
+-- An accepted collision: a value over 1 KiB is left out of the key, as a large folded constant is, so these two
+-- share an entry.
+SELECT trimBoth(s, repeat('x', 2000)) AS k FROM u_05401 GROUP BY k FORMAT Null SETTINGS log_comment = 'q05401_string_long_x_1';
+SELECT trimBoth(s, repeat('y', 2000)) AS k FROM u_05401 GROUP BY k FORMAT Null SETTINGS log_comment = 'q05401_string_long_y_1';
 
 -- Through a subquery the aggregation key is named `__table1.k` whatever it computes.
 SELECT k FROM (SELECT a + 1 AS k FROM t2_05401) GROUP BY k FORMAT Null SETTINGS log_comment = 'q05401_subquery_plus_1';
@@ -68,3 +83,4 @@ WHERE event_date >= yesterday() AND type = 'QueryFinish' AND current_database = 
 DROP TABLE t_05401;
 DROP TABLE t2_05401;
 DROP TABLE s_05401;
+DROP TABLE u_05401;
