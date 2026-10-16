@@ -5914,8 +5914,11 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                         backQuoteIfNeed(command.column_name), backQuoteIfNeed(*key_column));
             }
 
-            /// A type change leaves a MATERIALIZED key column computed from the column stale.
-            if (command.type == AlterCommand::MODIFY_COLUMN && command.data_type && !uk_set.contains(command.column_name))
+            /// A type change leaves a MATERIALIZED key column computed from the column stale. A new MATERIALIZED
+            /// expression changes what a queued mutation recomputes the key from.
+            const bool new_materialized = command.default_expression && command.default_kind == ColumnDefaultKind::Materialized;
+            if (command.type == AlterCommand::MODIFY_COLUMN && (command.data_type || new_materialized)
+                && !uk_set.contains(command.column_name))
             {
                 if (auto key_column = findUniqueKeyColumnComputedFrom(old_metadata, command.column_name, local_context))
                     throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
