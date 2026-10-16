@@ -130,3 +130,30 @@ def test_reload_retried_after_a_transient_failure(started_cluster):
 
     node1.query("DROP RULE rule_retry")
     assert_eq_with_retry(node2, "SELECT count() FROM system.query_rules", "0")
+
+
+def test_rule_restored_after_failed_write_left_keeper_unchanged(started_cluster):
+    # A failed rule write makes the replica re-read the rules. If that re-read fails too, the rule
+    # is dropped from the local cache. The failed write may have left Keeper untouched, so no
+    # Keeper version changes; the replica must still reload and restore the rule by itself.
+    node1.query("CREATE RULE rule_restore AS (SELECT 100) REWRITE TO (SELECT 200)")
+    assert_eq_with_retry(
+        node2, "SELECT 100", "200", settings={"query_rules": "rule_restore"}
+    )
+
+    node2.query("SYSTEM ENABLE FAILPOINT rewrite_rules_reload_fail_after_list")
+    # The duplicate does not change Keeper, and the recovery re-read hits the fault.
+    assert "REWRITE_RULE_ALREADY_EXISTS" in node2.query_and_get_error(
+        "CREATE RULE rule_restore AS (SELECT 100) REWRITE TO (SELECT 300)"
+    )
+    assert "REWRITE_RULE_DOESNT_EXIST" in node2.query_and_get_error(
+        "SELECT 100", settings={"query_rules": "rule_restore"}
+    )
+    node2.query("SYSTEM DISABLE FAILPOINT rewrite_rules_reload_fail_after_list")
+
+    assert_eq_with_retry(
+        node2, "SELECT 100", "200", settings={"query_rules": "rule_restore"}
+    )
+
+    node1.query("DROP RULE rule_restore")
+    assert_eq_with_retry(node2, "SELECT count() FROM system.query_rules", "0")

@@ -945,11 +945,15 @@ void RewriteRules::resyncAfterUncertainWrite(const std::string & rule_name, std:
         /// Even the re-read failed, so the current state of the affected rule is still unknown.
         /// Fail closed: stop applying it locally rather than applying a possibly stale definition
         /// (a query that lists it in `query_rules` fails with `REWRITE_RULE_DOESNT_EXIST`). The
-        /// background update task restores it if it does still exist in Keeper.
+        /// background update task restores it if it does still exist in Keeper: the failed write
+        /// may have left Keeper unchanged, so the reload is forced rather than left to a version change.
         tryLogCurrentException(log, fmt::format(
             "Could not re-read the rewrite rules after an uncertain write of rule `{}`, dropping it from the local cache",
             rule_name));
         remove(rule_name, lock);
+        reload_pending = true;
+        if (update_task)
+            update_task->schedule();
     }
 }
 
@@ -1042,6 +1046,7 @@ void RewriteRules::reloadImpl(std::lock_guard<std::mutex> & lock)
     /// `waitUpdate` returns true and the reload is retried instead of the stale rule set
     /// being served until some later rule mutation moves Keeper again.
     storage->commitUpdate();
+    reload_pending = false;
 }
 
 void RewriteRules::updateFunc()
@@ -1051,14 +1056,16 @@ void RewriteRules::updateFunc()
     try
     {
         RewriteRulesStorage * storage_ptr = nullptr;
+        bool force_reload = false;
         {
             std::lock_guard lock(mutex);
             if (shutdown_called.load() || !storage)
                 return;
             storage_ptr = storage.get();
+            force_reload = reload_pending;
         }
 
-        if (storage_ptr->waitUpdate())
+        if (force_reload || storage_ptr->waitUpdate())
         {
             std::lock_guard lock(mutex);
             if (shutdown_called.load() || !storage)

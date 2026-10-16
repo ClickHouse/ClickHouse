@@ -57,6 +57,10 @@ protected:
     const LoggerPtr log = getLogger("RewriteRule");
 
     mutable bool loaded = false;
+    /// Set when the local cache was changed without a matching change in the storage (see
+    /// `resyncAfterUncertainWrite`), so the background task must re-read the rules even if the
+    /// storage reports no new version. Cleared by a successful `reloadImpl`. Guarded by `mutex`.
+    bool reload_pending = false;
     std::atomic<bool> shutdown_called = false;
     mutable std::unique_ptr<RewriteRulesStorage> storage;
     mutable BackgroundSchedulePoolTaskHolder update_task;
