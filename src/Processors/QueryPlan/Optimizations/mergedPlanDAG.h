@@ -112,6 +112,9 @@ struct MergedPlanDAG
     /// The source an input of this DAG is a column of: every input is a column of exactly one source.
     size_t getSourceOfInput(const ActionsDAG::Node * input) const;
 
+    /// The nearest padded side of the columns of a source, which is the same for all of them, or null.
+    const PaddedSide * getNearestPaddedSideOfSource(size_t source) const;
+
     /// The padded side that decides whether this node has a value of its own at all. Where it is set, a
     /// join above this node replaced the node's value by a default or a NULL for the rows that matched
     /// nothing, so the value only means anything where that side matched.

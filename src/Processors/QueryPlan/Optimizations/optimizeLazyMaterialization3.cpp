@@ -419,6 +419,8 @@ public:
     {
         for (size_t source = 0; source < merged.sources.size(); ++source)
             source_numbers.emplace(merged.sources[source].plan_node, source);
+        for (const auto & [padded_side, source] : mask_sources)
+            sources_with_mask.insert(source);
     }
 
     bool prepare()
@@ -435,29 +437,23 @@ public:
         /// The values that cross the `LIMIT`: what the frontier says, and the columns meant for a lazy read that the main
         /// read keeps anyway. A sort key crosses as a column the sorting needs. In the order of the merged DAG, so that the
         /// copies are numbered and cross the `LIMIT` the same way every time.
-        std::vector<const ActionsDAG::Node *> carried_values;
-        for (const auto & node : merged.getDAG().getNodes())
-        {
-            if (sort_key_nodes.contains(&node))
-                continue;
-
-            const auto it = frontier.placement.find(&node);
-            if (kept_by_read.contains(&node) || (it != frontier.placement.end() && it->second == Placement::Carried))
-                carried_values.push_back(&node);
-        }
-
+        ///
         /// Each value crosses as a copy of its own, made where it is computed: of the column the step there outputs, or of
         /// a value an expression or a filter computes without outputting it, which that step outputs then. Every step
         /// above passes the copy through.
-        for (size_t number = 0; number < carried_values.size(); ++number)
+        for (const auto & node : merged.getDAG().getNodes())
         {
-            const auto * value = carried_values[number];
-            const auto & origin = merged.getOrigin(value);
+            const auto * value = &node;
+            const auto it = frontier.placement.find(value);
+            const bool is_carried = kept_by_read.contains(value) || (it != frontier.placement.end() && it->second == Placement::Carried);
+            if (!is_carried || sort_key_nodes.contains(value))
+                continue;
 
-            Carrying carrying{.value = value, .name = makeCarriedName(number)};
+            const auto & origin = merged.getOrigin(value);
+            Carrying carrying{.value = value, .name = makeCarriedName(carried.size())};
             const auto & values = merged.step_outputs.at(origin.plan_node);
-            if (const auto it = std::ranges::find(values, value); it != values.end())
-                carrying.position = it - values.begin();
+            if (const auto output_it = std::ranges::find(values, value); output_it != values.end())
+                carrying.position = output_it - values.begin();
             else if (origin.step_node
                 && (typeid_cast<const ExpressionStep *>(origin.plan_node->step.get())
                     || typeid_cast<const FilterStep *>(origin.plan_node->step.get())))
@@ -466,8 +462,8 @@ public:
                 return false;
 
             added_names.insert(carrying.name);
-            carried_copies.emplace_back(value, carrying.name);
-            carryings[origin.plan_node].push_back(std::move(carrying));
+            carried_from[origin.plan_node].push_back(carried.size());
+            carried.push_back(std::move(carrying));
         }
 
         return true;
@@ -478,9 +474,9 @@ public:
     {
         /// An expression or a filter computing a carried value it does not output outputs a copy of it last. The steps
         /// above it still have its former header, which the copy comes after, as the other columns this rebuild adds.
-        for (const auto & [node, node_carryings] : carryings)
-            for (const auto & carrying : node_carryings)
-                if (carrying.step_node)
+        for (const auto & [node, indices] : carried_from)
+            for (size_t index : indices)
+                if (const auto & carrying = carried[index]; carrying.step_node)
                     appendOutputToStep(*node->step, *carrying.step_node, carrying.name);
 
         /// What the chain hands over: the sort keys and the copies of the values crossing the `LIMIT`. The header of the
@@ -501,8 +497,7 @@ public:
         /// more than that. What each column of the block holds is followed from here on, so that the
         /// expression above the `LIMIT` can bind by position.
         const auto & outputs = merged.getOutputs();
-        std::vector<const ActionsDAG::Node *> slots;
-        std::vector<String> slot_indexes;
+        std::vector<Slot> slots;
         {
             const auto & header = *main_plan.getCurrentHeader();
             ActionsDAG projection(header.getColumnsWithTypeAndName());
@@ -524,20 +519,17 @@ public:
                         "Lazy materialization lost the sort key {} below the LIMIT", outputs[position]->result_name);
                 const auto dropped_before = next_dropped - dropped.begin();
                 projection_outputs.push_back(inputs.at(position - dropped_before));
-                slots.push_back(outputs[position]);
-                slot_indexes.emplace_back();
+                slots.push_back({.value = outputs[position]});
             }
-            for (const auto & [value, name] : carried_copies)
+            for (const auto & carrying : carried)
             {
-                projection_outputs.push_back(inputs.at(header.getPositionByName(name)));
-                slots.push_back(value);
-                slot_indexes.emplace_back();
+                projection_outputs.push_back(inputs.at(header.getPositionByName(carrying.name)));
+                slots.push_back({.value = carrying.value});
             }
-            for (const auto & [source, index_name] : index_names)
+            for (size_t source : sources_with_row_index)
             {
-                projection_outputs.push_back(inputs[header.getPositionByName(index_name)]);
-                slots.push_back(nullptr);
-                slot_indexes.push_back(index_name);
+                projection_outputs.push_back(inputs[header.getPositionByName(makeRowIndexName(source))]);
+                slots.push_back({.kind = Slot::Kind::RowIndex, .source = source});
             }
 
             auto step = std::make_unique<ExpressionStep>(main_plan.getCurrentHeader(), std::move(projection));
@@ -566,18 +558,11 @@ public:
             auto is_not_null = FunctionFactory::instance().get("isNotNull", context);
 
             /// A mask column serves every padded side its source masks.
-            std::map<size_t, size_t> mask_slot_of_source;
-            for (const auto & [padded_side, source] : mask_sources)
+            for (size_t source : sources_with_mask)
             {
-                auto [it, inserted] = mask_slot_of_source.emplace(source, slots.size());
-                if (inserted)
-                {
-                    const auto * index = masks_dag.getInputs()[header.getPositionByName(index_names.at(source))];
-                    masks_dag.getOutputs().push_back(&masks_dag.addFunction(is_not_null, {index}, makeMaskName(source)));
-                    slots.push_back(nullptr);
-                    slot_indexes.emplace_back();
-                }
-                mask_slots.emplace(padded_side, it->second);
+                const auto * index = masks_dag.getInputs()[header.getPositionByName(makeRowIndexName(source))];
+                masks_dag.getOutputs().push_back(&masks_dag.addFunction(is_not_null, {index}, makeMaskName(source)));
+                slots.push_back({.kind = Slot::Kind::Mask, .source = source});
             }
 
             auto step = std::make_unique<ExpressionStep>(main_plan.getCurrentHeader(), std::move(masks_dag));
@@ -606,13 +591,12 @@ public:
                 lazy_plan.addStep(std::move(lazy.object_storage_reading));
             }
 
-            const auto & index_name = index_names.at(source);
-            const auto index_slot = std::ranges::find(slot_indexes, index_name) - slot_indexes.begin();
-            slots.erase(slots.begin() + index_slot);
-            slot_indexes.erase(slot_indexes.begin() + index_slot);
-            for (auto & [padded_side, slot] : mask_slots)
-                if (slot > static_cast<size_t>(index_slot))
-                    --slot;
+            /// The step takes the row index away.
+            const auto index_slot = std::ranges::find_if(
+                slots, [&](const Slot & slot) { return slot.kind == Slot::Kind::RowIndex && slot.source == source; });
+            if (index_slot == slots.end())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "The row index of source {} does not reach the lazy read", source);
+            slots.erase(index_slot);
 
             /// The lazy read returns its columns in the order it reads them from storage rather than in the order of the
             /// header of the source, so each is matched with an input it was chosen for by name. Inputs of the same name are
@@ -627,12 +611,11 @@ public:
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "The lazy read of source {} returns the column {}, which no input was chosen for", source, column.name);
                 is_bound[input] = true;
-                slots.push_back(lazy.inputs[input]);
-                slot_indexes.emplace_back();
+                slots.push_back({.value = lazy.inputs[input]});
             }
 
             auto join_lazy_columns = std::make_unique<JoinLazyColumnsStep>(
-                main_plan.getCurrentHeader(), lazy_plan.getCurrentHeader(), lazy_materializing_rows, index_name);
+                main_plan.getCurrentHeader(), lazy_plan.getCurrentHeader(), lazy_materializing_rows, makeRowIndexName(source));
 
             QueryPlan joined;
             std::vector<QueryPlanPtr> plans;
@@ -651,9 +634,19 @@ public:
                     "Lazy materialization expected {} columns above the LIMIT, got {}", slots.size(), header.dumpNames());
 
             std::unordered_map<const ActionsDAG::Node *, size_t> positions;
+            std::unordered_map<size_t, size_t> mask_position_of_source;
             for (size_t position = 0; position < slots.size(); ++position)
-                if (slots[position])
-                    positions.emplace(slots[position], position);
+            {
+                const auto & slot = slots[position];
+                if (slot.kind == Slot::Kind::Value)
+                    positions.emplace(slot.value, position);
+                else if (slot.kind == Slot::Kind::Mask)
+                    mask_position_of_source.emplace(slot.source, position);
+            }
+
+            std::unordered_map<const MergedPlanDAG::PaddedSide *, size_t> mask_slots;
+            for (const auto & [padded_side, source] : mask_sources)
+                mask_slots.emplace(padded_side, mask_position_of_source.at(source));
 
             auto above = buildAboveLimitDAG(merged, frontier, positions, mask_slots, masked_values, header, context);
 
@@ -944,10 +937,10 @@ private:
         for (auto * node : top_down_nodes)
         {
             auto & node_unneeded = unneeded_of.at(node);
-            if (const auto it = carryings.find(node); it != carryings.end())
-                for (const auto & carrying : it->second)
-                    if (!carrying.step_node)
-                        std::erase(node_unneeded, carrying.position);
+            if (const auto it = carried_from.find(node); it != carried_from.end())
+                for (size_t index : it->second)
+                    if (!carried[index].step_node)
+                        std::erase(node_unneeded, carried[index].position);
 
             if (source_numbers.contains(node))
                 continue;
@@ -988,12 +981,13 @@ private:
     std::vector<ColumnCopy> copiesOfCarriedColumns(const QueryPlan::Node * node, const std::vector<size_t> & dropped_positions) const
     {
         std::vector<ColumnCopy> copies;
-        const auto it = carryings.find(node);
-        if (it == carryings.end())
+        const auto it = carried_from.find(node);
+        if (it == carried_from.end())
             return copies;
 
-        for (const auto & carrying : it->second)
+        for (size_t index : it->second)
         {
+            const auto & carrying = carried[index];
             if (carrying.step_node)
                 continue;
 
@@ -1130,8 +1124,7 @@ private:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "The lazy read of source {} does not read the columns it was chosen for", source);
 
         const auto copies = copiesOfCarriedColumns(node, result.dropped_positions);
-        const bool masks_padded_side = std::ranges::any_of(mask_sources, [&](const auto & mask_source) { return mask_source.second == source; });
-        if (!lazy && !masks_padded_side)
+        if (!lazy && !sources_with_mask.contains(source))
         {
             if (!copies.empty())
             {
@@ -1161,13 +1154,11 @@ private:
         }
 
         const auto index_name = makeRowIndexName(source);
-        index_names.emplace(source, index_name);
+        sources_with_row_index.insert(source);
         added_names.insert(index_name);
 
-        /// Below a join that can leave the source unmatched the index is `Nullable`; every column of a source
-        /// is gated alike.
-        const auto & source_inputs = merged.sources[source].inputs;
-        const bool nullable_index = !source_inputs.empty() && merged.getNearestPaddedSide(source_inputs.front()) != nullptr;
+        /// Below a join that can leave the source unmatched the index is `Nullable`.
+        const bool nullable_index = merged.getNearestPaddedSideOfSource(source) != nullptr;
 
         auto above_read = makeAboveReadDAG(*plan.getCurrentHeader(), index_positions, consumed_positions, index_name, nullable_index, copies);
         auto step = std::make_unique<ExpressionStep>(plan.getCurrentHeader(), std::move(above_read));
@@ -1213,6 +1204,21 @@ private:
     std::unordered_map<const QueryPlan::Node *, size_t> source_numbers;
     std::map<size_t, LazySource> lazy_by_source;
 
+    /// What a column of the block holds from the columns crossing the `LIMIT` on: a value of the merged DAG, the row index
+    /// of a source, or the mask a source gives.
+    struct Slot
+    {
+        enum class Kind : uint8_t
+        {
+            Value,
+            RowIndex,
+            Mask,
+        };
+        Kind kind = Kind::Value;
+        const ActionsDAG::Node * value = nullptr;
+        size_t source = 0;
+    };
+
     /// A value crossing the `LIMIT` besides the sort keys, carried from a node as a copy under `name`: of the column at
     /// `position` of its header, or, without such a column, of `step_node` of its step, which outputs it last.
     struct Carrying
@@ -1224,15 +1230,16 @@ private:
     };
 
     /// By the node each value is carried from, in the order of the values.
-    std::unordered_map<const QueryPlan::Node *, std::vector<Carrying>> carryings;
-    /// Each carried value and the name of its copy, in the order of the values, which is the order the copies cross the
-    /// `LIMIT` in: the same every time, unlike the order of the nodes in `carryings`.
-    std::vector<std::pair<const ActionsDAG::Node *, String>> carried_copies;
+    /// The carried values, in the order of the merged DAG, which is the order their copies cross the `LIMIT` in, and by the
+    /// node each is carried from, in the same order.
+    std::vector<Carrying> carried;
+    std::unordered_map<const QueryPlan::Node *, std::vector<size_t>> carried_from;
 
     /// The row index of every source that has one, either for a lazy read or for a mask.
-    std::map<size_t, String> index_names;
+    std::set<size_t> sources_with_row_index;
+    /// The sources whose row index gives a mask, from `mask_sources`.
+    std::set<size_t> sources_with_mask;
     NameSet added_names;
-    std::unordered_map<const MergedPlanDAG::PaddedSide *, size_t> mask_slots;
 };
 
 /// Whether a step can produce a block of totals: `WITH TOTALS`, or a remote read, whose query can have it. Such a block
@@ -1376,12 +1383,11 @@ bool optimizeLazyMaterialization3(
     ContextPtr context;
     for (size_t source = 0; source < merged.sources.size(); ++source)
     {
-        const auto & inputs = merged.sources[source].inputs;
         auto * merge_tree = typeid_cast<ReadFromMergeTree *>(merged.sources[source].plan_node->step.get());
-        if (!lazy_sources[source] || !merge_tree || inputs.empty())
+        if (!lazy_sources[source] || !merge_tree)
             continue;
 
-        if (const auto * padded_side = merged.getNearestPaddedSide(inputs.front()))
+        if (const auto * padded_side = merged.getNearestPaddedSideOfSource(source))
         {
             mask_candidates.emplace(padded_side, source);
             context = merge_tree->getContext();

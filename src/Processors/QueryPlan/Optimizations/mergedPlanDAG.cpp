@@ -30,6 +30,12 @@ size_t MergedPlanDAG::getSourceOfInput(const ActionsDAG::Node * input) const
     return *input_sources.begin();
 }
 
+const MergedPlanDAG::PaddedSide * MergedPlanDAG::getNearestPaddedSideOfSource(size_t source) const
+{
+    const auto & inputs = sources.at(source).inputs;
+    return inputs.empty() ? nullptr : getNearestPaddedSide(inputs.front());
+}
+
 const MergedPlanDAG::PaddedSide * MergedPlanDAG::getNearestPaddedSide(const ActionsDAG::Node * node) const
 {
     if (const auto it = nearest_padded_side.find(node); it != nearest_padded_side.end())
