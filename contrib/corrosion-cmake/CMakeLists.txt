@@ -144,6 +144,13 @@ if (CMAKE_OSX_DEPLOYMENT_TARGET)
     set(RUST_CFLAGS "${RUST_CFLAGS} -mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
 endif()
 
+if (SANITIZE STREQUAL "undefined" OR SANITIZE STREQUAL "address,undefined")
+    # The C and C++ code built by the crates (e.g. a copy of `zstd` in `zstd-sys`) is third-party,
+    # like the code in `contrib`, which is not checked for unsigned integer overflows either.
+    set(RUST_CXXFLAGS "${RUST_CXXFLAGS} -fno-sanitize=unsigned-integer-overflow")
+    set(RUST_CFLAGS "${RUST_CFLAGS} -fno-sanitize=unsigned-integer-overflow")
+endif()
+
 get_target_property(CXX_PUBLIC_DEFS cxx INTERFACE_COMPILE_DEFINITIONS)
 if (CXX_PUBLIC_DEFS)
     list(TRANSFORM CXX_PUBLIC_DEFS PREPEND "-D")
