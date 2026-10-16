@@ -41,7 +41,8 @@ ${CLICKHOUSE_CLIENT} -m --query "
 alter table 03008_test_local_mt update c = 0 where a % 2 = 1;
 alter table 03008_test_local_mt add column d Int64 after c;
 alter table 03008_test_local_mt drop column c;
-" 2>&1 | grep -Fq "SUPPORT_IS_DISABLED"
+select count(), sum(d) from 03008_test_local_mt;
+"
 
 ${CLICKHOUSE_CLIENT} -m --query "
 truncate table 03008_test_local_mt;
