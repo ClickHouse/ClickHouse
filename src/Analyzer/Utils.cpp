@@ -1764,7 +1764,6 @@ bool isRangeLimitedLiteralType(const IDataType & type)
     return which.isDate32() || which.isTime();
 }
 
-/// True if a subtree of this type may hold a leaf the default literal path serializes wrongly.
 bool typeMayNeedExactLiteralSerialization(const IDataType & type)
 {
     return anyInTypeTree(type, [](const IDataType & nested) { return isInexactLiteralType(nested) || isRangeLimitedLiteralType(nested); });
@@ -1795,7 +1794,6 @@ bool isDateOrTimeValueOutOfRange(const IColumn & column, size_t row, const IData
     }
 }
 
-/// A constant is one row, so every nested value belongs to it.
 bool hasDateOrTimeOutOfRange(const IColumn & column, const IDataType & type)
 {
     checkStackSize();
@@ -1908,8 +1906,7 @@ ASTPtr makeExactDecimalCarrierAST(const Field & field)
     return makeASTFunction("_CAST", make_intrusive<ASTLiteral>(text), make_intrusive<ASTLiteral>(carrier_type_name));
 }
 
-/// Conversions to `Date32`/`Time`/`Time64` saturate past the range of the type and `plus` does not, so a value past the
-/// range is sent as an in-range `base` plus `offset`.
+/// A conversion to `Date32`/`Time`/`Time64` saturates past the range of the type, and `plus` does not.
 ASTPtr makeOffsetCastAST(ASTPtr base, Int64 offset, const String & type_name)
 {
     return makeASTFunction(
