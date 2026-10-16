@@ -38,6 +38,7 @@
 #include <Interpreters/DirectJoinMergeTreeEntity.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/FullSortingMergeJoin.h>
+#include <Interpreters/HashJoin/HashJoinTypes.h>
 #include <Processors/QueryPlan/BlockNestedLoopJoinStep.h>
 #include <Processors/QueryPlan/IEJoinStep.h>
 #include <Interpreters/IJoin.h>
@@ -1046,7 +1047,7 @@ static std::optional<size_t> getFixedKeyWidth(const JoinKey & key)
 }
 
 /// `HashJoin` packs the keys of a clause into one fixed-width key only if all of them are fixed-width and fit into
-/// `HashJoin::max_packed_keys_bytes` together, otherwise it hashes their serialized values. A split null-safe key adds the
+/// `HashJoinTypes::max_packed_keys_bytes` together, otherwise it hashes their serialized values. A split null-safe key adds the
 /// byte of `isNull`, so it pays off only if every key of the clause still fits: a split that does not escape the
 /// serialized path only adds work, and `if` copies a `String` value. A tuple is never fixed-width, so either every
 /// null-safe key of the clause is split or none is.
@@ -1071,7 +1072,7 @@ static bool shouldSplitNullSafeKeys(const std::vector<JoinKey> & keys)
             keys_bytes += 1;
         }
     }
-    return has_null_safe_nullable_key && keys_bytes <= HashJoin::max_packed_keys_bytes;
+    return has_null_safe_nullable_key && keys_bytes <= HashJoinTypes::max_packed_keys_bytes;
 }
 
 static bool addJoinPredicatesToTableJoin(std::vector<JoinActionRef> & predicates, TableJoin::JoinOnClause & table_join_clause,
