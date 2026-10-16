@@ -12,6 +12,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 BLOCK_PER_ROW="max_block_size = 1, max_insert_threads = 1, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0,
     min_insert_block_size_rows_for_materialized_views = 0, min_insert_block_size_bytes_for_materialized_views = 0"
 UDF="udf_05388_${CLICKHOUSE_DATABASE}"
+# Each copy of the scalar is one more chance for concurrently analyzed blocks to bind each other's value.
+ARRAY_SCALARS=$(printf '(SELECT groupArray(x) FROM ppar), %.0s' $(seq 31))'(SELECT groupArray(x) FROM ppar)'
 
 $CLICKHOUSE_CLIENT -m -q "
 DROP TABLE IF EXISTS mv_policy_in, mv_policy_udf, mv_merge_policy, mv_nested_policy, mv_atf, mv_nested_settings, mv_merge_atf, mv_merge_array_policy, mv_merge_variant_policy, mv_parallel_array;
@@ -124,24 +126,24 @@ CREATE MATERIALIZED VIEW mv_merge_atf TO dst AS
 
 -- An 'Array' scalar with the blocks pushed to the view concurrently.
 CREATE TABLE src_par (x UInt64) ENGINE = Null;
-CREATE TABLE ppar ENGINE = MergeTree ORDER BY x AS SELECT number AS x FROM numbers(1000);
+CREATE TABLE ppar ENGINE = Memory AS SELECT number AS x FROM numbers(25);
 CREATE ROW POLICY policy_05388 ON ppar USING x IN (SELECT x FROM ${CLICKHOUSE_DATABASE}.src_par) TO ALL;
-CREATE TABLE dst_par (x UInt64, arr Array(UInt64)) ENGINE = Memory;
-CREATE MATERIALIZED VIEW mv_parallel_array TO dst_par AS SELECT x, (SELECT groupArray(x) FROM ppar) AS arr FROM src_par;
+CREATE TABLE dst_par (x UInt64, arrs Array(Array(UInt64))) ENGINE = Memory;
+CREATE MATERIALIZED VIEW mv_parallel_array TO dst_par AS SELECT x, [${ARRAY_SCALARS}] AS arrs FROM src_par;
 
 INSERT INTO src SELECT number + 1 FROM numbers(3) SETTINGS ${BLOCK_PER_ROW};
 INSERT INTO src_atf SELECT number + 1 FROM numbers(3)
     SETTINGS ${BLOCK_PER_ROW},
         additional_table_filters = {'${CLICKHOUSE_DATABASE}.patf': 'x IN (SELECT x FROM ${CLICKHOUSE_DATABASE}.src_atf)',
             '${CLICKHOUSE_DATABASE}.pmatf': 'x IN (SELECT x FROM ${CLICKHOUSE_DATABASE}.src_atf)'};
-INSERT INTO src_par SELECT number % 1000 FROM numbers_mt(2000)
-    SETTINGS max_block_size = 1, max_threads = 16, max_insert_threads = 16, parallel_view_processing = 1,
+INSERT INTO src_par SELECT number FROM numbers_mt(25)
+    SETTINGS max_block_size = 1, max_threads = 8, max_insert_threads = 8, parallel_view_processing = 1,
         optimize_trivial_insert_select = 0, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0,
         min_insert_block_size_rows_for_materialized_views = 0, min_insert_block_size_bytes_for_materialized_views = 0;
 
 SELECT * FROM dst ORDER BY name, value;
 SELECT name, scalar_value = join_value AS same, count() FROM dst_eq GROUP BY name, same ORDER BY name, same;
-SELECT 'parallel array policy', count(), countIf(arr != [x]) FROM dst_par;
+SELECT 'parallel array policy', count(), countIf(NOT arrayAll(a -> a = [x], arrs)) FROM dst_par;
 SELECT 'merge variant policy without a view', count() FROM merge(${CLICKHOUSE_DATABASE}, '^pvar\$');
 
 DROP TABLE mv_policy_in, mv_policy_udf, mv_merge_policy, mv_nested_policy, mv_atf, mv_nested_settings, mv_merge_atf, mv_merge_array_policy, mv_merge_variant_policy, mv_parallel_array;
