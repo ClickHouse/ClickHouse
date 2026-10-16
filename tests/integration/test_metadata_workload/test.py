@@ -159,6 +159,7 @@ def test_metadata_statements_exempt_when_disabled() -> None:
         run_times_out(node_off, "alter table t update x = x + 1 where 1", workload="regular")
         run_times_out(node_off, "create table t2 (x UInt64) engine=URL((select 'http://localhost:8123/?query=select+1'), 'TSV')", workload="regular")
         run_times_out(node_off, "create table t2 (x UInt64) engine=URL(endpoint(), 'TSV')", workload="regular")
+        run_times_out(node_off, "create table t2 (k UInt64, ts DateTime, x UInt64) engine=MergeTree order by k ttl ts + interval 1 day group by k set x = max(x) + (select 1)", workload="regular")
         run_times_out(node_off, "create table t2 (x UInt64) engine=URL(concat('http://localhost:8123/?query=select+1&x=', toString(length(file('a.txt')))), 'TSV')", workload="regular")
         run_times_out(node_off, "create dictionary d (x UInt64) primary key x source(clickhouse(table 't')) layout(flat()) lifetime(0)", workload="regular")
         run_times_out(node_off, "create table t2 (x UInt64) engine=Dictionary('d')", workload="regular")

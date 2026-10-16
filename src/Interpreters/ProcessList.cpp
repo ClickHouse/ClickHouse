@@ -10,6 +10,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Parsers/ASTSystemQuery.h>
+#include <Parsers/ASTTTLElement.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTKillQueryQuery.h>
 #include <Parsers/IAST.h>
@@ -135,6 +136,16 @@ static bool hasSubquery(const IAST & ast)
     for (const auto & child : ast.children)
         if (child && hasSubquery(*child))
             return true;
+    /// Not stored in `children`.
+    if (const auto * ttl = ast.as<ASTTTLElement>())
+    {
+        for (const auto & expressions : {ttl->group_by_key, ttl->group_by_assignments})
+            for (const auto & expression : expressions)
+                if (expression && hasSubquery(*expression))
+                    return true;
+        if (ttl->recompression_codec && hasSubquery(*ttl->recompression_codec))
+            return true;
+    }
     return false;
 }
 
