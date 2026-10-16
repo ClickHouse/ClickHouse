@@ -366,6 +366,10 @@ JIT 컴파일된 머신 코드 캐시에 있는 총 항목 수
 
 경합 중인 것으로 간주되지 않는 획득된 CPU 슬롯의 총수입니다(`fair_round_robin` 스케줄러를 사용하는 경우 첫 번째 스레드).
 
+### ConcurrencyControlParked {#concurrencycontrolparked}
+
+블로킹 I/O나 실행할 작업이 없는 경우처럼 CPU를 사용하지 않는 대기 상태로 인해 CPU 슬롯을 파킹(반납)한 현재 스레드 수
+
 ### ConcurrencyControlPreempted {#concurrencycontrolpreempted}
 
 CPU 슬롯을 기다리며 대기 중인 선점된 스레드의 총수
@@ -1374,6 +1378,10 @@ AzureObjectStorage 스레드 풀에 있는 스레드 수입니다.
 
 AzureObjectStorage 스레드 풀의 큐에서 대기 중이거나 실행 중인 작업 수입니다.
 
+### ObjectStorageExclusiveLeases {#objectstorageexclusiveleases}
+
+이 서버가 현재 객체 스토리지에 보유 중인 배타적 임대(exclusive lease)의 수입니다. Iceberg 테이블(Iceberg table) 컴팩션이 그 예입니다.
+
 ### ObjectStorageQueueMetadataCacheSizeBytes {#objectstoragequeuemetadatacachesizebytes}
 
 ObjectStorageQueue 메타데이터 캐시 크기(바이트)입니다.
@@ -1409,6 +1417,10 @@ S3ObjectStorage 스레드 풀에 있는 스레드 수입니다.
 ### ObjectStorageS3ThreadsScheduled {#objectstorages3threadsscheduled}
 
 S3ObjectStorage 스레드 풀의 큐에서 대기 중이거나 실행 중인 작업 수입니다.
+
+### ObjectStorageSharedLeases {#objectstoragesharedleases}
+
+이 서버의 쿼리가 객체 스토리지에서 현재 임대 중인 키(예: 읽는 중인 Iceberg 스냅샷)의 수입니다.
 
 ### OpenFileForRead {#openfileforread}
 

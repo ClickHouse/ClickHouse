@@ -172,8 +172,9 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "cpu_slot_*",
-      count: 3,
+      count: 4,
       settings: [
+        { name: "cpu_slot_parking", path: "/cpu-slot#cpu_slot_parking", default: "1" },
         { name: "cpu_slot_preemption", path: "/cpu-slot#cpu_slot_preemption", default: "1" },
         { name: "cpu_slot_preemption_timeout_ms", path: "/cpu-slot#cpu_slot_preemption_timeout_ms", default: "1000" },
         { name: "cpu_slot_quantum_ns", path: "/cpu-slot#cpu_slot_quantum_ns", default: "10000000" }
@@ -281,10 +282,13 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "distributed_cache_*",
-      count: 3,
+      count: 6,
       settings: [
         { name: "distributed_cache_apply_throttling_settings_from_client", path: "/distributed-cache#distributed_cache_apply_throttling_settings_from_client", default: "1" },
         { name: "distributed_cache_keep_up_free_connections_ratio", path: "/distributed-cache#distributed_cache_keep_up_free_connections_ratio", default: "0.1" },
+        { name: "distributed_cache_warmer_max_bytes_in_queue", path: "/distributed-cache#distributed_cache_warmer_max_bytes_in_queue", default: "107374182400" },
+        { name: "distributed_cache_warmer_max_file_segment_size", path: "/distributed-cache#distributed_cache_warmer_max_file_segment_size", default: "33554432" },
+        { name: "distributed_cache_warmer_max_segments_in_queue", path: "/distributed-cache#distributed_cache_warmer_max_segments_in_queue", default: "100000" },
         { name: "distributed_cache_write_pool_size", path: "/distributed-cache#distributed_cache_write_pool_size", default: "100" }
       ],
       children: []

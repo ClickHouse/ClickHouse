@@ -6163,6 +6163,10 @@ ROLLBACK;
   Дополнительные сведения см. на странице [Поддержка транзакций (ACID)](/ru/concepts/features/operations/insert/transactions#transactions-commit-and-rollback).
 </Note>
 
+<Note>
+  Эта функция недетерминирована: она может возвращать разные результаты при одних и тех же аргументах.
+</Note>
+
 **Синтаксис**
 
 ```sql
@@ -6213,6 +6217,10 @@ ROLLBACK;
   ```
 
   Дополнительные сведения см. на странице [Поддержка транзакций (ACID)](/ru/concepts/features/operations/insert/transactions#transactions-commit-and-rollback).
+</Note>
+
+<Note>
+  Эта функция недетерминирована: при одних и тех же аргументах она может возвращать разные результаты.
 </Note>
 
 **Синтаксис**

@@ -35,7 +35,11 @@ L&#39;analyseur est l&#39;infrastructure d&#39;analyse et de planification des r
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "Nouveau paramètre"}]}]} />
 
-Permet de supprimer les anciens fichiers de données lors de la compaction d’Iceberg.
+Permet de supprimer les anciens fichiers de données lors du compactage d’Iceberg.
+
+Le nettoyage exécute `iceberg_compaction_data_cleanup` à l’issue d’un compactage. Il fait expirer les snapshots rendus obsolètes par le compactage, de la même
+manière que `expire_snapshots` : il les retire des métadonnées de la table et supprime les fichiers qui ne sont référencés par aucun autre snapshot. Pour une table
+dont la version du format est 1, ou gérée par un catalogue transactionnel, seuls les fichiers sont supprimés ; les snapshots restent dans les métadonnées.
 
 ## allow_experimental_database_hms_catalog {#allow_experimental_database_hms_catalog}
 

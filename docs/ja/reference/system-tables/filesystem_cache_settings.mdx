@@ -52,6 +52,7 @@ doc_type: 'reference'
 * `check_cache_probability` ([Float64](/ja/reference/data-types/float)) — デバッグまたは sanitizer ビルドでのみ機能します。すべてのキャッシュを走査し、各キャッシュ要素の状態を確認することで、キャッシュの整合性を検証します
 * `idle_client_ttl_sec` ([UInt64](/ja/reference/data-types/int-uint)) — ゼロ以外でcacheポリシーがクライアントごとの使用状況を追跡する場合、この秒数の間アクセスされていないクライアント (user&#95;id) に属するすべてのキャッシュエントリは、キャッシュから完全に削除されます。クライアントによるアクセスのたびにタイマーが更新されます。デフォルトは1週間です。分散キャッシュサーバーで使用されます。
 * `idle_client_check_interval_sec` ([UInt64](/ja/reference/data-types/int-uint)) — アイドルクライアントのエビクションタスクを実行する間隔 (Seconds単位)。`idle_client_ttl_sec` がゼロ以外の場合にのみ意味を持ちます。0 は自動値 (`max(1, idle_client_ttl_sec / 10)`) を意味します。
+* `client_weight_persist_interval_sec` ([UInt64](/ja/reference/data-types/int-uint)) — クライアントごとの重みをディスクに書き込む間隔 (Seconds単位)。これにより、まだ再接続していないクライアントも再起動後に重みを保持できます。最初の書き込みは起動から1インターバル後に行われ、正常なシャットダウン時にも書き出されます。cacheポリシーがクライアントごとの使用状況を追跡する場合にのみ意味を持ちます。
 * `idle_client_eviction_threads` ([UInt64](/ja/reference/data-types/int-uint)) — アイドルクライアントのキャッシュをパージするために使用するスレッドの最大数。`idle_client_ttl_sec` がゼロ以外の場合にのみ意味を持ちます。
 * `expose_prometheus_eviction_metrics` ([UInt8](/ja/reference/data-types/int-uint)) — ファイルシステムキャッシュのエビクション活動に関する Prometheus メトリクス (`filesystem_cache_evictions_total` など) を公開します。デフォルトではオフです。`SYSTEM RELOAD CONFIG` により実行時にトグルできます。
 * `expose_prometheus_eviction_metrics_per_user` ([UInt8](/ja/reference/data-types/int-uint)) — さらに、ユーザー ID ごとのエビクションメトリクスを公開します。`expose_prometheus_eviction_metrics` が必要です。カーディナリティは、エビクションを行う個別ユーザー数に応じて増加します。

@@ -12,9 +12,23 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 تُعِدّ هذه الإعدادات ClickHouse server، وهي مُولَّدة تلقائيًا من الشفرة المصدرية لـ ClickHouse.
 
-<div id="cpu_slot_preemption">
-  ## cpu_slot_preemption
-</div>
+## cpu_slot_parking {#cpu_slot_parking}
+
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="Yes" />
+
+يحدد ما إذا كان خيط تنفيذ الاستعلام يُحرِّر (يَركن) خانة تنفيذ CPU المخصصة له أثناء توقفه في انتظار لا يتعلق بوحدة المعالجة المركزية، مثل بعض عمليات الإدخال/الإخراج أو الخمول عند عدم توفر أي مهمة. ولا يُحتسب خيط التنفيذ المركون ضمن حد التزامن الخاص بـ CPU، مما يتيح لخيط تنفيذ آخر الاستفادة من وحدة CPU التي كانت ستبقى خاملة؛ ثم يستعيد الخيط خانة التنفيذ عند انتهاء الانتظار. لا يسري هذا الإعداد إلا عندما يكون `cpu_slot_preemption` مفعّلاً، ويُعرّف مورد وحدة معالجة مركزية واحد كلاً من MASTER THREAD وWORKER THREAD؛ أما في حالات التهيئة الأخرى فلا تأثير له. ويمكن تغييره دون إعادة تشغيل الخادم.
+
+**مثال**
+
+```xml
+<cpu_slot_parking>true</cpu_slot_parking>
+```
+
+**انظر أيضًا**
+
+* [جدولة أعباء العمل](/ar/concepts/features/configuration/server-config/workload-scheduling)
+
+## cpu_slot_preemption {#cpu_slot_preemption}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="Yes" />
 
@@ -33,9 +47,7 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 * [جدولة أعباء العمل](/ar/concepts/features/configuration/server-config/workload-scheduling)
 
-<div id="cpu_slot_preemption_timeout_ms">
-  ## cpu_slot_preemption_timeout_ms
-</div>
+## cpu_slot_preemption_timeout_ms {#cpu_slot_preemption_timeout_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" changeable_without_restart="Yes" />
 
@@ -51,9 +63,7 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 * [جدولة أعباء العمل](/ar/concepts/features/configuration/server-config/workload-scheduling)
 
-<div id="cpu_slot_quantum_ns">
-  ## cpu_slot_quantum_ns
-</div>
+## cpu_slot_quantum_ns {#cpu_slot_quantum_ns}
 
 <SettingsInfoBlock type="UInt64" default_value="10000000" changeable_without_restart="Yes" />
 

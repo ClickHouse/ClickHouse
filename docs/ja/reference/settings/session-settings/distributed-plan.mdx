@@ -82,6 +82,16 @@ import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge
 分散クエリプランでは、PartialAggregation + Merge の代わりに Shuffle 集約戦略を使用します。
 Shuffle 戦略が正しい結果を生成できない場合、たとえば `GROUPING SETS` の場合や、集約が bucket 順で結果を生成しなければならない場合には無視されます。
 
+## distributed_plan_join_runtime_filters {#distributed_plan_join_runtime_filters}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "新しい実験的な設定"}]}]} />
+
+`make_distributed_plan` 使用時に、あるステージで構築された JOINランタイムフィルタを、プローブ側を読み取るステージへ送信します。これにより、それらのステージは行を送信する前にフィルタリングできます。フィルタが届かなかった場合、行はフィルタリングされずにそのまま渡されます。`enable_join_runtime_filters` を有効にする必要があります。
+
 ## distributed_plan_max_buffered_log_rows {#distributed_plan_max_buffered_log_rows}
 
 <ExperimentalBadge />

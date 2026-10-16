@@ -348,11 +348,71 @@ text&#95;log의 비동기 큐로 전송된 메시지 수(수락되었거나 폐�
 
 ### AutomaticParallelReplicasDecidedWithoutBuildingPlan {#automaticparallelreplicasdecidedwithoutbuildingplan}
 
-자동 병렬 레플리카 기능이 비용 산정용 후보 계획을 빌드하지 않고, 이전 실행에서 기억해 둔 경계를 근거로 병렬 레플리카를 사용하지 않기로 결정한 횟수입니다.
+자동 병렬 레플리카 기능이 비용 산정용 후보 계획을 빌드하지 않고, 이전 실행에서 기억해 둔 경계를 근거로 병렬 레플리카를 사용하지 않기로 결정한 횟수입니다. 그 이유를 나타내는 이벤트(예: `AutoParallelReplicasRejectedByCostModel`)도 함께 집계됩니다.
 
 ### AutomaticParallelReplicasProbePlansBuilt {#automaticparallelreplicasprobeplansbuilt}
 
-자동 병렬 레플리카 기능이 단일 노드 계획과 비교하기 위해 병렬 레플리카를 사용하는 후보 계획을 생성한 횟수입니다. 이렇게 생성된 계획이 모두 사용되지는 않습니다. 이 계획은 비용을 산정하기 위해 생성되며, 단일 노드 계획이 더 유리하다고 판단되면 폐기됩니다
+자동 병렬 레플리카 기능이 병렬 레플리카 사용이 이득인지 판단하기 위해 병렬 레플리카를 사용하는 계획을 생성한 횟수입니다
+
+### AutoParallelReplicasApplied {#autoparallelreplicasapplied}
+
+자동 병렬 레플리카 기능이 쿼리 실행 계획(query plan)을 병렬 레플리카를 사용하는 계획으로 대체한 횟수입니다
+
+### AutoParallelReplicasBytesPerReplica {#autoparallelreplicasbytesperreplica}
+
+자동 병렬 복제본(Automatic Parallel Replicas)이 산정한 이 쿼리의 레플리카당 읽기 바이트 수입니다. 결정 결과와 관계없이 항상 기록되므로, 이 분포에는 `automatic_parallel_replicas_min_bytes_per_replica`로 인해 제외된 쿼리와 통과한 쿼리가 모두 포함됩니다.
+
+### AutoParallelReplicasCostModelEvaluated {#autoparallelreplicascostmodelevaluated}
+
+자동 병렬 레플리카 기능이 비용 모델 단계에 도달하여 로컬 실행 계획(local plan)과 병렬 레플리카 실행 계획을 비교한 횟수입니다
+
+### AutoParallelReplicasNoStatistics {#autoparallelreplicasnostatistics}
+
+자동 병렬 레플리카 기능에 아직 통계가 없어 결정을 내리는 대신 통계를 수집한 횟수입니다
+
+### AutoParallelReplicasOptimizationMicroseconds {#autoparallelreplicasoptimizationmicroseconds}
+
+자동 병렬 복제본(Automatic Parallel Replicas) 최적화에 소요된 시간으로, 병렬 레플리카를 사용하는 계획을 빌드하는 데 걸린 시간은 제외합니다.
+
+### AutoParallelReplicasPlanBuildMicroseconds {#autoparallelreplicasplanbuildmicroseconds}
+
+자동 병렬 복제본(Automatic Parallel Replicas)이 로컬 실행 계획(local plan)과 비교하기 위해 병렬 레플리카를 사용하는 실행 계획을 빌드하는 데 소요된 시간입니다.
+
+### AutoParallelReplicasPlansNotComparable {#autoparallelreplicasplansnotcomparable}
+
+자동 병렬 복제본(Automatic Parallel Replicas)이 병렬 복제본을 사용하는 계획을 빌드한 후, 또는 이전 빌드 시 기억해 둔 경계 지점에서 해당 계획을 로컬 계획과 충분히 대응시키지 못해 비교하거나 사용할 수 없어 쿼리를 건너뛴 횟수입니다. 예를 들어 두 계획의 읽기 단계를 서로 짝지을 수 없거나, 복제본이 어떤 읽기를 분할할지 판단할 수 없는 경우가 이에 해당합니다. 구체적인 사유는 `AutoParallelReplicas` 로거에 기록됩니다
+
+### AutoParallelReplicasPlanWithoutParallelReplicas {#autoparallelreplicasplanwithoutparallelreplicas}
+
+자동 병렬 복제본(Automatic Parallel Replicas)이 병렬 복제본을 사용하는 계획을 빌드한 후 쿼리를 건너뛴 횟수입니다. 레플리카당 행(rows) 수가 너무 적거나 상관 서브쿼리(correlated subquery)가 있는 경우처럼, 플래너가 해당 계획에서 병렬 복제본을 사용하지 않았을 때 발생합니다. 구체적인 이유는 `Planner` 로거에서 확인할 수 있습니다.
+
+### AutoParallelReplicasRejectedByCostModel {#autoparallelreplicasrejectedbycostmodel}
+
+비용 모델이 로컬 실행 계획(local plan)이 병렬 레플리카 실행 계획보다 빠르거나 적어도 같은 속도라고 추정하여, 자동 병렬 레플리카 기능이 병렬 레플리카 사용을 거부한 횟수입니다.
+
+### AutoParallelReplicasRejectedByDuplicatedReads {#autoparallelreplicasrejectedbyduplicatedreads}
+
+비용 모델은 병렬 복제본(parallel replica) 사용이 유리하다고 판단했지만, 읽은 바이트 중 레플리카 간에 분할되지 않고 모든 레플리카가 전체를 읽어야 하는 비율이 `automatic_parallel_replicas_max_duplicated_read_ratio`를 초과하여 자동 병렬 복제본(Automatic Parallel Replicas) 사용이 거부된 횟수입니다.
+
+### AutoParallelReplicasRejectedByThreshold {#autoparallelreplicasrejectedbythreshold}
+
+비용 모델은 병렬 레플리카가 유리하다고 판단했으나, 읽기량이 `automatic_parallel_replicas_min_bytes_per_replica` 미만이어서 자동 병렬 복제본(Automatic Parallel Replicas)이 거부된 횟수입니다.
+
+### AutoParallelReplicasSkippedDueToQuery {#autoparallelreplicasskippedduetoquery}
+
+자동 병렬 복제본(Automatic Parallel Replicas)이 병렬 복제본을 사용하는 쿼리 계획을 빌드하기 전에 쿼리를 건너뛴 횟수입니다. 병렬 복제본으로 읽을 수 없는 조인이나 통계를 수집할 수 없는 단계처럼, 자동 병렬 복제본이 처리할 수 없는 기능이 쿼리에 포함된 경우에 해당합니다. 구체적인 원인은 `AutoParallelReplicas` 로거에서 확인할 수 있습니다
+
+### AutoParallelReplicasSkippedDueToSettings {#autoparallelreplicasskippedduetosettings}
+
+자동 병렬 복제본(Automatic Parallel Replicas)이 병렬 복제본을 사용하는 계획을 빌드하기 전에, 주어진 설정 때문에 쿼리를 건너뛴 횟수입니다. 구체적인 사유는 `AutoParallelReplicas` 로거에서 확인할 수 있습니다. 자동 병렬 복제본 자체를 끄는 설정은 집계되지 않습니다. `enable_parallel_replicas`가 비활성화되었거나 강제 설정되었을 때, 또는 `parallel_replicas_mode`가 `read_tasks`가 아닐 때는 `automatic_parallel_replicas_mode = 0`일 때와 마찬가지로 최적화가 아예 실행되지 않습니다
+
+### AutoParallelReplicasSkippedEarly {#autoparallelreplicasskippedearly}
+
+인덱스 분석(Index Analysis) 단계에서 이미 계획상 가장 큰 읽기 작업의 데이터 양이 복제본당 `automatic_parallel_replicas_min_bytes_per_replica`보다 적은 것으로 확인되어, 자동 병렬 복제본(Automatic Parallel Replicas)이 병렬 복제본을 사용하는 계획을 아예 빌드하지 않은 횟수입니다.
+
+### AutoParallelReplicasStatisticsDrifted {#autoparallelreplicasstatisticsdrifted}
+
+저장소에서 읽은 행(rows) 수가 캐시된 통계와 2배 넘게 차이 나서, 자동 병렬 복제본(Automatic Parallel Replicas)이 결정을 내리지 않고 통계를 다시 수집한 횟수입니다
 
 ### AzureClients {#azureclients}
 
@@ -766,6 +826,10 @@ Common executor에서 완료될 때까지 대기하는 데 소요된 시간입�
 
 CPU 다운스케일링 이벤트 총 횟수
 
+### ConcurrencyControlParks {#concurrencycontrolparks}
+
+블로킹 I/O나 실행할 작업이 없는 경우처럼 CPU를 사용하지 않는 대기로 인해 스레드가 CPU 슬롯을 반환(파킹)한 총 횟수입니다.
+
 ### ConcurrencyControlPreemptedMicroseconds {#concurrencycontrolpreemptedmicroseconds}
 
 CPU 슬롯이 선점되어 쿼리가 대기한 총 시간입니다.
@@ -793,6 +857,10 @@ CPU 슬롯 용량 부족으로 지연된 쿼리 수입니다. 경합 지표로, 
 ### ConcurrencyControlSlotsGranted {#concurrencycontrolslotsgranted}
 
 쿼리당 1개의 thread를 보장하는 기준과 `use_concurrency_control` = 0으로 설정된 쿼리에 대해 부여된 CPU 슬롯 수
+
+### ConcurrencyControlUnparks {#concurrencycontrolunparks}
+
+CPU 이외의 대기 후 스레드가 CPU 슬롯을 다시 획득한 총 횟수입니다.
 
 ### ConcurrencyControlUpscales {#concurrencycontrolupscales}
 
@@ -1501,6 +1569,10 @@ Distributed Cache registry 이벤트입니다. Distributed Cache registry를 업
 
 Distributed Cache registry 이벤트. Distributed Cache registry 업데이트 횟수
 
+### DistrCacheRejectedRegistryRecords {#distrcacherejectedregistryrecords}
+
+Distributed Cache 레지스트리 이벤트입니다. 인증서를 신뢰할 수 없거나, 시그니처가 일치하지 않거나, 둘 중 하나가 누락되어 무시된 레지스트리 엔트리 수입니다.
+
 ### DistrCacheRemoveOutdatedMicroseconds {#distrcacheremoveoutdatedmicroseconds}
 
 Distributed Cache 연결 이벤트입니다. 연결 풀에서 더 이상 유효하지 않은 연결을 제거하는 데 걸린 시간입니다.
@@ -1665,6 +1737,10 @@ Distributed Cache 연결 이벤트. Distributed Cache에서 생성된 임시 파
 
 Distributed Cache 연결 이벤트. Distributed Cache에서 생성된 임시 파일의 수
 
+### DistrCacheUnexpectedServerCertificate {#distrcacheunexpectedservercertificate}
+
+Distributed Cache 연결 이벤트입니다. Distributed Cache 서버가 레지스트리 엔트리에 등록된 개인 키와 다른 개인 키의 인증서를 제시해, 클라이언트가 연결을 종료하고 해당 서버를 제외한 횟수입니다.
+
 ### DistrCacheUnsuccessfulConnectAttempts {#distrcacheunsuccessfulconnectattempts}
 
 Distributed Cache 연결 이벤트입니다. Distributed Cache에 대한 연결 시도 실패 횟수입니다.
@@ -1692,6 +1768,10 @@ Distributed Cache 클라이언트 이벤트. Distributed Cache에서 사용되�
 ### DistrCacheUnusedPacketsBufferAllocations {#distrcacheunusedpacketsbufferallocations}
 
 Distributed Cache 클라이언트 이벤트입니다. 기존 버퍼를 재사용하지 못했을 때 발생한 추가 버퍼 할당 횟수입니다.
+
+### DistrCacheVerifiedServerCertificate {#distrcacheverifiedservercertificate}
+
+Distributed Cache 연결 이벤트입니다. 분산 캐시 서버(Distributed Cache server)가 자신의 레지스트리 엔트리에 등록된 키와 일치하는 인증서를 제시한 횟수입니다.
 
 ### DistrCacheWriteBytes {#distrcachewritebytes}
 
@@ -2133,6 +2213,14 @@ DOWNLOADING 상태에서의 대기
 
 DOWNLOADING 상태의 파일 세그먼트(file segment)를 대기하다가 타임아웃이 발생한 횟수입니다(`filesystem_cache_wait_for_concurrent_download_timeout_milliseconds` 참조)
 
+### FileSegmentWaitWithoutData {#filesegmentwaitwithoutdata}
+
+DOWNLOADING 상태의 파일 세그먼트에 대한 대기가, 다운로더가 기다리던 오프셋까지 다운로드하기 전에 세그먼트를 해제하여 종료된 횟수입니다.
+
+### FileSegmentWaitWithoutDataMicroseconds {#filesegmentwaitwithoutdatamicroseconds}
+
+`FileSegmentWaitWithoutData`에서 집계된 대기에 소요된 시간입니다
+
 ### FileSegmentWriteMicroseconds {#filesegmentwritemicroseconds}
 
 파일 세그먼트 write() 소요 시간
@@ -2289,6 +2377,10 @@ moving 상태이어서 eviction이 건너뛴 파일 세그먼트 수
 
 우선순위 큐에 쓰기 위해 파일 시스템 캐시를 잠그는 시간
 
+### FilesystemCachePromotedFileSegments {#filesystemcachepromotedfilesegments}
+
+SLRU 캐시 정책에서 시험(probationary) 큐에서 보호 큐로 승격(이동)된 파일 세그먼트 수입니다.
+
 ### FilesystemCacheReserveAheadRetries {#filesystemcachereserveaheadretries}
 
 사전 예약 방식의 파일 시스템 캐시 예약이 공간 부족으로 실패하여, 요청된 크기 그대로 다시 시도된 횟수입니다
@@ -2440,6 +2532,14 @@ Global Thread 풀에서 스레드를 제거해 크기가 줄어든 총 횟수를
 ### HTTPServerConnectionsReused {#httpserverconnectionsreused}
 
 재사용된 서버의 HTTP 연결 수
+
+### IcebergCompactionCleanupDeferredByReaders {#icebergcompactioncleanupdeferredbyreaders}
+
+이 레플리카 또는 다른 레플리카의 쿼리가 Iceberg 압축 병합으로 대체된 데이터 파일을 참조하는 스냅샷을 아직 읽고 있어서 해당 데이터 파일의 삭제가 연기된 횟수입니다.
+
+### IcebergCompactionCleanupDeferredBySnapshotLifetime {#icebergcompactioncleanupdeferredbysnapshotlifetime}
+
+Iceberg 압축 병합으로 대체된 데이터 파일의 삭제가 연기된 횟수입니다. 해당 컴팩션 또는 컴팩션으로 대체된 스냅샷의 경과 시간이 `iceberg_outdated_snapshot_lifetime_seconds`보다 짧으면 삭제가 연기됩니다.
 
 ### IcebergIteratorInitializationMicroseconds {#icebergiteratorinitializationmicroseconds}
 
@@ -3901,6 +4001,18 @@ mutation을 실행하는 대신 빈 파트로 대체된 파트의 총수
 
 다른 레플리카가 로그를 동시에 업데이트하여 ReplicatedMergeTree에서 파트에 mutation을 적용하기 위한 로그 항목이 생성되지 않습니다.
 
+### ObjectStorageExclusiveLeasesAcquired {#objectstorageexclusiveleasesacquired}
+
+이 서버가 객체 스토리지에서 획득한 키에 대한 배타적 임대 횟수입니다. Iceberg 테이블(Iceberg table)의 컴팩션 등이 이에 해당합니다.
+
+### ObjectStorageExclusiveLeasesRefused {#objectstorageexclusiveleasesrefused}
+
+다른 레플리카가 해당 키에 대해 아직 유효한 임대를 보유하고 있어 객체 스토리지에서 배타적 임대 획득을 포기한 시도 횟수입니다.
+
+### ObjectStorageExpiredLeasesRemoved {#objectstorageexpiredleasesremoved}
+
+객체 스토리지에서 제거된, 만료된 임대 객체와 폐기 대상으로 지정된 마커의 수입니다.
+
 ### ObjectStorageGlobFilteredObjects {#objectstorageglobfilteredobjects}
 
 glob 또는 regex 패턴과 일치하지 않아 목록 조회 중 건너뛴 객체입니다.
@@ -4028,6 +4140,26 @@ Set 처리 요청을 보내려고 시도한 횟수
 ### ObjectStorageReadObjects {#objectstoragereadobjects}
 
 객체 스토리지 소스에서 읽기 위해 실제로 연 객체 수입니다.
+
+### ObjectStorageSharedLeasesAcquired {#objectstoragesharedleasesacquired}
+
+이 서버의 쿼리가 아직 서버에 임대되지 않은 키를 획득할 때 객체 스토리지에 기록되는 키(예: 읽고 있는 Iceberg 스냅샷)의 공유 임대 수입니다.
+
+### ObjectStorageSharedLeasesCondemned {#objectstoragesharedleasescondemned}
+
+이 서버의 정리 작업(cleaner)이 객체 스토리지에서 폐기 대상으로 지정한 키의 수입니다. 이는 정리 작업이 해당 키가 보호하는 데이터를 제거하는 동안 어떤 레플리카도 이 키를 임대하지 못하도록 하기 위함입니다.
+
+### ObjectStorageSharedLeasesRefused {#objectstoragesharedleasesrefused}
+
+클리너가 키를 폐기 대상으로 지정하여 객체 스토리지의 해당 키에 대한 임대 시도가 거부된 횟수입니다. 예를 들어 컴팩션 이후 정리 작업에서 곧 제거될 Iceberg 스냅샷이 이에 해당합니다.
+
+### ObjectStorageSharedLeasesRenewed {#objectstoragesharedleasesrenewed}
+
+이 서버의 쿼리가 키를 보유한 동안 갱신 작업이 객체 스토리지에서 재작성한 공유 임대의 수입니다.
+
+### ObjectStorageSharedLeaseWriteFailures {#objectstoragesharedleasewritefailures}
+
+공유 임대를 획득하거나 갱신할 때 객체 스토리지에 공유 임대를 쓰는 작업이 실패한 횟수입니다.
 
 ### ObsoleteReplicatedParts {#obsoletereplicatedparts}
 
@@ -4171,7 +4303,7 @@ initiator에 전송된 요청 수입니다.
 
 ### ParallelReplicasQueryCount {#parallelreplicasquerycount}
 
-쿼리 실행 중 병렬 레플리카를 사용해 실행된 (하위)쿼리의 수
+쿼리 실행 중 병렬 레플리카를 사용해 실행되도록 계획된 (하위)쿼리의 수입니다. 자동 병렬 복제본(Automatic Parallel Replicas)도 사용 여부를 결정하려고 생성하는 계획에 대해 이 값을 증가시킵니다. 따라서 집계된 쿼리라도 실제로는 병렬 레플리카로 실행되지 않았을 수 있습니다. 실제 실행 내역은 `AutoParallelReplicasApplied` 및 `ParallelReplicasUsedCount`를 참조하십시오
 
 ### ParallelReplicasReadAssignedForStealingMarks {#parallelreplicasreadassignedforstealingmarks}
 
@@ -4985,9 +5117,17 @@ Prewhere 리더가 MergeTree 테이블에서 읽은 전체 행 수입니다.
 
 쿼리가 병렬 레플리카로 실행될 때 레플리카가 읽게 되는 바이트 수에 대한 수집 통계
 
+### RuntimeDataflowStatisticsInputNanoseconds {#runtimedataflowstatisticsinputnanoseconds}
+
+쿼리 실행(Query Execution) 중 자동 병렬 복제본(Automatic Parallel Replicas)을 위해 레플리카가 읽을 바이트 수에 대한 통계를 수집하는 데 소요된 시간입니다
+
 ### RuntimeDataflowStatisticsOutputBytes {#runtimedataflowstatisticsoutputbytes}
 
 쿼리가 병렬 레플리카로 실행될 경우 레플리카가 initiator에 전송할 바이트 수에 대해 수집된 통계
+
+### RuntimeDataflowStatisticsOutputNanoseconds {#runtimedataflowstatisticsoutputnanoseconds}
+
+자동 병렬 복제본(Automatic Parallel Replicas)에 사용하기 위해 쿼리 실행(Query Execution) 중 레플리카가 initiator로 전송할 바이트 수에 대한 통계를 수집하는 데 소요된 시간입니다.
 
 ### RuntimeFilterBlocksProcessed {#runtimefilterblocksprocessed}
 
@@ -5000,6 +5140,10 @@ JOIN Runtime Filters가 처리한 블록 수
 ### RuntimeFilterBloomFilterBuildsSkipped {#runtimefilterbloomfilterbuildsskipped}
 
 해시 테이블 통계의 빌드 측 key 개수로 예측했을 때 필터가 set bit 비율의 최대값을 초과할 것으로 판단되어 건너뛴 JOIN Runtime Filter 블룸 필터 빌드 수
+
+### RuntimeFilterDeliveriesAbandoned {#runtimefilterdeliveriesabandoned}
+
+수신 측의 연결이 끊어졌거나 수신 측이 읽기를 중단하여 전달이 중단된 JOIN Runtime Filter의 수입니다. 이 경우 해당 대상은 필터(filter)를 받지 못하므로, 그 행(rows)은 필터링되지 않고 그대로 통과합니다.
 
 ### RuntimeFilterGranulesConsidered {#runtimefiltergranulesconsidered}
 
@@ -5017,6 +5161,18 @@ JOIN Runtime Filters에 의해 읽기 시점에 프루닝된 그래뉼 수
 
 빌드 측이 아직 완료되지 않은 상태에서 JOIN 런타임 필터(JOIN Runtime Filter)를 조회하여 필터링되지 않고 그대로 통과한 블록 수
 
+### RuntimeFilterOversizedStatesRejected {#runtimefilteroversizedstatesrejected}
+
+크기 제한을 초과하여 사용되지 않거나 전송되지 않은 JOIN Runtime Filter 상태의 수입니다. 이 경우 행은 필터링되지 않고 그대로 통과합니다.
+
+### RuntimeFilterReceiveBranchFailures {#runtimefilterreceivebranchfailures}
+
+다른 작업으로부터 JOIN Runtime Filter를 수신하지 못한 작업의 수입니다. 이 경우 해당 작업은 필터를 사용하지 않으며, 행(rows)은 필터링되지 않고 그대로 통과합니다.
+
+### RuntimeFilterReceivesAbandoned {#runtimefilterreceivesabandoned}
+
+연결이 수립된 후 스트림의 끝에 도달하기 전에 송신 측 연결이 끊긴 JOIN Runtime Filter 스트림의 수입니다. 송신 측 상태가 아직 도착하지 않았다면 해당 필터(filter)는 사용되지 않으며, 행은 필터링되지 않고 그대로 통과합니다
+
 ### RuntimeFilterRowsChecked {#runtimefilterrowschecked}
 
 JOIN Runtime Filters에서 검사한 행 수
@@ -5032,6 +5188,22 @@ JOIN Runtime Filters로 건너뛴 블록 내 행 수
 ### RuntimeFiltersCreated {#runtimefilterscreated}
 
 쿼리 내에서 생성된 서로 다른 JOIN Runtime Filters의 수
+
+### RuntimeFilterStateBytesReceived {#runtimefilterstatebytesreceived}
+
+분산 쿼리 실행 계획의 다른 작업에서 수신한, 직렬화된 JOIN Runtime Filter 상태의 바이트 수
+
+### RuntimeFilterStateBytesSent {#runtimefilterstatebytessent}
+
+분산 쿼리 실행 계획의 다른 작업으로 전송된 직렬화된 JOIN Runtime Filter 상태의 바이트 수입니다. 대상 스트림마다 한 번씩 집계됩니다.
+
+### RuntimeFilterStatesReceived {#runtimefilterstatesreceived}
+
+분산 쿼리 실행 계획의 다른 작업에서 수신한 직렬화된 JOIN Runtime Filter 상태의 개수
+
+### RuntimeFilterStatesSent {#runtimefilterstatessent}
+
+분산 쿼리 실행 계획의 다른 작업으로 전송하기 위해 큐에 추가된 JOIN Runtime Filter 상태의 수입니다. 대상 스트림마다 하나씩 추가되며, 이후 전달이 중단된 경우도 포함됩니다.
 
 ### RWLockAcquiredReadLocks {#rwlockacquiredreadlocks}
 

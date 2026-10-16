@@ -367,6 +367,49 @@ SELECT arrayBottomK((x, y) -> y, 2, ['a', 'b', 'c'], [3, 1, 2])
 ['b','c']
 ```
 
+## arrayCombinations {#arrayCombinations}
+
+أُضيف: v26.10.0
+
+تُعيد جميع التركيبات (اختيارات غير مرتبة دون تكرار الفهارس) ذات الطول `k` من مصفوفة المصدر. يجري التعداد بحسب الفهارس، لذا قد تُنتج القيم المتساوية صفوفًا مكررة في النتيجة. عندما تكون `k = 0`، تُعيد الدالة `[[]]`. يخضع الحجم الإجمالي للنتيجة في كل كتلة للحد الذي يضبطه `function_range_max_elements_in_block`، إذ تُحتسب كل مصفوفة مُولَّدة بحجمها زائد واحد.
+
+**الصيغة**
+
+```sql
+arrayCombinations(arr, k)
+```
+
+**الوسيطات**
+
+* `arr` — مصفوفة المصدر. [`Array(T)`](/ar/reference/data-types/array)
+* `k` — طول كل تركيبة مُولَّدة. يجب ألا يتجاوز حجم مصفوفة المصدر. يدعم الأنواع `Int8` و`Int16` و`Int32` و`Int64` و`UInt8` و`UInt16` و`UInt32` و`UInt64`. [`(U)Int*`](/ar/reference/data-types/int-uint)
+
+**القيمة المعادة**
+
+جميع التركيبات ذات الطول `k`. [`Array(Array(T))`](/ar/reference/data-types/array)
+
+**أمثلة**
+
+**مثال على الاستخدام**
+
+```sql title=Query
+SELECT arrayCombinations([1, 2, 3], 2);
+```
+
+```response title=Response
+[[1,2],[1,3],[2,3]]
+```
+
+**مثال `k = 0`**
+
+```sql title=Query
+SELECT arrayCombinations([1, 2, 3], 0);
+```
+
+```response title=Response
+[[]]
+```
+
 ## arrayCompact {#arrayCompact}
 
 أُضيفت في: v20.1.0
@@ -2735,6 +2778,49 @@ SELECT arrayPackBitsToUInt64(x -> x, [1, 0, 0, 0, 0, 0])
 128
 ```
 
+## arrayPartialPermutations {#arrayPartialPermutations}
+
+أُضيف في: v26.10.0
+
+تُعيد جميع التباديل الجزئية (أي الاختيارات المرتبة التي لا تتكرر فيها الفهارس) ذات الطول `k` من مصفوفة المصدر. يجري التعداد وفقًا للفهارس، ولذلك قد تُنتج القيم المتساوية صفوفًا مكررة في النتيجة. عندما تكون `k = 0`، تُعيد `[[]]`. يُقيِّد الإعداد `function_range_max_elements_in_block` الحجمَ الإجمالي للنتيجة في كل كتلة، إذ تُحتسب كل مصفوفة مُولَّدة بحجمها مضافًا إليه واحد.
+
+**الصيغة**
+
+```sql
+arrayPartialPermutations(arr, k)
+```
+
+**الوسيطات**
+
+* `arr` — مصفوفة المصدر. [`Array(T)`](/ar/reference/data-types/array)
+* `k` — طول كل تبديل جزئي يُولَّد. يجب ألا يتجاوز حجم مصفوفة المصدر. يدعم الأنواع `Int8` و`Int16` و`Int32` و`Int64` و`UInt8` و`UInt16` و`UInt32` و`UInt64`. [`(U)Int*`](/ar/reference/data-types/int-uint)
+
+**القيمة المعادة**
+
+جميع التبديلات الجزئية التي طولها `k`. [`Array(Array(T))`](/ar/reference/data-types/array)
+
+**أمثلة**
+
+**مثال على الاستخدام**
+
+```sql title=Query
+SELECT arrayPartialPermutations([1, 2, 3], 2);
+```
+
+```response title=Response
+[[1,2],[1,3],[2,1],[2,3],[3,1],[3,2]]
+```
+
+**مثال `k = 0`**
+
+```sql title=Query
+SELECT arrayPartialPermutations([1, 2, 3], 0);
+```
+
+```response title=Response
+[[]]
+```
+
 ## arrayPartialReverseSort {#arrayPartialReverseSort}
 
 أُضيفت في: v23.2.0
@@ -2998,6 +3084,38 @@ SELECT arrayPartialSort((x, y) -> -y, 1, [0, 1, 2], [1, 2, 3]) as res
 
 ```response title=Response
 [2,1,0]
+```
+
+## arrayPermutations {#arrayPermutations}
+
+أُضيف في: v26.10.0
+
+تُعيد جميع تباديل عناصر مصفوفة المصدر. يجري التعداد بحسب الفهارس، لذا قد تؤدي القيم المتساوية إلى ظهور صفوف مكررة في النتيجة. وإذا كانت مصفوفة المصدر فارغة، تُعيد `[[]]`. يخضع الحجم الإجمالي للنتيجة في كل كتلة للحد الذي يفرضه `function_range_max_elements_in_block`، إذ تُحتسب كل مصفوفة مُولَّدة بحجمها مضافًا إليه واحد.
+
+**الصيغة**
+
+```sql
+arrayPermutations(arr)
+```
+
+**الوسيطات**
+
+* `arr` — مصفوفة المصدر. [`Array(T)`](/ar/reference/data-types/array)
+
+**القيمة المعادة**
+
+جميع التباديل الممكنة لمصفوفة المصدر. [`Array(Array(T))`](/ar/reference/data-types/array)
+
+**أمثلة**
+
+**مثال على الاستخدام**
+
+```sql title=Query
+SELECT arrayPermutations([1, 2, 3]);
+```
+
+```response title=Response
+[[1,2,3],[1,3,2],[2,1,3],[2,3,1],[3,1,2],[3,2,1]]
 ```
 
 ## arrayPopBack {#arrayPopBack}

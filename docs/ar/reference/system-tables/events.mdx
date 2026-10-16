@@ -349,11 +349,71 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 
 ### AutomaticParallelReplicasDecidedWithoutBuildingPlan {#automaticparallelreplicasdecidedwithoutbuildingplan}
 
-عدد المرات التي قررت فيها آلية النسخ المتماثلة المتوازية التلقائية عدم استخدام النسخ المتماثلة المتوازية عند حدٍّ محفوظ من تنفيذ سابق، دون بناء خطة مرشّحة لتقدير تكلفتها
+عدد المرات التي قررت فيها آلية النسخ المتماثلة المتوازية التلقائية عدم استخدام النسخ المتماثلة المتوازية عند حدٍّ محفوظ من تنفيذ سابق، دون بناء خطة مرشّحة لتقدير تكلفتها. ويُحتسب إلى جانبه الحدث الذي يبيّن السبب، مثل `AutoParallelReplicasRejectedByCostModel`
 
 ### AutomaticParallelReplicasProbePlansBuilt {#automaticparallelreplicasprobeplansbuilt}
 
-عدد المرات التي أنشأت فيها ميزة النسخ المتماثلة المتوازية التلقائية خطة مرشّحة تستخدم النسخ المتماثلة المتوازية لمقارنتها بخطة العقدة الواحدة. ولا تُستخدم بالضرورة كل خطة من هذا النوع، إذ تُنشأ بغرض تقدير تكلفتها، ثم تُستبعد إذا تفوقت عليها خطة العقدة الواحدة
+عدد المرات التي أنشأت فيها ميزة النسخ المتماثلة المتوازية التلقائية خطة تستخدم النسخ المتماثلة المتوازية لتحديد ما إذا كان استخدامها مجديًا
+
+### AutoParallelReplicasApplied {#autoparallelreplicasapplied}
+
+عدد المرات التي استبدلت فيها ميزة النسخ المتماثلة المتوازية التلقائية خطة تنفيذ الاستعلام بخطة تستخدم النسخ المتماثلة المتوازية
+
+### AutoParallelReplicasBytesPerReplica {#autoparallelreplicasbytesperreplica}
+
+عدد البايتات التي تقرؤها كل نسخة متماثلة في هذا الاستعلام، وفقًا للحجم الذي قدّرته ميزة النسخ المتماثلة المتوازية التلقائية. يُسجَّل هذا المقياس أيًّا كان القرار المتخذ، ولذلك يشمل التوزيع الاستعلامات التي يرفضها `automatic_parallel_replicas_min_bytes_per_replica` والاستعلامات التي يسمح بتمريرها على حدٍّ سواء
+
+### AutoParallelReplicasCostModelEvaluated {#autoparallelreplicascostmodelevaluated}
+
+عدد المرات التي بلغت فيها آلية النسخ المتماثلة المتوازية التلقائية مرحلة نموذج التكلفة، وقارنت خطة التنفيذ المحلية بخطة النسخ المتماثلة المتوازية
+
+### AutoParallelReplicasNoStatistics {#autoparallelreplicasnostatistics}
+
+عدد المرات التي لم تتوفر فيها بعدُ إحصاءات لدى آلية النسخ المتماثلة المتوازية التلقائية، فجمعتها بدلاً من اتخاذ القرار
+
+### AutoParallelReplicasOptimizationMicroseconds {#autoparallelreplicasoptimizationmicroseconds}
+
+الوقت المستغرق في تحسين النسخ المتماثلة المتوازية التلقائية، باستثناء بناء الخطة باستخدام النسخ المتماثلة المتوازية
+
+### AutoParallelReplicasPlanBuildMicroseconds {#autoparallelreplicasplanbuildmicroseconds}
+
+الوقت المستغرق في إنشاء الخطة باستخدام النسخ المتماثلة المتوازية، وهي الخطة التي تقارنها ميزة النسخ المتماثلة المتوازية التلقائية بخطة التنفيذ المحلية
+
+### AutoParallelReplicasPlansNotComparable {#autoparallelreplicasplansnotcomparable}
+
+عدد المرات التي تجاوزت فيها ميزة النسخ المتماثلة المتوازية التلقائية استعلامًا بعد إنشاء الخطة باستخدام النسخ المتماثلة المتوازية، أو عند حدٍّ محفوظ من إنشائها سابقًا، لتعذّر مطابقة تلك الخطة مع الخطة المحلية بدرجة تكفي لمقارنتهما أو لاستخدامها؛ كأن يتعذّر إقران عمليات القراءة في الخطتين، أو تحديد عملية القراءة التي ستقسّمها النسخ المتماثلة. ويوضّح مسجّل السجلات `AutoParallelReplicas` السبب الفعلي في كل حالة
+
+### AutoParallelReplicasPlanWithoutParallelReplicas {#autoparallelreplicasplanwithoutparallelreplicas}
+
+عدد المرات التي تخطّت فيها ميزة النسخ المتماثلة المتوازية التلقائية استعلامًا بعد بناء الخطة باستخدام النسخ المتماثلة المتوازية، نظرًا لأن مخطط الاستعلامات لم يستخدم النسخ المتماثلة المتوازية فيها، كأن يكون عدد الصفوف لكل نسخة متماثلة قليلًا جدًا أو أن يتضمن الاستعلام استعلامًا فرعيًا مترابطًا. ويوضّح مسجّل السجلات `Planner` السبب
+
+### AutoParallelReplicasRejectedByCostModel {#autoparallelreplicasrejectedbycostmodel}
+
+عدد المرات التي أحجمت فيها آلية النسخ المتماثلة المتوازية التلقائية عن استخدام النسخ المتماثلة المتوازية لأن نموذج التكلفة قدّر أن خطة التنفيذ المحلية لا تقل سرعةً عن خطة النسخ المتماثلة المتوازية
+
+### AutoParallelReplicasRejectedByDuplicatedReads {#autoparallelreplicasrejectedbyduplicatedreads}
+
+عدد المرات التي أحجمت فيها ميزة النسخ المتماثلة المتوازية التلقائية عن التنفيذ رغم أن نموذج التكلفة كان يرجّح استخدام النسخ المتماثلة المتوازية، وذلك لأن نسبة كبيرة جدًا من البايتات المقروءة كانت ستقرؤها كل نسخة متماثلة بالكامل بدلًا من تقسيمها فيما بينها، بما يتجاوز `automatic_parallel_replicas_max_duplicated_read_ratio`
+
+### AutoParallelReplicasRejectedByThreshold {#autoparallelreplicasrejectedbythreshold}
+
+عدد المرات التي أحجمت فيها ميزة النسخ المتماثلة المتوازية التلقائية عن التفعيل رغم أن نموذج التكلفة كان يرجّح استخدام النسخ المتماثلة المتوازية، وذلك لأن حجم القراءة كان أقل من `automatic_parallel_replicas_min_bytes_per_replica`
+
+### AutoParallelReplicasSkippedDueToQuery {#autoparallelreplicasskippedduetoquery}
+
+عدد المرات التي تخطّت فيها النسخ المتماثلة المتوازية التلقائية استعلامًا قبل بناء خطة التنفيذ باستخدام النسخ المتماثلة المتوازية، لأن الاستعلام يتضمن ميزة لا يمكنها التعامل معها، مثل عملية ربط لا يمكن قراءتها باستخدام النسخ المتماثلة المتوازية، أو خطوة لا يمكنها جمع الإحصاءات. ويُبيّن مسجّل السجلات `AutoParallelReplicas` السبب في كل حالة
+
+### AutoParallelReplicasSkippedDueToSettings {#autoparallelreplicasskippedduetosettings}
+
+عدد المرات التي تخطّت فيها ميزة النسخ المتماثلة المتوازية التلقائية استعلامًا قبل إنشاء الخطة باستخدام النسخ المتماثلة المتوازية، بسبب الإعدادات المُمرَّرة إليها. ويُبيّن مسجّل السجلات `AutoParallelReplicas` الحالة المعنية. ولا تُحتسب الإعدادات التي توقف النسخ المتماثلة المتوازية التلقائية كليًا: فعندما يكون `enable_parallel_replicas` معطّلًا أو مفروضًا، أو تكون قيمة `parallel_replicas_mode` غير `read_tasks`، لا يُنفَّذ التحسين إطلاقًا، كما هو الحال مع `automatic_parallel_replicas_mode = 0`
+
+### AutoParallelReplicasSkippedEarly {#autoparallelreplicasskippedearly}
+
+عدد المرات التي لم تُنشئ فيها ميزة النسخ المتماثلة المتوازية التلقائية خطةً بالنسخ المتماثلة المتوازية أصلًا، لأن تحليل الفهرس أظهر مسبقًا أن أكبر عملية قراءة في الخطة تقرأ أقل من `automatic_parallel_replicas_min_bytes_per_replica` لكل نسخة متماثلة
+
+### AutoParallelReplicasStatisticsDrifted {#autoparallelreplicasstatisticsdrifted}
+
+عدد المرات التي تجاوز فيها الفرق بين عدد الصفوف المقروءة من التخزين والإحصاءات المخزّنة مؤقتًا الضعفَ، مما دفع آلية النسخ المتماثلة المتوازية التلقائية إلى إعادة جمع هذه الإحصاءات بدلًا من اتخاذ القرار
 
 ### AzureClients {#azureclients}
 
@@ -767,6 +827,10 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 
 إجمالي عدد مرات خفض موارد CPU
 
+### ConcurrencyControlParks {#concurrencycontrolparks}
+
+إجمالي عدد المرات التي حرّر فيها خيط تنفيذ وحدة CPU المخصصة له (أي ركنها) بسبب انتظار لا يستهلك المعالج، مثل عمليات الإدخال/الإخراج الحاجبة أو عدم وجود مهمة لتنفيذها.
+
 ### ConcurrencyControlPreemptedMicroseconds {#concurrencycontrolpreemptedmicroseconds}
 
 إجمالي الوقت الذي قضاه الاستعلام في الانتظار بسبب استباق فتحات CPU.
@@ -794,6 +858,10 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 ### ConcurrencyControlSlotsGranted {#concurrencycontrolslotsgranted}
 
 عدد فتحات CPU الممنوحة استنادًا إلى ضمان خيط تنفيذ واحد لكل استعلام، وللاستعلامات التي يكون فيها الإعداد &#39;use&#95;concurrency&#95;control&#39; = 0
+
+### ConcurrencyControlUnparks {#concurrencycontrolunparks}
+
+إجمالي عدد المرات التي استعاد فيها خيط التنفيذ وحدة CPU الخاصة به بعد انتظار لا يتعلق بـ CPU.
 
 ### ConcurrencyControlUpscales {#concurrencycontrolupscales}
 
@@ -1502,6 +1570,10 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 
 حدث سجل Distributed Cache. عدد تحديثات سجل Distributed Cache
 
+### DistrCacheRejectedRegistryRecords {#distrcacherejectedregistryrecords}
+
+حدث سجل ذاكرة التخزين المؤقت الموزعة. عدد عناصر السجل التي جرى تجاهلها لأن شهادتها غير موثوقة، أو لأن توقيعها غير مطابق، أو لأن أيًّا منهما مفقود.
+
 ### DistrCacheRemoveOutdatedMicroseconds {#distrcacheremoveoutdatedmicroseconds}
 
 حدث اتصال في Distributed Cache. الوقت المستغرَق في إزالة الاتصالات القديمة من مجمّع الاتصالات
@@ -1666,6 +1738,10 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 
 حدث اتصال لـ Distributed Cache. عدد الملفات المؤقتة المُنشأة في Distributed Cache
 
+### DistrCacheUnexpectedServerCertificate {#distrcacheunexpectedservercertificate}
+
+حدث اتصال Distributed Cache. عدد المرات التي قدّم فيها خادم distributed cache شهادةً لا يطابق مفتاحُها المفتاحَ المُدرَج في إدخاله ضمن السجل، فأغلق العميل الاتصال واستبعد الخادم
+
 ### DistrCacheUnsuccessfulConnectAttempts {#distrcacheunsuccessfulconnectattempts}
 
 حدث اتصال لـ Distributed Cache. عدد محاولات الاتصال غير الناجحة بـ Distributed Cache
@@ -1693,6 +1769,10 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 ### DistrCacheUnusedPacketsBufferAllocations {#distrcacheunusedpacketsbufferallocations}
 
 حدث صادر عن عميل Distributed Cache. عدد تخصيصات buffer الإضافية عند تعذّر إعادة استخدام buffer موجود
+
+### DistrCacheVerifiedServerCertificate {#distrcacheverifiedservercertificate}
+
+حدث اتصال Distributed Cache. عدد المرات التي قدّم فيها خادم distributed cache شهادةً تحمل المفتاح الوارد في إدخاله ضمن السجل
 
 ### DistrCacheWriteBytes {#distrcachewritebytes}
 
@@ -2134,6 +2214,14 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 
 عدد المرات التي انتهت فيها مهلة انتظار مقطع الملف في حالة DOWNLOADING (راجع `filesystem_cache_wait_for_concurrent_download_timeout_milliseconds`)
 
+### FileSegmentWaitWithoutData {#filesegmentwaitwithoutdata}
+
+عدد المرات التي انتهى فيها انتظار file segment في الحالة DOWNLOADING بسبب تحرير أداة التنزيل للمقطع قبل أن تنزّل الإزاحة المنتظَرة
+
+### FileSegmentWaitWithoutDataMicroseconds {#filesegmentwaitwithoutdatamicroseconds}
+
+الوقت المستغرق في حالات الانتظار التي يحصيها العدّاد `FileSegmentWaitWithoutData`
+
 ### FileSegmentWriteMicroseconds {#filesegmentwritemicroseconds}
 
 مدة write() لمقطع الملف
@@ -2290,6 +2378,10 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 
 مدة قفل ذاكرة التخزين المؤقت لنظام الملفات عند الكتابة إلى قائمة انتظار الأولوية
 
+### FilesystemCachePromotedFileSegments {#filesystemcachepromotedfilesegments}
+
+عدد مقاطع الملفات التي تمت ترقيتها (نقلها) من قائمة الانتظار التجريبية إلى قائمة الانتظار المحمية ضمن سياسة التخزين المؤقت SLRU.
+
 ### FilesystemCacheReserveAheadRetries {#filesystemcachereserveaheadretries}
 
 عدد المرات التي تعذّر فيها استيعاب حجز في ذاكرة التخزين المؤقت لنظام الملفات باستخدام الحجز المسبق (reserve-ahead)، فأُعيدت محاولة الحجز بالحجم المطلوب بالضبط
@@ -2441,6 +2533,14 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 ### HTTPServerConnectionsReused {#httpserverconnectionsreused}
 
 عدد اتصالات HTTP المُعاد استخدامها على الخادم
+
+### IcebergCompactionCleanupDeferredByReaders {#icebergcompactioncleanupdeferredbyreaders}
+
+عدد المرات التي أُجّلت فيها إزالة ملفات البيانات التي استُبدلت نتيجة دمج ملفات Iceberg، لأن استعلامًا على هذه النسخة المتماثلة أو على نسخة متماثلة أخرى كان لا يزال يقرأ لقطة تشير إلى تلك الملفات.
+
+### IcebergCompactionCleanupDeferredBySnapshotLifetime {#icebergcompactioncleanupdeferredbysnapshotlifetime}
+
+عدد المرات التي أُجِّلت فيها إزالة ملفات البيانات التي استُبدلت نتيجة دمج ملفات Iceberg، لأن عملية الدمج أو اللقطة التي استبدلتها كانت أحدث من `iceberg_outdated_snapshot_lifetime_seconds`.
 
 ### IcebergIteratorInitializationMicroseconds {#icebergiteratorinitializationmicroseconds}
 
@@ -3902,6 +4002,18 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 
 لم يتم إنشاء إدخال السجل الخاص بتنفيذ mutation على الأجزاء في ReplicatedMergeTree بسبب تحديث متزامن للسجل من نسخة متماثلة أخرى.
 
+### ObjectStorageExclusiveLeasesAcquired {#objectstorageexclusiveleasesacquired}
+
+عدد عقود الاستئجار الحصرية للمفاتيح، مثل عملية دمج جدول Iceberg، التي استحوذ عليها هذا الخادم في التخزين الكائني.
+
+### ObjectStorageExclusiveLeasesRefused {#objectstorageexclusiveleasesrefused}
+
+عدد محاولات الحصول على استئجار حصري (exclusive lease) في التخزين الكائني التي جرى التخلي عنها لأن نسخة متماثلة أخرى كانت تحتفظ باستئجار قائم على المفتاح.
+
+### ObjectStorageExpiredLeasesRemoved {#objectstorageexpiredleasesremoved}
+
+عدد كائنات الاستئجار منتهية الصلاحية والوسوم المحددة للإزالة التي أُزيلت من التخزين الكائني.
+
 ### ObjectStorageGlobFilteredObjects {#objectstorageglobfilteredobjects}
 
 الكائنات التي لم تطابق نمط glob أو Regex وتم تجاهلها أثناء السرد.
@@ -4029,6 +4141,26 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 ### ObjectStorageReadObjects {#objectstoragereadobjects}
 
 الكائنات التي جرى فتحها فعليًا للقراءة بواسطة مصدر تخزين الكائنات.
+
+### ObjectStorageSharedLeasesAcquired {#objectstoragesharedleasesacquired}
+
+عدد عقود الاستئجار المشتركة للمفاتيح (مثل لقطات Iceberg قيد القراءة) التي تُكتب إلى التخزين الكائني عندما يستحوذ استعلام على هذا الخادم على مفتاح لم يستأجره الخادم بعد.
+
+### ObjectStorageSharedLeasesCondemned {#objectstoragesharedleasescondemned}
+
+عدد المفاتيح التي حدّدتها أداة تنظيف تابعة لهذا الخادم للإزالة في التخزين الكائني، كي لا تستأجرها أي نسخة متماثلة أثناء قيام الأداة بإزالة ما تحميه هذه المفاتيح.
+
+### ObjectStorageSharedLeasesRefused {#objectstoragesharedleasesrefused}
+
+عدد محاولات استئجار مفتاح في التخزين الكائني التي رُفضت لأن أداة التنظيف حدّدت المفتاح للإزالة، كلقطة Iceberg توشك عملية التنظيف التي تلي الدمج على إزالتها.
+
+### ObjectStorageSharedLeasesRenewed {#objectstoragesharedleasesrenewed}
+
+عدد عقود الاستئجار المشتركة التي أعادت مهمة التجديد كتابتها في التخزين الكائني أثناء احتفاظ استعلامات هذا الخادم بالمفتاح.
+
+### ObjectStorageSharedLeaseWriteFailures {#objectstoragesharedleasewritefailures}
+
+عدد عمليات الكتابة الفاشلة لعقود الاستئجار المشتركة في التخزين الكائني، سواء عند الحصول عليها أو عند تجديدها.
 
 ### ObsoleteReplicatedParts {#obsoletereplicatedparts}
 
@@ -4172,7 +4304,7 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 
 ### ParallelReplicasQueryCount {#parallelreplicasquerycount}
 
-عدد الاستعلامات (الفرعية) المُنفَّذة باستخدام النسخ المتماثلة المتوازية أثناء تنفيذ الاستعلام
+عدد الاستعلامات (الفرعية) المُخطَّط تنفيذها باستخدام النسخ المتماثلة المتوازية أثناء تنفيذ الاستعلام. تزيد ميزة النسخ المتماثلة المتوازية التلقائية هذه القيمة أيضًا عند بناء الخطة التي تستند إليها في اتخاذ قرارها، لذا قد لا يكون الاستعلام المحسوب قد نُفِّذ فعليًا باستخدام النسخ المتماثلة المتوازية - راجع `AutoParallelReplicasApplied` و`ParallelReplicasUsedCount` لمعرفة ما نُفِّذ فعليًا
 
 ### ParallelReplicasReadAssignedForStealingMarks {#parallelreplicasreadassignedforstealingmarks}
 
@@ -4986,9 +5118,17 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 
 إحصاءات مُجمَّعة عن عدد البايتات التي ستقرؤها النسخ المتماثلة إذا نُفِّذ الاستعلام باستخدام النسخ المتماثلة المتوازية
 
+### RuntimeDataflowStatisticsInputNanoseconds {#runtimedataflowstatisticsinputnanoseconds}
+
+الوقت المستغرق أثناء تنفيذ الاستعلام في جمع إحصاءات عن عدد البايتات التي ستقرؤها النسخ المتماثلة، وذلك لصالح ميزة النسخ المتماثلة المتوازية التلقائية
+
 ### RuntimeDataflowStatisticsOutputBytes {#runtimedataflowstatisticsoutputbytes}
 
 إحصاءات مُجمَّعة عن عدد البايتات التي سترسلها النسخ المتماثلة إلى المُبادِر إذا نُفِّذ الاستعلام باستخدام النسخ المتماثلة المتوازية
+
+### RuntimeDataflowStatisticsOutputNanoseconds {#runtimedataflowstatisticsoutputnanoseconds}
+
+الوقت المستغرق أثناء تنفيذ الاستعلام في جمع إحصاءات عن عدد البايتات التي سترسلها النسخ المتماثلة إلى المُبادِر، وذلك لأغراض ميزة النسخ المتماثلة المتوازية التلقائية
 
 ### RuntimeFilterBlocksProcessed {#runtimefilterblocksprocessed}
 
@@ -5001,6 +5141,10 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 ### RuntimeFilterBloomFilterBuildsSkipped {#runtimefilterbloomfilterbuildsskipped}
 
 عدد عمليات بناء bloom filter الخاصة بـ JOIN Runtime Filter التي تم تخطيها لأن عدد المفاتيح في جانب البناء، المأخوذ من إحصاءات جدول تجزئة، رجّح أن يتجاوز عامل التصفية الحد الأقصى لنسبة set bits
+
+### RuntimeFilterDeliveriesAbandoned {#runtimefilterdeliveriesabandoned}
+
+عدد عمليات تسليم مرشح JOIN وقت التنفيذ التي أُلغيت بسبب انقطاع اتصال المستقبِل أو توقفه عن القراءة؛ وفي هذه الحالة لا تتلقى الوجهة المتأثرة أي عامل تصفية، فتمر صفوفها دون تصفية
 
 ### RuntimeFilterGranulesConsidered {#runtimefiltergranulesconsidered}
 
@@ -5018,6 +5162,18 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 
 عدد الكتل التي جرى البحث عنها في مرشح وقت التشغيل الخاص بـ JOIN لم يكتمل جانب البناء الخاص به بعد، فتمرّ دون تصفية
 
+### RuntimeFilterOversizedStatesRejected {#runtimefilteroversizedstatesrejected}
+
+عدد حالات مرشح JOIN وقت التنفيذ التي لم تُستخدم أو لم تُرسَل لتجاوزها الحد الأقصى المسموح به للحجم؛ إذ تمرّ الصفوف حينها دون تصفية
+
+### RuntimeFilterReceiveBranchFailures {#runtimefilterreceivebranchfailures}
+
+عدد المهام التي فشلت في استلام مرشح JOIN وقت التنفيذ من مهمة أخرى؛ وفي هذه الحالة لا تستخدم المهمة عامل التصفية، وتمر الصفوف دون تصفية
+
+### RuntimeFilterReceivesAbandoned {#runtimefilterreceivesabandoned}
+
+عدد تدفقات مرشح JOIN وقت التنفيذ التي انقطع اتصال مُرسِلها بعد إنشاء الاتصال وقبل بلوغ نهاية التدفق؛ وإذا لم تكن حالة المُرسِل قد وصلت، فلا يُستخدَم عامل التصفية المتأثر وتمرّ الصفوف دون تصفية
+
 ### RuntimeFilterRowsChecked {#runtimefilterrowschecked}
 
 عدد الصفوف التي تم فحصها بواسطة عوامل تصفية JOIN أثناء التشغيل
@@ -5033,6 +5189,22 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 ### RuntimeFiltersCreated {#runtimefilterscreated}
 
 عدد مرشحات JOIN Runtime Filters الفريدة التي أُنشئت داخل الاستعلام
+
+### RuntimeFilterStateBytesReceived {#runtimefilterstatebytesreceived}
+
+عدد بايتات حالات مرشح JOIN وقت التنفيذ المُسلسَلة التي استُلمت من المهام الأخرى ضمن خطة الاستعلام الموزّع
+
+### RuntimeFilterStateBytesSent {#runtimefilterstatebytessent}
+
+عدد بايتات حالات مرشح JOIN وقت التنفيذ المُسلسَلة المُرسَلة إلى المهام الأخرى في خطة الاستعلام الموزّع، ويُحتسب مرة واحدة لكل دفق في الوجهة
+
+### RuntimeFilterStatesReceived {#runtimefilterstatesreceived}
+
+عدد حالات مرشح JOIN وقت التنفيذ المُسلسَلة التي جرى استلامها من المهام الأخرى في خطة الاستعلام الموزّع
+
+### RuntimeFilterStatesSent {#runtimefilterstatessent}
+
+عدد حالات مرشح JOIN وقت التنفيذ المُدرجة في قائمة الانتظار لإرسالها إلى المهام الأخرى ضمن خطة الاستعلام الموزّع، بواقع حالة واحدة لكل دفق وجهة، بما في ذلك عمليات التسليم التي يُتخلّى عنها لاحقًا
 
 ### RWLockAcquiredReadLocks {#rwlockacquiredreadlocks}
 

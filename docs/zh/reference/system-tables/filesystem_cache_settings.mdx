@@ -52,6 +52,7 @@ doc_type: 'reference'
 * `check_cache_probability` ([Float64](/zh/reference/data-types/float)) — 仅适用于 Debug 或 sanitizer 构建。通过遍历整个缓存并检查每个缓存元素的状态来验证缓存的正确性
 * `idle_client_ttl_sec` ([UInt64](/zh/reference/data-types/int-uint)) — 如果非零且缓存策略会跟踪各客户端的使用情况，则会从缓存中完全移除属于在这么多秒内未被访问的客户端 (user&#95;id) 的所有缓存条目。客户端每次访问都会刷新计时器。默认值为 1 周。由分布式缓存服务器使用。
 * `idle_client_check_interval_sec` ([UInt64](/zh/reference/data-types/int-uint)) — 空闲客户端驱逐任务的运行频率，单位为秒。仅当 `idle_client_ttl_sec` 非零时才有意义。0 表示自动值 (`max(1, idle_client_ttl_sec / 10)`)。
+* `client_weight_persist_interval_sec` ([UInt64](/zh/reference/data-types/int-uint)) — 将各客户端权重写入磁盘的频率，单位为秒，以便尚未重新连接的客户端在重启后仍能保留其权重。首次写入在启动后经过一个间隔时进行，正常关闭时也会写出权重。仅当缓存策略会跟踪各客户端的使用情况时才有意义。
 * `idle_client_eviction_threads` ([UInt64](/zh/reference/data-types/int-uint)) — 用于清理空闲客户端缓存的最大线程数。仅当 `idle_client_ttl_sec` 非零时才有意义。
 * `expose_prometheus_eviction_metrics` ([UInt8](/zh/reference/data-types/int-uint)) — 公开文件系统缓存驱逐活动的 Prometheus 指标 (如 `filesystem_cache_evictions_total`) 。默认关闭。可在运行时通过 `SYSTEM RELOAD CONFIG` 切换。
 * `expose_prometheus_eviction_metrics_per_user` ([UInt8](/zh/reference/data-types/int-uint)) — 额外公开按 user-id 统计的驱逐指标。需要 `expose_prometheus_eviction_metrics`。其基数会随发生驱逐的不同用户数量增加而增长。

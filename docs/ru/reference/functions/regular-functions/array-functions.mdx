@@ -367,6 +367,49 @@ SELECT arrayBottomK((x, y) -> y, 2, ['a', 'b', 'c'], [3, 1, 2])
 ['b','c']
 ```
 
+## arrayCombinations {#arrayCombinations}
+
+Добавлено в: v26.10.0
+
+Возвращает все комбинации (неупорядоченные выборки без повторяющихся индексов) длины `k` из исходного массива. Перебор выполняется по индексам, поэтому одинаковые значения могут приводить к появлению дублирующихся строк в результате. При `k = 0` возвращает `[[]]`. Общий размер результата в пределах одного блока ограничен параметром `function_range_max_elements_in_block`; каждый сгенерированный массив учитывается как его размер плюс один.
+
+**Синтаксис**
+
+```sql
+arrayCombinations(arr, k)
+```
+
+**Аргументы**
+
+* `arr` — исходный массив. [`Array(T)`](/ru/reference/data-types/array)
+* `k` — длина каждой генерируемой комбинации. Не должна превышать размер исходного массива. Поддерживаются типы `Int8`, `Int16`, `Int32`, `Int64`, `UInt8`, `UInt16`, `UInt32` и `UInt64`. [`(U)Int*`](/ru/reference/data-types/int-uint)
+
+**Возвращаемое значение**
+
+Все комбинации длины `k`. [`Array(Array(T))`](/ru/reference/data-types/array)
+
+**Примеры**
+
+**Пример использования**
+
+```sql title=Query
+SELECT arrayCombinations([1, 2, 3], 2);
+```
+
+```response title=Response
+[[1,2],[1,3],[2,3]]
+```
+
+**Пример с `k = 0`**
+
+```sql title=Query
+SELECT arrayCombinations([1, 2, 3], 0);
+```
+
+```response title=Response
+[[]]
+```
+
 ## arrayCompact {#arrayCompact}
 
 Добавленный в: v20.1.0
@@ -2736,6 +2779,49 @@ SELECT arrayPackBitsToUInt64(x -> x, [1, 0, 0, 0, 0, 0])
 128
 ```
 
+## arrayPartialPermutations {#arrayPartialPermutations}
+
+Добавлено в: v26.10.0
+
+Возвращает все частичные перестановки (упорядоченные выборки без повторяющихся индексов) длины `k` из исходного массива. Перебор выполняется по индексам, поэтому одинаковые значения могут давать в результате дублирующиеся строки. При `k = 0` возвращает `[[]]`. Общий размер результата в пределах одного блока ограничен параметром `function_range_max_elements_in_block`; каждый сгенерированный массив учитывается как его размер плюс один.
+
+**Синтаксис**
+
+```sql
+arrayPartialPermutations(arr, k)
+```
+
+**Аргументы**
+
+* `arr` — исходный массив. [`Array(T)`](/ru/reference/data-types/array)
+* `k` — длина каждой генерируемой частичной перестановки. Не должна превышать размер исходного массива. Поддерживаются типы `Int8`, `Int16`, `Int32`, `Int64`, `UInt8`, `UInt16`, `UInt32` и `UInt64`. [`(U)Int*`](/ru/reference/data-types/int-uint)
+
+**Возвращаемое значение**
+
+Все частичные перестановки длины `k`. [`Array(Array(T))`](/ru/reference/data-types/array)
+
+**Примеры**
+
+**Пример использования**
+
+```sql title=Query
+SELECT arrayPartialPermutations([1, 2, 3], 2);
+```
+
+```response title=Response
+[[1,2],[1,3],[2,1],[2,3],[3,1],[3,2]]
+```
+
+**Пример с `k = 0`**
+
+```sql title=Query
+SELECT arrayPartialPermutations([1, 2, 3], 0);
+```
+
+```response title=Response
+[[]]
+```
+
 ## arrayPartialReverseSort {#arrayPartialReverseSort}
 
 Добавленный в: v23.2.0
@@ -2999,6 +3085,38 @@ SELECT arrayPartialSort((x, y) -> -y, 1, [0, 1, 2], [1, 2, 3]) as res
 
 ```response title=Response
 [2,1,0]
+```
+
+## arrayPermutations {#arrayPermutations}
+
+Добавлено в: v26.10.0
+
+Возвращает все перестановки элементов исходного массива. Перебор выполняется по индексам, поэтому при наличии одинаковых значений в результате могут появиться дублирующиеся строки. Для пустого исходного массива возвращает `[[]]`. Общий размер результата в пределах одного блока ограничен параметром `function_range_max_elements_in_block`; каждый сгенерированный массив учитывается как его размер плюс один.
+
+**Синтаксис**
+
+```sql
+arrayPermutations(arr)
+```
+
+**Аргументы**
+
+* `arr` — Исходный массив. [`Array(T)`](/ru/reference/data-types/array)
+
+**Возвращаемое значение**
+
+Все перестановки исходного массива. [`Array(Array(T))`](/ru/reference/data-types/array)
+
+**Примеры**
+
+**Пример использования**
+
+```sql title=Query
+SELECT arrayPermutations([1, 2, 3]);
+```
+
+```response title=Response
+[[1,2,3],[1,3,2],[2,1,3],[2,3,1],[3,1,2],[3,2,1]]
 ```
 
 ## arrayPopBack {#arrayPopBack}

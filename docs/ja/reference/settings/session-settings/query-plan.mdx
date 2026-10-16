@@ -579,6 +579,14 @@ JOIN演算において左テーブルから順序どおりに読み取りを継�
 * 0 - 無効
 * 1 - 有効
 
+## query_plan_replace_always_true_filter {#query_plan_replace_always_true_filter}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "新しい設定"}]}]} />
+
+フィルタ条件が常に true であり、かつクエリでフィルタカラムが使用されていない場合に、フィルタステップを 式 ステップに置換します。このようなフィルタステップは行を除外しませんが、結合順序の変更を妨げてしまいます。
+
 ## query_plan_reuse_storage_ordering_for_window_functions {#query_plan_reuse_storage_ordering_for_window_functions}
 
 **別名**: `optimize_read_in_window_order`

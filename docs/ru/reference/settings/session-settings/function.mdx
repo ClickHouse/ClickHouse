@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически сгенерированы на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## function_base58_max_input_size
+## function_base58_max_input_size {#function_base58_max_input_size}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
@@ -21,7 +21,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Максимальный размер в байтах одного входного значения для функций `base58Encode`, `base58Decode` и `tryBase58Decode`. Преобразование `base58` в общем случае имеет квадратичную сложность по длине входных данных, поэтому обработка одного большого значения может занимать очень много времени. `base58` предназначен для коротких данных (ключей, хешей, адресов), поэтому значение по умолчанию 10 КБ — это достаточно щедрый порог безопасности. `base58Encode` и `base58Decode` выдают ошибку `TOO_LARGE_STRING_SIZE` для более крупных входных данных, а `tryBase58Decode` возвращает пустую строку. Значение `0` отключает ограничение (так система вела себя до появления этой настройки). Линейные функции `base32` и `base64` это не затрагивает.
 
-## function_date_trunc_return_type_behavior
+## function_date_trunc_return_type_behavior {#function_date_trunc_return_type_behavior}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -34,7 +34,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * 0 - Если второй аргумент — `DateTime64/Date32`, возвращаемый тип будет `DateTime64/Date32` независимо от единицы времени в первом аргументе.
 * 1 - Для `Date32` результатом всегда будет `Date`. Для `DateTime64` результатом будет `DateTime` для единиц времени `second` и более крупных.
 
-## function_locate_has_mysql_compatible_argument_order
+## function_locate_has_mysql_compatible_argument_order {#function_locate_has_mysql_compatible_argument_order}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -47,11 +47,18 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * 0 — Функция `locate` принимает аргументы `(haystack, needle[, start_pos])`.
 * 1 — Функция `locate` принимает аргументы `(needle, haystack, [, start_pos])` (поведение, совместимое с MySQL)
 
-## function_range_max_elements_in_block
+## function_range_max_elements_in_block {#function_range_max_elements_in_block}
 
 <SettingsInfoBlock type="UInt64" default_value="500000000" />
 
-Задаёт защитный порог для объёма данных, генерируемого функцией [range](/ru/reference/functions/regular-functions/array-functions#range). Определяет максимальное количество значений, генерируемых функцией на блок данных (сумма размеров массивов для каждой строки в блоке).
+Задаёт порог безопасности для объёма данных, генерируемых функциями [range](/ru/reference/functions/regular-functions/array-functions#range),
+[arrayPermutations](/ru/reference/functions/regular-functions/array-functions#arrayPermutations),
+[arrayPartialPermutations](/ru/reference/functions/regular-functions/array-functions#arrayPartialPermutations),
+[arrayCombinations](/ru/reference/functions/regular-functions/array-functions#arrayCombinations),
+[timeSeriesRange](/ru/reference/functions/regular-functions/time-series-functions#timeSeriesRange)
+и [timeSeriesFromGrid](/ru/reference/functions/regular-functions/time-series-functions#timeSeriesFromGrid).
+Определяет максимальное количество значений, которое функции могут сгенерировать на один блок данных (сумма размеров массивов по всем строкам блока).
+Для комбинаторных функций, возвращающих `Array(Array(T))`, каждый сгенерированный вложенный массив учитывается как его размер плюс один, поэтому даже результаты нулевой длины расходуют лимит.
 
 Возможные значения:
 
@@ -62,7 +69,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * [`max_block_size`](/ru/reference/settings/session-settings/max#max_block_size)
 * [`min_insert_block_size_rows`](/ru/reference/settings/session-settings/min-insert#min_insert_block_size_rows)
 
-## function_sleep_max_microseconds_per_block
+## function_sleep_max_microseconds_per_block {#function_sleep_max_microseconds_per_block}
 
 <SettingsInfoBlock type="UInt64" default_value="3000000" />
 
@@ -70,7 +77,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Максимальное число микросекунд, на которое функции `sleep` разрешено приостанавливать выполнение для каждого блока. Если пользователь вызовет её с большим значением, будет сгенерировано исключение. Это защитный порог.
 
-## function_visible_width_behavior
+## function_visible_width_behavior {#function_visible_width_behavior}
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
 

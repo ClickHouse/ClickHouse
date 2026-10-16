@@ -35,7 +35,11 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "Новая настройка"}]}]} />
 
-Разрешает удалять старые файлы данных во время compaction в Iceberg.
+Разрешает удалять старые файлы данных во время компакции в Iceberg.
+
+После компакции запускается очистка `iceberg_compaction_data_cleanup`. Она удаляет снимки, устаревшие в результате компакции, так же,
+как `expire_snapshots`: исключает их из метаданных таблицы и удаляет файлы, на которые не ссылается ни один другой снимок. Для таблиц
+с версией формата 1 или таблиц, работающих через транзакционный каталог, удаляются только файлы, а снимки остаются в метаданных.
 
 ## allow_experimental_database_hms_catalog {#allow_experimental_database_hms_catalog}
 

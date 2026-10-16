@@ -366,6 +366,10 @@ JIT 编译机器代码缓存中的总条目数。
 
 已获取且不被视为竞争性 CPU 插槽的总数 (如果使用 fair&#95;round&#95;robin 调度器，则指第一个线程)
 
+### ConcurrencyControlParked {#concurrencycontrolparked}
+
+当前因非 CPU 等待 (例如阻塞式 I/O 或没有可运行的任务) 而挂起 (释放) 其 CPU 插槽的线程数
+
 ### ConcurrencyControlPreempted {#concurrencycontrolpreempted}
 
 等待 CPU slot 的已被抢占线程总数
@@ -1374,6 +1378,10 @@ AzureObjectStorage 线程池中正在执行任务的线程数。
 
 AzureObjectStorage 线程池中处于排队或活动状态的作业数量。
 
+### ObjectStorageExclusiveLeases {#objectstorageexclusiveleases}
+
+该服务器当前在对象存储中持有的排他租约数量 (例如 Iceberg 表合并整理操作所持有的租约) 。
+
 ### ObjectStorageQueueMetadataCacheSizeBytes {#objectstoragequeuemetadatacachesizebytes}
 
 ObjectStorageQueue 元数据缓存大小 (以字节为单位) 。
@@ -1409,6 +1417,10 @@ S3ObjectStorage 线程池中正在执行任务的线程数。
 ### ObjectStorageS3ThreadsScheduled {#objectstorages3threadsscheduled}
 
 S3ObjectStorage 线程池中处于排队或运行中的作业数量。
+
+### ObjectStorageSharedLeases {#objectstoragesharedleases}
+
+此服务器上的查询当前在对象存储中租用的键数量，例如正在读取的 Iceberg 快照。
 
 ### OpenFileForRead {#openfileforread}
 

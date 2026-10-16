@@ -37,6 +37,10 @@ El analizador es la infraestructura de análisis y planificación de consultas q
 
 Permite eliminar archivos de datos antiguos durante la compactación de Iceberg.
 
+La limpieza ejecuta `iceberg_compaction_data_cleanup` después de una compactación. Hace expirar las instantáneas que la compactación dejó obsoletas, del mismo
+modo que `expire_snapshots`: las elimina de los metadata de la tabla y borra los archivos a los que no hace referencia ninguna otra instantánea. En una tabla
+con la versión del formato 1 o gestionada a través de un catálogo transaccional, solo elimina los archivos y las instantáneas permanecen en los metadata.
+
 ## allow_experimental_database_hms_catalog {#allow_experimental_database_hms_catalog}
 
 <ExperimentalBadge />

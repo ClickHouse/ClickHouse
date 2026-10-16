@@ -586,6 +586,14 @@ Valeurs possibles :
 * 0 - Désactiver
 * 1 - Activer
 
+## query_plan_replace_always_true_filter {#query_plan_replace_always_true_filter}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nouveau paramètre."}]}]} />
+
+Remplace une étape de filtre par une étape d&#39;expression lorsque la condition de filtrage est toujours vraie et que la requête n&#39;utilise pas la colonne de filtre. Une telle étape de filtre ne supprime aucune ligne, mais elle bloque le réordonnancement des JOIN.
+
 ## query_plan_reuse_storage_ordering_for_window_functions {#query_plan_reuse_storage_ordering_for_window_functions}
 
 **Aliases** : `optimize_read_in_window_order`

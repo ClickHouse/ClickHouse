@@ -938,9 +938,9 @@ SELECT mapPartialSort((k, v) -> v, 2, map('k1', 3, 'k2', 1, 'k3', 2))
 
 導入バージョン: v20.10.0
 
-整数のキーを持つマップで、欠落しているキー・バリューのペアを補完します。
+整数のキーを持つMapで、欠落しているキー・バリューのペアを補完します。
 最大値を超えてキーを拡張できるように、最大キーを指定できます。
-具体的には、この関数は、キーが最小キーから最大キー (または指定されている場合は `max` 引数) まで 1 刻みで連続する系列を成し、それに対応する値を持つマップを返します。
+具体的には、この関数は、キーが最小キーから最大キー (または指定されている場合は `max` 引数) まで 1 刻みで連続する系列を成し、それに対応する値を持つMapを返します。
 キーに対応する値が指定されていない場合は、デフォルト値が使用されます。
 キーが重複している場合は、最初の値のみ (出現順) がそのキーに関連付けられます。
 
@@ -955,11 +955,11 @@ mapPopulateSeries(map[, max]) | mapPopulateSeries(keys, values[, max])
 * `map` — 整数キーを持つ Map。[`Map((U)Int*, V)`](/ja/reference/data-types/map)
 * `keys` — キーの Array。[`Array(T)`](/ja/reference/data-types/array)
 * `values` — 値の Array。[`Array(T)`](/ja/reference/data-types/array)
-* `max` — オプション。キーの最大値。[`Int8`](/ja/reference/data-types/int-uint) または [`Int16`](/ja/reference/data-types/int-uint) または [`Int32`](/ja/reference/data-types/int-uint) または [`Int64`](/ja/reference/data-types/int-uint) または [`Int128`](/ja/reference/data-types/int-uint) または [`Int256`](/ja/reference/data-types/int-uint)
+* `max` — 任意。キーの最大値。[`Int8`](/ja/reference/data-types/int-uint) または [`Int16`](/ja/reference/data-types/int-uint) または [`Int32`](/ja/reference/data-types/int-uint) または [`Int64`](/ja/reference/data-types/int-uint) または [`Int128`](/ja/reference/data-types/int-uint) または [`Int256`](/ja/reference/data-types/int-uint)
 
 **戻り値**
 
-キーがソート順に並んだ最初の配列と、対応するキーの値を格納した 2 番目の配列からなる Map または 2 つの配列の Tuple を返します。[`Map(K, V)`](/ja/reference/data-types/map) または [`Tuple(Array(UInt*), Array(Any))`](/ja/reference/data-types/tuple)
+キーがソート順に並んだ最初の配列と、対応するキーの値を格納した 2 番目の配列からなる Map または 2 つの配列の Tuple を返します。[`Map(K, V)`](/ja/reference/data-types/map) または [`Tuple(Array(UInt*), Array)`](/ja/reference/data-types/tuple)
 
 **例**
 

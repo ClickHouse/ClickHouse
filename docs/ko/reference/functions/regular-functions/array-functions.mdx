@@ -367,6 +367,49 @@ SELECT arrayBottomK((x, y) -> y, 2, ['a', 'b', 'c'], [3, 1, 2])
 ['b','c']
 ```
 
+## arrayCombinations {#arrayCombinations}
+
+도입 버전: v26.10.0
+
+소스 배열에서 길이가 `k`인 모든 조합(인덱스 중복 없이 순서와 무관하게 선택한 원소 집합)을 반환합니다. 조합은 인덱스를 기준으로 열거되므로, 값이 같은 원소가 있으면 결과에 중복 행(duplicate rows)이 생길 수 있습니다. `k = 0`이면 `[[]]`를 반환합니다. 블록당 전체 결과 크기는 `function_range_max_elements_in_block`으로 제한되며, 생성된 각 배열은 해당 배열의 크기에 1을 더한 값으로 계산됩니다.
+
+**구문**
+
+```sql
+arrayCombinations(arr, k)
+```
+
+**인수**
+
+* `arr` — 소스 배열입니다. [`Array(T)`](/ko/reference/data-types/array)
+* `k` — 생성할 각 조합의 길이입니다. 소스 배열의 크기를 초과할 수 없습니다. `Int8`, `Int16`, `Int32`, `Int64`, `UInt8`, `UInt16`, `UInt32`, `UInt64`를 지원합니다. [`(U)Int*`](/ko/reference/data-types/int-uint)
+
+**반환 값**
+
+길이가 `k`인 모든 조합을 반환합니다. [`Array(Array(T))`](/ko/reference/data-types/array)
+
+**예시**
+
+**사용 예시**
+
+```sql title=Query
+SELECT arrayCombinations([1, 2, 3], 2);
+```
+
+```response title=Response
+[[1,2],[1,3],[2,3]]
+```
+
+**`k = 0` 예시**
+
+```sql title=Query
+SELECT arrayCombinations([1, 2, 3], 0);
+```
+
+```response title=Response
+[[]]
+```
+
 ## arrayCompact {#arrayCompact}
 
 도입 버전: v20.1.0
@@ -2732,6 +2775,49 @@ SELECT arrayPackBitsToUInt64(x -> x, [1, 0, 0, 0, 0, 0])
 128
 ```
 
+## arrayPartialPermutations {#arrayPartialPermutations}
+
+도입 버전: v26.10.0
+
+소스 배열에서 길이가 `k`인 모든 부분 순열(인덱스가 중복되지 않는 순서 있는 선택)을 반환합니다. 열거는 인덱스를 기준으로 수행되므로, 값이 같은 원소가 있으면 결과에 중복 행(duplicate rows)이 생길 수 있습니다. `k = 0`이면 `[[]]`를 반환합니다. 블록당 전체 결과 크기는 `function_range_max_elements_in_block`으로 제한되며, 생성된 각 배열은 배열 크기에 1을 더한 값으로 계산됩니다.
+
+**구문**
+
+```sql
+arrayPartialPermutations(arr, k)
+```
+
+**인수**
+
+* `arr` — 소스 배열입니다. [`Array(T)`](/ko/reference/data-types/array)
+* `k` — 생성할 각 부분 순열의 길이입니다. 소스 배열의 크기를 초과할 수 없습니다. `Int8`, `Int16`, `Int32`, `Int64`, `UInt8`, `UInt16`, `UInt32`, `UInt64`를 지원합니다. [`(U)Int*`](/ko/reference/data-types/int-uint)
+
+**반환 값**
+
+길이가 `k`인 모든 부분 순열입니다. [`Array(Array(T))`](/ko/reference/data-types/array)
+
+**예시**
+
+**사용 예시**
+
+```sql title=Query
+SELECT arrayPartialPermutations([1, 2, 3], 2);
+```
+
+```response title=Response
+[[1,2],[1,3],[2,1],[2,3],[3,1],[3,2]]
+```
+
+**`k = 0` 예시**
+
+```sql title=Query
+SELECT arrayPartialPermutations([1, 2, 3], 0);
+```
+
+```response title=Response
+[[]]
+```
+
 ## arrayPartialReverseSort {#arrayPartialReverseSort}
 
 도입 버전: v23.2.0
@@ -2995,6 +3081,38 @@ SELECT arrayPartialSort((x, y) -> -y, 1, [0, 1, 2], [1, 2, 3]) as res
 
 ```response title=Response
 [2,1,0]
+```
+
+## arrayPermutations {#arrayPermutations}
+
+도입 버전: v26.10.0
+
+소스 배열의 원소로 만들 수 있는 모든 순열을 반환합니다. 순열은 인덱스(indexes)를 기준으로 열거되므로, 값이 같은 원소가 있으면 결과에 중복 행(duplicate rows)이 생길 수 있습니다. 소스 배열이 비어 있으면 `[[]]`를 반환합니다. 블록당 전체 결과 크기는 `function_range_max_elements_in_block`으로 제한되며, 생성된 각 배열은 해당 배열의 크기에 1을 더한 값으로 집계됩니다.
+
+**구문**
+
+```sql
+arrayPermutations(arr)
+```
+
+**인수**
+
+* `arr` — 소스 배열입니다. [`Array(T)`](/ko/reference/data-types/array)
+
+**반환 값**
+
+소스 배열의 가능한 모든 순열을 반환합니다. [`Array(Array(T))`](/ko/reference/data-types/array)
+
+**예시**
+
+**사용 예시**
+
+```sql title=Query
+SELECT arrayPermutations([1, 2, 3]);
+```
+
+```response title=Response
+[[1,2,3],[1,3,2],[2,1,3],[2,3,1],[3,1,2],[3,2,1]]
 ```
 
 ## arrayPopBack {#arrayPopBack}

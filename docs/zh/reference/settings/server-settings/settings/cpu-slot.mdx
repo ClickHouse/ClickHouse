@@ -12,9 +12,23 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 这些设置用于配置 ClickHouse server，且由 ClickHouse 源代码自动生成。
 
-<div id="cpu_slot_preemption">
-  ## cpu_slot_preemption
-</div>
+## cpu_slot_parking {#cpu_slot_parking}
+
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="Yes" />
+
+指定查询线程在因非 CPU 等待而阻塞时 (例如执行某些 I/O 操作，或因没有可用任务而空闲) ，是否释放 (停放) 其占用的 CPU 插槽。被停放的线程不计入 CPU 并发度限制，因此其他线程可以利用原本会闲置的 CPU；等待结束后，该线程会重新获取槽位。仅当启用了 `cpu_slot_preemption`，且 MASTER THREAD 和 WORKER THREAD 由同一个 CPU 资源定义时，此设置才会生效；在其他配置下不起作用。无需重启服务器即可更改。
+
+**示例**
+
+```xml
+<cpu_slot_parking>true</cpu_slot_parking>
+```
+
+**另请参阅**
+
+* [工作负载调度](/zh/concepts/features/configuration/server-config/workload-scheduling)
+
+## cpu_slot_preemption {#cpu_slot_preemption}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="Yes" />
 
@@ -33,9 +47,7 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 * [工作负载调度](/zh/concepts/features/configuration/server-config/workload-scheduling)
 
-<div id="cpu_slot_preemption_timeout_ms">
-  ## cpu_slot_preemption_timeout_ms
-</div>
+## cpu_slot_preemption_timeout_ms {#cpu_slot_preemption_timeout_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" changeable_without_restart="Yes" />
 
@@ -51,9 +63,7 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 * [工作负载调度](/zh/concepts/features/configuration/server-config/workload-scheduling)
 
-<div id="cpu_slot_quantum_ns">
-  ## cpu_slot_quantum_ns
-</div>
+## cpu_slot_quantum_ns {#cpu_slot_quantum_ns}
 
 <SettingsInfoBlock type="UInt64" default_value="10000000" changeable_without_restart="Yes" />
 

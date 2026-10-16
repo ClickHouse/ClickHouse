@@ -367,6 +367,10 @@ Nombre total de slots CPU obtenus
 
 Nombre total de slots CPU obtenus qui ne sont pas considérés comme étant en concurrence (le premier thread si l’ordonnanceur fair&#95;round&#95;robin est utilisé)
 
+### ConcurrencyControlParked {#concurrencycontrolparked}
+
+Nombre actuel de fils d’exécution ayant mis de côté (libéré) leur slot CPU pendant une attente non liée au CPU, par exemple une E/S bloquante ou l’absence de tâche à exécuter
+
 ### ConcurrencyControlPreempted {#concurrencycontrolpreempted}
 
 Nombre total de threads préemptés en attente d’un slot CPU
@@ -1375,6 +1379,10 @@ Nombre de threads du pool de threads AzureObjectStorage exécutant une tâche.
 
 Nombre de jobs en file d’attente ou en cours d’exécution dans le pool de threads AzureObjectStorage.
 
+### ObjectStorageExclusiveLeases {#objectstorageexclusiveleases}
+
+Nombre de baux exclusifs (par exemple pour le compactage d’une table Iceberg) actuellement détenus par ce serveur dans le stockage d’objet.
+
 ### ObjectStorageQueueMetadataCacheSizeBytes {#objectstoragequeuemetadatacachesizebytes}
 
 Taille, en octets, du cache de métadonnées d’ObjectStorageQueue.
@@ -1410,6 +1418,10 @@ Nombre de threads du pool S3ObjectStorage qui exécutent une tâche.
 ### ObjectStorageS3ThreadsScheduled {#objectstorages3threadsscheduled}
 
 Nombre de jobs en attente ou actifs dans le pool de threads S3ObjectStorage.
+
+### ObjectStorageSharedLeases {#objectstoragesharedleases}
+
+Nombre de clés, telles que les snapshots Iceberg en cours de lecture, actuellement louées dans le stockage d’objet par les requêtes de ce serveur.
 
 ### OpenFileForRead {#openfileforread}
 

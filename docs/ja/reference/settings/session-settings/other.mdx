@@ -39,6 +39,16 @@ import { CloudOnlyBadge } from "/snippets/ja/components/CloudOnlyBadge/CloudOnly
 
 HTTP CORS ヘッダーを追加して書き込みます。
 
+## analyze_index_with_multiple_key_columns_per_condition {#analyze_index_with_multiple_key_columns_per_condition}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "索引解析時に、単一の条件で複数のキーカラムを絞り込めるようにする新しい設定。"}]}]} />
+
+索引解析時に、`WHERE`/`PREWHERE` 式に含まれる1つの原子的な条件 (単一の比較、`IN`、`has` など) で、複数のキーカラムを絞り込めるようにします。
+
+例えば、テーブルに `ORDER BY (toDate(ts), ts)` が指定されていて、クエリに `WHERE ts = '2026-01-10 00:00:00' AND user_id = 42` が含まれている場合、2つの条件のうち1つ目の条件で両方のキーカラムが絞り込まれます。つまり、`toDate(ts) = '2026-01-10' AND ts = '2026-01-10 00:00:00'` と記述した場合と同様に解析されます。この設定が無効の場合、この述語で絞り込まれるのは `ts` のみです。なお、`(a, b) IN ((1, 2), (3, 4))` のようなタプルのメンバーシップ述語では、この設定が無効であっても複数のキーカラムを絞り込めます。
+
 ## analyze_index_with_space_filling_curves {#analyze_index_with_space_filling_curves}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

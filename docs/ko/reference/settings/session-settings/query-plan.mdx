@@ -580,6 +580,14 @@ JOIN 작업에서 왼쪽 테이블의 순서를 유지하며 계속 읽고, 이�
 * 0 - 비활성화
 * 1 - 활성화
 
+## query_plan_replace_always_true_filter {#query_plan_replace_always_true_filter}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "새 설정입니다."}]}]} />
+
+필터 조건(filter condition)이 항상 참이고 쿼리에서 필터 컬럼을 사용하지 않으면 필터(filter) 단계를 표현식 단계로 대체합니다. 이러한 필터 단계는 행(rows)을 제거하지는 않지만 JOIN 재정렬을 막습니다.
+
 ## query_plan_reuse_storage_ordering_for_window_functions {#query_plan_reuse_storage_ordering_for_window_functions}
 
 **별칭**: `optimize_read_in_window_order`

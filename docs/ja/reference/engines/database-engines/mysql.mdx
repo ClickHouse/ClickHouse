@@ -23,9 +23,7 @@ import { CloudNotSupportedBadge } from "/snippets/ja/components/CloudNotSupporte
 * `CREATE TABLE`
 * `ALTER`
 
-<div id="creating-a-database">
-  ## データベースの作成
-</div>
+## データベースの作成 {#creating-a-database}
 
 ```sql
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
@@ -42,9 +40,7 @@ ENGINE = MySQL('host:port', ['database' | database], 'user', 'password')
 
 **設定**
 
-<div id="enable-compression">
-  ### `enable_compression`
-</div>
+### `enable_compression` {#enable-compression}
 
 MySQLプロトコルの接続で zlib 圧縮を有効にします。`1` に設定すると、ClickHouse は MySQLサーバーに対してプロトコルレベルの圧縮を要求します。
 
@@ -58,9 +54,13 @@ ENGINE = MySQL('localhost:3306', 'test', 'my_user', 'user_password')
 SETTINGS enable_compression = 1;
 ```
 
-<div id="tls-ssl">
-  ## TLS/SSL
-</div>
+### `connection_auto_close` {#connection-auto-close}
+
+クエリ実行後に接続を自動的に閉じます。つまり、接続の再利用を無効化します。`0` に設定すると、データベース内の各テーブルは、次のクエリで使用できるよう、それぞれ独自の pool に接続を保持します。
+
+デフォルト値: `1`。
+
+## TLS/SSL {#tls-ssl}
 
 MySQL への暗号化接続の認証情報は、[named collection](/ja/concepts/features/configuration/server-config/named-collections) のキー (またはキー・バリュー引数) として渡されます。
 
@@ -76,9 +76,7 @@ MySQL への暗号化接続の認証情報は、[named collection](/ja/concepts/
 
 <a id="data_types-support" />
 
-<div id="data-types-support">
-  ## 対応するデータ型
-</div>
+## 対応するデータ型 {#data-types-support}
 
 | MySQL                            | ClickHouse                                                   |
 | -------------------------------- | ------------------------------------------------------------ |
@@ -107,9 +105,7 @@ MySQL への暗号化接続の認証情報は、[named collection](/ja/concepts/
 
 [Nullable](/ja/reference/data-types/nullable) もサポートされています。空間カラムは、次の 3 つの場合、ジオメトリ型ではなく `String` (nullable の場合は `Nullable(String)`) にマッピングされます。`GEOMETRYCOLLECTION` として宣言されている場合、`geometry` フラグが無効で型が `POINT` ではない場合、または `Point` は `Nullable` 内にネストできる唯一のジオメトリ型であるため、カラムが nullable で型が `POINT` ではない場合です。いずれの場合も、文字列には MySQL が返す値がそのまま格納されます。つまり、4 バイトの SRID プレフィックスの後に WKB ペイロードが続くため、WKB デコーダに渡す前に先頭の 4 バイトを取り除いてください。
 
-<div id="global-variables-support">
-  ## グローバル変数のサポート
-</div>
+## グローバル変数のサポート {#global-variables-support}
 
 互換性を高めるため、MySQL スタイルで `@@identifier` としてグローバル変数を参照できます。
 
@@ -128,9 +124,7 @@ MySQL への暗号化接続の認証情報は、[named collection](/ja/concepts/
 SELECT @@version;
 ```
 
-<div id="examples-of-use">
-  ## 使用例
-</div>
+## 使用例 {#examples-of-use}
 
 MySQLのテーブル:
 

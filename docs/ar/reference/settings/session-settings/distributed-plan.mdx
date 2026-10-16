@@ -63,13 +63,13 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": ""},{"label": "إعداد تجريبي جديد."}]}]} />
 
-افرض نوع عوامل Exchange المحدد بين مراحل الاستعلام الموزّع.
+افرض نوع عوامل التبادل المحدد بين مراحل الاستعلام الموزّع.
 
 القيم الممكنة:
 
-* &#39;&#39; - لا تفرض أي نوع من عوامل Exchange، واترك للمُحسِّن اختيار ذلك،
+* &#39;&#39; - لا تفرض أي نوع من عوامل التبادل، واترك للمُحسِّن اختيار ذلك،
 * &#39;Persisted&#39; - استخدم ملفات مؤقتة في تخزين الكائنات،
-* &#39;Streaming&#39; - بثّ بيانات exchange عبر الشبكة.
+* &#39;Streaming&#39; - بثّ بيانات التبادل عبر الشبكة.
 
 ## distributed_plan_force_shuffle_aggregation {#distributed_plan_force_shuffle_aggregation}
 
@@ -81,6 +81,16 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 
 استخدم استراتيجية تجميع Shuffle بدلًا من PartialAggregation + Merge ضمن خطة الاستعلام الموزعة.
 يُتجاهل هذا الإعداد عندما لا تستطيع استراتيجية Shuffle إنتاج نتيجة صحيحة، على سبيل المثال مع `GROUPING SETS` أو عندما يجب أن ينتج التجميع نتائج مرتبة حسب حاوية.
+
+## distributed_plan_join_runtime_filters {#distributed_plan_join_runtime_filters}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "إعداد تجريبي جديد."}]}]} />
+
+عند استخدام `make_distributed_plan`، تُرسَل مرشحات JOIN وقت التشغيل التي تُبنى في إحدى المراحل إلى المراحل التي تقرأ جانب الفحص، لكي تُصفّي هذه المراحل الصفوف قبل إرسالها. وفي حال عدم وصول عامل التصفية، تمرّ الصفوف دون تصفية. يتطلب هذا الإعداد تفعيل `enable_join_runtime_filters`.
 
 ## distributed_plan_max_buffered_log_rows {#distributed_plan_max_buffered_log_rows}
 

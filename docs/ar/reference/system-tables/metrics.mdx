@@ -366,6 +366,10 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 
 إجمالي عدد فتحات CPU المُكتسبة التي لا تُعدّ متنافسة (أول خيط تنفيذ إذا كان المُجدول fair&#95;round&#95;robin قيد الاستخدام)
 
+### ConcurrencyControlParked {#concurrencycontrolparked}
+
+العدد الحالي لخيوط التنفيذ التي علّقت (حرّرت) وحدة CPU الخاصة بها لانتظارٍ لا يتعلق بالمعالج، مثل عمليات الإدخال/الإخراج الحاجبة أو عدم وجود مهمة لتنفيذها
+
 ### ConcurrencyControlPreempted {#concurrencycontrolpreempted}
 
 إجمالي عدد خيوط التنفيذ التي أُوقِفت مؤقتًا وتنتظر حصة CPU
@@ -1374,6 +1378,10 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 
 عدد المهام الموجودة في قائمة الانتظار أو قيد التنفيذ في مجمّع خيوط التنفيذ لـ AzureObjectStorage.
 
+### ObjectStorageExclusiveLeases {#objectstorageexclusiveleases}
+
+عدد عقود الإيجار الحصرية التي يحتفظ بها هذا الخادم حاليًا في التخزين الكائني، مثل تلك الخاصة بعملية دمج جدول Iceberg.
+
 ### ObjectStorageQueueMetadataCacheSizeBytes {#objectstoragequeuemetadatacachesizebytes}
 
 حجم ذاكرة التخزين المؤقت للبيانات الوصفية الخاصة بـ ObjectStorageQueue، بالبايت.
@@ -1409,6 +1417,10 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 ### ObjectStorageS3ThreadsScheduled {#objectstorages3threadsscheduled}
 
 عدد وحدات العمل قيد الانتظار أو النشطة في مجموعة مؤشرات الترابط S3ObjectStorage.
+
+### ObjectStorageSharedLeases {#objectstoragesharedleases}
+
+عدد المفاتيح المؤجَّرة حاليًا في التخزين الكائني من قِبل استعلامات هذا الخادم، مثل لقطات Iceberg قيد القراءة.
 
 ### OpenFileForRead {#openfileforread}
 

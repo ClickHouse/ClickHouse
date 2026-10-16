@@ -6163,6 +6163,10 @@ Retorna o snapshot mais recente (Commit Sequence Number) de uma [transação](/p
   Para mais informações, consulte a página [Suporte transacional (ACID)](/pt-BR/concepts/features/operations/insert/transactions#transactions-commit-and-rollback).
 </Note>
 
+<Note>
+  Esta função é não determinística: ela pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -6213,6 +6217,10 @@ Retorna o snapshot mais antigo (Commit Sequence Number) visível para alguma [tr
   ```
 
   Para mais informações, consulte a página [suporte transacional (ACID)](/pt-BR/concepts/features/operations/insert/transactions#transactions-commit-and-rollback).
+</Note>
+
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
 </Note>
 
 **Sintaxe**

@@ -37,6 +37,10 @@ analyzer 是自 v24.3 起默认启用的查询分析与查询计划基础设施�
 
 允许在 Iceberg 合并整理期间清理旧数据文件。
 
+清理操作会在合并整理完成后运行 `iceberg_compaction_data_cleanup`。它会将因本次合并整理而失效的快照置为过期，处理方式与 `expire_snapshots` 相同：从表元数据中移除这些快照，
+并删除未被其他任何快照引用的文件。对于格式版本为 1 的表，或基于事务性目录的表，
+该操作仅删除文件，快照仍保留在元数据中。
+
 ## allow_experimental_database_hms_catalog {#allow_experimental_database_hms_catalog}
 
 <ExperimentalBadge />

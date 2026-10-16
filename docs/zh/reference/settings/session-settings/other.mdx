@@ -39,6 +39,16 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 写入 HTTP CORS 请求头。
 
+## analyze_index_with_multiple_key_columns_per_condition {#analyze_index_with_multiple_key_columns_per_condition}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "新增设置，允许在索引分析期间由单个条件约束多个键列。"}]}]} />
+
+允许 `WHERE`/`PREWHERE` 表达式中的单个原子条件 (如单个比较、`IN`、`has` 等) 在索引分析期间约束多个键列。
+
+例如，若表定义了 `ORDER BY (toDate(ts), ts)`，而查询包含 `WHERE ts = '2026-01-10 00:00:00' AND user_id = 42`，则其中第一个条件会同时约束这两个键列：其分析效果相当于写成了 `toDate(ts) = '2026-01-10' AND ts = '2026-01-10 00:00:00'`。禁用该设置后，此谓词仅约束 `ts`。不过，诸如 `(a, b) IN ((1, 2), (3, 4))` 之类的元组成员谓词仍可约束多个键列。
+
 ## analyze_index_with_space_filling_curves {#analyze_index_with_space_filling_curves}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

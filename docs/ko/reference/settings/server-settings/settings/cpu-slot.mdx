@@ -12,9 +12,23 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
 
 이 설정은 ClickHouse 서버를 구성하며 ClickHouse 소스에서 자동으로 생성됩니다.
 
-<div id="cpu_slot_preemption">
-  ## cpu_slot_preemption
-</div>
+## cpu_slot_parking {#cpu_slot_parking}
+
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="Yes" />
+
+쿼리 스레드가 일부 I/O 연산이나 처리할 작업이 없는 유휴 상태처럼 CPU 외의 대기로 블로킹되어 있는 동안 자신의 CPU 슬롯을 반납(파킹)할지 여부를 정의합니다. 파킹된 스레드는 CPU 동시성 제한에 포함되지 않으므로, 그대로 두면 유휴 상태로 남았을 CPU를 다른 스레드가 사용할 수 있습니다. 대기가 끝나면 슬롯을 다시 획득합니다. 이 설정은 `cpu_slot_preemption`이 활성화되어 있고 하나의 CPU 리소스가 MASTER THREAD와 WORKER THREAD를 모두 정의하는 경우에만 적용되며, 그 외의 구성에서는 효과가 없습니다. 서버를 재시작하지 않고도 변경할 수 있습니다.
+
+**예시**
+
+```xml
+<cpu_slot_parking>true</cpu_slot_parking>
+```
+
+**관련 항목**
+
+* [워크로드 스케줄링](/ko/concepts/features/configuration/server-config/workload-scheduling)
+
+## cpu_slot_preemption {#cpu_slot_preemption}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="Yes" />
 
@@ -33,9 +47,7 @@ CPU 리소스에 대한 워크로드 스케줄링(MASTER THREAD 및 WORKER THREA
 
 * [워크로드 스케줄링](/ko/concepts/features/configuration/server-config/workload-scheduling)
 
-<div id="cpu_slot_preemption_timeout_ms">
-  ## cpu_slot_preemption_timeout_ms
-</div>
+## cpu_slot_preemption_timeout_ms {#cpu_slot_preemption_timeout_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" changeable_without_restart="Yes" />
 
@@ -51,9 +63,7 @@ CPU 리소스에 대한 워크로드 스케줄링(MASTER THREAD 및 WORKER THREA
 
 * [워크로드 스케줄링](/ko/concepts/features/configuration/server-config/workload-scheduling)
 
-<div id="cpu_slot_quantum_ns">
-  ## cpu_slot_quantum_ns
-</div>
+## cpu_slot_quantum_ns {#cpu_slot_quantum_ns}
 
 <SettingsInfoBlock type="UInt64" default_value="10000000" changeable_without_restart="Yes" />
 

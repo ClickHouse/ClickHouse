@@ -1,7 +1,7 @@
 const SessionSettingsExplorer = ({ href: baseRoute }) => {
-  // Mintlify의 프로덕션 렌더러는 모듈 범위 바인딩을 보존하지 않고
-  // 내보낸 컴포넌트를 평가합니다. 지연 상태(lazy state)는 생성된 데이터를
-  // 해당 평가 범위에 유지하면서 마운트당 한 번만 생성합니다.
+  // Mintlify의 프로덕션 렌더러는 모듈 범위 바인딩을 유지하지 않고
+  // 내보낸 컴포넌트를 평가합니다. 지연 상태(lazy state)를 사용하면 생성된 데이터를
+  // 해당 평가 범위 내에 유지하면서 마운트당 한 번만 생성합니다.
   const [entries] = useState(() => [
     {
       label: "additional_*",
@@ -429,10 +429,11 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "cluster_*",
-      count: 2,
+      count: 3,
       settings: [
         { name: "cluster_for_parallel_replicas", path: "/cluster#cluster_for_parallel_replicas", default: '""' },
-        { name: "cluster_function_process_archive_on_multiple_nodes", path: "/cluster#cluster_function_process_archive_on_multiple_nodes", default: "1" }
+        { name: "cluster_function_process_archive_on_multiple_nodes", path: "/cluster#cluster_function_process_archive_on_multiple_nodes", default: "1" },
+        { name: "cluster_function_wait_for_replica_ms", path: "/cluster#cluster_function_wait_for_replica_ms", default: "0" }
       ],
       children: []
     },
@@ -725,7 +726,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "distributed_plan_*",
-      count: 13,
+      count: 14,
       settings: [
         { name: "distributed_plan_default_reader_bucket_count", path: "/distributed-plan#distributed_plan_default_reader_bucket_count", default: "8" },
         { name: "distributed_plan_default_shuffle_join_bucket_count", path: "/distributed-plan#distributed_plan_default_shuffle_join_bucket_count", default: "8" },
@@ -733,6 +734,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "distributed_plan_fallback_to_local_execution", path: "/distributed-plan#distributed_plan_fallback_to_local_execution", default: "1" },
         { name: "distributed_plan_force_exchange_kind", path: "/distributed-plan#distributed_plan_force_exchange_kind", default: '""' },
         { name: "distributed_plan_force_shuffle_aggregation", path: "/distributed-plan#distributed_plan_force_shuffle_aggregation", default: "0" },
+        { name: "distributed_plan_join_runtime_filters", path: "/distributed-plan#distributed_plan_join_runtime_filters", default: "0" },
         { name: "distributed_plan_max_buffered_log_rows", path: "/distributed-plan#distributed_plan_max_buffered_log_rows", default: "100000" },
         { name: "distributed_plan_max_rows_to_broadcast", path: "/distributed-plan#distributed_plan_max_rows_to_broadcast", default: "20000" },
         { name: "distributed_plan_optimize_exchanges", path: "/distributed-plan#distributed_plan_optimize_exchanges", default: "1" },
@@ -2048,10 +2050,11 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "opentelemetry_trace_*",
-      count: 2,
+      count: 3,
       settings: [
         { name: "opentelemetry_trace_cpu_scheduling", path: "/opentelemetry-trace#opentelemetry_trace_cpu_scheduling", default: "0" },
-        { name: "opentelemetry_trace_processors", path: "/opentelemetry-trace#opentelemetry_trace_processors", default: "0" }
+        { name: "opentelemetry_trace_processors", path: "/opentelemetry-trace#opentelemetry_trace_processors", default: "0" },
+        { name: "opentelemetry_trace_stateless_worker_discovery", path: "/opentelemetry-trace#opentelemetry_trace_stateless_worker_discovery", default: "0" }
       ],
       children: []
     },
@@ -2391,7 +2394,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "query_plan_*",
-      count: 54,
+      count: 55,
       settings: [
         { name: "query_plan_aggregation_bucket_top_k", path: "/query-plan#query_plan_aggregation_bucket_top_k", default: "1" },
         { name: "query_plan_aggregation_having_prefilter", path: "/query-plan#query_plan_aggregation_having_prefilter", default: "1" },
@@ -2441,6 +2444,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "query_plan_remove_redundant_distinct", path: "/query-plan#query_plan_remove_redundant_distinct", default: "1" },
         { name: "query_plan_remove_redundant_sorting", path: "/query-plan#query_plan_remove_redundant_sorting", default: "1" },
         { name: "query_plan_remove_unused_columns", path: "/query-plan#query_plan_remove_unused_columns", default: "1" },
+        { name: "query_plan_replace_always_true_filter", path: "/query-plan#query_plan_replace_always_true_filter", default: "1" },
         { name: "query_plan_reuse_storage_ordering_for_window_functions", path: "/query-plan#query_plan_reuse_storage_ordering_for_window_functions", default: "0" },
         { name: "query_plan_short_circuit_constant_false_join", path: "/query-plan#query_plan_short_circuit_constant_false_join", default: "1" },
         { name: "query_plan_split_filter", path: "/query-plan#query_plan_split_filter", default: "1" },
@@ -3114,11 +3118,12 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "기타",
-      count: 156,
+      count: 157,
       settings: [
         { name: "adaptive_aggregator_freeze_threshold", path: "/other#adaptive_aggregator_freeze_threshold", default: "16384" },
         { name: "adaptive_aggregator_freeze_threshold_bytes", path: "/other#adaptive_aggregator_freeze_threshold_bytes", default: "4194304" },
         { name: "add_http_cors_header", path: "/other#add_http_cors_header", default: "0" },
+        { name: "analyze_index_with_multiple_key_columns_per_condition", path: "/other#analyze_index_with_multiple_key_columns_per_condition", default: "1" },
         { name: "analyze_index_with_space_filling_curves", path: "/other#analyze_index_with_space_filling_curves", default: "1" },
         { name: "analyzer_inline_views", path: "/other#analyzer_inline_views", default: "0" },
         { name: "anti_join_include_columns_from_both_sides", path: "/other#anti_join_include_columns_from_both_sides", default: "1" },
@@ -3417,7 +3422,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     const key = [...path, entry.label].join("/")
     const isOpen = isSearching || expandedGroups.has(key)
     const items = [...entry.settings.map((setting) => ({ type: "setting", value: setting })), ...entry.children.map((child) => ({ type: "group", value: child }))]
-    const countLabel = `${entry.count}${entry.count === 1 ? "개 설정" : "개 설정"}`
+    const countLabel = `설정 ${entry.count}개`
 
     return (
       <div key={key} className="min-w-max">
@@ -3508,7 +3513,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
       {isSearching && (
         <div className="mt-2 text-right text-xs text-gray-500 dark:text-gray-400">
           <span>
-            일치하는 설정 {matchingCount}개
+            일치하는 {matchingCount === 1 ? "설정" : "설정"} {matchingCount}개
           </span>
         </div>
       )}

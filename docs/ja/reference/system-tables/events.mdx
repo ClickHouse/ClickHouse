@@ -348,11 +348,71 @@ text&#95;log の非同期キューに送信されたメッセージ (受け付�
 
 ### AutomaticParallelReplicasDecidedWithoutBuildingPlan {#automaticparallelreplicasdecidedwithoutbuildingplan}
 
-自動並列レプリカが、以前の実行時に記憶した境界に基づき、コスト評価用の候補実行計画を構築せずに並列レプリカを使用しないと判断した回数
+自動並列レプリカが、以前の実行時に記憶した境界に基づき、コスト評価用の候補実行計画を構築せずに並列レプリカを使用しないと判断した回数。判断の理由を示すイベント (`AutoParallelReplicasRejectedByCostModel` など) も併せてカウントされます
 
 ### AutomaticParallelReplicasProbePlansBuilt {#automaticparallelreplicasprobeplansbuilt}
 
-自動並列レプリカが、単一ノードのプランとの比較用に、並列レプリカを使用する候補プランを構築した回数です。こうして構築されたプランが必ず使用されるとは限りません。プランはコスト見積もりのために構築されるものであり、単一ノードのプランが優位と判断された場合は破棄されます
+自動並列レプリカが、並列レプリカを使用する効果があるかどうかを判断するために、並列レプリカを使用する実行計画を構築した回数です
+
+### AutoParallelReplicasApplied {#autoparallelreplicasapplied}
+
+自動並列レプリカが、クエリ実行計画を並列レプリカ用のクエリ実行計画に置換した回数
+
+### AutoParallelReplicasBytesPerReplica {#autoparallelreplicasbytesperreplica}
+
+自動並列レプリカが見積もった、このクエリの読み取りにおけるレプリカあたりのバイト数です。判定結果にかかわらず記録されるため、この分布には `automatic_parallel_replicas_min_bytes_per_replica` によって除外されたクエリと、除外されずに通過したクエリの両方が含まれます
+
+### AutoParallelReplicasCostModelEvaluated {#autoparallelreplicascostmodelevaluated}
+
+自動並列レプリカがコストモデルによる評価段階に達し、ローカル実行計画と並列レプリカを使用する実行計画を比較した回数
+
+### AutoParallelReplicasNoStatistics {#autoparallelreplicasnostatistics}
+
+自動並列レプリカで統計情報がまだ存在しなかったため、判断を行わずに統計情報の収集を行った回数
+
+### AutoParallelReplicasOptimizationMicroseconds {#autoparallelreplicasoptimizationmicroseconds}
+
+自動並列レプリカの最適化に費やされた時間 (並列レプリカを使用した実行計画の構築にかかった時間を除く)
+
+### AutoParallelReplicasPlanBuildMicroseconds {#autoparallelreplicasplanbuildmicroseconds}
+
+自動並列レプリカがローカル実行計画との比較に用いる、並列レプリカを使用した実行計画の構築に要した時間
+
+### AutoParallelReplicasPlansNotComparable {#autoparallelreplicasplansnotcomparable}
+
+自動並列レプリカが、並列レプリカを使用した実行計画の構築後、または以前の構築時に記憶した境界において、その実行計画をローカルの実行計画と十分に対応付けられず、比較や利用ができなかったためにクエリをスキップした回数です。たとえば、両者の読み取りを対応付けられなかった場合や、レプリカがどの読み取りを分割するかを判別できなかった場合が該当します。どのケースに該当したかは `AutoParallelReplicas` ロガーに出力されます
+
+### AutoParallelReplicasPlanWithoutParallelReplicas {#autoparallelreplicasplanwithoutparallelreplicas}
+
+自動並列レプリカが並列レプリカを用いて実行計画を構築したものの、プランナーがその実行計画で並列レプリカを使用しなかったため、クエリをスキップした回数です。たとえば、レプリカあたりの行数が少なすぎる場合や、相関サブクエリが含まれる場合などが該当します。理由は `Planner` ロガーに出力されます
+
+### AutoParallelReplicasRejectedByCostModel {#autoparallelreplicasrejectedbycostmodel}
+
+コストモデルにより、ローカル実行計画が並列レプリカの実行計画と同等以上に高速であると見積もられたため、自動並列レプリカが並列レプリカの使用を見送った回数
+
+### AutoParallelReplicasRejectedByDuplicatedReads {#autoparallelreplicasrejectedbyduplicatedreads}
+
+コストモデルでは並列レプリカが有利と判断されたにもかかわらず、読み取りバイト数のうち、レプリカ間で分割されずに各レプリカが全量を読み取る部分の割合が `automatic_parallel_replicas_max_duplicated_read_ratio` を超えたため、自動並列レプリカが採用されなかった回数
+
+### AutoParallelReplicasRejectedByThreshold {#autoparallelreplicasrejectedbythreshold}
+
+コストモデルでは並列レプリカが有利と判断されたものの、読み取り量が `automatic_parallel_replicas_min_bytes_per_replica` を下回っていたため、自動並列レプリカが適用されなかった回数
+
+### AutoParallelReplicasSkippedDueToQuery {#autoparallelreplicasskippedduetoquery}
+
+自動並列レプリカが、並列レプリカを使用した実行計画を構築する前にクエリをスキップした回数です。並列レプリカで読み取れない結合や、統計情報を収集できないステップなど、処理できない機能がクエリに含まれている場合にスキップされます。どのケースに該当したかは `AutoParallelReplicas` ロガーに出力されます
+
+### AutoParallelReplicasSkippedDueToSettings {#autoparallelreplicasskippedduetosettings}
+
+自動並列レプリカが、指定された設定を理由として、並列レプリカを用いた実行計画を構築する前にクエリをスキップした回数です。どのケースに該当したかは `AutoParallelReplicas` ロガーに出力されます。自動並列レプリカそのものを無効にする設定はカウントされません。`enable_parallel_replicas` が無効または強制されている場合や、`parallel_replicas_mode` が `read_tasks` 以外の場合は、`automatic_parallel_replicas_mode = 0` の場合と同様に、この最適化自体が実行されないためです
+
+### AutoParallelReplicasSkippedEarly {#autoparallelreplicasskippedearly}
+
+索引解析の時点で、実行計画内で最大の読み取りでもレプリカあたりのデータ量が `automatic_parallel_replicas_min_bytes_per_replica` 未満になると判明したため、自動並列レプリカが並列レプリカを用いた実行計画の構築自体を行わなかった回数
+
+### AutoParallelReplicasStatisticsDrifted {#autoparallelreplicasstatisticsdrifted}
+
+ストレージから読み取られた行数がキャッシュされた統計情報と2倍を超えて乖離していたため、自動並列レプリカが判断を行わずに統計情報を再収集した回数
 
 ### AzureClients {#azureclients}
 
@@ -766,6 +826,10 @@ Common executor で処理が完了するまでの待機時間。
 
 CPU のスケールダウンの発生回数
 
+### ConcurrencyControlParks {#concurrencycontrolparks}
+
+ブロッキング I/O や実行するタスクがない場合など、CPU 以外の要因で待機するために、スレッドが CPU スロットを解放 (パーク) した回数の合計。
+
 ### ConcurrencyControlPreemptedMicroseconds {#concurrencycontrolpreemptedmicroseconds}
 
 CPUスロット のプリエンプションによってクエリが待機していた合計時間。
@@ -793,6 +857,10 @@ CPUスロット容量の逼迫により遅延したクエリ数。競合の指�
 ### ConcurrencyControlSlotsGranted {#concurrencycontrolslotsgranted}
 
 各クエリに1スレッドを保証する場合、および setting &#39;use&#95;concurrency&#95;control&#39; = 0 のクエリに対して付与された CPUスロット 数
+
+### ConcurrencyControlUnparks {#concurrencycontrolunparks}
+
+CPU 以外の要因による待機の後に、スレッドが CPU スロットを再取得した合計回数。
 
 ### ConcurrencyControlUpscales {#concurrencycontrolupscales}
 
@@ -1501,6 +1569,10 @@ write syscall の待機に費やされた合計時間です。これには page 
 
 分散キャッシュのレジストリイベント。分散キャッシュのレジストリの更新回数
 
+### DistrCacheRejectedRegistryRecords {#distrcacherejectedregistryrecords}
+
+分散キャッシュのレジストリイベント。証明書が信頼されていない、署名が一致しない、または証明書か署名のいずれかが存在しないために無視されたレジストリエントリの数
+
 ### DistrCacheRemoveOutdatedMicroseconds {#distrcacheremoveoutdatedmicroseconds}
 
 分散キャッシュの接続イベント。プールから古くなった接続を削除するのにかかった時間
@@ -1665,6 +1737,10 @@ write syscall の待機に費やされた合計時間です。これには page 
 
 分散キャッシュの接続イベント。分散キャッシュで作成された一時ファイルの数
 
+### DistrCacheUnexpectedServerCertificate {#distrcacheunexpectedservercertificate}
+
+Distributed Cache 接続イベント。分散キャッシュサーバーが提示した証明書の秘密鍵がレジストリのエントリに登録されているものと一致しなかったため、クライアントが接続を閉じてそのサーバーを除外した回数
+
 ### DistrCacheUnsuccessfulConnectAttempts {#distrcacheunsuccessfulconnectattempts}
 
 分散キャッシュの接続イベント。分散キャッシュへの接続試行に失敗した回数
@@ -1692,6 +1768,10 @@ write syscall の待機に費やされた合計時間です。これには page 
 ### DistrCacheUnusedPacketsBufferAllocations {#distrcacheunusedpacketsbufferallocations}
 
 分散キャッシュのクライアントイベント。既存のバッファを再利用できなかった場合に発生した追加のバッファ割り当て数
+
+### DistrCacheVerifiedServerCertificate {#distrcacheverifiedservercertificate}
+
+Distributed Cache 接続イベント。分散キャッシュサーバーが、自身のレジストリエントリに登録されている鍵を含む証明書を提示した回数
 
 ### DistrCacheWriteBytes {#distrcachewritebytes}
 
@@ -2133,6 +2213,14 @@ DOWNLOADING 状態で待機
 
 DOWNLOADING 状態の ファイルセグメント の待機がタイムアウトした回数 (`filesystem_cache_wait_for_concurrent_download_timeout_milliseconds` を参照)
 
+### FileSegmentWaitWithoutData {#filesegmentwaitwithoutdata}
+
+DOWNLOADING 状態のファイルセグメントの待機が、待機中のオフセットのダウンロード前にダウンローダーがセグメントを解放したことにより終了した回数
+
+### FileSegmentWaitWithoutDataMicroseconds {#filesegmentwaitwithoutdatamicroseconds}
+
+`FileSegmentWaitWithoutData` でカウントされる待機に要した時間
+
 ### FileSegmentWriteMicroseconds {#filesegmentwritemicroseconds}
 
 ファイルセグメントの write() にかかる時間
@@ -2289,6 +2377,10 @@ cacheキーのロック時間
 
 優先度キューへの書き込みのためにファイルシステムキャッシュがロックされていた時間
 
+### FilesystemCachePromotedFileSegments {#filesystemcachepromotedfilesegments}
+
+SLRU キャッシュポリシーにおいて、試用キューから保護キューへ昇格 (移動) されたファイルセグメントの数。
+
 ### FilesystemCacheReserveAheadRetries {#filesystemcachereserveaheadretries}
 
 先行予約 (reserve-ahead) を伴うファイルシステムキャッシュの予約が収まりきらず、要求されたサイズちょうどで再試行された回数
@@ -2440,6 +2532,14 @@ vertical merge のためのカラム収集に費やされた合計時間
 ### HTTPServerConnectionsReused {#httpserverconnectionsreused}
 
 再利用されたサーバーのHTTP接続数
+
+### IcebergCompactionCleanupDeferredByReaders {#icebergcompactioncleanupdeferredbyreaders}
+
+Iceberg のコンパクションによって不要になったデータファイルの削除が、当該レプリカまたは他のレプリカ上のクエリがそれらのファイルを参照するスナップショットをまだ読み取っていたために延期された回数。
+
+### IcebergCompactionCleanupDeferredBySnapshotLifetime {#icebergcompactioncleanupdeferredbysnapshotlifetime}
+
+Iceberg のコンパクションによって置き換えられたデータファイルの削除が、コンパクション自体またはそれによって置き換えられたスナップショットの経過時間が `iceberg_outdated_snapshot_lifetime_seconds` 未満であったために延期された回数。
 
 ### IcebergIteratorInitializationMicroseconds {#icebergiteratorinitializationmicroseconds}
 
@@ -3901,6 +4001,18 @@ ReplicatedMergeTree でパーツをマージするためのログエントリは
 
 別のレプリカによってログが同時に更新されたため、ReplicatedMergeTree でパーツにミューテーションを適用するためのログエントリは作成されません。
 
+### ObjectStorageExclusiveLeasesAcquired {#objectstorageexclusiveleasesacquired}
+
+このサーバーがオブジェクトストレージ上で取得した、キーに対する排他的リース (Icebergテーブルのコンパクション用など) の数。
+
+### ObjectStorageExclusiveLeasesRefused {#objectstorageexclusiveleasesrefused}
+
+オブジェクトストレージで排他的リースの取得を試みたものの、別のレプリカがそのキーの有効なリースを保持していたために断念した回数。
+
+### ObjectStorageExpiredLeasesRemoved {#objectstorageexpiredleasesremoved}
+
+オブジェクトストレージから削除された、期限切れのリースオブジェクトおよび廃棄対象マーカーの数。
+
 ### ObjectStorageGlobFilteredObjects {#objectstorageglobfilteredobjects}
 
 glob または regex パターンに一致せず、一覧取得時にスキップされたオブジェクト。
@@ -4028,6 +4140,26 @@ processing リクエストの設定を試みた回数
 ### ObjectStorageReadObjects {#objectstoragereadobjects}
 
 オブジェクトストレージで実際に読み取り用として開かれたオブジェクト数。
+
+### ObjectStorageSharedLeasesAcquired {#objectstoragesharedleasesacquired}
+
+このサーバーのクエリが、まだこのサーバーによってリースされていないキーを取得した際に、オブジェクトストレージに書き込まれたキー (読み取り中の Iceberg スナップショットなど) の共有リースの数。
+
+### ObjectStorageSharedLeasesCondemned {#objectstoragesharedleasescondemned}
+
+このサーバーのクリーナーがオブジェクトストレージ内で廃棄対象としたキーの数です。廃棄対象とすることで、クリーナーがキーで保護された対象を削除している間、いずれのレプリカもそれらのキーをリースできないようにします。
+
+### ObjectStorageSharedLeasesRefused {#objectstoragesharedleasesrefused}
+
+オブジェクトストレージ内のキーに対するリース取得の試行のうち、クリーナーによってそのキーが廃棄対象とされていたために拒否された回数です。たとえば、コンパクション後のクリーンアップで削除される予定の Iceberg スナップショットなどがこれに該当します。
+
+### ObjectStorageSharedLeasesRenewed {#objectstoragesharedleasesrenewed}
+
+このサーバーのクエリがキーを保持している間に、更新タスクによってオブジェクトストレージ上で書き換えられた共有リースの数。
+
+### ObjectStorageSharedLeaseWriteFailures {#objectstoragesharedleasewritefailures}
+
+取得時または更新時に、共有リースのオブジェクトストレージへの書き込みが失敗した回数。
 
 ### ObsoleteReplicatedParts {#obsoletereplicatedparts}
 
@@ -4171,7 +4303,7 @@ paimon メタデータcacheから追い出されたおおよそのバイト数�
 
 ### ParallelReplicasQueryCount {#parallelreplicasquerycount}
 
-クエリ実行時に並列レプリカを使用して実行された (サブ) クエリ数
+クエリ実行時に並列レプリカを使用して実行されるよう計画された (サブ) クエリ数。自動並列レプリカも、判断のために構築する実行計画についてこの値をインクリメントするため、カウントされたクエリが実際には一度も並列レプリカで実行されていない場合があります。実際に実行された内容については `AutoParallelReplicasApplied` および `ParallelReplicasUsedCount` を参照してください
 
 ### ParallelReplicasReadAssignedForStealingMarks {#parallelreplicasreadassignedforstealingmarks}
 
@@ -4985,9 +5117,17 @@ prewhere リーダーによって MergeTree テーブルから読み取られた
 
 クエリを並列レプリカで実行した場合にレプリカが読み取るバイト数に関する収集済みの統計情報
 
+### RuntimeDataflowStatisticsInputNanoseconds {#runtimedataflowstatisticsinputnanoseconds}
+
+自動並列レプリカ用に、各レプリカが読み取るバイト数の統計をクエリ実行中に収集するのに要した時間
+
 ### RuntimeDataflowStatisticsOutputBytes {#runtimedataflowstatisticsoutputbytes}
 
 クエリを並列レプリカで実行した場合に、レプリカからイニシエーターへ送信されるバイト数に関する統計
+
+### RuntimeDataflowStatisticsOutputNanoseconds {#runtimedataflowstatisticsoutputnanoseconds}
+
+自動並列レプリカ用に、各レプリカがイニシエーターへ送信する予定のバイト数に関する統計情報を、クエリ実行中に収集するのに費やされた時間
 
 ### RuntimeFilterBlocksProcessed {#runtimefilterblocksprocessed}
 
@@ -5000,6 +5140,10 @@ JOINランタイムフィルタによって処理されたブロック数
 ### RuntimeFilterBloomFilterBuildsSkipped {#runtimefilterbloomfilterbuildsskipped}
 
 ハッシュテーブル の statistics に基づくビルド側のキー数から、フィルタが set bits の最大比率を超えると予測されたためにスキップされた JOINランタイムフィルタ の bloom filter ビルドの回数
+
+### RuntimeFilterDeliveriesAbandoned {#runtimefilterdeliveriesabandoned}
+
+受信側が切断された、または読み取りを停止したために破棄されたJOINランタイムフィルタの配信数です。影響を受けた宛先にはフィルタが届かず、その行はフィルタリングされないまま通過します
 
 ### RuntimeFilterGranulesConsidered {#runtimefiltergranulesconsidered}
 
@@ -5017,6 +5161,18 @@ JOINランタイムフィルタ により読み取り時にプルーニングさ
 
 ビルド側の処理が未完了の状態でJOINランタイムフィルタによりルックアップされたブロックの数。これらのブロックはフィルタされずにそのまま通過します。
 
+### RuntimeFilterOversizedStatesRejected {#runtimefilteroversizedstatesrejected}
+
+サイズ上限を超えたために使用または送信されなかったJOINランタイムフィルタのステートの数。この場合、行はフィルタされずにそのまま通過します
+
+### RuntimeFilterReceiveBranchFailures {#runtimefilterreceivebranchfailures}
+
+他のタスクからJOINランタイムフィルタを受信できなかったタスクの数です。該当するタスクではフィルタが使用されないため、行はフィルタされずにそのまま通過します。
+
+### RuntimeFilterReceivesAbandoned {#runtimefilterreceivesabandoned}
+
+接続の確立後、ストリームの終端に達する前に送信側が切断された JOINランタイムフィルタのストリーム数。送信側のステートが届いていなかった場合、該当するフィルタは使用されず、行はフィルタされないまま通過します
+
 ### RuntimeFilterRowsChecked {#runtimefilterrowschecked}
 
 JOIN ランタイムフィルタ でチェックされた行数
@@ -5032,6 +5188,22 @@ JOIN ランタイムフィルタによってスキップされたブロック内
 ### RuntimeFiltersCreated {#runtimefilterscreated}
 
 クエリ内で作成された異なる JOIN ランタイムフィルタ の数
+
+### RuntimeFilterStateBytesReceived {#runtimefilterstatebytesreceived}
+
+分散クエリプランの他のタスクから受信した、シリアル化済みのJOINランタイムフィルタのステートのバイト数
+
+### RuntimeFilterStateBytesSent {#runtimefilterstatebytessent}
+
+分散クエリプラン内の他のタスクへ送信された、シリアル化済みJOINランタイムフィルタのステートのバイト数。宛先ストリームごとに1回ずつカウントされます。
+
+### RuntimeFilterStatesReceived {#runtimefilterstatesreceived}
+
+分散クエリプラン内の他のタスクから受信した、シリアル化済みのJOINランタイムフィルタのステートの数
+
+### RuntimeFilterStatesSent {#runtimefilterstatessent}
+
+分散クエリプランの他のタスクへ送信するためにキューに追加された JOINランタイムフィルタのステート数。宛先ストリームごとに 1 つずつカウントされ、後で中止された配信も含まれます
 
 ### RWLockAcquiredReadLocks {#rwlockacquiredreadlocks}
 

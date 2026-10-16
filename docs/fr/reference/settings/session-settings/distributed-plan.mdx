@@ -65,7 +65,7 @@ Ne prend effet que lorsque `make_distributed_plan` (private preview) est activé
 
 Force le type spécifié d&#39;opérateurs Exchange entre les étapes d&#39;une requête distribuée.
 
-Valeurs possibles :
+Valeurs possibles :
 
 * &#39;&#39; - ne forcer aucun type d&#39;opérateurs Exchange et laisser l&#39;optimiseur choisir,
 * &#39;Persisted&#39; - utiliser des fichiers temporaires sur le stockage objet,
@@ -81,6 +81,16 @@ Valeurs possibles :
 
 Utiliser la stratégie d’agrégation Shuffle au lieu de PartialAggregation + Merge dans le plan de requête distribuée.
 Ignoré lorsque la stratégie Shuffle ne peut pas produire un résultat correct, par exemple pour `GROUPING SETS` ou lorsque l’agrégation doit produire les résultats dans l’ordre des buckets.
+
+## distributed_plan_join_runtime_filters {#distributed_plan_join_runtime_filters}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nouveau paramètre expérimental."}]}]} />
+
+Avec `make_distributed_plan`, envoie les filtres d’exécution de JOIN construits dans une étape aux étapes qui lisent le côté sondage, afin que celles-ci filtrent les lignes avant de les transmettre. Si un filtre ne parvient pas à destination, les lignes sont transmises sans filtrage. Nécessite `enable_join_runtime_filters`.
 
 ## distributed_plan_max_buffered_log_rows {#distributed_plan_max_buffered_log_rows}
 

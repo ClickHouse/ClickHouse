@@ -35,7 +35,9 @@ v26.9 以降、この設定は廃止されています。アナライザは無�
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "新しい設定"}]}]} />
 
-Iceberg compaction 時に古い data files をクリーンアップできるようにします。
+Iceberg コンパクション 時に古い data files をクリーンアップできるようにします。
+
+このクリーンアップでは、コンパクションの完了後に `iceberg_compaction_data_cleanup` が実行されます。これにより、コンパクションによって不要になったスナップショットが `expire_snapshots` と同様の方法で期限切れになります。具体的には、該当するスナップショットをテーブルのメタデータから削除し、他のどのスナップショットからも参照されていないファイルを削除します。フォーマットバージョン 1 のテーブル、またはトランザクション対応のカタログ配下にあるテーブルでは、ファイルの削除のみが行われ、スナップショットはメタデータに残ります。
 
 ## allow_experimental_database_hms_catalog {#allow_experimental_database_hms_catalog}
 

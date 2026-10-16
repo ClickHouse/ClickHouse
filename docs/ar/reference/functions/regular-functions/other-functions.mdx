@@ -6147,7 +6147,7 @@ ROLLBACK;
 تعيد أحدث لقطة (Commit Sequence Number) لـ [معاملة](/ar/concepts/features/operations/insert/transactions#transactions-commit-and-rollback) المتاحة للقراءة.
 
 <Note>
-  هذه الدالة جزء من مجموعة ميزات تجريبية. فعِّل دعم المعاملات التجريبي بإضافة هذا الإعداد إلى التهيئة:
+  هذه الدالة جزء من مجموعة ميزات تجريبية. فعِّل دعم المعاملات التجريبي بإضافة هذا الإعداد إلى التهيئة:
 
   ```xml
   <clickhouse>
@@ -6158,13 +6158,17 @@ ROLLBACK;
   لمزيد من المعلومات، راجع صفحة [دعم المعاملات (ACID)](/ar/concepts/features/operations/insert/transactions#transactions-commit-and-rollback).
 </Note>
 
+<Note>
+  هذه الدالة غير حتمية: قد تُعيد نتائج مختلفة عند استدعائها بالوسيطات نفسها.
+</Note>
+
 **الصيغة**
 
 ```sql
 transactionLatestSnapshot()
 ```
 
-**الوسائط**
+**الوسيطات**
 
 * لا شيء.
 
@@ -6190,7 +6194,7 @@ ROLLBACK;
 
 ## transactionOldestSnapshot {#transactionOldestSnapshot}
 
-تم تقديمه في: v22.6.0
+أُضيف في: v22.6.0
 
 <ExperimentalBadge />
 
@@ -6199,7 +6203,7 @@ ROLLBACK;
 تُرجع أقدم لقطة (Commit Sequence Number) تكون مرئية لإحدى [المعاملات](/ar/concepts/features/operations/insert/transactions#transactions-commit-and-rollback) الجارية.
 
 <Note>
-  هذه الدالة جزء من مجموعة ميزات تجريبية. فعِّل دعم المعاملات التجريبي بإضافة هذا الإعداد إلى التهيئة الخاصة بك:
+  هذه الدالة جزء من مجموعة ميزات تجريبية. فعِّل دعم المعاملات التجريبي بإضافة هذا الإعداد إلى التهيئة الخاصة بك:
 
   ```xml
   <clickhouse>
@@ -6210,13 +6214,17 @@ ROLLBACK;
   لمزيد من المعلومات، راجع صفحة [دعم المعاملات (ACID)](/ar/concepts/features/operations/insert/transactions#transactions-commit-and-rollback).
 </Note>
 
-**البنية**
+<Note>
+  هذه الدالة غير حتمية: فقد تُعيد نتائج مختلفة عند استدعائها بالوسيطات نفسها.
+</Note>
+
+**الصيغة**
 
 ```sql
 transactionOldestSnapshot()
 ```
 
-**الوسائط**
+**الوسيطات**
 
 * لا شيء.
 

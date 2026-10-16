@@ -39,6 +39,16 @@ import { CloudOnlyBadge } from "/snippets/ru/components/CloudOnlyBadge/CloudOnly
 
 Добавляет HTTP-заголовок CORS.
 
+## analyze_index_with_multiple_key_columns_per_condition {#analyze_index_with_multiple_key_columns_per_condition}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Новая настройка, позволяющая одному условию ограничивать несколько столбцов ключа при анализе индексов."}]}]} />
+
+Позволяет одному атомарному условию выражения `WHERE`/`PREWHERE` (отдельному сравнению, `IN`, `has` и т. д.) ограничивать сразу несколько столбцов ключа при анализе индексов.
+
+Например, если в таблице задано `ORDER BY (toDate(ts), ts)`, а запрос содержит `WHERE ts = '2026-01-10 00:00:00' AND user_id = 42`, то первое из двух условий ограничивает оба столбца ключа: оно анализируется так, как если бы было написано `toDate(ts) = '2026-01-10' AND ts = '2026-01-10 00:00:00'`. Если настройка отключена, этот предикат ограничивает только `ts`. При этом предикаты проверки вхождения кортежа, например `(a, b) IN ((1, 2), (3, 4))`, по-прежнему могут ограничивать несколько столбцов ключа.
+
 ## analyze_index_with_space_filling_curves {#analyze_index_with_space_filling_curves}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

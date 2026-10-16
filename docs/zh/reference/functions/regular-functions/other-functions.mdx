@@ -6158,6 +6158,10 @@ ROLLBACK;
   更多信息请参见页面 [事务 (ACID) 支持](/zh/concepts/features/operations/insert/transactions#transactions-commit-and-rollback)。
 </Note>
 
+<Note>
+  此函数具有非确定性：即使参数相同，也可能返回不同的结果。
+</Note>
+
 **语法**
 
 ```sql
@@ -6210,6 +6214,10 @@ ROLLBACK;
   更多信息请参见[事务 (ACID) 支持](/zh/concepts/features/operations/insert/transactions#transactions-commit-and-rollback)页面。
 </Note>
 
+<Note>
+  此函数具有非确定性：即使参数相同，也可能返回不同的结果。
+</Note>
+
 **语法**
 
 ```sql
@@ -6226,7 +6234,7 @@ transactionOldestSnapshot()
 
 **示例**
 
-**用法示例**
+**使用示例**
 
 ```sql title=Query
 BEGIN TRANSACTION;

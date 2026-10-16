@@ -39,6 +39,16 @@ Taille de mémoire à partir de laquelle l’agrégateur adaptatif fige la table
 
 Écrit un en-tête CORS HTTP supplémentaire.
 
+## analyze_index_with_multiple_key_columns_per_condition {#analyze_index_with_multiple_key_columns_per_condition}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nouveau paramètre permettant à une seule condition de contraindre plusieurs colonnes de clé lors de l’analyse d’index."}]}]} />
+
+Permet à une condition atomique de l’expression `WHERE`/`PREWHERE` (une comparaison simple, `IN`, `has`, etc.) de contraindre plusieurs colonnes de clé lors de l’analyse d’index.
+
+Par exemple, si une table est définie avec `ORDER BY (toDate(ts), ts)` et que la requête contient `WHERE ts = '2026-01-10 00:00:00' AND user_id = 42`, la première des deux conditions contraint les deux colonnes de clé : elle est analysée comme si l’on avait écrit `toDate(ts) = '2026-01-10' AND ts = '2026-01-10 00:00:00'`. Lorsque le paramètre est désactivé, ce prédicat ne contraint que `ts`. Les prédicats d’appartenance à un tuple, tels que `(a, b) IN ((1, 2), (3, 4))`, peuvent néanmoins toujours contraindre plusieurs colonnes de clé.
+
 ## analyze_index_with_space_filling_curves {#analyze_index_with_space_filling_curves}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

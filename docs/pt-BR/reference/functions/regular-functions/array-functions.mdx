@@ -367,6 +367,49 @@ SELECT arrayBottomK((x, y) -> y, 2, ['a', 'b', 'c'], [3, 1, 2])
 ['b','c']
 ```
 
+## arrayCombinations {#arrayCombinations}
+
+Introduzido em: v26.10.0
+
+Retorna todas as combinações (seleções não ordenadas sem índices repetidos) de comprimento `k` a partir do array de origem. A enumeração é feita por índices, portanto valores iguais podem gerar linhas duplicadas no resultado. Para `k = 0`, retorna `[[]]`. O tamanho total do resultado por bloco é limitado por `function_range_max_elements_in_block`; cada array gerado é contabilizado como seu tamanho mais um.
+
+**Sintaxe**
+
+```sql
+arrayCombinations(arr, k)
+```
+
+**Argumentos**
+
+* `arr` — Array de origem. [`Array(T)`](/pt-BR/reference/data-types/array)
+* `k` — Comprimento de cada combinação gerada. Não pode exceder o tamanho do array de origem. Aceita `Int8`, `Int16`, `Int32`, `Int64`, `UInt8`, `UInt16`, `UInt32` e `UInt64`. [`(U)Int*`](/pt-BR/reference/data-types/int-uint)
+
+**Valor retornado**
+
+Todas as combinações de comprimento `k`. [`Array(Array(T))`](/pt-BR/reference/data-types/array)
+
+**Exemplos**
+
+**Exemplo de uso**
+
+```sql title=Query
+SELECT arrayCombinations([1, 2, 3], 2);
+```
+
+```response title=Response
+[[1,2],[1,3],[2,3]]
+```
+
+**Exemplo com `k = 0`**
+
+```sql title=Query
+SELECT arrayCombinations([1, 2, 3], 0);
+```
+
+```response title=Response
+[[]]
+```
+
 ## arrayCompact {#arrayCompact}
 
 Introduzido em: v20.1.0
@@ -2736,6 +2779,49 @@ SELECT arrayPackBitsToUInt64(x -> x, [1, 0, 0, 0, 0, 0])
 128
 ```
 
+## arrayPartialPermutations {#arrayPartialPermutations}
+
+Introduzido em: v26.10.0
+
+Retorna todas as permutações parciais (seleções ordenadas sem índices repetidos) de comprimento `k` do array de origem. A enumeração é feita por índices, de modo que valores iguais podem gerar linhas duplicadas no resultado. Para `k = 0`, retorna `[[]]`. O tamanho total do resultado por bloco é limitado por `function_range_max_elements_in_block`; cada array gerado conta como seu tamanho mais um.
+
+**Sintaxe**
+
+```sql
+arrayPartialPermutations(arr, k)
+```
+
+**Argumentos**
+
+* `arr` — Array de origem. [`Array(T)`](/pt-BR/reference/data-types/array)
+* `k` — Comprimento de cada permutação parcial gerada. Não pode exceder o tamanho do array de origem. Aceita `Int8`, `Int16`, `Int32`, `Int64`, `UInt8`, `UInt16`, `UInt32` e `UInt64`. [`(U)Int*`](/pt-BR/reference/data-types/int-uint)
+
+**Valor retornado**
+
+Todas as permutações parciais de comprimento `k`. [`Array(Array(T))`](/pt-BR/reference/data-types/array)
+
+**Exemplos**
+
+**Exemplo de uso**
+
+```sql title=Query
+SELECT arrayPartialPermutations([1, 2, 3], 2);
+```
+
+```response title=Response
+[[1,2],[1,3],[2,1],[2,3],[3,1],[3,2]]
+```
+
+**Exemplo com `k = 0`**
+
+```sql title=Query
+SELECT arrayPartialPermutations([1, 2, 3], 0);
+```
+
+```response title=Response
+[[]]
+```
+
 ## arrayPartialReverseSort {#arrayPartialReverseSort}
 
 Introduzido em: v23.2.0
@@ -2999,6 +3085,38 @@ SELECT arrayPartialSort((x, y) -> -y, 1, [0, 1, 2], [1, 2, 3]) as res
 
 ```response title=Response
 [2,1,0]
+```
+
+## arrayPermutations {#arrayPermutations}
+
+Introduzido em: v26.10.0
+
+Retorna todas as permutações dos elementos do array de origem. A enumeração é feita por índices, portanto valores iguais podem gerar linhas duplicadas no resultado. Para um array de origem vazio, retorna `[[]]`. O tamanho total do resultado por bloco é limitado por `function_range_max_elements_in_block`; cada array gerado é contabilizado como seu tamanho mais um.
+
+**Sintaxe**
+
+```sql
+arrayPermutations(arr)
+```
+
+**Argumentos**
+
+* `arr` — Array de origem. [`Array(T)`](/pt-BR/reference/data-types/array)
+
+**Valor retornado**
+
+Todas as permutações do array de origem. [`Array(Array(T))`](/pt-BR/reference/data-types/array)
+
+**Exemplos**
+
+**Exemplo de uso**
+
+```sql title=Query
+SELECT arrayPermutations([1, 2, 3]);
+```
+
+```response title=Response
+[[1,2,3],[1,3,2],[2,1,3],[2,3,1],[3,1,2],[3,2,1]]
 ```
 
 ## arrayPopBack {#arrayPopBack}

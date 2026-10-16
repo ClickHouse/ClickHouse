@@ -937,7 +937,7 @@ SELECT mapPartialSort((k, v) -> v, 2, map('k1', 3, 'k2', 1, 'k3', 2))
 
 ## mapPopulateSeries {#mapPopulateSeries}
 
-Introduite dans : v20.10.0
+Introduit dans : v20.10.0
 
 Remplit les paires clé-valeur manquantes dans une map à clés entières.
 Pour permettre d’étendre les clés au-delà de la valeur la plus élevée, une clé maximale peut être spécifiée.
@@ -960,7 +960,7 @@ mapPopulateSeries(map[, max]) | mapPopulateSeries(keys, values[, max])
 
 **Valeur renvoyée**
 
-Renvoie une map ou un tuple de deux tableaux, dans lequel le premier contient les clés dans l’ordre trié et le second les valeurs correspondant à ces clés. [`Map(K, V)`](/fr/reference/data-types/map) ou [`Tuple(Array(UInt*), Array(Any))`](/fr/reference/data-types/tuple)
+Renvoie une map ou un tuple de deux tableaux, dans lequel le premier contient les clés dans l’ordre trié et le second les valeurs correspondant à ces clés. [`Map(K, V)`](/fr/reference/data-types/map) ou [`Tuple(Array(UInt*), Array)`](/fr/reference/data-types/tuple)
 
 **Exemples**
 

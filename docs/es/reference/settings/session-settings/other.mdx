@@ -39,6 +39,16 @@ El tamaño de memoria a partir del cual el agregador adaptativo congela la tabla
 
 Escribe el encabezado HTTP CORS adicional.
 
+## analyze_index_with_multiple_key_columns_per_condition {#analyze_index_with_multiple_key_columns_per_condition}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nueva configuración que permite que una sola condición restrinja varias columnas de clave durante el análisis de índices."}]}]} />
+
+Permite que una única condición atómica de la expresión `WHERE`/`PREWHERE` (una sola comparación, `IN`, `has`, etc.) restrinja varias columnas de clave durante el análisis de índices.
+
+Por ejemplo, si una tabla tiene `ORDER BY (toDate(ts), ts)` y la consulta incluye `WHERE ts = '2026-01-10 00:00:00' AND user_id = 42`, la primera de las dos condiciones restringe ambas columnas de clave: se analiza como si se hubiera escrito `toDate(ts) = '2026-01-10' AND ts = '2026-01-10 00:00:00'`. Si el parámetro de configuración está deshabilitado, este predicado solo restringe `ts`. Los predicados de pertenencia a tuplas, como `(a, b) IN ((1, 2), (3, 4))`, pueden seguir restringiendo varias columnas de clave.
+
 ## analyze_index_with_space_filling_curves {#analyze_index_with_space_filling_curves}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

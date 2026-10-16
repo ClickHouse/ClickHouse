@@ -366,6 +366,10 @@ JIT コンパイル済みマシンコードの cache 内のエントリ総数
 
 競合中とは見なされない取得済み CPU スロットの総数 (`fair_round_robin` スケジューラ使用時の最初のスレッド)
 
+### ConcurrencyControlParked {#concurrencycontrolparked}
+
+ブロッキング I/O や実行するタスクがない場合など、CPU 以外の要因で待機するために CPU スロットをパーク (解放) しているスレッドの現在の数
+
 ### ConcurrencyControlPreempted {#concurrencycontrolpreempted}
 
 CPUスロット待機中のプリエンプトされたスレッドの総数
@@ -1374,6 +1378,10 @@ AzureObjectStorage のスレッドプールでタスクを実行しているス�
 
 AzureObjectStorage のスレッドプールでキューに入っている、または実行中のジョブ数。
 
+### ObjectStorageExclusiveLeases {#objectstorageexclusiveleases}
+
+このサーバーがオブジェクトストレージ上で現在保持している排他リース (Icebergテーブルのコンパクションなど) の数。
+
 ### ObjectStorageQueueMetadataCacheSizeBytes {#objectstoragequeuemetadatacachesizebytes}
 
 ObjectStorageQueue のメタデータキャッシュのサイズ (バイト単位) 。
@@ -1409,6 +1417,10 @@ S3ObjectStorage のスレッドプールでタスクを実行中のスレッド�
 ### ObjectStorageS3ThreadsScheduled {#objectstorages3threadsscheduled}
 
 S3ObjectStorage スレッドプール内でキューに入っている、または実行中のジョブ数。
+
+### ObjectStorageSharedLeases {#objectstoragesharedleases}
+
+このサーバーのクエリが現在オブジェクトストレージ内でリースしているキー (読み取り中の Iceberg スナップショットなど) の数。
 
 ### OpenFileForRead {#openfileforread}
 

@@ -37,6 +37,10 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 يتيح تنظيف ملفات البيانات القديمة أثناء دمج Iceberg.
 
+تُشغِّل عملية التنظيف `iceberg_compaction_data_cleanup` بعد اكتمال الدمج، فتُنهي صلاحية اللقطات التي أصبحت متقادمة بفعل الدمج، على غرار
+`expire_snapshots`: إذ تزيلها من البيانات الوصفية للجدول وتحذف الملفات التي لا تشير إليها أي لقطة أخرى. أما في حالة الجدول
+ذي إصدار التنسيق 1 أو الجدول الذي يقع خلف catalog معاملاتي، فتقتصر العملية على حذف الملفات، وتبقى اللقطات في البيانات الوصفية.
+
 ## allow_experimental_database_hms_catalog {#allow_experimental_database_hms_catalog}
 
 <ExperimentalBadge />

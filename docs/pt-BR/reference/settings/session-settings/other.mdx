@@ -39,6 +39,16 @@ O tamanho de memória em que o agregador adaptativo congela a tabela hash local 
 
 Grava o cabeçalho HTTP CORS.
 
+## analyze_index_with_multiple_key_columns_per_condition {#analyze_index_with_multiple_key_columns_per_condition}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nova configuração que permite que uma única condição restrinja várias colunas de chave durante a análise de índice."}]}]} />
+
+Permite que uma condição atômica da expressão `WHERE`/`PREWHERE` (uma única comparação, `IN`, `has` etc.) restrinja várias colunas de chave durante a análise de índice.
+
+Por exemplo, se uma tabela tem `ORDER BY (toDate(ts), ts)` e a consulta contém `WHERE ts = '2026-01-10 00:00:00' AND user_id = 42`, a primeira das duas condições restringe ambas as colunas de chave: ela é analisada como se tivesse sido escrito `toDate(ts) = '2026-01-10' AND ts = '2026-01-10 00:00:00'`. Quando a configuração está desabilitada, esse predicado restringe apenas `ts`. Predicados de pertinência de tupla, como `(a, b) IN ((1, 2), (3, 4))`, continuam podendo restringir várias colunas de chave.
+
 ## analyze_index_with_space_filling_curves {#analyze_index_with_space_filling_curves}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

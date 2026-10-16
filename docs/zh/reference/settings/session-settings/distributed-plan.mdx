@@ -61,7 +61,7 @@ import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge
 
 <ExperimentalBadge />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": ""},{"label": "新的 Experimental 设置。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": ""},{"label": "新增实验性设置。"}]}]} />
 
 强制在分布式查询各阶段之间使用指定类型的 Exchange 算子。
 
@@ -81,6 +81,16 @@ import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge
 
 在分布式查询计划中，采用 Shuffle 聚合策略，而不是 PartialAggregation + Merge。
 在 Shuffle 策略无法产生正确结果的场景下会被忽略，例如 `GROUPING SETS`，或者聚合必须按桶顺序产生结果时。
+
+## distributed_plan_join_runtime_filters {#distributed_plan_join_runtime_filters}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "新增实验性设置。"}]}]} />
+
+在启用 `make_distributed_plan` 时，将某个阶段构建的 JOIN 运行时过滤器发送到读取探测侧的各个阶段，使这些阶段在发送行之前先完成过滤。如果过滤器未能送达，行将不经过滤直接传递。需要同时启用 `enable_join_runtime_filters`。
 
 ## distributed_plan_max_buffered_log_rows {#distributed_plan_max_buffered_log_rows}
 

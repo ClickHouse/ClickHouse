@@ -52,6 +52,7 @@ doc_type: '참고'
 * `check_cache_probability` ([Float64](/ko/reference/data-types/float)) — 디버그 또는 새니타이저 빌드에서만 작동합니다. 전체 캐시를 순회하면서 각 캐시 원소의 상태를 확인해 캐시의 정확성을 검사합니다
 * `idle_client_ttl_sec` ([UInt64](/ko/reference/data-types/int-uint)) — 0이 아니고 캐시 정책이 클라이언트별 사용량을 추적하는 경우, 이 시간(초) 동안 액세스되지 않은 클라이언트(user&#95;id)에 속한 모든 캐시 엔트리가 캐시에서 완전히 제거됩니다. 클라이언트가 액세스할 때마다 타이머가 갱신됩니다. 기본값은 1주입니다. Distributed Cache server에서 사용됩니다.
 * `idle_client_check_interval_sec` ([UInt64](/ko/reference/data-types/int-uint)) — 유휴 클라이언트 축출 작업의 실행 주기(초)입니다. `idle_client_ttl_sec`가 0이 아닐 때만 의미가 있습니다. 0은 자동 값(`max(1, idle_client_ttl_sec / 10)`)을 의미합니다.
+* `client_weight_persist_interval_sec` ([UInt64](/ko/reference/data-types/int-uint)) — 아직 다시 연결하지 않은 클라이언트가 재시작 후에도 가중치를 유지할 수 있도록 클라이언트별 가중치를 디스크에 기록하는 주기(초)입니다. 첫 번째 기록은 시작 후 한 주기가 지난 시점에 수행되며, 정상 종료 시에도 기록됩니다. 캐시 정책이 클라이언트별 사용량을 추적할 때만 의미가 있습니다.
 * `idle_client_eviction_threads` ([UInt64](/ko/reference/data-types/int-uint)) — 유휴 클라이언트의 캐시를 정리하는 데 사용하는 최대 스레드 수입니다. `idle_client_ttl_sec`가 0이 아닐 때만 의미가 있습니다.
 * `expose_prometheus_eviction_metrics` ([UInt8](/ko/reference/data-types/int-uint)) — 파일 시스템 캐시 축출 활동에 대한 Prometheus 메트릭(`filesystem_cache_evictions_total` 등)을 노출합니다. 기본적으로 비활성화되어 있습니다. `SYSTEM RELOAD CONFIG`를 통해 런타임에 켜고 끌 수 있습니다.
 * `expose_prometheus_eviction_metrics_per_user` ([UInt8](/ko/reference/data-types/int-uint)) — 추가로 사용자 ID별 축출 메트릭을 노출합니다. `expose_prometheus_eviction_metrics`가 필요합니다. 카디널리티는 축출을 수행하는 사용자 수가 서로 다를수록 증가합니다.

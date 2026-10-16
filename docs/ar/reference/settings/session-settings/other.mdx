@@ -39,6 +39,16 @@ import { CloudOnlyBadge } from "/snippets/ar/components/CloudOnlyBadge/CloudOnly
 
 كتابة ترويسة CORS لـ HTTP.
 
+## analyze_index_with_multiple_key_columns_per_condition {#analyze_index_with_multiple_key_columns_per_condition}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "إعداد جديد يتيح لشرط واحد تقييد عدة أعمدة مفتاح أثناء تحليل الفهرس."}]}]} />
+
+يتيح لشرط ذرّي واحد في تعبير `WHERE`/`PREWHERE` (كمقارنة واحدة، أو `IN`، أو `has`، وغيرها) تقييد عدة أعمدة مفتاح أثناء تحليل الفهرس.
+
+على سبيل المثال، إذا كان للجدول `ORDER BY (toDate(ts), ts)` وتضمّن الاستعلام `WHERE ts = '2026-01-10 00:00:00' AND user_id = 42`، فإن الشرط الأول منهما يقيّد عمودَي المفتاح كليهما، إذ يُحلَّل كما لو كُتب `toDate(ts) = '2026-01-10' AND ts = '2026-01-10 00:00:00'`. أما عند تعطيل هذا الإعداد، فلا يقيّد هذا المسند سوى `ts`. ومع ذلك، تظل مسندات العضوية في Tuple، مثل `(a, b) IN ((1, 2), (3, 4))`، قادرة على تقييد عدة أعمدة مفتاح.
+
 ## analyze_index_with_space_filling_curves {#analyze_index_with_space_filling_curves}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

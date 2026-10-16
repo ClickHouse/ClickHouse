@@ -6143,7 +6143,7 @@ ROLLBACK;
 
 ## transactionLatestSnapshot {#transactionLatestSnapshot}
 
-Introduit dans : v22.6.0
+Introduit dans : v22.6.0
 
 <ExperimentalBadge />
 
@@ -6152,7 +6152,7 @@ Introduit dans : v22.6.0
 Renvoie l’instantané le plus récent (Commit Sequence Number) d’une [transaction](/fr/concepts/features/operations/insert/transactions#transactions-commit-and-rollback) disponible en lecture.
 
 <Note>
-  Cette fonction fait partie d’un ensemble de fonctionnalités expérimentales. Activez la prise en charge expérimentale des transactions en ajoutant ce paramètre à votre configuration :
+  Cette fonction fait partie d’un ensemble de fonctionnalités expérimentales. Activez la prise en charge expérimentale des transactions en ajoutant ce paramètre à votre configuration :
 
   ```xml
   <clickhouse>
@@ -6161,6 +6161,10 @@ Renvoie l’instantané le plus récent (Commit Sequence Number) d’une [transa
   ```
 
   Pour plus d’informations, consultez la page [Prise en charge des transactions (ACID)](/fr/concepts/features/operations/insert/transactions#transactions-commit-and-rollback).
+</Note>
+
+<Note>
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
 </Note>
 
 **Syntaxe**
@@ -6195,7 +6199,7 @@ ROLLBACK;
 
 ## transactionOldestSnapshot {#transactionOldestSnapshot}
 
-Introduit dans : v22.6.0
+Introduit dans : v22.6.0
 
 <ExperimentalBadge />
 
@@ -6204,7 +6208,7 @@ Introduit dans : v22.6.0
 Renvoie l’instantané le plus ancien (Commit Sequence Number) visible pour une [transaction](/fr/concepts/features/operations/insert/transactions#transactions-commit-and-rollback) en cours.
 
 <Note>
-  Cette fonction fait partie d’un ensemble de fonctionnalités expérimentales. Activez la prise en charge expérimentale des transactions en ajoutant ce paramètre à votre configuration :
+  Cette fonction fait partie d’un ensemble de fonctionnalités expérimentales. Activez la prise en charge expérimentale des transactions en ajoutant ce paramètre à votre configuration :
 
   ```xml
   <clickhouse>
@@ -6213,6 +6217,10 @@ Renvoie l’instantané le plus ancien (Commit Sequence Number) visible pour une
   ```
 
   Pour plus d’informations, consultez la page [Prise en charge des transactions (ACID)](/fr/concepts/features/operations/insert/transactions#transactions-commit-and-rollback).
+</Note>
+
+<Note>
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
 </Note>
 
 **Syntaxe**

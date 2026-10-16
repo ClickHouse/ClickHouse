@@ -39,6 +39,16 @@ import { CloudOnlyBadge } from "/snippets/ko/components/CloudOnlyBadge/CloudOnly
 
 HTTP CORS 헤더를 추가합니다.
 
+## analyze_index_with_multiple_key_columns_per_condition {#analyze_index_with_multiple_key_columns_per_condition}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "인덱스 분석(Index Analysis) 시 단일 조건이 여러 키 열을 제한할 수 있도록 하는 새로운 설정입니다."}]}]} />
+
+인덱스 분석(Index Analysis) 시 `WHERE`/`PREWHERE` 표현식의 원자적 조건(단일 비교, `IN`, `has` 등) 하나가 여러 키 열(Key Columns)을 제한할 수 있도록 허용합니다.
+
+예를 들어 테이블에 `ORDER BY (toDate(ts), ts)`가 지정되어 있고 쿼리에 `WHERE ts = '2026-01-10 00:00:00' AND user_id = 42`가 포함되어 있으면, 두 조건 중 첫 번째 조건이 두 키 열을 모두 제한합니다. 즉, `toDate(ts) = '2026-01-10' AND ts = '2026-01-10 00:00:00'`이라고 작성한 것과 동일하게 분석됩니다. 이 설정을 비활성화하면 해당 프레디케이트는 `ts`만 제한합니다. 단, `(a, b) IN ((1, 2), (3, 4))`와 같은 튜플 멤버십 프레디케이트는 이 경우에도 여러 키 열을 제한할 수 있습니다.
+
 ## analyze_index_with_space_filling_curves {#analyze_index_with_space_filling_curves}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

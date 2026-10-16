@@ -63,13 +63,13 @@ import { PrivatePreviewBadge } from "/snippets/ru/components/PrivatePreviewBadge
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": ""},{"label": "Новая экспериментальная настройка."}]}]} />
 
-Принудительно использовать указанный тип операторов Exchange между стадиями распределённого запроса.
+Принудительно использовать указанный тип операторов обменника между стадиями распределённого запроса.
 
 Возможные значения:
 
-* &#39;&#39; - не принудительно использовать какой-либо тип операторов Exchange, предоставить выбор оптимизатору,
+* &#39;&#39; - не принудительно использовать какой-либо тип операторов обменника, предоставить выбор оптимизатору,
 * &#39;Persisted&#39; - использовать временные файлы в Объектном хранилище,
-* &#39;Streaming&#39; - передавать данные Exchange по сети.
+* &#39;Streaming&#39; - передавать данные обменника по сети.
 
 ## distributed_plan_force_shuffle_aggregation {#distributed_plan_force_shuffle_aggregation}
 
@@ -81,6 +81,16 @@ import { PrivatePreviewBadge } from "/snippets/ru/components/PrivatePreviewBadge
 
 Используйте стратегию агрегации Shuffle вместо PartialAggregation + Merge в распределённом плане запроса.
 Игнорируется в случаях, когда стратегия Shuffle не может дать корректный результат, например для `GROUPING SETS` или когда агрегация должна выдавать результаты в порядке бакетов.
+
+## distributed_plan_join_runtime_filters {#distributed_plan_join_runtime_filters}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Новая экспериментальная настройка."}]}]} />
+
+При использовании `make_distributed_plan` фильтры JOIN времени выполнения, построенные на одной стадии, передаются на стадии, читающие проверяемую сторону, чтобы те отфильтровывали строки до их отправки. Если фильтр не поступил, строки передаются без фильтрации. Требуется включённая настройка `enable_join_runtime_filters`.
 
 ## distributed_plan_max_buffered_log_rows {#distributed_plan_max_buffered_log_rows}
 

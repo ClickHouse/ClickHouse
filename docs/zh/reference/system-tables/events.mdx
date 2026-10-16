@@ -348,11 +348,71 @@ DNS 解析结果中发现的 HTTP 连接新地址总数
 
 ### AutomaticParallelReplicasDecidedWithoutBuildingPlan {#automaticparallelreplicasdecidedwithoutbuildingplan}
 
-自动并行副本机制依据先前执行时记录的边界，未构建候选执行计划进行成本评估即决定不使用并行副本的次数
+自动并行副本机制依据先前执行时记录的边界，未构建候选执行计划进行成本评估即决定不使用并行副本的次数。说明具体原因的事件 (例如 `AutoParallelReplicasRejectedByCostModel`) 会同时单独计数
 
 ### AutomaticParallelReplicasProbePlansBuilt {#automaticparallelreplicasprobeplansbuilt}
 
-自动并行副本机制构建使用并行副本的候选计划、以便与单节点计划进行比较的次数。此类计划并不一定会被采用：构建它们是为了估算成本，若单节点计划胜出，则会被丢弃
+自动并行副本机制为判断采用并行副本是否划算而构建并行副本执行计划的次数
+
+### AutoParallelReplicasApplied {#autoparallelreplicasapplied}
+
+自动并行副本机制将查询计划替换为并行副本查询计划的次数
+
+### AutoParallelReplicasBytesPerReplica {#autoparallelreplicasbytesperreplica}
+
+按自动并行副本的估算，该查询的读取量分摊到每个副本的字节数。无论最终决策如何，该值都会被记录，因此其分布既涵盖被 `automatic_parallel_replicas_min_bytes_per_replica` 拒绝的查询，也涵盖被其放行的查询
+
+### AutoParallelReplicasCostModelEvaluated {#autoparallelreplicascostmodelevaluated}
+
+自动并行副本机制进入成本模型评估，并将本地执行计划与并行副本执行计划进行比较的次数
+
+### AutoParallelReplicasNoStatistics {#autoparallelreplicasnostatistics}
+
+自动并行副本机制因尚无统计信息而转为收集统计信息、未作出决策的次数
+
+### AutoParallelReplicasOptimizationMicroseconds {#autoparallelreplicasoptimizationmicroseconds}
+
+自动并行副本优化所耗费的时间，不含构建并行副本执行计划的时间
+
+### AutoParallelReplicasPlanBuildMicroseconds {#autoparallelreplicasplanbuildmicroseconds}
+
+构建使用并行副本的执行计划所耗费的时间；自动并行副本功能会将该执行计划与本地执行计划进行对比
+
+### AutoParallelReplicasPlansNotComparable {#autoparallelreplicasplansnotcomparable}
+
+自动并行副本跳过查询的次数：在构建使用并行副本的执行计划之后，或在先前构建时记录的某个边界处，由于无法将该执行计划与本地执行计划充分匹配，以致无法进行比较或使用，因而跳过该查询。例如，无法将两者的读取逐一配对，或无法确定副本将拆分哪一个读取。具体属于哪种情况，可查看 `AutoParallelReplicas` 日志记录器的输出
+
+### AutoParallelReplicasPlanWithoutParallelReplicas {#autoparallelreplicasplanwithoutparallelreplicas}
+
+自动并行副本在启用并行副本构建执行计划后跳过某个查询的次数，原因是查询规划器最终未在该执行计划中使用并行副本，例如每个副本分到的行数过少，或查询中包含关联子查询。具体原因可在 `Planner` 日志记录器中查看
+
+### AutoParallelReplicasRejectedByCostModel {#autoparallelreplicasrejectedbycostmodel}
+
+自动并行副本机制因成本模型估算本地执行计划不慢于并行副本执行计划而决定不使用并行副本的次数
+
+### AutoParallelReplicasRejectedByDuplicatedReads {#autoparallelreplicasrejectedbyduplicatedreads}
+
+尽管成本模型倾向于使用并行副本，但自动并行副本仍拒绝启用的次数。原因是所读取的字节中，由每个副本完整读取 (而非在副本之间拆分) 的部分占比过高，超过了 `automatic_parallel_replicas_max_duplicated_read_ratio`
+
+### AutoParallelReplicasRejectedByThreshold {#autoparallelreplicasrejectedbythreshold}
+
+尽管成本模型倾向于使用并行副本，但因读取量低于 `automatic_parallel_replicas_min_bytes_per_replica`，自动并行副本未予启用的次数
+
+### AutoParallelReplicasSkippedDueToQuery {#autoparallelreplicasskippedduetoquery}
+
+自动并行副本在使用并行副本构建执行计划之前跳过查询的次数。跳过的原因是该查询包含其无法处理的特性，例如无法通过并行副本读取的连接，或无法收集统计信息的步骤。具体属于哪种情况，可查看 `AutoParallelReplicas` 日志记录器的输出
+
+### AutoParallelReplicasSkippedDueToSettings {#autoparallelreplicasskippedduetosettings}
+
+自动并行副本在使用并行副本构建执行计划之前，因所给定的设置而跳过查询的次数。具体属于哪种情况，可查看 `AutoParallelReplicas` 日志记录器的输出。完全关闭自动并行副本的设置不计入此项：当 `enable_parallel_replicas` 被禁用或被强制启用，或 `parallel_replicas_mode` 不为 `read_tasks` 时，该优化根本不会运行，效果与 `automatic_parallel_replicas_mode = 0` 相同
+
+### AutoParallelReplicasSkippedEarly {#autoparallelreplicasskippedearly}
+
+自动并行副本根本未构建使用并行副本的执行计划的次数，原因是索引分析已表明，执行计划中最大的读取操作分摊到每个副本的数据量小于 `automatic_parallel_replicas_min_bytes_per_replica`
+
+### AutoParallelReplicasStatisticsDrifted {#autoparallelreplicasstatisticsdrifted}
+
+从存储中读取的行数与已缓存的统计信息相差超过 2 倍，导致自动并行副本不作决策、转而重新收集统计信息的次数
 
 ### AzureClients {#azureclients}
 
@@ -766,6 +826,10 @@ Common executor 任务在 `executeStep()` 中的耗时。
 
 CPU 缩容事件总数
 
+### ConcurrencyControlParks {#concurrencycontrolparks}
+
+线程因非 CPU 等待 (例如阻塞式 I/O 或没有可运行的任务) 而释放 (挂起) 其 CPU 插槽的总次数。
+
 ### ConcurrencyControlPreemptedMicroseconds {#concurrencycontrolpreemptedmicroseconds}
 
 查询因 CPU 插槽被抢占而等待的总时长。
@@ -793,6 +857,10 @@ CPU 抢占总次数
 ### ConcurrencyControlSlotsGranted {#concurrencycontrolslotsgranted}
 
 按照每个查询保底 1 个线程，以及对设置了 &#39;use&#95;concurrency&#95;control&#39; = 0 的查询所授予的 CPU 插槽 数量
+
+### ConcurrencyControlUnparks {#concurrencycontrolunparks}
+
+线程在非 CPU 等待结束后重新获取其 CPU 插槽的总次数。
 
 ### ConcurrencyControlUpscales {#concurrencycontrolupscales}
 
@@ -1501,6 +1569,10 @@ Distributed Cache registry 事件。更新分布式缓存 registry 所耗费的�
 
 Distributed Cache registry 事件。分布式缓存 registry 的更新次数
 
+### DistrCacheRejectedRegistryRecords {#distrcacherejectedregistryrecords}
+
+分布式缓存注册表事件。因证书不受信任、签名不匹配，或证书或签名缺失而被忽略的注册表条目数量
+
 ### DistrCacheRemoveOutdatedMicroseconds {#distrcacheremoveoutdatedmicroseconds}
 
 分布式缓存连接事件。表示从连接池中移除过期连接所耗费的时间
@@ -1665,6 +1737,10 @@ Distributed Cache 客户端事件。在请求内部信息系统表 (system.distr
 
 分布式缓存连接事件。分布式缓存中创建的临时 File 的数量
 
+### DistrCacheUnexpectedServerCertificate {#distrcacheunexpectedservercertificate}
+
+分布式缓存连接事件。Distributed Cache 服务器出示的证书私钥与其 registry 条目中记录的私钥不符，导致客户端关闭连接并排除该服务器的次数
+
 ### DistrCacheUnsuccessfulConnectAttempts {#distrcacheunsuccessfulconnectattempts}
 
 分布式缓存连接事件。连接到分布式缓存失败的尝试次数
@@ -1692,6 +1768,10 @@ Distributed Cache 客户端事件。从分布式缓存中跳过的未使用数�
 ### DistrCacheUnusedPacketsBufferAllocations {#distrcacheunusedpacketsbufferallocations}
 
 Distributed Cache 客户端事件。在无法复用现有缓冲区时发生的额外缓冲区分配次数
+
+### DistrCacheVerifiedServerCertificate {#distrcacheverifiedservercertificate}
+
+分布式缓存连接事件。Distributed Cache 服务器出示的证书与其 registry 条目中记录的私钥相匹配的次数
 
 ### DistrCacheWriteBytes {#distrcachewritebytes}
 
@@ -2133,6 +2213,14 @@ File 段优先级提升时间
 
 等待处于 DOWNLOADING 状态的 File 段时发生超时的次数 (参见 `filesystem_cache_wait_for_concurrent_download_timeout_milliseconds`)
 
+### FileSegmentWaitWithoutData {#filesegmentwaitwithoutdata}
+
+等待处于 DOWNLOADING 状态的 File 段时，因下载器尚未下载到所等待的偏移量就释放了该段，导致等待结束的次数
+
+### FileSegmentWaitWithoutDataMicroseconds {#filesegmentwaitwithoutdatamicroseconds}
+
+`FileSegmentWaitWithoutData` 所统计的等待耗费的时间
+
 ### FileSegmentWriteMicroseconds {#filesegmentwritemicroseconds}
 
 File 段 write() 耗时
@@ -2289,6 +2377,10 @@ FileCache::assertCacheCorrectness 耗费的时间
 
 写入优先队列时锁定文件系统缓存的时间
 
+### FilesystemCachePromotedFileSegments {#filesystemcachepromotedfilesegments}
+
+在 SLRU 缓存策略中，从 probationary 队列提升 (移动) 至受保护队列的 File 段数量。
+
 ### FilesystemCacheReserveAheadRetries {#filesystemcachereserveaheadretries}
 
 采用预先预留 (reserve-ahead) 方式的文件系统缓存预留因空间不足而失败、随后改为严格按请求大小重试的次数
@@ -2440,6 +2532,14 @@ SQL 常规函数调用次数 (SQL 函数按块调用，因此该数值表示块�
 ### HTTPServerConnectionsReused {#httpserverconnectionsreused}
 
 复用的服务器 HTTP 连接数
+
+### IcebergCompactionCleanupDeferredByReaders {#icebergcompactioncleanupdeferredbyreaders}
+
+已被 Iceberg 压实取代的数据文件的移除操作被延后的次数。延后的原因是当前副本或其他副本上的查询仍在读取引用这些数据文件的快照。
+
+### IcebergCompactionCleanupDeferredBySnapshotLifetime {#icebergcompactioncleanupdeferredbysnapshotlifetime}
+
+因 Iceberg 压实操作或其所取代的快照的存在时间短于 `iceberg_outdated_snapshot_lifetime_seconds`，而延后移除已被 Iceberg 压实取代的数据文件的次数。
 
 ### IcebergIteratorInitializationMicroseconds {#icebergiteratorinitializationmicroseconds}
 
@@ -3901,6 +4001,18 @@ Move 执行器 任务在 cancel() 中耗费的时间。
 
 由于另一副本并发更新日志，未能创建用于对 ReplicatedMergeTree 中 parts 执行变更的日志条目。
 
+### ObjectStorageExclusiveLeasesAcquired {#objectstorageexclusiveleasesacquired}
+
+此服务器在对象存储中获取的键独占租用数量，例如对 Iceberg 表执行合并整理时获取的租用。
+
+### ObjectStorageExclusiveLeasesRefused {#objectstorageexclusiveleasesrefused}
+
+由于另一个副本持有该键尚未释放的租用，而放弃在对象存储中获取独占租用的尝试次数。
+
+### ObjectStorageExpiredLeasesRemoved {#objectstorageexpiredleasesremoved}
+
+从对象存储中移除的已过期租用对象及废弃标记的数量。
+
 ### ObjectStorageGlobFilteredObjects {#objectstorageglobfilteredobjects}
 
 未匹配 glob 或 regex 模式、因此在列出时被跳过的对象。
@@ -4028,6 +4140,26 @@ Keeper 提交失败次数
 ### ObjectStorageReadObjects {#objectstoragereadobjects}
 
 对象存储源中实际打开并读取的对象数。
+
+### ObjectStorageSharedLeasesAcquired {#objectstoragesharedleasesacquired}
+
+当该服务器上的某个查询获取了一个尚未被该服务器租用的键 (例如正在读取的 Iceberg 快照) 时，写入对象存储的键共享租用数量。
+
+### ObjectStorageSharedLeasesCondemned {#objectstoragesharedleasescondemned}
+
+本服务器的清理器在对象存储中标记为废弃的键数量。标记后，在清理器删除这些键所保护的内容期间，任何副本都不会租用这些键。
+
+### ObjectStorageSharedLeasesRefused {#objectstoragesharedleasesrefused}
+
+在对象存储中租用某个键时，因该键已被清理器标记为废弃而遭拒绝的尝试次数。例如，某个 Iceberg 快照在合并整理后即将被清理流程删除。
+
+### ObjectStorageSharedLeasesRenewed {#objectstoragesharedleasesrenewed}
+
+在本服务器的查询持有该键期间，续订任务在对象存储中重写的共享租用数量。
+
+### ObjectStorageSharedLeaseWriteFailures {#objectstoragesharedleasewritefailures}
+
+在获取或续订共享租用时，向对象存储写入共享租用失败的次数。
 
 ### ObsoleteReplicatedParts {#obsoletereplicatedparts}
 
@@ -4171,7 +4303,7 @@ OneLake catalog 通过 Entra ID refresh token 授权发起的访问令牌请求�
 
 ### ParallelReplicasQueryCount {#parallelreplicasquerycount}
 
-一次查询执行过程中使用并行副本执行的 (子) 查询数
+一次查询执行过程中计划使用并行副本执行的 (子) 查询数。自动并行副本在构建用于决策的执行计划时也会递增该计数，因此被计入的查询可能从未真正使用并行副本运行——实际执行情况请参见 `AutoParallelReplicasApplied` 和 `ParallelReplicasUsedCount`
 
 ### ParallelReplicasReadAssignedForStealingMarks {#parallelreplicasreadassignedforstealingmarks}
 
@@ -4985,9 +5117,17 @@ prewhere 读取器从 MergeTree 表中总共读取的行数。
 
 统计信息：如果查询以并行副本方式执行，各副本将读取的字节数
 
+### RuntimeDataflowStatisticsInputNanoseconds {#runtimedataflowstatisticsinputnanoseconds}
+
+查询执行期间，为自动并行副本收集各副本预计读取字节数的统计信息所耗费的时间
+
 ### RuntimeDataflowStatisticsOutputBytes {#runtimedataflowstatisticsoutputbytes}
 
 统计在使用并行副本执行查询时，副本将发送给发起节点的字节数
+
+### RuntimeDataflowStatisticsOutputNanoseconds {#runtimedataflowstatisticsoutputnanoseconds}
+
+在查询执行期间，为自动并行副本收集“各副本将向发起服务器发送的字节数”统计信息所耗费的时间
 
 ### RuntimeFilterBlocksProcessed {#runtimefilterblocksprocessed}
 
@@ -5000,6 +5140,10 @@ prewhere 读取器从 MergeTree 表中总共读取的行数。
 ### RuntimeFilterBloomFilterBuildsSkipped {#runtimefilterbloomfilterbuildsskipped}
 
 被跳过的 JOIN 运行时过滤器 Bloom filter 构建次数：根据哈希表统计信息得出的构建端 key 数量预测该过滤器的置位比例会超过最大值，因此跳过构建
+
+### RuntimeFilterDeliveriesAbandoned {#runtimefilterdeliveriesabandoned}
+
+因接收方断开连接或停止读取而放弃投递 JOIN 运行时过滤器的次数；受影响的目标端不会收到过滤器，其行将不经过滤直接通过
 
 ### RuntimeFilterGranulesConsidered {#runtimefiltergranulesconsidered}
 
@@ -5017,6 +5161,18 @@ JOIN 运行时过滤器为进行读取时裁剪而检查的粒度数
 
 在 JOIN 运行时过滤器的构建端尚未完成时对其执行查找的块数量，这些块将不经过滤直接通过
 
+### RuntimeFilterOversizedStatesRejected {#runtimefilteroversizedstatesrejected}
+
+因超出大小限制而未被使用或未被发送的 JOIN 运行时过滤器状态数量；对应的行将不经过滤直接通过
+
+### RuntimeFilterReceiveBranchFailures {#runtimefilterreceivebranchfailures}
+
+未能从其他任务接收 JOIN 运行时过滤器的任务数；此类任务不会使用该过滤器，所有行将不经过滤直接通过
+
+### RuntimeFilterReceivesAbandoned {#runtimefilterreceivesabandoned}
+
+在连接建立后、到达 stream 末尾前，发送方即断开连接的 JOIN 运行时过滤器 stream 数量；若此时尚未收到发送方的状态，则不会使用受影响的过滤器，行将不经过滤直接通过
+
 ### RuntimeFilterRowsChecked {#runtimefilterrowschecked}
 
 经 JOIN 运行时过滤器 检查的行数
@@ -5032,6 +5188,22 @@ JOIN 运行时过滤器为进行读取时裁剪而检查的粒度数
 ### RuntimeFiltersCreated {#runtimefilterscreated}
 
 单次查询中创建的不同 JOIN 运行时过滤器 数量
+
+### RuntimeFilterStateBytesReceived {#runtimefilterstatebytesreceived}
+
+从分布式查询计划中其他任务接收的已序列化 JOIN 运行时过滤器状态的字节数
+
+### RuntimeFilterStateBytesSent {#runtimefilterstatebytessent}
+
+发送给分布式查询计划中其他任务的已序列化 JOIN 运行时过滤器状态的字节数，按每个目标端 stream 各计一次
+
+### RuntimeFilterStatesReceived {#runtimefilterstatesreceived}
+
+从分布式查询计划中其他任务接收到的已序列化 JOIN 运行时过滤器状态的数量
+
+### RuntimeFilterStatesSent {#runtimefilterstatessent}
+
+已加入发送队列、待发往分布式查询计划中其他任务的 JOIN 运行时过滤器状态数量，每个目标端 stream 各计一个，包括后来被放弃投递的状态
 
 ### RWLockAcquiredReadLocks {#rwlockacquiredreadlocks}
 

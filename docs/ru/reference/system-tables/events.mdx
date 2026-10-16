@@ -349,11 +349,71 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 
 ### AutomaticParallelReplicasDecidedWithoutBuildingPlan {#automaticparallelreplicasdecidedwithoutbuildingplan}
 
-Количество случаев, когда механизм автоматических параллельных реплик отказался от использования параллельных реплик на границе, запомненной при одном из предыдущих выполнений, не строя план-кандидат для оценки стоимости
+Количество случаев, когда механизм автоматических параллельных реплик отказался от использования параллельных реплик на границе, запомненной при одном из предыдущих выполнений, не строя план-кандидат для оценки стоимости. Вместе с ним учитывается событие, указывающее причину, например `AutoParallelReplicasRejectedByCostModel`
 
 ### AutomaticParallelReplicasProbePlansBuilt {#automaticparallelreplicasprobeplansbuilt}
 
-Количество случаев, когда механизм автоматических параллельных реплик строил план-кандидат с параллельными репликами для сравнения с планом выполнения на одном узле. Используется не каждый такой план: он строится лишь для оценки стоимости и отбрасывается, если план для одного узла оказывается выгоднее
+Количество случаев, когда механизм автоматических параллельных реплик строил план с параллельными репликами, чтобы определить, оправдано ли их использование
+
+### AutoParallelReplicasApplied {#autoparallelreplicasapplied}
+
+Количество случаев, когда механизм автоматических параллельных реплик заменял план запроса планом с параллельными репликами
+
+### AutoParallelReplicasBytesPerReplica {#autoparallelreplicasbytesperreplica}
+
+Объём данных в байтах на реплику, который приходится при чтении этого запроса, согласно оценке механизма автоматических параллельных реплик. Значение записывается независимо от принятого решения, поэтому распределение охватывает как запросы, отклонённые настройкой `automatic_parallel_replicas_min_bytes_per_replica`, так и пропущенные ею
+
+### AutoParallelReplicasCostModelEvaluated {#autoparallelreplicascostmodelevaluated}
+
+Количество случаев, когда механизм автоматических параллельных реплик доходил до модели стоимости и сравнивал локальный план с планом с параллельными репликами
+
+### AutoParallelReplicasNoStatistics {#autoparallelreplicasnostatistics}
+
+Количество случаев, когда у механизма автоматических параллельных реплик ещё не было статистики, и вместо принятия решения он собирал её
+
+### AutoParallelReplicasOptimizationMicroseconds {#autoparallelreplicasoptimizationmicroseconds}
+
+Время, затраченное на оптимизацию автоматических параллельных реплик, без учёта построения плана с параллельными репликами
+
+### AutoParallelReplicasPlanBuildMicroseconds {#autoparallelreplicasplanbuildmicroseconds}
+
+Время, затраченное на построение плана с параллельными репликами, который механизм автоматических параллельных реплик сравнивает с локальным планом (в микросекундах)
+
+### AutoParallelReplicasPlansNotComparable {#autoparallelreplicasplansnotcomparable}
+
+Количество случаев, когда механизм автоматических параллельных реплик пропустил запрос после построения плана с параллельными репликами (или на границе, запомненной при его предыдущем построении), поскольку не смог сопоставить этот план с локальным настолько, чтобы сравнить или использовать его: например, не удалось сопоставить их операции чтения или определить, какое чтение реплики будут разделять между собой. Какой именно это был случай, указывает логгер `AutoParallelReplicas`
+
+### AutoParallelReplicasPlanWithoutParallelReplicas {#autoparallelreplicasplanwithoutparallelreplicas}
+
+Количество случаев, когда механизм автоматических параллельных реплик пропустил запрос после построения плана с параллельными репликами, поскольку планировщик не задействовал в нём параллельные реплики — например, из-за слишком малого числа строк на реплику или наличия коррелированного подзапроса. Причина записывается логгером `Planner`
+
+### AutoParallelReplicasRejectedByCostModel {#autoparallelreplicasrejectedbycostmodel}
+
+Количество случаев, когда механизм автоматических параллельных реплик отказался от использования параллельных реплик, поскольку модель стоимости оценила локальный план как не менее быстрый, чем план с параллельными репликами
+
+### AutoParallelReplicasRejectedByDuplicatedReads {#autoparallelreplicasrejectedbyduplicatedreads}
+
+Количество случаев, когда механизм автоматических параллельных реплик отказался от их использования, хотя модель стоимости говорила в пользу параллельных реплик, поскольку доля прочитанных байтов, которые каждая реплика прочитала бы целиком, а не разделила бы с другими, оказалась слишком большой и превысила значение `automatic_parallel_replicas_max_duplicated_read_ratio`
+
+### AutoParallelReplicasRejectedByThreshold {#autoparallelreplicasrejectedbythreshold}
+
+Количество случаев, когда механизм автоматических параллельных реплик отказался от их использования, хотя модель стоимости оценивала параллельные реплики как более выгодные, поскольку объём чтения был ниже порога `automatic_parallel_replicas_min_bytes_per_replica`
+
+### AutoParallelReplicasSkippedDueToQuery {#autoparallelreplicasskippedduetoquery}
+
+Количество случаев, когда механизм автоматических параллельных реплик пропускал запрос до построения плана с параллельными репликами, поскольку запрос использует возможность, которую механизм не поддерживает: например, JOIN, который нельзя прочитать с параллельными репликами, или шаг плана, для которого невозможно собрать статистику. Конкретная причина указывается в сообщениях логгера `AutoParallelReplicas`
+
+### AutoParallelReplicasSkippedDueToSettings {#autoparallelreplicasskippedduetosettings}
+
+Количество случаев, когда механизм автоматических параллельных реплик пропустил запрос до построения плана с параллельными репликами из-за заданных ему настроек. Конкретная причина указывается в сообщении логгера `AutoParallelReplicas`. Настройки, полностью отключающие автоматические параллельные реплики, не учитываются: если настройка `enable_parallel_replicas` отключена или включена принудительно либо значение `parallel_replicas_mode` отличается от `read_tasks`, оптимизация вообще не выполняется — так же, как при `automatic_parallel_replicas_mode = 0`
+
+### AutoParallelReplicasSkippedEarly {#autoparallelreplicasskippedearly}
+
+Количество случаев, когда механизм автоматических параллельных реплик даже не строил план с параллельными репликами, поскольку анализ индексов уже показал, что самая крупная операция чтения в плане даёт менее `automatic_parallel_replicas_min_bytes_per_replica` на реплику
+
+### AutoParallelReplicasStatisticsDrifted {#autoparallelreplicasstatisticsdrifted}
+
+Количество случаев, когда число строк, прочитанных из хранилища, отличалось от кэшированной статистики более чем в 2 раза, из-за чего механизм автоматических параллельных реплик не принимал решение, а заново собирал статистику
 
 ### AzureClients {#azureclients}
 
@@ -767,6 +827,10 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 
 Общее количество случаев уменьшения ресурсов CPU
 
+### ConcurrencyControlParks {#concurrencycontrolparks}
+
+Общее число случаев, когда поток освобождал (парковал) свой слот CPU на время ожидания, не связанного с CPU, например при блокирующем вводе-выводе или при отсутствии задач для выполнения.
+
 ### ConcurrencyControlPreemptedMicroseconds {#concurrencycontrolpreemptedmicroseconds}
 
 Общее время ожидания запроса из-за вытеснения слотов CPU.
@@ -794,6 +858,10 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 ### ConcurrencyControlSlotsGranted {#concurrencycontrolslotsgranted}
 
 Количество слотов CPU, выданных по гарантии «1 поток на запрос», а также для запросов с настройкой &#39;use&#95;concurrency&#95;control&#39; = 0
+
+### ConcurrencyControlUnparks {#concurrencycontrolunparks}
+
+Общее количество случаев, когда поток повторно получал свой слот CPU после ожидания, не связанного с CPU.
 
 ### ConcurrencyControlUpscales {#concurrencycontrolupscales}
 
@@ -1502,6 +1570,10 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 
 Событие, связанное с реестром распределённого кэша. Количество обновлений реестра распределённого кэша
 
+### DistrCacheRejectedRegistryRecords {#distrcacherejectedregistryrecords}
+
+Событие реестра Distributed Cache. Количество записей реестра, проигнорированных, поскольку их сертификат не является доверенным, подпись не совпадает либо сертификат или подпись отсутствуют
+
 ### DistrCacheRemoveOutdatedMicroseconds {#distrcacheremoveoutdatedmicroseconds}
 
 Событие подключения к распределённому кэшу. Время, затраченное на удаление устаревших подключений из пула
@@ -1666,6 +1738,10 @@ Distributed Cache server event. Время ожидания мьютекса б�
 
 Событие подключения к распределённому кэшу. Количество временных файлов, созданных в распределённом кэше
 
+### DistrCacheUnexpectedServerCertificate {#distrcacheunexpectedservercertificate}
+
+Событие подключения к распределённому кэшу. Количество случаев, когда сервер distributed cache предъявлял сертификат, ключ которого не совпадал с ключом в его записи в registry, из-за чего клиент закрывал соединение и исключал этот сервер
+
 ### DistrCacheUnsuccessfulConnectAttempts {#distrcacheunsuccessfulconnectattempts}
 
 Событие подключения к распределённому кэшу. Число неудачных попыток подключения к распределённому кэшу
@@ -1693,6 +1769,10 @@ Distributed Cache server event. Время ожидания мьютекса б�
 ### DistrCacheUnusedPacketsBufferAllocations {#distrcacheunusedpacketsbufferallocations}
 
 Событие клиента Distributed Cache. Количество дополнительных выделений буфера в случаях, когда не удалось повторно использовать существующий буфер
+
+### DistrCacheVerifiedServerCertificate {#distrcacheverifiedservercertificate}
+
+Событие подключения к распределённому кэшу. Количество случаев, когда сервер distributed cache предъявлял сертификат с ключом, указанным в его записи в registry
 
 ### DistrCacheWriteBytes {#distrcachewritebytes}
 
@@ -2134,6 +2214,14 @@ Distributed Cache server event. Время ожидания мьютекса б�
 
 Сколько раз ожидание сегмента файла в состоянии DOWNLOADING завершилось по тайм-ауту (см. `filesystem_cache_wait_for_concurrent_download_timeout_milliseconds`)
 
+### FileSegmentWaitWithoutData {#filesegmentwaitwithoutdata}
+
+Количество случаев, когда ожидание сегмента файла в состоянии DOWNLOADING завершилось из-за того, что загрузчик освободил сегмент, не успев загрузить данные до ожидаемого смещения
+
+### FileSegmentWaitWithoutDataMicroseconds {#filesegmentwaitwithoutdatamicroseconds}
+
+Время, затраченное на ожидания, учитываемые счётчиком `FileSegmentWaitWithoutData`
+
 ### FileSegmentWriteMicroseconds {#filesegmentwritemicroseconds}
 
 Время выполнения write() для сегмента файла
@@ -2290,6 +2378,10 @@ Distributed Cache server event. Время ожидания мьютекса б�
 
 Время блокировки файлового кэша при записи в очередь с приоритетом
 
+### FilesystemCachePromotedFileSegments {#filesystemcachepromotedfilesegments}
+
+Количество сегментов файла, повышенных (перемещённых) из пробационной очереди в защищённую в политике кэширования SLRU.
+
 ### FilesystemCacheReserveAheadRetries {#filesystemcachereserveaheadretries}
 
 Количество случаев, когда резервирование места в файловом кэше с упреждением (опережающее резервирование) не удалось выполнить из-за нехватки места и оно было повторено ровно на запрошенный размер
@@ -2441,6 +2533,14 @@ Distributed Cache server event. Время ожидания мьютекса б�
 ### HTTPServerConnectionsReused {#httpserverconnectionsreused}
 
 Количество повторно используемых HTTP-соединений сервера
+
+### IcebergCompactionCleanupDeferredByReaders {#icebergcompactioncleanupdeferredbyreaders}
+
+Количество случаев, когда удаление файлов данных, замещённых в результате компактации Iceberg, было отложено, поскольку запрос на этой или другой реплике всё ещё читал снимок, который на них ссылается.
+
+### IcebergCompactionCleanupDeferredBySnapshotLifetime {#icebergcompactioncleanupdeferredbysnapshotlifetime}
+
+Количество случаев, когда удаление файлов данных, замещённых в результате компактации Iceberg, было отложено, поскольку компактация или замещённый ею снимок оказались новее порога `iceberg_outdated_snapshot_lifetime_seconds`.
 
 ### IcebergIteratorInitializationMicroseconds {#icebergiteratorinitializationmicroseconds}
 
@@ -3902,6 +4002,18 @@ Distributed Cache server event. Время ожидания мьютекса б�
 
 Запись в журнале для мутации частей в ReplicatedMergeTree не создаётся из-за того, что другая реплика одновременно обновляет журнал.
 
+### ObjectStorageExclusiveLeasesAcquired {#objectstorageexclusiveleasesacquired}
+
+Количество эксклюзивных аренд (leases) ключей в объектном хранилище, полученных этим сервером (например, для компакции таблицы Iceberg).
+
+### ObjectStorageExclusiveLeasesRefused {#objectstorageexclusiveleasesrefused}
+
+Количество попыток получить эксклюзивную аренду в объектном хранилище, которые были прекращены, поскольку другая реплика удерживала действующую аренду ключа.
+
+### ObjectStorageExpiredLeasesRemoved {#objectstorageexpiredleasesremoved}
+
+Количество объектов аренды с истекшим сроком действия и маркеров пометки на удаление, удалённых из объектного хранилища.
+
 ### ObjectStorageGlobFilteredObjects {#objectstorageglobfilteredobjects}
 
 Объекты, которые не соответствовали glob-шаблону или шаблону регулярного выражения и были пропущены при перечислении объектов.
@@ -4029,6 +4141,26 @@ Distributed Cache server event. Время ожидания мьютекса б�
 ### ObjectStorageReadObjects {#objectstoragereadobjects}
 
 Объекты, которые источник объектного хранилища фактически открыл для чтения.
+
+### ObjectStorageSharedLeasesAcquired {#objectstoragesharedleasesacquired}
+
+Количество общих аренд ключей (например, читаемых снимков Iceberg), записанных в объектное хранилище в момент, когда запрос этого сервера получал ключ, ещё не арендованный сервером.
+
+### ObjectStorageSharedLeasesCondemned {#objectstoragesharedleasescondemned}
+
+Количество ключей в объектном хранилище, помеченных на удаление процессом очистки этого сервера, чтобы ни одна реплика не могла взять их в аренду, пока он удаляет защищаемые ими данные.
+
+### ObjectStorageSharedLeasesRefused {#objectstoragesharedleasesrefused}
+
+Количество отклонённых попыток взять в аренду ключ в объектном хранилище из-за того, что процесс очистки пометил этот ключ на удаление (например, снимок Iceberg, который вот-вот будет удалён при очистке после компакции).
+
+### ObjectStorageSharedLeasesRenewed {#objectstoragesharedleasesrenewed}
+
+Количество общих аренд, перезаписанных в объектном хранилище задачей продления, пока запросы этого сервера удерживали ключ.
+
+### ObjectStorageSharedLeaseWriteFailures {#objectstoragesharedleasewritefailures}
+
+Количество неудачных операций записи общих аренд в объектное хранилище при их получении или продлении.
 
 ### ObsoleteReplicatedParts {#obsoletereplicatedparts}
 
@@ -4172,7 +4304,7 @@ Distributed Cache server event. Время ожидания мьютекса б�
 
 ### ParallelReplicasQueryCount {#parallelreplicasquerycount}
 
-Количество (под)запросов, выполненных с использованием параллельных реплик при выполнении запроса
+Количество (под)запросов, которые планировалось выполнить с использованием параллельных реплик при выполнении запроса. Механизм автоматических параллельных реплик также увеличивает это значение для плана, который он строит при принятии решения, поэтому учтённый запрос мог так и не выполниться с параллельными репликами — что было выполнено фактически, см. в `AutoParallelReplicasApplied` и `ParallelReplicasUsedCount`
 
 ### ParallelReplicasReadAssignedForStealingMarks {#parallelreplicasreadassignedforstealingmarks}
 
@@ -4986,9 +5118,17 @@ Distributed Cache server event. Время ожидания мьютекса б�
 
 Собранная статистика о количестве байтов, которые реплики прочитали бы при выполнении запроса с параллельными репликами
 
+### RuntimeDataflowStatisticsInputNanoseconds {#runtimedataflowstatisticsinputnanoseconds}
+
+Время, затраченное во время выполнения запроса на сбор статистики о количестве байтов, которое прочитали бы реплики, для механизма автоматических параллельных реплик
+
 ### RuntimeDataflowStatisticsOutputBytes {#runtimedataflowstatisticsoutputbytes}
 
 Собранная статистика о количестве байтов, которые реплики отправили бы инициатору, если бы запрос выполнялся в режиме параллельных реплик
+
+### RuntimeDataflowStatisticsOutputNanoseconds {#runtimedataflowstatisticsoutputnanoseconds}
+
+Время, затраченное в ходе выполнения запроса на сбор статистики о количестве байтов, которые реплики отправили бы узлу-initiator, для механизма автоматических параллельных реплик
 
 ### RuntimeFilterBlocksProcessed {#runtimefilterblocksprocessed}
 
@@ -5001,6 +5141,10 @@ Distributed Cache server event. Время ожидания мьютекса б�
 ### RuntimeFilterBloomFilterBuildsSkipped {#runtimefilterbloomfilterbuildsskipped}
 
 Количество пропущенных сборок bloom filter для JOIN Runtime Filter из-за того, что по статистике хеш-таблицы количество ключей на стороне build указывало на превышение filter максимальной доли установленных bits
+
+### RuntimeFilterDeliveriesAbandoned {#runtimefilterdeliveriesabandoned}
+
+Количество доставок фильтра времени выполнения JOIN, прерванных из-за того, что получатель отключился или прекратил чтение; затронутый пункт назначения не получает фильтр, и его строки проходят без фильтрации
 
 ### RuntimeFilterGranulesConsidered {#runtimefiltergranulesconsidered}
 
@@ -5018,6 +5162,18 @@ Distributed Cache server event. Время ожидания мьютекса б�
 
 Количество блоков, проверенных по JOIN Runtime Filter до завершения построения его build-стороны; такие блоки пропускаются без фильтрации
 
+### RuntimeFilterOversizedStatesRejected {#runtimefilteroversizedstatesrejected}
+
+Количество состояний фильтра времени выполнения JOIN, которые не были использованы или не были отправлены из-за превышения ограничения по размеру; строки проходят без фильтрации
+
+### RuntimeFilterReceiveBranchFailures {#runtimefilterreceivebranchfailures}
+
+Количество задач, которым не удалось получить фильтр времени выполнения JOIN от другой задачи; такая задача не применяет фильтр, и строки проходят без фильтрации
+
+### RuntimeFilterReceivesAbandoned {#runtimefilterreceivesabandoned}
+
+Количество потоков фильтра времени выполнения JOIN, отправитель которых отключился после установки соединения, но до конца потока; если состояние отправителя не было получено, соответствующий фильтр не применяется и строки проходят без фильтрации
+
 ### RuntimeFilterRowsChecked {#runtimefilterrowschecked}
 
 Количество строк, проверенных фильтрами JOIN Runtime Filters
@@ -5033,6 +5189,22 @@ Distributed Cache server event. Время ожидания мьютекса б�
 ### RuntimeFiltersCreated {#runtimefilterscreated}
 
 Количество различных JOIN Runtime Filters, созданных в запросе
+
+### RuntimeFilterStateBytesReceived {#runtimefilterstatebytesreceived}
+
+Объём (в байтах) сериализованных состояний фильтров времени выполнения JOIN, полученных от других задач плана выполнения распределённого запроса
+
+### RuntimeFilterStateBytesSent {#runtimefilterstatebytessent}
+
+Объём в байтах сериализованных состояний Фильтра времени выполнения JOIN, отправленных другим задачам плана выполнения распределённого запроса; учитывается один раз для каждого потока-получателя
+
+### RuntimeFilterStatesReceived {#runtimefilterstatesreceived}
+
+Количество сериализованных состояний Фильтра времени выполнения JOIN, полученных от других задач плана выполнения распределённого запроса
+
+### RuntimeFilterStatesSent {#runtimefilterstatessent}
+
+Количество состояний Фильтра времени выполнения JOIN, поставленных в очередь на отправку другим задачам плана выполнения распределённого запроса (по одному на каждый поток пункта назначения), включая доставки, впоследствии прерванные
 
 ### RWLockAcquiredReadLocks {#rwlockacquiredreadlocks}
 
