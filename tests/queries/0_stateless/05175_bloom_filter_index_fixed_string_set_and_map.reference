@@ -83,3 +83,10 @@ absent map key over Date32 values
 absent map key with a Dynamic Tuple(FixedString) constant
 3
 3
+3
+3
+map key over Tuple(Enum8) values
+1
+1
+1
+1

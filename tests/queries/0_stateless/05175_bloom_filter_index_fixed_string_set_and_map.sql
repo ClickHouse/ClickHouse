@@ -218,8 +218,25 @@ OPTIMIZE TABLE t_bf_map_absent_tuple FINAL;
 
 SELECT count() FROM t_bf_map_absent_tuple WHERE m['absent'] = CAST(tuple(toFixedString('', 1)) AS Dynamic);
 SELECT count() FROM t_bf_map_absent_tuple WHERE m['absent'] = CAST(tuple(toFixedString('', 1)) AS Dynamic) SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_bf_map_absent_tuple WHERE m['absent'] = tuple(CAST(toFixedString('', 1) AS Dynamic));
+SELECT count() FROM t_bf_map_absent_tuple WHERE m['absent'] = tuple(CAST(toFixedString('', 1) AS Dynamic)) SETTINGS use_skip_indexes = 0;
 
 DROP TABLE t_bf_map_absent_tuple;
+
+SELECT 'map key over Tuple(Enum8) values';
+-- The column default of `Tuple(Enum8)` holds the enum zero, which is no valid value and cannot be probed.
+DROP TABLE IF EXISTS t_bf_map_tuple_enum;
+CREATE TABLE t_bf_map_tuple_enum (m Map(String, Tuple(Enum8('a' = 1, 'b' = 2))), INDEX bf mapKeys(m) TYPE bloom_filter GRANULARITY 1)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
+INSERT INTO t_bf_map_tuple_enum VALUES (map('k', tuple('a'))), (map('k', tuple('b')));
+OPTIMIZE TABLE t_bf_map_tuple_enum FINAL;
+
+SELECT count() FROM t_bf_map_tuple_enum WHERE m['k'] IN (SELECT tuple('b'));
+SELECT count() FROM t_bf_map_tuple_enum WHERE m['k'] IN (SELECT tuple('b')) SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_bf_map_tuple_enum WHERE m['k'] = tuple('b');
+SELECT count() FROM t_bf_map_tuple_enum WHERE m['k'] = tuple('b') SETTINGS use_skip_indexes = 0;
+
+DROP TABLE t_bf_map_tuple_enum;
 DROP TABLE t_bf_map_uint8_set_source;
 DROP TABLE t_bf_set;
 DROP TABLE t_bf_map;

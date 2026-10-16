@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/TypeTree.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <IO/ReadBufferFromString.h>
@@ -684,6 +685,16 @@ static ColumnPtr createMissingMapValueColumn(const DataTypePtr & map_value_type)
     return ColumnConst::create(std::move(column), 1);
 }
 
+/// Whether an `Enum` is nested in a composite map value type, e.g. `Tuple(Enum8('a' = 1))`. Its column
+/// default holds the zero of that `Enum`, which need not be a valid value, so converting the default
+/// to the type of a constant or a set (`'a'`) throws `UNKNOWN_ELEMENT_OF_ENUM`. Nothing can be
+/// concluded about a missing key then, and the callers decline the index.
+static bool hasNestedEnum(const DataTypePtr & map_value_type)
+{
+    const auto nested_type = removeLowCardinalityAndNullable(map_value_type);
+    return !isEnum(nested_type) && anyInTypeTree(*nested_type, [](const IDataType & type) { return isEnum(type); });
+}
+
 /// Whether `equals(<default of the map's value type>, constant)` holds, i.e. whether a row without
 /// the key can satisfy `m['k'] = constant`: `arrayElement` yields the value type's default for a
 /// missing key. The comparison is padding-aware for the string family (`'\0'` equals the
@@ -693,12 +704,17 @@ static ColumnPtr createMissingMapValueColumn(const DataTypePtr & map_value_type)
 static bool missingMapKeyMayCompareEqual(
     const DataTypePtr & map_value_type, const DataTypePtr & value_type, const Field & value_field, const ContextPtr & context)
 {
-    /// A `Variant` or `Dynamic` constant is rebuilt below from its `Field`, which loses its active type:
-    /// a `FixedString` becomes a `String` (`''` equals `toFixedString('', 1)` but not `'\0'`), also
-    /// nested in a `Tuple`, and a `Date32` becomes an `Int16`, which `equals` may even reject. So
-    /// `equals` would answer for the wrong types; assume the worst for every such constant.
-    const WhichDataType which_constant(removeLowCardinalityAndNullable(value_type));
-    if (which_constant.isVariant() || which_constant.isDynamic())
+    /// A `Variant`, `Dynamic` or `JSON` constant is rebuilt below from its `Field`, which loses its active
+    /// type: a `FixedString` becomes a `String` (`''` equals `toFixedString('', 1)` but not `'\0'`), and a
+    /// `Date32` becomes an `Int16`, which `equals` may even reject. The same holds for such a type nested
+    /// anywhere in the constant, e.g. `Tuple(Dynamic)`. So `equals` would answer for the wrong types;
+    /// assume the worst for every such constant.
+    const bool constant_has_erased_type = anyInTypeTree(*value_type, [](const IDataType & type)
+    {
+        const WhichDataType which(type);
+        return which.isVariant() || which.isDynamic() || which.isObject();
+    });
+    if (constant_has_erased_type || hasNestedEnum(map_value_type))
         return true;
 
     ColumnsWithTypeAndName arguments
@@ -855,6 +871,9 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         };
 
         const auto & map_value_type = key_node.getDAGNode()->result_type;
+        if (hasNestedEnum(map_value_type))
+            return false;
+
         if (set_contains_default_of(type->createColumnConstWithDefaultValue(1), type)
             || set_contains_default_of(createMissingMapValueColumn(map_value_type), map_value_type))
             return false;
