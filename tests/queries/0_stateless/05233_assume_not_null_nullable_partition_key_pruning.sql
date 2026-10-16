@@ -1,7 +1,7 @@
 -- Tags: no-replicated-database, no-parallel-replicas
 -- no-replicated-database: EXPLAIN output differs for replicated database.
 -- no-parallel-replicas: EXPLAIN output differs for parallel replicas.
--- Test for https://github.com/ClickHouse/ClickHouse/issues/121133
+-- Test for https://github.com/ClickHouse/ClickHouse/issues/121133 and https://github.com/ClickHouse/ClickHouse/issues/126369
 
 -- Randomized to 0 or 1, and the value changes the plan the EXPLAIN blocks below print.
 SET parallel_replicas_local_plan = 1;
@@ -35,12 +35,16 @@ SELECT 'assumeNotNull(c0) >= 0', (SELECT count() FROM t_flat WHERE assumeNotNull
 -- A set atom carries its own copy of the chain and is applied by MergeTreeSetIndex, not by KeyCondition.
 SELECT 'assumeNotNull(c0) IN (0)', (SELECT count() FROM t_flat WHERE assumeNotNull(c0) IN (0)), (SELECT count() FROM t_part WHERE assumeNotNull(c0) IN (0));
 
--- `use_skip_indexes = 0` sets skip_analysis on the part-level Min-Max condition only, so the
--- Partition step becomes the sole pruner and its Parts: denominator is the table's part count.
+SELECT 'isNull and isNotNull compared with a constant';
+SELECT '(c0 IS NULL) >= true', (SELECT count() FROM t_flat WHERE (c0 IS NULL) >= true), (SELECT count() FROM t_part WHERE (c0 IS NULL) >= true);
+SELECT '(c0 IS NOT NULL) < true', (SELECT count() FROM t_flat WHERE (c0 IS NOT NULL) < true), (SELECT count() FROM t_part WHERE (c0 IS NOT NULL) < true);
+
+-- `isNull` reports no monotonicity, so only the single-point Partition step can use it: it is the sole
+-- pruner and its Parts: denominator is the table's part count.
 SELECT 'the partition step is the sole pruner here, and it now keeps the NULL partition';
 SELECT trimLeft(explain) FROM (
-    EXPLAIN indexes = 1 SELECT c0 FROM t_part WHERE assumeNotNull(c0) = 0
-    SETTINGS optimize_use_implicit_projections = 0, optimize_use_projections = 0, use_skip_indexes = 0
+    EXPLAIN indexes = 1 SELECT c0 FROM t_part WHERE (c0 IS NULL) >= true
+    SETTINGS optimize_use_implicit_projections = 0, optimize_use_projections = 0
 ) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%';
 
 SELECT 'ifNull and coalesce reach the same chain once the rewrite that usually hides them is off';
@@ -85,10 +89,10 @@ SELECT 'control: with no NULL row the partition step is the only pruner and stil
 DROP TABLE IF EXISTS t_nonull;
 CREATE TABLE t_nonull (c0 Nullable(Int)) ENGINE = MergeTree PARTITION BY (c0) ORDER BY tuple() SETTINGS allow_nullable_key = 1;
 INSERT INTO t_nonull VALUES (0), (1), (5);
-SELECT 'assumeNotNull(c0) = 0', count() FROM t_nonull WHERE assumeNotNull(c0) = 0;
+SELECT 'isZeroOrNull(c0) >= true', count() FROM t_nonull WHERE isZeroOrNull(c0) >= true;
 SELECT trimLeft(explain) FROM (
-    EXPLAIN indexes = 1 SELECT c0 FROM t_nonull WHERE assumeNotNull(c0) = 0
-    SETTINGS optimize_use_implicit_projections = 0, optimize_use_projections = 0, use_skip_indexes = 0
+    EXPLAIN indexes = 1 SELECT c0 FROM t_nonull WHERE isZeroOrNull(c0) >= true
+    SETTINGS optimize_use_implicit_projections = 0, optimize_use_projections = 0
 ) WHERE explain LIKE '%Parts%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%';
 
 SELECT 'control: the primary-key path already rejected the chain and is unchanged';

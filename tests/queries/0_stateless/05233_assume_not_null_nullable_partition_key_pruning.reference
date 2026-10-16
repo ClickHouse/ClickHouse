@@ -6,13 +6,16 @@ assumeNotNull(c0) < 3	4	4
 NOT (assumeNotNull(c0) > 0)	3	3
 assumeNotNull(c0) >= 0	5	5
 assumeNotNull(c0) IN (0)	3	3
+isNull and isNotNull compared with a constant
+(c0 IS NULL) >= true	2	2
+(c0 IS NOT NULL) < true	2	2
 the partition step is the sole pruner here, and it now keeps the NULL partition
 Min-Max
 Condition: true
 Parts: 4/4
 Partition
-Condition: (assumeNotNull(c0) in [0, 0])
-Parts: 2/4
+Condition: (isNull(c0) in [1, +Inf))
+Parts: 1/4
 ifNull and coalesce reach the same chain once the rewrite that usually hides them is off
 ifNull(c0, 0) = 0	3	3
 coalesce(c0, 0) = 0	3	3
@@ -27,7 +30,7 @@ LowCardinality(Nullable) key	3	3
 SummingMergeTree, the query the fuzzer reported
 1
 control: with no NULL row the partition step is the only pruner and still prunes
-assumeNotNull(c0) = 0	1
+isZeroOrNull(c0) >= true	1
 Min-Max
 Parts: 3/3
 Partition
