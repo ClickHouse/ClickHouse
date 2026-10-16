@@ -41,5 +41,5 @@ WHERE current_database = currentDatabase()
     AND log_comment = '$CLICKHOUSE_TEST_UNIQUE_NAME'
     AND type = 'QueryFinish'
     AND query LIKE 'SELECT count(), sum(c)%'
-ORDER BY event_time_microseconds
+ORDER BY Settings['enable_adaptive_aggregator'] DESC
 "
