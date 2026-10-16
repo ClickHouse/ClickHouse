@@ -65,3 +65,14 @@ Sparse
 0
 0	0	0
 1	0	0
+composed state with dense input
+0	0
+composed state with sparse input
+0	0
+composed state with sparse groups
+0	0
+1	0
+composed state with only defaults
+0
+composed state with empty input
+1

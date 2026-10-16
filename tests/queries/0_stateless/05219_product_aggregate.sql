@@ -152,4 +152,36 @@ FROM product_sparse
 GROUP BY if(id < 3, 0, 1)
 ORDER BY if(id < 3, 0, 1);
 
+-- State inside OrDefault must not move sparse defaults past nondefault values.
+SELECT 'composed state with dense input';
+SELECT finalizeAggregation(productStateOrDefault(x)), finalizeAggregation(productOrDefaultState(x))
+FROM
+(
+    SELECT if(number IN (0, 2), 1e300, 0.) AS x
+    FROM numbers(200)
+    ORDER BY number
+)
+SETTINGS max_threads = 1;
+
+SELECT 'composed state with sparse input';
+SELECT finalizeAggregation(productStateOrDefault(x)), finalizeAggregation(productOrDefaultState(x))
+FROM (SELECT x FROM product_sparse ORDER BY id)
+SETTINGS max_threads = 1;
+
+SELECT 'composed state with sparse groups';
+SELECT if(id < 3, 0, 1) AS key, finalizeAggregation(productStateOrDefault(x))
+FROM (SELECT id, x FROM product_sparse ORDER BY id)
+GROUP BY key
+ORDER BY key
+SETTINGS max_threads = 1;
+
+SELECT 'composed state with only defaults';
+SELECT finalizeAggregation(productStateOrDefault(x))
+FROM (SELECT x FROM product_sparse WHERE id > 2 ORDER BY id)
+SETTINGS max_threads = 1;
+
+SELECT 'composed state with empty input';
+SELECT isNull(finalizeAggregation(productStateOrDefault(x)))
+FROM product_sparse WHERE 0;
+
 DROP TABLE product_sparse;
