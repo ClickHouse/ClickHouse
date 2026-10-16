@@ -1270,7 +1270,7 @@ The server successfully detected this situation and will download merged part fr
     M(ObjectStorageGlobFilteredObjects, "Objects that did not match the glob or regex pattern and were skipped during listing.", ValueType::Number) \
     M(ObjectStoragePredicateFilteredObjects, "Objects removed by virtual column predicate filtering on _path/_file.", ValueType::Number) \
     M(ObjectStorageReadObjects, "Objects actually opened for reading by the object storage source.", ValueType::Number) \
-    M(ObjectStorageMetadataFetchedForRead, "Number of object metadata requests (e.g. S3 HEAD) issued while opening objects for reading, because the size and ETag of the object were not known from listing or table metadata.", ValueType::Number) \
+    M(ObjectStorageMetadataFetchedForRead, "Number of object metadata requests (e.g. S3 HEAD) issued to read objects (by the object storage source, its file iterators, and schema inference), because the size and ETag of the object were not known from listing or table metadata.", ValueType::Number) \
     M(ObjectStorageMetadataFetchMicroseconds, "Total time spent on object metadata requests counted in `ObjectStorageMetadataFetchedForRead`.", ValueType::Microseconds) \
     M(ObjectStorageReaderWaitMicroseconds, "Total time object storage sources spent waiting for the reader of the next object, which is prepared in the background.", ValueType::Microseconds) \
     M(ObjectStorageQueryConditionCacheSkippedFiles, "Number of objects skipped entirely by the object storage source because the query condition cache showed that none of their row groups match the filter.", ValueType::Number) \
