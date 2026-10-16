@@ -3709,41 +3709,78 @@ bool QueryAnalyzer::expandMatchersInsideProjectionExpression(QueryTreeNodePtr & 
       */
     const bool drops_unqualified_matchers = functionDropsUnqualifiedMatcherArgument(function_node->getFunctionName());
 
-    auto expand_matchers_in_list = [&](QueryTreeNodes & nodes, bool drops_unqualified)
+    /** `resolveFunction` accepts an invalid expression in a statically unreachable branch of `if` and `multiIf`:
+      * it tries to resolve the branch, and if that throws, it replaces the function with its live branch.
+      * The condition is not known here, so an argument other than the first one that fails to expand is left
+      * as it is, and `resolveFunction` decides about it. It either drops the argument or reports the same error.
+      */
+    const bool may_have_unreachable_arguments = function_node->getFunctionName() == "if" || function_node->getFunctionName() == "multiIf";
+
+    auto expand_matchers_in_node = [&](QueryTreeNodePtr & list_node, bool drops_unqualified, QueryTreeNodes & expanded_nodes)
+    {
+        const auto * matcher_node = list_node->as<MatcherNode>();
+
+        if (matcher_node && !(drops_unqualified && matcher_node->isUnqualified()))
+        {
+            resolveExpressionNode(list_node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+            const auto & matched_nodes = list_node->as<ListNode &>().getNodes();
+            /// The nodes produced by the matcher are passed as well, see below.
+            for (const auto & matched_node : matched_nodes)
+                projection_nodes_before_matcher.insert(matched_node.get());
+            expanded_nodes.insert(expanded_nodes.end(), matched_nodes.begin(), matched_nodes.end());
+            expanded = true;
+            return;
+        }
+
+        if (!matcher_node)
+            expanded |= expandMatchersInsideProjectionExpression(list_node, scope);
+
+        /// The nodes are resolved in order, so the following matchers must not rewrite this one.
+        projection_nodes_before_matcher.insert(list_node.get());
+        expanded_nodes.push_back(list_node);
+    };
+
+    auto expand_matchers_in_list = [&](QueryTreeNodes & nodes, bool drops_unqualified, bool may_be_unreachable)
     {
         QueryTreeNodes expanded_nodes;
         expanded_nodes.reserve(nodes.size());
 
-        for (auto & list_node : nodes)
+        for (size_t i = 0; i < nodes.size(); ++i)
         {
-            const auto * matcher_node = list_node->as<MatcherNode>();
-
-            if (matcher_node && !(drops_unqualified && matcher_node->isUnqualified()))
+            auto & list_node = nodes[i];
+            if (!may_be_unreachable || i == 0)
             {
-                resolveExpressionNode(list_node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-                const auto & matched_nodes = list_node->as<ListNode &>().getNodes();
-                /// The nodes produced by the matcher are passed as well, see below.
-                for (const auto & matched_node : matched_nodes)
-                    projection_nodes_before_matcher.insert(matched_node.get());
-                expanded_nodes.insert(expanded_nodes.end(), matched_nodes.begin(), matched_nodes.end());
-                expanded = true;
+                expand_matchers_in_node(list_node, drops_unqualified, expanded_nodes);
                 continue;
             }
 
-            if (!matcher_node)
-                expanded |= expandMatchersInsideProjectionExpression(list_node, scope);
+            /// The argument is expanded in a copy, so that a failed attempt leaves neither the argument
+            /// nor the guard of the preceding nodes half-rewritten.
+            auto saved_projection_nodes_before_matcher = projection_nodes_before_matcher;
+            const bool saved_expanded = expanded;
+            const size_t saved_expanded_nodes_size = expanded_nodes.size();
+            auto list_node_copy = list_node->clone();
 
-            /// The nodes are resolved in order, so the following matchers must not rewrite this one.
-            projection_nodes_before_matcher.insert(list_node.get());
-            expanded_nodes.push_back(list_node);
+            try
+            {
+                expand_matchers_in_node(list_node_copy, drops_unqualified, expanded_nodes);
+            }
+            catch (const Exception &)
+            {
+                projection_nodes_before_matcher = std::move(saved_projection_nodes_before_matcher);
+                expanded = saved_expanded;
+                expanded_nodes.resize(saved_expanded_nodes_size);
+                projection_nodes_before_matcher.insert(list_node.get());
+                expanded_nodes.push_back(list_node);
+            }
         }
 
         nodes = std::move(expanded_nodes);
     };
 
     /// The parameters are resolved before the arguments, see `resolveFunction`.
-    expand_matchers_in_list(function_node->getParameters().getNodes(), false /*drops_unqualified*/);
-    expand_matchers_in_list(function_node->getArguments().getNodes(), drops_unqualified_matchers);
+    expand_matchers_in_list(function_node->getParameters().getNodes(), false /*drops_unqualified*/, false /*may_be_unreachable*/);
+    expand_matchers_in_list(function_node->getArguments().getNodes(), drops_unqualified_matchers, may_have_unreachable_arguments);
 
     if (!function_node->hasWindow())
         return expanded;
@@ -3770,8 +3807,10 @@ bool QueryAnalyzer::expandMatchersInsideProjectionExpression(QueryTreeNodePtr & 
             && windows_in_resolve_process.emplace(parent_window_it->second.get()).second)
         {
             auto parent_window_node = parent_window_it->second;
-            expanded |= expandMatchersInsideWindowDefinition(parent_window_node, scope);
-            windows_in_resolve_process.erase(parent_window_node.get());
+            {
+                SCOPE_EXIT({ windows_in_resolve_process.erase(parent_window_node.get()); });
+                expanded |= expandMatchersInsideWindowDefinition(parent_window_node, scope);
+            }
 
             /** Without `group_by_use_nulls` the window function copies the definition when it is resolved,
               * so the `REPLACE` transformers of the following projection items, which rewrite the `WINDOW` clause,
@@ -3805,17 +3844,15 @@ bool QueryAnalyzer::expandMatchersInsideWindowDefinition(QueryTreeNodePtr & node
     /** As with the projection items, the entries of the definition are resolved in order, `PARTITION BY` before `ORDER BY`,
       * so the following matchers must not rewrite the entries already passed. The guard is scoped to this definition:
       * the following projection items may still rewrite a named window in the `WINDOW` clause, as without `group_by_use_nulls`.
+      * All the entries added while walking the definition are removed, including the nested function arguments,
+      * and the ones that existed before are kept.
       */
-    std::vector<const IQueryTreeNode *> passed_nodes;
-    SCOPE_EXIT({
-        for (const auto * passed_node : passed_nodes)
-            projection_nodes_before_matcher.erase(passed_node);
-    });
+    auto projection_nodes_before_window_definition = projection_nodes_before_matcher;
+    SCOPE_EXIT({ projection_nodes_before_matcher = std::move(projection_nodes_before_window_definition); });
 
     auto mark_passed = [&](const QueryTreeNodePtr & passed_node)
     {
-        if (projection_nodes_before_matcher.insert(passed_node.get()).second)
-            passed_nodes.push_back(passed_node.get());
+        projection_nodes_before_matcher.insert(passed_node.get());
     };
 
     if (window_node->hasPartitionBy())
