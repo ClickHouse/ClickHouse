@@ -48,6 +48,7 @@ class CompiledAggregateFunctionsHolder;
 struct MemoryTrackerSwitcher;
 class NativeWriter;
 struct OutputBlockColumns;
+class PartitionedRecordBuffer;
 
 struct GroupingSetsParams
 {
@@ -436,6 +437,11 @@ public:
     size_t spillAdaptiveProducer(
         AggregatedDataVariants & result, AdaptiveAggregationProducer & adaptive, bool no_more_keys, size_t at_least_bytes) const;
 
+    /// Serves a spill request of the memory scheduler for the staged records that finished producers handed over to the
+    /// session (see `AdaptiveAggregationSession::producer_buffers`): writes them all to the session's spill streams and
+    /// frees them, while their spills have not ended at the finish barrier. Returns the released bytes.
+    size_t spillHandedOverStagedRecords(AdaptiveAggregationSession & shared) const;
+
     /// Decides once, after the finish barrier of an engaged aggregation and before its merge starts, whether the merge
     /// prunes by the top-K, and orders the buckets for it by their bounds. The bounds need every source's rows, in the
     /// count bins or in a table that the merge counts. A producer without the adaptive context (another aggregator of a
@@ -717,6 +723,9 @@ private:
     /// Redirects the thread's accounting to the per-table tracker (created on demand under the
     /// aggregator tracker). Returns the aggregator tracker, nullptr when there is none to switch to.
     MemoryTracker * switchToOwnTracker(AggregatedDataVariants & result, std::optional<MemoryTrackerSwitcher> & switcher) const;
+
+    /// The aggregator tracker when the current thread reports to the query it accounts for, nullptr otherwise.
+    MemoryTracker * aggregatorTracker() const;
 
     /// Indicates whether the aggregation is a simple `count()` / `count(*)` / `count(non-nullable_column)`
     ///
@@ -1131,10 +1140,11 @@ private:
     void addMergeCountedTablesToBounds(
         ManyAggregatedDataVariants & data, Int32 bucket, const AdaptiveTopKPruning & pruning, std::span<UInt64> bounds, Arena * arena) const;
 
-    /// Writes the producer's staged records to the session's spill streams, a block per partition, and frees them; the
-    /// producer then keeps appending into new chunks. Called over the external-aggregation threshold and on request of
-    /// the memory scheduler (see `spillAdaptiveProducer`).
-    void spillAdaptivePartitions(AdaptiveAggregationProducer & adaptive) const;
+    /// Writes the staged records of `partitions`, a producer's or a finished producer's handed over to `shared`, to the
+    /// session's spill streams, a block per partition, and frees them; a producer then keeps appending into new chunks.
+    /// Called over the external-aggregation threshold and on request of the memory scheduler (see
+    /// `spillAdaptiveProducer` and `spillHandedOverStagedRecords`).
+    void spillAdaptivePartitions(AdaptiveAggregationSession & shared, PartitionedRecordBuffer & partitions) const;
 
     /// Writes the producer's learning or frozen table to disk as a part of the ordinary external aggregation, then lets
     /// the producer learn its keys again in an empty single-level table. Called for a table over the

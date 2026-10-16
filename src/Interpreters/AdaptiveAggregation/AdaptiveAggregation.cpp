@@ -177,7 +177,7 @@ bool Aggregator::advanceAdaptiveProducer(
     /// Over the external-aggregation threshold a producer writes its staged records to disk, whatever its phase: one
     /// back on the baseline path keeps the records it staged while frozen, which flushing its own table cannot free.
     if (over_external_threshold && adaptiveStagingWorthSpilling(adaptive))
-        spillAdaptivePartitions(adaptive);
+        spillAdaptivePartitions(*adaptive.session, *adaptive.partitions);
 
     /// A frozen producer whose staged stream repeats its misses thaws for good, and the baseline's checks apply.
     if (adaptive.isFrozen() && adaptiveStagingRepeats(adaptive))
@@ -341,6 +341,7 @@ void Aggregator::finishAdaptiveProducer(AggregatedDataVariants & local_variants,
     {
         ++shared.frozen_producers;
         shared.repeat_dominated_producers += repeat_dominated;
+        shared.spillable_handed_over_bytes.fetch_add(adaptive.partitions->allocatedChunkBytes(), std::memory_order_relaxed);
         shared.producer_buffers.push_back(std::move(adaptive.partitions));
     }
     if (bins)
@@ -393,7 +394,7 @@ size_t Aggregator::spillAdaptiveProducer(
         std::optional<MemoryTrackerSwitcher> aggregator_scope;
         if (aggregator_tracker)
             aggregator_scope.emplace(aggregator_tracker);
-        spillAdaptivePartitions(adaptive);
+        spillAdaptivePartitions(*adaptive.session, *adaptive.partitions);
         released = staged_bytes;
     }
     if (released >= at_least_bytes)
@@ -409,19 +410,51 @@ size_t Aggregator::spillAdaptiveProducer(
     return released + (before > after ? before - after : 0);
 }
 
-void Aggregator::spillAdaptivePartitions(AdaptiveAggregationProducer & adaptive) const
+size_t Aggregator::spillHandedOverStagedRecords(AdaptiveAggregationSession & shared) const
 {
-    auto & partitions = *adaptive.partitions;
-    auto & shared = *adaptive.session;
+    /// The records were staged under the aggregator's tracker (see `executeOnBlock`), and their release is charged to
+    /// it as well.
+    std::optional<MemoryTrackerSwitcher> aggregator_scope;
+    if (MemoryTracker * aggregator_tracker = aggregatorTracker())
+        aggregator_scope.emplace(aggregator_tracker);
+
+    std::lock_guard lock(shared.producer_buffers_mutex);
+    const size_t spillable_bytes = shared.spillable_handed_over_bytes.load(std::memory_order_relaxed);
+    if (!spillable_bytes)
+        return 0;
+
+    size_t released = 0;
+    for (const auto & partitions : shared.producer_buffers)
+    {
+        if (const size_t staged_bytes = partitions->allocatedChunkBytes())
+        {
+            spillAdaptivePartitions(shared, *partitions);
+            released += staged_bytes;
+        }
+    }
+    /// Every hand-over added the bytes of its buffer, and a spill writes out every buffer.
+    chassert(released == spillable_bytes);
+    shared.spillable_handed_over_bytes.store(0, std::memory_order_relaxed);
+    return released;
+}
+
+void AdaptiveAggregationSession::endHandedOverSpills()
+{
+    std::lock_guard lock(producer_buffers_mutex);
+    spillable_handed_over_bytes.store(0, std::memory_order_relaxed);
+}
+
+void Aggregator::spillAdaptivePartitions(AdaptiveAggregationSession & shared, PartitionedRecordBuffer & partitions) const
+{
     if (!shared.spill_scope)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot write to temporary file because temporary file is not initialized");
 
     partitions.finishAppending();
 
-    /// The producers that cross the threshold together start at different partitions, so they do not queue on the
-    /// same stream's lock partition after partition.
+    /// The buffers spilled together start at different partitions, so they do not queue on the same stream's lock
+    /// partition after partition.
     const size_t num_partitions = shared.layout.numPartitions();
-    const size_t first_partition = (reinterpret_cast<uintptr_t>(&adaptive) >> 6) % num_partitions;
+    const size_t first_partition = (reinterpret_cast<uintptr_t>(&partitions) >> 6) % num_partitions;
     size_t spilled_records = 0;
     size_t spilled_bytes = 0;
     for (size_t i = 0; i < num_partitions; ++i)

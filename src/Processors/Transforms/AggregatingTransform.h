@@ -1,4 +1,5 @@
 #pragma once
+#include <array>
 #include <mutex>
 #include <optional>
 #include <Compression/CompressedReadBuffer.h>
@@ -16,6 +17,8 @@
 
 namespace DB
 {
+
+class AdaptiveSessionSpillable;
 
 class AggregatedChunkInfo final : public ChunkInfoCloneable<AggregatedChunkInfo>
 {
@@ -114,6 +117,9 @@ struct ManyAggregatedData
     /// Set when the adaptive aggregation is enabled for this aggregation (see
     /// `AdaptiveAggregationSession`); shared by all the participating transforms.
     AdaptiveAggregationSessionPtr adaptive_session;
+    /// The spillable component of the staged records the finished producers handed over to `adaptive_session`, created
+    /// with the first producer and registered by every producer (see `AdaptiveSessionSpillable`).
+    std::shared_ptr<AdaptiveSessionSpillable> adaptive_spillable;
 
     explicit ManyAggregatedData(size_t num_threads = 0) : variants(num_threads), num_producers(num_threads)
     {
@@ -176,7 +182,7 @@ public:
     PipelineUpdate updatePipeline() override;
     void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr counter) override { rows_before_aggregation.swap(counter); }
 
-    std::span<ISpillable * const> getSpillables() override { return {&spillable_ptr, 1}; }
+    std::span<ISpillable * const> getSpillables() override { return {spillables.data(), adaptive_spillable ? 2uz : 1uz}; }
     ProcessorMemoryStats getMemoryStats() const;
     size_t spill(size_t at_least_bytes);
     const TemporaryDataOnDiskScope * getSpillScope() const { return params->aggregator.getSpillScope(); }
@@ -186,7 +192,8 @@ protected:
 
 private:
     SpillableAdapter<AggregatingTransform> spillable{*this};
-    ISpillable * const spillable_ptr = &spillable;
+    /// The transform's own component, preceded by the adaptive session's when the transform is an adaptive producer.
+    std::array<ISpillable *, 2> spillables{&spillable, nullptr};
 
     size_t getGeneratingStepGroup() const;
 
@@ -226,6 +233,9 @@ private:
     /// on `many_data`. Held by pointer: the producer's definition stays out of this widely
     /// included header (see `AdaptiveAggregationImpl.h`).
     std::unique_ptr<AdaptiveAggregationProducer> adaptive_context;
+    /// Held past the reset of `many_data` at the finish of this producer: the executor keeps the registration of the
+    /// component until this transform finishes.
+    std::shared_ptr<AdaptiveSessionSpillable> adaptive_spillable;
     size_t max_threads = 1;
     size_t temporary_data_merge_threads = 1;
     bool should_produce_results_in_order_of_bucket_number = true;

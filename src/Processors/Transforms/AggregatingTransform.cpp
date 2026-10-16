@@ -1363,6 +1363,40 @@ void rebuildVariantsToKeptKeys(
 
 }
 
+/// The spillable component of the staged records that the finished producers of an adaptive aggregation handed over to
+/// its session (see `AdaptiveAggregationSession::producer_buffers`). Every producer registers it, so it stays
+/// registered while any producer still runs, and the scheduler spills it through whichever of them runs.
+class AdaptiveSessionSpillable
+{
+public:
+    AdaptiveSessionSpillable(AggregatingTransformParamsPtr params_, AdaptiveAggregationSessionPtr session_)
+        : params(std::move(params_)), session(std::move(session_))
+    {
+    }
+
+    SpillableAdapter<AdaptiveSessionSpillable> spillable{*this};
+
+    ProcessorMemoryStats getMemoryStats() const
+    {
+        if (!params->params.tmp_data_scope)
+            return {};
+        return {.spillable_memory_bytes = static_cast<Int64>(session->spillable_handed_over_bytes.load(std::memory_order_relaxed))};
+    }
+
+    size_t spill(size_t /*at_least_bytes*/)
+    {
+        if (!getMemoryStats().spillable_memory_bytes)
+            return 0;
+        return params->aggregator.spillHandedOverStagedRecords(*session);
+    }
+
+    const TemporaryDataOnDiskScope * getSpillScope() const { return params->aggregator.getSpillScope(); }
+
+private:
+    AggregatingTransformParamsPtr params;
+    AdaptiveAggregationSessionPtr session;
+};
+
 AggregatingTransform::AggregatingTransform(
     SharedHeader header, AggregatingTransformParamsPtr params_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_, size_t output_streams_)
     : AggregatingTransform(
@@ -1407,7 +1441,14 @@ AggregatingTransform::AggregatingTransform(
     /// `AggregatingStep` leaves its engagement verdict in the flag. Without a producer nothing is ever
     /// staged, so the merge-time drains find empty backlogs and do nothing.
     if (many_data->adaptive_session && params->aggregator.getParams().enable_adaptive_aggregator)
+    {
         adaptive_context = std::make_unique<AdaptiveAggregationProducer>(many_data->adaptive_session);
+        if (!many_data->adaptive_spillable)
+            many_data->adaptive_spillable = std::make_shared<AdaptiveSessionSpillable>(params, many_data->adaptive_session);
+        adaptive_spillable = many_data->adaptive_spillable;
+        /// The records of the finished producers go to disk before a running producer gives up its own.
+        spillables = {&adaptive_spillable->spillable, &spillable};
+    }
 }
 
 AggregatingTransform::~AggregatingTransform() = default;
@@ -1747,6 +1788,10 @@ void AggregatingTransform::initGenerate()
         many_data.reset();
         return;
     }
+
+    /// The merge reads the handed-over records from here on.
+    if (many_data->adaptive_session)
+        many_data->adaptive_session->endHandedOverSpills();
 
     /// If the kept-keys cutoff froze, restrict the variants of the streams that finished
     /// consuming before discovering the freeze: they still hold arbitrary keys whose merged

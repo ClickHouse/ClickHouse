@@ -2624,7 +2624,7 @@ Block Aggregator::getSpilledStatesHeader() const
     return header;
 }
 
-MemoryTracker * Aggregator::switchToOwnTracker(AggregatedDataVariants & result, std::optional<MemoryTrackerSwitcher> & switcher) const
+MemoryTracker * Aggregator::aggregatorTracker() const
 {
     if (params.only_merge || !CurrentThread::getMemoryTracker())
         return nullptr;
@@ -2633,6 +2633,14 @@ MemoryTracker * Aggregator::switchToOwnTracker(AggregatedDataVariants & result, 
     /// aggregation state across all threads; the per-table tracker under it accounts for one table only.
     MemoryTracker * tracker = memory_tracker.get();
     if (!tracker || CurrentThread::getMemoryTracker()->getParent() != tracker->getParent())
+        return nullptr;
+    return tracker;
+}
+
+MemoryTracker * Aggregator::switchToOwnTracker(AggregatedDataVariants & result, std::optional<MemoryTrackerSwitcher> & switcher) const
+{
+    MemoryTracker * tracker = aggregatorTracker();
+    if (!tracker)
         return nullptr;
 
     if (!result.memory_tracker || result.memory_tracker->getParent() != tracker)

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -166,10 +167,20 @@ struct AdaptiveAggregationSession
     std::unique_ptr<AdaptiveTopKPruning> top_k_pruning;
 
     /// The producers' staged records, handed over by each producer when it finishes (see
-    /// `Aggregator::finishAdaptiveProducer`). The merge tasks read them without the mutex: they are created after
-    /// the finish barrier, which ordered every hand-over before them.
+    /// `Aggregator::finishAdaptiveProducer`). While other producers still run, the memory scheduler may write them to
+    /// `spilled_partitions` under the mutex (see `Aggregator::spillHandedOverStagedRecords`), until the last producer
+    /// ends those spills at the finish barrier (see `endHandedOverSpills`). The merge tasks read them without the
+    /// mutex: they are created after the finish barrier, which ordered every hand-over and spill before them.
     std::mutex producer_buffers_mutex;
     std::vector<std::unique_ptr<PartitionedRecordBuffer>> producer_buffers;
+    /// The memory of the records in `producer_buffers` that a spill can still free, changed under the mutex. Read
+    /// without it: the scheduler reads it around every job of a producer, which must not wait for a spill.
+    std::atomic<size_t> spillable_handed_over_bytes = 0;
+
+    /// Ends the spills of the records in `producer_buffers` at the finish barrier: waits for a spill in progress, and
+    /// zeroes `spillable_handed_over_bytes`, which no hand-over raises again, so the later requests find nothing to
+    /// spill.
+    void endHandedOverSpills();
 
     /// Published under the same mutex and read after the finish barrier. Retained states contribute their
     /// merge-work estimates, and each staged record contributes one unit per aggregate using this merge.
