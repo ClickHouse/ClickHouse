@@ -1,5 +1,5 @@
 # docker build -t clickhouse/stateless-test .
-ARG CCTOOLS_TAG=latest
+ARG CCTOOLS_TAG
 FROM clickhouse/cctools:${CCTOOLS_TAG} AS cctools
 ARG FROM_TAG=latest
 ARG REDPANDA_VERSION=v25.1.3

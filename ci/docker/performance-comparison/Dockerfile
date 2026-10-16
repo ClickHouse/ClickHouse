@@ -1,6 +1,6 @@
 # docker build -t clickhouse/performance-comparison .
 
-ARG CCTOOLS_TAG=latest
+ARG CCTOOLS_TAG
 FROM clickhouse/cctools:${CCTOOLS_TAG} AS cctools
 ARG FROM_TAG=latest
 FROM clickhouse/test-base:$FROM_TAG

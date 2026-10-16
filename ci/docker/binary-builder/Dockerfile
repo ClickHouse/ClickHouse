@@ -1,5 +1,5 @@
 # docker build -t clickhouse/binary-builder .
-ARG CCTOOLS_TAG=latest
+ARG CCTOOLS_TAG
 FROM clickhouse/cctools:${CCTOOLS_TAG} AS cctools
 ARG FROM_TAG
 FROM clickhouse/fasttest:$FROM_TAG

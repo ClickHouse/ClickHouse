@@ -1,5 +1,5 @@
 # docker build -t clickhouse/test-base .
-ARG CCTOOLS_TAG=latest
+ARG CCTOOLS_TAG
 FROM clickhouse/cctools:${CCTOOLS_TAG} AS cctools
 FROM ubuntu:24.04
 
