@@ -1,0 +1,28 @@
+--- Arrow ---
+id	Nullable(Int32)					
+ym	Nullable(IntervalMonth)					
+dt	Tuple(\n    days IntervalDay,\n    milliseconds IntervalMillisecond)					
+mdn	Tuple(\n    months IntervalMonth,\n    days IntervalDay,\n    nanoseconds IntervalNanosecond)					
+1	14	(2,500)	(1,2,3)
+2	-3	(0,0)	(-1,-2,-30)
+3	\N	(7,86400000)	(0,0,0)
+1	2027-03-31	2026-02-02 00:00:00.500	2026-03-02 00:00:00.000000003
+2	2025-10-31	2026-01-31 00:00:00.000	2025-12-28 23:59:59.999999970
+3	\N	2026-02-08 00:00:00.000	2026-01-31 00:00:00.000000000
+(1,2,3)	Nullable(Tuple(months IntervalMonth, days IntervalDay, nanoseconds IntervalNanosecond))
+(-1,-2,-30)	Nullable(Tuple(months IntervalMonth, days IntervalDay, nanoseconds IntervalNanosecond))
+\N	Nullable(Tuple(months IntervalMonth, days IntervalDay, nanoseconds IntervalNanosecond))
+--- ArrowStream ---
+id	Nullable(Int32)					
+ym	Nullable(IntervalMonth)					
+dt	Tuple(\n    days IntervalDay,\n    milliseconds IntervalMillisecond)					
+mdn	Tuple(\n    months IntervalMonth,\n    days IntervalDay,\n    nanoseconds IntervalNanosecond)					
+1	14	(2,500)	(1,2,3)
+2	-3	(0,0)	(-1,-2,-30)
+3	\N	(7,86400000)	(0,0,0)
+1	2027-03-31	2026-02-02 00:00:00.500	2026-03-02 00:00:00.000000003
+2	2025-10-31	2026-01-31 00:00:00.000	2025-12-28 23:59:59.999999970
+3	\N	2026-02-08 00:00:00.000	2026-01-31 00:00:00.000000000
+(1,2,3)	Nullable(Tuple(months IntervalMonth, days IntervalDay, nanoseconds IntervalNanosecond))
+(-1,-2,-30)	Nullable(Tuple(months IntervalMonth, days IntervalDay, nanoseconds IntervalNanosecond))
+\N	Nullable(Tuple(months IntervalMonth, days IntervalDay, nanoseconds IntervalNanosecond))
