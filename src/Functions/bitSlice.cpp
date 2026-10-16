@@ -138,6 +138,16 @@ public:
         return col_res;
     }
 
+    /// Call for positive lengths only; unsigned arithmetic avoids overflow at Int64::max().
+    void calculatePositiveLength(Int64 length, size_t offset_bit, size_t & length_byte, size_t & over_bit) const
+    {
+        const UInt64 adjusted_length = static_cast<UInt64>(length) + offset_bit;
+        length_byte = adjusted_length / word_size;
+        over_bit = adjusted_length % word_size;
+        if (over_bit && (length_byte || over_bit > offset_bit))
+            ++length_byte;
+    }
+
     void writeSliceWithLeftShift(const StringSource::Slice & slice, StringSink & sink, size_t shift_bit, size_t abandon_last_bit = 0) const
     {
         if (!shift_bit && !abandon_last_bit)
@@ -263,11 +273,7 @@ public:
         size_t over_bit = 0;
         if (length > 0)
         {
-            const UInt64 adjusted_length = static_cast<UInt64>(length) + offset_bit;
-            length_byte = adjusted_length / word_size;
-            over_bit = adjusted_length % word_size;
-            if (over_bit && (length_byte || over_bit > offset_bit)) // begin and end are not in same byte OR there are gaps
-                length_byte++;
+            calculatePositiveLength(length, offset_bit, length_byte, over_bit);
         }
 
         while (!src.isEnd())
@@ -303,11 +309,7 @@ public:
         size_t over_bit = 0;
         if (length > 0)
         {
-            const UInt64 adjusted_length = static_cast<UInt64>(length) + offset_bit;
-            length_byte = adjusted_length / word_size;
-            over_bit = adjusted_length % word_size;
-            if (over_bit && (length_byte || over_bit > offset_bit)) // begin and end are not in same byte OR there are gaps
-                length_byte++;
+            calculatePositiveLength(length, offset_bit, length_byte, over_bit);
         }
 
         while (!src.isEnd())
@@ -375,11 +377,7 @@ public:
                 size_t over_bit = 0;
                 if (length > 0)
                 {
-                    const UInt64 adjusted_length = static_cast<UInt64>(length) + offset_bit;
-                    length_byte = adjusted_length / word_size;
-                    over_bit = adjusted_length % word_size;
-                    if (over_bit && (length_byte || (over_bit > offset_bit))) // begin and end are not in same byte OR there are gaps
-                        length_byte++;
+                    calculatePositiveLength(length, offset_bit, length_byte, over_bit);
                 }
                 else
                 {

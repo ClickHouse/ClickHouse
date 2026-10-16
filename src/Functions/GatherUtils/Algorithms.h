@@ -328,33 +328,62 @@ enum class SliceArgumentPolicy
     RejectOutOfRangeUInt64,
 };
 
+/// Keeps nullable/default handling identical for string and array slices.
+/// Only string call sites request checked UInt64 conversion.
+template <SliceArgumentPolicy policy>
+class DynamicSliceArgumentReader
+{
+public:
+    DynamicSliceArgumentReader(const IColumn * column, const char * argument_name)
+    {
+        if (!column || column->onlyNull())
+            return;
+
+        if (const auto * nullable = typeid_cast<const ColumnNullable *>(column))
+        {
+            nested_column = &nullable->getNestedColumn();
+            null_map = &nullable->getNullMapData();
+        }
+        else
+            nested_column = column;
+
+        if constexpr (policy == SliceArgumentPolicy::RejectOutOfRangeUInt64)
+            checked_reader.emplace(*nested_column, argument_name);
+    }
+
+    bool hasValue(size_t row) const
+    {
+        return nested_column && (!null_map || !(*null_map)[row]);
+    }
+
+    Int64 get(size_t row) const
+    {
+        if constexpr (policy == SliceArgumentPolicy::RejectOutOfRangeUInt64)
+            return checked_reader->get(row);
+        else
+            return nested_column->getInt(row);
+    }
+
+    Int64 getOr(size_t row, Int64 default_value) const
+    {
+        return hasValue(row) ? get(row) : default_value;
+    }
+
+private:
+    const IColumn * nested_column = nullptr;
+    const ColumnUInt8::Container * null_map = nullptr;
+    std::optional<CheckedSliceArgument> checked_reader;
+};
+
 template <SliceArgumentPolicy policy = SliceArgumentPolicy::PreserveLegacySemantics, typename Source, typename Sink>
 void NO_INLINE sliceDynamicOffsetUnbounded(Source && src, Sink && sink, const IColumn & offset_column)
 {
-    const bool is_null = offset_column.onlyNull();
-    const auto * nullable = typeid_cast<const ColumnNullable *>(&offset_column);
-    const ColumnUInt8::Container * null_map = nullable ? &nullable->getNullMapData() : nullptr;
-    const IColumn * nested_column = nullable ? &nullable->getNestedColumn() : &offset_column;
-
-    std::optional<CheckedSliceArgument> offset_reader;
-    if constexpr (policy == SliceArgumentPolicy::RejectOutOfRangeUInt64)
-    {
-        if (!is_null)
-            offset_reader.emplace(*nested_column, "offset");
-    }
+    const DynamicSliceArgumentReader<policy> offset_reader(&offset_column, "offset");
 
     while (!src.isEnd())
     {
         auto row_num = src.rowNum();
-        bool has_offset = !is_null && !(null_map && (*null_map)[row_num]);
-        Int64 offset = 1;
-        if (has_offset)
-        {
-            if constexpr (policy == SliceArgumentPolicy::RejectOutOfRangeUInt64)
-                offset = offset_reader->get(row_num);
-            else
-                offset = nested_column->getInt(row_num);
-        }
+        const Int64 offset = offset_reader.getOr(row_num, 1);
 
         if (offset != 0)
         {
@@ -377,62 +406,17 @@ void NO_INLINE sliceDynamicOffsetUnbounded(Source && src, Sink && sink, const IC
 template <bool inverse, SliceArgumentPolicy policy = SliceArgumentPolicy::PreserveLegacySemantics, typename Source, typename Sink>
 static void sliceDynamicOffsetBoundedImpl(Source && src, Sink && sink, const IColumn * offset_column, const IColumn * length_column)
 {
-    const bool is_offset_null = !offset_column || offset_column->onlyNull();
-    const ColumnUInt8::Container * offset_null_map = nullptr;
-    const IColumn * offset_nested_column = nullptr;
-
-    if (!is_offset_null)
-    {
-        const auto * offset_nullable = typeid_cast<const ColumnNullable *>(offset_column);
-        offset_null_map = offset_nullable ? &offset_nullable->getNullMapData() : nullptr;
-        offset_nested_column = offset_nullable ? &offset_nullable->getNestedColumn() : offset_column;
-    }
-
-    const bool is_length_null = !length_column || length_column->onlyNull();
-    const ColumnUInt8::Container * length_null_map = nullptr;
-    const IColumn * length_nested_column = nullptr;
-
-    if (!is_length_null)
-    {
-        const auto * length_nullable = typeid_cast<const ColumnNullable *>(length_column);
-        length_null_map = length_nullable ? &length_nullable->getNullMapData() : nullptr;
-        length_nested_column = length_nullable ? &length_nullable->getNestedColumn() : length_column;
-    }
-
-    std::optional<CheckedSliceArgument> offset_reader;
-    std::optional<CheckedSliceArgument> length_reader;
-    if constexpr (policy == SliceArgumentPolicy::RejectOutOfRangeUInt64)
-    {
-        if (!is_offset_null)
-            offset_reader.emplace(*offset_nested_column, "offset");
-        if (!is_length_null)
-            length_reader.emplace(*length_nested_column, "length");
-    }
+    const DynamicSliceArgumentReader<policy> offset_reader(offset_column, "offset");
+    const DynamicSliceArgumentReader<policy> length_reader(length_column, "length");
 
     while (!src.isEnd())
     {
         size_t row_num = src.rowNum();
-        bool has_offset = !is_offset_null && !(offset_null_map && (*offset_null_map)[row_num]);
-        bool has_length = !is_length_null && !(length_null_map && (*length_null_map)[row_num]);
-        Int64 offset = 1;
-        if (has_offset)
-        {
-            if constexpr (policy == SliceArgumentPolicy::RejectOutOfRangeUInt64)
-                offset = offset_reader->get(row_num);
-            else
-                offset = offset_nested_column->getInt(row_num);
-        }
-
-        Int64 size = 0;
-        if (has_length)
-        {
-            if constexpr (policy == SliceArgumentPolicy::RejectOutOfRangeUInt64)
-                size = length_reader->get(row_num);
-            else
-                size = length_nested_column->getInt(row_num);
-        }
-        else
-            size = static_cast<Int64>(src.getElementSize());
+        const Int64 offset = offset_reader.getOr(row_num, 1);
+        /// Do not calculate the full UTF-8 element size for a present length.
+        Int64 size = length_reader.hasValue(row_num)
+            ? length_reader.get(row_num)
+            : static_cast<Int64>(src.getElementSize());
 
         if (size < 0)
         {
