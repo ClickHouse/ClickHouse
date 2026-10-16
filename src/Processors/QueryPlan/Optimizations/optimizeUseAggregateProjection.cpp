@@ -343,21 +343,27 @@ static AggregateProjectionInfo getAggregatingProjectionInfo(
     const auto * select = projection.query_ast->as<ASTSelectQuery>();
     if (select && !select->with() && !containsAliases(projection.query_ast))
     {
-        ASTs pending{projection.query_ast};
+        ASTs pending = select->select()->children;
         while (!pending.empty())
         {
             auto ast = std::move(pending.back());
             pending.pop_back();
             const auto * function = ast->as<ASTFunction>();
-            if (function && (function->name == "isNull" || function->name == "isNotNull")
+            if (!function || function->name == "lambda" || function->is_window_function)
+                continue;
+            if ((function->name == "isNull" || function->name == "isNotNull")
                 && function->arguments && function->arguments->children.size() == 1)
             {
                 const auto * identifier = function->arguments->children.front()->as<ASTIdentifier>();
-                const auto * column = identifier ? metadata_snapshot->getColumns().tryGetPhysical(identifier->name()) : nullptr;
-                if (column && !canContainNull(*column->type))
-                    info.context_independent_null_checks.insert(function->getColumnName());
+                if (identifier)
+                {
+                    const auto column = metadata_snapshot->getColumns().tryGetPhysical(identifier->name());
+                    if (column && !canContainNull(*column->type))
+                        info.context_independent_null_checks.insert(function->getColumnName());
+                }
             }
-            pending.insert(pending.end(), ast->children.begin(), ast->children.end());
+            if (function->arguments)
+                pending.insert(pending.end(), function->arguments->children.begin(), function->arguments->children.end());
         }
     }
 
