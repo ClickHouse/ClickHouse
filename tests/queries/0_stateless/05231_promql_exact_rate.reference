@@ -19,6 +19,10 @@
 [NULL,10,10]
 --- Counter reset across window boundaries ---
 [NULL,10,15]
+--- A big or infinite value does not cancel out the change from the sample before the window ---
+[2]
+[0.05]
+[10]
 --- The sample before the window of the first grid point: used only in the exact mode ---
 [NULL]
 [0.25]

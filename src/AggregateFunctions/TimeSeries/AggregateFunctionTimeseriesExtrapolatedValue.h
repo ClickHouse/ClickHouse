@@ -268,9 +268,11 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
                 {
                     has_previous_sample = true;
                     const Float64 previous_value = static_cast<Float64>(previous.last_value);
-                    value_difference += first_value - previous_value;
+                    /// Use the end samples directly, so a big or infinite value in between can't cancel out the change.
                     if (check_resets && previous_value > first_value)
-                        value_difference += previous_value;     /// reset between the previous sample and the window
+                        value_difference = last_value + combined.resets;     /// reset between the previous sample and the window
+                    else
+                        value_difference = last_value - previous_value + combined.resets;
                 }
             }
 
