@@ -166,7 +166,7 @@ void checkLimits(const Context & context, size_t rows)
         limits.check(rows, 0, "rows (controlled by 'max_rows_to_read' setting)", ErrorCodes::TOO_MANY_ROWS);
     }
 
-    if (context.getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
+    if (context.getClientInfo().distributed_depth > 0
         && settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW && settings[Setting::max_rows_to_read_leaf])
     {
         const auto leaf_limits = SizeLimits(settings[Setting::max_rows_to_read_leaf], 0, settings[Setting::read_overflow_mode_leaf]);

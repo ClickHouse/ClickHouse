@@ -2859,7 +2859,7 @@ bool ReadFromMergeTree::hasThrowingReadRowLimit() const
 {
     const auto & settings = context->getSettingsRef();
     return (settings[Setting::read_overflow_mode] == OverflowMode::THROW && settings[Setting::max_rows_to_read])
-        || (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
+        || (context->getClientInfo().distributed_depth > 0
             && settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW && settings[Setting::max_rows_to_read_leaf]);
 }
 

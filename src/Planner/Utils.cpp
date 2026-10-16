@@ -337,7 +337,7 @@ StorageLimits buildStorageLimits(const Context & context, const SelectQueryOptio
     if (!options.ignore_limits)
     {
         limits = getLimitsForStorage(settings, options);
-        if (context.getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+        if (context.getClientInfo().distributed_depth > 0)
             leaf_limits = SizeLimits(settings[Setting::max_rows_to_read_leaf], settings[Setting::max_bytes_to_read_leaf], settings[Setting::read_overflow_mode_leaf]);
     }
 
