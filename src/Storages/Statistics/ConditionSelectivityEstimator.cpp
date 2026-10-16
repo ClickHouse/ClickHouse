@@ -33,6 +33,11 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int TYPE_MISMATCH;
+}
+
 namespace Setting
 {
     extern const SettingsUInt64 statistics_max_set_size_for_exact_selectivity_estimation;
@@ -119,6 +124,23 @@ static bool isCompatibleStatistics(const StorageMetadataPtr & metadata, const Co
     /// Skip if the column statistics has outdated data type.
     /// It can happen after ALTER MODIFY COLUMN until mutations is not materialized in the data part.
     return column->type->equals(*stats->getDataType());
+}
+
+/// NDV is clamped by the caller to the estimated row count; the value range and NULL fraction
+/// describe the whole relation regardless of the filter.
+static ColumnStats makeColumnStats(UInt64 num_distinct_values, const ColumnStatisticsPtr & stats)
+{
+    ColumnStats result;
+    result.num_distinct_values = num_distinct_values;
+    if (!stats)
+        return result;
+
+    auto estimate = stats->getEstimate();
+    result.min_value = std::move(estimate.estimated_min);
+    result.max_value = std::move(estimate.estimated_max);
+    if (estimate.estimated_null_count && estimate.rows_count)
+        result.null_fraction = std::min(1.0, static_cast<Float64>(*estimate.estimated_null_count) / static_cast<Float64>(estimate.rows_count));
+    return result;
 }
 
 RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::vector<RPNElement> & rpn, const StorageMetadataPtr & metadata) const
@@ -217,7 +239,7 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
             continue;
 
         UInt64 cardinality = std::min(result.rows, estimator.estimateCardinality());
-        result.column_stats.emplace(column_name, cardinality);
+        result.column_stats.emplace(column_name, makeColumnStats(cardinality, estimator.stats));
     }
     return result;
 }
@@ -228,15 +250,14 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile() const
     result.rows = total_rows;
     for (const auto & [column_name, estimator] : column_estimators)
     {
-        result.column_stats.emplace(column_name, estimator.estimateCardinality());
+        result.column_stats.emplace(column_name, makeColumnStats(estimator.estimateCardinality(), estimator.stats));
     }
     return result;
 }
 
 RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * node) const
 {
-    RPNBuilderTreeContext tree_context(getContext());
-    return estimateRelationProfile(metadata, RPNBuilderTreeNode(node, tree_context));
+    return estimateRelationProfile(metadata, RPNBuilderTreeNode(node, getContext()));
 }
 
 bool ConditionSelectivityEstimator::isStale(const std::vector<DataPartPtr> & data_parts) const
@@ -263,6 +284,22 @@ bool ConditionSelectivityEstimator::isStale(const RangesInDataParts & parts) con
             return true;
     }
     return false;
+}
+
+/// `<col>.null` names the stored NULL map of a Nullable `<col>`. Returns `<col>` when the name has
+/// that shape and the parent column is Nullable in storage.
+static std::optional<String> tryGetNullMapParentColumn(const String & column_name, const StorageInMemoryMetadata & metadata)
+{
+    auto dot_pos = column_name.rfind('.');
+    if (dot_pos == std::string::npos || column_name.compare(dot_pos + 1, std::string::npos, "null") != 0)
+        return {};
+
+    String parent_name = column_name.substr(0, dot_pos);
+    const ColumnDescription * parent_col = metadata.getColumns().tryGet(parent_name);
+    if (!parent_col || !isNullableOrLowCardinalityNullable(parent_col->type))
+        return {};
+
+    return parent_name;
 }
 
 bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node, RPNElement & out) const
@@ -327,10 +364,9 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
         {
             const bool is_in_operator = functionIsInOperator(func_name);
 
-            /// If the second argument is built from `ASTNode`, it should fall into next branch, which directly
-            /// extracts constant value from `ASTLiteral`. Otherwise we try to build `Set` from `ActionsDAG::Node`,
-            /// and extract constant value from it.
-            if (is_in_operator && !func.getArgumentAt(1).getASTNode())
+            /// The right-hand side of IN is a `Set` column: read the elements out of the set. Every other
+            /// comparison takes the branches below, which read the constant of the other argument directly.
+            if (is_in_operator)
             {
                 const auto & rhs = func.getArgumentAt(1);
                 if (!rhs.isConstant())
@@ -345,7 +381,7 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                 /// built yet simply cannot be analysed, and the condition falls back to the default
                 /// selectivity, as it did for every subquery set before `ActionsDAG::Node::column`
                 /// became a `ColumnConst` and made these sets visible here.
-                auto prepared_set = future_set->getOrderedSetIfAlreadyBuilt(rhs.getTreeContext().getQueryContext());
+                auto prepared_set = future_set->getOrderedSetIfAlreadyBuilt(rhs.getContext());
                 if (!prepared_set || !prepared_set->hasExplicitSetElements())
                 {
                     ProfileEvents::increment(ProfileEvents::SelectivityEstimatorInSetNotBuilt);
@@ -362,13 +398,14 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                 /// sort or the per-element probes. The atom is finalized rather than turned into ranges:
                 /// a scalar selectivity cannot intersect with other predicates on the same column, only
                 /// multiply.
-                const auto max_set_size = node.getTreeContext().getQueryContext()->getSettingsRef()
+                const auto max_set_size = node.getContext()->getSettingsRef()
                     [Setting::statistics_max_set_size_for_exact_selectivity_estimation];
                 if (max_set_size && columns[0]->size() > max_set_size)
                 {
                     chassert(is_in_operator);
                     const bool negative = func_name != "in";
                     const auto lhs_name = func.getArgumentAt(0).getColumnName();
+                    const DataTypePtr & set_type = prepared_set->getElementsTypes().front();
 
                     /// An expression rather than a column (`lower(col) IN (...)`) has no statistics to
                     /// consult, and below the limit it is given a flat default by the "not a real column"
@@ -376,9 +413,12 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                     /// change the estimate for such an atom - and skip the size-based path, which would
                     /// otherwise read `set_size / <no cardinality>` as "matches everything".
                     if (metadata && !metadata->getColumns().tryGet(lhs_name))
-                        out.selectivity.true_sel = negative ? 1.0 - default_cond_equal_factor : default_cond_equal_factor;
+                    {
+                        const Float64 equal_factor = getEqualFactor(set_type, columns[0]->size());
+                        out.selectivity.true_sel = negative ? 1.0 - equal_factor : equal_factor;
+                    }
                     else
-                        out.selectivity = estimateSelectivityFromSetSize(metadata, lhs_name, *columns[0], negative);
+                        out.selectivity = estimateSelectivityFromSetSize(metadata, lhs_name, *columns[0], set_type, negative);
 
                     out.finalized = true;
                     return false;
@@ -420,6 +460,34 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
             else
                 return false;
 
+            /// `<col>.null != 0` is a truthiness test of the stored NULL map, so it selects exactly
+            /// the rows `IS NULL` does, and `= 0` the rows `IS NOT NULL` does. Recognising them keeps
+            /// the parent column's NULL count available instead of falling through to the flat default
+            /// below, which the subcolumn name would otherwise get for want of statistics of its own.
+            /// Only 0 qualifies: a NULL map byte only has to be non-zero to mean NULL, so `= 1` does
+            /// not select every NULL row.
+            const bool const_is_zero
+                = (const_value.getType() == Field::Types::UInt64 && const_value.safeGet<UInt64>() == 0)
+                || (const_value.getType() == Field::Types::Int64 && const_value.safeGet<Int64>() == 0);
+
+            if (metadata && const_is_zero && (func_name == "equals" || func_name == "notEquals"))
+            {
+                if (auto parent_name = tryGetNullMapParentColumn(column_name, *metadata))
+                {
+                    if (func_name == "notEquals")
+                    {
+                        out.function = RPNElement::FUNCTION_IS_NULL;
+                        out.null_check_columns.insert(*parent_name);
+                    }
+                    else
+                    {
+                        out.function = RPNElement::FUNCTION_IS_NOT_NULL;
+                        out.not_null_check_columns.insert(*parent_name);
+                    }
+                    return true;
+                }
+            }
+
             if (metadata)
             {
                 const ColumnDescription * column_desc = metadata->getColumns().tryGet(column_name);
@@ -430,10 +498,14 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                     /// Not a real column (e.g. a function expression like lower(col) or toDecimal64(col, 3)).
                     /// Skip range analysis to avoid bad cast when merging ranges of incompatible Field types.
                     /// Pre-set selectivity based on the function type so prewhere ordering is still reasonable.
+                    /// Compared with a `Bool` literal or set, the expression is assumed to be boolean.
+                    const Float64 equal_factor = set_for_ranges
+                        ? getEqualFactor(set_for_ranges->getElementsTypes().front(), set_for_ranges->getTotalRowCount())
+                        : getEqualFactor(const_type);
                     if (func_name == "equals" || func_name == "in")
-                        out.selectivity.true_sel = default_cond_equal_factor;
+                        out.selectivity.true_sel = equal_factor;
                     else if (func_name == "notEquals" || func_name == "notIn")
-                        out.selectivity.true_sel = 1.0 - default_cond_equal_factor;
+                        out.selectivity.true_sel = 1.0 - equal_factor;
                     else /// less, greater, lessOrEquals, greaterOrEquals
                         out.selectivity.true_sel = default_cond_range_factor;
                     out.finalized = true;
@@ -455,16 +527,14 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                     }
                     catch (const Exception & e)
                     {
-                        if (!isParseError(e.code()))
+                        if (!isParseError(e.code()) && e.code() != ErrorCodes::TYPE_MISMATCH)
                             throw;
 
-                        /// The string value is not valid for the column type (e.g. unknown enum element).
-                        /// For equality, the condition can never match, so selectivity is 0.
-                        /// For other operators, fall back to default unknown selectivity.
                         LOG_DEBUG(getLogger("ConditionSelectivityEstimator"),
                             "Cannot convert value to column type, skipping statistics estimation. The exception is : {}",
                             getCurrentExceptionMessage(false));
-                        if (func_name == "equals")
+
+                        if (func_name == "equals" && e.code() != ErrorCodes::TYPE_MISMATCH)
                         {
                             out.function = RPNElement::ALWAYS_FALSE;
                             return true;
@@ -556,19 +626,11 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
     /// Bare `<col>.null` UInt8 subcolumn reference, e.g. `SELECT … WHERE x.null`. Treat it as `IS NULL`.
     if (!node.isFunction() && !node.isConstant() && metadata)
     {
-        String bare_column_name = node.getColumnName();
-
-        auto dot_pos = bare_column_name.rfind('.');
-        if (dot_pos != std::string::npos && bare_column_name.compare(dot_pos + 1, std::string::npos, "null") == 0)
+        if (auto parent_name = tryGetNullMapParentColumn(node.getColumnName(), *metadata))
         {
-            String parent_name = bare_column_name.substr(0, dot_pos);
-            const ColumnDescription * parent_col = metadata->getColumns().tryGet(parent_name);
-            if (parent_col && isNullableOrLowCardinalityNullable(parent_col->type))
-            {
-                out.function = RPNElement::FUNCTION_IS_NULL;
-                out.null_check_columns.insert(parent_name);
-                return true;
-            }
+            out.function = RPNElement::FUNCTION_IS_NULL;
+            out.null_check_columns.insert(*parent_name);
+            return true;
         }
     }
 
@@ -648,7 +710,7 @@ ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::Column
         if (auto estimate = stats->estimateRange(range))
             result += *estimate;
         else if (range.left == range.right)
-            result += static_cast<Float64>(stats->getNonNullRowCount()) * default_cond_equal_factor;
+            result += static_cast<Float64>(stats->getNonNullRowCount()) * getEqualFactor(stats->getDataType());
         else
             result += static_cast<Float64>(stats->getNonNullRowCount()) * default_cond_range_factor;
     }
@@ -669,9 +731,18 @@ UInt64 ConditionSelectivityEstimator::ColumnEstimator::estimateCardinality() con
     return stats->estimateCardinality();
 }
 
+Float64 ConditionSelectivityEstimator::getEqualFactor(const DataTypePtr & type, size_t num_values)
+{
+    /// Like PostgreSQL, assume the two values of a `Bool` are equally frequent.
+    if (type && isBool(removeLowCardinalityAndNullable(type)))
+        return std::min(default_bool_equal_factor * static_cast<Float64>(num_values), 1.0);
+    return default_cond_equal_factor;
+}
+
 
 ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::estimateSelectivityFromSetSize(
-    const StorageMetadataPtr & metadata, const String & column_name, const IColumn & set_elements, bool negative) const
+    const StorageMetadataPtr & metadata, const String & column_name, const IColumn & set_elements,
+    const DataTypePtr & set_type, bool negative) const
 {
     ProfileEvents::increment(ProfileEvents::SelectivityEstimatorInSetEstimatedFromSize);
 
@@ -683,7 +754,7 @@ ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::estima
     if (it == column_estimators.end() || !isCompatibleStatistics(metadata, it->second.stats, column_name))
     {
         /// No statistics: match what `finalize` assumes for a list of point ranges on an unknown column.
-        const Selectivity selectivity{std::min(static_cast<Float64>(set_size) * default_cond_equal_factor, 1.0), 0};
+        const Selectivity selectivity{std::min(static_cast<Float64>(set_size) * getEqualFactor(set_type), 1.0), 0};
         return negative ? selectivity.applyNot() : selectivity;
     }
 
@@ -924,8 +995,10 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
         return;
     }
 
-    auto estimate_unknown_ranges = [&](const PlainRanges & ranges) -> Selectivity
+    auto estimate_unknown_ranges = [&](const String & column_name, const PlainRanges & ranges) -> Selectivity
     {
+        const ColumnDescription * column_desc = metadata ? metadata->getColumns().tryGet(column_name) : nullptr;
+        const Float64 equal_factor = getEqualFactor(column_desc ? column_desc->type : nullptr);
         Float64 equal_selectivity = 0;
         for (const Range & range : ranges.ranges)
         {
@@ -933,7 +1006,7 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
                 return Selectivity{1.0, 0.0};
 
             if (range.left == range.right)
-                equal_selectivity += default_cond_equal_factor;
+                equal_selectivity += equal_factor;
             else
                 return Selectivity{default_cond_range_factor, 0};
         }
@@ -957,7 +1030,7 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
         if (const auto * est = get_estimator(column_name))
             estimate_results.emplace(column_name, est->estimateRanges(ranges));
         else
-            estimate_results.emplace(column_name, estimate_unknown_ranges(ranges));
+            estimate_results.emplace(column_name, estimate_unknown_ranges(column_name, ranges));
     }
 
     for (const auto & [column_name, ranges] : column_not_ranges)
@@ -966,7 +1039,7 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
         if (const auto * est = get_estimator(column_name))
             not_ranges_selectivity = est->estimateRanges(ranges).applyNot();
         else
-            not_ranges_selectivity = estimate_unknown_ranges(ranges).applyNot();
+            not_ranges_selectivity = estimate_unknown_ranges(column_name, ranges).applyNot();
 
         auto it = estimate_results.find(column_name);
         if (it == estimate_results.end())

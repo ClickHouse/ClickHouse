@@ -58,6 +58,10 @@ DirectJoinMergeTreeEntity::DirectJoinMergeTreeEntity(
 {
     if (filter_dag.getOutputs().size() != 1)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Direct join with merge tree supports only single-column key");
+
+    /// The per-key-batch lookup read is stamped `disableQueryConditionCache` at plan time because its
+    /// hand-built filter has one identity for every batch, and that stamp is not part of a serialized read.
+    plan_optimization_settings.enable_parallel_replicas = false;
 }
 
 Names DirectJoinMergeTreeEntity::getPrimaryKey() const

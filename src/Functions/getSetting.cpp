@@ -48,6 +48,15 @@ public:
     size_t getNumberOfArguments() const override { return (mode == ErrorHandlingMode::Default) ? 2 : 1; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 1}; }
 
+    /// Documentation-only — the result type is the dynamic type of the
+    /// setting value resolved at query time from its const-string name.
+    String getSignatureString() const override
+    {
+        if (mode == ErrorHandlingMode::Default)
+            return "(const String, Any) -> Any";
+        return "(const String) -> Any";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         auto value = getValue(arguments);
@@ -121,17 +130,18 @@ Returns the current value of a setting.
     {
         "Usage example",
         R"(
-SELECT getSetting('enable_analyzer');
-SET enable_analyzer = false;
-SELECT getSetting('enable_analyzer');
+SET optimize_move_to_prewhere = false;
+SELECT getSetting('optimize_move_to_prewhere');
+SET optimize_move_to_prewhere = true;
+SELECT getSetting('optimize_move_to_prewhere');
         )",
         R"(
-┌─getSetting('enable_analyzer')─┐
-│ true                          │
-└───────────────────────────────┘
-┌─getSetting('enable_analyzer')─┐
-│ false                         │
-└───────────────────────────────┘
+┌─getSetting('optimize_move_to_prewhere')─┐
+│ false                                   │
+└─────────────────────────────────────────┘
+┌─getSetting('optimize_move_to_prewhere')─┐
+│ true                                    │
+└─────────────────────────────────────────┘
         )"
     }
     };

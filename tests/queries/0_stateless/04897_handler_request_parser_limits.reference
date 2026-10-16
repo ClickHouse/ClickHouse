@@ -1,0 +1,19 @@
+=== created ===
+created
+=== the request parse limits are in effect for an ordinary query ===
+TOO_DEEP_RECURSION
+TOO_SLOW_PARSING
+Max query size exceeded
+=== invoked over HTTP with the same request settings ===
+1	5
+1	6
+1	7
+=== request-controlled construction settings still use the request limits ===
+TOO_DEEP_RECURSION
+=== invoked through PARALLEL WITH under the same request limit ===
+1
+1
+=== invoked in the background under the same request limit ===
+1
+=== invoked with a remote fan-out under the same request limit ===
+0
