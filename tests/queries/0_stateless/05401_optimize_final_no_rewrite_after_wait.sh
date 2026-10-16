@@ -7,7 +7,8 @@
 # OPTIMIZE ... FINAL that finds the parts of a partition being merged waits for that merge and retries.
 # If the awaited merge has merged the whole partition into a single part, the retry must not merge that
 # part with itself once more. OPTIMIZE ... FINAL DEDUPLICATE still does, because the awaited merge did
-# not deduplicate. A merge is held in flight with a failpoint, so the wait happens deterministically.
+# not deduplicate, and so does OPTIMIZE ... FINAL of a table with TTL, because rows could expire after the
+# awaited merge started. A merge is held in flight with a failpoint, so the wait happens deterministically.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -23,20 +24,22 @@ trap cleanup EXIT
 
 function run_case()
 {
-    local second_optimize=$1
-    local second_query_id=$2
-    echo "$second_optimize"
+    local label=$1
+    local ttl=$2
+    local second_optimize=$3
+    local second_query_id="${CLICKHOUSE_DATABASE}_$4"
+    echo "$label"
 
     # A projection makes every merge go through the projection-merge stage, where the failpoint pauses it.
     # `max_bytes_to_merge_at_max_space_in_pool = 1` keeps background merges away from these parts.
     $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS $table SYNC"
     $CLICKHOUSE_CLIENT --query "
-        CREATE TABLE $table (k UInt64, v UInt64, PROJECTION by_v (SELECT k, v ORDER BY v))
-        ENGINE = MergeTree ORDER BY k
+        CREATE TABLE $table (k UInt64, v UInt64, d DateTime DEFAULT now(), PROJECTION by_v (SELECT k, v ORDER BY v))
+        ENGINE = MergeTree ORDER BY k $ttl
         SETTINGS max_bytes_to_merge_at_max_space_in_pool = 1, deduplicate_merge_projection_mode = 'rebuild'"
 
     for i in 1 2 3; do
-        $CLICKHOUSE_CLIENT --query "INSERT INTO $table SELECT number, $i FROM numbers(1000)"
+        $CLICKHOUSE_CLIENT --query "INSERT INTO $table (k, v) SELECT number, $i FROM numbers(1000)"
     done
 
     $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT merge_task_projection_stage_pause"
@@ -76,5 +79,6 @@ function run_case()
         WHERE database = currentDatabase() AND table = '$table' AND active"
 }
 
-run_case "OPTIMIZE TABLE $table FINAL" "${CLICKHOUSE_DATABASE}_final"
-run_case "OPTIMIZE TABLE $table FINAL DEDUPLICATE" "${CLICKHOUSE_DATABASE}_final_deduplicate"
+run_case "FINAL" "" "OPTIMIZE TABLE $table FINAL" "final"
+run_case "FINAL DEDUPLICATE" "" "OPTIMIZE TABLE $table FINAL DEDUPLICATE" "final_deduplicate"
+run_case "FINAL with TTL" "TTL d + INTERVAL 1 YEAR" "OPTIMIZE TABLE $table FINAL" "final_ttl"

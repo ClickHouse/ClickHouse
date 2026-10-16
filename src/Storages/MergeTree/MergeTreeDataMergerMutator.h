@@ -70,7 +70,7 @@ public:
       * and without expired TTL won't be merged with itself.
       * parts_before_wait - the parts of the partition when OPTIMIZE FINAL started to wait for running merges
       * (empty if it did not wait). If those merges have merged all of them into a single part, that part
-      * won't be merged with itself either, unless it has uncalculated TTL or patch parts to apply.
+      * won't be merged with itself either, unless it has patch parts to apply or the table has TTL or is a GraphiteMergeTree.
       */
     std::expected<MergeSelectorChoices, SelectMergeFailure> selectAllPartsToMergeWithinPartition(
         const StorageMetadataPtr & metadata_snapshot,

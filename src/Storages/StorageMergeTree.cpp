@@ -2160,7 +2160,7 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
 
     const auto select_in_partition = [&]() -> std::expected<FutureMergedMutatedPartPtr, SelectMergeFailure>
     {
-        /// The parts of the partition when we last started to wait for running merges.
+        /// The parts of the partition seen by the selection that first had to wait for running merges.
         std::vector<MergeTreePartInfo> parts_before_wait;
 
         while (true)
@@ -2187,6 +2187,16 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
                         .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
                         .explanation = std::move(memory_check.error()),
                     });
+            }
+
+            /// Taken before the selection, so that a merge committed meanwhile is not mistaken for a part that was there before.
+            std::vector<MergeTreePartInfo> parts_before_selection;
+            if (skip_part_of_awaited_merge && parts_before_wait.empty())
+            {
+                auto parts_lock = readLockParts();
+                parts_before_selection = std::ranges::to<std::vector>(
+                    getDataPartsVectorInPartitionForInternalUsage(MergeTreeDataPartState::Active, partition_id, parts_lock)
+                    | std::views::transform([](const DataPartPtr & part) { return part->info; }));
             }
 
             auto select_result = merger_mutator.selectAllPartsToMergeWithinPartition(
@@ -2222,13 +2232,8 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
                     if (on_wait_for_running_merges)
                         on_wait_for_running_merges();
 
-                    if (skip_part_of_awaited_merge)
-                    {
-                        auto parts_lock = readLockParts();
-                        parts_before_wait = std::ranges::to<std::vector>(
-                            getDataPartsVectorInPartitionForInternalUsage(MergeTreeDataPartState::Active, partition_id, parts_lock)
-                            | std::views::transform([](const DataPartPtr & part) { return part->info; }));
-                    }
+                    if (parts_before_wait.empty())
+                        parts_before_wait = std::move(parts_before_selection);
 
                     if (std::cv_status::timeout == currently_processing_in_background_condition.wait_for(lock, timeout))
                         return std::unexpected(SelectMergeFailure{
