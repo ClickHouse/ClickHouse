@@ -1,3 +1,6 @@
+delete_retried 1
+delete_ok 1
+merge_applied	1	1	1
 insert_delete_ok 1
 insert_applied	1	1	1	1
 both_deletes_committed	0	0

@@ -1124,6 +1124,7 @@ public:
 
     size_t clearEmptyParts();
 
+    ReadSnapshotPtr makeUniqueKeyReadSnapshot(const MergeTreeTransactionPtr & txn) const;
     ReadSnapshotPtr makeUniqueKeyReadSnapshot(const ContextPtr & local_context) const;
 
     UniqueKeyTxnManager & uniqueKeyTxnManager() const;
@@ -1966,6 +1967,9 @@ protected:
     std::optional<UInt64> totalRowsByPartitionPredicateImpl(
         const ActionsDAG & filter_actions_dag, ContextPtr context, const RangesInDataParts & parts, const ReadSnapshot * uk_read_snapshot = nullptr) const;
 
+    /// Throws for an OPTIMIZE a UNIQUE KEY table does not run: on a table with TTL, or DEDUPLICATE.
+    static void checkUniqueKeyOptimizeIsPossible(const StorageInMemoryMetadata & metadata, bool deduplicate);
+
     static decltype(auto) getStateModifier(DataPartState state)
     {
         return [state] (const DataPartPtr & part) { part->setState(state); };
@@ -2330,8 +2334,6 @@ protected:
     static MutableDataPartPtr asMutableDeletingPart(const DataPartPtr & part);
 
 private:
-    ReadSnapshotPtr makeUniqueKeyReadSnapshot(CSN snapshot_csn) const;
-
     /// Checking that candidate part doesn't break invariants: correct partition
     void checkPartPartition(MutableDataPartPtr & part, const DataPartsAnyLock & lock) const;
     void checkPartDuplicate(MutableDataPartPtr & part, Transaction & transaction, const DataPartsAnyLock & lock) const;

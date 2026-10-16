@@ -89,6 +89,8 @@ private:
 
     MergeTreeTransactionHolder txn_holder;
     MergeTreeTransactionPtr txn;
+    /// UNIQUE KEY only; `UniqueKeyTxnCommit::merge` commits it, not the stock path's `txn`.
+    MergeTreeTransactionHolder uk_txn;
 
     ProfileEvents::Counters profile_counters;
 
