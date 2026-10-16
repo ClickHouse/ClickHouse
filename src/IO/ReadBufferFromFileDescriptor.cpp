@@ -4,13 +4,13 @@
 #include <algorithm>
 #include <limits>
 #include <optional>
-#include <vector>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Throttler.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/PlatformFileIO.h>
 #include <IO/WriteHelpers.h>
@@ -74,7 +74,7 @@ bool pollConsoleInput(HANDLE handle, int timeout_milliseconds, const std::string
     DWORD console_mode = 0;
     const bool line_input = GetConsoleMode(handle, &console_mode) && (console_mode & ENABLE_LINE_INPUT);
 
-    std::vector<INPUT_RECORD> records;
+    VectorWithMemoryTracking<INPUT_RECORD> records;
     Stopwatch watch;
     for (;;)
     {
