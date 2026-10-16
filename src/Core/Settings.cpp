@@ -4996,7 +4996,7 @@ Possible values:
 - 1 — Creating several dictionaries for the data part is prohibited.
 - 0 — Creating several dictionaries for the data part is not prohibited.
 )", 0) \
-    DECLARE(Bool, exact_division_for_integers, false, R"(
+    DECLARE(Bool, sql_compatible_division_for_integers, false, R"(
 Makes `/` and `divide` return an integer when both operands are integer types, including `Int128`, `UInt128`, `Int256`, and `UInt256`.
 The quotient is truncated toward zero. The result has the width of the first operand and is signed if either operand is signed.
 Division by zero or a quotient outside the result type's range throws an exception. `Nullable` operands propagate `NULL`.
