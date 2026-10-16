@@ -32,10 +32,10 @@ function __set_connection_args()
 {
     # It's impossible to use a generic $CONNECTION_ARGS string, it's unsafe from word splitting perspective.
     # That's why we must stick to the generated option
+    : "${CLICKHOUSE_CI_LOGS_PASSWORD:?}"
     CONNECTION_ARGS=(
         --receive_timeout=45 --send_timeout=45 --secure
         --user "${CLICKHOUSE_CI_LOGS_USER:?}" --host "${CLICKHOUSE_CI_LOGS_HOST:?}"
-        --password "${CLICKHOUSE_CI_LOGS_PASSWORD:?}"
     )
 }
 
@@ -44,7 +44,8 @@ function __set_connection_args()
 REMOTE_QUERY_TIMEOUT=90
 function remote_client()
 {
-    timeout --verbose --kill-after 10 "$REMOTE_QUERY_TIMEOUT" clickhouse-client "${CONNECTION_ARGS[@]:?}" "$@"
+    CLICKHOUSE_PASSWORD="${CLICKHOUSE_CI_LOGS_PASSWORD:?}" \
+        timeout --verbose --kill-after 10 "$REMOTE_QUERY_TIMEOUT" clickhouse-client "${CONNECTION_ARGS[@]:?}" "$@"
 }
 
 function __shadow_credentials()
@@ -80,9 +81,10 @@ function check_logs_credentials()
     # outage or a non-recoverable error (auth, config, DNS) fails fast: this
     # probe is best-effort and must not slow every CI job. Export queries keep
     # the default timeouts.
-    local attempt err
+    local attempt err start
     # BEGIN: logs-cluster connectivity probe loop
     for attempt in 1 2 3; do
+        start=$SECONDS
         # Catch both success and error to not fail on `set -e`. Capture stderr
         # so we can distinguish transient failures from permanent ones.
         err=$(remote_client --connect_timeout 3 -q 'SELECT 1 FORMAT Null' 2>&1) && return 0 || code=$?
@@ -96,7 +98,7 @@ function check_logs_credentials()
     done
     # END: logs-cluster connectivity probe loop
     echo 'Failed to connect to CI Logs cluster'
-    if [[ "$code" == 124 || "$code" == 137 ]]; then
+    if (( SECONDS - start >= REMOTE_QUERY_TIMEOUT )); then
         echo "The CI Logs cluster did not answer within ${REMOTE_QUERY_TIMEOUT} seconds"
     fi
     echo "$err"
@@ -185,10 +187,12 @@ function setup_logs_replication()
         # has a `Map` keyed by an `Enum16` of every metric plus an `ALIAS` column per
         # metric, which is still larger than 256 KiB, so raise the limit as well.
         rc=0
+        start=$SECONDS
         echo "$statement" | remote_client --max_query_size=$((16 * 1024 * 1024)) \
             --database_replicated_initial_query_timeout_sec=10 \
             --distributed_ddl_task_timeout=30 --distributed_ddl_output_mode=throw_only_active || rc=$?
-        if [[ "$rc" == 124 || "$rc" == 137 ]]; then
+        # The exit code alone cannot tell a timeout from a client error.
+        if [[ "$rc" != 0 ]] && (( SECONDS - start >= REMOTE_QUERY_TIMEOUT )); then
             echo "The CI Logs cluster did not answer within ${REMOTE_QUERY_TIMEOUT} seconds, the remaining tables are not exported" >&2
             break
         fi
