@@ -91,6 +91,7 @@ void DiskSetImpl<Key>::finishWriting()
     encoder.reset();
 
     directory.setFileSize(file->finishWriting().compressed_size);
+    shared_file.emplace(*file);
     LOG_TRACE(
         getLogger("DiskSet"),
         "Created set on disk with {} keys of {} bytes, {} blocks, {} bytes of directory, {} bytes of filters with {:.2f} bits "

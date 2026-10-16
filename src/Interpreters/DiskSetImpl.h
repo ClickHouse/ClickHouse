@@ -5,6 +5,7 @@
 #include <Interpreters/DiskSetBlockFilters.h>
 #include <Interpreters/DiskSetBlockFormat.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
+#include <Interpreters/TemporaryFileFrameReader.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 #include <algorithm>
@@ -83,6 +84,10 @@ private:
     /// reading the larger file from the page cache. With `LZ4`, the lookups that read the file are up to 2
     /// times slower for such keys, and up to 17% slower for hashes, which `LZ4` makes slightly larger.
     TemporaryDataBufferPtr file;
+
+    /// The lookups of all threads read the blocks of `file` through this, which `finishWriting` creates
+    /// when it completes the file.
+    std::optional<TemporaryFileFrameReader::SharedFile> shared_file;
 
     /// The first key and the file position of each block, in file order, and the size of the file. A block
     /// holds the keys up to the first key of the next block, so a lookup searches the block with the greatest

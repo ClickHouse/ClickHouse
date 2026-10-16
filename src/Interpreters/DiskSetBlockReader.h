@@ -37,7 +37,7 @@ template <typename Key>
 class DiskSetImpl<Key>::BlockReader
 {
 public:
-    /// Prepares to read `blocks_`, which are distinct and ascend. The reader opens the file only if the cache
+    /// Prepares to read `blocks_`, which are distinct and ascend. The reader reads the file only if the cache
     /// lacks some of the blocks.
     BlockReader(const DiskSetImpl & set_, std::vector<size_t> blocks_)
         : set(set_)
@@ -61,7 +61,7 @@ public:
         }
 
         /// Step 2: Prepare to read the frames of the blocks that the cache lacks. A call whose blocks are all
-        /// cached never opens the file.
+        /// cached never reads the file.
         const size_t missing_blocks = static_cast<size_t>(std::ranges::count(cached_blocks, nullptr));
         cache_hits = blocks.size() - missing_blocks;
         if (missing_blocks)
@@ -71,7 +71,7 @@ public:
             for (size_t i = 0; i < blocks.size(); ++i)
                 if (!cached_blocks[i])
                     missing_frames.push_back({set.directory.getOffset(blocks[i]), set.directory.getEndOffset(blocks[i])});
-            frame_reader.emplace(*set.file, std::move(missing_frames));
+            frame_reader.emplace(*set.shared_file, std::move(missing_frames));
         }
     }
 

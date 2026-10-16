@@ -17,8 +17,8 @@ class TemporaryDataBuffer;
 /// data as it is. The reader checks the checksum of each frame and returns its data where it read it.
 ///
 /// The reader gets the positions of all the frames to read at once, so that one read of the file takes the
-/// frames that are close to each other together. A reader serves one thread, and concurrent readers of a file
-/// each open the file on their own.
+/// frames that are close to each other together. A reader serves one thread, and the readers of all threads
+/// share the file through one `SharedFile`.
 class TemporaryFileFrameReader
 {
 public:
@@ -29,8 +29,26 @@ public:
         size_t end;
     };
 
-    /// Prepares to read `frames_` of `file_`, which ascend and do not overlap, and opens the file.
-    TemporaryFileFrameReader(TemporaryDataBuffer & file_, std::vector<Frame> frames_);
+    /// A complete file that the readers of all threads share. A file that reads at an offset is opened once
+    /// here, and the readers read it concurrently (see `SeekableReadBuffer::readBigAt`), so that a reader
+    /// neither opens the file nor allocates a buffer. Any other file has to seek, so each reader opens it on
+    /// its own. The file outlives this object, which outlives its readers.
+    class SharedFile
+    {
+    public:
+        explicit SharedFile(TemporaryDataBuffer & file_);
+
+    private:
+        friend class TemporaryFileFrameReader;
+
+        TemporaryDataBuffer & file;
+
+        /// The file opened once if it reads at an offset, or null if it has to seek.
+        std::unique_ptr<SeekableReadBuffer> reader;
+    };
+
+    /// Prepares to read `frames_` of `shared_file_`, which ascend and do not overlap.
+    TemporaryFileFrameReader(const SharedFile & shared_file_, std::vector<Frame> frames_);
 
     /// Returns the data of the frame at `offset`, one of the frames of the reader. Calls come in ascending
     /// order of offsets, so that a read of the file also serves the frames after the one that it starts at.
@@ -53,25 +71,25 @@ private:
     /// frame, until one is more than `max_gap_bytes` after the range or does not fit in `max_range_bytes`.
     void readRange();
 
-    /// Reads `bytes` bytes of the file at `offset` into `to`: at the offset if the file supports it, and
-    /// after a seek otherwise.
+    /// Reads `bytes` bytes of the file at `offset` into `to`: at the offset through the file that the readers
+    /// share, or after a seek through the reader's own one.
     void readFile(char * to, size_t bytes, size_t offset);
 
     /// Returns the data of `frame`, after it checks the checksum of the frame.
     static std::string_view unwrapFrame(std::string_view frame);
 
-    /// The file outlives the reader.
-    TemporaryDataBuffer & file;
+    /// The shared file outlives the reader.
+    const SharedFile & shared_file;
 
     /// The frames to read, and the index of the frame that `read` returned last, where `read` starts looking
     /// for the next one.
     std::vector<Frame> frames;
     size_t position = 0;
 
-    /// A file that reads at an offset puts each range straight into `range`. Any other file seeks to the
-    /// range and reads it through its own buffer, which holds a whole range.
-    std::unique_ptr<SeekableReadBuffer> in;
-    bool supports_read_at = false;
+    /// A file that reads at an offset puts each range straight into `range` through the reader of
+    /// `shared_file`, and `own_reader` is null. Any other file seeks to the range and reads it through the
+    /// buffer of `own_reader`, which holds a whole range.
+    std::unique_ptr<SeekableReadBuffer> own_reader;
 
     /// The range of the file that the reader read last holds the bytes from `range_offset` up to `range_end`.
     /// One buffer serves all the ranges, so it grows to the largest range instead of allocating each one.

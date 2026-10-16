@@ -16,13 +16,22 @@ namespace ErrorCodes
 extern const int CANNOT_READ_ALL_DATA;
 }
 
-TemporaryFileFrameReader::TemporaryFileFrameReader(TemporaryDataBuffer & file_, std::vector<Frame> frames_)
+TemporaryFileFrameReader::SharedFile::SharedFile(TemporaryDataBuffer & file_)
     : file(file_)
-    , frames(std::move(frames_))
-    , in(file.readRaw(max_range_bytes))
-    , supports_read_at(in->supportsReadAt())
+    , reader(file.readRaw(max_range_bytes)) /// Its buffer stays unused if the file reads at an offset
 {
-    chassert(!frames.empty()); /// The caller opens the file only to read frames
+    /// `readBigAt` requires a call of `supportsReadAt` first, which must not run concurrently with it. The
+    /// readers of the file start after the constructor.
+    if (!reader->supportsReadAt())
+        reader.reset();
+}
+
+TemporaryFileFrameReader::TemporaryFileFrameReader(const SharedFile & shared_file_, std::vector<Frame> frames_)
+    : shared_file(shared_file_)
+    , frames(std::move(frames_))
+    , own_reader(shared_file.reader ? nullptr : shared_file.file.readRaw(max_range_bytes))
+{
+    chassert(!frames.empty()); /// The caller creates a reader only to read frames
     const auto overlaps_next = [](const Frame & frame, const Frame & next) { return frame.end > next.offset; };
     chassert(std::ranges::adjacent_find(frames, overlaps_next) == frames.end()); /// The frames ascend and do not overlap
 }
@@ -59,18 +68,18 @@ void TemporaryFileFrameReader::readRange()
 void TemporaryFileFrameReader::readFile(char * to, size_t bytes, size_t offset)
 {
     size_t bytes_read = 0;
-    if (supports_read_at)
-        bytes_read = in->readBigAt(to, bytes, offset, /*progress_callback=*/nullptr);
+    if (shared_file.reader)
+        bytes_read = shared_file.reader->readBigAt(to, bytes, offset, /*progress_callback=*/nullptr);
     else
     {
-        in->seek(offset, SEEK_SET);
-        bytes_read = in->readBig(to, bytes);
+        own_reader->seek(offset, SEEK_SET);
+        bytes_read = own_reader->readBig(to, bytes);
     }
     if (bytes_read != bytes)
         throw Exception(
             ErrorCodes::CANNOT_READ_ALL_DATA,
             "Cannot read all data of temporary file {}. Bytes read: {}. Bytes expected: {}",
-            file.describeFilePath(),
+            shared_file.file.describeFilePath(),
             bytes_read,
             bytes);
 }
