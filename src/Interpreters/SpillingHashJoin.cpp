@@ -7,6 +7,8 @@
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 
+#include <algorithm>
+
 namespace ProfileEvents
 {
 extern const Event JoinSpillingHashJoinSwitchedToGraceJoin;
@@ -156,6 +158,48 @@ void SpillingHashJoin::createGraceJoin(size_t initial_buckets_hint)
     grace_join->initialize(*left_sample_block);
 }
 
+ProcessorMemoryStats SpillingHashJoin::getMemoryStats() const
+{
+    if (state.load(std::memory_order_acquire) != State::COLLECTING)
+    {
+        if (!grace_join)
+            return {};
+
+        auto res = grace_join->getMemoryStats();
+        if (getMaxBuildThreads() > 1)
+        {
+            /// Unconverted fill lanes still own memory; releasing their blocks clears the counters.
+            const auto unconverted_bytes = partitioned_join->getTotalByteCount();
+            res.spillable_memory_bytes += unconverted_bytes;
+            res.need_reserved_memory_bytes += unconverted_bytes;
+        }
+        return res;
+    }
+
+    ProcessorMemoryStats res;
+    res.spillable_memory_bytes = partitioned_join->getTotalByteCount();
+    /// The released blocks stay alive while the grace join re-inserts them.
+    res.need_reserved_memory_bytes = res.spillable_memory_bytes;
+    return res;
+}
+
+size_t SpillingHashJoin::spill(size_t at_least_bytes)
+{
+    if (!at_least_bytes)
+        return 0;
+
+    if (state.load(std::memory_order_acquire) == State::COLLECTING)
+    {
+        size_t before = getTotalByteCount();
+        switchToGraceHashJoin(JoinBuildContext::serial(), /*spill_immediately=*/true);
+        size_t after = getTotalByteCount();
+        /// Check the new grace bucket's spillable estimate before requesting a repartition.
+        return before > after ? before - after : 0;
+    }
+
+    return grace_join ? grace_join->spill(at_least_bytes) : 0;
+}
+
 void SpillingHashJoin::switchToGraceHashJoin(JoinBuildContext context, bool spill_immediately)
 {
     {
@@ -166,35 +210,50 @@ void SpillingHashJoin::switchToGraceHashJoin(JoinBuildContext context, bool spil
 
         LOG_DEBUG(
             log,
-            "{}, switching to GraceHashJoin: {} holds {} bytes in {} rows",
-            spill_immediately ? "Spill requested under memory pressure" : "Memory spill threshold reached",
+            "Memory spill threshold reached, switching to GraceHashJoin: {} holds {} bytes in {} rows",
             partitioned_join->getName(),
             partitioned_join->getTotalByteCount(),
             partitioned_join->getTotalRowCount());
         ProfileEvents::increment(ProfileEvents::JoinSpillingHashJoinSwitchedToGraceJoin);
 
-        createGraceJoin();
-        if (spill_immediately)
-            grace_join->requestSpill(context);
+        /// A scheduler-requested switch must partition the data, not just rebuild it in one bucket.
+        createGraceJoin(spill_immediately ? 2 : 0);
         chosen_join = grace_join;
+
+        /// A build thread that got in before the state flipped is still inside the in-memory join,
+        /// which is why this runs under the lock. Freeing the table scratch here also drops it before
+        /// the conversion peak.
+        const auto hand_over_single_lane = [&]
+        {
+            partitioned_join->dropFillAuxiliary();
+
+            /// A single fill thread has no lanes: its rows sit in the stored blocks. The caller is the
+            /// only one filling, so it hands them over here. A build that stored nothing keeps its data.
+            if (partitioned_join->isSingleLaneBuild())
+            {
+                partitioned_join->beginStoredBlockDrain();
+                if (partitioned_join->getTotalRowCount() > 0)
+                    partitioned_join->drainStoredBlocksInto(*grace_join, context);
+            }
+        };
+
+        /// `spill` has no build-stream identity. Replay under the exclusive lock before publishing
+        /// the new join, so its `serial` context cannot overlap another insert into that join.
+        if (spill_immediately)
+        {
+            hand_over_single_lane();
+            tryConvertFillLanes(context);
+        }
 
         state.store(State::GRACE_HASH_JOIN, std::memory_order_release);
         QueryExecutionCounters::addUsedJoinAlgorithm(JoinAlgorithm::GRACE_HASH);
 
-        /// A build thread that got in before the state flipped is still inside the in-memory join,
-        /// which is why this runs under the lock. Freeing here also drops the table scratch before
-        /// the conversion peak.
-        partitioned_join->dropFillAuxiliary();
-
-        /// A single fill thread has no lanes: its rows sit in the stored blocks. This thread is the
-        /// only one filling, so it hands them over here. A build that stored nothing keeps its data.
-        if (partitioned_join->isSingleLaneBuild())
-        {
-            partitioned_join->beginStoredBlockDrain();
-            if (partitioned_join->getTotalRowCount() > 0)
-                partitioned_join->drainStoredBlocksInto(*grace_join, context);
-        }
+        if (!spill_immediately)
+            hand_over_single_lane();
     }
+
+    if (spill_immediately)
+        return;
 
     tryConvertFillLanes(context);
 }
@@ -269,38 +328,6 @@ void SpillingHashJoin::onBuildPhaseFinish()
         return;
 
     chosen_join->onBuildPhaseFinish();
-}
-
-size_t SpillingHashJoin::getSpillableBytes() const
-{
-    switch (state.load(std::memory_order_acquire))
-    {
-        case State::COLLECTING:
-            /// Switching to GraceHashJoin puts what was collected on disk, except the one bucket it keeps
-            /// in memory. An upper bound is fine here, the scheduler only ranks candidates by it.
-            return partitioned_join->getTotalByteCount();
-        case State::GRACE_HASH_JOIN:
-            return chosen_join->getSpillableBytes();
-        case State::IN_MEMORY_JOIN:
-            /// Build phase finished in memory, nothing left to spill.
-            return 0;
-    }
-}
-
-void SpillingHashJoin::requestSpill(JoinBuildContext context)
-{
-    switch (state.load(std::memory_order_acquire))
-    {
-        case State::COLLECTING:
-            /// `switchToGraceHashJoin` re-checks the state, so a concurrent switch is harmless.
-            switchToGraceHashJoin(context, /*spill_immediately=*/true);
-            return;
-        case State::GRACE_HASH_JOIN:
-            chosen_join->requestSpill(context);
-            return;
-        case State::IN_MEMORY_JOIN:
-            return;
-    }
 }
 
 void SpillingHashJoin::onProbePhaseFinish(std::optional<size_t> matched_right_rows)

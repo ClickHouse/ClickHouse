@@ -34,12 +34,11 @@ SET join_algorithm = 'hash';
 SET max_threads = 4;
 SET query_plan_join_swap_table = 0;
 SET query_plan_convert_outer_join_to_inner_join = 0;
-SET query_plan_optimize_join_order_limit = 10;
 
 SELECT '--- INNER nullable right ---';
 SELECT count() FROM (
     SELECT l.k, l.v, r.k, r.v FROM t_left l INNER JOIN t_right_nullable r ON l.k = r.k
-    SETTINGS parallel_hash_join_threshold=1000000000
+    SETTINGS parallel_hash_join_threshold=18446744073709551615
     EXCEPT
     SELECT l.k, l.v, r.k, r.v FROM t_left l INNER JOIN t_right_nullable r ON l.k = r.k
     SETTINGS parallel_hash_join_threshold=0
@@ -49,13 +48,13 @@ SELECT count() FROM (
     SETTINGS parallel_hash_join_threshold=0
     EXCEPT
     SELECT l.k, l.v, r.k, r.v FROM t_left l INNER JOIN t_right_nullable r ON l.k = r.k
-    SETTINGS parallel_hash_join_threshold=1000000000
+    SETTINGS parallel_hash_join_threshold=18446744073709551615
 ) SETTINGS log_comment = '04107_inner_reverse';
 
 SELECT '--- LEFT nullable right ---';
 SELECT count() FROM (
     SELECT l.k, l.v, r.k, r.v FROM t_left l LEFT JOIN t_right_nullable r ON l.k = r.k
-    SETTINGS parallel_hash_join_threshold=1000000000
+    SETTINGS parallel_hash_join_threshold=18446744073709551615
     EXCEPT
     SELECT l.k, l.v, r.k, r.v FROM t_left l LEFT JOIN t_right_nullable r ON l.k = r.k
     SETTINGS parallel_hash_join_threshold=0
@@ -65,13 +64,13 @@ SELECT count() FROM (
     SETTINGS parallel_hash_join_threshold=0
     EXCEPT
     SELECT l.k, l.v, r.k, r.v FROM t_left l LEFT JOIN t_right_nullable r ON l.k = r.k
-    SETTINGS parallel_hash_join_threshold=1000000000
+    SETTINGS parallel_hash_join_threshold=18446744073709551615
 ) SETTINGS log_comment = '04107_left_reverse';
 
 SELECT '--- RIGHT nullable right (exercises NotJoinedHash partition iteration) ---';
 SELECT count() FROM (
     SELECT l.k, l.v, r.k, r.v FROM t_left l RIGHT JOIN t_right_nullable r ON l.k = r.k
-    SETTINGS parallel_hash_join_threshold=1000000000
+    SETTINGS parallel_hash_join_threshold=18446744073709551615
     EXCEPT
     SELECT l.k, l.v, r.k, r.v FROM t_left l RIGHT JOIN t_right_nullable r ON l.k = r.k
     SETTINGS parallel_hash_join_threshold=0
@@ -81,13 +80,13 @@ SELECT count() FROM (
     SETTINGS parallel_hash_join_threshold=0
     EXCEPT
     SELECT l.k, l.v, r.k, r.v FROM t_left l RIGHT JOIN t_right_nullable r ON l.k = r.k
-    SETTINGS parallel_hash_join_threshold=1000000000
+    SETTINGS parallel_hash_join_threshold=18446744073709551615
 ) SETTINGS log_comment = '04107_right_reverse';
 
 SELECT '--- FULL nullable right ---';
 SELECT count() FROM (
     SELECT l.k, l.v, r.k, r.v FROM t_left l FULL JOIN t_right_nullable r ON l.k = r.k
-    SETTINGS parallel_hash_join_threshold=1000000000
+    SETTINGS parallel_hash_join_threshold=18446744073709551615
     EXCEPT
     SELECT l.k, l.v, r.k, r.v FROM t_left l FULL JOIN t_right_nullable r ON l.k = r.k
     SETTINGS parallel_hash_join_threshold=0
@@ -97,14 +96,14 @@ SELECT count() FROM (
     SETTINGS parallel_hash_join_threshold=0
     EXCEPT
     SELECT l.k, l.v, r.k, r.v FROM t_left l FULL JOIN t_right_nullable r ON l.k = r.k
-    SETTINGS parallel_hash_join_threshold=1000000000
+    SETTINGS parallel_hash_join_threshold=18446744073709551615
 ) SETTINGS log_comment = '04107_full_reverse';
 
 SELECT '--- ASOF LEFT nullable timestamp ---';
 CREATE TABLE asof_serial ENGINE = Memory AS
 SELECT l.k AS k, l.ts AS ts, l.v AS v, r.ts AS r_ts, r.tag AS tag
 FROM t_asof_left l ASOF LEFT JOIN t_asof_right r ON l.k = r.k AND l.ts >= r.ts
-SETTINGS max_threads=1, log_comment='04107_asof_left_serial';
+SETTINGS parallel_hash_join_threshold=18446744073709551615, log_comment='04107_asof_left_serial';
 CREATE TABLE asof_parallel ENGINE = Memory AS
 SELECT l.k AS k, l.ts AS ts, l.v AS v, r.ts AS r_ts, r.tag AS tag
 FROM t_asof_left l ASOF LEFT JOIN t_asof_right r ON l.k = r.k AND l.ts >= r.ts

@@ -324,9 +324,11 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImplTypeCas
 
     constexpr bool can_prefetch = join_prefetch_supported<KeyGetter, HashMap>;
 
+    /// A two-level map always prefetches here: summing its buckets would race with the resizes other threads do under
+    /// their own slot locks.
     bool use_prefetch = false;
     if constexpr (can_prefetch)
-        use_prefetch = shouldUseJoinPrefetch(join.enable_prefetch, &map);
+        use_prefetch = HashMap::NUM_BUCKETS > 1 ? join.enable_prefetch : shouldUseJoinPrefetch(join.enable_prefetch, &map);
 
     auto prefetcher = makeJoinPrefetcher(use_prefetch, rows,
         [&](size_t k) __attribute__((always_inline))

@@ -30,6 +30,7 @@ FutureSetSettings::FutureSetSettings(const Settings & settings)
     , min_free_disk_space(settings[Setting::min_free_disk_space_for_temporary_data])
     , temporary_files_codec(settings[Setting::temporary_files_codec])
     , temporary_files_buffer_size(settings[Setting::temporary_files_buffer_size])
+    , allow_spilling(true)
 {
     /// A distributed plan ships the set's values to worker tasks, so
     /// `use_index_for_in_with_subqueries_max_values` must not drop them; the transfer limits bound them at

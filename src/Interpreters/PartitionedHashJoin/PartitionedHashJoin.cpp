@@ -22,6 +22,7 @@
 
 #include <algorithm>
 #include <iterator>
+#include <limits>
 #include <mutex>
 
 namespace CurrentMetrics
@@ -149,7 +150,10 @@ PartitionedHashJoin::PartitionedHashJoin(
     , live_merged_hll(table_join->getClauses().size())
     , build_rows_hint(build_rows_hint_)
     , single_fill_thread(
-          !join_table_mode && (num_threads == 1 || (build_rows_hint_ && *build_rows_hint_ < table_join->parallelHashJoinThreshold())))
+          !join_table_mode
+          && (num_threads == 1
+              || (build_rows_hint_ ? *build_rows_hint_ < table_join->parallelHashJoinThreshold()
+                                   : table_join->parallelHashJoinThreshold() == std::numeric_limits<UInt64>::max())))
     , stats_collecting_params(stats_collecting_params_.build)
     , match_stats_collecting_params(stats_collecting_params_.match)
     , log(getLogger("PartitionedHashJoin"))

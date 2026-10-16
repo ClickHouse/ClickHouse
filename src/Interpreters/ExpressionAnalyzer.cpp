@@ -98,6 +98,7 @@ namespace Setting
     extern const SettingsUInt64 min_count_to_compile_sort_description;
     extern const SettingsDouble min_rows_ratio_for_hash_join_row_store;
     extern const SettingsOverflowMode set_overflow_mode;
+    extern const SettingsUInt64 parallel_hash_join_threshold;
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsUInt64 use_index_for_in_with_subqueries_max_values;
     extern const SettingsBool allow_suspicious_types_in_group_by;
