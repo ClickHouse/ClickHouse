@@ -240,31 +240,34 @@ struct AdaptiveMergeTask
 /// The misses of a frozen producer's current block, one descriptor per delayed record in staging order: the routing
 /// hash, the source row of the record's arguments, the multiplicity of a count record, and the key. The misses are added
 /// in row order, so the source rows ascend. A count record stands for the rows of its key that the kernel combined into
-/// it, consecutive or not. A string-like key is kept as its size, and the writer copies its bytes out of the block. A
-/// fixed-width key is kept as its value, which the kernel has at hand, while reading it back from the key columns would
-/// pack it a second time. The arrays are cleared after every block but keep their capacity.
+/// it, consecutive or not. A string-like key is kept as its size, and the writer reads its bytes from the key state,
+/// which holds them for the whole block. When the state does not, as with the serialized methods that serialize row by
+/// row, the kernel keeps the bytes as well, one key after another: building the key again would serialize it a second
+/// time. A fixed-width key is kept as its value, which the kernel has at hand, while reading it back from the key
+/// columns would pack it a second time. The arrays are cleared after every block but keep their capacity.
 class AdaptiveMissBatch
 {
 public:
-    /// Adds the miss of `row`.
+    /// Adds the miss of `row`, with the bytes of a string-like key if `keep_key_bytes`.
     template <typename RecordKey, typename Key>
-    ALWAYS_INLINE void add(UInt32 row, UInt64 hash, const Key & key)
+    ALWAYS_INLINE void add(UInt32 row, UInt64 hash, const Key & key, bool keep_key_bytes)
     {
         chassert(source_rows.empty() || source_rows.back() < row);
         source_rows.push_back(row);
         hashes.push_back(hash);
-        addKey<RecordKey>(key);
+        addKey<RecordKey>(key, keep_key_bytes);
     }
 
-    /// Adds a count record of the key of `row` with `multiplicity` rows. A fixed-width key stages no size: the writer
-    /// substitutes the compile-time constant, so the hot staging loop skips a dead store per record.
+    /// Adds a count record of the key of `row` with `multiplicity` rows, with the bytes of a string-like key if
+    /// `keep_key_bytes`. A fixed-width key stages no size: the writer substitutes the compile-time constant, so the hot
+    /// staging loop skips a dead store per record.
     template <typename RecordKey, typename Key>
-    ALWAYS_INLINE void addCount(UInt32 row, UInt64 hash, const Key & key, UInt32 multiplicity)
+    ALWAYS_INLINE void addCount(UInt32 row, UInt64 hash, const Key & key, UInt32 multiplicity, bool keep_key_bytes)
     {
         chassert(source_rows.empty() || source_rows.back() < row);
         hashes.push_back(hash);
         multiplicities.push_back(multiplicity);
-        addKey<RecordKey>(key);
+        addKey<RecordKey>(key, keep_key_bytes);
         source_rows.push_back(row);
     }
 
@@ -283,7 +286,7 @@ public:
     UInt64 lastHash() const { return hashes.back(); }
 
     /// The descriptors, read-only, for the writer and the accounting of the batch. The keys are the sizes of string-like
-    /// keys, or the raw bytes of one fixed-width key per record.
+    /// keys with the bytes the kernel kept, one key after another, or the raw bytes of one fixed-width key per record.
     const PaddedPODArray<UInt32> & getSourceRows() const { return source_rows; }
     const PaddedPODArray<UInt64> & getHashes() const { return hashes; }
     const PaddedPODArray<UInt64> & getKeySizes() const { return key_sizes; }
@@ -302,11 +305,14 @@ public:
 
 private:
     template <typename RecordKey, typename Key>
-    ALWAYS_INLINE void addKey(const Key & key)
+    ALWAYS_INLINE void addKey(const Key & key, [[maybe_unused]] bool keep_key_bytes)
     {
         if constexpr (adaptive_key_stages_bytes<RecordKey>)
         {
-            key_sizes.push_back(static_cast<std::string_view>(key).size());
+            const auto bytes = static_cast<std::string_view>(key);
+            key_sizes.push_back(bytes.size());
+            if (keep_key_bytes)
+                keys.insert(bytes.data(), bytes.data() + bytes.size());
         }
         else
         {
