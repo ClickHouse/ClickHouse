@@ -390,6 +390,12 @@ struct AdaptiveAggregationSession
     /// spilling gigabytes to disk - before it stops.
     std::atomic<bool> cancelled{false};
 
+    /// Set when a drain into `early_drain_variants` threw midway, leaving keys with null states
+    /// there. Unlike `cancelled`, which a successful query can also see (a `LIMIT` cancelling the
+    /// pipeline), this means the table must never be merged or written: the last finisher
+    /// checks it after quiescing the scheduled spills and fails instead of finalizing.
+    std::atomic<bool> shared_table_broken{false};
+
     /// Stops the sweeps at their next check and wakes any producer waiting for spill budget;
     /// the fence keeps the store from racing past a waiter that already checked the flag.
     void cancel()

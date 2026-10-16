@@ -1879,7 +1879,10 @@ size_t Aggregator::drainStagedBatchIntoSharedTable(
         /// running and take the coordinator lock next: a later drain would add rows into the
         /// null states, a residue release would write the table to disk and serialize them.
         /// Cancelling the session here, under the coordinator lock, stops every later drain
-        /// into the shared table and every detach and write of it.
+        /// into the shared table and every detach and write of it. The finalization checks
+        /// `shared_table_broken`, as a scheduled spill may fail on a finished producer while the
+        /// last finisher waits for it.
+        shared.shared_table_broken.store(true, std::memory_order_release);
         shared.cancel();
         throw;
     }

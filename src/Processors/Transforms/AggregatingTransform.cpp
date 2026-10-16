@@ -48,6 +48,7 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_AGGREGATED_DATA_VARIANT;
     extern const int LOGICAL_ERROR;
+    extern const int ABORTED;
 }
 
 ManyAggregatedData::~ManyAggregatedData()
@@ -1689,6 +1690,12 @@ void AggregatingTransform::initGenerate()
 
     if (adaptive_spillable)
         adaptive_spillable->finish();
+
+    /// A scheduled spill that failed on an already finished producer may have left keys with
+    /// null states in the shared table, and the executor may not have cancelled this transform
+    /// yet. Nothing below may merge or write that table.
+    if (adaptive_context && adaptive_context->session->shared_table_broken.load(std::memory_order_acquire))
+        throw Exception(ErrorCodes::ABORTED, "Adaptive aggregation cannot finish: a drain into its shared table failed");
 
     /// If the kept-keys cutoff froze, restrict the variants of the streams that finished
     /// consuming before discovering the freeze: they still hold arbitrary keys whose merged
