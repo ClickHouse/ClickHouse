@@ -2674,6 +2674,7 @@ The server adds an HTTP connection to the table on its first query. The server r
 Thus, the table shows an HTTP keep-alive connection as `idle` between the requests.
 
 A user without the `SHOW CONNECTIONS` privilege sees only the connections of this user.
+The check uses the user ID, not the name. Thus, a renamed user keeps its connections, and a new user with the old name does not get them.
 
 `connection_id` is a random UUID. Thus, it is unique across servers, and you can combine the tables of many replicas, for example with `clusterAllReplicas`.
 

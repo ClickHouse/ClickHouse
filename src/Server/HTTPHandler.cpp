@@ -490,6 +490,7 @@ void HTTPHandler::processQuery(
         const auto & http_client_info = context->getClientInfo();
         ConnectionPeer peer;
         peer.user = http_client_info.current_user;
+        peer.user_id = context->getUserID();
         peer.client_address = http_client_info.current_address->host();
         peer.client_port = http_client_info.current_address->port();
         peer.client_name = request.get("User-Agent", "");

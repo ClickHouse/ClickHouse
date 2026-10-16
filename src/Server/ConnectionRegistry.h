@@ -4,6 +4,7 @@
 #include <ctime>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <unordered_map>
 #include <vector>
 
@@ -33,7 +34,8 @@ struct ConnectionInfo
 /// A reverse proxy can send the requests of different clients and users on one keep-alive connection.
 struct ConnectionPeer
 {
-    String user;
+    String user;                /// for display only, because a user can be renamed and the name can be reused
+    std::optional<UUID> user_id; /// the owner of the connection, for access checks
     Poco::Net::IPAddress client_address;
     UInt16 client_port = 0;
     String client_name;

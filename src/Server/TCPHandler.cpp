@@ -3539,6 +3539,7 @@ void TCPHandler::registerConnectionIfNeeded()
     info.connected_time = connected_time;
     ConnectionPeer peer;
     peer.user = client_info.current_user;
+    peer.user_id = session->getUserID();
     peer.client_address = client_addr.host();
     peer.client_port = client_addr.port();
     peer.client_name = client_name;
