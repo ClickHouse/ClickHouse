@@ -40,6 +40,7 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/DataTypesBinaryEncoding.h>
 #include <DataTypes/transformTypesRecursively.h>
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnVariant.h>
@@ -54,6 +55,7 @@
 #include <Interpreters/Set.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
@@ -2002,25 +2004,25 @@ tryGetHeldVariantMembers(const IDataType & type, const IColumn * column)
     }
 
     std::vector<std::pair<DataTypePtr, const IColumn *>> members;
-    const auto & alternatives = assert_cast<const DataTypeVariant &>(*variant_type).getVariants();
+    const auto & alternatives = variant_type->getVariants();
     for (size_t i = 0; i < alternatives.size(); ++i)
     {
         if (dynamic_column && i == dynamic_column->getSharedVariantDiscriminator())
             continue;
         const IColumn * alternative_column = variant_column ? &variant_column->getVariantByGlobalDiscriminator(i) : nullptr;
-        if (!(alternative_column && alternative_column->empty()))
+        if (!alternative_column || !alternative_column->empty())
             members.emplace_back(alternatives[i], alternative_column);
     }
 
-    if (dynamic_column && !dynamic_column->getSharedVariant().empty())
+    if (dynamic_column)
     {
-        const auto shared_variant_discriminator = dynamic_column->getSharedVariantDiscriminator();
+        /// Each value of the shared variant starts with its binary encoded type, see `ColumnDynamic::getTypeAt`.
+        const auto & shared_variant = dynamic_column->getSharedVariant();
         std::unordered_set<String> shared_type_names;
-        for (size_t row = 0; row < dynamic_column->size(); ++row)
+        for (size_t i = 0; i < shared_variant.size(); ++i)
         {
-            if (variant_column->globalDiscriminatorAt(row) != shared_variant_discriminator)
-                continue;
-            auto shared_type = dynamic_column->getTypeAt(row);
+            ReadBufferFromMemory buf(shared_variant.getDataAt(i));
+            auto shared_type = decodeDataType(buf);
             if (shared_type_names.insert(shared_type->getName()).second)
                 members.emplace_back(std::move(shared_type), nullptr);
         }
@@ -2044,7 +2046,7 @@ enum class TuplePairing : uint8_t
 /// `from_column`, if given, holds the values to cast, and a `Variant` or `Dynamic` at any depth then only counts the
 /// members it actually holds. A `ColumnConst` hides them, so a constant is passed as its data column.
 static bool castMayDropFixedStringPadding(
-    const DataTypePtr & from_type, const DataTypePtr & to_type, const IColumn * from_column = nullptr,
+    const DataTypePtr & from_type, const DataTypePtr & to_type, const IColumn * from_column,
     TuplePairing tuple_pairing = TuplePairing::AsCast)
 {
     const auto from = removeLowCardinalityAndNullable(from_type);
@@ -2081,11 +2083,8 @@ static bool castMayDropFixedStringPadding(
     if (from_map && to_map)
     {
         const auto * map_column = typeid_cast<const ColumnMap *>(from_column);
-        const ColumnTuple * entries = map_column ? &map_column->getNestedData() : nullptr;
         return castMayDropFixedStringPadding(
-                   from_map->getKeyType(), to_map->getKeyType(), entries ? &entries->getColumn(0) : nullptr, tuple_pairing)
-            || castMayDropFixedStringPadding(
-                   from_map->getValueType(), to_map->getValueType(), entries ? &entries->getColumn(1) : nullptr, tuple_pairing);
+            from_map->getNestedType(), to_map->getNestedType(), map_column ? &map_column->getNestedColumn() : nullptr, tuple_pairing);
     }
 
     /// `CAST` pairs the elements of two tuples as in `FunctionCast::createTupleWrapper`: by name if both tuples are named
@@ -2178,9 +2177,8 @@ static bool castReordersTupleElements(const DataTypePtr & from_type, const DataT
     if (from_map && to_map)
     {
         const auto * map_column = typeid_cast<const ColumnMap *>(from_column);
-        const ColumnTuple * entries = map_column ? &map_column->getNestedData() : nullptr;
-        return castReordersTupleElements(from_map->getKeyType(), to_map->getKeyType(), entries ? &entries->getColumn(0) : nullptr)
-            || castReordersTupleElements(from_map->getValueType(), to_map->getValueType(), entries ? &entries->getColumn(1) : nullptr);
+        return castReordersTupleElements(
+            from_map->getNestedType(), to_map->getNestedType(), map_column ? &map_column->getNestedColumn() : nullptr);
     }
 
     const auto * from_tuple = typeid_cast<const DataTypeTuple *>(from.get());

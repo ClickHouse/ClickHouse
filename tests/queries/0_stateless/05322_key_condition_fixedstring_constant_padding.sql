@@ -20,6 +20,7 @@ DROP TABLE IF EXISTS t_named_hashed;
 DROP TABLE IF EXISTS t_named_monotonic;
 DROP TABLE IF EXISTS t_named_dynamic;
 DROP TABLE IF EXISTS t_dynamic_key;
+DROP TABLE IF EXISTS t_map;
 
 CREATE TABLE t_monotonic (s Nullable(String))
 ENGINE = MergeTree ORDER BY assumeNotNull(s) SETTINGS index_granularity = 1, allow_nullable_key = 1;
@@ -99,6 +100,10 @@ ENGINE = MergeTree ORDER BY CAST(k AS String) SETTINGS index_granularity = 1;
 INSERT INTO t_dynamic_key SELECT CAST('abc\0' AS Dynamic);
 INSERT INTO t_dynamic_key SELECT CAST('x' AS Dynamic);
 
+CREATE TABLE t_map (m Map(String, String))
+ENGINE = MergeTree ORDER BY cityHash64(m) SETTINGS index_granularity = 1;
+INSERT INTO t_map VALUES (map('a', 'abc')), (map('a', 'abc\0')), (map('a', 'b'));
+
 -- { echo }
 
 SELECT count() FROM t_monotonic WHERE s <= toFixedString('abc', 4);
@@ -110,11 +115,13 @@ SELECT count() FROM t_deterministic WHERE s IN (SELECT CAST(toFixedString('abc',
 SELECT count() FROM t_bare WHERE s IN (SELECT toFixedString('abc', 4));
 SELECT count() FROM t_bare WHERE s IN (SELECT toNullable(toFixedString('abc', 4)));
 SELECT count() FROM t_bare WHERE s IN (SELECT CAST(toFixedString('abc', 4) AS Dynamic));
+SELECT count() FROM t_deterministic WHERE s = CAST(toFixedString('abc', 4) AS Dynamic(max_types = 0));
 SELECT count() FROM t_array WHERE s IN (SELECT [toFixedString('abc', 4)]);
 SELECT count() FROM t_tuple WHERE k IN (SELECT tuple(toFixedString('abc', 4), toFixedString('abc', 4), toUInt8(1)));
 SELECT count() FROM t_tuple WHERE k IN (SELECT tuple(toFixedString('abc', 4), CAST(toFixedString('abc', 4) AS Variant(String, FixedString(4))), toUInt8(1)));
 SELECT count() FROM t_tuple_hashed WHERE x = (CAST(toFixedString('abc', 4) AS Dynamic), toUInt8(1));
 SELECT count() FROM t_tuple_hashed WHERE x = CAST((toFixedString('abc', 4), toUInt8(1)) AS Dynamic);
+SELECT count() FROM t_tuple_hashed WHERE x = (CAST(toFixedString('abc', 4) AS Dynamic(max_types = 0)), toUInt8(1));
 SELECT count() FROM t_tuple_parts WHERE k = tuple(toFixedString('abc', 4), toFixedString('abc', 4), 1);
 SELECT count() FROM t_tuple_parts WHERE k = tuple(toFixedString('abc', 4), CAST(toFixedString('abc', 4) AS Dynamic), 1);
 SELECT count() FROM t_named_tuple WHERE k IN (SELECT CAST(tuple(toFixedString('abc', 4), toFixedString('abc', 4)) AS Tuple(b FixedString(4), a FixedString(4))));
@@ -137,6 +144,8 @@ SELECT count() FROM t_monotonic WHERE s <= CAST('abc' AS Variant(String, FixedSt
 SELECT count() FROM t_tuple WHERE k IN (SELECT tuple(toFixedString('abc', 4), CAST('abc' AS Variant(String, FixedString(2))), toUInt8(1))) SETTINGS force_primary_key = 1;
 SELECT count() FROM t_tuple WHERE k IN (SELECT tuple(toFixedString('abc', 4), CAST('abc' AS Dynamic), toUInt8(1))) SETTINGS force_primary_key = 1;
 SELECT count() FROM t_tuple_hashed WHERE x = (CAST('abc' AS Dynamic), toUInt8(1)) SETTINGS force_primary_key = 1;
+-- A `Dynamic` without its own types stores the value in its shared variant.
+SELECT count() FROM t_tuple_hashed WHERE x = (CAST('abc' AS Dynamic(max_types = 0)), toUInt8(1)) SETTINGS force_primary_key = 1;
 SELECT count() FROM t_partitioned WHERE k = (CAST('abc' AS Dynamic), toUInt8(1)) SETTINGS optimize_trivial_count_query = 0, force_index_by_date = 1;
 
 -- A `FixedString` that stays a `FixedString` keeps index analysis.
@@ -148,6 +157,8 @@ SELECT count() FROM t_named_dynamic WHERE k = CAST(CAST(('x', 'y') AS Tuple(a St
 SELECT count() FROM t_named_dynamic WHERE k = CAST(CAST(('x', 'y') AS Tuple(a String, b String)) AS Variant(Tuple(a String, b String), Tuple(b String, a String))) SETTINGS force_primary_key = 1;
 -- Named tuple elements are paired by name, as `CAST` does.
 SELECT count() FROM t_named_tuple WHERE k IN (SELECT CAST(tuple('abc', toFixedString('abc', 4)) AS Tuple(b String, a FixedString(4)))) SETTINGS force_primary_key = 1;
+-- A `Map` without a `FixedString` keeps index analysis.
+SELECT count() FROM t_map WHERE m = map('a', 'abc') SETTINGS force_primary_key = 1;
 
 -- A `Variant` or `Dynamic` constant keeps the conversions of its declared type.
 SELECT count() FROM t_uint8 WHERE x = CAST(toIPv4(2) AS Dynamic);
@@ -170,3 +181,4 @@ DROP TABLE t_named_hashed;
 DROP TABLE t_named_monotonic;
 DROP TABLE t_named_dynamic;
 DROP TABLE t_dynamic_key;
+DROP TABLE t_map;
