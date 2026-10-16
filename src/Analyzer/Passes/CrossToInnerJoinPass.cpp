@@ -1,5 +1,6 @@
 #include <Analyzer/Passes/CrossToInnerJoinPass.h>
 
+#include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/getLeastSupertype.h>
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
@@ -11,6 +12,8 @@
 
 #include <Functions/logical.h>
 
+#include <Interpreters/JoinUtils.h>
+
 #include <Core/Settings.h>
 
 
@@ -18,6 +21,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_dynamic_type_in_join_keys;
     extern const SettingsUInt64 cross_to_inner_join_rewrite;
 }
 
@@ -184,8 +188,12 @@ public:
             DataTypes key_types = {lhs_equi_argument->getResultType(), rhs_equi_argument->getResultType()};
             DataTypePtr common_key_type = tryGetLeastSupertype(key_types);
 
+            /// The planner rejects a `Dynamic` JOIN key unless `allow_dynamic_type_in_join_keys` is set.
+            bool dynamic_key_rejected = !getSettings()[Setting::allow_dynamic_type_in_join_keys]
+                && (hasDynamicType(key_types[0]) || hasDynamicType(key_types[1]));
+
             /// If there is common key type, we can join on this condition
-            if (common_key_type)
+            if (common_key_type && !dynamic_key_rejected)
             {
                 auto left_src = getExpressionSource(lhs_equi_argument).first;
                 auto right_src = getExpressionSource(rhs_equi_argument).first;
@@ -212,6 +220,11 @@ public:
                             edge = &graph.edges.emplace_back();
                             graph.nodes[*rhs_index].edges[*lhs_index] = edge;
                         }
+
+                        /// Such a key matches NULLs that `equals` does not, so WHERE keeps the condition too.
+                        if (JoinCommon::keyMatchesNullAsValue(lhs_equi_argument->getResultType())
+                            || JoinCommon::keyMatchesNullAsValue(rhs_equi_argument->getResultType()))
+                            other_conditions.push_back(condition->clone());
 
                         edge->equi_conditions.push_back(std::move(condition));
                     }

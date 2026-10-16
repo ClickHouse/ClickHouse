@@ -6,6 +6,10 @@
 -- loaded, here by re-attaching the database. The tables are named with their database, because a TTL expression
 -- is not analysed in the current database of the statement.
 
+-- Keep this file's DDL out of the AST fuzzer: a replayed TTL or CHECK subquery that reads a table function
+-- cannot be analysed while a database loads, so the re-attach below and a server restart would fail.
+SET ast_fuzzer_any_query = 0;
+
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Atomic;
 

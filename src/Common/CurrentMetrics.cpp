@@ -55,6 +55,7 @@
     M(TemporaryFilesForSort, "Number of temporary files created for external sorting") \
     M(TemporaryFilesForAggregation, "Number of temporary files created for external aggregation") \
     M(TemporaryFilesForJoin, "Number of temporary files created for JOIN") \
+    M(TemporaryFilesForSet, "Number of temporary files created for `IN` sets in external memory") \
     M(TemporaryFilesForDistinct, "Number of temporary files created for external DISTINCT") \
     M(TemporaryFilesForMerge, "Number of temporary files for vertical merge") \
     M(TemporaryFilesUnknown, "Number of temporary files created without known purpose") \
@@ -232,6 +233,8 @@
     M(IcebergCompactionMerge, "Number of executing background Iceberg compaction merges.") \
     M(IcebergCompactionSourceFiles, "Number of input source files (data files and position delete files) participating in currently executing Iceberg compaction merges.") \
     M(IcebergCompactionCleanupTasks, "Number of background tasks for removing data files superseded by Iceberg compaction, which are scheduled or still retained by Iceberg tables.") \
+    M(ObjectStorageSharedLeases, "Number of keys, such as Iceberg snapshots being read, currently leased in object storage by the queries of this server.") \
+    M(ObjectStorageExclusiveLeases, "Number of exclusive leases, such as the compaction of an Iceberg table, currently held in object storage by this server.") \
     M(ParallelWithQueryThreads, "Number of threads in the threadpool for processing PARALLEL WITH queries.") \
     M(ParallelWithQueryActiveThreads, "Number of active threads in the threadpool for processing PARALLEL WITH queries.") \
     M(ParallelWithQueryScheduledThreads, "Number of queued or active jobs in the threadpool for processing PARALLEL WITH queries.") \
@@ -314,6 +317,8 @@
     M(KeeperChangelogStartupReadThreadsScheduled, "Number of queued or active jobs in the threadpool for Keeper changelog parallel startup reads.") \
     M(KeeperBlockCacheBytes, "Total size of blocks in the Keeper storage block cache, in bytes.") \
     M(KeeperBlockCacheBlocks, "Number of blocks in the Keeper storage block cache.") \
+    M(AddressToLineCacheEntries, "Number of code addresses in the cache of resolved source locations (file:line:column) used for symbolizing stack traces in system.trace_log, system.errors and system.error_log.") \
+    M(AddressToLineCacheBytes, "Approximate memory used by the cache of resolved source locations (file:line:column) used for symbolizing stack traces, in bytes.") \
     M(DistributedBytesToInsert, "Number of pending bytes to process for asynchronous insertion into Distributed tables. Number of bytes for every shard is summed.") \
     M(BrokenDistributedBytesToInsert, "Number of bytes for asynchronous insertion into Distributed tables that has been marked as broken. Number of bytes for every shard is summed.") \
     M(DistributedFilesToInsert, "Number of pending files to process for asynchronous insertion into Distributed tables. Number of files for every shard is summed.") \
@@ -413,6 +418,9 @@
     M(PageCacheCells, "Total number of entries in the userspace page cache") \
     M(UncompressedCacheBytes, "Total size of uncompressed cache in bytes. Uncompressed cache does not usually improve the performance and should be mostly avoided") \
     M(UncompressedCacheCells, "Total number of entries in the uncompressed cache. Each entry represents a decompressed block of data. Uncompressed cache does not usually improve performance and should be mostly avoided") \
+    M(ColumnsCacheBytes, "Total size of columns cache in bytes. The columns cache stores deserialized columns from MergeTree tables to avoid repeated decompression and deserialization.") \
+    M(ColumnsCacheEntries, "Total number of entries in the columns cache.") \
+    M(ColumnsCacheSizeLimit, "The size limit of the columns cache in bytes currently in effect. It is lowered below the configured `columns_cache_size` while the rest of the server is short of memory, and raised back towards it once that usage subsides, see `columns_cache_free_memory_ratio`.") \
     M(IndexMarkCacheBytes, "Total size of mark cache for secondary indices in bytes") \
     M(IndexMarkCacheFiles, "Total number of mark files cached in the mark cache for secondary indices") \
     M(IndexUncompressedCacheBytes, "Total size of uncompressed cache in bytes for secondary indices. Uncompressed cache does not usually improve the performance and should be mostly avoided") \
@@ -526,12 +534,14 @@
     M(ConcurrencyControlAcquiredNonCompeting, "Total number of acquired CPU slots that are not considered competing (the first thread if fair_round_robin scheduler is in use)") \
     M(ConcurrencyControlSoftLimit, "Value of soft limit on number of CPU slots") \
     M(ConcurrencyControlPreempted, "Total number of preempted threads waiting for CPU slot") \
+    M(ConcurrencyControlParked, "Current number of threads that have parked (released) their CPU slot for a non-CPU wait, such as blocking I/O or having no task to run") \
     \
     M(ConcurrentQueryScheduled, "Total number of query slot requests are being scheduled currently") \
     M(ConcurrentQueryAcquired, "Total number of acquired query slots") \
     \
     M(MemoryReservationApproved, "Total number of currently allocated (approved) bytes for memory reservations") \
     M(MemoryReservationDemand, "Total number of outstanding increase request bytes for memory reservations") \
+    M(MemoryReservationReclaimable, "Total number of reclaimable memory") \
     \
     M(DiskS3NoSuchKeyErrors, "The number of `NoSuchKey` errors that occur when reading data from S3 cloud storage through ClickHouse disks.") \
     \

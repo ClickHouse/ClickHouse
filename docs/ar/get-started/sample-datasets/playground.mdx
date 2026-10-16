@@ -12,9 +12,7 @@ doc_type: 'guide'
 
 يمكنك إرسال استعلامات إلى Playground باستخدام أي عميل HTTP، مثل [curl](https://curl.haxx.se) أو [wget](https://www.gnu.org/software/wget/)، أو إعداد اتصال باستخدام برامج تشغيل [JDBC](/ar/integrations/language-clients/java/jdbc) أو [ODBC](/ar/concepts/features/interfaces/odbc). تتوفر [هنا](/ar/integrations/home) مزيد من المعلومات حول المنتجات البرمجية التي تدعم ClickHouse.
 
-<div id="credentials">
-  ## بيانات الاعتماد
-</div>
+## بيانات الاعتماد {#credentials}
 
 | المعلمة                | القيمة                             |
 | :--------------------- | :--------------------------------- |
@@ -23,20 +21,18 @@ doc_type: 'guide'
 | المستخدم               | `explorer` أو `play`               |
 | كلمة المرور            | (فارغة)                            |
 
-<div id="limitations">
-  ## القيود
-</div>
+## القيود {#limitations}
 
-تُنفَّذ الاستعلامات باستخدام مستخدم بصلاحية القراءة فقط، وهذا يفرض بعض القيود:
+تُنفَّذ الاستعلامات بحساب مستخدم للقراءة فقط، لذا تسري القيود التالية:
 
-* استعلامات DDL غير مسموح بها
-* استعلامات INSERT غير مسموح بها
+* لا يُسمح باستعلامات DDL
+* لا يُسمح باستعلامات INSERT
 
-وتُطبَّق أيضًا quotas على استخدام الخدمة.
+تخضع الخدمة أيضًا لحصص استخدام.
 
-<div id="examples">
-  ## أمثلة
-</div>
+لتجاوز قيود القراءة فقط وتجربة تحميل بياناتك، يمكنك التسجيل للحصول على [فترة تجريبية مجانية من ClickHouse Cloud](https://clickhouse.cloud/signUp?loc=docs-get-started-sample-datasets-playground) أو [تثبيت ClickHouse](/ar/get-started/setup/install) محليًا.
+
+## أمثلة {#examples}
 
 مثال على نقطة نهاية HTTPS باستخدام `curl`:
 
@@ -50,9 +46,7 @@ curl "https://play.clickhouse.com/?user=explorer" --data-binary "SELECT 'Play Cl
 clickhouse client --secure --host play.clickhouse.com --user explorer
 ```
 
-<div id="specifications">
-  ## مواصفات ClickHouse Playground
-</div>
+## مواصفات ClickHouse Playground {#specifications}
 
 يعمل ClickHouse Playground لدينا بالمواصفات التالية:
 

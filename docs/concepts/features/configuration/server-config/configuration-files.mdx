@@ -15,6 +15,10 @@ For further details, see ["Configuring Settings"](/products/cloud/reference/sett
 
 The ClickHouse server can be configured with configuration files in XML or YAML syntax.
 In most installation types, the ClickHouse server runs with `/etc/clickhouse-server/config.xml` as the default configuration file, but it is also possible to specify the location of the configuration file manually at server startup using command line option `--config-file` or `-C`.
+When neither of these options is given, the server looks for `config.xml`, `config.yaml` and `config.yml`, in this order, in the current working directory, and uses the first one that exists.
+If none of them exists, the server starts with the configuration embedded into the binary.
+A file requested with `--config-file` is used as is: if it does not exist, the server reports an error instead of looking for a file with a different extension.
+`clickhouse-keeper` follows the same rules with `keeper_config.xml`, `keeper_config.yaml` and `keeper_config.yml`.
 Additional configuration files may be placed into directory `config.d/` relative to the main configuration file, for example into directory `/etc/clickhouse-server/config.d/`.
 Files in this directory and the main configuration are merged in a preprocessing step before the configuration is applied in ClickHouse server.
 Configuration fragments are merged in lexicographical order by their full paths. For files in the standard `config.d/` directory, this is equivalent to ordering by file name. The legacy `conf.d/` directory is also merged; because `conf.d` sorts before `config.d`, all its fragments are processed first when both directories exist.

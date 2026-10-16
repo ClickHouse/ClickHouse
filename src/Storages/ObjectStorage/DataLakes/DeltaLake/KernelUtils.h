@@ -76,6 +76,9 @@ namespace KernelUtils
 
 std::string getPhysicalName(const std::string & name, const DB::NameToNameMap & physical_names_map);
 std::optional<std::string> tryGetPhysicalName(const std::string & name, const DB::NameToNameMap & physical_names_map);
+/// Keys of the physical names map: field names from the table column down, joined with dots. A dot or a backslash
+/// inside a name is escaped with a backslash, so a column `a.b` and the field `b` of a column `a` have different keys.
+std::string appendToLogicalPath(const std::string & logical_path, const std::string & field_name);
 
 }
 
