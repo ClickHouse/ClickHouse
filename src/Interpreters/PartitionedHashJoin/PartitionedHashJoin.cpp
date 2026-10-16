@@ -346,7 +346,7 @@ ColumnWithTypeAndName PartitionedHashJoin::joinGet(const Block & block, const Bl
 void PartitionedHashJoin::shrinkStoredBlocksToFit()
 {
     size_t total_bytes = getTotalByteCount();
-    hash_join->shrinkStoredBlocksToFit(total_bytes, /*worker_id=*/0, /*force_optimize=*/true);
+    hash_join->shrinkStoredBlocksToFit(total_bytes, /*force_optimize=*/true);
 }
 
 PartitionedHashJoin::FillLane & PartitionedHashJoin::getFillLane()
