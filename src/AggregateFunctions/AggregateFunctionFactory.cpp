@@ -117,8 +117,8 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
                 if (!supertype || !supertype->canBeInsideNullable())
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Illegal type {} of argument for aggregate function {}: "
-                        "the alternatives of the Variant don't have a common supertype that can be inside Nullable",
-                        type->getName(), name);
+                        "the alternatives of the Variant don't have a common supertype that can be inside Nullable{}",
+                        type->getName(), name, getNumericVariantSupertypeHint(type));
                 type = makeNullable(supertype);
             }
         }
