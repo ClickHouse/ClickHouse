@@ -422,10 +422,10 @@ TEST(HashJoinTable, RoutesMatchWithoutSketch)
 
     auto key8 = ColumnUInt8::create();
     auto key16 = ColumnUInt16::create();
-    for (UInt16 key = 1; key <= skip.size(); ++key)
+    for (size_t key = 1; key <= skip.size(); ++key)
     {
         key8->insertValue(static_cast<UInt8>(key));
-        key16->insertValue(key);
+        key16->insertValue(static_cast<UInt16>(key));
     }
     check(HashJoinTypes::Type::key8, *key8, sizeof(UInt8), /*fixed=*/true);
     check(HashJoinTypes::Type::key16, *key16, sizeof(UInt16), /*fixed=*/true);

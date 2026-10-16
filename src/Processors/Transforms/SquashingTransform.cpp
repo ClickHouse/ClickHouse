@@ -155,7 +155,10 @@ void JoinOutputSquashingTransform::consume(Chunk chunk)
         pass_through = join->emitsSizedOutputBlocks();
 
     if (!*pass_through)
-        return SimpleSquashingChunksTransform::consume(std::move(chunk));
+    {
+        SimpleSquashingChunksTransform::consume(std::move(chunk));
+        return;
+    }
 
     if (chunk.hasRows())
         passed_chunk = std::move(chunk);
