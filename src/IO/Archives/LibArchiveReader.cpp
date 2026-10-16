@@ -14,6 +14,7 @@ namespace ErrorCodes
 {
 extern const int CANNOT_UNPACK_ARCHIVE;
 extern const int LOGICAL_ERROR;
+extern const int NOT_IMPLEMENTED;
 extern const int CANNOT_READ_ALL_DATA;
 extern const int UNSUPPORTED_METHOD;
 }
@@ -566,7 +567,7 @@ void LibArchiveReader::setPassword(const String & password_)
 {
     if (password_.empty())
         return;
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot set password to {} archive", archive_name);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot set password to {} archive", archive_name);
 }
 
 LibArchiveReader::Handle LibArchiveReader::acquireHandle()

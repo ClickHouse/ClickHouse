@@ -452,7 +452,7 @@ static HashJoin::Type chooseMethod(const ColumnRawPtrs & key_columns, Sizes & ke
         return Type::keys64;
     if (all_fixed && keys_bytes <= 16)
         return Type::keys128;
-    if (all_fixed && keys_bytes <= 32)
+    if (all_fixed && keys_bytes <= HashJoin::max_packed_keys_bytes)
         return Type::keys256;
 
     /// If there is single string key, use hash table of it's values.
@@ -759,7 +759,12 @@ bool HashJoin::isUsedByAnotherAlgorithm(const TableJoin & table_join)
 }
 bool HashJoin::canRemoveColumnsFromLeftBlock(const TableJoin & table_join)
 {
-    return !table_join.hasUsing() && !isUsedByAnotherAlgorithm(table_join) && table_join.strictness() != JoinStrictness::RightAny;
+    /// `auto` may switch HashJoin -> MergeJoin (which keeps all left columns), so pruning would
+    /// desync block structure; keep `grace_hash` conservative too. A spill threshold alone only
+    /// switches HashJoin -> GraceHashJoin (same result path), so it must not disable pruning.
+    const bool keep_left_columns = table_join.isEnabledAlgorithm(JoinAlgorithm::AUTO)
+        || table_join.isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH);
+    return !table_join.hasUsing() && !keep_left_columns && table_join.strictness() != JoinStrictness::RightAny;
 }
 
 bool HashJoin::isUsedByAnotherAlgorithm() const
