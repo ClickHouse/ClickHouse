@@ -2,10 +2,16 @@
 
 #include <atomic>
 #include <chrono>
+#include <climits>
 #include <condition_variable>
+#include <cstdlib>
 #include <mutex>
 #include <optional>
 #include <thread>
+
+#include <dirent.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
 
 #include <gtest/gtest.h>
 #include <fmt/format.h>
@@ -39,6 +45,9 @@
 #include <Server/DistributedQuery/StreamingExchangeSink.h>
 #include <Server/DistributedQuery/StreamingExchangeSource.h>
 #include <Server/DistributedQuery/tests/FakeExchangePeer.h>
+#include <Poco/Net/ServerSocket.h>
+#include <Poco/Net/SocketAddress.h>
+#include <Poco/Net/StreamSocket.h>
 
 namespace ProfileEvents
 {
@@ -728,6 +737,235 @@ std::chrono::milliseconds waitAfterCancel(QueryPipeline & pipeline, const std::f
 
 constexpr Int64 well_before_the_handshake_timeout_ms = StreamingExchangeProtocol::HELLO_TIMEOUT_SECONDS * 1000 / 2;
 
+/// `SO_SNDBUF` / `SO_RCVBUF` as the kernel reports them. Linux doubles the size passed to
+/// setsockopt and clamps it to `wmem_max` / `rmem_max` first; other kernels adjust differently.
+struct SocketBufferOptions
+{
+    int sndbuf = 0;
+    int rcvbuf = 0;
+};
+
+SocketBufferOptions optionsOf(const Poco::Net::StreamSocket & socket)
+{
+    return SocketBufferOptions{socket.getSendBufferSize(), socket.getReceiveBufferSize()};
+}
+
+/// The options a connected socket keeps after the same setsockopt calls `applySocketBufferSizes`
+/// makes. A zero size is not set, which is what leaves that direction on kernel TCP autotuning.
+SocketBufferOptions buffersTheKernelKeeps(UInt64 sndbuf, UInt64 rcvbuf)
+{
+    Poco::Net::ServerSocket listener(Poco::Net::SocketAddress("127.0.0.1", 0));
+    Poco::Net::StreamSocket client(listener.address());
+    Poco::Net::StreamSocket server_side = listener.acceptConnection();
+    listener.close();
+
+    auto apply = [&](Poco::Net::StreamSocket & socket)
+    {
+        if (sndbuf > 0)
+            socket.setSendBufferSize(static_cast<int>(sndbuf));
+        if (rcvbuf > 0)
+            socket.setReceiveBufferSize(static_cast<int>(rcvbuf));
+    };
+    apply(client);
+    apply(server_side);
+
+    const auto client_options = optionsOf(client);
+    const auto server_options = optionsOf(server_side);
+    EXPECT_EQ(client_options.sndbuf, server_options.sndbuf);
+    EXPECT_EQ(client_options.rcvbuf, server_options.rcvbuf);
+    return client_options;
+}
+
+/// Connected sockets whose local or peer port is `port`. The listening socket has no peer.
+std::vector<SocketBufferOptions> connectedSocketBuffers(UInt16 port)
+{
+    std::vector<SocketBufferOptions> found;
+    DIR * dir = opendir("/proc/self/fd");
+    if (!dir)
+        dir = opendir("/dev/fd");
+    if (!dir)
+        return found;
+
+    while (const dirent * entry = readdir(dir))
+    {
+        if (entry->d_name[0] == '.')
+            continue;
+
+        char * end = nullptr;
+        const long fd_long = std::strtol(entry->d_name, &end, 10);
+        if (!end || *end != '\0' || fd_long < 0 || fd_long > INT_MAX)
+            continue;
+
+        const int fd = static_cast<int>(fd_long);
+
+        sockaddr_storage local{};
+        socklen_t local_len = sizeof(local);
+        if (getsockname(fd, reinterpret_cast<sockaddr *>(&local), &local_len) != 0 || local.ss_family != AF_INET)
+            continue;
+
+        sockaddr_storage peer{};
+        socklen_t peer_len = sizeof(peer);
+        if (getpeername(fd, reinterpret_cast<sockaddr *>(&peer), &peer_len) != 0 || peer.ss_family != AF_INET)
+            continue;
+
+        const auto local_port = ntohs(reinterpret_cast<sockaddr_in *>(&local)->sin_port);
+        const auto peer_port = ntohs(reinterpret_cast<sockaddr_in *>(&peer)->sin_port);
+        if (local_port != port && peer_port != port)
+            continue;
+
+        SocketBufferOptions options;
+        socklen_t opt_len = sizeof(options.sndbuf);
+        if (getsockopt(fd, SOL_SOCKET, SO_SNDBUF, &options.sndbuf, &opt_len) != 0)
+            continue;
+        opt_len = sizeof(options.rcvbuf);
+        if (getsockopt(fd, SOL_SOCKET, SO_RCVBUF, &options.rcvbuf, &opt_len) != 0)
+            continue;
+        found.push_back(options);
+    }
+    closedir(dir);
+    return found;
+}
+
+/// Passes the first chunk and holds the second, so both exchange sockets stay open with the
+/// buffer sizes already applied: the sink applies them before it sends, and the source applies
+/// them before the hello that lets the sink send.
+class HoldSecondChunk : public ISimpleTransform
+{
+public:
+    explicit HoldSecondChunk(SharedHeader header_)
+        : ISimpleTransform(header_, header_, /*skip_empty_chunks_=*/ false)
+    {
+    }
+
+    String getName() const override { return "HoldSecondChunk"; }
+
+    void release()
+    {
+        std::lock_guard lock(mutex);
+        released = true;
+        gate.notify_all();
+    }
+
+protected:
+    void transform(Chunk &) override
+    {
+        std::unique_lock lock(mutex);
+        if (chunks_seen++ == 0)
+            return;
+        gate.wait(lock, [&] { return released; });
+    }
+
+private:
+    std::mutex mutex;
+    std::condition_variable gate;
+    bool released = false;
+    size_t chunks_seen = 0;
+};
+
+/// One real sink and one real source on a loopback exchange. Returns the buffer options of the
+/// two connected sockets once the sink has sent, which is after both sides have applied the
+/// current `streaming_exchange_sndbuf` / `streaming_exchange_rcvbuf` values.
+std::vector<SocketBufferOptions> exchangeSocketBuffers()
+{
+    auto header = makeHeader();
+    LoopbackExchange exchange;
+
+    Chunks chunks;
+    chunks.push_back(makeChunk(0, 32));
+    chunks.push_back(makeChunk(32, 32));
+
+    std::shared_ptr<HoldSecondChunk> hold;
+    QueryPipelineBuilder builder;
+    builder.init(Pipe(std::make_shared<SourceFromChunks>(header, std::move(chunks))));
+    builder.addSimpleTransform([&](const SharedHeader & stream_header)
+    {
+        hold = std::make_shared<HoldSecondChunk>(stream_header);
+        return hold;
+    });
+    builder.addSimpleTransform([](const SharedHeader & stream_header)
+    {
+        return std::make_shared<StreamingExchangeSerializingTransform>(
+            stream_header, CompressionCodecFactory::instance().getDefaultCodec());
+    });
+    if (!hold)
+    {
+        ADD_FAILURE() << "HoldSecondChunk was not inserted";
+        return {};
+    }
+
+    auto future_connection = exchange.connections->getConnection("query", "stream");
+    builder.setSinks([&](const SharedHeader & stream_header, Pipe::StreamType)
+    {
+        return std::make_shared<StreamingExchangeSink>(stream_header, future_connection, "stream");
+    });
+    auto sending = QueryPipelineBuilder::getPipeline(std::move(builder));
+    auto receiving = makeReceivingPipeline(
+        header, exchange.server.port(), /*source_hands_packets=*/ false, std::make_shared<CollectingSink>(header));
+
+    const UInt64 sent_before = eventCount(ProfileEvents::StreamingExchangeSendBytes);
+    const UInt16 port = exchange.server.port();
+
+    std::optional<int> sending_code;
+    std::optional<int> receiving_code;
+    std::atomic<bool> sender_finished{false};
+    std::atomic<bool> receiver_finished{false};
+    std::thread sender([&]
+    {
+        sending_code = run(sending, 2);
+        sender_finished.store(true);
+    });
+    std::thread receiver([&]
+    {
+        receiving_code = run(receiving, 2);
+        receiver_finished.store(true);
+    });
+
+    struct FinishExchange
+    {
+        std::shared_ptr<HoldSecondChunk> hold;
+        std::thread * sender = nullptr;
+        std::thread * receiver = nullptr;
+
+        ~FinishExchange()
+        {
+            if (hold)
+                hold->release();
+            if (sender && sender->joinable())
+                sender->join();
+            if (receiver && receiver->joinable())
+                receiver->join();
+        }
+    } finish{hold, &sender, &receiver};
+
+    std::vector<SocketBufferOptions> found;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+    while (std::chrono::steady_clock::now() < deadline)
+    {
+        if (eventCount(ProfileEvents::StreamingExchangeSendBytes) > sent_before)
+        {
+            found = connectedSocketBuffers(port);
+            if (found.size() >= 2)
+                break;
+        }
+        if (sender_finished.load() && receiver_finished.load())
+            break;
+        std::this_thread::yield();
+    }
+
+    /// Copy before releasing: the release lets both pipelines finish and close the sockets.
+    const std::vector<SocketBufferOptions> open_sockets = found;
+    if (hold)
+        hold->release();
+    sender.join();
+    receiver.join();
+    finish.sender = nullptr;
+    finish.receiver = nullptr;
+
+    EXPECT_EQ(sending_code, std::nullopt);
+    EXPECT_EQ(receiving_code, std::nullopt);
+    return open_sockets;
+}
+
 }
 
 /// A cancel stops a source that waits for the `SinkHello` of a peer that never answers, instead of the query
@@ -777,5 +1015,56 @@ TEST(StreamingExchangeTransport, CancelStopsTheWaitForTheConnect)
         well_before_the_handshake_timeout_ms);
 }
 #endif
+
+/// Explicit `streaming_exchange_sndbuf` / `streaming_exchange_rcvbuf` values reach both sockets of a
+/// new exchange, and publishing 0 again leaves the next connection on the kernel defaults. The
+/// expected options come from a socket this test configured the same way, so kernel doubling and
+/// clamping are part of the comparison rather than hard-coded.
+TEST(StreamingExchangeTransport, ConfiguredBuffersReachNewConnections)
+{
+    MainThreadStatus::getInstance();
+
+    const auto saved = StreamingExchangeProtocol::getSocketBufferSizes();
+    struct RestoreBufferSizes
+    {
+        StreamingExchangeProtocol::SocketBufferSizes saved;
+
+        ~RestoreBufferSizes()
+        {
+            StreamingExchangeProtocol::setSocketBufferSizes(saved.sndbuf, saved.rcvbuf);
+        }
+    } restore{saved};
+
+    const SocketBufferOptions kernel_defaults = buffersTheKernelKeeps(0, 0);
+    UInt64 sndbuf = 65536;
+    UInt64 rcvbuf = 32768;
+    SocketBufferOptions configured = buffersTheKernelKeeps(sndbuf, rcvbuf);
+    if (configured.sndbuf == kernel_defaults.sndbuf || configured.rcvbuf == kernel_defaults.rcvbuf)
+    {
+        sndbuf = 16384;
+        rcvbuf = 8192;
+        configured = buffersTheKernelKeeps(sndbuf, rcvbuf);
+    }
+    ASSERT_NE(configured.sndbuf, kernel_defaults.sndbuf);
+    ASSERT_NE(configured.rcvbuf, kernel_defaults.rcvbuf);
+
+    StreamingExchangeProtocol::setSocketBufferSizes(sndbuf, rcvbuf);
+    const auto explicit_sockets = exchangeSocketBuffers();
+    ASSERT_EQ(explicit_sockets.size(), 2u);
+    for (const auto & socket : explicit_sockets)
+    {
+        EXPECT_EQ(socket.sndbuf, configured.sndbuf);
+        EXPECT_EQ(socket.rcvbuf, configured.rcvbuf);
+    }
+
+    StreamingExchangeProtocol::setSocketBufferSizes(0, 0);
+    const auto default_sockets = exchangeSocketBuffers();
+    ASSERT_EQ(default_sockets.size(), 2u);
+    for (const auto & socket : default_sockets)
+    {
+        EXPECT_EQ(socket.sndbuf, kernel_defaults.sndbuf);
+        EXPECT_EQ(socket.rcvbuf, kernel_defaults.rcvbuf);
+    }
+}
 
 #endif
