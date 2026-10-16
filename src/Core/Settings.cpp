@@ -10694,7 +10694,7 @@ A row can contain several matched tokens, so the sum can exceed the number of ro
 
 Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
 )", 0, \
-        {"26.10", 1.0, 1.0, "New setting"}) \
+        {"26.11", 1.0, 1.0, "New setting"}) \
     DECLARE(Bool, use_text_index_tokens_cache, true, R"(
 Whether to cache deserialized text index token infos in memory.
 Using the text index tokens cache can significantly reduce latency and increase throughput when working with a large number of text index queries.
