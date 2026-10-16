@@ -2838,7 +2838,11 @@ static BlockIO executeQueryImpl(
         /// `DatabaseReplicated` task for every replayed query, and likewise a server-side flag),
         /// so a worker-side default `query_rules` cannot rewrite or reject the replayed DDL
         /// regardless of the entry format version.
-        if ((!internal || flags.user_initiated) && !context->isDDLOrOnClusterInternal())
+        ///
+        /// A query run in the background (`run_query_in_background`) had the rules applied when it
+        /// was dispatched, and the worker receives the already rewritten query (see the dispatch
+        /// below), so the rules are not applied a second time.
+        if ((!internal || flags.user_initiated) && !context->isDDLOrOnClusterInternal() && !flags.background)
             astTraversal(out_ast, context, applied_rewrite_rules);
     }
     catch (...)
@@ -3003,7 +3007,19 @@ static BlockIO executeQueryImpl(
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "A query whose data streams over the connection cannot be run in the background");
 
-                executeQueryInBackground(std::string_view(begin, end), out_ast, context);
+                /// The worker re-parses the text it is given and does not apply the rewrite rules
+                /// again, so a query rewritten by a rule is handed over in its rewritten form.
+                if (applied_rewrite_rules.empty())
+                {
+                    executeQueryInBackground(std::string_view(begin, end), out_ast, context);
+                }
+                else
+                {
+                    if (insert_query && insert_query->hasInlinedData())
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                            "A query rewritten by a query rule into an INSERT with inline data cannot be run in the background");
+                    executeQueryInBackground(out_ast->formatWithSecretsOneLine(), out_ast, context);
+                }
                 BlockIO io;
                 io.dispatched = true;
                 return io;
