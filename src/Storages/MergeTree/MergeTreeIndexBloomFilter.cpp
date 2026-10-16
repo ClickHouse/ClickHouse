@@ -12,6 +12,7 @@
 #include <Common/SipHash.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -29,6 +30,8 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/Serializations/SerializationBool.h>
+#include <DataTypes/Serializations/SerializationNumber.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/BloomFilterHash.h>
@@ -292,6 +295,30 @@ bool isSupportedLeafType(const IDataType & type)
         || typeid(type) == typeid(DataTypeUUID) || typeid(type) == typeid(DataTypeIPv4) || typeid(type) == typeid(DataTypeIPv6);
 }
 
+bool isNativeBoolType(const IDataType & type)
+{
+    if (typeid(type) != typeid(DataTypeUInt8))
+        return false;
+
+    const auto & uint8_type = static_cast<const DataTypeUInt8 &>(type);
+    if (uint8_type.canUnsignedBeSigned())
+        return false;
+
+    const auto * custom_serialization = type.getCustomSerialization();
+    if (!custom_serialization || typeid(*custom_serialization) != typeid(SerializationBool))
+        return false;
+
+    const auto * nested_serialization = static_cast<const SerializationBool *>(custom_serialization)->getNested().get();
+    if (!nested_serialization || typeid(*nested_serialization) != typeid(SerializationNumber<UInt8>))
+        return false;
+
+    const auto * custom_name = type.getCustomName();
+    if (!custom_name || typeid(*custom_name) != typeid(DataTypeCustomFixedName))
+        return false;
+
+    return custom_name->getName() == "Bool";
+}
+
 template <typename T>
 bool sameEnumType(const DataTypeEnum<T> & left, const DataTypeEnum<T> & right, ExpressionMatchBudget & budget)
 {
@@ -335,7 +362,19 @@ bool sameType(const DataTypePtr & left, const DataTypePtr & right, ExpressionMat
 
         auto [left_type, right_type] = std::move(pending.back());
         pending.pop_back();
-        if (!left_type || !right_type || left_type->getCustomName() || right_type->getCustomName())
+        if (!left_type || !right_type)
+            return false;
+
+        const bool left_is_native_bool = isNativeBoolType(*left_type);
+        const bool right_is_native_bool = isNativeBoolType(*right_type);
+        if (left_is_native_bool || right_is_native_bool)
+        {
+            if (!left_is_native_bool || !right_is_native_bool)
+                return false;
+            continue;
+        }
+
+        if (left_type->getCustomName() || right_type->getCustomName())
             return false;
 
         /// Function-typed arguments carry lambda captures outside the ordinary child structure.
@@ -393,6 +432,17 @@ bool sameType(const DataTypePtr & left, const DataTypePtr & right, ExpressionMat
         const DataTypePair pair{left_type.get(), right_type.get()};
         if (!visited.emplace(pair).second)
             continue;
+
+        if (const auto * left_map = typeid_cast<const DataTypeMap *>(left_type.get()))
+        {
+            const auto * right_map = typeid_cast<const DataTypeMap *>(right_type.get());
+            if (!right_map || left_map->getNumberOfChildren() != 2 || right_map->getNumberOfChildren() != 2
+                || !budget.consume(2))
+                return false;
+            pending.emplace_back(left_map->getChild(0), right_map->getChild(0));
+            pending.emplace_back(left_map->getChild(1), right_map->getChild(1));
+            continue;
+        }
 
         if (typeid_cast<const DataTypeArray *>(left_type.get())
             || typeid_cast<const DataTypeNullable *>(left_type.get())
@@ -862,6 +912,20 @@ bool isSupportedDirectFunctionPair(
     return left_hash.get128() == right_hash.get128();
 }
 
+bool isSupportedArrayJoinFunctionPair(
+    const ActionsDAG::Node & left, const ActionsDAG::Node & right, ExpressionMatchBudget & budget)
+{
+    if (!left.function_base || !right.function_base)
+        return false;
+
+    if (left.function_base->getFactoryHandle() && right.function_base->getFactoryHandle())
+        return isSupportedDirectFunctionPair(left, right, budget);
+
+    /// ArrayJoinStep creates emptyArrayToSingle outside FunctionFactory. When either handle is absent,
+    /// only the existing exact native-function bridge may authenticate the pair.
+    return isSupportedArrayFunctionPair(left, right, budget);
+}
+
 const ActionsDAG::Node * normalizeExpressionNode(const ActionsDAG::Node * node, ExpressionMatchBudget & budget)
 {
     while (node && node->type == ActionsDAG::ActionType::ALIAS)
@@ -919,7 +983,7 @@ bool structurallyMatchesIndexedExpression(
                 if (left->children.size() != right->children.size()
                     || (mode == ExpressionMatchMode::DirectIN
                         ? !isSupportedDirectFunctionPair(*left, *right, budget)
-                        : !isSupportedArrayFunctionPair(*left, *right, budget)))
+                        : !isSupportedArrayJoinFunctionPair(*left, *right, budget)))
                     return false;
                 for (size_t i = 0; i < left->children.size(); ++i)
                 {

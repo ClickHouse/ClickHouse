@@ -1,0 +1,52 @@
+Granules: 16/16
+Name: idx_bool
+Granules: 1/16
+Granules: 16/16
+Name: idx_u8
+Granules: 1/16
+Granules: 16/16
+Name: idx_map_keys
+Granules: 1/16
+Granules: 16/16
+Name: idx_array_sort
+Granules: 1/16
+Granules: 16/16
+Name: idx_array_reverse
+Granules: 1/16
+1
+1
+Granules: 16/16
+Name: idx_map_keys_physical
+Granules: 1/16
+Granules: 16/16
+Name: idx_array_sort_physical
+Granules: 1/16
+Granules: 16/16
+Name: idx_map_keys
+Granules: 1/16
+Granules: 16/16
+Name: idx_array_sort
+Granules: 1/16
+Granules: 16/16
+Name: idx_array_sort
+Granules: 1/16
+map physical	3	[]
+map physical	4	['3']
+array physical	3	[]
+array physical	4	['3']
+Bool indexed	[3]
+Bool full scan	[3]
+UInt8 indexed	[3]
+UInt8 full scan	[3]
+map indexed	[3]
+map full scan	[3]
+map computed collision	[3]
+map computed collision full scan	[3]
+map physical collision	[4]
+array indexed	[3]
+array full scan	[3]
+array computed collision	[3]
+array computed collision full scan	[3]
+array physical collision	[4]
+arrayReverse indexed	[3]
+arrayReverse full scan	[3]
