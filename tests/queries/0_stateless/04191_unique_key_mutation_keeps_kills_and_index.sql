@@ -17,7 +17,7 @@ SET optimize_use_implicit_projections = 0;
 DROP TABLE IF EXISTS uk_mut_wide;
 CREATE TABLE uk_mut_wide (id UInt64, v String, w UInt32)
 ENGINE = MergeTree UNIQUE KEY (id) ORDER BY (id)
-SETTINGS min_bytes_for_wide_part = 0, max_bytes_to_merge_at_max_space_in_pool = 1;
+SETTINGS min_bytes_for_wide_part = 0, max_bytes_to_merge_at_max_space_in_pool = 1, remove_empty_parts = 0;
 
 INSERT INTO uk_mut_wide SELECT number, 'v1', 1 FROM numbers(100);
 INSERT INTO uk_mut_wide SELECT number, 'v2', 2 FROM numbers(80, 20);
@@ -52,7 +52,7 @@ DROP TABLE IF EXISTS uk_mut_clone;
 CREATE TABLE uk_mut_clone (id UInt64, v String, w UInt32)
 ENGINE = MergeTree UNIQUE KEY (id) ORDER BY (id)
 SETTINGS min_bytes_for_wide_part = 0, max_bytes_to_merge_at_max_space_in_pool = 1,
-         auto_statistics_types = '';
+         auto_statistics_types = '', remove_empty_parts = 0;
 
 INSERT INTO uk_mut_clone SELECT number, 'v1', 1 FROM numbers(100);
 INSERT INTO uk_mut_clone SELECT number, 'v2', 2 FROM numbers(80, 20);
@@ -68,6 +68,7 @@ INSERT INTO uk_mut_clone SELECT number, 'v3', 3 FROM numbers(90, 20);
 SELECT 'clone reprobe', count(), countDistinct(id) FROM uk_mut_clone;
 
 -- 4. The mutation results (`_4`), staged names only: a carried one carries a csn. The source all_2_2_0 holds `for_all_1_1_0`.
+-- all_3_3_0_4 holds no rows and, once its bitmaps move, nothing; `remove_empty_parts = 0` keeps it listed.
 DETACH TABLE uk_mut_wide;
 ATTACH TABLE uk_mut_wide;
 SELECT 'wide bitmaps', name, arrayFilter(x -> startsWith(x, 'for_'), unique_key_bitmap_versions)
