@@ -36,7 +36,7 @@ CREATE TABLE test_05401
 ENGINE = MergeTree()
 ORDER BY type;
 
-INSERT INTO test_05401 VALUES (1), (2) SETTINGS max_block_size = 100;
+INSERT INTO test_05401 SETTINGS max_block_size = 100 VALUES (1), (2);
 
 SELECT sum(toUInt64(getSetting('max_block_size'))) FROM test_05401
 SETTINGS max_block_size = 200, optimize_use_projections = 0;
