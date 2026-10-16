@@ -4,6 +4,10 @@
 -- and run it alone. In the INSERT's `SETTINGS` clause it is shipped to the replicas, and must not stop
 -- them from reading their share, otherwise every replica inserts the whole source table.
 --
+-- In both forms the setting must not reach the replicas in the shipped query text (the second column):
+-- the parser copies the SELECT's `SETTINGS` into the INSERT's own clause, and a replica that predates
+-- followers ignoring the automatic mode would re-apply it over the pinned 0 and insert every row again.
+--
 -- Without a local pipeline every replica of `test_cluster_one_shard_three_replicas_localhost` gets a
 -- query, so a distributed insert has the initiator's own `Insert` row plus three shipped ones - 4. All
 -- three replicas are this same server, so every one of those rows lands in this `system.query_log`.
@@ -27,7 +31,7 @@ SELECT '-- automatic mode in the SELECT settings';
 INSERT INTO t_dst SELECT k FROM t_src SETTINGS log_comment = '05406_select_settings', automatic_parallel_replicas_mode = 2;
 
 SYSTEM FLUSH LOGS query_log;
-SELECT count() FROM system.query_log WHERE (current_database = currentDatabase() OR has(databases, currentDatabase())) AND type = 'QueryFinish' AND query_kind = 'Insert' AND log_comment = '05406_select_settings' AND event_date >= yesterday() AND event_time >= now() - 600;
+SELECT count(), countIf(NOT is_initial_query AND position(query, 'automatic_parallel_replicas_mode') > 0) FROM system.query_log WHERE (current_database = currentDatabase() OR has(databases, currentDatabase())) AND type = 'QueryFinish' AND query_kind = 'Insert' AND log_comment = '05406_select_settings' AND event_date >= yesterday() AND event_time >= now() - 600;
 
 SELECT count(), uniqExact(k) FROM t_dst;
 
@@ -36,7 +40,7 @@ TRUNCATE TABLE t_dst;
 INSERT INTO t_dst SETTINGS log_comment = '05406_insert_settings', automatic_parallel_replicas_mode = 2 SELECT k FROM t_src;
 
 SYSTEM FLUSH LOGS query_log;
-SELECT count() FROM system.query_log WHERE (current_database = currentDatabase() OR has(databases, currentDatabase())) AND type = 'QueryFinish' AND query_kind = 'Insert' AND log_comment = '05406_insert_settings' AND event_date >= yesterday() AND event_time >= now() - 600;
+SELECT count(), countIf(NOT is_initial_query AND position(query, 'automatic_parallel_replicas_mode') > 0) FROM system.query_log WHERE (current_database = currentDatabase() OR has(databases, currentDatabase())) AND type = 'QueryFinish' AND query_kind = 'Insert' AND log_comment = '05406_insert_settings' AND event_date >= yesterday() AND event_time >= now() - 600;
 
 SELECT count(), uniqExact(k) FROM t_dst;
 
