@@ -21,6 +21,15 @@ const BitSet & MergedPlanDAG::getSources(const ActionsDAG::Node * node) const
     return JoinActionRef(node, expression_actions).getSourceRelations();
 }
 
+size_t MergedPlanDAG::getSourceOfInput(const ActionsDAG::Node * input) const
+{
+    const auto & input_sources = getSources(input);
+    if (input->type != ActionsDAG::ActionType::INPUT || input_sources.count() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Node {} of the merged plan DAG is not an input of one source, it reads {}", input->result_name, input_sources.count());
+    return *input_sources.begin();
+}
+
 const MergedPlanDAG::PaddedSide * MergedPlanDAG::getNearestPaddedSide(const ActionsDAG::Node * node) const
 {
     if (const auto it = nearest_padded_side.find(node); it != nearest_padded_side.end())
@@ -43,7 +52,7 @@ namespace
 
 /// Which side of a join can end up with rows its columns took no part in. A kind that keeps every row of
 /// one side has to fill the other side in for the rows that matched nothing there.
-std::pair<bool, bool> findPaddedSides(JoinKind kind)
+std::array<bool, 2> findPaddedSides(JoinKind kind)
 {
     switch (kind)
     {
@@ -59,10 +68,10 @@ std::pair<bool, bool> findPaddedSides(JoinKind kind)
         case JoinKind::Full:
             return {true, true};
         /// `PASTE` matches rows by position rather than by a condition, and cuts both sides to the shorter one rather than
-        /// padding either. The careful answer costs at most a mask that is never false, or a value carried that could
-        /// have been recomputed, and does not depend on that.
+        /// padding either. The careful answer below costs at most a mask that is never false, or a value carried that
+        /// could have been recomputed, and does not depend on that.
         case JoinKind::Paste:
-            return {true, true};
+            break;
     }
 
     return {true, true};
@@ -227,6 +236,16 @@ std::optional<Built> tryBuildFromStep(QueryPlan::Node & node, std::vector<Built>
 {
     auto * step = node.step.get();
 
+    /// The DAG built for the step has to reproduce its header, or the walk stops there.
+    const auto finish = [&](Built & built, const ActionsDAG::NodeRawConstPtrs & outputs) -> std::optional<Built>
+    {
+        if (!outputsMatchHeader(outputs, *step->getOutputHeader()))
+            return {};
+
+        built.dag.step_outputs.emplace(&node, outputs);
+        return std::move(built);
+    };
+
     const auto mergeAndTrack = [&node](Built & built, const ActionsDAG & step_dag, ActionsDAG::NodeMapping & clone_mapping)
     {
         auto & dag = *built.dag.expression_actions.getActionsDAG();
@@ -257,29 +276,23 @@ std::optional<Built> tryBuildFromStep(QueryPlan::Node & node, std::vector<Built>
         if (!mergeAndTrack(built, step_dag, clone_mapping))
             return {};
 
-        if (!outputsMatchHeader(built.dag.getOutputs(), *step->getOutputHeader()))
-            return {};
-
-        built.dag.step_outputs.emplace(&node, built.dag.getOutputs());
-        return built;
+        return finish(built, built.dag.getOutputs());
     }
 
     if (auto * runtime_filter_step = typeid_cast<BuildRuntimeFilterStep *>(step))
     {
         auto built = std::move(children.front());
 
-        /// The step outputs what it reads, so the outputs stand as they are.
-        const auto & outputs = built.dag.getOutputs();
-        if (!outputsMatchHeader(outputs, *step->getOutputHeader()))
+        /// The step outputs what it reads, so the outputs stand as they are. The key name occurs once in the header,
+        /// which `canEnterStep` checked.
+        const auto outputs = built.dag.getOutputs();
+        const auto & key_name = runtime_filter_step->getFilterColumnName();
+        const auto key_it = std::ranges::find_if(outputs, [&](const auto * output) { return output->result_name == key_name; });
+        if (key_it == outputs.end())
             return {};
 
-        /// The key name occurs once in the header, which `canEnterStep` checked.
-        const auto & key_name = runtime_filter_step->getFilterColumnName();
-        built.dag.step_read_nodes.push_back(
-            *std::ranges::find_if(outputs, [&](const auto * output) { return output->result_name == key_name; }));
-
-        built.dag.step_outputs.emplace(&node, outputs);
-        return built;
+        built.dag.step_read_nodes.push_back(*key_it);
+        return finish(built, outputs);
     }
 
     if (auto * filter_step = typeid_cast<FilterStep *>(step))
@@ -303,11 +316,7 @@ std::optional<Built> tryBuildFromStep(QueryPlan::Node & node, std::vector<Built>
         if (filter_step->removesFilterColumn())
             dag_outputs.erase(filter_it);
 
-        if (!outputsMatchHeader(built.dag.getOutputs(), *step->getOutputHeader()))
-            return {};
-
-        built.dag.step_outputs.emplace(&node, built.dag.getOutputs());
-        return built;
+        return finish(built, built.dag.getOutputs());
     }
 
     auto * join_step = typeid_cast<JoinStepLogical *>(step);
@@ -349,8 +358,7 @@ std::optional<Built> tryBuildFromStep(QueryPlan::Node & node, std::vector<Built>
     /// further down keeps that one: it is the nearer, and its mask is padded by this join in turn, so
     /// it answers for both.
     const auto & join_operator = join_step->getJoinOperator();
-    const auto padded_join_sides = findPaddedSides(join_operator.kind);
-    const std::array<bool, 2> side_is_padded{padded_join_sides.first, padded_join_sides.second};
+    const auto side_is_padded = findPaddedSides(join_operator.kind);
     const std::array<ActionsDAG::NodeRawConstPtrs *, 2> side_ungated{&built.ungated_nodes, &right.ungated_nodes};
 
     std::array<const MergedPlanDAG::PaddedSide *, 2> join_padded_sides{nullptr, nullptr};
@@ -468,11 +476,7 @@ std::optional<Built> tryBuildFromStep(QueryPlan::Node & node, std::vector<Built>
             built.dag.unread_join_sides.push_back(std::move(side_inputs));
     }
 
-    if (!outputsMatchHeader(built.dag.getOutputs(), *step->getOutputHeader()))
-        return {};
-
-    built.dag.step_outputs.emplace(&node, built.dag.getOutputs());
-    return built;
+    return finish(built, built.dag.getOutputs());
 }
 
 Built buildFromSource(QueryPlan::Node & node)

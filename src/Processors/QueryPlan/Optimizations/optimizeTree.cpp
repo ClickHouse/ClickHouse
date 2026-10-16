@@ -502,8 +502,7 @@ void optimizeTreeSecondPass(
             auto & frame = stack.back();
 
             if (frame.next_child == 0
-                && optimizeLazyMaterialization3(
-                    *frame.node, query_plan, nodes, optimization_settings, optimization_settings.max_limit_for_lazy_materialization))
+                && optimizeLazyMaterialization3(*frame.node, query_plan, nodes, optimization_settings))
             {
                 lazy_materialization_applied = true;
                 stack.pop_back();

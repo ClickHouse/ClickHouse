@@ -74,11 +74,7 @@ std::optional<size_t> findSourceOfInput(const MergedPlanDAG & merged, const Acti
     if (node->type != ActionsDAG::ActionType::INPUT)
         return {};
 
-    const auto & node_sources = merged.getSources(node);
-    if (node_sources.count() != 1)
-        return {};
-
-    return *node_sources.begin();
+    return merged.getSourceOfInput(node);
 }
 
 /// Whether evaluating the node on rows it was never meant to see is harmless: the rows a join padded hold the
@@ -202,12 +198,9 @@ private:
     {
         const auto source = findSourceOfInput(merged, node);
 
-        /// Without a second read of its source there is no way to get a column above the `LIMIT`. An
-        /// input reading no source, or more than one, is not something this can place either, and an
-        /// `arrayJoin` changes the number of rows the `LIMIT` already counted.
-        const bool can_be_had_above = source
-            ? lazy_sources[*source]
-            : node->type != ActionsDAG::ActionType::INPUT && node->type != ActionsDAG::ActionType::ARRAY_JOIN;
+        /// Without a second read of its source there is no way to get a column above the `LIMIT`, and an `arrayJoin`
+        /// changes the number of rows the `LIMIT` already counted.
+        const bool can_be_had_above = source ? lazy_sources[*source] : node->type != ActionsDAG::ActionType::ARRAY_JOIN;
 
         if (!can_be_had_above)
             return Decision::Carry;
@@ -231,13 +224,8 @@ private:
         /// every row, the padded ones included. That needs a mask, and for a function one harmless to evaluate
         /// there. A source column read lazily needs neither, as the lazy read stands the default at a row nothing
         /// matched, and nor does an alias, which is whatever its child is, padded rows included.
-        if (node->type == ActionsDAG::ActionType::FUNCTION || node->type == ActionsDAG::ActionType::COLUMN)
-        {
-            if (const auto * padded_side = merged.getNearestPaddedSide(node))
-                if (!masked_padded_sides.contains(padded_side)
-                    || (node->type == ActionsDAG::ActionType::FUNCTION && !canEvaluateOnPaddedRows(node)))
-                    return Decision::Carry;
-        }
+        if ((node->type == ActionsDAG::ActionType::FUNCTION || node->type == ActionsDAG::ActionType::COLUMN) && isBlockedByPadding(node))
+            return Decision::Carry;
 
         /// A value that does not answer the same twice is computed where the plan computes it, and crosses as a column.
         /// Where something below the `LIMIT` uses it, the result has to agree with that; where nothing does, it is still
@@ -261,13 +249,17 @@ private:
     /// cannot be recomputed, or a join can pad it and it cannot be recomputed under a mask.
     bool wouldBeCarried(const ActionsDAG::Node * node) const
     {
-        if (!canBeRecomputed(node))
-            return true;
+        return !canBeRecomputed(node) || isBlockedByPadding(node);
+    }
 
-        if (const auto * padded_side = merged.getNearestPaddedSide(node))
-            return !masked_padded_sides.contains(padded_side) || !canEvaluateOnPaddedRows(node);
-
-        return false;
+    /// Whether a join can pad the value and it cannot be recomputed under that join's mask: there is no mask, or it is a
+    /// function that can throw on the padded rows.
+    bool isBlockedByPadding(const ActionsDAG::Node * node) const
+    {
+        const auto * padded_side = merged.getNearestPaddedSide(node);
+        return padded_side
+            && (!masked_padded_sides.contains(padded_side)
+                || (node->type == ActionsDAG::ActionType::FUNCTION && !canEvaluateOnPaddedRows(node)));
     }
 
     /// Whether `node` is a short-circuit function, and a function in its arguments would cross on its own.

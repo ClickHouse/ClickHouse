@@ -2,8 +2,6 @@
 
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeFunction.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Functions/FunctionFactory.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -398,35 +396,34 @@ void appendOutputToStep(IQueryPlanStep & step, const ActionsDAG::Node & step_nod
 class JoinPlanRebuild
 {
 public:
-    /// `mask_sources` are the sources whose row index says whether the join of a padded side matched a row, for the
-    /// padded sides the `masked_values` are on.
+    /// `chain_top` is the node right below the `LIMIT`, or below the sorting, and `sort_key_positions` are the positions of
+    /// its header the sorting reads. `mask_sources` are the sources whose row index says whether the join of a padded
+    /// side matched a row, for the padded sides the `masked_values` are on.
     JoinPlanRebuild(
         const MergedPlanDAG & merged_,
         const LazyFrontier & frontier_,
         const std::vector<bool> & lazy_sources_,
         const std::unordered_map<const MergedPlanDAG::PaddedSide *, size_t> & mask_sources_,
         const NodeSet & masked_values_,
-        ContextPtr context_)
+        ContextPtr context_,
+        QueryPlan::Node * chain_top_,
+        const std::vector<size_t> & sort_key_positions_)
         : merged(merged_)
         , frontier(frontier_)
         , lazy_sources(lazy_sources_)
         , mask_sources(mask_sources_)
         , masked_values(masked_values_)
         , context(std::move(context_))
+        , chain_top(chain_top_)
+        , sort_key_positions(sort_key_positions_)
     {
         for (size_t source = 0; source < merged.sources.size(); ++source)
             source_numbers.emplace(merged.sources[source].plan_node, source);
     }
 
-    bool prepare(QueryPlan::Node * chain_top_, const std::vector<size_t> & sort_key_positions)
+    bool prepare()
     {
-        chain_top = chain_top_;
-
-        /// A subtree reading one source is what `optimizeLazyMaterialization2` handles. A join is the only step with more
-        /// than one child the merged DAG goes through, so more sources than one mean a join.
-        if (merged.sources.size() < 2)
-            return false;
-
+        NodeSet sort_key_nodes;
         const auto & outputs = merged.getOutputs();
         for (size_t position : sort_key_positions)
             sort_key_nodes.insert(outputs[position]);
@@ -477,8 +474,7 @@ public:
     }
 
     /// `sorting_node` is the full sorting right below `root`, the `LIMIT`, or null without ORDER BY.
-    void apply(QueryPlan & query_plan, QueryPlan::Nodes & nodes, QueryPlan::Node & root, QueryPlan::Node * sorting_node,
-        const std::vector<size_t> & sort_key_positions)
+    void apply(QueryPlan & query_plan, QueryPlan::Nodes & nodes, QueryPlan::Node & root, QueryPlan::Node * sorting_node)
     {
         /// An expression or a filter computing a carried value it does not output outputs a copy of it last. The steps
         /// above it still have its former header, which the copy comes after, as the other columns this rebuild adds.
@@ -672,6 +668,13 @@ public:
 private:
     struct LazySource
     {
+        enum class Kind : uint8_t
+        {
+            MergeTree,
+            ObjectStorage,
+        };
+        Kind kind = Kind::MergeTree;
+
         /// The source columns the main read keeps, by name, for an object storage read; the positions of the ones the lazy
         /// read fetches, for a MergeTree read; and the inputs standing for them.
         NameSet eager_names;
@@ -763,6 +766,7 @@ private:
                 continue;
             }
 
+            lazy.kind = LazySource::Kind::ObjectStorage;
             std::vector<const ActionsDAG::Node *> candidates;
             for (const auto * input : merged.sources[source].inputs)
             {
@@ -788,7 +792,7 @@ private:
                 lazy_by_source.emplace(source, std::move(lazy));
         }
 
-        return !lazy_by_source.empty();
+        return true;
     }
 
     /// Leaves to the lazy read of an object storage source those of `lazy.inputs` the read can leave out given the columns
@@ -845,12 +849,7 @@ private:
                 if (column->type != ActionsDAG::ActionType::INPUT)
                     continue;
 
-                /// An input of the merged DAG is a column of exactly one read.
-                const auto & column_sources = merged.getSources(column);
-                if (column_sources.count() != 1)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Input {} of the merged plan DAG reads {} sources", column->result_name, column_sources.count());
-                const auto source = *column_sources.begin();
+                const auto source = merged.getSourceOfInput(column);
                 const auto lazy_it = lazy_by_source.find(source);
                 if (lazy_it == lazy_by_source.end())
                     continue;
@@ -863,7 +862,7 @@ private:
 
                 const auto index = input_it - lazy.inputs.begin();
                 lazy.inputs.erase(input_it);
-                if (!lazy.positions.empty())
+                if (lazy.kind == LazySource::Kind::MergeTree)
                     lazy.positions.erase(lazy.positions.begin() + index);
                 else
                 {
@@ -901,6 +900,9 @@ private:
     {
         QueryPlan plan;
         std::vector<size_t> dropped_positions;
+        /// Whether this rebuild put a step of its own on top of the plan - the row index of a read, the copies of carried
+        /// columns - which is merged into the step above when that can take it.
+        bool has_added_step_on_top = false;
     };
 
     /// A rebuilt child as the step above it sees it: everything but the columns this rebuild added, which the step passes
@@ -1013,8 +1015,8 @@ private:
         auto dag = makeAboveReadDAG(*assembled.plan.getCurrentHeader(), {}, {}, {}, false, copies);
         auto step = std::make_unique<ExpressionStep>(assembled.plan.getCurrentHeader(), std::move(dag));
         step->setStepDescription("Columns carried across the LIMIT");
-        steps_above_child.insert(step.get());
         assembled.plan.addStep(std::move(step));
+        assembled.has_added_step_on_top = true;
     }
 
     /// Prunes and assembles the step of a node on top of its assembled children.
@@ -1045,9 +1047,9 @@ private:
         if (children.size() == 1)
         {
             result.plan = std::move(children.front().plan);
-            const bool is_above_row_index = steps_above_child.contains(result.plan.getRootNode()->step.get());
+            const bool is_above_added_step = children.front().has_added_step_on_top;
             result.plan.addStep(std::move(node->step));
-            if (is_above_row_index)
+            if (is_above_added_step)
                 mergeRowIndexIntoParent(*result.plan.getRootNode());
         }
         else
@@ -1133,11 +1135,7 @@ private:
         {
             if (!copies.empty())
             {
-                auto above_read = makeAboveReadDAG(*plan.getCurrentHeader(), {}, {}, {}, false, copies);
-                auto step = std::make_unique<ExpressionStep>(plan.getCurrentHeader(), std::move(above_read));
-                step->setStepDescription("Columns carried across the LIMIT");
-                steps_above_child.insert(step.get());
-                plan.addStep(std::move(step));
+                addCopiesOfCarriedColumns(node, result);
             }
             return result;
         }
@@ -1174,7 +1172,7 @@ private:
         auto above_read = makeAboveReadDAG(*plan.getCurrentHeader(), index_positions, consumed_positions, index_name, nullable_index, copies);
         auto step = std::make_unique<ExpressionStep>(plan.getCurrentHeader(), std::move(above_read));
         step->setStepDescription("Row index");
-        steps_above_child.insert(step.get());
+        result.has_added_step_on_top = true;
         plan.addStep(std::move(step));
         return result;
     }
@@ -1210,13 +1208,10 @@ private:
     const NodeSet & masked_values;
     ContextPtr context;
 
-    QueryPlan::Node * chain_top = nullptr;
+    QueryPlan::Node * const chain_top;
+    const std::vector<size_t> & sort_key_positions;
     std::unordered_map<const QueryPlan::Node *, size_t> source_numbers;
-    NodeSet sort_key_nodes;
     std::map<size_t, LazySource> lazy_by_source;
-    /// The steps this rebuild adds right above a step - the row index and the copies of the carried values - to be
-    /// merged into the step above when that can take it.
-    std::unordered_set<const IQueryPlanStep *> steps_above_child;
 
     /// A value crossing the `LIMIT` besides the sort keys, carried from a node as a copy under `name`: of the column at
     /// `position` of its header, or, without such a column, of `step_node` of its step, which outputs it last.
@@ -1310,7 +1305,7 @@ bool mayDeferOverJoins(const QueryPlan::Node & chain_top, const QueryPlanOptimiz
 
 bool optimizeLazyMaterialization3(
     QueryPlan::Node & root, QueryPlan & query_plan, QueryPlan::Nodes & nodes,
-    const QueryPlanOptimizationSettings & settings, size_t max_limit_for_lazy_materialization)
+    const QueryPlanOptimizationSettings & settings)
 {
     if (root.children.size() != 1)
         return false;
@@ -1325,7 +1320,8 @@ bool optimizeLazyMaterialization3(
         return false;
 
     const auto limit = limit_step->getLimit();
-    if (limit == 0 || (max_limit_for_lazy_materialization != 0 && limit > max_limit_for_lazy_materialization))
+    const auto max_limit = settings.max_limit_for_lazy_materialization;
+    if (limit == 0 || (max_limit != 0 && limit > max_limit))
         return false;
 
     /// With ORDER BY, the sort keys are needed below the `LIMIT`. This runs before reading in order is applied,
@@ -1349,15 +1345,16 @@ bool optimizeLazyMaterialization3(
 
     const auto merged = buildMergedPlanDAG(*chain_top);
 
-    std::vector<bool> lazy_sources(merged.sources.size(), false);
-    bool has_lazy_source = false;
-    for (size_t source = 0; source < merged.sources.size(); ++source)
-    {
-        lazy_sources[source] = canReadLazily(*merged.sources[source].plan_node, settings);
-        has_lazy_source |= lazy_sources[source];
-    }
+    /// A subtree reading one source is what `optimizeLazyMaterialization2` handles. A join is the only step with more than
+    /// one child the merged DAG goes through, so more sources than one mean a join.
+    if (merged.sources.size() < 2)
+        return false;
 
-    if (!has_lazy_source)
+    std::vector<bool> lazy_sources(merged.sources.size(), false);
+    for (size_t source = 0; source < merged.sources.size(); ++source)
+        lazy_sources[source] = canReadLazily(*merged.sources[source].plan_node, settings);
+
+    if (!std::ranges::contains(lazy_sources, true))
         return false;
 
     /// The sort keys are needed below the LIMIT whatever else is deferred.
@@ -1406,11 +1403,15 @@ bool optimizeLazyMaterialization3(
         if (isPaddedRecomputation(merged, frontier, node))
             mask_sources.emplace(merged.getNearestPaddedSide(node), mask_candidates.at(merged.getNearestPaddedSide(node)));
 
-    JoinPlanRebuild rebuild(merged, frontier, lazy_sources, mask_sources, masked_values, context);
-    if (!rebuild.prepare(chain_top, sort_key_positions))
+    /// The masks call functions, which need the context of a read they are computed from.
+    if (!mask_sources.empty() && !context)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Lazy materialization over joins has masks, but no context to compute them");
+
+    JoinPlanRebuild rebuild(merged, frontier, lazy_sources, mask_sources, masked_values, context, chain_top, sort_key_positions);
+    if (!rebuild.prepare())
         return false;
 
-    rebuild.apply(query_plan, nodes, root, sorting_node, sort_key_positions);
+    rebuild.apply(query_plan, nodes, root, sorting_node);
     return true;
 }
 
