@@ -14,11 +14,11 @@ BLOCK_PER_ROW="max_block_size = 1, max_insert_threads = 1, min_insert_block_size
 UDF="udf_05388_${CLICKHOUSE_DATABASE}"
 
 $CLICKHOUSE_CLIENT -m -q "
-DROP TABLE IF EXISTS mv_policy_in, mv_policy_udf, mv_merge_policy, mv_nested_policy, mv_atf, mv_nested_settings, mv_merge_atf, mv_merge_array_policy, mv_parallel_array;
+DROP TABLE IF EXISTS mv_policy_in, mv_policy_udf, mv_merge_policy, mv_nested_policy, mv_atf, mv_nested_settings, mv_merge_atf, mv_merge_array_policy, mv_merge_variant_policy, mv_parallel_array;
 DROP TABLE IF EXISTS mv_alias_merge, mv_buffer_merge, mv_mv_merge, mv_tf_merge, mv_loop_merge_policy, mpol_mv;
-DROP ROW POLICY IF EXISTS policy_05388 ON pin, pudf, pmerge, pml, pn1, pn2, parr, ppar;
+DROP ROW POLICY IF EXISTS policy_05388 ON pin, pudf, pmerge, pml, pn1, pn2, parr, ppar, pvt, pvar;
 DROP TABLE IF EXISTS mpol_alias, mpol_buffer, mpol_tf, mpol, mpl;
-DROP TABLE IF EXISTS pin, pudf, pmerge, pn1, pn2, pns, patf, src_atf, pmatf, parr, src_par, ppar, dst_par;
+DROP TABLE IF EXISTS pin, pudf, pmerge, pn1, pn2, pns, patf, src_atf, pmatf, parr, pvt, pvar, src_par, ppar, dst_par;
 DROP TABLE IF EXISTS mpol_other, pml, dst_eq;
 DROP FUNCTION IF EXISTS ${UDF};
 DROP TABLE IF EXISTS dst;
@@ -43,11 +43,17 @@ CREATE TABLE pn2 ENGINE = MergeTree ORDER BY x AS SELECT number + 1 AS x FROM nu
 CREATE TABLE pns ENGINE = MergeTree ORDER BY x AS SELECT number + 1 AS x FROM numbers(3);
 CREATE TABLE parr ENGINE = MergeTree ORDER BY x AS SELECT number + 1 AS x FROM numbers(3);
 CREATE TABLE pml ENGINE = MergeTree ORDER BY x AS SELECT arrayJoin([1, 2, 3, 105]) AS x;
+CREATE TABLE pvt (x UInt64, v Variant(String, UInt64), d Dynamic) ENGINE = MergeTree ORDER BY x
+    AS SELECT number + 1, number + 1, number + 1 FROM numbers(3);
+CREATE TABLE pvar ENGINE = MergeTree ORDER BY x AS SELECT number + 1 AS x FROM numbers(3);
 CREATE FUNCTION ${UDF} AS (v) -> v IN (SELECT x FROM ${CLICKHOUSE_DATABASE}.src);
-CREATE ROW POLICY policy_05388 ON pin, pmerge, pml, pn2 USING x IN (SELECT x FROM ${CLICKHOUSE_DATABASE}.src) TO ALL;
+CREATE ROW POLICY policy_05388 ON pin, pmerge, pml, pn2, pvt USING x IN (SELECT x FROM ${CLICKHOUSE_DATABASE}.src) TO ALL;
 CREATE ROW POLICY policy_05388 ON pudf USING ${UDF}(x) TO ALL;
 CREATE ROW POLICY policy_05388 ON pn1 USING x <= (SELECT max(x) FROM ${CLICKHOUSE_DATABASE}.pn2) TO ALL;
 CREATE ROW POLICY policy_05388 ON parr USING has((SELECT groupArray(x) FROM ${CLICKHOUSE_DATABASE}.src), x) TO ALL;
+CREATE ROW POLICY policy_05388 ON pvar USING x = variantElement((SELECT groupArray(v) FROM ${CLICKHOUSE_DATABASE}.pvt)[1], 'UInt64')
+    AND dynamicType((SELECT groupArray(d) FROM ${CLICKHOUSE_DATABASE}.pvt)[1]) = 'UInt64'
+    AND variantType((SELECT any(v) FROM ${CLICKHOUSE_DATABASE}.pvt)) = 'UInt64' TO ALL;
 
 CREATE MATERIALIZED VIEW mv_policy_in TO dst AS
     SELECT 'policy in' AS name, count() AS block_rows, (SELECT max(x) FROM pin) AS value FROM src;
@@ -61,6 +67,11 @@ CREATE MATERIALIZED VIEW mv_merge_policy TO dst AS
 CREATE MATERIALIZED VIEW mv_merge_array_policy TO dst AS
     SELECT 'merge array policy' AS name, count() AS block_rows,
         (SELECT max(x) FROM merge(${CLICKHOUSE_DATABASE}, '^parr\$')) AS value
+    FROM src;
+-- 'Variant' and 'Dynamic' scalars there keep their member types.
+CREATE MATERIALIZED VIEW mv_merge_variant_policy TO dst AS
+    SELECT 'merge variant policy' AS name, count() AS block_rows,
+        (SELECT max(x) FROM merge(${CLICKHOUSE_DATABASE}, '^pvar\$')) AS value
     FROM src;
 
 -- 'Alias', 'Buffer', a materialized view and a table function table forward the read to a 'Merge' table.
@@ -131,12 +142,13 @@ INSERT INTO src_par SELECT number % 1000 FROM numbers_mt(2000)
 SELECT * FROM dst ORDER BY name, value;
 SELECT name, scalar_value = join_value AS same, count() FROM dst_eq GROUP BY name, same ORDER BY name, same;
 SELECT 'parallel array policy', count(), countIf(arr != [x]) FROM dst_par;
+SELECT 'merge variant policy without a view', count() FROM merge(${CLICKHOUSE_DATABASE}, '^pvar\$');
 
-DROP TABLE mv_policy_in, mv_policy_udf, mv_merge_policy, mv_nested_policy, mv_atf, mv_nested_settings, mv_merge_atf, mv_merge_array_policy, mv_parallel_array;
+DROP TABLE mv_policy_in, mv_policy_udf, mv_merge_policy, mv_nested_policy, mv_atf, mv_nested_settings, mv_merge_atf, mv_merge_array_policy, mv_merge_variant_policy, mv_parallel_array;
 DROP TABLE mv_alias_merge, mv_buffer_merge, mv_mv_merge, mv_tf_merge, mv_loop_merge_policy, mpol_mv;
-DROP ROW POLICY policy_05388 ON pin, pudf, pmerge, pml, pn1, pn2, parr, ppar;
+DROP ROW POLICY policy_05388 ON pin, pudf, pmerge, pml, pn1, pn2, parr, ppar, pvt, pvar;
 DROP TABLE mpol_alias, mpol_buffer, mpol_tf, mpol, mpl;
-DROP TABLE pin, pudf, pmerge, pn1, pn2, pns, patf, src_atf, pmatf, parr, src_par, ppar, dst_par;
+DROP TABLE pin, pudf, pmerge, pn1, pn2, pns, patf, src_atf, pmatf, parr, pvt, pvar, src_par, ppar, dst_par;
 DROP TABLE mpol_other, pml, dst_eq;
 DROP FUNCTION ${UDF};
 DROP TABLE dst;
