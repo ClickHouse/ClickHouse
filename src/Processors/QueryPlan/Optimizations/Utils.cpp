@@ -214,8 +214,7 @@ FilterResult filterResultForNotMatchedRows(
     if (!filter_node)
         return FilterResult::UNKNOWN;
 
-    /// A row of the outer join reaches the filter as a full column, but a constant of this side can stay a constant
-    /// wherever the rewritten join lets the filter run, so a function reading its representation gets no verdict.
+    /// Not-matched rows reach the filter as full columns, but a constant of this side may stay constant after the rewrite.
     ActionsDAG::NodeRawConstPtrs readers;
     auto full_input = filter_input;
     for (const auto * input : ActionsDAG::getInputsReadByRepresentation(*filter_node, &readers))
