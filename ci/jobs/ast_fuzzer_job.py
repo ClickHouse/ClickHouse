@@ -219,15 +219,16 @@ def _fuzzer_log_terminal_block_has_server_mle(fuzzer_log: Path) -> bool:
 # Genuine (non-OOM) failure signals that veto the OOM-is-success downgrade, so a crash on
 # one node isn't hidden by a benign OOM on another. `is_memory_limit_exceeded` is excluded
 # (surviving the memory cap is itself benign), and bare signal numbers are excluded too (the
-# "Signal" pattern already requires the fatal handler's "(from thread N)" prefix). Bare
-# "<Fatal>" is included so a crash type with no signature here yet still vetoes;
+# "Signal" pattern already requires the fatal handler's "(from thread N)" prefix). Any
+# `<Fatal>` record is included so a crash type with no signature here yet still vetoes;
 # `benign_pattern` below strips the two expected "<Fatal>" lines (OOM report, end-of-run
-# SIGKILL) back out.
+# SIGKILL) back out. The names are anchored to the line start like the parser's sanitizer
+# patterns, and the fatal to its record header, so query text in a log record never matches.
 SANITIZER_NON_OOM_PATTERN = "|".join(
     [
-        "AddressSanitizer|UndefinedBehaviorSanitizer|ThreadSanitizer"
-        "|MemorySanitizer|SIGSEGV|SIGABRT",
-        "<Fatal>",
+        "^(==[0-9]+==)?(AddressSanitizer|UndefinedBehaviorSanitizer|ThreadSanitizer"
+        "|MemorySanitizer|SIGSEGV|SIGABRT)",
+        FuzzerLogParser.GENERIC_FATAL_PATTERN,
         *(
             pattern
             for _, flag_name, pattern in FuzzerLogParser.ERROR_PATTERNS
@@ -235,6 +236,22 @@ SANITIZER_NON_OOM_PATTERN = "|".join(
         ),
     ]
 )
+
+
+def genuine_non_oom_logs(parser: FuzzerLogParser, logs: list[Path]) -> list[Path]:
+    """The logs holding a genuine non-OOM failure line, found with the parser's own scan.
+
+    Unlike a raw `rg`, it skips a match inside the query text a record quotes, and a log that
+    holds only OOM reports and the expected SIGKILL is no signal. `.gz` logs are read too.
+    """
+    found = []
+    for log in logs:
+        output, _, excluded_only = parser.find_failure(
+            SANITIZER_NON_OOM_PATTERN, log, exclude_pattern=SANITIZER_OOM_PATTERN
+        )
+        if output and not excluded_only:
+            found.append(log)
+    return found
 
 
 def _is_benign_memory_limit(
@@ -621,11 +638,24 @@ def analyze_job_logs(
             # gives the same verdict. Downgrading on an OOM found elsewhere would drop it,
             # so the flip below is gated on there being no such evidence left.
             unnamed_fatals = fuzzer_log_parser.find_unnamed_fatals()
+            # Nor any other genuine line the parser cannot name (e.g. a bare
+            # `AddressSanitizer:DEADLYSIGNAL`): it vetoes the OOM here as it does in
+            # `_classify_sanitizer_oom`, or another node's OOM would pass the run.
+            unnamed_genuine = genuine_non_oom_logs(
+                fuzzer_log_parser,
+                list(dict.fromkeys([*stderr_logs, *server_logs, *(error_logs or [])])),
+            )
             expected_name, expected_info, expected_files = (
                 fuzzer_log_parser.parse_failure(allow_expected_only=True)
             )
             if unnamed_fatals:
                 parsed_info += "Unclassified fatal:\n" + "\n".join(unnamed_fatals) + "\n"
+            elif unnamed_genuine:
+                parsed_info += (
+                    "Unclassified failure report in: "
+                    + ", ".join(Path(log).name for log in unnamed_genuine)
+                    + "\n"
+                )
             elif expected_name != FuzzerLogParser.UNKNOWN_ERROR and re.search(
                 SANITIZER_OOM_REPORT_PATTERN, expected_info
             ):

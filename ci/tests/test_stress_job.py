@@ -175,6 +175,10 @@ def test_every_force_stop_path_is_a_harness_kill():
     rows = [
         Result(name="Warning: server did not stop yet", status=Result.Status.OK),
         Result(
+            name="Warning: server did not stop, server force stopped",
+            status=Result.Status.OK,
+        ),
+        Result(
             name="Stateful data preparation statement exceeded 900s (see gdb.log)",
             status=Result.Status.FAIL,
         ),
@@ -206,3 +210,21 @@ def test_preparation_timeout_kill_is_not_an_oom(tmp_path):
     # Control: an unannounced kill still reads as an OOM that explains a failed check.
     assert server_log_reports_oom(logs, [check_failed])
     assert oom_explains_failure(True, False, [check_failed])
+
+
+def test_graceful_exit_after_the_stop_warning_is_not_a_harness_kill(tmp_path):
+    from ci.jobs.stress_job import server_log_reports_oom
+    from ci.praktika.result import Result
+
+    # `stop_server` warns, then the server exits within the grace period: no kill is sent,
+    # so the one kill line later in the run is the kernel's.
+    warning = Result(name="Warning: server did not stop yet", status=Result.Status.OK)
+    logs = _kill_logs(tmp_path, kills=1)
+
+    assert server_log_reports_oom(logs, [warning])
+    # Control: the force stop that follows a warning that timed out does account for it.
+    forced = Result(
+        name="Warning: server did not stop, server force stopped",
+        status=Result.Status.OK,
+    )
+    assert not server_log_reports_oom(logs, [warning, forced])

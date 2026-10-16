@@ -66,11 +66,11 @@ KILL_LINE = " <Fatal> Application: Child process was terminated by signal 9"
 # rows are the way to discount the harness's own kills from the kill lines. One marker per
 # force-stopping path, matched case-insensitively against the result name.
 HARNESS_KILL_MARKERS = (
-    # `stop_server` in `tests/docker_scripts/stress_tests.lib`, a server that ignored SIGTERM
-    "server did not stop yet",
     # `run_prep_statement` in `tests/docker_scripts/stress_runner.sh`
     "stateful data preparation statement exceeded",
-    # the `system.tables` probe in `tests/docker_scripts/upgrade_runner.sh`
+    # `stop_server` in `tests/docker_scripts/stress_tests.lib` and the `system.tables` probe in
+    # `tests/docker_scripts/upgrade_runner.sh`. Not `stop_server`'s earlier "did not stop yet"
+    # warning: the server may still exit on its own after it, and then no kill is sent.
     "server force stopped",
 )
 
@@ -119,8 +119,8 @@ def count_kill_lines(server_log_path: Path) -> int:
 def server_log_reports_oom(server_log_path: Path, results: List[Result]) -> bool:
     """Whether the live server logs hold a SIGKILL the harness did not send.
 
-    Each harness kill is announced by a `Warning: server did not stop yet` row, so only
-    a kill line beyond those can be the kernel's - and only that one may pass the run
+    Each harness kill is announced by a row written right before it, so only a kill line
+    beyond those can be the kernel's - and only that one may pass the run
     as an out-of-memory one. The harness's kill is the mark of a server that would not
     stop, and reading it as an OOM would rewrite whatever failed after it to OK.
 

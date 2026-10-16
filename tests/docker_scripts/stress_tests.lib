@@ -298,9 +298,12 @@ function stop_server()
       echo -e "Possible deadlock on shutdown (see gdb.log)$FAIL" >> /test_output/test_results.tsv
       echo "thread apply all backtrace (on stop)" >> /test_output/gdb.log
       timeout 30m gdb -batch -ex 'thread apply all backtrace' -p "$pid" | ts '%Y-%m-%d %H:%M:%S' >> /test_output/gdb.log
+      # Announces the kill below, so that the job does not read its SIGKILL as an OOM.
+      echo -e "Warning: server did not stop, server force stopped$OK" >> /test_output/test_results.tsv
       clickhouse stop --force
     else
       echo -e "Warning: server did not stop yet$OK" >> /test_output/test_results.tsv
+      echo -e "Warning: server did not stop, server force stopped$OK" >> /test_output/test_results.tsv
       clickhouse stop --force
     fi
 }

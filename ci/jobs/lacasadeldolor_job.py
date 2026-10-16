@@ -11,11 +11,7 @@ import traceback
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from ci.jobs.ast_fuzzer_job import (
-    SANITIZER_NON_OOM_PATTERN,
-    SANITIZER_OOM_PATTERN,
-    analyze_job_logs,
-)
+from ci.jobs.ast_fuzzer_job import analyze_job_logs, genuine_non_oom_logs
 from ci.jobs.buzzhouse_job import generate_buzz_config
 from ci.jobs.ci_utils import is_extended_run
 from ci.jobs.scripts.clickhouse_service import ClickHouseService
@@ -282,16 +278,9 @@ def _classify_genuine_failure(
         return None, False
     # The parser's own scan, not a raw `rg`: it skips a match inside the query text a record
     # quotes, e.g. "(in query: SELECT '<Fatal> not an error')", which is data, not a report.
-    # An OOM line is excluded the same way, so a log that holds only those is no signal.
-    # It reads `.gz` too, as rotation gzips all but the newest file.
-    scanner = FuzzerLogParser(server_logs=logs, fuzzer_log=fuzzer_out)
-    genuine_logs: list[Path] = []
-    for log in logs:
-        output, _, excluded_only = scanner.find_failure(
-            SANITIZER_NON_OOM_PATTERN, log, exclude_pattern=SANITIZER_OOM_PATTERN
-        )
-        if output and not excluded_only:
-            genuine_logs.append(log)
+    genuine_logs = genuine_non_oom_logs(
+        FuzzerLogParser(server_logs=logs, fuzzer_log=fuzzer_out), logs
+    )
     if not genuine_logs:
         return None, False
     print(info)
@@ -329,7 +318,7 @@ def _classify_genuine_failure(
 
 def _classify_rotated_logs(
     rotated_logs: list[Path], fuzzer_out: Path, sw: Utils.Stopwatch
-) -> tuple[Result | None, bool]:
+) -> tuple[Result | None, bool, bool]:
     """Classify what only the rotated logs hold, as the current logs are classified.
 
     `analyze_job_logs` judges the current per-node logs alone, on purpose: a sanitizer
@@ -338,17 +327,17 @@ def _classify_rotated_logs(
     run the report may live only in a rotated file, and dropping that on the floor turns
     both a benign and a genuine report into the same nondescript wrapper error.
 
-    Returns (failure, is_oom_only): a genuine non-OOM report yields its named verdict, a
-    report that is only an OOM yields (None, True) so the caller can pass the run, and no
-    report at all yields (None, False).
+    Returns (failure, is_oom_only, saw_genuine): a genuine non-OOM report yields its named
+    verdict, or no verdict but `saw_genuine` when the parser cannot name it; a report that is
+    only an OOM yields `is_oom_only` so the caller can pass the run.
     """
     if not rotated_logs:
-        return None, False
+        return None, False, False
     failed_result, saw_genuine = _classify_genuine_failure(
         rotated_logs, fuzzer_out, sw, "Failure found only in a rotated log"
     )
     if saw_genuine:
-        return failed_result, False
+        return failed_result, False, True
     # Report pattern only: `SANITIZER_OOM_PATTERN` also matches the watchdog's SIGKILL fatal,
     # which Dolor writes on purpose on every killed restart and forced stop, and passing a run
     # needs a real OOM report rather than a line the run was always going to produce.
@@ -356,8 +345,8 @@ def _classify_rotated_logs(
     if Shell.get_output(
         f"rg -z --text '{SANITIZER_OOM_REPORT_PATTERN}' {paths_to_scan}"
     ):
-        return None, True
-    return None, False
+        return None, True, False
+    return None, False, False
 
 
 def _is_expected_kill_only_failure(result: Result) -> bool:
@@ -439,11 +428,14 @@ def _classify_failed_run(
     # never looked at. A genuine report there wins over a benign current-log verdict and is
     # reported by name; one that is only an OOM passes the run the same way
     # `_classify_sanitizer_oom` passes an OOM in a current log.
-    rotated_failure, rotated_oom_only = _classify_rotated_logs(
+    rotated_failure, rotated_oom_only, rotated_genuine = _classify_rotated_logs(
         rotated_logs, fuzzer_out, sw
     )
     if failed_result is None:
         failed_result = rotated_failure
+    # A genuine report the parser cannot name explains no OOM either, so it vetoes every
+    # downgrade - including the one `analyze_job_logs` already made on another node's OOM.
+    unnamed_genuine = failed_result is None and (current_genuine or rotated_genuine)
     info_override = None
     if rotated_oom_only and not benign_downgrade and not current_genuine:
         info_override = (
@@ -463,6 +455,19 @@ def _classify_failed_run(
                 Result(
                     name="Watchdog timeout",
                     info=f"{message}. Check fuzzer.log.",
+                    status=Result.Status.FAIL,
+                )
+            ],
+            info=message,
+            stopwatch=sw,
+        )
+    if failed_result is None and unnamed_genuine:
+        message = "A server log holds a failure report the log parser cannot name"
+        failed_result = Result.create_from(
+            results=[
+                Result(
+                    name="Unclassified failure report",
+                    info=f"{message}. Check the server and stderr logs.",
                     status=Result.Status.FAIL,
                 )
             ],
