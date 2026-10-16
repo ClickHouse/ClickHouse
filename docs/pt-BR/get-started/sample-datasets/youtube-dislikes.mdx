@@ -1,33 +1,35 @@
 ---
-description: 'Uma coleção de dislikes de vídeos do YouTube.'
-sidebarTitle: 'Dislikes do YouTube'
+description: 'Uma coleção de não gostei de vídeos do YouTube.'
+sidebarTitle: 'Não gostei do YouTube'
 slug: /getting-started/example-datasets/youtube-dislikes
-title: 'Dataset do YouTube com dislikes'
+title: 'Dataset do YouTube com não gostei'
 doc_type: 'guide'
-keywords: ['dataset de exemplo', 'youtube', 'dados de amostra', 'análise de vídeo', 'dislikes']
+keywords: ['dataset de exemplo', 'youtube', 'dados de amostra', 'análise de vídeo', 'não gostei']
 ---
 
-Em novembro de 2021, o YouTube removeu a contagem pública de ***dislikes*** de todos os vídeos. Embora os criadores ainda possam ver o número de dislikes, os espectadores só conseguem ver quantos ***likes*** um vídeo recebeu.
+Em novembro de 2021, o YouTube removeu a contagem pública de ***não gostei*** de todos os vídeos. Embora os criadores ainda possam ver o número de não gostei, os espectadores só conseguem ver quantos ***likes*** um vídeo recebeu.
 
 <Warning>
-  O dataset tem mais de 4,55 bilhões de registros, então tome cuidado ao simplesmente copiar e colar os comandos abaixo, a menos que seus recursos consigam lidar com esse volume. Os comandos abaixo foram executados em uma instância de **produção** do [ClickHouse Cloud](https://clickhouse.cloud).
+  O dataset tem mais de 4,55 bilhões de registros, então tome cuidado ao simplesmente copiar e colar os comandos abaixo, a menos que seus recursos consigam lidar com esse volume. Esses comandos foram executados em um serviço do [ClickHouse Cloud](/pt-BR/products/cloud/getting-started/intro) com dimensionamento adequado.
 </Warning>
+
+<Tip>
+  Para testar esses comandos por conta própria, você pode se cadastrar em um [teste gratuito do ClickHouse Cloud](https://clickhouse.cloud/signUp?loc=docs-get-started-sample-datasets-youtube-dislikes) ou configurar um [ClickHouse auto-hospedado](/pt-BR/get-started/setup/install).
+</Tip>
 
 Os dados estão em formato JSON e podem ser baixados do [archive.org](https://archive.org/download/dislikes_youtube_2021_12_video_json_files). Também disponibilizamos esses mesmos dados no S3 para que possam ser carregados com mais eficiência em uma instância do ClickHouse Cloud.
 
 Aqui estão as etapas para criar uma tabela no ClickHouse Cloud e inserir os dados.
 
 <Note>
-  As etapas abaixo também funcionam facilmente em uma instalação local do ClickHouse. A única mudança é usar a função `s3` em vez de `s3cluster` (a menos que você tenha um cluster configurado — nesse caso, altere `default` para o nome do seu cluster).
+  As etapas abaixo também funcionam em uma instalação local do ClickHouse.
 </Note>
 
-<div id="step-by-step-instructions">
-  ## Instruções passo a passo
-</div>
+## Instruções passo a passo {#step-by-step-instructions}
 
 <Steps>
   <Step title="Exploração de dados" id="data-exploration">
-    Vamos ver a aparência dos dados. A função de tabela `s3cluster` retorna uma tabela, então podemos `DESCRIBE` o resultado:
+    Vamos ver a aparência dos dados. A função de tabela `s3` retorna uma tabela, então podemos `DESCRIBE` o resultado:
 
     ```sql
     DESCRIBE s3(
@@ -241,13 +243,9 @@ Aqui estão as etapas para criar uma tabela no ClickHouse Cloud e inserir os dad
   </Step>
 </Steps>
 
-<div id="questions">
-  ## Perguntas
-</div>
+## Perguntas {#questions}
 
-<div id="if-someone-disables-comments-does-it-lower-the-chance-someone-will-actually-click-like-or-dislike">
-  ### Se alguém desativar os comentários, isso diminui a chance de alguém realmente clicar em gostei ou não gostei?
-</div>
+### Se alguém desativar os comentários, isso diminui a chance de alguém realmente clicar em gostei ou não gostei? {#if-someone-disables-comments-does-it-lower-the-chance-someone-will-actually-click-like-or-dislike}
 
 Quando os comentários estão desativados, as pessoas têm mais probabilidade de clicar em gostei ou não gostei para expressar o que sentem em relação a um vídeo?
 
@@ -302,9 +300,7 @@ ORDER BY
 
 Ativar os comentários parece estar associado a uma taxa mais alta de engajamento.
 
-<div id="how-does-the-number-of-videos-change-over-time---notable-events">
-  ### Como o número de vídeos evolui ao longo do tempo — eventos notáveis?
-</div>
+### Como o número de vídeos evolui ao longo do tempo — eventos notáveis? {#how-does-the-number-of-videos-change-over-time---notable-events}
 
 ```sql
 SELECT
@@ -342,9 +338,7 @@ ORDER BY month ASC;
 
 Um pico no número de pessoas enviando vídeos [durante a covid é perceptível](https://www.theverge.com/2020/3/27/21197642/youtube-with-me-style-videos-views-coronavirus-cook-workout-study-home-beauty).
 
-<div id="more-subtitles-over-time-and-when">
-  ### Mais legendas ao longo do tempo — e quando
-</div>
+### Mais legendas ao longo do tempo — e quando {#more-subtitles-over-time-and-when}
 
 Com os avanços no reconhecimento de fala, ficou mais fácil do que nunca criar legendas para vídeos. Como o YouTube adicionou legendas automáticas no fim de 2009, o salto aconteceu nessa época?
 
@@ -381,9 +375,7 @@ ORDER BY month ASC;
 Os resultados mostram um pico em 2009. Ao que tudo indica, naquela época o YouTube estava descontinuando o recurso de legendas da comunidade, que permitia enviar legendas para os vídeos de outras pessoas.
 Isso motivou uma campanha muito bem-sucedida para que os criadores adicionassem legendas aos seus vídeos para pessoas surdas e com deficiência auditiva.
 
-<div id="top-uploaders-over-time">
-  ### Principais usuários que fizeram upload ao longo do tempo
-</div>
+### Principais usuários que fizeram upload ao longo do tempo {#top-uploaders-over-time}
 
 ```sql
 WITH uploaders AS
@@ -426,9 +418,7 @@ ORDER BY
 │ 2008-09-01 │ WWE                        │     3717092 │   0.07872802579349912 │
 ```
 
-<div id="how-do-like-ratio-changes-as-views-go-up">
-  ### Como a taxa de curtidas muda à medida que as visualizações aumentam?
-</div>
+### Como a taxa de curtidas muda à medida que as visualizações aumentam? {#how-do-like-ratio-changes-as-views-go-up}
 
 ```sql
 SELECT
@@ -476,9 +466,7 @@ ORDER BY
 └───────────────────┴─────────────────────┴────────────┘
 ```
 
-<div id="how-are-views-distributed">
-  ### Como as views são distribuídas?
-</div>
+### Como as views são distribuídas? {#how-are-views-distributed}
 
 ```sql
 SELECT
