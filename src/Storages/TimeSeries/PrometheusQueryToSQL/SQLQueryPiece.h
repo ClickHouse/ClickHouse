@@ -54,6 +54,8 @@ enum class StoreMethod
     /// any of these types, and the result is converted to `ConverterContext::result_timestamp_type` and Float64 later.
     /// The rows come in the order of the samples table, `(id, timestamp)`, and the consumers aggregate them `GROUP BY id`,
     /// so the aggregation runs in order and holds the state of one series at a time (see getRangeVectorGroupKey()).
+    /// Samples stored under different ids with the same set of tags, for example after `ALTER TABLE ... MODIFY SETTING id_generator`
+    /// on a table that already has data, are evaluated as separate series.
     /// RAW_DATA is produced by selectors in a prometheus query.
     /// Can be used only with type ResultType::RANGE_VECTOR.
     RAW_DATA,

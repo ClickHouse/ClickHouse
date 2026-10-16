@@ -5,17 +5,20 @@
 -- aggregated on its own thread and the streams are not merged, because the ranges hold disjoint keys.
 
 SET max_threads = 4;
+-- The tables are small, so a lower threshold per stream keeps four reading streams.
+SET merge_tree_min_rows_for_concurrent_read = 1024;
+SET merge_tree_min_bytes_for_concurrent_read = 1024;
 SET optimize_aggregation_in_order = 1;
 SET aggregation_in_order_split_by_primary_key_ranges = 1;
 
 DROP TABLE IF EXISTS t_agg_ranges;
 CREATE TABLE t_agg_ranges (k UInt64, ts UInt64, v Float64)
 ENGINE = MergeTree ORDER BY (k, ts)
-SETTINGS index_granularity = 1024;
+SETTINGS index_granularity = 128;
 
 SYSTEM STOP MERGES t_agg_ranges;
 
-INSERT INTO t_agg_ranges SELECT number % 1000, number, number FROM numbers(1000000);
+INSERT INTO t_agg_ranges SELECT number % 1000, number, number FROM numbers(100000);
 
 SELECT '-- one part: the read is split by ranges of k and the streams are not merged';
 SELECT countIf(explain LIKE '%FilterSortedStreamByRange%') AS ranges,
@@ -62,17 +65,17 @@ SELECT (SELECT groupArray((ts, s)) FROM (SELECT ts, sum(v) AS s FROM t_agg_range
      = (SELECT groupArray((ts, s)) FROM (SELECT ts, sum(v) AS s FROM t_agg_ranges WHERE k = 7 GROUP BY ts ORDER BY ts) SETTINGS aggregation_in_order_split_by_primary_key_ranges = 0);
 SELECT (SELECT groupArray((k, s)) FROM (SELECT k, sum(v) AS s FROM t_agg_ranges PREWHERE v > 100 WHERE ts > 10 GROUP BY k ORDER BY k))
      = (SELECT groupArray((k, s)) FROM (SELECT k, sum(v) AS s FROM t_agg_ranges PREWHERE v > 100 WHERE ts > 10 GROUP BY k ORDER BY k) SETTINGS aggregation_in_order_split_by_primary_key_ranges = 0);
-SELECT (SELECT groupArray((k, s)) FROM (SELECT k, sum(v) AS s FROM t_agg_ranges GROUP BY k HAVING s > 499900000 ORDER BY k))
-     = (SELECT groupArray((k, s)) FROM (SELECT k, sum(v) AS s FROM t_agg_ranges GROUP BY k HAVING s > 499900000 ORDER BY k) SETTINGS aggregation_in_order_split_by_primary_key_ranges = 0);
+SELECT (SELECT groupArray((k, s)) FROM (SELECT k, sum(v) AS s FROM t_agg_ranges GROUP BY k HAVING s > 5000000 ORDER BY k))
+     = (SELECT groupArray((k, s)) FROM (SELECT k, sum(v) AS s FROM t_agg_ranges GROUP BY k HAVING s > 5000000 ORDER BY k) SETTINGS aggregation_in_order_split_by_primary_key_ranges = 0);
 SELECT (SELECT sum(cityHash64(k, s)) FROM (SELECT k, sum(v) AS s FROM t_agg_ranges GROUP BY k WITH TOTALS))
      = (SELECT sum(cityHash64(k, s)) FROM (SELECT k, sum(v) AS s FROM t_agg_ranges GROUP BY k WITH TOTALS) SETTINGS aggregation_in_order_split_by_primary_key_ranges = 0);
 SELECT (SELECT sum(cityHash64(k, s)) FROM (SELECT k, sum(v) AS s FROM t_agg_ranges GROUP BY k WITH ROLLUP))
      = (SELECT sum(cityHash64(k, s)) FROM (SELECT k, sum(v) AS s FROM t_agg_ranges GROUP BY k WITH ROLLUP) SETTINGS aggregation_in_order_split_by_primary_key_ranges = 0);
 
 -- More parts with overlapping key ranges, so every range of k is spread over all parts.
-INSERT INTO t_agg_ranges SELECT number % 1000, number + 1000000, number FROM numbers(1000000);
-INSERT INTO t_agg_ranges SELECT number % 500, number + 2000000, number FROM numbers(500000);
-INSERT INTO t_agg_ranges SELECT 500 + number % 500, number + 3000000, number FROM numbers(500000);
+INSERT INTO t_agg_ranges SELECT number % 1000, number + 100000, number FROM numbers(100000);
+INSERT INTO t_agg_ranges SELECT number % 500, number + 200000, number FROM numbers(50000);
+INSERT INTO t_agg_ranges SELECT 500 + number % 500, number + 300000, number FROM numbers(50000);
 
 SELECT '-- several parts: the read is split by ranges of k and the streams are not merged';
 SELECT countIf(explain LIKE '%FilterSortedStreamByRange%') AS ranges,
@@ -102,12 +105,12 @@ DROP TABLE t_agg_ranges;
 DROP TABLE IF EXISTS t_agg_ranges_uuid;
 CREATE TABLE t_agg_ranges_uuid (id UUID, ts UInt64, v Float64)
 ENGINE = MergeTree ORDER BY (id, ts)
-SETTINGS index_granularity = 1024;
+SETTINGS index_granularity = 128;
 
 SYSTEM STOP MERGES t_agg_ranges_uuid;
 
-INSERT INTO t_agg_ranges_uuid SELECT toUUID(concat('00000000-0000-0000-0000-', leftPad(hex(number % 1000), 12, '0'))), number, number FROM numbers(1000000);
-INSERT INTO t_agg_ranges_uuid SELECT toUUID(concat('00000000-0000-0000-0000-', leftPad(hex(number % 1000), 12, '0'))), number + 1000000, number FROM numbers(1000000);
+INSERT INTO t_agg_ranges_uuid SELECT toUUID(concat('00000000-0000-0000-0000-', leftPad(hex(number % 1000), 12, '0'))), number, number FROM numbers(100000);
+INSERT INTO t_agg_ranges_uuid SELECT toUUID(concat('00000000-0000-0000-0000-', leftPad(hex(number % 1000), 12, '0'))), number + 100000, number FROM numbers(100000);
 
 SELECT '-- UUID key: the read is split by ranges of id and the streams are not merged';
 SELECT countIf(explain LIKE '%FilterSortedStreamByRange%') AS ranges,
@@ -126,9 +129,9 @@ DROP TABLE t_agg_ranges_uuid;
 DROP TABLE IF EXISTS t_agg_ranges_float;
 CREATE TABLE t_agg_ranges_float (f Float64, ts UInt64, v Float64)
 ENGINE = MergeTree ORDER BY (f, ts)
-SETTINGS index_granularity = 1024;
+SETTINGS index_granularity = 128;
 
-INSERT INTO t_agg_ranges_float SELECT number % 1000, number, number FROM numbers(1000000);
+INSERT INTO t_agg_ranges_float SELECT number % 1000, number, number FROM numbers(100000);
 
 SELECT '-- Float64 key: no split';
 SELECT countIf(explain LIKE '%FilterSortedStreamByRange%') AS ranges,

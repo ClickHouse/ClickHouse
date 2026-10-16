@@ -148,8 +148,13 @@ SELECT countIf(explain LIKE '%FilterSortedStreamByRange%') AS ranges,
 FROM (EXPLAIN PIPELINE SELECT * FROM prometheusQueryRange('prometheus_big', 'sum(rate(big[60s]))', 60, 1200, 10)
       SETTINGS aggregation_in_order_split_by_primary_key_ranges = 0);
 
+-- The result with the split is materialized once, so each query reads the samples table once.
 SELECT '-- the results do not depend on the split';
-SELECT (SELECT groupArray((tags, samples)) FROM (SELECT * FROM prometheusQueryRange('prometheus_big', 'sum by (inst) (rate(big[60s]))', 60, 1200, 100) ORDER BY tags))
+DROP TABLE IF EXISTS prometheus_big_result;
+CREATE TABLE prometheus_big_result ENGINE = Memory AS
+SELECT tags, samples FROM prometheusQueryRange('prometheus_big', 'sum by (inst) (rate(big[60s]))', 60, 1200, 100);
+SELECT (SELECT groupArray((tags, samples)) FROM (SELECT tags, samples FROM prometheus_big_result ORDER BY tags))
      = (SELECT groupArray((tags, samples)) FROM (SELECT * FROM prometheusQueryRange('prometheus_big', 'sum by (inst) (rate(big[60s]))', 60, 1200, 100) ORDER BY tags) SETTINGS aggregation_in_order_split_by_primary_key_ranges = 0);
 
+DROP TABLE prometheus_big_result;
 DROP TABLE prometheus_big;
