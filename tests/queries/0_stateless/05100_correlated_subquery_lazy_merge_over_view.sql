@@ -10,7 +10,6 @@
 -- A correlated subquery over a lazily loaded `Merge` whose source is a view over a `Distributed`
 -- table was planned instead of being refused.
 
-SET enable_analyzer = 1;
 SET allow_correlated_subqueries = 1;
 
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};

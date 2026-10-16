@@ -3,10 +3,6 @@
 -- `(1, 2) IN (materialize(NULL))` in 04827. Wrapping it in tuple() sent it through the
 -- tuple-set rewrite, where the least supertype of the tuple LHS and a NULL column becomes
 -- `Nullable(Tuple(...))` and the query failed with ILLEGAL_COLUMN.
--- Only the analyzer resolves a bare source column on the right of IN; the old analyzer
--- binds it as a table name (see 04234), so there is no enable_analyzer = 0 section.
-
-SET enable_analyzer = 1;
 
 -- { echoOn }
 

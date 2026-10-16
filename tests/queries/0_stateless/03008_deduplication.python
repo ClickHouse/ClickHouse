@@ -135,7 +135,6 @@ def get_settings_statements(args, extra_settings=""):
     values the failing run actually used.
     """
     return f"""
-            SET enable_analyzer=1;
 
             SET max_insert_threads={1 if args.single_thread else 10};
             SET update_insert_deduplication_token_in_dependent_materialized_views=1;

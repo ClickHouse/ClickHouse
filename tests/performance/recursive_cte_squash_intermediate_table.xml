@@ -1,8 +1,4 @@
 <test>
-    <settings>
-        <enable_analyzer>1</enable_analyzer>
-    </settings>
-
     <query>
         WITH RECURSIVE t AS
         (

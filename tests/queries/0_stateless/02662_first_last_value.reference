@@ -18,7 +18,6 @@ select last_value(b) ignore nulls from test;
 5
 select last_value(b) respect nulls from test;
 \N
-SET enable_analyzer = 1;
 -- first value
 select first_value(b) from test;
 3

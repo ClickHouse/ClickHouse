@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 
 CREATE TABLE t0 (c0 Int) ENGINE = MergeTree() ORDER BY tuple();
 CREATE TABLE t1 (c0 Int) ENGINE = Distributed('test_cluster_two_shards', default, t0);

@@ -5,7 +5,6 @@ SET explain_query_plan_default = 'legacy';
 SET allow_statistics = 1;
 SET use_statistics = 1;
 SET materialize_statistics_on_insert = 1;
-SET enable_analyzer = 1;
 SET optimize_move_to_prewhere = 1;
 SET allow_reorder_prewhere_conditions = 1;
 

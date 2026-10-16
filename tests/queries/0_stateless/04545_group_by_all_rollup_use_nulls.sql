@@ -8,7 +8,6 @@
 -- and raised "Bad cast from type ColumnNullable to ColumnVector<...>" at run time. Spelling the
 -- key explicitly (GROUP BY val) already worked; this test covers GROUP BY ALL.
 
-SET enable_analyzer = 1;
 SET group_by_use_nulls = 1;
 
 -- The inner projection must be Nullable, exactly as with an explicit GROUP BY key.

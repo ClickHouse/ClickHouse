@@ -5,7 +5,6 @@
 
 -- QUALIFY is only supported by the analyzer; force it so the old-analyzer CI lane
 -- runs the query instead of erroring with NOT_IMPLEMENTED.
-SET enable_analyzer = 1;
 SET allow_suspicious_low_cardinality_types = 1;
 -- Force the remote read path: prefer_localhost_replica defaults to 1, which makes
 -- SelectStreamFactory pick a local stream for a local non-replicated table and

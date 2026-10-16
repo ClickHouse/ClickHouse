@@ -5,8 +5,6 @@
 -- was undefined behavior (reported by UBSan). The product is now capped by max_limit_for_vector_search_queries before
 -- the conversion; the resulting huge neighbour count is then rejected by the index, as without the multiplier.
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS tab;
 
 CREATE TABLE tab(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 2)) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192;

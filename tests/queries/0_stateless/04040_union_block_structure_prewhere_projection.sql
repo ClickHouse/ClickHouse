@@ -5,7 +5,6 @@
 -- output that are not consumed by the expression DAG above.
 -- https://github.com/ClickHouse/ClickHouse/issues/96131
 
-SET enable_analyzer = 1;
 SET parallel_replicas_local_plan = 1;
 SET optimize_aggregation_in_order = 0;
 SET query_plan_remove_unused_columns = 0;

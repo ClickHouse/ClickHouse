@@ -27,7 +27,6 @@ INSERT INTO t_transplant_right SELECT number, number FROM numbers(300000);
 OPTIMIZE TABLE t_transplant_left FINAL;
 OPTIMIZE TABLE t_transplant_right FINAL;
 
-SET enable_analyzer = 1;
 -- The right-hand read has to be pruned by its own key condition - that is what the transplant must
 -- carry over - and not by a filter built from the left side at runtime.
 SET enable_join_runtime_filters = 0;

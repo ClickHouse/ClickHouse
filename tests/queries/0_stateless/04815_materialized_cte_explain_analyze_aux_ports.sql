@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 SET enable_materialized_cte = 1;
 
 -- A materialized CTE read behind an IN-subquery sits under a DelayedPortsProcessor gate.

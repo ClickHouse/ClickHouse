@@ -20,13 +20,11 @@ FROM
     )
     LIMIT AFTER x >= 0
 )
-ORDER BY x
-SETTINGS enable_analyzer = 1;
+ORDER BY x;
 
 -- Over the union the outer sort stays a full sort (only a `Sort description`), while over one ordered
 -- stream it becomes a finish sort (a `Prefix sort description`). The descriptions spell columns the way
 -- the analyzer names them.
-SET enable_analyzer = 1;
 SELECT trimLeft(explain)
 FROM
 (

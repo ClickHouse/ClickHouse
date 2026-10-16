@@ -15,7 +15,6 @@
 -- `query_plan_convert_join_to_in` and `arrayJoin` in JOIN ON are Analyzer
 -- features; the old analyzer rejects `arrayJoin` in JOIN ON with
 -- INVALID_JOIN_ON_EXPRESSION, so force the Analyzer here.
-SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS lt_03918_dangling;
 DROP TABLE IF EXISTS rt_03918_dangling;

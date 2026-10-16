@@ -20,14 +20,14 @@ printf '"[1,2,3]"\n"[4,5]"\n' > "$CSV_ABS"
 echo "--- control: a MergeTree table advertises the optimization, so length(arr) is rewritten to arr.size0 ---"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_mt"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_mt (arr Array(UInt32)) ENGINE = MergeTree ORDER BY tuple()"
-${CLICKHOUSE_CLIENT} -q "EXPLAIN QUERY TREE SELECT length(arr) FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_mt SETTINGS enable_analyzer = 1, optimize_functions_to_subcolumns = 1" 2>&1 \
+${CLICKHOUSE_CLIENT} -q "EXPLAIN QUERY TREE SELECT length(arr) FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_mt SETTINGS optimize_functions_to_subcolumns = 1" 2>&1 \
     | grep -qiE "arr\.size0" && echo "control-rewritten" || echo "control-NOT-rewritten"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_mt"
 
 echo "--- ENGINE = URL('file://...') delegates to File, which disables the optimization: length(arr) is NOT rewritten ---"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_sub"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_sub (arr Array(UInt32)) ENGINE = URL('file://${CSV_ABS}', 'CSV')"
-${CLICKHOUSE_CLIENT} -q "EXPLAIN QUERY TREE SELECT length(arr) FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_sub SETTINGS enable_analyzer = 1, optimize_functions_to_subcolumns = 1" 2>&1 \
+${CLICKHOUSE_CLIENT} -q "EXPLAIN QUERY TREE SELECT length(arr) FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_sub SETTINGS optimize_functions_to_subcolumns = 1" 2>&1 \
     | grep -qiE "arr\.size0" && echo "subcolumn-rewritten (BUG)" || echo "subcolumn-not-rewritten"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_sub"
 

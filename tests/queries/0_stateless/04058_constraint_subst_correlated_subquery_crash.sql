@@ -31,7 +31,7 @@ SELECT count() FROM t_constraint_corr
 WHERE exists(
     (SELECT toUInt8(1) PREWHERE murmurHash3_64(xxHash32(a, intDiv(2, xxHash32(0, toInt256(0) = b))), multiply(10, 10)))
 )
-SETTINGS enable_analyzer = 1, convert_query_to_cnf = 1, optimize_substitute_columns = 1, optimize_using_constraints = 1;
+SETTINGS convert_query_to_cnf = 1, optimize_substitute_columns = 1, optimize_using_constraints = 1;
 
 -- Case 2: Correlated subquery with transitivity constraints.
 -- The constraint optimizer correctly deduces a=d transitively (a=b, b=c, c=d),
@@ -53,7 +53,7 @@ INSERT INTO t_constraint_trans VALUES (1, 2, 3, 4);
 
 SELECT count() IGNORE NULLS FROM t_constraint_trans
 WHERE a != (SELECT d)
-SETTINGS enable_analyzer = 1, convert_query_to_cnf = 1, optimize_substitute_columns = 1, optimize_using_constraints = 1;
+SETTINGS convert_query_to_cnf = 1, optimize_substitute_columns = 1, optimize_using_constraints = 1;
 
 DROP TABLE t_constraint_trans;
 DROP TABLE t_constraint_corr;

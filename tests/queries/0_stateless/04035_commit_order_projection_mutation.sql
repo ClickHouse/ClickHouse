@@ -1,7 +1,5 @@
 -- Tags: no-parallel-replicas
 
-set enable_analyzer = 1;
-
 DROP TABLE IF EXISTS mt_mutation_test SYNC;
 
 CREATE TABLE mt_mutation_test(

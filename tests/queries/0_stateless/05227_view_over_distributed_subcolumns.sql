@@ -5,7 +5,6 @@
 -- the regular `StorageView` path, which wraps the body in `SELECT <subcolumn> FROM (<body>)`.
 
 -- The fix is in the analyzer's `PlannerJoinTree`; the old analyzer path is not covered here.
-SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t_05227;
 DROP TABLE IF EXISTS t_05227_dist;

@@ -30,13 +30,13 @@ SELECT arraySum([t.COLUMNS('^metric_') APPLY sum]) FROM t_columns_matcher AS t;
 SELECT length([COLUMNS('^metric_')]) FROM t_columns_matcher;
 
 -- Both planners give the same result when the settings are enabled.
-SELECT arraySum([COLUMNS('^metric_') APPLY sum]) FROM t_columns_matcher SETTINGS enable_analyzer = 0;
-SELECT arraySum([COLUMNS('^metric_') APPLY sum]) FROM t_columns_matcher SETTINGS enable_analyzer = 1;
-SELECT arraySum([t.COLUMNS('^metric_') APPLY sum]) FROM t_columns_matcher AS t SETTINGS enable_analyzer = 0;
-SELECT arraySum([t.COLUMNS('^metric_') APPLY sum]) FROM t_columns_matcher AS t SETTINGS enable_analyzer = 1;
+SELECT arraySum([COLUMNS('^metric_') APPLY sum]) FROM t_columns_matcher;
+SELECT arraySum([COLUMNS('^metric_') APPLY sum]) FROM t_columns_matcher;
+SELECT arraySum([t.COLUMNS('^metric_') APPLY sum]) FROM t_columns_matcher AS t;
+SELECT arraySum([t.COLUMNS('^metric_') APPLY sum]) FROM t_columns_matcher AS t;
 
 -- A qualified asterisk also includes the enabled `ALIAS` and `MATERIALIZED` columns, with both planners.
-SELECT t.* FROM t_columns_matcher AS t FORMAT TSVWithNames SETTINGS enable_analyzer = 0;
-SELECT t.* FROM t_columns_matcher AS t FORMAT TSVWithNames SETTINGS enable_analyzer = 1;
+SELECT t.* FROM t_columns_matcher AS t FORMAT TSVWithNames;
+SELECT t.* FROM t_columns_matcher AS t FORMAT TSVWithNames;
 
 DROP TABLE t_columns_matcher;

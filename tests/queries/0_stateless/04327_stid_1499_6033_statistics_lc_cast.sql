@@ -4,7 +4,6 @@ SET materialize_statistics_on_insert = 1;
 SET use_statistics_for_part_pruning = 1;
 -- Pin EXPLAIN-shape settings; `filterPartsByStatistics` swallows pruner exceptions in release builds,
 -- so the result assertions cannot prove the pruner ran. Match `03788_statistics_part_pruning.sql`.
-SET enable_analyzer = 1;
 SET parallel_replicas_local_plan = 1;
 SET optimize_move_to_prewhere = 1;
 SET explain_query_plan_default = 'legacy';

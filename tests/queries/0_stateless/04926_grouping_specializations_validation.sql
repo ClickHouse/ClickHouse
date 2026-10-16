@@ -2,8 +2,6 @@
 -- be called directly with arbitrary arguments; malformed calls must raise ordinary errors, not
 -- logical ones. Also, `grouping` over a `LowCardinality` key must return plain `UInt64`.
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS t_grouping_validation;
 CREATE TABLE t_grouping_validation (k1 String, k2 LowCardinality(String), v UInt64) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_grouping_validation VALUES ('a', 'x', 1), ('b', 'y', 2);

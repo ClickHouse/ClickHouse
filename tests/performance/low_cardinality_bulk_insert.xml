@@ -1,6 +1,5 @@
 <test>
     <settings>
-        <enable_analyzer>1</enable_analyzer>
         <allow_suspicious_low_cardinality_types>1</allow_suspicious_low_cardinality_types>
         <max_threads>1</max_threads>
         <max_block_size>65536</max_block_size>

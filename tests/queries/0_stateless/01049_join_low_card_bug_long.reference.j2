@@ -1,5 +1,4 @@
 -- { echoOn }
-SET enable_analyzer = 1;
 {% for join_algorithm in ['default', 'partial_merge', 'parallel_hash'] -%}
 SET join_algorithm = '{{ join_algorithm }}';
 SET join_use_nulls = 0;

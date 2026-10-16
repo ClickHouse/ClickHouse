@@ -45,9 +45,7 @@ FROM
     SELECT * FROM tokenbf_tab WHERE match(str, ' Hello (ClickHouse|World) ') ORDER BY id
 )
 WHERE
-    explain LIKE '%Granules: %'
-SETTINGS
-  enable_analyzer = 1;
+    explain LIKE '%Granules: %';
 
 
 SELECT *
@@ -57,9 +55,7 @@ FROM
     SELECT * FROM ngrambf_tab WHERE match(str, 'Hello (ClickHouse|World)') ORDER BY id
 )
 WHERE
-    explain LIKE '%Granules: %'
-SETTINGS
-  enable_analyzer = 1;
+    explain LIKE '%Granules: %';
 
 
 SELECT '---';
@@ -80,9 +76,7 @@ FROM
     SELECT * FROM tokenbf_tab WHERE match(str, '.* (ClickHouse|World) ') ORDER BY id
 )
 WHERE
-    explain LIKE '%Granules: %'
-SETTINGS
-  enable_analyzer = 1;
+    explain LIKE '%Granules: %';
 
 
 SELECT *
@@ -92,9 +86,7 @@ FROM
     SELECT * FROM ngrambf_tab WHERE match(str, '.*(ClickHouse|World)') ORDER BY id
 )
 WHERE
-    explain LIKE '%Granules: %'
-SETTINGS
-  enable_analyzer = 1;
+    explain LIKE '%Granules: %';
 
 SELECT '---';
 
@@ -113,9 +105,7 @@ FROM
     SELECT * FROM tokenbf_tab WHERE match(str, ' OLAP (.*?)*') ORDER BY id
 )
 WHERE
-    explain LIKE '%Granules: %'
-SETTINGS
-  enable_analyzer = 1;
+    explain LIKE '%Granules: %';
 
 
 SELECT *
@@ -125,9 +115,7 @@ FROM
     SELECT * FROM ngrambf_tab WHERE match(str, 'OLAP (.*?)*') ORDER BY id
 )
 WHERE
-    explain LIKE '%Granules: %'
-SETTINGS
-  enable_analyzer = 1;
+    explain LIKE '%Granules: %';
 
 DROP TABLE tokenbf_tab;
 DROP TABLE ngrambf_tab;

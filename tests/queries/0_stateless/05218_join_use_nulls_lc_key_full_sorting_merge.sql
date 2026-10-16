@@ -6,7 +6,6 @@
 -- case 1 is a control that passes without the fix and case 5 pins the output type.
 
 SET join_use_nulls = 1;
-SET enable_analyzer = 1;
 SET allow_suspicious_low_cardinality_types = 1;
 
 DROP TABLE IF EXISTS t_lc_l;

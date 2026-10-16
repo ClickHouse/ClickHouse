@@ -1,7 +1,6 @@
 -- Tags: no-parallel-replicas
 -- Bounded streaming reads the first snapshot (everything committed so far) and finishes, so it runs synchronously.
 
-SET enable_analyzer = 1; -- streaming queries require the analyzer (CI randomizes this setting)
 SET enable_streaming_queries = 1;
 SET use_skip_indexes_on_data_read = 0;
 

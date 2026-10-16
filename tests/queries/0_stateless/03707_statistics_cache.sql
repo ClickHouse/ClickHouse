@@ -1,7 +1,6 @@
 -- Tags: no-fasttest
 
 SET optimize_move_to_prewhere = 1;
-SET enable_analyzer = 1;
 SET use_statistics = 1;
 
 DROP TABLE IF EXISTS sc_core SYNC;

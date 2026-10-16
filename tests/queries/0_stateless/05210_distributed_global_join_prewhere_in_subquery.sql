@@ -3,7 +3,6 @@
 -- PREWHERE is moved into the GLOBAL JOIN broadcast subquery.
 -- https://github.com/ClickHouse/ClickHouse/pull/119780
 
-SET enable_analyzer = 1;
 SET join_use_nulls = 1;
 
 DROP TABLE IF EXISTS left_local_05210;

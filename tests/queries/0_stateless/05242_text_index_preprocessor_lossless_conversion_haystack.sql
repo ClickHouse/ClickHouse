@@ -6,7 +6,6 @@
 -- to apply the preprocessor to the unwrapped haystack as well, so the result doesn't depend on whether the
 -- index is read directly or the part has the index materialized.
 
-SET enable_analyzer = 1;
 SET use_skip_indexes = 1;
 SET use_skip_indexes_on_data_read = 1;
 

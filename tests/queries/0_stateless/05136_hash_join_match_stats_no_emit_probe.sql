@@ -6,7 +6,6 @@ DROP TABLE IF EXISTS right_wide;
 DROP TABLE IF EXISTS right_wide_ph;
 
 -- Pin planner settings so the row store decision comes from the recorded match count alone
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 SET query_plan_optimize_join_order_limit = 10;
 SET query_plan_optimize_join_order_randomize = 0;

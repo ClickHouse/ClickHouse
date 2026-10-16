@@ -29,7 +29,6 @@
 -- subquery shape `(SELECT p = 1)` from `PedroTadim`'s reproducer with `UNKNOWN_IDENTIFIER`
 -- in `TreeRewriter::collectUsedColumns`. So we force the analyzer for this whole test;
 -- this matches sibling JOIN-conversion regression tests (03130, 03210, 03595, 03623, 04003).
-SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t_l;
 DROP TABLE IF EXISTS t_r;

@@ -32,7 +32,6 @@ CREATE TABLE jd_build (id UInt64) ENGINE = MergeTree ORDER BY id;
 INSERT INTO jd_probe SELECT number FROM numbers(500);            -- below join_runtime_filter_min_probe_rows
 INSERT INTO jd_build SELECT number FROM numbers(100000);
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1;
 SET max_parallel_replicas = 3;
 SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';

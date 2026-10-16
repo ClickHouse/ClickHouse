@@ -9,7 +9,6 @@
 -- `system.columns_cache`, while an ordinary read of `id` in the same environment
 -- does populate the cache.
 
-SET enable_analyzer = 1;
 SET max_threads = 1;
 
 -- Force the direct read from the text index; CI may inject these as false, in

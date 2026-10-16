@@ -4,7 +4,7 @@
 -- that is not equivalent: `if` sends a NULL condition down the else branch, so the row contributes
 -- `x`, while `not(NULL)` is NULL and `aggIf` skips the row.
 
-SET enable_analyzer = 1, optimize_rewrite_aggregate_function_with_if = 1, optimize_rewrite_sum_if_to_count_if = 0;
+SET optimize_rewrite_aggregate_function_with_if = 1, optimize_rewrite_sum_if_to_count_if = 0;
 
 DROP TABLE IF EXISTS t_agg_if_nullable_cond;
 CREATE TABLE t_agg_if_nullable_cond (c Nullable(UInt8), x Int64) ENGINE = Memory;

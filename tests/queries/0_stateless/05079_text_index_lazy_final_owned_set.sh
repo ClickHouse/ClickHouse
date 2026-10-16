@@ -19,9 +19,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-settings="--enable_analyzer=1"
-
-$CLICKHOUSE_CLIENT $settings -q "
+$CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_lazy_final_text_index;
     CREATE TABLE t_lazy_final_text_index
     (
@@ -45,15 +43,15 @@ $CLICKHOUSE_CLIENT $settings -q "
 "
 
 echo "-- correctness does not depend on lazy FINAL"
-$CLICKHOUSE_CLIENT $settings -q "SELECT count(), uniqExact(m['k']) FROM t_lazy_final_text_index FINAL WHERE status = 'target' SETTINGS query_plan_optimize_lazy_final = 0"
-$CLICKHOUSE_CLIENT $settings -q "SELECT count(), uniqExact(m['k']) FROM t_lazy_final_text_index FINAL WHERE status = 'target' SETTINGS query_plan_optimize_lazy_final = 1, min_filtered_ratio_for_lazy_final = 0"
+$CLICKHOUSE_CLIENT -q "SELECT count(), uniqExact(m['k']) FROM t_lazy_final_text_index FINAL WHERE status = 'target' SETTINGS query_plan_optimize_lazy_final = 0"
+$CLICKHOUSE_CLIENT -q "SELECT count(), uniqExact(m['k']) FROM t_lazy_final_text_index FINAL WHERE status = 'target' SETTINGS query_plan_optimize_lazy_final = 1, min_filtered_ratio_for_lazy_final = 0"
 
 echo "-- the text index is consulted for the set the query owns"
-$CLICKHOUSE_CLIENT $settings -q "
+$CLICKHOUSE_CLIENT -q "
     SELECT count() FROM t_lazy_final_text_index FINAL WHERE status = 'target'
     SETTINGS query_plan_optimize_lazy_final = 1, min_filtered_ratio_for_lazy_final = 0
 " --send_logs_level='debug' 2>&1 \
     | grep -c -F 'LazyFinalKeyAnalysisTransform: Index `idx_keys` has dropped' \
     | sed 's/^0$/no/; s/^[1-9][0-9]*$/yes/'
 
-$CLICKHOUSE_CLIENT $settings -q "DROP TABLE t_lazy_final_text_index"
+$CLICKHOUSE_CLIENT -q "DROP TABLE t_lazy_final_text_index"

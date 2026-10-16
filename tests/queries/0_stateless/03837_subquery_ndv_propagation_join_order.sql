@@ -52,7 +52,6 @@ INSERT INTO test_product_catalog
     SELECT number + 1, concat('catalog_', toString(number))
     FROM numbers(300);
 
-SET enable_analyzer = 1;
 SET allow_statistic_optimize = 1;
 SET use_statistics = 1; -- NDV propagation relies on statistics; runner may inject use_statistics=0
 SET enable_parallel_replicas = 0;

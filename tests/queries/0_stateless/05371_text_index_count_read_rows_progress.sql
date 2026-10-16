@@ -1,7 +1,6 @@
 -- Tags: no-parallel-replicas
 -- `ReadFromTextIndexCount` reports the rows of the selected ranges of the answered parts as read rows, not one row per part.
 
-SET enable_analyzer = 1;
 SET use_skip_indexes = 1;
 SET query_plan_direct_read_from_text_index = 1;
 SET optimize_trivial_count_query = 1;

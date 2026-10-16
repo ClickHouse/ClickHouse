@@ -18,7 +18,6 @@ SETTINGS index_granularity = 8192;
 -- the query condition cache stores nothing for small tables
 INSERT INTO t_qcc_folded_lambda SELECT number, number FROM numbers(1000000);
 
-SET enable_analyzer = 1;
 SET use_query_condition_cache = 1;
 SET use_query_condition_cache_for_top_k = 1;
 SET use_top_k_dynamic_filtering = 1;

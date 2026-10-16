@@ -3,7 +3,6 @@
 -- (size limits, spill thresholds). A sort built with default settings would silently
 -- ignore `max_rows_to_sort`.
 
-SET enable_analyzer = 1;
 SET enable_cascades_optimizer = 1;
 SET make_distributed_plan = 1;
 SET enable_parallel_replicas = 0;

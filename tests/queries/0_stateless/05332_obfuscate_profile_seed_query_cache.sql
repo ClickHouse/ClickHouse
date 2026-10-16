@@ -6,8 +6,6 @@
 -- mentioning `obfuscate_seed` itself. The query result cache must judge the determinism of
 -- `obfuscate(...)` by the seed the subquery really runs with.
 
-SET allow_experimental_analyzer = 1;
-
 DROP SETTINGS PROFILE IF EXISTS profile_05332_empty_seed;
 DROP SETTINGS PROFILE IF EXISTS profile_05332_stable_seed;
 CREATE SETTINGS PROFILE profile_05332_empty_seed SETTINGS obfuscate_seed = '';

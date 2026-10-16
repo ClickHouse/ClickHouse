@@ -1,4 +1,3 @@
-set enable_analyzer=1;
 set session_timezone='UTC';
 
 select '1970-01-01 00:00:01.000'::DateTime64(3) from remote('127.0.0.{1,2}', 'system.one');

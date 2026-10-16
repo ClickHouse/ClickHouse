@@ -33,7 +33,6 @@ QUERY id: 0
                     LIST id: 18, nodes: 1
                       FUNCTION id: 19, function_name: rand, function_type: ordinary, result_type: UInt32
                 CONSTANT id: 20, constant_value: \'%2%\', constant_value_type: String
-  SETTINGS enable_analyzer=1
 QUERY id: 0
   PROJECTION COLUMNS
     s String
@@ -71,7 +70,6 @@ QUERY id: 0
                           LIST id: 22, nodes: 2
                             COLUMN id: 23, column_name: s, result_type: String, source_id: 3
                             CONSTANT id: 24, constant_value: \'%b%\', constant_value_type: String
-  SETTINGS enable_analyzer=1
 QUERY id: 0
   PROJECTION COLUMNS
     x UInt8
@@ -139,4 +137,3 @@ QUERY id: 0
                             CONSTANT id: 40, constant_value: Array_[UInt64_1], constant_value_type: Array(UInt8)
                       CONSTANT id: 41, constant_value: UInt64_1, constant_value_type: UInt8
                 CONSTANT id: 42, constant_value: \'%2%\', constant_value_type: String
-  SETTINGS enable_analyzer=1

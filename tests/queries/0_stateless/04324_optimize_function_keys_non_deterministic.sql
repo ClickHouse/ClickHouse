@@ -4,7 +4,6 @@
 -- the key, so it must not be removed: dropping it would change the partitioning (LIMIT BY) or the
 -- grouping (GROUP BY). This guards the shared function-keys elimination for both clauses.
 
-SET enable_analyzer = 1;
 SET optimize_limit_by_function_keys = 1;
 SET optimize_group_by_function_keys = 1;
 

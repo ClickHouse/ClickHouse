@@ -48,19 +48,12 @@ SELECT '-- parallel replicas, remote plan';
 SELECT a, count() FROM t_04371 WHERE a GROUP BY a ORDER BY a LIMIT 5
 SETTINGS parallel_replicas_local_plan = 0;
 
--- enable_analyzer = 1 is pinned only here, where the plan shape is asserted: the local
--- plan for parallel replicas engages only with the analyzer on
--- (canUseLocalPlanForParallelReplicas returns false otherwise), so without the pin a
--- randomized old-analyzer run would silently route the local-plan query through the
--- remote path and leave that half of the regression uncovered.
 SELECT '-- local plan reads initiator locally';
 SELECT countIf(explain ILIKE '%ReadFromMergeTree%') > 0 AND countIf(explain ILIKE '%ReadFromRemoteParallelReplicas%') > 0
-FROM (EXPLAIN SELECT a, count() FROM t_04371 WHERE a GROUP BY a ORDER BY a LIMIT 5 SETTINGS parallel_replicas_local_plan = 1)
-SETTINGS enable_analyzer = 1;
+FROM (EXPLAIN SELECT a, count() FROM t_04371 WHERE a GROUP BY a ORDER BY a LIMIT 5 SETTINGS parallel_replicas_local_plan = 1);
 
 SELECT '-- remote plan reads all replicas remotely';
 SELECT countIf(explain ILIKE '%ReadFromMergeTree%') = 0 AND countIf(explain ILIKE '%ReadFromRemoteParallelReplicas%') > 0
-FROM (EXPLAIN SELECT a, count() FROM t_04371 WHERE a GROUP BY a ORDER BY a LIMIT 5 SETTINGS parallel_replicas_local_plan = 0)
-SETTINGS enable_analyzer = 1;
+FROM (EXPLAIN SELECT a, count() FROM t_04371 WHERE a GROUP BY a ORDER BY a LIMIT 5 SETTINGS parallel_replicas_local_plan = 0);
 
 DROP TABLE t_04371;

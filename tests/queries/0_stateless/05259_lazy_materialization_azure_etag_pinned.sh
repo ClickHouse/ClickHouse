@@ -32,13 +32,11 @@ ${CLICKHOUSE_CLIENT} --query "
 
 TABLE_FN="azureBlobStorage('${AZURE_CONN}', '${AZURE_CONT}', 'data_{1,2}.parquet', 'Parquet')"
 
-# `enable_analyzer` is pinned because lazy materialization requires the analyzer, and
-# `query_plan_max_limit_for_lazy_materialization = 0` because the CI settings randomizer may set it to 1.
+# `query_plan_max_limit_for_lazy_materialization = 0` is pinned because the CI settings randomizer may set it to 1.
 for etag in 1 0; do
     echo "-- azure_validate_etag_on_read = $etag"
     echo "-- number of lazy read steps in the plan (1 only when the reread is ETag-pinned)"
     ${CLICKHOUSE_CLIENT} \
-        --enable_analyzer=1 \
         --azure_validate_etag_on_read="$etag" \
         --query_plan_optimize_lazy_materialization=1 \
         --query_plan_max_limit_for_lazy_materialization=0 \
@@ -46,7 +44,6 @@ for etag in 1 0; do
         --query "SELECT countIf(explain LIKE '%LazilyReadFromObjectStorage%') FROM (EXPLAIN SELECT s FROM ${TABLE_FN} ORDER BY k LIMIT 3)"
     echo "-- results are the same regardless of the plan"
     ${CLICKHOUSE_CLIENT} \
-        --enable_analyzer=1 \
         --azure_validate_etag_on_read="$etag" \
         --query_plan_optimize_lazy_materialization=1 \
         --query_plan_max_limit_for_lazy_materialization=0 \

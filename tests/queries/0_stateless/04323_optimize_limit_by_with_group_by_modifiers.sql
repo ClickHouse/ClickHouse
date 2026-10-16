@@ -1,6 +1,5 @@
 -- { echo }
 
-SET enable_analyzer = 1;
 SET optimize_limit_by_function_keys = 1;
 SET optimize_injective_functions_in_limit_by = 1;
 SET group_by_use_nulls = 1;

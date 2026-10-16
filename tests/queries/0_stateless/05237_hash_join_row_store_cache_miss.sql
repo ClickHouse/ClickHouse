@@ -2,7 +2,6 @@
 -- misses over reading it column by column. Column by column each plane is a miss of its own, and a
 -- `Nullable` column is two planes; from the store the misses are the lines one row spans.
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 SET join_algorithm = 'hash';
 SET enable_hash_join_row_store = 1;

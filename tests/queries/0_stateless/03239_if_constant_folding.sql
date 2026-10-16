@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 
 select false  ? c : '' as c, count() from (select '' c) group by c;
 select if( 0 , c, '') _c, count() from (select '' c) group by _c;

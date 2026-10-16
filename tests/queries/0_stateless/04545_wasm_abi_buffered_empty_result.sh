@@ -10,14 +10,14 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=1 << 'EOF'
+${CLICKHOUSE_CLIENT} << 'EOF'
 DROP FUNCTION IF EXISTS wasm_returns_empty;
 DELETE FROM system.webassembly_modules WHERE name = 'buffered_abi_empty';
 EOF
 
 cat "${CUR_DIR}/wasm/buffered_abi.wasm" | ${CLICKHOUSE_CLIENT} --query "INSERT INTO system.webassembly_modules (name, code) SELECT 'buffered_abi_empty', code FROM input('code String') FORMAT RawBlob"
 
-${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=1 << 'EOF'
+${CLICKHOUSE_CLIENT} << 'EOF'
 CREATE OR REPLACE FUNCTION wasm_returns_empty
     LANGUAGE WASM ABI BUFFERED_V1
     FROM 'buffered_abi_empty' :: 'returns_empty_buffer'

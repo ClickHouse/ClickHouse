@@ -6,7 +6,6 @@
 -- Field types. src/Common/FieldVisitorDump.cpp lines 35-36, 38-39, 41-42, 95-96.
 
 -- EXPLAIN QUERY TREE requires the analyzer.
-SET enable_analyzer = 1;
 
 -- 1. Decimal256 Field: CAST to Decimal256 constant-folds to a Decimal256 Field.
 --    FieldVisitorDump.cpp:35 formats it as "Decimal256_'<value>'".

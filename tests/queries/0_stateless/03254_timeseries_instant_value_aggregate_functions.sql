@@ -40,7 +40,7 @@ FROM (
     GROUP BY metric_id
 )
 ORDER BY metric_id, point
-SETTINGS enable_parallel_replicas=1, max_parallel_replicas=3, parallel_replicas_for_non_replicated_merge_tree=1, enable_analyzer=1;
+SETTINGS enable_parallel_replicas=1, max_parallel_replicas=3, parallel_replicas_for_non_replicated_merge_tree=1;
 
 -- Test with DateTime64
 
@@ -78,7 +78,7 @@ FROM (
     GROUP BY metric_id
 )
 ORDER BY metric_id, point
-SETTINGS enable_parallel_replicas=1, max_parallel_replicas=3, parallel_replicas_for_non_replicated_merge_tree=1, enable_analyzer=1;
+SETTINGS enable_parallel_replicas=1, max_parallel_replicas=3, parallel_replicas_for_non_replicated_merge_tree=1;
 
 -- Another test with a reset
 WITH [

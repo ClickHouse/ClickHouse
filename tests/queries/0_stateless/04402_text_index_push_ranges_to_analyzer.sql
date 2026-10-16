@@ -5,7 +5,6 @@
 -- intersection) fall entirely outside those rows. This skips reading their posting lists and
 -- short-circuits the dictionary scan, without changing query results.
 
-SET enable_analyzer = 1;
 SET use_skip_indexes = 1;
 -- The query condition cache remembers which granules failed WHERE from previous runs and would
 -- mask the actual index behavior, so disable it for this test.

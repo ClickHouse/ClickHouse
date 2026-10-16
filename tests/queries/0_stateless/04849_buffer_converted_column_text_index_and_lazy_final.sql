@@ -2,7 +2,6 @@
 
 -- Reading a Buffer whose destination declares a column differently logs a warning per read.
 SET send_logs_level = 'error';
-SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t04849_ti_dst;
 DROP TABLE IF EXISTS t04849_ti_buf;

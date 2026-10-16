@@ -8,9 +8,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-settings="--enable_analyzer=1"
-
-$CLICKHOUSE_CLIENT $settings -q "
+$CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_lazy_log;
     CREATE TABLE t_lazy_log (key UInt64, version UInt64, category UInt8, payload String)
     ENGINE = ReplacingMergeTree(version) ORDER BY key SETTINGS index_granularity = 64;
@@ -27,7 +25,7 @@ $CLICKHOUSE_CLIENT $settings -q "
 
 ## Case 1: Set truncated (max_rows too small)
 echo "=== Case 1: set truncated ==="
-$CLICKHOUSE_CLIENT $settings -q "
+$CLICKHOUSE_CLIENT -q "
     SELECT count() FROM t_lazy_log FINAL WHERE category = 1
     SETTINGS query_plan_optimize_lazy_final = 1, max_rows_for_lazy_final = 10
 " --send_logs_level='trace' 2>&1 \
@@ -38,7 +36,7 @@ $CLICKHOUSE_CLIENT $settings -q "
 
 ## Case 2: Filtered ratio too low (scattered filter, threshold 0.5)
 echo "=== Case 2: filtered ratio too low ==="
-$CLICKHOUSE_CLIENT $settings -q "
+$CLICKHOUSE_CLIENT -q "
     SELECT count() FROM t_lazy_log FINAL WHERE category = 2
     SETTINGS query_plan_optimize_lazy_final = 1, max_rows_for_lazy_final = 10000000, min_filtered_ratio_for_lazy_final = 0.5
 " --send_logs_level='trace' 2>&1 \
@@ -49,7 +47,7 @@ $CLICKHOUSE_CLIENT $settings -q "
 
 ## Case 3: Optimization enabled (concentrated filter, good pruning)
 echo "=== Case 3: optimization enabled ==="
-$CLICKHOUSE_CLIENT $settings -q "
+$CLICKHOUSE_CLIENT -q "
     SELECT count() FROM t_lazy_log FINAL WHERE category = 1
     SETTINGS query_plan_optimize_lazy_final = 1, max_rows_for_lazy_final = 10000000, min_filtered_ratio_for_lazy_final = 0.5
 " --send_logs_level='trace' 2>&1 \
@@ -58,4 +56,4 @@ $CLICKHOUSE_CLIENT $settings -q "
     | sed -E 's/[0-9]+\.[0-9]+/N.NN/g; s/=[0-9]+/=N/g' \
     | head -1
 
-$CLICKHOUSE_CLIENT $settings -q "DROP TABLE t_lazy_log"
+$CLICKHOUSE_CLIENT -q "DROP TABLE t_lazy_log"

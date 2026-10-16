@@ -23,10 +23,9 @@ ${CLICKHOUSE_CLIENT} --query "
 
 TABLE_FN="url('http://localhost:11111/${PATH_PREFIX}/data.parquet', 'Parquet')"
 
-# `enable_analyzer` and `query_plan_max_limit_for_lazy_materialization` are pinned (and the
+# `query_plan_max_limit_for_lazy_materialization` is pinned (and the
 # optimization force-enabled) so the negative `EXPLAIN` check is not vacuous.
 ${CLICKHOUSE_CLIENT} \
-    --enable_analyzer=1 \
     --query_plan_optimize_lazy_materialization=1 \
     --query_plan_max_limit_for_lazy_materialization=0 \
     --query_plan_optimize_lazy_materialization_for_object_storage=1 \

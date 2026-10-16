@@ -5,7 +5,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=1 << 'EOF'
+${CLICKHOUSE_CLIENT} << 'EOF'
 DROP FUNCTION IF EXISTS fuel_fib;
 DROP FUNCTION IF EXISTS fuel_fib_no_fuel;
 DROP FUNCTION IF EXISTS fuel_fib_bad;
@@ -20,7 +20,7 @@ EOF
 cat "${CUR_DIR}/wasm/faulty.wasm" | ${CLICKHOUSE_CLIENT} --query "INSERT INTO system.webassembly_modules (name, code) SELECT 'faulty_fuel_toggle', code FROM input('code String') FORMAT RawBlob"
 cat "${CUR_DIR}/wasm/as_infinite_start.wasm" | ${CLICKHOUSE_CLIENT} --query "INSERT INTO system.webassembly_modules (name, code) SELECT 'as_infinite_start_fuel_toggle', code FROM input('code String') FORMAT RawBlob"
 
-${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=1 << 'EOF'
+${CLICKHOUSE_CLIENT} << 'EOF'
 CREATE OR REPLACE FUNCTION fuel_fib
     LANGUAGE WASM ABI ROW_DIRECT
     FROM 'faulty_fuel_toggle' :: 'fib'

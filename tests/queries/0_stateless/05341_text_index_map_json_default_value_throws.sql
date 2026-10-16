@@ -1,7 +1,6 @@
 -- A text index on `mapKeys` or `JSONAllPaths` evaluates the predicate on the value of a missing key or path.
 -- If the predicate throws on it, the index cannot answer the predicate, and the query must not fail.
 
-SET enable_analyzer = 1;
 SET use_query_condition_cache = 0;
 
 DROP TABLE IF EXISTS tab_map;

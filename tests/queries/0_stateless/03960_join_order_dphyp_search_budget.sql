@@ -2,7 +2,6 @@
 -- deterministically. On a dense graph that exceeds the budget, dphyp gives up and the next
 -- algorithm in the chain produces the plan. Disabling the budget (0) lets dphyp finish.
 
-SET allow_experimental_analyzer = 1;
 SET use_statistics = 1;
 SET enable_parallel_replicas = 0;
 SET cross_to_inner_join_rewrite = 0;

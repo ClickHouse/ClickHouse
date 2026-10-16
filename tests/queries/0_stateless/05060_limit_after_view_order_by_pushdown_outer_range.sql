@@ -9,10 +9,10 @@ CREATE TABLE t_outer_range_src (x UInt64) ENGINE = MergeTree ORDER BY x;
 INSERT INTO t_outer_range_src SELECT number FROM numbers(10);
 CREATE VIEW v_outer_range_plain AS SELECT x FROM t_outer_range_src;
 
-SELECT arraySort(groupArray(x)) FROM (SELECT x FROM v_outer_range_plain ORDER BY x LIMIT 2 AFTER x >= 5) SETTINGS enable_analyzer = 1;
-SELECT arraySort(groupArray(x)) FROM (SELECT x FROM v_outer_range_plain ORDER BY x LIMIT 2 UNTIL x >= 8) SETTINGS enable_analyzer = 1;
-SELECT arraySort(groupArray(x)) FROM (SELECT x FROM v_outer_range_plain ORDER BY x LIMIT 1 AFTER x % 4 = 3 ALL) SETTINGS enable_analyzer = 1;
-SELECT arraySort(groupArray(x)) FROM (SELECT x FROM v_outer_range_plain ORDER BY x DESC LIMIT 2 AFTER x <= 5) SETTINGS enable_analyzer = 1;
+SELECT arraySort(groupArray(x)) FROM (SELECT x FROM v_outer_range_plain ORDER BY x LIMIT 2 AFTER x >= 5);
+SELECT arraySort(groupArray(x)) FROM (SELECT x FROM v_outer_range_plain ORDER BY x LIMIT 2 UNTIL x >= 8);
+SELECT arraySort(groupArray(x)) FROM (SELECT x FROM v_outer_range_plain ORDER BY x LIMIT 1 AFTER x % 4 = 3 ALL);
+SELECT arraySort(groupArray(x)) FROM (SELECT x FROM v_outer_range_plain ORDER BY x DESC LIMIT 2 AFTER x <= 5);
 
 DROP VIEW v_outer_range_plain;
 DROP TABLE t_outer_range_src;

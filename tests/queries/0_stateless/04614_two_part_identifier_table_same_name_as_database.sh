@@ -26,14 +26,14 @@ INSERT INTO ${DB}.${DB} VALUES (42);
 # column must not be picked up.
 $CLICKHOUSE_CLIENT --query "
 SELECT ${DB}.x FROM ${DB}.${DB}, (SELECT 1 AS \`${DB}.x\`)
-SETTINGS enable_analyzer = 1, joined_subquery_requires_alias = 0;
+SETTINGS joined_subquery_requires_alias = 0;
 " 2>&1 | grep -o -m1 'UNKNOWN_IDENTIFIER'
 
 # The same with three parts: there is no table \`x\` in the database, so \`db.x.y\` has no
 # \`db.table.column\` interpretation either.
 $CLICKHOUSE_CLIENT --query "
 SELECT ${DB}.x.y FROM ${DB}.${DB}, (SELECT 1 AS \`${DB}.x.y\`)
-SETTINGS enable_analyzer = 1, joined_subquery_requires_alias = 0;
+SETTINGS joined_subquery_requires_alias = 0;
 " 2>&1 | grep -o -m1 'UNKNOWN_IDENTIFIER'
 
 # The same when the second part names a real table: plain two-part \`db.db\` selected from the
@@ -42,21 +42,19 @@ SETTINGS enable_analyzer = 1, joined_subquery_requires_alias = 0;
 # instead of falling through to a sibling column literally named \`db.db\`.
 $CLICKHOUSE_CLIENT --query "
 SELECT ${DB}.${DB} FROM ${DB}.${DB}, (SELECT 1 AS \`${DB}.${DB}\`)
-SETTINGS enable_analyzer = 1, joined_subquery_requires_alias = 0;
+SETTINGS joined_subquery_requires_alias = 0;
 " 2>&1 | grep -o -m1 'UNKNOWN_IDENTIFIER'
 
 # The qualified matcher is the one context where the two-part qualifier miss must fall through:
 # \`db.db.*\` resolves the qualifier \`db.db\` as an expression first, and that lookup must be
 # allowed to fail so that the qualifier is bound as a table expression next.
 $CLICKHOUSE_CLIENT --query "
-SELECT ${DB}.${DB}.* FROM ${DB}.${DB}
-SETTINGS enable_analyzer = 1;
+SELECT ${DB}.${DB}.* FROM ${DB}.${DB};
 "
 
 # The dotted column is still reachable under its own qualification.
 $CLICKHOUSE_CLIENT --query "
-SELECT t.\`${DB}.x\` FROM ${DB}.${DB}, (SELECT 1 AS \`${DB}.x\`) AS t
-SETTINGS enable_analyzer = 1;
+SELECT t.\`${DB}.x\` FROM ${DB}.${DB}, (SELECT 1 AS \`${DB}.x\`) AS t;
 "
 
 # Mixing a qualified matcher with a plain two-part identifier of the same name must not let the
@@ -64,6 +62,5 @@ SETTINGS enable_analyzer = 1;
 # allowed to fall through to the sibling dotted column, but the later plain \`db.db\` must still
 # throw \`UNKNOWN_IDENTIFIER\` instead of returning the cached column.
 $CLICKHOUSE_CLIENT --query "
-SELECT ${DB}.${DB}.*, ${DB}.${DB} FROM ${DB}.${DB}, (SELECT tuple(1) AS \`${DB}.${DB}\`) AS t
-SETTINGS enable_analyzer = 1;
+SELECT ${DB}.${DB}.*, ${DB}.${DB} FROM ${DB}.${DB}, (SELECT tuple(1) AS \`${DB}.${DB}\`) AS t;
 " 2>&1 | grep -o -m1 'UNKNOWN_IDENTIFIER'

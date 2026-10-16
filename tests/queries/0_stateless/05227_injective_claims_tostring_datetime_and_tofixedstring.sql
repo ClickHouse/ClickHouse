@@ -56,8 +56,8 @@ SELECT DISTINCT count() OVER (PARTITION BY toFixedString(s, 16)) FROM t_window_p
 SELECT DISTINCT count() OVER (PARTITION BY toFixedString(s, 16)) FROM t_window_pad SETTINGS max_threads = 16, allow_window_partitions_independently = 0;
 
 SELECT 'a fixed-offset time zone is still injective';
-SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT uniqExact(toString(toDateTime(number, 'UTC'))) FROM numbers(2)) WHERE explain LIKE '%uniqExact%' AND explain NOT LIKE '%toString%' SETTINGS enable_analyzer = 1;
-SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT uniqExact(toString(toDateTime(number, 'Europe/Amsterdam'))) FROM numbers(2)) WHERE explain LIKE '%toString%' SETTINGS enable_analyzer = 1;
+SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT uniqExact(toString(toDateTime(number, 'UTC'))) FROM numbers(2)) WHERE explain LIKE '%uniqExact%' AND explain NOT LIKE '%toString%';
+SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT uniqExact(toString(toDateTime(number, 'Europe/Amsterdam'))) FROM numbers(2)) WHERE explain LIKE '%toString%';
 
 SELECT 'an explicit time zone argument';
 -- The rendering zone comes from the second argument, so a fixed-offset `DateTime('UTC')` folds all
@@ -84,7 +84,7 @@ SELECT count() FROM (SELECT 1 FROM (SELECT materialize(toFixedString('abc', 3)) 
 SELECT count() FROM (SELECT materialize(toFixedString('abc', 3)) AS f LIMIT 1 BY toFixedString(f, 2)); -- { serverError TOO_LARGE_STRING_SIZE }
 SELECT uniqExact(toFixedString(f, 2)) FROM (SELECT materialize(toFixedString('abc', 3)) AS f); -- { serverError TOO_LARGE_STRING_SIZE }
 -- A fitting target width stays injective.
-SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT uniqExact(toFixedString(materialize(toFixedString('abc', 3)), 4))) WHERE explain LIKE '%uniqExact%' AND explain NOT LIKE '%toFixedString%' SETTINGS enable_analyzer = 1;
+SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT uniqExact(toFixedString(materialize(toFixedString('abc', 3)), 4))) WHERE explain LIKE '%uniqExact%' AND explain NOT LIKE '%toFixedString%';
 
 SELECT 'a width that is not an unsigned integer still throws';
 -- The claim must not be made before the width is known to be unsigned: reading a negative width

@@ -112,7 +112,6 @@ SETTINGS short_circuit_function_evaluation = 'disable', short_circuit_function_e
 
 -- A cheap atom of an AND chain in `WHERE` is moved only in front of heavy atoms: two cheap atoms keep the written order,
 -- because the first one may be the more selective one (`notEmpty` does not describe whether it can throw, `less` does).
-SET enable_analyzer = 1;
 SELECT trim(explain) FROM (EXPLAIN actions = 1, pretty = 0, compact = 1 SELECT count() FROM (SELECT toString(number) AS s, number FROM numbers(10)) WHERE notEmpty(s) AND s < 'abc')
 WHERE explain LIKE '%AND column%'
 SETTINGS short_circuit_function_evaluation = 'enable', short_circuit_function_evaluation_reorder_arguments = 1;

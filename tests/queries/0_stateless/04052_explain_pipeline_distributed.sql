@@ -3,7 +3,6 @@
 -- Serialized query plan is not supported
 set serialize_query_plan=0;
 
-set enable_analyzer=1;
 set max_threads=2;
 
 -- This test inspects the distributed pipeline shape, so pin the unrelated virtual row optimization off.

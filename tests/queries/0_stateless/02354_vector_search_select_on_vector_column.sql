@@ -6,7 +6,6 @@
 -- `vec` as an input; the rewrite must keep the physical column rather than replacing it with
 -- `_distance` and failing with `NOT_FOUND_COLUMN_IN_BLOCK`.
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 
 DROP TABLE IF EXISTS t_04926;

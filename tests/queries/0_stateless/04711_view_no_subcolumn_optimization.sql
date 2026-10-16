@@ -8,7 +8,6 @@ DROP TABLE IF EXISTS okv;
 
 -- `FunctionToSubcolumnsPass` exists only in the analyzer, so every assertion below needs it
 -- enabled. The `old analyzer` CI job turns it off in the server profile.
-SET enable_analyzer = 1;
 
 -- The plan text below is grepped, so the rendering has to be pinned: `pretty` (the default)
 -- renders a different shape from `legacy`.

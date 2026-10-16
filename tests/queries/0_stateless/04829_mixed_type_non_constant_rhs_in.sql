@@ -6,8 +6,6 @@
 
 -- { echoOn }
 
-SET enable_analyzer = 1;
-
 SELECT 1 IN (materialize(1), 'x');
 SELECT 3 IN (materialize(1), 'x');
 SELECT 1 NOT IN (materialize(1), 'x');

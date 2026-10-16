@@ -1,7 +1,5 @@
 -- Tags: no-random-merge-tree-settings, no-parallel-replicas
 
-set enable_analyzer = 1;
-
 -- Missing allow_commit_order_projection
 CREATE TABLE mt_no_allow(a UInt64,
     PROJECTION p (SELECT *, _block_number, _block_offset ORDER BY _block_number, _block_offset))

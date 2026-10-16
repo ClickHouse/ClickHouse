@@ -3,7 +3,6 @@
 SET joined_subquery_requires_alias = 0;
 
 -- We are no longer interested in the old analyzer.
-SET enable_analyzer = 1;
 
 -- This test (SELECT) without cache can take tens minutes
 DROP TABLE IF EXISTS dict_string;

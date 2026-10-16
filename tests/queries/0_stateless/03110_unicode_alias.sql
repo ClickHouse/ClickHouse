@@ -1,7 +1,5 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/47288
 
-SET enable_analyzer=1;
-
 select 1 as `c0`
 from (
         select C.`字段` AS `字段`

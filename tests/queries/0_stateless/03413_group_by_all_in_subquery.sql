@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t;
 DROP TABLE IF EXISTS t_dist;

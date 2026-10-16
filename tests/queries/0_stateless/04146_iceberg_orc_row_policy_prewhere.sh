@@ -66,7 +66,7 @@ ${CLICKHOUSE_CLIENT} --user="${TEST_USER}" --password=rp_pwd --query "
     SELECT count()
     FROM ${TEST_TABLE}
     PREWHERE c0 > 10
-    SETTINGS input_format_parquet_use_native_reader_v3 = 1, enable_analyzer = 1
+    SETTINGS input_format_parquet_use_native_reader_v3 = 1
 "
 
 # 2) Same but with PREWHERE that overlaps the policy boundary (c0 > 3 < 5). The
@@ -76,7 +76,7 @@ ${CLICKHOUSE_CLIENT} --user="${TEST_USER}" --password=rp_pwd --query "
     SELECT count()
     FROM ${TEST_TABLE}
     PREWHERE c0 > 3
-    SETTINGS input_format_parquet_use_native_reader_v3 = 1, enable_analyzer = 1
+    SETTINGS input_format_parquet_use_native_reader_v3 = 1
 "
 
 # 3) Sanity: read c1 with PREWHERE on c0 (c0 in PREWHERE only; the column is
@@ -86,7 +86,7 @@ ${CLICKHOUSE_CLIENT} --user="${TEST_USER}" --password=rp_pwd --query "
     SELECT sum(toInt64(c1))
     FROM ${TEST_TABLE}
     PREWHERE c0 > 10
-    SETTINGS input_format_parquet_use_native_reader_v3 = 1, enable_analyzer = 1
+    SETTINGS input_format_parquet_use_native_reader_v3 = 1
 "
 
 # Cleanup

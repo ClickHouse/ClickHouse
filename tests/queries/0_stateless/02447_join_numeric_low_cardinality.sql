@@ -1,6 +1,5 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/57243
 
-SET enable_analyzer = 1;
 SET allow_suspicious_low_cardinality_types = 1;
 
 DROP TABLE IF EXISTS arrays_test;

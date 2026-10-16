@@ -2,7 +2,6 @@
 -- no-replicated-database: EXPLAIN output differs for replicated database.
 -- no-parallel-replicas: Dictionary is not available on parallel-replica workers.
 
-SET enable_analyzer = 1;
 SET rewrite_in_to_join = 0;
 SET prefer_localhost_replica = 1;
 

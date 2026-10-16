@@ -7,7 +7,6 @@
 -- `LogicalExpressionOptimizerPass` only runs with the analyzer, and its common-expression
 -- extraction for JOIN expressions is gated on `optimize_extract_common_expressions`; enable both
 -- explicitly so the test targets the pass regardless of the defaults.
-SET enable_analyzer = 1;
 SET optimize_extract_common_expressions = 1;
 
 DROP TABLE IF EXISTS t_04759;

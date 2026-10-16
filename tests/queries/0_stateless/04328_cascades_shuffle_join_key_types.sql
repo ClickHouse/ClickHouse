@@ -5,7 +5,6 @@
 -- on one side and `UInt64` on the other hash to different buckets and
 -- matching rows land on different nodes.
 
-SET enable_analyzer = 1;
 SET enable_cascades_optimizer = 1;
 SET make_distributed_plan = 1;
 SET enable_parallel_replicas = 0;

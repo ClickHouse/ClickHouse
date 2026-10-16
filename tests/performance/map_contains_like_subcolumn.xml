@@ -2,7 +2,6 @@
     <!-- Keep the unused Map side much wider than the side used by the LIKE predicate. -->
     <!-- Each generated wide string is about 64 bytes; 16 entries make about 1 KiB per row. -->
     <settings>
-        <enable_analyzer>1</enable_analyzer>
         <max_insert_threads>4</max_insert_threads>
         <use_query_condition_cache>0</use_query_condition_cache>
     </settings>

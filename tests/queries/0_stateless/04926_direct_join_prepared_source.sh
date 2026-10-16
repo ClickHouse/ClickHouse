@@ -35,23 +35,23 @@ INSERT INTO t_left VALUES (1, 'A');
 
 expect_refusal "left join, empty buffer" "
     SELECT * FROM t_left AS l LEFT JOIN t_right_buf AS r ON l.id = r.id
-    SETTINGS enable_analyzer = 1, join_algorithm = 'direct'"
+    SETTINGS join_algorithm = 'direct'"
 
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO t_right_buf VALUES (1, 'B')"
 
 expect_refusal "left join, non-empty buffer" "
     SELECT * FROM t_left AS l LEFT JOIN t_right_buf AS r ON l.id = r.id
-    SETTINGS enable_analyzer = 1, join_algorithm = 'direct'"
+    SETTINGS join_algorithm = 'direct'"
 
 expect_refusal "inner join, non-empty buffer" "
     SELECT * FROM t_left AS l INNER JOIN t_right_buf AS r ON l.id = r.id
-    SETTINGS enable_analyzer = 1, join_algorithm = 'direct'"
+    SETTINGS join_algorithm = 'direct'"
 
 echo "--- hash join over the same shape"
 ${CLICKHOUSE_CLIENT} --query "
     SELECT * FROM t_left AS l LEFT JOIN t_right_buf AS r ON l.id = r.id
     ORDER BY l.id
-    SETTINGS enable_analyzer = 1, join_algorithm = 'hash'"
+    SETTINGS join_algorithm = 'hash'"
 
 echo "--- direct join, MergeTree right side"
 ${CLICKHOUSE_CLIENT} --query "
@@ -59,10 +59,10 @@ ${CLICKHOUSE_CLIENT} --query "
 ${CLICKHOUSE_CLIENT} --query "
     SELECT * FROM t_left AS l LEFT JOIN t_right_mt AS r ON l.id = r.id
     ORDER BY l.id
-    SETTINGS enable_analyzer = 1, join_algorithm = 'direct'"
+    SETTINGS join_algorithm = 'direct'"
 
 echo "--- direct join, empty MergeTree right side"
 ${CLICKHOUSE_CLIENT} --query "
     SELECT * FROM t_left AS l LEFT JOIN t_right_empty AS r ON l.id = r.id
     ORDER BY l.id
-    SETTINGS enable_analyzer = 1, join_algorithm = 'direct'"
+    SETTINGS join_algorithm = 'direct'"

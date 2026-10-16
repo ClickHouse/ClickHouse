@@ -33,7 +33,6 @@ SET cluster_for_parallel_replicas = 'test_cluster_one_shard_two_replicas';
 SET max_parallel_replicas = 2;
 SET use_query_condition_cache = 0;
 SET allow_experimental_parallel_reading_from_replicas = 0;
-SET allow_experimental_analyzer = 1;
 -- Force distributed index analysis to fire on a plain (non-shared) MergeTree so the
 -- combine branch is actually reached regardless of the default storage policy.
 SET distributed_index_analysis_for_non_shared_merge_tree = 1;

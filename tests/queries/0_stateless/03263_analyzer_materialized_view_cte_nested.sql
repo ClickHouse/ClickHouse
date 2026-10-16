@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS test_table;
 DROP VIEW IF EXISTS test_mv;

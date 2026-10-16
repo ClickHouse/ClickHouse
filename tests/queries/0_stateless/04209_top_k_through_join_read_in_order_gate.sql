@@ -7,7 +7,6 @@
 -- disabled it, `topKThroughJoin` must still fire so the query gets at least
 -- one of the two optimizations, instead of falling through both gates.
 
-SET enable_analyzer = 1;
 SET query_plan_top_k_through_join = 1;
 
 DROP TABLE IF EXISTS t_l;

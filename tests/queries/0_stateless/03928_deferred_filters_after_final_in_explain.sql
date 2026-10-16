@@ -13,8 +13,6 @@ INSERT INTO tab SELECT 1, 'ccc', 2;
 
 CREATE ROW POLICY pol1 ON tab USING y != 'ccc' TO ALL;
 
-SET enable_analyzer = 1;
-
 SELECT '= full plan: both deferred =';
 EXPLAIN actions=1 SELECT * FROM tab FINAL PREWHERE y != 'ccc' ORDER BY x
 SETTINGS apply_row_policy_after_final=1, apply_prewhere_after_final=1, optimize_read_in_order=1;

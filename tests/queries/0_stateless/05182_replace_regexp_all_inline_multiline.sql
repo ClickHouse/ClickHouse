@@ -5,7 +5,6 @@
 -- The haystack has to come from a column: a fully constant argument is folded before the rewrite.
 
 -- `optimize_rewrite_regexp_functions` is a query tree pass, and `EXPLAIN QUERY TREE` needs the analyzer.
-SET enable_analyzer = 1;
 SET optimize_rewrite_regexp_functions = 1;
 
 SELECT replaceRegexpAll(h, '(?m)\\d+$', 'x'), regexp_replace(h, '(?m)\\d+$', 'x') FROM (SELECT '11\n22\n33' AS h);

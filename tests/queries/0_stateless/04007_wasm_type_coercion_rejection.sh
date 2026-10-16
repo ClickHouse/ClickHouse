@@ -7,7 +7,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=1 << EOF
+${CLICKHOUSE_CLIENT} << EOF
 
 DROP FUNCTION IF EXISTS wasm_identity_raw;
 DELETE FROM system.webassembly_modules WHERE name = 'identity_int';
@@ -16,7 +16,7 @@ EOF
 
 cat ${CUR_DIR}/wasm/identity_int.wasm | ${CLICKHOUSE_CLIENT} --query "INSERT INTO system.webassembly_modules (name, code) SELECT 'identity_int', code FROM input('code String') FORMAT RawBlob"
 
-${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=1 << EOF
+${CLICKHOUSE_CLIENT} << EOF
 
 CREATE FUNCTION wasm_identity_raw LANGUAGE WASM ABI ROW_DIRECT FROM 'identity_int' :: 'identity_raw' ARGUMENTS (Int32) RETURNS Int32;
 

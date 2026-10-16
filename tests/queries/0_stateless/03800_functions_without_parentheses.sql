@@ -1,7 +1,6 @@
 -- Tags: no-parallel
 
 -- Test SQL standard niladic functions without parentheses
-SET enable_analyzer = 1;
 
 -- NOW and CURRENT_TIMESTAMP are the same function, so we test both
 SELECT toTypeName(NOW);

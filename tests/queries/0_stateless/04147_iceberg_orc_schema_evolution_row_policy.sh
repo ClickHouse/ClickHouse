@@ -86,7 +86,7 @@ ${CLICKHOUSE_CLIENT} --user="${TEST_USER}" --password=rp_pwd_evol --query "
     SELECT count()
     FROM ${TEST_TABLE}
     PREWHERE renamed_c0 > 10
-    SETTINGS input_format_parquet_use_native_reader_v3 = 1, enable_analyzer = 1
+    SETTINGS input_format_parquet_use_native_reader_v3 = 1
 "
 
 # 2) `PREWHERE` overlaps the policy boundary (`renamed_c0 > 3`, policy
@@ -96,7 +96,7 @@ ${CLICKHOUSE_CLIENT} --user="${TEST_USER}" --password=rp_pwd_evol --query "
     SELECT count()
     FROM ${TEST_TABLE}
     PREWHERE renamed_c0 > 3
-    SETTINGS input_format_parquet_use_native_reader_v3 = 1, enable_analyzer = 1
+    SETTINGS input_format_parquet_use_native_reader_v3 = 1
 "
 
 # 3) Read `c1` with `PREWHERE` on the renamed column only (column gets removed
@@ -108,7 +108,7 @@ ${CLICKHOUSE_CLIENT} --user="${TEST_USER}" --password=rp_pwd_evol --query "
     SELECT sum(toInt64(c1))
     FROM ${TEST_TABLE}
     PREWHERE renamed_c0 > 10
-    SETTINGS input_format_parquet_use_native_reader_v3 = 1, enable_analyzer = 1
+    SETTINGS input_format_parquet_use_native_reader_v3 = 1
 "
 
 # 4) Plain `SELECT` without `PREWHERE` — exercises the row policy alone on
@@ -117,7 +117,7 @@ ${CLICKHOUSE_CLIENT} --user="${TEST_USER}" --password=rp_pwd_evol --query "
 ${CLICKHOUSE_CLIENT} --user="${TEST_USER}" --password=rp_pwd_evol --query "
     SELECT count()
     FROM ${TEST_TABLE}
-    SETTINGS input_format_parquet_use_native_reader_v3 = 1, enable_analyzer = 1
+    SETTINGS input_format_parquet_use_native_reader_v3 = 1
 "
 
 # Cleanup

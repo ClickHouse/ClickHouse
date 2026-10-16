@@ -4,7 +4,6 @@
 -- aggregated column, so the rows where that key is absent report its default value.
 
 DROP TABLE IF EXISTS t_05239;
-SET enable_analyzer = 1;
 SET group_by_use_nulls = 0;
 
 DROP TABLE IF EXISTS t_05239;

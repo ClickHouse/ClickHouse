@@ -3,7 +3,6 @@
 
 SET parallel_replicas_local_plan = 1;
 
-SET allow_experimental_analyzer = 1;
 SET optimize_move_to_prewhere = 1;
 
 -- Prove that the query condition cache now records unmatched granules at individual-granule

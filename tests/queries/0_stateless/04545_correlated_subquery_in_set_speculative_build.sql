@@ -8,7 +8,6 @@
 --   Logical error: Expected CommonSubplanReferenceStep to reference CommonSubplanStep
 -- and the consumer ReadFromCommonBufferStep ended up in a different pipeline than its producer.
 
-SET enable_analyzer = 1;
 SET allow_correlated_subqueries = 1;
 SET correlated_subqueries_use_in_memory_buffer = 1;
 

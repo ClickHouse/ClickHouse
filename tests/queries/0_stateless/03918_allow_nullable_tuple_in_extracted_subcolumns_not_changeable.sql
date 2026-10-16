@@ -1,6 +1,5 @@
 -- The setting `allow_nullable_tuple_in_extracted_subcolumns` can only be changed via server restart
 
-SET enable_analyzer = 1;
 SET allow_nullable_tuple_in_extracted_subcolumns = 1;
 
 SELECT

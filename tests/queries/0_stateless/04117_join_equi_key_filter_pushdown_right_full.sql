@@ -6,14 +6,9 @@
 -- Equi-key `WHERE` predicates must reach the opposite `MergeTree` input of a `RIGHT JOIN` or a plain
 -- `INNER JOIN` as an index condition, including when the two join keys differ in type.
 --
--- Analyzer only. Under `enable_analyzer = 0` a `USING` key is renamed to `<table>.<key>` in the right
--- input header while the `JOIN` output keeps the bare name, so the equivalence maps are keyed by a name
--- the filter never references and nothing is pushed. That path is left as is.
---
 -- Nothing may be pushed through a `FULL JOIN`: a dropped row only becomes a defaulted unmatched row, so
 -- a predicate on that default both admits and discards rows wrongly. Those cases assert results only.
 
-SET enable_analyzer = 1;
 SET query_plan_filter_push_down = 1;
 SET query_plan_join_swap_table = 'false';
 SET enable_join_runtime_filters = 0;

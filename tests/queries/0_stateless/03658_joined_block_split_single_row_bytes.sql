@@ -12,7 +12,6 @@ INSERT INTO t1 SELECT rand(), 1, 'a' || if(number = 99, repeat(toString(number),
 CREATE TABLE t2 (id UInt32, key Int32, payload String) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t2 SELECT rand(), 1, 'b' || toString(number) FROM numbers(100_000);
 
-SET enable_analyzer = 1;
 SET query_plan_join_swap_table = 0;
 SET query_plan_optimize_join_order_limit = 1;
 

@@ -8,7 +8,6 @@ SET allow_nondeterministic_optimize_skip_unused_shards = 1;
 SET optimize_skip_unused_shards = 1;
 SET force_optimize_skip_unused_shards = 2;
 SET check_table_dependencies = 0;
-SET enable_analyzer = 1;
 
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE:Identifier};
 DROP TABLE IF EXISTS logs_03989;

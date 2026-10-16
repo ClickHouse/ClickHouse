@@ -14,7 +14,6 @@
         EXPLAIN QUERY TREE isolates the analysis cost from execution.
     -->
     <settings>
-        <enable_analyzer>1</enable_analyzer>
         <max_parser_depth>100000</max_parser_depth>
         <max_ast_depth>100000</max_ast_depth>
         <max_ast_elements>10000000</max_ast_elements>

@@ -6,7 +6,6 @@
 
 SET query_plan_optimize_join_order_limit = 64;
 SET query_plan_optimize_join_order_randomize = 0;
-SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t_merge_expr_1;
 DROP TABLE IF EXISTS t_merge_expr_2;

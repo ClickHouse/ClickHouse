@@ -22,7 +22,7 @@ run() {
 
     ${CLICKHOUSE_CLIENT} --query_id="${query_id}" --query "
         SELECT count() FROM file('${DATA_FILE}', Parquet) WHERE ${predicate}
-        SETTINGS max_threads = 1, enable_analyzer = 1, optimize_functions_to_subcolumns = 1,
+        SETTINGS max_threads = 1, optimize_functions_to_subcolumns = 1,
                  input_format_parquet_filter_push_down = 1, input_format_parquet_dictionary_filter_push_down = 0 FORMAT Null"
 
     ${CLICKHOUSE_CLIENT} --query "
@@ -60,10 +60,10 @@ ${CLICKHOUSE_CLIENT} --query "
 ${CLICKHOUSE_CLIENT} --query "
     SELECT tupleElement(t, 'a.b'), tupleElement(tupleElement(t, 'a'), 'b')
     FROM file('${COLLISION_FILE}', Parquet, '${COLLISION_STRUCTURE}') LIMIT 1
-    SETTINGS enable_analyzer = 1, optimize_functions_to_subcolumns = 1, input_format_parquet_filter_push_down = 1;
+    SETTINGS optimize_functions_to_subcolumns = 1, input_format_parquet_filter_push_down = 1;
     SELECT countIf(tupleElement(t, 'a.b') = 999), countIf(tupleElement(t, 'a.b') = 111)
     FROM file('${COLLISION_FILE}', Parquet, '${COLLISION_STRUCTURE}')
-    SETTINGS enable_analyzer = 1, optimize_functions_to_subcolumns = 1, input_format_parquet_filter_push_down = 1"
+    SETTINGS optimize_functions_to_subcolumns = 1, input_format_parquet_filter_push_down = 1"
 
 # An unnamed tuple names its elements `1`, `2`, which the reader can only match by string against
 # the file's real field names, so the element must be read out of the whole tuple.
@@ -78,7 +78,7 @@ ${CLICKHOUSE_CLIENT} --query "
 ${CLICKHOUSE_CLIENT} --query "
     SELECT tupleElement(t, 1), tupleElement(t, 2)
     FROM file('${POSITIONAL_FILE}', Parquet, 't Tuple(UInt64, String)') ORDER BY 1
-    SETTINGS enable_analyzer = 1, optimize_functions_to_subcolumns = 1;
+    SETTINGS optimize_functions_to_subcolumns = 1;
     SELECT countIf(tupleElement(t, 1) = 1)
     FROM file('${POSITIONAL_FILE}', Parquet, 't Tuple(UInt64, String)')
-    SETTINGS enable_analyzer = 1, optimize_functions_to_subcolumns = 1"
+    SETTINGS optimize_functions_to_subcolumns = 1"

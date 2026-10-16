@@ -8,7 +8,6 @@
 -- `default_settings` for subquery scopes the table function still saw 0 and threw, while the query
 -- result cache logic already treated such resets as effective, causing a mismatch.
 
-SET allow_experimental_analyzer = 1;
 SET obfuscate_markov_order = 0;
 
 -- The inner DEFAULT resets the invalid session value back to 5, so the query succeeds.

@@ -8,7 +8,6 @@
 -- must not request that derived column from storage. optimize_on_insert = 0 keeps the
 -- inserted rows un-deduplicated so FINAL takes the intersecting (real FINAL) path.
 
-SET enable_analyzer = 1;
 SET query_plan_optimize_lazy_final = 1;
 SET optimize_move_to_prewhere_if_final = 1;
 SET optimize_on_insert = 0;
