@@ -1,0 +1,32 @@
+<test run_all_queries="1">
+    <!-- `hasAny` and `hasAll` on integer arrays of at least 128 bytes, the length where a search goes through whole blocks. -->
+    <substitutions>
+        <substitution>
+            <name>array_type</name>
+            <values>
+                <value>Int8</value>
+                <value>Int16</value>
+                <value>Int32</value>
+                <value>Int64</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <!-- 500 values; the values of `subset` (100 to 127) are never in `set`, so `hasAny` reads all of `set` for each of them. -->
+    <create_query>CREATE TABLE long_missing_{array_type} (set Array({array_type}), subset Array({array_type})) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE long_nullable_missing_{array_type} (set Array(Nullable({array_type})), subset Array(Nullable({array_type}))) ENGINE = Memory</create_query>
+    <!-- 200 bytes, and `subset` has only the first values of `set`, so each search stops at the first vector. -->
+    <create_query>CREATE TABLE long_front_{array_type} (set Array({array_type}), subset Array({array_type})) ENGINE = Memory</create_query>
+
+    <fill_query>INSERT INTO long_missing_{array_type} SELECT arrayMap(i -> toInt64(number + i) % 100, range(500)), arrayMap(i -> 100 + toInt64(number + i) % 28, range(500)) FROM numbers(multiIf('{array_type}' = 'Int8', 400000, '{array_type}' = 'Int16', 200000, '{array_type}' = 'Int32', 100000, 50000)) SETTINGS max_block_size = 8192</fill_query>
+    <fill_query>INSERT INTO long_nullable_missing_{array_type} SELECT arrayMap(i -> if(i % 64 = 5, NULL, toInt64(number + i) % 100), range(500)), arrayMap(i -> 100 + toInt64(number + i) % 28, range(500)) FROM numbers(multiIf('{array_type}' = 'Int8', 400000, '{array_type}' = 'Int16', 200000, '{array_type}' = 'Int32', 100000, 50000)) SETTINGS max_block_size = 8192</fill_query>
+    <fill_query>INSERT INTO long_front_{array_type} SELECT arr, arrayMap(j -> arr[j % 3 + 1], range(12)) FROM (SELECT arrayMap(i -> toInt64(number + i) % 100, range(multiIf('{array_type}' = 'Int8', 200, '{array_type}' = 'Int16', 100, '{array_type}' = 'Int32', 50, 25))) AS arr FROM numbers(2000000)) SETTINGS max_block_size = 8192</fill_query>
+
+    <query>SELECT hasAny(set, subset) FROM long_missing_{array_type} FORMAT Null</query>
+    <query>SELECT hasAny(set, subset) FROM long_nullable_missing_{array_type} FORMAT Null</query>
+    <query>SELECT hasAll(set, subset) FROM long_front_{array_type} FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS long_missing_{array_type}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS long_nullable_missing_{array_type}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS long_front_{array_type}</drop_query>
+</test>
