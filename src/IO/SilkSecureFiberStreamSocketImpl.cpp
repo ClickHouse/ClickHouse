@@ -186,6 +186,10 @@ SecureFiberStreamSocketImpl::SecureFiberStreamSocketImpl(int accepted_fd, Poco::
 SecureFiberStreamSocketImpl::SecureFiberStreamSocketImpl(FiberStreamSocketImpl * underlying_, Poco::Net::Context::Ptr context)
     : Poco::Net::SecureStreamSocketImpl(underlying_, context)
 {
+    /// The base constructor takes its own reference to `underlying_`, as if the caller kept one,
+    /// but every caller passes a freshly allocated socket: drop the reference it was created with,
+    /// or the underlying socket leaks when this one is destroyed.
+    underlying_->release();
     setBioMethod(silkBioMethod());
     setMutex(std::make_unique<SilkRecursiveMutex>());
 }
