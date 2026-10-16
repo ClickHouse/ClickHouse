@@ -2804,6 +2804,7 @@ class QueryProgressElement extends HTMLElement
             </style>
             <span id="hourglass">&#10711;</span>
             <span id="check-mark">&#10004;</span>
+            <span id="charts-toggle" class="progress-toggle" title="Suggested charts of the result">Charts</span>
             <span id="logs-toggle" class="progress-toggle">Logs</span>
             <span id="metrics-toggle" class="progress-toggle">Metrics</span>
             <div id="progress"><span id="progress-text"></span><span id="stats"></span></div>
@@ -2819,9 +2820,11 @@ class QueryProgressElement extends HTMLElement
         /// the streamed extras (server logs, or the extended profile-event metrics). The progress
         /// element only tracks which view is selected and announces changes via a `set-view` event;
         /// the page listener applies the view to the result element(s).
+        this._chartsToggle = this.shadowRoot.getElementById('charts-toggle');
         this._logsToggle = this.shadowRoot.getElementById('logs-toggle');
         this._metricsToggle = this.shadowRoot.getElementById('metrics-toggle');
         this._view = 'result';
+        this._chartsToggle.addEventListener('click', () => this._toggleView('charts'));
         this._logsToggle.addEventListener('click', () => this._toggleView('logs'));
         this._metricsToggle.addEventListener('click', () => this._toggleView('metrics'));
 
@@ -2833,9 +2836,17 @@ class QueryProgressElement extends HTMLElement
     _toggleView(target)
     {
         this._view = (this._view === target) ? 'result' : target;
+        this._chartsToggle.classList.toggle('active', this._view === 'charts');
         this._logsToggle.classList.toggle('active', this._view === 'logs');
         this._metricsToggle.classList.toggle('active', this._view === 'metrics');
         this.dispatchEvent(new CustomEvent('set-view', { detail: { view: this._view } }));
+    }
+
+    /// Reveal the Charts toggle. Called once a table result has finished with rows a chart of the
+    /// gallery can show (see `_markChartsAvailable`). Idempotent (reset by `resetViewToggles`).
+    showChartsToggle()
+    {
+        this._chartsToggle.style.display = 'inline-block';
     }
 
     /// Reveal the Logs toggle. Called once the query has produced at least one log line, so it is
@@ -2852,11 +2863,11 @@ class QueryProgressElement extends HTMLElement
         this._metricsToggle.style.display = 'inline-block';
     }
 
-    /// Hide both view toggles and return to the result view (used when a new query starts).
+    /// Hide the view toggles and return to the result view (used when a new query starts).
     resetViewToggles()
     {
         this._view = 'result';
-        for (const t of [this._logsToggle, this._metricsToggle])
+        for (const t of [this._chartsToggle, this._logsToggle, this._metricsToggle])
         {
             t.classList.remove('active');
             t.style.display = 'none';
@@ -2867,9 +2878,11 @@ class QueryProgressElement extends HTMLElement
     /// each toggle only if that tab produced logs / metrics, and mark the tab's selected view active.
     /// The view and toggle visibility are tab-owned, so switching tabs does not carry one tab's
     /// selection or toggle visibility onto another (see the `set-view` handler and `_markLogsAvailable`).
-    setViewState(view, logsAvailable, metricsAvailable)
+    setViewState(view, logsAvailable, metricsAvailable, chartsAvailable)
     {
         this._view = view;
+        this._chartsToggle.style.display = chartsAvailable ? 'inline-block' : 'none';
+        this._chartsToggle.classList.toggle('active', view === 'charts');
         this._logsToggle.style.display = logsAvailable ? 'inline-block' : 'none';
         this._metricsToggle.style.display = metricsAvailable ? 'inline-block' : 'none';
         this._logsToggle.classList.toggle('active', view === 'logs');
@@ -3456,11 +3469,659 @@ function digitGroupsHTML(digits)
     return groups.join('<span class="num-sep"></span>');
 }
 
+/// ----- Chart gallery --------------------------------------------------------------------
+/// The Charts view of a table result: a mosaic of Vega-Lite charts suggested for the rows on
+/// screen, to choose one from. Clicking a chart opens it large, next to its specification,
+/// which can be edited.
+///
+/// The suggestions are heuristic, in the spirit of CompassQL / Draco: every column gets a role
+/// from its type (quantitative, temporal, nominal) and a profile of its values (cardinality,
+/// order, sign); chart templates are matched against the combinations of roles, each match is
+/// scored by how well the data fits the template, and a greedy selection takes the best ones,
+/// discounting a chart that repeats the template or the columns of the charts already taken,
+/// so that the mosaic shows different views of the data instead of variations of one.
+///
+/// Everything here is a pure function of the header and the rows; the rendering is in
+/// `QueryResultElement` (`_renderGallery`).
+
+const GALLERY_MAX_CHARTS = 12;
+/// Only the first usable columns are combined, which bounds the number of candidates.
+const GALLERY_MAX_COLUMNS = 12;
+/// The categorical palette has this many slots. A series past them is never a generated hue,
+/// so a column with more values is not offered as a color.
+const GALLERY_MAX_COLORS = 8;
+/// A bar chart of a column with more values than this shows only its top values.
+const GALLERY_MAX_BARS = 40;
+/// A number with at most this many integer values, spanning at most this range, reads as discrete
+/// (an hour, a year, a remainder), so it can also be the categories of a bar chart or a heatmap.
+const GALLERY_MAX_ORDINAL = 24;
+const GALLERY_MAX_ORDINAL_RANGE = 100;
+
+/// The categorical palette, light and dark (the same eight hues, stepped for each surface), and
+/// the single-hue ramp of a magnitude, from near zero to the maximum.
+const GALLERY_PALETTE_LIGHT = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#6250d6', '#e34948'];
+const GALLERY_PALETTE_DARK = ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#008300', '#9085e9', '#e66767'];
+const GALLERY_RAMP_LIGHT = ['#cde2fb', '#86b6ef', '#3987e5', '#1c5cab', '#0d366b'];
+const GALLERY_RAMP_DARK = ['#0d366b', '#1c5cab', '#3987e5', '#86b6ef', '#cde2fb'];
+
+/// The role of a column of the given ClickHouse type: `Q` quantitative, `T` temporal, `N` nominal,
+/// or null for a type no chart here can show (arrays, maps, tuples, `JSON`, ...).
+function galleryColumnKind(type)
+{
+    const unwrapped = QueryResultElement.prototype._unwrapScalarType(type);
+    if (/^(U?Int|Float|BFloat|Decimal)/.test(unwrapped)) { return 'Q'; }
+    if (/^Date/.test(unwrapped)) { return 'T'; }
+    if (/^(String|FixedString|Enum|Bool|UUID|IPv[46])/.test(unwrapped)) { return 'N'; }
+    return null;
+}
+
+/// Profile the chartable columns of a result: the values converted for charting (a number, a
+/// timestamp in milliseconds, a string, or null) and what the templates need to know about them.
+/// `isNull(name, value)` says whether a value is a NULL in disguise (see `_cellIsNull`). A
+/// constant column says nothing a chart could show and is left out, as is a column whose name
+/// the header carries more than once, since the rows are keyed by name.
+function galleryProfileColumns(header, rows, isNull)
+{
+    const duplicates = duplicateColumnNames(header);
+    const profiles = [];
+    for (const column of header)
+    {
+        if (profiles.length >= GALLERY_MAX_COLUMNS) { break; }
+        const kind = galleryColumnKind(column.type);
+        if (!kind || duplicates.has(column.name)) { continue; }
+
+        const values = new Array(rows.length);
+        const distinct = new Set();
+        let nulls = 0;
+        let min = Infinity;
+        let max = -Infinity;
+        let ascending = true;
+        let integer = true;
+        let previous = null;
+        for (let i = 0; i < rows.length; ++i)
+        {
+            const raw = rows[i][column.name];
+            let value = null;
+            if (raw !== null && raw !== undefined && !isNull(column.name, raw))
+            {
+                if (kind === 'Q')
+                {
+                    const number = Number(raw);
+                    if (Number.isFinite(number)) { value = number; }
+                }
+                else if (kind === 'T')
+                {
+                    const seconds = QueryResultElement._parseChartDateTime(String(raw));
+                    if (seconds !== null) { value = seconds * 1000; }
+                }
+                else
+                {
+                    value = String(raw);
+                }
+            }
+            values[i] = value;
+            if (value === null) { ++nulls; continue; }
+            distinct.add(value);
+            if (kind !== 'N')
+            {
+                min = Math.min(min, value);
+                max = Math.max(max, value);
+                if (previous !== null && value < previous) { ascending = false; }
+                previous = value;
+                integer = integer && Number.isInteger(value);
+            }
+        }
+        if (distinct.size < 2) { continue; }
+
+        const count = rows.length - nulls;
+        profiles.push({
+            integer: kind === 'Q' && integer,
+            name: column.name,
+            kind,
+            rank: profiles.length,
+            values,
+            distinct: distinct.size,
+            count,
+            non_negative: kind === 'Q' && min >= 0,
+            /// A number that only grows and never repeats, like the `number` of `system.numbers`
+            /// or a running total: an axis to draw a line along rather than a measure.
+            sequence: kind === 'Q' && ascending && distinct.size === count,
+            /// A number with few integer values in a short range, like an hour, a weekday or a year,
+            /// that repeats or leads the row the way a dimension does: also a dimension. A sum or a
+            /// count over few groups also has few values, but neither in a short range nor repeated.
+            /// Settled by the key below when there is one.
+            ordinal: kind === 'Q' && integer && distinct.size <= GALLERY_MAX_ORDINAL
+                && max - min <= GALLERY_MAX_ORDINAL_RANGE && (distinct.size < count || profiles.length === 0),
+            key: false,
+            magnitude: kind === 'Q' ? Math.max(Math.abs(min), Math.abs(max)) : 0,
+        });
+    }
+
+    /// The key of the rows: the shortest run of leading columns, each of which could be a
+    /// dimension, that tells the rows apart - what a `GROUP BY` puts first. Its columns are the
+    /// dimensions, and the numbers after it are the measures, however few values they have.
+    for (let length = 1; length <= Math.min(3, profiles.length - 1); ++length)
+    {
+        const prefix = profiles.slice(0, length);
+        if (!prefix.every(p => p.kind !== 'Q' || p.integer)) { break; }
+        if (galleryUnique(prefix, rows.length))
+        {
+            for (const p of profiles)
+            {
+                p.key = p.rank < length;
+                if (p.kind === 'Q') { p.ordinal = p.key && p.distinct <= GALLERY_MAX_ORDINAL; }
+            }
+            break;
+        }
+    }
+    return profiles;
+}
+
+/// The rows of the Vega-Lite dataset: one object per row, with the converted values of the profiled
+/// columns under their own names.
+function galleryValues(profiles, row_count)
+{
+    const values = new Array(row_count);
+    for (let i = 0; i < row_count; ++i)
+    {
+        const row = {};
+        for (const p of profiles) { row[p.name] = p.values[i]; }
+        values[i] = row;
+    }
+    return values;
+}
+
+/// Whether no two rows share the values of the given columns (rows with a null among them aside),
+/// i.e. the columns identify a row and a chart of them needs no aggregation.
+function galleryUnique(columns, row_count)
+{
+    const seen = new Set();
+    for (let i = 0; i < row_count; ++i)
+    {
+        let key = '';
+        let has_null = false;
+        for (const p of columns)
+        {
+            const value = p.values[i];
+            if (value === null) { has_null = true; break; }
+            key += value + '\u0000';
+        }
+        if (has_null) { continue; }
+        if (seen.has(key)) { return false; }
+        seen.add(key);
+    }
+    return true;
+}
+
+/// The number of distinct combinations of the values of the given columns.
+function galleryCombinations(columns, row_count)
+{
+    const seen = new Set();
+    for (let i = 0; i < row_count; ++i)
+    {
+        seen.add(columns.map(p => p.values[i]).join('\u0000'));
+    }
+    return seen.size;
+}
+
+/// A column name as a Vega-Lite field reference: a dot or a bracket in it would otherwise be read
+/// as access to a nested field.
+function galleryFieldName(name)
+{
+    return name.replace(/[.\[\]\\]/g, '\\$&');
+}
+
+/// A name for a derived field that no column of the result has.
+function galleryFreshName(profiles, base)
+{
+    let name = base;
+    for (let i = 1; profiles.some(p => p.name === name); ++i) { name = base + '_' + i; }
+    return name;
+}
+
+/// The Vega-Lite encoding of a column in the given role. A temporal column holds UTC timestamps,
+/// like the time axis of the line chart (`_drawChart`), so it is shown in UTC.
+function galleryChannel(p, role, extra)
+{
+    const channel = { field: galleryFieldName(p.name), title: p.name };
+    if (role === 'T')
+    {
+        channel.type = 'temporal';
+        channel.scale = { type: 'utc' };
+    }
+    else if (role === 'O') { channel.type = 'ordinal'; }
+    else if (role === 'N') { channel.type = 'nominal'; }
+    else { channel.type = 'quantitative'; }
+    return Object.assign(channel, extra);
+}
+
+/// How well a column fits the color channel: up to three series stay apart for every reader in
+/// every chart form; up to the palette size, in most. More is not a color.
+function galleryColorFit(p)
+{
+    if (p.distinct <= 3) { return 1; }
+    if (p.distinct <= GALLERY_MAX_COLORS) { return 0.85; }
+    return 0;
+}
+
+/// How well several measures share one axis: of very different magnitudes, the smaller ones lie
+/// flat along the baseline.
+function galleryScaleFit(measures)
+{
+    const magnitudes = measures.map(p => p.magnitude).filter(m => m > 0);
+    if (magnitudes.length < measures.length) { return 0.5; }
+    const ratio = Math.max(...magnitudes) / Math.min(...magnitudes);
+    if (ratio <= 10) { return 1; }
+    if (ratio <= 100) { return 0.6; }
+    return 0.3;
+}
+
+/// Enumerate the charts that fit the profiled columns, each with a score: a template's prior times
+/// how well the data fits it, less a little for every column far to the right, since a query lists
+/// what matters first (`SELECT dimension, measure ...`).
+function galleryCandidates(profiles, row_count)
+{
+    const candidates = [];
+    /// The same combinations of columns come up again and again: check each once.
+    const unique_cache = new Map();
+    const unique = (columns, rows) =>
+    {
+        const key = columns.map(p => p.rank).join(',');
+        if (!unique_cache.has(key)) { unique_cache.set(key, galleryUnique(columns, rows)); }
+        return unique_cache.get(key);
+    };
+    const add = (template, columns, score, title, spec) =>
+    {
+        if (!(score > 0)) { return; }
+        score -= 0.015 * columns.reduce((sum, p) => sum + p.rank, 0);
+        candidates.push({ template, title, score, key: columns.map(p => p.name).sort().join('\u0000'), spec });
+    };
+
+    const temporal = profiles.filter(p => p.kind === 'T');
+    /// The x of a line: time, or a number that runs along the rows.
+    const lines_x = profiles.filter(p => p.kind === 'T' || p.sequence);
+    const categorical = profiles.filter(p => p.kind === 'N' || p.ordinal);
+    const measures = profiles.filter(p => p.kind === 'Q');
+    /// A measure is a number to be read off an axis; a sequence or a small integer usually is not.
+    const measureFit = (p) => p.key ? 0.3 : (p.sequence ? 0.5 : 1) * (p.ordinal ? 0.8 : 1);
+    const categoryRole = (p) => (p.kind === 'N' ? 'N' : 'O');
+    const xRole = (p) => (p.kind === 'T' ? 'T' : 'Q');
+    const series = galleryFreshName(profiles, 'series');
+    const value = galleryFreshName(profiles, 'value');
+    const rank = galleryFreshName(profiles, 'rank');
+
+    /// A line has a point at each value, invisible but hoverable, for its tooltip.
+    const lineMark = (type, extra) => Object.assign(
+        { type, tooltip: true },
+        row_count <= 500 ? { point: { filled: false, fill: 'transparent', strokeOpacity: 0, size: 80 } } : {},
+        extra);
+
+    for (const x of lines_x)
+    {
+        const x_unique = unique([x], row_count);
+        const prior = x.kind === 'T' ? 1 : 0.9;
+        for (const m of measures)
+        {
+            if (m === x) { continue; }
+            const y = galleryChannel(m, 'Q', x_unique ? {} : { aggregate: 'sum', title: 'sum(' + m.name + ')' });
+            /// Repeated x values mean another column splits the rows into series; a sum of them is
+            /// a weaker view than a line per series.
+            const fit = measureFit(m) * (x_unique ? 1 : 0.75) * (x.distinct >= 3 ? 1 : 0.3);
+            add('Line', [x, m], prior * fit, m.name + ' over ' + x.name, {
+                mark: lineMark('line'),
+                encoding: { x: galleryChannel(x, xRole(x)), y },
+            });
+            if (m.non_negative)
+            {
+                add('Area', [x, m], 0.7 * fit, m.name + ' over ' + x.name, {
+                    mark: { type: 'area', line: true, opacity: 0.4, tooltip: true },
+                    encoding: { x: galleryChannel(x, xRole(x)), y },
+                });
+            }
+
+            for (const c of categorical)
+            {
+                if (c === x || c === m) { continue; }
+                const color_fit = galleryColorFit(c);
+                if (!color_fit) { continue; }
+                const xc_unique = unique([x, c], row_count);
+                const yc = galleryChannel(m, 'Q', xc_unique ? {} : { aggregate: 'sum', title: 'sum(' + m.name + ')' });
+                const color = galleryChannel(c, 'N');
+                const line_color = galleryChannel(c, 'N', { legend: { symbolType: 'stroke' } });
+                /// The long form, a row per x and series, is exactly what a multi-line chart shows.
+                const long_form = !x_unique && xc_unique ? 1.15 : 1;
+                add('Lines', [x, m, c], 0.9 * measureFit(m) * color_fit * long_form, m.name + ' over ' + x.name + ' by ' + c.name, {
+                    mark: lineMark('line'),
+                    encoding: { x: galleryChannel(x, xRole(x)), y: yc, color: line_color },
+                });
+                if (m.non_negative)
+                {
+                    add('Stacked area', [x, m, c], 0.65 * measureFit(m) * color_fit * long_form, m.name + ' over ' + x.name + ' by ' + c.name, {
+                        mark: { type: 'area', tooltip: true },
+                        encoding: { x: galleryChannel(x, xRole(x)), y: Object.assign(yc, { stack: 'zero' }), color },
+                    });
+                }
+            }
+        }
+
+        /// Several measures of a row as several lines (`SELECT t, a, b, c`).
+        const folded = measures.filter(m => m !== x && !m.sequence).slice(0, GALLERY_MAX_COLORS);
+        if (folded.length >= 2 && x_unique)
+        {
+            add('Lines', [x, ...folded], 0.95 * galleryScaleFit(folded), folded.map(m => m.name).join(', ') + ' over ' + x.name, {
+                transform: [{ fold: folded.map(m => galleryFieldName(m.name)), as: [series, value] }],
+                mark: lineMark('line'),
+                encoding: {
+                    x: galleryChannel(x, xRole(x)),
+                    y: { field: value, type: 'quantitative', title: null },
+                    color: { field: series, type: 'nominal', title: null, sort: folded.map(m => m.name), legend: { symbolType: 'stroke' } },
+                },
+            });
+        }
+    }
+
+    for (const d of categorical)
+    {
+        const d_unique = unique([d], row_count);
+        const role = categoryRole(d);
+        for (const m of measures)
+        {
+            if (m === d) { continue; }
+            const fit = measureFit(m) * (role === 'N' ? 1 : 0.85);
+            /// A sum over the other dimensions of the key hides them.
+            const bar_fit = d_unique ? 1 : 0.9;
+            const aggregate = d_unique ? {} : { aggregate: 'sum', title: 'sum(' + m.name + ')' };
+            if (d.distinct <= GALLERY_MAX_BARS)
+            {
+                /// Names read best along the vertical axis, sorted by the bars; an ordinal keeps its
+                /// own order along the horizontal one.
+                const encoding = role === 'N'
+                    ? { y: galleryChannel(d, 'N', { sort: '-x' }), x: galleryChannel(m, 'Q', aggregate) }
+                    : { x: galleryChannel(d, 'O'), y: galleryChannel(m, 'Q', aggregate) };
+                add('Bar', [d, m], 0.85 * fit * bar_fit * (d.distinct <= 25 ? 1 : 0.9), m.name + ' by ' + d.name, {
+                    mark: { type: 'bar', tooltip: true },
+                    encoding,
+                });
+            }
+            else if (role === 'N')
+            {
+                const total = galleryFreshName(profiles, 'sum_' + m.name);
+                add('Bar', [d, m], 0.55 * fit, 'Top ' + GALLERY_MAX_BARS + ' ' + d.name + ' by ' + m.name, {
+                    transform: [
+                        { aggregate: [{ op: 'sum', field: galleryFieldName(m.name), as: total }], groupby: [galleryFieldName(d.name)] },
+                        { window: [{ op: 'row_number', as: rank }], sort: [{ field: total, order: 'descending' }] },
+                        { filter: 'datum[' + JSON.stringify(rank) + '] <= ' + GALLERY_MAX_BARS },
+                    ],
+                    mark: { type: 'bar', tooltip: true },
+                    encoding: {
+                        y: galleryChannel(d, 'N', { sort: '-x' }),
+                        x: { field: galleryFieldName(total), type: 'quantitative', title: 'sum(' + m.name + ')' },
+                    },
+                });
+            }
+
+            if (role === 'N' && m.non_negative && d.distinct <= GALLERY_MAX_COLORS)
+            {
+                add('Donut', [d, m], 0.4 * fit, m.name + ' by ' + d.name, {
+                    mark: { type: 'arc', innerRadius: 40, tooltip: true },
+                    encoding: {
+                        theta: galleryChannel(m, 'Q', Object.assign({ stack: true }, aggregate)),
+                        color: galleryChannel(d, 'N'),
+                    },
+                });
+            }
+
+            /// Enough rows per category to show their spread.
+            if (!d_unique && d.distinct <= 20 && row_count >= 5 * d.distinct)
+            {
+                add('Box plot', [d, m], 0.6 * fit, 'Spread of ' + m.name + ' by ' + d.name, {
+                    mark: { type: 'boxplot', extent: 1.5 },
+                    encoding: role === 'N'
+                        ? { y: galleryChannel(d, 'N'), x: galleryChannel(m, 'Q') }
+                        : { x: galleryChannel(d, 'O'), y: galleryChannel(m, 'Q') },
+                });
+            }
+
+            for (const c of categorical)
+            {
+                if (c === d || c === m) { continue; }
+
+                const color_fit = galleryColorFit(c);
+                if (color_fit && d.distinct <= GALLERY_MAX_BARS)
+                {
+                    const dc_unique = unique([d, c], row_count);
+                    const y = galleryChannel(m, 'Q', dc_unique ? {} : { aggregate: 'sum', title: 'sum(' + m.name + ')' });
+                    const long_form = !d_unique && dc_unique ? 1.15 : 1;
+                    if (m.non_negative)
+                    {
+                        add('Stacked bar', [d, m, c], 0.75 * fit * color_fit * long_form, m.name + ' by ' + d.name + ' and ' + c.name, {
+                            mark: { type: 'bar', tooltip: true },
+                            encoding: { x: galleryChannel(d, role), y, color: galleryChannel(c, 'N') },
+                        });
+                    }
+                    if (d.distinct * c.distinct <= 120)
+                    {
+                        add('Grouped bar', [d, m, c], 0.6 * fit * color_fit * long_form, m.name + ' by ' + d.name + ' and ' + c.name, {
+                            mark: { type: 'bar', tooltip: true },
+                            encoding: { x: galleryChannel(d, role), xOffset: galleryChannel(c, 'N'), y, color: galleryChannel(c, 'N') },
+                        });
+                    }
+                }
+
+                /// A heatmap is the same chart either way round: take each pair once.
+                if (c.rank > d.rank && d.distinct <= 50 && c.distinct <= 50)
+                {
+                    const density = galleryCombinations([d, c], row_count) / (d.distinct * c.distinct);
+                    const dc_unique = unique([d, c], row_count);
+                    /// Two dimensions that are the whole key: a cell per row.
+                    const key_fit = dc_unique ? (d.key && c.key ? 1.25 : 1.1) : 1;
+                    add('Heatmap', [d, c, m], 0.75 * fit * (density >= 0.3 ? 1 : 0.5) * key_fit, m.name + ' by ' + d.name + ' and ' + c.name, {
+                        mark: { type: 'rect', tooltip: true },
+                        encoding: {
+                            x: galleryChannel(d, role),
+                            y: galleryChannel(c, categoryRole(c)),
+                            color: galleryChannel(m, 'Q', dc_unique ? {} : { aggregate: 'sum', title: 'sum(' + m.name + ')' }),
+                        },
+                    });
+                }
+            }
+        }
+
+        /// Several measures of a row side by side (`SELECT name, a, b, c`).
+        const folded = measures.filter(m => m !== d && !m.sequence).slice(0, GALLERY_MAX_COLORS);
+        if (folded.length >= 2 && d_unique && d.distinct <= 20)
+        {
+            add('Grouped bar', [d, ...folded], 0.65 * galleryScaleFit(folded), folded.map(m => m.name).join(', ') + ' by ' + d.name, {
+                transform: [{ fold: folded.map(m => galleryFieldName(m.name)), as: [series, value] }],
+                mark: { type: 'bar', tooltip: true },
+                encoding: {
+                    x: galleryChannel(d, role),
+                    xOffset: { field: series, type: 'nominal', sort: folded.map(m => m.name) },
+                    y: { field: value, type: 'quantitative', title: null },
+                    color: { field: series, type: 'nominal', title: null, sort: folded.map(m => m.name) },
+                },
+            });
+        }
+
+        /// How often each value occurs, for rows that are records rather than aggregates.
+        if (role === 'N' && !d_unique && d.distinct <= GALLERY_MAX_BARS)
+        {
+            add('Bar', [d], 0.5, 'Number of rows by ' + d.name, {
+                mark: { type: 'bar', tooltip: true },
+                encoding: { y: galleryChannel(d, 'N', { sort: '-x' }), x: { aggregate: 'count', type: 'quantitative', title: 'rows' } },
+            });
+        }
+    }
+
+    for (const m1 of measures)
+    {
+        if (!m1.sequence && row_count >= 20 && m1.distinct >= 10)
+        {
+            add('Histogram', [m1], 0.55 * (m1.key ? 0.3 : 1), 'Distribution of ' + m1.name, {
+                mark: { type: 'bar', tooltip: true },
+                encoding: { x: galleryChannel(m1, 'Q', { bin: { maxbins: 30 } }), y: { aggregate: 'count', type: 'quantitative', title: 'rows' } },
+            });
+        }
+
+        for (const m2 of measures)
+        {
+            if (m2.rank <= m1.rank) { continue; }
+            /// A sequence against anything is a line, offered above.
+            const fit = ((m1.sequence || m2.sequence) ? 0.4 : 1) * (m1.key ? 0.4 : 1) * (m2.key ? 0.4 : 1);
+            if (row_count >= 5)
+            {
+                add('Scatter', [m1, m2], (row_count > 500 ? 0.5 : 0.65) * fit, m2.name + ' vs ' + m1.name, {
+                    mark: { type: 'point', filled: true, opacity: row_count > 200 ? 0.5 : 0.8, tooltip: true },
+                    encoding: { x: galleryChannel(m1, 'Q', { scale: { zero: false } }), y: galleryChannel(m2, 'Q', { scale: { zero: false } }) },
+                });
+            }
+            if (row_count >= 300)
+            {
+                add('Density', [m1, m2], 0.6 * fit, m2.name + ' vs ' + m1.name, {
+                    mark: { type: 'rect', tooltip: true },
+                    encoding: {
+                        x: galleryChannel(m1, 'Q', { bin: { maxbins: 30 } }),
+                        y: galleryChannel(m2, 'Q', { bin: { maxbins: 30 } }),
+                        color: { aggregate: 'count', type: 'quantitative', title: 'rows' },
+                    },
+                });
+            }
+            for (const c of categorical)
+            {
+                if (c === m1 || c === m2) { continue; }
+                const color_fit = galleryColorFit(c);
+                if (!color_fit || row_count < 5) { continue; }
+                add('Scatter', [m1, m2, c], 0.7 * fit * color_fit, m2.name + ' vs ' + m1.name + ' by ' + c.name, {
+                    mark: { type: 'point', filled: true, opacity: 0.8, tooltip: true },
+                    encoding: {
+                        x: galleryChannel(m1, 'Q', { scale: { zero: false } }),
+                        y: galleryChannel(m2, 'Q', { scale: { zero: false } }),
+                        color: galleryChannel(c, 'N'),
+                    },
+                });
+            }
+            for (const m3 of measures)
+            {
+                if (m3.rank <= m2.rank || !m3.non_negative || row_count < 5 || row_count > 300) { continue; }
+                add('Bubbles', [m1, m2, m3], 0.4 * fit, m2.name + ' vs ' + m1.name + ', sized by ' + m3.name, {
+                    mark: { type: 'circle', opacity: 0.6, tooltip: true },
+                    encoding: {
+                        x: galleryChannel(m1, 'Q', { scale: { zero: false } }),
+                        y: galleryChannel(m2, 'Q', { scale: { zero: false } }),
+                        size: galleryChannel(m3, 'Q'),
+                    },
+                });
+            }
+        }
+    }
+
+    for (const t of temporal)
+    {
+        if (row_count >= 20 && !unique([t], row_count))
+        {
+            add('Histogram', [t], 0.45, 'Number of rows over ' + t.name, {
+                mark: { type: 'bar', tooltip: true },
+                encoding: {
+                    x: galleryChannel(t, 'T', { bin: { maxbins: 40 } }),
+                    y: { aggregate: 'count', type: 'quantitative', title: 'rows' },
+                },
+            });
+        }
+    }
+
+    return candidates;
+}
+
+/// Take up to `limit` charts, best first, each time discounting the candidates that repeat the
+/// template or the columns of a chart already taken: a greedy solution of picking a set that is
+/// both good and diverse.
+function gallerySelect(candidates, limit)
+{
+    const chosen = [];
+    const remaining = candidates.slice();
+    const templates = new Map();
+    const keys = new Map();
+    while (chosen.length < limit && remaining.length > 0)
+    {
+        let best = -1;
+        let best_score = 0;
+        for (let i = 0; i < remaining.length; ++i)
+        {
+            const c = remaining[i];
+            const score = c.score
+                * Math.pow(0.7, templates.get(c.template) || 0)
+                * Math.pow(0.75, keys.get(c.key) || 0);
+            if (score > best_score) { best = i; best_score = score; }
+        }
+        if (best < 0 || best_score < 0.1) { break; }
+        const c = remaining.splice(best, 1)[0];
+        templates.set(c.template, (templates.get(c.template) || 0) + 1);
+        keys.set(c.key, (keys.get(c.key) || 0) + 1);
+        chosen.push(c);
+    }
+    return chosen;
+}
+
+/// The charts suggested for a result: its rows as a dataset and the specifications to show them.
+function gallerySuggest(header, rows, isNull)
+{
+    if (!Array.isArray(header) || rows.length < 2) { return null; }
+    const profiles = galleryProfileColumns(header, rows, isNull);
+    const charts = gallerySelect(galleryCandidates(profiles, rows.length), GALLERY_MAX_CHARTS);
+    if (charts.length === 0) { return null; }
+    for (const chart of charts)
+    {
+        chart.spec = Object.assign({ data: { name: 'result' } }, chart.spec);
+    }
+    return { charts, values: galleryValues(profiles, rows.length) };
+}
+
+/// The Vega-Lite configuration of the page's look, in the current theme: the text and the lines in
+/// the page's colors on a transparent background, thin marks, and the palette of the theme.
+function galleryConfig(element, compact)
+{
+    const style = getComputedStyle(element);
+    const css = (name) => style.getPropertyValue(name).trim();
+    const dark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const text = css('--text-color');
+    const muted = css('--misc-text-color');
+    const border = css('--border-color');
+    const surface = css('--element-background-color');
+    const palette = dark ? GALLERY_PALETTE_DARK : GALLERY_PALETTE_LIGHT;
+    const label_size = compact ? 9 : 11;
+    return {
+        background: null,
+        font: 'Liberation Sans, DejaVu Sans, sans-serif',
+        view: { stroke: null },
+        axis: {
+            labelColor: muted, titleColor: text, gridColor: border, domainColor: border, tickColor: border,
+            labelFontSize: label_size, titleFontSize: label_size + 1, titleFontWeight: 'normal',
+            labelOverlap: true, labelLimit: compact ? 80 : 180,
+        },
+        /// Horizontal labels on a discrete axis too, thinned out where they would overlap.
+        axisX: { labelAngle: 0 },
+        legend: Object.assign(
+            { labelColor: text, titleColor: text, labelFontSize: label_size, titleFontSize: label_size + 1, titleFontWeight: 'normal' },
+            compact ? { orient: 'bottom', direction: 'horizontal', columns: 4, symbolSize: 40, labelLimit: 60 } : {}),
+        title: { color: text },
+        range: { category: palette, heatmap: dark ? GALLERY_RAMP_DARK : GALLERY_RAMP_LIGHT, ramp: dark ? GALLERY_RAMP_DARK : GALLERY_RAMP_LIGHT },
+        mark: { color: palette[0] },
+        line: { strokeWidth: 2 },
+        bar: { cornerRadiusEnd: 2 },
+        /// A thin gap of the surface between the slices.
+        arc: { stroke: surface, strokeWidth: 2 },
+        point: { size: compact ? 20 : 40 },
+        circle: { stroke: surface, strokeWidth: 1 },
+        boxplot: { box: { color: palette[0] }, median: { color: surface }, rule: { color: muted }, outliers: { color: muted } },
+    };
+}
+
 class QueryResultElement extends HTMLElement
 {
     static _loadVizPromise = null;
     static _vizInstance = null;
     static _loadUplotPromise = null;
+    static _loadVegaPromise = null;
 
     /// The glyph used to render SQL NULL values (superscript "NULL").
     static _NULL_TEXT = 'ᴺᵁᴸᴸ';
@@ -4683,6 +5344,115 @@ class QueryResultElement extends HTMLElement
                 .u-cursor-pt {position: absolute;top: 0;left: 0;border-radius: 50%;border: 0 solid;pointer-events: none;will-change: transform;z-index: 100;background-clip: padding-box !important;}
                 .u-axis.u-off, .u-select.u-off, .u-cursor-x.u-off, .u-cursor-y.u-off, .u-cursor-pt.u-off {display: none;}
 
+                /* The Charts view: a mosaic of suggested charts (see galleryCandidates), and one of
+                   them opened large next to its editable Vega-Lite specification. */
+                #gallery_div
+                {
+                    display: none;
+                    margin-top: 1rem;
+                }
+
+                #gallery-grid
+                {
+                    display: grid;
+                    grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
+                    gap: 0.75rem;
+                }
+
+                .gallery-card
+                {
+                    display: flex;
+                    flex-direction: column;
+                    min-width: 0;
+                    padding: 0.5rem;
+                    font: inherit;
+                    text-align: left;
+                    color: var(--text-color);
+                    background-color: var(--element-background-color);
+                    border: 1px solid var(--border-color);
+                    filter: drop-shadow(.2rem .2rem .2rem var(--shadow-color));
+                    cursor: pointer;
+                }
+
+                .gallery-card:hover, .gallery-card:focus-visible
+                {
+                    border-color: var(--misc-text-color);
+                    outline: none;
+                }
+
+                .gallery-title
+                {
+                    font-size: 85%;
+                    overflow: hidden;
+                    white-space: nowrap;
+                    text-overflow: ellipsis;
+                }
+
+                .gallery-template
+                {
+                    color: var(--misc-text-color);
+                    margin-right: 0.5em;
+                }
+
+                .gallery-chart
+                {
+                    height: 12rem;
+                    margin-top: 0.25rem;
+                    overflow: hidden;
+                }
+
+                .gallery-message
+                {
+                    color: var(--misc-text-color);
+                }
+
+                #gallery-detail
+                {
+                    display: none;
+                    padding: 0.5rem;
+                    background-color: var(--element-background-color);
+                    border: 1px solid var(--border-color);
+                    filter: drop-shadow(.2rem .2rem .2rem var(--shadow-color));
+                }
+
+                #gallery-detail-bar
+                {
+                    display: flex;
+                    align-items: center;
+                    gap: 1rem;
+                    margin-bottom: 0.5rem;
+                }
+
+                #gallery-detail-chart
+                {
+                    overflow: auto;
+                }
+
+                #gallery-spec
+                {
+                    display: block;
+                    box-sizing: border-box;
+                    width: 100%;
+                    height: 20rem;
+                    margin-top: 0.5rem;
+                    padding: 0.5rem;
+                    font-size: 85%;
+                    color: var(--text-color);
+                    background-color: var(--element-background-color);
+                    border: 1px solid var(--border-color);
+                    resize: vertical;
+                }
+
+                #gallery-spec-error
+                {
+                    display: none;
+                    white-space: pre-wrap;
+                    margin: 0.5rem 0 0 0;
+                    padding: 0.5rem;
+                    color: var(--text-color);
+                    background: var(--error-color);
+                }
+
                 /* Tab bar to switch between the result and the server logs streamed via the
                    framing format. Hidden until a framing query starts. */
                 #view-toggle
@@ -4848,6 +5618,18 @@ class QueryResultElement extends HTMLElement
                 <div id="graph"></div>
                 <p id="error" class="monospace shadow"></p>
             </div>
+            <div id="gallery_div">
+                <div id="gallery-grid"></div>
+                <div id="gallery-detail">
+                    <div id="gallery-detail-bar">
+                        <button type="button" class="view-btn" id="gallery-back" title="Back to all the suggested charts (Escape)">All charts</button>
+                        <span id="gallery-detail-title"></span>
+                    </div>
+                    <div id="gallery-detail-chart"></div>
+                    <textarea id="gallery-spec" class="monospace" spellcheck="false" autocorrect="false" autocomplete="false" data-gramm="false" aria-label="Vega-Lite specification of the chart"></textarea>
+                    <p id="gallery-spec-error" class="monospace"></p>
+                </div>
+            </div>
             <div id="logs_div"><div id="logs-content" class="monospace"></div></div>
             <div id="metrics_div"><table id="metrics-table" class="monospace"><tbody id="metrics-body"></tbody></table></div>
         `;
@@ -4942,6 +5724,49 @@ class QueryResultElement extends HTMLElement
         this._chart = this.shadowRoot.getElementById('chart');
         this._graph = this.shadowRoot.getElementById('graph');
         this._error = this.shadowRoot.getElementById('error');
+
+        this._galleryDiv = this.shadowRoot.getElementById('gallery_div');
+        this._galleryGrid = this.shadowRoot.getElementById('gallery-grid');
+        this._galleryDetail = this.shadowRoot.getElementById('gallery-detail');
+        this._galleryDetailTitle = this.shadowRoot.getElementById('gallery-detail-title');
+        this._galleryDetailChart = this.shadowRoot.getElementById('gallery-detail-chart');
+        this._gallerySpec = this.shadowRoot.getElementById('gallery-spec');
+        this._gallerySpecError = this.shadowRoot.getElementById('gallery-spec-error');
+        /// The rows of the table as they arrived (keyed by column name), which the Charts view draws.
+        this._chart_rows = [];
+        /// The suggested charts of this result (see `gallerySuggest`): computed once the table is
+        /// complete, null when there are none.
+        this._gallery = null;
+        /// The Vega views on screen, finalized before they are replaced (they hold listeners).
+        this._gallery_views = [];
+        /// The index of the chart opened large, or -1 while the mosaic is shown.
+        this._gallery_open = -1;
+        /// Generation counter of the gallery renders, so a slow one (the first loads Vega) cannot
+        /// paint over a newer one, or over a cleared result.
+        this._gallery_token = 0;
+        this._gallery_spec_timer = null;
+        this._gallery_width = 0;
+        this.shadowRoot.getElementById('gallery-back').addEventListener('click', () => this._openGalleryChart(-1));
+        this._gallerySpec.addEventListener('input', () =>
+        {
+            clearTimeout(this._gallery_spec_timer);
+            this._gallery_spec_timer = setTimeout(() => this._renderGalleryDetail(), 300);
+        });
+        this._galleryDiv.addEventListener('keydown', (e) =>
+        {
+            if (e.key === 'Escape' && this._gallery_open >= 0)
+            {
+                e.stopPropagation();
+                this._openGalleryChart(-1);
+            }
+        });
+        /// Charts are drawn to the width of the view: draw them again when it changes.
+        new ResizeObserver(() =>
+        {
+            const width = this._galleryDiv.clientWidth;
+            if (this._view !== 'charts' || !width || Math.abs(width - this._gallery_width) < 20) { return; }
+            this._renderGallery();
+        }).observe(this._galleryDiv);
 
         this._row_idx = 0;
         this._skipped_rows = 0;
@@ -5108,6 +5933,7 @@ class QueryResultElement extends HTMLElement
         this._clearElement(this._dataUnparsed);
         this._clearElement(this._error);
         this._clearImage();
+        this._clearGallery();
 
         this._dataTable.classList.remove('fixed');
         this._dataTable.classList.remove('single-value');
@@ -5169,6 +5995,7 @@ class QueryResultElement extends HTMLElement
 
         this._view = 'result';
         this._resultGroup.style.display = '';
+        this._galleryDiv.style.display = 'none';
         this._logsDiv.style.display = 'none';
         this._metricsDiv.style.display = 'none';
         this._viewToggle.style.display = 'none';
@@ -5487,6 +6314,7 @@ class QueryResultElement extends HTMLElement
         table.style.display = 'table';
 
         this._row_idx = 0;
+        this._clearGallery();
     }
 
     appendRow(row, fragment)
@@ -5520,6 +6348,7 @@ class QueryResultElement extends HTMLElement
         }
 
         fragment.appendChild(tr);
+        this._chart_rows.push(row);
         this._incomplete_result = false;
         return true;
     }
@@ -6940,6 +7769,7 @@ class QueryResultElement extends HTMLElement
     {
         /// Only tabular results have a column header array; raw/chart/image results do not.
         if (!Array.isArray(this._header)) { return; }
+        this._markChartsAvailable();
         this._updateColorizeToggleVisibility();
         /// Vertical (transposed) single-row results do not show per-column color coding.
         if (this._willTranspose()) { return; }
@@ -7419,6 +8249,27 @@ class QueryResultElement extends HTMLElement
         progressEl.showLogsToggle();
     }
 
+    /// The same for the suggested charts of a finished table result (see `gallerySuggest`), computed
+    /// here, once all the rows are in: the toggle is offered only when there is something to show.
+    _markChartsAvailable()
+    {
+        if (!this._gallery && this._chart_rows.length >= 2)
+        {
+            this._gallery = gallerySuggest(this._header, this._chart_rows,
+                (name, value) => !!this._column_is_nullable[name] && value === QueryResultElement._NULL_TEXT);
+            /// The view may already be the Charts one, restored before the rows arrived.
+            if (this._gallery && this._view === 'charts') { this._renderGallery(); }
+        }
+        if (!this._gallery) { return; }
+        const cell = this._ownerCell;
+        if (cell)
+        {
+            cell.chartsAvailable = true;
+            if (!cellOwnsChrome(cell)) return;
+        }
+        progressEl.showChartsToggle();
+    }
+
     _markMetricsAvailable()
     {
         const cell = this._ownerCell;
@@ -7560,11 +8411,15 @@ class QueryResultElement extends HTMLElement
         return line;
     }
 
-    /// Switch between the query result, the server logs, and the extended metrics table.
+    /// Switch between the query result, its suggested charts, the server logs, and the extended
+    /// metrics table.
     showView(view)
     {
         this._view = view;
         this._resultGroup.style.display = view === 'result' ? '' : 'none';
+        this._galleryDiv.style.display = view === 'charts' ? 'block' : 'none';
+        if (view === 'charts')
+            this._renderGallery();
         this._logsDiv.style.display = view === 'logs' ? 'block' : 'none';
         this._metricsDiv.style.display = view === 'metrics' ? 'block' : 'none';
         /// The metrics table is rendered lazily - only while its view is visible, plus once more on
@@ -7988,6 +8843,9 @@ class QueryResultElement extends HTMLElement
 
     _handleKeyDown(e)
     {
+        /// The table is not on screen in the other views, and the keys typed there (in the chart
+        /// specification editor) are not meant for it.
+        if (this._view !== 'result') { return; }
         const arrows = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
         let cell = this._current_selected_cell;
 
@@ -8544,6 +9402,187 @@ class QueryResultElement extends HTMLElement
         if (this._uplot && this._chart.style.display == 'block')
         {
             this._drawChart();
+        }
+        if (this._view === 'charts')
+        {
+            this._renderGallery();
+        }
+    }
+
+    /// Vega-Lite compiles into a Vega specification, which Vega renders. The Vega-Lite bundle takes
+    /// the global `vega` when it is evaluated, so the two load one after the other.
+    _loadVega()
+    {
+        if (!QueryResultElement._loadVegaPromise)
+        {
+            QueryResultElement._loadVegaPromise = this._loadJS('https://cdn.jsdelivr.net/npm/vega@6.4.0/build/vega.min.js',
+                    'sha384-VKdcJr3ZaBIJMbVcopTAI/JEuUkSY6qnwVu9iLuw0DnQ9gQ1JjsfZJhXFQAgNi43')
+                .then(() => this._loadJS('https://cdn.jsdelivr.net/npm/vega-lite@6.5.0/build/vega-lite.min.js',
+                    'sha384-pV2l7nzmyxZh02knvUH7N8zvtyCYsYiGt+SsE/emG/dFiBI6G0YJZFZ2FzEX72P3'))
+                /// Drop the cached promise on failure so a later attempt can retry the load.
+                .catch((e) => { QueryResultElement._loadVegaPromise = null; throw e; });
+        }
+        return QueryResultElement._loadVegaPromise;
+    }
+
+    _finalizeGalleryViews()
+    {
+        for (const view of this._gallery_views) { view.finalize(); }
+        this._gallery_views = [];
+    }
+
+    _clearGallery()
+    {
+        ++this._gallery_token;
+        clearTimeout(this._gallery_spec_timer);
+        this._finalizeGalleryViews();
+        this._chart_rows = [];
+        this._gallery = null;
+        this._gallery_open = -1;
+        this._galleryGrid.replaceChildren();
+        this._galleryDetailChart.replaceChildren();
+        this._gallerySpec.value = '';
+        this._showGallerySpecError(null);
+    }
+
+    _showGallerySpecError(message)
+    {
+        this._gallerySpecError.textContent = message || '';
+        this._gallerySpecError.style.display = message ? 'block' : 'none';
+    }
+
+    /// Render a Vega-Lite specification into `container` over the rows of this result, which the
+    /// specification refers to as the dataset `result`. `size` is the size to draw at: forced on a
+    /// thumbnail, only a default for the chart opened large, whose specification is the user's.
+    async _drawGalleryChart(container, spec, size, compact)
+    {
+        const full = compact ? Object.assign({}, spec, size) : Object.assign({}, size, spec);
+        full.datasets = Object.assign({ result: this._gallery.values }, spec.datasets);
+        full.config = Object.assign(galleryConfig(this, compact), spec.config);
+        const view = new vega.View(vega.parse(vegaLite.compile(full).spec), { renderer: 'canvas', container, hover: true });
+        this._gallery_views.push(view);
+        await view.runAsync();
+    }
+
+    /// Show the Charts view: the mosaic of the suggested charts, or the one opened large.
+    async _renderGallery()
+    {
+        const token = ++this._gallery_token;
+        clearTimeout(this._gallery_spec_timer);
+        this._finalizeGalleryViews();
+        this._gallery_width = this._galleryDiv.clientWidth;
+        const open = this._gallery !== null && this._gallery_open >= 0;
+        this._galleryGrid.style.display = open ? 'none' : '';
+        this._galleryDetail.style.display = open ? 'block' : 'none';
+        this._galleryGrid.replaceChildren();
+        const message = (text) =>
+        {
+            const p = document.createElement('p');
+            p.className = 'gallery-message';
+            p.textContent = text;
+            this._galleryGrid.replaceChildren(p);
+        };
+        if (!this._gallery)
+        {
+            message('No charts to suggest for this result.');
+            return;
+        }
+        if (open)
+        {
+            await this._renderGalleryDetail();
+            return;
+        }
+
+        const cards = this._gallery.charts.map((chart, index) =>
+        {
+            const card = document.createElement('button');
+            card.type = 'button';
+            card.className = 'gallery-card';
+            card.title = 'Open the chart, with its specification';
+            const title = document.createElement('div');
+            title.className = 'gallery-title';
+            const template = document.createElement('span');
+            template.className = 'gallery-template';
+            template.textContent = chart.template;
+            title.append(template, chart.title);
+            const container = document.createElement('div');
+            container.className = 'gallery-chart';
+            card.append(title, container);
+            card.addEventListener('click', () => this._openGalleryChart(index));
+            this._galleryGrid.appendChild(card);
+            return container;
+        });
+
+        try
+        {
+            await this._loadVega();
+        }
+        catch (e)
+        {
+            if (token === this._gallery_token) { message(e.message); }
+            return;
+        }
+
+        for (let i = 0; i < cards.length; ++i)
+        {
+            if (token !== this._gallery_token) { return; }
+            const container = cards[i];
+            try
+            {
+                await this._drawGalleryChart(container, this._gallery.charts[i].spec,
+                    { width: container.clientWidth || 280, height: container.clientHeight || 190, autosize: { type: 'fit', contains: 'padding' } }, true);
+            }
+            catch (e)
+            {
+                container.textContent = e.message;
+            }
+        }
+    }
+
+    /// Open the suggested chart of the given index large (or return to the mosaic for -1).
+    _openGalleryChart(index)
+    {
+        this._gallery_open = index;
+        if (index >= 0)
+        {
+            const chart = this._gallery.charts[index];
+            this._galleryDetailTitle.textContent = chart.template + ': ' + chart.title;
+            this._gallerySpec.value = JSON.stringify(chart.spec, null, 2);
+        }
+        this._renderGallery();
+        if (index >= 0) { this.shadowRoot.getElementById('gallery-back').focus({ preventScroll: true }); }
+    }
+
+    /// Draw the chart opened large from the specification in the editor, as the user edits it.
+    async _renderGalleryDetail()
+    {
+        const token = ++this._gallery_token;
+        this._finalizeGalleryViews();
+        let spec;
+        try
+        {
+            spec = JSON.parse(this._gallerySpec.value);
+            if (spec === null || typeof spec !== 'object' || Array.isArray(spec)) { throw new Error('The specification must be a JSON object.'); }
+        }
+        catch (e)
+        {
+            this._showGallerySpecError(e.message);
+            return;
+        }
+        try
+        {
+            await this._loadVega();
+            if (token !== this._gallery_token) { return; }
+            const container = document.createElement('div');
+            this._galleryDetailChart.replaceChildren(container);
+            const width = Math.max(200, this._galleryDetailChart.clientWidth - 8);
+            const height = Math.min(600, Math.max(300, Math.round(window.innerHeight * 0.5)));
+            await this._drawGalleryChart(container, spec, { width, height, autosize: { type: 'fit', contains: 'padding' } }, false);
+            this._showGallerySpecError(null);
+        }
+        catch (e)
+        {
+            if (token === this._gallery_token) { this._showGallerySpecError(e.message); }
         }
     }
 }
@@ -14219,7 +15258,7 @@ const CELL_STATE_FIELDS = [
     'launchQuery', 'launchRunId', 'runEditorInteraction', 'queryErrorOwnerStart',
     /// The Logs/Metrics view selection and the resource meters describe one run's output, which
     /// lives in one cell's result element, so they follow the cell the shared progress line shows.
-    'view', 'logsAvailable', 'metricsAvailable', 'resources',
+    'view', 'logsAvailable', 'metricsAvailable', 'chartsAvailable', 'resources',
 ];
 
 /// Transient per-cell runtime state (never persisted).
@@ -14241,9 +15280,10 @@ function cellRuntimeDefaults() {
         progressPhase: 'idle',  /// 'idle' | 'running' | 'done' | 'error' — drives the shared bar on activation
         finalStats: null,       /// { rowCount, elapsedNs, incomplete } shown when a run finishes
         logoVisible: true,      /// whether the shared logo shows for this cell (hidden by errors / multi)
-        view: 'result',         /// this cell's selected view ('result' | 'logs' | 'metrics'), replayed by syncActiveTabChrome
+        view: 'result',         /// this cell's selected view ('result' | 'charts' | 'logs' | 'metrics'), replayed by syncActiveTabChrome
         logsAvailable: false,   /// this cell produced server logs (its Logs toggle can be offered)
         metricsAvailable: false,/// this cell produced profile-event metrics (its Metrics toggle can be offered)
+        chartsAvailable: false, /// this cell's table result has suggested charts (its Charts toggle can be offered)
         resources: null,        /// cell-owned resource-meter state (see `freshResourceState` / `readEventStream`)
         colorModes: {},         /// per-column color modes for this cell's result (shared with its element)
         pinnedColumns: {},      /// pinned columns for this cell's result (shared with its element)
@@ -14547,6 +15587,7 @@ function clearCell(cell) {
     cell.view = 'result';
     cell.logsAvailable = false;
     cell.metricsAvailable = false;
+    cell.chartsAvailable = false;
     /// Drop the cell-owned resource-meter state too, so a stale meter from a previous run is not
     /// re-adopted by `syncActiveTabChrome`; the next framed run creates a fresh one.
     cell.resources = null;
@@ -15485,7 +16526,7 @@ function syncActiveTabChrome() {
     /// Both are cell-owned (see the `set-view` handler and `_markLogsAvailable`), so showing a cell
     /// never inherits the previous one's selection or leaves a result hidden with no toggle. Other
     /// cells of the notebook keep whatever view they were left in.
-    progressEl.setViewState(run_cell.view || 'result', !!run_cell.logsAvailable, !!run_cell.metricsAvailable);
+    progressEl.setViewState(run_cell.view || 'result', !!run_cell.logsAvailable, !!run_cell.metricsAvailable, !!run_cell.chartsAvailable);
     if (run_cell.el)
         for (const el of run_cell.el.querySelectorAll('query-result'))
             el.showView(run_cell.view || 'result');
