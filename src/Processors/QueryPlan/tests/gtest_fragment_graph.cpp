@@ -240,10 +240,10 @@ TEST(FragmentGraph, DumpExchangeKinds)
         "  F4 main     distributed  tasks=1  needs F0 via exchange_0, F1 via exchange_1, "
         "F2 via exchange_2, F3 via exchange_3\n"
         "exchanges: 4\n"
-        "  exchange_0  F0 -> F4  hash(a, b)            streaming  1 -> 1\n"
-        "  exchange_1  F1 -> F4  any                   persisted  1 -> 1\n"
-        "  exchange_2  F2 -> F4  gather(merge: k ASC)  streaming  1 -> 1\n"
-        "  exchange_3  F3 -> F4  set values            streaming  1 -> 1\n"
+        "  exchange_0  F0 -> F4  hash(a, b)              streaming  1 -> 1\n"
+        "  exchange_1  F1 -> F4  any                     persisted  1 -> 1\n"
+        "  exchange_2  F2 -> F4  gather sorted by k ASC  streaming  1 -> 1\n"
+        "  exchange_3  F3 -> F4  set values              streaming  1 -> 1\n"
         "levels: [F0, F1, F2, F3] [F4]\n");
 }
 

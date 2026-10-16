@@ -81,6 +81,9 @@ struct ExplainPlanOptions
     /// followed by the exchanges and the dependencies between the fragments.
     /// Not sent to remote shards by `toSettingsChanges`, because it cannot be combined with `distributed`.
     bool fragments = false;
+    /// Draw a plan executed by stateless workers as boxes: one box per step, a frame per query fragment, and the
+    /// exchanges as edges between the fragments. Not sent to remote shards by `toSettingsChanges`, like `fragments`.
+    bool tree = false;
     /// Add input headers to step.
     bool input_headers = false;
     /// Print structure of columns instead of just their names and types.

@@ -41,6 +41,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Fragments/FragmentGraph.h>
 #include <Processors/QueryPlan/Fragments/FragmentGraphExplain.h>
+#include <Processors/QueryPlan/Fragments/FragmentGraphTree.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -642,6 +643,7 @@ struct QueryPlanSettings
             {"sorting", query_plan_options.sorting},
             {"distributed", query_plan_options.distributed},
             {"fragments", query_plan_options.fragments},
+            {"tree", query_plan_options.tree},
             {"keep_logical_steps", keep_logical_steps},
             {"input_headers", query_plan_options.input_headers},
             {"column_structure", query_plan_options.column_structure},
@@ -1193,6 +1195,18 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
             auto settings = checkAndGetSettings<QueryPlanSettings>(ast_settings, pretty_version);
 
+            if (settings.query_plan_options.tree)
+            {
+                if (settings.query_plan_options.fragments)
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Option 'tree' is not supported with option 'fragments'");
+                if (settings.json)
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Option 'tree' is not supported with option 'json'");
+                if (settings.query_plan_options.distributed)
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Option 'tree' is not supported with option 'distributed'");
+                if (!settings.optimize)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Option 'tree' requires option 'optimize'");
+            }
+
             if (settings.query_plan_options.fragments)
             {
                 if (settings.json)
@@ -1226,8 +1240,9 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 optimization_settings.max_step_description_length = query_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
                 plan.optimize(optimization_settings);
 
-                if (settings.query_plan_options.fragments)
+                if (settings.query_plan_options.fragments || settings.query_plan_options.tree)
                 {
+                    const auto explain_graph = settings.query_plan_options.tree ? explainFragmentGraphTree : explainFragmentGraph;
                     const size_t max_step_description_length = query_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
                     if (plan.staysDistributed())
                     {
@@ -1236,7 +1251,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                         /// `cut` must outlive `graph`, whose fragments point to the plans of its stages.
                         auto cut = plan.cutIntoDistributedPlan(optimization_settings);
                         auto graph = buildFragmentGraph(cut.distributed_plan);
-                        explainFragmentGraph(graph, buf, settings.query_plan_options, max_step_description_length);
+                        explain_graph(graph, buf, settings.query_plan_options, max_step_description_length);
                     }
                     else
                     {
@@ -1244,7 +1259,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                         if (plan.didFallBackToLocal())
                             fallback_reason = plan.getDistributedPlanFallbackReason();
                         auto graph = buildSingleFragmentGraph(plan, std::move(fallback_reason));
-                        explainFragmentGraph(graph, buf, settings.query_plan_options, max_step_description_length);
+                        explain_graph(graph, buf, settings.query_plan_options, max_step_description_length);
                     }
                     break;
                 }

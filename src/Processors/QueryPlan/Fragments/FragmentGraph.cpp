@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Fragments/FragmentGraph.h>
+#include <Processors/QueryPlan/Fragments/FragmentGraphFormat.h>
 
 #include <Processors/QueryPlan/BroadcastReceiveStep.h>
 #include <Processors/QueryPlan/BroadcastSendStep.h>
@@ -59,17 +60,6 @@ void checkNotEmpty(const QueryPlan & plan, const String & stage_name)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The plan of stage {} is empty", stage_name);
 }
 
-const String * tryGetReceiveExchangeId(const IQueryPlanStep & step)
-{
-    if (const auto * shuffle = typeid_cast<const ShuffleReceiveStep *>(&step))
-        return &shuffle->getExchangeId();
-    if (const auto * gather = typeid_cast<const GatherReceiveStep *>(&step))
-        return &gather->getExchangeId();
-    if (const auto * broadcast = typeid_cast<const BroadcastReceiveStep *>(&step))
-        return &broadcast->getExchangeId();
-    return nullptr;
-}
-
 /// Checks that `plan` has exactly one receive step of `exchange_name`: a dependency of the cut plan without one is
 /// an inconsistent cut.
 void checkReceiveStep(const QueryPlan & plan, const String & stage_name, const String & exchange_name)
@@ -118,38 +108,6 @@ FragmentExchange::Kind getExchangeKind(const ExchangeDescription & description)
         return FragmentExchange::Kind::Gather;
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected exchange step '{}' of exchange {}",
         description.exchange_step_name, description.name);
-}
-
-std::string_view formatExchangeMode(ExchangeDescription::Kind mode)
-{
-    switch (mode)
-    {
-        case ExchangeDescription::Kind::Streaming:
-            return "streaming";
-        case ExchangeDescription::Kind::Persisted:
-            return "persisted";
-    }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected exchange mode {}", static_cast<int>(mode));
-}
-
-String formatExchangeKind(const FragmentExchange & exchange)
-{
-    switch (exchange.kind)
-    {
-        case FragmentExchange::Kind::Hash:
-            return fmt::format("hash({})", fmt::join(exchange.keys, ", "));
-        case FragmentExchange::Kind::Broadcast:
-            return "broadcast";
-        case FragmentExchange::Kind::Gather:
-            if (exchange.merge_sort)
-                return fmt::format("gather(merge: {})", dumpSortDescription(*exchange.merge_sort));
-            return "gather";
-        case FragmentExchange::Kind::Any:
-            return "any";
-        case FragmentExchange::Kind::SetValues:
-            return "set values";
-    }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected kind of exchange {}", exchange.id);
 }
 
 }
@@ -418,7 +376,7 @@ String dumpFragmentGraph(const FragmentGraph & graph)
         {
             .name = exchange.name,
             .edge = fmt::format("F{} -> F{}", exchange.from, exchange.to),
-            .kind = formatExchangeKind(exchange),
+            .kind = formatExchangeKind(exchange, /*pretty=*/ false),
             .mode = String(formatExchangeMode(exchange.mode)),
             .buckets = fmt::format("{} -> {}", exchange.source_buckets, exchange.destination_buckets),
         };
