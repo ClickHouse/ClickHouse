@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: replica
+# Tags: replica, no-shared-merge-tree
+# no-shared-merge-tree: `ReplicatedMergeTree` is replaced with `SharedMergeTree`, which the test user has no `TABLE ENGINE` grant for
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
