@@ -72,9 +72,9 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    /// See `FunctionComparison::canThrow`. Both sides are cast to their common type before they are
+    /// See `FunctionComparison::canThrowIfKnown`. Both sides are cast to their common type before they are
     /// compared, so only the types that need no cast at all are reported as not throwing.
-    bool canThrow(const DataTypesWithConstInfo & arguments) const override
+    std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & arguments) const override
     {
         if (arguments.size() != 2)
             return true;
@@ -89,6 +89,26 @@ public:
     bool useDefaultImplementationForNothing() const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return true; }
+
+    /// Documentation-only — null-safe comparison treats `NULL` as comparable
+    /// and always returns a definite `UInt8` (or `Nothing` when an argument
+    /// contains the bare `Nothing` type).
+    String getSignatureString() const override
+    {
+        return "(Any, Any) -> UInt8";
+    }
+
+    /// The `(Any, Any) -> UInt8` signature is documentation-only: the actual result type is
+    /// value-dependent (`Nothing` when an argument contains `Nothing`, otherwise `UInt8`) and the
+    /// least-supertype check cannot be expressed in the DSL, so keep the legacy
+    /// `getReturnTypeImpl(DataTypes)` authoritative.
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        DataTypes data_types(arguments.size());
+        for (size_t i = 0; i < arguments.size(); ++i)
+            data_types[i] = arguments[i].type;
+        return getReturnTypeImpl(data_types);
+    }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
