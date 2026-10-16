@@ -87,12 +87,15 @@ public:
     /** All rows must correspond to same partition.
       * Returns part with unique name starting with 'tmp_', yet not added to MergeTreeData.
       * `may_have_leftover`: see `MergeTreeData::claimTemporaryPartDirectory`.
+      * `defer_fsync`: do not fsync the part files even if `fsync_after_insert` is enabled,
+      * because the caller will fsync them later, before acknowledging the insert.
       */
     MergeTreeTemporaryPartPtr writeTempPart(
         BlockWithPartition & block,
         StorageMetadataPtr metadata_snapshot,
         ContextPtr context,
-        bool may_have_leftover = true);
+        bool may_have_leftover = true,
+        bool defer_fsync = false);
 
     MergeTreeTemporaryPartPtr writeTempPatchPart(
         BlockWithPartition & block,
@@ -147,7 +150,8 @@ private:
         std::optional<PatchPartIndex> patch_part_index,
         ContextPtr context,
         UInt64 block_number,
-        bool may_have_leftover);
+        bool may_have_leftover,
+        bool defer_fsync);
 
     static MergeTreeTemporaryPartPtr writeProjectionPartImpl(
         const String & part_name,
