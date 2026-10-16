@@ -346,6 +346,10 @@ void ActionsDAG::Node::updateHash(
         /// conversion captures how it parses), and two expressions that differ only in those are not
         /// the same expression.
         function_base->updateHash(hash_state);
+
+        /// An index hint's predicate is in its own DAG, not in its name or children.
+        if (const auto * index_hint = FunctionIndexHint::tryGet(function_base); index_hint && !build_independent)
+            index_hint->getActions().updateHash(hash_state, build_independent, input_header, with_variable_size_constant_values);
     }
 
     if (function)
