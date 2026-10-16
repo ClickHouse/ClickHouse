@@ -291,6 +291,9 @@ bool astTraversal(ASTPtr &ast, ContextPtr context, std::vector<String> & applied
             /// as the literal it stands for, so a rule written against a bare literal still matches
             /// (and `{x:Int}` still captures) a value supplied through a typed parameter — both as
             /// a queue node and inside the non-`children` semantic members the hashes fold in.
+            /// The unwrapped view is only for matching: an `Expression` placeholder captures the
+            /// original node, so the substituted expression keeps the type of the parameter.
+            const ASTPtr original_top1 = top1;
             top1 = unwrapQueryParameterCast(top1);
             top1 = unwrapNonChildQueryParameterCasts(top1);
             if (top1->getTreeHash(true) != top2->getTreeHash(true))
@@ -326,6 +329,7 @@ bool astTraversal(ASTPtr &ast, ContextPtr context, std::vector<String> & applied
                     /// `SELECT {x:String}` would not match `SELECT 'hello'`) or `applyRule`
                     /// substitutes an extra `ASTExpressionList` layer into the resulting query.
                     ASTPtr match_node = top1;
+                    ASTPtr original_match_node = original_top1;
                     if (wrapped_parameter && query_parameter_type != "ExpressionList"
                         && top1->as<ASTExpressionList>())
                     {
@@ -344,6 +348,7 @@ bool astTraversal(ASTPtr &ast, ContextPtr context, std::vector<String> & applied
                         /// wrapper (e.g. `SELECT {p:UInt64}` as the whole projection); capture
                         /// the literal it stands for, like the top-level unwrap above.
                         match_node = unwrapQueryParameterCast(top1->children[0]);
+                        original_match_node = top1->children[0];
                     }
                     auto add_to_matching_map = [&](ASTPtr cloned_ast)
                     {
@@ -377,7 +382,10 @@ bool astTraversal(ASTPtr &ast, ContextPtr context, std::vector<String> & applied
                     else if (query_parameter_type == "Expression")
                     {
                         /// An `Expression` placeholder captures a single arbitrary expression subtree.
-                        add_to_matching_map(match_node->clone());
+                        /// A typed-parameter `_CAST` wrapper is kept: dropping it would change the
+                        /// type of the substituted expression (e.g. a `Date` parameter would become
+                        /// its integer day number).
+                        add_to_matching_map(original_match_node->clone());
                     }
                     else if (auto* expression = match_node->as<ASTExpressionList>();
                         expression && query_parameter_type == "ExpressionList")
