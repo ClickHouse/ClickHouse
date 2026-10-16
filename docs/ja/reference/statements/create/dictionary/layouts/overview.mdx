@@ -8,9 +8,7 @@ doc_type: 'reference'
 
 import CloudDetails from '/snippets/ja/_snippet_dictionary_in_cloud.mdx';
 
-<div id="storing-dictionaries-in-memory">
-  ## Dictionary レイアウトの種類
-</div>
+## Dictionary レイアウトの種類 {#storing-dictionaries-in-memory}
 
 Dictionary をメモリ内に格納する方法は複数あり、それぞれ CPU 使用量と RAM 使用量の間でトレードオフがあります。
 
@@ -43,9 +41,11 @@ Dictionary をメモリ内に格納する方法は複数あり、それぞれ CP
   キャッシュ系レイアウトは、パフォーマンスが低くなる可能性があり、パラメータ調整も難しいため推奨されません。詳細は [cache](/ja/reference/statements/create/dictionary/layouts/cache) を参照してください。
 </Tip>
 
-<div id="specify-dictionary-layout">
-  ## Dictionary のレイアウトを指定する
-</div>
+<Note>
+  キャッシュ系レイアウトは、ウォームアップ済みのエントリが各サーバーのローカルにのみ保持され、サーバーの再起動時や置き換え時に失われるため、挿入時のエンリッチメントを確実に行う用途には適していません。ClickHouse Cloud では、オートスケーリングやマネージドなノード置き換えにより、この状況がより発生しやすくなります。代わりに、データを完全にロードするレイアウトを使用してください。詳細は [インジェストパスにおける cache Dictionary](/ja/concepts/features/dictionaries/best-practices#cache-dictionaries-in-ingestion-path) を参照してください。
+</Note>
+
+## Dictionary のレイアウトを指定する {#specify-dictionary-layout}
 
 <CloudDetails />
 
@@ -139,9 +139,7 @@ Dictionary のレイアウトは、`LAYOUT` 句 (DDL の場合) または設定�
   </Tab>
 </Tabs>
 
-<div id="improve-performance">
-  ## Dictionary のパフォーマンスを向上させる
-</div>
+## Dictionary のパフォーマンスを向上させる {#improve-performance}
 
 Dictionary のパフォーマンスを向上させる方法はいくつかあります。
 

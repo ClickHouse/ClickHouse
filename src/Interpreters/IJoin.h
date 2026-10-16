@@ -27,6 +27,8 @@ using IBlocksStreamPtr = std::shared_ptr<IBlocksStream>;
 class IJoin;
 using JoinPtr = std::shared_ptr<IJoin>;
 
+class ISpillable;
+
 enum class JoinPipelineType : uint8_t
 {
     /*
@@ -93,13 +95,13 @@ inline void addMatchedRightRows(std::optional<size_t> & total, std::optional<siz
 ///
 /// A join that inserts into another join passes the context of the stream it works for, or
 /// `callerChecksLimits` of it. That covers the caller's own block, every block it converts, replays,
-/// re-buckets or drains during the call, and the inserts that `requestSpill` starts. It holds even when
-/// the join serializes those inserts under a lock of its own.
+/// re-buckets or drains during the call. It holds even when the join serializes those inserts under
+/// a lock of its own.
 ///
 /// `serial` claims that no other insert into the join can overlap this one. Only an owner that fills a
 /// join one call at a time uses it. That is a single filler, join by layers, `StorageJoin` (its inserts
 /// take the table's write lock), and code that runs while no build stream can run (`onBuildPhaseFinish`,
-/// after the build phase).
+/// after the build phase, or a spill replay protected from concurrent inserts).
 class JoinBuildContext
 {
 public:
@@ -196,6 +198,7 @@ public:
     virtual size_t getTotalRowCount() const = 0;
     virtual size_t getTotalByteCount() const = 0;
     virtual StepAnalysisReport getAnalysisReport() const = 0;
+    virtual ISpillable * getSpillable() { return nullptr; }
 
     /// Returns true if no data to join with.
     virtual bool alwaysReturnsEmptySet() const = 0;
@@ -247,17 +250,6 @@ public:
     /// Notify the join that the query plan requires left-side read-in-order preservation.
     /// SpillingHashJoin overrides this to forbid switching to GraceHashJoin at runtime.
     virtual void keepLeftPipelineInOrder() {}
-
-    /// Spilling under memory pressure, driven by `MemorySpillScheduler`. Asked once while the pipeline is
-    /// built, so do not look at runtime state here.
-    virtual bool canSpillToDisk() const { return false; }
-    /// How many bytes of the right side are still sitting in memory and could go to disk.
-    virtual size_t getSpillableBytes() const { return 0; }
-    /// Move the right side to disk at the next opportunity, at the latest when the build phase ends.
-    /// The stream that `context` names calls it from its own job, never while one of its own inserts runs.
-    /// The call can also come before that stream's first insert, or after its last one, even after
-    /// `onBuildPhaseFinish`. A join may insert on behalf of the stream here only while the build phase runs.
-    virtual void requestSpill(JoinBuildContext /*context*/) { }
 
     /// Called by `FillingRightJoinSideTransform` after all data is inserted in join.
     virtual void onBuildPhaseFinish() { }

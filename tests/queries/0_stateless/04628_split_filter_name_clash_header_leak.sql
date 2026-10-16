@@ -29,8 +29,9 @@ SELECT 1;
 
 -- The filter column is also an input name here and is consumed downstream, so a mis-resolved
 -- name would surface as wrong values or NOT_FOUND_COLUMN_IN_BLOCK, not as a header leak.
+-- `identity` keeps the filter from being folded away, so the split still happens
 SELECT 'values';
 SELECT countSubstrings(explain, '[split]') > 0 AS split_fired
 FROM (EXPLAIN json = 1, header = 1
-      SELECT x, materialize(7) AS k, k + 100 FROM (SELECT arrayJoin([materialize(1), NULL]) AS x GROUP BY materialize(7)) WHERE materialize(7));
-SELECT x, materialize(7) AS k, k + 100 FROM (SELECT arrayJoin([materialize(1), NULL]) AS x GROUP BY materialize(7)) WHERE materialize(7) ORDER BY x NULLS LAST;
+      SELECT x, identity(materialize(7)) AS k, k + 100 FROM (SELECT arrayJoin([materialize(1), NULL]) AS x GROUP BY identity(materialize(7))) WHERE identity(materialize(7)));
+SELECT x, identity(materialize(7)) AS k, k + 100 FROM (SELECT arrayJoin([materialize(1), NULL]) AS x GROUP BY identity(materialize(7))) WHERE identity(materialize(7)) ORDER BY x NULLS LAST;
