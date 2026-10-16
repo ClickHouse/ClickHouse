@@ -28,6 +28,7 @@ All functions are sharing a common infrastructure that provides:
 
 - **Quota enforcement**: Per-query limits on tokens ([`ai_function_max_input_tokens_per_query`](/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query)) and API calls ([`ai_function_max_api_calls_per_query`](/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query)).
 - **Retry with backoff**: Transient failures are retried ([`ai_function_max_retries`](/reference/settings/session-settings/ai-function#ai_function_max_retries)) with exponential backoff ([`ai_function_retry_initial_delay_ms`](/reference/settings/session-settings/ai-function#ai_function_retry_initial_delay_ms)).
+- **Concurrent requests**: Requests are issued from a server-wide thread pool, several at a time (controlled by [`ai_function_max_concurrent_requests_per_thread`](/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests_per_thread)).
 
 ## Configuration {#configuration}
 
@@ -155,6 +156,35 @@ The transport is determined solely by the scheme of the `endpoint` URL. There is
 By default, AI functions reject an `endpoint` that would send data in cleartext to a remote host: any non-HTTPS endpoint whose host is not loopback raises an exception. Loopback hosts (`localhost`, `127.0.0.0/8`, `::1`) are exempt, so a local `http://localhost` model server works out of the box. To allow a plaintext `http://` endpoint on a remote host, set [`ai_function_allow_insecure_endpoint`](/reference/settings/session-settings/ai-function#ai_function_allow_insecure_endpoint) to `1`. This check is independent of [`remote_url_allow_hosts`](/reference/settings/server-settings/settings/remote#remote_url_allow_hosts): that setting is a host allowlist and does not inspect the URL scheme, so an `http://` endpoint pointed at an allowed host still passes it.
 
 Note that in either case the provider receives the input data in cleartext after TLS termination; TLS protects the data only on the network path between the server and the provider.
+
+### Throughput {#throughput}
+
+The AI functions differ from most traditional ClickHouse functions in that their throughput is almost entirely bound by the remote endpoint they send requests to rather than local CPU or I/O. Because of this they benefit significantly from increased concurrency above the standard `max_threads` used throughout ClickHouse. For this reason the requests are issued from a dedicated server-wide thread pool. Its size (`ai_function_max_thread_pool_size`, a server setting) caps how many AI provider requests the whole server has in flight at once, across every query.
+
+[`ai_function_max_concurrent_requests_per_thread`](/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests_per_thread) bounds each query thread's share of that pool, so a query running on several threads (at most `max_threads`) can have up to that many requests in flight per thread. To stop queries from raising it, put a ceiling on the setting with a [settings profile constraint](/concepts/features/configuration/settings/constraints-on-settings). The ceiling is still per thread, so a query can have up to the ceiling times its number of threads in flight. For example:
+
+```xml
+<profiles>
+    <default>
+        <constraints>
+            <ai_function_max_concurrent_requests_per_thread>
+                <max>16</max>
+            </ai_function_max_concurrent_requests_per_thread>
+        </constraints>
+    </default>
+</profiles>
+```
+
+The default is `8`. A value above `1` loosens two guarantees:
+
+- A request's token usage is only known once its response arrives, so [`ai_function_max_input_tokens_per_query`](/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query) and [`ai_function_max_output_tokens_per_query`](/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query) may overshoot by one request's worth per request in flight, rather than by one request's worth in total.
+- A wave of requests is dispatched before any of their errors is seen, so a query that fails on its first row may still have issued, and been billed for, as many requests as the concurrency allows.
+
+[`ai_function_max_api_calls_per_query`](/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query) is unaffected and stays an exact cap, because a slot is reserved before each request is dispatched.
+
+<Note>
+For a materialized view, the settings must go on the `INSERT` that feeds the view's source table, not on the `CREATE MATERIALIZED VIEW` statement: the quotas are read from the top-level query, and a `SETTINGS` clause in a view definition is ignored.
+</Note>
 
 ## Supported providers {#supported-providers}
 
