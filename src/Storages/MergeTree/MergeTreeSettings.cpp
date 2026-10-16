@@ -2742,7 +2742,7 @@ part keeps in memory (without `use_primary_key_cache`) is handed over to the mov
 part as well, when `primary_key_lazy_load` is enabled; otherwise the moved part
 loads it during the move. This applies to projection parts too.
 )", 0, \
-        {"26.10", false, true, "New setting"}) \
+        {"26.11", false, true, "New setting"}) \
     /** Projection settings. */ \
     DECLARE(UInt64, max_projections, 25, R"(
 The maximum number of merge tree projections.
