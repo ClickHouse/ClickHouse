@@ -47,7 +47,7 @@ BlockIO InterpreterUseQuery::execute()
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "`USE {}`: the database part of a namespace path cannot contain a dot because the session scope is kept "
                 "as one dotted name; select the database with `USE {}` and qualify tables",
-                logical_name, backQuote(identifier->name_parts[0]));
+                identifier->formatForErrorMessage(), backQuote(identifier->name_parts[0]));
         database_name = identifier->name_parts[0];
     }
 
