@@ -47,6 +47,7 @@
 #include <Common/typeid_cast.h>
 
 #include <algorithm>
+#include <functional>
 #include <iterator>
 #include <limits>
 #include <memory>
@@ -109,29 +110,53 @@ namespace
 {
 
 /// `joinBlock` only sets up a lazy result - the matching runs inside `IJoinResult::next` - so the
-/// probe time has to be accounted there.
+/// probe time has to be accounted there. A probe that stopped at the joined block size limit leaves the
+/// rest of the left block in `next_block`. The pipeline does not look at it, so this result probes the
+/// rest itself.
 class TimedJoinResult : public IJoinResult
 {
 public:
-    TimedJoinResult(JoinResultPtr result_, ProfileEvents::Event event_)
+    using ProbeRest = std::function<JoinResultPtr(Block)>;
+
+    TimedJoinResult(JoinResultPtr result_, ProfileEvents::Event event_, ProbeRest probe_rest_)
         : result(std::move(result_))
         , event(event_)
+        , probe_rest(std::move(probe_rest_))
     {
     }
 
     JoinResultBlock next() override
     {
         ProfileEventTimeIncrement<Microseconds> watch(event);
-        return result->next();
+        auto res = result->next();
+        if (!res.is_last)
+        {
+            res.next_block = nullptr;
+            return res;
+        }
+
+        addMatchedRightRows(matched_right_rows, result->getMatchedRightRows());
+        if (res.next_block)
+        {
+            res.next_block->filterBySelector();
+            Block rest = std::move(*res.next_block).getSourceBlock();
+            result = rest.rows() ? probe_rest(std::move(rest)) : nullptr;
+        }
+        else
+            result.reset();
+
+        return {std::move(res.block), nullptr, !result};
     }
 
     /// The transform sums this into the count `onProbePhaseFinish` receives. Without it the join would
     /// publish zero matches. The planner would then never enable the row store for the next run.
-    std::optional<size_t> getMatchedRightRows() const override { return result->getMatchedRightRows(); }
+    std::optional<size_t> getMatchedRightRows() const override { return matched_right_rows; }
 
 private:
     JoinResultPtr result;
     ProfileEvents::Event event;
+    ProbeRest probe_rest;
+    std::optional<size_t> matched_right_rows = 0;
 };
 
 Block filterColumnsPresentInSampleBlock(const Block & block, const Block & sample_block)
@@ -1400,12 +1425,14 @@ JoinResultPtr HashJoin::joinBlock(Block block)
 
 JoinResultPtr HashJoin::joinBlock(Block block, size_t lane)
 {
+    auto probe = [this, lane](Block to_probe) { return probeDispatch(std::move(to_probe), lane); };
+
     JoinResultPtr result;
     {
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::HashJoinPartitionedProbeMicroseconds);
-        result = probeDispatch(std::move(block), lane);
+        result = probe(std::move(block));
     }
-    return std::make_unique<TimedJoinResult>(std::move(result), ProfileEvents::HashJoinPartitionedProbeMicroseconds);
+    return std::make_unique<TimedJoinResult>(std::move(result), ProfileEvents::HashJoinPartitionedProbeMicroseconds, std::move(probe));
 }
 
 size_t HashJoin::getTotalRowCount() const
