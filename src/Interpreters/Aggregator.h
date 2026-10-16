@@ -1050,11 +1050,11 @@ private:
 
     /// Counts the groups of one partition's argument records into `counting_table`, only those whose routing hash
     /// `filter` takes: a record adds one row to the count its group keeps in the mapped value, as a lone `count()`
-    /// keeps it, and builds no state. `update_candidates(count, key_holder, hash)` then takes the grown count by
+    /// keeps it, and builds no state. `update_candidates(count, key, hash, copy_key)` then takes the grown count by
     /// reference, so a tracker of the best groups can keep its metadata in the count's high bits. String-like keys
     /// point into the records, unless `copy_keys`: records read back from a spill go before the counting ends, so the
-    /// counting table copies its new keys into `arena`, and the key holder copies the key there when the tracker
-    /// keeps it. Returns how many records it skipped.
+    /// counting table copies its new keys into `arena`, and the tracker keeps copies of its own, which `copy_key`
+    /// asks for. Returns how many records it skipped.
     template <typename Method, bool copy_keys, typename Table, typename Filter, typename UpdateCandidates>
     requires MapAggregationMethod<Method>
     size_t countPartitionGroups(

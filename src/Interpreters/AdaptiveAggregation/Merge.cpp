@@ -58,7 +58,7 @@ namespace
     /// The key holder (see `keyHolderGetKey`) of a staged key read back by `readStagedKey`. A string-like key points
     /// into its record, which the merge frees only after converting the unit. With `copy_keys`, the record is in a
     /// block read back from a spill, which the next block overwrites, so the holder copies the key into `arena` when
-    /// a table or a tracker of the best groups keeps it.
+    /// a table keeps it.
     template <bool copy_keys, typename Key>
     auto ALWAYS_INLINE stagedKeyHolder(const Key & key, [[maybe_unused]] DB::Arena * arena)
     {
@@ -509,7 +509,7 @@ size_t NO_INLINE Aggregator::countPartitionGroups(
                         group_count = 1;
                     else
                         ++group_count;
-                    update_candidates(group_count, stagedKeyHolder<copy_keys>(key, arena), hash);
+                    update_candidates(group_count, key, hash, std::bool_constant<copy_keys>{});
                 }).skipped;
         }
     });
@@ -601,15 +601,16 @@ size_t Aggregator::selectCountFirstBestGroups(
         else
             group_count += count;
         if (top_k)
-            top_k->update(group_count, cell.key, cell.hash);
+            top_k->template update</*copy_key=*/false>(group_count, cell.key, cell.hash);
     }
-    const auto update_candidates = [&](UInt64 & group_count, auto && key_holder, UInt64 hash) ALWAYS_INLINE
+    const auto update_candidates
+        = [&]<bool copy_key>(UInt64 & group_count, const auto & key, UInt64 hash, std::bool_constant<copy_key>) ALWAYS_INLINE
     {
         if (top_k)
-            top_k->update(group_count, key_holder, hash);
+            top_k->template update<copy_key>(group_count, key, hash);
     };
     /// The records in memory, then those of the spill streams, whose blocks go after their calls: the counting table
-    /// and the top copy the keys they keep into `arena`.
+    /// copies the keys it keeps into `arena`, and the top keeps copies of its own (see `GrowingCountTopK`).
     const auto count_records = [&](const auto & filter)
     {
         for_each_in_memory_partition([&](const AdaptiveRecordRanges & ranges)

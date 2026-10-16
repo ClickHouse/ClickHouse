@@ -5,8 +5,6 @@
 #include <string_view>
 #include <vector>
 
-#include <Common/Arena.h>
-#include <Common/HashTable/HashTableKeyHolder.h>
 #include <Interpreters/AdaptiveAggregation/GrowingCountTopK.h>
 
 using namespace DB;
@@ -41,7 +39,7 @@ TEST(GrowingCountTopK, KeepsTheLargestCounts)
     const auto grow = [&](UInt64 & word, UInt64 key, UInt64 rows)
     {
         word += rows;
-        top.update(word, key, key);
+        top.update<false>(word, key, key);
     };
     grow(a, 1, 1);
     grow(b, 2, 1);
@@ -59,28 +57,27 @@ TEST(GrowingCountTopK, ConfirmsAStaleEntryByItsKey)
 {
     TopK<UInt64> top(1);
     UInt64 a = 1;
-    top.update(a, UInt64{1}, 1);
+    top.update<false>(a, UInt64{1}, 1);
     UInt64 b = 2;
-    top.update(b, UInt64{2}, 2);
+    top.update<false>(b, UInt64{2}, 2);
     a += 2;
-    top.update(a, UInt64{1}, 1);
+    top.update<false>(a, UInt64{1}, 1);
 
     EXPECT_EQ(sortedGroups(top), (std::vector<std::pair<UInt64, UInt64>>{{1, 3}}));
 }
 
-/// A key that views a block read back from a spill comes in a holder: the top keeps a copy of it for a new entry, so
-/// the entry is still found by its key after the next block overwrote the first.
+/// A key that views a block read back from a spill comes with `copy_key`: the top keeps a copy of it for a new entry,
+/// so the entry is still found by its key after the next block overwrote the first.
 TEST(GrowingCountTopK, KeepsACopyOfAStringKey)
 {
-    Arena arena;
     TopK<std::string_view> top(2);
     std::string block = "alpha";
     UInt64 word = 1;
-    top.update(word, ArenaKeyHolder{block, arena}, 7);
+    top.update<true>(word, block, 7);
     block = "omega";
     const std::string next_block = "alpha";
     ++word;
-    top.update(word, ArenaKeyHolder{next_block, arena}, 7);
+    top.update<true>(word, next_block, 7);
 
     EXPECT_EQ(sortedGroups(top), (std::vector<std::pair<std::string_view, UInt64>>{{"alpha", 2}}));
 }
@@ -94,15 +91,14 @@ TEST(GrowingCountTopK, KeepsACopyOfAPackedStringKey)
     const std::string key(40, 'k');
     const std::string padding(8, '\0');
 
-    Arena arena;
     TopK<PackedStringRef> top(2);
     std::string block = key + padding;
     UInt64 word = 1;
-    top.update(word, ArenaPackedStringHolder{pack(block, key.size()), arena}, 7);
+    top.update<true>(word, pack(block, key.size()), 7);
     std::ranges::fill(block, 'x');
     const std::string next_block = key + padding;
     ++word;
-    top.update(word, ArenaPackedStringHolder{pack(next_block, key.size()), arena}, 7);
+    top.update<true>(word, pack(next_block, key.size()), 7);
 
     ASSERT_EQ(top.getGroups().size(), 1);
     EXPECT_EQ(static_cast<std::string_view>(top.getGroups()[0].key), key);

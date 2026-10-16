@@ -1,11 +1,12 @@
 #pragma once
 
 #include <bit>
+#include <string_view>
 #include <vector>
 
+#include <base/PackedStringRef.h>
 #include <base/defines.h>
 #include <base/types.h>
-#include <Common/HashTable/HashTableKeyHolder.h>
 
 namespace DB
 {
@@ -19,9 +20,11 @@ namespace DB
 /// The low `count_bits` bits hold the count. The high bits belong to the top and are zero in the word of a new
 /// group: there the top keeps the index of the group's entry plus one, so it finds the entry of an updated group
 /// without a search. A group evicted from the top keeps its stale index, so the entry an index names is checked by
-/// the full key: a hash does not identify a group. A key comes in a key holder (see `keyHolderGetKey`), and a new
-/// entry keeps it made persistent, so a key that views memory gone before the updates end comes in a holder that
-/// copies it. `max_limit` is the largest `limit` the top takes, which sizes the index bits.
+/// the full key: a hash does not identify a group. An entry's key must therefore stay valid while its group holds
+/// the entry. A key that views memory gone before the updates end comes with `copy_key`, and the entry keeps a copy
+/// of it in a buffer of its own, which the next group to take the entry overwrites: the copies never outnumber the
+/// entries, however often the groups leave the top and enter it again. `max_limit` is the largest `limit` the top
+/// takes, which sizes the index bits.
 template <typename Key, size_t max_limit>
 class GrowingCountTopK
 {
@@ -55,15 +58,16 @@ public:
         min_count = 0;
     }
 
-    /// Takes the word of a group whose count grew, with the group's key in a key holder.
-    template <typename KeyHolder>
-    void ALWAYS_INLINE update(UInt64 & word, KeyHolder && key_holder, UInt64 hash)
+    /// Takes the word of a group whose count grew, with the group's key. With `copy_key`, the key views memory gone
+    /// before the updates end, so an entry that the group takes keeps a copy of it.
+    template <bool copy_key>
+    void ALWAYS_INLINE update(UInt64 & word, const Key & key, UInt64 hash)
     {
         const UInt64 count = word & count_mask;
         /// Until the top is full, `min_count` is zero, so every count enters, being positive.
         chassert(count > 0);
         if (count > min_count)
-            enter(word, count, key_holder, hash);
+            enter<copy_key>(word, count, key, hash);
     }
 
     /// The groups with the `limit` largest counts so far, or all of them while there are fewer, in no particular
@@ -71,13 +75,13 @@ public:
     const std::vector<Group> & getGroups() const { return groups; }
 
 private:
-    template <typename KeyHolder>
-    NO_INLINE void enter(UInt64 & word, UInt64 count, KeyHolder & key_holder, UInt64 hash)
+    template <bool copy_key>
+    NO_INLINE void enter(UInt64 & word, UInt64 count, const Key & key, UInt64 hash)
     {
         /// The high bits of the word name the group's entry by its index plus one, or no entry by zero.
         const UInt64 entry = word >> count_bits;
         chassert(entry <= groups.size());
-        if (entry && groups[entry - 1].key == keyHolderGetKey(key_holder))
+        if (entry && groups[entry - 1].key == key)
         {
             /// A grown count can only move its index away from the root of the min-heap.
             groups[entry - 1].count = count;
@@ -85,13 +89,11 @@ private:
         }
         else
         {
-            keyHolderPersistKey(key_holder);
-            const Key & key = keyHolderGetKey(key_holder);
             UInt32 index = 0;
             if (heap.size() < limit)
             {
                 index = static_cast<UInt32>(groups.size());
-                groups.push_back({key, hash, count});
+                groups.push_back({keptKey<copy_key>(key, index), hash, count});
                 heap.push_back(index);
                 heap_positions.push_back(static_cast<UInt32>(heap.size() - 1));
                 siftUp(heap.size() - 1);
@@ -100,13 +102,45 @@ private:
             {
                 /// The group with the smallest count leaves the top, and the new one takes its entry.
                 index = heap.front();
-                groups[index] = {key, hash, count};
+                groups[index] = {keptKey<copy_key>(key, index), hash, count};
                 siftDown(0);
             }
             word = count | (UInt64{index + 1} << count_bits);
         }
         if (heap.size() == limit)
             min_count = groups[heap.front()].count;
+    }
+
+    /// The key that the entry at `index` keeps for a group: with `copy_key`, a copy in the entry's buffer.
+    template <bool copy_key>
+    Key keptKey(const Key & key, UInt32 index)
+    {
+        if constexpr (copy_key)
+        {
+            /// The entries that only keys without `copy_key` took have no buffers yet.
+            if (index >= key_copies.size())
+                key_copies.resize(index + 1);
+            return copyKey(key, key_copies[index]);
+        }
+        else
+            return key;
+    }
+
+    static std::string_view copyKey(std::string_view key, std::vector<char> & buffer)
+    {
+        buffer.assign(key.begin(), key.end());
+        return {buffer.data(), buffer.size()};
+    }
+
+    static PackedStringRef copyKey(PackedStringRef key, std::vector<char> & buffer)
+    {
+        /// The small and empty encodings hold their bytes in the value itself.
+        if (const size_t size = key.heapSize())
+        {
+            buffer.assign(key.getHeapPtr(), key.getHeapPtr() + size);
+            key.setHeapPointer(buffer.data());
+        }
+        return key;
     }
 
     /// Moves the index at `position` of the min-heap toward the root while its count is below its parent's.
@@ -155,6 +189,9 @@ private:
     std::vector<Group> groups;
     std::vector<UInt32> heap;
     std::vector<UInt32> heap_positions;
+    /// The buffers of the entries' key copies by the entries' indices. A buffer keeps its memory, even across `clear`,
+    /// for the next group that takes the entry, and moving it does not move its bytes, which the entry's key views.
+    std::vector<std::vector<char>> key_copies;
     /// The smallest count of the top once it is full, zero before.
     UInt64 min_count = 0;
 };
