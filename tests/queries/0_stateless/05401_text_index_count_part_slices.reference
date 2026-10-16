@@ -1,0 +1,33 @@
+2	10700000
+(ReadFromTextIndexCount)
+TextIndexCount × 3 0 → 1
+max_threads = 1
+all	1770000
+all edge	286
+any	1585715
+max_threads = 2
+all	1770000
+all leapfrog	1770000
+all bruteforce	1770000
+all edge	286
+all edge leapfrog	286
+all tail	33333
+any	1585715
+any edge	102000
+max_threads = 8
+all	1770000
+all edge	286
+any	1585715
+single token	3540000
+normal read
+all	1770000
+all edge	286
+all tail	33333
+any	1585715
+any edge	102000
+single token	3540000
+selected ranges
+11000
+11000
+10700000
+1	2
