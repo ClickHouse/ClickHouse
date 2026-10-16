@@ -330,6 +330,14 @@ static void tryApply(
         const String name = aggregate.function->getName();
         if (aggregated_position && sorting_key_position(order_column(aggregate)) == aggregated_position)
         {
+            /// With a `Nullable` value argument, `argMin` and `argMax` ignore the rows where it is NULL, so the row
+            /// that proves a granule unnecessary may not take part, and the answer can be in a skipped granule.
+            if (name == "argMin" || name == "argMax")
+            {
+                const auto & value_type = aggregate.function->getArgumentTypes().front();
+                if (value_type->isNullable() || value_type->isLowCardinalityNullable())
+                    return;
+            }
             if (name == "min" || name == "argMin")
                 need_group_start = true;
             else
