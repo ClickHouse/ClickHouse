@@ -86,12 +86,17 @@ private:
     void fixTrailingNewline(int * pos, std::u32string * text);
     void resetVim(int * pos = nullptr, std::u32string * text = nullptr);
     template <typename T>
+    replxx::Replxx::key_press_handler_t vimHandler(T && func);
+    template <typename T>
     void bindKey(char32_t key, T && func, int mode);
+    /// Bind `func` to every key without its own binding in `mode`.
+    template <typename T>
+    void bindDefaultKey(T && func, int mode);
     void recomputeCurswant(int pos, std::u32string & text);
     int vimReps() const;
     void vimWordMotion(int & pos, std::u32string & text, char motion);
     void vimWordObject(int & pos, std::u32string & text, bool bigword);
-    void vimBracketObject(int & pos, std::u32string & text, char open_char, char close_char);
+    void vimBracketObject(int & pos, std::u32string & text, char32_t open_char, char32_t close_char);
     void find(std::u32string & text, int & pos, char direction, char32_t c, bool repeat);
 
     /// Whether the text cursor is at the very end of the input (where as-you-type hints render).

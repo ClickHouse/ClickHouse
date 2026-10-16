@@ -155,14 +155,16 @@ void ReplxxLineReader::find(std::u32string & text, int & pos, char direction, ch
         if (direction == 'T')
             pos++;
     }
-    if (op)
+    /* `f` and `t` are inclusive, `F` and `T` are exclusive. The range is not empty even when the
+     * cursor stays put, e.g. `dt1` right before a `1` deletes the character under the cursor. */
+    if (op && found >= 0)
     {
-        if (pos > oldpos)
+        if (forward)
         {
             text.erase(oldpos, pos - oldpos + 1 - inclusivity_flip);
             pos = oldpos;
         }
-        if (oldpos > pos)
+        else
         {
             text.erase(pos, oldpos - pos + inclusivity_flip);
         }
@@ -356,7 +358,7 @@ static int extendChunk(const std::u32string & text, int & end, bool bigword)
 }
 
 static bool
-findEnclosingPair(const std::u32string & text, int from_open, int from_close, char open_char, char close_char, int & open, int & close)
+findEnclosingPair(const std::u32string & text, int from_open, int from_close, char32_t open_char, char32_t close_char, int & open, int & close)
 {
     int length = static_cast<int>(text.length());
     int depth = 0;
@@ -396,7 +398,7 @@ findEnclosingPair(const std::u32string & text, int from_open, int from_close, ch
     return close >= 0;
 }
 
-static bool findBracketPair(const std::u32string & text, int pos, char open_char, char close_char, int & open, int & close)
+static bool findBracketPair(const std::u32string & text, int pos, char32_t open_char, char32_t close_char, int & open, int & close)
 {
     int length = static_cast<int>(text.length());
 
@@ -436,26 +438,41 @@ static bool findBracketPair(const std::u32string & text, int pos, char open_char
     return false;
 }
 
+/* A character typed as an argument of a command, e.g. after `f` or `r`, as opposed to a special key. */
+static bool isVimCharacter(char32_t c)
+{
+    return (c >= 32 || c == '\t') && c != 127 && c < Replxx::KEY::BASE;
+}
+
+template <typename T>
+Replxx::key_press_handler_t ReplxxLineReader::vimHandler(T && f)
+{
+    using F = std::decay_t<T>;
+    return [this, func = std::forward<T>(f)](char32_t c)
+    {
+        if constexpr (std::is_invocable_v<F &, int &, std::u32string &, char32_t>)
+        {
+            withVimState([&](int & pos, std::u32string & text) { func(pos, text, c); });
+        }
+        else if constexpr (std::is_invocable_v<F &, char32_t>)
+        {
+            (void)this;
+            func(c);
+        }
+        return Replxx::ACTION_RESULT::CONTINUE;
+    };
+}
+
 template <typename T>
 void ReplxxLineReader::bindKey(char32_t key, T && f, int mode)
 {
-    using F = std::decay_t<T>;
-    rx.bind_key(
-        key,
-        [this, func = std::forward<T>(f)](char32_t c)
-        {
-            if constexpr (std::is_invocable_v<F &, int &, std::u32string &, char32_t>)
-            {
-                withVimState([&](int & pos, std::u32string & text) { func(pos, text, c); });
-            }
-            else if constexpr (std::is_invocable_v<F &, char32_t>)
-            {
-                (void)this;
-                func(c);
-            }
-            return Replxx::ACTION_RESULT::CONTINUE;
-        },
-        mode);
+    rx.bind_key(key, vimHandler(std::forward<T>(f)), mode);
+}
+
+template <typename T>
+void ReplxxLineReader::bindDefaultKey(T && f, int mode)
+{
+    rx.bind_default_key(vimHandler(std::forward<T>(f)), mode);
 }
 
 void ReplxxLineReader::recomputeCurswant(int pos, std::u32string & text)
@@ -587,7 +604,7 @@ void ReplxxLineReader::vimWordObject(int & pos, std::u32string & text, bool bigw
         resetVim(&pos, &text);
 }
 
-void ReplxxLineReader::vimBracketObject(int & pos, std::u32string & text, char open_char, char close_char)
+void ReplxxLineReader::vimBracketObject(int & pos, std::u32string & text, char32_t open_char, char32_t close_char)
 {
     if (!op || !flag)
     {
@@ -803,14 +820,27 @@ void ReplxxLineReader::setupVimKeybindings(bool allow_editor)
 
     bindKey(
         Replxx::KEY::ENTER,
-        [this](int &pos, std::u32string & text, char32_t)
+        [this](int & pos, std::u32string & text, char32_t)
         {
+            int oldpos = pos;
             int length = static_cast<int>(text.length());
             int reps = vimReps();
             for (int rep = 0; rep < reps; rep++)
             {
                 for (pos = pos + 1; pos < length - 1 && text[pos] != '\n'; pos++);
                 for (; pos < length - 1 && iswhitespace(text[pos]); pos++);
+            }
+            if (op)
+            {
+                /* Linewise, like `j`: there is nothing to operate on without a next line. */
+                if (std::find(text.begin() + oldpos, text.begin() + pos, U'\n') != text.begin() + pos)
+                    vimLinewise(pos, text, oldpos);
+                else
+                {
+                    pos = oldpos;
+                    resetVim(&pos, &text);
+                }
+                return;
             }
             resetVim(&pos, &text);
         },
@@ -1239,33 +1269,27 @@ void ReplxxLineReader::setupVimKeybindings(bool allow_editor)
         },
         MODE_NORMAL);
 
-    for (char c = 32; c < 127; c++)
-    {
-        bindKey(
-            c,
-            [this, c](int & pos, std::u32string & text, char32_t)
-            {
-                last_find_char = c;
-                last_find_direction = find_direction;
-                find(text, pos, find_direction, c, /* repeat= */ false);
-            },
-            MODE_FIND);
-
-        if (c != 'g')
+    /* The character after `f`, `F`, `t`, `T` or `r` can be any code point, not only ASCII, so these
+     * modes take every key without its own binding. A special key cancels the command. */
+    bindDefaultKey(
+        [this](int & pos, std::u32string & text, char32_t c)
         {
-            bindKey(
-                c,
-                [this](char32_t)
-                {
-                    rx.set_editing_mode(MODE_NORMAL);
-                    resetVim();
-                },
-                MODE_G);
-        }
+            if (!isVimCharacter(c))
+            {
+                rx.set_editing_mode(MODE_NORMAL);
+                resetVim(&pos, &text);
+                return;
+            }
+            last_find_char = c;
+            last_find_direction = find_direction;
+            find(text, pos, find_direction, c, /* repeat= */ false);
+        },
+        MODE_FIND);
 
-        bindKey(
-            c,
-            [this, c](int & pos, std::u32string & text, char32_t)
+    bindDefaultKey(
+        [this](int & pos, std::u32string & text, char32_t c)
+        {
+            if (isVimCharacter(c))
             {
                 int length = static_cast<int>(text.length());
                 int reps = vimReps();
@@ -1279,11 +1303,19 @@ void ReplxxLineReader::setupVimKeybindings(bool allow_editor)
                         text[pos + i] = c;
                     pos += reps - 1;
                 }
-                rx.set_editing_mode(MODE_NORMAL);
-                resetVim(&pos, &text);
-            },
-            MODE_REPLACE);
-    }
+            }
+            rx.set_editing_mode(MODE_NORMAL);
+            resetVim(&pos, &text);
+        },
+        MODE_REPLACE);
+
+    bindDefaultKey(
+        [this](char32_t)
+        {
+            rx.set_editing_mode(MODE_NORMAL);
+            resetVim();
+        },
+        MODE_G);
 
     for (char motion : {'w', 'e', 'b', 'W', 'E', 'B'})
     {
@@ -1297,7 +1329,7 @@ void ReplxxLineReader::setupVimKeybindings(bool allow_editor)
         {
             bindKey(
                 pair[k],
-                [this, open_char = pair[0], close_char = pair[1]](int & pos, std::u32string & text, char32_t)
+                [this, open_char = static_cast<char32_t>(pair[0]), close_char = static_cast<char32_t>(pair[1])](int & pos, std::u32string & text, char32_t)
                 { vimBracketObject(pos, text, open_char, close_char); },
                 MODE_NORMAL);
         }

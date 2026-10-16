@@ -121,5 +121,50 @@ submit
 expect "x,,z?"
 expect ":) "
 
+# `t` selects the character under the cursor when the target is right after it.
+send -- "SELECT 1100+21"
+escape
+send -- "hdt1"
+submit
+expect "1101"
+expect ":) "
+
+send -- "SELECT 2100+21"
+escape
+send -- "hct14"
+submit
+expect "2141"
+expect ":) "
+
+# The character of `r` and `f` can be a multibyte one.
+send -- "SELECT concat('ab', 'c')"
+escape
+send -- "0f'lré"
+submit
+expect "ébc"
+expect ":) "
+
+send -- "SELECT concat('éqz', 'w')"
+escape
+send -- "0féx"
+submit
+expect "qzw"
+expect ":) "
+
+# An operator applies to the Enter motion linewise.
+send -- "SELECT 8000\r+ 3\r+ 9\r+ 20"
+escape
+send -- "kkd\r"
+submit
+expect "8020"
+expect ":) "
+
+send -- "SELECT 9000\r+ 3\r+ 9\r+ 40"
+escape
+send -- "kkc\r+ 1"
+submit
+expect "9041"
+expect ":) "
+
 send -- "\4"
 expect eof
