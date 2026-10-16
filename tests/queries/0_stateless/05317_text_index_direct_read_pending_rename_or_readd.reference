@@ -1,0 +1,9 @@
+['banana','apple']
+banana	[1]	[1]
+apple	[2]	[2]
+cherry	[]	[]
+count apple	1	1
+['banana','banana']
+banana	[1,2]	[1,2]
+apple	[]	[]
+count banana	2	2

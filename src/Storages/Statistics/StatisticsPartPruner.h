@@ -29,6 +29,10 @@ public:
     /// Get the list of column names used in the filter condition that have statistics.
     Names getUsedColumns() const { return {used_column_names.begin(), used_column_names.end()}; }
 
+    /// Get the names of all columns whose estimates `checkPartCanMatch` may consult. Unlike
+    /// `getUsedColumns`, it is complete before any part is checked.
+    NameSet getColumnsConsultedByEstimates() const;
+
 private:
     /// Get or create a KeyCondition for the given columns, using cache to avoid recreating for each part.
     KeyCondition * getKeyConditionForEstimates(const NamesAndTypesList & columns_and_types, bool record_used_columns = true);
