@@ -201,7 +201,7 @@ ColumnsDescription ITableFunctionXDBC::getActualTableStructure(ContextPtr contex
 
     /// Infer external table structure.
     Poco::URI columns_info_uri = helper->getColumnsInfoURI();
-    columns_info_uri.addQueryParameter("connection_string", connection_string);
+    columns_info_uri.addQueryParameter(XDBC_BRIDGE_CONNECTION_STRING_PARAMETER, connection_string);
     if (!schema_name.empty())
         columns_info_uri.addQueryParameter("schema", schema_name);
     columns_info_uri.addQueryParameter("table", remote_table_name);

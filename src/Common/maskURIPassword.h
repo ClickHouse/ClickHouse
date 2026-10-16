@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/BridgeProtocolVersion.h>
 #include <Common/HiddenSecret.h>
 
 #include <algorithm>
@@ -269,6 +270,60 @@ inline bool maskURIUserinfo(std::string & url)
     return true;
 }
 
+/** Mask the value of every query parameter whose name satisfies `is_secret_name`. A value runs to
+  * the next '&' or '#'. Returns whether anything was masked.
+  */
+template <typename IsSecretName>
+bool maskURIQueryParameterValues(std::string & url, IsSecretName && is_secret_name)
+{
+    /// Built in one pass rather than replacing in place: a replacement of a different length shifts
+    /// the rest of the string, which is quadratic in the number of masked parameters. A setting value
+    /// reaches this from the logging path and its length is chosen by whoever set the setting.
+    std::string result;
+    size_t copied = 0;
+
+    for (size_t position = url.find_first_of("?&"); position != std::string::npos;
+         position = url.find_first_of("?&", position + 1))
+    {
+        size_t name_begin = position + 1;
+
+        /// Bounded by the next separator instead of scanning on to the next '=', which is quadratic
+        /// on a string of separators. A name containing a separator is never matched.
+        size_t name_end = url.find_first_of("=?&", name_begin);
+        if (name_end == std::string::npos)
+            break;
+        if (url[name_end] != '=')
+        {
+            /// Rescan from the separator itself, so it is not skipped.
+            position = name_end - 1;
+            continue;
+        }
+
+        if (!is_secret_name(std::string_view(url).substr(name_begin, name_end - name_begin)))
+            continue;
+
+        /// `[^&#]*` - the value.
+        size_t value_begin = name_end + 1;
+        size_t value_end = url.find_first_of("&#", value_begin);
+        if (value_end == std::string::npos)
+            value_end = url.length();
+
+        result.append(url, copied, value_begin - copied);
+        result.append(HIDDEN_SECRET);
+        copied = value_end;
+
+        /// Continue after the value, not inside it.
+        position = value_end - 1;
+    }
+
+    if (copied == 0)
+        return false;
+
+    result.append(url, copied, std::string::npos);
+    url = std::move(result);
+    return true;
+}
+
 /** Mask the values of the query parameters that carry credentials in a presigned URL, so that
   * `...?X-Amz-Signature=abc&foo=1` becomes `...?X-Amz-Signature=[HIDDEN]&foo=1`. Every occurrence
   * is masked. Returns whether anything was masked.
@@ -306,57 +361,18 @@ inline bool maskPresignedURLParameters(std::string & url)
         return false;
     };
 
-        /// Built in one pass rather than replacing in place: a replacement of a different length shifts
-    /// the rest of the string, which is quadratic in the number of masked parameters. A setting value
-    /// reaches this from the logging path and its length is chosen by whoever set the setting.
-    std::string result;
-    size_t copied = 0;
-
-    for (size_t position = url.find_first_of("?&"); position != std::string::npos;
-         position = url.find_first_of("?&", position + 1))
-    {
-        size_t name_begin = position + 1;
-
-        /// Bounded by the next separator instead of scanning on to the next '=', which is quadratic
-        /// on a string of separators. None of the names above contains one, so a name that runs into
-        /// a separator is not one of them anyway.
-        size_t name_end = url.find_first_of("=?&", name_begin);
-        if (name_end == std::string::npos)
-            break;
-        if (url[name_end] != '=')
-        {
-            /// Rescan from the separator itself, so it is not skipped.
-            position = name_end - 1;
-            continue;
-        }
-
-        if (!is_secret_parameter(std::string_view(url).substr(name_begin, name_end - name_begin)))
-            continue;
-
-        /// `[^&#]*` - the value.
-        size_t value_begin = name_end + 1;
-        size_t value_end = url.find_first_of("&#", value_begin);
-        if (value_end == std::string::npos)
-            value_end = url.length();
-
-        result.append(url, copied, value_begin - copied);
-        result.append(HIDDEN_SECRET);
-        copied = value_end;
-
-        /// Continue after the value, not inside it.
-        position = value_end - 1;
-    }
-
-    if (copied == 0)
-        return false;
-
-    result.append(url, copied, std::string::npos);
-    url = std::move(result);
-    return true;
+    return maskURIQueryParameterValues(url, is_secret_parameter);
 }
 
-/** Mask both credential carriers of a URL: the userinfo (`user:password@`) and the values of the
-  * presigned-URL query parameters. Returns whether anything was masked.
+/// The whole connection string a bridge request carries is hidden: its grammar belongs to the ODBC or JDBC driver.
+inline bool maskXDBCConnectionStringParameter(std::string & url)
+{
+    return maskURIQueryParameterValues(url, [](std::string_view name) { return name == XDBC_BRIDGE_CONNECTION_STRING_PARAMETER; });
+}
+
+/** Mask the credential carriers of a URL: the userinfo (`user:password@`), the values of the
+  * presigned-URL query parameters and the connection string of a bridge request. Returns whether
+  * anything was masked.
   *
   * This is the masking to use for a whole HTTP/S3 URL. Scanning for a presigned parameter is only
   * sound on a value that is one whole URL (see `maskPresignedURLParameters`), so the argument must be
@@ -366,6 +382,7 @@ inline bool maskURICredentials(std::string & url)
 {
     bool masked = maskURIUserinfo(url);
     masked |= maskPresignedURLParameters(url);
+    masked |= maskXDBCConnectionStringParameter(url);
     return masked;
 }
 

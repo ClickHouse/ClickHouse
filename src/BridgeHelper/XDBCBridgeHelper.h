@@ -165,7 +165,7 @@ protected:
     {
         URLParams result;
 
-        result.emplace_back("connection_string", connection_string); /// already validated
+        result.emplace_back(XDBC_BRIDGE_CONNECTION_STRING_PARAMETER, connection_string); /// already validated
         result.emplace_back("max_block_size", std::to_string(max_block_size));
 
         return result;

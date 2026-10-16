@@ -31,7 +31,7 @@ bool XDBCBridgeHelper<T>::isSchemaAllowed()
         auto uri = createBaseURI();
         uri.setPath(SCHEMA_ALLOWED_HANDLER);
         uri.addQueryParameter("version", std::to_string(XDBC_BRIDGE_PROTOCOL_VERSION));
-        uri.addQueryParameter("connection_string", getConnectionString());
+        uri.addQueryParameter(XDBC_BRIDGE_CONNECTION_STRING_PARAMETER, getConnectionString());
         uri.addQueryParameter("use_connection_pooling", toString(use_connection_pooling));
 
         auto buf = BuilderRWBufferFromHTTP(uri)
@@ -59,7 +59,7 @@ IdentifierQuotingStyle XDBCBridgeHelper<T>::getIdentifierQuotingStyle()
         auto uri = createBaseURI();
         uri.setPath(IDENTIFIER_QUOTE_HANDLER);
         uri.addQueryParameter("version", std::to_string(XDBC_BRIDGE_PROTOCOL_VERSION));
-        uri.addQueryParameter("connection_string", getConnectionString());
+        uri.addQueryParameter(XDBC_BRIDGE_CONNECTION_STRING_PARAMETER, getConnectionString());
         uri.addQueryParameter("use_connection_pooling", toString(use_connection_pooling));
 
         auto buf = BuilderRWBufferFromHTTP(uri)
