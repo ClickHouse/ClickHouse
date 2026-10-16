@@ -1,4 +1,5 @@
 #include <zlib.h>
+#include <base/unaligned.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringOrArrayToT.h>
@@ -38,9 +39,8 @@ struct CRCImpl
         T crc = 0;
         while (size >= 8)
         {
-            uint64_t x{};
-            memcpy(&x, buf, sizeof(uint64_t));
-            uint64_t n = crc ^ x;
+            /// Low byte of n is the next input byte. A native load is big-endian on s390x.
+            UInt64 n = static_cast<UInt64>(crc) ^ unalignedLoadLittleEndian<UInt64>(buf);
             crc = base.tab[7][n & 0xff]
                 ^ base.tab[6][(n >> 8) & 0xff]
                 ^ base.tab[5][(n >> 16) & 0xff]
@@ -49,8 +49,8 @@ struct CRCImpl
                 ^ base.tab[2][(n >> 40) & 0xff]
                 ^ base.tab[1][(n >> 48) & 0xff]
                 ^ base.tab[0][(n >> 56) & 0xff];
-            buf += sizeof(uint64_t);
-            size -= sizeof(uint64_t);
+            buf += sizeof(UInt64);
+            size -= sizeof(UInt64);
         }
 
         while (size--)
