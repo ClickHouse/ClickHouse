@@ -214,8 +214,7 @@ private:
     /// If splitting, the request is being cancelled and replaced by a smaller range
     /// (splitAndPrefetchRange), and only subrange [subrange_start, subrange_end) needs to be read.
     void pickRangesAndCreateTaskIfNotExists(RequestState *, const PrefetchHandle &, bool splitting, size_t start_offset, size_t end_offset, std::unique_lock<std::mutex> lock);
-    /// Called with `mutex` locked. Returns the created task, or nullptr if the request already has one.
-    /// If `coalesce_only` is set, only the requests in it are coalesced into the task.
+    /// Returns nullptr if the request already has a task. If set, only requests in `coalesce_only` are coalesced into it.
     Task * pickRangesAndCreateTaskLocked(RequestState * initial_req, bool splitting, size_t start_offset, size_t end_offset, const std::unordered_set<const RequestState *> * coalesce_only);
     static void decreaseTaskRefcount(Task * task, size_t amount);
     void scheduleTask(Task * task);

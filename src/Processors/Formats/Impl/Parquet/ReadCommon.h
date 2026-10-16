@@ -35,7 +35,7 @@ struct ReadOptions
     /// searching for 100 elements would have 63% false positive probability.
     size_t bloom_filter_max_set_size = 100;
 
-    /// The file is read from object storage or a URL, where each read waits for the network.
+    /// The file is read from object storage or a URL.
     bool is_remote_fs = false;
 };
 
@@ -52,7 +52,6 @@ struct SharedResourcesExt
     };
 
     static Limits getLimitsPerReader(const FormatParserSharedResources & parser_shared_resources, double fraction);
-    /// The part of a stage's memory `fraction` that one reader gets (the readers split it evenly).
     static double getMemoryFractionPerReader(const FormatParserSharedResources & parser_shared_resources, double fraction);
 };
 

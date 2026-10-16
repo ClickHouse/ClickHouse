@@ -13,7 +13,6 @@ namespace DB::ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-/// The least `hard limit - amount` over `memory_tracker` and its parents that have a hard limit; none if none has.
 static std::optional<UInt64> getMostStrictAvailableMemory(MemoryTracker * memory_tracker)
 {
     std::optional<UInt64> available;

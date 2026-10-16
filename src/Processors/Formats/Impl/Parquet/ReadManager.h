@@ -139,8 +139,7 @@ private:
     };
     TopKAdmission top_k_admission;
 
-    /// Whether ColumnData prefetches of schedulable row groups are started ahead of their decoding,
-    /// up to the reader's share of `max_download_threads` (see readAheadColumnData).
+    /// Whether readAheadColumnData starts ColumnData prefetches of schedulable row groups ahead of their decoding.
     bool column_data_read_ahead = false;
     /// Held shared by ColumnData admission rounds and exclusively by readAheadColumnData, which never overlaps them.
     SharedMutex column_data_prefetch_mutex;

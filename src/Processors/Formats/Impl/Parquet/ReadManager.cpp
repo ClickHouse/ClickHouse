@@ -877,7 +877,6 @@ void ReadManager::readAheadColumnData()
     if (depth <= limits.parsing_threads)
         return;
 
-    /// The stage's share of the memory that the query, user and server limits still allow, if below its watermark share.
     size_t budget = limits.memory_high_watermark;
     if (auto available = getCurrentQueryAvailableMemory())
         budget = std::min(budget, size_t(static_cast<double>(*available) * SharedResourcesExt::getMemoryFractionPerReader(*parser_shared_resources, stage.memory_target_fraction)));
