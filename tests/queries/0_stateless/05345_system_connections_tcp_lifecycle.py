@@ -88,6 +88,9 @@ wait_for(
     "active",
 )
 print("active")
+# The connection is active before `executeQuery` adds the query to `system.processes`.
+# `KILL QUERY` finds the query only in `system.processes`. Thus, wait for the query there before the kill.
+wait_for(f"SELECT count() FROM system.processes WHERE query_id = '{running_query_id}'", "1")
 observe(f"KILL QUERY WHERE query_id = '{running_query_id}' SYNC FORMAT Null")
 receive_result(connection)
 

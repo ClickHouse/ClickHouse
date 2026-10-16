@@ -1,3 +1,6 @@
+-- Tags: no-parallel
+-- no-parallel: `SYSTEM RELOAD CONFIG` holds a server-wide lock. Many parallel copies of this test wait for each other for minutes.
+
 -- `SYSTEM RELOAD CONFIG` reads `collect_connection_metrics` again.
 -- The server config must set `collect_connection_metrics` to `true`.
 
