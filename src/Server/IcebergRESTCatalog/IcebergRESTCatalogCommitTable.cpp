@@ -144,14 +144,28 @@ Poco::JSON::Object::Ptr findSnapshot(const Poco::JSON::Object & metadata, Int64 
     return nullptr;
 }
 
+void validateSnapshot(const Poco::JSON::Object & snapshot)
+{
+    validateInteger(snapshot, f_metadata_snapshot_id);
+    validateInteger(snapshot, f_metadata_sequence_number);
+    validateInteger(snapshot, f_timestamp_ms);
+    validateString(snapshot, f_manifest_list);
+    validateOptionalInteger(snapshot, f_schema_id);
+    validateOptionalInteger(snapshot, f_parent_snapshot_id);
+
+    const auto summary = getObject(snapshot, f_summary);
+    validateString(*summary, f_operation);
+    for (const auto & [key, value] : *summary)
+    {
+        if (!value.isString())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Summary value '{}' must be a string", key);
+    }
+}
+
 void addSnapshot(Poco::JSON::Object & metadata, const Poco::JSON::Object & update)
 {
     const auto new_snapshot = getObject(update, "snapshot");
-
-    /// Check required fields exist.
-    validateInteger(*new_snapshot, f_timestamp_ms);
-    validateString(*new_snapshot, f_manifest_list);
-    validateString(*getObject(*new_snapshot, f_summary), f_operation);
+    validateSnapshot(*new_snapshot);
 
     /// Check the snapshot is indeed new.
     const auto new_snapshot_id = getInteger(*new_snapshot, f_metadata_snapshot_id);

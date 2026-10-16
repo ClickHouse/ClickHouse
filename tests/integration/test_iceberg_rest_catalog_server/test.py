@@ -1063,6 +1063,10 @@ def test_commit_rejected(started_cluster):
         ({"action": "add-schema", "schema": DEFAULT_SCHEMA}, "UnsupportedOperationException"),
         # Snapshot id 100 is taken.
         ({"action": "add-snapshot", "snapshot": fake_snapshot(100, 2)}, "BadRequestException"),
+        # Optional snapshot fields keep their spec types.
+        ({"action": "add-snapshot", "snapshot": fake_snapshot(101, 2) | {"schema-id": "bad"}}, "BadRequestException"),
+        ({"action": "add-snapshot", "snapshot": fake_snapshot(101, 2) | {"parent-snapshot-id": "100"}}, "BadRequestException"),
+        ({"action": "add-snapshot", "snapshot": fake_snapshot(101, 2) | {"summary": {"operation": "append", "added-records": 10}}}, "BadRequestException"),
         # Snapshot 5 does not exist.
         ({"action": "set-snapshot-ref", "ref-name": "main", "type": "branch", "snapshot-id": 5}, "BadRequestException"),
         # Retention settings must be positive integers.
@@ -1071,9 +1075,15 @@ def test_commit_rejected(started_cluster):
         # Tags carry only max-ref-age-ms.
         ({"action": "set-snapshot-ref", "ref-name": "v1", "type": "tag", "snapshot-id": 100, "max-snapshot-age-ms": 1000}, "BadRequestException"),
     ]
+    before = catalog_request("GET", tables_url(ns, "events")).json()
     for update, expected_type in bad_updates:
         response = commit_table(ns, "events", [], [update], expected_code=400)
         assert_error_shape(response, expected_type)
+
+    # Rejected updates leave the metadata pointer and its content untouched.
+    after = catalog_request("GET", tables_url(ns, "events")).json()
+    assert after["metadata-location"] == before["metadata-location"]
+    assert after["metadata"] == before["metadata"]
 
     # Sequence number 1 is not greater than the current one, so another commit landed first.
     stale = {"action": "add-snapshot", "snapshot": fake_snapshot(101, 1)}

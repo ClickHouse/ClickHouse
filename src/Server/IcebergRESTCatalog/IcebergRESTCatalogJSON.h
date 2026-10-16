@@ -38,6 +38,7 @@ Poco::Dynamic::Var getValue(const Poco::JSON::Object & object, const String & ke
 
 void validateBoolean(const Poco::JSON::Object & object, const String & key);
 void validateInteger(const Poco::JSON::Object & object, const String & key);
+void validateOptionalInteger(const Poco::JSON::Object & object, const String & key);
 /// Also rejects an empty string.
 void validateString(const Poco::JSON::Object & object, const String & key);
 

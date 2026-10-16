@@ -112,6 +112,11 @@ void validateInteger(const Poco::JSON::Object & object, const String & key)
     getInteger(object, key);
 }
 
+void validateOptionalInteger(const Poco::JSON::Object & object, const String & key)
+{
+    getOptionalInteger(object, key);
+}
+
 void validateString(const Poco::JSON::Object & object, const String & key)
 {
     if (!object.has(key) || !object.get(key).isString() || object.getValue<String>(key).empty())
