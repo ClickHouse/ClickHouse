@@ -1,3 +1,6 @@
+-- Tags: no-replicated-database
+-- Tag no-replicated-database: CREATE TABLE ... CLONE AS is not supported with Replicated databases
+
 DROP TABLE IF EXISTS clone_as_parenthesized_keys_source;
 DROP TABLE IF EXISTS clone_as_parenthesized_keys_target;
 DROP TABLE IF EXISTS clone_as_parenthesized_primary_source;
