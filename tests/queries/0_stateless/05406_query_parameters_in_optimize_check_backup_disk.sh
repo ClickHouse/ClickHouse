@@ -59,3 +59,4 @@ ${CLICKHOUSE_CURL} -sS "${BASE}${P}/disk?param_ty=local" | grep -o "type = 'loca
 
 $CLICKHOUSE_CLIENT --param_t=query_log -q "SYSTEM FLUSH LOGS {t:Identifier}" 2>&1 | grep -o -m1 'SYNTAX_ERROR'
 $CLICKHOUSE_CLIENT --param_f=CSV -q "INSERT INTO t_dedup FORMAT {f:Identifier} 1,1,x" 2>&1 | grep -o -m1 'SYNTAX_ERROR'
+echo '1,1,x' | $CLICKHOUSE_CLIENT --param_f=CSV -q "INSERT INTO t_dedup SELECT * FROM input('a UInt8, b UInt8, c String') FORMAT {f:Identifier}" 2>&1 | grep -o -m1 'SYNTAX_ERROR'
