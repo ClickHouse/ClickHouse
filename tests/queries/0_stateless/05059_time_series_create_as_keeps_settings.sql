@@ -48,3 +48,49 @@ FROM system.tables WHERE database = currentDatabase() AND name = 'ts_custom_copy
 
 DROP TABLE ts_custom_copy;
 DROP TABLE ts_custom_src;
+
+-- A declared `allow_nullable_key` survives the copy, because the user's nullable key column needs it.
+-- Only the one generated for `min_time` and `max_time` in the sorting key goes away with that key.
+DROP TABLE IF EXISTS ts_nullable_src;
+DROP TABLE IF EXISTS ts_nullable_copy;
+
+SELECT '-- a tags engine with arguments keeps allow_nullable_key';
+CREATE TABLE ts_nullable_src ENGINE = TimeSeries SETTINGS version = 8
+TAGS INNER COLUMNS (metric_name Nullable(String), v UInt64)
+TAGS ENGINE = ReplacingMergeTree(v) PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS allow_nullable_key = 1;
+CREATE TABLE ts_nullable_copy AS ts_nullable_src;
+SELECT extract(create_table_query, 'TAGS INNER ENGINE = (.*?)(?: [A-Z ]+ INNER |$)')
+FROM system.tables WHERE database = currentDatabase() AND name = 'ts_nullable_copy';
+DROP TABLE ts_nullable_copy;
+DROP TABLE ts_nullable_src;
+
+SELECT '-- a tags engine of another kind keeps allow_nullable_key';
+CREATE TABLE ts_nullable_src ENGINE = TimeSeries
+TAGS INNER COLUMNS (metric_name Nullable(String))
+TAGS ENGINE = MergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS allow_nullable_key = 1;
+CREATE TABLE ts_nullable_copy AS ts_nullable_src;
+SELECT extract(create_table_query, 'TAGS INNER ENGINE = (.*?)(?: [A-Z ]+ INNER |$)')
+FROM system.tables WHERE database = currentDatabase() AND name = 'ts_nullable_copy';
+DROP TABLE ts_nullable_copy;
+DROP TABLE ts_nullable_src;
+
+SELECT '-- the generated tags engine keeps allow_nullable_key';
+CREATE TABLE ts_nullable_src ENGINE = TimeSeries SETTINGS version = 8
+TAGS INNER COLUMNS (metric_name Nullable(String))
+TAGS ENGINE = ReplacingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS allow_nullable_key = 1;
+CREATE TABLE ts_nullable_copy AS ts_nullable_src;
+SELECT extract(create_table_query, 'TAGS INNER ENGINE = (.*?)(?: [A-Z ]+ INNER |$)')
+FROM system.tables WHERE database = currentDatabase() AND name = 'ts_nullable_copy';
+DROP TABLE ts_nullable_copy;
+DROP TABLE ts_nullable_src;
+
+SELECT '-- allow_nullable_key generated for min_time and max_time goes away with them';
+CREATE TABLE ts_nullable_src ENGINE = TimeSeries SETTINGS version = 7, aggregate_min_time_and_max_time = 0
+TAGS INNER COLUMNS (v UInt64) TAGS ENGINE = ReplacingMergeTree(v);
+SELECT extract(create_table_query, 'TAGS INNER ENGINE = (.*?)(?: [A-Z ]+ INNER |$)')
+FROM system.tables WHERE database = currentDatabase() AND name = 'ts_nullable_src';
+CREATE TABLE ts_nullable_copy AS ts_nullable_src;
+SELECT extract(create_table_query, 'TAGS INNER ENGINE = (.*?)(?: [A-Z ]+ INNER |$)')
+FROM system.tables WHERE database = currentDatabase() AND name = 'ts_nullable_copy';
+DROP TABLE ts_nullable_copy;
+DROP TABLE ts_nullable_src;

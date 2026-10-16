@@ -1010,12 +1010,13 @@ namespace
 
                 if (primary_key_is_generated && sorting_key_is_generated)
                 {
+                    /// `allow_nullable_key` is generated only for the nullable `min_time` and `max_time` in the sorting key.
+                    /// Otherwise the user set it for their own nullable key column, so it is kept.
+                    if (sorting_key_equals("metric_name, id, min_time, max_time"))
+                        remove_settings({{"allow_nullable_key", static_cast<UInt64>(1)}});
+
                     inner_engine.reset(inner_engine.primary_key);
                     inner_engine.reset(inner_engine.order_by);
-
-                    /// `allow_nullable_key` is needed for the nullable `min_time` and `max_time` in the sorting key,
-                    /// so it's connected to the sorting key too.
-                    remove_settings({{"allow_nullable_key", static_cast<UInt64>(1)}});
                 }
 
                 remove_settings({
