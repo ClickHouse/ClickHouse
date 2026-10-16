@@ -18,6 +18,7 @@
 #include <Analyzer/Passes/AggregateFunctionOfGroupByKeysPass.h>
 #include <Analyzer/Passes/AggregateFunctionsArithmeticOperationsPass.h>
 #include <Analyzer/Passes/ArrayExistsToHasPass.h>
+#include <Analyzer/Passes/RewriteArrayFilterLengthToArrayCountPass.h>
 #include <Analyzer/Passes/AutoFinalOnQueryPass.h>
 #include <Analyzer/Passes/ComparisonTupleEliminationPass.h>
 #include <Analyzer/Passes/HasToInPass.h>
@@ -105,7 +106,7 @@ public:
 private:
     void visitColumn(ColumnNode * column) const
     {
-        if (column->getColumnSourceOrNull() == nullptr && column->getColumnName() != "__grouping_set")
+        if (column->getColumnSourceOrNull() == nullptr && !column->mayHaveNoSource())
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Column {} {} query tree node does not have valid source node after running {} pass",
                 column->getColumnName(), column->getColumnType(), pass_name);
@@ -265,9 +266,9 @@ void QueryTreePassManager::dump(WriteBuffer & buffer, size_t up_to_pass_index)
     }
 }
 
-void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
+void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze, bool positional_arguments_already_resolved)
 {
-    manager.addPass(std::make_unique<QueryAnalysisPass>(only_analyze));
+    manager.addPass(std::make_unique<QueryAnalysisPass>(only_analyze, positional_arguments_already_resolved));
     manager.addPass(std::make_unique<GroupingFunctionsResolvePass>());
     manager.addPass(std::make_unique<AutoFinalOnQueryPass>());
     /// This pass should be run for the secondary queries
@@ -286,6 +287,7 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
     manager.addPass(std::make_unique<CountDistinctPass>());
     manager.addPass(std::make_unique<UniqToCountPass>());
     manager.addPass(std::make_unique<RewriteArrayExistsToHasPass>());
+    manager.addPass(std::make_unique<RewriteArrayFilterLengthToArrayCountPass>());
     manager.addPass(std::make_unique<RewriteHasToInPass>());
     manager.addPass(std::make_unique<NormalizeCountVariantsPass>());
 

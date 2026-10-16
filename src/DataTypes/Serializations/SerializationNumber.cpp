@@ -18,6 +18,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -138,13 +139,7 @@ void SerializationNumber<T>::deserializeText(IColumn & column, ReadBuffer & istr
     T x{};
 
     if constexpr (is_integer<T> && is_arithmetic_v<T>)
-    {
-        /// readIntTextUnsafe treats a leading '0' as the complete value zero, but readIntText tolerates it
-        if (settings.allow_number_leading_zeros)
-            readIntText(x, istr);
-        else
-            readIntTextUnsafe(x, istr);
-    }
+        readIntTextUnsafe(x, istr);
     else
         deserializeNumberText(x, istr, settings);
 
@@ -194,6 +189,17 @@ ReturnType deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, const Fo
             assertString("ull", istr);
         else if (!checkString("ull", istr))
             return ReturnType(false);
+
+        /// With `input_format_null_as_default = 0`, null must not be silently replaced by a number.
+        if (!settings.null_as_default)
+        {
+            if constexpr (throw_exception)
+                throw Exception(ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN,
+                    "Cannot insert NULL value into a column of type '{}'. You can enable 'input_format_null_as_default' "
+                    "to insert the default value instead", TypeName<T>);
+            else
+                return ReturnType(false);
+        }
 
         x = NaNOrZero<T>();
     }

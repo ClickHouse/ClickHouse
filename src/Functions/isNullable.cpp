@@ -11,7 +11,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
 }
 
 namespace
@@ -22,12 +21,10 @@ class FunctionIsNullable final : public IFunction
 {
 public:
     static constexpr auto name = "isNullable";
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(ContextPtr)
     {
-        return std::make_shared<FunctionIsNullable>(context->getSettingsRef()[Setting::allow_experimental_analyzer]);
+        return std::make_shared<FunctionIsNullable>();
     }
-
-    explicit FunctionIsNullable(bool use_analyzer_) : use_analyzer(use_analyzer_) {}
 
     String getName() const override
     {
@@ -36,10 +33,6 @@ public:
 
     ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
     {
-        /// isNullable(column) triggers a bug in old analyzer when it is replaced to constant.
-        if (!use_analyzer)
-            return nullptr;
-
         const ColumnWithTypeAndName & elem = arguments[0];
         if (elem.type->onlyNull() || canContainNull(*elem.type))
             return result_type->createColumnConst(1, UInt8(1));
@@ -64,9 +57,9 @@ public:
         return 1;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
+    String getSignatureString() const override
     {
-        return std::make_shared<DataTypeUInt8>();
+        return "(Any) -> UInt8";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -76,7 +69,6 @@ public:
     }
 
 private:
-    bool use_analyzer;
 };
 
 }

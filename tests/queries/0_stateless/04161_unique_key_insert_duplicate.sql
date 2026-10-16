@@ -7,7 +7,7 @@
 -- paths: UK = sort prefix (sorted writer) and UK not a sort prefix (unsorted
 -- writer, where the duplicates are only adjacent after the writer's UK sort).
 
-SET allow_experimental_unique_key = 1;
+SET enable_unique_key = 1;
 SET async_insert = 0;
 
 DROP TABLE IF EXISTS uk_dup_sorted;

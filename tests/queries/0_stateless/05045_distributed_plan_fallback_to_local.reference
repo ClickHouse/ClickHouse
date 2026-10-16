@@ -1,0 +1,29 @@
+-- WITH TOTALS falls back
+0	49500
+1	49600
+2	49700
+3	49800
+4	49900
+5	50000
+6	50100
+7	50200
+8	50300
+9	50400
+
+0	499500
+-- max_rows_to_group_by falls back
+0	49500
+1	49600
+2	49700
+3	49800
+4	49900
+5	50000
+6	50100
+7	50200
+8	50300
+9	50400
+-- _part_index read falls back
+1000	1
+-- fallback ran locally:	1
+-- strict mode throws
+-- strict mode also refuses a plan with no distributable source

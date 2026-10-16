@@ -39,20 +39,28 @@ public:
     bool isVariadic() const override { return true; }
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return false; }
+    bool useDefaultImplementationForNothing() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (arguments.size() > 1)
-            throw Exception(
-                ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
-                "Number of arguments for function {} doesn't match: passed {}, should be 0 or 1.",
-                getName(), arguments.size());
-
-        return std::make_shared<DataTypeFixedString>(ULID_LENGTH);
+        return "([Any]) -> FixedString(26)";
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    /// The function accepted at most one (ignored) argument and reported anything beyond that as
+    /// `TOO_MANY_ARGUMENTS_FOR_FUNCTION` before it adopted the declarative signature; tests pin that code.
+    int getWrongNumberOfArgumentsErrorCode(size_t /*number_of_arguments*/) const override
+    {
+        return ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION;
+    }
+
+    /// `useDefaultImplementationForConstants` is deliberately not enabled: with a constant argument
+    /// it would generate one identifier and stamp it onto every row, which is the opposite of what
+    /// the argument is for - it exists to get an independent identifier per call.
+    ///
+    /// The argument is ignored, so it does not take part in null propagation either: `generateULID(NULL)`
+    /// generates an identifier, the way `generateUUIDv4(NULL)` and `generateSnowflakeID(NULL)` do.
+    bool useDefaultImplementationForNulls() const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & /*arguments*/, const DataTypePtr &, size_t input_rows_count) const override
     {

@@ -86,26 +86,53 @@ TEST(DataTypesCache, InvalidatedOnQueryContextChange)
     }
 }
 
-TEST(DataTypesCache, DoesNotPoolNonPoolableSerializations)
+TEST(DataTypesCache, PoolsNonPoolableSerializationsWithinOneQuery)
 {
     ResetCurrentThreadGuard reset_current_thread;
     ThreadStatus thread_status;
 
-    auto query_context = makeQueryContext("data_types_cache_test_non_poolable", "UTC");
+    auto query_context = makeQueryContext("data_types_cache_test_non_poolable_same_query", "UTC");
     auto query_scope = QueryScope::create(query_context);
 
-    /// The JSON type itself is an immutable value object and is safe to cache...
+    /// SerializationJSON has supportsPooling() == false (it holds mutable per-use state in
+    /// its extraction tree, see the comment in SerializationJSON::create), but its contract
+    /// only forbids reuse *across queries*: within one query, on one thread, pooling one
+    /// instance across many lookups (and hence many rows) is the same trusted pattern
+    /// ColumnDynamic's per-column serialization_cache already relies on.
     auto first_type = getDataTypesCache().getType("JSON");
     auto second_type = getDataTypesCache().getType("JSON");
     ASSERT_EQ(first_type.get(), second_type.get());
 
-    /// ...but SerializationJSON holds mutable per-use state (`supportsPooling() == false`,
-    /// see the comment in SerializationJSON::create), so even within one query the cache
-    /// must build a fresh serialization on every lookup instead of pooling one instance.
     auto first_serialization = getDataTypesCache().getSerialization("JSON");
     auto second_serialization = getDataTypesCache().getSerialization("JSON");
     ASSERT_FALSE(first_serialization->supportsPooling());
-    ASSERT_NE(first_serialization.get(), second_serialization.get());
+    ASSERT_EQ(first_serialization.get(), second_serialization.get());
+}
+
+TEST(DataTypesCache, InvalidatesNonPoolableSerializationsAcrossQueries)
+{
+    ResetCurrentThreadGuard reset_current_thread;
+    ThreadStatus thread_status;
+
+    /// Kept alive (not just its raw address) across both query scopes: if only the address
+    /// were recorded, the first cache entry could be destroyed once its query scope ends,
+    /// and an unrelated later allocation could reuse the same address, making the comparison
+    /// below pass even when invalidation was actually broken.
+    SerializationPtr first_serialization;
+    {
+        auto query_context = makeQueryContext("data_types_cache_test_non_poolable_query_1", "UTC");
+        auto query_scope = QueryScope::create(query_context);
+        first_serialization = getDataTypesCache().getSerialization("JSON");
+    }
+
+    /// A new query on the same thread must not be served the previous query's pooled
+    /// SerializationJSON instance: pooling supportsPooling() == false serializations is
+    /// only safe because the cache is cleared on every query-context change.
+    {
+        auto query_context = makeQueryContext("data_types_cache_test_non_poolable_query_2", "UTC");
+        auto query_scope = QueryScope::create(query_context);
+        ASSERT_NE(getDataTypesCache().getSerialization("JSON").get(), first_serialization.get());
+    }
 }
 
 TEST(DataTypesCache, InvalidatedOnSessionTimezoneChangeWithinOneContext)

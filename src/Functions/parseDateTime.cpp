@@ -459,7 +459,7 @@ namespace
             if (parse_syntax_ == ParseSyntax::MySQL && scale_ != 6)
                 throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Precision {} is invalid (must be 6)", scale);
             else if (parse_syntax_ == ParseSyntax::Joda && scale_ > 6)
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Precision {} is invalid (must be [0, 6])", scale);
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Precision {} is invalid (must be [0, 6])", scale_);
 
             scale = scale_;
         }
@@ -612,10 +612,43 @@ namespace
         String getName() const override { return name; }
 
         bool useDefaultImplementationForConstants() const override { return true; }
+        /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
+        /// row references it, so the throwing variant must not be executed on the whole dictionary -
+        /// the empty string is not a date and it would fail on entirely valid data.
+        bool canBeExecutedOnDefaultArguments() const override { return error_handling != ErrorHandling::Exception; }
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
         ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
         bool isVariadic() const override { return true; }
         size_t getNumberOfArguments() const override { return 0; }
+
+        /// Documentation-only — the override below is authoritative (it computes
+        /// the DateTime64 scale from the number of `S` placeholders in the
+        /// format string, and attaches the timezone from the optional third arg).
+        String getSignatureString() const override
+        {
+            String result;
+            if constexpr (return_type == ReturnType::DateTime)
+                result = "DateTime";
+            else
+                result = "DateTime64";
+            if constexpr (error_handling == ErrorHandling::Null)
+                result = "Nullable(" + result + ")";
+            return "(String, [const String], [const String]) -> " + result;
+        }
+
+        /// There is no types-only answer: the result type depends on the *values* of the optional
+        /// arguments — the timezone comes from the third argument and, for the `DateTime64`
+        /// non-MySQL syntax, the scale is the number of `S` placeholders in the format string.
+        /// Decline this entry point instead of letting the documentation-only signature above
+        /// answer with a timezone-less `DateTime`/scale-0 `DateTime64`.
+        DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
+        {
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "getReturnType is not implemented for {}: the result type can only be derived "
+                "when the values of the format and timezone arguments are known",
+                getName());
+        }
 
         DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {

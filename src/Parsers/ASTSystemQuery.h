@@ -41,6 +41,7 @@ public:
         CLEAR_TEXT_INDEX_HEADER_CACHE,
         CLEAR_TEXT_INDEX_POSTINGS_CACHE,
         CLEAR_TEXT_INDEX_CACHES,
+        CLEAR_COLUMNS_CACHE,
         CLEAR_MMAP_CACHE,
         CLEAR_QUERY_CONDITION_CACHE,
         CLEAR_ENCRYPTION_HEADERS_CACHE,
@@ -58,6 +59,7 @@ public:
         CLEAR_FORMAT_SCHEMA_CACHE,
         CLEAR_AVRO_SCHEMA_CACHE,
         CLEAR_S3_CLIENT_CACHE,
+        CLEAR_TIME_SERIES_CACHES,
         STOP_LISTEN,
         START_LISTEN,
         RESTART_REPLICAS,
@@ -83,8 +85,6 @@ public:
         RELOAD_DICTIONARIES,
         UNLOAD_DICTIONARY,
         UNLOAD_DICTIONARIES,
-        RELOAD_MODEL,
-        RELOAD_MODELS,
         RELOAD_FUNCTION,
         RELOAD_FUNCTIONS,
         RELOAD_EMBEDDED_DICTIONARIES,
@@ -118,6 +118,7 @@ public:
         UNFREEZE,
         ENABLE_FAILPOINT,
         DISABLE_FAILPOINT,
+        DISABLE_ALL_FAILPOINTS,
         ALLOCATE_MEMORY,
         FREE_MEMORY,
         WAIT_FAILPOINT,
@@ -155,6 +156,7 @@ public:
         INSTRUMENT_ADD,
         INSTRUMENT_REMOVE,
         RESET_DDL_WORKER,
+        RESET_FILELOG,
         STOP_ALL_BACKGROUND,
         START_ALL_BACKGROUND,
         PAUSE_ALL_BACKGROUND,
@@ -183,7 +185,6 @@ public:
     void setDatabase(const String & name);
     void setTable(const String & name);
 
-    String target_model;
     String target_function;
     String replica;
     String shard;
@@ -192,6 +193,12 @@ public:
     String replica_zk_path;
     bool is_drop_whole_replica{};
     bool with_tables{false};
+
+    /// SYSTEM RESET FILELOG ... FILE 'name' [OFFSET n | TO END]
+    bool filelog_to_end = false;
+    std::optional<String> filelog_file;
+    std::optional<UInt64> filelog_offset;
+
     String storage_policy;
     String volume;
     String disk;

@@ -10,22 +10,18 @@ doc_type: 'guide'
 import CommunityMonitoring from '/snippets/ru/_community_monitoring.mdx';
 import { PrivatePreviewBadge } from "/snippets/ru/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
-<div id="direct-datadog">
-  ## Интеграция с Datadog
-</div>
+## Интеграция с Datadog {#direct-datadog}
 
 Для мониторинга развертывания ClickHouse в Datadog ClickHouse предлагает несколько интеграций для разных вариантов развертывания. У каждой из них есть свои особенности и компромиссы: одни разрабатываются ClickHouse, другие — Datadog. Интеграции перечислены в рекомендуемом порядке.
 
-| Интеграция                                                                                                 | Документация                                                                                   | Развертывание | Сигналы                          |
-| ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ------------- | -------------------------------- |
-| [Интеграция ClickHouse Cloud с API Datadog](#clickhouse-cloud-datadog-api-integration) *(рекомендуется)* | [docs.datadoghq.com](https://docs.datadoghq.com/integrations/clickhouse-cloud/)                | Cloud         | Метрики                          |
-| [Интеграция Prometheus для ClickHouse Cloud](#clickhouse-cloud-prometheus-integration)                     | [clickhouse.com/docs](/ru/products/cloud/features/monitoring/prometheus)                          | Cloud         | Метрики                          |
-| [Интеграция Datadog Agent для ClickHouse](#clickhouse-datadog-agent-integration)                           | [docs.datadoghq.com](https://docs.datadoghq.com/integrations/clickhouse/?tab=host)             | OSS / Cloud   | Журналы, Метрики                 |
-| [ClickHouse Datadog DBM](#clickhouse-datadog-dbm)                                                          | [datadoghq.com](https://www.datadoghq.com/product-preview/database-monitoring-for-clickhouse/) | OSS / Cloud   | Журналы, Метрики, Query Insights |
+| Интеграция                                                                                               | Документация                                                                                   | Развертывание | Сигналы                          |
+| -------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ------------- | -------------------------------- |
+| [Интеграция Prometheus с ClickHouse Cloud](#clickhouse-cloud-prometheus-integration) *(рекомендуется)* | [clickhouse.com/docs](/ru/products/cloud/features/monitoring/prometheus)                          | Cloud         | Метрики                          |
+| [Интеграция ClickHouse Cloud с API Datadog](#clickhouse-cloud-datadog-api-integration)                   | [docs.datadoghq.com](https://docs.datadoghq.com/integrations/clickhouse-cloud/)                | Cloud         | Метрики                          |
+| [Интеграция Datadog Agent для ClickHouse](#clickhouse-datadog-agent-integration)                         | [docs.datadoghq.com](https://docs.datadoghq.com/integrations/clickhouse/?tab=host)             | OSS / Cloud   | Журналы, Метрики                 |
+| [ClickHouse Datadog DBM](#clickhouse-datadog-dbm)                                                        | [datadoghq.com](https://www.datadoghq.com/product-preview/database-monitoring-for-clickhouse/) | OSS / Cloud   | Журналы, Метрики, Query Insights |
 
-<div id="clickhouse-cloud-datadog-api-integration">
-  ### Интеграция ClickHouse Cloud с API Datadog
-</div>
+### Интеграция ClickHouse Cloud с API Datadog {#clickhouse-cloud-datadog-api-integration}
 
 <PrivatePreviewBadge />
 
@@ -40,9 +36,7 @@ import { PrivatePreviewBadge } from "/snippets/ru/components/PrivatePreviewBadge
 
 Информацию по шагам онбординга см. в [руководстве Datadog по интеграции ClickHouse Cloud](https://docs.datadoghq.com/integrations/clickhouse-cloud/).
 
-<div id="clickhouse-cloud-prometheus-integration">
-  ### Интеграция Prometheus с ClickHouse Cloud
-</div>
+### Интеграция Prometheus с ClickHouse Cloud {#clickhouse-cloud-prometheus-integration}
 
 Самый распространённый и универсальный способ собирать телеметрию на уровне сервиса и организации в ClickHouse Cloud.
 
@@ -52,9 +46,7 @@ import { PrivatePreviewBadge } from "/snippets/ru/components/PrivatePreviewBadge
 * В Datadog эти метрики учитываются как **пользовательские метрики**
 * **Не** предотвращает переход сервиса в режим простоя
 
-<div id="clickhouse-datadog-agent-integration">
-  ### Интеграция ClickHouse с Datadog Agent
-</div>
+### Интеграция ClickHouse с Datadog Agent {#clickhouse-datadog-agent-integration}
 
 Это самый распространённый способ передачи данных из сервисов OSS ClickHouse в Datadog. Он также работает с ClickHouse Cloud, но с некоторыми оговорками.
 
@@ -68,9 +60,7 @@ Datadog Agent периодически опрашивает экземпляр C
 * Требуется `datadog-cluster-agent` вместо `datadog-agent`
 * **Не позволит сервису перейти в режим простоя**
 
-<div id="clickhouse-datadog-dbm">
-  ### ClickHouse Datadog DBM
-</div>
+### ClickHouse Datadog DBM {#clickhouse-datadog-dbm}
 
 Database Monitoring (DBM) для ClickHouse разрабатывает и поддерживает Datadog. Для этого Datadog Agent настраивается на сбор данных из системных таблиц экземпляра ClickHouse, что позволяет получать информацию о производительности на уровне запросов, аналогичную той, что встроенно доступна в ClickHouse Cloud Console. ClickHouse не участвует в этой интеграции — по всем проблемам обращайтесь в Datadog, а не в ClickHouse.
 
@@ -80,9 +70,7 @@ Database Monitoring (DBM) для ClickHouse разрабатывает и под
 
 <CommunityMonitoring />
 
-<div id="billing-usage-api">
-  ## API Billing &amp; Usage
-</div>
+## API Billing &amp; Usage {#billing-usage-api}
 
 API Billing &amp; Usage позволяет программно получать доступ к данным о биллинге и использовании вашей организации в Cloud. Это полезно при создании собственных панелей мониторинга затрат или интеграции данных о биллинге в существующие процессы финансовой отчетности.
 
