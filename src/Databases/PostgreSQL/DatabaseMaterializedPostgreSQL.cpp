@@ -25,6 +25,7 @@
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseFactory.h>
+#include <Databases/LoadingStrictnessLevel.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StoragePostgreSQL.h>
 #include <Storages/AlterCommands.h>
@@ -827,6 +828,10 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
         if (engine_define->settings)
             postgresql_replica_settings->loadFromQuery(*engine_define);
 
+        /// A definition stored by an older version, which did not check it, must still be loaded.
+        if (!is_internal_metadata_replay && isFreshTableDefinition(args.mode, args.create_query.attach_short_syntax))
+            postgresql_replica_settings->checkConsistencyForFreshDefinition();
+
         auto connection_info = postgres::formatConnectionString(
             configuration.database,
             configuration.host,
@@ -1039,6 +1044,7 @@ Default value: `65536`.
 ### `materialized_postgresql_replication_slot` {#materialized-postgresql-replication-slot}
 
 A user-created replication slot. Must be used together with `materialized_postgresql_snapshot`.
+Cannot be used together with `materialized_postgresql_use_unique_replication_consumer_identifier`.
 
 ### `materialized_postgresql_snapshot` {#materialized-postgresql-snapshot}
 
@@ -1062,6 +1068,7 @@ ALTER DATABASE postgres_database MODIFY SETTING materialized_postgresql_max_bloc
 
 Use a unique replication consumer identifier for replication. Default: `0`.
 If set to `1`, allows to setup several `MaterializedPostgreSQL` tables pointing to the same `PostgreSQL` table.
+Cannot be used together with `materialized_postgresql_replication_slot`: a user-managed replication slot has a single fixed name and cannot be unique per consumer. Such a combination is rejected on `CREATE` and on `ATTACH` with a full definition, but a database or table that was already created with it can still be loaded.
 
 ### `materialized_postgresql_use_extended_date_and_time_types` {#materialized-postgresql-use-extended-date-and-time-types}
 
