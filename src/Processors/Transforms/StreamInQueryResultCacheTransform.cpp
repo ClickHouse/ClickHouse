@@ -30,6 +30,17 @@ IProcessor::Status StreamInQueryResultCacheTransform::prepare()
     return ISimpleTransform::prepare();
 }
 
+void StreamInQueryResultCacheTransform::cancel(CancelReason reason) noexcept
+{
+    /// The client cancelled the query after a first partial result (setting `partial_result_on_first_cancel`). Only the sources stop,
+    /// the rest of the pipeline drains and the query finishes successfully with the rows read so far. This transform then sees an
+    /// exhausted input, but the buffered result is only a prefix, so it must not be stored.
+    if (reason == CancelReason::PartialResult)
+        query_result_cache_writer->markResultIncomplete();
+
+    ISimpleTransform::cancel(reason);
+}
+
 void StreamInQueryResultCacheTransform::finalizeWriteInQueryResultCache()
 {
     if (!isCancelled())
