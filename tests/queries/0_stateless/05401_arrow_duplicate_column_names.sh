@@ -9,7 +9,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 DATA_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
-trap 'rm -f "${DATA_FILE}.Arrow" "${DATA_FILE}.ArrowStream"' EXIT
+trap 'rm -f "${DATA_FILE}.Arrow" "${DATA_FILE}.ArrowStream" "${DATA_FILE}.wide.ArrowStream"' EXIT
 
 python3 - "$DATA_FILE" <<'EOF'
 import sys
@@ -28,6 +28,12 @@ for fmt, opener in [("Arrow", pa.ipc.new_file), ("ArrowStream", pa.ipc.new_strea
     with pa.OSFile(f"{base}.{fmt}", "wb") as sink:
         with opener(sink, batch.schema) as writer:
             writer.write_batch(batch)
+
+# 20000 columns that are all named `x`: the renaming must stay fast (linear) for many repeats of one name.
+wide = pa.record_batch([pa.array([i], pa.int32()) for i in range(20000)], names=["x"] * 20000)
+with pa.OSFile(f"{base}.wide.ArrowStream", "wb") as sink:
+    with pa.ipc.new_stream(sink, wide.schema) as writer:
+        writer.write_batch(wide)
 EOF
 
 for FMT in Arrow ArrowStream; do
@@ -37,3 +43,6 @@ for FMT in Arrow ArrowStream; do
         SELECT * FROM file('${DATA_FILE}.${FMT}', '${FMT}') ORDER BY ints;
         SELECT ints_2, d_1 FROM file('${DATA_FILE}.${FMT}', '${FMT}', 'ints_2 Int64, d_1 String') ORDER BY ints_2;"
 done
+
+echo "--- 20000 columns named x ---"
+${CLICKHOUSE_LOCAL} --query "SELECT x, x_1, x_19999 FROM file('${DATA_FILE}.wide.ArrowStream', 'ArrowStream')"

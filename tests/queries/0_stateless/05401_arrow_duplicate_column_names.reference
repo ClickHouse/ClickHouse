@@ -18,3 +18,5 @@ d_1	LowCardinality(Nullable(String))
 2	4	b	q	s
 3	r
 4	s
+--- 20000 columns named x ---
+0	1	19999

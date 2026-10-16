@@ -26,6 +26,7 @@
 #include <IO/SeekableReadBuffer.h>
 #include <IO/NetUtils.h>
 #include <Common/PODArray.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 
 #pragma clang diagnostic push
@@ -362,13 +363,17 @@ void makeFieldNamesUnique(ArrowFields & fields)
         return;
 
     UnorderedSetWithMemoryTracking<std::string> used_names;
+    /// The next suffix to try for each repeated name, so that every candidate is tried at most once (a schema with many
+    /// equal names would otherwise take quadratic time).
+    UnorderedMapWithMemoryTracking<std::string, size_t> next_suffix;
     for (ArrowField & field : fields)
     {
         if (used_names.insert(field.name).second)
             continue;
-        for (size_t suffix = 1;; ++suffix)
+        size_t & suffix = next_suffix.try_emplace(field.name, 1).first->second;
+        while (true)
         {
-            std::string candidate = fmt::format("{}_{}", field.name, suffix);
+            std::string candidate = fmt::format("{}_{}", field.name, suffix++);
             if (!original_names.contains(candidate) && used_names.insert(candidate).second)
             {
                 field.name = std::move(candidate);
