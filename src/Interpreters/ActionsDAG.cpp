@@ -2955,7 +2955,7 @@ void ActionsDAG::mergeInplace(ActionsDAG && second, std::unordered_map<const Nod
     /// second: x (1), x (2), x (3) ==> x (3), x (2), x (1)
     /// merge: x (1), x (2), x (3), y =(first)=> x (2), z, x (4), x (3) =(second)=> x (3), x (4), x (2), z
 
-    /// An implied hint reads `first`'s outputs by name, like `second`'s inputs; rebind it to what computes them as well.
+    /// An implied hint reads `first`'s outputs by name, like `second`'s inputs: rebind it to what computes them, or drop it if a name has another type there.
     {
         std::unordered_map<std::string_view, const Node *> first_output_by_name;
         for (auto & node : second.nodes)
@@ -2972,6 +2972,7 @@ void ActionsDAG::mergeInplace(ActionsDAG && second, std::unordered_map<const Nod
 
             NodeRawConstPtrs sources;
             bool renamed = false;
+            bool retyped = false;
             for (const auto * hint_input : index_hint->getActions().getInputs())
             {
                 auto it = first_output_by_name.find(hint_input->result_name);
@@ -2979,14 +2980,18 @@ void ActionsDAG::mergeInplace(ActionsDAG && second, std::unordered_map<const Nod
                     continue;
                 sources.push_back(it->second);
                 renamed |= it->second->type != ActionType::INPUT;
+                retyped |= !it->second->result_type->equals(*hint_input->result_type);
             }
-            if (!renamed)
+            if (!renamed && !retyped)
                 continue;
 
             ActionsDAG rebound_actions;
-            auto prefix = cloneSubDAG(sources, /*remove_aliases=*/ false);
-            if (!prefix.hasArrayJoin() && !prefix.hasNonDeterministic())
-                rebound_actions = merge(std::move(prefix), index_hint->getActions().clone());
+            if (!retyped)
+            {
+                auto prefix = cloneSubDAG(sources, /*remove_aliases=*/ false);
+                if (!prefix.hasArrayJoin() && !prefix.hasNonDeterministic())
+                    rebound_actions = merge(std::move(prefix), index_hint->getActions().clone());
+            }
 
             auto rebound = std::make_shared<FunctionIndexHint>();
             rebound->setActions(std::move(rebound_actions));

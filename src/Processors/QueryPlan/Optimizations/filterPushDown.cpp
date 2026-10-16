@@ -12,6 +12,7 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/TypeTree.h>
 #include <DataTypes/getLeastSupertype.h>
+#include <Functions/indexHint.h>
 
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
@@ -76,6 +77,20 @@ static bool identifiersIsAmongAllGroupingSets(const GroupingSetsParamsList & gro
     return true;
 }
 
+/// An implied hint reads its arguments from its own DAG, not from children. A user hint never passes a key step.
+static void addImpliedIndexHintInputs(const ActionsDAG::Node & node, NameSet & res)
+{
+    if (node.type != ActionsDAG::ActionType::FUNCTION)
+        return;
+    const auto * index_hint = FunctionIndexHint::tryGet(node.function_base);
+    if (!index_hint || !index_hint->isImplied())
+        return;
+    for (const auto * input : index_hint->getActions().getInputs())
+        res.emplace(input->result_name);
+    for (const auto & inner : index_hint->getActions().getNodes())
+        addImpliedIndexHintInputs(inner, res);
+}
+
 static NameSet findIdentifiersOfNode(const ActionsDAG::Node * node)
 {
     NameSet res;
@@ -93,6 +108,7 @@ static NameSet findIdentifiersOfNode(const ActionsDAG::Node * node)
     while (!queue.empty())
     {
         const auto * top = queue.front();
+        addImpliedIndexHintInputs(*top, res);
         for (const auto * child : top->children)
         {
             if (child->type == ActionsDAG::ActionType::INPUT)

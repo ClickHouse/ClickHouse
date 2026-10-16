@@ -54,9 +54,23 @@ DROP TABLE t_hint_key;
 
 -- below GROUP BY in a remote() local plan the derived hint still means the alias, not the column it shadows
 DROP TABLE IF EXISTS t_hint_alias;
-CREATE TABLE t_hint_alias (k UInt32, v UInt32, w UInt32) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 4, index_granularity_bytes = '10Mi';
-INSERT INTO t_hint_alias SELECT number, number % 10, number % 7 FROM numbers(100);
+CREATE TABLE t_hint_alias (k UInt32, v UInt32, w UInt32, arr Array(UInt32)) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 4, index_granularity_bytes = '10Mi';
+INSERT INTO t_hint_alias SELECT number, number % 10, number % 7, [number % 7, number % 10] FROM numbers(100);
 OPTIMIZE TABLE t_hint_alias FINAL;
 SELECT countIf(explain LIKE '%indexHint(%') > 0 FROM (EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM (SELECT w AS k, v FROM remote('127.0.0.1', currentDatabase(), t_hint_alias) AS t GROUP BY w, v, t.k) WHERE k < v AND v < 3 SETTINGS prefer_localhost_replica = 1);
 SELECT count() FROM (SELECT w AS k, v FROM remote('127.0.0.1', currentDatabase(), t_hint_alias) AS t GROUP BY w, v, t.k) WHERE k < v AND v < 3 SETTINGS prefer_localhost_replica = 1;
+-- a derived hint that crosses ARRAY JOIN is dropped, not bound to the array of the same name
+SELECT countIf(explain LIKE '%indexHint(%') > 0 FROM (EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM (SELECT x, v FROM t_hint_alias AS t ARRAY JOIN [w, v] AS x) WHERE x < v AND v < 3);
+SELECT count() FROM (SELECT x, v FROM t_hint_alias AS t ARRAY JOIN [w, v] AS x) WHERE x < v AND v < 3;
+SELECT countIf(explain LIKE '%indexHint(%') > 0 FROM (EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM (SELECT arr, v FROM t_hint_alias ARRAY JOIN arr GROUP BY arr, v) WHERE arr < v AND v < 3);
+SELECT count() FROM (SELECT arr, v FROM t_hint_alias ARRAY JOIN arr GROUP BY arr, v) WHERE arr < v AND v < 3;
 DROP TABLE t_hint_alias;
+
+-- a derived hint alone below GROUP BY does not pass GROUPING SETS that lack its key
+DROP TABLE IF EXISTS t_hint_gs;
+CREATE TABLE t_hint_gs (a UInt32, b UInt32) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 4, index_granularity_bytes = '10Mi';
+INSERT INTO t_hint_gs SELECT number, number FROM numbers(200);
+OPTIMIZE TABLE t_hint_gs FINAL;
+SELECT countIf(explain LIKE '%indexHint(%') > 0 FROM (EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM (SELECT a, max(b) AS m FROM (SELECT a, b FROM t_hint_gs GROUP BY GROUPING SETS ((a, b), (b))) GROUP BY a HAVING a < m AND m < 120));
+SELECT count() FROM (SELECT a, max(b) AS m FROM (SELECT a, b FROM t_hint_gs GROUP BY GROUPING SETS ((a, b), (b))) GROUP BY a HAVING a < m AND m < 120);
+DROP TABLE t_hint_gs;
