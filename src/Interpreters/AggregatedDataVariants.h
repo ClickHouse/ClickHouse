@@ -461,18 +461,20 @@ struct AggregatedDataVariants : private boost::noncopyable
     Type type = Type::EMPTY;
     bool top_k_heap_ever_rejected = false;
 
-    /// The table was rebuilt to the frozen set of kept keys of the trivial `GROUP BY ... LIMIT`
-    /// cutoff (see `ManyAggregatedData::SharedKeptKeys`), so it admits no other key. Only such a
-    /// table may be flushed to a temporary file while the cutoff holds: everything it contains is
-    /// a kept key, and `Aggregator` re-seeds it with the kept keys after the flush so the
-    /// remaining rows of those keys keep being aggregated.
+    /// The table admits no key outside the set `kept_keys_seed` holds, under
+    /// `group_by_overflow_mode = ANY`. Only such a table may be flushed to a temporary file
+    /// while the shared cutoff holds (see `ManyAggregatedData::SharedKeptKeys`): everything it
+    /// contains is a kept key, and `Aggregator` re-seeds it with the kept keys after the flush
+    /// so the remaining rows of those keys keep being aggregated.
     bool restricted_to_kept_keys = false;
 
-    /// The kept keys of the cutoff with empty aggregate states, in the mergeable block layout.
-    /// Set together with `restricted_to_kept_keys`; the `Aggregator` re-seeds the table from it
-    /// after an external-aggregation spill has emptied it. With the shared cutoff this is the
-    /// frozen set shared by all the streams (`ManyAggregatedData::SharedKeptKeys::seed`); on the
-    /// branches that cap every stream on its own it is the stream's own kept key set.
+    /// Keys with empty aggregate states, in the mergeable block layout; the `Aggregator` puts
+    /// them back into the table after an external-aggregation spill has emptied it. With the
+    /// shared cutoff of the trivial `GROUP BY ... LIMIT` optimization this is the frozen set
+    /// shared by all the streams (`ManyAggregatedData::SharedKeptKeys::seed`), captured before
+    /// the table is rebuilt around it, and set together with `restricted_to_kept_keys`; with a
+    /// plain `max_rows_to_group_by` cap it is refreshed by every flush from what that flush
+    /// wrote, which is every key the stream has admitted so far.
     ConstBlockPtr kept_keys_seed;
 
     /// The table is being rebuilt around the kept keys, or re-seeded with them after a flush.
