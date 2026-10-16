@@ -173,6 +173,7 @@ private:
 
 public:
     static constexpr bool DateTime64Supported = false;
+    static constexpr bool can_use_lookup_table8 = false;
 
     explicit AggregateFunctionProduct(const DataTypes & argument_types_)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionProduct<T>>(
