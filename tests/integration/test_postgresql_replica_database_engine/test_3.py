@@ -3357,6 +3357,11 @@ postgres_table_template_without_primary_key = """
     key Integer NOT NULL, value Integer)
     """
 
+postgres_table_template_without_primary_key_with_payload = """
+    CREATE TABLE IF NOT EXISTS "{}" (
+    key Integer NOT NULL, value Integer, payload text)
+    """
+
 
 def get_single_publication(cursor):
     cursor.execute(
@@ -3660,11 +3665,15 @@ def test_attach_bootstraps_listed_table_whose_first_snapshot_failed(started_clus
     mat_db = "partial_sync_database"
     pg_manager.create_postgres_table(good)
     pg_manager.create_postgres_table(
-        bad, template=postgres_table_template_without_primary_key
+        bad, template=postgres_table_template_without_primary_key_with_payload
     )
     cursor = pg_manager.get_db_cursor()
+    # Store `payload` out of line, so that an update that does not change it carries an unchanged TOAST value.
+    cursor.execute(f"ALTER TABLE {bad} ALTER COLUMN payload SET STORAGE EXTERNAL")
     cursor.execute(f"INSERT INTO {good} SELECT i, i FROM generate_series(0, 29) AS i")
-    cursor.execute(f"INSERT INTO {bad} SELECT i, i FROM generate_series(0, 29) AS i")
+    cursor.execute(
+        f"INSERT INTO {bad} SELECT i, i, repeat('x', 10000) FROM generate_series(0, 29) AS i"
+    )
 
     pg_manager.create_materialized_db(
         ip=started_cluster.postgres_ip,
@@ -3688,13 +3697,17 @@ def test_attach_bootstraps_listed_table_whose_first_snapshot_failed(started_clus
     instance.stop_clickhouse()
     cursor.execute(f"ALTER TABLE {bad} ADD PRIMARY KEY (key)")
     cursor.execute(f"INSERT INTO {good} SELECT i, i FROM generate_series(40, 49) AS i")
-    cursor.execute(f"INSERT INTO {bad} SELECT i, i FROM generate_series(30, 49) AS i")
+    cursor.execute(f"INSERT INTO {bad} SELECT i, i FROM generate_series(30, 50) AS i")
+    # These changes precede the new snapshot of the table, which already contains their effect. Replaying the
+    # update over the snapshot could not restore the unchanged TOAST value of the deleted row.
+    cursor.execute(f"UPDATE {bad} SET value = value + 100 WHERE key = 0")
+    cursor.execute(f"DELETE FROM {bad} WHERE key IN (0, 50)")
     instance.start_clickhouse()
 
     check_tables_are_synchronized(instance, good, materialized_database=mat_db)
     check_tables_are_synchronized(instance, bad, materialized_database=mat_db)
     assert 50 == int(instance.query(f"SELECT count() FROM {mat_db}.{good}"))
-    assert 50 == int(instance.query(f"SELECT count() FROM {mat_db}.{bad}"))
+    assert 49 == int(instance.query(f"SELECT count() FROM {mat_db}.{bad}"))
 
     cursor.execute(f"UPDATE {bad} SET value = value + 1000 WHERE key < 10")
     cursor.execute(f"DELETE FROM {bad} WHERE key >= 45")

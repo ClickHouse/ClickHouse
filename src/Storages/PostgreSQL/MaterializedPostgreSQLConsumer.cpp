@@ -944,7 +944,7 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
             if (!relation_id_to_name.contains(relation_id))
                 relation_id_to_name[relation_id] = table_name;
 
-            if (!isSyncAllowed(relation_id, relation_name))
+            if (!isSyncAllowed(relation_id, table_name, /* is_relation_message */ true))
                 return;
 
             auto storage_iter = storages.find(table_name);
@@ -1221,7 +1221,7 @@ String MaterializedPostgreSQLConsumer::advanceLSN(std::shared_ptr<pqxx::nontrans
 /// 2. There is no storage for this table. (As a result of some exception or incorrect pg_publication)
 /// 3. A new table was added to replication, it was loaded via snapshot, but consumer has not yet
 ///    read wal up to the lsn position of snapshot, from which table was loaded.
-bool MaterializedPostgreSQLConsumer::isSyncAllowed(Int32 relation_id, const String & relation_name)
+bool MaterializedPostgreSQLConsumer::isSyncAllowed(Int32 relation_id, const String & relation_name, bool is_relation_message)
 {
     if (deleted_tables.contains(relation_name))
         return false;
@@ -1239,6 +1239,13 @@ bool MaterializedPostgreSQLConsumer::isSyncAllowed(Int32 relation_id, const Stri
             waiting_list.erase(new_table_with_lsn);
             return true;
         }
+
+        /// The snapshot of the table already contains the changes before its start position. Applying them again
+        /// would be wrong: for example, an update of a row deleted later cannot restore its unchanged TOAST values
+        /// from the snapshot, and the table would be skipped. A `Relation` message is still processed, because
+        /// it is not repeated before the changes after the start position, and they need its column layout.
+        if (!is_relation_message)
+            return false;
     }
 
     auto skipped_table_with_lsn = skip_list.find(relation_id);

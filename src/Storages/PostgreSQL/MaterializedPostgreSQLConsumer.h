@@ -123,7 +123,7 @@ private:
 
     void processReplicationMessage(const char * replication_message, size_t size);
 
-    bool isSyncAllowed(Int32 relation_id, const String & relation_name);
+    bool isSyncAllowed(Int32 relation_id, const String & relation_name, bool is_relation_message = false);
 
     static void insertDefaultValue(StorageData & storage_data, size_t column_idx);
     /// Returns true if a source-value conversion failure was replaced with the column default.
