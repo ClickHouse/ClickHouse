@@ -223,6 +223,8 @@ TEST(ColumnVector, CorrectnessOfReplicate)
     }
 }
 
+/// Sanitizers replace `operator new`, so its allocations are not tracked and cannot hit the memory limit.
+#if !defined(SANITIZER)
 TEST(ColumnUnique, NullableViewIsRestoredWhenItsReconstructionHitsMemoryLimit)
 {
     auto data_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>());
@@ -267,3 +269,4 @@ TEST(ColumnUnique, NullableViewIsRestoredWhenItsReconstructionHitsMemoryLimit)
     ASSERT_EQ(column_unique->uniqueInsert(Field(String("b"))), size);
     ASSERT_EQ(column_unique->getNestedColumn()->size(), size + 1);
 }
+#endif
