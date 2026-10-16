@@ -14,7 +14,7 @@ import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-## promql_database
+## promql_database {#promql_database}
 
 <PrivatePreviewBadge />
 
@@ -22,19 +22,19 @@ import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge
 
 指定 &#39;promql&#39; 方言使用的数据库名称。空字符串表示当前数据库。
 
-## promql_evaluation_time
+## promql_evaluation_time {#promql_evaluation_time}
 
 <PrivatePreviewBadge />
 
 **别名**: `evaluation_time`
 
-<SettingsInfoBlock type="FloatAuto" default_value="auto" />
+<SettingsInfoBlock type="DoubleAuto" default_value="auto" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "auto"},{"label": "该设置已重命名。此前的名称是 `evaluation_time`。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "auto"},{"label": "该设置已重命名。此前的名称是 `evaluation_time`。"}]}, {"id": "row-2","items": [{"label": "25.8"},{"label": "auto"},{"label": "新增的实验性设置。当时该设置名为 `evaluation_time`，该名称现为其别名。"}]}]} />
 
-设置 promql 方言使用的求值时间。`auto` 表示当前时间。
+设置 promql 方言使用的求值时间，取值为以秒为单位的 Unix 时间戳，可带小数部分。`auto` 表示当前时间。
 
-## promql_table
+## promql_table {#promql_table}
 
 <PrivatePreviewBadge />
 
