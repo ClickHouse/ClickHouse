@@ -2,8 +2,9 @@
 
 # Inside a materialized view query, the source table read through `merge`, `loop` or `executable` is the
 # table, like through `remote` or `Distributed`, also in the IN and scalar subqueries of the `executable`
-# input query; only the view query itself, with its own subqueries, reads the inserted block. The values do
-# not depend on whether the inserted rows are already in the table. The database name is spelled out:
+# input query; only the view query itself, with its own subqueries, reads the inserted block. The same holds
+# when a refreshable view appends to the source table, while a refreshable view reading it sees the table.
+# The values do not depend on whether the inserted rows are already in the table. The database name is spelled out:
 # `currentDatabase()` in the view query does not resolve to the test database during the push.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -113,4 +114,34 @@ CREATE MATERIALIZED VIEW db_05389.mv_executable_scalar TO db_05389.dst AS
 INSERT INTO db_05389.src VALUES (1), (2), (3);
 
 SELECT * FROM db_05389.dst ORDER BY name;
+
+-- A refreshable view appending to the source table pushes its block to these views like an INSERT.
+TRUNCATE TABLE db_05389.dst;
+CREATE MATERIALIZED VIEW db_05389.rmv_append REFRESH EVERY 1 YEAR APPEND TO db_05389.src EMPTY AS
+    SELECT number + 1 AS x FROM numbers(3);
+SYSTEM REFRESH VIEW db_05389.rmv_append;
+SYSTEM WAIT VIEW db_05389.rmv_append;
+SELECT 'append_refresh', * FROM db_05389.dst ORDER BY name;
+
+-- A refreshable view has no inserted block, so it reads the table through every engine.
+TRUNCATE TABLE db_05389.dst;
+CREATE MATERIALIZED VIEW db_05389.rmv_read REFRESH EVERY 1 YEAR APPEND TO db_05389.dst EMPTY AS
+    SELECT 'executable' AS name, count() AS block_rows,
+        (SELECT sum(x) FROM executable('echo_rows.sh', 'TSV', 'x UInt64', (SELECT x FROM db_05389.src WHERE x >= 100))) AS value
+    FROM db_05389.src
+    UNION ALL
+    SELECT 'executable_in', count(), (SELECT sum(x) FROM executable('echo_rows.sh', 'TSV', 'x UInt64',
+        (SELECT x FROM db_05389.src WHERE x >= 100 AND x IN (SELECT x FROM db_05389.src))))
+    FROM db_05389.src
+    UNION ALL
+    SELECT 'executable_scalar', count(), (SELECT sum(x) FROM executable('echo_rows.sh', 'TSV', 'x UInt64',
+        (SELECT (SELECT sum(x) FROM db_05389.src WHERE x >= 100) AS x)))
+    FROM db_05389.src
+    UNION ALL
+    SELECT 'loop', count(), (SELECT max(x) FROM (SELECT x FROM loop(db_05389, src) WHERE x > 0 LIMIT 25)) FROM db_05389.src
+    UNION ALL
+    SELECT 'merge', count(), (SELECT sum(x) FROM merge(db_05389, '^src\$') WHERE x >= 100) FROM db_05389.src;
+SYSTEM REFRESH VIEW db_05389.rmv_read;
+SYSTEM WAIT VIEW db_05389.rmv_read;
+SELECT 'refreshable', * FROM db_05389.dst ORDER BY name;
 "
