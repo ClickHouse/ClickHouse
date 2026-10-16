@@ -435,11 +435,8 @@ void collectTableExpressionData(QueryTreeNodePtr & query_node, PlannerContextPtr
         if (!node || node == query_node_typed.getPrewhere())
             continue;
 
-        auto node_type = node->getNodeType();
-        if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
-            continue;
-
-        collect_source_columns_visitor.visit(node);
+        if (!collect_source_columns_visitor.checkSubquery(node))
+            collect_source_columns_visitor.visit(node);
     }
 
     if (query_node_typed.hasPrewhere())
