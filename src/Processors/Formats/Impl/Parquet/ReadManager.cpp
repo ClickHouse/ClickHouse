@@ -2,6 +2,7 @@
 
 #include <Common/BitHelpers.h>
 #include <Common/Logger.h>
+#include <Common/MemoryTrackerUtils.h>
 #include <Common/ProfileEvents.h>
 #include <Columns/ColumnsCommon.h>
 #include <Formats/FormatFilterInfo.h>
@@ -719,6 +720,11 @@ void ReadManager::scheduleTasksIfNeeded(ReadStage stage_idx)
     MemoryUsageDiff diff(stage_idx);
     std::vector<Task> tasks;
 
+    /// The admission round and readAheadColumnData each pick row groups and publish their charges under this lock.
+    std::unique_lock<std::mutex> prefetch_lock;
+    if (stage_idx == ReadStage::ColumnData && column_data_read_ahead)
+        prefetch_lock = std::unique_lock(column_data_prefetch_mutex);
+
     auto limits = SharedResourcesExt::getLimitsPerReader(*parser_shared_resources, stage.memory_target_fraction);
     size_t memory_usage = stage.memory_usage.load(std::memory_order_relaxed);
     size_t batches_in_progress = stage.batches_in_progress.load(std::memory_order_relaxed);
@@ -789,6 +795,8 @@ void ReadManager::scheduleTasksIfNeeded(ReadStage stage_idx)
             stages[i].memory_usage.fetch_add(diff.by_stage[i], std::memory_order_relaxed);
         }
     }
+    if (prefetch_lock)
+        prefetch_lock.unlock();
 
     if (!tasks.empty())
     {
@@ -852,34 +860,50 @@ void ReadManager::readAheadColumnData()
     if (depth <= limits.parsing_threads)
         return;
 
+    /// The stage's share of the memory that the query, user and server limits still allow, if below its watermark share.
+    size_t budget = limits.memory_high_watermark;
+    if (auto available = getCurrentQueryAvailableMemory())
+        budget = std::min(budget, size_t(static_cast<double>(*available) * SharedResourcesExt::getMemoryFractionPerReader(*parser_shared_resources, stage.memory_target_fraction)));
+
     MemoryUsageDiff diff(ReadStage::ColumnData);
+    std::lock_guard lock(column_data_prefetch_mutex);
+    for (auto row_group_idx = stage.schedulable_row_groups.findNext(0); row_group_idx.has_value();
+         row_group_idx = stage.schedulable_row_groups.findNext(*row_group_idx + 1))
     {
-        std::lock_guard lock(column_data_prefetch_mutex);
-        for (auto row_group_idx = stage.schedulable_row_groups.findNext(0); row_group_idx.has_value();
-             row_group_idx = stage.schedulable_row_groups.findNext(*row_group_idx + 1))
-        {
-            size_t memory_usage = stage.memory_usage.load(std::memory_order_relaxed) + size_t(diff.by_stage[size_t(ReadStage::ColumnData)]);
-            if (stage.batches_in_progress.load(std::memory_order_relaxed) + column_data_read_ahead_count.load(std::memory_order_relaxed) >= depth
-                || memory_usage >= limits.memory_high_watermark)
-                break;
+        if (stage.batches_in_progress.load(std::memory_order_relaxed) + column_data_read_ahead_count.load(std::memory_order_relaxed) >= depth)
+            break;
 
-            /// The admission path clears the schedulable bit before it locks the mutex in scheduleTask,
-            /// and consumes the tasks only after that, so a row group still schedulable here keeps its tasks.
-            size_t i = *row_group_idx;
-            if (column_data_read_ahead_row_groups.test(i, std::memory_order_relaxed) || !stage.schedulable_row_groups.test(i, std::memory_order_acquire))
-                continue;
+        /// Admission unsets the schedulable bit and takes the tasks under the same mutex, so a schedulable row group keeps its tasks.
+        size_t i = *row_group_idx;
+        if (column_data_read_ahead_row_groups.test(i, std::memory_order_relaxed) || !stage.schedulable_row_groups.test(i, std::memory_order_acquire))
+            continue;
 
-            std::vector<PrefetchHandle *> prefetches;
-            for (const Task & task : stage.row_group_tasks_to_schedule[i])
-                addColumnDataPrefetches(task, prefetches);
-            if (prefetches.empty())
-                continue;
+        const auto & tasks = stage.row_group_tasks_to_schedule[i];
+        if (std::any_of(tasks.begin(), tasks.end(), [&](const Task & task)
+            {
+                return task.column_idx != UINT64_MAX && !reader.row_groups[i].columns.at(task.column_idx).offset_index.page_locations.empty();
+            }))
+            continue;
 
-            reader.prefetcher.startPrefetch(prefetches, &diff);
-            column_data_read_ahead_row_groups.set(i, std::memory_order_relaxed);
-            column_data_read_ahead_count.fetch_add(1, std::memory_order_relaxed);
-            ProfileEvents::increment(ProfileEvents::ParquetColumnDataReadAheadRowGroups);
-        }
+        size_t memory_usage = stage.memory_usage.load(std::memory_order_relaxed) + size_t(diff.by_stage[size_t(ReadStage::ColumnData)]);
+        if (memory_usage >= budget)
+            break;
+
+        std::vector<PrefetchHandle *> prefetches;
+        for (const Task & task : tasks)
+            addColumnDataPrefetches(task, prefetches);
+        if (prefetches.empty())
+            continue;
+
+        auto charged = reader.prefetcher.startPrefetchWithinLimit(prefetches, &diff, budget - memory_usage);
+        if (!charged)
+            break;
+        if (*charged == 0)
+            continue;
+
+        column_data_read_ahead_row_groups.set(i, std::memory_order_relaxed);
+        column_data_read_ahead_count.fetch_add(1, std::memory_order_relaxed);
+        ProfileEvents::increment(ProfileEvents::ParquetColumnDataReadAheadRowGroups);
     }
 
     diff.finalized = true;
@@ -922,13 +946,9 @@ void ReadManager::scheduleTask(Task task, bool is_first_in_group, MemoryUsageDif
 {
     LOG_TEST(getLogger("ParquetReadManager"), "scheduleTask: schedule task.row_group_idx={}, task.row_subgroup_idx={}, task.stage={}, task.column_idx={}, task.step_idx={}", task.row_group_idx, task.row_subgroup_idx, static_cast<Int32>(task.stage), task.column_idx, task.step_idx);
 
-    std::unique_lock<std::mutex> prefetch_lock;
-    if (task.stage == ReadStage::ColumnData && column_data_read_ahead)
-    {
-        prefetch_lock = std::unique_lock(column_data_prefetch_mutex);
-        if (is_first_in_group && column_data_read_ahead_row_groups.unset(task.row_group_idx, std::memory_order_relaxed))
-            column_data_read_ahead_count.fetch_sub(1, std::memory_order_relaxed);
-    }
+    if (task.stage == ReadStage::ColumnData && column_data_read_ahead && is_first_in_group
+        && column_data_read_ahead_row_groups.unset(task.row_group_idx, std::memory_order_relaxed))
+        column_data_read_ahead_count.fetch_sub(1, std::memory_order_relaxed);
 
     /// Kick off prefetches and count estimated memory usage.
     std::vector<PrefetchHandle *> prefetches;

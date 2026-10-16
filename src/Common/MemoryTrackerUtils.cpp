@@ -93,6 +93,22 @@ std::optional<UInt64> getCurrentQueryHardLimit()
     return hard_limit;
 }
 
+std::optional<UInt64> getCurrentQueryAvailableMemory()
+{
+    std::optional<UInt64> available;
+    MemoryTracker * memory_tracker = DB::CurrentThread::getMemoryTracker();
+    while (memory_tracker)
+    {
+        if (Int64 tracker_limit = memory_tracker->getHardLimit(); tracker_limit > 0)
+        {
+            UInt64 tracker_available = static_cast<UInt64>(std::max<Int64>(tracker_limit - memory_tracker->get(), 0));
+            available = available ? std::min(*available, tracker_available) : tracker_available;
+        }
+        memory_tracker = memory_tracker->getParent();
+    }
+    return available;
+}
+
 
 Int64 getCurrentQueryMemoryUsage()
 {

@@ -52,6 +52,8 @@ struct SharedResourcesExt
     };
 
     static Limits getLimitsPerReader(const FormatParserSharedResources & parser_shared_resources, double fraction);
+    /// The part of a stage's memory `fraction` that one reader gets (the readers split it evenly).
+    static double getMemoryFractionPerReader(const FormatParserSharedResources & parser_shared_resources, double fraction);
 };
 
 

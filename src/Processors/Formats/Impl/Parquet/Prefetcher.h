@@ -5,6 +5,7 @@
 
 #include <optional>
 #include <span>
+#include <unordered_set>
 
 namespace DB
 {
@@ -55,6 +56,10 @@ public:
     /// Adds the range's memory usage to MemoryUsageDiff. Remembers memory_usage->stage so that
     /// PrefetchHandle::reset can later subtract from MemoryUsageDiff correctly.
     void startPrefetch(const std::vector<PrefetchHandle *> & requests_to_start, MemoryUsageDiff * diff);
+
+    /// Like startPrefetch, but a read task covers only these requests and the gaps between them, so what is
+    /// charged is what it allocates. Starts nothing and returns nullopt if that could exceed `max_memory`.
+    std::optional<size_t> startPrefetchWithinLimit(const std::vector<PrefetchHandle *> & requests_to_start, MemoryUsageDiff * diff, size_t max_memory);
 
     /// If prefetched, returns prefetched data.
     /// If prefetch in progress, waits for it to complete.
@@ -209,6 +214,9 @@ private:
     /// If splitting, the request is being cancelled and replaced by a smaller range
     /// (splitAndPrefetchRange), and only subrange [subrange_start, subrange_end) needs to be read.
     void pickRangesAndCreateTaskIfNotExists(RequestState *, const PrefetchHandle &, bool splitting, size_t start_offset, size_t end_offset, std::unique_lock<std::mutex> lock);
+    /// Called with `mutex` locked. Returns the created task, or nullptr if the request already has one.
+    /// If `coalesce_only` is set, only the requests in it are coalesced into the task.
+    Task * pickRangesAndCreateTaskLocked(RequestState * initial_req, bool splitting, size_t start_offset, size_t end_offset, const std::unordered_set<const RequestState *> * coalesce_only);
     static void decreaseTaskRefcount(Task * task, size_t amount);
     void scheduleTask(Task * task);
     Task::State runTask(Task * task);
