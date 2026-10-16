@@ -296,9 +296,10 @@ std::shared_ptr<ObjectStorageTopKQueryConditionCacheKey> ReadFromObjectStorageSt
     if (configuration->isArchive())
         return {};
 
-    /// The tags of an object can change without changing its `ETag` or the snapshot of a data lake,
+    /// The tags and the modification time of an object can change without changing its `ETag` (a copy
+    /// of an object onto itself with replaced metadata keeps the contents) or the snapshot of a data lake,
     /// so neither the key of the files nor the hash of the filter describes them.
-    if (info.requested_virtual_columns.contains("_tags"))
+    if (info.requested_virtual_columns.contains("_tags") || info.requested_virtual_columns.contains("_time"))
         return {};
 
     /// The rows the reader drops besides those of the TopN filter must be dropped by a condition the

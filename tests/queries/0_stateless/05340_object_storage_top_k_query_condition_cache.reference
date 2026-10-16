@@ -57,6 +57,23 @@
 100995
 100994
 100993
+--- a predicate on the modification time of the objects
+100999
+100998
+100997
+100996
+100995
+100994
+100993
+100992
+100999
+100998
+100997
+100996
+100995
+100994
+100993
+100992
 --- use_query_condition_cache_for_top_k = 0
 100999
 100998
@@ -85,5 +102,7 @@ unpinned_1	0	0
 unpinned_2	0	0
 tags_1	0	0
 tags_2	0	0
+time_1	0	0
+time_2	0	0
 gate_1	0	0
 gate_2	0	0

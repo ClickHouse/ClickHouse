@@ -91,11 +91,16 @@ echo "--- a predicate on the tags of the objects"
 run tags_1 "SELECT k FROM t_05340 WHERE _tags['x'] = '' ORDER BY k DESC LIMIT 7"
 run tags_2 "SELECT k FROM t_05340 WHERE _tags['x'] = '' ORDER BY k DESC LIMIT 7"
 
+echo "--- a predicate on the modification time of the objects"
+# The modification time can change without changing the ETag of an object, so the key is not made.
+run time_1 "SELECT k FROM t_05340 WHERE _time > toDateTime('2000-01-01 00:00:00', 'UTC') ORDER BY k DESC LIMIT 8"
+run time_2 "SELECT k FROM t_05340 WHERE _time > toDateTime('2000-01-01 00:00:00', 'UTC') ORDER BY k DESC LIMIT 8"
+
 echo "--- use_query_condition_cache_for_top_k = 0"
 run gate_1 "SELECT k FROM t_05340 ORDER BY k DESC LIMIT 6" ", use_query_condition_cache_for_top_k = 0"
 run gate_2 "SELECT k FROM t_05340 ORDER BY k DESC LIMIT 6" ", use_query_condition_cache_for_top_k = 0"
 
 echo "--- query condition cache lookups"
-events nowhere_1 nowhere_2 nowhere_limit nowhere_plain nowhere_asc where_1 where_2 rewritten_nowhere_1 rewritten_where_1 rewritten_nowhere_2 unpinned_1 unpinned_2 tags_1 tags_2 gate_1 gate_2
+events nowhere_1 nowhere_2 nowhere_limit nowhere_plain nowhere_asc where_1 where_2 rewritten_nowhere_1 rewritten_where_1 rewritten_nowhere_2 unpinned_1 unpinned_2 tags_1 tags_2 time_1 time_2 gate_1 gate_2
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05340"
