@@ -591,7 +591,7 @@ TEST_F(RuntimeFilterExchangeWiring, FragmentGraphLeavesOutMergeStages)
         "  F0 stage_0  distributed  tasks=40\n"
         "  F1 main     distributed  tasks=1  needs F0 via exchange_0\n"
         "exchanges: 1\n"
-        "  exchange_0  F0 -> F1  gather  pipelined  40 -> 1\n"
+        "  exchange_0  F0 -> F1  gather  streaming  40 -> 1\n"
         "levels: [F0] [F1]\n");
 
     /// The steps that build and apply the filter stay in the plans of the data fragments.

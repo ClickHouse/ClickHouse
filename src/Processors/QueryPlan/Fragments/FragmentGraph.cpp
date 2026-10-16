@@ -15,8 +15,6 @@
 #include <algorithm>
 #include <cmath>
 #include <queue>
-#include <unordered_map>
-#include <unordered_set>
 
 namespace DB
 {
@@ -127,9 +125,9 @@ FragmentExchange::Mode getExchangeMode(const ExchangeDescription & description)
     switch (description.kind)
     {
         case ExchangeDescription::Kind::Streaming:
-            return FragmentExchange::Mode::Pipelined;
+            return FragmentExchange::Mode::Streaming;
         case ExchangeDescription::Kind::Persisted:
-            return FragmentExchange::Mode::Materialised;
+            return FragmentExchange::Mode::Persisted;
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected kind of exchange {}", description.name);
 }
@@ -183,26 +181,32 @@ struct TopologicalOrder
     std::vector<std::vector<size_t>> producers;
 };
 
+/// The index of the fragment with the given id in `fragments`, which is sorted by id; nullopt when absent.
+std::optional<size_t> findFragmentIndex(const FragmentGraph & graph, UInt32 id)
+{
+    auto it = std::lower_bound(graph.fragments.begin(), graph.fragments.end(), id,
+        [](const QueryFragment & f, UInt32 value) { return f.id < value; });
+    if (it == graph.fragments.end() || it->id != id)
+        return std::nullopt;
+    return it - graph.fragments.begin();
+}
+
 /// Validates the graph (see `validateFragmentGraph`) and sorts it. Ready fragments are taken in the order of ids
 /// for determinism. The ids assigned by the cutter already ascend from producers to consumers; the sort does not
-/// rely on that.
+/// rely on that, because the fragments of `IN`-subquery sets get ids after the fragments that read them.
 TopologicalOrder sortTopologically(const FragmentGraph & graph)
 {
     const size_t num_fragments = graph.fragments.size();
 
-    std::unordered_map<UInt32, size_t> fragment_index_by_id;
-    for (size_t i = 0; i < num_fragments; ++i)
-    {
-        if (!fragment_index_by_id.emplace(graph.fragments[i].id, i).second)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicate fragment {} in the fragment graph", graph.fragments[i].id);
-    }
-
-    std::unordered_set<UInt32> exchange_ids;
-    for (const auto & exchange : graph.exchanges)
-    {
-        if (!exchange_ids.insert(exchange.id).second)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicate exchange {} in the fragment graph", exchange.id);
-    }
+    /// Strictly ascending ids: unique, and sorted as the binary searches of `getFragment` and `getExchange` need.
+    for (size_t i = 1; i < num_fragments; ++i)
+        if (graph.fragments[i - 1].id >= graph.fragments[i].id)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Fragments {} (id {}) and {} (id {}) are not in strictly ascending order of ids",
+                graph.fragments[i - 1].stage_name, graph.fragments[i - 1].id, graph.fragments[i].stage_name, graph.fragments[i].id);
+    for (size_t i = 1; i < graph.exchanges.size(); ++i)
+        if (graph.exchanges[i - 1].id >= graph.exchanges[i].id)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Exchanges {} (id {}) and {} (id {}) are not in strictly ascending order of ids",
+                graph.exchanges[i - 1].name, graph.exchanges[i - 1].id, graph.exchanges[i].name, graph.exchanges[i].id);
 
     TopologicalOrder result;
     result.producers.resize(num_fragments);
@@ -210,15 +214,15 @@ TopologicalOrder sortTopologically(const FragmentGraph & graph)
     std::vector<std::vector<size_t>> consumers(num_fragments);
     for (const auto & exchange : graph.exchanges)
     {
-        auto producer_it = fragment_index_by_id.find(exchange.from);
-        if (producer_it == fragment_index_by_id.end())
+        auto producer = findFragmentIndex(graph, exchange.from);
+        if (!producer)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Exchange {} comes from unknown fragment {}", exchange.name, exchange.from);
-        auto consumer_it = fragment_index_by_id.find(exchange.to);
-        if (consumer_it == fragment_index_by_id.end())
+        auto consumer = findFragmentIndex(graph, exchange.to);
+        if (!consumer)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Exchange {} goes to unknown fragment {}", exchange.name, exchange.to);
-        consumers[producer_it->second].push_back(consumer_it->second);
-        result.producers[consumer_it->second].push_back(producer_it->second);
-        ++in_degree[consumer_it->second];
+        consumers[*producer].push_back(*consumer);
+        result.producers[*consumer].push_back(*producer);
+        ++in_degree[*consumer];
     }
 
     std::priority_queue<std::pair<UInt32, size_t>, std::vector<std::pair<UInt32, size_t>>, std::greater<>> ready;
@@ -272,11 +276,10 @@ std::vector<std::vector<UInt32>> computeLevels(const FragmentGraph & graph)
         max_level = std::max(max_level, level_of[i]);
     }
 
+    /// The fragments are sorted by id, so every level comes out ascending.
     std::vector<std::vector<UInt32>> levels(max_level + 1);
     for (size_t i = 0; i < graph.fragments.size(); ++i)
         levels[level_of[i]].push_back(graph.fragments[i].id);
-    for (auto & level : levels)
-        std::sort(level.begin(), level.end());
     return levels;
 }
 
@@ -301,20 +304,9 @@ FragmentGraph buildFragmentGraph(const DistributedQueryPlan & distributed_plan)
         fragment.plan = &stage.query_plan_fragment;
         graph.fragments.push_back(std::move(fragment));
     }
+    /// `stages` and `stage_depends_on` are unordered maps: sort for a deterministic order and for the lookups by id.
+    /// Duplicate ids are left to `validateFragmentGraph`.
     std::sort(graph.fragments.begin(), graph.fragments.end(), [](const auto & lhs, const auto & rhs) { return lhs.id < rhs.id; });
-    for (size_t i = 1; i < graph.fragments.size(); ++i)
-        if (graph.fragments[i - 1].id == graph.fragments[i].id)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Stages {} and {} have the same id {}",
-                graph.fragments[i - 1].stage_name, graph.fragments[i].stage_name, graph.fragments[i].id);
-
-    auto find_fragment = [&](UInt32 id) -> const QueryFragment &
-    {
-        auto it = std::lower_bound(graph.fragments.begin(), graph.fragments.end(), id,
-            [](const QueryFragment & f, UInt32 value) { return f.id < value; });
-        if (it == graph.fragments.end() || it->id != id)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Stage of fragment {} is referenced by a dependency, but does not exist", id);
-        return *it;
-    };
 
     for (const auto & [consumer_stage, producers] : distributed_plan.stage_depends_on)
     {
@@ -343,19 +335,15 @@ FragmentGraph buildFragmentGraph(const DistributedQueryPlan & distributed_plan)
             exchange.mode = getExchangeMode(description);
             exchange.source_buckets = description.source_bucket_count;
             exchange.destination_buckets = description.destination_bucket_count;
-            exchange.statistics.estimated_rows = getEstimatedRows(*find_fragment(producer_id).plan);
+            exchange.statistics.estimated_rows = getEstimatedRows(*graph.getFragment(producer_id).plan);
 
-            checkReceiveStep(*find_fragment(consumer_id).plan, consumer_stage, exchange_name);
+            checkReceiveStep(*graph.getFragment(consumer_id).plan, consumer_stage, exchange_name);
 
             graph.exchanges.push_back(std::move(exchange));
         }
     }
 
     std::sort(graph.exchanges.begin(), graph.exchanges.end(), [](const auto & lhs, const auto & rhs) { return lhs.id < rhs.id; });
-    for (size_t i = 1; i < graph.exchanges.size(); ++i)
-        if (graph.exchanges[i - 1].id == graph.exchanges[i].id)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Exchanges {} and {} have the same id {}",
-                graph.exchanges[i - 1].name, graph.exchanges[i].name, graph.exchanges[i].id);
 
     validateFragmentGraph(graph);
     return graph;
@@ -429,7 +417,7 @@ String dumpFragmentGraph(const FragmentGraph & graph)
             .name = exchange.name,
             .edge = fmt::format("F{} -> F{}", exchange.from, exchange.to),
             .kind = formatExchangeKind(exchange),
-            .mode = exchange.mode == FragmentExchange::Mode::Pipelined ? "pipelined" : "materialised",
+            .mode = exchange.mode == FragmentExchange::Mode::Streaming ? "streaming" : "persisted",
             .buckets = fmt::format("{} -> {}", exchange.source_buckets, exchange.destination_buckets),
         };
         name_width = std::max(name_width, row.name.size());

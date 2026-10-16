@@ -147,9 +147,9 @@ TEST(FragmentGraph, LevelsWithSetFragment)
         "  F2 stage_2  distributed  tasks=8  needs F1 via exchange_1\n"
         "  F3 main     distributed  tasks=1  needs F2 via exchange_2\n"
         "exchanges: 3\n"
-        "  exchange_0  F0 -> F1  gather      pipelined  1 -> 1\n"
-        "  exchange_1  F1 -> F2  set values  pipelined  1 -> 1\n"
-        "  exchange_2  F2 -> F3  gather      pipelined  1 -> 1\n"
+        "  exchange_0  F0 -> F1  gather      streaming  1 -> 1\n"
+        "  exchange_1  F1 -> F2  set values  streaming  1 -> 1\n"
+        "  exchange_2  F2 -> F3  gather      streaming  1 -> 1\n"
         "levels: [F0] [F1] [F2] [F3]\n");
 }
 
@@ -173,7 +173,7 @@ TEST(FragmentGraph, InconsistentExchangesThrow)
         auto graph = makeGraph({0, 1});
         connect(graph, 1, 0);
         connect(graph, 1, 0);
-        expectInvalid(graph, "Duplicate exchange 1 in the fragment graph");
+        expectInvalid(graph, "Exchanges exchange_1 (id 1) and exchange_1 (id 1) are not in strictly ascending order of ids");
     }
 }
 #endif
@@ -211,8 +211,8 @@ TEST(FragmentGraph, Dump)
         "  F1 stage_1  distributed  tasks=8  needs F0 via exchange_0\n"
         "  F2 main     distributed  tasks=1  needs F1 via exchange_1\n"
         "exchanges: 2\n"
-        "  exchange_0  F0 -> F1  broadcast  pipelined  1 -> 8\n"
-        "  exchange_1  F1 -> F2  gather     pipelined  8 -> 1  ~5000 rows\n"
+        "  exchange_0  F0 -> F1  broadcast  streaming  1 -> 8\n"
+        "  exchange_1  F1 -> F2  gather     streaming  8 -> 1  ~5000 rows\n"
         "levels: [F0] [F1] [F2]\n");
 }
 
@@ -227,7 +227,7 @@ TEST(FragmentGraph, DumpExchangeKinds)
     graph.exchanges[0].kind = FragmentExchange::Kind::Hash;
     graph.exchanges[0].keys = {"a", "b"};
     graph.exchanges[1].kind = FragmentExchange::Kind::Any;
-    graph.exchanges[1].mode = FragmentExchange::Mode::Materialised;
+    graph.exchanges[1].mode = FragmentExchange::Mode::Persisted;
     graph.exchanges[2].merge_sort = makeSortDescription("k");
     graph.exchanges[3].kind = FragmentExchange::Kind::SetValues;
 
@@ -240,10 +240,10 @@ TEST(FragmentGraph, DumpExchangeKinds)
         "  F4 main     distributed  tasks=1  needs F0 via exchange_0, F1 via exchange_1, "
         "F2 via exchange_2, F3 via exchange_3\n"
         "exchanges: 4\n"
-        "  exchange_0  F0 -> F4  hash(a, b)            pipelined     1 -> 1\n"
-        "  exchange_1  F1 -> F4  any                   materialised  1 -> 1\n"
-        "  exchange_2  F2 -> F4  gather(merge: k ASC)  pipelined     1 -> 1\n"
-        "  exchange_3  F3 -> F4  set values            pipelined     1 -> 1\n"
+        "  exchange_0  F0 -> F4  hash(a, b)            streaming  1 -> 1\n"
+        "  exchange_1  F1 -> F4  any                   persisted  1 -> 1\n"
+        "  exchange_2  F2 -> F4  gather(merge: k ASC)  streaming  1 -> 1\n"
+        "  exchange_3  F3 -> F4  set values            streaming  1 -> 1\n"
         "levels: [F0, F1, F2, F3] [F4]\n");
 }
 
@@ -307,16 +307,16 @@ TEST(FragmentGraph, BuildFromDistributedPlan)
     EXPECT_EQ(exchange.to, 1u);
     EXPECT_EQ(exchange.kind, FragmentExchange::Kind::Hash);
     EXPECT_EQ(exchange.keys, (Names{"k"}));
-    EXPECT_EQ(exchange.mode, FragmentExchange::Mode::Pipelined);
+    EXPECT_EQ(exchange.mode, FragmentExchange::Mode::Streaming);
     EXPECT_EQ(exchange.source_buckets, 2u);
     EXPECT_EQ(exchange.destination_buckets, 4u);
     EXPECT_EQ(exchange.from, 0u);
     EXPECT_EQ(exchange.to, 1u);
 
-    /// A persisted exchange is materialised.
+    /// A persisted exchange is reported as persisted.
     distributed_plan.exchange_descriptions["exchange_0"].kind = ExchangeDescription::Kind::Persisted;
-    auto materialised_graph = buildFragmentGraph(distributed_plan);
-    EXPECT_EQ(materialised_graph.getExchange(0).mode, FragmentExchange::Mode::Materialised);
+    auto persisted_graph = buildFragmentGraph(distributed_plan);
+    EXPECT_EQ(persisted_graph.getExchange(0).mode, FragmentExchange::Mode::Persisted);
 
     /// A dependency without a matching receive step is an inconsistent plan.
     distributed_plan.stage_depends_on["main"] = {{"stage_0", "exchange_7"}};

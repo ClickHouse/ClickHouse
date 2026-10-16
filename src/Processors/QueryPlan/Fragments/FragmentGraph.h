@@ -69,10 +69,12 @@ struct FragmentExchange
 
     enum class Mode : uint8_t
     {
-        /// The data is sent over the network while it is produced.
-        Pipelined,
-        /// The data is written to temporary files first.
-        Materialised,
+        /// `ExchangeDescription::Kind::Streaming`: the data is sent over the network while it is produced; the producer
+        /// and the consumer run at the same time.
+        Streaming,
+        /// `ExchangeDescription::Kind::Persisted`: the data is written to temporary files, and the consumer starts only
+        /// after the producer has finished.
+        Persisted,
     };
 
     /// The exchange id assigned by the cutter, N for `exchange_N`.
@@ -88,7 +90,7 @@ struct FragmentExchange
     Names keys;
     /// The sort order a merging `Gather` exchange maintains.
     std::optional<SortDescription> merge_sort;
-    Mode mode = Mode::Pipelined;
+    Mode mode = Mode::Streaming;
     size_t source_buckets = 0;
     size_t destination_buckets = 0;
     ExchangeStatistics statistics;
@@ -116,9 +118,9 @@ FragmentGraph buildFragmentGraph(const DistributedQueryPlan & distributed_plan);
 /// The fragment has the `SingleNode` location and carries `fallback_reason`.
 FragmentGraph buildSingleFragmentGraph(const QueryPlan & plan, std::optional<String> fallback_reason);
 
-/// Throws `LOGICAL_ERROR` unless fragment and exchange ids are unique, every exchange goes from a known fragment to
-/// a known fragment, the graph is acyclic, and it has exactly one root: the fragment whose output no exchange reads,
-/// which produces the result of the query.
+/// Throws `LOGICAL_ERROR` unless the fragments and the exchanges are each in strictly ascending order of ids, every
+/// exchange goes from a known fragment to a known fragment, the graph is acyclic, and it has exactly one root: the
+/// fragment whose output no exchange reads, which produces the result of the query.
 void validateFragmentGraph(const FragmentGraph & graph);
 
 /// Fragment ids by topological level, ascending within a level: the first level are the leaves, the last the root.
