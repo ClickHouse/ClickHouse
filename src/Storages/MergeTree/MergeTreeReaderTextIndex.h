@@ -116,6 +116,8 @@ private:
     struct PhraseStream;
 
     std::shared_ptr<PhraseStream> makePhraseStream(const TextSearchQuery & search_query);
+    /// The column's phrase stream, able to match rows from `begin` on.
+    PhraseStream & getPhraseStream(size_t column_idx, size_t begin);
     /// One cursor per unique token.
     std::vector<PostingListCursorPtr> makePhraseCursors(const PhraseTokens & phrase);
 
