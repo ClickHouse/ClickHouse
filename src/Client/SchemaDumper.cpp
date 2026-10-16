@@ -49,6 +49,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTViewTargets.h>
 #include <Parsers/ASTWindowDefinition.h>
+#include <Parsers/ASTWithElement.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserDataType.h>
@@ -1228,7 +1229,10 @@ void collectFunctionArgumentReferences(
                             "constant such as getMacro()/hostName(), none of which is stored with the object",
                             function->formatForErrorMessage());
                 };
-                check_name_argument(args[1]);
+                /// A nested table function is dispatched, not folded into a name; the recursive walk checks it.
+                const auto * nested_function = args[1]->as<ASTFunction>();
+                if (!nested_function || !TableFunctionFactory::instance().isTableFunctionName(nested_function->name))
+                    check_name_argument(args[1]);
 
                 /// The server runs evaluateConstantExpressionOrIdentifierAsLiteral on these
                 /// positions: identifiers, string literals and constant expressions all name tables.
@@ -1635,6 +1639,12 @@ NamedCollectionDependencies namedCollectionsOfCreate(const String & create_query
         if (classify_remote)
             collectNamedCollectionsFromTableFunction(*engine, clusters, dependencies);
     }
+    /// A `Replicated` database reads the collection its `collection_name` setting names when it is created.
+    if (create->getTable().empty() && create->storage && create->storage->engine && create->storage->settings
+        && equalsCaseInsensitive(create->storage->engine->name, "Replicated"))
+        if (const Field * value = create->storage->settings->changes.tryGet("collection_name");
+            value && value->getType() == Field::Types::String && !value->safeGet<String>().empty())
+            addNamedCollectionDependency(value->safeGet<String>(), clusters, dependencies);
     if (const auto * function = create->as_table_function ? create->as_table_function->as<ASTFunction>() : nullptr)
         collectNamedCollectionsFromTableFunction(*function, clusters, dependencies);
     if (create->select)
@@ -1759,6 +1769,41 @@ std::vector<TableInfo> resolveTables(
                 if (!implicit_inner.contains({target_id.database_name, target_id.table_name}))
                     row.loading_dependencies.emplace_back(target_id.database_name, target_id.table_name);
             }
+
+    /// An `Alias` table, such as a table of an `Overlay` database, reads its target's columns at CREATE.
+    for (auto & row : rows)
+    {
+        if (row.engine != "Alias")
+            continue;
+        std::optional<std::pair<String, String>> target;
+        try
+        {
+            ParserCreateQuery create_parser;
+            const ASTPtr create_ast = parseQuery(
+                create_parser, row.create_query, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+            const auto * create = create_ast->as<ASTCreateQuery>();
+            const auto * engine = create && create->storage ? create->storage->engine : nullptr;
+            const ASTs arguments = engine && engine->arguments ? engine->arguments->children : ASTs{};
+            const auto database = arguments.size() == 2 ? tryFoldNameArgument(arguments[0], clusters.context) : std::nullopt;
+            const auto table = arguments.empty() ? std::nullopt : tryFoldNameArgument(arguments.back(), clusters.context);
+            if (database && table)
+                target = std::pair(*database, *table);
+            /// Like `registerStorageAlias`, the first dot of a single argument ends the database name.
+            else if (arguments.size() == 1 && table)
+                target = table->contains('.') ? std::pair(table->substr(0, table->find('.')), table->substr(table->find('.') + 1))
+                                              : std::pair(row.database, *table);
+        }
+        catch (const Exception &) // NOLINT(bugprone-empty-catch)
+        {
+            /// Refused below.
+        }
+        if (!target)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Cannot resolve the target of Alias table {}.{} for --dump-schema, so it cannot be ordered after it",
+                backQuoteIfNeed(row.database), backQuoteIfNeed(row.name));
+        if (*target != std::pair(row.database, row.name))
+            row.loading_dependencies.push_back(*target);
+    }
 
     std::set<std::pair<String, String>> known_tables;
     std::map<String, std::map<String, String>> table_engines_by_db;
@@ -2481,15 +2526,22 @@ std::vector<size_t> orderTablesByDependencies(const std::vector<TableInfo> & tab
     return order;
 }
 
-/// Orders `target_databases` by cross-database table dependency, for `--dump-schema-dir` file
-/// replay order. Returns `std::nullopt` on a database-level cycle (distinct from a table-level one).
-std::optional<std::vector<String>> orderDatabasesByDependencies(const std::vector<String> & target_databases, const std::vector<TableInfo> & tables)
+/// Orders `target_databases` by cross-database table dependency and by the databases each one needs at CREATE, for
+/// `--dump-schema-dir` file replay order. Returns `std::nullopt` on a database-level cycle (distinct from a table-level one).
+std::optional<std::vector<String>> orderDatabasesByDependencies(
+    const std::vector<String> & target_databases,
+    const std::vector<TableInfo> & tables,
+    const std::map<String, std::set<String>> & database_prerequisites)
 {
     std::set<String> db_set(target_databases.begin(), target_databases.end());
 
     std::map<String, std::set<String>> depends_on;
     for (const auto & db : target_databases)
         depends_on[db]; /// every database gets an entry, even with no dependencies
+    for (const auto & [db, prerequisites] : database_prerequisites)
+        for (const auto & prerequisite : prerequisites)
+            if (db_set.contains(db) && db_set.contains(prerequisite) && prerequisite != db)
+                depends_on[db].insert(prerequisite);
 
     /// A proxy row is not emitted, so its readers must also wait for the source it reads.
     std::map<std::pair<String, String>, const TableInfo *> proxy_rows;
@@ -2578,6 +2630,7 @@ struct ReplayGateNeeds
     bool delta_lake_table = false;
     bool archive_path = false; /// a table engine argument that names a file inside an archive (`a.tar :: f.csv`)
     bool nested_column = false; /// a column of type `Nested`, which CREATE flattens unless `flatten_nested = 0`
+    bool column_declaration = false; /// a column, which CREATE makes `Nullable` when `data_type_default_nullable = 1`
 
     /// Carriers of the shared gates, `parse_failed` keeps all of them.
     bool funnel_functions = false;
@@ -2895,23 +2948,41 @@ std::vector<String> codecGateNeeds(const ASTPtr & codec, const ASTPtr & type_ast
     return needed;
 }
 
-/// `verifySortingKey` rejects only a `SimpleAggregateFunction` column in the sorting key, so only a key naming one needs
+/// `verifySortingKey` rejects only a `SimpleAggregateFunction` key type, so only a key that may produce one needs
 /// `allow_suspicious_primary_key`. The old `MergeTree(date, key, ...)` form keeps its key in the engine arguments.
 bool sortingKeyMayUseSimpleAggregateFunction(const ASTStorage & storage, const ASTCreateQuery & create)
 {
     if (!create.columns_list || !create.columns_list->columns)
         return true;
+    /// A type, or a type name in a string such as a CAST target, that has the wrapper anywhere inside it.
+    const auto names_wrapper = [](const IAST & node)
+    {
+        if (const auto * type = node.as<ASTDataType>())
+            return equalsCaseInsensitive(type->name, "SimpleAggregateFunction");
+        const auto * literal = node.as<ASTLiteral>();
+        if (!literal || literal->value.getType() != Field::Types::String)
+            return false;
+        String text = literal->value.safeGet<String>();
+        std::transform(text.begin(), text.end(), text.begin(), [](unsigned char c) { return std::tolower(c); });
+        return hasToken(text, "simpleaggregatefunction");
+    };
     std::set<String> columns;
     for (const auto & child : create.columns_list->columns->children)
-        if (const auto * column = child->as<ASTColumnDeclaration>())
-            if (const auto * type = column->getType() ? column->getType()->as<ASTDataType>() : nullptr;
-                type && equalsCaseInsensitive(type->name, "SimpleAggregateFunction"))
-                columns.insert(column->name);
+        if (const auto * column = child->as<ASTColumnDeclaration>(); column && column->getType())
+            forEachNode(*column->getType(), [&](const IAST & node)
+            {
+                if (names_wrapper(node))
+                    columns.insert(column->name);
+            });
     bool found = false;
     const auto visit = [&](const IAST & node)
     {
-        if (const auto * identifier = node.as<ASTIdentifier>(); identifier && columns.contains(identifier->shortName()))
+        /// A subcolumn such as `v.a` reads its column through the first name part.
+        if (const auto * identifier = node.as<ASTIdentifier>(); identifier
+            && (columns.contains(identifier->name()) || columns.contains(identifier->name_parts.front())
+                || columns.contains(identifier->shortName())))
             found = true;
+        found |= names_wrapper(node);
     };
     for (const IAST * key : {storage.order_by, storage.primary_key, storage.engine->arguments.get()})
         if (key)
@@ -2977,6 +3048,38 @@ bool analyzesOnlyLocally(const IAST & select, const ContextPtr & context)
     return local;
 }
 
+/// Whether analyzing `query` runs a subquery: the analyzer runs a scalar one, or a CTE used as a value, at once,
+/// while a FROM subquery, a CTE body and the set of an IN are only planned.
+bool analysisMayRunSubquery(const IAST & query)
+{
+    std::set<const IAST *> planned;
+    std::set<String> cte_names;
+    forEachNode(query, [&](const IAST & node)
+    {
+        if (const auto * table_expression = node.as<ASTTableExpression>(); table_expression && table_expression->subquery)
+            planned.insert(table_expression->subquery.get());
+        else if (const auto * with = node.as<ASTWithElement>())
+        {
+            cte_names.insert(with->name);
+            if (!with->is_materialized && with->subquery)
+                planned.insert(with->subquery.get());
+        }
+        else if (const auto * function = node.as<ASTFunction>(); function && functionIsInOrGlobalInOperator(function->name)
+                 && function->arguments && function->arguments->children.size() == 2)
+            planned.insert(function->arguments->children[1].get());
+    });
+    bool runs = false;
+    forEachNode(query, [&](const IAST & node)
+    {
+        if (planned.contains(&node))
+            return;
+        const auto * identifier = node.as<ASTIdentifier>();
+        if (node.as<ASTSubquery>() || (identifier && !node.as<ASTTableIdentifier>() && cte_names.contains(identifier->name())))
+            runs = true;
+    });
+    return runs;
+}
+
 ReplayGateNeeds collectReplayGateNeeds(
     const std::vector<String> & create_queries, const ContextPtr & context, const AnalyzesOnSource & analyzes_on_source)
 {
@@ -3006,7 +3109,7 @@ ReplayGateNeeds collectReplayGateNeeds(
                     .materialized_postgresql_table = true, .time_series_table = true,
                     .kafka_keeper_offsets = true, .nullable_tuple_type = true, .unique_key = true,
                     .data_lake_catalog_database = true, .ytsaurus_table = true, .paimon_table = true,
-                    .delta_lake_table = true, .archive_path = true, .nested_column = true,
+                    .delta_lake_table = true, .archive_path = true, .nested_column = true, .column_declaration = true,
                     .codec_gates = {}, .data_lake_catalog_gates = {}};
         }
 
@@ -3116,7 +3219,7 @@ ReplayGateNeeds collectReplayGateNeeds(
             const AnalyzerCarriers carriers = scan_analyzed(*create->select);
             /// A SELECT that may analyze differently on the source (current database, remote data) is not asked.
             const bool ask_source = create->is_materialized_view && analyzes_on_source && has_carrier(carriers)
-                && analyzesOnlyLocally(*create->select, context);
+                && analyzesOnlyLocally(*create->select, context) && !analysisMayRunSubquery(*create->select);
             add_gates_read(carriers, ask_source ? create->select->formatWithSecretsOneLine() : "");
         }
         if (create->columns_list && create->columns_list->projections)
@@ -3128,7 +3231,7 @@ ReplayGateNeeds collectReplayGateNeeds(
                 /// A projection is analyzed as this SELECT over its table's columns, which the source table has too.
                 String select_query;
                 if (projection && analyzes_on_source && has_carrier(carriers) && !create->getDatabase().empty()
-                    && !create->getTable().empty())
+                    && !create->getTable().empty() && !analysisMayRunSubquery(*child))
                 {
                     ASTPtr select = projection->cloneToASTSelect();
                     select->as<ASTSelectQuery &>().setExpression(ASTSelectQuery::Expression::SETTINGS, nullptr);
@@ -3250,6 +3353,11 @@ ReplayGateNeeds collectReplayGateNeeds(
                 if (const auto * column = child->as<ASTColumnDeclaration>(); column && column->getType())
                     if (const auto * type = column->getType()->as<ASTDataType>(); type && equalsCaseInsensitive(type->name, "Nested"))
                         needs.nested_column = true;
+
+        /// A stored column never spells its nullability out, so the target session's default would decide it.
+        if (create->columns_list && create->columns_list->columns)
+            for (const auto & child : create->columns_list->columns->children)
+                needs.column_declaration |= child->as<ASTColumnDeclaration>() != nullptr;
 
         /// `allow_statistics` is read for every column STATISTICS (`getColumnsDescription`).
         if (create->columns_list && create->columns_list->columns)
@@ -3406,6 +3514,8 @@ String replaySettingsPrelude(
         {"allow_archive_path_syntax", "1"},
         /// Value 0 keeps a `Nested` column as the source stored it, instead of `n.a Array(...)` columns.
         {"flatten_nested", "0"},
+        /// Value 0 keeps a column's stored type, instead of making it `Nullable`.
+        {"data_type_default_nullable", "0"},
     };
     /// Emit only dump-specific gates known by the source server and required by these statements.
     const ReplayGateNeeds needs = collectReplayGateNeeds(create_queries, context, analyzes_on_source);
@@ -3435,6 +3545,8 @@ String replaySettingsPrelude(
             return needs.archive_path;
         if (name == "flatten_nested")
             return needs.nested_column;
+        if (name == "data_type_default_nullable")
+            return needs.column_declaration;
         return false;
     };
 
@@ -3813,7 +3925,8 @@ bool selectMayOutputUnknownColumn(const IAST & select, const std::set<String> & 
 /// the gate is only ever over-emitted. The stored `CREATE` always carries a column list, so the column
 /// check runs at replay for every view. SQL UDFs the SELECT calls are not tracked.
 bool materializedViewMayNeedBadSelectGate(
-    const TableInfo & table, const std::map<std::pair<String, String>, const TableInfo *> & emitted_tables, const ContextPtr & context)
+    const TableInfo & table, const std::map<std::pair<String, String>, const TableInfo *> & emitted_tables, const ContextPtr & context,
+    const AnalyzesOnSource & analyzes_on_source)
 {
     const ASTPtr ast = tryParseCreate(table.create_query);
     if (!ast)
@@ -3849,11 +3962,38 @@ bool materializedViewMayNeedBadSelectGate(
     if (containsTableFunction(*create->select, table, emitted_tables, context))
         return true;
 
-    return selectMayOutputUnknownColumn(*create->select, target_columns);
+    if (selectMayOutputUnknownColumn(*create->select, target_columns))
+        return true;
+
+    /// Matching names do not prove the SELECT analyzes, so the source is asked, unless that runs a subquery or a
+    /// table name could resolve against the dump session's database instead of the view's.
+    std::set<String> cte_names;
+    bool lateral = false;
+    forEachNode(*create->select, [&](const IAST & node)
+    {
+        if (const auto * with = node.as<ASTWithElement>())
+            cte_names.insert(with->name);
+        else if (const auto * join = node.as<ASTTableJoin>())
+            lateral |= join->lateral;
+    });
+    bool unqualified_table = false;
+    forEachNode(*create->select, [&](const IAST & node)
+    {
+        if (const auto * identifier = node.as<ASTTableIdentifier>())
+            unqualified_table |= identifier->getDatabaseName().empty() && !cte_names.contains(identifier->shortName());
+    });
+    if (!analyzes_on_source || unqualified_table || analysisMayRunSubquery(*create->select) || !analyzesOnlyLocally(*create->select, context))
+        return true;
+    SettingsChanges analyzer_gates = {{"allow_suspicious_types_in_group_by", Field(true)},
+        {"allow_suspicious_types_in_order_by", Field(true)}, {"allow_experimental_correlated_subqueries", Field(true)}};
+    if (lateral)
+        analyzer_gates.setSetting("allow_experimental_lateral_join", Field(true));
+    return !analyzes_on_source(create->select->formatWithSecretsOneLine(), analyzer_gates);
 }
 
 void markMaterializedViewsNeedingBadSelectGate(
-    std::vector<TableInfo> & tables, const ContextPtr & context, const std::set<String> & user_defined_functions, std::ostream & err)
+    std::vector<TableInfo> & tables, const ContextPtr & context, const std::set<String> & user_defined_functions,
+    const AnalyzesOnSource & analyzes_on_source, std::ostream & err)
 {
     std::map<std::pair<String, String>, const TableInfo *> emitted_tables;
     for (const auto & table : tables)
@@ -3863,7 +4003,7 @@ void markMaterializedViewsNeedingBadSelectGate(
     {
         if (!table.emit)
             continue;
-        table.needs_bad_select_gate = materializedViewMayNeedBadSelectGate(table, emitted_tables, context);
+        table.needs_bad_select_gate = materializedViewMayNeedBadSelectGate(table, emitted_tables, context, analyzes_on_source);
 
         /// The dump does not create user-defined functions; a stored CREATE still calls one only if it predates the function.
         const ASTPtr ast = user_defined_functions.empty() ? nullptr : tryParseCreate(table.create_query);
@@ -3881,6 +4021,27 @@ void markMaterializedViewsNeedingBadSelectGate(
         if (!called.empty() && ast->as<ASTCreateQuery>() && ast->as<ASTCreateQuery>()->is_materialized_view)
             table.needs_bad_select_gate = true;
     }
+}
+
+/// The source databases an `Overlay` database checks at CREATE, read like `registerDatabaseOverlay` does.
+std::set<String> overlaySourceDatabases(const String & database, const String & create_query, const ContextPtr & context)
+{
+    const ASTPtr ast = tryParseCreate(create_query);
+    const auto * create = ast ? ast->as<ASTCreateQuery>() : nullptr;
+    const auto * engine = create && create->storage ? create->storage->engine : nullptr;
+    if (!engine || !equalsCaseInsensitive(engine->name, "Overlay") || !engine->arguments)
+        return {};
+    std::set<String> sources;
+    for (const auto & argument : engine->arguments->children)
+    {
+        auto source = tryFoldNameArgument(argument, context);
+        if (!source)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Cannot resolve the source databases of Overlay database {} for --dump-schema, so it cannot be ordered after them",
+                backQuoteIfNeed(database));
+        sources.insert(*source);
+    }
+    return sources;
 }
 
 }
@@ -4008,21 +4169,32 @@ void dumpDatabaseSchema(
         create_database_query_by_db.emplace(db, std::move(create_database_query.front()));
     }
 
+    /// Database CREATEs that need another database first; the ones outside the dump are reported.
+    std::map<String, std::set<String>> database_prerequisites;
+    for (const auto & db : target_databases)
+        for (const auto & source : overlaySourceDatabases(db, create_database_query_by_db.at(db), context))
+        {
+            database_prerequisites[db].insert(source);
+            if (!std::binary_search(target_databases.begin(), target_databases.end(), source) && !DatabaseCatalog::isPredefinedDatabase(source))
+                err << "Warning: database " << backQuoteIfNeed(db) << " is an Overlay of database " << backQuoteIfNeed(source)
+                    << ", which is outside the dumped database(s) and will not be created by this dump; replaying this dump into a "
+                    << "fresh instance requires it to already exist.\n";
+        }
+    const std::vector<String> database_create_order
+        = orderDatabasesByDependencies(target_databases, {}, database_prerequisites).value_or(target_databases);
+
     /// Names the source server actually has and still acts on, used to filter the replay prelude below.
     std::vector<String> server_setting_names = fetchStringColumn(
         connection, timeouts, client_info, "SELECT name FROM system.settings WHERE NOT is_obsolete", context->getSettingsRef());
     std::set<String> settings_known_to_server(server_setting_names.begin(), server_setting_names.end());
 
-    /// `EXPLAIN QUERY TREE` runs the analyzer and the scalar subqueries only, so it creates nothing on the source. The settings go
-    /// in the query text, because `LocalConnection` drops the settings argument.
+    /// `EXPLAIN QUERY TREE` runs the analyzer only, so it creates nothing on the source; callers do not ask about a query whose
+    /// analysis runs a subquery. The settings go in the query text, because `LocalConnection` drops the settings argument.
     const AnalyzesOnSource analyzes_on_source = [&](const String & select_query, const SettingsChanges & changes)
     {
         String query = "EXPLAIN QUERY TREE " + select_query + " SETTINGS ";
         for (size_t i = 0; i < changes.size(); ++i)
             query += (i ? ", " : "") + changes[i].name + (changes[i].value.safeGet<bool>() ? " = 1" : " = 0");
-        /// A scalar subquery runs here, and its JOIN on `Dynamic` keys, which CREATE never plans, must not fail the probe.
-        if (settings_known_to_server.contains("allow_dynamic_type_in_join_keys"))
-            query += ", allow_dynamic_type_in_join_keys = 1";
         try
         {
             fetchStringColumn(connection, timeouts, client_info, query, context->getSettingsRef());
@@ -4062,7 +4234,7 @@ void dumpDatabaseSchema(
         const std::vector<String> user_defined_functions = fetchStringColumn(connection, timeouts, client_info,
             "SELECT name FROM system.functions WHERE origin != 'System'", context->getSettingsRef());
         markMaterializedViewsNeedingBadSelectGate(
-            tables, context, std::set<String>(user_defined_functions.begin(), user_defined_functions.end()), err);
+            tables, context, std::set<String>(user_defined_functions.begin(), user_defined_functions.end()), analyzes_on_source, err);
     }
 
     if (output_dir.empty())
@@ -4081,7 +4253,7 @@ void dumpDatabaseSchema(
             context,
             analyzes_on_source);
 
-        for (const auto & db : target_databases)
+        for (const auto & db : database_create_order)
             out << create_database_query_by_db.at(db) << ";\n\n";
 
         /// Stored queries can keep names unqualified and resolve them against the session's current
@@ -4105,7 +4277,7 @@ void dumpDatabaseSchema(
     }
 
     /// Each database's tables land in their own file, so the files must be replayed in order too.
-    std::optional<std::vector<String>> database_order = orderDatabasesByDependencies(target_databases, tables);
+    std::optional<std::vector<String>> database_order = orderDatabasesByDependencies(target_databases, tables, database_prerequisites);
     if (!database_order)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Cannot dump to `--dump-schema-dir`: these databases have circular cross-database table "
