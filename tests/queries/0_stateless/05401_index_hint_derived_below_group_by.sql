@@ -27,6 +27,10 @@ SELECT countIf(explain LIKE '%indexHint(%') > 0 FROM (EXPLAIN SYNTAX run_query_t
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM (SELECT a, b FROM t_chain_keys ORDER BY a, b LIMIT 1 BY a, b) WHERE (b < a AND a < 10) OR a = 500) WHERE explain LIKE '%Granules: %/%';
 SELECT count() FROM (SELECT a, b FROM t_chain_keys ORDER BY a, b LIMIT 1 BY a, b) WHERE (b < a AND a < 10) OR a = 500;
 
+-- a derived hint from an outer WHERE prunes through a GROUP BY subquery
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM (SELECT a, b FROM t_chain_keys GROUP BY a, b) WHERE a < b AND b < 10) WHERE explain LIKE '%Granules: %/%';
+SELECT count() FROM (SELECT a, b FROM t_chain_keys GROUP BY a, b) WHERE a < b AND b < 10;
+
 -- a hint the OR-LIKE chain rewrite adds does not keep the OR above the aggregation
 SELECT countIf(explain LIKE '%multiSearchAny(%') > 0 AND countIf(explain LIKE '%indexHint(%') > 0 FROM (EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT a, b FROM t_chain_keys GROUP BY a, b HAVING (a < 10 AND (toString(b) LIKE '%1%' OR toString(b) LIKE '%2%' OR toString(b) LIKE '%3%' OR toString(b) LIKE '%4%')) OR a = 500);
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT a, b FROM t_chain_keys GROUP BY a, b HAVING (a < 10 AND (toString(b) LIKE '%1%' OR toString(b) LIKE '%2%' OR toString(b) LIKE '%3%' OR toString(b) LIKE '%4%')) OR a = 500) WHERE explain LIKE '%Granules: %/%';
@@ -47,3 +51,12 @@ SELECT countIf(explain LIKE '%WHERE and(indexHint(%') > 0 FROM (EXPLAIN SYNTAX r
 SELECT count() FROM (SELECT k, v FROM remote('127.0.0.1', currentDatabase(), t_hint_key) GROUP BY k, v) WHERE (v = 7 AND indexHint(k < 3)) OR (k < v AND v < 3) SETTINGS optimize_extract_common_expressions = 1, prefer_localhost_replica = 1;
 
 DROP TABLE t_hint_key;
+
+-- below GROUP BY in a remote() local plan the derived hint still means the alias, not the column it shadows
+DROP TABLE IF EXISTS t_hint_alias;
+CREATE TABLE t_hint_alias (k UInt32, v UInt32, w UInt32) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 4, index_granularity_bytes = '10Mi';
+INSERT INTO t_hint_alias SELECT number, number % 10, number % 7 FROM numbers(100);
+OPTIMIZE TABLE t_hint_alias FINAL;
+SELECT countIf(explain LIKE '%indexHint(%') > 0 FROM (EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM (SELECT w AS k, v FROM remote('127.0.0.1', currentDatabase(), t_hint_alias) AS t GROUP BY w, v, t.k) WHERE k < v AND v < 3 SETTINGS prefer_localhost_replica = 1);
+SELECT count() FROM (SELECT w AS k, v FROM remote('127.0.0.1', currentDatabase(), t_hint_alias) AS t GROUP BY w, v, t.k) WHERE k < v AND v < 3 SETTINGS prefer_localhost_replica = 1;
+DROP TABLE t_hint_alias;

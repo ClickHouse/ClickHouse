@@ -2955,6 +2955,47 @@ void ActionsDAG::mergeInplace(ActionsDAG && second, std::unordered_map<const Nod
     /// second: x (1), x (2), x (3) ==> x (3), x (2), x (1)
     /// merge: x (1), x (2), x (3), y =(first)=> x (2), z, x (4), x (3) =(second)=> x (3), x (4), x (2), z
 
+    /// An implied hint reads `first`'s outputs by name, like `second`'s inputs; rebind it to what computes them as well.
+    {
+        std::unordered_map<std::string_view, const Node *> first_output_by_name;
+        for (auto & node : second.nodes)
+        {
+            if (node.type != ActionType::FUNCTION)
+                continue;
+            const auto * index_hint = FunctionIndexHint::tryGet(node.function_base);
+            if (!index_hint || !index_hint->isImplied())
+                continue;
+
+            if (first_output_by_name.empty())
+                for (const auto * output_node : first.outputs)
+                    first_output_by_name.emplace(output_node->result_name, output_node);
+
+            NodeRawConstPtrs sources;
+            bool renamed = false;
+            for (const auto * hint_input : index_hint->getActions().getInputs())
+            {
+                auto it = first_output_by_name.find(hint_input->result_name);
+                if (it == first_output_by_name.end())
+                    continue;
+                sources.push_back(it->second);
+                renamed |= it->second->type != ActionType::INPUT;
+            }
+            if (!renamed)
+                continue;
+
+            ActionsDAG rebound_actions;
+            auto prefix = cloneSubDAG(sources, /*remove_aliases=*/ false);
+            if (!prefix.hasArrayJoin() && !prefix.hasNonDeterministic())
+                rebound_actions = merge(std::move(prefix), index_hint->getActions().clone());
+
+            auto rebound = std::make_shared<FunctionIndexHint>();
+            rebound->setActions(std::move(rebound_actions));
+            rebound->setImplied(true);
+            node.function_base = FunctionToOverloadResolverAdaptor(std::move(rebound)).build({});
+            node.function = node.function_base->prepare({});
+        }
+    }
+
     /// Will store merged result in `first`.
 
     /// This map contains nodes which should be removed from `first` outputs, cause they are used as inputs for `second`.
