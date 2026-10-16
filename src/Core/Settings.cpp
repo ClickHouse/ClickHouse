@@ -10715,7 +10715,7 @@ Removes unnecessary exchanges in distributed query plan. Disable it for debuggin
     DECLARE(String, distributed_plan_worker_cluster, "", R"(
 Name of the stateless-worker cluster to execute this query's distributed plan on. The empty default selects the pre-configured default cluster; other clusters are configured under `stateless_worker_client.clusters`.
 )", PRIVATE_PREVIEW, \
-        {"26.10", "", "", "New setting to select the stateless worker cluster for distributed plan execution."}) \
+        {"26.11", "", "", "New setting to select the stateless worker cluster for distributed plan execution."}) \
     DECLARE(UInt64, distributed_plan_workers_num, 0, R"(
 How many stateless workers will be used to execute this query. Zero disables stateless-worker leasing for distributed plans.
 )", PRIVATE_PREVIEW, \
