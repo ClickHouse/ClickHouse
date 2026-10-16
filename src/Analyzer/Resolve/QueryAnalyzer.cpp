@@ -13,6 +13,7 @@
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/LambdaNode.h>
 #include <Analyzer/MatcherNode.h>
+#include <Analyzer/Passes/IfConstantConditionPass.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
@@ -46,6 +47,7 @@
 
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSubquery.h>
 
 #include <DataTypes/DataTypesNumber.h>
@@ -4436,6 +4438,12 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                     }
                     break;
                 }
+
+                if (is_correlated_column_node && scope_ptr->nullable_collapsed_group_by_key_columns.contains(node))
+                {
+                    node->convertToNullable();
+                    break;
+                }
             }
 
             /// For local references stop at the first surrounding QUERY scope.
@@ -4804,6 +4812,32 @@ void registerNullableGroupByKeys(const QueryTreeNodes & group_by_keys, Identifie
     }
 }
 
+/// The columns `IfConstantConditionPass` may collapse `node` to: the branches of nested `if`/`multiIf`, whatever their conditions.
+void registerConstantConditionBranchColumns(const QueryTreeNodePtr & node, IdentifierResolveScope & scope)
+{
+    const auto * function_node = node->as<FunctionNode>();
+    if (!function_node || (function_node->getFunctionName() != "if" && function_node->getFunctionName() != "multiIf"))
+        return;
+
+    const auto & arguments = function_node->getArguments().getNodes();
+    if (arguments.size() != 3)
+        return;
+
+    for (size_t i = 1; i < 3; ++i)
+    {
+        if (arguments[i]->getNodeType() == QueryTreeNodeType::COLUMN)
+            scope.nullable_collapsed_group_by_key_columns.insert(arguments[i]->clone());
+        else
+            registerConstantConditionBranchColumns(arguments[i], scope);
+    }
+}
+
+void registerCollapsedGroupByKeyColumns(const QueryTreeNodes & group_by_keys, IdentifierResolveScope & scope)
+{
+    for (const auto & key : group_by_keys)
+        registerConstantConditionBranchColumns(key, scope);
+}
+
 }
 
 /** Resolve GROUP BY clause.
@@ -4861,7 +4895,12 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
     }
 
     if (!nullable_group_by_keys.empty())
+    {
         registerNullableGroupByKeys(nullable_group_by_keys, scope);
+        /// Only if `IfConstantConditionPass` folds the keys of this query, so that the collapsed columns exist after aggregation.
+        if (!ifConstantConditionFoldingMergesGroupingKeys(query_node_typed, scope.context))
+            registerCollapsedGroupByKeyColumns(nullable_group_by_keys, scope);
+    }
 
     /// With group_by_use_nulls the projection (and the other clauses) are re-resolved after GROUP BY
     /// so that expressions equal to a key become Nullable via the scope.nullable_group_by_keys
@@ -5737,13 +5776,27 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
     /// the query context, and switching to the QueryNode's own context copy could change
     /// non-settings state (e.g. isDistributed) and break table function execution
     /// (for example, causing s3 to create a remote StorageObjectStorageCluster).
+    /// A subquery customizes its settings context when it has either `SETTINGS x = value` changes or
+    /// `SETTINGS x = DEFAULT` resets. Both are persisted on the `QueryNode`, so the context follows the
+    /// query tree through cloning and conversion back to AST for distributed execution.
+    /// A subquery customizes its settings when it is a `QueryNode` with its own `SETTINGS` clause, or a
+    /// `UnionNode` with a query-level `SETTINGS` clause of the union. In the latter case every arm was
+    /// built from the union's context, so the nearest query scope below it already carries the settings.
+    auto subquery_customizes_settings = [](const IQueryTreeNode & node) -> bool
+    {
+        if (const auto * query_node = node.as<QueryNode>())
+            return query_node->isSubquery() && query_node->hasSettingsChanges();
+        if (const auto * union_node = node.as<UnionNode>())
+            return union_node->isSubquery() && union_node->hasSettingsChanges();
+        return false;
+    };
+
     ContextPtr execution_context = scope_context->getQueryContext();
     {
         const IdentifierResolveScope * scope_to_check = &scope;
         while (scope_to_check != nullptr)
         {
-            if (auto * query_node = scope_to_check->scope_node->as<QueryNode>();
-                query_node && query_node->hasSettingsChanges() && query_node->isSubquery())
+            if (subquery_customizes_settings(*scope_to_check->scope_node))
             {
                 auto * nearest_query_scope = scope.getNearestQueryScope();
                 if (nearest_query_scope)

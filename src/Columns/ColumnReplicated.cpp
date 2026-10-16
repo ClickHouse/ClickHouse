@@ -747,28 +747,28 @@ namespace
 {
 
 template <typename T>
-ColumnPtr convertOffsetsToIndexesImpl(const IColumn::Offsets & offsets)
+ColumnPtr convertOffsetsToIndexesImpl(const IColumn::Offsets & offsets, size_t first_index)
 {
     auto result = ColumnVector<T>::create();
     auto & data = result->getData();
     data.reserve_exact(offsets.back());
     for (size_t i = 0; i != offsets.size(); ++i)
-        data.resize_fill(data.size() + offsets[i] - offsets[i - 1], static_cast<T>(i));
+        data.resize_fill(data.size() + offsets[i] - offsets[i - 1], static_cast<T>(first_index + i));
     return result;
 }
 
 }
 
-ColumnPtr convertOffsetsToIndexes(const IColumn::Offsets & offsets)
+ColumnPtr convertOffsetsToIndexes(const IColumn::Offsets & offsets, size_t first_index)
 {
-    size_t max_index = offsets.size();
+    size_t max_index = first_index + offsets.size();
     if (max_index <= std::numeric_limits<UInt8>::max())
-        return convertOffsetsToIndexesImpl<UInt8>(offsets);
+        return convertOffsetsToIndexesImpl<UInt8>(offsets, first_index);
     if (max_index <= std::numeric_limits<UInt16>::max())
-        return convertOffsetsToIndexesImpl<UInt16>(offsets);
+        return convertOffsetsToIndexesImpl<UInt16>(offsets, first_index);
     if (max_index <= std::numeric_limits<UInt32>::max())
-        return convertOffsetsToIndexesImpl<UInt32>(offsets);
-    return convertOffsetsToIndexesImpl<UInt64>(offsets);
+        return convertOffsetsToIndexesImpl<UInt32>(offsets, first_index);
+    return convertOffsetsToIndexesImpl<UInt64>(offsets, first_index);
 }
 
 bool isLazyReplicationUseful(const ColumnPtr & column)
@@ -820,14 +820,44 @@ void transformColumnsWithSharedIndex(
         positions);
 }
 
+namespace
+{
+
+/// an upper bound of the nested rows the indexes refer to, an ARRAY JOIN window refers only to a part of its block
+size_t getReferencedRowsBound(const ColumnReplicated & column)
+{
+    if (column.empty())
+        return 0;
+    Field min;
+    Field max;
+    column.getIndexesColumn()->getExtremes(min, max, 0, column.size());
+    size_t span = max.safeGet<UInt64>() - min.safeGet<UInt64>() + 1;
+    if (span < column.size())
+        return span;
+
+    /// the runs of equal indexes are exact for sorted indexes, as after a filtered ARRAY JOIN
+    const auto & indexes = column.getIndexes();
+    size_t runs = 1;
+    for (size_t row = 1, previous = indexes.getIndexAt(0); row < column.size() && runs < span; ++row)
+    {
+        size_t index = indexes.getIndexAt(row);
+        runs += index != previous;
+        previous = index;
+    }
+    return runs;
+}
+
+}
+
 ColumnPtr convertToFullColumnIfReplicationNotUseful(const ColumnPtr & column, bool with_size_check)
 {
     if (!column->isReplicated())
         return column;
 
     const auto & replicated = typeid_cast<const ColumnReplicated &>(*column);
-    /// Materialize if the type doesn't benefit from lazy replication, or if nested data isn't smaller than output.
-    if (!isLazyReplicationUseful(replicated.getNestedColumn()) || (with_size_check && replicated.getNestedColumn()->size() >= replicated.size()))
+    /// Materialize if the type doesn't benefit from lazy replication, or if the referenced nested data isn't smaller than output.
+    if (!isLazyReplicationUseful(replicated.getNestedColumn())
+        || (with_size_check && replicated.getNestedColumn()->size() >= replicated.size() && getReferencedRowsBound(replicated) >= replicated.size()))
         return replicated.convertToFullColumnIfReplicated();
 
     return column;
