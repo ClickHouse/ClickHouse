@@ -337,6 +337,31 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     if (isIEJoinPreferred(join_operator, join_step->getJoinSettings()))
         return false;
 
+    /// `supportsRuntimeFilter` only keeps `HASH`/`PARALLEL_HASH` (and never `GRACE_HASH`) for `ASOF`, so pruning
+    /// `join_algorithms` below would silently force one of those even when the user picked a different algorithm,
+    /// e.g. `full_sorting_merge,hash`. That substitution is harmless for `All`/`Any`/`Semi`/`Anti`, where `HashJoin`
+    /// supports the same column types as the algorithm it replaces, but not for `ASOF`: `HashJoin` only supports
+    /// numeric/`Decimal`/`DateTime64` closest-match columns (`SortedLookupVectorBase::getTypeSize` in
+    /// `RowRefs.cpp`) and cannot spill, unlike `full_sorting_merge`. Skip the filter whenever pruning would change
+    /// the algorithm `chooseJoinAlgorithm` (`PlannerJoins.cpp`) would otherwise pick for this `ASOF` join: `DIRECT`
+    /// (`tryDirectJoin`), `GRACE_HASH` (`GraceHashJoin::isSupported`), and `PARTIAL_MERGE`/`PREFER_PARTIAL_MERGE`/
+    /// `DEFAULT` (`MergeJoin::isSupported`) never run an `ASOF` join, so `chooseJoinAlgorithm` always falls through
+    /// them regardless of where they sit in the list; `IE_JOIN` is excluded too, consistent with the check above.
+    if (join_operator.strictness == JoinStrictness::Asof)
+    {
+        const auto first_candidate = std::ranges::find_if(
+            join_algorithms,
+            [](JoinAlgorithm algorithm)
+            {
+                return algorithm != JoinAlgorithm::DIRECT && algorithm != JoinAlgorithm::IE_JOIN
+                    && algorithm != JoinAlgorithm::GRACE_HASH && algorithm != JoinAlgorithm::PARTIAL_MERGE
+                    && algorithm != JoinAlgorithm::PREFER_PARTIAL_MERGE && algorithm != JoinAlgorithm::DEFAULT;
+            });
+        if (first_candidate == join_algorithms.end()
+            || (*first_candidate != JoinAlgorithm::HASH && *first_candidate != JoinAlgorithm::PARALLEL_HASH))
+            return false;
+    }
+
     /// Sometimes cross join can be represented by inner join without expressions
     if (join_operator.expression.empty())
         return false;
