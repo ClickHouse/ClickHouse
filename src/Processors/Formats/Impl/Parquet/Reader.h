@@ -678,6 +678,9 @@ struct Reader
 
     /// Guess how much memory ColumnSubchunk::{column, arrays_offsets} will use, per row.
     double estimateColumnMemoryBytesPerRow(const ColumnChunk & column, const RowGroup & row_group, const PrimitiveColumnInfo & column_info) const;
+    /// Bound for memory estimates charged to the read scheduler: the larger memory watermark plus one,
+    /// capped far below overflow.
+    size_t memoryEstimateLimit() const;
 
     void decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnInfo & column_info, ColumnSubchunk & subchunk, const RowGroup & row_group, RowSubgroup & row_subgroup);
 

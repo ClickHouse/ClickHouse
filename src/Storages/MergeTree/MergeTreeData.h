@@ -2272,6 +2272,8 @@ protected:
     BackgroundSchedulePoolTaskHolder refresh_stats_task;
     /// Set by `stopStatisticsCache`, after which `startStatisticsCache` does not arm the task anymore.
     bool refresh_stats_stopped TSA_GUARDED_BY(refresh_stats_task_mutex) = false;
+    /// Set before `refresh_stats_task` is deactivated, so that a running `refreshStatistics` returns between parts.
+    std::atomic_bool refresh_stats_cancelled = false;
 
     mutable std::mutex stats_mutex;
     ConditionSelectivityEstimatorPtr cached_estimator;

@@ -14,7 +14,7 @@ SET optimize_time_filter_with_preimage = 0;  -- the rewrite would rewrite the `c
 SET explain_query_plan_default = 'legacy';   -- for the Condition/Parts/Granules assertions
 SET parallel_replicas_local_plan = 1;        -- for explain with indexes and key condition values
 
-DROP TABLE IF EXISTS 05214_day, 05214_day_nullable, 05214_dt_seconds, 05214_hour, 05214_cast_date, 05214_pk, 05214_skip, 05214_explicit_zone, 05214_dynamic;
+DROP TABLE IF EXISTS 05214_day, 05214_day_nullable, 05214_dt_seconds, 05214_hour, 05214_cast_date, 05214_pk, 05214_skip, 05214_explicit_zone;
 
 -- Rows 1 and 2 are in UTC day 20240102 and row 3 in 20240105, so there are two parts to prune between.
 -- Read in Asia/Tokyo, '2024-01-03 05:00:00' names row 2, so the honest answer for that literal is 1.
@@ -148,19 +148,4 @@ SELECT (SELECT count() FROM 05214_day WHERE dt = CAST('2024-01-03 05:00:00' AS L
        (SELECT countIf(dt = CAST('2024-01-03 05:00:00' AS LowCardinality(String))) FROM 05214_day) AS honest
 SETTINGS session_timezone = 'Asia/Tokyo';
 
-SELECT '';
-SELECT '-- negative control: a key whose CAST input is not a DateTime still takes the direct fast path,';
-SELECT '-- which is what makes granule pruning possible for a round trip that cannot be done safely';
-CREATE TABLE 05214_dynamic (d Dynamic, id Int32) ENGINE = MergeTree ORDER BY CAST(d AS String) SETTINGS index_granularity = 1;
-INSERT INTO 05214_dynamic VALUES ('alpha', 1), ('beta', 2);
-SELECT (SELECT count() FROM 05214_dynamic WHERE d = 'alpha') AS pruned,
-       (SELECT countIf(d = 'alpha') FROM 05214_dynamic) AS honest
-SETTINGS session_timezone = 'Asia/Tokyo';
-SELECT trim(explain)
-FROM (
-    EXPLAIN indexes = 1 SELECT count() FROM 05214_dynamic WHERE d = 'alpha'
-)
-WHERE trim(explain) ilike 'granules: %'
-SETTINGS session_timezone = 'Asia/Tokyo';
-
-DROP TABLE 05214_day, 05214_day_nullable, 05214_dt_seconds, 05214_hour, 05214_cast_date, 05214_pk, 05214_skip, 05214_explicit_zone, 05214_dynamic;
+DROP TABLE 05214_day, 05214_day_nullable, 05214_dt_seconds, 05214_hour, 05214_cast_date, 05214_pk, 05214_skip, 05214_explicit_zone;

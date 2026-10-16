@@ -1986,6 +1986,12 @@ Read a Parquet group that has no `VARIANT` logical type, but has the layout of a
 Allow to write information about geo columns in parquet metadata and encode columns in WKB format.
 )", 0, \
         {"25.7", false, true, "A new setting to allow to write information about geo columns in parquet metadata and encode columns in WKB format."}) \
+    DECLARE(Bool, output_format_parquet_write_file_logical_type, false, R"(
+Write a named `Tuple` whose element names are all fields of the Parquet `FILE` logical type (`uri`, `offset`, `size`, `content_type`, `checksum`, `inline`; any non-empty subset in any order) as a group annotated with the `FILE` logical type, which represents a reference to a range of bytes stored inline or in an external file. The `offset` and `size` elements must be integers (written as `INT64`), the other elements must be `String` or `FixedString` (`inline` is written as `BYTE_ARRAY` without annotation, the others as `STRING`). As the specification requires, every field is written as `OPTIONAL`. Values are written as is, without checking that they form a valid reference.
+
+When reading, a `FILE`-annotated group is always read as such a `Tuple` of `Nullable` elements.
+)", 0, \
+        {"26.10", false, false, "New setting to write a named `Tuple` with fields of the Parquet `FILE` logical type as a `FILE`-annotated group."}) \
     DECLARE(Bool, into_outfile_create_parent_directories, false, R"(
 Automatically create parent directories when using INTO OUTFILE if they do not already exists.
 )", 0, \
