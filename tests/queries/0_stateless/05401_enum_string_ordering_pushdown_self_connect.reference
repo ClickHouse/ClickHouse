@@ -1,0 +1,14 @@
+--- pg_t
+e < s	['z']
+e < m	['z','a']
+(e, k) > (a, 0)	['a','m']
+toString(e) < s	['a']
+e = m	['m']
+e = m AND e > z	['m']
+--- my_t
+e < s	['z']
+e < m	['z','a']
+(e, k) > (a, 0)	['a','m']
+toString(e) < s	['a']
+e = m	['m']
+e = m AND e > z	['m']
