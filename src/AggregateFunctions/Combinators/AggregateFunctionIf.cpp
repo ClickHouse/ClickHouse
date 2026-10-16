@@ -634,7 +634,6 @@ AggregateFunctionPtr AggregateFunctionIf::getOwnNullAdapter(
         return_type_is_nullable = false;
 
     bool need_to_serialize_flag = return_type_is_nullable || properties.returns_default_when_only_null;
-    /// A `SimpleAggregateFunction` cannot be inside `Nullable`; the state keeps its flag.
     if (typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(getResultType()->getCustomName()))
         return_type_is_nullable = false;
 
