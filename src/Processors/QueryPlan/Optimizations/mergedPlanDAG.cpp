@@ -208,8 +208,11 @@ bool canEnterStep(const QueryPlan::Node & node)
     if (typeid_cast<const BuildRuntimeFilterStep *>(step))
         return node.children.size() == 1;
 
+    /// A join reads a prepared storage, as a direct join does, from a lookup that has to stay its immediate child, which a
+    /// step added above the lookup - a copy of a carried column - would not be. Such a join is a source as a whole.
     if (const auto * join_step = typeid_cast<const JoinStepLogical *>(step))
-        return node.children.size() == 2 && !join_step->getActionsDAG().hasArrayJoin();
+        return node.children.size() == 2 && !join_step->getActionsDAG().hasArrayJoin()
+            && std::ranges::none_of(node.children, [](const auto * child) { return typeid_cast<const JoinStepLogicalLookup *>(child->step.get()); });
 
     return false;
 }
