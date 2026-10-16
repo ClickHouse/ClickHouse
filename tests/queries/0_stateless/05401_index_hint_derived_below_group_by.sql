@@ -43,6 +43,7 @@ OPTIMIZE TABLE t_hint_key FINAL;
 SELECT count() FROM (SELECT k, v FROM t_hint_key GROUP BY k, v HAVING ((k < v AND v < 3) OR v = 7) AND indexHint(k < 3));
 SELECT count() FROM (SELECT k, v FROM t_hint_key GROUP BY k, v HAVING indexHint(k < 3) AND ((k < v AND v < 3) OR v = 7));
 -- a hint factored out of an OR keeps a user copy's missing mark
+SELECT countIf(explain LIKE '%WHERE and(indexHint(%') > 0 FROM (EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM (SELECT k, v FROM remote('127.0.0.1', currentDatabase(), t_hint_key) GROUP BY k, v) WHERE (v = 7 AND indexHint(k < 3)) OR (k < v AND v < 3) SETTINGS optimize_extract_common_expressions = 1, prefer_localhost_replica = 1);
 SELECT count() FROM (SELECT k, v FROM remote('127.0.0.1', currentDatabase(), t_hint_key) GROUP BY k, v) WHERE (v = 7 AND indexHint(k < 3)) OR (k < v AND v < 3) SETTINGS optimize_extract_common_expressions = 1, prefer_localhost_replica = 1;
 
 DROP TABLE t_hint_key;
