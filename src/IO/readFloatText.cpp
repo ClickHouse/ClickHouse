@@ -156,7 +156,7 @@ inline uint64_t byteMask16(Vector bytes)
 /// Value of the `n` <= 15 decimal digits at `p`, reading 16 bytes.
 /// Uses parse_eight_digits_unrolled above (credit: @aqrit), which needs exactly 8 digits. Right-aligning a
 /// shorter run behind leading zeros lets one or two such conversions handle any length without a loop.
-inline uint64_t parseDigits16(const char * p, unsigned n)
+inline uint64_t NO_SANITIZE_UNSIGNED_OVERFLOW parseDigits16(const char * p, unsigned n)
 {
     if (n == 0)
         return 0;
