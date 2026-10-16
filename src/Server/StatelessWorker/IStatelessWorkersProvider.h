@@ -65,8 +65,13 @@ public:
     virtual void start() = 0;
     virtual void shutdown() = 0;
 
-    /// Re-apply the server configuration to a running provider.
-    virtual void reloadConfig(const Poco::Util::AbstractConfiguration & config) { (void)config; }
+    /// Re-apply the server configuration to a running provider; `config_prefix` is its cluster's
+    /// configuration path.
+    virtual void reloadConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
+    {
+        (void)config;
+        (void)config_prefix;
+    }
 
 protected:
     friend class StatelessWorkerAllocation;

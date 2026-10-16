@@ -98,10 +98,12 @@ StatelessWorkersProviderPtr StatelessWorkersProviderRegistry::getProvider(const 
     /// The default cluster is cached under one key whether it was selected by an empty value or by name.
     const String canonical = canonicalizeClusterName(config, cluster_name);
 
-    std::lock_guard lock(mutex);
     /// Sign before building, so a reload published in between can only cause a rebuild, never keep a
-    /// stale provider under a newer signature.
+    /// stale provider under a newer signature. Signing reads only the configuration, so it runs outside
+    /// the lock and concurrent queries do not serialize on it.
     String signature = computeConfigSignature(config, canonical);
+
+    std::lock_guard lock(mutex);
     if (auto it = providers.find(canonical); it != providers.end())
     {
         /// The server publishes a new configuration before it reloads the registry; a cached provider
@@ -197,7 +199,7 @@ void StatelessWorkersProviderRegistry::reloadConfig(const Poco::Util::AbstractCo
             if (computeConfigSignature(config, it->first) == it->second.config_signature)
             {
                 /// Unchanged: refresh in place (e.g. re-read a token file).
-                it->second.provider->reloadConfig(config);
+                it->second.provider->reloadConfig(config, clusterConfigPrefix(it->first));
                 ++it;
                 continue;
             }
