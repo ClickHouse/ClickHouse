@@ -87,15 +87,8 @@ MergeTreeReaderWide::MergeTreeReaderWide(
     for (const auto & column : getColumns())
         requested_column_names.push_back(column.name);
 
-    /// The columns cache requires:
-    /// - columns_cache is available (it is null when the cache is disabled or sized zero, see `getColumnsCacheIfEnabled`)
-    /// - table has a valid UUID (Atomic/Replicated databases only)
-    /// Projection parts share the projection name (e.g. "ailog_rule_count") as their part name,
-    /// which is not unique across parent parts. This would cause cache key collisions,
-    /// so we disable caching for projection parts.
-    const bool cache_possible = columns_cache
-        && data_part_info_for_read->getTableUUID() != UUIDHelpers::Nil
-        && !data_part_info_for_read->isProjectionPart();
+    /// `columns_cache` is null when the cache is disabled or sized zero, see `getColumnsCacheIfEnabled`.
+    const bool cache_possible = isColumnsCachePossibleForPart(columns_cache, *data_part_info_for_read);
 
     /// A part read without marks has streams that cannot seek, so a granule served from the
     /// cache could not be followed by one read from the part. Such a read still populates the

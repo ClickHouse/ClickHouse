@@ -113,7 +113,8 @@ IMergeTreeReader::IMergeTreeReader(
 
     /// The columns read from the part may be written to the columns cache and then served to other
     /// queries, which must not see the substituted empty strings. Read the values in full then.
-    const bool may_write_to_columns_cache = columns_cache && settings.enable_columns_cache_writes;
+    const bool may_write_to_columns_cache = settings.enable_columns_cache_writes
+        && isColumnsCachePossibleForPart(columns_cache, *data_part_info_for_read);
 
     if (settings.string_value_filters && !settings.string_value_filters->empty() && !has_mutations_on_fly && !may_write_to_columns_cache)
     {
@@ -840,6 +841,14 @@ MergeTreeReaderPtr createMergeTreeReaderWide(
     const MergeTreeReaderSettings & reader_settings,
     const ValueSizeMap & avg_value_size_hints,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback);
+
+bool isColumnsCachePossibleForPart(const ColumnsCache * columns_cache, const IMergeTreeDataPartInfoForReader & part)
+{
+    return columns_cache
+        && part.isWidePart()
+        && part.getTableUUID() != UUIDHelpers::Nil
+        && !part.isProjectionPart();
+}
 
 MergeTreeReaderPtr createMergeTreeReader(
     const MergeTreeDataPartInfoForReaderPtr & read_info,
