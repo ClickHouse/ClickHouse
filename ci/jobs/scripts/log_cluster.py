@@ -200,6 +200,7 @@ class LogCluster:
         self.url = url or (self.READONLY_URL if readonly else "")
         self._session = None
         self._auth = None
+        self._probe_answer = None
         if password is not None:
             self._auth = {
                 "X-ClickHouse-User": self.user,
@@ -216,6 +217,7 @@ class LogCluster:
             self._session = None
 
     def is_ready(self):
+        self._probe_answer = None
         if not self.url:
             url = Secret.Config(
                 name=self.URL_SECRET,
@@ -249,7 +251,10 @@ class LogCluster:
                 timeout=3,
             )
             if not response.ok:
-                print("ERROR: No connection to LogCluster")
+                print(
+                    f"ERROR: LogCluster readiness probe failed, {self._classify(response)}"
+                )
+                self._probe_answer = response
                 return False
             if not response.json() == 1:
                 print("ERROR: LogCluster failure 1 != 1")
@@ -380,6 +385,14 @@ class LogCluster:
         reason = f"exception {code}, {reason}"
         return (LogClusterUnavailable if transient else LogClusterQueryError)(reason)
 
+    def _probe_load_rejection(self):
+        """`LogClusterUnavailable` if the server rejected the last probe for its own load, else None."""
+        answer = self._probe_answer
+        if answer is None or self.EXCEPTION_CODE_HEADER not in answer.headers:
+            return None
+        error = self._classify(answer)
+        return error if isinstance(error, LogClusterUnavailable) else None
+
     def _read_budget_spent(self):
         return self._read_deadline is not None and time.monotonic() >= self._read_deadline
 
@@ -409,6 +422,8 @@ class LogCluster:
         params = {} if self.readonly else {"send_logs_level": "warning"}
 
         response = None
+        probe_load = None
+        probe_hard = False
         post_attempted = False
         budget_spent = False
         for retry in range(retries):
@@ -438,6 +453,11 @@ class LogCluster:
                 traceback.print_exc()
                 ready = False
             if not ready:
+                load = self._probe_load_rejection()
+                if load is None:
+                    probe_hard = True
+                else:
+                    probe_load = load
                 print("WARNING: LogCluster not ready")
                 time.sleep(5 * (retry + 1))
                 continue
@@ -486,7 +506,10 @@ class LogCluster:
                 reason += f"; stopped retrying after the {self._read_budget_s} s read budget"
             raise LogClusterUnavailable(reason)
         # Every attempt gave up before its POST: `is_ready()` was false for all
-        # of them (no secret, or `SELECT 1` never succeeded).
+        # of them. Only probes all rejected by the server for its own load read
+        # as an outage.
+        if probe_load is not None and not probe_hard:
+            raise probe_load
         raise LogClusterNotReady("the endpoint never became ready")
 
 
