@@ -448,17 +448,22 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
     auto patch_parts = apply_patch_parts ? merge_predicate->getPatchesToApplyOnMerge(parts) : PartsRange{};
 
     /// If final and OPTIMIZE waited for running merges which have merged all the parts the partition had before the wait
-    /// into a single part (a merge raises the level above those of its source parts, a mutation keeps it), merging that
-    /// part with itself would only repeat the merge just done. Unless there are patch parts to apply, or the result of
-    /// a merge depends on its time (TTL, Graphite rollup): the awaited merge started earlier, and rows could expire since.
+    /// into a single part, merging that part with itself would only repeat the merge just done. A merge raises the level
+    /// above those of its source parts and keeps their highest mutation version, while a mutation keeps the level and
+    /// raises the mutation version. A part mutated after the merge is merged again, because the mutation may leave work
+    /// for a merge (rows masked by a lightweight delete, zero rows of `SummingMergeTree`). So is a part with patch parts
+    /// to apply, or when the result of a merge depends on its time (TTL, Graphite rollup): the awaited merge started
+    /// earlier, and rows could expire since.
     if (final && parts.size() == 1 && !parts_before_wait.empty() && patch_parts.empty()
         && !metadata_snapshot->hasAnyTTL() && data.merging_params.mode != MergeTreeData::MergingParams::Graphite)
     {
         const PartProperties & part = parts.front();
-        const bool made_by_awaited_merge = std::ranges::all_of(parts_before_wait, [&](const MergeTreePartInfo & part_before_wait)
-        {
-            return part.info.contains(part_before_wait) && part.info.level > part_before_wait.level;
-        });
+        const Int64 max_mutation_before_wait = std::ranges::max(parts_before_wait, {}, &MergeTreePartInfo::mutation).mutation;
+        const bool made_by_awaited_merge = part.info.mutation <= max_mutation_before_wait
+            && std::ranges::all_of(parts_before_wait, [&](const MergeTreePartInfo & part_before_wait)
+            {
+                return part.info.contains(part_before_wait) && part.info.level > part_before_wait.level;
+            });
 
         if (made_by_awaited_merge)
         {
