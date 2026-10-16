@@ -2364,11 +2364,11 @@ String formatStackTrace(const StackTrace & stack_trace)
         const auto resolved = StackTrace::tryResolveAddress(frame);
         const SymbolIndex::Symbol * symbol = symbol_index ? symbol_index->findSymbol(frame) : nullptr;
         String suffix;
-        if (resolved && resolved->kind == StackTrace::AddressKind::OtherObject)
-            suffix = fmt::format(" in {}", resolved->object);
-        else if (resolved && resolved->kind == StackTrace::AddressKind::UnknownMapping)
+        if (resolved.kind == StackTrace::AddressKind::OtherObject)
+            suffix = fmt::format(" in {}", resolved.object);
+        else if (resolved.kind == StackTrace::AddressKind::UnknownMapping)
             suffix = " in <unknown>";
-        res += fmt::format("\n{}. {}{} {}", i, resolved ? resolved->address : frame, suffix, symbol ? demangle(symbol->name) : "?");
+        res += fmt::format("\n{}. {}{} {}", i, resolved.address, suffix, symbol ? demangle(symbol->name) : "?");
     }
     return res;
 }
