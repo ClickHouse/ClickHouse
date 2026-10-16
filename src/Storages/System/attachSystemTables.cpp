@@ -3196,6 +3196,7 @@ slowdowns_count:         0
 estimated_recovery_time: 0
 database_shard_name:
 database_replica_name:
+replica_group:
 is_active:               NULL
 
 Row 2:
@@ -3216,6 +3217,7 @@ slowdowns_count:         0
 estimated_recovery_time: 0
 database_shard_name:
 database_replica_name:
+replica_group:
 is_active:               NULL
 ```
 
