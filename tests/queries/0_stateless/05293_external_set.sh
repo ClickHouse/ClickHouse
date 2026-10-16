@@ -200,7 +200,7 @@ run errors --max_bytes_before_external_set 1 --ignore-error --multiquery 2> "${L
 SELECT 1 IN (SELECT number FROM numbers(10)) SETTINGS max_bytes_ratio_before_external_set = 1;
 SELECT 1 IN (SELECT number FROM numbers(10000)) SETTINGS max_temporary_data_on_disk_size_for_query = 1;
 SELECT 1 IN (SELECT number FROM numbers(100)) SETTINGS min_free_disk_space_for_temporary_data = 1000000000000000;
-SYSTEM ENABLE FAILPOINT disk_set_builder_stop_before_finish;
+SYSTEM ENABLE FAILPOINT disk_set_builder_reach_time_limit;
 SELECT count() FROM numbers(10) WHERE number IN (SELECT number FROM numbers(1000));
 SQL
 # The message of an error can nest the message of the same error, so only the first code of each is printed.

@@ -20,7 +20,7 @@ extern const int SET_SIZE_LIMIT_EXCEEDED;
 
 namespace FailPoints
 {
-extern const char disk_set_builder_stop_before_finish[];
+extern const char disk_set_builder_reach_time_limit[];
 }
 
 namespace
@@ -48,7 +48,8 @@ DiskSetBuilder::estimateMemoryToWriteRun(size_t max_bytes_before_external_set, s
 /// The builder adds each column of keys to a `DiskSetKeySorter`, which writes runs of sorted distinct keys to
 /// temporary files while tracked query memory exceeds `max_bytes_before_external_set`, and merges them into a
 /// `DiskSetImpl` in batches of `max_block_size` keys. The builder checks the size limits after each batch. In
-/// the `break` mode, it stops the merge at the batch that reaches the limits. The builder also counts the
+/// the `break` mode, it stops the merge at the batch that reaches the limits. It checks the time limit of the
+/// query after each column of keys and after each batch of every merge. The builder also counts the
 /// distinct keys as they arrive. The sorter passes on no keys until all have arrived, so the builder creates
 /// the set before the merge, with filters sized for these keys, or for fewer when the size limits let the set
 /// write fewer. The merge counts the memory of the filters towards the spill threshold.
@@ -123,7 +124,12 @@ DiskSetBuilderImpl<Key>::DiskSetBuilderImpl(
     , max_bytes_for_bloom_filter(max_bytes_for_bloom_filter_)
     , max_bytes_for_cache(max_bytes_for_cache_)
     , process_list_element(std::move(process_list_element_))
-    , sorter(tmp_data, getMinBytesInRun(max_bytes_before_external_set), max_bytes_before_external_set, min_free_disk_space)
+    , sorter(
+          tmp_data,
+          getMinBytesInRun(max_bytes_before_external_set),
+          max_bytes_before_external_set,
+          min_free_disk_space,
+          [this] { checkTimeLimit(); })
 {
     if (max_bytes_for_bloom_filter)
         distinct_key_counter = std::make_unique<typename DiskSetBlockFilters<Key>::DistinctKeyCounter>();
@@ -136,6 +142,10 @@ void DiskSetBuilderImpl<Key>::add(ColumnPtr keys)
     if (distinct_key_counter)
         distinct_key_counter->add({values.data(), values.size()});
     sorter.add({values.data(), values.size()});
+
+    /// A set that spills passes all the keys that it holds in memory to `add` in one loop, which no pipeline
+    /// interrupts, so the builder checks the time limit after each column itself.
+    checkTimeLimit();
 }
 
 template <typename Key>
@@ -168,7 +178,7 @@ template <typename Key>
 void DiskSetBuilderImpl<Key>::checkTimeLimit() const
 {
     bool within_time_limit = !process_list_element || process_list_element->checkTimeLimit();
-    fiu_do_on(FailPoints::disk_set_builder_stop_before_finish, { within_time_limit = false; });
+    fiu_do_on(FailPoints::disk_set_builder_reach_time_limit, { within_time_limit = false; });
     if (!within_time_limit)
         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled before the set of IN was written to disk");
 }

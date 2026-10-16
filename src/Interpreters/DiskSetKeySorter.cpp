@@ -56,11 +56,16 @@ size_t estimateMemoryToSortRun(size_t bytes_in_run, size_t column_keys, size_t k
 
 template <typename Key>
 DiskSetKeySorter<Key>::DiskSetKeySorter(
-    TemporaryDataOnDiskScopePtr tmp_data_, size_t bytes_in_run, size_t max_bytes_before_external_set_, size_t min_free_disk_space_)
+    TemporaryDataOnDiskScopePtr tmp_data_,
+    size_t bytes_in_run,
+    size_t max_bytes_before_external_set_,
+    size_t min_free_disk_space_,
+    std::function<void()> check_time_limit_)
     : tmp_data(std::move(tmp_data_))
     , keys_in_run(std::max<size_t>(1, bytes_in_run / sizeof(Key))) /// A threshold below one key would give 0
     , max_bytes_before_external_set(max_bytes_before_external_set_)
     , min_free_disk_space(min_free_disk_space_)
+    , check_time_limit(std::move(check_time_limit_))
 {
 }
 
@@ -107,7 +112,8 @@ void DiskSetKeySorter<Key>::writeMemoryRuns(size_t count)
     DiskSetRunMerge::merge(std::move(chains), DiskSetRunMerge::keys_per_batch<Key>, [&](std::span<const Key> batch)
     {
         file->write(reinterpret_cast<const char *>(batch.data()), batch.size_bytes()); /// The file holds raw keys
-        return true; /// Never stops the merge
+        check_time_limit(); /// Throws to stop the merge of a cancelled query
+        return true;
     });
     file->finishWriting(); /// Flushes the file and frees its write buffers
     LOG_TRACE(

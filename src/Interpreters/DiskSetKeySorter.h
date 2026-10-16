@@ -36,8 +36,15 @@ template <typename Key>
 class DiskSetKeySorter
 {
 public:
+    /// `check_time_limit` throws when the query is cancelled or out of time. The sorter calls it after each
+    /// batch that it writes to a temporary file, because a write of many runs can take long within one call
+    /// of `add` or `merge`.
     DiskSetKeySorter(
-        TemporaryDataOnDiskScopePtr tmp_data_, size_t bytes_in_run, size_t max_bytes_before_external_set_, size_t min_free_disk_space_);
+        TemporaryDataOnDiskScopePtr tmp_data_,
+        size_t bytes_in_run,
+        size_t max_bytes_before_external_set_,
+        size_t min_free_disk_space_,
+        std::function<void()> check_time_limit_);
     ~DiskSetKeySorter();
 
     /// Adds keys in any order and with repeats.
@@ -67,6 +74,7 @@ private:
     const size_t keys_in_run;
     const size_t max_bytes_before_external_set;
     const size_t min_free_disk_space;
+    const std::function<void()> check_time_limit;
 
     /// The keys that are not in a run yet.
     PODArray<Key> pending;

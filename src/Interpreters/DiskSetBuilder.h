@@ -22,6 +22,10 @@ using TemporaryDataOnDiskScopePtr = std::shared_ptr<TemporaryDataOnDiskScope>;
 /// the set keeps the smallest keys, compared as unsigned integers, whatever order they arrive in: the merge
 /// writes the keys in ascending order and stops after the batch of at most `max_block_size` keys that reaches
 /// the limits.
+///
+/// The builder checks the time limit of the query while it adds and merges keys, so `add` and `finish` throw
+/// when the query is cancelled or out of time. They throw in the `break` overflow mode of the time limit too,
+/// because a set without all its keys would give wrong results.
 class DiskSetBuilder
 {
 public:
