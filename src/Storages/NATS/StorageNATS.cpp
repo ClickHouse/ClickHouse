@@ -1491,7 +1491,7 @@ void registerStorageNATS(StorageFactory & factory)
             .supports_settings = true,
             .source_access_type = AccessTypeObjects::Source::NATS,
             .has_builtin_setting_fn = NATSSettings::hasBuiltin,
-            .enumerate_engine_settings_fn = enumerateCompiledDefaults<NATSSettings>,
+            .enumerate_engine_settings_fn = enumerateStreamingEngineDefaults<NATSSettings>,
             /// A table that states no authentication takes the credentials from the `nats` section of the server
             /// configuration; one that does not state the others takes the server's `max_insert_block_size` and
             /// `stream_flush_interval_ms`.

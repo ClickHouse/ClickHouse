@@ -41,6 +41,10 @@ development and the expectations one might have when using them:
 * PRIVATE PREVIEW: The feature is on a clear path to general availability. Its applicability is still limited and it is not recommended for production use.
 * OBSOLETE: No longer supported. Either it is already removed or it will be removed in future releases.
 )"},
+        {"inherited", std::make_shared<DataTypeUInt8>(),
+            "1 if a table that does not state the setting takes it from elsewhere: from the query or server settings (the "
+            "format settings, for example), from the server configuration, or from the session that creates the table. "
+            "`value` is then the engine's own value, which such a table does not use."},
     };
 }
 
@@ -53,9 +57,7 @@ void StorageSystemEngineSettings::fillData(MutableColumns & res_columns, Context
 
         for (const auto & setting : creator.features.enumerate_engine_settings_fn(context))
         {
-            /// A setting a table takes from elsewhere unless its definition states it has no value of its own here.
-            if (StorageFactory::isInheritedSetting(creator.features, setting.name))
-                continue;
+            const bool inherited = !setting.set_by_engine && StorageFactory::isInheritedSetting(creator.features, setting.name);
 
             Array disallowed_values;
             for (const auto & value : setting.disallowed_values)
@@ -75,6 +77,7 @@ void StorageSystemEngineSettings::fillData(MutableColumns & res_columns, Context
             res_columns[col++]->insert(setting.type);
             res_columns[col++]->insert(setting.tier == SettingsTierType::OBSOLETE);
             res_columns[col++]->insert(setting.tier);
+            res_columns[col++]->insert(inherited);
         }
     }
 }

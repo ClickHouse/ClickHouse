@@ -33,11 +33,12 @@ SELECT count() FROM
      EXCEPT SELECT name FROM system.engine_settings WHERE engine_name = 'DeltaLake')
 );
 
--- Verify settings a table takes from elsewhere unless its definition states them are not listed: format settings,
--- PostgreSQL's pool settings, MySQL's mysql_datatypes_support_level, NATS and RabbitMQ credentials, and the settings
--- that fall back to server settings or the server configuration when not stated
-SELECT count() FROM system.engine_settings
-WHERE name LIKE 'format\_%' OR name LIKE 'input\_format\_%' OR name LIKE 'output\_format\_%'
+-- Verify settings a table takes from elsewhere unless its definition states them are listed with inherited = 1: format
+-- settings, PostgreSQL's pool settings, MySQL's mysql_datatypes_support_level, NATS and RabbitMQ credentials, and the
+-- settings that fall back to server settings or the server configuration when not stated. The format settings the
+-- streaming engines set themselves are not inherited, see 05404_engine_settings_inherited.
+SELECT countIf(NOT inherited), count() > 0 FROM system.engine_settings
+WHERE (name LIKE 'format\_%' OR name LIKE 'input\_format\_%' OR name LIKE 'output\_format\_%'
     OR name IN ('postgresql_connection_pool_size', 'mysql_datatypes_support_level', 'nats_username', 'nats_password',
                 'nats_token', 'nats_credential_file', 'rabbitmq_username', 'rabbitmq_password')
     OR (engine_name = 'Kafka' AND name IN ('kafka_max_block_size', 'kafka_poll_max_batch_size', 'kafka_poll_timeout_ms',
@@ -46,7 +47,11 @@ WHERE name LIKE 'format\_%' OR name LIKE 'input\_format\_%' OR name LIKE 'output
     OR (engine_name = 'FileLog' AND name IN ('max_block_size', 'poll_max_batch_size', 'poll_timeout_ms'))
     OR (engine_name = 'NATS' AND name IN ('nats_max_block_size', 'nats_flush_interval_ms'))
     OR (engine_name = 'RabbitMQ' AND name IN ('rabbitmq_max_block_size', 'rabbitmq_flush_interval_ms'))
-    OR (engine_name IN ('S3Queue', 'AzureQueue') AND name = 'keeper_path');
+    OR (engine_name IN ('S3Queue', 'AzureQueue') AND name = 'keeper_path'))
+    AND NOT (engine_name IN ('Kafka', 'FileLog', 'NATS', 'RabbitMQ')
+        AND name IN ('input_format_csv_detect_header', 'input_format_tsv_detect_header', 'input_format_custom_detect_header'))
+    AND NOT (engine_name = 'Kafka'
+        AND name IN ('input_format_skip_unknown_fields', 'input_format_allow_errors_ratio', 'input_format_allow_errors_num'));
 
 -- Verify settings a new table cannot use are not listed: MaterializedPostgreSQL's database engine settings and the
 -- deprecated catalog settings of the data lake engines

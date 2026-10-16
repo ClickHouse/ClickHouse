@@ -122,6 +122,30 @@ static bool isKafkaSettingTakenFromElsewhere(std::string_view name)
     return std::ranges::find(names, name) != std::end(names);
 }
 
+/// The settings of a new `Kafka` table: the compiled defaults, with the values of the format settings the engine sets
+/// itself when a table does not state them (`createSettingsAdjustments`) and the header detection it always disables.
+static SettingDescriptions enumerateKafkaSettings(ContextPtr /*context*/)
+{
+    KafkaSettings kafka_settings;
+    StorageKafkaUtils::createSettingsAdjustments(kafka_settings, /* schema_name */ "");
+
+    auto settings = kafka_settings.enumerateSettings();
+    for (auto & setting : settings)
+    {
+        if (setting.name == "input_format_skip_unknown_fields" || setting.name == "input_format_allow_errors_ratio")
+        {
+            setting.set_by_engine = true;
+        }
+        else if (setting.name == "input_format_allow_errors_num")
+        {
+            setting.set_by_engine = true;
+            setting.comment += " For a `Kafka` table that does not state it, the value of `kafka_skip_broken_messages`.";
+        }
+    }
+    setHeaderDetectionDisabled(settings);
+    return settings;
+}
+
 void registerStorageKafka(StorageFactory & factory);
 void registerStorageKafka(StorageFactory & factory)
 {
@@ -394,7 +418,7 @@ void registerStorageKafka(StorageFactory & factory)
             .supports_settings = true,
             .source_access_type = AccessTypeObjects::Source::KAFKA,
             .has_builtin_setting_fn = KafkaSettings::hasBuiltin,
-            .enumerate_engine_settings_fn = enumerateCompiledDefaults<KafkaSettings>,
+            .enumerate_engine_settings_fn = enumerateKafkaSettings,
             .is_inherited_setting_fn = isKafkaSettingTakenFromElsewhere,
         },
         Documentation{

@@ -27,6 +27,10 @@ struct SettingDescription
     std::optional<String> max_value;
     std::vector<String> disallowed_values;
     bool readonly = false;
+    /// The engine itself sets the value, so a table does not take it from elsewhere even if it is a setting that others
+    /// take from the query or server settings (`StorageFactory::isInheritedSetting`): `value` is the engine's own value
+    /// for a table that does not state it, or, with `readonly`, the value the engine always uses.
+    bool set_by_engine = false;
 };
 
 using SettingDescriptions = std::vector<SettingDescription>;
@@ -42,16 +46,43 @@ SettingDescriptions enumerateCompiledDefaults(ContextPtr)
     return TSettings{}.enumerateSettings();
 }
 
-/// `enumerateCompiledDefaults` without the settings for which `is_unusable` holds: those of `TSettings` that a new table
-/// of the engine cannot use, because the engine rejects them or replaces their value with its own - such as a setting
-/// only the database engine of the same name takes, or a deprecated one the engine rejects. A setting the engine accepts
-/// but does not read is not one of them, as the settings only the replicated engines read are not left out of the
-/// `MergeTree` rows. They are still rendered before being left out.
+/// `enumerateCompiledDefaults` without the settings for which `is_unusable` holds: those of `TSettings` that have no effect
+/// on a new table of the engine, because the engine rejects them - such as a setting only the database engine of the same
+/// name takes, or a deprecated one the engine rejects - or because the engine never reads them, as `Set` and `Hive` do not
+/// read the format settings their settings classes declare. A setting that only another engine sharing the settings class reads is
+/// not one of them, as the settings only the replicated engines read are not left out of the `MergeTree` rows. They are
+/// still rendered before being left out.
 template <typename TSettings, bool (*is_unusable)(std::string_view)>
 SettingDescriptions enumerateCompiledDefaultsExcept(ContextPtr context)
 {
     auto settings = enumerateCompiledDefaults<TSettings>(context);
     std::erase_if(settings, [](const SettingDescription & setting) { return is_unusable(setting.name); });
+    return settings;
+}
+
+/// The streaming engines (`Kafka`, `NATS`, `RabbitMQ`, `FileLog`) always disable the header detection of the `CSV`, `TSV`
+/// and `CustomSeparated` formats, whatever a table states: these settings show `0`, the value used, as `readonly`.
+inline void setHeaderDetectionDisabled(SettingDescriptions & settings)
+{
+    for (auto & setting : settings)
+    {
+        if (setting.name == "input_format_csv_detect_header" || setting.name == "input_format_tsv_detect_header"
+            || setting.name == "input_format_custom_detect_header")
+        {
+            setting.value = "0";
+            setting.changed = true;
+            setting.readonly = true;
+            setting.set_by_engine = true;
+        }
+    }
+}
+
+/// `enumerateCompiledDefaults` of a streaming engine, see `setHeaderDetectionDisabled`.
+template <typename TSettings>
+SettingDescriptions enumerateStreamingEngineDefaults(ContextPtr context)
+{
+    auto settings = enumerateCompiledDefaults<TSettings>(context);
+    setHeaderDetectionDisabled(settings);
     return settings;
 }
 
