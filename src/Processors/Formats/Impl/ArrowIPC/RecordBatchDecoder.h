@@ -332,7 +332,7 @@ private:
     /// run's value repeated for its rows. The nulls are those of the values.
     ColumnPtr decodeRunEndEncoded(
         const ArrowField & field, size_t rows, const DataTypePtr & target_hint, const String & path, size_t list_depth,
-        const InvisibleRowsMask * invisible_rows);
+        const InvisibleRowsMask * invisible_rows, ColumnUInt8::Ptr * decoded_null_map);
     ColumnPtr readOffsetsAndChild(
         const ArrowField & field, size_t rows, bool large, const DataTypePtr & target_hint, const String & path,
         size_t list_depth, const InvisibleRowsMask * invisible_rows);

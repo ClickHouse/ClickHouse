@@ -440,6 +440,14 @@ DataTypePtr resolveHint(
     return hint;
 }
 
+/// Whether a field's row count is backed by its buffers, so that it can be checked against the message body. The rows of a
+/// `RunEndEncoded` field come from its run ends: a few physical runs can describe many rows. Its run ends and values are
+/// checked when it is decoded (see `decodeRunEndEncoded`).
+bool hasRowsBackedByBuffers(const ArrowField & field)
+{
+    return field.dictionary || field.type.kind != TypeKind::RunEndEncoded;
+}
+
 /// A `Null` field has no buffers. A struct or fixed-size-list tree of such fields needs only optional
 /// validity buffers, so its logical row count can be independent of the message body size.
 bool isBufferlessSubtree(const ArrowField & field)
@@ -1038,7 +1046,7 @@ ColumnPtr RecordBatchDecoder::decodeInner(
             /// Children with physical data remain subject to the message-body row bound. Children
             /// determined by their size alone are materialized only for visible slots below.
             const bool size_determined_child = isSizeDeterminedSubtree(child_field);
-            if (!size_determined_child)
+            if (!size_determined_child && hasRowsBackedByBuffers(child_field))
                 checkRowCountWithinBody(expected_child, "fixed-size-list child");
 
             auto offsets_col = ColumnUInt64::create(rows);
@@ -1216,7 +1224,8 @@ ColumnPtr RecordBatchDecoder::readOffsetsAndChild(
 
     /// Children with physical data are decoded at their full declared length, which must stay within
     /// the message-body row bound even when some rows are unreferenced.
-    checkRowCountWithinBody(peekNodeRows(), "list child");
+    if (hasRowsBackedByBuffers(child_field))
+        checkRowCountWithinBody(peekNodeRows(), "list child");
 
     /// Rows of the child that only invisible slots reference — or that no slot references — hold
     /// undefined bytes and must not be value-validated; see `buildOffsetsChildInvisibleMask`.
@@ -1623,11 +1632,7 @@ ColumnPtr RecordBatchDecoder::decodeField(
                 ErrorCodes::INCORRECT_DATA,
                 "Arrow IPC RunEndEncoded field '{}' has no validity bitmap but its FieldNode reports {} nulls",
                 field.name, node.null_count());
-        ColumnPtr column = decodeRunEndEncoded(field, rows, target_hint, path, list_depth, invisible_rows);
-        if (decoded_null_map)
-            if (const auto * nullable = typeid_cast<const ColumnNullable *>(column.get()))
-                *decoded_null_map = nullable->getNullMapColumn().getPtr();
-        return column;
+        return decodeRunEndEncoded(field, rows, target_hint, path, list_depth, invisible_rows, decoded_null_map);
     }
 
     /// An Arrow `null` field has no buffers and maps to an all-null `Nullable(Nothing)` column.
@@ -1676,7 +1681,7 @@ ColumnPtr RecordBatchDecoder::decodeField(
 
 ColumnPtr RecordBatchDecoder::decodeRunEndEncoded(
     const ArrowField & field, size_t rows, const DataTypePtr & target_hint, const String & path, size_t list_depth,
-    const InvisibleRowsMask * invisible_rows)
+    const InvisibleRowsMask * invisible_rows, ColumnUInt8::Ptr * decoded_null_map)
 {
     const ArrowField & run_ends_field = field.type.children.at(0);
     const ArrowField & values_field = field.type.children.at(1);
@@ -1733,9 +1738,15 @@ ColumnPtr RecordBatchDecoder::decodeRunEndEncoded(
 
     /// The values hold one value per run and are decoded like the field itself: same hint, path and list depth.
     /// Dictionary-encoded values are materialized, as for a nested dictionary, which matches `fieldToCHType`.
+    /// The values' null map is expanded with the same indexes: a `List`, `Map` or `Struct` value column can't carry it
+    /// in a `Nullable` wrapper, but a caller such as `decodeUnion` still needs it.
     expectNextNodeLength(runs, "run-end-encoded values");
+    ColumnUInt8::Ptr values_null_map;
     const ColumnPtr values = decodeField(
-        values_field, /*allow_low_cardinality=*/false, target_hint, path, list_depth, maskPtr(values_invisible));
+        values_field, /*allow_low_cardinality=*/false, target_hint, path, list_depth, maskPtr(values_invisible),
+        &values_null_map);
+    if (decoded_null_map && values_null_map)
+        *decoded_null_map = assert_cast<const ColumnUInt8 &>(*values_null_map->index(*indexes, 0)).getPtr();
     return values->index(*indexes, 0);
 }
 
@@ -2023,7 +2034,8 @@ RecordBatchDecoder::DecodedColumn RecordBatchDecoder::decodeBatchColumn(
     }
     else
     {
-        checkRowCountWithinBody(batch_rows, fmt::format("column '{}'", field.name));
+        if (hasRowsBackedByBuffers(field))
+            checkRowCountWithinBody(batch_rows, fmt::format("column '{}'", field.name));
         /// Validate the complete subtree before allocating columns or visibility masks. A buffered
         /// descendant must justify its row count before any preceding bufferless sibling is materialized.
         const size_t first_node = node_index;
