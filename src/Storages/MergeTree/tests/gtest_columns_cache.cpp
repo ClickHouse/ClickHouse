@@ -571,33 +571,52 @@ TEST(ColumnsCache, AllocationOverTheLimitUnderTheMutexOfAShardDoesNotDeadlock)
     for (size_t stripe = 0; stripe < 100; ++stripe)
         EXPECT_GT(cache.setMany({makeEntry(c, stripe, stripe * 8, stripe * 8 + 8)}, generation), 0u);
 
-    /// `MemoryTracker` calls `autoResize` of this cache when an allocation exceeds the limit.
     auto * previous_cache = getMemoryReleasableCache();
-    setMemoryReleasableCache(&cache);
     const Int64 saved_hard_limit = total_memory_tracker.getHardLimit();
     const UInt64 saved_min_allocation_to_throw = CurrentMemoryTracker::getMinAllocationSizeBytesToThrow();
 
     /// In a thread without a `ThreadStatus`, every allocation goes to `total_memory_tracker` at once.
     /// The snapshot of `getAllEntriesMetadata` is allocated under the mutex of a shard, which the
     /// resize takes as well: it must not run then, and the allocation fails instead.
+    bool allocations_tracked = false;
     int error_code = 0;
     std::thread([&]
     {
         CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(1);
         total_memory_tracker.resetCounters();
         total_memory_tracker.setHardLimit(1);
+
+        /// With a sanitizer, `operator new` is the one of the sanitizer and is not tracked.
         try
         {
-            cache.getAllEntriesMetadata();
+            ::operator delete(::operator new(64));
         }
-        catch (const Exception & e)
+        catch (const Exception &)
         {
-            error_code = e.code();
+            allocations_tracked = true;
         }
+
+        if (allocations_tracked)
+        {
+            /// `MemoryTracker` calls `autoResize` of this cache when an allocation exceeds the limit.
+            setMemoryReleasableCache(&cache);
+            try
+            {
+                cache.getAllEntriesMetadata();
+            }
+            catch (const Exception & e)
+            {
+                error_code = e.code();
+            }
+            setMemoryReleasableCache(previous_cache);
+        }
+
         total_memory_tracker.setHardLimit(saved_hard_limit);
         CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(saved_min_allocation_to_throw);
     }).join();
-    setMemoryReleasableCache(previous_cache);
+
+    if (!allocations_tracked)
+        GTEST_SKIP() << "Allocations with operator new are not tracked in this build";
 
     EXPECT_EQ(error_code, ErrorCodes::MEMORY_LIMIT_EXCEEDED);
     /// Nothing was evicted: the resize did not run.
