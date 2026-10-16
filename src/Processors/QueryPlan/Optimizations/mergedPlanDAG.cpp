@@ -229,6 +229,177 @@ bool canEnterStep(const QueryPlan::Node & node)
 namespace
 {
 
+/// The node of the merged DAG a node of a step's own DAG became. Every node of the step's DAG has one.
+const ActionsDAG::Node * cloneOf(const ActionsDAG::NodeMapping & clone_mapping, const ActionsDAG::Node * node)
+{
+    const auto it = clone_mapping.find(node);
+    if (it == clone_mapping.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Node {} of a step has no node in the merged plan DAG", node->result_name);
+    return it->second;
+}
+
+/// The side of a join a source is on: the sources of the right side are numbered after the `source_shift` left ones.
+size_t sideOfSource(size_t source, size_t source_shift)
+{
+    return source < source_shift ? 0 : 1;
+}
+
+/// Unites what the right side of a join built into what the left side built, and returns the number of sources of the
+/// left side, which the sources of the right side are numbered after now. The join reads the left header first, so
+/// uniting in that order lines the columns up with its inputs, including the columns both sides happen to name alike.
+size_t uniteRightSide(Built & built, Built & right)
+{
+    const size_t source_shift = built.dag.sources.size();
+    auto [right_dag, right_sources] = right.dag.expression_actions.detachActionsDAG();
+    built.dag.expression_actions.getActionsDAG()->unite(std::move(right_dag));
+
+    for (auto & [right_node, node_sources] : right_sources)
+        node_sources.shift(source_shift);
+    built.dag.expression_actions.setNodeSources(right_sources);
+
+    built.dag.sources.append_range(std::move(right.dag.sources));
+    built.dag.filter_nodes.append_range(right.dag.filter_nodes);
+    built.dag.join_condition_nodes.append_range(right.dag.join_condition_nodes);
+    built.dag.unread_join_sides.append_range(right.dag.unread_join_sides);
+    built.dag.step_read_nodes.append_range(right.dag.step_read_nodes);
+
+    /// Both of these move rather than copy: the padded sides are a list, so this is a relink, and the
+    /// values map points at them, so nothing has to be renumbered.
+    built.dag.padded_sides.splice(built.dag.padded_sides.end(), right.dag.padded_sides);
+    built.dag.nearest_padded_side.merge(right.dag.nearest_padded_side);
+    built.dag.origins.merge(right.dag.origins);
+    built.dag.step_outputs.merge(right.dag.step_outputs);
+    built.pre_join_nodes.append_range(right.pre_join_nodes);
+
+    return source_shift;
+}
+
+/// The padded sides of the join of `node`, by side, null for a side it does not pad. Every value still ungated on a
+/// side this join can leave unmatched is gated by it. A value gated further down keeps that one: it is the nearer, and
+/// its mask is padded by this join in turn, so it answers for both.
+std::array<const MergedPlanDAG::PaddedSide *, 2> gatePaddedSides(Built & built, Built & right, QueryPlan::Node & node, JoinKind kind)
+{
+    const auto side_is_padded = findPaddedSides(kind);
+    const std::array<ActionsDAG::NodeRawConstPtrs *, 2> side_ungated{&built.ungated_nodes, &right.ungated_nodes};
+
+    std::array<const MergedPlanDAG::PaddedSide *, 2> join_padded_sides{nullptr, nullptr};
+    ActionsDAG::NodeRawConstPtrs still_ungated;
+    for (size_t side = 0; side < 2; ++side)
+    {
+        if (!side_is_padded[side])
+        {
+            still_ungated.append_range(*side_ungated[side]);
+            continue;
+        }
+
+        const auto & padded_side = built.dag.padded_sides.emplace_back(MergedPlanDAG::PaddedSide{&node, side});
+        join_padded_sides[side] = &padded_side;
+        for (const auto * ungated : *side_ungated[side])
+            built.dag.nearest_padded_side.emplace(ungated, &padded_side);
+    }
+    built.ungated_nodes = std::move(still_ungated);
+    return join_padded_sides;
+}
+
+/// The join's own DAG computes some values before the join - its keys, and the columns it hands on, wrapped in
+/// `toNullable` under `join_use_nulls` - and the rest after it, from `actions_after_join` up. A value of the first kind
+/// reads one side only and is padded by the join like any column of that side, so it is gated by the padded side of the
+/// join it is on, and it is below the join. The side is the one of the join's inputs it reads, which the join's own DAG
+/// knows: the nodes below that the merge put in place of those inputs need not read any table, as a constant of a
+/// subquery does not.
+void trackPreJoinNodes(
+    Built & built,
+    const JoinStepLogical & join_step,
+    const ActionsDAG::NodeMapping & clone_mapping,
+    const std::array<const MergedPlanDAG::PaddedSide *, 2> & join_padded_sides)
+{
+    ActionsDAG::NodeRawConstPtrs roots;
+    for (const auto * after_join : join_step.getActionsAfterJoin())
+        roots.push_back(cloneOf(clone_mapping, after_join));
+    for (const auto & key : join_step.getJoinOperator().expression)
+        roots.push_back(cloneOf(clone_mapping, key.getNode()));
+
+    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> original_of;
+    NodeSet created_here;
+    for (const auto & [original, merged_node] : clone_mapping)
+    {
+        if (original->type == ActionsDAG::ActionType::INPUT)
+            continue;
+        created_here.insert(merged_node);
+        original_of.emplace(merged_node, original);
+    }
+
+    const auto is_below = [&](const ActionsDAG::Node * candidate) { return !created_here.contains(candidate); };
+
+    NodeSet gated_here;
+    for (const auto * pre_join : findReachableNodes(roots, is_below))
+    {
+        if (!created_here.contains(pre_join))
+            continue;
+
+        built.pre_join_nodes.push_back(pre_join);
+
+        const JoinActionRef in_join(original_of.at(pre_join), join_step.getExpressionActions());
+        const MergedPlanDAG::PaddedSide * padded_side = nullptr;
+        if (in_join.fromLeft())
+            padded_side = join_padded_sides[0];
+        else if (in_join.fromRight())
+            padded_side = join_padded_sides[1];
+
+        if (padded_side && built.dag.nearest_padded_side.emplace(pre_join, padded_side).second)
+            gated_here.insert(pre_join);
+    }
+
+    std::erase_if(built.ungated_nodes, [&](const auto * ungated) { return gated_here.contains(ungated); });
+}
+
+/// Records the residual filter of the join as filters and its keys as join conditions, and returns which sides they read.
+std::array<bool, 2> collectJoinConditions(
+    Built & built, const JoinOperator & join_operator, const ActionsDAG::NodeMapping & clone_mapping, size_t source_shift)
+{
+    std::array<bool, 2> side_is_read{false, false};
+    const std::array<std::pair<const std::vector<JoinActionRef> *, ActionsDAG::NodeRawConstPtrs *>, 2> conditions_and_targets{{
+        {&join_operator.residual_filter, &built.dag.filter_nodes},
+        {&join_operator.expression, &built.dag.join_condition_nodes},
+    }};
+
+    for (const auto & [conditions, target] : conditions_and_targets)
+    {
+        for (const auto & condition : *conditions)
+        {
+            const auto * merged_condition = cloneOf(clone_mapping, condition.getNode());
+            target->push_back(merged_condition);
+            for (const auto source : built.dag.getSources(merged_condition))
+                side_is_read[sideOfSource(source, source_shift)] = true;
+        }
+    }
+    return side_is_read;
+}
+
+/// Records the inputs of each side of the join no condition reads, see `MergedPlanDAG::unread_join_sides`.
+void collectUnreadJoinSides(
+    Built & built, const ActionsDAG & step_dag, const ActionsDAG::NodeMapping & clone_mapping, size_t source_shift,
+    const std::array<bool, 2> & side_is_read)
+{
+    for (size_t side = 0; side < 2; ++side)
+    {
+        if (side_is_read[side])
+            continue;
+
+        ActionsDAG::NodeRawConstPtrs side_inputs;
+        for (const auto * input : step_dag.getInputs())
+        {
+            const auto * merged_input = cloneOf(clone_mapping, input);
+            const auto & input_sources = built.dag.getSources(merged_input);
+            if (input_sources.count() != 0 && sideOfSource(*input_sources.begin(), source_shift) == side)
+                side_inputs.push_back(merged_input);
+        }
+
+        if (!side_inputs.empty())
+            built.dag.unread_join_sides.push_back(std::move(side_inputs));
+    }
+}
+
 /// Builds a step for which `canEnterStep` holds on top of what its children built, in their order. Returns nullopt
 /// when the step cannot be represented, which is not a failure: the caller stops the walk there and the step becomes
 /// a source.
@@ -321,113 +492,25 @@ std::optional<Built> tryBuildFromStep(QueryPlan::Node & node, std::vector<Built>
 
     auto * join_step = typeid_cast<JoinStepLogical *>(step);
     const auto & step_dag = join_step->getActionsDAG();
+    const auto & join_operator = join_step->getJoinOperator();
 
     auto built = std::move(children.front());
     auto & right = children.back();
 
-    /// The join reads the left header first, so uniting in that order lines the columns up with its
-    /// inputs, including the columns both sides happen to name alike.
-    const size_t source_shift = built.dag.sources.size();
-    auto [right_dag, right_sources] = right.dag.expression_actions.detachActionsDAG();
-    built.dag.expression_actions.getActionsDAG()->unite(std::move(right_dag));
-
-    for (auto & [right_node, node_sources] : right_sources)
-        node_sources.shift(source_shift);
-    built.dag.expression_actions.setNodeSources(right_sources);
-
-    built.dag.sources.append_range(std::move(right.dag.sources));
-    built.dag.filter_nodes.append_range(right.dag.filter_nodes);
-    built.dag.join_condition_nodes.append_range(right.dag.join_condition_nodes);
-    built.dag.unread_join_sides.append_range(right.dag.unread_join_sides);
-    built.dag.step_read_nodes.append_range(right.dag.step_read_nodes);
-
-    /// Both of these move rather than copy: the padded sides are a list, so this is a relink, and the
-    /// values map points at them, so nothing has to be renumbered.
-    built.dag.padded_sides.splice(built.dag.padded_sides.end(), right.dag.padded_sides);
-    built.dag.nearest_padded_side.merge(right.dag.nearest_padded_side);
-    built.dag.origins.merge(right.dag.origins);
-    built.dag.step_outputs.merge(right.dag.step_outputs);
-    built.pre_join_nodes.append_range(right.pre_join_nodes);
+    const size_t source_shift = uniteRightSide(built, right);
 
     /// This join sits above everything either side computed, and above everything the joins below them
     /// sit above, so its own mark is the only one the result needs.
     auto & dag = *built.dag.expression_actions.getActionsDAG();
     built.last_node_below_top_join = lastNodeBefore(dag);
 
-    /// Every value still ungated on a side this join can leave unmatched is gated by it. A value gated
-    /// further down keeps that one: it is the nearer, and its mask is padded by this join in turn, so
-    /// it answers for both.
-    const auto & join_operator = join_step->getJoinOperator();
-    const auto side_is_padded = findPaddedSides(join_operator.kind);
-    const std::array<ActionsDAG::NodeRawConstPtrs *, 2> side_ungated{&built.ungated_nodes, &right.ungated_nodes};
-
-    std::array<const MergedPlanDAG::PaddedSide *, 2> join_padded_sides{nullptr, nullptr};
-    ActionsDAG::NodeRawConstPtrs still_ungated;
-    for (size_t side = 0; side < 2; ++side)
-    {
-        if (!side_is_padded[side])
-        {
-            still_ungated.append_range(*side_ungated[side]);
-            continue;
-        }
-
-        const auto & padded_side = built.dag.padded_sides.emplace_back(MergedPlanDAG::PaddedSide{&node, side});
-        join_padded_sides[side] = &padded_side;
-        for (const auto * ungated : *side_ungated[side])
-            built.dag.nearest_padded_side.emplace(ungated, &padded_side);
-    }
-    built.ungated_nodes = std::move(still_ungated);
+    const auto join_padded_sides = gatePaddedSides(built, right, node, join_operator.kind);
 
     ActionsDAG::NodeMapping clone_mapping;
     if (!mergeAndTrack(built, step_dag, clone_mapping))
         return {};
 
-    /// The join's own DAG computes some values before the join - its keys, and the columns it hands on,
-    /// wrapped in `toNullable` under `join_use_nulls` - and the rest after it, from `actions_after_join`
-    /// up. A value of the first kind reads one side only and is padded by the join like any column of
-    /// that side, so it is gated by the padded side of the join it is on, and it is below the join. The side is
-    /// the one of the join's inputs it reads, which the join's own DAG knows: the nodes below that the merge
-    /// put in place of those inputs need not read any table, as a constant of a subquery does not.
-    {
-        ActionsDAG::NodeRawConstPtrs roots;
-        for (const auto * after_join : join_step->getActionsAfterJoin())
-            roots.push_back(clone_mapping.at(after_join));
-        for (const auto & key : join_step->getJoinOperator().expression)
-            roots.push_back(clone_mapping.at(key.getNode()));
-
-        std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> original_of;
-        NodeSet created_here;
-        for (const auto & [original, merged_node] : clone_mapping)
-        {
-            if (original->type == ActionsDAG::ActionType::INPUT)
-                continue;
-            created_here.insert(merged_node);
-            original_of.emplace(merged_node, original);
-        }
-
-        const auto is_below = [&](const ActionsDAG::Node * candidate) { return !created_here.contains(candidate); };
-
-        NodeSet gated_here;
-        for (const auto * pre_join : findReachableNodes(roots, is_below))
-        {
-            if (!created_here.contains(pre_join))
-                continue;
-
-            built.pre_join_nodes.push_back(pre_join);
-
-            const JoinActionRef in_join(original_of.at(pre_join), join_step->getExpressionActions());
-            const MergedPlanDAG::PaddedSide * padded_side = nullptr;
-            if (in_join.fromLeft())
-                padded_side = join_padded_sides[0];
-            else if (in_join.fromRight())
-                padded_side = join_padded_sides[1];
-
-            if (padded_side && built.dag.nearest_padded_side.emplace(pre_join, padded_side).second)
-                gated_here.insert(pre_join);
-        }
-
-        std::erase_if(built.ungated_nodes, [&](const auto * ungated) { return gated_here.contains(ungated); });
-    }
+    trackPreJoinNodes(built, *join_step, clone_mapping, join_padded_sides);
 
     /// A join outputs what its DAG outputs and drops the rest, while the merge kept the columns of both
     /// sides that the join does not read. Those come after in the output list.
@@ -436,45 +519,8 @@ std::optional<Built> tryBuildFromStep(QueryPlan::Node & node, std::vector<Built>
         return {};
     dag_outputs.resize(step_dag.getOutputs().size());
 
-    for (const auto * conditions : {&join_operator.residual_filter, &join_operator.expression})
-    {
-        for (const auto & condition : *conditions)
-        {
-            auto it = clone_mapping.find(condition.getNode());
-            if (it == clone_mapping.end())
-                return {};
-
-            if (conditions == &join_operator.residual_filter)
-                built.dag.filter_nodes.push_back(it->second);
-            else
-                built.dag.join_condition_nodes.push_back(it->second);
-        }
-    }
-
-    /// The sides no condition reads. The sources of a value say its side: the ones of the right side are numbered after
-    /// the left ones.
-    std::array<bool, 2> side_is_read{false, false};
-    for (const auto * conditions : {&join_operator.residual_filter, &join_operator.expression})
-        for (const auto & condition : *conditions)
-            for (const auto source : built.dag.getSources(clone_mapping.at(condition.getNode())))
-                side_is_read[source < source_shift ? 0 : 1] = true;
-
-    for (size_t side = 0; side < 2; ++side)
-    {
-        if (side_is_read[side])
-            continue;
-
-        ActionsDAG::NodeRawConstPtrs side_inputs;
-        for (const auto * input : step_dag.getInputs())
-        {
-            const auto & input_sources = built.dag.getSources(clone_mapping.at(input));
-            if (input_sources.count() != 0 && (*input_sources.begin() < source_shift ? 0 : 1) == side)
-                side_inputs.push_back(clone_mapping.at(input));
-        }
-
-        if (!side_inputs.empty())
-            built.dag.unread_join_sides.push_back(std::move(side_inputs));
-    }
+    const auto side_is_read = collectJoinConditions(built, join_operator, clone_mapping, source_shift);
+    collectUnreadJoinSides(built, step_dag, clone_mapping, source_shift, side_is_read);
 
     return finish(built, built.dag.getOutputs());
 }
