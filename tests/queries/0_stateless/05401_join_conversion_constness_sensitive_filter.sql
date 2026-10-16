@@ -4,6 +4,7 @@
 
 SET query_plan_convert_outer_join_to_inner_join = 1;
 SET query_plan_convert_any_join_to_semi_or_anti_join = 1;
+SET query_plan_convert_outer_join_to_inner_join_transitively = 1;
 SET enable_parallel_replicas = 0;
 SET join_use_nulls = 0;
 
@@ -75,6 +76,51 @@ SELECT 'or of conjunctions';
 SELECT count() FROM (
     EXPLAIN actions = 1 SELECT a.number, b.number FROM numbers(3) AS a LEFT JOIN (SELECT number FROM numbers(2)) AS b ON a.number = b.number
     WHERE (b.number = 1 AND a.number < 2) OR (b.number = 5 AND a.number > 7)
+) WHERE explain ILIKE '%Type: inner%';
+
+-- The transitive rewrite decides from a condition further up the plan; without the padding of the converted side,
+-- a function above reads that side's constants as constants.
+SELECT 'transitive, WHERE above an enclosing join';
+SELECT a.number, b.flag, c.number FROM numbers(3) AS a LEFT JOIN (SELECT number, toNullable(1) AS flag FROM numbers(2)) AS b ON a.number = b.number
+INNER JOIN numbers(3) AS c ON b.flag = c.number WHERE isConstant(b.flag) = 0 ORDER BY 1;
+SELECT count() FROM numbers(3) AS a LEFT JOIN (SELECT number, toNullable(1) AS flag FROM numbers(2)) AS b ON a.number = b.number
+INNER JOIN numbers(3) AS c ON b.flag = c.number WHERE isConstant(b.flag) = 1;
+
+SELECT 'transitive, enclosing ON';
+SELECT a.number, b.flag, c.number FROM numbers(3) AS a LEFT JOIN (SELECT number, toNullable(1) AS flag FROM numbers(2)) AS b ON a.number = b.number
+INNER JOIN numbers(3) AS c ON b.flag = c.number AND isConstant(b.flag) = 0 ORDER BY 1;
+SELECT count() FROM numbers(3) AS a LEFT JOIN (SELECT number, toNullable(1) AS flag FROM numbers(2)) AS b ON a.number = b.number
+INNER JOIN numbers(3) AS c ON b.flag = c.number AND isConstant(b.flag) = 1;
+
+SELECT 'transitive, RIGHT JOIN projection';
+SELECT a.number, isConstant(a.flag), c.number FROM (SELECT number, toNullable(1) AS flag FROM numbers(2)) AS a RIGHT JOIN numbers(3) AS b ON a.number = b.number
+INNER JOIN numbers(3) AS c ON a.flag = c.number ORDER BY ALL;
+
+SELECT 'transitive, nested LEFT JOIN side';
+SELECT a.number, b.flag, c.number FROM numbers(3) AS a LEFT JOIN (SELECT x.number AS number, y.flag AS flag FROM numbers(2) AS x LEFT JOIN (SELECT number, toNullable(1) AS flag FROM numbers(2)) AS y ON x.number = y.number) AS b ON a.number = b.number
+INNER JOIN numbers(3) AS c ON b.flag = c.number WHERE isConstant(b.flag) = 0 ORDER BY 1;
+SELECT count() FROM numbers(3) AS a LEFT JOIN (SELECT x.number AS number, y.flag AS flag FROM numbers(2) AS x LEFT JOIN (SELECT number, toNullable(1) AS flag FROM numbers(2)) AS y ON x.number = y.number) AS b ON a.number = b.number
+INNER JOIN numbers(3) AS c ON b.flag = c.number WHERE isConstant(b.flag) = 1;
+
+SELECT 'transitive, join_use_nulls';
+SELECT a.number, b.number, c.number FROM numbers(3) AS a LEFT JOIN (SELECT number, 1 AS flag FROM numbers(2)) AS b ON a.number = b.number
+INNER JOIN numbers(3) AS c ON b.number = c.number AND isConstant(b.flag) = 0 ORDER BY 1 SETTINGS join_use_nulls = 1;
+
+-- Controls: a representation read of a column that is not a constant does not block the transitive rewrite.
+SELECT 'transitive, non-constant column';
+SELECT a.number, b.n, c.number FROM numbers(3) AS a LEFT JOIN (SELECT number, toNullable(number) AS n FROM numbers(2)) AS b ON a.number = b.number
+INNER JOIN numbers(3) AS c ON b.n = c.number WHERE isConstant(b.n) = 0 ORDER BY 1;
+SELECT count() FROM (
+    EXPLAIN actions = 1 SELECT a.number, b.n, c.number FROM numbers(3) AS a LEFT JOIN (SELECT number, toNullable(number) AS n FROM numbers(2)) AS b ON a.number = b.number
+    INNER JOIN numbers(3) AS c ON b.n = c.number WHERE isConstant(b.n) = 0
+) WHERE explain ILIKE '%Type: inner%';
+
+SELECT 'transitive, joinGet';
+SELECT a.number, b.n, c.number FROM numbers(3) AS a LEFT JOIN (SELECT number, toNullable(number + 1) AS n FROM numbers(2)) AS b ON a.number = b.number
+INNER JOIN numbers(3) AS c ON b.n = c.number WHERE joinGet('t_join_get', 'attr', b.number) != 'z' ORDER BY 1;
+SELECT count() FROM (
+    EXPLAIN actions = 1 SELECT a.number, b.n, c.number FROM numbers(3) AS a LEFT JOIN (SELECT number, toNullable(number + 1) AS n FROM numbers(2)) AS b ON a.number = b.number
+    INNER JOIN numbers(3) AS c ON b.n = c.number WHERE joinGet('t_join_get', 'attr', b.number) != 'z'
 ) WHERE explain ILIKE '%Type: inner%';
 
 DROP TABLE t_join_get;

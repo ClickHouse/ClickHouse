@@ -2680,6 +2680,11 @@ bool ActionsDAG::hasUnsafeHiddenLambdaBody(const Node & node, const std::functio
 
 std::unordered_set<const ActionsDAG::Node *> ActionsDAG::getInputsReadByRepresentation(const Node & root, NodeRawConstPtrs * outermost_readers)
 {
+    return getInputsReadByRepresentation(NodeRawConstPtrs{&root}, outermost_readers);
+}
+
+std::unordered_set<const ActionsDAG::Node *> ActionsDAG::getInputsReadByRepresentation(const NodeRawConstPtrs & roots, NodeRawConstPtrs * outermost_readers)
+{
     /// A lambda body reads the call's arguments too: the ones it does not capture arrive as formal parameters.
     static constexpr auto is_representation_read = [](const IFunctionBase & function) { return !function.isDeterministic(); };
     auto call_reads_representation = [](const Node * node)
@@ -2693,7 +2698,9 @@ std::unordered_set<const ActionsDAG::Node *> ActionsDAG::getInputsReadByRepresen
     };
 
     std::unordered_set<const Node *> result;
-    std::vector<std::pair<const Node *, bool>> to_visit{{&root, false}};
+    std::vector<std::pair<const Node *, bool>> to_visit;
+    for (const auto * root : roots)
+        to_visit.emplace_back(root, false);
     std::unordered_set<const Node *> visited_reading_value;
     std::unordered_set<const Node *> visited_reading_representation;
     std::unordered_set<const Node *> readers_seen;

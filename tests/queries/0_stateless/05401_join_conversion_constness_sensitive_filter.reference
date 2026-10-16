@@ -44,3 +44,29 @@ joinGet in an OR of conjunctions
 1
 or of conjunctions
 1
+transitive, WHERE above an enclosing join
+0	1	1
+1	1	1
+0
+transitive, enclosing ON
+0	1	1
+1	1	1
+0
+transitive, RIGHT JOIN projection
+0	0	1
+1	0	1
+transitive, nested LEFT JOIN side
+0	1	1
+1	1	1
+0
+transitive, join_use_nulls
+0	0	0
+1	1	1
+transitive, non-constant column
+0	0	0
+1	1	1
+2
+transitive, joinGet
+0	1	1
+1	2	2
+2
