@@ -869,14 +869,12 @@ void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr tab
     if (*has_metadata && checking_disk->existsFile(convert_to_replicated_parts_path))
         throw Exception(ErrorCodes::INCORRECT_DATA,
             "The conversion of table {} to replicated was interrupted after the table was created in ZooKeeper, and the parts "
-            "it moved to detached/ are listed in {}. To resume the conversion, remove {} from ZooKeeper `{}` if no other replica "
-            "uses it, and restart the server. To keep the table as it is, remove {} and attach each listed part with "
-            "ALTER TABLE ... ATTACH PART",
+            "it moved to detached/ are listed in {}. To resume the conversion, stop the server, remove {} from ZooKeeper `{}` "
+            "if no other replica uses it, and start the server",
             backQuote(name.getFullName()),
             fullPath(checking_disk, convert_to_replicated_parts_path),
             rmt->getZooKeeperPath(),
-            rmt->getZooKeeperName(),
-            fullPath(checking_disk, convert_to_replicated_parts_path));
+            rmt->getZooKeeperName());
 
     if (*has_metadata)
     {
