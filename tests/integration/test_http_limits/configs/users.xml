@@ -2,6 +2,8 @@
     <profiles>
         <default>
             <merge_tree_compact_parts_min_granules_to_multibuffer_read>1000</merge_tree_compact_parts_min_granules_to_multibuffer_read>
+            <!-- The test reads each INSERT's own query_log counters; an async insert accounts them on a separate flush entry. -->
+            <async_insert>0</async_insert>
         </default>
     </profiles>
 </clickhouse>
