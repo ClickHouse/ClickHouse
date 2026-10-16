@@ -2137,8 +2137,8 @@ namespace
 /// a comment or a dollar-quoted string does not split. The statements are not parsed - unlike
 /// `splitMultipartQuery`, this accepts the statements only the PostgreSQL handler understands
 /// (`PREPARE`, `EXECUTE`, `COPY`, transaction control, driver no-ops), which the ClickHouse parser
-/// would reject. Fragments of whitespace and comments only (a trailing semicolon, `;;`, a trailing
-/// `-- comment`) are dropped.
+/// would reject. Fragments of whitespace and complete comments only (a trailing semicolon, `;;`, a
+/// trailing `-- comment`) are dropped; an unterminated block comment is kept for the parser to reject.
 std::vector<String> splitPostgreSQLStatements(const String & text)
 {
     std::vector<String> statements;
@@ -2163,12 +2163,15 @@ std::vector<String> splitPostgreSQLStatements(const String & text)
             }
             const bool is_comment = (c == '-' && k + 1 < fragment.size() && fragment[k + 1] == '-')
                 || (c == '/' && k + 1 < fragment.size() && fragment[k + 1] == '*');
-            if (!is_comment)
+            const size_t comment_end = is_comment ? PostgreSQLProtocol::PostgresPreparedStatements::skipOpaqueSQLToken(fragment, k) : k;
+            if (!is_comment
+                || Lexer(fragment.data() + k, fragment.data() + comment_end).nextToken().type
+                    == TokenType::ErrorMultilineCommentIsNotClosed)
             {
                 statements.push_back(std::move(fragment));
                 return;
             }
-            k = PostgreSQLProtocol::PostgresPreparedStatements::skipOpaqueSQLToken(fragment, k);
+            k = comment_end;
         }
     };
 
@@ -2203,12 +2206,6 @@ void PostgreSQLHandler::processQuery()
         std::unique_ptr<PostgreSQLProtocol::Messaging::Query> query =
             message_transport->receive<PostgreSQLProtocol::Messaging::Query>();
 
-        if (isEmptyQuery(query->query))
-        {
-            message_transport->send(PostgreSQLProtocol::Messaging::EmptyQueryResponse());
-            return;
-        }
-
         /// PostgreSQL clients qualify catalog objects with the `pg_catalog` schema; the emulated
         /// catalog lives in per-session temporary views instead, so the qualifier is stripped here.
         String query_text = rewritePgTableIsVisible(removePgCatalogQualifier(query->query));
@@ -2219,6 +2216,13 @@ void PostgreSQLHandler::processQuery()
         /// ClickHouse parser - would reject as a syntax error before the per-statement dispatch
         /// below could see them.
         std::vector<String> queries = splitPostgreSQLStatements(query_text);
+
+        /// PostgreSQL answers a message without statements with `EmptyQueryResponse`.
+        if (queries.empty())
+        {
+            message_transport->send(PostgreSQLProtocol::Messaging::EmptyQueryResponse());
+            return;
+        }
 
         for (auto & sql_query : queries)
         {
@@ -2651,18 +2655,6 @@ void PostgreSQLHandler::sendErrorResponseOrRethrow(const Exception & e)
         PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
             PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "2F000", "Query execution failed.\n" + e.displayText()),
         true);
-}
-
-bool PostgreSQLHandler::isEmptyQuery(const String & query)
-{
-    if (query.empty())
-        return true;
-    /// golang driver pgx sends ";"
-    if (query == ";")
-        return true;
-
-    Poco::RegularExpression regex(R"(\A\s*\z)");
-    return regex.match(query);
 }
 
 bool PostgreSQLHandler::isTransactionControlQuery(const String & query)

@@ -9,16 +9,15 @@ keywords: ['亚马逊评论', '用户评论数据集', '电子商务数据', '�
 
 import { RunnableCode } from "/snippets/zh/components/RunnableCode/RunnableCode.jsx";
 
-该数据集包含超过 1.5 亿条 亚马逊 商品的用户评论。数据存储在 AWS S3 中采用 snappy 压缩的 Parquet 文件里，压缩后总大小为 49 GB。下面我们来逐步了解如何将其插入 ClickHouse。
+该数据集包含超过 1.5 亿条 亚马逊 商品的用户评论。数据存储在 AWS S3 中采用 snappy 压缩的 Parquet 文件里，压缩后总大小为 49 GB。
 
 <Note>
-  以下查询是在 ClickHouse Cloud 的 **Production** 实例上执行的。更多信息请参见
-  [&quot;Playground 规范&quot;](/zh/get-started/sample-datasets/playground#specifications)。
+  您可以在自行托管的 ClickHouse 或 ClickHouse Cloud 上试用。如果您还没有账户，可以[免费试用 ClickHouse Cloud](https://clickhouse.cloud/signUp?loc=docs-get-started-sample-datasets-amazon-reviews)。
 </Note>
 
-<div id="loading-the-dataset">
-  ## 加载数据集
-</div>
+下面我们来逐步了解如何将数据插入 ClickHouse。
+
+## 加载数据集 {#loading-the-dataset}
 
 1. 无需将数据插入 ClickHouse，我们就可以直接在原处查询。先取几行数据，看看它们的样子：
 
@@ -118,17 +117,17 @@ ENGINE = MergeTree
 ORDER BY (review_date, product_category)
 ```
 
-3. 以下 `INSERT` 命令使用了 `s3Cluster` table function，可利用集群中的所有节点并行处理多个 S3 文件。我们还使用了通配符，以插入所有以 `https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/amazon_reviews_*.snappy.parquet` 开头的文件：
+3. 以下 `INSERT` 命令使用了 [`s3Cluster`](/zh/reference/functions/table-functions/s3Cluster) table function，它会将 S3 文件分发到集群中的各个节点，以便并行读取。
+
+在 ClickHouse Cloud 中，集群名称为 `default`，可直接按上述方式运行。在自管理服务器上，请将 `default` 替换为您的集群名称；如果您运行的是单台服务器，则请改用 [`s3`](/zh/reference/functions/table-functions/s3) table function，并去掉第一个参数，让调用直接以 URL 开头。
+
+我们在 URL 中使用通配符，以插入所有匹配的评论文件。
 
 ```sql
 INSERT INTO amazon.amazon_reviews SELECT *
 FROM s3Cluster('default', 
 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/amazon_reviews_*.snappy.parquet', NOSIGN)
 ```
-
-<Tip>
-  在 ClickHouse Cloud 中，集群名称为 `default`。请将 `default` 改为你的集群名称……如果你没有集群，也可以使用 `s3` table function (而不是 `s3Cluster`) 。
-</Tip>
 
 5. 该查询耗时不长，平均每秒约处理 300,000 行。大约 5 分钟后，你应该就能看到所有行都已插入：
 
@@ -159,9 +158,7 @@ FROM s3Cluster('default',
 
 原始数据约为 70G，但在 ClickHouse 中压缩后仅占用约 30G。
 
-<div id="example-queries">
-  ## 示例查询
-</div>
+## 示例查询 {#example-queries}
 
 7. 我们来运行一些查询。以下是数据集中最有帮助的 10 条评论：
 
