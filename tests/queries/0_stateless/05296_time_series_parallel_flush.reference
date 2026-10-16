@@ -1,0 +1,89 @@
+--- an insert writes the same rows to the tags, samples and recent samples tables ---
+m	dev
+m	prod
+1
+2
+3
+3
+--- external target tables get the same rows ---
+m	prod
+1
+1
+--- a failed tags write rejects the bad metric name ---
+0
+0
+0
+--- a failed recent samples write rejects the bad value after the tags are committed ---
+1
+0
+--- an insert after a failure still writes all three tables ---
+m	dev	1
+5
+1
+--- early block commit still rejects a bad metric name ---
+0
+0
+0
+0
+0
+0
+0
+0
+--- a materialized view on the time series table receives the inserted rows ---
+mv
+--- Memory engine target tables get the same rows ---
+1
+1
+1
+--- a failed samples write leaves no recent rows and no view rows ---
+1
+0
+0
+0
+ok
+--- max_threads = 1 ---
+0
+0
+0
+--- Memory engine recent samples stay empty when samples fail ---
+0
+0
+--- a later block failure leaves no recent rows for that block ---
+1
+1
+1
+1
+0
+--- a partitioned recent target keeps no rows when samples fail ---
+0
+0
+0
+--- max_insert_delayed_streams_for_parallel_write = 6 ---
+0
+0
+0
+--- a Buffer recent target keeps no rows when samples fail ---
+0
+0
+0
+--- a recent target stores a default column ---
+7
+--- a Distributed recent target keeps no rows when samples fail ---
+0
+0
+0
+--- rejected sample ---
+0
+0
+0
+--- accepted sample ---
+1
+1
+1
+--- four days in one series are written as blocks of two rows ---
+4
+--- the same insert with one thread ---
+4
+--- the same insert with a recent samples table ---
+4
+4

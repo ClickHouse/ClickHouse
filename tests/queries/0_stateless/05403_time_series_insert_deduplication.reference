@@ -1,0 +1,26 @@
+--- three blocks with one token reach the tags and samples tables ---
+3
+[0,1,2]
+--- the same token inserts no duplicate rows ---
+3
+[0,1,2]
+--- a different token inserts the samples again ---
+3
+[0,0,1,1,2,2]
+--- three identical blocks without a token all land ---
+3
+[1,1,1]
+--- a different insert is not collapsed ---
+4
+[1,1,1,9]
+--- a retry of the first insert adds no rows ---
+4
+[1,1,1,9]
+--- the failing insert keeps tags for the committed blocks ---
+['a','b']
+--- the same token inserts the rejected block after the constraint is gone ---
+[1,2,3]
+['a','b','c']
+a
+b
+c

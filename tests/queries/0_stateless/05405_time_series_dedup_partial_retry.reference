@@ -1,8 +1,0 @@
---- the failing insert keeps tags for the committed blocks ---
-['a','b']
---- the same token inserts the rejected block after the constraint is gone ---
-[1,2,3]
-['a','b','c']
-a
-b
-c

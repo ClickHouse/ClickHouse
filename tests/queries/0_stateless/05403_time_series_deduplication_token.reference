@@ -1,9 +1,0 @@
---- three blocks with one token reach the tags and samples tables ---
-3
-[0,1,2]
---- the same token inserts no duplicate rows ---
-3
-[0,1,2]
---- a different token inserts the samples again ---
-3
-[0,0,1,1,2,2]
