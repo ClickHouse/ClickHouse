@@ -1906,6 +1906,52 @@ def test_cluster_insert(started_cluster):
     assert table_name not in node1.query(f"SHOW TABLES FROM {CATALOG_NAME}")
 
 
+def test_cluster_mutations(started_cluster):
+    node1 = started_cluster.instances["node1"]
+    node2 = started_cluster.instances["node2"]
+
+    test_ref = f"test_cluster_mutations_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+
+    create_clickhouse_iceberg_database(started_cluster, node1, CATALOG_NAME)
+    create_clickhouse_iceberg_database(started_cluster, node2, CATALOG_NAME)
+    create_clickhouse_iceberg_table(
+        started_cluster, node1, root_namespace, table_name, "(x String)"
+    )
+
+    parallel_replicas_settings = {
+        "parallel_replicas_for_cluster_engines": 1,
+        "enable_parallel_replicas": 2,
+        "cluster_for_parallel_replicas": "cluster_simple",
+    }
+    settings = {
+        "allow_insert_into_iceberg": 1,
+        "write_full_path_in_iceberg_metadata": 1,
+        **parallel_replicas_settings,
+    }
+
+    node1.query(
+        f"INSERT INTO {table_ref} VALUES ('a'), ('b'), ('c'), ('d')", settings=settings
+    )
+    node1.query(f"ALTER TABLE {table_ref} DELETE WHERE x = 'a'", settings=settings)
+    node1.query(f"DELETE FROM {table_ref} WHERE x = 'b'", settings=settings)
+    node1.query(
+        f"ALTER TABLE {table_ref} UPDATE x = 'z' WHERE x = 'c'", settings=settings
+    )
+
+    for replica in [node1, node2]:
+        assert replica.query(f"SELECT x FROM {table_ref} ORDER BY x") == "d\nz\n"
+        assert (
+            replica.query(
+                f"SELECT x FROM {table_ref} ORDER BY x",
+                settings=parallel_replicas_settings,
+            )
+            == "d\nz\n"
+        )
+
+
 def test_used_storages_in_query_log(started_cluster):
     node1 = started_cluster.instances["node1"]
     node2 = started_cluster.instances["node2"]

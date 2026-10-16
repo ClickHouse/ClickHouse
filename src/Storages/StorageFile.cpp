@@ -37,6 +37,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Archives/createArchiveReader.h>
 #include <IO/Archives/IArchiveReader.h>
+#include <IO/Archives/ArchiveEntryPositions.h>
 #include <IO/Archives/ArchiveUtils.h>
 #include <IO/PeekableReadBuffer.h>
 #include <IO/AsynchronousReadBufferFromFile.h>
@@ -1018,17 +1019,23 @@ namespace
                         continue;
 
                     last_read_file_path = paths_for_schema_cache.emplace_back(fmt::format("{}::{}", archive_reader->getPath(), archive_info.path_in_archive));
+                    last_read_file_cache_key = getArchiveEntryKey(last_read_file_path, std::nullopt);
                     is_first = false;
 
-                    if (auto cached_schema = tryGetSchemaFromCache(archive, last_read_file_path))
+                    if (auto cached_schema = tryGetSchemaFromCache(archive, last_read_file_cache_key))
                         return {nullptr, cached_schema, format};
                 }
                 else
                 {
                     if (last_read_buffer)
+                    {
                         file_enumerator = archive_reader->nextFile(std::move(last_read_buffer));
+                    }
                     else
+                    {
                         file_enumerator = archive_reader->firstFile();
+                        entry_positions.reset();
+                    }
 
                     if (!file_enumerator)
                     {
@@ -1037,6 +1044,7 @@ namespace
                     }
 
                     const auto * filename = &file_enumerator->getFileName();
+                    auto entry_position = entry_positions.onEntry(*filename);
                     while (!archive_info.filter(*filename))
                     {
                         if (!file_enumerator->nextFile())
@@ -1046,6 +1054,7 @@ namespace
                         }
 
                         filename = &file_enumerator->getFileName();
+                        entry_position = entry_positions.onEntry(*filename);
                     }
 
                     if (!archive_reader)
@@ -1055,6 +1064,7 @@ namespace
                     }
 
                     last_read_file_path = paths_for_schema_cache.emplace_back(fmt::format("{}::{}", archive_reader->getPath(), *filename));
+                    last_read_file_cache_key = getArchiveEntryKey(last_read_file_path, entry_position);
                     is_first = false;
 
                     /// If format is unknown we can try to determine it by the file name.
@@ -1066,7 +1076,7 @@ namespace
                             format = format_from_file;
                     }
 
-                    if (auto cached_schema = tryGetSchemaFromCache(archive, last_read_file_path))
+                    if (auto cached_schema = tryGetSchemaFromCache(archive, last_read_file_cache_key))
                     {
                         /// For union mode next() will be called again even if we found cached columns,
                         /// so we need to remember last_read_buffer to continue iterating through files in archive.
@@ -1095,7 +1105,7 @@ namespace
             if (!getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files])
                 return;
 
-            auto key = getKeyForSchemaCache(last_read_file_path, *format, format_settings, getContext());
+            auto key = getKeyForSchemaCache(last_read_file_cache_key, *format, format_settings, getContext());
             StorageFile::getSchemaCache(getContext()).addNumRows(key, num_rows);
         }
 
@@ -1107,7 +1117,7 @@ namespace
             /// For union mode, schema can be different for different files in archive, so we need to
             /// cache last inferred schema only for last processed file.
             auto & schema_cache = StorageFile::getSchemaCache(getContext());
-            auto cache_key = getKeyForSchemaCache(last_read_file_path, *format, format_settings, getContext());
+            auto cache_key = getKeyForSchemaCache(last_read_file_cache_key, *format, format_settings, getContext());
             schema_cache.addColumns(cache_key, columns);
         }
 
@@ -1191,8 +1201,10 @@ namespace
         bool is_first = true;
 
         std::string last_read_file_path;
+        std::string last_read_file_cache_key;
 
         std::unique_ptr<IArchiveReader::FileEnumerator> file_enumerator;
+        ArchiveEntryPositions entry_positions;
         std::unique_ptr<ReadBuffer> last_read_buffer;
 
         std::optional<String> format;
@@ -1823,7 +1835,7 @@ bool StorageFileSource::tryGetCountFromCache(const struct stat & file_stat)
     if (!getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files])
         return false;
 
-    auto num_rows_from_cache = tryGetNumRowsFromCache(current_path, file_stat.st_mtime);
+    auto num_rows_from_cache = tryGetNumRowsFromCache(current_archive_entry_cache_key.value_or(current_path), file_stat.st_mtime);
     if (!num_rows_from_cache)
         return false;
 
@@ -1880,6 +1892,7 @@ Chunk StorageFileSource::generate()
                         filename_override = files_iterator->getFileNameInArchive();
 
                         current_path = fmt::format("{}::{}", archive_reader->getPath(), *filename_override);
+                        current_archive_entry_cache_key = getArchiveEntryKey(current_path, std::nullopt);
                         if (need_only_count && tryGetCountFromCache(file_stat))
                             continue;
 
@@ -1903,6 +1916,7 @@ Chunk StorageFileSource::generate()
                     }
                     else
                     {
+                        std::optional<size_t> entry_position;
                         while (true)
                         {
                             if (file_enumerator == nullptr)
@@ -1925,10 +1939,12 @@ Chunk StorageFileSource::generate()
 
                                 archive_reader = createArchiveReader(archive);
                                 file_enumerator = archive_reader->firstFile();
+                                entry_positions.reset();
                                 continue;
                             }
 
                             bool file_found = true;
+                            entry_position = entry_positions.onEntry(file_enumerator->getFileName());
                             while (!files_iterator->validFileInArchive(file_enumerator->getFileName()))
                             {
                                 if (!file_enumerator->nextFile())
@@ -1936,6 +1952,7 @@ Chunk StorageFileSource::generate()
                                     file_found = false;
                                     break;
                                 }
+                                entry_position = entry_positions.onEntry(file_enumerator->getFileName());
                             }
 
                             if (file_found)
@@ -1949,6 +1966,7 @@ Chunk StorageFileSource::generate()
 
                         chassert(file_enumerator);
                         current_path = fmt::format("{}::{}", archive_reader->getPath(), *filename_override);
+                        current_archive_entry_cache_key = getArchiveEntryKey(current_path, entry_position);
                         current_file_size = file_enumerator->getFileInfo().uncompressed_size;
                         current_file_last_modified = file_enumerator->getFileInfo().last_modified;
                         if (need_only_count && tryGetCountFromCache(current_archive_stat))
@@ -1970,6 +1988,7 @@ Chunk StorageFileSource::generate()
                 else
                 {
                     current_path = files_iterator->next();
+                    current_archive_entry_cache_key.reset();
                     if (current_path.empty())
                         return {};
 
@@ -2389,7 +2408,7 @@ Chunk StorageFileSource::generate()
         if (input_format && storage->format_name != "Distributed" && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files]
             && (!format_filter_info || !format_filter_info->hasFilter()) && !input_format->isMinMaxFromStatisticsApplied()
             && !split_file)
-            addNumRowsToCache(current_path, total_rows_in_file);
+            addNumRowsToCache(current_archive_entry_cache_key.value_or(current_path), total_rows_in_file);
 
         total_rows_in_file = 0;
 
