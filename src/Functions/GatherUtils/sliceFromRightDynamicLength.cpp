@@ -30,9 +30,11 @@ struct Selector : public ArraySourceSelector<Selector>
             NullableSink sink(result->getData(), result->getOffsets(), source.getColumnSize());
 
             if (is_const)
-                sliceFromRightDynamicLength(static_cast<ConstSource<NullableSource> &>(source), sink, length_column);
+                sliceFromRightDynamicLength<SliceArgumentPolicy::PreserveLegacySemantics>(
+                    static_cast<ConstSource<NullableSource> &>(source), sink, length_column);
             else
-                sliceFromRightDynamicLength(static_cast<NullableSource &>(source), sink, length_column);
+                sliceFromRightDynamicLength<SliceArgumentPolicy::PreserveLegacySemantics>(
+                    static_cast<NullableSource &>(source), sink, length_column);
         }
         else
         {
@@ -40,9 +42,10 @@ struct Selector : public ArraySourceSelector<Selector>
             Sink sink(result->getData(), result->getOffsets(), source.getColumnSize());
 
             if (is_const)
-                sliceFromRightDynamicLength(static_cast<ConstSource<SourceType> &>(source), sink, length_column);
+                sliceFromRightDynamicLength<SliceArgumentPolicy::PreserveLegacySemantics>(
+                    static_cast<ConstSource<SourceType> &>(source), sink, length_column);
             else
-                sliceFromRightDynamicLength(source, sink, length_column);
+                sliceFromRightDynamicLength<SliceArgumentPolicy::PreserveLegacySemantics>(source, sink, length_column);
         }
     }
 };

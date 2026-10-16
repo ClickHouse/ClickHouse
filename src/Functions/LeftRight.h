@@ -85,7 +85,7 @@ public:
             if (column_length_const)
                 sliceFromLeftConstantOffsetBounded(source, StringSink(*col_res, input_rows_count), 0, length_value);
             else
-                sliceFromLeftDynamicLength<true>(source, StringSink(*col_res, input_rows_count), *column_length);
+                sliceFromLeftDynamicLength<SliceArgumentPolicy::RejectOutOfRangeUInt64>(source, StringSink(*col_res, input_rows_count), *column_length);
         }
         else
         {

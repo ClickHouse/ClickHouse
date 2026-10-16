@@ -78,7 +78,7 @@ public:
                     throw Exception(ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX, "Indices in strings are 1-based");
             }
             else
-                sliceDynamicOffsetUnbounded<true>(source, StringSink(*col_res, input_rows_count), *column_offset);
+                sliceDynamicOffsetUnbounded<SliceArgumentPolicy::RejectOutOfRangeUInt64>(source, StringSink(*col_res, input_rows_count), *column_offset);
         }
         else
         {
@@ -92,7 +92,7 @@ public:
                     throw Exception(ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX, "Indices in strings are 1-based");
             }
             else
-                sliceDynamicOffsetBounded<true>(source, StringSink(*col_res, input_rows_count), *column_offset, *column_length);
+                sliceDynamicOffsetBounded<SliceArgumentPolicy::RejectOutOfRangeUInt64>(source, StringSink(*col_res, input_rows_count), *column_offset, *column_length);
         }
 
         return col_res;

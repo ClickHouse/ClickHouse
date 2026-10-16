@@ -321,7 +321,14 @@ void NO_INLINE sliceFromRightConstantOffsetBounded(Source && src, Sink && sink, 
     }
 }
 
-template <bool check_uint64_range = false, typename Source, typename Sink>
+/// Strings reject UInt64 arguments outside Int64 range, while arraySlice keeps its existing behavior.
+enum class SliceArgumentPolicy
+{
+    PreserveLegacySemantics,
+    RejectOutOfRangeUInt64,
+};
+
+template <SliceArgumentPolicy policy, typename Source, typename Sink>
 void NO_INLINE sliceDynamicOffsetUnbounded(Source && src, Sink && sink, const IColumn & offset_column)
 {
     const bool is_null = offset_column.onlyNull();
@@ -330,7 +337,7 @@ void NO_INLINE sliceDynamicOffsetUnbounded(Source && src, Sink && sink, const IC
     const IColumn * nested_column = nullable ? &nullable->getNestedColumn() : &offset_column;
 
     std::optional<CheckedSliceArgument> offset_reader;
-    if constexpr (check_uint64_range)
+    if constexpr (policy == SliceArgumentPolicy::RejectOutOfRangeUInt64)
     {
         if (!is_null)
             offset_reader.emplace(*nested_column, "offset");
@@ -343,7 +350,7 @@ void NO_INLINE sliceDynamicOffsetUnbounded(Source && src, Sink && sink, const IC
         Int64 offset = 1;
         if (has_offset)
         {
-            if constexpr (check_uint64_range)
+            if constexpr (policy == SliceArgumentPolicy::RejectOutOfRangeUInt64)
                 offset = offset_reader->get(row_num);
             else
                 offset = nested_column->getInt(row_num);
@@ -367,7 +374,7 @@ void NO_INLINE sliceDynamicOffsetUnbounded(Source && src, Sink && sink, const IC
 }
 
 
-template <bool inverse, bool check_uint64_range = false, typename Source, typename Sink>
+template <bool inverse, SliceArgumentPolicy policy, typename Source, typename Sink>
 static void sliceDynamicOffsetBoundedImpl(Source && src, Sink && sink, const IColumn * offset_column, const IColumn * length_column)
 {
     const bool is_offset_null = !offset_column || offset_column->onlyNull();
@@ -394,7 +401,7 @@ static void sliceDynamicOffsetBoundedImpl(Source && src, Sink && sink, const ICo
 
     std::optional<CheckedSliceArgument> offset_reader;
     std::optional<CheckedSliceArgument> length_reader;
-    if constexpr (check_uint64_range)
+    if constexpr (policy == SliceArgumentPolicy::RejectOutOfRangeUInt64)
     {
         if (!is_offset_null)
             offset_reader.emplace(*offset_nested_column, "offset");
@@ -410,7 +417,7 @@ static void sliceDynamicOffsetBoundedImpl(Source && src, Sink && sink, const ICo
         Int64 offset = 1;
         if (has_offset)
         {
-            if constexpr (check_uint64_range)
+            if constexpr (policy == SliceArgumentPolicy::RejectOutOfRangeUInt64)
                 offset = offset_reader->get(row_num);
             else
                 offset = offset_nested_column->getInt(row_num);
@@ -419,7 +426,7 @@ static void sliceDynamicOffsetBoundedImpl(Source && src, Sink && sink, const ICo
         Int64 size = 0;
         if (has_length)
         {
-            if constexpr (check_uint64_range)
+            if constexpr (policy == SliceArgumentPolicy::RejectOutOfRangeUInt64)
                 size = length_reader->get(row_num);
             else
                 size = length_nested_column->getInt(row_num);
@@ -479,23 +486,24 @@ static void sliceDynamicOffsetBoundedImpl(Source && src, Sink && sink, const ICo
 }
 
 
-template <bool check_uint64_range = false, typename Source, typename Sink>
+template <SliceArgumentPolicy policy, typename Source, typename Sink>
 void NO_INLINE sliceDynamicOffsetBounded(Source && src, Sink && sink, const IColumn & offset_column, const IColumn & length_column)
 {
-    sliceDynamicOffsetBoundedImpl<false, check_uint64_range>(std::forward<Source>(src), std::forward<Sink>(sink), &offset_column, &length_column);
+    sliceDynamicOffsetBoundedImpl<false, policy>(std::forward<Source>(src), std::forward<Sink>(sink), &offset_column, &length_column);
 }
 
 /// Similar to above, but with no offset.
-template <bool check_uint64_range = false, typename Source, typename Sink>
+template <SliceArgumentPolicy policy, typename Source, typename Sink>
 void NO_INLINE sliceFromLeftDynamicLength(Source && src, Sink && sink, const IColumn & length_column)
 {
-    sliceDynamicOffsetBoundedImpl<false, check_uint64_range>(std::forward<Source>(src), std::forward<Sink>(sink), nullptr, &length_column);
+    sliceDynamicOffsetBoundedImpl<false, policy>(std::forward<Source>(src), std::forward<Sink>(sink), nullptr, &length_column);
 }
 
 template <typename Source, typename Sink>
 void NO_INLINE sliceFromRightDynamicLength(Source && src, Sink && sink, const IColumn & length_column)
 {
-    sliceDynamicOffsetBoundedImpl<true>(std::forward<Source>(src), std::forward<Sink>(sink), nullptr, &length_column);
+    sliceDynamicOffsetBoundedImpl<true, SliceArgumentPolicy::PreserveLegacySemantics>(
+        std::forward<Source>(src), std::forward<Sink>(sink), nullptr, &length_column);
 }
 
 
