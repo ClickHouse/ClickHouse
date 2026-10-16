@@ -660,6 +660,7 @@ struct ContextSharedPart : boost::noncopyable
     bool cpu_slot_preemption TSA_GUARDED_BY(mutex) = false;
     UInt64 cpu_slot_quantum_ns TSA_GUARDED_BY(mutex) = 10'000'000;
     UInt64 cpu_slot_preemption_timeout_ms TSA_GUARDED_BY(mutex) = 1000;
+    bool cpu_slot_parking TSA_GUARDED_BY(mutex) = true;
     UInt64 concurrent_threads_soft_limit_num TSA_GUARDED_BY(mutex) = 0;
     UInt64 concurrent_threads_soft_limit_ratio_to_cores TSA_GUARDED_BY(mutex) = 0;
     String concurrent_threads_scheduler TSA_GUARDED_BY(mutex);
@@ -2876,6 +2877,18 @@ void Context::setCPUSlotPreemption(bool cpu_slot_preemption, UInt64 cpu_slot_qua
     shared->cpu_slot_preemption = cpu_slot_preemption;
     shared->cpu_slot_quantum_ns = cpu_slot_quantum_ns;
     shared->cpu_slot_preemption_timeout_ms = cpu_slot_preemption_timeout_ms;
+}
+
+bool Context::getCPUSlotParking() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->cpu_slot_parking;
+}
+
+void Context::setCPUSlotParking(bool cpu_slot_parking)
+{
+    std::lock_guard lock(shared->mutex);
+    shared->cpu_slot_parking = cpu_slot_parking;
 }
 
 UInt64 Context::getConcurrentThreadsSoftLimitNum() const
@@ -9563,6 +9576,7 @@ bool Context::isParallelReplicasEnabled() const
     const auto & settings_ref = getSettingsRef();
     return settings_ref[Setting::allow_experimental_parallel_reading_from_replicas] > 0
         && !(settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::READ_TASKS
+             && !getClientInfo().collaborate_with_initiator
              && getAutomaticParallelReplicasMode(settings_ref) != 0);
 }
 
@@ -9579,7 +9593,8 @@ bool Context::canUseTaskBasedParallelReplicasImpl(bool ignore_automatic_parallel
 
 bool Context::canUseTaskBasedParallelReplicas() const
 {
-    return canUseTaskBasedParallelReplicasImpl(/*ignore_automatic_parallel_replicas=*/false);
+    /// A follower's own automatic mode can differ from the initiator's, e.g. `allow_feature_tier` drops the shipped change.
+    return canUseTaskBasedParallelReplicasImpl(/*ignore_automatic_parallel_replicas=*/getClientInfo().collaborate_with_initiator);
 }
 
 bool Context::canReplaceClusterEngineWithClusterVariant() const
