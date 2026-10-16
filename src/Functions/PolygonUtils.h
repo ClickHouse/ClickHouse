@@ -92,7 +92,7 @@ inline int orientationSign(Float64 ax, Float64 ay, Float64 bx, Float64 by, Float
 /// Whether (x, y) is strictly left of the edge a - b directed upwards. Exactly one endpoint of the edge must be above y.
 inline bool isLeftOfUpwardEdge(Float64 ax, Float64 ay, Float64 bx, Float64 by, Float64 x, Float64 y)
 {
-    /// The edge crosses the row y between the x coordinates of its endpoints.
+    /// The edge crosses the row y between the x coordinates of its endpoints; a NaN x is left of no edge.
     if (x < ax && x < bx)
         return true;
     if (!(x < ax || x < bx))

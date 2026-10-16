@@ -575,9 +575,6 @@ private:
         if (size < 2)
             return false;
 
-        if (!isFinite(point_x) || !isFinite(point_y))
-            return false;
-
         /** This is the algorithm by W. Randolph Franklin
           * https://wrf.ecse.rpi.edu//Research/Short_Notes/pnpoly.html
           *
