@@ -142,18 +142,23 @@ private:
     {
         auto & data = this->data(place);
         const bool was_empty = data.isEmpty();
-        Float64 running_product = was_empty ? 1.0 : data.product;
-        bool has_value = !was_empty;
+        if (was_empty)
+        {
+            /// Keep the empty-state sentinel when no row is selected.
+            while (row_begin < row_end && !keep(row_begin))
+                ++row_begin;
+            if (row_begin == row_end)
+                return;
+        }
 
+        Float64 running_product = was_empty ? 1.0 : data.product;
         for (size_t i = row_begin; i < row_end; ++i)
         {
             const UInt8 keep_value = static_cast<UInt8>(keep(i) != 0);
-            has_value |= keep_value != 0;
             running_product *= selectValueOrOne(values[i], keep_value, decimal_scale);
         }
 
-        if (has_value)
-            data.product = running_product;
+        data.product = running_product;
     }
 
 public:
