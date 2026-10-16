@@ -130,3 +130,15 @@ $CLICKHOUSE_CLIENT --input_format_try_infer_ipv4=1 -q "desc format(Values, '(\'1
 # 17. Values format mixed IPv4 string and non-IP string collapses to String
 echo '17. Values format mixed IPv4 and String collapses to String'
 $CLICKHOUSE_CLIENT --input_format_try_infer_ipv4=1 -q "desc format(Values, '(\'192.168.1.1\')\n(\'not-an-ip\')')"
+
+# 18. An IPv4 address after an IPv6 one in a dynamic path keeps its family, as in shared data
+echo '18. IPv4 after IPv6 in a dynamic path'
+for settings in "--input_format_try_infer_ipv4=0 --input_format_try_infer_ipv6=1" "--input_format_try_infer_ipv4=1 --input_format_try_infer_ipv6=1"; do
+    for max_dynamic_paths in 2 0; do
+        # shellcheck disable=SC2086
+        $CLICKHOUSE_CLIENT $settings --input_format_parallel_parsing=0 -q "
+            SELECT dynamicType(j.ip), toString(j.ip), dynamicType(j.a), toString(j.a)
+            FROM format(JSONEachRow, 'j JSON(max_dynamic_paths=$max_dynamic_paths)', '{\"j\":{\"ip\":\"2001:db8::1\",\"a\":[\"2001:db8::2\"]}}
+{\"j\":{\"ip\":\"192.168.1.1\",\"a\":[\"10.0.0.1\"]}}')"
+    done
+done

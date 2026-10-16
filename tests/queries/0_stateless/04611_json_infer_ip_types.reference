@@ -41,3 +41,12 @@ ip	Nullable(String)
 c1	Nullable(IPv4)					
 17. Values format mixed IPv4 and String collapses to String
 c1	Nullable(String)					
+18. IPv4 after IPv6 in a dynamic path
+IPv6	2001:db8::1	Array(Nullable(IPv6))	[\'2001:db8::2\']
+String	192.168.1.1	Array(Nullable(String))	[\'10.0.0.1\']
+IPv6	2001:db8::1	Array(Nullable(IPv6))	[\'2001:db8::2\']
+String	192.168.1.1	Array(Nullable(String))	[\'10.0.0.1\']
+IPv6	2001:db8::1	Array(Nullable(IPv6))	[\'2001:db8::2\']
+IPv4	192.168.1.1	Array(Nullable(IPv4))	[\'10.0.0.1\']
+IPv6	2001:db8::1	Array(Nullable(IPv6))	[\'2001:db8::2\']
+IPv4	192.168.1.1	Array(Nullable(IPv4))	[\'10.0.0.1\']

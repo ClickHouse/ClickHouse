@@ -1302,7 +1302,7 @@ public:
     bool insertResultToColumn(
         IColumn & column,
         const typename JSONParser::Element & element,
-        const JSONExtractInsertSettings &,
+        const JSONExtractInsertSettings & insert_settings,
         const FormatSettings & format_settings,
         String & error) const override
     {
@@ -1319,6 +1319,13 @@ public:
         }
 
         auto data = element.getString();
+        /// Reading an IPv4 address as IPv6 is a type conversion, so a Dynamic variant inferred as IPv6 does not take one.
+        if (!insert_settings.allow_type_conversion && !data.contains(':'))
+        {
+            error = fmt::format("cannot read IPv6 value from an IPv4 address without type conversion: {}", data);
+            return false;
+        }
+
         IPv6 value;
         if (!tryParse(value, data))
         {
