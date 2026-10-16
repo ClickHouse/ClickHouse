@@ -1746,12 +1746,15 @@ def rebuild_table(h: ServerHandle, source: str, destination: str) -> None:
     log(f"{h.name}: rebuilding {destination} from {source}")
     populate_query(h, f"DROP TABLE IF EXISTS {target} SYNC")
     populate_query(h, f"CREATE TABLE {target} AS {source}")
+    populate_query(h, f"ALTER TABLE {target} MODIFY SETTING lock_acquire_timeout_for_background_operations = 600")
+    populate_query(h, f"ALTER TABLE {target} MODIFY SETTING use_const_adaptive_granularity = 1")
     populate_query(
         h,
         f"INSERT INTO {target} SELECT * FROM {source} "
         f"SETTINGS {POPULATE_INSERT_SETTINGS}",
     )
-    populate_query(h, f"OPTIMIZE TABLE {target} FINAL")
+    populate_query(h, f"OPTIMIZE TABLE {target} FINAL SETTINGS optimize_throw_if_noop = 1, optimize_skip_merged_partitions = 1")
+    populate_query(h, f"ALTER TABLE {target} RESET SETTING use_const_adaptive_granularity")
     if target != destination:
         old = f"{destination}_old"
         populate_query(h, f"DROP TABLE IF EXISTS {old} SYNC")

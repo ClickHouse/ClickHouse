@@ -57,6 +57,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmapCache.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
+#include <Storages/MergeTree/StatisticsCache.h>
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/PaimonMetadataFilesCache.h>
@@ -661,6 +662,7 @@ struct ContextSharedPart : boost::noncopyable
     bool cpu_slot_preemption TSA_GUARDED_BY(mutex) = false;
     UInt64 cpu_slot_quantum_ns TSA_GUARDED_BY(mutex) = 10'000'000;
     UInt64 cpu_slot_preemption_timeout_ms TSA_GUARDED_BY(mutex) = 1000;
+    bool cpu_slot_parking TSA_GUARDED_BY(mutex) = true;
     UInt64 concurrent_threads_soft_limit_num TSA_GUARDED_BY(mutex) = 0;
     UInt64 concurrent_threads_soft_limit_ratio_to_cores TSA_GUARDED_BY(mutex) = 0;
     String concurrent_threads_scheduler TSA_GUARDED_BY(mutex);
@@ -673,6 +675,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable UniqueKeyIndexCachePtr unique_key_index_cache TSA_GUARDED_BY(mutex);               /// RocksDB-compatible block cache over CacheBase for the UNIQUE KEY index (nullptr when RocksDB unavailable or disabled).
     mutable DeleteBitmapCachePtr delete_bitmap_cache TSA_GUARDED_BY(mutex);           /// UNIQUE KEY per-part delete-bitmap cache.
     mutable PrimaryIndexCachePtr primary_index_cache TSA_GUARDED_BY(mutex);
+    mutable StatisticsCachePtr statistics_cache TSA_GUARDED_BY(mutex);              /// Cache of column statistics of data parts.
     mutable SystemAllocatedMemoryHolderPtr untracked_memory_holder TSA_GUARDED_BY(mutex);
     mutable OnceFlag load_marks_threadpool_initialized;
     mutable std::unique_ptr<ThreadPool> load_marks_threadpool;  /// Threadpool for loading marks cache.
@@ -2319,21 +2322,35 @@ void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_
     /// an existing context (`EXECUTE AS`, a view's definer), whose own settings say nothing about the target.
     if (!isUserDefinedInConfig(user_id_))
     {
-        auto global_context = getGlobalContext();
-        const auto & new_session_settings = global_context->getSettingsRef();
-        auto new_session_constraints = global_context->getSettingsConstraintsAndCurrentProfiles();
-        new_session_constraints->constraints.check(
-            new_session_settings, user->settings, SettingSource::USER, /* skip_config_defined_profiles= */ true);
-        new_session_constraints->constraints.check(
-            new_session_settings, enabled_roles->settings_from_enabled_roles, SettingSource::ROLE,
-            /* skip_config_defined_profiles= */ true);
+        try
+        {
+            auto global_context = getGlobalContext();
+            const auto & new_session_settings = global_context->getSettingsRef();
+            auto new_session_constraints = global_context->getSettingsConstraintsAndCurrentProfiles();
+            const auto * resolved_constraints = &enabled_profiles->constraints;
+            new_session_constraints->constraints.check(
+                new_session_settings, user->settings, SettingSource::USER, /* skip_config_defined_profiles= */ true,
+                /* actor_is_config_defined= */ false, resolved_constraints);
+            new_session_constraints->constraints.check(
+                new_session_settings, enabled_roles->settings_from_enabled_roles, SettingSource::ROLE,
+                /* skip_config_defined_profiles= */ true, /* actor_is_config_defined= */ false, resolved_constraints);
 
-        /// A profile also reaches the user through its own `TO` clause, which neither list above holds.
-        SettingsProfileElements applied_profiles;
-        for (const auto & profile_id : enabled_profiles->profiles)
-            applied_profiles.emplace_back().parent_profile = profile_id;
-        new_session_constraints->constraints.check(
-            new_session_settings, applied_profiles, SettingSource::PROFILE, /* skip_config_defined_profiles= */ true);
+            /// A profile also reaches the user through its own `TO` clause, which neither list above holds.
+            SettingsProfileElements applied_profiles;
+            for (const auto & profile_id : enabled_profiles->profiles)
+                applied_profiles.emplace_back().parent_profile = profile_id;
+            new_session_constraints->constraints.check(
+                new_session_settings, applied_profiles, SettingSource::PROFILE, /* skip_config_defined_profiles= */ true,
+                /* actor_is_config_defined= */ false, resolved_constraints);
+        }
+        catch (Exception & e)
+        {
+            /// A new session starts with the constraints of the system profile.
+            e.addMessage(
+                "while checking the settings of user {} against the constraints of the system profile {}",
+                backQuote(user->getName()), backQuote(getSystemProfileName()));
+            throw;
+        }
     }
 
     /// Apply user's profiles, constraints, settings, roles.
@@ -2864,6 +2881,18 @@ void Context::setCPUSlotPreemption(bool cpu_slot_preemption, UInt64 cpu_slot_qua
     shared->cpu_slot_preemption = cpu_slot_preemption;
     shared->cpu_slot_quantum_ns = cpu_slot_quantum_ns;
     shared->cpu_slot_preemption_timeout_ms = cpu_slot_preemption_timeout_ms;
+}
+
+bool Context::getCPUSlotParking() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->cpu_slot_parking;
+}
+
+void Context::setCPUSlotParking(bool cpu_slot_parking)
+{
+    std::lock_guard lock(shared->mutex);
+    shared->cpu_slot_parking = cpu_slot_parking;
 }
 
 UInt64 Context::getConcurrentThreadsSoftLimitNum() const
@@ -3964,6 +3993,12 @@ void Context::checkSettingsConstraintsForSettingsReset(const std::vector<String>
     SharedLockGuard lock(mutex);
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.checkResetToDefault(
         *settings, after_reset->getSettingsRef(), names, source);
+}
+
+void Context::clampSettingsConstraintsForSettingsReset(std::vector<String> & names, SettingsChanges & clamped_changes, SettingSource source)
+{
+    SharedLockGuard lock(mutex);
+    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.clampResetToDefault(*settings, names, clamped_changes, source);
 }
 
 void Context::checkSettingsConstraintsForSettingsReset(
@@ -5290,6 +5325,38 @@ PrimaryIndexCachePtr Context::getPrimaryIndexCache() const
     return shared->primary_index_cache;
 }
 
+void Context::setStatisticsCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->statistics_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistics cache has been already created.");
+
+    shared->statistics_cache = std::make_shared<StatisticsCache>(cache_policy, max_cache_size_in_bytes, size_ratio);
+}
+
+void Context::updateStatisticsCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (!shared->statistics_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistics cache was not created yet.");
+
+    size_t size = config.getUInt64("statistics_cache_size", DEFAULT_STATISTICS_CACHE_MAX_SIZE);
+    if (size > max_cache_size)
+    {
+        size = max_cache_size;
+        LOG_DEBUG(shared->log, "Lowered statistics cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
+    }
+    shared->statistics_cache->setMaxSizeInBytes(size);
+}
+
+StatisticsCachePtr Context::getStatisticsCache() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->statistics_cache;
+}
+
 SystemAllocatedMemoryHolderPtr Context::getSystemAllocatedMemoryHolder() const
 {
     SharedLockGuard lock(shared->mutex);
@@ -5332,6 +5399,15 @@ std::shared_ptr<std::unordered_set<std::string>> Context::getUsersToIgnoreEarlyM
 void Context::clearPrimaryIndexCache() const
 {
     PrimaryIndexCachePtr cache = getPrimaryIndexCache();
+
+    /// Clear the cache without holding context mutex to avoid blocking context for a long time
+    if (cache)
+        cache->clear();
+}
+
+void Context::clearStatisticsCache() const
+{
+    StatisticsCachePtr cache = getStatisticsCache();
 
     /// Clear the cache without holding context mutex to avoid blocking context for a long time
     if (cache)
@@ -5927,6 +6003,9 @@ void Context::clearCaches() const
 
     if (shared->primary_index_cache)
         shared->primary_index_cache->clear();
+
+    if (shared->statistics_cache)
+        shared->statistics_cache->clear();
 
     if (shared->index_uncompressed_cache)
         shared->index_uncompressed_cache->clear();
@@ -9545,6 +9624,7 @@ bool Context::isParallelReplicasEnabled() const
     const auto & settings_ref = getSettingsRef();
     return settings_ref[Setting::allow_experimental_parallel_reading_from_replicas] > 0
         && !(settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::READ_TASKS
+             && !getClientInfo().collaborate_with_initiator
              && getAutomaticParallelReplicasMode(settings_ref) != 0);
 }
 
@@ -9561,7 +9641,8 @@ bool Context::canUseTaskBasedParallelReplicasImpl(bool ignore_automatic_parallel
 
 bool Context::canUseTaskBasedParallelReplicas() const
 {
-    return canUseTaskBasedParallelReplicasImpl(/*ignore_automatic_parallel_replicas=*/false);
+    /// A follower's own automatic mode can differ from the initiator's, e.g. `allow_feature_tier` drops the shipped change.
+    return canUseTaskBasedParallelReplicasImpl(/*ignore_automatic_parallel_replicas=*/getClientInfo().collaborate_with_initiator);
 }
 
 bool Context::canReplaceClusterEngineWithClusterVariant() const
@@ -9687,7 +9768,8 @@ AIQuotaTrackerPtr Context::getAIQuotaTracker() const
             settings_ref[Setting::ai_function_max_input_tokens_per_query],
             settings_ref[Setting::ai_function_max_output_tokens_per_query],
             settings_ref[Setting::ai_function_max_api_calls_per_query],
-            settings_ref[Setting::ai_function_throw_on_quota_exceeded]);
+            settings_ref[Setting::ai_function_throw_on_quota_exceeded],
+            query_context->process_list_elem);
     }
     return query_context->ai_quota_tracker;
 }
