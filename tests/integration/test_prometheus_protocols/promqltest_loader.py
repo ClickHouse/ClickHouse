@@ -739,15 +739,22 @@ def normalize_labels(metric: str, labels: dict[str, str]) -> dict[str, str]:
     return out
 
 
+_SQL_QUOTED = r"'((?:[^'\\]|\\.)*)'"
+_SQL_ESCAPES = {"b": "\b", "f": "\f", "n": "\n", "r": "\r", "t": "\t", "0": "\0"}
+
+
+def _unescape_sql_quoted(value: str) -> str:
+    # Undo the escaping of ClickHouse quoted strings (writeAnyEscapedString).
+    return re.sub(
+        r"\\(.)", lambda m: _SQL_ESCAPES.get(m.group(1), m.group(1)), value, flags=re.DOTALL
+    )
+
+
 def parse_sql_labels(cell: str) -> dict[str, str]:
-    pairs = re.findall(r"\('(?:\\'|[^'])*','(?:\\'|[^'])*'\)", cell.replace('"', "'"))
-    if not pairs:
-        pairs = re.findall(r"\('([^']*)','([^']*)'\)", cell)
-        return {k: v for k, v in pairs}
-    out = {}
-    for item in re.findall(r"\('((?:\\'|[^'])*)','((?:\\'|[^'])*)'\)", cell):
-        out[item[0]] = item[1]
-    return out
+    return {
+        _unescape_sql_quoted(k): _unescape_sql_quoted(v)
+        for k, v in re.findall(rf"\({_SQL_QUOTED},{_SQL_QUOTED}\)", cell)
+    }
 
 
 def parse_sql_result(tsv: str) -> list[dict[str, Any]]:
