@@ -377,3 +377,27 @@ def test_invalid_configuration(started_cluster, settings):
         assert "INVALID_CONFIG_PARAMETER" in error
     finally:
         node.query("DROP DICTIONARY invalid_config_dict")
+
+
+@pytest.mark.parametrize("partition_key_prefix", [0, 3])
+def test_invalid_partition_key_prefix(started_cluster, partition_key_prefix):
+    node.query(
+        f"""
+        CREATE DICTIONARY invalid_prefix_dict (k1 UInt64, k2 String, value String)
+        PRIMARY KEY k1, k2
+        SOURCE(CASSANDRA(
+            host '{started_cluster.cassandra_host}'
+            port {started_cluster.cassandra_port}
+            keyspace 'paging'
+            column_family 't'
+            partition_key_prefix {partition_key_prefix}))
+        LAYOUT(COMPLEX_KEY_DIRECT())
+        """
+    )
+    try:
+        error = node.query_and_get_error(
+            "SELECT dictGet('invalid_prefix_dict', 'value', (toUInt64(1), 'a'))"
+        )
+        assert "INVALID_CONFIG_PARAMETER" in error
+    finally:
+        node.query("DROP DICTIONARY invalid_prefix_dict")

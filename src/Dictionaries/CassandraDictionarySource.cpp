@@ -300,6 +300,11 @@ CassandraDictionarySource::CassandraDictionarySource(
         configuration.consistency,
         configuration.max_threads))
 {
+    /// The partition key is a prefix of the dictionary key columns, see `loadKeys`.
+    if (dict_struct.key && (configuration.partition_key_prefix == 0 || configuration.partition_key_prefix > dict_struct.key->size()))
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+            "The `partition_key_prefix` setting of a Cassandra dictionary source must be between 1 and the number of key columns ({}), got {}",
+            dict_struct.key->size(), configuration.partition_key_prefix);
 }
 
 CassandraDictionarySource::CassandraDictionarySource(
