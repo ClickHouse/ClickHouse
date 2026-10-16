@@ -496,6 +496,9 @@ public:
         this->data(place).add(static_cast<TResult>(column.getData()[row_num]));
     }
 
+    /// Except for floats, the loop of inlined `add` is vectorized as well as `addMany`.
+    constexpr static bool addBatchSinglePlaceForLongArrays() { return is_floating_point<T>; }
+
     void addBatchSinglePlace(
         size_t row_begin,
         size_t row_end,

@@ -215,6 +215,10 @@ public:
 
     constexpr static bool parallelizeMergeWithKey() { return false; }
 
+    /// Whether `addBatchArray` of `IAggregateFunctionHelper` passes a long array to `addBatchSinglePlace`.
+    /// Off where the loop of inlined `add` is vectorized as well, without the cost of a call per row.
+    constexpr static bool addBatchSinglePlaceForLongArrays() { return true; }
+
     virtual void
     parallelizeMergePrepare(AggregateDataPtrs & /*places*/, ThreadPool & /*thread_pool*/, std::atomic<bool> & /*is_cancelled*/) const;
 
@@ -877,13 +881,32 @@ public:
         Arena * arena)
         const override
     {
+        /// The elements of a row all go to one state, so a long row is a single `addBatchSinglePlace`
+        /// call, which reaches the specialized batch loops (the nested batch calls of `-Null` and `-If`,
+        /// vectorized `max`). For a short row that call costs more than it saves. When the rows average
+        /// less than one element, even the test of the length of each row costs more than it saves.
+        static constexpr size_t min_array_size_for_batch = 16;
+        const auto * derived = static_cast<const Derived *>(this);
         size_t current_offset = offsets[static_cast<ssize_t>(row_begin) - 1];
+        const bool use_batch = Derived::addBatchSinglePlaceForLongArrays()
+            && offsets[static_cast<ssize_t>(row_end) - 1] - current_offset >= row_end - row_begin
+            && derived->canOptimizeEqualKeysRanges();
+
         for (size_t i = row_begin; i < row_end; ++i)
         {
             size_t next_offset = offsets[i];
-            for (size_t j = current_offset; j < next_offset; ++j)
+            /// `places[i]` is tested inside the loop over elements, so an empty row costs no load of it.
+            if (use_batch && next_offset - current_offset >= min_array_size_for_batch)
+            {
                 if (places[i])
-                    static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, j, arena);
+                    derived->addBatchSinglePlace(current_offset, next_offset, places[i] + place_offset, columns, arena, -1);
+            }
+            else
+            {
+                for (size_t j = current_offset; j < next_offset; ++j)
+                    if (places[i])
+                        derived->add(places[i] + place_offset, columns, j, arena);
+            }
             current_offset = next_offset;
         }
     }

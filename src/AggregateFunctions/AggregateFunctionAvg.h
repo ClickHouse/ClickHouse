@@ -486,6 +486,9 @@ public:
         ++this->data(place).denominator;
     }
 
+    /// Except for floats, the loop of inlined `add` is vectorized as well as `addMany`.
+    constexpr static bool addBatchSinglePlaceForLongArrays() { return is_floating_point<T>; }
+
     void addManyDefaults(
         AggregateDataPtr __restrict place,
         const IColumn ** /*columns*/,
