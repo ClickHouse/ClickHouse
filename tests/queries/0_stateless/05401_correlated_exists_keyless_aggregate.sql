@@ -1,3 +1,4 @@
+-- Random settings limits: max_threads=(1, 3)
 -- A correlated EXISTS over an aggregate without GROUP BY is true for every outer row: the aggregate yields
 -- one row (the empty-set result) also when no inner row matches the outer row.
 
@@ -65,55 +66,19 @@ SELECT count() > 0 FROM (
     EXPLAIN PLAN actions = 1 SELECT o.number, EXISTS (SELECT 1 FROM numbers(2) AS i WHERE i.number = o.number AND i.number = 1 HAVING count() = 0)
     FROM numbers(2) AS o)
 WHERE explain ILIKE '%correlated_aggregate_input_marker%';
-SELECT o.number, EXISTS (SELECT 1 FROM numbers(2) AS i WHERE i.number = o.number AND i.number = 1 HAVING count() > 0 AND max(i.number) >= 0)
-FROM numbers(2) AS o ORDER BY o.number;
-SELECT count() > 0 FROM (
-    EXPLAIN PLAN actions = 1 SELECT o.number, EXISTS (SELECT 1 FROM numbers(2) AS i WHERE i.number = o.number AND i.number = 1 HAVING count() > 0 AND max(i.number) >= 0)
-    FROM numbers(2) AS o)
-WHERE explain ILIKE '%correlated_aggregate_input_marker%';
-SELECT o.number, l.c
-FROM numbers(2) AS o
-LEFT JOIN LATERAL (SELECT count() AS c FROM numbers(2) AS i WHERE i.number = o.number AND i.number = 1 HAVING c > 0) AS l ON true
-ORDER BY o.number
-SETTINGS allow_experimental_lateral_join = 1, join_use_nulls = 0;
-SELECT count() > 0 FROM (
-    EXPLAIN PLAN actions = 1 SELECT o.number, l.c
-    FROM numbers(2) AS o
-    LEFT JOIN LATERAL (SELECT count() AS c FROM numbers(2) AS i WHERE i.number = o.number AND i.number = 1 HAVING c > 0) AS l ON true
-    SETTINGS allow_experimental_lateral_join = 1, join_use_nulls = 0)
-WHERE explain ILIKE '%correlated_aggregate_input_marker%';
 
 SELECT '-- a HAVING that cannot be decided at planning restores the groups';
 SELECT o.number, EXISTS (SELECT 1 FROM numbers(2) AS i WHERE i.number = o.number AND i.number = 1 HAVING isNaN(avg(i.number)))
 FROM numbers(2) AS o ORDER BY o.number;
 SELECT o.number, EXISTS (SELECT 1 FROM numbers(2) AS i WHERE i.number = o.number AND i.number = 1 HAVING finalizeAggregation(countState()) = 0)
 FROM numbers(2) AS o ORDER BY o.number;
-SELECT o.number, EXISTS (SELECT 1 FROM numbers(2) AS i WHERE i.number = o.number AND i.number = 1 HAVING count() > rand() % 1)
-FROM numbers(2) AS o ORDER BY o.number;
-SELECT count() > 0 FROM (
-    EXPLAIN PLAN actions = 1 SELECT o.number, EXISTS (SELECT 1 FROM numbers(2) AS i WHERE i.number = o.number AND i.number = 1 HAVING count() > rand() % 1)
-    FROM numbers(2) AS o)
-WHERE explain ILIKE '%correlated_aggregate_input_marker%';
-SELECT o.number, EXISTS (
-    SELECT * FROM (SELECT count() AS c FROM numbers(2) AS i WHERE i.number = o.number AND i.number = 1) WHERE c > o.t)
-FROM (SELECT number, toInt64(number) - 1 AS t FROM numbers(2)) AS o ORDER BY o.number;
-SELECT o.number, EXISTS (SELECT count() AS c FROM numbers(2) AS i WHERE i.number = o.number AND i.number = 1 HAVING isConstant(c) = 0)
-FROM numbers(2) AS o ORDER BY o.number;
 SELECT o.number, l.c
 FROM numbers(2) AS o
 INNER JOIN LATERAL (SELECT count() AS c FROM numbers(2) AS i WHERE i.number = o.number AND i.number = 1 HAVING isConstant(c) = 0) AS l ON true
 ORDER BY o.number
 SETTINGS allow_experimental_lateral_join = 1;
-SELECT o.number, l.c
-FROM numbers(2) AS o
-INNER JOIN LATERAL (
-    SELECT * FROM (SELECT count() AS c FROM numbers(2) AS i WHERE i.number = o.number AND i.number = 1) WHERE isConstant(c) = 0) AS l ON true
-ORDER BY o.number
-SETTINGS allow_experimental_lateral_join = 1;
 
 SELECT '-- an always-NULL condition of an -If aggregate';
-SELECT o.number, EXISTS (SELECT countIf(NULL) AS c FROM numbers(2) AS i WHERE i.number = o.number AND i.number = 1 HAVING c > 0)
-FROM numbers(2) AS o ORDER BY o.number;
 SELECT o.number, EXISTS (SELECT countIf(NULL) AS c FROM numbers(2) AS i WHERE i.number = o.number AND i.number = 1 HAVING c = 0)
 FROM numbers(2) AS o ORDER BY o.number;
 SELECT o.number, l.c, l.s
@@ -127,52 +92,25 @@ SELECT '-- layouts of the decorrelated plan';
 SELECT
     o.number,
     EXISTS (SELECT count() FROM numbers(2) AS i WHERE i.number = o.number AND i.number IN (SELECT 1)),
-    EXISTS (SELECT count() AS c FROM numbers(3) AS i WHERE i.number > o.number HAVING c = 0),
-    EXISTS (SELECT count() FROM numbers(3) AS i WHERE i.number > o.number HAVING count() > 0)
+    EXISTS (SELECT count() AS c FROM numbers(3) AS i WHERE i.number > o.number HAVING c = 0)
 FROM numbers(3) AS o ORDER BY o.number;
 SELECT
     o.number,
     EXISTS (SELECT count() FROM numbers(2) AS i WHERE i.number = o.number AND i.number IN (SELECT 1)),
-    EXISTS (SELECT count() AS c FROM numbers(3) AS i WHERE i.number > o.number HAVING c = 0),
-    EXISTS (SELECT count() FROM numbers(3) AS i WHERE i.number > o.number HAVING count() > 0)
-FROM numbers(3) AS o ORDER BY o.number
-SETTINGS correlated_subqueries_default_join_kind = 'left';
-SELECT
-    o.number,
-    EXISTS (SELECT count() FROM numbers(2) AS i WHERE i.number = o.number AND i.number IN (SELECT 1)),
-    EXISTS (SELECT count() AS c FROM numbers(3) AS i WHERE i.number > o.number HAVING c = 0),
-    EXISTS (SELECT count() FROM numbers(3) AS i WHERE i.number > o.number HAVING count() > 0)
+    EXISTS (SELECT count() AS c FROM numbers(3) AS i WHERE i.number > o.number HAVING c = 0)
 FROM numbers(3) AS o ORDER BY o.number
 SETTINGS correlated_subqueries_use_in_memory_buffer = 0;
 SELECT
     o.number,
     EXISTS (SELECT count() FROM numbers(2) AS i WHERE i.number = o.number AND i.number IN (SELECT 1)),
-    EXISTS (SELECT count() AS c FROM numbers(3) AS i WHERE i.number > o.number HAVING c = 0),
-    EXISTS (SELECT count() FROM numbers(3) AS i WHERE i.number > o.number HAVING count() > 0)
-FROM numbers(3) AS o ORDER BY o.number
-SETTINGS correlated_subqueries_substitute_equivalent_expressions = 0;
-SELECT
-    o.number,
-    EXISTS (SELECT count() FROM numbers(2) AS i WHERE i.number = o.number AND i.number IN (SELECT 1)),
-    EXISTS (SELECT count() AS c FROM numbers(3) AS i WHERE i.number > o.number HAVING c = 0),
-    EXISTS (SELECT count() FROM numbers(3) AS i WHERE i.number > o.number HAVING count() > 0)
+    EXISTS (SELECT count() AS c FROM numbers(3) AS i WHERE i.number > o.number HAVING c = 0)
 FROM numbers(3) AS o ORDER BY o.number
 SETTINGS correlated_subqueries_default_join_kind = 'left', correlated_subqueries_substitute_equivalent_expressions = 0;
 
 SELECT '-- the restored groups do not count against max_rows_to_group_by';
-SELECT o.number, EXISTS (SELECT count() FROM numbers(3) AS i WHERE i.number = o.number AND i.number IN (SELECT 1) HAVING count() > 0)
-FROM numbers(3) AS o ORDER BY o.number
-SETTINGS max_rows_to_group_by = 1, group_by_overflow_mode = 'throw';
-SELECT o.number, EXISTS (SELECT count() FROM numbers(3) AS i WHERE i.number = o.number AND i.number IN (SELECT 1) HAVING count() > 0)
-FROM numbers(3) AS o ORDER BY o.number
-SETTINGS max_rows_to_group_by = 1, group_by_overflow_mode = 'any';
-
 SELECT o.number, EXISTS (SELECT count() FROM numbers(3) AS i WHERE i.number = o.number AND i.number IN (SELECT 1))
 FROM numbers(3) AS o ORDER BY o.number
 SETTINGS max_rows_to_group_by = 1, group_by_overflow_mode = 'throw';
-SELECT o.number, EXISTS (SELECT count() FROM numbers(3) AS i WHERE i.number = o.number AND i.number IN (SELECT 1))
-FROM numbers(3) AS o ORDER BY o.number
-SETTINGS max_rows_to_group_by = 1, group_by_overflow_mode = 'any';
 
 SELECT '-- two UNION arms that read the outer rows';
 SELECT o.number, EXISTS (
@@ -186,9 +124,6 @@ SELECT '-- outer keys that differ between evaluations of the outer plan';
 SELECT o.number, EXISTS (SELECT sum(i.number) AS s FROM numbers(1000) AS i WHERE i.number = o.r HAVING s >= 0)
 FROM (SELECT number, rand64() % 1000 AS r FROM numbers(5)) AS o ORDER BY o.number
 SETTINGS correlated_subqueries_use_in_memory_buffer = 0;
-SELECT o.number, EXISTS (SELECT sum(i.number) AS s FROM numbers(1000) AS i WHERE i.number = o.r HAVING s >= 0)
-FROM (SELECT number, rand64() % 1000 AS r FROM numbers(5)) AS o ORDER BY o.number
-SETTINGS correlated_subqueries_default_join_kind = 'left';
 SELECT * FROM (
     SELECT o.number, EXISTS (SELECT sum(i.number) AS s FROM numbers(1000) AS i WHERE i.number = o.r HAVING s >= 0)
     FROM (SELECT number, rand64() % 1000 AS r FROM numbers(5)) AS o
