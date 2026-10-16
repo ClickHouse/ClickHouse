@@ -148,7 +148,7 @@ CREATE TABLE tab_chunks
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS allow_experimental_text_index_phrase_search = 1, text_index_posting_list_codec = 'pfor', index_granularity = 1024, index_granularity_bytes = 0;
+SETTINGS allow_experimental_text_index_phrase_search = 1, text_index_posting_list_codec = 'pfor', index_granularity = 1024, index_granularity_bytes = 0, min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
 INSERT INTO tab_chunks_ref SELECT number, multiIf(number % 7 = 3, 'alpha beta', number % 7 = 5, 'beta alpha', number % 11 = 0, 'gamma delta', 'alpha gamma beta') FROM numbers(50000);
 INSERT INTO tab_chunks SELECT * FROM tab_chunks_ref;
 
