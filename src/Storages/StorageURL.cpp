@@ -685,6 +685,7 @@ StorageURLSource::StorageURLSource(
             curr_uri = uri_and_buf.first;
             current_file_last_modified = uri_and_buf.second->tryGetLastModificationTime();
             current_file_response_date = uri_and_buf.second->tryGetResponseDateOfFileInfo();
+            const ReadWriteBufferFromHTTP & http_buf = *uri_and_buf.second;
             read_buf = std::move(uri_and_buf.second);
 
             FailPointInjection::pauseFailPoint(FailPoints::storage_url_pause_between_metadata_probes);
@@ -697,6 +698,10 @@ StorageURLSource::StorageURLSource(
                 return false;
 
             current_file_size = tryGetFileSizeFromReadBuffer(*read_buf);
+
+            /// With `max_http_get_redirects` the metadata above, and the data later, come from the target of the
+            /// redirects, which can change between queries while `curr_uri` stays the same.
+            current_file_resolved_uri = http_buf.getCurrentURI();
 
             current_query_condition_cache_file_key = makeQueryConditionCacheFileKey();
 
@@ -1071,9 +1076,11 @@ std::optional<String> StorageURLSource::makeQueryConditionCacheFileKey() const
 
     /// The URL can carry credentials (`user:password@`) or a signature in its query parameters. The cache
     /// exposes the part name of an entry in `system.query_condition_cache` and in its logs, so the entry is
-    /// keyed by a hash of the URL instead of the URL itself.
+    /// keyed by a hash of the URL instead of the URL itself. The URL is the one the file was read from after
+    /// following the redirects: the same URL can redirect to different files, which can have the same
+    /// modification time and size.
     return QueryConditionCache::makeFilePartName(
-        sipHash128String(curr_uri.toString()), fmt::format("{}_{}", *current_file_last_modified, *current_file_size));
+        sipHash128String(current_file_resolved_uri.toString()), fmt::format("{}_{}", *current_file_last_modified, *current_file_size));
 }
 
 void StorageURLSource::writeQueryConditionCacheEntry() const
