@@ -213,6 +213,8 @@ public:
         UInt64 total_marks_pk = 0;
         UInt64 selected_rows = 0;
         bool has_exact_ranges = false;
+        /// `ranges` exclude `exact_ranges`: their rows are counted from the primary key without being read.
+        bool exact_ranges_excluded = false;
         std::atomic<bool> exceeded_row_limits = false;
 
         AnalysisResult() = default;
@@ -234,6 +236,7 @@ public:
             , total_marks_pk(other.total_marks_pk)
             , selected_rows(other.selected_rows)
             , has_exact_ranges(other.has_exact_ranges)
+            , exact_ranges_excluded(other.exact_ranges_excluded)
             , exceeded_row_limits(other.exceeded_row_limits.load())
         {}
 
@@ -254,6 +257,7 @@ public:
             , total_marks_pk(other.total_marks_pk)
             , selected_rows(other.selected_rows)
             , has_exact_ranges(other.has_exact_ranges)
+            , exact_ranges_excluded(other.exact_ranges_excluded)
             , exceeded_row_limits(other.exceeded_row_limits.load())
         {}
 

@@ -24,7 +24,7 @@
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 #include <Core/UUID.h>
-#include <Parsers/getTimeSeriesSettingVersion.h>
+#include <Parsers/Prometheus/CreateQueryTimeSeriesSettings.h>
 
 
 namespace DB
@@ -578,7 +578,7 @@ void ASTCreateQuery::writeJSON(WriteBuffer & out) const
     {
         std::optional<UInt64> time_series_version;
         if (is_time_series_table)
-            time_series_version = getTimeSeriesSettingVersion(*this);
+            time_series_version = getTimeSeriesVersion(*this);
         w.writeKey("targets");
         targets->writeJSON(out, time_series_version);
     }
@@ -1201,7 +1201,7 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
     {
         std::optional<UInt64> time_series_version;
         if (is_time_series_table)
-            time_series_version = getTimeSeriesSettingVersion(*this);
+            time_series_version = getTimeSeriesVersion(*this);
         for (const auto & target : targets->targets)
         {
             /// `To` and `Inner` are formatted separately above (for materialized views).

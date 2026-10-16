@@ -337,8 +337,12 @@ void LocalConnection::sendQuery(
     state->json_ast_max_elements = parse_time_max_ast_elements;
     state->query_scope_holder = QueryScope::create(query_context);
     state->stage = QueryProcessingStage::Enum(stage);
-    state->profile_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
-    CurrentThread::attachInternalProfileEventsQueue(state->profile_queue);
+    /// Nothing drains the unbounded queue when profile events are not sent.
+    if (send_profile_events)
+    {
+        state->profile_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
+        CurrentThread::attachInternalProfileEventsQueue(state->profile_queue);
+    }
     state->logs_queue = std::make_shared<InternalTextLogsQueue>();
     const auto client_logs_level = getContext()->getSettingsRef()[Setting::send_logs_level];
     state->logs_queue->max_priority = Poco::Logger::parseLevel(client_logs_level.toString());

@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Processors/Chunk.h>
+#include <Interpreters/SetSpillable.h>
 
 namespace DB
 {
@@ -130,6 +131,7 @@ public:
         const ColumnsDescription * columns_ = nullptr);
 
     String getName() const;
+    std::span<ISpillable * const> getSpillables() const { return set_spillables.get(); }
 
     static Block transformHeader(
         Block block,
@@ -179,6 +181,7 @@ private:
     const PrewhereInfoPtr prewhere_info;
     const ExpressionActionsSettings actions_settings;
     const PrewhereExprInfo prewhere_actions;
+    SetSpillables set_spillables;
 
     const LazilyReadInfoPtr lazily_read_info;
 
