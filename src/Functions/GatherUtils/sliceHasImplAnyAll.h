@@ -155,9 +155,11 @@ ALWAYS_INLINE bool sliceContains(const NumericArraySlice<T> & slice, const UInt8
         return i < slice.size && vector_contains(slice.size - lanes);
     }
 
-    /// Opaque to the optimizer: otherwise AArch64 can take the loop index from the register of the test above, which is zero
-    /// on this path, and every load of the loop waits for that test.
+#if defined(__aarch64__)
+    /// Opaque start: otherwise the index can take the register of the test above, which is zero here, and every load of
+    /// the loop waits for that test. Not elsewhere: on x86 it costs an instruction per block.
     __asm__("" : "+r"(i));
+#endif
     for (; i + block_size <= slice.size; i += block_size)
     {
         if (block_contains(i))
