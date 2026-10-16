@@ -53,7 +53,8 @@ SELECT pointInPolygon((-0.9623 * 1e150, -0.9571 * 1e150), [(-1e150, -9e149), (8e
        pointInPolygon((0.3 * 1e150, 0.5 * 1e150), [(-1e150, -9e149), (8e149, -1e150), (3e149, 9.5e149)], [(-1e149, -2e149), (1e149, -2.5e149), (5e148, -5e148)]);
 
 -- A vertex far away but within the limit: points next to its long edge are classified exactly, so primary key analysis agrees.
-SELECT count() FROM pip_pk WHERE pointInPolygon((x, y), [(0.9999, 3.4028234663852886e38), (0., 0.), (1.0001, 0.), (10000000000., 1000.0001)]);
+SELECT count() FROM pip_pk WHERE pointInPolygon((x, y), [(0.9999, 3.4028234663852886e38), (0., 0.), (1.0001, 0.), (10000000000., 1000.0001)]) SETTINGS force_primary_key = 1, use_lightweight_primary_key_index_analysis = 0, use_query_condition_cache = 0;
+SELECT count() FROM pip_pk WHERE pointInPolygon((x, y), [(0.9999, 3.4028234663852886e38), (0., 0.), (1.0001, 0.), (10000000000., 1000.0001)]) SETTINGS force_primary_key = 1, use_lightweight_primary_key_index_analysis = 1, use_query_condition_cache = 0;
 SELECT count() FROM pip_nopk WHERE pointInPolygon((x, y), [(0.9999, 3.4028234663852886e38), (0., 0.), (1.0001, 0.), (10000000000., 1000.0001)]);
 -- Points at x = 0 are outside, points at 1.5 times the edge's distance from x = 0 are inside: constant and non-constant polygons,
 -- both vertex orders, and complex grid cells (a coordinate below 2^-300).
