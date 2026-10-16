@@ -74,7 +74,7 @@ def get_profile_events(query_id, query_type="QueryFinish"):
             ProfileEvents['AICacheReadTokens'] AS cache_read_tokens,
             ProfileEvents['AICacheWriteTokens'] AS cache_write_tokens,
             ProfileEvents['AIRequestMicroseconds'] AS request_us,
-            ProfileEvents['AIExecutionMicroseconds'] AS execution_us,
+            ProfileEvents['AIRetryBackoffMicroseconds'] AS retry_backoff_us,
             peak_threads_usage AS peak_threads
         FROM system.query_log
         WHERE query_id = '{query_id}' AND type = '{query_type}'
@@ -360,7 +360,7 @@ def test_ai_metrics_cache_and_latency(
     assert int(events["cache_write_tokens"]) == write_tokens
     assert int(events["rows_processed"]) == (1 if mode == "cached" else 0)
     assert int(events["request_us"]) >= 20000
-    assert int(events["execution_us"]) >= int(events["request_us"])
+    assert int(events["retry_backoff_us"]) == 0
 
 
 @pytest.mark.parametrize(
@@ -419,7 +419,7 @@ def test_ai_metrics_rows_and_batches(started_cluster, expression, calls, process
     assert int(events["rows_skipped"]) == 0
     assert int(events["api_calls"]) == calls
     assert int(events["request_us"]) > 0
-    assert int(events["execution_us"]) >= int(events["request_us"])
+    assert int(events["retry_backoff_us"]) == 0
 
 
 @pytest.mark.parametrize(
@@ -475,8 +475,8 @@ def test_ai_metrics_retry_latency(started_cluster, expression, throw_on_error):
     assert int(events["input_tokens"]) == 0
     assert int(events["cache_read_tokens"]) == 0
     assert int(events["request_us"]) > 0
-    # The two backoffs (10 + 20 ms) belong to execution time, not request time.
-    assert int(events["execution_us"]) - int(events["request_us"]) >= 30000
+    # Two backoffs: 10 ms and 20 ms.
+    assert int(events["retry_backoff_us"]) >= 30000
 
 
 # ---------------------------------------------------------------------------

@@ -157,7 +157,7 @@ AI function activity is tracked through ClickHouse [ProfileEvents](/reference/sy
 | `AICacheReadTokens` | Input tokens read from the provider's prompt cache. |
 | `AICacheWriteTokens` | Input tokens written to the provider's prompt cache. |
 | `AIRequestMicroseconds` | Total time spent in AI provider calls (request serialization, HTTP round trip, response parsing), including failed attempts, excluding retry backoff. |
-| `AIExecutionMicroseconds` | Total time executing AI functions, including request preparation, retry backoff, and result processing. |
+| `AIRetryBackoffMicroseconds` | Total time spent waiting before retries of failed AI provider calls. |
 | `AIRowsProcessed` | Number of rows that received a result. |
 | `AIRowsSkipped` | Number of rows skipped (quota exceeded, or error with `ai_function_throw_on_error = 0`). |
 
@@ -179,7 +179,7 @@ SELECT
     ProfileEvents['AIAPICalls'] AS api_calls,
     ProfileEvents['AIRequestMicroseconds'] / 1000 AS request_ms,
     request_ms / nullIf(api_calls, 0) AS mean_request_ms,
-    ProfileEvents['AIExecutionMicroseconds'] / 1000 AS execution_ms,
+    ProfileEvents['AIRetryBackoffMicroseconds'] / 1000 AS retry_backoff_ms,
     ProfileEvents['AIRowsProcessed'] AS rows_processed,
     ProfileEvents['AIRowsSkipped'] AS rows_skipped,
     ProfileEvents['AIInputTokens'] AS input_tokens,

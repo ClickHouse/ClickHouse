@@ -35,7 +35,7 @@ namespace ProfileEvents
     extern const Event AICacheReadTokens;
     extern const Event AICacheWriteTokens;
     extern const Event AIRequestMicroseconds;
-    extern const Event AIExecutionMicroseconds;
+    extern const Event AIRetryBackoffMicroseconds;
     extern const Event AIAPICalls;
     extern const Event AIRowsProcessed;
     extern const Event AIRowsSkipped;
@@ -442,6 +442,7 @@ void FunctionBaseAI::embedTexts(
             {
                 if (attempt < max_retries && isRetriableProviderError(std::current_exception()))
                 {
+                    ProfileEventTimeIncrement<Microseconds> backoff_time(ProfileEvents::AIRetryBackoffMicroseconds);
                     std::this_thread::sleep_for(std::chrono::milliseconds(computeRetryBackoffMs(retry_delay_ms, attempt)));
                     continue;
                 }
@@ -472,8 +473,6 @@ void FunctionBaseAI::embedTexts(
 
 ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
-    ProfileEventTimeIncrement<Microseconds> execution_time(ProfileEvents::AIExecutionMicroseconds);
-
     const auto & settings = getContext()->getSettingsRef();
     auto params = resolveAIParams(getContext(), arguments, allParams(), settings[Setting::ai_function_text_default_credentials]);
 
@@ -631,6 +630,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
             {
                 if (attempt < max_retries && isRetriableProviderError(std::current_exception()))
                 {
+                    ProfileEventTimeIncrement<Microseconds> backoff_time(ProfileEvents::AIRetryBackoffMicroseconds);
                     std::this_thread::sleep_for(std::chrono::milliseconds(computeRetryBackoffMs(retry_delay_ms, attempt)));
                     continue;
                 }
