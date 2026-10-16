@@ -57,6 +57,18 @@ SELECT 'ok';
 SELECT length(s), sipHash64(s), cityHash64(s), xxHash64(s), count() OVER () AS n FROM (SELECT toString(number % 10) AS s FROM numbers(1000000))
 FORMAT Null SETTINGS max_memory_usage = '50M', max_block_size = 1024, max_threads = 1;
 SELECT 'ok';
+SELECT s, length(t) AS h, count() OVER () AS n FROM (SELECT toString(number % 10) AS s, s AS t FROM numbers(1000000))
+FORMAT Null SETTINGS max_memory_usage = '40M', max_block_size = 1024, max_threads = 1;
+SELECT 'ok';
+SELECT reinterpretAsUInt128(concat(s, t)), count() OVER () FROM (SELECT toString(number % 10) AS s, 'a' AS t FROM numbers(1000000))
+FORMAT Null SETTINGS max_memory_usage = '40M', max_block_size = 1024, max_threads = 1;
+SELECT 'ok';
+
+SELECT 'functions with side effects are computed after window functions';
+SELECT length(s) + sleepEachRow(0.0001) AS b, count() OVER (ORDER BY number DESC) AS n
+FROM (SELECT number, toString(number) AS s FROM (SELECT arrayJoin(range(100)) AS number))
+FORMAT Null SETTINGS max_block_size = 2, max_threads = 1, function_sleep_max_microseconds_per_block = 1000, query_plan_enable_optimizations = 0;
+SELECT 'ok';
 
 SELECT 'LIMIT';
 SELECT toUInt64(s) AS v, count() OVER () AS n FROM (SELECT if(number < 10, '1', 'x') AS s FROM numbers(100))

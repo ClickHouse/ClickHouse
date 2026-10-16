@@ -48,6 +48,10 @@ ok
 expressions are not computed before window functions if the columns they read are not freed
 ok
 ok
+ok
+ok
+functions with side effects are computed after window functions
+ok
 LIMIT
 1	100
 1	100

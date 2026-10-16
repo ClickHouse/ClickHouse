@@ -349,11 +349,43 @@ size_t getMinimumSizeOfUnboundedValue(const IDataType & type)
     return 0;
 }
 
+/** The expression that computes the values of a column: for a column of a subquery, its projection expression,
+  * so that the columns of a subquery that are aliases of each other resolve to the same expression.
+  */
+QueryTreeNodePtr resolveColumnExpression(QueryTreeNodePtr node)
+{
+    while (const auto * column_node = node->as<ColumnNode>())
+    {
+        if (column_node->hasExpression() && column_node->getExpression()->getNodeType() == QueryTreeNodeType::CONSTANT)
+            return column_node->getExpression();
+
+        auto column_source = column_node->getColumnSourceOrNull();
+        const auto * subquery_node = column_source ? column_source->as<QueryNode>() : nullptr;
+        if (!subquery_node)
+            break;
+
+        const auto & projection_columns = subquery_node->getProjectionColumns();
+        const auto & projection_nodes = subquery_node->getProjection().getNodes();
+        if (projection_columns.size() != projection_nodes.size())
+            break;
+
+        auto it = std::find_if(projection_columns.begin(), projection_columns.end(),
+            [&](const auto & projection_column) { return projection_column.name == column_node->getColumnName(); });
+        if (it == projection_columns.end())
+            break;
+
+        node = projection_nodes[it - projection_columns.begin()];
+    }
+
+    return node;
+}
+
 /** Whether the expression can be computed before the window functions instead of after them.
   * The window step keeps every row and only changes the order of rows and their split into blocks,
   * so an expression evaluated row by row has the same value on either side of it.
   * The columns and the aggregate function results that the expression reads and whose values have
-  * no maximum size, such as `String` or `Array`, are added to `unbounded_inputs`.
+  * no maximum size, such as `String` or `Array`, are added to `unbounded_inputs`, except constant columns.
+  * A column is added as the expression that computes it, see `resolveColumnExpression`.
   */
 bool canBeComputedBeforeWindow(
     const QueryTreeNodePtr & node,
@@ -370,7 +402,11 @@ bool canBeComputedBeforeWindow(
             auto column_source = column_node.getColumnSourceOrNull();
             bool is_lambda_argument = column_source && column_source->getNodeType() == QueryTreeNodeType::LAMBDA_ARGS;
             if (!is_lambda_argument && !column_node.getColumnType()->haveMaximumSizeOfValue())
-                unbounded_inputs.insert(node);
+            {
+                auto column_expression = resolveColumnExpression(node);
+                if (column_expression->getNodeType() != QueryTreeNodeType::CONSTANT)
+                    unbounded_inputs.insert(column_expression);
+            }
             return !correlated_columns_set.contains(std::static_pointer_cast<ColumnNode>(node));
         }
         case QueryTreeNodeType::LIST:
@@ -401,8 +437,10 @@ bool canBeComputedBeforeWindow(
                 return false;
 
             /// Stateful functions (`rowNumberInBlock`, `runningDifference`, ...) depend on the order of rows,
-            /// and some functions that are not deterministic in the scope of the query (`blockSize`) depend on blocks.
-            if (auto function = function_node.getFunction(); function && (function->isStateful() || !function->isDeterministicInScopeOfQuery()))
+            /// some functions that are not deterministic in the scope of the query (`blockSize`) depend on blocks,
+            /// and the side effects of some functions (`sleepEachRow`) depend on blocks too.
+            if (auto function = function_node.getFunction();
+                function && (function->isStateful() || !function->isDeterministicInScopeOfQuery() || function->hasObservableSideEffects()))
                 return false;
 
             return canBeComputedBeforeWindow(function_node.getArgumentsNode(), correlated_columns_set, unbounded_inputs);
@@ -479,7 +517,7 @@ void collectInputsReadAfterWindow(
 
     if (node->getNodeType() == QueryTreeNodeType::COLUMN)
     {
-        inputs.insert(node);
+        inputs.insert(resolveColumnExpression(node));
         return;
     }
 
