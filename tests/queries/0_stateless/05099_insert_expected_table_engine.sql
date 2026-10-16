@@ -6,6 +6,11 @@ DROP TABLE IF EXISTS insert_expected_engine_mv_wide;
 DROP TABLE IF EXISTS insert_expected_engine_dist;
 DROP TABLE IF EXISTS insert_expected_engine_plain;
 DROP TABLE IF EXISTS insert_expected_engine_plain_dist;
+DROP TABLE IF EXISTS insert_expected_engine_src_mv;
+DROP TABLE IF EXISTS insert_expected_engine_src_dist;
+DROP TABLE IF EXISTS insert_expected_engine_src;
+DROP TABLE IF EXISTS insert_expected_engine_view_dst_dist;
+DROP TABLE IF EXISTS insert_expected_engine_view_dst;
 
 CREATE TABLE insert_expected_engine (x UInt8) ENGINE = Memory;
 CREATE TABLE insert_expected_engine_log (x UInt8) ENGINE = Log;
@@ -17,6 +22,12 @@ CREATE TABLE insert_expected_engine_dist AS insert_expected_engine ENGINE = Dist
 -- No view of its own: what the shard resolves over the connection is checked without a second hop from it.
 CREATE TABLE insert_expected_engine_plain (x UInt8) ENGINE = Memory;
 CREATE TABLE insert_expected_engine_plain_dist AS insert_expected_engine_plain ENGINE = Distributed(test_shard_localhost, currentDatabase(), insert_expected_engine_plain);
+-- A view on a Distributed table, writing through another Distributed table to a Log table of another type.
+CREATE TABLE insert_expected_engine_src (x UInt8) ENGINE = Memory;
+CREATE TABLE insert_expected_engine_src_dist AS insert_expected_engine_src ENGINE = Distributed(test_shard_localhost, currentDatabase(), insert_expected_engine_src);
+CREATE TABLE insert_expected_engine_view_dst (x UInt16) ENGINE = Log;
+CREATE TABLE insert_expected_engine_view_dst_dist AS insert_expected_engine_view_dst ENGINE = Distributed(test_shard_localhost, currentDatabase(), insert_expected_engine_view_dst);
+CREATE MATERIALIZED VIEW insert_expected_engine_src_mv TO insert_expected_engine_view_dst_dist AS SELECT toUInt16(x) AS x FROM insert_expected_engine_src_dist;
 
 -- The table named is checked; the views' targets are its own writes and are not.
 INSERT INTO insert_expected_engine SETTINGS insert_expected_table_engine = 'Memory' VALUES (1);
@@ -43,10 +54,22 @@ INSERT INTO insert_expected_engine_plain_dist SETTINGS insert_expected_table_eng
 INSERT INTO insert_expected_engine_plain_dist SETTINGS insert_expected_column_types = {'x': 'UInt8'}, distributed_foreground_insert = 1, prefer_localhost_replica = 0 VALUES (13);
 INSERT INTO insert_expected_engine_plain_dist SETTINGS insert_expected_column_types = {'x': 'UInt16'}, distributed_foreground_insert = 1, prefer_localhost_replica = 0 VALUES (14); -- { serverError INCOMPATIBLE_SCHEMA }
 
+-- The view's writes are its own there too: only the shards of the table the INSERT names are checked.
+INSERT INTO insert_expected_engine_src_dist SETTINGS insert_expected_table_engine = 'Memory', distributed_foreground_insert = 1 VALUES (15);
+INSERT INTO insert_expected_engine_src_dist SETTINGS insert_expected_column_types = {'x': 'UInt8'}, distributed_foreground_insert = 1, prefer_localhost_replica = 0 VALUES (16);
+
 SELECT * FROM insert_expected_engine ORDER BY x;
 SELECT * FROM insert_expected_engine_log ORDER BY x;
 SELECT * FROM insert_expected_engine_wide ORDER BY x;
 SELECT * FROM insert_expected_engine_plain ORDER BY x;
+SELECT * FROM insert_expected_engine_src ORDER BY x;
+SELECT * FROM insert_expected_engine_view_dst ORDER BY x;
+
+DROP TABLE insert_expected_engine_src_mv;
+DROP TABLE insert_expected_engine_src_dist;
+DROP TABLE insert_expected_engine_src;
+DROP TABLE insert_expected_engine_view_dst_dist;
+DROP TABLE insert_expected_engine_view_dst;
 
 DROP TABLE insert_expected_engine_plain_dist;
 DROP TABLE insert_expected_engine_plain;
