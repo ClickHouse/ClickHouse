@@ -97,6 +97,7 @@ namespace Setting
     extern const SettingsUInt64 min_count_to_compile_sort_description;
     extern const SettingsDouble min_rows_ratio_for_hash_join_row_store;
     extern const SettingsOverflowMode set_overflow_mode;
+    extern const SettingsUInt64 parallel_hash_join_threshold;
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsUInt64 use_index_for_in_with_subqueries_max_values;
     extern const SettingsBool allow_suspicious_types_in_group_by;
@@ -1034,7 +1035,8 @@ static std::shared_ptr<IJoin> tryCreateJoin(
 
     /// The old analyzer has no estimate of the right table size.
     const auto build_layout
-        = analyzed_join->preferParallelHashLayout(/*rhs_size_estimation=*/std::nullopt, /*parallel_hash_join_threshold=*/0)
+        = analyzed_join->preferParallelHashLayout(
+              /*rhs_size_estimation=*/std::nullopt, context->getSettingsRef()[Setting::parallel_hash_join_threshold])
         ? HashJoinBuildLayout::twoLevel(context->getSettingsRef()[Setting::max_threads])
         : HashJoinBuildLayout::oneBucket(1);
 

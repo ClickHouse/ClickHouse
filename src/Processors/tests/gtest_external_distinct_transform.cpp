@@ -218,6 +218,38 @@ protected:
 
 }
 
+TEST_F(ExternalDistinctTransformTest, SchedulerSpillsTailAfterEOF)
+{
+    withQueryThread([&]
+    {
+        ConnectedDistinct connected(tmp_data, /*limit_hint=*/ 0, /*threshold=*/ 0);
+        auto & transform = connected.transform;
+        auto * spillable = transform.getSpillables().front();
+        ASSERT_NO_FATAL_FAILURE(connected.hashChunk({1, 2}));
+
+        /// Only an explicit scheduler request can enter external mode with the threshold disabled.
+        ASSERT_GT(spillable->spill(1), 0);
+        ASSERT_EQ(transform.prepare(), IProcessor::Status::UpdatePipeline);
+        connected.attachRun();
+
+        ASSERT_EQ(transform.prepare(), IProcessor::Status::NeedData);
+        connected.upstream.push(makeChunk({2, 3, 4, 4}));
+        ASSERT_EQ(transform.prepare(), IProcessor::Status::Ready);
+        transform.work();
+        const auto resident_bytes = spillable->getMemoryStats().spillable_memory_bytes;
+        ASSERT_GT(resident_bytes, 0);
+
+        /// EOF moves the pending input into the tail before the next execution job can claim a spill.
+        connected.upstream.finish();
+        ASSERT_EQ(transform.prepare(), IProcessor::Status::Ready);
+        EXPECT_EQ(spillable->getMemoryStats().spillable_memory_bytes, resident_bytes);
+        ASSERT_GT(spillable->spill(resident_bytes), 0);
+        EXPECT_EQ(spillable->getMemoryStats().spillable_memory_bytes, 0);
+        ASSERT_EQ(transform.prepare(), IProcessor::Status::UpdatePipeline);
+        connected.attachRun();
+    });
+}
+
 TEST_F(ExternalDistinctTransformTest, SpillCompletionIsIndependentOfResultBackpressure)
 {
     withQueryThread([&]

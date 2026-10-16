@@ -10,6 +10,8 @@ O ClickHouse Cloud oferece suporte a fazer backups na sua própria conta do prov
 Para saber mais sobre como funcionam os backups do ClickHouse Cloud, incluindo backups &quot;completos&quot; e &quot;incrementais&quot;, consulte a documentação de [backups](/pt-BR/products/cloud/guides/backups/review-and-restore-backups). Observe que
 backups na sua própria conta de Cloud se comportam de forma diferente dos backups do Cloud no local em um aspecto importante: eles não podem usar cópia nativa (veja a observação abaixo).
 
+Exportar backups para sua própria conta normalmente não desativa os backups gerenciados pelo ClickHouse. Os backups gerenciados pelo ClickHouse não podem ser desativados no modelo de autoatendimento. Qualquer exceção requer aprovação do ClickHouse e alterações contratuais; entre em contato com o [suporte do ClickHouse](https://clickhouse.com/support/program) para discutir suas necessidades.
+
 Neste guia, mostramos exemplos de como fazer backups completos e backups incrementais na AWS, no GCP e no armazenamento de objetos do Azure, assim como restaurar a partir desses backups.
 
 <Note>
@@ -27,17 +29,13 @@ Neste guia, mostramos exemplos de como fazer backups completos e backups increme
   backups para o seu próprio bucket é mais lento e consome mais recursos do que os backups padrão do Cloud no local.
 </Warning>
 
-<div id="requirements">
-  ## Requisitos
-</div>
+## Requisitos {#requirements}
 
 Antes de executar um comando `BACKUP`, certifique-se de que seu usuário do ClickHouse tenha o privilégio `BACKUP`. O `default_role` no ClickHouse Cloud não inclui esse privilégio. Entre em contato com o [suporte do ClickHouse](https://clickhouse.com/support/program) para solicitá-lo antes de exportar backups.
 
 Você precisará dos seguintes detalhes para exportar/restaurar backups no bucket de armazenamento do seu próprio CSP.
 
-<div id="aws">
-  ### AWS
-</div>
+### AWS {#aws}
 
 1. endpoint do S3 da AWS, no formato:
 
@@ -62,17 +60,13 @@ Onde:
   Para usar a autenticação baseada em AWS Role, siga a [configuração](/pt-BR/products/cloud/guides/data-sources/accessing-s3-data-securely) de acesso seguro ao S3. Além disso, você precisará adicionar as permissões `s3:PutObject` e `s3:DeleteObject` à política do IAM descrita [aqui.](/pt-BR/products/cloud/guides/data-sources/accessing-s3-data-securely#option-2-manually-create-iam-role)
 </Note>
 
-<div id="azure">
-  ### Azure
-</div>
+### Azure {#azure}
 
 1. String de conexão da conta de armazenamento do Azure.
 2. Nome do contêiner do Azure na conta de armazenamento.
 3. Blob do Azure dentro do contêiner.
 
-<div id="google-cloud-storage-gcs">
-  ### Google Cloud Storage (GCS)
-</div>
+### Google Cloud Storage (GCS) {#google-cloud-storage-gcs}
 
 1. endpoint do GCS, no formato:
 
@@ -83,17 +77,11 @@ Onde:
 
 <hr />
 
-<div id="backup-restore">
-  ## Backup / Restauração
-</div>
+## Backup / Restauração {#backup-restore}
 
-<div id="backup--restore-to-aws-s3-bucket">
-  ## Backup / Restauração em bucket do S3 da AWS
-</div>
+## Backup / Restauração em bucket do S3 da AWS {#backup--restore-to-aws-s3-bucket}
 
-<div id="take-a-db-backup">
-  ### Fazer backup do banco de dados
-</div>
+### Fazer backup do banco de dados {#take-a-db-backup}
 
 **Backup completo**
 
@@ -117,9 +105,7 @@ TO S3('https://testchbackups.s3.amazonaws.com/backups/<uuid>', '<key id>', '<key
 SETTINGS base_backup = S3('https://testchbackups.s3.amazonaws.com/backups/<base-backup-uuid>', '<key id>', '<key secret>')
 ```
 
-<div id="restore-from-a-backup">
-  ### Restaurar a partir de um backup
-</div>
+### Restaurar a partir de um backup {#restore-from-a-backup}
 
 ```sql
 RESTORE DATABASE test_backups 
@@ -129,13 +115,9 @@ FROM S3('https://testchbackups.s3.amazonaws.com/backups/<uuid>', '<key id>', '<k
 
 Veja: [Como configurar o BACKUP/RESTORE para usar um endpoint do S3](/pt-BR/concepts/features/backup-restore/s3-endpoint) para mais detalhes.
 
-<div id="backup--restore-to-azure-blob-storage">
-  ## Backup / Restauração no Azure Blob Storage
-</div>
+## Backup / Restauração no Azure Blob Storage {#backup--restore-to-azure-blob-storage}
 
-<div id="take-a-db-backup">
-  ### Fazer backup do banco de dados
-</div>
+### Fazer backup do banco de dados {#take-a-db-backup-1}
 
 **Backup completo**
 
@@ -154,9 +136,7 @@ TO AzureBlobStorage('<AzureBlobStorage endpoint connection string>', '<container
 SETTINGS base_backup = AzureBlobStorage('<AzureBlobStorage endpoint connection string>', '<container>', '<blob>/<uuid>')
 ```
 
-<div id="restore-from-a-backup">
-  ### Restaurar a partir de um backup
-</div>
+### Restaurar a partir de um backup {#restore-from-a-backup-1}
 
 ```sql
 RESTORE DATABASE test_backups 
@@ -166,13 +146,9 @@ FROM AzureBlobStorage('<AzureBlobStorage endpoint connection string>', '<contain
 
 Consulte: [Configurando o BACKUP/RESTORE para usar um endpoint do AzureBlobStorage](/pt-BR/concepts/features/backup-restore/azure-blob-storage#configuring-backuprestore-to-use-an-azureblobstorage-endpoint) para mais detalhes.
 
-<div id="backup--restore-to-google-cloud-storage-gcs">
-  ## Backup / restauração no Google Cloud Storage (GCS)
-</div>
+## Backup / restauração no Google Cloud Storage (GCS) {#backup--restore-to-google-cloud-storage-gcs}
 
-<div id="take-a-db-backup">
-  ### Fazer backup do banco de dados
-</div>
+### Fazer backup do banco de dados {#take-a-db-backup-2}
 
 **Backup completo**
 
@@ -191,9 +167,7 @@ TO S3('https://storage.googleapis.com/test_gcs_backups/<uuid>/my_incremental', '
 SETTINGS base_backup = S3('https://storage.googleapis.com/test_gcs_backups/<uuid>', 'key', 'secret')
 ```
 
-<div id="restore-from-a-backup">
-  ### Restaurar a partir de um backup
-</div>
+### Restaurar a partir de um backup {#restore-from-a-backup-2}
 
 ```sql
 RESTORE DATABASE test_backups 
