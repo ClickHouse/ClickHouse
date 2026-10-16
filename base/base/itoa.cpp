@@ -162,8 +162,8 @@ char * itoa(Int16 i, char * p)
 
 namespace
 {
-/// Kendall Willets' digit count, as in {fmt}: indexed by the leading zeros of `n` as a 64-bit value, 32 to 64 (for 0),
-/// `(n + entry) >> 32` is the digit count of that bit length, plus one if `n` reaches the next power of ten.
+/// Kendall Willets' digit count, as in {fmt}: indexed by the leading zeros of `n`, 0 to 32 (for 0), `(n + entry) >> 32`
+/// is the digit count of that bit length, plus one if `n` reaches the next power of ten.
 /// Together with `reading_order` in one object, so that one register holds the address of both.
 struct UInt32Tables
 {
@@ -174,14 +174,14 @@ struct UInt32Tables
 constexpr std::array<UInt64, 33> makeDigitCountIncrements()
 {
     std::array<UInt64, 33> table{};
-    for (UInt32 leading_zeros = 32; leading_zeros <= 64; ++leading_zeros)
+    for (UInt32 leading_zeros = 0; leading_zeros <= 32; ++leading_zeros)
     {
-        UInt32 bit = leading_zeros == 64 ? 0 : 63 - leading_zeros;
+        UInt32 bit = leading_zeros == 32 ? 0 : 31 - leading_zeros;
         UInt64 digits = 1;
         UInt64 power = 10;
         for (; power <= (UInt64(1) << bit); power *= 10)
             ++digits;
-        table[leading_zeros - 32] = (digits << 32) + (power < (UInt64(1) << 32) ? (UInt64(1) << 32) - power : 0);
+        table[leading_zeros] = (digits << 32) + (power < (UInt64(1) << 32) ? (UInt64(1) << 32) - power : 0);
     }
     return table;
 }
@@ -217,7 +217,7 @@ ALWAYS_INLINE inline UInt8x16 shuffleBytes(UInt8x16 bytes, UInt8x16 order)
 /// and one 16-byte store writes them.
 ALWAYS_INLINE inline char * writeUInt32Text(UInt32 value, char * p)
 {
-    UInt32 length = static_cast<UInt32>((value + uint32_tables.digit_count_increments[std::countl_zero(UInt64(value)) - 32]) >> 32);
+    UInt32 length = static_cast<UInt32>((value + uint32_tables.digit_count_increments[std::countl_zero(value)]) >> 32);
 
     using UInt64x2 = UInt64 __attribute__((vector_size(16)));
     using UInt32x4 = UInt32 __attribute__((vector_size(16)));
@@ -228,7 +228,13 @@ ALWAYS_INLINE inline char * writeUInt32Text(UInt32 value, char * p)
     /// next_four = n / 100 - 10000 * (n / 10^6), first_four = n / 10^6, last_two = n - 100 * (n / 100).
     /// On big-endian, the high half of a 64-bit lane is the first 32-bit lane.
     constexpr bool little_endian = std::endian::native == std::endian::little;
-    UInt64x2 wide = {value, value};
+    /// The zeros are explicit, so that the multiplication is `vpmuludq` (32 x 32 to 64 bits) also where this is inlined
+    /// into code that already knows `value` fits in 32 bits, and would otherwise lose that in the vector.
+    UInt64x2 wide;
+    if constexpr (little_endian)
+        wide = std::bit_cast<UInt64x2>(UInt32x4{value, 0, value, 0});
+    else
+        wide = std::bit_cast<UInt64x2>(UInt32x4{0, value, 0, value});
     UInt32x4 quotients = std::bit_cast<UInt32x4>((wide * UInt64x2{0x51eb851f, 0x431bde83}) >> UInt64x2{37, 50});
     UInt32x4 terms;
     UInt32x4 subtracted;
@@ -279,17 +285,11 @@ char * itoa(Int32 i, char * p)
 
 /// ----------------------------------------------------------------------------------------------------
 /// Shared by several sizes
-/// Digit pair tables, the jeaiii algorithm (32 and 64 bits), fixed blocks of eight digits and the sign.
+/// The digit pair table, fixed blocks of eight digits and the sign.
 /// ----------------------------------------------------------------------------------------------------
 
 namespace
 {
-ALWAYS_INLINE inline char * outOneDigit(char * p, uint8_t value)
-{
-    *p = '0' + value;
-    return p + 1;
-}
-
 // Using a lookup table to convert binary numbers from 0 to 99
 // into ascii characters as described by Andrei Alexandrescu in
 // https://www.facebook.com/notes/facebook-engineering/three-optimization-tips-for-c/10151361643253920/
@@ -310,267 +310,16 @@ ALWAYS_INLINE inline char * outTwoDigits(char * p, uint8_t value)
     return p;
 }
 
-namespace jeaiii
-{
-/*
-    MIT License
-
-    Copyright (c) 2022 James Edward Anhalt III - https://github.com/jeaiii/itoa
-
-    Permission is hereby granted, free of charge, to any person obtaining a copy
-    of this software and associated documentation files (the "Software"), to deal
-    in the Software without restriction, including without limitation the rights
-    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-    copies of the Software, and to permit persons to whom the Software is
-    furnished to do so, subject to the following conditions:
-
-    The above copyright notice and this permission notice shall be included in all
-    copies or substantial portions of the Software.
-
-    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-    SOFTWARE.
-*/
-struct pair
-{
-    char dd[2];
-    constexpr pair(char c) : dd{c, '\0'} { } /// NOLINT(google-explicit-constructor)
-    constexpr pair(int n) : dd{"0123456789"[n / 10], "0123456789"[n % 10]} { } /// NOLINT(google-explicit-constructor)
-};
-
-constexpr struct
-{
-    pair dd[100]{
-        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, //
-        10, 11, 12, 13, 14, 15, 16, 17, 18, 19, //
-        20, 21, 22, 23, 24, 25, 26, 27, 28, 29, //
-        30, 31, 32, 33, 34, 35, 36, 37, 38, 39, //
-        40, 41, 42, 43, 44, 45, 46, 47, 48, 49, //
-        50, 51, 52, 53, 54, 55, 56, 57, 58, 59, //
-        60, 61, 62, 63, 64, 65, 66, 67, 68, 69, //
-        70, 71, 72, 73, 74, 75, 76, 77, 78, 79, //
-        80, 81, 82, 83, 84, 85, 86, 87, 88, 89, //
-        90, 91, 92, 93, 94, 95, 96, 97, 98, 99, //
-    };
-    pair fd[100]{
-        '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', //
-        10,  11,  12,  13,  14,  15,  16,  17,  18,  19, //
-        20,  21,  22,  23,  24,  25,  26,  27,  28,  29, //
-        30,  31,  32,  33,  34,  35,  36,  37,  38,  39, //
-        40,  41,  42,  43,  44,  45,  46,  47,  48,  49, //
-        50,  51,  52,  53,  54,  55,  56,  57,  58,  59, //
-        60,  61,  62,  63,  64,  65,  66,  67,  68,  69, //
-        70,  71,  72,  73,  74,  75,  76,  77,  78,  79, //
-        80,  81,  82,  83,  84,  85,  86,  87,  88,  89, //
-        90,  91,  92,  93,  94,  95,  96,  97,  98,  99, //
-    };
-} digits;
-
-constexpr UInt64 mask24 = (UInt64(1) << 24) - 1;
-constexpr UInt64 mask32 = (UInt64(1) << 32) - 1;
-constexpr UInt64 mask57 = (UInt64(1) << 57) - 1;
-
-template <bool, class, class F>
-struct _cond
-{
-    using type = F;
-};
-template <class T, class F>
-struct _cond<true, T, F>
-{
-    using type = T;
-};
-template <bool B, class T, class F>
-using cond = typename _cond<B, T, F>::type;
-
-template <class T>
-inline ALWAYS_INLINE char * to_text_from_integer(char * b, T i)
-{
-    constexpr auto q = sizeof(T);
-    static_assert(q >= 4, "8-bit and 16-bit integers have their own code");
-    using U = cond<q <= sizeof(UInt32), UInt32, UInt64>;
-
-    // convert bool to int before test with unary + to silence warning if T happens to be bool
-    U const n = +i < 0 ? *b++ = '-', U(0) - U(i) : U(i);
-
-    if (n < U(1e2))
-    {
-        /// This is changed from the original jeaiii implementation
-        /// For small numbers the extra branch to call outOneDigit() is worth it as it saves some instructions
-        /// and a memory access (no need to read digits.fd[n])
-        /// This is not true for pure random numbers, but that's not the common use case of a database
-        /// Original jeaii code
-        //      *reinterpret_cast<pair *>(b) = digits.fd[n];
-        //      return n < 10 ? b + 1 : b + 2;
-        return n < 10 ? outOneDigit(b, static_cast<uint8_t>(n)) : outTwoDigits(b, static_cast<uint8_t>(n));
-    }
-    if (n < UInt32(1e6))
-    {
-        if (n < U(1e4))
-        {
-            auto f0 = UInt32(10 * (1 << 24) / 1e3 + 1) * n;
-            *reinterpret_cast<pair *>(b) = digits.fd[f0 >> 24];
-            b -= n < U(1e3);
-            auto f2 = (f0 & mask24) * 100;
-            *reinterpret_cast<pair *>(b + 2) = digits.dd[f2 >> 24];
-            return b + 4;
-        }
-        auto f0 = UInt64(10 * (1ull << 32ull) / 1e5 + 1) * n;
-        *reinterpret_cast<pair *>(b) = digits.fd[f0 >> 32];
-        b -= n < U(1e5);
-        auto f2 = (f0 & mask32) * 100;
-        *reinterpret_cast<pair *>(b + 2) = digits.dd[f2 >> 32];
-        auto f4 = (f2 & mask32) * 100;
-        *reinterpret_cast<pair *>(b + 4) = digits.dd[f4 >> 32];
-        return b + 6;
-    }
-    if (sizeof(U) == 4 || n < UInt64(1ull << 32ull))
-    {
-        if (n < U(1e8))
-        {
-            auto f0 = UInt64(10 * (1ull << 48ull) / 1e7 + 1) * n >> 16;
-            *reinterpret_cast<pair *>(b) = digits.fd[f0 >> 32];
-            b -= n < U(1e7);
-            auto f2 = (f0 & mask32) * 100;
-            *reinterpret_cast<pair *>(b + 2) = digits.dd[f2 >> 32];
-            auto f4 = (f2 & mask32) * 100;
-            *reinterpret_cast<pair *>(b + 4) = digits.dd[f4 >> 32];
-            auto f6 = (f4 & mask32) * 100;
-            *reinterpret_cast<pair *>(b + 6) = digits.dd[f6 >> 32];
-            return b + 8;
-        }
-        auto f0 = UInt64(10 * (1ull << 57ull) / 1e9 + 1) * n;
-        *reinterpret_cast<pair *>(b) = digits.fd[f0 >> 57];
-        b -= n < UInt32(1e9);
-        auto f2 = (f0 & mask57) * 100;
-        *reinterpret_cast<pair *>(b + 2) = digits.dd[f2 >> 57];
-        auto f4 = (f2 & mask57) * 100;
-        *reinterpret_cast<pair *>(b + 4) = digits.dd[f4 >> 57];
-        auto f6 = (f4 & mask57) * 100;
-        *reinterpret_cast<pair *>(b + 6) = digits.dd[f6 >> 57];
-        auto f8 = (f6 & mask57) * 100;
-        *reinterpret_cast<pair *>(b + 8) = digits.dd[f8 >> 57];
-        return b + 10;
-    }
-
-    // if we get here U must be UInt64 but some compilers don't know that, so reassign n to a UInt64 to avoid warnings
-    UInt32 z = n % UInt32(1e8);
-    UInt64 u = n / UInt32(1e8);
-
-    if (u < UInt32(1e2))
-    {
-        // u can't be 1 digit (if u < 10 it would have been handled above as a 9 digit 32bit number)
-        *reinterpret_cast<pair *>(b) = digits.dd[u];
-        b += 2;
-    }
-    else if (u < UInt32(1e6))
-    {
-        if (u < UInt32(1e4))
-        {
-            auto f0 = UInt32(10 * (1 << 24) / 1e3 + 1) * u;
-            *reinterpret_cast<pair *>(b) = digits.fd[f0 >> 24];
-            b -= u < UInt32(1e3);
-            auto f2 = (f0 & mask24) * 100;
-            *reinterpret_cast<pair *>(b + 2) = digits.dd[f2 >> 24];
-            b += 4;
-        }
-        else
-        {
-            auto f0 = UInt64(10 * (1ull << 32ull) / 1e5 + 1) * u;
-            *reinterpret_cast<pair *>(b) = digits.fd[f0 >> 32];
-            b -= u < UInt32(1e5);
-            auto f2 = (f0 & mask32) * 100;
-            *reinterpret_cast<pair *>(b + 2) = digits.dd[f2 >> 32];
-            auto f4 = (f2 & mask32) * 100;
-            *reinterpret_cast<pair *>(b + 4) = digits.dd[f4 >> 32];
-            b += 6;
-        }
-    }
-    else if (u < UInt32(1e8))
-    {
-        auto f0 = UInt64(10 * (1ull << 48ull) / 1e7 + 1) * u >> 16;
-        *reinterpret_cast<pair *>(b) = digits.fd[f0 >> 32];
-        b -= u < UInt32(1e7);
-        auto f2 = (f0 & mask32) * 100;
-        *reinterpret_cast<pair *>(b + 2) = digits.dd[f2 >> 32];
-        auto f4 = (f2 & mask32) * 100;
-        *reinterpret_cast<pair *>(b + 4) = digits.dd[f4 >> 32];
-        auto f6 = (f4 & mask32) * 100;
-        *reinterpret_cast<pair *>(b + 6) = digits.dd[f6 >> 32];
-        b += 8;
-    }
-    else if (u < UInt64(1ull << 32ull))
-    {
-        auto f0 = UInt64(10 * (1ull << 57ull) / 1e9 + 1) * u;
-        *reinterpret_cast<pair *>(b) = digits.fd[f0 >> 57];
-        b -= u < UInt32(1e9);
-        auto f2 = (f0 & mask57) * 100;
-        *reinterpret_cast<pair *>(b + 2) = digits.dd[f2 >> 57];
-        auto f4 = (f2 & mask57) * 100;
-        *reinterpret_cast<pair *>(b + 4) = digits.dd[f4 >> 57];
-        auto f6 = (f4 & mask57) * 100;
-        *reinterpret_cast<pair *>(b + 6) = digits.dd[f6 >> 57];
-        auto f8 = (f6 & mask57) * 100;
-        *reinterpret_cast<pair *>(b + 8) = digits.dd[f8 >> 57];
-        b += 10;
-    }
-    else
-    {
-        UInt32 y = u % UInt32(1e8);
-        u /= UInt32(1e8);
-
-        // u is 2, 3, or 4 digits (if u < 10 it would have been handled above)
-        if (u < UInt32(1e2))
-        {
-            *reinterpret_cast<pair *>(b) = digits.dd[u];
-            b += 2;
-        }
-        else
-        {
-            auto f0 = UInt32(10 * (1 << 24) / 1e3 + 1) * u;
-            *reinterpret_cast<pair *>(b) = digits.fd[f0 >> 24];
-            b -= u < UInt32(1e3);
-            auto f2 = (f0 & mask24) * 100;
-            *reinterpret_cast<pair *>(b + 2) = digits.dd[f2 >> 24];
-            b += 4;
-        }
-        // do 8 digits
-        auto f0 = (UInt64((1ull << 48ull) / 1e6 + 1) * y >> 16) + 1;
-        *reinterpret_cast<pair *>(b) = digits.dd[f0 >> 32];
-        auto f2 = (f0 & mask32) * 100;
-        *reinterpret_cast<pair *>(b + 2) = digits.dd[f2 >> 32];
-        auto f4 = (f2 & mask32) * 100;
-        *reinterpret_cast<pair *>(b + 4) = digits.dd[f4 >> 32];
-        auto f6 = (f4 & mask32) * 100;
-        *reinterpret_cast<pair *>(b + 6) = digits.dd[f6 >> 32];
-        b += 8;
-    }
-    // do 8 digits
-    auto f0 = (UInt64((1ull << 48ull) / 1e6 + 1) * z >> 16) + 1;
-    *reinterpret_cast<pair *>(b) = digits.dd[f0 >> 32];
-    auto f2 = (f0 & mask32) * 100;
-    *reinterpret_cast<pair *>(b + 2) = digits.dd[f2 >> 32];
-    auto f4 = (f2 & mask32) * 100;
-    *reinterpret_cast<pair *>(b + 4) = digits.dd[f4 >> 32];
-    auto f6 = (f4 & mask32) * 100;
-    *reinterpret_cast<pair *>(b + 6) = digits.dd[f6 >> 32];
-    return b + 8;
-}
-}
-
 ALWAYS_INLINE inline void writeEightFixedDigits(char * p, uint32_t z)
 {
+    constexpr UInt64 mask32 = (UInt64(1) << 32) - 1;
     auto f0 = (UInt64((1ull << 48ull) / 1e6 + 1) * z >> 16) + 1;
     outTwoDigits(p, static_cast<uint8_t>(f0 >> 32));
-    auto f2 = (f0 & jeaiii::mask32) * 100;
+    auto f2 = (f0 & mask32) * 100;
     outTwoDigits(p + 2, static_cast<uint8_t>(f2 >> 32));
-    auto f4 = (f2 & jeaiii::mask32) * 100;
+    auto f4 = (f2 & mask32) * 100;
     outTwoDigits(p + 4, static_cast<uint8_t>(f4 >> 32));
-    auto f6 = (f4 & jeaiii::mask32) * 100;
+    auto f6 = (f4 & mask32) * 100;
     outTwoDigits(p + 6, static_cast<uint8_t>(f6 >> 32));
 }
 
@@ -627,35 +376,6 @@ ALWAYS_INLINE inline char * shiftedPointer(char * p, Int32 offset)
     return reinterpret_cast<char *>(reinterpret_cast<uintptr_t>(p) + static_cast<uintptr_t>(static_cast<intptr_t>(offset)));
 }
 
-ALWAYS_INLINE inline UInt32 digitCount(UInt64 x)
-{
-    static constexpr uint8_t digit_count[65]
-        = {19, 19, 19, 19, 18, 18, 18, 17, 17, 17, 16, 16, 16, 16, 15, 15, 15, 14, 14, 14, 13, 13,
-           13, 13, 12, 12, 12, 11, 11, 11, 10, 10, 10, 10, 9,  9,  9,  8,  8,  8,  7,  7,  7,  7,
-           6,  6,  6,  5,  5,  5,  4,  4,  4,  4,  3,  3,  3,  2,  2,  2,  1,  1,  1,  1,  1};
-    static constexpr UInt64 lower_bound[65]
-        = {9999999999999999999ULL, 9999999999999999999ULL, 9999999999999999999ULL, 9999999999999999999ULL,
-           999999999999999999ULL,  999999999999999999ULL,  999999999999999999ULL,  99999999999999999ULL,
-           99999999999999999ULL,   99999999999999999ULL,   9999999999999999ULL,    9999999999999999ULL,
-           9999999999999999ULL,    9999999999999999ULL,    999999999999999ULL,     999999999999999ULL,
-           999999999999999ULL,     99999999999999ULL,      99999999999999ULL,      99999999999999ULL,
-           9999999999999ULL,       9999999999999ULL,       9999999999999ULL,       9999999999999ULL,
-           999999999999ULL,        999999999999ULL,        999999999999ULL,        99999999999ULL,
-           99999999999ULL,         99999999999ULL,         9999999999ULL,          9999999999ULL,
-           9999999999ULL,          9999999999ULL,          999999999ULL,           999999999ULL,
-           999999999ULL,           99999999ULL,            99999999ULL,            99999999ULL,
-           9999999ULL,             9999999ULL,             9999999ULL,             9999999ULL,
-           999999ULL,              999999ULL,              999999ULL,              99999ULL,
-           99999ULL,               99999ULL,               9999ULL,                9999ULL,
-           9999ULL,                9999ULL,                999ULL,                 999ULL,
-           999ULL,                 99ULL,                  99ULL,                  99ULL,
-           9ULL,                   9ULL,                   9ULL,                   9ULL,
-           0ULL};
-
-    int leading_zeros = std::countl_zero(x);
-    return static_cast<UInt32>(x > lower_bound[leading_zeros]) + digit_count[leading_zeros];
-}
-
 ITOA_IFMA_TARGET ALWAYS_INLINE inline __m512i digitsOfEight(UInt64 n)
 {
     constexpr UInt64 two_to_52 = 1ULL << 52;
@@ -705,38 +425,6 @@ ITOA_IFMA_TARGET ALWAYS_INLINE inline void storeDigitsOfEight(char * p, UInt32 c
 #else
     _mm512_mask_cvtusepi64_storeu_epi8(destination, static_cast<__mmask8>(0xff00 >> count), digits);
 #endif
-}
-
-ITOA_IFMA_TARGET char * toChars(char * p, UInt64 value)
-{
-    if (value < 100000000ULL)
-    {
-        const __m512i digits_of_eight = digitsOfEight(value);
-        const UInt32 n = digitCount(value);
-        storeDigitsOfEight(p, n, digits_of_eight);
-        return p + n;
-    }
-
-    if (unlikely(value >= 10000000000000000ULL))
-    {
-        const UInt32 n = digitCount(value);
-        const UInt64 quotient = value / 10000;
-        const UInt32 quotient_digits = n - 4;
-        _mm_mask_storeu_epi8(
-            shiftedPointer(p, static_cast<Int32>(quotient_digits) - 16),
-            static_cast<__mmask16>(0xffffu << (16 - quotient_digits)),
-            digitsOfSixteen(quotient));
-        auto remainder = static_cast<uint32_t>(value - quotient * 10000);
-        outTwoDigits(p + quotient_digits, static_cast<uint8_t>(remainder / 100));
-        outTwoDigits(p + quotient_digits + 2, static_cast<uint8_t>(remainder % 100));
-        return p + n;
-    }
-
-    const __m128i digits_of_sixteen = digitsOfSixteen(value);
-    const UInt32 n = digitCount(value);
-    _mm_mask_storeu_epi8(
-        shiftedPointer(p, static_cast<Int32>(n) - 16), static_cast<__mmask16>(0xffffu << (16 - n)), digits_of_sixteen);
-    return p + n;
 }
 
 ITOA_IFMA_TARGET char * fixedDigits(char * p, UInt64 value, UInt32 width)
@@ -813,13 +501,130 @@ bool has_avx512_ifma = detectAVX512IFMA();
 
 #endif
 
+/// Together in one object, so that one register holds the address of all of them. C arrays, not `std::array`: an
+/// index loaded from a table cannot be proven in range, and the libc++ hardening would check it on every call.
+struct UInt64Tables
+{
+    /// fmt's digit count (https://github.com/fmtlib/fmt): an estimate from the leading zeros, then one less if `n` is
+    /// below the power of ten of that estimate.
+    uint8_t estimated_length[65];
+    UInt64 length_threshold[21];
+    uint8_t reading_order[32];
+    /// 16 bytes from offset `20 - length` put the first 4 digits in reading order without the leading zeros.
+    uint8_t top_order[32];
+    /// By length: the digits of the first 4 written, and where the shuffle of the other 16 starts in `reading_order`.
+    uint8_t top_length[21];
+    uint8_t order_offset[21];
+};
+
+constexpr UInt64Tables uint64_tables = []
+{
+    UInt64Tables tables{};
+    for (UInt32 leading_zeros = 0; leading_zeros <= 64; ++leading_zeros)
+    {
+        /// The digits of the largest value with this many leading zeros.
+        UInt64 largest = leading_zeros == 64 ? 0 : ~UInt64(0) >> leading_zeros;
+        uint8_t length = 1;
+        for (UInt64 rest = largest; rest >= 10; rest /= 10)
+            ++length;
+        tables.estimated_length[leading_zeros] = length;
+    }
+    UInt64 power = 1;
+    for (UInt32 length = 2; length <= 20; ++length, power *= 10)
+        tables.length_threshold[length] = power * 10;
+    for (uint8_t length = 0; length <= 20; ++length)
+    {
+        tables.top_length[length] = length > 16 ? length - 16 : 0;
+        tables.order_offset[length] = length > 16 ? 0 : 16 - length;
+    }
+    /// The 16 digits come out of `writeUInt64Text` as the 4-digit groups 2, 4, 3, 5 in the 32-bit lanes, reversed in
+    /// each lane on little-endian. 16 bytes from offset `k` put them in reading order without the first `k`.
+    constexpr uint8_t group_lane[4] = {0, 2, 1, 3};
+    for (uint8_t i = 0; i < 16; ++i)
+    {
+        if constexpr (std::endian::native == std::endian::little)
+            tables.reading_order[i] = 4 * group_lane[i / 4] + 3 - i % 4;
+        else
+            tables.reading_order[i] = 4 * group_lane[i / 4] + i % 4;
+    }
+    /// The first 4 digits are in the first 32-bit lane, the first digit in the highest byte. Only the first
+    /// `length - 16` bytes of the shuffle are kept, the others are any index in range.
+    for (uint8_t i = 0; i < 32; ++i)
+    {
+        if constexpr (std::endian::native == std::endian::little)
+            tables.top_order[i] = (3 - i) & 15;
+        else
+            tables.top_order[i] = i & 15;
+    }
+    return tables;
+}();
+
+/// As for 32 bits: `n / 10^16`, at most 1844, is the first 4 digits, and the other 16 are four groups of 4 in the
+/// 32-bit lanes of one vector, split into pairs and digits the same way. The first 4 are written with one 4-byte store,
+/// then the 16 with one 16-byte store over the part of those 4 bytes that is not digits.
+NO_INLINE char * writeLargeUInt64Text(UInt64 value, char * p)
+{
+    UInt32 estimated = uint64_tables.estimated_length[std::countl_zero(value)];
+    UInt32 length = estimated - (value < uint64_tables.length_threshold[estimated]);
+
+    using UInt64x2 = UInt64 __attribute__((vector_size(16)));
+    using UInt32x4 = UInt32 __attribute__((vector_size(16)));
+    using UInt32x8 = UInt32 __attribute__((vector_size(32)));
+
+    /// As zmij does: n * ceil(2^90 / 10^8) has n / 10^8 above bit 90, and the remainder as a fraction of 10^8 in the 32
+    /// bits below, rounded up. The same for that quotient gives the first 4 digits, n / 10^16, and digits 5 to 12.
+    constexpr UInt64 reciprocal = 12379400392853802749ULL;
+    unsigned __int128 low_product = static_cast<unsigned __int128>(value) * reciprocal;
+    UInt64 first_twelve = static_cast<UInt64>(low_product >> 90);
+    /// `first_twelve` is below 2^38, so it can be multiplied by 2^6 first: then n / 10^16 is in the high 32 bits of the
+    /// high 64, and the fraction in the low 32, with no shift across the two halves.
+    UInt64 high_half = static_cast<UInt64>((static_cast<unsigned __int128>(first_twelve << 6) * reciprocal) >> 64);
+    UInt32 top = static_cast<UInt32>(high_half >> 32);
+
+    /// Multiplying a fraction by 10^4 puts the next 4 digits in the high 32 bits and leaves the rest as a fraction in
+    /// the low 32: twice for each fraction gives the groups 2 to 5.
+    UInt64x2 fractions = {static_cast<UInt32>(high_half) + UInt64(1), static_cast<UInt32>(low_product >> 58) + UInt64(1)};
+    UInt64x2 first = fractions * 10000;
+    UInt64x2 second = (first & 0xFFFFFFFF) * 10000;
+    UInt32x4 groups;
+    if constexpr (std::endian::native == std::endian::little)
+        groups = __builtin_shufflevector(std::bit_cast<UInt32x4>(first), std::bit_cast<UInt32x4>(second), 1, 3, 5, 7);
+    else
+        groups = __builtin_shufflevector(std::bit_cast<UInt32x4>(first), std::bit_cast<UInt32x4>(second), 0, 2, 4, 6);
+
+    /// The first 4 digits in a fifth lane, so that the same vector operations produce them.
+    using UInt16x16 = UInt16 __attribute__((vector_size(32)));
+    using UInt32x16 = UInt32 __attribute__((vector_size(64)));
+    using UInt8x32 = uint8_t __attribute__((vector_size(32)));
+    UInt32x8 all_groups = __builtin_shufflevector(groups, UInt32x4{top, 0, 0, 0}, 0, 1, 2, 3, 4, 5, 6, 7);
+    UInt32x8 pairs = all_groups + ((all_groups * 5243) >> 19) * (65536 - 100);
+    UInt16x16 pair_lanes = std::bit_cast<UInt16x16>(pairs);
+    UInt16x16 tens = __builtin_convertvector((__builtin_convertvector(pair_lanes, UInt32x16) * 6554) >> 16, UInt16x16);
+    UInt8x32 all_text = std::bit_cast<UInt8x32>(pair_lanes + 0x3030 + tens * UInt16(256 - 10));
+    UInt8x16 text = __builtin_shufflevector(all_text, all_text, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15);
+    UInt8x16 top_text = __builtin_shufflevector(all_text, all_text, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31);
+
+    UInt8x16 top_order;
+    memcpy(&top_order, uint64_tables.top_order + 20 - length, 16);
+    top_text = shuffleBytes(top_text, top_order);
+    /// Stored as a 32-bit lane: a vector of 4 bytes is not a native type on AArch64, and is widened to store it.
+    unalignedStore<UInt32>(p, std::bit_cast<UInt32x4>(top_text)[0]);
+    UInt32 top_length = uint64_tables.top_length[length];
+
+    UInt8x16 order;
+    memcpy(&order, uint64_tables.reading_order + uint64_tables.order_offset[length], 16);
+    text = shuffleBytes(text, order);
+    memcpy(p + top_length, &text, 16);
+    return p + length;
+}
+
+/// Most values are small, and the 32-bit code is faster for them. The rest is out of line, so that the callers of this
+/// function do not get both bodies.
 ALWAYS_INLINE inline char * writeUInt64Text(UInt64 value, char * p)
 {
-#if defined(__x86_64__)
-    if (has_avx512_ifma)
-        return avx512ifma::toChars(p, value);
-#endif
-    return jeaiii::to_text_from_integer(p, value);
+    if (likely(value <= std::numeric_limits<UInt32>::max()))
+        return writeUInt32Text(static_cast<UInt32>(value), p);
+    return writeLargeUInt64Text(value, p);
 }
 }
 
@@ -830,9 +635,10 @@ char * itoa(UInt64 i, char * p)
 
 char * itoa(Int64 i, char * p)
 {
-    if (i < 0)
-        return writeUInt64Text(0 - static_cast<UInt64>(i), writeLeadingMinus(p));
-    return writeUInt64Text(static_cast<UInt64>(i), p);
+    UInt64 sign = static_cast<UInt64>(i >> 63);
+    *p = '-';
+    /// As for `Int32`.
+    return writeUInt64Text((static_cast<UInt64>(i) ^ sign) - sign, p - static_cast<Int64>(sign));
 }
 
 /// ----------------------------------------------------------------------------------------------------
