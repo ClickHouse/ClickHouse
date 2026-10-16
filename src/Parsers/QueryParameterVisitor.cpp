@@ -47,9 +47,8 @@ private:
         query_parameters[query_parameter.name] = query_parameter.type;
     }
 
-    /// A setting value can be a query parameter, e.g. `SETTINGS max_threads = {threads:UInt64}`, or contain
-    /// one, e.g. `SETTINGS disk = disk(path = {p:String})`. The parser stores such a value as an AST
-    /// wrapped into a Field (see ParserSetQuery), so it is not reachable via ast->children.
+    /// A setting value can be or contain a query parameter, e.g. `max_threads = {t:UInt64}` or `disk = disk(path = {p:String})`.
+    /// The parser stores it as an AST wrapped into a Field (see ParserSetQuery), so it is not reachable via ast->children.
     void visitSetQuery(const ASTSetQuery & set_query)
     {
         for (const auto & change : set_query.changes)
