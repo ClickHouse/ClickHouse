@@ -2304,9 +2304,13 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
         if (nearest_query_scope->using_joins_count == 0)
             return;
 
-        for (auto & [matched_column_node, _] : result_matched_column_nodes_with_names)
+        for (auto & [matched_column_node, matched_column_name] : result_matched_column_nodes_with_names)
         {
             auto & matched_column_node_typed = matched_column_node->as<ColumnNode &>();
+
+            /// A disambiguated duplicate's generated name cannot be referenced, so it is never a USING key.
+            if (matched_column_node_typed.getColumnName() != matched_column_name)
+                continue;
 
             Identifier explicit_identifier = matched_qualified_identifier;
             explicit_identifier.push_back(matched_column_node_typed.getColumnName());

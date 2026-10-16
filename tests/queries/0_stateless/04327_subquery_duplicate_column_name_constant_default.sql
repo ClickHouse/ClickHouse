@@ -189,6 +189,11 @@ SELECT * FROM (SELECT materialize(1) AS q, * FROM (SELECT materialize(2) AS q)) 
 SELECT * FROM (SELECT materialize(1) AS q, * FROM (SELECT materialize(2) AS q)) AS l JOIN (SELECT materialize(1) AS q) AS rr USING (q);
 SELECT * FROM (SELECT materialize(1) AS q, * FROM (SELECT materialize(2) AS q)) AS l JOIN (SELECT arrayJoin([4, 5]) AS q_1) AS x ON 1 NATURAL JOIN (SELECT materialize(4) AS q_1) AS rr ORDER BY ALL;
 SELECT * FROM (SELECT materialize(1) AS q, * FROM (SELECT materialize(2) AS q)) AS l JOIN (SELECT arrayJoin([4, 5]) AS q_1) AS x ON 1 JOIN (SELECT materialize(4) AS q_1) AS rr USING (q_1) ORDER BY ALL;
+-- A qualified matcher over a `USING` join expands both duplicates.
+SELECT s.* FROM (SELECT materialize(7) AS q, * FROM (SELECT materialize(0) AS q, 1 AS k)) AS s INNER JOIN (SELECT 1 AS k) AS t USING (k);
+SELECT s.COLUMNS('q') FROM (SELECT materialize(7) AS q, * FROM (SELECT materialize(0) AS q, 1 AS k)) AS s INNER JOIN (SELECT 1 AS k) AS t USING (k);
+-- Only the key takes the `USING` supertype; its duplicate keeps its own value and type.
+SELECT tuple(s.*), toTypeName(tuple(s.*)) FROM (SELECT materialize(toUInt8(1)) AS q, * FROM (SELECT materialize(toUInt8(2)) AS q)) AS s INNER JOIN (SELECT toUInt64(1) AS q) AS t USING (q);
 
 -- Column qualification is decided on the display name, so a disambiguated duplicate gets the same
 -- label it has without disambiguation.
