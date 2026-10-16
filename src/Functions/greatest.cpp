@@ -1,7 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
 #include <Core/AccurateComparison.h>
-#include <Common/NaNUtils.h>
 #include <Functions/LeastGreatestGeneric.h>
 
 
@@ -20,8 +19,8 @@ struct GreatestBaseImpl
     {
         const auto x = static_cast<Result>(a);
         const auto y = static_cast<Result>(b);
-        /// NaN loses against any number, as in the variadic `greatest`.
-        return (x > y || isNaN(y)) ? x : y;
+        /// Unlike the variadic form, a tie returns the right operand.
+        return candidateReplacesBest<LeastGreatest::Greatest>(y, x) ? x : y;
     }
 
 #if USE_EMBEDDED_COMPILER

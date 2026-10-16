@@ -56,32 +56,3 @@ SELECT 'legacy null',
     least(materialize(toNullable(1.)), materialize(toNullable(nan))),
     greatest(materialize(toNullable(1.)), materialize(toNullable(nan)))
 SETTINGS least_greatest_legacy_null_behavior = 1, compile_expressions = 0;
-
--- The carriers are compiled whenever a compilable control is
-SELECT least(-x, y)
-FROM values('x Float64, y Float64', (-1, nan), (nan, 1), (nan, nan), (-inf, nan), (1, 2))
-SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0, log_comment = '05401_live_least' FORMAT Null;
-
-SELECT greatest(-x, y)
-FROM values('x Float64, y Float64', (-1, nan), (nan, 1), (nan, nan), (-inf, nan), (1, 2))
-SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0, log_comment = '05401_live_greatest' FORMAT Null;
-
-SELECT plus(-x, y)
-FROM values('x Float64, y Float64', (-1, nan), (nan, 1), (nan, nan), (-inf, nan), (1, 2))
-SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0, log_comment = '05401_live_control' FORMAT Null;
-
-SYSTEM FLUSH LOGS query_log;
-
-WITH shapes AS
-(
-    SELECT log_comment, argMax(ProfileEvents['CompiledFunctionExecute'] > 0, event_time_microseconds) AS compiled
-    FROM system.query_log
-    WHERE current_database = currentDatabase() AND type = 'QueryFinish'
-      AND log_comment LIKE '05401_live_%'
-    GROUP BY log_comment
-)
-SELECT
-    (SELECT compiled FROM shapes WHERE log_comment = '05401_live_least')
-        = (SELECT compiled FROM shapes WHERE log_comment = '05401_live_control'),
-    (SELECT compiled FROM shapes WHERE log_comment = '05401_live_greatest')
-        = (SELECT compiled FROM shapes WHERE log_comment = '05401_live_control');

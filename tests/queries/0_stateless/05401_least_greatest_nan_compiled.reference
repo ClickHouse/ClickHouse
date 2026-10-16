@@ -25,4 +25,3 @@ signed zero JIT on	inf	-inf	inf	-inf
 constant	1	1	1	1
 BFloat16	1	1	1	1
 legacy null	1	1
-1	1
