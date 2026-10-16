@@ -624,9 +624,8 @@ private:
                     || std::abs(ring_y_data[vertex2_idx]) > max_abs_polygon_coordinate)
                     throwPolygonCoordinateIsTooLarge();
 
-                int point_side = orientationSign(ring_x_data[vertex1_idx], ring_y_data[vertex1_idx],
-                    ring_x_data[vertex2_idx], ring_y_data[vertex2_idx], point_x, point_y);
-                if (ring_y_data[vertex2_idx] > ring_y_data[vertex1_idx] ? point_side > 0 : point_side < 0)
+                if (isLeftOfUpwardEdge(ring_x_data[vertex1_idx], ring_y_data[vertex1_idx],
+                        ring_x_data[vertex2_idx], ring_y_data[vertex2_idx], point_x, point_y))
                     res = !res;
             }
 

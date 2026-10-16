@@ -73,6 +73,12 @@ SELECT
     countIf(pointInPolygon((0.45, y), materialize([(0.4, -1e20), (0.5, 1e20), (-1., 0.)]))),
     countIf(pointInPolygon((0.45, -y), materialize([(0.4, -1e20), (0.5, 1e20), (-1., 0.)])))
 FROM (SELECT (number + 1) * 0.1 AS y FROM numbers(99));
+-- Coordinates so small that products of their differences underflow: both points are inside.
+SELECT
+    pointInPolygon((1e-200, 0.3e-200), [(0., 0.), (3e-200, 0.), (3e-200, 1e-200), (0., 1e-200)]),
+    pointInPolygon((1e-200, 0.3e-200), materialize([(0., 0.), (3e-200, 0.), (3e-200, 1e-200), (0., 1e-200)])),
+    pointInPolygon((2e-201, 3e-201), [(0., 0.), (0., 1e-200), (1e-200, 0.)]),
+    pointInPolygon((2e-201, 3e-201), materialize([(0., 0.), (0., 1e-200), (1e-200, 0.)]));
 SELECT pointInPolygon((nan, 0.5), materialize([(0., 0.), (1., 0.), (0., 1.)])), pointInPolygon((-inf, 0.5), materialize([(0., 0.), (1., 0.), (0., 1.)]));
 
 DROP TABLE pip_pk;

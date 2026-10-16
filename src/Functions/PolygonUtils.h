@@ -53,23 +53,52 @@ inline constexpr Float64 max_abs_polygon_coordinate = 1e150;
 /// Exact sign of the orientation by boost's adaptive predicate, for the rare inputs the fast path cannot decide.
 [[gnu::cold]] NO_INLINE inline int orientationSignExact(Float64 ax, Float64 ay, Float64 bx, Float64 by, Float64 cx, Float64 cy)
 {
+    /// Scaling an axis by a power of two keeps the sign. With the largest coordinate of each axis near 2^399,
+    /// no product of coordinate differences that the sign depends on underflows, and none overflows.
+    auto scale_up = [](Float64 & u, Float64 & v, Float64 & w)
+    {
+        Float64 max_abs = std::max({std::abs(u), std::abs(v), std::abs(w)});
+        if (!(max_abs > 0) || !isFinite(max_abs))
+            return;
+        int shift = 399 - std::ilogb(max_abs);
+        if (shift <= 0)
+            return;
+        u = std::ldexp(u, shift);
+        v = std::ldexp(v, shift);
+        w = std::ldexp(w, shift);
+    };
+    scale_up(ax, bx, cx);
+    scale_up(ay, by, cy);
+
     using Point = boost::geometry::model::d2::point_xy<Float64>;
     using Side = boost::geometry::strategy::side::side_robust<Float64, boost::geometry::strategy::side::fp_equals_policy>;
     return Side::apply(Point(ax, ay), Point(bx, by), Point(cx, cy));
 }
 
 /// Sign of the orientation of (cx, cy) relative to the line (ax, ay) -> (bx, by): positive on the left, 0 on the line.
-/// Exact unless products of coordinate differences overflow or underflow.
+/// Exact unless products of coordinate differences overflow.
 inline int orientationSign(Float64 ax, Float64 ay, Float64 bx, Float64 by, Float64 cx, Float64 cy)
 {
     Float64 left = (ax - cx) * (by - cy);
     Float64 right = (ay - cy) * (bx - cx);
     Float64 det = left - right;
-    /// Shewchuk's error bound of the rounded determinant: above it, its sign is exact.
+    /// Shewchuk's error bound of the rounded determinant plus the error of products that underflow: above it, its sign is exact.
     constexpr Float64 epsilon = std::numeric_limits<Float64>::epsilon();
-    if (std::abs(det) >= (1.5 + 4 * epsilon) * epsilon * (std::abs(left) + std::abs(right)))
+    if (std::abs(det) >= (1.5 + 4 * epsilon) * epsilon * (std::abs(left) + std::abs(right)) + 2 * std::numeric_limits<Float64>::min())
         return det > 0 ? 1 : (det < 0 ? -1 : 0);
     return orientationSignExact(ax, ay, bx, by, cx, cy);
+}
+
+/// Whether (x, y) is strictly left of the edge a - b directed upwards. Exactly one endpoint of the edge must be above y.
+inline bool isLeftOfUpwardEdge(Float64 ax, Float64 ay, Float64 bx, Float64 by, Float64 x, Float64 y)
+{
+    /// The edge crosses the row y between the x coordinates of its endpoints.
+    if (x < ax && x < bx)
+        return true;
+    if (!(x < ax || x < bx))
+        return false;
+    int point_side = orientationSign(ax, ay, bx, by, x, y);
+    return by > ay ? point_side > 0 : point_side < 0;
 }
 
 namespace bgi = boost::geometry::index;
@@ -661,13 +690,8 @@ bool PointInPolygonWithGrid<CoordinateType>::isInside(const Polygon & poly, Coor
         {
             const Point & a = ring[i];
             const Point & b = ring[j];
-            if ((a.y() > y) != (b.y() > y))
-            {
-                /// The point is left of the edge directed upwards.
-                int point_side = side(a, b, Point(x, y));
-                if (b.y() > a.y() ? point_side > 0 : point_side < 0)
-                    inside = !inside;
-            }
+            if ((a.y() > y) != (b.y() > y) && isLeftOfUpwardEdge(a.x(), a.y(), b.x(), b.y(), x, y))
+                inside = !inside;
         }
         return inside;
     };
