@@ -339,7 +339,7 @@ ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTablesImpl(
         resolveStorageProxyLoading(t)->updateExternalDynamicMetadataIfExists(query_context);
         auto table_metadata = t->getInMemoryMetadataPtr(query_context, false);
         if (source_metadata && table_metadata->datalake_table_state)
-            source_metadata->emplace(storage_id, table_metadata);
+            source_metadata->emplace(storage_id, InferredSourceMetadata{t, table_metadata});
         const auto & structure = table_metadata->getColumns();
         String prev_column_name;
         for (const ColumnDescription & column : structure)
@@ -1194,9 +1194,10 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             RowPolicyDataOpt row_policy_data_opt;
             StorageMetadataHandle storage_metadata_snapshot;
             const auto & inferred_source_metadata = assert_cast<const StorageMerge &>(*storage_merge).inferred_source_metadata;
-            if (auto it = inferred_source_metadata.find(storage->getStorageID()); it != inferred_source_metadata.end())
+            if (auto it = inferred_source_metadata.find(storage->getStorageID());
+                it != inferred_source_metadata.end() && (it->first.hasUUID() || it->second.storage.lock() == storage))
             {
-                storage_metadata_snapshot = it->second;
+                storage_metadata_snapshot = it->second.metadata;
             }
             else
             {
