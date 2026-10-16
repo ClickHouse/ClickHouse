@@ -921,25 +921,17 @@ MutableColumnPtr readColumnFromDesc(
     }
     else if (raw_type == COL_FIXEDN)
     {
-        /// Width is data_size / rows.
-        uint64_t elem_size = 0;
-        if (rows_to_dec != 0)
-        {
-            if (desc.data_size % rows_to_dec != 0)
-                throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "COLUMNAR_V1: COL_FIXEDN data_size {} not a multiple of row count {}",
-                    desc.data_size, rows_to_dec);
-            elem_size = desc.data_size / rows_to_dec;
-            if (fixedValueSizeOrZero(*base_type) != elem_size)
-                throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "COLUMNAR_V1: COL_FIXEDN type width mismatch: declared type has {} bytes, wire has {}",
-                    fixedValueSizeOrZero(*base_type), elem_size);
-        }
-        /// No rows: data_size must be 0.
-        else if (desc.data_size != 0)
+        /// Check the declared type first: a variable-width type with data_size 0 would
+        /// otherwise pass the size check and allocate rows that carry no payload.
+        const size_t elem_size = fixedValueSizeOrZero(*base_type);
+        if (elem_size == 0)
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "COLUMNAR_V1: COL_FIXEDN data_size {} must be 0 for an empty column",
-                desc.data_size);
+                "COLUMNAR_V1: COL_FIXEDN descriptor does not match declared type {}", base_type->getName());
+        /// 64-bit size: rows * width may wrap in uint32.
+        if (desc.data_size != static_cast<uint64_t>(rows_to_dec) * elem_size)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "COLUMNAR_V1: COL_FIXEDN data_size {} does not match {} rows of {} bytes",
+                desc.data_size, rows_to_dec, elem_size);
         auto inner = base_type->createColumn();
         inner->insertManyDefaults(rows_to_dec);
         if (desc.data_size != 0)
@@ -1040,6 +1032,8 @@ MutableColumnPtr readColumnFromDesc(
         VectorWithMemoryTracking<std::pair<ColDescriptor, uint32_t>> sub_by_global(alt_types.size(), {ColDescriptor{}, 0u});
         VectorWithMemoryTracking<bool> sub_present(alt_types.size(), false);
         const uint8_t * record_ptr = header + 4u;
+        /// Sub-columns split the parent rows; cap them before any sub-column is decoded.
+        uint64_t total_sub_rows = 0;
         for (uint32_t r = 0; r < k; ++r)
         {
             uint8_t global_d = record_ptr[0];
@@ -1056,6 +1050,11 @@ MutableColumnPtr readColumnFromDesc(
             /// The writer stores the sub-column row count in null_offset. The other ranges must
             /// stay inside this column's payload, after the header.
             uint32_t sub_rows = checkFitsUint32(inner_desc.null_offset, "Variant sub-column row count read from frame");
+            total_sub_rows += sub_rows;
+            if (total_sub_rows > rows_to_dec)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "COLUMNAR_V1: COL_VARIANT sub-variants declare {} rows in total, more than the {} parent rows",
+                    total_sub_rows, rows_to_dec);
             uint64_t sub_region_end = desc.data_offset + desc.data_size;
             uint64_t payload_start = desc.data_offset + 4u + static_cast<uint64_t>(k) * record_bytes;
             if (inner_desc.offsets_offset != 0

@@ -1196,3 +1196,28 @@ TEST(ColumnarWire, FixedDescriptorForVariableWidthTypeIsIncorrectData)
         EXPECT_EQ(e.code(), ErrorCodes::INCORRECT_DATA) << e.message();
     }
 }
+
+// COL_FIXEDN derives no width from a zero-byte payload. A variable-width declared type
+// must be rejected before the decoder allocates host rows for the claimed row count.
+TEST(ColumnarWire, ZeroByteFixedNForVariableWidthTypeIsIncorrectData)
+{
+    const uint32_t num_rows = 1u << 30;
+    std::vector<uint8_t> buf(FRAME_HEADER_BYTES + COL_DESC_BYTES, 0);
+    writeFrameHeader(buf.data(), num_rows, /*num_cols=*/1);
+
+    ColDescriptor desc{};
+    desc.type        = COL_FIXEDN;
+    desc.data_offset = FRAME_HEADER_BYTES + COL_DESC_BYTES;
+    desc.data_size   = 0;
+    std::memcpy(buf.data() + FRAME_HEADER_BYTES, &desc, COL_DESC_BYTES);
+
+    try
+    {
+        readColumnarOutput({buf.data(), buf.size()}, std::make_shared<DataTypeString>(), num_rows);
+        FAIL() << "expected an exception";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::INCORRECT_DATA) << e.message();
+    }
+}
