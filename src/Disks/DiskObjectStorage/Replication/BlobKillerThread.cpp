@@ -270,9 +270,10 @@ BlobKillerThread::BlobKillerThread(
     task->deactivate();
 
     /// Scheduling does nothing while the task is deactivated, so the callback is harmless before `startup`
-    /// and after `shutdown`. It only wakes up an idle task: a round that is already pending (e.g. delayed by
-    /// `reschedule_interval_sec`) is not replaced, so ordinary asynchronous removals are still batched.
-    metadata_storage->setDeadBlobsQueuedCallback([this]() { task->scheduleAfter(0, /*overwrite=*/ false); });
+    /// and after `shutdown`. It only wakes up a task that stopped polling: while the task is polling, a round
+    /// is either running or pending (delayed by `reschedule_interval_sec`), and that round will see the queued
+    /// blobs, so ordinary asynchronous removals are still batched.
+    metadata_storage->setDeadBlobsQueuedCallback([this]() { wakeUpIfPollingStopped(); });
 }
 
 BlobKillerThread::~BlobKillerThread()
@@ -281,10 +282,27 @@ BlobKillerThread::~BlobKillerThread()
     task->deactivate();
 }
 
+void BlobKillerThread::wakeUpIfPollingStopped()
+{
+    std::lock_guard guard(polling_mutex);
+    if (!polling_stopped)
+        return;
+
+    polling_stopped = false;
+    task->schedule();
+}
+
 void BlobKillerThread::run()
 {
     auto component_guard = Coordination::setCurrentComponent("BlobKillerThread::run");
     LOG_TEST(log, "Starting cleanup");
+
+    {
+        /// The round is running, so the blobs queued from now on are seen either by it or by the next round,
+        /// which is scheduled at its end.
+        std::lock_guard guard(polling_mutex);
+        polling_stopped = false;
+    }
 
     const int64_t dead_queue_estimate = metadata_storage->getDeadBlobsQueueEstimate();
     const auto [round_request_batch, round_blobs_in_task, round_threads_count] = calculateBlobKillerEffectiveParams(
@@ -297,12 +315,18 @@ void BlobKillerThread::run()
     finished_rounds.fetch_add(1);
     finished_rounds.notify_all();
 
-    /// The queue is drained and nothing new can be queued, e.g. a cache layer over a `plain` disk that was
-    /// reloaded as read-only. The task stays active: the metadata storage schedules it when it queues blobs.
-    if (!metadata_storage->hasDeadBlobsQueue())
     {
-        LOG_TEST(log, "Nothing more to clean up, not rescheduling");
-        return;
+        /// The queue is drained and nothing new can be queued, e.g. a cache layer over a `plain` disk that was
+        /// reloaded as read-only. The task stays active: the metadata storage wakes it up when it queues blobs.
+        /// The check is done under the mutex: the metadata storage queues blobs before it calls the callback,
+        /// so a commit either makes the check answer `true` or wakes up the task after it stopped polling.
+        std::lock_guard guard(polling_mutex);
+        if (!metadata_storage->hasDeadBlobsQueue())
+        {
+            polling_stopped = true;
+            LOG_TEST(log, "Nothing more to clean up, not rescheduling");
+            return;
+        }
     }
 
     if (removed_blobs < static_cast<int64_t>(0.9 * static_cast<double>(round_request_batch)))
@@ -333,14 +357,17 @@ void BlobKillerThread::activateTask()
     /// can schedule it later. It is only scheduled when the metadata storage may have dead blobs.
     task->activate();
 
+    std::lock_guard guard(polling_mutex);
     if (metadata_storage->hasDeadBlobsQueue())
     {
         LOG_INFO(log, "Execution started");
+        polling_stopped = false;
         task->schedule();
     }
     else
     {
         LOG_INFO(log, "Execution is not needed: the metadata storage does not defer blob removal");
+        polling_stopped = true;
     }
 }
 
