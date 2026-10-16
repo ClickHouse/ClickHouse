@@ -196,6 +196,64 @@ def test_oom_report_alone_still_reports_oom(tmp_path):
     assert not failures.crash_named and failures.reports_oom(server_died=True)
 
 
+_EXPECTED_KILL_LINE = (
+    "2026.09.04 00:44:59.000000 [ 1 ] {} <Fatal> Application: Child process was "
+    "terminated by signal 9 (KILL). If it is not done by 'forcestop' command or "
+    "manually, the possible cause is OOM Killer\n"
+)
+# A healthy query whose text names a failure, on the record's first line and on the line
+# `toOneLineQuery` starts after the SQL comment.
+_HEALTHY_QUERY_RECORD = (
+    "2026.09.04 00:44:57.900000 [ 1068 ] {q} <Debug> executeQuery: (from [::1]:5000) "
+    "(comment: 00001_test.sql) -- Logical error: harmless\n"
+    "SELECT 'Logical error: harmless', 'Assertion x failed' (stage: Complete)\n"
+)
+_LOGICAL_ERROR_FATAL = (
+    "2026.09.04 00:44:58.000000 [ 1068 ] {q} <Fatal> : Logical error: 'max_rows > 0'.\n"
+)
+
+
+def _plain_server_log(tmp_path, text):
+    # The plain log is the one that holds `<Debug>` records, unlike the `.err.log`.
+    log = tmp_path / "clickhouse-server.log"
+    log.write_text(text, encoding="utf-8")
+    return log
+
+
+def test_healthy_query_record_with_the_expected_kill_is_not_a_crash(tmp_path):
+    log = _plain_server_log(tmp_path, _HEALTHY_QUERY_RECORD + _EXPECTED_KILL_LINE)
+
+    failures = select_replica_failures([("main", [log], [])])
+
+    assert not failures.crash_named and failures.expected_only, failures.results
+    assert FuzzerLogParser(server_logs=[log]).genuine_non_oom_logs() == []
+
+
+def test_logical_error_after_a_healthy_query_record_is_still_a_crash(tmp_path):
+    log = _plain_server_log(
+        tmp_path, _HEALTHY_QUERY_RECORD + _LOGICAL_ERROR_FATAL + _EXPECTED_KILL_LINE
+    )
+
+    failures = select_replica_failures([("main", [log], [])])
+
+    assert failures.crash_named
+    assert "'max_rows > 0'" in failures.results[0][1]
+    assert "harmless" not in failures.results[0][0]
+
+
+def test_raw_sanitizer_report_alone_triggers_the_stderr_scan(tmp_path):
+    from ci.jobs.stress_job import stderr_reports_sanitizer_error
+
+    raw = tmp_path / "stderr.log"
+    raw.write_text(_DEADLYSIGNAL_STDERR, encoding="utf-8")
+    oom = tmp_path / "stderr.log.1"
+    oom.write_text(_OOM_STDERR, encoding="utf-8")
+
+    assert stderr_reports_sanitizer_error([raw])
+    # Control: an OOM report alone is benign and must not reach the parser.
+    assert not stderr_reports_sanitizer_error([oom])
+
+
 def _kill_logs(tmp_path, kills):
     logs = tmp_path / "server_log"
     logs.mkdir()

@@ -52,8 +52,9 @@ class FuzzerLogParser:
     # failure: a test comment or a fuzzed query may contain any text, e.g. the literal
     # "Logical error: 'max_rows > 0'". Only the part of the line before the match is
     # checked, so a marker that follows the match (a real failure quoting a query)
-    # keeps the match.
-    QUERY_TEXT_MARKERS = ("(in query:", "(query:")
+    # keeps the match. `logQuery` (executeQuery.cpp) writes every query as
+    # "executeQuery: (from <address>...) <query> (stage: ...)", with no "query:" marker.
+    QUERY_TEXT_MARKERS = ("(in query:", "(query:", "executeQuery: (from ")
     # What precedes and what follows the query quoted by the crash record of
     # `SignalHandlers.cpp`, "... (query_id: {}) (query: {}) Received signal {} ({})".
     CRASH_RECORD_QUERY_START = ") (query: "

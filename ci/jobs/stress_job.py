@@ -11,7 +11,11 @@ from typing import List, Optional, Tuple
 from ci.jobs.scripts.clickhouse_service import ClickHouseService
 from ci.jobs.scripts.docker_image import DockerImage
 from ci.jobs.scripts.find_tests import Targeting
-from ci.jobs.scripts.log_parser import SANITIZER_OOM_REPORT_PATTERN, FuzzerLogParser
+from ci.jobs.scripts.log_parser import (
+    RAW_REPORT_PATTERN,
+    SANITIZER_OOM_REPORT_PATTERN,
+    FuzzerLogParser,
+)
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
@@ -177,10 +181,13 @@ def _replica_logs(logs: List[Path], replica: str | None) -> List[Path]:
     return [p for p in logs if replica in p.name]
 
 
-# The parser's own two report patterns, so that the stderr scan below fires exactly when the
+# The parser's own report patterns, so that the stderr scan below fires exactly when the
 # parser has something to say about the file rather than on a substring of its own choosing.
+# `RAW_REPORT_PATTERN` adds what no parser pattern names (e.g. `AddressSanitizer:DEADLYSIGNAL`),
+# which `select_replica_failures` still reports as a crash.
 STDERR_REPORT_PATTERN = (
     f"{FuzzerLogParser.SANITIZER_ERROR_PATTERN}|{FuzzerLogParser.RUNTIME_ERROR_PATTERN}"
+    f"|{RAW_REPORT_PATTERN}"
 )
 
 
