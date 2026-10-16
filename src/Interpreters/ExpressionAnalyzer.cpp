@@ -1078,7 +1078,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     };
     /// The old analyzer has no estimate of the right table size.
     const auto build_layout
-        = analyzed_join->preferParallelHashLayout(/*rhs_size_estimation=*/std::nullopt, /*parallel_hash_join_threshold=*/0)
+        = analyzed_join->preferParallelHashLayout(/*rhs_size_estimation=*/std::nullopt, /*threshold=*/0)
         ? HashJoinBuildLayout::twoLevel(context->getSettingsRef()[Setting::max_threads])
         : HashJoinBuildLayout::oneBucket(1);
 
