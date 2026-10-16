@@ -436,21 +436,14 @@ bool hasNonDeterministicFunctionsImpl(const ASTPtr & ast, const ContextPtr & con
             return true;
     }
 
-    /// `* APPLY(f)` and `* APPLY(x -> ...)` keep the function name, its parameters and the lambda
-    /// outside of `children`.
-    if (const auto * apply = ast->as<ASTColumnsApplyTransformer>())
+    /// `* APPLY(f)` keeps the function name outside of `children`.
+    if (const auto * apply = ast->as<ASTColumnsApplyTransformer>(); apply && !apply->func_name.empty())
     {
-        if (!apply->func_name.empty())
-        {
-            if (isOracleUnsafeFunctionName(apply->func_name))
-                return true;
-            for (const auto & name : {apply->func_name, stripAggregateCombinators(apply->func_name)})
-                if (namesNonDeterministicRegularFunction(name, context))
-                    return true;
-        }
-        if (hasNonDeterministicFunctionsImpl(apply->parameters, context)
-            || hasNonDeterministicFunctionsImpl(apply->lambda, context))
+        if (isOracleUnsafeFunctionName(apply->func_name))
             return true;
+        for (const auto & name : {apply->func_name, stripAggregateCombinators(apply->func_name)})
+            if (namesNonDeterministicRegularFunction(name, context))
+                return true;
     }
 
     for (const auto & child : ast->children)
@@ -1211,8 +1204,8 @@ void scanAggregatesSafe(const ASTPtr & ast, SafeAggregateScan & out)
 
     /// `SELECT * APPLY any` (or `APPLY x -> any(x)`) aggregates every expanded
     /// column, but the aggregate is not an `ASTFunction` in the AST: the
-    /// transformer keeps a bare function name (or a lambda that is not among its
-    /// children). Missing it routes an aggregating query into the non-aggregate
+    /// transformer keeps a bare function name (or a lambda over its argument).
+    /// Missing it routes an aggregating query into the non-aggregate
     /// oracles, where a partition over an empty WHERE still yields the one row
     /// every aggregate returns on no input — a false mismatch. Record the
     /// transformer itself as an aggregate: `hasAggregates` then reports it, and
@@ -1232,6 +1225,7 @@ void scanAggregatesSafe(const ASTPtr & ast, SafeAggregateScan & out)
         {
             out.aggregates.push_back(ast);
         }
+        return;
     }
 
     for (const auto & child : ast->children)
