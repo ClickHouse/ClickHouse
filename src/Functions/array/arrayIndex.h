@@ -10,7 +10,9 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/LowCardinalityExecutionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -20,6 +22,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsCommon.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Core/AccurateComparison.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -629,6 +632,16 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
 
+    String getSignatureString() const override
+    {
+        if constexpr (std::is_same_v<ConcreteAction, HasAction>)
+            return "(Array, Any) -> UInt8"
+                   " OR (Map(Any, Any), Any) -> UInt8"
+                   " OR (JSON, String | FixedString) -> UInt8";
+        else
+            return "(Array, Any) -> UInt64";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         auto first_argument_type = arguments[0].type;
@@ -722,6 +735,23 @@ private:
 
         return ((isNativeNumber(inner_type_decayed) || isEnum(inner_type_decayed)) && isNativeNumber(arg_decayed))
             || getLeastSupertype(DataTypes{inner_type_decayed, arg_decayed});
+    }
+
+    /// An array of `Enum` values searched for a `String` is compared by the name of the enum value,
+    /// because the common type of `Enum` and `String` is `String`. Returns the type of the elements
+    /// in that case, and `nullptr` otherwise.
+    static const IDataTypeEnum * getEnumToCompareByName(const ColumnsWithTypeAndName & arguments)
+    {
+        const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].type.get());
+        if (!array_type)
+            return nullptr;
+
+        if (!isStringOrFixedString(removeNullable(removeLowCardinality(arguments[1].type))))
+            return nullptr;
+
+        /// The nested type is owned by the array type, which outlives this call.
+        const auto & nested_type = array_type->getNestedType();
+        return dynamic_cast<const IDataTypeEnum *>(removeNullable(removeLowCardinality(nested_type)).get());
     }
 
     /// What a date or time type counts. Two types that count different things are told apart by a
@@ -918,6 +948,25 @@ private:
             null_map_item = &assert_cast<const ColumnUInt8 &>(*item_map).getData();
 
         return {null_map_data, null_map_item};
+    }
+
+    /// Under a NULL, the nested column of a `Nullable` argument holds an unspecified value: for an `Enum` it is usually 0,
+    /// which the enum may not declare, and casting it throws. Put the type's default there; the null map hides it.
+    static ColumnPtr getColumnWithDefaultsUnderNulls(const ColumnPtr & column, const NullMap * null_map, const DataTypePtr & type)
+    {
+        if (!null_map || type->isDefaultInsertTrivial() || memoryIsZero(null_map->data(), 0, null_map->size()))
+            return column;
+
+        auto patched = type->createColumn();
+        patched->reserve(column->size());
+        for (size_t row = 0; row < column->size(); ++row)
+        {
+            if ((*null_map)[row])
+                type->insertDefaultInto(*patched);
+            else
+                patched->insertFrom(*column, row);
+        }
+        return patched;
     }
 
     struct ExecutionData
@@ -1406,13 +1455,41 @@ private:
         Array arr = col_array->getValue<Array>();
         const IColumn * item_arg = arguments[1].column.get();
 
+        /// The elements of a constant array of `Enum` values are the numeric values of the enum, while a
+        /// `String` argument is the name of an enum value, so a direct comparison of the fields never matches.
+        /// The common type of `Enum` and `String` is `String`, hence `equals` (and the non-constant code path
+        /// below, which casts both arguments to the common type) compares them by the name of the enum value.
+        /// Do the same here by replacing the values of the constant array by their names, and by casting the
+        /// searched value to `String` as well: a `FixedString` is padded with zero bytes, which the cast to
+        /// the common type removes, so comparing its raw bytes with a name would disagree with `equals`.
+        ColumnPtr searched_value_holder;
+        const auto * enum_type = getEnumToCompareByName(arguments);
+        if (enum_type)
+        {
+            for (auto & element : arr)
+                if (!element.isNull())
+                    element = enum_type->castToName(element);
+
+            if (!isString(removeNullable(arguments[1].type)))
+            {
+                DataTypePtr string_type = std::make_shared<DataTypeString>();
+                if (arguments[1].type->isNullable())
+                    string_type = std::make_shared<DataTypeNullable>(string_type);
+
+                searched_value_holder = castColumn(arguments[1], string_type);
+                item_arg = searched_value_holder.get();
+            }
+        }
+
         if (isColumnConst(*item_arg))
         {
             ResultType current = 0;
             const auto & value = (*item_arg)[0];
             if constexpr (std::is_same_v<ConcreteAction, IndexOfAssumeSorted>)
             {
-                if (isColumnNullableOrLowCardinalityNullable(
+                /// The array is sorted by the numeric values of the enum, which is not the order of the names.
+                if (enum_type
+                    || isColumnNullableOrLowCardinalityNullable(
                         assert_cast<const ColumnArray &>(col_array->getDataColumn()).getData()))
                     current = Impl::Main<ConcreteAction, true>::linearSearchConst(arr, value);
                 else
@@ -1498,12 +1575,11 @@ private:
         const DataTypePtr & index_type = arguments[1].type;
 
         DataTypePtr common_type = getLeastSupertype(DataTypes{array_elements_type, arguments[1].type});
-        ColumnPtr col_nested = castColumn({ col_array->getDataPtr(), array_elements_type, "" }, common_type);
-        ColumnPtr item_arg = castColumn({ arguments[1].column, removeLowCardinality(index_type), "" }, common_type);
+        auto [null_map_data, null_map_item] = getNullMaps(arguments);
+        ColumnPtr col_nested = castColumn({ getColumnWithDefaultsUnderNulls(col_array->getDataPtr(), null_map_data, array_elements_type), array_elements_type, "" }, common_type);
+        ColumnPtr item_arg = castColumn({ getColumnWithDefaultsUnderNulls(arguments[1].column, null_map_item, index_type), removeLowCardinality(index_type), "" }, common_type);
 
         auto col_res = ResultColumnType::create();
-
-        auto [null_map_data, null_map_item] = getNullMaps(arguments);
 
         if (const auto * item_arg_const = checkAndGetColumn<ColumnConst>(item_arg.get()))
         {

@@ -71,12 +71,15 @@ html:not(.dark) .ch-usecase-arrow {
     color: white;
 }
 
-/* Highlight the `View` selector above the table of contents with theme accents. */
-html:not(.dark) .multi-view-dropdown-trigger {
-    border-color: #135BE6 !important;
+/* The view selector uses the same full-width outlined control as the rest of
+   the page chrome. */
+.multi-view-dropdown-trigger {
+    width: 100% !important;
+    border: 1px solid #dcdde0 !important;
+    border-radius: 4px !important;
 }
 .dark .multi-view-dropdown-trigger {
-    border-color: #FDFF75 !important;
+    border-color: rgba(255, 255, 255, 0.15) !important;
 }
 /* Homepage content hidden until React has mounted and child effects have settled.
    Double-RAF in PageWrapper ensures FullWidthDivider's own RAF fires first. */
@@ -3674,4 +3677,259 @@ a.mobile-nav-tabs-item[href$="/products/clickhouse-private/index"] {
 
 td:has(> .integration-table-logo) {
     white-space: nowrap;
+}
+
+/* Ask AI is a separate docs-assistant action rather than a second search
+   control. The gradient edge originates at the top left and gets one short
+   sheen after the control is inserted. */
+:root {
+    --ch-ai-fill: #f5f5f6;
+    --ch-ai-hover-fill: #f0f1f3;
+    --ch-ai-border-start: #c4ca00;
+    --ch-ai-border-end: #e1e2e5;
+    --ch-ai-border-hover-start: #a9ae00;
+    --ch-ai-border-hover-end: #c9cbd1;
+    --ch-ai-text: #161517;
+    --ch-ai-muted: #696e79;
+    --ch-ai-icon: #161517;
+    --ch-ai-sheen: rgba(255, 255, 255, 0.95);
+}
+
+.dark {
+    --ch-ai-fill: #232323;
+    --ch-ai-hover-fill: #2c2c2c;
+    --ch-ai-border-start: #faff69;
+    --ch-ai-border-end: #2e2e2e;
+    --ch-ai-border-hover-start: #fcff9e;
+    --ch-ai-border-hover-end: #4a4a4a;
+    --ch-ai-text: #f3f3f3;
+    --ch-ai-muted: #9f9f9f;
+    --ch-ai-icon: #faff69;
+    --ch-ai-sheen: rgba(255, 255, 255, 0.3);
+}
+
+#ch-ask-ai-row {
+    display: block;
+    width: 100%;
+    flex-basis: 100%;
+}
+
+.ch-ask-ai-button {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    overflow: hidden;
+    isolation: isolate;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    background:
+        linear-gradient(var(--ch-ai-fill), var(--ch-ai-fill)) padding-box,
+        radial-gradient(70% 130% at 0 0, var(--ch-ai-border-start), var(--ch-ai-border-end)) border-box;
+    color: var(--ch-ai-text);
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1;
+    transition: background 150ms ease, color 150ms ease;
+}
+
+.ch-ask-ai-button > * {
+    position: relative;
+    z-index: 1;
+}
+
+.ch-ask-ai-button::after {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 0;
+    width: 60%;
+    background: linear-gradient(105deg, transparent, var(--ch-ai-sheen), transparent);
+    content: "";
+    opacity: 0;
+    pointer-events: none;
+    transform: translateX(-180%) skewX(-12deg);
+    animation: ch-ask-ai-sheen 900ms ease-in-out 600ms both;
+}
+
+/* A faint glint travels along the gradient outline after the fill reflection.
+   It is masked to the one-pixel border so the content remains still. */
+.ch-ask-ai-button::before {
+    position: absolute;
+    inset: -1px;
+    z-index: 2;
+    padding: 1px;
+    border-radius: inherit;
+    background: linear-gradient(105deg, transparent 42%, #fff 50%, transparent 58%)
+        150% 0 / 300% 100% no-repeat;
+    content: "";
+    opacity: 0;
+    pointer-events: none;
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    animation: ch-ask-ai-gleam 900ms ease-in-out 600ms both;
+}
+
+.ch-ask-ai-button:hover {
+    background:
+        linear-gradient(var(--ch-ai-hover-fill), var(--ch-ai-hover-fill)) padding-box,
+        radial-gradient(70% 130% at 0 0, var(--ch-ai-border-hover-start), var(--ch-ai-border-hover-end)) border-box;
+}
+
+/* These rules supersede the previous combined Search/Ask AI styling. The
+   explicit important flag is required because that legacy dark selector uses
+   an ID and important longhand background declarations. */
+.dark #ch-ask-ai-btn,
+:is(.dark) #ch-ask-ai-btn {
+    background:
+        linear-gradient(var(--ch-ai-fill), var(--ch-ai-fill)) padding-box,
+        radial-gradient(70% 130% at 0 0, var(--ch-ai-border-start), var(--ch-ai-border-end)) border-box !important;
+    border-color: transparent !important;
+    color: var(--ch-ai-text) !important;
+}
+
+.dark #ch-ask-ai-btn:hover,
+:is(.dark) #ch-ask-ai-btn:hover {
+    background:
+        linear-gradient(var(--ch-ai-hover-fill), var(--ch-ai-hover-fill)) padding-box,
+        radial-gradient(70% 130% at 0 0, var(--ch-ai-border-hover-start), var(--ch-ai-border-hover-end)) border-box !important;
+    border-color: transparent !important;
+}
+
+.ch-ask-ai-button:hover::before,
+.ch-ask-ai-button:hover::after {
+    animation: none;
+    opacity: 0;
+}
+
+.ch-ask-ai-button:focus-visible {
+    outline: 2px solid #161517 !important;
+    outline-offset: 2px;
+}
+
+.dark .ch-ask-ai-button:focus-visible {
+    outline-color: #faff69 !important;
+}
+
+#ch-ask-ai-btn:focus-visible,
+#ch-page-ask-btn:focus-visible {
+    outline: 2px solid #161517 !important;
+    outline-offset: 2px;
+}
+
+.dark #ch-ask-ai-btn:focus-visible,
+.dark #ch-page-ask-btn:focus-visible {
+    outline-color: #faff69 !important;
+}
+
+/* Kapa restores focus to the triggering control when it closes. A pointer
+   activation should not suddenly acquire the keyboard-only yellow outline. */
+.ch-ask-ai-button[data-ch-ask-ai-pointer-trigger]:focus-visible,
+#home-assistant-entry[data-ch-ask-ai-pointer-trigger]:focus-visible,
+#ch-ask-ai-btn[data-ch-ask-ai-pointer-trigger]:focus-visible,
+#ch-page-ask-btn[data-ch-ask-ai-pointer-trigger]:focus-visible {
+    outline: none !important;
+}
+
+.ch-ask-ai-button .ch-ai-icon {
+    color: var(--ch-ai-icon) !important;
+}
+
+#ch-ask-ai-btn {
+    width: 100%;
+    height: 40px;
+    justify-content: flex-start;
+    padding: 0 12px;
+}
+
+#ch-ask-ai-btn .ch-ask-ai-label {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 4px;
+}
+
+#ch-ask-ai-btn small,
+#ch-ask-ai-btn kbd {
+    color: var(--ch-ai-muted);
+    font-size: 12px;
+    font-weight: 500;
+}
+
+#ch-ask-ai-btn kbd {
+    margin-left: auto;
+    min-width: 20px;
+    font-family: inherit;
+    font-size: inherit;
+    text-align: right;
+}
+
+.ch-ask-ai-mobile-button {
+    width: 32px;
+    height: 32px;
+    justify-content: center;
+    padding: 0;
+}
+
+.ch-ask-ai-mobile-button .ch-ask-ai-label {
+    display: none;
+}
+
+#ch-page-ask-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: nowrap;
+}
+
+#ch-page-ask-row:has(> #page-title) {
+    flex-direction: row !important;
+    align-items: center !important;
+}
+
+#ch-page-ask-row > h1,
+#ch-page-ask-row:has(> #page-title) > #page-title {
+    min-width: 0;
+    flex: 1 1 auto;
+    width: auto !important;
+}
+
+#ch-page-ask-btn {
+    flex: 0 0 auto;
+    height: 32px;
+    padding: 0 12px;
+    font-size: 13px;
+    white-space: nowrap;
+}
+
+#ch-page-ask-btn::before,
+#ch-page-ask-btn::after {
+    animation-delay: 950ms;
+}
+
+@media (max-width: 768px) {
+    #ch-page-ask-row {
+        flex-wrap: wrap;
+    }
+}
+
+@keyframes ch-ask-ai-sheen {
+    0% { opacity: 1; transform: translateX(-180%) skewX(-12deg); }
+    99% { opacity: 1; transform: translateX(260%) skewX(-12deg); }
+    100% { opacity: 0; transform: translateX(260%) skewX(-12deg); }
+}
+
+@keyframes ch-ask-ai-gleam {
+    0% { background-position: 150% 0; opacity: 1; }
+    99% { background-position: -50% 0; opacity: 1; }
+    100% { background-position: -50% 0; opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ch-ask-ai-button::before,
+    .ch-ask-ai-button::after { animation: none; }
 }
