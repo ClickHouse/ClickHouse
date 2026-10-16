@@ -2,9 +2,15 @@
 
 #include <Interpreters/Context.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char custom_disk_registration_pause_before_release[];
+}
 
 CustomDiskRegistration::~CustomDiskRegistration()
 {
@@ -16,6 +22,7 @@ CustomDiskRegistration::~CustomDiskRegistration()
 
     try
     {
+        FailPointInjection::pauseFailPoint(FailPoints::custom_disk_registration_pause_before_release);
         context->releaseCustomDisk(disk_name);
     }
     catch (...)

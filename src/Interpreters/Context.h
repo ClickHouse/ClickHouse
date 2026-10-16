@@ -1939,12 +1939,16 @@ public:
     /// registration takes them over, so that they outlive it. If the disk already has a registration,
     /// they stay in `nested`, and the caller destroys them.
     /// `settings_hash` identifies the definition, see `IDisk::markDiskAsCustom`.
+    /// `wrapped_disk_name` is the disk a wrapper disk refers to by name (`disk = '<name>'`), or empty. If it is a
+    /// custom disk not in `nested`, its registration is added to `nested`.
     std::pair<DiskPtr, CustomDiskRegistrationPtr> getOrCreateCustomDisk(
-        const String & name, UInt128 settings_hash, DiskCreator creator, CustomDiskRegistrations & nested) const;
+        const String & name, UInt128 settings_hash, DiskCreator creator, CustomDiskRegistrations & nested,
+        const String & wrapped_disk_name) const;
     /// See `CustomDiskRegistry::rememberDefinitionLoadedFromExistingMetadata`.
     void rememberCustomDiskLoadedFromExistingMetadata(UInt128 settings_hash) const;
     bool isCustomDiskLoadedFromExistingMetadata(UInt128 settings_hash) const;
     /// A registration for a custom disk that already exists, or nullptr if `name` is not one.
+    /// Throws if the disk is being unregistered, see `CustomDiskRegistry::tryGet`.
     CustomDiskRegistrationPtr tryGetCustomDiskRegistration(const String & name) const;
     /// Unregisters a custom disk. Called by ~CustomDiskRegistration, do not call directly.
     void releaseCustomDisk(const String & name) const;

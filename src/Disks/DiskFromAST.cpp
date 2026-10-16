@@ -111,19 +111,8 @@ static std::pair<std::string, CustomDiskRegistrationPtr> getOrCreateCustomDisk(
     if (!existing_definition && (disk_name.empty() || disk_name == "." || disk_name == ".." || disk_name.contains('/')))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk name cannot be empty, `.`, `..` or contain `/` ({})", disk_name);
 
-    /// A wrapper disk (`cache`, `encrypted`) may refer to the disk it wraps by name instead of a nested `disk(...)`.
-    /// If that is a custom disk, keep it registered for as long as the wrapper is, like a nested one.
-    if (config->has("disk"))
-    {
-        const auto wrapped_disk_name = config->getString("disk");
-        bool is_nested = std::any_of(nested_registrations.begin(), nested_registrations.end(),
-            [&](const auto & nested) { return nested->getDiskName() == wrapped_disk_name; });
-        if (!is_nested)
-        {
-            if (auto wrapped_registration = context->tryGetCustomDiskRegistration(wrapped_disk_name))
-                nested_registrations.push_back(std::move(wrapped_registration));
-        }
-    }
+    /// A wrapper disk (`cache`, `encrypted`) may refer to the disk it wraps by name, see `Context::getOrCreateCustomDisk`.
+    const auto wrapped_disk_name = config->getString("disk", "");
 
     /// The registrations in `nested_registrations` that are not taken over are destroyed when this function
     /// returns, without any lock held.
@@ -133,7 +122,7 @@ static std::pair<std::string, CustomDiskRegistrationPtr> getOrCreateCustomDisk(
         /// Mark that disk can be used without storage policy.
         result->markDiskAsCustom(disk_settings_hash);
         return result;
-    }, nested_registrations);
+    }, nested_registrations, wrapped_disk_name);
 
     if (attach && registration)
         context->rememberCustomDiskLoadedFromExistingMetadata(disk_settings_hash);

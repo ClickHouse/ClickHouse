@@ -34,7 +34,8 @@ public:
     /// registration takes over `nested`. Otherwise `nested` is left to the caller: destroying a
     /// registration may release a disk, which locks the mutexes the caller may be holding.
     CustomDiskRegistrationPtr getOrCreate(const String & name, CustomDiskRegistrations & nested);
-    /// The registration of the disk `name`, or nullptr if there is none.
+    /// The registration of the disk `name`, or nullptr if there is none. Throws if the last registration
+    /// of the disk is being destroyed: the disk is about to be unregistered, so it must not get a new user.
     CustomDiskRegistrationPtr tryGet(const String & name) const;
     /// Whether the last registration of the disk `name` is being destroyed. It is not if the disk
     /// has been registered again in the meantime, and then the disk has to stay.

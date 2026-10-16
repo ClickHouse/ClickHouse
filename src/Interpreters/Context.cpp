@@ -8006,8 +8006,11 @@ DiskPtr Context::getDisk(const String & name) const
 }
 
 std::pair<DiskPtr, CustomDiskRegistrationPtr> Context::getOrCreateCustomDisk(
-    const String & name, UInt128 settings_hash, DiskCreator creator, CustomDiskRegistrations & nested) const
+    const String & name, UInt128 settings_hash, DiskCreator creator, CustomDiskRegistrations & nested, const String & wrapped_disk_name) const
 {
+    bool need_wrapped_disk_registration = !wrapped_disk_name.empty() && !std::ranges::any_of(nested,
+        [&](const auto & nested_registration) { return nested_registration->getDiskName() == wrapped_disk_name; });
+
     while (true)
     {
         /// A disk with this name may have just been released by the last table or database using it,
@@ -8016,6 +8019,17 @@ std::pair<DiskPtr, CustomDiskRegistrationPtr> Context::getOrCreateCustomDisk(
         shared->custom_disk_registry.waitForShutdown(name, settings_hash);
 
         std::lock_guard lock(shared->storage_policies_mutex);
+
+        /// A wrapper disk (`cache`, `encrypted`) may refer to the disk it wraps by name instead of a nested
+        /// `disk(...)`. If that is a custom disk, keep it registered for as long as the wrapper is, like a
+        /// nested one. The registration is taken under `storage_policies_mutex`, so the wrapped disk cannot be
+        /// unregistered between the lookup of its registration and its use by the wrapper.
+        if (need_wrapped_disk_registration)
+        {
+            if (auto wrapped_registration = shared->custom_disk_registry.tryGet(wrapped_disk_name))
+                nested.push_back(std::move(wrapped_registration));
+            need_wrapped_disk_registration = false;
+        }
 
         auto disk_selector = getDiskSelector(lock);
 

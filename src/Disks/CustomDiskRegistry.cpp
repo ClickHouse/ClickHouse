@@ -12,6 +12,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_DISK;
+}
+
 static void shutdownDisk(const String & name, const DiskPtr & disk, const LoggerPtr & log)
 {
     try
@@ -62,7 +67,14 @@ CustomDiskRegistrationPtr CustomDiskRegistry::tryGet(const String & name) const
     auto it = registrations.find(name);
     if (it == registrations.end())
         return nullptr;
-    return it->second.lock();
+
+    auto registration = it->second.lock();
+    /// The last registration is being destroyed, and the disk is about to be unregistered. Taking no
+    /// registration and using the disk anyway would leave the user of the disk without it.
+    if (!registration)
+        throw Exception(ErrorCodes::UNKNOWN_DISK,
+            "Custom disk {} is being unregistered, because the last table or database using it is gone", backQuote(name));
+    return registration;
 }
 
 bool CustomDiskRegistry::canRelease(const String & name) const
