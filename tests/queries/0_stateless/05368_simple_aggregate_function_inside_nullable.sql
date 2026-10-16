@@ -41,3 +41,5 @@ INSERT INTO FUNCTION file(currentDatabase() || '_05368.orc', 'ORC', 'a Nullable(
 SELECT max(a), toTypeName(any(a)) FROM file(currentDatabase() || '_05368.orc', 'ORC', 'a SimpleAggregateFunction(max, Int128)') SETTINGS input_format_null_as_default = 1;
 INSERT INTO FUNCTION file(currentDatabase() || '_05368.arrow', 'Arrow', 'a Nullable(Int128)') SELECT toInt128(number) FROM numbers(2) UNION ALL SELECT NULL SETTINGS engine_file_truncate_on_insert = 1;
 SELECT max(a), toTypeName(any(a)) FROM file(currentDatabase() || '_05368.arrow', 'Arrow', 'a SimpleAggregateFunction(max, Int128)') SETTINGS input_format_null_as_default = 1;
+INSERT INTO FUNCTION file(currentDatabase() || '_05368_composite.arrow', 'Arrow', 'l Array(UInt64), t Tuple(a UInt64, b String), m Map(String, UInt64)') SELECT [1, 2], (1, 'a'), map('a', 1) SETTINGS engine_file_truncate_on_insert = 1;
+SELECT * FROM file(currentDatabase() || '_05368_composite.arrow', 'Arrow', 'l SimpleAggregateFunction(groupArrayArray, Array(UInt64)), t SimpleAggregateFunction(anyLast, Tuple(a UInt64, b String)), m SimpleAggregateFunction(sumMap, Map(String, UInt64))');
