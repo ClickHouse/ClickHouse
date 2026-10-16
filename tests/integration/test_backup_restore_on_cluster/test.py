@@ -45,11 +45,12 @@ node2 = cluster.add_instance(
 
 node3 = cluster.add_instance(
     "node3",
-    main_configs=main_configs,
+    main_configs=main_configs + ["configs/shutdown_wait_unfinished_queries.xml"],
     user_configs=user_configs,
     external_dirs=["/backups/"],
     macros={"replica": "node3", "shard": "shard1"},
     with_zookeeper=True,
+    stay_alive=True,  # Necessary for the "test_shutdown_waits_for_restore_that_arrives_during_shutdown" test
 )
 
 
@@ -1279,19 +1280,19 @@ def test_shutdown_waits_for_backup():
     assert node1.query("SELECT * FROM tbl ORDER BY x") == TSV([3, 5])
 
 
-def wait_for_unregistered_part_on_node2(query_kind):
-    # node2's part of the operation is running, but the backups worker has not registered it.
+def wait_for_unregistered_part(node, query_kind):
+    # The node's part of the operation is running, but the backups worker has not registered it.
     assert_eq_with_retry(
-        node2,
+        node,
         f"SELECT count() FROM system.processes WHERE query_kind = '{query_kind}' AND NOT is_initial_query",
         "1",
     )
-    query_id = node2.query(
+    query_id = node.query(
         f"SELECT query_id FROM system.processes WHERE query_kind = '{query_kind}' AND NOT is_initial_query"
     ).strip()
     assert query_id
-    node2.query("SYSTEM FLUSH LOGS backup_log")
-    assert node2.query(f"SELECT count() FROM system.backup_log WHERE query_id = '{query_id}'") == "0\n"
+    node.query("SYSTEM FLUSH LOGS backup_log")
+    assert node.query(f"SELECT count() FROM system.backup_log WHERE query_id = '{query_id}'") == "0\n"
 
 
 def test_shutdown_waits_for_backup_that_arrives_during_shutdown():
@@ -1316,7 +1317,7 @@ def test_shutdown_waits_for_backup_that_arrives_during_shutdown():
         id = node1.query(
             f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} ASYNC"
         ).split("\t")[0]
-        wait_for_unregistered_part_on_node2("Backup")
+        wait_for_unregistered_part(node2, "Backup")
     except Exception:
         # Releases the held part, which would block node2's DDL queue for the following tests.
         node2.query("SYSTEM DISABLE FAILPOINT backups_hold_registration_until_ddl_worker_stops")
@@ -1343,39 +1344,48 @@ def test_shutdown_waits_for_backup_that_arrives_during_shutdown():
     assert node1.query("SELECT * FROM tbl ORDER BY x") == TSV([3, 5])
 
 
-def test_shutdown_waits_for_restore_that_arrives_during_shutdown():
+# node3 waits for unfinished queries on shutdown, so it drains the late parts only after that wait.
+@pytest.mark.parametrize(
+    "cluster_name, node_name",
+    [("cluster", "node2"), ("cluster3", "node3")],
+    ids=["default", "shutdown_wait_unfinished_queries"],
+)
+def test_shutdown_waits_for_restore_that_arrives_during_shutdown(cluster_name, node_name):
+    node = cluster.instances[node_name]
+    node1.query(f"CREATE DATABASE mydb ON CLUSTER '{cluster_name}'")
     node1.query(
-        "CREATE TABLE tbl ON CLUSTER 'cluster' ("
+        f"CREATE TABLE mydb.tbl ON CLUSTER '{cluster_name}' ("
         "x UInt8"
         ") ENGINE=ReplicatedMergeTree('/clickhouse/tables/tbl/', '{replica}')"
         "ORDER BY x"
     )
 
-    node1.query("INSERT INTO tbl VALUES (3)")
-    node2.query("INSERT INTO tbl VALUES (5)")
+    node1.query("INSERT INTO mydb.tbl VALUES (3)")
+    node.query("INSERT INTO mydb.tbl VALUES (5)")
 
+    # The restore has to create the database, too.
     backup_name = new_backup_name()
-    node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
-    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
+    node1.query(f"BACKUP DATABASE mydb ON CLUSTER '{cluster_name}' TO {backup_name}")
+    node1.query(f"DROP DATABASE mydb ON CLUSTER '{cluster_name}' SYNC")
 
-    # Holds node2's part of the restore after its query is running and before the restore is registered, until
-    # the graceful shutdown below stops node2's DDL worker, which it does only after cancelling the queries.
+    # Holds the node's part of the restore after its query is running and before the restore is registered, until
+    # the graceful shutdown below stops the node's DDL worker, which it does only after cancelling the queries.
     # The restart clears the failpoint.
-    node2.query("SYSTEM ENABLE FAILPOINT backups_hold_registration_until_ddl_worker_stops")
+    node.query("SYSTEM ENABLE FAILPOINT backups_hold_registration_until_ddl_worker_stops")
 
     try:
         id = node1.query(
-            f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name} ASYNC"
+            f"RESTORE DATABASE mydb ON CLUSTER '{cluster_name}' FROM {backup_name} ASYNC"
         ).split("\t")[0]
-        wait_for_unregistered_part_on_node2("Restore")
+        wait_for_unregistered_part(node, "Restore")
     except Exception:
-        # Releases the held part, which would block node2's DDL queue for the following tests.
-        node2.query("SYSTEM DISABLE FAILPOINT backups_hold_registration_until_ddl_worker_stops")
+        # Releases the held part, which would block the node's DDL queue for the following tests.
+        node.query("SYSTEM DISABLE FAILPOINT backups_hold_registration_until_ddl_worker_stops")
         raise
 
-    node2.stop_clickhouse(stop_wait_sec=60)
+    node.stop_clickhouse(stop_wait_sec=60)
     try:
-        # Checked while node2 is down, so its part cannot have been re-run after a restart.
+        # Checked while the node is down, so its part cannot have been re-run after a restart.
         assert_eq_with_retry(
             node1,
             f"SELECT status FROM system.backups WHERE id='{id}' AND status == 'RESTORING'",
@@ -1384,12 +1394,12 @@ def test_shutdown_waits_for_restore_that_arrives_during_shutdown():
         )
         status = node1.query(f"SELECT status FROM system.backups WHERE id='{id}'").strip()
     finally:
-        node2.start_clickhouse()
+        node.start_clickhouse()
 
     assert status == "RESTORED"
 
-    node2.query("SYSTEM SYNC REPLICA tbl")
-    assert node2.query("SELECT * FROM tbl ORDER BY x") == TSV([3, 5])
+    node.query("SYSTEM SYNC REPLICA mydb.tbl")
+    assert node.query("SELECT * FROM mydb.tbl ORDER BY x") == TSV([3, 5])
 
 
 def test_replicated_table_after_alters():
