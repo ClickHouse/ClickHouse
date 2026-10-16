@@ -32,6 +32,20 @@ using Polygon = IPolygonDictionary::Polygon;
 using Ring = IPolygonDictionary::Ring;
 using Box = bg::model::box<IPolygonDictionary::Point>;
 
+/// Boost.Geometry relate and overlay misclassify small polygons on Float32 points, so grid predicates and clips use Float64 boxes.
+using PointF64 = bg::model::d2::point_xy<Float64>;
+using BoxF64 = bg::model::box<PointF64>;
+using PolygonF64 = bg::model::polygon<PointF64>;
+
+inline BoxF64 toBoxF64(const Box & box, Float64 pad = 0)
+{
+    const auto & lo = box.min_corner();
+    const auto & hi = box.max_corner();
+    return BoxF64(
+        PointF64(static_cast<Float64>(lo.x()) - pad, static_cast<Float64>(lo.y()) - pad),
+        PointF64(static_cast<Float64>(hi.x()) + pad, static_cast<Float64>(hi.y()) + pad));
+}
+
 /** SlabsPolygonIndex builds index based on shooting ray down from point.
   * When this ray crosses odd number of edges in single polygon, point is considered inside.
   *
@@ -266,11 +280,12 @@ private:
     std::unique_ptr<ICell<ReturnCell>> makeCell(Coord current_min_x, Coord current_min_y, Coord current_max_x, Coord current_max_y, VectorWithMemoryTracking<size_t> possible_ids, size_t depth, ThreadPool & pool)
     {
         auto current_box = Box(Point(current_min_x, current_min_y), Point(current_max_x, current_max_y));
-        Polygon tmp_poly;
-        bg::convert(current_box, tmp_poly);
+        const BoxF64 current_box_f64 = toBoxF64(current_box);
+        PolygonF64 tmp_poly;
+        bg::convert(current_box_f64, tmp_poly);
         std::erase_if(possible_ids, [&](const auto id)
         {
-            return !bg::intersects(current_box, polygons[id]);
+            return !bg::intersects(current_box_f64, polygons[id]);
         });
         int covered = 0;
 #ifndef __clang_analyzer__ /// Triggers a warning in boost geometry.

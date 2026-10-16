@@ -19,9 +19,6 @@ namespace ErrorCodes
 namespace
 {
 
-using PointF64 = bg::model::d2::point_xy<Float64>;
-using PolygonF64 = bg::model::polygon<PointF64>;
-
 /// static_cast, not bg::convert: its boost::numeric_cast throws on a last-ulp overshoot of FLT_MAX.
 template <typename DstPolygon, typename SrcPolygon>
 void convertPolygon(const SrcPolygon & src, DstPolygon & dst)
@@ -64,12 +61,7 @@ size_t FinalCell::getBytesAllocated() const
 FinalCellWithSlabs::FinalCellWithSlabs(const VectorWithMemoryTracking<size_t> & polygon_ids_, const VectorWithMemoryTracking<Polygon> & polygons_, const Box & box_, bool is_last_covered_)
 {
     /// boost.geometry overlay on Float32 points drops crossing points and overflows above ~1.8e19, so clip in Float64.
-    const auto eps = static_cast<Float64>(GridRoot<FinalCellWithSlabs>::kEps);
-    const auto & lo = box_.min_corner();
-    const auto & hi = box_.max_corner();
-    const bg::model::box<PointF64> extended(
-        PointF64(static_cast<Float64>(lo.x()) - eps, static_cast<Float64>(lo.y()) - eps),
-        PointF64(static_cast<Float64>(hi.x()) + eps, static_cast<Float64>(hi.y()) + eps));
+    const BoxF64 extended = toBoxF64(box_, static_cast<Float64>(GridRoot<FinalCellWithSlabs>::kEps));
     PolygonF64 tmp_poly;
     bg::convert(extended, tmp_poly);
     VectorWithMemoryTracking<Polygon> intersections;
