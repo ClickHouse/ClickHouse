@@ -10,9 +10,9 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ParserWithElement.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ParserInsertQuery.h>
 #include <Parsers/ParserSetQuery.h>
+#include <Parsers/parseDatabaseAndTableName.h>
 #include <Parsers/InsertQuerySettingsPushDownVisitor.h>
 #include <Common/typeid_cast.h>
 
@@ -54,7 +54,6 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_compression(Keyword::COMPRESSION);
     ParserKeyword s_table(Keyword::TABLE);
     ParserKeyword s_function(Keyword::FUNCTION);
-    ParserToken s_dot(TokenType::Dot);
     ParserKeyword s_values(Keyword::VALUES);
     ParserKeyword s_format(Keyword::FORMAT);
     ParserKeyword s_settings(Keyword::SETTINGS);
@@ -121,38 +120,8 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     else
     {
-        /// Read one word. It can be table or database name.
-        if (!name_p.parse(pos, table, expected))
+        if (!parseDatabaseAndTableAsAST(pos, expected, database, table))
             return false;
-
-        /// If there is a dot, previous name was database name,
-        /// so read table name after dot.
-        if (s_dot.ignore(pos, expected))
-        {
-            database = table;
-            if (!name_p.parse(pos, table, expected))
-                return false;
-
-            /// hierarchical table path db.ns1.ns2.table -> (db, `ns1.ns2.table`)
-            if (s_dot.checkWithoutMoving(pos, expected))
-            {
-                String table_path = getIdentifierName(table);
-                if (getIdentifierName(database).find('.') != String::npos
-                    || table_path.empty() || table_path.find('.') != String::npos)
-                    return false;
-                while (s_dot.ignore(pos, expected))
-                {
-                    ASTPtr part;
-                    if (!name_p.parse(pos, part, expected))
-                        return false;
-                    const String part_name = getIdentifierName(part);
-                    if (part_name.empty() || part_name.find('.') != String::npos)
-                        return false;
-                    table_path += "." + part_name;
-                }
-                table = make_intrusive<ASTIdentifier>(table_path);
-            }
-        }
     }
 
     Pos before_lparen = pos;
