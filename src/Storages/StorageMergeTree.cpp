@@ -1950,22 +1950,9 @@ void StorageMergeTree::loadMutations()
                   * scoped commands again here - once, and not while a storage snapshot is built. An entry
                   * created by this version names its partitions as `ID '...'` already, so this reads back
                   * exactly the partitions resolved at creation and evaluates nothing; an older entry may
-                  * still carry a partition expression. The entry was accepted when it was created, so a
-                  * failure here is an anomaly; leave the partition ids
-                  * unresolved then - such a command is applied on the fly to no partition at all, which
-                  * only defers its effect until the mutation materializes - instead of failing to load
-                  * the table.
+                  * still carry a partition expression.
                   */
-                try
-                {
-                    resolvePartitionIdsOfScopedCommands(*entry.commands, getContext());
-                }
-                catch (...)
-                {
-                    tryLogCurrentException(log, fmt::format(
-                        "Cannot resolve the partitions of the commands of mutation {}. "
-                        "They will not be applied on the fly until the mutation is materialized", it->name()));
-                }
+                resolvePartitionIdsOfScopedCommands(*entry.commands, getContext());
 
                 LOG_DEBUG(log, "Loading mutation: {} entry, commands size: {}", it->name(), entry.commands->size());
 

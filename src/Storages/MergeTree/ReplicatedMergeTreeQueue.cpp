@@ -1259,25 +1259,9 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
           * `ID '...'` it resolved to (`StorageReplicatedMergeTree::mutate`), so for such an entry this
           * evaluates nothing - no user SQL runs under `update_mutations_mutex` - and every replica gets
           * the same partitions. Only an entry created by an older version may still carry an expression.
-          *
-          * The entries were accepted by the replica that submitted them, so a failure here is an anomaly
-          * (a partition key that this replica reads differently, say). Leave the partition ids unresolved
-          * then - such a command is applied on the fly to no partition at all, which only defers its
-          * effect until the mutation materializes - instead of failing the whole mutation update.
           */
         for (const auto & entry : new_mutations)
-        {
-            try
-            {
-                storage.resolvePartitionIdsOfScopedCommands(entry->commands, storage.getContext());
-            }
-            catch (...)
-            {
-                tryLogCurrentException(log, fmt::format(
-                    "Cannot resolve the partitions of the commands of mutation {}. "
-                    "They will not be applied on the fly until the mutation is materialized", entry->znode_name));
-            }
-        }
+            storage.resolvePartitionIdsOfScopedCommands(entry->commands, storage.getContext());
 
         bool some_mutations_are_probably_done = false;
         {
