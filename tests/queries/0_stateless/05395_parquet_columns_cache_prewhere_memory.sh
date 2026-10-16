@@ -15,8 +15,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 FILE="${CLICKHOUSE_TEST_UNIQUE_NAME}.parquet"
 FILE_PATH="${USER_FILES_PATH}/${FILE}"
 
+# The file (32 row groups of about 1 MiB) must fit in the columns cache of the test server: 100 MB,
+# a half of which holds the new entries with the `SLRU` policy.
 $CLICKHOUSE_CLIENT -q "
-    INSERT INTO FUNCTION file('${FILE}', Parquet) SELECT leftPad(toString(number), 1024, 'a') AS s FROM numbers(131072)
+    INSERT INTO FUNCTION file('${FILE}', Parquet) SELECT leftPad(toString(number), 1024, 'a') AS s FROM numbers(32768)
     SETTINGS output_format_parquet_row_group_size = 1024, engine_file_truncate_on_insert = 1"
 # Only a file that has not been modified for a few seconds is cached.
 touch -d "1 minute ago" "${FILE_PATH}"
@@ -39,9 +41,9 @@ for _ in {1..20}; do
 done
 
 echo "--- without the cache"
-$CLICKHOUSE_CLIENT -q "${QUERY} SETTINGS ${LIMITS}, max_memory_usage = '32Mi', use_columns_cache = 0"
+$CLICKHOUSE_CLIENT -q "${QUERY} SETTINGS ${LIMITS}, max_memory_usage = '16Mi', use_columns_cache = 0"
 echo "--- from the cache"
-$CLICKHOUSE_CLIENT -q "${QUERY} SETTINGS ${LIMITS}, max_memory_usage = '32Mi',
+$CLICKHOUSE_CLIENT -q "${QUERY} SETTINGS ${LIMITS}, max_memory_usage = '16Mi',
     use_columns_cache = 1, enable_reads_from_columns_cache = 1, enable_writes_to_columns_cache = 0"
 $CLICKHOUSE_CLIENT -q "SELECT count() = ${ROW_GROUPS} FROM system.columns_cache WHERE database = '' AND endsWith(part, '/${FILE}')"
 
