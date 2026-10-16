@@ -1,9 +1,9 @@
 SET use_statistics_cache = 0, use_statistics_for_part_pruning = 0;
 SET use_query_cache = 0, use_query_condition_cache = 0;
 SET materialize_statistics_on_insert = 1, max_threads = 1;
--- `query_plan_optimize_prewhere` is pinned because the test harness randomizes it off, and the
--- probe below counts the locks that the plan-level `PREWHERE` optimization takes.
-SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1, enable_parallel_replicas = 0;
+-- `optimize_move_to_prewhere` is pinned because the test harness randomizes it off, and the
+-- probe below counts the part-statistics loads that the plan-level `PREWHERE` optimization performs.
+SET optimize_move_to_prewhere = 1, enable_parallel_replicas = 0;
 
 CREATE TABLE prewhere_planning_statistics (p UInt64, value UInt64)
 ENGINE = MergeTree PARTITION BY p ORDER BY tuple()
@@ -30,10 +30,10 @@ SETTINGS use_statistics = 1, force_index_by_date = 1, max_rows_to_read = 2001;
 SET enable_parallel_replicas = 0;
 SYSTEM FLUSH LOGS query_log;
 SELECT
-    maxIf(locks, log_comment = '05210_probe_on') - maxIf(locks, log_comment = '05210_probe_off') = 2
+    maxIf(stats, log_comment = '05210_probe_on') = 2
 FROM
 (
-    SELECT log_comment, toInt64(ProfileEvents['SharedPartsLocks']) AS locks
+    SELECT log_comment, toInt64(ProfileEvents['LoadedStatistics']) AS stats
     FROM system.query_log
     WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND startsWith(log_comment, '05210_')
 );

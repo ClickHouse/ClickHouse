@@ -13,12 +13,10 @@ keywords: ['SQL Console', 'SET ROLE', 'RBAC', 'Controle de acesso']
 Ao executar `SET ROLE` no SQL Console do ClickHouse Cloud, a função pode parecer mudar para uma consulta e, em seguida, ser revertida na próxima. Use uma função do SQL Console por usuário quando as permissões precisarem persistir entre consultas e sessões.
 
 <Tip>
-  Prefira [funções de banco de dados gerenciadas na Cloud](/pt-BR/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) (beta) para gerenciar o acesso ao banco de dados pelo console. As funções `sql-console-role:<email>` não são compatíveis com a [autenticação JWT](/pt-BR/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup).
+  Prefira [funções de banco de dados gerenciadas na Cloud](/pt-BR/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) para gerenciar o acesso ao banco de dados pelo console. As funções `sql-console-role:<email>` não são compatíveis com sessões JWT no SQL console.
 </Tip>
 
-<div id="symptoms">
-  ## Sintomas
-</div>
+## Sintomas {#symptoms}
 
 Você pode observar um ou mais dos seguintes sintomas:
 
@@ -37,9 +35,7 @@ SELECT
     defaultRoles();
 ```
 
-<div id="why-this-happens">
-  ## Por que isso acontece
-</div>
+## Por que isso acontece {#why-this-happens}
 
 O SQL Console envia consultas por conexões HTTP sem estado para um serviço ClickHouse Cloud com várias réplicas. Não há garantia de que consultas consecutivas usem a mesma conexão ou réplica.
 
@@ -47,9 +43,7 @@ O SQL Console envia consultas por conexões HTTP sem estado para um serviço Cli
 
 Por esse motivo, não use `SET ROLE` como um mecanismo persistente de controle de acesso no SQL Console.
 
-<div id="how-sql-console-user-roles-work">
-  ## Como funcionam as funções de usuário do SQL Console
-</div>
+## Como funcionam as funções de usuário do SQL Console {#how-sql-console-user-roles-work}
 
 Quando um usuário abre o SQL Console, o ClickHouse Cloud provisiona um usuário de banco de dados seguindo a seguinte convenção de nomenclatura:
 
@@ -71,9 +65,7 @@ Quando essa função existe, o ClickHouse Cloud a atribui ao usuário correspond
 | `sql_console_admin` and `sql_console_read_only` | Funções integradas do SQL Console                                | Sim, gerenciadas pelo ClickHouse Cloud   |
 | `sql-console-role:<email>`                      | Função personalizada por usuário criada por um administrador     | Sim, aplicada quando o usuário faz login |
 
-<div id="configure-persistent-permissions">
-  ## Configurar permissões persistentes
-</div>
+## Configurar permissões persistentes {#configure-persistent-permissions}
 
 Execute as instruções a seguir como um usuário com privilégios administrativos no serviço, como um usuário do SQL Console com a função `sql_console_admin` ou outro usuário com o privilégio `ACCESS MANAGEMENT`.
 
@@ -135,9 +127,7 @@ Execute as instruções a seguir como um usuário com privilégios administrativ
   </Step>
 </Steps>
 
-<div id="avoid-modifying-managed-roles">
-  ## Evite modificar funções gerenciadas
-</div>
+## Evite modificar funções gerenciadas {#avoid-modifying-managed-roles}
 
 Não modifique `sql_console_admin` nem `sql_console_read_only` para conceder permissões personalizadas. O ClickHouse Cloud gerencia essas funções integradas. Em vez disso, use `sql-console-role:<email>` para definir permissões por usuário.
 

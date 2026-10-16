@@ -17,9 +17,7 @@ import CommonUserRolesContent from '/snippets/es/_users-and-roles-common.mdx';
 
 Este artículo presenta los conceptos básicos para definir usuarios y roles de SQL, y para aplicar esos privilegios y permisos a bases de datos, tablas, filas y columnas.
 
-<div id="admin-user">
-  ## Usuario Admin
-</div>
+## Usuario Admin {#admin-user}
 
 Los servicios de ClickHouse Cloud tienen un usuario Admin, `default`, que se crea al crear el servicio. La contraseña se proporciona durante la creación del servicio y los usuarios de ClickHouse Cloud que tienen el rol **Admin** pueden restablecerla.
 
@@ -40,20 +38,16 @@ GRANT default_role TO clickhouse_admin;
   Estos usuarios de consola SQL generados automáticamente tienen el rol `default`.
 </Note>
 
-<div id="passwordless-authentication">
-  ## Autenticación sin contraseña
-</div>
+## Autenticación sin contraseña {#passwordless-authentication}
 
 Hay dos roles disponibles para la consola SQL: `sql_console_admin`, con permisos idénticos a `default_role`, y `sql_console_read_only`, con permisos de solo lectura.
 
 A los usuarios Admin se les asigna el rol `sql_console_admin` de forma predeterminada, por lo que para ellos no cambia nada. Sin embargo, el rol `sql_console_read_only` permite conceder a los usuarios que no son Admin acceso de solo lectura o acceso completo a cualquier instancia. Un Admin debe configurar este acceso. Los roles pueden ajustarse mediante los comandos `GRANT` o `REVOKE` para adaptarse mejor a los requisitos específicos de cada instancia, y cualquier modificación que se haga en ellos se conservará.
 
-<div id="granular-access-control">
-  ### Control de acceso granular
-</div>
+### Control de acceso granular {#granular-access-control}
 
 <Tip>
-  Prefiera los [roles de base de datos administrados en Cloud](/es/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) (beta) para administrar el acceso a la base de datos desde la consola. Los roles `sql-console-role:<email>` no son compatibles con la [autenticación con JWT](/es/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup).
+  Prefiera los [roles de base de datos administrados en Cloud](/es/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) para administrar el acceso a la base de datos desde la consola. Los roles `sql-console-role:<email>` no son compatibles con las sesiones con JWT en la consola SQL.
 </Tip>
 
 Esta funcionalidad de control de acceso también puede configurarse manualmente con granularidad a nivel de usuario. Antes de asignar a los usuarios los nuevos roles `sql_console_*`, deben crearse roles de base de datos específicos por usuario para la consola SQL que coincidan con el espacio de nombres `sql-console-role:<email>`. Por ejemplo:

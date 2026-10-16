@@ -384,6 +384,7 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
     ARM_DARWIN = "arm_darwin"
     ARM_V80COMPAT = "arm_v80compat"
     AMD_FREEBSD = "amd_freebsd"
+    AMD_ILLUMOS = "amd_illumos"
     PPC64LE = "ppc64le"
     AMD_COMPAT = "amd_compat"
     AMD_MUSL = "amd_musl"
@@ -398,7 +399,7 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
     # browser. A CMake project of its own rather than a target of this tree, with its own
     # toolchain and its own job script - see `build_wasm_parser.py`.
     WASM_PARSER = "wasm_parser"
-    AMD_FUZZERS = "amd_fuzzers"
+    ARM_FUZZERS = "arm_fuzzers"
     AMD_CFI = "amd_cfi"
 
 
@@ -516,6 +517,7 @@ class ArtifactNames:
     CH_ARM_DARWIN_SIGNED = "CH_ARM_DARWIN_SIGNED"
     CH_ARM_V80COMPAT = "CH_ARMV80C_DARWIN_BIN"
     CH_AMD_FREEBSD = "CH_ARM_FREEBSD_BIN"
+    CH_AMD_ILLUMOS = "CH_AMD_ILLUMOS_BIN"
     CH_PPC64LE = "CH_PPC64LE_BIN"
     CH_AMD_COMPAT = "CH_AMD_COMPAT_BIN"
     CH_AMD_MUSL = "CH_AMD_MUSL_BIN"
@@ -543,7 +545,7 @@ class ArtifactNames:
     TGZ_AMD_RELEASE = "TGZ_AMD_RELEASE"
     TGZ_ARM_RELEASE = "TGZ_ARM_RELEASE"
 
-    AMD_FUZZERS = "AMD_FUZZERS"
+    ARM_FUZZERS = "ARM_FUZZERS"
     FUZZERS_CORPUS = "FUZZERS_CORPUS"
     CLICKHOUSE_EXAMPLES = "CLICKHOUSE_EXAMPLES"
 
@@ -585,6 +587,10 @@ LLVM_FT_S3_DB_REPL_NUM_BATCHES = 3
 # The sequential counterpart is lighter than the parallel variant but still slow
 # enough to benefit from being split, so it gets its own (smaller) batch count.
 LLVM_FT_S3_DB_REPL_SEQUENTIAL_NUM_BATCHES = 2
+# The ParallelReplicas and AsyncInsert s3 variants run the whole stateless
+# suite, but only their parallel flavors come close to the job timeout, so only
+# those two are batched; the sequential ones stay un-batched.
+LLVM_FT_S3_PARALLEL_NUM_BATCHES = 2
 LLVM_FT_ARTIFACTS_LIST = [
     # default.profdata files for 3 batches from Stateless(Functional) tests
     ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_{batch}"
@@ -607,10 +613,16 @@ LLVM_FT_ARTIFACTS_LIST += [
 ]
 
 LLVM_FT_ARTIFACTS_LIST += [
-    # default.profdata files for jobs from Functional tests with S3 + AsyncInsert + parallel/sequential execution
-    ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_parallel",
+    # default.profdata files for batches from Functional tests with ParallelReplicas/AsyncInsert + S3, parallel execution
+    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3{flavor}_parallel_{batch}"
+    for flavor in ("", "_async")
+    for total_batches in (LLVM_FT_S3_PARALLEL_NUM_BATCHES,)
+    for batch in range(1, total_batches + 1)
+]
+
+LLVM_FT_ARTIFACTS_LIST += [
+    # default.profdata files for jobs from Functional tests with ParallelReplicas/AsyncInsert + S3, sequential execution
     ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_sequential",
-    ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_async_parallel",
     ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_async_sequential",
 ]
 
@@ -690,6 +702,14 @@ class ArtifactConfigs:
             ArtifactNames.CH_LOONGARCH64,
             ArtifactNames.CH_AMD_CFI,
         ]
+    )
+    clickhouse_binaries.append(
+        Artifact.Config(
+            name=ArtifactNames.CH_AMD_ILLUMOS,
+            type=Artifact.Type.S3,
+            path=f"{TEMP_DIR}/build/programs/clickhouse",
+            compress_zst=True,
+        )
     )
     clickhouse_darwin_plain_binaries = Artifact.Config(
         name="...",
@@ -806,7 +826,7 @@ class ArtifactConfigs:
         ],
     )
     fuzzers = Artifact.Config(
-        name=ArtifactNames.AMD_FUZZERS,
+        name=ArtifactNames.ARM_FUZZERS,
         type=Artifact.Type.S3,
         path=[
             f"{TEMP_DIR}/build/programs/*_fuzzer",

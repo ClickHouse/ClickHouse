@@ -13,7 +13,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
-#include <base/hex.h>
+#include <Common/Hex.h>
 
 namespace DB
 {
@@ -103,6 +103,7 @@ void StorageSystemProjectionParts::processNextStorage(
     QueryStatusPtr query_status = context->getProcessListElement();
 
     MergeTreeData::ProjectionPartsVector all_parts = info.getProjectionParts(all_parts_state, has_state_column, query_status);
+    PartitionKeySamples partition_key_samples;
 
     for (size_t part_number = 0; part_number < all_parts.projection_parts.size(); ++part_number)
     {
@@ -123,7 +124,7 @@ void StorageSystemProjectionParts::processNextStorage(
         size_t src_index = 0;
         size_t res_index = 0;
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(parent_part->partition.serializeToString(parent_part->getMetadataSnapshot()));
+            columns[res_index++]->insert(parent_part->partition.serializeToString(partition_key_samples.get(*parent_part)));
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part->name);
         if (columns_mask[src_index++])

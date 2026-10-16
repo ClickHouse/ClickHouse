@@ -1,0 +1,231 @@
+---
+title: 'الخدمات المُدارة'
+sidebarTitle: 'الخدمات المُدارة'
+slug: /products/bring-your-own-cloud/connector/managed-services
+description: 'أنشئ خدمات ClickHouse التي تُشغّلها ClickHouse Cloud داخل عنقودك وراقبها وأوقف عملها عبر المنفّذ الـ موصل'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'managed mode', 'executor']
+doc_type: 'guide'
+---
+
+import { PrivatePreviewBadge } from '/snippets/ar/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<PrivatePreviewBadge />
+
+في الوضع المُدار يشغّل الـ موصل مكوّنًا ثالثًا هو المنفّذ، ومن خلاله تُشغّل ClickHouse Cloud خدمات ClickHouse في عنقود Kubernetes الخاص بك. تتناول هذه الصفحة إنشاء خدمة، وقراءة حالتها (status)، وما تقوم به ClickHouse Cloud بها، وكيفية إيقافها نهائيًا (retired).
+
+## ما الذي يقوم به الوضع المُدار {#what-managed-mode-does}
+
+المنفّذ عبارة عن خدمة خفية ضمن نفس الملف الثنائي `clicklink` الذي يضم أداة السحب ومستكشف الأخطاء ومصلحها. وهو يحتفظ بقناة WebSocket صادرة نحو نقطة نهاية الموصل الخاصة بك، ويتلقى أوامر دورة الحياة من ClickHouse Cloud. ويطبّق كل أمر على عنقود Kubernetes الوحيد المُهيّأ له، ثم يبلّغ عن النتيجة عبر تلك القناة. وعلى غرار المكوّنات الأخرى، لا ينشئ سوى اتصالات صادرة: فـ ClickHouse Cloud لا يتصل أبدًا بعنقودك، كما أن واجهة برمجة التطبيقات المحلية للمنفّذ ترتبط بعنوان الاسترجاع المحلي (loopback).
+
+يتوفر الوضع المُدار على Amazon EKS مع S3 storage أثناء المعاينة الخاصة. ويقوم فريق حسابك بتفعيله عند تسجيل بيئتك. ويرفض الأمر `init` أي سياق kube لا يشير إلى عنقود EKS.
+
+تحتاج كل خدمة إلى ثلاثة موارد سحابية تملكها: حاوية للبيانات، وحاوية للنسخ الاحتياطية، ودور IAM تتقمّصه بودات ClickHouse للوصول إليهما. وأنت من ينشئها ببيانات اعتمادك الخاصة قبل وجود الخدمة، ومن يزيلها بعد زوالها. ولا يحتفظ المنفّذ بأي بيانات اعتماد لحاويات التخزين الخاصة بك أو لـ IAM، ولا يحذف البيانات إطلاقًا. وتقتصر استدعاءاته السحابية على Amazon ECR وSTS؛ فهو يسجّل الدخول إلى السجل عندما تسحب عملية مزامنة أو إنشاء للمنصة مخططًا، ويتحقق من الصور باستخدام دور السحب للقراءة فقط أثناء تحديث المنصة. ولا يجري أي استدعاءات إلى S3 أو IAM. ولكل خدمة ينشئ `Service` في Kubernetes من نوع LoadBalancer، تُجسّده وحدة تحكم موازن التحميل في عنقودك على هيئة NLB داخلي ضمن حسابك.
+
+على جهاز افتراضي، يعمل المنفّذ بوصفه وحدة systemd باسم `clicklink-executor` إلى جانب المكوّنين الآخرين. أما على Kubernetes فهو Deployment بنسخة واحدة ضمن مساحة أسماء الموصل. ويقدّم بيانات الصحة والمقاييس على المنفذ 8086، وواجهة برمجة التطبيقات المحلية الخاصة به على `127.0.0.1:9999`.
+
+## تفعيل الوضع المُدار {#enable-managed-mode}
+
+تختار الوضع المُدار عند التسجيل: مرّر `--managed` إلى `clicklink clctl init`، أو أجب عن المُطالبة في الطرفية. على جهاز افتراضي، يأخذ `init` العنقود من ملف kubeconfig الخاص بهذا المضيف (استخدم `--cluster-name` إذا كان يحتوي على أكثر من عنقود EKS) ويمنح المنفّذ أذونات الوصول على مستوى العنقود بشكل مضمّن. على Kubernetes، مرّر `--egress-cidrs` مع نطاقات CIDR الخاصة بنقطة نهاية الـ connector لديك ليُهيّئ المخطط سياسة NetworkPolicy الافتراضية للرفض مُفعّلة.
+
+أما التثبيت نفسه فلم يتغيّر. راجع [onboarding](/ar/products/bring-your-own-cloud/connector/onboarding#install-and-enroll) للاطلاع على التدفق الكامل، و[مرجع CLI](/ar/products/bring-your-own-cloud/connector/reference/cli#init) للاطلاع على الخيارات.
+
+## إنشاء خدمة {#create-a-service}
+
+يُفعَّل إنشاء الخدمة عبر نقطة نهاية الموصل على مستوى كل بيئة؛ تحقّق من ذلك مع فريق الحساب الخاص بك قبل البدء.
+
+يتطلب إنشاء خدمة أمرين اثنين. ينشئ `prepare` كل شيء على جانبك، بينما يقدّم `instances create` طلب الإنشاء إلى ClickHouse Cloud عبر نقطة نهاية موصل الخاصة بك. تُنشئ ClickHouse Cloud تعريف خدمة وترسل طلب الإنشاء إلى المنفّذ عبر قناتها الصادرة، فيطبّقه المنفّذ على العنقود الخاص بك ويعيد تقريراً بالنتيجة.
+
+ويحتاج `prepare` وحده إلى بيانات اعتماد AWS، إذ ينشئ حاويات S3 ودور IAM. أما `instances create` فيحتاج إلى تهيئة موصل وبيانات اعتماده، ولا يتصل بواجهة برمجة التطبيقات المحلية الخاصة بـ المنفّذ إلا عند استخدام `--wait`. على جهاز افتراضي، نفّذ كلا الأمرين بصلاحيات root على مضيف موصل. أما على Kubernetes، فنفّذهما من workstation يملك kube context للعنقود المُدار:
+
+* يحتاج `prepare` إلى نسخة من تهيئة موصل (`--config`)، وإلى `kubectl port-forward` نحو واجهة برمجة التطبيقات المحلية الخاصة بـ المنفّذ، وإلى `--output-dir` قابل للكتابة. وهو يتحقق من اسم الخدمة لدى المنفّذ ويرفض العمل إن تعذّر عليه الوصول إليه.
+* عندما لا تتوفر على هذا المضيف ملفات بيانات الاعتماد التي تحدّدها التهيئة، يقرأها `instances create` من Secrets المسماة `clicklink-hmac` و`clicklink-mtls` ويُعلن عن كل عملية قراءة. أضف `--connector-namespace` إذا لم تكن مساحة أسماء الـ موصل هي `clicklink`. وهذا الـ fallback متاح في `instances create` دون غيره.
+
+<Image img="/images/cloud/reference/byoc-connector-service-lifecycle.svg" size="lg" alt="دورة حياة خدمة في ClickHouse Connector في الوضع المُدار" />
+
+<Steps>
+  <Step title="إعداد الخدمة" id="prepare">
+    <Tabs>
+      <Tab title="Kubernetes" id="prepare-kubernetes">
+        ```bash
+        CONNECTOR_NAMESPACE='clicklink'   # مساحة أسماء connector التي اخترتها عند التهيئة
+        kubectl -n "${CONNECTOR_NAMESPACE}" get configmap clicklink-connector-executor \
+          -o jsonpath='{.data.config\.yaml}' > clicklink-config.yaml
+        kubectl -n "${CONNECTOR_NAMESPACE}" port-forward deployment/clicklink-connector-executor 9999:9999 &
+        clicklink clctl executor prepare --config clicklink-config.yaml --output-dir ./clicklink-access
+        ```
+
+        احتفظ بدليل المخرجات؛ فهو يحتوي على متن الإنشاء وسجل الاسم اللذين يقرأهما `instances create` وأي retry.
+      </Tab>
+
+      <Tab title="جهاز افتراضي يعمل بنظام Linux" id="prepare-vm">
+        ```bash
+        sudo clicklink clctl executor prepare --config /etc/clicklink/config.yaml
+        ```
+      </Tab>
+    </Tabs>
+
+    ينفّذ الأمر أربع خطوات بالترتيب ويتوقف عند أول إخفاق:
+
+    1. **الاسم.** يختار اسمًا لـ service، أو يتحقق من صحة الاسم الذي تمرّره عبر `--instance <name>`. ويُسجَّل الاسم المولَّد في `<output-dir>/_prepare/<eks-cluster-name>.name` ليستأنفه التشغيل التالي، فتعيد أي محاولة استخدام حاويات ودور التشغيل الأول نفسها. ويختار `--new-name` اسمًا آخر. ويرفض الأمر أي اسم لا يزال executor يحتفظ به، أو اسمًا تحتوي مساحة أسمائه بالفعل على عنقود ClickHouse.
+    2. **التخزين.** ينشئ حاويتي البيانات والنسخ الاحتياطي وIAM role باسم `CH-S3-<name>-<region>-00-Role`. وأسماء الحاويات الافتراضية هي `<cluster>-clickhouse-data-<rand>` و`<cluster>-clickhouse-backup-<rand>`، ويمكن تجاوزها بـ `--data-bucket` و`--backup-bucket`. ومع `--role-arn` يتحقق من دور تُحضره أنت ولا يكتب أي شيء في IAM.
+    3. **المنح والتطبيق.** على جهاز افتراضي، يولّد bundle الوصول الخاص بـ executor لمساحة أسماء service (`ns-<name>`)، ويطبّق RBAC الخاص بها، ويسجّل service في registry الخاص بـ executor. أما على Kubernetes فتُتخطى هذه الخطوة، إذ يعمل executor بهوية ServiceAccount الخاصة بجرابه ويسجّل service بنفسه عند وصول طلب الإنشاء.
+    4. **الملخّص.** يولّد كلمة مرور المستخدم `default` ويكتب متن الإنشاء إلى `<output-dir>/_prepare/<name>.create.json` (بوضع `0600`؛ وهو لا يحمل سوى تجزئات كلمة المرور). ثم يطبع الأمر التالي في سطر `Next:`.
+
+    <Warning>
+      يطبع `prepare` كلمة مرور المستخدم `default` مرة واحدة فقط على stderr. فلا متن الإنشاء ولا `--output json` يحتوي عليها، ولا تتلقى ClickHouse Cloud سوى تجزئاتها. احفظها قبل المتابعة. وإذا وجدت إعادة التشغيل متن الإنشاء، فإنها تُبقي التجزئات المكتوبة سلفًا وتُعلمك بذلك.
+    </Warning>
+
+    مرّر `--context <name>` عندما يحتوي kubeconfig على عدة سياقات؛ ويجب أن يشير السياق إلى عنقود EKS المسمّى في `executor.cluster` ضمن الإعداد. ويشغّل `--dry-run` كل خطوة دون إنشاء أو كتابة أي شيء. أما خطوة التجزئة فتستخدم SHA-1، وهي خوارزمية ترفضها Go تحت `GODEBUG=fips140=only`؛ لذا شغّل `prepare` على مضيف لا يحمل هذا الإعداد.
+  </Step>
+
+  <Step title="إرسال الإنشاء" id="create">
+    <Tabs>
+      <Tab title="Kubernetes" id="create-kubernetes">
+        ```bash
+        clicklink clctl instances create \
+          --from-prepare ./clicklink-access/_prepare/<name>.create.json \
+          --config clicklink-config.yaml \
+          --wait
+        ```
+
+        اترك port-forward الخاص بـ `prepare` مفتوحًا، فالخيار `--wait` يستطلع executor من خلاله.
+      </Tab>
+
+      <Tab title="جهاز افتراضي يعمل بنظام Linux" id="create-vm">
+        ```bash
+        sudo clicklink clctl instances create \
+          --from-prepare /etc/clicklink/access/executor/_prepare/<name>.create.json \
+          --config /etc/clicklink/config.yaml \
+          --wait
+        ```
+      </Tab>
+    </Tabs>
+
+    يرسل الأمر المتن المُجهَّز إلى connector endpoint الخاص بك مستخدمًا credentials الخاصة بالـ connector نفسه، ثم يطبع `created <spoken-name> (state provisioning)` مع استدلال `watch:`. و`<spoken-name>` هو الاسم الذي خصصته ClickHouse Cloud (مثل `amberaws-kq-42`)، وليس اسم الـ service الذي جهّزته. أما استدلال `watch:` وجميع أوامر `clctl` فتستخدم اسم الـ service الخاص بك.
+
+    إعادة المحاولة بالمدخلات نفسها آمنة. ويُشتق مفتاح إحكام التكرار (idempotency key) افتراضيًا من بيئتك ومن اسم الـ service، ولذلك تُرجع إعادة الإرسال عملية الإنشاء الأولى.
+
+    يستطلع `--wait` واجهة برمجة التطبيقات المحلية الخاصة بـ executor كل 10 ثوانٍ إلى أن يصبح الـ service في حالة `running`، ولمدة تصل إلى `--wait-timeout` (القيمة الافتراضية `30m`). ويفشل سريعًا، مع عرض الـ error المسجَّل، إذا سجّل executor عملية إنشاء فاشلة لهذا الاسم أو إذا تحولت حالة الـ service إلى `terminating` أو `terminated` أو `stale`.
+  </Step>
+
+  <Step title="تحقّق" id="verify">
+    ```bash
+    clicklink clctl instances get --name <name> --cluster <eks-cluster-name>
+    ```
+
+    تكون الـ service جاهزة عندما تكون قيمة `status` هي `running`. ويستخدم مستخدمها `default` كلمة المرور التي طبعها الأمر `prepare`. كما يمكن تمرير `--cluster` عبر متغيّر البيئة `CLCTL_CLUSTER`.
+  </Step>
+</Steps>
+
+## الحالة {#status}
+
+يجيب المنفّذ عن استعلامات الحالة عبر واجهة برمجة التطبيقات المحلية الخاصة به، التي ترتبط بالعنوان `127.0.0.1:9999` ولا توفّر أي مصادقة خاصة بها. على جهاز افتراضي، شغّل الأوامر على المضيف. أما على Kubernetes، فافتح إعادة توجيه المنفذ (port-forward) أولًا ثم وجّه الأوامر إليه:
+
+```bash
+kubectl -n <connector-namespace> port-forward deployment/clicklink-connector-executor 9999:9999
+clicklink clctl instances list --endpoint http://127.0.0.1:9999
+```
+
+يطبع `clicklink clctl instances list` كل خدمة يعرفها المنفّذ بصيغة JSON. أما `clicklink clctl instances get --name <name> --cluster <eks-cluster-name>` فيطبع واحدًا منها، مع التخزين الذي أُنشئ به. ويستنتج المنفّذ الحالة من مورد `ClickHouseCluster` الخاص بالخدمة (نسخ server الجاهزة مقابل المتوقعة) ويحدّثها كل `sync_interval` (‏30 ثانية افتراضيًا):
+
+* `provisioning`: لا توجد بعد أي نسخة server جاهزة، أو أن `ClickHouseCluster` لم يُنشأ بعد
+* `running`: جميع نسخ server المتوقعة جاهزة
+* `degraded`: بعض نسخ server جاهزة وليس كلها
+* `terminating`: المنفّذ بصدد إزالة تثبيت الخدمة
+* `terminated`: لم تعد مساحة أسماء الخدمة موجودة
+* `stale`: أُسقطت الخدمة من سجل المنفّذ دون عملية حذف؛ ويتعامل معه كل من `--wait` و`teardown` معاملة `terminated`
+
+تظل الخدمة المُنهى مدرجة، مع تخزينها، إلى أن تزيل عملية [التفكيك](#delete-a-service) موارده السحابية.
+
+يسجّل المنفّذ كل أمر ترسله إليه ClickHouse Cloud. ويطبع `clicklink clctl commands list` هذه الأوامر، مع إمكانية تصفيتها بواسطة `--status` (‏`pending` أو `running` أو `completed` أو `failed`) أو `--action` (‏`create_instance` على سبيل المثال) أو `--cluster`. ويطبع `clicklink clctl commands get <id>` أمرًا واحدًا مع مرحلته ونتيجته. وتحتوي `result` الخاصة بالأمر الفاشل على الخطأ: سبب عدم اكتمال عملية الإنشاء، أو أي [تحديث منصة](/ar/products/bring-your-own-cloud/connector/platform-updates) ينتظر موافقتك.
+
+## دورة حياة الـ خدمة {#service-lifecycle}
+
+بعد إنشاء الـ خدمة، تتولى ClickHouse Cloud تشغيله عبر المنفّذ. والأوامر التي ترسلها هي:
+
+* **Scale.** تحدد ClickHouse Cloud عددًا ثابتًا من الـ نسخة متماثلة، ويقيّده إعداد في ClickHouse Cloud (20 في التهيئة الافتراضية). ولا يوجد autoscaling.
+* **Stop and start.** يؤدي الإيقاف إلى تقليص عدد الخوادم إلى صفر مع الإبقاء على Keeper؛ أما البدء فيستعيد أعداد الـ نسخة متماثلة. وتبقى البيانات في حاوياتك طوال الوقت.
+* **Restart.** الـ خدمة بالكامل، أو Keeper الخاص به، أو pod واحد.
+* **Backups.** تطلقها ClickHouse Cloud؛ وتُخزَّن في حاوية النسخ الاحتياطي الخاصة بك، ويؤدي حذف النسخة الاحتياطية إلى إزالتها.
+* **ترقيات الإصدارات وتغييرات التهيئة.** تعيد ClickHouse Cloud توليد تعريف الـ خدمة بالإصدار أو الإعداد الجديد، ويصل ذلك على هيئة أمر `create_instance`، لذا يعرض `commands list --action create_instance` الترقيات أيضًا. ويطبّقه المنفّذ ثم ينتظر حتى تصبح الـ نسخة متماثلة جاهزة مجددًا.
+* **Delete.** موضّح في [حذف خدمة](#delete-a-service).
+
+<Warning>
+  لا تتضمن ترقيات الإصدارات وتغييرات التهيئة أي خطوة موافقة من العميل. فـ ClickHouse Cloud تطبّقها على الـ خدمة مُدارة بالطريقة نفسها التي تطبّق بها عملية تحجيم أو إعادة تشغيل: تعيد إرسال التعريف، ويوائم المنفّذ العنقود معه.
+</Warning>
+
+تكتمل عمليات الإنشاء والتحجيم والبدء بشكل غير متزامن. فيُبلغ المنفّذ عن الأمر بأنه قيد التشغيل بمجرد تطبيقه للتعريف، ويرسل تقرير تقدم كل دقيقتين، ثم يُبلغ عن النتيجة النهائية حالما تصبح نسخة متماثلة الخادم جاهزة. وإذا لم تصبح جاهزة خلال ساعتين، يُبلغ عن فشل الأمر؛ وإذا أصبحت متاحة لاحقًا، فإنه يعيد الـ خدمة إلى الحالة `running`.
+
+أما الأوامر الفرعية `instances scale` و`instances patch` و`instances delete` فترسل الأوامر مباشرةً إلى واجهة برمجة التطبيقات المحلية الخاصة بالمنفّذ، متجاوزةً ClickHouse Cloud. ولا تشغّلها إلا عندما يطلب منك فريق حسابك ذلك؛ ويوضّح [مرجع CLI](/ar/products/bring-your-own-cloud/connector/reference/cli#instances-scale) وظيفة كل منها.
+
+## Support sessions لخدمة مُدارة {#support-sessions}
+
+يربط الـ المنفّذ الـ scraper بكل خدمة ينشئها، لكنه لا يجهّز الـ مستكشف الأخطاء ومصلحها، لذا لا يمكن لأي [support session](/ar/products/bring-your-own-cloud/connector/support-sessions) تشغيل التشخيصات على خدمة مُدارة ما لم تجهّزه بنفسك. جهّزه مرة واحدة لكل خدمة، مع مساحة أسماء الخدمة `ns-<name>`، بالطريقة نفسها المتبعة مع instance سجّلته بنفسك:
+
+<Tabs>
+  <Tab title="Kubernetes" id="troubleshooter-kubernetes">
+    ```bash
+    printf '%s\n' "$CH_DEFAULT_PASSWORD" | clicklink clctl troubleshoot access provision --target helm \
+      --target-namespace "${CONNECTOR_NAMESPACE}" \
+      --instance <name> --instance-namespace ns-<name> \
+      --server <kubernetes-api-server-url> --ch-admin-password-stdin \
+      --apply-ch-grants --ch-pod <clickhouse-pod-or-label-selector> --ch-pod-namespace ns-<name>
+    ```
+
+    `$CH_DEFAULT_PASSWORD` هي كلمة مرور المستخدم `default` التي طبعها الأمر `prepare`. ويصادق بها الأمر لتطبيق أذونات SQL ولا يطلبها منك. ثم أضف زوج الـ Secret والـ ServiceAccount إلى `troubleshooter.accessBundles` ونفّذ `helm upgrade`، كما هو موضّح في [إضافة ClickHouse instances](/ar/products/bring-your-own-cloud/connector/configuration#clickhouse-instances).
+  </Tab>
+
+  <Tab title="جهاز افتراضي يعمل بنظام Linux" id="troubleshooter-vm">
+    ```bash
+    printf '%s\n' "$CH_DEFAULT_PASSWORD" | sudo clicklink clctl troubleshoot access provision --provider local \
+      --instance <name> --instance-namespace ns-<name> \
+      --server <kubernetes-api-server-url> --ch-admin-password-stdin
+    ```
+
+    `$CH_DEFAULT_PASSWORD` هي كلمة مرور المستخدم `default` التي طبعها الأمر `prepare`.
+  </Tab>
+</Tabs>
+
+امنح الأذونات لمستخدم ClickHouse عبر SQL كما سبق. فأي مستخدم يُضاف عبر `--ch-user-via cr` لن يبقى: إذ إن ClickHouse Cloud هي مالكة تعريف الخدمة وتعيد تطبيقه. وعند حذف الخدمة، يزيل الـ المنفّذ حزمة الـ مستكشف الأخطاء ومصلحها على الجهاز الافتراضي. أما على Kubernetes فتبقى الـ Secret والـ ServiceAccount الخاصتان بالحزمة إلى أن تحذفهما بنفسك، كما هو مذكور في [إلغاء التثبيت](/ar/products/bring-your-own-cloud/connector/operations#uninstall-kubernetes).
+
+## حذف خدمة {#delete-a-service}
+
+لا يوجد أمر حذف متاح للعميل عبر نقطة نهاية الموصل: اطلب من فريق حسابك حذف الخدمة. تتولّى ClickHouse Cloud إنهاءها، ويحذف المنفّذ عبء العمل ومساحة أسمائه (`terminating`، ثم `terminated`). ولا يُمسّ أي شيء في AWS: تبقى الحاويات وبياناتها ودور IAM إلى أن تزيلها بنفسك.
+
+وبمجرد أن تُبلّغ الخدمة عن الحالة `terminated`، فكّك ما أنشأه `prepare`. شغّل `teardown` من المكان نفسه الذي شغّلت فيه `prepare`، وباستخدام بيانات اعتماد AWS نفسها. وعلى Kubernetes يعني ذلك محطة العمل نفسها، ونسخة التهيئة ودليل المخرجات نفسيهما، وport-forward مفتوحًا إلى المنفّذ:
+
+<Tabs>
+  <Tab title="Kubernetes" id="teardown-kubernetes">
+    ```bash
+    kubectl -n "${CONNECTOR_NAMESPACE}" port-forward deployment/clicklink-connector-executor 9999:9999 &
+    clicklink clctl executor teardown --instance <name> --config clicklink-config.yaml --output-dir ./clicklink-access
+    ```
+  </Tab>
+
+  <Tab title="جهاز افتراضي يعمل بنظام Linux" id="teardown-vm">
+    ```bash
+    sudo clicklink clctl executor teardown --instance <name>
+    ```
+  </Tab>
+</Tabs>
+
+يقرأ الأمر سجلّ المنفّذ الخاص بالخدمة: أين توجد بياناتها وأي دور كان لها. ثم يحذف دور IAM الذي أنشأه `prepare` ويجعل المنفّذ ينسى الخدمة، فيتحرّر الاسم. وعلى جهاز افتراضي، يزيل أيضًا كائنات RBAC الخاصة بالخدمة على مستوى العنقود، وحزمة الوصول المحلية، ومدخل السجل.
+
+وهو يحتفظ افتراضيًا ببيانات الخدمة ونسخها الاحتياطية، ويعيد وسم الحاوية المحتفظ بها من `clicklink:deployed-name` إلى `clicklink:retained-from=<name>`، بحيث لا ترثها أبدًا خدمة يُعاد إنشاؤها بالاسم نفسه، ويوضّح الملخّص مكان البيانات. ولحذفها، أضف `--delete-data --delete-backups --yes` إلى الأمر نفسه.
+
+<Warning>
+  يُفرغ `--delete-data` و`--delete-backups` الحاويات التي يسمّيانها ثم يحذفانها، ولا سبيل إلى الاسترجاع بعد ذلك. تحقّق من أسماء الحاويات في خطوة السجل قبل إضافة `--yes`.
+</Warning>
+
+وبدون `--yes` يتوقف التشغيل بعد خطوة السجل ويذكر أسماء الحاويات التي كان سيفرغها. أما `--dry-run` فيقرأ كل شيء ولا يكتب شيئًا. وأي دور أحضرته عبر `--role-arn`، أو أي حاوية لم ينشئها `prepare`، يُبلَّغ عنها بوصفها محتفظًا بها ولا تُمسّ إطلاقًا. ويرفض التشغيل العمل ما دامت مساحة أسماء الخدمة لا تزال تحتوي على عنقود ClickHouse. وهو يقرأ كل شيء قبل أن يحذف أي شيء، لذا فإن التشغيل المرفوض لا يغيّر شيئًا.
+
+## عندما يكون الـ موصل غير متصل {#when-the-connector-is-offline}
+
+لا تعتمد الخدمات العاملة على المنفّذ؛ إذ يُبقيها ClickHouse Operator في عنقودك قيد التشغيل، ولا يؤثر انقطاع اتصال الـ موصل في أي شيء يخدم الاستعلامات بالفعل.
+
+وطالما لم يكن هناك منفّذ متصل، لا يستطيع ClickHouse Cloud إسناد عمل جديد إليه. أما أوامر الإنشاء أو الحذف أو مزامنة المنصة التي سبق أن قبِلها، فيُحتفظ بها وتُعاد محاولتها: يُعاد الإنشاء لمدة 30 دقيقة من آخر تقرير تقدّم، والحذف لمدة ساعتين، ومزامنة المنصة حتى 10 محاولات. وبعد تجاوز هذا الحد، تُسجّل نقطة نهاية الـ موصل الأمر على أنه فاشل. وأي أمر آخر من أوامر دورة الحياة (التوسيع، الإيقاف، البدء، إعادة التشغيل، النسخ الاحتياطي، حذف النسخة الاحتياطية) يُرفض بدلًا من أن يُوضع في قائمة انتظار. كما يُرفض بالطريقة نفسها أي أمر إنشاء أو حذف تُرسله في أثناء عدم وجود منفّذ متصل؛ فلا تُعاد المحاولة إلا للأوامر المقبولة مسبقًا.
+
+أما الأمر الذي قبِله المنفّذ فعلًا، فيستمر حتى اكتماله؛ وتُرسَل عند الاتصال التالي النتيجة التي تعذّر عليه الإبلاغ عنها.
+
+فأمر `instances create` يتطلب أن تكون نقطة نهاية الـ موصل قابلة للوصول من الـ host الذي يعمل عليه. أما `--wait` و`instances list` و`instances get` و`commands list` فتحتاج إلى واجهة برمجة التطبيقات المحلية للمنفّذ، أي أن المنفّذ يجب أن يكون قيد التشغيل. وتنتهي صلاحية رمز موافقة المنصة وفق مؤقّته الخاص، بغضّ النظر عن حالة الاتصال؛ راجع [نافذة الموافقة](/ar/products/bring-your-own-cloud/connector/platform-updates#the-approval-window).

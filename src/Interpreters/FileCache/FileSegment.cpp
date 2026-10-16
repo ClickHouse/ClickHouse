@@ -10,9 +10,10 @@
 #include <Interpreters/ProcessList.h>
 #include <base/EnumReflection.h>
 #include <base/getThreadId.h>
-#include <base/hex.h>
+#include <Common/Hex.h>
 #include <Common/CurrentThread.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
@@ -26,6 +27,8 @@ namespace ProfileEvents
 {
     extern const Event FileSegmentWaitMicroseconds;
     extern const Event FileSegmentWaitTimeouts;
+    extern const Event FileSegmentWaitWithoutData;
+    extern const Event FileSegmentWaitWithoutDataMicroseconds;
     extern const Event FileSegmentCompleteMicroseconds;
     extern const Event FileSegmentWriteMicroseconds;
     extern const Event FileSegmentIncreasePriorityMicroseconds;
@@ -34,6 +37,7 @@ namespace ProfileEvents
     extern const Event FilesystemCacheHoldFileSegments;
     extern const Event FilesystemCacheUnusedHoldFileSegments;
     extern const Event FilesystemCacheBackgroundDownloadQueuePush;
+    extern const Event FilesystemCacheReserveAheadRetries;
 }
 
 namespace CurrentMetrics
@@ -197,6 +201,26 @@ size_t FileSegment::getReservedSize() const
     return reserved_size.load();
 }
 
+size_t FileSegment::getDiskAccountedSize() const
+{
+    const auto km = tryGetKeyMetadata();
+    const size_t raw = reserved_size.load();
+    if (km && km->useRealDiskSize())
+        return km->alignFileSize(raw);
+    return raw;
+}
+
+size_t FileSegment::computeDiskAccountedDelta(size_t raw_delta) const
+{
+    const auto km = tryGetKeyMetadata();
+    if (km && km->useRealDiskSize())
+    {
+        const size_t prev_raw = reserved_size.load();
+        return km->alignFileSize(prev_raw + raw_delta) - km->alignFileSize(prev_raw);
+    }
+    return raw_delta;
+}
+
 FileSegment::Priority::IteratorPtr FileSegment::getQueueIterator() const
 {
     auto lk = lock();
@@ -304,6 +328,30 @@ String FileSegment::getOrSetDownloader()
     }
 
     return current_downloader;
+}
+
+scope_guard FileSegment::tryTakeDownloaderOfPartiallyDownloaded()
+{
+    /// Most calls are for downloaded segments: skip the lock for them.
+    if (download_state != State::PARTIALLY_DOWNLOADED)
+        return {};
+
+    auto lk = lock();
+
+    if (download_state != State::PARTIALLY_DOWNLOADED)
+        return {};
+
+    /// Every transition to `PARTIALLY_DOWNLOADED` resets the downloader under the same lock.
+    chassert(getDownloaderUnlocked(lk).empty());
+
+    getOrCreateDownloadDataUnlocked(lk).downloader_id = getCallerId();
+    setDownloadState(State::DOWNLOADING, lk);
+    return [this]
+    {
+        /// The guard runs in a destructor, and `resetDownloader` does small allocations.
+        LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+        resetDownloader();
+    };
 }
 
 void FileSegment::resetDownloadingStateUnlocked(const FileSegmentGuard::Lock & lock)
@@ -631,6 +679,13 @@ FileSegment::State FileSegment::wait(size_t offset, size_t timeout_ms)
             if (cv.wait_for(cv_lk, slice, downloaded))
                 break;
         }
+
+        /// The downloader released the segment before it downloaded the awaited offset.
+        if (download_state != State::DOWNLOADING && offset >= getCurrentWriteOffset())
+        {
+            ProfileEvents::increment(ProfileEvents::FileSegmentWaitWithoutData);
+            ProfileEvents::increment(ProfileEvents::FileSegmentWaitWithoutDataMicroseconds, watch.elapsed());
+        }
     }
 
     return download_state;
@@ -668,7 +723,8 @@ bool FileSegment::reserve(
     size_t lock_wait_timeout_milliseconds,
     std::string & failure_reason,
     FileCacheReserveStat * reserve_stat,
-    size_t reserve_hint)
+    std::optional<size_t> reserve_hint,
+    FileCacheReserveAhead * reserve_ahead)
 {
     if (!size_to_reserve)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Zero space reservation is not allowed");
@@ -708,29 +764,18 @@ bool FileSegment::reserve(
 
     const size_t minimum_reserve_size = size_to_reserve;
 
-    if (!is_unbound)
+    if (!is_unbound && reserve_ahead)
     {
-        const auto reserve_granularity = cache->getReserveGranularity();
-        if (reserve_granularity && reserve_granularity > size_to_reserve)
+        /// Don't reserve ahead past the segment end or the end of the read.
+        size_t segment_reserve_limit = range().size() - reserved_size;
+        if (reserve_hint)
         {
-            size_to_reserve = reserved_size + reserve_granularity > range().size()
-                ? range().size() - reserved_size
-                : reserve_granularity;
-
-            /// `reserve_hint` is measured from the current download offset, so the read ends at
-            /// `read_horizon` in segment-relative terms. Don't reserve ahead past it.
-            const size_t read_horizon = current_downloaded_size + reserve_hint;
-            if (reserve_hint
-                && read_horizon > reserved_size
-                && read_horizon < reserved_size + size_to_reserve)
-                size_to_reserve = read_horizon - reserved_size;
+            const size_t read_horizon = current_downloaded_size + *reserve_hint;
+            segment_reserve_limit = std::min(segment_reserve_limit, read_horizon > reserved_size ? read_horizon - reserved_size : 0);
         }
-    }
 
-    /// The reserve-ahead caps above (segment range, read horizon) are only an upper bound; they
-    /// must never reserve less than the current write needs, otherwise the write would exceed the
-    /// reservation. A bare assert would not protect release builds, so clamp explicitly.
-    size_to_reserve = std::max(size_to_reserve, minimum_reserve_size);
+        size_to_reserve = reserve_ahead->getReserveSize(size_to_reserve, segment_reserve_limit, cache->getReserveGranularity());
+    }
 
     /// This (resizable file segments) is allowed only for single threaded use of file segment.
     /// Currently it is used only for temporary files through cache.
@@ -742,9 +787,22 @@ bool FileSegment::reserve(
     FileCacheReserveStat dummy_stat;
     if (!reserve_stat)
         reserve_stat = &dummy_stat;
+    reserve_stat->not_enough_space = false;
 
     bool reserved = cache->tryReserve(
         *this, size_to_reserve, *reserve_stat, *getKeyMetadata()->origin, lock_wait_timeout_milliseconds, failure_reason);
+
+    if (!reserved && reserve_ahead)
+        reserve_ahead->reset();
+
+    /// Reserve-ahead is best-effort: retry with the exact size if it did not fit.
+    if (!reserved && size_to_reserve > minimum_reserve_size && reserve_stat->not_enough_space)
+    {
+        ProfileEvents::increment(ProfileEvents::FilesystemCacheReserveAheadRetries);
+        *reserve_stat = FileCacheReserveStat{};
+        reserved = cache->tryReserve(
+            *this, minimum_reserve_size, *reserve_stat, *getKeyMetadata()->origin, lock_wait_timeout_milliseconds, failure_reason);
+    }
 
     if (!reserved)
         setDownloadFailedUnlocked(lock());
@@ -953,7 +1011,12 @@ void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key
     chassert(reserved_size >= downloaded_size);
     if (reserved_size > downloaded_size)
     {
-        queue_iterator->decrementSize(reserved_size - downloaded_size);
+        const auto km = tryGetKeyMetadata();
+        const size_t aligned_delta = (km && km->useRealDiskSize())
+            ? km->alignFileSize(reserved_size) - km->alignFileSize(downloaded_size)
+            : reserved_size - downloaded_size;
+        if (aligned_delta)
+            queue_iterator->decrementSize(aligned_delta);
         reserved_size = downloaded_size.load();
     }
 
@@ -1261,10 +1324,14 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
             entry = it->getEntry();
             entry_size = entry->size;
         }
-        if (download_state != State::DOWNLOADING && entry_size != reserved_size)
+        const auto km = tryGetKeyMetadata();
+        const size_t expected_entry_size = (km && km->useRealDiskSize())
+            ? km->alignFileSize(reserved_size)
+            : reserved_size.load();
+        if (download_state != State::DOWNLOADING && entry_size != expected_entry_size)
             throw_logical(
                 fmt::format("Expected entry.size == reserved_size ({} == {}, entry: {})",
-                            entry_size, reserved_size.load(), entry->toString()));
+                            entry_size, expected_entry_size, entry->toString()));
 
         chassert(entry->key == key());
         chassert(entry->offset == offset());
@@ -1484,7 +1551,12 @@ void FileSegment::increasePriority()
         auto it = getQueueIterator();
         if (it)
         {
-            if (!cache->tryIncreasePriority(*this))
+            /// A move between priority queues must not run concurrently with a space reservation for
+            /// this segment. A completed segment never reserves again. A partially downloaded one is
+            /// safe while we hold its downloader role, because only the downloader reserves.
+            const auto downloader_guard = tryTakeDownloaderOfPartiallyDownloaded();
+
+            if (!cache->tryIncreasePriority(*it, downloader_guard || isCompleted()))
                 ProfileEvents::increment(ProfileEvents::FileSegmentFailToIncreasePriority);
 
             /// Used only for system.filesystem_cache.

@@ -650,8 +650,7 @@ static std::vector<StatisticsMinMaxAggregate> getStatisticsMinMaxAggregates(
     if (query_info.prewhere_info || query_info.row_level_filter || query_info.filter_actions_dag)
         return {};
 
-    /// TODO(unique-key): the delete bitmap of a unique-key table is applied at read time,
-    /// statistics don't reflect it.
+    /// TODO(unique-key): support statistics-based answers; they don't see the delete bitmap.
     if (metadata->hasUniqueKey())
         return {};
 
@@ -1272,6 +1271,7 @@ UseProjectionsResult optimizeUseAggregateProjections(
             /// store the remaining inexact ranges (not covered by exact analysis), to be used for for normal reading
             /// and count calculation.
             inexact_ranges_select_result = std::make_shared<ReadFromMergeTree::AnalysisResult>(*parent_reading_select_result);
+            inexact_ranges_select_result->exact_ranges_excluded = true;
             auto & parent_parts_with_ranges = inexact_ranges_select_result->parts_with_ranges;
             size_t exact_ranges_count = 0;
             size_t exact_ranges_parts = 0;
@@ -1388,6 +1388,7 @@ UseProjectionsResult optimizeUseAggregateProjections(
                 bool analyzed = analyzeProjectionCandidate(
                     candidate,
                     reader,
+                    reading->getMutationsSnapshot(),
                     empty_mutations_snapshot,
                     required_column_names,
                     metadata,
