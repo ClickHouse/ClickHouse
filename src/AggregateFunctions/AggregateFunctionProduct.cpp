@@ -11,6 +11,7 @@
 #include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/getLeastSupertype.h>
 
 #include <Common/assert_cast.h>
 #include <IO/ReadHelpers.h>
@@ -144,10 +145,10 @@ private:
 public:
     static constexpr bool DateTime64Supported = false;
 
-    explicit AggregateFunctionProduct(const DataTypes & argument_types)
+    explicit AggregateFunctionProduct(const DataTypes & argument_types_)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionProduct<T>>(
-            argument_types, {}, std::make_shared<DataTypeNumber<Float64>>())
-        , decimal_scale(is_decimal<T> ? getDecimalScale(*argument_types[0]) : 0)
+            argument_types_, {}, std::make_shared<DataTypeNumber<Float64>>())
+        , decimal_scale(is_decimal<T> ? getDecimalScale(*argument_types_[0]) : 0)
     {
     }
 
