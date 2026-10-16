@@ -6714,7 +6714,7 @@ bool StorageReplicatedMergeTree::optimize(
                         partition_id,
                         final,
                         query_context->getSettingsRef()[Setting::optimize_skip_merged_partitions],
-                        /*parts_before_wait=*/{});
+                        /*awaited_merge_results=*/{});
                 }
             };
 

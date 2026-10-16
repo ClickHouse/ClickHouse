@@ -120,6 +120,7 @@ namespace FailPoints
     extern const char mt_pause_before_register_mutation[];
     extern const char mt_alter_throw_in_durable_rollback[];
     extern const char mt_lightweight_update_pause_after_block_allocation[];
+    extern const char mt_optimize_final_pause_after_wait[];
 }
 
 namespace Setting
@@ -1099,8 +1100,8 @@ CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
     size_t total_size,
     StorageMergeTree & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
-    bool is_mutation)
-    : future_part(future_part_), storage(storage_), metadata_snapshot(metadata_snapshot_)
+    bool is_mutation_)
+    : future_part(future_part_), storage(storage_), metadata_snapshot(metadata_snapshot_), is_mutation(is_mutation_)
 {
     /// Assume mutex is already locked, because this method is called from mergeTask.
 
@@ -1151,7 +1152,7 @@ CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Tagging already tagged part {}. This is a bug.", part->name);
     }
     storage.currently_merging_mutating_parts.insert(future_part->parts.begin(), future_part->parts.end());
-    ++storage.currently_merging_mutating_metadata[metadata_snapshot];
+    storage.currently_merging_mutating_taggers.insert(this);
 
     if (is_mutation)
         storage.currently_mutating_part_future_versions[future_part->parts[0]] = future_part->part_info.mutation;
@@ -1171,8 +1172,7 @@ void CurrentlyMergingPartsTagger::finalize()
         storage.currently_mutating_part_future_versions.erase(part);
     }
 
-    if (auto it = storage.currently_merging_mutating_metadata.find(metadata_snapshot); --it->second == 0)
-        storage.currently_merging_mutating_metadata.erase(it);
+    storage.currently_merging_mutating_taggers.erase(this);
 
     storage.currently_processing_in_background_condition.notify_all();
 }
@@ -2164,8 +2164,8 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
 
     const auto select_in_partition = [&]() -> std::expected<FutureMergedMutatedPartPtr, SelectMergeFailure>
     {
-        /// The parts of the partition seen by the selection that first had to wait for running merges.
-        std::vector<MergeTreePartInfo> parts_before_wait;
+        /// The result parts of the merges that this OPTIMIZE waited for.
+        std::vector<MergeTreePartInfo> awaited_merge_results;
 
         while (true)
         {
@@ -2193,19 +2193,6 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
                     });
             }
 
-            /// Taken before the selection, so that a merge committed meanwhile is not mistaken for a part that was there before.
-            /// Only if all running merges and mutations use the metadata of this OPTIMIZE: a merge that started before an ALTER
-            /// (e.g. `ADD COLUMN`, `ADD INDEX`) does not do everything that merging its result again with the new metadata does.
-            std::vector<MergeTreePartInfo> parts_before_selection;
-            if (skip_part_of_awaited_merge && parts_before_wait.empty()
-                && std::ranges::all_of(currently_merging_mutating_metadata, [&](const auto & entry) { return entry.first == metadata_snapshot; }))
-            {
-                auto parts_lock = readLockParts();
-                parts_before_selection = std::ranges::to<std::vector>(
-                    getDataPartsVectorInPartitionForInternalUsage(MergeTreeDataPartState::Active, partition_id, parts_lock)
-                    | std::views::transform([](const DataPartPtr & part) { return part->info; }));
-            }
-
             auto select_result = merger_mutator.selectAllPartsToMergeWithinPartition(
                 metadata_snapshot,
                 parts_collector,
@@ -2213,7 +2200,7 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
                 partition_id,
                 final,
                 optimize_skip_merged_partitions,
-                parts_before_wait);
+                awaited_merge_results);
 
             if (!select_result.has_value())
             {
@@ -2225,8 +2212,7 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
                 /// while any merge is active. We only skip the wait when there is simply nothing to
                 /// merge in this partition (e.g. optimize_skip_merged_partitions): waiting there
                 /// would needlessly hold a slot while other partitions are still merging (#46770).
-                /// If the merges we waited for leave the partition merged into a single part, the retry
-                /// does not merge that part again (see `parts_before_wait`).
+                /// The retry does not merge again the part made by one of the merges we waited for.
                 if (final
                     && select_result.error().reason != SelectMergeFailure::Reason::NOTHING_TO_MERGE
                     && !currently_merging_mutating_parts.empty())
@@ -2239,14 +2225,31 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
                     if (on_wait_for_running_merges)
                         on_wait_for_running_merges();
 
-                    if (parts_before_wait.empty())
-                        parts_before_wait = std::move(parts_before_selection);
+                    /// Only merges with the metadata of this OPTIMIZE: a merge that started before an ALTER (e.g. `ADD COLUMN`,
+                    /// `ADD INDEX`) does not do everything that merging its result again with the new metadata does.
+                    if (skip_part_of_awaited_merge)
+                    {
+                        for (const auto * tagger : currently_merging_mutating_taggers)
+                        {
+                            if (!tagger->is_mutation && tagger->metadata_snapshot == metadata_snapshot
+                                && tagger->future_part->part_info.getPartitionId() == partition_id)
+                                awaited_merge_results.push_back(tagger->future_part->part_info);
+                        }
+                    }
 
                     if (std::cv_status::timeout == currently_processing_in_background_condition.wait_for(lock, timeout))
                         return std::unexpected(SelectMergeFailure{
                             .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
                             .explanation = PreformattedMessage::create("Timeout ({} ms) while waiting for already running merges before running OPTIMIZE with FINAL.", timeout_ms),
                         });
+
+                    /// Test hook: let other merges and mutations run between the wait and the retry.
+                    fiu_do_on(FailPoints::mt_optimize_final_pause_after_wait,
+                    {
+                        lock.unlock();
+                        FailPointInjection::notifyPauseAndWaitForResume(FailPoints::mt_optimize_final_pause_after_wait);
+                        lock.lock();
+                    });
 
                     continue;
                 }

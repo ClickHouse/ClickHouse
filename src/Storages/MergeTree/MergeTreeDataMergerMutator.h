@@ -68,9 +68,9 @@ public:
       * final - choose to merge even a single part - that is, allow to merge one part "with itself",
       * but if setting optimize_skip_merged_partitions is true than single part with level > 0
       * and without expired TTL won't be merged with itself.
-      * parts_before_wait - the parts of the partition when OPTIMIZE FINAL started to wait for running merges
-      * (empty if it did not wait). If those merges have merged all of them into a single part, that part
-      * won't be merged with itself either, unless it has patch parts to apply or the table has TTL or is a GraphiteMergeTree.
+      * awaited_merge_results - the result parts of the merges that OPTIMIZE FINAL waited for. If the partition
+      * consists only of one of them, it won't be merged with itself either, unless it has patch parts to apply
+      * or the table has TTL or is a GraphiteMergeTree.
       */
     std::expected<MergeSelectorChoices, SelectMergeFailure> selectAllPartsToMergeWithinPartition(
         const StorageMetadataPtr & metadata_snapshot,
@@ -79,7 +79,7 @@ public:
         const String & partition_id,
         bool final,
         bool optimize_skip_merged_partitions,
-        const std::vector<MergeTreePartInfo> & parts_before_wait);
+        const std::vector<MergeTreePartInfo> & awaited_merge_results);
 
     /** Creates a task to merge parts.
       * If `reservation != nullptr`, now and then reduces the size of the reserved space

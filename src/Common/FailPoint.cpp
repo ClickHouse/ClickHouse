@@ -425,6 +425,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(smt_merge_commit_pause_after_state_swap) \
     PAUSEABLE_ONCE(smt_metadata_update_pause_before_apply) \
     PAUSEABLE(mt_pause_before_register_mutation) \
+    PAUSEABLE(mt_optimize_final_pause_after_wait) \
     ONCE(transaction_rollback_reset_removal_tid_fail) \
     REGULAR(mt_mutate_task_can_skip_conversion_to_nullable_force_null_column_desc) \
     PAUSEABLE(iceberg_compaction_merge_pause_in_step) \

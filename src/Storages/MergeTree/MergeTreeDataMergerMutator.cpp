@@ -379,7 +379,7 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
             /*partition_id=*/best,
             /*final=*/true,
             /*optimize_skip_merged_partitions=*/true,
-            /*parts_before_wait=*/{});
+            /*awaited_merge_results=*/{});
     }
 
     return std::unexpected(SelectMergeFailure{
@@ -395,7 +395,7 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
     const String & partition_id,
     bool final,
     bool optimize_skip_merged_partitions,
-    const std::vector<MergeTreePartInfo> & parts_before_wait)
+    const std::vector<MergeTreePartInfo> & awaited_merge_results)
 {
     /// time is not important in this context, since the parts will not be passed through the merge selector.
     const time_t current_time = std::time(nullptr);
@@ -447,32 +447,16 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
     bool apply_patch_parts = (*data.getSettings())[MergeTreeSetting::apply_patches_on_merge];
     auto patch_parts = apply_patch_parts ? merge_predicate->getPatchesToApplyOnMerge(parts) : PartsRange{};
 
-    /// If final and OPTIMIZE waited for running merges which have merged all the parts the partition had before the wait
-    /// into a single part, merging that part with itself would only repeat the merge just done. A merge raises the level
-    /// above those of its source parts and keeps their highest mutation version, while a mutation keeps the level and
-    /// raises the mutation version. A part mutated after the merge is merged again, because the mutation may leave work
-    /// for a merge (rows masked by a lightweight delete, zero rows of `SummingMergeTree`). So is a part with patch parts
-    /// to apply, or when the result of a merge depends on its time (TTL, Graphite rollup): the awaited merge started
-    /// earlier, and rows could expire since.
-    if (final && parts.size() == 1 && !parts_before_wait.empty() && patch_parts.empty()
+    /// If final and the partition consists only of the part made by a merge that OPTIMIZE waited for, merging it with itself
+    /// would only repeat that merge. Unless there are patch parts to apply, or the result of a merge depends on its time
+    /// (TTL, Graphite rollup): the awaited merge started earlier, and rows could expire since.
+    if (final && parts.size() == 1 && patch_parts.empty() && std::ranges::contains(awaited_merge_results, parts.front().info)
         && !metadata_snapshot->hasAnyTTL() && data.merging_params.mode != MergeTreeData::MergingParams::Graphite)
     {
-        const PartProperties & part = parts.front();
-        const Int64 max_mutation_before_wait = std::ranges::max(parts_before_wait, {}, &MergeTreePartInfo::mutation).mutation;
-        const bool made_by_awaited_merge = part.info.mutation <= max_mutation_before_wait
-            && std::ranges::all_of(parts_before_wait, [&](const MergeTreePartInfo & part_before_wait)
-            {
-                return part.info.contains(part_before_wait) && part.info.level > part_before_wait.level;
-            });
-
-        if (made_by_awaited_merge)
-        {
-            return std::unexpected(SelectMergeFailure{
-                .reason = SelectMergeFailure::Reason::NOTHING_TO_MERGE,
-                .explanation = PreformattedMessage::create(
-                    "Partition was merged into the single part {} by the merges OPTIMIZE FINAL waited for", part.name),
-            });
-        }
+        return std::unexpected(SelectMergeFailure{
+            .reason = SelectMergeFailure::Reason::NOTHING_TO_MERGE,
+            .explanation = PreformattedMessage::create("Partition consists of the part {} made by a merge OPTIMIZE FINAL waited for", parts.front().name),
+        });
     }
 
     if (auto result = canMergeAllParts(parts, merge_predicate); !result.has_value())

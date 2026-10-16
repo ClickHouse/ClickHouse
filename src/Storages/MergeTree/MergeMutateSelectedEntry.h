@@ -21,6 +21,7 @@ struct CurrentlyMergingPartsTagger
     ReservationSharedPtr reserved_space;
     StorageMergeTree & storage;
     StorageMetadataPtr metadata_snapshot;
+    bool is_mutation;
     // Optional tagger to maintain volatile parts for the JBOD balancer
     std::optional<CurrentlySubmergingEmergingTagger> tagger;
     bool finalized{false};
@@ -30,7 +31,7 @@ struct CurrentlyMergingPartsTagger
         size_t total_size,
         StorageMergeTree & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
-        bool is_mutation);
+        bool is_mutation_);
 
     /// The finalize() method acquires the `currently_processing_in_background_mutex` lock
     /// to remove the parts from the `currently_merging_mutating_parts` set.

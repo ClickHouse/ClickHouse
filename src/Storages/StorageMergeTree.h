@@ -159,9 +159,9 @@ private:
     /// currently mutating parts with future version
     std::map<DataPartPtr, Int64> currently_mutating_part_future_versions;
 
-    /// Metadata snapshots of the currently running merges and mutations, with the number of them using each snapshot.
-    /// This map have to be used with `currently_processing_in_background_mutex`.
-    std::unordered_map<StorageMetadataPtr, size_t> currently_merging_mutating_metadata;
+    /// Taggers of the currently running merges and mutations.
+    /// This set have to be used with `currently_processing_in_background_mutex`.
+    std::unordered_set<const CurrentlyMergingPartsTagger *> currently_merging_mutating_taggers;
 
     /// current parts postpone reasons
     std::map<std::string, std::string> current_parts_postpone_reasons;
@@ -281,7 +281,7 @@ private:
         std::unique_lock<std::mutex> & lock,
         const MergeTreeTransactionPtr & txn,
         bool optimize_skip_merged_partitions = false,
-        /// OPTIMIZE FINAL that waited for running merges does not merge again the single part they have merged the partition into.
+        /// OPTIMIZE FINAL that waited for running merges does not merge again the part made by one of them.
         bool skip_part_of_awaited_merge = false,
         const std::function<void()> & on_wait_for_running_merges = {});
 

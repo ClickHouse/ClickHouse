@@ -10,3 +10,6 @@ second OPTIMIZE waits for the running merge: yes
 FINAL after ALTER
 second OPTIMIZE waits for the running merge: yes
 1	2
+FINAL after mutation of the merged part
+second OPTIMIZE waits for the running merge: yes
+1	2
