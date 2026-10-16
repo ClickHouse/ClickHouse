@@ -497,7 +497,7 @@ public:
     }
 
     /// Except for floats, the loop of inlined `add` is vectorized as well as `addMany`. For floats `addMany`
-    /// is unrolled by 16 values, so it pays off from about twice that.
+    /// is unrolled by 128 bytes (16 `Float64` values), so it pays off from about twice that.
     constexpr static size_t minArraySizeForAddBatchSinglePlace()
     {
         return is_floating_point<T> ? 32 : IAggregateFunction::never_add_batch_single_place_for_arrays;

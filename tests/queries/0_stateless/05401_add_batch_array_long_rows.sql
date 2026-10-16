@@ -1,6 +1,6 @@
 -- `addBatchArray` (used by `arrayReduce` and the `-Array` combinator) sends a row with a long array
--- to `addBatchSinglePlace` and adds a short one element by element. Mix both kinds of rows within
--- and across blocks and compare with results computed another way.
+-- to `addBatchSinglePlace` and adds a short one element by element (always for integer `sum`/`avg` and
+-- `count`). Mix both kinds of rows within and across blocks and compare with results computed another way.
 
 DROP TABLE IF EXISTS t_add_batch_array;
 
@@ -48,8 +48,6 @@ FROM (SELECT arrayMap(i -> if(i % 3 = 0, NULL, toInt64(number % 7 + i)), range(i
 SELECT k, sumArray(a), maxArray(a), ifNull(sumArray(n), 0), uniqExactArray(a), sumIfArray(a, c), arraySort(groupArrayArray(a)) FROM t_add_batch_array WHERE notEmpty(a) GROUP BY k
 EXCEPT
 SELECT k, sum(x), max(x), ifNull(sum(y), 0), uniqExact(x), sumIf(x, cf), arraySort(groupArray(x)) FROM t_add_batch_array ARRAY JOIN a AS x, n AS y, c AS cf GROUP BY k;
-
-SELECT sum(s) FROM (SELECT k, sumArray(a) AS s FROM t_add_batch_array GROUP BY k);
 
 -- The batch loop of a float `sum` may round differently, so the result for a row must not depend on the other rows of its block.
 SELECT

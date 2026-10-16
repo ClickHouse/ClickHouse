@@ -216,11 +216,6 @@ public:
 
     constexpr static bool parallelizeMergeWithKey() { return false; }
 
-    /// `addBatchArray` of `IAggregateFunctionHelper` passes an array of at least this many elements to `addBatchSinglePlace`
-    /// in one call; a shorter one is added element by element, as the call would cost more than it saves.
-    static constexpr size_t never_add_batch_single_place_for_arrays = std::numeric_limits<size_t>::max();
-    constexpr static size_t minArraySizeForAddBatchSinglePlace() { return 16; }
-
     virtual void
     parallelizeMergePrepare(AggregateDataPtrs & /*places*/, ThreadPool & /*thread_pool*/, std::atomic<bool> & /*is_cancelled*/) const;
 
@@ -243,8 +238,16 @@ public:
     virtual bool isAbleToParallelizeMerge() const { return false; }
 
     /// Return true if it is allowed to replace call of `addBatch`
-    /// to `addBatchSinglePlace` for ranges of consecutive equal keys.
+    /// to `addBatchSinglePlace` for ranges of consecutive equal keys,
+    /// and the calls of `add` for one array in `addBatchArray`:
+    /// `addBatchSinglePlace` must give exactly what `add` gives row by row.
     virtual bool canOptimizeEqualKeysRanges() const { return true; }
+
+    /// `addBatchArray` of `IAggregateFunctionHelper` passes an array of at least this many elements to `addBatchSinglePlace`
+    /// in one call; a shorter one is added element by element, as the call would cost more than it saves.
+    constexpr static size_t minArraySizeForAddBatchSinglePlace() { return 16; }
+    /// Returned by `minArraySizeForAddBatchSinglePlace` to add every array element by element.
+    constexpr static size_t never_add_batch_single_place_for_arrays = std::numeric_limits<size_t>::max();
 
     /// Should be used only if isAbleToParallelizeMerge() returned true.
     /// Non-virtual public entry point that asserts the source and destination states do not alias.
@@ -892,9 +895,10 @@ public:
     {
         /// The elements of a row all go to one state, so a long row is a single `addBatchSinglePlace`
         /// call, which reaches the specialized batch loops (the nested batch calls of `-Null` and `-If`,
-        /// vectorized `max`). For a short row that call costs more than it saves. The path depends only
-        /// on the row itself, because the batch loop of a float `sum` may round differently; when no row
-        /// of the block can be long, the test of each row is skipped, as it costs more than an empty row.
+        /// vectorized `max`), if `canOptimizeEqualKeysRanges` says it gives what `add` gives. For a short
+        /// row that call costs more than it saves. The path depends only on the row itself, because the
+        /// batch loop of a float `sum` may round differently; when no row of the block can be long, the
+        /// test of each row is skipped, as it costs more than an empty row.
         static constexpr size_t min_array_size_for_batch = Derived::minArraySizeForAddBatchSinglePlace();
         const auto * derived = static_cast<const Derived *>(this);
         size_t current_offset = offsets[static_cast<ssize_t>(row_begin) - 1];

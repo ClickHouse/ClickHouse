@@ -1,6 +1,6 @@
--- `arrayReduce` sends an array of at least 16 elements to `addBatchSinglePlace`, which must give what `add`
--- gives element by element: the first of equal values, and NaN and NULL nested in a value ordered as in `add`.
--- With one row per block, the array is the whole nested column.
+-- For these functions `addBatchSinglePlace` differs from `add` (another of equal values than the first, NaN
+-- and NULL nested in a value ordered differently, a condition of 2), so `arrayReduce` of an array of at
+-- least 16 elements must still give what `add` gives. With one row per block, the array is the whole column.
 
 SET max_block_size = 1;
 

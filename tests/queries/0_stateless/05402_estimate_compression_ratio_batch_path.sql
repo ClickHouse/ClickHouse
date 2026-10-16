@@ -10,7 +10,7 @@ SELECT
     (SELECT estimateCompressionRatioIf(number, number < 500) FROM numbers(1000))
     = (SELECT estimateCompressionRatioIf(number, number < 500) FROM numbers(1000) GROUP BY number % 1);
 
--- `arrayReduce` sends an array of at least 16 elements through the batch path.
+-- `arrayReduce` adds an array element by element, as `canOptimizeEqualKeysRanges` is false, also with `-If`.
 SELECT arrayReduce('estimateCompressionRatioIf', arrayMap(x -> toUInt64(x), range(100)), arrayMap(x -> toUInt8(0), range(100)));
 
 SELECT
