@@ -1626,7 +1626,8 @@ QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
     TableExpressionNodePtr replacement_table_expression,
     const ContextPtr & context,
     const Names & required_column_names,
-    const NamesAndTypesList & child_only_columns)
+    const NamesAndTypesList & child_only_columns,
+    std::vector<std::pair<size_t, QueryTreeNodePtr>> & child_only_projection)
 {
     auto * query_node = query->as<QueryNode>();
     auto join_tree_type = query_node->getJoinTreeNode()->getNodeType();
@@ -1747,7 +1748,8 @@ QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
         {
             if (auto child_column = child_only_columns.tryGetByName(column_name))
             {
-                projection.push_back(std::make_shared<ColumnNode>(*child_column, replacement_table_expression));
+                child_only_projection.emplace_back(projection.size(), std::make_shared<ColumnNode>(*child_column, replacement_table_expression));
+                projection.push_back(child_only_projection.back().second);
                 projection_columns.push_back(*child_column);
                 continue;
             }
@@ -1802,7 +1804,9 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
             replacement_table_expression->setTableExpressionModifiers(*query_info.table_expression_modifiers);
 
         /// A physical column of the child that the `Merge` does not declare can be requested only as the
-        /// substitute read of a query over nothing but the `Merge` virtual columns.
+        /// substitute read of a query over nothing but the `Merge` virtual columns. A substitute named like
+        /// a `Merge` virtual column replaced by a constant below (`_database`, `_table`) is the child's
+        /// column as well: the `Merge` never requests those virtual columns from a child.
         NamesAndTypesList child_only_columns;
         if (is_smallest_column_requested)
         {
@@ -1811,14 +1815,17 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
                 .withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
             for (const auto & column_name : required_column_names)
             {
-                if (merge_storage_snapshot->tryGetColumn(merge_column_options, column_name))
+                const bool is_merge_name_column = (column_name == "_database" || column_name == "_table")
+                    && merge_storage_snapshot->metadata->isVirtualColumn(column_name);
+                if (!is_merge_name_column && merge_storage_snapshot->tryGetColumn(merge_column_options, column_name))
                     continue;
                 if (auto child_column = storage_snapshot_->metadata->getColumns().tryGetPhysical(column_name))
                     child_only_columns.push_back(*child_column);
             }
         }
 
-        modified_query_info.query_tree = replaceTableExpressionAndRemoveJoin(modified_query_info.query_tree, modified_query_info.table_expression, replacement_table_expression, modified_context, required_column_names, child_only_columns);
+        std::vector<std::pair<size_t, QueryTreeNodePtr>> child_only_projection;
+        modified_query_info.query_tree = replaceTableExpressionAndRemoveJoin(modified_query_info.query_tree, modified_query_info.table_expression, replacement_table_expression, modified_context, required_column_names, child_only_columns, child_only_projection);
         modified_query_info.table_expression = replacement_table_expression;
         modified_query_info.planner_context->getOrCreateTableExpressionData(replacement_table_expression);
 
@@ -1891,6 +1898,12 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
             /// Merge virtual column must see the child's name as well.
             ReplaceColumnsEverywhereVisitor visitor(replacement_table_expression, std::move(virtual_column_name_to_constant));
             visitor.visit(modified_query_info.query_tree);
+
+            /// The substitute read of the child is the child's physical column even when it is named
+            /// `_database` or `_table`, so it is not a reference to the Merge virtual column: restore it.
+            auto & projection = modified_query_info.query_tree->as<QueryNode &>().getProjection().getNodes();
+            for (const auto & [position, node] : child_only_projection)
+                projection[position] = node;
         }
 
         /// Replace references to columns that don't exist in this child table with default values.
