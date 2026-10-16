@@ -128,8 +128,10 @@ StoragePolicy::StoragePolicy(
 
 bool StoragePolicy::isBackupMetadataOnly() const
 {
-    /// A disk can become writable after the policy is created, by a reload of the configuration that keeps the policy:
-    /// the policy built from the new configuration fails the check and the old one stays.
+    /// Rechecked on every call, because a disk can become writable while the policy is live: `DiskLocal` clears its
+    /// read-only flag itself once its periodic check writes to the root directory again, and a reload of the
+    /// configuration that makes a disk writable keeps this policy, since the policy built from the new configuration
+    /// fails the check in the constructor and is discarded. So the check cannot be left to where a policy is built.
     if (backup_metadata_only)
         checkVolumesAreReadOnly();
     return backup_metadata_only;

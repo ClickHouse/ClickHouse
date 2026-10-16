@@ -1385,6 +1385,7 @@ def test_backup_restore_s3_plain_backup_metadata_only(cluster):
         """
         DROP TABLE IF EXISTS sample_alias SYNC;
         DROP TABLE IF EXISTS sample_alias_copy SYNC;
+        DROP TABLE IF EXISTS sample_structure_only SYNC;
         DROP TABLE IF EXISTS ts SYNC;
         DROP TABLE IF EXISTS sample SYNC;
         DROP TABLE IF EXISTS mv SYNC;
@@ -1476,6 +1477,15 @@ def test_backup_restore_s3_plain_backup_metadata_only(cluster):
         f"RESTORE TABLE sample AS sample_copy FROM {backup_destination}"
     )
     assert "CANNOT_RESTORE_TABLE" in err and "another table already has this UUID" in err, err
+
+    # A restore that leaves out the data has nothing to find on the storage, so it keeps no UUID either: it is an
+    # ordinary empty table and fits next to the source table.
+    instance.query(
+        f"RESTORE TABLE sample AS sample_structure_only FROM {backup_destination} SETTINGS structure_only = 1"
+    )
+    assert get_uuid("sample_structure_only") != sample_uuid
+    assert instance.query("SELECT count() FROM sample_structure_only") == "0\n"
+    instance.query("DROP TABLE sample_structure_only SYNC")
 
     # The other table can be in a database the restoring user may not see, so the error doesn't name it.
     instance.query(

@@ -661,12 +661,9 @@ void BackupEntriesCollector::gatherTablesMetadata()
         }
 
         /// The data of a table on a storage policy marked `backup_metadata_only` is never backed up, the storage provides
-        /// it. A backup of some of its partitions would be restored as the whole table, so refuse it. A `Replicated` database
-        /// may give only the definition of a table not created on this replica yet, then the definition decides.
-        const auto * create_table_query = res_table_info.create_table_query ? res_table_info.create_table_query->as<ASTCreateQuery>() : nullptr;
+        /// it. A backup of some of its partitions would be restored as the whole table, so refuse it.
         if (partitions_named
-            && (res_table_info.storage ? BackupUtils::isDataOnBackupMetadataOnlyStoragePolicy(res_table_info.storage, context)
-                                       : create_table_query && BackupUtils::isCreatedOnBackupMetadataOnlyStoragePolicy(*create_table_query, context)))
+            && BackupUtils::isDataOnBackupMetadataOnlyStoragePolicy(res_table_info.storage, res_table_info.create_table_query, context))
         {
             throw Exception(
                 ErrorCodes::CANNOT_BACKUP_TABLE,
@@ -978,10 +975,7 @@ bool BackupEntriesCollector::shouldBackupTableData(
         return false;
     }
 
-    /// A `Replicated` database may give only the definition of a table not created on this replica yet.
-    const auto * create = create_table_query ? create_table_query->as<ASTCreateQuery>() : nullptr;
-    if (storage ? BackupUtils::isDataOnBackupMetadataOnlyStoragePolicy(storage, context)
-                : create && BackupUtils::isCreatedOnBackupMetadataOnlyStoragePolicy(*create, context))
+    if (BackupUtils::isDataOnBackupMetadataOnlyStoragePolicy(storage, create_table_query, context))
     {
         LOG_INFO(log, "Skipping table data for {} (on a storage policy marked backup_metadata_only)", table_name.getFullName());
         return false;

@@ -872,7 +872,10 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
                 "as a mount, or restore the selected partitions without mount_readonly_parts_from_snapshot.");
 #endif
 
-        if (create_table_query->uuid != UUIDHelpers::Nil && BackupUtils::isCreatedOnBackupMetadataOnlyStoragePolicy(*create_table_query, context))
+        /// Without the data the table has nothing to find on the storage, so it is restored as an ordinary empty table,
+        /// with a new UUID: keeping the UUID would show all the data of the storage in a `structure_only` restore.
+        if (create_table_query->uuid != UUIDHelpers::Nil && restore_settings.shouldRestoreTableData()
+            && BackupUtils::isCreatedOnBackupMetadataOnlyStoragePolicy(*create_table_query, context))
         {
             /// The table finds its data on the storage under a path derived from its UUID, so it keeps its UUID from the backup.
             /// The other table can be in any database, so its name is not shown: the user may not be allowed to see it.

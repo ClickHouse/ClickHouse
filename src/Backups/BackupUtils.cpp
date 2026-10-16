@@ -200,7 +200,8 @@ bool isDataOnBackupMetadataOnlyStoragePolicy(const StoragePtr & storage, const C
     {
         if (materialized_view->hasInnerTable())
         {
-            if (auto target = materialized_view->tryGetTargetTable(); target && getMergeTreeOnBackupMetadataOnlyStoragePolicy(target))
+            auto target = materialized_view->tryGetTargetTable();
+            if (target && getMergeTreeOnBackupMetadataOnlyStoragePolicy(target))
                 warnBackupMetadataOnlyIgnored(storage, fmt::format("it is a materialized view with the inner table {}", target->getStorageID().getNameForLogs()));
         }
         return false;
@@ -212,7 +213,8 @@ bool isDataOnBackupMetadataOnlyStoragePolicy(const StoragePtr & storage, const C
         {
             if (!time_series->isInnerTable(target_kind))
                 continue;
-            if (auto target = time_series->tryGetTargetTable(target_kind, context); target && getMergeTreeOnBackupMetadataOnlyStoragePolicy(target))
+            auto target = time_series->tryGetTargetTable(target_kind, context);
+            if (target && getMergeTreeOnBackupMetadataOnlyStoragePolicy(target))
                 warnBackupMetadataOnlyIgnored(storage, fmt::format("it is a TimeSeries table with the inner table {}", target->getStorageID().getNameForLogs()));
         }
         return false;
@@ -250,12 +252,22 @@ bool isCreatedOnBackupMetadataOnlyStoragePolicy(const ASTCreateQuery & create_qu
     if (it == storages.end() || it->second.features.has_builtin_setting_fn != MergeTreeSettings::hasBuiltin)
         return false;
 
-    if (!context->getStoragePolicy(policy_name->safeGet<String>())->isBackupMetadataOnly())
+    /// Only the plain family reopens the parts it finds on the storage: the replicated and shared engines are
+    /// registered with `supports_replication`. Decided before the policy is resolved, which throws when the policy is
+    /// not configured on this host: that is allowed for a table whose data the other replicas provide.
+    if (it->second.features.supports_replication)
         return false;
 
-    /// Only the plain family reopens the parts it finds on the storage: the replicated and shared engines are
-    /// registered with `supports_replication`.
-    return !it->second.features.supports_replication;
+    return context->getStoragePolicy(policy_name->safeGet<String>())->isBackupMetadataOnly();
+}
+
+bool isDataOnBackupMetadataOnlyStoragePolicy(const StoragePtr & storage, const ASTPtr & create_table_query, const ContextPtr & context)
+{
+    if (storage)
+        return isDataOnBackupMetadataOnlyStoragePolicy(storage, context);
+
+    const auto * create_query = create_table_query ? create_table_query->as<ASTCreateQuery>() : nullptr;
+    return create_query && isCreatedOnBackupMetadataOnlyStoragePolicy(*create_query, context);
 }
 
 }
