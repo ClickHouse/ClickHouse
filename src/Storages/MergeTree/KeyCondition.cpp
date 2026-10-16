@@ -3431,10 +3431,11 @@ static bool keyToSetConversionMayCollapse(const DataTypePtr & key_type, const Da
     if ((key_which.isInteger() || key_which.isFloat()) && (set_which.isInteger() || set_which.isFloat()))
         return false;
 
-    /// A value has one spelling, except a local `DateTime` (clocks going back) and an out-of-range `Date32`, `Time` or `Time64` (saturated).
+    /// A value has one spelling, except a local `DateTime` (clocks going back), an out-of-range `Date32`, `Time` or `Time64`
+    /// (saturated) and a `Bool` (every nonzero byte is `true`).
     if (set_which.isString())
-        return !(key_which.isNumber() || key_which.isEnum() || key_which.isDate() || key_which.isUUID() || key_which.isIPv4()
-            || key_which.isIPv6());
+        return !((key_which.isNumber() && !isBool(key_unwrapped)) || key_which.isEnum() || key_which.isDate() || key_which.isUUID()
+            || key_which.isIPv4() || key_which.isIPv6());
 
     const auto key_scale = tryGetDecimalScale(*key_unwrapped);
     const auto set_scale = tryGetDecimalScale(*set_unwrapped);

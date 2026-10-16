@@ -98,13 +98,16 @@ CREATE TABLE t_dec10 (d Decimal(10, 0)) ENGINE = MergeTree ORDER BY d SETTINGS i
 INSERT INTO t_dec10 SELECT CAST(9007199254740992 + number, 'Decimal(10, 0)') FROM numbers(2);
 SELECT count() FROM t_dec10 WHERE d IN (SELECT toFloat64(9007199254740992));
 
--- Formatting saturates an out-of-range `Date32` or `Time`; `RowBinary` stores one.
+-- Formatting saturates an out-of-range `Date32` or `Time` and prints every nonzero `Bool` byte as `true`; `RowBinary` stores them.
 CREATE TABLE t_d32s (d Date32) ENGINE = MergeTree ORDER BY d SETTINGS index_granularity = 1;
 INSERT INTO t_d32s SELECT * FROM format(RowBinary, 'd Date32', unhex('A0C02C00A1C02C00A2C02C00'));
 SELECT count() FROM t_d32s WHERE d IN (SELECT '9999-12-31');
 CREATE TABLE t_time (t Time) ENGINE = MergeTree ORDER BY t SETTINGS index_granularity = 1;
 INSERT INTO t_time SELECT * FROM format(RowBinary, 't Time', unhex('7FEE360080EE360081EE3600'));
 SELECT count() FROM t_time WHERE t IN (SELECT '999:59:59');
+CREATE TABLE t_boolb (b Bool) ENGINE = MergeTree ORDER BY b SETTINGS index_granularity = 1;
+INSERT INTO t_boolb SELECT * FROM format(RowBinary, 'b Bool', unhex('000102'));
+SELECT count() FROM t_boolb WHERE b IN (SELECT 'true');
 
 -- A set whose cast merges nothing keeps pruning.
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dt WHERE d IN (SELECT toDateTime('2023-02-01 12:00:01', 'UTC'))) WHERE explain ILIKE '%Granules: 1/2%';
@@ -158,3 +161,4 @@ DROP TABLE t_dec6;
 DROP TABLE t_dec10;
 DROP TABLE t_d32s;
 DROP TABLE t_time;
+DROP TABLE t_boolb;
