@@ -22,6 +22,13 @@ SELECT toUnixTimestamp64Nano(timestamp) AS t, t = toUnixTimestamp64Nano(parseDat
 SELECT toUnixTimestamp64Nano(timestamp) FROM prometheusQuery('ts', '1', '20231114');
 SELECT toUnixTimestamp64Nano(timestamp) FROM prometheusQuery('ts', '1', '1700000000');
 SELECT toUnixTimestamp64Nano(timestamp) FROM prometheusQuery('ts', '1', '-1');
+SELECT toUnixTimestamp64Nano(timestamp) FROM prometheusQuery('ts', '1', '1700000000.5');
+
+-- No number has two decimal points, so dotted dates are dates.
+SELECT toUnixTimestamp64Nano(timestamp) AS t, t = toUnixTimestamp64Nano(parseDateTime64BestEffort('14.11.2023', 9)) FROM prometheusQuery('ts', '1', '14.11.2023');
+SELECT toUnixTimestamp64Nano(timestamp) AS t, t = toUnixTimestamp64Nano(parseDateTime64BestEffort('2023.11.14', 9)) FROM prometheusQuery('ts', '1', '2023.11.14');
+SELECT timeSeriesLastToGrid('14.11.2023', '14.11.2023', 1, 1)(parseDateTime64BestEffort('14.11.2023', 3), 1::Float64);
+SELECT timeSeriesLastToGrid('2023.11.14', '2023.11.14', 1, 1)(parseDateTime64BestEffort('2023.11.14', 3), 1::Float64);
 
 SELECT arrayMap(x -> toUnixTimestamp(x.1), samples) FROM prometheusQueryRange('ts', '1', 'Tue, 14 Nov 2023 22:13:20 GMT', '15 Nov 2023 03:44:20', '30s');
 SELECT timeSeriesLastToGrid('Tue, 14 Nov 2023 22:13:20 GMT', '15 Nov 2023 03:44:20', 30, 60)(toDateTime(1700000000 + number * 30, 'UTC'), number::Float64) FROM numbers(3);
@@ -31,6 +38,9 @@ SELECT timestamp FROM prometheusQuery('ts', '1', 'abc'); -- { serverError BAD_AR
 SELECT timestamp FROM prometheusQuery('ts', '1', '2023-11-14T22:13:20Z junk'); -- { serverError BAD_ARGUMENTS }
 SELECT timestamp FROM prometheusQuery('ts', '1', '1970-13-01'); -- { serverError BAD_ARGUMENTS }
 SELECT timestamp FROM prometheusQuery('ts', '1', '9223372036854775808'); -- { serverError BAD_ARGUMENTS }
+SELECT timestamp FROM prometheusQuery('ts', '1', '9223372036854775808.5'); -- { serverError BAD_ARGUMENTS }
+SELECT timestamp FROM prometheusQuery('ts', '1', '1.2.3'); -- { serverError BAD_ARGUMENTS }
+SELECT timestamp FROM prometheusQuery('ts', '1', '1.2.3e5'); -- { serverError BAD_ARGUMENTS }
 
 -- Like Prometheus, leading or trailing whitespace is an error, so a too-big number is never read as a date either.
 SELECT timeSeriesLastToGrid(' 9223372036854775808', ' 9223372036854775816', 1, 1)(toDateTime64(0, 3, 'UTC'), 1.0); -- { serverError BAD_ARGUMENTS }

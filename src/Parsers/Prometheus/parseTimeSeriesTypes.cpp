@@ -231,7 +231,11 @@ namespace
             if (!str.empty() && (isWhitespaceASCII(str.front()) || isWhitespaceASCII(str.back())))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse a timestamp from string {}: Leading or trailing whitespace", quoteString(str));
 
-            if (PrometheusQueryParsingUtil::tryParseTimestamp(
+            /// No number has two decimal points, so a dotted date like '14.11.2023' is not read as Unix seconds.
+            bool may_be_number = std::ranges::count(str, '.') < 2;
+            if (!may_be_number)
+                error_message = "Too many decimal points";
+            else if (PrometheusQueryParsingUtil::tryParseTimestamp(
                     str, scale, result, &error_message, &error_pos, /* allow_octal_literals */ false))
                 return result;
 
@@ -241,7 +245,8 @@ namespace
             /// Otherwise accept any date-time text parseDateTimeBestEffort understands, e.g. 'Tue, 14 Nov 2023 22:13:20 GMT'.
             /// A plain number is always Unix seconds, so one that failed above (too big) is not read as a date.
             size_t digits_start = (str.starts_with('+') || str.starts_with('-')) ? 1 : 0;
-            bool is_plain_number = str.size() > digits_start && str.find_first_not_of("0123456789.", digits_start) == std::string_view::npos;
+            bool is_plain_number = may_be_number && str.size() > digits_start
+                && str.find_first_not_of("0123456789.", digits_start) == std::string_view::npos;
             ReadBufferFromString buf{str};
             if (!is_plain_number && tryParseDateTime64BestEffort(result, scale, buf, DateLUT::instance(), DateLUT::instance("UTC")) && buf.eof())
                 return result;
