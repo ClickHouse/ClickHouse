@@ -46,6 +46,8 @@ SELECT count() FROM t_enum_name_key WHERE e < 'm';
 SELECT count() FROM t_enum_name_key WHERE e > 'a';
 SELECT count() FROM t_string_key WHERE s < CAST('m', 'Enum8(''z'' = 1, ''a'' = 2, ''m'' = 3)');
 SELECT count() FROM t_string_key WHERE s < CAST('m', 'Enum8(''z'' = 1, ''a'' = 2, ''m'' = 3)') AND s = 'z';
+SELECT count() FROM t_string_derived_key WHERE s < CAST('m', 'Enum8(''z'' = 1, ''a'' = 2, ''m'' = 3)');
+SELECT count() FROM t_string_derived_key WHERE s < toNullable(CAST('m', 'Enum8(''z'' = 1, ''a'' = 2, ''m'' = 3)'));
 SELECT count() FROM t_string_derived_key WHERE s < CAST(CAST('m', 'Enum8(''z'' = 1, ''a'' = 2, ''m'' = 3)') AS Dynamic);
 SELECT count() FROM t_string_derived_key WHERE s < CAST(CAST('m', 'Enum8(''z'' = 1, ''a'' = 2, ''m'' = 3)') AS Variant(Array(UInt8), Enum8('z' = 1, 'a' = 2, 'm' = 3)));
 
