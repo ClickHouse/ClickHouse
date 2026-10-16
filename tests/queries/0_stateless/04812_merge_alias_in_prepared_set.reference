@@ -1,0 +1,19 @@
+constant tuple
+[0,1,7]
+explicit column
+[0,1,7]
+with filter
+[1]
+set table
+[0,1,7]
+not in
+[0,1,7]
+tuple key
+[0,1,7]
+nullable
+[1,7,255]	1
+query info cache
+[0,1,7]
+identical children
+[0,1]
+ALIAS	y IN (1, 2, 3)

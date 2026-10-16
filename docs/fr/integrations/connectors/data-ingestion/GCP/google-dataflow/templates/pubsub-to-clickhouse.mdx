@@ -167,20 +167,20 @@ Connectez-vous à votre Google Cloud Console et recherchez Dataflow.
 
 2. Une fois le formulaire du modèle ouvert, saisissez un nom de job et sélectionnez la région souhaitée.
 
-   {/* PLACEHOLDER: add screenshot of the Pub/Sub to ClickHouse template initial form (job name + region) */}
+   {/* PLACEHOLDER: add screenshot of the Pub/Sub vers ClickHouse template initial form (job name + region) */}
 
-3. Dans le champ `Dataflow Template`, saisissez `ClickHouse` ou `Pub/Sub`, puis sélectionnez le modèle `Pub/Sub to ClickHouse`.
+3. Dans le champ `Dataflow Template`, saisissez `ClickHouse` ou `Pub/Sub`, puis sélectionnez le modèle `Pub/Sub vers ClickHouse`.
 
-   {/* PLACEHOLDER: add screenshot of selecting the "Pub/Sub to ClickHouse" template from the dropdown */}
+   {/* PLACEHOLDER: add screenshot of selecting the "Pub/Sub vers ClickHouse" template from the dropdown */}
 
-4. Une fois le modèle sélectionné, le formulaire se déplie. Renseignez :
+4. Une fois le modèle sélectionné, le formulaire se déplie. Renseignez :
 
    * L&#39;abonnement d&#39;entrée Pub/Sub, au format `projects/<PROJECT_ID>/subscriptions/<SUBSCRIPTION_NAME>`.
    * L&#39;URL du point de terminaison ClickHouse — pour ClickHouse Cloud, utilisez `https://<HOST>:8443`.
    * La base de données ClickHouse, la table cible, le nom d&#39;utilisateur et le mot de passe.
-   * Au moins une destination dead-letter : une table ClickHouse ou un topic Pub/Sub (ou les deux).
+   * Au moins une destination dead-letter : une table ClickHouse ou un topic Pub/Sub (ou les deux).
 
-   {/* PLACEHOLDER: add screenshot of the expanded Pub/Sub to ClickHouse template form showing the required fields and the dead-letter section */}
+   {/* PLACEHOLDER: add screenshot of the expanded Pub/Sub vers ClickHouse template form showing the required fields and the dead-letter section */}
 
 5. Vous pouvez éventuellement personnaliser les paramètres de traitement par lots (`windowSeconds`, `batchRowCount`) et de réglage de `ClickHouseIO`, comme indiqué dans la section [Template parameters](#template-parameters).
 
@@ -194,12 +194,12 @@ Accédez à l’[onglet Dataflow Jobs](https://console.cloud.google.com/dataflow
 
 Le modèle émet également les métriques personnalisées suivantes dans l’espace de noms `PubSubToClickHouse`, consultables depuis la page de la tâche Dataflow :
 
-| Métrique                | Type         | Description                                                                                                              |
-| ----------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------ |
-| `messages-received`     | Counter      | Nombre total de messages Pub/Sub reçus par l’étape de parsing.                                                           |
-| `rows-parsed-ok`        | Counter      | Messages convertis avec succès en une ligne et acheminés vers la sortie principale.                                      |
+| Métrique                | Type         | Description                                                                                                 |
+| ----------------------- | ------------ | ----------------------------------------------------------------------------------------------------------- |
+| `messages-received`     | Counter      | Nombre total de messages Pub/Sub reçus par l’étape de parsing.                                              |
+| `rows-parsed-ok`        | Counter      | Messages convertis avec succès en une ligne et acheminés vers la sortie principale.                         |
 | `rows-parse-failed`     | Counter      | Messages dont le parsing ou la correspondance de schéma a échoué et qui ont été acheminés vers dead-letter. |
-| `message-payload-bytes` | Distribution | Répartition de la taille des charges utiles des messages Pub/Sub entrants, en octets.                                    |
+| `message-payload-bytes` | Distribution | Répartition de la taille des charges utiles des messages Pub/Sub entrants, en octets.                       |
 
 <div id="troubleshooting">
   ## Dépannage

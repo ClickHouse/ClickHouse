@@ -25,6 +25,7 @@ public:
         const StorageSnapshotPtr & storage_snapshot_,
         const MergeTreeSettingsPtr & storage_settings_,
         UncompressedCache * uncompressed_cache_,
+        ColumnsCache * columns_cache_,
         MarkCache * mark_cache_,
         DeserializationPrefixesCache * deserialization_prefixes_cache_,
         MarkRanges mark_ranges_,
@@ -42,13 +43,12 @@ protected:
 
     void readData(
         size_t column_idx,
-        ColumnPtr & column,
+        IColumn & column,
         size_t rows_to_read,
-        size_t rows_offset,
         size_t from_mark,
         size_t column_size_before_reading,
         MergeTreeReaderStream & stream,
-        std::unordered_map<String, ColumnPtr> & columns_cache,
+        std::unordered_map<String, ColumnPtr> & output_columns_cache,
         std::unordered_map<String, ColumnPtr> * columns_cache_for_subcolumns,
         ISerialization::SubstreamsCache * substreams_cache);
 
@@ -56,10 +56,10 @@ protected:
 
     void readPrefix(size_t column_idx, size_t from_mark, MergeTreeReaderStream & stream, ISerialization::SubstreamsDeserializeStatesCache * cache);
 
-    void readSubcolumnsPrefixes(size_t from_mark, size_t current_task_last_mark);
+    void readSubcolumnsPrefixes(size_t from_mark);
     void initSubcolumnsDeserializationOrder();
 
-    void createColumnsForReading(Columns & res_columns) const;
+    void createColumnsForReading(MutableColumns & res_columns) const;
     bool needSkipStream(size_t column_pos, const ISerialization::SubstreamPath & substream) const;
 
     const ColumnsSubstreams & columns_substreams;
@@ -107,7 +107,8 @@ private:
         const SerializationPtr & serialization,
         ISerialization::DeserializeBinaryBulkStatePtr & state,
         const InputStreamGetter & buffer_getter,
-        ISerialization::SubstreamsDeserializeStatesCache * cache);
+        ISerialization::SubstreamsDeserializeStatesCache * cache,
+        ISerialization::DeserializeBinaryBulkSettings::CheckStreamExistsCallback check_stream_exists_callback = {});
 
     NameAndTypePair getColumnConvertedToSubcolumnOfNested(const NameAndTypePair & column);
     void findPositionForMissedNested(size_t pos);

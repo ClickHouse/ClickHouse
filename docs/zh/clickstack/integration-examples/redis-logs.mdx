@@ -32,9 +32,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 * 可访问 Redis 日志文件
 
 <Steps>
-  <Step>
-    #### 验证 Redis 日志配置
-
+  <Step title="验证 Redis 日志配置" id="verify-redis">
     首先，检查 Redis 的日志配置。连接到 Redis，并查看日志文件的位置：
 
     ```bash
@@ -50,27 +48,25 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     如果 Redis 将日志输出到 stdout，可通过修改 `redis.conf` 将其配置为写入文件：
 
     ```bash
-    # 记录到文件而非标准输出
+    # Log to file instead of stdout
     logfile /var/log/redis/redis-server.log
 
-    # 设置日志级别（选项：debug、verbose、notice、warning）
+    # Set log level (options: debug, verbose, notice, warning)
     loglevel notice
     ```
 
     更改配置后，重新启动 Redis：
 
     ```bash
-    # 对于 systemd
+    # For systemd
     sudo systemctl restart redis
 
-    # 对于 Docker
+    # For Docker
     docker restart <redis-container>
     ```
   </Step>
 
-  <Step>
-    #### 创建自定义 OTel collector 配置
-
+  <Step title="创建自定义 OTel collector 配置" id="custom-otel">
     ClickStack 支持通过挂载自定义配置文件并设置环境变量来扩展基础 OpenTelemetry Collector 配置。自定义配置会与 HyperDX 通过 OpAMP 管理的基础配置合并。
 
     创建一个名为 `redis-monitoring.yaml` 的文件，内容如下：
@@ -126,9 +122,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step>
-    #### 配置 ClickStack 以加载自定义配置
-
+  <Step title="配置 ClickStack 以加载自定义配置" id="load-custom">
     要在现有的 ClickStack 部署中启用自定义 collector 配置，你必须：
 
     1. 将自定义配置文件挂载到 `/etc/otelcol-contrib/custom.config.yaml`
@@ -142,14 +136,14 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     ```yaml
     services:
       clickstack:
-        # ... 现有配置 ...
+        # ... existing configuration ...
         environment:
           - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
-          # ... 其他环境变量 ...
+          # ... other environment variables ...
         volumes:
           - ./redis-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
           - /var/log/redis:/var/log/redis:ro
-          # ... 其他挂载卷 ...
+          # ... other volumes ...
     ```
 
     ##### 选项 2：Docker Run (一体化镜像)
@@ -170,9 +164,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step>
-    #### 在 HyperDX 中验证日志
-
+  <Step title="在 HyperDX 中验证日志" id="verifying-logs">
     配置完成后，登录 HyperDX，确认日志已开始流入：
 
     <Image img="/images/clickstack/redis/redis-log-view.webp" alt="日志视图" />
@@ -188,9 +180,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 对于希望在配置生产系统之前先测试 Redis 集成的用户，我们提供了一个预先生成的 Redis 日志示例数据集，其中包含逼真的模式。
 
 <Steps>
-  <Step>
-    #### 下载示例数据集
-
+  <Step title="下载示例数据集" id="download-sample">
     下载示例日志文件：
 
     ```bash
@@ -198,9 +188,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### 创建测试 collector 配置
-
+  <Step title="创建测试 collector 配置" id="test-config">
     创建一个名为 `redis-demo.yaml` 的文件，内容如下：
 
     ```yaml
@@ -242,9 +230,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### 使用演示配置运行 ClickStack
-
+  <Step title="使用演示配置运行 ClickStack" id="run-demo">
     使用演示日志和配置运行 ClickStack：
 
     ```bash
@@ -258,7 +244,6 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 
     <Note>
       **这会将日志文件直接挂载到容器中。这么做是为了使用静态演示数据进行测试。**
-
     </Note>
 
     ## 在 HyperDX 中验证日志
@@ -288,13 +273,11 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 为帮助你快速开始使用 ClickStack 监控 Redis，我们提供了用于 Redis 日志的关键可视化内容。
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/redis-logs-dashboard.json'} download="redis-logs-dashboard.json" eventName="docs.redis_logs_monitoring.dashboard_download">下载</TrackedLink>仪表盘配置
+  <Step title="下载仪表盘配置" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/redis-logs-dashboard.json'} download="redis-logs-dashboard.json" eventName="docs.redis_logs_monitoring.dashboard_download">下载仪表盘配置文件</TrackedLink>。
   </Step>
 
-  <Step>
-    #### 导入预构建仪表盘
-
+  <Step title="导入预构建仪表盘" id="import-dashboard">
     1. 打开 HyperDX，进入“仪表盘”部分。
     2. 点击右上角省略号菜单中的“Import Dashboard”。
 
@@ -305,9 +288,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     <Image img="/images/clickstack/redis/redis-import-dashboard.webp" alt="完成导入" />
   </Step>
 
-  <Step>
-    #### 系统将创建一个已预先配置好所有可视化的仪表盘
-
+  <Step title="系统将创建一个已预先配置好所有可视化的仪表盘" id="created-dashboard">
     <Note>
       对于演示数据集，请将时间范围设置为 **2025-10-27 10:00:00 - 2025-10-28 10:00:00 (UTC)** (根据你的本地时区进行调整) 。默认情况下，导入的仪表盘不会预先指定时间范围。
     </Note>
@@ -418,7 +399,7 @@ tail -5 /var/log/redis/redis-server.log
 * 针对特定用例 (API 监控、安全事件) 创建更多[仪表盘](/zh/clickstack/features/dashboards/overview)
 
 <div id="going-to-production">
-  ## 生产环境部署
+  ## 投入生产环境
 </div>
 
-本指南使用 ClickStack 内置的 OpenTelemetry Collector 进行快速设置。对于生产环境部署，我们建议运行您自己的 OTel Collector，并将数据发送到 ClickStack 的 OTLP 端点。有关生产环境配置，请参阅[发送 OpenTelemetry 数据](/zh/clickstack/ingesting-data/opentelemetry)。
+本指南基于 ClickStack 内置的 OpenTelemetry Collector，帮助您快速完成设置。对于生产环境部署，我们建议自行运行 OTel Collector，并将数据发送到 ClickStack 的 OTLP 端点。有关生产环境配置，请参阅[发送 OpenTelemetry 数据](/zh/clickstack/ingesting-data/opentelemetry)。

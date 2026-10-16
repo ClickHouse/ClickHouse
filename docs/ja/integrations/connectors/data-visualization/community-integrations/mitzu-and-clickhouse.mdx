@@ -13,7 +13,7 @@ integration:
 import ConnectionDetails from '/snippets/ja/_gather_your_details_http.mdx';
 import { Image } from "/snippets/ja/components/Image.jsx";
 
-import CommunityMaintainedBadge from "/snippets/ja/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
 
@@ -39,157 +39,137 @@ Mitzu は、ノーコードのウェアハウスネイティブなプロダク�
 
 このガイドでは、Mitzu の使い方を簡単に紹介します。より詳しい情報については、[Mitzu のドキュメント](https://docs.mitzu.io/)を参照してください。
 
-<div id="1-gather-your-connection-details">
-  ## 1. 接続情報を確認する
-</div>
+<Steps>
+  <Step title="接続情報を用意する" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="Mitzu にサインインまたは登録する" id="2-sign-in-or-sign-up-to-mitzu">
+    まず、[https://app.mitzu.io](https://app.mitzu.io) にアクセスしてサインアップします。
 
-<div id="2-sign-in-or-sign-up-to-mitzu">
-  ## 2. Mitzu にサインインまたは新規登録する
-</div>
+    <Image size="lg" img="/images/integrations/data-visualization/mitzu_01.webp" alt="メールアドレスとパスワードの入力欄がある Mitzu のサインインページ" border />
+  </Step>
 
-まずは、[https://app.mitzu.io](https://app.mitzu.io) にアクセスして新規登録します。
+  <Step title="ワークスペースを設定する" id="3-configure-your-workspace">
+    組織を作成したら、左側のサイドバーにある `Set up your workspace` オンボーディングガイドに従ってください。次に、`Connect Mitzu with your data warehouse` リンクをクリックします。
 
-<Image size="lg" img="/images/integrations/data-visualization/mitzu_01.webp" alt="メールアドレスとパスワードのフィールドがある Mitzu のサインインページ" border />
+    <Image size="lg" img="/images/integrations/data-visualization/mitzu_02.webp" alt="オンボーディング手順を表示する Mitzu のワークスペース設定ページ" border />
+  </Step>
 
-<div id="3-configure-your-workspace">
-  ## 3. ワークスペースを設定する
-</div>
+  <Step title="MitzuをClickHouseに接続する" id="4-connect-mitzu-to-clickhouse">
+    まず、接続タイプとして ClickHouse を選択し、接続情報を入力します。次に、`Test connection & Save` ボタンをクリックして設定を保存します。
 
-組織を作成したら、左側のサイドバーにある `Set up your workspace` オンボーディングガイドに従って設定を進めてください。次に、`Connect Mitzu with your data warehouse` リンクをクリックします。
+    <Image size="lg" img="/images/integrations/data-visualization/mitzu_03.webp" alt="設定フォームが表示された ClickHouse 用の Mitzu 接続設定ページ" border />
+  </Step>
 
-<Image size="lg" img="/images/integrations/data-visualization/mitzu_02.webp" alt="オンボーディング手順が表示された Mitzu のワークスペース設定ページ" border />
+  <Step title="イベントテーブルを設定する" id="5-configure-event-tables">
+    接続を保存したら、`Event tables` タブを選択し、`Add table` ボタンをクリックします。モーダルで、データベースと Mitzu に追加するテーブルを選択します。
 
-<div id="4-connect-mitzu-to-clickhouse">
-  ## 4. Mitzu を ClickHouse に接続する
-</div>
+    チェックボックスを使って少なくとも 1 つのテーブルを選択し、`Configure table` ボタンをクリックします。モーダルウィンドウが開き、各テーブルのキーカラムを設定できます。
 
-まず、接続タイプとして ClickHouse を選択し、接続情報を設定します。続いて、`Test connection & Save` ボタンをクリックして設定を保存します。
+    <Image size="lg" img="/images/integrations/data-visualization/mitzu_04.webp" alt="データベーステーブルを表示する Mitzu のテーブル選択インターフェイス" border />
 
-<Image size="lg" img="/images/integrations/data-visualization/mitzu_03.webp" alt="ClickHouse 用の Mitzu 接続設定ページ（設定フォーム付き）" border />
+    <br />
 
-<div id="5-configure-event-tables">
-  ## 5. イベントテーブルを設定する
-</div>
+    > ClickHouse 環境でプロダクトアナリティクスを実行するには、テーブル内の
+    > いくつかの重要なキーカラムを指定する必要があります。
+    >
+    > 該当するのは次のとおりです。
+    >
+    > * **User id** - ユーザーを一意に識別するためのカラム。
+    > * **Event time** - イベントのタイムスタンプカラム。
+    > * Optional&#91;**Event name**&#93; - テーブルに複数のイベントタイプが含まれている場合、このカラムでイベントを分類します。
 
-接続を保存したら、`Event tables` タブを選択し、`Add table` ボタンをクリックします。モーダルで、データベースと Mitzu に追加するテーブルを選択します。
+    <Image size="lg" img="/images/integrations/data-visualization/mitzu_05.webp" alt="カラムマッピングのオプションを表示する Mitzu のイベントカタログ設定" border />
 
-チェックボックスを使って少なくとも 1 つのテーブルを選択し、`Configure table` ボタンをクリックします。モーダルウィンドウが開き、各テーブルのキーカラムを設定できます。
+    <br />
 
-<Image size="lg" img="/images/integrations/data-visualization/mitzu_04.webp" alt="データベーステーブルを表示する Mitzu のテーブル選択インターフェイス" border />
+    すべてのテーブルの設定が完了したら、`Save & update event catalog` ボタンをクリックします。すると Mitzu が、上で定義したテーブルからすべてのイベントとそのプロパティを検出します。この手順には、データセットのサイズによっては数分かかる場合があります。
+  </Step>
 
-<br />
+  <Step title="セグメンテーションのクエリを実行する" id="4-run-segmentation-queries">
+    Mitzu でのユーザーセグメンテーションは、Amplitude、Mixpanel、PostHog と同じように簡単です。
 
-> ClickHouse 環境でプロダクトアナリティクスを実行するには、テーブル内の
-> いくつかの重要なキーカラムを指定する必要があります。
->
-> 該当するのは次のとおりです。
->
-> * **User id** - ユーザーを一意に識別するためのカラム。
-> * **Event time** - イベントのタイムスタンプカラム。
-> * Optional[**Event name**] - テーブルに複数のイベントタイプが含まれている場合、このカラムでイベントを分類します。
+    `Explore` ページには左側にイベントの選択エリアがあり、上部のセクションでは期間を設定できます。
 
-<Image size="lg" img="/images/integrations/data-visualization/mitzu_05.webp" alt="カラムマッピングのオプションを表示する Mitzu のイベントカタログ設定" border />
+    <Image size="lg" img="/images/integrations/data-visualization/mitzu_06.webp" alt="イベント選択と期間設定を備えた Mitzu のセグメンテーション用クエリインターフェイス" border />
 
-<br />
+    <br />
 
-すべてのテーブルの設定が完了したら、`Save & update event catalog` ボタンをクリックします。すると Mitzu が、上で定義したテーブルからすべてのイベントとそのプロパティを検出します。この手順には、データセットのサイズによっては数分かかる場合があります。
+    <Tip>
+      **フィルターと内訳**
 
-<div id="4-run-segmentation-queries">
-  ## 4. セグメンテーションクエリを実行する
-</div>
+      フィルタリングは直感的です。プロパティ (ClickHouse のカラム) を選択し、絞り込みたい値をドロップダウンから選択します。
+      内訳には任意のイベントプロパティまたはユーザープロパティを選択できます (ユーザープロパティを取り込む方法については、以下を参照してください) 。
+    </Tip>
+  </Step>
 
-Mitzu でのユーザーセグメンテーションは、Amplitude、Mixpanel、PostHog と同じように簡単に行えます。
+  <Step title="ファネルクエリを実行する" id="5-run-funnel-queries">
+    ファネルでは最大 9 つのステップを選択できます。ユーザーがファネルを完了するまでの時間枠を選択します。
+    SQL コードを 1 行も書かずに、コンバージョン率に関するインサイトをすぐに得られます。
 
-Explore ページには、左側にイベントの選択エリアがあり、上部では対象期間を設定できます。
+    <Image size="lg" img="/images/integrations/data-visualization/mitzu_07.webp" alt="ステップ間のコンバージョン率を表示する Mitzu のファネル分析ビュー" border />
 
-<Image size="lg" img="/images/integrations/data-visualization/mitzu_06.webp" alt="イベント選択と期間設定を備えた Mitzu のセグメンテーションクエリのインターフェイス" border />
+    <br />
 
-<br />
+    <Tip>
+      **トレンドを可視化する**
 
-<Tip>
-  **フィルターとブレークダウン**
+      `Funnel trends` を選択すると、ファネルのトレンドを時系列で可視化できます。
+    </Tip>
+  </Step>
 
-  フィルタリングは一般的な操作と同じです。プロパティ (ClickHouse のカラム) を選択し、ドロップダウンから絞り込みに使う値を選びます。
-  ブレークダウンには、任意のイベントプロパティまたはユーザープロパティを使用できます (ユーザープロパティを統合する方法については以下を参照してください) 。
-</Tip>
+  <Step title="リテンションクエリを実行する" id="6-run-retention-queries">
+    継続率の計算では、最大 2 つのステップを選択します。リピートウィンドウの継続期間を選択します。
+    SQL を 1 行も書かずに、コンバージョン率のインサイトをすぐに得られます。
 
-<div id="5-run-funnel-queries">
-  ## 5. ファネルクエリを実行する
-</div>
+    <Image size="lg" img="/images/integrations/data-visualization/mitzu_08.webp" alt="コホート継続率を表示する Mitzu の継続分析" border />
 
-ファネルでは最大 9 つのステップを選択できます。ユーザーがファネルを完了するまでの時間枠を選択してください。
-SQL コードを 1 行も書かずに、コンバージョン率をすぐに把握できます。
+    <br />
 
-<Image size="lg" img="/images/integrations/data-visualization/mitzu_07.webp" alt="ステップ間のコンバージョン率を表示する Mitzu のファネル分析ビュー" border />
+    <Tip>
+      **コホート継続率**
 
-<br />
+      `Weekly cohort retention` を選択すると、継続率が時間の経過とともにどのように変化するかを可視化できます。
+    </Tip>
+  </Step>
 
-<Tip>
-  **トレンドを可視化する**
+  <Step title="ジャーニークエリを実行する" id="7-run-journey-queries">
+    ファネルには最大 9 つのステップを選択できます。ユーザーがこのジャーニーを完了できる時間枠を選択してください。Mitzu のジャーニーチャートでは、ユーザーが選択したイベント間をどのような経路で進んだかを視覚的に把握できます。
 
-  時間の経過に伴うファネルのトレンドを可視化するには、`Funnel trends` を選択します。
-</Tip>
+    <Image size="lg" img="/images/integrations/data-visualization/mitzu_09.webp" alt="イベント間のユーザー経路フローを表示する Mitzu のジャーニー可視化" border />
 
-<div id="6-run-retention-queries">
-  ## 6. リテンションクエリを実行する
-</div>
+    <br />
 
-リテンション率の計算に使用するステップを最大 2 つ選択します。繰り返しウィンドウのリテンション期間を選択してください。
-SQL を 1 行も書かずに、コンバージョン率をすぐに把握できます。
+    <Tip>
+      **ステップを分類する**
 
-<Image size="lg" img="/images/integrations/data-visualization/mitzu_08.webp" alt="コホートのリテンション率を示す Mitzu のリテンション分析" border />
+      同じステップ内のユーザーを区別するために、`Break down` セグメントのプロパティを選択できます。
+    </Tip>
 
-<br />
+    <br />
+  </Step>
 
-<Tip>
-  **コホートリテンション**
+  <Step title="売上クエリを実行する" id="8-run-revenue-queries">
+    収益設定を行っていれば、Mitzu は支払いイベントに基づいて合計 MRR とサブスクリプション数を計算できます。
 
-  `Weekly cohort retention` を選択すると、リテンション率が時間の経過とともにどのように変化するかを可視化できます。
-</Tip>
+    <Image size="lg" img="/images/integrations/data-visualization/mitzu_10.webp" alt="MRR メトリクスを表示する Mitzu の収益分析ダッシュボード" border />
+  </Step>
 
-<div id="7-run-journey-queries">
-  ## 7. ジャーニークエリを実行する
-</div>
+  <Step title="ネイティブ SQL" id="9-sql-native">
+    Mitzu は SQL Native です。つまり、Explore ページで選択した設定に基づいて、ネイティブな SQL コードを生成します。
 
-ファネルでは最大 9 つのステップを選択できます。ユーザーがジャーニーを完了できる時間枠を選択してください。Mitzu のジャーニーチャートでは、選択したイベント間でユーザーがたどるあらゆる経路を視覚的に把握できます。
+    <Image size="lg" img="/images/integrations/data-visualization/mitzu_11.webp" alt="ネイティブな ClickHouse クエリを表示する Mitzu の SQL コード生成ビュー" border />
 
-<Image size="lg" img="/images/integrations/data-visualization/mitzu_09.webp" alt="イベント間のユーザーの経路フローを示す Mitzu のジャーニー可視化" border />
+    <br />
 
-<br />
+    <Tip>
+      **BI ツールで作業を続ける**
 
-<Tip>
-  **ステップを内訳表示する**
-
-  同じステップ内のユーザーを区別するには、セグメント `Break down` に使用するプロパティを選択できます。
-</Tip>
-
-<br />
-
-<div id="8-run-revenue-queries">
-  ## 8. 収益クエリを実行する
-</div>
-
-収益関連の設定が完了している場合、Mitzu は支払いイベントに基づいて合計 MRR とサブスクリプション数を計算できます。
-
-<Image size="lg" img="/images/integrations/data-visualization/mitzu_10.webp" alt="MRR メトリクスを表示する Mitzu の収益分析ダッシュボード" border />
-
-<div id="9-sql-native">
-  ## 9. SQLネイティブ
-</div>
-
-Mitzu はSQLネイティブで、Explore ページで選択した設定からネイティブのSQLコードを生成します。
-
-<Image size="lg" img="/images/integrations/data-visualization/mitzu_11.webp" alt="ネイティブの ClickHouse クエリを表示する Mitzu の SQL コード生成ビュー" border />
-
-<br />
-
-<Tip>
-  **BI ツールで作業を続ける**
-
-  Mitzu の UI に制限がある場合は、SQL コードをコピーして BI ツールで作業を続けてください。
-</Tip>
+      Mitzu UI に制約がある場合は、SQL コードをコピーして BI ツールで作業を続けてください。
+    </Tip>
+  </Step>
+</Steps>
 
 <div id="mitzu-support">
   ## Mitzu サポート

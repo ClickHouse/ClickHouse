@@ -28,16 +28,14 @@ public:
     size_t getNumberOfArguments() const override { return 1; }
 
     bool useDefaultImplementationForNulls() const override { return false; }
+    bool isNullPropagating(const DataTypePtr & result_type) const override { return isNullableOrLowCardinalityNullable(result_type); }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (arguments[0]->lowCardinality())
-            return arguments[0];
-
-        return std::make_shared<DataTypeLowCardinality>(arguments[0]);
+        return "(T) -> LowCardinality(T)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & res_type, size_t /*input_rows_count*/) const override
@@ -54,6 +52,13 @@ public:
         typeid_cast<ColumnLowCardinality &>(*column).insertRangeFromFullColumn(*arg.column, 0, arg.column->size());
         return column;
     }
+
+    bool hasInformationAboutMonotonicity() const override { return true; }
+
+    Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
+    {
+        return { .is_monotonic = true, .is_positive = true, .is_always_monotonic = true, .is_strict = true };
+    }
 };
 
 }
@@ -62,12 +67,12 @@ REGISTER_FUNCTION(ToLowCardinality)
 {
     /// toLowCardinality documentation
     FunctionDocumentation::Description description = R"(
-Converts the input argument to the [LowCardinality](../data-types/lowcardinality.md) version of same data type.
+Converts the input argument to the [LowCardinality](/reference/data-types/lowcardinality) version of same data type.
 
-:::tip
+<Tip>
 To convert from the `LowCardinality` data type to a regular data type, use the [CAST](#CAST) function.
 For example: `CAST(x AS String)`.
-:::
+</Tip>
     )";
     FunctionDocumentation::Syntax syntax = "toLowCardinality(expr)";
     FunctionDocumentation::Arguments arguments = {

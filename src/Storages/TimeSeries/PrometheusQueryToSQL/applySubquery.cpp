@@ -29,7 +29,7 @@ namespace
 }
 
 
-SQLQueryPiece applySubquery(const PQT::Subquery * subquery_node, SQLQueryPiece && expression, ConverterContext & context)
+SQLQueryPiece applySubquery(const PrometheusQueryTree::Subquery * subquery_node, SQLQueryPiece && expression, ConverterContext & context)
 {
     checkExpressionType(expression, context);
 

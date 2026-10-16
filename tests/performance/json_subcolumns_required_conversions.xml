@@ -1,0 +1,12 @@
+<test>
+    <create_query>CREATE TABLE t_json_subcolumns_conversions (json JSON) ENGINE = MergeTree ORDER BY tuple()</create_query>
+
+    <fill_query>INSERT INTO t_json_subcolumns_conversions SELECT toJSONString(map('key' || toString(number % 400), number)) FROM numbers(1000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE t_json_subcolumns_conversions FINAL</fill_query>
+
+    <!-- Reading many dynamic JSON subcolumns stresses the per-block column resolution
+         in IMergeTreeReader::performRequiredConversions. -->
+    <query>SELECT json.key0, json.key1, json.key2, json.key3, json.key4, json.key5, json.key6, json.key7, json.key8, json.key9, json.key10, json.key11, json.key12, json.key13, json.key14, json.key15, json.key16, json.key17, json.key18, json.key19, json.key20, json.key21, json.key22, json.key23, json.key24, json.key25, json.key26, json.key27, json.key28, json.key29, json.key30, json.key31 FROM t_json_subcolumns_conversions FORMAT Null SETTINGS max_threads = 1</query>
+
+    <drop_query>DROP TABLE IF EXISTS t_json_subcolumns_conversions</drop_query>
+</test>

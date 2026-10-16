@@ -12,7 +12,7 @@ doc_type: 'guide'
   ## متى تستخدم استنتاج الأنواع
 </div>
 
-* **بنية متسقة** - يجب أن تحتوي البيانات التي ستستنتج منها الأنواع على جميع المفاتيح التي تهمك. يستند استنتاج الأنواع إلى أخذ عينات من البيانات حتى [الحد الأقصى لعدد الصفوف](/ar/reference/settings/formats#input_format_max_rows_to_read_for_schema_inference) أو [البايتات](/ar/reference/settings/formats#input_format_max_bytes_to_read_for_schema_inference). وأي بيانات تأتي بعد العينة وتحتوي على أعمدة إضافية سيتم تجاهلها، ولن يمكن الاستعلام عنها.
+* **بنية متسقة** - يجب أن تحتوي البيانات التي ستستنتج منها الأنواع على جميع المفاتيح التي تهمك. يستند استنتاج الأنواع إلى أخذ عينات من البيانات حتى [الحد الأقصى لعدد الصفوف](/ar/reference/settings/formats/input-format#input_format_max_rows_to_read_for_schema_inference) أو [البايتات](/ar/reference/settings/formats/input-format#input_format_max_bytes_to_read_for_schema_inference). وأي بيانات تأتي بعد العينة وتحتوي على أعمدة إضافية سيتم تجاهلها، ولن يمكن الاستعلام عنها.
 * **أنواع متسقة** - يجب أن تكون أنواع البيانات للمفاتيح المحددة متوافقة، أي يجب أن يكون من الممكن تحويل أحد الأنواع إلى الآخر تلقائيًا.
 
 إذا كانت بيانات JSON لديك أكثر ديناميكية، بحيث تُضاف إليها مفاتيح جديدة وتكون فيه أنواع متعددة ممكنة للمسار ذاته، فراجع [&quot;العمل مع البيانات شبه المنظمة والديناميكية&quot;](/ar/guides/clickhouse/data-formats/json/inference#working-with-semi-structured-data).
@@ -74,7 +74,7 @@ doc_type: 'guide'
 يُظهر استخدام [دالة s3](/ar/reference/functions/table-functions/s3) مع الأمر `DESCRIBE` الأنواع التي سيجري استنتاجها.
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz', NOSIGN)
 SETTINGS describe_compact_output = 1
 ```
 
@@ -100,7 +100,7 @@ SETTINGS describe_compact_output = 1
 <Info>
   **تجنّب القيم NULL**
 
-  يمكنك ملاحظة أن الكثير من الأعمدة جرى اكتشافها على أنها من النوع Nullable. نحن [لا نوصي باستخدام النوع Nullable](/ar/reference/data-types/nullable#storage-features) إلا عند الضرورة القصوى. يمكنك استخدام [schema&#95;inference&#95;make&#95;columns&#95;nullable](/ar/reference/settings/formats#schema_inference_make_columns_nullable) للتحكم في الحالات التي يُطبَّق فيها Nullable.
+  يمكنك ملاحظة أن الكثير من الأعمدة جرى اكتشافها على أنها من النوع Nullable. نحن [لا نوصي باستخدام النوع Nullable](/ar/reference/data-types/nullable#storage-features) إلا عند الضرورة القصوى. يمكنك استخدام [schema&#95;inference&#95;make&#95;columns&#95;nullable](/ar/reference/settings/formats/schema-inference#schema_inference_make_columns_nullable) للتحكم في الحالات التي يُطبَّق فيها Nullable.
 </Info>
 
 يمكننا ملاحظة أن معظم الأعمدة قد اكتُشفت تلقائيًا على أنها `String`، بينما اكتُشف العمود `update_date` بشكل صحيح على أنه `Date`. وقد أُنشئ العمود `versions` بصيغة `Array(Tuple(created String, version String))` لتخزين قائمة من الكائنات، في حين عُرِّف `authors_parsed` على أنه `Array(Array(String))` للمصفوفات المتداخلة.
@@ -108,7 +108,7 @@ SETTINGS describe_compact_output = 1
 <Info>
   **التحكم في اكتشاف الأنواع**
 
-  يمكن التحكم في الاكتشاف التلقائي للتواريخ وأنواع DateTime من خلال الإعدادين [`input_format_try_infer_dates`](/ar/reference/settings/formats#input_format_try_infer_dates) و[`input_format_try_infer_datetimes`](/ar/reference/settings/formats#input_format_try_infer_datetimes) على التوالي (وكلاهما مُمكَّن افتراضيًا). كما يتحكم الإعداد [`input_format_json_try_infer_named_tuples_from_objects`](/ar/reference/settings/formats#input_format_json_try_infer_named_tuples_from_objects) في استنتاج الكائنات على أنها Tuples. ويمكن العثور [هنا](/ar/concepts/features/interfaces/schema-inference#text-formats) على إعدادات أخرى تتحكم في استنتاج المخطط في JSON، مثل الاكتشاف التلقائي للأرقام.
+  يمكن التحكم في الاكتشاف التلقائي للتواريخ وأنواع DateTime من خلال الإعدادين [`input_format_try_infer_dates`](/ar/reference/settings/formats/input-format#input_format_try_infer_dates) و[`input_format_try_infer_datetimes`](/ar/reference/settings/formats/input-format#input_format_try_infer_datetimes) على التوالي (وكلاهما مُمكَّن افتراضيًا). كما يتحكم الإعداد [`input_format_json_try_infer_named_tuples_from_objects`](/ar/reference/settings/formats/input-format#input_format_json_try_infer_named_tuples_from_objects) في استنتاج الكائنات على أنها Tuples. ويمكن العثور [هنا](/ar/concepts/features/interfaces/schema-inference#text-formats) على إعدادات أخرى تتحكم في استنتاج المخطط في JSON، مثل الاكتشاف التلقائي للأرقام.
 </Info>
 
 <div id="querying-json">
@@ -124,7 +124,7 @@ SELECT
  toYear(update_date) AS year,
  authors,
     count() AS c
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz', NOSIGN)
 GROUP BY
     year,
  authors
@@ -172,7 +172,7 @@ CREATE TABLE arxiv
 ENGINE = MergeTree
 ORDER BY update_date EMPTY
 AS SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz', NOSIGN)
 SETTINGS schema_inference_make_columns_nullable = 0
 ```
 
@@ -202,7 +202,7 @@ ENGINE = MergeTree
 ORDER BY update_date
 ```
 
-ما سبق هو المخطط الصحيح لهذه البيانات. يعتمد استنتاج المخطط على أخذ عينات من البيانات وقراءة البيانات صفًا صفًا. تُستخرج قيم الأعمدة وفقًا للتنسيق، مع استخدام محللات متداخلة وأساليب استدلالية لتحديد النوع لكل قيمة. يتحكم الإعدادان [`input_format_max_rows_to_read_for_schema_inference`](/ar/reference/settings/formats#input_format_max_rows_to_read_for_schema_inference) (25000 افتراضيًا) و[`input_format_max_bytes_to_read_for_schema_inference`](/ar/reference/settings/formats#input_format_max_bytes_to_read_for_schema_inference) (32MB افتراضيًا) في الحد الأقصى لعدد الصفوف والبايتات المقروءة من البيانات أثناء استنتاج المخطط. إذا لم يكن الاكتشاف دقيقًا، يمكنك تقديم تلميحات كما هو موضح [هنا](/ar/reference/settings/formats#schema_inference_make_columns_nullable).
+ما سبق هو المخطط الصحيح لهذه البيانات. يعتمد استنتاج المخطط على أخذ عينات من البيانات وقراءة البيانات صفًا صفًا. تُستخرج قيم الأعمدة وفقًا للتنسيق، مع استخدام محللات متداخلة وأساليب استدلالية لتحديد النوع لكل قيمة. يتحكم الإعدادان [`input_format_max_rows_to_read_for_schema_inference`](/ar/reference/settings/formats/input-format#input_format_max_rows_to_read_for_schema_inference) (25000 افتراضيًا) و[`input_format_max_bytes_to_read_for_schema_inference`](/ar/reference/settings/formats/input-format#input_format_max_bytes_to_read_for_schema_inference) (32MB افتراضيًا) في الحد الأقصى لعدد الصفوف والبايتات المقروءة من البيانات أثناء استنتاج المخطط. إذا لم يكن الاكتشاف دقيقًا، يمكنك تقديم تلميحات كما هو موضح [هنا](/ar/reference/settings/formats/schema-inference#schema_inference_make_columns_nullable).
 
 <div id="creating-tables-from-snippets">
   ### إنشاء الجداول من المقتطفات
@@ -249,7 +249,7 @@ ORDER BY update_date
 
 ```sql
 INSERT INTO arxiv SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz', NOSIGN)
 ```
 
 ```response
@@ -303,7 +303,7 @@ FORMAT PrettyJSONEachRow
   ## التعامل مع الأخطاء
 </div>
 
-أحيانًا قد تكون لديك بيانات غير صالحة. على سبيل المثال، قد تحتوي أعمدة معيّنة على نوع غير صحيح أو كائن JSON غير منسّق بشكل صحيح. لهذا، يمكنك استخدام الإعدادين [`input_format_allow_errors_num`](/ar/reference/settings/formats#input_format_allow_errors_num) و[`input_format_allow_errors_ratio`](/ar/reference/settings/formats#input_format_allow_errors_ratio) للسماح بتجاهل عدد معيّن من الصفوف إذا كانت البيانات تتسبب في أخطاء عند الإدراج. بالإضافة إلى ذلك، يمكن تقديم [تلميحات](/ar/reference/settings/formats#schema_inference_hints) للمساعدة في الاستدلال.
+أحيانًا قد تكون لديك بيانات غير صالحة. على سبيل المثال، قد تحتوي أعمدة معيّنة على نوع غير صحيح أو كائن JSON غير منسّق بشكل صحيح. لهذا، يمكنك استخدام الإعدادين [`input_format_allow_errors_num`](/ar/reference/settings/formats/input-format#input_format_allow_errors_num) و[`input_format_allow_errors_ratio`](/ar/reference/settings/formats/input-format#input_format_allow_errors_ratio) للسماح بتجاهل عدد معيّن من الصفوف إذا كانت البيانات تتسبب في أخطاء عند الإدراج. بالإضافة إلى ذلك، يمكن تقديم [تلميحات](/ar/reference/settings/formats/schema-inference#schema_inference_hints) للمساعدة في الاستدلال.
 
 <div id="working-with-semi-structured-data">
   ## العمل مع البيانات شبه المنظَّمة والديناميكية
@@ -313,9 +313,9 @@ FORMAT PrettyJSONEachRow
 
 يتعامل ClickHouse مع ذلك من خلال النوع المخصص [`JSON`](/ar/reference/data-types/newjson).
 
-إذا كنت تعلم أن بيانات JSON لديك شديدة الديناميكية وتحتوي على عدد كبير من المفاتيح الفريدة وأنواع متعددة للمفاتيح نفسها، فنوصي بعدم استخدام استنتاج المخطط مع `JSONEachRow` لمحاولة استنتاج عمود لكل مفتاح، حتى لو كانت البيانات بتنسيق newline-delimited JSON.
+إذا كنت تعلم أن بيانات JSON لديك شديدة الديناميكية وتحتوي على عدد كبير من المفاتيح الفريدة وأنواع متعددة للمفاتيح نفسها، فنوصي بعدم استخدام استنتاج المخطط مع `JSONEachRow` لمحاولة استنتاج عمود لكل مفتاح، حتى لو كانت البيانات بتنسيق JSON مفصول بأسطر جديدة.
 
-تأمل المثال التالي من إصدار موسَّع من مجموعة بيانات [Python PyPI dataset](https://clickpy.clickhouse.com/) المذكورة أعلاه. هنا أضفنا عمود `tags` عشوائيًا يضم أزواجًا عشوائية من المفاتيح والقيم.
+تأمل المثال التالي من إصدار موسَّع من مجموعة بيانات [مجموعة بيانات Python PyPI](https://clickpy.clickhouse.com/) المذكورة أعلاه. هنا أضفنا عمود `tags` عشوائيًا يضم أزواجًا عشوائية من المفاتيح والقيم.
 
 ```json
 {
@@ -337,7 +337,7 @@ FORMAT PrettyJSONEachRow
 تتوفّر عيّنة من هذه البيانات للعامة بتنسيق JSON مفصول بأسطر جديدة. إذا حاولنا استنتاج المخطط لهذا الملف، فستجد أن الأداء ضعيف وأن الاستجابة مطوّلة للغاية:
 
 ```sql
-DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample_rows.json.gz')
+DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample_rows.json.gz', NOSIGN)
 
 -- result omitted for brevity
 ```
@@ -353,7 +353,7 @@ DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi
 يتعامل `JSONAsObject` مع الإدخال بالكامل على أنه كائن JSON واحد، ويخزّنه في عمود واحد من النوع [`JSON`](/ar/reference/data-types/newjson)، مما يجعله أنسب لحمولات JSON شديدة الديناميكية أو المتداخلة.
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample_rows.json.gz', 'JSONAsObject')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample_rows.json.gz', NOSIGN, 'JSONAsObject')
 SETTINGS describe_compact_output = 1
 ```
 
@@ -375,7 +375,7 @@ SETTINGS describe_compact_output = 1
 في هذه الحالة، يستطيع ClickHouse التوفيق بين تعارض الأنواع وتحديد العمود `a` على أنه `Nullable(String)`.
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/sample.json')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/sample.json', NOSIGN)
 SETTINGS describe_compact_output = 1
 ```
 
@@ -390,7 +390,7 @@ SETTINGS describe_compact_output = 1
 <Info>
   **التحويل القسري للنوع**
 
-  يمكن التحكم في هذا التحويل القسري للنوع عبر عدد من الإعدادات. يعتمد المثال أعلاه على الإعداد [`input_format_json_read_numbers_as_strings`](/ar/reference/settings/formats#input_format_json_read_numbers_as_strings).
+  يمكن التحكم في هذا التحويل القسري للنوع عبر عدد من الإعدادات. يعتمد المثال أعلاه على الإعداد [`input_format_json_read_numbers_as_strings`](/ar/reference/settings/formats/input-format#input_format_json_read_numbers_as_strings).
 </Info>
 
 ومع ذلك، فإن بعض الأنواع غير متوافقة. انظر إلى المثال التالي:
@@ -403,7 +403,7 @@ SETTINGS describe_compact_output = 1
 في هذه الحالة، لا يمكن إجراء أي نوع من تحويل الأنواع هنا. ولذلك يفشل الأمر `DESCRIBE`:
 
 ```sql
-DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/conflict_sample.json')
+DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/conflict_sample.json', NOSIGN)
 ```
 
 ```response
@@ -419,7 +419,7 @@ Code: 53. DB::Exception: Automatically defined type Tuple(b Int64) for column 'a
 في هذه الحالة، يتعامل `JSONAsObject` مع كل صف باعتباره قيمة واحدة من النوع [`JSON`](/ar/reference/data-types/newjson) (ما يتيح أن يكون للعمود نفسه أكثر من نوع). وهذا أمر أساسي:
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/conflict_sample.json', JSONAsObject)
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/conflict_sample.json', NOSIGN, JSONAsObject)
 SETTINGS enable_json_type = 1, describe_compact_output = 1
 ```
 

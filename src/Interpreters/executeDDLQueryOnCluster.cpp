@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLOnClusterQueryStatusSource.h>
 #include <Interpreters/DDLTask.h>
@@ -16,6 +17,7 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTQueryWithOutput.h>
+#include <Parsers/ASTRenameQuery.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <base/sort.h>
@@ -62,6 +64,23 @@ bool isSupportedAlterTypeForOnClusterDDLQuery(int type)
     };
 
     return !unsupported_alter_types.contains(type);
+}
+
+
+static bool needsDefaultDatabaseForBareDictionaryOnCluster(const ASTPtr & query_ptr)
+{
+    const auto * system_query = query_ptr->as<ASTSystemQuery>();
+    if (!system_query)
+        return false;
+
+    if (system_query->type != ASTSystemQuery::Type::RELOAD_DICTIONARY
+        && system_query->type != ASTSystemQuery::Type::UNLOAD_DICTIONARY)
+        return false;
+
+    if (!system_query->table || system_query->database)
+        return false;
+
+    return true;
 }
 
 
@@ -135,10 +154,12 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
     bool need_replace_current_database = std::any_of(
         access_to_check.begin(),
         access_to_check.end(),
-        [](const AccessRightsElement & elem) { return elem.isEmptyDatabase(); });
+        [](const AccessRightsElement & elem) { return elem.isEmptyDatabase(); })
+        || needsDefaultDatabaseForBareDictionaryOnCluster(query_ptr);
 
     bool use_local_default_database = false;
     const String & current_database = context->getCurrentDatabase();
+    Strings access_check_default_databases{current_database};
 
     if (need_replace_current_database)
     {
@@ -163,6 +184,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
         }
         else
         {
+            access_check_default_databases = host_default_databases;
             for (size_t i = 0; i != access_to_check.size();)
             {
                 auto & element = access_to_check[i];
@@ -187,6 +209,11 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
 
     DDLLogEntry entry;
     entry.hosts = std::move(hosts);
+    /// Strip the initiator-only settings from the queued DDL query text too — the `DDLLogEntry` settings
+    /// packet is stripped separately (in `setSettingsIfRequired`), but a worker parses `entry.query` before
+    /// applying that packet, so an initiator-only setting written in the statement itself would otherwise
+    /// reach an older worker as `UNKNOWN_SETTING` or be re-applied on a newer worker.
+    ClusterProxy::stripInitiatorOnlySettingsFromQuery(query_ptr);
     entry.query = query_ptr->formatWithSecretsOneLine();
     entry.initiator = ddl_worker.getCommonHostID();
     entry.setSettingsIfRequired(context);
@@ -197,6 +224,13 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
         entry.initiator_user = context->getUserName();
         entry.initiator_user_roles = context->getAccessControl().tryReadNames(context->getCurrentRoles());
     }
+
+    /// The workers run the query as the initiator's user and roles only if the entry carries them.
+    const bool workers_use_initiator_user = !entry.initiator_user.empty() && entry.version >= DDLLogEntry::INITIATOR_USER_VERSION;
+    if (params.additional_access_check)
+        for (const auto & default_database : access_check_default_databases)
+            params.additional_access_check(default_database, /* throw_if_unresolved = */ !workers_use_initiator_user);
+
     ddl_worker.updateHostIDs(entry.hosts);
     String node_path = ddl_worker.enqueueQuery(entry, params.retries_info);
 
@@ -224,27 +258,63 @@ BlockIO getDDLOnClusterStatus(const String & node_path, const String & replicas_
 
 bool maybeRemoveOnCluster(const ASTPtr & query_ptr, ContextPtr context)
 {
-    const auto * query = dynamic_cast<const ASTQueryWithTableAndOutput *>(query_ptr.get());
-    if (!query || !query->table)
+    auto * query_on_cluster = dynamic_cast<ASTQueryWithOnCluster *>(query_ptr.get());
+    if (!query_on_cluster || query_on_cluster->cluster.empty())
         return false;
 
-    String database_name = query->getDatabase();
-    if (database_name.empty())
-        database_name = context->getCurrentDatabase();
+    /// Extract the target database(s). For multi-element queries (RENAME / EXCHANGE TABLES)
+    /// all elements must reference the same database, otherwise we can't safely pass through.
+    String database_name;
+    const String & current_database = context->getCurrentDatabase();
 
-    auto * query_on_cluster = dynamic_cast<ASTQueryWithOnCluster *>(query_ptr.get());
-    auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
-    if (database && database->shouldReplicateQuery(context, query_ptr))
+    if (const auto * with_table = dynamic_cast<const ASTQueryWithTableAndOutput *>(query_ptr.get()))
     {
-        if (!context->getSettingsRef()[Setting::ignore_on_cluster_for_replicated_database] && database_name != query_on_cluster->cluster)
+        if (!with_table->table)
             return false;
-        /// It's Replicated database and query is replicated on database level,
-        /// so ON CLUSTER clause is redundant.
-        query_on_cluster->cluster.clear();
-        return true;
+        database_name = with_table->getDatabase();
+        if (database_name.empty())
+            database_name = current_database;
+    }
+    else if (const auto * rename = dynamic_cast<const ASTRenameQuery *>(query_ptr.get()))
+    {
+        if (rename->database)
+            return false;  /// RENAME DATABASE: target DB does not yet have a Replicated catalog
+        for (const auto & elem : rename->getElements())
+        {
+            String from = elem.from.getDatabase();
+            String to = elem.to.getDatabase();
+            if (from.empty())
+                from = current_database;
+            if (to.empty())
+                to = current_database;
+            if (from != to)
+                return false;
+            if (database_name.empty())
+                database_name = from;
+            else if (database_name != from)
+                return false;
+        }
+        if (database_name.empty())
+            return false;
+    }
+    else
+    {
+        return false;
     }
 
-    return false;
+    auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+    if (!database || !database->shouldReplicateQuery(context, query_ptr))
+        return false;
+
+    if (!context->getSettingsRef()[Setting::ignore_on_cluster_for_replicated_database]
+        && database_name != query_on_cluster->cluster)
+        return false;
+
+    /// It's a Replicated database and the query is replicated at the database level,
+    /// so the ON CLUSTER clause is redundant when the cluster name matches the database name
+    /// (the database's automatic cluster) or when `ignore_on_cluster_for_replicated_database` is set.
+    query_on_cluster->cluster.clear();
+    return true;
 }
 
 }

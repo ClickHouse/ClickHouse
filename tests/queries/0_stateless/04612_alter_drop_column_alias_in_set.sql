@@ -1,4 +1,3 @@
--- Tags: no-old-analyzer
 -- The bug and its fix are in the Analyzer's Planner (`collectSets`), and the old analyzer cannot
 -- execute these mutations at all (the ALIAS -> ALIAS -> IN chain in a mutation predicate throws
 -- UNKNOWN_IDENTIFIER). Background mutations run with server-default settings, so a session-level

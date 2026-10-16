@@ -1,0 +1,11 @@
+sequenceDiagram
+    participant S as Server (writer)
+    participant C as Client (decoder)
+    S->>C: Header block (num_rows = 0)
+    Note right of C: no state prefix
+    S->>C: First block with rows > 0
+    Note right of C: read state prefix,<br/>then block payload
+    S->>C: Next block with rows > 0
+    Note right of C: read state prefix<br/>again, then payload
+    S->>C: Empty block (end marker)
+    Note right of C: no state prefix

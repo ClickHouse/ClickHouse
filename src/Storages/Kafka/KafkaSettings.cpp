@@ -56,6 +56,8 @@ namespace ErrorCodes
     DECLARE(Milliseconds, kafka_consumer_acquire_timeout_ms, 30000, "Timeout in milliseconds for acquiring a Kafka consumer during direct SELECT queries. When multiple concurrent direct SELECTs run on the same Kafka2 table, each query must wait for consumers to become available. A timeout is needed to break potential deadlocks when queries hold different subsets of consumers.", 0) \
     DECLARE(Bool, kafka_map_virtual_columns_on_write, false, "If enabled, columns with special names (`_key`, `_timestamp`, `_headers.name`, `_headers.value`) in the Kafka table are mapped to the corresponding Kafka message metadata on INSERT and are excluded from the message payload.", 0) \
     DECLARE(String, kafka_aws_region, "", "AWS region for MSK IAM authentication. Auto-detected from broker address if not specified. Required for PrivateLink or custom DNS.", 0) \
+    DECLARE(String, kafka_partition_shard_num, "", "The shard number of this instance for static partition-to-shard affinity. Must be between 1 and kafka_shard_count inclusive. Supports macro expansion (e.g. '{shard}'). Must be used together with kafka_shard_count.", 0) \
+    DECLARE(UInt64, kafka_shard_count, 0, "Total number of shards participating in consumption. Must be used together with kafka_partition_shard_num and be identical across all shards.", 0) \
 
 #define OBSOLETE_KAFKA_SETTINGS(M, ALIAS) \
     MAKE_OBSOLETE(M, Char, kafka_row_delimiter, '\0') \
@@ -141,6 +143,17 @@ void KafkaSettings::sanityCheck(ContextPtr global_context) const
         && !global_context->getDeadLetterQueue())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "The table system.dead_letter_queue is not configured on the server. You cannot create a table with this `kafka_handle_error_mode`.");
+
+    /// Partition affinity: full validation (including macro expansion and range check)
+    /// is done in StorageKafka2::parsePartitionAffinitySettings; here we only check
+    /// that both settings are specified together.
+    const bool has_partition_num = !(*impl)[KafkaSetting::kafka_partition_shard_num].value.empty();
+    const bool has_shard_count = (*impl)[KafkaSetting::kafka_shard_count].value > 0;
+
+    if (has_partition_num != has_shard_count)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "'kafka_partition_shard_num' and 'kafka_shard_count' must be specified together");
 }
 
 SettingsChanges KafkaSettings::getFormatSettings() const

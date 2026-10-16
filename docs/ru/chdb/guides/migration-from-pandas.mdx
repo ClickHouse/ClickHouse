@@ -1,0 +1,500 @@
+---
+title: 'Миграция с pandas'
+sidebarTitle: 'Миграция с pandas'
+slug: /chdb/guides/migration-from-pandas
+description: 'Пошаговое руководство по миграции с pandas на DataStore'
+keywords: ['chdb', 'datastore', 'pandas', 'миграция', 'руководство']
+doc_type: 'guide'
+---
+
+Это руководство поможет вам перевести существующий код на pandas на DataStore, чтобы повысить производительность, сохранив совместимость.
+
+<div id="one-line">
+  ## Миграция одной строкой
+</div>
+
+Самый простой вариант — заменить import:
+
+```python
+# Before (pandas)
+import pandas as pd
+
+# After (DataStore)
+from chdb import datastore as pd
+```
+
+Вот и всё! Большая часть кода pandas работает без изменений.
+
+<div id="step-by-step">
+  ## Пошаговая миграция
+</div>
+
+<Steps>
+  <Step title="Установите chDB" id="step-1">
+    ```bash
+    pip install "chdb>=4.0"
+    ```
+  </Step>
+
+  <Step title="Измените импорт" id="step-2">
+    ```python
+    # Измените это:
+    import pandas as pd
+
+    # На это:
+    from chdb import datastore as pd
+    ```
+  </Step>
+
+  <Step title="Проверьте свой код" id="step-3">
+    Запустите существующий код. Большинство операций работают без изменений:
+
+    ```python
+    from chdb import datastore as pd
+
+    # Всё это работает одинаково
+    df = pd.read_csv("data.csv")
+    result = df[df['age'] > 25]
+    grouped = df.groupby('city')['salary'].mean()
+    df.to_csv("output.csv")
+    ```
+  </Step>
+
+  <Step title="Учтите различия" id="step-4">
+    Некоторые операции работают иначе. См. раздел [Ключевые различия](#differences) ниже.
+  </Step>
+</Steps>
+
+***
+
+<div id="works-unchanged">
+  ## Что остается без изменений
+</div>
+
+<div id="loading-unchanged">
+  ### Загрузка данных
+</div>
+
+```python
+# All these work the same
+df = pd.read_csv("data.csv")
+df = pd.read_parquet("data.parquet")
+df = pd.read_json("data.json")
+df = pd.read_excel("data.xlsx")
+```
+
+<div id="filtering-unchanged">
+  ### Фильтрация
+</div>
+
+```python
+# Boolean indexing
+df[df['age'] > 25]
+df[(df['age'] > 25) & (df['city'] == 'NYC')]
+
+# query() method
+df.query('age > 25 and salary > 50000')
+```
+
+<div id="selection-unchanged">
+  ### Выборка
+</div>
+
+```python
+# Column selection
+df['name']
+df[['name', 'age']]
+
+# Row selection
+df.head(10)
+df.tail(10)
+df.iloc[0:100]
+```
+
+<div id="groupby-unchanged">
+  ### GroupBy и агрегирование
+</div>
+
+```python
+# GroupBy
+df.groupby('city')['salary'].mean()
+df.groupby(['city', 'dept']).agg({'salary': ['sum', 'mean']})
+```
+
+<div id="sorting-unchanged">
+  ### Сортировка
+</div>
+
+```python
+df.sort_values('salary', ascending=False)
+df.sort_values(['city', 'age'])
+```
+
+<div id="string-unchanged">
+  ### Операции со строками
+</div>
+
+```python
+df['name'].str.upper()
+df['name'].str.contains('John')
+df['name'].str.len()
+```
+
+<div id="datetime-unchanged">
+  ### Operations с типом «дата и время»
+</div>
+
+```python
+df['date'].dt.year
+df['date'].dt.month
+df['date'].dt.dayofweek
+```
+
+<div id="io-unchanged">
+  ### Операции ввода-вывода
+</div>
+
+```python
+df.to_csv("output.csv")
+df.to_parquet("output.parquet")
+df.to_json("output.json")
+```
+
+***
+
+<div id="differences">
+  ## Основные различия
+</div>
+
+<div id="lazy">
+  ### 1. Отложенное вычисление
+</div>
+
+Операции DataStore выполняются отложенно — они не запускаются, пока не понадобятся результаты.
+
+**pandas:**
+
+```python
+# Executes immediately
+result = df[df['age'] > 25]
+print(type(result))  # pandas.DataFrame
+```
+
+**DataStore:**
+
+```python
+# Builds query, doesn't execute yet
+result = ds[ds['age'] > 25]
+print(type(result))  # DataStore (lazy)
+
+# Executes when you need the data
+print(result)        # Triggers execution
+df = result.to_df()  # Triggers execution
+```
+
+<div id="return-types">
+  ### 2. Возвращаемые типы
+</div>
+
+| Операция          | pandas возвращает | DataStore возвращает                  |
+| ----------------- | ----------------- | ------------------------------------- |
+| `df['col']`       | Series            | ColumnExpr (с отложенным выполнением) |
+| `df[['a', 'b']]`  | DataFrame         | DataStore (с отложенным выполнением)  |
+| `df[condition]`   | DataFrame         | DataStore (с отложенным выполнением)  |
+| `df.groupby('x')` | GroupBy           | LazyGroupBy                           |
+
+<div id="no-inplace">
+  ### 3. Параметр inplace не поддерживается
+</div>
+
+DataStore не поддерживает `inplace=True`. Всегда используйте возвращаемое значение:
+
+**pandas:**
+
+```python
+df.drop(columns=['col'], inplace=True)
+```
+
+**DataStore:**
+
+```python
+ds = ds.drop(columns=['col'])  # Assign the result
+```
+
+<div id="comparing">
+  ### 4. Сравнение объектов DataStore
+</div>
+
+pandas не распознаёт объекты DataStore, поэтому для сравнения используйте `to_pandas()`:
+
+```python
+# This may not work as expected
+df == ds  # pandas doesn't know DataStore
+
+# Do this instead
+df.equals(ds.to_pandas())
+```
+
+<div id="row-order">
+  ### 5. Порядок строк
+</div>
+
+DataStore может не сохранять порядок строк для файловых источников данных (например, SQL-баз данных). Используйте явную сортировку:
+
+```python
+# pandas preserves order
+df = pd.read_csv("data.csv")
+
+# DataStore - use sort for guaranteed order
+ds = pd.read_csv("data.csv")
+ds = ds.sort('id')  # Explicit ordering
+```
+
+***
+
+<div id="patterns">
+  ## Сценарии миграции
+</div>
+
+<div id="pattern-1">
+  ### Шаблон 1: чтение, анализ, запись
+</div>
+
+```python
+# pandas
+import pandas as pd
+df = pd.read_csv("data.csv")
+result = df[df['amount'] > 100].groupby('category')['amount'].sum()
+result.to_csv("output.csv")
+
+# DataStore - same code works!
+from chdb import datastore as pd
+df = pd.read_csv("data.csv")
+result = df[df['amount'] > 100].groupby('category')['amount'].sum()
+result.to_csv("output.csv")
+```
+
+<div id="pattern-2">
+  ### Шаблон 2: DataFrame с операциями в pandas
+</div>
+
+Если вам нужны возможности, специфичные для pandas, выполните преобразование в конце:
+
+```python
+from chdb import datastore as pd
+
+# Fast DataStore operations
+ds = pd.read_csv("large_data.csv")
+ds = ds.filter(ds['date'] >= '2024-01-01')
+ds = ds.filter(ds['amount'] > 100)
+
+# Convert to pandas for specific features
+df = ds.to_df()
+df_pivoted = df.pivot_table(...)  # pandas-specific
+```
+
+<div id="pattern-3">
+  ### Сценарий 3: Смешанный процесс работы
+</div>
+
+```python
+from chdb import datastore as pd
+import pandas
+
+# Start with DataStore for fast filtering
+ds = pd.read_csv("huge_file.csv")  # 10M rows
+ds = ds.filter(ds['year'] == 2024)  # Fast SQL filter
+ds = ds.select('col1', 'col2', 'col3')  # Column pruning
+
+# Convert for pandas-specific operations
+df = ds.to_df()  # Now only ~100K rows
+result = df.apply(complex_custom_function)  # pandas
+```
+
+***
+
+<div id="performance">
+  ## Сравнение производительности
+</div>
+
+DataStore работает значительно быстрее на больших наборах данных:
+
+| Операция                   | pandas  | DataStore | Ускорение  |
+| -------------------------- | ------- | --------- | ---------- |
+| Подсчёт в GroupBy          | 347ms   | 17ms      | **19.93x** |
+| Сложный конвейер           | 2,047ms | 380ms     | **5.39x**  |
+| Фильтрация+сортировка+head | 1,537ms | 350ms     | **4.40x**  |
+| Агрегация GroupBy          | 406ms   | 141ms     | **2.88x**  |
+
+*Бенчмарк на 10 млн строк*
+
+***
+
+<div id="troubleshooting">
+  ## Устранение неполадок при миграции
+</div>
+
+<div id="issue-op">
+  ### Проблема: Операция не работает
+</div>
+
+Некоторые операции pandas могут не поддерживаться. Проверьте следующее:
+
+1. Есть ли эта операция в [списке совместимости](/ru/chdb/datastore/pandas-compat)?
+2. Попробуйте сначала преобразовать данные в pandas: `ds.to_df().operation()`
+
+<div id="issue-results">
+  ### Проблема: Разные результаты
+</div>
+
+Включите отладочное журналирование, чтобы понять, что происходит:
+
+```python
+from chdb.datastore.config import config
+config.enable_debug()
+
+# View the SQL being generated
+ds.filter(ds['x'] > 10).explain()
+```
+
+<div id="issue-slow">
+  ### Проблема: Низкая производительность
+</div>
+
+Проверьте, как выполняется процесс:
+
+```python
+# Bad: Multiple small executions
+for i in range(1000):
+    result = ds.filter(ds['id'] == i).to_df()
+
+# Good: Single execution
+result = ds.filter(ds['id'].isin(ids)).to_df()
+```
+
+<div id="issue-types">
+  ### Проблема: несоответствие типов
+</div>
+
+DataStore может по-разному определять типы:
+
+```python
+# Check types
+print(ds.dtypes)
+
+# Force conversion
+ds['col'] = ds['col'].astype('int64')
+```
+
+***
+
+<div id="gradual">
+  ## Стратегия поэтапной миграции
+</div>
+
+<div id="week-1">
+  ### Неделя 1: Проверка совместимости
+</div>
+
+```python
+# Keep both imports
+import pandas as pd
+from chdb import datastore as ds
+
+# Compare results
+pdf = pd.read_csv("data.csv")
+dsf = ds.read_csv("data.csv")
+
+# Verify they match
+assert pdf.equals(dsf.to_pandas())
+```
+
+<div id="week-2">
+  ### Неделя 2: Переведите простые скрипты
+</div>
+
+Начните со скриптов, которые:
+
+* Читают большие файлы
+* Выполняют фильтрацию и агрегацию
+* Не используют пользовательские функции apply
+
+<div id="week-3">
+  ### Неделя 3: Разбор сложных случаев
+</div>
+
+Для скриптов с пользовательскими функциями:
+
+```python
+from chdb import datastore as pd
+
+# Let DataStore handle the heavy lifting
+ds = pd.read_csv("data.csv")
+ds = ds.filter(ds['year'] == 2024)  # SQL
+
+# Convert for custom work
+df = ds.to_df()
+result = df.apply(my_custom_function)
+```
+
+<div id="week-4">
+  ### Неделя 4: Полная миграция
+</div>
+
+Переведите все скрипты на импорт из DataStore.
+
+***
+
+<div id="faq">
+  ## FAQ
+</div>
+
+<div id="faq-both">
+  ### Можно ли использовать и pandas, и DataStore?
+</div>
+
+Да! Вы можете свободно преобразовывать их друг в друга:
+
+```python
+from chdb import datastore as ds
+import pandas as pd
+
+# DataStore to pandas
+df = ds_result.to_pandas()
+
+# pandas to DataStore  
+ds = ds.DataFrame(pd_result)
+```
+
+<div id="faq-tests">
+  ### Будут ли мои тесты по-прежнему проходить?
+</div>
+
+Большинство тестов должно проходить. Для тестов на сравнение преобразуйте данные в pandas:
+
+```python
+def test_my_function():
+    result = my_function()
+    expected = pd.DataFrame(...)
+    pd.testing.assert_frame_equal(result.to_pandas(), expected)
+```
+
+<div id="faq-jupyter">
+  ### Можно ли использовать DataStore в Jupyter?
+</div>
+
+Да! DataStore работает в Jupyter Notebook:
+
+```python
+from chdb import datastore as pd
+
+ds = pd.read_csv("data.csv")
+ds.head()  # Displays nicely in Jupyter
+```
+
+<div id="faq-issues">
+  ### Как сообщить о проблемах?
+</div>
+
+Если вы столкнулись с проблемами совместимости, сообщите о них здесь:
+https://github.com/chdb-io/chdb/issues

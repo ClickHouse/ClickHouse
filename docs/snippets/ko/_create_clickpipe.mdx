@@ -2,102 +2,82 @@
 title: ClickPipe 생성
 ---
 
-import S3DataSource from '/snippets/es/clickpipes/object-storage/amazon-s3/_1-data-source.mdx';
-import GCSSDataSource from '/snippets/es/clickpipes/object-storage/google-cloud-storage/_1-data-source.mdx';
+<Step title="데이터 포맷 선택" id="3-select-data-format">
+  UI에 지정된 버킷의 파일 목록이 표시됩니다.
+  데이터 포맷(현재 ClickHouse 포맷의 일부만 지원)을 선택하고, 지속적인 수집을 활성화할지 선택합니다.
+  자세한 내용은 개요 페이지의 &quot;continuous ingest&quot; 섹션을 참조하십시오.
 
-import S3Connection from '/snippets/es/clickpipes/object-storage/amazon-s3/_2-connection.mdx';
-import GCSConnection from '/snippets/es/clickpipes/object-storage/google-cloud-storage/_2-connection.mdx';
+  <Frame>
+    <img src="/images/integrations/data-ingestion/clickpipes/cp_step3_object_storage.webp" alt="데이터 포맷 및 topic 설정" />
+  </Frame>
+</Step>
 
-<Steps>
-  <Step>
-    ## 데이터 소스 선택
+<Step title="테이블, 스키마 및 설정 구성" id="5-configure-table-schema-settings">
+  다음 단계에서는 데이터를 새 ClickHouse 테이블에 수집할지, 기존 테이블을 재사용할지 선택할 수 있습니다.
+  화면의 안내에 따라 테이블 이름, 스키마, 설정을 수정하십시오.
+  상단의 샘플 테이블에서 변경 사항의 실시간 미리보기를 확인할 수 있습니다.
 
-    **1.** ClickHouse Cloud의 기본 탐색 메뉴에서 **데이터 소스**를 선택한 다음 **Create ClickPipe**를 클릭합니다.
+  <Frame>
+    <img src="/images/integrations/data-ingestion/clickpipes/cp_step4a.webp" alt="테이블, 스키마 및 설정 지정" />
+  </Frame>
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="가져오기 선택" size="lg" border />
+  제공된 컨트롤을 사용해 고급 설정도 사용자 지정할 수 있습니다.
 
-    {props.provider === 's3' && <S3DataSource />}
+  <Frame>
+    <img src="/images/integrations/data-ingestion/clickpipes/cp_step4a3.webp" alt="고급 컨트롤 설정" />
+  </Frame>
 
-    {props.provider === 'gcs' && <GCSSDataSource />}
-  </Step>
+  또는 데이터를 기존 ClickHouse 테이블에 수집하도록 선택할 수도 있습니다.
+  이 경우 UI에서 소스 필드를 선택한 대상 테이블의 ClickHouse 필드에 매핑할 수 있습니다.
 
-  <Step>
-    ## ClickPipe 연결 설정
+  <Frame>
+    <img src="/images/integrations/data-ingestion/clickpipes/cp_step4b.webp" alt="기존 테이블 사용" />
+  </Frame>
 
-    **1.** 새 ClickPipe를 설정하려면 객체 스토리지 서비스에 연결하고 인증하는 데 필요한 세부 정보를 입력해야 합니다.
+  <Info>
+    `_path` 또는 `_size`와 같은 [virtual columns](/ko/reference/functions/table-functions/s3#virtual-columns)도 필드에 매핑할 수 있습니다.
+  </Info>
+</Step>
 
-    {props.provider === 's3' && <S3Connection />}
+<Step title="권한 구성" id="6-configure-permissions">
+  마지막으로 내부 ClickPipes 사용자에 대한 권한을 구성할 수 있습니다.
 
-    {props.provider === 'gcs' && <GCSConnection />}
+  **권한:** ClickPipes는 대상 테이블에 데이터를 쓰기 위한 전용 사용자를 생성합니다. 사용자 지정 Role 또는 미리 정의된 Role 중 하나를 선택해 이 내부 사용자의 Role을 지정할 수 있습니다.
 
-    **2.** **Incoming data**를 클릭합니다. ClickPipes가 다음 단계에 필요한 메타데이터를 버킷에서 가져옵니다.
-  </Step>
+  * `Full access`: 클러스터 전체에 대한 액세스 권한입니다. 대상 테이블과 함께 materialized view 또는 딕셔너리(Dictionary)를 사용하는 경우 필요합니다.
+  * `Only destination table`: 대상 테이블에만 `INSERT` 권한을 부여합니다.
 
-  <Step>
-    ## 데이터 포맷 선택
+  <Frame>
+    <img src="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="권한" />
+  </Frame>
+</Step>
 
-    UI에 지정한 버킷의 파일 목록이 표시됩니다.
-    데이터 포맷(현재는 ClickHouse 포맷의 부분 집합만 지원)과 지속적인 수집을 활성화할지 선택합니다.
-    자세한 내용은 개요 페이지의 &quot;continuous ingest&quot; 섹션을 참조하십시오.
+<Step title="설정 완료" id="7-complete-setup">
+  &quot;Complete Setup&quot;을 클릭하면 시스템이 ClickPipe를 등록하고, 요약 테이블에 표시된 항목을 확인할 수 있습니다.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step3_object_storage.webp" alt="데이터 포맷 및 topic 설정" size="lg" border />
-  </Step>
+  <div className="ch-image-sm">
+    <Frame>
+      <img src="/images/integrations/data-ingestion/clickpipes/cp_success.webp" alt="성공 알림" />
+    </Frame>
+  </div>
 
-  <Step>
-    ## 테이블, 스키마 및 설정 구성
+  <Frame>
+    <img src="/images/integrations/data-ingestion/clickpipes/cp_remove.webp" alt="제거 알림" />
+  </Frame>
 
-    다음 단계에서는 데이터를 새 ClickHouse 테이블로 수집할지, 아니면 기존 테이블을 재사용할지 선택할 수 있습니다.
-    화면의 안내에 따라 테이블 이름, 스키마, 설정을 수정하십시오.
-    상단의 샘플 테이블에서 변경 사항을 실시간으로 미리 확인할 수 있습니다.
+  요약 테이블에는 소스 또는 ClickHouse의 대상 테이블에서 샘플 데이터를 표시하는 컨트롤이 제공됩니다.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a.webp" alt="테이블, 스키마 및 설정 지정" size="lg" border />
+  <Frame>
+    <img src="/images/integrations/data-ingestion/clickpipes/cp_destination.webp" alt="대상 보기" />
+  </Frame>
 
-    제공된 컨트롤을 사용해 고급 설정도 사용자 지정할 수 있습니다.
+  또한 ClickPipe를 제거하고 수집 작업의 요약을 표시하는 컨트롤도 제공합니다.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a3.webp" alt="고급 컨트롤 설정" size="lg" border />
+  <Frame>
+    <img src="/images/integrations/data-ingestion/clickpipes/cp_overview.webp" alt="개요 보기" />
+  </Frame>
 
-    또는 기존 ClickHouse 테이블로 데이터를 수집하도록 선택할 수도 있습니다.
-    이 경우 UI에서 소스의 필드를 선택한 대상 테이블의 ClickHouse 필드에 매핑할 수 있습니다.
-
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step4b.webp" alt="기존 테이블 사용" size="lg" border />
-
-    <Info>
-      `_path` 또는 `_size`와 같은 [virtual columns](/ko/reference/functions/table-functions/s3#virtual-columns)도 필드에 매핑할 수 있습니다.
-    </Info>
-  </Step>
-
-  <Step>
-    ## 권한 구성
-
-    마지막으로 내부 ClickPipes 사용자에 대한 권한을 구성할 수 있습니다.
-
-    **권한:** ClickPipes는 대상 테이블에 데이터를 쓰기 위한 전용 사용자를 생성합니다. 사용자 지정 Role 또는 미리 정의된 Role 중 하나를 선택해 이 내부 사용자에게 할당할 수 있습니다.
-
-    * `Full access`: cluster에 대한 전체 액세스 권한입니다. 대상 테이블과 함께 materialized view 또는 딕셔너리(Dictionary)를 사용하는 경우 필요합니다.
-    * `Only destination table`: 대상 테이블에만 `INSERT` 권한을 부여합니다.
-
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="권한" size="lg" border />
-  </Step>
-
-  <Step>
-    ## 설정 완료
-
-    &quot;Complete Setup&quot;을 클릭하면 시스템이 ClickPipe를 등록하고, 요약 테이블에 표시되는 것을 확인할 수 있습니다.
-
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_success.webp" alt="성공 알림" size="sm" border />
-
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_remove.webp" alt="제거 알림" size="lg" border />
-
-    요약 테이블에서는 소스 또는 ClickHouse의 대상 테이블에서 샘플 데이터를 표시하는 컨트롤을 제공합니다.
-
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_destination.webp" alt="대상 보기" size="lg" border />
-
-    또한 ClickPipe를 제거하고 수집 작업의 요약을 표시하는 컨트롤도 제공합니다.
-
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_overview.webp" alt="개요 보기" size="lg" border />
-
-    **축하합니다!** 첫 번째 ClickPipe 설정을 성공적으로 완료했습니다.
-    지속적인 수집으로 구성된 ClickPipe라면 원격 데이터 소스에서 데이터를 실시간으로 수집하면서 계속 실행됩니다.
-    그렇지 않으면 Batch를 수집한 후 완료됩니다.
-  </Step>
-</Steps>
+  **축하합니다!** 첫 번째 ClickPipe 설정을 성공적으로 완료했습니다.
+  이 ClickPipe가 지속적인 수집용으로 구성된 경우 원격 data source에서 데이터를 실시간으로 수집하면서 계속 실행됩니다.
+  그렇지 않으면 Batch를 수집한 후 완료됩니다.
+</Step>

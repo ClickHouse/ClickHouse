@@ -12,21 +12,15 @@ integration:
 
 import ConnectionDetails from '/snippets/pt-BR/_gather_your_details_native.mdx';
 
-<div id="quick-start">
-  ## Início rápido
-</div>
+## Início rápido {#quick-start}
 
 Vamos começar com um exemplo simples. Ele se conectará ao ClickHouse e fará uma consulta no banco de dados do sistema. Para começar, você precisará dos detalhes de conexão.
 
-<div id="connection-details">
-  ### Detalhes da conexão
-</div>
+### Detalhes da conexão {#connection-details}
 
 <ConnectionDetails />
 
-<div id="initialize-a-module">
-  ### Inicialize um módulo
-</div>
+### Inicialize um módulo {#initialize-a-module}
 
 ```bash
 mkdir clickhouse-golang-example
@@ -34,9 +28,7 @@ cd clickhouse-golang-example
 go mod init clickhouse-golang-example
 ```
 
-<div id="copy-in-some-sample-code">
-  ### Copie um código de exemplo
-</div>
+### Copie um código de exemplo {#copy-in-some-sample-code}
 
 Copie este código para o diretório `clickhouse-golang-example` com o nome `main.go`.
 
@@ -122,17 +114,13 @@ func connect() (driver.Conn, error) {
 }
 ```
 
-<div id="run-go-mod-tidy">
-  ### Execute o comando go mod tidy
-</div>
+### Execute o comando go mod tidy {#run-go-mod-tidy}
 
 ```bash
 go mod tidy
 ```
 
-<div id="set-your-connection-details">
-  ### Defina os detalhes da conexão
-</div>
+### Defina os detalhes da conexão {#set-your-connection-details}
 
 Antes, você consultou os detalhes da conexão. Defina-os em `main.go`, na função `connect()`:
 
@@ -149,9 +137,7 @@ func connect() (driver.Conn, error) {
       },
 ```
 
-<div id="run-the-example">
-  ### Execute o exemplo
-</div>
+### Execute o exemplo {#run-the-example}
 
 ```bash
 go run .
@@ -165,15 +151,11 @@ go run .
 2023/03/06 14:18:33 name: hourly_data, uuid: a4e36bd4-1e82-45b3-be77-74a0fe65c52b
 ```
 
-<div id="learn-more">
-  ### Saiba mais
-</div>
+### Saiba mais {#learn-more}
 
 O restante da documentação desta categoria aborda os detalhes do cliente Go para ClickHouse.
 
-<div id="overview">
-  ## Visão geral
-</div>
+## Visão geral {#overview}
 
 O ClickHouse oferece dois clientes Go oficiais. Eles são complementares e foram projetados intencionalmente para atender a diferentes casos de uso.
 
@@ -184,9 +166,7 @@ O clickhouse-go fornece uma interface de alto nível, permitindo que os usuário
 
 A partir da versão 2.3, o clickhouse-go utiliza o ch-go para funções de baixo nível, como codificação, decodificação e compressão. Ambos os clientes usam o formato nativo para codificação, a fim de oferecer desempenho ideal, e podem se comunicar pelo protocolo nativo do ClickHouse. O clickhouse-go também oferece suporte a HTTP como mecanismo de transporte para casos em que os usuários precisam usar proxy ou fazer balanceamento de carga do tráfego.
 
-<div id="four-ways-to-connect">
-  ### Quatro maneiras de se conectar
-</div>
+### Quatro maneiras de se conectar {#four-ways-to-connect}
 
 `clickhouse-go` oferece duas escolhas independentes: **qual API** usar e **qual transporte** usar. Elas se combinam em quatro modos de conexão:
 
@@ -206,9 +186,7 @@ Ambas as APIs usam a codificação binária nativa independentemente do transpor
 |   ClickHouse API   |       ✅       |        ✅       |        ✅        |         ✅        |           ✅           |      ✅     |            ✅           |
 | `database/sql` API |       ✅       |        ✅       |        ✅        |         ✅        |                       |      ✅     |                        |
 
-<div id="choosing-a-client">
-  ### Escolhendo um cliente
-</div>
+### Escolhendo um cliente {#choosing-a-client}
 
 A escolha de uma biblioteca cliente depende dos seus padrões de uso e da necessidade de obter o melhor desempenho. Para casos de uso com muitas inserções, em que são necessárias milhões de inserções por segundo, recomendamos usar o cliente de baixo nível [ch-go](https://github.com/ClickHouse/ch-go). Esse cliente evita a sobrecarga de converter os dados de um formato orientado a linhas para colunas, como exige o formato nativo do ClickHouse. Além disso, dispensa reflection e o uso do tipo `interface{}` (`any`), o que simplifica o uso.
 
@@ -219,9 +197,7 @@ Para cargas de trabalho de consulta focadas em agregações ou cargas de trabalh
 | clickhouse-go |        ✅       |         ✅        |        ✅       |            ✅           |            ✅            |            ✅           |      ✅     |             ✅            |
 |     ch-go     |        ✅       |         ✅        |                |                        |            ✅            |                        |      ✅     |                          |
 
-<div id="installation">
-  ## Instalação
-</div>
+## Instalação {#installation}
 
 A v1 do driver está obsoleta e não receberá atualizações de recursos nem suporte a novos tipos do ClickHouse. Você deve migrar para a v2, que oferece desempenho superior.
 
@@ -268,24 +244,18 @@ go run main.go
 
 ```
 
-<div id="versioning">
-  ### Controle de versão
-</div>
+### Controle de versão {#versioning}
 
 O cliente é lançado independentemente do ClickHouse. A série 2.x representa a atual versão principal em desenvolvimento. Todas as versões da série 2.x devem ser compatíveis entre si.
 
-<div id="clickhouse-compatibility">
-  #### Compatibilidade com ClickHouse
-</div>
+#### Compatibilidade com ClickHouse {#clickhouse-compatibility}
 
 O cliente oferece suporte a:
 
 * Todas as versões do ClickHouse com suporte atualmente, conforme listado [aqui](https://github.com/ClickHouse/ClickHouse/blob/master/SECURITY.md). Quando uma versão do ClickHouse deixa de ter suporte, ela também deixa de ser testada ativamente nos lançamentos do cliente.
 * Todas as versões do ClickHouse lançadas nos 2 anos anteriores à data de lançamento do cliente. Observe que apenas as versões LTS são testadas ativamente.
 
-<div id="golang-compatibility">
-  #### Compatibilidade do Golang
-</div>
+#### Compatibilidade do Golang {#golang-compatibility}
 
 |   Versão do cliente  | Versões do Golang |
 | :------------------: | :---------------: |
@@ -294,9 +264,7 @@ O cliente oferece suporte a:
 |      &gt;= 2.41      |       1.21+       |
 |      &gt;= 2.43      |       1.24+       |
 
-<div id="best-practices">
-  ## Boas práticas
-</div>
+## Boas práticas {#best-practices}
 
 * Utilize a API do ClickHouse sempre que possível, especialmente para tipos primitivos. Isso evita reflexão e indireção significativas.
 * Se estiver lendo grandes conjuntos de dados, considere modificar o [`BlockBufferSize`](/pt-BR/integrations/language-clients/go/configuration#connection-settings). Isso aumentará o uso de memória, mas permitirá que mais blocos sejam decodificados em paralelo durante a iteração pelas linhas. O valor padrão de 2 é conservador e minimiza a sobrecarga de memória. Valores mais altos significam mais blocos na memória. Isso exige testes, já que consultas diferentes podem produzir blocos de tamanhos diferentes. Portanto, isso pode ser definido no [nível da consulta](/pt-BR/integrations/language-clients/go/clickhouse-api#using-context) por meio do Context.
@@ -304,9 +272,7 @@ O cliente oferece suporte a:
 * Use inserções orientadas a colunas sempre que possível. Novamente, elas devem ter tipagem forte, evitando que o cliente precise converter seus valores.
 * Siga as [recomendações](/pt-BR/reference/statements/insert-into#performance-considerations) do ClickHouse para obter o melhor desempenho de inserção.
 
-<div id="next-steps">
-  ## Próximos passos
-</div>
+## Próximos passos {#next-steps}
 
 * [Configuração](/pt-BR/integrations/language-clients/go/configuration) — configurações de conexão, TLS, autenticação, logging, compressão
 * [ClickHouse API](/pt-BR/integrations/language-clients/go/clickhouse-api) — API nativa do Go para consultas e inserções

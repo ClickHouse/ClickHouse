@@ -11,7 +11,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-JoinLazyColumnsStep::JoinLazyColumnsStep(const SharedHeader & left_header_, const SharedHeader & right_header_, LazyMaterializingRowsPtr lazy_materializing_rows_)
+JoinLazyColumnsStep::JoinLazyColumnsStep(const SharedHeader & left_header_, const SharedHeader & right_header_, ILazyMaterializingRowsPtr lazy_materializing_rows_)
     : lazy_materializing_rows(std::move(lazy_materializing_rows_))
 {
     updateInputHeaders({left_header_, right_header_});

@@ -356,7 +356,7 @@ class KeeperBench:
             if _RAN_TO_TIMELIMIT in _stderr_check:
                 print(
                     "[keeper][bench] Bench ran to timelimit but Session expired prevented JSON "
-                    "write.  Waiting for servers and running short recovery bench (timelimit=30s)..."
+                    "write. Waiting for servers and running short recovery bench (timelimit=30s)..."
                 )
                 self._wait_for_any_server(timeout_s=120)
                 recovery_opath = f"/tmp/keeper_bench_out_{uuid.uuid4().hex[:8]}.json"

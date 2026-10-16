@@ -1,0 +1,82 @@
+the key is an ALIAS column of the Distributed table
+0
+0
+1
+1
+2
+2
+3
+3
+4
+4
+other columns alongside the key
+0	t	0
+0	t	0
+1	t	10
+1	t	10
+2	t	20
+2	t	20
+3	t	30
+3	t	30
+4	t	40
+4	t	40
+the Distributed table on the right of the join
+0
+0
+1
+1
+2
+2
+3
+3
+4
+4
+with the top-level identifier compatibility setting
+0
+0
+1
+1
+2
+2
+3
+3
+4
+4
+the key is a chain of ALIAS columns
+0
+0
+1
+1
+2
+2
+3
+3
+4
+4
+the key exists on both tables as a real column
+0
+0
+1
+1
+2
+2
+3
+3
+4
+4
+the key is an ALIAS column whose body is an expression
+the same, resolved through the SELECT list
+1
+1
+2
+2
+3
+3
+4
+4
+5
+5
+a nested SELECT-list alias shadowing a real column, locally
+11
+the same over a Distributed table: joins by the real column instead
+0

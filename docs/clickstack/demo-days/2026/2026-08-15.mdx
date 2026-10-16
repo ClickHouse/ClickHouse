@@ -1,0 +1,110 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-08-15
+title: 'Demo days - 2026-08-15'
+sidebarTitle: '2026-08-15'
+description: 'ClickStack demo days for 2026-08-15'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## Dashboard variables {#dashboard-variables}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/gY2Kej-EYx4" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+Dashboard variables are the main change this week. They build on the filters model dashboards already use: any existing filter, or any new one, can be made available as a variable.
+
+A variable uses the filter's display name by default. If that name contains special characters, or two filters share the same display name, you can assign a custom variable name. The custom name remains stable if the filter is renamed later. The configuration page shows the name you need to reference, and once the variable is enabled it also appears in the filter tooltip.
+
+Raw SQL charts support several ways to use variables. `$__filter($var)` expands the current selection for one variable. It's the single-variable equivalent of the existing `$__filters` macro, which expands every filter.
+
+The more interesting addition is `$__conditionalAll(condition, $var)`. Its first argument is a condition and its second is a variable. When the variable has a selection, the condition is included in the query. With no selection, the entire expression becomes `1 = 1` and has no effect on filtering.
+
+That makes cross-source mappings possible. A dashboard can map trace status codes to `error` or `info`, allowing a severity filter defined against a logs table to filter a traces table. Select `error` at the dashboard level and the trace query filters for an error status.
+
+Autocomplete suggests every available variable and the formats it supports. Following a suggestion from Brandon, it now shows the actual expansion inline using the current selection. Macro suggestions include their expansions as well, and a new documentation section explains what each macro does. Validation catches references to variables that don't exist and macros called with the wrong arguments.
+
+Builder charts use the same variable substitution in most editable fields, across SQL and Lucene inputs. Variables work in `WHERE`, `GROUP BY`, `HAVING` and `ORDER BY`, with the same autocomplete and validation. Lucene fields support variables but not macros. SQL builder fields offer the variable-related macros rather than the full set available in raw SQL.
+
+Alerts have one hard rule: every variable is evaluated using its empty value. If an alert query references variables, the editor warns you before you save it. The preview and generated SQL show the empty expansion, including on the alert detail page, and the alert task applies those empty values when it runs.
+
+
+
+Variable configuration remains behind `NEXT_PUBLIC_ENABLE_DASHBOARD_VARIABLES`. With no variables configured, dashboard behaviour is unchanged.
+
+**Related PRs:** [#2836](https://github.com/hyperdxio/hyperdx/pull/2836) add filter variable configuration, [#2873](https://github.com/hyperdxio/hyperdx/pull/2873) substitute variables in raw SQL charts, [#2874](https://github.com/hyperdxio/hyperdx/pull/2874) autocomplete and validations for SQL dashboard variables, [#2901](https://github.com/hyperdxio/hyperdx/pull/2901) support dashboard variables in chart builder tiles, [#2910](https://github.com/hyperdxio/hyperdx/pull/2910) expand variables as empty in alert queries, [#2923](https://github.com/hyperdxio/hyperdx/pull/2923) support dependent variable value queries, [#2937](https://github.com/hyperdxio/hyperdx/pull/2937) support nested macros and variable references in macros, [#2944](https://github.com/hyperdxio/hyperdx/pull/2944) add dashboard variables to external API
+
+## Alert detail page with evaluation history {#alert-detail-page-with-evaluation-history}
+
+*Demo by [@wrn14897](https://github.com/wrn14897)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Y0entaRF-R8" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+Until now, an alert gave you a history strip and little else. There wasn't much to inspect if you wanted to understand what the alert was actually doing.
+
+The new detail page shows every evaluation. For grouped alerts, it breaks out which group fired and the value that crossed the threshold. Each entry also includes the ClickHouse query duration, with the alert's configuration available alongside it.
+
+The backfilled buckets column deserves some explanation. When an evaluation is missed, the next run fills the gap by processing the missing bucket. Any backfilled buckets therefore mean the alert is running behind schedule. A slow ClickHouse query now leaves visible evidence instead of quietly delaying later evaluations.
+
+Chart markers line up with the start of the evaluated bucket, making it easier to see when the alert fired and when it returned to OK.
+
+You can also edit or delete an alert directly from the detail page. There's no need to return to the saved-search modal or dashboard tile editor. Bringing more of the alert configuration onto this page is still being explored.
+
+The page remains behind `NEXT_PUBLIC_ENABLE_ALERT_DETAILS`.
+
+**Related PRs:** [#2833](https://github.com/hyperdxio/hyperdx/pull/2833) alert evaluations read model and `GET /alerts/:id/evaluations`, [#2834](https://github.com/hyperdxio/hyperdx/pull/2834) persist alert evaluation errors and analytics in AlertHistory, [#2835](https://github.com/hyperdxio/hyperdx/pull/2835) alert detail page with evaluation history, [#2928](https://github.com/hyperdxio/hyperdx/pull/2928) align alert chart markers with the evaluated bucket start, [#2931](https://github.com/hyperdxio/hyperdx/pull/2931) allow editing and deleting alerts from the alert details page
+
+## Investigating alerts, and MCP tool annotations {#investigating-alerts-and-mcp-tool-annotations}
+
+*Demo by [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/942yeJitK4Q" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+Firing alerts now have an Investigate button. Clicking it starts a notebook investigation from either the alerts page or the alert detail page.
+
+The eventual goal is to start these investigations automatically when an alert fires. The button is the useful intermediate step, not the intended final form.
+
+Every tool on the ClickStack MCP server now includes annotation hints as well. Previously, the server provided no indication that one tool was read-only while another changed or deleted data.
+
+Adding `readOnlyHint` and `destructiveHint` gives clients enough information to handle those tools differently. Reads can proceed without interruption, while destructive actions can wait for explicit approval. Deleting an alert is the obvious example. You should be asked before that happens.
+
+The final change affects which tools agents choose in the first place. Use of `clickstack_sql` had crept up as the tool set expanded without a clear selection policy. Agents were reaching for raw SQL even when the builder tools were a better fit.
+
+That matters beyond query correctness. Raw SQL creates static result tiles. The builder tools, `clickstack_table`, `clickstack_timeseries` and `clickstack_search`, produce tiles you can click into and pivot from.
+
+The MCP now directs agents towards those builder tools first and reserves raw SQL for queries they genuinely can't express. Eval scores improved noticeably after the change.
+
+**Related PRs:** [#2838](https://github.com/hyperdxio/hyperdx/pull/2838) add MCP tool annotations (`readOnlyHint` etc.) to all tools, [#2840](https://github.com/hyperdxio/hyperdx/pull/2840) steer agents toward builder query tools instead of raw SQL, [#2870](https://github.com/hyperdxio/hyperdx/pull/2870) steer dashboard agents to per-series tile filters. The Investigate button itself has no public PR to link.
+
+## Multi-series metric charts in a single query {#multi-series-metric-charts-in-a-single-query}
+
+*Demo by [@wrn14897](https://github.com/wrn14897)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/jJKgFrMfGjU" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+Putting several metrics on one chart used to mean running one ClickHouse query per series, then merging the result sets in Node or the browser. A chart with N series produced N queries.
+
+Multi-series charts now compile into a single SQL query. Each series becomes a CTE, and ClickHouse merges them at the end. Ratios follow the same path: both series are produced in one query, with the ratio calculated in the final projection.
+
+Fewer queries is the immediate benefit. The same query shape also lays the groundwork for metric formulas. A formula needs every series available as columns in one relation so it can be expressed in the final `SELECT`. That's now exactly what the compiler produces, and the formula work is already following behind it.
+
+The change exposed one regression. Multi-series tiles failed to render when they mixed aggregations producing floats and integers. A histogram `quantile`, which returns `Float64`, combined with a histogram `count`, which returns `Int64`, was enough to trigger it.
+
+The composed `UNION ALL` and pivot sent every series through the same column, causing ClickHouse to widen the type to `Variant(Float64, Int64)`. That case has now been fixed.
+
+**Related PRs:** [#2858](https://github.com/hyperdxio/hyperdx/pull/2858) expand int test coverage for multi-series metric merge, [#2859](https://github.com/hyperdxio/hyperdx/pull/2859) move multi-series metric merge computation to ClickHouse, [#2907](https://github.com/hyperdxio/hyperdx/pull/2907) alert-task coverage for multi-series metric tiles, [#2916](https://github.com/hyperdxio/hyperdx/pull/2916) fix multi-series metric charts mixing float and int aggregations, [#2872](https://github.com/hyperdxio/hyperdx/pull/2872) formula expression model, [#2908](https://github.com/hyperdxio/hyperdx/pull/2908) render formulas in the composed metric query, [#2909](https://github.com/hyperdxio/hyperdx/pull/2909) chart editor UI for metric formulas
+
+## Lucene autocomplete and password requirement fixes {#lucene-autocomplete-and-password-requirement-fixes}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/8MODmM5RT6Q" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+Testing dashboard variables uncovered a separate regression: Lucene autocomplete had quietly stopped working almost everywhere. The search page was the only place it still worked.
+
+The other change is on the Join Team page, where invited users set their password. The page didn't show the password requirements even though the backend enforced them. Entering something invalid produced a generic "Password is invalid" message and left the user to guess the policy.
+
+Those requirements are now visible. Inspecting the shared component that displays them also found two disagreements with the backend: which special characters count and the maximum password length. Both have been corrected.
+
+**Related PRs:** [#2902](https://github.com/hyperdxio/hyperdx/pull/2902) restore Lucene autocomplete, [#2904](https://github.com/hyperdxio/hyperdx/pull/2904) show password requirements on Join Team page

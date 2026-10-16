@@ -106,7 +106,7 @@ En el paso final, solo se carga el conjunto mínimo de gránulos de columna: los
   ## La optimización de PREWHERE se aplica automáticamente
 </div>
 
-La cláusula PREWHERE puede añadirse manualmente, como se muestra en el ejemplo anterior. Sin embargo, no es necesario escribir PREWHERE manualmente. Cuando la configuración [`optimize_move_to_prewhere`](/es/reference/settings/session-settings#optimize_move_to_prewhere) está habilitada (`true` de forma predeterminada), ClickHouse mueve automáticamente las condiciones de filtro de WHERE a PREWHERE, priorizando las que más reducen el volumen de lectura.
+La cláusula PREWHERE puede añadirse manualmente, como se muestra en el ejemplo anterior. Sin embargo, no es necesario escribir PREWHERE manualmente. Cuando la configuración [`optimize_move_to_prewhere`](/es/reference/settings/session-settings/optimize-move-to-prewhere#optimize_move_to_prewhere) está habilitada (`true` de forma predeterminada), ClickHouse mueve automáticamente las condiciones de filtro de WHERE a PREWHERE, priorizando las que más reducen el volumen de lectura.
 
 La idea es que las columnas más pequeñas se escanean más rápido y, para cuando se procesan las columnas más grandes, la mayoría de los gránulos ya se han descartado. Como todas las columnas tienen el mismo número de filas, el tamaño de una columna viene determinado principalmente por su tipo de datos; por ejemplo, una columna `UInt8` suele ser mucho más pequeña que una columna `String`.
 

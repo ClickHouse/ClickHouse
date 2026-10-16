@@ -41,18 +41,14 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </div>
 
 <Steps>
-  <Step>
-    ### استنساخ مستودع الإضافة
-
+  <Step title="استنساخ مستودع الإضافة" id="clone-extension">
     ```shell
     git clone https://github.com/kyreddie/hyperdx-chrome-extension
     cd hyperdx-chrome-extension
     ```
   </Step>
 
-  <Step>
-    ### تثبيت الإضافة
-
+  <Step title="تثبيت الإضافة" id="install-extension">
     1. افتح Chrome وانتقل إلى `chrome://extensions`.
     2. فعّل **Developer mode** (أعلى اليمين).
     3. انقر على **Load unpacked**.
@@ -61,9 +57,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     ستظهر الإضافة في شريط الأدوات باسم **HyperDX Browser Extension**.
   </Step>
 
-  <Step>
-    ### تشغيل ClickStack
-
+  <Step title="تشغيل ClickStack" id="start-clickstack">
     إذا كانت لديك بالفعل نقطة نهاية لاستيعاب البيانات في ClickStack أو HyperDX، فانتقل مباشرةً إلى [تهيئة الإضافة](#configure-extension).
 
     بالنسبة إلى ClickStack محلي، شغّل OpenTelemetry Collector. استبدل `{{CLICKHOUSE_ENDPOINT}}` و`{{CLICKHOUSE_PASSWORD}}` بتفاصيل اتصال ClickHouse:
@@ -87,24 +81,20 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     للنشر المحلي الكامل مع ClickHouse وHyperDX UI، راجع [البدء مع ClickStack](/ar/clickstack/getting-started/oss).
   </Step>
 
-  <Step>
-    ### احصل على API key الخاصة بك
+  <Step title="احصل على مفتاح واجهة برمجة التطبيقات الخاص بك" id="get-api-key">
+    بالنسبة إلى ClickStack المحلي، قد لا تحتاج إلى مفتاح واجهة برمجة التطبيقات — اترك الحقل فارغًا في الإضافة عند إرسال بيانات telemetry إلى collector مستضاف ذاتيًا على `http://localhost:4318`.
 
-    بالنسبة إلى ClickStack المحلي، قد لا تحتاج إلى API key — اترك الحقل فارغًا في الإضافة عند إرسال بيانات telemetry إلى collector مستضاف ذاتيًا على `http://localhost:4318`.
-
-    أما لاستيعاب البيانات في ClickStack Cloud أو HyperDX Cloud، فافتح HyperDX وانتقل إلى **Team Settings → API Keys**، ثم انسخ **Ingestion API Key** الخاصة بك.
+    أما لاستيعاب البيانات في ClickStack Cloud أو HyperDX Cloud، فافتح HyperDX وانتقل إلى **Team Settings → مفاتيح واجهة برمجة التطبيقات**، ثم انسخ **مفتاح واجهة برمجة التطبيقات للاستيعاب** الخاص بك.
   </Step>
 
-  <Step>
-    ### تهيئة الإضافة
-
+  <Step title="تهيئة الإضافة" id="configure-extension">
     انقر على أيقونة **HyperDX Browser Extension** في شريط أدوات Chrome واملأ الإعدادات التالية:
 
     | الحقل                            | مثال ClickStack محلي                  | ملاحظات                                                                           |
     | -------------------------------- | ------------------------------------- | --------------------------------------------------------------------------------- |
     | **Enable HyperDX Monitoring**    | تشغيل                                 | مفتاح التبديل الرئيسي للحقن                                                       |
     | **Service Name**                 | `my-frontend-app`                     | مطلوب — يعرّف الخدمة في ClickStack                                                |
-    | **API Key**                      | *(فارغ)*                              | مطلوب للاستيعاب السحابي؛ واختياري في بعض إعدادات الاستضافة الذاتية                |
+    | **مفتاح واجهة برمجة التطبيقات**  | *(فارغ)*                              | مطلوب للاستيعاب السحابي؛ واختياري في بعض إعدادات الاستضافة الذاتية                |
     | **Collector URL**                | `http://localhost:4318`               | نقطة نهاية OTLP HTTP؛ والقيمة السحابية الافتراضية هي `https://in-otel.hyperdx.io` |
     | **Environment**                  | `development`                         | اختياري — يضبط سمة المورد `deployment.environment`                                |
     | **Trace Propagation Targets**    | `/api\.myapp\.domain/i, /localhost/i` | اختياري — أنماط regex في JavaScript مفصولة بفواصل لنشر ترويسات التتبّع            |
@@ -114,22 +104,18 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
     انقر على **Save Configuration**، ثم أعد تحميل أي علامات تبويب تريد تهيئتها.
 
-    <Image img="/images/clickstack/chrome-extension/extension-config.png" alt="نافذة منبثقة لتهيئة HyperDX Chrome extension مع إعدادات ClickStack محلية" size="sm" />
+    <Image img="/images/clickstack/chrome-extension/extension-config.png" alt="نافذة منبثقة لتهيئة إضافة Chrome لـ HyperDX مع إعدادات ClickStack محلية" size="sm" />
 
-    توضح لقطة الشاشة أعلاه إعدادًا محليًا نموذجيًا: المراقبة مفعّلة، واسم الخدمة معيّن، وcollector موجّه إلى `http://localhost:4318`، ونشر التتبّع مقيّد بعناوين URL الخاصة بـ API وlocalhost.
+    توضح لقطة الشاشة أعلاه إعدادًا محليًا نموذجيًا: المراقبة مفعّلة، واسم الخدمة معيّن، وcollector موجّه إلى `http://localhost:4318`، ونشر التتبّع مقيّد بعناوين URL الخاصة بـ واجهة برمجة التطبيقات وlocalhost.
   </Step>
 
-  <Step>
-    ### تصفّح موقعًا وأنشئ جلسة
-
+  <Step title="تصفّح موقعًا وأنشئ جلسة" id="browse-site">
     افتح أي موقع ويب أو تطبيق محلي في Chrome — على سبيل المثال، [http://localhost:3000](http://localhost:3000) لخادم تطوير الواجهة الأمامية.
 
     تفاعل مع الصفحة بشكل طبيعي: انقر على الروابط، وأرسل النماذج، وتسبّب في أخطاء، وتنقّل بين الواجهات. تحقن الإضافة Browser SDK تلقائيًا عند كل تحميل للصفحة إذا كانت التهيئة صحيحة.
   </Step>
 
-  <Step>
-    ### اعرض session replay الخاصة بك
-
+  <Step title="اعرض إعادة تشغيل الجلسة الخاصة بك" id="view-session-replay">
     عُد إلى HyperDX على [http://localhost:8080](http://localhost:8080) وانتقل إلى **Client Sessions** من الشريط الجانبي الأيسر.
 
     يُفترض أن تظهر جلستك في القائمة مع مدتها وعدد الأحداث فيها. انقر على الزر ▶️ لإعادة تشغيلها.

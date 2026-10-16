@@ -1,0 +1,25 @@
+-- Parquet nullable_tuple, nt=1 first
+Nullable(Tuple(a Nullable(UInt8), b Nullable(UInt8)))
+Tuple(\n    a Nullable(UInt8),\n    b Nullable(UInt8))
+-- Parquet nullable_tuple, nt=0 first
+Tuple(\n    a Nullable(UInt8),\n    b Nullable(UInt8))
+Nullable(Tuple(a Nullable(UInt8), b Nullable(UInt8)))
+-- Parquet nullable_tuple value, nt=1 first
+0
+1
+0
+0
+-- Parquet allow_geoparquet_parser, geo=1 first
+LineString
+Nullable(String)
+-- Parquet allow_geoparquet_parser, geo=0 first
+Nullable(String)
+LineString
+-- Parquet skip_columns_with_unsupported_types, skip=1 first then strict must throw
+1
+-- Parquet skip_columns_with_unsupported_types, strict alone throws (control)
+1
+-- Parquet skip_columns_with_unsupported_types, the permissive entry exists and is keyed
+1	skip_columns_with_unsupported_types=true
+-- Parquet skip_columns_with_unsupported_types, a repeated query hits the cache
+1

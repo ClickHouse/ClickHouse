@@ -3,6 +3,7 @@
 #include <Core/Names.h>
 #include <Parsers/IAST.h>
 
+namespace Poco::JSON { class Object; }
 
 namespace DB
 {
@@ -24,6 +25,7 @@ public:
     String getID(char) const override { return "ProjectionSelectQuery"; }
 
     ASTPtr clone() const override;
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
     ASTPtr & refSelect() { return getExpression(Expression::SELECT); }
 
@@ -45,6 +47,9 @@ public:
     }
 
     ASTPtr cloneToASTSelect() const;
+
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

@@ -6,6 +6,7 @@ body:
     attributes:
       value: |
         > Thanks for helping us improve the documentation! Please describe what's wrong, missing, or unclear below. If you opened this from the "Raise issue" button on the docs site, the page you were viewing is filled in for you; otherwise, please add a link to the affected page.
+        > Ask the [ClickHouse Wizard](https://wizard.clickhouse.com/) about related documentation issues and changes before filing.
   - type: input
     id: page
     attributes:

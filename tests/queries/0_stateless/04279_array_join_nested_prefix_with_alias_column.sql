@@ -17,8 +17,6 @@ CREATE TABLE t_array_join_alias_nested
 INSERT INTO t_array_join_alias_nested (id, `loc.x`, `loc.y`)
 VALUES ('a', ['x1', 'x2'], ['y1', 'y2']);
 
-SELECT loc.x FROM t_array_join_alias_nested ARRAY JOIN loc
-SETTINGS enable_analyzer = 0;
 
 SELECT loc.x FROM t_array_join_alias_nested ARRAY JOIN loc
 SETTINGS enable_analyzer = 1;

@@ -19,9 +19,7 @@ La ClickHouse CLI (`clickhousectl`) te ayuda a instalar y administrar versiones 
 iniciar servidores y ejecutar consultas.
 
 <Steps>
-  <Step>
-    ## Instala la ClickHouse CLI
-
+  <Step title="Instala la ClickHouse CLI" id="install-the-cli">
     ```bash
     curl https://clickhouse.com/cli | sh
     ```
@@ -29,9 +27,7 @@ iniciar servidores y ejecutar consultas.
     También se crea automáticamente un alias `chctl` para mayor comodidad.
   </Step>
 
-  <Step>
-    ## Instala ClickHouse
-
+  <Step title="Instala ClickHouse" id="cli-install-clickhouse">
     Instala la versión más reciente de ClickHouse y conviértela en la predeterminada:
 
     ```bash
@@ -60,9 +56,7 @@ iniciar servidores y ejecutar consultas.
     </Info>
   </Step>
 
-  <Step>
-    ## Inicia clickhouse-server
-
+  <Step title="Inicia clickhouse-server" id="cli-start-clickhouse-server">
     ```bash
     clickhousectl local server start
     ```
@@ -74,9 +68,7 @@ iniciar servidores y ejecutar consultas.
     ```
   </Step>
 
-  <Step>
-    ## Inicia clickhouse-client
-
+  <Step title="Inicia clickhouse-client" id="cli-start-clickhouse-client">
     ```bash
     clickhousectl local client
     ```

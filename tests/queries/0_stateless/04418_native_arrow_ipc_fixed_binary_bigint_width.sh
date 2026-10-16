@@ -39,7 +39,7 @@ write('ok32', 32, [(12345).to_bytes(32, 'little')])
 EOF
 
     reject_check() { # $1=label $2=file-suffix $3=hint
-        if ${CLICKHOUSE_LOCAL} --input_format_arrow_use_native_reader=1 \
+        if ${CLICKHOUSE_LOCAL} \
             --query "SELECT x FROM file('${PREFIX}_$2.arrow', '${FORMAT}', 'x $3') FORMAT Null" >/dev/null 2>&1
         then
             echo "${1}: ACCEPTED (BUG)"
@@ -52,10 +52,10 @@ EOF
     reject_check "wrong-width Int128" wrong Int128
     reject_check "wrong-width Int256" wrong Int256
     echo -n "correct-width Int128: "
-    ${CLICKHOUSE_LOCAL} --input_format_arrow_use_native_reader=1 \
+    ${CLICKHOUSE_LOCAL} \
         --query "SELECT x FROM file('${PREFIX}_ok16.arrow', '${FORMAT}', 'x Int128')"
     echo -n "correct-width Int256: "
-    ${CLICKHOUSE_LOCAL} --input_format_arrow_use_native_reader=1 \
+    ${CLICKHOUSE_LOCAL} \
         --query "SELECT x FROM file('${PREFIX}_ok32.arrow', '${FORMAT}', 'x Int256')"
 
     rm -f "${PREFIX}_wrong.arrow" "${PREFIX}_ok16.arrow" "${PREFIX}_ok32.arrow"

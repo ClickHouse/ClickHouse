@@ -880,7 +880,10 @@ def test_force_filesystem_cache_on_merges(cluster):
                 boundary_alignment = '1Ki',
                 max_size = '10Gi',
                 max_elements = 10000000,
-                load_metadata_threads = 30);
+                load_metadata_threads = 30),
+            -- auto_statistics_types='': otherwise the new materialize_statistics_on_insert default builds
+            -- statistics that are read through the cache on merge, changing the cache read counts.
+            auto_statistics_types='';
             """
         )
 
@@ -2063,12 +2066,171 @@ def test_reserve_granularity_reclaims_surplus_after_read(cluster):
     assert downloaded > 0
     assert range_size > downloaded, "expected at least one partially downloaded segment"
 
-    # FilesystemCacheSize tracks the space charged against the cache (sum of reserved sizes).
+    # `current_size` tracks the space charged against the cache (sum of reserved sizes) —
+    # the per-cache counterpart of the global `FilesystemCacheSize` metric, which cannot be
+    # used here because background activity on unrelated caches (e.g. the periodic statistics
+    # refresh re-downloading `statistics.packed` of another test's table after our
+    # `SYSTEM DROP FILESYSTEM CACHE`) perturbs the global value.
     # After reclaiming the reserve-ahead surplus it must equal the actually downloaded bytes,
     # not the rounded-up range. Without the fix it would equal `range_size`.
     reserved = int(
-        node.query("SELECT value FROM system.metrics WHERE name = 'FilesystemCacheSize'")
+        node.query(
+            "SELECT current_size FROM system.filesystem_cache_settings WHERE cache_name = 'reserve_granularity_cache'"
+        )
     )
     assert reserved == downloaded, f"reserved {reserved} != downloaded {downloaded} (range {range_size})"
 
     node.query("DROP TABLE test_reserve_granularity SYNC")
+
+
+# Every setting that `FileCache::applySettingsIfPossible` can adopt without a restart, apart from
+# `max_size`/`max_elements` which `test_dynamic_resize` above already covers. Each one is applied by
+# its own `if` in that function, so a reload that changes them all at once walks every branch, and a
+# reload back to the baseline walks them a second time in the opposite direction. The thread count
+# matters in both directions in particular: `CacheMetadata::setBackgroundDownloadThreads` starts
+# threads when the number grows and joins them when it shrinks.
+cache_dynamic_settings_config = """
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <hdd_blob>
+                <type>local_blob_storage</type>
+                <path>/</path>
+            </hdd_blob>
+            <cache_dynamic_resize>
+                <type>cache</type>
+                <disk>hdd_blob</disk>
+                <max_size>100000</max_size>
+                <max_elements>100</max_elements>
+                <max_file_segment_size>{max_file_segment_size}</max_file_segment_size>
+                <boundary_alignment>10</boundary_alignment>
+                <reserve_granularity>{reserve_granularity}</reserve_granularity>
+                <background_download_threads>{background_download_threads}</background_download_threads>
+                <background_download_queue_size_limit>{background_download_queue_size_limit}</background_download_queue_size_limit>
+                <background_download_max_file_segment_size>{background_download_max_file_segment_size}</background_download_max_file_segment_size>
+                <idle_client_ttl_sec>{idle_client_ttl_sec}</idle_client_ttl_sec>
+                <idle_client_check_interval_sec>{idle_client_check_interval_sec}</idle_client_check_interval_sec>
+                <expose_prometheus_eviction_metrics>{expose_prometheus_eviction_metrics}</expose_prometheus_eviction_metrics>
+                <expose_prometheus_eviction_metrics_per_user>{expose_prometheus_eviction_metrics_per_user}</expose_prometheus_eviction_metrics_per_user>
+                <path>./cache_dynamic_reload/</path>
+            </cache_dynamic_resize>
+            <cache_dynamic_resize_disabled>
+                <type>cache</type>
+                <disk>hdd_blob</disk>
+                <max_size>100000</max_size>
+                <max_elements>100</max_elements>
+                <max_file_segment_size>10</max_file_segment_size>
+                <boundary_alignment>10</boundary_alignment>
+                <allow_dynamic_cache_resize>0</allow_dynamic_cache_resize>
+                <path>./cache_dynamic_reload_disabled/</path>
+            </cache_dynamic_resize_disabled>
+        </disks>
+    </storage_configuration>
+    <filesystem_cache_log>
+            <database>system</database>
+            <table>filesystem_cache_log</table>
+    </filesystem_cache_log>
+</clickhouse>
+"""
+
+DYNAMIC_SETTINGS_BASELINE = {
+    "max_file_segment_size": 10,
+    "reserve_granularity": 4194304,
+    "background_download_threads": 5,
+    "background_download_queue_size_limit": 5000,
+    "background_download_max_file_segment_size": 4194304,
+    "idle_client_ttl_sec": 604800,
+    "idle_client_check_interval_sec": 0,
+    "expose_prometheus_eviction_metrics": 0,
+    "expose_prometheus_eviction_metrics_per_user": 0,
+}
+
+DYNAMIC_SETTINGS_CHANGED = {
+    "max_file_segment_size": 20,
+    "reserve_granularity": 8192,
+    "background_download_threads": 0,
+    "background_download_queue_size_limit": 512,
+    "background_download_max_file_segment_size": 1048576,
+    "idle_client_ttl_sec": 120,
+    "idle_client_check_interval_sec": 7,
+    "expose_prometheus_eviction_metrics": 1,
+    "expose_prometheus_eviction_metrics_per_user": 1,
+}
+
+
+def test_dynamic_settings_apply(cluster):
+    node = cluster.instances["cache_dynamic_resize"]
+    cache_name = "cache_dynamic_resize"
+
+    def reload(settings):
+        node.replace_config(
+            "/etc/clickhouse-server/config.d/cache_dynamic_resize.xml",
+            cache_dynamic_settings_config.format(**settings),
+        )
+        node.query("SYSTEM RELOAD CONFIG")
+
+    # `system.filesystem_cache_settings` reads the settings copy `FileCacheFactory` holds, so on its
+    # own it would also be satisfied by a reload that refreshed that copy and applied nothing. Each
+    # of these log lines is written by the `FileCache` object itself, inside the `if` that performs
+    # the change, so their presence is what says the live cache adopted the value: in particular
+    # `background_download_threads` is logged only when `CacheMetadata::setBackgroundDownloadThreads`
+    # reports that it really started or joined threads.
+    LOGGED_SETTINGS = [
+        "reserve_granularity",
+        "background_download_threads",
+        "background_download_queue_size_limit",
+        "background_download_max_file_segment_size",
+        "idle_client_ttl_sec",
+        "idle_client_check_interval_sec",
+    ]
+
+    def assert_logged(before, after):
+        for setting in LOGGED_SETTINGS:
+            # The queue size limit is logged under its shorter name.
+            logged_name = (
+                "background_download_queue_size"
+                if setting == "background_download_queue_size_limit"
+                else setting
+            )
+            message = (
+                f"FileCache({cache_name}): Changed {logged_name}"
+                f" from {before[setting]} to {after[setting]}"
+            )
+            assert node.contains_in_log(message), message
+
+    def assert_applied(settings):
+        columns = ", ".join(settings)
+        actual = node.query(
+            f"SELECT {columns} FROM system.filesystem_cache_settings"
+            f" WHERE cache_name = '{cache_name}' FORMAT TSV"
+        ).strip()
+        expected = "\t".join(str(value) for value in settings.values())
+        assert actual == expected, f"got [{actual}], expected [{expected}]"
+
+    try:
+        # The cache starts from the values baked into config.d, which name none of these settings
+        # and therefore leave them at their defaults. Naming them explicitly first makes the step
+        # below a change of every single one of them rather than of whichever ones happen to differ.
+        reload(DYNAMIC_SETTINGS_BASELINE)
+        assert_applied(DYNAMIC_SETTINGS_BASELINE)
+
+        reload(DYNAMIC_SETTINGS_CHANGED)
+        assert_applied(DYNAMIC_SETTINGS_CHANGED)
+        assert_logged(DYNAMIC_SETTINGS_BASELINE, DYNAMIC_SETTINGS_CHANGED)
+
+        # `max_size` and `max_elements` were held constant across the reload, so no resize was
+        # attempted and the cache still reports the limits it was created with.
+        assert "100000\t100" == node.query(
+            f"SELECT max_size, max_elements FROM system.filesystem_cache_settings"
+            f" WHERE cache_name = '{cache_name}' FORMAT TSV"
+        ).strip()
+
+        reload(DYNAMIC_SETTINGS_BASELINE)
+        assert_applied(DYNAMIC_SETTINGS_BASELINE)
+        assert_logged(DYNAMIC_SETTINGS_CHANGED, DYNAMIC_SETTINGS_BASELINE)
+    finally:
+        node.replace_config(
+            "/etc/clickhouse-server/config.d/cache_dynamic_resize.xml",
+            cache_dynamic_resize_config.format(100000, 100, 100000, 100),
+        )
+        node.query("SYSTEM RELOAD CONFIG")

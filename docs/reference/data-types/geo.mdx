@@ -31,6 +31,24 @@ SELECT p, toTypeName(p) FROM geo_point;
 └─────────┴───────────────┘
 ```
 
+## MultiPoint {#multipoint}
+
+`MultiPoint` is a set of points stored as an array of points: [Array](/reference/data-types/array)([Point](#point)).
+
+**Example**
+
+```sql title="Query"
+CREATE TABLE geo_multipoint (mp MultiPoint) ENGINE = Memory();
+INSERT INTO geo_multipoint VALUES([(0, 0), (10, 0), (10, 10), (0, 10)]);
+SELECT mp, toTypeName(mp) FROM geo_multipoint;
+```
+
+```text title="Response"
+┌─mp────────────────────────────┬─toTypeName(mp)─┐
+│ [(0,0),(10,0),(10,10),(0,10)] │ MultiPoint     │
+└───────────────────────────────┴────────────────┘
+```
+
 ## Ring {#ring}
 
 `Ring` is a simple polygon without holes stored as an array of points: [Array](/reference/data-types/array)([Point](#point)).

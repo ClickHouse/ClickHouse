@@ -444,7 +444,7 @@ inline bool haveGenuineIntel() noexcept
 
 struct CPUFlagsCache
 {
-#define DEF_NAME(X) static inline bool have_##X = have##X();
+#define DEF_NAME(X) static inline const bool have_##X = have##X();
     CPU_ID_ENUMERATE(DEF_NAME)
 #undef DEF_NAME
 };

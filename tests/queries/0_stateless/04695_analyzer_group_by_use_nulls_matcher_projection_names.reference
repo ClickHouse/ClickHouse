@@ -1,0 +1,58 @@
+=== describe: single join, ROLLUP ===
+k	Nullable(UInt8)					
+Date	Nullable(String)					
+t1.k	Nullable(UInt8)					
+=== outer ref t1.k, single join, ROLLUP ===
+1
+\N
+\N
+\N
+=== describe: single join, CUBE ===
+k	Nullable(UInt8)					
+Date	Nullable(String)					
+t1.k	Nullable(UInt8)					
+=== outer ref t1.k, single join, CUBE ===
+1
+1
+1
+1
+\N
+\N
+\N
+\N
+=== describe: single join, GROUPING SETS ===
+k	Nullable(UInt8)					
+Date	Nullable(String)					
+t1.k	Nullable(UInt8)					
+=== outer ref t1.k, single join, GROUPING SETS ===
+1
+\N
+=== describe: single join, plain GROUP BY ===
+k	UInt8					
+Date	String					
+t1.k	UInt8					
+=== describe: single join, ROLLUP, group_by_use_nulls = 0 ===
+k	UInt8					
+Date	String					
+t1.k	UInt8					
+=== describe: two joins, ROLLUP, setting ON ===
+ll.k	Nullable(UInt8)					
+ll.Date	Nullable(String)					
+t1.k	Nullable(UInt8)					
+t2.k	Nullable(UInt8)					
+=== outer ref ll.Date, two joins, ROLLUP, setting ON ===
+D
+D
+D
+\N
+\N
+=== describe: two joins, CUBE, setting ON ===
+ll.k	Nullable(UInt8)					
+ll.Date	Nullable(String)					
+t1.k	Nullable(UInt8)					
+t2.k	Nullable(UInt8)					
+=== describe: two joins, GROUPING SETS, setting ON ===
+ll.k	Nullable(UInt8)					
+ll.Date	Nullable(String)					
+t1.k	Nullable(UInt8)					
+t2.k	Nullable(UInt8)					

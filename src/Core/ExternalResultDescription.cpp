@@ -54,7 +54,8 @@ void ExternalResultDescription::init(const Block & sample_block_)
 
         /// All the other geometric types (including the umbrella `Geometry` type) are read from a
         /// WKB representation, see `vtGeometry` in `MySQLSource`.
-        if (dynamic_cast<const DataTypeLineStringName *>(type->getCustomName())
+        if (dynamic_cast<const DataTypeMultiPointName *>(type->getCustomName())
+            || dynamic_cast<const DataTypeLineStringName *>(type->getCustomName())
             || dynamic_cast<const DataTypeMultiLineStringName *>(type->getCustomName())
             || dynamic_cast<const DataTypeRingName *>(type->getCustomName())
             || dynamic_cast<const DataTypePolygonName *>(type->getCustomName())

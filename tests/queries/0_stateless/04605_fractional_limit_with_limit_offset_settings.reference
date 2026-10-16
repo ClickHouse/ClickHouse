@@ -1,0 +1,15 @@
+-- no settings: half of 10 rows
+0
+1
+2
+3
+4
+-- limit 2 keeps the first 2 of the 5 rows
+0
+1
+-- offset 3 skips 3 of the 5 rows
+3
+4
+-- offset 2, limit 2 returns rows 2 and 3 of the 5
+2
+3

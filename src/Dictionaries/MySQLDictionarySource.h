@@ -47,7 +47,7 @@ public:
         const Configuration & configuration_,
         mysqlxx::PoolWithFailoverPtr pool_,
         const Block & sample_block_,
-        const StreamSettings & settings_);
+        const MySQLStreamSettings & settings_);
 
     /// copy-constructor is provided in order to support cloneability
     MySQLDictionarySource(const MySQLDictionarySource & other);
@@ -91,7 +91,7 @@ private:
     ExternalQueryBuilder query_builder;
     const std::string load_all_query;
     mutable InvalidateQueryResponse invalidate_query_response;
-    const StreamSettings settings;
+    const MySQLStreamSettings settings;
 };
 
 }

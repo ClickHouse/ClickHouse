@@ -1,6 +1,9 @@
 #pragma once
 
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Core/SortDescription.h>
+
+#include <optional>
 
 
 namespace DB
@@ -10,8 +13,11 @@ namespace DB
 class GatherSendStep final : public IQueryPlanStep
 {
 public:
-    GatherSendStep(SharedHeader input_header_, const String & exchange_id_)
+    /// `maintain_sort_description_`, when set, must match `GatherReceiveStep`'s - see `updatePipeline`.
+    GatherSendStep(SharedHeader input_header_, const String & exchange_id_,
+                   std::optional<SortDescription> maintain_sort_description_ = std::nullopt)
         : exchange_id(exchange_id_)
+        , maintain_sort_description(std::move(maintain_sort_description_))
     {
         updateInputHeaders({std::move(input_header_)});
     }
@@ -31,6 +37,7 @@ private:
     void updateOutputHeader() override {}
 
     const String exchange_id;
+    const std::optional<SortDescription> maintain_sort_description;
 };
 
 }

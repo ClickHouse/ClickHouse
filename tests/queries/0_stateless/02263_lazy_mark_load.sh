@@ -24,7 +24,9 @@ CREATE TABLE lazy_mark_test
   n9 UInt64
 )
 ENGINE = MergeTree
-ORDER BY n0 SETTINGS min_bytes_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization = 1;
+-- auto_statistics_types = '': otherwise basic column statistics prune the n3 == 11 query (n3 is number % 10, so 11 is out of range),
+-- the query reads nothing and this test no longer measures lazy mark loading.
+ORDER BY n0 SETTINGS min_bytes_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization = 1, auto_statistics_types = '';
 EOF
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM STOP MERGES lazy_mark_test"

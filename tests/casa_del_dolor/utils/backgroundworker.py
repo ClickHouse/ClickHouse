@@ -36,8 +36,13 @@ class BackgroundWorker:
             try:
                 # Execute the provided function
                 self.task_function()
-            except Exception as e:
-                self.logger.error(str(e))
+            except Exception:
+                # Log the traceback and which task failed: this loop repeats every interval, so a
+                # bare str(e) turns one fault into hundreds of identical, unattributable lines.
+                self.logger.exception(
+                    "Background task %s failed",
+                    getattr(self.task_function, "__name__", self.task_function),
+                )
 
             # Sleep until interval or stop signal
             self.stop_event.wait(self.interval)

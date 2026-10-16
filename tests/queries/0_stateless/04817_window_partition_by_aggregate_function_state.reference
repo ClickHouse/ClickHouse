@@ -1,0 +1,17 @@
+-- the analyzer: refused
+-- old analyzer: refused
+-- window ORDER BY over a state is refused, old analyzer
+6
+6
+6
+6
+6
+6
+-- comparable types are untouched, old analyzer
+6
+6
+6
+6
+-- the pre-existing Dynamic/Variant gate is undisturbed
+3
+6

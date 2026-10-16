@@ -13,6 +13,6 @@ inline bool isAggregationOperatorQuantile(std::string_view operator_name) { retu
 
 /// Applies the `quantile` aggregation operator.
 SQLQueryPiece applyAggregationOperatorQuantile(
-    const PQT::AggregationOperator * operator_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context);
+    const PrometheusQueryTree::AggregationOperator * operator_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context);
 
 }

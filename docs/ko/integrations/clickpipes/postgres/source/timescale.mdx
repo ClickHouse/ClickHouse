@@ -10,7 +10,7 @@ integration:
   - category: 'clickpipes'
 ---
 
-import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge />
 
@@ -99,7 +99,7 @@ Timescale 하이퍼테이블은 여기에 삽입된 데이터를 직접 저장�
    CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2, TABLES IN SCHEMA _timescaledb_internal;
 ```
 
-`clickpipes` publication에는 지정된 테이블에서 생성된 변경 이벤트 집합이 포함되며, 이후 복제 스트림을 수집하는 데 사용됩니다.
+`clickpipes` publication은 변경 이벤트가 ClickPipes로 스트리밍될 테이블 집합을 정의합니다. 모든 테이블을 복제하려는 경우가 아니라면 `FOR ALL TABLES` 사용은 권장하지 않습니다. 불필요한 테이블이 포함되면 Postgres에서 ClickPipes로의 WAL 트래픽이 증가하고 전체 복제 효율이 저하되기 때문입니다.
 
 <Info>
   일부 관리형 서비스에서는 관리자 계정에 전체 스키마에 대한 publication을 생성하는 데 필요한 권한이 부여되지 않습니다. 이 경우 서비스 제공업체에 지원 티켓을 제출하십시오. 또는 이 단계(및 다음 단계)를 건너뛰고 대신 데이터를 일회성으로 적재할 수 있습니다.
@@ -111,6 +111,6 @@ Timescale 하이퍼테이블은 여기에 삽입된 데이터를 직접 저장�
   ## 네트워크 액세스 구성
 </div>
 
-Timescale 인스턴스로의 트래픽을 제한하려면 [문서에 안내된 정적 NAT IP 주소](/ko/integrations/clickpipes/home#list-of-static-ips)를 허용 목록에 추가하십시오.
-이 작업 방법은 제공업체마다 다르므로, 사용하는 제공업체가 사이드바에 나와 있으면 해당 안내를 참조하거나 제공업체에
+Timescale 인스턴스로의 트래픽을 제한하려면 [문서에 안내된 정적 NAT IP 주소](/ko/integrations/clickpipes/networking/static-ips)를 허용 목록에 추가하십시오.
+이 작업 방법은 서비스 제공업체마다 다르므로, 사용하는 서비스 제공업체가 사이드바에 나와 있으면 해당 안내를 참조하거나 서비스 제공업체에
 티켓을 제출하십시오.

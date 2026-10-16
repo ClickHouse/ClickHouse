@@ -30,21 +30,15 @@ import CreateIngestionUser from '/snippets/ja/clickstack/_create_ingestion_user.
 * まだ collector を用意しておらず、以下の新しい collector の手順に沿って進める場合は **Docker**。
 
 <Steps>
-  <Step>
-    ## 認証情報を用意する
-
+  <Step title="認証情報を用意する" id="gather-credentials">
     <GatherCredentials />
   </Step>
 
-  <Step>
-    ## インジェスト用ユーザーを作成する
-
+  <Step title="インジェスト用ユーザーを作成する" id="create-ingestion-user">
     <CreateIngestionUser />
   </Step>
 
-  <Step>
-    ## collectorのデプロイ
-
+  <Step title="collectorのデプロイ" id="deploy-collector">
     状況に合ったオプションを選択してください。
 
     <Info>
@@ -199,9 +193,7 @@ import CreateIngestionUser from '/snippets/ja/clickstack/_create_ingestion_user.
     </Tabs>
   </Step>
 
-  <Step>
-    ## アプリケーションをクローンして実行する
-
+  <Step title="アプリケーションをクローンして実行する" id="clone-and-run-the-application">
     リポジトリをクローンし、依存関係をインストールして、`.env` ファイルを作成します。
 
     ```bash
@@ -224,9 +216,7 @@ import CreateIngestionUser from '/snippets/ja/clickstack/_create_ingestion_user.
     この時点ではアプリケーションは実行中ですが、まだインストルメントされていません。ClickStack にはデータは表示されません。テレメトリーを待っている状態です。これは &quot;before&quot; の状態です。
   </Step>
 
-  <Step>
-    ## アプリケーションをcollectorに接続する
-
+  <Step title="アプリケーションをcollectorに接続する" id="connect-the-application">
     アプリケーションが上でデプロイしたcollectorに接続するには、2つの値が必要です。
 
     * `OTEL_EXPORTER_OTLP_ENDPOINT`: collectorが公開しているOTLP endpoint (通常、HTTPS上のOTLPではポート `4318`) 。
@@ -243,14 +233,12 @@ import CreateIngestionUser from '/snippets/ja/clickstack/_create_ingestion_user.
     SDK は、3 つのシグナルすべて (traces、メトリクス、logs) の認証ヘッダーを設定するために `OTEL_EXPORTER_OTLP_HEADERS` を使用します。collector をローカルで実行していて認証を必須にしていない場合は、値を空のままにできます (`OTEL_EXPORTER_OTLP_HEADERS=authorization=`) 。ただし、この変数自体は設定されている必要があります。未設定、または完全に空の場合、SDK は初期化をまったく行いません。最後に、TLS なしで collector を実行する場合は、正しい HTTPプロトコル を使用していることを確認してください (例: `http://localhost:4318`) 。
   </Step>
 
-  <Step>
-    ## アプリケーションをインストルメントする
-
+  <Step title="アプリケーションをインストルメントする" id="instrument-the-application">
     インストルメンテーションは、SDKs のインストール、起動コマンドの切り替え、ブラウザ SDK の有効化という3つの要素で構成されます。いずれもアプリケーションのビジネスロジックは変更しません。
 
     ### SDKs をインストールする
 
-    バックエンド用とブラウザ用の両方の OpenTelemetry SDK をインストールします。
+    バックエンド用とブラウザ用の両方の OpenTelemetry SDK をインストールします:
 
     ```bash
     npm install @hyperdx/node-opentelemetry @hyperdx/browser
@@ -298,9 +286,7 @@ import CreateIngestionUser from '/snippets/ja/clickstack/_create_ingestion_user.
     </Warning>
   </Step>
 
-  <Step>
-    ## トラフィックを発生させる
-
+  <Step title="トラフィックを発生させる" id="generate-traffic">
     新しい起動コマンドと新たにビルドしたブラウザ用バンドルを反映させるため、アプリケーションを再起動します：
 
     ```bash
@@ -311,9 +297,7 @@ import CreateIngestionUser from '/snippets/ja/clickstack/_create_ingestion_user.
     ブラウザのタブを再読み込みして Vite が更新済みのバンドルを配信するようにしたら、アプリを数回リロードし、年を切り替え、ストーリーをクリックしてトラフィックを発生させます。こうした操作を行うたびに、ログ、メトリクス、トレース、セッションリプレイのイベントが collector を経由して ClickStack に送信されます。
   </Step>
 
-  <Step>
-    ## ClickStack を起動してテレメトリーを確認する
-
+  <Step title="ClickStack を起動してテレメトリーを確認する" id="launch-clickstack">
     [ClickHouse Cloud console](https://console.clickhouse.cloud) でサービスを開き、左側のメニューから **ClickStack** を選択し、続けて **Start Ingestion** をクリックします。
 
     <Image img="/images/use-cases/observability/clickstack-cloud-first-time.webp" size="lg" alt="ClickStack を起動" border />
@@ -353,11 +337,11 @@ import CreateIngestionUser from '/snippets/ja/clickstack/_create_ingestion_user.
 </Steps>
 
 <div id="further-reading">
-  ## 関連情報
+  ## 参考情報
 </div>
 
-* [Kubernetes の監視](/ja/clickstack/managed-onboarding/monitoring-kubernetes): クラスターから logs、インフラのメトリクス、Kubernetes イベントを収集します。
-* [AWS CloudWatch logs の監視](/ja/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs): OpenTelemetry CloudWatch receiver を介して CloudWatch logs を転送します。
+* [Kubernetes の監視](/ja/clickstack/managed-onboarding/monitoring-kubernetes): クラスターからログ、インフラメトリクス、Kubernetes イベントを収集します。
+* [AWS CloudWatch Logs の監視](/ja/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs): OpenTelemetry CloudWatch receiver を使用して CloudWatch Logs を転送します。
 * [Managed ClickStack のチューニング](/ja/clickstack/managed-onboarding/tuning-clickstack-schema): クエリパフォーマンスとストレージ効率を高めるために、スキーマを調整します。
-* [collector の保護](/ja/clickstack/ingesting-data/collector#securing-the-collector): OTLP エンドポイント での TLS と、最小権限のインジェスト用ユーザーについて説明します。
-* [本番環境への移行](/ja/clickstack/managing/production): 本番環境へ移行する際の推奨事項を紹介します。
+* [collector の保護](/ja/clickstack/ingesting-data/collector#securing-the-collector): OTLP エンドポイント で TLS を有効にし、最小権限のインジェストユーザーを使用します。
+* [本番環境への移行](/ja/clickstack/managing/production): 本番環境に移行する際の推奨事項を紹介します。

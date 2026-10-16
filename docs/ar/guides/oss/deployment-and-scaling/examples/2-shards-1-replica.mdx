@@ -38,9 +38,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
 * Docker مُثبَّت على جهازك
 
 <Steps>
-  <Step>
-    ## إعداد بنية الدليل وبيئة الاختبار
-
+  <Step title="إعداد بنية الدليل وبيئة الاختبار" id="set-up">
     <ExampleFiles />
 
     في هذا الدليل العملي، ستستخدم [Docker compose](https://docs.docker.com/compose/) لإعداد مجموعة ClickHouse. يمكن تعديل هذا الإعداد ليعمل على أجهزة محلية منفصلة، أو أجهزة افتراضية، أو نسخ سحابية كذلك.
@@ -162,10 +160,8 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
     <ConfigExplanation />
   </Step>
 
-  <Step>
-    ## تهيئة عقد ClickHouse
-
-    ### إعداد الخادم
+  <Step title="تهيئة عقد ClickHouse" id="configure-clickhouse-servers">
+### إعداد الخادم
 
     قم الآن بتعديل كل ملف تهيئة فارغ `config.xml` الموجود في
     `fs/volumes/clickhouse-{}/etc/clickhouse-server/config.d`. يجب تغيير الأسطر
@@ -239,7 +235,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
 
     يُشرح كل قسم من أقسام ملف الإعداد أعلاه بمزيد من التفاصيل في ما يلي.
 
-    #### الشبكة والتسجيل
+#### الشبكة والتسجيل
 
     <ListenHost />
 
@@ -258,7 +254,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
     لمزيد من المعلومات حول تهيئة التسجيل، راجع التعليقات المضمّنة في
     [ملف التهيئة](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml) الافتراضي لـ ClickHouse.
 
-    #### تهيئة الكلستر
+#### تهيئة الكلستر
 
     يتم ضبط إعداد الكتلة في القسم `<remote_servers>`.
     هنا يُحدَّد اسم الكتلة `cluster_2S_1R`.
@@ -288,10 +284,10 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
 
     <ServerParameterTable />
 
-    #### تهيئة Keeper
+#### تهيئة Keeper
 
     يُحدِّد القسم `<ZooKeeper>` لـ ClickHouse موقع تشغيل ClickHouse Keeper (أو ZooKeeper).
-    نظرًا لاستخدامنا Keeper cluster، يجب تحديد كل `<node>` من عقد الـ cluster،
+    نظرًا لاستخدامنا ClickHouse Keeper cluster، يجب تحديد كل `<node>` من عقد الـ cluster،
     مع اسم الـ hostname ورقم المنفذ الخاص به باستخدام الوسمَين `<host>` و`<port>` على التوالي.
 
     سيُشرح إعداد ClickHouse Keeper في الخطوة التالية من الدليل العملي.
@@ -318,9 +314,9 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
       فإننا نوصي بشدة، في بيئات الإنتاج، بتشغيل ClickHouse Keeper على مضيفات مخصصة.
     </Note>
 
-    #### تهيئة الماكرو
+#### تهيئة الماكرو
 
-    بالإضافة إلى ذلك، يُستخدم قسم `<macros>` لتعريف استبدالات المعاملات للجداول المُتماثلة. وتُدرج هذه الاستبدالات في `system.macros`، مما يتيح استخدام استبدالات مثل `{shard}` و`{replica}` في الاستعلامات.
+    بالإضافة إلى ذلك، يُستخدم قسم `<macros>` لتعريف استبدالات المعلمات للجداول المُتماثلة. وتُدرج هذه الاستبدالات في `system.macros`، مما يتيح استخدام استبدالات مثل `{shard}` و`{replica}` في الاستعلامات.
 
     ```xml
     <macros>
@@ -330,10 +326,10 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
     ```
 
     <Note>
-      سيُحدَّد كلٌّ منها بشكل مختلف بحسب بنية العنقود.
+      سيُحدَّد كلٌّ منها بشكل مختلف بحسب بنية العنقود.
     </Note>
 
-    ### تهيئة المستخدم
+### تهيئة المستخدم
 
     عدِّل الآن كل ملف تهيئة فارغ `users.xml` الموجود في
     `fs/volumes/clickhouse-{}/etc/clickhouse-server/users.d` بالمحتوى التالي:
@@ -351,7 +347,6 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
         </profiles>
         <users>
             <default>
-                <access_management>1</access_management>
                 <profile>default</profile>
                 <networks>
                     <ip>::/0</ip>
@@ -359,7 +354,6 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
                 <quota>default</quota>
                 <access_management>1</access_management>
                 <named_collection_control>1</named_collection_control>
-                <show_named_collections>1</show_named_collections>
                 <show_named_collections_secrets>1</show_named_collections_secrets>
             </default>
         </users>
@@ -378,7 +372,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
     </clickhouse>
     ```
 
-    | Directory                                                | File                                                                                                                                                                          |
+    | الدليل                                                   | File                                                                                                                                                                          |
     | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
     | `fs/volumes/clickhouse-01/etc/clickhouse-server/users.d` | [`users.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_2S_1R/fs/volumes/clickhouse-01/etc/clickhouse-server/users.d/users.xml) |
     | `fs/volumes/clickhouse-02/etc/clickhouse-server/users.d` | [`users.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_2S_1R/fs/volumes/clickhouse-02/etc/clickhouse-server/users.d/users.xml) |
@@ -391,10 +385,8 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
     </Note>
   </Step>
 
-  <Step>
-    ## تكوين ClickHouse Keeper
-
-    ### إعداد ClickHouse Keeper
+  <Step title="تكوين ClickHouse Keeper" id="configure-clickhouse-keeper-nodes">
+### إعداد ClickHouse Keeper
 
     <KeeperConfig />
 
@@ -409,9 +401,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
     <CloudTip />
   </Step>
 
-  <Step>
-    ## اختبر الإعداد
-
+  <Step title="اختبر الإعداد" id="test-the-setup">
     تأكد من أن Docker قيد التشغيل على جهازك.
     ابدأ تشغيل الـcluster باستخدام الأمر `docker-compose up` من جذر الدليل `cluster_2S_1R`:
 
@@ -490,9 +480,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
     في الخطوة التالية، ستُنشئ جدولًا في العنقود.
   </Step>
 
-  <Step>
-    ## أنشئ قاعدة بيانات
-
+  <Step title="أنشئ قاعدة بيانات" id="creating-a-database">
     الآن بعد أن تحققت من أن العنقود مُعَدّ بشكل صحيح ويعمل، ستعيد إنشاء الجدول نفسه المستخدم في الدليل العملي الخاص بمجموعة البيانات النموذجية [UK property prices](/ar/get-started/sample-datasets/uk-price-paid).
     ويتكوّن من نحو 30 مليون صف لأسعار العقارات المدفوعة
     في إنجلترا وويلز منذ عام 1995.
@@ -548,9 +536,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
     ```
   </Step>
 
-  <Step>
-    ## إنشاء جدول على العنقود
-
+  <Step title="إنشاء جدول على العنقود" id="creating-a-table">
     الآن بعد أن أُنشئت قاعدة البيانات، ستُنشئ جدولًا.
     شغّل الاستعلام التالي من أي عميل من عملاء المضيف:
 
@@ -581,7 +567,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
     دليل مجموعة البيانات المثال [UK property prices](/ar/get-started/sample-datasets/uk-price-paid)،
     باستثناء عبارة `ON CLUSTER`.
 
-    صُمِّمت عبارة `ON CLUSTER` للتنفيذ الموزّع لاستعلامات DDL ‏(لغة تعريف البيانات)
+    صُمِّمت عبارة `ON CLUSTER` للتنفيذ الموزّع لاستعلامات DDL ‏(لغة تعريف البيانات)
     مثل `CREATE` و`DROP` و`ALTER` و`RENAME`، بما يضمن تطبيق
     هذه التغييرات على المخطط عبر جميع العقد في العنقود.
 
@@ -598,9 +584,9 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
     ```
 
     قبل أن نُدرج بيانات الأسعار المدفوعة في المملكة المتحدة، دعونا نجري تجربة سريعة لمعرفة
-    ما الذي يحدث عند إدراج البيانات في جدول عادي من أيٍّ من الخادمين.
+    ما الذي يحدث عند إدراج البيانات في جدول عادي من أيٍّ من الخادمين.
 
-    أنشئ قاعدة بيانات وجدولًا اختباريًا باستخدام الاستعلام التالي من أيٍّ من الخادمين:
+    أنشئ قاعدة بيانات وجدولًا اختباريًا باستخدام الاستعلام التالي من أيٍّ من الخادمين:
 
     ```sql
     CREATE DATABASE IF NOT EXISTS test ON CLUSTER cluster_2S_1R;
@@ -652,9 +638,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
     محرك الجدول [`Distributed`](/ar/reference/engines/table-engines/special/distributed). لنلقِ نظرة على كيفية عمله.
   </Step>
 
-  <Step>
-    ## إنشاء جدول موزّع
-
+  <Step title="إنشاء جدول موزّع" id="create-distributed-table">
     أنشئ جدولًا موزّعًا باستخدام الاستعلام التالي:
 
     ```sql
@@ -665,7 +649,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
     في هذا المثال، اختيرت الدالة `rand()` كمفتاح للتجزئة بحيث
     تتوزع عمليات الإدراج عشوائيًا على الأجزاء.
 
-    الآن نفّذ استعلامًا على الجدول الموزّع من أيٍّ من المضيفين، وستحصل
+    الآن نفّذ استعلامًا على الجدول الموزّع من أيٍّ من المضيفين، وستحصل
     على كلا الصفين اللذين أُدرجا على المضيفين كليهما، بخلاف مثالنا السابق:
 
     ```sql
@@ -679,7 +663,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
        └────┴────────────────────┘
     ```
 
-    لنفعل الأمر نفسه مع بيانات أسعار العقارات في المملكة المتحدة. من أيٍّ من الأجهزة المضيفة التي تشغّل العميل،
+    لنفعل الأمر نفسه مع بيانات أسعار العقارات في المملكة المتحدة. من أيٍّ من الأجهزة المضيفة التي تشغّل العميل،
     شغّل الاستعلام التالي لإنشاء جدول موزّع باستخدام الجدول الحالي
     الذي أنشأناه سابقًا باستخدام `ON CLUSTER`:
 
@@ -690,9 +674,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
     ```
   </Step>
 
-  <Step>
-    ## إدراج البيانات في جدول موزّع
-
+  <Step title="إدراج البيانات في جدول موزّع" id="inserting-data-into-distributed-table">
     الآن اتصل بأيٍّ من المضيفَين وأدرج البيانات:
 
     ```sql
@@ -786,7 +768,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
     clickhouse-keeper-03   clickhouse/clickhouse-keeper:latest-alpine   "/entrypoint.sh"   clickhouse-keeper-03   X minutes ago    Up X minutes    127.0.0.1:9183->9181/tcp
     ```
 
-    الآن من `clickhouse-02` نفِّذ نفس استعلام SELECT الذي أجريناه سابقًا على الجدول الموزَّع:
+    الآن من `clickhouse-02` نفِّذ نفس استعلام select الذي أجريناه سابقًا على الجدول الموزَّع:
 
     ```sql
     SELECT count(*)

@@ -34,7 +34,7 @@ StreamSocketImpl::StreamSocketImpl(SocketAddress::Family family)
 	else if (family == SocketAddress::IPv6)
 		init(AF_INET6);
 #endif
-#if defined(POCO_OS_FAMILY_UNIX)
+#if defined(POCO_OS_FAMILY_UNIX) && !defined(POCO_NO_UNIX_SOCKETS)
 	else if (family == SocketAddress::UNIX_LOCAL)
 		init(AF_UNIX);
 #endif

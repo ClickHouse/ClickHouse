@@ -14,51 +14,51 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 > хранения данных в S3
 
 <div id="create-an-aws-iam-user">
-  ## Создайте пользователя AWS IAM
+  ## Создание пользователя AWS IAM
 </div>
 
-В этой процедуре мы создадим пользователя служебной учетной записи, а не пользователя для входа в систему.
+В этой процедуре мы создадим пользователя для служебной учетной записи, а не пользователя для входа.
 
-1. Войдите в консоль управления AWS IAM.
+1. Войдите в AWS IAM Management Console.
 
 2. На вкладке `Users` выберите `Create user`
 
-<Image size="lg" img="/images/_snippets/s3/2025/s3-1.webp" alt="Консоль управления AWS IAM — добавление нового пользователя" />
+<Image size="lg" img="/images/_snippets/s3/2025/s3-1.webp" alt="AWS IAM Management Console — добавление нового пользователя" />
 
 3. Введите имя пользователя
 
-<Image size="lg" img="/images/_snippets/s3/2025/s3-2.webp" alt="Консоль управления AWS IAM — добавление нового пользователя" />
+<Image size="lg" img="/images/_snippets/s3/2025/s3-2.webp" alt="AWS IAM Management Console — добавление нового пользователя" />
 
 4. Выберите `Next`
 
-<Image size="lg" img="/images/_snippets/s3/2025/s3-3.webp" alt="Консоль управления AWS IAM — добавление нового пользователя" />
+<Image size="lg" img="/images/_snippets/s3/2025/s3-3.webp" alt="AWS IAM Management Console — добавление нового пользователя" />
 
 5. Выберите `Next`
 
-<Image size="lg" img="/images/_snippets/s3/2025/s3-4.webp" alt="Консоль управления AWS IAM — добавление нового пользователя" />
+<Image size="lg" img="/images/_snippets/s3/2025/s3-4.webp" alt="AWS IAM Management Console — добавление нового пользователя" />
 
 6. Выберите `Create user`
 
 Пользователь создан.
 Нажмите на только что созданного пользователя
 
-<Image size="lg" img="/images/_snippets/s3/2025/s3-5.webp" alt="Консоль управления AWS IAM — добавление нового пользователя" />
+<Image size="lg" img="/images/_snippets/s3/2025/s3-5.webp" alt="AWS IAM Management Console — добавление нового пользователя" />
 
 7. Выберите `Create access key`
 
-<Image size="lg" img="/images/_snippets/s3/2025/s3-6.webp" alt="Консоль управления AWS IAM — добавление нового пользователя" />
+<Image size="lg" img="/images/_snippets/s3/2025/s3-6.webp" alt="AWS IAM Management Console — добавление нового пользователя" />
 
 8. Выберите `Application running outside AWS`
 
-<Image size="lg" img="/images/_snippets/s3/2025/s3-7.webp" alt="Консоль управления AWS IAM — добавление нового пользователя" />
+<Image size="lg" img="/images/_snippets/s3/2025/s3-7.webp" alt="AWS IAM Management Console — добавление нового пользователя" />
 
 9. Выберите `Create access key`
 
-<Image size="lg" img="/images/_snippets/s3/2025/s3-8.webp" alt="Консоль управления AWS IAM — добавление нового пользователя" />
+<Image size="lg" img="/images/_snippets/s3/2025/s3-8.webp" alt="AWS IAM Management Console — добавление нового пользователя" />
 
-10. Скачайте ключ доступа и секретный ключ в формате .csv для дальнейшего использования
+10. Скачайте ключ доступа и secret в виде файла .csv, чтобы использовать их позже
 
-<Image size="lg" img="/images/_snippets/s3/2025/s3-9.webp" alt="Консоль управления AWS IAM — добавление нового пользователя" />
+<Image size="lg" img="/images/_snippets/s3/2025/s3-9.webp" alt="AWS IAM Management Console — добавление нового пользователя" />
 
 <div id="create-an-s3-bucket">
   ## Создание S3 бакета

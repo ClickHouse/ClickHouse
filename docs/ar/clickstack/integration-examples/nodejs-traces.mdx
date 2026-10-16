@@ -35,15 +35,11 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 * اسم المضيف أو عنوان IP الخاص بـ ClickStack
 
 <Steps>
-  <Step>
-    #### تثبيت OpenTelemetry وتهيئته
-
+  <Step title="تثبيت OpenTelemetry وتهيئته" id="install-configure">
     ثبّت الحزمة `@hyperdx/node-opentelemetry` وقم بتهيئتها عند بدء تطبيقك. راجع [دليل Node.js SDK](/ar/clickstack/ingesting-data/sdks/nodejs#getting-started) للاطلاع على خطوات التثبيت التفصيلية.
   </Step>
 
-  <Step>
-    #### الحصول على مفتاح واجهة برمجة تطبيقات لـ ClickStack
-
+  <Step title="الحصول على مفتاح واجهة برمجة تطبيقات لـ ClickStack" id="get-api-key">
     ستحتاج إلى مفتاح واجهة برمجة تطبيقات لإرسال التتبعات إلى نقطة نهاية OTLP الخاصة بـ ClickStack.
 
     1. افتح HyperDX على عنوان URL الخاص بـ ClickStack (على سبيل المثال: http://localhost:8080)
@@ -54,9 +50,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     <Image img="/images/clickstack/api-key.webp" alt="مفتاح واجهة برمجة تطبيقات لـ ClickStack" />
   </Step>
 
-  <Step>
-    #### شغّل تطبيقك
-
+  <Step title="شغّل تطبيقك" id="run-application">
     ابدأ تشغيل تطبيق Node.js بعد تعيين متغيرات البيئة:
 
     ```bash
@@ -65,9 +59,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### ولّد بعض الحركة
-
+  <Step title="ولّد بعض الحركة" id="generate-traffic">
     أرسل طلبات إلى تطبيقك لإنشاء تتبعات:
 
     ```bash
@@ -81,9 +73,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### تحقّق من التتبعات في HyperDX
-
+  <Step title="تحقّق من التتبعات في HyperDX" id="verify-traces">
     بعد اكتمال التهيئة، سجّل الدخول إلى HyperDX وتحقّق من وصول التتبعات. ينبغي أن ترى شيئًا مشابهًا لما يلي. إذا لم تظهر لك التتبعات، فجرّب تعديل النطاق الزمني:
 
     <Image img="/images/clickstack/nodejs/traces-search-view.webp" alt="واجهة البحث عن التتبعات" />
@@ -101,9 +91,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 للمستخدمين الذين يريدون اختبار التتبّع في Node.js باستخدام ClickStack قبل إضافة أدوات الرصد إلى تطبيقاتهم في بيئة الإنتاج، نوفر مجموعة بيانات نموذجية تحتوي على تتبعات مُولَّدة مسبقًا لتطبيق Node.js بأنماط حركة مرور واقعية.
 
 <Steps>
-  <Step>
-    #### تنزيل مجموعة البيانات النموذجية
-
+  <Step title="تنزيل مجموعة البيانات النموذجية" id="download-sample">
     نزّل ملف التتبعات النموذجي:
 
     ```bash
@@ -111,9 +99,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### بدء ClickStack
-
+  <Step title="بدء ClickStack" id="start-clickstack">
     إذا لم يكن ClickStack قيد التشغيل لديك بعد، فابدأه باستخدام:
 
     ```bash
@@ -125,9 +111,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### الحصول على مفتاح واجهة برمجة تطبيقات الخاص بـ ClickStack
-
+  <Step title="الحصول على مفتاح واجهة برمجة تطبيقات لـ ClickStack" id="get-api-key-demo">
     ستحتاج إلى مفتاح واجهة برمجة تطبيقات لإرسال التتبعات إلى نقطة نهاية OTLP الخاصة بـ ClickStack.
 
     1. افتح HyperDX على عنوان URL الخاص بـ ClickStack لديك (على سبيل المثال، http://localhost:8080)
@@ -135,7 +119,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     3. انتقل إلى **Team Settings → API Keys**
     4. انسخ **Ingestion API Key** الخاص بك
 
-    <Image img="/images/clickstack/api-key.webp" alt="مفتاح واجهة برمجة تطبيقات الخاص بـ ClickStack" />
+    <Image img="/images/clickstack/api-key.webp" alt="مفتاح واجهة برمجة تطبيقات لـ ClickStack" />
 
     عيّن مفتاح واجهة برمجة تطبيقات الخاص بك كمتغير بيئة:
 
@@ -144,9 +128,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### إرسال التتبعات إلى ClickStack
-
+  <Step title="إرسال التتبعات إلى ClickStack" id="send-traces">
     ```bash
     curl -X POST http://localhost:4318/v1/traces \
       -H "Content-Type: application/json" \
@@ -157,9 +139,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ينبغي أن ترى استجابة مثل `{"partialSuccess":{}}`، ما يشير إلى أنه تم إرسال التتبعات بنجاح.
   </Step>
 
-  <Step>
-    #### التحقق من التتبعات في HyperDX
-
+  <Step title="التحقق من التتبعات في HyperDX" id="verify-demo-traces">
     1. افتح [HyperDX](http://localhost:8080/) وسجّل الدخول إلى حسابك (قد تحتاج إلى إنشاء حساب أولًا)
     2. انتقل إلى عرض **Search** وعيّن المصدر إلى **Traces**
     3. عيّن النطاق الزمني إلى **2025-10-25 13:00:00 - 2025-10-28 13:00:00**
@@ -183,13 +163,11 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 لمساعدتك على بدء مراقبة أداء تطبيقات Node.js، نوفر لوحة معلومات مُعدّة مسبقًا تتضمن تصورات أساسية للتتبعات.
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/nodejs-traces-dashboard.json'} download="nodejs-traces-dashboard.json" eventName="docs.node_traces_monitoring.dashboard_download">نزّل</TrackedLink> إعدادات لوحة المعلومات
+  <Step title="نزّل إعدادات لوحة المعلومات" id="download-dashboard">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/nodejs-traces-dashboard.json'} download="nodejs-traces-dashboard.json" eventName="docs.node_traces_monitoring.dashboard_download">نزّل ملف إعدادات لوحة المعلومات</TrackedLink>.
   </Step>
 
-  <Step>
-    #### استورد لوحة المعلومات المُعدّة مسبقًا
-
+  <Step title="استورد لوحة المعلومات المُعدّة مسبقًا" id="import-dashboard">
     1. افتح HyperDX وانتقل إلى قسم **لوحات المعلومات**
     2. انقر على **استيراد لوحة معلومات** في الزاوية العلوية اليمنى (ضمن قائمة النقاط الثلاث)
 
@@ -200,9 +178,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     <Image img="/images/clickstack/nodejs/finish-import.webp" alt="إنهاء الاستيراد" />
   </Step>
 
-  <Step>
-    #### ستُنشأ لوحة المعلومات مع تهيئة جميع التصورات مسبقًا
-
+  <Step title="ستُنشأ لوحة المعلومات مع تهيئة جميع التصورات مسبقًا" id="created-dashboard">
     <Image img="/images/clickstack/nodejs/example-traces-dashboard.webp" alt="لوحة معلومات نموذجية" />
 
     <Note>
@@ -263,9 +239,9 @@ curl -v http://localhost:4318/v1/traces
 * أنشئ لوحات معلومات إضافية لحالات استخدام محددة (مراقبة واجهة برمجة التطبيقات، الأحداث الأمنية)
 
 <div id="going-to-production">
-  ## الانتقال إلى بيئة الإنتاج
+  ## الانتقال إلى الإنتاج
 </div>
 
-يستخدم هذا الدليل حزمة HyperDX SDK، التي ترسل التتبعات مباشرةً إلى نقطة نهاية OTLP الخاصة بـ ClickStack. ويعمل هذا النهج جيدًا في بيئات التطوير والاختبار وعمليات النشر الإنتاجية الصغيرة إلى المتوسطة.
-أما في بيئات الإنتاج الأكبر، أو إذا كنت بحاجة إلى تحكم إضافي في بيانات القياس عن بُعد، ففكّر في نشر OpenTelemetry Collector الخاص بك كوكيل.
-راجع [إدخال البيانات باستخدام OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطلاع على أنماط النشر في بيئات الإنتاج وأمثلة على تهيئة OpenTelemetry Collector.
+يستخدم هذا الدليل HyperDX SDK، الذي يرسل التتبعات مباشرةً إلى نقطة نهاية OTLP الخاصة بـ ClickStack. ينجح هذا النهج مع بيئات التطوير والاختبار وعمليات النشر الإنتاجية الصغيرة إلى المتوسطة.
+أما في بيئات الإنتاج الأكبر، أو إذا كنت بحاجة إلى مزيد من التحكم في بيانات القياس عن بُعد، ففكّر في نشر OpenTelemetry Collector الخاص بك بصفته agent.
+راجع [إدخال البيانات باستخدام OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطلاع على أنماط النشر في بيئة الإنتاج وأمثلة على تهيئة collector.

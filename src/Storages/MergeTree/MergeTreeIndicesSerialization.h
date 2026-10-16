@@ -25,7 +25,7 @@ inline bool looksLikePackedSkipIndexFile(std::string_view name)
 }
 
 class IMergeTreeIndexCondition;
-class IMergeTreeDataPart;
+class IMergeTreeDataPartInfoForReader;
 struct IMergeTreeIndex;
 struct MarkRanges;
 
@@ -76,11 +76,13 @@ using MergeTreeIndexInputStreams = std::map<MergeTreeIndexSubstream::Type, Merge
 
 struct MergeTreeIndexDeserializationState
 {
-    MergeTreeIndexVersion version;
-    const IMergeTreeIndexCondition * condition;
-    const IMergeTreeDataPart & part;
+    MergeTreeIndexVersion version = 0;
+    const IMergeTreeIndexCondition * condition = nullptr;
+    const IMergeTreeDataPartInfoForReader & part_info;
     const IMergeTreeIndex & index;
-    const MarkRanges * readable_ranges;
+    const MarkRanges * readable_ranges = nullptr;
+    bool text_index_read_postings = true;
+    const MergeTreeReaderSettings & reader_settings;
 };
 
 }

@@ -1,0 +1,20 @@
+C1 auto differs from none on .gz
+1
+C2 GZIP codec name
+100
+C3 unknown method still throws and echoes the raw spelling
+1	0
+C4 uppercase file extension autodetects
+1
+C5 empty hint autodetects
+1
+W1 AUTO on .gz equals auto
+1
+W2 NONE on .gz equals none
+1
+W3 Auto on .gz equals auto
+1
+W4 None on plain file equals none
+1
+W5 AUTO on the write path
+10

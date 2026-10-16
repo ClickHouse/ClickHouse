@@ -118,7 +118,9 @@ bool WorkloadSettings::hasAllocationLimit(CostUnit unit) const
         case CostUnit::CPUNanosecond:
         case CostUnit::QuerySlot:
             return false;
-        case CostUnit::MemoryByte: return max_memory != unlimited;
+        // A soft limit alone (without a hard `max_memory`) still needs an `AllocationLimit` node to host it:
+        // the node caps nothing (`max_allocated == unlimited`) but asks reclaimable allocations to spill.
+        case CostUnit::MemoryByte: return max_memory != unlimited || max_memory_before_spill != unlimited;
     }
 }
 
@@ -131,6 +133,18 @@ Int64 WorkloadSettings::getAllocationLimit(CostUnit unit) const
         case CostUnit::QuerySlot:
             chassert(false); return 0;
         case CostUnit::MemoryByte: return max_memory;
+    }
+}
+
+Int64 WorkloadSettings::getSoftAllocationLimit(CostUnit unit) const
+{
+    switch (unit)
+    {
+        case CostUnit::IOByte:
+        case CostUnit::CPUNanosecond:
+        case CostUnit::QuerySlot:
+            chassert(false); return 0;
+        case CostUnit::MemoryByte: return max_memory_before_spill;
     }
 }
 
@@ -149,6 +163,7 @@ void WorkloadSettings::initFromChanges(const ASTCreateWorkloadQuery::SettingsCha
         std::optional<Float64> max_burst_cpu_seconds;
         std::optional<Float64> max_queries_per_second;
         std::optional<Float64> max_burst_queries;
+        std::optional<String> scheduler;
         std::optional<Int64> max_io_requests;
         std::optional<Int64> max_bytes_inflight;
         std::optional<Int64> max_concurrent_threads;
@@ -157,6 +172,8 @@ void WorkloadSettings::initFromChanges(const ASTCreateWorkloadQuery::SettingsCha
         std::optional<Int64> max_waiting_queries;
         std::optional<Int64> max_memory;
         std::optional<Float64> max_memory_ratio;
+        std::optional<Int64> max_memory_before_spill;
+        std::optional<Float64> max_memory_to_spill_ratio;
 
         static Float64 getFloat64(const String & name, const Field & field)
         {
@@ -255,6 +272,13 @@ void WorkloadSettings::initFromChanges(const ASTCreateWorkloadQuery::SettingsCha
                 max_queries_per_second = getNotNegativeFloat64(name, value);
             else if (name == "max_burst_queries")
                 max_burst_queries = getNotNegativeFloat64(name, value);
+            else if (name == "scheduler")
+            {
+                scheduler = value.safeGet<String>();
+                if (*scheduler != "fifo" && *scheduler != "fair" && *scheduler != "las" && *scheduler != "priority")
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Unknown workload setting 'scheduler' value '{}' (expected 'fifo', 'fair', 'las' or 'priority')", *scheduler);
+            }
             else if (name == "max_io_requests" || name == "max_requests")
                 max_io_requests = getNotNegativeInt64(name, value);
             else if (name == "max_bytes_inflight" || name == "max_cost")
@@ -271,6 +295,16 @@ void WorkloadSettings::initFromChanges(const ASTCreateWorkloadQuery::SettingsCha
                 max_memory = getNotNegativeInt64(name, value);
             else if (name == "max_memory_ratio")
                 max_memory_ratio = getNotNegativeFloat64(name, value);
+            else if (name == "max_memory_before_spill")
+                max_memory_before_spill = getNotNegativeInt64(name, value);
+            else if (name == "max_memory_to_spill_ratio")
+            {
+                Float64 ratio = getNotNegativeFloat64(name, value);
+                if (ratio > 1.0)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Workload setting '{}' must be in the range [0, 1], got {}", name, ratio);
+                max_memory_to_spill_ratio = ratio;
+            }
             else if (throw_on_unknown_setting)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown workload setting '{}'", name);
         }
@@ -348,6 +382,14 @@ void WorkloadSettings::initFromChanges(const ASTCreateWorkloadQuery::SettingsCha
     }
     max_burst_queries = get_value(specific.max_burst_queries, regular.max_burst_queries, max_burst_queries);
 
+    // Scheduling algorithm. `FOR <resource>` is handled by the regular/specific split above, so it
+    // can be set per resource (e.g. `scheduler = 'fair' FOR cpu`). A resource-specific value wins;
+    // otherwise the regular value; otherwise the default ("fifo").
+    if (specific.scheduler)
+        scheduler = *specific.scheduler;
+    else if (regular.scheduler)
+        scheduler = *regular.scheduler;
+
     // Choose semaphore constraint values.
     // Zero setting value means unlimited number of requests or bytes.
     max_io_requests = get_value(specific.max_io_requests, regular.max_io_requests, max_io_requests, unlimited);
@@ -363,7 +405,10 @@ void WorkloadSettings::initFromChanges(const ASTCreateWorkloadQuery::SettingsCha
             limit = exact_number;
         if (ratio_to_cores > 0)
         {
-            Int64 value = static_cast<Int64>(ratio_to_cores * getNumberOfCPUCoresToUse());
+            // Clamp before casting to `Int64`: a large ratio (e.g. `1e100`) would otherwise produce a
+            // float outside `Int64` range and trigger undefined-behaviour on conversion.
+            Float64 raw = ratio_to_cores * getNumberOfCPUCoresToUse();
+            Int64 value = (raw >= static_cast<Float64>(unlimited)) ? unlimited : static_cast<Int64>(raw);
             if (value > 0 && value < limit)
                 limit = value;
         }
@@ -411,6 +456,26 @@ void WorkloadSettings::initFromChanges(const ASTCreateWorkloadQuery::SettingsCha
                 limit = value;
         }
         max_memory = limit;
+    }
+
+    // Compute the soft memory limit (spill threshold) as the minimum of two possible values:
+    // (1) exact `max_memory_before_spill` and (2) `max_memory_to_spill_ratio * max_memory` (a fraction of
+    // this workload's own hard limit). Zero setting value means unlimited (no soft limit). The ratio is
+    // ignored when `max_memory` is unlimited, since it has no finite base to scale.
+    {
+        Int64 limit = unlimited;
+        Int64 exact_number = get_value(specific.max_memory_before_spill, regular.max_memory_before_spill, Int64(0));
+        Float64 ratio = get_value(specific.max_memory_to_spill_ratio, regular.max_memory_to_spill_ratio, 0.0);
+        if (exact_number > 0 && exact_number < limit)
+            limit = exact_number;
+        if (ratio > 0 && max_memory != unlimited)
+        {
+            Float64 raw = ratio * static_cast<Float64>(max_memory);
+            Int64 value = (raw >= static_cast<Float64>(unlimited)) ? unlimited : static_cast<Int64>(raw);
+            if (value > 0 && value < limit)
+                limit = value;
+        }
+        max_memory_before_spill = limit;
     }
 }
 

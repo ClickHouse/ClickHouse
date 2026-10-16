@@ -1,0 +1,104 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-09-04
+title: 'Demo days - 2026-09-04'
+sidebarTitle: '2026-09-04'
+description: 'ClickStack demo days for 2026-09-04'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## New types of dashboard filter {#new-types-of-dashboard-filter}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/VnlNxvcvg-g" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+Previously, dashboard filters offered one kind of value: query values, where the drop-down options come from a column in ClickHouse. Open the filters and variables modal and you now have two more types to choose from.
+
+Static values let you type the options yourself when you create the filter, so an environment filter can simply offer `dev`, `staging` and `prod` with no query behind it. A static list filter has no `expression`, so it supports variable mode only and can't be converted into a SQL condition for broadcast mode.
+
+PromQL label values query the options from a PromQL source's `<label>/values` endpoint. You pick the label you want, and you can optionally narrow it with a matcher, which itself can reference other variables. That makes the filters dependent on one another: select an environment and the instances offered by the next filter narrow to match, with the PromQL charts filtering down as you go.
+
+Both types can be exposed as variables, which means a filter can drive more than a `WHERE` clause. In the demo, a static filter listing `ServiceName` and `SeverityText` is used as the group-by dimension for a chart, so choosing a value in the drop-down changes what the chart groups by, in any combination.
+
+**Related PRs:** [#3017](https://github.com/hyperdxio/hyperdx/pull/3017) add static value list filters to schemas and APIs, [#3022](https://github.com/hyperdxio/hyperdx/pull/3022) render static value list filter inputs, [#3020](https://github.com/hyperdxio/hyperdx/pull/3020) allow creation and editing of static list filters in the UI, [#3060](https://github.com/hyperdxio/hyperdx/pull/3060) support static custom value filters in MCP, [#3053](https://github.com/hyperdxio/hyperdx/pull/3053) support dashboard filters based on Prometheus label values, [#3072](https://github.com/hyperdxio/hyperdx/pull/3072) support autocomplete for PromQL label filters, [#3039](https://github.com/hyperdxio/hyperdx/pull/3039) accept optional time bounds on the Prometheus label values endpoint, [#3079](https://github.com/hyperdxio/hyperdx/pull/3079) support match[] on PromQL labels and values endpoints, [#3080](https://github.com/hyperdxio/hyperdx/pull/3080) support match[] in PromQL label filters, [#3083](https://github.com/hyperdxio/hyperdx/pull/3083) de-dupe PromQL labels and values to prevent a Mantine crash, [#3005](https://github.com/hyperdxio/hyperdx/pull/3005) confirm before discarding unsaved changes when closing the filter editor, [#3078](https://github.com/hyperdxio/hyperdx/pull/3078) support configuring dashboard filters as required, [#3093](https://github.com/hyperdxio/hyperdx/pull/3093) optionally apply dashboard filters to the tile editor preview
+
+## Custom legend templates for PromQL charts {#custom-legend-templates-for-promql-charts}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/2rR_kRAEvWw" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+PromQL legends were hard to read, as Vladimir pointed out. By default we show the metric name followed by every label that differs between the returned series, which on a query returning many series is a long string you have to click into to make sense of.
+
+The chart's display settings now take a legend template. It's a Handlebars template, so you reference the labels you actually care about and get a short series name in both the legend and the tooltip.
+
+If the template references a label that isn't present, that reference renders blank. If the result is empty or not unique across the series, we fall back to the full set of distinguishing labels, so you can't end up with two series you can't tell apart.
+
+**Related PRs:** [#3055](https://github.com/hyperdxio/hyperdx/pull/3055) support a custom template for PromQL series legends
+
+## Saving a relative date range as a dashboard default {#saving-a-relative-date-range-as-a-dashboard-default}
+
+*Demo by [@knudtty](https://github.com/knudtty)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/8KzwsEG-KSg" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+Dashboards can now save a relative date range as their default. Set the time range you want and click "Save Query and Filters as default", and the dashboard opens on that range from then on.
+
+Relative ranges are the point. Saving "the last 6 hours" means the dashboard is right whenever you open it, rather than pinned to a fixed window that goes stale. You can still change the range while you're on the dashboard, look at the last 7 days, navigate away, and come back to the saved default.
+
+**Related PRs:** [#3073](https://github.com/hyperdxio/hyperdx/pull/3073) relative date ranges can be saved for dashboards
+
+## Alerts without a saved search or dashboard tile {#alerts-without-a-saved-search-or-dashboard-tile}
+
+*Demo by [@wrn14897](https://github.com/wrn14897)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/wuK7geV7F94" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+Previously, every alert needed something behind it: a saved search for logs, or a dashboard tile for metrics. That doesn't scale when you're migrating thousands of Grafana alerts.
+
+Inline alerts drop the requirement. There's a **Create alert** action in the chart explorer's action bar, so you can build a chart on metrics or events and alert on it directly without saving anything first. You can also create an inline alert from the alerts page, which is the path to take when you specifically don't want the alert associated with a saved search or dashboard.
+
+An inline alert persists its own `chartConfig` on the alert document, in the exact shape a dashboard tile stores, so it evaluates through the same code path as tile alerts rather than a parallel one. It covers the builder and raw SQL on `line`, `stacked_bar` and `number` displays. PromQL isn't supported for now.
+
+The same `source: 'inline'` shape is accepted by the external v2 API and the MCP `save_alert` tool, using the same tile-config dialect v2 dashboards use, so alerts can be created programmatically at scale. The router reuses the dashboard tile converters, which stops the two surfaces drifting apart.
+
+**Related PRs:** [#3010](https://github.com/hyperdxio/hyperdx/pull/3010) support creating alerts without saved searches or dashboard tiles (backend), [#3069](https://github.com/hyperdxio/hyperdx/pull/3069) UI for creating and editing inline chart alerts, [#3043](https://github.com/hyperdxio/hyperdx/pull/3043) support chart alerts in the external API v2 and MCP
+
+## Alert names and tags {#alert-names-and-tags}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/nIJGusSLBuk" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+Alerts can now carry their own name and tags. The alert form on a dashboard tile or saved search has a name input and a tag input, and a new alert defaults to the chart or saved search name and inherits the tags of the dashboard or saved search it sits on.
+
+Those names are what the alerts page shows, and they're what you search and filter by. Alerts already in the database with no name set still derive one from the saved search or dashboard they reference.
+
+Tags returned by the `team/tags` endpoint now include tags from alert documents alongside dashboards and saved searches. Without that, a tag used only by an alert wouldn't be suggested when you tag the next one.
+
+This is groundwork for paginating the alerts page while still supporting search and filter by tag, which needs name and tags on the alert document itself rather than a join against the dashboard and saved search collections. The pagination isn't done yet.
+
+**Related PRs:** [#3063](https://github.com/hyperdxio/hyperdx/pull/3063) persist alert-level displayName and tags, [#3065](https://github.com/hyperdxio/hyperdx/pull/3065) support writing alert displayName and tags, [#3067](https://github.com/hyperdxio/hyperdx/pull/3067) show and edit alert displayName and tags in UI, [#3092](https://github.com/hyperdxio/hyperdx/pull/3092) include alert tags in the tags API response, [#3029](https://github.com/hyperdxio/hyperdx/pull/3029) backfill alert name and tags (open)
+
+## An Explore prototype {#an-explore-prototype}
+
+*Demo by [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/vlGMKp5Eroc" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+**This is exploratory work, with no commitment to ship it.**
+
+The prototype is a single Explore page that would replace both the search page and the chart explorer. It's in draft in the HyperDX repo. It could replace those pages, it could sit alongside them as a third page, or nothing might come of it at all.
+
+The problem it goes after is moving between the two pages we have today. Customers tell us that carrying a question from search into the chart explorer is awkward: you often have to reselect the data source and rebuild the same query on the other side. Explore keeps it on one page, switching the view between events, patterns, deltas and charts rather than changing the page under you.
+
+The second theme is lowering the barrier for people who aren't fluent in the query languages. Adding a column to the table, sorting, and choosing a group-by are drop-downs, with SQL still there when you want it. Group-by is a good example of the gap today: the histogram on the search page is grouped by status code with no way to change it, so anyone who wants a different grouping has to leave for the chart explorer. Here you set the group-by in the events view, switch to a time series or bar chart when the small histogram isn't enough, change the aggregation to something like `p99`, and save the result to a dashboard.
+
+The filter bar is a small query builder that abstracts away both Lucene and SQL: pick a field, pick an operator, type a value, with the full query editor and macros available for advanced users. Whether having two query languages at all is the right answer is one of the open questions here.
+
+Plenty is unanswered. There's no PromQL yet, and it isn't settled whether metrics belong on this page or whether that asks too much of a single page. The prototype focuses on the logs and traces experience.
+
+We'd love to get feedback on this.
+
+**Related PRs:** [#2985](https://github.com/hyperdxio/hyperdx/pull/2985) Explore as search-first visualization (prototype) (open)

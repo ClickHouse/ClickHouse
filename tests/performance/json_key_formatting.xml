@@ -1,0 +1,24 @@
+<test>
+    <!-- Cost of emitting the object keys in JSON row output formats, which is paid once per field
+         per row. `max_threads = 1` keeps that per-row cost visible instead of hiding it behind
+         threading, and `formatRow` keeps the output in memory so the sink is never the bottleneck. -->
+
+    <create_query>
+        CREATE TABLE json_key_formatting (id UInt64, event_count UInt64,
+            a_column_name_longer_than_the_small_string_limit UInt64) ENGINE = Memory
+    </create_query>
+    <fill_query>
+        INSERT INTO json_key_formatting SELECT number, number + 1, number + 2 FROM numbers(10000000)
+    </fill_query>
+
+    <!-- One narrow field, key short enough to fit a small-string buffer -->
+    <query>SELECT count() FROM json_key_formatting WHERE NOT ignore(formatRow('JSONEachRow', id)) SETTINGS max_threads = 1</query>
+    <!-- Same, with a key too long for a small-string buffer -->
+    <query>SELECT count() FROM json_key_formatting WHERE NOT ignore(formatRow('JSONEachRow', a_column_name_longer_than_the_small_string_limit)) SETTINGS max_threads = 1</query>
+    <!-- Three keys per row -->
+    <query>SELECT count() FROM json_key_formatting WHERE NOT ignore(formatRow('JSONEachRow', id, event_count, a_column_name_longer_than_the_small_string_limit)) SETTINGS max_threads = 1</query>
+    <!-- Scope control: a format that emits no keys, so it must not move -->
+    <query>SELECT count() FROM json_key_formatting WHERE NOT ignore(formatRow('TSV', id)) SETTINGS max_threads = 1</query>
+
+    <drop_query>DROP TABLE IF EXISTS json_key_formatting</drop_query>
+</test>

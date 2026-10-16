@@ -101,7 +101,7 @@ null('structure')
 
 - `structure` — A list of columns and column types. [String](/reference/data-types/string).
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 A temporary `Null`-engine table with the specified structure.
 
@@ -123,7 +123,7 @@ DROP TABLE IF EXISTS t;
 ## Related {#related}
 
 - [Null table engine](/reference/engines/table-engines/special/null)
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, {.allow_readonly = true});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{}, {.allow_readonly = true});
 }
 
 }

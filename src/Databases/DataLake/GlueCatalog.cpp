@@ -9,9 +9,11 @@
 #include <aws/glue/GlueClient.h>
 #include <aws/glue/model/GetTablesRequest.h>
 #include <aws/glue/model/GetTableRequest.h>
+#include <aws/glue/model/GetDatabaseRequest.h>
 #include <aws/glue/model/GetDatabasesRequest.h>
 #include <aws/glue/model/CreateTableRequest.h>
 #include <aws/glue/model/DeleteTableRequest.h>
+#include <aws/glue/model/DeleteDatabaseRequest.h>
 #include <aws/glue/model/CreateDatabaseRequest.h>
 #include <aws/glue/model/UpdateTableRequest.h>
 #include <aws/glue/model/TableInput.h>
@@ -68,7 +70,6 @@ namespace DB::FailPoints
 
 namespace DB::Setting
 {
-    extern const SettingsUInt64 s3_max_connections;
     extern const SettingsUInt64 s3_max_redirects;
     extern const SettingsUInt64 s3_retry_attempts;
     extern const SettingsBool s3_slow_all_threads_after_network_error;
@@ -163,7 +164,6 @@ GlueCatalog::GlueCatalog(
 
 
     Aws::Glue::GlueClientConfiguration client_configuration;
-    client_configuration.maxConnections = static_cast<unsigned>(global_settings[DB::Setting::s3_max_connections]);
     client_configuration.connectTimeoutMs = static_cast<unsigned>(global_settings[DB::Setting::s3_connect_timeout_ms]);
     client_configuration.requestTimeoutMs = static_cast<unsigned>(global_settings[DB::Setting::s3_request_timeout_ms]);
     client_configuration.region = region;
@@ -272,7 +272,7 @@ CatalogTables GlueCatalog::getTablesForDatabase(const std::string & db_name, siz
                 /// For some reason glue allow to have empty tables
                 /// without any columns. They are also empty in object
                 /// storage, so just ignore them.
-                if (table.GetStorageDescriptor().GetColumns().empty())
+                if (table.GetStorageDescriptor().GetColumns().empty() && !isReadableGlueTable(table))
                     continue;
 
                 if (limit != 0 && result.size() >= limit)
@@ -286,6 +286,11 @@ CatalogTables GlueCatalog::getTablesForDatabase(const std::string & db_name, siz
         }
         else
         {
+            /// The database is absent from Glue, so it contributes no tables. The error names the database, so
+            /// any pages already collected belong to a database that is gone and are dropped too.
+            if (outcome.GetError().GetErrorType() == Aws::Glue::GlueErrors::ENTITY_NOT_FOUND)
+                return {};
+
             throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Exception calling GetTables {}", outcome.GetError().GetMessage());
         }
         if (limit != 0 && result.size() >= limit)
@@ -321,12 +326,8 @@ CatalogTables GlueCatalog::listTablesInNamespaceDirect(const std::string & names
 
 bool GlueCatalog::existsTable(const std::string & database_name, const std::string & table_name) const
 {
-    Aws::Glue::Model::GetTableRequest request;
-    request.SetDatabaseName(database_name);
-    request.SetName(table_name);
-
-    auto outcome = glue_client->GetTable(request);
-    return outcome.IsSuccess();
+    TableMetadata metadata;
+    return tryGetTableMetadata(database_name, table_name, metadata);
 }
 
 bool GlueCatalog::tryGetTableMetadata(
@@ -474,7 +475,8 @@ void GlueCatalog::setCredentials(TableMetadata & metadata) const
     }
 }
 
-ICatalog::CredentialsRefreshCallback GlueCatalog::getCredentialsConfigurationCallback(const DB::StorageID & storage_id)
+ICatalog::CredentialsRefreshCallback GlueCatalog::getCredentialsConfigurationCallback(
+    const DB::StorageID & storage_id, const TableMetadata & /* table_metadata */)
 {
     /// The AWS SDK credentials provider chain (instance profile, STS assume-role,
     /// web-identity, etc.) refreshes its cached credentials internally before
@@ -634,13 +636,44 @@ void GlueCatalog::createNamespaceIfNotExists(const String & namespace_name) cons
     db_input.SetName(namespace_name);
     create_request.SetDatabaseInput(db_input);
 
-    glue_client->CreateDatabase(create_request);
+    auto outcome = glue_client->CreateDatabase(create_request);
+    if (!outcome.IsSuccess() && outcome.GetError().GetErrorType() != Aws::Glue::GlueErrors::ALREADY_EXISTS)
+    {
+        throw DB::Exception(
+            DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+            "Exception calling CreateDatabase for namespace {}: {}",
+            namespace_name, outcome.GetError().GetMessage());
+    }
+}
+
+std::optional<std::string> GlueCatalog::getDefaultTableLocation(
+    const std::string & namespace_name,
+    const std::string & table_name) const
+{
+    Aws::Glue::Model::GetDatabaseRequest request;
+    request.SetName(namespace_name);
+
+    auto outcome = glue_client->GetDatabase(request);
+    if (!outcome.IsSuccess())
+    {
+        if (outcome.GetError().GetErrorType() == Aws::Glue::GlueErrors::ENTITY_NOT_FOUND)
+            return std::nullopt;
+
+        throw DB::Exception(
+            DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+            "Exception calling GetDatabase for namespace {}: {}",
+            namespace_name, outcome.GetError().GetMessage());
+    }
+
+    const auto & location_uri = outcome.GetResult().GetDatabase().GetLocationUri();
+    if (location_uri.empty())
+        return std::nullopt;
+
+    return std::string(std::filesystem::path(location_uri) / table_name);
 }
 
 void GlueCatalog::createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr /*metadata_content*/) const
 {
-    createNamespaceIfNotExists(namespace_name);
-
     Aws::Glue::Model::CreateTableRequest request;
     request.SetDatabaseName(namespace_name);
 
@@ -719,7 +752,7 @@ bool GlueCatalog::updateSchema(
     return updateMetadata(namespace_name, table_name, new_metadata_path, nullptr);
 }
 
-void GlueCatalog::dropTable(const String & namespace_name, const String & table_name) const
+void GlueCatalog::dropTable(const String & namespace_name, const String & table_name, bool /*delete_data*/) const
 {
     Aws::Glue::Model::DeleteTableRequest request;
     request.SetDatabaseName(namespace_name);

@@ -62,7 +62,7 @@ O ClickHouse oferece suporte a vários algoritmos de JOIN que fazem um equilíbr
   Cada algoritmo oferece suporte diferente aos tipos de JOIN. Uma lista completa dos tipos de JOIN compatíveis com cada algoritmo pode ser encontrada [aqui](/pt-BR/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm).
 </Note>
 
-Você pode deixar que o ClickHouse escolha o melhor algoritmo definindo `join_algorithm = 'auto'` (o padrão) ou controlá-lo explicitamente com base na sua carga de trabalho. Se precisar selecionar um algoritmo de JOIN para otimizar o desempenho ou o uso de memória, recomendamos [este guia](/pt-BR/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm).
+Você pode deixar que o ClickHouse escolha o melhor algoritmo definindo `join_algorithm = 'auto'` ou controlá-lo explicitamente com base na sua carga de trabalho. O valor padrão é `direct,parallel_hash,hash`, portanto o ClickHouse usa direct join quando o lado direito é um dicionário ou um motor de chave-valor e, caso contrário, recorre a parallel hash e depois a hash. Se precisar selecionar um algoritmo de JOIN para otimizar o desempenho ou o uso de memória, recomendamos [este guia](/pt-BR/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm).
 
 Para um desempenho ideal:
 

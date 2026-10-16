@@ -11,7 +11,7 @@ integration:
   - website: 'https://apify.com/'
 ---
 
-import CommunityMaintainedBadge from "/snippets/ja/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 import ConnectionDetails from '/snippets/ja/_gather_your_details_http.mdx';
 
 <CommunityMaintainedBadge />
@@ -35,15 +35,11 @@ import ConnectionDetails from '/snippets/ja/_gather_your_details_http.mdx';
 </div>
 
 <Steps>
-  <Step>
-    ### ClickHouse の接続情報を確認する
-
+  <Step title="ClickHouse の接続情報を確認する" id="1-gather-your-connection-details">
     <ConnectionDetails />
   </Step>
 
-  <Step>
-    ### Apify の前提条件
-
+  <Step title="Apify の前提条件" id="2-apify-prerequisites">
     あわせて、以下が必要です。
 
     * [Apify アカウント](https://console.apify.com/sign-up) (無料プランあり)。
@@ -51,9 +47,7 @@ import ConnectionDetails from '/snippets/ja/_gather_your_details_http.mdx';
     * ローカルにインストールされた Node.js 18 以上 (JavaScript のサンプル用)。
   </Step>
 
-  <Step>
-    ### 依存関係をインストールする
-
+  <Step title="依存関係をインストールする" id="3-install-dependencies">
     Apify JavaScript クライアント と ClickHouse JavaScript クライアント をインストールします。
 
     ```bash
@@ -65,9 +59,7 @@ import ConnectionDetails from '/snippets/ja/_gather_your_details_http.mdx';
     </Note>
   </Step>
 
-  <Step>
-    ### ClickHouse にターゲットテーブルを作成する
-
+  <Step title="ClickHouse にターゲットテーブルを作成する" id="4-create-a-target-table">
     スクレイピングしたデータを格納するテーブルを作成します。スキーマは使用する Actor によって異なります。この例では、商品スクレイピング用の Actor に対して [MergeTree](/ja/reference/engines/table-engines/mergetree-family/mergetree) を使用しています。
 
     ```sql
@@ -84,9 +76,7 @@ import ConnectionDetails from '/snippets/ja/_gather_your_details_http.mdx';
     ```
   </Step>
 
-  <Step>
-    ### Apify Dataset を取得して ClickHouse に読み込む
-
+  <Step title="Apify Dataset を取得して ClickHouse に読み込む" id="5-fetch-and-load">
     次のスクリプトは、Apify Actor の実行結果を取得して ClickHouse に挿入します。
 
     ```javascript
@@ -124,9 +114,7 @@ import ConnectionDetails from '/snippets/ja/_gather_your_details_http.mdx';
     </Tip>
   </Step>
 
-  <Step>
-    ### webhook で自動化する
-
+  <Step title="webhook で自動化する" id="6-automate-with-webhooks">
     スクリプトを手動で実行する代わりに、Actor の完了時に毎回データが ClickHouse に読み込まれるよう、パイプラインを自動化します。
 
     1. [Apify Console](https://console.apify.com/) で対象の Actor を開き、**Integrations** タブに移動します。
@@ -163,7 +151,7 @@ ClickHouse のテーブルスキーマは、Actor の出力フィールドに合
   ### パフォーマンス
 </div>
 
-JavaScript client から高スループットで INSERT する場合は、[パフォーマンス最適化のヒント](/ja/integrations/language-clients/js#tips-for-performance-optimizations)に従ってください。1 行ずつ INSERT するのではなく、複数の行をまとめてより大きな INSERT にし、クライアント側でバッチ処理を行うのが現実的でない場合は、[非同期 INSERT](/ja/concepts/features/operations/insert/asyncinserts)を検討してください。
+JavaScript クライアント から高スループットで INSERT する場合は、[パフォーマンス最適化のヒント](/ja/integrations/language-clients/js/index#tips-for-performance-optimizations)に従ってください。1 行ずつ INSERT するのではなく、複数の行をまとめてより大きな INSERT にし、クライアント側でバッチ処理を行うのが現実的でない場合は、[非同期 INSERT](/ja/concepts/features/operations/insert/asyncinserts)を検討してください。
 
 <div id="security">
   ### セキュリティ
@@ -181,4 +169,4 @@ JavaScript client から高スループットで INSERT する場合は、[パ�
 * [Apify Python クライアント](https://docs.apify.com/api/client/python)
 * [Apify Store (既製の Actor) ](https://apify.com/store)
 * [Apify インテグレーションの概要](https://docs.apify.com/platform/integrations)
-* [ClickHouse JavaScript クライアント](/ja/integrations/language-clients/js)
+* [ClickHouse JavaScript クライアント](/ja/integrations/language-clients/js/index)

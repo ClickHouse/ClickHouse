@@ -5,7 +5,9 @@
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
+#include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NestedUtils.h>
 #include <Common/quoteString.h>
 #include <Core/NamesAndTypes.h>
@@ -31,11 +33,38 @@ namespace ErrorCodes
 
 namespace MergeTreeSetting
 {
-    extern MergeTreeSettingsBool enable_index_granularity_compression;
+    extern const MergeTreeSettingsBool enable_index_granularity_compression;
     extern const MergeTreeSettingsMergeTreeObjectSerializationVersion object_serialization_version;
     extern const MergeTreeSettingsMergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version;
     extern const MergeTreeSettingsMergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version_for_zero_level_parts;
     extern const MergeTreeSettingsNonZeroUInt64 object_shared_data_buckets_for_wide_part;
+}
+
+namespace
+{
+
+/// The number of bytes that each row of a column takes in a stream at least, or 0 if it is not known.
+/// Only the streams with one value per row of the column count, so the path may only go through `Nullable`.
+size_t getMinBytesPerRowOfStream(const DataTypePtr & type, const ISerialization::SubstreamPath & substream_path)
+{
+    for (size_t i = 0; i < substream_path.size(); ++i)
+    {
+        auto substream_type = substream_path[i].type;
+        bool is_last = i + 1 == substream_path.size();
+        if (is_last && substream_type == ISerialization::Substream::NullMap)
+            return sizeof(UInt8);
+        if (is_last && substream_type == ISerialization::Substream::ArraySizes)
+            return sizeof(UInt64);
+        if (substream_type != ISerialization::Substream::NullableElements && substream_type != ISerialization::Substream::Regular)
+            return 0;
+    }
+
+    auto nested_type = removeNullable(type);
+    if (nested_type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+        return nested_type->getSizeOfValueInMemory();
+    return 0;
+}
+
 }
 
 MergeTreeDataPartWide::MergeTreeDataPartWide(
@@ -45,8 +74,8 @@ MergeTreeDataPartWide::MergeTreeDataPartWide(
     const MergeTreePartInfo & info_,
     const MutableDataPartStoragePtr & data_part_storage_,
     const IMergeTreeDataPart * parent_part_,
-    bool part_may_exist_on_disk)
-    : IMergeTreeDataPart(storage_, storage_settings, name_, info_, data_part_storage_, Type::Wide, parent_part_, part_may_exist_on_disk)
+    PartDirIntent intent)
+    : IMergeTreeDataPart(storage_, storage_settings, name_, info_, data_part_storage_, Type::Wide, parent_part_, intent)
 {
 }
 
@@ -58,7 +87,8 @@ Strings MergeTreeDataPartWide::getPreferredFileOrder() const
     preferred_order.append_range(getMinMaxIndex()->getProbablyWrittenFiles(*this));
 
     /// First column's marks file is used for loadIndexGranularity, so it is better to have it first.
-    auto first_column_file = getFileNameForColumn(columns.front());
+    const auto & part_columns = getColumns();
+    auto first_column_file = getFirstFileNameForColumn(part_columns.front());
     if (first_column_file)
         preferred_order.push_back(*first_column_file + getMarksFileExtension());
 
@@ -75,9 +105,9 @@ Strings MergeTreeDataPartWide::getPreferredFileOrder() const
     }
 
     /// Move all marks for the rest of columns before all data files.
-    for (auto column_it = std::next(columns.begin()); column_it != columns.end(); ++column_it)
+    for (auto column_it = std::next(part_columns.begin()); column_it != part_columns.end(); ++column_it)
     {
-        auto column_file = getFileNameForColumn(*column_it);
+        auto column_file = getFirstFileNameForColumn(*column_it);
         if (column_file)
             preferred_order.push_back(*column_file + getMarksFileExtension());
     }
@@ -101,6 +131,7 @@ MergeTreeReaderPtr createMergeTreeReaderWide(
     const MarkRanges & mark_ranges,
     const VirtualFields & virtual_fields,
     UncompressedCache * uncompressed_cache,
+    ColumnsCache * columns_cache,
     MarkCache * mark_cache,
     DeserializationPrefixesCache * deserialization_prefixes_cache,
     const MergeTreeReaderSettings & reader_settings,
@@ -115,6 +146,7 @@ MergeTreeReaderPtr createMergeTreeReaderWide(
     const MarkRanges & mark_ranges,
     const VirtualFields & virtual_fields,
     UncompressedCache * uncompressed_cache,
+    ColumnsCache * columns_cache,
     MarkCache * mark_cache,
     DeserializationPrefixesCache * deserialization_prefixes_cache,
     const MergeTreeReaderSettings & reader_settings,
@@ -128,6 +160,7 @@ MergeTreeReaderPtr createMergeTreeReaderWide(
         storage_snapshot,
         storage_settings,
         uncompressed_cache,
+        columns_cache,
         mark_cache,
         deserialization_prefixes_cache,
         mark_ranges,
@@ -200,13 +233,13 @@ ColumnSize MergeTreeDataPartWide::getColumnSizeImpl(
     if (checksums.empty())
         return size;
 
-    if (column.type->hasDynamicSubcolumns() && !columns_substreams.empty())
+    if (column.type->hasDynamicSubcolumns() && !getColumnsSubstreams().empty())
     {
         auto column_position = getColumnPosition(column.name);
         if (!column_position)
             return size;
 
-        const auto & substreams = columns_substreams.getColumnSubstreams(*column_position);
+        const auto & substreams = getColumnsSubstreams().getColumnSubstreams(*column_position);
         for (const auto & substream : substreams)
         {
             if (auto stream_name = IMergeTreeDataPart::getStreamNameOrHash(substream, DATA_FILE_EXTENSION, checksums))
@@ -236,7 +269,7 @@ ColumnSize MergeTreeDataPartWide::getColumnSizeImpl(
 ColumnSize MergeTreeDataPartWide::calculateSubcolumnSize(const String & subcolumn_name) const
 {
     ColumnSize size;
-    if (checksums.empty())
+    if (checksums.empty() || isEmpty())
         return size;
 
     for (const auto & stream : getListOfStreamsForColumn(getColumn(subcolumn_name)))
@@ -312,14 +345,14 @@ void MergeTreeDataPartWide::loadIndexGranularityImpl(
 
 void MergeTreeDataPartWide::loadIndexGranularity()
 {
-    if (columns.empty())
+    if (getColumns().empty())
         throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns in part {}", name);
 
-    auto any_column_filename = getFileNameForColumn(columns.front());
+    auto any_column_filename = getFirstFileNameForColumn(getColumns().front());
     if (!any_column_filename)
         throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART,
             "There are no files for column {} in part {}",
-            columns.front().name, getDataPartStorage().getFullPath());
+            getColumns().front().name, getDataPartStorage().getFullPath());
 
     loadIndexGranularityImpl(index_granularity, index_granularity_info, getDataPartStorage(), *any_column_filename, *storage.getSettings());
 }
@@ -374,8 +407,7 @@ void MergeTreeDataPartWide::removeMarksFromCache(MarkCache * mark_cache) const
     if (!mark_cache)
         return;
 
-    const auto & serializations = getSerializations();
-    for (const auto & [column_name, serialization] : serializations)
+    getSerializations().forEach([&](const String & column_name, const SerializationPtr & serialization)
     {
         serialization->enumerateStreams([&](const auto & subpath)
         {
@@ -387,7 +419,7 @@ void MergeTreeDataPartWide::removeMarksFromCache(MarkCache * mark_cache) const
             auto key = MarkCache::hash(getDataPartStorage().getDiskName() + ":" + (fs::path(getRelativePathOfActivePart()) / mark_path).string());
             mark_cache->remove(key);
         });
-    }
+    });
 }
 
 bool MergeTreeDataPartWide::isStoredOnRemoteDisk() const
@@ -432,7 +464,7 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
                 /// This is more reliable than enumerateStreams for types with dynamic structure (JSON, Dynamic)
                 /// because enumerateStreams requires deserialization state to correctly enumerate dynamic substreams.
                 size_t col_idx = 0;
-                for (const auto & name_type : columns)
+                for (const auto & name_type : getColumns())
                 {
                     const auto & substreams = cols_substreams.getColumnSubstreams(col_idx);
                     for (const auto & substream : substreams)
@@ -467,7 +499,7 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
                 /// against checksums.txt.
                 ISerialization::EnumerateStreamsSettings settings;
                 settings.enumerate_dynamic_streams = false;
-                for (const auto & name_type : columns)
+                for (const auto & name_type : getColumns())
                 {
                     auto serialization = getSerialization(name_type.name);
                     auto data = ISerialization::SubstreamData(serialization)
@@ -499,20 +531,82 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
             }
         }
     }
-    else
+
+    /// Checksums regenerated from the files on disk by `loadChecksums` describe those files as they are,
+    /// so they cannot vouch for a marks file torn by a crash: check the shape of the marks files directly
+    /// in that case too, as when there are no checksums at all.
+    if (!hasTrustworthyChecksums())
     {
+        /// The marks alone do not prove that the data is there: a stream whose `.bin` file is gone entirely
+        /// still has intact marks. Checksums regenerated from the files on disk would not notice it either.
+        auto check_data_file_exists = [&](const String & stream_name)
+        {
+            auto data_file_name = stream_name + DATA_FILE_EXTENSION;
+            if (!getDataPartStorage().existsFile(data_file_name))
+                throw Exception(
+                    ErrorCodes::NO_FILE_IN_DATA_PART,
+                    "Part {} is broken: no data file {} for marks file {}{}",
+                    getDataPartStorage().getFullPath(),
+                    data_file_name,
+                    stream_name,
+                    marks_file_extension);
+        };
+
+        /// Without a final mark (non-adaptive granularity) the marks tell only where the last granule starts.
+        /// For the streams whose rows take a known number of bytes at least, check that the last granule has them.
+        std::unordered_map<String, size_t> min_bytes_per_row_of_streams;
+        if (!index_granularity->hasFinalMark())
+        {
+            ISerialization::EnumerateStreamsSettings settings;
+            settings.enumerate_dynamic_streams = false;
+            for (const auto & name_type : getColumns())
+            {
+                auto serialization = getSerialization(name_type.name);
+                auto data = ISerialization::SubstreamData(serialization).withType(name_type.type);
+                serialization->enumerateStreams(settings, [&](const ISerialization::SubstreamPath & substream_path)
+                {
+                    size_t min_bytes_per_row = getMinBytesPerRowOfStream(name_type.type, substream_path);
+                    if (!min_bytes_per_row)
+                        return;
+
+                    auto stream_name = getStreamNameForColumn(name_type, substream_path, marks_file_extension, getDataPartStorage(), storage.getSettings());
+                    if (stream_name)
+                        min_bytes_per_row_of_streams.emplace(*stream_name, min_bytes_per_row);
+                }, data);
+            }
+        }
+
+        auto get_min_bytes_per_row = [&](const String & stream_name) -> size_t
+        {
+            auto it = min_bytes_per_row_of_streams.find(stream_name);
+            return it == min_bytes_per_row_of_streams.end() ? 0 : it->second;
+        };
+
         if (!cols_substreams.empty())
         {
             /// Use columns_substreams.txt as the source of truth.
             std::optional<UInt64> marks_size;
-            for (size_t col_idx = 0; col_idx != columns.size(); ++col_idx)
+            for (size_t col_idx = 0; col_idx != getColumns().size(); ++col_idx)
             {
                 const auto & substreams = cols_substreams.getColumnSubstreams(col_idx);
                 for (const auto & substream : substreams)
                 {
                     auto stream_name = getStreamNameOrHash(substream, marks_file_extension, getDataPartStorage());
                     if (!stream_name)
-                        continue;
+                    {
+                        /// Missing or regenerated checksums cannot tell that a marks file is gone. But
+                        /// `columns_substreams.txt` names every substream the part was written with, and
+                        /// each of them must have its marks.
+                        throw Exception(
+                            ErrorCodes::NO_FILE_IN_DATA_PART,
+                            "Part {} is broken: no marks file ({}{}) for column {}",
+                            getDataPartStorage().getFullPath(),
+                            substream,
+                            marks_file_extension,
+                            getColumns().getNames()[col_idx]);
+                    }
+
+                    check_data_file_exists(*stream_name);
 
                     auto file_path = *stream_name + marks_file_extension;
                     UInt64 file_size = getDataPartStorage().getFileSize(file_path);
@@ -524,27 +618,64 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
                             getDataPartStorage().getFullPath(),
                             std::string(fs::path(getDataPartStorage().getFullPath()) / file_path));
 
+                    /// Compressed marks of different streams compress to different sizes, so compare their
+                    /// decompressed sizes. Reading them through also proves that each one is complete.
+                    UInt64 marks_payload_size = index_granularity_info.mark_type.compressed ? readFile(file_path)->ignoreAll() : file_size;
+
                     if (!marks_size)
-                        marks_size = file_size;
-                    else if (file_size != *marks_size)
+                        marks_size = marks_payload_size;
+                    else if (marks_payload_size != *marks_size)
                         throw Exception(
                             ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
                             "Part {} is broken: marks have different sizes.", getDataPartStorage().getFullPath());
+
+                    checkDataFileCoversMarks(*stream_name + DATA_FILE_EXTENSION, file_path, /*num_columns_in_mark=*/ 1, get_min_bytes_per_row(*stream_name));
                 }
             }
         }
         else
         {
             /// Fallback: check that all marks are nonempty and have the same size.
+            std::optional<UInt64> marks_size;
+            NameSet checked_marks_files;
+            auto check_marks_file = [&](const String & stream_name)
+            {
+                auto file_path = stream_name + marks_file_extension;
+                if (!checked_marks_files.insert(file_path).second)
+                    return;
+
+                UInt64 file_size = getDataPartStorage().getFileSize(file_path);
+
+                if (!file_size)
+                    throw Exception(
+                        ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
+                        "Part {} is broken: {} is empty.",
+                        getDataPartStorage().getFullPath(),
+                        std::string(fs::path(getDataPartStorage().getFullPath()) / file_path));
+
+                /// Compressed marks of different streams compress to different sizes, so compare their
+                /// decompressed sizes. Reading them through also proves that each one is complete.
+                UInt64 marks_payload_size = index_granularity_info.mark_type.compressed ? readFile(file_path)->ignoreAll() : file_size;
+
+                if (!marks_size)
+                    marks_size = marks_payload_size;
+                else if (marks_payload_size != *marks_size)
+                    throw Exception(
+                        ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
+                        "Part {} is broken: marks have different sizes.", getDataPartStorage().getFullPath());
+
+                checkDataFileCoversMarks(stream_name + DATA_FILE_EXTENSION, file_path, /*num_columns_in_mark=*/ 1, get_min_bytes_per_row(stream_name));
+            };
+
+            /// Dynamic streams are not enumerated here, so a sample column with the dynamic structure is not
+            /// needed. Reading one would not work anyway: the reader looks the streams up in the checksums,
+            /// which are empty for parts of very old formats.
             ISerialization::EnumerateStreamsSettings settings;
             settings.enumerate_dynamic_streams = false;
-            std::optional<UInt64> marks_size;
-            for (const auto & name_type : columns)
+            for (const auto & name_type : getColumns())
             {
                 auto serialization = getSerialization(name_type.name);
-                auto data = ISerialization::SubstreamData(serialization)
-                    .withType(name_type.type)
-                    .withColumn(getColumnSample(name_type));
+                auto data = ISerialization::SubstreamData(serialization).withType(name_type.type);
                 serialization->enumerateStreams(settings, [&](const ISerialization::SubstreamPath & substream_path)
                 {
                     auto stream_name = getStreamNameForColumn(name_type, substream_path, marks_file_extension, getDataPartStorage(), storage.getSettings());
@@ -553,23 +684,51 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
                     if (!stream_name)
                         return;
 
-                    auto file_path = *stream_name + marks_file_extension;
-                    UInt64 file_size = getDataPartStorage().getFileSize(file_path);
-
-                    if (!file_size)
-                        throw Exception(
-                            ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
-                            "Part {} is broken: {} is empty.",
-                            getDataPartStorage().getFullPath(),
-                            std::string(fs::path(getDataPartStorage().getFullPath()) / file_path));
-
-                    if (!marks_size)
-                        marks_size = file_size;
-                    else if (file_size != *marks_size)
-                        throw Exception(
-                            ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
-                            "Part {} is broken: marks have different sizes.", getDataPartStorage().getFullPath());
+                    check_data_file_exists(*stream_name);
+                    check_marks_file(*stream_name);
                 }, data);
+            }
+
+            /// Dynamic streams (`JSON`, `Dynamic`) cannot be enumerated without the deserialization state,
+            /// so check every stream found in the part directory, in both directions: a marks file that is
+            /// gone entirely leaves its `.bin` peer behind, and a data file that is gone leaves its marks.
+            /// Skip indices have marks without `.bin` files, so their files are left out.
+            NameSet file_names;
+            for (auto it = getDataPartStorage().iterate(); it->isValid(); it->next())
+                file_names.insert(it->name());
+
+            for (const auto & file_name : file_names)
+            {
+                if (file_name.starts_with(SKIP_INDEX_FILE_PREFIX))
+                    continue;
+
+                if (file_name.ends_with(marks_file_extension))
+                {
+                    String data_file_name = file_name.substr(0, file_name.size() - marks_file_extension.size()) + DATA_FILE_EXTENSION;
+                    if (!file_names.contains(data_file_name))
+                        throw Exception(
+                            ErrorCodes::NO_FILE_IN_DATA_PART,
+                            "Part {} is broken: no data file {} for marks file {}",
+                            getDataPartStorage().getFullPath(),
+                            data_file_name,
+                            file_name);
+                    continue;
+                }
+
+                if (!file_name.ends_with(DATA_FILE_EXTENSION))
+                    continue;
+
+                String stream_name = file_name.substr(0, file_name.size() - strlen(DATA_FILE_EXTENSION));
+                String marks_file_name = stream_name + marks_file_extension;
+                if (!file_names.contains(marks_file_name))
+                    throw Exception(
+                        ErrorCodes::NO_FILE_IN_DATA_PART,
+                        "Part {} is broken: no marks file {} for data file {}",
+                        getDataPartStorage().getFullPath(),
+                        marks_file_name,
+                        file_name);
+
+                check_marks_file(stream_name);
             }
         }
     }
@@ -613,24 +772,47 @@ std::optional<time_t> MergeTreeDataPartWide::getColumnModificationTime(const Str
     }
 }
 
-std::optional<String> MergeTreeDataPartWide::getFileNameForColumn(const NameAndTypePair & column) const
+std::optional<String> MergeTreeDataPartWide::getFirstFileNameForColumn(const NameAndTypePair & column) const
 {
+    const auto & part_columns_substreams = getColumnsSubstreams();
+    if (!part_columns_substreams.empty())
+    {
+        const auto * substreams = part_columns_substreams.tryGetColumnSubstreams(column.name);
+        if (!substreams || substreams->empty())
+            return std::nullopt;
+
+        /// This method may be called when checksums are not initialized yet.
+        if (!checksums.empty())
+            return getStreamNameOrHash((*substreams)[0], DATA_FILE_EXTENSION, checksums);
+
+        return getStreamNameOrHash((*substreams)[0], DATA_FILE_EXTENSION, getDataPartStorage());
+    }
+
     std::optional<String> filename;
 
-    /// Fallback for the case when serializations was not loaded yet (called from loadColumns())
-    if (getSerializations().empty())
-        return getStreamNameForColumn(column, {}, DATA_FILE_EXTENSION, getDataPartStorage(), storage.getSettings());
+    /// Fallback when serializations are not loaded yet (called from loadColumns()).
+    SerializationPtr serialization = getSerializations().empty() ? column.type->getDefaultSerialization() : getSerialization(column.name);
 
-    getSerialization(column.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+    ISerialization::StreamFileNameSettings stream_settings(*storage.getSettings());
+    ISerialization::StreamFileNameSettings unshared_settings = stream_settings;
+    unshared_settings.share_nested_offsets = false;
+
+    serialization->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
     {
-        if (!filename.has_value())
-        {
-            /// This method may be called when checksums are not initialized yet.
-            if (!checksums.empty())
-                filename = getStreamNameForColumn(column, substream_path, DATA_FILE_EXTENSION, checksums, storage.getSettings());
-            else
-                filename = getStreamNameForColumn(column, substream_path, DATA_FILE_EXTENSION, getDataPartStorage(), storage.getSettings());
-        }
+        if (filename.has_value())
+            return;
+
+        /// A stream whose name changes when offset sharing is turned off is named after the Nested
+        /// table, so it exists as soon as any sibling has data and cannot witness this column.
+        if (ISerialization::getFileNameForStream(column, substream_path, stream_settings)
+            != ISerialization::getFileNameForStream(column, substream_path, unshared_settings))
+            return;
+
+        /// This method may be called when checksums are not initialized yet.
+        if (!checksums.empty())
+            filename = getStreamNameForColumn(column, substream_path, DATA_FILE_EXTENSION, checksums, storage.getSettings());
+        else
+            filename = getStreamNameForColumn(column, substream_path, DATA_FILE_EXTENSION, getDataPartStorage(), storage.getSettings());
     });
 
     return filename;
@@ -639,7 +821,7 @@ std::optional<String> MergeTreeDataPartWide::getFileNameForColumn(const NameAndT
 void MergeTreeDataPartWide::calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const
 {
     std::unordered_set<String> processed_substreams;
-    for (const auto & column : columns)
+    for (const auto & column : getColumns())
     {
         ColumnSize size = getColumnSizeImpl(column, &processed_substreams);
         each_columns_size[column.name] = size;
@@ -695,8 +877,9 @@ std::vector<String> MergeTreeDataPartWide::getListOfStreamsForColumn(const NameA
         MarkRanges{MarkRange(0, getMarksCount())},
         /*virtual_fields=*/{},
         /*uncompressed_cache=*/{},
+        /*columns_cache=*/nullptr,
         storage.getContext()->getMarkCache().get(),
-        nullptr,
+        /*deserialization_prefixes_cache=*/nullptr,
         settings,
         ValueSizeMap{},
         ReadBufferFromFileBase::ProfileCallback{});

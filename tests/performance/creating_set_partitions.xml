@@ -1,0 +1,132 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>partitions</name>
+            <values>
+                <value>2</value>
+                <value>16</value>
+                <value>64</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <!-- Per-partition set building has no partition-count heuristic (any parallelism beats the
+         single-stream set fill), so both the 16- and 64-partition tables exercise the optimization. -->
+    <create_query>CREATE TABLE test_{partitions} (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a PARTITION BY sipHash64(a) % {partitions}</create_query>
+
+    <!-- The best shape for the optimization: duplicates spread through the table in insertion order
+         (`ORDER BY tuple()`), so the ordinary serial set fill takes a random hash-cell miss per row,
+         while the parallel per-partition pre-deduplication removes the duplicates before the fill. -->
+    <create_query>CREATE TABLE test_unsorted_{partitions} (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY tuple() PARTITION BY sipHash64(a) % {partitions}</create_query>
+
+    <!-- Skewed layouts where the per-partition build would lose: the skew check must decline them, so
+         these queries pin the absence of a regression. 90% of the rows in one partition with unique keys
+         is the worst measured shape; 30% with heavy duplication sits just past the threshold. -->
+    <create_query>CREATE TABLE t_skew90_uniq (a UInt64) ENGINE = MergeTree ORDER BY tuple() PARTITION BY if(sipHash64(a) % 10 &lt; 9, 0, 1 + sipHash64(a) % 15)</create_query>
+    <create_query>CREATE TABLE t_skew30_dup (a UInt64) ENGINE = MergeTree ORDER BY tuple() PARTITION BY if(sipHash64(a) % 10 &lt; 3, 0, 1 + sipHash64(a) % 15)</create_query>
+
+    <!-- Adversarial inputs that pass the skew check, so the per-partition build still engages, but the
+         preliminary deduplication removes little or nothing. The partition count is fixed: the abandon
+         decision depends on the observed unique rate, not on the partition count.
+         * t_all_unique: every key unique, the preliminary deduplication abandons itself after observing
+           the first chunks, keeping the read locality win without a duplicated hash table.
+         * t_all_unique_str: like t_all_unique but with wide String keys, which reach the observation
+           byte cap before the chunk window ends, so the deduplication abandons after fewer chunks.
+         * t_half_dup: half of the rows are duplicates, but each key's second copy is far apart in
+           insertion order and arrives only after the deduplication has already abandoned, so the set
+           fill removes the duplicates alone.
+         * t_mild_dup: every eighth row duplicates its neighbor, so duplicates are adjacent and the
+           observed unique rate (0.875) sits just under the abandon threshold. The deduplication stays
+           engaged at its least favorable point: it keeps per-partition hash tables while removing only
+           12.5% of the rows.
+         * t_dup_head_uniq_tail: the heavy duplicate head anchors the cumulative unique rate below the
+           abandon threshold, so the deduplication stays engaged through the unique tail.
+         * t_lc_nullable: LowCardinality(Nullable) key with mostly-unique values and a few NULLs. The
+           NULL rows are dropped before deduplication like the set fill drops them (default
+           transform_null_in = 0), so the observation sees only the unique non-NULL rows and abandons.
+           All NULLs land in one partition, so only a small NULL share keeps the layout balanced. -->
+    <create_query>CREATE TABLE t_all_unique (a UInt64) ENGINE = MergeTree ORDER BY tuple() PARTITION BY sipHash64(a) % 16</create_query>
+    <create_query>CREATE TABLE t_all_unique_str (a String) ENGINE = MergeTree ORDER BY tuple() PARTITION BY sipHash64(a) % 16</create_query>
+    <create_query>CREATE TABLE t_half_dup (a UInt64) ENGINE = MergeTree ORDER BY tuple() PARTITION BY sipHash64(a) % 16</create_query>
+    <create_query>CREATE TABLE t_mild_dup (a UInt64) ENGINE = MergeTree ORDER BY tuple() PARTITION BY sipHash64(a) % 16</create_query>
+    <create_query>CREATE TABLE t_dup_head_uniq_tail (a UInt64) ENGINE = MergeTree ORDER BY tuple() PARTITION BY sipHash64(a) % 16</create_query>
+    <create_query>CREATE TABLE t_lc_nullable (a LowCardinality(Nullable(String))) ENGINE = MergeTree ORDER BY tuple() PARTITION BY sipHash64(coalesce(a, '')) % 16</create_query>
+
+    <!-- ~100 duplicates per key: the set fill deduplicates 10M rows down to 100K unique keys. -->
+    <fill_query>INSERT INTO test_{partitions} SELECT number % 100000, number FROM numbers_mt(10000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE test_{partitions} FINAL</fill_query>
+
+    <!-- ~300 duplicates per key; more rows so the queries are long enough for stable measurement. -->
+    <fill_query>INSERT INTO test_unsorted_{partitions} SELECT number % 100000, number FROM numbers_mt(30000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE test_unsorted_{partitions} FINAL</fill_query>
+
+    <fill_query>INSERT INTO t_skew90_uniq SELECT number FROM numbers_mt(10000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE t_skew90_uniq FINAL</fill_query>
+
+    <fill_query>INSERT INTO t_skew30_dup SELECT number % 100000 FROM numbers_mt(10000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE t_skew30_dup FINAL</fill_query>
+
+    <fill_query>INSERT INTO t_all_unique SELECT number FROM numbers_mt(30000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE t_all_unique FINAL</fill_query>
+
+    <fill_query>INSERT INTO t_all_unique_str SELECT concat(toString(number), repeat('x', 80)) FROM numbers_mt(10000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE t_all_unique_str FINAL</fill_query>
+
+    <fill_query>INSERT INTO t_half_dup SELECT number % 15000000 FROM numbers_mt(30000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE t_half_dup FINAL</fill_query>
+
+    <fill_query>INSERT INTO t_mild_dup SELECT if(number % 8 = 0, number - 1, number) FROM numbers_mt(30000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE t_mild_dup FINAL</fill_query>
+
+    <fill_query>INSERT INTO t_dup_head_uniq_tail SELECT number % 100000 FROM numbers_mt(5000000)</fill_query>
+    <fill_query>INSERT INTO t_dup_head_uniq_tail SELECT 10000000 + number FROM numbers_mt(25000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE t_dup_head_uniq_tail FINAL</fill_query>
+
+    <fill_query>INSERT INTO t_lc_nullable SELECT if(number % 16 = 0, NULL, concat('k', toString(number))) FROM numbers_mt(10000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE t_lc_nullable FINAL</fill_query>
+
+    <query>SELECT count() FROM numbers_mt(1000000) WHERE number IN (SELECT a FROM test_{partitions}) FORMAT Null</query>
+
+    <query>SELECT count() FROM numbers_mt(1000000) WHERE number IN (SELECT a FROM test_{partitions} WHERE b > 1) FORMAT Null</query>
+
+    <query>SELECT count() FROM numbers_mt(1000000) WHERE (number, number + 1) IN (SELECT a, a + 1 FROM test_{partitions}) FORMAT Null</query>
+
+    <!-- propagation: a per-partition LIMIT BY passes the disjointness up to the set build -->
+    <query>SELECT count() FROM numbers_mt(1000000) WHERE number IN (SELECT a FROM test_{partitions} LIMIT 2 BY a) FORMAT Null</query>
+
+    <query>SELECT count() FROM numbers_mt(1000000) WHERE number IN (SELECT a FROM test_unsorted_{partitions}) FORMAT Null</query>
+
+    <query>SELECT count() FROM numbers_mt(1000000) WHERE (number, number + 1) IN (SELECT a, a + 1 FROM test_unsorted_{partitions}) FORMAT Null</query>
+
+    <query>SELECT count() FROM numbers_mt(1000000) WHERE number IN (SELECT a FROM t_skew90_uniq) FORMAT Null</query>
+
+    <query>SELECT count() FROM numbers_mt(1000000) WHERE number IN (SELECT a FROM t_skew30_dup) FORMAT Null</query>
+
+    <query>SELECT count() FROM numbers_mt(1000000) WHERE number IN (SELECT a FROM t_all_unique) FORMAT Null</query>
+
+    <query>SELECT count() FROM numbers_mt(100000) WHERE concat(toString(number), repeat('x', 80)) IN (SELECT a FROM t_all_unique_str) FORMAT Null</query>
+
+    <query>SELECT count() FROM numbers_mt(1000000) WHERE number IN (SELECT a FROM t_half_dup) FORMAT Null</query>
+
+    <query>SELECT count() FROM numbers_mt(1000000) WHERE number IN (SELECT a FROM t_mild_dup) FORMAT Null</query>
+
+    <query>SELECT count() FROM numbers_mt(1000000) WHERE number IN (SELECT a FROM t_dup_head_uniq_tail) FORMAT Null</query>
+
+    <query>SELECT count() FROM numbers_mt(100000) WHERE concat('k', toString(number)) IN (SELECT a FROM t_lc_nullable) FORMAT Null</query>
+
+    <!-- A constant NULL key component makes every key contain a NULL, so the set fill (default
+         transform_null_in = 0) drops every row and the set is empty. The preliminary deduplication
+         detects this from the header, emits nothing and stops reading the table entirely. -->
+    <query>SELECT count() FROM numbers_mt(100000) WHERE (number, NULL) IN (SELECT a, CAST(NULL AS Nullable(UInt8)) FROM t_all_unique) FORMAT Null</query>
+
+    <drop_query>DROP TABLE test_{partitions}</drop_query>
+    <drop_query>DROP TABLE test_unsorted_{partitions}</drop_query>
+    <drop_query>DROP TABLE t_skew90_uniq</drop_query>
+    <drop_query>DROP TABLE t_skew30_dup</drop_query>
+    <drop_query>DROP TABLE t_all_unique</drop_query>
+    <drop_query>DROP TABLE t_all_unique_str</drop_query>
+    <drop_query>DROP TABLE t_half_dup</drop_query>
+    <drop_query>DROP TABLE t_mild_dup</drop_query>
+    <drop_query>DROP TABLE t_dup_head_uniq_tail</drop_query>
+    <drop_query>DROP TABLE t_lc_nullable</drop_query>
+</test>

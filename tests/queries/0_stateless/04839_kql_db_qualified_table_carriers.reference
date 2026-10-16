@@ -1,0 +1,16 @@
+-- a let binds a database-qualified table --
+1
+0
+-- through a parameterless tabular function body --
+1
+0
+-- the quoted identifier form of the table name --
+1
+-- a tabular in (...) subquery over a qualified table --
+true
+false
+-- the pipelined form is unaffected --
+3
+-- a scalar binding stays a scalar --
+1
+2

@@ -2,7 +2,7 @@
 
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block_fwd.h>
-#include <Processors/IProcessor.h>
+#include <Processors/IProcessor_fwd.h>
 
 #include <functional>
 
@@ -11,6 +11,7 @@ namespace DB
 
 class Chain;
 class EnabledQuota;
+class Field;
 struct StreamLocalLimits;
 
 class Pipe;
@@ -19,6 +20,7 @@ using Pipes = std::vector<Pipe>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 class ReadProgressCallback;
 
 using OutputPortRawPtrs = std::vector<OutputPort *>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+using InputPortRawPtrs = std::vector<InputPort *>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 /// Pipe is a set of processors which represents the part of pipeline.
 /// Pipe contains a list of output ports, with specified port for totals and specified port for extremes.
@@ -34,6 +36,12 @@ public:
     explicit Pipe(ProcessorPtr source);
     /// Create from source with specified totals end extremes (may be nullptr). Ports should be owned by source.
     explicit Pipe(ProcessorPtr source, OutputPort * output, OutputPort * totals, OutputPort * extremes);
+    /// Create from processors of a seal-gated read: like the ctor from processors, but the
+    /// given input port is allowed to stay disconnected and is registered as a pending seal
+    /// input (it is connected to the build-side seal of the nearest join marked as gating;
+    /// a pending input which is never wired is terminated on pipeline completion and the
+    /// read proceeds unfiltered).
+    Pipe(std::shared_ptr<Processors> processors_, InputPort * pending_seal_input_);
     /// Create from processors. Use all not-connected output ports as output_ports. Check invariants.
     explicit Pipe(std::shared_ptr<Processors> processors_);
 
@@ -51,6 +59,13 @@ public:
     OutputPort * getTotalsPort() const { return totals_port; }
     OutputPort * getExtremesPort() const { return extremes_port; }
 
+    /// The seal inputs of gated reads (see SealGatedReadTransform). They stay disconnected
+    /// until a join marked as gating its probe side connects all of them to its build-side
+    /// seal. Each gated read contributes exactly one (it fans the seal out to its streams
+    /// with its own copy transform), but a probe subtree may unite several gated reads and
+    /// unmarked joins carry the inputs of both of their children upward.
+    const InputPortRawPtrs & getPendingSealInputs() const { return pending_seal_inputs; }
+
     /// Add processor to list, add it output ports to output_ports.
     /// Processor shouldn't have input ports, output ports shouldn't be connected.
     /// Output headers should have same structure and be compatible with current header (if not empty()).
@@ -60,9 +75,10 @@ public:
     void addTotalsSource(ProcessorPtr source);
     void addExtremesSource(ProcessorPtr source);
 
-    /// Drop totals and extremes (create NullSink for them).
+    /// Drop totals and extremes. All three discard through a `DroppingTransform` on the data path.
     void dropTotals();
     void dropExtremes();
+    void dropTotalsAndExtremes();
 
     /// Add processor to list. It should have size() input ports with compatible header.
     /// Output ports should have same headers.
@@ -96,6 +112,9 @@ public:
     /// Changes the number of output ports if needed. Adds (Strict)ResizeProcessor.
     void resize(size_t num_streams, bool strict = false, UInt64 min_outstreams_per_resize_after_split = 0);
 
+    /// Watermark-aware pair to resize. Adds CalibrateWatermarksProcessor.
+    void calibrateWatermarks(size_t num_streams, const Field & initial_watermark);
+
     using Transformer = std::function<Processors(const OutputPortRawPtrs & ports)>;
 
     /// Transform Pipe in general way.
@@ -121,6 +140,9 @@ private:
     OutputPort * totals_port = nullptr;
     OutputPort * extremes_port = nullptr;
 
+    /// See getPendingSealInputs.
+    InputPortRawPtrs pending_seal_inputs;
+
     /// It is the max number of processors which can be executed in parallel for each step.
     /// Usually, it's the same as the number of output ports.
     size_t max_parallel_streams = 0;
@@ -128,6 +150,11 @@ private:
     /// If is set, all newly created processors will be added to this too.
     /// It is needed for debug. See QueryPipelineProcessorsCollector.
     Processors * collected_processors = nullptr;
+
+    /// Discards the requested streams through a `DroppingTransform`. Requires a data output to forward,
+    /// which holds for every caller: totals and extremes can only be added to a non-empty pipe, and
+    /// `addTransform` rejects an empty one.
+    void dropStreams(bool drop_totals, bool drop_extremes);
 
     /// This methods are for QueryPipeline. It is allowed to complete graph only there.
     /// So, we may be sure that Pipe always has output port if not empty.
