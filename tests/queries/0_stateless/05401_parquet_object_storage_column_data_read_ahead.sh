@@ -7,6 +7,7 @@
 # row groups; with one stream and max_parsing_threads = 4 the reader decodes one row group's column data
 # at a time, so max_download_threads = 4 leaves room to read ahead and max_download_threads = 1 does not.
 # Local files are not read ahead.
+# With max_parsing_threads = 16 four decoders admit row groups concurrently while reading ahead.
 # Read-ahead takes at most the column data stage's share (0.2) of the memory the query may still use:
 # the ~8 MB second row group of _big.parquet is not read ahead under a 32 MB limit, but is under 1 GB.
 # Column chunks with an offset index (_pi.parquet) are not read ahead.
@@ -30,6 +31,8 @@ settings="max_threads = 1, max_parsing_threads = 4, input_format_parquet_memory_
 $CLICKHOUSE_CLIENT --query "$query FROM $s3_files SETTINGS $settings, max_download_threads = 4, log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_a_s3_4'"
 $CLICKHOUSE_CLIENT --query "$query FROM $s3_files SETTINGS $settings, max_download_threads = 1, log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_b_s3_1'"
 $CLICKHOUSE_CLIENT --query "$query FROM $local_files SETTINGS $settings, max_download_threads = 4, log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_c_local_4'"
+settings_16="max_threads = 1, max_parsing_threads = 16, input_format_parquet_memory_low_watermark = 0, input_format_parquet_memory_high_watermark = 4294967296, input_format_parquet_enable_row_group_prefetch = 1, enable_parallel_replicas = 0, use_page_cache_for_object_storage = 0"
+$CLICKHOUSE_CLIENT --query "$query FROM $s3_files SETTINGS $settings_16, max_download_threads = 16, log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_g_s3_16_decoders'"
 
 big_file="s3(s3_conn, filename = '${CLICKHOUSE_TEST_UNIQUE_NAME}_big.parquet', format = 'Parquet')"
 $CLICKHOUSE_CLIENT --query "SELECT count(), sum(x) FROM $big_file SETTINGS $settings, max_download_threads = 4, max_memory_usage = 32000000, log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_d_s3_limit_32mb'"
