@@ -107,7 +107,8 @@ void IStorageCluster::read(
     SharedHeader sample_block;
     ASTPtr query_to_send = query_info.query;
 
-    sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query_info.query, context, SelectQueryOptions(processed_stage));
+    sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(
+        query_info.query, context, SelectQueryOptions(processed_stage).positionalArgumentsAlreadyResolved());
 
     /// The nodes that will run the query are the nodes of this storage's own cluster.
     updateQueryToSendIfNeeded(query_to_send, storage_snapshot, context, getClusterName());

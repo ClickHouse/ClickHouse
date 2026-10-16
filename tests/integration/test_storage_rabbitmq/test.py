@@ -41,6 +41,14 @@ instance2 = cluster.add_instance(
     with_rabbitmq=True,
 )
 
+# parallel_view_processing=0: the insert into views gets a single pipeline thread.
+serial_views_instance = cluster.add_instance(
+    "serial_views_instance",
+    main_configs=["configs/rabbitmq.xml"],
+    user_configs=["configs/users_serial_views.xml"],
+    with_rabbitmq=True,
+)
+
 # Helpers
 
 
@@ -2956,7 +2964,7 @@ def test_max_rows_per_message(rabbitmq_cluster, db, unique):
 
     check_expected_result_polling(num_rows, f"SELECT count() FROM {db}.view")
 
-    result = instance.query(f"SELECT * FROM {db}.view")
+    result = instance.query(f"SELECT * FROM {db}.view ORDER BY key")
     assert result == "0\t0\n10\t100\n20\t200\n30\t300\n40\t400\n"
 
 
@@ -3044,7 +3052,7 @@ def test_row_based_formats(rabbitmq_cluster, db, unique):
         for i in range(num_rows):
             expected += str(i * 10) + "\t" + str(i * 100) + "\n"
 
-        result = instance.query(f"SELECT * FROM {db}.view")
+        result = instance.query(f"SELECT * FROM {db}.view ORDER BY key")
         assert result == expected
 
 
@@ -3966,3 +3974,62 @@ def test_disable_message_queue_insertion(rabbitmq_cluster, db, unique, setting_n
             f"<{setting_name}>0</{setting_name}>",
         )
         instance.restart_clickhouse()
+
+
+def test_rabbitmq_read_consumers_in_parallel(rabbitmq_cluster, unique):
+    # With parallel_view_processing=0 the sources of several consumers ran one after another on one thread. They share
+    # the flush deadline of a cycle, so once the first source had used it the others returned after one message each,
+    # and their messages waited many cycles. Measured from publish to insert (squashing would hide it in part counts).
+    node = serial_views_instance
+    node.query(
+        f"""
+        DROP DATABASE IF EXISTS {unique} SYNC;
+        CREATE DATABASE {unique};
+        CREATE TABLE {unique}.rabbitmq (key UInt64, sent Float64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = '{unique}',
+                     rabbitmq_queue_base = '{unique}',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_num_consumers = 4,
+                     rabbitmq_num_queues = 1,
+                     rabbitmq_flush_interval_ms = 1000;
+        CREATE TABLE {unique}.view (key UInt64, delay Float64) ENGINE = MergeTree ORDER BY key;
+        CREATE MATERIALIZED VIEW {unique}.consumer TO {unique}.view AS
+            SELECT key, toUnixTimestamp64Milli(now64(3)) / 1000 - sent AS delay FROM {unique}.rabbitmq;
+        """
+    )
+
+    # A steady trickle for about 20 seconds: every consumer of the queue gets some messages in each cycle.
+    messages_num = 2000
+    credentials = pika.PlainCredentials("root", "clickhouse")
+    connection = pika.BlockingConnection(pika.ConnectionParameters(
+        rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials))
+    # Publish only once all 4 consumers are subscribed (the queue is 1_<queue_base>). The table declares the queue
+    # asynchronously after CREATE returns, and a passive declare of a missing queue closes the channel, so use a new one.
+    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
+    while True:
+        probe = connection.channel()
+        try:
+            consumer_count = probe.queue_declare(queue=f"1_{unique}", passive=True).method.consumer_count
+            probe.close()
+        except pika.exceptions.ChannelClosedByBroker:
+            consumer_count = 0
+        if consumer_count >= 4:
+            break
+        assert time.monotonic() < deadline, "not all consumers subscribed"
+        time.sleep(0.1)
+    channel = connection.channel()
+    channel.confirm_delivery()
+    for i in range(messages_num):
+        channel.basic_publish(exchange=unique, routing_key="", body=json.dumps({"key": i, "sent": time.time()}))
+        time.sleep(0.01)
+    connection.close()
+
+    check_expected_result_polling(messages_num, f"SELECT uniqExact(key) FROM {unique}.view", instance=node)
+    late, max_delay = node.query(f"SELECT countIf(delay > 5), round(max(delay), 1) FROM {unique}.view").split()
+    node.query(f"DROP DATABASE {unique} SYNC")
+    logging.info(f"{late} of {messages_num} messages inserted more than 5 s after publishing, max delay {max_delay} s")
+    # Read in parallel, a message waits about one flush interval (1 s). Read one after another, about half of them
+    # waited longer than 5 s.
+    assert int(late) < messages_num // 20, f"{late} messages inserted more than 5 s after publishing (max {max_delay} s)"

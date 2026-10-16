@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # BACKUP and RESTORE of a TimeSeries table of the current version: the definition and the data
-# of all the inner tables (samples, recent samples, tags, metric families) must survive the round trip.
+# of all the inner tables (samples, recent samples, tags, time ranges, metric families) must survive the round trip.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -32,6 +32,7 @@ function count_inner_tables()
     count_tables_like '.inner\_id.samples.%'
     count_tables_like '.inner\_id.recentsamples.%'
     count_tables_like '.inner\_id.tags.%'
+    count_tables_like '.inner\_id.timeranges.%'
     count_tables_like '.inner\_id.metricfamilies.%'
 }
 
@@ -41,7 +42,7 @@ $CLIENT -q "INSERT INTO ts (metric_name, tags, samples, metric_family, type, uni
     ('disk_usage_bytes', {'job': 'test', 'instance': 'a'}, [(toDateTime64('2026-01-01 00:00:00', 3), 1.)], 'disk_usage_bytes', 'gauge', 'bytes', 'Disk usage'),
     ('up', {'job': 'test'}, [(toDateTime64('2026-01-01 00:00:00', 3), 1.)], 'up', 'gauge', '', 'Whether the target is up')"
 
-echo '--- the table has four inner tables ---'
+echo '--- the table has five inner tables ---'
 count_inner_tables
 
 BACKUP_NAME="${CLICKHOUSE_TEST_UNIQUE_NAME}"

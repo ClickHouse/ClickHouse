@@ -1,5 +1,5 @@
 #include <Core/Defines.h>
-#include <base/hex.h>
+#include <Common/Hex.h>
 #include <Common/PODArray.h>
 #include <Common/StringUtils.h>
 #include <Common/memcpySmall.h>
@@ -795,8 +795,7 @@ void readEscapedStringIntoImpl(Vector & s, ReadBuffer & buf)
                 }
             }
         }
-
-        if constexpr (support_crlf)
+        else if constexpr (support_crlf)
         {
             if (*buf.position() == '\r')
             {
@@ -2304,13 +2303,12 @@ void saveUpToPosition(ReadBuffer & in, Memory<> & memory, char * current)
     const size_t additional_bytes = current - in.position();
     const size_t new_bytes = old_bytes + additional_bytes;
 
-    /// There are no new bytes to add to memory.
-    /// No need to do extra stuff.
-    if (new_bytes == 0)
+    /// Nothing to append, and `in.position()` may be null.
+    if (additional_bytes == 0)
         return;
 
     chassert(in.position() + additional_bytes <= in.buffer().end());
-    memory.resize(new_bytes);
+    memory.resizeAmortized(new_bytes);
     memcpy(memory.data() + old_bytes, in.position(), additional_bytes);
     in.position() = current;
 }
