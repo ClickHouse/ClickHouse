@@ -273,10 +273,11 @@ public:
     /// Removes data related to data part from mark and primary index caches.
     void clearCaches();
 
-    /// Moves the entries of this part in the mark cache, the index mark cache and the primary index
-    /// cache to the keys of `target`, a copy of this part on another disk that has just replaced it
-    /// (see `MergeTreePartsMover::swapClonedPart`). The keys of these caches contain the disk and
-    /// the path of the part, so the entries of this part are useless for `target` as they are.
+    /// Moves the entries of this part in the mark cache, the index mark cache, the primary index
+    /// cache and the vector similarity index cache to the keys of `target`, a copy of this part on
+    /// another disk that has just replaced it (see `MergeTreePartsMover::swapClonedPart`). The keys
+    /// of these caches contain the disk and the path of the part, so the entries of this part are
+    /// useless for `target` as they are.
     /// Also hands over the primary index this part keeps in memory, if `target` has not loaded one.
     /// Projection parts are handled recursively.
     void moveCachesTo(const IMergeTreeDataPart & target) const;
@@ -561,6 +562,10 @@ public:
     IndexPtr tryGetIndex() const;
 
     void removeFromVectorIndexCache(VectorSimilarityIndexCache * vector_similarity_index_cache) const;
+
+    /// Moves the entries of this part in the vector similarity index cache to the keys of `target`.
+    /// The counterpart of `removeFromVectorIndexCache` for a part that is moved to another disk.
+    void moveVectorSimilarityIndexCacheTo(VectorSimilarityIndexCache & vector_similarity_index_cache, const IMergeTreeDataPart & target) const;
 
     void setIndex(Columns index_columns);
     void unloadIndex();

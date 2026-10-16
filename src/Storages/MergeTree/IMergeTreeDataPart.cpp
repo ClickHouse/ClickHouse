@@ -1136,6 +1136,9 @@ void IMergeTreeDataPart::moveCachesTo(const IMergeTreeDataPart & target) const
     if (auto primary_index_cache = storage.getPrimaryIndexCache())
         moveCacheEntry(*primary_index_cache, getPrimaryIndexCacheKey(*this), getPrimaryIndexCacheKey(target));
 
+    if (auto vector_similarity_index_cache = storage.getContext()->getVectorSimilarityIndexCache())
+        moveVectorSimilarityIndexCacheTo(*vector_similarity_index_cache, target);
+
     /// Without the primary index cache, the part keeps its primary index in memory. The copy has
     /// loaded its own already unless `primary_key_lazy_load` is enabled.
     {
@@ -1149,6 +1152,41 @@ void IMergeTreeDataPart::moveCachesTo(const IMergeTreeDataPart & target) const
     {
         if (auto it = target_projection_parts.find(projection_name); it != target_projection_parts.end())
             projection_part->moveCachesTo(*it->second);
+    }
+}
+
+void IMergeTreeDataPart::moveVectorSimilarityIndexCacheTo(
+    VectorSimilarityIndexCache & vector_similarity_index_cache, const IMergeTreeDataPart & target) const
+{
+    if (isProjectionPart())
+        return;
+
+    auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), /*bypass_metadata_cache=*/false);
+    const auto & secondary_indices = metadata_snapshot->getSecondaryIndices();
+    if (secondary_indices.empty())
+        return;
+
+    String from_path = getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart();
+    String to_path = target.getDataPartStorage().getDiskName() + ":" + target.getRelativePathOfActivePart();
+
+    for (const auto & index_description : secondary_indices)
+    {
+        auto skip_index = MergeTreeIndexFactory::instance().get(metadata_snapshot, index_description, *storage.getSettings());
+        if (!skip_index->isVectorSimilarityIndex())
+            continue;
+
+        /// The keys are built like in `MergeTreeIndexReader::read`: the path of the part, the name
+        /// of the index and one entry per index granule. Granules the part does not have (e.g. the
+        /// index was defined after the part was written) simply have no entry.
+        const auto & index_name = skip_index->getFileName();
+        size_t marks_count = index_granularity->getMarksCountForSkipIndex(skip_index->getGranularity());
+        for (size_t mark = 0; mark < marks_count; ++mark)
+        {
+            moveCacheEntry(
+                vector_similarity_index_cache,
+                VectorSimilarityIndexCacheKey{from_path, index_name, mark},
+                VectorSimilarityIndexCacheKey{to_path, index_name, mark});
+        }
     }
 }
 
