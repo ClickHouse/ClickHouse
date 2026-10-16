@@ -31,6 +31,7 @@ public:
     }
 
     static FunctionOverloadResolverPtr createImplied();
+    static FunctionIndexHint * tryGet(const FunctionBasePtr & function_base);
 
     bool isVariadic() const override
     {

@@ -14,6 +14,12 @@ FunctionOverloadResolverPtr FunctionIndexHint::createImplied()
     return std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(function));
 }
 
+FunctionIndexHint * FunctionIndexHint::tryGet(const FunctionBasePtr & function_base)
+{
+    const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(function_base.get());
+    return adaptor ? typeid_cast<FunctionIndexHint *>(adaptor->getFunction().get()) : nullptr;
+}
+
 REGISTER_FUNCTION(IndexHint)
 {
     FunctionDocumentation::Description description = R"(

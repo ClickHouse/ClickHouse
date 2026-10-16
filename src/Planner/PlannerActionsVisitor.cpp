@@ -1204,20 +1204,14 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     const auto & function_node = node->as<FunctionNode &>();
     auto function_node_name = action_node_name_helper.calculateActionNodeName(node);
 
-    auto try_get_index_hint = [](const FunctionBasePtr & function_base) -> FunctionIndexHint *
-    {
-        const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(function_base.get());
-        return adaptor ? typeid_cast<FunctionIndexHint *>(adaptor->getFunction().get()) : nullptr;
-    };
-
-    const auto * query_tree_index_hint = try_get_index_hint(function_node.getFunction());
+    const auto * query_tree_index_hint = FunctionIndexHint::tryGet(function_node.getFunction());
     bool implied = query_tree_index_hint && query_tree_index_hint->isImplied();
 
     size_t index_hint_function_level = actions_stack.size() - 1;
     if (const auto * existing_node = actions_stack[index_hint_function_level].tryGetNode(function_node_name))
     {
         /// Equal hints share one node, so a user-written one makes it not implied.
-        auto * existing_index_hint = try_get_index_hint(existing_node->function_base);
+        auto * existing_index_hint = FunctionIndexHint::tryGet(existing_node->function_base);
         if (existing_index_hint && !implied)
             existing_index_hint->setImplied(false);
 
