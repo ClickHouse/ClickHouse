@@ -145,7 +145,7 @@
 	url = https://github.com/abseil/abseil-cpp.git
 [submodule "contrib/fast_float"]
 	path = contrib/fast_float
-	url = https://github.com/fastfloat/fast_float
+	url = https://github.com/ClickHouse/fast_float
 [submodule "contrib/NuRaft"]
 	path = contrib/NuRaft
 	url = https://github.com/ClickHouse/NuRaft
@@ -208,7 +208,7 @@
 	url = https://github.com/ClickHouse/nats.c
 [submodule "contrib/vectorscan"]
 	path = contrib/vectorscan
-	url = https://github.com/ClickHouse/vectorscan.git
+	url = https://github.com/ClickHouse/vectorscan
 [submodule "contrib/llvm-project"]
 	path = contrib/llvm-project
 	url = https://github.com/ClickHouse/llvm-project
@@ -336,9 +336,6 @@
 [submodule "contrib/sz3"]
 	path = contrib/sz3
 	url = https://github.com/ClickHouse/SZ3.git
-[submodule "contrib/numactl"]
-	path = contrib/numactl
-	url = https://github.com/ClickHouse/numactl.git
 [submodule "contrib/postgres"]
 	path = contrib/postgres
 	url = https://github.com/ClickHouse/postgres.git
@@ -420,6 +417,9 @@
 [submodule "contrib/mapbox-geometry"]
 	path = contrib/mapbox-geometry
 	url = https://github.com/ClickHouse/geometry.hpp
+[submodule "contrib/pcodec"]
+	path = contrib/pcodec
+	url = https://github.com/ClickHouse/pcodec.git
 [submodule "contrib/zxc"]
 	path = contrib/zxc
 	url = https://github.com/hellobertrand/zxc
@@ -477,3 +477,6 @@
 [submodule "contrib/spdlog"]
 	path = contrib/spdlog
 	url = https://github.com/gabime/spdlog.git
+[submodule "contrib/parquet-testing"]
+	path = contrib/parquet-testing
+	url = https://github.com/apache/parquet-testing

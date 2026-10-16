@@ -1276,10 +1276,12 @@
 
     <!-- Embedded Iceberg REST catalog server (experimental). Not recommended for production use.
          The catalog state is stored in Keeper under <zookeeper_path>/<warehouse>.
-         New tables are placed under <base_location> and their metadata files are written using <storage_named_collection>. -->
+         New tables are placed under <base_location> and their metadata files are written using <storage_named_collection>.
+         Disabled unless <port> or <secure_port> is set. -->
     <!--
     <iceberg_rest_catalog>
         <port>8182</port>
+        <secure_port>8183</secure_port>
         <warehouse>my_warehouse</warehouse>
         <base_location>s3://my-bucket/warehouse</base_location>
         <storage_named_collection>iceberg_warehouse_storage</storage_named_collection>
@@ -1858,6 +1860,7 @@
     <cpu_slot_preemption>true</cpu_slot_preemption>
     <cpu_slot_quantum_ns>10000000</cpu_slot_quantum_ns>
     <cpu_slot_preemption_timeout_ms>1000</cpu_slot_preemption_timeout_ms>
+    <cpu_slot_parking>true</cpu_slot_parking>
     -->
 
     <!-- Settings to tune cpu and memory overload warnings for system.warnings.

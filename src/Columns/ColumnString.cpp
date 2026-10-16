@@ -362,14 +362,15 @@ ALWAYS_INLINE char * ColumnString::serializeValueIntoMemory(size_t n, char * mem
     return memory + string_size;
 }
 
-void ColumnString::batchSerializeValueIntoMemory(std::span<char *> memories, const IColumn::SerializationSettings * settings) const
+void ColumnString::batchSerializeValueIntoMemory(
+    std::span<char *> memories, size_t start_row, const IColumn::SerializationSettings * settings) const
 {
-    chassert(memories.size() == size());
+    chassert(start_row + memories.size() <= size());
     bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
     for (size_t i = 0; i < memories.size(); ++i)
     {
-        size_t string_size = sizeAt(i) + serialize_string_with_zero_byte;
-        size_t offset = offsetAt(i);
+        size_t string_size = sizeAt(start_row + i) + serialize_string_with_zero_byte;
+        size_t offset = offsetAt(start_row + i);
 
         memcpy(memories[i], &string_size, sizeof(string_size));
         memories[i] += sizeof(string_size);

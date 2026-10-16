@@ -1,0 +1,45 @@
+---
+sidebarTitle: 'ThoughtSpot'
+slug: /integrations/thoughtspot
+keywords: ['clickhouse', 'ThoughtSpot', 'connect', 'integrate', 'ui']
+description: 'O ThoughtSpot é uma plataforma de analytics com IA que permite buscar, explorar e visualizar seus dados em tempo real.'
+title: 'ThoughtSpot'
+doc_type: 'guide'
+integration:
+  - support_level: 'partner'
+  - category: 'data_visualization'
+---
+
+import ConnectionDetails from '/snippets/pt-BR/_gather_your_details_http.mdx';
+
+import { PartnerBadge } from "/snippets/pt-BR/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+O ThoughtSpot pode se conectar ao ClickHouse Cloud ou a uma implantação on-premise por meio do seu connector nativo para ClickHouse.
+
+<Steps>
+  <Step title="Reúna os detalhes da sua conexão" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
+
+  <Step title="Crie uma conexão ClickHouse no ThoughtSpot" id="2-create-a-clickhouse-connection-in-thoughtspot">
+    1. Acesse **Data workspace** &gt; **Connections**.
+
+    2. Clique em **+ Create connection**, selecione o bloco **ClickHouse** e clique em **Next**.
+
+    3. Insira um nome para a conexão, uma descrição opcional e os detalhes de conexão do ClickHouse que você reuniu na etapa anterior. Em seguida, clique em **Next**. Para obter detalhes sobre cada atributo, consulte a [referência de conexão do ClickHouse](https://docs.thoughtspot.com/cloud/latest/connections-clickhouse-reference) na documentação do ThoughtSpot.
+
+    4. (Opcional) Para configurar um tempo limite no nível da consulta, abra o menu **Advanced Config**. Em **Key**, insira `queryTimeoutSeconds`. Em **Value**, insira o tempo limite em segundos. Recomenda-se um máximo de 10 minutos.
+
+    5. (Opcional) Para fornecer pares chave-valor adicionais, abra o menu **Advanced Config** e insira uma **Key** e um **Value**. Clique no sinal de mais (**+**) para adicionar outros pares.
+
+       <Note>
+         Todos os pares chave-valor inseridos devem estar definidos na sua fonte de dados ClickHouse. Os pares chave-valor diferenciam maiúsculas de minúsculas.
+       </Note>
+
+    6. Selecione as tabelas e colunas que deseja usar e clique em **Create connection**. Uma mensagem confirmará o número de tabelas e colunas adicionadas.
+
+    A conexão passa a aparecer na página **Data workspace** &gt; **Connections**. Agora você pode pesquisar seus dados do ClickHouse e executar consultas em tempo real nas tabelas vinculadas no ThoughtSpot.
+  </Step>
+</Steps>
