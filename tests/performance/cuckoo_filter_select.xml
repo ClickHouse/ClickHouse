@@ -1,0 +1,14 @@
+<test new_server_only="1">
+    <settings>
+        <allow_experimental_cuckoo_filter_index>1</allow_experimental_cuckoo_filter_index>
+    </settings>
+    <create_query>DROP TABLE IF EXISTS test_cf_indexOf</create_query>
+    <create_query>CREATE TABLE test_cf_indexOf (`id` int, `ary` Array(LowCardinality(Nullable(String))), INDEX idx_ary ary TYPE cuckoo_filter(0.01) GRANULARITY 1) ENGINE = MergeTree() ORDER BY id</create_query>
+
+    <fill_query>INSERT INTO test_cf_indexOf SELECT number AS id, [CAST(id, 'String'), CAST(id + 1, 'String'), CAST(id + 2, 'String')] FROM numbers(1000000)</fill_query>
+
+    <query>SELECT count() FROM test_cf_indexOf WHERE indexOf(ary, '1') = 2</query>
+    <query>SELECT count() FROM test_cf_indexOf WHERE indexOf(ary, '1') > 0</query>
+
+    <drop_query>DROP TABLE IF EXISTS test_cf_indexOf</drop_query>
+</test>
