@@ -120,6 +120,14 @@ off_t ReadBufferFromFileView::seek(off_t off, int whence)
     return result - left_bound;
 }
 
+size_t ReadBufferFromFileView::readBigAt(char * to, size_t n, size_t offset, const std::function<bool(size_t)> & progress_callback) const
+{
+    const size_t size = right_bound - left_bound;
+    if (offset >= size)
+        return 0;
+    return impl->readBigAt(to, std::min(n, size - offset), left_bound + offset, progress_callback);
+}
+
 template <typename Op>
 void ReadBufferFromFileView::executeWithOriginalBuffer(Op && op)
 {

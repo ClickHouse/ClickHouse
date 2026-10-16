@@ -6,7 +6,7 @@
 --   4. DEDUPLICATE: OPTIMIZE ... DEDUPLICATE and its DRY RUN form are rejected
 --   5. merged index: an overwrite after the merge kills the key's own row when a source had dead rows
 --      (interleaved sources; no sorting key with a source whose every row is dead)
---   6. storage: the insert, the merge and a mutation write Full parts under Packed storage settings
+--   6. storage: the insert, the merge and a mutation write Packed parts under Packed part storage settings
 
 SET enable_unique_key = 1;
 SET optimize_trivial_count_query = 0;
@@ -148,7 +148,7 @@ SELECT 'no_sorting_key_count', count(), countDistinct(id) FROM uk_merge_index; -
 
 DROP TABLE uk_merge_index;
 
--- 6. storage: red if a UNIQUE KEY part can be written with Packed storage.
+-- 6. storage: red if a UNIQUE KEY part is not Packed under Packed settings.
 DROP TABLE IF EXISTS uk_merge_storage;
 CREATE TABLE uk_merge_storage (id UInt32, v UInt32)
 ENGINE = MergeTree ORDER BY id UNIQUE KEY (id)
