@@ -345,10 +345,6 @@ void convertColumnToNullable(ColumnWithTypeAndName & column)
         return;
     }
 
-    /// The type decides: a column cannot tell that its type refuses `Nullable`.
-    if (!isNullableOrLowCardinalityNullable(convertTypeToNullable(column.type)))
-        return;
-
     ColumnPtr nullable_column = tryConvertColumnToNullable(column.column);
     if (nullable_column)
     {

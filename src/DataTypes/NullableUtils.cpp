@@ -44,7 +44,7 @@ static bool canExtractedSubcolumnsBeInsideNullable(const ColumnPtr & column)
 bool canExtractedSubcolumnsBeInsideNullable(const DataTypePtr & type)
 {
     if (isTuple(type))
-        return isNullableTupleInExtractedSubcolumnsEnabledByGlobalSetting() && type->canBeInsideNullable();
+        return isNullableTupleInExtractedSubcolumnsEnabledByGlobalSetting();
 
     return type->canBeInsideNullable();
 }
@@ -205,19 +205,7 @@ SerializationPtr NullableSubcolumnCreator::create(const SerializationPtr & prev_
 
 ColumnPtr NullableSubcolumnCreator::create(const ColumnPtr & prev) const
 {
-    return createColumn(prev, canExtractedSubcolumnsBeInsideNullable(prev));
-}
-
-ColumnPtr NullableSubcolumnCreator::create(const ColumnPtr & prev, const DataTypePtr & prev_type) const
-{
-    if (!prev_type)
-        return create(prev);
-    return createColumn(prev, canExtractedSubcolumnsBeInsideNullable(prev_type));
-}
-
-ColumnPtr NullableSubcolumnCreator::createColumn(const ColumnPtr & prev, bool wrap) const
-{
-    if (wrap)
+    if (canExtractedSubcolumnsBeInsideNullable(prev))
         return ColumnNullable::create(prev, null_map);
 
     if (null_map)

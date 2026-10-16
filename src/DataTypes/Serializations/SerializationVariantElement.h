@@ -116,9 +116,6 @@ public:
         /// The callers additionally require the selection to still be a bare `UInt8`.
         bool absenceGoesIntoNullMap() const { return selected_subcolumn_is_null_map && !make_nullable; }
 
-        /// `prev_type` is nullptr when only the column is known.
-        ColumnPtr createColumn(const ColumnPtr & prev, const DataTypePtr & prev_type) const;
-
     public:
         VariantSubcolumnCreator(
             const ColumnPtr & local_discriminators_,
@@ -132,7 +129,6 @@ public:
 
         DataTypePtr create(const DataTypePtr & prev) const override;
         ColumnPtr create(const ColumnPtr & prev) const override;
-        ColumnPtr create(const ColumnPtr & prev, const DataTypePtr & prev_type) const override;
         SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override;
         std::shared_ptr<const ISubcolumnCreator> specializeForSelectedSubcolumn(const Substream & selected) const override;
     };

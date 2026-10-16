@@ -7,6 +7,7 @@
 #include <Common/typeid_cast.h>
 #include <Core/Field.h>
 #include <base/TypeLists.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -30,7 +31,13 @@ namespace ErrorCodes
 DataTypeLowCardinality::DataTypeLowCardinality(DataTypePtr dictionary_type_)
         : dictionary_type(std::move(dictionary_type_))
 {
-    if (!dictionary_type->canBeInsideLowCardinality())
+    auto inner_type = dictionary_type;
+    if (dictionary_type->isNullable())
+        inner_type = static_cast<const DataTypeNullable &>(*dictionary_type).getNestedType();
+
+    /// For `SimpleAggregateFunction(f, Nullable(T))` the custom name is on the `Nullable` type itself.
+    if (!inner_type->canBeInsideLowCardinality()
+        || typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(dictionary_type->getCustomName()))
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "DataTypeLowCardinality is supported only for numbers, strings, Date or DateTime, but got {}",
                         dictionary_type->getName());

@@ -254,13 +254,13 @@ private:
     /** For a QBit, reconstructs the n-th vector element from its bit planes. Only the planes of the single
       * stride group that contains the element are read.
       */
-    ColumnPtr executeQBit(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const;
+    ColumnPtr executeQBit(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const;
 
     template <typename T>
-    ColumnPtr executeQBitImpl(const ColumnsWithTypeAndName & arguments, size_t input_rows_count, bool result_is_nullable) const;
+    ColumnPtr executeQBitImpl(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const;
 
     template <typename T>
-    ColumnPtr executeQBitWithArrayIndex(const ColumnsWithTypeAndName & arguments, size_t input_rows_count, bool result_is_nullable) const;
+    ColumnPtr executeQBitWithArrayIndex(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const;
 
     using Offsets = ColumnArray::Offsets;
 
@@ -2221,7 +2221,7 @@ ColumnPtr FunctionArrayElement<mode>::applyOuterNullMap(
     /// OR-ed in, which keeps the (type, column) pair consistent with `getReturnTypeImpl` and with reading
     /// the subcolumn directly.
     if (canExtractedSubcolumnsBeInsideNullableOrLowCardinalityNullable(element_type) || canContainNull(*element_type))
-        return NullableSubcolumnCreator(null_map_column).create(element_column, element_type);
+        return NullableSubcolumnCreator(null_map_column).create(element_column);
 
     /// A typed path that has no NULL representation at all (e.g. `Array`, `Map`) is default-filled for the
     /// outer-NULL rows, matching the stored subcolumn, instead of leaking the payload hidden under the mask.
@@ -2616,24 +2616,20 @@ ColumnPtr FunctionArrayElement<mode>::executeWithArrayIndex(
 }
 
 template <ArrayElementExceptionMode mode>
-ColumnPtr FunctionArrayElement<mode>::executeQBit(
-    const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+ColumnPtr FunctionArrayElement<mode>::executeQBit(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
 {
     const auto & qbit_type = assert_cast<const DataTypeQBit &>(*removeNullable(arguments[0].type));
-    /// The element can be `NULL` only when the result type says so: a `SimpleAggregateFunction` element cannot.
-    const auto * result_array_type = typeid_cast<const DataTypeArray *>(result_type.get());
-    const bool result_is_nullable = (result_array_type ? result_array_type->getNestedType() : result_type)->isNullable();
 
     switch (qbit_type.getElementType()->getTypeId())
     {
         case TypeIndex::Int8:
-            return executeQBitImpl<Int8>(arguments, input_rows_count, result_is_nullable);
+            return executeQBitImpl<Int8>(arguments, input_rows_count);
         case TypeIndex::BFloat16:
-            return executeQBitImpl<BFloat16>(arguments, input_rows_count, result_is_nullable);
+            return executeQBitImpl<BFloat16>(arguments, input_rows_count);
         case TypeIndex::Float32:
-            return executeQBitImpl<Float32>(arguments, input_rows_count, result_is_nullable);
+            return executeQBitImpl<Float32>(arguments, input_rows_count);
         case TypeIndex::Float64:
-            return executeQBitImpl<Float64>(arguments, input_rows_count, result_is_nullable);
+            return executeQBitImpl<Float64>(arguments, input_rows_count);
         default:
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR, "Unexpected QBit element type {} in function {}", qbit_type.getElementType()->getName(), getName());
@@ -2642,8 +2638,7 @@ ColumnPtr FunctionArrayElement<mode>::executeQBit(
 
 template <ArrayElementExceptionMode mode>
 template <typename T>
-ColumnPtr FunctionArrayElement<mode>::executeQBitWithArrayIndex(
-    const ColumnsWithTypeAndName & arguments, size_t input_rows_count, bool result_is_nullable) const
+ColumnPtr FunctionArrayElement<mode>::executeQBitWithArrayIndex(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
 {
     using Word = std::conditional_t<
         sizeof(T) == 1,
@@ -2690,6 +2685,7 @@ ColumnPtr FunctionArrayElement<mode>::executeQBitWithArrayIndex(
     auto & result_data = result->getData();
     memset(result_data.data(), 0, total_indices * sizeof(T));
 
+    const bool result_is_nullable = is_null_mode || nullable_index || source_null_map;
     ColumnUInt8::MutablePtr null_map;
     if (result_is_nullable)
         null_map = ColumnUInt8::create(total_indices, UInt8(0));
@@ -2726,8 +2722,7 @@ ColumnPtr FunctionArrayElement<mode>::executeQBitWithArrayIndex(
             {
                 if (source_is_null(row))
                 {
-                    if (null_map)
-                        null_map->getData()[output_row] = 1;
+                    null_map->getData()[output_row] = 1;
                     continue;
                 }
 
@@ -2756,10 +2751,7 @@ ColumnPtr FunctionArrayElement<mode>::executeQBitWithArrayIndex(
                 if (element)
                     extract_into(output_row, qbit_is_const ? 0 : row, *element);
                 else if constexpr (is_null_mode)
-                {
-                    if (null_map)
-                        null_map->getData()[output_row] = 1;
-                }
+                    null_map->getData()[output_row] = 1;
             }
         }
     };
@@ -2804,8 +2796,7 @@ ColumnPtr FunctionArrayElement<mode>::executeQBitWithArrayIndex(
   */
 template <ArrayElementExceptionMode mode>
 template <typename T>
-ColumnPtr FunctionArrayElement<mode>::executeQBitImpl(
-    const ColumnsWithTypeAndName & arguments, size_t input_rows_count, bool result_is_nullable) const
+ColumnPtr FunctionArrayElement<mode>::executeQBitImpl(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
 {
     /// Note: the 8-bit word is `uint8_t` (not ClickHouse's `UInt8`, which is `char8_t`).
     using Word = std::conditional_t<
@@ -2814,7 +2805,7 @@ ColumnPtr FunctionArrayElement<mode>::executeQBitImpl(
         std::conditional_t<sizeof(T) == 2, UInt16, std::conditional_t<sizeof(T) == 4, UInt32, UInt64>>>;
 
     if (checkAndGetDataType<DataTypeArray>(arguments[1].type.get()))
-        return executeQBitWithArrayIndex<T>(arguments, input_rows_count, result_is_nullable);
+        return executeQBitWithArrayIndex<T>(arguments, input_rows_count);
 
     const auto & qbit_type = assert_cast<const DataTypeQBit &>(*removeNullable(arguments[0].type));
     const size_t dimension = qbit_type.getDimension();
@@ -2843,7 +2834,9 @@ ColumnPtr FunctionArrayElement<mode>::executeQBitImpl(
 
     const bool index_is_nullable = arguments[1].type->isNullable();
     ColumnUInt8::MutablePtr null_map;
-    if (result_is_nullable)
+    if constexpr (is_null_mode)
+        null_map = ColumnUInt8::create(input_rows_count, UInt8(0));
+    else if (source_null_map || index_is_nullable)
         null_map = ColumnUInt8::create(input_rows_count, UInt8(0));
 
     auto plane_chars = [&](size_t group, size_t bit) -> const UInt8 *
@@ -2876,10 +2869,7 @@ ColumnPtr FunctionArrayElement<mode>::executeQBitImpl(
     auto set_out_of_range = [&](size_t row)
     {
         if constexpr (is_null_mode)
-        {
-            if (null_map)
-                null_map->getData()[row] = 1;
-        }
+            null_map->getData()[row] = 1;
         /// res_data[row] stays the default (zero).
     };
 
@@ -2920,8 +2910,6 @@ ColumnPtr FunctionArrayElement<mode>::executeQBitImpl(
             element = resolve_signed(index.safeGet<Int64>());
         else if (index.isNull() && index_is_nullable)
         {
-            if (!null_map)
-                return res;
             null_map->getData().assign(input_rows_count, UInt8(1));
             return ColumnNullable::create(std::move(res), std::move(null_map));
         }
@@ -2933,10 +2921,7 @@ ColumnPtr FunctionArrayElement<mode>::executeQBitImpl(
             for (size_t row = 0; row < input_rows_count; ++row)
             {
                 if (source_is_null(row))
-                {
-                    if (null_map)
-                        null_map->getData()[row] = 1;
-                }
+                    null_map->getData()[row] = 1;
                 else
                     set_out_of_range(row);
             }
@@ -2958,8 +2943,7 @@ ColumnPtr FunctionArrayElement<mode>::executeQBitImpl(
                 {
                     if (source_is_null(row))
                     {
-                        if (null_map)
-                            null_map->getData()[row] = 1;
+                        null_map->getData()[row] = 1;
                         continue;
                     }
                     const size_t qbit_row = qbit_is_const ? 0 : row;
@@ -2983,10 +2967,14 @@ ColumnPtr FunctionArrayElement<mode>::executeQBitImpl(
             const auto & indices = col_index->getData();
             for (size_t row = 0; row < input_rows_count; ++row)
             {
-                if (source_is_null(row) || (index_null_map && (*index_null_map)[row]))
+                if (source_is_null(row))
                 {
-                    if (null_map)
-                        null_map->getData()[row] = 1;
+                    null_map->getData()[row] = 1;
+                    continue;
+                }
+                if (index_null_map && (*index_null_map)[row])
+                {
+                    null_map->getData()[row] = 1;
                     continue;
                 }
                 std::optional<size_t> element;
@@ -3070,7 +3058,7 @@ DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const DataTypes & argu
 
         /// The n-th element of a QBit vector is reconstructed at the full precision of the element type.
         const auto & element_type = qbit_type->getElementType();
-        return (is_null_mode || qbit_is_nullable || arguments[1]->isNullable()) && element_type->canBeInsideNullable() ? makeNullable(element_type) : element_type;
+        return (is_null_mode || qbit_is_nullable || arguments[1]->isNullable()) ? makeNullable(element_type) : element_type;
     }
 
     const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
@@ -3306,7 +3294,7 @@ ColumnPtr FunctionArrayElement<mode>::executeImpl(
     }
 
     if (is_qbit)
-        return executeQBit(arguments, result_type, input_rows_count);
+        return executeQBit(arguments, input_rows_count);
 
     const auto * col_object = checkAndGetColumn<ColumnObject>(arguments[0].column.get());
     const auto * col_const_object = checkAndGetColumnConst<ColumnObject>(arguments[0].column.get());
@@ -3365,7 +3353,7 @@ ColumnPtr FunctionArrayElement<mode>::executeImpl(
         ArrayImpl::NullMapBuilder<mode> builder;
         auto res = perform(arguments, removeNullable(result_type), builder, input_rows_count);
 
-        if (builder && removeNullable(result_type)->canBeInsideNullable())
+        if (builder && res->canBeInsideNullable())
             return ColumnNullable::create(res, std::move(builder).getNullMapColumnPtr());
 
         return res;
@@ -3521,7 +3509,7 @@ ColumnPtr FunctionArrayElement<mode>::executeReplicated(
             std::move(result), builder ? std::move(builder).getNullMapColumnPtr() : ColumnUInt8::create());
 
     ColumnPtr immutable_result = std::move(result);
-    if (builder && removeNullable(result_type)->canBeInsideNullable())
+    if (builder && immutable_result->canBeInsideNullable())
         return ColumnNullable::create(immutable_result, std::move(builder).getNullMapColumnPtr());
 
     return immutable_result;

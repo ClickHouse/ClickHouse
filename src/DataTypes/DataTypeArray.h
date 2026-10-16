@@ -36,7 +36,7 @@ public:
         return "Array";
     }
 
-    bool canBeInsideNullableImpl() const override
+    bool canBeInsideNullable() const override
     {
         return false;
     }

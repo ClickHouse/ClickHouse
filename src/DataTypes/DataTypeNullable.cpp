@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/NullableUtils.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -29,7 +30,9 @@ namespace ErrorCodes
 DataTypeNullable::DataTypeNullable(const DataTypePtr & nested_data_type_)
     : nested_data_type{nested_data_type_}
 {
-    if (!nested_data_type->canBeInsideNullable())
+    /// Merges apply a `SimpleAggregateFunction` only to a column whose outermost type it is.
+    if (!nested_data_type->canBeInsideNullable()
+        || typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(nested_data_type->getCustomName()))
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Nested type {} cannot be inside Nullable type", nested_data_type->getName());
 }
 
@@ -125,7 +128,7 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeNullable::getDynamicSubcolumnI
     res->data.serialization = creator.create(nested_subcolumn_info->data.serialization, nested_subcolumn_info->data.type);
     res->data.type = creator.create(nested_subcolumn_info->data.type);
     if (data.column)
-        res->data.column = creator.create(nested_subcolumn_info->data.column, nested_subcolumn_info->data.type);
+        res->data.column = creator.create(nested_subcolumn_info->data.column);
 
     /// Reached through the nullable elements, exactly as the static enumeration would reach it.
     res->substreams_path.emplace_back(ISerialization::Substream::NullableElements);
@@ -268,18 +271,6 @@ DataTypePtr makeNullableOrLowCardinalityNullableSafe(const DataTypePtr & type)
     }
 
     return makeNullableSafe(type);
-}
-
-ColumnPtr makeNullableSafe(const ColumnPtr & column, const DataTypePtr & type)
-{
-    return makeNullableSafe(type)->isNullable() ? makeNullableSafe(column) : column;
-}
-
-ColumnPtr makeNullableOrLowCardinalityNullableSafe(const ColumnPtr & column, const DataTypePtr & type)
-{
-    return isNullableOrLowCardinalityNullable(makeNullableOrLowCardinalityNullableSafe(type))
-        ? makeNullableOrLowCardinalityNullableSafe(column)
-        : column;
 }
 
 DataTypePtr removeNullableOrLowCardinalityNullable(const DataTypePtr & type)

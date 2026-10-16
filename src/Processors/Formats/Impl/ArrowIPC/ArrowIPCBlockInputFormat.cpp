@@ -28,7 +28,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnsCommon.h>
 #include <DataTypes/IDataType.h>
-#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeArray.h>
@@ -241,7 +240,7 @@ ColumnWithTypeAndName prepareArrowColumnForCast(
     {
         const auto & from_null_column = assert_cast<const ColumnNullable &>(*from.column);
         ColumnWithTypeAndName nested{from_null_column.getNestedColumnPtr(), from_null->getNestedType(), from.name};
-        const DataTypePtr to_nested = removeSimpleAggregateFunction(removeNullable(to));
+        const DataTypePtr to_nested = removeNullable(to);
         if (isTuple(nested.type) && isTuple(to_nested))
         {
             /// Null structs contain undefined child values. Convert only visible rows, then restore the

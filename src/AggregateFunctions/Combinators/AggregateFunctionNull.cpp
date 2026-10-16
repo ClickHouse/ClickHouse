@@ -127,11 +127,11 @@ public:
             return new_function;
         }
 
-        bool flag_like_nullable = !properties.returns_default_when_only_null
-            && removeSimpleAggregateFunction(nested_function->getResultType())->canBeInsideNullable();
-        bool serialize_flag = flag_like_nullable || properties.returns_default_when_only_null;
-        /// A `SimpleAggregateFunction` result cannot be `Nullable`; its states keep the flag of its storage type.
-        bool return_type_is_nullable = flag_like_nullable && nested_function->getResultType()->canBeInsideNullable();
+        bool return_type_is_nullable = !properties.returns_default_when_only_null && nested_function->getResultType()->canBeInsideNullable();
+        bool serialize_flag = return_type_is_nullable || properties.returns_default_when_only_null;
+        /// A `SimpleAggregateFunction` cannot be inside `Nullable`; the state keeps its flag.
+        if (typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(nested_function->getResultType()->getCustomName()))
+            return_type_is_nullable = false;
 
         if (arguments.size() == 1)
         {

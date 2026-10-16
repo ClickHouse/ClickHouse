@@ -2,7 +2,6 @@
 #include <Processors/Transforms/TotalsHavingTransform.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Columns/ColumnNullable.h>
-#include <DataTypes/DataTypeNullable.h>
 
 namespace DB
 {
@@ -43,7 +42,7 @@ void GroupByModifierTransform::mergeConsumed()
     if (use_nulls)
     {
         for (auto key : keys)
-            columns[key] = makeNullableOrLowCardinalityNullableSafe(columns[key], getInputPort().getHeader().getByPosition(key).type);
+            columns[key] = makeNullableOrLowCardinalityNullableSafe(columns[key]);
     }
     current_chunk = Chunk{ columns, rows };
 

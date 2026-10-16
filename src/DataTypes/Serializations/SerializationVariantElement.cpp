@@ -5,7 +5,6 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/MaskOperations.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <IO/ReadHelpers.h>
 #include <Columns/IColumn.h>
 
@@ -429,8 +428,7 @@ SerializationPtr SerializationVariantElement::VariantSubcolumnCreator::create(co
 {
     /// prev_type is the type prev serializes, i.e. the requested subcolumn before create(prev_type)
     /// wraps it. The wrap only adds nullability when the type does not have it already.
-    const bool nullable_added = make_nullable && prev_type && isNullableOrLowCardinalityNullable(create(prev_type))
-        && !isNullableOrLowCardinalityNullable(prev_type);
+    const bool nullable_added = make_nullable && prev_type && !isNullableOrLowCardinalityNullable(prev_type);
     const bool absent_element_is_null = absenceGoesIntoNullMap() && prev_type && isUInt8(prev_type);
     return SerializationVariantElement::create(
         prev, variant_element_name, global_variant_discriminator, num_variants, nullable_added, absent_element_is_null);
@@ -438,23 +436,10 @@ SerializationPtr SerializationVariantElement::VariantSubcolumnCreator::create(co
 
 ColumnPtr SerializationVariantElement::VariantSubcolumnCreator::create(const DB::ColumnPtr & prev) const
 {
-    return createColumn(prev, nullptr);
-}
-
-ColumnPtr SerializationVariantElement::VariantSubcolumnCreator::create(const DB::ColumnPtr & prev, const DataTypePtr & prev_type) const
-{
-    return createColumn(prev, prev_type);
-}
-
-ColumnPtr SerializationVariantElement::VariantSubcolumnCreator::createColumn(const DB::ColumnPtr & prev, const DataTypePtr & prev_type) const
-{
-    auto make_nullable_safe = [&](const ColumnPtr & column)
-    { return prev_type ? makeNullableOrLowCardinalityNullableSafe(column, prev_type) : makeNullableOrLowCardinalityNullableSafe(column); };
-
     /// Case when original Variant column contained only one non-empty variant and no NULLs.
     /// In this case just use this variant.
     if (prev->size() == local_discriminators->size())
-        return make_nullable ? make_nullable_safe(prev) : prev;
+        return make_nullable ? makeNullableOrLowCardinalityNullableSafe(prev) : prev;
 
     /// A null map is the one selection whose value for an absent element is not its default: 0 reads as
     /// "not null", but the element is not there, so the extracted value is `NULL` and the map owes 1.
@@ -463,7 +448,7 @@ ColumnPtr SerializationVariantElement::VariantSubcolumnCreator::createColumn(con
     /// If this variant is empty, fill result column with default values.
     if (prev->empty() && !fill_absent_rows_with_null)
     {
-        auto res = make_nullable ? make_nullable_safe(prev)->cloneEmpty() : prev->cloneEmpty();
+        auto res = make_nullable ? makeNullableOrLowCardinalityNullableSafe(prev)->cloneEmpty() : prev->cloneEmpty();
         res->insertManyDefaults(local_discriminators->size());
         return res;
     }
@@ -498,7 +483,7 @@ ColumnPtr SerializationVariantElement::VariantSubcolumnCreator::createColumn(con
     else
         res_column->expand(absent_rows, /*inverted = */ true);
 
-    if (make_nullable && (prev_type ? prev_type->canBeInsideNullable() : prev->canBeInsideNullable()))
+    if (make_nullable && prev->canBeInsideNullable())
     {
         if (null_map_from_discriminators)
         {

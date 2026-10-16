@@ -414,7 +414,6 @@ Block InterpreterInsertQuery::convertSelectToInsertSchema(
                     && !isDynamic(query_columns[col_idx].type)
                     && output_columns.has(query_columns[col_idx].name))
                 {
-                    /// `SimpleAggregateFunction` cannot be inside `Nullable`, its storage type can.
                     query_sample_block.setColumn(
                         col_idx,
                         ColumnWithTypeAndName(
