@@ -1807,6 +1807,30 @@ void ObjectStorageQueueSource::setUncertainCommit()
         file.metadata->setUncertainCommit();
 }
 
+void ObjectStorageQueueSource::releaseAfterChangedGeneration(const std::string & exception_message)
+{
+    /// Other modes release the batch by removing its processing nodes; here only the local claims exist.
+    Coordination::Requests requests;
+    for (auto & file : processed_files)
+    {
+        if (file.state == FileState::Processed)
+        {
+            /// The inserted files go back to the queue without using a retry, as in the other modes.
+            file.metadata->prepareFailedRequests(requests, exception_message, /* reduce_retry_count */ false);
+            file.metadata->finalizeResetProcessing();
+        }
+        else if (file.state == FileState::ErrorOnRead)
+        {
+            /// Their failure was already prepared by `prepareCommitRequests`.
+            if (file.metadata->wasProcessingResetWithoutFailure())
+                file.metadata->finalizeResetProcessing();
+            else
+                file.metadata->finalizeFailed(file.exception_during_read);
+        }
+    }
+    chassert(requests.empty());
+}
+
 void ObjectStorageQueueSource::finalizeCommit(
     bool insert_succeeded,
     UInt64 commit_id,
@@ -1976,7 +2000,16 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
                 files_metadata->getTableMetadata(),
                 after_processing_settings,
                 files_metadata->getKeeperIdentity());
-            postProcessor.process(successful_objects, post_processing_failed_paths);
+            try
+            {
+                postProcessor.process(successful_objects, post_processing_failed_paths);
+            }
+            catch (...)
+            {
+                if (mode == ObjectStorageQueueMode::EXCLUSIVE && ObjectStorageQueuePostProcessor::isChangedGeneration(getCurrentExceptionCode()))
+                    releaseAfterChangedGeneration(getCurrentExceptionMessage(false));
+                throw;
+            }
 
             if (mode == ObjectStorageQueueMode::EXCLUSIVE && !post_processing_failed_paths.empty())
             {

@@ -48,6 +48,9 @@ public:
         const StoredObjects & objects,
         UnorderedSetWithMemoryTracking<String> & failed_object_paths) const;
 
+    /// Whether `process` threw because an object is no longer the generation that was ingested.
+    static bool isChangedGeneration(int error_code);
+
 private:
     /// The source generation a copy step consumed. `version_id` is set only when the copy was pinned
     /// to that generation, so pinning the delete to it cannot remove contents nothing copied.

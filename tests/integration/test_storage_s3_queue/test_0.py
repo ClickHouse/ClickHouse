@@ -1050,9 +1050,10 @@ def test_move_fresh_attempt_recognizes_committed_copy(started_cluster, engine_na
     assert moved == data
 
 
+@pytest.mark.parametrize("mode", ["unordered", "exclusive"])
 @pytest.mark.parametrize("versioned", [False, True], ids=["unversioned", "versioned"])
 def test_move_fails_closed_when_source_rewritten_before_post_processing(
-    started_cluster, versioned
+    started_cluster, versioned, mode
 ):
     """A source rewritten after its rows were read, before the move inspects it, must not be moved
     as if the newer generation had been ingested. The batch is refused, so the file is read again
@@ -1077,7 +1078,7 @@ def test_move_fails_closed_when_source_rewritten_before_post_processing(
         started_cluster,
         node,
         table_name,
-        "unordered",
+        mode,
         files_path,
         after_processing="move",
         move_to_prefix=processed_prefix,
@@ -1612,6 +1613,73 @@ def test_move_takes_the_ingested_version_after_source_deleted(started_cluster):
     assert head["Metadata"]["clickhouse_move_source_version_id"] == ingested
     # The newer version is still the object, not hidden behind a delete marker.
     assert client.head_object(Bucket=bucket, Key=source_key)["VersionId"] == reuploaded
+
+
+def test_delete_takes_the_version_a_random_access_read_saw(started_cluster):
+    """A Parquet file bigger than the prefetch is read only by ranged reads. The delete must still
+    remove the version that was read, so a same-byte re-upload after the read stays the object."""
+    node = started_cluster.instances["instance"]
+    token = generate_random_string().lower()
+    bucket = f"versioned-{token}"
+    table_name = f"delete_random_read_{token}"
+    files_path = f"{table_name}_data"
+    source_key = f"{files_path}/part.parquet"
+    minio = started_cluster.minio_client
+    minio.make_bucket(bucket)
+    minio.set_bucket_versioning(bucket, VersioningConfig(ENABLED))
+    client = boto3.client(
+        "s3",
+        endpoint_url=f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
+        aws_access_key_id=started_cluster.minio_access_key,
+        aws_secret_access_key=started_cluster.minio_secret_key,
+    )
+    node.query(
+        f"INSERT INTO FUNCTION s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{source_key}', "
+        f"'{started_cluster.minio_access_key}', '{started_cluster.minio_secret_key}', 'Parquet') "
+        "SELECT number AS column1, number * 2 AS column2, number * 3 AS column3 FROM numbers(200000) "
+        "SETTINGS output_format_parquet_compression_method = 'none'"
+    )
+    ingested = client.head_object(Bucket=bucket, Key=source_key)["VersionId"]
+    data = client.get_object(Bucket=bucket, Key=source_key, VersionId=ingested)[
+        "Body"
+    ].read()
+    assert len(data) > 2 * 1024 * 1024
+
+    def source_versions():
+        return {
+            version["VersionId"]
+            for version in client.list_object_versions(
+                Bucket=bucket, Prefix=source_key
+            ).get("Versions", [])
+        }
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        file_format="Parquet",
+        after_processing="delete",
+        bucket=bucket,
+    )
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {PAUSE_BEFORE_POST_PROCESS_FAILPOINT}")
+    try:
+        create_mv(node, table_name, f"{table_name}_dst")
+        wait_failpoint_paused(node, PAUSE_BEFORE_POST_PROCESS_FAILPOINT)
+        # The rows are read and inserted; the same bytes are uploaded again before the delete.
+        reuploaded = client.put_object(Bucket=bucket, Key=source_key, Body=data)[
+            "VersionId"
+        ]
+        assert reuploaded != ingested
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {PAUSE_BEFORE_POST_PROCESS_FAILPOINT}")
+
+    # Only the version that was read is deleted; no delete marker hides the newer one.
+    wait_until(lambda: source_versions() == {reuploaded})
+    assert client.head_object(Bucket=bucket, Key=source_key)["VersionId"] == reuploaded
+    assert int(node.query(f"SELECT count() FROM {table_name}_dst")) == 200000
 
 
 @pytest.mark.parametrize("after_processing", ["move", "delete"])

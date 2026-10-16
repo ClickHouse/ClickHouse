@@ -1276,7 +1276,21 @@ void StorageObjectStorageQueue::commit(
     if (!successful_objects.empty()
         && metadata.getTableMetadata().after_processing != ObjectStorageQueueAction::KEEP)
     {
-        postProcess(successful_objects, post_processing_failed_paths, metadata);
+        try
+        {
+            postProcess(successful_objects, post_processing_failed_paths, metadata);
+        }
+        catch (...)
+        {
+            /// Exclusive mode keeps no processing nodes in Keeper, so the batch's files are released here.
+            if (mode == ObjectStorageQueueMode::EXCLUSIVE && ObjectStorageQueuePostProcessor::isChangedGeneration(getCurrentExceptionCode()))
+            {
+                const auto message = getCurrentExceptionMessage(false);
+                for (auto & source : sources)
+                    source->releaseAfterChangedGeneration(message);
+            }
+            throw;
+        }
     }
 
     /// In exclusive mode nothing is written to Keeper, but the after_processing action may have

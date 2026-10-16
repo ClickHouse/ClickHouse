@@ -237,6 +237,9 @@ public:
     /// we received the response ("failed after operation").
     void setUncertainCommit();
 
+    /// Exclusive mode only: releases the files of a batch whose post-processing found a changed generation.
+    void releaseAfterChangedGeneration(const std::string & exception_message);
+
     /// Do some work after Processed/Failed files were successfully committed to keeper.
     void finalizeCommit(
         bool insert_succeeded,

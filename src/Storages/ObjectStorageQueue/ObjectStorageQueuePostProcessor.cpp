@@ -162,12 +162,16 @@ ObjectStorageQueuePostProcessor::ObjectStorageQueuePostProcessor(
     , log(getLogger("ObjectStorageQueuePostProcessor"))
 { }
 
-void ObjectStorageQueuePostProcessor::ChangedGeneration::rememberIfCurrentExceptionIsOne()
+bool ObjectStorageQueuePostProcessor::isChangedGeneration(int error_code)
 {
     /// Each code means a replaced generation: Azure copy and delete, the Azure read buffer, and S3.
-    const int code = getCurrentExceptionCode();
-    if (code != ErrorCodes::FILE_CHANGED_DURING_READ && code != ErrorCodes::AZURE_OBJECT_CHANGED_DURING_READ
-        && code != ErrorCodes::S3_OBJECT_CHANGED_DURING_READ)
+    return error_code == ErrorCodes::FILE_CHANGED_DURING_READ || error_code == ErrorCodes::AZURE_OBJECT_CHANGED_DURING_READ
+        || error_code == ErrorCodes::S3_OBJECT_CHANGED_DURING_READ;
+}
+
+void ObjectStorageQueuePostProcessor::ChangedGeneration::rememberIfCurrentExceptionIsOne()
+{
+    if (!isChangedGeneration(getCurrentExceptionCode()))
         return;
 
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueMoveSourceRewritten);
