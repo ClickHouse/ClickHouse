@@ -21,3 +21,5 @@ WITH prometheus_query_step_1 AS MATERIALIZED (SELECT 1 AS x, 10 AS y)
 SELECT p.x, q.y
 FROM prometheus_query_step_1 AS p
 CROSS JOIN prometheus_query_step_1 AS q"
+
+${CLICKHOUSE_CLIENT} --enable_analyzer 1 --enable_materialized_cte 1 --max_execution_time 30 --query "${query} WHERE x = (SELECT max(x) FROM prometheus_query_step_22)"

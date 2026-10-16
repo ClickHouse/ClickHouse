@@ -204,7 +204,8 @@ void RemoveUnusedProjectionColumnsPass::run(QueryTreeNodePtr & query_tree_node, 
         pruneUnusedProjectionColumns(node_to_used_columns);
     }
 
-    pruneUnusedProjectionColumns(shared_body_columns);
+    if (prune_shared_bodies)
+        pruneUnusedProjectionColumns(shared_body_columns);
 }
 
 }

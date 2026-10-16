@@ -34,3 +34,32 @@ SELECT count()
 FROM prometheus_query_step_2 AS s
 CROSS JOIN prometheus_query_step_3 AS p
 CROSS JOIN prometheus_query_step_3 AS q;
+
+WITH
+    prometheus_query_step_1 AS MATERIALIZED (SELECT 1 AS x),
+    prometheus_query_step_2 AS MATERIALIZED (SELECT a.x FROM prometheus_query_step_1 a CROSS JOIN prometheus_query_step_1 b),
+    prometheus_query_step_3 AS MATERIALIZED (SELECT a.x FROM prometheus_query_step_2 a CROSS JOIN prometheus_query_step_2 b),
+    prometheus_query_step_4 AS MATERIALIZED (SELECT a.x FROM prometheus_query_step_3 a CROSS JOIN prometheus_query_step_3 b CROSS JOIN prometheus_query_step_2 c),
+    prometheus_query_step_5 AS MATERIALIZED (SELECT a.x FROM prometheus_query_step_4 a CROSS JOIN prometheus_query_step_4 b)
+SELECT count()
+FROM prometheus_query_step_5 d
+CROSS JOIN prometheus_query_step_5 e
+CROSS JOIN prometheus_query_step_4 f;
+
+WITH
+    prometheus_query_step_1 AS MATERIALIZED (SELECT 1 AS x),
+    prometheus_query_step_2 AS MATERIALIZED (SELECT a.x FROM prometheus_query_step_1 a CROSS JOIN prometheus_query_step_1 b),
+    prometheus_query_step_3 AS MATERIALIZED (SELECT a.x FROM prometheus_query_step_2 a CROSS JOIN prometheus_query_step_2 b),
+    prometheus_query_step_4 AS MATERIALIZED (SELECT a.x FROM prometheus_query_step_3 a CROSS JOIN prometheus_query_step_3 b CROSS JOIN prometheus_query_step_2 c),
+    prometheus_query_step_5 AS MATERIALIZED (SELECT a.x FROM prometheus_query_step_4 a CROSS JOIN prometheus_query_step_4 b)
+SELECT count()
+FROM prometheus_query_step_4 f
+CROSS JOIN prometheus_query_step_5 d
+CROSS JOIN prometheus_query_step_5 e;
+
+WITH prometheus_query_step_1 AS MATERIALIZED
+(
+    SELECT number AS x, number + 10 AS y FROM numbers(3)
+)
+SELECT * FROM prometheus_query_step_1
+WHERE y = (SELECT max(y) FROM prometheus_query_step_1);

@@ -56,15 +56,23 @@ OrderedMaterializedCTEs collectMaterializedCTEs(const QueryTreeNodePtr & node, c
 
     auto propagate = [&](const MaterializedCTEPtr & root_owner, size_t root_level)
     {
-        std::unordered_set<const MaterializedCTE *> seen;
         std::vector<std::pair<MaterializedCTEPtr, size_t>> pending;
         pending.emplace_back(root_owner, root_level);
-        seen.insert(root_owner.get());
 
-        while (!pending.empty())
+        /// A cycle of relative levels must not raise levels without end.
+        const size_t cte_count = std::max<size_t>(materialized_ctes.size(), 1);
+        const size_t hop_limit = cte_count * cte_count * cte_count;
+        size_t hops = 0;
+
+        while (!pending.empty() && hops < hop_limit)
         {
+            ++hops;
             auto [owner, owner_level] = pending.back();
             pending.pop_back();
+
+            auto owner_it = materialized_ctes.find(owner);
+            if (owner_it == materialized_ctes.end() || owner_level < owner_it->second.level)
+                continue;
 
             auto found = relative_levels.find(owner);
             if (found == relative_levels.end())
@@ -73,9 +81,6 @@ OrderedMaterializedCTEs collectMaterializedCTEs(const QueryTreeNodePtr & node, c
             const size_t new_entry = owner_level + 1;
             for (const auto & [nested, relative] : found->second)
             {
-                if (!seen.insert(nested.get()).second)
-                    continue;
-
                 auto nested_it = materialized_ctes.find(nested);
                 if (nested_it == materialized_ctes.end())
                     continue;
