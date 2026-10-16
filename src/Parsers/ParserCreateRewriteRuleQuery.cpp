@@ -78,12 +78,11 @@ bool ParserCreateRewriteRuleQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, 
 
     Pos end_pos = pos;
 
+    /// `end_pos` is the first token after the statement (e.g. the enclosing `)` when the rule is a template of another rule),
+    /// so it must not be included.
     String whole_query = String(begin_pos->begin, begin_pos->end);
-    while (begin_pos < end_pos)
-    {
-        ++begin_pos;
+    for (++begin_pos; begin_pos < end_pos; ++begin_pos)
         whole_query += " " + String(begin_pos->begin, begin_pos->end);
-    }
 
     auto query = make_intrusive<ASTCreateRewriteRuleQuery>();
 
