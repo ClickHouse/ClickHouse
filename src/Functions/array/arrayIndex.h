@@ -816,8 +816,7 @@ private:
     }
 
     /// An `Interval` stores a count of its own unit, so the raw numbers of two kinds are not comparable.
-    /// Bring the needle to the element kind with the accurate cast: a needle that kind cannot hold exactly is
-    /// not in the array. The array is not converted, so `indexOfAssumeSorted` still searches a sorted array.
+    /// Only the needle is converted, exactly, so `indexOfAssumeSorted` still sees a sorted array; an inexact needle is not found.
     ColumnPtr executeDifferentIntervalKinds(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
     {
         const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].type.get());
@@ -839,7 +838,6 @@ private:
         const auto & converted = assert_cast<const ColumnNullable &>(*converted_column);
         const auto * needle_nullable = checkAndGetColumn<ColumnNullable>(needle.column.get());
 
-        /// A NULL that only the cast produced marks a needle the element kind does not hold.
         PaddedPODArray<UInt8> not_representable(converted.size());
         bool any_not_representable = false;
         for (size_t row = 0; row < converted.size(); ++row)
