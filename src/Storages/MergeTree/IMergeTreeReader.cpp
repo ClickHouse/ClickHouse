@@ -374,6 +374,29 @@ NameSet IMergeTreeReader::getDefaultsDependingOn(const NameSet & candidates, con
 
     auto combined_columns = buildCombinedColumnsForDefaultExpressions();
     const auto & columns_in_part = data_part_info_for_read->getColumnsDescription();
+    bool share_nested = (*storage_settings)[MergeTreeSetting::share_nested_offsets];
+
+    /// Whether the reader takes the values of the column from the part, by the same rules as reading:
+    /// a pending `RENAME COLUMN` reads it under its old name, and the data of a column a pending
+    /// `DROP COLUMN` invalidates is ignored, even if the name was added again with a new `DEFAULT`.
+    auto is_stored_in_part = [&](const String & name)
+    {
+        String name_in_part = name;
+        if (alter_conversions && alter_conversions->isColumnRenamed(name))
+            name_in_part = alter_conversions->getColumnOldName(name);
+        else if (alter_conversions && alter_conversions->columnHasNewName(name))
+            return false;
+
+        if (!columns_in_part.has(name_in_part))
+            return false;
+
+        /// See `isColumnDroppedByPendingMutation`.
+        if (alter_conversions && !data_part_info_for_read->isProjectionPart()
+            && (alter_conversions->isColumnDropped(name_in_part, share_nested) || alter_conversions->isColumnDropped(name, share_nested)))
+            return false;
+
+        return true;
+    };
 
     auto get_name_in_storage = [&](const String & name)
     {
@@ -398,7 +421,7 @@ NameSet IMergeTreeReader::getDefaultsDependingOn(const NameSet & candidates, con
         added = false;
         for (const auto & [name, default_desc] : defaults)
         {
-            if (!default_desc.expression || depending.contains(name) || columns_in_part.has(name))
+            if (!default_desc.expression || depending.contains(name) || is_stored_in_part(name))
                 continue;
 
             /// Only the source columns the expression reads, not the formals of its lambdas or its aliases.

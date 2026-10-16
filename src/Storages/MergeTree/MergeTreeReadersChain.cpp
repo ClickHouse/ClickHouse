@@ -653,15 +653,11 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
         }
 
         /// The pass above computed the columns that read one of these from its `DEFAULT` rather than
-        /// from the patched rows, so they are evaluated again from the combined value.
-        NameSet rest;
-        for (const auto & name : columns_to_reevaluate)
-        {
-            if (!columns_with_patched_rows.contains(name))
-                rest.insert(name);
-        }
-
-        columns_to_reevaluate = reader->getDefaultsDependingOn(rest, columns_with_patched_rows);
+        /// from the patched rows, so they are evaluated again from the combined value. That includes
+        /// the columns with patched rows of their own: for `z DEFAULT a + 100, y DEFAULT z + 1`
+        /// with patched rows in both, `y` was computed from the `DEFAULT` of `z`. A column does not
+        /// depend on itself and `DEFAULT` expressions have no cycles, so this ends.
+        columns_to_reevaluate = reader->getDefaultsDependingOn(columns_to_reevaluate, columns_with_patched_rows);
     }
 }
 
@@ -822,15 +818,9 @@ void MergeTreeReadersChain::reevaluateDefaultsAfterPatches(ReadResult & result, 
         }
 
         /// The pass above computed the columns that read one of these from its `DEFAULT` rather than
-        /// from the patched rows, so they are evaluated again from the combined value.
-        NameSet rest;
-        for (const auto & name : added)
-        {
-            if (!columns_with_patched_rows.contains(name))
-                rest.insert(name);
-        }
-
-        names_to_evaluate = reader->getDefaultsDependingOn(rest, columns_with_patched_rows);
+        /// from the patched rows, so they are evaluated again from the combined value, also the ones
+        /// with patched rows of their own (see `executeActionsBeforePrewhere`).
+        names_to_evaluate = reader->getDefaultsDependingOn(added, columns_with_patched_rows);
     }
 
     if (!evaluated_any)
