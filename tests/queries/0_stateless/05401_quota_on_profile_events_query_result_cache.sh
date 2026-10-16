@@ -39,6 +39,6 @@ ${CLICKHOUSE_CLIENT} -q "SELECT profile_events['SelectQuery'], profile_events['Q
 ${CLICKHOUSE_CLIENT} --user "${U}" -q "${CACHED_QUERY}" 2>&1 | grep -o -m1 "QUOTA_EXCEEDED"
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
-${CLICKHOUSE_CLIENT} -q "SELECT query_cache_usage, count() FROM system.query_log WHERE current_database = '${CLICKHOUSE_DATABASE}' AND user = '${U}' AND type = 'QueryFinish' AND query LIKE '%use_query_cache%' GROUP BY ALL ORDER BY ALL"
+${CLICKHOUSE_CLIENT} -q "SELECT query_cache_usage, count() FROM system.query_log WHERE current_database = currentDatabase() AND user = '${U}' AND type = 'QueryFinish' AND query LIKE '%use_query_cache%' GROUP BY ALL ORDER BY ALL"
 
 cleanup
