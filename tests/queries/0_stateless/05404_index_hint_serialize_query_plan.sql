@@ -19,4 +19,7 @@ SELECT sum(b), count() FROM remote('127.0.0.2', currentDatabase(), t_index_hint_
 SELECT sum(b), count() FROM remote('127.0.0.2', currentDatabase(), t_index_hint_serialized) WHERE indexHint(a IN (SELECT number FROM numbers(10))) SETTINGS serialize_query_plan = 0;
 SELECT sum(b), count() FROM remote('127.0.0.2', currentDatabase(), t_index_hint_serialized) WHERE indexHint(a IN (SELECT number FROM numbers(10))) SETTINGS serialize_query_plan = 1;
 
+SELECT sum(b), count() FROM t_index_hint_serialized WHERE indexHint(a < 10) SETTINGS make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0;
+SELECT sum(b), count() FROM t_index_hint_serialized WHERE indexHint(a IN (SELECT number FROM numbers(10))) SETTINGS make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0;
+
 DROP TABLE t_index_hint_serialized;
