@@ -618,11 +618,20 @@ public:
                 if (slot > static_cast<size_t>(index_slot))
                     --slot;
 
+            /// The lazy read returns its columns in the order it reads them from storage rather than in the order of the
+            /// header of the source, so each is matched with an input it was chosen for by name. Inputs of the same name are
+            /// the same column of storage, so which of them takes which column does not matter.
+            std::vector<bool> is_bound(lazy.inputs.size(), false);
             for (const auto & column : *lazy_plan.getCurrentHeader())
             {
-                const auto & inputs = merged.sources[source].inputs;
-                const auto it = std::ranges::find_if(inputs, [&](const auto * input) { return input->result_name == column.name; });
-                slots.push_back(it == inputs.end() ? nullptr : *it);
+                size_t input = 0;
+                while (input < lazy.inputs.size() && (is_bound[input] || lazy.inputs[input]->result_name != column.name))
+                    ++input;
+                if (input == lazy.inputs.size())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "The lazy read of source {} returns the column {}, which no input was chosen for", source, column.name);
+                is_bound[input] = true;
+                slots.push_back(lazy.inputs[input]);
                 slot_indexes.emplace_back();
             }
 

@@ -12,7 +12,10 @@ namespace DB::QueryPlanOptimizations
 /// recomputed one.
 enum class Placement : uint8_t
 {
-    None,       /// not involved: nothing below or above the `LIMIT` reads it
+    /// Not involved: nothing below or above the `LIMIT` reads it. This is what `LazyFrontier::at` returns for a value with
+    /// no entry, and what an entry starts as when it is created, so that `Below` and the others are set explicitly. A
+    /// stored entry is never left as `None`.
+    None,
     Below,      /// computed below the `LIMIT` only, for a filter, a join condition, the sort order or a carried value
     Carried,    /// computed below, and handed over as a column of the block the `LIMIT` cuts
     Deferred,   /// had above only: an input of a source is read lazily, anything else is computed there
