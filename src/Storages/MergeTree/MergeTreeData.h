@@ -2292,6 +2292,9 @@ protected:
     BackgroundSchedulePoolTaskHolder refresh_stats_task;
     /// Set by `stopStatisticsCache`, after which `startStatisticsCache` does not arm the task anymore.
     bool refresh_stats_stopped TSA_GUARDED_BY(refresh_stats_task_mutex) = false;
+    /// While non-zero, the task is not armed; the last pause arms it again if it was armed or was asked to be.
+    size_t refresh_stats_pause_count TSA_GUARDED_BY(refresh_stats_task_mutex) = 0;
+    bool refresh_stats_rearm_after_pause TSA_GUARDED_BY(refresh_stats_task_mutex) = false;
     /// Set before `refresh_stats_task` is deactivated, so that a running `refreshStatistics` returns between parts.
     std::atomic_bool refresh_stats_cancelled = false;
 
@@ -2302,6 +2305,9 @@ protected:
     /// Deactivates the statistics refresh task and prevents any later `startStatisticsCache` from arming it.
     /// Idempotent. Called on shutdown.
     void stopStatisticsCache();
+    /// Waits for a running statistics refresh and keeps the task inactive until the guard is destroyed.
+    /// Held while renaming parts in place: the refresh reads part paths without any lock.
+    [[nodiscard]] scope_guard pauseStatisticsCache();
     void refreshStatistics(UInt64 interval_seconds);
 
     static void incrementInsertedPartsProfileEvent(MergeTreeDataPartType type);

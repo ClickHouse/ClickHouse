@@ -1453,7 +1453,16 @@ void InterpreterSystemQuery::restoreReplica()
             settings[Setting::keeper_retry_initial_backoff_ms],
             settings[Setting::keeper_retry_max_backoff_ms],
             getContext()->getProcessListElementSafe()},
-        false);
+        false,
+        [&]
+        {
+            std::vector<TableExclusiveLockHolder> locks;
+            locks.push_back(table_ptr->lockExclusively(getContext()->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]));
+            /// A lazily loaded table: queries lock the stand-in, `system.parts` locks the nested storage.
+            if (table_ptr.get() != table_replicated_ptr)
+                locks.push_back(table_replicated_ptr->lockExclusively(getContext()->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]));
+            return locks;
+        });
 }
 
 void InterpreterSystemQuery::restoreDatabaseReplica(ASTSystemQuery & query)

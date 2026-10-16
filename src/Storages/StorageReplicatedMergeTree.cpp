@@ -7588,7 +7588,9 @@ bool StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(
 }
 
 void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(
-    const ZooKeeperRetriesInfo & zookeeper_retries_info, bool is_called_during_attach)
+    const ZooKeeperRetriesInfo & zookeeper_retries_info,
+    bool is_called_during_attach,
+    const std::function<std::vector<TableExclusiveLockHolder>()> & lock_out_readers)
 {
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::restoreMetadataInZooKeeper");
     LOG_INFO(log, "Restoring replica metadata");
@@ -7616,6 +7618,12 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(
     auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
 
     waitForOutdatedPartsToBeLoaded();
+
+    std::vector<TableExclusiveLockHolder> readers_locks;
+    if (lock_out_readers)
+        readers_locks = lock_out_readers();
+    auto statistics_cache_pause = pauseStatisticsCache();
+
     const DataPartsVector all_parts = getAllDataPartsVector();
     Strings active_parts_names;
 
@@ -7645,6 +7653,9 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(
             forcefullyMovePartToDetachedAndRemoveFromMemory(part, "ignored");
         }
     }
+
+    statistics_cache_pause.reset();
+    readers_locks.clear();
 
     LOG_INFO(log, "Moved all parts to detached/");
 
