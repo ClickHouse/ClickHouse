@@ -6,7 +6,10 @@
 
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
+
+#include <unordered_set>
 
 #include <Interpreters/Context.h>
 
@@ -55,6 +58,13 @@ public:
 
     void visit(VisitQueryTreeNodeType & query_tree_node)
     {
+        ++visit_depth;
+        SCOPE_EXIT({
+            --visit_depth;
+            if (visit_depth == 0)
+                entered_shared_bodies.clear();
+        });
+
         bool traverse_top_to_bottom = getDerived().shouldTraverseTopToBottom();
         if (!traverse_top_to_bottom)
             visitChildren(query_tree_node);
@@ -85,10 +95,13 @@ private:
 
             bool need_visit_child = getDerived().needChildVisit(expression, child);
 
-            if (need_visit_child)
+            if (need_visit_child && enterSharedMaterializedCTEBody(expression, child, entered_shared_bodies))
                 visit(child);
         }
     }
+
+    size_t visit_depth = 0;
+    std::unordered_set<const IQueryTreeNode *> entered_shared_bodies;
 };
 
 template <typename Derived>
@@ -158,6 +171,13 @@ public:
         if (is_subquery_node)
             ++subquery_depth;
 
+        ++visit_depth;
+        SCOPE_EXIT({
+            --visit_depth;
+            if (visit_depth == 0)
+                entered_shared_bodies.clear();
+        });
+
         getDerived().enterImpl(query_tree_node);
 
         visitChildren(query_tree_node);
@@ -210,7 +230,8 @@ private:
             }
             return;
         }
-        visit(child);
+        if (enterSharedMaterializedCTEBody(parent, child, entered_shared_bodies))
+            visit(child);
     }
 
     void visitChildren(VisitQueryTreeNodeType & expression)
@@ -224,6 +245,8 @@ private:
 
     ContextPtr current_context;
     size_t subquery_depth = 0;
+    size_t visit_depth = 0;
+    std::unordered_set<const IQueryTreeNode *> entered_shared_bodies;
 };
 
 }

@@ -768,6 +768,7 @@ void validateCorrelatedSubqueries(const QueryTreeNodePtr & node, const ContextPt
     bool has_remote = false;
     bool has_correlated_subquery = false;
     QueryTreeNodes nodes_to_process = { node };
+    std::unordered_set<const IQueryTreeNode *> seen_nodes;
 
     /// Tables whose own storage is local but that read from other tables. Resolving what they reach
     /// takes the catalog's dependency graph, so it is deferred to the end and only done when the query
@@ -778,6 +779,9 @@ void validateCorrelatedSubqueries(const QueryTreeNodePtr & node, const ContextPt
     {
         auto current_node = nodes_to_process.back();
         nodes_to_process.pop_back();
+
+        if (!current_node || !seen_nodes.insert(current_node.get()).second)
+            continue;
 
         switch (current_node->getNodeType())
         {

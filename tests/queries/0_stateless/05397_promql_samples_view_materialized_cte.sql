@@ -14,7 +14,7 @@ CREATE VIEW samples_view SQL SECURITY INVOKER AS
 WITH c AS MATERIALIZED
 (
     SELECT number AS id,
-           toDateTime64(100 + number, 3) AS timestamp,
+           toDateTime64(1700000100 + number, 3, 'UTC') AS timestamp,
            toFloat64(number + 1) AS value
     FROM numbers(3)
 )
@@ -25,18 +25,18 @@ CREATE TABLE tags_table
     id UInt64,
     metric_name LowCardinality(String),
     tags Map(LowCardinality(String), String),
-    min_time DateTime64(3),
-    max_time DateTime64(3)
+    min_time DateTime64(3, 'UTC'),
+    max_time DateTime64(3, 'UTC')
 ) ENGINE = MergeTree() ORDER BY id;
 
-INSERT INTO tags_table VALUES (2, 'm', map(), toDateTime64(100, 3), toDateTime64(110, 3));
+INSERT INTO tags_table VALUES (2, 'm', map(), toDateTime64(1700000100, 3, 'UTC'), toDateTime64(1700000110, 3, 'UTC'));
 
 CREATE TABLE prometheus ENGINE = TimeSeries
 SETTINGS recent_samples_ttl_seconds = 0
 SAMPLES samples_view
 TAGS tags_table;
 
-SELECT value FROM prometheusQuery('prometheus', 'm', 102);
+SELECT value FROM prometheusQuery('prometheus', 'm', 1700000102);
 
 DROP TABLE prometheus;
 DROP TABLE tags_table;

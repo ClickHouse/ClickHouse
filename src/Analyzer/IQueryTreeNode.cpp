@@ -222,7 +222,13 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash(CompareOptions compare_options)
             if (!node_to_process_child)
                 continue;
 
-            nodes_to_process.emplace_back(node_to_process_child.get(), false);
+            /// A shared materialized CTE body is hashed once.
+            bool shared_body = false;
+            if (const auto * table_node = node_to_process->as<TableNode>();
+                table_node && table_node->isMaterializedCTE() && table_node->sharesMaterializedCTEBody())
+                shared_body = node_to_process_child.get() == table_node->getMaterializedCTESubquery().get();
+
+            nodes_to_process.emplace_back(node_to_process_child.get(), shared_body);
         }
 
         if (const auto * column_node = node_to_process->as<ColumnNode>())

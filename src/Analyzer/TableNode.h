@@ -12,6 +12,8 @@
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/TableExpressionModifiers.h>
 
+#include <unordered_set>
+
 namespace DB
 {
 
@@ -208,6 +210,22 @@ private:
     static constexpr size_t materialized_cte_subquery_index = 0;
     static constexpr size_t children_size = materialized_cte_subquery_index + 1;
 };
+
+/// A shared materialized CTE body is one node. Return false when this traversal already entered it.
+inline bool enterSharedMaterializedCTEBody(
+    const QueryTreeNodePtr & parent,
+    const QueryTreeNodePtr & child,
+    std::unordered_set<const IQueryTreeNode *> & entered)
+{
+    const auto * table = parent->as<TableNode>();
+    if (!table || !table->isMaterializedCTE() || !table->sharesMaterializedCTEBody())
+        return true;
+
+    if (child.get() != table->getMaterializedCTESubquery().get())
+        return true;
+
+    return entered.insert(child.get()).second;
+}
 
 }
 
