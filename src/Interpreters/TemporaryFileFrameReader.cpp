@@ -72,6 +72,11 @@ void TemporaryFileFrameReader::readFile(char * to, size_t bytes, size_t offset)
         bytes_read = shared_file.reader->readBigAt(to, bytes, offset, /*progress_callback=*/nullptr);
     else
     {
+        /// A remote file requests the bytes up to its bound. Without a bound, a request runs to the end of
+        /// the file. The seek to the next range then cancels it while its data is in flight, which can cost
+        /// the connection, so the distributed cache opens a new one for each range. With the bound, the
+        /// request ends with the range, which the read consumes.
+        own_reader->setReadUntilPosition(offset + bytes);
         own_reader->seek(offset, SEEK_SET);
         bytes_read = own_reader->readBig(to, bytes);
     }
