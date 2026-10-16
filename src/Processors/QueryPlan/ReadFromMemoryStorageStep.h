@@ -67,6 +67,10 @@ public:
 
     const StoragePtr & getStorage() const { return storage; }
 
+    /// The key of the query condition cache for the filter of the query pushed down to this step,
+    /// or std::nullopt if the cache cannot be used for it. See `updateQueryConditionCache`.
+    std::optional<UInt64> getFilterConditionHashForQueryConditionCache() const;
+
     /// Lazy materialization (see `optimizeLazyMaterialization2`).
     bool canUseLazyMaterialization() const;
     /// Removes the columns that are not in `required_names` and are not needed by the in-source filters

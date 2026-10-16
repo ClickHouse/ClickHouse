@@ -17,7 +17,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
@@ -327,15 +326,6 @@ namespace
                 executeGeneric<nullable>           (src_data, src_array_offsets, res_data_col, res_array_offsets, src_null_map, res_null_map);
         }
     }
-}
-
-DataTypePtr FunctionEmptyArrayToSingle::getReturnTypeImpl(const DataTypes & arguments) const
-{
-    const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
-    if (!array_type)
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument for function {} must be array.", getName());
-
-    return arguments[0];
 }
 
 ColumnPtr FunctionEmptyArrayToSingle::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const

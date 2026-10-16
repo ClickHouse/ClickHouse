@@ -4,12 +4,14 @@
 
 #include <Common/Exception.h>
 #include <Common/JSONBuilder.h>
+#include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
 
 #include <Core/Settings.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/FilterDescription.h>
 #include <DataTypes/DataTypeArray.h>
@@ -17,6 +19,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Functions/FunctionTopKFilter.h>
+#include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/getColumnFromBlock.h>
@@ -52,6 +55,8 @@ namespace Setting
 {
 
 extern const SettingsBool enable_multiple_prewhere_read_steps;
+extern const SettingsBool use_query_condition_cache;
+extern const SettingsBool use_query_condition_cache_for_top_k;
 
 }
 
@@ -90,6 +95,38 @@ struct MemorySourceFilter
     /// The columns of the output header that are requested physical columns, in header order.
     /// Those not produced by the steps are read after all steps, only for the passing rows.
     NamesAndTypesList output_columns;
+
+    /// The query condition cache, or nullptr if it is not used. An entry describes one block of the
+    /// snapshot, split into granules of `query_condition_cache_granule_rows` rows, and records the
+    /// granules where no row satisfies a condition. The source skips such blocks and granules without
+    /// evaluating the steps on them. There are two conditions:
+    /// - PREWHERE, which the source evaluates itself. No row passing the steps is the same as no row
+    ///   satisfying PREWHERE only if no other step (the row-level security filter, the TopN threshold)
+    ///   has removed rows before it, so only then the source writes the entries.
+    /// - The filter of the query pushed down to the read (`filter_actions_dag`), the same key as for
+    ///   `MergeTree`. Its entries are written by the `FilterTransform` of the `WHERE` filter, from the
+    ///   `MarkRangesInfo` of the chunks, which the source attaches when it has removed no rows itself.
+    QueryConditionCachePtr query_condition_cache;
+    UUID table_uuid;
+    std::optional<UInt64> prewhere_condition_hash;
+    String prewhere_condition;
+    bool write_prewhere_condition = false;
+    std::optional<UInt64> filter_condition_hash;
+    bool attach_mark_ranges_info = false;
+    /// The identity of the blocks of the snapshot, see `StorageMemory::BlocksWithCounts`.
+    UInt64 generation = 0;
+    UInt64 first_block_number = 0;
+    /// The hash of the columns of the metadata snapshot. An `ALTER` of the columns keeps the stored
+    /// blocks, but can change the values read from them (e.g. the array sizes of a `Nested` subcolumn
+    /// missing in the blocks, which come from its stored siblings, or a cast to a changed type).
+    UInt64 columns_hash = 0;
+
+    static constexpr size_t query_condition_cache_granule_rows = 8192;
+
+    String getQueryConditionCachePartName(size_t block_index) const
+    {
+        return fmt::format("{}_{:016x}_{}", generation, columns_hash, first_block_number + block_index);
+    }
 };
 
 using MemorySourceFilterPtr = std::shared_ptr<const MemorySourceFilter>;
@@ -144,9 +181,9 @@ static const ColumnWithTypeAndName * findSizesSource(const Block & src, const Na
     return nullptr;
 }
 
-/// `nested_arrays` are the arrays of the table that are members of the `Nested` of a requested member.
 /// Each missing entry is filled from `src` alone, independently of the other columns of the read.
-static void fillColumnsMissingFromBlock(const Block & src, const NamesAndTypesList & columns_to_read, const Names & nested_arrays, Columns & columns)
+/// `nested_arrays` are the arrays of the table that are members of the `Nested` of a requested member.
+static void fillColumnsMissingFromBlock(const Block & src, const NamesAndTypesList & columns_to_read, Columns & columns, const Names & nested_arrays)
 {
     NamesAndTypesList columns_without_sizes;
     std::vector<size_t> positions_without_sizes;
@@ -279,7 +316,7 @@ protected:
 
                 /// Every row of this block was filtered out; move on to the next block
                 /// without reading the rest of its columns. `generateFiltered` has already
-                /// reported the block's rows as read.
+                /// reported the block's scanned rows as read.
                 if (isCancelled())
                     return {};
                 continue;
@@ -321,7 +358,7 @@ private:
         for (const auto & name_and_type : physical_columns)
             result_columns.emplace_back(readColumnFromBlock(src, name_and_type));
 
-        fillColumnsMissingFromBlock(src, physical_columns, nested_arrays, result_columns);
+        fillColumnsMissingFromBlock(src, physical_columns, result_columns, nested_arrays);
         chassert(std::all_of(result_columns.begin(), result_columns.end(), [](const auto & column) { return column != nullptr; }));
     }
 
@@ -332,7 +369,10 @@ private:
     /// the returned chunk, which here holds only the rows that passed the filter - and nothing at
     /// all for a block that the filter eliminated completely. The reported number of rows is the
     /// number of rows scanned, the same as what `ReadFromMergeTree` reports for its `PREWHERE`,
-    /// so `max_rows_to_read`, read quotas and `SelectedRows` still see the whole scan.
+    /// so `max_rows_to_read`, read quotas and `SelectedRows` still see the whole scan. The granules
+    /// skipped by the query condition cache are not scanned and not reported, as with `MergeTree`,
+    /// so that the cache cannot make `max_rows_to_read` with `read_overflow_mode = 'break'` stop
+    /// the read earlier.
     ///
     /// The layout of the block after the steps depends on how the steps were split, so the result
     /// is assembled by name in the order of the output header, as in `MergeTreeSelectProcessor`.
@@ -346,9 +386,116 @@ private:
         Block block;
         size_t num_rows = num_src_rows;
 
+        /// The number of rows of the block that are scanned: all of them except the granules skipped
+        /// by the query condition cache.
+        size_t num_scanned_rows = num_src_rows;
+
         /// Mask over the stored block's rows combining all steps so far, for cutting the columns
         /// read after some step has filtered. Empty while no step has filtered anything.
         IColumn::Filter combined_mask;
+
+        const size_t granule_rows = MemorySourceFilter::query_condition_cache_granule_rows;
+        const size_t num_granules = (num_src_rows + granule_rows - 1) / granule_rows;
+        const bool use_query_condition_cache = filter->query_condition_cache && num_granules;
+        String query_condition_cache_part_name;
+
+        /// The granules skipped by the entry of the filter of the query. Nothing is known about PREWHERE
+        /// on them, so they must not be recorded as having no rows satisfying it.
+        QueryConditionCache::MatchingMarks granules_skipped_by_filter_condition;
+
+        if (use_query_condition_cache)
+        {
+            query_condition_cache_part_name = filter->getQueryConditionCachePartName(block_index);
+
+            /// The granules that may have rows satisfying both conditions, or std::nullopt if nothing is known.
+            std::optional<QueryConditionCache::MatchingMarks> matching_granules;
+            for (const auto & condition_hash : {filter->prewhere_condition_hash, filter->filter_condition_hash})
+            {
+                if (!condition_hash)
+                    continue;
+
+                auto entry = filter->query_condition_cache->read(filter->table_uuid, query_condition_cache_part_name, *condition_hash);
+                if (!entry)
+                    continue;
+
+                if (entry->size() != num_granules)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "The query condition cache entry for block {} of a Memory table has {} granules instead of {}",
+                        query_condition_cache_part_name, entry->size(), num_granules);
+
+                if (condition_hash == filter->filter_condition_hash && filter->write_prewhere_condition)
+                {
+                    granules_skipped_by_filter_condition.resize(num_granules);
+                    for (size_t granule = 0; granule < num_granules; ++granule)
+                        granules_skipped_by_filter_condition[granule] = !(*entry)[granule];
+                }
+
+                if (!matching_granules)
+                    matching_granules = std::move(entry);
+                else
+                    for (size_t granule = 0; granule < num_granules; ++granule)
+                        (*matching_granules)[granule] = (*matching_granules)[granule] && (*entry)[granule];
+            }
+
+            if (matching_granules)
+            {
+                const size_t num_matching_granules = std::ranges::count(*matching_granules, true);
+                if (num_matching_granules == 0)
+                    return std::nullopt;
+
+                /// Start with the rows of the granules that may have matches, as if a step had filtered the others out.
+                if (num_matching_granules != num_granules)
+                {
+                    combined_mask.resize_fill(num_src_rows, 0);
+                    num_rows = 0;
+                    for (size_t granule = 0; granule < num_granules; ++granule)
+                    {
+                        if (!(*matching_granules)[granule])
+                            continue;
+                        const size_t begin = granule * granule_rows;
+                        const size_t end = std::min(begin + granule_rows, num_src_rows);
+                        std::fill(combined_mask.begin() + begin, combined_mask.begin() + end, 1);
+                        num_rows += end - begin;
+                    }
+                    num_scanned_rows = num_rows;
+                }
+            }
+        }
+
+        /// Records the granules where no row has passed the steps.
+        auto write_to_query_condition_cache = [&](bool no_rows_passed)
+        {
+            if (!use_query_condition_cache || !filter->write_prewhere_condition)
+                return;
+
+            if (!no_rows_passed && combined_mask.empty())
+                return;
+
+            MarkRanges granules_without_matches;
+            for (size_t granule = 0; granule < num_granules; ++granule)
+            {
+                if (!granules_skipped_by_filter_condition.empty() && granules_skipped_by_filter_condition[granule])
+                    continue;
+                if (!no_rows_passed)
+                {
+                    const size_t begin = granule * granule_rows;
+                    const size_t end = std::min(begin + granule_rows, num_src_rows);
+                    /// The mask can hold any non-zero value for a passing row: it is taken from the filter column
+                    /// as is, which is e.g. the column itself for `PREWHERE k`.
+                    if (!memoryIsZero(combined_mask.data(), begin, end))
+                        continue;
+                }
+                if (!granules_without_matches.empty() && granules_without_matches.back().end == granule)
+                    ++granules_without_matches.back().end;
+                else
+                    granules_without_matches.emplace_back(granule, granule + 1);
+            }
+
+            if (!granules_without_matches.empty())
+                filter->query_condition_cache->write(
+                    filter->table_uuid, query_condition_cache_part_name, *filter->prewhere_condition_hash, filter->prewhere_condition,
+                    granules_without_matches, num_granules, /*has_final_mark=*/ false);
+        };
 
         /// Reads those of the columns that the block does not have yet, only for the rows that
         /// passed the steps so far.
@@ -367,7 +514,7 @@ private:
             for (const auto & name_and_type : missing)
                 columns.emplace_back(readColumnFromBlock(src, name_and_type));
 
-            fillColumnsMissingFromBlock(src, missing, nested_arrays, columns);
+            fillColumnsMissingFromBlock(src, missing, columns, nested_arrays);
 
             auto column_it = columns.begin();
             for (const auto & name_and_type : missing)
@@ -392,7 +539,8 @@ private:
             ConstantFilterDescription constant_filter(*filter_column);
             if (constant_filter.always_false)
             {
-                progress(num_src_rows, num_read_bytes);
+                write_to_query_condition_cache(/*no_rows_passed=*/ true);
+                progress(num_scanned_rows, num_read_bytes);
                 return std::nullopt;
             }
 
@@ -402,7 +550,8 @@ private:
                 const size_t num_passed_rows = filter_description.countBytesInFilter();
                 if (num_passed_rows == 0)
                 {
-                    progress(num_src_rows, num_read_bytes);
+                    write_to_query_condition_cache(/*no_rows_passed=*/ true);
+                    progress(num_scanned_rows, num_read_bytes);
                     return std::nullopt;
                 }
 
@@ -433,6 +582,8 @@ private:
                 block.erase(filter_column_position);
         }
 
+        write_to_query_condition_cache(/*no_rows_passed=*/ false);
+
         read_missing_columns(filter->output_columns);
 
         if (block_start_rows)
@@ -448,7 +599,7 @@ private:
             block.insert({std::move(global_row_index), std::make_shared<DataTypeUInt64>(), global_row_index_column_name});
         }
 
-        progress(num_src_rows, num_read_bytes);
+        progress(num_scanned_rows, num_read_bytes);
 
         const auto & header = getPort().getHeader();
         Columns result_columns;
@@ -456,7 +607,21 @@ private:
         for (const auto & elem : header)
             result_columns.push_back(block.getByName(elem.name).column);
 
-        return Chunk(std::move(result_columns), num_rows);
+        Chunk chunk(std::move(result_columns), num_rows);
+
+        if (use_query_condition_cache && filter->attach_mark_ranges_info)
+        {
+            /// Without the granules removed above, which are already known to have no matches, the chunk
+            /// does not hold all rows of the block, so only the whole block can be recorded.
+            auto mark_ranges_info = std::make_shared<MarkRangesInfo>(
+                filter->table_uuid, query_condition_cache_part_name, num_granules, /*has_final_mark=*/ false,
+                MarkRanges{MarkRange(0, num_granules)});
+            if (combined_mask.empty())
+                mark_ranges_info->rows_per_mark = granule_rows;
+            chunk.getChunkInfos().add(std::move(mark_ranges_info));
+        }
+
+        return chunk;
     }
 
     void fillVirtualColumns([[maybe_unused]] Columns & result_columns, [[maybe_unused]] UInt64 num_rows) const
@@ -532,7 +697,7 @@ protected:
             for (const auto & name_and_type : columns)
                 block_columns.emplace_back(readColumnFromBlock(src, name_and_type));
 
-            fillColumnsMissingFromBlock(src, columns, nested_arrays, block_columns);
+            fillColumnsMissingFromBlock(src, columns, block_columns, nested_arrays);
 
             for (size_t i = 0; i < block_columns.size(); ++i)
             {
@@ -844,6 +1009,19 @@ void ReadFromMemoryStorageStep::describeActions(JSONBuilder::JSONMap & map) cons
         map.add("TopN Filter Column", top_k_filter->column_name);
 }
 
+std::optional<UInt64> ReadFromMemoryStorageStep::getFilterConditionHashForQueryConditionCache() const
+{
+    if (!filter_actions_dag || !context->getSettingsRef()[Setting::use_query_condition_cache])
+        return {};
+
+    /// Same as for `MergeTree`, see `updateQueryConditionCache`.
+    const auto & outputs = filter_actions_dag->getOutputs();
+    if (outputs.size() != 1 || !VirtualColumnUtils::isDeterministic(outputs[0]))
+        return {};
+
+    return queryConditionCacheHash(outputs[0]->getHash(), queryConditionCacheSettingsSalt(context->getSettingsRef()));
+}
+
 bool ReadFromMemoryStorageStep::canUseLazyMaterialization() const
 {
     /// A read for a global subquery takes the blocks of the storage when it starts, and the lazy branch
@@ -942,9 +1120,10 @@ MemorySourceFilterPtr ReadFromMemoryStorageStep::makeSourceFilter(const NamesAnd
     /// The threshold filter runs first and shrinks the block before the other steps, which then see
     /// a different set of rows. `tryOptimizeTopK` checks that the filters do not depend on that, but
     /// `optimizePrewhere` may have moved such a condition into PREWHERE after it.
-    const bool use_top_k_filter = top_k_filter
-        && !(query_info.row_level_filter && query_info.row_level_filter->actions.hasNonDeterministicOrStatefulFunctions())
-        && !(query_info.prewhere_info && query_info.prewhere_info->prewhere_actions.hasNonDeterministicOrStatefulFunctions());
+    const bool filters_depend_on_row_set
+        = (query_info.row_level_filter && query_info.row_level_filter->actions.hasNonDeterministicOrStatefulFunctions())
+        || (query_info.prewhere_info && query_info.prewhere_info->prewhere_actions.hasNonDeterministicOrStatefulFunctions());
+    const bool use_top_k_filter = top_k_filter && !filters_depend_on_row_set;
 
     auto result = std::make_shared<MemorySourceFilter>();
     ExpressionActionsSettings actions_settings(context);
@@ -977,9 +1156,6 @@ MemorySourceFilterPtr ReadFromMemoryStorageStep::makeSourceFilter(const NamesAnd
             });
         }
     }
-
-    if (result->steps.empty() && !query_info.row_level_filter && !query_info.prewhere_info)
-        return nullptr;
 
     /// The row-level security filter runs first, so PREWHERE expressions are never evaluated
     /// on the rows the policy hides.
@@ -1048,6 +1224,47 @@ MemorySourceFilterPtr ReadFromMemoryStorageStep::makeSourceFilter(const NamesAnd
         if (auto name_and_type = physical_columns.tryGetByName(elem.name))
             result->output_columns.push_back(*name_and_type);
 
+    /// The query condition cache. A read for a global subquery takes the blocks of the storage when it
+    /// starts, not those of the snapshot, so their identity is unknown here. The granules skipped by
+    /// the cache are removed before the steps, so it cannot be used if they depend on the set of rows
+    /// they see, like the top-K filter above (e.g. `PREWHERE rowNumberInBlock() = 1` would match
+    /// a different row).
+    const auto & settings = context->getSettingsRef();
+    const UUID table_uuid = storage->getStorageID().uuid;
+    if (settings[Setting::use_query_condition_cache] && table_uuid != UUIDHelpers::Nil && !delay_read_for_global_sub_queries
+        && !filters_depend_on_row_set
+        && (!use_top_k_filter || settings[Setting::use_query_condition_cache_for_top_k]))
+    {
+        if (query_info.prewhere_info)
+        {
+            const auto & prewhere_info = *query_info.prewhere_info;
+            const auto * prewhere_node = prewhere_info.prewhere_actions.tryFindInOutputs(prewhere_info.prewhere_column_name);
+            if (prewhere_node && VirtualColumnUtils::isDeterministic(prewhere_node))
+            {
+                result->prewhere_condition_hash = queryConditionCacheHash(prewhere_node->getHash(), queryConditionCacheSettingsSalt(settings));
+                result->prewhere_condition = prewhere_info.prewhere_column_name;
+                result->write_prewhere_condition = !use_top_k_filter && !query_info.row_level_filter;
+            }
+        }
+
+        result->filter_condition_hash = getFilterConditionHashForQueryConditionCache();
+        result->attach_mark_ranges_info = result->filter_condition_hash && result->steps.empty();
+
+        if (result->prewhere_condition_hash || result->filter_condition_hash)
+        {
+            const auto & snapshot_data = assert_cast<const StorageMemory::SnapshotData &>(*storage_snapshot->data);
+            result->query_condition_cache = context->getQueryConditionCache();
+            result->table_uuid = table_uuid;
+            result->generation = snapshot_data.generation;
+            result->first_block_number = snapshot_data.first_block_number;
+            result->columns_hash = sipHash64(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
+        }
+    }
+
+    /// Without the steps, the filter is needed only for the query condition cache.
+    if (result->steps.empty() && !result->query_condition_cache)
+        return nullptr;
+
     return result;
 }
 
@@ -1087,6 +1304,9 @@ Pipe ReadFromMemoryStorageStep::makePipe()
     auto virtual_columns = storage_snapshot->getColumnsByNames(GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader), virtual_column_names);
 
     auto source_filter = makeSourceFilter(physical_columns);
+    /// Virtual columns are not filled by a source with a filter. Such a filter is needed only for the query condition cache then.
+    if (source_filter && source_filter->steps.empty() && !virtual_columns.empty())
+        source_filter = nullptr;
     auto nested_arrays = getArraysOfRequestedNested(physical_columns, storage_snapshot);
 
     const auto & snapshot_data = assert_cast<const StorageMemory::SnapshotData &>(*storage_snapshot->data);
@@ -1115,7 +1335,7 @@ Pipe ReadFromMemoryStorageStep::makePipe()
             typeid_cast<StorageMemory *>(storage.get())->getMaterializedCTE(),
             source_filter,
             output_header,
-            nullptr,
+            nullptr /* block start rows */,
             nested_arrays));
     }
 
@@ -1129,8 +1349,8 @@ Pipe ReadFromMemoryStorageStep::makePipe()
     for (size_t stream = 0; stream < num_streams; ++stream)
     {
         auto source = std::make_shared<MemorySource>(
-            physical_columns, virtual_columns, current_data, parallel_execution_index, nullptr, nullptr, source_filter, output_header,
-            block_start_rows, nested_arrays);
+            physical_columns, virtual_columns, current_data, parallel_execution_index, nullptr, nullptr, source_filter, output_header, block_start_rows,
+            nested_arrays);
         if (stream == 0)
             source->addTotalRowsApprox(snapshot_data.rows);
         pipes.emplace_back(std::move(source));

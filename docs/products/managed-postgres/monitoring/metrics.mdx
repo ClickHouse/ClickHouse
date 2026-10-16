@@ -3,7 +3,7 @@ slug: /cloud/managed-postgres/monitoring/metrics
 sidebarTitle: 'Metrics reference'
 title: 'ClickHouse Managed Postgres metrics reference'
 description: 'Full list of metrics exposed by the ClickHouse Managed Postgres Prometheus endpoint'
-keywords: ['managed postgres', 'metrics', 'prometheus', 'reference', 'observability']
+keywords: ['managed postgres', 'metrics', 'prometheus', 'reference', 'observability', 'wait events', 'lock waits']
 doc_type: 'reference'
 ---
 
@@ -27,7 +27,7 @@ Every metric carries the following labels:
 
 Some metrics add a label for the dimension they break out (e.g.
 `mode` on CPU metrics, `state` on connections, `database` on database
-size). Those are listed alongside each metric.
+size, `wait` on wait events). Those are listed alongside each metric.
 
 ## Information metric {#information-metric}
 
@@ -121,10 +121,31 @@ Counters from recorded Query Insights events, excluding `UTILITY` operations.
 | `PostgresServer_CacheHitRatio`          | gauge |              | Buffer cache hit ratio: blocks served from cache vs. total blocks accessed, as a percentage. |
 | `PostgresServer_DatabaseSizeBytes`      | gauge | `database`   | Disk size of each database, in bytes. Includes the `postgres` default and any user-created databases. |
 
+## Wait events {#wait-events}
+
+Gauges from the wait samples that ClickHouse Managed Postgres takes on
+the primary every 30 seconds. These are the same samples behind the
+[wait charts in Query insights](/products/managed-postgres/monitoring/query-insights#wait-charts).
+A series appears only while there's something to report: an idle
+service has no wait series, and `PostgresServer_LockWaitMaxSeconds`
+appears only while a session is blocked on a lock.
+
+| Metric                                | Type  | Extra labels | Description |
+| ------------------------------------- | ----- | ------------ | ----------- |
+| `PostgresServer_ActiveSessionsByWait` | gauge | `wait`       | Active sessions in each wait event, averaged over the recent samples that reported it. `wait` is the wait event as `type:event`, for example `Lock:relation` or `IO:WalSync`, or `None` for sessions running with no wait event. |
+| `PostgresServer_LockWaitMaxSeconds`   | gauge |              | Longest time a session has been blocked on a lock, in seconds. |
+
+To count the sessions blocked on locks, sum the `Lock` wait events:
+
+```promql
+sum by (postgres_service_name) (PostgresServer_ActiveSessionsByWait{wait=~"Lock:.*"})
+```
+
 ## Related pages {#related}
 
 - [Prometheus endpoint] — setup, authentication, and scraping
 - [Dashboard](/products/managed-postgres/monitoring/dashboard) — built-in cloud console charts
+- [Query insights](/products/managed-postgres/monitoring/query-insights#wait-charts) — wait charts and the Waits table in the cloud console
 - [OpenAPI guide](/products/managed-postgres/openapi) — API key creation
   and lookup of organization and service IDs
 

@@ -158,8 +158,12 @@ std::unique_ptr<ReadBuffer> ReadBufferIterator::recreateLastReadBuffer()
     auto context = getContext();
 
     const auto & path = current_object_info->isArchive() ? current_object_info->getPathToArchive() : current_object_info->getPath();
-    auto impl
-        = createReadBuffer(current_object_info->relative_path_with_metadata, object_storage, context, getLogger("ReadBufferIterator"));
+    std::unique_ptr<ReadBuffer> impl;
+    using ObjectInfoInArchive = StorageObjectStorageSource::ArchiveIterator::ObjectInfoInArchive;
+    if (const auto * object_info_in_archive = dynamic_cast<const ObjectInfoInArchive *>(current_object_info.get()))
+        impl = object_info_in_archive->readFile();
+    else
+        impl = createReadBuffer(current_object_info->relative_path_with_metadata, object_storage, context, getLogger("ReadBufferIterator"));
 
     const auto compression_method = chooseCompressionMethod(current_object_info->getFileName(), configuration->compression_method);
     const auto & settings_ref = context->getSettingsRef();
@@ -280,8 +284,7 @@ ReadBufferIterator::Data ReadBufferIterator::next()
         if (const auto * object_info_in_archive = dynamic_cast<const ObjectInfoInArchive *>(current_object_info.get()))
         {
             compression_method = chooseCompressionMethod(filename, configuration->compression_method);
-            const auto & archive_reader = object_info_in_archive->archive_reader;
-            read_buf = archive_reader->readFile(object_info_in_archive->path_in_archive, /*throw_on_not_found=*/true);
+            read_buf = object_info_in_archive->readFile();
         }
         else
         {

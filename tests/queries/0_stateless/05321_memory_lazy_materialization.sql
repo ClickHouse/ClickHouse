@@ -10,7 +10,8 @@ DROP TABLE IF EXISTS t_memory_lazy_compressed;
 CREATE TABLE t_memory_lazy (k UInt64, v Int64, s String, a Array(UInt32), t Tuple(x UInt8, y String), n Nullable(String)) ENGINE = Memory;
 CREATE TABLE t_memory_lazy_compressed (k UInt64, v Int64, s String, a Array(UInt32), t Tuple(x UInt8, y String), n Nullable(String)) ENGINE = Memory SETTINGS compress = 1;
 
-INSERT INTO t_memory_lazy SELECT number, (number * 7919) % 100003, toString(number % 97), range(number % 5), (number % 7, toString(number)), if(number % 3 = 0, NULL, 'n' || toString(number)) FROM numbers(100000) SETTINGS max_block_size = 1000;
+-- A single thread inserts the blocks in the order of `number`, which `rowNumberInAllBlocks` below relies on.
+INSERT INTO t_memory_lazy SELECT number, (number * 7919) % 100003, toString(number % 97), range(number % 5), (number % 7, toString(number)), if(number % 3 = 0, NULL, 'n' || toString(number)) FROM numbers(100000) SETTINGS max_block_size = 1000, max_threads = 1;
 INSERT INTO t_memory_lazy_compressed SELECT * FROM t_memory_lazy;
 
 SELECT '-- explain';
@@ -36,12 +37,7 @@ SELECT sum(cityHash64(*)) FROM (SELECT * FROM t_memory_lazy_compressed WHERE v %
 SELECT sum(cityHash64(*)) FROM (SELECT * FROM t_memory_lazy_compressed WHERE v % 3 = 1 ORDER BY v DESC, k LIMIT 1000 SETTINGS query_plan_optimize_lazy_materialization = 0);
 
 SELECT '-- every column is deferred, the main branch reads only the global row index';
--- The order of the blocks depends on randomized insert settings, so check that the lazily read
--- columns belong to the same row and match the result without lazy materialization.
-SELECT k % 97 = toUInt64(s), n IS NULL OR n = 'n' || toString(k) FROM (SELECT k, s, n FROM t_memory_lazy ORDER BY rowNumberInAllBlocks() LIMIT 3) SETTINGS max_threads = 1;
-SELECT (SELECT groupArray((k, s, n)) FROM (SELECT k, s, n FROM t_memory_lazy ORDER BY rowNumberInAllBlocks() LIMIT 3))
-    = (SELECT groupArray((k, s, n)) FROM (SELECT k, s, n FROM t_memory_lazy ORDER BY rowNumberInAllBlocks() LIMIT 3 SETTINGS query_plan_optimize_lazy_materialization = 0))
-SETTINGS max_threads = 1;
+SELECT s, n FROM t_memory_lazy ORDER BY rowNumberInAllBlocks() LIMIT 3 SETTINGS max_threads = 1;
 SELECT s, n FROM t_memory_lazy_compressed ORDER BY rand() LIMIT 1000 FORMAT Null;
 
 SELECT '-- a row policy over a column that is not otherwise needed before the LIMIT';
@@ -59,6 +55,14 @@ SELECT k, v, s, m FROM t_memory_lazy ORDER BY v LIMIT 4;
 SELECT '-- an empty table';
 TRUNCATE TABLE t_memory_lazy;
 SELECT * FROM t_memory_lazy ORDER BY v LIMIT 5;
+
+SELECT '-- a member of a Nested added after the blocks were inserted';
+CREATE TABLE t_memory_lazy_nested (k UInt64, n Nested(a UInt64)) ENGINE = Memory;
+INSERT INTO t_memory_lazy_nested SELECT number, range(number % 3) FROM numbers(10);
+ALTER TABLE t_memory_lazy_nested ADD COLUMN `n.b` Array(String);
+SELECT k, n.b FROM t_memory_lazy_nested ORDER BY k DESC LIMIT 3;
+SELECT k, n.a, n.b FROM t_memory_lazy_nested ORDER BY k DESC LIMIT 3;
+DROP TABLE t_memory_lazy_nested;
 
 DROP TABLE t_memory_lazy;
 DROP TABLE t_memory_lazy_compressed;
