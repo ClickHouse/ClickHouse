@@ -1400,7 +1400,7 @@ std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
         *actual_stream_name,
         extension,
         data_part_storage->getFileSize(*actual_stream_name + extension),
-        /// The index merge reads every substream sequentially in file order, so it keeps the normal lookahead.
+        /// use_page_cache_lookahead: the index merge reads every substream in file order.
         makeTextIndexReaderSettings(reader_settings, substream.type, expected_buffer_size, /*use_page_cache_lookahead=*/ true));
 }
 

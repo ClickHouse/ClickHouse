@@ -396,8 +396,7 @@ void MergeTreeReaderTextIndex::initializePositionsStream()
     if (positions_substream == index_format.substreams.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index format V2 has no positions substream for index `{}`", index_read_task.index.index->index.name);
 
-    /// Positions are later seeked to by `token_info.position_offset` / `block_offsets[block_idx]`
-    /// in token order, not file order, so ask the page cache for one block at a time.
+    /// use_page_cache_lookahead: positions are read in token order, not in file order.
     positions_stream = makeTextIndexInputStream(
         *data_part_info_for_read,
         index_read_task.index.index->getFileName(),
@@ -581,9 +580,8 @@ void MergeTreeReaderTextIndex::createEmptyColumns(MutableColumns & columns, size
 
 std::unique_ptr<MergeTreeReaderStream> MergeTreeReaderTextIndex::makePostingsStream(const TokenPostingsInfo & token_info) const
 {
-    /// One stream per token, consumed by a cursor that can skip segments forward (see `getPostingsStream`)
-    /// or read whole and dropped (see `readAllPostingsForToken`). A longer lookahead would be abandoned
-    /// with data in flight in both cases, so ask the page cache for one block at a time.
+    /// use_page_cache_lookahead: a cursor can skip segments forward (`getPostingsStream`),
+    /// and a whole-list read drops the stream at the end of the list (`readAllPostingsForToken`).
     return makeTextIndexInputStream(
         *data_part_info_for_read,
         index_read_task.index.index->getFileName(),

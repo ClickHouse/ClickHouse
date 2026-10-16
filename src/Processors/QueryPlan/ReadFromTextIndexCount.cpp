@@ -259,8 +259,7 @@ UInt64 computeCountForPart(
             if (!(token_info->header & PostingsSerialization::Flags::IsCompressed))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected uncompressed multi-block posting list in text index {}", index.index->index.name);
 
-            /// Each cursor's own stream can skip segments forward (see `PostingListCursor`), so ask
-            /// for one block at a time rather than a lookahead that would be abandoned mid-flight.
+            /// use_page_cache_lookahead: the cursor can skip segments forward.
             cursor_streams.push_back(makeTextIndexInputStream(
                 part_info,
                 index.index->getFileName(),
@@ -295,8 +294,7 @@ UInt64 computeCountForPart(
     for (const auto * token_info : tokens_to_read)
         largest_segment_bytes = std::max(largest_segment_bytes, estimatePostingListBufferSize(*token_info));
 
-    /// One shared stream, but each token's blocks start at an unrelated file offset (`tokens_to_read`
-    /// is not in file order), so ask for one block at a time instead of a lookahead abandoned by seeks.
+    /// use_page_cache_lookahead: `tokens_to_read` is not in file order.
     auto postings_stream = makeTextIndexInputStream(
         part_info,
         index.index->getFileName(),

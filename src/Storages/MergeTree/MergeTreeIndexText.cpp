@@ -683,8 +683,7 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
     const auto dictionary_substream = getSubstream(state.index, MergeTreeIndexSubstream::Type::TextIndexDictionary);
     constexpr size_t dictionary_buffer_size = 16 * 1024;
 
-    /// Blocks are visited in token-cardinality order (and in ranges for patterns), not in file order,
-    /// so ask the page cache for one block at a time instead of a lookahead the next seek abandons.
+    /// use_page_cache_lookahead: blocks are read by token and by pattern range, not in file order.
     auto dictionary_stream = makeTextIndexInputStream(
         state.part_info,
         state.index.getFileName(),
@@ -999,9 +998,8 @@ void MergeTreeIndexGranuleText::analyzePostings(PostingsSerialization & postings
         return lhs.second->cardinality < rhs.second->cardinality;
     });
 
-    /// Tokens are read rarest-first (`tokens_to_read` is sorted by cardinality above), so their
-    /// posting lists are visited out of file order: ask the page cache for one block at a time.
     const auto postings_substream = getSubstream(state.index, MergeTreeIndexSubstream::Type::TextIndexPostings);
+    /// use_page_cache_lookahead: tokens are read rarest-first, not in file order.
     auto stream = makeTextIndexInputStream(
         state.part_info,
         state.index.getFileName(),
