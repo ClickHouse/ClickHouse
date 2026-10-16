@@ -13,58 +13,50 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で利用でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-<div id="http_allow_database_as_path">
-  ## http_allow_database_as_path
-</div>
+## http_allow_database_as_path {#http_allow_database_as_path}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "HTTPリクエストのURLパス内のデータベース名を認識するための新しい設定。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "HTTPリクエストのURLパス内のデータベース名を認識するための新しい設定。"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "デフォルトで有効化: HTTPインターフェイスはURLパスの`\/database\/`部分を現在のデータベースとして解釈します。"}]}]} />
 
 有効にすると、HTTPインターフェイスはURLパス内の`/database/`部分を認識し、これを現在のデータベースとして使用します。
 
-これは、ルーティングされたパス形式のリクエストを解釈するかどうかを制御するユーザーごとの設定です。ルーティング自体は、サーバーレベルの設定`http_allow_path_requests` (デフォルトでは無効) によってグローバルに制御されます。HTTPインターフェイスがパス形式のリクエスト (`/my_db/my_table.csv`など) をクエリハンドラーにルーティングするには、この設定を有効にする必要があります。ルーティングの判定はリクエストの認証前に行われるため、ユーザーごとの設定に依存させることはできません。`http_allow_path_requests`が無効の場合、未知のパスには通常の`404`が返されます。ルーティング後、この設定は認証済みユーザーに有効な設定に照らして再度確認されるため、ユーザー、ロール、またはプロファイルごとに選択的に有効化できます。
+これは、ルーティングされたパス形式のリクエストを解釈するかどうかを制御するユーザーごとの設定です。ルーティング自体は、サーバーレベルの設定`http_allow_path_requests` (デフォルトでは有効) によってグローバルに制御されます。HTTPインターフェイスがパス形式のリクエスト (`/my_db/my_table.csv`など) をクエリハンドラーにルーティングするには、この設定を有効にする必要があります。ルーティングの判定はリクエストの認証前に行われるため、ユーザーごとの設定に依存させることはできません。`http_allow_path_requests`が無効の場合、未知のパスには通常の`404`が返されます。ルーティング後、この設定は認証済みユーザーに有効な設定に照らして再度確認されるため、ユーザー、ロール、またはプロファイルごとに選択的に無効化できます。
 
-<div id="http_allow_filters_as_path">
-  ## http_allow_filters_as_path
-</div>
+## http_allow_filters_as_path {#http_allow_filters_as_path}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "HTTP リクエストの URL パス内にある Hive スタイルの `name=value` フィルターを認識するための新しい設定。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "HTTP リクエストの URL パス内にある Hive スタイルの `name=value` フィルタを認識するための新しい設定。"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "デフォルトで有効化: HTTP インターフェイスは `\/name=value\/` パス部分を `AND` で結合したフィルタとして解釈します。"}]}]} />
 
-有効にすると、HTTP インターフェイスはパス内の `/name=value/` 部分 (Hive パーティション化スタイル) を認識し、AND で結合したフィルターに変換します。演算子 `>`、`<`、`>=`、`<=`、`!=`、`<>` も認識されます。
+有効にすると、HTTP インターフェイスはパス内の `/name=value/` 部分 (Hive パーティション化スタイル) を認識し、AND で結合したフィルタに変換します。演算子 `>`、`<`、`>=`、`<=`、`!=`、`<>` も認識されます。
 
 [`http_allow_database_as_path`](/ja/reference/settings/session-settings/http#http_allow_database_as_path) と同様に、これはユーザーごとの設定です。パス形式のリクエストのルーティングは、サーバーレベルの `http_allow_path_requests` 設定によってグローバルに制御されます (ルーティングは認証前に行われます) 。
 
-<div id="http_allow_filters_as_unrecognized_url_parameters">
-  ## http_allow_filters_as_unrecognized_url_parameters
-</div>
+## http_allow_filters_as_unrecognized_url_parameters {#http_allow_filters_as_unrecognized_url_parameters}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "認識されない URL パラメータを HTTP リクエストのフィルター式として扱うための新しい設定。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "認識されない URL パラメータを HTTP リクエストのフィルタ式として扱うための新しい設定。"}]}]} />
 
-有効にすると、既知のパラメータ、設定、`param_*` プレフィックスのいずれにも該当しない URL パラメータはすべてフィルターとして扱われ、AND で結合されます。次の 2 つの形式を使用できます。
+有効にすると、既知のパラメータ、設定、`param_*` プレフィックスのいずれにも該当しない URL パラメータはすべてフィルタとして扱われ、AND で結合されます。次の 2 つの形式を使用できます。
 
 * 単純な `name=value` は、等価比較 `` `name` = 'value' `` になります (識別子はバッククォートで囲まれ、値は文字列リテラルとして引用されます) 。
 * 比較演算子 (`!=`、`>`、`<`、`>=`、`<=`、`<>`) を指定すると、比較として扱われます。パラメータをまたいで指定することも (`?a!=2`、`?a>=2`) 、URL 内に分割対象となる `=` がない場合はインラインで記述することもできます (`?a<>2`、`?f(x)>3`) 。後者では、再構成された `name[=value]` が完全な SQL 式として解析されます。
 
-<div id="http_allow_table_as_file">
-  ## http_allow_table_as_file
-</div>
+他の `http_allow_*` 設定とは異なり、この設定はデフォルトで無効です。`/?query=...` エンドポイントを含む HTTP インターフェイスのすべてのリクエストに適用されるため、有効にすると、クライアントが付加した認識されない URL パラメータ (リクエスト ID、署名、キャッシュバスターなど) がすべてクエリのフィルタになってしまいます。その結果、設定名のスペルミスは `UNKNOWN_SETTING` として報告されず、`UNKNOWN_IDENTIFIER` エラーで失敗します (名前がたまたまカラム名と一致した場合は、警告なしに結果がフィルタされます) 。さらに、パラメータの値はクエリテキストの一部となり、ログ内の `Request URI` のようにマスクされることはありません。
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+## http_allow_table_as_file {#http_allow_table_as_file}
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "HTTP リクエストの URL パス内のテーブル名を、任意のフォーマット\/圧縮拡張子付きで認識するための新しい設定。"}]}]} />
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "HTTP リクエストの URL パス内のテーブル名を、任意のフォーマット\/圧縮拡張子付きで認識するための新しい設定。"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "デフォルトで有効化: HTTP インターフェイスは URL パスの最後の部分を `table[.format[.compression]]` として解釈し、`SELECT * FROM table` の結果を返します。"}]}]} />
 
 有効にすると、HTTP インターフェイスは URL パスの最後の部分を、`table`、`table.format`、または `table.format.compression` 形式のテーブル名として認識します。このパスは `SELECT * FROM table` として解釈されます。
 
 [`http_allow_database_as_path`](/ja/reference/settings/session-settings/http#http_allow_database_as_path) と同様に、これはユーザーごとの設定です。パス形式のリクエストのルーティングは、サーバーレベルの `http_allow_path_requests` 設定によってグローバルに制御されます (ルーティングは認証前に行われます) 。
 
-<div id="http_connection_timeout">
-  ## http_connection_timeout
-</div>
+## http_connection_timeout {#http_connection_timeout}
 
 <SettingsInfoBlock type="Seconds" default_value="1" />
 
@@ -75,17 +67,13 @@ HTTP 接続のタイムアウト時間 (秒) 。
 * 任意の正の整数。
 * 0 - 無効 (タイムアウトなし) 。
 
-<div id="http_make_head_request">
-  ## http_make_head_request
-</div>
+## http_make_head_request {#http_make_head_request}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 `http_make_head_request` 設定を有効にすると、HTTP からデータを読み取る際に `HEAD` リクエストを実行し、読み取るファイルのサイズなどの情報を取得できます。この設定はデフォルトで有効になっているため、サーバーが `HEAD` リクエストをサポートしていない場合は、無効にすることをおすすめします。
 
-<div id="http_native_compression_disable_checksumming_on_decompress">
-  ## http_native_compression_disable_checksumming_on_decompress
-</div>
+## http_native_compression_disable_checksumming_on_decompress {#http_native_compression_disable_checksumming_on_decompress}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -98,9 +86,7 @@ HTTP 接続のタイムアウト時間 (秒) 。
 * 0 — 無効。
 * 1 — 有効。
 
-<div id="http_receive_timeout">
-  ## http_receive_timeout
-</div>
+## http_receive_timeout {#http_receive_timeout}
 
 <SettingsInfoBlock type="Seconds" default_value="30" />
 
@@ -112,9 +98,7 @@ HTTP受信タイムアウト (単位: 秒) 。
 
 * 任意の正の整数 (秒) 。`0` は無限タイムアウトでは**なく**、接続確立に失敗する可能性があります (POSIXソケットのタイムアウトには正のintervalが必要です) 。
 
-<div id="http_send_timeout">
-  ## http_send_timeout
-</div>
+## http_send_timeout {#http_send_timeout}
 
 <SettingsInfoBlock type="Seconds" default_value="30" />
 
@@ -130,25 +114,19 @@ HTTP 送信タイムアウト (秒) 。
   これはデフォルトプロファイルにのみ適用されます。変更を反映するにはサーバーの再起動が必要です。
 </Note>
 
-<div id="http_skip_not_found_url_for_globs">
-  ## http_skip_not_found_url_for_globs
-</div>
+## http_skip_not_found_url_for_globs {#http_skip_not_found_url_for_globs}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 HTTP&#95;NOT&#95;FOUND エラーが発生した glob の URL をスキップします
 
-<div id="http_wait_end_of_query">
-  ## http_wait_end_of_query
-</div>
+## http_wait_end_of_query {#http_wait_end_of_query}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 サーバー側のHTTPレスポンスバッファリングを有効にします。
 
-<div id="http_write_exception_in_output_format">
-  ## http_write_exception_in_output_format
-</div>
+## http_write_exception_in_output_format {#http_write_exception_in_output_format}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -156,9 +134,23 @@ HTTP&#95;NOT&#95;FOUND エラーが発生した glob の URL をスキップし�
 
 有効な出力を生成できるよう、例外を出力フォーマットに従って書き込みます。JSON および XML フォーマットで動作します。
 
-<div id="http_zlib_compression_level">
-  ## http_zlib_compression_level
-</div>
+## http_x_clickhouse_format_overrides_output_format {#http_x_clickhouse_format_overrides_output_format}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "`X-ClickHouse-Format` HTTP ヘッダーを、26.8 以降のように `output_format` の別名（クエリの `FORMAT` 句をオーバーライド）として扱うか、26.8 より前のように `default_format` の別名として扱うかを制御します。このエントリは 26.8 での変更を遡って記録するものであり、`compatibility` に 26.8 より前のバージョンを指定すると、以前のヘッダーの動作に戻ります。"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "26.8 で導入された `X-ClickHouse-Format` HTTP ヘッダーの変更を制御するために、26.10 で新たに追加された設定です。実質的な動作の変更は 26.8 のブロックに登録されているため、`compatibility = '26.7'` ではこの変更がリバートされ、`compatibility = '26.8'` および `'26.9'` ではそれぞれのリリースの動作が維持されます。このエントリは、アップグレードチェックで新たに導入された設定名が受け入れられるようにするためのものです。"}]}]} />
+
+`X-ClickHouse-Format` HTTP ヘッダーをどの設定に対応付けるかを制御します。
+
+有効な場合 (デフォルト) 、このヘッダーは `output_format` 設定の別名となります。つまり、レスポンスフォーマットを明示的にオーバーライドするものとして扱われ、クエリ内の `FORMAT` 句や URL パス内のファイル拡張子よりも優先されます。
+
+無効な場合、このヘッダーはバージョン 26.8 より前と同様に `default_format` 設定の別名となります。つまり、クエリに `FORMAT` 句がなく、ほかにフォーマットのオーバーライドも適用されていない場合に使用するフォーマットを指定するだけです。
+
+いずれの場合も、このヘッダーは同名の URL パラメータ (それぞれ `output_format` または `default_format`) よりも優先され、`INSERT` のリクエストボディのパース方法には一切影響しません。
+
+これは HTTP インターフェイス向けの互換性設定です。ヘッダーはクエリのパース前に消費されるため、クエリ内の `SETTINGS` 句ではなく、URL パラメータまたはユーザープロファイルで指定する必要があります。`output_format` や `default_format` と同様に、読み取り専用モード (`readonly = 1`) でも常に変更できるため、読み取り専用ユーザーも URL パラメータとして指定できます。
+
+## http_zlib_compression_level {#http_zlib_compression_level}
 
 <SettingsInfoBlock type="Int64" default_value="3" />
 
