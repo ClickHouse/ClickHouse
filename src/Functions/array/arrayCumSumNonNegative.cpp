@@ -19,6 +19,12 @@ namespace ErrorCodes
   */
 struct ArrayCumSumNonNegativeImpl
 {
+    /// Authoritative — like `arrayCumSum` but the running total is clamped to zero; the result
+    /// element type widens the same way, via the `arraySumResult` type function.
+    static constexpr auto signature =
+        "(Function((Any, ...), T : Number), Array, ...) -> Array(arraySumResult(T))"
+        " OR (Array(T : Number)) -> Array(arraySumResult(T))";
+
     static bool needBoolean() { return false; }
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }
