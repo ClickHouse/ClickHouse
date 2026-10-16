@@ -5536,7 +5536,7 @@ and marking it `readonly`:
 
 This setting has no effect in `clickhouse-local`, where the user is the operator.
 )", 0, \
-        {"26.10", true, false, "New setting to block Azure Blob Storage access from user SQL from authenticating with the server's own identity (the AKS workload identity or the machine's managed identity). The previous behavior (allowed) is restored with compatibility settings."}) \
+        {"26.11", true, false, "New setting to block Azure Blob Storage access from user SQL from authenticating with the server's own identity (the AKS workload identity or the machine's managed identity). The previous behavior (allowed) is restored with compatibility settings."}) \
     DECLARE(UInt64, max_parts_to_move, 1000, "Limit the number of parts that can be moved in one query. Zero means unlimited.", 0, \
         {"24.10", 0, 1000, "New setting"}) \
     \
