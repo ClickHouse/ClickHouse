@@ -1,6 +1,8 @@
 -- the most negative divisor
 7	-7	0
 104	-104	1696	-7
+-- a divisor just above the range of a narrower dividend
+0	-2147483647	2147483647
 -- the minimal signed number modulo -1 is 0
 0	0	0
 0	0	0
@@ -29,3 +31,5 @@ Int32 % Int32(-2147483648)	0
 Int32 % Int32(-1)	0
 Int32 % Int64(-9223372036854775808)	0
 Int32 % Int64(-1)	0
+Int32 % Int64(2147483648)	0
+Int32 % Int64(-2147483648)	0

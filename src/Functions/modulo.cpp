@@ -78,6 +78,17 @@ struct ModuloByConstantImpl
         /// Modulo with too large divisor.
         if (b > std::numeric_limits<A>::max()) [[unlikely]]
         {
+            /// The divisor `max(A) + 1` equals `|lowest(A)|`, so `lowest(A)` is divisible by it:
+            /// take the power-of-two path, which gives `0` for it and the dividend for the rest.
+            if constexpr (std::is_signed_v<A> && sizeof(B) > sizeof(A))
+            {
+                if (b == static_cast<B>(std::numeric_limits<A>::max()) + 1)
+                {
+                    vectorPowerOfTwo(src, std::numeric_limits<A>::max(), dst, size);
+                    return;
+                }
+            }
+
             for (size_t i = 0; i < size; ++i)
                 dst[i] = static_cast<ResultType>(src[i]);
             return;
