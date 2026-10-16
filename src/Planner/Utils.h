@@ -130,6 +130,12 @@ ASTPtr parseAdditionalResultFilter(const Settings & settings);
 using UsefulSets = std::unordered_set<FutureSetPtr>;
 void appendSetsFromActionsDAG(const ActionsDAG & dag, UsefulSets & useful_sets);
 
+/// Build a query plan for every set subquery in `subqueries` that is not ready and has none yet,
+/// the same way `addBuildSubqueriesForSetsStepIfNeeded` does, so that a `CreatingSet` step or
+/// `FutureSetFromSubquery::buildSetInplace` can fill it. The same ordering requirement as for
+/// `buildPreparedSetsInplace` below applies.
+void planPreparedSetSubqueries(const PreparedSets::Subqueries & subqueries, const ContextPtr & context);
+
 /// Build and fill every deferred set that `collectSets` registered in `planner_context`.
 ///
 /// Deferred sets - the right-hand side of an `IN` that is a subquery, a table or a table function -

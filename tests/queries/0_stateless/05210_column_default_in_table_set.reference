@@ -5,6 +5,17 @@ ALIAS read
 2	0
 ALIAS referenced from a subquery
 1
+ALIAS through a Merge table
+1	1
+2	0
+3	1
+4	0
+1
+3
+0
+1
+0
+1
 mutation over the ALIAS carrier
 2
 DEFAULT on INSERT

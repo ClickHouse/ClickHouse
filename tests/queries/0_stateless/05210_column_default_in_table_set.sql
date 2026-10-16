@@ -12,6 +12,7 @@ SET async_insert = 0;
 
 DROP TABLE IF EXISTS t_default_in_set_keys;
 DROP TABLE IF EXISTS t_default_in_set_alias;
+DROP TABLE IF EXISTS t_default_in_set_alias_copy;
 DROP TABLE IF EXISTS t_default_in_set_default;
 DROP TABLE IF EXISTS t_default_in_set_materialized;
 DROP TABLE IF EXISTS t_default_in_set_added;
@@ -35,6 +36,17 @@ SELECT x, flag FROM t_default_in_set_alias ORDER BY x;
 -- expanded rather than by the outer `collectSets`, and still has to be built.
 SELECT 'ALIAS referenced from a subquery';
 SELECT x FROM (SELECT x, flag FROM t_default_in_set_alias) WHERE flag ORDER BY x;
+
+-- A `Merge` table computes the ALIAS columns of its underlying tables in their own plans, and each
+-- of them has to build the set. Two tables of the same structure also cover the reuse of the analysis
+-- of the first one for the second.
+SELECT 'ALIAS through a Merge table';
+CREATE TABLE t_default_in_set_alias_copy AS t_default_in_set_alias;
+INSERT INTO t_default_in_set_alias_copy (p, x) VALUES (1, 3), (5, 4);
+SELECT x, flag FROM merge(currentDatabase(), '^t_default_in_set_alias') ORDER BY x;
+SELECT x FROM merge(currentDatabase(), '^t_default_in_set_alias') WHERE flag ORDER BY x;
+SELECT flag FROM merge(currentDatabase(), '^t_default_in_set_alias') ORDER BY x DESC NULLS LAST;
+DROP TABLE t_default_in_set_alias_copy;
 
 SELECT 'mutation over the ALIAS carrier';
 ALTER TABLE t_default_in_set_alias DELETE WHERE flag SETTINGS mutations_sync = 1;
