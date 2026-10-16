@@ -8,6 +8,7 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/re2.h>
+#include <Common/RemoteHostFilter.h>
 #include <Core/SettingsFields.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/URI.h>
@@ -180,8 +181,11 @@ void setupAuthentication(
 
     if (!context_holder)
     {
+        /// The configuration holds the filter by reference, so the filter must outlive `context_holder->provider`.
+        static const RemoteHostFilter remote_host_filter;
+
         auto aws_client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
-            effective_region, {}, 0, {}, false, false, false, false, {}, {});
+            effective_region, remote_host_filter, 0, {}, false, false, false, false, {}, {});
 
         S3::CredentialsConfiguration credentials_configuration;
         credentials_configuration.use_environment_credentials = use_environment_credentials;
