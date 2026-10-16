@@ -145,7 +145,7 @@ std::string StorageS3Configuration::getPathInArchive() const
 void StorageS3Configuration::check(ContextPtr context)
 {
     validateNamespace(url.bucket);
-    context->getGlobalContext()->getRemoteHostFilter().checkURL(url.uri);
+    url.checkRemoteHostFilter(context->getGlobalContext()->getRemoteHostFilter());
     context->getGlobalContext()->getHTTPHeaderFilter().checkHeaders(headers_from_ast);
     StorageObjectStorageConfiguration::check(context);
 }
@@ -892,9 +892,15 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
 }
 
 static void addStructureAndFormatToArgsIfNeededS3(
-    ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure, size_t max_number_of_arguments)
+    ASTs & args,
+    const String & structure_,
+    const String & format_,
+    ContextPtr context,
+    bool with_structure,
+    size_t max_number_of_arguments,
+    bool is_replayed_definition)
 {
-    if (auto collection = tryGetNamedCollectionWithOverrides(args, context))
+    if (auto collection = tryGetNamedCollectionWithOverrides(args, context, true, nullptr, nullptr, nullptr, is_replayed_definition))
     {
         /// In case of named collection, just add key-value pairs "format='...', structure='...'"
         /// at the end of arguments to override existed format and structure with "auto" values.
@@ -1224,7 +1230,13 @@ void StorageS3Configuration::addStructureAndFormatToArgsIfNeeded(
     ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure)
 {
     addStructureAndFormatToArgsIfNeededS3(
-        args, structure_, format_, context, with_structure, S3StorageParsedArguments::getMaxNumberOfArguments(with_structure));
+        args,
+        structure_,
+        format_,
+        context,
+        with_structure,
+        S3StorageParsedArguments::getMaxNumberOfArguments(with_structure),
+        is_replayed_definition);
 }
 }
 
