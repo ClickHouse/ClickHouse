@@ -784,13 +784,27 @@ void validateMaterializedPostgreSQLCoordinationSettings(
 }
 
 
-bool PostgreSQLReplicationHandler::coordinationIdentityDependsOnDatabaseName(const MaterializedPostgreSQLSettings & replication_settings)
+bool PostgreSQLReplicationHandler::coordinationIdentityDependsOnDatabaseName(
+    const MaterializedPostgreSQLSettings & replication_settings, const ContextPtr & macros_context, const StorageID & macro_table_id)
 {
     const String & keeper_path = replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_keeper_path].value;
     if (keeper_path.empty())
         return false;
     const String & replica_name = replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_replica_name].value;
-    return keeper_path.contains("{database}") || replica_name.contains("{database}");
+
+    /// Expand recursively, exactly like the constructor does, because `{database}` can be reached through a
+    /// configuration macro. An unknown macro is not an error here: it does not expand `{database}`, and the
+    /// startup paths refuse an unresolved identity anyway.
+    const auto macros = macros_context->getMacros();
+    auto expands_database = [&](const String & value)
+    {
+        Macros::MacroExpansionInfo info;
+        info.table_id = macro_table_id;
+        info.ignore_unknown = true;
+        macros->expand(value, info);
+        return info.expanded_database;
+    };
+    return expands_database(keeper_path) || expands_database(replica_name);
 }
 
 
@@ -808,6 +822,7 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     : WithContext(context_->getGlobalContext())
     , log(getLogger("PostgreSQLReplicationHandler"))
     , is_attach(is_attach_)
+    , adopt_legacy_replication_identity(is_attach_)
     , postgres_database(postgres_database_)
     , postgres_schema(replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_schema])
     , current_database_name(clickhouse_database_)
@@ -1218,7 +1233,7 @@ void PostgreSQLReplicationHandler::assertInitialized() const
 /// replica or hijacking another engine's replication slot.
 void PostgreSQLReplicationHandler::adoptLegacyReplicationIdentityIfNeeded(pqxx::nontransaction & tx)
 {
-    if (!is_attach)
+    if (!adopt_legacy_replication_identity)
         return;
 
     /// The generated names differ from the legacy ones only for a non-default schema (and, for the slot,
@@ -1421,6 +1436,24 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
         }
     };
 
+    /// A plain single-table engine whose `DROP TABLE` threw after the nested table had already left the catalog
+    /// keeps the wrapper and the slot/publication, but has no nested table to resume into. The in-memory
+    /// `restartReplicationAfterFailedDrop` handles that until the next restart; after a restart this handler is
+    /// constructed in attach mode again, and the attach-style resume below would fail on the missing nested table
+    /// forever. `tryGetNested` waits for the table to be loaded, so a missing table here is really gone: start
+    /// create-style, which recreates the nested table and reloads it from a new snapshot.
+    if (is_attach && !coordination_enabled && !is_materialized_postgresql_database)
+    {
+        for (const auto & [table_name, storage] : materialized_storages)
+        {
+            if (!storage->as<StorageMaterializedPostgreSQL>()->tryGetNested())
+            {
+                LOG_WARNING(log, "The nested table of {} does not exist. Recreating it from a new snapshot", table_name);
+                is_attach = false;
+            }
+        }
+    }
+
     /// There is one replication slot for each replication handler. In case of MaterializedPostgreSQL database engine,
     /// there is one replication slot per database. Its lifetime must be equal to the lifetime of replication handler.
     /// Recreation of a replication slot imposes reloading of all tables.
@@ -1462,9 +1495,16 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
             /// The marker deletion used the same session that owns /leader. Do not proceed if that
             /// session expired while deleting it, because another worker may already be rebuilding.
             assertReplicationLeadershipIsLive();
-            truncateNestedTables();
-            assertReplicationLeadershipIsLive();
         }
+
+        /// The same holds without coordination: a nested table can exist here, for example one that survived a
+        /// refused partial `DROP DATABASE`, or one whose slot was dropped while replication was down. The rows
+        /// PostgreSQL deleted meanwhile have no counterpart in the new snapshot, so the table must be cleared
+        /// before the reload, exactly like in the plain create-style branch below.
+        truncateNestedTables();
+
+        if (coordination_enabled)
+            assertReplicationLeadershipIsLive();
 
         initial_sync();
     }

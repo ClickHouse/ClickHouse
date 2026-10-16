@@ -172,7 +172,8 @@ private:
     /// operator) can repair. The startup that performs the repair is asynchronous and can be interrupted by
     /// a server restart, which rebuilds this object from its metadata and forgets `is_attach` /
     /// `manual_repair_required`, so the decision is also recorded as a marker file in the database metadata
-    /// directory and re-applied on every startup until one of them succeeds.
+    /// directory and re-applied on every startup until one of them succeeds. The compensating reload of a failed
+    /// `DETACH TABLE ... PERMANENTLY` persists the same marker before it truncates the surviving nested table.
     String getPartialDropRecoveryMarkerPath() const;
     void persistPartialDropRecoveryMarker();
     void removePartialDropRecoveryMarker();
@@ -184,6 +185,10 @@ private:
     String getFormattedTablesList(const String & except = {}) const TSA_REQUIRES(tables_mutex);
 
     bool is_attach;
+    /// `is_attach` as it was when the database was loaded: unlike `is_attach`, the partial-drop recovery does not
+    /// reset it, because the database stays the same deployment with the same replication identity (see
+    /// `PostgreSQLReplicationHandler::setAdoptLegacyReplicationIdentity`).
+    const bool adopt_legacy_replication_identity;
     String remote_database_name;
     postgres::ConnectionInfo connection_info;
     std::unique_ptr<MaterializedPostgreSQLSettings> settings;

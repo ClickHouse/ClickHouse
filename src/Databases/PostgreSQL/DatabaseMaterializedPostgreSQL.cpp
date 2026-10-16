@@ -97,6 +97,7 @@ DatabaseMaterializedPostgreSQL::DatabaseMaterializedPostgreSQL(
         ASTPtr table_overrides_)
     : DatabaseAtomic(database_name_, metadata_path_, uuid_, "DatabaseMaterializedPostgreSQL (" + database_name_ + ")", context_)
     , is_attach(is_attach_)
+    , adopt_legacy_replication_identity(is_attach_)
     , remote_database_name(postgres_database_name)
     , connection_info(connection_info_)
     , settings(std::move(settings_))
@@ -138,7 +139,7 @@ void DatabaseMaterializedPostgreSQL::tryStartSynchronization()
 
 std::shared_ptr<PostgreSQLReplicationHandler> DatabaseMaterializedPostgreSQL::makeReplicationHandler()
 {
-    return std::make_shared<PostgreSQLReplicationHandler>(
+    auto handler = std::make_shared<PostgreSQLReplicationHandler>(
             remote_database_name,
             /* table_name */"",
             TSA_SUPPRESS_WARNING_FOR_READ(database_name),     /// FIXME
@@ -149,6 +150,8 @@ std::shared_ptr<PostgreSQLReplicationHandler> DatabaseMaterializedPostgreSQL::ma
             *settings,
             /* is_materialized_postgresql_database = */ true,
             table_overrides.get());
+    handler->setAdoptLegacyReplicationIdentity(adopt_legacy_replication_identity);
+    return handler;
 }
 
 
@@ -987,8 +990,21 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
                 if (!replication_handler)
                     throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
                         "The replication handler is gone");
+
+                /// The re-add truncates the surviving nested table before it reloads it. If the reload fails, or
+                /// the server restarts in the middle of it, nothing else records that the table is now empty or
+                /// partially loaded: the next startup would wrap it as available and resume from the existing
+                /// slot, which never brings the historical rows back. Persist the reload intent first, reusing the
+                /// partial-drop recovery marker: until a startup completes, it keeps the tables hidden and forces
+                /// a create-style startup that reloads every table from a new snapshot. A failure to persist it
+                /// propagates before anything is truncated.
+                const bool reload_marker_existed = getDisk()->existsFile(getPartialDropRecoveryMarkerPath());
+                persistPartialDropRecoveryMarker();
                 replication_handler->addTableToReplication(materialized_storage, table_name, /* clear_existing_data */ true);
                 table_readded = true;
+                /// A marker that existed before belongs to a recovery that is still pending, keep it.
+                if (!reload_marker_existed)
+                    removePartialDropRecoveryMarker();
             }
             catch (...)
             {
@@ -1165,7 +1181,10 @@ void DatabaseMaterializedPostgreSQL::renameDatabase(ContextPtr query_context, co
     /// Refuse before any metadata is changed: the nested tables keep the coordination path and the replica name
     /// expanded with the old database name, so after the rename the next startup would expand them differently
     /// and reject every attempt as a change of the coordination identity, leaving the replica unavailable.
-    if (PostgreSQLReplicationHandler::coordinationIdentityDependsOnDatabaseName(*settings))
+    StorageID macro_table_id = StorageID::createEmpty();
+    macro_table_id.database_name = getDatabaseName();
+    macro_table_id.uuid = getUUID();
+    if (PostgreSQLReplicationHandler::coordinationIdentityDependsOnDatabaseName(*settings, query_context, macro_table_id))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "RENAME DATABASE is not supported for a coordinated MaterializedPostgreSQL database whose "
             "materialized_postgresql_keeper_path or materialized_postgresql_replica_name uses the {{database}} macro: "
@@ -1388,7 +1407,7 @@ void DatabaseMaterializedPostgreSQL::removePartialDropRecoveryMarker()
     if (db_disk->existsFile(marker_path))
     {
         db_disk->removeFileIfExists(marker_path);
-        LOG_INFO(log, "The database recovered from a partially applied DROP DATABASE, removed {}", marker_path);
+        LOG_INFO(log, "The database does not need a create-style reload anymore, removed {}", marker_path);
     }
 }
 

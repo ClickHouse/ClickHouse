@@ -117,8 +117,11 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
             /* table_overrides */ nullptr);
 
     is_standalone_coordinated = replication_handler->isCoordinated();
+    StorageID macro_table_id = StorageID::createEmpty();
+    macro_table_id.database_name = table_id_.database_name;
+    macro_table_id.uuid = table_id_.uuid;
     coordination_identity_depends_on_database_name
-        = PostgreSQLReplicationHandler::coordinationIdentityDependsOnDatabaseName(*replication_settings);
+        = PostgreSQLReplicationHandler::coordinationIdentityDependsOnDatabaseName(*replication_settings, getContext(), macro_table_id);
 
     replication_handler->addStorage(remote_table_name, this);
     replication_handler->startup(/* delayed */is_attach);

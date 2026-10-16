@@ -44,7 +44,13 @@ instance2 = cluster.add_instance(
     with_postgres=True,
     with_zookeeper=True,
     stay_alive=True,
-    macros={"shard": "1", "replica": "coord_instance2", "coord_replica": "coord_instance2"},
+    macros={
+        "shard": "1",
+        "replica": "coord_instance2",
+        "coord_replica": "coord_instance2",
+        # Reaches `{database}` only indirectly, through the recursive macro expansion.
+        "coord_database_path": "/clickhouse/mat_pg/{shard}/{database}",
+    },
 )
 
 # A replica with no Keeper/ZooKeeper configured. Coordination needs Keeper, so a coordinated CREATE
@@ -722,6 +728,31 @@ def test_rename_database_is_rejected_when_keeper_path_uses_database_macro(starte
         "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(10, 10)"
     )
     check_tables_are_synchronized(instance, "test_table")
+
+
+def test_rename_database_is_rejected_when_keeper_path_uses_database_macro_indirectly(started_cluster):
+    # Same as above, but `{database}` is reached only through a configuration macro.
+    pg_manager.create_postgres_table("test_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(10)"
+    )
+    pg_manager2.create_materialized_db(
+        ip=cluster.postgres_ip,
+        port=cluster.postgres_port,
+        settings=[
+            "materialized_postgresql_table_engine = 'ReplicatedReplacingMergeTree'",
+            "materialized_postgresql_keeper_path = '{coord_database_path}'",
+            "materialized_postgresql_replica_name = '{replica}'",
+            "materialized_postgresql_tables_list = 'test_table'",
+        ],
+    )
+    check_tables_are_synchronized(instance2, "test_table")
+
+    error = instance2.query_and_get_error(
+        "RENAME DATABASE test_database TO test_database_renamed"
+    )
+    assert "RENAME DATABASE is not supported" in error
+    assert "test_database" in instance2.query("SHOW DATABASES").split()
 
 
 def test_coordinated_create_adopts_publication_over_mismatching_tables_list(started_cluster):

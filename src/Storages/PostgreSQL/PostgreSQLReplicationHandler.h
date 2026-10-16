@@ -114,11 +114,19 @@ public:
     /// True when this handler runs in coordinated mode (materialized_postgresql_keeper_path is set).
     bool isCoordinated() const { return coordination_enabled; }
 
+    /// By default the legacy (schema-blind) replication identity is adopted only on attach. A database that was
+    /// attached, but whose refused partial `DROP DATABASE` switched it to a create-style startup, is still the same
+    /// deployment: its slot and publication must keep their adopted names, otherwise the reload would run under new
+    /// names into the surviving nested tables and leak the legacy objects.
+    void setAdoptLegacyReplicationIdentity(bool value) { adopt_legacy_replication_identity = value; }
+
     /// Whether the coordination identity (`materialized_postgresql_keeper_path` / `materialized_postgresql_replica_name`)
     /// of a coordinated setup expands the `{database}` macro. The nested tables record the expanded identity, so
     /// `RENAME DATABASE` must be refused for such a setup: after the rename the identity would expand differently
-    /// and every startup would be rejected as an identity change.
-    static bool coordinationIdentityDependsOnDatabaseName(const MaterializedPostgreSQLSettings & replication_settings);
+    /// and every startup would be rejected as an identity change. The settings are expanded with the server macros,
+    /// so `{database}` reached through a configuration macro (e.g. `<coord_path>/pg/{database}</coord_path>`) counts too.
+    static bool coordinationIdentityDependsOnDatabaseName(
+        const MaterializedPostgreSQLSettings & replication_settings, const ContextPtr & macros_context, const StorageID & macro_table_id);
 
     /// Coordinated teardown that must run BEFORE the caller deletes this replica's local nested tables (from
     /// DatabaseMaterializedPostgreSQL::beforeDropDatabase for the database engine, and from
@@ -423,6 +431,9 @@ private:
 
     /// If it is not attach, i.e. a create query, then if publication already exists - always drop it.
     bool is_attach;
+
+    /// See `setAdoptLegacyReplicationIdentity`.
+    bool adopt_legacy_replication_identity;
 
     String postgres_database;
     String postgres_schema;

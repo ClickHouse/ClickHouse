@@ -818,6 +818,54 @@ def test_failed_detach_remains_retryable_after_failed_rollback(started_cluster):
     pg_manager.drop_materialized_db()
 
 
+def test_failed_detach_reload_is_repeated_after_restart(started_cluster):
+    # A failed DETACH TABLE ... PERMANENTLY re-adds the table by truncating the surviving nested table and
+    # reloading it from a snapshot. If that reload fails too, the table is empty, and nothing but the persisted
+    # reload intent tells the next startup that the historical rows must be reloaded: resuming from the existing
+    # replication slot only brings changes made after the restart.
+    table_name = "postgresql_replica_detach_reload"
+    other_table_name = "postgresql_replica_detach_reload_other"
+    for name in (table_name, other_table_name):
+        pg_manager.create_postgres_table(name)
+        instance.query(
+            f"INSERT INTO postgres_database.{name} SELECT number, number FROM numbers(50)"
+        )
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table_name},{other_table_name}'"
+        ],
+    )
+    check_tables_are_synchronized(instance, table_name)
+    check_tables_are_synchronized(instance, other_table_name)
+
+    failpoints = [
+        "materialized_postgresql_fail_nested_drop_on_detach",
+        "materialized_postgresql_fail_load_from_snapshot",
+    ]
+    for failpoint in failpoints:
+        instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+    try:
+        error = instance.query_and_get_error(
+            f"DETACH TABLE test_database.{table_name} PERMANENTLY"
+        )
+        assert "Injected failure" in error
+    finally:
+        for failpoint in failpoints:
+            instance.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+    instance.restart_clickhouse()
+
+    # The startup reloads the table from a new snapshot, so the original rows are back.
+    check_tables_are_synchronized(instance, table_name)
+    check_tables_are_synchronized(instance, other_table_name)
+    assert int(instance.query(f"SELECT count() FROM test_database.{table_name}")) == 50
+
+    pg_manager.drop_materialized_db()
+
+
 def test_count_does_not_include_deleted_rows(started_cluster):
     # A `SELECT count()` needs no particular column, so the planner reads the cheapest column of the
     # nested table - which is the one-byte `_sign` column itself. The `_sign = 1` filter of the wrapped
