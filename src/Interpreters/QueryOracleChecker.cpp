@@ -535,6 +535,9 @@ bool containsIdentifier(const ASTPtr & ast)
         return false;
     if (ast->as<ASTIdentifier>())
         return true;
+    /// The lambda of `APPLY` always contains its own parameter.
+    if (ast->as<ASTColumnsApplyTransformer>())
+        return false;
     for (const auto & child : ast->children)
         if (containsIdentifier(child))
             return true;

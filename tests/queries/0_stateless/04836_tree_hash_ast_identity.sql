@@ -70,7 +70,7 @@ SELECT k, s FROM (
     SELECT 2 AS k, sum(w) AS s FROM view(SELECT sum(number) OVER (ORDER BY -number ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS w FROM numbers(4))
 ) ORDER BY k;
 
--- The parameters of `ASTColumnsApplyTransformer`, which are not children of it either.
+-- `ASTColumnsApplyTransformer::parameters`, a child of the transformer.
 SELECT * FROM (
     SELECT 1 AS k, * FROM view(SELECT COLUMNS('x') APPLY(quantile(0.1)) FROM (SELECT number AS x FROM numbers(11)))
     UNION ALL

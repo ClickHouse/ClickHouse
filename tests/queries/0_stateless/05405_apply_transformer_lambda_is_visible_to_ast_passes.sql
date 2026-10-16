@@ -18,6 +18,10 @@ SELECT * APPLY (quantile({q:Float64})) FROM (SELECT number AS i FROM numbers(11)
 -- Integer division follows `exact_division_for_integers`.
 SELECT * APPLY (x -> x / 2) FROM (SELECT 3 AS i) SETTINGS exact_division_for_integers = 1;
 
+-- The query cache refuses a non-deterministic function and a system table.
+SELECT * APPLY (x -> x + rand()) FROM (SELECT 1 AS i) SETTINGS use_query_cache = 1, query_cache_nondeterministic_function_handling = 'throw'; -- { serverError QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS }
+SELECT * APPLY (x -> x + (SELECT count() FROM system.one)) FROM (SELECT 1 AS i) SETTINGS use_query_cache = 1, query_cache_system_table_handling = 'throw'; -- { serverError QUERY_CACHE_USED_WITH_SYSTEM_TABLE }
+
 -- A table function's secret arguments are masked in the query log. The empty address is rejected after the query is logged.
 SELECT * APPLY (x -> x + (SELECT count() FROM remote('', system.one, 'usr', 'pass_05405_secret'))) FROM (SELECT 1 AS i) SETTINGS log_comment = '05405_apply_masking'; -- { serverError BAD_ARGUMENTS }
 SYSTEM FLUSH LOGS query_log;
