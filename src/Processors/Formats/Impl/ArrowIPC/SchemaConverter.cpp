@@ -307,11 +307,10 @@ ArrowType parseType(const flatbuf::Field & field)
             }
             break;
         }
-        /// View-list and run-end-encoded types the reader cannot decode, but whose physical buffer layout
-        /// is known. Keep them as `Unsupported` placeholders (so schema inference can drop them and a
-        /// `SELECT` of such a column errors clearly), but parse their children and record the layout so
-        /// `advanceField` can advance the node/buffer cursors past an *unrequested* column of this type and
-        /// keep subset-of-columns reads working.
+        /// View-list types the reader cannot decode, but whose physical buffer layout is known. Keep them as
+        /// `Unsupported` placeholders (so schema inference can drop them and a `SELECT` of such a column errors
+        /// clearly), but parse their children and record the layout so `advanceField` can advance the node/buffer
+        /// cursors past an *unrequested* column of this type and keep subset-of-columns reads working.
         case flatbuf::Type_ListView:
             type.kind = TypeKind::Unsupported;
             type.unsupported_type_name = flatbuf::EnumNameType(field.type_type());
@@ -327,16 +326,21 @@ ArrowType parseType(const flatbuf::Field & field)
             requireSingleChild(type, "LargeListView");
             break;
         case flatbuf::Type_RunEndEncoded:
-            type.kind = TypeKind::Unsupported;
-            type.unsupported_type_name = flatbuf::EnumNameType(field.type_type());
-            type.skip_layout = ArrowType::SkipLayout::RunEndEncoded;
+        {
+            type.kind = TypeKind::RunEndEncoded;
             type.children = parseChildren(field.children());
             if (type.children.size() != 2)
                 throw Exception(
                     ErrorCodes::INCORRECT_DATA,
                     "Arrow IPC RunEndEncoded type must have exactly two children (run_ends, values), got {}",
                     type.children.size());
+            const ArrowField & run_ends = type.children[0];
+            if (run_ends.type.kind != TypeKind::Int || !run_ends.type.is_signed || run_ends.type.bit_width < 16
+                || run_ends.dictionary)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA, "Arrow IPC RunEndEncoded run ends must be an Int16, Int32 or Int64 field");
             break;
+        }
         default:
             /// Keep an unsupported Arrow type as a placeholder rather than failing here, so schema
             /// inference can drop the column with
@@ -1193,6 +1197,12 @@ DataTypePtr fieldToCHType(
                 ErrorCodes::UNKNOWN_TYPE,
                 "Native Arrow IPC reader does not support the `null` type in schema inference (field '{}')",
                 field.name);
+        case TypeKind::RunEndEncoded:
+        {
+            /// Read as the values type: each run is expanded into its rows. The nulls are those of the values.
+            const ArrowField & values = type.children.at(1);
+            return fieldToCHType(values, settings, make_nullable && values.nullable, allow_null_type);
+        }
         case TypeKind::Interval:
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,

@@ -51,6 +51,8 @@ enum class TypeKind : UInt8
     Struct,
     Map,
     Union,
+    /// Values stored once per run: children `run_ends` (Int16/Int32/Int64, the exclusive end of each run) and `values`.
+    RunEndEncoded,
     /// An Arrow type the native reader does not support. Parsed as a placeholder (rather than failing
     /// during schema parsing) so schema inference can drop it with
     /// `input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference`; decoding or requesting
@@ -103,7 +105,6 @@ struct ArrowType
     {
         Unknown,        /// cannot be skipped
         ListView,       /// validity + offsets + sizes buffers, then one child (same buffer count for LargeListView)
-        RunEndEncoded,  /// no buffers (not even validity), then two children (run_ends, values)
     };
     SkipLayout skip_layout = SkipLayout::Unknown;
 };

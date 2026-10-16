@@ -1615,6 +1615,21 @@ ColumnPtr RecordBatchDecoder::decodeField(
         return decodeUnion(field, rows, invisible_rows);
     }
 
+    /// A run-end-encoded field has no buffers either: its nulls are the nulls of its values.
+    if (!is_dictionary && field.type.kind == TypeKind::RunEndEncoded)
+    {
+        if (node.null_count() != 0)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Arrow IPC RunEndEncoded field '{}' has no validity bitmap but its FieldNode reports {} nulls",
+                field.name, node.null_count());
+        ColumnPtr column = decodeRunEndEncoded(field, rows, target_hint, path, list_depth, invisible_rows);
+        if (decoded_null_map)
+            if (const auto * nullable = typeid_cast<const ColumnNullable *>(column.get()))
+                *decoded_null_map = nullable->getNullMapColumn().getPtr();
+        return column;
+    }
+
     /// An Arrow `null` field has no buffers and maps to an all-null `Nullable(Nothing)` column.
     if (!is_dictionary && field.type.kind == TypeKind::Null)
     {
@@ -1657,6 +1672,71 @@ ColumnPtr RecordBatchDecoder::decodeField(
         return ColumnNullable::create(inner, null_map);
     }
     return inner;
+}
+
+ColumnPtr RecordBatchDecoder::decodeRunEndEncoded(
+    const ArrowField & field, size_t rows, const DataTypePtr & target_hint, const String & path, size_t list_depth,
+    const InvisibleRowsMask * invisible_rows)
+{
+    const ArrowField & run_ends_field = field.type.children.at(0);
+    const ArrowField & values_field = field.type.children.at(1);
+
+    /// The run ends are an integer child (checked when the schema is parsed) without nulls. Run `k` covers the rows
+    /// from the end of run `k - 1` up to `run_ends[k]` (exclusive); the run ends must be positive, strictly
+    /// increasing and cover every row.
+    const size_t runs = peekNodeRows();
+    checkRowCountWithinBody(runs, "run-end-encoded run ends");
+    ColumnPtr run_ends = decodeField(
+        run_ends_field, /*allow_low_cardinality=*/false, /*target_hint=*/nullptr, childPath(path, run_ends_field.name),
+        list_depth, /*invisible_rows=*/nullptr);
+    if (const auto * nullable = typeid_cast<const ColumnNullable *>(run_ends.get()))
+    {
+        if (std::ranges::find(nullable->getNullMapData(), UInt8{1}) != nullable->getNullMapData().end())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC RunEndEncoded field '{}' has null run ends", field.name);
+        run_ends = nullable->getNestedColumnPtr();
+    }
+    Int64 previous_end = 0;
+    for (size_t run = 0; run < runs; ++run)
+    {
+        const Int64 end = run_ends->getInt(run);
+        if (end <= previous_end)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Arrow IPC RunEndEncoded field '{}' has run end {} after {}: run ends must be positive and strictly increasing",
+                field.name, end, previous_end);
+        previous_end = end;
+    }
+    if (static_cast<UInt64>(previous_end) < rows)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Arrow IPC RunEndEncoded field '{}' has {} rows but its runs cover only {}", field.name, rows, previous_end);
+
+    /// Map every row to its run. A run is invisible (its value bytes are undefined) when all of its rows are, or when
+    /// it is past the last row.
+    auto indexes = ColumnUInt64::create(rows);
+    auto & index_data = indexes->getData();
+    InvisibleRowsMask runs_invisible(runs, 1);
+    size_t row = 0;
+    for (size_t run = 0; run < runs && row < rows; ++run)
+    {
+        const UInt64 end = static_cast<UInt64>(run_ends->getInt(run));
+        for (; row < rows && row < end; ++row)
+        {
+            index_data[row] = run;
+            if (!isInvisible(invisible_rows, row))
+                runs_invisible[run] = 0;
+        }
+    }
+    std::optional<InvisibleRowsMask> values_invisible;
+    if (std::ranges::find(runs_invisible, UInt8{1}) != runs_invisible.end())
+        values_invisible = std::move(runs_invisible);
+
+    /// The values hold one value per run and are decoded like the field itself: same hint, path and list depth.
+    /// Dictionary-encoded values are materialized, as for a nested dictionary, which matches `fieldToCHType`.
+    expectNextNodeLength(runs, "run-end-encoded values");
+    const ColumnPtr values = decodeField(
+        values_field, /*allow_low_cardinality=*/false, target_hint, path, list_depth, maskPtr(values_invisible));
+    return values->index(*indexes, 0);
 }
 
 bool RecordBatchDecoder::wrapsInNullable(const ArrowField & field, const IColumn & inner, const DataTypePtr & effective_hint) const
@@ -1727,7 +1807,7 @@ void RecordBatchDecoder::advanceField(const ArrowField & field, bool validate_le
     /// `Null` and `RunEndEncoded` fields have no validity buffer of their own.
     if (type.kind == TypeKind::Null)
         return;
-    if (type.kind == TypeKind::Unsupported && type.skip_layout == ArrowType::SkipLayout::RunEndEncoded)
+    if (type.kind == TypeKind::RunEndEncoded)
     {
         for (const ArrowField & child : type.children)
             advanceField(child, validate_lengths);
@@ -1820,6 +1900,7 @@ void RecordBatchDecoder::advanceField(const ArrowField & field, bool validate_le
             break;
         case TypeKind::Null:
         case TypeKind::Union:
+        case TypeKind::RunEndEncoded:
             break; /// These layouts are handled before the validity buffer.
         case TypeKind::Unsupported:
             /// List views can be skipped when unrequested; their values are not supported by the decoder.
@@ -2351,6 +2432,11 @@ void RecordBatchDecoder::collectDictionaryUses(
                     child, tupleElementHint(effective_hint, child.name, i, settings.arrow.case_insensitive_column_matching),
                     childPath(path, child.name), list_depth, lookup_types, uses);
             }
+            break;
+        case TypeKind::RunEndEncoded:
+            /// The values are decoded with the field's own hint, path and list depth (see `decodeRunEndEncoded`);
+            /// the run ends are a plain integer child.
+            collectDictionaryUses(type.children.at(1), effective_hint, path, list_depth, lookup_types, uses);
             break;
         case TypeKind::Union:
             /// `decodeUnion` decodes its children with no hint, path or list depth.
