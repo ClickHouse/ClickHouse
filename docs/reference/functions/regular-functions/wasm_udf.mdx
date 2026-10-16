@@ -547,7 +547,7 @@ In frames ClickHouse sends, the data of every `COL_FIXED*` and `COL_FIXEDN` desc
 
 The sizes above use the number of rows stored in the column: `1` for a constant column, otherwise the row count from the header. A constant `String` column has 2 offsets, and a constant `COL_FIXEDN` value is `data_size` bytes wide.
 
-`COL_COMPLEX` data is nested. An `Array` is `num_rows + 1` `uint64` offsets into its elements, followed by the elements laid out the same way. A `Tuple` is its elements laid out one after another, each for all rows. A `Map(K, V)` is laid out as `Array(Tuple(K, V))`. Strings inside these types use the `COL_BYTES` layout, and fixed-width values are stored one after another.
+`COL_COMPLEX` data is nested. An `Array` is `num_rows + 1` `uint64` offsets into its elements, followed by the elements laid out the same way. A `Tuple` is its elements laid out one after another, each for all rows. A `Map(K, V)` is laid out as `Array(Tuple(K, V))`. A `Nullable(T)` is `n` `uint8` null map bytes, `1` for `NULL`, followed by `T` laid out for all `n` values, including those in `NULL` slots; inside an `Array`, `n` is the total number of its elements. Strings inside these types use the `COL_BYTES` layout, and fixed-width values are stored one after another.
 
 `COL_VARIANT`:
 
