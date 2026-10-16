@@ -4,7 +4,7 @@ Type: inner | Strictness: all | Algorithm: PartitionedHashJoin
 228	9430432
 -- a common equality factored out of two disjuncts, with per-side conditions (the shape of 01881)
 Type: inner | Strictness: all | Algorithm: PartitionedHashJoin
-Filter column: key = key2
+Prewhere filter column:  key = key2
 30	455060
 30	455060
 -- FULL join with two disjuncts: the non-joined rows of both sides

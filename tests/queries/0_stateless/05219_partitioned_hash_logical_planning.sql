@@ -29,7 +29,7 @@ SELECT replaceRegexpAll(explain, '^[ │└─]+', '') FROM (
     EXPLAIN actions = 1 SELECT count() FROM t_phj_lp_l AS l INNER JOIN t_phj_lp_r AS r
     ON r.key = r.key2 AND l.key = l.key2 AND l.key != 'XXX' AND l.id = r.id OR r.key = r.key2 AND l.id = r.id AND l.id = r.id
     SETTINGS join_algorithm = 'partitioned_hash'
-) WHERE explain LIKE '%Algorithm%' OR explain LIKE '%Filter column%';
+) WHERE explain LIKE '%Algorithm%' OR explain ILIKE '%Filter column%';
 SELECT count(), sum(l.id * 1000 + r.c) FROM t_phj_lp_l AS l INNER JOIN t_phj_lp_r AS r
     ON r.key = r.key2 AND l.key = l.key2 AND l.key != 'XXX' AND l.id = r.id OR r.key = r.key2 AND l.id = r.id AND l.id = r.id
     SETTINGS join_algorithm = 'partitioned_hash';
