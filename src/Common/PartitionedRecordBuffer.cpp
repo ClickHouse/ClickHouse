@@ -39,11 +39,14 @@ struct alignas(CH_CACHE_LINE_SIZE) PartitionedRecordBuffer::Block
     }
 };
 
-PartitionedRecordBuffer::PartitionedRecordBuffer(size_t num_partitions_, size_t partitions_per_group_)
+PartitionedRecordBuffer::PartitionedRecordBuffer(
+    size_t num_partitions_, size_t partitions_per_group_, size_t first_chunk_bytes_)
     : num_partitions(num_partitions_)
     , partitions_per_group(partitions_per_group_)
+    , first_chunk_bytes(first_chunk_bytes_)
 {
     chassert(num_partitions > 0 && partitions_per_group > 0);
+    chassert(first_chunk_bytes >= min_first_chunk_bytes && first_chunk_bytes <= max_first_chunk_bytes);
     cursors = std::make_unique<Cursor[]>(num_partitions);
     chains = std::make_unique<Chain[]>(num_partitions);
     carvers.resize((num_partitions - 1) / partitions_per_group + 1);

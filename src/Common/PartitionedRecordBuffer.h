@@ -14,8 +14,8 @@ namespace DB
 /// `finishAppending`, consumers may read and release distinct partitions concurrently. The caller chooses
 /// the record format and partition for each append.
 ///
-/// A partition's chunks double in size from a small first chunk up to a cap: most partitions of a producer stay
-/// small, and the first chunks of all partitions form the minimum allocation for their records,
+/// A partition's chunks double in size from a first chunk, which the caller chooses, up to a cap: most partitions of
+/// a producer stay small, and the first chunks of all partitions form the minimum allocation for their records,
 /// while doubling keeps the unused end of a large partition's last chunk proportional to its records.
 ///
 /// The chunks are carved from blocks rather than allocated one by one: chunks past the allocator's small size
@@ -32,13 +32,18 @@ namespace DB
 class PartitionedRecordBuffer
 {
 public:
-    static constexpr size_t first_chunk_bytes = 2 << 10;
+    /// The range of a partition's first chunk. The largest keeps the appends of a dense partition to few chunks, and
+    /// the smallest holds a small record or two besides the chunk's header and tail padding.
+    static constexpr size_t max_first_chunk_bytes = 2 << 10;
+    static constexpr size_t min_first_chunk_bytes = 128;
     /// Padding after the last record permits bounded reads and writes past a record
     /// by vectorized comparison and copy routines.
     static constexpr size_t tail_padding_bytes = 64;
 
-    /// Both counts must be positive. A final allocation group may contain fewer partitions.
-    PartitionedRecordBuffer(size_t num_partitions_, size_t partitions_per_group_);
+    /// Both counts must be positive. A final allocation group may contain fewer partitions. The first chunk is
+    /// between `min_first_chunk_bytes` and `max_first_chunk_bytes`.
+    PartitionedRecordBuffer(
+        size_t num_partitions_, size_t partitions_per_group_, size_t first_chunk_bytes_ = max_first_chunk_bytes);
     ~PartitionedRecordBuffer();
 
     PartitionedRecordBuffer(const PartitionedRecordBuffer &) = delete;
@@ -132,6 +137,7 @@ private:
 
     const size_t num_partitions;
     const size_t partitions_per_group;
+    const size_t first_chunk_bytes;
     std::unique_ptr<Cursor[]> cursors;
     std::unique_ptr<Chain[]> chains;
     std::vector<Carver> carvers;

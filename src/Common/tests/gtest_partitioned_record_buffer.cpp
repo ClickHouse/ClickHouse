@@ -231,3 +231,32 @@ TEST(PartitionedRecordBuffer, FirstBlockSizes)
         EXPECT_LT(allocated, 4_KiB);
     });
 }
+
+TEST(PartitionedRecordBuffer, SmallFirstChunks)
+{
+    runTracked([](const MemoryTracker & tracker)
+    {
+        /// A small record in each of 256 partitions, in groups of 16. With the largest first chunk, every group's
+        /// first block takes the first chunks of its partitions, 32 KiB. With the smallest, a group's first block of
+        /// 2 KiB holds 15 first chunks besides the block's header, and the 16th starts a second block of 2 KiB.
+        const auto allocated_by_small_records = [&](size_t first_chunk_bytes)
+        {
+            PartitionedRecordBuffer buffer(256, 16, first_chunk_bytes);
+            const Int64 initial = tracker.get();
+            for (size_t partition = 0; partition < 256; ++partition)
+                appendRecord(buffer, partition, "small");
+            return static_cast<size_t>(tracker.get() - initial);
+        };
+        EXPECT_EQ(allocated_by_small_records(PartitionedRecordBuffer::max_first_chunk_bytes), 16 * 32_KiB);
+        EXPECT_EQ(allocated_by_small_records(PartitionedRecordBuffer::min_first_chunk_bytes), 16 * 4_KiB);
+
+        /// A record larger than the smallest first chunk takes a chunk of its own size, and the records read back in
+        /// order.
+        PartitionedRecordBuffer buffer(2, 2, PartitionedRecordBuffer::min_first_chunk_bytes);
+        appendRecord(buffer, 0, "first");
+        appendRecord(buffer, 0, std::string(1000, 'x'));
+        appendRecord(buffer, 0, "last");
+        buffer.finishAppending();
+        EXPECT_EQ(readPartition(buffer, 0), "first" + std::string(1000, 'x') + "last");
+    });
+}
