@@ -349,7 +349,7 @@ static AggregateProjectionInfo getAggregatingProjectionInfo(
             auto ast = std::move(pending.back());
             pending.pop_back();
             const auto * function = ast->as<ASTFunction>();
-            if (!function || function->name == "lambda" || function->is_window_function)
+            if (!function || function->name == "lambda" || function->isWindowFunction())
                 continue;
             if ((function->name == "isNull" || function->name == "isNotNull")
                 && function->arguments && function->arguments->children.size() == 1)
