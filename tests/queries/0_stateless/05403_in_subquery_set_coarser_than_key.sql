@@ -98,6 +98,14 @@ CREATE TABLE t_dec10 (d Decimal(10, 0)) ENGINE = MergeTree ORDER BY d SETTINGS i
 INSERT INTO t_dec10 SELECT CAST(9007199254740992 + number, 'Decimal(10, 0)') FROM numbers(2);
 SELECT count() FROM t_dec10 WHERE d IN (SELECT toFloat64(9007199254740992));
 
+-- Formatting saturates an out-of-range `Date32` or `Time`; `RowBinary` stores one.
+CREATE TABLE t_d32s (d Date32) ENGINE = MergeTree ORDER BY d SETTINGS index_granularity = 1;
+INSERT INTO t_d32s SELECT * FROM format(RowBinary, 'd Date32', unhex('A0C02C00A1C02C00A2C02C00'));
+SELECT count() FROM t_d32s WHERE d IN (SELECT '9999-12-31');
+CREATE TABLE t_time (t Time) ENGINE = MergeTree ORDER BY t SETTINGS index_granularity = 1;
+INSERT INTO t_time SELECT * FROM format(RowBinary, 't Time', unhex('7FEE360080EE360081EE3600'));
+SELECT count() FROM t_time WHERE t IN (SELECT '999:59:59');
+
 -- A set whose cast merges nothing keeps pruning.
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dt WHERE d IN (SELECT toDateTime('2023-02-01 12:00:01', 'UTC'))) WHERE explain ILIKE '%Granules: 1/2%';
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dt WHERE d IN (SELECT toDateTime64('2023-02-01 12:00:01', 3, 'UTC'))) WHERE explain ILIKE '%Granules: 1/2%';
@@ -105,6 +113,7 @@ SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dt WHERE toDate(d) 
 CREATE TABLE t_date (d Date) ENGINE = MergeTree ORDER BY d SETTINGS index_granularity = 1;
 INSERT INTO t_date VALUES ('2023-02-01'), ('2023-02-03');
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_date WHERE d IN (SELECT toDate32('2023-02-01'))) WHERE explain ILIKE '%Granules: 1/2%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_date WHERE d IN (SELECT '2023-02-01')) WHERE explain ILIKE '%Granules: 1/2%';
 CREATE TABLE t_dec9 (d Decimal(9, 0)) ENGINE = MergeTree ORDER BY d SETTINGS index_granularity = 1;
 INSERT INTO t_dec9 VALUES (1), (2);
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dec9 WHERE d IN (SELECT toFloat64(1))) WHERE explain ILIKE '%Granules: 1/2%';
@@ -147,3 +156,5 @@ DROP TABLE t_n64;
 DROP TABLE t_tup64;
 DROP TABLE t_dec6;
 DROP TABLE t_dec10;
+DROP TABLE t_d32s;
+DROP TABLE t_time;
