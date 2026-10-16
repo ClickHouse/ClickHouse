@@ -1,8 +1,8 @@
 #!/bin/bash
-# `user_files_policy` takes precedence over `user_files_path`: the server serves user files from the
-# policy's disk and never touches the legacy directory, so the entrypoint must not prepare it either.
-# The config sets `user_files_path` to a path under `/dev/null` that cannot be created; the container
-# must still come up, and `file` must read from the policy's disk.
+# With `user_files_policy` configured, `user_files_path` is a directory inside the policy's disk rather
+# than a local path, so the entrypoint must not prepare it as a local directory. The config sets
+# `user_files_path` to `/dev/null/user_files/`, which cannot be created locally; the container must
+# still come up, and `file` must use the directory `dev/null/user_files` on the policy's disk.
 set -eo pipefail
 
 dir="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
@@ -37,7 +37,7 @@ server_uid="$(docker exec "$cid" sed -n 's/^Uid:[[:space:]]*\([0-9][0-9]*\).*/\1
 docker exec -u "$server_uid" "$cid" test -d /var/lib/clickhouse/docker_test_user_files
 [ "$(docker exec -u "$server_uid" "$cid" stat -c '%u' /var/lib/clickhouse/docker_test_user_files)" = "$server_uid" ]
 
-# User files are served from the policy's disk.
+# User files are served from `user_files_path` inside the policy's disk.
 chCli "INSERT INTO FUNCTION file('numbers.csv', 'CSV', 'c1 UInt64') VALUES (1), (2), (3)"
-docker exec -u "$server_uid" "$cid" test -f /var/lib/clickhouse/docker_test_user_files/numbers.csv
+docker exec -u "$server_uid" "$cid" test -f /var/lib/clickhouse/docker_test_user_files/dev/null/user_files/numbers.csv
 [ "$(chCli "SELECT sum(c1) FROM file('numbers.csv', 'CSV', 'c1 UInt64')")" = 6 ]

@@ -100,7 +100,13 @@ Poco::Timestamp MetadataStorageFromPlainObjectStorage::getLastModified(const std
 
 std::optional<Poco::Timestamp> MetadataStorageFromPlainObjectStorage::getLastModifiedIfExists(const std::string & path) const
 {
-    /// Since the plain object storage is used for backups only, return the current time.
+    {
+        Expect404ResponseScope scope;  // 404 is not an error
+        if (auto res = getObjectMetadataEntryWithCache(path))
+            return Poco::Timestamp::fromEpochTime(res->last_modified);
+    }
+
+    /// Directories are not stored as objects and have no modification time, return the current time.
     if (existsFileOrDirectory(path))
         return Poco::Timestamp{};
     return std::nullopt;

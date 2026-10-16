@@ -18,8 +18,8 @@
 
     <user_files_policy>docker_test_user_files</user_files_policy>
 
-    <!-- Deliberately unusable legacy path: `/dev/null` is a character device, not a directory, so
-         creating it fails. With `user_files_policy` configured the entrypoint and the server must
-         both leave it alone. -->
+    <!-- Deliberately unusable as a local path: `/dev/null` is a character device, not a directory,
+         so creating it locally fails. With `user_files_policy` configured it denotes the directory
+         `dev/null/user_files` on the policy's disk, and the entrypoint must not create it locally. -->
     <user_files_path>/dev/null/user_files/</user_files_path>
 </clickhouse>

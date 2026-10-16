@@ -1,6 +1,7 @@
 # pylint: disable=unused-argument
 # pylint: disable=redefined-outer-name
 
+import time
 import uuid
 
 import pytest
@@ -456,34 +457,40 @@ def test_local_time_virtual_column_matches_exact_mtime():
 
 def test_s3_time_virtual_column_tracks_the_object():
     """On a remote disk `_time` comes from `disk->getLastModified`; check it is the
-    object's own modification time (close to the write) and that it advances when the
-    object is rewritten."""
+    object's own modification time as reported by the object storage, that it does not
+    change between reads of an unchanged object, and that it follows a rewrite."""
+    key = "data/disks/user_files/tenant=a/files/s3_mtime_tracked.csv"
+
+    def object_mtime():
+        return int(
+            cluster.minio_client.stat_object(cluster.minio_bucket, key)
+            .last_modified.timestamp()
+        )
+
+    def time_column():
+        return int(
+            node_s3.query(
+                "SELECT toUnixTimestamp(_time) "
+                "FROM file('s3_mtime_tracked.csv', 'CSV', 'x UInt64')"
+            ).strip()
+        )
+
     node_s3.query(
         "INSERT INTO FUNCTION file('s3_mtime_tracked.csv', 'CSV', 'x UInt64') SELECT 1"
     )
-    near_now = node_s3.query(
-        "SELECT abs(dateDiff('second', _time, now())) < 600 "
-        "FROM file('s3_mtime_tracked.csv', 'CSV', 'x UInt64')"
-    )
-    assert near_now.strip() == "1"
+    first = time_column()
+    assert first == object_mtime()
 
-    first = int(
-        node_s3.query(
-            "SELECT toUnixTimestamp(_time) "
-            "FROM file('s3_mtime_tracked.csv', 'CSV', 'x UInt64')"
-        ).strip()
-    )
+    # An implementation that reports the current time would return a later value here.
+    time.sleep(2)
+    assert time_column() == first
 
     node_s3.query(
         "INSERT INTO FUNCTION file('s3_mtime_tracked.csv', 'CSV', 'x UInt64') "
         "SELECT 2 SETTINGS engine_file_truncate_on_insert = 1"
     )
-    second = int(
-        node_s3.query(
-            "SELECT toUnixTimestamp(_time) "
-            "FROM file('s3_mtime_tracked.csv', 'CSV', 'x UInt64')"
-        ).strip()
-    )
+    second = time_column()
+    assert second == object_mtime()
     assert second >= first
 
 

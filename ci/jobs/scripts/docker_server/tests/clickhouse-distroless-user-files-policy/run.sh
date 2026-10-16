@@ -1,8 +1,8 @@
 #!/bin/bash
 # The distroless image starts through the compiled `clickhouse docker-init` entrypoint, which must
-# apply the same rule as `entrypoint.sh`: with `user_files_policy` configured the legacy
-# `user_files_path` is not prepared, so an unusable one (here a path under `/dev/null`) must not stop
-# the container. Shares the config of the `clickhouse-user-files-policy` test.
+# apply the same rule as `entrypoint.sh`: with `user_files_policy` configured `user_files_path` is a
+# directory inside the policy's disk and is not prepared as a local directory, so a path that is unusable
+# locally (here a path under `/dev/null`) must not stop the container. Shares the config of the `clickhouse-user-files-policy` test.
 set -eo pipefail
 
 dir="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
@@ -44,7 +44,7 @@ chCli() {
   --sleep "$CLICKHOUSE_TEST_SLEEP" \
   chCli SELECT 1
 
-# The server is up although its legacy `user_files_path` cannot exist, and user files are served
+# The server is up although `user_files_path` cannot exist as a local path, and user files are served
 # from the policy's disk, which the entrypoint prepared as a `storage_configuration` disk.
 [ "$(chCli "SELECT value FROM system.server_settings WHERE name = 'user_files_policy'")" = docker_test_user_files ]
 chCli "INSERT INTO FUNCTION file('numbers.csv', 'CSV', 'c1 UInt64') VALUES (1), (2), (3)"
