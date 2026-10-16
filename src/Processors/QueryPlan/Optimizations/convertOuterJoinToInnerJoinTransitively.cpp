@@ -15,7 +15,6 @@
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
-#include <Columns/IColumn.h>
 #include <Core/Joins.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/IFunction.h>
@@ -24,6 +23,7 @@
 #include <Common/typeid_cast.h>
 
 #include <algorithm>
+#include <optional>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -358,133 +358,6 @@ void splitInputsBySide(const JoinStepLogical & join, const NodeSet & inputs, Nam
     }
 }
 
-/// Names of the outputs of `dag` computed from an input that `is_marked_input` accepts.
-template <typename IsMarkedInput>
-NameSet outputsReadingMarkedInputs(const ActionsDAG & dag, IsMarkedInput && is_marked_input)
-{
-    std::unordered_map<const ActionsDAG::Node *, bool> marked;
-    std::vector<std::pair<const ActionsDAG::Node *, bool>> stack;
-    for (const auto * output : dag.getOutputs())
-        stack.emplace_back(output, false);
-
-    while (!stack.empty())
-    {
-        auto [node, expanded] = stack.back();
-        stack.pop_back();
-
-        if (marked.contains(node))
-            continue;
-
-        if (node->type == ActionsDAG::ActionType::INPUT)
-        {
-            marked.emplace(node, is_marked_input(*node));
-            continue;
-        }
-
-        if (!expanded)
-        {
-            stack.emplace_back(node, true);
-            for (const auto * child : node->children)
-                if (!marked.contains(child))
-                    stack.emplace_back(child, false);
-            continue;
-        }
-
-        marked.emplace(node, std::ranges::any_of(node->children, [&](const auto * child) { return marked.at(child); }));
-    }
-
-    NameSet result;
-    for (const auto * output : dag.getOutputs())
-        if (marked.at(output))
-            result.insert(output->result_name);
-    return result;
-}
-
-/// Columns of each node's output that are a constant there, or below it where a filter pushed down from above can read them.
-using ConstantColumns = std::unordered_map<const QueryPlan::Node *, NameSet>;
-
-ConstantColumns collectConstantColumns(QueryPlan::Node & root)
-{
-    ConstantColumns result;
-    static const NameSet no_columns;
-    auto constant_columns_of = [&](const QueryPlan::Node * node) -> const NameSet &
-    {
-        auto it = result.find(node);
-        return it == result.end() ? no_columns : it->second;
-    };
-
-    std::unordered_set<const QueryPlan::Node *> visited;
-    std::vector<std::pair<QueryPlan::Node *, bool>> stack{{&root, false}};
-    while (!stack.empty())
-    {
-        auto [node, expanded] = stack.back();
-        stack.pop_back();
-
-        if (!expanded)
-        {
-            if (!visited.insert(node).second)
-                continue;
-            stack.emplace_back(node, true);
-            for (auto * child : node->children)
-                stack.emplace_back(child, false);
-            continue;
-        }
-
-        NameSet constants;
-        const auto * step = node->step.get();
-        if (step && step->hasOutputHeader())
-            for (const auto & column : *step->getOutputHeader())
-                if (column.column && isColumnConst(*column.column))
-                    constants.insert(column.name);
-
-        const ActionsDAG * dag = nullptr;
-        if (const auto * filter = typeid_cast<const FilterStep *>(step))
-            dag = &filter->getExpression();
-        else if (const auto * expression = typeid_cast<const ExpressionStep *>(step))
-            dag = &expression->getExpression();
-
-        const auto * join = typeid_cast<const JoinStepLogical *>(step);
-        if (dag && node->children.size() == 1)
-        {
-            const auto & below = constant_columns_of(node->children.front());
-            constants.merge(outputsReadingMarkedInputs(*dag, [&](const auto & input) { return below.contains(input.result_name); }));
-
-            /// A name the DAG neither produces nor consumes is forwarded by `ActionsDAG::updateHeader`.
-            NameSet known_columns;
-            for (const auto * output : dag->getOutputs())
-                known_columns.insert(output->result_name);
-            for (const auto * input : dag->getInputs())
-                known_columns.insert(input->result_name);
-            for (const auto & name : below)
-                if (!known_columns.contains(name))
-                    constants.insert(name);
-        }
-        else if (join && node->children.size() == 2)
-        {
-            const auto & left = constant_columns_of(node->children[0]);
-            const auto & right = constant_columns_of(node->children[1]);
-            constants.merge(outputsReadingMarkedInputs(
-                join->getActionsDAG(),
-                [&](const auto & input)
-                {
-                    JoinActionRef ref(&input, join->getExpressionActions());
-                    return (ref.fromLeft() && left.contains(input.result_name)) || (ref.fromRight() && right.contains(input.result_name));
-                }));
-        }
-        else
-        {
-            for (const auto * child : node->children)
-            {
-                const auto & below = constant_columns_of(child);
-                constants.insert(below.begin(), below.end());
-            }
-        }
-
-        result[node] = std::move(constants);
-    }
-    return result;
-}
-
 void convertJoinKind(
     JoinStepLogical & join,
     QueryPlan::Node & node,
@@ -539,12 +412,17 @@ void convertJoinKind(
         join_operator.kind = JoinKind::Inner;
 }
 
-void visit(QueryPlan::Node & root, const ConstantColumns & constant_columns)
+void visit(QueryPlan::Node & root)
 {
+    std::optional<ConstantColumns> constant_columns;
     auto reads_constant = [&](const QueryPlan::Node * child, const NameSet & reads)
     {
-        auto it = constant_columns.find(child);
-        return it != constant_columns.end() && std::ranges::any_of(reads, [&](const auto & name) { return it->second.contains(name); });
+        if (reads.empty())
+            return false;
+        if (!constant_columns)
+            constant_columns = collectConstantColumns(root);
+        auto it = constant_columns->find(child);
+        return it != constant_columns->end() && std::ranges::any_of(reads, [&](const auto & name) { return it->second.contains(name); });
     };
 
     struct Frame
@@ -785,7 +663,7 @@ void convertOuterJoinToInnerJoinTransitively(const QueryPlanOptimizationSettings
     if (!optimization_settings.optimize_plan || !optimization_settings.convert_outer_join_to_inner_join_transitively)
         return;
 
-    visit(root, collectConstantColumns(root));
+    visit(root);
 }
 
 }

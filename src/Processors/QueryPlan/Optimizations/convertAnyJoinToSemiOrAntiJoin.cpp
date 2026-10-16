@@ -182,7 +182,8 @@ size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPla
     {
         case JoinKind::Left:
         {
-            auto result_for_not_matched_rows = filterResultForNotMatchedRows(filter_dag, filter_column_name, *right_stream_input_header);
+            auto result_for_not_matched_rows = filterResultForNotMatchedRows(
+                filter_dag, filter_column_name, *right_stream_input_header, /*allow_unknown_function_arguments=*/false, child_node->children.back());
             auto result_for_matched_rows = filterResultForMatchedRows(getPreFilterActionsDAG<JoinSide::Right>(child_node, join), filter_dag, filter_column_name);
 
             if (result_for_not_matched_rows == FilterResult::FALSE && semi_can_be_executed)
@@ -213,7 +214,8 @@ size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPla
         }
         case JoinKind::Right:
         {
-            auto result_for_not_matched_rows = filterResultForNotMatchedRows(filter_dag, filter_column_name, *left_stream_input_header);
+            auto result_for_not_matched_rows = filterResultForNotMatchedRows(
+                filter_dag, filter_column_name, *left_stream_input_header, /*allow_unknown_function_arguments=*/false, child_node->children.front());
             auto result_for_matched_rows = filterResultForMatchedRows(getPreFilterActionsDAG<JoinSide::Left>(child_node, join), filter_dag, filter_column_name);
 
             if (result_for_not_matched_rows == FilterResult::FALSE && semi_can_be_executed)

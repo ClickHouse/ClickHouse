@@ -1,3 +1,4 @@
+-- Random settings limits: enable_join_runtime_filters=(1, 1); query_plan_optimize_join_order_randomize=(0, 0)
 -- The JOIN-kind rewrites decide from a one-row evaluation of the WHERE over stand-in rows.
 -- `isConstant` depends on the constness of its argument, so it must see the full column
 -- that a row of the join result has at runtime.
@@ -49,6 +50,14 @@ WHERE isConstant(b.flag) = 0 AND b.flag = 1 ORDER BY 1;
 SELECT 'left, Enum constant';
 SELECT a.number, b.flag FROM numbers(3) AS a LEFT JOIN (SELECT number, 1 AS flag, CAST('x', 'Enum8(\'x\' = 1)') AS e FROM numbers(2)) AS b ON a.number = b.number
 WHERE isConstant(b.e) = 0 AND b.flag = 1 ORDER BY 1;
+
+SELECT 'left, constant below GROUP BY';
+SELECT count() FROM numbers(3) AS a
+LEFT JOIN (SELECT number, flag FROM (SELECT number, toNullable(1) AS flag FROM numbers(2)) GROUP BY number, flag) AS b ON a.number = b.number
+WHERE isConstant(b.flag) = 1;
+SELECT count() FROM (SELECT number, flag FROM (SELECT number, toNullable(1) AS flag FROM numbers(2)) GROUP BY number, flag) AS a
+RIGHT JOIN numbers(3) AS b ON a.number = b.number
+WHERE isConstant(a.flag) = 1;
 
 -- Controls: the rewrite still happens for a `joinGet` filter, also inside an OR of conjunctions, and for an OR of
 -- conjunctions with conditions on the other side.
@@ -106,6 +115,9 @@ SELECT 'transitive, constant below GROUP BY';
 SELECT a.number, b.flag, c.number FROM numbers(3) AS a
 LEFT JOIN (SELECT number, flag FROM (SELECT number, toNullable(1) AS flag FROM numbers(2)) GROUP BY number, flag) AS b ON a.number = b.number
 INNER JOIN numbers(3) AS c ON b.flag = c.number WHERE isConstant(b.flag) = 0 ORDER BY 1;
+SELECT count() FROM numbers(3) AS a
+LEFT JOIN (SELECT number, flag FROM (SELECT number, toNullable(1) AS flag FROM numbers(2)) GROUP BY number, flag) AS b ON a.number = b.number
+INNER JOIN numbers(3) AS c ON b.flag = c.number WHERE isConstant(b.flag) = 1;
 
 SELECT 'transitive, read above a PASTE JOIN';
 SELECT isConstant(t.x), t.n FROM (SELECT a.flag AS x, b.number AS n FROM (SELECT number, toNullable(1) AS flag FROM numbers(2)) AS a

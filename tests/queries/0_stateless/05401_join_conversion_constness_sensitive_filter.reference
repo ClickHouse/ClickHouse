@@ -36,6 +36,9 @@ left, constant column and value
 left, Enum constant
 0	1
 1	1
+left, constant below GROUP BY
+0
+0
 joinGet
 1	1
 1
@@ -62,6 +65,7 @@ transitive, nested LEFT JOIN side
 transitive, constant below GROUP BY
 0	1	1
 1	1	1
+0
 transitive, read above a PASTE JOIN
 0	0
 0	1
