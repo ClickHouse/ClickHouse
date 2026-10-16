@@ -16,24 +16,30 @@ doc_type: 'reference'
 * Используйте в тестах для заполнения большой таблицы воспроизводимыми данными.
 * Генерируйте случайные входные данные для фаззинг-тестов.
 
-<div id="usage-in-clickhouse-server">
-  ## Использование в сервере ClickHouse
-</div>
+## Использование в сервере ClickHouse {#usage-in-clickhouse-server}
 
 ```sql
 ENGINE = GenerateRandom([random_seed [,max_string_length [,max_array_length]]])
+[SETTINGS null_ratio = ..., max_json_depth = ..., max_json_keys_per_object = ...]
 ```
 
-Параметры `max_array_length` и `max_string_length` задают максимальную длину всех
-массивов, столбцов map и строк соответственно в сгенерированных данных.
+Параметры `max_array_length` и `max_string_length` задают максимальную длину соответственно всех
+столбцов типа array или map и всех строк в генерируемых данных.
+
+Предложение `SETTINGS` определяет, как генерируются значения `Nullable`, `Variant`, `Dynamic` и `JSON`:
+`null_ratio` (по умолчанию `0.0625`) — вероятность того, что значение равно `NULL`, а также базовая вероятность
+отсутствия ключа `JSON` в строке (небольшая часть разреженных ключей отсутствует в несколько раз
+чаще); `max_json_depth` (по умолчанию `3`) ограничивает глубину вложенности генерируемых объектов `JSON`,
+а `max_json_keys_per_object` (по умолчанию `8`) — количество генерируемых ключей на одном уровне
+объекта. [Табличная функция `generateRandom`](/ru/reference/functions/table-functions/generate) принимает
+те же настройки.
 
 Движок таблицы Generate поддерживает только запросы `SELECT`.
 
-Он поддерживает все [DataTypes](/ru/reference/data-types/index), которые можно хранить в таблице, кроме `AggregateFunction`.
+Он поддерживает все [типы данных](/ru/reference/data-types/index), которые могут храниться в таблице,
+кроме `AggregateFunction`, `Interval`, `Nothing` и `QBit`.
 
-<div id="example">
-  ## Пример
-</div>
+## Пример {#example}
 
 **1.** Создайте таблицу `generate_engine_table`:
 
@@ -55,9 +61,7 @@ SELECT * FROM generate_engine_table LIMIT 3
 └──────┴────────────┘
 ```
 
-<div id="details-of-implementation">
-  ## Детали реализации
-</div>
+## Детали реализации {#details-of-implementation}
 
 * Не поддерживаются:
   * `ALTER`

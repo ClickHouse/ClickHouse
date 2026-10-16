@@ -13,7 +13,7 @@ catalogues de données externes et d’interroger des données dans un format de
 Cela transforme ClickHouse en un puissant moteur de requête qui s’intègre parfaitement à
 votre infrastructure de lac de données existante.
 
-## Catalogues pris en charge
+## Catalogues pris en charge {#supported-catalogs}
 
 Le moteur `DataLakeCatalog` prend en charge les catalogues de données suivants :
 
@@ -22,7 +22,7 @@ Le moteur `DataLakeCatalog` prend en charge les catalogues de données suivants�
 * **Hive Metastore** - Catalogue traditionnel de l’écosystème Hadoop
 * **Catalogues REST** - Tout catalogue compatible avec la spécification REST d’Iceberg
 
-## Création d’une base de données
+## Création d’une base de données {#creating-a-database}
 
 Vous devrez activer les paramètres appropriés ci-dessous pour utiliser le moteur `DataLakeCatalog` :
 
@@ -48,9 +48,10 @@ Les paramètres suivants sont pris en charge :
 
 | Setting                 | Description                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `catalog_type`          | Type de catalogue : `glue`, `unity` (Delta), `rest` (Iceberg), `hive`, `onelake` (Iceberg), `delta_sharing` (Iceberg, espaces de noms plats), `horizon` (Snowflake Horizon Iceberg REST)                                                                                                                                                                                                                                                                 |
+| `catalog_type`          | Type de catalogue : `glue`, `unity` (Delta, ou Delta et Iceberg avec `use_unity_catalog_v2`), `rest` (Iceberg), `hive`, `onelake` (Iceberg), `delta_sharing` (Iceberg, espaces de noms plats), `horizon` (Snowflake Horizon Iceberg REST)                                                                                                                                                                                                                |
 | `warehouse`             | Nom du warehouse/de la base de données à utiliser dans le catalogue.                                                                                                                                                                                                                                                                                                                                                                                     |
 | `catalog_credential`    | Identifiants d’authentification pour le catalogue (par ex. clé API ou jeton)                                                                                                                                                                                                                                                                                                                                                                             |
+| `use_unity_catalog_v2`  | Pour `catalog_type = 'unity'` : utilisez la nouvelle implémentation, qui prend en charge les tables Delta Lake et Iceberg. Par défaut : `false`. Définissez ce paramètre lors de `CREATE`, ou modifiez-le pour une base de données existante avec `ALTER DATABASE ... MODIFY SETTING`.                                                                                                                                                                   |
 | `auth_header`           | En-tête HTTP personnalisé pour l’authentification auprès du service de catalogue                                                                                                                                                                                                                                                                                                                                                                         |
 | `auth_scope`            | Scope OAuth2 pour l’authentification (si vous utilisez OAuth)                                                                                                                                                                                                                                                                                                                                                                                            |
 | `storage_endpoint`      | URL du point de terminaison du stockage sous-jacent                                                                                                                                                                                                                                                                                                                                                                                                      |
@@ -66,11 +67,30 @@ Les paramètres suivants sont pris en charge :
 | `dlf_access_key_secret` | Clé d’accès secrète pour l’accès à DLF                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `force_add_bucket`      | Lors de la construction des URL du stockage objet à partir de l’emplacement de table fourni par le catalogue et de `storage_endpoint`, ajoutez le nom du bucket/conteneur au début, même si le point de terminaison le contient déjà. Par défaut : `false`. Définissez cette valeur sur `true` pour les catalogues qui renvoient des chemins sans le bucket et nécessitent son ajout lors de l’étape de construction de l’URL (chemins de type Polaris). |
 
-## Exemples
+## Exemples {#examples}
 
 Consultez les sections ci-dessous pour voir des exemples d&#39;utilisation du moteur `DataLakeCatalog` :
 
 * [Unity Catalog](/fr/guides/use-cases/data-warehousing/unity-catalog)
+* Unity Catalog avec des tables Delta Lake et Iceberg
+  Avec `use_unity_catalog_v2 = 1`, le catalogue `unity` prend en charge les tables Delta Lake et Iceberg
+  et détecte le format de chaque table.
+
+```sql
+CREATE DATABASE database_name
+ENGINE = DataLakeCatalog('https://<workspace>.cloud.databricks.com/api/2.1/unity-catalog')
+SETTINGS
+    catalog_type = 'unity',
+    use_unity_catalog_v2 = 1,
+    warehouse = 'my_catalog',
+    catalog_credential = '<client_id>:<client_secret>';
+SHOW TABLES FROM database_name;
+SELECT count() FROM database_name.`schema_name.table_name`;
+```
+
+`catalog_credential` accepte un principal de service OAuth sous la forme `<client_id>:<client_secret>`,
+un jeton d’accès personnel (`dapi...`) ou un jeton OAuth obtenu au préalable.
+
 * [Glue Catalog](/fr/guides/use-cases/data-warehousing/glue-catalog)
 * Catalog OneLake
   Peut être utilisé en activant `allow_database_iceberg`.

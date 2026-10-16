@@ -69,6 +69,18 @@ An entry holds a contiguous range of granules of one stripe: a granule enters th
 
 Respect the server's concurrency control (see the `concurrent_threads_soft_limit_num` and `concurrent_threads_soft_limit_ratio_to_cores` global server settings). If disabled, it allows using a larger number of threads even if the server is overloaded (not recommended for normal usage, and needed mostly for tests).
 
+## use_concurrency_control_for_max_threads {#use_concurrency_control_for_max_threads}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "New setting to choose the parallelism of a query from the fair share of CPU slots of the concurrency control"}]}]}/>
+
+Choose the parallelism of a query (the number of streams and threads it is planned with) from the fair share of CPU slots of the server's concurrency control, instead of the number of CPU cores. The fair share is the slot limit (see the `concurrent_threads_soft_limit_num` and `concurrent_threads_soft_limit_ratio_to_cores` global server settings) divided evenly between the currently running pipelines and the new query.
+
+This way, when many queries run concurrently, each of them is planned with fewer streams: it uses less memory and spends less CPU on merging the partial results of its threads (e.g. aggregation states), which increases the total throughput. A query that is planned while the server is idle uses all CPU cores as before.
+
+It only applies if `max_threads` is `auto` (not set explicitly) and `use_concurrency_control` is enabled.
+
 ## use_constant_folding_in_index_analysis {#use_constant_folding_in_index_analysis}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
