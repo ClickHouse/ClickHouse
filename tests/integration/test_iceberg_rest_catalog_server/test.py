@@ -1031,6 +1031,11 @@ def test_commit_rejected(started_cluster):
         ({"action": "add-snapshot", "snapshot": fake_snapshot(100, 2)}, "BadRequestException"),
         # Snapshot 5 does not exist.
         ({"action": "set-snapshot-ref", "ref-name": "main", "type": "branch", "snapshot-id": 5}, "BadRequestException"),
+        # Retention settings must be positive integers.
+        ({"action": "set-snapshot-ref", "ref-name": "dev", "type": "branch", "snapshot-id": 100, "min-snapshots-to-keep": 0}, "BadRequestException"),
+        ({"action": "set-snapshot-ref", "ref-name": "dev", "type": "branch", "snapshot-id": 100, "max-ref-age-ms": "soon"}, "BadRequestException"),
+        # Tags carry only max-ref-age-ms.
+        ({"action": "set-snapshot-ref", "ref-name": "v1", "type": "tag", "snapshot-id": 100, "max-snapshot-age-ms": 1000}, "BadRequestException"),
     ]
     for update, expected_type in bad_updates:
         response = commit_table(ns, "events", [], [update], expected_code=400)
@@ -1138,6 +1143,42 @@ def test_pyiceberg_append(started_cluster):
 
     table.transaction().set_properties(owner="alice").commit_transaction()
     assert catalog.load_table(f"{ns}.events").properties["owner"] == "alice"
+
+
+def test_pyiceberg_transaction_history(started_cluster):
+    ns = f"pyiceberg_txn_{uuid.uuid4().hex[:8]}"
+    catalog = load_pyiceberg_catalog()
+    catalog.create_namespace(ns)
+    schema = Schema(
+        NestedField(field_id=1, name="id", field_type=LongType(), required=True),
+        NestedField(field_id=2, name="name", field_type=StringType(), required=False),
+    )
+    table = catalog.create_table(f"{ns}.events", schema=schema)
+    rows = pa.Table.from_pylist(
+        [{"id": 1, "name": "a"}, {"id": 2, "name": "b"}],
+        schema=pa.schema([pa.field("id", pa.int64(), nullable=False), pa.field("name", pa.string())]),
+    )
+    table.append(rows)
+
+    # Two appends in one transaction are one commit. Only the final snapshot was ever current.
+    with table.transaction() as txn:
+        txn.append(rows)
+        txn.append(rows)
+    table = catalog.load_table(f"{ns}.events")
+    assert len(table.metadata.snapshots) == 3
+    assert [e.snapshot_id for e in table.metadata.snapshot_log] == [
+        table.metadata.snapshots[0].snapshot_id,
+        table.metadata.snapshots[2].snapshot_id,
+    ]
+
+    # A timestamp read at the commit time sees both appends of the transaction.
+    node.query(create_database_query("ZGVmYXVsdDo="))  # default:
+    try:
+        commit_ms = table.metadata.snapshot_log[-1].timestamp_ms
+        query = f"SELECT count() FROM rest_tables_db.`{ns}.events` SETTINGS iceberg_timestamp_ms = {commit_ms}"
+        assert node.query(query) == "6\n"
+    finally:
+        node.query("DROP DATABASE IF EXISTS rest_tables_db")
 
 
 def test_clickhouse_insert(started_cluster):

@@ -189,9 +189,19 @@ void setSnapshotRef(Poco::JSON::Object & metadata, const Poco::JSON::Object & up
     Poco::JSON::Object::Ptr ref = new Poco::JSON::Object;
     ref->set(f_type, type);
     ref->set(f_metadata_snapshot_id, snapshot_id);
+
+    /// Retention settings are positive integers. Snapshot retention applies to branches only.
     for (const auto * key : {f_ref_max_ref_age_ms, f_ref_max_snapshot_age_ms, f_ref_min_snapshots_to_keep})
-        if (update.has(key) && !update.isNull(key))
-            ref->set(key, update.get(key));
+    {
+        const auto value = getOptionalInteger(update, key);
+        if (!value)
+            continue;
+        if (*value <= 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'{}' must be greater than 0, got {}", key, *value);
+        if (type == f_tag && key != f_ref_max_ref_age_ms)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'{}' is not allowed on a tag", key);
+        ref->set(key, *value);
+    }
 
     /// Add ref to metadata.
     getObject(metadata, f_refs)->set(ref_name, ref);
@@ -202,10 +212,20 @@ void setSnapshotRef(Poco::JSON::Object & metadata, const Poco::JSON::Object & up
         metadata.set(f_current_snapshot_id, snapshot_id);
 
         /// The log records when main moved, which is now. The snapshot itself may be old, for example on a rollback.
+        const auto now = getInteger(metadata, f_last_updated_ms);
         Poco::JSON::Object::Ptr entry = new Poco::JSON::Object;
         entry->set(f_metadata_snapshot_id, snapshot_id);
-        entry->set(f_timestamp_ms, metadata.get(f_last_updated_ms));
-        getArray(metadata, f_snapshot_log)->add(entry);
+        entry->set(f_timestamp_ms, now);
+
+        /// An earlier move of main in this same commit was never visible to readers. Replace its entry.
+        auto snapshot_log = getArray(metadata, f_snapshot_log);
+        if (snapshot_log->size() > 0)
+        {
+            const auto last = static_cast<UInt32>(snapshot_log->size() - 1);
+            if (getInteger(*snapshot_log->getObject(last), f_timestamp_ms) == now)
+                snapshot_log->remove(last);
+        }
+        snapshot_log->add(entry);
     }
 }
 
