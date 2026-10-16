@@ -2,7 +2,9 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/PatchParts/PatchPartIndex.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/InsertDeduplication.h>
+#include <Interpreters/ProcessList.h>
 
 namespace DB
 {
@@ -44,8 +46,25 @@ void ReplicatedMergeTreeSinkPatch::finishDelayed(const ZooKeeperWithFaultInjecti
     if (delayed_parts.empty())
         return;
 
+    auto process_list_element = context->getProcessListElement();
     for (auto & partition : delayed_parts)
     {
+        if (process_list_element)
+            process_list_element->checkTimeLimit();
+
+        Stopwatch watch;
+        ProfileEventsScope scoped_attach(&partition.part_counters);
+        if (partition.temp_part->part->getDataPartStorage().getType() == MergeTreeDataPartStorageType::Packed)
+            partition.temp_part->startFinalization();
+        partition.elapsed_ns += watch.elapsed();
+    }
+
+    for (auto & partition : delayed_parts)
+    {
+        if (process_list_element)
+            process_list_element->checkTimeLimit();
+
+        Stopwatch watch;
         ProfileEventsScope scoped_attach(&partition.part_counters);
         partition.temp_part->finalize();
         partition.temp_part->part->getDataPartStorage().commitTransaction();
@@ -63,12 +82,14 @@ void ReplicatedMergeTreeSinkPatch::finishDelayed(const ZooKeeperWithFaultInjecti
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Patch part {} was deduplicated. It's a bug", part->name);
 
             auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.part_counters.getPartiallyAtomicSnapshot());
+            partition.elapsed_ns += watch.elapsed();
             PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, partition.elapsed_ns, counters_snapshot), deduplication_blocks_ids, ExecutionStatus(0));
             StorageReplicatedMergeTree::incrementInsertedPartsProfileEvent(part->getType());
         }
         catch (...)
         {
             auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.part_counters.getPartiallyAtomicSnapshot());
+            partition.elapsed_ns += watch.elapsed();
             PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, partition.elapsed_ns, counters_snapshot), deduplication_blocks_ids, ExecutionStatus::fromCurrentException(__PRETTY_FUNCTION__));
             throw;
         }

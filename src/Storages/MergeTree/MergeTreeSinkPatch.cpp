@@ -1,7 +1,9 @@
 #include <Storages/MergeTree/MergeTreeSinkPatch.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/MergeTree/PatchParts/PatchPartIndex.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/InsertDeduplication.h>
+#include <Interpreters/ProcessList.h>
 #include <Common/ProfileEventsScope.h>
 
 namespace DB
@@ -32,8 +34,25 @@ void MergeTreeSinkPatch::finishDelayedChunk()
     if (!delayed_chunk)
         return;
 
+    auto process_list_element = context->getProcessListElement();
     for (auto & partition : delayed_chunk->partitions)
     {
+        if (process_list_element)
+            process_list_element->checkTimeLimit();
+
+        Stopwatch watch;
+        ProfileEventsScope scoped_attach(&partition.part_counters);
+        if (partition.temp_part->part->getDataPartStorage().getType() == MergeTreeDataPartStorageType::Packed)
+            partition.temp_part->startFinalization();
+        partition.elapsed_ns += watch.elapsed();
+    }
+
+    for (auto & partition : delayed_chunk->partitions)
+    {
+        if (process_list_element)
+            process_list_element->checkTimeLimit();
+
+        Stopwatch watch;
         ProfileEventsScope scoped_attach(&partition.part_counters);
         partition.temp_part->finalize();
         partition.temp_part->part->getDataPartStorage().commitTransaction();
@@ -48,6 +67,7 @@ void MergeTreeSinkPatch::finishDelayedChunk()
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Patch part {} was deduplicated. It's a bug", part->name);
 
         auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.part_counters.getPartiallyAtomicSnapshot());
+        partition.elapsed_ns += watch.elapsed();
         auto block_ids = getDeduplicationBlockIds(deduplication_hashes);
         PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, partition.elapsed_ns, counters_snapshot), block_ids);
         StorageMergeTree::incrementInsertedPartsProfileEvent(part->getType());
