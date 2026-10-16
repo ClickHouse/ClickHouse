@@ -1738,7 +1738,8 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
             current_filter = FilterWithCachedCount(filtered_column);
         }
 
-        result.optimize(current_filter, can_read_incomplete_granules, false);
+        /// No later step re-evaluates the candidates, so the filter must not be left in final_filter.
+        result.optimize(current_filter, can_read_incomplete_granules, /*must_apply_filter=*/ true);
     }
 
     if (!prewhere_info || prewhere_info->type == PrewhereExprStep::None)
