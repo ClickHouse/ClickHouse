@@ -699,7 +699,19 @@ ReplicasInfo DatabaseReplicated::awaitReplicasInfo(PendingReplicasInfo pending) 
 
 ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_) const noexcept
 {
-    return awaitReplicasInfo(requestReplicasInfo(cluster_));
+    auto component_guard = Coordination::setCurrentComponent("DatabaseReplicated::tryGetReplicasInfo");
+    try
+    {
+        PendingReplicasInfo pending;
+        pending.cluster = cluster_;
+        pending.responses = getZooKeeper()->tryGet(getReplicasInfoPaths(*cluster_));
+        return parseReplicasInfo(pending);
+    }
+    catch (...)
+    {
+        logReplicasInfoFailure(log, getCurrentExceptionCode());
+        return {};
+    }
 }
 
 void DatabaseReplicated::fillClusterAuthInfo(String collection_name)

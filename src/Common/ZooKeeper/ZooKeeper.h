@@ -105,6 +105,22 @@ struct MultiReadResponses
             responses);
     }
 
+    /// The number of Keeper requests submitted by this response, without waiting for them.
+    size_t numKeeperRequests() const
+    {
+        return std::visit(
+            []<typename TResponses>(const TResponses & resp) -> size_t
+            {
+                if constexpr (std::same_as<TResponses, ResponsesWithFutures>)
+                    return resp.size();
+                else if constexpr (std::same_as<TResponses, MultiResponseWithFuture>)
+                    return 1;
+                else
+                    return 0;
+            },
+            responses);
+    }
+
     ResponseType & operator[](size_t index)
     {
         return std::visit(
@@ -188,8 +204,8 @@ private:
 
     /// One MultiRead request in flight, awaited on the first access: the lazy counterpart of
     /// `RegularResponses`, as `ResponsesWithFutures` is for [Zoo]Keepers without the MultiRead feature.
-    /// Awaited with a plain future.get() like those futures: the client answers requests that got
-    /// no response within its operation timeout by itself.
+    /// Awaited with a plain `future.get` like those futures: the receive thread finalizes the session
+    /// after a session timeout without responses or three session timeouts with a request unanswered.
     struct MultiResponseWithFuture
     {
         MultiResponseWithFuture(std::future<Coordination::MultiResponse> future_, size_t num_requests_)
@@ -198,21 +214,18 @@ private:
 
         std::future<Coordination::MultiResponse> future;
         size_t num_requests;
-        std::optional<Coordination::Responses> cached_responses;
+        std::optional<Coordination::MultiResponse> response;
 
         Coordination::Responses & get()
         {
-            if (cached_responses.has_value())
-                return *cached_responses;
-
-            auto multi_response = future.get();
+            if (!response.has_value())
+                response = future.get();
             /// The rule of `tryMulti` (the constructor allows try-requests only): user errors such as
             /// `ZNONODE` stay in the sub-responses, anything else throws.
-            if (multi_response.error != Coordination::Error::ZOK && !Coordination::isUserError(multi_response.error))
-                throw KeeperException(multi_response.error);
+            if (response->error != Coordination::Error::ZOK && !Coordination::isUserError(response->error))
+                throw KeeperException(response->error);
 
-            cached_responses = std::move(multi_response.responses);
-            return *cached_responses;
+            return response->responses;
         }
 
         size_t size() const { return num_requests; }

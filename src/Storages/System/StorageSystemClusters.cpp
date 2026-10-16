@@ -273,20 +273,33 @@ void StorageSystemClusters::fillData(MutableColumns & res_columns, ContextPtr co
                 entries.push_back({.name = all_groups_name, .cluster = std::move(cluster), .replicated = replicated});
     }
 
-    /// Send the Keeper requests of all `Replicated` databases first and await them one by one while writing
-    /// the rows: the requests are in flight together, one round trip for all databases instead of one each.
+    /// Keep a window of Keeper requests in flight while writing rows in cluster order. One cluster may
+    /// add several requests without `MultiRead`, so the window can exceed the limit by that cluster's requests.
+    constexpr size_t max_keeper_requests_in_flight = 512;
     std::vector<PendingReplicasInfo> pending_replicas_info(entries.size());
-    if (with_replicas_info)
-    {
-        for (size_t i = 0; i < entries.size(); ++i)
-            if (entries[i].replicated)
-                pending_replicas_info[i] = entries[i].replicated->requestReplicasInfo(entries[i].cluster);
-    }
-
+    size_t next_request = 0;
+    size_t requests_in_flight = 0;
     for (size_t i = 0; i < entries.size(); ++i)
     {
+        if (with_replicas_info)
+        {
+            while (next_request < entries.size()
+                && (next_request <= i || requests_in_flight < max_keeper_requests_in_flight))
+            {
+                if (entries[next_request].replicated)
+                {
+                    auto & pending = pending_replicas_info[next_request];
+                    pending = entries[next_request].replicated->requestReplicasInfo(entries[next_request].cluster);
+                    requests_in_flight += pending.numKeeperRequests();
+                }
+                ++next_request;
+            }
+        }
+
+        const size_t current_requests = pending_replicas_info[i].numKeeperRequests();
         const ReplicasInfo replicas_info
             = entries[i].replicated ? entries[i].replicated->awaitReplicasInfo(std::move(pending_replicas_info[i])) : ReplicasInfo{};
+        requests_in_flight -= current_requests;
         writeCluster(res_columns, columns_mask, entries[i].name, *entries[i].cluster, replicas_info);
     }
 
