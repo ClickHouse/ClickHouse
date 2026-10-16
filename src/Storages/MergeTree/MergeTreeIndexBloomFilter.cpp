@@ -43,6 +43,7 @@
 #include <Functions/FunctionConversionMatching.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunctionAdaptors.h>
+#include <Functions/array/emptyArrayToSingle.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSubquery.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -727,24 +728,46 @@ bool isSupportedArrayFunctionPair(
     if (!left_adaptor || !right_adaptor)
         return false;
 
-    const FunctionCreator * left_handle = left.function_base->getFactoryHandle();
-    if (!left_handle || right.function_base->getFactoryHandle() != left_handle)
-        return false;
-
-    /// Authenticate against the small registered allowlist before asking a function for its name.
-    /// Arbitrary/custom function names must not induce unbounded string work in this matcher.
-    String function_name;
-    if (left_handle == getCanonicalArrayFunctionHandle("arrayDistinct"))
-        function_name = "arrayDistinct";
-    else if (left_handle == getCanonicalArrayFunctionHandle("arrayConcat"))
-        function_name = "arrayConcat";
-    else if (left_handle == getCanonicalArrayFunctionHandle("emptyArrayToSingle"))
-        function_name = "emptyArrayToSingle";
-    else
-        return false;
-
     const auto & left_function = left_adaptor->getFunction();
     const auto & right_function = right_adaptor->getFunction();
+    if (!left_function || !right_function)
+        return false;
+
+    const FunctionCreator * left_handle = left.function_base->getFactoryHandle();
+    const FunctionCreator * right_handle = right.function_base->getFactoryHandle();
+
+    String function_name;
+    if (!left_handle || !right_handle)
+    {
+        /// ArrayJoinStep constructs this function directly, without a FunctionFactory handle. Authenticate
+        /// both native implementations by exact type, and still verify any handle that is present.
+        const auto * left_empty_array_to_single = typeid_cast<const FunctionEmptyArrayToSingle *>(left_function.get());
+        const auto * right_empty_array_to_single = typeid_cast<const FunctionEmptyArrayToSingle *>(right_function.get());
+        const FunctionCreator * canonical_empty_array_to_single = getCanonicalArrayFunctionHandle("emptyArrayToSingle");
+        if (!left_empty_array_to_single || !right_empty_array_to_single
+            || (left_handle && left_handle != canonical_empty_array_to_single)
+            || (right_handle && right_handle != canonical_empty_array_to_single))
+            return false;
+
+        function_name = "emptyArrayToSingle";
+    }
+    else
+    {
+        if (left_handle != right_handle)
+            return false;
+
+        /// Authenticate against the small registered allowlist before asking a function for its name.
+        /// Arbitrary/custom function names must not induce unbounded string work in this matcher.
+        if (left_handle == getCanonicalArrayFunctionHandle("arrayDistinct"))
+            function_name = "arrayDistinct";
+        else if (left_handle == getCanonicalArrayFunctionHandle("arrayConcat"))
+            function_name = "arrayConcat";
+        else if (left_handle == getCanonicalArrayFunctionHandle("emptyArrayToSingle"))
+            function_name = "emptyArrayToSingle";
+        else
+            return false;
+    }
+
     /// These authenticated native IFunction creators have no separate function parameters.
     if (!left_function || !right_function
         || left_function->getName() != function_name || right_function->getName() != function_name
