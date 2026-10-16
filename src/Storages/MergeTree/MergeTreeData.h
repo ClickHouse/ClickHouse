@@ -836,7 +836,7 @@ public:
     size_t getTotalActiveSizeInRows() const;
     size_t getTotalUncompressedBytesInPatches() const;
 
-    UInt64 rowsForDatabaseLimit() const override { return getTotalActiveSizeInRows(); }
+    UInt64 rowsForDatabaseLimit() const override;
 
     /// All-or-nothing aggregate of per-part `SerializationInfo::Data` for `column_name`:
     /// returns nullopt unless every visible part has exact stats (see `SparsityFilter.h`).
@@ -2444,6 +2444,7 @@ private:
 
     mutable std::atomic<size_t> total_outdated_parts_count = 0;
     std::atomic<size_t> total_uncompressed_bytes_in_patches = 0;
+    std::atomic<size_t> total_rows_in_patches = 0;
 
     // Record all query ids which access the table. It's guarded by `query_id_set_mutex` and is always mutable.
     mutable std::set<String> query_id_set TSA_GUARDED_BY(query_id_set_mutex);

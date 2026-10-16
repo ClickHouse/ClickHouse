@@ -8214,6 +8214,15 @@ size_t MergeTreeData::getTotalUncompressedBytesInPatches() const
     return total_uncompressed_bytes_in_patches.load();
 }
 
+UInt64 MergeTreeData::rowsForDatabaseLimit() const
+{
+    /// Patch parts represent mutations of rows in regular parts, not additional table rows.
+    /// The two counters are not updated together, so the difference may be momentarily negative.
+    const size_t rows = total_active_size_rows.load();
+    const size_t rows_in_patches = total_rows_in_patches.load();
+    return rows > rows_in_patches ? rows - rows_in_patches : 0;
+}
+
 MergeTreeData::ColumnDefaultnessStatsUnavailableReason
 MergeTreeData::getColumnDefaultnessStatsUnavailableReason(ContextPtr query_context) const
 {
@@ -10176,7 +10185,8 @@ private:
         /// The check is done here rather than in `attachRestoredParts` so that it covers every engine.
         UInt64 incoming_rows = 0;
         for (const auto & part : parts)
-            incoming_rows += part->rows_count;
+            if (!part->info.isPatch())
+                incoming_rows += part->rows_count;
         storage->checkDatabaseRowsLimit(incoming_rows);
 
         storage->attachRestoredParts(std::move(parts), query_context, zookeeper_retries_info);
@@ -14549,6 +14559,7 @@ void MergeTreeData::addPartContributionToUncompressedBytesInPatches(const DataPa
     {
         Int64 uncompressed_bytes = part->getBytesUncompressedOnDisk();
         total_uncompressed_bytes_in_patches.fetch_add(uncompressed_bytes);
+        total_rows_in_patches.fetch_add(part->rows_count);
     }
 }
 
@@ -14558,6 +14569,7 @@ void MergeTreeData::removePartContributionToUncompressedBytesInPatches(const Dat
     {
         Int64 uncompressed_bytes = part->getBytesUncompressedOnDisk();
         total_uncompressed_bytes_in_patches.fetch_add(-uncompressed_bytes);
+        total_rows_in_patches.fetch_sub(part->rows_count);
     }
 }
 

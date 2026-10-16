@@ -4003,7 +4003,8 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
 
     UInt64 incoming_rows = 0;
     for (const auto & part : loaded_parts)
-        incoming_rows += part->rows_count;
+        if (!part->info.isPatch())
+            incoming_rows += part->rows_count;
     checkDatabaseRowsLimit(incoming_rows);
 
     /// The parts are committed one by one, so check the size limits of a temporary table for all of them

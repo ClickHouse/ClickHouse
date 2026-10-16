@@ -7852,6 +7852,9 @@ PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartitionImpl(
         std::unordered_set<String> seen_block_id_paths;
         for (const auto & part : loaded_parts)
         {
+            if (part->info.isPatch())
+                continue;
+
             bool will_be_deduplicated = false;
             if (deduplicate)
             {
