@@ -4,6 +4,7 @@
 #include <filesystem>
 
 #include <Access/AccessControl.h>
+#include <Access/ContextAccess.h>
 #include <Access/User.h>
 
 #include <Core/Settings.h>
@@ -11,6 +12,8 @@
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/Prometheus/CreateQueryTimeSeriesSettings.h>
+#include <Parsers/Prometheus/TimeSeriesVersion.h>
 #include <Parsers/stripQuerySettings.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
@@ -55,9 +58,6 @@
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Storages/StorageTimeSeries.h>
-#include <Storages/TimeSeries/TimeSeriesSettings.h>
-#include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
 
 #include <Interpreters/Context.h>
@@ -234,14 +234,9 @@ size_t getNumberOfTablesToCreate(const ASTCreateQuery & create, LoadingStrictnes
 
     if (create.is_time_series_table)
     {
-        for (auto target_kind : StorageTimeSeries::getTargetKinds())
-        {
-            /// The recent samples target exists only if the create query has a `RECENT SAMPLES` clause.
-            if ((target_kind == ViewTarget::RecentSamples) && (!create.targets || !create.targets->tryGetTarget(target_kind)))
-                continue;
-            if (!create.hasTargetTableID(target_kind))
-                ++result;
-        }
+        /// The query must be already normalized here (see getTablePropertiesAndNormalizeCreateQuery).
+        chassert(hasExplicitTimeSeriesVersion(create));
+        result += countTimeSeriesInnerTables(create);
     }
 
     return result;
@@ -916,6 +911,23 @@ void throwIfTableFunctionCannotBeUsedToCreateTable(const ASTPtr & table_function
     throwIfNestedTableFunctionDependsOnCurrentUserGrants(table_function_ast, context);
 }
 
+/// `TABLE ENGINE ON <name>` cannot be granted for an unregistered name, so it is reported as unknown if that is the first missing grant.
+void throwIfEngineIsUnknownAndNotGranted(
+    const String & engine_name, bool is_database_engine, const AccessRightsElements & required_before, const ContextPtr & context)
+{
+    if (is_database_engine ? DatabaseFactory::instance().getDatabaseEngines().contains(engine_name)
+                           : StorageFactory::instance().getAllStorages().contains(engine_name))
+        return;
+    const auto access = context->getAccess();
+    if (access->isGranted(AccessType::TABLE_ENGINE, engine_name) || !access->isGranted(required_before))
+        return;
+    if (is_database_engine)
+        throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Unknown database engine {}{}",
+                        engine_name, DatabaseFactory::instance().getHintsMessage(engine_name));
+    throw Exception(ErrorCodes::UNKNOWN_STORAGE, "Unknown table engine {}{}",
+                    engine_name, StorageFactory::instance().getHintsMessage(engine_name));
+}
+
 }
 
 InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTablePropertiesAndNormalizeCreateQuery(
@@ -939,7 +951,11 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
     /// We have to check access rights again (in case engine was changed).
     if (create.storage && create.storage->engine)
+    {
+        throwIfEngineIsUnknownAndNotGranted(
+            create.storage->engine->name, /*is_database_engine=*/ false, /*required_before=*/ {}, getContext());
         getContext()->checkAccess(AccessType::TABLE_ENGINE, create.storage->engine->name);
+    }
 
     /// If this is a TimeSeries table then we need to normalize list of columns (add missing columns and reorder), and also set inner table engines.
     if (create.is_time_series_table && (mode <= LoadingStrictnessLevel::SECONDARY_CREATE))
@@ -1478,11 +1494,20 @@ namespace
         }
     }
 
-    void setNullDictionarySourceIfExternal(ASTCreateQuery & create_query)
+    void setNullDictionarySourceIfExternal(ASTCreateQuery & create_query, const ContextPtr & context)
     {
+        /// Nothing to replace: a definition without a source is rejected later by `getDictionaryConfigurationFromAST`.
+        if (!create_query.dictionary || !create_query.dictionary->source)
+            return;
+
         ASTDictionary & dict = *create_query.dictionary;
         if (Poco::toLower(dict.source->name) == "clickhouse")
         {
+            /// `getDictionaryConfigurationFromAST` rejects functions, so evaluate constants such as `currentDatabase()` first.
+            NormalizeAndEvaluateConstantsVisitor::Data visitor_data{context};
+            NormalizeAndEvaluateConstantsVisitor visitor(visitor_data);
+            visitor.visit(dict.source->ptr());
+
             auto config = getDictionaryConfigurationFromAST(create_query, Context::getGlobalContextInstance());
             auto info = getInfoIfClickHouseDictionarySource(config, Context::getGlobalContextInstance());
             if (info && info->is_local)
@@ -1560,7 +1585,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
     }
 
     if (create.is_dictionary && getContext()->getSettingsRef()[Setting::restore_replace_external_dictionary_source_to_null])
-        setNullDictionarySourceIfExternal(create);
+        setNullDictionarySourceIfExternal(create, getContext());
 
     if (create.is_dictionary || create.is_ordinary_view)
         return;
@@ -2594,7 +2619,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                 backQuoteIfNeed(create.getTable()));
         }
     }
-    else if (!create.attach)
+    else if (!create.attach || (!create.attach_short_syntax && !database->canReattachTableWithFullDefinition()))
     {
         /// Checking that table may exists in detached/detached permanently state
         try
@@ -3786,8 +3811,8 @@ void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, Cont
 
     /// With an old DDL entry format the query is shipped un-normalized, so hosts running different releases
     /// of ClickHouse would pin different latest versions. Pin the initiator's one here, like the UUIDs above.
-    if (create.is_time_series_table && !hasExplicitTimeSeriesSettingVersion(create))
-        setTimeSeriesSettingVersion(create, TimeSeriesVersion::LATEST);
+    if (create.is_time_series_table && !hasExplicitTimeSeriesVersion(create))
+        setTimeSeriesVersion(create, TimeSeriesVersion::LATEST);
 
     /// For cross-replication cluster we cannot use UUID in replica path.
     String cluster_name_expanded = local_context->getMacros()->expand(cluster_name);
@@ -3971,7 +3996,18 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
     }
 
     if (create.storage && create.storage->engine)
+    {
+        auto required_before = required_access;
+        /// `CREATE DATABASE` and legacy-format `CREATE TABLE` `ON CLUSTER` check `CLUSTER` before these.
+        if (!create.cluster.empty()
+            && (!create.table
+                || getContext()->getSettingsRef()[Setting::distributed_ddl_entry_format_version].value
+                    < DDLLogEntry::NORMALIZE_CREATE_ON_INITIATOR_VERSION))
+            required_before.emplace_back(AccessType::CLUSTER);
+        throwIfEngineIsUnknownAndNotGranted(
+            create.storage->engine->name, /*is_database_engine=*/ !create.table, required_before, getContext());
         required_access.emplace_back(AccessType::TABLE_ENGINE, create.storage->engine->name);
+    }
 
     /// `ATTACH TABLE ... FROM '<path>'` reads a directory in `user_files` as the table data and then moves it to the
     /// data path of the new table. Reading it needs `READ` on the FILE source like the `file` function does, and
