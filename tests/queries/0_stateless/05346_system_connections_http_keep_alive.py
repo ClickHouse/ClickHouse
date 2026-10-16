@@ -59,10 +59,10 @@ def query(sql, user_agent=USER_AGENT):
 
 def idle_state(connection_id):
     # The server sends the response before it sets the connection to idle. Thus, wait for the idle status.
-    wait_for(f"SELECT status FROM system.connections WHERE connection_id = {connection_id}", "idle")
+    wait_for(f"SELECT status FROM system.connections WHERE connection_id = '{connection_id}'", "idle")
     return observe(
         "SELECT protocol, status, query_id = '', user, client_name, last_query_time >= connected_time "
-        f"FROM system.connections WHERE connection_id = {connection_id}"
+        f"FROM system.connections WHERE connection_id = '{connection_id}'"
     )
 
 
@@ -89,5 +89,5 @@ print(idle_state(connection_id))
 
 print("--- removed after the socket closes")
 connection.close()
-wait_for(f"SELECT count() FROM system.connections WHERE connection_id = {connection_id}", "0")
+wait_for(f"SELECT count() FROM system.connections WHERE connection_id = '{connection_id}'", "0")
 print("removed")

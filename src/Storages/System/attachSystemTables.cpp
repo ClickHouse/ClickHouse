@@ -2652,10 +2652,9 @@ moved to the TTL destination by a background move task (observable via
 `system.moves`). See the
 [`perform_ttl_move_on_insert` setting on the MergeTree engine](/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes_configure).
 )DOCS_MD");
-    if (context->getConfigRef().getBool("collect_connection_metrics", false))
-    {
-        ConnectionRegistry::instance().enable();
-        attach<StorageSystemConnections>(context, system_database, "connections", R"DOCS_MD(
+    /// Attach the table also if `collect_connection_metrics` is `false`, because a reload of the configuration can change the setting.
+    ConnectionRegistry::instance().setEnabled(context->getConfigRef().getBool("collect_connection_metrics", false));
+    attach<StorageSystemConnections>(context, system_database, "connections", R"DOCS_MD(
 .description
 Shows the open client connections of the native TCP and HTTP query interfaces.
 A connection is `active` when a query runs. A connection is `idle` when it waits for the next query.
@@ -2665,13 +2664,21 @@ The table does not show these connections:
 - Interserver connections.
 - HTTP connections that did not run a query, for example `/ping` and Prometheus connections.
 
-The table is available only if the server setting `collect_connection_metrics` is `true`.
+The server collects the connections only if the server setting `collect_connection_metrics` is `true`. If the setting is `false`, the table is empty.
+You can change the setting without a restart (`SYSTEM RELOAD CONFIG`):
+- When you change the setting to `false`, the table becomes empty and the server stops the registration of new connections.
+- When you change the setting to `true`, an open connection shows in the table on its next query.
 
 The server adds a TCP connection to the table after authentication. The server removes the connection when it closes.
 The server adds an HTTP connection to the table on its first query. The server removes the connection when the socket closes.
 Thus, the table shows an HTTP keep-alive connection as `idle` between the requests.
 
 A user without the `SHOW CONNECTIONS` privilege sees only the connections of this user.
+
+`connection_id` is a random UUID. Thus, it is unique across servers, and you can combine the tables of many replicas, for example with `clusterAllReplicas`.
+
+`connected_time` has the same meaning for TCP and HTTP: the time when the server started to handle the socket.
+This time is before the TCP handshake, the authentication, and the first query. Thus, it can be earlier than the time when the connection shows in the table.
 
 .examples
 ```sql
@@ -2680,10 +2687,16 @@ FROM system.connections
 FORMAT Vertical;
 ```
 
+```sql
+SELECT hostName(), protocol, status, count()
+FROM clusterAllReplicas(default, system.connections)
+GROUP BY ALL;
+```
+
 ```response
 Row 1:
 ──────
-connection_id:   2
+connection_id:   0d6c1b7e-31a2-4f5c-9a43-7e2b8c5d1f90
 protocol:        TCP
 user:            default
 status:          active
@@ -2694,7 +2707,7 @@ last_query_time: 2026-03-17 09:18:27
 
 Row 2:
 ──────
-connection_id:   1
+connection_id:   a4f3e2d1-8b7c-4c6d-9e5f-1a2b3c4d5e6f
 protocol:        HTTP
 user:            default
 status:          idle
@@ -2704,7 +2717,6 @@ connected_time:  2026-03-17 09:18:14
 last_query_time: 2026-03-17 09:18:14
 ```
 )DOCS_MD");
-    }
     attach<StorageSystemProcesses>(context, system_database, "processes", R"DOCS_MD(
 .description
 This system table is used for implementing the `SHOW PROCESSLIST` query.

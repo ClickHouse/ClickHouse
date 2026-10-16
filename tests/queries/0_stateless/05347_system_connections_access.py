@@ -36,13 +36,13 @@ try:
     other_id = client.execute("SELECT connection_id FROM system.connections WHERE query_id = currentQueryID()")[0][0]
 
     print("--- without SHOW CONNECTIONS: only the connections of this user")
-    print(query(f"SELECT count() FROM system.connections WHERE connection_id = {other_id}", USER))
+    print(query(f"SELECT count() FROM system.connections WHERE connection_id = '{other_id}'", USER))
     print(query("SELECT countIf(user = currentUser()) > 0, countIf(user != currentUser()) FROM system.connections", USER))
 
     query(f"GRANT SHOW CONNECTIONS ON *.* TO {USER}")
 
     print("--- with SHOW CONNECTIONS: connections of all users")
-    print(query(f"SELECT user FROM system.connections WHERE connection_id = {other_id}", USER))
+    print(query(f"SELECT user FROM system.connections WHERE connection_id = '{other_id}'", USER))
 
     client.disconnect()
 finally:

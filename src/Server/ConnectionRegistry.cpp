@@ -4,7 +4,7 @@
 namespace DB
 {
 
-ConnectionState::ConnectionState(UInt64 connection_id_, ConnectionInfo info_, ConnectionPeer peer_)
+ConnectionState::ConnectionState(UUID connection_id_, ConnectionInfo info_, ConnectionPeer peer_)
     : connection_id(connection_id_)
     , info(std::move(info_))
     , peer(std::move(peer_))
@@ -115,9 +115,9 @@ ConnectionRegistry & ConnectionRegistry::instance()
     return registry;
 }
 
-void ConnectionRegistry::enable()
+void ConnectionRegistry::setEnabled(bool value)
 {
-    enabled.store(true, std::memory_order_relaxed);
+    enabled.store(value, std::memory_order_relaxed);
 }
 
 ConnectionHandle ConnectionRegistry::add(ConnectionInfo info, ConnectionPeer peer)
@@ -125,7 +125,8 @@ ConnectionHandle ConnectionRegistry::add(ConnectionInfo info, ConnectionPeer pee
     if (!isEnabled())
         return {};
 
-    const UInt64 id = next_id.fetch_add(1, std::memory_order_relaxed);
+    /// A random identifier is unique across servers. Thus, rows from different replicas do not collide, for example in `clusterAllReplicas`.
+    const UUID id = UUIDHelpers::generateV4();
     auto state = std::make_shared<ConnectionState>(id, std::move(info), std::move(peer));
 
     {
@@ -137,6 +138,9 @@ ConnectionHandle ConnectionRegistry::add(ConnectionInfo info, ConnectionPeer pee
 
 std::vector<ConnectionSnapshot> ConnectionRegistry::list() const
 {
+    if (!isEnabled())
+        return {};
+
     /// Copy the pointers with the registry-wide lock. Then release this lock and make the copies of the connections.
     /// Thus, this function does not lock a connection mutex when it holds the registry-wide lock.
     std::vector<ConnectionStatePtr> states;
@@ -154,7 +158,7 @@ std::vector<ConnectionSnapshot> ConnectionRegistry::list() const
     return result;
 }
 
-void ConnectionRegistry::remove(UInt64 id)
+void ConnectionRegistry::remove(const UUID & id)
 {
     std::lock_guard lock(mutex);
     connections.erase(id);

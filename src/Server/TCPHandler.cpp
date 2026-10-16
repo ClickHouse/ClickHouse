@@ -544,29 +544,7 @@ void TCPHandler::runImpl()
         throw;
     }
 
-    /// Register this connection in the global registry. Then `system.connections` shows this connection.
-    /// Do not register interserver connections (connections with the cluster secret). These connections are internal.
-    if (!is_interserver_mode && session && ConnectionRegistry::instance().isEnabled())
-    {
-        const auto & client_info = session->getClientInfo();
-        /// Use `getClientAddress`. `session->authenticate` and `system.processes` use the same function.
-        /// This function uses the PROXY protocol header and `auth_use_forwarded_address`.
-        /// Thus, behind a proxy, the table shows the address of the client, not the address of the proxy.
-        const auto client_addr = getClientAddress(client_info);
-        ConnectionInfo info;
-        info.protocol = "TCP";
-        info.server_port = tcp_server.portNumber();
-        info.client_version_major = client_version_major;
-        info.client_version_minor = client_version_minor;
-        info.client_version_patch = client_version_patch;
-        info.connected_time = std::time(nullptr);
-        ConnectionPeer peer;
-        peer.user = client_info.current_user;
-        peer.client_address = client_addr.host();
-        peer.client_port = client_addr.port();
-        peer.client_name = client_name;
-        connection_handle = ConnectionRegistry::instance().add(std::move(info), std::move(peer));
-    }
+    registerConnectionIfNeeded();
 
     while (tcp_server.isOpen())
     {
@@ -975,6 +953,8 @@ void TCPHandler::runImpl()
             if (client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_OUT_OF_ORDER_BUCKETS_IN_AGGREGATION)
                 query_state->query_context->setSetting("enable_producing_buckets_out_of_order_in_aggregation", false);
 
+            /// If `collect_connection_metrics` was `false` after authentication, register the connection now.
+            registerConnectionIfNeeded();
             /// Set the connection to idle in `system.connections` at each exit from this scope. This includes exceptions.
             connection_handle.setActive(query_state->query_context->getCurrentQueryId());
             SCOPE_EXIT(connection_handle.setIdle());
@@ -3537,6 +3517,32 @@ void TCPHandler::run()
         tryLogCurrentException(log, "TCPHandler");
         throw;
     }
+}
+
+void TCPHandler::registerConnectionIfNeeded()
+{
+    /// Do not register interserver connections (connections with the cluster secret). These connections are internal.
+    if (connection_handle || is_interserver_mode || !session || !ConnectionRegistry::instance().isEnabled())
+        return;
+
+    const auto & client_info = session->getClientInfo();
+    /// Use `getClientAddress`. `session->authenticate` and `system.processes` use the same function.
+    /// This function uses the PROXY protocol header and `auth_use_forwarded_address`.
+    /// Thus, behind a proxy, the table shows the address of the client, not the address of the proxy.
+    const auto client_addr = getClientAddress(client_info);
+    ConnectionInfo info;
+    info.protocol = "TCP";
+    info.server_port = tcp_server.portNumber();
+    info.client_version_major = client_version_major;
+    info.client_version_minor = client_version_minor;
+    info.client_version_patch = client_version_patch;
+    info.connected_time = connected_time;
+    ConnectionPeer peer;
+    peer.user = client_info.current_user;
+    peer.client_address = client_addr.host();
+    peer.client_port = client_addr.port();
+    peer.client_name = client_name;
+    connection_handle = ConnectionRegistry::instance().add(std::move(info), std::move(peer));
 }
 
 bool TCPHandler::connectionLimitReached()

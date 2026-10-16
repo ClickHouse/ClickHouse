@@ -1,5 +1,5 @@
 1
-connection_id	UInt64
+connection_id	UUID
 protocol	LowCardinality(String)
 client_address	IPv6
 client_port	UInt16

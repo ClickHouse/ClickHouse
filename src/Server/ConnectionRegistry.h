@@ -9,6 +9,7 @@
 
 #include <base/defines.h>
 #include <base/types.h>
+#include <Core/UUID.h>
 #include <Poco/Net/IPAddress.h>
 
 
@@ -42,7 +43,7 @@ struct ConnectionPeer
 /// A copy of a registered connection at one point in time. `ConnectionRegistry::list` returns these copies.
 struct ConnectionSnapshot
 {
-    UInt64 connection_id = 0;
+    UUID connection_id = UUIDHelpers::Nil;
     ConnectionInfo info;
     ConnectionPeer peer;
     bool is_active = false;     /// true when a query runs, false when the connection waits for the next query
@@ -58,7 +59,7 @@ struct ConnectionSnapshot
 class ConnectionState
 {
 public:
-    ConnectionState(UInt64 connection_id_, ConnectionInfo info_, ConnectionPeer peer_);
+    ConnectionState(UUID connection_id_, ConnectionInfo info_, ConnectionPeer peer_);
 
     /// Sets the connection to active. The client properties do not change.
     void setActive(const String & query_id_);
@@ -68,7 +69,7 @@ public:
 
     ConnectionSnapshot getSnapshot() const;
 
-    const UInt64 connection_id;
+    const UUID connection_id;
     const ConnectionInfo info;
 
 private:
@@ -135,27 +136,29 @@ class ConnectionRegistry
 public:
     static ConnectionRegistry & instance();
 
-    /// Call this function one time at server start (from `attachSystemTablesServer`) if `collect_connection_metrics` is `true`.
-    /// Before this call, `add` returns an empty handle.
-    void enable();
+    /// The server calls this function at start and at each reload of the configuration, with the value of `collect_connection_metrics`.
+    /// When the registry is disabled:
+    /// - `add` returns an empty handle.
+    /// - `list` returns an empty list.
+    /// - The connections that are already registered stay registered until they close. They show again if the registry is enabled again.
+    void setEnabled(bool value);
     bool isEnabled() const { return enabled.load(std::memory_order_relaxed); }
 
     /// Registers a connection. The connection is idle until the first call to `setActive`.
     ConnectionHandle add(ConnectionInfo info, ConnectionPeer peer);
 
-    /// Returns a copy of all registered connections.
+    /// Returns a copy of all registered connections. Returns an empty list if the registry is disabled.
     std::vector<ConnectionSnapshot> list() const;
 
 private:
     friend class ConnectionHandle;
 
-    void remove(UInt64 id);
+    void remove(const UUID & id);
 
     std::atomic<bool> enabled{false};
-    std::atomic<UInt64> next_id{1};
 
     mutable std::mutex mutex;
-    std::unordered_map<UInt64, ConnectionStatePtr> connections TSA_GUARDED_BY(mutex);
+    std::unordered_map<UUID, ConnectionStatePtr> connections TSA_GUARDED_BY(mutex);
 };
 
 }

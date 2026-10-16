@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Common/IPv6ToBinary.h>
@@ -22,7 +23,7 @@ ColumnsDescription StorageSystemConnections::getColumnsDescription()
 
     return ColumnsDescription
     {
-        {"connection_id",          std::make_shared<DataTypeUInt64>(),                                       "Unique identifier of the connection. A TCP connection gets the identifier after authentication. An HTTP connection gets the identifier on its first query."},
+        {"connection_id",          std::make_shared<DataTypeUUID>(),                                         "Unique identifier of the connection: a random UUID. It is unique across servers, for example in `clusterAllReplicas`. A TCP connection gets the identifier after authentication. An HTTP connection gets the identifier on its first query."},
         {"protocol",               low_cardinality_string,                                                   "Protocol of the connection: TCP (native protocol) or HTTP."},
         {"client_address",         DataTypeFactory::instance().get("IPv6"),                                  "IP address of the client. Behind a proxy, this is the address of the client if the server trusts the PROXY protocol or the `X-Forwarded-For` header. For HTTP, this is the address of the last request."},
         {"client_port",            std::make_shared<DataTypeUInt16>(),                                       "TCP port of the client. Behind a proxy, this is the port from the PROXY protocol or the `X-Forwarded-For` header if the server trusts them. For HTTP, this is the port of the last request."},
@@ -34,7 +35,7 @@ ColumnsDescription StorageSystemConnections::getColumnsDescription()
         {"client_version_major",   std::make_shared<DataTypeUInt64>(),                                       "Major version of the client from the TCP handshake. 0 for HTTP connections."},
         {"client_version_minor",   std::make_shared<DataTypeUInt64>(),                                       "Minor version of the client from the TCP handshake. 0 for HTTP connections."},
         {"client_version_patch",   std::make_shared<DataTypeUInt64>(),                                       "Patch version of the client from the TCP handshake. 0 for HTTP connections."},
-        {"connected_time",         std::make_shared<DataTypeDateTime>(),                                     "Time when the connection started. For a TCP connection, this is the time after authentication."},
+        {"connected_time",         std::make_shared<DataTypeDateTime>(),                                     "Time when the server started to handle the socket. This time is the same for TCP and HTTP: before the handshake, the authentication, and the first query."},
         {"last_query_time",        std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "Start time of the last query on this connection. NULL if the connection did not run a query."},
     };
 }
