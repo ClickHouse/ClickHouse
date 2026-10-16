@@ -1615,6 +1615,15 @@ static bool bloomFilterHashDomainMatches(const DataTypePtr & value_type, const D
     return (isInteger(value) && isInteger(element)) || value->equals(*element);
 }
 
+/// LEFT ARRAY JOIN is arrayJoin(emptyArrayToSingle(col)), the default element it adds is not in an index on col
+static String getArrayJoinColumnName(const RPNBuilderTreeNode & node, const Block & header, bool & padded)
+{
+    if (header.has(node.getColumnName()) || !node.isFunction() || node.toFunctionNode().getFunctionName() != "emptyArrayToSingle")
+        return node.getColumnName();
+    padded = true;
+    return node.toFunctionNode().getArgumentAt(0).getColumnName();
+}
+
 bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
     const String & function_name,
     const RPNBuilderTreeNode & wrapped_key_node,
@@ -1758,6 +1767,21 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         bool set_contain_default_value = set_contains_default_value_predicate_column_typed.getData()[0];
         if (set_contain_default_value)
             return false;
+
+        /// Over `Enum` map values `arrayElement` returns the zero of the underlying integer for a missing key,
+        /// which is not necessarily the default value of the `Enum` (its first value), so check it as well.
+        /// Over `Nullable(Enum)` map values a missing key gives `NULL` rather than the zero, so this is not needed.
+        if (const auto * dag_node = key_node.getDAGNode(); dag_node && isEnum(removeLowCardinality(dag_node->result_type)))
+        {
+            if (!isEnum(removeLowCardinalityAndNullable(type)))
+                return false;
+
+            auto zero_column = type->createColumn();
+            zero_column->insert(Field(Int64(0)));
+            auto set_contains_zero_column = prepared_set->execute({ColumnWithTypeAndName{std::move(zero_column), type, ""}}, false /*negative*/);
+            if (assert_cast<const ColumnUInt8 &>(*set_contains_zero_column).getData()[0])
+                return false;
+        }
 
         if (map_info->has_keys_index)
         {
@@ -1913,6 +1937,9 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
     }
 
     const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, array_nested_type);
+    if (array_input.has_empty_array_to_single && converted_column->getNumberOfDefaultRows() != 0)
+        return false;
+
     out.predicate.emplace_back(
         std::make_pair(position, BloomFilterHash::hashWithColumn(array_nested_type, converted_column, 0, column->size())));
     out.function = is_in ? RPNElement::FUNCTION_HAS_ANY : RPNElement::FUNCTION_IN;
@@ -2164,7 +2191,8 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
     {
         if (auto array_join_argument = key_node.getArrayJoinArgument())
         {
-            auto array_column_name = array_join_argument->getColumnName();
+            bool padded = false;
+            auto array_column_name = getArrayJoinColumnName(*array_join_argument, header, padded);
             if (header.has(array_column_name))
             {
                 size_t position = header.getPositionByName(array_column_name);
@@ -2180,6 +2208,9 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 
                     auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
                     if (converted_field.isNull())
+                        return false;
+
+                    if (padded && array_type->getNestedType()->createColumnConst(1, converted_field)->isDefaultAt(0))
                         return false;
 
                     out.function = RPNElement::FUNCTION_HAS;

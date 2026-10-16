@@ -161,12 +161,18 @@ private:
     /// can possibly cover. Costs one pass for the bounds and a single statistics probe, where turning the
     /// set into ranges costs a `Field` per element, a sort and one probe per element.
     Selectivity estimateSelectivityFromSetSize(
-        const StorageMetadataPtr & metadata, const String & column_name, const IColumn & set_elements, bool negative) const;
+        const StorageMetadataPtr & metadata, const String & column_name, const IColumn & set_elements,
+        const DataTypePtr & set_type, bool negative) const;
     UInt64 estimateSelectivity(const RPNBuilderTreeNode & node) const;
+
+    /// Selectivity of an equality with any of `num_values` values of `type` when no statistics can estimate it.
+    /// Only a `Bool` counts the values: the default for other types is flat.
+    static Float64 getEqualFactor(const DataTypePtr & type, size_t num_values = 1);
 
     /// Magic constants for estimating the selectivity of a condition no statistics exists.
     static constexpr Float64 default_cond_range_factor = 0.33;
     static constexpr Float64 default_cond_equal_factor = 0.01;
+    static constexpr Float64 default_bool_equal_factor = 0.5;
     static constexpr Float64 default_unknown_cond_factor = 0.33;
     static constexpr Float64 default_like_factor = 0.1;
     static constexpr Float64 default_cardinality_ratio = 0.1;

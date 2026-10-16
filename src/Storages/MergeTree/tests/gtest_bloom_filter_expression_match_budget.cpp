@@ -26,13 +26,11 @@ namespace
 
 const ActionsDAG::Node & addArrayLiteral(
     ActionsDAG & dag,
-    const ContextPtr & context,
-    const DataTypePtr & uint64_type,
+    const DataTypePtr & array_type,
     UInt64 value)
 {
-    const auto & constant = dag.addColumn(
-        uint64_type->createColumnConst(0, Field(value)), uint64_type, "needle", true);
-    return dag.addFunction(FunctionFactory::instance().get("array", context), {&constant}, "literal_array");
+    return dag.addColumn(
+        array_type->createColumnConst(0, Field(Array{Field(value)})), array_type, "literal_array", true);
 }
 
 bool canPruneTupleArrayJoinInWithSharedBudget(bool first_component_mismatches)
@@ -50,8 +48,8 @@ bool canPruneTupleArrayJoinInWithSharedBudget(bool first_component_mismatches)
     const UInt64 query_first_value = first_component_mismatches ? 18 : 17;
     const UInt64 query_second_value = first_component_mismatches ? 17 : 18;
 
-    const auto & query_first_literal = addArrayLiteral(query_dag, context, uint64_type, query_first_value);
-    const auto & query_second_literal = addArrayLiteral(query_dag, context, uint64_type, query_second_value);
+    const auto & query_first_literal = addArrayLiteral(query_dag, array_type, query_first_value);
+    const auto & query_second_literal = addArrayLiteral(query_dag, array_type, query_second_value);
     const auto & query_first_array = query_dag.addFunction(
         FunctionFactory::instance().get("arrayConcat", context),
         {&query_input, &query_first_literal}, "query_first_array");
@@ -63,7 +61,7 @@ bool canPruneTupleArrayJoinInWithSharedBudget(bool first_component_mismatches)
     const auto & query_tuple = query_dag.addFunction(
         FunctionFactory::instance().get("tuple", context), {&query_first_join, &query_second_join}, "query_tuple");
 
-    const auto & index_literal = addArrayLiteral(index_dag, context, uint64_type, 17);
+    const auto & index_literal = addArrayLiteral(index_dag, array_type, 17);
     const auto & index_array = index_dag.addFunction(
         FunctionFactory::instance().get("arrayConcat", context),
         {&index_input, &index_literal}, "index_array");

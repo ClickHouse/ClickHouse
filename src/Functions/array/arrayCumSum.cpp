@@ -17,6 +17,12 @@ namespace ErrorCodes
 
 struct ArrayCumSumImpl
 {
+    /// Authoritative — array of cumulative sums; the result element type widens to fit the
+    /// running total (e.g. `Array(UInt8)` → `Array(UInt64)`) via the `arraySumResult` type function.
+    static constexpr auto signature =
+        "(Function((Any, ...), T : Number), Array, ...) -> Array(arraySumResult(T))"
+        " OR (Array(T : Number)) -> Array(arraySumResult(T))";
+
     static bool needBoolean() { return false; }
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }
