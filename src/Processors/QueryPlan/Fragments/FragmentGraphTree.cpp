@@ -131,7 +131,7 @@ private:
     String stepText(IQueryPlanStep & step) const
     {
         String text = step.getName();
-        auto description = step.getStepDescription();
+        String description(step.getStepDescription());
         if (options.pretty)
             description = QueryPlanFormat::trimColumnIdentifier(description);
         if (options.description && !description.empty())
