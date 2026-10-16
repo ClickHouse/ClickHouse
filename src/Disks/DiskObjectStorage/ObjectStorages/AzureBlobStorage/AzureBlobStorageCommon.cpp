@@ -238,9 +238,11 @@ static bool isServerManagedCredential(const AuthMethod & auth_method)
         || std::holds_alternative<std::shared_ptr<Azure::Identity::ManagedIdentityCredential>>(auth_method);
 }
 
-bool ConnectionParams::mustDropServerManagedCredentials() const
+bool ConnectionParams::checkOrDropServerManagedCredentials() const
 {
-    if (!forbid_implicit_credentials || !isServerManagedCredential(auth_method))
+    /// A request authorized by SAS does not use `auth_method`.
+    if (!forbid_implicit_credentials || !endpoint.sas_auth.empty() || !endpoint.additional_params.empty()
+        || !isServerManagedCredential(auth_method))
         return false;
 
     if (anonymous_fallback_for_server_credentials)
@@ -261,7 +263,7 @@ std::unique_ptr<ServiceClient> ConnectionParams::createForService() const
 {
     try
     {
-        if (mustDropServerManagedCredentials())
+        if (checkOrDropServerManagedCredentials())
             return std::make_unique<ServiceClient>(endpoint.getServiceEndpoint(), client_options);
 
         return std::visit([this]<typename T>(const T & auth)
@@ -289,7 +291,7 @@ std::unique_ptr<ContainerClient> ConnectionParams::createForContainer() const
             return std::make_unique<ContainerClient>(std::move(raw_client), endpoint.prefix);
         }
 
-        if (mustDropServerManagedCredentials())
+        if (checkOrDropServerManagedCredentials())
         {
             RawContainerClient raw_client{endpoint.getContainerEndpoint(), client_options};
             return std::make_unique<ContainerClient>(std::move(raw_client), endpoint.prefix);

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
-# Tag no-fasttest: needs USE_AZURE_BLOB_STORAGE.
+# Tag no-fasttest: needs USE_AZURE_BLOB_STORAGE and Azurite.
 #
 # Azure access from user SQL may not authenticate with the server's own identity. The restriction is applied
 # when the client is built, so the refused cases need no reachable endpoint.
@@ -15,14 +15,21 @@ NC_URL_ONLY="azure_url_only_${DB}"
 NC_ACCOUNT_KEY="azure_account_key_${DB}"
 
 TABLE="azure_hardening_${DB}"
+DISK_TABLE="azure_hardening_disk_${DB}"
 
 # The Azure SDK attaches a bearer token only to an `https` endpoint.
 URL="https://localhost:11111/${DB}"
-CONN_STRING="DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://localhost:11111/devstoreaccount1;"
+
+# Azurite, for the permitted cases that can actually read and write.
+AZURITE_URL="http://localhost:10000/devstoreaccount1"
+AZURITE_KEY="Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
+CONN_STRING="DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=${AZURITE_KEY};BlobEndpoint=${AZURITE_URL};"
+CONTAINER="cont-$(echo "${CLICKHOUSE_TEST_UNIQUE_NAME}" | tr _ -)"
 
 cleanup() {
     $CLICKHOUSE_CLIENT -m -q "
         DROP TABLE IF EXISTS ${TABLE};
+        DROP TABLE IF EXISTS ${DISK_TABLE} SYNC;
         DROP NAMED COLLECTION IF EXISTS ${NC_URL_ONLY};
         DROP NAMED COLLECTION IF EXISTS ${NC_ACCOUNT_KEY};
     " 2>/dev/null
@@ -34,8 +41,10 @@ $CLICKHOUSE_CLIENT -m -q "
     CREATE NAMED COLLECTION ${NC_URL_ONLY} AS
         storage_account_url = '${URL}', container = 'cont', blob_path = 'f.csv';
     CREATE NAMED COLLECTION ${NC_ACCOUNT_KEY} AS
-        storage_account_url = 'http://localhost:11111/${DB}', container = 'cont', blob_path = 'f.csv',
-        account_name = 'devstoreaccount1', account_key = 'a2V5';
+        storage_account_url = '${AZURITE_URL}', container = '${CONTAINER}', blob_path = 'f.csv',
+        account_name = 'devstoreaccount1', account_key = '${AZURITE_KEY}';
+    INSERT INTO FUNCTION azureBlobStorage('${CONN_STRING}', '${CONTAINER}', 'f.csv', 'CSV', 'auto', 'x UInt8')
+        SELECT 7 SETTINGS azure_truncate_on_insert = 1;
 " > /dev/null
 
 # Classifies without depending on which error a permitted but unreachable endpoint produces.
@@ -75,12 +84,31 @@ $CLICKHOUSE_CLIENT -m -q "
     BACKUP TABLE ${TABLE} TO AzureBlobStorage('${URL}', 'cont', 'b_${DB}'); -- { serverError ACCESS_DENIED }
 " > /dev/null
 
-# Permitted: explicit credentials, and the opt-in.
-run_and_classify "connection string" \
-    "SELECT * FROM azureBlobStorage('${CONN_STRING}', 'cont', 'f.csv', 'CSV', 'auto', 'x UInt8')"
+# A dynamic disk from user SQL is checked as well, unlike a disk from the server configuration.
+$CLICKHOUSE_CLIENT -m -q "
+    CREATE TABLE ${DISK_TABLE} (x UInt8) ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS disk = disk(type = azure_blob_storage, storage_account_url = '${URL}', container_name = 'cont'); -- { serverError ACCESS_DENIED }
+    CREATE TABLE ${DISK_TABLE} (x UInt8) ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS disk = disk(type = azure_blob_storage, storage_account_url = '${URL}', container_name = 'cont',
+            use_workload_identity = 1); -- { serverError ACCESS_DENIED }
+"
 
-run_and_classify "account name and key in a named collection" \
-    "SELECT * FROM azureBlobStorage(${NC_ACCOUNT_KEY}, format = 'CSV', structure = 'x UInt8')"
+# Permitted: explicit credentials read and write for real.
+echo "connection string: $($CLICKHOUSE_CLIENT -q "
+    SELECT * FROM azureBlobStorage('${CONN_STRING}', '${CONTAINER}', 'f.csv', 'CSV', 'auto', 'x UInt8')")"
+
+echo "account name and key in a named collection: $($CLICKHOUSE_CLIENT -q "
+    SELECT * FROM azureBlobStorage(${NC_ACCOUNT_KEY}, format = 'CSV', structure = 'x UInt8')")"
+
+$CLICKHOUSE_CLIENT -m -q "
+    CREATE TABLE ${DISK_TABLE} (x UInt8) ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS disk = disk(type = azure_blob_storage, storage_account_url = '${AZURITE_URL}',
+            container_name = '${CONTAINER}', account_name = 'devstoreaccount1', account_key = '${AZURITE_KEY}');
+    INSERT INTO ${DISK_TABLE} VALUES (7);
+"
+echo "dynamic disk with account name and key: $($CLICKHOUSE_CLIENT -q "SELECT * FROM ${DISK_TABLE}")"
+
+# Permitted without a reachable endpoint, so only checked for not being refused.
 
 run_and_classify "SAS token in the endpoint" \
     "SELECT * FROM azureBlobStorage('${URL}?sv=2021-08-06&sig=abc', 'cont', 'f.csv', 'CSV', 'auto', 'x UInt8')"

@@ -5485,6 +5485,11 @@ managed identity of the machine. Such a request is rejected with `ACCESS_DENIED`
 explicitly are unaffected: an `account_name`/`account_key` pair, a connection string, a SAS token, and static
 credentials in a named collection or in the server `<storage_configuration>` all keep working.
 
+A named collection that relies on workload or managed identity is restricted as well, including one defined in
+the server configuration: a query that uses it is rejected the same way, because the endpoint and identity reach
+the request through user SQL. Give such a collection explicit credentials, or enable this setting for the users
+that need it.
+
 This prevents an authenticated user from making the server authenticate to an endpoint of the user's choosing
 with the server's own identity. Azure binds a storage bearer token to the account it was minted for and not to
 the host it is sent to, so a request to a URL taken from the query both hands a usable token to whoever
@@ -5494,12 +5499,14 @@ controls that URL and reads containers the user has no rights to.
 federated token for the named client, so it resolves a server-managed credential even though the query names
 the identity.
 
-Disks defined in the server configuration are unaffected and keep using workload or managed identity.
+Disks defined in the server configuration are unaffected and keep using workload or managed identity. A dynamic
+disk defined in user SQL with `disk(type = azure_blob_storage, ...)` is restricted like a table.
 
-Durability for persistent `AzureBlobStorage` and `AzureQueue` tables: when the server reloads such a table
-from its stored definition (startup or `RESTORE`) it re-applies the restriction with the startup context, so a
-table that relied on server-managed credentials is loaded with a client that has no credentials and stays
-inaccessible until its credentials resolve to a permitted source. The server itself still starts. See the
+Durability for persistent `AzureBlobStorage` and `AzureQueue` tables and for dynamic Azure disks: when the
+server reloads such a table from its stored definition at startup it re-applies the restriction with the startup
+context, so a table that relied on server-managed credentials is loaded with a client that has no credentials and
+stays inaccessible until its credentials resolve to a permitted source. The server itself still starts. `RESTORE`
+creates its tables like `CREATE`, so such a table is refused there instead. See the
 server setting `azure_load_table_anonymously_if_credentials_restricted`. Give such tables explicit credentials
 for durable access.
 

@@ -106,7 +106,7 @@ ObjectStoragePtr StorageAzureConfiguration::createObjectStorage(ContextPtr conte
         && (context->getGlobalContext()->getServerSettings()[ServerSetting::azure_load_table_anonymously_if_credentials_restricted]
             || force_anonymous_load_fallback);
 
-    if (connection_params.anonymous_fallback_for_server_credentials && connection_params.mustDropServerManagedCredentials())
+    if (connection_params.anonymous_fallback_for_server_credentials && connection_params.checkOrDropServerManagedCredentials())
         LOG_WARNING(
             getLogger("StorageAzureConfiguration"),
             "Loading this table with an Azure client that has no credentials: its definition uses the server's "

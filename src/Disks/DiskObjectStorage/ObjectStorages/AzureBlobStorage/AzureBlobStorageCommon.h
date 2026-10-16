@@ -169,7 +169,7 @@ struct ConnectionParams
     std::unique_ptr<ContainerClient> createForContainer() const;
 
     /// Throws `ACCESS_DENIED` when the credential is off limits and the anonymous fallback is not allowed.
-    bool mustDropServerManagedCredentials() const;
+    bool checkOrDropServerManagedCredentials() const;
 };
 
 void processURL(const String & url, const String & container_name, Endpoint & endpoint, AuthMethod & auth_method);

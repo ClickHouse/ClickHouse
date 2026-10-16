@@ -222,6 +222,9 @@ std::vector<std::pair<std::string, std::string>> getAzureBuilderOptions(
 
     const auto & endpoint = connection_params.endpoint;
 
+    /// Given no credentials, the kernel's object store falls back to the machine's managed identity by itself.
+    const bool drop_credentials = connection_params.checkOrDropServerManagedCredentials();
+
     /// Supported options
     /// https://github.com/apache/arrow-rs-object-store/blob/main/src/azure/builder.rs#L390
     set_option("azure_container_name", endpoint.container_name);
@@ -337,6 +340,9 @@ std::vector<std::pair<std::string, std::string>> getAzureBuilderOptions(
 
     if (!endpoint.sas_auth.empty())
         set_option("azure_storage_sas_key", endpoint.sas_auth);
+
+    if (drop_credentials)
+        set_option("azure_skip_signature", "true");
 
     /// If the configuration carries an endpoint URL, pass it to the kernel explicitly, which
     /// otherwise derives the public `<account>.blob.core.windows.net` host from the account

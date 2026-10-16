@@ -1651,9 +1651,10 @@ exemption also applies when the table is reloaded from metadata on restart. It i
 database, which ordinary users cannot create tables in, so it does not relax the restriction for user queries.
 )", 0) \
     DECLARE(Bool, azure_load_table_anonymously_if_credentials_restricted, true, R"(
-Controls what happens when a persistent `AzureBlobStorage` or `AzureQueue` table is loaded from existing
-metadata (server startup or `RESTORE`) and its definition would authenticate with the server's own identity,
-which is blocked for user queries by `azure_allow_server_credentials_in_user_queries`.
+Controls what happens when a persistent `AzureBlobStorage` or `AzureQueue` table, or a table on a dynamic Azure
+disk, is loaded from existing metadata at server startup and its definition would authenticate with the server's
+own identity, which is blocked for user queries by `azure_allow_server_credentials_in_user_queries`. `RESTORE`
+creates its tables like `CREATE`, so such a table is refused there instead.
 
 When enabled (the default), the table is loaded with a client that carries no credentials instead of aborting
 startup. The server starts, but the table is inaccessible (its requests are denied by Azure) until its

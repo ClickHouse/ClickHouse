@@ -454,8 +454,10 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
         /// cannot smuggle a `1` in: its own `readonly` constraint keeps the entry value at `0`.
         if (query && query->as<ASTBackupQuery>())
         {
-            if (const auto * value = entry.settings->tryGet("s3_allow_server_credentials_in_user_queries"))
-                query_context->setSetting("s3_allow_server_credentials_in_user_queries", *value);
+            /// The same applies to Azure credentials and `azure_allow_server_credentials_in_user_queries`.
+            for (const auto * name : {"s3_allow_server_credentials_in_user_queries", "azure_allow_server_credentials_in_user_queries"})
+                if (const auto * value = entry.settings->tryGet(name))
+                    query_context->setSetting(name, *value);
         }
     }
 

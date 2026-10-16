@@ -346,7 +346,7 @@ AzureObjectStorage::buildDataLakeFileClient(const String & blob_path) const
         makeAdlsGen2FileClient(
             params->endpoint,
             params->auth_method,
-            params->mustDropServerManagedCredentials(),
+            params->checkOrDropServerManagedCredentials(),
             params->client_options,
             blob_path));
 }
@@ -377,7 +377,7 @@ std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NO
         return std::make_unique<WriteBufferFromAzureDataLakeStorage>(
             params->endpoint,
             params->auth_method,
-            params->mustDropServerManagedCredentials(),
+            params->checkOrDropServerManagedCredentials(),
             params->client_options,
             object.remote_path,
             /// The adaptive initial size must not exceed buf_size (the maximum); this writer

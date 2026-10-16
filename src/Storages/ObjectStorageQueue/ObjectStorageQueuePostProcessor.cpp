@@ -240,8 +240,6 @@ static AzureBlobStorage::ConnectionParams getAzureConnectionParams(
     AzureBlobStorage::processURL(connection_url, container_name, connection_params.endpoint, connection_params.auth_method);
     connection_params.client_options = AzureBlobStorage::getClientOptions(local_context, local_context->getSettingsRef(), *request_settings, /*for_disk=*/ false);
 
-    connection_params.forbid_implicit_credentials = local_context->shouldRestrictUserQueryAzureCredentials();
-
     return connection_params;
 }
 
@@ -482,6 +480,10 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                 move_connection_string,
                 move_container,
                 contextPtr);
+            /// The context here is the global one, so take the decision captured when the table was created.
+            const auto src_params = azure_storage->getAzureBlobStorageConnectionParams();
+            connection_params.forbid_implicit_credentials = src_params->forbid_implicit_credentials;
+            connection_params.anonymous_fallback_for_server_credentials = src_params->anonymous_fallback_for_server_credentials;
             const bool is_readonly = true;
             std::shared_ptr<AzureBlobStorage::ContainerClient> dst_client = AzureBlobStorage::getContainerClient(
                 connection_params,
