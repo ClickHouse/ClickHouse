@@ -31,6 +31,11 @@ FilterResult filterResultForMatchedRows(ActionsDAG pre_actions_dag, const Action
     if (dagContainsNonDeterministicFunction(filter_dag) || dagContainsNonDeterministicFunction(pre_actions_dag))
         return FilterResult::UNKNOWN;
 
+    /// Pre-join constants reach the filter as full columns after the join, so a function reading representation cannot be probed.
+    if (const auto * filter = filter_dag.tryFindInOutputs(filter_column_name);
+        filter && !ActionsDAG::getInputsReadByRepresentation(*filter).empty())
+        return FilterResult::UNKNOWN;
+
     auto combined_dag = ActionsDAG::merge(std::move(pre_actions_dag), filter_dag.clone());
     ActionsDAG::IntermediateExecutionResult combined_dag_input;
 

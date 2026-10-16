@@ -214,6 +214,49 @@ FilterResult filterResultForNotMatchedRows(
     if (!filter_node)
         return FilterResult::UNKNOWN;
 
+    /// A row of the outer join reaches the filter as a full column, but a constant of this side can stay a constant
+    /// wherever the rewritten join lets the filter run, so a function reading its representation gets no verdict.
+    ActionsDAG::NodeRawConstPtrs readers;
+    auto full_input = filter_input;
+    for (const auto * input : ActionsDAG::getInputsReadByRepresentation(*filter_node, &readers))
+    {
+        const auto * column = input_stream_header.findByName(input->result_name);
+        if (!column)
+            continue;
+        if (column->column && isColumnConst(*column->column))
+            return FilterResult::UNKNOWN;
+        if (auto it = full_input.find(input); it != full_input.end())
+            it->second.column = it->second.column->convertToFullColumnIfConst();
+    }
+
+    /// The readers see the full column; above them only values matter, so their one-row results are constants.
+    if (!readers.empty())
+    {
+        ColumnsWithTypeAndName reader_results;
+        try
+        {
+            reader_results = ActionsDAG::evaluatePartialResult(
+                full_input,
+                readers,
+                /*input_rows_count=*/1,
+                { .skip_materialize = true, .allow_unknown_function_arguments = allow_unknown_function_arguments });
+        }
+        catch (const Exception &)
+        {
+            return FilterResult::UNKNOWN;
+        }
+
+        for (size_t i = 0; i < readers.size(); ++i)
+        {
+            auto & result = reader_results[i];
+            if (!result.column || result.column->size() != 1 || WhichDataType(result.type).isFunction())
+                result.column = nullptr;
+            else if (!isColumnConst(*result.column))
+                result.column = ColumnConst::create(result.column, 1);
+            filter_input[readers[i]] = std::move(result);
+        }
+    }
+
     ActionsDAG::NodeRawConstPtrs targets = {filter_node};
     auto conjunction_atoms = ActionsDAG::extractConjunctionAtoms(filter_node);
     if (conjunction_atoms.size() > 1)
