@@ -16,6 +16,8 @@ def clickhouse_cluster():
             user_configs=["configs/users.xml"],
             with_minio=True,
             with_zookeeper=True,
+            # A remote database disk would share the Disk connection group whose hard limit this test saturates.
+            with_remote_database_disk=False,
         )
         cluster.start()
         yield cluster
