@@ -11685,7 +11685,13 @@ function parseInbandExceptionFromTail(tail, format)
 /// not be re-read here, or a tab switch + database/connection edit during that await (or between the
 /// sequential statement groups of a "Run all") would send this run's already-snapshotted query to a
 /// different database, server or identity.
+/// The query of a run is admitted against the implicit-user probes of its server (`admitRunQuery`).
 async function postImpl(cell, posted_request_num, query, targetResultEl, abortController, paramValuesSnapshot, query_database, connection, queryStart, shape_params = '')
+{
+    return admitRunQuery(connection.url, () => postImplAdmitted(cell, posted_request_num, query, targetResultEl,
+        abortController, paramValuesSnapshot, query_database, connection, queryStart, shape_params));
+}
+async function postImplAdmitted(cell, posted_request_num, query, targetResultEl, abortController, paramValuesSnapshot, query_database, connection, queryStart, shape_params)
 {
     const tab = cell.tab;
     /// The connection tuple (server address, user, password) is snapshotted once per run by the
@@ -16909,12 +16915,13 @@ function runEntryImplicitUser(server_address, user, implicit_user) {
 /// yet. If the server now authenticates such a request as another account, the recorded account is
 /// named explicitly, so the request fails visibly or reproduces the result as that account, rather
 /// than silently exporting the data of another user. A stamp that denotes no known name (recorded by
-/// an earlier visit before the name was learned) keeps the empty field.
-async function replayConnectionUser(server_address, user, implicit_user) {
+/// an earlier visit before the name was learned) keeps the empty field. `password` is the one the
+/// request will be sent with, snapshotted by the caller.
+async function replayConnectionUser(server_address, user, implicit_user, password) {
     if (effectiveConnectionUser(server_address, user)) return user;
     const account = resolvedImplicitUser(server_address, implicit_user);
     if (!account) return '';
-    if (!learnedImplicitUser(server_address)) await learnImplicitUser(server_address, password_elem.value);
+    if (!learnedImplicitUser(server_address)) await learnImplicitUser(server_address, password);
     return account === learnedImplicitUser(server_address) ? '' : account;
 }
 
@@ -16925,10 +16932,51 @@ async function replayConnectionUser(server_address, user, implicit_user) {
 async function learnImplicitUser(server_address, password) {
     const probe_address = serverAddressWithoutSession(server_address);
     if (!probe_address) return '';
-    const json = await getServerStatus(probe_address, '', password);
+    const json = await admitImplicitUserProbe(server_address, () => getServerStatus(probe_address, '', password));
     if (!json || !json.u) return '';
     rememberImplicitUser(server_address, json.u);
     return json.u;
+}
+
+/// Admission of the implicit-user probes (`learnImplicitUser`) against the queries of runs (`postImpl`).
+/// A probe is an ordinary query of the same user, so it competes with the queries of the user for
+/// the user's query slots: with `max_concurrent_queries_for_user = 1` the server rejects whichever of
+/// the two arrives second with `TOO_MANY_SIMULTANEOUS_QUERIES`. The probes are bookkeeping and must
+/// never displace a query of the user, whichever path starts them (`storeCredentials`,
+/// `rememberAuthenticationOutcome` after the database panel or the completions, Download, the
+/// startup auto-run). So, per server (`serverIdentityKey`): a probe is sent only while no query of a
+/// run is in flight, waiting for them to finish otherwise, and a run that starts while a probe is in
+/// flight sends its query only after the probe has settled. A run counts from its admission to the
+/// end of its response, as the server holds the slot until then. The probe is a short status query,
+/// so a run waits for it only briefly; a probe can wait as long as the runs go on.
+function implicitUserProbeAdmission(server_address) {
+    const all = implicitUserProbeAdmission.servers ??= new Map();
+    const key = serverIdentityKey(server_address) ?? server_address;
+    if (!all.has(key)) all.set(key, { runs: 0, probes: new Set(), idle: [] });
+    return all.get(key);
+}
+async function admitRunQuery(server_address, run) {
+    const admission = implicitUserProbeAdmission(server_address);
+    ++admission.runs;
+    try {
+        /// No probe of this server starts while `runs` is non-zero, so the set only shrinks here.
+        while (admission.probes.size) await Promise.allSettled([...admission.probes]);
+        return await run();
+    } finally {
+        if (--admission.runs === 0) for (const wake of admission.idle.splice(0)) wake();
+    }
+}
+async function admitImplicitUserProbe(server_address, probe) {
+    const admission = implicitUserProbeAdmission(server_address);
+    /// Rechecked after every wake-up: a run may have been admitted between the wake-up and this point.
+    while (admission.runs) await new Promise(resolve => admission.idle.push(resolve));
+    const pending = probe();
+    admission.probes.add(pending);
+    try {
+        return await pending;
+    } finally {
+        admission.probes.delete(pending);
+    }
 }
 
 /// `sameConnectionUser` of a stored connection and the live connection fields.
@@ -18155,7 +18203,8 @@ function serverAddressWithoutSession(server_address) {
 /// server rejects whichever of the two arrives second with `TOO_MANY_SIMULTANEOUS_QUERIES`, and the
 /// probe can win the race, since the Run first awaits its lexer preflight. So the probe is sent only
 /// after `run` (the promise of the launched Run) has settled; the connection is still the one taken
-/// here, at launch. Returns a promise for tests.
+/// here, at launch. The probe is admitted against the runs of other tabs as well (`admitRunQuery`).
+/// Returns a promise for tests.
 function storeCredentials(run) {
     /// A stale autofilled password must not be re-offered to the browser's store either.
     dropAutofilledStalePassword();
@@ -21746,8 +21795,10 @@ const implicit_user_from_url = current_url.searchParams.get('implicit_user') || 
 /// (`learnImplicitUser`), since the server's `default_session_user` may have changed since the link was
 /// written, or the link is opened by someone the server authenticates as another account. Otherwise
 /// the query is left in the editor and the link no longer carries `run=1`, failing closed. Any change
-/// of the connection, the tab or the query while the server is being asked, or a run started
-/// meanwhile, cancels the auto-run as well.
+/// of the connection, the tab or the query while the server is being asked, any other action that
+/// cancels a deferred auto-run (`deferred_run_cancelled`: a database selection, a parameter edit), or
+/// a run started meanwhile (`tab.reqNum`, which also covers a run that has already completed),
+/// cancels the auto-run as well.
 function runDeferredStartupQuery() {
     if (!implicit_user_from_url || effectiveConnectionUser(url_elem.value, user_elem.value)) {
         postAll();   /// saves history itself on completion
@@ -21756,8 +21807,10 @@ function runDeferredStartupQuery() {
     const connection = connectionTuple();
     const tab = getActiveTab();
     const query = query_area.value;
+    const request_num = tab.reqNum;
     learnImplicitUser(url_elem.value, password_elem.value).then(name => {
-        const unchanged = connectionTuple() === connection && getActiveTab() === tab && query_area.value === query;
+        const unchanged = connectionTuple() === connection && getActiveTab() === tab && query_area.value === query
+            && tab.reqNum === request_num && !deferred_run_cancelled && !bootstrap_dirty;
         if (!unchanged || activeInFlight()) return;
         if (name === implicit_user_from_url) {
             postAll();
@@ -22564,11 +22617,19 @@ document.getElementById('download-button').addEventListener('click', async funct
     // snapshotted (never stored in history), so the live password is used — a mismatched
     // connection then surfaces as a visible authentication error rather than silently exporting
     // data from the wrong server.
+    //
+    // Everything the download sends is snapshotted here, before the first await: the account may have
+    // to be asked from the server (`replayConnectionUser`), and a tab or connection switch meanwhile
+    // replaces the live fields and the `last_*_for_download` globals, which would otherwise mix the
+    // query, password, database and parameters of another result into a request to this server.
     const server_address = last_url_for_download || url_elem.value;
     dropAutofilledStalePassword();
-    const user = await replayConnectionUser(server_address, last_user_for_download, last_implicit_user_for_download);
     const password = password_elem.value;
     const query = last_query_for_download;
+    const database = last_database_for_download;
+    const shape = last_shape_for_download;
+    const params = { ...last_params_for_download };
+    const user = await replayConnectionUser(server_address, last_user_for_download, last_implicit_user_for_download, password);
 
     if (!query) {
         alert('No query to download results for');
@@ -22606,10 +22667,10 @@ document.getElementById('download-button').addEventListener('click', async funct
         '&http_response_headers=' + encodeURIComponent(`{'Content-Disposition':'attachment; filename="result.${encodeURIComponent(extension)}"'}`);
     if (user) url += '&user=' + encodeURIComponent(user);
     if (password) url += '&password=' + encodeURIComponent(password);
-    if (last_database_for_download) url += '&database=' + encodeURIComponent(last_database_for_download);
-    url += last_shape_for_download;
+    if (database) url += '&database=' + encodeURIComponent(database);
+    url += shape;
 
-    for (const [name, value] of Object.entries(last_params_for_download))
+    for (const [name, value] of Object.entries(params))
     {
         url += '&param_' + encodeURIComponent(name) + '=' + encodeURIComponent(value);
     }

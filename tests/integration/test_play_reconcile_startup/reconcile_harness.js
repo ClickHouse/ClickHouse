@@ -1768,6 +1768,205 @@ async function main() {
         }
     }
 
+    /// Guard (cancellation while the implicit account is asked): an action that cancels a deferred
+    /// auto-run (a database selection) or a run of the user (here one that has already completed,
+    /// which bumps `tab.reqNum`) while the probe is pending must cancel the auto-run once the probe
+    /// answers, although the connection, the tab and the query are unchanged. The control case
+    /// proves the delayed probe alone does not cancel it.
+    for (const [interaction, act] of [
+        ['none', () => {}],
+        ['database', (sandbox) => vm.runInContext("commitSelectedDatabase('changed_by_user')", sandbox)],
+        ['completed-run', (sandbox) => vm.runInContext('++getActiveTab().reqNum', sandbox)],
+    ]) {
+        const q = 'DELETE FROM target WHERE id = 1';
+        const probes = [];
+        let respond;
+        const responded = new Promise(resolve => { respond = resolve; });
+        let runs = 0;
+        const r = await runScenario(js, {
+            href: base + '?run=1&implicit_user=alice&database=original#' + Buffer.from(q, 'utf8').toString('base64'),
+            historyState: null,
+            seedTabs: [],
+            seedMeta: null,
+            afterBoot: (sandbox) => {
+                sandbox.postAll = async () => { ++runs; };
+                sandbox.fetch = async (url, options) => {
+                    const is_probe = String(options && options.body).includes('currentUser()');
+                    if (is_probe) {
+                        probes.push(String(url));
+                        await responded;
+                    }
+                    return {
+                        ok: is_probe,
+                        status: is_probe ? 200 : 503,
+                        headers: { get: () => null },
+                        text: async () => '',
+                        json: async () => ({ v: 'test', t: 0, u: 'alice' }),
+                    };
+                };
+            },
+        });
+        for (let i = 0; i < 100 && !probes.length; ++i) await sleep(10);
+        check('run-link-delayed-probe', `the server is asked which account an empty user is (${interaction})`,
+            probes.length > 0, probes);
+        act(r.sandbox);
+        respond();
+        await sleep(50);
+        check('run-link-delayed-probe', `the query is auto-run only without an interaction (${interaction})`,
+            runs === (interaction === 'none' ? 1 : 0), runs);
+    }
+
+    /// Guard (Download of an implicit result while its account is asked): a restored implicit result
+    /// whose account this visit has not learned waits for the server (`replayConnectionUser`). A tab or
+    /// connection switch meanwhile replaces the live password and the `last_*_for_download` state;
+    /// the submitted request must still carry the query, password, database, shape and parameters
+    /// taken when Download was clicked, all for the server of that result.
+    {
+        const r = await runScenario(js, {
+            href: base,
+            historyState: null,
+            seedTabs: [
+                { id: 't9', title: 'Report', query: 'select 1', params: {}, result: null, lastSavedQuery: 'select 1' },
+            ],
+            seedMeta: { key: 'state', activeTabId: 't9', tabOrder: ['t9'], tabSeq: 9, tabTitleSeq: 2 },
+        });
+        const probes = [];
+        let respond;
+        const responded = new Promise(resolve => { respond = resolve; });
+        r.sandbox.fetch = async (url, options) => {
+            const is_probe = String(options && options.body).includes('currentUser()');
+            if (is_probe) {
+                probes.push(String(url));
+                await responded;
+            }
+            return {
+                ok: is_probe,
+                status: is_probe ? 200 : 503,
+                headers: { get: () => null },
+                text: async () => '',
+                json: async () => ({ v: 'test', t: 0, u: 'alice' }),
+            };
+        };
+        const forms = [];
+        const create_element = r.sandbox.document.createElement;
+        r.sandbox.document.createElement = (tag) => {
+            const el = create_element(tag);
+            if (String(tag).toLowerCase() === 'form') {
+                el.submit = () => {
+                    const input = (el.children || []).find(c => c.name === 'query');
+                    forms.push({ action: el.action, query: input && input.value });
+                };
+            }
+            return el;
+        };
+        vm.runInContext(`
+            last_url_for_download = 'http://a:8123/';
+            last_user_for_download = '';
+            last_implicit_user_for_download = 'alice';
+            last_query_for_download = 'SELECT a';
+            last_database_for_download = 'db_a';
+            last_shape_for_download = '&shape=a';
+            last_params_for_download = { p: 'a' };
+            password_elem.value = 'secret_a';
+            document.getElementById('download-format').value = 'CSV';
+            document.getElementById('download-button').dispatchEvent({ type: 'click', isTrusted: true });
+        `, r.sandbox);
+        for (let i = 0; i < 100 && !probes.length; ++i) await sleep(10);
+        check('download-snapshot', 'the account of the implicit result is asked from its server',
+            probes.length === 1 && probes[0].startsWith('http://a:8123/?') && probes[0].includes('password=secret_a'), probes);
+        vm.runInContext(`
+            last_url_for_download = 'http://b:8123/';
+            last_user_for_download = 'bob';
+            last_query_for_download = 'SELECT b';
+            last_database_for_download = 'db_b';
+            last_shape_for_download = '&shape=b';
+            last_params_for_download.p = 'b';
+            password_elem.value = 'secret_b';
+        `, r.sandbox);
+        respond();
+        await sleep(50);
+        const form = forms[0];
+        check('download-snapshot', 'the download is submitted once', forms.length === 1, forms);
+        if (form) {
+            const action = form.action;
+            check('download-snapshot', 'to the server of the result, as the empty user',
+                action.startsWith('http://a:8123/?') && !/[?&]user=/.test(action), action);
+            check('download-snapshot', 'with the password, database, shape and parameters taken at the click',
+                action.includes('&password=secret_a') && action.includes('&database=db_a') && action.includes('&shape=a')
+                    && action.includes('&param_p=a') && !/secret_b|db_b|shape=b|param_p=b/.test(action), action);
+            check('download-snapshot', 'and the query taken at the click', form.query === 'SELECT a', form.query);
+        }
+    }
+
+    /// Guard (implicit-user probes never take the query slot of a run): a probe is an ordinary query
+    /// of the same user, so with `max_concurrent_queries_for_user = 1` it would make the query of a
+    /// concurrent run fail with `TOO_MANY_SIMULTANEOUS_QUERIES`. A probe started by the bookkeeping of
+    /// another request (`rememberAuthenticationOutcome`, as after the database panel) holds the query
+    /// of a Run back until it settles, and a probe wanted while the query of a Run is in flight waits
+    /// for it to finish.
+    for (const order of ['probe-first', 'run-first']) {
+        const r = await runScenario(js, {
+            href: base,
+            historyState: null,
+            seedTabs: [
+                { id: 't10', title: 'Report', query: 'SELECT 7', params: {}, result: null, lastSavedQuery: 'SELECT 7' },
+            ],
+            seedMeta: { key: 'state', activeTabId: 't10', tabOrder: ['t10'], tabSeq: 10, tabTitleSeq: 2 },
+        });
+        const events = [];
+        const holds = { probe: null, query: null };
+        const release = { probe: null, query: null };
+        for (const kind of ['probe', 'query'])
+            holds[kind] = new Promise(resolve => { release[kind] = resolve; });
+        r.sandbox.fetch = async (url, options) => {
+            const body = String(options && options.body);
+            const kind = body.includes('currentUser()') ? 'probe' : body.includes('SELECT 7') ? 'query' : null;
+            if (kind) {
+                events.push(kind + ':start');
+                await holds[kind];
+                events.push(kind + ':end');
+            }
+            return {
+                ok: kind === 'probe',
+                status: kind === 'probe' ? 200 : 503,
+                headers: { get: () => null },
+                text: async () => '',
+                json: async () => ({ v: 'test', t: 0, u: 'alice' }),
+            };
+        };
+        const remember = () => vm.runInContext(`
+            user_elem.value = '';
+            password_elem.value = '';
+            rememberAuthenticationOutcome({ ok: true, status: 200, headers: { get: () => null } }, url_elem.value, '', '');
+        `, r.sandbox);
+        const wait_for = async (event) => { for (let i = 0; i < 100 && !events.includes(event); ++i) await sleep(10); };
+        if (order === 'probe-first') {
+            remember();
+            await wait_for('probe:start');
+            vm.runInContext("query_area.value = 'SELECT 7'; postAll();", r.sandbox);
+            await sleep(50);
+            check('probe-admission', 'the query of the Run is held back while the probe is in flight',
+                !events.includes('query:start'), events);
+            release.probe();
+            release.query();
+            await wait_for('query:end');
+            check('probe-admission', 'and is sent once the probe has settled',
+                events.indexOf('query:start') > events.indexOf('probe:end'), events);
+        } else {
+            vm.runInContext("query_area.value = 'SELECT 7'; postAll();", r.sandbox);
+            await wait_for('query:start');
+            remember();
+            await sleep(50);
+            check('probe-admission', 'the probe waits while the query of a Run is in flight',
+                !events.includes('probe:start'), events);
+            release.query();
+            release.probe();
+            await wait_for('probe:end');
+            check('probe-admission', 'and is sent once the query has finished',
+                events.indexOf('probe:start') > events.indexOf('query:end'), events);
+        }
+    }
+
     if (failures) {
         console.log(`${failures} check(s) FAILED`);
         process.exit(1);

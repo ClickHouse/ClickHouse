@@ -163,7 +163,7 @@ function makeContext(storage) {
 
 const FUNCTIONS = ['effectiveConnectionUser', 'implicitUserStamp', 'implicitUserVisitState', 'pendingImplicitUserStamp',
     'resolvedImplicitUser', 'durableImplicitUserStamp', 'durableResultSnapshot', 'runEntryImplicitUser', 'replayConnectionUser',
-    'learnImplicitUser', 'sameConnectionUser', 'sameAsLiveConnectionUser',
+    'learnImplicitUser', 'implicitUserProbeAdmission', 'admitRunQuery', 'admitImplicitUserProbe', 'sameConnectionUser', 'sameAsLiveConnectionUser',
     'serverIdentityKey', 'learnedImplicitUser', 'rememberImplicitUser', 'restampPendingImplicitUser',
     'serverAddressWithoutSession', 'storeCredentials', 'getServerStatus', 'buildCompletionUrl',
     'isAutofilled', 'dropAutofilledStalePassword', 'passwordlessLoginKey', 'loadPasswordlessLogins',
@@ -441,7 +441,7 @@ scenario('proxy-authenticated-implicit-replay', async js => {
     const replay = async (ctx, entry) => {
         ctx.entry = entry;
         ctx.fetched.length = 0;
-        const user = await vm.runInContext('replayConnectionUser(entry.server, entry.user, entry.implicitUser)', ctx);
+        const user = await vm.runInContext('replayConnectionUser(entry.server, entry.user, entry.implicitUser, password_elem.value)', ctx);
         ctx.replay_user = user;
         const status = await vm.runInContext('getServerStatus(entry.server, replay_user, password_elem.value)', ctx);
         return { user, status };
