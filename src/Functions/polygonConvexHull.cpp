@@ -9,7 +9,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
@@ -45,8 +45,9 @@ public:
         return 1;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
+        checkGeometryArgumentType(arguments[0], getName(), GeoKindPoint, "The argument of function {} must not be a {}", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         return DataTypeFactory::instance().get("Polygon");
     }
 
@@ -59,8 +60,12 @@ public:
             using TypeConverter = std::decay_t<decltype(type)>;
             using Converter = typename TypeConverter::Type;
 
+            /// Unreachable from a query: `getReturnTypeImpl` refuses a `Point` argument during
+            /// analysis. The branch stays because `callOnGeometryDataType` instantiates the
+            /// continuation for every converter, and `boost::geometry::convex_hull` has no overload
+            /// taking a point.
             if constexpr (std::is_same_v<Converter, ColumnToPointsConverter<Point>>)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The argument of function {} must not be a Point", getName());
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The argument of function {} must not be a Point", getName());
             else
             {
                 auto geometries = Converter::convert(arguments[0].column->convertToFullColumnIfConst());

@@ -59,6 +59,7 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument should be String");
         }
 
+        checkGeometryArgumentType(arguments[0], getName(), 0);
         return std::make_shared<DataTypeString>();
     }
 
