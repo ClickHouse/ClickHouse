@@ -48,6 +48,7 @@ read_settings=(
     --remote_filesystem_read_method read
     --remote_filesystem_read_prefetch 0
     --use_uncompressed_cache 0
+    --use_columns_cache 0
     --use_query_condition_cache 0
     --use_reader_executor 0
     --enable_parallel_replicas 0
