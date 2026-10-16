@@ -9,7 +9,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/NodeEvaluationRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
-#include <Storages/TimeSeries/TimeSeriesVersion.h>
+#include <Parsers/Prometheus/TimeSeriesVersion.h>
 #include <base/arithmeticOverflow.h>
 
 

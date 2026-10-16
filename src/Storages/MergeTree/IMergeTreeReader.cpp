@@ -7,9 +7,13 @@
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
+#if CLICKHOUSE_CLOUD
+#include <Storages/MergeTree/BorrowedMergeTreeDataPartInfoForReader.h>
+#endif
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNested.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/Serializations/SerializationQuantizedVector.h>
 #include <Common/escapeForFileName.h>
 #include <Compression/CachedCompressedReadBuffer.h>
@@ -100,6 +104,70 @@ IMergeTreeReader::IMergeTreeReader(
         else
             serializations.emplace_back(std::move(serialization));
     }
+
+    /// On-fly `UPDATE` and `DELETE` mutations are executed as steps ahead of PREWHERE, and their
+    /// expressions (assignments and `WHERE` conditions) may read any column, so they would observe
+    /// the substituted empty strings of the rows that PREWHERE rejects afterwards: for example,
+    /// a pending `DELETE WHERE throwIf(empty(s)) = 0` would start throwing. Read the values in full then.
+    const bool has_mutations_on_fly = alter_conversions && alter_conversions->hasMutations();
+
+    /// The columns read from the part may be written to the columns cache and then served to other
+    /// queries, which must not see the substituted empty strings. Read the values in full then.
+    const bool may_write_to_columns_cache = columns_cache && settings.enable_columns_cache_writes;
+
+    if (settings.string_value_filters && !settings.string_value_filters->empty() && !has_mutations_on_fly && !may_write_to_columns_cache)
+    {
+        /// Count how many requested columns read from each storage column
+        /// (e.g. a column requested together with its subcolumn).
+        std::unordered_map<String, size_t> storage_column_use_count;
+        for (const auto & column : getColumns())
+            ++storage_column_use_count[column.getNameInStorage()];
+
+        size_t pos = 0;
+        for (const auto & column : getColumns())
+        {
+            size_t current_pos = pos++;
+
+            /// Only full String and Nullable(String) columns are supported.
+            if (column.isSubcolumn() || !isString(removeNullable(column.type)))
+                continue;
+
+            auto it = settings.string_value_filters->find(column.name);
+            if (it == settings.string_value_filters->end())
+                continue;
+
+            /// If some other requested column reads from the same storage column (e.g. the `.size` subcolumn),
+            /// the deserialized data may be shared between them through caches, so the values must be read in full.
+            if (storage_column_use_count[column.getNameInStorage()] > 1)
+                continue;
+
+            /// If the column is overwritten by an on-fly mutation, PREWHERE is evaluated
+            /// on the values computed by the mutation expression, not on the stored values,
+            /// so the stored values must be read in full.
+            if (alter_conversions && alter_conversions->getAllUpdatedColumns().contains(column.name))
+                continue;
+
+            /// Only the plain serialization reads values one by one and supports filtering.
+            if (serializations[current_pos]->getKindStack() != ISerialization::KindStack{ISerialization::Kind::DEFAULT})
+                continue;
+
+            /// The key is the name in the part: it may differ from the requested name
+            /// when the column is affected by a pending RENAME.
+            string_value_filters_by_part_column_name.emplace(columns_to_read[current_pos].name, it->second);
+        }
+    }
+}
+
+StringValueFilterPtr IMergeTreeReader::getStringValueFilter(const NameAndTypePair & column_in_part) const
+{
+    if (string_value_filters_by_part_column_name.empty())
+        return nullptr;
+
+    auto it = string_value_filters_by_part_column_name.find(column_in_part.name);
+    if (it == string_value_filters_by_part_column_name.end())
+        return nullptr;
+
+    return it->second;
 }
 
 const ValueSizeMap & IMergeTreeReader::getAvgValueSizeHints() const
@@ -132,10 +200,13 @@ void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
     chassert(columns.size() == getColumns().size());
 
     const auto * loaded_part_info = typeid_cast<const LoadedMergeTreeDataPartInfoForReader *>(data_part_info_for_read.get());
-    if (!loaded_part_info)
+    bool is_borrowed = false;
+#if CLICKHOUSE_CLOUD
+    is_borrowed = typeid_cast<const BorrowedMergeTreeDataPartInfoForReader *>(data_part_info_for_read.get()) != nullptr;
+#endif
+    if (!loaded_part_info && !is_borrowed)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Filling of virtual columns is supported only for LoadedMergeTreeDataPartInfoForReader");
 
-    const auto & data_part = loaded_part_info->getDataPart();
     const auto & storage_columns = storage_snapshot->metadata->columns;
     const auto & virtual_columns = storage_snapshot->metadata->virtuals;
 
@@ -169,8 +240,10 @@ void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
         Field field;
         if (auto field_it = virtual_fields.find(it->name); field_it != virtual_fields.end())
             field = field_it->second;
+        else if (loaded_part_info)
+            field = getFieldForConstVirtualColumn(it->name, *loaded_part_info->getDataPart());
         else
-            field = getFieldForConstVirtualColumn(it->name, *data_part);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Virtual column {} is not supported for this part", it->name);
 
         columns[pos] = virtual_column->type->createColumnConst(rows, field)->convertToFullColumnIfConst();
     }
@@ -411,7 +484,49 @@ std::pair<String, String> IMergeTreeReader::getStorageAndSubcolumnNameInPart(con
     auto subcolumn_name = required_column.getSubcolumnName();
 
     if (alter_conversions->isColumnRenamed(name_in_storage))
+    {
         name_in_storage = alter_conversions->getColumnOldName(name_in_storage);
+    }
+    else if (!subcolumn_name.empty() && isNested(required_column.getTypeInStorage()))
+    {
+        /** A leaf of a Nested column is requested as a subcolumn of its parent (`n.z` becomes the
+          * subcolumn `z` of `n`, see `Nested::convertToSubcolumns`), while a pending rename of that
+          * leaf is recorded under the flattened name `n.z`. The lookup above asks for the parent and
+          * misses it, so the part is searched for a column that only exists there under its old name
+          * and the values are read as defaults while the mutation is pending.
+          */
+        /// The leaf name may itself contain dots (`n.b.c` is the leaf `b.c` of `n`, see `Nested::splitName`),
+        /// and it may be followed by a real subcolumn of the leaf (`.size0`, `.null`), so the leaf is found
+        /// among the elements of the Nested type in the current metadata. The longest matching element wins:
+        /// the leaves `x` and `x.y` may coexist, and a read of `x.y` must not be taken for the subcolumn `y`
+        /// of the leaf `x`, which could have a pending rename of its own.
+        const auto & nested_names = typeid_cast<const DataTypeNestedCustomName &>(*required_column.getTypeInStorage()->getCustomName()).getNames();
+
+        std::optional<size_t> leaf_length;
+        for (const auto & element_name : nested_names)
+        {
+            bool is_prefix = subcolumn_name.starts_with(element_name)
+                && (subcolumn_name.size() == element_name.size() || subcolumn_name[element_name.size()] == '.');
+
+            if (is_prefix && (!leaf_length || element_name.size() > *leaf_length))
+                leaf_length = element_name.size();
+        }
+
+        if (leaf_length)
+        {
+            auto leaf_name = Nested::concatenateName(name_in_storage, subcolumn_name.substr(0, *leaf_length));
+
+            if (alter_conversions->isColumnRenamed(leaf_name))
+            {
+                /// A rename cannot move a leaf to another Nested column, so the parent stays the same.
+                auto old_leaf_split = Nested::splitName(alter_conversions->getColumnOldName(leaf_name));
+                auto leaf_subcolumn_name = *leaf_length < subcolumn_name.size() ? subcolumn_name.substr(*leaf_length + 1) : String{};
+
+                name_in_storage = old_leaf_split.first;
+                subcolumn_name = Nested::concatenateName(old_leaf_split.second, leaf_subcolumn_name);
+            }
+        }
+    }
 
     /// A special case when we read subcolumn of shared offsets of Nested.
     /// E.g. instead of requested column "n.arr1.size0" we must read column "n.size0" from disk.
@@ -553,6 +668,23 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
         {
             if (res_columns[pos] == nullptr)
                 continue;
+
+            /** A column a pending mutation drops is not read from the part: the readers skip it and the
+              * value comes from the current metadata - the column's default, in the requested type - so
+              * the type the part carries says nothing about what is in `res_columns`. Converting from
+              * that type builds the conversion for the part's type and hands it a column of another
+              * one, which raises `Illegal column ... of first argument of function ...`.
+              *
+              * That is reachable whenever the dropped name is taken by a new column of a different type
+              * before the drop's mutation has rewritten the part:
+              *
+              *     ALTER TABLE t DROP COLUMN c;               -- c UInt64 still in the part
+              *     ALTER TABLE t ADD COLUMN c UInt32;         -- new column, absent from the part
+              *     SELECT c FROM t;                           -- read as UInt32, not converted from UInt64
+              */
+            if (isColumnDroppedByPendingMutation(pos))
+                continue;
+
             const auto & column_in_part = columns_to_read[pos];
             if (column_in_part.type->equals(*name_and_type->type))
                 continue;
@@ -761,14 +893,15 @@ MergeTreeReaderPtr createMergeTreeReader(
 
 MergeTreeReaderPtr createMergeTreeReaderIndex(
     const IMergeTreeReader * main_reader,
-    const MergeTreeIndexWithCondition & index,
+    const IndexReadTask & index_read_task,
     const NamesAndTypesList & columns_to_read,
     const IndexGranulesMap & index_granules)
 {
+    const auto & index = index_read_task.index;
     if (index.index->index.type == "text")
     {
         auto it = index_granules.find(index.index->index.name);
-        return createMergeTreeReaderTextIndex(main_reader, index, columns_to_read, it != index_granules.end() ? it->second : nullptr);
+        return createMergeTreeReaderTextIndex(main_reader, index_read_task, columns_to_read, it != index_granules.end() ? it->second : nullptr);
     }
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create reader for index with type {}", index.index->index.type);

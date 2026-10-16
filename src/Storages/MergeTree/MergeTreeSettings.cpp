@@ -1096,6 +1096,46 @@ Minimal amount of data parts which merge selector can pick to merge at once
 (expert level setting, don't change if you don't understand what it is doing).
 0 - disabled. Works for Simple and StochasticSimple merge selectors.
 )", 0) \
+    DECLARE(UInt64, merge_selector_small_parts_threshold, 10 * 1024 * 1024, R"(
+Size threshold in bytes: a merge range is considered "all small parts" when every part
+is below this size. Used together with `merge_selector_small_parts_min_count`.
+Works for Simple and StochasticSimple merge selectors, and only for background merge
+selection: aggressive selection (`OPTIMIZE` without `FINAL`) ignores the `small_parts_*`
+settings.
+)", 0, \
+        {"26.10", 10 * 1024 * 1024, 10 * 1024 * 1024, "Size threshold for the small-parts batching heuristic in merge selector"}) \
+    DECLARE(UInt64, merge_selector_small_parts_min_count, 0, R"(
+When all parts in a merge range are small (below `merge_selector_small_parts_threshold`)
+and fresh (below `merge_selector_small_parts_max_age`), require at least this many parts
+to allow the merge. Reduces the number of merge operations under rapid small-part insertion.
+0 means disabled. Works for Simple and StochasticSimple merge selectors.
+
+The gate applies to background merge selection only. Aggressive selection - `OPTIMIZE`
+without `FINAL` - is an explicit user request that ignores part novelty, so it ignores this
+setting and merges small fresh parts regardless of their count.
+
+The selector never considers merge candidates wider than `max_parts_to_merge_at_once`, nor
+candidates reaching further back than `merge_selector_window_size` parts, so configuring
+either of them below this minimum is a contradictory configuration: small fresh parts then
+merge only after `merge_selector_small_parts_max_age` (or earlier, once force merge applies by
+`min_age_to_force_merge_seconds` or `min_partition_age_to_force_merge_seconds`). Keep both at
+or above this minimum.
+(If the built-in fullness heuristic temporarily lowers its effective cap below this minimum,
+the selector still considers the first all-small, all-fresh candidate of this width. Stale or
+large candidates, and candidates that already qualify for force merge by
+`min_age_to_force_merge_seconds` or `min_partition_age_to_force_merge_seconds`, retain the
+lowered cap.)
+)", 0, \
+        {"26.10", 0, 0, "Minimum part count to allow merging small fresh parts (0 = disabled)"}) \
+    DECLARE(UInt64, merge_selector_small_parts_max_age, 600, R"(
+Age limit in seconds for the small-parts restriction: as soon as any part in a range
+exceeds this age, the restriction from `merge_selector_small_parts_min_count` is lifted,
+so backlogs of stale small parts can still merge even if the range is shorter than
+`merge_selector_small_parts_min_count`. Works for Simple and StochasticSimple merge selectors,
+and only for background merge selection: aggressive selection (`OPTIMIZE` without `FINAL`)
+ignores the `small_parts_*` settings.
+)", 0, \
+        {"26.10", 600, 600, "Age limit for the small-parts merge restriction"}) \
     DECLARE(Bool, apply_patches_on_merge, true, R"(
 If true patch parts are applied on merges
 )", 0, \
@@ -1410,6 +1450,30 @@ High-cardinality primary keys, e.g. involving timestamp columns of type
 Allow to use adaptive writer buffers during writing dynamic subcolumns to
 reduce memory usage
 )", 0) \
+    DECLARE(Bool, optimize_row_order_if_no_order_by, false, R"(
+Controls whether row order optimization (see `optimize_row_order`) is applied
+automatically on insert for tables with an empty sorting key, i.e. tables
+declared with `ORDER BY ()` or `ORDER BY tuple()`.
+
+Disabled by default. Enable it for tables where improving the compressibility
+of newly inserted parts with LZ4 or ZSTD is more important than preserving
+insertion order and insert throughput.
+
+As with `optimize_row_order`, inserts incur additional CPU cost to analyze and
+optimize the row order of the new data. Disable this setting if preserving the
+original insert order of the rows or maximizing insert throughput matters more
+than compression.
+
+An explicitly set `optimize_row_order = 0` takes precedence: such a table is
+never row-order optimized, regardless of this setting.
+
+As with `optimize_row_order`, the optimization applies to ordinary
+`MergeTree`-family tables only, including `ReplicatedMergeTree`. Specialized
+engines of the family, e.g. `ReplacingMergeTree`,
+`CollapsingMergeTree` or `AggregatingMergeTree`, are never row-order optimized
+and keep the order of the inserted rows.
+)", 0, \
+        {"26.10", false, false, "New setting to enable row order optimization automatically for ordinary MergeTree-family tables without a sorting key."}) \
     DECLARE(UInt64, min_columns_to_activate_adaptive_write_buffer, 500, R"(
 Allow to reduce memory usage for tables with lots of columns by using adaptive writer buffers.
 
@@ -3229,6 +3293,11 @@ MERGETREE_SETTINGS_SUPPORTED_TYPES(MergeTreeSettings, IMPLEMENT_SETTING_SUBSCRIP
 bool MergeTreeSettings::has(std::string_view name) const
 {
     return impl->has(name);
+}
+
+bool MergeTreeSettings::isChanged(std::string_view name) const
+{
+    return impl->isChanged(name);
 }
 
 bool MergeTreeSettings::tryGet(std::string_view name, Field & value) const

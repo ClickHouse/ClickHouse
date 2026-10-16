@@ -345,6 +345,38 @@ xml_dir = os.path.dirname(os.path.abspath(args.file[0].name))
 tree = et.parse(args.file[0])
 root = tree.getroot()
 
+
+def expand_includes(parent, source_dir, stack):
+    """Inline <fragment> children in order, with paths relative to their source file."""
+    index = 0
+    while index < len(parent):
+        element = parent[index]
+        if element.tag != "include":
+            if element.tag in ("query", "settings") and element.get("file"):
+                path = os.path.join(source_dir, element.get("file"))
+                element.set("file", os.path.relpath(path, xml_dir))
+            expand_includes(element, source_dir, stack)
+            index += 1
+            continue
+
+        filename = element.get("file")
+        if not filename or len(element.attrib) != 1:
+            raise ValueError('<include> requires exactly one attribute: file="..."')
+        path = os.path.realpath(os.path.join(source_dir, filename))
+        if path in stack:
+            raise ValueError(f"Cyclic performance-test include: {' -> '.join((*stack, path))}")
+        fragment = et.parse(path).getroot()
+        if fragment.tag != "fragment":
+            raise ValueError(f"Performance-test include {path} must have a <fragment> root")
+        expand_includes(fragment, os.path.dirname(path), (*stack, path))
+        parent.remove(element)
+        children = list(fragment)
+        parent[index:index] = children
+        index += len(children)
+
+
+expand_includes(root, xml_dir, (os.path.realpath(args.file[0].name),))
+
 reportStageEnd("parse")
 
 # Process query parameters
@@ -484,13 +516,20 @@ def execute_query_group(connection, q_list, query_id, settings):
 
 
 def load_settings_file(xml_root, base_dir):
-    """Load settings from a JSON file referenced by <settings file="..."/> attribute."""
-    elem = xml_root.find("settings")
-    if elem is None or "file" not in elem.attrib:
-        return {}
-    path = os.path.join(base_dir, elem.attrib["file"])
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)["settings"]
+    """Load and merge settings from every <settings file="..."/> element.
+
+    After include expansion a test can carry more than one file-backed <settings>
+    (e.g. one from the test and one from an included fragment); honor them all
+    instead of silently dropping every file but the first. Inline settings are
+    already merged across all <settings> blocks via findall("settings/*")."""
+    merged = {}
+    for elem in xml_root.findall("settings"):
+        if "file" not in elem.attrib:
+            continue
+        path = os.path.join(base_dir, elem.attrib["file"])
+        with open(path, "r", encoding="utf-8") as f:
+            merged.update(json.load(f)["settings"])
+    return merged
 
 
 # Build a list of test queries, substituting parameters to query templates.

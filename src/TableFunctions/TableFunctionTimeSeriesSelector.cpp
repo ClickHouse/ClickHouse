@@ -4,7 +4,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <Parsers/ASTFunction.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
-#include <Storages/TimeSeries/TimeSeriesVersion.h>
+#include <Parsers/Prometheus/TimeSeriesVersion.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
 

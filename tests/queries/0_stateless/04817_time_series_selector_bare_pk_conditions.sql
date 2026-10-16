@@ -15,6 +15,7 @@ SET allow_experimental_time_series_table = 1;
 SET session_timezone = 'UTC';
 
 DROP TABLE IF EXISTS ts_tags;
+DROP TABLE IF EXISTS ts_time_ranges;
 DROP TABLE IF EXISTS ts_samples;
 DROP TABLE IF EXISTS ts;
 
@@ -22,7 +23,12 @@ CREATE TABLE ts_tags
 (
     id UInt64,
     metric_name LowCardinality(String),
-    tags Map(LowCardinality(String), String),
+    tags Map(LowCardinality(String), String)
+) ENGINE = MergeTree() ORDER BY id;
+
+CREATE TABLE ts_time_ranges
+(
+    id UInt64,
     min_time DateTime64(3),
     max_time DateTime64(3)
 ) ENGINE = MergeTree() ORDER BY id;
@@ -36,15 +42,20 @@ CREATE TABLE ts_samples
     max_time SimpleAggregateFunction(max, DateTime64(3))
 ) ENGINE = AggregatingMergeTree() ORDER BY (id, bucket);
 
-CREATE TABLE ts ENGINE = TimeSeries SAMPLES ts_samples TAGS ts_tags;
+CREATE TABLE ts ENGINE = TimeSeries SAMPLES ts_samples TAGS ts_tags TIME RANGES ts_time_ranges;
 
 -- Series 201 ('bar') must not match the 'foo' selector, and it has a sample inside the requested
 -- time range - so if the `id IN <tags subquery>` condition is ever lost from the generated query,
 -- that sample leaks into the result and the test fails.
-INSERT INTO ts_tags (id, metric_name, tags, min_time, max_time) VALUES
-    (101, 'foo', map('env', 'prod'), toDateTime64(0, 3), toDateTime64(1000, 3)),
-    (102, 'foo', map('env', 'dev'), toDateTime64(0, 3), toDateTime64(1000, 3)),
-    (201, 'bar', map(), toDateTime64(0, 3), toDateTime64(1000, 3));
+INSERT INTO ts_tags (id, metric_name, tags) VALUES
+    (101, 'foo', map('env', 'prod')),
+    (102, 'foo', map('env', 'dev')),
+    (201, 'bar', map());
+
+INSERT INTO ts_time_ranges (id, min_time, max_time) VALUES
+    (101, toDateTime64(0, 3), toDateTime64(1000, 3)),
+    (102, toDateTime64(0, 3), toDateTime64(1000, 3)),
+    (201, toDateTime64(0, 3), toDateTime64(1000, 3));
 
 -- All the samples belong to the bucket starting at 0 (the default bucket step is 1 hour).
 INSERT INTO ts_samples (id, samples, bucket, min_time, max_time) VALUES
@@ -96,4 +107,5 @@ FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN 
 
 DROP TABLE ts;
 DROP TABLE ts_samples;
+DROP TABLE ts_time_ranges;
 DROP TABLE ts_tags;

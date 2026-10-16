@@ -33,7 +33,8 @@
 #include <Storages/TimeSeries/PromQLNativeAdmission.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
-#include <Storages/TimeSeries/TimeSeriesVersion.h>
+#include <Parsers/Prometheus/TimeSeriesVersion.h>
+#include <Storages/TimeSeries/checkTimeSeriesVersion.h>
 #include <Storages/TimeSeries/getPromQLResultTimestampType.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 #include <Common/ProfileEvents.h>

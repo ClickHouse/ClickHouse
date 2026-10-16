@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Storages/TimeSeries/TimeSeriesVersion.h>
+#include <Parsers/Prometheus/TimeSeriesVersion.h>
 
 
 namespace DB
@@ -11,7 +11,7 @@ struct TimeSeriesColumnNames
     /// The "samples" table contains time series:
     static constexpr const char * ID = "id";
 
-    /// A row of the "samples" table contains the samples of one time series within one time bucket
+    /// In version 9, a row of the "samples" table contains samples of one time series within one time bucket
     /// as a sorted array of tuples (timestamp, value); "bucket" is the start of the bucket.
     static constexpr const char * Bucket = "bucket";
 
@@ -32,7 +32,8 @@ struct TimeSeriesColumnNames
     /// and without the metric name, so reading must be able to handle both cases.)
     static constexpr const char * Tags = "tags";
 
-    /// The time range of a time series (in the "tags" table) or of a row (in the "samples" table).
+    /// The "time ranges" table contains the time range of each time series
+    /// (tables of versions before 8 kept these columns in the "tags" table; version 9 also has them per sample bucket):
     static constexpr const char * MinTime = "min_time";
     static constexpr const char * MaxTime = "max_time";
 
@@ -52,9 +53,11 @@ struct TimeSeriesColumnNames
     static constexpr const char * Group = "group";
     static constexpr const char * NewGroup = "new_group";
     static constexpr const char * OriginalGroup = "original_group";
+    static constexpr const char * ExtraLabelsGroup = "extra_labels_group";
     static constexpr const char * JoinGroup = "join_group";
     static constexpr const char * JoinPresence = "join_presence";
     static constexpr const char * Values = "values";
+    static constexpr const char * ValueCounts = "value_counts";
     static constexpr const char * SelectedGroups = "selected_groups";
     static constexpr const char * StepsMask = "steps_mask";
 

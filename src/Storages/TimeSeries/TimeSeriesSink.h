@@ -29,9 +29,9 @@ using TimeSeriesSettingsPtr = std::shared_ptr<const TimeSeriesSettings>;
 
 /// Sink for inserting data into the TimeSeries table engine.
 /// Transforms outer columns (samples, metric_name, tags, metric_family, type, unit, help)
-/// into blocks for the target tables (Tags, Samples, RecentSamples, MetricFamilies).
-/// Version 6 stores sorted and deduplicated samples in time buckets; versions 0 through 5
-/// keep the historical one-sample-per-row representation.
+/// into blocks for the target tables (Tags, TimeRanges, Samples, RecentSamples, MetricFamilies).
+/// Versions 0 through 8 keep the one-sample-per-row representation; version 9 stores sorted
+/// and deduplicated samples in time buckets.
 class TimeSeriesSink : public SinkToStorage, WithContext
 {
 public:
@@ -116,6 +116,7 @@ private:
     std::optional<Decimal64> recent_samples_bucket_step;
 
     std::unique_ptr<TargetPipeline> tags_pipeline;
+    std::unique_ptr<TargetPipeline> time_ranges_pipeline;
     std::unique_ptr<TargetPipeline> samples_pipeline;
     std::unique_ptr<TargetPipeline> recent_samples_pipeline;
     std::unique_ptr<TargetPipeline> metric_families_pipeline;

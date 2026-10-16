@@ -57,6 +57,7 @@ protected:
     bool isCompression() const override { return false; }
     bool isGenericCompression() const override { return false; }
     bool isNone() const override { return true; }
+    bool requiresColumnTypeToCompress() const override { return true; }
 
     String getDescription() const override
     {
@@ -111,7 +112,8 @@ void registerCodecTimeSeriesSamples(CompressionCodecFactory & factory)
                 ErrorCodes::BAD_ARGUMENTS,
                 "Codec TimeSeriesSamples cannot be applied to column {}: expected UInt32, DateTime, DateTime64, Float32 or Float64",
                 column_type->getName());
-        });
+        },
+        CompressionCodecFamilyProperties{.is_declarative = true});
 }
 
 }

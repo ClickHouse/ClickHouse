@@ -3,6 +3,7 @@
         Benchmark sampling-key materialization separately from group setup.
         Keep the group vector small and repeat it over many output rows so the
         temporary vector and copy removed by this change dominate the query.
+        The groups get ids 1..4096 (0 is the empty tag set), so rows pass ids directly.
     -->
     <query>
         WITH
@@ -16,7 +17,7 @@
                     ORDER BY number
                 )
             ) AS groups
-        SELECT timeSeriesGroupToSamplingKey(groups[number % 4096 + 1])
+        SELECT timeSeriesGroupToSamplingKey(toUInt64(number % length(groups) + 1))
         FROM numbers(20000000)
         SETTINGS max_threads = 1, max_block_size = 1000000
         FORMAT Null

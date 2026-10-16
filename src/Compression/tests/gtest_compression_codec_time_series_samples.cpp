@@ -151,6 +151,32 @@ TEST(CompressionCodecTimeSeriesSamples, UnsupportedTypesFailClosed)
     }
 }
 
+TEST(CompressionCodecTimeSeriesSamples, TypeLessCompressionContextsRejectSelector)
+{
+    auto & factory = CompressionCodecFactory::instance();
+    const auto codec_ast = makeTimeSeriesSamplesCodec();
+
+    const auto expect_bad_arguments = [](auto && operation)
+    {
+        try
+        {
+            operation();
+            FAIL() << "TimeSeriesSamples must reject a compression context without a column type";
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::BAD_ARGUMENTS);
+        }
+    };
+
+    /// The string overload is used by the compressor and table-level codec settings.
+    expect_bad_arguments([&] { factory.get(String{"timeseriessamples, ZSTD(3)"}); });
+    expect_bad_arguments([&] { factory.validateCodecString("TimeSeriesSamples", CodecValidationSettings::trusted()); });
+    /// TTL recompression validates an AST without a column type, including the trusted metadata path.
+    expect_bad_arguments([&] { factory.validateCodecAndGetPreprocessedAST(codec_ast, {}, CodecValidationSettings::trusted()); });
+    expect_bad_arguments([&] { factory.checkCodecChainIsNotDeclarative(codec_ast); });
+}
+
 TEST(CompressionCodecTimeSeriesSamples, ValidationPreservesSelectorWhenSubstreamHashesDiffer)
 {
     const auto column_type = std::make_shared<DataTypeTuple>(

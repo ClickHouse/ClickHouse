@@ -10,45 +10,17 @@ SET allow_experimental_time_series_table = 1;
 SET session_timezone = 'UTC';
 
 DROP TABLE IF EXISTS prometheus;
-DROP TABLE IF EXISTS tags_table;
-DROP TABLE IF EXISTS samples_table;
 
--- We create a TimeSeries table `prometheus` with external target tables `tags_table`
--- and `samples_table`.
-CREATE TABLE tags_table
-(
-    id UInt64,
-    metric_name LowCardinality(String),
-    tags Map(LowCardinality(String), String),
-    min_time DateTime64(3),
-    max_time DateTime64(3)
-) ENGINE = MergeTree() ORDER BY id;
+CREATE TABLE prometheus ENGINE = TimeSeries;
 
-CREATE TABLE samples_table
-(
-    id UInt64,
-    samples SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3), value Float64))),
-    bucket DateTime64(3),
-    min_time SimpleAggregateFunction(min, DateTime64(3)),
-    max_time SimpleAggregateFunction(max, DateTime64(3))
-) ENGINE = AggregatingMergeTree() ORDER BY (id, bucket);
+-- Three metrics: `foo`, `bar`, `baz`, each with one sample at the same timestamp.
+INSERT INTO prometheus (metric_name, tags, samples) VALUES
+    ('foo', map(), [(toDateTime64(100, 3), 10.)]),
+    ('bar', map(), [(toDateTime64(100, 3), 10.)]),
+    ('baz', map(), [(toDateTime64(100, 3), 20.)]);
 
-CREATE TABLE prometheus ENGINE = TimeSeries
-SAMPLES samples_table TAGS tags_table;
-
--- Three metrics: `foo`, `bar`, `baz`.
-INSERT INTO tags_table (id, metric_name, tags, min_time, max_time) VALUES
-    (1583154, 'foo', map(), toDateTime64(0, 3), toDateTime64(1000, 3)),
-    (2836623, 'bar', map(), toDateTime64(0, 3), toDateTime64(1000, 3)),
-    (3691271, 'baz', map(), toDateTime64(0, 3), toDateTime64(1000, 3));
-
-INSERT INTO samples_table (id, samples, bucket, min_time, max_time) VALUES
-    (1583154, [(toDateTime64(100, 3), 10.)], toDateTime(0), toDateTime64(100, 3), toDateTime64(100, 3)),
-    (2836623, [(toDateTime64(100, 3), 10.)], toDateTime(0), toDateTime64(100, 3), toDateTime64(100, 3)),
-    (3691271, [(toDateTime64(100, 3), 20.)], toDateTime(0), toDateTime64(100, 3), toDateTime64(100, 3));
-
-
--- PromQL query `(foo == bar)[50:10]` internally evaluates a SQL query like this:
+-- PromQL query `(foo == bar)[50:10]` internally evaluates a SQL query like this, where `samples_table`,
+-- `tags_table` and `time_ranges_table` stand for the inner target tables of `prometheus`:
 --
 -- SELECT timeSeriesGroupToTags(foo.group) AS tags, foo.timestamp, foo.value
 -- FROM
@@ -58,9 +30,10 @@ INSERT INTO samples_table (id, samples, bucket, min_time, max_time) VALUES
 --     WHERE bucket >= toDateTime64(0, 3) AND bucket <= toDateTime64(150, 3)
 --       AND max_time >= toDateTime64(60, 3) AND min_time <= toDateTime64(150, 3)
 --       AND id IN (
---         SELECT timeSeriesStoreTags(id, tags, '__name__', metric_name)
---         FROM tags_table
---         WHERE metric_name = 'foo' AND max_time >= toDateTime64(60, 3) AND min_time <= toDateTime64(150, 3))
+--         SELECT timeSeriesStoreTags(id, tags, '__name__', metric_name) FROM tags_table
+--         LEFT JOIN (SELECT id, 1 AS matched FROM time_ranges_table
+--                    WHERE max_time >= toDateTime64(60, 3) AND min_time <= toDateTime64(150, 3) AND <id range of the metric 'foo'>) AS time_ranges_subquery USING (id)
+--         WHERE metric_name = 'foo' AND (time_ranges_subquery.matched = 1 OR tupleElement(id, 1) != sipHash64('foo')))
 -- ) AS foo
 -- ANY INNER JOIN
 -- (
@@ -69,9 +42,10 @@ INSERT INTO samples_table (id, samples, bucket, min_time, max_time) VALUES
 --     WHERE bucket >= toDateTime64(0, 3) AND bucket <= toDateTime64(150, 3)
 --       AND max_time >= toDateTime64(60, 3) AND min_time <= toDateTime64(150, 3)
 --       AND id IN (
---         SELECT timeSeriesStoreTags(id, tags, '__name__', metric_name)
---         FROM tags_table
---         WHERE metric_name = 'bar' AND max_time >= toDateTime64(60, 3) AND min_time <= toDateTime64(150, 3))
+--         SELECT timeSeriesStoreTags(id, tags, '__name__', metric_name) FROM tags_table
+--         LEFT JOIN (SELECT id, 1 AS matched FROM time_ranges_table
+--                    WHERE max_time >= toDateTime64(60, 3) AND min_time <= toDateTime64(150, 3) AND <id range of the metric 'bar'>) AS time_ranges_subquery USING (id)
+--         WHERE metric_name = 'bar' AND (time_ranges_subquery.matched = 1 OR tupleElement(id, 1) != sipHash64('bar')))
 -- ) AS bar
 -- ON timeSeriesRemoveTag(foo.group, '__name__') = timeSeriesRemoveTag(bar.group, '__name__')
 --    AND foo.timestamp = bar.timestamp AND foo.value = bar.value
@@ -79,7 +53,4 @@ INSERT INTO samples_table (id, samples, bucket, min_time, max_time) VALUES
 
 SELECT * FROM prometheusQuery('prometheus', '(foo == bar)[50:10]', toDateTime64(150, 3));
 
-
 DROP TABLE prometheus;
-DROP TABLE tags_table;
-DROP TABLE samples_table;

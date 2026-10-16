@@ -13,7 +13,7 @@
 #
 # Control and regression cases for diverged `TimeSeries` tables with external and inner targets.
 # The external control uses bucketed samples; the inner regression preserves the version 7 row
-# layout. Version 8 inner-target recovery is covered separately.
+# layout. Version 9 inner-target recovery is covered separately.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -89,9 +89,9 @@ ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${DB} SYNC"
 ${CLICKHOUSE_CLIENT} -q "CREATE DATABASE ${DB} ENGINE = Replicated('${ZK_PATH}', 's1', 'r1')"
 
 # ---------------------------------------------------------------------------------------------
-# A `TimeSeries` table with EXTERNAL target tables. It still owns the on-by-default recent
-# samples table, so `dropInnerTableIfAny` adds its drop to the metadata transaction.
-# This shape already recovered before the fix, so
+# Part 1: a `TimeSeries` table with EXTERNAL target tables. It still owns inner tables (the
+# on-by-default recent samples and time ranges tables), so `dropInnerTableIfAny`
+# adds their drops to the metadata transaction. This shape already recovered before the fix, so
 # it is the control case.
 # ---------------------------------------------------------------------------------------------
 
@@ -102,14 +102,11 @@ ${CLIENT} -q "CREATE TABLE ${DB}.ext_data (id UUID,
                   max_time SimpleAggregateFunction(max, DateTime64(3)))
               ENGINE = ReplicatedAggregatingMergeTree ORDER BY (id, bucket)"
 ${CLIENT} -q "CREATE TABLE ${DB}.ext_tags (
-                  id UUID DEFAULT reinterpretAsUUID(sipHash128(metric_name, all_tags)),
+                  id UUID,
                   metric_name LowCardinality(String),
-                  tags Map(LowCardinality(String), String),
-                  all_tags Map(String, String),
-                  min_time SimpleAggregateFunction(min, Nullable(DateTime64(3))),
-                  max_time SimpleAggregateFunction(max, Nullable(DateTime64(3))))
-              ENGINE = ReplicatedAggregatingMergeTree PRIMARY KEY metric_name
-              ORDER BY (metric_name, id) SETTINGS allow_dimensions_outside_sorting_key = 1"
+                  tags Map(LowCardinality(String), String))
+              ENGINE = ReplicatedReplacingMergeTree PRIMARY KEY metric_name
+              ORDER BY (metric_name, id)"
 ${CLIENT} -q "CREATE TABLE ${DB}.ext_metrics (metric_family String, type LowCardinality(String),
                                              unit LowCardinality(String), help String)
               ENGINE = ReplicatedReplacingMergeTree ORDER BY metric_family"
@@ -134,7 +131,7 @@ ${CLIENT} --allow_experimental_time_series_table=1 -q "CREATE TABLE ${DB}.ts ENG
     SETTINGS version = 7, recent_samples_ttl_seconds = 345600"
 
 # The outer `TimeSeries` table, its 4 inner targets (samples, recent samples, tags, metric families),
-# and the recent samples target of the external control: 6 tables in total.
+# and the recent samples and time ranges targets of the external control: 7 tables in total.
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables WHERE database = '${DB}' AND (name = 'ts' OR name LIKE '.inner_id.%')"
 
 # Fill one inner table, so that afterwards the inner tables can be shown to be genuinely NEW rather
@@ -152,9 +149,9 @@ diverge_from_keeper ts
 force_recovery
 wait_for_recovery
 
-# Before the fix this stays at 5: only the inner targets survive, `ts` never comes back.
+# Before the fix this stays at 6: only the inner targets survive, `ts` never comes back.
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables WHERE database = '${DB}' AND (name = 'ts' OR name LIKE '.inner_id.%')"
-# `ts` specifically exists again (a count of 6 made only of inner tables would be wrong).
+# `ts` specifically exists again (a count of 7 made only of inner tables would be wrong).
 ${CLICKHOUSE_CLIENT} -q "EXISTS TABLE ${DB}.ts"
 ${CLICKHOUSE_CLIENT} -q "SELECT comment = '' FROM system.tables WHERE database = '${DB}' AND name = 'ts'"
 # The inner tables really were dropped and re-created, so they are empty again. If the eager inner

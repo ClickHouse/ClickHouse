@@ -241,7 +241,7 @@ public:
         size_t lock_wait_timeout_milliseconds,
         std::string & failure_reason);
 
-    bool tryIncreasePriority(FileSegment & file_segment);
+    bool tryIncreasePriority(Priority::Iterator & iterator, bool is_space_reservation_complete);
 
     std::vector<FileSegment::Info> getFileSegmentInfos(const UserID & user_id);
 
@@ -284,9 +284,9 @@ public:
     const String & getName() const { return name; }
 
 private:
-    void onSegmentEvicted(const FileSegment & segment, const String & user_id) const;
+    void onSegmentEvicted(const FileSegment & segment, size_t disk_accounted_size, const String & user_id) const;
     IFileCachePriority::OnEvictCallback getOnBackgroundEvictCallback() const;
-    void onSegmentEvictedInTheBackground(const FileSegment & segment, const String & user_id) const;
+    void onSegmentEvictedInTheBackground(const FileSegment & segment, size_t disk_accounted_size, const String & user_id) const;
 
     using KeyAndOffset = FileCacheKeyAndOffset;
 

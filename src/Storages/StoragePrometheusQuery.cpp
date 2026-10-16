@@ -26,9 +26,10 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/Converter.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/pushDownLabelMatchers.h>
 #include <Storages/TimeSeries/PromQLNativePlanBuilder.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
-#include <Storages/TimeSeries/TimeSeriesVersion.h>
+#include <Storages/TimeSeries/checkTimeSeriesVersion.h>
 #include <Storages/TimeSeries/getPromQLResultTimestampType.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 
@@ -57,6 +58,7 @@ namespace Setting
     extern const SettingsUInt64 max_promql_query_block_size;
     extern const SettingsUInt64 min_promql_native_query_range_points;
     extern const SettingsBool serialize_query_plan;
+    extern const SettingsBool promql_push_down_label_matchers;
 }
 
 namespace
@@ -410,16 +412,23 @@ void StoragePrometheusQuery::readImpl(
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(config.evaluation_settings.time_series_storage_id, context));
     checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
 
-    const bool is_query_range = config.evaluation_settings.mode == PrometheusQueryEvaluationMode::QUERY_RANGE;
+    const auto & settings = context->getSettingsRef();
+    /// Native fragments are keyed by node identity. Rewrite once before discovering them,
+    /// then share this tree with the SQL converter rather than cloning it again there.
+    auto promql_query = settings[Setting::promql_push_down_label_matchers]
+        ? PrometheusQueryToSQL::pushDownLabelMatchers(config.promql_query)
+        : config.promql_query;
+    auto evaluation_settings = config.evaluation_settings;
+    evaluation_settings.push_down_label_matchers = false;
+    const bool is_query_range = evaluation_settings.mode == PrometheusQueryEvaluationMode::QUERY_RANGE;
     const auto min_native_range_points = context->getSettingsRef()[Setting::min_promql_native_query_range_points];
     const auto query_range_points = is_query_range
         ? PrometheusQueryToSQL::stepsInTimeSeriesRange(
-            *config.evaluation_settings.start_time,
-            *config.evaluation_settings.end_time,
-            *config.evaluation_settings.step)
+            *evaluation_settings.start_time,
+            *evaluation_settings.end_time,
+            *evaluation_settings.step)
         : 1;
     const bool native_range_admitted = !is_query_range || !min_native_range_points || query_range_points >= min_native_range_points;
-    const auto & settings = context->getSettingsRef();
     size_t promql_max_block_size = max_block_size;
     const auto configured_promql_block_size = settings[Setting::max_promql_query_block_size];
     if (configured_promql_block_size.value)
@@ -449,8 +458,8 @@ void StoragePrometheusQuery::readImpl(
             min_native_range_points.value);
     }
 
-    const bool has_exact_native_root = extractPromQLRangeSumByQuery(*config.promql_query, is_query_range)
-        || extractPromQLRangeRateQuery(config.promql_query->getRoot(), is_query_range);
+    const bool has_exact_native_root = extractPromQLRangeSumByQuery(*promql_query, is_query_range)
+        || extractPromQLRangeRateQuery(promql_query->getRoot(), is_query_range);
     if (native_plan_enabled
         && native_range_admitted
         && has_exact_native_root
@@ -463,11 +472,11 @@ void StoragePrometheusQuery::readImpl(
             processed_stage,
             promql_max_block_size,
             num_streams,
-            *config.promql_query,
-            config.evaluation_settings,
+            *promql_query,
+            evaluation_settings,
             context->getSettingsRef()[Setting::max_promql_native_output_groups]))
     {
-        LOG_INFO(log, "Using the native execution plan to evaluate promql: {}", *config.promql_query);
+        LOG_INFO(log, "Using the native execution plan to evaluate promql: {}", *promql_query);
         return;
     }
 
@@ -485,7 +494,7 @@ void StoragePrometheusQuery::readImpl(
         const auto prepare_fragment = [&](const PrometheusQueryTree::Node * fragment_node, bool metric_name_dropped)
             -> std::optional<PreparedNativeFragment>
         {
-            auto fragment_query = clonePromQLSubtree(fragment_node, config.promql_query->getTimeScale());
+            auto fragment_query = clonePromQLSubtree(fragment_node, promql_query->getTimeScale());
             auto preparation = tryPreparePromQLNativeVectorGridPlan(
                 query_info,
                 query_context,
@@ -493,7 +502,7 @@ void StoragePrometheusQuery::readImpl(
                 promql_max_block_size,
                 num_streams,
                 *fragment_query,
-                config.evaluation_settings);
+                evaluation_settings);
             if (!preparation)
                 return {};
             return PreparedNativeFragment{
@@ -504,7 +513,7 @@ void StoragePrometheusQuery::readImpl(
             };
         };
 
-        if (auto two_rate_query = extractPromQLTwoRangeRatesSumByQuery(*config.promql_query, is_query_range))
+        if (auto two_rate_query = extractPromQLTwoRangeRatesSumByQuery(*promql_query, is_query_range))
         {
             const auto max_grid_cells = settings[Setting::max_promql_native_vector_grid_cells];
             auto prepared = max_grid_cells.value
@@ -526,7 +535,7 @@ void StoragePrometheusQuery::readImpl(
             {
                 native_fragments = installNativeFragments(
                     query_context,
-                    config.evaluation_settings,
+                    evaluation_settings,
                     settings[Setting::max_promql_native_output_groups],
                     std::vector<PreparedNativeFragment>{std::move(*prepared)});
             }
@@ -539,9 +548,9 @@ void StoragePrometheusQuery::readImpl(
         }
         else
         {
-            const auto * fragment_node = findH0NativeFragment(*config.promql_query, is_query_range);
+            const auto * fragment_node = findH0NativeFragment(*promql_query, is_query_range);
             if (!fragment_node)
-                fragment_node = findH1NativeFragment(*config.promql_query, is_query_range);
+                fragment_node = findH1NativeFragment(*promql_query, is_query_range);
             if (fragment_node)
             {
                 auto prepared = prepare_fragment(fragment_node, /* metric_name_dropped = */ true);
@@ -549,7 +558,7 @@ void StoragePrometheusQuery::readImpl(
                 {
                     native_fragments = installNativeFragments(
                         query_context,
-                        config.evaluation_settings,
+                        evaluation_settings,
                         settings[Setting::max_promql_native_output_groups],
                         std::vector<PreparedNativeFragment>{std::move(*prepared)});
                 }
@@ -565,12 +574,12 @@ void StoragePrometheusQuery::readImpl(
         log,
         "Building {} to evaluate promql: {}",
         native_fragments.empty() ? "SQL" : "hybrid native-fragment/SQL plan",
-        *config.promql_query);
+        *promql_query);
     const PrometheusQueryToSQL::ConverterOptions converter_options{
         .use_compensated_sum = settings[Setting::enable_promql_compensated_sum],
         .distributed_plan = settings[Setting::make_distributed_plan] || settings[Setting::serialize_query_plan],
     };
-    PrometheusQueryToSQL::Converter converter{config.promql_query, config.evaluation_settings, std::move(native_fragments), converter_options};
+    PrometheusQueryToSQL::Converter converter{promql_query, evaluation_settings, std::move(native_fragments), converter_options};
     ASTPtr select_query = converter.getSQL();
 
     LOG_INFO(log, "Will execute query:\n{}", select_query->formatForLogging());
