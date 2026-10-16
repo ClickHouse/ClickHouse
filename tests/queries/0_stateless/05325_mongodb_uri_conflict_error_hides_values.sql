@@ -18,13 +18,14 @@ SELECT dictGet('d_conflict', 'v', tuple('k')); -- { serverError DICTIONARIES_WAS
 
 SYSTEM FLUSH LOGS query_log;
 -- Only the two failed statements of this session: a database can be shared by several runs of the test.
+-- GLOBAL: with parallel replicas a plain IN subquery also runs on the follower replicas, which have no session history.
 SELECT
     countIf(exception LIKE '%Deprecated option ''sslclientcertificatekeypassword'' conflicts with canonical name ''tlscertificatekeyfilepassword''%'),
     countIf(exception LIKE '%' || 'ERR' || 'SECRET' || '%')
 FROM system.query_log
 WHERE current_database = currentDatabase() AND event_date >= yesterday()
     AND type IN ('ExceptionBeforeStart', 'ExceptionWhileProcessing')
-    AND query_id IN (SELECT query_id FROM system.session_query_ids);
+    AND query_id GLOBAL IN (SELECT query_id FROM system.session_query_ids);
 
 SELECT
     last_exception LIKE '%Deprecated option ''sslclientcertificatekeypassword'' conflicts with canonical name ''tlscertificatekeyfilepassword''%',

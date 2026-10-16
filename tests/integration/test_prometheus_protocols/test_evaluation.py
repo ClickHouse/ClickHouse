@@ -1,3 +1,4 @@
+import json
 import struct
 
 import pytest
@@ -585,8 +586,11 @@ def do_query_test(
     chresult,
     clickhouse_http_api_result_is_same_as_prometheus=True,
     eps=0,
+    prometheus_query=None,
 ):
-    actual_result = execute_query_in_prometheus(query, timestamp, eps=eps)
+    actual_result = execute_query_in_prometheus(
+        prometheus_query or query, timestamp, eps=eps
+    )
     assert http_api_response_close_to(
         actual_result, result, eps=eps
     ), f"actual result from prometheus: {actual_result}, expected: {result}"
@@ -633,9 +637,10 @@ def do_range_query_test(
     chresult,
     clickhouse_http_api_result_is_same_as_prometheus=True,
     eps=0,
+    prometheus_query=None,
 ):
     actual_result = execute_range_query_in_prometheus(
-        query, start_time, end_time, step, eps=eps
+        prometheus_query or query, start_time, end_time, step, eps=eps
     )
     assert http_api_response_close_to(
         actual_result, result, eps=eps
@@ -6051,4 +6056,83 @@ def test_label_manipulation_functions():
         1753176757.89,
         'expected at least 3 argument(s) in call to "label_join", got 2',
         "Function 'label_join' expects 3 or more arguments, but was called with 2 arguments",
+    )
+
+
+def test_standalone_step_range_instant():
+    # Prometheus 3.7.3 does not support these functions, so compare with constant equivalents.
+    do_query_test(
+        "step() + range()",
+        1000.125,
+        '{"resultType": "scalar", "result": [1000.125, "0"]}',
+        [["1970-01-01 00:16:40.125", 0]],
+        prometheus_query="0",
+    )
+
+    # Subquery steps and offsets must not change the outer query's step.
+    do_query_test(
+        "last_over_time(last_over_time(vector(step())[10s:2s])[20s:5s] offset 7s)",
+        1000.125,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [1000.125, "0"]}]}',
+        [["[]", "1970-01-01 00:16:40.125", 0]],
+        prometheus_query="last_over_time(last_over_time(vector(0)[10s:2s])[20s:5s] offset 7s)",
+    )
+
+    # An explicit subquery timestamp must not change the outer query's range.
+    do_query_test(
+        "last_over_time(vector(range())[20s:5s] @ 1005)",
+        1750000000.125,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [1750000000.125, "0"]}]}',
+        [["[]", "2025-06-15 15:06:40.125", 0]],
+        prometheus_query="last_over_time(vector(0)[20s:5s] @ 1005)",
+    )
+
+    data = json.loads(execute_query_in_clickhouse_http_api("step() + range()", None))
+    assert data["resultType"] == "scalar"
+    assert float(data["result"][1]) == 0
+
+
+def test_standalone_step_range_range():
+    # An off-grid end must not truncate the total requested range.
+    do_range_query_test(
+        "vector(step() * 10 + range())",
+        1000.125,
+        1002.375,
+        0.5,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[1000.125, "7.25"], [1000.625, "7.25"], [1001.125, "7.25"], [1001.625, "7.25"], [1002.125, "7.25"]]}]}',
+        [["[]", "[('1970-01-01 00:16:40.125',7.25),('1970-01-01 00:16:40.625',7.25),('1970-01-01 00:16:41.125',7.25),('1970-01-01 00:16:41.625',7.25),('1970-01-01 00:16:42.125',7.25)]"]],
+        prometheus_query="vector(7.25)",
+    )
+
+    # One-point range queries still have a nonzero requested step.
+    do_range_query_test(
+        "vector(step() + range())",
+        1000.125,
+        1000.125,
+        7.5,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[1000.125, "7.5"]]}]}',
+        [["[]", "[('1970-01-01 00:16:40.125',7.5)]"]],
+        prometheus_query="vector(7.5)",
+    )
+
+    # Subqueries and offsets must not replace the outer step.
+    do_range_query_test(
+        "last_over_time(vector(step())[20s:5s] offset 7s)",
+        1000.125,
+        1002.375,
+        0.5,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[1000.125, "0.5"], [1000.625, "0.5"], [1001.125, "0.5"], [1001.625, "0.5"], [1002.125, "0.5"]]}]}',
+        [["[]", "[('1970-01-01 00:16:40.125',0.5),('1970-01-01 00:16:40.625',0.5),('1970-01-01 00:16:41.125',0.5),('1970-01-01 00:16:41.625',0.5),('1970-01-01 00:16:42.125',0.5)]"]],
+        prometheus_query="last_over_time(vector(0.5)[20s:5s] offset 7s)",
+    )
+
+    # Subtract integer timestamp ticks before converting to seconds.
+    do_range_query_test(
+        "vector(range())",
+        "1750000000.001",
+        "1750000000.003",
+        "0.001",
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[1750000000.001, "0.002"], [1750000000.002, "0.002"], [1750000000.003, "0.002"]]}]}',
+        [["[]", "[('2025-06-15 15:06:40.001',0.002),('2025-06-15 15:06:40.002',0.002),('2025-06-15 15:06:40.003',0.002)]"]],
+        prometheus_query="vector(0.002)",
     )

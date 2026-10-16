@@ -35,7 +35,8 @@ size_t DiskSetBuilder::getMinBytesInRun(size_t max_bytes_before_external_set)
 {
     /// Smaller runs would make the final merge wide, so only a spill threshold below the default
     /// run size makes runs smaller.
-    return std::min(max_bytes_before_external_set, DEFAULT_BYTES_IN_RUN);
+    return max_bytes_before_external_set
+        ? std::min(max_bytes_before_external_set, DEFAULT_BYTES_IN_RUN) : DEFAULT_BYTES_IN_RUN;
 }
 
 size_t
@@ -124,8 +125,6 @@ DiskSetBuilderImpl<Key>::DiskSetBuilderImpl(
     , process_list_element(std::move(process_list_element_))
     , sorter(tmp_data, getMinBytesInRun(max_bytes_before_external_set), max_bytes_before_external_set, min_free_disk_space)
 {
-    chassert(max_bytes_before_external_set);
-
     if (max_bytes_for_bloom_filter)
         distinct_key_counter = std::make_unique<typename DiskSetBlockFilters<Key>::DistinctKeyCounter>();
 }

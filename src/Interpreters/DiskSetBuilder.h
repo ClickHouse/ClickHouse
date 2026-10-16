@@ -37,7 +37,7 @@ public:
     virtual bool isTruncated() const = 0;
 
     /// Returns the smallest run that a builder writes, which is the smaller of 16 MiB and
-    /// `max_bytes_before_external_set`. The builder writes no keys to disk before it buffers that many
+    /// a nonzero `max_bytes_before_external_set`. The builder writes no keys to disk before it buffers that many
     /// bytes of them.
     static size_t getMinBytesInRun(size_t max_bytes_before_external_set);
 
@@ -51,12 +51,12 @@ public:
 /// `tmp_data` holds the runs of the sorter, which use its codec, and the finished set, whose file is not
 /// compressed (see `DiskSetImpl::createFileScope`). `limits` are the size limits of the set.
 /// `max_bytes_before_external_set` is the spill threshold of the set: the builder writes a run of buffered
-/// keys only while tracked query memory exceeds it. The finished set keeps Bloom filters of its blocks in at
-/// most `max_bytes_for_bloom_filter` bytes, sized for the number of distinct keys that the builder counts as
-/// they arrive, or for the keys that the size limits let the set write when these are fewer. It keeps a cache
-/// of its blocks in at most `max_bytes_for_cache` bytes. The filters and the cache have budgets of their own
-/// and do not count towards the size limits, so that they do not change which keys the set keeps in the
-/// `break` mode.
+/// keys only while tracked query memory exceeds it. With 0, requested spills write bounded runs regardless
+/// of query memory. The finished set keeps Bloom filters of its blocks in at most `max_bytes_for_bloom_filter`
+/// bytes, sized for the number of distinct keys that the builder counts as they arrive, or for the keys that
+/// the size limits let the set write when these are fewer. It keeps a cache of its blocks in at most
+/// `max_bytes_for_cache` bytes. The filters and the cache have budgets of their own and do not count towards
+/// the size limits, so that they do not change which keys the set keeps in the `break` mode.
 template <typename Key>
 std::unique_ptr<DiskSetBuilder> createDiskSetBuilder(
     TemporaryDataOnDiskScopePtr tmp_data,
