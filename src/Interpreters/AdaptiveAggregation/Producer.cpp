@@ -33,16 +33,24 @@ namespace ErrorCodes
 
 namespace
 {
-    /// Whether the kernel of `state` keeps the bytes of its missed string-like keys in the batch (see
-    /// `AdaptiveMissBatch`). A state with `getKeyBytes` reads them from the block's padded column buffers. A state
-    /// whose key views are block-stable, which the batch serialization of the serialized methods guarantees, returns
-    /// the bytes that the probe read. Any other state builds a key again for every read, which for the serialized
-    /// methods means serializing it a second time. The states that never keep the bytes get `std::false_type`, which
-    /// stays a constant in the lambdas that capture it, so their probe loops and writer compile without the kept bytes.
+    /// Whether the kernel of `State` may keep the bytes of its missed string-like keys in the batch (see
+    /// `AdaptiveMissBatch`): a state with `getKeyBytes` reads them from the block's padded column buffers, so it never
+    /// keeps them. The probe loops check the bound on the kept bytes only under this: the check stages the batch, and a
+    /// probe lambda that merely names the staging captures it, which changes the code of every other state's loop.
+    template <typename RecordKey, typename State>
+    constexpr bool adaptive_misses_may_keep_key_bytes
+        = adaptive_key_stages_bytes<RecordKey> && !requires(const State & state) { state.getKeyBytes(size_t{}); };
+
+    /// Whether the kernel of `state` keeps the bytes of its missed string-like keys in the batch. A state whose key
+    /// views are block-stable, which the batch serialization of the serialized methods guarantees, returns the bytes
+    /// that the probe read. Any other state builds a key again for every read, which for the serialized methods means
+    /// serializing it a second time, so it keeps them. The states that never keep the bytes get `std::false_type`,
+    /// which stays a constant in the lambdas that capture it, so their probe loops and writer compile without the kept
+    /// bytes.
     template <typename RecordKey, typename State>
     auto ALWAYS_INLINE adaptiveMissesKeepKeyBytes(const State & state)
     {
-        if constexpr (adaptive_key_stages_bytes<RecordKey> && !requires { state.getKeyBytes(size_t{}); })
+        if constexpr (adaptive_misses_may_keep_key_bytes<RecordKey, State>)
             return !state.keyViewsAreBlockStable();
         else
             return std::false_type{};
@@ -50,8 +58,7 @@ namespace
 
     /// Whether a batch that keeps the bytes of its keys holds as many of them as it may, so that the kernel stages it
     /// before it adds more misses (see `adaptive_miss_batch_max_key_bytes`).
-    template <typename KeepKeyBytes>
-    bool ALWAYS_INLINE missBatchKeyBytesFull(const AdaptiveMissBatch & misses, KeepKeyBytes keep_key_bytes)
+    bool ALWAYS_INLINE missBatchKeyBytesFull(const AdaptiveMissBatch & misses, bool keep_key_bytes)
     {
         return keep_key_bytes && misses.getKeys().size() >= adaptive_miss_batch_max_key_bytes;
     }
@@ -217,8 +224,11 @@ void NO_INLINE Aggregator::executeFrozenImpl(
             misses.add<RecordKey>(static_cast<UInt32>(i), hash, key, keep_key_bytes);
 
         keyHolderDiscardKey(key_holder);
-        if (missBatchKeyBytesFull(misses, keep_key_bytes))
-            stage_misses();
+        if constexpr (adaptive_misses_may_keep_key_bytes<RecordKey, typename LocalMethod::StateNoCache>)
+        {
+            if (missBatchKeyBytesFull(misses, keep_key_bytes))
+                stage_misses();
+        }
     }
 
     if (frozen.recordLocalProbeResults(hits, row_end - row_begin))
@@ -363,12 +373,17 @@ size_t ALWAYS_INLINE Aggregator::collectCountMisses(
                 if (stop_combining)
                     return {i + 1, hits};
             }
-            if (missBatchKeyBytesFull(misses, keep_key_bytes))
+            if constexpr (adaptive_misses_may_keep_key_bytes<RecordKey, State>)
             {
-                /// The key views of a state whose batch keeps the key bytes do not outlive their row, so no record takes
-                /// more rows, and staging the batch in the middle of the block splits none.
-                chassert(!stable_key_views && !combine_partition_counts);
-                stage_misses();
+                /// The key views of a state whose batch keeps the key bytes do not outlive their row, so no record
+                /// takes more rows, and staging the batch in the middle of the block splits none. Combining needs the
+                /// key bytes of `getKeyBytes`, which such a state lacks.
+                static_assert(!combine_partition_counts);
+                if (missBatchKeyBytesFull(misses, keep_key_bytes))
+                {
+                    chassert(!stable_key_views);
+                    stage_misses();
+                }
             }
         }
         return {row_end, hits};
@@ -538,8 +553,11 @@ void NO_INLINE Aggregator::executeFrozenImpl(
                 places_data[i] = nullptr;
             misses.add<RecordKey>(static_cast<UInt32>(i), hash, key, keep_key_bytes);
             keyHolderDiscardKey(key_holder);
-            if (missBatchKeyBytesFull(misses, keep_key_bytes))
-                stage_misses();
+            if constexpr (adaptive_misses_may_keep_key_bytes<RecordKey, typename LocalMethod::StateNoCache>)
+            {
+                if (missBatchKeyBytesFull(misses, keep_key_bytes))
+                    stage_misses();
+            }
         }
         return hits;
     };
