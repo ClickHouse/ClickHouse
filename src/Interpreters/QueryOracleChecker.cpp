@@ -4,6 +4,8 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
 #include <Common/ProfileEvents.h>
+#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ThreadStatus.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/GetAggregatesVisitor.h>
@@ -322,6 +324,21 @@ bool isOracleUnsafeFunctionName(String name)
     }
 }
 
+/// True if `name` resolves to a regular function or a user-defined function that is not deterministic.
+bool namesNonDeterministicRegularFunction(const String & name, const ContextPtr & context)
+{
+    if (const auto resolver = FunctionFactory::instance().tryGet(name, context))
+        if (!resolver->isDeterministic())
+            return true;
+    if (UserDefinedSQLFunctionFactory::instance().tryGet(name))
+        /// SQL UDF determinism is not introspectable — treat as non-deterministic.
+        return true;
+    if (const auto udf_exec = UserDefinedExecutableFunctionFactory::tryGet(name, context))
+        if (!udf_exec->isDeterministic())
+            return true;
+    return false;
+}
+
 /// Walk an AST tree and check whether any `ASTFunction` references something
 /// non-deterministic. The primary source of truth is `FunctionFactory` —
 /// every regular function exposes `isDeterministic`, so newly-added
@@ -395,17 +412,45 @@ bool hasNonDeterministicFunctionsImpl(const ASTPtr & ast, const ContextPtr & con
             return true;
 
         for (const auto & name : {std::cref(func->name), std::cref(stripped)})
-        {
-            if (const auto resolver = FunctionFactory::instance().tryGet(name.get(), context))
-                if (!resolver->isDeterministic())
-                    return true;
-            if (UserDefinedSQLFunctionFactory::instance().tryGet(name.get()))
-                /// SQL UDF determinism is not introspectable — treat as non-deterministic.
+            if (namesNonDeterministicRegularFunction(name.get(), context))
                 return true;
-            if (const auto udf_exec = UserDefinedExecutableFunctionFactory::tryGet(name.get(), context))
-                if (!udf_exec->isDeterministic())
+    }
+
+    /// A higher-order function accepts a function by its bare name instead of a lambda, e.g.
+    /// `arrayMap(generateUUIDv7, arr)`: the name is an `ASTIdentifier`, not an `ASTFunction`.
+    /// A column with the same name as a non-deterministic function only skips one more query, which is safe.
+    /// The fuzzer may also turn that name into a `{fuzz_param_N:Identifier}` placeholder: its name part
+    /// is empty in the AST, and the value is substituted only when the query text is executed, so look
+    /// the value up in the query parameters of the context. An unknown parameter skips the query.
+    if (const auto * identifier = ast->as<ASTIdentifier>(); identifier && !identifier->compound())
+    {
+        if (identifier->isParam())
+        {
+            const auto param = identifier->getParam();
+            const auto & params = context->getQueryParameters();
+            const auto it = params.find(param->as<ASTQueryParameter &>().name);
+            if (it == params.end() || namesNonDeterministicRegularFunction(it->second, context))
+                return true;
+        }
+        else if (namesNonDeterministicRegularFunction(identifier->name(), context))
+            return true;
+    }
+
+    /// `* APPLY(f)` and `* APPLY(x -> ...)` keep the function name, its parameters and the lambda
+    /// outside of `children`.
+    if (const auto * apply = ast->as<ASTColumnsApplyTransformer>())
+    {
+        if (!apply->func_name.empty())
+        {
+            if (isOracleUnsafeFunctionName(apply->func_name))
+                return true;
+            for (const auto & name : {apply->func_name, stripAggregateCombinators(apply->func_name)})
+                if (namesNonDeterministicRegularFunction(name, context))
                     return true;
         }
+        if (hasNonDeterministicFunctionsImpl(apply->parameters, context)
+            || hasNonDeterministicFunctionsImpl(apply->lambda, context))
+            return true;
     }
 
     for (const auto & child : ast->children)
@@ -1193,6 +1238,13 @@ void scanAggregatesSafe(const ASTPtr & ast, SafeAggregateScan & out)
         scanAggregatesSafe(child, out);
 }
 
+/// A sub-query runs on a thread group of its own context: code that takes the query context from the thread
+/// (e.g. distributed plan stage tasks) must see the oracle's settings, not the fuzzed query's.
+ThreadGroupSwitcher switchToThreadGroupOf(const ContextPtr & oracle_context)
+{
+    return ThreadGroupSwitcher(ThreadGroup::createForQuery(oracle_context), ThreadName::AST_FUZZER, /*allow_existing_group=*/ true);
+}
+
 }
 
 
@@ -1455,6 +1507,7 @@ QueryOracleChecker::executeAndCollectSortedRows(const String & query, const Cont
 {
     auto oracle_context = makeOracleContext(context);
     oracle_context->setDefaultFormat("TabSeparated");
+    auto thread_group_switcher = switchToThreadGroupOf(oracle_context);
 
     /// Use the ReadBuffer/WriteBuffer executeQuery API — this is crash-safe because
     /// ClickHouse handles all column serialization within the pipeline internally,
@@ -1490,6 +1543,7 @@ QueryOracleChecker::executeAndCollectSortedRows(const String & query, const Cont
 Field QueryOracleChecker::executeScalar(const String & query, const ContextMutablePtr & context)
 {
     auto oracle_context = makeOracleContext(context);
+    auto thread_group_switcher = switchToThreadGroupOf(oracle_context);
 
     auto result = executeQuery(query, oracle_context, QueryFlags{.internal = true});
 
@@ -1536,6 +1590,7 @@ QueryOracleChecker::executeWithSettings(
     oracle_context->setDefaultFormat("TabSeparated");
     for (const auto & [name, value] : settings)
         oracle_context->setSetting(name, value);
+    auto thread_group_switcher = switchToThreadGroupOf(oracle_context);
 
     ReadBufferFromString istr(query);
     WriteBufferFromOwnString ostr;

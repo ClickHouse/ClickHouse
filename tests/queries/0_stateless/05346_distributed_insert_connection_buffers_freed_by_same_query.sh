@@ -23,14 +23,16 @@ done
 
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS trace_log"
 
-# Frees, in each INSERT, of memory that the INSERT did not allocate itself.
+# Frees, in each INSERT, of memory that the INSERT did not allocate itself. Only samples charged to the query count:
+# a sample taken under a memory tracker blocker, such as a shared system log queue regrowing, is not charged to it.
 $CLICKHOUSE_CLIENT -q "
     SELECT uniqExact(query_id), countIf(first_size < 0)
     FROM
     (
         SELECT query_id, argMin(size, event_time_microseconds) AS first_size
         FROM system.trace_log
-        WHERE event_date >= yesterday() AND trace_type = 'MemorySample' AND query_id LIKE '${CLICKHOUSE_TEST_UNIQUE_NAME}\\_%'
+        WHERE event_date >= yesterday() AND trace_type = 'MemorySample' AND memory_blocked_context = 'Max'
+            AND query_id LIKE '${CLICKHOUSE_TEST_UNIQUE_NAME}\\_%'
         GROUP BY query_id, ptr
     )
 "
