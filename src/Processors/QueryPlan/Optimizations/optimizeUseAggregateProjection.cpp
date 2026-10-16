@@ -987,6 +987,12 @@ static Block makeBlockWithMinMaxFromStatistics(
     size_t covered_marks = 0;
     size_t covered_ranges = 0;
 
+    /// The columns whose estimates are needed, so that only their statistics are read.
+    NameSet required_columns;
+    for (const auto & stats_aggregate : stats_aggregates)
+        if (stats_aggregate.kind != StatisticsMinMaxAggregate::Kind::Count)
+            required_columns.insert(stats_aggregate.column_name);
+
     auto part_covered_by_statistics = [&](const RangesInDataPart & part_with_ranges)
     {
         const auto & part = part_with_ranges.data_part;
@@ -1007,7 +1013,9 @@ static Block makeBlockWithMinMaxFromStatistics(
         Estimates estimates;
         try
         {
-            estimates = part->getEstimates();
+            /// An empty set would mean all columns, but `count` needs no statistics.
+            if (!required_columns.empty())
+                estimates = part->getEstimates(required_columns);
         }
         catch (const Exception &)
         {
@@ -1271,6 +1279,7 @@ UseProjectionsResult optimizeUseAggregateProjections(
             /// store the remaining inexact ranges (not covered by exact analysis), to be used for for normal reading
             /// and count calculation.
             inexact_ranges_select_result = std::make_shared<ReadFromMergeTree::AnalysisResult>(*parent_reading_select_result);
+            inexact_ranges_select_result->exact_ranges_excluded = true;
             auto & parent_parts_with_ranges = inexact_ranges_select_result->parts_with_ranges;
             size_t exact_ranges_count = 0;
             size_t exact_ranges_parts = 0;
@@ -1387,6 +1396,7 @@ UseProjectionsResult optimizeUseAggregateProjections(
                 bool analyzed = analyzeProjectionCandidate(
                     candidate,
                     reader,
+                    reading->getMutationsSnapshot(),
                     empty_mutations_snapshot,
                     required_column_names,
                     metadata,

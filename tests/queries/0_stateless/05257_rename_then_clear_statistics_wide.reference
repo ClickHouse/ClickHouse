@@ -1,0 +1,13 @@
+before
+a	['TDigest','Basic','UniqV2']
+b	['TDigest','Basic','UniqV2']
+c	['Basic','UniqV2']
+after the rename and CLEAR STATISTICS of the new name
+a1	[]
+b	['TDigest','Basic','UniqV2']
+c	['Basic','UniqV2']
+after the rename and CLEAR STATISTICS ALL
+a1	[]
+b1	[]
+c	[]
+1	2	3

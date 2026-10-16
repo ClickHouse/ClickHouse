@@ -1,3 +1,4 @@
+#include <utility>
 #include <Core/ServerSettings.h>
 #include <IO/MMappedFileCache.h>
 #include <IO/ReadHelpers.h>
@@ -6,6 +7,7 @@
 #include <Interpreters/Context.h>
 #include <base/cgroupsv2.h>
 #include <base/find_symbols.h>
+#include <base/EnumReflection.h>
 #include <sys/resource.h>
 #include <Common/AsynchronousMetrics.h>
 #include <Common/Exception.h>
@@ -2808,60 +2810,72 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 #endif
 
     {
-        auto threads_get_metric_name_doc = [](const String & name) -> std::pair<const char *, const char *>
+        /// Metric name and description per protocol. Keyed by the `ServerType::Type` name rather than
+        /// by the config key, so a protocol declared under `<protocols>` is reported under the same
+        /// metrics as the equivalent built-in port. Keeper listeners are not part of `ServerType`; they
+        /// are keyed by their config key. Each entry pairs one key with one metric name and its
+        /// description, which is the shape `utils/generate-async-metrics-docs` extracts the docs from.
+        using MetricNameDoc = std::pair<const char *, const char *>;
+
+        static const std::unordered_map<String, MetricNameDoc> threads_metric_by_protocol =
         {
-            static std::map<String, std::pair<const char *, const char *>> metric_map =
-            {
-                {"tcp_port", {"TCPThreads", "Number of threads in the server of the TCP protocol (without TLS)."}},
-                {"tcp_port_secure", {"TCPSecureThreads", "Number of threads in the server of the TCP protocol (with TLS)."}},
-                {"http_port", {"HTTPThreads", "Number of threads in the server of the HTTP interface (without TLS)."}},
-                {"https_port", {"HTTPSecureThreads", "Number of threads in the server of the HTTPS interface."}},
-                {"interserver_http_port", {"InterserverThreads", "Number of threads in the server of the replicas communication protocol (without TLS)."}},
-                {"interserver_https_port", {"InterserverSecureThreads", "Number of threads in the server of the replicas communication protocol (with TLS)."}},
-                {"mysql_port", {"MySQLThreads", "Number of threads in the server of the MySQL compatibility protocol."}},
-                {"postgresql_port", {"PostgreSQLThreads", "Number of threads in the server of the PostgreSQL compatibility protocol."}},
-                {"grpc_port", {"GRPCThreads", "Number of threads in the server of the GRPC protocol."}},
-                {"prometheus.port", {"PrometheusThreads", "Number of threads in the server of the Prometheus endpoint. Note: prometheus endpoints can be also used via the usual HTTP/HTTPs ports."}},
-                {"keeper_server.tcp_port", {"KeeperTCPThreads", "Number of threads in the server of the Keeper TCP protocol (without TLS)."}},
-                {"keeper_server.tcp_port_secure", {"KeeperTCPSecureThreads", "Number of threads in the server of the Keeper TCP protocol (with TLS)."}}
-            };
-            auto it = metric_map.find(name);
-            if (it == metric_map.end())
-                return { nullptr, nullptr };
-            return it->second;
+            {"TCP", {"TCPThreads", "Number of threads in the server of the TCP protocol (without TLS)."}},
+            {"TCP_SECURE", {"TCPSecureThreads", "Number of threads in the server of the TCP protocol (with TLS)."}},
+            {"TCP_WITH_PROXY", {"TCPWithProxyThreads", "Number of threads in the server of the TCP protocol behind a PROXY protocol handler."}},
+            {"TCP_SSH", {"TCPSSHThreads", "Number of threads in the server of the SSH protocol."}},
+            {"HTTP", {"HTTPThreads", "Number of threads in the server of the HTTP interface (without TLS)."}},
+            {"HTTPS", {"HTTPSecureThreads", "Number of threads in the server of the HTTPS interface."}},
+            {"INTERSERVER_HTTP", {"InterserverThreads", "Number of threads in the server of the replicas communication protocol (without TLS)."}},
+            {"INTERSERVER_HTTPS", {"InterserverSecureThreads", "Number of threads in the server of the replicas communication protocol (with TLS)."}},
+            {"MYSQL", {"MySQLThreads", "Number of threads in the server of the MySQL compatibility protocol."}},
+            {"POSTGRESQL", {"PostgreSQLThreads", "Number of threads in the server of the PostgreSQL compatibility protocol."}},
+            {"GRPC", {"GRPCThreads", "Number of threads in the server of the GRPC protocol."}},
+            {"PROMETHEUS", {"PrometheusThreads", "Number of threads in the server of the Prometheus endpoint. Note: prometheus endpoints can be also used via the usual HTTP/HTTPs ports."}},
+            {"keeper_server.tcp_port", {"KeeperTCPThreads", "Number of threads in the server of the Keeper TCP protocol (without TLS)."}},
+            {"keeper_server.tcp_port_secure", {"KeeperTCPSecureThreads", "Number of threads in the server of the Keeper TCP protocol (with TLS)."}}
         };
 
-        auto rejected_connections_get_metric_name_doc = [](const String & name) -> std::pair<const char *, const char *>
+        static const std::unordered_map<String, MetricNameDoc> rejected_connections_metric_by_protocol =
         {
-            static std::map<String, std::pair<const char *, const char *>> metric_map =
-                {
-                    {"tcp_port", {"TCPRejectedConnections", "Number of rejected connections for the TCP protocol (without TLS)."}},
-                    {"tcp_port_secure", {"TCPSecureRejectedConnections", "Number of rejected connections for the TCP protocol (with TLS)."}},
-                    {"http_port", {"HTTPRejectedConnections", "Number of rejected connections for the HTTP interface (without TLS)."}},
-                    {"https_port", {"HTTPSecureRejectedConnections", "Number of rejected connections for the HTTPS interface."}},
-                    {"interserver_http_port", {"InterserverRejectedConnections", "Number of rejected connections for the replicas communication protocol (without TLS)."}},
-                    {"interserver_https_port", {"InterserverSecureRejectedConnections", "Number of rejected connections for the replicas communication protocol (with TLS)."}},
-                    {"mysql_port", {"MySQLRejectedConnections", "Number of rejected connections for the MySQL compatibility protocol."}},
-                    {"postgresql_port", {"PostgreSQLRejectedConnections", "Number of rejected connections for the PostgreSQL compatibility protocol."}},
-                    {"grpc_port", {"GRPCRejectedConnections", "Number of rejected connections for the GRPC protocol."}},
-                    {"prometheus.port", {"PrometheusRejectedConnections", "Number of rejected connections for the Prometheus endpoint. Note: prometheus endpoints can be also used via the usual HTTP/HTTPs ports."}},
-                    {"keeper_server.tcp_port", {"KeeperTCPRejectedConnections", "Number of rejected connections for the Keeper TCP protocol (without TLS)."}},
-                    {"keeper_server.tcp_port_secure", {"KeeperTCPSecureRejectedConnections", "Number of rejected connections for the Keeper TCP protocol (with TLS)."}}
-                };
-            auto it = metric_map.find(name);
-            if (it == metric_map.end())
-                return { nullptr, nullptr };
-            return it->second;
+            {"TCP", {"TCPRejectedConnections", "Number of rejected connections for the TCP protocol (without TLS)."}},
+            {"TCP_SECURE", {"TCPSecureRejectedConnections", "Number of rejected connections for the TCP protocol (with TLS)."}},
+            {"TCP_WITH_PROXY", {"TCPWithProxyRejectedConnections", "Number of rejected connections for the TCP protocol behind a PROXY protocol handler."}},
+            {"TCP_SSH", {"TCPSSHRejectedConnections", "Number of rejected connections for the SSH protocol."}},
+            {"HTTP", {"HTTPRejectedConnections", "Number of rejected connections for the HTTP interface (without TLS)."}},
+            {"HTTPS", {"HTTPSecureRejectedConnections", "Number of rejected connections for the HTTPS interface."}},
+            {"INTERSERVER_HTTP", {"InterserverRejectedConnections", "Number of rejected connections for the replicas communication protocol (without TLS)."}},
+            {"INTERSERVER_HTTPS", {"InterserverSecureRejectedConnections", "Number of rejected connections for the replicas communication protocol (with TLS)."}},
+            {"MYSQL", {"MySQLRejectedConnections", "Number of rejected connections for the MySQL compatibility protocol."}},
+            {"POSTGRESQL", {"PostgreSQLRejectedConnections", "Number of rejected connections for the PostgreSQL compatibility protocol."}},
+            {"GRPC", {"GRPCRejectedConnections", "Number of rejected connections for the GRPC protocol."}},
+            {"PROMETHEUS", {"PrometheusRejectedConnections", "Number of rejected connections for the Prometheus endpoint. Note: prometheus endpoints can be also used via the usual HTTP/HTTPs ports."}},
+            {"keeper_server.tcp_port", {"KeeperTCPRejectedConnections", "Number of rejected connections for the Keeper TCP protocol (without TLS)."}},
+            {"keeper_server.tcp_port_secure", {"KeeperTCPSecureRejectedConnections", "Number of rejected connections for the Keeper TCP protocol (with TLS)."}}
         };
 
-        const auto server_metrics = protocol_server_metrics_func();
-        for (const auto & server_metric : server_metrics)
-        {
-            if (auto name_doc = threads_get_metric_name_doc(server_metric.port_name); name_doc.first != nullptr)
-                new_values[name_doc.first] = { server_metric.current_threads, name_doc.second };
+        /// Several servers can share a protocol - one per listen host, or a built-in port and a
+        /// `<protocols>` endpoint of the same type - so the values are summed before being reported.
+        std::unordered_map<String, std::pair<size_t, size_t>> totals;
 
-            if (auto name_doc = rejected_connections_get_metric_name_doc(server_metric.port_name); name_doc.first != nullptr)
-                new_values[name_doc.first] = { server_metric.rejected_connections, name_doc.second };
+        for (const auto & server_metric : protocol_server_metrics_func())
+        {
+            String key{magic_enum::enum_name(server_metric.protocol_type)};
+            if (!threads_metric_by_protocol.contains(key))
+                key = server_metric.port_name;
+            if (!threads_metric_by_protocol.contains(key))
+                continue;
+
+            auto & total = totals[key];
+            total.first += server_metric.current_threads;
+            total.second += server_metric.rejected_connections;
+        }
+
+        for (const auto & [key, total] : totals)
+        {
+            const auto & [threads_name, threads_doc] = threads_metric_by_protocol.at(key);
+            new_values[threads_name] = { total.first, threads_doc };
+            const auto & [rejected_name, rejected_doc] = rejected_connections_metric_by_protocol.at(key);
+            new_values[rejected_name] = { total.second, rejected_doc };
         }
     }
 

@@ -1,0 +1,7 @@
+<test>
+    <!-- Null-safe comparison of nullable keys is joined through two plain keys, isNull and the non-null value,
+         so a nullable fixed-width key packs into a fixed-width hash key instead of a serialized tuple. -->
+
+    <query>SELECT count() FROM (SELECT if(number % 100000 = 0, NULL, number)::Nullable(UInt64) AS a FROM numbers_mt(10000000)) AS l JOIN (SELECT if(number % 100000 = 0, NULL, number)::Nullable(UInt64) AS a FROM numbers_mt(10000000)) AS r ON l.a &lt;=&gt; r.a</query>
+    <query>SELECT count() FROM (SELECT if(number % 100000 = 0, NULL, number)::Nullable(UInt64) AS a, if(number % 3 = 0, NULL, number % 5)::Nullable(UInt8) AS b FROM numbers_mt(10000000)) AS l SEMI LEFT JOIN (SELECT if(number % 100000 = 0, NULL, number)::Nullable(UInt64) AS a, if(number % 3 = 0, NULL, number % 5)::Nullable(UInt8) AS b FROM numbers_mt(10000000)) AS r ON l.a &lt;=&gt; r.a AND l.b &lt;=&gt; r.b</query>
+</test>

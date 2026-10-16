@@ -15,9 +15,7 @@ import S3Settings from '/snippets/zh/_s3_settings.mdx';
 > 详细说明，请参阅侧边栏中相应方法的
 > 页面。
 
-<div id="introduction">
-  ## 简介
-</div>
+## 简介 {#introduction}
 
 虽然[复制](/zh/reference/engines/table-engines/mergetree-family/replication)可以防范硬件故障，但它并不能
 防止人为失误：误删数据、删除错误的
@@ -71,9 +69,7 @@ PB 的数据。可选的方法有很多，它们各有优缺点，
 * 受密码保护
 * 对[系统表、日志表或访问管理表](#system-backups)进行备份
 
-<div id="backup-types">
-  ## 备份类型
-</div>
+## 备份类型 {#backup-types}
 
 备份可以分为全量备份和增量备份。全量备份是
 数据的完整副本，而增量备份则只包含自上次全量备份以来发生变化的数据。
@@ -90,18 +86,14 @@ PB 的数据。可选的方法有很多，它们各有优缺点，
 * **增量备份**，适用于较大的数据库，或需要频繁且经济高效地执行备份的场景。
 * **两者结合**，例如每周执行一次全量备份，每天执行一次增量备份。
 
-<div id="synchronous-vs-asynchronous">
-  ## 同步与异步备份
-</div>
+## 同步与异步备份 {#synchronous-vs-asynchronous}
 
 `BACKUP` 和 `RESTORE` 命令也可以标记为 `ASYNC`。在这种情况下，
 备份命令会立即返回，备份过程则在后台运行。
 如果命令未标记为 `ASYNC`，备份过程则会同步执行，
 命令会一直阻塞，直到备份完成。
 
-<div id="concurrent-vs-non-concurrent">
-  ## 并发与非并发备份
-</div>
+## 并发与非并发备份 {#concurrent-vs-non-concurrent}
 
 默认情况下，ClickHouse 允许并发执行备份和恢复。这意味着你
 可以同时发起多个备份或恢复操作。不过，
@@ -125,9 +117,7 @@ PB 的数据。可选的方法有很多，它们各有优缺点，
 当这些设置在集群中为 false 时，任一时刻整个集群只允许运行一个备份/恢复
 操作。
 
-<div id="compressed-vs-uncompressed">
-  ## 压缩与未压缩备份
-</div>
+## 压缩与未压缩备份 {#compressed-vs-uncompressed}
 
 ClickHouse 备份支持通过 `compression_method` 和 `compression_level` 设置启用压缩。
 
@@ -139,9 +129,7 @@ BACKUP TABLE test.table
   SETTINGS compression_method='lzma', compression_level=3
 ```
 
-<div id="using-named-collections">
-  ## 使用命名集合
-</div>
+## 使用命名集合 {#using-named-collections}
 
 命名集合允许您存储可在备份/恢复操作中重复使用的键值对 (如 S3 凭据、端点和设置) 。
 它们有助于：
@@ -153,9 +141,7 @@ BACKUP TABLE test.table
 
 更多详情请参见[&quot;命名集合&quot;](/zh/concepts/features/configuration/server-config/named-collections)。
 
-<div id="system-backups">
-  ## 备份系统表、日志表或访问管理相关表
-</div>
+## 备份系统表、日志表或访问管理相关表 {#system-backups}
 
 系统表也可以纳入备份和恢复工作流中，但是否纳入取决于你的具体使用场景。
 
@@ -179,42 +165,113 @@ settings&#95;profiles 和 quotas，在备份和恢复操作期间会进行特殊
 在 ClickHouse server 配置文件 (如 `users.xml`)
 中定义的访问配置不会包含在备份中，也无法通过此方法恢复。
 
-<div id="syntax">
-  ## 常规语法
-</div>
+## 常规语法 {#syntax}
 
 <Syntax />
 
-<div id="command-summary">
-  ### 命令概览
-</div>
+### 命令概览 {#command-summary}
 
 上述各命令的详细说明如下：
 
-| **命令**                                                                 | **说明**                                                                  |   |
-| ---------------------------------------------------------------------- | ----------------------------------------------------------------------- | - |
-| `BACKUP`                                                               | 为指定对象创建备份                                                               |   |
-| `RESTORE`                                                              | 从备份中恢复对象                                                                |   |
-| `TABLE [db.]table_name [AS [db.]table_name_in_backup]`                 | 备份/恢复指定表 (可重命名)                                                         |   |
-| `[PARTITION[S] partition_expr [,...]]`                                 | 仅备份/恢复该表的指定分区                                                           |   |
-| `DICTIONARY [db.]dictionary_name [AS [db.]name_in_backup]`             | 备份/恢复字典对象                                                               |   |
-| `DATABASE database_name [AS database_name_in_backup]`                  | 备份/恢复整个数据库 (可重命名)                                                       |   |
-| `TEMPORARY TABLE table_name [AS table_name_in_backup]`                 | 备份/恢复临时表 (可重命名)                                                         |   |
-| `VIEW view_name [AS view_name_in_backup]`                              | 备份/恢复视图 (可重命名)                                                          |   |
-| `[EXCEPT TABLES ...]`                                                  | 备份数据库时排除特定表                                                             |   |
-| `ALL`                                                                  | 备份/恢复所有内容 (所有数据库、表等) 。在 ClickHouse 23.4 之前的版本中，`ALL` 仅适用于 `RESTORE` 命令。 |   |
-| `[EXCEPT {TABLES\|DATABASES}...]`                                      | 使用 `ALL` 时排除特定表或数据库                                                     |   |
-| `[ON CLUSTER 'cluster_name']`                                          | 在 ClickHouse 集群上执行备份/恢复                                                 |   |
-| `TO\|FROM`                                                             | 方向：`TO` 表示备份目标位置，`FROM` 表示恢复源                                           |   |
-| `File('<path>/<filename>')`                                            | 存储到本地文件系统/从本地文件系统恢复                                                     |   |
-| `Disk('<disk_name>', '<path>/')`                                       | 存储到已配置磁盘/从已配置磁盘恢复                                                       |   |
-| `S3('<S3 endpoint>/<path>', '<Access key ID>', '<Secret access key>')` | 存储到 Amazon S3 或兼容 S3 的对象存储/从中恢复                                         |   |
-| `[SETTINGS ...]`                                                       | 完整设置列表见下文                                                               |   |
-| `[ASYNC]`                                                              | 使操作以异步方式运行 (立即返回一个可监控的 ID)                                              |   |
+| **命令**                                                                 | **说明**                                                                                                                                |   |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | - |
+| `BACKUP`                                                               | 为指定对象创建备份                                                                                                                             |   |
+| `RESTORE`                                                              | 从备份中恢复对象                                                                                                                              |   |
+| `TABLE [db.]table_name [AS [db.]table_name_in_backup]`                 | 备份/恢复指定表 (可重命名)                                                                                                                       |   |
+| `[PARTITION[S] partition_expr [,...]]`                                 | 仅备份/恢复该表的指定分区                                                                                                                         |   |
+| `DICTIONARY [db.]dictionary_name [AS [db.]name_in_backup]`             | 备份/恢复字典对象                                                                                                                             |   |
+| `DATABASE database_name [AS database_name_in_backup]`                  | 备份/恢复整个数据库 (可重命名)                                                                                                                     |   |
+| `TEMPORARY TABLE table_name [AS table_name_in_backup]`                 | 备份/恢复临时表 (可重命名)                                                                                                                       |   |
+| `VIEW view_name [AS view_name_in_backup]`                              | 备份/恢复视图 (可重命名)                                                                                                                        |   |
+| `[EXCEPT TABLES ...]`                                                  | 备份数据库时排除特定表                                                                                                                           |   |
+| `[EXCEPT DATA FROM {TABLE\|TABLES} ...]`                               |&#x20;**&#x20;(仅适用于 BACKUP)&#x20;**&#x20;仅备份表定义，不备份表中的行。与会完全排除该表的 `EXCEPT TABLES` 不同。该选项仅对其所在的元素生效：请参阅[仅备份表结构，不备份数据](#backup-without-data)。 |   |
+| `ALL`                                                                  | 备份/恢复所有内容 (所有数据库、表等) 。在 ClickHouse 23.4 之前的版本中，`ALL` 仅适用于 `RESTORE` 命令。                                                               |   |
+| `[EXCEPT {TABLES\|DATABASES}...]`                                      | 使用 `ALL` 时排除特定表或数据库                                                                                                                   |   |
+| `[ON CLUSTER 'cluster_name']`                                          | 在 ClickHouse 集群上执行备份/恢复                                                                                                               |   |
+| `TO\|FROM`                                                             | 方向：`TO` 表示备份目标位置，`FROM` 表示恢复源                                                                                                         |   |
+| `File('<path>/<filename>')`                                            | 存储到本地文件系统/从本地文件系统恢复                                                                                                                   |   |
+| `Disk('<disk_name>', '<path>/')`                                       | 存储到已配置磁盘/从已配置磁盘恢复                                                                                                                     |   |
+| `S3('<S3 endpoint>/<path>', '<Access key ID>', '<Secret access key>')` | 存储到 Amazon S3 或兼容 S3 的对象存储/从中恢复                                                                                                       |   |
+| `[SETTINGS ...]`                                                       | 完整设置列表见下文                                                                                                                             |   |
+| `[ASYNC]`                                                              | 使操作以异步方式运行 (立即返回一个可监控的 ID)                                                                                                            |   |
 
-<div id="settings">
-  ### 设置
-</div>
+### 仅备份表结构，不备份数据 {#backup-without-data}
+
+`EXCEPT DATA FROM {TABLE|TABLES}` 只将表定义写入备份，不备份表中的行。适用于
+恢复后可以重新生成数据的表，例如物化视图的目标端表。
+
+该子句决定 `BACKUP` 写入哪些内容，但不影响 `RESTORE` 能否从备份中恢复表。对于
+`RESTORE` 能够重新创建的表，不含行的表定义会被恢复为空表。它不会让原本无法恢复的
+表变得可以恢复——能否根据备份中的表定义重新创建表取决于引擎，有些引擎会直接拒绝。参见
+[`RESTORE` 无法重建的引擎](#engines-restore-cannot-recreate)。
+
+该子句仅对其所在的元素生效：
+
+* 用于 `DATABASE` 或 `ALL` 元素时，可以指定该元素所备份的任意表：
+
+```sql
+BACKUP DATABASE mydb EXCEPT DATA FROM TABLES events, metrics TO Disk('backups', 'mydb/')
+```
+
+在此列表中，如果表或数据库的名称为 `table`、`dictionary`、`view`、`database` 或 `all`，请用反引号将其括起来：在逗号之后，未加引号的此类名称会被解析为下一个元素的开头。
+
+* 对于单对象元素 (`TABLE`、`DICTIONARY`、`VIEW`、`TEMPORARY TABLE`) ，作用域内只有该元素自身的对象，
+  因此该子句只能指定这一个对象，不能指定其他对象。请为每个表分别编写独立的元素和
+  子句：
+
+```sql
+-- Backs up both tables, without the data of `t1`
+BACKUP TABLE mydb.t1 EXCEPT DATA FROM TABLE mydb.t1, TABLE mydb.t2 TO Disk('backups', 'tables/')
+
+-- Rejected: the clause of the `mydb.t2` element names a different table
+BACKUP TABLE mydb.t1, TABLE mydb.t2 EXCEPT DATA FROM TABLE mydb.t1 TO Disk('backups', 'tables/')
+```
+
+如果某个表既由其自身的元素指定，又出现在某个范围更宽的元素的 `EXCEPT DATA FROM` 子句中，
+则其数据**会**被备份：指定某个表的元素，也就意味着要备份该表的数据。这与 `EXCEPT TABLES` 的行为一致：
+显式指定的表即使被范围更宽的元素排除，仍会被备份。
+
+materialized view 的内部表 (或 `TimeSeries` 表的内部表) 的数据需通过外部对象的名称来排除；
+该子句不接受内部表名。
+
+`EXCEPT DATA FROM {TABLE|TABLES}` 仅适用于 `BACKUP`。`RESTORE` 会直接拒绝该子句，而不是将其视为空操作
+予以接受。
+
+#### `RESTORE` 无法重建的引擎 {#engines-restore-cannot-recreate}
+
+有少数引擎完全无法通过 `RESTORE` 重建，无论是否使用 `EXCEPT DATA FROM {TABLE|TABLES}`。对于
+这些表，该子句仍会影响备份的大小，但你并不会得到一个恢复后为空的表——原位置上什么都不会恢复，因为 `RESTORE` 会拒绝创建该表。
+
+需要特别注意的是独立的 `MaterializedPostgreSQL` 表。该表一旦创建，就会立即开始从
+正在运行的 PostgreSQL 源复制数据，导致备份快照与远程的当前状态混杂在一起。因此，
+`RESTORE` 会在存储工厂中 (即在创建表之前) 以 `NOT_IMPLEMENTED` 错误拒绝该表。这是
+该引擎本身的特性，对普通的全量备份同样适用。
+
+受支持的做法是以不同的名称进行恢复，将其恢复到一个预先创建好的 `ReplacingMergeTree` 表中，该表需具有与嵌套表相同的结构 (包括 `_sign` 和 `_version` 列) ：
+
+```sql
+-- Back up the definition without the rows: they are replicated from PostgreSQL and can be replicated again
+BACKUP DATABASE mydb EXCEPT DATA FROM TABLE mydb.pg_table TO Disk('backups', 'mydb/')
+
+CREATE TABLE mydb.plain_target
+(
+    key Int32,
+    value Int32,
+    _sign Int8 MATERIALIZED 1,
+    _version UInt64 MATERIALIZED 1
+)
+ENGINE = ReplacingMergeTree(_version) ORDER BY key
+
+-- Succeeds, and leaves `mydb.plain_target` empty because the backup carries no rows for `mydb.pg_table`
+RESTORE TABLE mydb.pg_table AS mydb.plain_target FROM Disk('backups', 'mydb/')
+SETTINGS allow_different_table_def = 1
+```
+
+必须指定 `allow_different_table_def`，因为备份中的表定义使用的是
+`MaterializedPostgreSQL` 引擎，而这里要将其恢复为普通的 `ReplacingMergeTree` 表。
+如果不指定 `EXCEPT DATA FROM TABLE`，同一条 `RESTORE` 语句还会恢复表中的数据行。
+
+### 设置 {#settings}
 
 **通用备份/恢复设置**
 
@@ -228,9 +285,7 @@ settings&#95;profiles 和 quotas，在备份和恢复操作期间会进行特殊
 
 <AzureSettings />
 
-<div id="check-the-status-of-backups">
-  ## 管理与故障排查
-</div>
+## 管理与故障排查 {#check-the-status-of-backups}
 
 `backup` 命令会返回一个 `id` 和 `status`，并且可以使用该 `id`
 查询备份状态。这对于检查长时间运行的 `ASYNC`
