@@ -1,9 +1,11 @@
 #include <gtest/gtest.h>
 
+#include <Columns/ColumnBLOB.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMaterializationUtils.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Compression/CompressionFactory.h>
 #include <Core/Block.h>
 #include <Core/Field.h>
 #include <Core/ProtocolDefines.h>
@@ -11,6 +13,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
+#include <Formats/FormatSettings.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
 #include <IO/ReadBufferFromString.h>
@@ -201,4 +204,45 @@ TEST(NativeAutomaticLowCardinality, TupleElementThroughOlderRevision)
     };
 
     EXPECT_EQ(serialize(block), serialize(plain_block));
+}
+
+TEST(NativeAutomaticLowCardinality, BLOBThroughOlderRevision)
+{
+    /// Parallel block marshalling wraps the column into a `ColumnBLOB` before `NativeWriter` sees it.
+    /// The kinds announced for the blob are computed from its wrapped column, so they must describe
+    /// the materialized payload rather than the encoded column for a peer without the `LOW_CARDINALITY` kind.
+    static constexpr UInt64 old_revision = DBMS_MIN_REVISION_WITH_AUTOMATIC_LOW_CARDINALITY_SERIALIZATION - 1;
+    static_assert(old_revision >= DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING);
+    static constexpr size_t num_rows = 1000;
+
+    auto column = makeAutomaticallyEncodedColumn(num_rows);
+    column.column = ColumnBLOB::create(
+        column, CompressionCodecFactory::instance().getDefaultCodec(), old_revision, FormatSettings{});
+
+    EXPECT_EQ(
+        ISerialization::getKindStack(*column.column),
+        (ISerialization::KindStack{ISerialization::Kind::DEFAULT, ISerialization::Kind::DETACHED}));
+
+    Block block;
+    block.insert(column);
+
+    String encoded;
+    {
+        WriteBufferFromString out(encoded);
+        NativeWriter writer(out, old_revision, std::make_shared<const Block>(block.cloneEmpty()));
+        writer.write(block);
+        writer.flush();
+    }
+
+    ReadBufferFromString in(encoded);
+    NativeReader reader(in, old_revision, std::nullopt, ISerialization::KindSet::all());
+    auto read_block = reader.read();
+
+    ASSERT_EQ(read_block.rows(), num_rows);
+    const auto & read = read_block.getByName("s");
+    EXPECT_EQ(read.type->getName(), "String");
+    auto full = read.column->convertToFullColumnIfDetached();
+    EXPECT_FALSE(full->lowCardinality());
+    for (size_t i = 0; i < num_rows; ++i)
+        ASSERT_EQ(String(full->getDataAt(i)), "val_" + std::to_string(i % 4)) << "row " << i;
 }

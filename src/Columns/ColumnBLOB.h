@@ -50,7 +50,11 @@ private:
         , wrapped_column(wrapped_column_.column)
     {
         chassert(wrapped_column);
-        toBLOB(blob, wrapped_column_, codec, client_revision, format_settings);
+        /// Keep the representation that was actually serialized into the BLOB: the kind stack announced on the
+        /// wire is computed from the wrapped column, so it must not contain kinds that `getSerializationAndColumn`
+        /// removed for the peer revision (e.g. a non-native `LowCardinality` column for a peer without the
+        /// `LOW_CARDINALITY` kind).
+        wrapped_column = toBLOB(blob, wrapped_column_, codec, client_revision, format_settings);
     }
 
     ColumnBLOB(FromBLOB task, ColumnPtr wrapped_column_, size_t rows_)
@@ -117,7 +121,8 @@ public:
     ColumnPtr convertToFullColumnIfDetached() const override { return convertFrom(); }
 
     /// Creates serialized and compressed blob from the source column.
-    static void toBLOB(
+    /// Returns the column in the representation that was written, adjusted for `client_revision`.
+    static ColumnPtr toBLOB(
         BLOB & blob,
         ColumnWithTypeAndName wrapped_column,
         CompressionCodecPtr codec,
@@ -133,6 +138,7 @@ public:
         NativeWriter::writeData(
             *serialization, column_to_write, compressed_buffer, format_settings, 0, column_to_write->size(), client_revision);
         compressed_buffer.finalize();
+        return column_to_write;
     }
 
     /// Decompresses and deserializes the blob into the source column.
