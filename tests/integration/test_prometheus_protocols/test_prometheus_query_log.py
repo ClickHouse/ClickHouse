@@ -90,6 +90,7 @@ node = cluster.add_instance(
     main_configs=[
         "configs/prometheus.xml",
         "configs/config.d/query_log.xml",
+        "configs/config.d/query_masking_rules.xml",
     ],
     user_configs=["configs/allow_experimental_time_series_table.xml"],
     handle_prometheus_remote_write=(9093, "/write"),
@@ -328,3 +329,16 @@ def test_query_api_keeps_empty_user_log_comment():
     query_id = f"prometheus-query-log-test-{uuid.uuid4()}"
     run_instant_query("up", query_id, "&log_comment=")
     assert query_log_comment(query_id) == "\n"
+
+
+def test_query_api_masks_promql_in_log_comment():
+    """The PromQL text in log_comment is masked by query_masking_rules, like the query text."""
+    query_id = f"prometheus-query-log-test-{uuid.uuid4()}"
+    run_instant_query('up{job="prometheus_masking_secret"}', query_id)
+    assert (
+        node.query(
+            f"SELECT log_comment, Settings['log_comment'] FROM system.query_log "
+            f"WHERE type = 'QueryFinish' AND query_id = '{query_id}'"
+        )
+        == 'up{job="******"}\tup{job="******"}\n'
+    )
