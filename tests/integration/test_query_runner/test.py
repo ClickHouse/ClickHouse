@@ -9,7 +9,7 @@ cluster = ClickHouseCluster(__file__)
 
 node_query_runner = cluster.add_instance(
     "node_query_runner",
-    main_configs=["configs/remote_servers.xml", "configs/silk.xml"],
+    main_configs=["configs/remote_servers.xml", "configs/silk.xml", "configs/startup_scripts.xml"],
 )
 node_cluster = cluster.add_instance(
     "node_cluster",
@@ -292,3 +292,7 @@ def test_many_concurrent_queries(location, node_target, scheduler, extra_setting
         == "200\t200\t0\t199\n"
     )
     node_query_runner.query("DROP TABLE runner")
+
+
+def test_insert_without_user():
+    assert_eq_with_retry(node_query_runner, "SELECT x FROM startup_target", "1")
