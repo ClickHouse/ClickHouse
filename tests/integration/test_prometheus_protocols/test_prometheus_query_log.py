@@ -338,9 +338,9 @@ def cancel_close_query_range_path(cancel):
     )
 
 
-def read_query_range(cancel, query_id, timeout):
-    """Read the range query until `timeout` seconds, then close the socket."""
-    conn = http.client.HTTPConnection(node.ip_address, 9093, timeout=timeout)
+def read_query_range(cancel, query_id):
+    """Read the range query for three seconds, then close the socket."""
+    conn = http.client.HTTPConnection(node.ip_address, 9093, timeout=3)
     try:
         conn.request(
             "GET",
@@ -356,18 +356,20 @@ def read_query_range(cancel, query_id, timeout):
 
 def test_query_range_cancels_when_client_closes():
     """
-    With cancel_http_readonly_queries_on_client_close=1, closing the client during
-    /api/v1/query_range records QUERY_WAS_CANCELLED (394). With the setting off, the
-    same query reaches QueryFinish.
+    Both /api/v1/query_range requests disconnect after three seconds. Only the
+    request with cancel_http_readonly_queries_on_client_close=1 is cancelled.
+    That query records QUERY_WAS_CANCELLED (394). The request with the setting
+    off reaches QueryFinish.
     """
     insert_cancel_close_series()
 
-    # The throttled scan runs for about ten seconds and sends no bytes until it
-    # finishes, so a three-second read timeout closes the socket mid-query.
+    # Both requests disconnect after three seconds. The throttled scan takes
+    # about ten seconds and sends no bytes until it finishes, so each socket
+    # closes while its query still runs. Only the enabled request is cancelled.
     cancel_query_id = f"prometheus-cancel-on-close-{uuid.uuid4()}"
-    read_query_range(1, cancel_query_id, timeout=3)
+    read_query_range(1, cancel_query_id)
     assert_query_log_row(cancel_query_id, "ExceptionWhileProcessing", exception_code=394)
 
     finish_query_id = f"prometheus-cancel-on-close-{uuid.uuid4()}"
-    read_query_range(0, finish_query_id, timeout=120)
+    read_query_range(0, finish_query_id)
     assert_query_log_row(finish_query_id, "QueryFinish")

@@ -247,15 +247,17 @@ protected:
             return;
 
         auto prev = context->getProgressCallback();
-        context->setProgressCallback([prev, &request, my_context = context](const Progress & progress)
+        ProcessList & process_list = context->getProcessList();
+        const String query_id = context->getCurrentQueryId();
+        const String user = context->getClientInfo().current_user;
+        context->setProgressCallback([prev, &request, &process_list, query_id, user](const Progress & progress)
         {
             if (prev)
                 prev(progress);
 
             /// Assume that at the point this method is called no one is reading data from the socket any more.
             if (!request.checkPeerConnected())
-                my_context->getProcessList().sendCancelToQuery(
-                    my_context->getCurrentQueryId(), my_context->getClientInfo().current_user);
+                process_list.sendCancelToQuery(query_id, user);
         });
     }
 
