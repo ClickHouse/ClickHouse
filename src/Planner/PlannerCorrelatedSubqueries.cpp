@@ -32,6 +32,7 @@
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/JoinOperator.h>
 #include <Interpreters/PreparedSets.h>
 
@@ -57,6 +58,7 @@
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/NegativeOffsetStep.h>
 #include <Processors/QueryPlan/OffsetStep.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 
@@ -147,9 +149,9 @@ bool aggregateCountsZeroOverEmptyInput(const FunctionNode & function_node)
     return false;
 }
 
-/// Adds `node` to `dag` with every aggregate replaced by its empty-input value 0. Null if `node` holds anything
-/// but counting aggregates, constants and ordinary functions of them.
-const ActionsDAG::Node * addEmptyGroupValue(ActionsDAG & dag, const QueryTreeNodePtr & node)
+/// Adds `node` to `dag` with every aggregate replaced by an input holding its empty-input value 0, appended to
+/// `aggregate_values`. Null if `node` holds anything but counting aggregates, constants and ordinary functions of them.
+const ActionsDAG::Node * addEmptyGroupValue(ActionsDAG & dag, const QueryTreeNodePtr & node, ColumnsWithTypeAndName & aggregate_values)
 {
     if (const auto * constant_node = node->as<ConstantNode>())
         return &dag.addColumn(constant_node->getColumn(), constant_node->getResultType(), constant_node->getValueStringRepresentation());
@@ -164,7 +166,9 @@ const ActionsDAG::Node * addEmptyGroupValue(ActionsDAG & dag, const QueryTreeNod
             return nullptr;
 
         auto result_type = function_node->getResultType();
-        return &dag.addColumn(result_type->createColumnConst(1, result_type->getDefault()), result_type, "0");
+        auto name = "__empty_group_aggregate_" + std::to_string(aggregate_values.size());
+        aggregate_values.emplace_back(result_type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst(), result_type, name);
+        return &dag.addInput(std::move(name), std::move(result_type));
     }
 
     /// `IN` needs a prepared set.
@@ -174,7 +178,7 @@ const ActionsDAG::Node * addEmptyGroupValue(ActionsDAG & dag, const QueryTreeNod
     ActionsDAG::NodeRawConstPtrs children;
     for (const auto & argument : function_node->getArguments().getNodes())
     {
-        const auto * child = addEmptyGroupValue(dag, argument);
+        const auto * child = addEmptyGroupValue(dag, argument, aggregate_values);
         if (!child)
             return nullptr;
         children.push_back(child);
@@ -208,15 +212,25 @@ std::optional<Field> tryGetScalarSubqueryEmptyGroupValue(const QueryTreeNodePtr 
         || projection_nodes.front()->getResultType()->isNullable() || !query_node->getResultType()->isNullable())
         return {};
 
-    /// A projection that throws over an empty group (e.g. `intDiv(1, count())`) keeps the NULL: a query
-    /// without empty groups must not fail.
+    /// Evaluated once over one row, so short-circuit functions skip the branches the empty group does not take.
+    /// A projection sensitive to the evaluation count (`rand`, `sleep`) or that throws over an empty group
+    /// (`intDiv(1, count())`) keeps the NULL: a query without empty groups must not fail.
     try
     {
         ActionsDAG dag;
-        const auto * value = addEmptyGroupValue(dag, projection_nodes.front());
-        if (value && value->column && isColumnConst(*value->column))
-            return (*value->column)[0];
-        return {};
+        ColumnsWithTypeAndName aggregate_values;
+        const auto * value = addEmptyGroupValue(dag, projection_nodes.front(), aggregate_values);
+        if (!value || QueryPlanOptimizations::isSensitiveToEvaluationCount(dag))
+            return {};
+
+        auto value_name = value->result_name;
+        dag.getOutputs() = {value};
+        ExpressionActions actions(std::move(dag), ExpressionActionsSettings(query_node->getContext()));
+
+        Block block(std::move(aggregate_values));
+        size_t num_rows = 1;
+        actions.execute(block, num_rows);
+        return (*block.getByName(value_name).column)[0];
     }
     catch (const Exception &)
     {

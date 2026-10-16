@@ -64,6 +64,24 @@ SELECT o.k,
 FROM values('k UInt8, flag UInt8', (1, 0), (2, 1)) AS o
 ORDER BY o.k;
 
+-- The expression is evaluated like a one-row query: a short-circuited branch that would throw is skipped, and a
+-- non-constant result such as materialize(count()) is restored too.
+SELECT o.k,
+    (SELECT if(count() = 0, 100, intDiv(100, count())) FROM values('k UInt8', (2)) AS i WHERE i.k = o.k) AS c_if,
+    (SELECT multiIf(count() = 0, 100, intDiv(100, count())) FROM values('k UInt8', (2)) AS i WHERE i.k = o.k) AS c_multi_if,
+    (SELECT materialize(count()) FROM values('k UInt8', (2)) AS i WHERE i.k = o.k) AS c_materialize
+FROM values('k UInt8', (1), (2)) AS o
+ORDER BY o.k;
+
+-- A non-deterministic or side-effecting function cannot be evaluated once for every empty group, so the restore
+-- is not applied.
+SELECT count()
+FROM (EXPLAIN actions = 1 SELECT o.k,
+    (SELECT count() + rand() FROM values('k UInt8', (1), (2)) AS i WHERE i.k = o.k),
+    (SELECT count() + sleep(0) FROM values('k UInt8', (1), (2)) AS i WHERE i.k = o.k)
+    FROM values('k UInt8', (1), (2)) AS o)
+WHERE explain ILIKE '%ifNull(%rand()%' OR explain ILIKE '%ifNull(%sleep(%';
+
 -- An expression that would throw over an empty group must not fail a query without empty groups.
 SELECT o.k, (SELECT intDiv(100, count()) FROM values('k UInt8', (1), (2)) AS i WHERE i.k = o.k) AS d
 FROM values('k UInt8', (1), (2)) AS o
