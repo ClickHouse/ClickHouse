@@ -14,7 +14,6 @@
 #include <Common/tests/gtest_global_context.h>
 #include <Interpreters/Context.h>
 #include <Parsers/SelectUnionMode.h>
-#include <Processors/QueryPlan/QueryPlan.h>
 
 using namespace DB;
 
@@ -190,43 +189,5 @@ TEST(QueryNodeQueryContextLifetime, UnionCloneCarriesBranchOwners)
     }
 
     cloned_union_tree.reset();
-    EXPECT_TRUE(canonical_weak.expired());
-}
-
-TEST(QueryNodeQueryContextLifetime, QueryPlanResourceMoveRetainsThenReleasesRoot)
-{
-    std::weak_ptr<Context> canonical_weak;
-
-    {
-        QueryPlan destination_plan;
-        {
-            QueryPlan source_plan;
-            auto canonical = makeCanonicalQueryContext();
-            canonical_weak = canonical;
-
-            auto union_node = std::make_shared<UnionNode>(
-                Context::createCopy(canonical), SelectUnionMode::UNION_ALL);
-            union_node->setIsCTE(true);
-            union_node->setCTEName("query_context_plan_lifetime_cte");
-            union_node->getQueries().getNodes().push_back(
-                std::make_shared<QueryNode>(Context::createCopy(canonical)));
-            union_node->getQueries().getNodes().push_back(
-                std::make_shared<QueryNode>(Context::createCopy(canonical)));
-
-            source_plan.addInterpreterContext(canonical);
-            destination_plan = std::move(source_plan);
-            canonical.reset();
-
-            /// The UNION branches and moved plan resource both keep the root available.
-            ASSERT_FALSE(canonical_weak.expired());
-            union_node.reset();
-
-            /// After releasing the tree, only the destination plan resource keeps it alive.
-            EXPECT_FALSE(canonical_weak.expired());
-        }
-
-        EXPECT_FALSE(canonical_weak.expired());
-    }
-
     EXPECT_TRUE(canonical_weak.expired());
 }

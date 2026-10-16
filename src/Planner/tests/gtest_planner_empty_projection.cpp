@@ -1,5 +1,9 @@
 #include <gtest/gtest.h>
 
+#include <memory>
+#include <optional>
+#include <utility>
+
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
@@ -14,9 +18,15 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ExpressionActionsSettings.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/ParserSelectQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <QueryPipeline/QueryPipeline.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MemorySettings.h>
 #include <Storages/StorageMemory.h>
 
@@ -166,4 +176,73 @@ TEST(PlannerJoinTreeEmptyProjectionGuard, SubqueryWithEmptyProjectionThrowsUnsup
             << "Got error code " << e.code() << " (" << ErrorCodes::getName(e.code()) << ")"
             << "; message: " << e.message();
     }
+}
+
+/// A real Planner-created plan must keep its canonical query context alive after the
+/// interpreter, query tree, and callers release their references, then transfer that
+/// ownership to the pipeline until pipeline teardown.
+TEST(PlannerQueryContextLifetime, PlannerPlanAndPipelineRetainCanonicalRoot)
+{
+    std::weak_ptr<Context> canonical_weak;
+    std::optional<QueryPlan> plan;
+
+    {
+        const auto & state = State::instance();
+        auto canonical = Context::createCopy(state.context);
+        canonical->makeQueryContext();
+        canonical_weak = canonical;
+
+        auto planning_context = Context::createCopy(canonical);
+        ASSERT_NE(planning_context.get(), canonical.get());
+        ASSERT_EQ(planning_context->getQueryContext().get(), canonical.get());
+
+        {
+            ParserSelectQuery parser;
+            ASTPtr ast = parseQuery(parser, "SELECT 1 FROM planner_empty_projection_test_db.t", 1000, 1000, 1000000);
+            auto query_tree = buildQueryTree(ast, planning_context);
+            QueryTreePassManager pass_manager(planning_context);
+            addQueryTreePasses(pass_manager);
+            pass_manager.run(query_tree);
+
+            auto * query_node = query_tree->as<QueryNode>();
+            ASSERT_NE(query_node, nullptr);
+            ASSERT_NE(query_node->getContext().get(), canonical.get());
+            ASSERT_EQ(query_node->getContext()->getQueryContext().get(), canonical.get());
+
+            SelectQueryOptions options;
+            InterpreterSelectQueryAnalyzer interpreter(query_tree, planning_context, options);
+            plan.emplace(std::move(interpreter).extractQueryPlan());
+        }
+
+        planning_context.reset();
+        canonical.reset();
+    }
+
+    /// The plan is now the only owner outside the fixture's unrelated global context.
+    ASSERT_FALSE(canonical_weak.expired());
+
+    {
+        QueryPipeline pipeline;
+        {
+            const auto & state = State::instance();
+            const auto & settings = state.context->getSettingsRef();
+            QueryPlanOptimizationSettings optimization_settings(
+                settings,
+                /* max_entries_for_hash_table_stats_ */ 0,
+                state.context->getInitialQueryId(),
+                ExpressionActionsSettings(settings, CompileExpressions::yes),
+                state.context->getPreparedSetsCache(),
+                /* is_parallel_replicas_initiator_with_projection_support_ */ false);
+            BuildQueryPipelineSettings build_pipeline_settings(state.context);
+            auto builder = plan->buildQueryPipeline(optimization_settings, build_pipeline_settings);
+            ASSERT_NE(builder, nullptr);
+            pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
+        }
+
+        plan.reset();
+        /// After plan and temporary settings teardown, only the pipeline should retain the root.
+        EXPECT_FALSE(canonical_weak.expired());
+    }
+
+    EXPECT_TRUE(canonical_weak.expired());
 }
