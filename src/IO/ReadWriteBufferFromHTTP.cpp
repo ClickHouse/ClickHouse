@@ -316,7 +316,7 @@ ReadWriteBufferFromHTTP::CallResult ReadWriteBufferFromHTTP::callImpl(
     /// buffer needs none of its own.
     auto response_body = receiveHTTPResponse(session, response, use_external_buffer ? 0 : buffer_size);
 
-    assertResponseIsOk(maskedURI(current_uri), response, *response_body, allow_redirects, requestCredentialSecrets(request));
+    assertResponseIsOk(current_uri.toString(), response, *response_body, allow_redirects, requestCredentialSecrets(request));
 
     return response_body;
 }

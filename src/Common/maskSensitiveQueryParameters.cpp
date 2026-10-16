@@ -4,6 +4,7 @@
 #include <Common/StringUtils.h>
 #include <Common/Hex.h>
 
+#include <algorithm>
 #include <array>
 #include <string>
 #include <string_view>
@@ -37,13 +38,13 @@ char asciiToLower(char c)
     return (c >= 'A' && c <= 'Z') ? static_cast<char>(c | 0x20) : c;
 }
 
-/// Decode a query-parameter NAME the same way the server interprets it before authentication:
+/// Decode a query-string component (a parameter name or value) the same way the server interprets it:
 /// HTMLForm::readQuery turns '+' into a space and percent-decodes ('%XX') the name. We must
 /// classify on this decoded form, otherwise an encoded name like "pass%77ord" (which the server
 /// accepts as "password") would slip past the match and leak its value. This is tolerant by
 /// design: a malformed escape is copied through verbatim (never throws) since this only feeds
 /// the sensitivity decision, never the logged output.
-std::string decodeParameterName(std::string_view name)
+std::string decodeQueryComponent(std::string_view name)
 {
     std::string decoded;
     decoded.reserve(name.size());
@@ -69,7 +70,7 @@ std::string decodeParameterName(std::string_view name)
 
 bool isSensitiveParameterName(std::string_view raw_name)
 {
-    const std::string decoded = decodeParameterName(raw_name);
+    const std::string decoded = decodeQueryComponent(raw_name);
 
     std::string lower;
     lower.reserve(decoded.size());
@@ -140,6 +141,56 @@ std::string maskSensitiveQueryParametersInURI(const std::string & uri)
     }
 
     return result;
+}
+
+std::vector<std::string> presignedURLCredentials(std::string_view uri)
+{
+    static constexpr std::array<std::string_view, 4> credential_names{
+        "X-Amz-Signature", "X-Amz-Security-Token", "Signature", "AWSAccessKeyId"};
+
+    std::vector<std::string> credentials;
+    const size_t question = uri.find('?');
+    if (question == std::string_view::npos)
+        return credentials;
+
+    std::string_view query = uri.substr(question + 1);
+    query = query.substr(0, query.find('#'));
+
+    auto add = [&](std::string credential)
+    {
+        if (!credential.empty())
+            credentials.push_back(std::move(credential));
+    };
+
+    size_t pos = 0;
+    while (pos <= query.size())
+    {
+        const size_t amp = std::min(query.find('&', pos), query.size());
+        const std::string_view pair = query.substr(pos, amp - pos);
+        pos = amp + 1;
+
+        const size_t eq = pair.find('=');
+        if (eq == std::string_view::npos)
+            continue;
+        const std::string_view name = pair.substr(0, eq);
+        const std::string_view value = pair.substr(eq + 1);
+
+        if (std::ranges::find(credential_names, name) != credential_names.end())
+        {
+            /// An echo can reproduce the value as sent or percent-decoded.
+            std::string decoded = decodeQueryComponent(value);
+            if (decoded != value)
+                add(std::string(value));
+            add(std::move(decoded));
+        }
+        else if (name == "X-Amz-Credential")
+        {
+            /// `<access key id>/<scope>`: the scope is not a secret, and the key id is echoed on its own.
+            std::string decoded = decodeQueryComponent(value);
+            add(decoded.substr(0, decoded.find('/')));
+        }
+    }
+    return credentials;
 }
 
 }

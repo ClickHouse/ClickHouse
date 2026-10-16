@@ -3,6 +3,7 @@
 #include <IO/ReadHelpers.h>
 #include <Server/HTTP/HTTPServerResponse.h>
 #include <Common/Exception.h>
+#include <Common/maskSensitiveQueryParameters.h>
 #include <Common/maskURIPassword.h>
 
 #include <boost/algorithm/string/replace.hpp>
@@ -157,8 +158,14 @@ Exception HTTPException::makeExceptionMessage(
     /// The response body is remote content that can reflect the request's own credentials back, which
     /// a server may echo verbatim (e.g. an auth error naming the user). Scrub those exact credential
     /// strings, keeping the rest of the body - a useful diagnostic that does not carry a credential.
+    /// `uri` arrives unmasked, so that the credentials it carries are scrubbed here too. Longest first: a secret
+    /// contained in a longer one must not break the longer one's match.
+    Strings secrets = presignedURLCredentials(uri);
+    secrets.insert(secrets.end(), body_secrets.begin(), body_secrets.end());
+    std::ranges::stable_sort(secrets, [](const String & a, const String & b) { return a.size() > b.size(); });
+
     std::string masked_body = body;
-    for (const auto & secret : body_secrets)
+    for (const auto & secret : secrets)
         if (!secret.empty())
             boost::replace_all(masked_body, secret, "[HIDDEN]");
 
