@@ -78,7 +78,7 @@ public:
 
     ISpillable * getSpillable() override { return &spillable; }
     /// While collecting: the whole right side, spilled by switching to the grace join.
-    /// After the switch: the grace join and the blocks of unconverted workers. Nothing once the build ended in memory.
+    /// After the switch: the grace join and the blocks of unconverted fill lanes. Nothing once the build ended in memory.
     ProcessorMemoryStats getMemoryStats() const;
     size_t spill(size_t at_least_bytes);
 
