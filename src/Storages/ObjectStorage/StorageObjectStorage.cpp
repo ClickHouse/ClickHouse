@@ -1003,12 +1003,11 @@ void StorageObjectStorage::truncate(
 
 void StorageObjectStorage::drop()
 {
-    dropTable(configuration, object_storage, catalog, storage_id);
+    dropTable(configuration, catalog, storage_id);
 }
 
 void StorageObjectStorage::dropTable(
     const StorageObjectStorageConfigurationPtr & configuration,
-    const ObjectStoragePtr & object_storage,
     const std::shared_ptr<DataLake::ICatalog> & catalog,
     const StorageID & storage_id)
 {
@@ -1016,19 +1015,10 @@ void StorageObjectStorage::dropTable(
     /// A table of a `DataLakeCatalog` database is dropped inside the query, so the query settings apply.
     auto query_context = CurrentThread::tryGetQueryContext();
     auto drop_context = query_context ? query_context : Context::getGlobalContextInstance();
-    const bool iceberg_delete_data_on_drop = drop_context->getSettingsRef()[Setting::iceberg_delete_data_on_drop];
-
-    if (iceberg_delete_data_on_drop && configuration->isDataLakeConfiguration())
-    {
-        /// The data deletion needs the table metadata, which an attached or catalog table loads lazily.
-        /// This runs before the catalog call, so a failed load leaves the table untouched.
-        configuration->lazyInitializeIfNeeded(object_storage, drop_context);
-    }
-
     if (catalog)
     {
         const auto [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
-        catalog->dropTable(namespace_name, table_name, iceberg_delete_data_on_drop);
+        catalog->dropTable(namespace_name, table_name, drop_context->getSettingsRef()[Setting::iceberg_delete_data_on_drop]);
     }
     configuration->drop(drop_context);
 }

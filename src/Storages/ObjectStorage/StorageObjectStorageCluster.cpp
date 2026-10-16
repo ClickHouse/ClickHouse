@@ -299,7 +299,7 @@ Pipe StorageObjectStorageCluster::executeCommand(const String & command_name, co
 
 void StorageObjectStorageCluster::drop()
 {
-    StorageObjectStorage::dropTable(configuration, object_storage, catalog, getStorageID());
+    StorageObjectStorage::dropTable(configuration, catalog, getStorageID());
 }
 
 std::optional<UInt64> StorageObjectStorageCluster::totalRows(ContextPtr query_context) const

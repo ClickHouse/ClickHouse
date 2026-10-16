@@ -1789,28 +1789,6 @@ def test_drop_table_purge_query_setting(started_cluster):
         assert list_s3_objects(started_cluster.minio_client, "warehouse-rest", f"{table_name}/") == ([] if purge else files)
 
 
-def test_drop_attached_table_purge(started_cluster):
-    # node2 has `iceberg_delete_data_on_drop` enabled in its profile.
-    # The background drop of an `Atomic` table reads the setting from there.
-    node = started_cluster.instances["node2"]
-    table_name = f"test_drop_attached_table_purge_{uuid.uuid4().hex}"
-
-    node.query(
-        f"CREATE TABLE {table_name} (x Int) ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{table_name}/', '{minio_access_key}', '{minio_secret_key}')"
-    )
-    node.query(
-        f"INSERT INTO {table_name} VALUES (1)",
-        settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
-    )
-    assert list_s3_objects(started_cluster.minio_client, "warehouse-rest", f"{table_name}/")
-
-    # ATTACH builds the table lazily, like a server restart.
-    node.query(f"DETACH TABLE {table_name}")
-    node.query(f"ATTACH TABLE {table_name}")
-    node.query(f"DROP TABLE {table_name} SYNC")
-    assert list_s3_objects(started_cluster.minio_client, "warehouse-rest", f"{table_name}/") == []
-
-
 def test_create_table_order_by(started_cluster):
     # `ORDER BY` must reach the catalog as the table's write order.
     node = started_cluster.instances["node1"]

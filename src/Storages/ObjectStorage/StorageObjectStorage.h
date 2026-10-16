@@ -176,7 +176,6 @@ public:
     /// The body of `drop`, shared with `StorageObjectStorageCluster`.
     static void dropTable(
         const StorageObjectStorageConfigurationPtr & configuration,
-        const ObjectStoragePtr & object_storage,
         const std::shared_ptr<DataLake::ICatalog> & catalog,
         const StorageID & storage_id);
 
