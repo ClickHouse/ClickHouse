@@ -369,8 +369,40 @@ bool writeFile(const std::string & path, const std::string & content)
     f.close();
     if (f)
         return true;
-    std::cerr << "docker-init: error: failed to write " << path << ": " << strerror(errno) << "\n"; // NOLINT(concurrency-mt-unsafe)
+    const int error = errno;
+    std::cerr << "docker-init: error: failed to write " << path << ": " << strerror(error) << "\n"; // NOLINT(concurrency-mt-unsafe)
     return false;
+}
+
+/// Reads the first line of the file, without the newline.
+/// Returns 0, or the errno of the failed open or read.
+int readFirstLine(const std::string & path, std::string & line)
+{
+    const int fd = open(path.c_str(), O_RDONLY | O_CLOEXEC);
+    if (fd < 0)
+        return errno;
+
+    std::string content;
+    char buf[4096];
+    int error = 0;
+    while (!content.contains('\n'))
+    {
+        const ssize_t n = read(fd, buf, sizeof(buf));
+        if (n > 0)
+            content.append(buf, static_cast<size_t>(n));
+        else if (n == 0)
+            break;
+        else if (errno != EINTR)
+        {
+            error = errno;
+            break;
+        }
+    }
+    (void)close(fd);
+
+    if (error == 0)
+        line = content.substr(0, content.find('\n'));
+    return error;
 }
 
 /// Write the user management XML to `/etc/clickhouse-server/users.d/default-user.xml`.
@@ -1046,16 +1078,12 @@ int mainEntryClickHouseDockerInit(int argc, char ** argv)
     std::string password_file = getEnv("CLICKHOUSE_PASSWORD_FILE");
     if (!password_file.empty())
     {
-        std::ifstream pf(password_file);
-        const int open_errno = errno;
-        if (pf.is_open())
-            std::getline(pf, clickhouse_password);
-        else
+        if (const int error = readFirstLine(password_file, clickhouse_password))
         {
             /// A missing file is ignored like in entrypoint.sh; an unreadable one must not leave the user without a password.
-            const bool fatal = open_errno != ENOENT && open_errno != ENOTDIR;
+            const bool fatal = error != ENOENT && error != ENOTDIR;
             std::cerr << "docker-init: " << (fatal ? "error" : "warning") << ": cannot read CLICKHOUSE_PASSWORD_FILE '"
-                      << password_file << "': " << strerror(open_errno) << "\n"; // NOLINT(concurrency-mt-unsafe)
+                      << password_file << "': " << strerror(error) << "\n"; // NOLINT(concurrency-mt-unsafe)
             if (fatal)
                 return 1;
         }

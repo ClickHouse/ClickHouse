@@ -35,8 +35,12 @@ expectStartFailure 'failed to write /etc/clickhouse-server/users.d/default-user.
   --read-only --tmpfs /tmp -e CLICKHOUSE_PASSWORD=env_password
 expectStartFailure 'failed to write /etc/clickhouse-server/users.d/default-user.xml' \
   --read-only --tmpfs /tmp
-expectStartFailure 'cannot read CLICKHOUSE_PASSWORD_FILE' \
+expectStartFailure 'failed to write /etc/clickhouse-server/users.d/default-user.xml' \
+  --device /dev/full:/etc/clickhouse-server/users.d/default-user.xml -e CLICKHOUSE_PASSWORD=env_password
+expectStartFailure 'error: cannot read CLICKHOUSE_PASSWORD_FILE' \
   -e CLICKHOUSE_USER=app -e CLICKHOUSE_PASSWORD_FILE=/run/test-secrets/unreadable
+expectStartFailure 'error: cannot read CLICKHOUSE_PASSWORD_FILE' \
+  -e CLICKHOUSE_USER=app -e CLICKHOUSE_PASSWORD_FILE=/run/test-secrets
 
 # Control: the same image on a read-only root filesystem starts once users.d is writable and applies the file's password.
 cid="$(
