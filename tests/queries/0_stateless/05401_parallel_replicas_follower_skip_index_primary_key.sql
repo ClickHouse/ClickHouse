@@ -26,19 +26,19 @@ FROM numbers(64000);
 SELECT sum(v), sum(k) FROM t_pr_follower_skip_idx WHERE (k BETWEEN 30 AND 39 OR p = 100) AND v = 42
 SETTINGS enable_parallel_replicas = 0, log_comment = '05401_single';
 
-SELECT sum(v), sum(k) FROM t_pr_follower_skip_idx WHERE sleepEachRow(0.001) = 0 AND (k BETWEEN 30 AND 39 OR p = 100) AND v = 42
+-- No local replica: every replica reads as a follower, so followers always read the data (a local replica can read
+-- everything and cancel the followers before they start).
+SELECT sum(v), sum(k) FROM t_pr_follower_skip_idx WHERE (k BETWEEN 30 AND 39 OR p = 100) AND v = 42
 SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
     parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_min_number_of_rows_per_replica = 0,
     parallel_replicas_local_plan = 1, parallel_replicas_index_analysis_only_on_coordinator = 1,
-    parallel_replicas_prefer_local_replica = 1, parallel_replicas_plan_based = 0, max_threads = 2,
-    function_sleep_max_microseconds_per_block = 0, log_comment = '05401_query_based';
+    parallel_replicas_prefer_local_replica = 0, parallel_replicas_plan_based = 0, max_threads = 2, log_comment = '05401_query_based';
 
-SELECT sum(v), sum(k) FROM t_pr_follower_skip_idx WHERE sleepEachRow(0.001) = 0 AND (k BETWEEN 30 AND 39 OR p = 100) AND v = 42
+SELECT sum(v), sum(k) FROM t_pr_follower_skip_idx WHERE (k BETWEEN 30 AND 39 OR p = 100) AND v = 42
 SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
     parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_min_number_of_rows_per_replica = 0,
     parallel_replicas_local_plan = 1, parallel_replicas_index_analysis_only_on_coordinator = 1,
-    parallel_replicas_prefer_local_replica = 1, parallel_replicas_plan_based = 1, max_threads = 2,
-    function_sleep_max_microseconds_per_block = 0, log_comment = '05401_plan_based';
+    parallel_replicas_prefer_local_replica = 0, parallel_replicas_plan_based = 1, max_threads = 2, log_comment = '05401_plan_based';
 
 SYSTEM FLUSH LOGS query_log;
 
