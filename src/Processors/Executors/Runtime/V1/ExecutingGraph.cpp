@@ -478,6 +478,7 @@ void ExecutingGraph::accountFinishedProcessorInGroup(const ProcessorPtr & proces
 void ExecutingGraph::initializeExecution(Queue & queue, Queue & async_queue)
 {
     StackWithMemoryTracking<Node *> stack;
+    UpdateNodeBuffers buffers;
 
     /// Add childless processors to stack.
     for (auto & node : nodes)
@@ -495,16 +496,40 @@ void ExecutingGraph::initializeExecution(Queue & queue, Queue & async_queue)
         Node * node = stack.top();
         stack.pop();
 
-        updateNode(*node->processor(), queue, async_queue);
+        updateNode(*node->processor(), queue, async_queue, buffers);
     }
 }
 
-ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(IProcessor & initial, Queue & queue, Queue & async_queue)
+namespace
+{
+
+template <typename Container>
+void resetBuffer(Container & container)
+{
+    if (container.capacity() > ExecutingGraph::UpdateNodeBuffers::max_kept_capacity)
+        Container().swap(container);
+    else
+        container.clear();
+}
+
+}
+
+void ExecutingGraph::UpdateNodeBuffers::reset()
+{
+    resetBuffer(updated_edges);
+    resetBuffer(updated_processors);
+    resetBuffer(pending_expansion);
+}
+
+ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(IProcessor & initial, Queue & queue, Queue & async_queue, UpdateNodeBuffers & buffers)
 {
     Processors delayed_destruction;
-    DevectorWithMemoryTracking<Edge *> updated_edges;
-    DevectorWithMemoryTracking<Node *> updated_processors;
-    VectorWithMemoryTracking<Node *> pending_expansion;
+    auto & updated_edges = buffers.updated_edges;
+    auto & updated_processors = buffers.updated_processors;
+    auto & pending_expansion = buffers.pending_expansion;
+
+    /// The buffers may be left non-empty by a previous call that exited early or threw.
+    buffers.reset();
 
     std::shared_lock read_lock(nodes_mutex);
 
