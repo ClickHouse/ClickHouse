@@ -646,7 +646,7 @@ protected:
     bool is_view_inner_query = false;
     /// True in the analysis of an interpreter that swaps the view source in for the source table after the passes.
     bool view_source_substituted = false;
-    /// True where IN and scalar subqueries read the view source: in such an analysis and in its replan for a `Merge` child.
+    /// True where IN and scalar subqueries read the view source: in such an analysis and in its replan for a `Merge` child or a `Buffer`.
     bool view_source_in_subqueries = false;
     /// True when positional arguments in the outer query have already been resolved by the
     /// initiator node. Set by distributed/parallel-replicas local plan builders to prevent

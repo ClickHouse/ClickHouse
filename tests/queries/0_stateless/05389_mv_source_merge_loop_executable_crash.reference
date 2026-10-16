@@ -1,3 +1,5 @@
+buffer_not_in	3	10
+buffer_not_in_table	3	10
 loop	3	109
 merge	3	1045
 merge_in	3	0

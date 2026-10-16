@@ -16,7 +16,10 @@ DROP TABLE IF EXISTS mv_merge;
 DROP TABLE IF EXISTS mv_merge_in;
 DROP TABLE IF EXISTS mv_merge_not_in_table;
 DROP TABLE IF EXISTS mv_loop;
+DROP TABLE IF EXISTS mv_buffer_not_in;
+DROP TABLE IF EXISTS mv_buffer_not_in_table;
 DROP TABLE IF EXISTS dst;
+DROP TABLE IF EXISTS buf;
 DROP TABLE IF EXISTS dist;
 DROP TABLE IF EXISTS dist_target;
 DROP TABLE IF EXISTS src;
@@ -26,6 +29,8 @@ INSERT INTO src SELECT number + 100 FROM numbers(10);
 
 CREATE TABLE dist_target (x UInt64) ENGINE = MergeTree ORDER BY x;
 CREATE TABLE dist AS dist_target ENGINE = Distributed(test_shard_localhost, ${CLICKHOUSE_DATABASE}, dist_target);
+CREATE TABLE buf AS dist_target ENGINE = Buffer(${CLICKHOUSE_DATABASE}, dist, 1, 100000, 100000, 100000, 100000, 100000000, 100000000);
+INSERT INTO buf SELECT number + 100 FROM numbers(10);
 
 CREATE TABLE dst (name String, block_rows UInt64, value UInt64) ENGINE = MergeTree ORDER BY name;
 
@@ -49,6 +54,17 @@ CREATE MATERIALIZED VIEW mv_merge_not_in_table TO dst AS
         (SELECT count() FROM merge(${CLICKHOUSE_DATABASE}, '^(src|dist)\$') WHERE x >= 100 AND x NOT IN src) AS value
     FROM src;
 
+-- So does NOT IN over a 'Buffer', whose blocks are planned again for 'dist'.
+CREATE MATERIALIZED VIEW mv_buffer_not_in TO dst AS
+    SELECT 'buffer_not_in' AS name, count() AS block_rows,
+        (SELECT count() FROM buf WHERE x NOT IN (SELECT x FROM src)) AS value
+    FROM src;
+
+CREATE MATERIALIZED VIEW mv_buffer_not_in_table TO dst AS
+    SELECT 'buffer_not_in_table' AS name, count() AS block_rows,
+        (SELECT count() FROM buf WHERE x NOT IN src) AS value
+    FROM src;
+
 CREATE MATERIALIZED VIEW mv_loop TO dst AS
     SELECT 'loop' AS name, count() AS block_rows,
         (SELECT max(x) FROM (SELECT x FROM loop(${CLICKHOUSE_DATABASE}, src) WHERE x > 0 LIMIT 25)) AS value
@@ -62,7 +78,10 @@ DROP TABLE mv_merge;
 DROP TABLE mv_merge_in;
 DROP TABLE mv_merge_not_in_table;
 DROP TABLE mv_loop;
+DROP TABLE mv_buffer_not_in;
+DROP TABLE mv_buffer_not_in_table;
 DROP TABLE dst;
+DROP TABLE buf;
 DROP TABLE dist;
 DROP TABLE dist_target;
 DROP TABLE src;
