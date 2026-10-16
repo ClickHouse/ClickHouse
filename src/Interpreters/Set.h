@@ -316,26 +316,35 @@ private:
     /// key count (see `estimateDiskSetMemory`).
     size_t estimateMemoryOfDiskSet() const;
 
-    /// Moves the keys of the table to a `DiskSetBuilder`, which takes later insertions, and frees the table.
-    void spill(std::string_view reason, bool force = false);
+    /// Spills the set while it is built: moves the keys of the table to a `DiskSetBuilder`, which takes
+    /// later insertions, and frees the table. `requested` tells whether the scheduler requested the spill
+    /// (see `getBuilderSpillThreshold`). Call it under the exclusive `rwlock`.
+    void spillWhileBuilding(std::string_view reason, bool requested = false);
 
-    /// Writes the keys of the table to a `DiskSet` while lookups keep reading the table, then replaces the
-    /// table with the disk set under the exclusive lock. Only the first caller spills, and the others return.
-    /// Call it without holding `rwlock`.
-    size_t spillAfterBuild(std::string_view reason, bool force = false) const;
+    /// Spills the set while it is used: writes the keys of the table to a `DiskSet` while lookups keep
+    /// reading the table, then replaces the table with the disk set under the exclusive lock. Only the first
+    /// caller spills, and the others return 0. Returns the bytes of the table that the spill frees.
+    /// `requested` is as for `spillWhileBuilding`. Call it without holding `rwlock`.
+    size_t spillAfterBuild(std::string_view reason, bool requested = false) const;
 
     /// Logs that the set switches to disk, at which `stage` ("while it is built" or "while it is used") and why.
     void logSpill(std::string_view stage, std::string_view reason) const;
 
-    /// Returns the memory that spilling takes while the table still exists: converting each batch of its keys
-    /// to disk keys, and the builder that takes them until it writes its first run. A forced spill writes runs
-    /// of the default size (see `createDiskSetBuilderWithKeys`).
-    size_t estimateMemoryToSpill(bool force = false) const;
+    /// Returns the spill threshold of the builder of a spill. A spill that the scheduler requested must free
+    /// memory now, so its builder gets 0 and writes its runs to disk whatever the query memory. Other spills
+    /// pass the threshold of the set, under which the builder keeps its runs in memory.
+    size_t getBuilderSpillThreshold(bool requested) const;
+
+    /// Returns the memory that spilling takes while the table still exists: converting each batch of its
+    /// keys to disk keys, and the builder that takes them until it writes its first run. The builder depends
+    /// on whether the scheduler requested the spill (see `getBuilderSpillThreshold`).
+    size_t estimateMemoryToSpill(bool requested = false) const;
 
     /// Creates a `DiskSetBuilder` with the spill settings of the set and adds the keys of the table to it.
+    /// The threshold of the builder depends on `requested` (see `getBuilderSpillThreshold`).
     template <typename Method>
     std::unique_ptr<DiskSetBuilder> createDiskSetBuilderWithKeys(
-        const Method & method, const SizeLimits & builder_limits, bool force = false) const;
+        const Method & method, const SizeLimits & builder_limits, bool requested) const;
 
     void executeDiskSet(const ColumnRawPtrs & key_columns, ColumnUInt8::Container & vec_res, bool negative, ConstNullMapPtr null_map) const;
 };

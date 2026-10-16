@@ -100,7 +100,7 @@ ProcessorMemoryStats Set::getMemoryStatsUnlocked() const
 
     ProcessorMemoryStats stats;
     stats.spillable_memory_bytes = data->getTotalByteCount();
-    stats.need_reserved_memory_bytes = estimateMemoryToSpill(/*force=*/ true);
+    stats.need_reserved_memory_bytes = estimateMemoryToSpill(/*requested=*/ true);
 
     /// A built set writes its disk set while lookups keep reading the table, so the directory and the Bloom
     /// filters of the disk set take memory besides the table until the disk set replaces it. A set that
@@ -126,10 +126,10 @@ size_t Set::spill(size_t /*at_least_bytes*/)
     if (isCreated())
     {
         lock.unlock();
-        return spillAfterBuild("memory scheduler request", /*force=*/ true);
+        return spillAfterBuild("memory scheduler request", /*requested=*/ true);
     }
 
-    spill("memory scheduler request", /*force=*/ true);
+    spillWhileBuilding("memory scheduler request", /*requested=*/ true);
     return bytes;
 }
 
@@ -173,7 +173,7 @@ bool Set::isSpillNeededBeforeInsert(const ColumnRawPtrs & key_columns, size_t ro
     return insert_memory > available_memory - spill_memory;
 }
 
-void Set::spill(std::string_view reason, bool force)
+void Set::spillWhileBuilding(std::string_view reason, bool requested)
 {
     logSpill("while it is built", reason);
 
@@ -186,7 +186,7 @@ void Set::spill(std::string_view reason, bool force)
     data->callOnMethod([&]<typename Method>(const Method & method)
     {
         compute_disk_set_keys = computeDiskSetKeys<Method>;
-        disk_set_builder = createDiskSetBuilderWithKeys(method, limits, force);
+        disk_set_builder = createDiskSetBuilderWithKeys(method, limits, requested);
     });
 
     data.reset();
@@ -214,7 +214,7 @@ size_t Set::estimateMemoryOfDiskSet() const
         { return estimateDiskSetMemory<DiskSetKey<Method>>(data->getTotalRowCount(), spill_settings.max_bytes_for_bloom_filter); });
 }
 
-size_t Set::spillAfterBuild(std::string_view reason, bool force) const
+size_t Set::spillAfterBuild(std::string_view reason, bool requested) const
 {
     if (spill_after_build_started.exchange(true))
         return 0;
@@ -235,7 +235,7 @@ size_t Set::spillAfterBuild(std::string_view reason, bool force) const
         data->callOnMethod([&]<typename Method>(const Method & method)
         {
             /// The keys are final, so the builder applies no size limits and keeps all of them.
-            new_disk_set = createDiskSetBuilderWithKeys(method, SizeLimits{}, force)->finish();
+            new_disk_set = createDiskSetBuilderWithKeys(method, SizeLimits{}, requested)->finish();
             new_compute_disk_set_keys = computeDiskSetKeys<Method>;
         });
     }
@@ -267,7 +267,12 @@ void Set::logSpill(std::string_view stage, std::string_view reason) const
         formatReadableSizeWithBinarySuffix(spill_settings.max_bytes_before_external_set));
 }
 
-size_t Set::estimateMemoryToSpill(bool force) const
+size_t Set::getBuilderSpillThreshold(bool requested) const
+{
+    return requested ? 0 : spill_settings.max_bytes_before_external_set;
+}
+
+size_t Set::estimateMemoryToSpill(bool requested) const
 {
     const size_t buffer_size = spill_settings.tmp_data->getSettings().buffer_size;
     return data->callOnMethod(
@@ -275,14 +280,14 @@ size_t Set::estimateMemoryToSpill(bool force) const
         {
             return estimateMemoryToComputeDiskSetKeysOfTable<Method>(spill_settings.max_block_size)
                 + DiskSetBuilder::estimateMemoryToWriteRun(
-                    force ? 0 : spill_settings.max_bytes_before_external_set, spill_settings.max_block_size,
-                    sizeof(DiskSetKey<Method>), buffer_size);
+                    getBuilderSpillThreshold(requested), spill_settings.max_block_size, sizeof(DiskSetKey<Method>),
+                    buffer_size);
         });
 }
 
 template <typename Method>
 std::unique_ptr<DiskSetBuilder> Set::createDiskSetBuilderWithKeys(
-    const Method & method, const SizeLimits & builder_limits, bool force) const
+    const Method & method, const SizeLimits & builder_limits, bool requested) const
 {
     /// The runs of the external sort of a set use `temporary_files_codec`, as other external sorts do, while
     /// the file of the set is never compressed (see `DiskSetImpl::createFileScope`). For sets of numbers,
@@ -299,7 +304,7 @@ std::unique_ptr<DiskSetBuilder> Set::createDiskSetBuilderWithKeys(
     auto builder = createDiskSetBuilder<DiskSetKey<Method>>(
         std::move(tmp_data),
         builder_limits,
-        force ? 0 : spill_settings.max_bytes_before_external_set,
+        getBuilderSpillThreshold(requested),
         spill_settings.max_block_size,
         spill_settings.min_free_disk_space,
         spill_settings.max_bytes_for_bloom_filter,
@@ -533,7 +538,7 @@ bool Set::insertFromColumnsImpl(const Columns & columns, SetKeyColumns & holder)
         null_map_holder = extractNestedColumnsAndNullMap(holder.key_columns, null_map);
 
     if (!disk_set_builder && isSpillNeededBeforeInsert(holder.key_columns, rows))
-        spill("the projected growth of the set exceeds the memory left under the spill threshold");
+        spillWhileBuilding("the projected growth of the set exceeds the memory left under the spill threshold");
 
     if (disk_set_builder)
     {
@@ -553,7 +558,7 @@ bool Set::insertFromColumnsImpl(const Columns & columns, SetKeyColumns & holder)
         is_truncated = true;
     /// Actual allocations and concurrent operators can consume more memory than projected before insertion.
     else if (isSpillNeeded())
-        spill("query memory exceeds the spill threshold after insertion");
+        spillWhileBuilding("query memory exceeds the spill threshold after insertion");
     return within_limits;
 }
 
