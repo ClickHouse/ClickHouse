@@ -70,7 +70,8 @@ FRAGMENT_SUFFIXES = (".inc", ".inl", ".ipp", ".tcc", ".tpp", ".txx")
 # A changed header can be included by thousands of translation units, and
 # analyzing all of them is exactly the full check this job exists to avoid. The
 # sibling translation unit (`Foo.h` -> `Foo.cpp`) is the one that covers a header
-# best; for a header that has none - a header-only addition, for instance - this
+# best when it includes the header; for a header that has none - a header-only
+# addition, for instance - or whose sibling does not include it, this
 # many direct includers are analyzed instead.
 MAX_INCLUDERS_PER_HEADER = 3
 
@@ -239,6 +240,12 @@ SELF_TEST_CHANGED_FRAGMENT = "src/Dictionaries/RangeHashedDictionaryGetItemsImpl
 SELF_TEST_DISTANT_HEADER = "base/poco/Foundation/include/Poco/NotificationStrategy.h"
 SELF_TEST_DISTANT_TRANSLATION_UNIT = "base/poco/Foundation/src/EventChannel.cpp"
 SELF_TEST_SOURCE_TEMPLATE = "src/Common/config_version.cpp.in"
+# A header with a same-stem source that does not include it: `divideImpl.cpp`
+# instantiates the `libdivide` kernels, and `divideImpl.h` is included only by
+# `intDiv.cpp`. The same-stem source must not be taken as its coverage.
+SELF_TEST_UNRELATED_SIBLING_HEADER = "src/Functions/divideImpl.h"
+SELF_TEST_UNRELATED_SIBLING = "src/Functions/divideImpl.cpp"
+SELF_TEST_UNRELATED_SIBLING_INCLUDER = "src/Functions/intDiv.cpp"
 
 # Upper bound on the translation units one run analyzes, so that a sweeping
 # change cannot turn the merge-queue gate back into a multi-hour build. Beyond
@@ -724,6 +731,49 @@ def direct_includers(header, repo_dir):
     return sorted(precise or by_name)
 
 
+def includes_transitively(source, header, repo_dir):
+    """True when `source` includes `header`, directly or through other headers.
+
+    Followed backwards from `header` over the include graph, so that it is a
+    lookup in the same index, with the same matching of directives, as the
+    search for includers.
+    """
+    seen = {header}
+    frontier = [header]
+    while frontier:
+        next_frontier = []
+        for current in frontier:
+            for includer in direct_includers(current, repo_dir):
+                if includer == source:
+                    return True
+                if includer in seen or includer.endswith(SOURCE_SUFFIXES):
+                    continue
+                seen.add(includer)
+                next_frontier.append(includer)
+        frontier = next_frontier
+    return False
+
+
+def covering_sibling(header, repo_dir, is_built):
+    """The sibling translation unit (`Foo.h` -> `Foo.cpp`) covering `header`, or `None`.
+
+    A source of the same name is only a guess: it is accepted when the build
+    compiles it and it actually includes `header`, since a sibling that does not
+    (`divideImpl.cpp` next to `divideImpl.h`, which only `intDiv.cpp` includes)
+    never parses the header, and a finding in it would pass unnoticed.
+    """
+    stem = header.rsplit(".", 1)[0]
+    return next(
+        (
+            f"{stem}{suffix}"
+            for suffix in SOURCE_SUFFIXES
+            if is_built(f"{stem}{suffix}")
+            and includes_transitively(f"{stem}{suffix}", header, repo_dir)
+        ),
+        None,
+    )
+
+
 def find_includers(header, repo_dir, limit, is_built):
     """Translation units that cover `header` through its includers, at most `limit`.
 
@@ -759,15 +809,7 @@ def find_includers(header, repo_dir, limit, is_built):
                     if is_built(includer):
                         sources.append(includer)
                     continue
-                stem = includer.rsplit(".", 1)[0]
-                sibling = next(
-                    (
-                        f"{stem}{suffix}"
-                        for suffix in SOURCE_SUFFIXES
-                        if is_built(f"{stem}{suffix}")
-                    ),
-                    None,
-                )
+                sibling = covering_sibling(includer, repo_dir, is_built)
                 if sibling is not None:
                     siblings.append(sibling)
                 else:
@@ -790,7 +832,8 @@ def is_coverable(path, repo_dir, compile_commands):
     """True when `select_translation_units` finds a translation unit for `path`.
 
     The same order of lookups: a source file itself, a header's sibling
-    translation unit, or a translation unit reached through the header's includers.
+    translation unit including it, or a translation unit reached through the
+    header's includers.
     """
 
     def is_built(candidate):
@@ -801,8 +844,7 @@ def is_coverable(path, repo_dir, compile_commands):
 
     if path.endswith(SOURCE_SUFFIXES):
         return is_built(path)
-    stem = path.rsplit(".", 1)[0]
-    if any(is_built(f"{stem}{suffix}") for suffix in SOURCE_SUFFIXES):
+    if covering_sibling(path, repo_dir, is_built) is not None:
         return True
     return bool(find_includers(path, repo_dir, 1, is_built))
 
@@ -859,11 +901,11 @@ def select_translation_units(
                 unbuilt.append(path)
             continue
 
-        stem = path.rsplit(".", 1)[0]
-        if any(
-            add(f"{stem}{suffix}", f"sibling of changed {path}", pin)
-            for suffix in SOURCE_SUFFIXES
-        ):
+        sibling = covering_sibling(
+            path, repo_dir, lambda candidate: lookup(candidate) is not None
+        )
+        if sibling is not None:
+            add(sibling, f"sibling of changed {path}", pin)
             continue
 
         includers = find_includers(
@@ -1235,6 +1277,28 @@ def self_test(repo_dir, build_dir, compile_commands):
         units == [distant_file] and not notes,
         f"`select_translation_units` did not cover {SELF_TEST_DISTANT_HEADER} "
         f"through {SELF_TEST_DISTANT_TRANSLATION_UNIT}: {units}, {notes}",
+    )
+
+    # A same-stem source that does not include the changed header is not its
+    # coverage: the header is covered through its actual includer instead.
+    sibling_header = SELF_TEST_UNRELATED_SIBLING_HEADER
+    sibling_units = {
+        os.path.normpath(f"{repo_dir}/{path}"): {
+            "file": os.path.normpath(f"{repo_dir}/{path}")
+        }
+        for path in (SELF_TEST_UNRELATED_SIBLING, SELF_TEST_UNRELATED_SIBLING_INCLUDER)
+    }
+    expect(
+        all(os.path.isfile(path) for path in sibling_units),
+        f"{', '.join(sibling_units)} do not all exist",
+    )
+    units, notes = select_translation_units([sibling_header], repo_dir, sibling_units)
+    expect(
+        units
+        == [os.path.normpath(f"{repo_dir}/{SELF_TEST_UNRELATED_SIBLING_INCLUDER}")]
+        and not notes,
+        f"`select_translation_units` did not cover {sibling_header} through "
+        f"{SELF_TEST_UNRELATED_SIBLING_INCLUDER} alone: {units}, {notes}",
     )
 
     # The sources of targets that never enable clang-tidy are neither selected
