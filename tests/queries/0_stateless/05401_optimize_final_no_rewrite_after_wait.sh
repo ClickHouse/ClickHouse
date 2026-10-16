@@ -7,8 +7,9 @@
 # OPTIMIZE ... FINAL that finds the parts of a partition being merged waits for that merge and retries.
 # If the awaited merge has merged the whole partition into a single part, the retry must not merge that
 # part with itself once more. OPTIMIZE ... FINAL DEDUPLICATE still does, because the awaited merge did
-# not deduplicate, and so does OPTIMIZE ... FINAL of a table with TTL, because rows could expire after the
-# awaited merge started. A merge is held in flight with a failpoint, so the wait happens deterministically.
+# not deduplicate, so does OPTIMIZE ... FINAL of a table with TTL, because rows could expire after the
+# awaited merge started, and so does OPTIMIZE ... FINAL after an ALTER, because the awaited merge used the
+# old metadata. A merge is held in flight with a failpoint, so the wait happens deterministically.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -28,6 +29,7 @@ function run_case()
     local ttl=$2
     local second_optimize=$3
     local second_query_id="${CLICKHOUSE_DATABASE}_$4"
+    local before_second_optimize=${5:-}
     echo "$label"
 
     # A projection makes every merge go through the projection-merge stage, where the failpoint pauses it.
@@ -48,6 +50,10 @@ function run_case()
     local first_pid=$!
 
     $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT merge_task_projection_stage_pause PAUSE"
+
+    if [[ -n "$before_second_optimize" ]]; then
+        $CLICKHOUSE_CLIENT --query "$before_second_optimize"
+    fi
 
     # The second OPTIMIZE cannot take the parts of the paused merge, so it waits for that merge. The client
     # receives the server logs of the query only after it finishes, so look for the wait in `system.text_log`.
@@ -82,3 +88,4 @@ function run_case()
 run_case "FINAL" "" "OPTIMIZE TABLE $table FINAL" "final"
 run_case "FINAL DEDUPLICATE" "" "OPTIMIZE TABLE $table FINAL DEDUPLICATE" "final_deduplicate"
 run_case "FINAL with TTL" "TTL d + INTERVAL 1 YEAR" "OPTIMIZE TABLE $table FINAL" "final_ttl"
+run_case "FINAL after ALTER" "" "OPTIMIZE TABLE $table FINAL" "final_alter" "ALTER TABLE $table ADD COLUMN x UInt64 DEFAULT 7"

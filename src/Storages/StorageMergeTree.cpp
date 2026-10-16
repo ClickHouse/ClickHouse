@@ -1098,9 +1098,9 @@ CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
     FutureMergedMutatedPartPtr future_part_,
     size_t total_size,
     StorageMergeTree & storage_,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageMetadataPtr & metadata_snapshot_,
     bool is_mutation)
-    : future_part(future_part_), storage(storage_)
+    : future_part(future_part_), storage(storage_), metadata_snapshot(metadata_snapshot_)
 {
     /// Assume mutex is already locked, because this method is called from mergeTask.
 
@@ -1151,6 +1151,7 @@ CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Tagging already tagged part {}. This is a bug.", part->name);
     }
     storage.currently_merging_mutating_parts.insert(future_part->parts.begin(), future_part->parts.end());
+    ++storage.currently_merging_mutating_metadata[metadata_snapshot];
 
     if (is_mutation)
         storage.currently_mutating_part_future_versions[future_part->parts[0]] = future_part->part_info.mutation;
@@ -1169,6 +1170,9 @@ void CurrentlyMergingPartsTagger::finalize()
         storage.currently_merging_mutating_parts.erase(part);
         storage.currently_mutating_part_future_versions.erase(part);
     }
+
+    if (auto it = storage.currently_merging_mutating_metadata.find(metadata_snapshot); --it->second == 0)
+        storage.currently_merging_mutating_metadata.erase(it);
 
     storage.currently_processing_in_background_condition.notify_all();
 }
@@ -2190,8 +2194,11 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             }
 
             /// Taken before the selection, so that a merge committed meanwhile is not mistaken for a part that was there before.
+            /// Only if all running merges and mutations use the metadata of this OPTIMIZE: a merge that started before an ALTER
+            /// (e.g. `ADD COLUMN`, `ADD INDEX`) does not do everything that merging its result again with the new metadata does.
             std::vector<MergeTreePartInfo> parts_before_selection;
-            if (skip_part_of_awaited_merge && parts_before_wait.empty())
+            if (skip_part_of_awaited_merge && parts_before_wait.empty()
+                && std::ranges::all_of(currently_merging_mutating_metadata, [&](const auto & entry) { return entry.first == metadata_snapshot; }))
             {
                 auto parts_lock = readLockParts();
                 parts_before_selection = std::ranges::to<std::vector>(

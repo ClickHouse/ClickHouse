@@ -159,6 +159,10 @@ private:
     /// currently mutating parts with future version
     std::map<DataPartPtr, Int64> currently_mutating_part_future_versions;
 
+    /// Metadata snapshots of the currently running merges and mutations, with the number of them using each snapshot.
+    /// This map have to be used with `currently_processing_in_background_mutex`.
+    std::unordered_map<StorageMetadataPtr, size_t> currently_merging_mutating_metadata;
+
     /// current parts postpone reasons
     std::map<std::string, std::string> current_parts_postpone_reasons;
 
