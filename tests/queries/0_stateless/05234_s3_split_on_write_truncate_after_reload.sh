@@ -34,8 +34,10 @@ ${CLICKHOUSE_CLIENT} --query "
     SELECT count(), min(x), max(x) FROM test_05234;
 "
 
+# The forgotten tail is probed only when splitting is enabled for the query, so that a plain truncate
+# does not need the permission to read a key the table is not configured with.
 echo '--- The truncate removes the base object and leaves the forgotten tail in place, with a warning in the log'
-${CLICKHOUSE_CLIENT} --send_logs_level=warning --query "TRUNCATE TABLE test_05234" 2>&1 \
+${CLICKHOUSE_CLIENT} --send_logs_level=warning --s3_split_on_write_by_size_bytes=1000 --query "TRUNCATE TABLE test_05234" 2>&1 \
     | grep -c -F "has left the object ${PREFIX}/data.1.tsv in place"
 
 ${CLICKHOUSE_CLIENT} --query "

@@ -1077,7 +1077,7 @@ bool StorageObjectStorage::optimize(
 void StorageObjectStorage::truncate(
     const ASTPtr & /* query */,
     const StorageMetadataPtr & /* metadata_snapshot */,
-    ContextPtr /* context */,
+    ContextPtr local_context,
     TableExclusiveLockHolder & /* table_holder */)
 {
     const auto path = configuration->getRawPath();
@@ -1160,7 +1160,12 @@ void StorageObjectStorage::truncate(
     /// probed: listing differs between the backends (a prefix in S3 and Azure, a directory in HDFS) and can be
     /// expensive for a large prefix. A forgotten tail that does not start from the first number - the one written
     /// with `*_create_new_file_on_insert` stepping over the keys taken by someone else - is left without a warning.
-    if (paths.size() == 1)
+    ///
+    /// The probe is made only when `*_split_on_write_by_size_bytes` is enabled for the query: a key that the table
+    /// is not configured with may be unreadable for its credentials (S3 answers `403` for a missing key without
+    /// `s3:ListBucket`, and a policy may cover the exact key only), and a plain `TRUNCATE TABLE` of a table that never
+    /// used splitting must not need more permissions than reading and deleting its own object.
+    if (paths.size() == 1 && configuration->getQuerySettings(local_context).split_on_write_by_size_bytes)
     {
         const auto numbered_keys = getNumberedFileNames(paths.front().path);
         const String forgotten_key = numbered_keys.getName(1);
