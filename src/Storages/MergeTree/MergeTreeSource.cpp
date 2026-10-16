@@ -147,6 +147,11 @@ MergeTreeSource::MergeTreeSource(MergeTreeSelectProcessorPtr processor_, const s
 
 MergeTreeSource::~MergeTreeSource() = default;
 
+std::span<ISpillable * const> MergeTreeSource::getSpillables()
+{
+    return processor->getSpillables();
+}
+
 std::string MergeTreeSource::getName() const
 {
     return processor->getName();
