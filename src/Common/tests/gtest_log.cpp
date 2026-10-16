@@ -10,6 +10,7 @@
 #include <Poco/CombinedRotateStrategy.h>
 #include <Poco/Exception.h>
 #include <Poco/FileChannel.h>
+#include <Poco/Message.h>
 #include <Poco/NullChannel.h>
 #include <Poco/StreamChannel.h>
 #include <Poco/TemporaryFile.h>
@@ -258,6 +259,29 @@ TEST(Logger, Rotation)
     EXPECT_EQ(readLogFile(log_dir / "logger.log.1"), "A\nB\n" + std::string(201, 'C') + "\n");
     EXPECT_EQ(readLogFile(log_dir / "logger.log.0"), "D\nE\n");
     EXPECT_EQ(readLogFile(log_dir / "logger.log"), "F\n");
+}
+
+TEST(Logger, DestroyCompressingChannelRightAfterRotation)
+{
+    for (int i = 0; i < 50; ++i)
+    {
+        Poco::TemporaryFile temp_dir;
+        temp_dir.createDirectories();
+        std::filesystem::path log_dir{temp_dir.path()};
+
+        auto my_channel = Poco::AutoPtr<Poco::FileChannel>(new Poco::FileChannel());
+        my_channel->setProperty(Poco::FileChannel::PROP_PATH, log_dir / "logger.log");
+        my_channel->setProperty(Poco::FileChannel::PROP_ROTATION, "100");
+        my_channel->setProperty(Poco::FileChannel::PROP_COMPRESS, "true");
+        my_channel->log(Poco::Message("test", std::string(200, 'A'), Poco::Message::PRIO_INFORMATION));
+        /// This rotates the file and starts the compressor thread, which may still be running when the channel is destroyed.
+        my_channel->log(Poco::Message("test", "B", Poco::Message::PRIO_INFORMATION));
+        my_channel = nullptr;
+
+        /// The compression either finished before the channel was destroyed or was dropped.
+        EXPECT_NE(std::filesystem::exists(log_dir / "logger.log.0"), std::filesystem::exists(log_dir / "logger.log.0.gz"))
+            << "iteration " << i;
+    }
 }
 
 TEST(Logger, RotationParseValid)
