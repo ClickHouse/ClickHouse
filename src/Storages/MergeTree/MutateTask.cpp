@@ -2529,6 +2529,8 @@ struct MutationContext
 
     IMergedBlockOutputStream::GatheredData all_gathered_data;
     MergeTreeData::MutableDataPartPtr new_data_part;
+    /// Observe the result after promise handoff without extending its owning lifetime.
+    std::weak_ptr<IMergeTreeDataPart> part_for_cleanup;
     IMergedBlockOutputStreamPtr out;
 
     String mrk_extension;
@@ -2635,6 +2637,17 @@ public:
     explicit PartMergerWriter(MutationContextPtr ctx_)
         : ctx(ctx_), projections(ctx->metadata_snapshot->projections)
     {
+    }
+
+    void cancel() noexcept
+    {
+        /// Text-index subtasks retain output streams between steps; stop them before parent transaction undo.
+        for (auto & subtask : merge_subtasks)
+            subtask->cancel();
+
+        /// Segment builders use local stream holders, already destroyed on return/unwind from execution.
+        if (temporary_text_index_storage)
+            temporary_text_index_storage->undoTransactionIfUncommitted();
     }
 
     bool execute()
@@ -2943,8 +2956,18 @@ void PartMergerWriter::writeTempProjectionPart(size_t projection_idx, Chunk chun
         ctx->is_explicit_recompression,
         ctx->context);
 
-    tmp_part->finalize();
-    tmp_part->part->getDataPartStorage().commitTransaction();
+    try
+    {
+        tmp_part->finalize();
+        tmp_part->part->getDataPartStorage().commitTransaction();
+    }
+    catch (...)
+    {
+        auto failed_part = tmp_part->part;
+        tmp_part->cancel();
+        failed_part->getDataPartStorage().undoTransactionIfUncommitted();
+        throw;
+    }
     projection_parts[projection.name].emplace_back(std::move(tmp_part->part));
 }
 
@@ -3228,6 +3251,8 @@ public:
 
     void cancel() noexcept override
     {
+        if (part_merger_writer_task)
+            part_merger_writer_task->cancel();
         if (ctx->out)
         {
             ctx->out->cancel();
@@ -3621,6 +3646,8 @@ public:
 
     void cancel() noexcept override
     {
+        if (part_merger_writer_task)
+            part_merger_writer_task->cancel();
         if (ctx->out)
         {
             ctx->out->cancel();
@@ -4172,7 +4199,10 @@ private:
         /// registered across this reorder, so both directories stay protected at all times. Installing
         /// the holder keeps temporary_parts authoritative for every createEmptyPart caller (see
         /// createEmptyPart), so the entry outlives the physical tmp_empty_<part> directory.
+        executable_task->cancel();
+        ctx->new_data_part->getDataPartStorage().undoTransactionIfUncommitted();
         ctx->new_data_part = std::move(mutable_empty_part);
+        ctx->part_for_cleanup = ctx->new_data_part;
         ctx->temporary_directory_lock = std::move(tmp_dir_holder);
     }
 };
@@ -4253,8 +4283,12 @@ void MutateTask::cancel() noexcept
     if (task)
         task->cancel();
 
-    if (ctx->new_data_part)
-        ctx->new_data_part->removeIfNeeded();
+    /// Undo only the current transaction; earlier checkpoints and source hardlinks need metadata-backed removal.
+    if (auto part = ctx->part_for_cleanup.lock())
+    {
+        part->getDataPartStorage().undoTransactionIfUncommitted();
+        part->removeIfNeeded();
+    }
 }
 
 void MutateTask::updateProfileEvents() const
@@ -4778,6 +4812,7 @@ bool MutateTask::prepare()
             std::tie(part, lock) = ctx->data->cloneAndLoadDataPart(
                 ctx->source_part, "tmp_clone_", ctx->future_part->part_info, ctx->metadata_snapshot, clone_params, ctx->context->getReadSettings(), ctx->context->getWriteSettings(), true/*must_on_same_disk*/);
             part->getDataPartStorage().beginTransaction();
+            ctx->part_for_cleanup = part;
             ctx->temporary_directory_lock = std::move(lock);
         }
 
@@ -4813,6 +4848,7 @@ bool MutateTask::prepare()
             ctx->temporary_directory_lock = std::move(tmp_dir_holder);
 
             ProfileEvents::increment(ProfileEvents::MutationCreatedEmptyParts);
+            ctx->part_for_cleanup = empty_part;
             promise.set_value(std::move(empty_part));
             return false;
         }
@@ -4923,6 +4959,7 @@ bool MutateTask::prepare()
     builder.withPartInfo(ctx->future_part->part_info);
 
     ctx->new_data_part = std::move(builder).build();
+    ctx->part_for_cleanup = ctx->new_data_part;
     ctx->new_data_part->getDataPartStorage().beginTransaction();
 
     ctx->new_data_part->uuid = ctx->future_part->uuid;

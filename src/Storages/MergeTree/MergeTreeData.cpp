@@ -11802,7 +11802,7 @@ void MergeTreeData::optimizeDryRun(
 
     auto new_part = executeHere(merge_task);
 
-    /// This commits a transcation on disk, but doesn't commit the data part.
+    /// Commit disk metadata without publishing the part, making its output discoverable by temporary-directory cleanup.
     if (new_part->getDataPartStorage().hasActiveTransaction())
         new_part->getDataPartStorage().commitTransaction();
 

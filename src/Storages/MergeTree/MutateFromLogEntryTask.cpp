@@ -67,6 +67,7 @@ void MutateFromLogEntryTask::cancel() noexcept
         merge_mutate_entry ? (*merge_mutate_entry)->thread_group : nullptr, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
     if (mutate_task)
         mutate_task->cancel();
+    /// Keeper may have published despite an error; retain metadata-backed removal and shared-data checks.
     if (new_part)
         new_part->removeIfNeeded();
     mutate_task.reset();

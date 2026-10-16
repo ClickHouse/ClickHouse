@@ -1146,6 +1146,20 @@ bool DataPartStorageOnDiskBase::hasActiveTransaction() const
     return transaction != nullptr;
 }
 
+void DataPartStorageOnDiskBase::undoTransactionIfUncommitted() noexcept
+{
+    try
+    {
+        /// A projection's borrowed transaction may also own sibling output.
+        if (transaction && !has_shared_transaction && transaction->canUndoBeforeCommit())
+            undoTransaction();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
 bool DataPartStorageOnDiskBase::isCaseInsensitive() const
 {
     return getDisk()->isCaseInsensitive();

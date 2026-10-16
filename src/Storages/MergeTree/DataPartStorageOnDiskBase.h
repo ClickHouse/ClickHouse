@@ -173,6 +173,7 @@ public:
 
     SyncGuardPtr getDirectorySyncGuard() const override;
     bool hasActiveTransaction() const override;
+    void undoTransactionIfUncommitted() noexcept override;
 
     bool isCaseInsensitive() const override;
 

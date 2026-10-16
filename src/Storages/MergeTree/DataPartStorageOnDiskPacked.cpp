@@ -569,6 +569,7 @@ void DataPartStorageOnDiskPacked::commitTransaction()
 
 void DataPartStorageOnDiskPacked::undoTransaction()
 {
+    /// Discard buffered members without finalizing them; transaction undo also reclaims already-uploaded files.
     if (!transaction || (!writer && !is_precommitted))
         return;
 

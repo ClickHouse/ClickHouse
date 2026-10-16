@@ -22,6 +22,7 @@ extern const int FS_METADATA_ERROR;
 
 void MetadataOperationsHolder::rollback(size_t until_pos, Exception & rollback_reason) noexcept
 {
+    /// Rollback restores live names/data under the caller's locks; deferring or cancelling it exposes partial state.
     ThreadStatus::QueryCancellationBlocker cleanup;
     ProfileEvents::increment(ProfileEvents::MetadataTransactionRollbacks);
 

@@ -630,6 +630,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         builder->withPartType(global_ctx->future_part->part_format.part_type);
 
         global_ctx->new_data_part = std::move(*builder).build();
+        global_ctx->part_for_cleanup = global_ctx->new_data_part;
     }
     auto data_part_storage = global_ctx->new_data_part->getDataPartStoragePtr();
 
@@ -1709,8 +1710,18 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::calculateProjectionForBlock(
             global_ctx->compression_codec, ++ctx->projection_block_num,
             /*use_selected_codec=*/ false, global_ctx->is_explicit_recompression, global_ctx->context);
 
-        tmp_part->finalize();
-        tmp_part->part->getDataPartStorage().commitTransaction();
+        try
+        {
+            tmp_part->finalize();
+            tmp_part->part->getDataPartStorage().commitTransaction();
+        }
+        catch (...)
+        {
+            auto failed_part = tmp_part->part;
+            tmp_part->cancel();
+            failed_part->getDataPartStorage().undoTransactionIfUncommitted();
+            throw;
+        }
         ctx->projection_parts[projection.name].emplace_back(std::move(tmp_part->part));
     }
     ctx->projections_rebuild_elapsed_ns[projection.name] += projection_watch.elapsedNanoseconds();
@@ -1753,8 +1764,18 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::finalizeProjections() const
                 global_ctx->compression_codec, ++ctx->projection_block_num,
                 /*use_selected_codec=*/ false, global_ctx->is_explicit_recompression, global_ctx->context);
 
-            temp_part->finalize();
-            temp_part->part->getDataPartStorage().commitTransaction();
+            try
+            {
+                temp_part->finalize();
+                temp_part->part->getDataPartStorage().commitTransaction();
+            }
+            catch (...)
+            {
+                auto failed_part = temp_part->part;
+                temp_part->cancel();
+                failed_part->getDataPartStorage().undoTransactionIfUncommitted();
+                throw;
+            }
             ctx->projection_parts[projection.name].emplace_back(std::move(temp_part->part));
         }
     }
@@ -2866,8 +2887,16 @@ void MergeTask::cancel() noexcept
     if (global_ctx->to)
         global_ctx->to->cancel();
 
-    if (global_ctx->new_data_part)
-        global_ctx->new_data_part->removeIfNeeded();
+    /// Temporary text-index segments have their own transaction. Their stream holders are local to
+    /// `BuildTextIndexTransform::writeTemporarySegment`, which has returned or unwound before cancellation.
+    if (global_ctx->temporary_text_index_storage)
+        global_ctx->temporary_text_index_storage->undoTransactionIfUncommitted();
+
+    if (auto part = global_ctx->part_for_cleanup.lock())
+    {
+        part->getDataPartStorage().undoTransactionIfUncommitted();
+        part->removeIfNeeded();
+    }
 }
 
 

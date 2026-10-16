@@ -277,6 +277,8 @@ namespace
             auto outcome = client_ptr->AbortMultipartUpload(abort_request);
             auto elapsed = watch.elapsedMicroseconds();
 
+            /// TODO: Report failed aborts without `blob_storage_log`; retain the upload ID if retrying.
+            /// Never substitute destination deletion: completion may have succeeded despite a lost response.
             if (blob_storage_log)
                 blob_storage_log->addEvent(BlobStorageLogElement::EventType::MultiPartUploadAbort,
                                            dest_bucket, dest_key, /* local_path_ */ {}, /* data_size */ 0, elapsed,

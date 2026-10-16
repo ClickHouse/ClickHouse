@@ -284,6 +284,8 @@ private:
         std::unique_ptr<PullingPipelineExecutor> merging_executor;
 
         MergeTreeData::MutableDataPartPtr new_data_part{nullptr};
+        /// Keep cleanup reachable across promise handoff without preventing unique-ownership part removal.
+        std::weak_ptr<IMergeTreeDataPart> part_for_cleanup;
 
         /// If lightweight delete mask is present then some input rows are filtered out right after reading.
         std::shared_ptr<std::atomic<size_t>> input_rows_filtered{std::make_shared<std::atomic<size_t>>(0)};
@@ -631,11 +633,19 @@ private:
     static BuildStatisticsTransformPtr addBuildStatisticsStep(QueryPlan & plan, const IMergeTreeDataPart & data_part, const GlobalRuntimeContextPtr & global_ctx);
 };
 
-/// FIXME
+/// Synchronous projection merges and `OPTIMIZE ... DRY RUN` have no background executor to cancel failed work.
 [[ maybe_unused]] static MergeTreeData::MutableDataPartPtr executeHere(MergeTaskPtr task)
 {
-    while (task->execute()) {}
-    return task->getFuture().get();
+    try
+    {
+        while (task->execute()) {}
+        return task->getFuture().get();
+    }
+    catch (...)
+    {
+        task->cancel();
+        throw;
+    }
 }
 
 }

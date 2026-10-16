@@ -226,7 +226,7 @@ int64_t removeBlobs(
                 blobs_to_remove[removed_blob].erase(location);
     }
 
-    /// If removal from some locations failed we should not mark this blob in metadata storage.
+    /// Keep the removal record for retry until deletion succeeds at every location.
     StoredObjects blobs_removed_from_all_locations;
     for (const auto & [blob, locations_cleanup_list] : blobs_to_remove)
         if (locations_cleanup_list.empty())

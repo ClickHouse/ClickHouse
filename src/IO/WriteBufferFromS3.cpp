@@ -271,6 +271,8 @@ String WriteBufferFromS3::getShortLogDetails() const
 
 void WriteBufferFromS3::tryToAbortMultipartUpload() noexcept
 {
+    /// Abort reclaims incomplete uploads only. Failed aborts need the upload ID or bucket lifecycle cleanup;
+    /// deleting a completed object instead requires its owner's permission.
     try
     {
         task_tracker->safeWaitAll();
