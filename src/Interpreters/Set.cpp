@@ -101,6 +101,12 @@ ProcessorMemoryStats Set::getMemoryStatsUnlocked() const
     ProcessorMemoryStats stats;
     stats.spillable_memory_bytes = data->getTotalByteCount();
     stats.need_reserved_memory_bytes = estimateMemoryToSpill(/*force=*/ true);
+
+    /// A built set writes its disk set while lookups keep reading the table, so the directory and the Bloom
+    /// filters of the disk set take memory besides the table until the disk set replaces it. A set that
+    /// spills while it is built frees the table first and creates them only when it finishes.
+    if (isCreated())
+        stats.need_reserved_memory_bytes += estimateMemoryOfDiskSet();
     return stats;
 }
 
