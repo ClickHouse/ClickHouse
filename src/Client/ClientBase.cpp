@@ -14,6 +14,8 @@
 #include <Core/UUID.h>
 #include <Interpreters/sortBlock.h>
 #include <boost/algorithm/string/predicate.hpp>
+#include <fmt/format.h>
+#include <cstdio>
 
 #if USE_CLIENT_AI
 #include <Client/AI/AISQLGenerator.h>
@@ -3589,6 +3591,31 @@ void ClientBase::printCancellationMessage(std::string_view message)
     /// handles, see #22426): an ordinary blocking write of the diagnostic to that sink would then
     /// hang the client right after the result-set write was successfully aborted.
     printMessageBestEffort(message);
+}
+
+void ClientBase::printErrorReport(std::string_view message) const
+{
+    /// Only a query that received an interrupt signal takes the bounded path, exactly like the
+    /// post-query epilogue: on a live sink the report appears immediately, on a stuck one it is
+    /// dropped after a short wait, since nothing is reading that sink anyway. Otherwise, and for a
+    /// sink that cannot block (a regular file, see isBlockingCapableSink), the report is written
+    /// with the ordinary blocking write, so that it is never lost.
+    if ((cancelled || query_received_interrupt) && isBlockingCapableSink(stderr_fd))
+    {
+        /// Keep the report ordered after anything still buffered in the streams on `stderr`.
+        error_stream.flush();
+        std::fflush(stderr);
+        WriteBufferFromFileDescriptor stderr_buf(stderr_fd);
+        stderr_buf.writeBestEffort(message, /*timeout_ms*/ 1000);
+        stderr_buf.finalize();
+        return;
+    }
+
+    /// musl defines `stderr` as `(stderr)` which triggers `-Wdisabled-macro-expansion`.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
+    fmt::print(stderr, "{}", message);
+#pragma clang diagnostic pop
 }
 
 void ClientBase::cancelQuery()

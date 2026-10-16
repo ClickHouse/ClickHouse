@@ -349,15 +349,8 @@ void LocalServer::processError(std::string_view query) const
             message = client_exception->message();
         }
 
-        /// musl defines `stderr` as `(stderr)` which triggers `-Wdisabled-macro-expansion`.
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
-        fmt::print(stderr, "Received exception:\n{}\n", message);
-        if (is_interactive)
-            fmt::print(stderr, "\n");
-        else
-            fmt::print(stderr, "(query: {})\n", query);
-#pragma clang diagnostic pop
+        printErrorReport(fmt::format(
+            "Received exception:\n{}\n{}", message, is_interactive ? "\n" : fmt::format("(query: {})\n", query)));
     }
     else
     {

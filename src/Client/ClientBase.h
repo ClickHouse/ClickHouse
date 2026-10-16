@@ -154,6 +154,12 @@ protected:
     void armResynchronizationAndSendQuery(std::function<void()> send_query);
 
     virtual void processError(std::string_view query) const = 0;
+
+    /// Print an error report of the last query (the text of processError) to `stderr`. After a
+    /// Ctrl+C `stderr` may be the very terminal that stopped draining, and the interrupt handler is
+    /// already stopped here, so a plain blocking write could hang the client right after the
+    /// cancellation was handled - see the definition.
+    void printErrorReport(std::string_view message) const;
     virtual String getName() const = 0;
 
     void processOrdinaryQuery(String query, ASTPtr parsed_query);
