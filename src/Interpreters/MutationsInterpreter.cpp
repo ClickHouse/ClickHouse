@@ -47,6 +47,7 @@
 #include <Interpreters/PreparedSets.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Processors/Sources/ThrowingExceptionSource.h>
+#include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/Identifier.h>
 #include <Analyzer/QueryTreeBuilder.h>
@@ -2524,6 +2525,116 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
     return pipeline;
 }
 
+namespace
+{
+
+/// Collects the names of the columns read from `table_node` in the resolved `node`, including the ones read
+/// by the definitions of `ALIAS` columns, which are computed on read. Subqueries are not entered: they are
+/// refused separately.
+void collectColumnsReadFromTable(const QueryTreeNodePtr & node, const QueryTreeNodePtr & table_node, NameSet & column_names)
+{
+    if (!node || node->getNodeType() == QueryTreeNodeType::QUERY || node->getNodeType() == QueryTreeNodeType::UNION)
+        return;
+
+    if (const auto * column_node = node->as<ColumnNode>(); column_node && column_node->getColumnSourceOrNull() == table_node)
+        column_names.insert(column_node->getColumnName());
+
+    for (const auto & child : node->getChildren())
+        collectColumnsReadFromTable(child, table_node, column_names);
+}
+
+}
+
+/// Virtual columns declared with `deterministic = false` (`_table`, `_database`, `_disk_name`, ...)
+/// are constants on one server, but replicas of the same table may have different local names or
+/// disks, so a mutation that reads them would produce different parts on different replicas.
+/// The expressions of the mutation are resolved by the analyzer the same way they are when the mutation
+/// is executed, so a virtual column is found however it is reached: qualified with the table name, through
+/// an `ALIAS` column or its subcolumn, or through a `Nested` prefix assembled from `ALIAS` columns.
+std::optional<String> MutationsInterpreter::findNonDeterministicVirtualColumn(
+    const StoragePtr & storage,
+    const MutationCommands & commands,
+    ContextPtr context)
+{
+    /// A real column with the same name shadows the virtual one and is deterministic.
+    /// `_sample_factor` is non-deterministic only because of the `SAMPLE` clause of a `SELECT`; no `SAMPLE`
+    /// reaches a mutation, so there it is always 1 on every replica. `_part_index` and `_part_starting_offset`
+    /// depend on the set of parts read by a query, but a mutation reads every part on its own, so they are
+    /// always 0.
+    static const NameSet deterministic_in_mutations = {"_sample_factor", "_part_index", "_part_starting_offset"};
+
+    auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
+    const auto & real_columns = metadata_snapshot->getColumns();
+    NameSet nondeterministic_virtual_columns;
+    for (const auto & virtual_column : metadata_snapshot->virtuals)
+    {
+        if (!virtual_column.deterministic && !deterministic_in_mutations.contains(virtual_column.name) && !real_columns.has(virtual_column.name))
+            nondeterministic_virtual_columns.insert(virtual_column.name);
+    }
+
+    if (nondeterministic_virtual_columns.empty())
+        return {};
+
+    ASTPtr expressions = make_intrusive<ASTExpressionList>();
+    for (const auto & command : commands)
+    {
+        if (command.type != MutationCommand::UPDATE && command.type != MutationCommand::DELETE)
+            continue;
+
+        auto alter = command.ast();
+        if (alter->predicate)
+            expressions->children.push_back(alter->predicate->clone());
+        if (command.type == MutationCommand::UPDATE && alter->update_assignments)
+            for (const auto & assignment : alter->update_assignments->children)
+                expressions->children.push_back(assignment->as<ASTAssignment &>().expression()->clone());
+    }
+
+    auto storage_snapshot = storage->getStorageSnapshot(metadata_snapshot, context);
+
+    /// `EPHEMERAL` columns are not expanded by the analyzer, but their definitions may read virtual columns
+    /// as well (`e String EPHEMERAL _database`), so they are resolved in turn. Column definitions cannot
+    /// reference each other cyclically, and each one is resolved once.
+    NameSet followed_ephemeral_columns;
+    while (!expressions->children.empty())
+    {
+        NameSet read_columns;
+
+        /// How a compound identifier such as `t._table` is resolved depends on
+        /// `analyzer_compatibility_prefer_alias_over_subcolumn`, and the mutation may be executed in the
+        /// background with a different value of it than the one of the query, so check both interpretations.
+        for (bool prefer_alias_over_subcolumn : {false, true})
+        {
+            auto analysis_context = Context::createCopy(context);
+            analysis_context->setSetting("analyzer_compatibility_prefer_alias_over_subcolumn", prefer_alias_over_subcolumn);
+
+            auto expression = buildQueryTree(expressions->clone(), analysis_context);
+            /// The expressions are only analyzed, nothing is read, so the table is not locked.
+            auto table_node = std::make_shared<TableNode>(storage, TableLockHolder{}, storage_snapshot);
+
+            QueryAnalyzer query_analyzer(/*only_analyze=*/ true);
+            query_analyzer.resolve(expression, table_node, analysis_context);
+
+            collectColumnsReadFromTable(expression, table_node, read_columns);
+        }
+
+        expressions = make_intrusive<ASTExpressionList>();
+        for (const auto & name : read_columns)
+        {
+            if (nondeterministic_virtual_columns.contains(name))
+                return name;
+
+            auto column = real_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::Ephemeral, name);
+            if (!column)
+                continue;
+            const auto * description = real_columns.tryGet(column->getNameInStorage());
+            if (description && description->default_desc.expression && followed_ephemeral_columns.insert(description->name).second)
+                expressions->children.push_back(description->default_desc.expression->clone());
+        }
+    }
+
+    return {};
+}
+
 void MutationsInterpreter::validateNonDeterministicMutationsForStorage(
     const StoragePtr & storage,
     const MutationCommands & commands,
@@ -2534,25 +2645,9 @@ void MutationsInterpreter::validateNonDeterministicMutationsForStorage(
     if (!startsWith(storage->getName(), "Replicated") || context->getSettingsRef()[Setting::allow_nondeterministic_mutations])
         return;
 
-    /// Virtual columns declared with `deterministic = false` (`_table`, `_database`, `_disk_name`, ...)
-    /// are constants on one server, but replicas of the same table may have different local names or
-    /// disks, so a mutation that reads them would produce different parts on different replicas.
-    /// A real column with the same name shadows the virtual one and is deterministic.
-    /// `_sample_factor` is non-deterministic only because of the `SAMPLE` clause of a `SELECT`; no `SAMPLE`
-    /// reaches a mutation, so there it is always 1 on every replica.
-    NameSet nondeterministic_virtual_columns;
-    auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
-    const auto & real_columns = metadata_snapshot->getColumns();
-    for (const auto & virtual_column : metadata_snapshot->virtuals)
-    {
-        if (!virtual_column.deterministic && virtual_column.name != "_sample_factor" && !real_columns.has(virtual_column.name))
-            nondeterministic_virtual_columns.insert(virtual_column.name);
-    }
-
-    const auto storage_id = storage->getStorageID();
     for (const auto & command : commands)
     {
-        const auto nondeterministic_func_data = findFirstNonDeterministicFunction(command, context, nondeterministic_virtual_columns, &storage_id, &real_columns);
+        const auto nondeterministic_func_data = findFirstNonDeterministicFunction(command, context);
         if (nondeterministic_func_data.subquery)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "ALTER UPDATE/ALTER DELETE statement with subquery may be nondeterministic, "
                                                        "see allow_nondeterministic_mutations setting");
@@ -2562,12 +2657,13 @@ void MutationsInterpreter::validateNonDeterministicMutationsForStorage(
                 "The source storage is replicated so ALTER UPDATE/ALTER DELETE statements must use only deterministic functions. "
                 "Function '{}' is non-deterministic", *nondeterministic_func_data.nondeterministic_function_name);
 
-        if (nondeterministic_func_data.nondeterministic_virtual_column_name)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "The source storage is replicated so ALTER UPDATE/ALTER DELETE statements must use only deterministic expressions. "
-                "Virtual column '{}' is non-deterministic: its value may differ between replicas, "
-                "see allow_nondeterministic_mutations setting", *nondeterministic_func_data.nondeterministic_virtual_column_name);
     }
+
+    if (auto virtual_column_name = findNonDeterministicVirtualColumn(storage, commands, context))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The source storage is replicated so ALTER UPDATE/ALTER DELETE statements must use only deterministic expressions. "
+            "Virtual column '{}' is non-deterministic: its value may differ between replicas, "
+            "see allow_nondeterministic_mutations setting", *virtual_column_name);
 }
 
 void MutationsInterpreter::validate()

@@ -62,6 +62,18 @@ ALTER TABLE t_repl_05228_sample DELETE WHERE _sample_factor = 1 AND key = 2 SETT
 SELECT key, value FROM t_repl_05228_sample ORDER BY key;
 DROP TABLE t_repl_05228_sample SYNC;
 
+-- `_part_index` and `_part_starting_offset` depend on the set of parts read by a query, but a mutation reads
+-- every part on its own, so they are 0 on every replica and the guard accepts them.
+DROP TABLE IF EXISTS t_repl_05228_part_index SYNC;
+CREATE TABLE t_repl_05228_part_index (key Int, value String)
+    ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test_05228/t_part_index', 'r1') ORDER BY key;
+INSERT INTO t_repl_05228_part_index VALUES (1, 'a');
+INSERT INTO t_repl_05228_part_index VALUES (2, 'b');
+ALTER TABLE t_repl_05228_part_index UPDATE value = toString(_part_index) WHERE key = 1 SETTINGS mutations_sync = 2;
+ALTER TABLE t_repl_05228_part_index UPDATE value = toString(_part_starting_offset) WHERE key = 2 SETTINGS mutations_sync = 2;
+SELECT key, value FROM t_repl_05228_part_index ORDER BY key;
+DROP TABLE t_repl_05228_part_index SYNC;
+
 -- An `ALIAS` or `EPHEMERAL` column over a non-deterministic virtual column is computed on read, so reading it
 -- in a mutation reads the virtual column too.
 DROP TABLE IF EXISTS t_repl_05228_alias SYNC;
@@ -85,12 +97,34 @@ ALTER TABLE t_repl_05228_alias DELETE WHERE v = 't_repl_05228_alias' AND key = 2
 SELECT key, value FROM t_repl_05228_alias ORDER BY key;
 DROP TABLE t_repl_05228_alias SYNC;
 
--- A compound identifier naming a real subcolumn is not the virtual column, even when its first part
--- matches the table name.
+-- A bare `Nested` prefix is assembled from its `ALIAS` subcolumns, which read the virtual column.
+DROP TABLE IF EXISTS t_repl_05228_nested SYNC;
+CREATE TABLE t_repl_05228_nested (key Int, value String, `n.s` Array(String) ALIAS [_table])
+    ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test_05228/t_nested', 'r1') ORDER BY key;
+INSERT INTO t_repl_05228_nested (key, value) VALUES (1, 'a');
+ALTER TABLE t_repl_05228_nested UPDATE value = tupleElement(arrayElement(n, 1), 's') WHERE 1; -- { serverError BAD_ARGUMENTS }
+SELECT key, value FROM t_repl_05228_nested ORDER BY key;
+DROP TABLE t_repl_05228_nested SYNC;
+
+-- With `analyzer_compatibility_prefer_alias_over_subcolumn`, `r._table` is the virtual column of the table `r`
+-- rather than the element of its tuple column `r`. The mutation may be executed with either value of the
+-- setting, so it is refused regardless of the value in the query.
+DROP TABLE IF EXISTS r_05228 SYNC;
+CREATE TABLE r_05228 (key Int, value String, r_05228 Tuple(_table String))
+    ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test_05228/r', 'r1') ORDER BY key;
+INSERT INTO r_05228 VALUES (1, 'a', tuple('x'));
+ALTER TABLE r_05228 UPDATE value = r_05228._table WHERE 1 SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 1; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE r_05228 UPDATE value = r_05228._table WHERE 1 SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 0; -- { serverError BAD_ARGUMENTS }
+SELECT key, value FROM r_05228 ORDER BY key;
+DROP TABLE r_05228 SYNC;
+
+-- A compound identifier naming a real subcolumn is not the virtual column, also when it is qualified with the
+-- table name.
 DROP TABLE IF EXISTS b_05228 SYNC;
-CREATE TABLE b_05228 (key Int, b_05228 Tuple(_table String))
+CREATE TABLE b_05228 (key Int, c Tuple(_table String))
     ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test_05228/b', 'r1') ORDER BY key;
-INSERT INTO b_05228 VALUES (1, tuple('x')), (2, tuple(''));
-ALTER TABLE b_05228 DELETE WHERE b_05228._table != '' SETTINGS mutations_sync = 2;
+INSERT INTO b_05228 VALUES (1, tuple('x')), (2, tuple('')), (3, tuple('y'));
+ALTER TABLE b_05228 DELETE WHERE c._table = 'x' SETTINGS mutations_sync = 2;
+ALTER TABLE b_05228 DELETE WHERE b_05228.c._table = 'y' SETTINGS mutations_sync = 2;
 SELECT key FROM b_05228 ORDER BY key;
 DROP TABLE b_05228 SYNC;
