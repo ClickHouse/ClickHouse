@@ -444,7 +444,7 @@ size_t MaterializedPostgreSQLConsumer::readTupleData(
             }
             default:
             {
-                LOG_WARNING(log, "Unexpected identifier: {}. This is a bug, please report an issue on github", identifier);
+                LOG_WARNING(log, "Unexpected identifier: {}. This is a bug! Please report an issue on github", identifier);
                 chassert(false);
 
                 insertDefaultValue(storage_data, column_idx);

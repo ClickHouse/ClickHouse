@@ -1,7 +1,7 @@
 -- Regression test for https://github.com/ClickHouse/ClickHouse/issues/105355
 -- `__bitWrapperFunc` only supports integer arguments. The set skip index used
 -- to wrap any WHERE atom (including atoms whose result type is `Float`) with
--- `__bitWrapperFunc`, which threw the internal "It's a bug" exception at
+-- `__bitWrapperFunc`, which threw the internal "It's a bug!" exception at
 -- execution time. After the fix, non-integer atom result types fall back to
 -- `UNKNOWN_FIELD` and the query goes through the regular filter path.
 

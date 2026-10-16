@@ -596,7 +596,7 @@ const ActionsDAG::Node & MergeTreeIndexConditionSet::traverseDAG(const ActionsDA
         {
             /// `__bitWrapperFunc` is defined only for integer arguments. If the atom result type
             /// is not integer (e.g. `Float`, `BFloat16`), wrapping it would throw the internal
-            /// "It's a bug" exception from `__bitWrapperFunc` at execution time. Fall back to
+            /// "It's a bug!" exception from `__bitWrapperFunc` at execution time. Fall back to
             /// `UNKNOWN_FIELD` so that the index does not prune granules and the query goes
             /// through the regular filter path.
             /// A type with no boolean reading takes the same way out. A wide integer is an integer,
