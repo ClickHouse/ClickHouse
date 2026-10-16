@@ -33,3 +33,5 @@ zeta_after_merge	5
 zeta_after_merge	6
 dplan_fallback	1	a
 dplan_fallback	3	c
+topk	8	8
+topk_dynamic	8	8

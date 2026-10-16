@@ -6,6 +6,7 @@
 --   4. lazy materialization: the bitmap is not applied twice
 --   5. text index: a hasToken read honours the bitmap, and a merge rebuilds the index
 --   6. make_distributed_plan: the read falls back to local execution, which applies the bitmap
+--   7. top-k: a skip-index top-k read returns the live top row, not the dead one its minmax holds
 
 SET enable_unique_key = 1;
 
@@ -179,3 +180,26 @@ EXPLAIN PIPELINE SELECT id FROM uk_dplan
 SETTINGS distributed_plan_fallback_to_local_execution = 0; -- { serverError SUPPORT_IS_DISABLED }
 
 DROP TABLE uk_dplan;
+
+-- 7. top-k: red if the top-k skip-index pass keeps only the granule of the dead top row (`topk` 2 2).
+SET make_distributed_plan = 0;
+
+DROP TABLE IF EXISTS uk_topk;
+
+CREATE TABLE uk_topk (k UInt64, v UInt64, INDEX iv v TYPE minmax GRANULARITY 1)
+ENGINE = MergeTree
+UNIQUE KEY (k)
+ORDER BY (k)
+SETTINGS index_granularity = 2;
+
+SYSTEM STOP MERGES uk_topk;
+
+INSERT INTO uk_topk SELECT number, if(number = 1, 1000, number) FROM numbers(1, 8);
+DELETE FROM uk_topk WHERE k = 1;
+
+SELECT 'topk' AS step, k, v FROM uk_topk ORDER BY v DESC LIMIT 1
+SETTINGS use_skip_indexes_for_top_k = 1, use_top_k_dynamic_filtering = 0;  -- 8 8
+SELECT 'topk_dynamic' AS step, k, v FROM uk_topk ORDER BY v DESC LIMIT 1
+SETTINGS use_skip_indexes_for_top_k = 0, use_top_k_dynamic_filtering = 1;  -- 8 8
+
+DROP TABLE uk_topk;
