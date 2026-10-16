@@ -8,6 +8,7 @@
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/ErrorCodes.h>
+#include <Common/FailPoint.h>
 #include <Common/ProxyConfiguration.h>
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTrackerSwitcher.h>
@@ -99,6 +100,11 @@ namespace
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char http_connection_socket_inode_unavailable[];
+}
 
 namespace ErrorCodes
 {
@@ -708,7 +714,16 @@ private:
             {
             }
 
-            if (inode == 0)
+            /// Not every OS exposes an inode for a socket: on macOS `fstat` succeeds with `st_ino`
+            /// set to zero. The inode is then reported as zero, but the socket still gets its
+            /// identity - it is told apart from the previous one by the fd alone, which is enough
+            /// because every path that drops a socket calls `forgetSocketIdentity`.
+            fiu_do_on(FailPoints::http_connection_socket_inode_unavailable,
+            {
+                inode = 0;
+            });
+
+            if (fd < 0)
                 return;
 
             if (fd != socket_fd || inode != socket_inode)

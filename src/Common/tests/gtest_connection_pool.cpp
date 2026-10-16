@@ -2,6 +2,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/HTTPConnectionInfo.h>
 #include <Common/HTTPConnectionPool.h>
 #include <Common/HostResolvePool.h>
@@ -28,6 +29,11 @@
 #include <limits>
 
 #include <gtest/gtest.h>
+
+namespace DB::FailPoints
+{
+extern const char http_connection_socket_inode_unavailable[];
+}
 
 namespace
 {
@@ -614,6 +620,49 @@ TEST_F(ConnectionPoolTest, ConnectionInfoNewIdAfterReconnect)
     /// descriptor number - and often the same socket inode - right after the previous one closed.
     ASSERT_NE(first.id, second.id);
     ASSERT_EQ(0, second.requests_served);
+}
+
+/// Some systems expose no inode for a socket: on macOS `fstat` succeeds with `st_ino` set to zero.
+/// The connection must get its identity all the same, keep it across reuse, and get a new one
+/// on reconnect.
+TEST_F(ConnectionPoolTest, ConnectionInfoWithoutSocketInode)
+{
+    DB::FailPointInjection::enableFailPoint(DB::FailPoints::http_connection_socket_inode_unavailable);
+    SCOPE_EXIT(DB::FailPointInjection::disableFailPoint(DB::FailPoints::http_connection_socket_inode_unavailable));
+
+    auto ka = Poco::Timespan(10, 0); // 10 seconds
+    timeouts.withHTTPKeepAliveTimeout(ka);
+
+    auto pool = getPool();
+
+    DB::HTTPConnectionInfo first;
+    {
+        auto connection = pool->getConnection(timeouts, nullptr);
+        first = echoRequestAndTakeConnectionInfo("Hello", *connection);
+    } // returned to the pool
+
+    ASSERT_TRUE(first.has_value);
+    ASSERT_NE(0, first.id);
+    ASSERT_EQ(0, first.socket_inode);
+    ASSERT_EQ(0, first.requests_served);
+
+    auto connection = pool->getConnection(timeouts, nullptr);
+    auto reused = echoRequestAndTakeConnectionInfo("Hello", *connection);
+
+    ASSERT_TRUE(reused.has_value);
+    ASSERT_EQ(first.id, reused.id);
+    ASSERT_EQ(0, reused.socket_inode);
+    ASSERT_EQ(1, reused.requests_served);
+
+    connection->abort(); // further usage requires reconnect, the pool is empty so a new socket
+
+    auto reconnected = echoRequestAndTakeConnectionInfo("Hello", *connection);
+
+    ASSERT_TRUE(reconnected.has_value);
+    ASSERT_NE(0, reconnected.id);
+    ASSERT_NE(first.id, reconnected.id);
+    ASSERT_EQ(0, reconnected.socket_inode);
+    ASSERT_EQ(0, reconnected.requests_served);
 }
 
 TEST_F(ConnectionPoolTest, ConnectionInfoIdleTimeAfterReconnect)

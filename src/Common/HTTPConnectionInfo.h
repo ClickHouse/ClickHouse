@@ -29,7 +29,8 @@ struct HTTPConnectionInfo
 
     /// Local TCP port, and the socket inode as reported by fstat. Unique only among sockets that
     /// are open at the same moment, so use them to join against a packet capture or a
-    /// `/proc/net/tcp` row taken at the time - not to tell one connection from the next.
+    /// `/proc/net/tcp` row taken at the time - not to tell one connection from the next. The
+    /// inode is zero where the OS exposes none for a socket (macOS); `id` is assigned regardless.
     UInt16 local_port = 0;
     UInt64 socket_inode = 0;
 
