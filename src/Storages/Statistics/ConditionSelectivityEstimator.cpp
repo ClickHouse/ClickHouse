@@ -22,6 +22,7 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Formats/ParseError.h>
+#include <Functions/IFunction.h>
 
 
 namespace ProfileEvents
@@ -302,6 +303,17 @@ static std::optional<String> tryGetNullMapParentColumn(const String & column_nam
     return parent_name;
 }
 
+bool isAlwaysTrueEquality(const ActionsDAG::Node & node)
+{
+    if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base || node.function_base->getName() != "equals"
+        || node.children.size() != 2 || node.children[0] != node.children[1])
+        return false;
+
+    WhichDataType which(removeLowCardinality(node.children[0]->result_type));
+    return which.isInteger() || which.isDecimal() || which.isEnum() || which.isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64()
+        || which.isStringOrFixedString() || which.isUUID() || which.isIPv4() || which.isIPv6();
+}
+
 bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node, RPNElement & out) const
 {
     const auto * node_dag = node.getDAGNode();
@@ -362,6 +374,12 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
 
         if (num_args == 2)
         {
+            if (isAlwaysTrueEquality(*func.getDAGNode()))
+            {
+                out.function = RPNElement::ALWAYS_TRUE;
+                return true;
+            }
+
             const bool is_in_operator = functionIsInOperator(func_name);
 
             /// The right-hand side of IN is a `Set` column: read the elements out of the set. Every other

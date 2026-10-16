@@ -178,6 +178,9 @@ private:
 
 using ConditionSelectivityEstimatorPtr = std::shared_ptr<ConditionSelectivityEstimator>;
 
+/// `equals(x, x)` of one node whose type makes `x = x` true on every row (no NULL, NaN or composite values).
+bool isAlwaysTrueEquality(const ActionsDAG::Node & node);
+
 class ConditionSelectivityEstimatorBuilder
 {
 public:
