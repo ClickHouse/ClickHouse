@@ -1370,6 +1370,15 @@ public:
     ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
     bool canBeExecutedOnLowCardinalityDictionary() const override { return false; }
 
+    /// `if(cond, then, else)` accepts UInt8 / Nullable(UInt8) / NULL for `cond`;
+    /// the result is `leastSupertype{,OrVariant}(then, else)`. The Variant
+    /// branch is selected by the `use_variant_when_no_common_type` setting.
+    String getSignatureString() const override
+    {
+        if (use_variant_when_no_common_type)
+            return "(MaybeNullable(UInt8) | Nothing, T1, T2) -> leastSupertypeOrVariant(T1, T2)";
+        return "(MaybeNullable(UInt8) | Nothing, T1, T2) -> leastSupertype(T1, T2)";
+    }
 
     static void checkConditionArgType(const DataTypePtr & type)
     {
@@ -1389,9 +1398,12 @@ public:
         }
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    /// Returns `LowCardinality(String)` or `LowCardinality(Nullable(String))` when both branches are constant strings
+    /// (see `optimize_if_transform_const_strings_to_lowcardinality`), otherwise nullptr.
+    DataTypePtr tryGetLowCardinalityReturnType(const ColumnsWithTypeAndName & arguments) const
     {
-        checkConditionArgType(arguments[0].type);
+        if (!use_low_cardinality_optimisation)
+            return nullptr;
 
         // Some processing - for constant strings - for LowCardinality.
         // If the condition is constant too, the whole expression is constant and gets folded into a single
@@ -1411,7 +1423,7 @@ public:
             && isColumnConst(*arguments[1].column) && isColumnConst(*arguments[2].column);
         auto const are_branches_identical = are_branches_constant && arguments[1].type->equals(*arguments[2].type)
             && (*arguments[1].column)[0] == (*arguments[2].column)[0];
-        if (use_low_cardinality_optimisation && !is_condition_constant && !are_branches_identical && are_branches_constant)
+        if (!is_condition_constant && !are_branches_identical && are_branches_constant)
         {
             auto const is_string1 = isString(arguments[1].type);
             auto const is_string2 = isString(arguments[2].type);
@@ -1435,10 +1447,41 @@ public:
                 return std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()));
         }
 
-        if (use_variant_when_no_common_type)
-            return getLeastSupertypeOrVariant(DataTypes{arguments[1].type, arguments[2].type}, allow_lossy_numeric_supertype);
+        return nullptr;
+    }
 
-        return getLeastSupertype(DataTypes{arguments[1].type, arguments[2].type}, allow_lossy_numeric_supertype);
+    /// The declarative signature cannot express `allow_lossy_numeric_supertype` (the `leastSupertype`
+    /// type-function always uses the strict mode), so when that setting is enabled, compute the common
+    /// type explicitly, mirroring the legacy implementation. Otherwise the signature stays authoritative.
+    /// It also cannot express the `LowCardinality` result for constant string branches, which depends on
+    /// the constness of the arguments.
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        if (auto low_cardinality_type = tryGetLowCardinalityReturnType(arguments))
+        {
+            checkConditionArgType(arguments[0].type);
+            return low_cardinality_type;
+        }
+
+        if (!allow_lossy_numeric_supertype)
+            return FunctionIfBase::getReturnTypeImpl(arguments);
+
+        DataTypes types;
+        types.reserve(arguments.size());
+        for (const auto & arg : arguments)
+            types.push_back(arg.type);
+        return getReturnTypeImpl(types);
+    }
+
+    /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        checkConditionArgType(arguments[0]);
+
+        if (use_variant_when_no_common_type)
+            return getLeastSupertypeOrVariant(DataTypes{arguments[1], arguments[2]}, allow_lossy_numeric_supertype);
+
+        return getLeastSupertype(DataTypes{arguments[1], arguments[2]}, allow_lossy_numeric_supertype);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override

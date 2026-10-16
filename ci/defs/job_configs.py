@@ -606,6 +606,11 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
+            parameter=BuildTypes.AMD_ILLUMOS,
+            provides=[ArtifactNames.CH_AMD_ILLUMOS],
+            runs_on=RunnerLabels.AMD_LARGE,
+        ),
+        Job.ParamSet(
             parameter=BuildTypes.PPC64LE,
             provides=[ArtifactNames.CH_PPC64LE],
             runs_on=RunnerLabels.ARM_LARGE,

@@ -40,10 +40,10 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
@@ -114,6 +114,34 @@ public:
         return args;
     }
 
+    String getSignatureString() const override
+    {
+        /// Arguments: cond1, then1, cond2, then2, ..., else. The existing matcher engine
+        /// walks back through the args before `...` and groups them by index coherence:
+        /// (MaybeNullable(UInt8) | Nothing) has index 0; V1 has index 1; together they form
+        /// the repeating pair. The fixed group before `...` matches one mandatory pair, so
+        /// minimum arity is 3 (cond, then, else) — exactly matching the legacy check.
+        ///
+        /// `use_variant_as_common_type` selects `leastSupertypeOrVariant`, matching `if`.
+        if (use_variant_as_common_type)
+            return "(MaybeNullable(UInt8) | Nothing, V1, ..., E) -> leastSupertypeOrVariant(V1, ..., E)";
+        return "(MaybeNullable(UInt8) | Nothing, V1, ..., E) -> leastSupertype(V1, ..., E)";
+    }
+
+    /// Same as the `ColumnsWithTypeAndName` overload, without information about constant arguments.
+    DataTypePtr getReturnTypeImpl(const DataTypes & args) const override
+    {
+        ColumnsWithTypeAndName columns;
+        columns.reserve(args.size());
+        for (const auto & type : args)
+            columns.emplace_back(nullptr, type, String{});
+        return getReturnTypeImpl(columns);
+    }
+
+    /// The declarative signature cannot express `allow_lossy_numeric_supertype` (the `leastSupertype`
+    /// type-function always uses the strict mode), so when that setting is enabled, compute the common
+    /// type explicitly, mirroring the legacy implementation. It also cannot express the `LowCardinality`
+    /// result for constant string branches, which depends on the constness of the arguments.
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & args) const override
     {
         /// Arguments are the following: cond1, then1, cond2, then2, ... condN, thenN, else.
@@ -131,6 +159,25 @@ public:
                 f(args[i]);
             f(args.back());
         };
+
+        /// Unless `allow_lossy_numeric_supertype` is enabled, the declarative signature is authoritative for the
+        /// validation of the arguments and for the common type. Apply it to the LowCardinality-stripped arguments,
+        /// restoring the contract of the default LowCardinality implementation this function opted out of
+        /// (see `useDefaultImplementationForLowCardinalityColumns` above).
+        DataTypePtr signature_result_type;
+        if (!allow_lossy_numeric_supertype)
+        {
+            ColumnsWithTypeAndName stripped_args;
+            stripped_args.reserve(args.size());
+            for (const auto & arg : args)
+            {
+                auto stripped_type = recursiveRemoveLowCardinality(arg.type);
+                /// The column is only used to check constness, which no position of the signature requires.
+                auto column = stripped_type.get() == arg.type.get() ? arg.column : nullptr;
+                stripped_args.emplace_back(std::move(column), std::move(stripped_type), arg.name);
+            }
+            signature_result_type = FunctionIfBase::getReturnTypeImpl(stripped_args);
+        }
 
         if (!(args.size() >= 3 && args.size() % 2 == 1))
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Invalid number of arguments for function {}", getName());
@@ -286,6 +333,9 @@ public:
                 && (only_null_branches_count + string_branches_count + nullable_string_branches_count) == num_branches)
                 return std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()));
         }
+
+        if (signature_result_type)
+            return signature_result_type;
 
         if (use_variant_as_common_type)
             return getLeastSupertypeOrVariant(types_of_branches, allow_lossy_numeric_supertype);
