@@ -443,6 +443,12 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2, 3, 4}; }
 
+    String getSignatureString() const override
+    {
+        /// Documentation only: the legacy `getReturnTypeImpl` below still runs to keep the per-argument error messages.
+        return "(StringOrFixedString, [StringOrFixedString], [StringOrFixedString], [StringOrFixedString], [StringOrFixedString]) -> Map(String, String)";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.empty() || arguments.size() > MAX_NUMBER_OF_ARGUMENTS)
