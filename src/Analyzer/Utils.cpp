@@ -172,27 +172,33 @@ bool stringFamilyPairIsNotEqualityEquivalent(const DataTypePtr & left_type, cons
         return stringFamilyPairIsNotEqualityEquivalent(left_map->getKeyType(), right_map->getKeyType())
             || stringFamilyPairIsNotEqualityEquivalent(left_map->getValueType(), right_map->getValueType());
 
-    /// A `Variant` value is compared as its active alternative, so the pair can disagree if any
-    /// alternative can. This holds even when both sides have the same `Variant` type: `equals`
-    /// dispatches on the active alternative of every row, so a `String` alternative compares equal
-    /// to a `FixedString` alternative zero-padded, while a set is keyed on the discriminator and the
-    /// value. Hence every alternative of one side is checked against every alternative of the other.
+    /// A `Variant` value is compared as its active alternative, while a set is keyed on the
+    /// discriminator and the value. With several alternatives, matching values in distinct
+    /// alternatives are equal for `equals` but different set keys: `CAST(toUInt8(1), 'Variant(UInt8, UInt64)')`
+    /// equals `toUInt64(1)`, but is not in a set of `Variant(UInt8, UInt64)` built from it. The same
+    /// goes for a `String` and a `FixedString` alternative, which compare zero-padded. This holds even
+    /// when both sides have the same `Variant` type, so decline conservatively. `Dynamic` stores its
+    /// values in a `Variant` of the types seen so far, so it has the same problem. A `Variant` with a
+    /// single alternative is compared as that alternative.
+    if (isDynamic(left) || isDynamic(right))
+        return true;
+
     if (const auto * left_variant = typeid_cast<const DataTypeVariant *>(left.get()))
     {
-        for (const auto & alternative : left_variant->getVariants())
-            if (stringFamilyPairIsNotEqualityEquivalent(alternative, right))
-                return true;
+        const auto & alternatives = left_variant->getVariants();
+        if (alternatives.size() != 1)
+            return true;
 
-        return false;
+        return stringFamilyPairIsNotEqualityEquivalent(alternatives.front(), right);
     }
 
     if (const auto * right_variant = typeid_cast<const DataTypeVariant *>(right.get()))
     {
-        for (const auto & alternative : right_variant->getVariants())
-            if (stringFamilyPairIsNotEqualityEquivalent(left, alternative))
-                return true;
+        const auto & alternatives = right_variant->getVariants();
+        if (alternatives.size() != 1)
+            return true;
 
-        return false;
+        return stringFamilyPairIsNotEqualityEquivalent(left, alternatives.front());
     }
 
     return isStringOrFixedString(left) && isStringOrFixedString(right) && !left->equals(*right);

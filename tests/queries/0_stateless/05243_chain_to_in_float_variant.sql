@@ -26,8 +26,9 @@ SELECT id FROM t_chain_variant WHERE v != 0.0 AND v != 1.0 AND v != 2.0 AND x = 
 SELECT 'not rewritten';
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT (v = 0.0) OR (v = 1.0) OR (v = 2.0) FROM t_chain_variant) WHERE explain LIKE '%function_name: in%';
 
--- A `Variant` without a floating-point alternative is still rewritten.
+-- A `Variant` with a single non-floating-point alternative is still rewritten. With several
+-- alternatives it is not, see `05406_chain_to_in_numeric_variant`.
 SELECT 'still rewritten';
-SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT (w = 1) OR (w = 2) OR (w = 3) FROM (SELECT 1::UInt64::Variant(UInt64, String) AS w)) WHERE explain LIKE '%function_name: in%';
+SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT (w = 1) OR (w = 2) OR (w = 3) FROM (SELECT 1::UInt64::Variant(UInt64) AS w)) WHERE explain LIKE '%function_name: in%';
 
 DROP TABLE t_chain_variant;
