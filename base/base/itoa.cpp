@@ -510,6 +510,8 @@ struct UInt64Tables
     uint8_t estimated_length[65];
     UInt64 length_threshold[21];
     uint8_t reading_order[32];
+    /// The same for the 16 digits of a chunk of `writeLargeUInt128Text`.
+    uint8_t chunk_order[32];
     /// 16 bytes from offset `20 - length` put the first 4 digits in reading order without the leading zeros.
     uint8_t top_order[32];
     /// By length: the digits of the first 4 written, and where the shuffle of the other 16 starts in `reading_order`.
@@ -547,6 +549,16 @@ constexpr UInt64Tables uint64_tables = []
         else
             tables.reading_order[i] = 4 * group_lane[i / 4] + i % 4;
     }
+    /// A chunk has its two halves of 8 digits in the 64-bit lanes, each as the last 4 digits in the low 32 bits and the
+    /// first 4 in the high 32 bits: the groups 2, 1, 4, 3 on little-endian, 1 to 4 on big-endian.
+    constexpr uint8_t chunk_group_lane[4] = {1, 0, 3, 2};
+    for (uint8_t i = 0; i < 16; ++i)
+    {
+        if constexpr (std::endian::native == std::endian::little)
+            tables.chunk_order[i] = 4 * chunk_group_lane[i / 4] + 3 - i % 4;
+        else
+            tables.chunk_order[i] = i;
+    }
     /// The first 4 digits are in the first 32-bit lane, the first digit in the highest byte. Only the first
     /// `length - 16` bytes of the shuffle are kept, the others are any index in range.
     for (uint8_t i = 0; i < 32; ++i)
@@ -559,17 +571,21 @@ constexpr UInt64Tables uint64_tables = []
     return tables;
 }();
 
-/// As for 32 bits: `n / 10^16`, at most 1844, is the first 4 digits, and the other 16 are four groups of 4 in the
-/// 32-bit lanes of one vector, split into pairs and digits the same way. The first 4 are written with one 4-byte store,
-/// then the 16 with one 16-byte store over the part of those 4 bytes that is not digits.
-NO_INLINE char * writeLargeUInt64Text(UInt64 value, char * p)
-{
-    UInt32 estimated = uint64_tables.estimated_length[std::countl_zero(value)];
-    UInt32 length = estimated - (value < uint64_tables.length_threshold[estimated]);
+using UInt32x4 = UInt32 __attribute__((vector_size(16)));
+using UInt32x8 = UInt32 __attribute__((vector_size(32)));
+using UInt8x32 = uint8_t __attribute__((vector_size(32)));
 
+/// As for 32 bits: `n / 10^16`, at most 1844, is the first 4 digits, and the other 16 are four groups of 4 in the
+/// 32-bit lanes of one vector, in the order of `reading_order`.
+struct DigitGroups
+{
+    UInt32x4 groups;
+    UInt32 top;
+};
+
+ALWAYS_INLINE inline DigitGroups digitGroups(UInt64 value)
+{
     using UInt64x2 = UInt64 __attribute__((vector_size(16)));
-    using UInt32x4 = UInt32 __attribute__((vector_size(16)));
-    using UInt32x8 = UInt32 __attribute__((vector_size(32)));
 
     /// As zmij does: n * ceil(2^90 / 10^8) has n / 10^8 above bit 90, and the remainder as a fraction of 10^8 in the 32
     /// bits below, rounded up. The same for that quotient gives the first 4 digits, n / 10^16, and digits 5 to 12.
@@ -579,43 +595,107 @@ NO_INLINE char * writeLargeUInt64Text(UInt64 value, char * p)
     /// `first_twelve` is below 2^38, so it can be multiplied by 2^6 first: then n / 10^16 is in the high 32 bits of the
     /// high 64, and the fraction in the low 32, with no shift across the two halves.
     UInt64 high_half = static_cast<UInt64>((static_cast<unsigned __int128>(first_twelve << 6) * reciprocal) >> 64);
-    UInt32 top = static_cast<UInt32>(high_half >> 32);
 
     /// Multiplying a fraction by 10^4 puts the next 4 digits in the high 32 bits and leaves the rest as a fraction in
     /// the low 32: twice for each fraction gives the groups 2 to 5.
     UInt64x2 fractions = {static_cast<UInt32>(high_half) + UInt64(1), static_cast<UInt32>(low_product >> 58) + UInt64(1)};
     UInt64x2 first = fractions * 10000;
     UInt64x2 second = (first & 0xFFFFFFFF) * 10000;
-    UInt32x4 groups;
+    DigitGroups result;
     if constexpr (std::endian::native == std::endian::little)
-        groups = __builtin_shufflevector(std::bit_cast<UInt32x4>(first), std::bit_cast<UInt32x4>(second), 1, 3, 5, 7);
+        result.groups = __builtin_shufflevector(std::bit_cast<UInt32x4>(first), std::bit_cast<UInt32x4>(second), 1, 3, 5, 7);
     else
-        groups = __builtin_shufflevector(std::bit_cast<UInt32x4>(first), std::bit_cast<UInt32x4>(second), 0, 2, 4, 6);
+        result.groups = __builtin_shufflevector(std::bit_cast<UInt32x4>(first), std::bit_cast<UInt32x4>(second), 0, 2, 4, 6);
+    result.top = static_cast<UInt32>(high_half >> 32);
+    return result;
+}
 
-    /// The first 4 digits in a fifth lane, so that the same vector operations produce them.
+/// Groups of 4 digits to their characters, each lane with the first in the highest byte, whatever the endianness.
+ALWAYS_INLINE inline UInt8x32 textOfGroups(UInt32x8 groups)
+{
     using UInt16x16 = UInt16 __attribute__((vector_size(32)));
     using UInt32x16 = UInt32 __attribute__((vector_size(64)));
-    using UInt8x32 = uint8_t __attribute__((vector_size(32)));
-    UInt32x8 all_groups = __builtin_shufflevector(groups, UInt32x4{top, 0, 0, 0}, 0, 1, 2, 3, 4, 5, 6, 7);
-    UInt32x8 pairs = all_groups + ((all_groups * 5243) >> 19) * (65536 - 100);
+    UInt32x8 pairs = groups + ((groups * 5243) >> 19) * (65536 - 100);
     UInt16x16 pair_lanes = std::bit_cast<UInt16x16>(pairs);
     UInt16x16 tens = __builtin_convertvector((__builtin_convertvector(pair_lanes, UInt32x16) * 6554) >> 16, UInt16x16);
-    UInt8x32 all_text = std::bit_cast<UInt8x32>(pair_lanes + 0x3030 + tens * UInt16(256 - 10));
-    UInt8x16 text = __builtin_shufflevector(all_text, all_text, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15);
-    UInt8x16 top_text = __builtin_shufflevector(all_text, all_text, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31);
+    return std::bit_cast<UInt8x32>(pair_lanes + 0x3030 + tens * UInt16(256 - 10));
+}
+
+ALWAYS_INLINE inline UInt8x16 lowHalf(UInt8x32 text)
+{
+    return __builtin_shufflevector(text, text, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15);
+}
+
+ALWAYS_INLINE inline UInt8x16 highHalf(UInt8x32 text)
+{
+    return __builtin_shufflevector(text, text, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31);
+}
+
+ALWAYS_INLINE inline UInt32 digitCount(UInt64 value)
+{
+    UInt32 estimated = uint64_tables.estimated_length[std::countl_zero(value)];
+    return estimated - (value < uint64_tables.length_threshold[estimated]);
+}
+
+/// Writes the last `length` of the 16 digits in `text`, which are in the order of `order_table`.
+ALWAYS_INLINE inline void writeLastDigits(UInt8x16 text, UInt32 length, const uint8_t * order_table, char * p)
+{
+    UInt8x16 order;
+    memcpy(&order, order_table + uint64_tables.order_offset[length], 16);
+    text = shuffleBytes(text, order);
+    memcpy(p, &text, 16);
+}
+
+/// The first 4 digits, the fifth lane, are written with one 4-byte store, then the other 16 with one 16-byte store over
+/// the part of those 4 bytes that is not digits.
+NO_INLINE char * writeLargeUInt64Text(UInt64 value, char * p)
+{
+    UInt32 length = digitCount(value);
+    DigitGroups groups = digitGroups(value);
+    UInt8x32 text = textOfGroups(__builtin_shufflevector(groups.groups, UInt32x4{groups.top, 0, 0, 0}, 0, 1, 2, 3, 4, 5, 6, 7));
 
     UInt8x16 top_order;
     memcpy(&top_order, uint64_tables.top_order + 20 - length, 16);
-    top_text = shuffleBytes(top_text, top_order);
+    UInt8x16 top_text = shuffleBytes(highHalf(text), top_order);
     /// Stored as a 32-bit lane: a vector of 4 bytes is not a native type on AArch64, and is widened to store it.
     unalignedStore<UInt32>(p, std::bit_cast<UInt32x4>(top_text)[0]);
-    UInt32 top_length = uint64_tables.top_length[length];
-
-    UInt8x16 order;
-    memcpy(&order, uint64_tables.reading_order + uint64_tables.order_offset[length], 16);
-    text = shuffleBytes(text, order);
-    memcpy(p + top_length, &text, 16);
+    writeLastDigits(lowHalf(text), length, uint64_tables.reading_order, p + uint64_tables.top_length[length]);
     return p + length;
+}
+
+/// The digits of `head` and `tail`, both below 10^16, in the two halves of one vector, in the order of `chunk_order`.
+/// As zmij does: not `digitGroups`, which also makes the first 4 of 20 digits. Each chunk is split into two halves
+/// of 8 digits, and all four halves into groups of 4 at once.
+ALWAYS_INLINE inline UInt8x32 textOfTwo(UInt64 head, UInt64 tail)
+{
+    using UInt64x4 = UInt64 __attribute__((vector_size(32)));
+    auto head_first = static_cast<UInt32>(head / 100000000);
+    auto tail_first = static_cast<UInt32>(tail / 100000000);
+    auto head_last = static_cast<UInt32>(head % 100000000);
+    auto tail_last = static_cast<UInt32>(tail % 100000000);
+    /// The zeros are explicit, so that the compiler knows the halves fit in 32 bits, and multiplies 32 x 32 to 64 bits.
+    UInt64x4 halves;
+    if constexpr (std::endian::native == std::endian::little)
+        halves = std::bit_cast<UInt64x4>(UInt32x8{head_first, 0, head_last, 0, tail_first, 0, tail_last, 0});
+    else
+        halves = std::bit_cast<UInt64x4>(UInt32x8{0, head_first, 0, head_last, 0, tail_first, 0, tail_last});
+    /// The last 4 digits of each half in its low 32 bits, the first 4 in its high 32 bits. Not `halves / 10000`: clang
+    /// divides 64-bit lanes as if they could be any 64-bit value, with two multiplications. A half is below 10^8, and
+    /// for that n * ceil(2^40 / 10^4) / 2^40 is n / 10^4, as zmij does.
+    constexpr UInt64 reciprocal = (UInt64(1) << 40) / 10000 + 1;
+    UInt64x4 groups = halves + ((halves * reciprocal) >> 40) * ((UInt64(1) << 32) - 10000);
+    return textOfGroups(std::bit_cast<UInt32x8>(groups));
+}
+
+/// All the 32 digits of `textOfTwo` in reading order: on little-endian each 64-bit lane is reversed, as `chunk_order`.
+ALWAYS_INLINE inline UInt8x32 chunksInReadingOrder(UInt8x32 text)
+{
+    if constexpr (std::endian::native == std::endian::little)
+        return __builtin_shufflevector(
+            text, text, 7, 6, 5, 4, 3, 2, 1, 0, 15, 14, 13, 12, 11, 10, 9, 8,
+            23, 22, 21, 20, 19, 18, 17, 16, 31, 30, 29, 28, 27, 26, 25, 24);
+    else
+        return text;
 }
 
 /// Most values are small, and the 32-bit code is faster for them. The rest is out of line, so that the callers of this
@@ -716,15 +796,6 @@ ALWAYS_INLINE inline uint64_t divmod_1e18(UInt256 & value)
     return remainder;
 }
 
-ALWAYS_INLINE inline char * writeEighteenFixedDigits(char * p, UInt64 value)
-{
-    writeEightFixedDigits(p + 10, static_cast<uint32_t>(value % 100000000ULL));
-    value /= 100000000ULL;
-    writeEightFixedDigits(p + 2, static_cast<uint32_t>(value % 100000000ULL));
-    outTwoDigits(p, static_cast<uint8_t>(value / 100000000ULL));
-    return p + 18;
-}
-
 /// Divides a 256-bit unsigned integer by 10^18, one limb per step. Returns the quotient and stores
 /// the remainder in `remainder`.
 ///
@@ -770,37 +841,41 @@ ALWAYS_INLINE inline char * writeDigitPairs(char * p, const uint8_t * two_values
     return p;
 }
 
-ALWAYS_INLINE inline char * writeUIntText(UInt128 _x, char * p)
+/// As zmij does: 16 digits at a time. `value` is at least 2^64, so the part above the last 16 digits is at least 1844.
+NO_INLINE char * writeLargeUInt128Text(unsigned __int128 value, char * p)
 {
-    /// If the highest 64-bit item is empty, we can print just the lowest item as u64.
-    /// Even though technically there are more numbers in the range where this isn't true, in real-life data this isn't the case
-    if (likely(_x.items[UInt128::_impl::little(1)] == 0))
-        return writeUInt64Text(_x.items[UInt128::_impl::little(0)], p);
-
-    /// Doing operations using __int128 is faster and we already rely on this feature.
-    using T = unsigned __int128;
-    T x = (T(_x.items[UInt128::_impl::little(1)]) << 64) + T(_x.items[UInt128::_impl::little(0)]);
-
-    /// Split into blocks of up to 18 digits (10^18 per block) using Barrett reduction.
-    /// UInt128 max is ~3.4e38, so at most 2 divisions are needed.
-    /// Unrolled: first division always needed (x > uint64 max since high item != 0),
-    /// second division only if quotient still exceeds uint64 max.
-    uint64_t low_block = 0;
-    x = divmod_1e18(x, low_block);
-
-    constexpr T largest_uint64 = std::numeric_limits<uint64_t>::max();
-    if (unlikely(x > largest_uint64))
+    constexpr UInt64 ten_to_16 = 10000000000000000ULL;
+    unsigned __int128 high = value / ten_to_16;
+    /// In 64 bits: the remainder is below 10^16, and the high half of the product is not needed.
+    UInt64 low = static_cast<UInt64>(value) - static_cast<UInt64>(high) * ten_to_16;
+    if (likely(high < ten_to_16))
     {
-        uint64_t middle_block = 0;
-        x = divmod_1e18(x, middle_block);
-
-        char * out = writeUInt64Text(uint64_t(x), p);
-        out = writeEighteenFixedDigits(out, middle_block);
-        return writeEighteenFixedDigits(out, low_block);
+        /// The head without leading zeros at `p`, the 16 digits of `low` right after it.
+        UInt32 length = digitCount(static_cast<UInt64>(high));
+        UInt8x32 text = textOfTwo(static_cast<UInt64>(high), low);
+        writeLastDigits(lowHalf(text), length, uint64_tables.chunk_order, p);
+        UInt8x16 tail_text = highHalf(chunksInReadingOrder(text));
+        memcpy(p + length, &tail_text, 16);
+        return p + length + 16;
     }
 
-    char * out = writeUInt64Text(uint64_t(x), p);
-    return writeEighteenFixedDigits(out, low_block);
+    /// `high` is below 2^75, and 10^16 is 2^16 * 5^16: the division by 5^16 of `high / 2^16` is a 64-bit one.
+    UInt32 top = static_cast<UInt32>(static_cast<UInt64>(high >> 16) / 152587890625ULL);
+    UInt64 middle = static_cast<UInt64>(high) - top * ten_to_16;
+    p = writeUInt32Text(top, p);
+    UInt8x32 text = textOfTwo(middle, low);
+    text = chunksInReadingOrder(text);
+    memcpy(p, &text, 32);
+    return p + 32;
+}
+
+ALWAYS_INLINE inline char * writeUIntText(UInt128 x, char * p)
+{
+    /// Most values fit in 64 bits.
+    if (likely(x.items[UInt128::_impl::little(1)] == 0))
+        return writeUInt64Text(x.items[UInt128::_impl::little(0)], p);
+    return writeLargeUInt128Text(
+        (static_cast<unsigned __int128>(x.items[UInt128::_impl::little(1)]) << 64) | x.items[UInt128::_impl::little(0)], p);
 }
 
 /// Only values above the 128-bit range reach here. Out of line so the digit buffer, and the
@@ -850,49 +925,22 @@ NO_INLINE char * writeSInt256TextSlow(const Int256 & x, char * pos)
     return writeUIntText(UInt256(x), pos);
 }
 
-template <typename T>
-ALWAYS_INLINE inline char * writeSIntText(const T & x, char * pos)
+ALWAYS_INLINE inline char * writeSIntText(const Int256 & x, char * pos)
 {
-    static_assert(std::is_same_v<T, Int128> || std::is_same_v<T, Int256>);
-
-    using UnsignedT = make_unsigned_t<T>;
-    constexpr T min_int = UnsignedT(1) << (sizeof(T) * 8 - 1);
-
+    constexpr Int256 min_int = UInt256(1) << 255;
     if (unlikely(x == min_int))
     {
-        if constexpr (std::is_same_v<T, Int128>)
-        {
-            const char * res = "-170141183460469231731687303715884105728";
-            memcpy(pos, res, strlen(res)); /// NOLINT(bugprone-not-null-terminated-result)
-            return pos + strlen(res);
-        }
-        else if constexpr (std::is_same_v<T, Int256>)
-        {
-            const char * res = "-57896044618658097711785492504343953926634992332820282019728792003956564819968";
-            memcpy(pos, res, strlen(res)); /// NOLINT(bugprone-not-null-terminated-result)
-            return pos + strlen(res);
-        }
+        const char * res = "-57896044618658097711785492504343953926634992332820282019728792003956564819968";
+        memcpy(pos, res, strlen(res)); /// NOLINT(bugprone-not-null-terminated-result)
+        return pos + strlen(res);
     }
 
-    if constexpr (std::is_same_v<T, Int256>)
-    {
-        /// Clear top limbs mean the value fits into 128 bits, the common case. Reading through the
-        /// reference avoids a copy, and a copy would cost a `-fstack-protector-strong` canary.
-        if (likely(x.items[Int256::_impl::little(3)] == 0 && x.items[Int256::_impl::little(2)] == 0))
-            return writeUIntText(UInt128{x.items[Int256::_impl::little(0)], x.items[Int256::_impl::little(1)]}, pos);
+    /// Clear top limbs mean the value fits into 128 bits, the common case. Reading through the
+    /// reference avoids a copy, and a copy would cost a `-fstack-protector-strong` canary.
+    if (likely(x.items[Int256::_impl::little(3)] == 0 && x.items[Int256::_impl::little(2)] == 0))
+        return writeUIntText(UInt128{x.items[Int256::_impl::little(0)], x.items[Int256::_impl::little(1)]}, pos);
 
-        return writeSInt256TextSlow(x, pos);
-    }
-    else
-    {
-        T value = x;
-        if (value < 0)
-        {
-            value = -value;
-            pos = writeLeadingMinus(pos);
-        }
-        return writeUIntText(UnsignedT(value), pos);
-    }
+    return writeSInt256TextSlow(x, pos);
 }
 }
 
@@ -903,7 +951,16 @@ char * itoa(UInt128 i, char * p)
 
 char * itoa(Int128 i, char * p)
 {
-    return writeSIntText(i, p);
+    unsigned __int128 value = (static_cast<unsigned __int128>(static_cast<UInt64>(i.items[Int128::_impl::little(1)])) << 64)
+        | static_cast<UInt64>(i.items[Int128::_impl::little(0)]);
+    unsigned __int128 sign = static_cast<unsigned __int128>(static_cast<__int128>(value) >> 127);
+    *p = '-';
+    /// As for `Int32`.
+    value = (value ^ sign) - sign;
+    p += static_cast<UInt64>(sign) & 1;
+    if (likely(value >> 64 == 0))
+        return writeUInt64Text(static_cast<UInt64>(value), p);
+    return writeLargeUInt128Text(value, p);
 }
 
 char * itoa(const UInt256 & i, char * p)
