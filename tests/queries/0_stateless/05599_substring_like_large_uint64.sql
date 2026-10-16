@@ -83,3 +83,13 @@ SELECT substring(materialize(CAST('alpha', 'Enum8(\'alpha\' = 1)')), 2, material
 SELECT arraySort(groupArray(ifNull(right('abcd', nullIf(if(number = 0, toUInt64(18446744073709551615), toUInt64(2)), toUInt64(18446744073709551615))), '<null>'))) = ['<null>', 'cd'] FROM numbers(2) SETTINGS short_circuit_function_evaluation_for_nulls = 0;
 SELECT arraySort(groupArray(ifNull(substring('abcd', nullIf(if(number = 0, toUInt64(18446744073709551615), toUInt64(2)), toUInt64(18446744073709551615)), 2), '<null>'))) = ['<null>', 'bc'] FROM numbers(2) SETTINGS short_circuit_function_evaluation_for_nulls = 0;
 SELECT arraySort(groupArray(ifNull(hex(bitSlice('AB', 1, nullIf(if(number = 0, toUInt64(18446744073709551615), toUInt64(8)), toUInt64(18446744073709551615)))), '<null>'))) = ['41', '<null>'] FROM numbers(2) SETTINGS short_circuit_function_evaluation_for_nulls = 0;
+
+-- Short dynamic UTF-8 slices should not count all code points when length is provided.
+SELECT leftUTF8('Привет', materialize(toUInt64(2))) = 'Пр';
+SELECT substringUTF8('Привет', materialize(toUInt64(2)), materialize(toUInt64(3))) = 'рив';
+SELECT countIf(leftUTF8(concat(repeat('Ж', 10000), toString(number)), toUInt64(number % 2 + 1)) = if(number % 2 = 0, 'Ж', 'ЖЖ')) = 8 FROM numbers(8);
+SELECT countIf(substringUTF8(concat(repeat('Ж', 10000), toString(number)), materialize(toUInt64(2)), toUInt64(number % 2 + 1)) = if(number % 2 = 0, 'Ж', 'ЖЖ')) = 8 FROM numbers(8);
+-- LowCardinality(UInt64) arguments must follow the checked, materialized execution path.
+SELECT countIf(leftUTF8('Привет', toLowCardinality(toUInt64(number % 2 + 1))) = if(number % 2 = 0, 'П', 'Пр')) = 8 FROM numbers(8);
+SELECT countIf(substringUTF8('Привет', 2, toLowCardinality(toUInt64(number % 2 + 1))) = if(number % 2 = 0, 'р', 'ри')) = 8 FROM numbers(8);
+SELECT leftUTF8('Привет', toLowCardinality(arrayJoin([toUInt64(1), toUInt64(9223372036854775808)]))); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
