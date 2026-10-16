@@ -179,6 +179,10 @@ void setSnapshotRef(Poco::JSON::Object & metadata, const Poco::JSON::Object & up
     if (type != f_branch && type != f_tag)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Ref type must be 'branch' or 'tag', got '{}'", type);
 
+    /// Iceberg requires main to be a branch. Writers append to it.
+    if (ref_name == f_main && type != f_branch)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Ref 'main' must be a branch, got '{}'", type);
+
     /// Get new snapshot-id for ref.
     const auto snapshot_id = getInteger(update, f_metadata_snapshot_id);
     const auto snapshot = findSnapshot(metadata, snapshot_id);
