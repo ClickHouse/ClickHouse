@@ -1,0 +1,7 @@
+--- The first path stays inside user_files
+p.1.x
+p.x
+target.parquet
+--- The numbered path that leads out of user_files is refused
+DATABASE_ACCESS_DENIED
+sub

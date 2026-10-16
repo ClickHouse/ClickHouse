@@ -3608,16 +3608,30 @@ public:
         /// The files after the first one are numbered: `data.1.tsv`, `data.2.tsv`, ... The number is placed into
         /// the path pattern rather than into the path of the partition, so that a partition id with a dot in it
         /// cannot shift it - see `IPartitionStrategy::getNumberedPathsForWrite`.
-        const NumberedFileNames numbered_paths = partition_strategy->getNumberedPathsForWrite(path, partition_id, filepath);
+        NumberedFileNames numbered_paths = partition_strategy->getNumberedPathsForWrite(path, partition_id, filepath);
         size_t sequence_number = 1;
 
-        /// A truncating insert split by size deletes the numbered files of the partition (see below), but with this path pattern
-        /// a numbered name of the partition may be the first file of another partition written by the same pattern. Nothing
-        /// tells them apart, so the insert is refused before anything is written or deleted.
-        if (split_on_write_by_size_bytes && truncate_on_insert && !allow_create_multiple_files && numbered_paths.may_be_names_of_other_partitions)
+        /// Every numbered path is checked like the first one before it is probed, opened or deleted. The check of the
+        /// first path does not cover them: the number goes into the pattern before the partition id is substituted,
+        /// so it can change a directory that a `..` of the partition id leads out of - with `p.{_partition_id}.tsv`
+        /// and the partition id `x/../target`, `p.1.x/../target.tsv` resolves through `p.1.x` rather than `p.x`.
+        numbered_paths.getName = [get_name = std::move(numbered_paths.getName), check_context = context](size_t number)
+        {
+            String numbered_path = get_name(number);
+            validatePartitionKey(numbered_path, true);
+            checkCreationIsAllowedResolvingDotDot(check_context, check_context->getUserFilesPath(), numbered_path, /*can_be_directory=*/ true);
+            return numbered_path;
+        };
+
+        /// An insert split by size writes the numbered files of the partition, and a truncating one deletes them (see below),
+        /// but with this path pattern a numbered name of the partition may be the first file of another partition written by
+        /// the same pattern. Nothing tells them apart: the split would write a file that the next insert into the other
+        /// partition overwrites, or overwrite or delete the file of the other partition itself. So the insert is refused
+        /// before anything is written or deleted, whatever the other settings are.
+        if (split_on_write_by_size_bytes && numbered_paths.may_be_names_of_other_partitions)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Cannot overwrite the partition {} with engine_file_truncate_on_insert and engine_file_split_on_write_by_size_bytes: "
+                "Cannot split the partition {} with engine_file_split_on_write_by_size_bytes: "
                 "the numbered files of the partition, such as {}, may be the files of other partitions written by the path pattern {}. "
                 "Place a character that is not a digit between {} and the extension of the file, or {} into a directory of the path, "
                 "or use a partition key of an integer, date or UUID type",

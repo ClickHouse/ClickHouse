@@ -250,18 +250,19 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
     const NumberedFileNames numbered_keys = configuration->getNumberedPathsForWrite(partition_id, file_path);
     size_t sequence_number = 1;
 
-    /// A truncating insert split by size deletes the numbered objects of the partition (see below), but with this path pattern
-    /// a numbered key of the partition may be the first object of another partition written by the same pattern. Nothing
-    /// tells them apart, so the insert is refused before anything is written or deleted.
-    if (query_settings.split_on_write_by_size_bytes && query_settings.truncate_on_insert && !query_settings.create_new_file_on_insert
-        && numbered_keys.may_be_names_of_other_partitions)
+    /// An insert split by size writes the numbered objects of the partition, and a truncating one deletes them (see below),
+    /// but with this path pattern a numbered key of the partition may be the first object of another partition written by
+    /// the same pattern. Nothing tells them apart: the split would write an object that the next insert into the other
+    /// partition overwrites, or overwrite or delete the object of the other partition itself. So the insert is refused
+    /// before anything is written or deleted, whatever the other settings are.
+    if (query_settings.split_on_write_by_size_bytes && numbered_keys.may_be_names_of_other_partitions)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Cannot overwrite the partition {} with {}_truncate_on_insert and {}_split_on_write_by_size_bytes: "
+            "Cannot split the partition {} with {}_split_on_write_by_size_bytes: "
             "the numbered objects of the partition, such as {}, may be the objects of other partitions written by the path pattern {}. "
             "Place a character that is not a digit between {} and the extension of the file, or {} into a directory of the path, "
             "or use a partition key of an integer, date or UUID type",
-            partition_id, configuration->getTypeName(), configuration->getTypeName(), numbered_keys.getName(1),
+            partition_id, configuration->getTypeName(), numbered_keys.getName(1),
             configuration->getRawPath().path, PartitionedSink::PARTITION_ID_WILDCARD, PartitionedSink::PARTITION_ID_WILDCARD);
 
     /// See the same reservation in `StorageObjectStorage::write`: a generated key is invisible both for the
@@ -288,9 +289,16 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
     /// for a while, see `StorageObjectStorageConfiguration::commitPathWrittenByInsert`. It is done after the object is
     /// committed, before the reservation is released, so the key is never free in between. A generated name cannot
     /// be met again, so it is not kept.
-    StorageObjectStorageSink::PublishPathCallback publish_path;
-    if (!names_are_generated)
-        publish_path = [config = configuration](const String & key) { config->commitPathWrittenByInsert(key); };
+    /// The callback also holds the reservations, whatever the settings are: the partitioned sink is destroyed
+    /// before the sinks of its partitions, and a sink that is cancelled may still be cleaning up its object
+    /// (HDFS deletes the file of a cancelled write) - if the key were free by then, another insert could start
+    /// writing it, and the cleanup would delete the object of that insert.
+    StorageObjectStorageSink::PublishPathCallback publish_path
+        = [config = configuration, names_are_generated, path_reservations = reservations](const String & key)
+    {
+        if (!names_are_generated)
+            config->commitPathWrittenByInsert(key);
+    };
 
     StorageObjectStorageSink::GetNextPathCallback get_next_path;
     if (query_settings.split_on_write_by_size_bytes)

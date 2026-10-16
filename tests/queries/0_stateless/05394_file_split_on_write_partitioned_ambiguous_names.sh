@@ -6,8 +6,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # With the path pattern `p_{_partition_id}.tsv`, the first numbered file of the partition `a` is `p_a.1.tsv`,
 # which is also the first file of the partition `a.1`. A truncating insert split by size deletes the numbered files
-# of the partition it rewrites, and it cannot tell them from the files of other partitions, so it is refused before
-# anything is deleted. The layouts where the names cannot be the same are still rewritten.
+# of the partition it rewrites, and it cannot tell them from the files of other partitions. An insert split by size
+# without truncation writes `p_a.1.tsv`, which a truncating insert into the partition `a.1` would overwrite later.
+# So an insert split by size is refused for such a layout before anything is written or deleted. The layouts where
+# the names cannot be the same are still split and rewritten.
 
 DIR="${CLICKHOUSE_TMP}/05394_split_on_write_partitioned"
 rm -rf "${DIR}"
@@ -27,6 +29,16 @@ ${CLICKHOUSE_LOCAL} --query "
 " 2>&1 | grep -o -m1 'BAD_ARGUMENTS'
 ls "${DIR}/ambiguous" | LC_ALL=C sort
 ${CLICKHOUSE_LOCAL} --query "SELECT p, x FROM file('${DIR}/ambiguous/p_*.tsv', TSV, 'p String, x UInt64') ORDER BY p"
+
+echo '--- The partition `a` is not split into `p_a.1.tsv` either, with or without engine_file_allow_create_multiple_files'
+for allow_create_multiple_files in 0 1
+do
+    ${CLICKHOUSE_LOCAL} --query "
+        INSERT INTO FUNCTION file('${DIR}/ambiguous/p_{_partition_id}.tsv', TSV, 'p String, x UInt64') PARTITION BY p
+            SELECT 'a', number FROM numbers(400) SETTINGS ${SETTINGS}, engine_file_allow_create_multiple_files = ${allow_create_multiple_files};
+    " 2>&1 | grep -o -m1 'BAD_ARGUMENTS'
+done
+ls "${DIR}/ambiguous" | LC_ALL=C sort
 
 # Rewrites the partition `a` written into 4 files with 100 rows, next to the partition `a.1`.
 function rewrite()

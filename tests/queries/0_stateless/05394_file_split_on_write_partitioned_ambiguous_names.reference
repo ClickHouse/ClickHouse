@@ -2,6 +2,10 @@
 BAD_ARGUMENTS
 p_a.1.tsv
 a.1	1
+--- The partition `a` is not split into `p_a.1.tsv` either, with or without engine_file_allow_create_multiple_files
+BAD_ARGUMENTS
+BAD_ARGUMENTS
+p_a.1.tsv
 --- A character that is not a digit between the partition id and the extension
 a	100	4950	1
 a.1	1	1	1

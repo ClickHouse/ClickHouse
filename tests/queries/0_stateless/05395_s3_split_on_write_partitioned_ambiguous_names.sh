@@ -8,8 +8,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # The same as 05394_file_split_on_write_partitioned_ambiguous_names for object storage: with the path pattern
 # `p_{_partition_id}.tsv`, the first numbered object of the partition `a` is `p_a.1.tsv`, which is also the first
-# object of the partition `a.1`, so a truncating insert split by size is refused before anything is deleted.
-# The layouts where the keys cannot be the same are still rewritten.
+# object of the partition `a.1`, so an insert split by size is refused, with or without truncation, before anything
+# is written or deleted. The layouts where the keys cannot be the same are still split and rewritten.
 
 PREFIX="05395_split_on_write_partitioned/${CLICKHOUSE_DATABASE}"
 
@@ -25,6 +25,18 @@ ${CLICKHOUSE_CLIENT} --query "
     INSERT INTO FUNCTION s3(s3_conn, filename='${PREFIX}/ambiguous/p_{_partition_id}.tsv', format=TSV, structure='p String, x UInt64') PARTITION BY p
         SELECT 'a', 2 SETTINGS ${SETTINGS}, s3_truncate_on_insert = 1;
 " 2>&1 | grep -o -m1 'BAD_ARGUMENTS'
+${CLICKHOUSE_CLIENT} --query "
+    SELECT _file, p, x FROM s3(s3_conn, filename='${PREFIX}/ambiguous/p_*.tsv', format=TSV, structure='p String, x UInt64') ORDER BY _file;
+"
+
+echo '--- The partition `a` is not split into `p_a.1.tsv` either, with or without s3_create_new_file_on_insert'
+for create_new_file_on_insert in 0 1
+do
+    ${CLICKHOUSE_CLIENT} --query "
+        INSERT INTO FUNCTION s3(s3_conn, filename='${PREFIX}/ambiguous/p_{_partition_id}.tsv', format=TSV, structure='p String, x UInt64') PARTITION BY p
+            SELECT 'a', number FROM numbers(400) SETTINGS ${SETTINGS}, s3_create_new_file_on_insert = ${create_new_file_on_insert};
+    " 2>&1 | grep -o -m1 'BAD_ARGUMENTS'
+done
 ${CLICKHOUSE_CLIENT} --query "
     SELECT _file, p, x FROM s3(s3_conn, filename='${PREFIX}/ambiguous/p_*.tsv', format=TSV, structure='p String, x UInt64') ORDER BY _file;
 "

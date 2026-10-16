@@ -31,7 +31,7 @@ struct NumberedFileNames
 
     /// The numbered names may be the names of the first files of other partitions written by the same path pattern:
     /// with `p_{_partition_id}.tsv`, the file `p_a.1.tsv` is both the first numbered file of the partition `a`
-    /// and the first file of the partition `a.1`. Nothing tells them apart, so such names are never deleted by number.
+    /// and the first file of the partition `a.1`. Nothing tells them apart, so an insert is never split into such names.
     bool may_be_names_of_other_partitions = false;
 };
 
