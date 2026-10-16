@@ -87,3 +87,26 @@ SELECT variantType(any(CAST(toUInt64(1), 'Variant(Date, UInt64)'))) FROM test_05
 SETTINGS prefer_optimize_projection = 1;
 
 DROP TABLE test_05401;
+
+SET cast_keep_nullable = 1;
+
+CREATE TABLE test_05401
+(
+    type Nullable(UInt8),
+    PROJECTION p_cast
+    (
+        SELECT countIf(isNull(CAST(type, 'UInt8'))),
+               countIf(isNotNull(CAST(type, 'UInt8')))
+    )
+)
+ENGINE = MergeTree()
+ORDER BY tuple();
+
+INSERT INTO test_05401 VALUES (NULL), (1);
+
+SELECT countIf(isNull(CAST(type, 'UInt8'))), countIf(isNotNull(CAST(type, 'UInt8')))
+FROM test_05401 SETTINGS cast_keep_nullable = 0, optimize_use_projections = 0;
+SELECT countIf(isNull(CAST(type, 'UInt8'))), countIf(isNotNull(CAST(type, 'UInt8')))
+FROM test_05401 SETTINGS cast_keep_nullable = 0, prefer_optimize_projection = 1;
+
+DROP TABLE test_05401;
