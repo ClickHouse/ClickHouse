@@ -187,8 +187,8 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
     const auto [metadata_version, metadata_file_path, compression_method]
         = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration->getPathForRead().path, configuration->getDataLakeSettings(), cache_ptr, context_, log.get(), std::nullopt, CompressionMethod::None, true);
     LOG_DEBUG(log, "Latest metadata file path is {}, version {}", metadata_file_path, metadata_version);
-    auto metadata_object
-        = getMetadataJSONObject(metadata_file_path, object_storage, cache_ptr, context_, log, compression_method, std::nullopt);
+    auto metadata_json_str = readMetadataJSONString(metadata_file_path, object_storage, cache_ptr != nullptr, context_, log, compression_method);
+    auto metadata_object = parseMetadataJSONString(metadata_json_str);
     Int32 format_version = metadata_object->getValue<Int32>(f_format_version);
     String table_location = metadata_object->getValue<String>(f_location);
     std::optional<String> table_uuid = std::nullopt;
@@ -207,6 +207,10 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
                 Iceberg::f_table_uuid);
         }
     }
+    if (cache_ptr && table_uuid)
+        cache_ptr->getOrSetTableMetadata(
+            IcebergMetadataFilesCache::getKey(*table_uuid, metadata_file_path),
+            [&]() { return std::make_shared<IcebergMetadataFilesCacheCell>(metadata_object, metadata_json_str.size()); });
     auto table_path = configuration->getPathForRead().path;
     auto root_derivation = IcebergPathResolver::deriveTableRoot(table_location, table_path, metadata_file_path);
     return PersistentTableComponents{

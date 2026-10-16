@@ -539,6 +539,49 @@ std::string normalizeUuid(const std::string & uuid)
     return result;
 }
 
+String readMetadataJSONString(
+    const String & metadata_file_path,
+    ObjectStoragePtr object_storage,
+    bool use_metadata_cache,
+    const ContextPtr & local_context,
+    LoggerPtr log,
+    CompressionMethod compression_method)
+{
+    ObjectInfo object_info(metadata_file_path);
+
+    auto read_settings = local_context->getReadSettings();
+    /// Do not utilize filesystem cache if more precise cache enabled
+    if (use_metadata_cache)
+        read_settings.enable_filesystem_cache = false;
+
+    auto source_buf = createReadBuffer(object_info.relative_path_with_metadata, object_storage, local_context, log, read_settings);
+
+    std::unique_ptr<ReadBuffer> buf;
+    if (compression_method != CompressionMethod::None)
+        /// Iceberg metadata snappy is always the Hadoop block format (`SnappyMode::Basic`); the
+        /// write path in `writeMessageToFile` pins the same mode. The wire format cannot be
+        /// inferred from the `.snappy.metadata.json` suffix, so both sides must agree statically.
+        buf = wrapReadBufferWithCompressionMethod(std::move(source_buf), compression_method, /*zstd_window_log_max=*/ 0, SnappyMode::Basic);
+    else
+        buf = std::move(source_buf);
+
+    String json_str;
+    readJSONObjectPossiblyInvalid(json_str, *buf);
+    return json_str;
+}
+
+Poco::JSON::Object::Ptr parseMetadataJSONString(const String & metadata_json_str)
+{
+    Poco::JSON::Parser parser; /// For some reason base/base/JSON.h can not parse this json file
+    Poco::Dynamic::Var json = parser.parse(metadata_json_str);
+    return json.extract<Poco::JSON::Object::Ptr>();
+}
+
+Poco::JSON::Object::Ptr deepCopy(const Poco::JSON::Object::Ptr & object)
+{
+    return parseMetadataJSONString(stringifyJSON(object));
+}
+
 Poco::JSON::Object::Ptr getMetadataJSONObject(
     const String & metadata_file_path,
     ObjectStoragePtr object_storage,
@@ -548,41 +591,21 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
     CompressionMethod compression_method,
     const std::optional<String> & table_uuid)
 {
-    auto create_fn = [&]()
+    auto read_fn = [&]()
     {
-        ObjectInfo object_info(metadata_file_path);
-
-        auto read_settings = local_context->getReadSettings();
-        /// Do not utilize filesystem cache if more precise cache enabled
-        if (metadata_cache)
-            read_settings.enable_filesystem_cache = false;
-
-        auto source_buf = createReadBuffer(object_info.relative_path_with_metadata, object_storage, local_context, log, read_settings);
-
-        std::unique_ptr<ReadBuffer> buf;
-        if (compression_method != CompressionMethod::None)
-            /// Iceberg metadata snappy is always the Hadoop block format (`SnappyMode::Basic`); the
-            /// write path in `writeMessageToFile` pins the same mode. The wire format cannot be
-            /// inferred from the `.snappy.metadata.json` suffix, so both sides must agree statically.
-            buf = wrapReadBufferWithCompressionMethod(std::move(source_buf), compression_method, /*zstd_window_log_max=*/ 0, SnappyMode::Basic);
-        else
-            buf = std::move(source_buf);
-
-        String json_str;
-        readJSONObjectPossiblyInvalid(json_str, *buf);
-        return json_str;
+        return readMetadataJSONString(metadata_file_path, object_storage, metadata_cache != nullptr, local_context, log, compression_method);
     };
 
-    String metadata_json_str;
-    if (metadata_cache && table_uuid.has_value())
-        metadata_json_str = metadata_cache->getOrSetTableMetadata(
-            IcebergMetadataFilesCache::getKey(*table_uuid, metadata_file_path), create_fn);
-    else
-        metadata_json_str = create_fn();
+    if (!metadata_cache || !table_uuid.has_value())
+        return parseMetadataJSONString(read_fn());
 
-    Poco::JSON::Parser parser; /// For some reason base/base/JSON.h can not parse this json file
-    Poco::Dynamic::Var json = parser.parse(metadata_json_str);
-    return json.extract<Poco::JSON::Object::Ptr>();
+    return metadata_cache->getOrSetTableMetadata(
+        IcebergMetadataFilesCache::getKey(*table_uuid, metadata_file_path),
+        [&]()
+        {
+            auto metadata_json_str = read_fn();
+            return std::make_shared<IcebergMetadataFilesCacheCell>(parseMetadataJSONString(metadata_json_str), metadata_json_str.size());
+        });
 }
 
 /// Iceberg stores a decimal as its unscaled value in two's-complement big-endian form, in the
