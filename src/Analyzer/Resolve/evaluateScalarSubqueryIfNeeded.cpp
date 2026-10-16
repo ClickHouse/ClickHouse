@@ -228,7 +228,11 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         options.forceMaterializeCTE();
 
         QueryTreePassManager query_tree_pass_manager(subquery_context);
-        addQueryTreePasses(query_tree_pass_manager, options.only_analyze, /*prune_shared_materialized_cte_bodies=*/ false);
+        addQueryTreePasses(
+            query_tree_pass_manager,
+            options.only_analyze,
+            /*positional_arguments_already_resolved=*/ false,
+            /*prune_shared_materialized_cte_bodies=*/ false);
         query_tree_pass_manager.run(query_tree);
 
         /// The inner query of an ordinary view referenced by the view query reads the table itself,
