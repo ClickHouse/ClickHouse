@@ -3,6 +3,7 @@
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnSparse.h>
+#include <Columns/FilterDescription.h>
 #include <Common/FailPoint.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
@@ -81,6 +82,8 @@ struct ProjectionPartData
     size_t rows = 0;
     /// uncompressed bytes, used for granularity
     size_t bytes = 0;
+    /// lightweight-deleted rows of the parent, which the projection does not store
+    size_t deleted_rows = 0;
     /// per-row bytes, only filled for adaptive granularity
     PaddedPODArray<UInt32> row_bytes;
     /// some stored column has values of different sizes
@@ -204,7 +207,14 @@ bool buildProjectionPart(
 {
     const auto & proj_key = projection.metadata->getSortingKey();
 
-    Pipe pipe = makePartPipe(part, ranges, projection.required_columns, read_step, context);
+    const bool has_lightweight_delete = part->hasLightweightDelete();
+    const bool projection_reads_row_exists
+        = std::ranges::find(projection.required_columns, RowExistsColumn::name) != projection.required_columns.end();
+    Names columns_to_read = projection.required_columns;
+    if (has_lightweight_delete && !projection_reads_row_exists)
+        columns_to_read.push_back(RowExistsColumn::name);
+
+    Pipe pipe = makePartPipe(part, ranges, columns_to_read, read_step, context);
     QueryPipeline pipeline(std::move(pipe));
     pipeline.setProcessListElement(context->getProcessListElement());
     pipeline.setProgressCallback(context->getProgressCallback());
@@ -236,6 +246,21 @@ bool buildProjectionPart(
         /// key expression and sort need full columns
         for (auto & column : block)
             column.column = recursiveRemoveSparse(column.column);
+
+        /// the read limits count the deleted rows, the projection part does not store them
+        if (has_lightweight_delete)
+        {
+            const size_t rows_read = block.rows();
+            FilterDescription row_exists_filter(*block.getByName(RowExistsColumn::name).column);
+            if (!projection_reads_row_exists)
+                block.erase(RowExistsColumn::name);
+            const size_t rows_kept = row_exists_filter.countBytesInFilter();
+            out.deleted_rows += rows_read - rows_kept;
+            if (rows_kept == 0)
+                continue;
+            for (auto & column : block)
+                column.column = row_exists_filter.filter(*column.column, rows_kept);
+        }
 
         /// measured before the key expression, as the writer does
         out.bytes += getBlockSizeForGranularity(block);
@@ -526,6 +551,17 @@ bool planScan(
         return false;
     }
 
+    /// the sample model maps every row read to its granule, and the projection drops deleted rows
+    const bool has_lightweight_delete = std::ranges::any_of(
+        baseline_parts, [](const auto & part_with_ranges) { return part_with_ranges.data_part->hasLightweightDelete(); });
+    if (plan.sample_step > 1 && has_lightweight_delete)
+    {
+        result.empirical_unsupported_reason
+            = "The parts read have lightweight-deleted rows, which an estimate from a sample of granules cannot follow "
+              "(see projection_scan_budget_rows)";
+        return false;
+    }
+
     /// the granule floor and one granule per part can outgrow the budget, so check the read limit before reading
     plan.ranges.reserve(baseline_parts.size());
     UInt64 rows_planned = 0;
@@ -567,6 +603,10 @@ struct Scenarios
     UInt64 scanned_marks = 0;
     UInt64 uneven_width_parts = 0;
     std::vector<SampledPart> samples;
+    /// parts whose rows are all deleted: the writer stores no projection part, so the read takes the parent's ranges
+    UInt64 parts_without_projection = 0;
+    UInt64 parent_marks = 0;
+    UInt64 parent_rows = 0;
 };
 
 /// reads the planned granules and builds the projection parts, or returns false with the reason
@@ -613,7 +653,7 @@ bool buildScenarios(
             return false;
         }
         /// a `break` time limit or a cancelled query stops the read silently
-        if (part_data.rows != part->index_granularity->getRowsCountInRanges(ranges))
+        if (part_data.rows + part_data.deleted_rows != part->index_granularity->getRowsCountInRanges(ranges))
         {
             result.empirical_unsupported_reason = "The projection scan was cut short by a time limit in `break` mode or a cancelled query";
             /// the limit also drops the output, so log the reason
@@ -633,14 +673,19 @@ bool buildScenarios(
         }
         if (uneven_rows)
             ++out.uneven_width_parts;
-        /// no key rows from a non-empty part: the key needs a column we don't read, e.g. `_part_offset`
-        if (part_data.rows == 0 && part->rows_count > 0)
+        /// no key rows from a part with live rows: the key needs a column we don't read, e.g. `_part_offset`
+        if (part_data.rows == 0 && part->rows_count > part_data.deleted_rows)
         {
             result.empirical_unsupported_reason = "The projection key could not be built from the columns the projection stores";
             return false;
         }
         if (part_data.rows == 0)
+        {
+            ++out.parts_without_projection;
+            out.parent_marks += baseline_parts[part_idx].getMarksCount();
+            out.parent_rows += baseline_parts[part_idx].getRowsCount();
             continue;
+        }
 
         const size_t part_rows = plan.sample_step > 1 ? part->rows_count : part_data.rows;
         const auto [parts, primary]
@@ -655,6 +700,12 @@ bool buildScenarios(
         }
         if (part_rows > part_data.rows)
             out.samples.push_back({part->name, std::move(part_data), part_rows, ranges, part, parts[primary]});
+    }
+
+    if (out.scanned_parts != 0 && out.parts_without_projection == out.scanned_parts)
+    {
+        result.empirical_unsupported_reason = "Every row of the parts read is deleted, so the projection would store no part to read";
+        return false;
     }
 
     return true;
@@ -859,10 +910,13 @@ bool tryEstimateProjection(
         marks_low += part_low == std::numeric_limits<UInt64>::max() ? 0 : part_low;
         marks_high += part_high;
     }
+    /// the optimizer charges the parent's marks of a part without a projection part, but not its rows
+    marks_low += built.parent_marks;
+    marks_high += built.parent_marks;
     widenForSamples(built.samples, outcome, marks_low, marks_high);
 
     result.estimated_marks = outcome.marks;
-    result.estimated_rows = outcome.rows;
+    result.estimated_rows = outcome.rows + built.parent_rows;
     result.estimated_marks_low = marks_low;
     result.estimated_marks_high = marks_high;
     setVerdict(result, outcome, chosen_in, weighed, relaxing_setting, baseline_marks, built);
