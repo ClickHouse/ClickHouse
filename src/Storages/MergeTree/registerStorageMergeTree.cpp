@@ -356,8 +356,8 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected two string literal arguments: zookeeper_path and replica_name");
 }
 
-/// Extracts a zookeeper path from a specified CREATE TABLE query.
-std::optional<String> extractZooKeeperPathFromReplicatedTableDef(const ASTCreateQuery & query, const ContextPtr & local_context)
+std::optional<TableZnodeInfo> extractZnodeInfoFromReplicatedTableDef(
+    const ASTCreateQuery & query, const StorageID & table_id, LoadingStrictnessLevel mode, const ContextPtr & local_context)
 {
     if (!query.storage || !query.storage->engine)
         return {};
@@ -366,22 +366,29 @@ std::optional<String> extractZooKeeperPathFromReplicatedTableDef(const ASTCreate
     if (!isReplicated(engine_name))
         return {};
 
-    StorageID table_id{query.getDatabase(), query.getTable(), query.uuid};
-
     ASTs engine_args;
     if (query.storage->engine->arguments)
         engine_args = query.storage->engine->arguments->children;
     for (auto & engine_arg : engine_args)
         engine_arg = engine_arg->clone();
 
+    return extractZooKeeperPathAndReplicaNameFromEngineArgs(
+        query, table_id, engine_name, engine_args, mode, local_context,
+        /*validate_substitutions=*/ false, /*validate_injected_defaults=*/ false);
+}
+
+/// Extracts a zookeeper path from a specified CREATE TABLE query.
+std::optional<String> extractZooKeeperPathFromReplicatedTableDef(const ASTCreateQuery & query, const ContextPtr & local_context)
+{
     try
     {
         /// This only reads back the path of an already-created table, so it must never reject it:
         /// the `catch` below turns a rejection into `nullopt`, which silently drops the table from a backup.
-        auto res = extractZooKeeperPathAndReplicaNameFromEngineArgs(
-            query, table_id, engine_name, engine_args, LoadingStrictnessLevel::CREATE, local_context,
-            /*validate_substitutions=*/ false, /*validate_injected_defaults=*/ false);
-        return res.full_path;
+        auto res = extractZnodeInfoFromReplicatedTableDef(
+            query, StorageID{query.getDatabase(), query.getTable(), query.uuid}, LoadingStrictnessLevel::CREATE, local_context);
+        if (!res)
+            return {};
+        return res->full_path;
     }
     catch (Exception & e)
     {
@@ -949,8 +956,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// restart or `UNDROP TABLE`), security checks inside `getDiskConfigurationFromAST` are
         /// intentionally skipped because the disk configuration was already validated when the
         /// table was originally created.
-        /// User-initiated `ATTACH TABLE` queries use `LoadingStrictnessLevel::ATTACH` and must
-        /// still be subject to these checks.
+        /// User-initiated `ATTACH TABLE` queries, with a definition or in the short form, use
+        /// `LoadingStrictnessLevel::ATTACH` and must still be subject to these checks.
         storage_settings->loadFromQuery(
             *args.storage_def, args.getLocalContext(), isLoadingFromExistingMetadata(args.mode),
             args.table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE);
@@ -3773,7 +3780,7 @@ ClickHouse can merge the data parts so that different resulting parts of data ca
 
 The values in the columns with the numeric data type are summed. The set of columns is defined by the parameter `columns`.
 
-If the values were 0 in all of the columns for summation, the row is deleted.
+If the values were 0 in all of the columns for summation, the row is deleted during a merge. A query with the [FINAL](/reference/statements/select/from#final-modifier) modifier sums the rows but does not delete such rows, so the set of rows it returns does not depend on which columns the query reads. Note that `FINAL` merges a [nested structure](#nested-structures) whose name ends with `Map` the same way as a merge only if the query reads all columns of that structure.
 
 If column is not in the primary key and is not summed, an arbitrary value is selected from the existing ones.
 
@@ -3863,7 +3870,7 @@ The same rules apply to the flattened sub-columns as to regular columns:
 - Only numeric sub-columns are summed.
 - Sub-columns that belong to a `Tuple` in the sorting key or partition key are excluded from summation.
 - If `columns` is specified, only sub-columns of the listed `Tuple` columns are summed.
-- If all numeric sub-columns of a row are zero after summation, the row is deleted.
+- If all numeric sub-columns of a row are zero after summation, the row is deleted during a merge (but not by a query with `FINAL`).
 
 <Note>
 This setting is immutable and must be specified at table creation time.

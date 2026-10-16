@@ -8,9 +8,7 @@ doc_type: 'reference'
 
 import CloudDetails from '/snippets/zh/_snippet_dictionary_in_cloud.mdx';
 
-<div id="storing-dictionaries-in-memory">
-  ## 字典布局类型
-</div>
+## 字典布局类型 {#storing-dictionaries-in-memory}
 
 字典可通过多种方式存储在内存中，每种方式都需要在 CPU 和 RAM 占用之间进行权衡。
 
@@ -43,9 +41,11 @@ import CloudDetails from '/snippets/zh/_snippet_dictionary_in_cloud.mdx';
   不推荐使用缓存类布局，因为其性能可能较差，且参数调优困难——详见 [cache](/zh/reference/statements/create/dictionary/layouts/cache)。
 </Tip>
 
-<div id="specify-dictionary-layout">
-  ## 指定字典布局
-</div>
+<Note>
+  基于缓存的布局无法可靠地支持写入时富集，因为已预热的条目仅保存在各个服务器本地，一旦服务器重启或被替换就会丢失。而 ClickHouse Cloud 的自动扩缩容和托管节点替换会使这种情况更容易发生。请改用完全加载的布局；详见 [摄取路径中的缓存字典](/zh/concepts/features/dictionaries/best-practices#cache-dictionaries-in-ingestion-path)。
+</Note>
+
+## 指定字典布局 {#specify-dictionary-layout}
 
 <CloudDetails />
 
@@ -139,9 +139,7 @@ import CloudDetails from '/snippets/zh/_snippet_dictionary_in_cloud.mdx';
   </Tab>
 </Tabs>
 
-<div id="improve-performance">
-  ## 提高字典性能
-</div>
+## 提高字典性能 {#improve-performance}
 
 有几种方法可以提高字典性能：
 

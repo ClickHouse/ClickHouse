@@ -58,6 +58,14 @@ ColumnCodecs resolveCodecsForWholeColumn(const ColumnDescription & description, 
 
 }
 
+NamesAndTypesList IndexReadTask::getNamesAndTypesList() const
+{
+    NamesAndTypesList res;
+    for (const auto & column : columns)
+        res.emplace_back(column.name, column.type);
+    return res;
+}
+
 String MergeTreeReadTaskColumns::dump() const
 {
     WriteBufferFromOwnString s;
@@ -284,11 +292,12 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
         const IndexReadTask * index_read_task = read_info->index_read_tasks.empty()
             ? nullptr
             : getIndexReadTaskForReadStep(read_info->index_read_tasks, pre_columns_per_step, *read_info->data_part_info);
+
         if (index_read_task)
         {
             new_readers.prewhere.push_back(createMergeTreeReaderIndex(
                 new_readers.main.get(),
-                index_read_task->index,
+                *index_read_task,
                 pre_columns_per_step,
                 read_info->read_hints.index_granules));
         }
@@ -550,8 +559,10 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
         {
             /// We may have columns that have other references, usually it is a constant column that has been created during analysis
             /// (that will not be const here anymore, i.e. after materialize()). The contract is - not to shrink if column is shared.
-            /// But if some subcolumns are shared, we'll clone them via IColumn::mutate() and then safely shrink
-            if (column->use_count() == 1)
+            /// But if some subcolumns are shared, we'll clone them via IColumn::mutate() and then safely shrink.
+            /// Shrinking reallocates the column, so don't do it if only a little memory would be freed (e.g. for small blocks).
+            static constexpr size_t min_bytes_to_free_by_shrinking = 4096;
+            if (column->use_count() == 1 && column->allocatedBytes() >= column->byteSize() + min_bytes_to_free_by_shrinking)
             {
                 auto mutable_column = IColumn::mutate(std::move(column));
                 mutable_column->shrinkToFit();
@@ -567,6 +578,7 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
         .unmatched_mark_ranges = readers.main->getMergeTreeReaderSettings().use_query_condition_cache
             ? read_result.computeUnmatchedMarkRanges()
             : MarkRanges{},
+        .query_condition_cache_attributable_marks = std::move(read_result.query_condition_cache_attributable_marks),
         .row_count = read_result.num_rows,
         .num_read_rows = num_read_rows,
         .num_read_bytes = num_read_bytes };
@@ -577,6 +589,11 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
 void MergeTreeReadTask::addPrewhereUnmatchedMarks(const MarkRanges & mark_ranges_)
 {
     prewhere_unmatched_marks.insert(prewhere_unmatched_marks.end(), mark_ranges_.begin(), mark_ranges_.end());
+}
+
+void MergeTreeReadTask::addQueryConditionCacheAttributableMarks(const MarkRanges & mark_ranges_)
+{
+    query_condition_cache_attributable_marks.insert(query_condition_cache_attributable_marks.end(), mark_ranges_.begin(), mark_ranges_.end());
 }
 
 bool MergeTreeReadTask::readersChainCanSkipMarksBeforePrewhere(bool prewhere_filters_by_top_k_threshold) const

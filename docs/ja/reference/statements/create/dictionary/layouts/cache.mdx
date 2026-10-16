@@ -15,6 +15,8 @@ Dictionaryキーは [UInt64](/ja/reference/data-types/int-uint) 型です。
 
 Dictionaryを検索するときは、まず cache が検索されます。データの各 block について、cache に存在しないキー、または古くなったキーは、`SELECT attrs... FROM db.table WHERE id IN (k1, k2, ...)` を使用してソースへ要求されます。取得したデータはその後 cache に書き込まれます。
 
+cache の内容は各サーバーにローカルに保持され、サーバーが再起動されたり置き換えられたりすると失われます。確実性が求められる挿入時のエンリッチメントには、`cache` や `complex_key_cache` を使用しないでください。cache が空の場合、挿入処理が Dictionary ソースへのルックアップに依存してしまいます。ClickHouse Cloud では、オートスケーリングやマネージドなノード置き換えによって、この状態が発生しやすくなります。代わりに、各サーバーにDictionary全体を読み込むレイアウトを使用してください。詳しくは [Dictionaryのベストプラクティス](/ja/concepts/features/dictionaries/best-practices#cache-dictionaries-in-ingestion-path) を参照してください。
+
 これは、キーの**ルックアップ**、つまり `dictGet` やその他のDictionary関数に適用されます。`SELECT ... FROM <dictionary>` でDictionaryを**table として**読み取る場合は異なります。cache にはどのキーが存在するかの記録がないため、この読み取りでは、その時点で cache に存在し、かつ値を保持している cell のみが列挙され、キーに対する `WHERE` は、取得するキーのリストではなく、それらの cell に対する通常の filter となります。cache に存在しないキーは、`WHERE` に何を記述してもこの方法では発見できません。ルックアップは行われたもののソースで見つからなかったキーも表示されません。cache はそのミスをデフォルト cell として記憶し、table としての読み取りはデフォルト cell をスキップするためです。また、cache に存在する cell もソースと無関係ではありません。期限切れの cell は `dictGet` と同じ経路で読み取られるため、ソースへ再度要求されます。これは同期的に行われ、`allow_read_expired_keys` が有効な場合は非同期に行われます。
 
 ```sql
@@ -41,9 +43,9 @@ cache Dictionaryでは、cache 内のデータの有効期限 [lifetime](/ja/ref
 
 これは、Dictionaryの格納方法の中で最も効率が低いものです。cache の速度は、適切な設定と使用シナリオに大きく依存します。cache 型Dictionaryが十分に高い性能を発揮するのは、ヒット率が十分高い場合のみです (推奨は 99% 以上) 。平均ヒット率は [system.dictionaries](/ja/reference/system-tables/dictionaries) table で確認できます。
 
-`allow_read_expired_keys` 設定が 1 の場合 (デフォルトは 0) 、Dictionaryは非同期更新をサポートできます。クライアントがキーを要求し、それらがすべて cache 内にあるものの一部が期限切れの場合、Dictionaryは期限切れのキーをクライアントに返しつつ、それらをソースに非同期で要求します。
+`allow_read_expired_keys` 設定が 1 に設定されている場合 (デフォルトは 0) 、Dictionary は非同期更新をサポートします。クライアントが要求したキーがすべて cache 内に存在し、そのうち一部が期限切れである場合、Dictionary はクライアントに期限切れのキーを返し、それらのキーをソースから非同期に再取得します。
 
-cache の性能を向上させるには、`LIMIT` を含むサブクエリを使用し、Dictionaryの外側で関数を呼び出してください。
+cache のパフォーマンスを向上させるには、`LIMIT` を指定したサブクエリを使用し、Dictionary を使用する関数はその外側で呼び出してください。
 
 すべての種類のソースがサポートされています。
 

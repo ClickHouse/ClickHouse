@@ -11,20 +11,16 @@ Valide sua integração em ambos os modos de implantação do ClickHouse e em co
 
 Consulte [Criando integrações](/pt-BR/resources/develop-contribute/integrations/building-integrations) para ver os fluxos de ingestão e consumo, e [Documentando sua integração](/pt-BR/resources/develop-contribute/integrations/documenting-your-integration) para saber como publicar seus resultados.
 
-<div id="test-matrix">
-  ## Matriz de testes
-</div>
+## Matriz de testes {#test-matrix}
 
 Cubra ambos os modos de implantação. A maioria dos clientes usa um ou outro, e o comportamento varia em alguns pontos (autenticação, rede e recursos disponíveis).
 
-* **ClickHouse Cloud:** cadastre-se para uma [avaliação gratuita](https://clickhouse.com/cloud). Não é necessário cartão de crédito para o tier Development
-* **auto-hospedado (código aberto):** use a versão stable mais recente nas [releases do GitHub](https://github.com/ClickHouse/ClickHouse/releases). O [guia de instalação](/pt-BR/get-started/setup/install) é a forma mais rápida de ter uma instância local com Docker
+* **ClickHouse Cloud:** cadastre-se para uma [avaliação gratuita](https://clickhouse.cloud/signUp?loc=docs-resources-develop-contribute-integrations-testing-your-integration). Não é necessário cartão de crédito para o tier Development
+* **auto-hospedado (Open Source):** use o lançamento stable mais recente nos [lançamentos do GitHub](https://github.com/ClickHouse/ClickHouse/releases). O [guia de instalação](/pt-BR/get-started/setup/install) é a forma mais rápida de ter uma instância local com Docker
 
 Teste em ambos e documente eventuais lacunas de recursos na sua página de integração.
 
-<div id="what-to-test">
-  ## O que testar
-</div>
+## O que testar {#what-to-test}
 
 **Correção funcional.** Exercite todos os caminhos de código que sua integração expõe: ingestão, consultas, descoberta de esquema, tratamento de erros e reconexão. Se o seu produto expõe SQL a usuários finais, confirme que as consultas geradas pela sua UI completam o ciclo de ida e volta sem problemas.
 
@@ -36,9 +32,7 @@ Teste em ambos e documente eventuais lacunas de recursos na sua página de integ
 
 **Ciclo de vida da conexão.** Confirme um comportamento adequado em quedas de conexão, reinicializações do servidor e consultas lentas. Muitos escalonamentos acabam sendo causados pelo tratamento da conexão, e não pela semântica da consulta.
 
-<div id="recommended-example-datasets">
-  ## Conjuntos de dados de exemplo recomendados
-</div>
+## Conjuntos de dados de exemplo recomendados {#recommended-example-datasets}
 
 O conjunto completo pode ser encontrado na seção [**Conjuntos de dados de exemplo**](/pt-BR/get-started/sample-datasets/index). Os quatro conjuntos de dados a seguir cobrem a maioria das necessidades de testes de integração:
 
@@ -49,9 +43,7 @@ O conjunto completo pode ser encontrado na seção [**Conjuntos de dados de exem
 
 Para validação em escala extrema, use **[WikiStat](/pt-BR/get-started/sample-datasets/wikistat)** (~0,5 trilhão de registros).
 
-<div id="what-to-capture-from-your-testing">
-  ## O que registrar nos seus testes
-</div>
+## O que registrar nos seus testes {#what-to-capture-from-your-testing}
 
 Ao enviar sua integração para revisão, compartilhe:
 

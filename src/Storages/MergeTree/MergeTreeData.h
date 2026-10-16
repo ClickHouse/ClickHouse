@@ -109,6 +109,23 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+/// Whether the current thread holds the parts lock of any table.
+bool partsLockHeldByCurrentThread();
+
+class PartsLockHoldCount
+{
+public:
+    PartsLockHoldCount();
+    PartsLockHoldCount(PartsLockHoldCount && other) noexcept : held(std::exchange(other.held, false)) {}
+    PartsLockHoldCount & operator=(PartsLockHoldCount && other) noexcept;
+    ~PartsLockHoldCount() { release(); }
+
+    void release() noexcept;
+
+private:
+    bool held;
+};
+
 struct DataPartsLock
 {
     explicit DataPartsLock(SharedMutex & data_parts_mutex_, const MergeTreeData * data_);
@@ -122,6 +139,7 @@ struct DataPartsLock
 private:
     std::optional<Stopwatch> wait_watch;
     std::unique_lock<DB::SharedMutex> lock;
+    PartsLockHoldCount hold_count;
     std::optional<Stopwatch> lock_watch;
     const MergeTreeData * data;
 };
@@ -136,11 +154,12 @@ struct DataPartsSharedLock
     DataPartsSharedLock(DataPartsSharedLock &&) = default;
     DataPartsSharedLock & operator=(DataPartsSharedLock &&) = default;
 
-    void unlock() { lock.unlock(); }
+    void unlock();
 
 private:
     std::optional<Stopwatch> wait_watch;
     std::shared_lock<DB::SharedMutex> lock;
+    PartsLockHoldCount hold_count;
     std::optional<Stopwatch> lock_watch;
 };
 
@@ -781,6 +800,7 @@ public:
     DataPartsVector getAllDataPartsVector(DataPartStateVector * out_states = nullptr, const std::function<bool()> & need_stop = {}) const;
 
     DataPartsVector getDataPartsVectorInPartitionForInternalUsage(const DataPartState & state, const String & partition_id, const DataPartsAnyLock & acquired_lock) const;
+    DataPartsVector getDataPartsVectorInPartitionForInternalUsage(const DataPartState & state, const String & partition_id) const;
     DataPartsVector getDataPartsVectorInPartitionForInternalUsage(const DataPartStates & affordable_states, const String & partition_id, const DataPartsAnyLock & acquired_lock) const;
 
     /// Returns the number of data mutations suitable for applying on the fly.
@@ -1531,8 +1551,16 @@ public:
 
     ExpressionActionsPtr
     getPrimaryKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot, const MergeTreeIndices & indices) const;
-    ExpressionActionsPtr
-    getSortingKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot, const MergeTreeIndices & indices) const;
+    /// `use_index_expression` selects skip index expressions by result name; without it all of them are used.
+    ExpressionActionsPtr getSortingKeyAndSkipIndicesExpression(
+        const StorageMetadataPtr & metadata_snapshot,
+        const MergeTreeIndices & indices,
+        const std::function<bool(const String &)> & use_index_expression = {}) const;
+    /// Returns nullptr when no expression is selected.
+    ExpressionActionsPtr getSkipIndicesExpression(
+        const StorageMetadataPtr & metadata_snapshot,
+        const MergeTreeIndices & indices,
+        const std::function<bool(const String &)> & use_index_expression = {}) const;
 
     struct PartCompressionCodec
     {
@@ -2264,6 +2292,8 @@ protected:
     BackgroundSchedulePoolTaskHolder refresh_stats_task;
     /// Set by `stopStatisticsCache`, after which `startStatisticsCache` does not arm the task anymore.
     bool refresh_stats_stopped TSA_GUARDED_BY(refresh_stats_task_mutex) = false;
+    /// Set before `refresh_stats_task` is deactivated, so that a running `refreshStatistics` returns between parts.
+    std::atomic_bool refresh_stats_cancelled = false;
 
     mutable std::mutex stats_mutex;
     ConditionSelectivityEstimatorPtr cached_estimator;

@@ -9,6 +9,7 @@
 #include <city.h>
 #include <Core/Settings.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
+#include <Interpreters/Cache/QueryConditionCacheTimeConditions.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/PredicateStatisticsLog.h>
@@ -235,6 +236,80 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     , merge_tree_index_build_context(std::move(merge_tree_index_build_context_))
     , lazy_materializing_rows(std::move(lazy_materializing_rows_))
 {
+    for (const auto & step : prewhere_actions.steps)
+        if (step->actions)
+            set_spillables.add(step->actions->getActionsDAG());
+
+    /// Determine the condition under which PREWHERE-filtered granules can be recorded in the query
+    /// condition cache. A deterministic PREWHERE condition is cached under its own hash. A condition
+    /// that is non-deterministic only because of folded current-time constants (e.g.
+    /// `time >= now() - INTERVAL 10 DAY`) is cached under the hash of the deterministic condition
+    /// derived by rounding the constants onto a time grid (issue #115504). Since this is a write
+    /// side, the rounding must *strengthen* the condition: "PREWHERE matched no rows of this granule"
+    /// then implies "the derived condition matches no rows of this granule". The consult side in
+    /// MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache probes the weakened variant.
+    if (prewhere_info && reader_settings.use_query_condition_cache)
+    {
+        for (const auto * output : prewhere_info->prewhere_actions.getOutputs())
+        {
+            if (output->result_name == prewhere_info->prewhere_column_name)
+            {
+                if (VirtualColumnUtils::isDeterministic(output))
+                {
+                    prewhere_condition_for_query_condition_cache.emplace(
+                        queryConditionCacheHash(output->getHash(), reader_settings.query_condition_cache_settings_salt),
+                        prewhere_info->prewhere_actions.getNames()[0]);
+                    break;
+                }
+
+                /// A TopK read composes the dynamic `__topKFilter` into the PREWHERE, so the
+                /// granules it drops depend on the running threshold. They can still be
+                /// recorded: for a fixed plan and data the threshold only tightens, so a
+                /// granule with no surviving rows has no row that could have reached the
+                /// final top-N. The entry is keyed with the TopK plan salt (mirroring the
+                /// WHERE write path in `updateQueryConditionCache` and the consult in
+                /// `filterPartsByQueryConditionCache`), so only the same TopK plan, part set,
+                /// and post-PREWHERE predicate ever reuses it. The consult side salts every
+                /// non-deterministic PREWHERE of a TopK read, so do the same here, also for a
+                /// condition involving the current time. The latter never contains `__topKFilter`
+                /// (see `deriveDeterministicTimeCondition`), so its granule drops do not depend on
+                /// the running threshold.
+                const auto & top_k_salt = reader_settings.query_condition_cache_top_k_salt;
+                std::optional<std::pair<UInt64, String>> condition;
+                if (top_k_salt && VirtualColumnUtils::isDeterministicAllowingTopKFilter(output))
+                {
+                    condition.emplace(output->getHash(), prewhere_info->prewhere_actions.getNames()[0]);
+                }
+                else if (reader_settings.use_query_condition_cache_for_time_conditions)
+                {
+                    if (auto derived = deriveDeterministicTimeCondition(
+                            output,
+                            TimeConditionRounding::Strengthen,
+                            reader_settings.query_condition_cache_time_condition_grid_factor,
+                            time(nullptr)))
+                        condition.emplace(derived->hash, derived->condition);
+                }
+
+                if (condition && top_k_salt)
+                {
+                    /// `size_t` (not `UInt64`) so `boost::hash_combine` binds on platforms where
+                    /// they differ (e.g. Apple, where `size_t` is `unsigned long` but `UInt64` is
+                    /// `unsigned long long`).
+                    size_t condition_hash = queryConditionCacheHash(condition->first, reader_settings.query_condition_cache_settings_salt);
+                    boost::hash_combine(condition_hash, *top_k_salt);
+                    prewhere_condition_for_query_condition_cache.emplace(condition_hash, std::move(condition->second));
+                }
+                else if (condition)
+                {
+                    prewhere_condition_for_query_condition_cache.emplace(
+                        queryConditionCacheHash(condition->first, reader_settings.query_condition_cache_settings_salt),
+                        std::move(condition->second));
+                }
+                break;
+            }
+        }
+    }
+
     bool has_prewhere_actions_steps = !prewhere_actions.steps.empty();
     if (has_prewhere_actions_steps)
         LOG_TEST(log, "PREWHERE condition was split into {} steps", prewhere_actions.steps.size());
@@ -249,6 +324,74 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
 String MergeTreeSelectProcessor::getName() const
 {
     return fmt::format("MergeTreeSelect(pool: {}, algorithm: {})", pool->getName(), algorithm->getName());
+}
+
+/// Inserts the steps that read the virtual columns of indexes, each right before the first step that uses them,
+/// so that an index is read only for the rows that passed the preceding steps. Columns that no step uses are read last.
+/// Those must be separate steps, one per index, because index readers cannot read physical columns from table.
+static void addIndexReadSteps(PrewhereExprSteps & steps, const IndexReadTasks & index_read_tasks, const ExpressionActionsSettings & actions_settings)
+{
+    if (index_read_tasks.empty())
+        return;
+
+    /// Virtual column of an index -> position of the first step that uses it.
+    /// Columns that no step uses are read after the last step.
+    std::unordered_map<String, size_t> first_step_using_column;
+    for (const auto & [_, index_task] : index_read_tasks)
+    {
+        for (const auto & column : index_task.columns)
+            first_step_using_column.emplace(column.name, steps.size());
+    }
+
+    for (size_t i = 0; i < steps.size(); ++i)
+    {
+        Names required_columns = steps[i]->actions
+            ? steps[i]->actions->getActionsDAG().getRequiredColumnsNames()
+            : Names{steps[i]->filter_column_name};
+
+        for (const auto & name : required_columns)
+        {
+            if (auto it = first_step_using_column.find(name); it != first_step_using_column.end())
+                it->second = std::min(it->second, i);
+        }
+    }
+
+    /// Position of the first step that uses the columns -> columns to read, one element per index read task.
+    std::vector<std::vector<NamesAndTypesList>> columns_to_read_by_step(steps.size() + 1, std::vector<NamesAndTypesList>(index_read_tasks.size()));
+
+    size_t task_idx = 0;
+    for (const auto & [_, index_task] : index_read_tasks)
+    {
+        for (const auto & column : index_task.columns)
+        {
+            size_t first_step_pos = first_step_using_column.at(column.name);
+            columns_to_read_by_step[first_step_pos][task_idx].emplace_back(column.name, column.type);
+        }
+
+        ++task_idx;
+    }
+
+    PrewhereExprSteps result;
+
+    for (size_t i = 0; i <= steps.size(); ++i)
+    {
+        for (const auto & columns : columns_to_read_by_step[i])
+        {
+            if (columns.empty())
+                continue;
+
+            auto index_read_step = std::make_shared<PrewhereExprStep>();
+            index_read_step->type = PrewhereExprStep::None;
+            index_read_step->actions = std::make_shared<ExpressionActions>(ActionsDAG(columns), actions_settings);
+            index_read_step->perform_alter_conversions = true;
+            result.push_back(std::move(index_read_step));
+        }
+
+        if (i < steps.size())
+            result.push_back(std::move(steps[i]));
+    }
+
+    steps = std::move(result);
 }
 
 PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
@@ -280,19 +423,8 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
         prewhere_actions.steps.emplace_back(std::make_shared<PrewhereExprStep>(std::move(row_level_filter_step)));
     }
 
-    /// Add steps for reading virtual columns for indexes.
-    /// Those must be separate steps, because index readers
-    /// cannot read physical columns from table.
-    for (const auto & [_, index_task] : index_read_tasks)
-    {
-        auto index_read_step = std::make_shared<PrewhereExprStep>();
-        index_read_step->type = PrewhereExprStep::None;
-        index_read_step->actions = std::make_shared<ExpressionActions>(ActionsDAG(index_task.columns), actions_settings);
-        prewhere_actions.steps.emplace_back(std::move(index_read_step));
-    }
-
     if (prewhere_info &&
-        (!enable_multiple_prewhere_read_steps || !tryBuildPrewhereSteps(prewhere_info, actions_settings, prewhere_actions, force_short_circuit_execution, columns, read_ahead_prewhere_columns)))
+        (!enable_multiple_prewhere_read_steps || !tryBuildPrewhereSteps(prewhere_info, actions_settings, prewhere_actions, force_short_circuit_execution, columns, read_ahead_prewhere_columns, &index_read_tasks)))
     {
         PrewhereExprStep prewhere_step
         {
@@ -309,6 +441,7 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
         prewhere_actions.steps.emplace_back(std::make_shared<PrewhereExprStep>(std::move(prewhere_step)));
     }
 
+    addIndexReadSteps(prewhere_actions.steps, index_read_tasks, actions_settings);
     return prewhere_actions;
 }
 
@@ -363,11 +496,16 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
             /// Some rows survived PREWHERE, but individual granules within this batch may
             /// still have been fully filtered out. Record those granules immediately so that
             /// future queries can skip them without waiting for an entire batch to be zero.
-            if (prewhere_info && !res.unmatched_mark_ranges.empty()
+            if (prewhere_info
                 && !current_task.readersChainCanSkipMarksBeforePrewhere(prewhere_filters_by_top_k_threshold)
                 && !current_task.appliesMutationsBeforePrewhere()
                 && !row_level_filter)
-                current_task.addPrewhereUnmatchedMarks(res.unmatched_mark_ranges);
+            {
+                if (!res.unmatched_mark_ranges.empty())
+                    current_task.addPrewhereUnmatchedMarks(res.unmatched_mark_ranges);
+                if (!res.query_condition_cache_attributable_marks.empty())
+                    current_task.addQueryConditionCacheAttributableMarks(res.query_condition_cache_attributable_marks);
+            }
         }
 
         return ChunkAndProgress{
@@ -388,7 +526,11 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
         && !current_task.readersChainCanSkipMarksBeforePrewhere(prewhere_filters_by_top_k_threshold)
         && !current_task.appliesMutationsBeforePrewhere()
         && !row_level_filter)
+    {
         current_task.addPrewhereUnmatchedMarks(res.read_mark_ranges);
+        /// Not `read_mark_ranges`: the steps after the attribution boundary may be what emptied them.
+        current_task.addQueryConditionCacheAttributableMarks(res.query_condition_cache_attributable_marks);
+    }
 
     return {Chunk(), res.num_read_rows, res.num_read_bytes, false, std::move(res.read_mark_ranges)};
 }
@@ -479,50 +621,33 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                     /// QueryConditionCache needs the concrete part's storage UUID; skip for borrowed parts.
                     && task->getInfo().data_part_info->getDataPart())
                 {
-                    for (const auto * output : prewhere_info->prewhere_actions.getOutputs())
+                    const auto & data_part_info = task->getInfo().data_part_info;
+                    auto write_to_query_condition_cache = [&](UInt64 condition_hash, const String & condition, const MarkRanges & marks)
                     {
-                        if (output->result_name == prewhere_info->prewhere_column_name)
-                        {
-                            /// `size_t` (not `UInt64`) so `boost::hash_combine` binds on platforms where
-                            /// they differ (e.g. Apple, where `size_t` is `unsigned long` but `UInt64` is
-                            /// `unsigned long long`).
-                            size_t condition_hash = queryConditionCacheHash(output->getHash(), reader_settings.query_condition_cache_settings_salt);
-                            if (!VirtualColumnUtils::isDeterministic(output))
-                            {
-                                /// A TopK read composes the dynamic `__topKFilter` into the PREWHERE, so the
-                                /// granules it drops depend on the running threshold. They can still be
-                                /// recorded: for a fixed plan and data the threshold only tightens, so a
-                                /// granule with no surviving rows has no row that could have reached the
-                                /// final top-N. The entry is keyed with the TopK plan salt (mirroring the
-                                /// WHERE write path in `updateQueryConditionCache` and the consult in
-                                /// `filterPartsByQueryConditionCache`), so only the same TopK plan, part set,
-                                /// and post-PREWHERE predicate ever reuses it. Any other non-deterministic
-                                /// condition must not be cached at all.
-                                if (!reader_settings.query_condition_cache_top_k_salt
-                                    || !VirtualColumnUtils::isDeterministicAllowingTopKFilter(output))
-                                    break;
-                                boost::hash_combine(condition_hash, *reader_settings.query_condition_cache_top_k_salt);
-                            }
+                        String part_name = data_part_info->isProjectionPart()
+                            ? fmt::format("{}:{}", data_part_info->getParentPartName(), data_part_info->getPartName())
+                            : data_part_info->getPartName();
+                        Context::getGlobalContextInstance()->getQueryConditionCache()->write(
+                            /// QueryConditionCache is a coordinator feature; concrete part present here.
+                            data_part_info->getDataPart()->storage.getStorageID().uuid,
+                            part_name,
+                            condition_hash,
+                            condition,
+                            marks,
+                            data_part_info->getIndexGranularity().getMarksCount(),
+                            data_part_info->getIndexGranularity().hasFinalMark());
+                    };
 
-                            auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
-                            const auto & data_part_info = task->getInfo().data_part_info;
+                    if (prewhere_condition_for_query_condition_cache)
+                        write_to_query_condition_cache(
+                            prewhere_condition_for_query_condition_cache->first,
+                            prewhere_condition_for_query_condition_cache->second,
+                            task->getPrewhereUnmatchedMarks());
 
-                            String part_name = data_part_info->isProjectionPart()
-                                ? fmt::format("{}:{}", data_part_info->getParentPartName(), data_part_info->getPartName())
-                                : data_part_info->getPartName();
-                            query_condition_cache->write(
-                                /// QueryConditionCache is a coordinator feature; concrete part present here.
-                                data_part_info->getDataPart()->storage.getStorageID().uuid,
-                                part_name,
-                                condition_hash,
-                                prewhere_info->prewhere_actions.getNames()[0],
-                                task->getPrewhereUnmatchedMarks(),
-                                data_part_info->getIndexGranularity().getMarksCount(),
-                                data_part_info->getIndexGranularity().hasFinalMark());
-
-                            break;
-                        }
-                    }
+                    /// An empty write would still create an entry.
+                    const auto & attribution = prewhere_info->query_condition_cache_attribution;
+                    if (attribution && !task->getQueryConditionCacheAttributableMarks().empty())
+                        write_to_query_condition_cache(attribution->key, attribution->condition, task->getQueryConditionCacheAttributableMarks());
                 }
 
                 task = algorithm->getNewTask(*pool, task.get());
