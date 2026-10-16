@@ -25,6 +25,8 @@ struct MergeTreePartInfo;
 struct MergeTreePartition;
 struct MergeTreeDataPartChecksums;
 struct MergeTreeIndexGranularityInfo;
+struct MergeTreePartMinMaxIndex;
+using MergeTreePartMinMaxIndexPtr = std::shared_ptr<MergeTreePartMinMaxIndex>;
 
 class ISerialization;
 using SerializationPtr = std::shared_ptr<const ISerialization>;
@@ -69,6 +71,9 @@ public:
     virtual Int64 getMaxDataVersion() const = 0;
 
     virtual IndexPtr getIndexPtr() const = 0;
+
+    /// Minmax index over the partition columns, or nullptr when the part does not carry it.
+    virtual MergeTreePartMinMaxIndexPtr getMinMaxIndex() const = 0;
 
     virtual DataPartStoragePtr getDataPartStorage() const = 0;
 

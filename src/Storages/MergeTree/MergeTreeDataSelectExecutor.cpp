@@ -2335,9 +2335,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         && std::any_of(pk_to_minmax_slot->begin(),
                        pk_to_minmax_slot->begin() + std::min(pk_to_minmax_slot->size(), used_key_prefix_size),
                        [](const auto & slot) { return slot.has_value(); });
-    /// A part description without an `IMergeTreeDataPart` (`getDataPart` is null) has no partition minmax bound, which only prunes less.
-    const auto data_part = partition_bound_usable ? part.getDataPart() : nullptr;
-    const auto part_minmax_index = data_part ? data_part->getMinMaxIndex() : nullptr;
+    const auto part_minmax_index = partition_bound_usable ? part.getMinMaxIndex() : nullptr;
     const bool part_has_minmax_index = part_minmax_index && part_minmax_index->initialized;
 
     /// Number of leading primary key columns covered by the index analysis (`index_bounds` has one entry
