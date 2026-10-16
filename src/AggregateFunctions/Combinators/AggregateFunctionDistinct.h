@@ -161,6 +161,7 @@ private:
     AggregateFunctionPtr nested_func;
     size_t prefix_size;
     size_t arguments_num;
+    bool preserve_input_order;
 
     AggregateDataPtr getNestedPlace(AggregateDataPtr __restrict place) const noexcept
     {
@@ -198,10 +199,12 @@ private:
     }
 
 public:
-    AggregateFunctionDistinct(AggregateFunctionPtr nested_func_, const DataTypes & arguments, const Array & params_)
+    AggregateFunctionDistinct(
+        AggregateFunctionPtr nested_func_, const DataTypes & arguments, const Array & params_, bool preserve_input_order_)
     : IAggregateFunctionDataHelper<Data, AggregateFunctionDistinct>(arguments, params_, nested_func_->getResultType())
     , nested_func(nested_func_)
     , arguments_num(arguments.size())
+    , preserve_input_order(preserve_input_order_)
     {
         size_t nested_size = nested_func->alignOfData();
         prefix_size = (sizeof(Data) + nested_size - 1) / nested_size * nested_size;
@@ -262,6 +265,30 @@ public:
                         addToNested(row, row + 1, place, columns, arena);
             }
         }
+    }
+
+
+    /// Keep sparse rows in input order for order-dependent aggregates wrapped in DISTINCT.
+    void addBatchSparseSinglePlace(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        Arena * arena) const override
+    {
+        if (!preserve_input_order)
+        {
+            IAggregateFunctionHelper<AggregateFunctionDistinct<Data>>::addBatchSparseSinglePlace(
+                row_begin, row_end, place, columns, arena);
+            return;
+        }
+
+        const auto & column_sparse = assert_cast<const ColumnSparse &>(*columns[0]);
+        const auto * values = &column_sparse.getValuesColumn();
+        auto offset_it = column_sparse.getIterator(row_begin);
+
+        for (size_t row = row_begin; row < row_end; ++row, ++offset_it)
+            add(place, &values, offset_it.getValueIndex(), arena);
     }
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override

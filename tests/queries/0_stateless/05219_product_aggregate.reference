@@ -48,6 +48,8 @@ decimal values
 1
 Float64 input arithmetic
 1	1
+distinct with dense input
+1	1	1
 0
 0	0
 1	0
@@ -55,6 +57,9 @@ Float64 input arithmetic
 0	0	0
 1	0	0
 Sparse
+distinct with sparse input
+1	1	1
+1	1
 0
 0	0
 1	0

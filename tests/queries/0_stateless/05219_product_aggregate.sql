@@ -111,6 +111,16 @@ SELECT 'Float64 input arithmetic';
 SELECT product(x) > 0, arrayProduct(groupArray(x)) = 0
 FROM VALUES('x UInt64', (9223372036854775808), (2));
 
+SELECT 'distinct with dense input';
+SELECT product(DISTINCT x) = 0, productDistinct(x) = 0, productDistinctIf(x, 1) = 0
+FROM
+(
+    SELECT if(number = 0, 1e300, if(number = 2, 2e300, 0.)) AS x
+    FROM numbers(200)
+    ORDER BY number
+)
+SETTINGS max_threads = 1;
+
 DROP TABLE IF EXISTS product_sparse;
 CREATE TABLE product_sparse
 (
@@ -122,7 +132,7 @@ ORDER BY id
 SETTINGS ratio_of_defaults_for_sparse_serialization = 0.1;
 
 INSERT INTO product_sparse
-SELECT number, if(number IN (0, 2), 1e300, 0.)
+SELECT number, if(number = 0, 1e300, if(number = 2, 2e300, 0.))
 FROM numbers(200);
 
 SELECT product(x) FROM product_sparse;
@@ -138,6 +148,14 @@ OPTIMIZE TABLE product_sparse FINAL;
 SELECT serialization_kind
 FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 'product_sparse' AND column = 'x' AND active;
+SELECT 'distinct with sparse input';
+SELECT product(DISTINCT x) = 0, productDistinct(x) = 0, productDistinctIf(x, 1) = 0
+FROM (SELECT x FROM product_sparse ORDER BY id)
+SETTINGS max_threads = 1;
+SELECT product(DISTINCT x) = 0, productDistinct(x) = 0
+FROM (SELECT x FROM product_sparse ORDER BY id)
+SETTINGS max_threads = 1, max_block_size = 7;
+
 SELECT product(x) FROM product_sparse;
 SELECT if(id < 3, 0, 1), product(x) FROM product_sparse GROUP BY if(id < 3, 0, 1) ORDER BY if(id < 3, 0, 1);
 SELECT product(x), finalizeAggregation(productState(x)) FROM product_sparse;
