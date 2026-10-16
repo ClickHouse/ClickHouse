@@ -174,7 +174,7 @@ static std::optional<ActionsDAG::ActionsForFilterPushDown> splitFilter(
     QueryPlan::Node * parent_node,
     bool step_changes_the_number_of_rows,
     const Names & available_inputs,
-    bool allow_index_hints,
+    ActionsDAG::PushDownIndexHints index_hints,
     size_t child_idx = 0)
 {
     QueryPlan::Node * child_node = parent_node->children.front();
@@ -198,7 +198,7 @@ static std::optional<ActionsDAG::ActionsForFilterPushDown> splitFilter(
         original_filter_const_column = filter->getOutputHeader()->getByName(filter_column_name).column;
 
     auto result = expression.splitActionsForFilterPushDown(
-        filter_column_name, removes_filter, available_inputs, all_inputs, allow_deterministic_functions, allow_index_hints);
+        filter_column_name, removes_filter, available_inputs, all_inputs, allow_deterministic_functions, index_hints);
     if (result)
     {
         if (is_filter_column_const_before && !result->is_filter_const_after_push_down)
@@ -295,10 +295,10 @@ static size_t tryAddNewFilterStep(
     bool step_changes_the_number_of_rows,
     QueryPlan::Nodes & nodes,
     const Names & allowed_inputs,
-    bool allow_index_hints = true,
+    ActionsDAG::PushDownIndexHints index_hints = ActionsDAG::PushDownIndexHints::All,
     size_t child_idx = 0)
 {
-    if (auto split_filter = splitFilter(parent_node, step_changes_the_number_of_rows, allowed_inputs, allow_index_hints, child_idx))
+    if (auto split_filter = splitFilter(parent_node, step_changes_the_number_of_rows, allowed_inputs, index_hints, child_idx))
         return addNewFilterStepOrThrow(parent_node, nodes, std::move(*split_filter), child_idx);
     return 0;
 }
@@ -1290,7 +1290,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         if (keys.empty())
             return 0;
 
-        if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, keys, /*allow_index_hints=*/false))
+        if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, keys, ActionsDAG::PushDownIndexHints::Implied))
             return updated_steps;
     }
 
@@ -1314,7 +1314,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         if (keys.empty() || limit_by->getGroupOffset() != 0 || limit_by->getGroupLength() == 0)
             return 0;
 
-        if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, keys, /*allow_index_hints=*/false))
+        if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, keys, ActionsDAG::PushDownIndexHints::Implied))
             return updated_steps;
     }
 
@@ -1375,7 +1375,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         ///    ) group by y with totals) where y != 2`
         /// Optimization will replace totals row `y, sum(x)` from `(0, 45)` to `(0, 37)`.
         /// It is expected to be OK, because the AST-level push-down that preceded this optimization did the same.
-        if (auto updated_steps = tryAddNewFilterStep(parent_node, false, nodes, keys))
+        if (auto updated_steps = tryAddNewFilterStep(parent_node, false, nodes, keys, ActionsDAG::PushDownIndexHints::None))
             return updated_steps;
     }
 

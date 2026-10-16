@@ -3736,20 +3736,21 @@ struct ConjunctionNodes
 
 /// indexHint keeps its arguments in its own dag, so they are not children of the node, and hints may nest
 template <typename Predicate>
-bool allIndexHintsAllowed(const ActionsDAG::Node & node, bool allow_index_hints, const Predicate & is_input_allowed)
+bool allIndexHintsAllowed(const ActionsDAG::Node & node, ActionsDAG::PushDownIndexHints index_hints, const Predicate & is_input_allowed)
 {
     if (node.type != ActionsDAG::ActionType::FUNCTION || node.function_base->getName() != "indexHint")
         return true;
 
     const auto & adaptor = assert_cast<const FunctionToFunctionBaseAdaptor &>(*node.function_base);
     const auto & index_hint = assert_cast<const FunctionIndexHint &>(*adaptor.getFunction());
-    if (!allow_index_hints && !index_hint.isImplied())
+    if (index_hints == ActionsDAG::PushDownIndexHints::None
+        || (index_hints == ActionsDAG::PushDownIndexHints::Implied && !index_hint.isImplied()))
         return false;
 
     const auto & dag = index_hint.getActions();
     return std::ranges::all_of(dag.getInputs(), is_input_allowed)
         && std::ranges::all_of(
-            dag.getNodes(), [&](const auto & inner) { return allIndexHintsAllowed(inner, allow_index_hints, is_input_allowed); });
+            dag.getNodes(), [&](const auto & inner) { return allIndexHintsAllowed(inner, index_hints, is_input_allowed); });
 }
 
 /// Take a node which result is a predicate.
@@ -3761,7 +3762,7 @@ ConjunctionNodes getConjunctionNodes(
     const ActionsDAG::NodeRawConstPtrs & inputs,
     std::unordered_set<const ActionsDAG::Node *> allowed_nodes,
     bool allow_non_deterministic_functions,
-    bool allow_index_hints = true)
+    ActionsDAG::PushDownIndexHints index_hints = ActionsDAG::PushDownIndexHints::All)
 {
     ConjunctionNodes conjunction;
     std::unordered_set<const ActionsDAG::Node *> allowed;
@@ -3849,7 +3850,7 @@ ConjunctionNodes getConjunctionNodes(
                 if (cur.node->type != ActionsDAG::ActionType::ARRAY_JOIN
                     && cur.node->type != ActionsDAG::ActionType::INPUT
                     && !is_deprecated_function
-                    && allIndexHintsAllowed(*cur.node, allow_index_hints, is_index_hint_input_allowed))
+                    && allIndexHintsAllowed(*cur.node, index_hints, is_index_hint_input_allowed))
                     allowed_nodes.emplace(cur.node);
             }
 
@@ -4057,7 +4058,7 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::splitActionsForF
     const Names & available_inputs,
     const ColumnsWithTypeAndName & all_inputs,
     bool allow_non_deterministic_functions,
-    bool allow_index_hints)
+    PushDownIndexHints index_hints)
 {
     Node * predicate = const_cast<Node *>(tryFindInOutputs(filter_name));
     if (!predicate)
@@ -4090,7 +4091,7 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::splitActionsForF
         }
     }
 
-    auto conjunction = getConjunctionNodes(predicate, inputs, allowed_nodes, allow_non_deterministic_functions, allow_index_hints);
+    auto conjunction = getConjunctionNodes(predicate, inputs, allowed_nodes, allow_non_deterministic_functions, index_hints);
 
     if (conjunction.allowed.empty())
         return {};

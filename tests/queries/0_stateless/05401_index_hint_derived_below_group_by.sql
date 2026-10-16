@@ -73,4 +73,7 @@ INSERT INTO t_hint_gs SELECT number, number FROM numbers(200);
 OPTIMIZE TABLE t_hint_gs FINAL;
 SELECT countIf(explain LIKE '%indexHint(%') > 0 FROM (EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM (SELECT a, max(b) AS m FROM (SELECT a, b FROM t_hint_gs GROUP BY GROUPING SETS ((a, b), (b))) GROUP BY a HAVING a < m AND m < 120));
 SELECT count() FROM (SELECT a, max(b) AS m FROM (SELECT a, b FROM t_hint_gs GROUP BY GROUPING SETS ((a, b), (b))) GROUP BY a HAVING a < m AND m < 120);
+-- nor below totals, which are not filtered
+SELECT countIf(explain LIKE '%indexHint(%') > 0 FROM (EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM (SELECT a, max(b) AS m FROM t_hint_gs GROUP BY a WITH TOTALS) WHERE a < m AND m < 120);
+SELECT * FROM (SELECT a, max(b) AS m FROM t_hint_gs GROUP BY a WITH TOTALS) WHERE a < m AND m < 120;
 DROP TABLE t_hint_gs;
