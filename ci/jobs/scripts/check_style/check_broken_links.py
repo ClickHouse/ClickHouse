@@ -50,6 +50,9 @@ EXCLUDED_PATH_PATTERNS = ("/tests/", "/gtest", "/examples/")
 DOCS_PATH_PREFIX = "docs/"
 DOCS_LINK_PREFIXES = ("](", 'href="', "href='", "<")
 
+# The base URL of an apt repository is not a page: apt only requests the paths below it.
+APT_SOURCE_RE = re.compile(r"\bdeb(?:-src)?\s+(?:\[[^\]]*\]\s+)?$")
+
 BROKEN_STATUSES = {404, 410}
 DEFINITE_ERRORS = {f"HTTP {status}" for status in BROKEN_STATUSES}
 
@@ -82,7 +85,10 @@ def extract_urls(path, line):
     is_docs = path.startswith(DOCS_PATH_PREFIX)
     urls = []
     for match in URL_RE.finditer(line):
-        if is_docs and not line[: match.start()].endswith(DOCS_LINK_PREFIXES):
+        prefix = line[: match.start()]
+        if is_docs and not prefix.endswith(DOCS_LINK_PREFIXES):
+            continue
+        if APT_SOURCE_RE.search(prefix):
             continue
         url = trim_url(match.group(0))
         if url:
