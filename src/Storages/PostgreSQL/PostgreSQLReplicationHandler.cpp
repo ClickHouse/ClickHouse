@@ -900,6 +900,15 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
                     tables_without_nested.emplace_back(table_name, materialized_storage);
                     continue;
                 }
+
+                /// Without `materialized_postgresql_tables_list` the tables are discovered from the replicated schemas
+                /// (a configured tables list is validated against the publication in checkReplicationStateOnAttach).
+                /// A table that is neither materialized nor published was removed from replication by
+                /// `DETACH TABLE ... PERMANENTLY`, or was created in PostgreSQL later. It is not replicated.
+                LOG_INFO(log, "Table {}.{} has no nested table and is not in publication {}, it is not replicated",
+                         postgres_database, table_name, doubleQuoteString(publication_name));
+                tables_skipped_on_attach.insert(table_name);
+                continue;
             }
 
             try
@@ -940,10 +949,10 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
                     tables_bootstrapped_on_resume.emplace(
                         table_name, loadFromSnapshot(*tmp_connection, temporary_snapshot_name, table_name, materialized_storage));
                 }
-                catch (Exception & e)
+                catch (...)
                 {
-                    e.addMessage("while loading table `{}`.`{}`", postgres_database, table_name);
-                    tryLogCurrentException(log);
+                    /// Not only `DB::Exception`: a lost connection during the snapshot throws `pqxx::failure`.
+                    tryLogCurrentException(log, fmt::format("while loading table `{}`.`{}`", postgres_database, table_name));
 
                     /// A partially loaded nested table would be taken for a completed snapshot on the next attach.
                     try
