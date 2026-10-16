@@ -90,6 +90,9 @@ ColumnsDescription StorageSystemPrivileges::getColumnsDescription()
         {"parent_group", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeEnum16>(getAccessTypeEnumValues())),
          "Parent privilege - if the parent privilege is granted then all its children privileges are considered as granted too."
         },
+        {"is_obsolete", std::make_shared<DataTypeUInt8>(),
+         "Shows whether the privilege is obsolete. Granting it has no effect."
+        },
     };
 }
 
@@ -104,6 +107,7 @@ void StorageSystemPrivileges::fillData(MutableColumns & res_columns, ContextPtr,
     auto & column_level_null_map = assert_cast<ColumnNullable &>(*res_columns[column_index++]).getNullMapData();
     auto & column_parent_group = assert_cast<ColumnInt16 &>(assert_cast<ColumnNullable &>(*res_columns[column_index]).getNestedColumn()).getData();
     auto & column_parent_group_null_map = assert_cast<ColumnNullable &>(*res_columns[column_index++]).getNullMapData();
+    auto & column_is_obsolete = assert_cast<ColumnUInt8 &>(*res_columns[column_index++]).getData();
 
     auto add_row = [&](AccessType access_type, std::string_view aliases, Level max_level, AccessType parent_group)
     {
@@ -144,6 +148,8 @@ void StorageSystemPrivileges::fillData(MutableColumns & res_columns, ContextPtr,
             column_parent_group.push_back(static_cast<Int16>(parent_group));
             column_parent_group_null_map.push_back(false);
         }
+
+        column_is_obsolete.push_back(isObsolete(access_type));
     };
 
 #define STORAGE_SYSTEM_PRIVILEGES_ADD_ROW(name, aliases, node_type, parent_group_name) \
