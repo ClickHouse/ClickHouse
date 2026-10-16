@@ -76,6 +76,26 @@
             </time_based_one_time_password>
         </totuser_empty_password_1>
 
+        <totuser_postgresql_plaintext>
+            <password>aa+bb</password>
+            <time_based_one_time_password>
+                <secret>JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP</secret>
+                <period>60</period>
+                <digits>9</digits>
+                <algorithm>SHA256</algorithm>
+            </time_based_one_time_password>
+        </totuser_postgresql_plaintext>
+        <totuser_postgresql_scram>
+            <!-- SCRAM SHA-256 of 'abacaba' with an empty salt: password_scram_sha256_hex stores the salted password -->
+            <password_scram_sha256_hex>04e7a70338d7af7bb6142fe7e19fef46d9b605f3e78b932a60e8200ef9154976</password_scram_sha256_hex>
+            <time_based_one_time_password>
+                <secret>GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ</secret>
+                <period>60</period>
+                <digits>9</digits>
+                <algorithm>SHA256</algorithm>
+            </time_based_one_time_password>
+        </totuser_postgresql_scram>
+
         <totuser_single_use>
             <password>pw</password>
             <time_based_one_time_password>
