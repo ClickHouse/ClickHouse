@@ -1,6 +1,7 @@
--- Tags: no-fasttest, no-parallel-replicas
+-- Tags: no-fasttest, no-parallel-replicas, long
 -- Tag no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
 -- Tag no-parallel-replicas: the test asserts on the query plan shape (the number of reads of the samples table).
+-- Tag long: the file runs many PromQL statements.
 
 -- The SQL generated from a PromQL query may reference a named subquery more than once: the left side of `or`
 -- feeds both the per-group presence-mask step and the final merge join, and the topk/bottomk/limitk operand grid
