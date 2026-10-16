@@ -7,6 +7,10 @@
 #include <Common/setThreadName.h>
 #include <Poco/Logger.h>
 
+#include <array>
+#include <cmath>
+#include <numeric>
+
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/box.hpp>
 #include <boost/geometry/geometries/point_xy.hpp>
@@ -182,19 +186,24 @@ class DividedCell : public ICell<ReturnCell>
 public:
     explicit DividedCell(VectorWithMemoryTracking<std::unique_ptr<ICell<ReturnCell>>> children_): children(std::move(children_)) {}
 
+    /// Picks the child along one side for `ratio`, the point's position in [0, 1] along this cell's side,
+    /// and makes `ratio` the point's position in that child.
+    static int route(Coord & ratio)
+    {
+        ratio *= kSplit;
+        auto bin = static_cast<int>(ratio);
+        /// ratio is 1 for points very close to the max side.
+        if (bin == kSplit)
+            --bin;
+        ratio -= static_cast<Coord>(bin);
+        return bin;
+    }
+
     [[nodiscard]] const ReturnCell * find(Coord x, Coord y) const override
     {
-        auto x_ratio = x * kSplit;
-        auto y_ratio = y * kSplit;
-        auto x_bin = static_cast<int>(x_ratio);
-        auto y_bin = static_cast<int>(y_ratio);
-        /// In case if we have a lot of values and argument is very close to max_x (max_y) so x_ratio (y_ratio) = 1.
-        if (x_bin == kSplit)
-            --x_bin;
-        /// => x_bin (y_bin) will be 4, which can lead to wrong vector access.
-        if (y_bin == kSplit)
-            --y_bin;
-        return children[y_bin + x_bin * kSplit]->find(x_ratio - static_cast<Coord>(x_bin), y_ratio - static_cast<Coord>(y_bin));
+        auto x_bin = route(x);
+        auto y_bin = route(y);
+        return children[y_bin + x_bin * kSplit]->find(x, y);
     }
 
     [[nodiscard]] size_t getBytesAllocated() const override
@@ -254,7 +263,7 @@ public:
             return nullptr;
         if (y < min_y || y >= max_y)
             return nullptr;
-        return root->find((x - min_x) / (max_x - min_x), (y - min_y) / (max_y - min_y));
+        return root->find(toRatio(x, min_x, max_x), toRatio(y, min_y, max_y));
     }
 
     [[nodiscard]] size_t getBytesAllocated() const override
@@ -276,6 +285,51 @@ private:
     const size_t k_max_depth;
 
     const VectorWithMemoryTracking<Polygon> & polygons;
+
+    /// Position of `v` in [0, 1] along the side [lo, hi) of the bounding box, monotone in `v`.
+    static Coord toRatio(Coord v, Coord lo, Coord hi) { return (v - lo) / (hi - lo); }
+
+    /// The child index along one side that `find` picks for `v` in the `level`-th divided cell of its path (the root is 1).
+    static size_t routedBin(Coord v, Coord lo, Coord hi, size_t level)
+    {
+        Coord ratio = toRatio(v, lo, hi);
+        /// NaN when the side's extent overflows Float32.
+        if (std::isnan(ratio))
+            return 0;
+        int bin = 0;
+        for (size_t i = 0; i < level; ++i)
+            bin = DividedCell<ReturnCell>::route(ratio);
+        return static_cast<size_t>(bin);
+    }
+
+    /// bounds[i] is the smallest coordinate in [lo, hi) that `find` routes to a child >= i, so the children tile the
+    /// cell and every point lands in a child whose box contains it.
+    static std::array<Coord, DividedCell<ReturnCell>::kSplit + 1> splitSide(Coord lo, Coord hi, Coord side_min, Coord side_max, size_t level)
+    {
+        std::array<Coord, DividedCell<ReturnCell>::kSplit + 1> bounds{};
+        bounds[0] = lo;
+        bounds[DividedCell<ReturnCell>::kSplit] = hi;
+        for (size_t bin = 1; bin < DividedCell<ReturnCell>::kSplit; ++bin)
+        {
+            /// Binary search, `routedBin` is monotone in the coordinate.
+            Coord below = bounds[bin - 1];
+            Coord above = hi;
+            if (routedBin(below, side_min, side_max, level) >= bin)
+                above = below;
+            while (below < above)
+            {
+                Coord mid = std::midpoint(below, above);
+                if (mid == below || mid == above)
+                    break;
+                if (routedBin(mid, side_min, side_max, level) >= bin)
+                    above = mid;
+                else
+                    below = mid;
+            }
+            bounds[bin] = above;
+        }
+        return bounds;
+    }
 
     std::unique_ptr<ICell<ReturnCell>> makeCell(Coord current_min_x, Coord current_min_y, Coord current_max_x, Coord current_max_y, VectorWithMemoryTracking<size_t> possible_ids, size_t depth, ThreadPool & pool)
     {
@@ -302,20 +356,22 @@ private:
         size_t intersections = possible_ids.size() - covered;
         if (intersections <= k_min_intersections || depth++ == k_max_depth)
             return std::make_unique<ReturnCell>(possible_ids, polygons, current_box, covered);
-        auto x_shift = (current_max_x - current_min_x) / DividedCell<ReturnCell>::kSplit;
-        auto y_shift = (current_max_y - current_min_y) / DividedCell<ReturnCell>::kSplit;
+        /// `depth` is now this cell's level, the root's is 1.
+        const auto x_bounds = splitSide(current_min_x, current_max_x, min_x, max_x, depth);
+        const auto y_bounds = splitSide(current_min_y, current_max_y, min_y, max_y, depth);
         VectorWithMemoryTracking<std::unique_ptr<ICell<ReturnCell>>> children;
         children.resize(DividedCell<ReturnCell>::kSplit * DividedCell<ReturnCell>::kSplit);
 
         ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::POLYGON_DICT_LOAD);
-        for (size_t i = 0; i < DividedCell<ReturnCell>::kSplit; current_min_x += x_shift, ++i)
+        for (size_t i = 0; i < DividedCell<ReturnCell>::kSplit; ++i)
         {
             /// Capturing by reference is fine, all variables outlive runner
-            auto handle_row = [this, &children, &y_shift, &x_shift, &possible_ids, &pool, depth, i, x = current_min_x, y = current_min_y]() mutable
+            auto handle_row = [this, &children, &x_bounds, &y_bounds, &possible_ids, &pool, depth, i]()
             {
-                for (size_t j = 0; j < DividedCell<ReturnCell>::kSplit; y += y_shift, ++j)
+                for (size_t j = 0; j < DividedCell<ReturnCell>::kSplit; ++j)
                 {
-                    children[i * DividedCell<ReturnCell>::kSplit + j] = makeCell(x, y, x + x_shift, y + y_shift, possible_ids, depth, pool);
+                    children[i * DividedCell<ReturnCell>::kSplit + j] = makeCell(
+                        x_bounds[i], y_bounds[j], x_bounds[i + 1], y_bounds[j + 1], possible_ids, depth, pool);
                 }
             };
             if (depth <= kMultiProcessingDepth)
