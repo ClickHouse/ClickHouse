@@ -641,6 +641,15 @@ static bool bloomFilterHashDomainMatches(const DataTypePtr & value_type, const D
     return (isInteger(value) && isInteger(element)) || value->equals(*element);
 }
 
+/// LEFT ARRAY JOIN is arrayJoin(emptyArrayToSingle(col)), the default element it adds is not in an index on col
+static String getArrayJoinColumnName(const RPNBuilderTreeNode & node, const Block & header, bool & padded)
+{
+    if (header.has(node.getColumnName()) || !node.isFunction() || node.toFunctionNode().getFunctionName() != "emptyArrayToSingle")
+        return node.getColumnName();
+    padded = true;
+    return node.toFunctionNode().getArgumentAt(0).getColumnName();
+}
+
 bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
     const String & function_name,
     const RPNBuilderTreeNode & wrapped_key_node,
@@ -826,7 +835,8 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
     if (!array_join_argument)
         return false;
 
-    auto array_column_name = array_join_argument->getColumnName();
+    bool padded = false;
+    auto array_column_name = getArrayJoinColumnName(*array_join_argument, header, padded);
     if (!header.has(array_column_name))
         return false;
 
@@ -840,6 +850,9 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         return false;
 
     const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, array_nested_type);
+    if (padded && converted_column->getNumberOfDefaultRows() != 0)
+        return false;
+
     out.predicate.emplace_back(
         std::make_pair(position, BloomFilterHash::hashWithColumn(array_nested_type, converted_column, 0, column->size())));
     out.function = RPNElement::FUNCTION_HAS_ANY;
@@ -1091,7 +1104,8 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
     {
         if (auto array_join_argument = key_node.getArrayJoinArgument())
         {
-            auto array_column_name = array_join_argument->getColumnName();
+            bool padded = false;
+            auto array_column_name = getArrayJoinColumnName(*array_join_argument, header, padded);
             if (header.has(array_column_name))
             {
                 size_t position = header.getPositionByName(array_column_name);
@@ -1107,6 +1121,9 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 
                     auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
                     if (converted_field.isNull())
+                        return false;
+
+                    if (padded && array_type->getNestedType()->createColumnConst(1, converted_field)->isDefaultAt(0))
                         return false;
 
                     out.function = RPNElement::FUNCTION_HAS;
