@@ -10598,11 +10598,11 @@ Limit on the number of grace hash join buckets
     DECLARE(NonZeroUInt64, hash_join_max_fanout_per_pass, 8192, R"(
 Maximum number of partitions the hash join writes in one pass over the right table. When the join needs more partitions, it makes several passes. Values from 2 to 32768 are accepted and rounded down to a power of two. Each partition of a pass needs about 76 bytes of buffer per thread. The default keeps the buffers of one pass near 600 KiB. That fits in a 1 MiB L2 cache.
 )", 0, \
-        {"26.10", 8192, 8192, "New setting: the maximum number of partitions the hash join writes in one pass over the right table. When the join needs more partitions, it makes several passes."}) \
+        {"26.11", 8192, 8192, "New setting: the maximum number of partitions the hash join writes in one pass over the right table. When the join needs more partitions, it makes several passes."}) \
     DECLARE(Bool, hash_join_cap_partitions_by_l1_descriptors, true, R"(
 Limit how many partitions the hash join may use. The records that say where each partition's cells start and end must fit in a quarter of the L1 data cache. The probe reads one such record per row. With more partitions, that read misses the L1 cache.
 )", 0, \
-        {"26.10", true, true, "New setting: limit the number of partitions of the hash join so that the per-partition records of the hash table fit in a quarter of the L1 data cache."}) \
+        {"26.11", true, true, "New setting: limit the number of partitions of the hash join so that the per-partition records of the hash table fit in a quarter of the L1 data cache."}) \
     DECLARE(UInt64, join_to_sort_minimum_perkey_rows, 40, R"(
 The lower limit of per-key average rows in the right table to determine whether to rerange the right table by key in left or inner join. This setting ensures that the optimization is not applied for sparse table keys
 )", EXPERIMENTAL, \
