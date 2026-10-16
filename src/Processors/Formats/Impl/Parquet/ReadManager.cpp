@@ -81,8 +81,8 @@ void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_, 
         stages[i].schedulable_row_groups.resize(num_row_groups);
         stages[i].row_group_tasks_to_schedule.resize(num_row_groups);
     }
-    /// Read-ahead skips row groups with an offset-index column, so it is off if every row group has one.
-    column_data_read_ahead = reader.options.is_remote_fs && reader.prefetcher.readsInBackground()
+    /// Read-ahead skips row groups with an offset-index column, so it is off if every row group has one or no column is read.
+    column_data_read_ahead = reader.options.is_remote_fs && reader.prefetcher.readsInBackground() && !reader.primitive_columns.empty()
         && std::any_of(reader.row_groups.begin(), reader.row_groups.end(), [](const RowGroup & row_group)
             {
                 return std::none_of(row_group.columns.begin(), row_group.columns.end(),
@@ -727,7 +727,7 @@ void ReadManager::scheduleTasksIfNeeded(ReadStage stage_idx)
     std::vector<Task> tasks;
     size_t released_read_ahead_slots = 0;
 
-    /// Admission rounds run concurrently; readAheadColumnData waits until their charges are published.
+    /// Admission rounds run concurrently; readAheadColumnData waits until their charges and batches are published.
     std::shared_lock<SharedMutex> prefetch_lock;
     if (stage_idx == ReadStage::ColumnData && column_data_read_ahead)
         prefetch_lock = std::shared_lock(column_data_prefetch_mutex);
@@ -806,8 +806,6 @@ void ReadManager::scheduleTasksIfNeeded(ReadStage stage_idx)
             stages[i].memory_usage.fetch_add(diff.by_stage[i], std::memory_order_relaxed);
         }
     }
-    if (prefetch_lock)
-        prefetch_lock.unlock();
 
     if (!tasks.empty())
     {
@@ -849,6 +847,8 @@ void ReadManager::scheduleTasksIfNeeded(ReadStage stage_idx)
             });
         }
         stage.batches_in_progress.fetch_add(funcs.size(), std::memory_order_relaxed);
+        if (prefetch_lock)
+            prefetch_lock.unlock();
         ProfileEvents::increment(ProfileEvents::ParquetDecodingTasks, tasks.size());
         ProfileEvents::increment(ProfileEvents::ParquetDecodingTaskBatches, funcs.size());
         parser_shared_resources->parsing_runner.bulkSchedule(std::move(funcs));
@@ -858,6 +858,8 @@ void ReadManager::scheduleTasksIfNeeded(ReadStage stage_idx)
         LOG_TEST(getLogger("ParquetReadManager"), "scheduleTasksIfNeeded: stage={} no tasks to schedule",
                   magic_enum::enum_name(stage_idx));
     }
+    if (prefetch_lock)
+        prefetch_lock.unlock();
 
     /// After batches_in_progress counts the admitted row groups, so a read-ahead pass never sees their slots as free.
     if (released_read_ahead_slots)
