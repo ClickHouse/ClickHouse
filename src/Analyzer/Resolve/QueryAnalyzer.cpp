@@ -4952,7 +4952,12 @@ NamesAndTypes QueryAnalyzer::resolveProjectionExpressionNodeList(
 
         for (auto & node : node_list_typed.getNodes())
         {
-            const bool node_is_matcher = node->getNodeType() == QueryTreeNodeType::MATCHER;
+            /// An `APPLY` output is an expression of a column, not a starred column an explicit alias may redefine.
+            const auto * matcher_node = node->as<MatcherNode>();
+            const bool node_is_matcher = matcher_node
+                && std::ranges::none_of(
+                    matcher_node->getColumnTransformers().getNodes(),
+                    [](const QueryTreeNodePtr & transformer) { return transformer->as<ApplyColumnTransformerNode>() != nullptr; });
             const bool node_has_explicit_alias = !node->getAlias().empty();
             auto node_to_resolve = node;
             auto names = resolveExpressionNode(

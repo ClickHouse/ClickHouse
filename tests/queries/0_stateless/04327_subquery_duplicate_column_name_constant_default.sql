@@ -59,6 +59,8 @@ SELECT a, x, b FROM (SELECT 7, * FROM (SELECT 2 AS x, materialize(0) AS `7`)) AS
 -- explicit alias.
 SELECT * FROM (SELECT materialize(1), materialize(2) AS `1`);
 SELECT * FROM (SELECT materialize(100) AS a, * FROM (SELECT materialize(1) AS a, materialize(2) AS b));
+-- `* APPLY f` lists `f(c)` expressions, not starred columns, so the alias does not shadow them either.
+SELECT * FROM (SELECT * APPLY toString, materialize('r') AS `toString(a)` FROM (SELECT materialize(1) AS a));
 
 -- A union used as a subquery exposes its column names from the first branch. When the first
 -- branch has duplicate names backed by different expressions, an outer `SELECT *` must keep both
