@@ -1,0 +1,9 @@
+Keys without aggregates
+matches the baseline	1
+records staged	1
+Keys with a count
+matches the baseline	1
+records staged	1
+Keys with arguments
+matches the baseline	1
+records staged	1
