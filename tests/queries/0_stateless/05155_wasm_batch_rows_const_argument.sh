@@ -7,10 +7,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # A `ColumnConst` argument is one stored row broadcast to the batch, and a wire that carries
 # constness writes that row once, so the argument costs the same bytes at one row as at a whole
-# block. When it alone exceeds the input budget, no row count brings a call inside the budget:
-# splitting only re-pays those same bytes once per call, and takes from the guest whatever it
-# amortizes across a call. The splitter must hand over the whole block instead of collapsing to
-# one row per call.
+# block. When it alone exceeds the input budget, no row count brings a call inside the budget,
+# and every call re-pays those bytes. The splitter must then budget the rows on top of that fixed
+# part: neither collapse to one row per call, nor hand over the whole block, which would leave the
+# call unbounded.
 #
 # The module declares exactly 1 MiB of linear memory, so with a ratio of 0.002 the budget is
 # 2097 bytes and the 4000-byte constant below is over it whatever the compiler does.
@@ -37,7 +37,8 @@ CREATE OR REPLACE FUNCTION ${FUNC}
     ARGUMENTS (s String, wide String) RETURNS UInt64;"
 
 ${CLICKHOUSE_CLIENT} --query "
-SELECT 'oversized const does not force a batch of one row: ' || toString(min(batch_rows) = 1000),
+SELECT 'oversized const does not force a batch of one row: ' || toString(max(batch_rows) > 10),
+       'oversized const does not take the whole block: ' || toString(max(batch_rows) < 1000),
        'all rows processed: ' || toString(count() = 1000)
 FROM
 (
@@ -57,7 +58,7 @@ CREATE OR REPLACE FUNCTION ${FUNC_TYPED}
     ARGUMENTS (n UInt64, wide String) RETURNS UInt64;"
 
 ${CLICKHOUSE_CLIENT} --query "
-SELECT 'const argument keeps its declared type: ' || toString(min(batch_rows) = 1000),
+SELECT 'const argument keeps its declared type: ' || toString(max(batch_rows) > 10),
        'all rows processed: ' || toString(count() = 1000)
 FROM
 (
@@ -69,8 +70,7 @@ SETTINGS max_block_size = 1000, max_threads = 1, webassembly_udf_max_input_block
 
 # The frame header and one descriptor per argument are paid once per call even with no constant
 # argument at all. Sixty narrow arguments cost 16 + 60 * 40 = 2416 bytes before the first row,
-# over the 2097-byte budget, so no row count fits and the block must not be split one row per call.
-# A hundred rows keep the call inside the test module's 64 KiB heap.
+# over the 2097-byte budget, so no row count fits; the rows are still budgeted on top of it.
 ${CLICKHOUSE_CLIENT} --query "
 CREATE OR REPLACE FUNCTION ${FUNC_WIDE}
     LANGUAGE WASM ABI COLUMNAR_V1
@@ -78,7 +78,8 @@ CREATE OR REPLACE FUNCTION ${FUNC_WIDE}
     ARGUMENTS (a0 UInt8, a1 UInt8, a2 UInt8, a3 UInt8, a4 UInt8, a5 UInt8, a6 UInt8, a7 UInt8, a8 UInt8, a9 UInt8, a10 UInt8, a11 UInt8, a12 UInt8, a13 UInt8, a14 UInt8, a15 UInt8, a16 UInt8, a17 UInt8, a18 UInt8, a19 UInt8, a20 UInt8, a21 UInt8, a22 UInt8, a23 UInt8, a24 UInt8, a25 UInt8, a26 UInt8, a27 UInt8, a28 UInt8, a29 UInt8, a30 UInt8, a31 UInt8, a32 UInt8, a33 UInt8, a34 UInt8, a35 UInt8, a36 UInt8, a37 UInt8, a38 UInt8, a39 UInt8, a40 UInt8, a41 UInt8, a42 UInt8, a43 UInt8, a44 UInt8, a45 UInt8, a46 UInt8, a47 UInt8, a48 UInt8, a49 UInt8, a50 UInt8, a51 UInt8, a52 UInt8, a53 UInt8, a54 UInt8, a55 UInt8, a56 UInt8, a57 UInt8, a58 UInt8, a59 UInt8) RETURNS UInt64;"
 
 ${CLICKHOUSE_CLIENT} --query "
-SELECT 'oversized framing does not force a batch of one row: ' || toString(min(batch_rows) = 100),
+SELECT 'oversized framing does not force a batch of one row: ' || toString(max(batch_rows) > 10),
+       'oversized framing does not take the whole block: ' || toString(max(batch_rows) < 100),
        'all rows processed: ' || toString(count() = 100)
 FROM
 (

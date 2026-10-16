@@ -1176,6 +1176,17 @@ private:
         for (size_t probe = 0; probe < max_probes; ++probe)
         {
             const size_t measured = measure(arguments, start_idx, candidate, {});
+            if (measured > budget && candidate == 1)
+            {
+                const size_t fixed = measureFixedBatchBytes(arguments, start_idx, measure);
+                /// A row that does not fit next to a fixed part that does is still sent alone.
+                if (fixed < budget)
+                    break;
+                /// Every call repeats a fixed part over the budget, so the budget can only bound
+                /// the rows on top of it. Sending the whole block instead would leave the call unbounded.
+                budget += fixed;
+            }
+
             if (measured <= budget)
             {
                 largest_fitting = candidate;
@@ -1186,13 +1197,7 @@ private:
             {
                 smallest_overflowing = candidate;
                 if (candidate == 1)
-                {
-                    /// If the fixed part alone does not fit, splitting only repeats it; send the whole block.
-                    if (measureFixedBatchBytes(arguments, start_idx, measure) >= budget)
-                        return remaining;
-                    /// Otherwise a row that does not fit is still sent alone.
                     break;
-                }
             }
 
             /// The boundary is known exactly once the bracket has nothing left between its ends.
