@@ -21,8 +21,11 @@
 #include <Formats/FormatFilterInfo.h>
 #include <Functions/DateTimeTransforms.h>
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
+#include <Processors/Formats/Impl/Parquet/FileLogicalType.h>
 
 #include <array>
+#include <cstring>
+#include <unordered_set>
 #include <fmt/ranges.h>
 
 namespace DB::ErrorCodes
@@ -206,6 +209,84 @@ std::string_view SchemaConverter::useColumnMapperIfNeeded(
     return it->second;
 }
 
+static bool isPrimitiveNode(const parq::SchemaElement & elem)
+{
+    /// `parquet.thrift` says "[num_children] is not set when the element is a primitive type".
+    /// If it's set but has value 0, logically it should be an empty tuple/struct.
+    /// But in practice some writers are sloppy about it and set this field to 0 (rather than unset)
+    /// for primitive columns. E.g.
+    /// tests/queries/0_stateless/data_hive/partitioning/non_existing_column=Elizabeth/sample.parquet
+    return !elem.__isset.num_children || (elem.num_children == 0 && elem.__isset.type);
+}
+
+/// Checks that the children of a group annotated with the `FILE` logical type are the fields
+/// defined by the specification, with the specified physical and logical types and `OPTIONAL`
+/// repetition. Apart from this, the group is read as an ordinary `Tuple`.
+///
+/// The values are not validated: a row whose fields do not form a valid reference (e.g. `offset`
+/// without `uri`, or no fields set at all) is returned as is, with each field as stored. The
+/// specification allows a reader to return a null reference for such rows, and returning the
+/// stored fields is not less informative than that (a reference with all fields null is the null
+/// reference), while avoiding a pass over the values.
+static void validateFileLogicalTypeGroup(const parq::FileMetaData & file_metadata, size_t group_schema_idx, const String & name_for_logging)
+{
+    const parq::SchemaElement & group = file_metadata.schema.at(group_schema_idx);
+    const size_t first_child_idx = group_schema_idx + 1;
+    if (group.num_children < 0 || size_t(group.num_children) > file_metadata.schema.size() - first_child_idx)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet schema element {} declares {} children, but only {} schema elements remain in the file", name_for_logging, group.num_children, file_metadata.schema.size() - first_child_idx);
+
+    std::unordered_set<std::string_view> seen_names;
+    for (size_t i = 0; i < size_t(group.num_children); ++i)
+    {
+        /// Every child must be a primitive node (checked below), so the children are consecutive.
+        const parq::SchemaElement & field = file_metadata.schema[first_child_idx + i];
+        const std::optional<FileLogicalTypeFieldKind> kind = getFileLogicalTypeFieldKind(field.name);
+        if (!kind.has_value())
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Parquet column {} has `FILE` logical type, but contains unrecognized field `{}`. Valid fields are: {}",
+                name_for_logging, field.name, file_logical_type_field_names);
+        if (!seen_names.insert(field.name).second)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Parquet column {} has `FILE` logical type, but contains field `{}` more than once", name_for_logging, field.name);
+        if (!isPrimitiveNode(field))
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Parquet column {} has `FILE` logical type, but its field `{}` is a group", name_for_logging, field.name);
+        if (field.repetition_type != parq::FieldRepetitionType::OPTIONAL)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Parquet column {} has `FILE` logical type, but its field `{}` is not OPTIONAL", name_for_logging, field.name);
+
+        const parq::LogicalType & logical = field.logicalType;
+        const bool has_annotation = field.__isset.logicalType || field.__isset.converted_type;
+        bool valid_type = false;
+        std::string_view expected_type;
+        switch (*kind)
+        {
+            case FileLogicalTypeFieldKind::String:
+                expected_type = "BYTE_ARRAY annotated with STRING";
+                valid_type = field.type == parq::Type::BYTE_ARRAY
+                    && (field.__isset.logicalType ? logical.__isset.STRING
+                                                  : field.__isset.converted_type && field.converted_type == parq::ConvertedType::UTF8);
+                break;
+            case FileLogicalTypeFieldKind::Int64:
+                /// An `INTEGER(64, true)` annotation means the same as no annotation.
+                expected_type = "INT64";
+                valid_type = field.type == parq::Type::INT64
+                    && (!has_annotation
+                        || (field.__isset.logicalType && logical.__isset.INTEGER && logical.INTEGER.bitWidth == 64 && logical.INTEGER.isSigned)
+                        || (!field.__isset.logicalType && field.converted_type == parq::ConvertedType::INT_64));
+                break;
+            case FileLogicalTypeFieldKind::Binary:
+                expected_type = "BYTE_ARRAY without annotation";
+                valid_type = field.type == parq::Type::BYTE_ARRAY && !has_annotation;
+                break;
+        }
+        if (!field.__isset.type || !valid_type)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Parquet column {} has `FILE` logical type, but its field `{}` has unexpected type (expected {}): {}",
+                name_for_logging, field.name, expected_type, thriftToString(field));
+    }
+}
+
 void SchemaConverter::processSubtree(TraversalNode & node)
 {
     /// Reject deeply nested schemas before recursing. The def-level guard below (def == UINT8_MAX)
@@ -311,6 +392,17 @@ void SchemaConverter::processSubtree(TraversalNode & node)
 
     /// https://github.com/apache/parquet-format/blob/master/LogicalTypes.md
 
+    /// A `FILE` group is validated regardless of whether it is requested (even partially, like
+    /// `file.uri`), because a schema that violates the specification makes the file invalid.
+    /// After that it is read as a `Tuple`, which is what processSubtreeTuple below produces for it.
+    if (node.element->logicalType.__isset.FILE)
+    {
+        if (isPrimitiveNode(*node.element))
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Parquet column {} has `FILE` logical type, but it is a primitive column rather than a group", node.getNameForLogging());
+        validateFileLogicalTypeGroup(file_metadata, schema_idx - 1, node.getNameForLogging());
+    }
+
     if (!processSubtreePrimitive(node) &&
         !processSubtreeMap(node) &&
         !processSubtreeArrayOuter(node) &&
@@ -366,16 +458,6 @@ void SchemaConverter::processSubtree(TraversalNode & node)
     }
 }
 
-static bool isPrimitiveNode(const parq::SchemaElement & elem)
-{
-    /// `parquet.thrift` says "[num_children] is not set when the element is a primitive type".
-    /// If it's set but has value 0, logically it should be an empty tuple/struct.
-    /// But in practice some writers are sloppy about it and set this field to 0 (rather than unset)
-    /// for primitive columns. E.g.
-    /// tests/queries/0_stateless/data_hive/partitioning/non_existing_column=Elizabeth/sample.parquet
-    return !elem.__isset.num_children || (elem.num_children == 0 && elem.__isset.type);
-}
-
 bool SchemaConverter::processSubtreePrimitive(TraversalNode & node)
 {
     if (!isPrimitiveNode(*node.element))
@@ -425,12 +507,19 @@ bool SchemaConverter::processSubtreePrimitive(TraversalNode & node)
     auto geo_it = geo_columns.find(node.getParquetName());
     auto geo_metadata = geo_it == geo_columns.end() ? std::nullopt : std::optional(geo_it->second);
 
+    /// Iceberg stores only `time` as Parquet TIME, so a column of a file without field ids needs no lookup.
+    bool time_as_stored_integer = false;
+    if (column_mapper && primitive_type_hint && WhichDataType(primitive_type_hint).isInt64())
+        time_as_stored_integer = node.element->__isset.field_id
+            ? column_mapper->isIcebergTimeFieldId(node.element->field_id)
+            : column_mapper->hasIcebergTimeFieldIds();
+
     DataTypePtr inferred_type;
     DataTypePtr decoded_type;
     PageDecoderInfo decoder;
     try
     {
-        processPrimitiveColumn(*node.element, primitive_type_hint, decoder, decoded_type, inferred_type, geo_metadata);
+        processPrimitiveColumn(*node.element, primitive_type_hint, time_as_stored_integer, decoder, decoded_type, inferred_type, geo_metadata);
     }
     catch (Exception & e)
     {
@@ -607,7 +696,9 @@ bool SchemaConverter::processSubtreeArrayOuter(TraversalNode & node)
     if (child.repetition_type != parq::FieldRepetitionType::REPEATED)
         return false;
 
-    bool has_inner_group = child.num_children == 1;
+    /// A repeated group annotated with `FILE` is the element itself (a two-level list), even if it has
+    /// only one field: the middle level of a three-level list has no annotation.
+    bool has_inner_group = child.num_children == 1 && !child.logicalType.__isset.FILE;
 
     TraversalNode subnode = node.prepareToRecurse(has_inner_group ? SchemaContext::ListTuple : SchemaContext::ListElement, node.type_hint);
     processSubtree(subnode);
@@ -1115,7 +1206,7 @@ std::optional<RequestedIntegerSpace> getRequestedIntegerSpace(const IDataType & 
 }
 
 void SchemaConverter::processPrimitiveColumn(
-    const parq::SchemaElement & element, DataTypePtr type_hint,
+    const parq::SchemaElement & element, DataTypePtr type_hint, bool time_as_stored_integer,
     PageDecoderInfo & out_decoder, DataTypePtr & out_decoded_type,
     DataTypePtr & out_inferred_type, std::optional<GeoColumnMetadata> geo_metadata) const
 {
@@ -1135,6 +1226,14 @@ void SchemaConverter::processPrimitiveColumn(
     /// After parsing, columns are converted (using castColumn) from out_decoded_type to the final
     /// data type. E.g. maybe out_decoded_type is Int32 based on parquet physical type, but
     /// out_inferred_type is Int16 based on schema inference, and castColumn does the conversion.
+
+    /// The physical type is read from the file as an integer and may be out of the range of the enum.
+    /// Check it without loading it as the enum, which would be undefined behavior.
+    Int32 raw_type = 0;
+    static_assert(sizeof(raw_type) == sizeof(element.type));
+    memcpy(&raw_type, &element.type, sizeof(raw_type));
+    if (raw_type < parq::Type::BOOLEAN || raw_type > parq::Type::FIXED_LEN_BYTE_ARRAY)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type: {}", raw_type);
 
     parq::Type::type type = element.type;
     std::optional<parq::ConvertedType::type> converted =
@@ -1307,6 +1406,16 @@ void SchemaConverter::processPrimitiveColumn(
         return get_output_type_index() == TypeIndex::String;
     };
 
+    auto set_plain_int64_decoder = [&]
+    {
+        out_inferred_type = std::make_shared<DataTypeInt64>();
+        auto converter = std::make_shared<IntConverter>();
+        converter->input_size = 8;
+        out_decoder.allow_stats = dispatch_int_stats_converter(/*allow_datetime_and_ipv4=*/ false, *converter);
+        out_decoder.allow_hash_filters = allow_int_hash_filters(64, true, 64);
+        out_decoder.fixed_size_converter = std::move(converter);
+    };
+
     /// Escape hatch for reading raw plain-encoded values and bypassing data type stuff.
     /// If type FixedString is requested, and the parquet physical type is a fixed-size type of
     /// matching size, use a trivial FixedSizeConverter.
@@ -1468,6 +1577,12 @@ void SchemaConverter::processPrimitiveColumn(
             scale = 9;
         else
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected timestamp units: {}", thriftToString(element));
+
+        if (time_as_stored_integer && is_time_of_day && scale == 6 && type == parq::Type::INT64)
+        {
+            set_plain_int64_decoder();
+            return;
+        }
 
         if (type != parq::Type::INT64 && type != parq::Type::INT32)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type for timestamp logical type: {}", thriftToString(element));
@@ -1816,12 +1931,7 @@ void SchemaConverter::processPrimitiveColumn(
         }
         case parq::Type::INT64:
         {
-            out_inferred_type = std::make_shared<DataTypeInt64>();
-            auto converter = std::make_shared<IntConverter>();
-            converter->input_size = 8;
-            out_decoder.allow_stats = dispatch_int_stats_converter(/*allow_datetime_and_ipv4=*/ false, *converter);
-            out_decoder.allow_hash_filters = allow_int_hash_filters(64, true, 64);
-            out_decoder.fixed_size_converter = std::move(converter);
+            set_plain_int64_decoder();
             return;
         }
         case parq::Type::INT96:

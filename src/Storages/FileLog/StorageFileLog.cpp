@@ -1070,6 +1070,7 @@ void registerStorageFileLog(StorageFactory & factory)
         SecretArgumentsSpec{},
         StorageFactory::StorageFeatures{
             .supports_settings = true,
+            .source_access_type = AccessTypeObjects::Source::FILE,
             .has_builtin_setting_fn = FileLogSettings::hasBuiltin,
             .enumerate_engine_settings_fn = enumerateCompiledDefaults<FileLogSettings>,
             /// A table that does not state these takes the server's `max_insert_block_size`, `max_block_size` and
