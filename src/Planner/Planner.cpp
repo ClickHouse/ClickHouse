@@ -1273,8 +1273,10 @@ void addTotalsHavingStep(QueryPlan & query_plan,
             "Correlated subqueries in HAVING are not supported yet with WITH TOTALS, max_rows_to_group_by, "
             "group_by_overflow_mode = 'any' and totals_mode other than 'after_having_exclusive'");
 
+    SharedCorrelatedInputRoot shared_input_root;
     for (const auto & correlated_subquery : having_analysis_result.correlated_subtrees.subqueries)
-        buildQueryPlanForCorrelatedSubquery(planner_context, query_plan, correlated_subquery, select_query_options);
+        buildQueryPlanForCorrelatedSubquery(
+            planner_context, query_plan, correlated_subquery, select_query_options, &shared_input_root);
 
     std::optional<ActionsDAG> actions;
     if (having_analysis_result.filter_actions)
