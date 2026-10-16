@@ -130,16 +130,19 @@ void DirectoryWatcherBase::onEvent(const inotify_event & event)
     if ((p_event->mask & IN_CREATE) && (eventMask() & DirectoryWatcherBase::DW_ITEM_ADDED))
     {
         DirectoryWatcherBase::DirectoryEvent ev(p_event->name, DirectoryWatcherBase::DW_ITEM_ADDED);
+        has_uncommitted_events = true;
         owner.onItemAdded(ev);
     }
     if ((p_event->mask & IN_DELETE) && (eventMask() & DirectoryWatcherBase::DW_ITEM_REMOVED))
     {
         DirectoryWatcherBase::DirectoryEvent ev(p_event->name, DirectoryWatcherBase::DW_ITEM_REMOVED);
+        has_uncommitted_events = true;
         owner.onItemRemoved(ev);
     }
     if ((p_event->mask & IN_MODIFY) && (eventMask() & DirectoryWatcherBase::DW_ITEM_MODIFIED))
     {
         DirectoryWatcherBase::DirectoryEvent ev(p_event->name, DirectoryWatcherBase::DW_ITEM_MODIFIED);
+        has_uncommitted_events = true;
         owner.onItemModified(ev);
     }
     if ((p_event->mask & IN_MOVED_FROM) && (eventMask() & DirectoryWatcherBase::DW_ITEM_MOVED_FROM))
@@ -147,7 +150,15 @@ void DirectoryWatcherBase::onEvent(const inotify_event & event)
         unpaired_move_cookies.push_back(p_event->cookie);
         if (unpaired_move_cookies.size() > max_unpaired_move_cookies)
             unpaired_move_cookies.pop_front();
+
+        /// Started when the watcher begins to wait and not extended by later renames, so that they cannot postpone the
+        /// commit. A late `IN_MOVED_TO` is still paired by `unpaired_move_cookies`.
+        if (unpaired_moves.empty())
+            pairing_deadline = std::chrono::steady_clock::now() + pairing_timeout;
+        unpaired_moves.insert(p_event->cookie);
+
         DirectoryWatcherBase::DirectoryEvent ev(p_event->name, DirectoryWatcherBase::DW_ITEM_MOVED_FROM, p_event->cookie);
+        has_uncommitted_events = true;
         owner.onItemMovedFrom(ev);
     }
     if (p_event->mask & IN_MOVED_TO)
@@ -161,31 +172,27 @@ void DirectoryWatcherBase::onEvent(const inotify_event & event)
             if (eventMask() & DirectoryWatcherBase::DW_ITEM_MOVED_TO)
             {
                 DirectoryWatcherBase::DirectoryEvent ev(p_event->name, DirectoryWatcherBase::DW_ITEM_MOVED_TO, p_event->cookie);
+                has_uncommitted_events = true;
                 owner.onItemMovedTo(ev);
             }
         }
         else if (eventMask() & DirectoryWatcherBase::DW_ITEM_ADDED)
         {
             DirectoryWatcherBase::DirectoryEvent ev(p_event->name, DirectoryWatcherBase::DW_ITEM_ADDED);
+            has_uncommitted_events = true;
             owner.onItemAdded(ev);
         }
     }
 
-    if (p_event->mask & IN_MOVED_FROM)
-        unpaired_moves.insert(p_event->cookie);
     if (p_event->mask & IN_MOVED_TO)
         unpaired_moves.erase(p_event->cookie);
 }
 
-bool DirectoryWatcherBase::onReadEnd()
+bool DirectoryWatcherBase::hasUnpairedMoves() const
 {
-    /// The IN_MOVED_FROM and IN_MOVED_TO of one rename can come in two reads (see inotify(7)): hold the events back
-    /// until every IN_MOVED_FROM has its IN_MOVED_TO, or until the reactor gives up waiting for it.
-    if (!unpaired_moves.empty())
-        return true;
-
-    commitEvents();
-    return false;
+    /// The IN_MOVED_FROM and IN_MOVED_TO of one rename can come in two reads (see inotify(7)): the events are held
+    /// back until every IN_MOVED_FROM has its IN_MOVED_TO, or until the reactor gives up waiting for it.
+    return !unpaired_moves.empty();
 }
 
 void DirectoryWatcherBase::onPairingTimeout()
@@ -201,7 +208,12 @@ void DirectoryWatcherBase::onWatchRemoved()
 
 void DirectoryWatcherBase::commitEvents()
 {
+    if (!has_uncommitted_events)
+    {
+        return;
+    }
     owner.commitEvents();
+    has_uncommitted_events = false;
 
     /// Wake up reader thread
     owner.storage.wakeUp();
@@ -258,8 +270,10 @@ void DirectoryWatcherBase::onVnodeEvent(int fd, uint32_t fflags)
     /// IN_MODIFY is, and needs no scan. Truncation may come as NOTE_ATTRIB only.
     if ((fflags & (NOTE_WRITE | NOTE_EXTEND | NOTE_ATTRIB)) && (eventMask() & DW_ITEM_MODIFIED))
     {
+        has_uncommitted_events = true;
         owner.onItemModified(DirectoryEvent(name_it->second, DW_ITEM_MODIFIED));
         owner.commitEvents();
+        has_uncommitted_events = false;
         owner.storage.wakeUp();
     }
     if (fflags & NOTE_RENAME)
@@ -591,10 +605,16 @@ void DirectoryWatcherBase::onTimer()
         if (is_rename(inode))
         {
             if (eventMask() & DW_ITEM_MOVED_FROM)
+            {
+                has_uncommitted_events = true;
                 owner.onItemMovedFrom(DirectoryEvent(name, DW_ITEM_MOVED_FROM, inode));
+            }
         }
         else if (eventMask() & DW_ITEM_REMOVED)
+        {
+            has_uncommitted_events = true;
             owner.onItemRemoved(DirectoryEvent(name, DW_ITEM_REMOVED));
+        }
     }
 
     /// Arrived rename targets, in the topologically-sorted order computed above.
@@ -602,7 +622,10 @@ void DirectoryWatcherBase::onTimer()
     {
         changed = true;
         if (eventMask() & DW_ITEM_MOVED_TO)
+        {
+            has_uncommitted_events = true;
             owner.onItemMovedTo(DirectoryEvent(name, DW_ITEM_MOVED_TO, current_files_inodes.at(name)));
+        }
     }
 
     /// Arrived identities that are genuinely new (including a name whose inode was replaced).
@@ -612,10 +635,14 @@ void DirectoryWatcherBase::onTimer()
             continue;
         changed = true;
         if (eventMask() & DW_ITEM_ADDED)
+        {
+            has_uncommitted_events = true;
             owner.onItemAdded(DirectoryEvent(name, DW_ITEM_ADDED));
+        }
     }
 
     owner.commitEvents();
+    has_uncommitted_events = false;
     watch_state->setSnapshot(std::move(current_files_inodes));
     /// This pass committed successfully, so the deletes it collected have been applied; start the next
     /// pass with a clean set. (On a retried pass we return early, keeping them.)

@@ -38,8 +38,8 @@ class DirectoryWatcherBase;
 /// instances does not depend on the number of tables either (`fs.inotify.max_user_instances` is only 128 by default).
 /// The directory of each watcher is a watch of that descriptor: `add` adds it and `remove` removes it. The kernel
 /// gives the watchers of the same directory the same watch, and the reactor hands its events to each of them. The
-/// callbacks of a watcher (`DirectoryWatcherBase::onEvent`, `DirectoryWatcherBase::onReadEnd` and
-/// `DirectoryWatcherBase::onPairingTimeout`) run on the reactor thread, one at a time, and must not block.
+/// callbacks of a watcher (`DirectoryWatcherBase::onEvent`, `DirectoryWatcherBase::hasUnpairedMoves`,
+/// `DirectoryWatcherBase::commitEvents` and `DirectoryWatcherBase::onPairingTimeout`) run on the reactor thread, one at a time, and must not block.
 ///
 /// On macOS the reactor owns one `kqueue`. It registers the directory descriptor of a watcher in it in `add`, and the
 /// watchers register the descriptors of their files (`watchVnode`), with the registration of the watcher as the user
@@ -49,15 +49,9 @@ class DirectoryWatcherBase;
 class DirectoryWatchReactor
 {
 public:
-#if defined(OS_LINUX)
-    /// `pairing_timeout_` is one timeout for all watchers: it restarts whenever a watcher starts or keeps waiting for
-    /// the second half of a rename, and when it expires every watcher that still waits is committed as it is.
-    /// So each waiting watcher gets at least the whole timeout, but continuous renames in other directories can
-    /// postpone the commit of a watcher whose second half never comes.
-    explicit DirectoryWatchReactor(std::chrono::milliseconds pairing_timeout_);
-#elif defined(OS_DARWIN)
     DirectoryWatchReactor();
 
+#if defined(OS_DARWIN)
     /// Called by a watcher from its callbacks, that is on the reactor thread only, once it has been added.
     /// Registers `fd` for the vnode events `fflags` (`NOTE_*`) of `watcher`, which the events of `fd` are reported to.
     /// Closing `fd` removes the registration.
@@ -140,13 +134,11 @@ private:
         WatcherRegistration & operator=(const WatcherRegistration &) = delete;
 
         DirectoryWatcherBase * watcher;
-        /// The watch of the directory in `inotify_fd`, shared by all watchers of the directory. -1 once the kernel has
-        /// dropped it.
+        /// The watch of the directory in `inotify_fd`, shared by all watchers of the directory. A watcher gets only the
+        /// events queued after it was added (see `attachWatcher`). -1 once the kernel has dropped it.
         int wd = -1;
         /// Its callback has failed in the current read, and it is removed at the end of it.
         bool failed = false;
-        /// It has got events in the current read, and `onReadEnd` is to be called.
-        bool touched = false;
     };
 
     void runLoop();
@@ -154,22 +146,34 @@ private:
     void detachWatcher(WatcherRegistration & registration);
     /// Reads the events of `inotify_fd` and hands them to the watchers.
     void dispatchEvents();
-    /// Hands one event to the watchers of its watch, and adds those to `touched`.
-    void dispatchEvent(const inotify_event & event, std::vector<WatcherRegistration *> & touched);
+    /// Reads exactly the events that are in the queue of `inotify_fd` right now and hands them to the watchers, so
+    /// that a watcher added next does not get them.
+    void dispatchQueuedEvents();
+    /// Commits the events of `touched_watchers` after a read, and removes the watchers that failed in it.
+    void commitTouchedWatchers();
+    /// Hands one event to the watchers of its watch, and adds those to `touched_watchers`.
+    void dispatchEvent(const inotify_event & event);
     void removeFailedWatchers();
-    void flushPairingTimeout();
+    /// Commits the watchers whose deadline is not after `now`.
+    void flushExpiredPairings(std::chrono::steady_clock::time_point now);
 
-    const std::chrono::milliseconds pairing_timeout;
     Epoll epoll;
     int inotify_fd = -1;
 
     /// The registrations of the watchers of each watch of `inotify_fd`.
     std::unordered_map<int, std::vector<WatcherRegistration *>> registrations_by_wd;
 
+    /// The watchers that wait for the second half of a rename, in no particular order. A watcher sets its
+    /// deadline when it starts to wait, while the events of a read are decoded, before the reactor sees it, so
+    /// the deadlines are not kept sorted: the loop looks through all of them for the earliest one and the expired
+    /// ones. There are few of them, only while a rename is split between two reads. When the deadline expires, the
+    /// watcher is committed as it is.
     std::unordered_set<WatcherRegistration *> waiting_for_pairing;
     /// The events are read here and decoded at once, so one buffer serves all the watchers.
     std::string buffer;
-    std::chrono::steady_clock::time_point pairing_deadline;
+    /// The watchers that got events in the current read, to commit their events once per read. It is empty between
+    /// the reads, and kept to reuse its memory.
+    std::unordered_set<WatcherRegistration *> touched_watchers;
 #elif defined(OS_DARWIN)
     struct WatcherRegistration
     {

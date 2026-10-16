@@ -6157,12 +6157,7 @@ std::shared_ptr<DirectoryWatchReactor> Context::getDirectoryWatchReactor() const
 {
     callOnce(shared->directory_watch_reactor_initialized, [&]
     {
-#if defined(OS_LINUX)
-        /// How long a watcher waits for the second half of a rename that the first read did not bring.
-        auto created_reactor = std::make_shared<DirectoryWatchReactor>(std::chrono::milliseconds(10));
-#elif defined(OS_DARWIN)
         auto created_reactor = std::make_shared<DirectoryWatchReactor>();
-#endif
         std::lock_guard lock(shared->directory_watch_reactor_mutex);
         shared->directory_watch_reactor = std::move(created_reactor);
     });

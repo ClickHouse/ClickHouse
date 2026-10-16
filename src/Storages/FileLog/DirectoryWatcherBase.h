@@ -6,6 +6,7 @@
 #include <memory>
 #include <string>
 #if defined(OS_LINUX)
+#include <chrono>
 #include <deque>
 #include <unordered_set>
 
@@ -113,23 +114,31 @@ private:
     std::shared_ptr<DirectoryWatchReactor> reactor;
     /// Whether the reactor watches the directory. Not if it failed to add the watcher, then the watcher stays inert.
     bool registered = false;
+    /// Whether the watcher has reported an event to `owner` that has not been committed yet.
+    bool has_uncommitted_events = false;
 
 #if defined(OS_LINUX)
     /// Cookies of the `IN_MOVED_FROM` events that are waiting for their `IN_MOVED_TO`, the oldest evicted first.
     std::deque<uint32_t> unpaired_move_cookies;
     /// Cookies of the `IN_MOVED_FROM` events of the current batch that have not got their `IN_MOVED_TO` yet.
     std::unordered_set<uint32_t> unpaired_moves;
+    /// How long the watcher waits for the `IN_MOVED_TO` of a rename that one read of the inotify descriptor did not bring.
+    static constexpr std::chrono::milliseconds pairing_timeout{10};
+    /// Set to `pairing_timeout` from now when the watcher starts to wait for the second half of a rename, and not
+    /// extended by later renames. The `DirectoryWatchReactor` commits the watcher at this time unless its renames
+    /// complete before.
+    std::chrono::steady_clock::time_point pairing_deadline;
 
     /// The inotify mask for the events the watcher is interested in.
     uint32_t watchMask() const;
 
     /// Called by the `DirectoryWatchReactor` thread only.
-    /// `onEvent` decodes one event of the directory, and `onReadEnd` is called once after all the events of the
-    /// directory that one read of the inotify descriptor has brought. It hands the events to `owner` as soon as
-    /// every rename in them is complete. Returns true if it does not, then the reactor calls `onPairingTimeout`
-    /// unless the rest of the events come in time.
+    /// `onEvent` decodes one event of the directory, and `hasUnpairedMoves` is called once after all the events of
+    /// the directory that one read of the inotify descriptor has brought. If every rename in them is complete, the
+    /// reactor calls `commitEvents` to hand the events to `owner`, otherwise it calls `onPairingTimeout` unless the
+    /// rest of the events come in time.
     void onEvent(const inotify_event & event);
-    bool onReadEnd();
+    bool hasUnpairedMoves() const;
     void onPairingTimeout();
     /// The kernel has dropped the watch of the directory (`IN_IGNORED`), because it was deleted or unmounted.
     void onWatchRemoved();

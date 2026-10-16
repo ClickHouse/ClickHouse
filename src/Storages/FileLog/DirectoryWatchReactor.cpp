@@ -9,6 +9,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <base/scope_guard.h>
 
 #include <algorithm>
 #include <array>
@@ -17,6 +18,7 @@
 #include <unistd.h>
 #if defined(OS_LINUX)
 #include <sys/inotify.h>
+#include <sys/ioctl.h>
 #elif defined(OS_DARWIN)
 #include <fcntl.h>
 #endif
@@ -183,9 +185,8 @@ static constexpr size_t buffer_size = 4096;
 /// not delay the commands. The descriptor is level-triggered, so the rest of the events wakes the loop up at once.
 static constexpr size_t max_reads_per_wakeup = 64;
 
-DirectoryWatchReactor::DirectoryWatchReactor(std::chrono::milliseconds pairing_timeout_)
+DirectoryWatchReactor::DirectoryWatchReactor()
     : log(getLogger("DirectoryWatchReactor"))
-    , pairing_timeout(pairing_timeout_)
     , epoll(EpollNesting::Leaf)
     , buffer(buffer_size, '\0')
 {
@@ -228,14 +229,18 @@ void DirectoryWatchReactor::runLoop()
 
     while (true)
     {
+        /// The wait ends at the earliest deadline of the waiting watchers. Once it has passed the wait does not block,
+        /// and the events already in the queue are dispatched before the flush below, so that a rename split between
+        /// two reads is completed instead of committing only its first half.
         int timeout_ms = -1;
         if (!waiting_for_pairing.empty())
         {
-            const auto remaining = std::chrono::ceil<std::chrono::milliseconds>(pairing_deadline - std::chrono::steady_clock::now());
-            if (remaining.count() <= 0)
-                flushPairingTimeout(); /// Empties the set, so the wait below has no timeout.
-            else
-                timeout_ms = static_cast<int>(remaining.count());
+            auto earliest_deadline = std::chrono::steady_clock::time_point::max();
+            for (const WatcherRegistration * registration : waiting_for_pairing)
+                earliest_deadline = std::min(earliest_deadline, registration->watcher->pairing_deadline);
+
+            const auto remaining = std::chrono::ceil<std::chrono::milliseconds>(earliest_deadline - std::chrono::steady_clock::now());
+            timeout_ms = static_cast<int>(std::max<std::chrono::milliseconds::rep>(remaining.count(), 0));
         }
 
         const size_t ready = epoll.getManyReady(static_cast<int>(events.size()), events.data(), timeout_ms);
@@ -257,6 +262,9 @@ void DirectoryWatchReactor::runLoop()
         if (has_commands)
             processCommands();
 
+        if (!waiting_for_pairing.empty())
+            flushExpiredPairings(std::chrono::steady_clock::now());
+
         /// Once `stopped` is set no command is submitted, so the queue stays empty and nothing is lost by leaving.
         std::lock_guard lock(mutex);
         if (stopped && commands.empty())
@@ -266,8 +274,14 @@ void DirectoryWatchReactor::runLoop()
 
 void DirectoryWatchReactor::attachWatcher(DirectoryWatcherBase & watcher, std::unique_ptr<WatcherRegistration> registration)
 {
-    /// The kernel gives the same watch to the same directory, and `IN_MASK_ADD` keeps the events of its other
-    /// watchers. Each watcher filters the events it gets by its own mask.
+    /// The kernel gives the same watch to the same directory, so the queue can already have events of this watch,
+    /// which happened before the watcher took its baseline of the directory. They are handed to the other watchers of
+    /// the directory first. This is done before the watch is added: otherwise the events between the two would reach
+    /// the other watchers only, and this watcher would lose events that happened after its baseline.
+    dispatchQueuedEvents();
+
+    /// `IN_MASK_ADD` keeps the events of the other watchers of the watch. Each watcher filters the events it gets by
+    /// its own mask.
     const int wd = inotify_add_watch(inotify_fd, watcher.path.c_str(), watcher.watchMask() | IN_MASK_ADD);
     if (wd == -1)
     {
@@ -307,7 +321,7 @@ void DirectoryWatchReactor::detachWatcher(WatcherRegistration & registration)
 
 void DirectoryWatchReactor::dispatchEvents()
 {
-    std::vector<WatcherRegistration *> touched;
+    chassert(touched_watchers.empty());
 
     for (size_t reads = 0; reads < max_reads_per_wakeup; ++reads)
     {
@@ -326,42 +340,84 @@ void DirectoryWatchReactor::dispatchEvents()
         for (size_t offset = 0; offset < static_cast<size_t>(bytes_read);)
         {
             const auto & event = *reinterpret_cast<const inotify_event *>(buffer.data() + offset);
-            dispatchEvent(event, touched);
+            dispatchEvent(event);
             offset += sizeof(inotify_event) + event.len;
         }
 
-        for (WatcherRegistration * registration : touched)
-        {
-            registration->touched = false;
-            if (registration->failed)
-                continue;
-
-            try
-            {
-                if (registration->watcher->onReadEnd())
-                {
-                    /// Restarted for every waiting watcher, so each of them gets the whole timeout at least but not exactly
-                    pairing_deadline = std::chrono::steady_clock::now() + pairing_timeout;
-                    waiting_for_pairing.insert(registration);
-                }
-                else
-                {
-                    waiting_for_pairing.erase(registration);
-                }
-            }
-            catch (...)
-            {
-                tryLogCurrentException(log, "Cannot process the events of a directory watcher, it is not watched anymore");
-                failWatcher(*registration);
-            }
-        }
-        touched.clear();
-
-        removeFailedWatchers();
+        commitTouchedWatchers();
     }
 }
 
-void DirectoryWatchReactor::dispatchEvent(const inotify_event & event, std::vector<WatcherRegistration *> & touched)
+void DirectoryWatchReactor::dispatchQueuedEvents()
+{
+    chassert(touched_watchers.empty());
+
+    /// The size of the whole events in the queue right now. The reads below take exactly these, and leave the events
+    /// that come after to the next reads, which a watcher added next gets too.
+    int queued = 0;
+    if (::ioctl(inotify_fd, FIONREAD, &queued) == -1)
+        throw ErrnoException(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Cannot get the size of the events of the directory watchers");
+
+    size_t remaining = static_cast<size_t>(queued);
+    while (remaining > 0)
+    {
+        /// The queue is read in order and in whole events, so the end of `remaining` is always the end of an event.
+        const ssize_t bytes_read = ::read(inotify_fd, buffer.data(), std::min(buffer.size(), remaining));
+        if (bytes_read < 0)
+        {
+            if (errno == EINTR)
+                continue;
+            if (errno == EAGAIN)
+                return;
+            throw ErrnoException(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Cannot read the events of the directory watchers");
+        }
+        if (bytes_read == 0)
+            return;
+
+        for (size_t offset = 0; offset < static_cast<size_t>(bytes_read);)
+        {
+            const auto & event = *reinterpret_cast<const inotify_event *>(buffer.data() + offset);
+            dispatchEvent(event);
+            offset += sizeof(inotify_event) + event.len;
+        }
+
+        commitTouchedWatchers();
+        remaining -= std::min(remaining, static_cast<size_t>(bytes_read));
+    }
+}
+
+void DirectoryWatchReactor::commitTouchedWatchers()
+{
+    for (WatcherRegistration * registration : touched_watchers)
+    {
+        if (registration->failed)
+            continue;
+
+        try
+        {
+            if (registration->watcher->hasUnpairedMoves())
+            {
+                /// The deadline is kept by the watcher, so a watcher that waits already needs nothing more.
+                waiting_for_pairing.insert(registration);
+            }
+            else
+            {
+                registration->watcher->commitEvents();
+                waiting_for_pairing.erase(registration);
+            }
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Cannot process the events of a directory watcher, it is not watched anymore");
+            failWatcher(*registration);
+        }
+    }
+    touched_watchers.clear();
+
+    removeFailedWatchers();
+}
+
+void DirectoryWatchReactor::dispatchEvent(const inotify_event & event)
 {
     if (event.mask & IN_Q_OVERFLOW)
     {
@@ -415,29 +471,31 @@ void DirectoryWatchReactor::dispatchEvent(const inotify_event & event, std::vect
             continue;
         }
 
-        if (!registration->touched)
-        {
-            registration->touched = true;
-            touched.push_back(registration);
-        }
+        touched_watchers.insert(registration);
     }
 }
 
 void DirectoryWatchReactor::removeFailedWatchers()
 {
-    std::vector<DirectoryWatcherBase *> failed;
-    failed.swap(failed_watchers);
-    for (DirectoryWatcherBase * watcher : failed)
+    /// Cleared even if a removal throws, so the next call does not see the watchers of this one.
+    SCOPE_EXIT({ failed_watchers.clear(); });
+    for (DirectoryWatcherBase * watcher : failed_watchers)
         removeWatcher(*watcher);
 }
 
-void DirectoryWatchReactor::flushPairingTimeout()
+void DirectoryWatchReactor::flushExpiredPairings(std::chrono::steady_clock::time_point now)
 {
-    std::unordered_set<WatcherRegistration *> expired;
-    expired.swap(waiting_for_pairing);
-
-    for (WatcherRegistration * registration : expired)
+    for (auto it = waiting_for_pairing.begin(); it != waiting_for_pairing.end();)
     {
+        WatcherRegistration * registration = *it;
+        if (registration->watcher->pairing_deadline > now)
+        {
+            ++it;
+            continue;
+        }
+
+        /// Erased before the callback; the callbacks do not change `waiting_for_pairing`, so `it` stays valid.
+        it = waiting_for_pairing.erase(it);
         try
         {
             registration->watcher->onPairingTimeout();
@@ -607,9 +665,9 @@ void DirectoryWatchReactor::watcherScan(WatcherRegistration & registration)
 /// The watchers that failed are removed once nothing refers to their registrations anymore.
 void DirectoryWatchReactor::removeFailedWatchers()
 {
-    std::vector<DirectoryWatcherBase *> failed;
-    failed.swap(failed_watchers);
-    for (DirectoryWatcherBase * watcher : failed)
+    /// Cleared even if a removal throws, so the next call does not see the watchers of this one.
+    SCOPE_EXIT({ failed_watchers.clear(); });
+    for (DirectoryWatcherBase * watcher : failed_watchers)
         removeWatcher(*watcher);
 }
 
