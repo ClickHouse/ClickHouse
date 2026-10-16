@@ -299,28 +299,28 @@ Names filterTupleColumnsToRead(NamesAndTypesList & requested_columns)
         /// (Note that `t.a.b.c` will not be listed by enumerateStreams because `c`
         ///  is a dynamic subcolumn.)
         auto & column_info = columns_info[idx];
-        bool found_full_path = false;
         column_info.name_in_storage = column_to_read.getNameInStorage();
         column_info.type = column_to_read.getTypeInStorage();
         column_info.type_in_storage = column_to_read.getTypeInStorage();
 
         if (column_to_read.isSubcolumn())
         {
-            /// Do subcolumn lookup similar to getColumnFromBlock.
-
+            /// Element names may contain dots, so an element whose name prefixes the subcolumn name need not be on its path.
+            /// Follow the substreams of the subcolumn the name resolves to, as getColumnFromBlock does.
             auto type = column_to_read.getTypeInStorage();
-            auto subcolumn_name = column_to_read.getSubcolumnName();
-            if (!type->hasCustomName())
+            auto resolved = type->hasCustomName() ? std::nullopt : type->tryGetSubcolumnInfo(column_to_read.getSubcolumnName());
+            if (resolved)
             {
+                const auto & resolved_path = resolved->substreams_path;
                 auto data = ISerialization::SubstreamData(type->getDefaultSerialization()).withType(type);
 
                 ISerialization::StreamCallback callback_with_data = [&](const auto & subpath)
                 {
-                    if (found_full_path)
-                        return;
-
-                    for (size_t i = 0; i < subpath.size(); ++i)
+                    for (size_t i = 0; i < subpath.size() && i < resolved_path.size(); ++i)
                     {
+                        if (subpath[i].type != resolved_path[i].type || subpath[i].name_of_substream != resolved_path[i].name_of_substream)
+                            break;
+
                         /// Allow `a.x` where `a` is array of tuples.
                         if (subpath[i].type == ISerialization::Substream::ArrayElements)
                             continue;
@@ -328,25 +328,12 @@ Names filterTupleColumnsToRead(NamesAndTypesList & requested_columns)
                         if (subpath[i].type != ISerialization::Substream::TupleElement)
                             break;
 
-                        if (subpath[i].visited)
-                            continue;
-                        subpath[i].visited = true;
-                        size_t prefix_len = i + 1;
-                        if (prefix_len <= column_info.path.size())
-                            continue;
-
-                        auto name = ISerialization::getSubcolumnNameForStream(subpath, prefix_len);
+                        /// Do not stop at an element of a type with a custom name (e.g. `Point`).
                         if (subpath[i].data.type->hasCustomName())
                             continue;
 
-                        if (name == subcolumn_name)
-                            found_full_path = true;
-                        else if (!subcolumn_name.starts_with(name + "."))
-                            continue;
-
-                        column_info.path.insert(column_info.path.end(), subpath.begin() + column_info.path.size(), subpath.begin() + prefix_len);
-                        if (found_full_path)
-                            break;
+                        if (i + 1 > column_info.path.size())
+                            column_info.path.assign(subpath.begin(), subpath.begin() + i + 1);
                     }
                 };
 

@@ -60,6 +60,7 @@
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
 #include <Common/parseGlobs.h>
+#include <Common/quoteString.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #if ENABLE_DISTRIBUTED_CACHE
 #include <DistributedCache/DistributedCacheRegistry.h>
@@ -495,6 +496,9 @@ std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
     /// suffix would both expose the internal index and break predicates written against the real path.
     if (include_connection_info && object_info.relative_path_with_metadata.read_source_index)
         result += fmt::format("#read_source_index={}", *object_info.relative_path_with_metadata.read_source_index);
+
+    if (include_connection_info)
+        result = getArchiveEntryKey(result, object_info.archive_entry_index);
 
     return result;
 }
@@ -1483,8 +1487,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         {
             ProfileEvents::increment(ProfileEvents::ObjectStorageReadObjects);
             compression_method = chooseCompressionMethod(configuration->getPathInArchive(), configuration->compression_method);
-            const auto & archive_reader = object_info_in_archive->archive_reader;
-            read_buf = archive_reader->readFile(object_info_in_archive->path_in_archive, /*throw_on_not_found=*/true);
+            read_buf = object_info_in_archive->readFile();
         }
         else
         {
@@ -1620,20 +1623,27 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 }
             }
 
+            /// There is no shared mapper when the table's configured format is not Parquet, but its
+            /// Parquet data files still have to be resolved by field id.
+            ColumnMapperPtr column_mapper = format_filter_info->column_mapper;
+            if (!column_mapper)
+                column_mapper = configuration->getColumnMapperForObject(object_info);
+
             if (!format_supports_prewhere)
                 return std::make_shared<FormatFilterInfo>(
                     format_filter_info->filter_actions_dag,
                     format_filter_info->context.lock(),
-                    format_filter_info->column_mapper,
+                    column_mapper,
                     nullptr, nullptr,
                     format_filter_info->additional_columns);
 
-            if (filters_substituted || (format_filter_info->top_k_filter && !top_k_filter_allowed))
+            if (filters_substituted || (format_filter_info->top_k_filter && !top_k_filter_allowed)
+                || column_mapper != format_filter_info->column_mapper)
             {
                 auto result = std::make_shared<FormatFilterInfo>(
                     format_filter_info->filter_actions_dag,
                     format_filter_info->context.lock(),
-                    format_filter_info->column_mapper,
+                    column_mapper,
                     row_level_filter, prewhere_info);
                 if (top_k_filter_allowed)
                     result->top_k_filter = format_filter_info->top_k_filter;
@@ -1744,7 +1754,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         {
             std::optional<RelativePathWithMetadata> object_with_metadata = object_info->relative_path_with_metadata;
             if (object_info->isArchive())
-                object_with_metadata->relative_path = object_info->getPath();
+                object_with_metadata->relative_path = getArchiveEntryKey(object_info->getPath(), object_info->archive_entry_index);
             input_format = FormatFactory::instance().getInputWithMetadata(
                 format_name,
                 *read_buf,
@@ -2688,6 +2698,28 @@ static size_t getKnownArchiveSize(const ObjectInfoPtr & object_info)
     return object_metadata->size_bytes;
 }
 
+/// Returns the enumerator at entry `position` of the archive, which must be named `name`.
+static std::unique_ptr<IArchiveReader::FileEnumerator> locateArchiveEntry(
+    IArchiveReader & archive_reader, const std::string & name, size_t position)
+{
+    auto file_enumerator = archive_reader.firstFile();
+    for (size_t i = 0; file_enumerator && i < position; ++i)
+    {
+        if (!file_enumerator->nextFile())
+            file_enumerator.reset();
+    }
+
+    if (!file_enumerator || file_enumerator->getFileName() != name)
+        throw Exception(
+            ErrorCodes::CANNOT_UNPACK_ARCHIVE,
+            "Couldn't unpack archive {}: file {} was not found in archive at position {}",
+            archive_reader.getPath(),
+            quoteString(name),
+            position);
+
+    return file_enumerator;
+}
+
 ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::next(size_t)
 {
     size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
@@ -2716,13 +2748,18 @@ ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::next(size_t)
     if (!path_in_archive.has_value())
         return object_info;
 
-    return createObjectInfoInArchive(path_to_archive, path_in_archive.value(), object_info->relative_path_with_metadata.read_source_index);
+    return createObjectInfoInArchive(
+        path_to_archive,
+        path_in_archive.value(),
+        object_info->relative_path_with_metadata.read_source_index,
+        object_info->archive_entry_index);
 }
 
 ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::createObjectInfoInArchive(
     const std::string & path_to_archive,
     const std::string & path_in_archive,
-    std::optional<size_t> read_source_index)
+    std::optional<size_t> read_source_index,
+    std::optional<size_t> archive_entry_index)
 {
     auto archive_object = std::make_shared<ObjectInfo>(RelativePathWithMetadata{path_to_archive, std::optional<ObjectMetadata>{}});
     archive_object->relative_path_with_metadata.read_source_index = read_source_index;
@@ -2749,8 +2786,12 @@ ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::createObjectInfoInAr
         }
     }
 
+    auto file_info = archive_entry_index
+        ? IArchiveReader::FileInfo(locateArchiveEntry(*archive_reader, path_in_archive, *archive_entry_index)->getFileInfo())
+        : archive_reader->getFileInfo(path_in_archive);
+
     return std::make_shared<ArchiveIterator::ObjectInfoInArchive>(
-        archive_object, path_in_archive, archive_reader, archive_reader->getFileInfo(path_in_archive));
+        archive_object, path_in_archive, archive_reader, std::move(file_info), archive_entry_index);
 }
 
 static IArchiveReader::NameFilter createArchivePathFilter(const std::string & archive_pattern)
@@ -2769,10 +2810,19 @@ StorageObjectStorageSource::ArchiveIterator::ObjectInfoInArchive::ObjectInfoInAr
     ObjectInfoPtr archive_object_,
     const std::string & path_in_archive_,
     std::shared_ptr<IArchiveReader> archive_reader_,
-    IArchiveReader::FileInfo && file_info_)
+    IArchiveReader::FileInfo && file_info_,
+    std::optional<size_t> archive_entry_index_)
     : archive_object(archive_object_), path_in_archive(path_in_archive_), archive_reader(archive_reader_), file_info(file_info_)
 {
     relative_path_with_metadata.read_source_index = archive_object->relative_path_with_metadata.read_source_index;
+    archive_entry_index = archive_entry_index_;
+}
+
+std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::ArchiveIterator::ObjectInfoInArchive::readFile() const
+{
+    if (archive_entry_index)
+        return archive_reader->readFile(locateArchiveEntry(*archive_reader, path_in_archive, *archive_entry_index));
+    return archive_reader->readFile(path_in_archive, /*throw_on_not_found=*/true);
 }
 
 StorageObjectStorageSource::ArchiveIterator::ArchiveIterator(
@@ -2810,6 +2860,7 @@ ObjectInfoPtr StorageObjectStorageSource::ArchiveIterator::next(size_t processor
 {
     std::unique_lock lock{next_mutex};
     IArchiveReader::FileInfo current_file_info{};
+    std::optional<size_t> archive_entry_index;
     while (true)
     {
         if (filter)
@@ -2828,6 +2879,7 @@ ObjectInfoPtr StorageObjectStorageSource::ArchiveIterator::next(size_t processor
 
                 archive_reader = createArchiveReader(archive_object);
                 file_enumerator = archive_reader->firstFile();
+                entry_positions.reset();
                 if (!file_enumerator)
                     continue;
             }
@@ -2838,6 +2890,7 @@ ObjectInfoPtr StorageObjectStorageSource::ArchiveIterator::next(size_t processor
             }
 
             path_in_archive = file_enumerator->getFileName();
+            archive_entry_index = entry_positions.onEntry(path_in_archive);
             LOG_TEST(log, "Path in archive: {}", path_in_archive);
             if (!filter(path_in_archive))
                 continue;
@@ -2860,8 +2913,8 @@ ObjectInfoPtr StorageObjectStorageSource::ArchiveIterator::next(size_t processor
         break;
     }
 
-    auto object_in_archive
-        = std::make_shared<ObjectInfoInArchive>(archive_object, path_in_archive, archive_reader, std::move(current_file_info));
+    auto object_in_archive = std::make_shared<ObjectInfoInArchive>(
+        archive_object, path_in_archive, archive_reader, std::move(current_file_info), archive_entry_index);
 
     if (read_keys != nullptr)
         read_keys->push_back(object_in_archive);
