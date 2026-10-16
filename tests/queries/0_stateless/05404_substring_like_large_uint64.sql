@@ -1,4 +1,3 @@
--- Regression for https://github.com/ClickHouse/ClickHouse/issues/125943
 -- UInt64 values above Int64::max() must never become negative slicing arguments.
 -- Preserve signed negative arguments and valid positive boundary values.
 

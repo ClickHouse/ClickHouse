@@ -12,9 +12,6 @@
 #include <Functions/GatherUtils/sliceEqualElements.h>
 #include <Functions/GatherUtils/sliceHasImplAnyAll.h>
 
-#include <optional>
-
-
 namespace DB::ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -320,60 +317,6 @@ void NO_INLINE sliceFromRightConstantOffsetBounded(Source && src, Sink && sink, 
         src.next();
     }
 }
-
-/// Array slicing keeps its existing semantics; string functions opt into checked UInt64 arguments.
-enum class SliceArgumentPolicy
-{
-    PreserveLegacySemantics,
-    RejectOutOfRangeUInt64,
-};
-
-/// Keeps nullable/default handling identical for string and array slices.
-/// Only string call sites request checked UInt64 conversion.
-template <SliceArgumentPolicy policy>
-class DynamicSliceArgumentReader
-{
-public:
-    DynamicSliceArgumentReader(const IColumn * column, const char * argument_name)
-    {
-        if (!column || column->onlyNull())
-            return;
-
-        if (const auto * nullable = typeid_cast<const ColumnNullable *>(column))
-        {
-            nested_column = &nullable->getNestedColumn();
-            null_map = &nullable->getNullMapData();
-        }
-        else
-            nested_column = column;
-
-        if constexpr (policy == SliceArgumentPolicy::RejectOutOfRangeUInt64)
-            checked_reader.emplace(*nested_column, argument_name);
-    }
-
-    bool hasValue(size_t row) const
-    {
-        return nested_column && (!null_map || !(*null_map)[row]);
-    }
-
-    Int64 get(size_t row) const
-    {
-        if constexpr (policy == SliceArgumentPolicy::RejectOutOfRangeUInt64)
-            return checked_reader->get(row);
-        else
-            return nested_column->getInt(row);
-    }
-
-    Int64 getOr(size_t row, Int64 default_value) const
-    {
-        return hasValue(row) ? get(row) : default_value;
-    }
-
-private:
-    const IColumn * nested_column = nullptr;
-    const ColumnUInt8::Container * null_map = nullptr;
-    std::optional<CheckedSliceArgument> checked_reader;
-};
 
 template <SliceArgumentPolicy policy = SliceArgumentPolicy::PreserveLegacySemantics, typename Source, typename Sink>
 void NO_INLINE sliceDynamicOffsetUnbounded(Source && src, Sink && sink, const IColumn & offset_column)
