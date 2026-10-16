@@ -27,6 +27,8 @@ namespace Setting
     extern const SettingsBool aggregate_functions_null_for_empty;
     extern const SettingsBool apply_mutations_on_fly;
     extern const SettingsBool apply_patch_parts;
+    extern const SettingsBool force_index_by_date;
+    extern const SettingsBool force_primary_key;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 select_sequential_consistency;
     extern const SettingsBool parallel_replicas_local_plan;
@@ -403,6 +405,24 @@ static bool partHasPendingMetadataMutationsOnColumns(
     return false;
 }
 
+/// Projection candidate analysis is an optional optimization: when the filter does not constrain
+/// a projection's primary key, the candidate is rejected, not the query. The `force_primary_key`
+/// and `force_index_by_date` guardrails apply to the main table read, which is analyzed with the
+/// original context, so disable them for the analysis of projection parts. Otherwise a query
+/// whose filter uses the main table's primary key fails with `INDEX_NOT_USED` as soon as the
+/// table has an unrelated projection.
+static ContextPtr getContextForProjectionAnalysis(const ContextPtr & context)
+{
+    const auto & settings = context->getSettingsRef();
+    if (!settings[Setting::force_primary_key] && !settings[Setting::force_index_by_date])
+        return context;
+
+    auto projection_context = Context::createCopy(context);
+    projection_context->setSetting("force_primary_key", false);
+    projection_context->setSetting("force_index_by_date", false);
+    return projection_context;
+}
+
 bool analyzeProjectionCandidate(
     ProjectionCandidate & candidate,
     const MergeTreeDataSelectExecutor & reader,
@@ -458,7 +478,7 @@ bool analyzeProjectionCandidate(
         candidate.projection->metadata,
         projection_query_info,
         top_k_filter_info,
-        context,
+        getContextForProjectionAnalysis(context),
         context->getSettingsRef()[Setting::max_threads],
         /*max_block_numbers_to_read=*/nullptr,
         /// The candidate's marks are reused by the projection read, so it must not consult the cache
@@ -566,7 +586,7 @@ void filterPartsAndCollectProjectionCandidates(
         projection.metadata,
         projection_query_info,
         reading.getTopKFilterInfo(),
-        context,
+        getContextForProjectionAnalysis(context),
         context->getSettingsRef()[Setting::max_threads],
         /*max_block_numbers_to_read=*/nullptr,
         /// The result filters the parts of the actual read, so keep the read's own cache gate.
