@@ -23,6 +23,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import socket
 import ssl
 import struct
@@ -169,7 +170,9 @@ def split_queries(text):
             # the same line or the next ones, and ends at an empty line, regardless of semicolons in it.
             end = text.find("\n\n", insert_format)
             end = len(text) if end == -1 else end
-            queries.append((text[begin:end].strip(), ""))
+            # Only the SQL before the data is trimmed: whitespace at the end of the data can be a
+            # field separator or a part of a value.
+            queries.append((text[begin:end].lstrip(), ""))
             begin = pos = end
             has_tokens = False
         else:
@@ -195,8 +198,10 @@ def match_insert_format(text, begin, pos):
     statement = text[begin:pos]
     if not INSERT_RE.match(strip_comments(statement)):
         return None
-    # The rows of `INSERT ... SELECT` and `INSERT ... FROM INFILE` do not follow the format name.
-    if any(word in ("SELECT", "INFILE") for word in top_level_words(statement)):
+    # The rows of `INSERT ... FROM INFILE` and of `INSERT ... SELECT` do not follow the format name,
+    # unless the `SELECT` reads them with the `input` table function.
+    words = set(top_level_words(statement))
+    if "INFILE" in words or ("SELECT" in words and not reads_input(statement)):
         return None
     return insert_format.end()
 
@@ -327,8 +332,9 @@ RESULT_KEYWORDS = {"SELECT", "WITH", "SHOW", "DESC", "DESCRIBE", "EXPLAIN", "EXI
 WORD_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
-def top_level_words(query):
-    """Yield the upper-cased words of the query outside of literals, comments and parentheses."""
+def top_level_words(query, any_depth=False):
+    """Yield the upper-cased words of the query outside of literals, comments and, unless
+    `any_depth`, parentheses."""
     query = strip_comments(query)
     depth = 0
     pos = 0
@@ -343,11 +349,34 @@ def top_level_words(query):
             depth -= 1
             pos += 1
         elif word := WORD_RE.match(query, pos):
-            if depth == 0:
+            if depth == 0 or any_depth:
                 yield word.group(0).upper()
             pos = word.end()
         else:
             pos += 1
+
+
+INPUT_FUNCTION_RE = re.compile(r"\binput\s*\(", re.IGNORECASE)
+
+
+def reads_input(statement):
+    """Whether the statement calls the `input` table function, which reads the inline data."""
+    if "INPUT" not in top_level_words(statement, any_depth=True):
+        return False
+    # Literals and quoted identifiers become empty, so that only an actual call matches.
+    text = strip_comments(statement)
+    unquoted = []
+    pos = 0
+    while pos < len(text):
+        char = text[pos]
+        if char in "'\"`":
+            end = skip_quoted(text, pos, char)
+            unquoted.append(char + char)
+            pos = end
+        else:
+            unquoted.append(char)
+            pos += 1
+    return INPUT_FUNCTION_RE.search("".join(unquoted)) is not None
 
 
 def returns_result(query):
@@ -824,7 +853,23 @@ def run_ssh(args, text):
             f"{args.ssh_user}@{args.host}",
             text,
         ]
-        return subprocess.call(command, stdin=subprocess.DEVNULL)
+        # The random disruptor of the Stress test terminates this process to disconnect the client in
+        # the middle of a query. The connection belongs to the `ssh` child, so terminate it as well.
+        previous_handler = signal.signal(signal.SIGTERM, lambda signum, frame: sys.exit(128 + signum))
+        try:
+            process = subprocess.Popen(command, stdin=subprocess.DEVNULL)
+            try:
+                return process.wait()
+            finally:
+                if process.poll() is None:
+                    process.terminate()
+                    try:
+                        process.wait(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait()
+        finally:
+            signal.signal(signal.SIGTERM, previous_handler)
     finally:
         shutil.rmtree(key_dir)
 
