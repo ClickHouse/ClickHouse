@@ -1279,10 +1279,21 @@ static void applyRangeFilterFromAST(Pipe & pipe, ASTPtr & filter_function, const
     /// sorting expression on the pipe first, but the join-by-shards layers of
     /// `ReadFromMergeTree::readByLayers` are read without it and carry the plain table columns only.
     /// Either way the key expression needs the same source columns the filter needed before.
-    auto syntax_result = TreeRewriter(context).analyze(filter_function, primary_key.sample_block.getNamesAndTypesList());
+    ///
+    /// The filter is resolved against `column_names` rather than the names of `sample_block`: the latter
+    /// carry the aliases of the key (`PRIMARY KEY (k AS a)` gives `a`), while `column_names` and the
+    /// outputs of `primary_key.expression` are alias-free.
+    NamesAndTypesList key_columns;
+    for (size_t i = 0; i < primary_key.column_names.size(); ++i)
+        key_columns.emplace_back(primary_key.column_names[i], primary_key.data_types.at(i));
+    auto syntax_result = TreeRewriter(context).analyze(filter_function, key_columns);
     auto filter_actions = ExpressionAnalyzer(filter_function, syntax_result, context).getActionsDAG(false);
     auto actions = ActionsDAG::merge(primary_key.expression->getActionsDAG().clone(), std::move(filter_actions));
     reorderColumns(actions, pipe.getHeader(), filter_function->getColumnName());
+    /// The key expression computes every key column, but the filter may use only a prefix of them
+    /// (the join-by-shards layers split on the common prefix of the join keys and read only the
+    /// columns of the query). Drop the computations of the rest, so that their source columns are not required.
+    actions.removeUnusedActions();
     ExpressionActionsPtr expression_actions = std::make_shared<ExpressionActions>(std::move(actions));
     pipe.addSimpleTransform(
         [&](const SharedHeader & header)
