@@ -102,6 +102,16 @@ INNER JOIN numbers(3) AS c ON b.flag = c.number WHERE isConstant(b.flag) = 0 ORD
 SELECT count() FROM numbers(3) AS a LEFT JOIN (SELECT x.number AS number, y.flag AS flag FROM numbers(2) AS x LEFT JOIN (SELECT number, toNullable(1) AS flag FROM numbers(2)) AS y ON x.number = y.number) AS b ON a.number = b.number
 INNER JOIN numbers(3) AS c ON b.flag = c.number WHERE isConstant(b.flag) = 1;
 
+SELECT 'transitive, constant below GROUP BY';
+SELECT a.number, b.flag, c.number FROM numbers(3) AS a
+LEFT JOIN (SELECT number, flag FROM (SELECT number, toNullable(1) AS flag FROM numbers(2)) GROUP BY number, flag) AS b ON a.number = b.number
+INNER JOIN numbers(3) AS c ON b.flag = c.number WHERE isConstant(b.flag) = 0 ORDER BY 1;
+
+SELECT 'transitive, read above a PASTE JOIN';
+SELECT isConstant(t.x), t.n FROM (SELECT a.flag AS x, b.number AS n FROM (SELECT number, toNullable(1) AS flag FROM numbers(2)) AS a
+RIGHT JOIN numbers(3) AS b ON a.number = b.number INNER JOIN numbers(3) AS c ON a.flag = c.number) AS t
+PASTE JOIN (SELECT number FROM numbers(3)) AS u ORDER BY ALL SETTINGS query_plan_join_swap_table = 0;
+
 SELECT 'transitive, join_use_nulls';
 SELECT a.number, b.number, c.number FROM numbers(3) AS a LEFT JOIN (SELECT number, 1 AS flag FROM numbers(2)) AS b ON a.number = b.number
 INNER JOIN numbers(3) AS c ON b.number = c.number AND isConstant(b.flag) = 0 ORDER BY 1 SETTINGS join_use_nulls = 1;

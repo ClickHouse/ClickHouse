@@ -59,6 +59,12 @@ transitive, nested LEFT JOIN side
 0	1	1
 1	1	1
 0
+transitive, constant below GROUP BY
+0	1	1
+1	1	1
+transitive, read above a PASTE JOIN
+0	0
+0	1
 transitive, join_use_nulls
 0	0	0
 1	1	1
