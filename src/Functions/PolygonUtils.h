@@ -23,7 +23,6 @@
 #include <boost/geometry/geometries/polygon.hpp>
 #include <boost/geometry/geometries/segment.hpp>
 #include <boost/geometry/index/rtree.hpp>
-#include <boost/geometry/strategy/cartesian/side_robust.hpp>
 
 #include <array>
 #include <vector>
@@ -50,29 +49,55 @@ inline constexpr Float64 max_abs_polygon_coordinate = 1e150;
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Polygon is not valid: a coordinate exceeds {} in absolute value", max_abs_polygon_coordinate);
 }
 
-/// Exact sign of the orientation by boost's adaptive predicate, for the rare inputs the fast path cannot decide.
+/// Exact sign of the orientation for the rare inputs the fast path cannot decide, 0 for non-finite coordinates.
 [[gnu::cold]] NO_INLINE inline int orientationSignExact(Float64 ax, Float64 ay, Float64 bx, Float64 by, Float64 cx, Float64 cy)
 {
-    /// Scaling an axis by a power of two keeps the sign. With the largest coordinate of each axis near 2^399,
-    /// no product of coordinate differences that the sign depends on underflows, and none overflows.
-    auto scale_up = [](Float64 & u, Float64 & v, Float64 & w)
-    {
-        Float64 max_abs = std::max({std::abs(u), std::abs(v), std::abs(w)});
-        if (!(max_abs > 0) || !isFinite(max_abs))
-            return;
-        int shift = 399 - std::ilogb(max_abs);
-        if (shift <= 0)
-            return;
-        u = std::ldexp(u, shift);
-        v = std::ldexp(v, shift);
-        w = std::ldexp(w, shift);
-    };
-    scale_up(ax, bx, cx);
-    scale_up(ay, by, cy);
+    if (!(isFinite(ax) && isFinite(ay) && isFinite(bx) && isFinite(by) && isFinite(cx) && isFinite(cy)))
+        return 0;
 
-    using Point = boost::geometry::model::d2::point_xy<Float64>;
-    using Side = boost::geometry::strategy::side::side_robust<Float64, boost::geometry::strategy::side::fp_equals_policy>;
-    return Side::apply(Point(ax, ay), Point(bx, by), Point(cx, cy));
+    /// The orientation is ax * by - ay * bx + bx * cy - by * cx + cx * ay - cy * ax. Each product of two Float64 values
+    /// is an integer below 2^106 times a power of two, so the products are added exactly, from the largest power down.
+    struct Term
+    {
+        __int128 value;
+        int exponent;
+    };
+    std::array<Term, 6> terms{};
+    size_t num_terms = 0;
+    auto add_product = [&](Float64 u, Float64 v, int sign)
+    {
+        if (u == 0 || v == 0)
+            return;
+        int u_exponent = 0;
+        int v_exponent = 0;
+        auto u_mantissa = static_cast<Int64>(std::frexp(u, &u_exponent) * 0x1p53);
+        auto v_mantissa = static_cast<Int64>(std::frexp(v, &v_exponent) * 0x1p53);
+        terms[num_terms++] = {static_cast<__int128>(u_mantissa) * v_mantissa * sign, u_exponent + v_exponent};
+    };
+    add_product(ax, by, 1);
+    add_product(ay, bx, -1);
+    add_product(bx, cy, 1);
+    add_product(by, cx, -1);
+    add_product(cx, ay, 1);
+    add_product(cy, ax, -1);
+    std::sort(terms.begin(), terms.begin() + num_terms, [](const Term & l, const Term & r) { return l.exponent > r.exponent; });
+
+    __int128 sum = 0;
+    int sum_exponent = 0;
+    for (size_t i = 0; i < num_terms; ++i)
+    {
+        if (sum != 0)
+        {
+            /// In units of 2^terms[i].exponent, the terms from i on add up to less than 2^109 and cannot change the sign of a larger sum.
+            int shift = sum_exponent - terms[i].exponent;
+            if (shift >= 110 || (sum < 0 ? -sum : sum) >> (109 - shift) != 0)
+                break;
+            sum *= static_cast<__int128>(1) << shift;
+        }
+        sum += terms[i].value;
+        sum_exponent = terms[i].exponent;
+    }
+    return (sum > 0) - (sum < 0);
 }
 
 /// Sign of the orientation of (cx, cy) relative to the line (ax, ay) -> (bx, by): positive on the left, 0 on the line.

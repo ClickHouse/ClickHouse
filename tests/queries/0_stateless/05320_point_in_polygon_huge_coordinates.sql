@@ -79,6 +79,10 @@ SELECT
     pointInPolygon((1e-200, 0.3e-200), materialize([(0., 0.), (3e-200, 0.), (3e-200, 1e-200), (0., 1e-200)])),
     pointInPolygon((2e-201, 3e-201), materialize([(0., 0.), (0., 1e-200), (1e-200, 0.)]));
 SELECT pointInPolygon((nan, 0.5), materialize([(0., 0.), (1., 0.), (0., 1.)])), pointInPolygon((-inf, 0.5), materialize([(0., 0.), (1., 0.), (0., 1.)]));
+-- A vertex at 1e150 and coordinates near 1e-170: the point is outside in both vertex orders.
+SELECT
+    pointInPolygon((1e-170, 2e-170), materialize([(1e150, 1e150), (0., 1e-170), (0., 0.)])),
+    pointInPolygon((1e-170, 2e-170), materialize([(0., 0.), (0., 1e-170), (1e150, 1e150)]));
 
 DROP TABLE pip_pk;
 DROP TABLE pip_nopk;
