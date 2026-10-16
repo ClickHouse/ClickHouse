@@ -67,7 +67,8 @@ public:
         ObjectStoragePtr object_storage_,
         StorageObjectStorageConfigurationPtr configuration_,
         Iceberg::PersistentTableComponents && persistent_components_,
-        ContextPtr context_);
+        ContextPtr context_,
+        std::optional<Iceberg::MetadataFileWithInfo> initial_latest_metadata_ = std::nullopt);
 
     ~IcebergMetadata() override;
 
@@ -210,7 +211,7 @@ public:
     }
 
 private:
-    static Iceberg::PersistentTableComponents initializePersistentTableComponents(
+    static std::pair<Iceberg::PersistentTableComponents, Iceberg::MetadataFileWithInfo> initializePersistentTableComponents(
         ObjectStoragePtr object_storage,
         StorageObjectStorageConfigurationPtr configuration,
         IcebergMetadataFilesCachePtr cache_ptr,
@@ -240,6 +241,9 @@ private:
     const String write_format;
     BackgroundSchedulePoolTaskHolder background_metadata_prefetch_task;
     ObjectIterator prepared_iterator;
+
+    mutable std::mutex initial_latest_metadata_mutex;
+    mutable std::optional<Iceberg::MetadataFileWithInfo> initial_latest_metadata TSA_GUARDED_BY(initial_latest_metadata_mutex);
 
     KeyDescription getSortingKey(ContextPtr local_context, Iceberg::TableStateSnapshot actual_table_state_snapshot) const;
 
