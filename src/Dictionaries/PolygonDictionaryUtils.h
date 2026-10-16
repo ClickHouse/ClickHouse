@@ -192,8 +192,7 @@ class DividedCell : public ICell<ReturnCell>
 public:
     explicit DividedCell(VectorWithMemoryTracking<std::unique_ptr<ICell<ReturnCell>>> children_): children(std::move(children_)) {}
 
-    /// Picks the child along one side for `ratio`, the point's position in [0, 1] along this cell's side,
-    /// and makes `ratio` the point's position in that child.
+    /// Returns the child index along one side for `ratio` in [0, 1] and rescales `ratio` to that child.
     static int route(Coord & ratio)
     {
         ratio *= kSplit;
@@ -292,7 +291,6 @@ private:
 
     const VectorWithMemoryTracking<Polygon> & polygons;
 
-    /// Position of `v` in [0, 1] along the side [lo, hi) of the bounding box, monotone in `v`.
     static Coord toRatio(Coord v, Coord lo, Coord hi) { return (v - lo) / (hi - lo); }
 
     /// `find` accepts no point when a side of the bounding box is zero.
@@ -308,8 +306,7 @@ private:
         return static_cast<size_t>(bin);
     }
 
-    /// bounds[i] is the smallest coordinate in [lo, hi) that `find` routes to a child >= i, so the children tile the
-    /// cell and every point lands in a child whose box contains it.
+    /// bounds[i] is the smallest coordinate in [lo, hi) that `find` routes to a child >= i, so each child's box contains its points.
     static std::array<Coord, DividedCell<ReturnCell>::kSplit + 1> splitSide(Coord lo, Coord hi, Coord side_min, Coord side_max, size_t level)
     {
         std::array<Coord, DividedCell<ReturnCell>::kSplit + 1> bounds{};
@@ -362,7 +359,6 @@ private:
         size_t intersections = possible_ids.size() - covered;
         if (intersections <= k_min_intersections || depth++ == k_max_depth || hasZeroSide())
             return std::make_unique<ReturnCell>(possible_ids, polygons, current_box, covered);
-        /// Points are routed by their position along each side of the bounding box, computed in Float32.
         if (!std::isfinite(max_x - min_x) || !std::isfinite(max_y - min_y))
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "PolygonDictionary polygons are too far apart for a grid index: a side of their bounding box exceeds the Float32 range");
