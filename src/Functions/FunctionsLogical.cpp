@@ -7,7 +7,6 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnFunction.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Columns/FilterDescription.h>
