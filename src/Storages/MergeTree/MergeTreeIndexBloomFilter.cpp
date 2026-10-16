@@ -700,15 +700,19 @@ const FunctionCreator * getCanonicalArrayFunctionHandle(const String & function_
     {
         const auto distinct = FunctionFactory::instance().tryGet("arrayDistinct", {});
         const auto concat = FunctionFactory::instance().tryGet("arrayConcat", {});
-        return std::array<const FunctionCreator *, 2>{
+        const auto empty_array_to_single = FunctionFactory::instance().tryGet("emptyArrayToSingle", {});
+        return std::array<const FunctionCreator *, 3>{
             distinct ? distinct->getFactoryHandle() : nullptr,
-            concat ? concat->getFactoryHandle() : nullptr};
+            concat ? concat->getFactoryHandle() : nullptr,
+            empty_array_to_single ? empty_array_to_single->getFactoryHandle() : nullptr};
     }();
 
     if (function_name == "arrayDistinct")
         return handles[0];
     if (function_name == "arrayConcat")
         return handles[1];
+    if (function_name == "emptyArrayToSingle")
+        return handles[2];
     return nullptr;
 }
 
@@ -734,6 +738,8 @@ bool isSupportedArrayFunctionPair(
         function_name = "arrayDistinct";
     else if (left_handle == getCanonicalArrayFunctionHandle("arrayConcat"))
         function_name = "arrayConcat";
+    else if (left_handle == getCanonicalArrayFunctionHandle("emptyArrayToSingle"))
+        function_name = "emptyArrayToSingle";
     else
         return false;
 
