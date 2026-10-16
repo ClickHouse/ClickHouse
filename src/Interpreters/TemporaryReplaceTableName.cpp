@@ -3,7 +3,7 @@
 #include <Common/re2.h>
 #include <Common/SipHash.h>
 
-#include <Common/Hex.h>
+#include <base/hex.h>
 #include <fmt/core.h>
 
 

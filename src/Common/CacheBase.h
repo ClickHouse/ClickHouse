@@ -4,7 +4,6 @@
 #include <Common/ICachePolicy.h>
 #include <Common/LRUCachePolicy.h>
 #include <Common/SLRUCachePolicy.h>
-#include <Common/SIEVECachePolicy.h>
 #include <Common/CurrentMetrics.h>
 
 #include <base/UUID.h>
@@ -44,7 +43,6 @@ public:
 
     static constexpr auto NO_MAX_COUNT = 0uz;
     static constexpr auto DEFAULT_SIZE_RATIO = 0.5l;
-    static constexpr auto DEFAULT_CACHE_POLICY = "SLRU";
 
     /// Use this ctor if you only care about the cache size but not internals like the cache policy.
     explicit CacheBase(
@@ -53,14 +51,11 @@ public:
         size_t max_size_in_bytes,
         size_t max_count = NO_MAX_COUNT,
         double size_ratio = DEFAULT_SIZE_RATIO)
+        : CacheBase("SLRU", size_in_bytes_metric, count_metric, max_size_in_bytes, max_count, size_ratio)
     {
-        /// Construct the default policy directly instead of delegating to the ctor below, so that caches which never
-        /// select a policy by name do not instantiate the code of the other policies.
-        using SLRUPolicy = SLRUCachePolicy<TKey, TMapped, HashFunction, WeightFunction>;
-        cache_policy = std::make_unique<SLRUPolicy>(size_in_bytes_metric, count_metric, max_size_in_bytes, max_count, size_ratio, makeOnRemoveEntryFunction());
     }
 
-    /// Use this ctor if the user should be able to configure the cache policy and cache sizes via settings. Supports only general-purpose policies LRU, SLRU and SIEVE.
+    /// Use this ctor if the user should be able to configure the cache policy and cache sizes via settings. Supports only general-purpose policies LRU and SLRU.
     explicit CacheBase(
         std::string_view cache_policy_name,
         CurrentMetrics::Metric size_in_bytes_metric,
@@ -69,11 +64,15 @@ public:
         size_t max_count,
         double size_ratio)
     {
-        auto on_remove_entry_function = makeOnRemoveEntryFunction();
+        auto on_remove_entry_function = [this](size_t weight_loss, const MappedPtr & mapped_ptr)
+        {
+            onEntryRemoval(weight_loss, mapped_ptr);
+        };
 
         if (cache_policy_name.empty())
         {
-            cache_policy_name = DEFAULT_CACHE_POLICY;
+            static constexpr auto default_cache_policy = "SLRU";
+            cache_policy_name = default_cache_policy;
         }
 
         if (cache_policy_name == "LRU")
@@ -85,11 +84,6 @@ public:
         {
             using SLRUPolicy = SLRUCachePolicy<TKey, TMapped, HashFunction, WeightFunction>;
             cache_policy = std::make_unique<SLRUPolicy>(size_in_bytes_metric, count_metric, max_size_in_bytes, max_count, size_ratio, on_remove_entry_function);
-        }
-        else if (cache_policy_name == "SIEVE")
-        {
-            using SIEVEPolicy = SIEVECachePolicy<TKey, TMapped, HashFunction, WeightFunction>;
-            cache_policy = std::make_unique<SIEVEPolicy>(size_in_bytes_metric, count_metric, max_size_in_bytes, max_count, on_remove_entry_function);
         }
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown cache policy name: {}", cache_policy_name);
@@ -141,25 +135,6 @@ public:
         }
 
         return values;
-    }
-
-    /// Insert several entries under one lock.
-    void setMany(const std::vector<Key> & keys, const std::vector<MappedPtr> & mapped)
-    {
-        chassert(keys.size() == mapped.size());
-        std::lock_guard lock(mutex);
-        for (size_t i = 0; i < keys.size(); ++i)
-            cache_policy->set(keys[i], mapped[i]);
-    }
-
-    /// Which of the keys are in the cache, under one lock. Does not touch the priorities.
-    std::vector<bool> containsMany(const std::vector<Key> & keys) const
-    {
-        std::vector<bool> result(keys.size());
-        std::lock_guard lock(mutex);
-        for (size_t i = 0; i < keys.size(); ++i)
-            result[i] = cache_policy->contains(keys[i]);
-        return result;
     }
 
     bool contains(const Key & key) const
@@ -331,14 +306,6 @@ public:
         cache_policy->setQuotaForUser(user_id, max_size_in_bytes, max_entries);
     }
 
-    /// For unit tests.
-    /// Do not use it anywhere else as this is not thread-safe.
-    const CachePolicy & getCachePolicy()
-    {
-        std::lock_guard lock(mutex);
-        return *cache_policy;
-    }
-
     virtual ~CacheBase() = default;
 
 protected:
@@ -346,14 +313,6 @@ protected:
 
 private:
     std::unique_ptr<CachePolicy> cache_policy TSA_GUARDED_BY(mutex);
-
-    typename CachePolicy::OnRemoveEntryFunction makeOnRemoveEntryFunction()
-    {
-        return [this](size_t weight_loss, const MappedPtr & mapped_ptr)
-        {
-            onEntryRemoval(weight_loss, mapped_ptr);
-        };
-    }
 
     std::atomic<size_t> hits{0};
     std::atomic<size_t> misses{0};

@@ -1,7 +1,6 @@
 #include <IO/ReadHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/MetadataGenerator.h>
 
-#include <algorithm>
 #include <climits>
 #include <optional>
 #include <Poco/JSON/Array.h>
@@ -86,26 +85,19 @@ void setSnapshotTotals(
             summary->set(field_name, std::to_string(added));
             return;
         }
+        /// The parent omits this data total, so the new table-wide total cannot be derived: fail the rewrite instead of corrupting the summary.
         auto parent_value = readParentTotal(parent_snapshot, field_name);
         if (!parent_value.has_value())
-        {
-            /// A zero delta leaves the total exactly as the parent had it, so an absent counter is carried
-            /// forward by staying absent; a non-zero delta genuinely cannot be derived from a missing total.
-            if (added == 0)
-                return;
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Cannot derive Iceberg snapshot total '{}': the parent snapshot's summary omits it",
                 field_name);
-        }
         summary->set(field_name, std::to_string(*parent_value + added));
     };
-    /// Delete-family totals: a missing parent counter means "none", so treating it as 0 is safe;
-    /// with that reading a removal can only take the counter down to none, never below it.
+    /// Delete-family totals: a missing parent counter means "none", so treating it as 0 is safe.
     auto set_delete_total = [&](const char * field_name, Int64 added)
     {
-        const Int64 parent_value = readParentTotal(parent_snapshot, field_name).value_or(0);
-        summary->set(field_name, std::to_string(std::max<Int64>(0, parent_value + added)));
+        summary->set(field_name, std::to_string(readParentTotal(parent_snapshot, field_name).value_or(0) + added));
     };
     set_data_total(Iceberg::f_total_records, added_records);
     set_data_total(Iceberg::f_total_files_size, added_files_size);
@@ -187,11 +179,6 @@ Poco::JSON::Object::Ptr MetadataGenerator::getParentSnapshot(Int64 parent_snapsh
     return nullptr;
 }
 
-Int64 MetadataGenerator::generateSnapshotId()
-{
-    return static_cast<Int64>(dis(gen));
-}
-
 MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     FileNamesGenerator & generator,
     const Iceberg::IcebergPathFromMetadata & metadata_file_path,
@@ -205,8 +192,7 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     std::optional<Int64> user_defined_snapshot_id,
     std::optional<Int64> user_defined_timestamp,
     SnapshotOperation operation,
-    const std::optional<String> & refresh_cursor,
-    const SnapshotRemovals & removals)
+    const std::optional<String> & refresh_cursor)
 {
     int format_version = metadata_object->getValue<Int32>(Iceberg::f_format_version);
 
@@ -236,7 +222,7 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
         new_snapshot->set(Iceberg::f_metadata_sequence_number, sequence_number);
         metadata_object->set(Iceberg::f_last_sequence_number, sequence_number);
     }
-    Int64 snapshot_id = user_defined_snapshot_id.value_or(generateSnapshotId());
+    Int64 snapshot_id = user_defined_snapshot_id.value_or(static_cast<Int64>(dis(gen)));
 
     auto manifest_list_path = generator.generateManifestListName(snapshot_id, format_version);
     new_snapshot->set(Iceberg::f_metadata_snapshot_id, snapshot_id);
@@ -270,27 +256,14 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
         summary->set(Iceberg::f_added_position_deletes, std::to_string(num_deleted_rows));
     }
 
-    if (removals.data_files != 0)
-    {
-        summary->set(Iceberg::f_deleted_data_files, std::to_string(removals.data_files));
-        summary->set(Iceberg::f_deleted_records, std::to_string(removals.records));
-        summary->set(Iceberg::f_removed_files_size, std::to_string(removals.files_size));
-    }
-    if (removals.position_delete_files != 0)
-    {
-        summary->set(Iceberg::f_removed_delete_files, std::to_string(removals.position_delete_files));
-        summary->set(Iceberg::f_removed_position_delete_files, std::to_string(removals.position_delete_files));
-        summary->set(Iceberg::f_removed_position_deletes, std::to_string(removals.position_deletes));
-    }
-
     setSnapshotTotals(
         summary,
         parent_snapshot,
-        /*added_records=*/added_records - removals.records,
-        /*added_files_size=*/added_files_size - removals.files_size,
-        /*added_data_files=*/added_files - removals.data_files,
-        /*added_delete_files=*/added_delete_files - removals.position_delete_files,
-        /*added_position_deletes=*/num_deleted_rows - removals.position_deletes,
+        /*added_records=*/added_records,
+        /*added_files_size=*/added_files_size,
+        /*added_data_files=*/added_files,
+        /*added_delete_files=*/added_delete_files,
+        /*added_position_deletes=*/num_deleted_rows,
         /*added_equality_deletes=*/0);
     new_snapshot->set(Iceberg::f_summary, summary);
 
@@ -383,7 +356,7 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateManifestOnlySna
         new_snapshot->set(Iceberg::f_metadata_sequence_number, sequence_number);
         metadata_object->set(Iceberg::f_last_sequence_number, sequence_number);
     }
-    Int64 snapshot_id = generateSnapshotId();
+    Int64 snapshot_id = static_cast<Int64>(dis(gen));
 
     auto manifest_list_path = generator.generateManifestListName(snapshot_id, format_version);
     new_snapshot->set(Iceberg::f_metadata_snapshot_id, snapshot_id);

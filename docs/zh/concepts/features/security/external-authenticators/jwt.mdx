@@ -7,6 +7,7 @@ doc_type: 'reference'
 ---
 
 import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 import { VersionBadge } from "/snippets/zh/components/VersionBadge/VersionBadge.jsx";
 import { EnterprisePlanFeatureBadge } from "/snippets/zh/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
@@ -222,36 +223,15 @@ curl -H 'Authorization: Bearer <your_jwt_token>' \
   始终通过 HTTPS 发送 JWT。通过明文 HTTP 发送的 Bearer 令牌会暴露给网络路径上的任何人，这等同于泄露凭证。
 </Warning>
 
-### OAuth2 设备码登录 {#oauth2-device-code-login}
+<div id="oauth2-device-code-login">
+  ### OAuth2 设备代码登录
+</div>
 
-`clickhouse-client` 支持通过 `--login` 标志使用交互式 OAuth 2.0 设备授权许可 ([RFC 8628](https://datatracker.ietf.org/doc/html/rfc8628)) 。
-
-对于 ClickHouse Cloud 端点，如果未传入任何 `--oauth-*` 选项，客户端会通过 ClickHouse Cloud IdP 登录，并自动执行标记交换，以获取 ClickHouse 特有的 JWT。会话期间，标记会在后台自动刷新，无需用户干预。获取新标记后，客户端会自动重新连接。
+`clickhouse-client` 支持通过 `--login` 标志使用交互式 OAuth2 设备代码流程。对于 ClickHouse Cloud 端点，客户端会自动执行令牌交换，以获取 ClickHouse 专用 JWT。令牌会在会话期间自动刷新，整个过程对用户透明。获取到新令牌后，客户端会自动重新连接。
 
 ```bash
 clickhouse-client --host your-instance.clickhouse.cloud --login
 ```
-
-对于自定义 IdP，请通过 `--oauth-url` 传入 OIDC 签发方。只要传入任意 `--oauth-*` 选项，就会使用自定义 IdP 流程，ClickHouse Cloud 主机也不例外 (例如，服务已启用[使用自定义身份提供商的 JWT 身份验证](#enabling-jwt-authentication-for-your-service)时) 。客户端会从签发方的 `/.well-known/openid-configuration` (以及相关的 OAuth 元数据 URL) 中自动发现 `device_authorization_endpoint` 和 `token_endpoint`。如果存在 `grant_types_supported`，则其中必须包含 `urn:ietf:params:oauth:grant-type:device_code`。如果发现失败，客户端会报错；在元数据不可用时，请显式设置 `--oauth-device-uri` 和 `--oauth-token-uri`。
-
-登录期间，客户端会输出简短的 `verification_uri` 和 `user_code` (RFC 8628) 。如果 IdP 还返回了 `verification_uri_complete`，客户端会输出该快捷 URL 并在浏览器中打开；若 `qrencode` 工具可用，还会将其渲染为终端二维码。对于 ClickHouse Cloud IdP，仅输出 `verification_uri_complete` 和 `user_code`。机密客户端可以通过 `--oauth-client-secret` 配合 `--oauth-client-auth basic|post` 传入凭据。
-
-```bash
-# Microsoft Entra ID (issuer URL, not the device endpoint itself)
-clickhouse-client --host your-clickhouse-host --secure --login \
-  --oauth-client-id <app-client-id> \
-  --oauth-url https://login.microsoftonline.com/<TENANT_ID>/v2.0 \
-  --oauth-scope "openid profile offline_access api://<app-client-id>/.default"
-
-# Explicit endpoints when discovery is unavailable
-clickhouse-client --host your-clickhouse-host --secure --login \
-  --oauth-client-id <app-client-id> \
-  --oauth-device-uri https://login.microsoftonline.com/<TENANT_ID>/oauth2/v2.0/devicecode \
-  --oauth-token-uri https://login.microsoftonline.com/<TENANT_ID>/oauth2/v2.0/token \
-  --oauth-scope "openid profile offline_access api://<app-client-id>/.default"
-```
-
-生成的访问标记将以 JWT 的形式提交给 ClickHouse。角色和授权的映射仍取决于服务器端 JWT 身份验证器的配置 (例如 `clickhouse:roles` 声明) 。
 
 <div id="clickhouse-cloud-built-in">
   ## ClickHouse Cloud 内置 JWT 身份验证器
@@ -273,11 +253,13 @@ clickhouse-client --host your-clickhouse-host --secure --login \
   ## 为服务启用 JWT 身份验证
 </div>
 
+<BetaBadge />
+
 <VersionBadge minVersion="26.4" />
 
 <EnterprisePlanFeatureBadge feature="通过自定义身份提供商进行 JWT 身份验证" />
 
-除内置身份验证器外，您还可以将 ClickHouse Cloud 服务配置为接受由自己的身份提供商 (例如 Microsoft Entra 或 Okta) 签发的 JWT。此功能适用于运行 ClickHouse 26.4 或更高版本的 Enterprise 计划服务。您可以在 Cloud 控制台的 **设置 → 安全 → JWT 身份验证** 中自行配置；有关分步说明，请参阅 [JWT 身份验证设置](/zh/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)。每个提供商由以下内容定义：
+除内置身份验证器外，您还可以将 ClickHouse Cloud 服务配置为接受由自己的身份提供商 (例如 Microsoft Entra 或 Okta) 签发的 JWT。这是一项 Beta 功能，适用于运行 ClickHouse 26.4 或更高版本的 Enterprise 方案服务。您可以在 Cloud 控制台的 **设置 → 安全 → JWT 身份验证** 中自行配置；有关分步说明，请参阅 [JWT 身份验证设置](/zh/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)。每个提供商由以下内容定义：
 
 | 参数        | 说明                                                                                                                                                                                                                                                     |
 | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

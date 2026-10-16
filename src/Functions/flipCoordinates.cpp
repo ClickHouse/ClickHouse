@@ -18,6 +18,7 @@ namespace ErrorCodes
 {
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int ILLEGAL_COLUMN;
+extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 class FunctionFlipCoordinates final : public IFunction
@@ -40,11 +41,16 @@ public:
         return type->getName() != "Geometry";
     }
 
-    /// The signature returns the argument type verbatim, so a custom type name such as `Geometry`
-    /// survives return-type inference just like the legacy `getReturnTypeImpl` it replaced.
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(T) -> T";
+        if (arguments.size() != 1)
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Function {} takes exactly one argument, got {}",
+                getName(),
+                arguments.size());
+
+        return arguments[0];
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override

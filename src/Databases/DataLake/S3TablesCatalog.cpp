@@ -17,7 +17,6 @@
 #include <IO/S3/Client.h>
 #include <IO/S3/URI.h>
 #include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
@@ -40,6 +39,7 @@ namespace DB::ErrorCodes
 
 namespace DB::Setting
 {
+    extern const SettingsUInt64 s3_max_connections;
     extern const SettingsUInt64 s3_max_redirects;
     extern const SettingsUInt64 s3_retry_attempts;
     extern const SettingsBool s3_slow_all_threads_after_network_error;
@@ -243,13 +243,13 @@ void S3TablesCatalog::dropTable(const String & namespace_name, const String & ta
     const auto state_snapshot = state.get();
     const std::string endpoint
         = (base_url / state_snapshot->config.prefix / "namespaces" / namespace_name / "tables" / table_name).string()
-        + "?purgeRequested=true";
+        + "?purgeRequested=True";
 
     Poco::JSON::Object::Ptr request_body = nullptr;
     try
     {
         sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_DELETE, true);
-        LOG_INFO(log, "S3 Tables: dropped table {}.{} (purgeRequested=true)", namespace_name, table_name);
+        LOG_INFO(log, "S3 Tables: dropped table {}.{} (purgeRequested=True)", namespace_name, table_name);
     }
     catch (const DB::HTTPException & ex)
     {
@@ -327,7 +327,7 @@ DB::ReadWriteBufferFromHTTPPtr S3TablesCatalog::createReadBuffer(
         .create(credentials);
 }
 
-String S3TablesCatalog::sendRequest(
+void S3TablesCatalog::sendRequest(
     const CatalogState & /* catalog_state */,
     const String & endpoint,
     Poco::JSON::Object::Ptr request_body,
@@ -344,7 +344,7 @@ String S3TablesCatalog::sendRequest(
     DB::ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback;
     if (!body_str.empty())
     {
-        out_stream_callback = [body_str](DB::WriteBuffer & out) { DB::writeString(body_str, out); };
+        out_stream_callback = [body_str](std::ostream & os) { os << body_str; };
     }
 
     /// enable_url_encoding=false to allow using tables with encoded sequences in names like 'foo%2Fbar'
@@ -375,7 +375,6 @@ String S3TablesCatalog::sendRequest(
         readJSONObjectPossiblyInvalid(response_str, *wb);
     else
         wb->ignoreAll();
-    return response_str;
 }
 
 }

@@ -59,12 +59,6 @@ ROBOT_NAMES = [
 # via `codex login --with-api-key`.
 OPENAI_KEY_SECRET = "/ci/llm/openai_api_key"
 
-MODEL = "gpt-6.1-sol"
-# `gpt-6.1-sol` refuses some reviews with "This content was flagged for possible
-# cybersecurity risk"; the remaining attempts then use `FALLBACK_MODEL`.
-FALLBACK_MODEL = "gpt-5.4"
-CYBER_RISK_FLAG = "flagged for possible cybersecurity risk"
-
 
 def _join_prompt(*sections):
     return "\n\n".join(section.rstrip() for section in sections if section).rstrip() + "\n"
@@ -246,7 +240,7 @@ def _gh_auth_with_robot_token(gh_config_dir, robot_name):
     )
 
 
-def _run_copilot_once(prompt, robot_name, model):
+def _run_copilot_once(prompt, robot_name):
     """Run a single attempt of `gh auth login` + `copilot` for one robot."""
     _drop_stale_review_file()
     with tempfile.TemporaryDirectory() as gh_config_dir:
@@ -262,12 +256,12 @@ def _run_copilot_once(prompt, robot_name, model):
             # </dev/null: ensure stdin is definitively non-interactive
             command=f"GH_CONFIG_DIR={shlex.quote(gh_config_dir)} "
                     f"copilot -p {shlex.quote(prompt)} --allow-all --no-ask-user "
-                    f"--add-dir . --model {model} --effort xhigh < /dev/null",
+                    f"--add-dir . --model gpt-5.4 --effort xhigh < /dev/null",
             with_info=True,
         )
 
 
-def _run_codex_once(prompt, _robot_name, model):
+def _run_codex_once(prompt, _robot_name):
     """Run a single attempt of `codex login` + `codex exec`.
 
     Codex stores credentials in `$CODEX_HOME/auth.json` and does NOT consult
@@ -296,7 +290,7 @@ def _run_codex_once(prompt, _robot_name, model):
 
         return Result.from_commands_run(
             name="codex review",
-            # -m: same model the Copilot CLI uses, so
+            # -m gpt-5.4: same model the Copilot CLI uses, so
             #   review quality stays comparable across backends.
             # -s workspace-write: writable workspace + /tmp + CODEX_HOME,
             #   read-only elsewhere; sufficient for the review output.
@@ -309,7 +303,7 @@ def _run_codex_once(prompt, _robot_name, model):
             # --color never: no ANSI codes in the job log.
             command=f"CODEX_HOME={shlex.quote(codex_home)} "
                     f"codex exec "
-                    f"-m {model} -c 'model_reasoning_effort=xhigh' "
+                    f"-m gpt-5.4 -c 'model_reasoning_effort=xhigh' "
                     f"-s workspace-write "
                     f"-c sandbox_workspace_write.network_access=true "
                     f"-c approval_policy=never "
@@ -327,16 +321,12 @@ def _run(prompt, run_once, agent_name):
     with non-empty content.
     """
     last_error = None
-    model = MODEL
     robots = ROBOT_NAMES.copy()
     random.shuffle(robots)
     for attempt in range(1, MAX_ATTEMPTS + 1):
         robot_name = robots[(attempt - 1) % len(robots)]
         try:
-            result = run_once(prompt, robot_name, model)
-            if model != FALLBACK_MODEL and CYBER_RISK_FLAG in result.info:
-                print(f"WARNING: {model} flagged the review as a cybersecurity risk, switching to {FALLBACK_MODEL}")
-                model = FALLBACK_MODEL
+            result = run_once(prompt, robot_name)
             if not result.is_ok():
                 last_error = (
                     f"{agent_name} subprocess exited with non-OK status [{result.status}]"

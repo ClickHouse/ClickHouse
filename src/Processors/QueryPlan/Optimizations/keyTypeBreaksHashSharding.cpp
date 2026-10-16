@@ -1,7 +1,6 @@
 #include <Processors/QueryPlan/Optimizations/keyTypeBreaksHashSharding.h>
 
 #include <DataTypes/IDataType.h>
-#include <DataTypes/TypeTree.h>
 
 namespace DB
 {
@@ -16,7 +15,16 @@ bool keyTypeBreaksHashSharding(const IDataType & type)
         return which.isFloat() || which.isObject() || which.isDynamic();
     };
 
-    return anyInTypeTree(type, breaks_sharding);
+    if (breaks_sharding(type))
+        return true;
+
+    bool result = false;
+    type.forEachChild([&](const IDataType & child)
+    {
+        if (breaks_sharding(child))
+            result = true;
+    });
+    return result;
 }
 
 }

@@ -73,16 +73,6 @@ SQLQueryPiece applyBinaryOperatorAnd(
     ///
     ASTPtr step2;
     {
-        bool left_metric_name_dropped = left_argument.metric_name_dropped;
-        ASTPtr left_join_key = makeJoinKeyColumn(
-            left,
-            transformGroupASTForBinaryOperator(
-                operator_node,
-                make_intrusive<ASTIdentifier>(ColumnNames::Group),
-                /*drop_metric_name=*/ true,
-                left_metric_name_dropped),
-            context);
-
         SelectQueryBuilder builder;
 
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
@@ -108,10 +98,15 @@ SQLQueryPiece applyBinaryOperatorAnd(
         builder.join_strictness = JoinStrictness::Semi;
         builder.join_table = step1;
 
+        bool left_metric_name_dropped = left_argument.metric_name_dropped;
         builder.join_on = makeASTFunction(
             "equals",
-            std::move(left_join_key),
-            make_intrusive<ASTIdentifier>(Strings{step1, ColumnNames::JoinGroup}));
+            transformGroupASTForBinaryOperator(
+                operator_node,
+                make_intrusive<ASTIdentifier>(ColumnNames::Group),
+                /*drop_metric_name=*/ true,
+                left_metric_name_dropped),
+            make_intrusive<ASTIdentifier>(ColumnNames::JoinGroup));
 
         step2 = builder.getSelectQuery();
     }

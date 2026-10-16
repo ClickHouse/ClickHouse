@@ -264,7 +264,7 @@ struct IMergeTreeIndex
     /// Reimplement if you want new index format.
     ///
     /// NOTE: In case getSubstreams() is reimplemented,
-    /// `getPhysicalFormat` and `getPotentialSubstreams` should be reimplemented too,
+    /// getPhysicalFormat() should be reimplemented too,
     /// and check all previous extensions for substreams too
     /// (to avoid breaking backward compatibility).
     virtual MergeTreeIndexSubstreams getSubstreams() const { return {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}; }
@@ -272,9 +272,8 @@ struct IMergeTreeIndex
     /// Two distinct questions are asked about a part's copy of an index, and they must not be conflated:
     ///
     /// - getPhysicalFormat(): what is ON DISK? Discovers the substreams and format version actually
-    ///   present in the part, including legacy layouts. Callers that manipulate the files need this,
-    ///   even for an index we refuse to read. It probes the part's storage, so it must not be called
-    ///   while destroying a part: use `getPotentialSubstreams` there.
+    ///   present in the part, including legacy layouts. Callers that manipulate the files or their
+    ///   cache entries (e.g. evicting index marks) need this, even for an index we refuse to read.
     /// - getDeserializedFormat(): may this part's copy of the index be DESERIALIZED? Physical
     ///   discovery plus usability checks. Every read path must use this one.
     ///
@@ -286,7 +285,8 @@ struct IMergeTreeIndex
     /// @part's storage is consulted so that packed substreams (whose virtual filenames are not in
     /// checksums.txt) can still be discovered via the skp_idx.packed overlay.
     ///
-    /// The physical question needs only the checksums and the storage, so it is answered without a part.
+    /// The physical question needs only the checksums and the storage, so it is answered without a part:
+    /// it is also asked from ~IMergeTreeDataPart, where the part can no longer be shared.
     virtual MergeTreeIndexFormat getPhysicalFormat(
         const MergeTreeDataPartChecksums & checksums,
         const IDataPartStorage & storage,
@@ -315,15 +315,10 @@ struct IMergeTreeIndex
     /// `getDeserializedFormat`, which returns only the preferred readable layout and reports
     /// nothing once a required system column is invalidated). Mutation cleanup uses this so a
     /// stale legacy substream on a mixed-format part is skipped/stripped, not hardlinked forward.
-    /// Probes `getPotentialSubstreams`, so reimplement that one to cover another version.
-    MergeTreeIndexSubstreams getAllSubstreamsInPart(
+    virtual MergeTreeIndexSubstreams getAllSubstreamsInPart(
         const MergeTreeDataPartChecksums & checksums,
         const std::string & relative_path_prefix,
         const IDataPartStorage * storage) const;
-
-    /// Superset: every substream any version of this index could have written, whatever a given
-    /// part holds. Takes no part and must do no I/O, so it is safe during part destruction.
-    virtual MergeTreeIndexSubstreams getPotentialSubstreams() const { return getSubstreams(); }
 
     virtual MergeTreeIndexGranulePtr createIndexGranule() const = 0;
 
@@ -445,9 +440,8 @@ String getIndexFileName(const String & index_name, bool escape_filename);
 
 /// Check if an index substream file exists for the part. Returns true if the file is listed
 /// directly in checksums.txt (original or hashed name) OR if it's a virtual file inside
-/// skp_idx.packed. Standalone files are always in checksums, so the archive check looks only at
-/// the archive index of @storage and never asks the disk about the file. Passing a null @storage
-/// skips the archive check, which is fine for callers that only see standalone per-file layouts.
+/// skp_idx.packed (resolved through the storage overlay). Passing a null @storage skips
+/// the archive check, which is fine for callers that only see standalone per-file layouts.
 bool indexFileExistsInChecksums(
     const MergeTreeDataPartChecksums & checksums,
     const std::string & path_prefix,

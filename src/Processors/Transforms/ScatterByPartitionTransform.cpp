@@ -74,10 +74,6 @@ IProcessor::Status ScatterByPartitionTransform::prepare()
         return Status::Finished;
     }
 
-    if (!was_output_needed && !isAnyOutputNeeded())
-        return Status::PortFull;
-    was_output_needed = true;
-
     input.setNeeded();
     if (!input.hasData())
         return Status::NeedData;

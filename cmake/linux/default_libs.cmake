@@ -45,25 +45,16 @@ if (OS_ANDROID)
 elseif (USE_MUSL)
     # musl itself is linked in cmake/musl.cmake. -nostartfiles: don't use glibc's crt*.o
     # from the sysroot; musl's own startup files (copied to stable paths in
-    # contrib/musl-cmake) are wired here in the canonical order: rcrt1.o and crti.o go
+    # contrib/musl-cmake) are wired here in the canonical order: crt1.o and crti.o go
     # through CMAKE_EXE_LINKER_FLAGS, which the link line places before all object
     # files, and crtn.o goes at the end of DEFAULT_LIBS, after all libraries — crti and
     # crtn provide the prologue/epilogue of the `.init`/`.fini` sections and must wrap
     # every other contribution to them.
     set (MUSL_CRT_DIR "${CMAKE_BINARY_DIR}/contrib/musl-cmake")
-    # -static-pie: a static executable that relocates itself at startup (rcrt1.o), so it keeps ASLR.
-    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${MUSL_CRT_DIR}/rcrt1.o ${MUSL_CRT_DIR}/crti.o")
-    set (DEFAULT_LIBS "${DEFAULT_LIBS} -static-pie -nostartfiles ${MUSL_CRT_DIR}/crtn.o")
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${MUSL_CRT_DIR}/crt1.o ${MUSL_CRT_DIR}/crti.o")
+    set (DEFAULT_LIBS "${DEFAULT_LIBS} -static -nostartfiles ${MUSL_CRT_DIR}/crtn.o")
 else ()
     set (DEFAULT_LIBS "${DEFAULT_LIBS} -lc -lm -lrt -lpthread -ldl")
-endif ()
-
-# The GPU island is built against the system libstdc++, so a binary carrying it needs that library.
-# It must stay last: both runtimes define `__gxx_personality_v0`, the linker binds the first on the
-# command line, and libstdc++'s does not recognize a libc++ exception - earlier, and the server dies
-# on the first `throw` anywhere.
-if (ENABLE_GPU)
-    set (DEFAULT_LIBS "${DEFAULT_LIBS} ${GPU_LIBSTDCXX_LIBRARY}")
 endif ()
 
 message(STATUS "Default libraries: ${DEFAULT_LIBS}")
