@@ -737,23 +737,41 @@ public:
         return !functionForcesTheReturnType<Impl>();
     }
 
+    /// `build()` below constructs the result type itself, so the signature is purely
+    /// advertised — it does not gate execution. We still surface it through
+    /// `system.functions` so users see the expected shape for each JSON function.
+    String getSignatureString() const override
+    {
+        if constexpr (requires { Impl<DummyJSONParser>::signature; })
+            return Impl<DummyJSONParser>::signature;
+        else
+            return {};
+    }
+
+    /// `build` computes the result type from `Impl::getReturnType`, which is the authoritative
+    /// logic for these functions: it also accepts `Dynamic` / `Variant` JSON arguments and wraps
+    /// nullable inputs itself, neither of which the advertised signature expresses. Route both
+    /// return-type entry points through the same logic, so that a direct `getReturnType` call
+    /// agrees with `build` instead of evaluating the documentation-only signature.
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        return calculateResultType(arguments);
+    }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        ColumnsWithTypeAndName columns;
+        columns.reserve(arguments.size());
+        for (const auto & type : arguments)
+            columns.emplace_back(nullptr, type, String{});
+        return calculateResultType(columns);
+    }
+
     FunctionBasePtr build(const ColumnsWithTypeAndName & arguments) const override
     {
-        bool has_nothing_argument = false;
-        for (const auto & arg : arguments)
-            has_nothing_argument |= isNothing(arg.type);
-
         DataTypePtr json_return_type = Impl<DummyJSONParser>::getReturnType(Name::name, createBlockWithNestedColumns(arguments));
         NullPresence null_presence = getNullPresense(arguments);
-        DataTypePtr return_type;
-        if (has_nothing_argument)
-            return_type = std::make_shared<DataTypeNothing>();
-        else if (null_presence.has_null_constant)
-            return_type = makeNullable(std::make_shared<DataTypeNothing>());
-        else if (null_presence.has_nullable)
-            return_type = makeNullable(json_return_type);
-        else
-            return_type = json_return_type;
+        DataTypePtr return_type = wrapReturnType(arguments, json_return_type, null_presence);
 
         DataTypes argument_types;
         argument_types.reserve(arguments.size());
@@ -764,6 +782,29 @@ public:
     }
 
 private:
+    /// Applies the `Nothing` / `Nullable` handling on top of the type `Impl` computed.
+    static DataTypePtr wrapReturnType(
+        const ColumnsWithTypeAndName & arguments, const DataTypePtr & json_return_type, const NullPresence & null_presence)
+    {
+        for (const auto & arg : arguments)
+        {
+            if (isNothing(arg.type))
+                return std::make_shared<DataTypeNothing>();
+        }
+
+        if (null_presence.has_null_constant)
+            return makeNullable(std::make_shared<DataTypeNothing>());
+        if (null_presence.has_nullable)
+            return makeNullable(json_return_type);
+        return json_return_type;
+    }
+
+    static DataTypePtr calculateResultType(const ColumnsWithTypeAndName & arguments)
+    {
+        DataTypePtr json_return_type = Impl<DummyJSONParser>::getReturnType(Name::name, createBlockWithNestedColumns(arguments));
+        return wrapReturnType(arguments, json_return_type, getNullPresense(arguments));
+    }
+
     const bool allow_simdjson;
     FormatSettings format_settings;
     UInt64 settings_hash = 0;
@@ -805,6 +846,7 @@ class JSONHasImpl
 {
 public:
     using Element = typename JSONParser::Element;
+    static constexpr auto signature = "(String, ...) -> UInt8";
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &) { return std::make_shared<DataTypeUInt8>(); }
 
@@ -824,6 +866,7 @@ class IsValidJSONImpl
 {
 public:
     using Element = typename JSONParser::Element;
+    static constexpr auto signature = "(String) -> UInt8";
 
     static DataTypePtr getReturnType(const char * function_name, const ColumnsWithTypeAndName & arguments)
     {
@@ -854,6 +897,7 @@ class JSONLengthImpl
 {
 public:
     using Element = typename JSONParser::Element;
+    static constexpr auto signature = "(String, ...) -> UInt64";
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
     {
@@ -884,6 +928,7 @@ class JSONKeyImpl
 {
 public:
     using Element = typename JSONParser::Element;
+    static constexpr auto signature = "(String, ...) -> String";
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
     {
@@ -908,6 +953,8 @@ class JSONTypeImpl
 {
 public:
     using Element = typename JSONParser::Element;
+    static constexpr auto signature
+        = "(String, ...) -> Enum8('Array' = 91, 'Object' = 123, 'String' = 34, 'Int64' = 105, 'UInt64' = 117, 'Double' = 100, 'Bool' = 98, 'Null' = 0)";
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
     {
@@ -969,6 +1016,10 @@ class JSONExtractNumericImpl
 {
 public:
     using Element = typename JSONParser::Element;
+    static constexpr auto signature =
+        std::is_same_v<NumberType, Int64>  ? "(String, ...) -> Int64"  :
+        std::is_same_v<NumberType, UInt64> ? "(String, ...) -> UInt64" :
+                                             "(String, ...) -> Float64";
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
     {
@@ -1008,6 +1059,7 @@ class JSONExtractBoolImpl
 {
 public:
     using Element = typename JSONParser::Element;
+    static constexpr auto signature = "(String, ...) -> UInt8";
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
     {
@@ -1048,6 +1100,7 @@ class JSONExtractStringImpl
 {
 public:
     using Element = typename JSONParser::Element;
+    static constexpr auto signature = "(String, ...) -> String";
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
     {
@@ -1076,6 +1129,13 @@ class JSONExtractImpl
 {
 public:
     using Element = typename JSONParser::Element;
+
+    /// Declarative signature — the last argument is a constant string with the
+    /// type name; the result is the type produced by `typeFromString` on that
+    /// name. The optional middle arguments are JSON-pointer-like index/key
+    /// selectors. The signature is documentation-only because the function's
+    /// `build()` constructs the return type itself.
+    static constexpr auto signature = "(String, ..., const t String) -> typeFromString(t)";
 
     static DataTypePtr getReturnType(const char * function_name, const ColumnsWithTypeAndName & arguments)
     {
@@ -1117,6 +1177,12 @@ class JSONExtractKeysAndValuesImpl
 {
 public:
     using Element = typename JSONParser::Element;
+
+    /// Declarative signature — keys are strings; values get parsed via the
+    /// trailing constant type-name argument. Result is `Array(Tuple(String,
+    /// typeFromString(t)))`. Documentation-only (the function's `build()`
+    /// constructs the return type itself).
+    static constexpr auto signature = "(String, ..., const t String) -> Array(Tuple(String, typeFromString(t)))";
 
     static DataTypePtr getReturnType(const char * function_name, const ColumnsWithTypeAndName & arguments)
     {
@@ -1184,6 +1250,7 @@ class JSONExtractRawImpl
 {
 public:
     using Element = typename JSONParser::Element;
+    static constexpr auto signature = "(String, ...) -> String";
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
     {
@@ -1220,6 +1287,7 @@ class JSONExtractArrayRawImpl
 {
 public:
     using Element = typename JSONParser::Element;
+    static constexpr auto signature = "(String, ...) -> Array(String)";
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
     {
@@ -1254,6 +1322,7 @@ class JSONExtractKeysAndValuesRawImpl
 {
 public:
     using Element = typename JSONParser::Element;
+    static constexpr auto signature = "(String, ...) -> Array(Tuple(String, String))";
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
     {
@@ -1294,6 +1363,7 @@ class JSONExtractKeysImpl
 {
 public:
     using Element = typename JSONParser::Element;
+    static constexpr auto signature = "(String, ...) -> Array(String)";
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
     {

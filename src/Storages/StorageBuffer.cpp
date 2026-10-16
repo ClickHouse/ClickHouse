@@ -614,7 +614,7 @@ void StorageBuffer::read(
     {
         /// The buffers plan is united with the table plan in the same process, where nothing
         /// unmarshalls its blocks, so `BlocksMarshallingStep` must not be added to it.
-        auto buffers_select_query_options = SelectQueryOptions(processed_stage);
+        auto buffers_select_query_options = SelectQueryOptions(processed_stage).positionalArgumentsAlreadyResolved();
         buffers_select_query_options.is_local_plan_for_distributed_query = true;
 
         auto storage = std::make_shared<StorageValues>(
