@@ -14,6 +14,10 @@
 //   lc_dict_rows_col(s LowCardinality(String)) -> UInt64 — the dictionary row count read
 //                              from the LC header. A split call's second batch re-serializes
 //                              its own dictionary, so a per-batch value is expected here.
+//   hex_variant_col(v Variant(...)) -> String — decodes the COL_VARIANT frame and returns
+//                              "<discriminator>:<hex of the row's value>" ("NULL" for a null
+//                              row). Returns NULL (a trap on the host) unless the argument
+//                              arrives as one COL_VARIANT column.
 
 #include <stdint.h>
 #include <stddef.h>
@@ -65,6 +69,7 @@ void clickhouse_destroy_buffer(uint8_t * ptr) { (void)ptr; }
 // ── COLUMNAR_V1 wire constants — must match src/Functions/UserDefined/UserDefinedWebAssemblyColumnarWire.h ──
 
 #define COL_BYTES      0u
+#define COL_VARIANT    6u
 #define COL_LOWCARD    8u
 #define COL_TAG_MASK   0x1Fu
 #define COL_IS_NULLABLE 0x20u
@@ -266,4 +271,64 @@ Buffer * lc_dict_rows_col(Buffer * ptr, uint32_t num_rows) {
         memcpy(out->data + od.data_offset + (uint64_t)i * 8u, &dict_rows, 8u);
     out->size = total;
     return out;
+}
+
+// hex_variant_col: COL_VARIANT. Discriminators (u8, 255 = NULL) at null_offset, u32
+// row offsets into the sub-column at offsets_offset. At data_offset:
+//   uint32 K | K x { uint8 discriminator | uint8[3] pad | ColDesc sub-column }
+// where the sub-column descriptor's null_offset holds its row count.
+__attribute__((export_name("hex_variant_col")))
+Buffer * hex_variant_col(Buffer * ptr, uint32_t num_rows) {
+    ColBuf cb = parse_input(ptr);
+    if (!cb.base) return NULL;
+    ColDesc d = get_desc(&cb, 0);
+    if ((d.type & COL_TAG_MASK) != COL_VARIANT) return NULL;
+
+    ColDesc subs[256];
+    uint8_t present[256];
+    memset(present, 0, sizeof(present));
+    uint32_t k; memcpy(&k, cb.base + d.data_offset, 4);
+    for (uint32_t r = 0; r < k; ++r) {
+        const uint8_t * rec = cb.base + d.data_offset + 4u + r * (4u + DESC_BYTES);
+        memcpy(&subs[rec[0]], rec + 4, DESC_BYTES);
+        present[rec[0]] = 1;
+    }
+
+    // "dd:" prefix plus at most the whole variant payload hexed per row.
+    HexOut ho; ho.out = begin_hex_out(num_rows, (uint32_t)(num_rows * (4u + d.data_size * 2u) + 16u));
+    if (!ho.out) return NULL;
+    ho.cursor = 0;
+
+    for (uint32_t i = 0; i < num_rows; ++i) {
+        uint32_t idx = (d.type & COL_IS_CONST) ? 0u : i;
+        uint8_t discr = cb.base[d.null_offset + idx];
+        if (discr == 255u) {
+            hex_row(&ho, i, NULL, 0, 1);
+            continue;
+        }
+        if (!present[discr]) return NULL;
+        uint32_t off; memcpy(&off, cb.base + d.offsets_offset + (uint64_t)idx * 4u, 4);
+        const ColDesc * s = &subs[discr];
+        const uint8_t * src;
+        uint32_t n;
+        if ((s->type & COL_TAG_MASK) == COL_BYTES) {
+            uint64_t start, end;
+            memcpy(&start, cb.base + s->offsets_offset + (uint64_t)off * 8u, 8);
+            memcpy(&end, cb.base + s->offsets_offset + (uint64_t)(off + 1u) * 8u, 8);
+            src = cb.base + s->data_offset + start;
+            n = (uint32_t)(end - start);
+        } else {
+            if (s->null_offset == 0u) return NULL;
+            n = (uint32_t)(s->data_size / s->null_offset);
+            src = cb.base + s->data_offset + (uint64_t)off * n;
+        }
+        uint8_t * p = ho.out->data;
+        ColDesc od; memcpy(&od, p + HEADER_BYTES, DESC_BYTES);
+        p[od.data_offset + ho.cursor++] = (uint8_t)hex_digits[discr >> 4];
+        p[od.data_offset + ho.cursor++] = (uint8_t)hex_digits[discr & 0xFu];
+        p[od.data_offset + ho.cursor++] = ':';
+        hex_row(&ho, i, src, n, 0);
+    }
+    finish_hex(&ho);
+    return ho.out;
 }
