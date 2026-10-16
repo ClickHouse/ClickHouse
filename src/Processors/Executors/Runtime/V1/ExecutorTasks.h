@@ -8,6 +8,7 @@
 #include <Processors/Executors/Runtime/V1/TasksQueue.h>
 #include <Common/ISlotControl.h>
 #include <Common/Logger.h>
+#include <Common/Scheduler/MemoryReservation.h>
 
 #include <atomic>
 #include <memory>
@@ -26,7 +27,7 @@ namespace Runtime::V1
 {
 
 /// Manage tasks which are ready for execution. Used in PipelineExecutor.
-class ExecutorTasks
+class ExecutorTasks : public ISpillRequestListener
 {
     /// If query is finished (or cancelled).
     std::atomic_bool finished = false;
@@ -47,6 +48,7 @@ class ExecutorTasks
     /// So we have a separate queue specifically for them.
     TaskQueue<IProcessor> fast_task_queue;
     std::atomic_bool has_fast_tasks = false; // Required only to enable local task optimization
+    std::atomic_bool spill_requested = false;
 
     /// Queue which stores tasks where processors returned Async status after prepare.
     /// If multiple threads are used, main thread will wait for async tasks.
@@ -75,9 +77,17 @@ class ExecutorTasks
     const static size_t TOO_MANY_IDLE_THRESHOLD = 4;
 
 public:
+    void notifySpillRequested() override;
+    bool takeSpillNotification()
+    {
+        return spill_requested.load(std::memory_order_relaxed) && spill_requested.exchange(false, std::memory_order_acq_rel);
+    }
+
     /// This queue can grow a lot and lead to OOM, so it is allocated through a tracking
     /// allocator that throws instead of overcommitting.
     using Queue = DevectorQueueWithMemoryTracking<IProcessor *>;
+
+    void pushSpillTasks(Queue & queue, size_t thread_number);
 
     void finish();
     bool isFinished() const { return finished; }
@@ -107,7 +117,8 @@ public:
     // threads can cover the push, or no new tasks were added).
     size_t pushTasks(Queue & queue, Queue & async_queue, ExecutionThreadContext & context);
 
-    void init(size_t num_threads_, size_t use_threads_, const SlotAllocationPtr & cpu_slots_, bool profile_processors, bool trace_processors, ReadProgressCallback * callback, StepProfiler * step_profiler);
+    void init(size_t num_threads_, size_t use_threads_, const SlotAllocationPtr & cpu_slots_, bool profile_processors,
+        bool trace_processors, ReadProgressCallback * callback, StepProfiler * step_profiler, QueryStatus * process_list_element);
 
     /// Push initial tasks. Returns the count of tasks pushed (regular + async) — used by
     /// `PipelineExecutor::initializeExecution` to size the slot-allocation ceiling via

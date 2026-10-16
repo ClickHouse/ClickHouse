@@ -7,6 +7,7 @@
 #include <Processors/IProcessor.h>
 #include <Processors/ISource.h>
 #include <Interpreters/IJoin.h>
+#include <Interpreters/SetSpillable.h>
 
 namespace DB
 {
@@ -83,6 +84,7 @@ public:
     ~JoiningTransform() override;
 
     String getName() const override { return "JoiningTransform"; }
+    std::span<ISpillable * const> getSpillables() override { return set_spillables.get(); }
 
     const JoinPtr & getJoin() const { return join; }
 
@@ -107,6 +109,7 @@ private:
     bool is_last_drained = false;
 
     JoinPtr join;
+    SetSpillables set_spillables;
     bool on_totals;
     /// Whether this transform emits non-joined rows itself once all probe streams have drained.
     /// False when separate `NonJoinedBlocksTransform` processors own the emission.
@@ -169,8 +172,7 @@ public:
     Status prepare() override;
     void work() override;
 
-    ProcessorMemoryStats getMemoryStats() override;
-    bool spillOnSize(size_t bytes) override;
+    std::span<ISpillable * const> getSpillables() override { return {&spillable, spillable ? 1uz : 0uz}; }
 
 private:
     /// Emit the seal (if this transform completed the build and emit is allowed) and finish
@@ -178,6 +180,7 @@ private:
     void finishSealPort(bool emit);
 
     JoinPtr join;
+    ISpillable * const spillable = join->getSpillable();
     FinishCounterPtr finish_counter;
     const JoinBuildContext build_context;
     Chunk chunk;
@@ -217,12 +220,14 @@ public:
     explicit DelayedJoinedBlocksTransform(size_t num_streams, JoinPtr join_);
 
     String getName() const override { return "DelayedJoinedBlocksTransform"; }
+    std::span<ISpillable * const> getSpillables() override { return set_spillables.get(); }
 
     Status prepare() override;
     void work() override;
 
 private:
     JoinPtr join;
+    SetSpillables set_spillables;
 
     IBlocksStreamPtr delayed_blocks = nullptr;
     bool finished = false;

@@ -824,7 +824,17 @@ namespace
         Node * makeFunction(antlr4_grammars::PromQLParser::Function_Context * ctx, const std::vector<Node *> & arguments)
         {
             if (auto * function_name_ctx = ctx->FUNCTION())
-                return makeFunction(getText(function_name_ctx), arguments);
+            {
+                const auto function_name = getText(function_name_ctx);
+                if ((function_name == "step" || function_name == "range") && !arguments.empty())
+                {
+                    error_listener.setError(
+                        fmt::format("Function '{}' expects no arguments", function_name),
+                        getStartPos(function_name_ctx));
+                    return nullptr;
+                }
+                return makeFunction(function_name, arguments);
+            }
             if (ctx->START())
                 return makeFunction("start", arguments);
             if (ctx->END())
