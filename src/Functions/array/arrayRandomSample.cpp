@@ -36,6 +36,14 @@ public:
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return false; }
 
+    /// `samples` must be a constant `UInt*`. On the column-less types-only path the
+    /// constness cannot be decided, so it is still enforced by `getArgumentsThatAreAlwaysConstant`
+    /// and `executeImpl`.
+    String getSignatureString() const override
+    {
+        return "(Array(T), const UInt) -> Array(T)";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors args{
