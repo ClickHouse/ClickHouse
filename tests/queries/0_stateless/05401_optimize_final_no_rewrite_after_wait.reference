@@ -1,0 +1,6 @@
+OPTIMIZE TABLE t_optimize_final_after_wait FINAL
+second OPTIMIZE waits for the running merge: yes
+1	1
+OPTIMIZE TABLE t_optimize_final_after_wait FINAL DEDUPLICATE
+second OPTIMIZE waits for the running merge: yes
+1	2

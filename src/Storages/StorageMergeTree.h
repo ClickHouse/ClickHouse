@@ -277,6 +277,7 @@ private:
         std::unique_lock<std::mutex> & lock,
         const MergeTreeTransactionPtr & txn,
         bool optimize_skip_merged_partitions = false,
+        bool skip_part_of_awaited_merge = false,
         const std::function<void()> & on_wait_for_running_merges = {});
 
     MergeMutateSelectedEntryPtr selectPartsToMutate(

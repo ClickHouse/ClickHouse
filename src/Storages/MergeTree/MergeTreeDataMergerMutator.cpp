@@ -378,7 +378,8 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
             merge_predicate,
             /*partition_id=*/best,
             /*final=*/true,
-            /*optimize_skip_merged_partitions=*/true);
+            /*optimize_skip_merged_partitions=*/true,
+            /*parts_before_wait=*/{});
     }
 
     return std::unexpected(SelectMergeFailure{
@@ -393,7 +394,8 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
     const MergePredicatePtr & merge_predicate,
     const String & partition_id,
     bool final,
-    bool optimize_skip_merged_partitions)
+    bool optimize_skip_merged_partitions,
+    const std::vector<MergeTreePartInfo> & parts_before_wait)
 {
     /// time is not important in this context, since the parts will not be passed through the merge selector.
     const time_t current_time = std::time(nullptr);
@@ -426,18 +428,42 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
         });
     }
 
-    /// If final, optimize_skip_merged_partitions is true and we have only one part in partition with level > 0
-    /// than we don't select it to merge. But if there are some expired TTL then merge is needed
-    if (final && optimize_skip_merged_partitions && parts.size() == 1)
+    bool apply_patch_parts = (*data.getSettings())[MergeTreeSetting::apply_patches_on_merge];
+    auto patch_parts = apply_patch_parts ? merge_predicate->getPatchesToApplyOnMerge(parts) : PartsRange{};
+
+    /// If final and we have only one part in partition, we don't select it to merge with itself when either
+    /// - optimize_skip_merged_partitions is true and the part has level > 0, or
+    /// - OPTIMIZE waited for running merges, they have merged all the parts the partition had before the wait into
+    ///   this part (a merge raises the level above those of its source parts, a mutation keeps it), and there are
+    ///   no patch parts to apply: merging it again would only repeat the merge just done.
+    /// But if there are some expired TTL then merge is needed.
+    if (final && parts.size() == 1)
     {
         const PartProperties & part = parts.front();
 
         /// FIXME? Probably we should check expired ttls here, not only calculated.
-        if (part.info.level > 0 && (!metadata_snapshot->hasAnyTTL() || part.all_ttl_calculated_if_any))
+        const bool all_ttl_calculated = !metadata_snapshot->hasAnyTTL() || part.all_ttl_calculated_if_any;
+
+        if (all_ttl_calculated && optimize_skip_merged_partitions && part.info.level > 0)
         {
             return std::unexpected(SelectMergeFailure{
                 .reason = SelectMergeFailure::Reason::NOTHING_TO_MERGE,
                 .explanation = PreformattedMessage::create("Partition skipped due to optimize_skip_merged_partitions"),
+            });
+        }
+
+        const bool made_by_awaited_merge = !parts_before_wait.empty()
+            && std::ranges::all_of(parts_before_wait, [&](const MergeTreePartInfo & part_before_wait)
+            {
+                return part.info.contains(part_before_wait) && part.info.level > part_before_wait.level;
+            });
+
+        if (all_ttl_calculated && made_by_awaited_merge && patch_parts.empty())
+        {
+            return std::unexpected(SelectMergeFailure{
+                .reason = SelectMergeFailure::Reason::NOTHING_TO_MERGE,
+                .explanation = PreformattedMessage::create(
+                    "Partition was merged into the single part {} by the merges OPTIMIZE FINAL waited for", part.name),
             });
         }
     }
@@ -478,9 +504,6 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
             });
         }
     }
-
-    bool apply_patch_parts = (*data.getSettings())[MergeTreeSetting::apply_patches_on_merge];
-    auto patch_parts = apply_patch_parts ? merge_predicate->getPatchesToApplyOnMerge(parts) : PartsRange{};
 
     LOG_TRACE(log, "Selected {} parts from {} to {}. Will apply {} patch parts", parts.size(), parts.front().name, parts.back().name, patch_parts.size());
     return MergeSelectorChoices{{std::move(parts), std::move(patch_parts), MergeType::Regular, final}};

@@ -1983,6 +1983,7 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
     std::unique_lock<std::mutex> & lock,
     const MergeTreeTransactionPtr & txn,
     bool optimize_skip_merged_partitions,
+    bool skip_part_of_awaited_merge,
     const std::function<void()> & on_wait_for_running_merges)
 {
     /// Merges are disabled for UNIQUE KEY tables: a background merge can outdate
@@ -2159,6 +2160,9 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
 
     const auto select_in_partition = [&]() -> std::expected<FutureMergedMutatedPartPtr, SelectMergeFailure>
     {
+        /// The parts of the partition when we last started to wait for running merges.
+        std::vector<MergeTreePartInfo> parts_before_wait;
+
         while (true)
         {
             auto timeout = saturatedMilliseconds((*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations].totalMilliseconds());
@@ -2191,7 +2195,8 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
                 merge_predicate,
                 partition_id,
                 final,
-                optimize_skip_merged_partitions);
+                optimize_skip_merged_partitions,
+                parts_before_wait);
 
             if (!select_result.has_value())
             {
@@ -2203,6 +2208,8 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
                 /// while any merge is active. We only skip the wait when there is simply nothing to
                 /// merge in this partition (e.g. optimize_skip_merged_partitions): waiting there
                 /// would needlessly hold a slot while other partitions are still merging (#46770).
+                /// If the merges we waited for leave the partition merged into a single part, the retry
+                /// does not merge that part again (see `parts_before_wait`).
                 if (final
                     && select_result.error().reason != SelectMergeFailure::Reason::NOTHING_TO_MERGE
                     && !currently_merging_mutating_parts.empty())
@@ -2214,6 +2221,14 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
                     /// of the wait, so that other merges can use it meanwhile (see `merge`).
                     if (on_wait_for_running_merges)
                         on_wait_for_running_merges();
+
+                    if (skip_part_of_awaited_merge)
+                    {
+                        auto parts_lock = readLockParts();
+                        parts_before_wait = std::ranges::to<std::vector>(
+                            getDataPartsVectorInPartitionForInternalUsage(MergeTreeDataPartState::Active, partition_id, parts_lock)
+                            | std::views::transform([](const DataPartPtr & part) { return part->info; }));
+                    }
 
                     if (std::cv_status::timeout == currently_processing_in_background_condition.wait_for(lock, timeout))
                         return std::unexpected(SelectMergeFailure{
@@ -2300,6 +2315,7 @@ bool StorageMergeTree::merge(
                 lock,
                 txn,
                 optimize_skip_merged_partitions,
+                /*skip_part_of_awaited_merge=*/!deduplicate && !cleanup && txn == nullptr,
                 release_slot_before_wait);
         }();
 
