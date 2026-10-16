@@ -1,9 +1,9 @@
 before the swap
 a	UInt64	['TDigest','Basic','UniqV2']
-b	Float64	['TDigest','Basic','UniqV2']
+b	Float64	['TDigest','Basic']
 c	UInt64	['Basic','UniqV2']
 after the swap and a mutation
-a	Float64	['TDigest','Basic','UniqV2']
+a	Float64	['TDigest','Basic']
 b	UInt64	['TDigest','Basic','UniqV2']
 c	UInt64	['Basic','UniqV2']
 a drop and a rename onto the dropped name

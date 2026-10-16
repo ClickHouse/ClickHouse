@@ -389,6 +389,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool allow_part_offset_column_in_projections;
     extern const MergeTreeSettingsUInt64 max_uncompressed_bytes_in_patches;
     extern const MergeTreeSettingsString auto_statistics_types;
+    extern const MergeTreeSettingsBool auto_statistics_assume_floats_distinct;
     extern const MergeTreeSettingsString default_compression_codec;
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
@@ -1042,6 +1043,8 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
 
     LOG_DEBUG(log, "Loading statistics");
     ConditionSelectivityEstimatorBuilder estimator_builder(local_context);
+    const auto metadata_snapshot = getInMemoryMetadataPtr(local_context, /*bypass_metadata_cache=*/false);
+    estimator_builder.setCardinalityPolicy(metadata_snapshot, (*getSettings())[MergeTreeSetting::auto_statistics_assume_floats_distinct]);
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::LoadedStatisticsMicroseconds);
     for (const auto & part : parts)
     {
@@ -1614,6 +1617,23 @@ void MergeTreeData::setProperties(
         std::lock_guard lock(patch_parts_sorting_keys_mutex);
         setInMemoryMetadata(new_metadata);
         patch_parts_sorting_keys_cache.clear();
+    }
+
+    /// The cardinality policy of the cached estimator depends on the statistics declared for the columns,
+    /// e.g. an explicit `uniq` that is not materialized yet (see `shouldAssumeAllDistinct`).
+    {
+        bool statistics_changed = false;
+        for (const auto & column : new_metadata.columns)
+        {
+            const auto * old_column = old_metadata.columns.tryGet(column.name);
+            if (!old_column || !(old_column->statistics == column.statistics))
+            {
+                statistics_changed = true;
+                break;
+            }
+        }
+        if (statistics_changed)
+            resetStatisticsCache();
     }
 
     /// Invalidate the columns cache when column identity changes: cache keys identify
@@ -3545,6 +3565,13 @@ void MergeTreeData::startStatisticsCache()
     }
 }
 
+void MergeTreeData::resetStatisticsCache()
+{
+    std::lock_guard lock(stats_mutex);
+    cached_estimator.reset();
+    ++cached_estimator_generation;
+}
+
 void MergeTreeData::stopStatisticsCache()
 {
     /// The task itself does not take the mutex, so waiting for it in `deactivate` under the lock is safe.
@@ -3724,9 +3751,18 @@ try
     /// Queries do not read patch parts, otherwise the cache would never match.
     std::erase_if(data_parts, [](const auto & part) { return part->info.isPatch(); });
 
-    if (cached_estimator)
+    /// `resetStatisticsCache` may drop the cache concurrently.
+    ConditionSelectivityEstimatorPtr cached;
+    UInt64 cache_generation = 0;
     {
-        if (!cached_estimator->isStale(data_parts))
+        std::lock_guard<std::mutex> lock(stats_mutex);
+        cached = cached_estimator;
+        cache_generation = cached_estimator_generation;
+    }
+
+    if (cached)
+    {
+        if (!cached->isStale(data_parts))
         {
             LOG_DEBUG(log, "The parts in this storage does not change, will not refresh statistics");
             if (interval_seconds)
@@ -3736,6 +3772,8 @@ try
     }
     LOG_DEBUG(log, "Refreshing statistics");
     ConditionSelectivityEstimatorBuilder estimator_builder(getContext());
+    const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), /*bypass_metadata_cache=*/false);
+    estimator_builder.setCardinalityPolicy(metadata_snapshot, (*getSettings())[MergeTreeSetting::auto_statistics_assume_floats_distinct]);
     for (const DataPartPtr & data_part : data_parts)
     {
         if (refresh_stats_cancelled)
@@ -3747,7 +3785,10 @@ try
             estimator_builder.addStatistics(column_name, stat);
     }
     std::lock_guard<std::mutex> lock(stats_mutex);
-    cached_estimator = estimator_builder.getEstimator();
+    /// Otherwise the cache was dropped while building, and the estimator may apply the old cardinality policy.
+    /// The cache stays empty until the next refresh.
+    if (cache_generation == cached_estimator_generation)
+        cached_estimator = estimator_builder.getEstimator();
     if (interval_seconds)
         refresh_stats_task->scheduleAfter(interval_seconds * 1000);
 }
@@ -6096,8 +6137,8 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         }
     }
 
-    auto [auto_statistics_types, statistics_changed] = getNewImplicitStatisticsTypes(new_metadata, *settings_from_storage);
-    addImplicitStatistics(new_metadata.columns, auto_statistics_types);
+    auto implicit_statistics = getNewImplicitStatisticsSettings(new_metadata, *settings_from_storage);
+    addImplicitStatistics(new_metadata.columns, implicit_statistics.types, implicit_statistics.assume_floats_distinct);
 
     /// Statistics of a column that is not physically stored can never be built: the column is absent
     /// from every written block. Only the state after all commands can decide, because one command can
@@ -7261,6 +7302,9 @@ void MergeTreeData::changeSettings(
         UInt64 has_refresh_statistics_interval_changed
             = (*storage_settings.get())[MergeTreeSetting::refresh_statistics_interval].totalSeconds() != (*copy)[MergeTreeSetting::refresh_statistics_interval].totalSeconds();
 
+        bool has_assume_floats_distinct_changed = (*storage_settings.get())[MergeTreeSetting::auto_statistics_assume_floats_distinct]
+            != (*copy)[MergeTreeSetting::auto_statistics_assume_floats_distinct];
+
         storage_settings.set(std::move(copy));
 
         /// Route the new `StorageInMemoryMetadata` clone (and the deeper clone produced by
@@ -7285,6 +7329,10 @@ void MergeTreeData::changeSettings(
         if (has_storage_policy_changed)
             startBackgroundMovesIfNeeded();
 
+        /// The cached estimator was built with the old cardinality policy.
+        if (has_assume_floats_distinct_changed)
+            resetStatisticsCache();
+
         if (has_refresh_statistics_interval_changed)
         {
             startStatisticsCache();
@@ -7292,22 +7340,38 @@ void MergeTreeData::changeSettings(
     }
 }
 
-std::pair<String, bool> MergeTreeData::getNewImplicitStatisticsTypes(const StorageInMemoryMetadata & new_metadata, const MergeTreeSettings & old_settings) const
+MergeTreeData::ImplicitStatisticsSettings MergeTreeData::getNewImplicitStatisticsSettings(const StorageInMemoryMetadata & new_metadata, const MergeTreeSettings & old_settings) const
 {
     if (getStorageID().database_name == DatabaseCatalog::SYSTEM_DATABASE)
-        return {"", false};
+        return {};
+
+    ImplicitStatisticsSettings result;
+    const auto default_settings = getDefaultSettings();
 
     Field new_statistics_types = new_metadata.getSettingChange("auto_statistics_types");
-
     if (new_statistics_types.isNull())
     {
         /// Not set in the table definition, either never or since a reset: the engine default applies.
-        String default_types = (*getDefaultSettings())[MergeTreeSetting::auto_statistics_types];
-        String old_types = old_settings[MergeTreeSetting::auto_statistics_types];
-        return std::make_pair(default_types, default_types != old_types);
+        result.types = (*default_settings)[MergeTreeSetting::auto_statistics_types];
+        result.changed = result.types != old_settings[MergeTreeSetting::auto_statistics_types].value;
+    }
+    else
+    {
+        result.types = new_statistics_types.safeGet<String>();
+        result.changed = true;
     }
 
-    return std::make_pair(new_statistics_types.safeGet<String>(), true);
+    /// The same for the setting that leaves out implicit uniq statistics for Float columns.
+    Field new_assume_floats_distinct = new_metadata.getSettingChange("auto_statistics_assume_floats_distinct");
+    if (new_assume_floats_distinct.isNull())
+        result.assume_floats_distinct = (*default_settings)[MergeTreeSetting::auto_statistics_assume_floats_distinct];
+    else
+        result.assume_floats_distinct = SettingFieldBool{new_assume_floats_distinct}.value;
+    result.assume_floats_distinct_changed
+        = result.assume_floats_distinct != old_settings[MergeTreeSetting::auto_statistics_assume_floats_distinct];
+    result.changed |= result.assume_floats_distinct_changed;
+
+    return result;
 }
 
 void MergeTreeData::PartsTemporaryRename::addPart(const String & part_name, const String & old_dir, const String & new_dir, const DiskPtr & disk)

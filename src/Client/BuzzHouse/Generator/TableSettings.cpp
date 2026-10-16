@@ -90,6 +90,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
          [](RandomGenerator & rg, FuzzConfig &) { return settingCombinations(rg, {"tdigest", "countmin", "uniq", "basic"}); },
          {"'tdigest'", "'countmin'", "'uniq'", "'basic'"},
          false)},
+    {"auto_statistics_assume_floats_distinct", trueOrFalseSetting},
     {"background_task_preferred_step_execution_time_ms", highRangeSetting},
     {"cache_populated_by_fetch", trueOrFalseSetting},
     {"check_sample_column_is_correct", trueOrFalseSetting},

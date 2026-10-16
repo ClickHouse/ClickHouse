@@ -1179,7 +1179,21 @@ public:
         AlterLockHolder & table_lock_holder,
         bool run_sanity_checks = true);
 
-    std::pair<String, bool> getNewImplicitStatisticsTypes(const StorageInMemoryMetadata & new_metadata, const MergeTreeSettings & old_settings) const;
+    /// The settings that decide the implicit statistics of the columns, see `addImplicitStatistics`.
+    struct ImplicitStatisticsSettings
+    {
+        /// `auto_statistics_types`
+        String types;
+        /// `auto_statistics_assume_floats_distinct`
+        bool assume_floats_distinct = false;
+        /// Whether `assume_floats_distinct` differs from `old_settings`. It changes the cardinality policy
+        /// of the statistics cache, see `resetStatisticsCache`.
+        bool assume_floats_distinct_changed = false;
+        /// Whether the implicit statistics may differ from the ones derived from `old_settings`,
+        /// i.e. whether the in-memory metadata has to be updated on a settings `ALTER`.
+        bool changed = false;
+    };
+    ImplicitStatisticsSettings getNewImplicitStatisticsSettings(const StorageInMemoryMetadata & new_metadata, const MergeTreeSettings & old_settings) const;
     static void verifySortingKey(const KeyDescription & sorting_key);
 
     /// True iff the resolved sorting key (column list or data types) differs between two metadata snapshots.
@@ -2277,6 +2291,16 @@ protected:
 
     mutable std::mutex stats_mutex;
     ConditionSelectivityEstimatorPtr cached_estimator;
+    /// Incremented by `resetStatisticsCache`, so that `refreshStatistics` doesn't publish an estimator it
+    /// started to build before the reset.
+    UInt64 cached_estimator_generation TSA_GUARDED_BY(stats_mutex) = 0;
+
+    /// Drops `cached_estimator`. The cached estimator applies the cardinality policy that was in effect when
+    /// it was built (see `ConditionSelectivityEstimatorBuilder::setCardinalityPolicy`), and `isStale` only
+    /// compares parts, so it has to be dropped when the inputs of that policy change: the setting
+    /// `auto_statistics_assume_floats_distinct` or the statistics declared for the columns. Until the next
+    /// refresh, queries load the statistics of the parts they read.
+    void resetStatisticsCache();
 
     void startStatisticsCache();
     /// Deactivates the statistics refresh task and prevents any later `startStatisticsCache` from arming it.

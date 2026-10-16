@@ -114,7 +114,12 @@ struct Estimate
 {
     std::set<StatisticsType> types;
     UInt64 rows_count = 0;
+    /// Cardinality measured by a uniq sketch. Unset when the column has no sketch.
     std::optional<UInt64> estimated_cardinality;
+    /// Cardinality assumed for a column type whose values are assumed to be distinct
+    /// (`ColumnStatistics::estimateAssumedDistinctCardinality`). Only depends on the column type,
+    /// whether the policy applies is decided by the owner (see `shouldAssumeAllDistinct`).
+    std::optional<UInt64> estimated_assumed_cardinality;
     std::optional<Field> estimated_min;
     std::optional<Field> estimated_max;
     std::optional<UInt64> estimated_null_count;
@@ -147,11 +152,36 @@ public:
     /// True iff loaded statistics include a source of numeric min/max values
     /// (`MinMax`, or `Basic` on a numeric/temporal column).
     bool hasMinMax() const;
-    /// True iff `estimateCardinality` is backed by a uniq sketch. When it is not, that method returns a
-    /// fixed fraction of the row count, which callers dividing by the cardinality must not mistake for
-    /// a measurement.
+    /// Where the cardinality returned by `estimateCardinality` comes from.
+    enum class CardinalitySource : uint8_t
+    {
+        /// A `uniq` / `uniq_v2` sketch.
+        Sketch,
+        /// No sketch, but the owner enabled `setAssumeAllDistinct` and the column type qualifies
+        /// (`canAssumeAllDistinctByType`): all non-NULL values are assumed to be distinct, capped using `Basic`.
+        AssumedDistinct,
+        /// Neither: `estimateCardinality` returns a fixed fraction of the row count.
+        Unknown,
+    };
+    CardinalitySource getCardinalitySource() const;
+
+    /// True iff `estimateCardinality` is backed by a uniq sketch. When it is not, that method returns
+    /// either an assumed cardinality or a fixed fraction of the row count, which callers dividing by
+    /// the cardinality must not mistake for a measurement.
     bool hasCardinality() const;
+    /// The cardinality from a sketch, or the assumed cardinality (`CardinalitySource::AssumedDistinct`),
+    /// otherwise a fixed fraction of the row count.
     UInt64 estimateCardinality() const;
+    /// Like `estimateCardinality`, but returns std::nullopt instead of the fixed fraction of the row count.
+    std::optional<UInt64> tryEstimateCardinality() const;
+    /// The cardinality assumed if all non-NULL values are distinct: the non-NULL row count, capped
+    /// using `Basic` (rows equal to the type default count as one value, `min == max` means one value).
+    /// Returns std::nullopt if the column has a sketch or its type doesn't qualify. Ignores
+    /// `setAssumeAllDistinct`, i.e. the caller decides whether the assumption applies.
+    std::optional<UInt64> estimateAssumedDistinctCardinality() const;
+    /// Set by owners that know the policy (the table metadata and settings, see `shouldAssumeAllDistinct`).
+    /// Off by default, so statistics built for writing, merging and mutating parts are unaffected.
+    void setAssumeAllDistinct(bool value) { assume_all_distinct = value; }
     UInt64 estimateDefaults() const;
 
     /// `null_count / rows` when `Basic` statistics are present; otherwise a default factor.
@@ -177,6 +207,7 @@ private:
     ColumnStatisticsDescription stats_desc;
     StatsMap stats;
     UInt64 rows = 0; /// the number of rows in the column
+    bool assume_all_distinct = false; /// see `setAssumeAllDistinct`
 };
 
 class ColumnsStatistics : public std::map<String, ColumnStatisticsPtr>
@@ -237,7 +268,24 @@ private:
 };
 
 void removeImplicitStatistics(ColumnsDescription & columns);
-void addImplicitStatistics(ColumnsDescription & columns, const String & statistics_types_str);
+/// Adds the statistics types listed in `statistics_types_str` (the `auto_statistics_types` setting) as
+/// implicit statistics to every suitable column. If `assume_floats_distinct` is set, implicit `uniq` and
+/// `uniq_v2` are left out for the column types accepted by `canAssumeAllDistinctByType`; explicit
+/// statistics are never removed.
+void addImplicitStatistics(ColumnsDescription & columns, const String & statistics_types_str, bool assume_floats_distinct);
+
+/// True for `Float32` / `Float64`, also inside `Nullable`. False for `BFloat16` (at most 65536 distinct
+/// values) and for `LowCardinality(...)` (the dictionary makes a sketch cheap and hints at few distinct values).
+/// Values of such columns are almost always distinct, so no implicit uniq sketch is built for them, and the
+/// optimizer assumes that their non-NULL values are distinct (see `shouldAssumeAllDistinct`).
+bool canAssumeAllDistinctByType(const DataTypePtr & type);
+
+/// Whether the optimizer assumes that all non-NULL values of `column` are distinct when a part has no
+/// uniq sketch for it. Policy shared by the estimator builder and `system.parts_columns`: the setting
+/// `auto_statistics_assume_floats_distinct` is on, the type is accepted by `canAssumeAllDistinctByType`, and
+/// the metadata declares no `uniq` / `uniq_v2` for the column. A declared `uniq` that a part lacks means the
+/// part has not been materialized yet (or the setting is off, so the implicit `uniq` is declared).
+bool shouldAssumeAllDistinct(const ColumnDescription & column, bool assume_floats_distinct_setting);
 
 /// Whether statistics record the exact minimum and maximum of a column of this type. Only
 /// numeric-like columns are tracked, and by both statistics types that store min/max: `minmax`
