@@ -1,0 +1,11 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <query>SELECT sumDistinct(number % 4096) FROM numbers(30000000) FORMAT Null</query>
+    <query>SELECT sumDistinct(number % 262144) FROM numbers(30000000) FORMAT Null</query>
+    <query>SELECT sumDistinct(intHash64(number) % 1048576) FROM numbers(30000000) FORMAT Null</query>
+    <query>SELECT sumDistinct(toUInt32(number % 4096)) FROM numbers(30000000) FORMAT Null</query>
+    <query>SELECT sumDistinct(toInt128(number % 4096)) FROM numbers(30000000) FORMAT Null</query>
+</test>
