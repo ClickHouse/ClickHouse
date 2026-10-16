@@ -19,6 +19,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTViewTargets.h>
 #include <Parsers/FieldFromAST.h>
+#include <Parsers/QueryParameterVisitor.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Analyzer/Utils.h>
 #include <Common/SettingsChanges.h>
@@ -139,6 +140,8 @@ void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
 
 void ReplaceQueryParameterVisitor::visitChildren(ASTPtr & ast)
 {
+    forEachQueryParameterMemberOutsideChildren(*ast, [&](ASTPtr & member) { visit(member); });
+
     for (auto & child : ast->children)
     {
         IAST * old_ptr = child.get();
@@ -274,11 +277,16 @@ void ReplaceQueryParameterVisitor::visitSettingsChanges(SettingsChanges & change
             continue;
 
         const auto & ast = dynamic_cast<const FieldFromASTImpl &>(custom.getImpl()).ast;
-        const auto * param = ast->as<ASTQueryParameter>();
-        if (!param)
-            continue; /// Some other AST-valued setting, e.g. `disk = disk(...)`; leave it untouched.
+        if (const auto * param = ast->as<ASTQueryParameter>())
+        {
+            change.value = resolveParameterValueAsField(param->name, param->type);
+            continue;
+        }
 
-        change.value = resolveParameterValueAsField(param->name, param->type);
+        /// E.g. `disk = disk(...)`. The AST is shared with every copy of the change, so substitute in a clone.
+        ASTPtr value = ast->clone();
+        visit(value);
+        change.value = createFieldFromAST(value);
     }
 }
 

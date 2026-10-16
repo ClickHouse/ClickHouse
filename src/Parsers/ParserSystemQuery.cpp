@@ -954,7 +954,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             }
 
             ParserToken s_dot(TokenType::Dot);
-            ParserIdentifier table_parser(true);
+            ParserIdentifier table_parser;
 
             do
             {
