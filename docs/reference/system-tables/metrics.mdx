@@ -1178,6 +1178,10 @@ Total number of currently allocated (approved) bytes for memory reservations
 
 Total number of outstanding increase request bytes for memory reservations
 
+### MemoryReservationReclaimable {#memoryreservationreclaimable}
+
+Total number of reclaimable memory
+
 ### MemoryTracking {#memorytracking}
 
 Total amount of memory (bytes) tracked by the server. By default the background memory worker corrects this value on every tick from an external measurement of the memory the process really uses (see the `memory_worker_correct_memory_tracker` server setting), so it follows the measured usage rather than a plain count of allocations. See `MemoryTrackingUncorrected` for the value with no corrections applied.
