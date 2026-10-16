@@ -322,12 +322,6 @@ ALWAYS_INLINE inline void writeEightFixedDigits(char * p, uint32_t z)
     auto f6 = (f4 & mask32) * 100;
     outTwoDigits(p + 6, static_cast<uint8_t>(f6 >> 32));
 }
-
-ALWAYS_INLINE inline char * writeLeadingMinus(char * pos)
-{
-    *pos = '-';
-    return pos + 1;
-}
 }
 
 /// ----------------------------------------------------------------------------------------------------
@@ -698,6 +692,31 @@ ALWAYS_INLINE inline UInt8x32 chunksInReadingOrder(UInt8x32 text)
         return text;
 }
 
+/// Exactly 16 digits of `value` below 10^16, with leading zeros.
+ALWAYS_INLINE inline void writeSixteenDigits(UInt64 value, char * p)
+{
+    UInt8x16 text = lowHalf(chunksInReadingOrder(textOfTwo(value, 0)));
+    memcpy(p, &text, 16);
+}
+
+/// Exactly 32 digits: those of `head` then those of `tail`, both below 10^16, with leading zeros.
+ALWAYS_INLINE inline void writeThirtyTwoDigits(UInt64 head, UInt64 tail, char * p)
+{
+    UInt8x32 text = chunksInReadingOrder(textOfTwo(head, tail));
+    memcpy(p, &text, 32);
+}
+
+/// `head` without leading zeros, then the 16 digits of `tail`, both below 10^16, converted in the two halves of one vector.
+ALWAYS_INLINE inline char * writeHeadAndSixteenDigits(UInt64 head, UInt64 tail, char * p)
+{
+    UInt32 length = digitCount(head);
+    UInt8x32 text = textOfTwo(head, tail);
+    writeLastDigits(lowHalf(text), length, uint64_tables.chunk_order, p);
+    UInt8x16 tail_text = highHalf(chunksInReadingOrder(text));
+    memcpy(p + length, &tail_text, 16);
+    return p + length + 16;
+}
+
 /// Most values are small, and the 32-bit code is faster for them. The rest is out of line, so that the callers of this
 /// function do not get both bodies.
 ALWAYS_INLINE inline char * writeUInt64Text(UInt64 value, char * p)
@@ -723,7 +742,149 @@ char * itoa(Int64 i, char * p)
 
 /// ----------------------------------------------------------------------------------------------------
 /// 128 and 256 bits
-/// They share the signed path and the division by 10^18.
+/// They share the chunks of 16 digits.
+/// ----------------------------------------------------------------------------------------------------
+
+namespace
+{
+/// As zmij does: 16 digits at a time. `value` is at least 2^64, so the part above the last 16 digits is at least 1844.
+NO_INLINE char * writeLargeUInt128Text(unsigned __int128 value, char * p)
+{
+    constexpr UInt64 ten_to_16 = 10000000000000000ULL;
+    unsigned __int128 high = value / ten_to_16;
+    /// In 64 bits: the remainder is below 10^16, and the high half of the product is not needed.
+    UInt64 low = static_cast<UInt64>(value) - static_cast<UInt64>(high) * ten_to_16;
+    if (likely(high < ten_to_16))
+        return writeHeadAndSixteenDigits(static_cast<UInt64>(high), low, p);
+
+    /// `high` is below 2^75, and 10^16 is 2^16 * 5^16: the division by 5^16 of `high / 2^16` is a 64-bit one.
+    UInt32 top = static_cast<UInt32>(static_cast<UInt64>(high >> 16) / 152587890625ULL);
+    UInt64 middle = static_cast<UInt64>(high) - top * ten_to_16;
+    p = writeUInt32Text(top, p);
+    writeThirtyTwoDigits(middle, low, p);
+    return p + 32;
+}
+
+ALWAYS_INLINE inline char * writeUInt128Text(unsigned __int128 value, char * p)
+{
+    /// Most values fit in 64 bits.
+    if (likely(value >> 64 == 0))
+        return writeUInt64Text(static_cast<UInt64>(value), p);
+    return writeLargeUInt128Text(value, p);
+}
+
+constexpr unsigned __int128 ten_to_32 = static_cast<unsigned __int128>(10000000000000000ULL) * 10000000000000000ULL;
+
+/// `high` and `low` divided by 10^32, as for 128 bits: the product by ceil(2^362 / 10^32), from bit 362, which is exact
+/// for every 256-bit value. Clang divides 256 bits by a constant with a loop over the bits.
+ALWAYS_INLINE inline void divideByTenToThirtyTwo(unsigned __int128 high, unsigned __int128 low, unsigned __int128 & quotient_high, unsigned __int128 & quotient_low)
+{
+    constexpr UInt64 reciprocal[4] = {0x59e338e387ad8e29ULL, 0x0b5b1aa028ccd99eULL, 0x67de18eda5814af2ULL, 0xcfb11ead453994baULL};
+    const UInt64 value[4] = {static_cast<UInt64>(low), static_cast<UInt64>(low >> 64), static_cast<UInt64>(high), static_cast<UInt64>(high >> 64)};
+    UInt64 product[8] = {};
+    for (size_t i = 0; i < 4; ++i)
+    {
+        UInt64 carry = 0;
+        for (size_t j = 0; j < 4; ++j)
+        {
+            unsigned __int128 term = static_cast<unsigned __int128>(value[i]) * reciprocal[j] + product[i + j] + carry;
+            product[i + j] = static_cast<UInt64>(term);
+            carry = static_cast<UInt64>(term >> 64);
+        }
+        product[i + 4] = carry;
+    }
+    quotient_high = product[7] >> 42;
+    quotient_low = (static_cast<unsigned __int128>(product[7]) << 86) | (static_cast<unsigned __int128>(product[6]) << 22) | (product[5] >> 42);
+}
+
+/// The value in `high` and `low` is at least 2^128. One division by 10^32 leaves a remainder of 32 digits and a quotient
+/// below 2^150. When the quotient does not fit in 128 bits, a second division by 10^32 splits it into at most 14 digits
+/// and 32 more.
+NO_INLINE char * writeLargeUInt256Text(unsigned __int128 high, unsigned __int128 low, char * p)
+{
+    unsigned __int128 quotient_high;
+    unsigned __int128 quotient_low;
+    divideByTenToThirtyTwo(high, low, quotient_high, quotient_low);
+
+    /// In 128 bits: the remainder is below 10^32, and the high half of the product is not needed.
+    unsigned __int128 rest = low - quotient_low * ten_to_32;
+    constexpr UInt64 ten_to_16 = 10000000000000000ULL;
+    UInt64 middle = static_cast<UInt64>(rest / ten_to_16);
+    UInt64 last = static_cast<UInt64>(rest) - middle * ten_to_16;
+
+    if (quotient_high == 0)
+    {
+        p = writeUInt128Text(quotient_low, p);
+        writeThirtyTwoDigits(middle, last, p);
+        return p + 32;
+    }
+
+    /// The quotient is below 2^150, and 10^32 is 2^32 * 5^32: the division by 5^32 of the quotient / 2^32 is one of
+    /// 128 bits.
+    unsigned __int128 quotient = (quotient_high << 96) | (quotient_low >> 32);
+    constexpr unsigned __int128 five_to_32 = static_cast<unsigned __int128>(152587890625ULL) * 152587890625ULL;
+    UInt64 top = static_cast<UInt64>(quotient / five_to_32);
+    unsigned __int128 next = quotient_low - top * ten_to_32;
+    UInt64 second = static_cast<UInt64>(next / ten_to_16);
+    UInt64 third = static_cast<UInt64>(next) - second * ten_to_16;
+
+    p = writeHeadAndSixteenDigits(top, second, p);
+    writeThirtyTwoDigits(third, middle, p);
+    writeSixteenDigits(last, p + 32);
+    return p + 48;
+}
+
+}
+
+char * itoa(UInt128 i, char * p)
+{
+    return writeUInt128Text(
+        (static_cast<unsigned __int128>(i.items[UInt128::_impl::little(1)]) << 64) | i.items[UInt128::_impl::little(0)], p);
+}
+
+char * itoa(Int128 i, char * p)
+{
+    unsigned __int128 value = (static_cast<unsigned __int128>(static_cast<UInt64>(i.items[Int128::_impl::little(1)])) << 64)
+        | static_cast<UInt64>(i.items[Int128::_impl::little(0)]);
+    unsigned __int128 sign = static_cast<unsigned __int128>(static_cast<__int128>(value) >> 127);
+    *p = '-';
+    /// As for `Int32`.
+    value = (value ^ sign) - sign;
+    p += static_cast<UInt64>(sign) & 1;
+    return writeUInt128Text(value, p);
+}
+
+char * itoa(const UInt256 & i, char * p)
+{
+    unsigned __int128 high = (static_cast<unsigned __int128>(i.items[UInt256::_impl::little(3)]) << 64)
+        | i.items[UInt256::_impl::little(2)];
+    unsigned __int128 low = (static_cast<unsigned __int128>(i.items[UInt256::_impl::little(1)]) << 64)
+        | i.items[UInt256::_impl::little(0)];
+    /// Most values fit in 128 bits.
+    if (likely(high == 0))
+        return writeUInt128Text(low, p);
+    return writeLargeUInt256Text(high, low, p);
+}
+
+char * itoa(const Int256 & i, char * p)
+{
+    unsigned __int128 high = (static_cast<unsigned __int128>(static_cast<UInt64>(i.items[Int256::_impl::little(3)])) << 64)
+        | static_cast<UInt64>(i.items[Int256::_impl::little(2)]);
+    unsigned __int128 low = (static_cast<unsigned __int128>(static_cast<UInt64>(i.items[Int256::_impl::little(1)])) << 64)
+        | static_cast<UInt64>(i.items[Int256::_impl::little(0)]);
+    unsigned __int128 sign = static_cast<unsigned __int128>(static_cast<__int128>(high) >> 127);
+    *p = '-';
+    p += static_cast<UInt64>(sign) & 1;
+    /// As for `Int32`, in two halves: the negation of the low half carries into the high one when the low half is 0.
+    high = (high ^ sign) + (sign & (low == 0));
+    low = (low ^ sign) - sign;
+    if (likely(high == 0))
+        return writeUInt128Text(low, p);
+    return writeLargeUInt256Text(high, low, p);
+}
+
+/// ----------------------------------------------------------------------------------------------------
+/// `writeFixedDigits`: the fractional part of `Decimal`
 /// ----------------------------------------------------------------------------------------------------
 
 namespace
@@ -796,189 +957,6 @@ ALWAYS_INLINE inline uint64_t divmod_1e18(UInt256 & value)
     return remainder;
 }
 
-/// Divides a 256-bit unsigned integer by 10^18, one limb per step. Returns the quotient and stores
-/// the remainder in `remainder`.
-///
-/// Every step is a 128 / 64 division by a constant, which `divmod_1e18` does with multiplications
-/// only. The quotient of a step fits in a limb because the remainder carried in from the previous
-/// step is below 10^18.
-///
-/// This is why the digit blocks are not stripped off with _BitInt(256) division: for that the
-/// compiler emits a generic bignum sequence, while here the divisor is a known constant spanning a
-/// single limb. It also produces the quotient and the remainder at once, so a block costs one
-/// division instead of two.
-ALWAYS_INLINE inline UInt256 divmod_1e18_256(UInt256 x, uint64_t & remainder)
-{
-    UInt256 quotient{};
-    uint64_t r = 0;
-    for (int i = 3; i >= 0; --i)
-    {
-        const unsigned __int128 current = (static_cast<unsigned __int128>(r) << 64) | x.items[UInt256::_impl::little(i)];
-        quotient.items[UInt256::_impl::little(i)] = static_cast<uint64_t>(divmod_1e18(current, r));
-    }
-    remainder = r;
-    return quotient;
-}
-
-/// Extract up to 9 digit pairs from a u64 value into the provided output buffer.
-ALWAYS_INLINE inline void extractDigitPairs(uint64_t remainder, uint8_t * two_values)
-{
-    for (int i = 0; i < 9; ++i)
-    {
-        two_values[i] = uint8_t(remainder % 100);
-        remainder /= 100;
-    }
-}
-
-/// Write `count` digit pairs from `two_values` (in reverse order) to the output buffer.
-ALWAYS_INLINE inline char * writeDigitPairs(char * p, const uint8_t * two_values, int count)
-{
-    for (int i = count - 1; i >= 0; --i)
-    {
-        outTwoDigits(p, two_values[i]);
-        p += 2;
-    }
-    return p;
-}
-
-/// As zmij does: 16 digits at a time. `value` is at least 2^64, so the part above the last 16 digits is at least 1844.
-NO_INLINE char * writeLargeUInt128Text(unsigned __int128 value, char * p)
-{
-    constexpr UInt64 ten_to_16 = 10000000000000000ULL;
-    unsigned __int128 high = value / ten_to_16;
-    /// In 64 bits: the remainder is below 10^16, and the high half of the product is not needed.
-    UInt64 low = static_cast<UInt64>(value) - static_cast<UInt64>(high) * ten_to_16;
-    if (likely(high < ten_to_16))
-    {
-        /// The head without leading zeros at `p`, the 16 digits of `low` right after it.
-        UInt32 length = digitCount(static_cast<UInt64>(high));
-        UInt8x32 text = textOfTwo(static_cast<UInt64>(high), low);
-        writeLastDigits(lowHalf(text), length, uint64_tables.chunk_order, p);
-        UInt8x16 tail_text = highHalf(chunksInReadingOrder(text));
-        memcpy(p + length, &tail_text, 16);
-        return p + length + 16;
-    }
-
-    /// `high` is below 2^75, and 10^16 is 2^16 * 5^16: the division by 5^16 of `high / 2^16` is a 64-bit one.
-    UInt32 top = static_cast<UInt32>(static_cast<UInt64>(high >> 16) / 152587890625ULL);
-    UInt64 middle = static_cast<UInt64>(high) - top * ten_to_16;
-    p = writeUInt32Text(top, p);
-    UInt8x32 text = textOfTwo(middle, low);
-    text = chunksInReadingOrder(text);
-    memcpy(p, &text, 32);
-    return p + 32;
-}
-
-ALWAYS_INLINE inline char * writeUIntText(UInt128 x, char * p)
-{
-    /// Most values fit in 64 bits.
-    if (likely(x.items[UInt128::_impl::little(1)] == 0))
-        return writeUInt64Text(x.items[UInt128::_impl::little(0)], p);
-    return writeLargeUInt128Text(
-        (static_cast<unsigned __int128>(x.items[UInt128::_impl::little(1)]) << 64) | x.items[UInt128::_impl::little(0)], p);
-}
-
-/// Only values above the 128-bit range reach here. Out of line so the digit buffer, and the
-/// `-fstack-protector-strong` canary that any local array forces, stay off the common path.
-NO_INLINE char * writeUIntTextAbove128(const UInt256 & _x, char * p)
-{
-    /// Similar to writeUIntText(UInt128) only that in this case we will stop as soon as we reach the largest u128
-    /// and switch to that function.
-    uint8_t two_values[39] = {0}; // 78 Max characters / 2
-    int current_pos = 0;
-
-    UInt256 x = _x;
-    /// The loop condition is `x > std::numeric_limits<UInt128>::max()`, spelled out on the limbs
-    /// to avoid a full 256-bit comparison.
-    while (x.items[UInt256::_impl::little(3)] != 0 || x.items[UInt256::_impl::little(2)] != 0)
-    {
-        uint64_t block = 0;
-        x = divmod_1e18_256(x, block);
-        extractDigitPairs(block, two_values + current_pos);
-        current_pos += 9;
-    }
-
-    UInt128 pending{x.items[UInt256::_impl::little(0)], x.items[UInt256::_impl::little(1)]};
-
-    char * out = writeUIntText(pending, p);
-    return writeDigitPairs(out, two_values, current_pos);
-}
-
-/// By reference: by value a 256-bit integer is a `byval` aggregate holding an array, and that alone
-/// puts a `-fstack-protector-strong` canary on the function.
-ALWAYS_INLINE inline char * writeUIntText(const UInt256 & _x, char * p)
-{
-    /// If possible, treat it as a smaller integer as they are much faster to print
-    if (likely(_x.items[UInt256::_impl::little(3)] == 0 && _x.items[UInt256::_impl::little(2)] == 0))
-        return writeUIntText(UInt128{_x.items[UInt256::_impl::little(0)], _x.items[UInt256::_impl::little(1)]}, p);
-
-    return writeUIntTextAbove128(_x, p);
-}
-
-/// Out of line: everything but the fast path needs a 256-bit local, which holds an array and so gets a
-/// `-fstack-protector-strong` canary.
-NO_INLINE char * writeSInt256TextSlow(const Int256 & x, char * pos)
-{
-    if (x < 0)
-        return writeUIntText(UInt256(-x), writeLeadingMinus(pos));
-
-    return writeUIntText(UInt256(x), pos);
-}
-
-ALWAYS_INLINE inline char * writeSIntText(const Int256 & x, char * pos)
-{
-    constexpr Int256 min_int = UInt256(1) << 255;
-    if (unlikely(x == min_int))
-    {
-        const char * res = "-57896044618658097711785492504343953926634992332820282019728792003956564819968";
-        memcpy(pos, res, strlen(res)); /// NOLINT(bugprone-not-null-terminated-result)
-        return pos + strlen(res);
-    }
-
-    /// Clear top limbs mean the value fits into 128 bits, the common case. Reading through the
-    /// reference avoids a copy, and a copy would cost a `-fstack-protector-strong` canary.
-    if (likely(x.items[Int256::_impl::little(3)] == 0 && x.items[Int256::_impl::little(2)] == 0))
-        return writeUIntText(UInt128{x.items[Int256::_impl::little(0)], x.items[Int256::_impl::little(1)]}, pos);
-
-    return writeSInt256TextSlow(x, pos);
-}
-}
-
-char * itoa(UInt128 i, char * p)
-{
-    return writeUIntText(i, p);
-}
-
-char * itoa(Int128 i, char * p)
-{
-    unsigned __int128 value = (static_cast<unsigned __int128>(static_cast<UInt64>(i.items[Int128::_impl::little(1)])) << 64)
-        | static_cast<UInt64>(i.items[Int128::_impl::little(0)]);
-    unsigned __int128 sign = static_cast<unsigned __int128>(static_cast<__int128>(value) >> 127);
-    *p = '-';
-    /// As for `Int32`.
-    value = (value ^ sign) - sign;
-    p += static_cast<UInt64>(sign) & 1;
-    if (likely(value >> 64 == 0))
-        return writeUInt64Text(static_cast<UInt64>(value), p);
-    return writeLargeUInt128Text(value, p);
-}
-
-char * itoa(const UInt256 & i, char * p)
-{
-    return writeUIntText(i, p);
-}
-
-char * itoa(const Int256 & i, char * p)
-{
-    return writeSIntText(i, p);
-}
-
-/// ----------------------------------------------------------------------------------------------------
-/// `writeFixedDigits`: the fractional part of `Decimal`
-/// ----------------------------------------------------------------------------------------------------
-
-namespace
-{
 char * writeFixedDigitsPortable(char * p, UInt64 value, UInt32 width)
 {
     UInt32 rest = width;
