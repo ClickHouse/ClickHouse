@@ -498,6 +498,7 @@ public:
             projections = rhs.projections;
             views = rhs.views;
             row_policies = rhs.row_policies;
+            is_hidden_from_user_query_log = rhs.is_hidden_from_user_query_log;
         }
 
         QueryAccessInfo(QueryAccessInfo && rhs) = delete;
@@ -519,6 +520,7 @@ public:
             std::swap(projections, rhs.projections);
             std::swap(views, rhs.views);
             std::swap(row_policies, rhs.row_policies);
+            std::swap(is_hidden_from_user_query_log, rhs.is_hidden_from_user_query_log);
         }
 
         /// To prevent a race between copy-constructor and other uses of this structure.
@@ -530,6 +532,7 @@ public:
         std::set<std::string> projections TSA_GUARDED_BY(mutex){};
         std::set<std::string> views TSA_GUARDED_BY(mutex){};
         std::set<std::string> row_policies TSA_GUARDED_BY(mutex){};
+        bool is_hidden_from_user_query_log TSA_GUARDED_BY(mutex) = false;
     };
     using QueryAccessInfoPtr = std::shared_ptr<QueryAccessInfo>;
 
@@ -1167,6 +1170,7 @@ public:
     void addQueryAccessInfo(const Names & partition_names);
     void addViewAccessInfo(const String & view_name);
     void addUsedRowPolicy(const String & policy_name);
+    void markQueryAccessInfoHiddenFromUserQueryLog();
 
     struct QualifiedProjectionName
     {

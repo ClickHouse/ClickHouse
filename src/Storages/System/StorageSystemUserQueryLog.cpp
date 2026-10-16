@@ -77,6 +77,19 @@ const std::unordered_set<std::string_view> pushable_columns
     "current_database",
 };
 
+/// These fields can identify objects or policies behind a SQL SECURITY DEFINER/NONE view. They are
+/// redacted in the internal source query before any expression in the outer query can inspect them.
+const std::unordered_set<std::string_view> query_access_info_columns
+{
+    "databases",
+    "tables",
+    "columns",
+    "partitions",
+    "projections",
+    "views",
+    "used_row_policies",
+};
+
 /// The functions that may appear in a pushed-down predicate: logical connectives and comparisons.
 /// They never throw depending on the value of an argument row.
 const std::unordered_set<std::string_view> pushable_functions
@@ -192,9 +205,11 @@ public:
         const StorageSnapshotPtr & storage_snapshot_,
         const ContextPtr & context_,
         SharedHeader header_,
-        StorageID log_table_id_)
+        StorageID log_table_id_,
+        bool has_query_access_info_marker_)
         : SourceStepWithFilter(std::move(header_), column_names_, query_info_, storage_snapshot_, context_)
         , log_table_id(std::move(log_table_id_))
+        , has_query_access_info_marker(has_query_access_info_marker_)
     {
         setStepDescription("Read the query log records of the current user");
     }
@@ -207,6 +222,7 @@ private:
     String buildPushedDownConditions() const;
 
     StorageID log_table_id;
+    bool has_query_access_info_marker;
 };
 
 String ReadFromUserQueryLog::buildPushedDownConditions() const
@@ -271,11 +287,18 @@ void ReadFromUserQueryLog::initializePipeline(QueryPipelineBuilder & pipeline, c
     inner_context->applySettingsChanges(settings_changes);
 
     String select_columns;
+    const String hidden_marker = has_query_access_info_marker
+        ? "ifNull(`query_access_info_is_hidden`, toUInt8(1))"
+        : "toUInt8(1)";
     for (const auto & name : requiredSourceColumns())
     {
         if (!select_columns.empty())
             select_columns += ", ";
-        select_columns += backQuoteIfNeed(name);
+        const String quoted_name = backQuoteIfNeed(name);
+        if (query_access_info_columns.contains(name))
+            select_columns += fmt::format("if({} != 0, emptyArrayString(), {}) AS {}", hidden_marker, quoted_name, quoted_name);
+        else
+            select_columns += quoted_name;
     }
 
     /// For queries received from an initiator (e.g. from a distributed query), the initiating user is
@@ -342,6 +365,9 @@ ColumnsDescription StorageSystemUserQueryLog::getColumnsDescription()
     ColumnsDescription res;
     for (auto column : QueryLogElement::getColumnsDescription())
     {
+        if (column.name == "query_access_info_is_hidden")
+            continue;
+
         column.type = recursiveRemoveLowCardinality(column.type);
         res.add(std::move(column));
     }
@@ -428,8 +454,15 @@ void StorageSystemUserQueryLog::read(
     /// Only the vetted subset of the outer predicate is pushed into the internal query (see
     /// `ReadFromUserQueryLog`), keeping efficient partition pruning and point lookups on the backing
     /// table.
+    const auto source_table_metadata = source_table->getInMemoryMetadataPtr(context, false);
     query_plan.addStep(std::make_unique<ReadFromUserQueryLog>(
-        column_names, query_info, storage_snapshot, context, std::move(expected_header), source_table->getStorageID()));
+        column_names,
+        query_info,
+        storage_snapshot,
+        context,
+        std::move(expected_header),
+        source_table->getStorageID(),
+        source_table_metadata->getColumns().has("query_access_info_is_hidden")));
 }
 
 }

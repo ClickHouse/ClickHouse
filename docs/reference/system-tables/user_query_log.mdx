@@ -14,6 +14,8 @@ Shows the current user their own query log records. It reads the query log table
 
 Unlike the query log table itself, `system.user_query_log` can be read without any grants, so users can inspect their own queries without being given access to the queries of others.
 
+For rows marked as crossing an ordinary `SQL SECURITY DEFINER` or `SQL SECURITY NONE` view, `databases`, `tables`, `columns`, `partitions`, `projections`, `views`, and `used_row_policies` are returned as empty arrays. This coarse rule also applies when the user is authorized to inspect the view plan; `system.query_log` retains the complete operator audit metadata. Rows with an unknown marker, including legacy or custom query-log tables without the marker column, are treated as restricted. The marker itself is not exposed by `system.user_query_log`.
+
 This is only supported when the query log is stored locally. If `query_log.engine` is configured as `Distributed` or any other engine that delegates reads to another server, `system.user_query_log` refuses to read from it and throws an exception, because the required access check cannot be enforced across a ClickHouse-protocol server boundary. In that case, disable the table with `query_log.enable_user_query_log = 0`.
 
 **Availability**
