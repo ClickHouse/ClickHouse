@@ -3,6 +3,7 @@
 #include <Common/PODArray_fwd.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/Transforms/finalizeChunk.h>
+#include <Interpreters/SetSpillable.h>
 
 namespace DB
 {
@@ -34,6 +35,7 @@ public:
         bool final_);
 
     String getName() const override { return "TotalsHavingTransform"; }
+    std::span<ISpillable * const> getSpillables() override { return set_spillables.get(); }
 
     OutputPort & getTotalsPort() { return outputs.back(); }
 
@@ -60,6 +62,7 @@ private:
     const ColumnsMask aggregates_mask;
     bool overflow_row;
     ExpressionActionsPtr expression;
+    SetSpillables set_spillables;
     String filter_column_name;
     bool remove_filter;
     TotalsMode totals_mode;
