@@ -1,8 +1,6 @@
 -- Regression test for https://github.com/ClickHouse/ClickHouse/pull/80263
--- `IPv4StringToNum*` / `IPv6StringToNum*` take over the `LowCardinality` execution path themselves
--- (`useDefaultImplementationForLowCardinalityColumns` returns `false`), so they must preserve the
--- `LowCardinality` output contract: a `LowCardinality` argument must return a `LowCardinality` result
--- (as before PR #80263), not a materialized plain result.
+-- `IPv4StringToNum*` / `IPv6StringToNum*` must preserve the `LowCardinality` output contract:
+-- a `LowCardinality` argument must return a `LowCardinality` result, not a materialized plain result.
 
 SELECT 'Types: LowCardinality(String) input';
 SELECT toTypeName(IPv4StringToNum(toLowCardinality('1.2.3.4')));

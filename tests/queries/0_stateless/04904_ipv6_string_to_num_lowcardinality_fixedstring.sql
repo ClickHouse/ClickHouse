@@ -1,7 +1,5 @@
 -- Regression test for https://github.com/ClickHouse/ClickHouse/pull/80263
--- `IPv6StringToNum` accepts `FixedString` arguments, but its `LowCardinality` fast path used to throw
--- `Illegal column type FixedString. Expected String` for a `LowCardinality(FixedString)` dictionary.
--- The fast path now falls back to the regular path, which handles every supported argument type.
+-- `IPv6StringToNum` accepts `FixedString` arguments, including a `LowCardinality(FixedString)` dictionary.
 
 SELECT hex(IPv6StringToNum(toLowCardinality(toFixedString('::1', 3))));
 SELECT hex(IPv6StringToNum(toLowCardinality(toFixedString('2001:0DB8:AC10:FE01:FEED:BABE:CAFE:F00D', 39))));
