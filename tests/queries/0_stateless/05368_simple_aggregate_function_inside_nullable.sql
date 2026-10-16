@@ -27,6 +27,7 @@ SELECT count() FROM t WHERE m IN (40, 50);
 SELECT -1 IN (SELECT m FROM t), 40 IN (SELECT m FROM t);
 SELECT toInt64(40) IN (SELECT m FROM t) SETTINGS transform_null_in = 1;
 SELECT (SELECT max(m) FROM t) AS x, toTypeName(x);
+SELECT (SELECT m FROM t WHERE 0) AS x, toTypeName(x);
 SELECT (SELECT max(i.m) FROM t AS i WHERE i.k = o.k) AS x, toTypeName(x) FROM t AS o;
 SELECT (SELECT n FROM t) AS x, toTypeName(x), (SELECT i.n FROM t AS i WHERE i.k = o.k) AS y, toTypeName(y) FROM t AS o;
 SELECT sumSimpleStateIf(toNullable(number), number > 0) AS x, toTypeName(x), hex(sumSimpleStateIfState(toNullable(number), number > 0)) FROM numbers(3);
@@ -43,3 +44,5 @@ INSERT INTO FUNCTION file(currentDatabase() || '_05368.arrow', 'Arrow', 'a Nulla
 SELECT max(a), toTypeName(any(a)) FROM file(currentDatabase() || '_05368.arrow', 'Arrow', 'a SimpleAggregateFunction(max, Int128)') SETTINGS input_format_null_as_default = 1;
 INSERT INTO FUNCTION file(currentDatabase() || '_05368_composite.arrow', 'Arrow', 'l Array(UInt64), t Tuple(a UInt64, b String), m Map(String, UInt64)') SELECT [1, 2], (1, 'a'), map('a', 1) SETTINGS engine_file_truncate_on_insert = 1;
 SELECT * FROM file(currentDatabase() || '_05368_composite.arrow', 'Arrow', 'l SimpleAggregateFunction(groupArrayArray, Array(UInt64)), t SimpleAggregateFunction(anyLast, Tuple(a UInt64, b String)), m SimpleAggregateFunction(sumMap, Map(String, UInt64))');
+INSERT INTO FUNCTION file(currentDatabase() || '_05368_opaque.arrow', 'Arrow') SELECT CAST(42::Dynamic, 'SimpleAggregateFunction(any, Dynamic)') AS d SETTINGS output_format_arrow_unsupported_types = 'binary', engine_file_truncate_on_insert = 1;
+SELECT hex(CAST(d AS String)), toTypeName(d) FROM file(currentDatabase() || '_05368_opaque.arrow', 'Arrow', 'd SimpleAggregateFunction(any, Dynamic)');
