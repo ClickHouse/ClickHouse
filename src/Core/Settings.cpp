@@ -9330,6 +9330,13 @@ Traverse frozen data (shadow directory) in addition to actual table data when qu
 If all four arguments to `geoDistance`, `greatCircleDistance`, `greatCircleAngle` functions are Float64, return Float64 and use double precision for internal calculations. In previous ClickHouse versions, the functions always returned Float32.
 )", 0, \
         {"24.3", false, true, "Increase the default precision."}) \
+    DECLARE(Bool, function_iceberg_truncate_returns_uint64_on_uint64_argument, true, R"(
+If enabled, `icebergTruncate` returns `UInt64` for a `UInt64` value. If disabled, it returns `Int64` as in previous versions, so results at or above 2^63 come back negative.
+Tables created by a previous version that use `icebergTruncate` of a `UInt64` value (also inside a `Dynamic` column) in a partition key, sorting key, skipping index or projection need this setting disabled (or `compatibility` set to a version before 26.11) in the default profile; otherwise their parts are detached on load or read incorrectly.
+
+During a rolling upgrade, disable it on the upgraded servers for the users under which distributed queries run on them, so that old and upgraded shards compute the same result (an initiator that is not upgraded yet does not forward this setting). After the upgrade, enable it again only on servers without the tables described above.
+)", 0, \
+        {"26.11", false, true, "`icebergTruncate` returns `UInt64` instead of a wrapped `Int64` for a `UInt64` value."}) \
     DECLARE(Bool, allow_get_client_http_header, false, R"(
 Allow to use the function `getClientHTTPHeader` which lets to obtain a value of the current HTTP request's header. It is not enabled by default for security reasons, because some headers, such as `Cookie`, could contain sensitive info. Note that the `X-ClickHouse-*`, `Authentication` and `Authorization` headers are always restricted and cannot be obtained with this function.
 )", 0, \

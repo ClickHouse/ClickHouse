@@ -39,6 +39,7 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
     extern const SettingsBool parsedatetime_parse_without_leading_zeros;
     extern const SettingsBool parsedatetime_e_requires_space_padding;
     extern const SettingsBool function_locate_has_mysql_compatible_argument_order;
+    extern const SettingsBool function_iceberg_truncate_returns_uint64_on_uint64_argument;
     extern const SettingsBool least_greatest_legacy_null_behavior;
     extern const SettingsBool h3togeo_lon_lat_result_order;
     extern const SettingsGeoToH3ArgumentOrder geotoh3_argument_order;
@@ -95,6 +96,8 @@ UInt64 queryConditionCacheSettingsSalt(const Settings & settings)
     hash.update(settings[Setting::parsedatetime_e_requires_space_padding].value);
     /// `locate` swaps its haystack and needle arguments.
     hash.update(settings[Setting::function_locate_has_mysql_compatible_argument_order].value);
+    /// `icebergTruncate` of a `Dynamic` value returns `String` under both values of this setting.
+    hash.update(settings[Setting::function_iceberg_truncate_returns_uint64_on_uint64_argument].value);
     /// `least` / `greatest` propagate or skip NULL arguments.
     hash.update(settings[Setting::least_greatest_legacy_null_behavior].value);
     /// `h3ToGeo` swaps the tuple elements, `geoToH3` swaps the arguments.
