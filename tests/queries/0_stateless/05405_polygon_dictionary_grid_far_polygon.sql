@@ -2,6 +2,8 @@
 
 DROP DICTIONARY IF EXISTS dict_grid_each;
 DROP DICTIONARY IF EXISTS dict_grid_cell;
+DROP DICTIONARY IF EXISTS dict_grid_each_leaf;
+DROP DICTIONARY IF EXISTS dict_grid_cell_leaf;
 DROP TABLE IF EXISTS polygons_grid;
 
 CREATE TABLE polygons_grid (key Array(Array(Array(Tuple(Float64, Float64)))), name String) ENGINE = Memory;
@@ -58,6 +60,19 @@ INSERT INTO polygons_grid VALUES
     ([[[(1e38, 1e38), (3e38, 1e38), (3e38, 3e38), (1e38, 3e38)]]], 'b');
 SYSTEM RELOAD DICTIONARY dict_grid_each; -- { serverError BAD_ARGUMENTS }
 SYSTEM RELOAD DICTIONARY dict_grid_cell; -- { serverError BAD_ARGUMENTS }
+
+-- A grid that is a single leaf does not route points, so it still loads.
+CREATE DICTIONARY dict_grid_each_leaf (key Array(Array(Array(Tuple(Float64, Float64)))), name String)
+PRIMARY KEY key SOURCE(CLICKHOUSE(TABLE 'polygons_grid' DB currentDatabase())) LIFETIME(0) LAYOUT(POLYGON_INDEX_EACH(MAX_DEPTH 0));
+CREATE DICTIONARY dict_grid_cell_leaf (key Array(Array(Array(Tuple(Float64, Float64)))), name String)
+PRIMARY KEY key SOURCE(CLICKHOUSE(TABLE 'polygons_grid' DB currentDatabase())) LIFETIME(0) LAYOUT(POLYGON_INDEX_CELL(MAX_DEPTH 0));
+SYSTEM RELOAD DICTIONARY dict_grid_each_leaf;
+SYSTEM RELOAD DICTIONARY dict_grid_cell_leaf;
+SELECT dictGet('dict_grid_each_leaf', 'name', (2e38, 2e38)), dictGet('dict_grid_each_leaf', 'name', (-2e38, -2e38)),
+    dictHas('dict_grid_each_leaf', (0., 0.)), dictGet('dict_grid_cell_leaf', 'name', (2e38, 2e38)),
+    dictGet('dict_grid_cell_leaf', 'name', (-2e38, -2e38)), dictHas('dict_grid_cell_leaf', (0., 0.));
+DROP DICTIONARY dict_grid_each_leaf;
+DROP DICTIONARY dict_grid_cell_leaf;
 
 -- Sides that fit in Float32 still load.
 TRUNCATE TABLE polygons_grid;

@@ -245,10 +245,6 @@ public:
             k_min_intersections(min_intersections_), k_max_depth(max_depth_), polygons(polygons_)
     {
         setBoundingBox();
-        /// Other points are routed by their position along each side of the bounding box, computed in Float32.
-        if (!hasZeroSide() && (!std::isfinite(max_x - min_x) || !std::isfinite(max_y - min_y)))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "PolygonDictionary polygons are too far apart for a grid index: a side of their bounding box exceeds the Float32 range");
         VectorWithMemoryTracking<size_t> order(polygons.size());
         iota(order.data(), order.size(), size_t(0));
 
@@ -366,6 +362,10 @@ private:
         size_t intersections = possible_ids.size() - covered;
         if (intersections <= k_min_intersections || depth++ == k_max_depth || hasZeroSide())
             return std::make_unique<ReturnCell>(possible_ids, polygons, current_box, covered);
+        /// Points are routed by their position along each side of the bounding box, computed in Float32.
+        if (!std::isfinite(max_x - min_x) || !std::isfinite(max_y - min_y))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "PolygonDictionary polygons are too far apart for a grid index: a side of their bounding box exceeds the Float32 range");
         /// `depth` is now this cell's level, the root's is 1.
         const auto x_bounds = splitSide(current_min_x, current_max_x, min_x, max_x, depth);
         const auto y_bounds = splitSide(current_min_y, current_max_y, min_y, max_y, depth);
