@@ -12,6 +12,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Formats/ParseError.h>
@@ -96,7 +97,11 @@ try
             assert_cast<ColumnFloat64 &>(column).insertValue(pqxx::from_string<double>(value));
             break;
         case ExternalResultDescription::ValueType::vtEnum8:
+            assert_cast<ColumnInt8 &>(column).insertValue(assert_cast<const DataTypeEnum8 &>(*data_type).getValue(value));
+            break;
         case ExternalResultDescription::ValueType::vtEnum16:
+            assert_cast<ColumnInt16 &>(column).insertValue(assert_cast<const DataTypeEnum16 &>(*data_type).getValue(value));
+            break;
         case ExternalResultDescription::ValueType::vtFixedString:
             assert_cast<ColumnFixedString &>(column).insertData(value.data(), value.size());
             break;

@@ -581,7 +581,7 @@ static bool isNullPropagatingFunction(const ActionsDAG::Node & node)
         /// comparisons (the atoms of equi/theta-join predicates)
         "equals", "notEquals", "less", "greater", "lessOrEquals", "greaterOrEquals",
         /// arithmetic that may wrap a column inside a comparison, e.g. `a.x + 1 = b.y`
-        "plus", "minus", "multiply", "divide", "modulo", "negate",
+        "plus", "minus", "multiply", "divide", "divideExact", "modulo", "negate",
         "CAST", "_CAST",
     };
     const auto & name = node.function_base->getName();
