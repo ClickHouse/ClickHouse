@@ -28,7 +28,7 @@ function reserved_for_merge()
 {
     local projection="$1"
     local data_dir
-    data_dir=$(mktemp -d "${CLICKHOUSE_TMP}/05404_merge_memory_reservation_XXXXXX")
+    data_dir=$(mktemp -d "${CLICKHOUSE_TMP}/05407_merge_memory_reservation_XXXXXX")
 
     ${CLICKHOUSE_LOCAL} --path "$data_dir" -q "
         CREATE TABLE t_merge_mem_aggregate_projection (k UInt64, s String ${value_columns}, PROJECTION p (${projection}))

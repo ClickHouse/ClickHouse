@@ -26,7 +26,7 @@ function reserved_for_merge()
 {
     local min_columns_to_activate_adaptive_write_buffer="$1"
     local data_dir
-    data_dir=$(mktemp -d "${CLICKHOUSE_TMP}/05403_merge_memory_reservation_XXXXXX")
+    data_dir=$(mktemp -d "${CLICKHOUSE_TMP}/05406_merge_memory_reservation_XXXXXX")
 
     ${CLICKHOUSE_LOCAL} --path "$data_dir" -q "
         CREATE TABLE t_merge_mem_vertical_adaptive (k UInt64, t ${tuple_type} ${scalar_columns})
