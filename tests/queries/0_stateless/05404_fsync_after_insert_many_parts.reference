@@ -1,3 +1,9 @@
 100000	4999950000	4999950000
-1
-1	1
+100000	4999950000	4999950000
+100000	4999950000	4999950000
+t_fsync_many_parts	1
+t_fsync_many_parts_no_defer	1
+t_fsync_many_parts_replicated	1
+t_fsync_many_parts	1	1
+t_fsync_many_parts_no_defer	1	1
+t_fsync_many_parts_replicated	1	1

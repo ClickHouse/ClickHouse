@@ -2,8 +2,6 @@
 #include <Storages/StorageMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/MergeTree/ParallelSyncFiles.h>
-#include <Disks/StoragePolicy.h>
 #include <Interpreters/InsertDeduplication.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/Context.h>
@@ -18,7 +16,6 @@
 #include <base/sleep.h>
 
 #include <exception>
-#include <filesystem>
 #include <memory>
 
 namespace ProfileEvents
@@ -48,7 +45,6 @@ namespace Setting
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsUInt64 non_replicated_deduplication_window;
-    extern const MergeTreeSettingsBool fsync_after_insert;
 }
 
 namespace FailPoints
@@ -86,13 +82,7 @@ MergeTreeSink::MergeTreeSink(
 {
     LOG_TEST(storage.log, "Create MergeTreeSink, deduplicate={}", deduplicate);
 
-    if ((*storage.getSettings())[MergeTreeSetting::fsync_after_insert])
-    {
-        /// The deferred fsync reopens the files by their path on the local filesystem,
-        /// so it is only possible if the files of the parts are stored there as is.
-        const auto disks = storage.getStoragePolicy()->getDisks();
-        defer_fsync = std::ranges::all_of(disks, [](const auto & disk) { return disk->getDataSourceDescription().type == DataSourceType::Local; });
-    }
+    defer_fsync = DeferredPartsSync::isEnabled(storage);
 
     /// It's only allowed to throw "too many parts" before write,
     /// because interrupting long-running INSERT query in the middle is not convenient for users.
@@ -142,34 +132,7 @@ void MergeTreeSink::onFinish()
         return;
 
     finishDelayedChunk();
-    syncDeferredParts(/*only_old=*/ false);
-}
-
-void MergeTreeSink::syncDeferredParts(bool only_old)
-{
-    /// A part committed this long ago was most likely already written back by the OS,
-    /// so syncing it is cheap. It is also much less than `old_parts_lifetime`, so holding the
-    /// parts for this time does not delay the removal of parts that were merged in the meantime.
-    static constexpr auto min_age_to_sync = std::chrono::seconds(30);
-    const auto now = std::chrono::steady_clock::now();
-
-    std::vector<std::string> paths;
-    size_t num_parts = 0;
-    while (!parts_to_sync.empty() && (!only_old || now - parts_to_sync.front().commit_time >= min_age_to_sync))
-    {
-        for (const auto & entry : std::filesystem::recursive_directory_iterator(parts_to_sync.front().part->getDataPartStorage().getFullPath()))
-            if (entry.is_regular_file())
-                paths.push_back(entry.path());
-
-        parts_to_sync.pop_front();
-        ++num_parts;
-    }
-
-    if (num_parts == 0)
-        return;
-
-    LOG_TRACE(storage.log, "Syncing {} files of {} inserted parts", paths.size(), num_parts);
-    parallelSyncPaths(paths);
+    parts_to_sync.syncAll();
 }
 
 void MergeTreeSink::consume(Chunk & chunk)
@@ -359,7 +322,7 @@ void MergeTreeSink::finishDelayedChunk()
             if (conflicts.empty())
             {
                 if (defer_fsync)
-                    parts_to_sync.push_back({part, std::chrono::steady_clock::now()});
+                    parts_to_sync.add(part);
 
                 partition.temp_part->prewarmCaches();
 
@@ -446,7 +409,7 @@ void MergeTreeSink::finishDelayedChunk()
 
     delayed_chunk.reset();
 
-    syncDeferredParts(/*only_old=*/ true);
+    parts_to_sync.syncOld();
 }
 
 MergeTreeTemporaryPartPtr MergeTreeSink::writeNewTempPart(BlockWithPartition & block)

@@ -11,6 +11,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/AsyncBlockIDsCache.h>
 #include <Storages/MergeTree/InsertBlockInfo.h>
+#include <Storages/MergeTree/DeferredPartsSync.h>
 
 
 namespace Poco { class Logger; }
@@ -93,6 +94,10 @@ protected:
 
     /// We can delay processing for previous chunk and start writing a new one.
     std::vector<DelayedPartInPartition> delayed_parts;
+
+    /// See `DeferredPartsSync`.
+    bool defer_fsync = false;
+    DeferredPartsSync parts_to_sync;
 
 
     /// Rename temporary part and commit to ZooKeeper.
