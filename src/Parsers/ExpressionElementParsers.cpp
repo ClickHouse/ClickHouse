@@ -503,7 +503,7 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
 {
     auto element_parser = std::make_unique<ParserIdentifier>(options.allow_query_parameter, options.highlight);
     std::vector<std::pair<ParserPtr, SpecialDelimiter>> delimiter_parsers;
-    /// JSON subcolumn delimiters make no sense in table path, leave them unconsumed
+    /// `allow_json_subcolumns` enables the `.:Type`, `.^path` and `.@path` delimiters; otherwise they stay unconsumed
     if (options.allow_json_subcolumns)
     {
         delimiter_parsers.emplace_back(std::make_unique<ParserTokenSequence>(std::vector<TokenType>{TokenType::Dot, TokenType::Colon}), SpecialDelimiter::JSON_PATH_DYNAMIC_TYPE);

@@ -40,13 +40,13 @@ BlockIO InterpreterUseQuery::execute()
     {
         if (!getContext()->getSettingsRef()[Setting::allow_experimental_table_namespaces])
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Table namespaces are an experimental feature; enable allow_experimental_table_namespaces to use `USE {}`",
-                logical_name);
+                "Table namespaces are an experimental feature; enable allow_experimental_table_namespaces to use USE {}",
+                identifier->formatForErrorMessage());
         /// the session scope is one dotted name, a dotted database part would split differently
         if (identifier->name_parts[0].contains('.'))
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "`USE {}`: the database part of a namespace path cannot contain a dot because the session scope is kept "
-                "as one dotted name; select the database with `USE {}` and qualify tables",
+                "USE {}: the database part of a namespace path cannot contain a dot because the session scope is kept "
+                "as one dotted name; select the database with USE {} and qualify tables",
                 identifier->formatForErrorMessage(), backQuote(identifier->name_parts[0]));
         database_name = identifier->name_parts[0];
     }

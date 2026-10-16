@@ -77,7 +77,7 @@ public:
     struct Options
     {
         bool table_name = false;             /// build `ASTTableIdentifier`, fold `db.ns.t` into (`db`, `ns.t`); implies no JSON subcolumns
-        bool allow_uuid_clause = false;      /// accept a trailing `UUID '...'`
+        bool allow_uuid_clause = false;      /// accept a trailing `UUID '...'`; requires `table_name`
         bool allow_query_parameter = false;
         bool allow_json_subcolumns = true;   /// `.:Type`, `.^path`, `.@path` and `[]` sugar for JSON subcolumns
         Highlight highlight = Highlight::identifier;
@@ -88,6 +88,7 @@ public:
     {
         if (options.table_name)
             options.allow_json_subcolumns = false;
+        options.allow_uuid_clause = options.allow_uuid_clause && options.table_name;
     }
 
     /// legacy spelling: `table_name_with_optional_uuid` means table name, `UUID` clause allowed, no JSON subcolumns

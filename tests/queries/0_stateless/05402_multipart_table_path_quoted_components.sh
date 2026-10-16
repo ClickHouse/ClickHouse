@@ -76,6 +76,11 @@ for s in "${spellings[@]}"; do
     $CLICKHOUSE_CLIENT -q "OPTIMIZE TABLE ${db}.\`ns.t\` FINAL SETTINGS optimize_throw_if_noop = 1"
 done
 
+echo '-- query parameter as the first part of a folded path'
+$CLICKHOUSE_CLIENT --param_d="${db}" -q "EXISTS TABLE {d:Identifier}.ns.t"
+$CLICKHOUSE_CLIENT --param_d="${db}" -q "INSERT INTO {d:Identifier}.ns.t VALUES (5, 0, 0, 0)"
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM ${db}.\`ns.t\` WHERE x = 5"
+
 echo '-- RENAME'
 $CLICKHOUSE_CLIENT -q "RENAME TABLE ${db}.ns.t TO ${db}.ns.t2"
 $CLICKHOUSE_CLIENT -q "EXISTS TABLE ${db}.\`ns.t2\`"

@@ -2238,7 +2238,8 @@ A back-quoted component containing a dot spells the same path as the separate
 parts, exactly as for column names: `` catalog_name.`a.b`.table ``,
 `catalog_name.a.b.table` and `` catalog_name.`a.b.table` `` denote the same
 table. Catalog objects whose native names contain literal dots cannot be told
-apart from nested paths, which is the catalog's own naming convention.
+apart from nested paths, because the catalogs themselves spell nested namespaces
+with dots.
 
 Only `DataLakeCatalog` databases support namespaces: `USE db.namespace` and
 `SHOW TABLES FROM db.namespace` fail with `NOT_IMPLEMENTED` for other database

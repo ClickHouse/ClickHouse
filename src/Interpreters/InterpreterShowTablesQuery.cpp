@@ -54,9 +54,9 @@ CurrentDatabaseInfo InterpreterShowTablesQuery::getFromInfo() const
     {
         if (!getContext()->getSettingsRef()[Setting::allow_experimental_table_namespaces])
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Table namespaces are an experimental feature; enable allow_experimental_table_namespaces to use `{} FROM {}`",
+                "Table namespaces are an experimental feature; enable allow_experimental_table_namespaces to use {} FROM {}",
                 query.dictionaries ? "SHOW DICTIONARIES" : "SHOW TABLES",
-                identifier->name());
+                identifier->formatForErrorMessage());
         String path = doubleQuoteString(identifier->name_parts[0]);
         for (size_t i = 1; i < identifier->name_parts.size(); ++i)
             path += "." + identifier->name_parts[i];

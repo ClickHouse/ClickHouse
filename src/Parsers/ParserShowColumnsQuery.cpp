@@ -1,11 +1,11 @@
 #include <Parsers/ParserShowColumnsQuery.h>
 
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTShowColumnsQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
+#include <Parsers/parseDatabaseAndTableName.h>
 
 
 namespace DB
@@ -14,9 +14,6 @@ namespace DB
 bool ParserShowColumnsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTPtr like;
-    ASTPtr from1;
-    ASTPtr from2;
-
 
     auto query = make_intrusive<ASTShowColumnsQuery>();
 
@@ -32,29 +29,10 @@ bool ParserShowColumnsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     if (!(ParserKeyword(Keyword::COLUMNS).ignore(pos, expected) || ParserKeyword(Keyword::FIELDS).ignore(pos, expected)))
         return false;
 
-    if (ParserKeyword(Keyword::FROM).ignore(pos, expected) || ParserKeyword(Keyword::IN).ignore(pos, expected))
-    {
-        if (!ParserCompoundIdentifier({.table_name = true}).parse(pos, from1, expected))
-            return false;
-    }
-    else
+    if (!(ParserKeyword(Keyword::FROM).ignore(pos, expected) || ParserKeyword(Keyword::IN).ignore(pos, expected)))
         return false;
-
-    const auto * table_id = from1->as<ASTTableIdentifier>();
-    if (!table_id)
+    if (!parseTableNameWithOptionalFromDatabase(pos, expected, query->database, query->table))
         return false;
-    query->table = table_id->shortName();
-    if (table_id->compound())
-    {
-        query->database = table_id->getDatabaseName();
-    }
-    else
-    {
-        if (ParserKeyword(Keyword::FROM).ignore(pos, expected) || ParserKeyword(Keyword::IN).ignore(pos, expected))
-            if (!ParserIdentifier().parse(pos, from2, expected))
-                return false;
-        tryGetIdentifierNameInto(from2, query->database);
-    }
 
     if (ParserKeyword(Keyword::NOT).ignore(pos, expected))
         query->not_like = true;

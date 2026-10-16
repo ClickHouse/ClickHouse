@@ -27,6 +27,9 @@ show create: same
 Code: 236
 Code: 236
 Code: 236
+-- query parameter as the first part of a folded path
+1
+1
 -- RENAME
 1
 0

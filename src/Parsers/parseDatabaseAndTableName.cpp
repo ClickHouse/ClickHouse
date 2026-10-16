@@ -54,6 +54,28 @@ bool parseDatabaseAndTableAsAST(IParser::Pos & pos, Expected & expected, ASTPtr 
 }
 
 
+bool parseTableNameWithOptionalFromDatabase(IParser::Pos & pos, Expected & expected, String & database_str, String & table_str)
+{
+    ASTPtr table_identifier;
+    if (!ParserCompoundIdentifier({.table_name = true}).parse(pos, table_identifier, expected))
+        return false;
+    const auto & identifier = table_identifier->as<ASTTableIdentifier &>();
+    table_str = identifier.shortName();
+    if (identifier.compound())
+    {
+        database_str = identifier.getDatabaseName();
+        return true;
+    }
+
+    ASTPtr database;
+    if (ParserKeyword(Keyword::FROM).ignore(pos, expected) || ParserKeyword(Keyword::IN).ignore(pos, expected))
+        if (!ParserIdentifier().parse(pos, database, expected))
+            return false;
+    tryGetIdentifierNameInto(database, database_str);
+    return true;
+}
+
+
 bool parseDatabaseAsAST(IParser::Pos & pos, Expected & expected, ASTPtr & database)
 {
     ParserIdentifier identifier_parser(/* allow_query_parameter */true);
