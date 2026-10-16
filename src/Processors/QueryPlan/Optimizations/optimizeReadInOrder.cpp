@@ -1,4 +1,11 @@
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnDynamic.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVariant.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -220,6 +227,63 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node, FindReadingStepContext
 /// Fixed columns are 'x' and 'y'.
 using FixedColumns = std::unordered_set<const ActionsDAG::Node *>;
 
+/// Whether `column = constant` holds for several values of the column that sort differently, so it does not fix the column.
+/// `equals` pads a `FixedString` with zero bytes against a `String`, so `s = toFixedString('a', 2)` matches `'a'` with any
+/// number of trailing zero bytes, also inside `Tuple`, `Variant` and `Dynamic`, but not inside `Array` or `Map`.
+bool equalsMatchesSeveralValues(
+    const DataTypePtr & column_type_with_wrappers, ColumnPtr constant, const DataTypePtr & constant_type_with_wrappers)
+{
+    if (const auto * column_const = typeid_cast<const ColumnConst *>(constant.get()))
+        constant = column_const->getDataColumnPtr();
+    chassert(constant->size() == 1);
+    /// NULL is not equal to anything.
+    if (constant->isNullAt(0))
+        return false;
+    constant = removeNullable(constant->convertToFullColumnIfLowCardinality());
+
+    auto column_type = removeLowCardinalityAndNullable(column_type_with_wrappers);
+    auto constant_type = removeLowCardinalityAndNullable(constant_type_with_wrappers);
+
+    /// The type of the value that a `Variant` or `Dynamic` constant holds is in the value, not in `constant_type`.
+    if (const auto * column_dynamic = typeid_cast<const ColumnDynamic *>(constant.get()))
+    {
+        /// Inserting into a new column moves the value out of the shared variant.
+        auto copy = ColumnDynamic::create();
+        copy->insertFrom(*column_dynamic, 0);
+        return equalsMatchesSeveralValues(column_type_with_wrappers, copy->getVariantColumnPtr(), copy->getVariantInfo().variant_type);
+    }
+    if (const auto * column_variant = typeid_cast<const ColumnVariant *>(constant.get()))
+    {
+        const auto discriminator = column_variant->globalDiscriminatorAt(0);
+        return equalsMatchesSeveralValues(
+            column_type_with_wrappers,
+            column_variant->getVariantPtrByGlobalDiscriminator(discriminator)->cut(column_variant->offsetAt(0), 1),
+            assert_cast<const DataTypeVariant &>(*constant_type).getVariant(discriminator));
+    }
+
+    if (isString(column_type) && isFixedString(constant_type))
+        return true;
+    /// Values of several types can be equal to the constant (`'a'` as `String` and `FixedString(1)`) and sort differently.
+    if (isVariant(column_type) || isDynamic(column_type))
+        return true;
+
+    const auto * column_tuple = typeid_cast<const DataTypeTuple *>(column_type.get());
+    const auto * constant_tuple = typeid_cast<const DataTypeTuple *>(constant_type.get());
+    if (!column_tuple || !constant_tuple)
+        return false;
+
+    const auto & column_elements = column_tuple->getElements();
+    const auto & constant_elements = constant_tuple->getElements();
+    if (column_elements.size() != constant_elements.size())
+        return false;
+
+    const auto & constant_columns = assert_cast<const ColumnTuple &>(*constant);
+    for (size_t i = 0; i < column_elements.size(); ++i)
+        if (equalsMatchesSeveralValues(column_elements[i], constant_columns.getColumnPtr(i), constant_elements[i]))
+            return true;
+    return false;
+}
+
 /// Right now we find only simple cases like 'and(..., and(..., and(column = value, ...), ...'
 /// Injective functions are supported here. For a condition 'injectiveFunction(x) = 5' column 'x' is fixed.
 void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expression, FixedColumns & fixed_columns)
@@ -244,16 +308,21 @@ void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expr
             else if (name == "equals")
             {
                 const ActionsDAG::Node * maybe_fixed_column = nullptr;
+                const ActionsDAG::Node * constant = nullptr;
                 size_t num_constant_columns = 0;
                 for (const auto & child : node->children)
                 {
                     if (child->column)
+                    {
                         ++num_constant_columns;
+                        constant = child;
+                    }
                     else
                         maybe_fixed_column = child;
                 }
 
-                if (maybe_fixed_column && num_constant_columns + 1 == node->children.size())
+                if (maybe_fixed_column && num_constant_columns + 1 == node->children.size()
+                    && !equalsMatchesSeveralValues(maybe_fixed_column->result_type, constant->column, constant->result_type))
                 {
                     //std::cerr << "====== Added fixed column " << maybe_fixed_column->result_name << ' ' << static_cast<const void *>(maybe_fixed_column) << std::endl;
                     fixed_columns.insert(maybe_fixed_column);
@@ -262,7 +331,7 @@ void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expr
                     const ActionsDAG::Node * maybe_injective = maybe_fixed_column;
                     while (maybe_injective->type == ActionsDAG::ActionType::FUNCTION
                         && maybe_injective->children.size() == 1
-                        && maybe_injective->function_base->isInjective({}))
+                        && maybe_injective->function_base->isInjective(getFunctionArgumentColumns(*maybe_injective)))
                     {
                         maybe_injective = maybe_injective->children.front();
                         fixed_columns.insert(maybe_injective);
@@ -549,18 +618,33 @@ SortingInputOrder buildInputOrderFromSortDescription(
         int reverse_indicator = (!sorting_key.reverse_flags.empty() && sorting_key.reverse_flags[next_sort_key]) ? -1 : 1;
         const auto & sort_column_description = description[next_description_column];
 
+        /// The NULL/NaN placement check below can only run after this iteration consumed the key, so
+        /// remember how much was consumed and undo it when the check rejects the key. Otherwise the
+        /// rejected key would still widen `next_sort_key`, which becomes
+        /// `InputOrderInfo::used_prefix_of_sorting_key_size` - the width the storage actually reads with
+        /// and applies a hard `LIMIT` to - and the read would stop on a row the advertised prefix does
+        /// not order.
+        const size_t prev_sort_key = next_sort_key;
+        const size_t prev_match_infos_size = match_infos.size();
+        const size_t prev_order_key_prefix_size = order_key_prefix_descr.size();
+
         /// If required order depend on collation, it cannot be matched with primary key order.
         /// Because primary keys cannot have collations.
         if (sort_column_description.collator)
             break;
 
-        /// Since sorting key columns are always sorted with
-        // ASC NULLS LAST ("in order") or DESC NULLS FIRST ("reverse")
-        /// supported only this direction, other cases are represented as nulls_direction==-1
-        /// Also actual for floating point values NaN.
-        const auto column_is_nullable = isNullableOrLowCardinalityNullable(sorting_key.data_types[next_sort_key])|| isFloat(*sorting_key.data_types[next_sort_key]);
-        if (column_is_nullable && sort_column_description.nulls_direction == -1)
-            break;
+        /// A part stores a `Nullable` or `Float` key with its NULLs and NaNs at one physical end - the
+        /// forward end for an ordinary key column, the other one for a key column declared `DESC` (a
+        /// reverse flag) - and reading the part cannot move them. Whether the requested order is
+        /// satisfiable therefore depends on the direction the key is read in, which is known only below,
+        /// after the monotonicity of the match is applied: `ORDER BY negate(x)` over an ascending key is
+        /// served by a *backward* read, which surfaces the NaNs first while `ASC NULLS LAST` wants them
+        /// last. The check is at the end of the iteration; here we only note the column's kind.
+        /// `LowCardinality` is unwrapped as well: a `LowCardinality(Float64)` key (allowed with
+        /// `allow_suspicious_low_cardinality_types`) holds `NaN`s at a physical end just like a plain one.
+        const auto & sorting_key_type = sorting_key.data_types[next_sort_key];
+        const auto column_is_nullable
+            = isNullableOrLowCardinalityNullable(sorting_key_type) || isFloat(*removeLowCardinalityAndNullable(sorting_key_type));
 
         /// Direction for current sort key.
         int current_direction = 0;
@@ -673,6 +757,29 @@ SortingInputOrder buildInputOrderFromSortDescription(
                 match_infos.push_back({.source = sort_node, .fixed_column = sort_node});
                 order_key_prefix_descr.push_back(sort_column_description);
                 ++next_description_column;
+            }
+        }
+
+        /** The NULLs and NaNs of this key column come out at the end of the stream when the part is read
+          * in the direction that has them last, and at its beginning otherwise; `nulls_direction` asks for
+          * them last exactly when it agrees with `direction` (`ASC NULLS LAST`, `DESC NULLS FIRST`). A
+          * mismatch cannot be repaired downstream - the sort is elided, which is the point of this
+          * optimization - so the match ends here.
+          *
+          * `current_direction` is the direction the key is read in, with the monotonicity of the match
+          * already applied, and `reverse_indicator` says which physical end holds the NULLs and NaNs.
+          */
+        if (column_is_nullable && current_direction != 0)
+        {
+            const bool produces_nulls_last = current_direction * reverse_indicator == 1;
+            const bool requests_nulls_last = sort_column_description.direction == sort_column_description.nulls_direction;
+            if (produces_nulls_last != requests_nulls_last)
+            {
+                /// `next_description_column` is not read after the loop, so it is left alone.
+                next_sort_key = prev_sort_key;
+                match_infos.resize(prev_match_infos_size);
+                order_key_prefix_descr.resize(prev_order_key_prefix_size);
+                break;
             }
         }
 
@@ -1360,6 +1467,10 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
         if (reading->isParallelReadingFromReplicas() && !find_reading_ctx.joins_to_keep_in_order.empty())
             return {};
 
+        /// A follower forced to aggregate in order cannot use an aggregate projection and would read the base table.
+        if (reading->isParallelReadingFromReplicas() && aggregating.getParams().only_merge)
+            return {};
+
         auto order_info = buildInputOrderFromUnorderedKeys(
             reading,
             fixed_columns,
@@ -1660,15 +1771,24 @@ bool readingFromParallelReplicas(const QueryPlan::Node * node)
 
 }
 
-bool wouldReadInOrderBeUseful(
+QueryPlan::Node * findReadingStepForReadInOrder(QueryPlan::Node & node, bool read_in_order_through_join)
+{
+    FindReadingStepContext find_reading_ctx{
+        .allow_existing_order = false,
+        .read_in_order_through_join = read_in_order_through_join,
+    };
+    return findReadingStep(node, find_reading_ctx);
+}
+
+InputOrderInfoPtr getInputOrderIfReadInOrderIsUseful(
     const SortingStep & sorting,
     const KeyDescription & sorting_key,
     const QueryPlan::Node & subtree_above_reading)
 {
     if (sorting.getType() != SortingStep::Type::Full)
-        return false;
+        return nullptr;
     if (sorting_key.column_names.empty())
-        return false;
+        return nullptr;
 
     std::optional<ActionsDAG> dag;
     FixedColumns fixed_columns;
@@ -1686,7 +1806,35 @@ bool wouldReadInOrderBeUseful(
         sorting_key.column_names,
         limit);
 
-    return order_info.input_order != nullptr;
+    return order_info.input_order;
+}
+
+InputOrderInfoPtr getInputOrderIfReadInOrderIsUseful(
+    const SortingStep & sorting,
+    ReadFromMerge & merge,
+    const QueryPlan::Node & subtree_above_reading)
+{
+    if (sorting.getType() != SortingStep::Type::Full)
+        return nullptr;
+
+    std::optional<ActionsDAG> dag;
+    FixedColumns fixed_columns;
+    size_t limit = sorting.getLimit();
+    buildSortingDAG(subtree_above_reading, dag, fixed_columns, limit);
+
+    if (dag && !fixed_columns.empty())
+        enrichFixedColumns(*dag, fixed_columns);
+
+    /// The same matching as in `optimizeReadInOrder` itself: every child's sorting key against the sort
+    /// description, through the renaming that the child plan performs on top of the child table.
+    auto order_info = buildInputOrderFromSortDescription(
+        &merge,
+        fixed_columns,
+        dag,
+        sorting.getSortDescription(),
+        limit);
+
+    return order_info.input_order;
 }
 
 void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)

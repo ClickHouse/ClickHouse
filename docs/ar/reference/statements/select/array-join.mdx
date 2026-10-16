@@ -13,7 +13,7 @@ doc_type: 'reference'
 تأتي هذه التسمية من أنه يمكن النظر إليها على أنها تنفيذ `JOIN` مع مصفوفة أو بنية بيانات متداخلة. والغرض منها مشابه للدالة [arrayJoin](/ar/reference/functions/regular-functions/array-join)، لكن وظيفة العبارة أوسع.
 
 <Note>
-  لا يدعم PostgreSQL `FROM unnest(...)` و`CROSS JOIN UNNEST(...)` و`LATERAL`. استخدم `ARRAY JOIN` بدلًا من ذلك. الاسم `unnest` (منذ الإصدار 26.5) هو اسم مستعار لاستدعاء الدالة `arrayJoin` (`SELECT unnest(arr)`)، وليس دالة جدول.
+  صيغ مصادر الجداول `FROM unnest(...)` و`CROSS JOIN UNNEST(...)` و`LATERAL unnest(...)` المستخدمة في PostgreSQL غير مدعومة. استخدم `ARRAY JOIN` بدلًا من ذلك. الاسم `unnest` (منذ الإصدار 26.5) هو اسم بديل لاستدعاء الدالة `arrayJoin` (`SELECT unnest(arr)`)، وليس دالة جدول. أما `JOIN LATERAL <subquery>` مع استعلام فرعي مترابط فهو مدعوم بشكل منفصل كميزة تجريبية، راجع [`JOIN`](/ar/reference/statements/select/join#lateral-join).
 </Note>
 
 الصياغة:
@@ -28,16 +28,12 @@ FROM <left_subquery>
 
 الأنواع المدعومة من `ARRAY JOIN` مبيّنة أدناه:
 
-* `ARRAY JOIN` - في الحالة الأساسية، لا تُضمَّن المصفوفات الفارغة في نتيجة `JOIN`.
+* `ARRAY JOIN` - في الحالة الأساسية، لا تُضمَّن المصفوفات الفارغة في نتيجة `JOIN`.
 * `LEFT ARRAY JOIN` - تحتوي نتيجة `JOIN` على صفوف تتضمن مصفوفات فارغة. وتُضبط قيمة المصفوفة الفارغة على القيمة الافتراضية لنوع عنصر المصفوفة (وتكون عادةً 0 أو سلسلة فارغة أو NULL).
 
-<div id="basic-array-join-examples">
-  ## أمثلة أساسية على ARRAY JOIN
-</div>
+## أمثلة أساسية على ARRAY JOIN {#basic-array-join-examples}
 
-<div id="array-join-left-array-join-examples">
-  ### ARRAY JOIN و LEFT ARRAY JOIN
-</div>
+### ARRAY JOIN و LEFT ARRAY JOIN {#array-join-left-array-join-examples}
 
 تُظهر الأمثلة أدناه كيفية استخدام عبارتي `ARRAY JOIN` و `LEFT ARRAY JOIN`. لنُنشئ جدولًا يحتوي على عمود من النوع [Array](/ar/reference/data-types/array)، ثم نُدرج فيه قيمًا:
 
@@ -97,9 +93,7 @@ LEFT ARRAY JOIN arr;
 └─────────────┴─────┘
 ```
 
-<div id="array-join-arrayEnumerate">
-  ### ARRAY JOIN ودالة arrayEnumerate
-</div>
+### ARRAY JOIN ودالة arrayEnumerate {#array-join-arrayEnumerate}
 
 تُستخدم هذه الدالة عادةً مع `ARRAY JOIN`. وتتيح عدّ شيءٍ ما مرةً واحدة فقط لكل مصفوفة بعد تطبيق `ARRAY JOIN`. مثال:
 
@@ -137,9 +131,7 @@ WHERE (CounterID = 160656) AND notEmpty(GoalsReached)
 └─────────┴───────┘
 ```
 
-<div id="array_join_arrayEnumerateUniq">
-  ### ARRAY JOIN وarrayEnumerateUniq
-</div>
+### ARRAY JOIN وarrayEnumerateUniq {#array_join_arrayEnumerateUniq}
 
 تفيد هذه الدالة عند استخدام `ARRAY JOIN` وتجميع عناصر المصفوفة.
 
@@ -175,9 +167,7 @@ LIMIT 10
 └─────────┴─────────┴────────┘
 ```
 
-<div id="using-aliases">
-  ## استخدام الأسماء المستعارة
-</div>
+## استخدام الأسماء المستعارة {#using-aliases}
 
 يمكن تحديد اسم مستعار لمصفوفة ضمن عبارة `ARRAY JOIN`. في هذه الحالة، يمكن الوصول إلى أحد عناصر المصفوفة عبر هذا الاسم المستعار، بينما يُشار إلى المصفوفة نفسها باسمها الأصلي. مثال:
 
@@ -275,9 +265,7 @@ SETTINGS enable_unaligned_array_join = 1;
 └─────────┴─────────┴───┴───────────┘
 ```
 
-<div id="array-join-with-nested-data-structure">
-  ## ‏ARRAY JOIN مع بنية بيانات متداخلة
-</div>
+## ‏ARRAY JOIN مع بنية بيانات متداخلة {#array-join-with-nested-data-structure}
 
 يعمل `ARRAY JOIN` أيضًا مع [بنية بيانات متداخلة](/ar/reference/data-types/nested-data-structures/index):
 
@@ -390,23 +378,17 @@ ARRAY JOIN nest AS n, arrayEnumerate(`nest.x`) AS num;
 └───────┴─────┴─────┴─────────┴────────────┴─────┘
 ```
 
-<div id="implementation-details">
-  ## تفاصيل التنفيذ
-</div>
+## تفاصيل التنفيذ {#implementation-details}
 
 يُحسَّن ترتيب تنفيذ الاستعلام عند تنفيذ `ARRAY JOIN`. وعلى الرغم من أنه يجب دائمًا تحديد `ARRAY JOIN` قبل عبارة [WHERE](/ar/reference/statements/select/where)/[PREWHERE](/ar/reference/statements/select/prewhere) في الاستعلام، فمن الناحية التقنية يمكن تنفيذهما بأي ترتيب، ما لم تُستخدَم نتيجة `ARRAY JOIN` في التصفية. ويتحكم مُحسِّن الاستعلامات في ترتيب التنفيذ.
 
-<div id="incompatibility-with-short-circuit-function-evaluation">
-  ### عدم التوافق مع التقييم المختصر للدوال
-</div>
+### عدم التوافق مع التقييم المختصر للدوال {#incompatibility-with-short-circuit-function-evaluation}
 
 يُعد [التقييم المختصر للدوال](/ar/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) ميزة تُحسّن تنفيذ التعبيرات المعقدة في دوال محددة مثل `if` و`multiIf` و`and` و`or`. وهي تمنع حدوث استثناءات محتملة، مثل القسمة على صفر، أثناء تنفيذ هذه الدوال.
 
 يُنفَّذ `arrayJoin` دائمًا، ولا يدعم التقييم المختصر للدوال. ويعود ذلك إلى أنه دالة فريدة تُعالَج بشكل منفصل عن جميع الدوال الأخرى أثناء تحليل الاستعلام وتنفيذه، وتتطلب منطقًا إضافيًا لا يعمل مع التقييم المختصر للدوال. والسبب هو أن عدد الصفوف في النتيجة يعتمد على ناتج `arrayJoin`، كما أن تنفيذ `arrayJoin` بصورة كسولة معقد للغاية ومكلف.
 
-<div id="related-content">
-  ## محتوى مرتبط
-</div>
+## محتوى مرتبط {#related-content}
 
 * مدونة: [العمل مع بيانات السلاسل الزمنية في ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
 

@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 
 
@@ -37,7 +38,7 @@
 #include <Common/HistogramMetrics.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
-#include <base/hex.h>
+#include <Common/Hex.h>
 #include <base/sleep.h>
 #include <Poco/DOM/DOMParser.h>
 #include <Poco/Util/XMLConfiguration.h>
@@ -76,7 +77,9 @@ namespace CurrentMetrics
 namespace ProfileEvents
 {
     extern const Event FilesystemCacheDowngradedFileSegments;
+    extern const Event FilesystemCachePromotedFileSegments;
     extern const Event FilesystemCacheEvictedFileSegments;
+    extern const Event FilesystemCacheReserveAheadRetries;
 }
 
 using namespace std::chrono_literals;
@@ -110,8 +113,10 @@ namespace DB::FileCacheSetting
     extern const FileCacheSettingsUInt64 max_elements;
     extern const FileCacheSettingsUInt64 max_file_segment_size;
     extern const FileCacheSettingsUInt64 boundary_alignment;
+    extern const FileCacheSettingsUInt64 reserve_granularity;
     extern const FileCacheSettingsFileCachePolicy cache_policy;
     extern const FileCacheSettingsDouble slru_size_ratio;
+    extern const FileCacheSettingsUInt64 background_download_threads;
     extern const FileCacheSettingsDouble keep_free_space_elements_ratio;
     extern const FileCacheSettingsNonZeroUInt64 load_metadata_threads;
     extern const FileCacheSettingsBool load_metadata_asynchronously;
@@ -2299,6 +2304,207 @@ TEST_F(FileCacheTest, DynamicResizeConcurrentWithReservations)
         fs::remove_all(cache_path);
 }
 
+TEST_F(FileCacheTest, SLRUPromotePartiallyDownloadedConcurrent)
+{
+    /// Stress SLRU promotion of partially downloaded segments: writers leave segments partially
+    /// downloaded, promoters hit them (moving them to the protected queue), continuers download
+    /// more of them (growth in the protected queue), and a churn thread keeps the protected queue
+    /// full (downgrades and evictions). All threads share one key, so they race on the same segments.
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    const std::string cache_path = caches_dir / "cache_slru_promote_partial_concurrent" / "";
+    if (fs::exists(cache_path))
+        fs::remove_all(cache_path);
+    fs::create_directories(cache_path);
+
+    constexpr size_t max_size = 256;
+    constexpr size_t max_elements = 24;
+    constexpr size_t segment_size = 16;
+    constexpr size_t num_offsets = 32;
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_path;
+    settings[FileCacheSetting::max_size] = max_size;
+    settings[FileCacheSetting::max_elements] = max_elements;
+    /// Alignment equal to the segment size, so a released partially downloaded segment is not shrunk.
+    settings[FileCacheSetting::max_file_segment_size] = segment_size;
+    settings[FileCacheSetting::boundary_alignment] = segment_size;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::SLRU;
+    settings[FileCacheSetting::slru_size_ratio] = 0.5;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    /// Only the continuer threads complete partially downloaded segments.
+    settings[FileCacheSetting::background_download_threads] = 0;
+
+    auto cache = std::make_shared<DB::FileCache>("slru_promote_partial_concurrent", settings);
+    cache->initialize();
+
+    const auto & user = FileCache::getCommonOrigin();
+    const size_t file_size = -1;
+    const auto shared_key = DB::FileCacheKey::fromPath("slru_promote_partial_shared");
+    const auto churn_key = DB::FileCacheKey::fromPath("slru_promote_partial_churn");
+
+    std::atomic<size_t> exceptions_caught{0};
+    std::mutex first_exception_mutex;
+    std::string first_exception_message;
+    auto record_exception = [&]
+    {
+        exceptions_caught.fetch_add(1, std::memory_order_relaxed);
+        std::lock_guard lock(first_exception_mutex);
+        if (first_exception_message.empty())
+            first_exception_message = getCurrentExceptionMessage(true);
+    };
+
+    std::atomic<size_t> promoted_partial{0};
+    std::atomic<size_t> grew_in_protected{0};
+    const auto promoted_before = ProfileEvents::global_counters[ProfileEvents::FilesystemCachePromotedFileSegments];
+    const auto downgraded_before = ProfileEvents::global_counters[ProfileEvents::FilesystemCacheDowngradedFileSegments];
+
+    /// A failed reservation is normal under eviction pressure: the caller stops writing.
+    auto reserve_and_write = [](FileSegment & segment, size_t size)
+    {
+        std::string failure_reason;
+        if (!segment.reserve(size, 1000, failure_reason))
+            return false;
+        std::string data(size, '0');
+        segment.write(data.data(), size, segment.getCurrentWriteOffset());
+        return true;
+    };
+
+    auto complete_segment = [](const FileSegmentPtr & segment)
+    {
+        FileSegment::complete(
+            FileSegmentPtr(segment),
+            /*allow_background_download=*/false,
+            /*force_shrink_to_downloaded_size=*/false);
+    };
+
+    constexpr size_t iterations = 3000;
+
+    auto run = [&](UInt64 seed, auto && iteration)
+    {
+        DB::ThreadStatus worker_thread_status;
+        pcg64 local_rng(seed);
+        for (size_t iter = 0; iter < iterations; ++iter)
+        {
+            try
+            {
+                iteration(local_rng);
+            }
+            catch (...)
+            {
+                /// Ok: the exception is saved and asserted on after all threads join.
+                record_exception();
+            }
+        }
+    };
+
+    auto get_shared_segment = [&](pcg64 & local_rng)
+    {
+        const size_t offset = (local_rng() % num_offsets) * segment_size;
+        return cache->getOrSet(shared_key, offset, segment_size, file_size, {}, 0, user);
+    };
+
+    /// Downloads a prefix of a new segment and leaves it partially downloaded.
+    auto partial_writer = [&](pcg64 & local_rng)
+    {
+        auto holder = get_shared_segment(local_rng);
+        auto segment = holder->getSingleFileSegment();
+        if (segment->state() == State::EMPTY && segment->getOrSetDownloader() == FileSegment::getCallerId())
+        {
+            reserve_and_write(*segment, 1 + local_rng() % (segment_size - 2));
+            complete_segment(segment);
+        }
+    };
+
+    /// Not `FileSegment::getInfo`: `getOrSet` can return a detached copy of an evicting segment.
+    auto queue_type = [](const FileSegment & segment)
+    {
+        auto iterator = segment.getQueueIterator();
+        return iterator ? iterator->getNestedOrThis()->getType() : IFileCachePriority::QueueEntryType::None;
+    };
+
+    auto promoter = [&](pcg64 & local_rng)
+    {
+        auto holder = get_shared_segment(local_rng);
+        auto segment = holder->getSingleFileSegment();
+        const auto state_before = segment->state();
+        const auto queue_type_before = queue_type(*segment);
+        segment->increasePriority();
+        if (state_before == State::PARTIALLY_DOWNLOADED
+            && queue_type_before == IFileCachePriority::QueueEntryType::SLRU_Probationary
+            && queue_type(*segment) == IFileCachePriority::QueueEntryType::SLRU_Protected)
+            promoted_partial.fetch_add(1, std::memory_order_relaxed);
+    };
+
+    /// Downloads the rest of a partially downloaded segment in small steps.
+    auto continuer = [&](pcg64 & local_rng)
+    {
+        auto holder = get_shared_segment(local_rng);
+        auto segment = holder->getSingleFileSegment();
+        if (segment->state() == State::PARTIALLY_DOWNLOADED && segment->getOrSetDownloader() == FileSegment::getCallerId())
+        {
+            while (segment->getDownloadedSize() < segment_size)
+            {
+                const bool is_protected = queue_type(*segment) == IFileCachePriority::QueueEntryType::SLRU_Protected;
+                if (!reserve_and_write(*segment, std::min<size_t>(4, segment_size - segment->getDownloadedSize())))
+                    break;
+                if (is_protected)
+                    grew_in_protected.fetch_add(1, std::memory_order_relaxed);
+            }
+            complete_segment(segment);
+        }
+    };
+
+    /// Downloads and promotes complete segments of another key, so that the protected queue stays full.
+    auto churn = [&](pcg64 & local_rng)
+    {
+        const size_t offset = (local_rng() % num_offsets) * segment_size;
+        auto holder = cache->getOrSet(churn_key, offset, segment_size, file_size, {}, 0, user);
+        auto segment = holder->getSingleFileSegment();
+        if (segment->state() == State::EMPTY && segment->getOrSetDownloader() == FileSegment::getCallerId())
+        {
+            reserve_and_write(*segment, segment_size);
+            complete_segment(segment);
+        }
+        segment->increasePriority();
+    };
+
+    std::vector<std::thread> threads;
+    for (size_t i = 0; i < 2; ++i)
+    {
+        threads.emplace_back(run, rng(), partial_writer);
+        threads.emplace_back(run, rng(), promoter);
+        threads.emplace_back(run, rng(), continuer);
+    }
+    threads.emplace_back(run, rng(), churn);
+    for (auto & t : threads)
+        t.join();
+
+    if (exceptions_caught.load() != 0u)
+        std::cerr << "First exception caught (of " << exceptions_caught.load() << "): "
+                  << first_exception_message << std::endl;
+    ASSERT_EQ(exceptions_caught.load(), 0u);
+
+    ASSERT_LE(cache->getUsedCacheSize(), max_size);
+    ASSERT_LE(cache->getFileSegmentsNum(), max_elements);
+    ASSERT_NO_THROW(cache->dumpQueue());
+    /// Runs `assertCacheCorrectness`, which also checks the size limits of both SLRU queues.
+    ASSERT_NO_THROW(cache->getFileSegmentInfos(user.user_id));
+
+    /// The new paths ran: partially downloaded segments were promoted and then grew in the protected queue.
+    ASSERT_GT(promoted_partial.load(), 0u);
+    ASSERT_GT(grew_in_protected.load(), 0u);
+    ASSERT_GT(ProfileEvents::global_counters[ProfileEvents::FilesystemCachePromotedFileSegments], promoted_before);
+    ASSERT_GT(ProfileEvents::global_counters[ProfileEvents::FilesystemCacheDowngradedFileSegments], downgraded_before);
+
+    /// Destroy the cache before removing the directory: `~FileCache` runs `assertCacheCorrectness`
+    /// (debug/sanitizer builds), which stats the cached files.
+    cache.reset();
+    if (fs::exists(cache_path))
+        fs::remove_all(cache_path);
+}
+
 TEST_F(FileCacheTest, SLRUFreeSpaceKeepingProtectedOnly)
 {
     /// Regression test for https://github.com/ClickHouse/ClickHouse/issues/104307
@@ -2336,7 +2542,8 @@ TEST_F(FileCacheTest, SLRUFreeSpaceKeepingProtectedOnly)
     CacheMetadata cache_metadata(cache_path,
                                  /* background_download_queue_size_limit */0,
                                  /* background_download_threads */0,
-                                 /* write_cache_per_user_directory */false);
+                                 /* write_cache_per_user_directory */false,
+                                 /* use_real_disk_size */false);
 
     const auto key = DB::FileCacheKey::fromPath("104307_protected_only_key");
     const auto & origin = FileCache::getCommonOrigin();
@@ -2467,7 +2674,7 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
     LRUFileCachePriority priority(IFileCachePriority::QueueType::Main, max_size, max_elements);
 
     std::string cache_path = std::filesystem::path(caches_dir) / "test_eviction_pos";
-    CacheMetadata cache_metadata(cache_path, 0, 0, false);
+    CacheMetadata cache_metadata(cache_path, 0, 0, false, false);
 
     auto key = DB::FileCacheKey::fromPath("evict_key");
     auto origin = FileCache::getCommonOrigin();
@@ -2584,7 +2791,7 @@ TEST_F(FileCacheTest, MoveEvictionPos)
     LRUFileCachePriority dst(IFileCachePriority::QueueType::Main, /* max_size */100, /* max_elements */10, "dst");
 
     std::string cache_path = std::filesystem::path(caches_dir) / "test_move_eviction_pos";
-    CacheMetadata cache_metadata(cache_path, 0, 0, false);
+    CacheMetadata cache_metadata(cache_path, 0, 0, false, false);
 
     auto key = DB::FileCacheKey::fromPath("move_key");
     auto origin = FileCache::getCommonOrigin();
@@ -3312,7 +3519,7 @@ TEST_F(FileCacheTest, SLRUModifySizeLimitsRollbackOnThrow)
 
     const std::string cache_path = caches_dir / "test_slru_modify_rollback";
     fs::create_directories(cache_path);
-    CacheMetadata cache_metadata(cache_path, 0, 0, false);
+    CacheMetadata cache_metadata(cache_path, 0, 0, false, false);
 
     const auto key = DB::FileCacheKey::fromPath("slru_modify_rollback_key");
     const auto & origin = FileCache::getCommonOrigin();
@@ -3368,7 +3575,8 @@ TEST_F(FileCacheTest, LRUDecrementSizeToZeroDropsElement)
     CacheMetadata cache_metadata(cache_path,
                                  /* background_download_queue_size_limit */0,
                                  /* background_download_threads */0,
-                                 /* write_cache_per_user_directory */false);
+                                 /* write_cache_per_user_directory */false,
+                                 /* use_real_disk_size */false);
 
     const auto key = DB::FileCacheKey::fromPath("lru_decrement_to_zero_key");
     const auto & origin = FileCache::getCommonOrigin();
@@ -3415,7 +3623,7 @@ TEST_F(FileCacheTest, SplitTotalSpaceCleanupReclaimsSystemQueue)
 
     const std::string cache_path = caches_dir / "test_split_total_cleanup";
     fs::create_directories(cache_path);
-    CacheMetadata cache_metadata(cache_path, 0, 0, false);
+    CacheMetadata cache_metadata(cache_path, 0, 0, false, false);
 
     FileCacheOriginInfo system_origin(FileCache::getCommonOrigin().user_id, 0, FileSegmentKeyType::System);
     auto key = DB::FileCacheKey::fromPath("split_total_cleanup_system_key");
@@ -3458,7 +3666,7 @@ TEST_F(FileCacheTest, SplitResizeCollectsSystemCandidates)
 
     const std::string cache_path = caches_dir / "test_split_resize";
     fs::create_directories(cache_path);
-    CacheMetadata cache_metadata(cache_path, 0, 0, false);
+    CacheMetadata cache_metadata(cache_path, 0, 0, false, false);
 
     FileCacheOriginInfo system_origin(FileCache::getCommonOrigin().user_id, 0, FileSegmentKeyType::System);
     auto key = DB::FileCacheKey::fromPath("split_resize_system_key");
@@ -3528,7 +3736,7 @@ TEST_F(FileCacheTest, SLRUDowngradeRollbackResetsEvictingOnSkippedFinalization)
 
     const std::string cache_path = caches_dir / "test_slru_downgrade_rollback";
     fs::create_directories(cache_path);
-    CacheMetadata cache_metadata(cache_path, 0, 0, false);
+    CacheMetadata cache_metadata(cache_path, 0, 0, false, false);
 
     const auto key = DB::FileCacheKey::fromPath("slru_downgrade_rollback_key");
     const auto & origin = FileCache::getCommonOrigin();
@@ -3617,7 +3825,7 @@ TEST_F(FileCacheTest, SplitSLRUTotalSpaceCleanupSystemOnly)
 
     const std::string cache_path = caches_dir / "test_split_slru_total_cleanup";
     fs::create_directories(cache_path);
-    CacheMetadata cache_metadata(cache_path, 0, 0, false);
+    CacheMetadata cache_metadata(cache_path, 0, 0, false, false);
 
     FileCacheOriginInfo system_origin(FileCache::getCommonOrigin().user_id, 0, FileSegmentKeyType::System);
     auto key = DB::FileCacheKey::fromPath("split_slru_total_cleanup_system_key");
@@ -3674,7 +3882,7 @@ TEST_F(FileCacheTest, PriorityQueueElementsMetrics)
 
     const auto cache_path = caches_dir / "test_queue_metrics";
     fs::create_directories(cache_path);
-    CacheMetadata cache_metadata(cache_path, 0, 0, false);
+    CacheMetadata cache_metadata(cache_path, 0, 0, false, false);
     const auto key = DB::FileCacheKey::fromPath("metrics_key");
     const auto & origin = FileCache::getCommonOrigin();
     auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);
@@ -3718,7 +3926,7 @@ TEST_F(FileCacheTest, SLRUDowngradeMetric)
 
     const auto cache_path = caches_dir / "test_slru_downgrade";
     fs::create_directories(cache_path);
-    CacheMetadata cache_metadata(cache_path, 0, 0, false);
+    CacheMetadata cache_metadata(cache_path, 0, 0, false, false);
     const auto key = DB::FileCacheKey::fromPath("downgrade_key");
     const auto & origin = FileCache::getCommonOrigin();
     auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);
@@ -3867,6 +4075,210 @@ TEST_F(FileCacheTest, RenameToIncludeSizeInNameFailureKeepsSegmentConsistent)
     auto reloaded_holder = reloaded->getOrSet(key, 0, 8, /*file_size=*/8, {}, 0, user);
     ASSERT_EQ(reloaded_holder->size(), 1u);
     ASSERT_EQ((*reloaded_holder->begin())->state(), State::DOWNLOADED);
+}
+
+TEST_F(FileCacheTest, ReserveUndoneWhenKeyDirectoryCannotBeCreated)
+{
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    Poco::XML::DOMParser dom_parser;
+    std::string xml(R"CONFIG(<clickhouse></clickhouse>)CONFIG");
+    Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(xml);
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(document);
+    getMutableContext().context->setConfig(config);
+
+    auto query_context = DB::Context::createCopy(getContext().context);
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId("reserve_key_directory_failure");
+    chassert(&DB::CurrentThread::get() == &thread_status);
+    auto query_scope_holder = DB::QueryScope::create(query_context);
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::max_size] = 16;
+    settings[FileCacheSetting::max_elements] = 4;
+    settings[FileCacheSetting::max_file_segment_size] = 8;
+    settings[FileCacheSetting::boundary_alignment] = 8;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+
+    auto cache = std::make_shared<DB::FileCache>("reserve_key_directory_failure", settings);
+    cache->initialize();
+
+    const auto & user = FileCache::getCommonOrigin();
+    auto key = DB::FileCacheKey::fromPath("reserve_key_directory_failure_key");
+
+    /// A regular file at the key directory path makes `create_directories` fail, even as root.
+    const fs::path key_path = cache->getKeyPath(key, user);
+    fs::create_directories(key_path.parent_path());
+    std::ofstream(key_path) << "x";
+
+    auto holder = cache->getOrSet(key, 0, 8, /*file_size=*/8, {}, 0, user);
+    ASSERT_EQ(holder->size(), 1u);
+    auto seg = *holder->begin();
+    ASSERT_EQ(seg->getOrSetDownloader(), FileSegment::getCallerId());
+
+    std::string failure_reason;
+    ASSERT_FALSE(seg->reserve(8, 1000, failure_reason));
+    ASSERT_TRUE(failure_reason.contains("base directory")) << failure_reason;
+    ASSERT_EQ(seg->getReservedSize(), 0u);
+    ASSERT_EQ(cache->getUsedCacheSize(), 0u);
+
+    /// Before the release, which queues the emptied key for the cleanup thread that also removes `key_path`.
+    fs::remove(key_path);
+    /// The failed segment is `PARTIALLY_DOWNLOADED_NO_CONTINUATION`; releasing its last holder removes it,
+    /// so the same offset gets a new segment, which caches normally once the directory can be created.
+    seg.reset();
+    holder = nullptr;
+    auto next_holder = cache->getOrSet(key, 0, 8, /*file_size=*/8, {}, 0, user);
+    ASSERT_EQ(next_holder->size(), 1u);
+    download(*next_holder->begin());
+    ASSERT_EQ(cache->getUsedCacheSize(), 8u);
+}
+
+TEST(FileCacheReserveAhead, GrowsUpToLimitAndResets)
+{
+    DB::FileCacheReserveAhead reserve_ahead;
+
+    /// Exact first, then doubling up to the limit.
+    ASSERT_EQ(reserve_ahead.getReserveSize(/* size_to_reserve */ 2, /* max_reserve_size */ 100, /* limit */ 16), 2u);
+    ASSERT_EQ(reserve_ahead.getReserveSize(2, 100, 16), 4u);
+    ASSERT_EQ(reserve_ahead.getReserveSize(2, 100, 16), 8u);
+    ASSERT_EQ(reserve_ahead.getReserveSize(2, 100, 16), 16u);
+    ASSERT_EQ(reserve_ahead.getReserveSize(2, 100, 16), 16u);
+
+    /// Capped by `max_reserve_size`, but never less than the request.
+    ASSERT_EQ(reserve_ahead.getReserveSize(2, 10, 16), 10u);
+    ASSERT_EQ(reserve_ahead.getReserveSize(2, 1, 16), 2u);
+    ASSERT_EQ(reserve_ahead.getReserveSize(32, 100, 16), 32u);
+
+    ASSERT_EQ(reserve_ahead.getReserveSize(2, 100, 4), 4u);
+
+    /// Limit 0 disables reserve-ahead.
+    ASSERT_EQ(reserve_ahead.getReserveSize(2, 100, 0), 2u);
+
+    reserve_ahead.reset();
+    ASSERT_EQ(reserve_ahead.getReserveSize(6, 100, 16), 6u);
+    ASSERT_EQ(reserve_ahead.getReserveSize(6, 100, 16), 12u);
+
+    reserve_ahead.reset();
+    ASSERT_EQ(reserve_ahead.getReserveSize(2, 100, 16), 2u);
+
+    /// A short first request does not keep the reserve-ahead small for later, larger requests.
+    reserve_ahead.reset();
+    ASSERT_EQ(reserve_ahead.getReserveSize(2, 1000, 1024), 2u);
+    ASSERT_EQ(reserve_ahead.getReserveSize(100, 1000, 1024), 100u);
+    ASSERT_EQ(reserve_ahead.getReserveSize(100, 1000, 1024), 200u);
+}
+
+TEST_F(FileCacheTest, DynamicReserveGranularity)
+{
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::max_size] = 1000;
+    settings[FileCacheSetting::max_elements] = 10;
+    settings[FileCacheSetting::max_file_segment_size] = 100;
+    settings[FileCacheSetting::boundary_alignment] = 100;
+    settings[FileCacheSetting::reserve_granularity] = 16;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+
+    auto cache = std::make_shared<DB::FileCache>("dynamic_reserve_granularity", settings);
+    cache->initialize();
+
+    const auto & user = FileCache::getCommonOrigin();
+    std::string failure_reason;
+    std::string data(100, '0');
+
+    auto reserve_and_write = [&](DB::FileSegment & segment, size_t size, DB::FileCacheReserveAhead * reserve_ahead)
+    {
+        EXPECT_TRUE(segment.reserve(size, 1000, failure_reason, nullptr, std::nullopt, reserve_ahead)) << failure_reason;
+        segment.write(data.data(), size, segment.getCurrentWriteOffset());
+        return segment.getReservedSize();
+    };
+
+    {
+        auto holder = cache->getOrSet(DB::FileCacheKey::fromPath("no_reserve_ahead"), 0, 100, /*file_size=*/100, {}, 0, user);
+        auto segment = *holder->begin();
+        ASSERT_EQ(segment->getOrSetDownloader(), FileSegment::getCallerId());
+        ASSERT_EQ(reserve_and_write(*segment, 2, nullptr), 2u);
+        ASSERT_EQ(reserve_and_write(*segment, 2, nullptr), 4u);
+        ASSERT_EQ(reserve_and_write(*segment, 2, nullptr), 6u);
+    }
+
+    {
+        auto holder = cache->getOrSet(DB::FileCacheKey::fromPath("reserve_ahead"), 0, 100, /*file_size=*/100, {}, 0, user);
+        auto segment = *holder->begin();
+        ASSERT_EQ(segment->getOrSetDownloader(), FileSegment::getCallerId());
+
+        DB::FileCacheReserveAhead reserve_ahead;
+        ASSERT_EQ(reserve_and_write(*segment, 2, &reserve_ahead), 2u);
+        ASSERT_EQ(reserve_and_write(*segment, 2, &reserve_ahead), 2u + 4);
+        ASSERT_EQ(reserve_and_write(*segment, 2, &reserve_ahead), 6u);
+        ASSERT_EQ(reserve_and_write(*segment, 2, &reserve_ahead), 6u + 8);
+        for (size_t downloaded = 10; downloaded <= 14; downloaded += 2)
+            ASSERT_EQ(reserve_and_write(*segment, 2, &reserve_ahead), 14u);
+        ASSERT_EQ(reserve_and_write(*segment, 2, &reserve_ahead), 14u + 16);
+        for (size_t downloaded = 18; downloaded <= 30; downloaded += 2)
+            ASSERT_EQ(reserve_and_write(*segment, 2, &reserve_ahead), 30u);
+        ASSERT_EQ(reserve_and_write(*segment, 2, &reserve_ahead), 30u + 16);
+    }
+}
+
+TEST_F(FileCacheTest, ReserveAheadFallsBackToExactSize)
+{
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    /// The cache is smaller than the reserve-ahead limit.
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::max_size] = 12;
+    settings[FileCacheSetting::max_elements] = 10;
+    settings[FileCacheSetting::max_file_segment_size] = 20;
+    settings[FileCacheSetting::boundary_alignment] = 20;
+    settings[FileCacheSetting::reserve_granularity] = 16;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+
+    auto cache = std::make_shared<DB::FileCache>("reserve_ahead_fallback", settings);
+    cache->initialize();
+
+    const auto & user = FileCache::getCommonOrigin();
+    auto holder = cache->getOrSet(DB::FileCacheKey::fromPath("reserve_ahead_fallback"), 0, 20, /*file_size=*/20, {}, 0, user);
+    auto segment = *holder->begin();
+    ASSERT_EQ(segment->getOrSetDownloader(), FileSegment::getCallerId());
+
+    std::string failure_reason;
+    std::string data(20, '0');
+    DB::FileCacheReserveAhead reserve_ahead;
+    auto & events = CurrentThread::getProfileEvents();
+    const auto retries_before = events[ProfileEvents::FilesystemCacheReserveAheadRetries];
+    auto reserve_and_write = [&]()
+    {
+        EXPECT_TRUE(segment->reserve(2, 1000, failure_reason, nullptr, std::nullopt, &reserve_ahead)) << failure_reason;
+        segment->write(data.data(), 2, segment->getCurrentWriteOffset());
+        return segment->getReservedSize();
+    };
+
+    ASSERT_EQ(reserve_and_write(), 2u);
+    ASSERT_EQ(reserve_and_write(), 6u);
+    ASSERT_EQ(reserve_and_write(), 6u);
+    ASSERT_EQ(events[ProfileEvents::FilesystemCacheReserveAheadRetries], retries_before);
+    ASSERT_EQ(reserve_and_write(), 8u);  /// +8 does not fit, falls back to exact +2 and resets
+    ASSERT_EQ(events[ProfileEvents::FilesystemCacheReserveAheadRetries], retries_before + 1);
+    ASSERT_EQ(reserve_and_write(), 10u);
+    ASSERT_EQ(reserve_and_write(), 12u); /// +4 does not fit, falls back to exact +2, the cache is full
+    ASSERT_EQ(events[ProfileEvents::FilesystemCacheReserveAheadRetries], retries_before + 2);
+
+    ASSERT_FALSE(segment->reserve(2, 1000, failure_reason, nullptr, std::nullopt, &reserve_ahead));
+    ASSERT_EQ(events[ProfileEvents::FilesystemCacheReserveAheadRetries], retries_before + 2);
+    ASSERT_EQ(segment->getReservedSize(), 12u);
+    ASSERT_EQ(cache->getUsedCacheSize(), 12u);
 }
 
 TEST_F(FileCacheTest, QueryLimitContextRevivedDuringRelease)

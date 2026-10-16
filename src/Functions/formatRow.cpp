@@ -162,7 +162,7 @@ public:
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument to {} must be a format name", getName());
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeString>(); }
+    String getSignatureString() const override { return "(const String, Any, ...) -> String"; }
 
 private:
     const char * function_name;
@@ -215,13 +215,13 @@ SETTINGS format_custom_result_before_delimiter='<prefix>\n', format_custom_resul
         R"DOCS_MD(
 ┌─formatRow('CustomSeparated', number, 'good')─┐
 │ <prefix>                                    ↴│
-│↳0	good                                     ↴│
+│↳0	good                                  ↴│
 │↳<suffix>                                     │
 │ <prefix>                                    ↴│
-│↳1	good                                     ↴│
+│↳1	good                                  ↴│
 │↳<suffix>                                     │
 │ <prefix>                                    ↴│
-│↳2	good                                     ↴│
+│↳2	good                                  ↴│
 │↳<suffix>                                     │
 └──────────────────────────────────────────────┘
         )DOCS_MD"
