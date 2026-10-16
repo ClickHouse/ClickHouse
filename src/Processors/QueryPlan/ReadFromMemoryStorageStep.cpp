@@ -34,6 +34,7 @@
 #include <IO/Operators.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <QueryPipeline/StreamLocalLimits.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/Sources/NullSource.h>
@@ -1321,9 +1322,16 @@ Pipe ReadFromMemoryStorageStep::makePipe()
     auto parallel_execution_index = std::make_shared<std::atomic<size_t>>(0);
     auto block_start_rows = read_global_row_index ? makeBlockStartRows(*current_data) : nullptr;
 
-    /// `max_rows_to_read` with `read_overflow_mode = 'throw'` is checked against this estimate, so it leaves out
-    /// the granules skipped by the query condition cache, which the sources do not report as read.
-    const size_t total_rows_approx = source_filter && source_filter->query_condition_cache
+    /// `max_rows_to_read` with `read_overflow_mode = 'throw'` is checked against this estimate, so then it leaves out
+    /// the granules skipped by the query condition cache, which the sources do not report as read. Finding them
+    /// takes a cache lookup per block, so it is done only for such a limit.
+    const bool row_limit_checks_estimate = query_info.storage_limits
+        && std::ranges::any_of(*query_info.storage_limits, [](const StorageLimits & limits)
+        {
+            return limits.local_limits.size_limits.overflow_mode == OverflowMode::THROW
+                && (limits.local_limits.size_limits.max_rows || limits.leaf_limits.max_rows);
+        });
+    const size_t total_rows_approx = row_limit_checks_estimate && source_filter && source_filter->query_condition_cache
         ? source_filter->countRowsToScan(*current_data)
         : snapshot_data.rows;
 
