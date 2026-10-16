@@ -619,7 +619,7 @@ class AggregateFunctionNullVariadic final : public AggregateFunctionNullBase<
 {
 public:
     /// The batch path allocates a flag buffer up to `row_end`, so one call per array would allocate per row.
-    constexpr static bool addBatchSinglePlaceForLongArrays() { return false; }
+    constexpr static size_t minArraySizeForAddBatchSinglePlace() { return IAggregateFunction::never_add_batch_single_place_for_arrays; }
 
     AggregateFunctionNullVariadic(AggregateFunctionPtr nested_function_, const DataTypes & arguments, const Array & params)
         : AggregateFunctionNullBase<result_is_nullable, serialize_flag, AggregateFunctionNullVariadic<result_is_nullable, serialize_flag>>(

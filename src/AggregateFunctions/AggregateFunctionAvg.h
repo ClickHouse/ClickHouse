@@ -486,8 +486,12 @@ public:
         ++this->data(place).denominator;
     }
 
-    /// Except for floats, the loop of inlined `add` is vectorized as well as `addMany`.
-    constexpr static bool addBatchSinglePlaceForLongArrays() { return is_floating_point<T>; }
+    /// Except for floats, the loop of inlined `add` is vectorized as well as `addMany`. For floats `addMany`
+    /// is unrolled by 16 values, so it pays off from about twice that.
+    constexpr static size_t minArraySizeForAddBatchSinglePlace()
+    {
+        return is_floating_point<T> ? 32 : IAggregateFunction::never_add_batch_single_place_for_arrays;
+    }
 
     void addManyDefaults(
         AggregateDataPtr __restrict place,

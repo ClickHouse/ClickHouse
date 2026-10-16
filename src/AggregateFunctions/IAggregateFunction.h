@@ -19,6 +19,7 @@
 #include <IO/WriteBuffer.h>
 
 #include <cstddef>
+#include <limits>
 #include <memory>
 #include <vector>
 #include <type_traits>
@@ -215,9 +216,10 @@ public:
 
     constexpr static bool parallelizeMergeWithKey() { return false; }
 
-    /// Whether `addBatchArray` of `IAggregateFunctionHelper` passes a long array to `addBatchSinglePlace`.
-    /// Off where a call per array costs more than it saves, e.g. where the loop of inlined `add` is vectorized as well.
-    constexpr static bool addBatchSinglePlaceForLongArrays() { return true; }
+    /// `addBatchArray` of `IAggregateFunctionHelper` passes an array of at least this many elements to `addBatchSinglePlace`
+    /// in one call; a shorter one is added element by element, as the call would cost more than it saves.
+    static constexpr size_t never_add_batch_single_place_for_arrays = std::numeric_limits<size_t>::max();
+    constexpr static size_t minArraySizeForAddBatchSinglePlace() { return 16; }
 
     virtual void
     parallelizeMergePrepare(AggregateDataPtrs & /*places*/, ThreadPool & /*thread_pool*/, std::atomic<bool> & /*is_cancelled*/) const;
@@ -622,6 +624,13 @@ private:
         }
     }
 
+    /// Kept out of the loop of `addBatchArray`: inlined, the batch loop slows down the rows added by `add`.
+    NO_INLINE void addBatchSinglePlaceOutOfLine(
+        size_t row_begin, size_t row_end, AggregateDataPtr __restrict place, const IColumn ** columns, Arena * arena) const
+    {
+        static_cast<const Derived *>(this)->addBatchSinglePlace(row_begin, row_end, place, columns, arena, -1);
+    }
+
 public:
     IAggregateFunctionHelper(const DataTypes & argument_types_, const Array & parameters_, const DataTypePtr & result_type_)
         : IAggregateFunction(argument_types_, parameters_, result_type_) {}
@@ -886,24 +895,25 @@ public:
         /// vectorized `max`). For a short row that call costs more than it saves. The path depends only
         /// on the row itself, because the batch loop of a float `sum` may round differently; when no row
         /// of the block can be long, the test of each row is skipped, as it costs more than an empty row.
-        static constexpr size_t min_array_size_for_batch = 16;
+        static constexpr size_t min_array_size_for_batch = Derived::minArraySizeForAddBatchSinglePlace();
         const auto * derived = static_cast<const Derived *>(this);
         size_t current_offset = offsets[static_cast<ssize_t>(row_begin) - 1];
-        const bool use_batch = Derived::addBatchSinglePlaceForLongArrays()
+        const bool use_batch = min_array_size_for_batch != never_add_batch_single_place_for_arrays
             && offsets[static_cast<ssize_t>(row_end) - 1] - current_offset >= min_array_size_for_batch
             && derived->canOptimizeEqualKeysRanges();
 
+        /// One loop with one call of `add`: with two, the compiler inlines less of it into each.
         for (size_t i = row_begin; i < row_end; ++i)
         {
             size_t next_offset = offsets[i];
-            /// `places[i]` is tested inside the loop over elements, so an empty row costs no load of it.
             if (use_batch && next_offset - current_offset >= min_array_size_for_batch)
             {
                 if (places[i])
-                    derived->addBatchSinglePlace(current_offset, next_offset, places[i] + place_offset, columns, arena, -1);
+                    addBatchSinglePlaceOutOfLine(current_offset, next_offset, places[i] + place_offset, columns, arena);
             }
             else
             {
+                /// `places[i]` is tested inside the loop over elements, so an empty row costs no load of it.
                 for (size_t j = current_offset; j < next_offset; ++j)
                     if (places[i])
                         derived->add(places[i] + place_offset, columns, j, arena);

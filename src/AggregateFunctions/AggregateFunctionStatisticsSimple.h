@@ -100,7 +100,10 @@ public:
 
     /// The unrolled `CorrMoments::addMany` reduces about as many partial sums as an array of a few dozen
     /// values has, so for `corr` a call per array costs more than it saves.
-    constexpr static bool addBatchSinglePlaceForLongArrays() { return !std::is_same_v<typename StatFunc::Data, CorrMoments<ResultType>>; }
+    constexpr static size_t minArraySizeForAddBatchSinglePlace()
+    {
+        return std::is_same_v<typename StatFunc::Data, CorrMoments<ResultType>> ? IAggregateFunction::never_add_batch_single_place_for_arrays : 16;
+    }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
