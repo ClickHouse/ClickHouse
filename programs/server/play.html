@@ -3485,6 +3485,9 @@ function digitGroupsHTML(digits)
 /// `QueryResultElement` (`_renderGallery`).
 
 const GALLERY_MAX_CHARTS = 12;
+/// The charts are drawn from the whole result, not from the page on screen; at most this many of its
+/// rows are fetched for them.
+const GALLERY_MAX_ROWS = 100000;
 /// Only the first usable columns are combined, which bounds the number of candidates.
 const GALLERY_MAX_COLUMNS = 12;
 /// The categorical palette has this many slots. A series past them is never a generated hue,
@@ -4074,6 +4077,36 @@ function gallerySuggest(header, rows, isNull)
         chart.spec = Object.assign({ data: { name: 'result' } }, chart.spec);
     }
     return { charts, values: galleryValues(profiles, rows.length) };
+}
+
+/// The construction-setting URL parameters of a run (see `shapeUrlParams`) without its page: the
+/// charts show the whole result in the shape the table has - sorted and filtered the same way - and
+/// not only the page of it on screen. Each parameter is `&name=` followed by a URI-encoded value,
+/// which cannot contain a raw `&`, so the parameters split apart on it.
+function galleryShapeWithoutPage(shape_params) {
+    return String(shape_params || '').split('&')
+        .filter(param => param !== '' && !param.startsWith('limit=') && !param.startsWith('page='))
+        .map(param => '&' + param).join('');
+}
+
+/// Whether a run's construction-setting URL parameters select a page of its result.
+function galleryShapeHasPage(shape_params) {
+    return String(shape_params || '').split('&').some(param => param.startsWith('page='));
+}
+
+/// The header and the rows (keyed by column name, like the table's) of a `JSONColumnsWithMetadata`
+/// response. The format keys its columns by name, so of the columns sharing a name only one survives;
+/// the gallery leaves such names out anyway (see `galleryProfileColumns`).
+function galleryRowsFromColumns(json) {
+    const header = json.meta;
+    const row_count = header.length ? json.data[header[0].name].length : 0;
+    const rows = new Array(row_count);
+    for (let i = 0; i < row_count; ++i) {
+        const row = {};
+        for (const column of header) { row[column.name] = json.data[column.name][i]; }
+        rows[i] = row;
+    }
+    return { header, rows };
 }
 
 /// The Vega-Lite configuration of the page's look, in the current theme: the text and the lines in
@@ -5406,6 +5439,12 @@ class QueryResultElement extends HTMLElement
                     color: var(--misc-text-color);
                 }
 
+                #gallery-status
+                {
+                    margin: 0 0 0.5rem 0;
+                    font-size: 85%;
+                }
+
                 #gallery-detail
                 {
                     display: none;
@@ -5619,6 +5658,7 @@ class QueryResultElement extends HTMLElement
                 <p id="error" class="monospace shadow"></p>
             </div>
             <div id="gallery_div">
+                <p id="gallery-status" class="gallery-message"></p>
                 <div id="gallery-grid"></div>
                 <div id="gallery-detail">
                     <div id="gallery-detail-bar">
@@ -5727,6 +5767,7 @@ class QueryResultElement extends HTMLElement
 
         this._galleryDiv = this.shadowRoot.getElementById('gallery_div');
         this._galleryGrid = this.shadowRoot.getElementById('gallery-grid');
+        this._galleryStatus = this.shadowRoot.getElementById('gallery-status');
         this._galleryDetail = this.shadowRoot.getElementById('gallery-detail');
         this._galleryDetailTitle = this.shadowRoot.getElementById('gallery-detail-title');
         this._galleryDetailChart = this.shadowRoot.getElementById('gallery-detail-chart');
@@ -5746,6 +5787,16 @@ class QueryResultElement extends HTMLElement
         this._gallery_token = 0;
         this._gallery_spec_timer = null;
         this._gallery_width = 0;
+        /// What the producing run of this result was: its database, connection, parameters and the
+        /// construction settings it was shaped with - everything needed to run it again for all of its
+        /// rows (see `_fetchGalleryRows`). Set by every path that shows a result (see `runContext`).
+        this._run_context = null;
+        /// The fetch of the whole result for the charts: its promise while in flight, and how to cancel
+        /// it when the result goes away. `_gallery_source` describes the rows the charts are drawn
+        /// from once known: `{ rows, truncated }`.
+        this._gallery_fetch = null;
+        this._gallery_abort = null;
+        this._gallery_source = null;
         this.shadowRoot.getElementById('gallery-back').addEventListener('click', () => this._openGalleryChart(-1));
         this._gallerySpec.addEventListener('input', () =>
         {
@@ -5907,6 +5958,11 @@ class QueryResultElement extends HTMLElement
     /// own snapshot and a history entry) - stamps the producing query here, so this is also the one
     /// place from which the sort availability can be (re)resolved for whatever is displayed.
     set queryText(v) { this._queryText = v; this._refreshShapeAvailability(); }
+    /// `{ database, url, user, params, shape }` of the run that produced the result, stamped next to
+    /// `queryText` by the live run and by both restore paths. `shape` is the construction-setting URL
+    /// parameters the run was made with (see `shapeUrlParams`), as opposed to the cell's current shape,
+    /// which a multi-statement run does not apply.
+    set runContext(v) { this._run_context = v; }
     get rawText() { return this._dataUnparsed.textContent; }
 
     _clearElement(elem)
@@ -8253,7 +8309,9 @@ class QueryResultElement extends HTMLElement
     /// here, once all the rows are in: the toggle is offered only when there is something to show.
     _markChartsAvailable()
     {
-        if (!this._gallery && this._chart_rows.length >= 2)
+        /// Once the charts are drawn from the whole result (see `_prepareGalleryRows`), that verdict
+        /// stands, even when it is that there is nothing to chart.
+        if (!this._gallery && !this._gallery_source && this._chart_rows.length >= 2)
         {
             this._gallery = gallerySuggest(this._header, this._chart_rows,
                 (name, value) => !!this._column_is_nullable[name] && value === QueryResultElement._NULL_TEXT);
@@ -9439,7 +9497,12 @@ class QueryResultElement extends HTMLElement
         this._chart_rows = [];
         this._gallery = null;
         this._gallery_open = -1;
+        if (this._gallery_abort) { this._gallery_abort.abort(); }
+        this._gallery_abort = null;
+        this._gallery_fetch = null;
+        this._gallery_source = null;
         this._galleryGrid.replaceChildren();
+        this._galleryStatus.textContent = '';
         this._galleryDetailChart.replaceChildren();
         this._gallerySpec.value = '';
         this._showGallerySpecError(null);
@@ -9482,6 +9545,29 @@ class QueryResultElement extends HTMLElement
             p.textContent = text;
             this._galleryGrid.replaceChildren(p);
         };
+        if (this._gallery && !this._gallery_source)
+        {
+            this._galleryStatus.textContent = '';
+            message('Loading all the rows of the result...');
+            try
+            {
+                await this._loadGalleryRows();
+            }
+            catch (e)
+            {
+                if (token === this._gallery_token) { message(e.message); }
+                return;
+            }
+            if (token === this._gallery_token) { this._renderGallery(); }
+            return;
+        }
+        if (this._gallery_source)
+        {
+            const rows = this._gallery_source.rows.toLocaleString('en-US');
+            this._galleryStatus.textContent = this._gallery_source.truncated
+                ? 'Charts of the first ' + rows + ' rows of the result.'
+                : 'Charts of all ' + rows + ' rows of the result.';
+        }
         if (!this._gallery)
         {
             message('No charts to suggest for this result.');
@@ -9537,6 +9623,106 @@ class QueryResultElement extends HTMLElement
                 container.textContent = e.message;
             }
         }
+    }
+
+    /// Make `_gallery` describe the rows the charts are drawn from: the whole result, at most
+    /// `GALLERY_MAX_ROWS` rows of it. Those are the rows on screen when the table holds all of them;
+    /// otherwise - a page of the result, or a table cut off at the display limit - the result is
+    /// fetched again, once. A failure is reported and the next showing of the charts tries again.
+    _loadGalleryRows()
+    {
+        if (!this._gallery_fetch)
+        {
+            this._gallery_fetch = this._prepareGalleryRows()
+                .catch((e) => { this._gallery_fetch = null; throw e; });
+        }
+        return this._gallery_fetch;
+    }
+
+    async _prepareGalleryRows()
+    {
+        const shape = this._run_context ? this._run_context.shape : '';
+        if (!this._incomplete_result && !galleryShapeHasPage(shape))
+        {
+            this._gallery_source = { rows: this._chart_rows.length, truncated: false };
+            return;
+        }
+        const abort = new AbortController();
+        this._gallery_abort = abort;
+        const { header, rows } = await this._fetchGalleryRows(abort.signal);
+        /// The result was cleared (or replaced) while its rows were on their way.
+        if (abort.signal.aborted) { return; }
+        this._gallery_abort = null;
+        const truncated = rows.length > GALLERY_MAX_ROWS;
+        if (truncated) { rows.length = GALLERY_MAX_ROWS; }
+        /// A real `JSON` null is the only NULL of this format.
+        this._gallery = gallerySuggest(header, rows, () => false);
+        this._gallery_source = { rows: rows.length, truncated };
+    }
+
+    /// Run the producing query of this result again, for the rows of the charts: against the database
+    /// and the connection that produced it, with its parameters and with its sort and filters but
+    /// without its page, and limited to one row more than the charts take, which tells whether there
+    /// are more. Like the download, it uses the live password, which is never stored.
+    async _fetchGalleryRows(signal)
+    {
+        const context = this._run_context;
+        if (!context || !context.url)
+        {
+            throw new Error('This result does not record the connection it was produced with, so its rows cannot be fetched for the charts. Run the query again.');
+        }
+        const query = this._queryText;
+        /// A framing chosen by the query itself would stream packets instead of the requested format.
+        const { user_framing, user_sets_session_framing } = await detectFramingSetting(query);
+        if (user_framing || user_sets_session_framing)
+        {
+            throw new Error('This query chooses its own framing_output_format, so its rows cannot be fetched for the charts.');
+        }
+        const format_clause = await detectExplicitFormatClause(query);
+        const body = format_clause ? query.slice(0, format_clause.start) + query.slice(format_clause.end) : query;
+
+        dropAutofilledStalePassword();
+        const password = password_elem.value;
+        let url = context.url + (context.url.indexOf('?') >= 0 ? '&' : '?')
+            + 'add_http_cors_header=1&enable_http_compression=1&framing_output_format=None&default_format=JSONColumnsWithMetadata';
+        if (context.user) { url += '&user=' + encodeURIComponent(context.user); }
+        if (password) { url += '&password=' + encodeURIComponent(password); }
+        if (context.database) { url += '&database=' + encodeURIComponent(context.database); }
+        url += galleryShapeWithoutPage(context.shape);
+        url += '&limit=' + (GALLERY_MAX_ROWS + 1);
+        for (const [name, value] of Object.entries(context.params || {}))
+        {
+            url += '&param_' + encodeURIComponent(name) + '=' + encodeURIComponent(value);
+        }
+
+        const response = await fetch(url, { method: 'POST', body, signal });
+        /// A failure after the response started is appended to the body after a marker, and the server
+        /// then breaks the chunked stream off, which fails the read: the body is read piece by piece so
+        /// that what arrived, and with it the message, is not lost with the failed read.
+        const exception_tag = response.headers.get('X-ClickHouse-Exception-Tag');
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let text = '';
+        try
+        {
+            for (;;)
+            {
+                const { done, value } = await reader.read();
+                if (done) { break; }
+                text += decoder.decode(value, { stream: true });
+            }
+            text += decoder.decode();
+        }
+        catch (e)
+        {
+            const failure = parseExceptionMarker(text, exception_tag);
+            if (failure !== null) { throw new Error(failure.message); }
+            throw e;
+        }
+        if (!response.ok) { throw new Error(text.trim() || ('HTTP ' + response.status)); }
+        const failure = parseExceptionMarker(text, exception_tag);
+        if (failure !== null) { throw new Error(failure.message); }
+        return galleryRowsFromColumns(JSON.parse(text));
     }
 
     /// Open the suggested chart of the given index large (or return to the mosaic for -1).
@@ -12790,6 +12976,7 @@ async function postImpl(cell, posted_request_num, query, targetResultEl, abortCo
     url += '&framing_output_format=None&default_format=' + (user_framing ? framed_default_format : default_format);
 
     targetResultEl.queryText = query;
+    targetResultEl.runContext = { database: query_database, url: server_address, user, params: paramValuesSnapshot, shape: shape_params };
 
     let is_table = false;
     let is_raw = false;
@@ -14683,6 +14870,8 @@ async function restoreMultiQuery(snapshot, cell, matToken) {
 
     let any_restore_failed = false;
     for (let i = 0; i < snapshot.multi.length; ++i) {
+        /// A multi-statement run applies no result shape (see `resolveShapeForRun`).
+        elements[i].runContext = { database: snapshot.database || '', url: snapshot.url, user: snapshot.user ?? '', params: snapshot.params || {}, shape: '' };
         const rendered_ok = await renderSnapshotIntoElement(elements[i], snapshot.multi[i], cell, matToken);
         if (matToken !== tab.reqNum) return;
         if (!rendered_ok) any_restore_failed = true;
@@ -14848,6 +15037,9 @@ async function materializeResult(cell) {
     /// Graph detection keys off the producing query, so a snapshot still renders as a graph
     /// even if the editor query was changed without rerunning.
     el.queryText = result.query ?? cell.query;
+    /// A snapshot that predates the record of its producing connection has no `url`: its rows cannot
+    /// be fetched again (see `_fetchGalleryRows`), like its download.
+    el.runContext = { database: result.database || '', url: result.url, user: result.user ?? '', params: result.params || {}, shape: cell.downloadShape };
 
     /// A snapshotted multi-query ("Run all") result is restored into this cell's multi-query
     /// container, rebuilding one result element per statement, rather than into `cell.resultEl`.
