@@ -51,7 +51,8 @@ static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_READ_SOURCE_
 static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_IDENTITY_PARTITION_COLUMNS = 9;
 static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_CDC_READING = 10;
 static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_DELETION_VECTORS = 11;
-static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION = DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_DELETION_VECTORS;
+static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ARCHIVE_ENTRY_INDEX = 12;
+static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION = DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ARCHIVE_ENTRY_INDEX;
 
 static constexpr auto DATA_LAKE_TABLE_STATE_SNAPSHOT_PROTOCOL_VERSION = 1;
 
@@ -131,6 +132,8 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// know the name and has no block nested loop join: it rejects a join without equality keys by itself.
 /// Version 20 also adds the `sorted_merge` and `parallel_sorted_merge` values of `join_algorithm`. They are removed
 /// from the list towards a peer below it, which does not know them.
+/// Version 20 also registers the `MergeRuntimeFilters` step and adds the `join_runtime_filter_exact_bytes_limit`
+/// plan setting.
 ///
 /// Rules for this version:
 /// - Bump it at most once per release: the first change in a release that needs it bumps it, later changes
@@ -227,7 +230,10 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_GROUP_BY_TO
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 /// Version 3 added the error code of a failed task to its status reply.
-static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 3;
+/// Version 4 added runtime filter receive descriptors to the task.
+static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 4;
+/// First distributed-task serialization version that carries the runtime filter receive descriptors.
+static constexpr auto DBMS_MIN_DISTRIBUTED_TASK_SERIALIZATION_VERSION_WITH_RUNTIME_FILTERS = 4;
 
 static constexpr auto DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET = 54441;
 

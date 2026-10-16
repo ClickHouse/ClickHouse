@@ -318,6 +318,13 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
                         "codec, or in any other context where the column data type is unknown",
                         codec_family_name);
 
+                /// A codec that needs the column type to compress (e.g. `PCO`) cannot be used where the codec is
+                /// resolved without one: the marks, primary key, default and TTL recompression codecs.
+                if (!column_type && result_codec->requiresColumnTypeToCompress())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Codec {} requires the column type to compress and can only be specified for a column",
+                        codec_family_name);
+
                 codecs_descriptions->children.emplace_back(result_codec->getCodecDescription());
             }
 

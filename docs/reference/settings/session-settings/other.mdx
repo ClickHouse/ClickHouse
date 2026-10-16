@@ -1107,6 +1107,14 @@ Do not add aliases to top level expression list on multiple joins rewrite
 
 Normalize function names to their canonical names
 
+## obfuscate_seed {#obfuscate_seed}
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": ""},{"label": "New setting: seed string for the obfuscate table function."}]}]}/>
+
+Seed for the `obfuscate` table function. Arbitrary string — the seed for each column is derived from it and the column name, so the same seed always produces the same obfuscation. Empty string means a random seed is generated for each query.
+
+The seed is an ordinary setting, not a secret: its value is stored and shown in plain text like any other setting, for example in `system.query_log` and `system.settings`. Do not use a password or another secret as the seed. If the obfuscated outputs of different queries must not be correlatable with each other, keep the default empty value (a fresh random seed per query) instead of setting a fixed seed.
+
 ## offset {#offset}
 
 <SettingsInfoBlock type="Double" default_value="0" />

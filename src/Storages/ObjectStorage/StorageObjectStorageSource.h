@@ -6,6 +6,7 @@
 #include <Common/threadPoolCallbackRunner.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ClusterFunctionReadTask.h>
+#include <IO/Archives/ArchiveEntryPositions.h>
 #include <IO/Archives/IArchiveReader.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -187,7 +188,8 @@ private:
     ObjectInfoPtr createObjectInfoInArchive(
         const std::string & path_to_archive,
         const std::string & path_in_archive,
-        std::optional<size_t> read_source_index);
+        std::optional<size_t> read_source_index,
+        std::optional<size_t> archive_entry_index);
 
     ClusterFunctionReadTaskCallback callback;
     ObjectInfos buffer;
@@ -343,7 +345,10 @@ public:
             ObjectInfoPtr archive_object_,
             const std::string & path_in_archive_,
             std::shared_ptr<IArchiveReader> archive_reader_,
-            IArchiveReader::FileInfo && file_info_);
+            IArchiveReader::FileInfo && file_info_,
+            std::optional<size_t> archive_entry_index_);
+
+        std::unique_ptr<ReadBufferFromFileBase> readFile() const;
 
         std::string getFileName() const override
         {
@@ -390,6 +395,7 @@ private:
     std::shared_ptr<IArchiveReader> archive_reader;
     /// File enumerator inside the archive.
     std::unique_ptr<IArchiveReader::FileEnumerator> file_enumerator;
+    ArchiveEntryPositions entry_positions;
 
     bool ignore_archive_globs;
 
