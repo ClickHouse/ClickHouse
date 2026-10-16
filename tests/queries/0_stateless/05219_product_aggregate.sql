@@ -36,6 +36,16 @@ SELECT 'filtered non-finite values';
 SELECT isNull(productIf(x, isFinite(x))), productIf(x, isFinite(x))
 FROM VALUES('x Float64', (2), (nan), (3), (inf));
 
+SELECT 'filtered non-finite and nullable input';
+SELECT productIf(x, keep) = 6
+FROM VALUES('x Nullable(Float64), keep UInt8', (2, 1), (NULL, 1), (nan, 0), (inf, 0), (3, 1));
+
+SELECT 'filtered Decimal and integer input';
+SELECT productIf(x, keep) = 10
+FROM VALUES('x Decimal64(2), keep UInt8', (2.00, 1), (0.00, 0), (5.00, 1));
+SELECT productIf(x, keep) = 6
+FROM VALUES('x Int64, keep UInt8', (2, 1), (0, 0), (3, 1));
+
 SELECT 'non-finite result semantics';
 SELECT isNull(product(x)) FROM VALUES('x Float64', (nan), (2));
 SELECT isNull(product(x)) FROM VALUES('x Float64', (0), (inf), (2));

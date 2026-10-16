@@ -17,6 +17,11 @@ nullable and filtered input
 1
 filtered non-finite values
 0	6
+filtered non-finite and nullable input
+1
+filtered Decimal and integer input
+1
+1
 non-finite result semantics
 1
 1

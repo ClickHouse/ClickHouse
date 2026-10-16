@@ -108,41 +108,26 @@ private:
 
     static Float64 toFloat64(const T & value, UInt32 scale)
     {
-        Float64 converted = 0;
         if constexpr (is_decimal<T>)
-            converted = DecimalUtils::convertTo<Float64>(value, scale);
+            return DecimalUtils::convertTo<Float64>(value, scale);
         else
-            converted = static_cast<Float64>(value);
-
-        return converted;
+            return static_cast<Float64>(value);
     }
 
     static Float64 selectValueOrOne(const T & value, UInt8 keep, UInt32 scale)
     {
-        if constexpr (is_decimal<T>)
+        if constexpr (is_floating_point<T>)
         {
-            if (!keep)
-                return 1.0;
-
-            return toFloat64(value, scale);
+            /// A discarded NaN or Inf must be replaced with 1.0 at the bit level,
+            /// rather than multiplied by an arithmetic mask.
+            constexpr UInt64 identity_bits = std::bit_cast<UInt64>(1.0);
+            const UInt64 value_bits = std::bit_cast<UInt64>(toFloat64(value, scale));
+            const UInt64 mask = 0 - static_cast<UInt64>(keep != 0);
+            return std::bit_cast<Float64>((value_bits & mask) | (identity_bits & ~mask));
         }
         else
         {
-            if constexpr (is_floating_point<T>)
-            {
-                Float64 converted = toFloat64(value, scale);
-
-                /// Multiplying a discarded NaN or Inf by an arithmetic mask is not safe.
-                /// Select the bit pattern of the multiplicative identity instead.
-                UInt64 value_bits = std::bit_cast<UInt64>(converted);
-
-                constexpr UInt64 identity_bits = 0x3ff0000000000000ULL;
-                const UInt64 mask = 0 - static_cast<UInt64>(keep != 0);
-                value_bits = (value_bits & mask) | (identity_bits & ~mask);
-
-                return std::bit_cast<Float64>(value_bits);
-            }
-
+            /// Avoid converting a filtered-out Decimal or integer.
             return keep ? toFloat64(value, scale) : 1.0;
         }
     }
@@ -157,22 +142,23 @@ private:
     {
         auto & data = this->data(place);
         const bool was_empty = data.isEmpty();
-        Float64 product = was_empty ? 1.0 : data.product;
-        UInt8 has_value = static_cast<UInt8>(!was_empty);
+        Float64 running_product = was_empty ? 1.0 : data.product;
+        bool has_value = !was_empty;
 
         for (size_t i = row_begin; i < row_end; ++i)
         {
             const UInt8 keep_value = static_cast<UInt8>(keep(i) != 0);
-            has_value |= keep_value;
-            product *= selectValueOrOne(values[i], keep_value, decimal_scale);
+            has_value |= keep_value != 0;
+            running_product *= selectValueOrOne(values[i], keep_value, decimal_scale);
         }
 
         if (has_value)
-            data.product = product;
+            data.product = running_product;
     }
 
 public:
     static constexpr bool DateTime64Supported = false;
+    /// The UInt8 lookup-table fast path merges interleaved states, changing multiplication order.
     static constexpr bool can_use_lookup_table8 = false;
 
     explicit AggregateFunctionProduct(const DataTypes & argument_types_)
@@ -298,7 +284,7 @@ public:
     }
 
 private:
-    UInt32 decimal_scale;
+    const UInt32 decimal_scale;
 };
 
 AggregateFunctionPtr createAggregateFunctionProduct(
