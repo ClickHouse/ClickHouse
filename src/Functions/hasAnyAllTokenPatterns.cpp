@@ -504,7 +504,7 @@ any other one is checked against every token in the dictionary of each part.
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 10};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 11};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
     FunctionDocumentation documentation = {description, syntax, commonArguments("patterns", "The regular expression, or an array of regular expressions, each token is matched against."), {}, returned_value, examples, introduced_in, category};
 
