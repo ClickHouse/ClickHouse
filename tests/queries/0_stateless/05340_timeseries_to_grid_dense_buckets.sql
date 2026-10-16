@@ -168,6 +168,37 @@ GROUP BY series
 ORDER BY series
 SETTINGS max_threads = 8, max_block_size = 1000, group_by_two_level_threshold = 1, max_bytes_before_external_group_by = 1;
 
+-- The peak memory of 200 states shows the memory of their buckets. A gappy series must not take more than the map,
+-- and a dense series with one late bucket below it no more than the same buckets added in order.
+SET max_threads = 1, max_block_size = 65536, max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0,
+    max_untracked_memory = 0, log_queries = 1;
+
+SELECT series, timeSeriesSumToGridState(10, 200000, 10, 10)(toDateTime(10 + 10 * (i + intDiv(i, 2)), 'UTC'), toFloat64(i))
+FROM (SELECT number % 200 AS series, intDiv(number, 200) AS i FROM numbers(1200000))
+GROUP BY series FORMAT Null SETTINGS log_comment = '05340_gappy';
+
+SELECT series, timeSeriesSumToGridState(10, 200000, 10, 10)(toDateTime(10 + 10 * if(i = 0, 19999, i - 1 + intDiv(i - 1, 2)), 'UTC'), toFloat64(i))
+FROM (SELECT number % 200 AS series, intDiv(number, 200) AS i FROM numbers(1200000))
+GROUP BY series FORMAT Null SETTINGS log_comment = '05340_map';
+
+SELECT series, timeSeriesSumToGridState(10, 200000, 10, 10)(toDateTime(10 + 10 * (i + 100), 'UTC'), toFloat64(i))
+FROM (SELECT number % 200 AS series, intDiv(number, 200) AS i FROM numbers(620200))
+GROUP BY series FORMAT Null SETTINGS log_comment = '05340_dense';
+
+SELECT series, timeSeriesSumToGridState(10, 200000, 10, 10)(toDateTime(10 + 10 * if(i = 3100, 100, i + 101), 'UTC'), toFloat64(i))
+FROM (SELECT number % 200 AS series, intDiv(number, 200) AS i FROM numbers(620200))
+GROUP BY series FORMAT Null SETTINGS log_comment = '05340_backfill';
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT 'memory: gappy within the map, backfill within dense (1 1):';
+SELECT
+    maxIf(memory_usage, log_comment = '05340_gappy') < 1.25 * maxIf(memory_usage, log_comment = '05340_map'),
+    maxIf(memory_usage, log_comment = '05340_backfill') < 1.25 * maxIf(memory_usage, log_comment = '05340_dense')
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
+    AND log_comment IN ('05340_gappy', '05340_map', '05340_dense', '05340_backfill');
+
 DROP VIEW shapes;
 DROP TABLE states;
 DROP TABLE ordered_samples;

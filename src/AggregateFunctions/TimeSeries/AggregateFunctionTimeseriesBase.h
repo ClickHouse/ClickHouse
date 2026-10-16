@@ -71,8 +71,8 @@ struct TimeSeriesBucketsHashTableGrower : public HashTableGrower<4>
 template <typename Bucket>
 using TimeSeriesBucketsMap = HashMap<UInt64, Bucket, TrivialHash, TimeSeriesBucketsHashTableGrower>;
 
-/// The buckets of one `timeSeries*ToGrid` state. They are kept in a plain array over the indices they span
-/// while they fill at least half of it, and in a `TimeSeriesBucketsMap` otherwise.
+/// The buckets of one `timeSeries*ToGrid` state. They are kept in a plain array over the indices they span while they
+/// fill at least half of it and it takes no more memory than a `TimeSeriesBucketsMap`, and in such a map otherwise.
 template <typename Bucket>
 class TimeSeriesBuckets
 {
@@ -82,6 +82,7 @@ public:
     /// Returns the bucket with this index (less than `limit`), adding an empty one if it is missing.
     Bucket & get(size_t index, size_t limit)
     {
+        const bool below_array = !map && index < first;
         if (!map && !(index >= first && index - first < slots.size()))
             growArray(index, limit);
 
@@ -89,8 +90,8 @@ public:
         {
             const size_t old_size = map->size();
             Bucket & bucket = (*map)[index];
-            /// Checked at powers of two only, so moving between the map and the array stays cheap.
-            if (map->size() == old_size || !std::has_single_bit(map->size()) || !moveToArrayIfDense())
+            /// Checked at powers of two and right after an index below the array, so moving stays cheap.
+            if (map->size() == old_size || !(below_array || std::has_single_bit(map->size())) || !moveToArrayIfDense())
                 return bucket;
         }
 
@@ -136,8 +137,8 @@ public:
 private:
     using Map = TimeSeriesBucketsMap<Bucket>;
 
-    /// Extends the array up to `index`, or moves the buckets to the map if `index` is below the array
-    /// or the array would be less than half full.
+    /// Extends the array up to `index`, or moves the buckets to the map if `index` is below the array,
+    /// or the array would be less than half full or take more memory than the map.
     void growArray(size_t index, size_t limit)
     {
         if (slots.empty())
@@ -152,13 +153,26 @@ private:
         const size_t new_size = index - first + 1;
         if (new_size > slots.capacity())
         {
-            /// Doubles the capacity, but never past the last possible index.
-            const size_t new_capacity = std::min(std::max(new_size, 2 * slots.capacity()), limit - first);
+            /// Doubles the capacity, but never past the last possible index or the memory of the map.
+            const size_t new_capacity = std::min({std::max(new_size, 2 * slots.capacity()), limit - first, maxSlotsInMapMemory(count + 1)});
+            if (new_capacity < new_size)
+            {
+                moveToMap();
+                return;
+            }
             present.reserve(new_capacity);
             slots.reserve(new_capacity);
         }
         present.resize(new_size);
         slots.resize(new_size);
+    }
+
+    /// The number of array slots that take no more memory than the map with this many buckets.
+    static size_t maxSlotsInMapMemory(size_t num_buckets)
+    {
+        TimeSeriesBucketsHashTableGrower grower;
+        grower.set(num_buckets);
+        return grower.bufSize() * sizeof(typename Map::cell_type) / (sizeof(Bucket) + sizeof(UInt8));
     }
 
     void moveToMap()
@@ -174,7 +188,8 @@ private:
         count = 0;
     }
 
-    /// Moves the buckets to an array over the indices they span if they fill at least half of it.
+    /// Moves the buckets to an array over the indices they span if they fill at least half of it
+    /// and it takes no more memory than the map.
     bool moveToArrayIfDense()
     {
         if (moves_below >= 2)
@@ -187,7 +202,8 @@ private:
             min_index = std::min<size_t>(min_index, cell.getKey());
             max_index = std::max<size_t>(max_index, cell.getKey());
         }
-        if (max_index - min_index >= 2 * map->size())
+        if (max_index - min_index >= 2 * map->size()
+            || (max_index - min_index + 1) * (sizeof(Bucket) + sizeof(UInt8)) > map->getBufferSizeInBytes())
             return false;
 
         VectorWithMemoryTracking<UInt8> new_present(max_index - min_index + 1);
