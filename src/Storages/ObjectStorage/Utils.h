@@ -37,9 +37,12 @@ public:
     /// Returns false when another insert into the same table is already writing this key.
     bool tryReserve(const std::string & path)
     {
+        /// Everything that can throw is done before the key is reserved in the configuration: a key reserved
+        /// there but not remembered here would never be released, and would block the inserts into the table.
+        auto entry = prepareEntry(path);
         if (!configuration->tryReservePathForWrite(path))
             return false;
-        reserved.push_back(path);
+        reserved.push_back(std::move(entry));
         return true;
     }
 
@@ -47,9 +50,10 @@ public:
     /// see `StorageObjectStorageConfiguration::tryReserveStartingPathForWrite`.
     bool tryReserveStartingPath(const std::string & path)
     {
+        auto entry = prepareEntry(path);
         if (!configuration->tryReserveStartingPathForWrite(path))
             return false;
-        reserved.push_back(path);
+        reserved.push_back(std::move(entry));
         return true;
     }
 
@@ -64,6 +68,14 @@ public:
     }
 
 private:
+    /// Copies the key and makes room for it, so that `push_back` of the copy cannot throw.
+    std::string prepareEntry(const std::string & path)
+    {
+        std::string entry = path;
+        reserved.reserve(reserved.size() + 1);
+        return entry;
+    }
+
     StorageObjectStorageConfigurationPtr configuration;
     std::vector<std::string> reserved;
 };
