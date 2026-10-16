@@ -236,7 +236,8 @@ void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, Context
     create_query.storage->set(create_query.storage->engine, engine->clone());
 }
 
-StoragePolicyPtr DatabaseOrdinary::getStoragePolicyFromCreateQuery(const ASTCreateQuery & create_query, bool create_custom_disk) const
+StoragePolicyPtr DatabaseOrdinary::getStoragePolicyFromCreateQuery(
+    const ASTCreateQuery & create_query, bool create_custom_disk, CustomDiskRegistrationPtr & custom_disk_registration) const
 {
     /// The `convert_to_replicated` flag is looked up on the first disk of the table's storage policy, and
     /// both phases of the conversion have to resolve it identically. The policy is taken from the CREATE
@@ -264,8 +265,9 @@ StoragePolicyPtr DatabaseOrdinary::getStoragePolicyFromCreateQuery(const ASTCrea
 
                     /// The disk is cached by its definition and reused when the table is loaded, so it has to be
                     /// created exactly as `registerStorageMergeTree` creates it, with the exemption of `system` tables.
+                    /// The registration keeps the disk registered until the caller is done with the policy.
                     SettingChange change{"disk", *disk_setting};
-                    MergeTreeSettings::resolveDiskSetting(
+                    custom_disk_registration = MergeTreeSettings::resolveDiskSetting(
                         change,
                         getContext(),
                         /* is_loading_from_existing_metadata = */ true,
@@ -310,8 +312,11 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
     /// Get table's storage policy
     /// A table on an inline `disk(...)` definition in a database with `lazy_load_tables` is not looked at:
     /// the second phase reports the flag if the table is ever loaded eagerly with it.
+    CustomDiskRegistrationPtr custom_disk_registration;
     auto policy = getStoragePolicyFromCreateQuery(
-        create_query, /* create_custom_disk = */ !database_metadata_disk_settings[DatabaseMetadataDiskSetting::lazy_load_tables]);
+        create_query,
+        /* create_custom_disk = */ !database_metadata_disk_settings[DatabaseMetadataDiskSetting::lazy_load_tables],
+        custom_disk_registration);
     if (!policy)
         return;
 
@@ -779,7 +784,9 @@ void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr tab
 
         /// The first phase does not resolve an inline `disk(...)` definition with `lazy_load_tables`, so it never
         /// converts such a table.
-        storage_policy = getStoragePolicyFromCreateQuery(create_query->as<const ASTCreateQuery &>(), /* create_custom_disk = */ false);
+        CustomDiskRegistrationPtr custom_disk_registration;
+        storage_policy = getStoragePolicyFromCreateQuery(
+            create_query->as<const ASTCreateQuery &>(), /* create_custom_disk = */ false, custom_disk_registration);
         if (!storage_policy)
             return;
     }

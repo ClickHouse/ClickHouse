@@ -135,6 +135,10 @@ public:
     /// Done by getOrSetStoragePolicyForSingleDisk.
     void add(StoragePolicyPtr storage_policy);
 
+    /// Only for the temporary policies added by `add`: the ones created for a single disk that is
+    /// itself temporary. Policies from the configuration stay until the server stops.
+    void remove(const String & name);
+
 private:
     StoragePoliciesMap policies;
 };

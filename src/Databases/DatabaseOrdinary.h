@@ -2,6 +2,7 @@
 
 #include <Databases/DatabaseMetadataDiskSettings.h>
 #include <Databases/DatabaseOnDisk.h>
+#include <Disks/CustomDiskRegistration.h>
 #include <Storages/TableZnodeInfo.h>
 
 #include <Common/Stopwatch.h>
@@ -176,7 +177,10 @@ private:
     /// resolves the path through the database's attached-table map.
     String getConvertToReplicatedFlagPath(const ASTCreateQuery & create_query);
     String getConvertToReplicatedFlagPath(const String & table_name);
-    StoragePolicyPtr getStoragePolicyFromCreateQuery(const ASTCreateQuery & create_query, bool create_custom_disk) const;
+    /// With `create_custom_disk`, `custom_disk_registration` receives the registration of the inline disk, which
+    /// keeps the disk registered while the returned policy is in use.
+    StoragePolicyPtr getStoragePolicyFromCreateQuery(
+        const ASTCreateQuery & create_query, bool create_custom_disk, CustomDiskRegistrationPtr & custom_disk_registration) const;
 };
 
 }
