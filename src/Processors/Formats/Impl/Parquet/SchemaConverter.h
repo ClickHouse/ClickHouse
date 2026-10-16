@@ -56,6 +56,9 @@ struct SchemaConverter
     std::unordered_map<String, String> clickhouse_variant_type_hints;
     std::unordered_set<String> clickhouse_variant_wrapper_paths;
     bool has_clickhouse_variant_wrapper_paths_metadata = false;
+    /// Dot-joined paths of all elements of the file schema (lowercase if matching is case-insensitive).
+    /// Filled only when reading, if some requested column has a dot in its name.
+    std::unordered_set<String> schema_element_paths;
 
     /// If precomputed_geo_columns has a value it is used directly (including the empty-map case)
     /// and the constructor skips parsing the "geo" key-value metadata. This ensures that a
@@ -175,6 +178,7 @@ private:
     std::vector<std::pair<size_t, String>> collectRequestedSubcolumns(const String & prefix) const;
     void checkSchemaReadDepth(size_t depth) const;
     size_t schemaIdxAfterSubtree(size_t idx, size_t depth) const;
+    size_t collectSchemaElementPaths(size_t idx, const String & prefix, size_t depth);
     size_t getOrAddVariantMetadataPrimitive(const TraversalNode & node, const String & name);
     size_t addParsedObjectSource(size_t primitive_idx, String storage_name, DataTypePtr parsed_object_type);
     size_t addVariantSource(

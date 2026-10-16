@@ -30,6 +30,7 @@
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
+#include <Poco/String.h>
 
 #include <algorithm>
 #include <array>
@@ -259,8 +260,19 @@ void SchemaConverter::prepareForReading()
     chassert(sample_block);
     checkHasColumns();
 
-    /// DFS the schema tree.
     size_t top_level_columns = size_t(file_metadata.schema.at(0).num_children);
+
+    bool has_dotted_requested_column = false;
+    for (const auto & column : *sample_block)
+        has_dotted_requested_column |= column.name.contains('.');
+    if (has_dotted_requested_column)
+    {
+        size_t idx = 1;
+        for (size_t i = 0; i < top_level_columns; ++i)
+            idx = collectSchemaElementPaths(idx, "", 1);
+    }
+
+    /// DFS the schema tree.
     for (size_t i = 0; i < top_level_columns; ++i)
     {
         TraversalNode node;
@@ -380,6 +392,27 @@ std::vector<std::pair<size_t, String>> SchemaConverter::collectRequestedSubcolum
     }
 
     return requested_subcolumns;
+}
+
+size_t SchemaConverter::collectSchemaElementPaths(size_t idx, const String & prefix, size_t depth)
+{
+    checkSchemaReadDepth(depth);
+
+    if (idx >= file_metadata.schema.size())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid parquet schema tree");
+
+    const auto & element = file_metadata.schema.at(idx);
+    String path = prefix.empty() ? element.name : prefix + "." + element.name;
+    if (options.format.parquet.case_insensitive_column_matching)
+        path = Poco::toLower(path);
+
+    size_t next_idx = idx + 1;
+    if (element.__isset.num_children)
+        for (Int32 i = 0; i < element.num_children; ++i)
+            next_idx = collectSchemaElementPaths(next_idx, path, depth + 1);
+
+    schema_element_paths.insert(std::move(path));
+    return next_idx;
 }
 
 size_t SchemaConverter::schemaIdxAfterSubtree(size_t idx, size_t depth) const
@@ -988,7 +1021,18 @@ bool SchemaConverter::processSubtreePrimitive(TraversalNode & node)
 
     std::vector<std::pair<size_t, String>> requested_object_subcolumns;
     if (!node.requested && sample_block && node.element->type == parq::Type::BYTE_ARRAY && levels.back().rep == 0)
+    {
         requested_object_subcolumns = collectRequestedSubcolumns(node.name);
+        /// A requested name like `s.a.b` may be both a path `b` of the `JSON` string `s.a` and an
+        /// element `a.b` of the tuple `s`. It is the element, as when the whole `s` is read.
+        std::erase_if(requested_object_subcolumns, [&](const auto & requested_subcolumn)
+        {
+            String name = sample_block->getByPosition(requested_subcolumn.first).name;
+            if (options.format.parquet.case_insensitive_column_matching)
+                name = Poco::toLower(name);
+            return schema_element_paths.contains(name);
+        });
+    }
 
     if (!node.requested && requested_object_subcolumns.empty())
         return true;
