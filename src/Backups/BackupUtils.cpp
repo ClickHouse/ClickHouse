@@ -232,6 +232,15 @@ bool isDataOnBackupMetadataOnlyStoragePolicy(const StoragePtr & storage, const C
     return true;
 }
 
+bool isDataOnBackupMetadataOnlyStoragePolicy(const StoragePtr & storage, const ASTPtr & create_table_query, const ContextPtr & context)
+{
+    if (storage)
+        return isDataOnBackupMetadataOnlyStoragePolicy(storage, context);
+
+    const auto * create_query = create_table_query ? create_table_query->as<ASTCreateQuery>() : nullptr;
+    return create_query && isCreatedOnBackupMetadataOnlyStoragePolicy(*create_query, context);
+}
+
 bool isCreatedOnBackupMetadataOnlyStoragePolicy(const ASTCreateQuery & create_query, const ContextPtr & context)
 {
     const auto * storage = create_query.storage;
@@ -259,15 +268,6 @@ bool isCreatedOnBackupMetadataOnlyStoragePolicy(const ASTCreateQuery & create_qu
         return false;
 
     return context->getStoragePolicy(policy_name->safeGet<String>())->isBackupMetadataOnly();
-}
-
-bool isDataOnBackupMetadataOnlyStoragePolicy(const StoragePtr & storage, const ASTPtr & create_table_query, const ContextPtr & context)
-{
-    if (storage)
-        return isDataOnBackupMetadataOnlyStoragePolicy(storage, context);
-
-    const auto * create_query = create_table_query ? create_table_query->as<ASTCreateQuery>() : nullptr;
-    return create_query && isCreatedOnBackupMetadataOnlyStoragePolicy(*create_query, context);
 }
 
 }

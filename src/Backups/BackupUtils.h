@@ -38,12 +38,12 @@ bool isInnerTable(const String & database_name, const String & table_name);
 /// for a replicated or shared `MergeTree` table, or a view with an inner table on such a policy, it warns and returns false.
 bool isDataOnBackupMetadataOnlyStoragePolicy(const StoragePtr & storage, const ContextPtr & context);
 
-/// Whether a table created by `create_query` is on a storage policy marked `backup_metadata_only`.
-bool isCreatedOnBackupMetadataOnlyStoragePolicy(const ASTCreateQuery & create_query, const ContextPtr & context);
-
 /// The same for a table that may not exist on this host: a `Replicated` database gives only the definition of a table
 /// not created on this replica yet, and then the definition decides.
 bool isDataOnBackupMetadataOnlyStoragePolicy(const StoragePtr & storage, const ASTPtr & create_table_query, const ContextPtr & context);
+
+/// Whether a table created by `create_query` is on a storage policy marked `backup_metadata_only`.
+bool isCreatedOnBackupMetadataOnlyStoragePolicy(const ASTCreateQuery & create_query, const ContextPtr & context);
 
 }
 
