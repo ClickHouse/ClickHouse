@@ -1,3 +1,5 @@
+Test stopped_actions of an Alias target with the target grant
+['merges']
 Test system.tables with an Alias database-level grant
 1	1	1	1
 Test other metadata tables with an Alias database-level grant
