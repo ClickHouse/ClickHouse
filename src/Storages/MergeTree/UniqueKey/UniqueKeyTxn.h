@@ -95,8 +95,8 @@ public:
 
     /// Commits one unique-key write (INSERT, DELETE, MERGE) under @transaction, returning the csn of the commit point.
     /// Throws ABORTED if a lost commit reply resolves to a rollback, or if the partition has an unresolved part:
-    /// Active, with no creation csn stamped yet. Throws UNKNOWN_STATUS_OF_TRANSACTION if a lost reply is still
-    /// unresolved at shutdown.
+    /// Active, with no creation csn stamped yet. Throws UNKNOWN_STATUS_OF_TRANSACTION if the wait for a lost reply is
+    /// killed or ended by shutdown.
     ///
     /// Commit wait involve:
     /// - commits in flight: writers holding the partition guard;
