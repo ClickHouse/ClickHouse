@@ -183,7 +183,13 @@ void MultiplexedConnections::sendQuery(
     /// any shard-side profile default for `query_rules`; otherwise a shard with a default would
     /// re-enable rules for the fragment. An older shard that does not know the setting safely
     /// ignores the unknown value.
-    modified_settings[Setting::query_rules] = "";
+    ///
+    /// Only a secondary query is stripped. A genuine initial query sent over a remote connection
+    /// (e.g. a `QueryRunner` job in cluster mode) has not been through the rules anywhere yet,
+    /// so it keeps its `query_rules` and the remote server applies them. The query kind is
+    /// chosen by the sender here, not by the client.
+    if (client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+        modified_settings[Setting::query_rules] = "";
 
     modified_settings[Setting::interactive_delay] = scaleInteractiveDelayByFanout(
         modified_settings[Setting::interactive_delay],
