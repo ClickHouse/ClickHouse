@@ -1734,7 +1734,6 @@ The server successfully detected this situation and will download merged part fr
     M(AIAPICalls, "Number of HTTP requests dispatched to AI providers.", ValueType::Number) \
     M(AIRequestMicroseconds, "Total time spent in AI provider requests, including failed attempts and response parsing, excluding retry backoff. Summed across threads.", ValueType::Microseconds) \
     M(AIExecutionMicroseconds, "Total time spent executing AI functions, including request preparation, retry backoff and result processing. Summed across threads.", ValueType::Microseconds) \
-    M(AIInputRows, "Rows passed to AI function execution, including NULL and empty inputs. Counted once per function, not per request or retry.", ValueType::Number) \
     M(AIRowsProcessed, "Number of rows that received an AI result.", ValueType::Number) \
     M(AIRowsSkipped, "Number of rows that received a default value due to quota or error.", ValueType::Number) \
     \

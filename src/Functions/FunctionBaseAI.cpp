@@ -36,7 +36,6 @@ namespace ProfileEvents
     extern const Event AICacheWriteTokens;
     extern const Event AIRequestMicroseconds;
     extern const Event AIExecutionMicroseconds;
-    extern const Event AIInputRows;
     extern const Event AIAPICalls;
     extern const Event AIRowsProcessed;
     extern const Event AIRowsSkipped;
@@ -474,7 +473,6 @@ void FunctionBaseAI::embedTexts(
 ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
     ProfileEventTimeIncrement<Microseconds> execution_time(ProfileEvents::AIExecutionMicroseconds);
-    ProfileEvents::increment(ProfileEvents::AIInputRows, input_rows_count);
 
     const auto & settings = getContext()->getSettingsRef();
     auto params = resolveAIParams(getContext(), arguments, allParams(), settings[Setting::ai_function_text_default_credentials]);

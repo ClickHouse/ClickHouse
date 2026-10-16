@@ -32,7 +32,6 @@
 namespace ProfileEvents
 {
     extern const Event AIExecutionMicroseconds;
-    extern const Event AIInputRows;
     extern const Event AIRowsProcessed;
     extern const Event AIRowsSkipped;
 }
@@ -103,7 +102,6 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         ProfileEventTimeIncrement<Microseconds> execution_time(ProfileEvents::AIExecutionMicroseconds);
-        ProfileEvents::increment(ProfileEvents::AIInputRows, input_rows_count);
 
         const auto & settings = getContext()->getSettingsRef();
         auto params = FunctionBaseAI::resolveAIParams(
