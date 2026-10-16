@@ -32,7 +32,8 @@ public:
     void dropTable(
         ContextPtr context,
         const String & table_name,
-        bool sync) override;
+        bool sync,
+        bool if_exists) override;
 
     ASTPtr getCreateTableQueryImpl(const String & name, ContextPtr context, bool throw_on_error) const override;
 

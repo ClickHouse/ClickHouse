@@ -41,6 +41,8 @@ public:
 
     bool needStructureHint() const override { return configuration->structure == "auto"; }
 
+    bool isDataLake() const override { return is_data_lake; }
+
     void setStructureHint(const ColumnsDescription & structure_hint_) override { structure_hint = structure_hint_; }
 
     bool supportsReadingSubsetOfColumns(const ContextPtr & context) override

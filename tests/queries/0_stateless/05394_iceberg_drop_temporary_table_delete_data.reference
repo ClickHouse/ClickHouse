@@ -1,0 +1,2 @@
+data_lake_delete_data_on_drop = 0: files kept
+data_lake_delete_data_on_drop = 1: files deleted

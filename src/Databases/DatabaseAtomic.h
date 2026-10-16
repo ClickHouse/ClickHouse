@@ -48,7 +48,7 @@ public:
             bool exchange,
             bool dictionary) override;
 
-    void dropTable(ContextPtr context, const String & table_name, bool sync) override;
+    void dropTable(ContextPtr context, const String & table_name, bool sync, bool if_exists) override;
     void dropTableImpl(ContextPtr context, const String & table_name, bool sync);
 
     void attachTable(ContextPtr context, const String & name, const StoragePtr & table, const String & relative_table_path) override;
