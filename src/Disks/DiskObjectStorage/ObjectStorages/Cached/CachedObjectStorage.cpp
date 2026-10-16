@@ -164,6 +164,7 @@ void CachedObjectStorage::removeCacheIfExists(const std::string & path_key_for_c
 
 void CachedObjectStorage::removeObjectIfExists(const StoredObject & object)
 {
+    /// Cache eviction only; the underlying disk owns physical deletion.
     removeCacheIfExists(object.remote_path);
 }
 
@@ -171,6 +172,7 @@ void CachedObjectStorage::removeObjectsIfExist( /// NOLINT
     const StoredObjects & objects,
     StoredObjects * successful_objects)
 {
+    /// Cache eviction only, as in `removeObjectIfExists`.
     for (const auto & object : objects)
     {
         removeCacheIfExists(object.remote_path);

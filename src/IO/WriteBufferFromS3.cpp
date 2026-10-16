@@ -1,4 +1,5 @@
 #include "config.h"
+#include <Common/ThreadStatus.h>
 #include <Common/CurrentThread.h>
 
 #if USE_AWS_S3
@@ -270,6 +271,8 @@ String WriteBufferFromS3::getShortLogDetails() const
 
 void WriteBufferFromS3::tryToAbortMultipartUpload() noexcept
 {
+    /// Abort reclaims incomplete uploads only. Failed aborts need the upload ID or bucket lifecycle cleanup;
+    /// deleting a completed object instead requires its owner's permission.
     try
     {
         task_tracker->safeWaitAll();
@@ -463,6 +466,7 @@ void WriteBufferFromS3::createMultipartUpload()
 
 void WriteBufferFromS3::abortMultipartUpload()
 {
+    ThreadStatus::QueryCancellationBlocker cleanup;
     if (multipart_upload_id.empty())
     {
         if (!isEmpty())

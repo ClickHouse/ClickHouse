@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <optional>
 #include <base/types.h>
 
@@ -114,6 +115,9 @@ struct ClientSettings
 /// Client that improves the client from the AWS SDK
 /// - inject region and URI into requests so they are rerouted to the correct destination if needed
 /// - automatically detect endpoint and regions for each bucket and cache them
+///
+/// Cancellation stops further attempts, but does not interrupt in-flight I/O or finite backoff.
+/// Cleanup ignores cancellation to preserve rollback safety; shutdown has no guaranteed time bound.
 ///
 /// For this client to work correctly both Client::RetryStrategy and Requests defined in <IO/S3/Requests.h> should be used.
 ///
@@ -296,7 +300,8 @@ private:
 
     template <bool IsReadMethod, typename RequestType, typename RequestFn>
     std::invoke_result_t<RequestFn, RequestType &>
-    doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request_fn) const;
+    doRequestWithRetryNetworkErrors(
+        RequestType & request, RequestFn request_fn) const;
 
     void updateURIForBucket(const std::string & bucket, S3::URI new_uri) const;
     std::optional<S3::URI> getURIFromError(const Aws::S3::S3Error & error) const;

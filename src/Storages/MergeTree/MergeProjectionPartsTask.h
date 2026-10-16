@@ -50,7 +50,10 @@ public:
 
     void cancel() noexcept override
     {
-        /// FIXME: See `executeHere` from MergeTask.h called in executeStep
+        /// `executeHere` cancels the in-flight child; reclaim returned, uncommitted intermediates here.
+        for (auto & [_, parts] : level_parts)
+            for (auto & part : parts)
+                part->getDataPartStorage().undoTransactionIfUncommitted();
     }
     bool executeStep() override;
 

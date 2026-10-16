@@ -4,6 +4,7 @@
 #include <Storages/StorageMergeTree.h>
 #include <Interpreters/TransactionManager.h>
 #include <Interpreters/Context.h>
+#include <Common/ThreadStatus.h>
 #include <Common/ErrorCodes.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -43,7 +44,9 @@ void MutatePlainMergeTreeTask::prepare()
     merge_list_entry = storage.getContext()->getMergeList().insert(
         storage.getStorageID(),
         future_part,
-        task_context);
+        task_context,
+        storage.merger_mutator.merges_blocker.getCancellationRequestPredicate(future_part->part_info.getPartitionId()));
+    ThreadGroupSwitcher preparation_group((*merge_list_entry)->thread_group, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
 
     stopwatch = std::make_unique<Stopwatch>();
 
@@ -84,6 +87,10 @@ void MutatePlainMergeTreeTask::prepare()
 
 void MutatePlainMergeTreeTask::finish()
 {
+    /// Destroy `MutateTask` and its writer buffers while the mutation's `ThreadGroup` is attached,
+    /// before `MergeMutateSelectedEntry::finalize` makes the source parts available for other background tasks.
+    mutate_task.reset();
+
     if (merge_mutate_entry)
         merge_mutate_entry->finalize();
 }
@@ -198,6 +205,15 @@ bool MutatePlainMergeTreeTask::executeStep()
 void MutatePlainMergeTreeTask::cancel() noexcept
 {
     auto component_guard = Coordination::setCurrentComponent("MutatePlainMergeTreeTask::cancel");
+    cleanupAfterFailure();
+}
+
+void MutatePlainMergeTreeTask::cleanupAfterFailure() noexcept
+{
+    /// Cleanup must finish rollback even after the operation is cancelled.
+    ThreadGroupSwitcher operation_group(
+        merge_list_entry ? (*merge_list_entry)->thread_group : nullptr, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
+    ThreadStatus::QueryCancellationBlocker cleanup;
     if (mutate_task)
         mutate_task->cancel();
 
@@ -208,6 +224,8 @@ void MutatePlainMergeTreeTask::cancel() noexcept
     /// temp directories which guards temporary dir from background removal which can
     /// conflict with the next scheduled merge because it will be possible after merge_mutate_entry->finalize()
     mutate_task.reset();
+
+    new_part.reset();
 
     if (merge_mutate_entry)
         merge_mutate_entry->finalize();

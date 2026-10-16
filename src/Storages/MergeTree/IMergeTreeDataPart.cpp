@@ -52,6 +52,7 @@
 
 #include <unordered_set>
 
+#include <Common/ThreadStatus.h>
 #include <Common/StackTrace.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
@@ -1127,6 +1128,7 @@ bool IMergeTreeDataPart::mayStoreDataInCaches() const
 
 void IMergeTreeDataPart::removeIfNeeded()
 {
+    ThreadStatus::QueryCancellationBlocker cleanup;
     auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::removeIfNeeded");
 
     if (is_removed)
@@ -1156,6 +1158,7 @@ void IMergeTreeDataPart::removeIfNeeded()
 
     try
     {
+        /// Uncommitted uploads can lack a directory; their owner must undo the transaction separately.
         if (!getDataPartStorage().exists()) // path
             return;
 
@@ -1199,7 +1202,7 @@ void IMergeTreeDataPart::removeIfNeeded()
     {
         tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("while removing part {} with path {}", name, path));
 
-        /// FIXME If part it temporary, then directory will not be removed for 1 day (temporary_directories_lifetime).
+        /// Background cleanup retries discoverable temporary directories after `temporary_directories_lifetime`.
         /// If it's tmp_merge_<part_name> or tmp_fetch_<part_name>,
         /// then all future attempts to execute part producing operation will fail with "directory already exists".
     }

@@ -1,13 +1,96 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/BlobLinkCounts.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/FsMetadata.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/FsSnapshot.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 
+#include <Common/CurrentThread.h>
+#include <Common/Exception.h>
+#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ThreadStatus.h>
+#include <Common/tests/gtest_global_context.h>
+#include <future>
 #include <gtest/gtest.h>
 
 #include <map>
 #include <random>
 
 using namespace DB;
+
+namespace
+{
+class RecordingRemovalStorage : public LocalObjectStorage
+{
+public:
+    RecordingRemovalStorage() : LocalObjectStorage(LocalObjectStorageSettings("cleanup_test", "/", true)) {}
+
+    std::map<std::string, bool> requests;
+
+    void removeObjectsIfExist(const StoredObjects & objects, StoredObjects *) override
+    {
+        CurrentThread::checkIfNotCancelled();
+        for (const auto & object : objects)
+            EXPECT_TRUE(requests.emplace(object.remote_path, ThreadStatus::QueryCancellationBlocker::isActive()).second);
+    }
+};
+}
+
+TEST(FsSnapshot, ConcurrentLastLinkDeletionRespectsCleanupBlocker)
+{
+    std::async(std::launch::async, []
+    {
+        ThreadStatus status;
+        auto state = std::make_shared<OperationCancellationState>();
+        auto group = ThreadGroup::createForMergeMutate(getContext().context, [state] { return state->getRequest(); });
+        ThreadGroupSwitcher attached(group, ThreadName::MERGE_MUTATE);
+        for (const bool is_cleanup : {false, true})
+        {
+            FsMetadata fs(CurrentMetrics::end(), CurrentMetrics::end());
+            std::unordered_map<std::string, DirectoryRemoteInfo> directories;
+            for (const auto * directory : {"a", "b"})
+                directories[directory] = {.remote_path = directory, .etag = "", .files = {
+                    {"data", {1, 0, "shared_blob"}}}, .has_explicit_file_list = true};
+            fs.applyLayout(std::move(directories));
+
+            auto first = fs.takeReadWriteSnapshot();
+            auto second = fs.takeReadWriteSnapshot();
+            first->resetToRoot(fs.takeReadOnlySnapshot()->getRoot());
+            second->resetToRoot(fs.takeReadOnlySnapshot()->getRoot());
+            first->removeFile("a/data");
+            first->removeBlobLink("shared_blob");
+            second->removeFile("b/data");
+            second->removeBlobLink("shared_blob");
+
+            auto storage = std::make_shared<RecordingRemovalStorage>();
+            auto layout = std::make_shared<PlainRewritableLayout>("prefix/");
+            StoredObjects removed;
+            MetadataStorageFromPlainObjectStoragePublishOperation first_publish(first, fs, storage, layout, removed);
+            {
+                ThreadStatus::QueryCancellationBlocker cleanup;
+                first_publish.execute();
+                first_publish.finalize();
+            }
+            EXPECT_TRUE(storage->requests.empty());
+            state->request(CancellationRequest::StopWork);
+            MetadataStorageFromPlainObjectStoragePublishOperation second_publish(second, fs, storage, layout, removed);
+            second_publish.execute();
+            if (!is_cleanup)
+            {
+                EXPECT_THROW(second_publish.finalize(), Exception);
+                EXPECT_TRUE(storage->requests.empty());
+                EXPECT_TRUE(removed.empty());
+            }
+            else
+            {
+                ThreadStatus::QueryCancellationBlocker cleanup;
+                second_publish.finalize();
+                ASSERT_EQ(storage->requests.size(), 1);
+                EXPECT_EQ(storage->requests.at(layout->constructBlobObjectKey("shared_blob")), true);
+                EXPECT_EQ(removed.size(), 1);
+            }
+        }
+    }).get();
+}
 
 TEST(FsSnapshot, BranchesRemainIndependent)
 {

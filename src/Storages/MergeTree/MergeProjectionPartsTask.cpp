@@ -91,7 +91,8 @@ bool MergeProjectionPartsTask::executeStep()
 
         LOG_DEBUG(log, "Merged {} parts in level {} to {}", selected_parts.size(), current_level, projection_future_part->name);
 
-        auto child_merge_list_element = std::make_unique<MergeListElement>((*merge_entry)->table_id, projection_future_part, context);
+        auto child_merge_list_element = std::make_unique<MergeListElement>(
+            (*merge_entry)->table_id, projection_future_part, context, (*merge_entry)->getCancellationRequestPredicate());
 
         if (parent_merge_list_element)
         {

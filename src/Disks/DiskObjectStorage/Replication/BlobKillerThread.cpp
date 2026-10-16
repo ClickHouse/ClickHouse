@@ -8,6 +8,7 @@
 
 #include <Core/BackgroundSchedulePool.h>
 
+#include <Common/ThreadStatus.h>
 #include <Common/DelayWithJitter.h>
 #include <Common/Exception.h>
 #include <Common/Logger.h>
@@ -141,6 +142,7 @@ bool removeBlobsBatch(
 {
     try
     {
+        ThreadStatus::QueryCancellationBlocker cleanup;
         LOG_TRACE(log, "Removing {} blobs from '{}' location", remove_batch.size(), location);
 
         object_storages->takePointingTo(location)->removeObjectsIfExist(remove_batch);
@@ -224,7 +226,7 @@ int64_t removeBlobs(
                 blobs_to_remove[removed_blob].erase(location);
     }
 
-    /// If removal from some locations failed we should not mark this blob in metadata storage.
+    /// Keep the removal record for retry until deletion succeeds at every location.
     StoredObjects blobs_removed_from_all_locations;
     for (const auto & [blob, locations_cleanup_list] : blobs_to_remove)
         if (locations_cleanup_list.empty())

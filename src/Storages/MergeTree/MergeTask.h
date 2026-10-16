@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <list>
 #include <memory>
 
@@ -126,6 +127,7 @@ public:
             global_ctx->projection_merge_list_element = std::move(projection_merge_list_element_);
             global_ctx->merge_list_element_ptr
                 = global_ctx->projection_merge_list_element ? global_ctx->projection_merge_list_element.get() : (*global_ctx->merge_entry)->ptr();
+            global_ctx->operation_request = global_ctx->merge_list_element_ptr->getCancellationRequestPredicate();
             global_ctx->time_of_merge = std::move(time_of_merge_);
             global_ctx->context = std::move(context_);
             global_ctx->holder = &holder;
@@ -214,6 +216,7 @@ private:
         /// If not null, use this instead of the global MergeList::Entry. This is for merging projections.
         std::unique_ptr<MergeListElement> projection_merge_list_element;
         MergeListElement * merge_list_element_ptr{nullptr};
+        CancellationRequestPredicate operation_request;
         MergeTreeData * data{nullptr};
         MergeTreeSettingsPtr data_settings;
         MergeTreeDataMergerMutator * mutator{nullptr};
@@ -281,6 +284,8 @@ private:
         std::unique_ptr<PullingPipelineExecutor> merging_executor;
 
         MergeTreeData::MutableDataPartPtr new_data_part{nullptr};
+        /// Keep cleanup reachable across promise handoff without preventing unique-ownership part removal.
+        std::weak_ptr<IMergeTreeDataPart> part_for_cleanup;
 
         /// If lightweight delete mask is present then some input rows are filtered out right after reading.
         std::shared_ptr<std::atomic<size_t>> input_rows_filtered{std::make_shared<std::atomic<size_t>>(0)};
@@ -628,11 +633,19 @@ private:
     static BuildStatisticsTransformPtr addBuildStatisticsStep(QueryPlan & plan, const IMergeTreeDataPart & data_part, const GlobalRuntimeContextPtr & global_ctx);
 };
 
-/// FIXME
+/// Synchronous projection merges and `OPTIMIZE ... DRY RUN` have no background executor to cancel failed work.
 [[ maybe_unused]] static MergeTreeData::MutableDataPartPtr executeHere(MergeTaskPtr task)
 {
-    while (task->execute()) {}
-    return task->getFuture().get();
+    try
+    {
+        while (task->execute()) {}
+        return task->getFuture().get();
+    }
+    catch (...)
+    {
+        task->cancel();
+        throw;
+    }
 }
 
 }

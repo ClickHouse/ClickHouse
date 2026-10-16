@@ -72,8 +72,16 @@ private:
 
 [[ maybe_unused]] static MergeTreeData::MutableDataPartPtr executeHere(MutateTaskPtr task)
 {
-    while (task->execute()) {}
-    return task->getFuture().get();
+    try
+    {
+        while (task->execute()) {}
+        return task->getFuture().get();
+    }
+    catch (...)
+    {
+        task->cancel();
+        throw;
+    }
 }
 
 }

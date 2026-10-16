@@ -1258,6 +1258,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     if (is_temp)
         projection_part_storage->beginTransaction();
 
+    /// TODO: On construction failure, stop local writers and undo the owned temporary transaction here.
+    /// The caller has no part yet; non-temporary projections may borrow the parent's transaction.
     new_data_part->is_temp = is_temp;
 
     NamesAndTypesList columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
