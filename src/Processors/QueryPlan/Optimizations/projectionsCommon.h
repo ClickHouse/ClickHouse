@@ -44,7 +44,7 @@ struct QueryDAG
     std::optional<ActionsDAG> dag;
     const ActionsDAG::Node * filter_node = nullptr;
 
-    bool build(QueryPlan::Node & node);
+    bool build(QueryPlan::Node & node, bool remove_trivial_wrappers = true);
 
 private:
     bool buildImpl(QueryPlan::Node & node, ActionsDAG::NodeRawConstPtrs & filter_nodes);
