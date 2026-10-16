@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: long
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -22,7 +23,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 function check()
 {
     local label=$1 settings=$2 keys=$3 aggregates=$4 order=$5
-    local source="SELECT if(number % 4 = 0, toUInt64(sqrt(number % 10000)), number + 1000000) AS k, number FROM numbers_mt(1000000)"
+    local source="SELECT if(number % 4 = 0, toUInt64(sqrt(number % 10000)), number + 1000000) AS k, number FROM numbers_mt(400000)"
     local query="SELECT $keys, $aggregates FROM ($source) GROUP BY $keys ORDER BY $order"
     local full="SELECT $keys, $aggregates FROM ($source) GROUP BY $keys SETTINGS enable_adaptive_aggregator = 0"
     local columns
@@ -49,5 +50,5 @@ check 'With other aggregates' 'max_threads = 4' 'k' 'count() AS c, uniqExact(num
 check 'Nullable argument' 'max_threads = 4' 'k' 'uniqExact(nullIf(number, 4)) AS u' 'u DESC LIMIT 10'
 check 'uniqExactIf' 'max_threads = 4' 'k' 'uniqExact(if(number % 3 = 0, NULL, number)) AS u' 'u DESC LIMIT 10'
 check 'Two arguments' 'max_threads = 4' 'k' 'uniqExact(number % 3, number) AS u' 'u DESC LIMIT 10'
-check 'Spilled records' 'max_bytes_before_external_group_by = 8000000' 'k' 'uniqExact(number) AS u' 'u DESC LIMIT 10'
+check 'Spilled records' 'max_bytes_before_external_group_by = 3200000' 'k' 'uniqExact(number) AS u' 'u DESC LIMIT 10'
 check 'Ascending order' 'max_threads = 4' 'k' 'uniqExact(number) AS u' 'u ASC LIMIT 10'

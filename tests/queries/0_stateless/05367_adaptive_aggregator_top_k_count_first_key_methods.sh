@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: long
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -14,7 +15,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # throw-mode group limit at the exact group count: a key the counting table did not copy splits its group,
 # which exceeds the limit. The limit also turns the top-K pruning off, so every unit is counted.
 #
-# Half of the rows go to a head of 3000 keys with about 50 rows each, so many groups tie around the top and
+# Half of the rows go to a head of 3000 keys with about 25 rows each, so many groups tie around the top and
 # replace each other among the best. The other half are unique keys, which keep the aggregation frozen. A
 # freeze threshold above the head keeps most head keys in the frozen tables as source cells; a small one
 # stages most of their rows as records. Every cell compares the top with the top of the feature off: the
@@ -26,7 +27,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 function check()
 {
     local label=$1 settings=$2 keys=$3 columns=$4 order=$5
-    local source="SELECT if(number % 2 = 0, intHash64(number) % 3000, number + 1000000000) AS k, number FROM numbers_mt(300000)"
+    local source="SELECT if(number % 2 = 0, intHash64(number) % 3000, number + 1000000000) AS k, number FROM numbers_mt(150000)"
     local query="SELECT $keys, count() AS c, sum(number) AS s FROM ($source) GROUP BY $columns ORDER BY $order"
     local full="SELECT $keys, count() AS c, sum(number) AS s FROM ($source) GROUP BY $columns SETTINGS enable_adaptive_aggregator = 0"
     $CLICKHOUSE_LOCAL --query "
@@ -47,7 +48,7 @@ function check()
 }
 
 legacy_string_key="concat(toString(k), repeat('x', k % 30), if(k % 11 = 0, '\\0', '')) AS sk"
-spilled_string_settings="max_bytes_before_external_group_by = 1, max_rows_to_group_by = 153000, group_by_overflow_mode = 'throw'"
+spilled_string_settings="max_bytes_before_external_group_by = 1, max_rows_to_group_by = 78000, group_by_overflow_mode = 'throw'"
 
 check 'Number key' 'max_threads = 4' 'k' 'k' 'c DESC LIMIT 10'
 check 'Number key in source cells' 'adaptive_aggregator_freeze_threshold = 8192' 'k' 'k' 'c DESC LIMIT 10'

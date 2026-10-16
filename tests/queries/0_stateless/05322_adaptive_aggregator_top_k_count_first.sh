@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: long
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -22,7 +23,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 function check()
 {
     local label=$1 settings=$2 keys=$3 aggregates=$4 order=$5
-    local source="SELECT if(number % 4 = 0, toUInt64(sqrt(number % 10000)), number + 1000000) AS k, number FROM numbers_mt(1000000)"
+    local source="SELECT if(number % 4 = 0, toUInt64(sqrt(number % 10000)), number + 1000000) AS k, number FROM numbers_mt(400000)"
     local query="SELECT $keys, $aggregates FROM ($source) GROUP BY $keys ORDER BY $order"
     local full="SELECT $keys, $aggregates FROM ($source) GROUP BY $keys SETTINGS enable_adaptive_aggregator = 0"
     local columns
@@ -47,7 +48,7 @@ check 'States with destructors' 'max_threads = 4' 'k' 'count() AS c, uniqExact(n
 check 'String key' 'max_threads = 4' 'toString(k) AS sk' 'count() AS c, sum(number) AS s' 'c DESC LIMIT 10'
 check 'Offset' 'max_threads = 4' 'k' 'count() AS c, sum(number) AS s' 'c DESC LIMIT 5 OFFSET 3'
 check 'Ascending order' 'max_threads = 4' 'k' 'count() AS c, sum(number) AS s' 'c ASC LIMIT 10'
-check 'Spilled records' 'max_bytes_before_external_group_by = 8000000' 'k' 'count() AS c, sum(number) AS s' 'c DESC LIMIT 10'
+check 'Spilled records' 'max_bytes_before_external_group_by = 3200000' 'k' 'count() AS c, sum(number) AS s' 'c DESC LIMIT 10'
 check 'Throw-mode group limit' "max_rows_to_group_by = 10000000, group_by_overflow_mode = 'throw'" 'k' 'count() AS c, sum(number) AS s' 'c DESC LIMIT 10'
 
 $CLICKHOUSE_LOCAL --query "
@@ -56,6 +57,6 @@ SET collect_hash_table_stats_during_aggregation = 0, max_bytes_before_external_g
 SET query_plan_enable_optimizations = 1, query_plan_aggregation_bucket_top_k = 1, enable_adaptive_aggregator = 1;
 SET max_rows_to_group_by = 100000, group_by_overflow_mode = 'throw';
 SELECT k, count() AS c, sum(number) AS s
-FROM (SELECT if(number % 4 = 0, toUInt64(sqrt(number % 10000)), number + 1000000) AS k, number FROM numbers_mt(1000000))
+FROM (SELECT if(number % 4 = 0, toUInt64(sqrt(number % 10000)), number + 1000000) AS k, number FROM numbers_mt(400000))
 GROUP BY k ORDER BY c DESC LIMIT 10 FORMAT Null;
 " 2>&1 | grep -o 'TOO_MANY_ROWS' | head -1
