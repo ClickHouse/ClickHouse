@@ -69,6 +69,8 @@ static std::string getOrCreateCustomDisk(
             forceAnonymousS3DiskConfig(*config);
         else
             validateResolvedS3DiskCredentials(*config, context, attach, s3_disk_info);
+
+        validateResolvedAzureDiskCredentials(*config, context, attach);
     }
 
     Poco::Util::AbstractConfiguration::Keys disk_settings_keys;

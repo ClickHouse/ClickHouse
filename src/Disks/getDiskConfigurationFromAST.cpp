@@ -24,6 +24,10 @@
 #include <vector>
 #include <boost/algorithm/string/trim.hpp>
 
+#if USE_AZURE_BLOB_STORAGE
+#include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
+#endif
+
 
 namespace DB
 {
@@ -45,6 +49,7 @@ namespace ServerSetting
 {
     extern const ServerSettingsBool s3_load_table_anonymously_if_credentials_restricted;
     extern const ServerSettingsBool s3_allow_server_credentials_for_system_table_disks;
+    extern const ServerSettingsBool azure_load_table_anonymously_if_credentials_restricted;
 }
 
 [[noreturn]] static void throwBadConfiguration(const std::string & message = "")
@@ -460,6 +465,46 @@ void validateResolvedS3DiskCredentials(
             " Enable `s3_allow_server_credentials_in_user_queries` to allow it."
 #endif
             );
+}
+
+void validateResolvedAzureDiskCredentials(
+    [[maybe_unused]] const Poco::Util::AbstractConfiguration & config,
+    [[maybe_unused]] ContextPtr context,
+    [[maybe_unused]] bool is_loading_from_existing_metadata)
+{
+#if USE_AZURE_BLOB_STORAGE
+    if (!context->shouldRestrictUserQueryAzureCredentials())
+        return;
+
+    /// The same prefixes `registerDiskObjectStorage` passes to the object storage factory.
+    std::vector<String> prefixes{""};
+    if (config.has(".locations"))
+    {
+        Poco::Util::AbstractConfiguration::Keys locations;
+        config.keys(".locations", locations);
+        for (const auto & location : locations)
+            prefixes.push_back(".locations." + location);
+    }
+
+    for (const auto & prefix : prefixes)
+    {
+        const String type = config.has(prefix + ".object_storage_type")
+            ? config.getString(prefix + ".object_storage_type")
+            : config.getString(prefix + ".type", "");
+        if (!type.starts_with("azure"))
+            continue;
+
+        const AzureBlobStorage::ConnectionParams params
+        {
+            .endpoint = AzureBlobStorage::processEndpoint(config, prefix),
+            .auth_method = AzureBlobStorage::getAuthMethod(config, prefix),
+            .forbid_implicit_credentials = true,
+            .anonymous_fallback_for_server_credentials = is_loading_from_existing_metadata
+                && context->getGlobalContext()->getServerSettings()[ServerSetting::azure_load_table_anonymously_if_credentials_restricted],
+        };
+        params.checkOrDropServerManagedCredentials();
+    }
+#endif
 }
 
 DiskConfigurationPtr getDiskConfigurationFromAST(const ASTs & disk_args, ContextPtr context)
