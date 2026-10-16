@@ -1061,7 +1061,10 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(LoadMode mode)
     /// on the configuration of `MergeTree` tables (the lifetime of old parts) to make a delayed state usable. A snapshot
     /// is a delayed state of the same kind, so the reader trusts it fully: every load reads only the snapshot file (and
     /// does nothing if its ETag is the same as of the snapshot applied last time), without listing the object storage
-    /// or reading `prefix.path`. Only if there is no snapshot file (e.g. the writer has snapshots disabled or is of an
+    /// or reading `prefix.path`. That includes the files replaced or rewritten in place after the snapshot was written:
+    /// the reader sees their previous size and blob (which may be overwritten or removed already) until the snapshot is
+    /// rewritten, exactly as a reader that lists the object storage sees them until its next refresh; the snapshot only
+    /// extends this window by `write_delay_ms`. Only if there is no snapshot file (e.g. the writer has snapshots disabled or is of an
     /// older version), or it cannot be read, the state is loaded by listing the object storage (see `loadRemoteLayout`).
     ///
     /// The writer must have the latest and precise state, which it fully controls, so it never reads the snapshot: it

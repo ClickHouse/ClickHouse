@@ -471,6 +471,11 @@ that the writer is replacing right now is read from its backup. A read-only disk
 delayed state anyway, relying on the lifetime of the old parts of `MergeTree`
 tables, and the snapshot is a delayed state of the same kind: the changes of
 the writer become visible to the readers when the writer rewrites the snapshot.
+This includes the files that the writer replaced or rewrote in place: until
+the snapshot is rewritten, a reader sees them with their previous size and
+blob, which may already be overwritten or removed, exactly as a reader that
+lists the object storage sees them until its next refresh. The snapshot only
+extends this window by at most `metadata_snapshot_write_delay_ms`.
 Only if there is no snapshot (for example, the writer has it disabled or runs
 an older version) or it cannot be read, the read-only disk lists the object
 storage.
