@@ -1100,8 +1100,9 @@ CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
     size_t total_size,
     StorageMergeTree & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
-    bool is_mutation_)
-    : future_part(future_part_), storage(storage_), metadata_snapshot(metadata_snapshot_), is_mutation(is_mutation_)
+    bool is_mutation_,
+    bool in_transaction_)
+    : future_part(future_part_), storage(storage_), metadata_snapshot(metadata_snapshot_), is_mutation(is_mutation_), in_transaction(in_transaction_)
 {
     /// Assume mutex is already locked, because this method is called from mergeTask.
 
@@ -1152,10 +1153,12 @@ CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Tagging already tagged part {}. This is a bug.", part->name);
     }
     storage.currently_merging_mutating_parts.insert(future_part->parts.begin(), future_part->parts.end());
-    storage.currently_merging_mutating_taggers.insert(this);
 
     if (is_mutation)
         storage.currently_mutating_part_future_versions[future_part->parts[0]] = future_part->part_info.mutation;
+
+    /// Last, so that a failed constructor does not leave a dangling pointer.
+    storage.currently_merging_mutating_taggers.insert(this);
 }
 
 
@@ -2087,7 +2090,7 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
         });
 
         uint64_t needed_disk_space = CompactionStatistics::estimateNeededDiskSpace(future_part->parts, true);
-        auto tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, needed_disk_space, *this, metadata_snapshot, false);
+        auto tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, needed_disk_space, *this, metadata_snapshot, false, txn != nullptr);
 
         auto entry = std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), std::make_shared<MutationCommands>());
         entry->ttl_merge_slot = std::move(ttl_merge_slot);
@@ -2225,13 +2228,14 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
                     if (on_wait_for_running_merges)
                         on_wait_for_running_merges();
 
-                    /// Only merges with the metadata of this OPTIMIZE: a merge that started before an ALTER (e.g. `ADD COLUMN`,
-                    /// `ADD INDEX`) does not do everything that merging its result again with the new metadata does.
+                    /// Only merges outside of transactions, whose result cannot be rolled back, and with the metadata of this
+                    /// OPTIMIZE: a merge that started before an ALTER (e.g. `ADD COLUMN`, `ADD INDEX`) does not do everything
+                    /// that merging its result again with the new metadata does.
                     if (skip_part_of_awaited_merge)
                     {
                         for (const auto * tagger : currently_merging_mutating_taggers)
                         {
-                            if (!tagger->is_mutation && tagger->metadata_snapshot == metadata_snapshot
+                            if (!tagger->is_mutation && !tagger->in_transaction && tagger->metadata_snapshot == metadata_snapshot
                                 && tagger->future_part->part_info.getPartitionId() == partition_id)
                                 awaited_merge_results.push_back(tagger->future_part->part_info);
                         }
@@ -2708,7 +2712,8 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
             future_part->name = part->getNewName(new_part_info);
             future_part->part_format = part->getFormat();
 
-            tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, CompactionStatistics::estimateNeededDiskSpace({part}, false), *this, metadata_snapshot, true);
+            tagger = std::make_unique<CurrentlyMergingPartsTagger>(
+                future_part, CompactionStatistics::estimateNeededDiskSpace({part}, false), *this, metadata_snapshot, true, txn != nullptr);
             return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), commands, txn, mutation_ids);
         }
     }
