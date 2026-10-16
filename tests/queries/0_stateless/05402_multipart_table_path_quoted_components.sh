@@ -91,7 +91,7 @@ for s in "${spellings[@]}"; do
 done
 
 echo '-- database with a dot in its name'
-ddb="\`${db}.d\`"
+ddb="\`${db}_x.d\`"
 $CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS ${ddb}"
 $CLICKHOUSE_CLIENT -q "CREATE DATABASE ${ddb}"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE ${ddb}.\`ns.t\` (x Int32) ENGINE = MergeTree ORDER BY x"
