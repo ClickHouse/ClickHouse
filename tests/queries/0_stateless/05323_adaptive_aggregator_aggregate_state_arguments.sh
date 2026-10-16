@@ -13,8 +13,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # small enough for the outer tables to freeze. The outer key stays a `String`, not reduced to the `UInt16` argument of
 # its injective conversion, whose fixed single-level table the adaptive aggregator does not take. Every cell compares
 # the result with the one of the feature off and checks that records were staged and whether they were spilled: the
-# last cell spills the staged states and reads them back. Each cell runs in its own clickhouse-local process, so the
-# counters in `system.events` belong to it alone.
+# last cell spills the staged states and reads them back. A producer spills only while the query is over the threshold
+# and its staged records fill a sixth of it, so the threshold of that cell is a fraction of what each producer stages,
+# and every producer spills several times however the threads interleave. Each cell runs in its own clickhouse-local
+# process, so the counters in `system.events` belong to it alone.
 
 function check()
 {
@@ -37,4 +39,4 @@ function check()
 check 'uniqMerge' 'max_threads = 3' 'uniqState(number) AS s' 'uniqMerge(s) AS m' 'm'
 check 'sumMerge' 'max_threads = 3' 'sumState(number) AS s' 'sumMerge(s) AS m' 'm'
 check 'uniqMergeState' 'max_threads = 3' 'uniqState(number) AS s' 'uniqMergeState(s) AS m' 'finalizeAggregation(m)'
-check 'Spilled states' 'max_bytes_before_external_group_by = 4000000' 'uniqState(number) AS s' 'uniqMerge(s) AS m' 'm'
+check 'Spilled states' 'max_bytes_before_external_group_by = 1000000' 'uniqState(number) AS s' 'uniqMerge(s) AS m' 'm'
