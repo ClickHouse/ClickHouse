@@ -9,98 +9,81 @@
 
 using namespace DB;
 
-namespace
+TEST(MaskURIPassword, FollowsRFC3986AndFailsClosed)
 {
+    const std::vector<std::pair<std::string, std::string>> cases = {
+        /// Ordinary URIs with credentials.
+        {"http://user:password@host", "http://user:[HIDDEN]@host"},
+        {"https://user:password@host:8080/path?query=1", "https://user:[HIDDEN]@host:8080/path?query=1"},
+        {"amqp://guest:guest@localhost:5672/", "amqp://guest:[HIDDEN]@localhost:5672/"},
+        {"mongodb://u:p@h1:27017,h2:27017/db?replicaSet=r", "mongodb://u:[HIDDEN]@h1:27017,h2:27017/db?replicaSet=r"},
+        {"http://u:p@[::1]:8123/", "http://u:[HIDDEN]@[::1]:8123/"},
+        {"http://user:pass:word@host", "http://user:[HIDDEN]@host"},
+        {"http://user%3Aname:password@host", "http://user%3Aname:[HIDDEN]@host"},
+        {"http://:password@host", "http://:[HIDDEN]@host"},
+        {"mysql://root:@host", "mysql://root:[HIDDEN]@host"},
 
-/// The regular expression `maskURIPassword` used to be. Kept here so that the hand-written scan
-/// can be checked against it: this is masking of secrets, so "close enough" is not good enough.
-bool maskURIPasswordWithRE2(std::string * uri)
-{
-    return RE2::Replace(uri, R"(([^:]+://[^:]*):([^@]*)@(.*))", "\\1:[HIDDEN]@\\3");
-}
+        /// A '@' after the authority is not the end of a userinfo.
+        {"http://localhost:11111/x?email=a@b.com", "http://localhost:11111/x?email=a@b.com"},
+        {"http://host/user:password@x", "http://host/user:password@x"},
+        {"http://u:p@a/b@host", "http://u:[HIDDEN]@a/b@host"},
+        {"http://host?email=a@b.com", "http://host?email=a@b.com"},
 
-const std::vector<std::string> corpus = {
-    /// Ordinary URIs with credentials.
-    "http://user:password@host",
-    "https://user:password@host:8080/path?query=1",
-    "amqp://guest:guest@localhost:5672/",
-    "nats://u:p@127.0.0.1:4222",
-    "postgres://user:p@ss@host/db",
-    "mysql://root:@host",
-    "scheme://:password@host",
+        /// No password: a userinfo without ':' is a user name, and an authority without '@' has no userinfo.
+        {"http://user@host", "http://user@host"},
+        {"http://host:8080", "http://host:8080"},
+        {"http://[::1]:8123/path@x", "http://[::1]:8123/path@x"},
+        {"file:///etc/passwd", "file:///etc/passwd"},
+        {"http://user:password", "http://user:password"},
+        {"user:password@host", "user:password@host"},
+        {"just some text", "just some text"},
+        {"", ""},
+        {"://", "://"},
 
-    /// No credentials to mask.
-    "http://host",
-    "http://host/path",
-    "http://user@host",
-    "just some text",
-    "",
-    "://",
-    ":",
-    "a://b",
+        /// Fails closed: a raw '@' in the password extends the userinfo to the last '@' of the authority.
+        {"https://user:SEKRIT@PW@localhost:11111/x", "https://user:[HIDDEN]@localhost:11111/x"},
+        {"http://user:password@host@another/x", "http://user:[HIDDEN]@another/x"},
 
-    /// The scheme must be non-empty and colon-free, so these do not match at the first "://".
-    "://user:password@host",
-    ":://user:password@host",
-    "x:://user:password@host",
+        /// Fails closed: an authority that is not `host[:port]` was cut by a raw '/', '?' or '#' in the password.
+        {"http://u:pa/ss@host/x", "http://u:[HIDDEN]@host/x"},
+        {"http://u:pa?ss@host", "http://u:[HIDDEN]@host"},
+        {"http://u:pa#ss@host", "http://u:[HIDDEN]@host"},
+        {"http://u:12/ss@host", "http://u:12/ss@host"},
+        {"http://u:pa/ss", "http://u:pa/ss"},
 
-    /// A second "://" can match when the first one cannot.
-    "://nope http://user:password@host",
-    "http://host ftp://user:password@elsewhere",
+        /// Any `://` can start a URI, also inside a longer text.
+        {"://user:password@host", "://user:[HIDDEN]@host"},
+        {"line one\nhttp://user:password@host", "line one\nhttp://user:[HIDDEN]@host"},
+        {"http://host/ ftp://user:password@elsewhere", "http://host/ ftp://user:[HIDDEN]@elsewhere"},
+        /// Here the first authority is `host ftp:`, which is not `host[:port]`, so it fails closed.
+        {"http://host ftp://user:password@elsewhere", "http://host ftp:[HIDDEN]@elsewhere"},
+        {"https://host/key?redirect=http://u:p@elsewhere", "https://host/key?redirect=http://u:[HIDDEN]@elsewhere"},
 
-    /// Colons and at signs in unusual places.
-    "http://user:pass:word@host",
-    "http://user:password@host@another",
-    "http://a:b@c://d:e@f",
-    "@:://",
-    "http://user:password",
-    "user:password@host",
+        /// Fails closed by default: a consumer like the MongoDB driver ends the userinfo at the first '/' only.
+        {"mongodb://usr:999999?TOPSECRET@localhost:27017/db", "mongodb://usr:[HIDDEN]@localhost:27017/db"},
+        {"http://host#frag:x@y", "http://host#frag:[HIDDEN]@y"},
+    };
 
-    /// Newlines: `[^:]` matches them but `.` does not, which only affects the tail.
-    "http://user:password@host\nsecond line",
-    "line one\nhttp://user:password@host",
-};
+    /// `Poco::URI` ends the authority where the RFC does, so a '@' after '?' or '#' is not in its userinfo.
+    const std::vector<std::pair<std::string, std::string>> rfc_cases = {
+        {"mongodb://usr:999999?TOPSECRET@localhost:27017/db", "mongodb://usr:999999?TOPSECRET@localhost:27017/db"},
+        {"http://host#frag:x@y", "http://host#frag:x@y"},
+        {"http://u:pa?ss@host", "http://u:[HIDDEN]@host"},
+        {"https://user:SEKRIT@PW@localhost:11111/x", "https://user:[HIDDEN]@localhost:11111/x"},
+    };
 
-}
-
-TEST(MaskURIPassword, MatchesTheRegularExpressionItReplaced)
-{
-    for (const auto & input : corpus)
+    for (const auto & [input, expected] : cases)
     {
-        std::string with_scan = input;
-        std::string with_re2 = input;
-
-        bool scanned = maskURIPassword(&with_scan);
-        bool matched = maskURIPasswordWithRE2(&with_re2);
-
-        EXPECT_EQ(scanned, matched) << "return value differs for: " << input;
-        EXPECT_EQ(with_scan, with_re2) << "result differs for: " << input;
+        std::string uri = input;
+        EXPECT_EQ(maskURIPassword(&uri), input != expected) << "return value for: " << input;
+        EXPECT_EQ(uri, expected) << "result for: " << input;
     }
-}
 
-TEST(MaskURIPassword, AgreesWithTheRegularExpressionOnRandomStrings)
-{
-    /// The fixed corpus above documents the interesting cases; this is the safety net for the ones
-    /// nobody thought of. The alphabet is the characters the regular expression assigns meaning to.
-    constexpr std::string_view alphabet = "ab:@/.\n";
-    std::mt19937_64 rng(20260731); /// NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp) deterministic seed, so a failure is reproducible
-    std::uniform_int_distribution<size_t> length_dist(0, 32);
-    std::uniform_int_distribution<size_t> char_dist(0, alphabet.size() - 1);
-
-    for (size_t round = 0; round < 200000; ++round)
+    for (const auto & [input, expected] : rfc_cases)
     {
-        std::string input(length_dist(rng), ' ');
-        for (auto & c : input)
-            c = alphabet[char_dist(rng)];
-
-        std::string with_scan = input;
-        std::string with_re2 = input;
-
-        bool scanned = maskURIPassword(&with_scan);
-        bool matched = maskURIPasswordWithRE2(&with_re2);
-
-        ASSERT_EQ(scanned, matched) << "return value differs for: " << input;
-        ASSERT_EQ(with_scan, with_re2) << "result differs for: " << input;
+        std::string uri = input;
+        EXPECT_EQ(maskURIPassword(&uri, URI_AUTHORITY_TERMINATORS), input != expected) << "return value for: " << input;
+        EXPECT_EQ(uri, expected) << "result for: " << input;
     }
 }
 

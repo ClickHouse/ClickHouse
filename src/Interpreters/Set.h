@@ -132,6 +132,9 @@ public:
     bool empty() const;
     size_t getTotalRowCount() const;
     size_t getTotalByteCount() const;
+    /// Bytes of the stored elements (see `fillSetElements`), including string data. Valid while the set
+    /// is being filled.
+    size_t getSetElementsBytes() const;
 
     const DataTypes & getDataTypes() const { return data_types; }
     const DataTypes & getElementsTypes() const { return set_elements_types; }

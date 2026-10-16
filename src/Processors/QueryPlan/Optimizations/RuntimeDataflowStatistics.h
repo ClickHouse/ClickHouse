@@ -63,7 +63,8 @@ public:
     using CachePtr = std::shared_ptr<Cache>;
 
     RuntimeDataflowStatisticsCache()
-        : stats_cache(std::make_shared<Cache>(CurrentMetrics::end(), CurrentMetrics::end(), 1024 * 1024 * 1024, 0))
+        : stats_cache(std::make_shared<Cache>(CurrentMetrics::end(), CurrentMetrics::end(), 100_MiB, 1'000'000))
+        , boundary_cache(std::make_shared<BoundaryCache>(CurrentMetrics::end(), CurrentMetrics::end(), 100_MiB, 1'000'000))
     {
     }
 
@@ -71,8 +72,26 @@ public:
 
     void update(size_t key, RuntimeDataflowStatistics stats);
 
+    /// The keys of the single-replica plan's boundary - the node matched to the top of the replicas plan - and of
+    /// the read below it that parallel replicas coordinate, both found by an earlier execution, so that a later one
+    /// can find its statistics without building a replicas plan to match against.
+    struct Boundary
+    {
+        UInt64 boundary_hash = 0;
+        UInt64 coordinated_read_hash = 0;
+    };
+
+    /// `root_key` combines the single-replica plan's root hash with the settings that can move the boundary
+    /// without changing that plan.
+    std::optional<Boundary> getBoundary(UInt64 root_key) const;
+
+    void setBoundary(UInt64 root_key, Boundary boundary);
+
 private:
+    using BoundaryCache = DB::CacheBase<UInt64, Boundary>;
+
     CachePtr stats_cache;
+    std::shared_ptr<BoundaryCache> boundary_cache;
 };
 
 RuntimeDataflowStatisticsCache & getRuntimeDataflowStatisticsCache();
