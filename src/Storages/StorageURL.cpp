@@ -192,7 +192,7 @@ String getSampleURI(String uri, ContextPtr context, const RemoteDescriptionCalle
         /// Only the first address is needed, to read the hive partitioning and the virtual columns off
         /// its path, so the rest of the pattern is never generated and never counted against the limit.
         RemoteDescriptionGenerator generator(
-            uri, 0, uri.size(), ',', context->getSettingsRef()[Setting::glob_expansion_max_elements], caller);
+            uri, 0, uri.size(), ',', context->getSettingsRef()[Setting::glob_expansion_max_elements], caller, '|');
         String first_uri;
         if (generator.next(first_uri))
             return first_uri;
