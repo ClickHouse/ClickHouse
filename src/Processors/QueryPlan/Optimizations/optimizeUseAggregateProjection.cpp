@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/Optimizations/projectionsCommon.h>
+
 #include <Columns/ColumnConst.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Functions/FunctionFactory.h>
@@ -61,6 +62,7 @@ namespace FailPoints
 {
     extern const char parallel_replicas_skip_aggregate_projection_on_follower[];
 }
+
 }
 
 namespace DB::QueryPlanOptimizations
@@ -436,17 +438,16 @@ static std::optional<AggregateFunctionMatches> matchAggregateFunctions(
                 auto mt = matches.find(query_node);
                 if (mt == matches.end() || mt->second.node == nullptr)
                 {
-                    /// A function with non-constant arguments may still have a constant result
-                    /// (e.g. `isNull(non_nullable_col)` == 0). Both the query DAG and the projection
-                    /// DAG fold such functions into plain COLUMN constants (losing the expression),
-                    /// so the argument names differ and no match exists. If the projection argument
-                    /// node is a folded COLUMN constant, compare its value with the query constant.
+                    /// Folding `isNull` on a non-nullable column can produce differently named constants.
+                    /// Only compare deterministic unsigned integer constants by value: other types may
+                    /// contain floating-point values whose representations `Field::operator==` does not distinguish.
                     /// See https://github.com/ClickHouse/ClickHouse/issues/68949
                     if (query_node->type == ActionsDAG::ActionType::COLUMN && query_node->column
-                        && isColumnConst(*query_node->column)
+                        && isColumnConst(*query_node->column) && query_node->isDeterministic()
                         && proj_node->type == ActionsDAG::ActionType::COLUMN && proj_node->column
-                        && isColumnConst(*proj_node->column)
+                        && isColumnConst(*proj_node->column) && proj_node->isDeterministic()
                         && proj_node->result_type->equals(*query_node->result_type)
+                        && assert_cast<const ColumnConst &>(*query_node->column).getField().getType() == Field::Types::UInt64
                         && assert_cast<const ColumnConst &>(*proj_node->column).getField()
                             == assert_cast<const ColumnConst &>(*query_node->column).getField())
                     {
