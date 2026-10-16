@@ -4,7 +4,7 @@
 -- alone qualifies now. The cross join itself is executed by `ConstantJoin`, the one implementation of
 -- CROSS joins, whatever `join_algorithm` lists. The plan therefore shows that algorithm, not
 -- `PartitionedHashJoin`, and the rows are those of `hash`. Strictness ANY is not converted for
--- either algorithm.
+-- either algorithm: the block nested loop join runs it.
 
 SET enable_analyzer = 1;
 SET allow_general_join_planning = 1;
@@ -34,8 +34,8 @@ SELECT count(), sum(l.id * 1000 + r.c) FROM t_phj_otc_l AS l INNER JOIN t_phj_ot
 SELECT count(), sum(l.id * 1000 + r.c) FROM t_phj_otc_l AS l INNER JOIN t_phj_otc_r AS r ON l.b > r.c SETTINGS join_algorithm = 'hash';
 
 SELECT '-- INNER ANY is not converted, for either algorithm';
-SELECT count() FROM t_phj_otc_l AS l INNER ANY JOIN t_phj_otc_r AS r ON l.b < r.c OR l.id > r.id + 30 SETTINGS join_algorithm = 'partitioned_hash'; -- { serverError INVALID_JOIN_ON_EXPRESSION }
-SELECT count() FROM t_phj_otc_l AS l INNER ANY JOIN t_phj_otc_r AS r ON l.b < r.c OR l.id > r.id + 30 SETTINGS join_algorithm = 'hash'; -- { serverError INVALID_JOIN_ON_EXPRESSION }
+SELECT count() FROM t_phj_otc_l AS l INNER ANY JOIN t_phj_otc_r AS r ON l.b < r.c OR l.id > r.id + 30 SETTINGS join_algorithm = 'partitioned_hash';
+SELECT count() FROM t_phj_otc_l AS l INNER ANY JOIN t_phj_otc_r AS r ON l.b < r.c OR l.id > r.id + 30 SETTINGS join_algorithm = 'hash';
 
 DROP TABLE t_phj_otc_l;
 DROP TABLE t_phj_otc_r;

@@ -10,3 +10,5 @@ Type: cross | Strictness: all | Algorithm: ConstantJoin
 1992	59402928
 1992	59402928
 -- INNER ANY is not converted, for either algorithm
+48
+48
