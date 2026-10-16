@@ -2486,6 +2486,10 @@ def main():
         test_discovery.test_requires_read_dataset(f"./tests/performance/{file}")
         for file in test_files
     )
+    needs_iceberg_read_dataset = needs_s3_read_dataset or any(
+        test_discovery.test_requires_local_read_dataset(f"./tests/performance/{file}")
+        for file in test_files
+    )
 
     def prepare_s3():
         # Configure and stage re-entry must produce the same S3 fixture.
@@ -2676,7 +2680,11 @@ def main():
 
     if res and JobStages.DOWNLOAD_DATASETS in stages:
         print("Download datasets")
-        if not Path(f"{db_path}/.done").is_file():
+        db_done = Path(f"{db_path}/.done").is_file()
+        iceberg_dir = Path(db_path) / "user_files" / s3_service.READ_DATASET_DIRECTORY
+        # A cached db0 can predate the Iceberg fixture. Restore only the
+        # missing archive when the selected S3 read tests require it.
+        if not db_done or (needs_iceberg_read_dataset and not iceberg_dir.is_dir()):
             Shell.check(f"mkdir -p {db_path}/data/default/", verbose=True)
             dataset_paths = {
                 "hits10": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_10m_single.tar",
@@ -2687,6 +2695,8 @@ def main():
                 "tpch_ice10": "https://clickhouse-datasets.s3.amazonaws.com/h-ice/10/tpch_ice_sf10.tar",
                 "tpcds1": "https://clickhouse-datasets.s3.amazonaws.com/ds/scale_1/tpcds.tar",
             }
+            if db_done:
+                dataset_paths = {"tpch_ice10": dataset_paths["tpch_ice10"]}
             stop_watch = Utils.Stopwatch()
             errors = download_and_extract_datasets(dataset_paths.values(), db_path)
             res = not errors
@@ -2699,7 +2709,7 @@ def main():
                     info="\n".join(errors),
                 )
             )
-            if res:
+            if res and not db_done:
                 Shell.check(f"touch {db_path}/.done")
 
     if res and JobStages.CONFIGURE in stages:
