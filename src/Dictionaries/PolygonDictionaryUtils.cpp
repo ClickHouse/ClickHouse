@@ -16,6 +16,31 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+
+using PointF64 = bg::model::d2::point_xy<Float64>;
+using PolygonF64 = bg::model::polygon<PointF64>;
+
+/// static_cast, not bg::convert: its boost::numeric_cast throws on a last-ulp overshoot of FLT_MAX.
+template <typename DstPolygon, typename SrcPolygon>
+void convertPolygon(const SrcPolygon & src, DstPolygon & dst)
+{
+    using DstCoord = bg::coordinate_type_t<DstPolygon>;
+    auto convert_ring = [](const auto & src_ring, auto & dst_ring)
+    {
+        dst_ring.reserve(src_ring.size());
+        for (const auto & point : src_ring)
+            dst_ring.emplace_back(static_cast<DstCoord>(point.x()), static_cast<DstCoord>(point.y()));
+    };
+    convert_ring(src.outer(), dst.outer());
+    dst.inners().resize(src.inners().size());
+    for (size_t i = 0; i < src.inners().size(); ++i)
+        convert_ring(src.inners()[i], dst.inners()[i]);
+}
+
+}
+
 FinalCell::FinalCell(const VectorWithMemoryTracking<size_t> & polygon_ids_, const VectorWithMemoryTracking<Polygon> &, const Box &, bool is_last_covered_):
 polygon_ids(polygon_ids_)
 {
@@ -36,28 +61,26 @@ size_t FinalCell::getBytesAllocated() const
     return sizeof(*this) + polygon_ids.capacity() * sizeof(size_t);
 }
 
-inline void shift(Point & point, Coord val)
-{
-    point.x(point.x() + val);
-    point.y(point.y() + val);
-}
-
 FinalCellWithSlabs::FinalCellWithSlabs(const VectorWithMemoryTracking<size_t> & polygon_ids_, const VectorWithMemoryTracking<Polygon> & polygons_, const Box & box_, bool is_last_covered_)
 {
-    auto extended = box_;
-    shift(extended.min_corner(), -GridRoot<FinalCellWithSlabs>::kEps);
-    shift(extended.max_corner(), GridRoot<FinalCellWithSlabs>::kEps);
-    Polygon tmp_poly;
+    /// boost.geometry overlay on Float32 points drops crossing points and overflows above ~1.8e19, so clip in Float64.
+    const auto eps = static_cast<Float64>(GridRoot<FinalCellWithSlabs>::kEps);
+    const auto & lo = box_.min_corner();
+    const auto & hi = box_.max_corner();
+    const bg::model::box<PointF64> extended(
+        PointF64(static_cast<Float64>(lo.x()) - eps, static_cast<Float64>(lo.y()) - eps),
+        PointF64(static_cast<Float64>(hi.x()) + eps, static_cast<Float64>(hi.y()) + eps));
+    PolygonF64 tmp_poly;
     bg::convert(extended, tmp_poly);
     VectorWithMemoryTracking<Polygon> intersections;
     if (is_last_covered_)
         first_covered = polygon_ids_.back();
     for (size_t i = 0; i + is_last_covered_ < polygon_ids_.size(); ++i)
     {
-        VectorWithMemoryTracking<Polygon> intersection;
+        VectorWithMemoryTracking<PolygonF64> intersection;
         bg::intersection(tmp_poly, polygons_[polygon_ids_[i]], intersection);
-        for (auto & polygon : intersection)
-            intersections.emplace_back(std::move(polygon));
+        for (const auto & piece : intersection)
+            convertPolygon(piece, intersections.emplace_back());
         while (corresponding_ids.size() < intersections.size())
             corresponding_ids.push_back(polygon_ids_[i]);
     }
