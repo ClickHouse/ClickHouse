@@ -26,6 +26,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/getRandomASCIIString.h>
+#include <Common/randomSeed.h>
 #include <Common/logger_useful.h>
 #include <Common/FailPoint.h>
 #include <Common/ErrnoException.h>
@@ -425,9 +426,27 @@ void stampMTimeAfterReplacedVersion(const String & temp_path, const struct stat 
         static_cast<Int64>(replaced_mtime.tv_nsec));
 }
 
-void publishConditionally(const String & temp_path, const String & target_path, const std::optional<String> & if_match_etag)
+/// How a completely written temporary file becomes the object.
+enum class PublishMode : uint8_t
 {
-    if (!if_match_etag.has_value())
+    /// Only if the object does not exist (If-None-Match: *).
+    IfNoneMatch,
+    /// Only if the object exists and has the expected etag (If-Match).
+    IfMatch,
+    /// Unconditionally, replacing the object if it exists.
+    Replace,
+};
+
+void publishConditionally(const String & temp_path, const String & target_path, PublishMode mode, const std::optional<String> & if_match_etag)
+{
+    if (mode == PublishMode::Replace)
+    {
+        if (0 != ::rename(temp_path.c_str(), target_path.c_str()))
+            ErrnoException::throwFromPath(ErrorCodes::SYSTEM_ERROR, target_path, "Cannot rename {} to {}", temp_path, target_path);
+        return;
+    }
+
+    if (mode == PublishMode::IfNoneMatch)
     {
         if (0 == ::link(temp_path.c_str(), target_path.c_str()))
             return;
@@ -482,12 +501,14 @@ public:
         const String & target_path_,
         const String & temp_path_,
         size_t buf_size,
+        PublishMode mode_,
         std::optional<String> if_match_etag_,
         const String & bucket_,
         BlobStorageLogWriterPtr blob_log_)
         : WriteBufferFromFileDecorator(std::make_unique<WriteBufferFromFile>(temp_path_, buf_size, O_WRONLY | O_CREAT | O_EXCL))
         , target_path(target_path_)
         , temp_path(temp_path_)
+        , mode(mode_)
         , if_match_etag(std::move(if_match_etag_))
         , bucket(bucket_)
         , blob_log(std::move(blob_log_))
@@ -507,7 +528,7 @@ private:
         WriteBufferFromFileDecorator::finalizeImpl();
 
         const size_t data_size = count();
-        publishConditionally(temp_path, target_path, if_match_etag);
+        publishConditionally(temp_path, target_path, mode, if_match_etag);
         removeTemporaryFile();
 
         if (blob_log)
@@ -539,6 +560,7 @@ private:
 
     const String target_path;
     const String temp_path;
+    const PublishMode mode;
     const std::optional<String> if_match_etag;
     const String bucket;
     BlobStorageLogWriterPtr blob_log;
@@ -604,7 +626,7 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
     if (!if_none_match.empty() && !if_match.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "If-None-Match and If-Match cannot be used together for object {}", object.remote_path);
 
-    if (!if_none_match.empty() || !if_match.empty())
+    if (!if_none_match.empty() || !if_match.empty() || write_settings.object_storage_write_atomically)
     {
         if (!if_none_match.empty() && if_none_match != "*")
             throw Exception(
@@ -612,22 +634,31 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
                 "Local object storage supports only `*` for If-None-Match, got `{}`",
                 if_none_match);
 
+        PublishMode publish_mode = PublishMode::Replace;
         std::optional<String> if_match_etag;
         if (!if_match.empty())
+        {
+            publish_mode = PublishMode::IfMatch;
             if_match_etag = if_match;
+        }
+        else if (!if_none_match.empty())
+            publish_mode = PublishMode::IfNoneMatch;
 
         /// Both filenames have to come out of `resolved_path`, exactly like the
-        /// unconditional write below: a key relative to `settings.key_prefix` would
+        /// direct write below: a key relative to `settings.key_prefix` would
         /// otherwise be staged and published under the server's working directory,
         /// giving conditional writes a different notion of a key than every other
         /// method of this storage.
         auto target_path = fs::path(resolved_path);
-        auto temp_path = target_path.parent_path() / fmt::format(".tmp_{}_{}", target_path.filename().string(), getRandomASCIIString(8));
+        /// A dedicated generator, so that staging a file does not advance `thread_local_rng`, which also generates the keys.
+        thread_local pcg64 temp_name_rng(randomSeed());
+        auto temp_path = target_path.parent_path() / fmt::format(".tmp_{}_{}", target_path.filename().string(), getRandomASCIIString(8, temp_name_rng));
 
         return std::make_unique<WriteBufferToConditionallyPublishedFile>(
             resolved_path,
             temp_path,
             buf_size,
+            publish_mode,
             std::move(if_match_etag),
             settings.key_prefix,
             std::move(blob_storage_log));

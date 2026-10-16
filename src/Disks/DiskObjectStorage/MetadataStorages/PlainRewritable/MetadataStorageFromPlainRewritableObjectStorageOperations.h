@@ -26,13 +26,15 @@ bool isMetadataOnlyMove(
     const std::string & blob_key_from,
     const std::optional<std::string> & blob_key_of_existing_target);
 
-/// Writes a metadata object of the layout (a `prefix.path` object or a marker) with a single write.
-/// `LocalObjectStorage` writes to the final key directly, and a small buffer would split the contents into several
-/// writes. A process killed between them would leave a torn object, and some torn shapes are indistinguishable from
-/// valid contents: an explicit file list cut right after the logical path reads as a directory in the implicit form,
-/// and a long logical path cut in the middle reads as another directory. With a single write, the object is either
-/// empty, which the load recognizes as unreadable, or complete.
+/// Writes a metadata object of the layout (a `prefix.path` object or a marker) atomically, see `getWriteSettingsForMetadataObject`.
 void writeMetadataObject(IObjectStorage & object_storage, const StoredObject & object, const std::string & contents, const WriteSettings & settings);
+
+/// The settings to write a metadata object of the layout with: the object is published only once it is written completely.
+/// `LocalObjectStorage` otherwise writes to the final key directly, and a process killed in the middle of the write would
+/// leave a torn object. Some torn shapes are indistinguishable from valid contents: an explicit file list cut right after
+/// the logical path reads as a directory in the implicit form, and a long logical path cut in the middle reads as another
+/// directory. Others, such as an explicit file list missing some of its entries, make the load fail.
+WriteSettings getWriteSettingsForMetadataObject(WriteSettings settings);
 
 class MetadataStorageFromPlainObjectStorageValidatePreconditionsOperation final : public IMetadataOperation
 {

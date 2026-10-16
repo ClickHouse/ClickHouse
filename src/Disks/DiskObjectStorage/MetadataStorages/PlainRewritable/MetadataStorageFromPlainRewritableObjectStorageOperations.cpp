@@ -213,6 +213,12 @@ void copyBlobOfListedFile(
 
 }
 
+WriteSettings getWriteSettingsForMetadataObject(WriteSettings settings)
+{
+    settings.object_storage_write_atomically = true;
+    return settings;
+}
+
 void writeMetadataObject(IObjectStorage & object_storage, const StoredObject & object, const std::string & contents, const WriteSettings & settings)
 {
     auto buf = object_storage.writeObject(
@@ -220,7 +226,7 @@ void writeMetadataObject(IObjectStorage & object_storage, const StoredObject & o
         WriteMode::Rewrite,
         /*object_attributes*/ std::nullopt,
         /*buf_size*/ std::max<size_t>(contents.size(), 1),
-        settings);
+        getWriteSettingsForMetadataObject(settings));
 
     writeString(contents, *buf);
     buf->finalize();
@@ -338,14 +344,13 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute()
     auto metadata_object = StoredObject(metadata_object_key, path);
 
     write_attempted = true;
-    /// The buffer holds the whole contents, so they are written at once, see `writeMetadataObject`.
     const auto contents = path.string();
     auto buf = object_storage->writeObject(
         metadata_object,
         WriteMode::Rewrite,
         /*object_attributes*/ std::nullopt,
         /*buf_size*/ std::max<size_t>(contents.size(), 1),
-        /*settings*/ getWriteSettings());
+        /*settings*/ getWriteSettingsForMetadataObject(getWriteSettings()));
 
     writeString(contents, *buf);
     fiu_do_on(FailPoints::plain_object_storage_write_fail_on_directory_create, {
@@ -422,13 +427,12 @@ std::unique_ptr<WriteBufferFromFileBase> MetadataStorageFromPlainObjectStorageMo
                 parsed.has_explicit_file_list);
     }
 
-    /// The buffer is sized by the caller to hold the whole contents, so they are written at once, see `writeMetadataObject`.
     auto write_buf = object_storage->writeObject(
         metadata_object,
         WriteMode::Rewrite,
         /*object_attributes*/ std::nullopt,
         std::max<size_t>(buf_size, 1),
-        /*settings*/ getWriteSettings());
+        /*settings*/ getWriteSettingsForMetadataObject(getWriteSettings()));
 
     return write_buf;
 }
