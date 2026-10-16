@@ -6,6 +6,7 @@
 #include <ranges>
 #include <stack>
 #include <unordered_set>
+#include <Core/ProtocolDefines.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -644,7 +645,8 @@ void FilterStep::serialize(Serialization & ctx) const
     else
         writeStringBinary(filter_column_name, ctx.out);
 
-    actions_dag.serialize(ctx.out, ctx.registry, ctx.input_header);
+    const auto index_hint_actions = ctx.step_version >= 1 ? ActionsDAG::IndexHintActions::Write : ActionsDAG::IndexHintActions::Refuse;
+    actions_dag.serialize(ctx.out, ctx.registry, index_hint_actions, ctx.input_header);
 }
 
 QueryPlanStepPtr FilterStep::deserialize(Deserialization & ctx)
@@ -718,7 +720,11 @@ QueryPlanStepPtr FilterStep::clone() const
 void registerFilterStep(QueryPlanStepRegistry & registry);
 void registerFilterStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("Filter", FilterStep::deserialize);
+    /// Version 1 carries the predicate of `indexHint`.
+    registry.registerStep(
+        "Filter",
+        FilterStep::deserialize,
+        {{0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_INDEX_HINT_ACTIONS}});
 }
 
 }
