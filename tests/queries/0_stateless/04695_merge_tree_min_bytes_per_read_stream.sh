@@ -14,7 +14,7 @@
 # memory of the global memory tracker at the moment a query is planned. On a busy server the two
 # queries of a comparison get different values, which changes the stream count without the cap
 # having anything to do with it. Disable it for every query of this test.
-CLICKHOUSE_CLIENT_OPT="--max_threads_min_free_memory_per_thread=0"
+CLICKHOUSE_CLIENT_OPT="--max_threads_min_free_memory_per_thread=0 --use_statistics_for_sum_avg_aggregation=0"
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

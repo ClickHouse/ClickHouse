@@ -420,6 +420,12 @@ bool ColumnStatistics::hasMinMax() const
     return false;
 }
 
+bool ColumnStatistics::hasSum() const
+{
+    auto it = stats.find(StatisticsType::Basic);
+    return it != stats.end() && assert_cast<const StatisticsBasic &>(*it->second).hasSum();
+}
+
 UInt64 ColumnStatistics::getNullCount() const
 {
     if (auto it = stats.find(StatisticsType::Basic); it != stats.end())
@@ -495,6 +501,8 @@ Estimate ColumnStatistics::getEstimate() const
             info.estimated_null_count = basic_stats.getNullCount();
         if (basic_stats.hasDefaultCount())
             info.estimated_default_count = basic_stats.getDefaultCount();
+        if (basic_stats.hasSum())
+            info.estimated_sum = basic_stats.getSum();
     }
     else if (auto minmax_it = stats.find(StatisticsType::MinMax); minmax_it != stats.end())
     {
@@ -986,6 +994,11 @@ void addImplicitStatistics(ColumnsDescription & columns, const String & statisti
 bool canStatisticsTrackMinMax(const DataTypePtr & data_type)
 {
     return removeLowCardinalityAndNullable(removeNullable(data_type))->isValueRepresentedByNumber();
+}
+
+bool canStatisticsTrackSum(const DataTypePtr & data_type)
+{
+    return WhichDataType(data_type).isIntegerOrDecimal();
 }
 
 }

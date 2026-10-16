@@ -29,6 +29,7 @@ CREATE TABLE t_05259_proxy AS view(SELECT a, b FROM ${CLICKHOUSE_DATABASE}.t_052
 ${CLICKHOUSE_CLIENT} --query "
 SELECT sum(b) FROM t_05259_proxy FORMAT Null
 SETTINGS enable_analyzer = 1,
+         use_statistics_for_sum_avg_aggregation = 0,
          enable_parallel_replicas = 1,
          cluster_for_parallel_replicas = 'parallel_replicas',
          max_parallel_replicas = 3,

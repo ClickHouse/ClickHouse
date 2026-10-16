@@ -88,7 +88,7 @@ SELECT count() FROM t_stored WHERE w > 1000;
 SELECT count() FROM t_stored WHERE w = 10;
 SELECT countIf(explain ILIKE '%Statistics%') > 0 AND countIf(explain ILIKE '%Parts: 0/1%') > 0
 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_stored WHERE w > 1000);
-SELECT countIf(explain ILIKE '%statistics_min_max%') > 0
+SELECT countIf(explain ILIKE '%_statistics_projection%') > 0
 FROM (EXPLAIN indexes = 1, projections = 1 SELECT max(w) FROM t_stored);
 
 DROP TABLE t_carried_over;
