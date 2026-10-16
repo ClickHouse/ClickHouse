@@ -13,7 +13,8 @@
 
 /// ----------------------------------------------------------------------------------------------------
 /// 8 bits
-/// A table of the text of every value: one load, one 4-byte store and no branch to mispredict.
+/// `one_byte_to_string_lookup_table` has the text of every value: one load, one 4-byte store and no branch.
+/// `Int8` uses it too, with the sign written in front of the magnitude.
 /// ----------------------------------------------------------------------------------------------------
 
 namespace
@@ -24,9 +25,9 @@ constexpr UInt32 byteShift(UInt32 i)
 {
     return 8 * (std::endian::native == std::endian::little ? i : sizeof(T) - 1 - i);
 }
+}
 
-/// Bytes 0 to 2: the digits. Byte 3: the length.
-constexpr std::array<UInt32, 256> uint8_text = []
+constexpr std::array<UInt32, 256> one_byte_to_string_lookup_table = []
 {
     std::array<UInt32, 256> table{};
     for (UInt32 value = 0; value < 256; ++value)
@@ -40,30 +41,12 @@ constexpr std::array<UInt32, 256> uint8_text = []
     return table;
 }();
 
-/// Indexed by the bit pattern of the value. Bytes 0 to 3: the sign and the digits. Byte 4: the length.
-/// Wider than `uint8_text`: "-128" leaves no room for the length in four bytes, and computing it from
-/// the text instead is slower.
-constexpr std::array<UInt64, 256> int8_text = []
+namespace
 {
-    std::array<UInt64, 256> table{};
-    for (Int32 value = -128; value < 128; ++value)
-    {
-        UInt32 negative = value < 0;
-        UInt32 magnitude = negative ? -value : value;
-        UInt32 digits = magnitude >= 100 ? 3 : (magnitude >= 10 ? 2 : 1);
-        UInt64 entry = UInt64(digits + negative) << byteShift<UInt64>(4);
-        if (negative)
-            entry |= UInt64('-') << byteShift<UInt64>(0);
-        for (UInt32 i = digits, rest = magnitude; i > 0; --i, rest /= 10)
-            entry |= UInt64('0' + rest % 10) << byteShift<UInt64>(negative + i - 1);
-        table[static_cast<UInt8>(value)] = entry;
-    }
-    return table;
-}();
-
-ALWAYS_INLINE inline char * writeUInt8Text(UInt8 value, char * p)
+/// `value` is below 256. `UInt32`, not `UInt8`, so that callers computing it are not narrowed to 8-bit instructions.
+ALWAYS_INLINE inline char * writeUInt8Text(UInt32 value, char * p)
 {
-    UInt32 entry = uint8_text[value];
+    UInt32 entry = one_byte_to_string_lookup_table[value];
     /// One 4-byte store instead of the exact length: storing 2 + 1 bytes is 1.35x slower, and storing only the
     /// text needs a branch on the length. The bytes after the text are the rest of the entry (zeros and the length),
     /// to be overwritten by whatever is written next; `max_int_width<UInt8>` reserves the extra byte.
@@ -71,12 +54,13 @@ ALWAYS_INLINE inline char * writeUInt8Text(UInt8 value, char * p)
     return p + ((entry >> byteShift<UInt32>(3)) & 0xFF);
 }
 
-ALWAYS_INLINE inline char * writeInt8Text(Int8 value, char * p)
+ALWAYS_INLINE inline char * writeInt8Text(Int32 value, char * p)
 {
-    UInt64 entry = int8_text[static_cast<UInt8>(value)];
-    /// As for `UInt8`, one 4-byte store whatever the length. Here it never writes past the longest text, "-128".
-    memcpy(p, &entry, 4);
-    return p + ((entry >> byteShift<UInt64>(4)) & 0xFF);
+    Int32 sign = value >> 31;
+    *p = '-';
+    /// The magnitude as `(value ^ sign) - sign`, not `std::abs`: clang narrows that to 8-bit instructions, which
+    /// is about two cycles slower. `p - sign` is one past the '-' when there is one.
+    return writeUInt8Text((value ^ sign) - sign, p - sign);
 }
 }
 
@@ -97,7 +81,7 @@ char * itoa(Int8 i, char * p)
 
 char * itoa(int8_t i, char * p)
 {
-    return writeInt8Text(Int8(i), p);
+    return writeInt8Text(i, p);
 }
 
 /// ----------------------------------------------------------------------------------------------------

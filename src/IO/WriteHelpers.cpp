@@ -54,17 +54,17 @@ std::array<char, 36> formatUUID(const UUID & uuid)
 
 void writeIPv4Text(const IPv4 & ip, WriteBuffer & buf)
 {
-    size_t idx = (ip >> 24);
-    buf.write(one_byte_to_string_lookup_table[idx].first, one_byte_to_string_lookup_table[idx].second);
+    std::string_view text = oneByteToString(static_cast<UInt8>(ip >> 24));
+    buf.write(text.data(), text.size());
     buf.write('.');
-    idx = (ip >> 16) & 0xFF;
-    buf.write(one_byte_to_string_lookup_table[idx].first, one_byte_to_string_lookup_table[idx].second);
+    text = oneByteToString(static_cast<UInt8>(ip >> 16));
+    buf.write(text.data(), text.size());
     buf.write('.');
-    idx = (ip >> 8) & 0xFF;
-    buf.write(one_byte_to_string_lookup_table[idx].first, one_byte_to_string_lookup_table[idx].second);
+    text = oneByteToString(static_cast<UInt8>(ip >> 8));
+    buf.write(text.data(), text.size());
     buf.write('.');
-    idx = ip & 0xFF;
-    buf.write(one_byte_to_string_lookup_table[idx].first, one_byte_to_string_lookup_table[idx].second);
+    text = oneByteToString(static_cast<UInt8>(ip));
+    buf.write(text.data(), text.size());
 }
 
 void writeIPv6Text(const IPv6 & ip, WriteBuffer & buf)
