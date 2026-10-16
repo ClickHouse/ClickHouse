@@ -432,7 +432,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     }
 
     auto & nearest_query_scope_query_node = nearest_query_scope->scope_node->as<QueryNode &>();
-    auto & mutable_context = nearest_query_scope_query_node.getMutableContext();
+    const auto & mutable_context = nearest_query_scope_query_node.getMutableContext();
 
     auto scalar_query_hash_string = DB::toString(node_with_hash.hash) + (only_analyze_subquery ? "_analyze" : "");
 
