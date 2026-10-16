@@ -2363,12 +2363,10 @@ String formatStackTrace(const StackTrace & stack_trace)
         const void * frame = stack_trace.getFramePointers()[i];
         const auto resolved = StackTrace::tryResolveAddress(frame);
         const SymbolIndex::Symbol * symbol = symbol_index ? symbol_index->findSymbol(frame) : nullptr;
-        String suffix;
-        if (resolved && resolved->kind == StackTrace::AddressKind::OtherObject)
-            suffix = fmt::format(" in {}", resolved->object);
-        else if (resolved && resolved->kind == StackTrace::AddressKind::UnknownMapping)
-            suffix = " in <unknown>";
-        res += fmt::format("\n{}. {}{} {}", i, resolved ? resolved->address : frame, suffix, symbol ? demangle(symbol->name) : "?");
+        String address = resolved.address ? fmt::format("{}", resolved.address) : "<unknown>";
+        if (resolved.kind == StackTrace::AddressKind::OtherObject)
+            address += fmt::format(" in {}", resolved.object);
+        res += fmt::format("\n{}. {} {}", i, address, symbol ? demangle(symbol->name) : "?");
     }
     return res;
 }
