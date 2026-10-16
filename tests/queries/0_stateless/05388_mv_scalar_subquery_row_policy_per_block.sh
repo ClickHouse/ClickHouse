@@ -14,11 +14,11 @@ BLOCK_PER_ROW="max_block_size = 1, max_insert_threads = 1, min_insert_block_size
 UDF="udf_05388_${CLICKHOUSE_DATABASE}"
 
 $CLICKHOUSE_CLIENT -m -q "
-DROP TABLE IF EXISTS mv_policy_in, mv_policy_udf, mv_merge_policy, mv_nested_policy, mv_atf, mv_nested_settings, mv_merge_atf, mv_merge_array_policy;
+DROP TABLE IF EXISTS mv_policy_in, mv_policy_udf, mv_merge_policy, mv_nested_policy, mv_atf, mv_nested_settings, mv_merge_atf, mv_merge_array_policy, mv_parallel_array;
 DROP TABLE IF EXISTS mv_alias_merge, mv_buffer_merge, mv_mv_merge, mv_tf_merge, mv_loop_merge_policy, mpol_mv;
-DROP ROW POLICY IF EXISTS policy_05388 ON pin, pudf, pmerge, pml, pn1, pn2, parr;
+DROP ROW POLICY IF EXISTS policy_05388 ON pin, pudf, pmerge, pml, pn1, pn2, parr, ppar;
 DROP TABLE IF EXISTS mpol_alias, mpol_buffer, mpol_tf, mpol, mpl;
-DROP TABLE IF EXISTS pin, pudf, pmerge, pn1, pn2, pns, patf, src_atf, pmatf, parr;
+DROP TABLE IF EXISTS pin, pudf, pmerge, pn1, pn2, pns, patf, src_atf, pmatf, parr, src_par, ppar, dst_par;
 DROP TABLE IF EXISTS mpol_other, pml, dst_eq;
 DROP FUNCTION IF EXISTS ${UDF};
 DROP TABLE IF EXISTS dst;
@@ -111,20 +111,32 @@ CREATE MATERIALIZED VIEW mv_merge_atf TO dst AS
         (SELECT max(x) FROM merge(${CLICKHOUSE_DATABASE}, '^(pmatf|dist)\$')) AS value
     FROM src_atf;
 
+-- An 'Array' scalar with the blocks pushed to the view concurrently.
+CREATE TABLE src_par (x UInt64) ENGINE = Null;
+CREATE TABLE ppar ENGINE = MergeTree ORDER BY x AS SELECT number AS x FROM numbers(1000);
+CREATE ROW POLICY policy_05388 ON ppar USING x IN (SELECT x FROM ${CLICKHOUSE_DATABASE}.src_par) TO ALL;
+CREATE TABLE dst_par (x UInt64, arr Array(UInt64)) ENGINE = Memory;
+CREATE MATERIALIZED VIEW mv_parallel_array TO dst_par AS SELECT x, (SELECT groupArray(x) FROM ppar) AS arr FROM src_par;
+
 INSERT INTO src SELECT number + 1 FROM numbers(3) SETTINGS ${BLOCK_PER_ROW};
 INSERT INTO src_atf SELECT number + 1 FROM numbers(3)
     SETTINGS ${BLOCK_PER_ROW},
         additional_table_filters = {'${CLICKHOUSE_DATABASE}.patf': 'x IN (SELECT x FROM ${CLICKHOUSE_DATABASE}.src_atf)',
             '${CLICKHOUSE_DATABASE}.pmatf': 'x IN (SELECT x FROM ${CLICKHOUSE_DATABASE}.src_atf)'};
+INSERT INTO src_par SELECT number % 1000 FROM numbers_mt(2000)
+    SETTINGS max_block_size = 1, max_threads = 16, max_insert_threads = 16, parallel_view_processing = 1,
+        optimize_trivial_insert_select = 0, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0,
+        min_insert_block_size_rows_for_materialized_views = 0, min_insert_block_size_bytes_for_materialized_views = 0;
 
 SELECT * FROM dst ORDER BY name, value;
 SELECT name, scalar_value = join_value AS same, count() FROM dst_eq GROUP BY name, same ORDER BY name, same;
+SELECT 'parallel array policy', count(), countIf(arr != [x]) FROM dst_par;
 
-DROP TABLE mv_policy_in, mv_policy_udf, mv_merge_policy, mv_nested_policy, mv_atf, mv_nested_settings, mv_merge_atf, mv_merge_array_policy;
+DROP TABLE mv_policy_in, mv_policy_udf, mv_merge_policy, mv_nested_policy, mv_atf, mv_nested_settings, mv_merge_atf, mv_merge_array_policy, mv_parallel_array;
 DROP TABLE mv_alias_merge, mv_buffer_merge, mv_mv_merge, mv_tf_merge, mv_loop_merge_policy, mpol_mv;
-DROP ROW POLICY policy_05388 ON pin, pudf, pmerge, pml, pn1, pn2, parr;
+DROP ROW POLICY policy_05388 ON pin, pudf, pmerge, pml, pn1, pn2, parr, ppar;
 DROP TABLE mpol_alias, mpol_buffer, mpol_tf, mpol, mpl;
-DROP TABLE pin, pudf, pmerge, pn1, pn2, pns, patf, src_atf, pmatf, parr;
+DROP TABLE pin, pudf, pmerge, pn1, pn2, pns, patf, src_atf, pmatf, parr, src_par, ppar, dst_par;
 DROP TABLE mpol_other, pml, dst_eq;
 DROP FUNCTION ${UDF};
 DROP TABLE dst;

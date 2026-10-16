@@ -107,7 +107,8 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     QueryTreeNodePtrWithHash node_with_hash(node_without_alias);
     auto str_hash = DB::toString(node_with_hash.hash);
 
-    bool can_use_global_scalars = !only_analyze_subquery && !subtreeMayReadViewSource(node_without_alias.get(), context);
+    const bool is_local_scalar = !only_analyze_subquery && subtreeMayReadViewSource(node_without_alias.get(), context);
+    bool can_use_global_scalars = !only_analyze_subquery && !is_local_scalar;
 
     auto & scalars_cache = early_short_circuit_type_inference_in_process
         ? scalar_subquery_to_scalar_value_type_only
@@ -390,9 +391,10 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     /// the view's query parameters, see `parameterized_view_arguments_in_resolve_process`).
     /// The EXISTS caller also requires a ConstantNode. In type-only analysis its sample value is
     /// only a placeholder; `early_short_circuit_type_inference_failed` prevents folding from it.
+    /// So is a local scalar: `__getScalar` reads the query context, which all blocks of an `INSERT` share.
     if (execute_for_exists || !context->getSettingsRef()[Setting::enable_scalar_subquery_optimization]
         || !useless_literal_types.contains(scalar_type_name) || !context->hasQueryContext()
-        || !nearest_query_scope || parameterized_view_arguments_in_resolve_process)
+        || !nearest_query_scope || parameterized_view_arguments_in_resolve_process || is_local_scalar)
     {
         ConstantValue constant_value{ ConstantValue::wrapToColumnConst(scalar_column_with_type.column), scalar_type };
         auto constant_node = std::make_shared<ConstantNode>(constant_value, node);
