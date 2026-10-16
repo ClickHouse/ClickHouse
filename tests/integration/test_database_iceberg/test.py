@@ -3251,3 +3251,33 @@ def test_drop_partition_catalog_without_snapshot(started_cluster):
         f"ALTER TABLE {qualified} DROP PARTITION 1", settings=DROP_PARTITION_SETTINGS
     )
     assert node.query(f"SELECT count() FROM {qualified}").strip() == "0"
+
+
+def test_drop_partition_catalog_parallel_replicas(started_cluster):
+    node = started_cluster.instances["node1"]
+    namespace = f"clickhouse_{uuid.uuid4()}"
+    table_name = "drop_partition_parallel_replicas"
+
+    create_drop_partition_catalog_table(load_catalog_impl(started_cluster), namespace, table_name)
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    qualified = f"{CATALOG_NAME}.`{namespace}.{table_name}`"
+
+    node.query(
+        f"INSERT INTO {qualified} VALUES (1, 'x'), (2, 'y'), (3, 'z')",
+        settings=DROP_PARTITION_SETTINGS,
+    )
+    # With parallel replicas the catalog table is served by `StorageObjectStorageCluster`.
+    node.query(
+        f"ALTER TABLE {qualified} DROP PARTITION 2",
+        settings={
+            **DROP_PARTITION_SETTINGS,
+            "parallel_replicas_for_cluster_engines": 1,
+            "enable_parallel_replicas": 2,
+            "cluster_for_parallel_replicas": "cluster_simple",
+        },
+    )
+    assert node.query(f"SELECT a FROM {qualified} ORDER BY a").strip() == "1\n3"
+
+    # Reread the metadata location from the catalog to confirm the commit is durable.
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    assert node.query(f"SELECT a FROM {qualified} ORDER BY a").strip() == "1\n3"
