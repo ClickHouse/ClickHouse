@@ -2370,14 +2370,17 @@ bool Aggregator::executeOnBlock(Columns columns,
     MemoryTracker * aggregator_tracker = switchToOwnTracker(result, memory_tracker_switcher);
 
     /// The block's materialized columns and the staged records of an adaptive producer are not part of this table: the
-    /// table's tracker measures what writing the table releases, so they live under the aggregator's tracker instead. A
-    /// thread reports its allocations to its tracker in batches, and the switch holds the unreported ones back until
-    /// the scope ends. A scope in which the table may freeze reports them to the table's tracker first: the freeze
-    /// bound and the write of a learning table read the table's tracked memory, and the freeze takes it as the base of
-    /// its growth (see `adaptiveFreezeBoundReached` and `adaptiveTableWorthSpilling`).
+    /// table's tracker measures what writing the table releases, so they live under the aggregator's tracker instead.
+    /// Only an adaptive producer reads the table's tracker on its own. The other decisions read the aggregator's
+    /// tracker, which adds up the table's, so without an adaptive producer the scope stays closed and spares every block
+    /// two tracker switches, which a stream of small blocks feels. A thread reports its allocations to its tracker in
+    /// batches, and the switch holds the unreported ones back until the scope ends. A scope in which the table may
+    /// freeze reports them to the table's tracker first: the freeze bound and the write of a learning table read the
+    /// table's tracked memory, and the freeze takes it as the base of its growth (see `adaptiveFreezeBoundReached` and
+    /// `adaptiveTableWorthSpilling`).
     const auto aggregator_scope = [&](std::optional<MemoryTrackerSwitcher> & scope, bool table_may_freeze)
     {
-        if (aggregator_tracker)
+        if (aggregator_tracker && adaptive)
         {
             if (table_may_freeze)
                 CurrentThread::flushUntrackedMemory();
@@ -2404,9 +2407,9 @@ bool Aggregator::executeOnBlock(Columns columns,
     NestedColumnsHolder nested_columns_holder;
     AggregateFunctionInstructions aggregate_functions_instructions;
 
-    /// The block's materialized key and argument columns are temporaries of this call, created and released under the
-    /// aggregator's tracker (see `aggregator_scope`): the guard releases them there, because a release is charged to
-    /// the tracker current at the time.
+    /// The block's materialized key and argument columns are temporaries of this call, created and released in
+    /// `aggregator_scope`: the guard releases them there, because a release is charged to the tracker current at the
+    /// time.
     SCOPE_EXIT({
         std::optional<MemoryTrackerSwitcher> scope;
         aggregator_scope(scope, /*table_may_freeze=*/false);
