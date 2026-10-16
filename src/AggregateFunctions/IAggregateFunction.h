@@ -216,7 +216,7 @@ public:
     constexpr static bool parallelizeMergeWithKey() { return false; }
 
     /// Whether `addBatchArray` of `IAggregateFunctionHelper` passes a long array to `addBatchSinglePlace`.
-    /// Off where the loop of inlined `add` is vectorized as well, without the cost of a call per row.
+    /// Off where a call per array costs more than it saves, e.g. where the loop of inlined `add` is vectorized as well.
     constexpr static bool addBatchSinglePlaceForLongArrays() { return true; }
 
     virtual void

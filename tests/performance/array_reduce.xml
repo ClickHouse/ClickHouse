@@ -6,8 +6,8 @@
     <query>SELECT arrayReduceInRanges('count', arrayZip(range(1000000), range(1000000)), range(1000000))[123456]</query>
     <query>SELECT arrayReduceInRanges('sum', arrayZip(range(1000000), range(1000000)), range(1000000))[123456]</query>
 
-    <create_query>CREATE TABLE array_reduce_arrays (k UInt16, short Array(Int64), long Array(Int64), long_nullable Array(Nullable(Int64)), long_flags Array(UInt8)) ENGINE = Memory</create_query>
-    <fill_query>INSERT INTO array_reduce_arrays SELECT number % 1024 AS k, arrayMap(i -> toInt64(number + i), range(number % 4)) AS short, arrayMap(i -> toInt64((number * 31 + i) % 1000), range(100)) AS long, arrayMap(x -> if(x % 5 = 0, NULL, x), long) AS long_nullable, arrayMap(x -> toUInt8(x % 2), long) AS long_flags FROM numbers(2000000)</fill_query>
+    <create_query>CREATE TABLE array_reduce_arrays (k UInt16, short Array(Int64), long Array(Int64), long_nullable Array(Nullable(Int64)), long_flags Array(UInt8), long_nullable_flags Array(Nullable(UInt8))) ENGINE = Memory</create_query>
+    <fill_query>INSERT INTO array_reduce_arrays SELECT number % 1024 AS k, arrayMap(i -> toInt64(number + i), range(number % 4)) AS short, arrayMap(i -> toInt64((number * 31 + i) % 1000), range(100)) AS long, arrayMap(x -> if(x % 5 = 0, NULL, x), long) AS long_nullable, arrayMap(x -> toUInt8(x % 2), long) AS long_flags, arrayMap(x -> if(x % 7 = 0, NULL, toUInt8(x % 2)), long) AS long_nullable_flags FROM numbers(2000000)</fill_query>
 
     <query>SELECT arrayReduce('sum', short) FROM array_reduce_arrays FORMAT Null</query>
     <query>SELECT arrayReduce('sum', long) FROM array_reduce_arrays FORMAT Null</query>
@@ -16,6 +16,8 @@
     <query>SELECT arrayReduce('max', long) FROM array_reduce_arrays FORMAT Null</query>
     <query>SELECT k, maxArray(long) FROM array_reduce_arrays GROUP BY k FORMAT Null</query>
     <query>SELECT k, sumArray(long_nullable) FROM array_reduce_arrays GROUP BY k FORMAT Null</query>
+    <query>SELECT arrayReduce('sumIf', long_nullable, long_nullable_flags) FROM array_reduce_arrays FORMAT Null</query>
+    <query>SELECT arrayReduce('corr', long_nullable, long_nullable) FROM array_reduce_arrays FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS array_reduce_arrays</drop_query>
 </test>

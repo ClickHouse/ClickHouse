@@ -618,6 +618,9 @@ class AggregateFunctionNullVariadic final : public AggregateFunctionNullBase<
                                                 AggregateFunctionNullVariadic<result_is_nullable, serialize_flag>>
 {
 public:
+    /// The batch path allocates a flag buffer up to `row_end`, so one call per array would allocate per row.
+    constexpr static bool addBatchSinglePlaceForLongArrays() { return false; }
+
     AggregateFunctionNullVariadic(AggregateFunctionPtr nested_function_, const DataTypes & arguments, const Array & params)
         : AggregateFunctionNullBase<result_is_nullable, serialize_flag, AggregateFunctionNullVariadic<result_is_nullable, serialize_flag>>(
             std::move(nested_function_), arguments, params)

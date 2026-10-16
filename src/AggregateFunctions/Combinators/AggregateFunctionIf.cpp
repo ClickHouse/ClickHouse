@@ -103,6 +103,9 @@ private:
     }
 
 public:
+    /// The batch path allocates a flag buffer up to `row_end`, so one call per array would allocate per row.
+    constexpr static bool addBatchSinglePlaceForLongArrays() { return false; }
+
     String getName() const override
     {
         return name;
@@ -278,6 +281,8 @@ private:
     bool filter_is_only_null = false;
 
 public:
+    /// The batch path allocates a flag buffer up to `row_end`, so one call per array would allocate per row.
+    constexpr static bool addBatchSinglePlaceForLongArrays() { return false; }
 
     String getName() const override
     {
