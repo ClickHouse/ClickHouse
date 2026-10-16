@@ -65,7 +65,6 @@ CREATE MATERIALIZED VIEW mv_merge_array_policy TO dst AS
 
 -- 'Alias', 'Buffer', a materialized view and a table function table forward the read to a 'Merge' table.
 CREATE TABLE mpol (x UInt64) ENGINE = Merge(${CLICKHOUSE_DATABASE}, '^pmerge\$');
-SET allow_experimental_alias_table_engine = 1;
 CREATE TABLE mpol_alias ENGINE = Alias(${CLICKHOUSE_DATABASE}, mpol);
 CREATE TABLE mpol_buffer (x UInt64) ENGINE = Buffer(${CLICKHOUSE_DATABASE}, mpol, 1, 1000, 1000, 1000000000, 1000000000, 1000000000, 1000000000);
 CREATE TABLE mpol_other (x UInt64) ENGINE = MergeTree ORDER BY x;
