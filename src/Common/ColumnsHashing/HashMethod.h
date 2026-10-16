@@ -635,9 +635,8 @@ struct HashMethodKeysFixed
             {
                 if (covers_sub_range)
                 {
-                    const size_t index = row - prepared_keys_begin;
-                    if (index < prepared_keys.size())
-                        return prepared_keys[index];
+                    if (row >= prepared_keys_begin && row - prepared_keys_begin < prepared_keys.size())
+                        return prepared_keys[row - prepared_keys_begin];
                     return packFixed<Key>(row, keys_size, Base::getActualColumns(), key_sizes, Base::createBitmap(row));
                 }
             }
