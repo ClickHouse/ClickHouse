@@ -4,6 +4,7 @@
 
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/Scheduler/CurrentCPULease.h>
 #include <algorithm>
 
 #include <IO/WriteBufferFromString.h>
@@ -145,17 +146,24 @@ PollingQueue::TaskData PollingQueue::getTask(std::unique_lock<std::mutex> & lock
 
         lock.unlock();
 
+        epoll_event event{};
+        event.data.ptr = nullptr;
+        size_t num_events = 0;
         if (timeout == 0)
         {
+            /// Non-blocking probe: never sleeps, so the CPU lease is not parked
             fiu_do_on(FailPoints::polling_queue_before_try_poll,
             {
                 FailPointInjection::notifyPauseAndWaitForResume(FailPoints::polling_queue_before_try_poll);
             });
+            num_events = epoll.getManyReady(1, &event, timeout);
         }
-
-        epoll_event event{};
-        event.data.ptr = nullptr;
-        size_t num_events = epoll.getManyReady(1, &event, timeout);
+        else
+        {
+            /// Non-CPU wait: park the CPU lease while blocked
+            CPULeaseParkGuard cpu_park;
+            num_events = epoll.getManyReady(1, &event, timeout);
+        }
 
         lock.lock();
 
