@@ -1668,7 +1668,7 @@ bool QueryOracleChecker::checkTLPWhere(const ASTSelectQuery & select, const Cont
         ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
 
         String message = fmt::format(
-            "TLP WHERE oracle mismatch.\n"
+            "TLP WHERE oracle mismatch!\n"
             "Reference query ({} rows): {}\n"
             "Partitioned query ({} rows): {}\n",
             ref_rows.size(), ref_sql,
@@ -1786,7 +1786,7 @@ bool QueryOracleChecker::checkNoREC(const ASTSelectQuery & select, const Context
         ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
 
         throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
-            "NoREC oracle mismatch.\n"
+            "NoREC oracle mismatch!\n"
             "Optimized query (count={}): {}\n"
             "Unoptimized query (count={}): {}",
             opt_count, opt_sql,
@@ -1871,7 +1871,7 @@ bool QueryOracleChecker::checkTLPDistinct(const ASTSelectQuery & select, const C
     {
         ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
         throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
-            "TLP DISTINCT oracle mismatch.\n"
+            "TLP DISTINCT oracle mismatch!\n"
             "Reference query ({} rows): {}\n"
             "Partitioned query ({} rows): {}",
             ref_rows.size(), ref_sql,
@@ -1953,7 +1953,7 @@ bool QueryOracleChecker::checkTLPGroupBy(const ASTSelectQuery & select, const Co
     {
         ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
         throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
-            "TLP GROUP BY oracle mismatch.\n"
+            "TLP GROUP BY oracle mismatch!\n"
             "Reference query ({} unique rows): {}\n"
             "Partitioned query ({} unique rows): {}",
             ref_rows.size(), ref_sql,
@@ -2021,7 +2021,7 @@ bool QueryOracleChecker::checkTLPHaving(const ASTSelectQuery & select, const Con
     {
         ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
         throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
-            "TLP HAVING oracle mismatch.\n"
+            "TLP HAVING oracle mismatch!\n"
             "Reference query ({} rows): {}\n"
             "Partitioned query ({} rows): {}",
             ref_rows.size(), ref_sql,
@@ -2102,7 +2102,7 @@ bool QueryOracleChecker::checkDQP(const ASTSelectQuery & select, const ContextMu
         {
             ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
             throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
-                "DQP oracle mismatch. Setting: {}\n"
+                "DQP oracle mismatch! Setting: {}\n"
                 "Default ({} rows): {}\n"
                 "With {}=off ({} rows): {}",
                 setting_name,
@@ -2422,7 +2422,7 @@ bool QueryOracleChecker::checkTLPAggregate(const ASTSelectQuery & select, const 
         ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
 
         throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
-            "TLP Aggregate oracle mismatch.\n"
+            "TLP Aggregate oracle mismatch!\n"
             "Reference query ({} rows): {}\n"
             "Metamorphic query ({} rows): {}",
             ref_rows.size(), ref_sql,
@@ -2565,7 +2565,7 @@ bool QueryOracleChecker::checkIdentityWhere(const ASTSelectQuery & select, const
         {
             ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
             throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
-                "Identity WHERE ({}) oracle mismatch.\n"
+                "Identity WHERE ({}) oracle mismatch!\n"
                 "Reference query ({} rows): {}\n"
                 "Variant query ({} rows): {}",
                 name, ref_rows.size(), ref_sql, rows.size(), sql);
@@ -2671,7 +2671,7 @@ bool QueryOracleChecker::checkSubqueryWrap(const ASTSelectQuery & select, const 
 
         ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
         throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
-            "Subquery wrap oracle mismatch.\n"
+            "Subquery wrap oracle mismatch!\n"
             "Reference query ({} rows): {}\n"
             "Wrapped query ({} rows): {}",
             ref_rows.size(), ref_sql,

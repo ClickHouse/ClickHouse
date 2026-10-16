@@ -3895,7 +3895,7 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
                     if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
                     {
                         LOG_FATAL(logger,
-                            "AST Fuzzer oracle mismatch detected\n"
+                            "AST Fuzzer oracle mismatch detected!\n"
                             "Fuzzed query: {}\n"
                             "{}",
                             fuzzed_query, e.message());

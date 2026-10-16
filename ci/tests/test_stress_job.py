@@ -17,9 +17,9 @@ from ci.jobs.stress_job import select_replica_failures
 
 _ORACLE_MISMATCH_LOG = (
     "2026.09.04 00:44:57.972626 [ 1068 ] {q} <Fatal> ASTFuzzer: "
-    "AST Fuzzer oracle mismatch detected\n"
+    "AST Fuzzer oracle mismatch detected!\n"
     "Fuzzed query: SELECT g FROM t GROUP BY g\n"
-    "TLP Aggregate oracle mismatch.\n"
+    "TLP Aggregate oracle mismatch!\n"
     "2026.09.04 00:44:58.000000 [ 1068 ] {} <Information> Application: shutting down\n"
 )
 _ASAN_STDERR = (
