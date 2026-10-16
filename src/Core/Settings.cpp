@@ -11122,7 +11122,7 @@ which would start again for each chunk, or with `max_execution_time` and `timeou
 The chunks are separate queries, so a check over the whole range, like the one for series with the same labels or the limit on the grid points of a subquery, sees one chunk at a time.
 Each chunk counts as one query against quotas.
 )", PRIVATE_PREVIEW, \
-        {"26.10", 0, 0, "New setting."}) \
+        {"26.11", 0, 0, "New setting."}) \
     \
     DECLARE(Seconds, promql_range_query_cache_min_age, 0, R"(
 If greater than zero, a chunk of a range query split by `promql_range_query_split_interval` that covers a whole interval and ends more than this many seconds ago
@@ -11131,7 +11131,7 @@ The other query cache settings, like `query_cache_ttl`, apply as usual.
 A query with a negative `offset` or an `@` modifier can read samples newer than its chunk, so its chunks are not cached. 0 disables caching of chunks, also in a request, and so does `use_query_cache` changed to 0 by the profile or the request.
 No chunk is cached if an overflow mode, like `timeout_overflow_mode`, is not `throw`, because a limit could cut the chunk short.
 )", PRIVATE_PREVIEW, \
-        {"26.10", 0, 0, "New setting."}) \
+        {"26.11", 0, 0, "New setting."}) \
     \
     DECLARE(Bool, promql_push_down_label_matchers, true, R"(
 Copies the label matchers of one side of a PromQL binary operator to the selectors of the other side for the labels the operator matches series by, so `b / on(job) a{job="x"}` reads only the series of `b` with `job="x"`.
