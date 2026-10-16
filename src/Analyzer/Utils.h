@@ -181,6 +181,10 @@ QueryTreeNodePtr createCastFunction(QueryTreeNodePtr node, DataTypePtr result_ty
 /// node is returned unchanged.
 QueryTreeNodePtr foldConstantCast(const QueryTreeNodePtr & cast_node);
 
+/// If `node` is `__getScalar('<hash>')` and the query context holds that scalar, returns it as a constant column
+/// of one row, the value `resolveFunction` folds with. Otherwise returns nullptr.
+ColumnPtr tryGetScalarConstantColumn(const QueryTreeNodePtr & node, const ContextPtr & context);
+
 /// Maps an `in`-family function name to its null-aware counterpart the way `transform_null_in` does
 /// (`in` -> `nullIn` and so on). Any other name is returned unchanged.
 std::string_view getNullInFunctionName(std::string_view function_name);

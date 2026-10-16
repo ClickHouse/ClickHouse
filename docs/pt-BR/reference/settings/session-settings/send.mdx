@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/Versio
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="send_profile_events">
-  ## send_profile_events
-</div>
+## send_profile_events {#send_profile_events}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -30,9 +28,7 @@ Possíveis valores:
 * 0 — Desativado.
 * 1 — Ativado.
 
-<div id="send_progress_in_http_headers">
-  ## send_progress_in_http_headers
-</div>
+## send_progress_in_http_headers {#send_progress_in_http_headers}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -45,9 +41,7 @@ Valores possíveis:
 * 0 — Desativado.
 * 1 — Ativado.
 
-<div id="send_table_structure_on_insert_with_inline_data">
-  ## send_table_structure_on_insert_with_inline_data
-</div>
+## send_table_structure_on_insert_with_inline_data {#send_table_structure_on_insert_with_inline_data}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -55,9 +49,7 @@ Valores possíveis:
 
 Se estiver desativada e a consulta INSERT contiver dados inline, o servidor não enviará a estrutura da tabela nem os valores padrão das colunas ao cliente pelo protocolo nativo. Em vez disso, o próprio servidor analisará os dados inline. Isso pode melhorar o desempenho de muitas inserções pequenas pelo protocolo nativo.
 
-<div id="send_timeout">
-  ## send_timeout
-</div>
+## send_timeout {#send_timeout}
 
 <SettingsInfoBlock type="Seconds" default_value="300" />
 

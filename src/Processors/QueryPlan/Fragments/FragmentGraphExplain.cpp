@@ -8,7 +8,7 @@
 #include <fmt/format.h>
 #include <fmt/ranges.h>
 
-#include <algorithm>
+#include <ranges>
 
 namespace DB
 {
@@ -26,18 +26,6 @@ const QueryPlan & getPlan(const QueryFragment & fragment)
     if (!fragment.plan)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Fragment {} has no plan to explain", fragment.id);
     return *fragment.plan;
-}
-
-std::string_view formatRole(QueryFragment::Role role)
-{
-    switch (role)
-    {
-        case QueryFragment::Role::Initiator:
-            return "initiator";
-        case QueryFragment::Role::Worker:
-            return "worker";
-    }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected role of a query fragment");
 }
 
 String formatKind(const FragmentExchange & exchange)
@@ -60,34 +48,26 @@ String formatKind(const FragmentExchange & exchange)
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected kind of exchange {}", exchange.name);
 }
 
-std::string_view formatMode(FragmentExchange::Mode mode)
+std::string_view formatMode(ExchangeDescription::Kind mode)
 {
     switch (mode)
     {
-        case FragmentExchange::Mode::Pipelined:
-            return "pipelined";
-        case FragmentExchange::Mode::Materialised:
-            return "materialised";
+        case ExchangeDescription::Kind::Streaming:
+            return "streaming";
+        case ExchangeDescription::Kind::Persisted:
+            return "persisted";
     }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected mode of exchange");
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected exchange mode {}", static_cast<int>(mode));
 }
 
-/// The initiator first, then the other fragments by descending id.
+/// By descending id. The cutter numbers the stages in post-order, so a fragment comes before the fragments it reads,
+/// and the fragment that produces the result (`main`) comes first.
 std::vector<const QueryFragment *> getPrintOrder(const FragmentGraph & graph)
 {
     std::vector<const QueryFragment *> order;
     order.reserve(graph.fragments.size());
-    for (const auto & fragment : graph.fragments)
+    for (const auto & fragment : graph.fragments | std::views::reverse)
         order.push_back(&fragment);
-
-    std::sort(order.begin(), order.end(), [](const QueryFragment * lhs, const QueryFragment * rhs)
-    {
-        const bool lhs_is_initiator = lhs->role == QueryFragment::Role::Initiator;
-        const bool rhs_is_initiator = rhs->role == QueryFragment::Role::Initiator;
-        if (lhs_is_initiator != rhs_is_initiator)
-            return lhs_is_initiator;
-        return lhs->id > rhs->id;
-    });
     return order;
 }
 
@@ -116,7 +96,7 @@ void explainFragmentGraph(
 
     for (const auto * fragment : print_order)
     {
-        buf << fmt::format("Query fragment {} ({}) · {} · tasks={}\n", fragment->id, fragment->stage_name, formatRole(fragment->role), fragment->tasks);
+        buf << fmt::format("Query fragment {} ({}) · tasks={}\n", fragment->id, fragment->stage_name, fragment->tasks);
         getPlan(*fragment).explainPlan(buf, options, 0, max_step_description_length);
         buf << '\n';
     }
@@ -139,20 +119,10 @@ void explainFragmentGraph(
         buf << "Dependencies:\n";
         for (const auto * fragment : print_order)
         {
-            for (UInt32 child : fragment->children)
+            for (const auto & exchange : graph.exchanges)
             {
-                const auto & exchange = graph.getExchange(child);
-                buf << fmt::format("  F{} <- F{} ({}, ", fragment->id, exchange.from, exchange.name);
-                switch (exchange.type)
-                {
-                    case FragmentExchange::Type::Streaming:
-                        buf << "streaming";
-                        break;
-                    case FragmentExchange::Type::Blocking:
-                        buf << "blocking: " << exchange.reason;
-                        break;
-                }
-                buf << ")\n";
+                if (exchange.to == fragment->id)
+                    buf << fmt::format("  F{} <- F{} ({})\n", fragment->id, exchange.from, exchange.name);
             }
         }
     }

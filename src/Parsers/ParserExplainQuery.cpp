@@ -852,13 +852,13 @@ Join (JOIN FillRightFirst)
 
 #### Query fragments {#explain-plan-fragments}
 
-With `fragments` = 1, a query that is executed by stateless workers (`make_distributed_plan = 1`) is shown as it is cut for execution: one plan per query fragment. A query fragment is a part of the plan that is executed as one or more parallel tasks; the fragment run by the initiator is printed first, and the other fragments follow in the reverse order of their ids, so that data flows upward as in a plan tree. Every fragment starts with a header `Query fragment <id> (<stage name>) · <role> · tasks=<N>` that shows its id, its stage name, its role (`initiator` or `worker`) and its number of tasks. The send and receive steps show the name of the exchange they write to or read from.
+With `fragments` = 1, a query that is executed by stateless workers (`make_distributed_plan = 1`) is shown as it is cut for execution: one plan per query fragment. A query fragment is a part of the plan that is executed as one or more parallel tasks. The fragments are printed in the reverse order of their ids: the fragment that produces the result of the query comes first, and every fragment comes before the fragments it reads from, so that data flows upward as in a plan tree. Every fragment starts with a header `Query fragment <id> (<stage name>) · tasks=<N>` that shows its id, its stage name and its number of tasks. The send and receive steps show the name of the exchange they write to or read from.
 
 The fragments are followed by three sections, which refer to query fragment `<id>` as `F<id>`:
 
-- `Exchanges` — how the data is transferred between two fragments: by the hash of the keys (`hash(...)`), to every task of the consumer (`broadcast`), into one task (`gather`, with `sorted by` when the sort order is kept) or without regard to the values (`any`); whether it is sent over the network while it is produced (`pipelined`) or written to temporary files first (`materialised`); and the number of source and destination buckets.
-- `Dependencies` — for every fragment, the fragments it reads from. A `streaming` dependency is processed as the rows arrive; a `blocking` dependency must be finished before the consumer produces output, because a step on the way from the exchange to the output of the fragment needs all of its input first: the build side of a join, a hash aggregation, a merge of aggregation states that does not merge bucket by bucket, or a full sort. A materialised exchange is always blocking. The reason is printed next to it.
-- `Levels` — fragment ids grouped by their depth, from the fragments without dependencies to the initiator. The fragments of one level do not depend on each other.
+- `Exchanges` — how the data is transferred between two fragments: by the hash of the keys (`hash(...)`), to every task of the consumer (`broadcast`), into one task (`gather`, with `sorted by` when the sort order is kept) or without regard to the values (`any`); whether it is sent over the network while it is produced (`streaming`) or written to temporary files first (`persisted`, see [`distributed_plan_force_exchange_kind`](/reference/settings/session-settings/distributed-plan#distributed_plan_force_exchange_kind)), in which case the consumer starts only after the producer has finished; and the number of source and destination buckets.
+- `Dependencies` — for every fragment, the fragments it reads from and the exchange it reads them through.
+- `Levels` — fragment ids grouped by their depth, from the fragments without dependencies to the fragment that produces the result. The fragments of one level do not depend on each other.
 
 When the query is not distributed, the plan is printed as without `fragments`. If the query could not be distributed and fell back to local execution, the reason is printed after the plan as `Not distributed: <reason>`.
 
@@ -873,13 +873,13 @@ SETTINGS make_distributed_plan = 1, explain_query_plan_default = 'legacy';
 ```
 
 ```text
-Query fragment 3 (main) · initiator · tasks=1
+Query fragment 3 (main) · tasks=1
 GatherSend (final_result)
   Expression ((Project names + Projection))
     MergingAggregated (merge)
       GatherReceive (exchange_2)
 
-Query fragment 2 (stage_2) · worker · tasks=3
+Query fragment 2 (stage_2) · tasks=3
 GatherSend (exchange_2)
   Aggregating (partial)
     Expression (Before GROUP BY)
@@ -887,24 +887,24 @@ GatherSend (exchange_2)
         ShuffleReceive (exchange_0)
         BroadcastReceive (exchange_1)
 
-Query fragment 1 (stage_1) · worker · tasks=1
+Query fragment 1 (stage_1) · tasks=1
 BroadcastSend (exchange_1)
   Expression (Change column names to column identifiers)
     ReadFromMergeTree (default.small)
 
-Query fragment 0 (stage_0) · worker · tasks=1
+Query fragment 0 (stage_0) · tasks=1
 ShuffleSend (exchange_0)
   Expression (Change column names to column identifiers)
     ReadFromMergeTree (default.big)
 
 Exchanges:
-  exchange_0: any, pipelined, F0 -> F2, buckets 1 -> 3
-  exchange_1: broadcast, pipelined, F1 -> F2, buckets 1 -> 3
-  exchange_2: gather, pipelined, F2 -> F3, buckets 3 -> 1
+  exchange_0: any, streaming, F0 -> F2, buckets 1 -> 3
+  exchange_1: broadcast, streaming, F1 -> F2, buckets 1 -> 3
+  exchange_2: gather, streaming, F2 -> F3, buckets 3 -> 1
 Dependencies:
-  F3 <- F2 (exchange_2, streaming)
-  F2 <- F0 (exchange_0, blocking: hash aggregation)
-  F2 <- F1 (exchange_1, blocking: build side of JoinLogical)
+  F3 <- F2 (exchange_2)
+  F2 <- F0 (exchange_0)
+  F2 <- F1 (exchange_1)
 Levels: [F0, F1] -> [F2] -> [F3]
 ```
 
@@ -1068,6 +1068,18 @@ The maximum number in `parallelism` is computed as a minimum between:
 1. total number of tasks within the plan step;
 2. The maximum number of query processing threads set in `max_threads`.
 </Note>
+
+#### Spilling in aggregation, sorting, and distinct steps {#explain-analyze-spilling}
+
+When a `GROUP BY`, `ORDER BY`, or `DISTINCT` step spills data to temporary storage, it reports:
+
+```txt
+Spill: spilled <compressed_bytes>
+```
+
+This is the cumulative number of compressed bytes written by the whole step, including its parallel processors.
+The total includes temporary files already consumed or deleted, and counts each write when data is spilled more than once.
+The line is omitted when no data was spilled.
 
 #### Join steps {#explain-analyze-join-steps}
 

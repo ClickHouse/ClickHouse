@@ -1,15 +1,9 @@
 #include <Processors/QueryPlan/Fragments/FragmentGraph.h>
 
-#include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/BroadcastReceiveStep.h>
 #include <Processors/QueryPlan/BroadcastSendStep.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/GatherReceiveStep.h>
 #include <Processors/QueryPlan/GatherSendStep.h>
-#include <Processors/QueryPlan/JoinStep.h>
-#include <Processors/QueryPlan/JoinStepLogical.h>
-#include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/ShuffleReceiveStep.h>
 #include <Processors/QueryPlan/ShuffleSendStep.h>
 #include <Common/Exception.h>
@@ -21,8 +15,6 @@
 #include <algorithm>
 #include <cmath>
 #include <queue>
-#include <unordered_map>
-#include <unordered_set>
 
 namespace DB
 {
@@ -60,32 +52,11 @@ bool isExchangeEndpointStep(const IQueryPlanStep & step)
         || typeid_cast<const GatherReceiveStep *>(&step) || typeid_cast<const BroadcastReceiveStep *>(&step);
 }
 
-bool isPassThroughStep(const IQueryPlanStep & step)
+/// A fragment is a stage of the executor, so it always has a plan.
+void checkNotEmpty(const QueryPlan & plan, const String & stage_name)
 {
-    return typeid_cast<const ExpressionStep *>(&step) || typeid_cast<const FilterStep *>(&step);
-}
-
-std::vector<String> buildSummary(const QueryPlan & plan)
-{
-    std::vector<String> summary;
-    const auto * root = plan.getRootNode();
-    if (!root)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "A plan fragment of a distributed query plan is empty");
-
-    std::vector<const QueryPlan::Node *> stack{root};
-    while (!stack.empty())
-    {
-        const auto * node = stack.back();
-        stack.pop_back();
-
-        if (!isPassThroughStep(*node->step) && !isExchangeEndpointStep(*node->step))
-            summary.push_back(node->step->getName());
-
-        /// Push in reverse order so that the first child is visited first.
-        for (auto it = node->children.rbegin(); it != node->children.rend(); ++it)
-            stack.push_back(*it);
-    }
-    return summary;
+    if (!plan.getRootNode())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The plan of stage {} is empty", stage_name);
 }
 
 const String * tryGetReceiveExchangeId(const IQueryPlanStep & step)
@@ -99,122 +70,28 @@ const String * tryGetReceiveExchangeId(const IQueryPlanStep & step)
     return nullptr;
 }
 
-/// Describes `step` as a consumer of its input number `child_index`.
-ConsumerStepInfo describeConsumerStep(const IQueryPlanStep & step, size_t child_index)
+/// Checks that `plan` has exactly one receive step of `exchange_name`: a dependency of the cut plan without one is
+/// an inconsistent cut.
+void checkReceiveStep(const QueryPlan & plan, const String & stage_name, const String & exchange_name)
 {
-    ConsumerStepInfo info;
-    info.step_name = step.getName();
-    if (typeid_cast<const JoinStepLogical *>(&step))
-    {
-        info.kind = ConsumerStepInfo::Kind::Join;
-        info.receive_feeds_build_side = child_index == 1;
-    }
-    else if (const auto * join = typeid_cast<const JoinStep *>(&step))
-    {
-        info.kind = ConsumerStepInfo::Kind::Join;
-        const size_t build_side_index = join->swap_streams ? 0 : 1;
-        info.receive_feeds_build_side = child_index == build_side_index;
-    }
-    else if (const auto * merging = typeid_cast<const MergingAggregatedStep *>(&step))
-    {
-        info.kind = ConsumerStepInfo::Kind::MergingAggregated;
-        info.merges_bucket_by_bucket = merging->isMemoryEfficientAggregation() || merging->memoryBoundMergingWillBeUsed();
-    }
-    else if (const auto * sorting = typeid_cast<const SortingStep *>(&step))
-    {
-        info.kind = ConsumerStepInfo::Kind::Sorting;
-        info.sorting_type = sorting->getType();
-    }
-    else if (const auto * aggregating = typeid_cast<const AggregatingStep *>(&step))
-    {
-        info.kind = ConsumerStepInfo::Kind::Aggregating;
-        info.aggregation_in_order = aggregating->inOrder();
-    }
-    return info;
-}
-
-/// Whether the consumer step needs all of its input before producing output; sets `reason` if so.
-bool consumerNeedsWholeInput(const ConsumerStepInfo & consumer, String & reason)
-{
-    switch (consumer.kind)
-    {
-        case ConsumerStepInfo::Kind::Join:
-            if (!consumer.receive_feeds_build_side)
-                return false;
-            reason = "build side of " + consumer.step_name;
-            return true;
-        case ConsumerStepInfo::Kind::MergingAggregated:
-            if (consumer.merges_bucket_by_bucket)
-                return false;
-            reason = "merge of aggregation states";
-            return true;
-        case ConsumerStepInfo::Kind::Sorting:
-            if (consumer.sorting_type != SortingStep::Type::Full)
-                return false;
-            reason = "full sort";
-            return true;
-        case ConsumerStepInfo::Kind::Aggregating:
-            if (consumer.aggregation_in_order)
-                return false;
-            reason = "hash aggregation";
-            return true;
-        case ConsumerStepInfo::Kind::Other:
-            return false;
-    }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected kind of consumer step {}", consumer.step_name);
-}
-
-/// Finds the receive step of `exchange_name` in `plan` and walks from it towards the output of the fragment
-/// to the first step which needs all of its input on that way, keeping the input position at every parent.
-ConsumerStepInfo findConsumerStep(const QueryPlan & plan, const String & stage_name, const String & exchange_name)
-{
-    const auto * root = plan.getRootNode();
-    if (!root)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The plan fragment of stage {} is empty", stage_name);
-
-    /// Node -> (parent, index of the node among the children of the parent).
-    std::unordered_map<const QueryPlan::Node *, std::pair<const QueryPlan::Node *, size_t>> parents;
-    const QueryPlan::Node * receive_node = nullptr;
-
-    std::vector<const QueryPlan::Node *> stack{root};
+    size_t receive_steps = 0;
+    std::vector<const QueryPlan::Node *> stack{plan.getRootNode()};
     while (!stack.empty())
     {
         const auto * node = stack.back();
         stack.pop_back();
 
         if (const auto * exchange_id = tryGetReceiveExchangeId(*node->step); exchange_id && *exchange_id == exchange_name)
-        {
-            if (receive_node)
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Stage {} has more than one receive step for exchange {}", stage_name, exchange_name);
-            receive_node = node;
-        }
-
-        for (size_t i = 0; i < node->children.size(); ++i)
-        {
-            parents[node->children[i]] = {node, i};
-            stack.push_back(node->children[i]);
-        }
+            ++receive_steps;
+        stack.insert(stack.end(), node->children.begin(), node->children.end());
     }
 
-    if (!receive_node)
+    if (receive_steps == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Stage {} depends on exchange {}, but has no receive step for it", stage_name, exchange_name);
-
-    const QueryPlan::Node * current = receive_node;
-    while (true)
-    {
-        auto it = parents.find(current);
-        if (it == parents.end())
-            return {}; /// No step up to the output of the fragment needs the whole input: the rows stream through.
-
-        const auto [parent, child_index] = it->second;
-        ConsumerStepInfo info = describeConsumerStep(*parent->step, child_index);
-        String reason;
-        if (consumerNeedsWholeInput(info, reason))
-            return info;
-        current = parent;
-    }
+    if (receive_steps > 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Stage {} has more than one receive step for exchange {}", stage_name, exchange_name);
 }
 
 /// The estimated number of rows a producer fragment sends: the estimate of its root node,
@@ -243,16 +120,16 @@ FragmentExchange::Kind getExchangeKind(const ExchangeDescription & description)
         description.exchange_step_name, description.name);
 }
 
-FragmentExchange::Mode getExchangeMode(const ExchangeDescription & description)
+std::string_view formatExchangeMode(ExchangeDescription::Kind mode)
 {
-    switch (description.kind)
+    switch (mode)
     {
         case ExchangeDescription::Kind::Streaming:
-            return FragmentExchange::Mode::Pipelined;
+            return "streaming";
         case ExchangeDescription::Kind::Persisted:
-            return FragmentExchange::Mode::Materialised;
+            return "persisted";
     }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected kind of exchange {}", description.name);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected exchange mode {}", static_cast<int>(mode));
 }
 
 String formatExchangeKind(const FragmentExchange & exchange)
@@ -293,28 +170,6 @@ const FragmentExchange & FragmentGraph::getExchange(UInt32 id) const
     return *it;
 }
 
-FragmentExchange::Type classifyDependency(
-    const ConsumerStepInfo & consumer, FragmentExchange::Kind kind, FragmentExchange::Mode mode, String & reason)
-{
-    reason.clear();
-
-    if (kind == FragmentExchange::Kind::SetValues)
-    {
-        reason = "set must be complete";
-        return FragmentExchange::Type::Blocking;
-    }
-
-    if (mode == FragmentExchange::Mode::Materialised)
-    {
-        reason = "materialised exchange";
-        return FragmentExchange::Type::Blocking;
-    }
-
-    if (consumerNeedsWholeInput(consumer, reason))
-        return FragmentExchange::Type::Blocking;
-    return FragmentExchange::Type::Streaming;
-}
-
 namespace
 {
 
@@ -326,58 +181,49 @@ struct TopologicalOrder
     std::vector<std::vector<size_t>> producers;
 };
 
+/// The index of the fragment with the given id in `fragments`, which is sorted by id; nullopt when absent.
+std::optional<size_t> findFragmentIndex(const FragmentGraph & graph, UInt32 id)
+{
+    auto it = std::lower_bound(graph.fragments.begin(), graph.fragments.end(), id,
+        [](const QueryFragment & f, UInt32 value) { return f.id < value; });
+    if (it == graph.fragments.end() || it->id != id)
+        return std::nullopt;
+    return it - graph.fragments.begin();
+}
+
 /// Validates the graph (see `validateFragmentGraph`) and sorts it. Ready fragments are taken in the order of ids
 /// for determinism. The ids assigned by the cutter already ascend from producers to consumers; the sort does not
-/// rely on that.
+/// rely on that, because the fragments of `IN`-subquery sets get ids after the fragments that read them.
 TopologicalOrder sortTopologically(const FragmentGraph & graph)
 {
     const size_t num_fragments = graph.fragments.size();
 
-    std::unordered_map<UInt32, size_t> fragment_index_by_id;
-    for (size_t i = 0; i < num_fragments; ++i)
-    {
-        if (!fragment_index_by_id.emplace(graph.fragments[i].id, i).second)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicate fragment {} in the fragment graph", graph.fragments[i].id);
-    }
-
-    std::unordered_map<UInt32, const FragmentExchange *> exchange_by_id;
-    for (const auto & exchange : graph.exchanges)
-    {
-        if (!exchange_by_id.emplace(exchange.id, &exchange).second)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicate exchange {} in the fragment graph", exchange.id);
-    }
+    /// Strictly ascending ids: unique, and sorted as the binary searches of `getFragment` and `getExchange` need.
+    for (size_t i = 1; i < num_fragments; ++i)
+        if (graph.fragments[i - 1].id >= graph.fragments[i].id)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Fragments {} (id {}) and {} (id {}) are not in strictly ascending order of ids",
+                graph.fragments[i - 1].stage_name, graph.fragments[i - 1].id, graph.fragments[i].stage_name, graph.fragments[i].id);
+    for (size_t i = 1; i < graph.exchanges.size(); ++i)
+        if (graph.exchanges[i - 1].id >= graph.exchanges[i].id)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Exchanges {} (id {}) and {} (id {}) are not in strictly ascending order of ids",
+                graph.exchanges[i - 1].name, graph.exchanges[i - 1].id, graph.exchanges[i].name, graph.exchanges[i].id);
 
     TopologicalOrder result;
     result.producers.resize(num_fragments);
     std::vector<size_t> in_degree(num_fragments, 0);
     std::vector<std::vector<size_t>> consumers(num_fragments);
-    std::unordered_set<UInt32> read_exchanges;
-    for (size_t i = 0; i < num_fragments; ++i)
+    for (const auto & exchange : graph.exchanges)
     {
-        const auto & fragment = graph.fragments[i];
-        for (UInt32 child : fragment.children)
-        {
-            auto exchange_it = exchange_by_id.find(child);
-            if (exchange_it == exchange_by_id.end())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Fragment {} reads unknown exchange {}", fragment.id, child);
-            const auto & exchange = *exchange_it->second;
-            if (!read_exchanges.insert(exchange.id).second)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Exchange {} is read more than once", exchange.name);
-            if (exchange.to != fragment.id)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Fragment {} reads exchange {}, which goes to fragment {}",
-                    fragment.id, exchange.name, exchange.to);
-            auto producer_it = fragment_index_by_id.find(exchange.from);
-            if (producer_it == fragment_index_by_id.end())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Fragment {} reads exchange {} from unknown fragment {}",
-                    fragment.id, exchange.name, exchange.from);
-            consumers[producer_it->second].push_back(i);
-            result.producers[i].push_back(producer_it->second);
-            ++in_degree[i];
-        }
+        auto producer = findFragmentIndex(graph, exchange.from);
+        if (!producer)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Exchange {} comes from unknown fragment {}", exchange.name, exchange.from);
+        auto consumer = findFragmentIndex(graph, exchange.to);
+        if (!consumer)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Exchange {} goes to unknown fragment {}", exchange.name, exchange.to);
+        consumers[*producer].push_back(*consumer);
+        result.producers[*consumer].push_back(*producer);
+        ++in_degree[*consumer];
     }
-    if (read_exchanges.size() != graph.exchanges.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The fragment graph has {} exchanges, but its fragments read {}",
-            graph.exchanges.size(), read_exchanges.size());
 
     std::priority_queue<std::pair<UInt32, size_t>, std::vector<std::pair<UInt32, size_t>>, std::greater<>> ready;
     for (size_t i = 0; i < num_fragments; ++i)
@@ -387,7 +233,7 @@ TopologicalOrder sortTopologically(const FragmentGraph & graph)
     result.order.reserve(num_fragments);
     while (!ready.empty())
     {
-        size_t i = ready.top().second;
+        const auto [id, i] = ready.top();
         ready.pop();
         result.order.push_back(i);
         for (size_t consumer : consumers[i])
@@ -400,19 +246,11 @@ TopologicalOrder sortTopologically(const FragmentGraph & graph)
 
     /// The root is the fragment whose output nobody consumes: the result of the query.
     size_t num_roots = 0;
-    size_t root = 0;
     for (size_t i = 0; i < num_fragments; ++i)
-    {
         if (consumers[i].empty())
-        {
             ++num_roots;
-            root = i;
-        }
-    }
     if (num_roots != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The fragment graph has {} root fragments, expected one", num_roots);
-    if (graph.fragments[root].role != QueryFragment::Role::Initiator)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The root fragment F{} must have the initiator role", graph.fragments[root].id);
 
     return result;
 }
@@ -438,11 +276,10 @@ std::vector<std::vector<UInt32>> computeLevels(const FragmentGraph & graph)
         max_level = std::max(max_level, level_of[i]);
     }
 
+    /// The fragments are sorted by id, so every level comes out ascending.
     std::vector<std::vector<UInt32>> levels(max_level + 1);
     for (size_t i = 0; i < graph.fragments.size(); ++i)
         levels[level_of[i]].push_back(graph.fragments[i].id);
-    for (auto & level : levels)
-        std::sort(level.begin(), level.end());
     return levels;
 }
 
@@ -450,72 +287,64 @@ FragmentGraph buildFragmentGraph(const DistributedQueryPlan & distributed_plan)
 {
     FragmentGraph graph;
 
+    /// The graph is the data flow of the query. The merge stages of runtime filters (`filter_only`, added by
+    /// `wireRuntimeFilterExchangeTopology`) produce no query data and are not cut from the plan, so they and the
+    /// dependencies on either side of them are left out. The steps that build and apply the filters stay in the plans
+    /// of the data fragments.
     for (const auto & [stage_name, stage] : distributed_plan.stages)
     {
-        QueryFragment fragment;
-        fragment.id = stage.id;
-        fragment.stage_name = stage_name;
-        fragment.role = stage_name == main_stage_name ? QueryFragment::Role::Initiator : QueryFragment::Role::Worker;
-        fragment.tasks = stage.tasks.size();
-        fragment.plan = &stage.query_plan_fragment;
-        fragment.summary = buildSummary(stage.query_plan_fragment);
-        graph.fragments.push_back(std::move(fragment));
-    }
-    std::sort(graph.fragments.begin(), graph.fragments.end(), [](const auto & lhs, const auto & rhs) { return lhs.id < rhs.id; });
-    for (size_t i = 1; i < graph.fragments.size(); ++i)
-        if (graph.fragments[i - 1].id == graph.fragments[i].id)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Stages {} and {} have the same id {}",
-                graph.fragments[i - 1].stage_name, graph.fragments[i].stage_name, graph.fragments[i].id);
+        if (stage.filter_only)
+            continue;
 
-    auto find_fragment = [&](UInt32 id) -> QueryFragment &
-    {
-        auto it = std::lower_bound(graph.fragments.begin(), graph.fragments.end(), id,
-            [](const QueryFragment & f, UInt32 value) { return f.id < value; });
-        if (it == graph.fragments.end() || it->id != id)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Stage of fragment {} is referenced by a dependency, but does not exist", id);
-        return *it;
-    };
+        checkNotEmpty(stage.query_plan_fragment, stage_name);
+        graph.fragments.push_back(QueryFragment{
+            .id = stage.id,
+            .stage_name = stage_name,
+            .execution_mode = QueryFragment::ExecutionMode::Distributed,
+            .fallback_reason = {},
+            .description = {},
+            .tasks = stage.tasks.size(),
+            .plan = &stage.query_plan_fragment,
+        });
+    }
+    /// `stages` and `stage_depends_on` are unordered maps: sort for a deterministic order and for the lookups by id.
+    /// Duplicate ids are left to `validateFragmentGraph`.
+    std::sort(graph.fragments.begin(), graph.fragments.end(), [](const auto & lhs, const auto & rhs) { return lhs.id < rhs.id; });
 
     for (const auto & [consumer_stage, producers] : distributed_plan.stage_depends_on)
     {
-        UInt32 consumer_id = findStage(distributed_plan, consumer_stage).id;
+        const auto & consumer_stage_description = findStage(distributed_plan, consumer_stage);
+        if (consumer_stage_description.filter_only)
+            continue;
+        UInt32 consumer_id = consumer_stage_description.id;
         for (const auto & [producer_stage, exchange_name] : producers)
         {
-            UInt32 producer_id = findStage(distributed_plan, producer_stage).id;
+            const auto & producer_stage_description = findStage(distributed_plan, producer_stage);
+            if (producer_stage_description.filter_only)
+                continue;
+            UInt32 producer_id = producer_stage_description.id;
             const auto & description = findDescription(distributed_plan, exchange_name);
 
-            FragmentExchange exchange;
-            exchange.id = description.id;
-            exchange.name = description.name;
-            exchange.from = producer_id;
-            exchange.to = consumer_id;
-            exchange.kind = getExchangeKind(description);
-            if (exchange.kind == FragmentExchange::Kind::Hash)
-                exchange.keys = description.keys;
-            if (exchange.kind == FragmentExchange::Kind::Gather)
-                exchange.merge_sort = description.sort_description;
-            exchange.mode = getExchangeMode(description);
-            exchange.source_buckets = description.source_bucket_count;
-            exchange.destination_buckets = description.destination_bucket_count;
-            exchange.statistics.estimated_rows = getEstimatedRows(*find_fragment(producer_id).plan);
+            const auto kind = getExchangeKind(description);
+            checkReceiveStep(*graph.getFragment(consumer_id).plan, consumer_stage, exchange_name);
 
-            auto & consumer = find_fragment(consumer_id);
-            ConsumerStepInfo consumer_step = findConsumerStep(*consumer.plan, consumer_stage, exchange_name);
-            exchange.type = classifyDependency(consumer_step, exchange.kind, exchange.mode, exchange.reason);
-            consumer.children.push_back(exchange.id);
-
-            graph.exchanges.push_back(std::move(exchange));
+            graph.exchanges.push_back(FragmentExchange{
+                .id = description.id,
+                .name = description.name,
+                .from = producer_id,
+                .to = consumer_id,
+                .kind = kind,
+                .keys = kind == FragmentExchange::Kind::Hash ? description.keys : Names{},
+                .merge_sort = kind == FragmentExchange::Kind::Gather ? description.sort_description : std::nullopt,
+                .mode = description.kind,
+                .source_buckets = description.source_bucket_count,
+                .destination_buckets = description.destination_bucket_count,
+                .statistics = {.estimated_rows = getEstimatedRows(*graph.getFragment(producer_id).plan)},
+            });
         }
     }
 
     std::sort(graph.exchanges.begin(), graph.exchanges.end(), [](const auto & lhs, const auto & rhs) { return lhs.id < rhs.id; });
-    for (size_t i = 1; i < graph.exchanges.size(); ++i)
-        if (graph.exchanges[i - 1].id == graph.exchanges[i].id)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Exchanges {} and {} have the same id {}",
-                graph.exchanges[i - 1].name, graph.exchanges[i].name, graph.exchanges[i].id);
-
-    for (auto & fragment : graph.fragments)
-        std::sort(fragment.children.begin(), fragment.children.end());
 
     validateFragmentGraph(graph);
     return graph;
@@ -525,16 +354,16 @@ FragmentGraph buildSingleFragmentGraph(const QueryPlan & plan, std::optional<Str
 {
     FragmentGraph graph;
 
-    QueryFragment fragment;
-    fragment.id = 0;
-    fragment.stage_name = String(main_stage_name);
-    fragment.role = QueryFragment::Role::Initiator;
-    fragment.location = QueryFragment::ExecutionLocation::SingleNode;
-    fragment.fallback_reason = std::move(fallback_reason);
-    fragment.tasks = 1;
-    fragment.plan = &plan;
-    fragment.summary = buildSummary(plan);
-    graph.fragments.push_back(std::move(fragment));
+    checkNotEmpty(plan, String(main_stage_name));
+    graph.fragments.push_back(QueryFragment{
+        .id = 0,
+        .stage_name = String(main_stage_name),
+        .execution_mode = QueryFragment::ExecutionMode::SingleNode,
+        .fallback_reason = std::move(fallback_reason),
+        .description = {},
+        .tasks = 1,
+        .plan = &plan,
+    });
     return graph;
 }
 
@@ -550,18 +379,18 @@ String dumpFragmentGraph(const FragmentGraph & graph)
     fmt::format_to(out, "query fragments: {}\n", graph.fragments.size());
     for (const auto & fragment : graph.fragments)
     {
-        fmt::format_to(out, "  F{} {:<{}}  {:<9}  {:<11}  tasks={}",
+        fmt::format_to(out, "  F{} {:<{}}  {:<11}  tasks={}",
             fragment.id, fragment.stage_name, stage_name_width,
-            fragment.role == QueryFragment::Role::Initiator ? "initiator" : "worker",
-            fragment.location == QueryFragment::ExecutionLocation::Distributed ? "distributed" : "single node",
+            fragment.execution_mode == QueryFragment::ExecutionMode::Distributed ? "distributed" : "single node",
             fragment.tasks);
 
-        for (size_t i = 0; i < fragment.children.size(); ++i)
+        bool first_input = true;
+        for (const auto & exchange : graph.exchanges)
         {
-            const auto & exchange = graph.getExchange(fragment.children[i]);
-            fmt::format_to(out, "{}F{} via {} ({})", i == 0 ? "  needs " : ", ",
-                exchange.from, exchange.name,
-                exchange.type == FragmentExchange::Type::Blocking ? "blocking: " + exchange.reason : "streaming");
+            if (exchange.to != fragment.id)
+                continue;
+            fmt::format_to(out, "{}F{} via {}", first_input ? "  needs " : ", ", exchange.from, exchange.name);
+            first_input = false;
         }
         if (fragment.fallback_reason)
             fmt::format_to(out, "  not distributed: {}", *fragment.fallback_reason);
@@ -590,7 +419,7 @@ String dumpFragmentGraph(const FragmentGraph & graph)
             .name = exchange.name,
             .edge = fmt::format("F{} -> F{}", exchange.from, exchange.to),
             .kind = formatExchangeKind(exchange),
-            .mode = exchange.mode == FragmentExchange::Mode::Pipelined ? "pipelined" : "materialised",
+            .mode = String(formatExchangeMode(exchange.mode)),
             .buckets = fmt::format("{} -> {}", exchange.source_buckets, exchange.destination_buckets),
         };
         name_width = std::max(name_width, row.name.size());

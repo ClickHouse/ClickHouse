@@ -1,0 +1,53 @@
+---
+description: 'O motor de banco de dados Overlay expõe a união das tabelas de vários bancos de dados existentes.'
+sidebarTitle: 'Overlay'
+slug: /engines/database-engines/overlay
+title: 'Overlay'
+doc_type: 'reference'
+---
+
+O motor de banco de dados `Overlay` expõe a união das tabelas de vários bancos de dados existentes.
+
+## Criando um banco de dados {#creating-a-database}
+
+```sql
+CREATE DATABASE overlay_db
+ENGINE = Overlay(db1[, db2, ...]);
+```
+
+O nome de uma tabela é resolvido nos bancos de dados de origem na ordem em que eles são listados: prevalece o primeiro banco de dados que tiver uma tabela com esse nome.
+
+O banco de dados não possui tabelas próprias. Cada tabela do banco de dados overlay se comporta como uma tabela [`Alias`](/pt-BR/reference/engines/table-engines/special/alias) da tabela correspondente no banco de dados de origem: tanto a leitura quanto a gravação são direcionadas à tabela de origem.
+As operações `CREATE`, `DROP`, `RENAME`, `ATTACH` e `DETACH` de tabelas dentro do banco de dados overlay não são suportadas.
+
+Os bancos de dados de origem são resolvidos pelo nome a cada acesso: quando um banco de dados de origem é removido, suas tabelas desaparecem do banco de dados overlay e voltam a aparecer quando ele é recriado.
+Um banco de dados `Overlay` não pode ser usado como origem de outro banco de dados `Overlay`.
+
+## Controle de acesso {#access-control}
+
+Assim como em uma tabela `Alias`, trabalhar com uma tabela do banco de dados overlay exige concessões tanto no banco de dados overlay quanto na tabela de origem, e as row policies de ambos são aplicadas.
+Uma tabela do banco de dados overlay só fica visível para usuários que consigam ver tanto o banco de dados overlay quanto a tabela de origem (ou seja, que tenham o privilégio `SHOW TABLES` em ambos).
+Um nome é resolvido no primeiro banco de dados de origem em que o usuário consiga ver uma tabela com esse nome: uma tabela oculta para o usuário é ignorada, como se não existisse.
+
+## Exemplo {#example}
+
+```sql
+CREATE DATABASE db1;
+CREATE DATABASE db2;
+CREATE TABLE db1.a (x UInt8) ENGINE = Memory;
+CREATE TABLE db2.b (y String) ENGINE = Memory;
+INSERT INTO db2.b VALUES ('Hello');
+CREATE DATABASE overlay_db ENGINE = Overlay(db1, db2);
+SELECT name, engine FROM system.tables WHERE database = 'overlay_db' ORDER BY name;
+SELECT * FROM overlay_db.b;
+```
+
+```response
+┌─name─┬─engine─┐
+│ a    │ Alias  │
+│ b    │ Alias  │
+└──────┴────────┘
+┌─y─────┐
+│ Hello │
+└───────┘
+```

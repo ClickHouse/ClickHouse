@@ -1,0 +1,89 @@
+-- Tags: no-random-settings, no-random-merge-tree-settings
+-- no-random-settings, no-random-merge-tree-settings: the selected marks and EXPLAIN output may differ with
+-- random settings.
+
+-- A strict comparison over a column of consecutive integer values goes through a monotonic key function as
+-- the inclusive bound next to its constant, so the relaxed key atom leaves out a key bucket that the
+-- constant starts or ends: `ts < '2026-01-11 00:00:00'` gives `toDate(ts) <= '2026-01-10'`. The bound
+-- moves only when both forms match the same rows. The keys consist of the function alone, so the
+-- transformed atom is the only one that prunes.
+
+SET explain_query_plan_default = 'legacy';
+SET session_timezone = 'UTC';
+
+{#- Each check prints the predicate, the count with index analysis, the count of a full scan, the marks
+    selected by index analysis and the key condition. -#}
+{% macro check(table, predicate) -%}
+SELECT '{{ predicate | replace("\\", "\\\\") | replace("'", "\\'") }}', (SELECT count() FROM {{ table }} WHERE {{ predicate }}),
+    (SELECT count() FROM {{ table }} WHERE {{ predicate }} SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0),
+    (SELECT sum(marks) FROM (EXPLAIN ESTIMATE SELECT 1 FROM {{ table }} WHERE {{ predicate }})),
+    (SELECT arrayStringConcat(groupArray(trimLeft(explain)), ' | ') FROM (EXPLAIN indexes = 1 SELECT 1 FROM {{ table }} WHERE {{ predicate }}) WHERE trimLeft(explain) LIKE 'Condition:%')
+FORMAT TSVRaw;
+{%- endmacro %}
+
+CREATE TABLE t_datetime (ts DateTime('UTC')) ENGINE = MergeTree ORDER BY toDate(ts)
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO t_datetime SELECT toDateTime('2026-01-09 00:00:00', 'UTC') + INTERVAL number HOUR FROM numbers(96);
+
+-- A text constant is converted to the column type exactly as the comparison converts it.
+{{ check('t_datetime', "ts >= '2026-01-10 00:00:00' AND ts < '2026-01-11 00:00:00'") }}
+{{ check('t_datetime', "ts > '2026-01-09 23:59:59' AND ts <= '2026-01-10 23:59:59'") }}
+-- The constant on the left is the same bound.
+{{ check('t_datetime', "'2026-01-11 00:00:00' > ts AND ts >= '2026-01-10 00:00:00'") }}
+-- Constants of the column type, of `Date` and of an integer type convert without loss.
+{{ check('t_datetime', "ts >= toDateTime('2026-01-10 00:00:00', 'UTC') AND ts < toDateTime('2026-01-11 00:00:00', 'UTC')") }}
+{{ check('t_datetime', "ts >= toDate('2026-01-10') AND ts < toDate('2026-01-11')") }}
+{{ check('t_datetime', "ts >= 1768003200 AND ts < 1768089600") }}
+-- A `DateTime64` constant with a fractional part is compared as `DateTime64`, so `ts = '2026-01-11 00:00:00'`
+-- matches and the bound stays.
+{{ check('t_datetime', "ts >= '2026-01-10 00:00:00' AND ts < toDateTime64('2026-01-11 00:00:00.5', 1, 'UTC')") }}
+
+CREATE TABLE t_date (d Date) ENGINE = MergeTree ORDER BY toStartOfMonth(d)
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO t_date SELECT toDate('2026-01-01') + number FROM numbers(90);
+
+-- A `DateTime` constant at midnight is a `Date` value.
+{{ check('t_date', "d < toDateTime('2026-02-01 00:00:00', 'UTC')") }}
+-- A `DateTime` constant after midnight converts to its day, which still matches, so the bound stays.
+{{ check('t_date', "d < toDateTime('2026-02-01 12:00:00', 'UTC')") }}
+
+CREATE TABLE t_int (x Int32) ENGINE = MergeTree ORDER BY intDiv(x, 10)
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO t_int SELECT toInt32(number) - 50 FROM numbers(100);
+
+-- A signed column, with integer constants and an integral float constant.
+{{ check('t_int', "x < 20") }}
+{{ check('t_int', "x > 9") }}
+{{ check('t_int', "x < 20.") }}
+-- A float constant with a fractional part is not an `Int32` value.
+{{ check('t_int', "x < 19.5") }}
+
+CREATE TABLE t_divided (x Int32) ENGINE = MergeTree ORDER BY x / -10
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO t_divided SELECT toInt32(number) - 50 FROM numbers(100);
+
+-- A decreasing key function takes the inclusive bound and reverses the comparison.
+{{ check('t_divided', "x < 20") }}
+{{ check('t_divided', "x > 9") }}
+
+CREATE TABLE t_uint (u UInt32) ENGINE = MergeTree ORDER BY intDiv(u, 10)
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO t_uint SELECT toUInt32(number) FROM numbers(100);
+
+-- Bounds without a neighbour inside `UInt32` stay.
+{{ check('t_uint', "u < 0") }}
+{{ check('t_uint', "u > 4294967295") }}
+
+CREATE TABLE t_nullable (ts Nullable(DateTime('UTC'))) ENGINE = MergeTree ORDER BY toDate(ts)
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0, allow_nullable_key = 1;
+INSERT INTO t_nullable SELECT if(number = 30, NULL, toDateTime('2026-01-09 00:00:00', 'UTC') + INTERVAL number HOUR) FROM numbers(96);
+
+-- A `Nullable` column has the values of its nested type.
+{{ check('t_nullable', "ts >= '2026-01-10 00:00:00' AND ts < '2026-01-11 00:00:00'") }}
+
+CREATE TABLE t_datetime64 (ts DateTime64(3, 'UTC')) ENGINE = MergeTree ORDER BY toDate(ts)
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO t_datetime64 SELECT toDateTime64('2026-01-09 00:00:00', 3, 'UTC') + INTERVAL number HOUR FROM numbers(96);
+
+-- Only integer, `Date`, `Date32` and `DateTime` columns move the bound, so a `DateTime64` column keeps it.
+{{ check('t_datetime64', "ts >= '2026-01-10 00:00:00' AND ts < '2026-01-11 00:00:00'") }}

@@ -22,16 +22,15 @@ Las claves de una colección con nombre deben coincidir con los nombres de los p
 función, el motor de tabla, la base de datos, etc. correspondientes. En los ejemplos de abajo, se
 enlaza la lista de parámetros para cada tipo.
 
-Los parámetros establecidos en una colección con nombre pueden sobrescribirse en SQL, como se muestra en los ejemplos
-de abajo. Esta capacidad puede limitarse mediante las palabras clave `[NOT] OVERRIDABLE`, atributos XML
-y/o la opción de configuración `allow_named_collection_override_by_default`.
+Para sobrescribir un parámetro almacenado en una colección con nombre se requiere el privilegio `SHOW NAMED COLLECTIONS SECRETS` sobre esa colección, incluso cuando el parámetro está marcado como `OVERRIDABLE`. Las claves marcadas como `NOT OVERRIDABLE` en SQL o con `overridable="false"` en XML no pueden sobrescribirse. Añadir un parámetro que la colección no almacena no requiere este privilegio adicional. Los alias, como `addresses_expr` para `host`, cuentan como sobrescrituras del parámetro almacenado.
 
-<Warning>
-  Si se permite la sobrescritura, es posible que los usuarios sin acceso administrativo
-  averigüen las credenciales que intenta ocultar.
-  Si está usando colecciones con nombre con ese fin, debería deshabilitar
-  `allow_named_collection_override_by_default` (que está habilitado de forma predeterminada).
-</Warning>
+```sql
+GRANT SHOW NAMED COLLECTIONS SECRETS ON my_collection TO my_user;
+```
+
+Esta comprobación solo requiere el privilegio; no depende de la configuración que controla la visualización de secretos. La opción de configuración `allow_named_collection_override_by_default` está obsoleta y no tiene ningún efecto.
+
+Las fuentes de diccionarios siguen la misma regla. El privilegio se comprueba al crear, adjuntar o restaurar el diccionario. Al cargar el diccionario, solo se aplican las claves marcadas como `NOT OVERRIDABLE`.
 
 ## Almacenar colecciones con nombre en la base de datos del sistema {#storing-named-collections-in-the-system-database}
 
@@ -46,9 +45,9 @@ url = 'https://connection.url/'
 
 En el ejemplo anterior:
 
-* `key_1` siempre puede sobrescribirse.
+* `key_1` pueden sobrescribirlo los usuarios con `SHOW NAMED COLLECTIONS SECRETS` sobre la colección.
 * `key_2` nunca puede sobrescribirse.
-* `url` puede sobrescribirse o no, según el valor de `allow_named_collection_override_by_default`.
+* `url` pueden sobrescribirlo los usuarios con `SHOW NAMED COLLECTIONS SECRETS` sobre la colección.
 
 ### Permisos para crear colecciones con nombre con DDL {#permissions-to-create-named-collections-with-ddl}
 
@@ -128,9 +127,9 @@ Cambiar el tipo de almacenamiento requiere reiniciar el servidor; `SYSTEM RELOAD
 
 En el ejemplo anterior:
 
-* `key_1` siempre puede sobrescribirse.
+* `key_1` pueden sobrescribirla los usuarios con `SHOW NAMED COLLECTIONS SECRETS` sobre la colección.
 * `key_2` nunca puede sobrescribirse.
-* `url` puede sobrescribirse o no, según el valor de `allow_named_collection_override_by_default`.
+* `url` pueden sobrescribirla los usuarios con `SHOW NAMED COLLECTIONS SECRETS` sobre la colección.
 
 ## Modificar colecciones con nombre {#modifying-named-collections}
 
@@ -500,12 +499,19 @@ SELECT * FROM remote(remote1, database = default, table = test);
 └───┴───┘
 ```
 
-### Ejemplo de uso de colecciones con nombre en un diccionario con origen en ClickHouse {#example-of-using-named-collections-with-a-dictionary-with-source-clickhouse}
+### Ejemplo de uso de colecciones con nombre en un diccionario con fuente en ClickHouse {#example-of-using-named-collections-with-a-dictionary-with-source-clickhouse}
 
 ```sql
+CREATE NAMED COLLECTION remote_dict AS
+host = 'localhost',
+port = 9000,
+database = 'default',
+user = 'default',
+password = '';
+
 CREATE DICTIONARY dict(a Int64, b String)
 PRIMARY KEY a
-SOURCE(CLICKHOUSE(NAME remote1 TABLE test DB default))
+SOURCE(CLICKHOUSE(NAME remote_dict TABLE test))
 LIFETIME(MIN 1 MAX 2)
 LAYOUT(HASHED());
 
@@ -689,7 +695,7 @@ CREATE DICTIONARY dict
     `b` String
 )
 PRIMARY KEY a
-SOURCE(MONGODB(NAME mymongo COLLECTION my_dict))
+SOURCE(MONGODB(NAME mymongo))
 LIFETIME(MIN 1 MAX 2)
 LAYOUT(HASHED())
 
@@ -701,5 +707,5 @@ SELECT dictGet('dict', 'b', 2);
 ```
 
 <Note>
-  La colección con nombre especifica `my_collection` como nombre de la colección. En la llamada a la función, este valor se sustituye por `collection = 'my_dict'` para seleccionar otra colección.
+  El diccionario utiliza `my_collection`, tal como se especifica en la colección con nombre. Para usar otra colección de MongoDB, defina una colección con nombre distinta con ese valor.
 </Note>
