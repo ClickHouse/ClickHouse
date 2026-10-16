@@ -16,6 +16,9 @@
 #    include <immintrin.h>
 #endif
 
+/// Not instrumented: the XRay entry and exit sleds are a measurable part of calls this short.
+#pragma clang attribute push([[clang::xray_never_instrument]], apply_to = function)
+
 /// ----------------------------------------------------------------------------------------------------
 /// 8 bits
 /// `one_byte_to_string_lookup_table` has the text of every value: one load, one 4-byte store and no branch.
@@ -1113,3 +1116,5 @@ bool getUseAVX512ItoaForTests()
     return false;
 #endif
 }
+
+#pragma clang attribute pop
