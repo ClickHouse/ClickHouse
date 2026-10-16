@@ -10,7 +10,11 @@ constinit UInt32 supported_archs = 0;
 namespace
 {
     /// Priority 101 runs before every constructor of default priority, so `supported_archs` is already
-    /// valid for any other static initializer. `getSupportedArchs` only executes CPUID and reads no globals.
+    /// valid for any other static initializer. On x86_64, `getSupportedArchs` only executes CPUID and reads
+    /// no globals. On AArch64, SVE detection reads the hardware capabilities (`AT_HWCAP`) via `getauxval`
+    /// (Linux) or `elf_aux_info` (FreeBSD), which read global state from the auxiliary vector that the kernel
+    /// passes to the process. This state is set up during process startup, before any constructor runs, so it
+    /// is already valid here.
     [[gnu::constructor(101)]] void initSupportedArchs()
     {
         supported_archs = getSupportedArchs();
