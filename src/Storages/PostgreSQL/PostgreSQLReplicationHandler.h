@@ -46,7 +46,9 @@ public:
 
     /// Fetch list of tables which are going to be replicated. Used for database engine.
     /// `nested_tables_on_disk` are the tables that were already replicated before the restart (their nested tables exist).
-    std::set<String> fetchRequiredTables(const std::set<String> & nested_tables_on_disk);
+    /// `published_but_not_materialized` receives the tables that are in the publication but are not replicated,
+    /// because they do not have nested tables (for example, their initial snapshot has failed).
+    std::set<String> fetchRequiredTables(const std::set<String> & nested_tables_on_disk, std::set<String> & published_but_not_materialized);
 
     /// Start replication setup immediately.
     void startSynchronization(bool throw_on_error);

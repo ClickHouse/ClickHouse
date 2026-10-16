@@ -1219,8 +1219,9 @@ void PostgreSQLReplicationHandler::shutdownFinal()
 
 
 /// Used by MaterializedPostgreSQL database engine.
-std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables(const std::set<String> & nested_tables_on_disk)
+std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables(const std::set<String> & nested_tables_on_disk, std::set<String> & published_but_not_materialized)
 {
+    published_but_not_materialized.clear();
     postgres::Connection connection(connection_info);
     std::set<String> result_tables;
     bool publication_exists_before_startup = false;
@@ -1376,7 +1377,6 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables(const std::se
                         published_tables = fetchTablesFromPublication(tx);
                     }
 
-                    String published_but_not_materialized;
                     for (auto it = result_tables.begin(); it != result_tables.end();)
                     {
                         if (nested_tables_on_disk.contains(*it))
@@ -1386,11 +1386,7 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables(const std::se
                         }
 
                         if (published_tables.contains(*it))
-                        {
-                            if (!published_but_not_materialized.empty())
-                                published_but_not_materialized += ", ";
-                            published_but_not_materialized += *it;
-                        }
+                            published_but_not_materialized.insert(*it);
                         it = result_tables.erase(it);
                     }
 
@@ -1398,7 +1394,7 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables(const std::se
                         LOG_WARNING(log,
                             "Publication {} contains tables that are not replicated, because they were never materialized "
                             "(for example, their initial snapshot has failed): {}. To replicate them, run `ATTACH TABLE {}.<table>`",
-                            doubleQuoteString(publication_name), published_but_not_materialized, backQuoteIfNeed(current_database_name));
+                            doubleQuoteString(publication_name), boost::algorithm::join(published_but_not_materialized, ", "), backQuoteIfNeed(current_database_name));
                 }
             }
             /// Check tables list from publication is the same as expected tables list.

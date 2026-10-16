@@ -3400,6 +3400,12 @@ def test_whole_schema_database_restart_after_new_postgresql_table(started_cluste
         f"contains tables that are not replicated, because they were never materialized (for example, their initial snapshot has failed): {published_table}"
     )
 
+    # A full database backup must not silently omit the published table that has no nested table.
+    error = instance.query_and_get_error(
+        "BACKUP DATABASE test_database TO Disk('backups', 'mpg_whole_schema_unmaterialized_backup')"
+    )
+    assert "CANNOT_BACKUP_TABLE" in error and published_table in error, error
+
     # Both tables are added to replication with `ATTACH TABLE`.
     for table in (new_table, published_table):
         instance.query(f"ATTACH TABLE test_database.{table}")
