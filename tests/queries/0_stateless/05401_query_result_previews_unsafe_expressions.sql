@@ -1,8 +1,8 @@
 -- Query result previews (the `query_result_previews` setting) must neither change nor fail the
--- result of a query. A preview holds intermediate values, so an expression after the aggregation
--- that is stateful, or that can throw on a value the final result never has, keeps the preview
--- emitters dormant. With `max_threads = 1` and two source blocks, the aggregation below emits a
--- preview with `c = 32768` after the first block, and the final result has `c = 65536`.
+-- result of a query. A preview holds intermediate values: a stateful expression after the
+-- aggregation keeps the preview emitters dormant, and a preview on which an expression throws is
+-- dropped. With `max_threads = 1` and two source blocks, the aggregation below emits a preview with
+-- `c = 32768` after the first block, and the final result has `c = 65536`.
 
 SET query_result_previews = 1;
 SET query_result_previews_min_interval_ms = 0;

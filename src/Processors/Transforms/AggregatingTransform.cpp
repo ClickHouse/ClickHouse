@@ -1631,7 +1631,7 @@ void AggregatingTransform::tryEmitQueryResultPreview(UInt64 num_rows, UInt64 num
     if (!preview.getNumRows())
         return;
 
-    markAsQueryResultPreview(preview);
+    markAsQueryResultPreview(preview, std::shared_ptr<QueryResultPreviewsControl>(query_result_previews, &query_result_previews->control));
     pending_query_result_preview = std::move(preview);
 }
 

@@ -1,14 +1,22 @@
 #include <Processors/QueryResultPreview.h>
 
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnFunction.h>
 #include <Core/Settings.h>
-#include <Functions/IFunction.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Common/Exception.h>
 #include <Common/Stopwatch.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int QUERY_WAS_CANCELLED;
+    extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
+    extern const int ABORTED;
+}
 
 namespace Setting
 {
@@ -25,14 +33,14 @@ bool isQueryResultPreview(const Chunk & chunk)
     return chunk.getChunkInfos().has<QueryResultPreviewInfo>();
 }
 
-void markAsQueryResultPreview(Chunk & chunk)
+void markAsQueryResultPreview(Chunk & chunk, std::shared_ptr<QueryResultPreviewsControl> control)
 {
     /// Shared by all queries: only the relative order of the previews of one query matters.
     static std::atomic<UInt64> last_sequence_number{0};
 
     chunk.getChunkInfos().extract<QueryResultPreviewInfo>();
-    chunk.getChunkInfos().add(
-        std::make_shared<QueryResultPreviewInfo>(last_sequence_number.fetch_add(1, std::memory_order_relaxed) + 1));
+    chunk.getChunkInfos().add(std::make_shared<QueryResultPreviewInfo>(
+        last_sequence_number.fetch_add(1, std::memory_order_relaxed) + 1, std::move(control)));
 }
 
 UInt64 getQueryResultPreviewSequenceNumber(const Chunk & chunk)
@@ -45,49 +53,28 @@ bool canEvaluateOnQueryResultPreviews(const ActionsDAG & expression)
 {
     for (const auto & node : expression.getNodes())
     {
-        switch (node.type)
-        {
-            case ActionsDAG::ActionType::INPUT:
-            case ActionsDAG::ActionType::ALIAS:
-                break;
+        if (node.type == ActionsDAG::ActionType::ARRAY_JOIN || node.type == ActionsDAG::ActionType::PLACEHOLDER)
+            return false;
 
-            case ActionsDAG::ActionType::COLUMN:
-            {
-                if (!node.column)
-                    break;
-
-                const IColumn * data = node.column.get();
-                if (const auto * column_const = typeid_cast<const ColumnConst *>(data))
-                    data = &column_const->getDataColumn();
-
-                if (typeid_cast<const ColumnFunction *>(data))
-                    return false;
-                break;
-            }
-
-            case ActionsDAG::ActionType::FUNCTION:
-            {
-                const auto & function = *node.function_base;
-                if (function.isStateful() || function.hasObservableSideEffects())
-                    return false;
-
-                DataTypesWithConstInfo arguments;
-                arguments.reserve(node.children.size());
-                for (const auto * child : node.children)
-                    arguments.push_back({child->result_type, child->column != nullptr});
-
-                if (function.canThrow(arguments))
-                    return false;
-                break;
-            }
-
-            case ActionsDAG::ActionType::ARRAY_JOIN:
-            case ActionsDAG::ActionType::PLACEHOLDER:
-                return false;
-        }
+        /// Covers the body of a lambda, including a lambda that constant folding turned into a `COLUMN` node.
+        if (!allNodeFunctions(node, [](const IFunctionBase & function) { return !function.isStateful() && !function.hasObservableSideEffects(); }))
+            return false;
     }
 
     return true;
+}
+
+void onQueryResultPreviewEvaluationError(const Exception & error, const QueryResultPreviewInfo & preview, bool is_cancelled)
+{
+    const auto code = error.code();
+    if (is_cancelled || code == ErrorCodes::LOGICAL_ERROR || code == ErrorCodes::QUERY_WAS_CANCELLED
+        || code == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT || code == ErrorCodes::ABORTED)
+        throw;
+
+    preview.control->disable();
+    LOG_DEBUG(getLogger("QueryResultPreview"),
+        "A query result preview failed and is dropped, previews of its stage are disabled for the rest of the query: {}",
+        error.message());
 }
 
 QueryResultPreviewsSettings QueryResultPreviewsSettings::fromSettings(const Settings & settings)

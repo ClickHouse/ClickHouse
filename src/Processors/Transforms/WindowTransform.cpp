@@ -573,25 +573,35 @@ void WindowTransform::computeQueryResultPreview()
     /// keeps the sequence number of the original one.
     auto preview_info = preview.getChunkInfos().extract<QueryResultPreviewInfo>();
 
-    QueryPipelineBuilder builder;
-    builder.init(Pipe(std::make_shared<SourceFromSingleChunk>(input.getSharedHeader(), std::move(preview))));
-    builder.addTransform(std::make_shared<WindowTransform>(
-        input.getSharedHeader(), output.getSharedHeader(), params.window_description, window_functions_for_preview));
-
-    auto preview_pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
-    PullingPipelineExecutor executor(preview_pipeline);
-
-    /// A single input chunk produces a single output chunk, but drain defensively.
+    /// A window function may throw on the intermediate values of a preview (see
+    /// `QueryResultPreview.h`); then the preview is dropped.
     Chunk computed;
-    Chunk next;
-    while (executor.pull(next))
+    try
     {
-        if (!next.hasRows())
-            continue;
-        if (!computed)
-            computed = std::move(next);
-        else
-            computed.append(next);
+        QueryPipelineBuilder builder;
+        builder.init(Pipe(std::make_shared<SourceFromSingleChunk>(input.getSharedHeader(), std::move(preview))));
+        builder.addTransform(std::make_shared<WindowTransform>(
+            input.getSharedHeader(), output.getSharedHeader(), params.window_description, window_functions_for_preview));
+
+        auto preview_pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
+        PullingPipelineExecutor executor(preview_pipeline);
+
+        /// A single input chunk produces a single output chunk, but drain defensively.
+        Chunk next;
+        while (executor.pull(next))
+        {
+            if (!next.hasRows())
+                continue;
+            if (!computed)
+                computed = std::move(next);
+            else
+                computed.append(next);
+        }
+    }
+    catch (const Exception & e)
+    {
+        onQueryResultPreviewEvaluationError(e, *preview_info, isCancelled());
+        return;
     }
 
     /// An empty preview is a preview state of its own: it replaces the previous one and tells the

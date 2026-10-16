@@ -256,8 +256,28 @@ void FilterTransform::onCancel() noexcept
 void FilterTransform::transform(Chunk & chunk)
 {
     auto chunk_rows_before = chunk.getNumRows();
-    const bool is_preview = isQueryResultPreview(chunk);
-    doTransform(chunk);
+    const auto preview = chunk.getChunkInfos().get<QueryResultPreviewInfo>();
+    if (!preview)
+    {
+        doTransform(chunk);
+        if (rows_filtered)
+            *rows_filtered += chunk_rows_before - chunk.getNumRows();
+        return;
+    }
+
+    /// A function may throw on the intermediate values of a preview (see `QueryResultPreview.h`).
+    /// The chunk without columns is skipped by `ISimpleTransform`, so the preview is dropped.
+    try
+    {
+        doTransform(chunk);
+    }
+    catch (const Exception & e)
+    {
+        onQueryResultPreviewEvaluationError(e, *preview, isCancelled());
+        chunk.clear();
+        return;
+    }
+
     if (rows_filtered)
         *rows_filtered += chunk_rows_before - chunk.getNumRows();
 
@@ -265,7 +285,7 @@ void FilterTransform::transform(Chunk & chunk)
     /// has to be delivered as well - dropping it would leave the previous, stale rows on the
     /// screen. `ISimpleTransform` skips a chunk without columns, so give the empty preview the
     /// columns of the output header; the chunk keeps its `QueryResultPreviewInfo`.
-    if (is_preview && !chunk.hasColumns())
+    if (!chunk.hasColumns())
         chunk.setColumns(getOutputPort().getHeader().cloneEmptyColumns(), 0);
 }
 

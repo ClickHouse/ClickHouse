@@ -92,9 +92,7 @@ print('previews are deduplicated' if ok else 'duplicate rows in a preview')
 echo "${DISTINCT_RESPONSE}" | grep '"packet":"data"'
 
 echo '--- window functions are computed over each preview standalone'
-# No `round` here: it does not declare that it cannot throw, so it would keep the previews dormant
-# (see `canEvaluateOnQueryResultPreviews`).
-WINDOW_QUERY="SELECT k, c / max(c) OVER () AS share FROM (SELECT intDiv(number, 250000) AS k, count() AS c FROM numbers(1000000) GROUP BY k) ORDER BY k FORMAT JSONCompactEachRow"
+WINDOW_QUERY="SELECT k, round(c / max(c) OVER (), 6) AS share FROM (SELECT intDiv(number, 250000) AS k, count() AS c FROM numbers(1000000) GROUP BY k) ORDER BY k FORMAT JSONCompactEachRow"
 WINDOW_RESPONSE=$(${CLICKHOUSE_CURL} -sS "${URL}${BLOCKS}${PREVIEWS}&framing_output_format=JSONEachPacketString" -d "${WINDOW_QUERY}")
 WINDOW_PREVIEWS=$(echo "${WINDOW_RESPONSE}" | grep -c '"packet":"preview"')
 if [ "${WINDOW_PREVIEWS}" -ge 1 ]; then echo "has previews"; else echo "no previews: ${WINDOW_RESPONSE}"; fi

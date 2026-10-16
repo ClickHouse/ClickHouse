@@ -250,7 +250,7 @@ void MergeSortingTransform::tryEmitQueryResultPreview(UInt64 num_rows, UInt64 nu
     }
 
     enrichChunkWithConstants(preview);
-    markAsQueryResultPreview(preview);
+    markAsQueryResultPreview(preview, std::shared_ptr<QueryResultPreviewsControl>(query_result_previews, &query_result_previews->control));
     generated_chunk = std::move(preview);
 }
 

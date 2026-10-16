@@ -61,6 +61,7 @@ public:
     /// Preview chunks are computed standalone by a fresh one-shot transform, out of band
     /// (see `QueryResultPreview.h`): the window functions apply to the preview alone, so e.g.
     /// `max(x) OVER ()` is the maximum of the intermediate result and converges to the final value.
+    /// A preview on which a window function throws is dropped.
     bool supportsQueryResultPreviews() const override { return true; }
 
     static Block transformHeader(Block header, const ExpressionActionsPtr & expression);

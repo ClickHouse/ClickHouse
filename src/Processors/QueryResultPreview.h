@@ -13,6 +13,8 @@ namespace DB
 
 struct Settings;
 class ActionsDAG;
+class Exception;
+class QueryResultPreviewsControl;
 
 /** Marks a chunk as a preview of the query result (see the `query_result_previews` setting).
   *
@@ -33,37 +35,54 @@ class ActionsDAG;
   * overtake an older one. Every preview carries a sequence number assigned at its emission, which
   * is monotonic across all the stages, and the processors that merge several inputs, as well as the
   * output format, drop a preview older than the one they have already forwarded.
+  *
+  * A preview holds intermediate values that the result of the query never has (for example, a
+  * partial `count()` that is zero), so a function downstream may throw on it while it would not
+  * throw on the result. Such an error must not fail the query: the processor that evaluates the
+  * preview drops it and disables the previews of its stage (see `onQueryResultPreviewEvaluationError`).
   */
 class QueryResultPreviewInfo : public ChunkInfoCloneable<QueryResultPreviewInfo>
 {
 public:
-    explicit QueryResultPreviewInfo(UInt64 sequence_number_) : sequence_number(sequence_number_) {}
+    QueryResultPreviewInfo(UInt64 sequence_number_, std::shared_ptr<QueryResultPreviewsControl> control_)
+        : sequence_number(sequence_number_), control(std::move(control_))
+    {
+    }
     QueryResultPreviewInfo(const QueryResultPreviewInfo & other) = default;
 
     const UInt64 sequence_number;
+
+    /// The control of the stage that emitted the preview, so that a processor downstream can
+    /// disable the previews of the stage.
+    const std::shared_ptr<QueryResultPreviewsControl> control;
 };
 
 bool isQueryResultPreview(const Chunk & chunk);
 
-/// Annotates a freshly emitted preview with the next sequence number. Emitters call it while
-/// holding the emission lock of their stage, so that the order of the sequence numbers is the order
-/// of the snapshots.
-void markAsQueryResultPreview(Chunk & chunk);
+/// Annotates a freshly emitted preview with the next sequence number and the control of the stage.
+/// Emitters call it while holding the emission lock of their stage, so that the order of the
+/// sequence numbers is the order of the snapshots.
+void markAsQueryResultPreview(Chunk & chunk, std::shared_ptr<QueryResultPreviewsControl> control);
 
 /// The sequence number of a preview chunk, or 0 for a chunk which is not a preview.
 UInt64 getQueryResultPreviewSequenceNumber(const Chunk & chunk);
 
-/// Whether an expression can be evaluated on preview chunks, which hold intermediate values that
-/// the result of the query never has (for example, a partial `count()` that is zero). The
-/// expression must not change the result of the query and must not fail it:
-/// - no stateful function (`isStateful`): it carries its state from a preview to the real data,
-///   e.g. `rowNumberInAllBlocks` would count the rows of the previews;
+/// Whether an expression can be evaluated on preview chunks without changing the result of the
+/// query:
+/// - no stateful function (`isStateful`, including the body of a lambda): it carries its state from
+///   a preview to the real data, e.g. `rowNumberInAllBlocks` would count the rows of the previews;
 /// - no function with observable side effects;
-/// - no function that can throw on its arguments (`canThrow`), e.g. `intDiv(1, c - 32768)` would
-///   fail the query on a preview, while the final value of `c` is valid;
-/// - no `arrayJoin` and no constant-folded lambda, whose functions are not checked here.
+/// - no `arrayJoin`.
+/// A function that can throw on a preview is allowed (see `onQueryResultPreviewEvaluationError`).
 /// The check is fail-close: an expression that it rejects keeps the preview emitters dormant.
 bool canEvaluateOnQueryResultPreviews(const ActionsDAG & expression);
+
+/// Called from the `catch` block of a processor whose evaluation of a preview chunk threw `error`.
+/// Rethrows the error if it is not caused by the values of the preview: a cancellation of the
+/// query (`is_cancelled`), or a logical error. Otherwise disables the previews of the stage that
+/// emitted the preview - the next previews would likely fail in the same way - and returns; the
+/// caller then drops the preview chunk.
+void onQueryResultPreviewEvaluationError(const Exception & error, const QueryResultPreviewInfo & preview, bool is_cancelled);
 
 /// Thresholds extracted from the query settings. All frequency limits must pass for a preview
 /// to be emitted: at least `min_interval_ms`/`min_rows`/`min_bytes` processed since the previous

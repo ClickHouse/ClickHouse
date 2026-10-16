@@ -41,6 +41,28 @@ ExpressionTransform::ExpressionTransform(
 
 void ExpressionTransform::transform(Chunk & chunk)
 {
+    const auto preview = chunk.getChunkInfos().get<QueryResultPreviewInfo>();
+    if (!preview)
+    {
+        executeExpression(chunk);
+        return;
+    }
+
+    /// A function may throw on the intermediate values of a preview (see `QueryResultPreview.h`).
+    /// The chunk without columns is skipped by `ISimpleTransform`, so the preview is dropped.
+    try
+    {
+        executeExpression(chunk);
+    }
+    catch (const Exception & e)
+    {
+        onQueryResultPreviewEvaluationError(e, *preview, isCancelled());
+        chunk.clear();
+    }
+}
+
+void ExpressionTransform::executeExpression(Chunk & chunk)
+{
     size_t num_rows = chunk.getNumRows();
 
     if (isCancelled())
