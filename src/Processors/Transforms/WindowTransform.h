@@ -32,11 +32,11 @@ class Arena;
  *                |<------------------ stored ------------------>|<----------- not read yet ----------- .
  *   partition         |<---------------------------------------- - - - - - - - - - - - - - ->|
  *   frame                        |<------------>|
- *   peers                          |<------->|
- *   current row                           ^
+ *   peers                              |<--------->|
+ *   current row                             ^
  *
  * - partition: rows range with the current row's PARTITION BY key.
- * - frame: rows range used to calculate window functions.
+ * - frame: rows range available to the aggregation window function while it is being evaluated.
  * - peers: rows range with the current row's ORDER BY key.
  * - current row: the row being computed right now.
  */
