@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <optional>
 #include <thread>
 
 #include <Columns/ColumnSparse.h>
@@ -91,6 +92,42 @@ ColumnsCache makeCache(size_t max_size_in_bytes = 1 << 24)
 {
     return ColumnsCache("LRU", CurrentMetrics::ColumnsCacheBytes, CurrentMetrics::ColumnsCacheEntries, max_size_in_bytes, /*max_count=*/ 0, /*size_ratio=*/ 0.5);
 }
+
+/// Lowers the hard limit of `total_memory_tracker` to 1 byte, so that every tracked allocation exceeds it,
+/// and restores it on destruction. For a thread without a `ThreadStatus`, whose every allocation goes to
+/// `total_memory_tracker` at once.
+struct GlobalMemoryLimitOfOneByte
+{
+    const Int64 saved_hard_limit = total_memory_tracker.getHardLimit();
+    const UInt64 saved_min_allocation_to_throw = CurrentMemoryTracker::getMinAllocationSizeBytesToThrow();
+
+    GlobalMemoryLimitOfOneByte()
+    {
+        CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(1);
+        total_memory_tracker.resetCounters();
+        total_memory_tracker.setHardLimit(1);
+    }
+
+    ~GlobalMemoryLimitOfOneByte()
+    {
+        total_memory_tracker.setHardLimit(saved_hard_limit);
+        CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(saved_min_allocation_to_throw);
+    }
+
+    /// With a sanitizer, `operator new` is the one of the sanitizer and is not tracked.
+    static bool allocationsFail()
+    {
+        try
+        {
+            ::operator delete(::operator new(64));
+        }
+        catch (const Exception &)
+        {
+            return true;
+        }
+        return false;
+    }
+};
 
 }
 
@@ -572,30 +609,15 @@ TEST(ColumnsCache, AllocationOverTheLimitUnderTheMutexOfAShardDoesNotDeadlock)
         EXPECT_GT(cache.setMany({makeEntry(c, stripe, stripe * 8, stripe * 8 + 8)}, generation), 0u);
 
     auto * previous_cache = getMemoryReleasableCache();
-    const Int64 saved_hard_limit = total_memory_tracker.getHardLimit();
-    const UInt64 saved_min_allocation_to_throw = CurrentMemoryTracker::getMinAllocationSizeBytesToThrow();
 
-    /// In a thread without a `ThreadStatus`, every allocation goes to `total_memory_tracker` at once.
     /// The snapshot of `getAllEntriesMetadata` is allocated under the mutex of a shard, which the
     /// resize takes as well: it must not run then, and the allocation fails instead.
     bool allocations_tracked = false;
     int error_code = 0;
     std::thread([&]
     {
-        CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(1);
-        total_memory_tracker.resetCounters();
-        total_memory_tracker.setHardLimit(1);
-
-        /// With a sanitizer, `operator new` is the one of the sanitizer and is not tracked.
-        try
-        {
-            ::operator delete(::operator new(64));
-        }
-        catch (const Exception &)
-        {
-            allocations_tracked = true;
-        }
-
+        GlobalMemoryLimitOfOneByte limit;
+        allocations_tracked = GlobalMemoryLimitOfOneByte::allocationsFail();
         if (allocations_tracked)
         {
             /// `MemoryTracker` calls `autoResize` of this cache when an allocation exceeds the limit.
@@ -610,9 +632,6 @@ TEST(ColumnsCache, AllocationOverTheLimitUnderTheMutexOfAShardDoesNotDeadlock)
             }
             setMemoryReleasableCache(previous_cache);
         }
-
-        total_memory_tracker.setHardLimit(saved_hard_limit);
-        CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(saved_min_allocation_to_throw);
     }).join();
 
     if (!allocations_tracked)
@@ -622,4 +641,75 @@ TEST(ColumnsCache, AllocationOverTheLimitUnderTheMutexOfAShardDoesNotDeadlock)
     /// Nothing was evicted: the resize did not run.
     EXPECT_EQ(cache.count(), 100u);
     EXPECT_EQ(cache.getAllEntriesMetadata().size(), 100u);
+}
+
+TEST(ColumnsCache, MemoryLimitDuringInsertionAndEvictionKeepsTheCacheConsistent)
+{
+    /// Part names longer than the inline buffer of a string, so that the eviction callback allocates.
+    TestColumn first(UUIDHelpers::generateV4(), "20260101_1_1000000000_1000000000_1000000000", "col");
+    TestColumn second(UUIDHelpers::generateV4(), "20260101_2_2000000000_2000000000_2000000000", "col");
+    const size_t entry_weight = ColumnsCacheWeightFunction{}(*makeEntry(first, 0, 0, 8));
+    auto cache = makeCache(100 * entry_weight);
+
+    const auto first_generation = cache.getInvalidationGeneration(first.table_uuid);
+    for (size_t stripe = 0; stripe < 100; ++stripe)
+        cache.setMany({makeEntry(first, stripe, stripe * 8, stripe * 8 + 8)}, first_generation);
+    const size_t count_before = cache.count();
+
+    std::vector<ColumnsCache::MappedPtr> entries;
+    for (size_t stripe = 0; stripe < 100; ++stripe)
+        entries.push_back(makeEntry(second, stripe, stripe * 8, stripe * 8 + 8));
+    const auto second_generation = cache.getInvalidationGeneration(second.table_uuid);
+
+    /// The stripes are recorded in the index, then the entries are inserted and evict those of the
+    /// first part, with every allocation over the limit.
+    bool allocations_tracked = false;
+    int error_code = 0;
+    std::thread([&]
+    {
+        {
+            GlobalMemoryLimitOfOneByte probe_limit;
+            allocations_tracked = GlobalMemoryLimitOfOneByte::allocationsFail();
+        }
+        if (!allocations_tracked)
+            return;
+
+        std::optional<GlobalMemoryLimitOfOneByte> limit;
+        cache.on_entries_staged_for_test = [&] { limit.emplace(); };
+        try
+        {
+            cache.setMany(entries, second_generation);
+        }
+        catch (const Exception & e)
+        {
+            error_code = e.code();
+        }
+        limit.reset();
+    }).join();
+    cache.on_entries_staged_for_test = {};
+
+    if (!allocations_tracked)
+        GTEST_SKIP() << "Allocations with operator new are not tracked in this build";
+
+    EXPECT_EQ(error_code, 0);
+    EXPECT_LT(cache.count(), count_before + entries.size());
+
+    /// The accounted size and count are those of the entries the cache holds, and the index knows
+    /// the parts of exactly these entries.
+    const auto metadata = cache.getAllEntriesMetadata();
+    size_t bytes = 0;
+    bool has_first = false;
+    bool has_second = false;
+    for (const auto & entry : metadata)
+    {
+        bytes += entry.bytes;
+        has_first |= entry.part_name == first.part;
+        has_second |= entry.part_name == second.part;
+    }
+    EXPECT_EQ(metadata.size(), cache.count());
+    EXPECT_EQ(bytes, cache.sizeInBytes());
+    EXPECT_LE(cache.sizeInBytes(), 100 * entry_weight);
+    EXPECT_EQ(cache.containsPart(first.table_uuid, first.part), has_first);
+    EXPECT_EQ(cache.containsPart(second.table_uuid, second.part), has_second);
+    EXPECT_TRUE(has_second);
 }

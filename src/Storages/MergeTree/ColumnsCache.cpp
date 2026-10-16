@@ -2,6 +2,7 @@
 #include <chrono>
 
 #include <Common/CurrentMetrics.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
@@ -315,6 +316,12 @@ size_t ColumnsCache::setMany(const std::vector<MappedPtr> & entries, UInt64 expe
     if (to_store.empty())
         return 0;
 
+    /// From here on, the index and the shards are updated in steps that must all happen: an exception
+    /// in between would leave the index with stripes that no shard holds, or a shard with an entry that
+    /// was taken out of its accounted size but not of its queue. The allocations are only for the
+    /// bookkeeping, the columns are allocated already, so they are not allowed to fail the limit.
+    LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
+
     /// Record the stripes before the entries are inserted, so that the eviction callback, which
     /// may run inside the insertion itself, always finds the bit to reset.
     {
@@ -401,6 +408,10 @@ void ColumnsCache::Shard::onEntryRemoval(size_t weight_loss, const MappedPtr & m
     if (!mapped->used.load(std::memory_order_relaxed))
         parent.recent_evicted_unused.fetch_add(1, std::memory_order_relaxed);
 
+    /// The cache policy has already subtracted the weight of the entry and removes it from its
+    /// queue after this returns: an exception here would leave the entry there, unaccounted.
+    LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
+
     /// Runs under the mutex of the shard; `index_mutex` is taken second, see `part_index`.
     std::lock_guard lock(parent.index_mutex);
 
@@ -462,6 +473,8 @@ void ColumnsCache::removeStaleEntries(const std::vector<Key> & keys, const std::
 void ColumnsCache::removeTable(const UUID & table_uuid)
 {
     OperationInThread operation;
+    /// An invalidation must not stop halfway, with the index and the shards out of step, see `setMany`.
+    LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
 
     /// Not under `index_mutex`: `maxSizeInBytes` of a shard takes the mutex of the shard.
     const bool disabled = shards.front()->maxSizeInBytes() == 0;
@@ -515,6 +528,8 @@ void ColumnsCache::removeTable(const UUID & table_uuid)
 void ColumnsCache::removePart(const UUID & table_uuid, const String & part_name)
 {
     OperationInThread operation;
+    /// An invalidation must not stop halfway, with the index and the shards out of step, see `setMany`.
+    LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
 
     /// No invalidation stamp is advanced here, see the declaration: the part is removed from
     /// the cache only once no reader can hold it, so there is no deferred write to reject.
@@ -546,6 +561,8 @@ bool ColumnsCache::containsPart(const UUID & table_uuid, const String & part_nam
 void ColumnsCache::clearAll()
 {
     OperationInThread operation;
+    /// An invalidation must not stop halfway, with the index and the shards out of step, see `setMany`.
+    LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
 
     {
         std::lock_guard lock(index_mutex);
