@@ -103,6 +103,11 @@ public:
         const Settings & settings,
         LoggerPtr log);
 
+    /// Maps each primary-key column position to the slot of the matching column in a part's partition
+    /// minmax index (nullopt when the primary-key column is not a partition-minmax column).
+    static std::vector<std::optional<size_t>> buildPrimaryKeyToMinMaxSlotMapping(
+        const StorageMetadataPtr & metadata_snapshot, const MergeTreeSettingsPtr & data_settings);
+
     /// Works on any part description, not only on an `IMergeTreeDataPart`.
     static MarkRanges markRangesFromPKRange(
         const IMergeTreeDataPartInfoForReader & part,
