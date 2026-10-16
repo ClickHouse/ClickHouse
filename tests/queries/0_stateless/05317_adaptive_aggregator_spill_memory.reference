@@ -23,6 +23,6 @@ Four UInt64 keys, count
 the producers spilled most of the stream	1
 stayed on the frozen path	1
 UInt64 key, wide fixed state
-1200000	1200000
+3000000	3000000
 the producers spilled most of the stream	1
 stayed on the frozen path	1

@@ -18,7 +18,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # own heap memory), key records of wide fixed-width keys for `count`, and fixed-stride general
 # records whose `uniqUpTo(100)` state is some thirty times wider than the record. Distinct keys, or
 # keys repeated too little for the thaw verdict, keep every producer frozen, so the whole stream goes
-# through the staging path. The thresholds are pinned because the runner randomizes them, and
+# through the staging path. Every shape stages several times the threshold: the producers spill once
+# the query's memory passes the threshold, so up to about a threshold's worth of records may stay in
+# memory when the stream ends, and only a larger stream spills most of itself whatever the
+# interleaving of the threads. The thresholds are pinned because the runner randomizes them, and
 # `max_memory_usage`, five times the threshold, is the cell that encodes the claim; the exact totals
 # move if a record is lost or doubled across the spill.
 #
@@ -83,5 +86,5 @@ run_shape 3000000 4 8192 "SELECT count(), sum(cnt) FROM (
     SELECT number AS a, number * 7 AS b, number * 13 AS c, number * 17 AS d, count() AS cnt FROM numbers_mt(3000000) GROUP BY ALL)"
 
 echo 'UInt64 key, wide fixed state'
-run_shape 1200000 2 65536 "SELECT count(), sum(u) FROM (
-    SELECT number AS k, uniqUpTo(100)(number) AS u FROM numbers_mt(1200000) GROUP BY k)"
+run_shape 3000000 2 65536 "SELECT count(), sum(u) FROM (
+    SELECT number AS k, uniqUpTo(100)(number) AS u FROM numbers_mt(3000000) GROUP BY k)"
