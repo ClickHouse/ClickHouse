@@ -54,6 +54,14 @@ public:
     static void addUpdatedColumns(const MutationCommand & command, NameSet & updated_columns);
 
     const NameSet & getAllUpdatedColumns() const { return all_updated_columns; }
+
+    /// The columns a skip index must not depend on to be usable for this part: the columns updated on
+    /// the fly (`getAllUpdatedColumns`) plus every name touched by a pending `DROP COLUMN` or
+    /// `RENAME COLUMN`. A name dropped or renamed away can be reused by a new column right away (and
+    /// an index with the old name can be added on it), while the part still holds the index file
+    /// built over the old column; which column that file was built over is not recorded, so any
+    /// pending drop or rename of an indexed name makes the index unusable until it is materialized.
+    NameSet getColumnsInvalidatingIndexes() const;
     const NameSet & getColumnsUpdatedInPatches() const { return columns_updated_in_patches; }
 
     bool hasPatches() const { return !patch_parts.empty(); }
@@ -114,6 +122,10 @@ private:
     /// Columns that were dropped by pending mutations.
     /// If a column with the same name is re-added, old data in parts should be ignored.
     NameSet dropped_columns;
+
+    /// Every name used by a pending `RENAME COLUMN` (both sides) or `DROP COLUMN` command, as written
+    /// in the command, before the normalization done for `rename_map` and `dropped_columns`.
+    NameSet columns_touched_by_metadata_mutations;
 
     /// All mutations commands that should be applied.
     MutationCommands mutation_commands;
