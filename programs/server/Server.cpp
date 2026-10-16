@@ -119,6 +119,7 @@
 #include <Storages/registerStorages.h>
 #include <Databases/registerDatabases.h>
 #include <Dictionaries/registerDictionaries.h>
+#include <Interpreters/SecretArgumentsRegistry.h>
 #include <Disks/registerDisks.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Coordination/KeeperContext.h>
@@ -424,6 +425,7 @@ namespace ServerSetting
     extern const ServerSettingsBool cpu_slot_preemption;
     extern const ServerSettingsUInt64 cpu_slot_quantum_ns;
     extern const ServerSettingsUInt64 cpu_slot_preemption_timeout_ms;
+    extern const ServerSettingsBool cpu_slot_parking;
     extern const ServerSettingsString uncompressed_cache_policy;
     extern const ServerSettingsUInt64 uncompressed_cache_size;
     extern const ServerSettingsDouble uncompressed_cache_size_ratio;
@@ -1357,6 +1359,7 @@ try
     registerDatabases();
     registerStorages();
     registerDictionaries();
+    setSecretArgumentsFinder(&SecretArgumentsRegistry::instance());
     registerDisks(/* global_skip_access_check= */ false);
     registerFormats();
     registerRemoteFileMetadatas();
@@ -1865,7 +1868,6 @@ try
     JemallocMergeTreeArena::initialize(server_settings[ServerSetting::jemalloc_merge_tree_arenas]);
     addMergeTreeArenaPoolWarnings(global_context);
 
-#if defined(OS_LINUX)
     /// Restrict the server to the system calls it is known to use, as early in the startup as the
     /// configuration allows. That is after the ZooKeeper-include reload above, not before it: a
     /// filter cannot be removed or relaxed afterwards, so one installed from the configuration as it
@@ -1882,13 +1884,22 @@ try
             seccomp_status.allowed_syscalls,
             SettingFieldSeccompMode(seccomp_mode).toString());
     else if (seccomp_mode != SeccompMode::Disabled)
+#if defined(OS_LINUX)
         LOG_WARNING(
             log,
             "The `seccomp` server setting is set to `{}`, but {}, so the server is running without a seccomp policy. "
             "`PR_SET_NO_NEW_PRIVS` has been set anyway, so nothing this process runs can gain privileges through a setuid program",
             SettingFieldSeccompMode(seccomp_mode).toString(),
             seccomp_status.not_installed_reason);
+#else
+        LOG_WARNING(
+            log,
+            "The `seccomp` server setting is set to `{}`, but {}, so the server is running without a seccomp policy",
+            SettingFieldSeccompMode(seccomp_mode).toString(),
+            seccomp_status.not_installed_reason);
+#endif
 
+#if defined(OS_LINUX)
     if (server_settings[ServerSetting::skip_binary_checksum_checks])
     {
         LOG_WARNING(log, "Binary checksum checks disabled due to skip_binary_checksum_checks - not recommended for production deployments");
@@ -2642,13 +2653,13 @@ try
             DB::abort_on_logical_error.store(new_server_settings[ServerSetting::abort_on_logical_error], std::memory_order_relaxed);
 
             /// The seccomp filter cannot be changed once installed; `system.server_settings` keeps showing the mode in force.
-            if (const auto installed_seccomp_mode = getInstalledSeccompMode();
-                installed_seccomp_mode && *installed_seccomp_mode != new_server_settings[ServerSetting::seccomp].value)
+            if (const auto requested_seccomp_mode = getRequestedSeccompMode();
+                requested_seccomp_mode && *requested_seccomp_mode != new_server_settings[ServerSetting::seccomp].value)
                 LOG_WARNING(
                     log,
                     "The `seccomp` server setting was changed from `{}` to `{}` in the configuration, but it takes effect only "
                     "after a restart: the seccomp policy of a running process cannot be changed",
-                    SettingFieldSeccompMode(*installed_seccomp_mode).toString(),
+                    SettingFieldSeccompMode(*requested_seccomp_mode).toString(),
                     new_server_settings[ServerSetting::seccomp].toString());
 
             size_t max_server_memory_usage = new_server_settings[ServerSetting::max_server_memory_usage];
@@ -2925,6 +2936,7 @@ try
                 new_server_settings[ServerSetting::cpu_slot_preemption],
                 new_server_settings[ServerSetting::cpu_slot_quantum_ns],
                 new_server_settings[ServerSetting::cpu_slot_preemption_timeout_ms]);
+            global_context->setCPUSlotParking(new_server_settings[ServerSetting::cpu_slot_parking]);
 
             /// The thresholds were validated above, so a rejected reload never reaches here. Sets and stamps
             /// the shared thresholds, so every monitor adopts them on its next sample,
@@ -4711,35 +4723,80 @@ void Server::createServers(
             }
         }
 
-        if (server_type.shouldStart(ServerType::Type::ICEBERG_REST_CATALOG) && !config.getString("iceberg_rest_catalog.port", "").empty())
+        bool has_catalog_port = !config.getString("iceberg_rest_catalog.port", "").empty();
+        bool has_catalog_secure_port = !config.getString("iceberg_rest_catalog.secure_port", "").empty();
+        if (server_type.shouldStart(ServerType::Type::ICEBERG_REST_CATALOG)
+            && (has_catalog_port || has_catalog_secure_port))
         {
-            port_name = "iceberg_rest_catalog.port";
+            auto is_listening = [&](const char * name)
+            {
+                return std::any_of(servers.begin(), servers.end(), [&](const auto & server)
+                {
+                    return !server.isStopping() && server.getListenHost() == listen_host && server.getPortName() == name;
+                });
+            };
+
+            /// Both listeners share one handler factory. Create it only if some configured port is not listening yet.
+            const bool already_listening = (!has_catalog_port || is_listening("iceberg_rest_catalog.port"))
+                && (!has_catalog_secure_port || is_listening("iceberg_rest_catalog.secure_port"));
+
             HTTPRequestHandlerFactoryPtr handler_factory;
-            try
+            if (!already_listening)
             {
-                handler_factory = createIcebergRESTCatalogHandlerFactory(*this, config);
-            }
-            catch (...)
-            {
-                LOG_ERROR(&logger(), "Not starting the Iceberg REST catalog server: {}", getCurrentExceptionMessage(/*with_stacktrace*/ false));
+                try
+                {
+                    handler_factory = createIcebergRESTCatalogHandlerFactory(*this, config);
+                }
+                catch (...)
+                {
+                    LOG_ERROR(&logger(), "Not starting the Iceberg REST catalog server: {}", getCurrentExceptionMessage(/*with_stacktrace*/ false));
+                }
             }
 
             if (handler_factory)
             {
-                createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+                if (has_catalog_port)
                 {
-                    Poco::Net::ServerSocket socket;
-                    auto address = socketBindListen(server_settings, socket, listen_host, port);
-                    socket.setReceiveTimeout(settings[Setting::http_receive_timeout]);
-                    socket.setSendTimeout(settings[Setting::http_send_timeout]);
-                    return ProtocolServerAdapter(
-                        listen_host,
-                        port_name,
-                        ServerType::Type::ICEBERG_REST_CATALOG,
-                        "Iceberg REST catalog: http://" + address.toString(),
-                        std::make_unique<HTTPServer>(
-                            httpContext(), handler_factory, server_pool, socket, http_params, nullptr, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes));
-                });
+                    port_name = "iceberg_rest_catalog.port";
+                    createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+                    {
+                        Poco::Net::ServerSocket socket;
+                        auto address = socketBindListen(server_settings, socket, listen_host, port);
+                        socket.setReceiveTimeout(settings[Setting::http_receive_timeout]);
+                        socket.setSendTimeout(settings[Setting::http_send_timeout]);
+                        return ProtocolServerAdapter(
+                            listen_host,
+                            port_name,
+                            ServerType::Type::ICEBERG_REST_CATALOG,
+                            "Iceberg REST catalog: http://" + address.toString(),
+                            std::make_unique<HTTPServer>(
+                                httpContext(), handler_factory, server_pool, socket, http_params, nullptr, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes));
+                    });
+                }
+
+                /// The TLS listener uses the certificate from the <openSSL><server> section.
+                if (has_catalog_secure_port)
+                {
+                    port_name = "iceberg_rest_catalog.secure_port";
+                    createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&]([[maybe_unused]] UInt16 port) -> ProtocolServerAdapter
+                    {
+#if USE_SSL
+                        Poco::Net::SecureServerSocket socket;
+                        auto address = socketBindListen(server_settings, socket, listen_host, port, /* secure = */ true);
+                        socket.setReceiveTimeout(settings[Setting::http_receive_timeout]);
+                        socket.setSendTimeout(settings[Setting::http_send_timeout]);
+                        return ProtocolServerAdapter(
+                            listen_host,
+                            port_name,
+                            ServerType::Type::ICEBERG_REST_CATALOG,
+                            "Iceberg REST catalog: https://" + address.toString(),
+                            std::make_unique<HTTPServer>(
+                                httpContext(), handler_factory, server_pool, socket, http_params, nullptr, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes));
+#else
+                        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "HTTPS for the Iceberg REST catalog is disabled because Poco library was built without NetSSL support.");
+#endif
+                    });
+                }
             }
         }
     }
@@ -5034,7 +5091,8 @@ void Server::updateServers(
             }
             /// The warehouse name is baked into the Iceberg REST catalog handler factory, so if
             /// the section changes, the listener must be restarted.
-            if (port_name == "iceberg_rest_catalog.port" && !isSameConfiguration(previous_config, config, "iceberg_rest_catalog"))
+            if ((port_name == "iceberg_rest_catalog.port" || port_name == "iceberg_rest_catalog.secure_port")
+                && !isSameConfiguration(previous_config, config, "iceberg_rest_catalog"))
             {
                 force_restart = true;
                 LOG_TRACE(log, "<iceberg_rest_catalog> had been changed, will reload {}", server->getDescription());

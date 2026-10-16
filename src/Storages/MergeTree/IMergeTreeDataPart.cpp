@@ -8,6 +8,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedReadBufferFromFile.h>
 #include <Compression/CompressionCodecMultiple.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/getCompressionCodecForFile.h>
@@ -47,6 +48,7 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <base/JSON.h>
+#include <base/getThreadId.h>
 
 #include <unordered_set>
 
@@ -1557,6 +1559,16 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
 
             loadRowsCount(); /// Must be called after loadIndexGranularity() as it uses the value of `index_granularity`.
 
+            /// Missing checksums, or checksums regenerated from the files on disk by `loadChecksums`, cannot
+            /// vouch for a marks file torn by a crash: if it was cut at a compressed block boundary, it still
+            /// decompresses, only to fewer marks, and the rows past them would become unreadable. Such marks
+            /// cover fewer rows than the part has. This runs before `fixFromRowsCount`, so constant granularity
+            /// counts every mark as a full granule here, and intact marks always cover all rows.
+            if (check_consistency && !hasTrustworthyChecksums() && index_granularity->getTotalRows() < rows_count)
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Part {} is broken: its marks cover {} rows, but it has {} rows",
+                    getDataPartStorage().getFullPath(), index_granularity->getTotalRows(), rows_count);
+
             /// For constant granularity parts (non-adaptive marks), the last mark granularity
             /// is assumed to be a full granule because the mark file does not store per-granule
             /// row counts, and the final mark is not distinguished from data marks.
@@ -1588,14 +1600,23 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
         if (!parent_part)
             loadProjections(require_columns_checksums, check_consistency, has_broken_projections, false /* if_not_loaded */);
 
+        /// A broken projection does not break its part on purpose, and this check tolerates one by
+        /// itself: `loadProjections` above marks such a projection broken instead of failing, and the
+        /// file-size loop of `checkConsistencyBase` does the same for the `.proj` entry of the part's
+        /// checksums. Skipping the check entirely instead used to take the part's own crash-corruption
+        /// protection away with it: a marks file left empty by a power loss loads as an empty
+        /// `index_granularity`, `loadRowsCount` then reports zero rows, and the part's acknowledged
+        /// rows disappear from every query - with nothing detached to recover them from.
+        if (check_consistency)
+            checkConsistency(require_columns_checksums);
+
         /// Kept out of the dedicated arena scope above on purpose: the size computation is heavy
         /// short-lived churn (a sample column per column/substream). The finished, part-lifetime maps
         /// are re-homed into the arena inside `calculateColumnsAndSecondaryIndicesSizesOnDiskUnlocked`.
+        /// It runs after `checkConsistency`: computing the size of a `Dynamic` column reads the column,
+        /// which fails with a less helpful error on a broken part.
         if (!(*storage.getSettings())[MergeTreeSetting::columns_and_secondary_indices_sizes_lazy_calculation])
             calculateColumnsAndSecondaryIndicesSizesOnDisk();
-
-        if (check_consistency && !has_broken_projections)
-            checkConsistency(require_columns_checksums);
 
         loadDefaultCompressionCodec();
     }
@@ -2150,15 +2171,39 @@ void IMergeTreeDataPart::writeMetadata(const String & filename, const WriteSetti
 {
     auto & data_part_storage = getDataPartStorage();
 
-    data_part_storage.beginTransaction();
+    /// Rewrite the metadata file atomically and durably (write to a temp file, fsync, rename),
+    /// because it goes into an already-committed part directory with no enclosing rename to rely
+    /// on. An interrupted in-place write could otherwise leave an empty checksums.txt, which
+    /// bricks the whole part. Mirrors VersionMetadataOnDisk::storeInfoToDataPartStorage.
+    /// The temp name carries the thread id so two concurrent repairs of the same part (from
+    /// separate CHECK TABLE queries) do not rename each other's half-written file. It keeps the
+    /// .tmp suffix so checkDataPart skips it if a crash leaves it behind.
+    const String tmp_filename = fmt::format("{}.{}.tmp", filename, getThreadId());
 
+    try
     {
-        auto out = data_part_storage.writeFile(filename, 4096, settings);
+        auto out = data_part_storage.writeFile(tmp_filename, 4096, settings);
         writer(*out);
         out->finalize();
-    }
+        out->sync();
 
-    data_part_storage.commitTransaction();
+        SyncGuardPtr sync_guard;
+        if ((*storage.getSettings())[MergeTreeSetting::fsync_part_directory])
+            sync_guard = data_part_storage.getDirectorySyncGuard();
+        data_part_storage.replaceFile(tmp_filename, filename);
+    }
+    catch (...)
+    {
+        try
+        {
+            data_part_storage.removeFileIfExists(tmp_filename);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(storage.log, __PRETTY_FUNCTION__);
+        }
+        throw;
+    }
 }
 
 void IMergeTreeDataPart::writeChecksums(const MergeTreeDataPartChecksums & checksums_, const WriteSettings & settings)
@@ -2413,7 +2458,12 @@ void IMergeTreeDataPart::loadChecksums(bool require)
     /// Arena-agnostic: the real part-load callers (`loadColumnsChecksumsIndexes`, the projection load)
     /// already run inside the parts-arena scope, while transient checksum-only probes must stay on the
     /// default arenas. So the caller picks the arena rather than pinning it here.
-    if (auto buf = readFileIfExists("checksums.txt"))
+    auto buf = readFileIfExists("checksums.txt");
+
+    /// An existing but empty checksums.txt is treated like an absent one (recalculated from the
+    /// data files), not as fatal: a zero-byte file left by an interrupted repair would otherwise
+    /// brick an intact part, which is strictly worse than the missing-file state that self-heals.
+    if (buf && !buf->eof())
     {
         if (checksums.read(*buf))
         {
@@ -2429,9 +2479,17 @@ void IMergeTreeDataPart::loadChecksums(bool require)
         if (require)
             throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No checksums.txt in part {}", name);
 
-        /// If the checksums file is not present, calculate the checksums and write them to disk.
-        /// Check the data while we are at it.
-        LOG_WARNING(storage.log, "Checksums for part {} not found. Will calculate them from data on disk.", name);
+        /// If the checksums file is not present (or empty), calculate the checksums and write
+        /// them to disk. Check the data while we are at it.
+        LOG_WARNING(storage.log, "Checksums for part {} not found or empty. Will calculate them from data on disk.", name);
+
+        /// An empty checksums.txt on disk would be re-read (and rejected) by checkDataPart, so
+        /// drop it first. Any leftover .tmp from an interrupted rewrite is skipped by checkDataPart.
+        if (buf && !getDataPartStorage().isReadonly())
+        {
+            buf.reset();
+            getDataPartStorage().removeFileIfExists("checksums.txt");
+        }
 
         /// The file we are about to write is compressed with the *current* built-in default codec, so
         /// its frame reflects that codec, not the one the part was written with. Remember that it was
@@ -2492,9 +2550,14 @@ void IMergeTreeDataPart::loadRowsCount()
             throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No count.txt in part {}", name);
 
 #ifndef NDEBUG
+        /// The sizes of columns are taken from the checksums, and a `Dynamic` column is even read to
+        /// compute them. Missing or regenerated checksums cannot vouch for the files, so leave a broken
+        /// part to `checkConsistency`, which tells what is wrong with it.
         /// columns have to be loaded
         for (const auto & column : getColumns())
         {
+            if (!hasTrustworthyChecksums())
+                break;
             /// Most trivial types
             if (column.type->isValueRepresentedByNumber()
                 && !column.type->haveSubtypes()
@@ -2917,7 +2980,9 @@ void IMergeTreeDataPart::loadColumnsSubstreams(bool validate_against_loaded_colu
             }
         }
 
-        setColumnsSubstreams(loaded_columns_substreams, validate_against_loaded_columns);
+        if (validate_against_loaded_columns)
+            loaded_columns_substreams.validateColumns(getColumns().getNames(), ErrorCodes::CORRUPTED_DATA);
+        setColumnsSubstreams(loaded_columns_substreams, /*validate_against_loaded_columns=*/false);
     }
     /// In Compact part with marks for substreams we must have substreams file. For other cases it's not mandatory.
     else if (part_type == MergeTreeDataPartType::Compact && index_granularity_info.mark_type.with_substreams)
@@ -3364,6 +3429,79 @@ void IMergeTreeDataPart::doCheckConsistency(bool /* require_part_metadata */) co
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'checkConsistency' is not implemented for part with type {}", getType().toString());
 }
 
+void IMergeTreeDataPart::checkDataFileCoversMarks(
+    const String & data_file_name, const String & marks_file_name, size_t num_columns_in_mark, size_t min_bytes_per_row) const
+{
+    size_t marks_count = index_granularity->getMarksCount();
+    if (marks_count == 0)
+        return;
+
+    auto info_for_read = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), std::make_shared<AlterConversions>());
+    MergeTreeMarksLoader marks_loader(
+        info_for_read,
+        /*mark_cache=*/ nullptr,
+        marks_file_name,
+        marks_count,
+        index_granularity_info,
+        /*save_marks_in_cache=*/ false,
+        storage.getContext()->getReadSettings(),
+        /*load_marks_threadpool=*/ nullptr,
+        num_columns_in_mark,
+        storage.getContext()->getSettingsRef()[Setting::use_streaming_marks_compression]);
+    auto marks = marks_loader.loadMarks();
+
+    /// The marks of all columns of a compact part point into the same file, so take the farthest one.
+    MarkInCompressedFile farthest_mark{0, 0};
+    for (size_t mark = 0; mark < marks_count; ++mark)
+        for (size_t column = 0; column < num_columns_in_mark; ++column)
+            farthest_mark = std::max(farthest_mark, marks->getMark(mark, column));
+
+    /// A mark into a compressed block needs that block in the file. A mark right at the end of the file
+    /// with nothing to decompress is the final mark of a stream whose last block was already flushed.
+    UInt64 data_file_size = getDataPartStorage().getFileSize(data_file_name);
+    if (farthest_mark.offset_in_compressed_file > data_file_size
+        || (farthest_mark.offset_in_compressed_file == data_file_size && farthest_mark.offset_in_decompressed_block > 0))
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA,
+            "Part {} is broken: data file {} has {} bytes, but its marks in {} point to {}",
+            getDataPartStorage().getFullPath(),
+            data_file_name,
+            data_file_size,
+            marks_file_name,
+            farthest_mark.toString());
+
+    /// Without a final mark the farthest mark is only the start of the last granule, so a data file cut after
+    /// it at a compressed block boundary passes the check above. Check that the last granule is complete.
+    if (min_bytes_per_row == 0 || index_granularity->hasFinalMark())
+        return;
+
+    chassert(num_columns_in_mark == 1);
+    size_t last_granule_rows = index_granularity->getMarkRows(marks_count - 1);
+    size_t expected_bytes = last_granule_rows * min_bytes_per_row;
+    if (expected_bytes == 0)
+        return;
+
+    MarkInCompressedFile last_mark = marks->getMark(marks_count - 1, 0);
+    size_t available_bytes = 0;
+    if (last_mark.offset_in_compressed_file < data_file_size)
+    {
+        CompressedReadBufferFromFile data_in(getDataPartStorage().readFile(data_file_name, getReadSettings(), data_file_size));
+        data_in.seek(last_mark.offset_in_compressed_file, last_mark.offset_in_decompressed_block);
+        available_bytes = data_in.tryIgnore(expected_bytes);
+    }
+
+    if (available_bytes < expected_bytes)
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA,
+            "Part {} is broken: the last granule of {} rows in data file {} needs at least {} bytes from {}, but it has {}",
+            getDataPartStorage().getFullPath(),
+            last_granule_rows,
+            data_file_name,
+            expected_bytes,
+            last_mark.toString(),
+            available_bytes);
+}
+
 void IMergeTreeDataPart::checkConsistencyWithProjections(bool require_part_metadata) const
 {
     checkConsistency(require_part_metadata);
@@ -3786,6 +3924,11 @@ bool IMergeTreeDataPart::hasBrokenProjection(const String & projection_name) con
     if (it == projection_parts.end())
         return false;
     return it->second->is_broken;
+}
+
+bool IMergeTreeDataPart::hasUnloadedProjection(const String & projection_name) const
+{
+    return !hasProjection(projection_name) && checksums.has(projection_name + ".proj");
 }
 
 void IMergeTreeDataPart::setBrokenReason(const String & message, int code) const

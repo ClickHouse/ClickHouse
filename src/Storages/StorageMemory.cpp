@@ -174,6 +174,7 @@ public:
             new_data->rows -= rows_to_remove;
             new_data->bytes -= bytes_to_remove;
             new_data->blocks.erase(new_data->blocks.begin());
+            ++new_data->first_block_number;
         }
 
         checkTemporaryTableMemoryUsage(new_data->bytes);
@@ -242,6 +243,8 @@ StorageSnapshotPtr StorageMemory::getStorageSnapshot(const StorageMetadataPtr & 
     /// The blocks and the row count come from the same version of `data`, so they are consistent.
     snapshot_data->blocks = std::shared_ptr<const Blocks>(current_data, &current_data->blocks);
     snapshot_data->rows = current_data->rows;
+    snapshot_data->generation = current_data->generation;
+    snapshot_data->first_block_number = current_data->first_block_number;
     return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(snapshot_data));
 }
 
@@ -272,6 +275,12 @@ SinkToStoragePtr StorageMemory::write(const ASTPtr & /*query*/, const StorageMet
     return std::make_shared<MemorySink>(*this, metadata_snapshot, context);
 }
 
+
+UInt64 StorageMemory::BlocksWithCounts::nextGeneration()
+{
+    static std::atomic<UInt64> next_generation{0};
+    return next_generation.fetch_add(1, std::memory_order_relaxed);
+}
 
 void StorageMemory::setData(std::unique_ptr<BlocksWithCounts> new_data)
 {
@@ -501,6 +510,7 @@ void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr conte
                 new_data->rows -= rows_to_remove;
                 new_data->bytes -= bytes_to_remove;
                 new_data->blocks.erase(new_data->blocks.begin());
+                ++new_data->first_block_number;
             }
 
             setData(std::move(new_data));
@@ -663,11 +673,11 @@ void StorageMemory::restoreDataFromBackup(RestorerFromBackup & restorer, const S
         RestorerFromBackup::throwTableIsNotEmpty(getStorageID());
 
     restorer.addDataRestoreTask(
-        [storage = std::static_pointer_cast<StorageMemory>(shared_from_this()), backup, data_path_in_backup]
-        { storage->restoreDataImpl(backup, data_path_in_backup); });
+        [storage = std::static_pointer_cast<StorageMemory>(shared_from_this()), backup, data_path_in_backup, context = restorer.getContext()]
+        { storage->restoreDataImpl(backup, data_path_in_backup, context); });
 }
 
-void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup)
+void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup, const ContextPtr & context)
 {
     /// Our data are in the StripeLog format.
 
@@ -743,6 +753,10 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
         old_and_new_data->blocks.end(), std::make_move_iterator(new_blocks.begin()), std::make_move_iterator(new_blocks.end()));
     old_and_new_data->bytes += new_bytes;
     old_and_new_data->rows += new_rows;
+
+    /// The restored data is checked against the settings of the `RESTORE` query, as for `INSERT` and `ALTER`.
+    if (is_temporary_table)
+        checkTemporaryTableMemoryUsage(old_and_new_data->bytes, context->getSettingsRef()[Setting::max_temporary_table_memory_usage]);
 
     /// Finish restoring.
     setData(std::move(old_and_new_data));
@@ -847,6 +861,7 @@ void registerStorageMemory(StorageFactory & factory)
 
         return storage;
     },
+    SecretArgumentsSpec{},
     {
         .supports_settings = true,
         .supports_parallel_insert = true,

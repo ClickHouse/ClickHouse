@@ -80,6 +80,7 @@
 #include <TableFunctions/registerTableFunctions.h>
 #include <Storages/registerStorages.h>
 #include <Dictionaries/registerDictionaries.h>
+#include <Interpreters/SecretArgumentsRegistry.h>
 #include <Disks/registerDisks.h>
 #include <Formats/registerFormats.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
@@ -1227,6 +1228,7 @@ void LocalServer::setupUsers()
     access_control.setEnableReadWriteGrants(config.getBool("access_control_improvements.enable_read_write_grants", true));
     access_control.setEnableUserNameAccessType(config.getBool("access_control_improvements.enable_user_name_access_type", true));
     access_control.setThrowOnInvalidReplicatedAccessEntities(config.getBool("access_control_improvements.throw_on_invalid_replicated_access_entities", true));
+    access_control.setForbidSQLAccessEntitiesTargetingUsersConfig(config.getBool("access_control_improvements.forbid_sql_access_entities_targeting_users_config", false));
 
     /// Keep in sync with `AccessControl::setupFromMainConfig` and `attachSystemTables`: `system.user_query_log`
     /// is attached (and thus safe to grant SELECT on implicitly) only when this is enabled.
@@ -1296,8 +1298,16 @@ void LocalServer::connect()
         input = std::make_unique<ReadBufferFromFile>(table_file);
         in = input.get();
     }
+    /// Profile events feed only the progress bar and table, the interactive statistics, `--print-profile-events`
+    /// and `--memory-usage`. Producing them is not free (the sample block loads the time zone), so skip them otherwise.
+    const auto & print_memory_mode = getClientConfiguration().getString("print-memory-to-stderr", "");
+    const bool send_profile_events = need_render_profile_events
+        && (is_interactive || delayed_interactive || need_render_progress || need_render_progress_table || profile_events.print
+            || getClientConfiguration().getBool("print-profile-events", false) || print_memory_mode == "default"
+            || print_memory_mode == "readable");
+
     connection = LocalConnection::createConnection(
-        connection_parameters, client_context, in, need_render_progress, need_render_profile_events, server_display_name);
+        connection_parameters, client_context, in, need_render_progress, send_profile_events, server_display_name);
 }
 
 
@@ -1346,6 +1356,7 @@ try
     registerDatabases();
     registerStorages();
     registerDictionaries();
+    setSecretArgumentsFinder(&SecretArgumentsRegistry::instance());
     registerDisks(/* global_skip_access_check= */ true);
     registerFormats();
     QueryPlanStepRegistry::registerPlanSteps();

@@ -3,8 +3,8 @@
 -- view's inner MergeTree reading step automatically -- the planner builds a plain local plan and standard
 -- filter push-down runs before the parallel-replicas split is inserted. So force_index_by_date /
 -- force_primary_key over a view see the covered predicate and do NOT throw a false-positive
--- INDEX_NOT_USED, without enabling parallel_replicas_filter_pushdown (nor
--- parallel_replicas_allow_view_over_mergetree). A genuinely unused index still throws.
+-- INDEX_NOT_USED, without needing parallel_replicas_allow_view_over_mergetree. A genuinely unused
+-- index still throws.
 -- Compare with the non-plan-based / AST path, which needs the pushdown to be auto-enabled.
 -- See issues #108266 / PR #109409.
 
@@ -29,8 +29,8 @@ SET enable_analyzer = 1, enable_parallel_replicas = 1, automatic_parallel_replic
     max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
     parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_min_number_of_rows_per_replica = 0,
     parallel_replicas_plan_based = 1, parallel_replicas_local_plan = 1;
--- Note: parallel_replicas_filter_pushdown and parallel_replicas_allow_view_over_mergetree are left at
--- their defaults (0): plan-based mode needs neither.
+-- Note: parallel_replicas_allow_view_over_mergetree is left at its default (0): plan-based mode does
+-- not need it.
 
 -- Base table with parallel replicas and a key predicate (always worked). Kept as a control.
 SELECT count() FROM t_force_index_pr_pb
