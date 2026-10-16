@@ -943,6 +943,9 @@ void optimizeTreeSecondPass(
     /// Propagate stream disjointness so that DISTINCT / LIMIT BY / GROUP BY can skip merging streams.
     applyStreamDisjointness(optimization_settings, root);
 
+    if (optimization_settings.aggregation_in_order_split_by_primary_key_ranges)
+        optimizeAggregationInOrderByLayers(root);
+
     if (optimization_settings.query_plan_join_shard_by_pk_ranges)
         optimizeJoinByShards(root);
 

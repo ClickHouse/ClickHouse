@@ -36,6 +36,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsUInt64 aggregation_in_order_max_block_bytes;
+    extern const SettingsBool aggregation_in_order_split_by_primary_key_ranges;
     extern const SettingsBool enable_materialized_cte;
     extern const SettingsBool optimize_aggregation_in_order;
     extern const SettingsBool promql_push_down_label_matchers;
@@ -225,6 +226,8 @@ void StoragePrometheusQuery::readImpl(
         query_context->setSetting("optimize_aggregation_in_order", true);
     if (!context->getSettingsRef()[Setting::aggregation_in_order_max_block_bytes].changed)
         query_context->setSetting("aggregation_in_order_max_block_bytes", 10000000);
+    if (!context->getSettingsRef()[Setting::aggregation_in_order_split_by_primary_key_ranges].changed)
+        query_context->setSetting("aggregation_in_order_split_by_primary_key_ranges", true);
 
     InterpreterSelectQueryAnalyzer interpreter(select_query, query_context, options, column_names);
     interpreter.addStorageLimits(*query_info.storage_limits);

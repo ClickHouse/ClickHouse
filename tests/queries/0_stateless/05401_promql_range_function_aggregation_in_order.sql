@@ -132,4 +132,24 @@ FROM prometheusQueryRange('prometheus_big', 'sum(rate(big[60s]))', 60, 1200, 10)
 GROUP BY samples
 SETTINGS max_memory_usage = 150000000;
 
+-- The samples are split into one primary key range per thread. Each range is aggregated on its own thread
+-- and the streams are not merged, because the ranges hold disjoint series.
+SELECT '-- the in-order aggregation runs over primary key ranges';
+SELECT countIf(explain LIKE '%FilterSortedStreamByRange%') AS ranges,
+       countIf(explain LIKE '%FinishAggregatingInOrderTransform%') AS merging
+FROM (EXPLAIN PIPELINE SELECT * FROM prometheusQueryRange('prometheus_big', 'sum(rate(big[60s]))', 60, 1200, 10));
+
+SELECT countIf(explain LIKE '%Skip merging: 1%') > 0 AS skip_merging
+FROM (EXPLAIN actions = 1 SELECT * FROM prometheusQueryRange('prometheus_big', 'sum(rate(big[60s]))', 60, 1200, 10));
+
+SELECT '-- the split by primary key ranges can be switched off by the setting';
+SELECT countIf(explain LIKE '%FilterSortedStreamByRange%') AS ranges,
+       countIf(explain LIKE '%FinishAggregatingInOrderTransform%') > 0 AS merging
+FROM (EXPLAIN PIPELINE SELECT * FROM prometheusQueryRange('prometheus_big', 'sum(rate(big[60s]))', 60, 1200, 10)
+      SETTINGS aggregation_in_order_split_by_primary_key_ranges = 0);
+
+SELECT '-- the results do not depend on the split';
+SELECT (SELECT groupArray((tags, samples)) FROM (SELECT * FROM prometheusQueryRange('prometheus_big', 'sum by (inst) (rate(big[60s]))', 60, 1200, 100) ORDER BY tags))
+     = (SELECT groupArray((tags, samples)) FROM (SELECT * FROM prometheusQueryRange('prometheus_big', 'sum by (inst) (rate(big[60s]))', 60, 1200, 100) ORDER BY tags) SETTINGS aggregation_in_order_split_by_primary_key_ranges = 0);
+
 DROP TABLE prometheus_big;

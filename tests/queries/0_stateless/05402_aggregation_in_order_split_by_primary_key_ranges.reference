@@ -1,0 +1,55 @@
+-- one part: the read is split by ranges of k and the streams are not merged
+4	0
+1
+-- the setting switches the split off
+0	1
+-- a key wrapped into a function is not split: one function value can span two ranges
+0	1
+-- an alias of the key, PREWHERE and WHERE keep the split
+4
+4
+-- one thread or max_rows_to_group_by: no split
+0
+0
+-- one part: results
+0	499500000	1000
+1	499501000	1000
+2	499502000	1000
+1000	1000000	499999500000
+1000000	1000000	499999500000
+100	1000000	499999500000
+-- one part: the results do not depend on the split
+1
+1
+1
+1
+1
+1
+1
+1
+-- several parts: the read is split by ranges of k and the streams are not merged
+4	0
+-- several parts: results
+0	1248750000	3000
+1	1248753000	3000
+2	1248756000	3000
+1000	3000000	1249998500000
+3000000	3000000	1249998500000
+501	1503000
+0
+-- several parts: the results do not depend on the split
+1
+1
+1
+1
+-- UUID key: the read is split by ranges of id and the streams are not merged
+4	0
+-- UUID key: results
+00000000-0000-0000-0000-000000000000	999000000	2000
+00000000-0000-0000-0000-000000000001	999002000	2000
+00000000-0000-0000-0000-000000000002	999004000	2000
+1000	2000000	999999000000
+1
+-- Float64 key: no split
+0	1
+1000	1000000	499999500000
