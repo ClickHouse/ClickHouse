@@ -982,13 +982,24 @@ private:
         size_t old_rows = buffer.data.rows();
         size_t old_bytes = buffer.data.allocatedBytes();
 
-        appendBlock(storage.log, sorted_block, buffer.data);
-
         /// Remember that the buffer now holds rows of this query, so that a later flush of them - by
         /// this query or by another one - shares the `Too many parts` gates of this query.
-        if (insert_start_gates
-            && std::find(buffer.contributing_gates.begin(), buffer.contributing_gates.end(), insert_start_gates)
-                == buffer.contributing_gates.end())
+        ///
+        /// The capacity is reserved before the rows are appended: once `appendBlock` has committed them,
+        /// nothing below may throw, or the rows would stay in the buffer without being accounted in
+        /// `total_writes` and without the record of the query they came from.
+        ///
+        /// Only the last contributor is compared, which catches the consecutive blocks of one query
+        /// without a linear search over all of them; a repeated entry is harmless, because the
+        /// registries are deduplicated when the participants of a flush are walked.
+        const bool add_contributor = insert_start_gates
+            && (buffer.contributing_gates.empty() || buffer.contributing_gates.back() != insert_start_gates);
+        if (add_contributor && buffer.contributing_gates.size() == buffer.contributing_gates.capacity())
+            buffer.contributing_gates.reserve(std::max<size_t>(4, buffer.contributing_gates.capacity() * 2));
+
+        appendBlock(storage.log, sorted_block, buffer.data);
+
+        if (add_contributor)
             buffer.contributing_gates.push_back(insert_start_gates);
 
         storage.total_writes.rows += (buffer.data.rows() - old_rows);

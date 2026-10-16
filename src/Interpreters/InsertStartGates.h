@@ -8,6 +8,7 @@
 #include <memory>
 #include <mutex>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace DB
@@ -112,6 +113,16 @@ public:
             return gate;
         }
 
+        /// The group write has already handed out a gate for the table, so its own later sinks - e.g. the
+        /// parallel branches created during the write - observe the same decision, a rejection included.
+        /// An entry is never removed; another group write may only replace it with the gate it was merged
+        /// into, which makes the same decision. So there is no need to walk and lock the participants.
+        {
+            std::lock_guard lock(mutex);
+            if (auto it = gates.find(table_id); it != gates.end() && it->second)
+                return it->second;
+        }
+
         /// A group write hands out one and the same gate object to this registry and to every
         /// participant, so looking the gate up, creating it and sharing it has to be one atomic step.
         /// Otherwise two group writes over the same participants - the flushes of the several shards of
@@ -122,19 +133,18 @@ public:
         /// All the registries involved are locked at once, in the order of their addresses. That order
         /// is global, so a registry taking part in several group writes cannot deadlock against them.
         std::vector<InsertStartGates *> registries;
-        collectRegistries(registries);
+        std::unordered_set<const InsertStartGates *> visited;
+        collectRegistries(registries, visited);
 
         std::vector<InsertStartGates *> lock_order = registries;
         std::sort(lock_order.begin(), lock_order.end());
-        lock_order.erase(std::unique(lock_order.begin(), lock_order.end()), lock_order.end());
 
         std::vector<std::unique_lock<std::mutex>> locks;
         locks.reserve(lock_order.size());
         for (auto * registry : lock_order)
             locks.emplace_back(registry->mutex);
 
-        /// The group write has already handed out a gate for the table, so its own later sinks - e.g. the
-        /// parallel branches created during the write - observe the same decision, a rejection included.
+        /// Checked again under the locks: another sink of this group write may have been faster.
         if (auto it = gates.find(table_id); it != gates.end() && it->second)
             return it->second;
 
@@ -166,12 +176,13 @@ public:
         while (true)
         {
             std::vector<InsertStartGatePtr> candidates;
+            std::unordered_set<const InsertStartGate *> seen_candidates;
             for (auto * registry : registries)
             {
                 auto it = registry->gates.find(table_id);
                 if (it == registry->gates.end() || !it->second)
                     continue;
-                if (std::find(candidates.begin(), candidates.end(), it->second) == candidates.end())
+                if (seen_candidates.insert(it->second.get()).second)
                     candidates.push_back(it->second);
             }
 
@@ -189,17 +200,12 @@ public:
             /// Follow the gates that are already merged into other ones to their targets: those are the
             /// gates that decide. A target is locked in the next iteration.
             bool retry = false;
-            for (auto & candidate : candidates)
+            for (auto * registry : registries)
             {
-                if (candidate->forward_to)
+                auto it = registry->gates.find(table_id);
+                if (it != registry->gates.end() && it->second && it->second->forward_to)
                 {
-                    InsertStartGatePtr target = candidate->forward_to;
-                    for (auto * registry : registries)
-                    {
-                        auto it = registry->gates.find(table_id);
-                        if (it != registry->gates.end() && it->second == candidate)
-                            it->second = target;
-                    }
+                    it->second = it->second->forward_to;
                     retry = true;
                 }
             }
@@ -230,13 +236,13 @@ public:
             if (!gate)
                 gate = std::make_shared<InsertStartGate>();
 
-            std::vector<InsertStartGatePtr> merged;
+            std::unordered_set<const InsertStartGate *> merged;
             for (const auto & candidate : candidates)
             {
                 if (candidate != gate && !candidate->done)
                 {
                     candidate->forward_to = gate;
-                    merged.push_back(candidate);
+                    merged.insert(candidate.get());
                 }
             }
 
@@ -247,7 +253,7 @@ public:
             for (auto * registry : registries)
             {
                 auto & existing = registry->gates[table_id];
-                if (!existing || std::find(merged.begin(), merged.end(), existing) != merged.end())
+                if (!existing || merged.contains(existing.get()))
                     existing = gate;
             }
 
@@ -268,15 +274,18 @@ private:
     /// direct participants do, so the whole participant graph is walked here instead of its first level
     /// only. The graph is acyclic - a group registry lists only registries that already existed when it
     /// was constructed - and `participants` is fixed at construction, so no lock is needed to walk it.
-    void collectRegistries(std::vector<InsertStartGates *> & registries)
+    ///
+    /// `visited` keeps the walk linear in the size of the graph: a flush of a `Buffer` shard may list many
+    /// thousands of participating queries.
+    void collectRegistries(std::vector<InsertStartGates *> & registries, std::unordered_set<const InsertStartGates *> & visited)
     {
-        if (std::find(registries.begin(), registries.end(), this) != registries.end())
+        if (!visited.insert(this).second)
             return;
 
         registries.push_back(this);
 
         for (const auto & participant : participants)
-            participant->collectRegistries(registries);
+            participant->collectRegistries(registries, visited);
     }
 
     std::mutex mutex;
