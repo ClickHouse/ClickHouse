@@ -1279,6 +1279,21 @@ def test_shutdown_waits_for_backup():
     assert node1.query("SELECT * FROM tbl ORDER BY x") == TSV([3, 5])
 
 
+def wait_for_unregistered_part_on_node2(query_kind):
+    # node2's part of the operation is running, but the backups worker has not registered it.
+    assert_eq_with_retry(
+        node2,
+        f"SELECT count() FROM system.processes WHERE query_kind = '{query_kind}' AND NOT is_initial_query",
+        "1",
+    )
+    query_id = node2.query(
+        f"SELECT query_id FROM system.processes WHERE query_kind = '{query_kind}' AND NOT is_initial_query"
+    ).strip()
+    assert query_id
+    node2.query("SYSTEM FLUSH LOGS backup_log")
+    assert node2.query(f"SELECT count() FROM system.backup_log WHERE query_id = '{query_id}'") == "0\n"
+
+
 def test_shutdown_waits_for_backup_that_arrives_during_shutdown():
     node1.query(
         "CREATE TABLE tbl ON CLUSTER 'cluster' ("
@@ -1297,15 +1312,15 @@ def test_shutdown_waits_for_backup_that_arrives_during_shutdown():
 
     backup_name = new_backup_name()
 
-    id = node1.query(
-        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} ASYNC"
-    ).split("\t")[0]
-
-    assert_eq_with_retry(
-        node2,
-        "SELECT count() FROM system.processes WHERE query_kind = 'Backup' AND NOT is_initial_query",
-        "1",
-    )
+    try:
+        id = node1.query(
+            f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} ASYNC"
+        ).split("\t")[0]
+        wait_for_unregistered_part_on_node2("Backup")
+    except Exception:
+        # Releases the held part, which would block node2's DDL queue for the following tests.
+        node2.query("SYSTEM DISABLE FAILPOINT backups_hold_registration_until_ddl_worker_stops")
+        raise
 
     node2.stop_clickhouse(stop_wait_sec=60)
     try:
@@ -1348,15 +1363,15 @@ def test_shutdown_waits_for_restore_that_arrives_during_shutdown():
     # The restart clears the failpoint.
     node2.query("SYSTEM ENABLE FAILPOINT backups_hold_registration_until_ddl_worker_stops")
 
-    id = node1.query(
-        f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name} ASYNC"
-    ).split("\t")[0]
-
-    assert_eq_with_retry(
-        node2,
-        "SELECT count() FROM system.processes WHERE query_kind = 'Restore' AND NOT is_initial_query",
-        "1",
-    )
+    try:
+        id = node1.query(
+            f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name} ASYNC"
+        ).split("\t")[0]
+        wait_for_unregistered_part_on_node2("Restore")
+    except Exception:
+        # Releases the held part, which would block node2's DDL queue for the following tests.
+        node2.query("SYSTEM DISABLE FAILPOINT backups_hold_registration_until_ddl_worker_stops")
+        raise
 
     node2.stop_clickhouse(stop_wait_sec=60)
     try:
