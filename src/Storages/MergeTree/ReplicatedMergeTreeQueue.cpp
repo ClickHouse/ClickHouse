@@ -88,6 +88,8 @@ void ReplicatedMergeTreeQueue::clear()
     virtual_parts.clear();
     queue.clear();
     inserts_by_time.clear();
+    for (const auto & [znode, _] : mutations_by_znode)
+        mutations_cleared.insert(znode);
     mutations_by_znode.clear();
     mutations_by_partition.clear();
     mutation_pointer.clear();
@@ -1223,6 +1225,16 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
             else
                 ++it;
         }
+
+        /// `clear` skipped the removal above, so a mutation killed while the queue was being rebuilt is released here.
+        for (const String & znode : mutations_cleared)
+        {
+            if (entries_in_zk_set.contains(znode))
+                continue;
+            LOG_DEBUG(log, "Mutation {} was removed while the queue was rebuilt, dropping its progress state", znode);
+            storage.dropMutationInitialBytes(znode);
+        }
+        mutations_cleared.clear();
 
         for (const String & znode : entries_in_zk_set)
         {
