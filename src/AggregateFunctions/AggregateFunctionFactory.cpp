@@ -105,31 +105,23 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
     auto properties = tryGetProperties(name, action);
     bool is_window_function = properties.has_value() && properties->is_window_function;
 
-    /// Decide which prefix of arguments to check for Nullable. Most combinators use all arguments
-    /// for the nested function, so the check covers everything. But the OrderBy combinator
-    /// consumes trailing arguments as sort keys, and those are allowed to be Nullable —
-    /// the combinator itself handles NULLs (with NULLS FIRST/LAST semantics) and we must not
-    /// strip out NULL rows before they reach the combinator's add().
-    size_t nullable_check_count = types_without_low_cardinality.size();
-    if (auto outer_combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(name);
-        outer_combinator && outer_combinator->getName() == "OrderBy")
-    {
-        nullable_check_count = outer_combinator->getNumberOfNestedArguments(types_without_low_cardinality, parameters);
-    }
+    /// The OrderBy combinator handles Nullable arguments itself: it does not apply the `Null` wrapper
+    /// on top, because that would drop the rows where only a sort key is NULL (they must be ordered
+    /// according to NULLS FIRST/LAST instead). The nested function is created by a recursive call
+    /// with the nested-function arguments only, and that call applies the `Null` wrapper to it.
+    bool is_order_by_combinator = false;
+    if (auto outer_combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(name))
+        is_order_by_combinator = outer_combinator->getName() == "OrderBy";
 
-    if (!is_window_function && std::any_of(
-            types_without_low_cardinality.begin(),
-            types_without_low_cardinality.begin() + nullable_check_count,
-            [](const auto & type) { return type->isNullable(); }))
+    if (!is_window_function && !is_order_by_combinator && std::any_of(types_without_low_cardinality.begin(), types_without_low_cardinality.end(),
+        [](const auto & type) { return type->isNullable(); }))
     {
         AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix("Null");
         if (!combinator)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find aggregate function combinator "
                             "to apply a function to Nullable arguments.");
 
-        size_t nested_args_count = combinator->getNumberOfNestedArguments(types_without_low_cardinality, parameters);
-        DataTypes types_for_nested(types_without_low_cardinality.begin(), types_without_low_cardinality.begin() + nested_args_count);
-        DataTypes nested_types = combinator->transformArguments(types_for_nested);
+        DataTypes nested_types = combinator->transformArguments(types_without_low_cardinality);
         Array nested_parameters = combinator->transformParameters(parameters);
 
         bool has_null_arguments = std::any_of(types_without_low_cardinality.begin(), types_without_low_cardinality.end(),

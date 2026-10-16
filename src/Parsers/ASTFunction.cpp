@@ -113,6 +113,20 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
         }
     }
 
+    if (order_by_combinator && order_by_combinator_columns)
+    {
+        FormatSettings format_settings{true /* one_line */};
+        FormatState state;
+        FormatStateStacked frame;
+        writeCString(" ORDER BY ", ostr);
+        order_by_combinator_columns->format(ostr, format_settings, state, frame);
+        if (order_by_combinator_limit.has_value())
+        {
+            writeCString(" LIMIT ", ostr);
+            writeIntText(*order_by_combinator_limit, ostr);
+        }
+    }
+
     writeChar(')', ostr);
 
     if (getNullsAction() == NullsAction::RESPECT_NULLS)
@@ -394,6 +408,12 @@ void ASTFunction::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) 
     ASTWithAlias::updateTreeHashImpl(hash_state, ignore_aliases);
 
     hash_state.update(getNullsAction());
+
+    /// The ORDER BY sort list of the aggregate function combinator is a child, but the LIMIT is not.
+    hash_state.update(order_by_combinator);
+    hash_state.update(order_by_combinator_limit.has_value());
+    if (order_by_combinator_limit.has_value())
+        hash_state.update(*order_by_combinator_limit);
 
     /// The function composition operator `f | g` and an ordinary call to a function of the same
     /// name are different expressions, see the formatting of `__compose` below.

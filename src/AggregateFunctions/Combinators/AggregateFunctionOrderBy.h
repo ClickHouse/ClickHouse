@@ -68,7 +68,7 @@ struct OrderByArrayNode
     /// a StringRef that tells us how many bytes were written.
     static OrderByArrayNode * allocate(const IColumn & column, size_t row_num, Arena * arena)
     {
-        IColumn::SerializationSettings settings;
+        auto settings = IColumn::SerializationSettings::createForAggregationState();
         const char * begin = arena->alignedAlloc(sizeof(OrderByArrayNode), alignof(OrderByArrayNode));
         auto value = column.serializeValueIntoArena(row_num, *arena, begin, &settings);
 
@@ -79,7 +79,7 @@ struct OrderByArrayNode
 
     void insertInto(IColumn & column) const
     {
-        IColumn::SerializationSettings settings;
+        auto settings = IColumn::SerializationSettings::createForAggregationState();
         ReadBufferFromMemory buf(data(), size);
         column.deserializeAndInsertFromArena(buf, &settings);
     }
@@ -130,6 +130,35 @@ private:
     AggregateFunctionPtr nested_func;
     SortDescription sort_description;
     std::optional<UInt64> limit;
+    /// Size of OrderByData padded to the alignment of the nested state, which is placed right after it.
+    size_t prefix_size;
+
+    AggregateDataPtr getNestedPlace(AggregateDataPtr __restrict place) const noexcept
+    {
+        return place + prefix_size;
+    }
+
+    /// Creates the nested state, feeds `rows` rows of `columns` into it, and inserts the result into `to`.
+    /// The nested state is temporary: it lives only within this call.
+    void insertNestedResultInto(AggregateDataPtr __restrict place, const IColumn ** columns, size_t rows, IColumn & to, Arena * arena) const
+    {
+        AggregateDataPtr nested_place = getNestedPlace(place);
+        nested_func->create(nested_place);
+        try
+        {
+            if (rows)
+                nested_func->addBatchSinglePlace(0, rows, nested_place, columns, arena);
+            /// `insertMergeResultInto` copies the state if the nested function returns a state (e.g. `groupArrayState`),
+            /// while `insertResultInto` would insert a reference to the temporary state that is destroyed below.
+            nested_func->insertMergeResultInto(nested_place, to, arena);
+        }
+        catch (...)
+        {
+            nested_func->destroy(nested_place);
+            throw;
+        }
+        nested_func->destroy(nested_place);
+    }
 
 public:
     AggregateFunctionOrderBy(
@@ -143,6 +172,7 @@ public:
         , nested_func(nested_func_)
         , sort_description(sort_description_)
         , limit(limit_)
+        , prefix_size((sizeof(OrderByData) + nested_func_->alignOfData() - 1) / nested_func_->alignOfData() * nested_func_->alignOfData())
     {
     }
 
@@ -151,19 +181,9 @@ public:
     bool allocatesMemoryInArena() const override { return true; }
 
     /// The combined state lives in one buffer: our accumulator first, nested state right after.
-    static AggregateDataPtr getNestedPlace(AggregateDataPtr __restrict place)
-    {
-        return place + sizeof(OrderByData);
-    }
-
-    static ConstAggregateDataPtr getNestedPlace(ConstAggregateDataPtr __restrict place)
-    {
-        return place + sizeof(OrderByData);
-    }
-
     size_t sizeOfData() const override
     {
-        return sizeof(OrderByData) + nested_func->sizeOfData();
+        return prefix_size + nested_func->sizeOfData();
     }
 
     size_t alignOfData() const override
@@ -234,17 +254,7 @@ public:
         /// Empty group: still emit a default value via the nested function.
         if (value.empty() || columns_num == 0)
         {
-            nested_func->create(getNestedPlace(place));
-            try
-            {
-                nested_func->insertResultInto(getNestedPlace(place), to, arena);
-            }
-            catch (...)
-            {
-                nested_func->destroy(getNestedPlace(place));
-                throw;
-            }
-            nested_func->destroy(getNestedPlace(place));
+            insertNestedResultInto(place, nullptr, 0, to, arena);
             return;
         }
 
@@ -290,18 +300,7 @@ public:
         for (size_t i = 0; i < nested_args_count; ++i)
             nested_columns.push_back(block.getByPosition(i).column.get());
 
-        nested_func->create(getNestedPlace(place));
-        try
-        {
-            nested_func->addBatchSinglePlace(0, rows_to_take, getNestedPlace(place), nested_columns.data(), arena);
-            nested_func->insertResultInto(getNestedPlace(place), to, arena);
-        }
-        catch (...)
-        {
-            nested_func->destroy(getNestedPlace(place));
-            throw;
-        }
-        nested_func->destroy(getNestedPlace(place));
+        insertNestedResultInto(place, nested_columns.data(), rows_to_take, to, arena);
     }
 };
 
