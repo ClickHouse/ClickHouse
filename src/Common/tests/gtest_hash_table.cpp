@@ -7,6 +7,7 @@
 
 #include <Interpreters/AggregationCommon.h>
 
+#include <base/arithmeticOverflow.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/StringHashMap.h>
@@ -575,7 +576,7 @@ struct GrowthTrackingAllocator : HashTableAllocator
     {
         peak_bytes = std::max(peak_bytes, allocated_bytes + new_bytes);
         void * result = HashTableAllocator::realloc(buffer, old_bytes, new_bytes);
-        allocated_bytes += new_bytes - old_bytes;
+        allocated_bytes = allocated_bytes + new_bytes - old_bytes;
         return result;
     }
 
@@ -689,7 +690,7 @@ struct HashTableWithInvariantsCheck : Base
 /// Many keys share the optimal position, and the chains wrap around the end of the buffer.
 struct CollidingHash
 {
-    size_t operator()(UInt64 key) const { return (key / 8) * 0x9E3779B97F4A7C15ULL; }
+    size_t operator()(UInt64 key) const { return common::mulIgnoreOverflow(key / 8, 0x9E3779B97F4A7C15ULL); }
 };
 
 template <typename Map>
