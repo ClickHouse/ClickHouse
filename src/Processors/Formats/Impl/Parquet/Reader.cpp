@@ -4034,12 +4034,26 @@ ColumnPtr & Reader::getOrFormOutputColumn(const RowGroup & row_group, RowSubgrou
         chassert(state.column || cached_column || (info.primitive_start == info.primitive_end));
         if (!state.column && cached_column)
         {
-            /// The rows of the subgroup that passed the filters so far. `cut` makes a copy, so the
-            /// column in the cache cannot be mutated through the result.
-            ColumnPtr rows = (*cached_column)->cut(row_subgroup.start_row_idx, row_subgroup.filter.rows_total);
-            if (row_subgroup.filter.rows_pass != row_subgroup.filter.rows_total)
-                rows = rows->filter(row_subgroup.filter.filter, row_subgroup.filter.rows_pass);
-            state.column = std::move(rows);
+            /// The rows of the subgroup that passed the filters so far. `cut` and `index` make a copy,
+            /// so the column in the cache cannot be mutated through the result.
+            if (row_subgroup.filter.rows_pass == row_subgroup.filter.rows_total)
+            {
+                state.column = (*cached_column)->cut(row_subgroup.start_row_idx, row_subgroup.filter.rows_total);
+            }
+            else
+            {
+                /// Gather only the rows that passed. Copying the whole range before filtering would
+                /// allocate memory for the rejected rows, which the uncached path does not decode at all.
+                const IColumnFilter & mask = row_subgroup.filter.filter;
+                chassert(mask.size() == row_subgroup.filter.rows_total);
+                auto indexes = ColumnUInt64::create();
+                auto & indexes_data = indexes->getData();
+                indexes_data.reserve(row_subgroup.filter.rows_pass);
+                for (size_t i = 0; i < mask.size(); ++i)
+                    if (mask[i])
+                        indexes_data.push_back(row_subgroup.start_row_idx + i);
+                state.column = (*cached_column)->index(*indexes, 0);
+            }
         }
         else if (!state.column)
             state.column = formOutputColumn(row_subgroup, *output_idx, row_subgroup.filter.rows_pass);
