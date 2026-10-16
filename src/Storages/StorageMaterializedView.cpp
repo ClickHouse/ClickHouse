@@ -909,6 +909,10 @@ void StorageMaterializedView::alter(
     params.apply(new_metadata, mv_db_context);
 
     const auto & new_select = new_metadata.select;
+    bool modifies_query = std::ranges::any_of(params, [](const AlterCommand & command) { return command.type == AlterCommand::MODIFY_QUERY; });
+    if (modifies_query && !new_select.select_table_id.empty()
+        && new_select.select_table_id.getQualifiedName() == table_id.getQualifiedName())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Materialized view {} cannot select from itself", table_id.getFullTableName());
     new_metadata.setSelectQuery(new_select);
 
     /// Check the materialized view's inner table structure.
