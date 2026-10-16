@@ -26,6 +26,8 @@ CREATE TABLE t_rfa_fact (k UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER 
 CREATE TABLE t_rfa_mid (k UInt64, x UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = 'basic, uniq_v2';
 CREATE TABLE t_rfa_dim (k UInt64, name String) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = 'basic, uniq_v2';
 CREATE TABLE t_rfa_dim2 (k UInt64, b UInt64, name String) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = 'basic, uniq_v2';
+-- The chosen order depends on the column statistics.
+SET materialize_statistics_on_insert = 1;
 INSERT INTO t_rfa_fact SELECT number % 10000, number % 500, number FROM numbers(200000);
 INSERT INTO t_rfa_mid SELECT number, number FROM numbers(10000);
 INSERT INTO t_rfa_dim SELECT number, if(number < 10, 'keep', 'skip') FROM numbers(10000);
