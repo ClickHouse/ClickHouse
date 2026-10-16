@@ -48,6 +48,14 @@ namespace
             return std::false_type{};
     }
 
+    /// Whether a batch that keeps the bytes of its keys holds as many of them as it may, so that the kernel stages it
+    /// before it adds more misses (see `adaptive_miss_batch_max_key_bytes`).
+    template <typename KeepKeyBytes>
+    bool ALWAYS_INLINE missBatchKeyBytesFull(const AdaptiveMissBatch & misses, KeepKeyBytes keep_key_bytes)
+    {
+        return keep_key_bytes && misses.getKeys().size() >= adaptive_miss_batch_max_key_bytes;
+    }
+
     /// Copies the bytes of a string-like key into a staged record from a buffer that keeps padding past them: the
     /// block's key column, or the bytes that the batch of misses kept. The overflow-tolerant small copy reads and
     /// writes up to 15 bytes past the end. The records are appended in increasing byte order with every chunk ending in
@@ -209,6 +217,8 @@ void NO_INLINE Aggregator::executeFrozenImpl(
             misses.add<RecordKey>(static_cast<UInt32>(i), hash, key, keep_key_bytes);
 
         keyHolderDiscardKey(key_holder);
+        if (missBatchKeyBytesFull(misses, keep_key_bytes))
+            stage_misses();
     }
 
     if (frozen.recordLocalProbeResults(hits, row_end - row_begin))
@@ -217,7 +227,7 @@ void NO_INLINE Aggregator::executeFrozenImpl(
     stage_misses();
 }
 
-template <typename RecordKey, typename LocalMethod, typename State>
+template <typename RecordKey, typename LocalMethod, typename State, typename StageMisses>
 size_t ALWAYS_INLINE Aggregator::collectCountMisses(
     LocalMethod & local_method,
     State & find_state,
@@ -225,7 +235,8 @@ size_t ALWAYS_INLINE Aggregator::collectCountMisses(
     size_t row_end,
     Arena & scratch_pool,
     AdaptiveAggregationProducer & adaptive,
-    bool bypass_local_probe) const
+    bool bypass_local_probe,
+    const StageMisses & stage_misses) const
 {
     auto & misses = adaptive.misses;
     const auto keep_key_bytes = adaptiveMissesKeepKeyBytes<RecordKey>(find_state);
@@ -351,6 +362,13 @@ size_t ALWAYS_INLINE Aggregator::collectCountMisses(
             {
                 if (stop_combining)
                     return {i + 1, hits};
+            }
+            if (missBatchKeyBytesFull(misses, keep_key_bytes))
+            {
+                /// The key views of a state whose batch keeps the key bytes do not outlive their row, so no record takes
+                /// more rows, and staging the batch in the middle of the block splits none.
+                chassert(!stable_key_views && !combine_partition_counts);
+                stage_misses();
             }
         }
         return {row_end, hits};
@@ -485,7 +503,8 @@ void NO_INLINE Aggregator::executeFrozenImpl(
     if (is_simple_count)
     {
         record_local_probes(
-            collectCountMisses<RecordKey>(local_method, local_find_state, row_begin, row_end, scratch_pool, adaptive, bypass_local_probe),
+            collectCountMisses<RecordKey>(
+                local_method, local_find_state, row_begin, row_end, scratch_pool, adaptive, bypass_local_probe, stage_misses),
             row_end - row_begin);
         stage_misses();
         return;
@@ -519,6 +538,8 @@ void NO_INLINE Aggregator::executeFrozenImpl(
                 places_data[i] = nullptr;
             misses.add<RecordKey>(static_cast<UInt32>(i), hash, key, keep_key_bytes);
             keyHolderDiscardKey(key_holder);
+            if (missBatchKeyBytesFull(misses, keep_key_bytes))
+                stage_misses();
         }
         return hits;
     };
@@ -610,7 +631,8 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
             partitions.prefetchAppend(layout.partitionOf(hashes[record + adaptive_append_prefetch_distance]));
     };
 
-    /// The records are written in staging order, so they take the key bytes that the batch kept in their order.
+    /// The records are written in staging order, so they take the key bytes that the batch kept in their order, and the
+    /// records of a constant key all take its one copy.
     const auto batch_keeps_key_bytes = adaptiveMissesKeepKeyBytes<RecordKey>(local_find_state);
     const char * kept_key_bytes = staged_keys;
     const auto write_key = [&](size_t record, size_t key_size, char * to)
@@ -620,7 +642,8 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
             if (batch_keeps_key_bytes)
             {
                 copyPaddedKeyBytes(kept_key_bytes, key_size, to);
-                kept_key_bytes += key_size;
+                if (!keys_are_const)
+                    kept_key_bytes += key_size;
             }
             else
                 copyStagedKeyBytes(local_find_state, key_row_of(record), key_size, scratch_pool, to);
@@ -814,8 +837,9 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
             append_key_records(format);
     });
     /// The kernel and the writer decide on keeping the key bytes from the same state, and every kept byte belongs to
-    /// exactly one record.
-    chassert(!batch_keeps_key_bytes || kept_key_bytes == staged_keys + misses.getKeys().size());
+    /// exactly one record, or to all the records of a constant key.
+    chassert(!batch_keeps_key_bytes
+        || misses.getKeys().size() == (keys_are_const ? key_size_of(0) : static_cast<size_t>(kept_key_bytes - staged_keys)));
 
     return {.key_bytes = key_bytes, .variable_argument_bytes = variable_argument_bytes, .keys_as_bytes = adaptive_key_stages_bytes<RecordKey>};
 }

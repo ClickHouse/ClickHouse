@@ -990,9 +990,10 @@ private:
     /// Collects the misses of a block of an aggregation by a lone `count` into the producer's batch: a row whose key the
     /// local table holds adds one to the key's inline count, and the other rows become count records, each with the
     /// multiplicity of the rows it combines. A run of one key goes into one record, and while a trial shows that it
-    /// pays, so do the later rows of the key found through a per-partition cache. Neither writes the records nor records
-    /// the probe results. Returns the number of local hits.
-    template <typename RecordKey, typename LocalMethod, typename State>
+    /// pays, so do the later rows of the key found through a per-partition cache. A batch whose kept key bytes reach
+    /// their bound is staged by `stage_misses` in the middle of the block (see `adaptive_miss_batch_max_key_bytes`); the
+    /// rest of the misses and the probe results are left to the caller. Returns the number of local hits.
+    template <typename RecordKey, typename LocalMethod, typename State, typename StageMisses>
     size_t collectCountMisses(
         LocalMethod & local_method,
         State & find_state,
@@ -1000,7 +1001,8 @@ private:
         size_t row_end,
         Arena & scratch_pool,
         AdaptiveAggregationProducer & adaptive,
-        bool bypass_local_probe) const;
+        bool bypass_local_probe,
+        const StageMisses & stage_misses) const;
 
     /// Appends the producer's batch of misses to its partitions in the format `visitStagedRecordFormat` selects. Each
     /// record carries a key and either a multiplicity (an aggregation by a lone `count`), no payload (no aggregates), or

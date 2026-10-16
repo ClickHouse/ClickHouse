@@ -50,6 +50,11 @@ constexpr size_t adaptive_count_combining_min_hit_rate_inverse = 8;
 /// Fixed-width arguments are gathered column by column into bounded batches of staged records, so
 /// width and nullability are dispatched once per field while the destination rows remain in cache.
 constexpr size_t adaptive_argument_staging_batch_rows = 1024;
+/// A batch of misses that keeps the bytes of its keys (see `AdaptiveMissBatch`) is staged once it holds this many of
+/// them, in the middle of the block if need be. The serialized methods serialize row by row when the keys of a block are
+/// large, so the kept keys of a whole block could take as much memory as its records. Bounded, they are a small scratch
+/// per producer, which the writer reads back from the cache.
+constexpr size_t adaptive_miss_batch_max_key_bytes = 256 << 10;
 /// Fixed lookahead of the drain's hash prefetch.
 constexpr size_t adaptive_drain_prefetch_look_ahead = 16;
 /// How much of the next range of records the drain requests ahead of its prefetch cursor: a page, the most a
@@ -237,14 +242,16 @@ struct AdaptiveMergeTask
     PaddedPODArray<UInt64> best_hashes;
 };
 
-/// The misses of a frozen producer's current block, one descriptor per delayed record in staging order: the routing
-/// hash, the source row of the record's arguments, the multiplicity of a count record, and the key. The misses are added
-/// in row order, so the source rows ascend. A count record stands for the rows of its key that the kernel combined into
-/// it, consecutive or not. A string-like key is kept as its size, and the writer reads its bytes from the key state,
-/// which holds them for the whole block. When the state does not, as with the serialized methods that serialize row by
-/// row, the kernel keeps the bytes as well, one key after another: building the key again would serialize it a second
-/// time. A fixed-width key is kept as its value, which the kernel has at hand, while reading it back from the key
-/// columns would pack it a second time. The arrays are cleared after every block but keep their capacity.
+/// The misses of a frozen producer's current block, or of a part of it, one descriptor per delayed record in staging
+/// order: the routing hash, the source row of the record's arguments, the multiplicity of a count record, and the key.
+/// The misses are added in row order, so the source rows ascend. A count record stands for the rows of its key that the
+/// kernel combined into it, consecutive or not. A string-like key is kept as its size, and the writer reads its bytes
+/// from the key state, which holds them for the whole block. When the state does not, as with the serialized methods
+/// that serialize row by row, the kernel keeps the bytes as well, one key after another, and once for all the records
+/// of a constant key: building the key again would serialize it a second time. The kernel stages such a batch whenever
+/// the kept bytes reach `adaptive_miss_batch_max_key_bytes`. A fixed-width key is kept as its value, which the kernel
+/// has at hand, while reading it back from the key columns would pack it a second time. The arrays are cleared after
+/// every staging but keep their capacity.
 class AdaptiveMissBatch
 {
 public:
@@ -275,9 +282,14 @@ public:
     ALWAYS_INLINE void incrementCount(size_t i) { ++multiplicities[i]; }
     ALWAYS_INLINE void incrementLastCount() { ++multiplicities.back(); }
 
-    /// Marks the block's keys as constant: their columns hold a single row, from which every key is read, while the
-    /// arguments of each record stay at its source row.
-    void setKeysConst() { keys_are_const = true; }
+    /// Marks the block's keys as constant, before the misses are added: their columns hold a single row, from which every
+    /// key is read, while the arguments of each record stay at its source row. The records then share the kept bytes of
+    /// the key.
+    void setKeysConst()
+    {
+        chassert(empty());
+        keys_are_const = true;
+    }
     bool keysAreConst() const { return keys_are_const; }
 
     size_t size() const { return hashes.size(); }
@@ -310,9 +322,10 @@ private:
         if constexpr (adaptive_key_stages_bytes<RecordKey>)
         {
             const auto bytes = static_cast<std::string_view>(key);
-            key_sizes.push_back(bytes.size());
-            if (keep_key_bytes)
+            /// The records of a constant key share the bytes kept for the first of them.
+            if (keep_key_bytes && (!keys_are_const || key_sizes.empty()))
                 keys.insert(bytes.data(), bytes.data() + bytes.size());
+            key_sizes.push_back(bytes.size());
         }
         else
         {
