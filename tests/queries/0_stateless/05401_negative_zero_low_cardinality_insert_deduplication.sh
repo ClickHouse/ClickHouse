@@ -1,7 +1,17 @@
+#!/usr/bin/env bash
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+$CLICKHOUSE_LOCAL --multiquery <<'EOF'
 -- The hash of an inserted block identifies it for insert deduplication, so it is persisted and has to be the same
 -- as in older versions, which hashed the raw bits of floating point values: `-0.` and `0.` are different blocks.
 -- `LowCardinality` columns, also nested ones, must hash the same way as plain ones, so that a retry of an insert
 -- written by an older version is still deduplicated.
+-- The queries run in `clickhouse-local`: it parses `VALUES` into the `LowCardinality` columns value by value, which
+-- keeps the sign of zero. A block that is sent to the server, or cast with `CAST`, is inserted into the dictionary as
+-- a range, and that maps `-0.` to the default `0.` of the dictionary, so both inserts would hold the same values.
 
 SET allow_suspicious_low_cardinality_types = 1;
 SET insert_deduplicate = 1;
@@ -40,3 +50,4 @@ SELECT abs(f) AS a, count() FROM t_dedup_signed_zero GROUP BY a ORDER BY a;
 SELECT count() FROM t_dedup_signed_zero;
 
 DROP TABLE t_dedup_signed_zero;
+EOF
