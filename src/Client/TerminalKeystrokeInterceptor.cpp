@@ -143,7 +143,9 @@ void TerminalKeystrokeInterceptor::runImpl(const DB::TerminalKeystrokeIntercepto
     ssize_t res = read(fd, bytes.data(), bytes.size());  /// NOLINT(clang-analyzer-unix.BlockInCriticalSection)
     for (ssize_t i = 0; i < res; ++i)
     {
-        auto it = map.find(bytes[i]);
+        /// A space typed after other text, or pasted along with it, is part of that text, not the hotkey.
+        bool is_text = bytes[i] == ' ' && (!unhandled_input.empty() || res > 1);
+        auto it = is_text ? map.end() : map.find(bytes[i]);
         if (it != map.end())
         {
             auto fn = it->second;
