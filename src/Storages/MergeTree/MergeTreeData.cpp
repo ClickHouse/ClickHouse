@@ -30,6 +30,9 @@
 #include <Backups/RestorerFromBackup.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnDynamic.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVariant.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressionCodecQuantized.h>
 #include <Compression/CompressionFactory.h>
@@ -44,6 +47,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/ISerialization.h>
@@ -83,6 +87,7 @@
 #include <Planner/TableExpressionData.h>
 #include <Storages/StorageDummy.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Core/ConstantValue.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/QueryMetadataCache.h>
@@ -10419,6 +10424,40 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
     UNREACHABLE();
 }
 
+/// A `Variant` or `Dynamic` constant is extracted into a `Field` of its active alternative, but its type stays the
+/// carrier type. The conversion of a partition value depends on its source type (a `UUID2` value has another layout
+/// than a `UUID` value with the same `Field` representation), so this returns the type of the active alternative,
+/// read from the discriminator of the evaluated column. `tuple_element` selects an element of a tuple constant.
+/// Returns `nullptr` for a `NULL` value.
+static DataTypePtr getActiveTypeOfPartitionValue(const ConstantValue & constant, std::optional<size_t> tuple_element)
+{
+    const IColumn * column = &constant.getColumn()->getDataColumn();
+    DataTypePtr type = constant.getType();
+    if (tuple_element)
+    {
+        column = &assert_cast<const ColumnTuple &>(*column).getColumn(*tuple_element);
+        type = assert_cast<const DataTypeTuple &>(*type).getElement(*tuple_element);
+    }
+
+    if (const auto * variant_type = typeid_cast<const DataTypeVariant *>(type.get()))
+    {
+        const auto discriminator = assert_cast<const ColumnVariant &>(*column).globalDiscriminatorAt(0);
+        if (discriminator == ColumnVariant::NULL_DISCRIMINATOR)
+            return nullptr;
+        return variant_type->getVariant(discriminator);
+    }
+
+    if (isDynamic(type))
+        return assert_cast<const ColumnDynamic &>(*column).getTypeAt(0);
+
+    return type;
+}
+
+static bool isVariantOrDynamic(const DataTypePtr & type)
+{
+    return type && (isVariant(type) || isDynamic(type));
+}
+
 /// Converts one field of a partition value to the type of the partition key column.
 ///
 /// Text parsing of the date and time types is lenient: a day or a time of day that does not exist rolls over
@@ -10713,6 +10752,12 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
 
             const auto * tuple_type = typeid_cast<const DataTypeTuple *>(partition_key_value_type.get());
             partition_key_value_type = (tuple_type && tuple_type->getElements().size() == 1) ? tuple_type->getElements()[0] : nullptr;
+            if (isVariantOrDynamic(partition_key_value_type))
+                partition_key_value_type = getActiveTypeOfPartitionValue(evaluateConstantExpressionAsColumn(partition_value_ast, local_context), 0);
+        }
+        else if (isVariantOrDynamic(partition_key_value_type))
+        {
+            partition_key_value_type = getActiveTypeOfPartitionValue(evaluateConstantExpressionAsColumn(partition_value_ast, local_context), {});
         }
 
         partition_row[0] = convertPartitionFieldToType(partition_key_value, key_sample_block.getByPosition(0).type, partition_key_value_type.get());
@@ -10736,9 +10781,18 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
         if (tuple_type && tuple_type->getElements().size() != fields_count)
             tuple_type = nullptr;
 
+        std::optional<ConstantValue> partition_key_column;
         for (size_t i = 0; i < fields_count; ++i)
-            partition_row[i] = convertPartitionFieldToType(
-                tuple[i], key_sample_block.getByPosition(i).type, tuple_type ? tuple_type->getElements()[i].get() : nullptr);
+        {
+            DataTypePtr element_type = tuple_type ? tuple_type->getElements()[i] : nullptr;
+            if (isVariantOrDynamic(element_type))
+            {
+                if (!partition_key_column)
+                    partition_key_column.emplace(evaluateConstantExpressionAsColumn(partition_value_ast, local_context));
+                element_type = getActiveTypeOfPartitionValue(*partition_key_column, i);
+            }
+            partition_row[i] = convertPartitionFieldToType(tuple[i], key_sample_block.getByPosition(i).type, element_type.get());
+        }
     }
 
     MergeTreePartition partition(std::move(partition_row));
