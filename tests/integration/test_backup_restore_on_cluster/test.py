@@ -1290,9 +1290,10 @@ def test_shutdown_waits_for_backup_that_arrives_during_shutdown():
     node1.query("INSERT INTO tbl VALUES (3)")
     node2.query("INSERT INTO tbl VALUES (5)")
 
-    # Holds node2's part of the backup after its query is running and before the backup is registered,
-    # so the graceful restart below begins inside that window. The restart clears the failpoint.
-    node2.query("SYSTEM ENABLE FAILPOINT backups_delay_before_registering_operation")
+    # Holds node2's part of the backup after its query is running and before the backup is registered, until
+    # the graceful shutdown below stops node2's DDL worker, which it does only after cancelling the queries.
+    # The restart clears the failpoint.
+    node2.query("SYSTEM ENABLE FAILPOINT backups_hold_registration_until_ddl_worker_stops")
 
     backup_name = new_backup_name()
 
@@ -1342,9 +1343,10 @@ def test_shutdown_waits_for_restore_that_arrives_during_shutdown():
     node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
     node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
-    # Holds node2's part of the restore after its query is running and before the restore is registered,
-    # so the graceful restart below begins inside that window. The restart clears the failpoint.
-    node2.query("SYSTEM ENABLE FAILPOINT backups_delay_before_registering_operation")
+    # Holds node2's part of the restore after its query is running and before the restore is registered, until
+    # the graceful shutdown below stops node2's DDL worker, which it does only after cancelling the queries.
+    # The restart clears the failpoint.
+    node2.query("SYSTEM ENABLE FAILPOINT backups_hold_registration_until_ddl_worker_stops")
 
     id = node1.query(
         f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name} ASYNC"

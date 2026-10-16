@@ -298,7 +298,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(restore_pause_on_start) \
     PAUSEABLE_ONCE(restore_pause_before_data_restore_tasks) \
     PAUSEABLE_ONCE(backups_pause_before_publishing_progress) \
-    REGULAR(backups_delay_before_registering_operation) \
+    REGULAR(backups_hold_registration_until_ddl_worker_stops) \
     PAUSEABLE_ONCE(restore_pause_before_publishing_final_progress) \
     PAUSEABLE(sc_state_application_pause) \
     PAUSEABLE(sc_state_application_pause_after_fetch) \
