@@ -1,14 +1,20 @@
-#include <Storages/Statistics/StatisticsUniq.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeNullable.h>
+#include <Columns/IColumn.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <Columns/ColumnLowCardinality.h>
-#include <Columns/ColumnSparse.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/IDataType.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Storages/Statistics/StatisticsUniq.h>
+#include <Storages/Statistics/StatisticsUniqBuildProbe.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
 
 StatisticsUniq::StatisticsUniq(const SingleStatisticsDescription & description, const DataTypePtr & data_type)
     : IStatistics(description)
@@ -27,29 +33,18 @@ StatisticsUniq::~StatisticsUniq()
 
 void StatisticsUniq::build(const ColumnPtr & column)
 {
-    const IColumn * raw_column_ptr = nullptr;
-
-    /// For sparse and low cardinality columns an extra default
-    /// value may be added. That is ok since the uniq count is an estimation.
-    if (const auto * column_sparse = typeid_cast<const ColumnSparse *>(column.get()))
-    {
-        raw_column_ptr = &column_sparse->getValuesColumn();
-    }
-    else if (const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(column.get()))
-    {
-        raw_column_ptr = column_low_cardinality->getDictionary().getNestedColumn().get();
-    }
-    else
-    {
-        raw_column_ptr = column.get();
-    }
-
+    auto raw_column = getRawColumnForUniqBuild(column);
+    const IColumn * raw_column_ptr = raw_column.get();
     collector->addBatchSinglePlace(0, raw_column_ptr->size(), data, &raw_column_ptr, nullptr);
 }
 
 void StatisticsUniq::merge(const StatisticsPtr & other_stats)
 {
     const StatisticsUniq * other = typeid_cast<const StatisticsUniq *>(other_stats.get());
+    /// Callers route incompatible statistics (e.g. the assumed-all-distinct materialization of the
+    /// same logical type) through the ColumnStatistics::merge policy, so this should never fire.
+    if (!other)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot merge uniq statistics with {}", other_stats->getNameForLogs());
     collector->merge(data, other->data, arena.get());
 }
 
@@ -103,9 +98,7 @@ UInt64 StatisticsUniq::estimateCardinality() const
 
 bool uniqStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & data_type)
 {
-    DataTypePtr inner_data_type = removeNullable(data_type);
-    inner_data_type = removeLowCardinalityAndNullable(inner_data_type);
-    return inner_data_type->isValueRepresentedByNumber() || isStringOrFixedString(inner_data_type);
+    return dataTypeSupportsUniqStatistics(data_type);
 }
 
 StatisticsPtr uniqStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type)

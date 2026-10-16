@@ -16,6 +16,7 @@
 #include <Parsers/FieldFromAST.h>
 #include <Parsers/isDiskFunction.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/Statistics/Statistics.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <Common/Exception.h>
 #include <Common/FieldVisitorToString.h>
@@ -2449,10 +2450,33 @@ not during inserts.
 Comma-separated list of statistics types to calculate automatically on all suitable columns.
 Supported statistics types: basic, tdigest, countmin, uniq, uniq_v2.
 The `minmax` statistics type is deprecated: it is a subset of `basic`, which should be used instead.
+The `assumed_all_distinct` materialization is not allowed here: declare it per column with `STATISTICS(uniq_v2(assumed_all_distinct))`, or use [auto_statistics_assume_floats_distinct](#auto_statistics_assume_floats_distinct) and [auto_statistics_assume_long_strings_distinct](#auto_statistics_assume_long_strings_distinct).
 )", 0, \
         {"26.7", "minmax, uniq", "basic, uniq_v2", "Deprecate the `minmax` statistics type and replace it with `basic` (a superset of `minmax`) in the default auto statistics; also replace `uniq` with `uniq_v2` for less overhead on inserts and memory"}, \
         {"26.4", "", "minmax, uniq", "Enable auto statistics by default"}, \
         {"25.10", "", "", "New setting"}) \
+    DECLARE(Bool, auto_statistics_assume_floats_distinct, false, R"(
+When enabled, implicit cardinality statistics (added through [auto_statistics_types](#auto_statistics_types)) for Float columns are materialized with an all-distinct assumption instead of scanning values.
+Explicitly declared `STATISTICS(uniq)` / `STATISTICS(uniq_v2)` columns keep building real sketches; use `STATISTICS(uniq_v2(assumed_all_distinct))` to opt a column in explicitly.
+Columns whose ratio of default-valued rows reaches [ratio_of_defaults_for_sparse_serialization](#ratio_of_defaults_for_sparse_serialization) keep real sketches, since repeated defaults contradict the assumption.
+Existing parts keep their statistics until rebuilt: after disabling this setting, statistics are restored on the next merge (with [materialize_statistics_on_merge](#materialize_statistics_on_merge)) or by `ALTER TABLE ... MATERIALIZE STATISTICS`. A change of `ratio_of_defaults_for_sparse_serialization` only affects newly built statistics; use `ALTER TABLE ... MATERIALIZE STATISTICS` to re-evaluate existing parts.
+)", 0, \
+        {"26.10", false, false, "New setting to materialize Float cardinality statistics with an all-distinct assumption."}) \
+    DECLARE(Bool, auto_statistics_assume_long_strings_distinct, false, R"(
+When enabled, implicit cardinality statistics (added through [auto_statistics_types](#auto_statistics_types)) for String and FixedString columns whose probed average value length is at least [auto_statistics_long_string_distinct_min_length](#auto_statistics_long_string_distinct_min_length) are materialized with an all-distinct assumption instead of scanning all values.
+Explicitly declared `STATISTICS(uniq)` / `STATISTICS(uniq_v2)` columns keep building real sketches; use `STATISTICS(uniq_v2(assumed_all_distinct))` to opt a column in explicitly.
+Existing parts keep their statistics until rebuilt: after disabling this setting, statistics are restored on the next merge (with [materialize_statistics_on_merge](#materialize_statistics_on_merge)) or by `ALTER TABLE ... MATERIALIZE STATISTICS`.
+)", 0, \
+        {"26.10", false, false, "New setting to materialize long String cardinality statistics with an all-distinct assumption."}) \
+    DECLARE(UInt64, auto_statistics_long_string_distinct_min_length, 64, R"(
+Average string byte length threshold used by [auto_statistics_assume_long_strings_distinct](#auto_statistics_assume_long_strings_distinct).
+A change only affects newly built statistics: merges keep existing assumptions, use `ALTER TABLE ... MATERIALIZE STATISTICS` to re-evaluate existing parts.
+)", 0, \
+        {"26.10", 64, 64, "New setting controlling the average string length threshold for all-distinct cardinality statistics."}) \
+    DECLARE(UInt64, auto_statistics_long_string_distinct_probe_rows, 1000, R"(
+Number of initial rows probed to decide whether [auto_statistics_assume_long_strings_distinct](#auto_statistics_assume_long_strings_distinct) applies. Set to `0` to disable the long-string all-distinct assumption.
+)", 0, \
+        {"26.10", 1000, 1000, "New setting controlling how many rows are probed for long-string all-distinct cardinality statistics."}) \
     DECLARE(UInt64, packed_skip_index_max_bytes, 1024 * 1024, R"(
 Threshold (serialized on-disk bytes, i.e. after the substream's compression and hashing
 chain) below which a skip-index substream is bundled into a single `skp_idx.packed`
@@ -3289,6 +3313,17 @@ MergeTreeSettings::MergeTreeSettings(MergeTreeSettings && settings) noexcept = d
 MergeTreeSettings::~MergeTreeSettings() = default;
 
 MERGETREE_SETTINGS_SUPPORTED_TYPES(MergeTreeSettings, IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR)
+
+StatisticsBuildOptions getStatisticsBuildOptions(const MergeTreeSettings & settings)
+{
+    return {
+        .assume_floats_distinct = settings[MergeTreeSetting::auto_statistics_assume_floats_distinct],
+        .assume_long_strings_distinct = settings[MergeTreeSetting::auto_statistics_assume_long_strings_distinct],
+        .long_string_distinct_min_length = settings[MergeTreeSetting::auto_statistics_long_string_distinct_min_length],
+        .long_string_distinct_probe_rows = settings[MergeTreeSetting::auto_statistics_long_string_distinct_probe_rows],
+        .max_default_ratio_for_assumed_distinct
+        = static_cast<Float64>(settings[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization].value)};
+}
 
 bool MergeTreeSettings::has(std::string_view name) const
 {

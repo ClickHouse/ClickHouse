@@ -3,10 +3,12 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTStatisticsDeclaration.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Storages/ColumnsDescription.h>
 
+#include <optional>
 
 namespace DB
 {
@@ -26,6 +28,7 @@ SingleStatisticsDescription & SingleStatisticsDescription::operator=(const Singl
     type = other.type;
     ast = other.ast ? other.ast->clone() : nullptr;
     is_implicit = other.is_implicit;
+    materialization = other.materialization;
 
     return *this;
 }
@@ -38,6 +41,7 @@ SingleStatisticsDescription & SingleStatisticsDescription::operator=(SingleStati
     type = std::exchange(other.type, StatisticsType{});
     ast = other.ast ? other.ast->clone() : nullptr;
     is_implicit = other.is_implicit;
+    materialization = other.materialization;
     other.ast.reset();
 
     return *this;
@@ -79,8 +83,58 @@ String statisticsTypeToString(StatisticsType type)
             return "basic";
         case StatisticsType::UniqV2:
             return "uniq_v2";
+        case StatisticsType::UniqAssumedAllDistinct:
+            return "uniq_assumed_all_distinct";
+        case StatisticsType::UniqV2AssumedAllDistinct:
+            return "uniq_v2_assumed_all_distinct";
         default:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown statistics type: {}. Supported statistics types are 'basic', 'countmin', 'minmax', 'tdigest', 'uniq' and 'uniq_v2'", type);
+    }
+}
+
+String statisticsMaterializationToString(StatisticsMaterialization materialization)
+{
+    switch (materialization)
+    {
+        case StatisticsMaterialization::Default: return "default";
+        case StatisticsMaterialization::AssumedAllDistinct: return "assumed_all_distinct";
+    }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown statistics materialization: {}", static_cast<unsigned>(materialization));
+}
+
+ASTPtr makeStatisticsTypeAST(StatisticsType type, StatisticsMaterialization materialization)
+{
+    if (materialization == StatisticsMaterialization::AssumedAllDistinct)
+        return makeASTFunction(
+            statisticsTypeToString(type), make_intrusive<ASTIdentifier>(statisticsMaterializationToString(materialization)));
+
+    auto function = makeASTFunction(statisticsTypeToString(type));
+    function->setNoEmptyArgs(true);
+    return function;
+}
+
+bool isAssumedAllDistinctSerializedStatisticsType(StatisticsType type)
+{
+    return type == StatisticsType::UniqAssumedAllDistinct || type == StatisticsType::UniqV2AssumedAllDistinct;
+}
+
+StatisticsType getLogicalStatisticsType(StatisticsType type)
+{
+    switch (type)
+    {
+        case StatisticsType::UniqAssumedAllDistinct: return StatisticsType::Uniq;
+        case StatisticsType::UniqV2AssumedAllDistinct: return StatisticsType::UniqV2;
+        default: return type;
+    }
+}
+
+StatisticsType getAssumedAllDistinctSerializedStatisticsType(StatisticsType type)
+{
+    switch (type)
+    {
+        case StatisticsType::Uniq: return StatisticsType::UniqAssumedAllDistinct;
+        case StatisticsType::UniqV2: return StatisticsType::UniqV2AssumedAllDistinct;
+        default: throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistics type {} cannot be materialized as assumed_all_distinct", type);
     }
 }
 
@@ -89,13 +143,18 @@ String SingleStatisticsDescription::getTypeName() const
     return statisticsTypeToString(type);
 }
 
-SingleStatisticsDescription::SingleStatisticsDescription(StatisticsType type_, ASTPtr ast_, bool is_implicit_)
-    : type(type_), ast(ast_), is_implicit(is_implicit_)
-{}
+SingleStatisticsDescription::SingleStatisticsDescription(
+    StatisticsType type_, ASTPtr ast_, bool is_implicit_, StatisticsMaterialization materialization_)
+    : type(type_)
+    , ast(ast_)
+    , is_implicit(is_implicit_)
+    , materialization(materialization_)
+{
+}
 
 bool SingleStatisticsDescription::operator==(const SingleStatisticsDescription & other) const
 {
-    return type == other.type && is_implicit == other.is_implicit;
+    return type == other.type && is_implicit == other.is_implicit && materialization == other.materialization;
 }
 
 bool ColumnStatisticsDescription::operator==(const ColumnStatisticsDescription & other) const
@@ -124,7 +183,94 @@ bool ColumnStatisticsDescription::contains(const String & stat_type) const
     return types_to_desc.contains(stringToStatisticsType(stat_type));
 }
 
-void ColumnStatisticsDescription::merge(const ColumnStatisticsDescription & other, const String & merging_column_name, DataTypePtr merging_column_type, bool if_not_exists)
+bool isUniqLikeStatisticsType(StatisticsType type)
+{
+    return type == StatisticsType::Uniq || type == StatisticsType::UniqV2;
+}
+
+namespace
+{
+
+std::optional<String> getIdentifierOrStringLiteralName(const ASTPtr & ast)
+{
+    if (const auto * identifier = ast->as<ASTIdentifier>())
+        return identifier->name();
+
+    if (const auto * literal = ast->as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::String)
+        return literal->value.safeGet<String>();
+
+    return std::nullopt;
+}
+
+std::optional<String> getStatisticsMaterializationNameFromArgument(const ASTPtr & ast)
+{
+    if (auto name = getIdentifierOrStringLiteralName(ast))
+        return name;
+
+    const auto * function = ast->as<ASTFunction>();
+    if (!function || !function->arguments || function->name != "equals" || function->arguments->children.size() != 2)
+        return std::nullopt;
+
+    auto key = getIdentifierOrStringLiteralName(function->arguments->children[0]);
+    if (!key || Poco::toLower(*key) != "materialization")
+        return std::nullopt;
+
+    return getIdentifierOrStringLiteralName(function->arguments->children[1]);
+}
+
+StatisticsMaterialization getStatisticsMaterializationFromAST(const ASTFunction & stat_ast, StatisticsType type)
+{
+    if (!stat_ast.arguments || stat_ast.arguments->children.empty())
+        return StatisticsMaterialization::Default;
+
+    if (!isUniqLikeStatisticsType(type))
+    {
+        for (const auto & argument : stat_ast.arguments->children)
+        {
+            auto materialization_name = getStatisticsMaterializationNameFromArgument(argument);
+            if (materialization_name
+                && Poco::toLower(*materialization_name) == statisticsMaterializationToString(StatisticsMaterialization::AssumedAllDistinct))
+                throw Exception(
+                    ErrorCodes::INCORRECT_QUERY, "Statistics type '{}' cannot use assumed_all_distinct materialization", stat_ast.name);
+        }
+        return StatisticsMaterialization::Default;
+    }
+
+    if (stat_ast.arguments->children.size() != 1)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Statistics type '{}' expects at most one materialization argument", stat_ast.name);
+
+    auto materialization_name = getStatisticsMaterializationNameFromArgument(stat_ast.arguments->children[0]);
+    if (!materialization_name)
+        throw Exception(
+            ErrorCodes::INCORRECT_QUERY,
+            "Invalid materialization argument for statistics type '{}'. Expected 'assumed_all_distinct'",
+            stat_ast.name);
+
+    materialization_name = Poco::toLower(*materialization_name);
+    if (*materialization_name == statisticsMaterializationToString(StatisticsMaterialization::AssumedAllDistinct))
+        return StatisticsMaterialization::AssumedAllDistinct;
+
+    throw Exception(
+        ErrorCodes::INCORRECT_QUERY,
+        "Unknown materialization '{}' for statistics type '{}'. Supported materialization is 'assumed_all_distinct'",
+        *materialization_name,
+        stat_ast.name);
+}
+
+SingleStatisticsDescription getSingleStatisticsDescriptionFromAST(const ASTPtr & ast, bool is_implicit)
+{
+    const auto & stat_ast = ast->as<const ASTFunction &>();
+    auto type = stringToStatisticsType(Poco::toLower(stat_ast.name));
+    auto materialization = getStatisticsMaterializationFromAST(stat_ast, type);
+    auto ast_to_store
+        = materialization == StatisticsMaterialization::AssumedAllDistinct ? makeStatisticsTypeAST(type, materialization) : ast->clone();
+    return SingleStatisticsDescription(type, ast_to_store, is_implicit, materialization);
+}
+
+}
+
+void ColumnStatisticsDescription::merge(
+    const ColumnStatisticsDescription & other, const String & merging_column_name, DataTypePtr merging_column_type, bool if_not_exists)
 {
     chassert(merging_column_type);
 
@@ -162,11 +308,10 @@ std::vector<std::pair<String, ColumnStatisticsDescription>> ColumnStatisticsDesc
     for (const auto & stat_ast : stat_definition_ast->types->children)
     {
         String stat_type_name = stat_ast->as<ASTFunction &>().name;
-        auto stat_type = stringToStatisticsType(Poco::toLower(stat_type_name));
-        if (statistics_types.contains(stat_type))
+        auto stat = getSingleStatisticsDescriptionFromAST(stat_ast, false);
+        if (statistics_types.contains(stat.type))
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Statistics type {} was specified more than once", stat_type_name);
 
-        SingleStatisticsDescription stat(stat_type, stat_ast->clone(), false);
         statistics_types.emplace(stat.type, std::move(stat));
     }
 
@@ -193,7 +338,8 @@ std::vector<std::pair<String, ColumnStatisticsDescription>> ColumnStatisticsDesc
     return result;
 }
 
-ColumnStatisticsDescription ColumnStatisticsDescription::fromStatisticsDescriptionAST(const ASTPtr & statistics_desc, const String & column_name, DataTypePtr data_type)
+ColumnStatisticsDescription ColumnStatisticsDescription::fromStatisticsDescriptionAST(
+    const ASTPtr & statistics_desc, const String & column_name, DataTypePtr data_type, bool is_implicit_)
 {
     const auto & stat_type_list_ast = statistics_desc->as<ASTFunction &>().arguments;
     if (stat_type_list_ast->children.empty())
@@ -204,7 +350,7 @@ ColumnStatisticsDescription ColumnStatisticsDescription::fromStatisticsDescripti
     {
         const auto & stat_type = ast->as<const ASTFunction &>().name;
 
-        SingleStatisticsDescription stat(stringToStatisticsType(Poco::toLower(stat_type)), ast->clone(), false);
+        auto stat = getSingleStatisticsDescriptionFromAST(ast, is_implicit_);
         if (stats.types_to_desc.contains(stat.type))
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Column {} already contains statistics type {}", column_name, stat_type);
 

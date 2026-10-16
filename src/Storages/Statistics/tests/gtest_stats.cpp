@@ -6,37 +6,38 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/IColumn.h>
-#include <Common/Exception.h>
 #include <Core/Block.h>
 #include <Core/ColumnWithTypeAndName.h>
+#include <Core/Field.h>
+#include <Core/NamesAndTypes.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Interpreters/convertFieldToType.h>
 #include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
-#include <Core/Field.h>
-#include <Core/NamesAndTypes.h>
-#include <DataTypes/DataTypeString.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/convertFieldToType.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/parseQuery.h>
+#include <Storages/ColumnsDescription.h>
+#include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/Statistics/Statistics.h>
+#include <Storages/Statistics/StatisticsAssumedAllDistinct.h>
 #include <Storages/Statistics/StatisticsBasic.h>
 #include <Storages/Statistics/StatisticsMinMax.h>
-#include <Storages/StatisticsDescription.h>
-#include <Storages/ColumnsDescription.h>
 #include <Storages/Statistics/StatisticsTDigest.h>
-#include <Storages/Statistics/ConditionSelectivityEstimator.h>
-#include <Parsers/parseQuery.h>
-#include <Parsers/ExpressionListParsers.h>
+#include <Storages/StatisticsDescription.h>
+#include <Common/Exception.h>
 
 using namespace DB;
 
@@ -267,13 +268,323 @@ namespace
 /// Build a `ColumnStatistics` carrying the requested types over `data_type`.
 ColumnStatisticsPtr createTestStats(
     const std::vector<StatisticsType> & types,
-    const DataTypePtr & data_type)
+    const DataTypePtr & data_type,
+    bool is_implicit = false,
+    StatisticsMaterialization materialization = StatisticsMaterialization::Default)
 {
     ColumnStatisticsDescription desc;
     desc.data_type = data_type;
     for (auto type : types)
-        desc.types_to_desc.emplace(type, SingleStatisticsDescription(type, nullptr, false));
+        desc.types_to_desc.emplace(type, SingleStatisticsDescription(type, nullptr, is_implicit, materialization));
     return MergeTreeStatisticsFactory::instance().get(desc);
+}
+
+
+TEST(Statistics, AssumedCardinalityPolicyReplacesOnlyImplicitUniqStatistics)
+{
+    tryRegisterAggregateFunctions();
+
+    auto data_type = std::make_shared<DataTypeFloat64>();
+
+    StatisticsBuildOptions options;
+    options.assume_floats_distinct = true;
+
+    /// Implicit statistics (auto_statistics_types) are converted to the assumed materialization.
+    auto implicit_stats = createTestStats({StatisticsType::UniqV2}, data_type, /*is_implicit=*/true);
+    auto implicit_column = data_type->createColumn();
+    for (UInt64 i = 0; i < 100; ++i)
+        implicit_column->insert(static_cast<Float64>(i % 5));
+
+    implicit_stats->build(static_cast<const IColumn &>(*implicit_column).getPtr(), options);
+    ASSERT_TRUE(implicit_stats->getStats().contains(StatisticsType::UniqV2));
+    EXPECT_TRUE(isAssumedAllDistinctStatistics(*implicit_stats->getStats().at(StatisticsType::UniqV2)));
+    EXPECT_EQ(implicit_stats->estimateCardinality(), 100);
+
+    /// An explicit STATISTICS(uniq_v2) clause is a request for a real sketch and is left alone.
+    auto explicit_stats = createTestStats({StatisticsType::UniqV2}, data_type, /*is_implicit=*/false);
+    auto explicit_column = data_type->createColumn();
+    for (UInt64 i = 0; i < 100; ++i)
+        explicit_column->insert(static_cast<Float64>(i % 5));
+
+    explicit_stats->build(static_cast<const IColumn &>(*explicit_column).getPtr(), options);
+    ASSERT_TRUE(explicit_stats->getStats().contains(StatisticsType::UniqV2));
+    EXPECT_FALSE(isAssumedAllDistinctStatistics(*explicit_stats->getStats().at(StatisticsType::UniqV2)));
+    EXPECT_EQ(explicit_stats->estimateCardinality(), 5);
+}
+
+TEST(Statistics, AssumedFloatPolicySkipsDefaultDominatedColumns)
+{
+    tryRegisterAggregateFunctions();
+
+    auto data_type = std::make_shared<DataTypeFloat64>();
+
+    StatisticsBuildOptions options;
+    options.assume_floats_distinct = true;
+    options.max_default_ratio_for_assumed_distinct = 0.5;
+
+    /// 90% zeros: repeated defaults contradict the all-distinct assumption even though the column
+    /// arrives as a full (not sparse) column on the insert path, so the real sketch is kept.
+    auto stats = createTestStats({StatisticsType::UniqV2}, data_type, /*is_implicit=*/true);
+    auto column = data_type->createColumn();
+    for (UInt64 i = 0; i < 1000; ++i)
+        column->insert(i % 10 == 0 ? static_cast<Float64>(i) : 0.0);
+
+    stats->build(static_cast<const IColumn &>(*column).getPtr(), options);
+    ASSERT_TRUE(stats->getStats().contains(StatisticsType::UniqV2));
+    EXPECT_FALSE(isAssumedAllDistinctStatistics(*stats->getStats().at(StatisticsType::UniqV2)));
+    EXPECT_LT(stats->estimateCardinality(), 500);
+}
+
+TEST(Statistics, AssumedFloatPolicyRejectionIsFinalForThePart)
+{
+    tryRegisterAggregateFunctions();
+
+    auto data_type = std::make_shared<DataTypeFloat64>();
+
+    StatisticsBuildOptions options;
+    options.assume_floats_distinct = true;
+    options.max_default_ratio_for_assumed_distinct = 0.5;
+
+    auto stats = createTestStats({StatisticsType::UniqV2}, data_type, /*is_implicit=*/true);
+
+    /// An empty block carries no evidence and must not decide in favour of the assumption.
+    auto empty_column = data_type->createColumn();
+    stats->build(static_cast<const IColumn &>(*empty_column).getPtr(), options);
+    EXPECT_FALSE(isAssumedAllDistinctStatistics(*stats->getStats().at(StatisticsType::UniqV2)));
+
+    /// The first block (900 zeros, values 1..100) fails the default-ratio guard.
+    auto first_column = data_type->createColumn();
+    for (UInt64 i = 0; i < 1000; ++i)
+        first_column->insert(i < 900 ? 0.0 : static_cast<Float64>(i - 899));
+    stats->build(static_cast<const IColumn &>(*first_column).getPtr(), options);
+    EXPECT_FALSE(isAssumedAllDistinctStatistics(*stats->getStats().at(StatisticsType::UniqV2)));
+
+    /// A later block passing the guard must not switch to the assumption: that would discard the
+    /// real sketch built so far and report only this block's row count.
+    auto second_column = data_type->createColumn();
+    second_column->insert(101.0);
+    stats->build(static_cast<const IColumn &>(*second_column).getPtr(), options);
+    EXPECT_FALSE(isAssumedAllDistinctStatistics(*stats->getStats().at(StatisticsType::UniqV2)));
+    EXPECT_EQ(stats->estimateCardinality(), 102);
+}
+
+TEST(Statistics, AssumedLongStringPolicyStopsBuildingUniqAfterProbeThreshold)
+{
+    tryRegisterAggregateFunctions();
+
+    auto data_type = std::make_shared<DataTypeString>();
+    auto stats = createTestStats({StatisticsType::UniqV2}, data_type, /*is_implicit=*/true);
+
+    StatisticsBuildOptions options;
+    options.assume_long_strings_distinct = true;
+    options.long_string_distinct_min_length = 64;
+    options.long_string_distinct_probe_rows = 10;
+
+    auto first_column = data_type->createColumn();
+    for (UInt64 i = 0; i < 5; ++i)
+        first_column->insert(String(80, 'x'));
+
+    stats->build(static_cast<const IColumn &>(*first_column).getPtr(), options);
+    ASSERT_TRUE(stats->getStats().contains(StatisticsType::UniqV2));
+    EXPECT_FALSE(isAssumedAllDistinctStatistics(*stats->getStats().at(StatisticsType::UniqV2)));
+
+    auto second_column = data_type->createColumn();
+    for (UInt64 i = 0; i < 10; ++i)
+        second_column->insert(String(80, 'x'));
+
+    stats->build(static_cast<const IColumn &>(*second_column).getPtr(), options);
+    ASSERT_TRUE(stats->getStats().contains(StatisticsType::UniqV2));
+    EXPECT_TRUE(isAssumedAllDistinctStatistics(*stats->getStats().at(StatisticsType::UniqV2)));
+    EXPECT_EQ(stats->estimateCardinality(), 15);
+}
+
+TEST(Statistics, AssumedCardinalityMergeConvertsOnlyAssumedVariants)
+{
+    tryRegisterAggregateFunctions();
+
+    auto data_type = std::make_shared<DataTypeUInt64>();
+
+    auto uniq_stats = createTestStats({StatisticsType::Uniq, StatisticsType::UniqV2}, data_type);
+    auto uniq_column = data_type->createColumn();
+    for (UInt64 i = 0; i < 5; ++i)
+        uniq_column->insert(i);
+    uniq_stats->build(static_cast<const IColumn &>(*uniq_column).getPtr());
+
+    auto assumed_stats
+        = createTestStats({StatisticsType::UniqV2}, data_type, /*is_implicit=*/false, StatisticsMaterialization::AssumedAllDistinct);
+    auto assumed_column = data_type->createColumn();
+    for (UInt64 i = 0; i < 7; ++i)
+        assumed_column->insert(i);
+    assumed_stats->build(static_cast<const IColumn &>(*assumed_column).getPtr());
+
+    /// UniqV2 has an assumed side, so it merges into an assumed statistic with the summed
+    /// cardinality (the side lacking assumed contributes its sketch estimate). Uniq has no
+    /// assumed side and keeps its real sketch.
+    uniq_stats->merge(assumed_stats);
+    ASSERT_TRUE(uniq_stats->getStats().contains(StatisticsType::Uniq));
+    ASSERT_TRUE(uniq_stats->getStats().contains(StatisticsType::UniqV2));
+    EXPECT_FALSE(isAssumedAllDistinctStatistics(*uniq_stats->getStats().at(StatisticsType::Uniq)));
+    EXPECT_TRUE(isAssumedAllDistinctStatistics(*uniq_stats->getStats().at(StatisticsType::UniqV2)));
+    EXPECT_EQ(uniq_stats->getStats().at(StatisticsType::Uniq)->estimateCardinality(), 5);
+    EXPECT_EQ(uniq_stats->getStats().at(StatisticsType::UniqV2)->estimateCardinality(), 12);
+}
+
+TEST(Statistics, MergeIntoEmptyDoesNotAliasOtherStatistics)
+{
+    tryRegisterAggregateFunctions();
+
+    auto data_type = std::make_shared<DataTypeUInt64>();
+
+    /// Empty accumulator with a different structure than the parts being merged.
+    auto accumulator = createTestStats({StatisticsType::UniqV2}, data_type);
+
+    auto first_part = createTestStats({StatisticsType::Uniq}, data_type);
+    auto first_column = data_type->createColumn();
+    for (UInt64 i = 0; i < 5; ++i)
+        first_column->insert(i);
+    first_part->build(static_cast<const IColumn &>(*first_column).getPtr());
+
+    auto second_part = createTestStats({StatisticsType::Uniq}, data_type);
+    auto second_column = data_type->createColumn();
+    for (UInt64 i = 5; i < 12; ++i)
+        second_column->insert(i);
+    second_part->build(static_cast<const IColumn &>(*second_column).getPtr());
+
+    accumulator->merge(first_part);
+    accumulator->merge(second_part);
+
+    EXPECT_EQ(accumulator->estimateCardinality(), 12);
+    /// Merging the second part into the accumulator must not have mutated the first part's
+    /// statistics through shared pointers.
+    EXPECT_EQ(first_part->estimateCardinality(), 5);
+    EXPECT_EQ(second_part->estimateCardinality(), 7);
+}
+
+TEST(Statistics, StaleAssumedStatisticsDetection)
+{
+    tryRegisterAggregateFunctions();
+
+    auto data_type = std::make_shared<DataTypeFloat64>();
+
+    StatisticsBuildOptions assume_options;
+    assume_options.assume_floats_distinct = true;
+
+    /// A part whose implicit uniq statistics were materialized with the assumption.
+    auto part_stats = createTestStats({StatisticsType::UniqV2}, data_type, /*is_implicit=*/true);
+    auto column = data_type->createColumn();
+    for (UInt64 i = 0; i < 100; ++i)
+        column->insert(static_cast<Float64>(i));
+    part_stats->build(static_cast<const IColumn &>(*column).getPtr(), assume_options);
+    ASSERT_TRUE(isAssumedAllDistinctStatistics(*part_stats->getStats().at(StatisticsType::UniqV2)));
+
+    auto metadata_stats = createTestStats({StatisticsType::UniqV2}, data_type, /*is_implicit=*/true);
+
+    /// While the setting is enabled the assumption is not stale; after disabling it, it is.
+    EXPECT_FALSE(metadata_stats->hasStaleAssumedStatistics(*part_stats, assume_options));
+    EXPECT_TRUE(metadata_stats->hasStaleAssumedStatistics(*part_stats, StatisticsBuildOptions{}));
+
+    /// The check is metadata-only: tightening the data-dependent default-ratio guard does not make
+    /// the assumption stale (that would need the part's data); `MATERIALIZE STATISTICS` re-evaluates it.
+    StatisticsBuildOptions tightened_options = assume_options;
+    tightened_options.max_default_ratio_for_assumed_distinct = 0.0;
+    EXPECT_FALSE(metadata_stats->hasStaleAssumedStatistics(*part_stats, tightened_options));
+
+    /// An explicitly declared assumed materialization is never stale.
+    auto explicit_assumed_metadata
+        = createTestStats({StatisticsType::UniqV2}, data_type, /*is_implicit=*/false, StatisticsMaterialization::AssumedAllDistinct);
+    EXPECT_FALSE(explicit_assumed_metadata->hasStaleAssumedStatistics(*part_stats, StatisticsBuildOptions{}));
+}
+
+TEST(Statistics, CardinalityEstimationPrefersRealSketchOverAssumed)
+{
+    tryRegisterAggregateFunctions();
+
+    auto data_type = std::make_shared<DataTypeFloat64>();
+
+    auto make_column = [&]
+    {
+        auto column = data_type->createColumn();
+        for (UInt64 i = 0; i < 100; ++i)
+            column->insert(static_cast<Float64>(i % 5));
+        return ColumnPtr(std::move(column));
+    };
+
+    auto make_stats = [&](std::initializer_list<SingleStatisticsDescription> descs)
+    {
+        ColumnStatisticsDescription desc;
+        desc.data_type = data_type;
+        for (const auto & single : descs)
+            desc.types_to_desc.emplace(single.type, single);
+        return MergeTreeStatisticsFactory::instance().get(desc);
+    };
+
+    StatisticsBuildOptions assume_options;
+    assume_options.assume_floats_distinct = true;
+
+    /// An implicit `uniq` converted by the settings next to an explicit `STATISTICS(uniq_v2)`: the
+    /// real UniqV2 sketch must win over the assumed Uniq even though Uniq is otherwise preferred.
+    auto settings_mixed = make_stats({
+        SingleStatisticsDescription(StatisticsType::Uniq, nullptr, /*is_implicit_=*/true),
+        SingleStatisticsDescription(StatisticsType::UniqV2, nullptr, /*is_implicit_=*/false),
+    });
+    settings_mixed->build(make_column(), assume_options);
+    ASSERT_TRUE(isAssumedAllDistinctStatistics(*settings_mixed->getStats().at(StatisticsType::Uniq)));
+    ASSERT_FALSE(isAssumedAllDistinctStatistics(*settings_mixed->getStats().at(StatisticsType::UniqV2)));
+    EXPECT_EQ(settings_mixed->estimateCardinality(), 5);
+    EXPECT_EQ(settings_mixed->getEstimate().estimated_cardinality, 5);
+    EXPECT_DOUBLE_EQ(*settings_mixed->estimateEqual(Field(1.0)), 20.0);
+
+    /// `STATISTICS(uniq(assumed_all_distinct), uniq_v2)` declared explicitly.
+    auto declared_mixed = make_stats({
+        SingleStatisticsDescription(StatisticsType::Uniq, nullptr, /*is_implicit_=*/false, StatisticsMaterialization::AssumedAllDistinct),
+        SingleStatisticsDescription(StatisticsType::UniqV2, nullptr, /*is_implicit_=*/false),
+    });
+    declared_mixed->build(make_column());
+    EXPECT_EQ(declared_mixed->estimateCardinality(), 5);
+
+    /// Without a real sketch the assumption is still used, preferring Uniq over UniqV2.
+    auto all_assumed = make_stats({
+        SingleStatisticsDescription(StatisticsType::Uniq, nullptr, /*is_implicit_=*/true),
+        SingleStatisticsDescription(StatisticsType::UniqV2, nullptr, /*is_implicit_=*/true),
+    });
+    all_assumed->build(make_column(), assume_options);
+    EXPECT_TRUE(all_assumed->hasCardinality());
+    EXPECT_EQ(all_assumed->estimateCardinality(), 100);
+    EXPECT_EQ(findPreferredCardinalityStatistics(all_assumed->getStats()), all_assumed->getStats().at(StatisticsType::Uniq).get());
+}
+
+TEST(Statistics, AssumedAllDistinctRoundTripPreservesLogicalType)
+{
+    auto data_type = std::make_shared<DataTypeUInt64>();
+    auto stats = createTestStats({StatisticsType::UniqV2}, data_type, /*is_implicit=*/false, StatisticsMaterialization::AssumedAllDistinct);
+
+    auto column = data_type->createColumn();
+    for (UInt64 i = 0; i < 123; ++i)
+        column->insert(i);
+    stats->build(std::move(column));
+    EXPECT_EQ(stats->estimateCardinality(), 123);
+
+    String serialized;
+    WriteBufferFromString out(serialized);
+    stats->serialize(out);
+    out.finalize();
+
+    ReadBufferFromString version_in(serialized);
+    UInt16 version_raw{};
+    readIntBinary(version_raw, version_in);
+    EXPECT_EQ(static_cast<StatisticsFileVersion>(version_raw), StatisticsFileVersion::V4);
+    UInt64 stat_types_mask{};
+    readIntBinary(stat_types_mask, version_in);
+    EXPECT_TRUE(stat_types_mask & (1ULL << static_cast<UInt8>(StatisticsType::UniqV2AssumedAllDistinct)));
+    EXPECT_FALSE(stat_types_mask & (1ULL << static_cast<UInt8>(StatisticsType::UniqV2)));
+
+    ReadBufferFromString in(serialized);
+    auto restored = ColumnStatistics::deserialize(in, data_type);
+    ASSERT_TRUE(restored);
+    EXPECT_EQ(restored->getNumRows(), 123);
+    ASSERT_TRUE(restored->getStats().contains(StatisticsType::UniqV2));
+    EXPECT_TRUE(isAssumedAllDistinctStatistics(*restored->getStats().at(StatisticsType::UniqV2)));
+    EXPECT_EQ(restored->estimateCardinality(), 123);
 }
 
 /// Build a `Nullable(Int32)` column with `total` rows where every `null_every`-th row is NULL.

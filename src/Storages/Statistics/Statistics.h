@@ -1,8 +1,11 @@
 #pragma once
 
+#include <optional>
 #include <Core/Range.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
+#include <Storages/Statistics/StatisticsFwd.h>
+#include <Storages/Statistics/UniqAssumedAllDistinctPolicy.h>
 #include <Storages/StatisticsDescription.h>
 #include <boost/core/noncopyable.hpp>
 
@@ -66,8 +69,18 @@ struct StatisticsUtils
     static void updateMax(Field & accumulator, const Field & value);
 };
 
-class IStatistics;
-using StatisticsPtr = std::shared_ptr<IStatistics>;
+struct StatisticsBuildOptions
+{
+    bool assume_floats_distinct = false;
+    bool assume_long_strings_distinct = false;
+    UInt64 long_string_distinct_min_length = 64;
+    UInt64 long_string_distinct_probe_rows = 1000;
+    /// Columns whose ratio of default-valued rows reaches this threshold keep real sketches:
+    /// repeated defaults obviously violate the all-distinct assumption. Sourced from the table's
+    /// `ratio_of_defaults_for_sparse_serialization` so the data-based guard matches the
+    /// representation-based ColumnSparse guard used on the merge/mutation read paths.
+    Float64 max_default_ratio_for_assumed_distinct = 1.0;
+};
 
 /// Interface for a single statistics object for a column within a part.
 ///
@@ -96,6 +109,8 @@ public:
     virtual std::optional<Float64> estimateLess(const Field & val) const;  /// summarized cardinality of values < val in the column
     virtual Float64 estimateRange(const Range & range) const;
     virtual String getNameForLogs() const = 0;
+
+    const SingleStatisticsDescription & getDescription() const { return stat; }
 
     /// Returns true iff `other` can be safely merged into this statistics object.
     /// Incompatible state layouts (e.g. a Nullable vs non-Nullable column type change that
@@ -127,13 +142,13 @@ using Estimates = std::unordered_map<String, Estimate>;
 class ColumnStatistics
 {
 public:
-    using StatsMap = std::map<StatisticsType, StatisticsPtr>;
+    using StatsMap = StatisticsMap;
     explicit ColumnStatistics(const ColumnStatisticsDescription & stats_desc_);
 
     void serialize(WriteBuffer & buf) const;
     static std::shared_ptr<ColumnStatistics> deserialize(ReadBuffer & buf, const DataTypePtr & data_type);
 
-    void build(const ColumnPtr & column);
+    void build(const ColumnPtr & column, const StatisticsBuildOptions & options = {});
     void merge(const ColumnStatisticsPtr & other);
 
     UInt64 getNumRows() const { return rows; }
@@ -170,13 +185,22 @@ public:
 
     const StatsMap & getStats() const { return stats; }
     bool structureEquals(const ColumnStatistics & other) const;
+    /// True when `part_stats` carries assumed-all-distinct uniq statistics that this
+    /// (metadata-derived) description does not declare and the current build options no longer
+    /// enable (the setting was disabled), so merges should rebuild them from data instead of
+    /// propagating the stale assumption. Threshold changes are not detected, see
+    /// `UniqAssumedAllDistinctPolicy::hasStaleAssumedStatistics`.
+    bool hasStaleAssumedStatistics(const ColumnStatistics & part_stats, const StatisticsBuildOptions & options) const;
     std::shared_ptr<ColumnStatistics> cloneEmpty() const;
 
 private:
+    void mergeRegularStatistics(const ColumnStatisticsPtr & other, const std::optional<AssumedAllDistinctMergeDecision> & merge_decision);
+
     friend class MergeTreeStatisticsFactory;
     ColumnStatisticsDescription stats_desc;
     StatsMap stats;
     UInt64 rows = 0; /// the number of rows in the column
+    UniqAssumedAllDistinctPolicy assumed_all_distinct_policy;
 };
 
 class ColumnsStatistics : public std::map<String, ColumnStatisticsPtr>
@@ -191,8 +215,8 @@ public:
     explicit ColumnsStatistics(const ColumnsDescription & columns);
     ColumnsStatistics cloneEmpty() const;
 
-    void build(const Block & block);
-    void buildIfExists(const Block & block);
+    void build(const Block & block, const StatisticsBuildOptions & options = {});
+    void buildIfExists(const Block & block, const StatisticsBuildOptions & options = {});
     void merge(const ColumnsStatistics & other);
     Estimates getEstimates() const;
 };
