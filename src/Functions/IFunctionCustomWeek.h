@@ -66,14 +66,10 @@ public:
 
         const IFunction::Monotonicity is_monotonic = {.is_monotonic = true};
 
-        /// A time zone *argument* cannot reach here: `KeyCondition` only chains functions of arity <= 2
-        /// (`isKeyPossiblyWrappedByMonotonicFunctionsImpl`), and for custom-week functions the second
-        /// argument is the week mode. The argument *type*, however, still carries a time zone, and
-        /// execution uses it -- `extractTimeZoneFromFunctionArguments(arguments, 2, 0)` falls back to
-        /// `arguments[0].type->getTimeZone()` when there is no third argument. It must be read off the
-        /// unwrapped type: neither `DataTypeNullable` nor `DataTypeLowCardinality` is a `TimezoneMixin`,
-        /// so the outer type would silently fall back to the session time zone and produce an inverted
-        /// key range.
+        /// The function is executed with the time zone taken from its argument's type
+        /// (`extractTimeZoneFromFunctionArguments`), so the factor comparison below has to use that same
+        /// time zone: a range that lies inside one week of the server time zone can straddle a week
+        /// boundary of the column's time zone, and there the function is not monotonic.
         const DateLUTImpl * date_lut_ptr = &DateLUT::instance();
         if (const auto * timezone = dynamic_cast<const TimezoneMixin *>(type_ptr))
             date_lut_ptr = &timezone->getTimeZone();

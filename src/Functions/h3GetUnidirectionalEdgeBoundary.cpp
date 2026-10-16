@@ -18,7 +18,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
 }
 
@@ -46,18 +45,9 @@ public:
     bool canBeExecutedOnDefaultArguments() const override { return !validator.throw_on_error; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        const auto * arg = arguments[0].get();
-        if (!WhichDataType(arg).isUInt64())
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument {} of function {}. Must be UInt64",
-                arg->getName(), 1, getName());
-
-        return std::make_shared<DataTypeArray>(
-            std::make_shared<DataTypeTuple>(
-                DataTypes{std::make_shared<DataTypeFloat64>(), std::make_shared<DataTypeFloat64>()}));
+        return "(UInt64) -> Array(Tuple(Float64, Float64))";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -130,9 +120,9 @@ Returns the coordinates defining the unidirectional edge [H3](#h3-index).
             "Get boundary coordinates of a unidirectional edge",
             "SELECT h3GetUnidirectionalEdgeBoundary(1248204388774707199) AS boundary",
             R"(
-┌─boundary─────────────────────────────────────────────────────────────────────┐
-│ [(37.4201286776778,-122.03773496427027),(37.337556084353,-122.090428929044)] │
-└──────────────────────────────────────────────────────────────────────────────┘
+┌─boundary────────────────────────────────────────────────────────────────────────┐
+│ [(37.4201286776778,-122.03773496427027),(37.337556084353004,-122.090428929044)] │
+└─────────────────────────────────────────────────────────────────────────────────┘
             )"
         }
     };

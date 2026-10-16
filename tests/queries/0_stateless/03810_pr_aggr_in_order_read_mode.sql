@@ -1,3 +1,4 @@
+-- Tags: no-parallel, no-fasttest
 DROP TABLE IF EXISTS t1;
 
 CREATE TABLE t1 (a UInt8) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity=1;
@@ -11,9 +12,10 @@ SET optimize_aggregation_in_order=1; -- issue is related to this optimization
 
 SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
 
--- TODO: this query will fail if parallel_replicas_filter_pushdown is enabled
---       enable parallel_replicas_filter_pushdown setting explicitly
---       after https://github.com/ClickHouse/ClickHouse/issues/95524 is fixed
+-- This query used to fail with the condition pushed into the fragment - the initiator read in order
+-- off a condition the replicas did not have. It goes into the fragment now only as far as it is
+-- shipped to the replicas too, so the read modes agree.
+-- https://github.com/ClickHouse/ClickHouse/issues/95524
 SELECT a
 FROM t1
 GROUP BY a

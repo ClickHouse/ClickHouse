@@ -130,10 +130,7 @@ public:
             if (const auto * nullable_type = checkAndGetDataType<DataTypeNullable>(type_ptr))
                 type_ptr = nullable_type->getNestedType().get();
 
-            /// The time zone must be taken from the unwrapped type: neither DataTypeNullable nor
-            /// DataTypeLowCardinality is a TimezoneMixin, so looking at the outer type would silently
-            /// fall back to the session time zone while execution uses the nested type's one
-            /// (see extractTimeZoneFromFunctionArguments), producing an inverted key range.
+            /// `LowCardinality` and `Nullable` carry no time zone of their own.
             const DateLUTImpl * date_lut = &DateLUT::instance();
             if (const auto * timezone = dynamic_cast<const TimezoneMixin *>(type_ptr))
                 date_lut = &timezone->getTimeZone();

@@ -1,3 +1,5 @@
+-- Tags: no-parallel-replicas
+-- Tag no-parallel-replicas: `medianDeterministicMerge` over the network sends the `-Merge` state at version `0`, which drops the skip degree, https://github.com/ClickHouse/ClickHouse/issues/122935
 -- `quantileDeterministic` must return the same value for the same data no matter how that data was
 -- split between the partial aggregate states that are merged to produce it. Storing the states in a
 -- table is what makes them go through serialization, which used to drop the reservoir's skip degree:
