@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
+#include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreePrefetchedReadPool.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
@@ -450,11 +451,25 @@ void MergeTreePrefetchedReadPool::fillPerPartStatistics()
 
         part_stat.approx_size_of_mark = read_info.approx_size_of_mark;
 
+        /// A Compact part has no sizes of individual columns, but its reader prefetches a buffer
+        /// per column as well, so estimate the size of a column as an equal share of the data file.
+        std::optional<size_t> compact_part_column_size;
+        if (read_info.data_part_info->isCompactPart())
+        {
+            size_t data_file_size = read_info.data_part_info->getFileSizeOrZero(MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION);
+            size_t num_columns = std::max<size_t>(read_info.data_part_info->getColumns().size(), 1);
+            compact_part_column_size = std::max<size_t>(data_file_size / num_columns, 1);
+        }
+
         auto update_stat_for_column = [&](const auto & column_name)
         {
             size_t column_size = 0;
             auto column = read_info.data_part_info->tryGetColumn(column_name);
-            if (column)
+            if (column && compact_part_column_size)
+            {
+                column_size = *compact_part_column_size;
+            }
+            else if (column)
             {
                 if (column->isSubcolumn() && settings[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading])
                     column_size = read_info.data_part_info->getSubcolumnSize(column_name).data_compressed;
