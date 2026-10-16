@@ -135,6 +135,35 @@ SELECT count(), sum(id) FROM tab_ref WHERE hasPhrase(message, 'needle rare');
 SELECT count(), sum(id) FROM tab_idx WHERE hasPhrase(message, 'needle rare') SETTINGS use_text_index_postings_cache = 1, log_comment = '02346_cache_1';
 SELECT count(), sum(id) FROM tab_idx WHERE hasPhrase(message, 'needle rare') SETTINGS use_text_index_postings_cache = 1, log_comment = '02346_cache_2';
 
+SELECT 'Cached chunks between searched ones';
+DROP TABLE IF EXISTS tab_chunks_ref;
+DROP TABLE IF EXISTS tab_chunks;
+CREATE TABLE tab_chunks_ref (id UInt32, message String) ENGINE = MergeTree ORDER BY id;
+-- Granules align with the 16384-row cache chunks, so a range filter fills exactly the chunks it covers.
+CREATE TABLE tab_chunks
+(
+    id UInt32,
+    message String,
+    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, support_phrase_search = 1)
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS allow_experimental_text_index_phrase_search = 1, text_index_posting_list_codec = 'pfor', index_granularity = 1024, index_granularity_bytes = 0;
+INSERT INTO tab_chunks_ref SELECT number, multiIf(number % 7 = 3, 'alpha beta', number % 7 = 5, 'beta alpha', number % 11 = 0, 'gamma delta', 'alpha gamma beta') FROM numbers(50000);
+INSERT INTO tab_chunks SELECT * FROM tab_chunks_ref;
+
+-- Only the middle chunk is cached, then a forward scan misses, hits and misses again.
+SELECT count(), sum(id) FROM tab_chunks WHERE id BETWEEN 16385 AND 32766 AND hasPhrase(message, 'alpha beta') SETTINGS use_text_index_postings_cache = 1, max_threads = 1;
+SELECT count(), sum(id) FROM tab_chunks_ref WHERE hasPhrase(message, 'alpha beta');
+SELECT count(), sum(id) FROM tab_chunks WHERE hasPhrase(message, 'alpha beta') SETTINGS use_text_index_postings_cache = 1, max_threads = 1;
+
+-- The same in reverse order, where a miss behind the cursors rebuilds them.
+SELECT count(), sum(id) FROM tab_chunks WHERE id BETWEEN 16385 AND 32766 AND hasPhrase(message, 'beta alpha') SETTINGS use_text_index_postings_cache = 1, max_threads = 1;
+SELECT count(), sum(id) FROM tab_chunks_ref WHERE hasPhrase(message, 'beta alpha');
+SELECT count(), sum(id) FROM (
+    SELECT id FROM tab_chunks WHERE hasPhrase(message, 'beta alpha') ORDER BY id DESC LIMIT 100000
+    SETTINGS use_text_index_postings_cache = 1, optimize_read_in_order = 1, max_threads = 1, max_block_size = 4096);
+
 SELECT 'Every search walks cursors, or falls back without a codec';
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, countIf(ProfileEvents['TextIndexPhraseCursorSearches'] > 0), countIf(ProfileEvents['TextIndexPhraseFallbacks'] > 0), count()
@@ -152,3 +181,5 @@ DROP TABLE tab_ref;
 DROP TABLE tab_idx;
 DROP TABLE tab_none;
 DROP TABLE tab_win;
+DROP TABLE tab_chunks_ref;
+DROP TABLE tab_chunks;

@@ -59,6 +59,13 @@ A repeated search is served from the cache
 256	525568
 256	525568
 256	525568
+Cached chunks between searched ones
+2340	57509010
+7143	178575000
+7143	178575000
+2341	57530075
+7143	178589286
+7143	178589286
 Every search walks cursors, or falls back without a codec
 02346_cursors	10	0	10
 02346_cursors_none	0	10	10
