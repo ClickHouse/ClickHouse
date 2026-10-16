@@ -5825,8 +5825,9 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryBuildComparisonAtom(
         = (isNativeInteger(key_expr_type_not_null) || isDateTimeOrDateTime64(key_expr_type_not_null))
         && (isNativeInteger(const_type) || isDateTimeOrDateTime64(const_type));
 
-    /// `Range` closes an open integer bound by stepping it by 1, a whole second here; a scale-0 decimal compares the same.
-    if (cast_not_needed && isDateTime64(key_expr_type_not_null)
+    /// `Range` closes the open integer bound of a strict comparison by stepping it by 1, a whole second here;
+    /// a scale-0 decimal compares the same and is not stepped.
+    if (cast_not_needed && (func_name == "less" || func_name == "greater") && isDateTime64(key_expr_type_not_null)
         && assert_cast<const DataTypeDateTime64 &>(*key_expr_type_not_null).getScale() > 0)
     {
         if (const_value.getType() == Field::Types::Int64)
