@@ -59,8 +59,8 @@ public:
     MutableColumns scatterRows(const PaddedPODArray<UInt64> & row_nums) const;
 
     /// Gathers selected fixed-width values into existing rows. A nullable field stores its null byte
-    /// followed by the value bytes. The caller materializes constant, sparse and replicated columns and
-    /// removes `LowCardinality`. Both spans must describe the same number of rows.
+    /// followed by the value bytes. The source is a full column without `LowCardinality`, not a
+    /// constant, sparse or replicated one. Both spans must describe the same number of rows.
     static void gatherFieldToRows(
         const IColumn & source,
         std::span<const UInt32> source_rows,

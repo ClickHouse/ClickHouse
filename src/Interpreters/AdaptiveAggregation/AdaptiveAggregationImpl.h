@@ -238,11 +238,11 @@ struct AdaptiveMergeTask
 };
 
 /// The misses of a frozen producer's current block, one descriptor per delayed record in staging order: the routing
-/// hash, the source row of the record's arguments, the multiplicity of a count record, and the key. A count record
-/// stands for the rows of its key that the kernel combined into it, consecutive or not. A string-like key is kept as its
-/// size, and the writer copies its bytes out of the block. A fixed-width key is kept as its value, which the kernel has
-/// at hand, while reading it back from the key columns would pack it a second time. The arrays are cleared after every
-/// block but keep their capacity.
+/// hash, the source row of the record's arguments, the multiplicity of a count record, and the key. The misses are added
+/// in row order, so the source rows ascend. A count record stands for the rows of its key that the kernel combined into
+/// it, consecutive or not. A string-like key is kept as its size, and the writer copies its bytes out of the block. A
+/// fixed-width key is kept as its value, which the kernel has at hand, while reading it back from the key columns would
+/// pack it a second time. The arrays are cleared after every block but keep their capacity.
 class AdaptiveMissBatch
 {
 public:
@@ -250,6 +250,7 @@ public:
     template <typename RecordKey, typename Key>
     ALWAYS_INLINE void add(UInt32 row, UInt64 hash, const Key & key)
     {
+        chassert(source_rows.empty() || source_rows.back() < row);
         source_rows.push_back(row);
         hashes.push_back(hash);
         addKey<RecordKey>(key);
@@ -260,6 +261,7 @@ public:
     template <typename RecordKey, typename Key>
     ALWAYS_INLINE void addCount(UInt32 row, UInt64 hash, const Key & key, UInt32 multiplicity)
     {
+        chassert(source_rows.empty() || source_rows.back() < row);
         hashes.push_back(hash);
         multiplicities.push_back(multiplicity);
         addKey<RecordKey>(key);

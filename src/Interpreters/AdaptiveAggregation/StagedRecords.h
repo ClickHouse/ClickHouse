@@ -32,8 +32,8 @@ namespace DB
 /// numeric key used as an argument shares its key bytes instead of occupying another field.
 struct AdaptiveArgumentLayout
 {
-    /// The producers stage the normalized argument columns (`LowCardinality` removed, constant, sparse and replicated
-    /// columns materialized), so the layout follows the types without `LowCardinality`.
+    /// The producers stage the normalized argument values (`LowCardinality` removed, constant, sparse and replicated
+    /// columns read as full ones), so the layout follows the types without `LowCardinality`.
     static std::unique_ptr<const AdaptiveArgumentLayout>
     build(const Block & header, const ColumnNumbers & keys_positions, const ColumnNumbersList & aggregates_positions);
 

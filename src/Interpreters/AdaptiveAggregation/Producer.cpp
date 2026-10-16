@@ -61,6 +61,14 @@ namespace
         }
     }
 
+    /// Where the staging reads an aggregate argument of a batch of misses: `rows[i]` is the row of `column` that record
+    /// `i` reads.
+    struct ArgumentSource
+    {
+        const IColumn * column;
+        const UInt32 * rows;
+    };
+
 }
 
 void Aggregator::executeFrozen(
@@ -612,34 +620,45 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
         /// rows, unlike the `batch_arguments` that an `-Array` combinator unnests: the drain rebuilds the instructions
         /// from the staged rows and unnests them again. Building them again from the block's own columns would copy
         /// each such column once more, however few rows miss. Of a column that several aggregates read, a dense form
-        /// that one of them prepared is preferred to a sparse one.
-        std::vector<const IColumn *> arguments(argument_layout.num_positions);
+        /// that one of them prepared is preferred to a sparse one, which takes a pass over its offsets (below).
+        std::vector<ArgumentSource> arguments(argument_layout.num_positions, {nullptr, source_rows});
         for (size_t i = 0; i < params.aggregates_size; ++i)
             for (size_t j = 0; j < aggregates_positions[i].size(); ++j)
             {
-                const IColumn *& argument = arguments[aggregates_positions[i][j]];
+                const IColumn *& argument = arguments[aggregates_positions[i][j]].column;
                 if (!argument || argument->isSparse())
                     argument = aggregate_instructions[i].arguments[j];
             }
 
-        /// Only a sparse column, which an aggregate of one argument consumes as it is, is densified for the record
-        /// writer.
-        Columns densified_arguments;
-        const auto densify_argument = [&](size_t position)
+        /// A sparse column, which an aggregate of one argument consumes as it is, is read through its values: the
+        /// source rows of the records ascend, so one pass of an iterator along its offsets finds the value of every
+        /// record. A dense copy of the column would also copy the values of the rows that hit the local table.
+        std::vector<PaddedPODArray<UInt32>> value_rows(argument_layout.num_positions);
+        const auto read_through_values = [&](size_t position)
         {
-            const IColumn *& argument = arguments[position];
-            if (argument->isSparse())
-                argument = densified_arguments.emplace_back(recursiveRemoveSparse(argument->getPtr())).get();
+            ArgumentSource & argument = arguments[position];
+            const auto * sparse = typeid_cast<const ColumnSparse *>(argument.column);
+            if (!sparse)
+                return;
+            auto & rows = value_rows[position];
+            rows.resize(total);
+            auto iterator = sparse->getIterator(source_rows[0]);
+            for (size_t i = 0; i < total; ++i)
+            {
+                iterator.advanceToRow(source_rows[i]);
+                rows[i] = static_cast<UInt32>(iterator.getValueIndex());
+            }
+            argument = {&sparse->getValuesColumn(), rows.data()};
         };
 
         for (const auto & field : argument_layout.fixed_fields)
-            densify_argument(field.position);
+            read_through_values(field.position);
 
-        std::vector<const IColumn *> variable_sources;
+        std::vector<ArgumentSource> variable_sources;
         variable_sources.reserve(argument_layout.variable_fields.size());
         for (const auto & field : argument_layout.variable_fields)
         {
-            densify_argument(field.position);
+            read_through_values(field.position);
             variable_sources.push_back(arguments[field.position]);
         }
 
@@ -675,14 +694,14 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
                     const UInt64 hash = hashes[i];
                     const size_t partition = layout.partitionOf(hash);
                     const size_t key_size = key_size_of(i);
-                    const size_t row = source_rows[i];
 
                     size_t variable_bytes = 0;
                     const char * scratch_begin = nullptr;
                     size_t scratch_bytes = 0;
                     for (size_t j = 0; j < variable_sources.size(); ++j)
                     {
-                        if (const auto size = variable_sources[j]->getSerializedValueSize(row, &serialization_settings))
+                        const auto & [column, rows] = variable_sources[j];
+                        if (const auto size = column->getSerializedValueSize(rows[i], &serialization_settings))
                         {
                             serialized_in_scratch[j].reset();
                             variable_bytes += *size;
@@ -694,7 +713,7 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
                             if (!argument_scratch)
                                 argument_scratch.emplace();
                             const size_t size_of_value
-                                = variable_sources[j]->serializeValueIntoArena(row, *argument_scratch, scratch_begin, &serialization_settings).size();
+                                = column->serializeValueIntoArena(rows[i], *argument_scratch, scratch_begin, &serialization_settings).size();
                             serialized_in_scratch[j] = size_of_value;
                             variable_bytes += size_of_value;
                             scratch_bytes += size_of_value;
@@ -722,7 +741,10 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
                             scratch += *serialized_size;
                         }
                         else
-                            variable = variable_sources[j]->serializeValueIntoMemory(row, variable, &serialization_settings);
+                        {
+                            const auto & [column, rows] = variable_sources[j];
+                            variable = column->serializeValueIntoMemory(rows[i], variable, &serialization_settings);
+                        }
                     }
                     zeroStagedRecordPadding(variable);
                     if (scratch_bytes)
@@ -735,11 +757,14 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
 
             const size_t batch_rows = batch_end - batch_begin;
             for (const auto & field : argument_layout.fixed_fields)
+            {
+                const auto & [column, rows] = arguments[field.position];
                 RowDataStore::gatherFieldToRows(
-                    *arguments[field.position],
-                    {source_rows + batch_begin, batch_rows},
+                    *column,
+                    {rows + batch_begin, batch_rows},
                     {argument_rows.data(), batch_rows},
                     field.offset);
+            }
         }
     };
 
