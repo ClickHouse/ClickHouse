@@ -6,6 +6,7 @@
 #include <condition_variable>
 #include <csignal>
 #include <cstdlib>
+#include <cstring>
 #include <future>
 #include <mutex>
 #include <optional>
@@ -966,27 +967,53 @@ SocketBufferOptions buffersTheKernelKeeps(UInt64 sndbuf, UInt64 rcvbuf)
     return client_options;
 }
 
+int compareDirectoryEntries(const dirent ** left, const dirent ** right)
+{
+    return std::strcmp((*left)->d_name, (*right)->d_name);
+}
+
 /// Connected sockets whose local or peer port is `port`. The listening socket has no peer.
+/// `scandir` snapshots the directory, so the walk stays valid while the exchange pipelines run.
 std::vector<SocketBufferOptions> connectedSocketBuffers(UInt16 port)
 {
     std::vector<SocketBufferOptions> found;
-    DIR * dir = opendir("/proc/self/fd");
-    if (!dir)
-        dir = opendir("/dev/fd");
-    if (!dir)
+
+    dirent ** entries = nullptr;
+    int count = scandir("/proc/self/fd", &entries, nullptr, compareDirectoryEntries);
+    if (count < 0)
+    {
+        entries = nullptr;
+        count = scandir("/dev/fd", &entries, nullptr, compareDirectoryEntries);
+    }
+    if (count < 0)
         return found;
 
-    while (const dirent * entry = readdir(dir))
+    struct FreeEntries
     {
+        dirent ** entries;
+        int count;
+
+        ~FreeEntries()
+        {
+            for (int index = 0; index < count; ++index)
+                std::free(entries[index]);
+            std::free(entries);
+        }
+    };
+    const FreeEntries free_entries{entries, count};
+
+    for (int index = 0; index < count; ++index)
+    {
+        const dirent * entry = entries[index];
         if (entry->d_name[0] == '.')
             continue;
 
         char * end = nullptr;
-        const long fd_long = std::strtol(entry->d_name, &end, 10);
-        if (!end || *end != '\0' || fd_long < 0 || fd_long > INT_MAX)
+        const Int64 fd_value = std::strtoll(entry->d_name, &end, 10);
+        if (!end || *end != '\0' || fd_value < 0 || fd_value > INT_MAX)
             continue;
 
-        const int fd = static_cast<int>(fd_long);
+        const int fd = static_cast<int>(fd_value);
 
         sockaddr_storage local{};
         socklen_t local_len = sizeof(local);
@@ -1012,7 +1039,6 @@ std::vector<SocketBufferOptions> connectedSocketBuffers(UInt16 port)
             continue;
         found.push_back(options);
     }
-    closedir(dir);
     return found;
 }
 
@@ -1086,7 +1112,7 @@ std::vector<SocketBufferOptions> exchangeSocketBuffers()
     auto future_connection = exchange.connections->getConnection("query", "stream");
     builder.setSinks([&](const SharedHeader & stream_header, Pipe::StreamType)
     {
-        return std::make_shared<StreamingExchangeSink>(stream_header, future_connection, "stream");
+        return std::make_shared<StreamingExchangeSink>(stream_header, future_connection, "stream", /*advisory*/ false);
     });
     auto sending = QueryPipelineBuilder::getPipeline(std::move(builder));
     auto receiving = makeReceivingPipeline(
