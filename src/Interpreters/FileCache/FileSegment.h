@@ -13,6 +13,7 @@
 #include <IO/Operators.h>
 #include <IO/OpenedFileCache.h>
 #include <base/getThreadId.h>
+#include <base/scope_guard.h>
 #include <Interpreters/FileCache/IFileCachePriority.h>
 #include <Interpreters/FileCache/FileSegmentInfo.h>
 #include <Interpreters/FileCache/FileCache_fwd_internal.h>
@@ -163,6 +164,16 @@ public:
 
     size_t getReservedSize() const;
 
+    /// Returns the size as it is accounted for in the priority queue and cache state.
+    /// When `use_real_disk_size` is enabled for the cache, this is aligned to the filesystem
+    /// block size; otherwise it equals the reserved size.
+    size_t getDiskAccountedSize() const;
+
+    /// Computes how many bytes the priority queue accounting changes when `raw_delta` extra
+    /// bytes are reserved on top of the current reserved size. Equals `raw_delta` for caches
+    /// without `use_real_disk_size`; otherwise it is the difference between aligned sizes.
+    size_t computeDiskAccountedDelta(size_t raw_delta) const;
+
     /// Now detached status can be used in the following cases:
     /// 1. there is only 1 remaining file segment holder
     ///    && it does not need this segment anymore
@@ -278,6 +289,10 @@ private:
     const LoggerPtr & getLog() const;
     bool isDownloaderUnlocked(const FileSegmentGuard::Lock & segment_lock) const;
     void resetDownloaderUnlocked(const FileSegmentGuard::Lock &);
+    /// Takes the downloader role of a `PARTIALLY_DOWNLOADED` segment that has no downloader.
+    /// Returns a guard which resets the role, or an empty guard if the role is not taken.
+    /// Only the downloader reserves space, so no reservation runs while the guard holds the role.
+    scope_guard tryTakeDownloaderOfPartiallyDownloaded();
     size_t getSizeForBackgroundDownloadUnlocked(const FileSegmentGuard::Lock &) const;
 
     void setDownloadState(State state, const FileSegmentGuard::Lock &);

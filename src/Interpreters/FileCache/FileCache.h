@@ -130,7 +130,10 @@ public:
 
     static const OriginInfo & getInternalOrigin();
 
+    /// The common origin with a segment key type derived from the file extension or given explicitly.
+    /// Both return the common origin as is if the cache is not split (`use_split_cache`).
     OriginInfo getCommonOriginWithSegmentKeyType(const std::filesystem::path & filename) const;
+    OriginInfo getCommonOriginWithSegmentKeyType(FileSegmentKeyType segment_type) const;
 
     String getFileSegmentPath(const Key & key, size_t offset, FileSegmentKind segment_kind, const OriginInfo & origin, std::optional<size_t> size = std::nullopt) const;
 
@@ -238,11 +241,14 @@ public:
         size_t lock_wait_timeout_milliseconds,
         std::string & failure_reason);
 
-    bool tryIncreasePriority(FileSegment & file_segment);
+    bool tryIncreasePriority(Priority::Iterator & iterator, bool is_space_reservation_complete);
 
     std::vector<FileSegment::Info> getFileSegmentInfos(const UserID & user_id);
 
     std::vector<FileSegment::Info> getFileSegmentInfos(const Key & key, const UserID & user_id);
+
+    /// Same as above, but returns an empty vector if there is no such key.
+    std::vector<FileSegment::Info> tryGetFileSegmentInfos(const Key & key, const UserID & user_id);
 
     IFileCachePriority::PriorityDumpPtr dumpQueue();
 
@@ -278,9 +284,9 @@ public:
     const String & getName() const { return name; }
 
 private:
-    void onSegmentEvicted(const FileSegment & segment, const String & user_id) const;
+    void onSegmentEvicted(const FileSegment & segment, size_t disk_accounted_size, const String & user_id) const;
     IFileCachePriority::OnEvictCallback getOnBackgroundEvictCallback() const;
-    void onSegmentEvictedInTheBackground(const FileSegment & segment, const String & user_id) const;
+    void onSegmentEvictedInTheBackground(const FileSegment & segment, size_t disk_accounted_size, const String & user_id) const;
 
     using KeyAndOffset = FileCacheKeyAndOffset;
 

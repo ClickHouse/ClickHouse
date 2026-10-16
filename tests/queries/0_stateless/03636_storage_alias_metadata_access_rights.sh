@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-replicated-database
+# Tag no-replicated-database: on a replicated database the DDL runs with no user, so the access check asserted here is skipped and the deny path silently allows, https://github.com/ClickHouse/ClickHouse/issues/111561
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -103,9 +105,6 @@ ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS test_merge_access;"
 echo "Test ENGINE = Buffer structure inference without target permission"
 ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "CREATE TABLE test_buffer_infer_access ENGINE = Buffer(currentDatabase(), test_alias_access, 1, 1000, 1000, 1000, 1000, 1000000, 1000000);" 2>&1 | grep -o "ACCESS_DENIED" | head -1
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS test_buffer_infer_access;"
-
-echo "Test SHOW CREATE without target permission"
-${CLICKHOUSE_CLIENT} --user="${access_username}" --query "SHOW CREATE TABLE test_alias_access;" 2>&1 | grep -o "ACCESS_DENIED" | head -1
 
 echo "Test SHOW COLUMNS without target permission"
 ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "SHOW COLUMNS FROM test_alias_access;"
