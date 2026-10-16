@@ -2596,6 +2596,13 @@ void escapeDotInJSONKey(String & out, std::string_view key)
     out.append(key.substr(pos));
 }
 
+String escapeDotInJSONKey(const String & key)
+{
+    String res;
+    escapeDotInJSONKey(res, key);
+    return res;
+}
+
 String unescapeDotInJSONKey(const String & key)
 {
     return boost::replace_all_copy(key, "%2E", ".");
