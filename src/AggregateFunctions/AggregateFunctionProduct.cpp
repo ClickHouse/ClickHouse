@@ -128,10 +128,10 @@ private:
         }
         else
         {
-            Float64 converted = toFloat64(value, scale);
-
             if constexpr (is_floating_point<T>)
             {
+                Float64 converted = toFloat64(value, scale);
+
                 /// Multiplying a discarded NaN or Inf by an arithmetic mask is not safe.
                 /// Select the bit pattern of the multiplicative identity instead.
                 UInt64 value_bits = std::bit_cast<UInt64>(converted);
@@ -143,7 +143,7 @@ private:
                 return std::bit_cast<Float64>(value_bits);
             }
 
-            return keep ? converted : 1.0;
+            return keep ? toFloat64(value, scale) : 1.0;
         }
     }
 
@@ -331,9 +331,10 @@ void registerAggregateFunctionProduct(AggregateFunctionFactory & factory)
     FunctionDocumentation::Description description = R"(
 Calculates the product of numeric values.
 
-The function aggregates rows directly and keeps a constant-size state. Input values are converted
-to `Float64` before multiplication. Floating-point results can depend on aggregation order when
-data is processed in parallel. For wide integer and Decimal input, results can differ from
+The function aggregates rows directly and keeps a constant-size state. Input values of all supported
+types are converted to `Float64` before multiplication. Consequently, the result can depend on
+aggregation order for any input type, especially when data is processed in parallel. For wide integer
+and Decimal input, results can differ from
 `arrayProduct(groupArray(x))` because that expression can use a wider intermediate type. If the
 input is already an array, use
 [`arrayProduct`](/reference/functions/regular-functions/array-functions#arrayProduct) instead.
