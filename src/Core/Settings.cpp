@@ -11034,7 +11034,7 @@ where a non-zero `lookback_delta` URL parameter takes priority. It is the same a
 0 means the default of 5 minutes. The value is kept to the microsecond, so a value below 1 microsecond also means the default.
 A negative value is an error.
 )", PRIVATE_PREVIEW, \
-        {"26.10", 300, 300, "New setting."}) \
+        {"26.11", 300, 300, "New setting."}) \
     \
     DECLARE(Double, promql_default_subquery_step, 15, R"(
 The step of PromQL subqueries written without one, such as `max_over_time(rate(x[1m])[30m:])`, in seconds.
@@ -11042,7 +11042,7 @@ Applies to the `promql` dialect, the `prometheusQuery` and `prometheusQueryRange
 0 means the default of 15 seconds. Prometheus uses its global `evaluation_interval` here, which is 1 minute by default.
 The value is kept to the microsecond, so a value below 1 microsecond also means the default. A negative value is an error.
 )", PRIVATE_PREVIEW, \
-        {"26.10", 15, 15, "New setting."}) \
+        {"26.11", 15, 15, "New setting."}) \
     \
     DECLARE(Bool, promql_push_down_label_matchers, true, R"(
 Copies the label matchers of one side of a PromQL binary operator to the selectors of the other side for the labels the operator matches series by, so `b / on(job) a{job="x"}` reads only the series of `b` with `job="x"`.
