@@ -2273,15 +2273,17 @@ def test_merge_over_datalake_with_unresolvable_table_does_not_hang(started_clust
 
 def test_merge_reads_the_snapshot_it_inferred_from(started_cluster):
     """`merge()` looks its tables up again for the read, and each catalog lookup builds a new storage
-    object. The read must still use the snapshot the structure was inferred from."""
+    object. The read, including the row policy, must still use the snapshot the structure was inferred from."""
     node = started_cluster.instances["node1"]
     namespace = f"merge_snapshot_{uuid.uuid4().hex}"
     catalog = load_catalog_impl(started_cluster)
     catalog.create_namespace(namespace)
     schema = Schema(NestedField(field_id=1, name="k", field_type=LongType(), required=False))
     table = create_table(catalog, namespace, "t", schema, PartitionSpec(), SortOrder())
-    table.append(pa.Table.from_pylist([{"k": 7}]))
+    table.append(pa.Table.from_pylist([{"k": 7}, {"k": -1}]))
     create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    policy = f"merge_snapshot_policy ON {CATALOG_NAME}.`{namespace}.t`"
+    node.query(f"CREATE ROW POLICY {policy} USING k > 0 TO ALL")
 
     # The failpoint sleeps 10 seconds before each catalog fetch, and the line is logged before each one,
     # so the second line means the fetch of the structure inference is done and the next one is pending.
@@ -2297,6 +2299,7 @@ def test_merge_reads_the_snapshot_it_inferred_from(started_cluster):
         node.query("SYSTEM DISABLE FAILPOINT lightweight_show_tables")
 
     assert request.get_answer().strip() == "7"
+    node.query(f"DROP ROW POLICY {policy}")
     node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
 
 

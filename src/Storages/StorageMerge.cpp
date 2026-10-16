@@ -1278,7 +1278,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                     for (const auto & row_policy : row_policy_filter_ptr->policies)
                         modified_context->getQueryContext()->addUsedRowPolicy(row_policy->getFullName().toString());
 
-                row_policy_data_opt = RowPolicyData(row_policy_filter_ptr, storage, modified_context);
+                row_policy_data_opt = RowPolicyData(row_policy_filter_ptr, storage_metadata_snapshot, modified_context);
                 row_policy_data_opt->extendNames(real_column_names);
             }
 
@@ -2031,11 +2031,10 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
 }
 
 ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter_ptr,
-    std::shared_ptr<DB::IStorage> storage,
+    StorageMetadataPtr storage_metadata,
     ContextPtr local_context)
+    : storage_metadata_snapshot(std::move(storage_metadata))
 {
-    const auto storage_metadata = storage->getInMemoryMetadataPtr(local_context, false);
-    storage_metadata_snapshot = storage_metadata;
     auto storage_columns = storage_metadata_snapshot->getColumns();
     auto needed_columns = storage_columns.getAll();
 

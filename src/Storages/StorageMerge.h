@@ -290,7 +290,7 @@ private:
     class RowPolicyData
     {
     public:
-        RowPolicyData(RowPolicyFilterPtr, std::shared_ptr<DB::IStorage>, ContextPtr);
+        RowPolicyData(RowPolicyFilterPtr, StorageMetadataPtr, ContextPtr);
 
         /// Add to data stream columns that are needed only for row policies
         ///  SELECT x from T  if  T has row policy  y=42
