@@ -161,6 +161,9 @@ public:
 
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const override;
 
+    /// The filter is sized by the number of distinct values, so about half of its bits are set.
+    bool isCompressible() const override { return false; }
+
 private:
     size_t bits_per_row;
     size_t hash_functions;
