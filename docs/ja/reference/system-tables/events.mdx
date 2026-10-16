@@ -72,11 +72,15 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 
 ### AdaptiveAggregationSharedTableSpills {#adaptiveaggregationsharedtablespills}
 
-アダプティブ集約が、メモリ逼迫下でパーツ数の上限に達したために共有ドレインテーブルを書き出した回数。
+適応型集約が、メモリ逼迫時、パーツ数の上限到達時、または明示的なスピルリクエストの受信時に共有ドレインテーブルを書き出した回数。
 
 ### AdaptiveAggregationSpillBacklogSheds {#adaptiveaggregationspillbacklogsheds}
 
 ステージ済みのレコードがまだ残っている状態で、baseline アルゴリズム上のスレッド (thaw によってそこへ戻されたもの、または自ら退いたもの) がスピルしようとしたため、アダプティブ集約がステージ済みのバックログを破棄した回数。
+
+### AdaptiveAggregationSpillDrains {#adaptiveaggregationspilldrains}
+
+適応型集約が、アダプティブパスから外れずに、ステージングされたレコードまたは共有の排出残余データをディスクに書き込むことで対応した、メモリスケジューラからのスピルリクエストの数。
 
 ### AdaptiveAggregationStagedBytes {#adaptiveaggregationstagedbytes}
 
@@ -341,6 +345,10 @@ syslog の非同期キューに送信されたメッセージ数 (受け入れ�
 ### AsyncLoggingTextLogTotalMessages {#asyncloggingtextlogtotalmessages}
 
 text&#95;log の非同期キューに送信されたメッセージ (受け付けられたもの、または破棄されたもの) の総数
+
+### AutomaticParallelReplicasDecidedWithoutBuildingPlan {#automaticparallelreplicasdecidedwithoutbuildingplan}
+
+自動並列レプリカが、以前の実行時に記憶した境界に基づき、コスト評価用の候補実行計画を構築せずに並列レプリカを使用しないと判断した回数
 
 ### AutomaticParallelReplicasProbePlansBuilt {#automaticparallelreplicasprobeplansbuilt}
 
@@ -920,6 +928,10 @@ ReplicatedMergeTree 内のパーツに対する ミューテーション 用の�
 ### DataAfterMutationDiffersFromReplica {#dataaftermutationdiffersfromreplica}
 
 ミューテーション後のデータが、他のレプリカ上のデータとバイト単位で一致しない回数。&#39;DataAfterMergeDiffersFromReplica&#39; で説明した理由に加え、非決定論的なミューテーションが原因で発生することもあります。
+
+### DatabaseTablesEnumerated {#databasetablesenumerated}
+
+データベースがテーブルイテレータを通じて返したテーブルの数です。返却先には、`SHOW TABLES`、テーブルを一覧表示するシステムテーブル、その他データベースを走査するすべての処理が含まれます。こうしたシステムテーブルに対するクエリでテーブル名に条件を指定すると列挙対象が絞り込まれます。このカウンターを見ると、どの程度絞り込まれたかがわかります。
 
 ### DefaultImplementationForNullsRows {#defaultimplementationfornullsrows}
 
@@ -1981,6 +1993,26 @@ encryption header cache 内に encryption header のバイト列が見つから�
 
 外部処理 (ソート/集約/結合) によって書き込まれたデータ量 (非圧縮、圧縮前)
 
+### ExternalSetCompressedBytes {#externalsetcompressedbytes}
+
+外部メモリに書き込まれた `IN` 集合の圧縮バイト数。
+
+### ExternalSetMerge {#externalsetmerge}
+
+外部メモリを使用する `IN` 集合で、一時ファイルがマージされた回数。
+
+### ExternalSetReadBlocks {#externalsetreadblocks}
+
+キーを検索するために、外部メモリ上の `IN` 集合の一時ファイルから読み取られたブロック数。
+
+### ExternalSetUncompressedBytes {#externalsetuncompressedbytes}
+
+外部メモリ上の `IN` 集合用に書き込まれたデータ量 (圧縮前の非圧縮サイズ) 。
+
+### ExternalSetWritePart {#externalsetwritepart}
+
+外部メモリを使用する `IN` 集合について、一時ファイルがディスクに書き込まれた回数。
+
 ### ExternalSortCompressedBytes {#externalsortcompressedbytes}
 
 外部メモリでソートする際に書き込まれた圧縮バイト数。
@@ -2629,6 +2661,14 @@ DelayedJoinedBlocksWorkerTransform が出力したブロック数。
 
 DelayedJoinedBlocksWorkerTransform によって出力された行数。
 
+### JoinNonJoinedHashTableScans {#joinnonjoinedhashtablescans}
+
+RIGHT または FULL のハッシュ結合で、結合されなかった行を探すためにハッシュテーブルをスキャンした回数。
+
+### JoinNonJoinedHashTableScansSkipped {#joinnonjoinedhashtablescansskipped}
+
+RIGHT または FULL のハッシュ結合で、スキャン対象部分の右側のキーがすべて一致していたために、未結合行を探すハッシュテーブルのスキャンをスキップした回数。
+
 ### JoinNonJoinedTransformBlockCount {#joinnonjoinedtransformblockcount}
 
 NonJoinedBlocksTransform が出力したブロック数。
@@ -3253,6 +3293,10 @@ Keeper がバッチ処理した書き込みリクエストの総数
 
 読み込まれた主キーの行数。
 
+### LoadedStatistics {#loadedstatistics}
+
+カラム STATISTICS が読み込まれたパーツの数
+
 ### LoadedStatisticsMicroseconds {#loadedstatisticsmicroseconds}
 
 パーツから統計情報を読み込むのに要した時間
@@ -3412,6 +3456,18 @@ OvercommitTracker でメモリが解放されるまでの待機に費やされ�
 ### MemoryReservationKilled {#memoryreservationkilled}
 
 メモリ予約のキルシグナルの総数
+
+### MemoryReservationReclaimableBytes {#memoryreservationreclaimablebytes}
+
+クエリによって回収可能 (スピル可能) になったメモリ量
+
+### MemoryReservationSpilledBytes {#memoryreservationspilledbytes}
+
+ディスクにスピルされたメモリの合計量
+
+### MemoryReservationSpillingMicroseconds {#memoryreservationspillingmicroseconds}
+
+スピルに要した時間
 
 ### MemoryWorkerRun {#memoryworkerrun}
 
@@ -4201,6 +4257,10 @@ DB::Parquet::Prefetcher において ReadMode::SeekAndRead で行われた読み
 
 Parquetデータからプルーニングにより除外された行グループの総数
 
+### ParquetReadMinMaxFromStatistics {#parquetreadminmaxfromstatistics}
+
+データを読み取らずに、カラム chunk の統計情報から `min` / `max` を算出した Parquetファイルの数 (`optimize_min_max_from_files` を参照)
+
 ### ParquetReadPages {#parquetreadpages}
 
 読み取られた Parquet データページの総数
@@ -4577,6 +4637,10 @@ Azure からの読み取りに要した時間。
 
 Azure からの読み取り時に発生した例外数
 
+### ReadBufferFromFileDescriptorPageCacheHitBytes {#readbufferfromfiledescriptorpagecachehitbytes}
+
+同期 `pread` によってファイルディスクリプタから読み取られたバイトのうち、OS page cache から返されたと検出されたバイト数です (この検出は、帯域幅スロットラーが設定された読み取りに対してのみ行われます) 。
+
 ### ReadBufferFromFileDescriptorRead {#readbufferfromfiledescriptorread}
 
 ファイルディスクリプタからの read/pread の回数。ソケットは含まれません。
@@ -4600,6 +4664,10 @@ S3 への接続の初期化に費やされた時間。
 ### ReadBufferFromS3Microseconds {#readbufferfroms3microseconds}
 
 S3 からの読み取りにかかった時間。
+
+### ReadBufferFromS3RequestsCut {#readbufferfroms3requestscut}
+
+ディスクの接続グループが `disk_connections_soft_limit` 以上に達していたため、バッファ 1 回分の充填量に切り詰められた S3ディスクのリクエスト数。
 
 ### ReadBufferFromS3RequestsErrors {#readbufferfroms3requestserrors}
 
@@ -4941,6 +5009,10 @@ JOINランタイムフィルタ による読み取り時のプルーニングの
 
 JOINランタイムフィルタ により読み取り時にプルーニングされたグラニュール数
 
+### RuntimeFilterIndexAnalysisReads {#runtimefilterindexanalysisreads}
+
+読み取り時に JOIN実行時フィルターを使用してグラニュールを除外するよう設定された読み取りの数です。読み取りがディスクリプタを保持した状態でパイプラインに到達し、かつそれらを用いて除外を行うための主キーまたはスキップ索引がある場合に、その後グラニュールが実際に検査されるかどうかにかかわらずカウントされます。したがって、この値は、読み取りステップが再構築されるたびにディスクリプタが失われることなく維持されたことを示します。
+
 ### RuntimeFilterLookupsBeforeBuildFinished {#runtimefilterlookupsbeforebuildfinished}
 
 ビルド側の処理が未完了の状態でJOINランタイムフィルタによりルックアップされたブロックの数。これらのブロックはフィルタされずにそのまま通過します。
@@ -5252,6 +5324,10 @@ ReplicatedMergeTree テーブルに INSERT されたブロック内で、自己�
 ### SetsBuiltFromSubquery {#setsbuiltfromsubquery}
 
 サブクエリを実行して補完された `IN`/`JOIN` の set の数。準備済み set cache から取得された set や、すでに構築済みで再利用された set はカウントされません。
+
+### SetsSpilledToDisk {#setsspilledtodisk}
+
+サブクエリからの構築中にディスクにスピルされた `IN` 集合の数。
 
 ### SettingsProfileCacheRecalculationMicroseconds {#settingsprofilecacherecalculationmicroseconds}
 
@@ -5576,6 +5652,10 @@ MergeTree テーブルで共有データパーツのロックが取得された�
 ### SharedPartsLockWaitMicroseconds {#sharedpartslockwaitmicroseconds}
 
 MergeTree テーブルで共有データパーツのロック待機に費やされた合計時間
+
+### ShortCircuitArgumentsReordered {#shortcircuitargumentsreordered}
+
+`and` または `or` 関数が、クエリ内の記述順とは異なる順序で引数を評価したブロックの数です。具体的には、コストの低い引数をコストの高い引数より先に評価した場合や、前のブロックで収集した統計情報に基づいて評価順序を決定した場合 (設定 `short_circuit_function_evaluation_reorder_arguments`) が該当します。`WHERE` / `HAVING` における AND チェーンの要素の並べ替えは、`FilterStep` がパイプラインを構築する際に一度だけ決定されるものであり、カウントの対象外です。
 
 ### SleepFunctionCalls {#sleepfunctioncalls}
 
@@ -6249,6 +6329,10 @@ TimeSeries テーブルのメトリクスファミリーテーブルに、重複
 
 Poco の TLS 実装を使用するサーバープロトコル (ネイティブ TCP、HTTPS、MySQL、PostgreSQL) において、受信 (サーバー側) 接続で完了した TLS ハンドシェイクの数です。gRPC は独自の TLS スタックを備えているため、カウント対象外です。セッション再開時にもハンドシェイクは実行されるため、このメトリクスにカウントされます。
 
+### TopKGranulesSkippedByPrimaryKey {#topkgranulesskippedbyprimarykey}
+
+読み取り時にスキップされたグラニュールの数です。対象となるのは、集約 (`enable_group_by_top_k_dynamic_filtering` を参照) またはソート (`use_top_k_dynamic_filtering` を参照) によってパブリッシュされる、実行中に更新される top-K しきい値の範囲外にすべての行が位置することが、プライマリインデックスから判明したグラニュールです。
+
 ### UncompressedCacheHits {#uncompressedcachehits}
 
 データのブロックが非圧縮cacheで見つかり、解凍を回避できた回数。
@@ -6420,6 +6504,10 @@ S3への書き込み時に発生した例外の数。
 ### WriteBufferFromS3WaitInflightLimitMicroseconds {#writebufferfroms3waitinflightlimitmicroseconds}
 
 現在処理中のリクエスト数が `s3_max_inflight_parts_for_one_file` で定義された上限に達したときに、その一部のリクエストが完了するまでの待機時間。
+
+### YTsaurusLookupThrottled {#ytsauruslookupthrottled}
+
+YTsaurus へのルックアップリクエストのうち、スロットリングされたものの数
 
 ### ZooKeeperBytesReceived {#zookeeperbytesreceived}
 

@@ -13,13 +13,13 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات يتم إنشاؤها تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/FormatFactorySettings.h).
 
-## date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands
+## date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands {#date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 احذف الأصفار اللاحقة من قيم `DateTime64` ديناميكيًا، مع تقريب مقياس الإخراج إلى الأعلى إلى المضاعف التالي للعدد ثلاثة الذي يحافظ على جميع الأرقام المهمة: [0, 3, 6, 9]. ويُحذف الجزء الكسري إذا كانت جميع أرقامه أصفارًا.
 
-## date_time_input_format
+## date_time_input_format {#date_time_input_format}
 
 <SettingsInfoBlock type="DateTimeInputFormat" default_value="best_effort" />
 
@@ -46,7 +46,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 * [نوع البيانات DateTime.](/ar/reference/data-types/datetime)
 * [الدالة الخاصة بالتعامل مع التواريخ والأوقات.](/ar/reference/functions/regular-functions/date-time-functions)
 
-## date_time_output_format
+## date_time_output_format {#date_time_output_format}
 
 <SettingsInfoBlock type="DateTimeOutputFormat" default_value="simple" />
 
@@ -71,17 +71,21 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 * [نوع البيانات DateTime.](/ar/reference/data-types/datetime)
 * [الدوال الخاصة بالتعامل مع التواريخ والأوقات.](/ar/reference/functions/regular-functions/date-time-functions)
 
-## date_time_overflow_behavior
+## date_time_overflow_behavior {#date_time_overflow_behavior}
 
 <SettingsInfoBlock type="DateTimeOverflowBehavior" default_value="ignore" />
 
-يحدّد السلوك عند تحويل [Date](/ar/reference/data-types/date) أو [Date32](/ar/reference/data-types/date32) أو [DateTime](/ar/reference/data-types/datetime) أو [DateTime64](/ar/reference/data-types/datetime64) أو الأعداد الصحيحة إلى Date أو Date32 أو DateTime أو DateTime64، عندما يتعذّر تمثيل القيمة في النوع الناتج. وينطبق أيضًا عند تحليل `Date` أو `DateTime` من نص، بما في ذلك عبر صيغة إدخال.
+يحدّد السلوك المتّبع عند تحويل قيم من الأنواع [Date](/ar/reference/data-types/date) أو [Date32](/ar/reference/data-types/date32) أو [DateTime](/ar/reference/data-types/datetime) أو [DateTime64](/ar/reference/data-types/datetime64) أو [Time](/ar/reference/data-types/time) أو [Time64](/ar/reference/data-types/time64) أو قيم عددية (أعداد صحيحة وأعداد الفاصلة العائمة) إلى `Date` أو `Date32` أو `DateTime` أو `DateTime64` أو `Time` أو `Time64` حين يتعذّر تمثيل القيمة في نوع النتيجة. لا يمكن تحويل قيم `Decimal` إلا إلى `DateTime64` و`Time64`، وتخضع هذه التحويلات لهذا الإعداد أيضًا؛ أما تحويل `Decimal` إلى `Date` أو `Date32` أو `DateTime` أو `Time` فيُرفض أيًّا كانت قيمة الإعداد. ويسري الإعداد كذلك عند تحليل `Date` أو `DateTime` من نص، بما في ذلك التحليل الذي تُجريه صيغة الإدخال.
 
 القيم الممكنة:
 
-* `ignore` — تجاهل تجاوز السعة بصمت. تكون النتيجة غير معرّفة.
-* `throw` — إطلاق استثناء عند حدوث تجاوز سعة.
-* `saturate` — تشبيع النتيجة. إذا كانت القيمة أصغر من أصغر قيمة يمكن تمثيلها في النوع الهدف، فستكون النتيجة أصغر قيمة قابلة للتمثيل. وإذا كانت القيمة أكبر من أكبر قيمة يمكن تمثيلها في النوع الهدف، فستكون النتيجة أكبر قيمة قابلة للتمثيل.
+* `ignore` — تجاهل حالات تجاوز السعة دون أي تنبيه. في التحويلات بين أنواع التاريخ والوقت تكون النتيجة غير محددة (قد تلتف القيمة)؛ أما القيمة العددية فتُشبَع إلى حدود نطاق نوع النتيجة.
+* `throw` — رفع استثناء عند تجاوز السعة.
+* `saturate` — إشباع النتيجة. إذا كانت القيمة أصغر من أصغر قيمة يمكن تمثيلها في النوع المستهدف، تكون النتيجة أصغر قيمة قابلة للتمثيل. وإذا كانت أكبر من أكبر قيمة يمكن تمثيلها في النوع المستهدف، تكون النتيجة أكبر قيمة قابلة للتمثيل.
+
+لا تتأثر دوال التحويل الدقيقة (`accurateCast` و`accurateCastOrNull` و`accurateCastOrDefault`) بهذا الإعداد: فالقيمة غير القابلة للتمثيل تُرفض دائمًا، أو يُعاد `NULL` بدلًا منها، أو تُستبدل بالقيمة الافتراضية، على الترتيب.
+
+يسري الإعداد على التحويلات التي تُجريها `CAST` ودوال التحويل، بما فيها التحويلات التي يُجريها قالب تعبير `INSERT ... VALUES` أو عملية `INSERT ... SELECT`. أما التعبير الثابت الذي تقيّمه صيغة `Values` دون قالب (الآلية الاحتياطية التي يفعّلها `input_format_values_interpret_expressions`) ودالة الجدول `values`، فلا يخضعان لهذا الإعداد إلا مع `DateTime64` و`Time64`؛ إذ لا يخضع له في هاتين الحالتين الرقمُ الواقع خارج النطاق عند إدراجه في عمود من النوع `Date` أو `Date32` أو `DateTime` أو `Time`. فدالة الجدول `values` ترفضه، وكذلك صيغة `Values`، ما لم يكن `input_format_null_as_default` مفعّلًا، وعندئذٍ تُدرج القيمة الافتراضية للعمود.
 
 القيمة الافتراضية: `ignore`.
 

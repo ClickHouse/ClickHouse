@@ -180,11 +180,17 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 ## query_plan_join_shard_by_pk_ranges {#query_plan_join_shard_by_pk_ranges}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "0"},{"label": "新增设置"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "默认启用。对两个 MergeTree 表执行 `full_sorting_merge` 或 `parallel_full_sorting_merge` JOIN 时，若连接键包含两个表主键的前缀，现在会按主键范围并行执行多个相互独立的归并连接，而不再使用单个单线程归并连接。仅当 JOIN 运行时过滤器和落盘均未生效时，哈希连接才会受到影响。"}]}, {"id": "row-2","items": [{"label": "25.4"},{"label": "0"},{"label": "新增设置"}]}]} />
 
-如果两个表的连接键都包含 PRIMARY KEY 的前缀，则对 JOIN 启用分片。支持哈希、parallel&#95;hash、full&#95;sorting&#95;merge 和 parallel&#95;full&#95;sorting&#95;merge 算法。通常不会加速查询，但可能会降低内存消耗。
+当连接键包含两个表主键的前缀时，将两个 MergeTree 表的 JOIN 按主键范围拆分为多个相互独立的连接来执行。两个表会按该前缀的值拆分为相同的范围 (方式与 `FINAL` 将数据部分拆分为互不相交的层相同) ，因此相等的键必然落入同一范围，每个范围在各自的线程上完成连接。
+
+对于 `full_sorting_merge` 和 `parallel_full_sorting_merge`，该设置会将覆盖两个表的单个单线程归并连接，替换为每个范围各自一个并行运行的流式归并连接，通常可将速度提升数倍，同时将内存占用降低数倍。
+
+对于 `hash` 和 `parallel_hash`，每个范围使用各自独立的哈希表。仅当 JOIN 运行时过滤器 (`enable_join_runtime_filters`) 和落盘 (`max_bytes_ratio_before_external_join`、`max_bytes_before_external_join`) 均未生效时，此优化才会应用，因为二者都会使该连接对此优化不透明；在这种情况下，它通常不会提升查询速度，但可能降低内存消耗。范围以静态方式分配给线程，因此如果某个过滤器仅在主键范围的部分区间内具有较高选择性，就会导致部分线程空闲。
+
+此优化不适用于 `FINAL`、`ASOF`、`ON` 中包含多个析取项的连接，也不适用于使用并行副本读取的情况。
 
 ## query_plan_join_swap_table {#query_plan_join_swap_table}
 
@@ -363,7 +369,7 @@ EXPLAIN PLAN 中步骤描述的最大长度。
 
 <SettingsInfoBlock type="JoinOrderAlgorithm" default_value="greedy" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "greedy"},{"label": "新的实验性设置。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "greedy"},{"label": "新增实验性设置。"}]}]} />
 
 指定在优化查询计划时要尝试哪些 JOIN 顺序算法。可用算法如下：
 
@@ -379,7 +385,8 @@ EXPLAIN PLAN 中步骤描述的最大长度。
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": ""},{"label": "新增设置，用于选择在 DPsub JOIN 顺序算法中判定 JOIN 重排序 有效性的 conflict detector：`a` 表示（正确但不完备的）CD-A，`c` 表示（正确且完备的）CD-C，留空表示不使用。"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": ""},{"label": "新增设置，用于选择在 DPsub JOIN 顺序算法中判定 JOIN 重排序 有效性的 conflict detector：`a` 表示（正确但不完备的）CD-A，`c` 表示（正确且完备的）CD-C，留空表示不使用。"}]}]} />
 
-仅对 `dpsub` JOIN 顺序算法生效。用于选择 DPsub 判定哪些 JOIN 重排序 有效时所使用的 conflict detector。可选取值如下：
+仅对 `dpsub` JOIN 顺序算法生效。用于选择 DPsub 判定哪些 JOIN 重排序 有效时所使用的
+conflict detector。可选取值如下：
 
 * `''` (默认) —— 不使用 conflict detector，DPsub 采用按 relation 划分的 `ON` clause 限制
 * `'a'` —— CD-A conflict detector，正确但不完备

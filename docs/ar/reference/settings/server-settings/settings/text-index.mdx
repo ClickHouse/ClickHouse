@@ -12,21 +12,15 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 تُعِدّ هذه الإعدادات ClickHouse server، وهي مُولَّدة تلقائيًا من الشيفرة المصدرية لـ ClickHouse.
 
-<div id="text_index_header_cache_max_entries">
-  ## text_index_header_cache_max_entries
-</div>
+## text_index_header_cache_max_entries {#text_index_header_cache_max_entries}
 
 <SettingsInfoBlock type="UInt64" default_value="100000" changeable_without_restart="No" />حجم ذاكرة التخزين المؤقت لترويسة الفهرس النصي، محسوبًا بعدد الإدخالات. ويعني الصفر أنه معطّل.
 
-<div id="text_index_header_cache_policy">
-  ## text_index_header_cache_policy
-</div>
+## text_index_header_cache_policy {#text_index_header_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />اسم سياسة التخزين المؤقت لترويسة الفهرس النصي.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />اسم سياسة الإخلاء في ذاكرة التخزين المؤقت لترويسة الفهرس النصي. القيم الممكنة: `LRU`، `SLRU`، `SIEVE`.
 
-<div id="text_index_header_cache_size">
-  ## text_index_header_cache_size
-</div>
+## text_index_header_cache_size {#text_index_header_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" changeable_without_restart="Yes" />حجم ذاكرة التخزين المؤقت لترويسات الفهرس النصي. وتعني القيمة صفرًا أنه معطّل.
 
@@ -34,27 +28,19 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
   يمكن تعديل هذا الإعداد في وقت التشغيل، ويسري مفعوله فورًا.
 </Note>
 
-<div id="text_index_header_cache_size_ratio">
-  ## text_index_header_cache_size_ratio
-</div>
+## text_index_header_cache_size_ratio {#text_index_header_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />حجم الطابور المحمي (في حالة سياسة SLRU) في ذاكرة التخزين المؤقت لترويسة الفهرس النصي، كنسبة إلى الحجم الإجمالي لذاكرة التخزين المؤقت.
 
-<div id="text_index_postings_cache_max_entries">
-  ## text_index_postings_cache_max_entries
-</div>
+## text_index_postings_cache_max_entries {#text_index_postings_cache_max_entries}
 
 <SettingsInfoBlock type="UInt64" default_value="1000000" changeable_without_restart="No" />سعة ذاكرة التخزين المؤقت لقائمة postings الخاصة بالفهرس النصي، بوحدة الإدخالات. تعني القيمة صفر أنه معطّل.
 
-<div id="text_index_postings_cache_policy">
-  ## text_index_postings_cache_policy
-</div>
+## text_index_postings_cache_policy {#text_index_postings_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />اسم سياسة ذاكرة التخزين المؤقت لقائمة postings للفهرس النصي.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />اسم سياسة الإخلاء لذاكرة التخزين المؤقت لقائمة postings للفهرس النصي. القيم الممكنة: `LRU`، `SLRU`، `SIEVE`.
 
-<div id="text_index_postings_cache_size">
-  ## text_index_postings_cache_size
-</div>
+## text_index_postings_cache_size {#text_index_postings_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="2147483648" changeable_without_restart="Yes" />حجم ذاكرة التخزين المؤقت لقوائم postings في الفهرس النصي. تعني القيمة صفر أن هذه الميزة معطّلة.
 
@@ -62,27 +48,19 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
   يمكن تعديل هذا الإعداد أثناء التشغيل، ويُطبَّق فورًا.
 </Note>
 
-<div id="text_index_postings_cache_size_ratio">
-  ## text_index_postings_cache_size_ratio
-</div>
+## text_index_postings_cache_size_ratio {#text_index_postings_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />حجم الطابور المحمي (في حالة سياسة SLRU) في ذاكرة التخزين المؤقت لقائمة postings الخاصة بالفهرس النصي، نسبةً إلى الحجم الإجمالي لذاكرة التخزين المؤقت.
 
-<div id="text_index_tokens_cache_max_entries">
-  ## text_index_tokens_cache_max_entries
-</div>
+## text_index_tokens_cache_max_entries {#text_index_tokens_cache_max_entries}
 
 <SettingsInfoBlock type="UInt64" default_value="1000000" changeable_without_restart="No" />حجم ذاكرة التخزين المؤقت لرموز الفهرس النصي، مقاسًا بعدد الإدخالات. الصفر يعني أنها معطّلة.
 
-<div id="text_index_tokens_cache_policy">
-  ## text_index_tokens_cache_policy
-</div>
+## text_index_tokens_cache_policy {#text_index_tokens_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />اسم سياسة ذاكرة التخزين المؤقت لرموز الفهرس النصي.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />اسم سياسة الإخلاء لذاكرة التخزين المؤقت لرموز الفهرس النصي. القيم الممكنة: `LRU`، `SLRU`، `SIEVE`.
 
-<div id="text_index_tokens_cache_size">
-  ## text_index_tokens_cache_size
-</div>
+## text_index_tokens_cache_size {#text_index_tokens_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" changeable_without_restart="Yes" />حجم ذاكرة التخزين المؤقت لرموز الفهرس النصي. تعني القيمة صفر أنه معطّل.
 
@@ -90,9 +68,7 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
   يمكن تعديل هذا الإعداد أثناء التشغيل، ويُطبَّق فورًا.
 </Note>
 
-<div id="text_index_tokens_cache_size_ratio">
-  ## text_index_tokens_cache_size_ratio
-</div>
+## text_index_tokens_cache_size_ratio {#text_index_tokens_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />حجم الطابور المحمي (في حال استخدام سياسة SLRU) في ذاكرة التخزين المؤقت لرموز الفهرس النصي، نسبةً إلى الحجم الإجمالي لذاكرة التخزين المؤقت.
 

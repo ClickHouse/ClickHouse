@@ -6,9 +6,7 @@ title: '地理座標を扱う関数'
 doc_type: 'reference'
 ---
 
-<div id="greatcircledistance">
-  ## greatCircleDistance
-</div>
+## greatCircleDistance {#greatcircledistance}
 
 [大円距離の公式](https://en.wikipedia.org/wiki/Great-circle_distance)を用いて、地球表面上の2点間の距離を計算します。
 
@@ -43,9 +41,7 @@ SELECT greatCircleDistance(55.755831, 37.617673, -55.755831, -37.617673) AS grea
 └─────────────────────┘
 ```
 
-<div id="geodistance">
-  ## geoDistance
-</div>
+## geoDistance {#geodistance}
 
 `greatCircleDistance` と似ていますが、球面ではなく WGS-84 楕円体上での距離を計算します。これは地球のジオイドをより正確に近似するものです。
 パフォーマンスは `greatCircleDistance` と同等で、性能上のデメリットはありません。地球上の距離を計算する場合は、`geoDistance` の使用を推奨します。
@@ -83,9 +79,7 @@ SELECT geoDistance(38.8976, -77.0366, 39.9496, -75.1503) AS geoDistance
 └─────────────┘
 ```
 
-<div id="greatcircleangle">
-  ## greatCircleAngle
-</div>
+## greatCircleAngle {#greatcircleangle}
 
 [大円距離の公式](https://en.wikipedia.org/wiki/Great-circle_distance)を用いて、地球表面上の2点間の中心角を計算します。
 
@@ -116,9 +110,7 @@ SELECT greatCircleAngle(0, 0, 45, 0) AS arc
 └─────┘
 ```
 
-<div id="geotoutm">
-  ## geoToUTM
-</div>
+## geoToUTM {#geotoutm}
 
 WGS84 の地理座標 `(longitude, latitude)` を [Universal Transverse Mercator (UTM)](https://en.wikipedia.org/wiki/Universal_Transverse_Mercator_coordinate_system) 座標に変換します。
 
@@ -150,9 +142,7 @@ SELECT geoToUTM(2.294497, 48.858222) AS utm; -- Eiffel Tower
 (448251.5978370684,5411935.125629659,31,'U')
 ```
 
-<div id="utmtogeo">
-  ## UTMToGeo
-</div>
+## UTMToGeo {#utmtogeo}
 
 [UTM](https://en.wikipedia.org/wiki/Universal_Transverse_Mercator_coordinate_system) 座標を WGS84 の地理座標 `(longitude, latitude)` に変換します。これは [`geoToUTM`](#geotoutm) の逆変換です。
 
@@ -181,9 +171,7 @@ SELECT UTMToGeo(448251.6, 5411935.13, 31, 1) AS coord;
 (2.2944970289079203,48.85822204127082)
 ```
 
-<div id="geotomgrs">
-  ## geoToMGRS
-</div>
+## geoToMGRS {#geotomgrs}
 
 WGS84の地理座標`(longitude, latitude)`を、[Military Grid Reference System (MGRS)](https://en.wikipedia.org/wiki/Military_Grid_Reference_System)文字列にエンコードします。
 
@@ -215,9 +203,7 @@ SELECT geoToMGRS(2.294497, 48.858222) AS mgrs, geoToMGRS(2.294497, 48.858222, 3)
 └─────────────────┴─────────────┘
 ```
 
-<div id="mgrstogeo">
-  ## MGRSToGeo
-</div>
+## MGRSToGeo {#mgrstogeo}
 
 [MGRS](https://en.wikipedia.org/wiki/Military_Grid_Reference_System) 文字列を WGS84 の地理座標 `(longitude, latitude)` にデコードします。これは [`geoToMGRS`](#geotomgrs) の逆です。
 
@@ -245,9 +231,7 @@ SELECT MGRSToGeo('31UDQ4825111935') AS coord;
 (2.294495618908297,48.85822536113692)
 ```
 
-<div id="pointinellipses">
-  ## pointInEllipses
-</div>
+## pointInEllipses {#pointinellipses}
 
 点が少なくとも1つの楕円内にあるかどうかを判定します。
 座標はデカルト座標系の幾何座標です。
@@ -280,9 +264,7 @@ SELECT pointInEllipses(10., 10., 10., 9.1, 1., 0.9999)
 └─────────────────────────────────────────────────┘
 ```
 
-<div id="pointinpolygon">
-  ## pointInPolygon
-</div>
+## pointInPolygon {#pointinpolygon}
 
 平面上で、その点がポリゴン内にあるかどうかを判定します。
 
@@ -334,4 +316,5 @@ SELECT id, pointInPolygon((2., 2.), shape) AS res FROM poly;
 > **注**
 > • ジオメトリの検証をスキップするには、`validate_polygons = 0` を設定できます。
 > • `pointInPolygon` は、すべてのポリゴンが正しい形式であることを前提としています。入力が自己交差している、リングの順序が誤っている、または辺同士が重なっている場合、結果は信頼できなくなります。特に、点が辺上や頂点上にちょうどある場合や、&quot;内側&quot; と &quot;外側&quot; の区別が定義できない自己交差部分の内部にある場合は、その傾向が顕著です。
+> • Polygon の座標の絶対値は `1e150` を超えてはなりません。これを超える値で計算が行われる場合、この関数は例外をスローします。
 > • ポリゴン引数が定数で、点が索引付きのキーカラムで表されている場合 (たとえば、`x, y` が `PRIMARY KEY` の一部である、または `minmax` 索引でカバーされているテーブル上の `pointInPolygon((x, y), constant_polygon)` など) 、ClickHouse は主キーと `minmax` のデータスキップ索引の両方を使って、無関係なグラニュールを刈り込むことができます。

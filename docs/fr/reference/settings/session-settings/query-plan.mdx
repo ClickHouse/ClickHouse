@@ -180,11 +180,17 @@ Ne prend effet que si le paramètre [query&#95;plan&#95;enable&#95;optimizations
 
 ## query_plan_join_shard_by_pk_ranges {#query_plan_join_shard_by_pk_ranges}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "0"},{"label": "Nouveau paramètre"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Activé par défaut. Un JOIN `full_sorting_merge` ou `parallel_full_sorting_merge` entre deux tables MergeTree dont les clés contiennent un préfixe des deux clés primaires s’exécute désormais sous forme de jointures par fusion indépendantes sur des plages de clé primaire, en parallèle, au lieu d’une unique jointure par fusion single-threaded. Les jointures par hachage ne sont concernées que lorsque ni les filtres dynamiques JOIN ni le déversement sur disque ne sont actifs."}]}, {"id": "row-2","items": [{"label": "25.4"},{"label": "0"},{"label": "Nouveau paramètre"}]}]} />
 
-Applique le sharding pour JOIN si les clés de jointure contiennent un préfixe de PRIMARY KEY dans les deux tables. Pris en charge par les algorithmes hash, parallel&#95;hash, full&#95;sorting&#95;merge et parallel&#95;full&#95;sorting&#95;merge. En général, cela n&#39;accélère pas les requêtes, mais peut réduire la consommation de mémoire.
+Exécute un JOIN entre deux tables MergeTree sous forme de jointures indépendantes sur des plages de clé primaire lorsque les clés de jointure contiennent un préfixe de la clé primaire des deux tables. Les deux tables sont découpées selon les mêmes plages en fonction des valeurs de ce préfixe (de la même manière que `FINAL` découpe les parties de données en couches qui ne se chevauchent pas) : les clés égales se retrouvent ainsi dans la même plage, et chaque plage est jointe sur son propre fil d’exécution.
+
+Pour `full_sorting_merge` et `parallel_full_sorting_merge`, l’unique jointure par fusion single-threaded sur les deux tables est remplacée par une jointure par fusion en flux continu par plage, exécutées en parallèle. Le résultat est généralement plusieurs fois plus rapide et consomme plusieurs fois moins de mémoire.
+
+Pour `hash` et `parallel_hash`, chaque plage dispose de sa propre table de hachage. Cette optimisation ne s’applique que lorsque ni les filtres dynamiques JOIN (`enable_join_runtime_filters`) ni le déversement sur disque (`max_bytes_ratio_before_external_join`, `max_bytes_before_external_join`) ne sont actifs, car tous deux rendent la jointure opaque à cette optimisation. Dans ce cas, elle n’accélère généralement pas les requêtes, mais peut réduire la consommation de mémoire. Les plages sont assignées aux fils d’exécution de manière statique : un filter sélectif sur une partie seulement de la plage de clé primaire laisse donc certains fils d’exécution inactifs.
+
+Ne s’applique pas à `FINAL`, à `ASOF`, aux jointures comportant plusieurs disjonctions dans `ON`, ni à la lecture avec des répliques parallèles.
 
 ## query_plan_join_swap_table {#query_plan_join_swap_table}
 
@@ -365,13 +371,13 @@ Ne prend effet que si `query_plan_direct_read_from_text_index` est activé.
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "greedy"},{"label": "Nouveau paramètre expérimental."}]}]} />
 
-Spécifie quels algorithmes d’ordre des jointures essayer lors de l’optimisation du plan de requête. Les algorithmes suivants sont disponibles :
+Spécifie quels algorithmes d’ordre des jointures essayer lors de l’optimisation du plan de requête. Les algorithmes suivants sont disponibles :
 
 * &#39;greedy&#39; - algorithme glouton de base - est rapide, mais peut ne pas produire le meilleur ordre de jointure
 * &#39;dpsize&#39; - implémente l’algorithme DPsize, actuellement uniquement pour les jointures internes - prend en compte tous les ordres de jointure possibles et trouve le plus optimal, mais peut être lent pour les requêtes comportant de nombreuses tables et de nombreux prédicats de jointure.
 * &#39;dpsub&#39; - implémente l’algorithme DPsub, qui prend en charge à la fois les jointures internes et les jointures autres qu’internes - prend en compte tous les ordres de jointure possibles et trouve le plus optimal, mais peut être lent pour les requêtes comportant de nombreuses tables et de nombreux prédicats de jointure.
 * &#39;dphyp&#39; - implémente l’algorithme DPhyp (Dynamic Programming via Hypergraph Partitioning), actuellement uniquement pour les jointures internes - explore le même espace de recherche que `dpsize`, mais n’énumère que les paires de sous-graphes connectés, ce qui génère moins de jointures intermédiaires sur des graphes de jointure clairsemés, au prix de ne pas prendre en compte les produits cartésiens
-  Plusieurs algorithmes peuvent être spécifiés sous forme de liste séparée par des virgules, par exemple `dphyp,greedy`. Ils sont essayés dans l’ordre ; si un algorithme ne peut pas traiter la requête (par exemple, en raison de jointures externes ou de composantes non connexes), le suivant est utilisé comme solution de repli.
+  Plusieurs algorithmes peuvent être spécifiés sous forme de liste séparée par des virgules, par exemple `dphyp,greedy`. Ils sont essayés dans l’ordre ; si un algorithme ne peut pas traiter la requête (par exemple, en raison de jointures externes ou de composantes non connexes), le suivant est utilisé comme solution de repli.
 
 ## query_plan_optimize_join_order_conflict_detector {#query_plan_optimize_join_order_conflict_detector}
 

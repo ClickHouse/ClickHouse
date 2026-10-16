@@ -13,9 +13,7 @@ El motor hereda de [MergeTree](/es/reference/engines/table-engines/mergetree-fam
 
 Recomendamos usar este motor junto con `MergeTree`. Almacene los datos completos en una tabla `MergeTree` y use `SummingMergeTree` para almacenar datos agregados, por ejemplo, al preparar informes. Este enfoque evitará la pérdida de datos valiosos debido a una clave primaria mal definida.
 
-<div id="creating-a-table">
-  ## Crear una tabla
-</div>
+## Crear una tabla {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -32,22 +30,16 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Para obtener una descripción de los parámetros de la solicitud, consulte [descripción de la solicitud](/es/reference/statements/create/table).
 
-<div id="parameters-of-summingmergetree">
-  ### Parámetros de SummingMergeTree
-</div>
+### Parámetros de SummingMergeTree {#parameters-of-summingmergetree}
 
-<div id="columns">
-  #### Columnas
-</div>
+#### Columnas {#columns}
 
 `columns` - una tupla con los nombres de las columnas cuyos valores se sumarán. Parámetro opcional.
 Las columnas deben ser de tipo numérico y no deben formar parte de la partición ni de la clave de ordenación.
 
 Si no se especifica `columns`, ClickHouse suma los valores de todas las columnas de tipo de datos numérico que no formen parte de la clave de ordenación.
 
-<div id="query-clauses">
-  ### Cláusulas de consulta
-</div>
+### Cláusulas de consulta {#query-clauses}
 
 Al crear una tabla `SummingMergeTree`, se requieren las mismas [cláusulas](/es/reference/engines/table-engines/mergetree-family/mergetree) que al crear una tabla `MergeTree`.
 
@@ -72,9 +64,7 @@ Al crear una tabla `SummingMergeTree`, se requieren las mismas [cláusulas](/es/
   * `columns` — tupla con los nombres de las columnas cuyos valores se sumarán. Es un parámetro opcional. Para ver una descripción, consulte el texto anterior.
 </details>
 
-<div id="usage-example">
-  ## Ejemplo de uso
-</div>
+## Ejemplo de uso {#usage-example}
 
 Considere la siguiente tabla:
 
@@ -107,35 +97,27 @@ SELECT key, sum(value) FROM summtt GROUP BY key
 └─────┴────────────┘
 ```
 
-<div id="data-processing">
-  ## Procesamiento de datos
-</div>
+## Procesamiento de datos {#data-processing}
 
 Cuando los datos se insertan en una tabla, se guardan tal cual. ClickHouse fusiona periódicamente las partes de datos insertadas, y es entonces cuando las filas con la misma clave primaria se suman y se sustituyen por una sola fila en cada parte de datos resultante.
 
 ClickHouse puede fusionar las partes de datos de modo que distintas partes de datos resultantes puedan contener filas con la misma clave primaria; es decir, la suma será incompleta. Por lo tanto, en una consulta (`SELECT`) se deben usar una función de agregación [sum()](/es/reference/functions/aggregate-functions/sum) y la cláusula `GROUP BY`, como se describe en el ejemplo anterior.
 
-<div id="common-rules-for-summation">
-  ### Reglas comunes para la suma
-</div>
+### Reglas comunes para la suma {#common-rules-for-summation}
 
 Se suman los valores de las columnas con tipo de dato numérico. El conjunto de columnas se define mediante el parámetro `columns`.
 
-Si los valores eran 0 en todas las columnas que se suman, la fila se elimina.
+Si los valores eran 0 en todas las columnas que se suman, la fila se elimina durante una fusión. Una consulta con el modificador [FINAL](/es/reference/statements/select/from#final-modifier) suma las filas, pero no elimina esas filas, de modo que el conjunto de filas que devuelve no depende de las columnas que lea la consulta. Tenga en cuenta que `FINAL` fusiona una [estructura anidada](#nested-structures) cuyo nombre termina en `Map` del mismo modo que una fusión solo si la consulta lee todas las columnas de esa estructura.
 
 Si una columna no forma parte de la clave primaria y no se suma, se selecciona un valor arbitrario de los existentes.
 
 Los valores no se suman en las columnas de la clave primaria.
 
-<div id="the-summation-in-the-aggregatefunction-columns">
-  ### La suma en las columnas de AggregateFunction
-</div>
+### La suma en las columnas de AggregateFunction {#the-summation-in-the-aggregatefunction-columns}
 
 En las columnas de [tipo AggregateFunction](/es/reference/data-types/aggregatefunction), ClickHouse se comporta como el [motor AggregatingMergeTree](/es/reference/engines/table-engines/mergetree-family/aggregatingmergetree), agregando de acuerdo con la función.
 
-<div id="nested-structures">
-  ### Estructuras anidadas
-</div>
+### Estructuras anidadas {#nested-structures}
 
 Una tabla puede tener estructuras de datos anidadas que se procesan de forma especial.
 
@@ -206,9 +188,7 @@ Al solicitar datos, utilice la función [sumMap(key, value)](/es/reference/funct
 
 En una estructura de datos anidada, no es necesario especificar sus columnas en la tupla de columnas para la suma.
 
-<div id="tuple-element-aggregation">
-  ### Agregación de elementos de Tuple
-</div>
+### Agregación de elementos de Tuple {#tuple-element-aggregation}
 
 Cuando la configuración `allow_tuple_element_aggregation` está habilitada, las columnas `Tuple` se aplanan de forma recursiva para que cada elemento hoja participe en la suma de forma independiente. Esto le permite almacenar varias métricas en una sola columna `Tuple` y hacer que se sumen elemento a elemento durante las fusiones.
 
@@ -217,7 +197,7 @@ A las subcolumnas aplanadas se les aplican las mismas reglas que a las columnas 
 * Solo se suman las subcolumnas numéricas.
 * Las subcolumnas que pertenecen a un `Tuple` en la clave de ordenación o en la clave de partición se excluyen de la suma.
 * Si se especifica `columns`, solo se suman las subcolumnas de las columnas `Tuple` incluidas en la lista.
-* Si todas las subcolumnas numéricas de una fila son cero después de la suma, la fila se elimina.
+* Si todas las subcolumnas numéricas de una fila son cero después de la suma, la fila se elimina durante una fusión (pero no mediante una consulta con `FINAL`).
 
 <Note>
   Esta configuración es inmutable y debe especificarse al crear la tabla.
@@ -252,9 +232,7 @@ SELECT key, metrics.impressions, metrics.clicks, metrics.nested.conversions FROM
 └─────┴─────────────────────┴────────────────┴────────────────────────────┘
 ```
 
-<div id="related-content">
-  ## Contenido relacionado
-</div>
+## Contenido relacionado {#related-content}
 
 * Blog: [Uso de los combinadores de agregación en ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)
 

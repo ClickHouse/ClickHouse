@@ -98,6 +98,16 @@ https://iceberg.apache.org/docs/1.5.2/configuration/ 를 참조하십시오.
 
 Iceberg의 compaction 데이터 파일 수에 대한 임계값입니다.
 
+## iceberg_orphan_files_min_retention_seconds {#iceberg_orphan_files_min_retention_seconds}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="86400" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "86400"},{"label": "새 설정입니다. `remove_orphan_files`는 현재 시점으로부터 이 초 수 이내의 `older_than` 값을 거부하므로, 이 시간 이내에 시작되어 아직 커밋되지 않은 쓰기 작업의 파일은 삭제되지 않고 유지됩니다. `compatibility`를 26.10 이전 버전으로 설정하면 이전 동작(최솟값 없음)으로 복원됩니다."}]}]} />
+
+`ALTER TABLE ... EXECUTE remove_orphan_files`가 Iceberg 테이블(Iceberg table)에서 삭제할 수 있는 파일의 최소 경과 시간(초)입니다. `older_than` 값(명시적으로 지정했거나 `iceberg_orphan_files_older_than_seconds`에서 도출된 값)이 현재 시점으로부터 이 값보다 가까우면 거부됩니다. 아직 커밋되지 않은 쓰기 작업의 파일은 테이블 메타데이터에서 참조되지 않으므로 삭제 대상이 될 수 있으며, 이 경우 해당 쓰기 작업이 커밋될 때 테이블이 손상됩니다. 이 값은 테이블 쓰기 작업이 커밋되기까지 걸릴 수 있는 최대 시간보다 크게 설정하십시오. 0으로 설정하면 이 검사가 비활성화됩니다.
+
 ## iceberg_orphan_files_older_than_seconds {#iceberg_orphan_files_older_than_seconds}
 
 <ExperimentalBadge />

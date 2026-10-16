@@ -138,6 +138,14 @@ Arrow Flight リクエストで使用するディスクリプタの種類です�
 
 個々の Arrow Flight リクエストのタイムアウト (秒) です。この上限はリクエスト全体に適用されます。読み取りの場合は、最初のレコードバッチを受信するまでの待機時間だけでなく、結果ストリーム全体が対象となります。0 を指定するとタイムアウトは無効になります。この場合、Flight サーバーがリクエストを受け付けたまま応答しないと、接続が閉じられるまでクエリがブロックされます。
 
+## backup_s3_expired_token_retry_timeout_ms {#backup_s3_expired_token_retry_timeout_ms}
+
+<SettingsInfoBlock type="UInt64" default_value="120000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "120000"},{"label": "トークンの期限切れが発生した場合に、S3 のバックアップおよび復元リクエストを再試行します。0 を指定すると以前の動作に戻ります。"}]}]} />
+
+バックアップまたは復元中に、応答で `ExpiredToken` が返された S3 リクエストを再試行する最大時間 (ミリ秒) です。再試行回数が `backup_restore_s3_retry_attempts` に達した場合も、再試行は停止します。0 を指定すると、この再試行は無効になります。AWS S3 の `HEAD` 応答は汎用的な HTTP ステータスしか返さないため、`HEAD` によるメタデータリクエストはこの再試行の対象外です。
+
 ## backup_slow_all_threads_after_retryable_s3_error {#backup_slow_all_threads_after_retryable_s3_error}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -305,6 +313,7 @@ WHERE 句に結合条件となる式がある場合、comma/cross join の代わ
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 カラム定義で明示的な修飾子 [NULL or NOT NULL](/ja/reference/statements/create/table#null-or-not-null-modifiers) を指定しないデータ型を、[Nullable](/ja/reference/data-types/nullable) として扱うかどうかを指定します。
+この設定は `CREATE TABLE`、`ALTER TABLE ... ADD COLUMN`、`ALTER TABLE ... MODIFY COLUMN` に適用されます。
 
 設定可能な値:
 
@@ -377,13 +386,13 @@ true の場合、DESCRIBE クエリの結果にはカラム名と型のみが含
 サポートされる値:
 
 * `clickhouse` (デフォルト) — 標準のClickHouse SQL。
-* `kusto` — Kusto Query Language。実験的設定の`allow_experimental_kusto_dialect`が必要です。
+* `kusto` — Kusto Query Language。ベータ設定の`allow_experimental_kusto_dialect`が必要です。
 * `prql` — PRQL。実験的設定の`allow_experimental_prql_dialect`が必要です。
 * `polyglot` — 他のdialect (MySQL、PostgreSQLなど) のSQLをClickHouse SQLにトランスパイルします。実験的設定の`allow_experimental_polyglot_dialect`が必要です。
 * `promql` — `promql_database`、`promql_table`、`promql_evaluation_time`設定で構成されたTimeSeriesテーブルに対して評価されるPromQL (Prometheus Query Language) 。
 * `clickhouse_json` — SQLテキストの代わりに、クエリをJSON AST (`parseQueryToJSON`の出力) として解釈します。dialectを元に戻せるよう、`SET`クエリは引き続き通常の形式で認識されます。実験的設定の`enable_json_ast_dialect`が必要です。
 * `logsql` — VictoriaLogsのログクエリ言語であるLogsQL。`logsql_database`および`logsql_table`設定で指定されたログテーブルに対する`SELECT`クエリに変換されます。実験的設定の`enable_logsql_dialect`が必要です。
-* `trino` — Trino SQL: Trinoの構文 (`ARRAY[...]`、`TRY_CAST`、`UNNEST`など) を変換し、Trinoの関数名をClickHouseの同等のものにマッピングします。実験的設定の`enable_trino_dialect`が必要です。
+* `trino` — Trino SQL: Trinoの構文 (`ARRAY[...]`、`TRY_CAST`、`UNNEST`など) を変換し、Trinoの関数名をClickHouseの同等のものにマッピングします。ベータ設定の`enable_trino_dialect`が必要です。
 
 ## discard_query_data {#discard_query_data}
 
@@ -449,6 +458,22 @@ true の場合、DESCRIBE クエリの結果にはカラム名と型のみが含
 
 * 0 — 空のファイルが要求されたフォーマットと互換性がない場合、`SELECT` は例外をスローします。
 * 1 — 空のファイルに対して、`SELECT` は空の結果を返します。
+
+## exact_division_for_integers {#exact_division_for_integers}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "`\/` および `divide` で正確な整数除算を有効にする新しい設定。"}]}]} />
+
+両方のオペランドが整数型 (`Int128`、`UInt128`、`Int256`、`UInt256` を含む) の場合、`/` および `divide` が整数を返すようにします。
+商はゼロ方向に切り詰められます。結果の幅は第 1 オペランドと同じになり、いずれかのオペランドが符号付きであれば結果も符号付きになります。
+ゼロ除算の場合、または商が結果の型の範囲を超える場合は例外をスローします。`Nullable` オペランドの場合は `NULL` が伝播されます。
+
+デフォルトでは、整数同士の除算は `Float64` を返します。この設定は、`Decimal` オペランドや floating-point オペランドを含む除算、
+および明示的な関数 `intDiv`、`divideDecimal`、`divideOrNull` には影響しません。
+
+この設定の値は、新たに送信された SQL の式がテーブルのメタデータ、ビュー、SQL関数、またはミューテーションに保存される前に、その式に記録されます。
+既存の定義および `ATTACH` クエリは、この設定に関係なく、元の除算のセマンティクスを維持します。
 
 ## exact_rows_before_limit {#exact_rows_before_limit}
 
@@ -909,6 +934,18 @@ ORDER BY がないとクエリ結果が非決定論的になるため、主に�
 
 INTERSECTクエリのデフォルトモードを設定します。設定可能な値: 空文字列、&#39;ALL&#39;、&#39;DISTINCT&#39;。空の場合、モードを指定しないクエリでは例外がスローされます。
 
+## json_extract_named_tuples_as_objects {#json_extract_named_tuples_as_objects}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "`JSONExtract` ファミリーの関数が、従来の配列からの位置依存の補完ではなく、JSON オブジェクトからのみ名前付きタプルを補完するようにする新しい設定です。名前なしタプルは常に位置依存で補完されます。また、`JSON` データ型のカラムからの抽出には影響しません。"}]}]} />
+
+`JSONExtract` ファミリーの関数において、名前付きタプルを JSON オブジェクトからのみ補完します。無効の場合は、従来どおり JSON配列から名前付きタプルが位置依存で補完されます。そのため、どの配列要素がどの名前付きフィールドに入るかは、タプルの宣言順序によって決まります。名前なしタプルは、この設定にかかわらず常に配列から位置依存で補完されます。
+
+この設定は、文字列として渡される JSON に適用されます。`JSON` データ型のカラムからの抽出は、型指定されたパスか型指定されていないパスかを問わず影響を受けません。この抽出は JSON ドキュメントをパースせずにカラムのサブカラムを読み取るため、この設定が制御するコードを通らないからです。JSON入力形式における名前付きタプルの*カラム*は、別の設定である [input&#95;format&#95;json&#95;named&#95;tuples&#95;as&#95;objects](/ja/reference/settings/formats/input-format#input_format_json_named_tuples_as_objects) で制御されます。この設定の対象は抽出関数のみです。
+
+デフォルトでは無効です。
+
 ## kill_throw_if_noop {#kill_throw_if_noop}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -1056,6 +1093,14 @@ MergeTree の marks をバックグラウンドの thread pool (server setting `
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "21.3"},{"label": "1"},{"label": "関数名を標準名に正規化します。これはプロジェクションのクエリルーティングに必要でした"}]}]} />
 
 関数名を標準名に正規化します
+
+## obfuscate_seed {#obfuscate_seed}
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": ""},{"label": "新しい設定: obfuscate テーブル関数用の seed 文字列。"}]}]} />
+
+`obfuscate` テーブル関数で使用する seed です。任意の文字列を指定でき、各カラムの seed はこの値とカラム名から導出されます。そのため、同じ seed からは常に同じ難読化結果が得られます。空文字列を指定すると、クエリごとに乱数シードが生成されます。
+
+この seed は通常の設定であり、シークレットではありません。値は他の設定と同様に平文で保存・表示されます (`system.query_log` や `system.settings` など)。パスワードなどのシークレットを seed として使用しないでください。異なるクエリの難読化された出力同士を関連付けられないようにする必要がある場合は、固定の seed を設定せず、デフォルトの空の値 (クエリごとに新しい乱数シードを生成) のままにしてください。
 
 ## offset {#offset}
 
@@ -1258,6 +1303,16 @@ a   Tuple(
 `QBit` の距離関数 (`L2DistanceTransposed`、`cosineDistanceTransposed`、`dotProductTransposed`、およびそれぞれの `...Quantized` 版) が精度 1 で呼び出された場合に、参照ベクトルもその要素の符号に縮約し、2 つの符号ベクトル間のハミング距離 (XOR と popcount で計算) から結果を求めます。
 
 デフォルトでは、精度 1 の場合でも参照ベクトルは元の精度を保持し、格納されたベクトルのみが符号に縮約されます (非対称距離)。対称距離は数倍高速ですが、参照ベクトルの要素の大きさは考慮されません。つまり、参照ベクトルの値が大きい次元も、ゼロに近い次元も同じ重みで扱われます。
+
+## query_condition_cache_time_condition_grid_factor {#query_condition_cache_time_condition_grid_factor}
+
+<SettingsInfoBlock type="Float" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "新しい設定: クエリ条件キャッシュにおいて、現在時刻を含む条件から決定論的な条件を導出する際に使用するグリッドのステップ。時刻定数と現在時刻との距離に対する割合で指定します。"}]}]} />
+
+`MergeTree` テーブルの[クエリ条件キャッシュ](/ja/concepts/features/performance/caches/query-condition-cache)で現在時刻を含む条件を扱う場合([`use_query_condition_cache_for_time_conditions`](/ja/reference/settings/session-settings/use-query#use_query_condition_cache_for_time_conditions) を参照)に、時刻定数を丸める際のグリッドのサイズを、定数と現在時刻との距離に対する割合で指定します。例えば、デフォルトの係数 1.0 では、`WHERE time >= now() - INTERVAL 10 DAY` の定数は 1 日単位のグリッドに丸められ(上限は 1 日)、`WHERE time >= now() - INTERVAL 1 HOUR` の定数は 1 時間単位のグリッドに丸められます。
+
+値を小さくすると、導出される条件が元の条件に近づき、境界付近での over-read が減りますが、その分キャッシュキーが切り替わる頻度が高くなります。グリッドのステップは最小 1 秒に制限されるため、係数を小さくしても導出が無効化されることはなく、導出される条件が元の条件に収束していきます。0 以下の値を指定すると、導出は完全に無効化されます。
 
 ## query_metric_log_interval {#query_metric_log_interval}
 

@@ -12,15 +12,11 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 Эти настройки задают конфигурацию сервера ClickHouse и автоматически генерируются из исходного кода ClickHouse.
 
-<div id="index_uncompressed_cache_policy">
-  ## index_uncompressed_cache_policy
-</div>
+## index_uncompressed_cache_policy {#index_uncompressed_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Название политики кэша несжатых данных вторичных индексов.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Название политики вытеснения кэша несжатых данных вторичных индексов. Возможные значения: `LRU`, `SLRU`, `SIEVE`.
 
-<div id="index_uncompressed_cache_size">
-  ## index_uncompressed_cache_size
-</div>
+## index_uncompressed_cache_size {#index_uncompressed_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
 
@@ -32,9 +28,7 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
   Этот параметр можно изменять во время выполнения, и изменения вступят в силу немедленно.
 </Note>
 
-<div id="index_uncompressed_cache_size_ratio">
-  ## index_uncompressed_cache_size_ratio
-</div>
+## index_uncompressed_cache_size_ratio {#index_uncompressed_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />Размер защищённой очереди (в случае политики SLRU) в кэше несжатых данных вторичных индексов по отношению к общему размеру кэша.
 

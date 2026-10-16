@@ -73,11 +73,15 @@ Cuántas columnas de argumentos preparadas normalizó el sellado de la agregaci�
 
 ### AdaptiveAggregationSharedTableSpills {#adaptiveaggregationsharedtablespills}
 
-Número de veces que la agregación adaptativa volcó a disco su tabla compartida de vaciado por haber alcanzado el límite de partes bajo presión de memoria.
+Número de veces que la agregación adaptativa volcó a disco su tabla de drenaje compartida bajo presión de memoria, al alcanzar el límite de partes o ante una solicitud explícita de volcado a disco.
 
 ### AdaptiveAggregationSpillBacklogSheds {#adaptiveaggregationspillbacklogsheds}
 
 Cuántas veces la agregación adaptativa descartó el backlog preparado porque un thread del algoritmo baseline —uno que el deshielo devolvió allí o uno que se retiró por sí mismo— estaba a punto de hacer spill mientras aún quedaban registros preparados residentes en memoria.
+
+### AdaptiveAggregationSpillDrains {#adaptiveaggregationspilldrains}
+
+Número de solicitudes de volcado a disco del planificador de memoria que la agregación adaptativa atendió escribiendo en disco registros preparados temporalmente o residuos de vaciado compartidos, en lugar de abandonar la ruta adaptativa.
 
 ### AdaptiveAggregationStagedBytes {#adaptiveaggregationstagedbytes}
 
@@ -342,6 +346,10 @@ Cuántos mensajes se han descartado de text&#95;log porque la cola de logs asín
 ### AsyncLoggingTextLogTotalMessages {#asyncloggingtextlogtotalmessages}
 
 Número de mensajes (aceptados o descartados) que se han enviado a la cola asíncrona de text&#95;log
+
+### AutomaticParallelReplicasDecidedWithoutBuildingPlan {#automaticparallelreplicasdecidedwithoutbuildingplan}
+
+Número de veces que el mecanismo automático de réplicas paralelas decidió no usar réplicas paralelas en un límite recordado de una ejecución anterior, sin construir un plan candidato para estimar su costo
 
 ### AutomaticParallelReplicasProbePlansBuilt {#automaticparallelreplicasprobeplansbuilt}
 
@@ -921,6 +929,10 @@ Número de veces que los datos tras la fusión no son idénticos byte a byte a l
 ### DataAfterMutationDiffersFromReplica {#dataaftermutationdiffersfromreplica}
 
 Número de veces que los datos tras una mutación no son idénticos byte a byte a los datos de otras réplicas. Además de las razones descritas en &#39;DataAfterMergeDiffersFromReplica&#39;, esto también puede deberse a una mutación no determinista.
+
+### DatabaseTablesEnumerated {#databasetablesenumerated}
+
+Número de tablas que una base de datos ha devuelto a través de su iterador de tablas: a `SHOW TABLES`, a las tablas del sistema que listan tablas y a cualquier otro proceso que recorra una base de datos. Una condición sobre el nombre de tabla en una consulta a una de estas tablas del sistema acota la enumeración, y este contador indica en qué medida.
 
 ### DefaultImplementationForNullsRows {#defaultimplementationfornullsrows}
 
@@ -1982,6 +1994,26 @@ Número de archivos utilizados por el procesamiento externo (ordenación/agregac
 
 Volumen de datos (sin comprimir, antes de la compresión) escrito por el procesamiento externo (ordenación/agregación/join)
 
+### ExternalSetCompressedBytes {#externalsetcompressedbytes}
+
+Número de bytes comprimidos escritos para los conjuntos de `IN` en memoria externa.
+
+### ExternalSetMerge {#externalsetmerge}
+
+Número de veces que se fusionaron archivos temporales para un conjunto `IN` en memoria externa.
+
+### ExternalSetReadBlocks {#externalsetreadblocks}
+
+Número de bloques leídos de los archivos temporales de los conjuntos `IN` en memoria externa para buscar claves.
+
+### ExternalSetUncompressedBytes {#externalsetuncompressedbytes}
+
+Cantidad de datos (sin comprimir, antes de la compresión) escritos en memoria externa para los conjuntos de `IN`.
+
+### ExternalSetWritePart {#externalsetwritepart}
+
+Número de veces que se escribió un archivo temporal en disco para un conjunto de `IN` en memoria externa.
+
 ### ExternalSortCompressedBytes {#externalsortcompressedbytes}
 
 Número de bytes comprimidos escritos durante la ordenación en memoria externa.
@@ -2630,6 +2662,14 @@ Número de bloques emitidos por DelayedJoinedBlocksWorkerTransform.
 
 Número de filas emitidas por DelayedJoinedBlocksWorkerTransform.
 
+### JoinNonJoinedHashTableScans {#joinnonjoinedhashtablescans}
+
+Número de veces que una unión hash RIGHT o FULL recorrió su tabla hash en busca de filas no emparejadas.
+
+### JoinNonJoinedHashTableScansSkipped {#joinnonjoinedhashtablescansskipped}
+
+Número de veces que una unión hash RIGHT o FULL omitió el escaneo de su tabla hash en busca de filas no emparejadas, porque todas las claves del lado derecho de la parte escaneada ya tenían coincidencia.
+
 ### JoinNonJoinedTransformBlockCount {#joinnonjoinedtransformblockcount}
 
 Número de bloques emitidos por NonJoinedBlocksTransform.
@@ -3254,6 +3294,10 @@ Número de archivos del índice primario cargados.
 
 Número de filas de la clave primaria que se han cargado.
 
+### LoadedStatistics {#loadedstatistics}
+
+Número de partes de datos cuyas estadísticas de columna se cargaron
+
 ### LoadedStatisticsMicroseconds {#loadedstatisticsmicroseconds}
 
 Tiempo transcurrido durante la carga de estadísticas desde las partes
@@ -3413,6 +3457,18 @@ Número total de solicitudes aprobadas de aumento de MemoryReservation
 ### MemoryReservationKilled {#memoryreservationkilled}
 
 Número total de señales de terminación de reserva de memoria
+
+### MemoryReservationReclaimableBytes {#memoryreservationreclaimablebytes}
+
+Memoria de la consulta que pasó a ser recuperable (susceptible de volcado a disco)
+
+### MemoryReservationSpilledBytes {#memoryreservationspilledbytes}
+
+Cantidad total de memoria volcada a disco
+
+### MemoryReservationSpillingMicroseconds {#memoryreservationspillingmicroseconds}
+
+Tiempo que tarda el volcado a disco
 
 ### MemoryWorkerRun {#memoryworkerrun}
 
@@ -4202,6 +4258,10 @@ El número total de pages descartadas de los datos de Parquet mediante el índic
 
 El número total de grupos de filas descartados en los datos Parquet
 
+### ParquetReadMinMaxFromStatistics {#parquetreadminmaxfromstatistics}
+
+Número de archivos Parquet cuyos valores `min` / `max` se calcularon a partir de las estadísticas de los fragmentos de columna, en lugar de leyendo los datos (véase `optimize_min_max_from_files`)
+
 ### ParquetReadPages {#parquetreadpages}
 
 Número total de pages de datos Parquet leídas
@@ -4578,6 +4638,10 @@ Tiempo dedicado a leer desde Azure.
 
 Número de excepciones al leer desde Azure
 
+### ReadBufferFromFileDescriptorPageCacheHitBytes {#readbufferfromfiledescriptorpagecachehitbytes}
+
+Número de bytes leídos desde descriptores de archivo mediante `pread` síncrono que se detectó que se sirvieron desde la caché de páginas del sistema operativo (esto solo se hace para las lecturas con un limitador de tasa de ancho de banda).
+
 ### ReadBufferFromFileDescriptorRead {#readbufferfromfiledescriptorread}
 
 Número de operaciones de lectura (read/pread) desde un descriptor de archivo. No incluye sockets.
@@ -4601,6 +4665,10 @@ Tiempo empleado en inicializar la conexión a S3.
 ### ReadBufferFromS3Microseconds {#readbufferfroms3microseconds}
 
 Tiempo empleado en leer desde S3.
+
+### ReadBufferFromS3RequestsCut {#readbufferfroms3requestscut}
+
+Número de solicitudes desde discos S3 truncadas a un único llenado del búfer porque el grupo de conexiones de los discos había alcanzado o superado `disk_connections_soft_limit`.
 
 ### ReadBufferFromS3RequestsErrors {#readbufferfroms3requestserrors}
 
@@ -4942,6 +5010,10 @@ Número de gránulos examinados para el pruning en tiempo de lectura por los JOI
 
 Número de gránulos descartados en el momento de la lectura por los filtros en tiempo de ejecución de JOIN
 
+### RuntimeFilterIndexAnalysisReads {#runtimefilterindexanalysisreads}
+
+Número de lecturas configuradas para descartar gránulos con un filtro en tiempo de ejecución de JOIN durante la lectura. Se contabiliza cuando la lectura llega a su canalización con los descriptores y dispone de una clave primaria o un índice de omisión de datos con el que descartarlos, se examine o no posteriormente algún gránulo, por lo que indica que los descriptores se conservaron tras todas las reconstrucciones del paso de lectura.
+
 ### RuntimeFilterLookupsBeforeBuildFinished {#runtimefilterlookupsbeforebuildfinished}
 
 Número de bloques consultados en un filtro en tiempo de ejecución de JOIN cuyo lado de build aún no había terminado, por lo que pasan sin filtrarse
@@ -5253,6 +5325,10 @@ Tiempo transcurrido desde el inicio del servidor hasta que comienza a escuchar e
 ### SetsBuiltFromSubquery {#setsbuiltfromsubquery}
 
 Número de Sets `IN`/`JOIN` construidos al ejecutar su subconsulta. No se contabilizan los Sets tomados de la caché de Sets preparados ni los que ya estaban construidos y se reutilizan.
+
+### SetsSpilledToDisk {#setsspilledtodisk}
+
+Número de conjuntos `IN` que se volcaron a disco durante su construcción a partir de su subconsulta.
 
 ### SettingsProfileCacheRecalculationMicroseconds {#settingsprofilecacherecalculationmicroseconds}
 
@@ -5577,6 +5653,10 @@ Número de veces que se ha adquirido el bloqueo de partes de datos compartidas p
 ### SharedPartsLockWaitMicroseconds {#sharedpartslockwaitmicroseconds}
 
 Tiempo total invertido en esperar el bloqueo de partes de datos compartidos en tablas MergeTree
+
+### ShortCircuitArgumentsReordered {#shortcircuitargumentsreordered}
+
+Número de bloques en los que la función `and` u `or` evaluó sus argumentos en un orden distinto al de la consulta: un argumento barato antes que uno costoso, o según las estadísticas recopiladas en los bloques anteriores (parámetro de configuración `short_circuit_function_evaluation_reorder_arguments`). No se contabiliza la reordenación de los átomos de la cadena AND en `WHERE` / `HAVING`, que se decide una sola vez cuando `FilterStep` construye su canalización.
 
 ### Llamadas a funciones sleep {#sleepfunctioncalls}
 
@@ -6250,6 +6330,10 @@ Tiempo total dedicado a los handshakes TLS de las conexiones entrantes (del serv
 
 Número de handshakes TLS completados en las conexiones entrantes (del lado del servidor) a través de los protocolos del servidor que usan la implementación TLS de Poco: TCP nativo, HTTPS, MySQL y PostgreSQL. gRPC utiliza su propia pila TLS, por lo que no se incluye en el recuento. La reanudación de una sesión también implica un handshake y se contabiliza aquí.
 
+### TopKGranulesSkippedByPrimaryKey {#topkgranulesskippedbyprimarykey}
+
+Número de gránulos omitidos durante la lectura porque el índice primario indica que todas sus filas quedan fuera del umbral top-K vigente, publicado por la agregación (véase `enable_group_by_top_k_dynamic_filtering`) o por la ordenación (véase `use_top_k_dynamic_filtering`).
+
 ### UncompressedCacheHits {#uncompressedcachehits}
 
 Número de veces que se encontró un bloque de datos en la caché sin comprimir (evitando así la descompresión).
@@ -6421,6 +6505,10 @@ Número de excepciones al escribir en S3.
 ### WriteBufferFromS3WaitInflightLimitMicroseconds {#writebufferfroms3waitinflightlimitmicroseconds}
 
 Tiempo dedicado a esperar a que se completen algunas de las solicitudes actuales cuando su número alcanza el límite definido por s3&#95;max&#95;inflight&#95;parts&#95;for&#95;one&#95;file.
+
+### YTsaurusLookupThrottled {#ytsauruslookupthrottled}
+
+Número de solicitudes de búsqueda a YTsaurus que se limitaron
 
 ### ZooKeeperBytesReceived {#zookeeperbytesreceived}
 

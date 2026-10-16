@@ -825,6 +825,18 @@ Le nombre de lignes et d’octets est indiqué une seule fois pour l’ensemble 
   2. le nombre maximal de threads de traitement des requêtes défini dans `max_threads`.
 </Note>
 
+#### Déversement sur le disque dans les étapes d&#39;agrégation, de tri et de dédoublonnage {#explain-analyze-spilling}
+
+Lorsqu&#39;une étape `GROUP BY`, `ORDER BY` ou `DISTINCT` déverse des données dans un stockage temporaire, elle indique :
+
+```txt
+Spill: spilled <compressed_bytes>
+```
+
+Il s&#39;agit du nombre cumulé d&#39;octets compressés écrits par l&#39;ensemble de l&#39;étape, y compris ses processeurs parallèles.
+Ce total inclut les fichiers temporaires déjà consommés ou supprimés, et comptabilise chaque écriture lorsque des données sont déversées sur disque à plusieurs reprises.
+Cette ligne est omise si aucune donnée n&#39;a été déversée sur disque.
+
 #### Étapes de jointure {#explain-analyze-join-steps}
 
 Pour une étape de jointure, `EXPLAIN ANALYZE` affiche des lignes comparant les estimations de l’optimiseur de requêtes d’ordre de jointure avec ce qui s’est réellement produit (voir [Métriques de jointure estimées et réelles](#explain-analyze-join-estimation)), ainsi que, pour chaque côté, des lignes de *participation* — `Left` et `Right` — suivies des éventuelles lignes propres à l’implémentation de la jointure. `Left` et `Right` correspondent aux côtés logiques de la requête SQL. Dans la plupart des cas, `Left` correspond également au côté sonde (probe) de la jointure, et `Right` au côté de construction (build). Ce n’est toutefois pas toujours le cas, en raison de l’inversion (swap) qui peut se produire lors de l’exécution de la jointure. Toutes les valeurs de [`join_algorithm`](/fr/reference/settings/session-settings/join#join_algorithm) sont prises en charge (`hash`, `parallel_hash`, `grace_hash`, `partial_merge`, `full_sorting_merge`, `parallel_full_sorting_merge`, `direct`), de même que les trois implémentations que ce paramètre ne peut pas sélectionner : les jointures `CROSS` ou `COMMA`, la [jointure par boucles imbriquées par blocs](/fr/reference/statements/select/join#join-with-an-arbitrary-on-condition) utilisée pour une section `ON` ne déterminant aucune clé de jointure, et le moteur de table [`Join`](/fr/reference/engines/table-engines/special/join). La plupart indiquent les deux côtés ; certaines n’indiquent que le côté qu’elles matérialisent (par exemple, `direct` affiche uniquement `Left:`).

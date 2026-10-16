@@ -12,17 +12,13 @@ doc_type: 'reference'
 事前に設定されているかどうかに関係なく、テーブルコメントを追加、変更、または削除します。コメントの変更は、[`system.tables`](/ja/reference/system-tables/tables)
 と `SHOW CREATE TABLE` クエリの両方に反映されます。
 
-<div id="syntax">
-  ## 構文
-</div>
+## 構文 {#syntax}
 
 ```sql
 ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY COMMENT 'Comment'
 ```
 
-<div id="examples">
-  ## 例
-</div>
+## 例 {#examples}
 
 コメント付きのテーブルを作成するには:
 
@@ -77,9 +73,7 @@ WHERE database = currentDatabase() AND name = 'table_with_comment';
 └─────────┘
 ```
 
-<div id="caveats">
-  ## 注意事項
-</div>
+## 注意事項 {#caveats}
 
 レプリケートテーブルでは、コメントがレプリカごとに異なる場合があります。
 コメントの変更は、1 つのレプリカにのみ適用されます。
@@ -87,9 +81,7 @@ WHERE database = currentDatabase() AND name = 'table_with_comment';
 この機能はバージョン 23.9 以降で利用できます。以前の
 ClickHouse バージョンでは動作しません。
 
-<div id="related-content">
-  ## 関連コンテンツ
-</div>
+## 関連コンテンツ {#related-content}
 
 * [`COMMENT`](/ja/reference/statements/create/table#comment-clause) 句
 * [`ALTER DATABASE ... MODIFY COMMENT`](/ja/reference/statements/alter/database-comment)

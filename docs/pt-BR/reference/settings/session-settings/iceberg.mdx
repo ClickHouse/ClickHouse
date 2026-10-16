@@ -98,6 +98,16 @@ consulte https://iceberg.apache.org/docs/1.5.2/configuration/.
 
 Limite de arquivos de dados de compactação no Iceberg.
 
+## iceberg_orphan_files_min_retention_seconds {#iceberg_orphan_files_min_retention_seconds}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="86400" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "86400"},{"label": "Nova configuração. `remove_orphan_files` rejeita um `older_than` inferior a esta quantidade de segundos antes do momento atual, preservando assim os arquivos de uma escrita iniciada há menos tempo que isso e que ainda não foi confirmada. Definir `compatibility` com versões anteriores à 26.10 restaura o comportamento anterior (sem valor mínimo)."}]}]} />
+
+Idade mínima, em segundos, dos arquivos que `ALTER TABLE ... EXECUTE remove_orphan_files` pode excluir de uma tabela Iceberg. Um `older_than` (fornecido explicitamente ou derivado de `iceberg_orphan_files_older_than_seconds`) mais próximo do momento atual do que este valor é rejeitado: os arquivos de uma escrita ainda não confirmada não são referenciados pelos metadados da tabela e seriam excluídos, o que corromperia a tabela quando a escrita fosse confirmada. Mantenha este valor acima do tempo máximo que uma escrita na tabela pode levar para ser confirmada. O valor 0 desabilita a verificação.
+
 ## iceberg_orphan_files_older_than_seconds {#iceberg_orphan_files_older_than_seconds}
 
 <ExperimentalBadge />

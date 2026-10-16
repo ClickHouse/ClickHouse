@@ -404,19 +404,97 @@ SELECT char(0xD0, 0xBF, 0xD1, 0x80, 0xD0, 0xB8, 0xD0, 0xB2, 0xD0, 0xB5, 0xD1, 0x
 └────────┘
 ```
 
+## decodeQuotedPrintable {#decodeQuotedPrintable}
+
+Introduit dans : v26.10.0
+
+Décode une string encodée en [Quoted-Printable](https://en.wikipedia.org/wiki/Quoted-printable), conformément à la [RFC 2045](https://www.rfc-editor.org/rfc/rfc2045#section-6.7).
+
+`=XX` (chiffres hexadécimaux, en majuscules ou en minuscules) est remplacé par l’octet qu’il encode.
+Un `=` suivi de `\r` ou de `\n` constitue un saut de ligne souple : il est supprimé avec le reste de la ligne, jusqu’au `\n` suivant inclus.
+Les autres séquences d’échappement mal formées (comme `=ZZ`, ou `=4` en fin de string) sont conservées telles quelles, à ceci près qu’un `=` isolé situé tout à la fin de la string est supprimé.
+Ce comportement correspond à celui de `quopri.decodestring` en Python.
+
+**Syntaxe**
+
+```sql
+decodeQuotedPrintable(s)
+```
+
+**Arguments**
+
+* `s` — String encodée en Quoted-Printable. [`String`](/fr/reference/data-types/string)
+
+**Valeur renvoyée**
+
+Renvoie la string décodée. [`String`](/fr/reference/data-types/string)
+
+**Exemples**
+
+**Exemple d’utilisation**
+
+```sql title=Query
+SELECT decodeQuotedPrintable('Caf=C3=A9 =3D 3 =E2=82=AC') AS decoded
+```
+
+```response title=Response
+┌─decoded────┐
+│ Café = 3 € │
+└────────────┘
+```
+
+## encodeQuotedPrintable {#encodeQuotedPrintable}
+
+Introduit dans : v26.10.0
+
+Encode une string à l’aide de l’encodage [Quoted-Printable](https://en.wikipedia.org/wiki/Quoted-printable), conformément à la [RFC 2045](https://www.rfc-editor.org/rfc/rfc2045#section-6.7), tel qu’utilisé dans les e-mails.
+
+Les caractères ASCII imprimables, à l’exception de `=`, sont conservés tels quels ; les autres octets sont écrits sous la forme `=XX`, avec des chiffres hexadécimaux en majuscules.
+Un saut de ligne `\r\n` est conservé, tandis qu’un `\r` ou un `\n` isolé est encodé. Un espace ou une tabulation est encodé s’il se trouve en fin de ligne.
+Les lignes sont limitées à 76 caractères au maximum à l’aide de sauts de ligne souples (`=\r\n`).
+`decodeQuotedPrintable(encodeQuotedPrintable(s))` renvoie la string d’origine `s`, quelle que soit la valeur de `s`.
+
+**Syntaxe**
+
+```sql
+encodeQuotedPrintable(s)
+```
+
+**Arguments**
+
+* `s` — String à encoder. [`String`](/fr/reference/data-types/string)
+
+**Valeur renvoyée**
+
+Renvoie la string encodée en Quoted-Printable. [`String`](/fr/reference/data-types/string)
+
+**Exemples**
+
+**Exemple d’utilisation**
+
+```sql title=Query
+SELECT encodeQuotedPrintable('Café = 3 €') AS encoded
+```
+
+```response title=Response
+┌─encoded───────────────────┐
+│ Caf=C3=A9 =3D 3 =E2=82=AC │
+└───────────────────────────┘
+```
+
 ## hex {#hex}
 
-Introduit dans : v1.1.0
+Introduit dans : v1.1.0
 
 Renvoie une chaîne contenant la représentation hexadécimale de l&#39;argument selon
-la logique suivante pour les différents types :
+la logique suivante pour les différents types :
 
 | Type                      | Description                                                                                                                                                                                                                                                                                                                                            |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `(U)Int*`                 | Affiche les chiffres hexadécimaux (&quot;nibbles&quot;) du plus significatif au moins significatif (ordre big-endian, ou ordre &quot;lisible par l&#39;humain&quot;). Commence par l&#39;octet non nul le plus significatif (les octets nuls en tête sont omis), mais affiche toujours les deux chiffres de chaque octet, même si le premier est zéro. |
 | `Date` et `DateTime`      | Formatés comme les entiers correspondants (le nombre de jours depuis l’epoch pour Date et la valeur du timestamp Unix pour DateTime).                                                                                                                                                                                                                  |
 | `String` et `FixedString` | Tous les octets sont simplement encodés sous forme de deux chiffres hexadécimaux. Les octets nuls ne sont pas omis.                                                                                                                                                                                                                                    |
-| `Float*` et `Decimal`     | Encodés selon leur représentation en mémoire. ClickHouse représente toujours les valeurs en interne en little-endian ; elles sont donc encodées de cette façon. Les octets nuls de début et de fin ne sont pas omis.                                                                                                                                   |
+| `Float*` et `Decimal`     | Encodés selon leur représentation en mémoire. ClickHouse représente toujours les valeurs en interne en little-endian ; elles sont donc encodées de cette façon. Les octets nuls de début et de fin ne sont pas omis.                                                                                                                                   |
 | `UUID`                    | Encodé sous forme de chaîne en ordre big-endian.                                                                                                                                                                                                                                                                                                       |
 
 La fonction utilise les lettres majuscules `A-F` et n’utilise ni préfixe (comme `0x`) ni suffixe (comme `h`).
@@ -426,6 +504,8 @@ La fonction utilise les lettres majuscules `A-F` et n’utilise ni préfixe (com
 ```sql
 hex(arg)
 ```
+
+**Alias** : `to_hex`
 
 **Arguments**
 
@@ -1050,7 +1130,7 @@ SELECT reinterpretAsUInt64(reverse(unbin('1110'))) AS num
 
 ## unhex {#unhex}
 
-Introduit dans : v1.1.0
+Introduit dans : v1.1.0
 
 Effectue l’opération inverse de [`hex`](#hex). Interprète chaque paire de chiffres hexadécimaux (dans l’argument) comme un nombre, puis la convertit
 en l’octet représenté par ce nombre. La valeur renvoyée est une chaîne binaire (BLOB).
@@ -1074,9 +1154,11 @@ Pour un argument numérique, `unhex()` n’effectue pas l’inverse de `hex(N)`.
 unhex(arg)
 ```
 
+**Alias** : `from_hex`
+
 **Arguments**
 
-* `arg` — Une chaîne contenant un nombre quelconque de caractères hexadécimaux. [`String`](/fr/reference/data-types/string) ou [`FixedString`](/fr/reference/data-types/fixedstring)
+* `arg` — Une chaîne contenant un nombre quelconque de chiffres hexadécimaux. [`String`](/fr/reference/data-types/string) ou [`FixedString`](/fr/reference/data-types/fixedstring)
 
 **Valeur renvoyée**
 

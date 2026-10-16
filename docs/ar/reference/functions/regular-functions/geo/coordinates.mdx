@@ -6,9 +6,7 @@ title: 'دوال للتعامل مع الإحداثيات الجغرافية'
 doc_type: 'reference'
 ---
 
-<div id="greatcircledistance">
-  ## greatCircleDistance
-</div>
+## greatCircleDistance {#greatcircledistance}
 
 يحسب المسافة بين نقطتين على سطح الأرض باستخدام [معادلة الدائرة العظمى](https://en.wikipedia.org/wiki/Great-circle_distance).
 
@@ -43,9 +41,7 @@ SELECT greatCircleDistance(55.755831, 37.617673, -55.755831, -37.617673) AS grea
 └─────────────────────┘
 ```
 
-<div id="geodistance">
-  ## geoDistance
-</div>
+## geoDistance {#geodistance}
 
 مشابهة لـ `greatCircleDistance`، لكنها تحسب المسافة على إهليلج WGS-84 بدلًا من الكرة. ويوفّر ذلك تقريبًا أدق لجيود الأرض.
 الأداء مماثل لأداء `greatCircleDistance` (من دون أي تراجع في الأداء). ويُوصى باستخدام `geoDistance` لحساب المسافات على الأرض.
@@ -83,9 +79,7 @@ SELECT geoDistance(38.8976, -77.0366, 39.9496, -75.1503) AS geoDistance
 └─────────────┘
 ```
 
-<div id="greatcircleangle">
-  ## greatCircleAngle
-</div>
+## greatCircleAngle {#greatcircleangle}
 
 تحسب الزاوية المركزية بين نقطتين على سطح الأرض باستخدام [معادلة الدائرة العظمى](https://en.wikipedia.org/wiki/Great-circle_distance).
 
@@ -116,9 +110,7 @@ SELECT greatCircleAngle(0, 0, 45, 0) AS arc
 └─────┘
 ```
 
-<div id="geotoutm">
-  ## geoToUTM
-</div>
+## geoToUTM {#geotoutm}
 
 يحوّل الإحداثيات الجغرافية وفق نظام WGS84 `(longitude, latitude)` إلى إحداثيات [Universal Transverse Mercator (UTM)](https://en.wikipedia.org/wiki/Universal_Transverse_Mercator_coordinate_system).
 
@@ -150,9 +142,7 @@ SELECT geoToUTM(2.294497, 48.858222) AS utm; -- Eiffel Tower
 (448251.5978370684,5411935.125629659,31,'U')
 ```
 
-<div id="utmtogeo">
-  ## UTMToGeo
-</div>
+## UTMToGeo {#utmtogeo}
 
 يحوّل إحداثيات [UTM](https://en.wikipedia.org/wiki/Universal_Transverse_Mercator_coordinate_system) إلى الإحداثيات الجغرافية وفق WGS84 `(خط الطول، خط العرض)`. وهذه هي الدالة العكسية لـ [`geoToUTM`](#geotoutm).
 
@@ -181,9 +171,7 @@ SELECT UTMToGeo(448251.6, 5411935.13, 31, 1) AS coord;
 (2.2944970289079203,48.85822204127082)
 ```
 
-<div id="geotomgrs">
-  ## geoToMGRS
-</div>
+## geoToMGRS {#geotomgrs}
 
 يحوِّل الإحداثيات الجغرافية وفق WGS84 `(خط الطول، خط العرض)` إلى سلسلة [Military Grid Reference System (MGRS)](https://en.wikipedia.org/wiki/Military_Grid_Reference_System).
 
@@ -215,9 +203,7 @@ SELECT geoToMGRS(2.294497, 48.858222) AS mgrs, geoToMGRS(2.294497, 48.858222, 3)
 └─────────────────┴─────────────┘
 ```
 
-<div id="mgrstogeo">
-  ## MGRSToGeo
-</div>
+## MGRSToGeo {#mgrstogeo}
 
 يفكّ ترميز سلسلة [MGRS](https://en.wikipedia.org/wiki/Military_Grid_Reference_System) إلى إحداثيات جغرافية وفق WGS84 `(longitude, latitude)`. وهذه هي العملية العكسية لـ [`geoToMGRS`](#geotomgrs).
 
@@ -245,9 +231,7 @@ SELECT MGRSToGeo('31UDQ4825111935') AS coord;
 (2.294495618908297,48.85822536113692)
 ```
 
-<div id="pointinellipses">
-  ## pointInEllipses
-</div>
+## pointInEllipses {#pointinellipses}
 
 يتحقق مما إذا كانت النقطة تقع داخل شكل بيضاوي واحد على الأقل.
 الإحداثيات هندسية ضمن نظام الإحداثيات الديكارتية.
@@ -280,9 +264,7 @@ SELECT pointInEllipses(10., 10., 10., 9.1, 1., 0.9999)
 └─────────────────────────────────────────────────┘
 ```
 
-<div id="pointinpolygon">
-  ## pointInPolygon
-</div>
+## pointInPolygon {#pointinpolygon}
 
 يتحقق مما إذا كانت النقطة تقع داخل المضلع على المستوى.
 
@@ -293,12 +275,12 @@ pointInPolygon((x, y), [(a, b), (c, d) ...], ...)
 **قيم الإدخال**
 
 * `(x, y)` — إحداثيات نقطة على المستوى. نوع البيانات — [Tuple](/ar/reference/data-types/tuple) — قيمة Tuple مكوّنة من رقمين، أو [Point](/ar/reference/data-types/geo#point).
-* `[(a, b), (c, d) ...]` — رؤوس المضلع. نوع البيانات — [Array](/ar/reference/data-types/array) أو [Ring](/ar/reference/data-types/geo#ring). تُمثَّل كل قمة بزوج من الإحداثيات `(a, b)`. يجب تحديد الرؤوس بترتيب مع عقارب الساعة أو عكس اتجاه عقارب الساعة. الحد الأدنى لعدد الرؤوس هو 3.
-* تدعم الدالة أيضًا المضلع ذي الفتحات (الأجزاء المقتطعة). نوع البيانات — [Polygon](/ar/reference/data-types/geo#polygon). مرِّر إما `Polygon` بالكامل باعتباره المُدخل الثاني، أو مرِّر الحلقة الخارجية أولًا ثم كل فتحة كمدخل إضافي منفصل.
-* تدعم الدالة أيضًا MultiPolygon. نوع البيانات — [MultiPolygon](/ar/reference/data-types/geo#multipolygon). مرِّر إما `MultiPolygon` بالكامل باعتباره المُدخل الثاني، أو أدرج كل مضلع مكوّن باعتباره مُدخلًا مستقلًا.
+* `[(a, b), (c, d) ...]` — رؤوس المضلع. نوع البيانات — [Array](/ar/reference/data-types/array) أو [Ring](/ar/reference/data-types/geo#ring). تُمثَّل كل قمة بزوج من الإحداثيات `(a, b)`. يجب تحديد الرؤوس بترتيب مع عقارب الساعة أو عكس اتجاه عقارب الساعة. الحد الأدنى لعدد الرؤوس هو 3.
+* تدعم الدالة أيضًا المضلع ذي الفتحات (الأجزاء المقتطعة). نوع البيانات — [Polygon](/ar/reference/data-types/geo#polygon). مرِّر إما `Polygon` بالكامل باعتباره الوسيطة الثانية، أو مرِّر الحلقة الخارجية أولًا ثم كل فتحة كوسيطة إضافية منفصلة.
+* تدعم الدالة أيضًا MultiPolygon. نوع البيانات — [MultiPolygon](/ar/reference/data-types/geo#multipolygon). مرِّر إما `MultiPolygon` بالكامل باعتباره الوسيطة الثانية، أو أدرج كل مضلع مكوّن باعتباره وسيطةً مستقلةً.
 * يمكن أيضًا أن تكون وسيطة المضلع عمود [Geometry](/ar/reference/data-types/geo#geometry) يحتوي على قيم ذات شكل مضلع (`Ring` أو `Polygon` أو `MultiPolygon`).
 
-يمكن تمرير الأنواع ذات الشكل المضلع ([Ring](/ar/reference/data-types/geo#ring) و[Polygon](/ar/reference/data-types/geo#polygon) و[MultiPolygon](/ar/reference/data-types/geo#multipolygon) و[Geometry](/ar/reference/data-types/geo#geometry)) إما كثوابت أو كأعمدة جدول عادية (غير ثابتة). وعندما يُمرَّر المضلع عبر عدة وسائط منفصلة (حلقة خارجية تتبعها فتحات، أو عدة مضلعات ضمن multipolygon)، يجب أن تكون جميع تلك الوسائط ثابتة.
+يمكن تمرير الأنواع ذات الشكل المضلع ([Ring](/ar/reference/data-types/geo#ring) و[Polygon](/ar/reference/data-types/geo#polygon) و[MultiPolygon](/ar/reference/data-types/geo#multipolygon) و[Geometry](/ar/reference/data-types/geo#geometry)) إما كثوابت أو كأعمدة جدول عادية (غير ثابتة). وعندما يُمرَّر المضلع عبر عدة وسائط منفصلة (حلقة خارجية تتبعها فتحات، أو عدة مضلعات ضمن multipolygon)، يجب أن تكون جميع تلك الوسائط ثابتة.
 
 **القيم المعادة**
 
@@ -333,5 +315,6 @@ SELECT id, pointInPolygon((2., 2.), shape) AS res FROM poly;
 
 > **ملاحظة**
 > • يمكنك تعيين `validate_polygons = 0` لتجاوز التحقق من صحة الأشكال الهندسية.
-> • تفترض الدالة `pointInPolygon` أن كل مضلع مُشكَّل بصورة صحيحة. إذا كان الإدخال متقاطعًا مع نفسه، أو كانت حلقاته مرتبة على نحو غير صحيح، أو كانت حوافه متداخلة، تصبح النتائج غير موثوقة—خصوصًا للنقاط الواقعة تمامًا على حافة أو رأس، أو داخل تقاطع ذاتي حيث يكون مفهوم &quot;الداخل&quot; مقابل &quot;الخارج&quot; غير معرّف.
-> • عندما تكون وسيطة المضلع ثابتة وتُعبَّر النقطة باستخدام أعمدة المفتاح المفهرسة (على سبيل المثال، `pointInPolygon((x, y), constant_polygon)` على جدول تكون فيه `x, y` جزءًا من `PRIMARY KEY` أو مشمولة بفهرس `minmax`)، يمكن لـ ClickHouse استخدام كلٍّ من المفتاح الأساسي وفهارس تخطي البيانات `minmax` لاستبعاد الحبيبات غير ذات الصلة.
+> • تفترض الدالة `pointInPolygon` أن كل مضلع مُشكَّل بصورة صحيحة. إذا كان الإدخال متقاطعًا مع نفسه، أو كانت حلقاته مرتبة على نحو غير صحيح، أو كانت حوافه متداخلة، تصبح النتائج غير موثوقة—خصوصًا للنقاط الواقعة تمامًا على حافة أو رأس، أو داخل تقاطع ذاتي حيث يكون مفهوم &quot;الداخل&quot; مقابل &quot;الخارج&quot; غير معرّف.
+> • يجب ألا تتجاوز القيمة المطلقة لإحداثيات المضلع `1e150`؛ إذ تُطلق الدالة استثناءً إذا اضطرت إلى إجراء حسابات بقيمة أكبر من ذلك.
+> • عندما تكون وسيطة المضلع ثابتة وتُعبَّر النقطة باستخدام أعمدة المفتاح المفهرسة (على سبيل المثال، `pointInPolygon((x, y), constant_polygon)` على جدول تكون فيه `x, y` جزءًا من `PRIMARY KEY` أو مشمولة بفهرس `minmax`)، يمكن لـ ClickHouse استخدام كلٍّ من المفتاح الأساسي وفهارس تخطي البيانات `minmax` لاستبعاد الحبيبات غير ذات الصلة.

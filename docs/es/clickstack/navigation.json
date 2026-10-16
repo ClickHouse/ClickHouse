@@ -110,6 +110,13 @@
               "group": "2026",
               "pages": [
                 {
+                  "group": "Octubre",
+                  "pages": [
+                    "es/clickstack/demo-days/2026/2026-10-08",
+                    "es/clickstack/demo-days/2026/2026-10-01"
+                  ]
+                },
+                {
                   "group": "Septiembre",
                   "pages": [
                     "es/clickstack/demo-days/2026/2026-09-24",

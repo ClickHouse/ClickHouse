@@ -623,11 +623,33 @@ La fonction `transform` ne fonctionne pas avec `NULL`.
 
 `x -> expr` – La fonction `lambda(x, expr)`.
 
-Les opérateurs suivants n’ont pas de priorité, car il s’agit de parenthèses :
+## Opérateur de composition de fonctions {#function-composition-operator}
+
+`f | g` – Composition de fonctions : une fonction qui applique `f`, puis `g`. Elle peut être utilisée partout où une fonction est attendue, c’est-à-dire comme argument d’une fonction d’ordre supérieur :
+
+```sql
+SELECT arrayMap(plus(_, 1) | multiply(_, 2), [1, 2, 3]); -- [4, 6, 8]
+```
+
+La composition se lit de gauche à droite : la valeur traverse les opérandes dans l&#39;ordre où ils sont écrits, de sorte que `f | g` signifie `g(f(x))` et `f | g | h` signifie `h(g(f(x)))`. C&#39;est le sens du pipe de l&#39;interpréteur de commandes et du `|` des plages C++, d&#39;où l&#39;emploi du même symbole. C&#39;est l&#39;inverse du `∘` mathématique et du `.` de Haskell, où `g . f` applique d&#39;abord `f` ; dans ces langages, les équivalents de gauche à droite s&#39;écrivent `>>>` ou `>>`.
+
+Chaque opérande peut être une lambda, le nom d&#39;une fonction, une autre composition ou une expression comportant des caractères de substitution d&#39;arguments. Les caractères de substitution transforment une expression en lambda : `_1`, `_2`, ... désignent le premier, le deuxième, ... argument de la lambda et peuvent apparaître à n&#39;importe quelle profondeur de l&#39;expression (sauf dans une sous-requête) ; le plus grand numéro de caractère de substitution détermine le nombre d&#39;arguments. Le caractère de substitution anonyme `_` introduit un argument par occurrence, dans l&#39;ordre d&#39;apparition, et doit être un argument direct d&#39;un appel de fonction. Par exemple, `plus(_, 1)` et `plus(_1, 1)` signifient tous deux `x -> plus(x, 1)`. Les caractères de substitution ne sont pas recherchés dans les sous-requêtes : `_1` y est un identifiant ordinaire, de même qu&#39;une sous-requête ne peut pas référencer l&#39;argument d&#39;une lambda explicite.
+
+Les caractères de substitution peuvent également s&#39;utiliser sans l&#39;opérateur de composition, à la place de la lambda d&#39;une fonction d&#39;ordre supérieur : `arrayMap(_1 * 2 + 1, [1, 2, 3])`. Les noms liés dans la requête ont priorité sur les caractères de substitution ; ainsi, une colonne, un alias ou une lambda liée avec `WITH` et nommée `_1` conserve sa signification. Les caractères de substitution placés à la position de la lambda d&#39;une fonction d&#39;ordre supérieur imbriquée appartiennent à cet appel imbriqué : `arrayMap(arrayMap(_ + 1, _1), [[1, 2], [3]])` signifie `arrayMap(x -> arrayMap(y -> y + 1, x), [[1, 2], [3]])`.
+
+La composition est résolue lors de l&#39;analyse de requêtes en intégrant `f` dans `g`, comme c&#39;est le cas pour les fonctions définies par l&#39;utilisateur en SQL, et le résultat est une lambda ordinaire. L&#39;opérande droit doit être une fonction à un seul argument.
+
+Un caractère de substitution seul correspond à la fonction identité ; ainsi, `_1 | toString` équivaut à `toString(_1)`.
+
+Notez que le `|` simple n&#39;est pas le OU bit à bit ; utilisez pour cela la fonction `bitOr`. L&#39;opérateur ne possède pas de nom de fonction propre visible par l&#39;utilisateur et ne réserve aucun nom : tout identifiant, y compris `compose`, reste disponible pour une fonction définie par l&#39;utilisateur.
+
+Les opérateurs suivants n&#39;ont pas de priorité, car il s&#39;agit de délimiteurs :
 
 ## Opérateur de création de tableau {#array-creation-operator}
 
 `[x1, ...]` – La fonction `array(x1, ...)`.
+
+`ARRAY[x1, ...]` – Équivalent, avec la syntaxe de la norme SQL, de PostgreSQL et de Trino.
 
 ## Opérateur de création de Tuple {#tuple-creation-operator}
 

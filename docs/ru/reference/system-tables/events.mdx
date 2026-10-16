@@ -73,11 +73,15 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 
 ### AdaptiveAggregationSharedTableSpills {#adaptiveaggregationsharedtablespills}
 
-Сколько раз адаптивная агрегация сбрасывала на диск свою общую таблицу из-за достижения границы части при нехватке памяти.
+Сколько раз адаптивная агрегация сбрасывала на диск свою общую таблицу сброса при нехватке памяти, по достижении границы части или по явному запросу на сброс данных на диск.
 
 ### AdaptiveAggregationSpillBacklogSheds {#adaptiveaggregationspillbacklogsheds}
 
 Сколько раз адаптивная агрегация отбрасывала накопленную очередь отложенных записей из-за того, что поток, работающий по базовому алгоритму, — либо возвращённый туда при «оттаивании», либо перешедший на него самостоятельно — был близок к сбросу данных на диск, тогда как промежуточные записи всё ещё находились в памяти.
+
+### AdaptiveAggregationSpillDrains {#adaptiveaggregationspilldrains}
+
+Количество запросов на сброс данных на диск от планировщика памяти, которые адаптивная агрегация обработала, записав на диск промежуточные записи или общий остаток выгрузки, вместо того чтобы покинуть адаптивный путь выполнения.
 
 ### AdaptiveAggregationStagedBytes {#adaptiveaggregationstagedbytes}
 
@@ -342,6 +346,10 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 ### AsyncLoggingTextLogTotalMessages {#asyncloggingtextlogtotalmessages}
 
 Количество сообщений (принятых или отброшенных), отправленных в асинхронную очередь для text&#95;log
+
+### AutomaticParallelReplicasDecidedWithoutBuildingPlan {#automaticparallelreplicasdecidedwithoutbuildingplan}
+
+Количество случаев, когда механизм автоматических параллельных реплик отказался от использования параллельных реплик на границе, запомненной при одном из предыдущих выполнений, не строя план-кандидат для оценки стоимости
 
 ### AutomaticParallelReplicasProbePlansBuilt {#automaticparallelreplicasprobeplansbuilt}
 
@@ -921,6 +929,10 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 ### DataAfterMutationDiffersFromReplica {#dataaftermutationdiffersfromreplica}
 
 Количество случаев, когда данные после мутации побайтно отличаются от данных на других репликах. Помимо причин, описанных в &#39;DataAfterMergeDiffersFromReplica&#39;, это также может происходить из-за недетерминированной мутации.
+
+### DatabaseTablesEnumerated {#databasetablesenumerated}
+
+Количество таблиц, которые база данных выдала через свой итератор таблиц, — для `SHOW TABLES`, системных таблиц, выводящих списки таблиц, и любых других механизмов, обходящих базу данных. Условие на имя таблицы в запросе к такой системной таблице сокращает перечисление, и этот счётчик показывает, насколько именно.
 
 ### DefaultImplementationForNullsRows {#defaultimplementationfornullsrows}
 
@@ -1982,6 +1994,26 @@ Distributed Cache server event. Время ожидания мьютекса б�
 
 Объём данных в несжатом виде (до сжатия), записанных при внешней обработке (сортировке/агрегации/JOIN)
 
+### ExternalSetCompressedBytes {#externalsetcompressedbytes}
+
+Количество байтов сжатых данных, записанных во внешнюю память для множеств `IN`.
+
+### ExternalSetMerge {#externalsetmerge}
+
+Количество слияний временных файлов для множества `IN` во внешней памяти.
+
+### ExternalSetReadBlocks {#externalsetreadblocks}
+
+Количество блоков, прочитанных из временных файлов множеств `IN` во внешней памяти при поиске ключей.
+
+### ExternalSetUncompressedBytes {#externalsetuncompressedbytes}
+
+Объём данных (в несжатом виде, до сжатия), записанных во внешнюю память для множеств `IN`.
+
+### ExternalSetWritePart {#externalsetwritepart}
+
+Количество записей временного файла на диск для множества `IN` во внешней памяти.
+
 ### ExternalSortCompressedBytes {#externalsortcompressedbytes}
 
 Количество сжатых байтов, записанных при сортировке с использованием внешней памяти.
@@ -2630,6 +2662,14 @@ Distributed Cache server event. Время ожидания мьютекса б�
 
 Количество строк, выведенных DelayedJoinedBlocksWorkerTransform.
 
+### JoinNonJoinedHashTableScans {#joinnonjoinedhashtablescans}
+
+Количество случаев, когда RIGHT или FULL hash JOIN сканировал свою хеш-таблицу в поисках строк, не объединённых через JOIN.
+
+### JoinNonJoinedHashTableScansSkipped {#joinnonjoinedhashtablescansskipped}
+
+Количество случаев, когда RIGHT или FULL hash JOIN пропускал сканирование хеш-таблицы для поиска строк, не объединённых через JOIN, поскольку для каждого правого ключа в просканированной части уже было найдено соответствие.
+
 ### JoinNonJoinedTransformBlockCount {#joinnonjoinedtransformblockcount}
 
 Количество блоков, которые выдал NonJoinedBlocksTransform.
@@ -3254,6 +3294,10 @@ Distributed Cache server event. Время ожидания мьютекса б�
 
 Количество загруженных строк первичного индекса.
 
+### LoadedStatistics {#loadedstatistics}
+
+Количество частей данных, для которых была загружена статистика столбцов
+
 ### LoadedStatisticsMicroseconds {#loadedstatisticsmicroseconds}
 
 Время, затраченное на загрузку статистики из частей
@@ -3413,6 +3457,18 @@ Distributed Cache server event. Время ожидания мьютекса б�
 ### MemoryReservationKilled {#memoryreservationkilled}
 
 Общее количество сигналов о завершении резервирования памяти
+
+### MemoryReservationReclaimableBytes {#memoryreservationreclaimablebytes}
+
+Объём памяти, который запрос сделал доступным для высвобождения (для сброса данных на диск)
+
+### MemoryReservationSpilledBytes {#memoryreservationspilledbytes}
+
+Общий объём памяти, для которой выполнен сброс данных на диск
+
+### MemoryReservationSpillingMicroseconds {#memoryreservationspillingmicroseconds}
+
+Время, затраченное на сброс данных на диск
 
 ### MemoryWorkerRun {#memoryworkerrun}
 
@@ -4202,6 +4258,10 @@ Distributed Cache server event. Время ожидания мьютекса б�
 
 Общее количество групп строк, исключённых из данных Parquet
 
+### ParquetReadMinMaxFromStatistics {#parquetreadminmaxfromstatistics}
+
+Количество файлов Parquet, для которых значения `min` / `max` были вычислены по статистике фрагментов столбцов без чтения самих данных (см. `optimize_min_max_from_files`)
+
 ### ParquetReadPages {#parquetreadpages}
 
 Общее количество прочитанных страниц данных Parquet
@@ -4578,6 +4638,10 @@ Distributed Cache server event. Время ожидания мьютекса б�
 
 Количество исключений при чтении из Azure
 
+### ReadBufferFromFileDescriptorPageCacheHitBytes {#readbufferfromfiledescriptorpagecachehitbytes}
+
+Количество байтов, прочитанных из файловых дескрипторов синхронным вызовом `pread`, которые, как было установлено, были получены из кэша страниц ОС (это определяется только для чтений с ограничителем пропускной способности).
+
 ### ReadBufferFromFileDescriptorRead {#readbufferfromfiledescriptorread}
 
 Количество операций чтения (read/pread) из файлового дескриптора. Сокеты не учитываются.
@@ -4601,6 +4665,10 @@ Distributed Cache server event. Время ожидания мьютекса б�
 ### ReadBufferFromS3Microseconds {#readbufferfroms3microseconds}
 
 Время, затраченное на чтение данных из S3.
+
+### ReadBufferFromS3RequestsCut {#readbufferfroms3requestscut}
+
+Количество запросов к S3-дискам, усечённых до одного заполнения буфера из-за того, что группа соединений этих дисков достигла значения `disk_connections_soft_limit` или превысила его.
 
 ### ReadBufferFromS3RequestsErrors {#readbufferfroms3requestserrors}
 
@@ -4942,6 +5010,10 @@ Distributed Cache server event. Время ожидания мьютекса б�
 
 Количество гранул, отсечённых при чтении с помощью JOIN Runtime Filters
 
+### RuntimeFilterIndexAnalysisReads {#runtimefilterindexanalysisreads}
+
+Количество чтений, настроенных на отсечение гранул с помощью фильтра времени выполнения JOIN непосредственно при чтении. Счётчик увеличивается, когда чтение достигает своего конвейера с дескрипторами и при этом имеет первичный ключ или индекс пропуска данных, по которому можно выполнить отсечение, — независимо от того, будет ли затем проверена хотя бы одна гранула. Таким образом, это значение показывает, что дескрипторы сохранились после всех перестроений шага чтения.
+
 ### RuntimeFilterLookupsBeforeBuildFinished {#runtimefilterlookupsbeforebuildfinished}
 
 Количество блоков, проверенных по JOIN Runtime Filter до завершения построения его build-стороны; такие блоки пропускаются без фильтрации
@@ -5253,6 +5325,10 @@ Distributed Cache server event. Время ожидания мьютекса б�
 ### SetsBuiltFromSubquery {#setsbuiltfromsubquery}
 
 Количество Set `IN`/`JOIN`, заполненных за счёт выполнения соответствующего подзапроса. Set, взятые из кэша подготовленных Set, а также уже построенные и использованные повторно, не учитываются.
+
+### SetsSpilledToDisk {#setsspilledtodisk}
+
+Количество множеств `IN`, для которых при построении из подзапроса был выполнен сброс данных на диск.
 
 ### SettingsProfileCacheRecalculationMicroseconds {#settingsprofilecacherecalculationmicroseconds}
 
@@ -5577,6 +5653,10 @@ Distributed Cache server event. Время ожидания мьютекса б�
 ### SharedPartsLockWaitMicroseconds {#sharedpartslockwaitmicroseconds}
 
 Общее время ожидания блокировки общих частей данных в таблицах MergeTree
+
+### ShortCircuitArgumentsReordered {#shortcircuitargumentsreordered}
+
+Количество блоков, для которых функция `and` или `or` вычисляла свои аргументы в порядке, отличном от указанного в запросе: дешёвый аргумент раньше тяжёлого либо в соответствии со статистикой, собранной по предыдущим блокам (настройка `short_circuit_function_evaluation_reorder_arguments`). Переупорядочивание атомов цепочки AND в `WHERE` / `HAVING`, которое выполняется однократно при построении конвейера в `FilterStep`, не учитывается.
 
 ### Вызовы функций sleep {#sleepfunctioncalls}
 
@@ -6250,6 +6330,10 @@ Distributed Cache server event. Время ожидания мьютекса б�
 
 Количество завершённых TLS-рукопожатий при входящих соединениях с сервером по протоколам, использующим реализацию TLS от Poco: нативному TCP, HTTPS, MySQL и PostgreSQL. gRPC использует собственный стек TLS, поэтому его рукопожатия не учитываются. При возобновлении сеанса также выполняется рукопожатие, которое учитывается в этом показателе.
 
+### TopKGranulesSkippedByPrimaryKey {#topkgranulesskippedbyprimarykey}
+
+Количество гранул, пропущенных при чтении, поскольку по первичному индексу видно, что все их строки лежат за пределами текущего порога top-K, который публикуется агрегацией (см. `enable_group_by_top_k_dynamic_filtering`) или сортировкой (см. `use_top_k_dynamic_filtering`).
+
 ### UncompressedCacheHits {#uncompressedcachehits}
 
 Количество раз, когда блок данных был найден в кэше несжатых данных, благодаря чему декомпрессия не потребовалась.
@@ -6421,6 +6505,10 @@ Distributed Cache server event. Время ожидания мьютекса б�
 ### WriteBufferFromS3WaitInflightLimitMicroseconds {#writebufferfroms3waitinflightlimitmicroseconds}
 
 Время, затраченное на ожидание завершения части текущих запросов, когда их число достигло предела, заданного `s3_max_inflight_parts_for_one_file`.
+
+### YTsaurusLookupThrottled {#ytsauruslookupthrottled}
+
+Количество запросов поиска к YTsaurus, ограниченных по скорости
 
 ### ZooKeeperBytesReceived {#zookeeperbytesreceived}
 

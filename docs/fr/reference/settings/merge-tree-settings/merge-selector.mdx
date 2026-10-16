@@ -76,6 +76,58 @@ Si la valeur est supérieure à zéro et que `merge_selector_enable_heuristic_to
 désactive cette heuristique pour les plages dont toutes les parts ont au moins ce nombre de secondes d&#39;ancienneté. `0` désactive cette vérification.
 S&#39;applique aux sélecteurs de fusion Simple et StochasticSimple.
 
+## merge_selector_small_parts_max_age {#merge_selector_small_parts_max_age}
+
+<SettingsInfoBlock type="UInt64" default_value="600" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "600"},{"label": "Limite d'âge pour la restriction de fusion des petites parts"}]}]} />
+
+Limite d&#39;âge, en secondes, de la restriction portant sur les petites parts : dès qu&#39;une part d&#39;une plage
+dépasse cet âge, la restriction imposée par `merge_selector_small_parts_min_count` est levée,
+afin que les petites parts obsolètes accumulées puissent tout de même être fusionnées, même si la plage est plus courte que
+`merge_selector_small_parts_min_count`. S&#39;applique aux sélecteurs de fusion Simple et StochasticSimple,
+et uniquement à la sélection des parties à fusionner en arrière-plan : la sélection agressive (`OPTIMIZE` sans `FINAL`)
+ignore les paramètres `small_parts_*`.
+
+## merge_selector_small_parts_min_count {#merge_selector_small_parts_min_count}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nombre minimal de parts pour autoriser la fusion de petites parts récentes (0 = désactivé)"}]}]} />
+
+Lorsque toutes les parts d&#39;une plage de fusion sont petites (inférieures à `merge_selector_small_parts_threshold`)
+et récentes (plus jeunes que `merge_selector_small_parts_max_age`), ce paramètre exige au moins ce nombre de parts
+pour autoriser la fusion. Il réduit ainsi le nombre d&#39;opérations de fusion en cas d&#39;insertions rapides de petites parts.
+0 signifie désactivé. S&#39;applique aux sélecteurs de fusion Simple et StochasticSimple.
+
+Cette condition s&#39;applique uniquement à la sélection des parties à fusionner en arrière-plan. La sélection agressive (`OPTIMIZE`
+sans `FINAL`) correspond à une demande explicite de l&#39;utilisateur qui ne tient pas compte de l&#39;ancienneté des parts : elle ignore donc ce
+paramètre et fusionne les petites parts récentes quel que soit leur nombre.
+
+Le sélecteur n&#39;examine jamais de candidats de fusion plus larges que `max_parts_to_merge_at_once`, ni
+de candidats remontant au-delà de `merge_selector_window_size` parts. Définir
+l&#39;un ou l&#39;autre en dessous de ce minimum aboutit donc à une configuration contradictoire : les petites parts récentes ne
+sont alors fusionnées qu&#39;après `merge_selector_small_parts_max_age` (ou plus tôt, dès que la fusion forcée s&#39;applique via
+`min_age_to_force_merge_seconds` ou `min_partition_age_to_force_merge_seconds`). Veillez à ce que ces deux paramètres
+restent supérieurs ou égaux à ce minimum.
+(Si l&#39;heuristique de remplissage intégrée abaisse temporairement sa limite effective en dessous de ce minimum,
+le sélecteur examine malgré tout le premier candidat de cette largeur composé uniquement de petites parts récentes. Les candidats obsolètes ou
+volumineux, ainsi que ceux déjà éligibles à la fusion forcée via
+`min_age_to_force_merge_seconds` ou `min_partition_age_to_force_merge_seconds`, restent soumis à la
+limite abaissée.)
+
+## merge_selector_small_parts_threshold {#merge_selector_small_parts_threshold}
+
+<SettingsInfoBlock type="UInt64" default_value="10485760" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "10485760"},{"label": "Seuil de taille pour l'heuristique de batching des petites parts dans le sélecteur de fusion"}]}]} />
+
+Seuil de taille en octets : une plage de fusion est considérée comme composée uniquement de « petites parts » lorsque toutes ses parts
+ont une taille inférieure à ce seuil. S&#39;utilise conjointement avec `merge_selector_small_parts_min_count`.
+S&#39;applique aux sélecteurs de fusion Simple et StochasticSimple, et uniquement à la sélection
+des parties à fusionner en arrière-plan : la sélection agressive (`OPTIMIZE` sans `FINAL`) ignore les paramètres
+`small_parts_*`.
+
 ## merge_selector_window_size {#merge_selector_window_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />

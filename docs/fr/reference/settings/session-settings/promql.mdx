@@ -34,6 +34,19 @@ Indique le nom de la base de données utilisé par le dialecte &#39;promql&#39;.
 
 Définit l’instant d’évaluation à utiliser avec le dialecte promql, sous forme de timestamp Unix en secondes, avec une partie fractionnaire facultative. `auto` correspond à l’heure actuelle.
 
+## promql_push_down_label_matchers {#promql_push_down_label_matchers}
+
+<PrivatePreviewBadge />
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nouveau paramètre permettant de copier les matchers de labels PromQL d'un côté à l'autre des opérateurs binaires."}]}]} />
+
+Copie les matchers de labels d&#39;un côté d&#39;un opérateur binaire PromQL vers les sélecteurs de l&#39;autre côté, pour les labels sur lesquels l&#39;opérateur met les séries en correspondance. Ainsi, `b / on(job) a{job="x"}` ne lit que les séries de `b` pour lesquelles `job="x"`.
+Un matcher n&#39;est pas copié lorsque les séries qu&#39;il exclut pourraient amener Prometheus à signaler des séries en double, c&#39;est-à-dire : vers le côté « one » de l&#39;opérateur, sauf s&#39;il s&#39;agit d&#39;une agrégation par les labels mis en correspondance ; dans un opérateur entre deux vecteurs autre que `and` et `unless` ; et à travers une fonction sur une plage ou un opérateur avec un scalaire, sauf si son entrée est une seule métrique sélectionnée par son nom.
+Une comparaison sans `bool` conserve le nom de la métrique ; les matchers la traversent donc toujours. Les autres fonctions et le moins unaire bloquent la propagation des matchers.
+Un matcher copié transforme un sélecteur portant sur une métrique entière en sélecteur filtré, ce qui peut ralentir les requêtes sur une table [TimeSeries](/fr/reference/engines/table-engines/integrations/time-series) dont l&#39;`id` est regroupé par métrique (comportement par défaut) si le matcher conserve la plupart des séries de la métrique. Désactivez ce paramètre pour ce type de requêtes.
+
 ## promql_table {#promql_table}
 
 <PrivatePreviewBadge />

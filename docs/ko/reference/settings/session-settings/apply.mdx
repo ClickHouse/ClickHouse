@@ -81,9 +81,9 @@ FINAL 전에 적용됩니다. 이러한 필터링은 중복 제거 결과에 영
 
 ## apply_string_filters_during_scan {#apply_string_filters_during_scan}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "String 컬럼에 대한 부분 문자열 검색 조건을 PREWHERE에서 컬럼 스캔으로 푸시다운하는 새로운 설정입니다."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "`String` 컬럼에 대한 부분 문자열 검색 조건을 `PREWHERE`에서 컬럼 스캔으로 푸시다운하는 새로운 설정으로, 기본적으로 활성화되어 있습니다. `compatibility`를 26.10 이전 버전으로 설정하면 비활성화됩니다."}]}]} />
 
 `String` 컬럼에 대한 부분 문자열 검색 조건을 `PREWHERE`에서 컬럼 스캔으로 푸시다운합니다.
 
@@ -92,13 +92,15 @@ FINAL 전에 적용됩니다. 이러한 필터링은 중복 제거 결과에 영
 일치하지 않는 값은 빈 문자열로 읽습니다. 일치하지 않는 값의 데이터는 컬럼에 복사되지 않으므로, 조건의 선택도가 높을수록 읽기 속도가 빨라지고 메모리 사용량이 줄어듭니다.
 일치하지 않는 값을 가진 행은 `PREWHERE`에서 반드시 필터링되고 이러한 조건은 빈 문자열과 일치하는 경우가 없으므로, 쿼리 결과는 달라지지 않습니다.
 
-필터의 선택도가 낮은 것으로 확인되면 런타임에 필터가 적응적으로 비활성화됩니다.
+필터의 선택도가 낮은 것으로 확인되거나, 일치하지 않는 값이 너무 짧아 해당 데이터를 건너뛰어도 이점이 없는 경우
+런타임에 필터가 적응적으로 비활성화됩니다.
 
 또한 부분 문자열 검색 조건(`LIKE`, `position`, `startsWith`, `endsWith`)이 쿼리 대상 컬럼을 모두 사용하는 경우에도 `WHERE`에서 `PREWHERE`로의 최적화를 통해
 이동될 수 있도록 합니다(일반적으로는 의미가 없지만, 이 설정을 사용하면 스캔 자체의 비용이 낮아집니다).
 상수 문자열과의 동등 비교는 이러한 목적으로 이동되지 않지만, 이미 `PREWHERE`에 있다면 스캔 중에 그대로 적용됩니다.
 
-`MergeTree` 테이블과 `Parquet` 포맷에서 읽을 때 지원됩니다.
+`MergeTree` 테이블과 `Parquet` 포맷에서 읽을 때 지원됩니다. `Parquet`에서는 `PLAIN`, `DELTA_LENGTH_BYTE_ARRAY`, `DELTA_BYTE_ARRAY` 및
+딕셔너리 인코딩(dictionary encoding)을 사용하는 페이지에 필터가 적용됩니다.
 
 병렬 레플리카 사용 여부를 자동으로 결정하기 위해 수집되는 입력 바이트 추정치(`RuntimeDataflowStatisticsInputBytes`)는 읽은 블록의 인메모리 크기를 기준으로 하므로,
 값이 빈 문자열로 대체되면 디스크에서 읽은 데이터 양이 실제보다 적게 추정된다는 점에 유의하십시오.

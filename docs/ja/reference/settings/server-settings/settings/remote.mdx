@@ -10,9 +10,7 @@ doc_type: 'reference'
 
 これらの設定はClickHouseサーバーを構成するもので、ClickHouseのソースコードから自動生成されています。
 
-<div id="remote_servers">
-  ## remote_servers
-</div>
+## remote_servers {#remote_servers}
 
 [Distributed](/ja/reference/engines/table-engines/special/distributed) テーブルエンジンおよび `cluster` テーブル関数で使用されるクラスター構成です。
 
@@ -30,9 +28,7 @@ doc_type: 'reference'
 * [Cluster Discovery](/ja/guides/oss/deployment-and-scaling/cluster-discovery)
 * [Replicated データベースエンジン](/ja/reference/engines/database-engines/replicated)
 
-<div id="remote_url_allow_hosts">
-  ## remote_url_allow_hosts
-</div>
+## remote_url_allow_hosts {#remote_url_allow_hosts}
 
 URL 関連のストレージエンジンおよびテーブル関数で使用を許可する host の一覧です。
 
@@ -44,11 +40,23 @@ URL 関連のストレージエンジンおよびテーブル関数で使用を�
 * host を IP アドレスとして指定した場合は、URL で指定されたとおりにチェックされます。例: `[2a02:6b8:a::a]`。
 * リダイレクトがあり、かつリダイレクトのサポートが enabled の場合は、すべてのリダイレクト (`location` フィールド) がチェックされます。
 
+`\<host_regexp\>` xml タグで正規表現を追加する場合は、RE2 エンジンが使用され、host 全体に対して一致判定が行われます。例: `<host_regexp>^.*\.clickhouse\.com$</host_regexp>`
+
+`\<s3_bucket\>` xml タグで単一の S3バケットを `host/bucket` または `host:port/bucket` の形式で追加する場合:
+
+* エンドポイントが多数の利用者で共有されている場合 (例: パス形式の AWS エンドポイント `s3.us-west-2.amazonaws.com`) に有用です。このような場合に host 全体を許可すると、その host 上のすべてのバケットが許可されてしまいます。
+* バケットはパースされた S3 URL から取得されるため、このエントリは `https://s3.us-west-2.amazonaws.com/my-bucket/...` と `https://my-bucket.s3.us-west-2.amazonaws.com/...` の両方に一致します。
+* S3 URL にのみ適用されます。対象は、`s3` テーブル関数およびエンジン、`S3` データベースエンジン、`S3` への `BACKUP`/`RESTORE`、および `disk` 関数を使って SQL で作成された S3 ディスクです。
+* SQL で作成された S3 ディスクは、そのディスクを作成するクエリの実行時にチェックされます。一覧の設定時点ですでに存在していたディスクや、このチェックがないバージョンで作成されたディスクは、サーバー起動時に引き続き読み込まれます。DROP されたもののまだ物理的に削除されていないテーブルも同様に読み込まれるため、`UNDROP TABLE` は引き続き機能します。その場合、サーバーはログおよび `system.warnings` に報告します。
+* S3 から返される恒久的 (301) リダイレクトもバケットのエントリに照らしてチェックされますが、一時的 (307) リダイレクトは host のみでチェックされるため、一覧に `\<s3_bucket\>` エントリしかない場合は拒否されます。
+
 例:
 
 ```sql
 <remote_url_allow_hosts>
     <host>clickhouse.com</host>
+    <host_regexp>^.*\.clickhouse\.com$</host_regexp>
+    <s3_bucket>s3.us-west-2.amazonaws.com/my-bucket</s3_bucket>
 </remote_url_allow_hosts>
 ```
 

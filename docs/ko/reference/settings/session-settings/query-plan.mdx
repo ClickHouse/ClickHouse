@@ -180,11 +180,17 @@ JOIN 이후의 필터가 일치하지 않는 행 또는 일치하는 행에 대�
 
 ## query_plan_join_shard_by_pk_ranges {#query_plan_join_shard_by_pk_ranges}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "0"},{"label": "새로운 설정"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "기본적으로 활성화됩니다. 조인 키에 두 테이블의 기본 키(primary keys) 접두사가 포함된 두 MergeTree 테이블(MergeTree tables) 간의 `full_sorting_merge` 또는 `parallel_full_sorting_merge` JOIN은 이제 단일 스레드 병합 조인(merge join) 대신 프라이머리 키 범위별로 독립적인 병합 조인을 병렬로 실행합니다. 해시 조인(Hash Joins)은 JOIN 런타임 필터와 디스크로 유출이 모두 적용되지 않는 경우에만 영향을 받습니다."}]}, {"id": "row-2","items": [{"label": "25.4"},{"label": "0"},{"label": "새로운 설정"}]}]} />
 
-두 테이블 모두에서 JOIN 키에 PRIMARY KEY의 접두사가 포함되어 있으면 JOIN에 세그먼트 분할을 적용합니다. hash, parallel&#95;hash, full&#95;sorting&#95;merge 및 parallel&#95;full&#95;sorting&#95;merge 알고리즘에서 지원됩니다. 일반적으로 쿼리 속도를 높이지는 않지만 메모리 사용량을 줄일 수 있습니다.
+조인 키에 두 테이블의 프라이머리 키 접두사가 포함되어 있으면, 두 MergeTree 테이블(MergeTree tables)의 JOIN을 프라이머리 키 범위별 독립적인 조인으로 실행합니다. 두 테이블은 해당 접두사의 값에 따라 동일한 범위로 분할되므로(`FINAL`이 파트를 겹치지 않는 계층으로 분할하는 방식과 동일), 같은 키는 항상 같은 범위에 속하며 각 범위는 별도의 스레드에서 조인됩니다.
+
+`full_sorting_merge` 및 `parallel_full_sorting_merge`에서는 두 테이블 전체에 대한 단일 스레드 병합 조인(merge join)을 범위별 스트리밍 병합 조인으로 대체하여 병렬로 실행합니다. 이 방식은 일반적으로 속도가 몇 배 빠르고 메모리 사용량도 몇 배 적습니다.
+
+`hash` 및 `parallel_hash`에서는 범위마다 별도의 해시 테이블을 사용합니다. 이 최적화는 JOIN 런타임 필터(`enable_join_runtime_filters`)와 디스크로 유출(`max_bytes_ratio_before_external_join`, `max_bytes_before_external_join`)이 모두 적용되지 않는 경우에만 동작합니다. 두 기능 모두 이 최적화가 조인 내부를 파악할 수 없게 만들기 때문입니다. 이 경우 쿼리 속도는 대개 향상되지 않지만 메모리 활용량은 줄어들 수 있습니다. 범위는 스레드에 정적으로 할당되므로, 프라이머리 키 범위의 일부 구간에서만 선택도가 높은 필터(filter)를 사용하면 일부 스레드가 유휴 상태가 됩니다.
+
+`FINAL`, `ASOF`, `ON`에 논리합(disjunct)이 여러 개 있는 조인, 또는 병렬 레플리카로 읽는 경우에는 적용되지 않습니다.
 
 ## query_plan_join_swap_table {#query_plan_join_swap_table}
 
@@ -365,11 +371,11 @@ JOIN에서 lazy indexing 최적화를 활성화하는 데 필요한 왼쪽 입�
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "greedy"},{"label": "새 실험적 설정."}]}]} />
 
-쿼리 계획 최적화 시 시도할 조인 순서 알고리즘을 지정합니다. 사용할 수 있는 알고리즘은 다음과 같습니다.
+쿼리 계획 최적화 시 시도할 조인 순서(Join Order) 알고리즘을 지정합니다. 사용할 수 있는 알고리즘은 다음과 같습니다.
 
-* &#39;greedy&#39; - 기본 탐욕 알고리즘으로, 빠르게 동작하지만 최적의 조인 순서를 찾지 못할 수 있습니다
-* &#39;dpsize&#39; - 현재 Inner 조인에만 적용되는 DPsize 알고리즘을 구현합니다. 가능한 모든 조인 순서를 고려해 가장 최적의 순서를 찾지만, 테이블 수와 조인 프레디케이트가 많은 쿼리에서는 느릴 수 있습니다.
-* &#39;dpsub&#39; - Inner 조인과 비-Inner 조인을 모두 지원하는 DPsub 알고리즘을 구현합니다. 가능한 모든 조인 순서를 고려해 가장 최적의 순서를 찾지만, 테이블 수와 조인 프레디케이트가 많은 쿼리에서는 느릴 수 있습니다.
+* &#39;greedy&#39; - 기본 탐욕 알고리즘으로, 빠르게 동작하지만 최적의 조인 순서(Join Order)를 찾지 못할 수 있습니다
+* &#39;dpsize&#39; - 현재 Inner 조인에만 적용되는 DPsize 알고리즘을 구현합니다. 가능한 모든 조인 순서(Join Order)를 고려해 가장 최적의 순서를 찾지만, 테이블 수와 조인 프레디케이트가 많은 쿼리에서는 느릴 수 있습니다.
+* &#39;dpsub&#39; - Inner 조인과 비-Inner 조인을 모두 지원하는 DPsub 알고리즘을 구현합니다. 가능한 모든 조인 순서(Join Order)를 고려해 가장 최적의 순서를 찾지만, 테이블 수와 조인 프레디케이트가 많은 쿼리에서는 느릴 수 있습니다.
 * &#39;dphyp&#39; - 현재 Inner 조인에만 적용되는 DPhyp(Dynamic Programming via Hypergraph Partitioning) 알고리즘을 구현합니다. `dpsize`와 동일한 탐색 공간을 탐색하지만 연결된 서브그래프 쌍만 열거하므로, 교차 곱을 고려하지 않는 대신 희소 조인 그래프에서 생성되는 중간 조인이 더 적습니다
   여러 알고리즘을 쉼표로 구분된 목록으로 지정할 수 있습니다. 예: `dphyp,greedy`. 알고리즘은 지정된 순서대로 시도되며, 어떤 알고리즘이 쿼리를 처리할 수 없으면(예: Outer 조인 또는 연결되지 않은 구성 요소 때문) 다음 알고리즘을 폴백으로 사용합니다.
 
@@ -377,9 +383,10 @@ JOIN에서 lazy indexing 최적화를 활성화하는 데 필요한 왼쪽 입�
 
 <ExperimentalBadge />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": ""},{"label": "DPsub 조인 순서 알고리즘에서 JOIN 재정렬의 유효성을 판단하는 충돌 감지기를 선택하는 새로운 설정입니다. `a`는 (정확하지만 불완전한) CD-A, `c`는 (정확하고 완전한) CD-C, 빈 값은 사용하지 않음을 의미합니다."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": ""},{"label": "DPsub 조인 순서 알고리즘에서 JOIN 재정렬의 유효성을 판단하는 충돌 감지기를 선택하는 새로운 설정입니다. `a`는 (정확하지만 불완전한) CD-A, `c`는 (정확하고 완전한) CD-C, 빈 값은 사용하지 않음을 의미합니다."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": ""},{"label": "DPsub 조인 순서(Join Order) 알고리즘에서 JOIN 재정렬의 유효성을 판단하는 충돌 감지기를 선택하는 새로운 설정입니다. `a`는 (정확하지만 불완전한) CD-A, `c`는 (정확하고 완전한) CD-C, 빈 값은 사용하지 않음을 의미합니다."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": ""},{"label": "DPsub 조인 순서(Join Order) 알고리즘에서 JOIN 재정렬의 유효성을 판단하는 충돌 감지기를 선택하는 새로운 설정입니다. `a`는 (정확하지만 불완전한) CD-A, `c`는 (정확하고 완전한) CD-C, 빈 값은 사용하지 않음을 의미합니다."}]}]} />
 
-`dpsub` 조인 순서 알고리즘에만 적용됩니다. DPsub가 어떤 JOIN 재정렬이 유효한지 판단할 때 사용하는 충돌 감지기를 선택합니다. 사용 가능한 값은 다음과 같습니다:
+`dpsub` 조인 순서(Join Order) 알고리즘에만 적용됩니다. DPsub가 어떤 JOIN 재정렬이 유효한지
+판단할 때 사용하는 충돌 감지기를 선택합니다. 사용 가능한 값은 다음과 같습니다:
 
 * `''` (기본값) - 충돌 감지기를 사용하지 않으며, DPsub는 릴레이션별 `ON` 절 제약을 사용합니다
 * `'a'` - 정확하지만 불완전한 CD-A 충돌 감지기

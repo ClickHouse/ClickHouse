@@ -19,7 +19,7 @@ doc_type: 'reference'
 Las tablas con motor Distributed no almacenan datos propios, sino que permiten el procesamiento distribuido de consultas en varios servidores.
 La lectura se paraleliza automáticamente. Durante la lectura, se utilizan los índices de las tablas en los servidores remotos, si existen.
 
-## Crear una tabla
+## Crear una tabla {#distributed-creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -31,7 +31,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [SETTINGS name=value, ...]
 ```
 
-### A partir de una tabla
+### A partir de una tabla {#distributed-from-a-table}
 
 Cuando la tabla distribuida apunta a una tabla del servidor actual, puede adoptar el esquema de esa tabla:
 
@@ -39,7 +39,7 @@ Cuando la tabla distribuida apunta a una tabla del servidor actual, puede adopta
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster] AS [db2.]name2 ENGINE = Distributed(cluster, database, table[, sharding_key[, policy_name]]) [SETTINGS name=value, ...]
 ```
 
-### Motores Remote y RemoteSecure
+### Motores Remote y RemoteSecure {#distributed-remote-engines}
 
 `Remote` y `RemoteSecure` son motores de tabla persistentes que aceptan las mismas expresiones de dirección y credenciales que las funciones de tabla [`remote` y `remoteSecure`](/es/reference/functions/table-functions/remote):
 
@@ -68,7 +68,7 @@ Este es el equivalente persistente de `CREATE TABLE ... AS remote(...)`. Al igua
 
 El destino también puede ser una función de tabla, por ejemplo `Remote('127.0.0.1', numbers(10))` o `Remote('127.0.0.1', merge(db, '^table_'))`. Esa tabla es de solo lectura: no hay ninguna tabla remota en la que insertar, por lo que `INSERT` se rechaza con una excepción `NOT_IMPLEMENTED`. Esta limitación de solo lectura se aplica por igual a las funciones de tabla `remote` y `remoteSecure`: tanto `SELECT` como `INSERT` son compatibles para un destino `db`/`table` normal, pero un destino de función de tabla (`remote('127.0.0.1', numbers(10))`) es de solo lectura por la misma razón.
 
-### Parámetros de Distributed
+### Parámetros de Distributed {#distributed-parameters}
 
 | Parámetro                 | Descripción                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -83,13 +83,13 @@ El destino también puede ser una función de tabla, por ejemplo `Remote('127.0.
 * ajuste [distributed&#95;foreground&#95;insert](/es/reference/settings/session-settings/distributed#distributed_foreground_insert)
 * [MergeTree](/es/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes) para ver ejemplos
 
-### Configuración de Distributed
+### Configuración de Distributed {#distributed-settings}
 
 | Setting                                    | Description                                                                                                                                                                                                                                                                                                                                                                                | Default value                  |
 | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------ |
 | `fsync_after_insert`                       | Realiza `fsync` de los datos del archivo después de una inserción en segundo plano en Distributed. Garantiza que el SO haya volcado todos los datos insertados a un archivo en el **disco del nodo iniciador**.                                                                                                                                                                            | `false`                        |
 | `fsync_directories`                        | Realiza `fsync` en los directorios. Garantiza que el SO haya actualizado los metadatos del directorio después de las operaciones relacionadas con las inserciones en segundo plano en una tabla distribuida (después de insertar, después de enviar los datos al segmento, etc.).                                                                                                          | `false`                        |
-| `skip_unavailable_shards`                  | Si es `true`, ClickHouse omite silenciosamente los segmentos no disponibles. El comportamiento de esta configuración se controla mediante el parámetro `skip_unavailable_shards_mode`.                                                                                                                                                                                                     | `false`                        |
+| `skip_unavailable_shards`                  | Si es `true`, ClickHouse omite silenciosamente los segmentos no disponibles, salvo que una lectura haya omitido todos los segmentos antes de que alguno devolviera datos, en cuyo caso la consulta lanza `ALL_CONNECTION_TRIES_FAILED`. El parámetro `skip_unavailable_shards_mode` determina qué errores se consideran no disponibles.                                                    | `false`                        |
 | `skip_unavailable_shards_mode`             | Controla qué excepciones de un segmento remoto se ignoran cuando `skip_unavailable_shards` está habilitado: `unavailable` ignora solo los errores de conexión; `unavailable_or_table_missing` también ignora la ausencia de una tabla o base de datos; `unavailable_or_exception_before_processing` también ignora cualquier excepción recibida antes de que el segmento devolviera datos. | `unavailable_or_table_missing` |
 | `bytes_to_throw_insert`                    | Si los bytes comprimidos pendientes de un `INSERT` en segundo plano superan este valor, se lanzará una excepción. `0`: no lanzar ninguna excepción.                                                                                                                                                                                                                                        | `0`                            |
 | `bytes_to_delay_insert`                    | Si los bytes comprimidos pendientes de un `INSERT` en segundo plano superan este valor, la consulta se retrasará. `0`: no retrasar.                                                                                                                                                                                                                                                        | `0`                            |
@@ -128,7 +128,7 @@ Los datos se leerán de todos los servidores del clúster `logs`, desde la tabla
 
 En lugar del nombre de la base de datos, puede usar una expresión constante que devuelva una cadena. Por ejemplo: `currentDatabase()`.
 
-## Clústeres
+## Clústeres {#distributed-clusters}
 
 Los clústeres se configuran en el [archivo de configuración del servidor](/es/concepts/features/configuration/server-config/configuration-files):
 
@@ -214,7 +214,7 @@ El motor `Distributed` permite trabajar con un clúster como si fuera un servido
 
 Si necesita enviar una consulta a un conjunto desconocido de segmentos y réplicas cada vez, no necesita crear una tabla `Distributed`; use en su lugar la función de tabla `remote`. Consulte la sección [Funciones de tabla](/es/reference/functions/table-functions/index).
 
-## Escritura de datos
+## Escritura de datos {#distributed-writing-data}
 
 Hay dos métodos para escribir datos en un clúster:
 
@@ -247,7 +247,7 @@ Los datos se escriben en segundo plano. Cuando se insertan en la tabla, el bloqu
 
 Si el servidor dejó de estar disponible o sufrió un reinicio brusco (por ejemplo, debido a un fallo de hardware) después de un `INSERT` en una tabla distribuida, los datos insertados podrían perderse. Si se detecta una parte de datos dañada en el directorio de la tabla, se transfiere al subdirectorio `broken` y deja de utilizarse.
 
-## Lectura de datos
+## Lectura de datos {#distributed-reading-data}
 
 Al consultar una tabla distribuida, las consultas `SELECT` se envían a todos los segmentos y funcionan independientemente de cómo estén distribuidos los datos entre ellos (incluso pueden distribuirse completamente al azar). Cuando se añade un nuevo segmento, no es necesario transferirle los datos antiguos. En su lugar, puede escribir datos nuevos en él asignándole un mayor peso; los datos se distribuirán de forma ligeramente desigual, pero las consultas seguirán funcionando de forma correcta y eficiente.
 
@@ -255,9 +255,9 @@ Cuando la opción `max_parallel_replicas` está habilitada, el procesamiento de 
 
 Para obtener más información sobre cómo se procesan las consultas distribuidas `in` y `global in`, consulte [esta](/es/reference/statements/in#distributed-subqueries) documentación.
 
-## Columnas virtuales
+## Columnas virtuales {#virtual-columns}
 
-#### _Shard_num
+#### _Shard_num {#_shard_num}
 
 `_shard_num` — Contiene el valor `shard_num` de la tabla `system.clusters`. Tipo: [UInt32](/es/reference/data-types/int-uint).
 

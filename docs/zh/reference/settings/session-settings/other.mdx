@@ -138,6 +138,14 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 单个 Arrow Flight 请求的超时时间 (单位：秒) 。该限制作用于整个请求：对于读取操作，它涵盖整个结果流，而不仅仅是等待第一个记录批次的时间。设为 0 表示不设超时，此时如果 Flight 服务器接受请求后始终不响应，查询将一直阻塞，直到连接关闭为止。
 
+## backup_s3_expired_token_retry_timeout_ms {#backup_s3_expired_token_retry_timeout_ms}
+
+<SettingsInfoBlock type="UInt64" default_value="120000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "120000"},{"label": "在令牌过期后重试 S3 备份和恢复请求；设置为 0 可恢复之前的行为。"}]}]} />
+
+在备份或恢复期间，如果 S3 请求的响应标识为 `ExpiredToken`，则对该请求进行重试的最长时间 (以毫秒为单位) 。重试次数达到 `backup_restore_s3_retry_attempts` 时也会停止重试。设置为 0 则禁用此类重试。由于 AWS S3 的 `HEAD` 响应仅返回通用的 HTTP 状态码，此重试不适用于 `HEAD` 元数据请求。
+
 ## backup_slow_all_threads_after_retryable_s3_error {#backup_slow_all_threads_after_retryable_s3_error}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -304,8 +312,9 @@ SETTINGS convert_query_to_cnf = true;
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 允许将列定义中未显式使用修饰符 [NULL or NOT NULL](/zh/reference/statements/create/table#null-or-not-null-modifiers) 的数据类型设为 [Nullable](/zh/reference/data-types/nullable)。
+该设置适用于 `CREATE TABLE`、`ALTER TABLE ... ADD COLUMN` 和 `ALTER TABLE ... MODIFY COLUMN`。
 
-可能的值：
+可选值：
 
 * 1 — 列定义中的数据类型默认设置为 `Nullable`。
 * 0 — 列定义中的数据类型默认不设置为 `Nullable`。
@@ -368,13 +377,13 @@ SETTINGS convert_query_to_cnf = true;
 支持的值：
 
 * `clickhouse` (默认) — 标准 ClickHouse SQL。
-* `kusto` — Kusto 查询语言。需要启用 Experimental 设置 `allow_experimental_kusto_dialect`。
+* `kusto` — Kusto 查询语言。需要启用 Beta 设置 `allow_experimental_kusto_dialect`。
 * `prql` — PRQL。需要启用 Experimental 设置 `allow_experimental_prql_dialect`。
 * `polyglot` — 将其他方言 (MySQL、PostgreSQL 等) 的 SQL 转译为 ClickHouse SQL。需要启用 Experimental 设置 `allow_experimental_polyglot_dialect`。
 * `promql` — PromQL (Prometheus 查询语言) ，基于由 `promql_database`、`promql_table` 和 `promql_evaluation_time` 设置指定的 TimeSeries 表进行计算。
 * `clickhouse_json` — 查询将不作为 SQL 文本处理，而是解释为 JSON AST (`parseQueryToJSON` 的输出) 。仍可使用普通形式的 `SET` 查询，以便切换回其他方言。需要启用 Experimental 设置 `enable_json_ast_dialect`。
 * `logsql` — LogsQL，即 VictoriaLogs 的日志查询语言，会被转换为 `SELECT` 查询，作用于由 `logsql_database` 和 `logsql_table` 设置指定的日志表。需要启用 Experimental 设置 `enable_logsql_dialect`。
-* `trino` — Trino SQL：转换 Trino 语法 (`ARRAY[...]`、`TRY_CAST`、`UNNEST` 等) ，并将 Trino 函数名映射为对应的 ClickHouse 函数。需要启用 Experimental 设置 `enable_trino_dialect`。
+* `trino` — Trino SQL：转换 Trino 语法 (`ARRAY[...]`、`TRY_CAST`、`UNNEST` 等) ，并将 Trino 函数名映射为对应的 ClickHouse 函数。需要启用 Beta 设置 `enable_trino_dialect`。
 
 ## discard_query_data {#discard_query_data}
 
@@ -439,6 +448,22 @@ SETTINGS convert_query_to_cnf = true;
 
 * 0 — 如果空文件与所请求的格式不兼容，`SELECT` 会抛出异常。
 * 1 — 对于空文件，`SELECT` 返回空结果。
+
+## exact_division_for_integers {#exact_division_for_integers}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "新增设置，用于为 `\/` 和 `divide` 启用精确整数除法。"}]}]} />
+
+当两个操作数均为整数类型 (包括 `Int128`、`UInt128`、`Int256` 和 `UInt256`) 时，`/` 和 `divide` 将返回整数。
+商向零截断。结果的位宽与第一个操作数相同；只要任一操作数为有符号类型，结果即为有符号类型。
+除数为零或商超出结果类型的范围时，会抛出异常。`Nullable` 操作数会传播 `NULL`。
+
+默认情况下，两个整数相除返回 `Float64`。此设置不影响涉及 `Decimal` 或浮点操作数的除法，
+也不影响显式函数 `intDiv`、`divideDecimal` 和 `divideOrNull`。
+
+对于新提交的 SQL，该设置的取值会在表达式存储到表元数据、视图、SQL 函数或变更之前被记录下来。
+现有定义和 `ATTACH` 查询将保留其原有的除法语义，不受此设置影响。
 
 ## exact_rows_before_limit {#exact_rows_before_limit}
 
@@ -900,6 +925,18 @@ HSTS 的过期时长。0 表示禁用 HSTS。
 
 设置 INTERSECT 查询的默认 mode。可能的值：空字符串、&#39;ALL&#39;、&#39;DISTINCT&#39;。如果为空，未指定 mode 的查询将抛出异常。
 
+## json_extract_named_tuples_as_objects {#json_extract_named_tuples_as_objects}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "新增设置，使 `JSONExtract` 函数家族仅从 JSON 对象填充命名元组，不再沿用以往从数组按位置填充的方式。未命名元组始终按位置填充；从 `JSON` 数据类型的列中提取数据不受影响。"}]}]} />
+
+在 `JSONExtract` 函数家族中，仅从 JSON 对象填充命名元组。禁用时，JSON 数组会按位置填充命名元组 (即以往的行为) ，因此各数组元素会落入哪个命名字段，取决于元组的声明顺序。无论此设置如何，未命名元组始终从数组按位置填充。
+
+此设置适用于以字符串形式传入的 JSON。从 `JSON` 数据类型的列中提取数据不受此设置影响，无论路径是否显式指定类型：此类提取直接读取该列的子列，而非解析 JSON 文档，因此根本不会执行到此设置所控制的代码。JSON 输入格式中的命名元组*列*由另一个设置 [input&#95;format&#95;json&#95;named&#95;tuples&#95;as&#95;objects](/zh/reference/settings/formats/input-format#input_format_json_named_tuples_as_objects) 控制；此设置仅作用于提取函数。
+
+默认禁用。
+
 ## kill_throw_if_noop {#kill_throw_if_noop}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -1047,6 +1084,14 @@ Possible values:
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "21.3"},{"label": "1"},{"label": "将函数名称规范化为其标准名称，这对于投影查询路由是必需的"}]}]} />
 
 将函数名称规范化为其标准名称
+
+## obfuscate_seed {#obfuscate_seed}
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": ""},{"label": "新增设置：obfuscate 表函数的种子字符串。"}]}]} />
+
+`obfuscate` 表函数使用的种子，可以是任意字符串。每一列的种子均由该字符串和列名派生而来，因此相同的种子始终会产生相同的混淆结果。如果设置为空字符串，则会为每个查询生成一个随机种子。
+
+该种子只是一个普通设置，而非机密信息：与其他设置一样，其值会以明文形式存储和显示，例如在 `system.query_log` 和 `system.settings` 中。请勿使用密码或其他机密信息作为种子。如果要求不同查询的已混淆输出之间无法相互关联，请保留默认的空值 (即每个查询使用一个新的随机种子) ，不要设置固定种子。
 
 ## offset {#offset}
 
@@ -1250,6 +1295,16 @@ a   Tuple(
 当以精度 1 调用 `QBit` 距离函数 (`L2DistanceTransposed`、`cosineDistanceTransposed`、`dotProductTransposed` 及其 `...Quantized` 变体) 时，将参考向量也简化为其各元素的符号，并基于两个符号向量之间的 Hamming 距离 (通过异或和 popcount 计算) 得出结果。
 
 默认情况下，在精度为 1 时，参考向量保留全精度，仅将存储的向量简化为符号 (即非对称距离) 。对称距离的计算速度要快数倍，但会忽略参考向量各元素的大小：参考值较大的维度与参考值接近零的维度权重相同。
+
+## query_condition_cache_time_condition_grid_factor {#query_condition_cache_time_condition_grid_factor}
+
+<SettingsInfoBlock type="Float" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "新增设置：查询条件缓存在从涉及当前时间的条件推导确定性条件时所用的网格步长，以时间常量与当前时间之间距离的比例表示。"}]}]} />
+
+对于 `MergeTree` 表的[查询条件缓存](/zh/concepts/features/performance/caches/query-condition-cache)中涉及当前时间的条件 (参见 [`use_query_condition_cache_for_time_conditions`](/zh/reference/settings/session-settings/use-query#use_query_condition_cache_for_time_conditions)) ，该设置指定时间常量取整时所对齐的网格大小，以常量与当前时间之间距离的比例表示。例如，在默认系数 1.0 下，`WHERE time >= now() - INTERVAL 10 DAY` 中的常量会取整到以一天为单位的网格上 (最大为一天) ，而 `WHERE time >= now() - INTERVAL 1 HOUR` 中的常量则会取整到以一小时为单位的网格上。
+
+较小的值可使推导出的条件更贴近原始条件 (减少边界附近的过量读取) ，代价是缓存键的轮换更加频繁。网格步长最小为一秒，因此系数较小时，推导出的条件会逐渐趋近原始条件，而不会被禁用。小于或等于 0 的值会完全禁用该推导。
 
 ## query_metric_log_interval {#query_metric_log_interval}
 

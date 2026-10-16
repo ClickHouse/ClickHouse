@@ -1,0 +1,528 @@
+---
+sidebarTitle: 'SQLFlow'
+keywords: ['clickhouse', 'sqlflow', 'duckdb', 'kafka', 'streaming', 'stream processing', 'sink', 'data ingestion', 'integrate', 'websocket']
+slug: /integrations/sqlflow
+description: 'استخدم SQLFlow لتدفيق بيانات Kafka وWebSocket وwebhook إلى ClickHouse بعد تحويلها باستخدام DuckDB SQL'
+title: 'SQLFlow وClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_ingestion'
+  - website: 'https://turbolytics.io'
+---
+
+import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
+import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+<a href="https://github.com/turbolytics/sql-flow" target="_blank">SQLFlow</a> هو محرك مفتوح المصدر (بترخيص MIT) لمعالجة التدفقات. يستهلك دفقًا (من Kafka، أو WebSocket، أو خطافات الويب)، وينفّذ استعلامات DuckDB SQL على كل دفعة صغيرة، ثم يُدرج النتيجة في جدول ClickHouse. يتكوّن كل مسار تنفيذ الاستعلام من ملف YAML واحد، ويُوزَّع SQLFlow في صورة ملف تنفيذي واحد وصورة Docker واحدة، لذا لا حاجة إلى تشغيل أي عنقود.
+
+تتناول هذه الصفحة وجهة البيانات ClickHouse، وتشمل: الاتصال بـ ClickHouse Cloud وبـ ClickHouse مستضاف ذاتيًا، وكيفية تعيين الأنواع، ومثالًا متكاملًا يستخدم عينة بيانات سيارات الأجرة في مدينة نيويورك، إضافةً إلى الحدود التي جرى قياسها فعليًا لا افتراضها.
+
+## المتطلبات المسبقة {#prerequisites}
+
+* SQLFlow **[v2026.10.08](https://github.com/turbolytics/sql-flow/releases/tag/v2026.10.08)** أو أحدث. قيست جميع النتائج الواردة في هذه الصفحة على هذا الإصدار ما لم يُذكر إصدار آخر.
+* ClickHouse Cloud، أو ClickHouse مستضاف ذاتيًا. اختُبرت هذه الصفحة على الإصدار 26.8.1 المستضاف ذاتيًا وعلى الإصدار 26.6.1 من Cloud. ولم يُحدَّد حد أدنى للإصدار دون ذلك.
+* وسيط Kafka يمكن لمسار تنفيذ الاستعلام الوصول إليه، وذلك لمصدر Kafka المستخدم في المثال. أما مصدرا WebSocket وwebhook فلا يحتاجان إلى وسيط.
+* بايثون 3 مع حزمة `confluent-kafka` (`pip install confluent-kafka`)، وذلك فقط لتشغيل البرنامج النصي الوارد في المثال الذي ينشر عينة البيانات إلى Kafka. أما SQLFlow نفسه فلا يحتاج إلى بايثون.
+* يُعد Docker أبسط طريقة للتثبيت، إذ تُنشر الصورة `turbolytics/sql-flow` بدعم معماريات متعددة لكل من `linux/amd64` و`linux/arm64`. ويمكن أيضًا بناء SQLFlow من الشيفرة المصدرية، ويتطلب ذلك Go وسلسلة أدوات C، إضافةً إلى توفر `libduckdb` في بيئة التشغيل.
+
+## الإعداد {#setup}
+
+يتصل SQLFlow باستخدام DSN واحد. يحدد نظام المصادقة البروتوكول المستخدم وما إذا كان الاتصال يستخدم TLS، وإذا لم يُحدَّد المنفذ، فإنه يأخذ قيمته الافتراضية بحسب هذا النظام.
+
+| نظام المصادقة                      | البروتوكول | TLS | المنفذ الافتراضي | الاستخدام                                               |
+| ---------------------------- | ---------- | --- | ---------------- | ------------------------------------------------------- |
+| `clickhouses://`, `https://` | HTTP       | نعم | 8443             | ClickHouse Cloud، أو أي نقطة نهاية HTTP تُنهي اتصال TLS |
+| `clickhouse://`, `http://`   | HTTP       | لا  | 8123             | ClickHouse مستضاف ذاتيًا                                |
+| `natives://`                 | أصلي       | نعم | 9440             | ClickHouse Cloud عبر البروتوكول الأصلي                  |
+| `tcp://`, `native://`        | أصلي       | لا  | 9000             | ClickHouse مستضاف ذاتيًا عبر البروتوكول الأصلي          |
+
+يجب أن يكون الجدول الهدف موجودًا مسبقًا، إذ لا ينشئ SQLFlow الجداول ولا يعدّل المخططات تلقائيًا، بل يحدد أسماء الأعمدة في عبارة `INSERT` بناءً على أسماء الأعمدة التي يُنتجها استعلام SQL؛ لذا **يجب أن تطابق الأعمدة التي يُخرجها استعلام SQL الخاص بالمعالج أسماءَ أعمدة الجدول**. استخدم الأسماء المستعارة في استعلام SQL لإعادة تسمية الأعمدة.
+
+### الاتصال بـ ClickHouse Cloud {#connect-to-clickhouse-cloud}
+
+<ConnectionDetails />
+
+بناءً على هذه التفاصيل، تكون سلسلة الاتصال DSN كما يلي:
+
+```
+clickhouses://default:<password>@<host>.clickhouse.cloud:8443/<database>
+```
+
+أبقِها خارج ملف YAML بتمريرها كمتغير بيئة؛ فحقل `dsn` في الإعداد عبارة عن قالب:
+
+```yaml
+sink:
+  type: clickhouse
+  clickhouse:
+    dsn: {{ SQLFLOW_CLICKHOUSE_DSN }}
+    table: trips_small
+```
+
+```bash
+export SQLFLOW_CLICKHOUSE_DSN='clickhouses://default:<password>@<host>.clickhouse.cloud:8443/nyc_taxi'
+```
+
+<Warning>
+  استخدم `clickhouses://` (بالحرف `s`) مع Cloud، إذ يُرسل `clickhouse://` بيانات HTTP غير مشفّرة إلى المنفذ 8443، فيُعاد ضبط الاتصال قبل إرسال أي طلب. راجع [استكشاف الأخطاء وإصلاحها](#troubleshooting).
+</Warning>
+
+### الاتصال بـ ClickHouse مستضاف ذاتيًا {#connect-to-self-hosted-clickhouse}
+
+اضبط DSN ليشير إلى واجهة HTTP، التي تعمل افتراضيًا على المنفذ 8123:
+
+```bash
+export SQLFLOW_CLICKHOUSE_DSN='clickhouse://default:<password>@clickhouse.internal:8123/nyc_taxi'
+```
+
+إذا كنت قد وضعت TLS أمام واجهة HTTP، فاستخدم `clickhouses://` تمامًا كما في Cloud. أما مع البروتوكول الأصلي، فاستخدم `tcp://` (9000) أو `natives://` (9440).
+
+عند تشغيل SQLFlow في Docker، يشير `localhost` داخل الحاوية إلى الحاوية نفسها لا إلى جهازك. لذا ضع SQLFlow وClickHouse على شبكة Docker نفسها، واستخدم اسم حاوية ClickHouse مضيفًا.
+
+## المصادقة {#authentication}
+
+يُضمَّن اسم المستخدم وكلمة المرور في DSN، ويُرسَلان عبر TLS عند استخدام `clickhouses://` أو `natives://`. ويُتحقَّق من شهادة الخادم مقابل مخزن الثقة في النظام، ولا يتوفر أي خيار لتخطي هذا التحقق.
+
+* **المحارف الخاصة في كلمة المرور.** يُحلَّل DSN بوصفه URL، لذا يجب ترميز `/` و`#` و`?` بصيغة percent-encoded (`%2F` و`%23` و`%3F`)؛ وإن تُركت دون ترميز، فإنها تُنتج خطأً مُربِكًا هو `invalid port ":p" after host`. أما `@` و`:` فتُعالَجان بشكل صحيح في الحالتين.
+* **قوائم الوصول لعناوين IP في Cloud.** إذا كانت خدمتك تقيّد عناوين IP المصدر، فيجب إضافة العنوان الذي يتصل منه SQLFlow إلى القائمة.
+* **غير مدعوم:** TLS المتبادل / شهادات العميل، وحزم شهادات جهات إصدار الشهادات المخصصة. استخدم اسم المستخدم وكلمة المرور بدلًا من ذلك.
+
+## مثال: دفق مجموعة بيانات سيارات الأجرة في مدينة نيويورك من Kafka {#example-nyc-taxi}
+
+يوضّح هذا المثال كيفية تمرير [عينة مجموعة بيانات سيارات الأجرة في مدينة نيويورك](/ar/get-started/sample-datasets/nyc-taxi) عبر Kafka إلى ClickHouse، مع تحويلها بواسطة SQLFlow أثناء انتقالها. ويمكن تنفيذه على Cloud أو على بيئة مستضافة ذاتيًا، ولا يتغير في الحالتين سوى DSN.
+
+### 1. إنشاء جدول الهدف {#example-create-table}
+
+وهو الجدول نفسه المُعرَّف في صفحة مجموعة البيانات النموذجية:
+
+```sql
+CREATE DATABASE IF NOT EXISTS nyc_taxi;
+
+CREATE TABLE IF NOT EXISTS nyc_taxi.trips_small (
+    trip_id             UInt32,
+    pickup_datetime     DateTime,
+    dropoff_datetime    DateTime,
+    pickup_longitude    Nullable(Float64),
+    pickup_latitude     Nullable(Float64),
+    dropoff_longitude   Nullable(Float64),
+    dropoff_latitude    Nullable(Float64),
+    passenger_count     UInt8,
+    trip_distance       Float32,
+    fare_amount         Float32,
+    extra               Float32,
+    tip_amount          Float32,
+    tolls_amount        Float32,
+    total_amount        Float32,
+    payment_type        Enum('CSH' = 1, 'CRE' = 2, 'NOC' = 3, 'DIS' = 4, 'UNK' = 5),
+    pickup_ntaname      LowCardinality(String),
+    dropoff_ntaname     LowCardinality(String)
+)
+ENGINE = MergeTree
+PRIMARY KEY (pickup_datetime, dropoff_datetime);
+```
+
+### 2. نشر البيانات إلى Kafka {#example-publish}
+
+تتوفر مجموعة البيانات بصيغة TSV مضغوطة بـ gzip. تحوّل هذه الخطوة ملفًا واحدًا (يضم نحو مليون صف) إلى JSON مفصول بأسطر جديدة، ثم تنشره إلى موضوع باسم `nyc-taxi-trips`.
+
+ثبّت الحزمة التي تعتمد عليها أداة النشر، ثم نزّل الملف:
+
+```bash
+pip install confluent-kafka
+curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_0.gz
+```
+
+أنشئ الموضوع. ينشئه وسيط Apache Kafka القياسي تلقائيًا عند أول عملية نشر، لكن العناقيد المُدارة وعناقيد بيئة الإنتاج تضبط عادةً `auto.create.topics.enable=false`، وفي هذه الحالة يفشل المثال لعدم وجود الموضوع قبل أن يصل أي صف إلى ClickHouse:
+
+```bash
+kafka-topics.sh --bootstrap-server localhost:9092 \
+  --create --topic nyc-taxi-trips --partitions 1 --replication-factor 1
+```
+
+تُسمّي صور Confluent هذا الأمر `kafka-topics`، دون اللاحقة `.sh`.
+
+احفظ برنامج النشر باسم `publish.py`. وغيّر قيمة `bootstrap.servers` إذا لم يكن الوسيط يعمل على `localhost:9092`:
+
+```python
+import gzip, json
+from confluent_kafka import Producer
+
+COLUMNS = ["trip_id", "pickup_datetime", "dropoff_datetime", "pickup_longitude",
+           "pickup_latitude", "dropoff_longitude", "dropoff_latitude", "passenger_count",
+           "trip_distance", "fare_amount", "extra", "tip_amount", "tolls_amount",
+           "total_amount", "payment_type", "pickup_ntaname", "dropoff_ntaname"]
+INTS = {"trip_id", "passenger_count"}
+FLOATS = {"pickup_longitude", "pickup_latitude", "dropoff_longitude", "dropoff_latitude",
+          "trip_distance", "fare_amount", "extra", "tip_amount", "tolls_amount", "total_amount"}
+
+producer = Producer({"bootstrap.servers": "localhost:9092"})
+
+def send(topic, value):
+    # The producer's queue holds 100,000 messages by default, and this file
+    # has a million rows; poll() drains it as it fills.
+    while True:
+        try:
+            producer.produce(topic, value)
+            return
+        except BufferError:
+            producer.poll(0.5)
+
+with gzip.open("trips_0.gz", "rb") as f:
+    header = f.readline().decode().rstrip("\n").split("\t")
+    index = {name: i for i, name in enumerate(header)}
+    for raw in f:
+        # Split on the raw bytes and decode only the columns being published.
+        # The file carries columns this example does not use that are not
+        # valid UTF-8, and decoding the whole line would have to corrupt them.
+        parts = raw.rstrip(b"\n").split(b"\t")
+        row = {}
+        for col in COLUMNS:
+            value = parts[index[col]].decode()
+            if value == "":
+                row[col] = None
+            elif col in INTS:
+                row[col] = int(float(value))
+            elif col in FLOATS:
+                row[col] = float(value)
+            else:
+                row[col] = value
+        send("nyc-taxi-trips", json.dumps(row))
+producer.flush()
+```
+
+شغّله. يستغرق نشر مليون صف أقل من دقيقة:
+
+```bash
+python publish.py
+```
+
+### 3. كتابة مسار تنفيذ الاستعلام {#example-pipeline}
+
+احفظ هذا الملف باسم `taxi.yml`. يُنفَّذ استعلام SQL الخاص بالمعالج في DuckDB على كل دفعة من رسائل JSON، وتُنتج عمليات تحويل الأنواع أنواعَ Arrow تُطابق أنواع ClickHouse المعرّفة في الجدول (راجع [تعيين الأنواع](#type-mapping)).
+
+```yaml
+pipeline:
+  name: nyc-taxi-clickhouse
+  batch_size: 20000
+
+  source:
+    type: kafka
+    kafka:
+      brokers: [{{ SQLFLOW_KAFKA_BROKERS|default('localhost:9092') }}]
+      group_id: nyc-taxi
+      auto_offset_reset: earliest
+      topics:
+        - nyc-taxi-trips
+
+  handler:
+    type: 'handlers.InferredMemBatch'
+    sql: |
+      SELECT
+        CAST(trip_id AS UINTEGER)            AS trip_id,
+        CAST(pickup_datetime AS TIMESTAMP)   AS pickup_datetime,
+        CAST(dropoff_datetime AS TIMESTAMP)  AS dropoff_datetime,
+        pickup_longitude,
+        pickup_latitude,
+        dropoff_longitude,
+        dropoff_latitude,
+        CAST(passenger_count AS UTINYINT)    AS passenger_count,
+        CAST(trip_distance AS FLOAT)         AS trip_distance,
+        CAST(fare_amount AS FLOAT)           AS fare_amount,
+        CAST(extra AS FLOAT)                 AS extra,
+        CAST(tip_amount AS FLOAT)            AS tip_amount,
+        CAST(tolls_amount AS FLOAT)          AS tolls_amount,
+        CAST(total_amount AS FLOAT)          AS total_amount,
+        payment_type,
+        pickup_ntaname,
+        dropoff_ntaname
+      FROM batch
+
+  sink:
+    type: clickhouse
+    clickhouse:
+      dsn: {{ SQLFLOW_CLICKHOUSE_DSN }}
+      table: trips_small
+```
+
+يحدّد `batch_size` عدد الرسائل في كل دفعة من DuckDB وفي كل عملية `INSERT` إلى ClickHouse. راجع قسم [الأداء](#performance) لمعرفة سبب اختيار القيمة 20,000.
+
+### 4. التشغيل {#example-run}
+
+```bash
+docker run --rm \
+  --network <the broker's docker network> \
+  -v "$(pwd)":/conf \
+  -e SQLFLOW_CLICKHOUSE_DSN \
+  -e SQLFLOW_KAFKA_BROKERS=<broker address as advertised inside that network> \
+  turbolytics/sql-flow:v2026.10.08 \
+  run /conf/taxi.yml --max-msgs=1000000
+```
+
+<Warning>
+  **يجب أن يكون عنوان الوسيط عنوانًا يمكن للحاوية الوصول إليه.** يُعاد توجيه عميل Kafka إلى العنوان الذي *يُعلن عنه* الوسيط، لا إلى العنوان الذي تتصل به. فإذا أعلن الوسيط عن `127.0.0.1:9092` للعملاء الخارجيين، فإنه يوجّه الحاوية إلى نفسها، فتفشل كل عملية جلب بالخطأ `dial tcp 127.0.0.1:9092: connect: connection refused`، رغم أن العنوان نفسه يعمل من الـ shell لديك. لذا ضع الحاوية على شبكة الوسيط نفسها واستخدم العنوان المُعلَن عنه فيها، أو شغّل الملف التنفيذي مباشرةً على المضيف:
+
+  ```bash
+  sqlflow run taxi.yml --max-msgs=1000000
+  ```
+</Warning>
+
+يوقف الخيار `--max-msgs` التشغيل بعد معالجة هذا العدد من الرسائل؛ احذفه ليعمل التشغيل باستمرار. لا تُثبَّت إزاحات Kafka إلا بعد أن يؤكد ClickHouse استلام كل عملية `INSERT`، ولا يتجاوز ذلك آخر رسالة تمت معالجتها فعليًا.
+
+### 5. التحقق {#example-verify}
+
+```sql
+SELECT payment_type, count() AS trips, round(avg(total_amount), 2) AS avg_total
+FROM nyc_taxi.trips_small
+GROUP BY payment_type
+ORDER BY trips DESC;
+```
+
+```
+┌─payment_type─┬──trips─┬─avg_total─┐
+│ CSH          │ 617237 │     17.82 │
+│ CRE          │ 377897 │     13.91 │
+│ NOC          │   3573 │     13.89 │
+│ DIS          │   1293 │     12.09 │
+└──────────────┴────────┴───────────┘
+```
+
+يُعيد الاستعلام نفسه أعداد مرات الظهور ذاتها على Cloud وعلى النسخة المستضافة ذاتيًا، وهذا فحص معقول يؤكد عدم حذف أي بيانات أو تحويل أنواعها قسرًا في أيٍّ من المسارين. وعلى Cloud، قد تُظهر عملية القراءة عددًا أقل من الفعلي لفترة وجيزة بعد انتهاء التشغيل، إذا خدمتها نسخة متماثلة لم تجلب بعدُ أحدث جزء بيانات. أضِف `SETTINGS select_sequential_consistency = 1` إلى الاستعلام إذا جاء المجموع أقل من المتوقع.
+
+### مثال ثانٍ: مصدر WebSocket من دون Kafka {#example-websocket}
+
+لا يحتاج مصدر WebSocket إلى وسيط، ويوضّح هذا المثال كيف يُكتب عمود من النوع `Array(String)` ويُستعلَم عنه بشكل أصلي. ويستهلك هذا المصدر تدفق Bluesky firehose العام.
+
+```sql
+CREATE TABLE bluesky_posts (
+    ts    DateTime,
+    did   String,
+    langs Array(String),
+    text  String
+) ENGINE = MergeTree ORDER BY ts;
+```
+
+```yaml
+pipeline:
+  batch_size: 200
+  source:
+    type: websocket
+    websocket:
+      uri: 'wss://jetstream2.us-east.bsky.network/subscribe?wantedCollections=app.bsky.feed.post'
+  handler:
+    type: 'handlers.InferredMemBatch'
+    sql: |
+      SELECT
+        to_timestamp(time_us / 1000000)          AS ts,
+        did,
+        COALESCE(commit.record.langs, [])       AS langs,
+        COALESCE(commit.record.text, '')        AS text
+      FROM batch
+  sink:
+    type: clickhouse
+    clickhouse:
+      dsn: {{ SQLFLOW_CLICKHOUSE_DSN }}
+      table: bluesky_posts
+```
+
+احفظه باسم `bluesky.yml` ثم شغّله. لا حاجة هنا إلى `SQLFLOW_KAFKA_BROKERS`، إذ إن المصدر هو WebSocket، والمتغير الوحيد الذي يقرؤه مسار تنفيذ الاستعلام هو DSN.
+
+```bash
+docker run --rm \
+  -v "$(pwd)":/conf \
+  -e SQLFLOW_CLICKHOUSE_DSN \
+  turbolytics/sql-flow:v2026.10.08 \
+  run /conf/bluesky.yml --max-msgs=2000
+```
+
+أضف `--network` كما في مثال Kafka إذا كان ClickHouse يعمل داخل Docker على الجهاز نفسه. أما عند استخدام الملف التنفيذي بدلاً من الصورة:
+
+```bash
+sqlflow run bluesky.yml --max-msgs=2000
+```
+
+يضخّ مصدر البيانات المتدفق (firehose) نحو 50 منشورًا في الثانية، لذا يستغرق استقبال 2,000 رسالة أقل من دقيقة. بعد ذلك:
+
+```sql
+SELECT lang, count() AS posts
+FROM (SELECT arrayJoin(langs) AS lang FROM bluesky_posts)
+GROUP BY lang ORDER BY posts DESC LIMIT 5;
+```
+
+## تعيين الأنواع {#type-mapping}
+
+يُسلِّم SQLFlow كل دفعة إلى ClickHouse على هيئة صفوف مبنية من جدول Arrow الذي يُنتجه DuckDB، لذا فالعبرة بنوع Arrow الذي يؤول إليه كل عمود في SQL. استخدم التحويل (CAST) في استعلام SQL الخاص بالمعالج للتحكم في هذا النوع.
+
+يُولَّد كل صف أدناه من مصفوفة الأنواع الخاصة بالمحرك، ويُتحقَّق منه عبر اختبار تكامل يكتب القيمة ثم يقرؤها مجددًا عبر الخادم ويقارن بينهما. تتوفر المصفوفة والاختبار في [مستودع SQLFlow](https://github.com/turbolytics/sql-flow/blob/main/docs/coverage/clickhouse-types.mdx). كل اقتران مذكور في الجدول جرى التحقق منه، أما الاقتران غير المذكور فيه فهو غير مُختبَر وليس مرفوضًا؛ إذ إن الاقترانات المرفوضة مُدرجة ضمن [غير مدعوم](#unsupported)، وتؤدي إلى فشل الدفعة مع إرجاع رمز خطأ. وتُدرَج أنواع الأعمدة ذات المعلمات بصيغة المثيل الذي كتبه الاختبار.
+
+| نوع SQL في DuckDB (التحويل إليه) | أنواع الأعمدة في ClickHouse التي تقبله                                                                                                                  | ملاحظات                                                                                                                                               |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BOOLEAN`                        | `Bool`, `UInt8`                                                                                                                                         |                                                                                                                                                       |
+| `TINYINT`                        | `Int8`                                                                                                                                                  |                                                                                                                                                       |
+| `SMALLINT`                       | `Int16`                                                                                                                                                 |                                                                                                                                                       |
+| `INTEGER`                        | `Int32`                                                                                                                                                 |                                                                                                                                                       |
+| `BIGINT`                         | `Int64`                                                                                                                                                 |                                                                                                                                                       |
+| `UTINYINT`                       | `UInt8`                                                                                                                                                 |                                                                                                                                                       |
+| `USMALLINT`                      | `UInt16`                                                                                                                                                |                                                                                                                                                       |
+| `UINTEGER`                       | `UInt32`                                                                                                                                                |                                                                                                                                                       |
+| `UBIGINT`                        | `UInt64`                                                                                                                                                |                                                                                                                                                       |
+| `REAL`                           | `Float32`                                                                                                                                               |                                                                                                                                                       |
+| `DOUBLE`                         | `Float64`                                                                                                                                               |                                                                                                                                                       |
+| `VARCHAR`                        | `String`, `LowCardinality(String)`, `DateTime64(3)`, `DateTime`, `Enum8('' = 0, 'a' = 1, 'b' = 2)`, `FixedString(36)`, `UUID`, `IPv4`, `Decimal(10, 2)` | يجب أن تكون السلسلة النصية مكتوبة مسبقًا بالصيغة النصية لنوع الوجهة؛ راجع الملاحظة أدناه. يصل `UUID` و`JSON` إلى وجهة البيانات على هيئة `VARCHAR`     |
+| `BLOB`, `BIT`, `VARINT`          | `String`                                                                                                                                                |                                                                                                                                                       |
+| `DATE`                           | `Date`, `Date32`                                                                                                                                        |                                                                                                                                                       |
+| `TIMESTAMP_S`                    | `DateTime`                                                                                                                                              |                                                                                                                                                       |
+| `TIMESTAMP_MS`                   | `DateTime64(3)`                                                                                                                                         |                                                                                                                                                       |
+| `TIMESTAMP`                      | `DateTime64(6)`, `DateTime`                                                                                                                             | يحتفظ DateTime بالثواني الكاملة فقط، بينما يحتفظ DateTime64(6) بالأرقام الستة كلها                                                                    |
+| `TIMESTAMP_NS`                   | `DateTime64(9)`                                                                                                                                         |                                                                                                                                                       |
+| `TIMESTAMPTZ`                    | `DateTime64(6)`, `DateTime`                                                                                                                             | يُخزَّن على أنه اللحظة نفسها بتوقيت UTC؛ إذ تُحذف المنطقة الزمنية، وتتحكم المنطقة الزمنية للعمود في طريقة العرض؛ ويحتفظ DateTime بالثواني الكاملة فقط |
+| `BOOLEAN[]`                      | `Array(Bool)`                                                                                                                                           |                                                                                                                                                       |
+| `TINYINT[]`                      | `Array(Int8)`                                                                                                                                           |                                                                                                                                                       |
+| `SMALLINT[]`                     | `Array(Int16)`                                                                                                                                          |                                                                                                                                                       |
+| `INTEGER[]`                      | `Array(Int32)`                                                                                                                                          |                                                                                                                                                       |
+| `BIGINT[]`                       | `Array(Int64)`                                                                                                                                          |                                                                                                                                                       |
+| `UTINYINT[]`                     | `Array(UInt8)`                                                                                                                                          |                                                                                                                                                       |
+| `USMALLINT[]`                    | `Array(UInt16)`                                                                                                                                         |                                                                                                                                                       |
+| `UINTEGER[]`                     | `Array(UInt32)`                                                                                                                                         |                                                                                                                                                       |
+| `UBIGINT[]`                      | `Array(UInt64)`                                                                                                                                         |                                                                                                                                                       |
+| `REAL[]`                         | `Array(Float32)`                                                                                                                                        |                                                                                                                                                       |
+| `DOUBLE[]`                       | `Array(Float64)`                                                                                                                                        |                                                                                                                                                       |
+| `VARCHAR[]`                      | `Array(String)`                                                                                                                                         |                                                                                                                                                       |
+| `BLOB[]`                         | `Array(String)`                                                                                                                                         |                                                                                                                                                       |
+| `DATE[]`                         | `Array(Date32)`                                                                                                                                         |                                                                                                                                                       |
+| `TIMESTAMP_S[]`                  | `Array(DateTime)`                                                                                                                                       |                                                                                                                                                       |
+| `TIMESTAMP_MS[]`                 | `Array(DateTime64(3))`                                                                                                                                  |                                                                                                                                                       |
+| `TIMESTAMP[]`                    | `Array(DateTime64(6))`                                                                                                                                  |                                                                                                                                                       |
+| `TIMESTAMP_NS[]`                 | `Array(DateTime64(9))`                                                                                                                                  |                                                                                                                                                       |
+| `TIMESTAMPTZ[]`                  | `Array(DateTime64(6))`                                                                                                                                  | يُخزَّن على أنه اللحظة نفسها بتوقيت UTC؛ إذ تُحذف المنطقة الزمنية، وتتحكم المنطقة الزمنية للعمود في طريقة العرض                                       |
+| `BIGINT[][]`                     | `Array(Array(Int64))`                                                                                                                                   |                                                                                                                                                       |
+| `NULL` في أي عمود                | نوع العمود نفسه                                                                                                                                         | القيمة الصفرية لنوع العمود؛ ولا يُقيَّم تعبير DEFAULT لأن كل عمود ناتج مذكور بالاسم في عبارة INSERT. ويُستثنى من ذلك `Enum`: راجع الملاحظة أدناه      |
+| `NULL` داخل `LIST`               | نوع العنصر نفسه                                                                                                                                         | القيمة الصفرية لنوع العنصر، لأن Array(T) في ClickHouse لا يقبل القيم الخالية ما لم يكن T من النوع Nullable                                            |
+
+<Note>
+  **تصل قيمة `VARCHAR` إلى أي عمود من نوع غير `String` على هيئة نص يحلّله العمود.** تتحقق المصفوفة من كل وجهة باستخدام قيمة مكتوبة أصلًا بالصيغة النصية الخاصة بتلك الوجهة، لا بقيمة واحدة لجميع الوجهات؛ فسلسلة UUID النصية لا تتحول إلى `DateTime`. الصيغ التي جرى اختبارها:
+
+  | الوجهة                             | النص الذي كتبه الاختبار                           |
+  | ---------------------------------- | ------------------------------------------------- |
+  | `String`، `LowCardinality(String)` | `L'Œil 👁 "quoted" back\slash` ومسافة جدولة (tab) |
+  | `DateTime64(3)`                    | `2026-09-01 12:00:00.123`                         |
+  | `DateTime`                         | `2026-09-01 12:00:00`                             |
+  | `Enum8(...)`                       | اسم أحد الأعضاء، مثل `a`                          |
+  | `FixedString(36)`، `UUID`          | `0b7e2c9a-4d31-4f6e-9a02-7c1de3f10b45`            |
+  | `IPv4`                             | `192.168.1.1`                                     |
+  | `Decimal(10, 2)`                   | `1234.56`                                         |
+</Note>
+
+<Warning>
+  **يؤدي إدراج `NULL` في عمود `Enum` غير `Nullable` لا يتضمن عضوًا بالقيمة `0` إلى كتابة صف تتعذّر قراءته.** إذ تخزّن وجهة البيانات (sink) القيمة الصفرية `0`، فتنجح عملية `INSERT`، لكن كل عملية `SELECT` لاحقة على العمود تفشل بالخطأ `UNKNOWN_ELEMENT_OF_ENUM`. جرى القياس باستخدام `Enum8('a' = 1, 'b' = 2)`. يحتاج عمود enum الذي قد يستقبل `NULL` إلى عضو بالقيمة `0`، كما في `Enum8('' = 0, 'a' = 1, 'b' = 2)`، أو إلى النوع `Nullable(Enum8(...))`. وإلا فطبّق `coalesce` على القيمة في استعلام SQL الخاص بالمعالج.
+</Warning>
+
+تُطابَق القيم مع الأعمدة **بالاسم**، لا بالموضع.
+
+<Note>
+  **يُفضَّل استخدام `CAST(ts AS TIMESTAMP)` بدلًا من تمرير الطوابع الزمنية كسلاسل نصية.** عندما يرسل SQLFlow قيمة `VARCHAR` إلى عمود `DateTime`، فإن مشغّل Go هو من يحلّل السلسلة النصية، لا الخادم. ولا يقبل سوى شكلين تحديدًا:
+
+  * `'2026-09-01 12:00:00'`، ويفسّره على أنه بتوقيت UTC. ولا تؤثر المنطقة الزمنية للخادم ولا المنطقة الزمنية للعمود في اللحظة المخزّنة. فعند القياس على خادم يعمل بالمنطقة `Asia/Tokyo`، خُزّن الصف بالقيمة `2026-09-01 12:00:00 UTC`، وهي اللحظة نفسها التي استقبلها عمود `DateTime('UTC')`.
+  * `'2026-09-01 12:00:00 +09:00'`، وتُطبَّق عليه الإزاحة، فيُخزَّن الصف بالقيمة `2026-09-01 03:00:00 UTC`.
+
+  أي صيغة أخرى تؤدي إلى فشل الدفعة، بما في ذلك صيغة ISO 8601 مع الفاصل `T` أو اللاحقة `Z`. فمثلًا تُرفض القيمة `'2026-09-01T12:00:00Z'` بالخطأ `parsing time "2026-09-01T12:00:00Z" as "2006-01-02 15:04:05"`.
+
+  يختلف هذا عن كتابة القيمة الحرفية نفسها يدويًا في عبارة `INSERT`، إذ يحلّل ClickHouse حينها السلسلة النصية وفق المنطقة الزمنية لعمود الهدف، ويعتمد عمود `DateTime` العادي المنطقة الزمنية للخادم. أما التحويل داخل استعلام SQL الخاص بالمعالج فيُغنيك عن كلتا مجموعتي القواعد.
+
+  إذا كان الحقل قد يحمل `NULL`، فإن عمود `DateTime` يخزّنه بالقيمة `1970-01-01 00:00:00`. استخدم `Nullable(DateTime)`، أو `coalesce(CAST(ts AS TIMESTAMP), now()::TIMESTAMP)` في استعلام SQL الخاص بالمعالج.
+</Note>
+
+<Note>
+  تقبل أعمدة `Decimal` القيمة على هيئة **سلسلة نصية**، لا على هيئة `DOUBLE`. فالتعبير `CAST(amount AS VARCHAR)` يعمل، بينما يؤدي `CAST(amount AS DOUBLE)` إلى فشل الدفعة بالخطأ `converting float64 to Decimal(10, 2) is unsupported`.
+</Note>
+
+### غير مدعوم {#unsupported}
+
+تتسبب هذه الأنواع في فشل الدفعة بالخطأ `user.sink.type_unsupported` بدلاً من وصولها إلى الجدول. حوّلها باستخدام CAST أو سطّحها في استعلام SQL الخاص بالمعالج.
+
+* `DECIMAL(p, s)`، `HUGEINT`، `UHUGEINT`
+* `TIME`، `TIMETZ`
+* `TIME_NS`
+* `INTERVAL`
+* `DECIMAL(p, s)[]`، `HUGEINT[]`
+* `TIME[]`
+* `STRUCT(...)[]`
+* `INTEGER[3]`
+* `STRUCT(...)`
+* `MAP(K, V)`
+* `UNION(...)`
+* `ENUM`
+
+## الحدود المعروفة {#known-limits}
+
+* **الأنواع غير المدعومة:** مُدرجة ضمن [غير مدعوم](#unsupported). وأكثرها استخدامًا في المعالجات هي `DECIMAL` و`STRUCT` و`MAP` و`TIME` و`INTERVAL`. ويؤدي كلٌّ منها إلى فشل الدفعة بالخطأ `user.sink.type_unsupported` قبل كتابة أي صف. سطِّح `STRUCT` أو `MAP` إلى أعمدة قياسية في استعلام SQL الخاص بالمعالج، أو حوِّله إلى سلسلة باستخدام `to_json()` وخزّنه في عمود من النوع `String`. أما `DECIMAL` فحوِّله إلى `VARCHAR`. لم تُختبر أعمدة `Nested`.
+* **لا يُنشئ الجداول ولا يطوّر المخطط.** يجب أن يكون الجدول موجودًا مسبقًا، وأي عمود يُصدره المعالج وليس موجودًا في الجدول يؤدي إلى فشل الدفعة (راجع [استكشاف الأخطاء وإصلاحها](#troubleshooting)). أما الأعمدة التي يُغفلها المعالج فتأخذ قيمة `DEFAULT` المحددة في الجدول.
+* **تُخزَّن قيمة `NULL` المكتوبة في عمود ليس من النوع `Nullable` على أنها القيمة الصفرية للنوع**، لا على أنها تعبير `DEFAULT` الخاص بالعمود، دون إطلاق أي خطأ. راجع [تعيين الأنواع](#type-mapping) للاطلاع على الحل البديل. وفي حالة `Enum` لا يحتوي على عضو بالقيمة `0`، لا تكون تلك القيمة عضوًا فيه، فيتعذر قراءة الصف لاحقًا. راجع التحذير ضمن [تعيين الأنواع](#type-mapping).
+* **التسليم مرة واحدة على الأقل.** تُثبَّت إزاحات Kafka بعد الإقرار باستلام `INSERT`. وأي تعطّل يقع بين الخطوتين يؤدي إلى إعادة تنفيذ الدفعة، لذا قد تظهر نسخ مكررة.
+
+  يزيل `ReplacingMergeTree` ذو المفتاح الذي يميّز الصف هذه النسخ المكررة **في نهاية المطاف**، عند حدوث دمج في الخلفية. وإلى أن يحدث ذلك الدمج، تُظهر القراءة العادية النسختين كلتيهما: ففي قياس على الإصدار 26.8.1 المستضاف ذاتيًا، أعادت قراءة كتلة مُعاد تنفيذها 4 صفوف، و2 عند استخدام `FINAL`. استخدم `FINAL` في الاستعلام حين تلزم الدقة الفورية في القراءة.
+
+  لا تُسقط إزالة التكرار على مستوى الكتل في مرحلة الإدراج النسخة الثانية إلا إذا كانت الكتلة متطابقة بايتًا ببايت. ويطبّق الجدول المتماثل ذلك افتراضيًا، وجميع جداول Cloud متماثلة، في حين يطبّقه الجدول غير المتماثل عبر `non_replicated_deduplication_window`. غير أن إعادة التنفيذ تقتطع الدفعات من جديد بدءًا من الإزاحة المُثبَّتة، والدفعة التي قطعها الفاصل الزمني للتفريغ قبل اكتمالها لا تعود بالحدود نفسها. لذا تعامل مع إزالة التكرار في مرحلة الإدراج على أنها إجراء جزئي لا ضمان.
+* **تُعاد محاولة الأعطال العابرة.** عند رفض الاتصال بـ ClickHouse أو إعادة تعيينه أو انتهاء مهلته، تُعاد المحاولة مع تأخير أُسّي بين محاولات إعادة المحاولة ضمن موعد نهائي، ويُضبط ذلك عبر الكتلة `retry` الخاصة بوجهة البيانات (`max_attempts` و`initial_backoff_ms` و`max_backoff_ms` و`deadline_seconds`). ولا تُعاد محاولة `INSERT` المرفوض متى استلمه الخادم. كما لا تُعاد المحاولة مع القيمة التي يعجز المشغّل نفسه عن ترميزها، مثل الطابع الزمني بصيغة ISO 8601 المذكور أعلاه، إذ تفشل فورًا بالخطأ `user.sink.encode_failed`، وتنتهي العملية بالرمز 10. كذلك تتصل وجهة البيانات بـ ClickHouse مرة واحدة عند بدء التشغيل، فإذا تعذّر الوصول إلى المضيف، يقع الفشل قبل استهلاك أي رسالة.
+* **اتصال واحد، و`INSERT` واحد لكل دفعة.** لا يوجد كاتب متوازٍ. ويتحكم `batch_size` في الإنتاجية؛ راجع ما يلي.
+* **التجميع المتدفق** (النوافذ المتعاقبة) مدعوم. تُغلق النافذة بناءً على علامة مائية لوقت الحدث يحددها المحرك، ولا تُغلق أبدًا بناءً على وقت الساعة الفعلي. ووقت حدث السجل هو حقل الحمولة الذي يحدده `event_time` الخاص بالمصدر، أو الطابع الزمني لـ Kafka إن لم يحدد أي حقل. ويقتطع المعالج الحاوية الزمنية على النحو `time_bucket(INTERVAL '<size>', event_time)`. ولذلك فإن إعادة التنفيذ المتأخرة عن الوقت الفعلي تنشر كل حاوية زمنية مرة واحدة كاملةً: فـ 1,000 حدث في حاوية زمنية سابقة مدتها دقيقة واحدة، قُرئت في عشر دفعات من 100، نُشرت صفًا واحدًا قيمته 1,000. وإذا ضبطت `allowed_lateness_seconds` على قيمة أكبر من الصفر، فإن الصف المتأخر يعيد نشر حاويته الزمنية بقيمتها الكاملة، لذا يجب حينئذٍ أن يستبدل الهدف الصف حسب المفتاح، باستخدام `ReplacingMergeTree` يُقرأ عبر `FINAL`. راجع [Tumbling windows](https://github.com/turbolytics/sql-flow#tumbling-windows) في ملف README.
+
+## الأداء {#performance}
+
+جرى القياس باستخدام المثال أعلاه: مليون صف يضم كل منها 17 عمودًا، وعملية SQLFlow واحدة، وKafka يعمل على الجهاز نفسه مع SQLFlow، مع إجراء تشغيلتين لكل صف في الجدول.
+
+| الهدف                                                                                          | صف/ثانية       |
+| ---------------------------------------------------------------------------------------------- | -------------- |
+| ClickHouse مستضاف ذاتيًا، مع SQLFlow وKafka على شبكة Docker نفسها، الإصدار v2026.10.08         | 57,900 و55,900 |
+| ClickHouse Cloud (us-east-2)، مع SQLFlow بجوار الوسيط، عبر الإنترنت العام، الإصدار v2026.10.08 | 13,700 و13,300 |
+
+يعكس رقم Cloud أداء الشبكة بين الجهاز والخدمة، لا أداء SQLFlow. فعبر الاتصال نفسه وفي الساعة نفسها، حقق الإصدار السابق v2026.09.17.1 معدل 12,500 و12,900 صف في الثانية، في حين يعمل مسار تنفيذ الاستعلام نفسه أسرع بأربع مرات عند استهداف خادم مستضاف ذاتيًا على شبكة Docker واحدة. لذا شغّل SQLFlow بالقرب من الخدمة، في المنطقة نفسها، ويُفضَّل أن يكون ذلك في شبكة VPC نفسها، للحصول على أرقام أقرب إلى أرقام النشر المستضاف ذاتيًا.
+
+يُعد `batch_size` أداة التحكم الأساسية عند استهداف خادم قريب، وفيما يلي نتائج القياس على شبكة Docker نفسها:
+
+| `batch_size` | صف/ثانية |
+| ------------ | -------- |
+| 5,000        | 34,000   |
+| 20,000       | 56,900   |
+| 50,000       | 57,600   |
+| 100,000      | 56,900   |
+
+عندما يقل حجم الدفعة عن 20,000 صف تقريبًا، يطغى العبء الإضافي لكل عملية `INSERT`؛ أما فوق ذلك فلا يتحقق مكسب يُذكر، بينما يزداد استهلاك الذاكرة لكل دفعة. تُعد القيمة 20,000 قيمة افتراضية مناسبة لصفوف بهذا العرض، لكن تحقّق منها باستخدام بياناتك الخاصة.
+
+## استكشاف الأخطاء وإصلاحها {#troubleshooting}
+
+### ظهور `connection reset by peer` فورًا، مع وجود `...:8443?...` في الرسالة {#trouble-reset}
+
+يستخدم DSN نظام المصادقة `clickhouse://` (‏HTTP عادي) للاتصال بمنفذ TLS. وتكون رسالة الخطأ الكاملة على النحو التالي: `failed to query server hello: … Post "http://…:8443?…": … connection reset by peer`. لحل المشكلة، غيّر نظام المصادقة إلى `clickhouses://`.
+
+### `[HTTP 401] code: 194 … Authentication failed: password is incorrect, or there is no user with such name` {#trouble-auth}
+
+بيانات الاعتماد الواردة في DSN غير صحيحة، أو أن أحد الأحرف الخاصة في كلمة المرور لم يُرمَّز وفق URL. في Cloud، تُعرض كلمة مرور المستخدم `default` مرة واحدة فقط عند إنشاء الخدمة، ويمكن إعادة ضبطها من وحدة التحكم. وإذا كانت كلمة المرور صحيحة، فتحقّق من قائمة الوصول لعناوين IP الخاصة بالخدمة.
+
+### `column <name> is not present in the table <table>` {#trouble-column}
+
+تبدأ رسالة الخطأ الكاملة بـ `[system.sink.write_failed] clickhouse sink: prepare batch:`. ويعني ذلك أن استعلام SQL الخاص بالمعالج أنتج عمودًا غير موجود في جدول الهدف. ونظرًا لأن SQLFlow يُجري عمليات الإدراج بحسب اسم العمود، فعليك إما أن تُعيّن للعمود اسمًا بديلًا في استعلام SQL يطابق الجدول، أو أن تحذفه من `SELECT`، أو أن تضيفه إلى الجدول.
+
+### `clickhouse sink: column "<name>": unsupported arrow type <type>` {#trouble-type}
+
+لا يوجد في ClickHouse نوع مطابق لنوع Arrow الخاص بالعمود، كقيمة من نوع struct أو خريطة. حوِّل النوع باستخدام CAST أو طبِّق التسطيح في استعلام SQL الخاص بالمعالج؛ راجع [تعيين الأنواع](#type-mapping).
+
+### `converting float64 to Decimal(10, 2) is unsupported` {#trouble-decimal}
+
+أُرسلت قيمة من النوع `DOUBLE` إلى عمود من النوع `Decimal`. حوّل القيمة إلى string بدلاً من ذلك: `CAST(amount AS VARCHAR) AS amount`. وبذلك يحلّل المشغّل النص العشري بدقة تامة، دون أي تقريب ناتج عن تمثيل الفاصلة العائمة.
+
+### `parsing time "…" as "2006-01-02 15:04:05"` {#trouble-timestamp}
+
+وصل طابع زمني من النوع `VARCHAR` إلى عمود `DateTime` بشكل لا يقبله المشغّل. إذ لا يقبل سوى الصيغة `'2006-01-02 15:04:05'`، والصيغة نفسها متبوعةً بإزاحة لاحقة. أما صيغة ISO 8601 التي تستخدم الفاصل `T` أو اللاحقة `Z` فتفشل. حوِّل النوع في SQL الخاص بالمعالج باستخدام `CAST(ts AS TIMESTAMP)`، أو أعد تنسيق السلسلة النصية. راجع [تعيين الأنواع](#type-mapping).
+
+يحمل الخطأ الرمز `user.sink.encode_failed`، وتنتهي العملية برمز الخروج 10. ولا تُعاد المحاولة، لأن القيمة ستفشل في كل مرة.
+
+### يعمل مسار تنفيذ الاستعلام لكن الصفوف لا تظهر أبدًا {#trouble-no-rows}
+
+تحقّق من إعدادات التجميع في دفعات. تُنفَّذ الدفعة وتُدرَج عند وصول عدد من الرسائل يساوي `batch_size`، أو عند انقضاء المدة المحددة في `flush_interval_seconds` مع وجود دفعة جزئية قيد الانتظار، أيّهما أسبق. القيمة الافتراضية لـ `flush_interval_seconds` هي `30`، لذا قد تنتظر الدفعة الجزئية في موضوع منخفض الحجم مدة تصل إلى 30 ثانية. ولتسريع عمليات الإدراج في موضوع قليل النشاط، خفّض قيمة `flush_interval_seconds` (وهي تقبل أي عدد صحيح من الثواني)، أو خفّض قيمة `batch_size`. وعند استخدام `--max-msgs`، تُدرَج الدفعة الجزئية الأخيرة عند الخروج.
+
+## قراءات إضافية {#further-reading}
+
+* <a href="https://github.com/turbolytics/sql-flow" target="_blank">SQLFlow على GitHub</a>: مرجع التهيئة، وجميع المصادر ووجهات البيانات، وسياسات معالجة الأخطاء، والمعالجة بالنوافذ.
+* <a href="https://turbolytics.io/docs/sqlflow" target="_blank">توثيق SQLFlow</a>: أدلة عملية، منها <a href="https://turbolytics.io/docs/sqlflow/tutorials/clickhouse-sink" target="_blank">شرح أكثر تفصيلًا للتكامل مع ClickHouse</a>.

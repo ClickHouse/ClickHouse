@@ -150,7 +150,7 @@ SELECT extractKeyValuePairs('age:a\\x0A\\n\\0') AS kv;
 extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_character], [unexpected_quoting_character_strategy])
 ```
 
-**별칭**: `mapFromString`, `str_to_map`
+**별칭**: `str_to_map`, `mapFromString`
 
 **인수**
 
@@ -841,6 +841,8 @@ SELECT mapFromArrays([1, 2, 3], map('a', 1, 'b', 2, 'c', 3))
 mapKeys(map)
 ```
 
+**별칭**: `map_keys`
+
 **인수**
 
 * `map` — 키를 추출할 맵입니다. [`Map(K, V)`](/ko/reference/data-types/map)
@@ -1172,6 +1174,8 @@ SELECT mapUpdate(map('key1', 0, 'key3', 0), map('key1', 10, 'key2', 10))
 ```sql
 mapValues(map)
 ```
+
+**별칭**: `map_values`
 
 **인수**
 

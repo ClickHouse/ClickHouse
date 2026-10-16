@@ -13,63 +13,49 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で利用でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-<div id="backup_restore_batch_size_for_keeper_multi">
-  ## backup_restore_batch_size_for_keeper_multi
-</div>
+## backup_restore_batch_size_for_keeper_multi {#backup_restore_batch_size_for_keeper_multi}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
 バックアップまたは復元時に [Zoo]Keeper への multi リクエストで使用するバッチの最大サイズ
 
-<div id="backup_restore_batch_size_for_keeper_multiread">
-  ## backup_restore_batch_size_for_keeper_multiread
-</div>
+## backup_restore_batch_size_for_keeper_multiread {#backup_restore_batch_size_for_keeper_multiread}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
 バックアップまたは復元時に [Zoo]Keeper への multiread リクエストで使用するバッチの最大サイズ
 
-<div id="backup_restore_failure_after_host_disconnected_for_seconds">
-  ## backup_restore_failure_after_host_disconnected_for_seconds
-</div>
+## backup_restore_failure_after_host_disconnected_for_seconds {#backup_restore_failure_after_host_disconnected_for_seconds}
 
 <SettingsInfoBlock type="UInt64" default_value="3600" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "3600"},{"label": "新しい設定"}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "3600"},{"label": "新しい設定"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "3600"},{"label": "`compatibility` に関係なくデフォルト値を維持します。"}]}, {"id": "row-2","items": [{"label": "24.11"},{"label": "3600"},{"label": "新しい設定"}]}, {"id": "row-3","items": [{"label": "24.10"},{"label": "3600"},{"label": "新しい設定"}]}]} />
 
 BACKUP ON CLUSTER または RESTORE ON CLUSTER の実行中に、あるホストがこの時間内に ZooKeeper 上の一時的な &#39;alive&#39; ノードを再作成できなかった場合、バックアップまたは復元全体は失敗したと見なされます。
 この値は、障害発生後にホストが ZooKeeper に再接続するまでにかかりうる妥当な時間よりも大きくする必要があります。
 0 は無制限を意味します。
 
-<div id="backup_restore_finish_timeout_after_error_sec">
-  ## backup_restore_finish_timeout_after_error_sec
-</div>
+## backup_restore_finish_timeout_after_error_sec {#backup_restore_finish_timeout_after_error_sec}
 
 <SettingsInfoBlock type="UInt64" default_value="180" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "180"},{"label": "新しい設定"}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "180"},{"label": "新しい設定"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "180"},{"label": "`compatibility` の値にかかわらず、デフォルト値を維持します。"}]}, {"id": "row-2","items": [{"label": "24.11"},{"label": "180"},{"label": "新しい設定"}]}, {"id": "row-3","items": [{"label": "24.10"},{"label": "180"},{"label": "新しい設定"}]}]} />
 
 現在の BACKUP ON CLUSTER または RESTORE ON CLUSTER の処理で、他のホストが &#39;error&#39; ノードに反応して作業を停止するのを、イニシエーターがどれだけ待機するかを指定します。
 
-<div id="backup_restore_keeper_fault_injection_probability">
-  ## backup_restore_keeper_fault_injection_probability
-</div>
+## backup_restore_keeper_fault_injection_probability {#backup_restore_keeper_fault_injection_probability}
 
 <SettingsInfoBlock type="Float" default_value="0" />
 
 バックアップまたは復元中の Keeper リクエストが失敗するおおよその確率です。有効な値の範囲は [0.0f, 1.0f] です
 
-<div id="backup_restore_keeper_fault_injection_seed">
-  ## backup_restore_keeper_fault_injection_seed
-</div>
+## backup_restore_keeper_fault_injection_seed {#backup_restore_keeper_fault_injection_seed}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 0 - ランダムシード、それ以外の場合は設定値
 
-<div id="backup_restore_keeper_max_retries">
-  ## backup_restore_keeper_max_retries
-</div>
+## backup_restore_keeper_max_retries {#backup_restore_keeper_max_retries}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -78,37 +64,29 @@ BACKUP ON CLUSTER または RESTORE ON CLUSTER の実行中に、あるホスト
 BACKUP または RESTORE の途中で行われる [Zoo]Keeper 操作の最大再試行回数。
 一時的な [Zoo]Keeper の障害が原因で処理全体が失敗しないよう、十分大きな値にする必要があります。
 
-<div id="backup_restore_keeper_max_retries_while_handling_error">
-  ## backup_restore_keeper_max_retries_while_handling_error
-</div>
+## backup_restore_keeper_max_retries_while_handling_error {#backup_restore_keeper_max_retries_while_handling_error}
 
 <SettingsInfoBlock type="UInt64" default_value="20" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "20"},{"label": "新しい設定"}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "20"},{"label": "新しい設定"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "20"},{"label": "`compatibility` の値に関係なくデフォルト値を維持します。"}]}, {"id": "row-2","items": [{"label": "24.11"},{"label": "20"},{"label": "新しい設定"}]}, {"id": "row-3","items": [{"label": "24.10"},{"label": "20"},{"label": "新しい設定"}]}]} />
 
 BACKUP ON CLUSTER または RESTORE ON CLUSTER のエラー処理中に行う [Zoo]Keeper 操作の最大再試行回数。
 
-<div id="backup_restore_keeper_max_retries_while_initializing">
-  ## backup_restore_keeper_max_retries_while_initializing
-</div>
+## backup_restore_keeper_max_retries_while_initializing {#backup_restore_keeper_max_retries_while_initializing}
 
 <SettingsInfoBlock type="UInt64" default_value="20" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "20"},{"label": "新しい設定"}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "20"},{"label": "新しい設定"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "20"},{"label": "`compatibility` に関係なくデフォルト値を維持します。"}]}, {"id": "row-2","items": [{"label": "24.11"},{"label": "20"},{"label": "新しい設定"}]}, {"id": "row-3","items": [{"label": "24.10"},{"label": "20"},{"label": "新しい設定"}]}]} />
 
 BACKUP ON CLUSTER または RESTORE ON CLUSTER の初期化中における [Zoo]Keeper 操作の最大再試行回数。
 
-<div id="backup_restore_keeper_retry_initial_backoff_ms">
-  ## backup_restore_keeper_retry_initial_backoff_ms
-</div>
+## backup_restore_keeper_retry_initial_backoff_ms {#backup_restore_keeper_retry_initial_backoff_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="100" />
 
 バックアップまたは復元時の[Zoo]Keeper操作における初期バックオフタイムアウト
 
-<div id="backup_restore_keeper_retry_max_backoff_ms">
-  ## backup_restore_keeper_retry_max_backoff_ms
-</div>
+## backup_restore_keeper_retry_max_backoff_ms {#backup_restore_keeper_retry_max_backoff_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="5000" />
 
@@ -116,17 +94,13 @@ BACKUP ON CLUSTER または RESTORE ON CLUSTER の初期化中における [Zoo]
 
 Cloud でのデフォルト値: `60000`.
 
-<div id="backup_restore_keeper_value_max_size">
-  ## backup_restore_keeper_value_max_size
-</div>
+## backup_restore_keeper_value_max_size {#backup_restore_keeper_value_max_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1048576" />
 
 バックアップ時の[Zoo]Keeperノード内データの最大サイズ
 
-<div id="backup_restore_s3_retry_attempts">
-  ## backup_restore_s3_retry_attempts
-</div>
+## backup_restore_s3_retry_attempts {#backup_restore_s3_retry_attempts}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -134,9 +108,7 @@ Cloud でのデフォルト値: `60000`.
 
 Aws::Client::RetryStrategy の設定です。Aws::Client 自体が再試行を行い、0 は再試行しないことを意味します。バックアップ/復元に対してのみ適用されます。
 
-<div id="backup_restore_s3_retry_initial_backoff_ms">
-  ## backup_restore_s3_retry_initial_backoff_ms
-</div>
+## backup_restore_s3_retry_initial_backoff_ms {#backup_restore_s3_retry_initial_backoff_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="25" />
 
@@ -144,9 +116,7 @@ Aws::Client::RetryStrategy の設定です。Aws::Client 自体が再試行を�
 
 バックアップおよび復元時に、最初の再試行まで待機する初期バックオフ時間 (ミリ秒) です。以降の再試行では、`backup_restore_s3_retry_max_backoff_ms` で指定された最大値に達するまで、待機時間が指数関数的に増加します。
 
-<div id="backup_restore_s3_retry_jitter_factor">
-  ## backup_restore_s3_retry_jitter_factor
-</div>
+## backup_restore_s3_retry_jitter_factor {#backup_restore_s3_retry_jitter_factor}
 
 <SettingsInfoBlock type="Float" default_value="0.1" />
 
@@ -154,9 +124,7 @@ Aws::Client::RetryStrategy の設定です。Aws::Client 自体が再試行を�
 
 バックアップおよびリストア操作中に、Aws::Client::RetryStrategy の再試行時のバックオフ遅延に適用されるジッタ係数です。計算されたバックオフ遅延には、最大 `backup_restore_s3_retry_max_backoff_ms` まで、[1.0, 1.0 + jitter] の範囲内のランダムな係数が乗算されます。[0.0, 1.0] の範囲内である必要があります
 
-<div id="backup_restore_s3_retry_max_backoff_ms">
-  ## backup_restore_s3_retry_max_backoff_ms
-</div>
+## backup_restore_s3_retry_max_backoff_ms {#backup_restore_s3_retry_max_backoff_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="5000" />
 

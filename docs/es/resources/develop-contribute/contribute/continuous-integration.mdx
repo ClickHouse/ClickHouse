@@ -262,6 +262,7 @@ Ejecuta las [pruebas de integración](/es/resources/develop-contribute/contribut
 En la rama master, con cada commit se ejecutan las pruebas sin estado, de integración y unitarias sobre una build con instrumentación de cobertura de LLVM, y se publica el informe de cobertura.
 En los pull requests, estos Jobs solo se ejecutan si tienen la etiqueta `ci-coverage` (o si modifican el código que recopila la cobertura y genera sus informes); añádala para obtener el informe de cobertura del pull request y la cobertura de las líneas modificadas.
 Sin la etiqueta, los pull requests ejecutan en su lugar las mismas configuraciones de pruebas sin estado y de integración sobre la build `arm_binary`; las pruebas unitarias ya se ejecutan con sanitizadores.
+Un pull request que solo añada pruebas sin estado y necesite el informe de cobertura puede usar en su lugar la etiqueta `ci-llvm-coverage`: con ella se ejecutan los Jobs de cobertura, los Jobs de las pruebas excluidas de la cobertura, las comprobaciones de inestabilidad de las pruebas sin estado modificadas y la comprobación de estilo, y se omiten todos los demás Jobs. Un pull request de este tipo puede fusionarse con la etiqueta; uno que modifique cualquier otra cosa, no.
 
 ## Comprobación de validación de correcciones de errores {#bugfix-validate-check}
 

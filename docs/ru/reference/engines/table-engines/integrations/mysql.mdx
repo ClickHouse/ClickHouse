@@ -36,7 +36,7 @@ SETTINGS
 
 * Имена столбцов должны совпадать с именами в исходной таблице MySQL, но можно использовать только часть этих столбцов и в любом порядке.
 * Типы столбцов могут отличаться от типов в исходной таблице MySQL. ClickHouse пытается [преобразовать](/ru/reference/engines/database-engines/mysql#data_types-support) значения в типы данных ClickHouse.
-* Настройка [external&#95;table&#95;functions&#95;use&#95;nulls](/ru/reference/settings/session-settings/external-table#external_table_functions_use_nulls) определяет, как обрабатывать столбцы Nullable. Значение по умолчанию: 1. Если установлено значение 0, функция таблицы не создаёт столбцы типа Nullable и вместо NULL выполняет вставку значений по умолчанию. Это также применимо к значениям NULL внутри массивов.
+* Настройка [external&#95;table&#95;functions&#95;use&#95;nulls](/ru/reference/settings/session-settings/external-table#external_table_functions_use_nulls) определяет, как обрабатывать столбцы Nullable. Значение по умолчанию: 1. Если установлено значение 0, табличная функция не создаёт столбцы типа Nullable и вместо NULL выполняет вставку значений по умолчанию. Это также применимо к значениям NULL внутри массивов.
 
 **Параметры движка**
 
@@ -54,7 +54,7 @@ SETTINGS
 
 Простые условия `WHERE`, такие как `=, !=, >, >=, <, <=`, выполняются на сервере MySQL.
 
-Остальные условия и ограничение выборки `LIMIT` выполняются в ClickHouse только после завершения запроса к MySQL.
+Остальные условия выполняются в ClickHouse после завершения запроса к MySQL. Ограничение выборки `LIMIT` передаётся в MySQL только в том случае, если это безопасно и включена настройка [external&#95;storage&#95;push&#95;down&#95;limit](/ru/reference/settings/session-settings/external-storage#external_storage_push_down_limit); в противном случае оно применяется в ClickHouse.
 
 ## TLS/SSL {#tls-ssl}
 

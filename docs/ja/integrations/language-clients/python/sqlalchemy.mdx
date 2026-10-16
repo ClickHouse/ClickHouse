@@ -143,7 +143,9 @@ with engine.connect() as conn:
 
 SQLAlchemy の接続を介してドライバーが送出するエラーには、`clickhouse_connect.dbapi` からエクスポートされている DB-API クラスが使用されます。これらは `clickhouse_connect.driver.exceptions` 内の対応するクラスと同一のクラスオブジェクトであるため、SQLAlchemy はこれらを該当する `sqlalchemy.exc.DBAPIError` サブクラスでラップします。`StreamFailureError` は `OperationalError` の一種であり、`sqlalchemy.exc.OperationalError` としてラップされます。
 
-SQL の実行には、ドライバーの [HTTP 再試行ポリシー](/ja/integrations/language-clients/python/driver-api#http-retries)が適用されます。ネイティブの一括挿入処理には、[挿入の再試行ポリシー](/ja/integrations/language-clients/python/advanced-inserting#insert-retries-and-deduplication)が適用されます。
+テーブルが存在しない場合、カラムの検査およびテーブルのリフレクションでは `sqlalchemy.exc.NoSuchTableError` が送出されます。この例外は `sqlalchemy.exc.NoResultFound` も継承しているため、既存のハンドラーでも引き続き捕捉できます。エラーメッセージは `Table <database>.<table_name> does not exist` です。
+
+SQL の実行には、ドライバーの [HTTP 再試行ポリシー](/ja/integrations/language-clients/python/driver-api#http-retries)が適用されます。Native一括挿入処理には、[挿入の再試行ポリシー](/ja/integrations/language-clients/python/advanced-inserting#insert-retries-and-deduplication)が適用されます。
 
 呼び出し元によるキャンセルが明示的な `AsyncConnection.invalidate()` の呼び出しを中断する可能性がある場合は、無効化処理を自身が管理するタスク内で実行し、キャンセルを伝播させる前にそのタスクの完了を待機してください。これにより、SQLAlchemy は接続レコードの管理処理を最後まで完了できます:
 
@@ -442,6 +444,8 @@ ClickHouse は再帰的なマテリアライズド CTE をサポートしてい�
 
 ClickHouse Connect は、ClickHouse データ型、テーブルエンジン、Dictionary 機能、データベース DDL、テーブルリフレクションをサポートしています。
 
+`Inspector.get_table_names()` は、互換性のためにすべての種類のビューを含みます。`MetaData.reflect()` はデフォルトでそれらを含み、`only` を使用すると名前を指定してビューを選択できます。non-materialized なビューには `Inspector.get_view_names()` を、materialized view には `Inspector.get_materialized_view_names()` を使用してください。どちらのメソッドも `schema` を受け付け、SQLAlchemy 1.4.40 以降 (2.x を含む) で動作します。`Inspector.get_view_definition()` によるビュー定義の取得はサポートされていません。
+
 `clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes` の `Nullable()` と `LowCardinality()` は、ClickHouse の SQLAlchemy 型クラスまたはインスタンスを受け取り、型チェッカーに対して元の具体的な型を保持します。例えば、`Nullable(String)` は `String` インスタンスを返すため、そのまま `Column` に渡せます。型チェッカーは `[Nullable(String)]` の型を `list[String]` と推論します。リストに他の ClickHouse の型も含まれる場合は、`clickhouse_connect.cc_sqlalchemy.datatypes.base` から `ChSqlaType` をインポートし、`list[ChSqlaType]` として型注釈を付けてください。
 
 単独の `Variant` カラムは SQLAlchemy の内部型を通じてリフレクションされ、Alembic の 自動生成 は型変更を繰り返すことなく、その 標準的な生の型名を保持します。`Geometry` および `MultiPoint` カラムは、公開されている SQLAlchemy の型としてリフレクションされます。
@@ -505,7 +509,7 @@ engine_clause = SummingMergeTree("id", columns=("delta", "n_tx"))
 # Sum delta and n_tx for rows with the same id.
 ```
 
-文字列、SQLAlchemy のカラム、マッピングされたカラム属性、またはそれらからなる空でないリストまたはタプルを渡します。リストおよびタプル内の文字列要素は、識別子としてクォートされます。単一の文字列を渡した場合は、`"delta"` や `"(delta, n_tx)"` のような生の SQL として扱われます。サーバー側では、これらのカラムを識別子で指定する必要があります。`columns` を省略すると、合計対象のカラムは ClickHouse によって選択されます。リフレクションおよび Alembic の自動生成では、明示的に指定したカラムリストが保持されます。
+文字列、SQLAlchemy のカラム、マッピングされたカラム属性、またはそれらからなる空でないリストまたはタプルを渡します。リストおよびタプル内の文字列要素は、識別子として引用符で囲まれます。単一の文字列を渡した場合は、`"delta"` や `"(delta, n_tx)"` のような生の SQL として扱われます。サーバー側では、これらのカラムを識別子で指定する必要があります。`columns` を省略すると、合計対象のカラムは ClickHouse によって選択されます。リフレクションおよび Alembic の自動生成では、明示的に指定したカラムリストが保持されます。
 
 ## 挿入と基本的な ORM の使用 {#sqlalchemy-inserts}
 

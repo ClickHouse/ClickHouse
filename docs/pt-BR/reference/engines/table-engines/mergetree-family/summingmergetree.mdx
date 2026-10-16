@@ -13,9 +13,7 @@ O motor herda de [MergeTree](/pt-BR/reference/engines/table-engines/mergetree-fa
 
 Recomendamos usar esse motor em conjunto com `MergeTree`. Armazene os dados completos em uma tabela `MergeTree` e use `SummingMergeTree` para armazenar dados agregados, por exemplo, na preparação de relatórios. Essa abordagem evita a perda de dados valiosos devido a uma chave primária composta incorretamente.
 
-<div id="creating-a-table">
-  ## Criar uma tabela
-</div>
+## Criar uma tabela {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -32,22 +30,16 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Para ver uma descrição dos parâmetros da requisição, consulte [descrição da requisição](/pt-BR/reference/statements/create/table).
 
-<div id="parameters-of-summingmergetree">
-  ### Parâmetros do SummingMergeTree
-</div>
+### Parâmetros do SummingMergeTree {#parameters-of-summingmergetree}
 
-<div id="columns">
-  #### Colunas
-</div>
+#### Colunas {#columns}
 
 `columns` - uma tupla com os nomes das colunas cujos valores serão somados. Parâmetro opcional.
 As colunas devem ser de tipo numérico e não devem estar na partição nem na chave de ordenação.
 
 Se `columns` não for especificado, o ClickHouse soma os valores de todas as colunas com tipo de dado numérico que não estejam na chave de ordenação.
 
-<div id="query-clauses">
-  ### Cláusulas de consulta
-</div>
+### Cláusulas de consulta {#query-clauses}
 
 Ao criar uma tabela `SummingMergeTree`, são necessárias as mesmas [cláusulas](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree) exigidas na criação de uma tabela `MergeTree`.
 
@@ -72,9 +64,7 @@ Ao criar uma tabela `SummingMergeTree`, são necessárias as mesmas [cláusulas]
   * `columns` — tupla com os nomes das colunas cujos valores serão somados. Parâmetro opcional. Para uma descrição, consulte o texto acima.
 </details>
 
-<div id="usage-example">
-  ## Exemplo de uso
-</div>
+## Exemplo de uso {#usage-example}
 
 Considere a tabela a seguir:
 
@@ -107,35 +97,27 @@ SELECT key, sum(value) FROM summtt GROUP BY key
 └─────┴────────────┘
 ```
 
-<div id="data-processing">
-  ## Processamento de dados
-</div>
+## Processamento de dados {#data-processing}
 
 Quando os dados são inseridos em uma tabela, eles são salvos como foram inseridos. O ClickHouse mescla periodicamente as partes de dados inseridas, e é nesse momento que as linhas com a mesma chave primária são somadas e substituídas por uma única linha em cada parte de dados resultante.
 
 O ClickHouse pode mesclar as partes de dados de modo que diferentes partes de dados resultantes possam conter linhas com a mesma chave primária, ou seja, a soma ficará incompleta. Portanto, em uma consulta, devem ser usados a função de agregação [sum()](/pt-BR/reference/functions/aggregate-functions/sum) e a cláusula `GROUP BY` no (`SELECT`), conforme descrito no exemplo acima.
 
-<div id="common-rules-for-summation">
-  ### Regras comuns de soma
-</div>
+### Regras comuns de soma {#common-rules-for-summation}
 
 Os valores nas colunas com tipo de dado numérico são somados. O conjunto de colunas é definido pelo parâmetro `columns`.
 
-Se os valores forem 0 em todas as colunas de soma, a linha será excluída.
+Se os valores forem 0 em todas as colunas de soma, a linha será excluída durante uma mesclagem. Uma consulta com o modificador [FINAL](/pt-BR/reference/statements/select/from#final-modifier) soma as linhas, mas não as exclui; assim, o conjunto de linhas retornado não depende de quais colunas a consulta lê. Observe que o `FINAL` só mescla uma [estrutura aninhada](#nested-structures) cujo nome termina com `Map` da mesma forma que uma mesclagem se a consulta ler todas as colunas dessa estrutura.
 
 Se uma coluna não fizer parte da chave primária e não for somada, um valor arbitrário será selecionado entre os existentes.
 
 Os valores não são somados nas colunas da chave primária.
 
-<div id="the-summation-in-the-aggregatefunction-columns">
-  ### A soma nas colunas do tipo AggregateFunction
-</div>
+### A soma nas colunas do tipo AggregateFunction {#the-summation-in-the-aggregatefunction-columns}
 
 Para colunas do [tipo AggregateFunction](/pt-BR/reference/data-types/aggregatefunction), o ClickHouse se comporta como o motor [AggregatingMergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/aggregatingmergetree), agregando de acordo com a função.
 
-<div id="nested-structures">
-  ### Estruturas aninhadas
-</div>
+### Estruturas aninhadas {#nested-structures}
 
 Uma tabela pode conter estruturas de dados aninhadas que são processadas de forma especial.
 
@@ -206,18 +188,16 @@ Ao solicitar dados, use a função [sumMap(key, value)](/pt-BR/reference/functio
 
 Para estruturas de dados aninhadas, não é necessário especificar suas colunas na tupla de colunas usada para a soma.
 
-<div id="tuple-element-aggregation">
-  ### Agregação de elementos de Tuple
-</div>
+### Agregação de elementos de tupla {#tuple-element-aggregation}
 
-Quando a configuração `allow_tuple_element_aggregation` está habilitada, as colunas `Tuple` são achatadas recursivamente para que cada elemento final participe da soma de forma independente. Isso permite armazenar várias métricas em uma única coluna `Tuple` e fazer com que elas sejam somadas elemento por elemento durante as operações de merge.
+Quando a configuração `allow_tuple_element_aggregation` está habilitada, as colunas `Tuple` são achatadas recursivamente para que cada elemento final participe da soma de forma independente. Isso permite armazenar várias métricas em uma única coluna `Tuple` e fazer com que elas sejam somadas elemento por elemento durante as operações de mesclagem.
 
 As mesmas regras se aplicam às subcolunas achatadas e às colunas regulares:
 
 * Apenas subcolunas numéricas são somadas.
 * As subcolunas que pertencem a um `Tuple` na chave de ordenação ou na chave de partição são excluídas da soma.
 * Se `columns` for especificado, apenas as subcolunas das colunas `Tuple` listadas serão somadas.
-* Se todas as subcolunas numéricas de uma linha forem zero após a soma, a linha será excluída.
+* Se todas as subcolunas numéricas de uma linha forem zero após a soma, a linha será excluída durante uma operação de mesclagem (mas não por uma consulta com `FINAL`).
 
 <Note>
   Esta configuração é imutável e deve ser especificada no momento da criação da tabela.
@@ -252,9 +232,7 @@ SELECT key, metrics.impressions, metrics.clicks, metrics.nested.conversions FROM
 └─────┴─────────────────────┴────────────────┴────────────────────────────┘
 ```
 
-<div id="related-content">
-  ## Conteúdo relacionado
-</div>
+## Conteúdo relacionado {#related-content}
 
 * Blog: [Como usar combinadores de agregação no ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)
 

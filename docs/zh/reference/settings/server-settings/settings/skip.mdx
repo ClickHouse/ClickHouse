@@ -12,19 +12,18 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 这些设置用于配置 ClickHouse 服务器，由 ClickHouse 源代码自动生成。
 
-<div id="skip_binary_checksum_checks">
-  ## skip_binary_checksum_checks
-</div>
+## skip_binary_checksum_checks {#skip_binary_checksum_checks}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />跳过对 ClickHouse 二进制文件校验和完整性的检查
 
-<div id="skip_check_for_incorrect_settings">
-  ## skip_check_for_incorrect_settings
-</div>
+## skip_check_for_incorrect_settings {#skip_check_for_incorrect_settings}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
 
 如果设置为 true，则不会检查服务器设置是否正确。
+
+此外，它还会禁用对 `storage_configuration` 中磁盘定义的检查。启用该检查时，若某个元素不会被任何该类型的磁盘读取，
+则会被报告为 `UNKNOWN_ELEMENT_IN_CONFIG`，而不是被忽略。
 
 **示例**
 

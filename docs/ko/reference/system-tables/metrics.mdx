@@ -30,6 +30,14 @@ QueryProfiler의 활성 스레드 로컬 타이머 수
 
 연결 풀에서 연결을 생성할 때 문제가 있는 것으로 판단되어 차단된 주소의 총개수
 
+### AddressToLineCacheBytes {#addresstolinecachebytes}
+
+스택 트레이스 심볼화에 사용되는 해석된 소스 코드 위치(file:line:column) 캐시가 사용하는 근사 메모리 양으로, 바이트 단위입니다.
+
+### AddressToLineCacheEntries {#addresstolinecacheentries}
+
+system.trace&#95;log, system.errors, system.error&#95;log의 스택 트레이스를 심볼화하는 데 사용되는 해석된 소스 코드 위치(file:line:column) 캐시에 저장된 코드 주소 수입니다.
+
 ### AggregatorThreads {#aggregatorthreads}
 
 Aggregator 스레드 풀에 있는 스레드 수입니다.
@@ -1170,6 +1178,10 @@ DDLWorker가 ZooKeeper에 푸시한 최대 DDL 엔트리 ID입니다.
 
 메모리 예약에 대한 미처리 증가 요청 바이트의 총량
 
+### MemoryReservationReclaimable {#memoryreservationreclaimable}
+
+회수 가능한 메모리의 총량
+
 ### MemoryTracking {#memorytracking}
 
 서버가 추적하는 총 메모리 사용량(바이트)입니다. 기본적으로 백그라운드에서 실행되는 메모리 워커는 매 틱마다 프로세스의 실제 메모리 사용량을 외부에서 측정한 값을 기준으로 이 값을 보정합니다(`memory_worker_correct_memory_tracker` 서버 설정 참조). 따라서 이 값은 메모리 할당량을 단순히 합산한 값이 아니라 측정된 사용량을 반영합니다. 보정 전 값은 `MemoryTrackingUncorrected`를 참조하십시오.
@@ -2125,6 +2137,10 @@ JOIN에 대해 생성된 임시 파일 수
 ### TemporaryFilesForMerge {#temporaryfilesformerge}
 
 수직 병합용 임시 파일 수
+
+### TemporaryFilesForSet {#temporaryfilesforset}
+
+외부 메모리에서 `IN` 집합(set)용으로 생성된 임시 파일 수
 
 ### TemporaryFilesForSort {#temporaryfilesforsort}
 

@@ -262,6 +262,7 @@ Executa os [testes de integração](/pt-BR/resources/develop-contribute/contribu
 A cada commit, a branch master executa os testes sem estado, de integração e unitários em uma compilação com instrumentação de cobertura LLVM e publica o relatório de cobertura.
 Os pull requests só executam esses jobs quando têm o rótulo `ci-coverage` (ou quando alteram o código que coleta e reporta a cobertura); adicione-o para obter o relatório de cobertura do pull request e a cobertura das linhas alteradas.
 Sem o rótulo, os pull requests executam as mesmas configurações de testes sem estado e de integração na compilação `arm_binary`; os testes unitários já são executados com sanitizadores.
+Um pull request que apenas adiciona testes sem estado e precisa do relatório de cobertura pode usar, em vez disso, o rótulo `ci-llvm-coverage`: ele executa os jobs de cobertura, os jobs dos testes excluídos da cobertura, as verificações de instabilidade dos testes sem estado alterados e a verificação de estilo, e pula todos os demais jobs. Um pull request desse tipo pode ser mesclado com o rótulo; já um pull request que altere qualquer outra coisa, não.
 
 ## Verificação de validação de correção de bug {#bugfix-validate-check}
 

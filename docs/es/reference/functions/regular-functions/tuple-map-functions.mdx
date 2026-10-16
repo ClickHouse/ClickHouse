@@ -150,7 +150,7 @@ SELECT extractKeyValuePairs('age:a\\x0A\\n\\0') AS kv;
 extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_character], [unexpected_quoting_character_strategy])
 ```
 
-**Alias**: `mapFromString`, `str_to_map`
+**Alias**: `str_to_map`, `mapFromString`
 
 **Argumentos**
 
@@ -843,6 +843,8 @@ La consulta `SELECT mapKeys(m) FROM table` se transforma en `SELECT m.keys FROM 
 mapKeys(map)
 ```
 
+**Alias**: `map_keys`
+
 **Argumentos**
 
 * `map` — Mapa del que extraer las claves. [`Map(K, V)`](/es/reference/data-types/map)
@@ -1174,6 +1176,8 @@ La consulta `SELECT mapValues(m) FROM table` se transforma en `SELECT m.values F
 ```sql
 mapValues(map)
 ```
+
+**Alias**: `map_values`
 
 **Argumentos**
 

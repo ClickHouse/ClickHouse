@@ -30,6 +30,14 @@ QueryProfiler 中处于活动状态的线程局部计时器数量
 
 因故障而被连接池禁止用于创建连接的地址总数
 
+### AddressToLineCacheBytes {#addresstolinecachebytes}
+
+用于堆栈跟踪符号化的已解析源代码位置 (file:line:column) 缓存所占用的近似内存量，单位为字节。
+
+### AddressToLineCacheEntries {#addresstolinecacheentries}
+
+已解析源代码位置 (file:line:column) 缓存中的代码地址数量。该缓存用于对 system.trace&#95;log、system.errors 和 system.error&#95;log 中的堆栈跟踪进行符号化。
+
 ### AggregatorThreads {#aggregatorthreads}
 
 Aggregator 线程池中的线程数量。
@@ -1170,6 +1178,10 @@ DDLWorker 推送到 ZooKeeper 的最大 DDL 条目 ID。
 
 内存预留中待处理的增量请求总字节数
 
+### MemoryReservationReclaimable {#memoryreservationreclaimable}
+
+可回收内存总量
+
 ### MemoryTracking {#memorytracking}
 
 服务器跟踪的内存总量 (字节) 。默认情况下，后台内存工作线程会在每个 tick 依据外部测得的进程实际内存使用量来校正该值 (参见服务器设置 `memory_worker_correct_memory_tracker`) ，因此该值反映的是实测用量，而不是单纯对内存分配的累计。如需查看未经任何校正的值，请参见 `MemoryTrackingUncorrected`。
@@ -2125,6 +2137,10 @@ JOIN 期间创建的临时 File 数量
 ### TemporaryFilesForMerge {#temporaryfilesformerge}
 
 垂直合并的临时 File 数量
+
+### TemporaryFilesForSet {#temporaryfilesforset}
+
+在外部内存中为 `IN` 集合创建的临时 File 数量
 
 ### TemporaryFilesForSort {#temporaryfilesforsort}
 

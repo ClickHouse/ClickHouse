@@ -813,6 +813,18 @@ I/O: rows <in> → <out> (<selectivity>%) · <bytes_in> → <bytes_out>
   2. الحد الأقصى لعدد خيوط معالجة الاستعلام المحدَّد في `max_threads`.
 </Note>
 
+#### الكتابة إلى القرص في خطوات التجميع والفرز وإزالة التكرار {#explain-analyze-spilling}
+
+عندما تكتب خطوة `GROUP BY` أو `ORDER BY` أو `DISTINCT` البيانات إلى وحدة التخزين المؤقتة، فإنها تُبلغ عمّا يلي:
+
+```txt
+Spill: spilled <compressed_bytes>
+```
+
+يمثّل هذا العدد التراكمي للبايتات المضغوطة التي كتبتها الخطوة بأكملها، بما في ذلك معالجاتها المتوازية.
+يشمل الإجمالي الملفات المؤقتة التي سبق استهلاكها أو حذفها، ويحتسب كل عملية كتابة على حدة عند ترحيل البيانات إلى القرص أكثر من مرة.
+يُحذف هذا السطر إذا لم تُرحَّل أي بيانات إلى القرص.
+
 #### خطوات الربط {#explain-analyze-join-steps}
 
 في خطوة ربط، يطبع `EXPLAIN ANALYZE` أسطرًا تقارن تقديرات محسّن ترتيب الربط بما حدث فعليًا (انظر [مقاييس الربط المقدّرة مقابل الفعلية](#explain-analyze-join-estimation))، وأسطر *المشاركة* لكل جانب — `Left` و`Right` — ثم أي أسطر خاصة بتنفيذ الربط. يقابل `Left` و`Right` الجانبين المنطقيين في عبارة SQL. وفي معظم الحالات، يكون `Left` أيضًا جانب الفحص (probe) في الربط، و`Right` جانب البناء (build). غير أن هذا لا ينطبق دائمًا، إذ قد يحدث تبديل بين الجانبين أثناء تنفيذ الربط. تُغطّى جميع قيم [`join_algorithm`](/ar/reference/settings/session-settings/join#join_algorithm) (`hash`، `parallel_hash`، `grace_hash`، `partial_merge`، `full_sorting_merge`، `parallel_full_sorting_merge`، `direct`)، وكذلك التنفيذات الثلاثة التي لا يمكن للإعداد اختيارها: ربط `CROSS` أو `COMMA`، و[ربط الحلقة المتداخلة على مستوى الكتل](/ar/reference/statements/select/join#join-with-an-arbitrary-on-condition) الذي يستخدم قسم `ON` لا يحدد أي مفتاح ربط، ومحرك الجدول [`Join`](/ar/reference/engines/table-engines/special/join). يُبلّغ معظمها عن كلا الجانبين، بينما يُبلّغ بعضها فقط عن الجانب الذي يجسّده ماديًا (على سبيل المثال، يطبع `direct` ‏`Left:` فقط).

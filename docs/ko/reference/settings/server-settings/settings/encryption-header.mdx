@@ -12,15 +12,11 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
 
 이러한 설정은 ClickHouse 서버를 구성하며 ClickHouse 소스에서 자동으로 생성됩니다.
 
-<div id="encryption_header_cache_policy">
-  ## encryption_header_cache_policy
-</div>
+## encryption_header_cache_policy {#encryption_header_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />암호화 헤더 캐시 정책의 이름입니다.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />암호화 헤더 캐시 eviction 정책의 이름입니다. 가능한 값: `LRU`, `SLRU`, `SIEVE`.
 
-<div id="encryption_header_cache_size">
-  ## encryption_header_cache_size
-</div>
+## encryption_header_cache_size {#encryption_header_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="52428800" changeable_without_restart="Yes" />
 
@@ -30,9 +26,7 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
   이 설정은 런타임에 수정할 수 있으며 즉시 적용됩니다.
 </Note>
 
-<div id="encryption_header_cache_size_ratio">
-  ## encryption_header_cache_size_ratio
-</div>
+## encryption_header_cache_size_ratio {#encryption_header_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />암호화 헤더 캐시에서 보호 큐(SLRU 정책인 경우)가 전체 캐시 크기에서 차지하는 비율입니다.
 

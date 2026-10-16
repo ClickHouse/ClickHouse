@@ -6,9 +6,7 @@ title: '处理地理坐标的函数'
 doc_type: 'reference'
 ---
 
-<div id="greatcircledistance">
-  ## greatCircleDistance
-</div>
+## greatCircleDistance {#greatcircledistance}
 
 使用[大圆距离公式](https://en.wikipedia.org/wiki/Great-circle_distance)计算地球表面上两点之间的距离。
 
@@ -43,9 +41,7 @@ SELECT greatCircleDistance(55.755831, 37.617673, -55.755831, -37.617673) AS grea
 └─────────────────────┘
 ```
 
-<div id="geodistance">
-  ## geoDistance
-</div>
+## geoDistance {#geodistance}
 
 与 `greatCircleDistance` 类似，但它计算的是 WGS-84 椭球体上的距离，而不是球面上的距离。这种方法对地球大地水准面的近似更精确。
 其性能与 `greatCircleDistance` 相同 (没有性能损失) 。建议使用 `geoDistance` 来计算地球表面的距离。
@@ -83,9 +79,7 @@ SELECT geoDistance(38.8976, -77.0366, 39.9496, -75.1503) AS geoDistance
 └─────────────┘
 ```
 
-<div id="greatcircleangle">
-  ## greatCircleAngle
-</div>
+## greatCircleAngle {#greatcircleangle}
 
 使用[大圆距离公式](https://en.wikipedia.org/wiki/Great-circle_distance)计算地球表面两点之间的中心角。
 
@@ -116,9 +110,7 @@ SELECT greatCircleAngle(0, 0, 45, 0) AS arc
 └─────┘
 ```
 
-<div id="geotoutm">
-  ## geoToUTM
-</div>
+## geoToUTM {#geotoutm}
 
 将 WGS84 地理坐标 `(longitude, latitude)` 转换为 [Universal Transverse Mercator (UTM)](https://en.wikipedia.org/wiki/Universal_Transverse_Mercator_coordinate_system) 坐标。
 
@@ -150,9 +142,7 @@ SELECT geoToUTM(2.294497, 48.858222) AS utm; -- Eiffel Tower
 (448251.5978370684,5411935.125629659,31,'U')
 ```
 
-<div id="utmtogeo">
-  ## UTMToGeo
-</div>
+## UTMToGeo {#utmtogeo}
 
 将 [UTM](https://en.wikipedia.org/wiki/Universal_Transverse_Mercator_coordinate_system) 坐标还原为 WGS84 地理坐标 `(longitude, latitude)`。这是 [`geoToUTM`](#geotoutm) 的逆运算。
 
@@ -181,9 +171,7 @@ SELECT UTMToGeo(448251.6, 5411935.13, 31, 1) AS coord;
 (2.2944970289079203,48.85822204127082)
 ```
 
-<div id="geotomgrs">
-  ## geoToMGRS
-</div>
+## geoToMGRS {#geotomgrs}
 
 将 WGS84 地理坐标 `(longitude, latitude)` 编码为 [Military Grid Reference System (MGRS)](https://en.wikipedia.org/wiki/Military_Grid_Reference_System) 字符串。
 
@@ -215,9 +203,7 @@ SELECT geoToMGRS(2.294497, 48.858222) AS mgrs, geoToMGRS(2.294497, 48.858222, 3)
 └─────────────────┴─────────────┘
 ```
 
-<div id="mgrstogeo">
-  ## MGRSToGeo
-</div>
+## MGRSToGeo {#mgrstogeo}
 
 将 [MGRS](https://en.wikipedia.org/wiki/Military_Grid_Reference_System) 字符串解码为 WGS84 地理坐标 `(longitude, latitude)`。这是 [`geoToMGRS`](#geotomgrs) 的逆运算。
 
@@ -245,9 +231,7 @@ SELECT MGRSToGeo('31UDQ4825111935') AS coord;
 (2.294495618908297,48.85822536113692)
 ```
 
-<div id="pointinellipses">
-  ## pointInEllipses
-</div>
+## pointInEllipses {#pointinellipses}
 
 判断该点是否位于至少一个椭圆内。
 坐标采用笛卡尔坐标系中的几何坐标。
@@ -280,9 +264,7 @@ SELECT pointInEllipses(10., 10., 10., 9.1, 1., 0.9999)
 └─────────────────────────────────────────────────┘
 ```
 
-<div id="pointinpolygon">
-  ## pointInPolygon
-</div>
+## pointInPolygon {#pointinpolygon}
 
 检查该点是否位于平面上的多边形内。
 
@@ -334,4 +316,5 @@ SELECT id, pointInPolygon((2., 2.), shape) AS res FROM poly;
 > **注意**
 > • 你可以设置 `validate_polygons = 0` 以跳过几何校验。
 > • `pointInPolygon` 假定每个多边形都是合法的。如果输入存在自相交、环顺序错误或边重叠，结果就会变得不可靠——尤其是对于恰好位于边上、顶点上，或位于自相交区域内且“内部”与“外部”的概念未定义的点。
+> • 多边形坐标的绝对值不得超过 `1e150`；若计算时会用到超出该范围的值，函数将抛出异常。
 > • 当多边形参数是常量，且点是用已建立索引的键列表示时 (例如，在 `x, y` 是 `PRIMARY KEY` 的一部分或被 `minmax` 索引覆盖的表上使用 `pointInPolygon((x, y), constant_polygon)`) ，ClickHouse 可以同时使用主键和 `minmax` 数据跳过索引来跳过无关粒度。

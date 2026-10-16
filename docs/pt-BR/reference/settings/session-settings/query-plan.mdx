@@ -180,11 +180,17 @@ Só tem efeito se a configuração [query&#95;plan&#95;enable&#95;optimizations]
 
 ## query_plan_join_shard_by_pk_ranges {#query_plan_join_shard_by_pk_ranges}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "0"},{"label": "Nova configuração"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Habilitado por padrão. Um JOIN `full_sorting_merge` ou `parallel_full_sorting_merge` entre duas tabelas MergeTree cujas chaves contêm um prefixo de ambas as chaves primárias agora é executado como junções merge independentes sobre intervalos da chave primária, em paralelo, em vez de uma única junção merge de thread única. Hash joins só são afetados quando nem Filtros em Tempo de Execução de JOIN nem descarregamento em disco estão em vigor."}]}, {"id": "row-2","items": [{"label": "25.4"},{"label": "0"},{"label": "Nova configuração"}]}]} />
 
-Aplica sharding ao JOIN se as chaves de junção contiverem um prefixo de PRIMARY KEY em ambas as tabelas. Compatível com os algoritmos hash, parallel&#95;hash, full&#95;sorting&#95;merge e parallel&#95;full&#95;sorting&#95;merge. Normalmente não acelera as consultas, mas pode reduzir o consumo de memória.
+Executa um JOIN entre duas tabelas MergeTree como junções independentes sobre intervalos da chave primária quando as chaves de junção contêm um prefixo da chave primária de ambas as tabelas. As duas tabelas são divididas nos mesmos intervalos pelos valores desse prefixo (da mesma forma que `FINAL` divide as partes em camadas não sobrepostas), de modo que chaves iguais ficam no mesmo intervalo, e cada intervalo é unido em sua própria thread.
+
+Para `full_sorting_merge` e `parallel_full_sorting_merge`, isso substitui uma única junção merge de thread única sobre as duas tabelas por uma junção merge em streaming para cada intervalo, executadas em paralelo, o que normalmente é várias vezes mais rápido e consome várias vezes menos memória.
+
+Para `hash` e `parallel_hash`, cada intervalo recebe sua própria tabela hash. Isso só se aplica quando nem Filtros em Tempo de Execução de JOIN (`enable_join_runtime_filters`) nem descarregamento em disco (`max_bytes_ratio_before_external_join`, `max_bytes_before_external_join`) estão em vigor, já que ambos tornam a junção opaca para essa otimização; nesse caso, geralmente não acelera as consultas, mas pode reduzir o consumo de memória. Os intervalos são atribuídos às threads de forma estática; assim, um filtro que seja seletivo apenas em parte do intervalo da chave primária deixa algumas threads ociosas.
+
+Não se aplica a `FINAL`, `ASOF`, junções com várias disjunções em `ON` nem à leitura com réplicas paralelas.
 
 ## query_plan_join_swap_table {#query_plan_join_swap_table}
 

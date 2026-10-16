@@ -11,6 +11,7 @@ doc_type: 'reference'
 import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 이러한 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며 [소스](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)에서 자동 생성됩니다.
 
@@ -104,11 +105,11 @@ Iceberg 테이블에서 &#39;OPTIMIZE&#39;를 명시적으로 사용할 수 있�
 
 ## allow_experimental_kusto_dialect {#allow_experimental_kusto_dialect}
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0"},{"label": "새로운 설정"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Kusto Query Language (KQL) 방언이 베타로 전환되었습니다."}]}, {"id": "row-2","items": [{"label": "25.1"},{"label": "0"},{"label": "새로운 설정"}]}]} />
 
 SQL의 대안인 Kusto Query Language (KQL) 방언을 활성화합니다.
 

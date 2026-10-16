@@ -2,7 +2,7 @@
 title: Paramètres du journal système
 ---
 
-Les paramètres suivants peuvent être configurés via des sous-balises :
+Les paramètres suivants peuvent être configurés via des sous-balises :
 
 | Paramètre                          | Description                                                                                                                                                                | Valeur par défaut   | Remarque                                                                                                                                     |
 | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -20,14 +20,18 @@ Les paramètres suivants peuvent être configurés via des sous-balises :
 | `buffer_size_rows_flush_threshold` | Seuil du nombre de lignes. Si ce seuil est atteint, le vidage des logs sur le disque est lancé en arrière-plan.                                                            | `max_size_rows / 2` |                                                                                                                                              |
 | `flush_on_crash`                   | Définit si les logs doivent être écrits sur le disque en cas de crash.                                                                                                     | `false`             |                                                                                                                                              |
 
-De plus, le paramètre suivant au niveau du serveur contrôle la politique de vidage par défaut pour toutes les tables de journal système :
+Tous les paramètres, à l&#39;exception de `database`, `table` et `engine`, peuvent également être définis une seule fois pour toutes les tables de journaux système dans la section `system_tables`. Un paramètre défini dans la section propre à une table prévaut, et un `engine` défini au niveau d&#39;une table remplace l&#39;intégralité de la définition du moteur, y compris les paramètres globaux `partition_by`, `ttl`, `order_by`, `storage_policy` et `settings` :
 
 ```xml
-<default_system_log_flush_policy>
-    <skip_alias_columns>true</skip_alias_columns>
-</default_system_log_flush_policy>
+<system_tables>
+    <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
+</system_tables>
 ```
+
+La section `system_tables` accepte en outre le paramètre suivant, qui s&#39;applique à toutes les tables de journal système et ne peut pas être défini table par table :
 
 | Paramètre            | Description                                                                                                                       | Par défaut |
 | -------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ---------- |
 | `skip_alias_columns` | Lorsque `true`, les colonnes ALIAS sont omises des schémas des tables de logs système. Requis pour les logs système basés sur S3. | `false`    |
+
+L&#39;ancien emplacement de ce paramètre, `default_system_log_flush_policy.skip_alias_columns`, est déconseillé et n&#39;est pris en compte que si `system_tables.skip_alias_columns` n&#39;est pas défini.
