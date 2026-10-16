@@ -456,7 +456,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 {
     /// A non-Null constant of `Nullable(T)` / `LowCardinality(T)` is a plain value of `T`, and the caller only unwraps
     /// the target type. Unwrap a temporal or interval source hint too, so that such a constant takes the typed `Date` /
-    /// `DateTime` / `Time` / `Interval` branches below instead of being reinterpreted as a raw number - otherwise
+    /// `DateTime` / `Time` / `Interval` branches below instead of being rejected or reinterpreted as a raw number - otherwise
     /// `CAST(toDate32('1970-01-02') AS Nullable(Date32))` would become one second past the epoch in a `DateTime64`.
     if (from_type_hint && !src.isNull())
     {
