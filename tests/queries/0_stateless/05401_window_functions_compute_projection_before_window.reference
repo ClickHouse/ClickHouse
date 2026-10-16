@@ -42,8 +42,11 @@ lazily executed arguments of short-circuit functions
 0
 1
 1
-expressions with results of unbounded size are computed after window functions
+expressions with results that can be larger than their input are computed after window functions
 ok
+ok
+LIMIT
+1	100
 QUALIFY
 0	0	1
 1	0	2

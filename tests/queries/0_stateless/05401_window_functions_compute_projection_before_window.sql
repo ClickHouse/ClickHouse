@@ -42,10 +42,17 @@ SELECT multiIf(count() OVER () = 0, toUInt64(s), count() OVER () = 1, toUInt64(s
 SELECT count() OVER () = 0 AND toUInt64(s) = 1 AS a FROM (SELECT concat('x', toString(number)) AS s FROM numbers(2)) SETTINGS short_circuit_function_evaluation = 'enable';
 SELECT count() OVER () > 0 OR toUInt64(s) = 1 AS a FROM (SELECT concat('x', toString(number)) AS s FROM numbers(2)) SETTINGS short_circuit_function_evaluation = 'enable';
 
-SELECT 'expressions with results of unbounded size are computed after window functions';
+SELECT 'expressions with results that can be larger than their input are computed after window functions';
 SELECT repeat(s, 1000) AS r, count() OVER () AS n FROM (SELECT toString(number) AS s FROM numbers(100000))
 FORMAT Null SETTINGS max_memory_usage = '50M', max_block_size = 1024, max_threads = 1;
 SELECT 'ok';
+SELECT toFixedString(s, 2048) AS r, count() OVER () AS n FROM (SELECT toString(number % 10) AS s FROM numbers(100000))
+FORMAT Null SETTINGS max_memory_usage = '50M', max_block_size = 1024, max_threads = 1;
+SELECT 'ok';
+
+SELECT 'LIMIT';
+SELECT toUInt64(s) AS v, count() OVER () AS n FROM (SELECT if(number < 10, '1', 'x') AS s FROM numbers(100))
+LIMIT 1 SETTINGS max_block_size = 10, max_threads = 1;
 
 SELECT 'QUALIFY';
 SELECT number, throwIf(number = 3) AS t, row_number() OVER (ORDER BY number) AS rn FROM numbers(5) QUALIFY rn != 4 ORDER BY number;

@@ -334,13 +334,31 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
     return aggregation_analysis_result;
 }
 
+/** A lower bound of the number of bytes that a value of a type without a maximum size of value takes in a column.
+  */
+size_t getMinimumSizeOfUnboundedValue(const IDataType & type)
+{
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&type))
+        return 1 + getMinimumSizeOfUnboundedValue(*nullable_type->getNestedType());
+
+    /// The columns of these types keep an offset for each value.
+    if (isString(type) || isArray(type) || isMap(type))
+        return sizeof(UInt64);
+
+    /// For example, a `LowCardinality` column keeps only an index for each value, which can take one byte.
+    return 0;
+}
+
 /** Whether the expression can be computed before the window functions instead of after them.
   * The window step keeps every row and only changes the order of rows and their split into blocks,
   * so an expression evaluated row by row has the same value on either side of it.
-  * `reads_unbounded_values` is set if the expression reads a column or an aggregate function result
-  * whose values have no maximum size, such as `String` or `Array`.
+  * The columns and the aggregate function results that the expression reads and whose values have
+  * no maximum size, such as `String` or `Array`, are added to `unbounded_inputs`.
   */
-bool canBeComputedBeforeWindow(const QueryTreeNodePtr & node, const ColumnNodePtrWithHashSet & correlated_columns_set, bool & reads_unbounded_values)
+bool canBeComputedBeforeWindow(
+    const QueryTreeNodePtr & node,
+    const ColumnNodePtrWithHashSet & correlated_columns_set,
+    QueryTreeNodePtrWithHashSet & unbounded_inputs)
 {
     switch (node->getNodeType())
     {
@@ -349,19 +367,21 @@ bool canBeComputedBeforeWindow(const QueryTreeNodePtr & node, const ColumnNodePt
         case QueryTreeNodeType::COLUMN:
         {
             const auto & column_node = node->as<ColumnNode &>();
-            if (!column_node.getColumnType()->haveMaximumSizeOfValue())
-                reads_unbounded_values = true;
+            auto column_source = column_node.getColumnSourceOrNull();
+            bool is_lambda_argument = column_source && column_source->getNodeType() == QueryTreeNodeType::LAMBDA_ARGS;
+            if (!is_lambda_argument && !column_node.getColumnType()->haveMaximumSizeOfValue())
+                unbounded_inputs.insert(node);
             return !correlated_columns_set.contains(std::static_pointer_cast<ColumnNode>(node));
         }
         case QueryTreeNodeType::LIST:
         {
             for (const auto & child : node->as<ListNode &>().getNodes())
-                if (!canBeComputedBeforeWindow(child, correlated_columns_set, reads_unbounded_values))
+                if (!canBeComputedBeforeWindow(child, correlated_columns_set, unbounded_inputs))
                     return false;
             return true;
         }
         case QueryTreeNodeType::LAMBDA:
-            return canBeComputedBeforeWindow(node->as<LambdaNode &>().getExpression(), correlated_columns_set, reads_unbounded_values);
+            return canBeComputedBeforeWindow(node->as<LambdaNode &>().getExpression(), correlated_columns_set, unbounded_inputs);
         case QueryTreeNodeType::FUNCTION:
         {
             const auto & function_node = node->as<FunctionNode &>();
@@ -372,7 +392,7 @@ bool canBeComputedBeforeWindow(const QueryTreeNodePtr & node, const ColumnNodePt
             if (function_node.isAggregateFunction())
             {
                 if (!function_node.getResultType()->haveMaximumSizeOfValue())
-                    reads_unbounded_values = true;
+                    unbounded_inputs.insert(node);
                 return true;
             }
 
@@ -385,7 +405,7 @@ bool canBeComputedBeforeWindow(const QueryTreeNodePtr & node, const ColumnNodePt
             if (auto function = function_node.getFunction(); function && (function->isStateful() || !function->isDeterministicInScopeOfQuery()))
                 return false;
 
-            return canBeComputedBeforeWindow(function_node.getArgumentsNode(), correlated_columns_set, reads_unbounded_values);
+            return canBeComputedBeforeWindow(function_node.getArgumentsNode(), correlated_columns_set, unbounded_inputs);
         }
         default:
             /// Subqueries.
@@ -395,8 +415,8 @@ bool canBeComputedBeforeWindow(const QueryTreeNodePtr & node, const ColumnNodePt
 
 /** Collect the largest subexpressions of the projection that are worth computing before the window functions.
   * Window functions buffer their input, so computing a projection expression before them lets the window step
-  * buffer its result instead of the columns it reads. This is done only if it reads values of unbounded size and
-  * its result has a maximum size, otherwise the result can be larger than the columns it reads.
+  * buffer its result instead of the columns it reads. This is done only if the result can not be larger than
+  * the smallest possible values of the columns of unbounded size that it reads.
   * The arguments of short-circuit functions that may be executed lazily are not collected, as computing them
   * before the window step would execute them for all rows.
   */
@@ -409,13 +429,21 @@ void collectExpressionsComputableBeforeWindow(
     if (!function_node || !function_node->isOrdinaryFunction())
         return;
 
-    bool reads_unbounded_values = false;
-    if (canBeComputedBeforeWindow(node, correlated_columns_set, reads_unbounded_values)
-        && reads_unbounded_values
-        && function_node->getResultType()->haveMaximumSizeOfValue())
+    QueryTreeNodePtrWithHashSet unbounded_inputs;
+    if (canBeComputedBeforeWindow(node, correlated_columns_set, unbounded_inputs))
     {
-        result.push_back(node);
-        return;
+        size_t minimum_size_of_inputs = 0;
+        for (const auto & input : unbounded_inputs)
+            minimum_size_of_inputs += getMinimumSizeOfUnboundedValue(*input.node->getResultType());
+
+        const auto & result_type = function_node->getResultType();
+        if (minimum_size_of_inputs > 0
+            && result_type->haveMaximumSizeOfValue()
+            && result_type->getMaximumSizeOfValueInMemory() <= minimum_size_of_inputs)
+        {
+            result.push_back(node);
+            return;
+        }
     }
 
     const auto & arguments = function_node->getArguments().getNodes();
@@ -557,10 +585,11 @@ std::optional<WindowAnalysisResult> analyzeWindow(
         for (auto & window_function : window_description.window_functions)
             window_functions_additional_columns.emplace_back(nullptr, window_function.aggregate_function->getResultType(), window_function.column_name);
 
-    /// With `QUALIFY`, the projection is computed only for the rows that pass the filter after the window functions.
+    /// With `QUALIFY`, the projection is computed only for the rows that pass the filter after the window functions,
+    /// and with `LIMIT` it may be computed only for the first blocks of the result.
     QueryTreeNodes expressions_before_window;
     const auto & query_node = query_tree->as<const QueryNode &>();
-    if (!query_node.hasQualify())
+    if (!query_node.hasQualify() && !query_node.hasLimit())
     {
         for (const auto & projection_node : query_node.getProjection().getNodes())
             collectExpressionsComputableBeforeWindow(projection_node, correlated_columns_set, expressions_before_window);
