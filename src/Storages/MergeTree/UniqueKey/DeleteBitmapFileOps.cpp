@@ -2,6 +2,7 @@
 
 #include <Disks/IDisk.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 
 #include <IO/ReadSettings.h>
 #include <IO/copyData.h>
@@ -131,6 +132,30 @@ MergeTreeDataPartChecksum carryBitmap(
 DeleteBitmapPtr tryReadBitmap(const IDataPartStorage & holder, const BitmapFile & file)
 {
     return tryReadBitmapFile(holder, file.fileName());
+}
+
+std::vector<BitmapFile> removeClonedBitmaps(IMergeTreeDataPart & clone)
+{
+    auto & storage = clone.getDataPartStorage();
+    auto files = enumerateFiles(storage);
+    if (files.empty())
+        return files;
+
+    for (const auto & file : files)
+    {
+        storage.removeFile(file.fileName());
+        clone.checksums.remove(file.fileName());
+    }
+
+    {
+        auto out = storage.writeFile("checksums.txt", /*buf_size=*/4096, WriteSettings{});
+        clone.checksums.write(*out);
+        out->sync();
+        out->finalize();
+    }
+
+    clone.setBytesOnDisk(clone.checksums.getTotalSizeOnDisk());
+    return files;
 }
 
 }

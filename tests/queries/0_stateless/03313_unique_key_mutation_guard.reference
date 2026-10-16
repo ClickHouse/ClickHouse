@@ -1,17 +1,45 @@
 alter_delete_uk
 alter_update_uk_column
-alter_update_non_uk_column
-lightweight_update_uk
+alter_update_row_exists
 lightweight_force_update_uk
+mutation_in_transaction_uk
+0
 materialize_uk_a
 materialize_uk_b
 clear_uk_a
 clear_uk_b
-materialize_non_uk_d
 clear_non_uk_d
+cleared_d	['def','def']
 clear_missing_if_exists_noop
 2
 clear_nested_group
-1	[1,2]	['a','b']
-2	[3]	['c']
+1	[]	[]
+2	[]	[]
+clear_nested_group_with_key
+drop_nested_group_with_key
+clear_inner_nested_group_with_key
+drop_inner_nested_group_with_key
+clear_source_of_materialized_key
+materialize_source_of_materialized_key
+update_source_of_materialized_key
+modify_type_source_of_materialized_key
+modify_expression_source_of_materialized_key
+rename_source_of_materialized_key
+modify_alias_source_of_materialized_key
+update_alias_source_of_materialized_key
+update_source_behind_prefix_column
+clear_nested_source_of_materialized_key
+clear_source_of_default_key
+default_key_kept	[(0,2),(0,4)]
+drop_column
+rename_column
+modify_column_type
+materialize_index
+materialize_statistics
+rewrite_parts
+update_column
+drop_index
+drop_statistics
+metadata_only_alters
+materialize_column
 2

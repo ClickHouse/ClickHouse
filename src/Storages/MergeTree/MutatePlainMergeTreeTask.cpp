@@ -2,9 +2,14 @@
 #include <Storages/MergeTree/MutatePlainMergeTreeTask.h>
 
 #include <Storages/StorageMergeTree.h>
+#include <Storages/MergeTree/MergedPartOffsets.h>
+#include <Storages/MergeTree/UniqueKey/ReadSnapshot.h>
+#include <Storages/MergeTree/UniqueKey/UniqueKeyTxn.h>
+#include <Storages/MergeTree/UniqueKey/UniqueKeyTxnCommit.h>
 #include <Interpreters/TransactionManager.h>
 #include <Interpreters/Context.h>
 #include <Common/ErrorCodes.h>
+#include <Common/FailPoint.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/setThreadName.h>
@@ -16,6 +21,11 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool enable_sharing_sets_for_mutations;
+}
+
+namespace FailPoints
+{
+    extern const char unique_key_merge_pause_before_commit[];
 }
 
 namespace ErrorCodes
@@ -77,9 +87,15 @@ void MutatePlainMergeTreeTask::prepare()
         task_context->setPreparedSetsCache(prepared_sets_cache_for_mutation);
     }
 
+    if (metadata_snapshot->hasUniqueKey())
+        uk_txn = beginUniqueKeyTransaction(merge_mutate_entry->txn, "MUTATE", future_part->parts);
+
+    /// The part's creation tid must be the committing transaction's.
     mutate_task = storage.merger_mutator.mutatePartToTemporaryPart(
             future_part, metadata_snapshot, merge_mutate_entry->commands, merge_list_entry.get(),
-            time(nullptr), task_context, merge_mutate_entry->txn, merge_mutate_entry->tagger->reserved_space, table_lock_holder);
+            time(nullptr), task_context,
+            uk_txn.getTransaction() ? uk_txn.getTransaction() : merge_mutate_entry->txn,
+            merge_mutate_entry->tagger->reserved_space, table_lock_holder);
 }
 
 void MutatePlainMergeTreeTask::finish()
@@ -122,7 +138,9 @@ bool MutatePlainMergeTreeTask::executeStep()
                 if (data_part_storage.hasActiveTransaction())
                     data_part_storage.commitTransaction();
 
-                MergeTreeData::Transaction transaction(storage, merge_mutate_entry->txn.get());
+                /// Before `mutation_wait_mutex`, so nothing waits on the pause.
+                if (uk_txn.getTransaction())
+                    FailPointInjection::pauseFailPoint(FailPoints::unique_key_merge_pause_before_commit);
 
                 /// `waitForMutation` considers the mutation done as soon as the mutated part is visible,
                 /// and it re-checks on any wakeup (a timeout or an unrelated notification), not only on
@@ -132,13 +150,30 @@ bool MutatePlainMergeTreeTask::executeStep()
                 /// `SYSTEM FLUSH LOGS` misses the `MutatePart` row.
                 std::unique_lock mutation_wait_lock(storage.mutation_wait_mutex);
 
-                /// Hold data_parts_lock across both renameTempPartAndReplace and commit to prevent
-                /// a race with REPLACE PARTITION. Without this, there is a window where the mutation
-                /// result is PreActive (not yet committed): REPLACE PARTITION's
-                /// removePartsInRangeFromWorkingSet only removes Active parts and misses the PreActive
-                /// mutation result. After REPLACE releases the lock, the mutation's commit promotes
-                /// the PreActive part to Active, "resurrecting" old data.
+                if (uk_txn.getTransaction())
                 {
+                    /// Rows stay in place: read below every commit, each source kill is a late kill at the same offset.
+                    const ReadSnapshot nothing_dead(storage.uniqueKeyTxnManager().deleteBitmapStore(), Tx::MaxReservedCSN);
+                    const MergedPartOffsets rows_in_place(1, MergedPartOffsets::MappingMode::Disabled);
+
+                    UniqueKeyTxnCommit::merge(
+                        storage,
+                        {.transaction = uk_txn,
+                        .source_parts = future_part->parts,
+                        .merged_part = new_part,
+                        .read_snapshot = nothing_dead,
+                        .merged_part_offsets = rows_in_place});
+                }
+                else
+                {
+                    MergeTreeData::Transaction transaction(storage, merge_mutate_entry->txn.get());
+
+                    /// Hold data_parts_lock across both renameTempPartAndReplace and commit to prevent
+                    /// a race with REPLACE PARTITION. Without this, there is a window where the mutation
+                    /// result is PreActive (not yet committed): REPLACE PARTITION's
+                    /// removePartsInRangeFromWorkingSet only removes Active parts and misses the PreActive
+                    /// mutation result. After REPLACE releases the lock, the mutation's commit promotes
+                    /// the PreActive part to Active, "resurrecting" old data.
                     auto lock = storage.lockParts();
                     storage.renameTempPartAndReplaceUnlocked(new_part, transaction, lock, /*rename_in_transaction=*/ false);
                     transaction.commit(lock);
