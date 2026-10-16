@@ -6,6 +6,7 @@
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/SecretArgumentsSpec.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/ISource.h>
 #include <Storages/Cache/SchemaCache.h>
@@ -128,7 +129,7 @@ protected:
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size) const;
 
-    virtual std::function<void(std::ostream &)> getReadPOSTDataCallback(
+    virtual std::function<void(WriteBuffer &)> getReadPOSTDataCallback(
         const Names & column_names,
         const ColumnsDescription & columns_description,
         const SelectQueryInfo & query_info,
@@ -226,7 +227,7 @@ public:
         const ReadFromFormatInfo & info,
         std::shared_ptr<IteratorWrapper> uri_iterator_,
         const std::string & http_method,
-        std::function<void(std::ostream &)> callback,
+        std::function<void(WriteBuffer &)> callback,
         const String & format,
         const std::optional<FormatSettings> & format_settings,
         String name_,
@@ -264,7 +265,7 @@ public:
         ContextPtr context,
         const URIParams & params,
         const String & http_method,
-        std::function<void(std::ostream &)> callback,
+        std::function<void(WriteBuffer &)> callback,
         const ConnectionTimeouts & timeouts,
         Poco::Net::HTTPBasicCredentials & credentials,
         const HTTPHeaderEntries & headers,
@@ -472,4 +473,9 @@ public:
 private:
     std::vector<String> uri_options;
 };
+
+/// The `SecretArgumentsSpec` of `url`, `urlCluster` and the `URL` table and database engines: the url is at
+/// `url_offset`, a `url` override of a named collection and `headers(...)` can carry credentials.
+SecretArgumentsSpec urlSecretArguments(size_t url_offset);
+
 }

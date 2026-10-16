@@ -9,9 +9,7 @@ keywords: ['ClickPipes', 'Terraform', 'البنية التحتية كشيفرة'
 
 يمكن إنشاء جميع أنواع ClickPipes وإدارتها باستخدام المورد `clickhouse_clickpipe` في [موفّر Terraform لـ ClickHouse](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/clickpipe). تستعرض هذه الصفحة إعداد الموفّر وتقدّم أمثلة على التهيئة لكل نوع ClickPipe مدعوم.
 
-<div id="provider-setup">
-  ## إعداد الموفّر
-</div>
+## إعداد الموفّر {#provider-setup}
 
 <Note>
   أصبح دعم ClickPipes متاحًا رسميًا بدءًا من إصدار الموفّر **v3.14.0**.
@@ -41,9 +39,7 @@ provider "clickhouse" {
 
 راجع [إدارة مفاتيح API](/ar/products/cloud/features/admin-features/api/openapi) للحصول على إرشادات حول إنشاء مفتاح API لاستخدامه مع الموفّر.
 
-<div id="resource-overview">
-  ## نظرة عامة على المورد
-</div>
+## نظرة عامة على المورد {#resource-overview}
 
 يحتوي المورد `clickhouse_clickpipe` على معاملات المستوى الأعلى التالية:
 
@@ -60,9 +56,7 @@ provider "clickhouse" {
 
 السِّمتان `id` و`state` للقراءة فقط، ويجري تعبئتهما بواسطة ClickHouse Cloud بعد الإنشاء.
 
-<div id="destination">
-  ## الوجهة
-</div>
+## الوجهة {#destination}
 
 يُستخدم القسم `destination` مع جميع أنواع المصادر:
 
@@ -94,13 +88,9 @@ destination {
 
 بالنسبة إلى مصادر CDC ‏(Postgres وMySQL وMongoDB وBigQuery)، تُنشأ جداول الوجهة تلقائيًا استنادًا إلى مخطط المصدر — وعادةً ما يلزم فقط `database`.
 
-<div id="examples">
-  ## أمثلة بحسب نوع ClickPipe
-</div>
+## أمثلة بحسب نوع ClickPipe {#examples}
 
-<div id="kafka">
-  ### Kafka
-</div>
+### Kafka {#kafka}
 
 القيم المدعومة لـ `type`: `kafka`، `confluent`، `msk`، `azureeventhub`، `redpanda`، `warpstream`.
 
@@ -163,9 +153,7 @@ resource "clickhouse_clickpipe" "kafka_clickpipe" {
 }
 ```
 
-<div id="kafka-schema-registry">
-  #### Kafka مع schema registry
-</div>
+#### Kafka مع schema registry {#kafka-schema-registry}
 
 ```hcl
 resource "clickhouse_clickpipe" "kafka_avro_clickpipe" {
@@ -219,9 +207,7 @@ resource "clickhouse_clickpipe" "kafka_avro_clickpipe" {
 }
 ```
 
-<div id="kinesis">
-  ### Amazon كينيسيس
-</div>
+### Amazon Kinesis {#kinesis}
 
 ```hcl
 resource "clickhouse_clickpipe" "kinesis_clickpipe" {
@@ -230,11 +216,17 @@ resource "clickhouse_clickpipe" "kinesis_clickpipe" {
 
   source {
     kinesis {
-      format         = "JSONEachRow"
+      format         = "AvroConfluent"
       stream_name    = "my-stream"
       region         = "us-east-1"
       iterator_type  = "TRIM_HORIZON"
       authentication = "IAM_USER"
+
+      schema_registry {
+        type               = "glue"
+        glue_region        = "us-east-1"
+        glue_registry_name = "my-registry"
+      }
 
       access_key {
         access_key_id = var.aws_access_key_id
@@ -266,9 +258,50 @@ resource "clickhouse_clickpipe" "kinesis_clickpipe" {
 }
 ```
 
-<div id="kinesis-iam-role">
-  #### Kinesis مع IAM role
-</div>
+#### Kinesis مع مخطط Protobuf مُحمَّل {#kinesis-protobuf-schema}
+
+اضبط `format` على `Protobuf`، واستخدم `protobuf_schema` لتمرير ملف `.proto` مُرمَّز بصيغة base64 أو `FileDescriptorSet` مُسلسَل. لا تُهيِّئ `schema_registry` عند تحميل مخطط.
+
+```hcl
+resource "clickhouse_clickpipe" "kinesis_protobuf_clickpipe" {
+  name       = "My Kinesis Protobuf ClickPipe"
+  service_id = var.service_id
+
+  source {
+    kinesis {
+      format          = "Protobuf"
+      stream_name     = "my-stream"
+      region          = "us-east-1"
+      iterator_type   = "TRIM_HORIZON"
+      authentication  = "IAM_USER"
+      protobuf_schema = filebase64("${path.module}/event.proto")
+
+      access_key {
+        access_key_id = var.aws_access_key_id
+        secret_key    = var.aws_secret_key
+      }
+    }
+  }
+
+  destination {
+    table         = "my_table"
+    managed_table = true
+
+    table_definition {
+      engine {
+        type = "MergeTree"
+      }
+    }
+
+    columns {
+      name = "id"
+      type = "UInt64"
+    }
+  }
+}
+```
+
+#### Kinesis مع IAM role {#kinesis-iam-role}
 
 تتطلب المصادقة باستخدام IAM role خدمة ClickHouse قيد التشغيل على AWS.
 
@@ -311,9 +344,7 @@ resource "clickhouse_clickpipe" "kinesis_iam_role_clickpipe" {
 }
 ```
 
-<div id="s3">
-  ### Amazon S3
-</div>
+### Amazon S3 {#s3}
 
 ```hcl
 resource "clickhouse_clickpipe" "s3_clickpipe" {
@@ -357,9 +388,7 @@ resource "clickhouse_clickpipe" "s3_clickpipe" {
 }
 ```
 
-<div id="s3-continuous">
-  #### الإدخال المستمر من S3 باستخدام SQS
-</div>
+#### الإدخال المستمر من S3 باستخدام SQS {#s3-continuous}
 
 للإدخال المستمر باستخدام قائمة انتظار SQS (الوضع غير المرتب)، راجع [تهيئة الوضع غير المرتب](/ar/integrations/clickpipes/object-storage/amazon-s3/unordered-mode) للحصول على إرشادات الإعداد.
 
@@ -407,9 +436,7 @@ resource "clickhouse_clickpipe" "s3_continuous_clickpipe" {
 }
 ```
 
-<div id="gcs">
-  ### Google Cloud Storage
-</div>
+### Google Cloud Storage {#gcs}
 
 يجب أن تكون `service_account_key` هي المحتوى المُرمَّز بترميز base64 لملف مفتاح JSON خاص بحساب خدمة في GCP.
 
@@ -451,9 +478,7 @@ resource "clickhouse_clickpipe" "gcs_clickpipe" {
 }
 ```
 
-<div id="abs">
-  ### تخزين Azure Blob
-</div>
+### تخزين Azure Blob {#abs}
 
 ```hcl
 resource "clickhouse_clickpipe" "abs_clickpipe" {
@@ -494,9 +519,7 @@ resource "clickhouse_clickpipe" "abs_clickpipe" {
 }
 ```
 
-<div id="postgres">
-  ### CDC لـ Postgres
-</div>
+### CDC لـ Postgres {#postgres}
 
 ```hcl
 resource "clickhouse_clickpipe" "postgres_cdc_clickpipe" {
@@ -552,9 +575,7 @@ resource "clickhouse_clickpipe" "postgres_cdc_clickpipe" {
 }
 ```
 
-<div id="postgres-iam-role">
-  #### Postgres مع IAM role
-</div>
+#### Postgres مع IAM role {#postgres-iam-role}
 
 تتطلب المصادقة باستخدام IAM role خدمة ClickHouse قيد التشغيل على AWS.
 
@@ -594,9 +615,7 @@ resource "clickhouse_clickpipe" "postgres_iam_role_clickpipe" {
 }
 ```
 
-<div id="mysql">
-  ### MySQL CDC
-</div>
+### MySQL CDC {#mysql}
 
 ```hcl
 resource "clickhouse_clickpipe" "mysql_cdc_clickpipe" {
@@ -652,9 +671,7 @@ resource "clickhouse_clickpipe" "mysql_cdc_clickpipe" {
 }
 ```
 
-<div id="mongodb">
-  ### CDC في MongoDB
-</div>
+### CDC في MongoDB {#mongodb}
 
 ```hcl
 resource "clickhouse_clickpipe" "mongodb_cdc_clickpipe" {
@@ -702,9 +719,7 @@ resource "clickhouse_clickpipe" "mongodb_cdc_clickpipe" {
 }
 ```
 
-<div id="bigquery">
-  ### BigQuery
-</div>
+### BigQuery {#bigquery}
 
 يجب أن يكون `service_account_file` هو المحتوى المشفَّر بترميز base64 لملف مفتاح JSON لحساب خدمة على GCP.
 
@@ -755,9 +770,7 @@ resource "clickhouse_clickpipe" "bigquery_snapshot_clickpipe" {
 }
 ```
 
-<div id="scaling">
-  ## التوسيع
-</div>
+## التوسيع {#scaling}
 
 تدعم جميع أنواع ClickPipe قسم `scaling` لضبط عدد النسخ المتماثلة وتخصيص الموارد لها:
 
@@ -769,9 +782,7 @@ scaling {
 }
 ```
 
-<div id="import">
-  ## استيراد ClickPipes الموجودة
-</div>
+## استيراد ClickPipes الموجودة {#import}
 
 يمكن استيراد ClickPipes الموجودة ضمن حالة Terraform باستخدام كلٍّ من معرّف الخدمة ومعرّف ClickPipe:
 

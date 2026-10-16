@@ -49,7 +49,7 @@ struct Optimization
         VectorSearchFilterStrategy vector_search_filter_strategy{};
 
         /// Other settings
-        size_t use_index_for_in_with_subqueries_max_values{};
+        FutureSetSettings set_settings;
         SizeLimits network_transfer_limits;
         bool optimize_prewhere{};
         bool remove_unused_columns{};
@@ -72,12 +72,11 @@ struct Optimization
         bool enable_group_by_top_k_optimization{};
         UInt64 top_k_optimization_observation_rows{};
         bool top_k_optimization_shared_boundary{};
+        bool enable_group_by_top_k_dynamic_filtering{};
+        bool use_query_condition_cache_for_top_k{};
         bool is_explain{};
 
         size_t max_block_size{};
-
-        // parallel replicas
-        bool parallel_replicas_filter_pushdown = false;
 
         /// Mirrors `QueryPlanOptimizationSettings::push_down_volume_reducing_functions`.
         /// `tryExecuteFunctionsAfterSorting` consults it to avoid pinging volume-reducing
@@ -129,6 +128,9 @@ size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes, const Op
 /// Replace chain `ExpressionStep -> ExpressionStep` to single ExpressionStep
 /// Replace chain `FilterStep -> ExpressionStep` to single FilterStep
 size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings &);
+
+/// replace a dropped always-true filter with an expression
+size_t tryReplaceAlwaysTrueFilter(QueryPlan::Node * node, QueryPlan::Nodes &, const Optimization::ExtraSettings &);
 
 /// Replace chain `FilterStep -> FilterStep` to single FilterStep
 /// Note: this breaks short-circuit logic, so it is disabled for now.
@@ -251,6 +253,9 @@ size_t tryPushHavingPrefilterIntoAggregation(QueryPlan::Node * parent_node, Quer
 /// the preserved-side input must produce before joining.
 size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
 
+/// Let a format source answer key-less, unfiltered `min` / `max` of its columns from format statistics.
+size_t tryMinMaxFromFormatStatistics(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
+
 /// Whether the plan-based parallel replicas may make this `MergeTree` read part of a shipped fragment.
 bool mergeTreeReadCanBeShipped(const ReadFromMergeTree & read);
 
@@ -272,6 +277,7 @@ inline const auto & getOptimizations()
         {tryPushBucketTopKIntoAggregation, "aggregationBucketTopK", &QueryPlanOptimizationSettings::aggregation_bucket_top_k},
         {trySplitFilter, "splitFilter", &QueryPlanOptimizationSettings::split_filter},
         {tryMergeExpressions, "mergeExpressions", &QueryPlanOptimizationSettings::merge_expressions},
+        {tryReplaceAlwaysTrueFilter, "replaceAlwaysTrueFilter", &QueryPlanOptimizationSettings::replace_always_true_filter},
         {tryMergeFilters, "mergeFilters", &QueryPlanOptimizationSettings::merge_filters},
         {tryPushDownFilter, "pushDownFilter", &QueryPlanOptimizationSettings::filter_push_down},
         {tryFuseFilterIntoArrayJoin, "fuseFilterIntoArrayJoin", &QueryPlanOptimizationSettings::fuse_filter_into_array_join},
@@ -288,6 +294,7 @@ inline const auto & getOptimizations()
          &QueryPlanOptimizationSettings::convert_any_join_to_semi_or_anti_join},
         {tryOptimizeTopK, "tryOptimizeTopK", &QueryPlanOptimizationSettings::try_use_top_k_optimization},
         {tryTopKThroughJoin, "topKThroughJoin", &QueryPlanOptimizationSettings::top_k_through_join},
+        {tryMinMaxFromFormatStatistics, "minMaxFromFormatStatistics", &QueryPlanOptimizationSettings::min_max_from_files},
     });
 
     return optimizations;

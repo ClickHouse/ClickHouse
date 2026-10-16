@@ -119,6 +119,20 @@ O processo de merge depende de `settings_constraints_replace_previous`:
   cada tipo de restrição não definido seja herdado do perfil anterior, e cada
   tipo de restrição definido seja substituído pelo valor do novo perfil.
 
+## CONSTRAINTS e a configuração `compatibility` {#constraints-and-compatibility}
+
+A configuração [`compatibility`](/pt-BR/reference/settings/session-settings/compatibility#compatibility) altera as
+configurações que o usuário não definiu para os valores padrão de uma versão anterior. Ela nunca aplica um valor que as
+CONSTRAINTS rejeitam: uma configuração mantém seu valor padrão quando o padrão anterior está fora do seu intervalo `min`/`max`,
+está entre os seus valores `disallowed` ou quando a configuração é `const`. O mesmo vale para uma configuração de um tier
+que [`allow_feature_tier`](/pt-BR/reference/settings/server-settings/settings/allow#allow_feature_tier) desabilita.
+A configuração `readonly` não restringe `compatibility` dessa forma: ela determina se uma consulta pode ou não definir
+`compatibility`.
+
+As configurações de `MergeTree` seguem apenas a `compatibility` do perfil padrão, que define os valores padrão de todas as tabelas
+no nível do servidor. Nesse caso, uma configuração também mantém seu valor padrão quando uma CONSTRAINT com prefixo `merge_tree_`
+do perfil padrão ou `allow_feature_tier` rejeita o padrão anterior.
+
 ## Modo somente leitura {#read-only}
 
 O modo somente leitura é habilitado pela configuração `readonly`, que não deve ser confundida com o tipo de
