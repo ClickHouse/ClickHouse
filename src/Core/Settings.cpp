@@ -9793,7 +9793,7 @@ a dotted path such as `db.ns.table` is only shorthand for the quoted name
 ``db.`ns.table` ``, and `USE db.namespace` and `SHOW TABLES FROM db.namespace` fail
 with `SUPPORT_IS_DISABLED`.
 )", EXPERIMENTAL, \
-        {"26.10", false, false, "New experimental setting gating hierarchical table paths and USE db.namespace scoping."}) \
+        {"26.11", false, false, "New experimental setting gating hierarchical table paths and USE db.namespace scoping."}) \
     DECLARE_WITH_ALIAS(Bool, allow_database_unity_catalog, false, R"(
 Allow database engine `DataLakeCatalog` with `catalog_type = 'unity'`
 
