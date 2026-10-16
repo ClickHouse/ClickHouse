@@ -11120,7 +11120,7 @@ The setting only affects the translation of PromQL queries (the `promql` dialect
 It does not affect these aggregate functions used directly in SQL, pass the fifth parameter to them explicitly.
 With this setting, a subquery as the argument of these functions is not supported, like the `anchored` modifier in Prometheus.
 )", IMPORTANT | SettingsTierType::PRIVATE_PREVIEW, \
-        {"26.10", false, false, "New setting to calculate PromQL rate, increase, and delta without boundary extrapolation."}) \
+        {"26.11", false, false, "New setting to calculate PromQL rate, increase, and delta without boundary extrapolation."}) \
     DECLARE(Bool, promql_push_down_label_matchers, true, R"(
 Copies the label matchers of one side of a PromQL binary operator to the selectors of the other side for the labels the operator matches series by, so `b / on(job) a{job="x"}` reads only the series of `b` with `job="x"`.
 A matcher is not copied where the series it filters out could make Prometheus report duplicate series: into the "one" side of the operator unless it is an aggregation by the matched labels, into an operator between two vectors other than `and` and `unless`, and through a function over a range or an operator with a scalar unless its input is one metric selected by name.
