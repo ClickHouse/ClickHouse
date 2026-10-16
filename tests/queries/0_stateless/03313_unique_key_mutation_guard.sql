@@ -111,8 +111,9 @@ SELECT 'modify_type_renamed_source_of_materialized_key' AS step;
 ALTER TABLE uk_mut_computed RENAME COLUMN a TO a2, MODIFY COLUMN a2 UInt32; -- { serverError NOT_IMPLEMENTED }
 
 -- UPDATE is checked against the renamed columns; the RENAME before it still applies.
+-- A Replicated database refuses ALTERs of different types in one query first.
 SELECT 'update_renamed_source_of_materialized_key' AS step;
-ALTER TABLE uk_mut_computed RENAME COLUMN a TO a2, UPDATE a2 = a2 + 1 WHERE 1; -- { serverError SUPPORT_IS_DISABLED }
+ALTER TABLE uk_mut_computed RENAME COLUMN a TO a2, UPDATE a2 = a2 + 1 WHERE 1; -- { serverError SUPPORT_IS_DISABLED, QUERY_IS_PROHIBITED }
 DROP TABLE uk_mut_computed;
 
 DROP TABLE IF EXISTS uk_mut_computed_nested;
