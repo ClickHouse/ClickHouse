@@ -156,8 +156,7 @@ ALWAYS_INLINE bool sliceContains(const NumericArraySlice<T> & slice, const UInt8
     }
 
 #if defined(__aarch64__)
-    /// Opaque start: otherwise the index can take the register of the test above, which is zero here, and every load of
-    /// the loop waits for that test. Not elsewhere: on x86 it costs an instruction per block.
+    /// Opaque start: otherwise the index reuses the register of the test above and every block load waits for that test.
     __asm__("" : "+r"(i));
 #endif
     for (; i + block_size <= slice.size; i += block_size)
