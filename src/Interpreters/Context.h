@@ -419,6 +419,9 @@ protected:
     using InteractiveCancelCallback = std::function<bool()>;
     InteractiveCancelCallback interactive_cancel_callback; /// Callback for usage in interactive sessions with CompletedPipelineExecutor
 
+    using ClientConnectedCallback = std::function<bool()>;
+    ClientConnectedCallback client_connected_callback; /// Returns false once the client has disconnected. Not inherited by copies.
+
     std::weak_ptr<QueryStatus> process_list_elem;  /// For tracking total resource usage for query.
     bool has_process_list_elem = false;     /// It's impossible to check if weak_ptr was initialized or not
     UInt64 normalized_query_hash = 0;       /// Hash of the normalized query text, used for `NORMALIZED_QUERY_HASH` quotas.
@@ -1551,6 +1554,9 @@ public:
 
     void setInteractiveCancelCallback(InteractiveCancelCallback && callback) { interactive_cancel_callback = callback; }
     InteractiveCancelCallback getInteractiveCancelCallback() const { return interactive_cancel_callback; }
+
+    void setClientConnectedCallback(ClientConnectedCallback && callback) { client_connected_callback = callback; }
+    ClientConnectedCallback getClientConnectedCallback() const { return client_connected_callback; }
 
     /** Set in executeQuery and InterpreterSelectQuery. Then it is used in QueryPipeline,
       *  to update and monitor information about the total number of resources spent for the query.
