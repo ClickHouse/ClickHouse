@@ -1,4 +1,5 @@
 #include <Interpreters/ActionLocksManager.h>
+#include <Interpreters/ActionLockTypes.h>
 #include <Storages/IStorage.h>
 #include <Common/ActionBlocker.h>
 #include <Common/tests/gtest_global_context.h>
@@ -15,20 +16,7 @@ namespace DB
 {
 namespace ActionLocks
 {
-    extern const StorageActionBlockType PartsMerge;
-    extern const StorageActionBlockType PartsFetch;
-    extern const StorageActionBlockType PartsSend;
-    extern const StorageActionBlockType ReplicationQueue;
-    extern const StorageActionBlockType DistributedSend;
-    extern const StorageActionBlockType PartsTTLMerge;
-    extern const StorageActionBlockType PartsMove;
-    extern const StorageActionBlockType PullReplicationLog;
-    extern const StorageActionBlockType Cleanup;
-    extern const StorageActionBlockType ViewRefresh;
-    extern const StorageActionBlockType VirtualPartsUpdate;
-    extern const StorageActionBlockType ReduceBlockingParts;
-    extern const StorageActionBlockType ViewRefreshPause;
-    extern const StorageActionBlockType StreamConsume;
+ACTION_LOCK_TYPES(ACTION_LOCK_DECLARE)
 }
 
 namespace
@@ -128,38 +116,20 @@ TEST(ActionLocksManager, StorageOwnershipSurvivesAddressReuse)
 
 TEST(ActionLocksManager, AllActionTypesHaveDisplayNames)
 {
-    /// A new `StorageActionBlockType` that is registered here but missed in
-    /// `getActionName` would make every `system.tables` scan fail with
-    /// LOGICAL_ERROR instead of just showing an incomplete list. Guard against
-    /// that by registering all known action types and expecting their full,
-    /// sorted set of display names back.
-    const std::vector<std::pair<StorageActionBlockType, String>> expected_names = {
-        {ActionLocks::PartsMerge, "merges"},
-        {ActionLocks::PartsFetch, "fetches"},
-        {ActionLocks::PartsSend, "replicated_sends"},
-        {ActionLocks::ReplicationQueue, "replication_queue"},
-        {ActionLocks::DistributedSend, "distributed_sends"},
-        {ActionLocks::PartsTTLMerge, "ttl_merges"},
-        {ActionLocks::PartsMove, "moves"},
-        {ActionLocks::PullReplicationLog, "pull_replication_log"},
-        {ActionLocks::Cleanup, "cleanup"},
-        {ActionLocks::ViewRefresh, "view_refresh"},
-        {ActionLocks::VirtualPartsUpdate, "virtual_parts_update"},
-        {ActionLocks::ReduceBlockingParts, "reduce_blocking_parts"},
-        {ActionLocks::ViewRefreshPause, "view_refresh_pause"},
-        {ActionLocks::StreamConsume, "streaming_consumption"},
-    };
-
+    /// The expected names are generated from the same `ACTION_LOCK_TYPES` list that
+    /// declares the constants and drives `getActionName`, so a new `StorageActionBlockType`
+    /// added without a display name breaks the build instead of making every
+    /// `system.tables` scan fail with LOGICAL_ERROR at runtime.
     ActionLocksManager manager(getContext().context);
     ActionBlocker blocker;
     auto storage = std::make_shared<ActionLocksTestStorage>(blocker);
 
     Names expected;
-    for (const auto & [action_type, name] : expected_names)
-    {
-        manager.add(storage, action_type);
-        expected.push_back(name);
-    }
+#define ADD_ACTION_LOCK(ID, VALUE, NAME) \
+    manager.add(storage, ActionLocks::ID); \
+    expected.push_back(NAME);
+    ACTION_LOCK_TYPES(ADD_ACTION_LOCK)
+#undef ADD_ACTION_LOCK
     std::ranges::sort(expected);
 
     EXPECT_EQ(manager.getStoppedActions(storage), expected);
