@@ -1065,6 +1065,7 @@ TEST(DistinctSetFilterWorkspace, PreparedKeysMatchActualAllocation)
     const std::vector<DataTypes> key_types{
         {u8}, {u64}, {u8, u16}, {u8, u32}, {u8, u64}, {u64, u64}, {u64, u64, u64},
         {std::make_shared<DataTypeNullable>(u8), u64},
+        {std::make_shared<DataTypeNullable>(u64), u64},
         {std::make_shared<DataTypeFixedString>(3), u64},
         {std::make_shared<DataTypeLowCardinality>(u64), u64},
         {std::make_shared<DataTypeArray>(u64)}};

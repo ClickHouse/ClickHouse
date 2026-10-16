@@ -36,6 +36,7 @@ REGISTER_FUNCTION(IsNaN)
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionIsNaN>(documentation);
+    factory.registerAlias("is_nan", "isNaN", FunctionFactory::Case::Insensitive);
 }
 
 }
