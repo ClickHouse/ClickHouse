@@ -1238,11 +1238,15 @@ std::map<std::pair<TypeIndex, String>, ChainedNodeToSubcolumnTransformer> chaine
 /// The special subcolumn holds all paths of a read in its first row, so the rewrite is valid only
 /// when every row of one table reaches one aggregation unfiltered.
 bool canOptimizeDistinctJSONPaths(
-    const QueryTreeNodePtr & query_node, const FunctionNode & function_node, const QueryTreeNodePtr & column_source, const ContextPtr & context)
+    const std::vector<QueryTreeNodePtr> & query_nodes,
+    const FunctionNode & function_node,
+    const QueryTreeNodePtr & column_source,
+    const ContextPtr & context)
 {
-    if (!query_node || !function_node.isAggregateFunction())
+    if (query_nodes.empty() || !function_node.isAggregateFunction())
         return false;
 
+    const auto & query_node = query_nodes.back();
     const auto & query = query_node->as<const QueryNode &>();
     if (query.hasWhere() || query.hasPrewhere() || query.hasGroupBy() || query.getJoinTreeNode().get() != column_source.get())
         return false;
@@ -1264,10 +1268,17 @@ bool canOptimizeDistinctJSONPaths(
     if (context->canUseParallelReplicasCustomKey() || settings[Setting::parallel_replicas_count] > 1)
         return false;
 
-    if (settings[Setting::read_overflow_mode] == OverflowMode::BREAK || settings[Setting::read_overflow_mode_leaf] == OverflowMode::BREAK
-        || settings[Setting::timeout_overflow_mode] == OverflowMode::BREAK
-        || settings[Setting::timeout_overflow_mode_leaf] == OverflowMode::BREAK || settings[Setting::partial_result_on_first_cancel])
-        return false;
+    /// The read limits of the enclosing queries apply to this read too.
+    for (const auto & node : query_nodes)
+    {
+        const auto & level_settings = node->as<const QueryNode &>().getContext()->getSettingsRef();
+        if (level_settings[Setting::read_overflow_mode] == OverflowMode::BREAK
+            || level_settings[Setting::read_overflow_mode_leaf] == OverflowMode::BREAK
+            || level_settings[Setting::timeout_overflow_mode] == OverflowMode::BREAK
+            || level_settings[Setting::timeout_overflow_mode_leaf] == OverflowMode::BREAK
+            || level_settings[Setting::partial_result_on_first_cancel])
+            return false;
+    }
 
     for (const auto & aggregate_function_node : collectAggregateFunctionNodes(query_node))
         if (hasArrayJoinFunctionNode(aggregate_function_node))
@@ -1686,7 +1697,7 @@ private:
         auto qualified_name = makeColumnInSource(column_source, column.name);
 
         if (function_node.getFunctionName() == "distinctJSONPaths"
-            && !canOptimizeDistinctJSONPaths(query_nodes.empty() ? nullptr : query_nodes.back(), function_node, column_source, getContext()))
+            && !canOptimizeDistinctJSONPaths(query_nodes, function_node, column_source, getContext()))
             return;
 
         /// The column belongs to an outer query, and the subquery reading it lists it among its

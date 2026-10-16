@@ -44,6 +44,11 @@ SELECT distinctJSONPaths(j) FROM t_djp_break SETTINGS max_block_size = 1, max_th
 SELECT distinctJSONPaths(j) FROM t_djp_break SETTINGS max_block_size = 1, max_threads = 1, max_rows_to_read = 1, read_overflow_mode = 'break', optimize_functions_to_subcolumns = 0;
 SELECT distinctJSONPaths(j) FROM t_djp_break SETTINGS max_block_size = 1, max_threads = 1, max_rows_to_read_leaf = 1, read_overflow_mode_leaf = 'break', optimize_functions_to_subcolumns = 1;
 SELECT distinctJSONPaths(j) FROM t_djp_break SETTINGS max_block_size = 1, max_threads = 1, max_rows_to_read_leaf = 1, read_overflow_mode_leaf = 'break', optimize_functions_to_subcolumns = 0;
+-- The limit of an enclosing query still applies when the subquery resets its own.
+SELECT * FROM (SELECT distinctJSONPaths(j) FROM t_djp_break SETTINGS max_rows_to_read = 0, read_overflow_mode = 'throw') SETTINGS enable_parallel_replicas = 0, max_block_size = 1, max_threads = 1, max_rows_to_read = 1, read_overflow_mode = 'break', optimize_functions_to_subcolumns = 1;
+SELECT * FROM (SELECT distinctJSONPaths(j) FROM t_djp_break SETTINGS max_rows_to_read = 0, read_overflow_mode = 'throw') SETTINGS enable_parallel_replicas = 0, max_block_size = 1, max_threads = 1, max_rows_to_read = 1, read_overflow_mode = 'break', optimize_functions_to_subcolumns = 0;
+SELECT * FROM (SELECT distinctJSONPaths(j) FROM t_djp_break SETTINGS max_rows_to_read_leaf = 0, read_overflow_mode_leaf = 'throw') SETTINGS enable_parallel_replicas = 0, max_block_size = 1, max_threads = 1, max_rows_to_read_leaf = 1, read_overflow_mode_leaf = 'break', optimize_functions_to_subcolumns = 1;
+SELECT * FROM (SELECT distinctJSONPaths(j) FROM t_djp_break SETTINGS max_rows_to_read_leaf = 0, read_overflow_mode_leaf = 'throw') SETTINGS enable_parallel_replicas = 0, max_block_size = 1, max_threads = 1, max_rows_to_read_leaf = 1, read_overflow_mode_leaf = 'break', optimize_functions_to_subcolumns = 0;
 
 -- SAMPLE: the first row of the part is outside the sample.
 DROP TABLE IF EXISTS t_djp_sample;
