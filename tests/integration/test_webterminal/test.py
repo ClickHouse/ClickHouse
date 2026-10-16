@@ -570,6 +570,36 @@ def test_tab_completion_respects_session_user():
         instance.query("DROP TABLE IF EXISTS default.hidden_completion_target")
 
 
+def test_ctrl_z_does_not_stop_server():
+    """Ctrl-Z in the embedded client must not suspend the server process.
+
+    The embedded client runs inside the server, so the "suspend" action of the
+    line editor (`raise(SIGSTOP)`) would stop the whole server. It is disabled by
+    the key binding, but the incremental history search (Ctrl-R) used to handle
+    Ctrl-Z by itself, bypassing the binding.
+    """
+    sock = _open_ws(instance.ip_address, 8123)
+    try:
+        _ws_send_text(sock, json.dumps({"type": "auth", "user": "default", "password": ""}))
+        output = _read_pty_until(sock, timeout=20, marker=":) ")
+        assert ":) " in output, f"no prompt from the embedded client: {output!r}"
+
+        # Ctrl-Z in the main loop, then Ctrl-R (history search) followed by Ctrl-Z.
+        _ws_send_binary(sock, b"\x1a")
+        _ws_send_binary(sock, b"\x12\x1a")
+        _read_pty_until(sock, timeout=1)
+
+        response = instance.http_request("ping", method="GET", timeout=10)
+        assert response.status_code == 200
+
+        # The session is still usable: Ctrl-U clears the line, then run a query.
+        _ws_send_binary(sock, b"\x15SELECT 1234 + 1\r")
+        output = _read_pty_until(sock, timeout=10, marker="1235")
+        assert "1235" in output, f"the embedded client does not respond: {output!r}"
+    finally:
+        sock.close()
+
+
 def test_session_keeps_user_settings():
     """The embedded client must keep the settings of the authenticated user.
 
