@@ -44,6 +44,14 @@
                     <table>metrics.prom_mixed</table>
                 </handler>
             </mixed_write>
+            <!-- The remote shard under an interserver secret. -->
+            <secret_write>
+                <url>/secret/write</url>
+                <handler>
+                    <type>write</type>
+                    <table>metrics.prom_secret</table>
+                </handler>
+            </secret_write>
             <restricted_api>
                 <url_prefix>/restricted_api</url_prefix>
                 <handler>

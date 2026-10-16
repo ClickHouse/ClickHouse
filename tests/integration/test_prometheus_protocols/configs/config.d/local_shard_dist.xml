@@ -53,5 +53,17 @@
                 </replica>
             </shard>
         </mixed_local_remote_dist>
+        <!-- The remote shard alone under an interserver secret, where a shard runs a request as the
+             user who made it rather than as a cluster user. -->
+        <secret_remote_dist>
+            <secret>prometheus_local_shard_secret</secret>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>9000</port>
+                    <default_database>remote_shard</default_database>
+                </replica>
+            </shard>
+        </secret_remote_dist>
     </remote_servers>
 </clickhouse>

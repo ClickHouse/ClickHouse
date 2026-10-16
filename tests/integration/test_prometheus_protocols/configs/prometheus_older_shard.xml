@@ -1,0 +1,21 @@
+<clickhouse>
+    <prometheus>
+        <port>9093</port>
+        <handlers>
+            <older_write>
+                <url>/older/write</url>
+                <handler>
+                    <type>write</type>
+                    <table>default.prom_older</table>
+                </handler>
+            </older_write>
+            <older_api>
+                <url_prefix>/older_api</url_prefix>
+                <handler>
+                    <type>api_v1</type>
+                    <table>default.prom_older</table>
+                </handler>
+            </older_api>
+        </handlers>
+    </prometheus>
+</clickhouse>
