@@ -13,10 +13,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 BASE="${USER_FILES_PATH}/05321_sqlite_enum_constant_${CLICKHOUSE_DATABASE}"
 DB_PATH="${BASE}/data.sqlite"
 
+# Fuzzed `CREATE`/`DROP` queries can leave detached tables or `__fuzz_N` clones referencing the deleted SQLite file.
+# Keep DDL deterministic while retaining query fuzzing, and always execute the cleanup drops.
 function cleanup()
 {
-    ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_05321_check"
-    ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_05321"
+    ${CLICKHOUSE_CLIENT} --ast_fuzzer_any_query=0 --ignore_drop_queries_probability=0 --query "DROP TABLE IF EXISTS t_05321_check" || return
+    ${CLICKHOUSE_CLIENT} --ast_fuzzer_any_query=0 --ignore_drop_queries_probability=0 --query "DROP TABLE IF EXISTS t_05321" || return
     rm -rf "${BASE}"
 }
 trap cleanup EXIT
@@ -30,7 +32,7 @@ CREATE TABLE tbl (s TEXT NOT NULL, n INTEGER NOT NULL, f REAL NOT NULL) STRICT;
 INSERT INTO tbl VALUES ('7', 3, 3.0), ('3', 3, 7.0), ('x', 42, 42.0);
 "
 
-${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_05321 (s String, n Int64, f Float64) ENGINE = SQLite('${DB_PATH}', 'tbl')"
+${CLICKHOUSE_CLIENT} --ast_fuzzer_any_query=0 --query "CREATE TABLE t_05321 (s String, n Int64, f Float64) ENGINE = SQLite('${DB_PATH}', 'tbl')"
 
 E="CAST('7', 'Enum8(\\'7\\' = 3)')"
 E2="CAST('3', 'Enum8(\\'3\\' = 4)')"
@@ -99,8 +101,8 @@ ${CLICKHOUSE_CLIENT} --query "SELECT s FROM t_05321 WHERE s = $E SETTINGS extern
 function check_constraint()
 {
     echo "$1"
-    ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_05321_check"
-    ${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_05321_check (n Int64, s String, CONSTRAINT c CHECK $2) ENGINE = MergeTree ORDER BY n"
+    ${CLICKHOUSE_CLIENT} --ast_fuzzer_any_query=0 --ignore_drop_queries_probability=0 --query "DROP TABLE IF EXISTS t_05321_check"
+    ${CLICKHOUSE_CLIENT} --ast_fuzzer_any_query=0 --query "CREATE TABLE t_05321_check (n Int64, s String, CONSTRAINT c CHECK $2) ENGINE = MergeTree ORDER BY n"
     ${CLICKHOUSE_CLIENT} --query "INSERT INTO t_05321_check VALUES (3, '7')" 2>&1 | grep -oE '\([A-Z_]+\)' | head -1
     ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM t_05321_check"
 }

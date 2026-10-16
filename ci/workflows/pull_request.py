@@ -62,12 +62,12 @@ PLAIN_FUNCTIONAL_TEST_JOB = [
 
 # Pull requests run the integration tests only in targeted jobs (the changed tests, the
 # tests covering the changed lines and the tests that failed in the PR before, each run
-# once), except for the full `arm_binary` run below and, with the `ci-coverage` label, the full
-# LLVM coverage run and the tests excluded from it.
+# once), except for the full `arm_binary` run below and, with the `ci-coverage` or
+# `ci-llvm-coverage` label, the full LLVM coverage run and the tests excluded from it.
 INTEGRATION_TARGETED_JOBS = JobConfigs.integration_test_targeted_pr_jobs
 
-# The LLVM coverage jobs run in pull requests only with the `ci-coverage` label (see
-# `should_skip_job`); by default these `arm_binary` jobs run the same configurations instead.
+# The LLVM coverage jobs run in pull requests only with the `ci-coverage` or `ci-llvm-coverage`
+# label (see `should_skip_job`); by default these `arm_binary` jobs run the same configurations instead.
 # Master runs the coverage jobs on every commit.
 FUNCTIONAL_COVERAGE_REPLACEMENT_JOBS = (
     JobConfigs.functional_tests_arm_binary_coverage_replacement_pr_jobs
@@ -90,7 +90,6 @@ workflow = Workflow.Config(
         JobConfigs.code_review.set_run_after(CODE_REVIEW_BLOCKING_JOBS),
         JobConfigs.docs_job_mintlify,
         JobConfigs.fast_test,
-        *JobConfigs.darwin_fast_test_jobs,
         *JobConfigs.tidy_build_arm_jobs,
         *[job.set_run_after(STYLE_AND_FAST_TESTS) for job in JobConfigs.build_jobs],
         *[
@@ -124,6 +123,10 @@ workflow = Workflow.Config(
                 CORE_BLOCKING_JOB_NAMES if job.name not in CORE_BLOCKING_JOB_NAMES else []
             )
             for job in INTEGRATION_TARGETED_JOBS
+        ],
+        *[
+            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.integration_test_contrib_tsan_pr_jobs
         ],
         JobConfigs.ast_fuzzer_targeted_pr_jobs[0].set_allow_failure(),
         JobConfigs.ast_fuzzer_targeted_pr_jobs[1].set_allow_failure(),

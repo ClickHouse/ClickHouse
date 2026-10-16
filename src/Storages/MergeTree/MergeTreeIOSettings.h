@@ -8,6 +8,7 @@
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
 #include <Interpreters/Context_fwd.h>
+#include <Storages/MergeTree/StreamBaseManifest.h>
 #include <Common/StringValueFilter.h>
 
 namespace DB
@@ -71,6 +72,11 @@ struct MergeTreeReaderSettings
     bool is_compressed = true;
     /// If we should write/read to/from the query condition cache.
     bool use_query_condition_cache = false;
+    /// If the query condition cache should serve conditions involving the current time by deriving
+    /// deterministic conditions from them (rounding time constants onto a grid).
+    bool use_query_condition_cache_for_time_conditions = false;
+    /// Grid step for the above, as a fraction of the distance between the constant and the current time.
+    double query_condition_cache_time_condition_grid_factor = 1.0;
     /// Folded into every query condition cache key, see `queryConditionCacheSettingsSalt`.
     UInt64 query_condition_cache_settings_salt = 0;
     bool enable_columns_cache_reads = false;
@@ -196,6 +202,10 @@ struct MergeTreeWriterSettings
     /// per-column `MergedColumnOnlyOutputStream`, which shares the horizontal
     /// `MergedBlockOutputStream`'s archive.
     PackedFilesWriter * external_packed_skip_indices_writer = nullptr;
+    /// Shared by every producer writing into one part directory, so that a column stream and a
+    /// skip index substream cannot claim the same base name (and hence the same marks file).
+    /// Null means no coordination is requested.
+    StreamBaseManifestPtr stream_base_manifest;
     bool use_adaptive_write_buffer_for_dynamic_subcolumns{};
     size_t min_columns_to_activate_adaptive_write_buffer{};
     size_t adaptive_write_buffer_initial_size{};
