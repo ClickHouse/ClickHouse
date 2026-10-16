@@ -1305,9 +1305,20 @@ void MergeTreeData::checkProperties(
                         checkSuspiciousIndices(index_expression_ptr);
                 }
 
+                const IndexDescription * old_index = nullptr;
+                /// The create path and the projection recursion pass the same metadata object as both
+                /// arguments, so an index found there is the one being declared and nothing can be inherited.
+                /// Definitions are not compared: `RENAME COLUMN` rewrites an index's AST without redeclaring it.
+                if (&old_metadata != &new_metadata)
+                    for (const auto & candidate : old_metadata.secondary_indices)
+                        if (candidate.name == index.name)
+                            old_index = &candidate;
+
                 if (!attach && !allow_minmax_index_for_json)
                     checkMinMaxIndexForJSON(index);
-                MergeTreeIndexFactory::instance().validate(index, attach, *getSettings());
+                /// An index already in the old metadata was validated when it was declared, so re-validating
+                /// it as new would make an unrelated `ALTER` fail on a definition the server accepted before.
+                MergeTreeIndexFactory::instance().validate(index, attach || old_index != nullptr, *getSettings());
 
                 /// An index the server generates from a setting is not the user's declaration, so it
                 /// must not be the reason a statement is refused; `addImplicitIndicesForColumn` drops
@@ -1316,15 +1327,6 @@ void MergeTreeData::checkProperties(
                 {
                     if (auto failure = tryEvaluateIndexExpression(index))
                     {
-                        const IndexDescription * old_index = nullptr;
-                        /// The create path and the projection recursion pass the same metadata object as both
-                        /// arguments, so an index found there is the one being declared and nothing can be inherited.
-                        /// Definitions are not compared: `RENAME COLUMN` rewrites an index's AST without redeclaring it.
-                        if (&old_metadata != &new_metadata)
-                            for (const auto & candidate : old_metadata.secondary_indices)
-                                if (candidate.name == index.name)
-                                    old_index = &candidate;
-
                         const bool inherited = old_index && tryEvaluateIndexExpression(*old_index);
 
                         if (!inherited)

@@ -48,6 +48,9 @@ def test_legacy_nested_string_index_attaches(started_cluster):
         ) == "1\n"
         assert "NOT_IMPLEMENTED" in node.query_and_get_error(f"INSERT INTO {table} VALUES ([['new']])")
 
+        # An unrelated ALTER revalidates every index of the table, including the inherited legacy one.
+        node.query(f"ALTER TABLE {table} ADD COLUMN n UInt8 DEFAULT 0")
+
         node.query(f"ALTER TABLE {table} DROP INDEX idx")
         node.query(f"INSERT INTO {table} VALUES ([['new']])")
         assert node.query(f"SELECT count() FROM {table}") == "2\n"
@@ -65,10 +68,11 @@ def test_legacy_nested_fixed_string_index_attaches(started_cluster):
         assert node.query(
             f"SELECT count() FROM system.data_skipping_indices WHERE database = 'default' AND table = '{table}' AND name = 'idx'"
         ) == "1\n"
-        node.query(f"INSERT INTO {table} VALUES ([['abcdefgh', 'ijklmnop']])")
+        node.query(f"ALTER TABLE {table} ADD COLUMN n UInt8 DEFAULT 0")
+        node.query(f"INSERT INTO {table} VALUES ([['abcdefgh', 'ijklmnop']], 1)")
         node.query(f"DETACH TABLE {table} SYNC")
         node.query(f"ATTACH TABLE {table}")
-        node.query(f"INSERT INTO {table} VALUES ([['qrstuvwx', 'yzabcdef']])")
+        node.query(f"INSERT INTO {table} VALUES ([['qrstuvwx', 'yzabcdef']], 2)")
         assert node.query(f"SELECT count() FROM {table}") == "2\n"
     finally:
         node.query(f"DROP TABLE IF EXISTS {table} SYNC")
