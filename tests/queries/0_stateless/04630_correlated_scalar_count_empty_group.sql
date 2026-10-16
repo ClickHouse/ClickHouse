@@ -73,6 +73,14 @@ SELECT o.k,
 FROM values('k UInt8', (1), (2)) AS o
 ORDER BY o.k;
 
+-- A LowCardinality projection is restored too. A LowCardinality(Nullable) one can be NULL over a non-empty
+-- group (k=2), so it keeps the NULL.
+SELECT o.k,
+    (SELECT toLowCardinality(toString(count())) FROM values('k UInt8', (2)) AS i WHERE i.k = o.k) AS c_lc,
+    (SELECT toLowCardinality(nullIf(toString(count()), '1')) FROM values('k UInt8', (2)) AS i WHERE i.k = o.k) AS c_lc_nullable
+FROM values('k UInt8', (1), (2)) AS o
+ORDER BY o.k;
+
 -- A non-deterministic or side-effecting function cannot be evaluated once for every empty group, so the restore
 -- is not applied.
 SELECT count()
@@ -167,17 +175,16 @@ SELECT o.k, (SELECT count() FROM values('k Nullable(Int32)', (NULL), (NULL), (5)
 FROM values('k Nullable(Int32)', (NULL), (5)) AS o
 ORDER BY o.k NULLS LAST;
 
--- quantilesExact() has returns_default_when_only_null but a non-Nullable Array result, so the restore is not
--- applied (its result cannot be made Nullable). Assert the restore's ifNull wrapper is present for count() but
--- absent for quantilesExact(), which pins the Nullable-result guard (a plain result oracle cannot: an unmatched
--- Array is already join-filled with []).
+-- [count()] cannot be made Nullable, so the restore is not applied. Assert the restore's ifNull wrapper is
+-- present for count() but absent for [count()], which pins the Nullable-result guard (a plain result oracle
+-- cannot: an unmatched Array is already join-filled with []).
 SELECT count() > 0
 FROM (EXPLAIN actions = 1 SELECT o.k, (SELECT count() FROM values('k UInt8', (1), (2)) AS i WHERE i.k = o.k) FROM values('k UInt8', (1), (2)) AS o)
 WHERE explain ILIKE '%ifNull(%count()%';
 
 SELECT count()
-FROM (EXPLAIN actions = 1 SELECT o.k, (SELECT quantilesExact(0.5)(i.k) FROM values('k UInt8', (1), (2)) AS i WHERE i.k = o.k) FROM values('k UInt8', (1), (2)) AS o)
-WHERE explain ILIKE '%ifNull(%quantilesExact%';
+FROM (EXPLAIN actions = 1 SELECT o.k, (SELECT [count()] FROM values('k UInt8', (1), (2)) AS i WHERE i.k = o.k) FROM values('k UInt8', (1), (2)) AS o)
+WHERE explain ILIKE '%ifNull(%array(count())%';
 
 -- countOrNull() inherits count()'s returns_default_when_only_null but already returns a Nullable result, so it
 -- can legitimately be NULL over a non-empty group; the restore must not apply (no ifNull wrapper in the plan).

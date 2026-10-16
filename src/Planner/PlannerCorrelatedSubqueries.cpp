@@ -209,7 +209,8 @@ std::optional<Field> tryGetScalarSubqueryEmptyGroupValue(const QueryTreeNodePtr 
     /// Without an aggregate there is no row over an empty group, so NULL is already the right value.
     const auto & projection_nodes = query_node->getProjection().getNodes();
     if (projection_nodes.size() != 1 || !hasAggregateFunctionNodes(projection_nodes.front())
-        || projection_nodes.front()->getResultType()->isNullable() || !query_node->getResultType()->isNullable())
+        || isNullableOrLowCardinalityNullable(projection_nodes.front()->getResultType())
+        || !isNullableOrLowCardinalityNullable(query_node->getResultType()))
         return {};
 
     /// Evaluated once over one row, so short-circuit functions skip the branches the empty group does not take.
