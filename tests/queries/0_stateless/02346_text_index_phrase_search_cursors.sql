@@ -164,6 +164,23 @@ SELECT count(), sum(id) FROM (
     SELECT id FROM tab_chunks WHERE hasPhrase(message, 'beta alpha') ORDER BY id DESC LIMIT 100000
     SETTINGS use_text_index_postings_cache = 1, optimize_read_in_order = 1, max_threads = 1, max_block_size = 4096);
 
+SELECT 'A phrase proven false without a codec reads no positions';
+DROP TABLE IF EXISTS tab_false;
+CREATE TABLE tab_false
+(
+    id UInt32,
+    message String,
+    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, support_phrase_search = 1)
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS allow_experimental_text_index_phrase_search = 1, text_index_posting_list_codec = 'none', index_granularity = 128;
+-- alpha and beta lie in disjoint rows, so the analysis proves the phrase false.
+INSERT INTO tab_false SELECT number, multiIf(number < 1000, 'alpha gamma', number < 2000, 'beta gamma', 'delta') FROM numbers(3000);
+SELECT count(), sum(id) FROM tab_false WHERE hasPhrase(message, 'alpha beta') OR hasToken(message, 'gamma');
+SELECT count(), sum(id) FROM tab_false WHERE hasPhrase(message, 'alpha beta') OR hasToken(message, 'gamma') SETTINGS use_skip_indexes = 0;
+DROP TABLE tab_false;
+
 SELECT 'Every search walks cursors, or falls back without a codec';
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, countIf(ProfileEvents['TextIndexPhraseCursorSearches'] > 0), countIf(ProfileEvents['TextIndexPhraseFallbacks'] > 0), count()

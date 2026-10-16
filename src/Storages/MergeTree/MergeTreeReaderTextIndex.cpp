@@ -1323,6 +1323,9 @@ void MergeTreeReaderTextIndex::applyPostingsPhrase(IColumn & column, size_t colu
     if (!positions_stream || search_query.getPhraseTokens().empty())
         return;
 
+    if (granule->getAnalyzer().getQueryBuilder(search_query).is_failed)
+        return;
+
     UInt8 * out = column_data.data() + column_offset;
     if (search_query.getPhraseTokens().size() == 1)
     {

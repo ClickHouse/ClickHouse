@@ -66,6 +66,9 @@ Cached chunks between searched ones
 2341	57530075
 7143	178589286
 7143	178589286
+A phrase proven false without a codec reads no positions
+2000	1999000
+2000	1999000
 Every search walks cursors, or falls back without a codec
 02346_cursors	10	0	10
 02346_cursors_none	0	10	10
