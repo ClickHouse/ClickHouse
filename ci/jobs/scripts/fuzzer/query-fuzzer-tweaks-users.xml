@@ -39,6 +39,7 @@
             <ast_fuzzer_any_query>true</ast_fuzzer_any_query>
 
             <ai_function_allow_insecure_endpoint>1</ai_function_allow_insecure_endpoint>
+            <allow_block_nested_loop_join>1</allow_block_nested_loop_join>
             <allow_create_index_without_type>1</allow_create_index_without_type>
             <allow_custom_error_code_in_throwif>1</allow_custom_error_code_in_throwif>
             <allow_ddl>1</allow_ddl>
@@ -67,6 +68,7 @@
             <allow_experimental_join_right_table_sorting>1</allow_experimental_join_right_table_sorting>
             <allow_experimental_json_lazy_type_hints>1</allow_experimental_json_lazy_type_hints>
             <allow_experimental_kafka_offsets_storage_in_keeper>1</allow_experimental_kafka_offsets_storage_in_keeper>
+            <allow_experimental_lateral_join>1</allow_experimental_lateral_join>
             <allow_experimental_materialized_postgresql_table>1</allow_experimental_materialized_postgresql_table>
             <allow_experimental_nlp_functions>1</allow_experimental_nlp_functions>
             <allow_experimental_object_storage_queue_hive_partitioning>1</allow_experimental_object_storage_queue_hive_partitioning>
