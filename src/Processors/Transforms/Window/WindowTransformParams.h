@@ -24,6 +24,9 @@ struct WindowTransformParams
     const std::vector<size_t> order_by_indices;
     const std::vector<bool> should_materialize;
     const RangeOffsetComparator range_offset_comparator;
+    /// Under ROWS every row is its own peer group, so the ORDER BY peer groups read by rank() and
+    /// dense_rank() are tracked separately. Set only when such a function is present.
+    const bool separate_order_by_peer_groups;
 
 public:
     static WindowTransformParams create(

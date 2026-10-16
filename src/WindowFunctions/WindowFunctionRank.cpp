@@ -30,13 +30,15 @@ struct WindowFunctionRank final : public StatelessWindowFunction
 
     bool allocatesMemoryInArena() const override { return false; }
 
+    bool needsOrderByPeerGroup() const override { return true; }
+
     void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) const override
     {
         IColumn & to = *transform->blocks.blockAt(transform->current.location.block)
             .result_columns[function_index];
         assert_cast<ColumnUInt64 &>(to).getData().push_back(
-            transform->peer_group_start.row_index_in_partition + 1);
+            transform->orderByPeerGroupStart().row_index_in_partition + 1);
     }
 };
 

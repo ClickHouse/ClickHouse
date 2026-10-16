@@ -333,6 +333,16 @@ void WindowTransform::computeReadyRows()
                 peer_group_start = current;
             checkInvariants();
 
+            if (params.separate_order_by_peer_groups && order_by_peer_group_start.location != current.location
+                && blocks.blockAt(current.location.block).index.order_by_peer_group_starts[current.location.row])
+            {
+                order_by_peer_group_start = RowPoint{
+                    .location = current.location,
+                    .row_index_in_partition = current.row_index_in_partition,
+                    .peer_group_index_in_partition = order_by_peer_group_start.peer_group_index_in_partition + 1,
+                };
+            }
+
             frame.advance(blocks, current, partition);
             if (!frame.bounds().fully_visible)
             {
@@ -414,6 +424,7 @@ void WindowTransform::startNextPartition()
     chassert(current.location == partition_start);
     current = {partition_start};
     peer_group_start = {partition_start};
+    order_by_peer_group_start = {partition_start};
     frame.enterPartition(partition_start);
     prev_frame = FrameBounds{.start = {partition_start}, .end = {partition_start}, .fully_visible = true};
 
