@@ -63,6 +63,15 @@ SELECT 'ok';
 SELECT reinterpretAsUInt128(concat(s, t)), count() OVER () FROM (SELECT toString(number % 10) AS s, 'a' AS t FROM numbers(1000000))
 FORMAT Null SETTINGS max_memory_usage = '40M', max_block_size = 1024, max_threads = 1;
 SELECT 'ok';
+SELECT s, length(t) AS h, count() OVER () AS n FROM (SELECT toString(number % 10) AS s, CAST(s AS String) AS t FROM numbers(1000000))
+FORMAT Null SETTINGS max_memory_usage = '48M', max_block_size = 1024, max_threads = 1;
+SELECT 'ok';
+SELECT s, length(t) AS h, count() OVER () AS n FROM (SELECT toString(number % 10) AS s, toNullable(s) AS t FROM numbers(1000000))
+FORMAT Null SETTINGS max_memory_usage = '48M', max_block_size = 1024, max_threads = 1;
+SELECT 'ok';
+SELECT s, length(t) AS h, count() OVER () AS n FROM (SELECT toNullable(toString(number % 10)) AS s, assumeNotNull(s) AS t FROM numbers(1000000))
+FORMAT Null SETTINGS max_memory_usage = '48M', max_block_size = 1024, max_threads = 1;
+SELECT 'ok';
 
 SELECT 'functions with side effects are computed after window functions';
 SELECT length(s) + sleepEachRow(0.0001) AS b, count() OVER (ORDER BY number DESC) AS n

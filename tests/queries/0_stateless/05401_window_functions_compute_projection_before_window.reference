@@ -50,6 +50,9 @@ ok
 ok
 ok
 ok
+ok
+ok
+ok
 functions with side effects are computed after window functions
 ok
 LIMIT

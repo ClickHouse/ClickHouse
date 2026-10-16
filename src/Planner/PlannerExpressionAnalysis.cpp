@@ -354,8 +354,13 @@ size_t getMinimumSizeOfUnboundedValue(const IDataType & type)
   */
 QueryTreeNodePtr resolveColumnExpression(QueryTreeNodePtr node)
 {
-    while (const auto * column_node = node->as<ColumnNode>())
+    static constexpr size_t max_steps = 100;
+    for (size_t step = 0; step < max_steps; ++step)
     {
+        const auto * column_node = node->as<ColumnNode>();
+        if (!column_node)
+            break;
+
         if (column_node->hasExpression() && column_node->getExpression()->getNodeType() == QueryTreeNodeType::CONSTANT)
             return column_node->getExpression();
 
@@ -503,38 +508,87 @@ void collectExpressionsComputableBeforeWindow(
     }
 }
 
-/** Collect the columns and the aggregate function results that are read after the window step
+/** Collect the columns of tables and the aggregate function results from which the values of the expression
+  * are computed, following the columns of subqueries to their projection expressions and the columns with
+  * expressions (`ALIAS` columns) to their expressions. Two values can share memory (for example, if one is
+  * an identity `CAST` of the other) only if they are computed from common base columns.
+  */
+void collectBaseColumns(const QueryTreeNodePtr & node, QueryTreeNodePtrWithHashSet & base_columns, size_t depth = 0)
+{
+    static constexpr size_t max_depth = 100;
+    if (depth > max_depth)
+    {
+        base_columns.insert(node);
+        return;
+    }
+
+    if (node->getNodeType() == QueryTreeNodeType::CONSTANT)
+        return;
+
+    if (const auto * column_node = node->as<ColumnNode>())
+    {
+        auto column_source = column_node->getColumnSourceOrNull();
+        if (column_source && column_source->getNodeType() == QueryTreeNodeType::LAMBDA_ARGS)
+            return;
+
+        if (column_node->hasExpression())
+        {
+            collectBaseColumns(column_node->getExpression(), base_columns, depth + 1);
+            return;
+        }
+
+        auto column_expression = resolveColumnExpression(node);
+        if (column_expression.get() == node.get())
+            base_columns.insert(node);
+        else
+            collectBaseColumns(column_expression, base_columns, depth + 1);
+        return;
+    }
+
+    if (const auto * function_node = node->as<FunctionNode>(); function_node && function_node->isAggregateFunction() && !function_node->isWindowFunction())
+    {
+        base_columns.insert(node);
+        return;
+    }
+
+    for (const auto & child : node->getChildren())
+        if (child)
+            collectBaseColumns(child, base_columns, depth + 1);
+}
+
+/** Collect the base columns (see `collectBaseColumns`) of the values that are read after the window step
   * by anything except the expressions computed before it.
   * It includes the arguments of window functions, which the window step buffers anyway.
   */
-void collectInputsReadAfterWindow(
+void collectBaseColumnsReadAfterWindow(
     const QueryTreeNodePtr & node,
     const QueryTreeNodePtrWithHashSet & expressions_before_window,
-    QueryTreeNodePtrWithHashSet & inputs)
+    QueryTreeNodePtrWithHashSet & base_columns)
 {
     if (!node || expressions_before_window.contains(node))
         return;
 
     if (node->getNodeType() == QueryTreeNodeType::COLUMN)
     {
-        inputs.insert(resolveColumnExpression(node));
+        collectBaseColumns(node, base_columns);
         return;
     }
 
     if (const auto * function_node = node->as<FunctionNode>(); function_node && function_node->isAggregateFunction() && !function_node->isWindowFunction())
     {
-        inputs.insert(node);
+        base_columns.insert(node);
         return;
     }
 
     for (const auto & child : node->getChildren())
-        collectInputsReadAfterWindow(child, expressions_before_window, inputs);
+        collectBaseColumnsReadAfterWindow(child, expressions_before_window, base_columns);
 }
 
 /** Select the expressions worth computing before the window functions.
   * Window functions buffer their input, so computing a projection expression before them lets the window step
-  * buffer its result instead of the columns it reads, but only the columns that nothing else reads after
-  * the window step are freed. The expressions that read common columns are selected or rejected together:
+  * buffer its result instead of the values it reads, but a value is freed only if nothing else read after
+  * the window step can share its memory. This is assumed only if they have no common base columns, otherwise
+  * the value is not credited. The expressions with common base columns are selected or rejected together:
   * only if the maximum size of their results is not larger than a lower bound of the size of the values they free,
   * so the buffered rows can not become larger.
   */
@@ -546,11 +600,16 @@ QueryTreeNodes selectExpressionsWorthComputingBeforeWindow(
     for (const auto & candidate : candidates)
         candidate_nodes.insert(candidate.node);
 
-    QueryTreeNodePtrWithHashSet inputs_read_after_window;
-    collectInputsReadAfterWindow(query_node.getProjectionNode(), candidate_nodes, inputs_read_after_window);
-    collectInputsReadAfterWindow(query_node.getOrderByNode(), candidate_nodes, inputs_read_after_window);
-    collectInputsReadAfterWindow(query_node.getInterpolate(), candidate_nodes, inputs_read_after_window);
-    collectInputsReadAfterWindow(query_node.getLimitByNode(), candidate_nodes, inputs_read_after_window);
+    QueryTreeNodePtrWithHashSet base_columns_read_after_window;
+    collectBaseColumnsReadAfterWindow(query_node.getProjectionNode(), candidate_nodes, base_columns_read_after_window);
+    collectBaseColumnsReadAfterWindow(query_node.getOrderByNode(), candidate_nodes, base_columns_read_after_window);
+    collectBaseColumnsReadAfterWindow(query_node.getInterpolate(), candidate_nodes, base_columns_read_after_window);
+    collectBaseColumnsReadAfterWindow(query_node.getLimitByNode(), candidate_nodes, base_columns_read_after_window);
+
+    std::vector<QueryTreeNodePtrWithHashSet> candidates_base_columns(candidates.size());
+    for (size_t i = 0; i < candidates.size(); ++i)
+        for (const auto & input : candidates[i].unbounded_inputs)
+            collectBaseColumns(input.node, candidates_base_columns[i]);
 
     QueryTreeNodes result;
     std::vector<bool> visited(candidates.size(), false);
@@ -560,7 +619,7 @@ QueryTreeNodes selectExpressionsWorthComputingBeforeWindow(
         if (visited[group_start])
             continue;
 
-        /// The group of candidates connected by common inputs.
+        /// The group of candidates connected by common base columns.
         std::vector<size_t> group{group_start};
         visited[group_start] = true;
         QueryTreeNodePtrWithHashSet group_inputs = candidates[group_start].unbounded_inputs;
@@ -572,12 +631,12 @@ QueryTreeNodes selectExpressionsWorthComputingBeforeWindow(
                 if (visited[other])
                     continue;
 
-                bool has_common_inputs = false;
-                for (const auto & input : candidates[other].unbounded_inputs)
-                    if (candidates[group[i]].unbounded_inputs.contains(input))
-                        has_common_inputs = true;
+                bool has_common_base_columns = false;
+                for (const auto & base_column : candidates_base_columns[other])
+                    if (candidates_base_columns[group[i]].contains(base_column))
+                        has_common_base_columns = true;
 
-                if (!has_common_inputs)
+                if (!has_common_base_columns)
                     continue;
 
                 visited[other] = true;
@@ -587,9 +646,24 @@ QueryTreeNodes selectExpressionsWorthComputingBeforeWindow(
         }
 
         size_t minimum_size_of_freed_inputs = 0;
+        QueryTreeNodePtrWithHashSet credited_base_columns;
         for (const auto & input : group_inputs)
-            if (!inputs_read_after_window.contains(input))
-                minimum_size_of_freed_inputs += getMinimumSizeOfUnboundedValue(*input.node->getResultType());
+        {
+            QueryTreeNodePtrWithHashSet input_base_columns;
+            collectBaseColumns(input.node, input_base_columns);
+
+            /// A value without base columns, such as `materialize('a')`, may share memory with anything.
+            bool can_be_freed = !input_base_columns.empty();
+            for (const auto & base_column : input_base_columns)
+                if (base_columns_read_after_window.contains(base_column) || credited_base_columns.contains(base_column))
+                    can_be_freed = false;
+
+            if (!can_be_freed)
+                continue;
+
+            credited_base_columns.insert(input_base_columns.begin(), input_base_columns.end());
+            minimum_size_of_freed_inputs += getMinimumSizeOfUnboundedValue(*input.node->getResultType());
+        }
 
         size_t maximum_size_of_results = 0;
         for (size_t candidate_index : group)
