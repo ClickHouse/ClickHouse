@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: long
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -15,7 +16,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # same query with the feature off: the counts as a multiset, which ties cannot reorder, and every returned row against
 # the row of its key in the full aggregation, which catches a group whose count lost records or source cells. The last
 # two columns say whether the merge skipped units and records. The cells for an ascending order, a throw-mode group
-# limit and `WITH TIES` must not prune. Each cell runs in its own clickhouse-local process, so the counters in
+# limit and `WITH TIES` must not prune. `max_threads_min_free_memory_per_thread = 0` keeps the threads of every
+# cell whatever the free memory. Each cell runs in its own clickhouse-local process, so the counters in
 # `system.events` belong to it alone.
 
 function check()
@@ -27,7 +29,8 @@ function check()
     local columns
     columns=$(echo "$keys, $aggregates" | sed -E 's/[^,]* AS ([a-z]+)/\1/g')
     $CLICKHOUSE_LOCAL --query "
-    SET max_threads = 4, max_block_size = 8192, adaptive_aggregator_freeze_threshold = 128;
+    SET max_threads = 4, max_threads_min_free_memory_per_thread = 0, max_block_size = 8192;
+    SET adaptive_aggregator_freeze_threshold = 128;
     SET collect_hash_table_stats_during_aggregation = 0, max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0;
     SET query_plan_enable_optimizations = 1, query_plan_aggregation_bucket_top_k = 1, enable_adaptive_aggregator = 1;
     SET $settings;

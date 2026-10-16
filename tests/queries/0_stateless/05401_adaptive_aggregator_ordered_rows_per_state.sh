@@ -7,14 +7,15 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # `deltaSumTimestamp` needs the rows of each state in order, which the merge of the adaptive aggregator cannot keep: it
 # adds the staged rows of every thread to the same states, and a thawed table holds rows newer than the records its
 # thread staged before. An aggregation with such a function takes the ordinary path, which merges the states of the
-# threads with `merge`. Each lane of `UNION ALL` is its own thread, and the tables freeze at their first key. In the
+# threads with `merge`. Each lane of `UNION ALL` is its own thread, `max_threads_min_free_memory_per_thread = 0`
+# keeps both threads whatever the free memory, and the tables freeze at their first key. In the
 # first query the lanes hold disjoint keys, which the threads stage until they thaw. In the second, a combinator of the
 # function runs over lanes that hold the same keys over disjoint ranges of time. Each result matches the same query
 # with the feature off, and nothing is staged, while `sum` stages its records under the same settings. The thresholds
 # are pinned because the runner randomizes them, and each part runs in its own clickhouse-local process, so the
 # counters in `system.events` belong to it alone.
 settings="
-SET max_threads = 2, max_block_size = 1024;
+SET max_threads = 2, max_threads_min_free_memory_per_thread = 0, max_block_size = 1024;
 SET adaptive_aggregator_freeze_threshold = 1, adaptive_aggregator_freeze_threshold_bytes = 0;
 SET group_by_two_level_threshold = 100000000, group_by_two_level_threshold_bytes = 100000000;
 SET collect_hash_table_stats_during_aggregation = 0;
