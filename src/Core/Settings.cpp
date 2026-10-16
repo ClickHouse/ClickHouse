@@ -11077,15 +11077,14 @@ When the hash join build side was converted to a FixedHashMap (see `enable_join_
         {"26.6", false, true, "New setting."}) \
     DECLARE(Bool, enable_join_runtime_filters_index_analysis, true, R"(
 Prune granules on the probe side of a JOIN with the runtime filter collected from the build side, see `enable_join_runtime_filters`.
-Only has an effect if `use_skip_indexes_on_data_read = 1`.
 Only a join key that is a primary key column of the probe side, or is covered by a `minmax`, `set` or `bloom_filter` skip index, can be pruned.
 If the runtime filter kept the exact key values, the pruning predicate is an `IN` set of them, otherwise the minimum/maximum key range is used (this has a lower pruning power).
 
 Works with parallel replicas (`enable_parallel_replicas = 1`): each replica prunes the granules it reads with the filter it built itself. That filter can be partial - for a `RIGHT` join the build side is the one split among the replicas, so each replica's filter covers only its own share of it - but the result stays correct, because exactly one side of the join is split, every matching pair of rows meets on exactly one replica, and each replica emits a disjoint share of the result.
 
-The granule pruning does not happen with a distributed query plan (`make_distributed_plan = 1`). There the setting is a no-op: the query returns the same result and the JOIN runtime filter itself behaves exactly as it does with this setting disabled, only the granule pruning is lost.
+With a distributed query plan (`make_distributed_plan = 1`), a task prunes the parts it reads with the runtime filters that are ready when it starts reading each part. A filter of a join in the same task is ready by then. A filter sent from another task (`distributed_plan_join_runtime_filters`) often arrives later, and then the part is read without granule pruning.
 
-The granule pruning is also skipped for a probe side read with `FINAL` (the pruning is not implemented for `FINAL` reads, and `optimizeLazyFinal` rebuilds such a read without the descriptors), and for a table with pending data or `ALTER` mutations or patch parts. These cases are a no-op in the same sense.
+The granule pruning is also skipped for a probe side read with `FINAL` (the pruning is not implemented for `FINAL` reads, and `optimizeLazyFinal` rebuilds such a read without the descriptors), and for a table with pending data or `ALTER` mutations or patch parts. In these cases the query returns the same result, only without the granule pruning.
 )", 0, \
         {"26.10", false, true, "Enable pruning of granules on the probe (left) side of a JOIN by the runtime filter collected from the build (right) side."}, \
         {"26.9", false, false, "The JOIN runtime filters became a Production tier feature."}, \

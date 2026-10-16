@@ -5511,12 +5511,14 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     bool runtime_prune_primary_key = false;
     const bool pending_mutations = mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations() || mutations_snapshot->hasPatchParts();
     MergeTreeIndices runtime_skip_indexes;
-    if (context->getSettingsRef()[Setting::use_skip_indexes_on_data_read]
-        /// Not implemented for `FINAL` reads (which merge row versions across parts in their own
+    /// A join runtime filter exists only while the query runs, so it always prunes at read time.
+    /// `use_skip_indexes_on_data_read` decides only when the static skip indexes are evaluated; it is off
+    /// with `make_distributed_plan`, where the coordinator uses them to choose the marks of each task.
+    if (/// Not implemented for `FINAL` reads (which merge row versions across parts in their own
         /// pipeline), and `optimizeLazyFinal` rebuilds such a read without the descriptors anyway. The
         /// setting's description documents this no-op, and
         /// `05243_join_runtime_filters_index_analysis_final_noop` pins it.
-        && !query_info.isFinal()
+        !query_info.isFinal()
         && runtime_filter_lookup
         && !runtime_filters_for_data_read.empty()
         && !pending_mutations
@@ -5533,7 +5535,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         /// Descriptors are attached by a plan optimization, so a replica has them whether it planned the
         /// query itself or optimized a plan it deserialized. A read that has none leaves
         /// `runtime_prune_primary_key` and `runtime_skip_indexes` empty below and reads its share unpruned,
-        /// which costs coverage, not correctness; `make_distributed_plan` still reads that way.
+        /// which costs coverage, not correctness.
         && indexes.has_value())
     {
         /// The PK path only needs the data-read safety checks above; only the secondary skip-index

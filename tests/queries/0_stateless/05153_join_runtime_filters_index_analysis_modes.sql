@@ -9,8 +9,9 @@
 -- replica's filter covers only its own share of it, and the probe rows it drops are matched by the replicas
 -- that read the rest. That holds however the replica got its plan - planning the query itself or optimizing
 -- one it deserialized - because the descriptors are attached by an optimization that runs in both cases.
--- A distributed query plan (`make_distributed_plan = 1`) does not prune, which is the one no-op the
--- setting's description still claims.
+-- The distributed query plan row (`make_distributed_plan = 1`) does not prune: there the probe side is read in
+-- another task than the join, below an exchange, so the read has no runtime filter. A read in the same task as its
+-- join prunes, see 05404.
 --
 -- Every mode must return exactly the result of a local read, which is what makes the pruning safe rather
 -- than merely faster.
