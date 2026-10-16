@@ -241,7 +241,6 @@ QueryPlanStepPtr TotalsHavingStep::clone() const
 void registerTotalsHavingStep(QueryPlanStepRegistry & registry);
 void registerTotalsHavingStep(QueryPlanStepRegistry & registry)
 {
-    /// Version 1 carries the predicate of `indexHint`.
     registry.registerStep(
         "TotalsHaving",
         TotalsHavingStep::deserialize,

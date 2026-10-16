@@ -3072,7 +3072,6 @@ void registerJoinStep(QueryPlanStepRegistry & registry);
 
 void registerJoinStep(QueryPlanStepRegistry & registry)
 {
-    /// Version 1 carries the predicate of `indexHint`.
     registry.registerStep(
         "Join",
         JoinStepLogical::deserialize,

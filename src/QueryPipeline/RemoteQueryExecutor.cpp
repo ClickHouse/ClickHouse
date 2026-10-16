@@ -593,7 +593,6 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
         stage = query_plan_fallback_stage;
     }
 
-    /// Likewise for a plan that needs a newer version, e.g. for the predicate of `indexHint`.
     if (query_plan && query_plan->getMinSerializationVersion()
         && !connections->supportsQueryPlanSerializationVersion(query_plan->getMinSerializationVersion()))
     {

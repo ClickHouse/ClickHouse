@@ -267,7 +267,6 @@ QueryPlanStepPtr LimitRangeStep::clone() const
 void registerLimitRangeStep(QueryPlanStepRegistry & registry);
 void registerLimitRangeStep(QueryPlanStepRegistry & registry)
 {
-    /// Version 1 carries the predicate of `indexHint`.
     registry.registerStep(
         "LimitRange",
         LimitRangeStep::deserialize,

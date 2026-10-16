@@ -132,8 +132,7 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// know the name and has no block nested loop join: it rejects a join without equality keys by itself.
 /// Version 20 also registers the `MergeRuntimeFilters` step and adds the `join_runtime_filter_exact_bytes_limit`
 /// plan setting.
-/// Version 21 lets the steps that carry an `ActionsDAG` write the predicate of `indexHint`, each in a new step
-/// version. Before it, a receiver rebuilt every `indexHint` without its predicate.
+/// Version 21 lets the steps carrying an `ActionsDAG` write the predicate of `indexHint` (new step versions).
 ///
 /// Rules for this version:
 /// - Bump it at most once per release: the first change in a release that needs it bumps it, later changes
@@ -221,10 +220,8 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_QUERY_CONDI
 /// rejected: the peer aggregates without the heap and returns partial states for all its groups,
 /// which the initiator's merge, sort and limit handle correctly - the safe direction.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_GROUP_BY_TOP_K = 20;
-/// First global query-plan version that writes the versions of the steps carrying an `ActionsDAG` that
-/// serialize the predicate of `indexHint`. Towards an older peer such a predicate is refused rather than
-/// dropped, because a hint without its predicate selects every granule; a query containing `indexHint`
-/// is sent to such a peer as SQL instead (see `QueryPlan::setMinSerializationVersion`).
+/// First global query-plan version whose `ActionsDAG`-carrying steps write the predicate of `indexHint`. Towards an
+/// older peer the predicate is refused, never dropped; a query containing `indexHint` is sent to it as SQL instead.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_INDEX_HINT_ACTIONS = 21;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.

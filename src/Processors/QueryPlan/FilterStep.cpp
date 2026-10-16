@@ -720,7 +720,6 @@ QueryPlanStepPtr FilterStep::clone() const
 void registerFilterStep(QueryPlanStepRegistry & registry);
 void registerFilterStep(QueryPlanStepRegistry & registry)
 {
-    /// Version 1 carries the predicate of `indexHint`.
     registry.registerStep(
         "Filter",
         FilterStep::deserialize,

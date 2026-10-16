@@ -312,7 +312,6 @@ QueryPlanStepPtr ExpressionStep::clone() const
 void registerExpressionStep(QueryPlanStepRegistry & registry);
 void registerExpressionStep(QueryPlanStepRegistry & registry)
 {
-    /// Version 1 carries the predicate of `indexHint`.
     registry.registerStep(
         "Expression",
         ExpressionStep::deserialize,

@@ -297,7 +297,6 @@ QueryPlanStepPtr FillingStep::deserialize(Deserialization & ctx)
 void registerFillingStep(QueryPlanStepRegistry & registry);
 void registerFillingStep(QueryPlanStepRegistry & registry)
 {
-    /// Version 1 carries the predicate of `indexHint`.
     registry.registerStep(
         "Filling",
         FillingStep::deserialize,
