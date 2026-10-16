@@ -241,7 +241,7 @@ public:
         size_t lock_wait_timeout_milliseconds,
         std::string & failure_reason);
 
-    bool tryIncreasePriority(FileSegment & file_segment);
+    bool tryIncreasePriority(Priority::Iterator & iterator, bool is_space_reservation_complete);
 
     std::vector<FileSegment::Info> getFileSegmentInfos(const UserID & user_id);
 
