@@ -244,16 +244,15 @@ inline void ALWAYS_INLINE readVarInt(Int16 & x, ReadBuffer & istr)
     x = static_cast<Int16>(tmp);
 }
 
+/// Only unsigned integral targets (including `bool`) are accepted, so a read through this template is always range-checked.
+/// Signed values are written with `writeVarInt` and must be read with `readVarInt`.
 template <typename T>
-requires(!std::is_same_v<T, UInt64>)
+requires(std::is_integral_v<T> && std::is_unsigned_v<T> && !std::is_same_v<T, UInt64>)
 inline void ALWAYS_INLINE readVarUInt(T & x, ReadBuffer & istr)
 {
     UInt64 tmp = 0;
     readVarUInt(tmp, istr);
-
-    if constexpr (std::is_integral_v<T>)
-        varint_impl::checkVarUIntFits<T>(tmp);
-
+    varint_impl::checkVarUIntFits<T>(tmp);
     x = static_cast<T>(tmp);
 }
 

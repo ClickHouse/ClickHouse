@@ -123,7 +123,7 @@ struct WindowFunctionCumeDist final : public StatefulWindowFunction<CumeDistStat
         {
             Int64 peer_group_end_row_number = transform->current.row_index_in_partition + 1;
             RowNumber check_row = transform->current.location;
-            const RowNumber partition_end = transform->partition.bounds().end;
+            const RowNumber partition_end = transform->partition.bounds().end.location;
 
             // Advance through all rows that are peers with the current row
             while (true)

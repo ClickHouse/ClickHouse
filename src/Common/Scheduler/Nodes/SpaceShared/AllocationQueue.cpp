@@ -1,3 +1,4 @@
+#include <Common/Scheduler/CostUnit.h>
 #include <Common/Scheduler/Nodes/SpaceShared/AllocationQueue.h>
 #include <Common/Scheduler/IWorkloadNode.h>
 #include <Common/Scheduler/Debug.h>
@@ -6,6 +7,9 @@
 #include <Common/ErrorCodes.h>
 
 #include <fmt/format.h>
+
+#include <algorithm>
+#include <utility>
 
 namespace DB
 {
@@ -85,10 +89,7 @@ void AllocationQueue::increaseAllocation(ResourceAllocation & allocation, Resour
 
     chassert(!allocation.increasing_hook.is_linked());
 
-    // Update the key of running allocation
-    running_allocations.erase(running_allocations.iterator_to(allocation));
-    allocation.fair_key = allocation.allocated + increase_size;
-    running_allocations.insert(allocation);
+    updateFairKey(allocation, allocation.allocated + increase_size - allocation.reclaiming);
 
     // Enqueue increase request. `Kind::Initial` is the first increase that admits the allocation
     // into the hierarchy (it makes `apply(IncreaseRequest)` increment `allocations`). Use the
@@ -115,6 +116,98 @@ void AllocationQueue::decreaseAllocation(ResourceAllocation & allocation, Resour
         scheduleActivation();
 }
 
+void AllocationQueue::updateFairKey(ResourceAllocation & allocation, ResourceCost new_key) // TSA_REQUIRES(mutex)
+{
+    if (allocation.fair_key == new_key)
+        return;
+    running_allocations.erase(running_allocations.iterator_to(allocation));
+    bool is_increasing = allocation.increasing_hook.is_linked();
+    if (is_increasing)
+        increasing_allocations.erase(increasing_allocations.iterator_to(allocation));
+    allocation.fair_key = new_key;
+    running_allocations.insert(allocation);
+    if (is_increasing)
+        increasing_allocations.insert(allocation);
+}
+
+ResourceCost AllocationQueue::getAvailableReclaimable(const ResourceAllocation & allocation) // TSA_REQUIRES(mutex)
+{
+    return std::max<ResourceCost>(0, std::min(allocation.reclaimable, allocation.allocated) - allocation.reclaiming);
+}
+
+bool AllocationQueue::applyReclaimable(const ResourceAllocation & allocation, ResourceCost previous_available) // TSA_REQUIRES(mutex)
+{
+    ResourceCost delta = getAvailableReclaimable(allocation) - previous_available;
+    pending_reclaimable_delta += delta;
+    return delta != 0;
+}
+
+void AllocationQueue::setReclaimable(ResourceAllocation & allocation, ResourceCost reclaimable_total)
+{
+    std::lock_guard lock(mutex);
+    if (is_not_usable)
+        return; // Queue has been purged — `allocationFailed` has already notified the owner.
+    if (allocation.removing_hook.is_linked())
+        return;
+
+    /// The report includes bytes already requested for spilling. Only publish uncommitted capacity.
+    ResourceCost previous_available = getAvailableReclaimable(allocation);
+    allocation.reclaimable = std::max<ResourceCost>(0, reclaimable_total);
+    if (applyReclaimable(allocation, previous_available))
+        scheduleActivation();
+}
+
+ResourceCost AllocationQueue::requestSpill(ResourceAllocation & allocation, ResourceCost max_bytes)
+{
+    chassert(max_bytes >= 0);
+    ResourceCost request = 0;
+    Update update;
+    {
+        std::lock_guard lock(mutex);
+        if (is_not_usable)
+            return 0;
+
+        ResourceCost previous_available = getAvailableReclaimable(allocation);
+        request = std::min(max_bytes, previous_available);
+        allocation.reclaiming += request;
+        updateFairKey(allocation, allocation.fair_key - request);
+        applyReclaimable(allocation, previous_available);
+
+        // Publish pending estimates with the new key before another selection can use this subtree.
+        // Settlements stay pending until activation also publishes their reservation decreases.
+        update.setReclaimableDelta(std::exchange(pending_reclaimable_delta, 0))
+            .setReclaimingDelta(request);
+        if (setIncrease())
+            update.setIncrease(increase);
+        if (setDecrease())
+            update.setDecrease(decrease);
+        apply(update);
+    }
+
+    if (parent && update)
+        propagate(std::move(update));
+    if (request > 0)
+        allocation.spillAllocation(request);
+    return request;
+}
+
+void AllocationQueue::finishSpill(ResourceAllocation & allocation, ResourceCost settled_bytes, ResourceCost reclaimable_total)
+{
+    std::lock_guard lock(mutex);
+    if (is_not_usable)
+        return; // Queue has been purged — `allocationFailed` has already notified the owner.
+
+    chassert(settled_bytes >= 0 && settled_bytes <= allocation.reclaiming);
+    ResourceCost previous_available = getAvailableReclaimable(allocation);
+    allocation.reclaiming -= settled_bytes;
+    updateFairKey(allocation, allocation.fair_key + settled_bytes);
+    allocation.reclaimable = allocation.removing_hook.is_linked() ? 0 : std::max<ResourceCost>(0, reclaimable_total);
+    applyReclaimable(allocation, previous_available);
+    pending_spilled_settled_bytes += settled_bytes;
+
+    scheduleActivation();
+}
+
 void AllocationQueue::removeAllocation(ResourceAllocation & allocation)
 {
     std::lock_guard lock(mutex);
@@ -128,6 +221,9 @@ void AllocationQueue::removeAllocation(ResourceAllocation & allocation)
     // freed object.
     if (!allocation.pending_hook.is_linked() && !allocation.running_hook.is_linked())
         return;
+    ResourceCost previous_available = getAvailableReclaimable(allocation);
+    allocation.reclaimable = 0;
+    applyReclaimable(allocation, previous_available);
     removing_allocations.push_back(allocation);
     if (&allocation == &*removing_allocations.begin())
         scheduleActivation();
@@ -166,6 +262,8 @@ void AllocationQueue::purgeQueue()
         if (allocation.removing_hook.is_linked())
             removing_allocations.erase(removing_allocations.iterator_to(allocation));
         allocation.allocated = 0;
+        allocation.reclaimable = 0;
+        allocation.reclaiming = 0;
         allocation.allocationFailed(reason);
     }
 
@@ -180,6 +278,10 @@ void AllocationQueue::purgeQueue()
     decrease = nullptr;
     allocated = 0;
     allocations = 0;
+    reclaimable = 0;
+    reclaiming = 0;
+    pending_reclaimable_delta = 0;
+    pending_spilled_settled_bytes = 0;
     is_not_usable = true;
 }
 
@@ -225,19 +327,30 @@ void AllocationQueue::approveIncrease()
 {
     std::lock_guard lock(mutex);
     chassert(increase);
-    ResourceAllocation & allocation = increase->allocation;
-    SCHED_DBG("{} -- approveIncrease(id={}, size={}, allocated={})", getPath(), allocation.id, increase->size, allocated);
+    approveIncrease(*increase);
+    increase = nullptr;
+
+    setIncrease();
+}
+
+void AllocationQueue::approveIncrease(IncreaseRequest & request) // TSA_REQUIRES(mutex)
+{
+    ResourceAllocation & allocation = request.allocation;
+    SCHED_DBG("{} -- approveIncrease(id={}, size={}, allocated={})", getPath(), allocation.id, request.size, allocated);
     if (allocation.increase.kind == IncreaseRequest::Kind::Pending)
     {
         pending_allocations.erase(pending_allocations.iterator_to(allocation));
         pending_allocations_size -= allocation.increase.size;
-        allocation.fair_key = increase->size;
+        allocation.fair_key = request.size;
         running_allocations.insert(allocation);
     }
     else
         increasing_allocations.erase(increasing_allocations.iterator_to(allocation));
-    apply(*increase);
-    allocation.allocated += increase->size;
+    apply(request);
+    ResourceCost previous_available = getAvailableReclaimable(allocation);
+    allocation.allocated += request.size;
+    if (applyReclaimable(allocation, previous_available))
+        scheduleActivation();
     // `apply` above incremented `allocations` for `Kind::Pending`/`Kind::Initial`. Mark the
     // allocation as admitted so its eventual removal propagates a matching `removing_allocation`
     // decrease (instead of underflowing `allocations` in the hierarchy).
@@ -246,10 +359,7 @@ void AllocationQueue::approveIncrease()
         allocation.admitted = true;
 
     // Notify allocation
-    increase->allocation.increaseApproved(*increase);
-    increase = nullptr;
-
-    setIncrease();
+    allocation.increaseApproved(request);
 }
 
 void AllocationQueue::approveDecrease()
@@ -257,8 +367,16 @@ void AllocationQueue::approveDecrease()
     std::lock_guard lock(mutex);
 
     chassert(decrease);
-    ResourceAllocation & allocation = decrease->allocation;
-    SCHED_DBG("{} -- approveDecrease(id={}, size={}, allocated={})", getPath(), allocation.id, decrease->size, allocated);
+    approveDecrease(*decrease);
+    decrease = nullptr;
+
+    setDecrease();
+}
+
+void AllocationQueue::approveDecrease(DecreaseRequest & request) // TSA_REQUIRES(mutex)
+{
+    ResourceAllocation & allocation = request.allocation;
+    SCHED_DBG("{} -- approveDecrease(id={}, size={}, allocated={})", getPath(), allocation.id, request.size, allocated);
     decreasing_allocations.erase(decreasing_allocations.iterator_to(allocation));
 
     // We need to remove from running/increasing allocations to update the key
@@ -266,14 +384,18 @@ void AllocationQueue::approveDecrease()
     bool is_increasing = allocation.increasing_hook.is_linked();
     if (is_increasing)
         increasing_allocations.erase(increasing_allocations.iterator_to(allocation));
-
     // Update the key and other fields
-    apply(*decrease);
-    allocation.allocated -= decrease->size;
-    allocation.fair_key -= decrease->size;
+    apply(request);
+    ResourceCost previous_available = getAvailableReclaimable(allocation);
+    allocation.allocated -= request.size;
+    allocation.fair_key -= request.size;
+
+    /// Shrinking cannot make already requested bytes available for another request.
+    if (applyReclaimable(allocation, previous_available))
+        scheduleActivation();
 
     // Reinsert into the appropriate data structures unless this is a removal
-    if (!decrease->removing_allocation)
+    if (!request.removing_allocation)
     {
         running_allocations.insert(allocation);
         if (is_increasing)
@@ -285,10 +407,7 @@ void AllocationQueue::approveDecrease()
         propagate(Update().setIncrease(increase));
 
     // Notify allocation
-    decrease->allocation.decreaseApproved(*decrease);
-    decrease = nullptr;
-
-    setDecrease();
+    allocation.decreaseApproved(request);
 }
 
 ResourceAllocation * AllocationQueue::selectAllocationToKill(IncreaseRequest & killer, ResourceCost limit, String & details)
@@ -320,6 +439,22 @@ ResourceAllocation * AllocationQueue::selectAllocationToKill(IncreaseRequest & k
     return &victim;
 }
 
+ResourceAllocation * AllocationQueue::selectAllocationToSpill(ResourceCost at_least, String & details)
+{
+    std::lock_guard lock(mutex);
+    auto it = std::find_if(running_allocations.rbegin(), running_allocations.rend(), [](const auto & allocation)
+    {
+        return getAvailableReclaimable(allocation) > 0;
+    });
+    if (it == running_allocations.rend())
+        return nullptr; // Nothing reclaimable here — fail-close.
+
+    ResourceAllocation & victim = *it;
+    details = fmt::format("Asking an allocation of size {} (available reclaimable {}) in workload '{}' to reclaim at least {}.",
+        formatReadableCost(victim.allocated), formatReadableCost(getAvailableReclaimable(victim)), getWorkloadName(), formatReadableCost(at_least));
+    return &victim;
+}
+
 void AllocationQueue::processActivation()
 {
     if (!parent)
@@ -333,6 +468,12 @@ void AllocationQueue::processActivation()
         {
             ResourceAllocation & allocation = removing_allocations.front();
             removing_allocations.pop_front(); // Unlink before calling allocationFailed() to avoid use-after-free race
+
+            ResourceCost previous_available = getAvailableReclaimable(allocation);
+            allocation.reclaimable = 0;
+            applyReclaimable(allocation, previous_available);
+            pending_spilled_settled_bytes += std::exchange(allocation.reclaiming, 0);
+
             if (allocation.pending_hook.is_linked()) // Allocation is still pending - cancel it
             {
                 pending_allocations.erase(pending_allocations.iterator_to(allocation));
@@ -343,12 +484,8 @@ void AllocationQueue::processActivation()
             {
                 // Cancel pending increase (safe: we are on the scheduler thread)
                 if (allocation.increasing_hook.is_linked())
-                {
                     increasing_allocations.erase(increasing_allocations.iterator_to(allocation));
-                    running_allocations.erase(running_allocations.iterator_to(allocation));
-                    allocation.fair_key = allocation.allocated;
-                    running_allocations.insert(allocation);
-                }
+                updateFairKey(allocation, allocation.allocated);
 
                 // Never-admitted allocation (inserted with `initial_size == 0` and either never
                 // grew or had its first `Initial` increase cancelled above). The hierarchy's
@@ -380,6 +517,10 @@ void AllocationQueue::processActivation()
             update.setIncrease(increase);
         if (setDecrease())
             update.setDecrease(decrease);
+
+        update.setReclaimableDelta(std::exchange(pending_reclaimable_delta, 0))
+            .setReclaimingDelta(-std::exchange(pending_spilled_settled_bytes, 0));
+        apply(update);
     }
 
     // Propagate update to parent

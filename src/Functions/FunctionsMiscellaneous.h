@@ -169,6 +169,14 @@ inline bool isLambdaBodyStateful(const ExpressionActions & expression_actions)
     return !allLambdaBodyFunctions(expression_actions, [](const IFunctionBase & function) { return !function.isStateful(); });
 }
 
+/// A lambda has observable side effects if any function in its body has them. Without this, a higher-order
+/// function like `arrayExists(x -> sleepEachRow(0.001) = 0, arr)` looks free of side effects, and the
+/// reordering of short-circuit arguments evaluates `sleepEachRow` on fewer rows than in the written order.
+inline bool isLambdaBodyWithObservableSideEffects(const ExpressionActions & expression_actions)
+{
+    return !allLambdaBodyFunctions(expression_actions, [](const IFunctionBase & function) { return !function.hasObservableSideEffects(); });
+}
+
 /// A `ColumnSet` argument arrives wrapped in `ColumnConst` whether or not its set has been built, so
 /// const-ness alone does not make it foldable: an unbuilt set carries no value yet, and `in` over it
 /// can only answer with the dummy it reserves for a not-ready set.
@@ -265,6 +273,7 @@ public:
     bool isDeterministic() const override { return isLambdaBodyDeterministic(*expression_actions); }
     bool isDeterministicInScopeOfQuery() const override { return isLambdaBodyDeterministicInScopeOfQuery(*expression_actions); }
     bool isStateful() const override { return isLambdaBodyStateful(*expression_actions); }
+    bool hasObservableSideEffects() const override { return isLambdaBodyWithObservableSideEffects(*expression_actions); }
     bool isSuitableForConstantFolding() const override { return isLambdaBodySuitableForConstantFolding(*expression_actions); }
 
     const DataTypes & getArgumentTypes() const override { return argument_types; }
@@ -401,6 +410,7 @@ public:
     bool isDeterministic() const override { return isLambdaBodyDeterministic(*expression_actions); }
     bool isDeterministicInScopeOfQuery() const override { return isLambdaBodyDeterministicInScopeOfQuery(*expression_actions); }
     bool isStateful() const override { return isLambdaBodyStateful(*expression_actions); }
+    bool hasObservableSideEffects() const override { return isLambdaBodyWithObservableSideEffects(*expression_actions); }
 
     const DataTypes & getArgumentTypes() const override { return capture->captured_types; }
     const DataTypePtr & getResultType() const override { return return_type; }

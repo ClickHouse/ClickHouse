@@ -14,6 +14,7 @@
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <QueryPipeline/receiveExchangeStreams.h>
 #include <QueryPipeline/DistributedPlanExecutor.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/CascadesParams.h>
 #if CLICKHOUSE_CLOUD
@@ -33,6 +34,7 @@
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/ISimpleTransform.h>
+#include <Processors/Sinks/EmptySink.h>
 #include <Processors/Sinks/NativeCompressedSink.h>
 #include <Common/ThreadStatus.h>
 #include <Common/ThreadGroupSwitcher.h>
@@ -47,6 +49,8 @@
 #include <Poco/URI.h>
 #include <Server/StatelessWorker/StatelessWorkerClient.h>
 #include <Server/DistributedQuery/StreamingExchangeLookup.h>
+#include <Server/DistributedQuery/StreamingExchangeProtocol.h>
+#include <Processors/Transforms/MergeRuntimeFiltersTransform.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InternalTextLogsQueue.h>
@@ -59,6 +63,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadPool.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/ProfileEvents.h>
@@ -80,15 +85,20 @@ namespace ProfileEvents
     extern const Event DistributedPlanRemoteTasks;
     extern const Event DistributedPlanLocalExecution;
     extern const Event DistributedPlanHostsUsed;
+    extern const Event RuntimeFilterReceiveBranchFailures;
 }
 
 
 namespace DB
 {
 
+/// The comment at `MAX_TRANSPORTED_RUNTIME_FILTER_STATE_BYTES` explains why the two limits are equal.
+static_assert(MAX_TRANSPORTED_RUNTIME_FILTER_STATE_BYTES == StreamingExchangeProtocol::MAX_DATA_PACKET_BODY_BYTES);
+
 namespace Setting
 {
     extern const SettingsBool distributed_plan_execute_locally;
+    extern const SettingsBool enable_join_runtime_filters_index_analysis;
     extern const SettingsUInt64 distributed_plan_workers_num;
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsUInt64 max_rows_to_transfer;
@@ -110,6 +120,7 @@ namespace FailPoints
 {
     extern const char distributed_plan_status_check_reenqueue_fault[];
     extern const char distributed_plan_record_failure_while_starting_tasks[];
+    extern const char distributed_plan_runtime_filter_receive_branch_fails_before_connect[];
 }
 
 class TaskParameters : public IParameterLookup
@@ -185,7 +196,9 @@ public:
     {
     }
 
-    std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id) override
+    /// `advisory` is ignored: a persisted stream has no peer, and its reader starts only after this
+    /// stage finishes. A write failure is a failure of the object storage, so it stays an error.
+    std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id, bool /*advisory*/) override
     {
         if (!temporary_files)
             throw Exception(
@@ -196,7 +209,10 @@ public:
         return std::make_shared<NativeCompressedSink>(input_header, temporary_files->getTemporaryFileForWriting(file_name), file_name);
     }
 
-    std::shared_ptr<ISource> createSource(SharedHeader output_header, const ExchangeStreamId & exchange_stream_id, bool output_is_serialized) override
+    /// `advisory` is ignored: a persisted stream is read only after its producer finished, and a
+    /// missing file means a failed producer, which already fails the query.
+    std::shared_ptr<ISource> createSource(
+        SharedHeader output_header, const ExchangeStreamId & exchange_stream_id, bool output_is_serialized, bool /*advisory*/) override
     {
         if (!temporary_files)
             throw Exception(
@@ -278,12 +294,6 @@ public:
         std::lock_guard lock(mutex);
         return reader_detached;
     }
-
-    /// Identifies one stream of an exchange, not the whole exchange: it is
-    /// `ExchangeStreamId::toString()`, so the buckets of one exchange have distinct names.
-    const String & getStreamName() const { return name; }
-
-    LoggerPtr getLog() const { return log; }
 
     /// Waits up to `timeout` for a chunk. Returns std::nullopt if nothing arrived in time.
     /// An empty chunk is the producer's end-of-data marker. Chunks queued before a cancel are
@@ -403,14 +413,18 @@ public:
     {
     }
 
-    std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id) override
+    /// `advisory` is ignored: this sink already drops chunks when its reader detaches.
+    std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id, bool /*advisory*/) override
     {
         auto file_name = exchange_stream_id.toString();
         auto exchange = InMemoryExchanges::instance()->getExchange(query_id, file_name);
         return std::make_shared<SinkFromInMemoryExchange>(input_header, exchange);
     }
 
-    std::shared_ptr<ISource> createSource(SharedHeader output_header, const ExchangeStreamId & exchange_stream_id, bool output_is_serialized) override
+    /// `advisory` is ignored: an in-memory source has no peer to lose and fails only when the
+    /// query is cancelled.
+    std::shared_ptr<ISource> createSource(
+        SharedHeader output_header, const ExchangeStreamId & exchange_stream_id, bool output_is_serialized, bool /*advisory*/) override
     {
         if (output_is_serialized)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "In-memory exchange {} has no deserializer, its source gives data chunks", exchange_stream_id.toString());
@@ -439,7 +453,6 @@ private:
             /// data that nobody reads.
             if (exchange->isReaderDetached())
             {
-                LOG_TRACE(exchange->getLog(), "Closing input of exchange stream {}, reader detached", exchange->getStreamName());
                 input.close();
                 return Status::Finished;
             }
@@ -452,6 +465,8 @@ private:
             /// forwarding them would only grow the queue and wake the consumer for nothing.
             if (!chunk.hasRows() && chunk.getChunkInfos().empty())
                 return;
+            /// The consumer's header is deserialized without constants, so a constant column must not cross this exchange.
+            convertToFullIfConst(chunk);
             exchange->appendChunk(std::move(chunk));
         }
 
@@ -486,7 +501,6 @@ private:
             if (status == Status::Finished && !finished && !detach_notified)
             {
                 detach_notified = true;
-                LOG_TRACE(exchange->getLog(), "NoMoreDataNeeded from exchange stream {}, detaching reader", exchange->getStreamName());
                 exchange->detachReader();
             }
             return status;
@@ -573,14 +587,16 @@ public:
     {
     }
 
-    std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id) override
+    std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id, bool advisory) override
     {
-        return lookupFor(exchange_stream_id.exchange_id).createSink(std::move(input_header), exchange_stream_id);
+        return lookupFor(exchange_stream_id.exchange_id).createSink(std::move(input_header), exchange_stream_id, advisory);
     }
 
-    std::shared_ptr<ISource> createSource(SharedHeader output_header, const ExchangeStreamId & exchange_stream_id, bool output_is_serialized) override
+    std::shared_ptr<ISource>
+    createSource(SharedHeader output_header, const ExchangeStreamId & exchange_stream_id, bool output_is_serialized, bool advisory) override
     {
-        return lookupFor(exchange_stream_id.exchange_id).createSource(std::move(output_header), exchange_stream_id, output_is_serialized);
+        return lookupFor(exchange_stream_id.exchange_id)
+            .createSource(std::move(output_header), exchange_stream_id, output_is_serialized, advisory);
     }
 
     std::shared_ptr<IProcessor> createSerializer(SharedHeader input_header, const String & exchange_id) override
@@ -798,6 +814,110 @@ static QueryPlan deserializeQueryPlan(const String & serialized_query_plan, Cont
     return QueryPlan::makeSets(std::move(plan_and_sets), context);
 }
 
+/// Runs each runtime filter receive branch of a task in its own thread, beside the data pipeline.
+/// A branch starts reading at once, without waiting for the data pipeline. `finish` cancels the
+/// branches that still wait. A branch error is logged and the filter is skipped, so rows pass
+/// unfiltered.
+class RuntimeFilterReceiveBranches
+{
+public:
+    explicit RuntimeFilterReceiveBranches(LoggerPtr logger_) : logger(std::move(logger_)) {}
+
+    void start(QueryPipeline pipeline, const String & filter_name)
+    {
+        auto branch = std::make_shared<Branch>(std::move(pipeline));
+        branches.push_back(branch);
+        try
+        {
+            branch->thread = ThreadFromGlobalPool(
+                [branch, filter_name, thread_group = CurrentThread::getGroup(), log = logger]
+                {
+                    ThreadGroupSwitcher switcher(thread_group, ThreadName::DISTRIBUTED_QUERY_TASK);
+                    try
+                    {
+                        fiu_do_on(FailPoints::distributed_plan_runtime_filter_receive_branch_fails_before_connect,
+                        {
+                            throw Exception(ErrorCodes::EXCHANGE_PEER_DISCONNECTED, "Injected receive branch failure before it connects");
+                        });
+                        CompletedPipelineExecutor executor(branch->pipeline);
+                        executor.setCancelCallback([branch] { return branch->cancelled.load(); }, /*interactive_timeout_ms_*/ 50);
+                        executor.execute();
+                    }
+                    catch (...)
+                    {
+                        ProfileEvents::increment(ProfileEvents::RuntimeFilterReceiveBranchFailures);
+                        tryLogCurrentException(
+                            log,
+                            fmt::format(
+                                "Receive branch for runtime filter '{}' failed; the filter is skipped and rows pass unfiltered",
+                                filter_name));
+                    }
+                });
+        }
+        catch (...)
+        {
+            /// The thread did not start: skip the filter.
+            branches.pop_back();
+            ProfileEvents::increment(ProfileEvents::RuntimeFilterReceiveBranchFailures);
+            tryLogCurrentException(
+                logger,
+                fmt::format(
+                    "Cannot start the receive branch for runtime filter '{}'; the filter is skipped and rows pass unfiltered",
+                    filter_name));
+        }
+    }
+
+    /// Cancel the branches that are still waiting and join their threads. Idempotent.
+    void finish() noexcept
+    {
+        for (const auto & branch : branches)
+            branch->cancelled = true;
+        for (const auto & branch : branches)
+            if (branch->thread.joinable())
+                branch->thread.join();
+        branches.clear();
+    }
+
+    ~RuntimeFilterReceiveBranches() { finish(); }
+
+private:
+    struct Branch
+    {
+        explicit Branch(QueryPipeline pipeline_) : pipeline(std::move(pipeline_)) {}
+
+        QueryPipeline pipeline;
+        std::atomic<bool> cancelled{false};
+        ThreadFromGlobalPool thread;
+    };
+
+    LoggerPtr logger;
+    VectorWithMemoryTracking<std::shared_ptr<Branch>> branches;
+};
+
+/// The identity of the task on its `DistributedPlanTask::execute` span. No-op when tracing is off.
+static void addTaskSpanAttributes(
+    OpenTelemetry::Span & span,
+    const DistributedQueryTaskDescription & task_description,
+    const ContextPtr & context,
+    UInt64 query_plan_hash,
+    bool execute_locally,
+    const Strings & input_exchange_streams,
+    const Strings & output_exchange_streams)
+{
+    if (!span.isTraceEnabled())
+        return;
+
+    span.addAttribute("clickhouse.distributed.task_id", task_description.task.task_id);
+    /// From the task's context rather than the description: a worker copies the description's
+    /// initial query id into its `ClientInfo`, while an in-process task inherits the initiator's.
+    span.addAttribute("clickhouse.initial_query_id", context->getClientInfo().initial_query_id);
+    span.addAttribute("clickhouse.distributed.plan_hash", query_plan_hash);
+    span.addAttribute("clickhouse.distributed.serialization_version", task_description.serialization_version);
+    span.addAttribute("clickhouse.distributed.execute_locally", static_cast<UInt64>(execute_locally));
+    span.addAttribute("clickhouse.exchange.inputs", fmt::format("[{}]", fmt::join(input_exchange_streams, ", ")));
+    span.addAttribute("clickhouse.exchange.outputs", fmt::format("[{}]", fmt::join(output_exchange_streams, ", ")));
+}
+
 void doExecuteTask(const DistributedQueryTaskDescription & task_description, ObjectStoragePtr object_storage,
     const String & object_storage_path, const String & distributed_query_id, ContextMutablePtr context,
     bool execute_locally, std::function<bool()> is_cancelled, ProgressCallback progress_callback)
@@ -805,7 +925,9 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
     Stopwatch execute_task_watch;
     const auto & task = task_description.task;
 
-    std::shared_ptr<OpenTelemetry::SpanHolder> query_span = std::make_shared<OpenTelemetry::SpanHolder>(task.task_id);
+    /// The task's span is analogous to the `query` span of a regular query. Its parent is the initiator's trace.
+    std::shared_ptr<OpenTelemetry::SpanHolder> query_span
+        = std::make_shared<OpenTelemetry::SpanHolder>("DistributedPlanTask::execute", OpenTelemetry::SpanKind::SERVER);
 
     auto logger = Poco::Logger::getShared("executeDistributedQuery");
 
@@ -820,6 +942,11 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
     Strings output_exchange_streams;
     for (const auto & stream_id : task.output_exchange_streams)
         output_exchange_streams.push_back(stream_id.toString());
+
+    /// Identifies the plan fragment in the span and in the query log alike.
+    const UInt64 query_plan_hash = sipHash64(task_description.serialized_query_plan);
+
+    addTaskSpanAttributes(*query_span, task_description, context, query_plan_hash, execute_locally, input_exchange_streams, output_exchange_streams);
 
     LOG_TRACE(logger, "Task '{}' input exchange streams: [{}], output exchange streams: [{}]",
         task.task_id, fmt::join(input_exchange_streams, ", "), fmt::join(output_exchange_streams, ", "));
@@ -881,10 +1008,37 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
         pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
     }
 
+    RuntimeFilterReceiveBranches receive_branches(logger);
+    for (const auto & descriptor : task.runtime_filter_descriptors)
+    {
+        const auto partials_header = runtimeFilterPartialsHeader();
+        auto partials = receiveExchangeStreams(
+            partials_header,
+            descriptor.stream.exchange_id,
+            {descriptor.stream},
+            pipeline_settings,
+            /*spread_over_max_threads*/ false,
+            /*advisory*/ true);
+        auto merge = std::make_shared<MergeRuntimeFiltersTransform>(
+            partials_header,
+            /*num_inputs=*/1,
+            MergeRuntimeFiltersTransform::Mode::RegisterUnion,
+            descriptor.filter_name,
+            descriptor.filter_key,
+            descriptor.key_column_type,
+            descriptor.geometry,
+            context->getRuntimeFilterLookup());
+        if (context->getSettingsRef()[Setting::enable_join_runtime_filters_index_analysis])
+            merge->enableIndexAnalysis();
+        partials.addTransform(std::move(merge));
+        auto branch = QueryPipelineBuilder::getPipeline(std::move(partials));
+        branch.complete(std::make_shared<EmptySink>(partials_header));
+        receive_branches.start(std::move(branch), descriptor.filter_name);
+    }
+
     /// No AST: this fragment is built from a serialized query plan, not parsed. The query-log
     /// helpers below treat a null AST as QueryKind::Select, which is correct here.
     const ASTPtr no_ast;
-    UInt64 query_plan_hash = sipHash64(task_description.serialized_query_plan);
 
     auto query_log_elem = logQueryStart(
         std::chrono::system_clock::now(),
@@ -924,6 +1078,9 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
             executor.execute();
         }
 
+        /// The data work is done; a filter that has not arrived by now has nothing left to serve.
+        receive_branches.finish();
+
         logQueryFinish(query_log_elem, context, no_ast, std::move(pipeline), false,
             query_span, QueryResultCacheUsage::None, false, /*log_as_internal*/ false);
     }
@@ -952,7 +1109,7 @@ std::pair<ObjectStoragePtr, String> getObjectStorageForTemporaryFiles(const Stri
     String object_storage_path = getTemporaryFilesPath(unique_temp_file_path, context);
     if (config.has(config_prefix))
     {
-        ObjectStoragePtr object_storage = ObjectStorageFactory::instance().create("distributed_query_temp_files", config, config_prefix, context, /*run_access_check=*/true, /*run_local_paths_check=*/false);
+        ObjectStoragePtr object_storage = ObjectStorageFactory::instance().create("distributed_query_temp_files", config, config_prefix, context, /*run_access_check=*/true, /*run_local_paths_check=*/false, RemoteHostFilterCheck::None);
         return {object_storage, object_storage_path};
     }
     return {nullptr, object_storage_path};
@@ -1040,9 +1197,15 @@ protected:
         std::promise<void> task_promise;
         std::future<void> future = task_promise.get_future();
 
-        threads.emplace_back([promise = std::move(task_promise), query_id = unique_query_id, task_description, ctx = context, cancellation = this->cancellation, stage_wakeup = this->stage_wakeup]() mutable
+        /// A raw thread inherits no tracing context (unlike a `ThreadPool` job), so hand the initiator's context over explicitly.
+        threads.emplace_back([promise = std::move(task_promise), query_id = unique_query_id, task_description, ctx = context, cancellation = this->cancellation, stage_wakeup = this->stage_wakeup,
+            parent_trace_context = OpenTelemetry::CurrentContext()]() mutable
         {
             ThreadStatus thread_status;
+            /// A guard, not a `TracingContextHolder`: the holder would log a span of its own for this
+            /// thread, while the task's `DistributedPlanTask::execute` span is meant to attach to the
+            /// initiator's context directly, the same as a task dispatched to a worker does.
+            OpenTelemetry::TracingContextGuard thread_trace_context(parent_trace_context);
             /// The task attaches its own query context and thread group inside executeTask (matching
             /// the worker path), so this thread is intentionally not attached to the initiator group.
 
@@ -1120,6 +1283,10 @@ protected:
 
         return true;
     }
+
+    /// Merge tasks end soon after their inputs here, so waiting for them is cheap and reports
+    /// their errors.
+    bool waitsForFilterOnlyStages() const override { return true; }
 
 private:
     /// Rethrow the exception of any already-finished failed task across all stages, without blocking.
@@ -2164,9 +2331,11 @@ void DistributedQueryPlanExecutor::start()
             startStageWithDependencies(stage_name, executed_stages);
     }
 
-    /// Wait for all stages to finish
-    for (const auto & [stage_name, _] : distributed_query_plan.stages)
-        running_stages.push_back(stage_name);
+    /// Wait for all data stages to finish. Whether the filter-only stages are waited for depends on
+    /// the executor, see `DistributedQueryStage::filter_only`.
+    for (const auto & [stage_name, stage] : distributed_query_plan.stages)
+        if (!stage.filter_only || waitsForFilterOnlyStages())
+            running_stages.push_back(stage_name);
 }
 
 bool DistributedQueryPlanExecutor::execute(UInt64 poll_timeout_ms)
