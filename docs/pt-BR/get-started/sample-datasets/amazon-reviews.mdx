@@ -9,16 +9,15 @@ keywords: ['avaliações da Amazon', 'conjunto de dados de avaliações de clien
 
 import { RunnableCode } from "/snippets/pt-BR/components/RunnableCode/RunnableCode.jsx";
 
-Este conjunto de dados contém mais de 150 milhões de avaliações de clientes sobre produtos da Amazon. Os dados estão em arquivos Parquet compactados com snappy no AWS S3, totalizando 49 GB (compactados). Vamos ver as etapas para inseri-los no ClickHouse.
+Este conjunto de dados contém mais de 150 milhões de avaliações de clientes sobre produtos da Amazon. Os dados estão em arquivos Parquet comprimidos com snappy no AWS S3, totalizando 49 GB (comprimidos).
 
 <Note>
-  As consultas abaixo foram executadas em uma instância **Production** do ClickHouse Cloud. Para mais informações, consulte
-  [&quot;Especificações do Playground&quot;](/pt-BR/get-started/sample-datasets/playground#specifications).
+  Você pode experimentar isso no ClickHouse auto-hospedado ou no ClickHouse Cloud. Se ainda não tem uma conta, pode iniciar um [teste gratuito do ClickHouse Cloud](https://clickhouse.cloud/signUp?loc=docs-get-started-sample-datasets-amazon-reviews).
 </Note>
 
-<div id="loading-the-dataset">
-  ## Carregando o conjunto de dados
-</div>
+Vamos ver as etapas para inserir os dados no ClickHouse.
+
+## Carregando o conjunto de dados {#loading-the-dataset}
 
 1. Sem inserir os dados no ClickHouse, podemos consultá-los diretamente. Vamos obter algumas linhas para ver como elas são:
 
@@ -118,17 +117,17 @@ ENGINE = MergeTree
 ORDER BY (review_date, product_category)
 ```
 
-3. O comando `INSERT` a seguir usa a função de tabela `s3Cluster`, que permite processar vários arquivos S3 em paralelo usando todos os nós do cluster. Também usamos um curinga para inserir qualquer arquivo que comece com `https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/amazon_reviews_*.snappy.parquet`:
+3. O comando `INSERT` a seguir usa a função de tabela [`s3Cluster`](/pt-BR/reference/functions/table-functions/s3Cluster), que distribui os arquivos S3 entre os nós do cluster para que sejam lidos em paralelo.
+
+No ClickHouse Cloud, seu cluster se chama `default` e você pode executar o comando como está. Em um servidor autogerenciado, substitua `default` pelo nome do seu cluster — ou, se estiver usando um único servidor, use a função de tabela [`s3`](/pt-BR/reference/functions/table-functions/s3) e remova o primeiro argumento para que a chamada comece com a URL.
+
+Usamos um caractere curinga na URL para inserir todos os arquivos de avaliações correspondentes.
 
 ```sql
 INSERT INTO amazon.amazon_reviews SELECT *
 FROM s3Cluster('default', 
 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/amazon_reviews_*.snappy.parquet', NOSIGN)
 ```
-
-<Tip>
-  No ClickHouse Cloud, o nome do cluster é `default`. Altere `default` para o nome do seu cluster...ou use a função de tabela `s3` (em vez de `s3Cluster`) se você não tiver um cluster.
-</Tip>
 
 5. Essa consulta não demora muito — em média, cerca de 300.000 linhas por segundo. Em uns 5 minutos, você deverá ver todas as linhas inseridas:
 
@@ -159,9 +158,7 @@ FROM s3Cluster('default',
 
 Os dados originais tinham cerca de 70G, mas, quando comprimidos no ClickHouse, ocupam cerca de 30G.
 
-<div id="example-queries">
-  ## Consultas de exemplo
-</div>
+## Consultas de exemplo {#example-queries}
 
 7. Vamos executar algumas consultas. Aqui estão as 10 avaliações mais úteis do conjunto de dados:
 

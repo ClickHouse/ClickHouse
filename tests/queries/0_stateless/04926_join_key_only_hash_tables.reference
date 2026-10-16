@@ -1,0 +1,277 @@
+-- ANTI, key only
+1
+2
+4
+5
+7
+8
+10
+11
+13
+14
+16
+17
+19
+-- ANTI, right column selected: always default
+1	
+2	
+4	
+5	
+7	
+8	
+10	
+11	
+13	
+14	
+16	
+17	
+19	
+-- SEMI, key only
+0
+3
+6
+9
+12
+15
+18
+-- SEMI, right column selected
+0	r
+3	r
+6	r
+9	r
+12	r
+15	r
+18	r
+-- ANTI, right column selected, join_use_nulls
+1	\N
+2	\N
+4	\N
+5	\N
+7	\N
+8	\N
+10	\N
+11	\N
+13	\N
+14	\N
+16	\N
+17	\N
+19	\N
+-- ANTI/SEMI with ON
+13
+7
+-- one-byte key
+0
+0
+0
+1
+1
+1
+2
+2
+2
+3
+3
+3
+4
+4
+4
+5
+5
+5
+6
+6
+-- string key
+1
+10
+11
+13
+14
+16
+17
+19
+2
+4
+5
+7
+8
+-- LowCardinality key
+3
+3
+3
+3
+4
+4
+4
+4
+0
+0
+0
+0
+1
+1
+1
+1
+2
+2
+2
+2
+-- nullable key
+1
+2
+5
+7
+9
+10
+11
+13
+14
+17
+18
+19
+\N
+\N
+\N
+\N
+\N
+3
+6
+15
+-- composite key
+1	1
+2	2
+4	4
+5	5
+7	7
+8	8
+10	10
+11	11
+13	13
+14	14
+16	16
+17	17
+19	19
+-- empty right table
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+-- several disjuncts
+0
+7
+1	
+2	
+4	
+5	
+7	
+8	
+10	
+11	
+13	
+14	
+16	
+17	
+19	
+-- mixed join expression keeps every right row
+13
+7
+-- dense small range, converted to a flat array
+13
+-- other join algorithms
+1
+2
+4
+5
+7
+8
+10
+11
+13
+14
+16
+17
+19
+1
+2
+4
+5
+7
+8
+10
+11
+13
+14
+16
+17
+19
+0
+3
+6
+9
+12
+15
+18
+-- another algorithm may reclaim the right blocks, so they are kept
+1
+2
+4
+5
+7
+8
+10
+11
+13
+14
+16
+17
+19
+-- nothing may reclaim them, so they are dropped as they are built
+1
+2
+4
+5
+7
+8
+10
+11
+13
+14
+16
+17
+19
+0
+3
+6
+9
+12
+15
+18
+-- the same with several disjuncts, where the per-row used flags used to keep them
+1	
+2	
+4	
+5	
+7	
+8	
+10	
+11	
+13	
+14	
+16	
+17	
+19	

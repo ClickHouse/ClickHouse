@@ -43,6 +43,7 @@ public:
 
     Field getDefault() const override;
     void insertDefaultInto(IColumn & column) const override;
+    bool isDefaultInsertTrivial() const override;
 
     bool equals(const IDataType & rhs) const override;
 
@@ -74,9 +75,15 @@ public:
 
     void updateHashImpl(SipHash & hash) const override;
 
-    void forEachChild(const ChildCallback & callback) const override;
+    size_t getNumberOfChildren() const override { return elems.size(); }
+    const DataTypePtr & getChild(size_t index) const override
+    {
+        chassert(index < elems.size());
+        return elems[index];
+    }
 
 private:
+    DataTypePtr doCloneWithChildren(const DataTypes & new_children) const override;
     SerializationInfoMutablePtr getSerializationInfoImpl(const IColumn & column, const SerializationInfoSettings & settings) const;
 };
 

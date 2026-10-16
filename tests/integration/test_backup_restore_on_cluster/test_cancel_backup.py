@@ -410,8 +410,16 @@ class NoTrashChecker:
                         + "')"
                     )
                 )
+            acceptable_errors = set(self.expect_errors) | set(self.allow_errors)
+            if "QUERY_WAS_CANCELLED" in acceptable_errors:
+                # Killing a query tears down its reading pipeline; a not-yet-started asynchronous
+                # marks-loading task then throws ASYNC_LOAD_CANCELED ("Background task for loading
+                # marks was canceled") inside the load_marks_threadpool. The exception never reaches
+                # the client but is still counted in system.errors, so it is a normal side effect
+                # of the cancellation the scenario expects, not trash.
+                acceptable_errors.add("ASYNC_LOAD_CANCELED")
             for error in errors:
-                assert (error in self.expect_errors) or (error in self.allow_errors)
+                assert error in acceptable_errors
                 all_errors.update(errors)
 
         not_found_expected_errors = set(self.expect_errors).difference(all_errors)

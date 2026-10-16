@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import logging
+import re
 import time
 
 import pytest
@@ -40,8 +41,24 @@ def clone_git_repository(repo, dir, commit=None):
             time.sleep(1)
 
 
+# `ClickHouseCluster` gives the whole container the running server's profraw merge pool
+# (`LLVM_PROFILE_FILE=/debug/it-%c%4m.profraw`), which every `docker exec`-ed process inherits.
+# A second writer cannot merge into a continuous-mode profile - it records its own writer's counter
+# bias - so in a coverage build the profiling runtime writes
+# `LLVM Profile Warning: Unable to merge profile data: source profile file is not compatible.` and
+# two `File exists` errors to stderr. Give this one-shot process a file of its own: its coverage is
+# still collected and it no longer touches the server's pool.
+GIT_IMPORT_PROFILE_FILE = "/debug/git-import-%p.profraw"
+
+# One progress line per processed commit, which `git-import` writes to stderr.
+COMMIT_PROGRESS_RE = re.compile(r"^\d+%  \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}  [0-9a-f]{40}  ")
+
+
 def run_git_import(dir):
-    command = f"cd {dir} && /usr/bin/clickhouse git-import 2>&1"
+    command = (
+        f"cd {dir} && LLVM_PROFILE_FILE={GIT_IMPORT_PROFILE_FILE} "
+        "/usr/bin/clickhouse git-import 2>&1"
+    )
     return node.exec_in_container(["bash", "-c", command])
 
 
@@ -176,7 +193,15 @@ def test_git_import():
     create_tables()
     insert_into_tables(dir)
 
-    assert output.count("\n") == 26
+    # `git-import` prints the `git log` command it runs and the commit count to stdout, and one
+    # progress line per commit to stderr, which the `2>&1` above merges into the same stream. Match
+    # those shapes instead of counting every newline, so that a line written by anything other than
+    # `git-import` - a profiling or sanitizer runtime, a loader warning - fails the thing it
+    # actually broke rather than this count.
+    lines = output.splitlines()
+    assert "git log --reverse --no-merges --pretty=%H" in lines, output
+    assert "Total 24 commits to process." in lines, output
+    assert sum(1 for line in lines if COMMIT_PROGRESS_RE.match(line)) == 24, output
     assert node.query("SELECT count() FROM commits") == "24\n"
     assert node.query("SELECT count() FROM file_changes") == "35\n"
     assert node.query("SELECT count(), round(avg(indent), 1) FROM line_changes") == TSV(

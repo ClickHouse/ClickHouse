@@ -1,0 +1,3 @@
+run	replicas_were_used	reads_no_more_than_a_single_node
+05100_with_replicas	1	1
+05100_with_replicas_min_rows	1	1

@@ -70,7 +70,13 @@ struct AggregationEntry
 
 struct HashJoinEntry
 {
-    bool shouldBeUpdated(const HashJoinEntry & new_entry) const { return new_entry.ht_size < ht_size / 2 || ht_size < new_entry.ht_size; }
+    /// A stored size is kept until a run finds less than this fraction of it, so a hint may overstate the current size up to this factor.
+    static constexpr size_t MAX_OVERESTIMATION_FACTOR = 2;
+
+    bool shouldBeUpdated(const HashJoinEntry & new_entry) const
+    {
+        return new_entry.ht_size < ht_size / MAX_OVERESTIMATION_FACTOR || ht_size < new_entry.ht_size;
+    }
 
     std::string dump() const { return fmt::format("ht_size={}", ht_size); }
 

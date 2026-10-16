@@ -3,8 +3,6 @@
 
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionListParsers.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 
 
 namespace DB
@@ -61,17 +59,17 @@ bool ParserKillQueryQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     return true;
 }
 
-}
-
-namespace DB
+std::map<String, Documentation> ParserKillQueryQuery::getDocumentation() const
 {
+    std::map<String, Documentation> documentation;
 
-void registerStatementKillQuery(StatementFactory & factory)
-{
-    factory.registerStatement("KILL",
+    documentation["KILL"] =
     {
         .description = R"DOCS_MD(
-There are two kinds of kill statements: to kill a query and to kill a mutation
+This page describes the `KILL QUERY` and `KILL MUTATION` statements.
+
+By default, an empty match returns without an exception. To make `KILL QUERY` throw when its `WHERE` expression leaves no eligible rows in `system.processes` after excluding the current `KILL` statement, and `KILL MUTATION` throw when its `WHERE` expression matches zero rows in `system.mutations`, set [`kill_throw_if_noop`](/operations/settings/settings#kill_throw_if_noop) to `true`.
+`ON CLUSTER` execution does not throw for empty matches because match results are not aggregated across hosts.
 
 ## KILL QUERY {#kill-query}
 
@@ -129,6 +127,13 @@ If you are killing a query in ClickHouse Cloud or in a self-managed cluster, the
 </Tip>
 
 Read-only users can only stop their own queries.
+
+A user who has not been granted `SELECT` on `system.processes` can still cancel their own query by naming it:
+`KILL QUERY WHERE query_id = '<id>'`. For a user who holds neither that grant nor `KILL QUERY`, an id that is
+not running as them cancels nothing and returns no rows rather than reporting an error, unless
+[`kill_throw_if_noop`](/operations/settings/settings#kill_throw_if_noop) is enabled, which reports
+the no-op as an exception; a user who holds `KILL QUERY` but not that `SELECT` is refused for want of the `SELECT`.
+Any other `WHERE` condition, and `ON CLUSTER`, keep requiring the grants described above.
 
 By default, the asynchronous version of queries is used (`ASYNC`), which does not wait for confirmation that queries have stopped.
 
@@ -215,7 +220,9 @@ KILL QUERY [ON CLUSTER cluster] WHERE <where expression to SELECT FROM system.pr
 KILL MUTATION [ON CLUSTER cluster] WHERE <where expression to SELECT FROM system.mutations query> [TEST] [FORMAT format]
 )",
         .related = {"SYSTEM", "SHOW", "ALTER"},
-    });
+    };
+
+    return documentation;
 }
 
 }
