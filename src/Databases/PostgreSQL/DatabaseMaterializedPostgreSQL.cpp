@@ -40,6 +40,9 @@
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
 
+#include <boost/algorithm/string/split.hpp>
+#include <boost/algorithm/string/trim.hpp>
+
 namespace DB
 {
 namespace Setting
@@ -177,6 +180,14 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
     }
 
     replication_handler->startup(/* delayed */false);
+
+    /// Do not keep wrappers of the tables that the replication handler excluded from replication.
+    if (const auto & skipped_tables = replication_handler->getTablesSkippedOnAttach(); !skipped_tables.empty())
+    {
+        std::lock_guard tables_lock(tables_mutex);
+        for (const auto & table_name : skipped_tables)
+            materialized_tables.erase(table_name);
+    }
 }
 
 
@@ -457,6 +468,30 @@ void DatabaseMaterializedPostgreSQL::attachTable(ContextPtr context_, const Stri
         bool publication_added = false;
         try
         {
+            /// With `materialized_postgresql_schema_list` the attached table is not persisted in the database definition,
+            /// and after restart only the tables of the listed schemas are discovered. So a table from another schema
+            /// would silently stop being replicated.
+            if (const String & schema_list = (*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_schema_list].value;
+                !schema_list.empty())
+            {
+                Strings schemas;
+                boost::split(schemas, schema_list, [](char c){ return c == ','; });
+                for (auto & schema : schemas)
+                    boost::trim(schema);
+
+                const auto pos = table_name.find('.');
+                const bool has_listed_schema = pos == std::string::npos
+                    ? schemas.size() == 1
+                    : std::find(schemas.begin(), schemas.end(), table_name.substr(0, pos)) != schemas.end();
+                if (!has_listed_schema)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Cannot attach table `{}` to MaterializedPostgreSQL database `{}`: it is not in the schemas of "
+                        "`materialized_postgresql_schema_list` ({}). With several schemas, the table name must be "
+                        "`schema.table`",
+                        table_name, getDatabaseName(), schema_list);
+            }
+
             auto storage = std::make_shared<StorageMaterializedPostgreSQL>(table, getContext(), remote_database_name, table_name);
 
             /// Set up the PostgreSQL side first, so that a failed snapshot leaves neither the persisted

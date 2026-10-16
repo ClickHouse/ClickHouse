@@ -54,6 +54,10 @@ public:
     /// Start replication setup immediately.
     void startSynchronization(bool throw_on_error);
 
+    /// Tables passed to addStorage that startSynchronization does not replicate, because on attach they had
+    /// neither a nested table nor a publication entry (see startSynchronization).
+    const std::set<String> & getTablesSkippedOnAttach() const { return tables_skipped_on_attach; }
+
     ASTPtr getCreateNestedTableQuery(StorageMaterializedPostgreSQL * storage, const String & table_name);
 
     /// Returns true if this call added the table to the publication, and false if the publication already
@@ -222,6 +226,8 @@ private:
 
     /// MaterializedPostgreSQL tables. Used for managing all operations with its internal nested tables.
     MaterializedStorages materialized_storages;
+
+    std::set<String> tables_skipped_on_attach;
 
     bool replication_handler_initialized = false;
 
