@@ -165,7 +165,8 @@ DOCKERS = [
         name="clickhouse/cctools",
         path="./ci/docker/cctools",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/fasttest"],
+        depends_on=[],
+        build_args=APT_MIRROR_BUILD_ARGS,
     ),
     Docker.Config(
         name="clickhouse/utils",
