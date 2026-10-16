@@ -12,11 +12,9 @@ import SettingsInfoBlock from "/snippets/fr/components/SettingsInfoBlock/Setting
 
 Ces paramètres configurent le serveur ClickHouse et sont générés automatiquement à partir du code source de ClickHouse.
 
-<div id="allow_feature_tier">
-  ## allow_feature_tier
-</div>
+## allow_feature_tier {#allow_feature_tier}
 
-<SettingsInfoBlock type="UInt32" default_value="0" changeable_without_restart="Oui" />
+<SettingsInfoBlock type="UInt32" default_value="0" changeable_without_restart="Yes" />
 
 Contrôle si l&#39;utilisateur peut modifier les paramètres associés aux différents niveaux de fonctionnalités.
 
@@ -27,24 +25,28 @@ Contrôle si l&#39;utilisateur peut modifier les paramètres associés aux diff�
 
 Cela équivaut à définir une contrainte `readonly` sur toutes les fonctionnalités `EXPERIMENTAL` / `PRIVATE PREVIEW` / `BETA`.
 
+Un statement portant sur un utilisateur, un rôle ou un settings profile est rejeté lorsqu&#39;il attribue à un tel paramètre une valeur différente
+de celle en vigueur dans la session qui l&#39;exécute, mais aussi lorsqu&#39;il modifie un tel paramètre pour un utilisateur, même
+s&#39;il ne mentionne aucun paramètre : octroi ou révocation d&#39;un rôle qui en définit un, affectation d&#39;un settings profile,
+suppression d&#39;un rôle ou d&#39;un profil, ou suppression d&#39;une surcharge par omission. Un utilisateur défini via SQL dont les propres paramètres ou
+ceux de ses rôles contiennent une telle valeur ne peut pas se connecter. Les paramètres que le serveur applique lui-même via
+le fichier de configuration, ainsi que les utilisateurs qui y sont définis, ne sont jamais rejetés. Le paramètre `compatibility` laisse un
+paramètre d&#39;un niveau désactivé à sa valeur par défaut, au lieu d&#39;appliquer la valeur par défaut de la version précédente.
+
 <Note>
   Une valeur de `0` signifie que tous les paramètres peuvent être modifiés.
 </Note>
 
 <Note>
-  `2` signifiait auparavant « paramètres de production uniquement ». Il autorise désormais également les paramètres beta, donc une configuration
+  `2` signifiait auparavant « paramètres de production uniquement ». Il autorise désormais également les paramètres beta, donc une configuration
   qui fixait `2` pour n&#39;autoriser que les paramètres de production doit utiliser `3`.
 </Note>
 
-<div id="allow_impersonate_user">
-  ## allow_impersonate_user
-</div>
+## allow_impersonate_user {#allow_impersonate_user}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Active ou désactive la fonctionnalité IMPERSONATE (EXECUTE AS target&#95;user). Ce paramètre est obsolète.
 
-<div id="allow_implicit_no_password">
-  ## allow_implicit_no_password
-</div>
+## allow_implicit_no_password {#allow_implicit_no_password}
 
 Interdit la création d’un utilisateur sans mot de passe, sauf si &#39;IDENTIFIED WITH no&#95;password&#39; est explicitement indiqué.
 
@@ -54,9 +56,7 @@ Interdit la création d’un utilisateur sans mot de passe, sauf si &#39;IDENTIF
 <allow_implicit_no_password>1</allow_implicit_no_password>
 ```
 
-<div id="allow_no_password">
-  ## allow_no_password
-</div>
+## allow_no_password {#allow_no_password}
 
 Indique si le type de mot de passe non sécurisé no&#95;password est autorisé ou non.
 
@@ -66,9 +66,7 @@ Indique si le type de mot de passe non sécurisé no&#95;password est autorisé 
 <allow_no_password>1</allow_no_password>
 ```
 
-<div id="allow_plaintext_password">
-  ## allow_plaintext_password
-</div>
+## allow_plaintext_password {#allow_plaintext_password}
 
 Indique si les types d’authentification par mot de passe en clair (non sécurisés) sont autorisés ou non.
 
@@ -78,9 +76,7 @@ Indique si les types d’authentification par mot de passe en clair (non sécuri
 <allow_plaintext_password>1</allow_plaintext_password>
 ```
 
-<div id="allow_use_jemalloc_memory">
-  ## allow_use_jemalloc_memory
-</div>
+## allow_use_jemalloc_memory {#allow_use_jemalloc_memory}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />Autorise l&#39;utilisation de la mémoire jemalloc.
 
