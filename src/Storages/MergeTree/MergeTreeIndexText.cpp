@@ -890,12 +890,15 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
             {
                 String token(block_tokens.getDataAt(matched_indices[i]));
                 /// Count after clipping: a token an earlier predicate ruled out is never read.
-                const auto reachable_rows = analyzer->addTokenInfo(token, infos[i]);
-                if (reachable_rows && *reachable_rows > 0
-                    && !(infos[i]->header & PostingsSerialization::Flags::EmbeddedPostings))
+                if (!analyzer->addTokenInfo(token, infos[i]) || (infos[i]->header & PostingsSerialization::Flags::EmbeddedPostings))
+                    continue;
+
+                /// Without the rows limit, only whether some block is reachable matters.
+                const size_t reachable_rows = analyzer->countReachableRows(*infos[i], /*stop_at_first_block=*/ !check_postings_rows);
+                if (reachable_rows > 0)
                 {
                     ++postings_to_read;
-                    postings_rows_to_read += *reachable_rows;
+                    postings_rows_to_read += reachable_rows;
                 }
             }
 

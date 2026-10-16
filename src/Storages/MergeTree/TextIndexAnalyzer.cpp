@@ -28,7 +28,7 @@ TextIndexAnalyzer::ReadableRows::ReadableRows(std::vector<RowsRange> ranges_)
 {
 }
 
-size_t TextIndexAnalyzer::ReadableRows::countReachableRows(const TokenPostingsInfo & token_info) const
+size_t TextIndexAnalyzer::ReadableRows::countReachableRows(const TokenPostingsInfo & token_info, bool stop_at_first_block) const
 {
     if (token_info.ranges.empty())
         return 0;
@@ -42,8 +42,14 @@ size_t TextIndexAnalyzer::ReadableRows::countReachableRows(const TokenPostingsIn
     /// this counts what `readPostingsBlocksForToken` reads, which asks per mark range.
     std::set<size_t> blocks;
     for (; it != ranges.end() && it->begin <= token_span.end; ++it)
+    {
         for (size_t block : token_info.getBlocksToRead(*it))
+        {
+            if (stop_at_first_block)
+                return 1;
             blocks.insert(block);
+        }
+    }
 
     /// The row count of a single block is not stored, but a block holds at most as many rows as its row range.
     size_t reachable_width = 0;
@@ -239,7 +245,7 @@ void TextIndexAnalyzer::addMissingToken(std::string_view token)
     });
 }
 
-std::optional<size_t> TextIndexAnalyzer::addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info)
+bool TextIndexAnalyzer::addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info)
 {
     all_token_infos[token] = token_info;
 
@@ -259,7 +265,7 @@ std::optional<size_t> TextIndexAnalyzer::addTokenInfo(std::string_view token, To
             });
 
             queries_by_token.erase(token);
-            return {};
+            return false;
         }
 
         token_rows_range = *clipped_range;
@@ -277,7 +283,12 @@ std::optional<size_t> TextIndexAnalyzer::addTokenInfo(std::string_view token, To
         ProfileEvents::increment(ProfileEvents::TextIndexUsedEmbeddedPostings);
     }
 
-    return readable_rows ? readable_rows->countReachableRows(*token_info) : token_info->cardinality;
+    return true;
+}
+
+size_t TextIndexAnalyzer::countReachableRows(const TokenPostingsInfo & token_info, bool stop_at_first_block) const
+{
+    return readable_rows ? readable_rows->countReachableRows(token_info, stop_at_first_block) : token_info.cardinality;
 }
 
 void TextIndexAnalyzer::addPostings(std::string_view token, const PostingList & postings)
