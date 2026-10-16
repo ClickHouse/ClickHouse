@@ -838,7 +838,7 @@ static void splitAndModifyMutationCommands(
         {
             if (projections_being_dropped.contains(projection.name))
                 continue;
-            if (!part->hasProjection(projection.name))
+            if (!part->hasProjection(projection.name) && !part->hasUnloadedProjection(projection.name))
                 continue;
             if (part->hasBrokenProjection(projection.name))
                 continue;
@@ -1514,7 +1514,7 @@ static std::set<ProjectionDescriptionRawPtr> getProjectionsToRecalculate(
         bool need_recalculate =
             materialized_projections.contains(projection.name)
             || (!is_full_part_storage
-                && source_part->hasProjection(projection.name)
+                && (source_part->hasProjection(projection.name) || source_part->hasUnloadedProjection(projection.name))
                 && !source_part->hasBrokenProjection(projection.name));
 
         if (need_recalculate)
@@ -3365,7 +3365,7 @@ private:
             bool need_recalculate =
                 (ctx->materialized_projections.contains(projection.name)
                 || (!is_full_part_storage
-                    && ctx->source_part->hasProjection(projection.name)
+                    && (ctx->source_part->hasProjection(projection.name) || ctx->source_part->hasUnloadedProjection(projection.name))
                     && !ctx->source_part->hasBrokenProjection(projection.name)))
                 && !lightweight_delete_drop;
 
@@ -5134,7 +5134,7 @@ bool MutateTask::prepare()
         {
             for (const auto & projection : ctx->metadata_snapshot->getProjections())
             {
-                if (!ctx->source_part->hasProjection(projection.name))
+                if (!ctx->source_part->hasProjection(projection.name) && !ctx->source_part->hasUnloadedProjection(projection.name))
                     continue;
 
                 ctx->materialized_projections.insert(projection.name);

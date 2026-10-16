@@ -1,0 +1,45 @@
+<!--
+    Decoding of `DELTA_BINARY_PACKED` Parquet columns: 64-bit (`DateTime64`) and 32-bit (`Int32`).
+    The ClickHouse Parquet writer does not produce this encoding, so the data comes from
+    `user_files/parquet_delta_binary_packed.parquet` (3.4 KB): 6M rows, no nulls, zstd, data page v2,
+    generated with pyarrow 26.0.0 / numpy 2.5.4:
+
+        import numpy as np, pyarrow as pa, pyarrow.parquet as pq
+        rng = np.random.default_rng(0)
+        n = 6_000_000
+        # Deltas in [0, 3] (2-bit miniblocks) repeating every 128 values, so every block has the same bytes and
+        # the file compresses to a few KB. The decode cost per value does not depend on the data.
+        deltas = lambda: np.tile(rng.integers(0, 4, 128), n // 128 + 1)[:n]
+        ts = np.int64(1_767_225_600_000_000) + np.cumsum(deltas())  # 2026-01-01, microseconds
+        i32 = np.cumsum(deltas()).astype(np.int32)
+        schema = pa.schema([pa.field('ts', pa.timestamp('us', tz='UTC'), nullable=False), pa.field('i32', pa.int32(), nullable=False)])
+        table = pa.table({'ts': ts, 'i32': i32}, schema=schema)
+        pq.write_table(table, 'parquet_delta_binary_packed.parquet', use_dictionary=False, compression='zstd',
+                       column_encoding='DELTA_BINARY_PACKED', data_page_version='2.0',
+                       row_group_size=1 << 20, max_rows_per_page=1 << 20, data_page_size=1 << 30)
+
+    Each query decodes the file 10 times (`loop` with `LIMIT`) to get a run time well above the noise.
+-->
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <query>
+        SELECT sum(toUnixTimestamp64Micro(ts)) FROM
+        (
+            SELECT ts FROM loop(file('parquet_delta_binary_packed.parquet'))
+            LIMIT 60000000
+        )
+        FORMAT Null
+    </query>
+
+    <query>
+        SELECT sum(i32) FROM
+        (
+            SELECT i32 FROM loop(file('parquet_delta_binary_packed.parquet'))
+            LIMIT 60000000
+        )
+        FORMAT Null
+    </query>
+</test>

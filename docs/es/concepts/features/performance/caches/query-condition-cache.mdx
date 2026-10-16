@@ -57,6 +57,8 @@ Las ejecuciones posteriores de la misma consulta, también con el parámetro `us
 
 Las consultas que utilizan la optimización TopK (`ORDER BY <column> LIMIT n`, acelerada mediante filtrado dinámico o un índice de omisión minmax en la columna de ordenación) también utilizan la caché de condiciones de consulta.
 Las lecturas TopK pueden omitir gránulos según un umbral que cambia mientras se ejecuta la consulta, por lo que sus entradas de caché se particionan según los parámetros del plan TopK y el conjunto de partes leídas: solo una consulta con el mismo plan sobre las mismas partes las reutiliza.
+Esto también se aplica a las lecturas TopK de archivos Parquet mediante el motor de tabla `File`: en ese caso, la caché recuerda los grupos de filas que no contenían ninguna fila del resultado, y las entradas se particionan según los parámetros del plan TopK, la condición de filtrado (si la hay) y el conjunto de archivos leídos junto con sus versiones, de modo que cualquier modificación en alguno de los archivos genera una entrada nueva.
+A diferencia de otras lecturas, una lectura TopK de este tipo utiliza la caché incluso sin condición de filtrado, por ejemplo, `SELECT * FROM hits ORDER BY EventTime LIMIT 10`.
 Estas lecturas pueden excluirse por completo de la caché con la configuración [`use_query_condition_cache_for_top_k`](/es/reference/settings/session-settings/use-query) (predeterminado: habilitado), que solo surte efecto si `use_query_condition_cache` también está habilitada.
 
 ## Administración {#administration}
