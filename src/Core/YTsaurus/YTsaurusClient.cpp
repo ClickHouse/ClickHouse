@@ -4,7 +4,6 @@
 
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/ReadHelpers.h>
-#include <IO/WriteBufferFromOStream.h>
 #include <Formats/formatBlock.h>
 #include <Core/Block.h>
 #include <Formats/FormatFactory.h>
@@ -146,14 +145,12 @@ ReadBufferPtr YTsaurusClient::selectRows(const String & cypress_path, const Colu
 ReadBufferPtr YTsaurusClient::lookupRows(const String & cypress_path, const Block & lookup_block_input, ThrottlerPtr lookup_throttler)
 {
     YTsaurusQueryPtr lookup_rows_query(new YTsaurusLookupRows(cypress_path));
-    auto out_callback = [lookup_block_input, this](std::ostream & ostr)
+    auto out_callback = [lookup_block_input, this](WriteBuffer & out)
     {
         FormatSettings format_settings;
         format_settings.json.quote_64bit_integers = false;
-        WriteBufferFromOStream out_buffer(ostr);
-        auto output_format = context->getOutputFormat("JSONEachRow", out_buffer, lookup_block_input.cloneEmpty(), format_settings);
+        auto output_format = context->getOutputFormat("JSONEachRow", out, lookup_block_input.cloneEmpty(), format_settings);
         formatBlock(output_format, lookup_block_input);
-        out_buffer.finalize();
     };
     /// The throttler is passed down to `executeQuery` so that every real `lookup_rows` HTTP attempt, including retries
     /// against other http proxies, consumes its own token; otherwise one logical lookup could exceed the limit on failover.
