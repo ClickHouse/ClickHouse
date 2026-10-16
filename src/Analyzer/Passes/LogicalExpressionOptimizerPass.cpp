@@ -1803,6 +1803,7 @@ public:
         if (preserved_join_tables.empty())
             return false;
 
+        bool reads_other_table = false;
         std::vector<const IQueryTreeNode *> nodes_to_process{node.get()};
         while (!nodes_to_process.empty())
         {
@@ -1815,13 +1816,17 @@ public:
                 if (source && source->getNodeType() == QueryTreeNodeType::LAMBDA_ARGS)
                     continue;
                 if (!std::ranges::contains(preserved_join_tables, source))
-                    return false;
+                    reads_other_table = true;
             }
             else if (const auto * function = current->as<FunctionNode>())
             {
                 if (function->getFunctionName() == "indexHint")
                     continue;
-                for (const auto & argument : function->getArguments().getNodes())
+                const auto & arguments = function->getArguments().getNodes();
+                /// The join folds an `IN` whose constant set turns out empty, and what it feeds, to a constant.
+                if (isNameOfInFunction(function->getFunctionName()) && arguments.size() == 2 && arguments[1]->as<ConstantNode>())
+                    return true;
+                for (const auto & argument : arguments)
                     nodes_to_process.push_back(argument.get());
             }
             else if (const auto * lambda = current->as<LambdaNode>())
@@ -1829,7 +1834,7 @@ public:
                 nodes_to_process.push_back(lambda->getExpression().get());
             }
         }
-        return true;
+        return !reads_other_table;
     }
 
     bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child)

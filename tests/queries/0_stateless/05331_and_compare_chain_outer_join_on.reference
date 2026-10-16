@@ -50,6 +50,10 @@ key with indexHint
 0	1
 1	0
 2	0
+key with a constant IN set
+0	10
+1	11
+2	0
 bound within the other side
 0	1
 1	0

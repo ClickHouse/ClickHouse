@@ -46,6 +46,9 @@ SELECT l.number, r.number FROM numbers(3) AS l LEFT JOIN numbers(3) AS r ON l.nu
 SELECT 'key with indexHint';
 SELECT l.number, r.number FROM numbers(3) AS l LEFT JOIN numbers(3) AS r ON l.number + indexHint(r.number < 2) = r.number AND r.number < 2 ORDER BY l.number;
 
+SELECT 'key with a constant IN set';
+SELECT l.number, r.v FROM numbers(3) AS l LEFT JOIN (SELECT number AS k, number + 10 AS v FROM numbers(3)) AS r ON l.number + (r.k IN [] AND r.k > 0) = r.k AND r.k < 2 ORDER BY l.number;
+
 SELECT 'bound within the other side';
 SELECT l.number, r.b FROM numbers(3) AS l LEFT JOIN (SELECT number AS a, number + 1 AS b FROM numbers(3)) AS r ON l.number = r.a AND r.a < r.b AND r.b < 2 ORDER BY l.number;
 
