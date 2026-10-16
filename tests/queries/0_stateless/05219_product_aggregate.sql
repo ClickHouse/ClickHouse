@@ -8,6 +8,8 @@ SELECT product(x) FROM VALUES('x Int64', (5), (0), (7));
 
 SELECT 'empty and nullable input';
 SELECT product(number), toTypeName(product(number)) FROM numbers(0);
+SELECT toTypeName(productOrNull(number)), productOrNull(number) FROM numbers(0);
+SELECT toTypeName(productOrDefault(number)), productOrDefault(number) FROM numbers(0);
 SELECT toTypeName(product(x)), product(x)
 FROM VALUES('x Nullable(Float64)', (1.5), (NULL), (2));
 SELECT toTypeName(product(x)), product(x)
