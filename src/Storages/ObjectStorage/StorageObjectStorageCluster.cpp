@@ -305,6 +305,21 @@ void StorageObjectStorageCluster::checkAlterIsPossible(const AlterCommands & com
     configuration->checkAlterIsPossible(object_storage, context, commands);
 }
 
+Pipe StorageObjectStorageCluster::alterPartition(
+    const StorageMetadataPtr & /*metadata_snapshot*/, const PartitionCommands & commands, ContextPtr context)
+{
+    return configuration->alterPartition(commands, std::move(context), catalog, getStorageID());
+}
+
+void StorageObjectStorageCluster::checkAlterPartitionIsPossible(
+    const PartitionCommands & commands,
+    const StorageMetadataPtr & /*metadata_snapshot*/,
+    const Settings & /*settings*/,
+    ContextPtr context) const
+{
+    configuration->checkAlterPartitionIsPossible(object_storage, context, commands);
+}
+
 Pipe StorageObjectStorageCluster::executeCommand(const String & command_name, const ASTPtr & args, ContextPtr context)
 {
     if (!configuration->isDataLakeConfiguration())
