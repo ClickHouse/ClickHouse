@@ -6240,7 +6240,7 @@ Given that, for example, dictionaries, can be out of sync across nodes, mutation
     DECLARE(Seconds, lock_acquire_timeout, DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC, R"(
 Defines how many seconds a locking request waits before failing.
 
-Locking timeout is used to protect from deadlocks while executing read/write operations with tables. When the timeout expires and the locking request fails, the ClickHouse server throws an exception "Locking attempt timed out! Possible deadlock avoided. Client should retry." with error code `DEADLOCK_AVOIDED`.
+Locking timeout is used to protect from deadlocks while executing read/write operations with tables. When the timeout expires and the locking request fails, the ClickHouse server throws an exception "Locking attempt timed out. Possible deadlock avoided. Client should retry." with error code `DEADLOCK_AVOIDED`.
 
 Possible values:
 

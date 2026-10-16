@@ -260,7 +260,7 @@ SinkToStoragePtr StorageKafka::write(const ASTPtr &, const StorageMetadataPtr & 
     ProfileEvents::increment(ProfileEvents::KafkaWrites);
 
     if (topics.size() > 1)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Can't write to Kafka table with multiple topics!");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Can't write to Kafka table with multiple topics");
 
     cppkafka::Configuration conf = getProducerConfiguration();
 
