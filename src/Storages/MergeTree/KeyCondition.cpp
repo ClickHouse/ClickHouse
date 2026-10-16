@@ -3462,13 +3462,9 @@ static bool keyToSetConversionMayCollapse(const DataTypePtr & key_type, const Da
             return *set_scale < *key_scale;
         if (set_which.isInteger())
             return *key_scale > 0;
+        /// A numeric `CAST` bounds a stored decimal by its backing integer, not by its precision; only `Float64` holds every `Int32`.
         if (set_which.isFloat())
-        {
-            const UInt32 exact_digits = set_which.isFloat64() ? std::numeric_limits<Float64>::digits10
-                : set_which.isFloat32()                       ? std::numeric_limits<Float32>::digits10
-                                                              : 0;
-            return getDecimalPrecision(*key_unwrapped) > exact_digits;
-        }
+            return !(key_which.isDecimal32() && set_which.isFloat64());
     }
 
     return !conversionPreservesOrder(*key_unwrapped, *set_unwrapped);
