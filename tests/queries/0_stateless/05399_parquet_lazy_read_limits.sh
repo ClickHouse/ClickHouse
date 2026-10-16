@@ -28,6 +28,7 @@ CLIENT=(${CLICKHOUSE_CLIENT}
     --query_plan_optimize_lazy_materialization=1 --query_plan_max_limit_for_lazy_materialization=0
     --query_plan_optimize_lazy_materialization_for_file=1
     --query_plan_optimize_lazy_materialization_for_object_storage=1 --s3_validate_etag_on_read=1
+    --read_overflow_mode=throw --read_overflow_mode_leaf=throw --timeout_overflow_mode=throw
     --max_threads=1 --max_block_size=1 --input_format_parquet_max_block_size=1)
 
 for source in "${FILE_SOURCE}" "${S3_SOURCE}"; do
@@ -44,7 +45,13 @@ for source in "${FILE_SOURCE}" "${S3_SOURCE}"; do
         "${CLIENT[@]}" --query "${QUERY} SETTINGS ${limit} = 1000000" 2>&1 | grep -m1 -o 'TOO_MANY_BYTES'
     done
 
-    # One-row Parquet blocks ensure that the deferred pass can stop before the full result.
+    # A partial deferred read cannot be joined to all main-pass rows, so break mode uses one pass.
+    "${CLIENT[@]}" --query "SELECT countIf(explain LIKE '%LazilyReadFrom%') FROM (EXPLAIN ${QUERY})
+        SETTINGS max_bytes_to_read = 1000000, read_overflow_mode = 'break'"
+    "${CLIENT[@]}" --query "SELECT countIf(explain LIKE '%LazilyReadFrom%') FROM (EXPLAIN ${QUERY})
+        SETTINGS max_bytes_to_read_leaf = 1000000, read_overflow_mode_leaf = 'break'"
+
+    # One-row Parquet blocks ensure that the read can stop before the full result.
     "${CLIENT[@]}" --query "SELECT (${QUERY}) < 1310720 SETTINGS max_bytes_to_read = 1000000, read_overflow_mode = 'break'"
     "${CLIENT[@]}" --query "SELECT (${QUERY}) < 1310720 SETTINGS max_bytes_to_read_leaf = 1000000, read_overflow_mode_leaf = 'break'"
 done

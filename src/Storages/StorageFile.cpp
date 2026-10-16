@@ -61,6 +61,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <QueryPipeline/StreamLocalLimits.h>
 
 #include <Common/CurrentThread.h>
 #include <Common/checkStackSize.h>
@@ -2601,6 +2602,21 @@ bool ReadFromFile::canUseLazyMaterialization() const
 {
     if (need_only_count)
         return false;
+
+    /// The lazy branch must return every requested row to restore the main branch's order.
+    /// A read limit in break mode can stop it before all deferred rows have been read.
+    if (query_info.storage_limits)
+    {
+        for (const auto & limits : *query_info.storage_limits)
+        {
+            const auto & size_limits = limits.local_limits.size_limits;
+            if ((size_limits.hasLimits() && size_limits.overflow_mode == OverflowMode::BREAK)
+                || (limits.leaf_limits.hasLimits() && limits.leaf_limits.overflow_mode == OverflowMode::BREAK)
+                || (limits.local_limits.speed_limits.max_execution_time != 0
+                    && limits.local_limits.timeout_overflow_mode == OverflowMode::BREAK))
+                return false;
+        }
+    }
 
     /// The global row index requires per-row file row numbers (ChunkInfoRowNumbers), and the lazy
     /// branch requires reading an explicit set of rows (FormatFilterInfo::rows_to_read).
