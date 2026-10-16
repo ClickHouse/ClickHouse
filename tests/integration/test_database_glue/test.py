@@ -1348,7 +1348,9 @@ def test_location_not_a_uri(started_cluster):
     create_clickhouse_glue_database(
         started_cluster, node, CATALOG_NAME, additional_settings={"storage_endpoint": ""}
     )
-    assert node.query(f"SELECT count() FROM {CATALOG_NAME}.`{namespace}.{table_name}`") == "5\n"
+    assert node.query(
+        f"SELECT count() FROM {CATALOG_NAME}.`{namespace}.{table_name}` SETTINGS optimize_trivial_count_query = 0"
+    ) == "5\n"
 
 
 def test_check_database(started_cluster):

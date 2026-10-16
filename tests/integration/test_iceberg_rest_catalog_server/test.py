@@ -548,6 +548,9 @@ def test_clickhouse_rest_catalog_client_location_not_a_uri(started_cluster):
     for ns, directory in directories.items():
         create_namespace([ns], properties={"location": f"s3://{BUCKET}/custom/{ns}/{directory}"})
         create_table(ns, "events")
+    encoded_ns = f"client_location_e_{suffix}"
+    create_namespace([encoded_ns], properties={"location": f"s3://{BUCKET}/custom/{encoded_ns}/a%20b"})
+    create_table(encoded_ns, "events")
 
     node.query(f"""
         DROP DATABASE IF EXISTS rest_client_location_db;
@@ -560,6 +563,10 @@ def test_clickhouse_rest_catalog_client_location_not_a_uri(started_cluster):
     try:
         for ns in directories:
             assert node.query(f"SELECT count() FROM rest_client_location_db.`{ns}.events`") == "0\n"
+        # A location the catalog returns already encoded keeps its escape.
+        assert f"/custom/{encoded_ns}/a%20b/events" in node.query(
+            f"SHOW CREATE TABLE rest_client_location_db.`{encoded_ns}.events`"
+        )
     finally:
         node.query("DROP DATABASE IF EXISTS rest_client_location_db")
 
