@@ -588,8 +588,8 @@ TEST_F(RuntimeFilterExchangeWiring, FragmentGraphLeavesOutMergeStages)
     auto graph = buildFragmentGraph(plan);
     EXPECT_EQ(dumpFragmentGraph(graph),
         "query fragments: 2\n"
-        "  F0 stage_0  worker     distributed  tasks=40\n"
-        "  F1 main     initiator  distributed  tasks=1  needs F0 via exchange_0\n"
+        "  F0 stage_0  distributed  tasks=40\n"
+        "  F1 main     distributed  tasks=1  needs F0 via exchange_0\n"
         "exchanges: 1\n"
         "  exchange_0  F0 -> F1  gather  pipelined  40 -> 1\n"
         "levels: [F0] [F1]\n");

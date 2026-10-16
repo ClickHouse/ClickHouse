@@ -197,10 +197,10 @@ TopologicalOrder sortTopologically(const FragmentGraph & graph)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicate fragment {} in the fragment graph", graph.fragments[i].id);
     }
 
-    std::unordered_map<UInt32, const FragmentExchange *> exchange_by_id;
+    std::unordered_set<UInt32> exchange_ids;
     for (const auto & exchange : graph.exchanges)
     {
-        if (!exchange_by_id.emplace(exchange.id, &exchange).second)
+        if (!exchange_ids.insert(exchange.id).second)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicate exchange {} in the fragment graph", exchange.id);
     }
 
@@ -208,33 +208,18 @@ TopologicalOrder sortTopologically(const FragmentGraph & graph)
     result.producers.resize(num_fragments);
     std::vector<size_t> in_degree(num_fragments, 0);
     std::vector<std::vector<size_t>> consumers(num_fragments);
-    std::unordered_set<UInt32> read_exchanges;
-    for (size_t i = 0; i < num_fragments; ++i)
+    for (const auto & exchange : graph.exchanges)
     {
-        const auto & fragment = graph.fragments[i];
-        for (UInt32 child : fragment.children)
-        {
-            auto exchange_it = exchange_by_id.find(child);
-            if (exchange_it == exchange_by_id.end())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Fragment {} reads unknown exchange {}", fragment.id, child);
-            const auto & exchange = *exchange_it->second;
-            if (!read_exchanges.insert(exchange.id).second)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Exchange {} is read more than once", exchange.name);
-            if (exchange.to != fragment.id)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Fragment {} reads exchange {}, which goes to fragment {}",
-                    fragment.id, exchange.name, exchange.to);
-            auto producer_it = fragment_index_by_id.find(exchange.from);
-            if (producer_it == fragment_index_by_id.end())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Fragment {} reads exchange {} from unknown fragment {}",
-                    fragment.id, exchange.name, exchange.from);
-            consumers[producer_it->second].push_back(i);
-            result.producers[i].push_back(producer_it->second);
-            ++in_degree[i];
-        }
+        auto producer_it = fragment_index_by_id.find(exchange.from);
+        if (producer_it == fragment_index_by_id.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Exchange {} comes from unknown fragment {}", exchange.name, exchange.from);
+        auto consumer_it = fragment_index_by_id.find(exchange.to);
+        if (consumer_it == fragment_index_by_id.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Exchange {} goes to unknown fragment {}", exchange.name, exchange.to);
+        consumers[producer_it->second].push_back(consumer_it->second);
+        result.producers[consumer_it->second].push_back(producer_it->second);
+        ++in_degree[consumer_it->second];
     }
-    if (read_exchanges.size() != graph.exchanges.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The fragment graph has {} exchanges, but its fragments read {}",
-            graph.exchanges.size(), read_exchanges.size());
 
     std::priority_queue<std::pair<UInt32, size_t>, std::vector<std::pair<UInt32, size_t>>, std::greater<>> ready;
     for (size_t i = 0; i < num_fragments; ++i)
@@ -257,19 +242,11 @@ TopologicalOrder sortTopologically(const FragmentGraph & graph)
 
     /// The root is the fragment whose output nobody consumes: the result of the query.
     size_t num_roots = 0;
-    size_t root = 0;
     for (size_t i = 0; i < num_fragments; ++i)
-    {
         if (consumers[i].empty())
-        {
             ++num_roots;
-            root = i;
-        }
-    }
     if (num_roots != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The fragment graph has {} root fragments, expected one", num_roots);
-    if (graph.fragments[root].role != QueryFragment::Role::Initiator)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The root fragment F{} must have the initiator role", graph.fragments[root].id);
 
     return result;
 }
@@ -319,7 +296,6 @@ FragmentGraph buildFragmentGraph(const DistributedQueryPlan & distributed_plan)
         QueryFragment fragment;
         fragment.id = stage.id;
         fragment.stage_name = stage_name;
-        fragment.role = stage_name == main_stage_name ? QueryFragment::Role::Initiator : QueryFragment::Role::Worker;
         fragment.tasks = stage.tasks.size();
         checkNotEmpty(stage.query_plan_fragment, stage_name);
         fragment.plan = &stage.query_plan_fragment;
@@ -331,7 +307,7 @@ FragmentGraph buildFragmentGraph(const DistributedQueryPlan & distributed_plan)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Stages {} and {} have the same id {}",
                 graph.fragments[i - 1].stage_name, graph.fragments[i].stage_name, graph.fragments[i].id);
 
-    auto find_fragment = [&](UInt32 id) -> QueryFragment &
+    auto find_fragment = [&](UInt32 id) -> const QueryFragment &
     {
         auto it = std::lower_bound(graph.fragments.begin(), graph.fragments.end(), id,
             [](const QueryFragment & f, UInt32 value) { return f.id < value; });
@@ -369,9 +345,7 @@ FragmentGraph buildFragmentGraph(const DistributedQueryPlan & distributed_plan)
             exchange.destination_buckets = description.destination_bucket_count;
             exchange.statistics.estimated_rows = getEstimatedRows(*find_fragment(producer_id).plan);
 
-            auto & consumer = find_fragment(consumer_id);
-            checkReceiveStep(*consumer.plan, consumer_stage, exchange_name);
-            consumer.children.push_back(exchange.id);
+            checkReceiveStep(*find_fragment(consumer_id).plan, consumer_stage, exchange_name);
 
             graph.exchanges.push_back(std::move(exchange));
         }
@@ -382,9 +356,6 @@ FragmentGraph buildFragmentGraph(const DistributedQueryPlan & distributed_plan)
         if (graph.exchanges[i - 1].id == graph.exchanges[i].id)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Exchanges {} and {} have the same id {}",
                 graph.exchanges[i - 1].name, graph.exchanges[i].name, graph.exchanges[i].id);
-
-    for (auto & fragment : graph.fragments)
-        std::sort(fragment.children.begin(), fragment.children.end());
 
     validateFragmentGraph(graph);
     return graph;
@@ -397,7 +368,6 @@ FragmentGraph buildSingleFragmentGraph(const QueryPlan & plan, std::optional<Str
     QueryFragment fragment;
     fragment.id = 0;
     fragment.stage_name = String(main_stage_name);
-    fragment.role = QueryFragment::Role::Initiator;
     fragment.location = QueryFragment::ExecutionLocation::SingleNode;
     fragment.fallback_reason = std::move(fallback_reason);
     fragment.tasks = 1;
@@ -419,16 +389,18 @@ String dumpFragmentGraph(const FragmentGraph & graph)
     fmt::format_to(out, "query fragments: {}\n", graph.fragments.size());
     for (const auto & fragment : graph.fragments)
     {
-        fmt::format_to(out, "  F{} {:<{}}  {:<9}  {:<11}  tasks={}",
+        fmt::format_to(out, "  F{} {:<{}}  {:<11}  tasks={}",
             fragment.id, fragment.stage_name, stage_name_width,
-            fragment.role == QueryFragment::Role::Initiator ? "initiator" : "worker",
             fragment.location == QueryFragment::ExecutionLocation::Distributed ? "distributed" : "single node",
             fragment.tasks);
 
-        for (size_t i = 0; i < fragment.children.size(); ++i)
+        bool first_input = true;
+        for (const auto & exchange : graph.exchanges)
         {
-            const auto & exchange = graph.getExchange(fragment.children[i]);
-            fmt::format_to(out, "{}F{} via {}", i == 0 ? "  needs " : ", ", exchange.from, exchange.name);
+            if (exchange.to != fragment.id)
+                continue;
+            fmt::format_to(out, "{}F{} via {}", first_input ? "  needs " : ", ", exchange.from, exchange.name);
+            first_input = false;
         }
         if (fragment.fallback_reason)
             fmt::format_to(out, "  not distributed: {}", *fragment.fallback_reason);

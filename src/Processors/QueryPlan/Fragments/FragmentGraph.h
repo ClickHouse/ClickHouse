@@ -17,12 +17,6 @@ namespace DB
 /// One stage of a distributed query plan.
 struct QueryFragment
 {
-    enum class Role : uint8_t
-    {
-        Initiator,
-        Worker,
-    };
-
     enum class ExecutionLocation : uint8_t
     {
         /// A stage of a cut plan, run as tasks by the scheduler.
@@ -33,11 +27,10 @@ struct QueryFragment
     };
 
     /// The stage id assigned by the cutter: N for `stage_N`, the next number for `main`.
-    /// Ids ascend from the leaves to the initiator.
+    /// Ids ascend from the leaves to the root.
     UInt32 id = 0;
     /// The name of the stage in the executor, to join with logs and traces.
     String stage_name;
-    Role role = Role::Worker;
     ExecutionLocation location = ExecutionLocation::Distributed;
     /// `SingleNode` only: why the plan was not cut.
     std::optional<String> fallback_reason;
@@ -45,8 +38,6 @@ struct QueryFragment
     std::optional<String> description;
     /// The number of tasks of the stage.
     size_t tasks = 0;
-    /// Ids of the exchanges this fragment reads, ascending.
-    std::vector<UInt32> children;
     /// The plan of the stage (not owned); nullptr in hand-built graphs of tests.
     const QueryPlan * plan = nullptr;
 };
@@ -58,7 +49,8 @@ struct ExchangeStatistics
 };
 
 /// The edge from a producer fragment to the fragment that consumes its output. Every dependency between two
-/// fragments goes through exactly one exchange; the send and receive steps stay in the plans of the fragments.
+/// fragments goes through exactly one exchange, and the exchanges are the only edges of the graph: the inputs of a
+/// fragment are the exchanges whose `to` is its id. The send and receive steps stay in the plans of the fragments.
 struct FragmentExchange
 {
     enum class Kind : uint8_t
@@ -121,12 +113,12 @@ struct FragmentGraph
 FragmentGraph buildFragmentGraph(const DistributedQueryPlan & distributed_plan);
 
 /// The one-fragment graph of a plan that was not cut (no exchanges, or the planner fell back to a single node).
-/// The fragment is an initiator with the `SingleNode` location and carries `fallback_reason`.
+/// The fragment has the `SingleNode` location and carries `fallback_reason`.
 FragmentGraph buildSingleFragmentGraph(const QueryPlan & plan, std::optional<String> fallback_reason);
 
-/// Throws `LOGICAL_ERROR` unless every child of a fragment is an exchange into it from a known fragment, every
-/// exchange is the child of one fragment, the graph is acyclic, and it has exactly one root (a fragment whose
-/// output no exchange reads), which has the `Initiator` role.
+/// Throws `LOGICAL_ERROR` unless fragment and exchange ids are unique, every exchange goes from a known fragment to
+/// a known fragment, the graph is acyclic, and it has exactly one root: the fragment whose output no exchange reads,
+/// which produces the result of the query.
 void validateFragmentGraph(const FragmentGraph & graph);
 
 /// Fragment ids by topological level, ascending within a level: the first level are the leaves, the last the root.

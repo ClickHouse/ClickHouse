@@ -403,7 +403,7 @@ struct DistributedQueryTask
 struct DistributedQueryStage
 {
     /// Number of the stage: the N of `stage_N` for worker stages, the next number for `main`, so that
-    /// ids ascend from the leaves to the initiator. Not sent to workers.
+    /// ids ascend from the leaves to `main`. Not sent to workers.
     UInt32 id = 0;
     QueryPlan query_plan_fragment;   /// Common for all tasks
     std::vector<DistributedQueryTask> tasks;   /// Individual set of parameter values for each task
