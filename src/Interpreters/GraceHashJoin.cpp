@@ -955,7 +955,7 @@ size_t GraceHashJoin::spill(size_t at_least_bytes)
     /// Let the scheduler check the remaining estimate before requesting another split.
     const size_t before = hash_join->getTotalByteCount();
     /// The bucket's in-memory join is exclusively held by `hash_join_mutex`.
-    repartitionCurrentBucket(hash_join->getTotalRowCount(), {}, JoinBuildContext::serial());
+    repartitionCurrentBucket({}, JoinBuildContext::serial());
     const size_t after = hash_join->getTotalByteCount();
     return before > after ? before - after : 0;
 }
