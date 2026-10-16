@@ -72,7 +72,8 @@ MergeTreeSink::MergeTreeSink(
     StorageMergeTree & storage_,
     StorageMetadataPtr metadata_snapshot_,
     size_t max_parts_per_block_,
-    ContextPtr context_)
+    ContextPtr context_,
+    bool check_database_rows_limit_)
     : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
@@ -97,17 +98,19 @@ MergeTreeSink::MergeTreeSink(
     /// With insert deduplication, the database `max_rows` check is evaluated here as well, but its
     /// verdict is carried to `commitPart` and thrown only for a part that is not a duplicate, so that
     /// retrying an INSERT which was already written stays a no-op even once the database is full.
+    /// Lightweight updates are not checked against `max_rows`: their patch parts add no rows.
     try
     {
         storage.delayInsertOrThrowIfNeeded(
-            nullptr, context, /*allow_throw=*/ true, /*allow_delay=*/ false, /*check_database_rows_limit=*/ !deduplicate);
+            nullptr, context, /*allow_throw=*/ true, /*allow_delay=*/ false,
+            /*check_database_rows_limit=*/ check_database_rows_limit_ && !deduplicate);
     }
     catch (...)
     {
         too_many_parts_exception = std::current_exception();
     }
 
-    if (deduplicate && !too_many_parts_exception)
+    if (check_database_rows_limit_ && deduplicate && !too_many_parts_exception)
         database_rows_limit_exception = storage.getDatabaseRowsLimitReachedException();
 }
 

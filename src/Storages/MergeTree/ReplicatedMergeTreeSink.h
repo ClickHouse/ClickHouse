@@ -72,7 +72,8 @@ public:
         // needed to set the special LogEntryType::ATTACH_PART
         bool is_attach_ = false,
         bool allow_attach_while_readonly_ = false,
-        std::optional<ZooKeeperRetriesInfo> keeper_retries_info_ = std::nullopt);
+        std::optional<ZooKeeperRetriesInfo> keeper_retries_info_ = std::nullopt,
+        bool check_database_rows_limit_ = true);
 
     ~ReplicatedMergeTreeSink() override;
 

@@ -119,7 +119,8 @@ ReplicatedMergeTreeSink::ReplicatedMergeTreeSink(
     ContextPtr context_,
     bool is_attach_,
     bool allow_attach_while_readonly_,
-    std::optional<ZooKeeperRetriesInfo> keeper_retries_info_)
+    std::optional<ZooKeeperRetriesInfo> keeper_retries_info_,
+    bool check_database_rows_limit_)
     : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
@@ -179,18 +180,20 @@ ReplicatedMergeTreeSink::ReplicatedMergeTreeSink(
     /// which passes its verdict through `setDatabaseRowsLimitException`, and `RESTORE` before attaching,
     /// so attach sinks are not checked here: replica metadata recovery can run in the table startup,
     /// where counting the rows would wait for the database startup, which waits for this table.
-    const bool defer_database_rows_limit = deduplicate && !is_attach;
+    /// Lightweight updates are not checked either: their patch parts add no rows.
+    const bool check_database_rows_limit = check_database_rows_limit_ && !is_attach;
     try
     {
         storage.delayInsertOrThrowIfNeeded(
-            nullptr, context, /*allow_throw=*/ true, /*allow_delay=*/ false, /*check_database_rows_limit=*/ !deduplicate && !is_attach);
+            nullptr, context, /*allow_throw=*/ true, /*allow_delay=*/ false,
+            /*check_database_rows_limit=*/ check_database_rows_limit && !deduplicate);
     }
     catch (...)
     {
         too_many_parts_exception = std::current_exception();
     }
 
-    if (defer_database_rows_limit && !too_many_parts_exception)
+    if (check_database_rows_limit && deduplicate && !too_many_parts_exception)
         database_rows_limit_exception = storage.getDatabaseRowsLimitReachedException();
 }
 

@@ -46,7 +46,8 @@ public:
         StorageMergeTree & storage_,
         StorageMetadataPtr metadata_snapshot_,
         size_t max_parts_per_block_,
-        ContextPtr context_);
+        ContextPtr context_,
+        bool check_database_rows_limit_ = true);
 
     ~MergeTreeSink() override;
 
