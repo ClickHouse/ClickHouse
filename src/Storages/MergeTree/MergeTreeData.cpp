@@ -10541,18 +10541,29 @@ static void checkDateTimeConversionArgument(
     else if (value.getType() == Field::Types::Tuple && converted.getType() == Field::Types::Tuple)
     {
         const auto * tuple_type = typeid_cast<const DataTypeTuple *>(removeNullable(type).get());
-        const auto * value_tuple_type = typeid_cast<const DataTypeTuple *>(removeNullable(value_type).get());
         const auto & elements = value.safeGet<Tuple>();
         const auto & converted_elements = converted.safeGet<Tuple>();
-        if (!tuple_type || !value_tuple_type || value_tuple_type->getElements().size() != elements.size()
-            || tuple_type->getElements().size() != converted_elements.size())
+        if (!tuple_type || tuple_type->getElements().size() != converted_elements.size())
             return;
+
+        /// A tuple carried by a `Dynamic` or a `Variant` source, or by an element of one, has the type of that source, so
+        /// the element names it is cast with are unknown. A cast between tuples with no names on either side matches the
+        /// elements by position, so they are checked by position, and without the types of the source elements.
+        const auto * value_tuple_type
+            = value_type ? typeid_cast<const DataTypeTuple *>(removeNullable(value_type).get()) : nullptr;
+        if (value_tuple_type && value_tuple_type->getElements().size() != elements.size())
+            value_tuple_type = nullptr;
+        if (!value_tuple_type && tuple_type->hasExplicitNames())
+            throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
+                            "Partition value of type {} cannot be checked for a date or a time that does not exist: it is "
+                            "cast from a tuple of type {}, whose element names are unknown",
+                            type->getName(), value_type ? value_type->getName() : "unknown");
 
         /// Like `FunctionCast::createTupleWrapper`, a cast between named tuples with a common element name matches the
         /// elements by name, and an element with no counterpart gets the default value; otherwise they are matched by
         /// position.
         bool match_by_name = false;
-        if (value_tuple_type->hasExplicitNames() && tuple_type->hasExplicitNames())
+        if (value_tuple_type && value_tuple_type->hasExplicitNames() && tuple_type->hasExplicitNames())
             for (size_t i = 0; i < converted_elements.size() && !match_by_name; ++i)
                 match_by_name = value_tuple_type->tryGetPositionByName(tuple_type->getElementNames()[i]).has_value();
 
@@ -10566,7 +10577,10 @@ static void checkDateTimeConversionArgument(
 
             if (source)
                 checkDateTimeConversionArgument(
-                    elements[*source], value_tuple_type->getElement(*source), converted_elements[i], tuple_type->getElement(i));
+                    elements[*source],
+                    value_tuple_type ? value_tuple_type->getElement(*source) : nullptr,
+                    converted_elements[i],
+                    tuple_type->getElement(i));
         }
     }
 }

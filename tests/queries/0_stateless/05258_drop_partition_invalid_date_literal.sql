@@ -215,3 +215,18 @@ SELECT 'conversion, valid time spellings', (SELECT groupArray(x) FROM (SELECT x 
 DROP TABLE t_conversion;
 DROP TABLE t_conversion_datetime;
 DROP TABLE t_conversion_datetime64;
+
+-- A tuple carried by a `Dynamic` or a `Variant` is checked too: its type is not a tuple type, and this used to skip the
+-- check and drop `2024-03-01`.
+DROP TABLE IF EXISTS t_dynamic;
+CREATE TABLE t_dynamic (d Date) ENGINE = MergeTree PARTITION BY d ORDER BY d;
+INSERT INTO t_dynamic VALUES ('2024-03-01');
+ALTER TABLE t_dynamic DROP PARTITION tuple(tupleElement(CAST(CAST(tuple('2024-02-30'), 'Dynamic'), 'Tuple(Date)'), 1)); -- { serverError INVALID_PARTITION_VALUE }
+ALTER TABLE t_dynamic DROP PARTITION tuple(tupleElement(CAST(CAST(tuple('2024-02-30'), 'Variant(Tuple(String), Tuple(UInt16))'), 'Tuple(Date)'), 1)); -- { serverError INVALID_PARTITION_VALUE }
+ALTER TABLE t_dynamic DROP PARTITION tuple(tupleElement(tupleElement(CAST(tuple(CAST(tuple('2024-02-30'), 'Dynamic')), 'Tuple(Tuple(Date))'), 1), 1)); -- { serverError INVALID_PARTITION_VALUE }
+-- The element names of such a tuple are unknown, so a cast to a named tuple, which may match the elements by name, is rejected.
+ALTER TABLE t_dynamic DROP PARTITION tuple(tupleElement(CAST(CAST(tuple('2024-03-01'), 'Dynamic'), 'Tuple(a Date)'), 'a')); -- { serverError INVALID_PARTITION_VALUE }
+SELECT 'dynamic, nothing dropped', count() FROM t_dynamic;
+ALTER TABLE t_dynamic DROP PARTITION tuple(tupleElement(CAST(CAST(tuple('2024-03-01'), 'Dynamic'), 'Tuple(Date)'), 1));
+SELECT 'dynamic, valid literal', count() FROM t_dynamic;
+DROP TABLE t_dynamic;
