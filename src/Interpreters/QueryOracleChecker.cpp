@@ -4,6 +4,8 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
 #include <Common/ProfileEvents.h>
+#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ThreadStatus.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/GetAggregatesVisitor.h>
@@ -63,6 +65,7 @@ extern const SettingsJoinStrictness join_default_strictness;
 namespace ErrorCodes
 {
 extern const int AST_FUZZER_ORACLE_MISMATCH;
+extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
 extern const int TOO_MANY_ROWS;
 extern const int TOO_MANY_BYTES;
 }
@@ -1236,6 +1239,13 @@ void scanAggregatesSafe(const ASTPtr & ast, SafeAggregateScan & out)
         scanAggregatesSafe(child, out);
 }
 
+/// A sub-query runs on a thread group of its own context: code that takes the query context from the thread
+/// (e.g. distributed plan stage tasks) must see the oracle's settings, not the fuzzed query's.
+ThreadGroupSwitcher switchToThreadGroupOf(const ContextPtr & oracle_context)
+{
+    return ThreadGroupSwitcher(ThreadGroup::createForQuery(oracle_context), ThreadName::AST_FUZZER, /*allow_existing_group=*/ true);
+}
+
 }
 
 
@@ -1498,6 +1508,7 @@ QueryOracleChecker::executeAndCollectSortedRows(const String & query, const Cont
 {
     auto oracle_context = makeOracleContext(context);
     oracle_context->setDefaultFormat("TabSeparated");
+    auto thread_group_switcher = switchToThreadGroupOf(oracle_context);
 
     /// Use the ReadBuffer/WriteBuffer executeQuery API — this is crash-safe because
     /// ClickHouse handles all column serialization within the pipeline internally,
@@ -1533,6 +1544,7 @@ QueryOracleChecker::executeAndCollectSortedRows(const String & query, const Cont
 Field QueryOracleChecker::executeScalar(const String & query, const ContextMutablePtr & context)
 {
     auto oracle_context = makeOracleContext(context);
+    auto thread_group_switcher = switchToThreadGroupOf(oracle_context);
 
     auto result = executeQuery(query, oracle_context, QueryFlags{.internal = true});
 
@@ -1579,6 +1591,7 @@ QueryOracleChecker::executeWithSettings(
     oracle_context->setDefaultFormat("TabSeparated");
     for (const auto & [name, value] : settings)
         oracle_context->setSetting(name, value);
+    auto thread_group_switcher = switchToThreadGroupOf(oracle_context);
 
     ReadBufferFromString istr(query);
     WriteBufferFromOwnString ostr;
@@ -2100,7 +2113,7 @@ bool QueryOracleChecker::checkDQP(const ASTSelectQuery & select, const ContextMu
     }
     catch (const Exception & e)
     {
-        if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
+        if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH || e.code() == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT)
             throw;
         /// The variant query might fail with a different error — that's OK.
         LOG_TRACE(logger, "DQP oracle: variant query failed (expected): {}", e.message());
@@ -2847,7 +2860,8 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
 
     /// Run one oracle under a uniform guard: its own mismatch
     /// (`AST_FUZZER_ORACLE_MISMATCH`) propagates and is annotated with the
-    /// reproduction settings by the outer handler below; any other execution
+    /// reproduction settings by the outer handler below, and a disconnected
+    /// client (`QUERY_WAS_CANCELLED_BY_CLIENT`) stops the remaining oracles; any other execution
     /// error means the rewrite was not comparable on this query (e.g. a
     /// function the rewrite cannot analyse), so it is swallowed and the
     /// remaining oracles still run. `name` reproduces the per-oracle log wording.
@@ -2860,7 +2874,7 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
         }
         catch (const Exception & e)
         {
-            if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
+            if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH || e.code() == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT)
                 throw;
             LOG_TRACE(logger, "{} oracle execution error (skipping): {}", name, e.message());
         }
