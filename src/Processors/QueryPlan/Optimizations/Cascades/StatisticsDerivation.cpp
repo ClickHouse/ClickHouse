@@ -97,8 +97,11 @@ void StatisticsDerivation::deriveStatistics(GroupId group_id)
     {
         group->statistics = deriveLimitStatistics(*limit_step, input_statistics(0));
     }
-    else if (const auto * distinct_step = typeid_cast<const DistinctStep *>(plan_step); distinct_step && !distinct_step->isPreliminary())
+    else if (const auto * distinct_step = typeid_cast<const DistinctStep *>(plan_step))
     {
+        /// A preliminary `DISTINCT` gets the rows of a full one, as if over one stream. Over several nodes it
+        /// can emit each value once per node; its physical expression records that (see `CostEstimator`),
+        /// and the exchange above it is priced on those rows.
         group->statistics = deriveDistinctStatistics(*distinct_step, input_statistics(0));
     }
     else if (const auto * intersect_or_except_step = typeid_cast<const IntersectOrExceptStep *>(plan_step))
