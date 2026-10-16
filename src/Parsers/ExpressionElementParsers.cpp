@@ -501,10 +501,10 @@ private:
 
 bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    auto element_parser = std::make_unique<ParserIdentifier>(allow_query_parameter, highlight_type);
+    auto element_parser = std::make_unique<ParserIdentifier>(options.allow_query_parameter, options.highlight);
     std::vector<std::pair<ParserPtr, SpecialDelimiter>> delimiter_parsers;
     /// JSON subcolumn delimiters make no sense in table path, leave them unconsumed
-    if (!table_name_with_optional_uuid)
+    if (options.allow_json_subcolumns)
     {
         delimiter_parsers.emplace_back(std::make_unique<ParserTokenSequence>(std::vector<TokenType>{TokenType::Dot, TokenType::Colon}), SpecialDelimiter::JSON_PATH_DYNAMIC_TYPE);
         delimiter_parsers.emplace_back(std::make_unique<ParserTokenSequence>(std::vector<TokenType>{TokenType::Dot, TokenType::Caret}), SpecialDelimiter::JSON_PATH_PREFIX);
@@ -539,7 +539,7 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
             parts.push_back(getIdentifierName(element));
             /// Check if we have Array of JSON subcolumn additioon after identifier
             /// and replace it with corresponding type subcolumn.
-            if (!is_first && !table_name_with_optional_uuid && array_of_json_identifier_addition.check(pos, expected))
+            if (!is_first && options.allow_json_subcolumns && array_of_json_identifier_addition.check(pos, expected))
                 parts.push_back(array_of_json_identifier_addition.getLastArrayOfJSONSubcolumnIdentifier());
         }
 
@@ -570,25 +570,24 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     UUID uuid = UUIDHelpers::Nil;
     bool has_uuid_clause = false;
 
-    if (table_name_with_optional_uuid)
+    if (options.allow_uuid_clause && s_uuid.ignore(pos, expected))
     {
-        if (s_uuid.ignore(pos, expected))
-        {
-            ParserStringLiteral uuid_p;
-            ASTPtr ast_uuid;
-            if (!uuid_p.parse(pos, ast_uuid, expected))
-                return false;
-            uuid = parseFromString<UUID>(ast_uuid->as<ASTLiteral>()->value.safeGet<String>());
-            has_uuid_clause = true;
-        }
+        ParserStringLiteral uuid_p;
+        ASTPtr ast_uuid;
+        if (!uuid_p.parse(pos, ast_uuid, expected))
+            return false;
+        uuid = parseFromString<UUID>(ast_uuid->as<ASTLiteral>()->value.safeGet<String>());
+        has_uuid_clause = true;
+    }
 
+    if (options.table_name)
+    {
         if (parts.size() > 2)
         {
-            /// fold db.ns1.ns2.table into (db, `ns1.ns2.table`), the same as the quoted form db.`ns1.ns2.table`
-            /// no query parameters inside a path, and no quoted components with a
-            /// literal dot, a substituted or quoted dot would alias another path
+            /// fold db.ns1.ns2.table into (db, `ns1.ns2.table`); a quoted dotted component spells the same name
+            /// as its separate parts, as for column identifiers; a parameter cannot be folded before substitution
             for (size_t i = 1; i < parts.size(); ++i)
-                if (parts[i].empty() || parts[i].find('.') != String::npos)
+                if (parts[i].empty())
                     return false;
             String table_name = parts[1];
             for (size_t i = 2; i < parts.size(); ++i)

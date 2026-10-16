@@ -1,4 +1,5 @@
 #include <Parsers/parseDatabaseAndTableName.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
@@ -43,19 +44,12 @@ bool parseDatabaseAndTableName(IParser::Pos & pos, Expected & expected, String &
 
 bool parseDatabaseAndTableAsAST(IParser::Pos & pos, Expected & expected, ASTPtr & database, ASTPtr & table)
 {
-    ParserToken s_dot(TokenType::Dot);
-    ParserIdentifier table_parser(true);
-
-    if (!table_parser.parse(pos, table, expected))
+    ASTPtr table_identifier;
+    if (!ParserCompoundIdentifier({.table_name = true, .allow_query_parameter = true}).parse(pos, table_identifier, expected))
         return false;
-
-    if (s_dot.ignore(pos))
-    {
-        database = table;
-        if (!table_parser.parse(pos, table, expected))
-            return false;
-    }
-
+    const auto & identifier = table_identifier->as<ASTTableIdentifier &>();
+    database = identifier.getDatabase();
+    table = identifier.getTable();
     return true;
 }
 
