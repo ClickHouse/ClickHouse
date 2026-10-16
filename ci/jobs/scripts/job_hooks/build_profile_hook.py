@@ -6,6 +6,7 @@ from pathlib import Path
 from ci.jobs.scripts.log_cluster import (
     BUILD_PROFILE_USER,
     LogClusterBuildProfileQueries,
+    LogClusterUnavailable,
 )
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -227,7 +228,8 @@ def _upload_profile_artifacts(build_type, start_time, artifacts):
     raises when missing or empty - fail-close, so a broken producer cannot
     turn into a false-green "no data" downstream. Optional artifacts are
     skipped. Upload failures are NOT swallowed either: an INSERT rejection
-    propagates so the lost telemetry stays visible and the hook fails loudly.
+    propagates so the lost telemetry stays visible and the hook fails loudly
+    (an endpoint that never answered is reported as a warning by check()).
     Both of those stop the upload where they happen, which is why the order is
     not the caller's to choose (see _UPLOAD_ORDER).
     """
@@ -304,9 +306,18 @@ def check():
                 (queries.insert_build_size_data, build_size_file),
             ],
         )
+    except LogClusterUnavailable as e:
+        # The completion marker is uploaded last (_UPLOAD_ORDER), so a commit
+        # whose upload stopped here never becomes a baseline.
+        print(
+            f"WARNING: Build profile not uploaded, the CI logs cluster did not answer: {e}"
+        )
+        Info().add_workflow_warning(
+            "Build profile not uploaded: the CI logs cluster did not answer"
+        )
     except Exception:
-        # Fail loudly on any error producing, assembling, or uploading the
-        # profile data: never let the post-hook pass silently.
+        # Fail loudly on any other error producing, assembling, or uploading
+        # the profile data: never let the post-hook pass silently.
         print("ERROR: Failed to collect build profile data:")
         traceback.print_exc()
         sys.exit(1)
