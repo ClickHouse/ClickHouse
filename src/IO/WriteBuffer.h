@@ -188,8 +188,7 @@ private:
     [[noreturn]] NO_INLINE static void throwWriteToCanceledBuffer(int code);
 
     /// Flushes the buffer as many times as needed, and throws for a finalized or canceled buffer.
-    /// Returns `pos`: the inlined `write` assigns it, so the position stays in a register on every path
-    /// and a loop of writes does not reload it from memory on each iteration.
+    /// Returns `pos` for the inlined `write` to assign, so the position stays in a register on every path.
     [[nodiscard]] Position writeSlow(const char * from, size_t n);
     [[nodiscard]] Position writeSlow(char x);
 
