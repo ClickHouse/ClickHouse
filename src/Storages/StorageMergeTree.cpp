@@ -300,12 +300,10 @@ void StorageMergeTree::startup()
             enableBackgroundWorkers();
             startBackgroundWorkers();
         }
-        /// Statistics refresh and the streaming subscription enrichment only read parts and must also
+        /// The streaming subscription enrichment only reads parts and must also
         /// run for read-only tables: without the streaming assignee, `triggerStreamingSubscriptionEnrichment`
         /// is a no-op and a `STREAM BOUNDED` read on the table never receives its first snapshot.
         background_streaming_assignee.start();
-        startStatisticsCache();
-
         /// A concurrent `shutdown()` (e.g. a `DETACH` racing with this async startup) may have already set
         /// `shutdown_called`. `shutdown()` publishes that flag before stopping the background workers, so if
         /// we observe it here — after arming — we must unwind *everything* we just armed above; otherwise a
@@ -367,7 +365,6 @@ void StorageMergeTree::shutdown(bool)
     {
         if (refresh_parts_task)
             refresh_parts_task->deactivate();
-        stopStatisticsCache();
         stopOutdatedAndUnexpectedDataPartsLoadingTask();
 
         /// Unlock all waiting mutations
@@ -395,7 +392,6 @@ void StorageMergeTree::stopAllBackgroundTasks()
 {
     if (refresh_parts_task)
         refresh_parts_task->deactivate();
-    stopStatisticsCache();
     stopOutdatedAndUnexpectedDataPartsLoadingTask();
     cleanup_thread.stop();
     background_operations_assignee.finish();
