@@ -23,6 +23,7 @@
 #include <IO/ConcatReadBufferFromFile.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
+#include <IO/StdStreamFromReadBuffer.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteHelpers.h>
@@ -32,6 +33,7 @@
 #if CLICKHOUSE_CLOUD && USE_SSL
 #include <Backups/BackupEncryptionSidecar.h>
 #endif
+#include <Poco/SAX/InputSource.h>
 #include <Poco/SAX/SAXParser.h>
 #include <Poco/SAX/XMLReader.h>
 
@@ -738,9 +740,6 @@ void BackupImpl::readBackupMetadata()
         in = reader->readFile(METADATA_FILE_NAME);
     }
 
-    String str;
-    readStringUntilEOF(str, *in);
-
     num_files = 0;
     total_size = 0;
     num_entries = 0;
@@ -931,9 +930,18 @@ void BackupImpl::readBackupMetadata()
     /// ordinary element; with it the handler sees "x:contents" and ignores it (writeBackupMetadata never
     /// emits namespaces, so this only rejects hand-crafted manifests).
     xml_parser.setFeature(Poco::XML::XMLReader::FEATURE_NAMESPACE_PREFIXES, true);
+    /// The metadata is parsed while it is read, in chunks, instead of being read into one string first: it has
+    /// a record per file and can take gigabytes for a backup of many files.
+    ReadBuffer & metadata_in = *in;
+    /// The parser reads the stream from start to end and never seeks, so the stream doesn't need the size.
+    StdIStreamFromReadBuffer metadata_stream(std::move(in), /*size=*/ 0);
+    /// `std::istream` swallows an exception thrown by the buffer and only sets `badbit`, which the parser takes
+    /// for the end of the data. Rethrow it instead, so a read error isn't reported as a malformed manifest.
+    metadata_stream.exceptions(std::ios::badbit);
+    Poco::XML::InputSource metadata_source(metadata_stream);
     try
     {
-        xml_parser.parseMemoryNP(str.data(), str.size());
+        xml_parser.parse(&metadata_source);
     }
     catch (...)
     {
@@ -953,7 +961,7 @@ void BackupImpl::readBackupMetadata()
     if (!contents_seen)
         throw Exception(ErrorCodes::BACKUP_DAMAGED, "Backup {}: Metadata has no <contents>", backup_name_for_logging);
 
-    uncompressed_size = size_of_entries + str.size();
+    uncompressed_size = size_of_entries + metadata_in.count();
 
 #if CLICKHOUSE_CLOUD && USE_SSL
     /// A backup written with an encryption config file next to it carries the TDE key information of that

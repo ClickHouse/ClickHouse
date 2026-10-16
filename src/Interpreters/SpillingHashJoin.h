@@ -10,6 +10,7 @@
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
+#include <Processors/SpillableAdapter.h>
 #include <Common/SharedMutex.h>
 
 
@@ -75,6 +76,12 @@ public:
 
     StepAnalysisReport getAnalysisReport() const override;
 
+    ISpillable * getSpillable() override { return &spillable; }
+    /// While collecting: the whole right side, spilled by switching to the grace join.
+    /// After the switch: the grace join and the blocks of unconverted workers. Nothing once the build ended in memory.
+    ProcessorMemoryStats getMemoryStats() const;
+    size_t spill(size_t at_least_bytes);
+
     bool supportParallelJoin() const override;
     bool emitsSizedOutputBlocks() const override;
     size_t getMaxBuildThreads() const override;
@@ -97,10 +104,6 @@ public:
     void onBuildPhaseFinish() override;
     void onProbePhaseFinish(std::optional<size_t> matched_right_rows) override;
 
-    bool canSpillToDisk() const override { return true; }
-    size_t getSpillableBytes() const override;
-    void requestSpill(JoinBuildContext context) override;
-
     /// Forwarded to the join actually chosen in `onBuildPhaseFinish`, so that an in-memory join still
     /// gets its post-build optimizations (right-table reranging, conversion to a fixed hash map,
     /// publishing the shared runtime filter).
@@ -115,6 +118,8 @@ public:
     void setEnableLazyColumnsIndexing(bool value) override;
 
 private:
+    SpillableAdapter<SpillingHashJoin> spillable{*this};
+
     enum class State
     {
         COLLECTING, // Right-side blocks are being collected in the HashJoin, no spilling yet.
@@ -122,8 +127,6 @@ private:
         IN_MEMORY_JOIN // All blocks fit in memory, using the HashJoin directly without switching.
     };
 
-    /// `spill_immediately` is for the memory-pressure path: the new GraceHashJoin repartitions as it
-    /// takes the data over, instead of holding all of it in bucket 0 until the next spill request.
     void switchToGraceHashJoin(JoinBuildContext context, bool spill_immediately = false);
     /// Shared by the overflow switch and the `MustSpill` case after the build. The `MustSpill` case must
     /// not call `switchToGraceHashJoin`: that would drain build lanes `onBuildPhaseFinish` already consumed.

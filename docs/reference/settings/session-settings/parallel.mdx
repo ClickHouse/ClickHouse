@@ -43,6 +43,7 @@ Since v25.4, `INSERT ... SELECT` from a `ReplicatedMergeTree` or `SharedMergeTre
 When a hash join is used, this threshold decides whether the join builds its hash table in parallel.
 If an estimate of the right table size is available and it is below the threshold, one thread builds the hash table as the rows arrive.
 At or above the threshold, and also when there is no row-count estimate, the build uses at least one partition per thread (when `max_threads` > 1).
+The largest value, `18446744073709551615`, always builds the hash table on one thread, also when there is no estimate. `0` always builds it in parallel.
 The estimate comes from the query plan, or from the statistics of earlier runs of the same join (see `collect_hash_table_stats_during_joins`).
 `ASOF` joins never get an estimate, and with `query_plan_optimize_join_order_limit = 0` no join gets one.
 A right table known to be empty, such as a `MergeTree` table without data parts, counts as 0 rows for `INNER`, `RIGHT` and `LEFT SEMI` joins, which return no rows with it.

@@ -317,6 +317,18 @@ DataTypePtr removeNullableInsideTuple(const DataTypePtr & type)
     return std::make_shared<DataTypeTuple>(elements);
 }
 
+bool keyMatchesNullAsValue(const DataTypePtr & type)
+{
+    /// A top-level NULL of Nullable and LowCardinality(Nullable) never matches.
+    auto key_type = removeLowCardinalityAndNullable(type);
+    if (canContainNull(*key_type))
+        return true;
+
+    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(key_type.get());
+    return tuple_type && std::ranges::any_of(tuple_type->getElements(), [](const DataTypePtr & element)
+        { return canContainNull(*element) || keyMatchesNullAsValue(element); });
+}
+
 bool canBecomeNullable(const DataTypePtr & type)
 {
     bool can_be_inside = type->canBeInsideNullable();
@@ -873,7 +885,12 @@ bool isUsedByAnotherAlgorithm(const TableJoin & table_join)
 
 bool canRemoveColumnsFromLeftBlock(const TableJoin & table_join)
 {
-    return !table_join.hasUsing() && !isUsedByAnotherAlgorithm(table_join) && table_join.strictness() != JoinStrictness::RightAny;
+    /// `auto` may switch HashJoin -> MergeJoin (which keeps all left columns), so pruning would
+    /// desync block structure; keep `grace_hash` conservative too. A spill threshold alone only
+    /// switches HashJoin -> GraceHashJoin (same result path), so it must not disable pruning.
+    const bool keep_left_columns = table_join.isEnabledAlgorithm(JoinAlgorithm::AUTO)
+        || table_join.isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH);
+    return !table_join.hasUsing() && !keep_left_columns && table_join.strictness() != JoinStrictness::RightAny;
 }
 
 ColumnPtr filterWithBlanks(ColumnPtr src_column, const IColumn::Filter & filter, bool inverse_filter)

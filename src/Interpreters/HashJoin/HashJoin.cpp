@@ -279,7 +279,10 @@ HashJoin::HashJoin(
     , live_merged_hll(table_join->getClauses().size())
     , build_rows_hint(build_rows_hint_)
     , single_fill_thread(
-          !join_table_mode && (num_threads == 1 || (build_rows_hint_ && *build_rows_hint_ < table_join->parallelHashJoinThreshold())))
+          !join_table_mode
+          && (num_threads == 1
+              || (build_rows_hint_ ? *build_rows_hint_ < table_join->parallelHashJoinThreshold()
+                                   : table_join->parallelHashJoinThreshold() == std::numeric_limits<UInt64>::max())))
     , stats_collecting_params(stats_collecting_params_.build)
     , match_stats_collecting_params(stats_collecting_params_.match)
 {
@@ -565,7 +568,7 @@ static HashJoin::Type chooseMethod(const ColumnRawPtrs & key_columns, Sizes & ke
         return Type::keys64;
     if (all_fixed && keys_bytes <= 16)
         return Type::keys128;
-    if (all_fixed && keys_bytes <= 32)
+    if (all_fixed && keys_bytes <= HashJoin::max_packed_keys_bytes)
         return Type::keys256;
 
     /// If there is single string key, use hash table of it's values.
