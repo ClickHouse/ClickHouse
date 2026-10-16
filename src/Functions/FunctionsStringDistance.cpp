@@ -1324,6 +1324,7 @@ Returns `0` if either string is empty.
 
     factory.registerFunction<FunctionEditDistanceUTF8>(documentation_edit_utf8);
     factory.registerAlias("levenshteinDistanceUTF8", NameEditDistanceUTF8::name);
+    factory.registerAlias("levenshtein_distance", NameEditDistanceUTF8::name, FunctionFactory::Case::Insensitive);
 
     factory.registerFunction<FunctionDamerauLevenshteinDistance>(documentation_damerau);
 
