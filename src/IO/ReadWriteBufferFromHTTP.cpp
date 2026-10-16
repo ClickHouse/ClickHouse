@@ -43,7 +43,7 @@ Poco::URI getUriAfterRedirect(const Poco::URI & prev_uri, Poco::Net::HTTPRespons
 }
 
 /// A URI that ends up in a log line or an exception message must never carry credentials. Convenience
-/// overload of `maskURICredentials` for a `Poco::URI`.
+/// overload for a `Poco::URI`: masks the userinfo and presigned-URL parameters via the shared helper.
 std::string maskedURI(const Poco::URI & uri)
 {
     std::string masked = uri.toString();

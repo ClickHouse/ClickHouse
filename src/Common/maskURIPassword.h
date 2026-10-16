@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/BridgeProtocolVersion.h>
 #include <Common/HiddenSecret.h>
 
 #include <algorithm>
@@ -270,13 +269,48 @@ inline bool maskURIUserinfo(std::string & url)
     return true;
 }
 
-/** Mask the value of every query parameter whose name satisfies `is_secret_name`. A value runs to
-  * the next '&' or '#'. Returns whether anything was masked.
+/** Mask the values of the query parameters that carry credentials in a presigned URL, so that
+  * `...?X-Amz-Signature=abc&foo=1` becomes `...?X-Amz-Signature=[HIDDEN]&foo=1`, and of the
+  * `connection_string` parameter of an ODBC/JDBC bridge request. Every occurrence is masked.
+  * Returns whether anything was masked.
+  *
+  * Apart from `connection_string`, this used to be the regular expression
+  * `([?&](?:AWSAccessKeyId|Signature|Expires|GoogleAccessId|X-Amz-[A-Za-z0-9\-]*|X-Goog-[A-Za-z0-9\-]*)=)[^&#]*`
+  * rewritten to `\1[HIDDEN]` globally. The parameter set mirrors
+  * `BackupInfo::removeCredentialsFromS3URL`. Matching is case-sensitive, as in the expression, and
+  * `src/Common/tests/gtest_mask_uri_password.cpp` checks this against re2.
   */
-template <typename IsSecretName>
-bool maskURIQueryParameterValues(std::string & url, IsSecretName && is_secret_name)
+inline bool maskPresignedURLParameters(std::string & url)
 {
-    /// Built in one pass rather than replacing in place: a replacement of a different length shifts
+    static constexpr std::array<std::string_view, 4> exact_names = {"AWSAccessKeyId", "Signature", "Expires", "GoogleAccessId"};
+    static constexpr std::array<std::string_view, 2> prefixes = {"X-Amz-", "X-Goog-"};
+
+    auto is_secret_parameter = [](std::string_view name)
+    {
+        if (name == "connection_string")
+            return true;
+
+        for (auto exact : exact_names)
+            if (name == exact)
+                return true;
+
+        for (auto prefix : prefixes)
+        {
+            if (!name.starts_with(prefix))
+                continue;
+            /// `[A-Za-z0-9\-]*` - the rest of the name, possibly empty.
+            bool rest_matches = true;
+            for (char c : name.substr(prefix.length()))
+                if (!(('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || ('0' <= c && c <= '9') || c == '-'))
+                    rest_matches = false;
+            if (rest_matches)
+                return true;
+        }
+
+        return false;
+    };
+
+        /// Built in one pass rather than replacing in place: a replacement of a different length shifts
     /// the rest of the string, which is quadratic in the number of masked parameters. A setting value
     /// reaches this from the logging path and its length is chosen by whoever set the setting.
     std::string result;
@@ -288,7 +322,8 @@ bool maskURIQueryParameterValues(std::string & url, IsSecretName && is_secret_na
         size_t name_begin = position + 1;
 
         /// Bounded by the next separator instead of scanning on to the next '=', which is quadratic
-        /// on a string of separators. A name containing a separator is never matched.
+        /// on a string of separators. None of the names above contains one, so a name that runs into
+        /// a separator is not one of them anyway.
         size_t name_end = url.find_first_of("=?&", name_begin);
         if (name_end == std::string::npos)
             break;
@@ -299,7 +334,7 @@ bool maskURIQueryParameterValues(std::string & url, IsSecretName && is_secret_na
             continue;
         }
 
-        if (!is_secret_name(std::string_view(url).substr(name_begin, name_end - name_begin)))
+        if (!is_secret_parameter(std::string_view(url).substr(name_begin, name_end - name_begin)))
             continue;
 
         /// `[^&#]*` - the value.
@@ -324,55 +359,8 @@ bool maskURIQueryParameterValues(std::string & url, IsSecretName && is_secret_na
     return true;
 }
 
-/** Mask the values of the query parameters that carry credentials in a presigned URL, so that
-  * `...?X-Amz-Signature=abc&foo=1` becomes `...?X-Amz-Signature=[HIDDEN]&foo=1`. Every occurrence
-  * is masked. Returns whether anything was masked.
-  *
-  * This used to be the regular expression
-  * `([?&](?:AWSAccessKeyId|Signature|Expires|GoogleAccessId|X-Amz-[A-Za-z0-9\-]*|X-Goog-[A-Za-z0-9\-]*)=)[^&#]*`
-  * rewritten to `\1[HIDDEN]` globally. The parameter set mirrors
-  * `BackupInfo::removeCredentialsFromS3URL`. Matching is case-sensitive, as in the expression, and
-  * `src/Common/tests/gtest_mask_uri_password.cpp` checks this against re2.
-  */
-inline bool maskPresignedURLParameters(std::string & url)
-{
-    static constexpr std::array<std::string_view, 4> exact_names = {"AWSAccessKeyId", "Signature", "Expires", "GoogleAccessId"};
-    static constexpr std::array<std::string_view, 2> prefixes = {"X-Amz-", "X-Goog-"};
-
-    auto is_secret_parameter = [](std::string_view name)
-    {
-        for (auto exact : exact_names)
-            if (name == exact)
-                return true;
-
-        for (auto prefix : prefixes)
-        {
-            if (!name.starts_with(prefix))
-                continue;
-            /// `[A-Za-z0-9\-]*` - the rest of the name, possibly empty.
-            bool rest_matches = true;
-            for (char c : name.substr(prefix.length()))
-                if (!(('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || ('0' <= c && c <= '9') || c == '-'))
-                    rest_matches = false;
-            if (rest_matches)
-                return true;
-        }
-
-        return false;
-    };
-
-    return maskURIQueryParameterValues(url, is_secret_parameter);
-}
-
-/// The whole connection string a bridge request carries is hidden: its grammar belongs to the ODBC or JDBC driver.
-inline bool maskXDBCConnectionStringParameter(std::string & url)
-{
-    return maskURIQueryParameterValues(url, [](std::string_view name) { return name == XDBC_BRIDGE_CONNECTION_STRING_PARAMETER; });
-}
-
-/** Mask the credential carriers of a URL: the userinfo (`user:password@`), the values of the
-  * presigned-URL query parameters and the connection string of a bridge request. Returns whether
-  * anything was masked.
+/** Mask both credential carriers of a URL: the userinfo (`user:password@`) and the values of the
+  * presigned-URL query parameters. Returns whether anything was masked.
   *
   * This is the masking to use for a whole HTTP/S3 URL. Scanning for a presigned parameter is only
   * sound on a value that is one whole URL (see `maskPresignedURLParameters`), so the argument must be
@@ -382,7 +370,6 @@ inline bool maskURICredentials(std::string & url)
 {
     bool masked = maskURIUserinfo(url);
     masked |= maskPresignedURLParameters(url);
-    masked |= maskXDBCConnectionStringParameter(url);
     return masked;
 }
 
