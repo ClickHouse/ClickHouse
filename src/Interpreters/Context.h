@@ -1247,6 +1247,8 @@ public:
 
     void addViewSource(const StoragePtr & storage);
     StoragePtr getViewSource() const;
+    /// The view source if IN and scalar subqueries read it instead of the source table, else nullptr.
+    StoragePtr getViewSourceForSubqueries() const;
     void clearViewSource();
 
     String getCurrentDatabase() const;

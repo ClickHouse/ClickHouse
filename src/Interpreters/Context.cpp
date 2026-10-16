@@ -3691,6 +3691,12 @@ StoragePtr Context::getViewSource() const
 }
 
 
+StoragePtr Context::getViewSourceForSubqueries() const
+{
+    return view_source_in_subqueries && !is_view_inner_query ? view_source : nullptr;
+}
+
+
 void Context::clearViewSource()
 {
     view_source.reset();

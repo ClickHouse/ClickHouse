@@ -2568,8 +2568,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
         /// Replace storage with values storage of insertion block.
         /// The inner query of an ordinary view and the query of another engine, like `executable`, read the table itself.
-        if (StoragePtr storage = scope.context->getViewSource(); storage && scope.context->isViewSourceInSubqueries()
-            && !scope.context->isViewInnerQuery() && !in_second_argument->as<TableFunctionNode>())
+        if (StoragePtr storage = scope.context->getViewSourceForSubqueries(); storage && !in_second_argument->as<TableFunctionNode>())
             replaceStorageInQueryTree(in_second_argument, scope.context, storage);
 
         auto * table_node = in_second_argument->as<TableNode>();

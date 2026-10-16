@@ -2,8 +2,9 @@
 
 # Inside a materialized view query, the source table read through `merge`, `loop` or `executable` is the
 # table, like through `remote` or `Distributed`, also in the IN and scalar subqueries of the `executable`
-# input query; only the view query itself, with its own subqueries, reads the inserted block. The same holds
-# when a refreshable view appends to the source table, while a refreshable view reading it sees the table.
+# input query and of the row policies it reads through `merge`; only the view query itself, with its own
+# subqueries, reads the inserted block. The same holds when a refreshable view appends to the source table,
+# while a refreshable view reading it sees the table.
 # The values do not depend on whether the inserted rows are already in the table. The database name is spelled out:
 # `currentDatabase()` in the view query does not resolve to the test database during the push.
 
@@ -128,6 +129,26 @@ CREATE MATERIALIZED VIEW db_05389.mv_executable_scalar TO db_05389.dst AS
     SELECT 'executable_scalar' AS name, count() AS block_rows,
         (SELECT sum(x) FROM executable('echo_rows.sh', 'TSV', 'x UInt64',
             (SELECT (SELECT sum(x) FROM db_05389.src WHERE x >= 100) AS x))) AS value
+    FROM db_05389.src;
+
+-- Through the table the policies read 4 and 1047, through the inserted block 1049 and 2.
+CREATE TABLE db_05389.aux_in (x UInt64) ENGINE = MergeTree ORDER BY x;
+INSERT INTO db_05389.aux_in SELECT number + 100 FROM numbers(10);
+INSERT INTO db_05389.aux_in VALUES (4);
+CREATE ROW POLICY p_in ON db_05389.aux_in USING x NOT IN (SELECT x FROM db_05389.src) TO ALL;
+CREATE TABLE db_05389.aux_scalar (x UInt64) ENGINE = MergeTree ORDER BY x;
+INSERT INTO db_05389.aux_scalar SELECT number + 100 FROM numbers(10);
+INSERT INTO db_05389.aux_scalar VALUES (2), (200);
+CREATE ROW POLICY p_scalar ON db_05389.aux_scalar USING x <= (SELECT max(x) FROM db_05389.src) TO ALL;
+
+CREATE MATERIALIZED VIEW db_05389.mv_executable_merge_policy_in TO db_05389.dst AS
+    SELECT 'executable_merge_policy_in' AS name, count() AS block_rows,
+        (SELECT sum(x) FROM executable('echo_rows.sh', 'TSV', 'x UInt64', (SELECT x FROM merge(db_05389, '^aux_in\$')))) AS value
+    FROM db_05389.src;
+
+CREATE MATERIALIZED VIEW db_05389.mv_executable_merge_policy_scalar TO db_05389.dst AS
+    SELECT 'executable_merge_policy_scalar' AS name, count() AS block_rows,
+        (SELECT sum(x) FROM executable('echo_rows.sh', 'TSV', 'x UInt64', (SELECT x FROM merge(db_05389, '^aux_scalar\$')))) AS value
     FROM db_05389.src;
 
 INSERT INTO db_05389.src VALUES (1), (2), (3);
