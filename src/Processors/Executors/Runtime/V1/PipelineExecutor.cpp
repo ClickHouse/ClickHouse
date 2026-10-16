@@ -169,12 +169,11 @@ PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> processors, Query
     }
     catch (Exception & exception)
     {
-        /// A logical error here means the pipeline was built incorrectly: append a dump of it, with addresses to match the
-        /// endpoints the exception names even when `getUniqID` degrades to `_0`.
+        /// A logical error here means the pipeline was built incorrectly: append a dump of it.
         if (exception.code() == ErrorCodes::LOGICAL_ERROR)
         {
             WriteBufferFromOwnString buf;
-            printPipeline(*processors, buf, /* with_profile = */ false, /* with_addresses = */ true);
+            printPipeline(*processors, buf);
             buf.finalize();
             exception.addMessage("Query pipeline:\n" + buf.str());
         }
