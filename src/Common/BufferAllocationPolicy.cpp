@@ -194,12 +194,16 @@ namespace
 /// capped by the policy's first buffer size - every time it fills up. Replay that growth, so that output
 /// which does not even fill the first buffer is not priced at the whole first part size. Returns false when
 /// the doubling overflows.
+/// A buffer that the output fills exactly is grown (or detached) as well: the writer is always flushed after
+/// the last byte (`MergeTreeWriterStream::preFinalize` finalizes the hashing wrappers, and
+/// `HashingWriteBuffer::nextImpl` calls `next` of the file buffer), and `nextImpl` grows a full buffer even
+/// when nothing more is written into it.
 bool replayFirstBufferGrowth(UInt64 initial_buffer_size, UInt64 first_policy_buffer_size, UInt64 bytes_written, UInt64 & first_buffer_size)
 {
     /// An empty initial buffer cannot be doubled; start the replay from one byte, which still reaches the
     /// same power-of-two sizes the writer would grow through.
     first_buffer_size = std::min<UInt64>(first_policy_buffer_size, std::max<UInt64>(initial_buffer_size, 1));
-    while (bytes_written > first_buffer_size && first_buffer_size < first_policy_buffer_size)
+    while (bytes_written >= first_buffer_size && first_buffer_size < first_policy_buffer_size)
     {
         if (__builtin_mul_overflow(first_buffer_size, static_cast<UInt64>(2), &first_buffer_size))
             return false;
@@ -236,12 +240,12 @@ UInt64 getMultipartUploadMemoryCeilingForWrittenBytes(const MultipartUploadMemor
         if (!replayFirstBufferGrowth(memory.initial_buffer_size, settings.strict_size, bytes_written, first_buffer_size))
             return MultipartUploadMemory::UNLIMITED;
 
-        if (bytes_written <= first_buffer_size)
+        if (bytes_written < first_buffer_size)
             return first_buffer_size;
 
-        UInt64 reachable_buffers = bytes_written / settings.strict_size;
-        if (bytes_written % settings.strict_size)
-            ++reachable_buffers;
+        /// Every full buffer, including one filled exactly by the last byte, is detached by the final flush,
+        /// which then allocates the next buffer.
+        const UInt64 reachable_buffers = bytes_written / settings.strict_size + 1;
         const UInt64 live_buffers = std::min(memory.max_inflight_parts + 1, reachable_buffers);
         if (__builtin_mul_overflow(live_buffers, settings.strict_size, &largest_reachable_buffer))
             return MultipartUploadMemory::UNLIMITED;
@@ -262,7 +266,7 @@ UInt64 getMultipartUploadMemoryCeilingForWrittenBytes(const MultipartUploadMemor
         if (!replayFirstBufferGrowth(memory.initial_buffer_size, first_policy_buffer_size, bytes_written, first_buffer_size))
             return MultipartUploadMemory::UNLIMITED;
 
-        if (bytes_written <= first_buffer_size)
+        if (bytes_written < first_buffer_size)
             return std::min(memory.ceiling, first_buffer_size);
 
         /// The buffer being filled coexists with up to max_inflight_parts earlier, detached or in-flight
@@ -286,8 +290,11 @@ UInt64 getMultipartUploadMemoryCeilingForWrittenBytes(const MultipartUploadMemor
                 return MultipartUploadMemory::UNLIMITED;
             peak_live_memory = std::max(peak_live_memory, live_memory);
 
-            written += std::min(buffer_size, bytes_written - written);
-            if (written == bytes_written)
+            const UInt64 written_into_buffer = std::min(buffer_size, bytes_written - written);
+            written += written_into_buffer;
+            /// A buffer the output does not fill is the last one. One filled exactly by the last byte is still
+            /// detached by the final flush, which allocates the next buffer.
+            if (written_into_buffer < buffer_size)
                 break;
 
             /// The filled buffer is detached; keep it if it is among the largest earlier ones.

@@ -27,6 +27,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
+#include <Common/BitHelpers.h>
 #include <Common/BufferAllocationPolicy.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
@@ -61,6 +62,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
     extern const MergeTreeSettingsNonZeroUInt64 marks_compress_block_size;
     extern const MergeTreeSettingsBool allow_vertical_merges_from_compact_to_wide_parts;
+    extern const MergeTreeSettingsBool compress_marks;
     extern const MergeTreeSettingsBool compress_primary_key;
     extern const MergeTreeSettingsBool enable_adaptive_codec_selection;
     extern const MergeTreeSettingsUInt64 enable_vertical_merge_algorithm;
@@ -1201,12 +1203,16 @@ static UInt64 estimateNeededMemoryForMergeImpl(
     bool output_on_remote_disk,
     const std::vector<DiskWriteBufferMemory> & remote_write_buffer_memories,
     bool deduplicate,
-    bool cleanup)
+    bool cleanup,
+    const MergeTreeData::MergingParams * merging_params_override = nullptr)
 {
-    /// The merging params the merge runs with: those of patch parts for a merge of patch parts (see
-    /// MergeTreeDataMergerMutator::mergePartsToTemporaryPart), the table's otherwise.
+    /// The merging params the merge runs with: those the caller passes for a nested projection merge, those
+    /// of patch parts for a merge of patch parts (see MergeTreeDataMergerMutator::mergePartsToTemporaryPart),
+    /// the table's otherwise.
     MergeTreeData::MergingParams merge_merging_params;
-    if (future_part.isResultPatch())
+    if (merging_params_override)
+        merge_merging_params = *merging_params_override;
+    else if (future_part.isResultPatch())
         merge_merging_params = MergeTreeData::getMergingParamsForPatchParts();
     else if (!future_part.parts.empty())
         merge_merging_params = future_part.parts.front()->storage.merging_params;
@@ -1375,6 +1381,9 @@ static UInt64 estimateNeededMemoryForMergeImpl(
     /// the merge rebuilds, so it is computed once here and reused by the projection pricing below.
     NameSet expired_columns;
     std::unordered_map<String, String> pending_rename_sources;
+    /// Rename targets with dynamic structure that base parts store under the new name while a selected
+    /// patch still stores them under the old one (see the patch loop below).
+    NameSet patch_renamed_dynamic_targets;
     {
         NameSet columns_present_in_parts;
         for (const auto & part : future_part.parts)
@@ -1454,8 +1463,11 @@ static UInt64 estimateNeededMemoryForMergeImpl(
         /// renamed while the patch application was disabled for the merges of the base parts keeps its only
         /// values in a patch under the old name. Such a target is kept alive. It is mapped to the patch's
         /// old name for the source-part probes only when no base part stores the new name: the probes use
-        /// one name for all source parts, and the base parts that have already passed the rename and store
-        /// the column under the new name carry its streams with the same type.
+        /// one name for all source parts. When base parts do store the new name, the probes see only their
+        /// streams. That is enough for a static type, but a JSON / Dynamic patch carrier can hold dynamic
+        /// substreams (a path set only by the UPDATE) that no base part has, and the merged writer opens
+        /// their union. Such a target is priced at its type's write-time capacity, like a default-filled
+        /// dynamic column (patch_renamed_dynamic_targets joins default_filled_dynamic_columns below).
         if (mutations_snapshot)
         {
             for (const auto & patch : future_part.patch_parts)
@@ -1465,9 +1477,18 @@ static UInt64 estimateNeededMemoryForMergeImpl(
                     mutations_snapshot->getOnFlyMutationCommandsForPart(patch), PatchPartsForReader{}, context);
                 for (const auto & rename : patch_conversions.getRenameMap())
                 {
-                    if (columns_present_in_patch_parts.contains(rename.rename_from) && !storage_column_names.contains(rename.rename_from)
-                        && !columns_present_in_parts.contains(rename.rename_to))
+                    if (!columns_present_in_patch_parts.contains(rename.rename_from) || storage_column_names.contains(rename.rename_from))
+                        continue;
+                    if (!columns_present_in_parts.contains(rename.rename_to))
+                    {
                         pending_rename_sources.emplace(rename.rename_to, rename.rename_from);
+                    }
+                    else
+                    {
+                        const auto target = output_columns.tryGetByName(rename.rename_to);
+                        if (target && target->type->hasDynamicStructure())
+                            patch_renamed_dynamic_targets.insert(rename.rename_to);
+                    }
                 }
             }
         }
@@ -1767,6 +1788,8 @@ static UInt64 estimateNeededMemoryForMergeImpl(
                 default_filled_dynamic_columns.insert(source_name);
         }
     }
+    for (const auto & name : patch_renamed_dynamic_targets)
+        default_filled_dynamic_columns.insert(part_source_name(name));
 
     /// A compact output part writes every column into one shared file, and its writer does not take the wide
     /// writer's per-stream adaptive decision; it is counted as a single stream here (for the marks and the
@@ -1885,8 +1908,39 @@ static UInt64 estimateNeededMemoryForMergeImpl(
 
     /// One output stream writes through a compressor block of max_compress_block_size and a file buffer the
     /// writer creates at that same size (the stream's own writeFile call), so its worst case is twice the
-    /// block size.
+    /// block size plus the compressor's scratch buffer (see compression_scratch below).
     const UInt64 base_max_compress_block_size = resolve_max_compress_block_size(settings, output_columns, columns_description);
+
+    /// The default codec of the result part, resolved like MergeTask resolves it (MergeTreeData::getCompressionCodecForPart):
+    /// the compact writer keys its compressors by the resolved codecs. The TTL infos of the result part are not known
+    /// before the merge; the union of the source parts' ones is what the merge starts from.
+    const MergeTreeData::PartCompressionCodec part_codec = [&]
+    {
+        if (future_part.parts.empty())
+            return MergeTreeData::PartCompressionCodec{.codec = CompressionCodecFactory::instance().getDefaultCodec()};
+        IMergeTreeDataPart::TTLInfos merged_ttl_infos;
+        UInt64 total_size_compressed = 0;
+        for (const auto & part : future_part.parts)
+        {
+            merged_ttl_infos.update(part->ttl_infos);
+            total_size_compressed += part->getBytesOnDisk();
+        }
+        return future_part.parts.front()->storage.getCompressionCodecForPart(
+            metadata_snapshot, total_size_compressed, merged_ttl_infos, time_of_merge);
+    }();
+
+    /// A compressor holds a scratch buffer next to its block once it flushes a block that does not fit into
+    /// what is left of its output buffer: CompressedWriteBuffer::nextImpl compresses directly into the output
+    /// only when it has getCompressedReserveSize free bytes, which is always more than the block itself.
+    /// A data file buffer has the size of the compressor block (or less on object storage), and the marks
+    /// file buffer is much smaller than the marks block, so a full block always goes through the scratch
+    /// buffer. It is a PODArray, so its capacity is rounded up to a power of two: a 1 MiB block keeps a
+    /// 2 MiB scratch buffer alive until the stream is finalized. Columns with their own codecs have reserve
+    /// sizes close to the part codec's one (every codec bound is a little over the block size).
+    const auto compression_scratch = [&](UInt64 compress_block_size) -> UInt64
+    {
+        return roundUpToPowerOfTwoOrZero(part_codec.codec->getCompressedReserveSize(static_cast<UInt32>(compress_block_size)));
+    };
 
     /// Worst case: every stream allocates all of its buffers in full. A zero remote_write_buffer_size
     /// means the output is not written through multipart upload buffers (a local disk, a known remote disk
@@ -2038,22 +2092,25 @@ static UInt64 estimateNeededMemoryForMergeImpl(
                     written_bytes));
         return result;
     };
+    /// The marks compressor only writes when the marks are compressed; otherwise its block stays empty and
+    /// it never needs a scratch buffer.
+    const UInt64 marks_compression_scratch = settings[MergeTreeSetting::compress_marks] ? compression_scratch(marks_compress_block_size) : 0;
     const auto marks_worst_case_write_buffer_size = [&](bool adaptive_stream) -> UInt64
     {
         if (remote_write_buffer_size == 0)
-            return marks_compress_block_size + MergeTreeWriterStream::MARKS_FILE_BUFFER_SIZE;
+            return marks_compress_block_size + marks_compression_scratch + MergeTreeWriterStream::MARKS_FILE_BUFFER_SIZE;
         return saturatingAdd(
             stream_remote_write_buffer_size(
                 MergeTreeWriterStream::MARKS_FILE_BUFFER_SIZE, adaptive_stream, output_marks_bytes_per_stream, marks_remote_write_buffer_size),
-            marks_compress_block_size);
+            marks_compress_block_size + marks_compression_scratch);
     };
     const auto worst_case_write_buffer_size = [&](UInt64 max_compress_block_size, bool adaptive_stream)
     {
         const UInt64 data_worst_case = remote_write_buffer_size != 0
             ? saturatingAdd(
                 stream_remote_write_buffer_size(max_compress_block_size, adaptive_stream, multipart_written_bytes, remote_write_buffer_size),
-                max_compress_block_size)
-            : 2 * max_compress_block_size;
+                max_compress_block_size + compression_scratch(max_compress_block_size))
+            : 2 * max_compress_block_size + compression_scratch(max_compress_block_size);
         return saturatingAdd(data_worst_case, marks_worst_case_write_buffer_size(adaptive_stream));
     };
     /// The worst case of a non-adaptive stream, also used where the adaptive split is not known.
@@ -2080,23 +2137,6 @@ static UInt64 estimateNeededMemoryForMergeImpl(
             compact_block_size = context->getSettingsRef()[Setting::max_compress_block_size];
         return std::min<UInt64>(compact_block_size, MergeTreeWriterSettings::MAX_COMPRESS_BLOCK_SIZE);
     };
-    /// The default codec of the result part, resolved like MergeTask resolves it (MergeTreeData::getCompressionCodecForPart):
-    /// the compact writer keys its compressors by the resolved codecs. The TTL infos of the result part are not known
-    /// before the merge; the union of the source parts' ones is what the merge starts from.
-    const MergeTreeData::PartCompressionCodec part_codec = [&]
-    {
-        if (future_part.parts.empty())
-            return MergeTreeData::PartCompressionCodec{.codec = CompressionCodecFactory::instance().getDefaultCodec()};
-        IMergeTreeDataPart::TTLInfos merged_ttl_infos;
-        UInt64 total_size_compressed = 0;
-        for (const auto & part : future_part.parts)
-        {
-            merged_ttl_infos.update(part->ttl_infos);
-            total_size_compressed += part->getBytesOnDisk();
-        }
-        return future_part.parts.front()->storage.getCompressionCodecForPart(
-            metadata_snapshot, total_size_compressed, merged_ttl_infos, time_of_merge);
-    }();
     const auto compact_eager_buffers = [&](UInt64 compact_block_size, size_t compressors)
     {
         const UInt64 file_buffer_size = remote_write_buffer_size != 0
@@ -2108,7 +2148,8 @@ static UInt64 estimateNeededMemoryForMergeImpl(
     };
     const auto compact_worst_case = [&](UInt64 compact_block_size, size_t compressors)
     {
-        const UInt64 compressors_size = saturatingStreamsTimesBuffer(compressors, DBMS_DEFAULT_BUFFER_SIZE);
+        const UInt64 compressors_size
+            = saturatingStreamsTimesBuffer(compressors, DBMS_DEFAULT_BUFFER_SIZE + compression_scratch(DBMS_DEFAULT_BUFFER_SIZE));
         /// The compact writer does not take the per-stream adaptive decision: its data file starts from
         /// compact_block_size, the buf_size it is opened with.
         const UInt64 data_worst_case = remote_write_buffer_size != 0
@@ -2373,7 +2414,12 @@ static UInt64 estimateNeededMemoryForMergeImpl(
                     /// The marks of the streams alive at once, with the same in-flight allowance.
                     saturatingStreamsTimesBuffer(3, saturatingStreamsTimesBuffer(output_marks_bytes_per_stream, alive_streams)));
 
-                output_memory = std::min({output_memory, vertical_worst_case, vertical_data_bound});
+                /// The horizontal bounds are not kept in this min: they take the adaptive-write-buffer decision for
+                /// the whole part's stream count, while a vertical merge takes it per writer. A part that crosses
+                /// min_columns_to_activate_adaptive_write_buffer as a whole can have a gathering column below it
+                /// (a wide Tuple), whose writer opens all its streams with full-size buffers, so the horizontal
+                /// price is not an upper bound for the vertical writers.
+                output_memory = std::min(vertical_worst_case, vertical_data_bound);
 
                 /// The same holds for the readers: a vertical merge reads the merging columns (and the
                 /// lightweight-delete mask) in its horizontal stage, then reads one gathering column at a time
@@ -2572,8 +2618,15 @@ static UInt64 estimateNeededMemoryForMergeImpl(
                 projection_future_part.assign(std::move(projection_parts), /*patch_parts_=*/ {}, &projection, base_settings);
                 /// A projection part is never subject to a pending on-fly rename (renaming a column used
                 /// in a projection is forbidden, and the nested merge runs over the projection's own
-                /// columns), so the recursion needs no mutations snapshot.
-                projection_memory = std::max(projection_memory, estimateNeededMemoryForMerge(
+                /// columns), so the recursion needs no mutations snapshot. The nested merge does not run with
+                /// the table's merging params either: MergeProjectionsStage::prepareProjections merges an
+                /// aggregate projection with Aggregating and any other one with Ordinary, whatever the table's
+                /// mode is - and an aggregate projection merge is never vertical.
+                MergeTreeData::MergingParams projection_merging_params;
+                projection_merging_params.mode = projection.type == ProjectionDescription::Type::Aggregate
+                    ? MergeTreeData::MergingParams::Aggregating
+                    : MergeTreeData::MergingParams::Ordinary;
+                projection_memory = std::max(projection_memory, estimateNeededMemoryForMergeImpl(
                     projection_future_part,
                     projection.metadata,
                     context,
@@ -2581,7 +2634,10 @@ static UInt64 estimateNeededMemoryForMergeImpl(
                     /*mutations_snapshot=*/ nullptr,
                     time_of_merge,
                     output_on_remote_disk,
-                    remote_write_buffer_memories));
+                    remote_write_buffer_memories,
+                    deduplicate,
+                    cleanup,
+                    &projection_merging_params));
             }
             else
             {

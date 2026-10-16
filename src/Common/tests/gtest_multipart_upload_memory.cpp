@@ -90,19 +90,22 @@ UInt64 firstPolicyBufferSize(const BufferAllocationPolicy::Settings & settings)
 /// constructed with the size the caller passes (S3ObjectStorage::writeObject hands it the stream's own
 /// buf_size), allocateBuffer only shrinks it when it exceeds the policy size, and reallocateFirstBuffer
 /// doubles it - capped by the policy size - on the nextImpl path, that is only once it has actually filled up.
+/// The writer is flushed after the last byte as well (a merge writer stream finalizes its hashing wrappers,
+/// which call `next` of the file buffer), so a buffer filled exactly by the last byte is grown too.
 UInt64 firstBufferMemoryAfterWriting(const BufferAllocationPolicy::Settings & settings, UInt64 initial_buffer_size, UInt64 written)
 {
     const UInt64 max_first_buffer = firstPolicyBufferSize(settings);
     UInt64 memory = std::min(initial_buffer_size, max_first_buffer);
 
     UInt64 filled = 0;
-    while (filled < written)
+    while (true)
     {
         filled += std::min(memory - filled, written - filled);
-        if (filled == written)
+        if (filled < memory)
             break;
-        /// The buffer is full and there is more to write: nextImpl grows the first buffer, or - once it is at
-        /// the policy size - detaches it and moves on to the multipart buffers priced by the ceiling.
+        /// The buffer is full, and nextImpl runs on it either for the next byte or for the final flush: it
+        /// grows the first buffer, or - once it is at the policy size - detaches it and moves on to the
+        /// multipart buffers priced by the ceiling.
         if (memory == max_first_buffer)
             break;
         memory = std::min(memory * 2, max_first_buffer);
@@ -285,9 +288,13 @@ TEST(MultipartUploadMemory, StrictUploadPartSizeCapsTheCeilingAtReachableBuffers
 
     /// A strict-size writer starts with the caller's at-most-1-MiB buffer and grows it only after data
     /// fills it. With 1 GiB of output it can reach at most two completed 512-MiB buffers and the next
-    /// buffer being filled, not all 21 configured in-flight buffers.
+    /// buffer, which the final flush allocates after the second one is detached, not all 21 configured
+    /// in-flight buffers.
     EXPECT_EQ(
         getMultipartUploadMemoryCeilingForWrittenBytes(memory, 1024ULL * 1024 * 1024),
+        3 * 512ULL * 1024 * 1024);
+    EXPECT_EQ(
+        getMultipartUploadMemoryCeilingForWrittenBytes(memory, 1024ULL * 1024 * 1024 - 1),
         2 * 512ULL * 1024 * 1024);
 
     /// The first full strict-size buffer can be detached while the second is only partially filled.
@@ -440,7 +447,7 @@ TEST(MultipartUploadMemory, ExponentialPolicyDoesNotChargeTheFirstPartBeforeItIs
           1024ULL * 1024 + 1,
           3ULL * 1024 * 1024,
           20ULL * 1024 * 1024,
-          32ULL * 1024 * 1024})
+          32ULL * 1024 * 1024 - 1})
     {
         EXPECT_EQ(
             getMultipartUploadMemoryCeilingForWrittenBytes(memory, bytes_written),
@@ -448,12 +455,18 @@ TEST(MultipartUploadMemory, ExponentialPolicyDoesNotChargeTheFirstPartBeforeItIs
             << "bytes_written = " << bytes_written;
     }
 
-    EXPECT_EQ(getMultipartUploadMemoryCeilingForWrittenBytes(memory, 1024ULL * 1024), 1024ULL * 1024);
+    EXPECT_EQ(getMultipartUploadMemoryCeilingForWrittenBytes(memory, 1024ULL * 1024 - 1), 1024ULL * 1024);
+    /// The final flush grows a buffer that the last byte filled exactly.
+    EXPECT_EQ(getMultipartUploadMemoryCeilingForWrittenBytes(memory, 1024ULL * 1024), 2ULL * 1024 * 1024);
     EXPECT_EQ(getMultipartUploadMemoryCeilingForWrittenBytes(memory, 1024ULL * 1024 + 1), 2ULL * 1024 * 1024);
     EXPECT_EQ(getMultipartUploadMemoryCeilingForWrittenBytes(memory, 20ULL * 1024 * 1024), 32ULL * 1024 * 1024);
 
-    /// One byte past the first part is the first moment a second buffer exists: the full first buffer is
-    /// detached while the policy's second buffer - min_upload_part_size - is being filled.
+    /// Filling the first part is the first moment a second buffer exists: the full first buffer is detached
+    /// (by the next byte or by the final flush) while the policy's second buffer - min_upload_part_size - is
+    /// allocated.
+    EXPECT_EQ(
+        getMultipartUploadMemoryCeilingForWrittenBytes(memory, 32ULL * 1024 * 1024),
+        32ULL * 1024 * 1024 + 16ULL * 1024 * 1024);
     EXPECT_EQ(
         getMultipartUploadMemoryCeilingForWrittenBytes(memory, 32ULL * 1024 * 1024 + 1),
         32ULL * 1024 * 1024 + 16ULL * 1024 * 1024);
@@ -491,7 +504,7 @@ TEST(MultipartUploadMemory, ExponentialPolicySubFirstBufferWindowNeverExceedsThe
             const UInt64 priced = getMultipartUploadMemoryCeilingForWrittenBytes(memory, bytes_written);
             const UInt64 held = firstBufferMemoryAfterWriting(settings, DBMS_DEFAULT_BUFFER_SIZE, bytes_written);
             EXPECT_GE(priced, held) << "first part " << first_part << ", bytes_written " << bytes_written;
-            if (bytes_written <= first_part)
+            if (bytes_written < first_part)
                 EXPECT_EQ(priced, held) << "first part " << first_part << ", bytes_written " << bytes_written;
         }
     }
