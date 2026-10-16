@@ -86,7 +86,7 @@ public:
                             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse ULID: non-ASCII character");
                     }
 
-                    if (ulid_decode(destination, value.data()) != 0)
+                    if (ulid_decode(reinterpret_cast<unsigned char *>(destination), value.data()) != 0)
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse ULID {}", value);
                 }
                 else
