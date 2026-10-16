@@ -525,7 +525,7 @@ def test_clickhouse_rest_catalog_client(started_cluster):
     ns = f"client_{uuid.uuid4().hex[:8]}"
     create_namespace([ns])
     create_table(ns, "events")
-    level = "a b?#%41+/é"
+    level = "a b?#%41+/é&:;=@"
     create_namespace([ns, level], properties={"location": f"s3://{BUCKET}/{ns}_special"})
     create_table(f"{ns}%1F{quote(level, safe='')}", "events")
     create_table(ns, "t?#x")
@@ -546,6 +546,7 @@ def test_clickhouse_rest_catalog_client(started_cluster):
             f"DESCRIBE rest_client_db.`{ns}.events` FORMAT TSVRaw SETTINGS describe_compact_output = 1"
         ) == "id\tInt64\nname\tNullable(String)\n"
         assert f"{ns}.{level}.events" in tables
+        assert node.contains_in_log(f"Requesting: .*/namespaces/{ns}%1F{quote(level, safe='')}/tables")
         assert f"{ns}.t%3F%23x" in tables
         assert node.query(f"SELECT count() FROM rest_client_db.`{ns}.{level}.events`") == "0\n"
         assert node.query(f"EXISTS TABLE rest_client_db.`{ns}.t%3F%23x`") == "1\n"
