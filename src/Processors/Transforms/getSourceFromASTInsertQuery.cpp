@@ -33,6 +33,7 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <Processors/Formats/ISchemaReader.h>
+#include <Processors/Formats/AggregateFunctionStatesFromValuesInputFormat.h>
 #include <Interpreters/StorageID.h>
 #include <Common/quoteString.h>
 #include <Common/StringUtils.h>
@@ -315,6 +316,11 @@ String getInsertDataSchemaMismatchDescription(
 
     auto format_settings = getFormatSettings(context);
 
+    /// `schema_inference_hints` override the inferred types of the named columns, but the real parser
+    /// does not use them to interpret the data. Keeping them would let a hint (e.g. `a Array(UInt8)`)
+    /// manufacture the very mismatch being reported, so infer from the data alone.
+    format_settings.schema_inference_hints.clear();
+
     /// Infer only from the rows the parser had reached, including the row whose parsing failed.
     /// Sampling the whole payload would let a row the parser never got to contaminate the diagnosis
     /// of an earlier failure — e.g. `TSV` rows `1\t1.5` and `2\ttext` into `(a UInt8, b UInt8)` fail
@@ -456,7 +462,12 @@ String getInsertDataSchemaMismatchDescription(
     }
 
     auto inferred = inferred_columns.getAll();
-    auto expected = expected_header.getNamesAndTypesList();
+    /// With `aggregate_function_input_format` = 'value' or 'array', the format parses the values the
+    /// aggregate functions take instead of their states (see `AggregateFunctionStatesFromValuesInputFormat`),
+    /// so compare with the header the format actually parses.
+    const auto header_to_parse
+        = AggregateFunctionStatesFromValuesInputFormat::getHeaderToParse(expected_header, format_settings.aggregate_function_input_format);
+    auto expected = (header_to_parse ? *header_to_parse : expected_header).getNamesAndTypesList();
 
     /// Best-effort: if inference produced no columns at all there is nothing useful to compare, so do
     /// not risk attaching a misleading explanation to an unrelated parse error.
@@ -1259,6 +1270,18 @@ String getInsertDataSchemaMismatchDescription(
                     return sampled_string_values_are_valid_text_for(
                                *evidence.column_index, evidence.path, removeLowCardinality(expected_type))
                         .value_or(true);
+                /// The formats that read quoted text values (`MySQLDump`, the `Quoted` escaping rule) and
+                /// `Values` read a `Bool` with `SerializationBool::deserializeTextQuoted`, which accepts a
+                /// quoted literal (`'true'`, `'yes'`, `'1'`, ...) and parses its content like the whole-text
+                /// deserializer. So only a sampled string that is not a valid `Bool` text is a mismatch,
+                /// and when the values cannot be located in the sample the comparison is inconclusive.
+                if (format_reads_quoted_text_values || format_reads_quoted_strings_into_nested_columns_as_whole_text)
+                {
+                    if (!evidence.column_index)
+                        return true;
+                    return sampled_string_values_are_valid_text_for(*evidence.column_index, evidence.path, expected_unwrapped)
+                        .value_or(true);
+                }
                 return format_casts_string_source_columns;
             }
 
@@ -1395,6 +1418,52 @@ String getInsertDataSchemaMismatchDescription(
             || which_inferred.isObject();
         if (format_casts_string_source_columns && !inferred_is_nested && !expected_is_nested && !which_expected.isObject())
             return true;
+
+        /// A nested source and a nested destination of the same kind are read (or cast with `castColumn`)
+        /// element by element, so they may share no least supertype even though every element is valid:
+        /// e.g. an inferred `Array(Nullable(String))` holding a `UUID` text for an `Array(UUID)` column, or
+        /// a decoded `Array(Date32)` for an `Array(UInt8)` column. Compare their elements with the same
+        /// rules instead of reporting the whole column as a mismatch. The typed-token JSON formats have
+        /// their own token-shape rules for the nested destinations above.
+        if (format_reads_typed_json_value_tokens)
+            return false;
+
+        if (const auto * inferred_array = typeid_cast<const DataTypeArray *>(inferred_unwrapped.get()))
+        {
+            if (const auto * expected_array = typeid_cast<const DataTypeArray *>(expected_unwrapped.get()))
+                return types_are_compatible(
+                    inferred_array->getNestedType(),
+                    expected_array->getNestedType(),
+                    nested_evidence(evidence, {SampledValueStep::Kind::ArrayElements}));
+        }
+
+        if (const auto * inferred_tuple = typeid_cast<const DataTypeTuple *>(inferred_unwrapped.get()))
+        {
+            const auto * expected_tuple = typeid_cast<const DataTypeTuple *>(expected_unwrapped.get());
+            if (expected_tuple && inferred_tuple->getElements().size() == expected_tuple->getElements().size())
+            {
+                const auto & inferred_elements = inferred_tuple->getElements();
+                const auto & expected_elements = expected_tuple->getElements();
+                for (size_t i = 0; i < inferred_elements.size(); ++i)
+                    if (!types_are_compatible(
+                            inferred_elements[i],
+                            expected_elements[i],
+                            nested_evidence(evidence, {SampledValueStep::Kind::TupleElement, i})))
+                        return false;
+                return true;
+            }
+        }
+
+        if (const auto * inferred_map = typeid_cast<const DataTypeMap *>(inferred_unwrapped.get()))
+        {
+            if (const auto * expected_map = typeid_cast<const DataTypeMap *>(expected_unwrapped.get()))
+                /// The sampled keys cannot be located, so they are compared without value-level evidence.
+                return types_are_compatible(inferred_map->getKeyType(), expected_map->getKeyType(), SampledValueEvidence{})
+                    && types_are_compatible(
+                           inferred_map->getValueType(),
+                           expected_map->getValueType(),
+                           nested_evidence(evidence, {SampledValueStep::Kind::MapValues}));
+        }
 
         return false;
     };
@@ -1760,6 +1829,12 @@ PrefixCapturingReadBuffer::PrefixCapturingReadBuffer(ReadBuffer & in_, size_t ma
     working_buffer = in.buffer();
     pos = in.position();
     captureFromCurrentBuffer();
+}
+
+void PrefixCapturingReadBuffer::returnPositionToWrappedBuffer()
+{
+    if (working_buffer.begin() == in.buffer().begin() && working_buffer.end() == in.buffer().end())
+        in.position() = pos;
 }
 
 void PrefixCapturingReadBuffer::captureFromCurrentBuffer()

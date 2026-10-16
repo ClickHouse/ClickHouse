@@ -52,11 +52,18 @@ private:
     /// an unquoted value is rejected by a `String` column (`CANNOT_PARSE_QUOTED_STRING`), and a `Bool`
     /// column accepts only `true` / `false`, `1` / `0` and a quoted representation, never another number.
     bool readsQuotedTextValues() const override { return true; }
+
+    /// When the dump contains a `CREATE TABLE` query for the table, `readSchema` returns the declared
+    /// column types rather than the types of the values: the declaration says neither whether a value is
+    /// quoted nor whether it fits the destination, so it does not describe what the parser validates.
+    bool schemaDescribesParsedData() const override { return !schema_read_from_create; }
+
     bool readsNumericValueIntoBoolColumn() const override { return false; }
     BoolValueIntoNumericColumn readsBoolValueIntoNumericColumn() const override { return BoolValueIntoNumericColumn::None; }
 
     String table_name;
     bool column_names_read_from_data = false;
+    bool schema_read_from_create = false;
 };
 
 }

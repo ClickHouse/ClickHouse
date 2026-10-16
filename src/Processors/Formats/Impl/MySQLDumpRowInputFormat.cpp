@@ -525,6 +525,7 @@ NamesAndTypesList MySQLDumpSchemaReader::readSchema()
     /// condition (see `MySQLDumpRowInputFormat::readPrefix`, which reads the names with the same
     /// helper), so latch whether the data provided column names for `mapsColumnsByName`.
     column_names_read_from_data = !names.empty();
+    schema_read_from_create = !structure_from_create.empty();
 
     if (!structure_from_create.empty())
         return structure_from_create;

@@ -149,7 +149,9 @@ public:
     /// (see getRowsReachedOnParseError), so the explanation can be derived from the data the parser
     /// actually read rather than from rows it never reached.
     /// The callback must return an empty string when there is nothing to report.
-    void setParseErrorDiagnosticProvider(std::function<String(std::optional<size_t>)> provider)
+    /// A wrapper that reads through another input format without calling its own `generate` forwards
+    /// the callback to the wrapped format, which is where the parse errors are thrown.
+    virtual void setParseErrorDiagnosticProvider(std::function<String(std::optional<size_t>)> provider)
     {
         parse_error_diagnostic_provider = std::move(provider);
     }

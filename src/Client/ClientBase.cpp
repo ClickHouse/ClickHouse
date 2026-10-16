@@ -78,6 +78,7 @@
 #include <IO/Ask.h>
 #include <IO/CompressionMethod.h>
 #include <IO/ForkWriteBuffer.h>
+#include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/WriteBufferDecorator.h>
@@ -2829,13 +2830,39 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
     /// When the data is not inline, capture a bounded prefix of it as it streams through instead.
     /// The capture happens on every insert, including the ones that succeed, so it is capped the same
     /// way as the streamed server-side path (see getInsertDataPrefixCaptureLimitForDiagnostic).
+    ///
+    /// A regular file redirected to stdin is the exception: the columnar readers (`Parquet`, `ORC`,
+    /// `Arrow`) rely on the random access and the known size of such a buffer, and a wrapper would make
+    /// them read the whole file into memory. There the data is left unwrapped, and the diagnostic re-reads
+    /// a bounded prefix of the file with `pread`, which does not move the offset of the descriptor.
+    const size_t capture_limit = getInsertDataPrefixCaptureLimitForDiagnostic(client_context);
+    auto * file_descriptor_buf = data_is_inline ? nullptr : typeid_cast<ReadBufferFromFileDescriptor *>(&buf);
+    /// The offset of the descriptor is taken from the kernel rather than from the buffer, which counts
+    /// from zero even if stdin was handed over at a nonzero offset; the bytes buffered but not yet
+    /// consumed are still part of the data.
+    off_t data_start_in_file = -1;
+    if (file_descriptor_buf && file_descriptor_buf->checkIfActuallySeekable())
+    {
+        off_t descriptor_offset = ::lseek(file_descriptor_buf->getFD(), 0, SEEK_CUR);
+        if (descriptor_offset >= 0)
+            data_start_in_file = descriptor_offset - static_cast<off_t>(file_descriptor_buf->available());
+    }
+    const bool data_is_regular_file = data_start_in_file >= 0;
+
     std::optional<PrefixCapturingReadBuffer> capturing_buf;
-    if (!data_is_inline)
-        capturing_buf.emplace(buf, getInsertDataPrefixCaptureLimitForDiagnostic(client_context));
+    if (!data_is_inline && !data_is_regular_file)
+        capturing_buf.emplace(buf, capture_limit);
+
+    /// Declared before `source`, so that it runs after the input format, together with the buffers it
+    /// stacks on top of the wrapper, is destroyed and has returned its position to the wrapper.
+    SCOPE_EXIT({
+        if (capturing_buf)
+            capturing_buf->returnPositionToWrappedBuffer();
+    });
 
     auto source = client_context->getInputFormat(
         current_format,
-        data_is_inline ? buf : static_cast<ReadBuffer &>(*capturing_buf),
+        capturing_buf ? static_cast<ReadBuffer &>(*capturing_buf) : buf,
         sample,
         insert_format_max_block_size_rows,
         std::nullopt,
@@ -2847,6 +2874,22 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
     /// destination (for diagnostics only).
     if (data_is_inline)
         setInsertSchemaMismatchDiagnostic(*source, parsed_query, current_format, sample, client_context);
+    else if (data_is_regular_file)
+        source->setParseErrorDiagnosticProvider(
+            [fd = file_descriptor_buf->getFD(), data_start_in_file, capture_limit, current_format, expected_header = sample,
+             context = client_context](std::optional<size_t> rows_reached_by_parser) -> String
+            {
+                ReadBufferFromFileDescriptorPRead file_in(fd);
+                file_in.seek(data_start_in_file, SEEK_SET);
+                /// One byte more than the limit tells whether the prefix is the whole data.
+                String prefix(capture_limit + 1, '\0');
+                prefix.resize(file_in.read(prefix.data(), prefix.size()));
+                const bool truncated = prefix.size() > capture_limit;
+                if (truncated)
+                    prefix.resize(capture_limit);
+                return getInsertDataSchemaMismatchDescription(
+                    prefix, current_format, expected_header, context, rows_reached_by_parser, truncated);
+            });
     else
         source->setParseErrorDiagnosticProvider(
             [&capturing_buf, current_format, expected_header = sample, context = client_context](

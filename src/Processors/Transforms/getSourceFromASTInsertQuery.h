@@ -123,6 +123,13 @@ class PrefixCapturingReadBuffer : public ReadBuffer, public ReadBufferWrapperBas
 public:
     PrefixCapturingReadBuffer(ReadBuffer & in_, size_t max_bytes_to_capture_);
 
+    /// Returns the consumed position to the wrapped buffer, so that whoever reads it next (e.g. the next
+    /// `INSERT` reading the same stdin) continues where the parser stopped. The wrapper reads the buffer
+    /// of `in` in place and moves the position of `in` only on a refill. Call it after the reader of this
+    /// buffer is destroyed: buffers stacked on top of it (e.g. the `PeekableReadBuffer` of `Values`)
+    /// return their position to this one only on destruction.
+    void returnPositionToWrappedBuffer();
+
     /// The captured prefix together with whether it may be a truncated view of the data (see the
     /// `data_is_truncated` parameter of getInsertDataSchemaMismatchDescription): either more bytes
     /// streamed through than the cap allowed to capture, or the end of the input has not been seen and
