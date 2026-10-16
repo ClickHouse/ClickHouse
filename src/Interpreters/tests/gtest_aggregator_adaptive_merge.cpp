@@ -2,15 +2,19 @@
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/ThreadStatus.h>
 #include <Common/tests/gtest_global_register.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/AdaptiveAggregation/AdaptiveAggregationImpl.h>
 #include <Interpreters/Aggregator.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
+#include <map>
 #include <stdexcept>
 #include <tuple>
 
@@ -112,6 +116,36 @@ protected:
     }
 };
 
+AggregateDescription makeAggregate(const String & name, const Names & argument_names, const DataTypes & argument_types)
+{
+    AggregateDescription description;
+    AggregateFunctionProperties properties;
+    description.function = AggregateFunctionFactory::instance().get(name, NullsAction::EMPTY, argument_types, {}, properties);
+    description.argument_names = argument_names;
+    description.column_name = name;
+    return description;
+}
+
+/// The parameters of an adaptive aggregation whose tables freeze at their first key.
+Aggregator::Params makeAdaptiveParams(const Names & keys, const AggregateDescriptions & aggregates)
+{
+    return Aggregator::Params(
+        keys, aggregates,
+        /*overflow_row_=*/false, /*max_rows_to_group_by_=*/0, OverflowMode::THROW,
+        /*group_by_two_level_threshold_=*/0, /*group_by_two_level_threshold_bytes_=*/0,
+        /*max_bytes_before_external_group_by_=*/0, /*empty_result_for_aggregation_by_empty_set_=*/false,
+        /*tmp_data_scope_=*/nullptr, /*max_threads_=*/3, /*min_free_disk_space_=*/0,
+        /*compile_aggregate_expressions_=*/false, /*min_count_to_compile_aggregate_expression_=*/0,
+        /*max_block_size_=*/65536, /*enable_prefetch_=*/false, /*only_merge_=*/false,
+        /*optimize_group_by_constant_keys_=*/true,
+        /*min_hit_rate_to_use_consecutive_keys_optimization_=*/0.5, StatsCollectingParams{},
+        /*enable_producing_buckets_out_of_order_in_aggregation_=*/false,
+        /*serialize_string_with_zero_byte_=*/false, /*enable_parallel_single_level_merge_=*/false,
+        /*enable_packed_string_keys_=*/true, /*enable_adaptive_aggregator_=*/true,
+        /*adaptive_aggregator_freeze_threshold_=*/1, /*adaptive_aggregator_freeze_threshold_bytes_=*/0,
+        /*adaptive_aggregator_disable_thaw_=*/false, /*use_aggregation_memory_tracker_=*/true);
+}
+
 }
 
 TEST_P(AggregatorAdaptiveMerge, SourceStateLifetimes)
@@ -124,13 +158,7 @@ TEST_P(AggregatorAdaptiveMerge, SourceStateLifetimes)
         auto second = std::make_shared<TrackedMergeFunction>(mode, throws);
         AggregateDescriptions aggregates;
         if (count_first)
-        {
-            AggregateFunctionProperties properties;
-            AggregateDescription count;
-            count.function = AggregateFunctionFactory::instance().get("count", NullsAction::EMPTY, {}, {}, properties);
-            count.column_name = "count";
-            aggregates.push_back(std::move(count));
-        }
+            aggregates.push_back(makeAggregate("count", {}, {}));
         for (const auto & function : {first, second})
         {
             AggregateDescription description;
@@ -140,21 +168,7 @@ TEST_P(AggregatorAdaptiveMerge, SourceStateLifetimes)
         }
 
         {
-            Aggregator::Params params(
-                {"k"}, aggregates,
-                /*overflow_row_=*/false, /*max_rows_to_group_by_=*/0, OverflowMode::THROW,
-                /*group_by_two_level_threshold_=*/0, /*group_by_two_level_threshold_bytes_=*/0,
-                /*max_bytes_before_external_group_by_=*/0, /*empty_result_for_aggregation_by_empty_set_=*/false,
-                /*tmp_data_scope_=*/nullptr, /*max_threads_=*/3, /*min_free_disk_space_=*/0,
-                /*compile_aggregate_expressions_=*/false, /*min_count_to_compile_aggregate_expression_=*/0,
-                /*max_block_size_=*/65536, /*enable_prefetch_=*/false, /*only_merge_=*/false,
-                /*optimize_group_by_constant_keys_=*/true,
-                /*min_hit_rate_to_use_consecutive_keys_optimization_=*/0.5, StatsCollectingParams{},
-                /*enable_producing_buckets_out_of_order_in_aggregation_=*/false,
-                /*serialize_string_with_zero_byte_=*/false, /*enable_parallel_single_level_merge_=*/false,
-                /*enable_packed_string_keys_=*/true, /*enable_adaptive_aggregator_=*/true,
-                /*adaptive_aggregator_freeze_threshold_=*/1, /*adaptive_aggregator_freeze_threshold_bytes_=*/0,
-                /*adaptive_aggregator_disable_thaw_=*/false, /*use_aggregation_memory_tracker_=*/true);
+            auto params = makeAdaptiveParams({"k"}, aggregates);
             if (count_first)
                 params.bucket_top_k = 1;
 
@@ -206,3 +220,73 @@ TEST_P(AggregatorAdaptiveMerge, SourceStateLifetimes)
 
 INSTANTIATE_TEST_SUITE_P(MergePaths, AggregatorAdaptiveMerge,
     ::testing::Combine(::testing::Values(MergeMode::Batch, MergeMode::Pairwise, MergeMode::Group), ::testing::Bool()));
+
+/// A block whose keys are all constant reads its one key for every row. Each producer learns key `a` from its first
+/// block and freezes. Its second block, of key `b`, misses on every row and stages a record per row, each with the key.
+/// The `Array` key is serialized row by row, so the batch of misses keeps the bytes of the key, once for all the
+/// records. The merge returns both groups with all their rows.
+TEST(AggregatorAdaptiveStaging, ConstantSerializedKey)
+{
+    MainThreadStatus::getInstance();
+    tryRegisterAggregateFunctions();
+
+    const auto number = std::make_shared<DataTypeUInt64>();
+    const auto string = std::make_shared<DataTypeString>();
+    const auto array = std::make_shared<DataTypeArray>(number);
+    const AggregateDescriptions aggregates{makeAggregate("count", {}, {}), makeAggregate("sum", {"n"}, {number})};
+    const Block header({{string->createColumn(), string, "s"}, {array->createColumn(), array, "k"}, {number->createColumn(), number, "n"}});
+    Aggregator aggregator(header, makeAdaptiveParams({"s", "k"}, aggregates));
+
+    constexpr size_t rows = 1000;
+    const auto block = [&](char key, UInt64 element)
+    {
+        auto values = ColumnUInt64::create();
+        for (size_t i = 0; i < rows; ++i)
+            values->insertValue(i);
+        return Columns{
+            string->createColumnConst(rows, String(100, key)), array->createColumnConst(rows, Array{Field(element)}), std::move(values)};
+    };
+
+    auto session = aggregator.createAdaptiveSession(2);
+    ManyAggregatedDataVariants sources;
+    for (size_t i = 0; i < 2; ++i)
+    {
+        auto source = std::make_shared<AggregatedDataVariants>();
+        AdaptiveAggregationProducer producer(session);
+        ColumnRawPtrs key_columns(2);
+        Aggregator::AggregateColumns aggregate_columns(aggregates.size());
+        bool no_more_keys = false;
+        ASSERT_TRUE(aggregator.executeOnBlock(block('a', 1), 0, rows, *source, key_columns, aggregate_columns, no_more_keys, &producer));
+        ASSERT_TRUE(producer.isFrozen());
+        ASSERT_TRUE(aggregator.executeOnBlock(block('b', 2), 0, rows, *source, key_columns, aggregate_columns, no_more_keys, &producer));
+        EXPECT_EQ(producer.total_staged_records, rows);
+        /// A copy of the key per record would have grown the buffer past the bytes of all the keys.
+        EXPECT_LT(producer.misses.getKeys().allocated_bytes(), rows * 100);
+        aggregator.finishAdaptiveProducer(*source, producer);
+        sources.push_back(std::move(source));
+    }
+
+    aggregator.prepareAdaptiveTopKPruning(*session, sources.size(), /*external_merge=*/false, /*collects_statistics=*/false);
+    auto prepared = aggregator.prepareVariantsToMerge(std::move(sources), session.get());
+    AdaptiveMergeTask task;
+    std::atomic<bool> cancelled{false};
+    std::map<std::pair<String, UInt64>, std::pair<UInt64, UInt64>> groups;
+    for (size_t bucket = 0; bucket < ADAPTIVE_AGGREGATION_NUM_BUCKETS; ++bucket)
+    {
+        const auto chunks = aggregator.mergeAndConvertAdaptiveBucket(
+            prepared, *session, task, /*final=*/true, static_cast<Int32>(bucket), cancelled,
+            /*updater=*/nullptr, /*full_group_count=*/nullptr);
+        for (const auto & converted : chunks)
+        {
+            const auto & columns = converted.chunk.getColumns();
+            for (size_t row = 0; row < converted.chunk.getNumRows(); ++row)
+                groups[{String(columns[0]->getDataAt(row)), (*columns[1])[row].safeGet<Array>().at(0).safeGet<UInt64>()}]
+                    = {columns[2]->getUInt(row), columns[3]->getUInt(row)};
+        }
+    }
+
+    /// Both producers add every row of both keys.
+    const std::pair<UInt64, UInt64> all_rows{2 * rows, rows * (rows - 1)};
+    const decltype(groups) expected{{{String(100, 'a'), 1}, all_rows}, {{String(100, 'b'), 2}, all_rows}};
+    EXPECT_EQ(groups, expected);
+}
