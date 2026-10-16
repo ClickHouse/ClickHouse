@@ -24,7 +24,11 @@
 
     <query>SELECT hasAny(set, subset) FROM long_missing_{array_type} FORMAT Null</query>
     <query>SELECT hasAny(set, subset) FROM long_nullable_missing_{array_type} FORMAT Null</query>
+    <!-- Most values are first found after the first vector of `set`, so `hasAll` searches through blocks. -->
+    <query>SELECT hasAll(set, set) FROM long_nullable_missing_{array_type} FORMAT Null</query>
     <query>SELECT hasAll(set, subset) FROM long_front_{array_type} FORMAT Null</query>
+    <!-- The last 12 values of `set` are not in its first vector, so each search goes through blocks. -->
+    <query>SELECT hasAll(set, arraySlice(set, -12)) FROM long_front_{array_type} FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS long_missing_{array_type}</drop_query>
     <drop_query>DROP TABLE IF EXISTS long_nullable_missing_{array_type}</drop_query>
