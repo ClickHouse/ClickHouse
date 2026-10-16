@@ -23,6 +23,7 @@ SELECT count() FROM (SELECT a, b FROM t_chain_keys GROUP BY a, b HAVING (b < a A
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT a, max(b) AS m FROM t_chain_keys GROUP BY a HAVING a < m AND m < 120) WHERE explain LIKE '%Granules: %/%';
 SELECT count() FROM (SELECT a, max(b) AS m FROM t_chain_keys GROUP BY a HAVING a < m AND m < 120);
 
+SELECT countIf(explain LIKE '%indexHint(%') > 0 FROM (EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM (SELECT a, b FROM t_chain_keys ORDER BY a, b LIMIT 1 BY a, b) WHERE (b < a AND a < 10) OR a = 500);
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM (SELECT a, b FROM t_chain_keys ORDER BY a, b LIMIT 1 BY a, b) WHERE (b < a AND a < 10) OR a = 500) WHERE explain LIKE '%Granules: %/%';
 SELECT count() FROM (SELECT a, b FROM t_chain_keys ORDER BY a, b LIMIT 1 BY a, b) WHERE (b < a AND a < 10) OR a = 500;
 
