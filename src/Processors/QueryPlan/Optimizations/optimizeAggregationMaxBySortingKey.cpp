@@ -502,34 +502,40 @@ static void tryApply(
                 return whole_granule ? data_part->index_granularity->getMarkRows(granule) : 1;
             };
 
-            /// Whether at least `rows_needed` such rows of the run of granule `mark` follow it. Every one of them has
-            /// a value of the aggregated column not smaller than any in granule `mark`.
-            auto enough_rows_after = [&](size_t mark)
-            {
-                size_t rows = 0;
-                for (size_t granule = mark + 1; granule < num_granules && granule < index_rows && same_prefix(mark, granule); ++granule)
-                {
-                    bool whole_granule = granule + 1 < num_granules && granule + 1 < index_rows && same_prefix(mark, granule + 1);
-                    rows += known_rows(granule, whole_granule);
-                    if (rows >= rows_needed)
-                        return true;
-                }
-                return false;
-            };
+            /// Granules with an index row: `continues_run[g]` when granule `g + 1` starts with the same prefix as `g`, so
+            /// that granule `g` lies entirely in one run.
+            const size_t indexed_granules = std::min(num_granules, index_rows);
+            std::vector<UInt8> continues_run(indexed_granules);
+            for (size_t granule = 0; granule + 1 < indexed_granules; ++granule)
+                continues_run[granule] = same_prefix(granule, granule + 1);
 
-            /// Whether at least `rows_needed` such rows of the run of granule `mark` precede it. A granule before `mark`
+            /// `rows_from[g]`: such rows of the run of granule `g` in granules `g`, `g + 1`, ... of that run. The last
+            /// granule of a run may hold rows of the next run, so only its first row counts. Every one of the rows
+            /// after granule `mark` has a value of the aggregated column not smaller than any in granule `mark`.
+            /// `rows_before[g]`: such rows of the run of granule `g` in the granules before it. A granule before `g`
             /// that starts with the same prefix lies entirely in the run, because the next one does too.
-            auto enough_rows_before = [&](size_t mark)
+            /// Both are computed in one pass each, so that the planning time stays linear in the number of granules
+            /// even when no run has enough rows (e.g. `LIMIT n BY` with `n` larger than every run).
+            std::vector<size_t> rows_from;
+            std::vector<size_t> rows_before;
+            if (need_group_end)
             {
-                size_t rows = 0;
-                for (size_t granule = mark; granule > 0 && same_prefix(granule - 1, mark); --granule)
-                {
-                    rows += known_rows(granule - 1, /*whole_granule=*/ true);
-                    if (rows >= rows_needed)
-                        return true;
-                }
-                return false;
-            };
+                rows_from.assign(indexed_granules + 1, 0);
+                for (size_t granule = indexed_granules; granule-- > 0;)
+                    rows_from[granule] = known_rows(granule, continues_run[granule]) + (continues_run[granule] ? rows_from[granule + 1] : 0);
+            }
+            if (need_group_start)
+            {
+                rows_before.assign(indexed_granules, 0);
+                for (size_t granule = 1; granule < indexed_granules; ++granule)
+                    if (continues_run[granule - 1])
+                        rows_before[granule] = rows_before[granule - 1] + known_rows(granule - 1, /*whole_granule=*/ true);
+            }
+
+            /// Whether at least `rows_needed` such rows of the run of granule `mark` follow (precede) it. Called only
+            /// when granule `mark + 1` continues the run of `mark`.
+            auto enough_rows_after = [&](size_t mark) { return rows_from[mark + 1] >= rows_needed; };
+            auto enough_rows_before = [&](size_t mark) { return rows_before[mark] >= rows_needed; };
 
             const size_t min_marks_for_seek = minMarksForSeek(
                 *data_part, reading->getAllColumnNames(), num_granules, context->getSettingsRef(), limit_by.has_value());
@@ -542,7 +548,7 @@ static void tryApply(
                 for (size_t mark = range.begin; mark < range.end; ++mark)
                 {
                     /// Granule `mark` must lie entirely in one run: the next granule starts with the same prefix.
-                    bool can_skip = mark + 1 < num_granules && mark + 1 < index_rows && same_prefix(mark, mark + 1);
+                    bool can_skip = mark < indexed_granules && continues_run[mark];
                     if (can_skip && need_group_end)
                         can_skip = enough_rows_after(mark);
                     if (can_skip && need_group_start)
