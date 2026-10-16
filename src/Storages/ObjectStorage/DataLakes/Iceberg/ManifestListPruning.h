@@ -1,10 +1,10 @@
 #pragma once
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergJSON.h>
 #include "config.h"
 
 #if USE_AVRO
 
 #include <Interpreters/ActionsDAG.h>
-#include <Poco/JSON/Array.h>
 #include <Storages/KeyDescription.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
@@ -20,7 +20,7 @@ public:
         const IcebergSchemaProcessor & schema_processor_,
         Int32 current_schema_id_,
         Int32 partition_schema_id_,
-        const Poco::JSON::Array::Ptr & partition_specs,
+        const Iceberg::JSONArrayPtr & partition_specs,
         const DB::ActionsDAG * filter_dag,
         DB::ContextPtr context);
 

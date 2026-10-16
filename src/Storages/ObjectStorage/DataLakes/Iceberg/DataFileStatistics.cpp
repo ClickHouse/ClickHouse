@@ -15,7 +15,7 @@ namespace ErrorCodes
 
 #if USE_AVRO
 
-DataFileStatistics::DataFileStatistics(Poco::JSON::Array::Ptr schema_)
+DataFileStatistics::DataFileStatistics(Iceberg::JSONArrayPtr schema_)
 {
     field_ids.resize(schema_->size());
     for (UInt32 i = 0; i < schema_->size(); ++i)
@@ -26,7 +26,7 @@ DataFileStatistics::DataFileStatistics(Poco::JSON::Array::Ptr schema_)
     }
 }
 
-DataFileStatistics::DataFileStatistics(Poco::JSON::Array::Ptr schema_, std::vector<Int64> written_field_ids)
+DataFileStatistics::DataFileStatistics(Iceberg::JSONArrayPtr schema_, std::vector<Int64> written_field_ids)
     : DataFileStatistics(schema_)
 {
     if (!written_field_ids.empty())

@@ -39,7 +39,7 @@ struct PartitionKeyFromSpec
 };
 
 PartitionKeyFromSpec buildPartitionKeyFromSpec(
-    const Poco::JSON::Array::Ptr & partition_specification_json,
+    const Iceberg::JSONArrayPtr & partition_specification_json,
     Int32 schema_id,
     const IcebergSchemaProcessor & schema_processor,
     DB::ContextPtr context);

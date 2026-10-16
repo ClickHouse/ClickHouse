@@ -1,12 +1,12 @@
 #pragma once
 
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergJSON.h>
 #include <pcg_random.hpp>
 #include "config.h"
 
 #include <DataTypes/IDataType.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/FileNamesGenerator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
-#include <Poco/JSON/Object.h>
 
 
 namespace DB
@@ -28,11 +28,11 @@ struct SnapshotRemovals
 class MetadataGenerator
 {
 public:
-    explicit MetadataGenerator(Poco::JSON::Object::Ptr metadata_object_);
+    explicit MetadataGenerator(Iceberg::JSONObjectPtr metadata_object_);
 
     struct NextMetadataResult
     {
-        Poco::JSON::Object::Ptr snapshot = nullptr;
+        Iceberg::JSONObjectPtr snapshot = nullptr;
         /// Metadata path for the manifest list file; resolve for I/O, serialize for writing into Iceberg metadata.
         Iceberg::IcebergPathFromMetadata manifest_list_path;
     };
@@ -75,13 +75,13 @@ public:
     void generateRenameColumnMetadata(const String & column_name, const String & new_column_name);
 
 private:
-    Poco::JSON::Object::Ptr metadata_object;
+    Iceberg::JSONObjectPtr metadata_object;
 
     pcg64_fast gen;
     std::uniform_int_distribution<Int64> dis;
 
     Int64 getMaxSequenceNumber();
-    Poco::JSON::Object::Ptr getParentSnapshot(Int64 parent_snapshot_id);
+    Iceberg::JSONObjectPtr getParentSnapshot(Int64 parent_snapshot_id);
 };
 
 #endif

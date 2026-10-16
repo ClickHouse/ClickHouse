@@ -31,7 +31,7 @@ static std::vector<Int64> fieldIdsOfWrittenColumns(const ColumnMapper & mapper, 
 MultipleFileWriter::MultipleFileWriter(
     UInt64 max_data_file_num_rows_,
     UInt64 max_data_file_num_bytes_,
-    Poco::JSON::Array::Ptr schema_,
+    Iceberg::JSONArrayPtr schema_,
     FileNamesGenerator & filename_generator_,
     const Iceberg::IcebergPathResolver & path_resolver_,
     ObjectStoragePtr object_storage_,

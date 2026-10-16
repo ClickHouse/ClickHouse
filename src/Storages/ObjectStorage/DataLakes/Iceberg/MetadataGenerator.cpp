@@ -1,13 +1,10 @@
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergJSON.h>
 #include <IO/ReadHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/MetadataGenerator.h>
 
 #include <algorithm>
 #include <climits>
 #include <optional>
-#include <Poco/JSON/Array.h>
-#include <Poco/JSON/Object.h>
-#include <Poco/JSON/Stringifier.h>
-#include <Poco/JSON/Parser.h>
 
 #include <Common/randomSeed.h>
 
@@ -30,24 +27,19 @@ namespace DB
 namespace
 {
 
-Poco::JSON::Object::Ptr deepCopy(Poco::JSON::Object::Ptr obj)
+Iceberg::JSONObjectPtr deepCopy(Iceberg::JSONObjectPtr obj)
 {
-    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    obj->stringify(oss);
-
-    Poco::JSON::Parser parser;
-    auto result = parser.parse(oss.str());
-    return result.extract<Poco::JSON::Object::Ptr>();
+    return obj->clone();
 }
 
 /// Only the incremental refreshable-MV append supplies a new cursor; every other snapshot must carry the parent's forward, else the next refresh re-appends already-materialized rows.
 void carryForwardRefreshCursor(
-    Poco::JSON::Object::Ptr summary, Poco::JSON::Object::Ptr parent_snapshot, const std::optional<String> & new_cursor)
+    Iceberg::JSONObjectPtr summary, Iceberg::JSONObjectPtr parent_snapshot, const std::optional<String> & new_cursor)
 {
     std::optional<String> cursor = new_cursor;
     if (!cursor.has_value() && parent_snapshot && parent_snapshot->has(Iceberg::f_summary))
     {
-        auto parent_summary = parent_snapshot->get(Iceberg::f_summary).extract<Poco::JSON::Object::Ptr>();
+        auto parent_summary = parent_snapshot->get(Iceberg::f_summary).getObject();
         if (parent_summary->has(Iceberg::f_refresh_cursor))
             cursor = parent_summary->getValue<String>(Iceberg::f_refresh_cursor);
     }
@@ -56,7 +48,7 @@ void carryForwardRefreshCursor(
 }
 
 /// Read a numeric `total-*` field from the parent snapshot's summary, returning std::nullopt when absent or null.
-std::optional<Int64> readParentTotal(Poco::JSON::Object::Ptr parent_snapshot, const char * field_name)
+std::optional<Int64> readParentTotal(Iceberg::JSONObjectPtr parent_snapshot, const char * field_name)
 {
     if (!parent_snapshot || !parent_snapshot->has(Iceberg::f_summary))
         return std::nullopt;
@@ -68,8 +60,8 @@ std::optional<Int64> readParentTotal(Poco::JSON::Object::Ptr parent_snapshot, co
 
 /// Write the standard `total-*` counters into `summary` by adding each per-field delta to the corresponding parent value.
 void setSnapshotTotals(
-    Poco::JSON::Object::Ptr summary,
-    Poco::JSON::Object::Ptr parent_snapshot,
+    Iceberg::JSONObjectPtr summary,
+    Iceberg::JSONObjectPtr parent_snapshot,
     Int64 added_records,
     Int64 added_files_size,
     Int64 added_data_files,
@@ -115,26 +107,26 @@ void setSnapshotTotals(
     set_delete_total(Iceberg::f_total_equality_deletes, added_equality_deletes);
 }
 
-bool checkValidSchemaEvolution(Poco::Dynamic::Var old_type, Poco::Dynamic::Var new_type)
+bool checkValidSchemaEvolution(Iceberg::JSONValue old_type, Iceberg::JSONValue new_type)
 {
-    if (old_type.isString() && new_type.isString() && old_type.extract<String>() == new_type.extract<String>())
+    if (old_type.isString() && new_type.isString() && old_type.getString() == new_type.getString())
         return true;
 
-    if (new_type.isString() && new_type.extract<String>() == "long" &&
-        old_type.isString() && (old_type.extract<String>() == "long" ||  old_type.extract<String>() == "int"))
+    if (new_type.isString() && new_type.getString() == "long" &&
+        old_type.isString() && (old_type.getString() == "long" ||  old_type.getString() == "int"))
     {
         return true;
     }
 
-    if (new_type.isString() && new_type.extract<String>() == "double" &&
-        old_type.isString() && (old_type.extract<String>() == "float" ||  old_type.extract<String>() == "double"))
+    if (new_type.isString() && new_type.getString() == "double" &&
+        old_type.isString() && (old_type.getString() == "float" ||  old_type.getString() == "double"))
     {
         return true;
     }
 
     {
-        auto old_complex_type = old_type.extract<Poco::JSON::Object::Ptr>();
-        auto new_complex_type = new_type.extract<Poco::JSON::Object::Ptr>();
+        auto old_complex_type = old_type.getObject();
+        auto new_complex_type = new_type.getObject();
 
         if (old_complex_type && new_complex_type && old_complex_type->has("precision") && new_complex_type->has("precision") &&
             (old_complex_type->getValue<Int32>("precision") <= new_complex_type->getValue<Int32>("precision") &&
@@ -149,7 +141,7 @@ bool checkValidSchemaEvolution(Poco::Dynamic::Var old_type, Poco::Dynamic::Var n
 
 }
 
-MetadataGenerator::MetadataGenerator(Poco::JSON::Object::Ptr metadata_object_)
+MetadataGenerator::MetadataGenerator(Iceberg::JSONObjectPtr metadata_object_)
     : metadata_object(metadata_object_)
     , gen(randomSeed())
     , dis(1, std::numeric_limits<Int64>::max())
@@ -162,7 +154,7 @@ Int64 MetadataGenerator::getMaxSequenceNumber()
     if (metadata_object->has(Iceberg::f_last_sequence_number))
         return metadata_object->getValue<Int64>(Iceberg::f_last_sequence_number);
 
-    auto snapshots = metadata_object->get(Iceberg::f_snapshots).extract<Poco::JSON::Array::Ptr>();
+    auto snapshots = metadata_object->get(Iceberg::f_snapshots).getArray();
     Int64 max_seq_number = 0;
 
     for (size_t i = 0; i < snapshots->size(); ++i)
@@ -174,9 +166,9 @@ Int64 MetadataGenerator::getMaxSequenceNumber()
     return max_seq_number;
 }
 
-Poco::JSON::Object::Ptr MetadataGenerator::getParentSnapshot(Int64 parent_snapshot_id)
+Iceberg::JSONObjectPtr MetadataGenerator::getParentSnapshot(Int64 parent_snapshot_id)
 {
-    auto snapshots = metadata_object->get(Iceberg::f_snapshots).extract<Poco::JSON::Array::Ptr>();
+    auto snapshots = metadata_object->get(Iceberg::f_snapshots).getArray();
     for (size_t i = 0; i < snapshots->size(); ++i)
     {
         const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
@@ -211,10 +203,10 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     int format_version = metadata_object->getValue<Int32>(Iceberg::f_format_version);
 
     /// These arrays are optional per the Iceberg spec, so external metadata may omit them.
-    /// Seed an empty one (as Array::Ptr so getArray/extract see the right type tag) before use.
+    /// Seed an empty one before use.
     for (const auto * field : {Iceberg::f_metadata_log, Iceberg::f_snapshot_log})
         if (!metadata_object->has(field))
-            metadata_object->set(field, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
+            metadata_object->set(field, Iceberg::JSONArray::create());
 
     /// `snapshots` may only be seeded when the table has no current snapshot: with a live
     /// parent snapshot the commit relies on finding its manifest list in `snapshots`, and an
@@ -226,10 +218,10 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
                 ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
                 "Metadata has a current snapshot with id {} but no `snapshots` list",
                 parent_snapshot_id);
-        metadata_object->set(Iceberg::f_snapshots, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
+        metadata_object->set(Iceberg::f_snapshots, Iceberg::JSONArray::create());
     }
 
-    Poco::JSON::Object::Ptr new_snapshot = new Poco::JSON::Object;
+    Iceberg::JSONObjectPtr new_snapshot = Iceberg::JSONObject::create();
     if (format_version > 1)
     {
         auto sequence_number = getMaxSequenceNumber() + 1;
@@ -249,7 +241,7 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     metadata_object->set(Iceberg::f_last_updated_ms, timestamp);
 
     auto parent_snapshot = getParentSnapshot(parent_snapshot_id);
-    Poco::JSON::Object::Ptr summary = new Poco::JSON::Object;
+    Iceberg::JSONObjectPtr summary = Iceberg::JSONObject::create();
     /// A merge-on-read DELETE writes position-delete files (num_deleted_rows != 0): per the Iceberg
     /// spec that snapshot is an `overwrite`, not an `append`. Compaction passes `Replace` explicitly.
     const char * operation_name = Iceberg::f_append;
@@ -311,11 +303,11 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     metadata_object->set(Iceberg::f_current_snapshot_id, snapshot_id);
 
     if (!metadata_object->has(Iceberg::f_refs))
-        metadata_object->set(Iceberg::f_refs, Poco::JSON::Object::Ptr(new Poco::JSON::Object));
+        metadata_object->set(Iceberg::f_refs, Iceberg::JSONObject::create());
 
     if (!metadata_object->getObject(Iceberg::f_refs)->has(Iceberg::f_main))
     {
-        Poco::JSON::Object::Ptr branch = new Poco::JSON::Object;
+        Iceberg::JSONObjectPtr branch = Iceberg::JSONObject::create();
         branch->set(Iceberg::f_metadata_snapshot_id, snapshot_id);
         branch->set(Iceberg::f_type, Iceberg::f_branch);
 
@@ -325,13 +317,13 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
         metadata_object->getObject(Iceberg::f_refs)->getObject(Iceberg::f_main)->set(Iceberg::f_metadata_snapshot_id, snapshot_id);
 
     {
-        Poco::JSON::Object::Ptr new_metadata_item = new Poco::JSON::Object;
+        Iceberg::JSONObjectPtr new_metadata_item = Iceberg::JSONObject::create();
         new_metadata_item->set(Iceberg::f_metadata_file, metadata_file_path.serialize());
         new_metadata_item->set(Iceberg::f_timestamp_ms, timestamp);
         metadata_object->getArray(Iceberg::f_metadata_log)->add(new_metadata_item);
     }
     {
-        Poco::JSON::Object::Ptr new_snapshot_item = new Poco::JSON::Object;
+        Iceberg::JSONObjectPtr new_snapshot_item = Iceberg::JSONObject::create();
         new_snapshot_item->set(Iceberg::f_metadata_snapshot_id, snapshot_id);
         new_snapshot_item->set(Iceberg::f_timestamp_ms, timestamp);
         metadata_object->getArray(Iceberg::f_snapshot_log)->add(new_snapshot_item);
@@ -341,7 +333,7 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     {
         if (!metadata_object->has(Iceberg::f_properties))
         {
-            Poco::JSON::Object::Ptr properties = new Poco::JSON::Object;
+            Iceberg::JSONObjectPtr properties = Iceberg::JSONObject::create();
             metadata_object->set(Iceberg::f_properties, properties);
         }
         auto properties = metadata_object->getObject(Iceberg::f_properties);
@@ -361,11 +353,11 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateManifestOnlySna
     int format_version = metadata_object->getValue<Int32>(Iceberg::f_format_version);
 
     /// These arrays are optional per the Iceberg spec, so external metadata may omit them.
-    /// Seed an empty one (as Array::Ptr so getArray/extract see the right type tag) before use,
+    /// Seed an empty one before use.
     /// mirroring `generateNextMetadata`; otherwise appending to a missing log dereferences a null array.
     for (const auto * field : {Iceberg::f_metadata_log, Iceberg::f_snapshot_log})
         if (!metadata_object->has(field))
-            metadata_object->set(field, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
+            metadata_object->set(field, Iceberg::JSONArray::create());
 
     /// A manifest-only rewrite always runs against a table with a current snapshot, so `snapshots`
     /// must already be present. Guard the same way as `generateNextMetadata` instead of dereferencing
@@ -376,7 +368,7 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateManifestOnlySna
             "Metadata has a current snapshot with id {} but no `snapshots` list",
             parent_snapshot_id);
 
-    Poco::JSON::Object::Ptr new_snapshot = new Poco::JSON::Object;
+    Iceberg::JSONObjectPtr new_snapshot = Iceberg::JSONObject::create();
     if (format_version > 1)
     {
         auto sequence_number = getMaxSequenceNumber() + 1;
@@ -398,7 +390,7 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateManifestOnlySna
     auto parent_snapshot = getParentSnapshot(parent_snapshot_id);
 
     /// Manifest-only rewrite: all added-* deltas are zero so `total-*` counters are inherited unchanged from the parent.
-    Poco::JSON::Object::Ptr summary = new Poco::JSON::Object;
+    Iceberg::JSONObjectPtr summary = Iceberg::JSONObject::create();
     summary->set(Iceberg::f_operation, Iceberg::f_replace);
     carryForwardRefreshCursor(summary, parent_snapshot, std::nullopt);
     summary->set(Iceberg::f_added_data_files, "0");
@@ -423,14 +415,13 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateManifestOnlySna
     metadata_object->getArray(Iceberg::f_snapshots)->add(new_snapshot);
     metadata_object->set(Iceberg::f_current_snapshot_id, snapshot_id);
 
-    /// `refs` is optional per the Iceberg spec. Seed it as Object::Ptr, not as a raw pointer:
-    /// `getObject` below matches on typeid(Object::Ptr) and returns null for any other type tag.
+    /// `refs` is optional per the Iceberg spec.
     if (!metadata_object->has(Iceberg::f_refs))
-        metadata_object->set(Iceberg::f_refs, Poco::JSON::Object::Ptr(new Poco::JSON::Object));
+        metadata_object->set(Iceberg::f_refs, Iceberg::JSONObject::create());
 
     if (!metadata_object->getObject(Iceberg::f_refs)->has(Iceberg::f_main))
     {
-        Poco::JSON::Object::Ptr branch = new Poco::JSON::Object;
+        Iceberg::JSONObjectPtr branch = Iceberg::JSONObject::create();
         branch->set(Iceberg::f_metadata_snapshot_id, snapshot_id);
         branch->set(Iceberg::f_type, Iceberg::f_branch);
         metadata_object->getObject(Iceberg::f_refs)->set(Iceberg::f_main, branch);
@@ -441,13 +432,13 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateManifestOnlySna
     }
 
     {
-        Poco::JSON::Object::Ptr new_metadata_item = new Poco::JSON::Object;
+        Iceberg::JSONObjectPtr new_metadata_item = Iceberg::JSONObject::create();
         new_metadata_item->set(Iceberg::f_metadata_file, metadata_file_path.serialize());
         new_metadata_item->set(Iceberg::f_timestamp_ms, timestamp);
         metadata_object->getArray(Iceberg::f_metadata_log)->add(new_metadata_item);
     }
     {
-        Poco::JSON::Object::Ptr new_snapshot_item = new Poco::JSON::Object;
+        Iceberg::JSONObjectPtr new_snapshot_item = Iceberg::JSONObject::create();
         new_snapshot_item->set(Iceberg::f_metadata_snapshot_id, snapshot_id);
         new_snapshot_item->set(Iceberg::f_timestamp_ms, timestamp);
         metadata_object->getArray(Iceberg::f_snapshot_log)->add(new_snapshot_item);
@@ -461,7 +452,7 @@ void MetadataGenerator::generateDropColumnMetadata(const String & column_name)
     auto current_schema_id = metadata_object->getValue<Int32>(Iceberg::f_current_schema_id);
     metadata_object->set(Iceberg::f_current_schema_id, current_schema_id + 1);
 
-    Poco::JSON::Object::Ptr current_schema;
+    Iceberg::JSONObjectPtr current_schema;
     auto schemas = metadata_object->getArray(Iceberg::f_schemas);
     for (UInt32 i = 0; i < schemas->size(); ++i)
     {
@@ -500,7 +491,7 @@ void MetadataGenerator::generateAddColumnMetadata(const String & column_name, Da
     auto current_schema_id = metadata_object->getValue<Int32>(Iceberg::f_current_schema_id);
     metadata_object->set(Iceberg::f_current_schema_id, current_schema_id + 1);
 
-    Poco::JSON::Object::Ptr current_schema;
+    Iceberg::JSONObjectPtr current_schema;
     auto schemas = metadata_object->getArray(Iceberg::f_schemas);
     for (UInt32 i = 0; i < schemas->size(); ++i)
     {
@@ -532,7 +523,7 @@ void MetadataGenerator::generateAddColumnMetadata(const String & column_name, Da
     auto new_type = Iceberg::getIcebergType(type, iter);
     metadata_object->set(Iceberg::f_last_column_id, iter);
 
-    Poco::JSON::Object::Ptr new_field = new Poco::JSON::Object;
+    Iceberg::JSONObjectPtr new_field = Iceberg::JSONObject::create();
     new_field->set(Iceberg::f_id, new_field_id);
     new_field->set(Iceberg::f_name, column_name);
     new_field->set(Iceberg::f_required, new_type.second);
@@ -548,7 +539,7 @@ void MetadataGenerator::generateModifyColumnMetadata(const String & column_name,
     auto current_schema_id = metadata_object->getValue<Int32>(Iceberg::f_current_schema_id);
     metadata_object->set(Iceberg::f_current_schema_id, current_schema_id + 1);
 
-    Poco::JSON::Object::Ptr current_schema;
+    Iceberg::JSONObjectPtr current_schema;
     auto schemas = metadata_object->getArray(Iceberg::f_schemas);
     for (UInt32 i = 0; i < schemas->size(); ++i)
     {
@@ -598,7 +589,7 @@ void MetadataGenerator::generateRenameColumnMetadata(const String & column_name,
 {
     auto current_schema_id = metadata_object->getValue<Int32>(Iceberg::f_current_schema_id);
 
-    Poco::JSON::Object::Ptr current_schema;
+    Iceberg::JSONObjectPtr current_schema;
     auto schemas = metadata_object->getArray(Iceberg::f_schemas);
     for (UInt32 i = 0; i < schemas->size(); ++i)
     {

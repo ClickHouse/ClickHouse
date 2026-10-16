@@ -1,3 +1,4 @@
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergJSON.h>
 #include <memory>
 #include <stack>
 #include <variant>
@@ -9,10 +10,6 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ComplexTypeSchemaProcessorFunctions.h>
 #include <base/defines.h>
-#include <Poco/JSON/Array.h>
-#include <Poco/JSON/Object.h>
-#include <Poco/JSON/Stringifier.h>
-#include <Poco/SharedPtr.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -640,17 +637,17 @@ void ExecutableEvolutionFunction::fillMissingElementsInPermutation(std::vector<s
     }
 }
 
-Poco::JSON::Array::Ptr ExecutableEvolutionFunction::makeArrayFromObject(Poco::JSON::Object::Ptr object)
+Iceberg::JSONArrayPtr ExecutableEvolutionFunction::makeArrayFromObject(Iceberg::JSONObjectPtr object)
 {
-    Poco::JSON::Array::Ptr json_array(new Poco::JSON::Array);
+    Iceberg::JSONArrayPtr json_array(Iceberg::JSONArray::create());
     json_array->add(object);
     return json_array;
 }
 
 void ExecutableEvolutionFunction::pushNewNode(
     std::stack<ExecutableEvolutionFunction::TraverseItem> & walk_stack,
-    Poco::JSON::Object::Ptr old_node,
-    Poco::JSON::Object::Ptr new_node,
+    Iceberg::JSONObjectPtr old_node,
+    Iceberg::JSONObjectPtr new_node,
     std::vector<IcebergChangeSchemaOperation::Edge> * current_path)
 {
     if (!old_node->isObject("type"))
@@ -658,8 +655,8 @@ void ExecutableEvolutionFunction::pushNewNode(
 
     if (old_node->getObject("type")->getValue<std::string>("type") == "struct")
     {
-        Poco::JSON::Array::Ptr subfields = new_node->getObject("type")->get("fields").extract<Poco::JSON::Array::Ptr>();
-        Poco::JSON::Array::Ptr old_subfields = old_node->getObject("type")->get("fields").extract<Poco::JSON::Array::Ptr>();
+        Iceberg::JSONArrayPtr subfields = new_node->getObject("type")->get("fields").getArray();
+        Iceberg::JSONArrayPtr old_subfields = old_node->getObject("type")->get("fields").getArray();
 
         if (current_path)
             current_path->push_back(
@@ -722,7 +719,7 @@ static std::shared_ptr<DeletingTransform> makeDeletingTransform(
     const std::vector<IcebergChangeSchemaOperation::Edge> & current_path,
     const std::vector<size_t> & initial_permutation,
     DataTypePtr old_type,
-    Poco::JSON::Object::Ptr old_subfield)
+    Iceberg::JSONObjectPtr old_subfield)
 {
     auto operation = IcebergDeletingOperation(current_path, old_subfield->getValue<String>("name"));
     auto transform = std::make_shared<DeletingTransform>(operation, old_type, initial_permutation);
@@ -734,7 +731,7 @@ static std::shared_ptr<AddingTransform> makeAddingTransform(
     const std::vector<IcebergChangeSchemaOperation::Edge> & current_path,
     DataTypePtr type,
     DataTypePtr old_type,
-    Poco::JSON::Object::Ptr subfield)
+    Iceberg::JSONObjectPtr subfield)
 {
     auto operation = IcebergAddingOperation(current_path, subfield->getValue<String>("name"));
     auto transform = std::make_shared<AddingTransform>(operation, type, old_type);
@@ -763,8 +760,8 @@ void ExecutableEvolutionFunction::lazyInitialize() const
             if (old_subfield->has("type") && old_subfield->getValue<std::string>("type") == "struct")
             {
                 walk_stack.push(
-                    {old_subfield->get("fields").extract<Poco::JSON::Array::Ptr>(),
-                     subfield->get("fields").extract<Poco::JSON::Array::Ptr>(),
+                    {old_subfield->get("fields").getArray(),
+                     subfield->get("fields").getArray(),
                      current_path,
                      TransformType::STRUCT});
             }
@@ -793,7 +790,7 @@ void ExecutableEvolutionFunction::lazyInitialize() const
         std::vector<std::string> initial_field_names;
         std::vector<std::string> result_field_names;
 
-        std::unordered_map<size_t, Poco::SharedPtr<Poco::JSON::Object>> id_to_type;
+        std::unordered_map<size_t, Iceberg::JSONObjectPtr> id_to_type;
         std::unordered_map<size_t, size_t> old_types;
 
         /// Stage 1: collect new permutation to reorder current fields.

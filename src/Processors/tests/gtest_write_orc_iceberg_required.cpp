@@ -15,12 +15,11 @@
 #    include <Processors/Formats/Impl/ORCBlockOutputFormat.h>
 #    include <Processors/Sources/SourceFromChunks.h>
 #    include <QueryPipeline/QueryPipelineBuilder.h>
+#    include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergJSON.h>
 #    include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 
 #    include <orc/OrcFile.hh>
 
-#    include <Poco/JSON/Object.h>
-#    include <Poco/JSON/Parser.h>
 
 using namespace DB;
 
@@ -92,8 +91,7 @@ Block makeHeader()
 
 ColumnMapperPtr makeIcebergMapper()
 {
-    Poco::JSON::Parser parser;
-    auto schema_object = parser.parse(kIcebergSchema).extract<Poco::JSON::Object::Ptr>();
+    auto schema_object = Iceberg::parseJSONObject(kIcebergSchema);
     // Use the same builder the MultipleFileWriter INSERT path uses, so this test covers the
     // production mapper wiring (dropping the wiring there would fail this test).
     return Iceberg::createColumnMapperFromFields(schema_object->getArray("fields"));
@@ -229,8 +227,6 @@ TEST(ORCIcebergRequired, NoInfoFallsBackToNullable)
 /// same as the schema parser, so building the mapper throws.
 TEST(ORCIcebergRequired, MalformedSchemaThrows)
 {
-    Poco::JSON::Parser parser;
-
     // A field with no top-level `required` key.
     const char * missing_required = R"JSON(
     { "type": "struct", "schema-id": 0, "fields": [
@@ -238,7 +234,7 @@ TEST(ORCIcebergRequired, MalformedSchemaThrows)
           "type": { "type": "list", "element-id": 10, "element": "int", "element-required": false } }
     ] }
     )JSON";
-    auto obj1 = parser.parse(missing_required).extract<Poco::JSON::Object::Ptr>();
+    auto obj1 = Iceberg::parseJSONObject(missing_required);
     EXPECT_ANY_THROW(Iceberg::createColumnMapperFromFields(obj1->getArray("fields")));
 
     // A field with `required` but no `type` (the mandatory member is skipped nowhere).
@@ -247,7 +243,7 @@ TEST(ORCIcebergRequired, MalformedSchemaThrows)
         { "id": 1, "name": "x", "required": false }
     ] }
     )JSON";
-    auto obj2 = parser.parse(missing_type).extract<Poco::JSON::Object::Ptr>();
+    auto obj2 = Iceberg::parseJSONObject(missing_type);
     EXPECT_ANY_THROW(Iceberg::createColumnMapperFromFields(obj2->getArray("fields")));
 }
 #endif

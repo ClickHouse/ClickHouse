@@ -1,3 +1,5 @@
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergJSON.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergJSONPoco.h>
 #include <Analyzer/FunctionNode.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
@@ -45,8 +47,6 @@
 #include <base/types.h>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <sys/stat.h>
-#include <Poco/Dynamic/Var.h>
-#include <Poco/JSON/Array.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/FieldVisitorConvertToNumber.h>
@@ -73,8 +73,6 @@
 #include <Types.hh>
 #include <ValidSchema.hh>
 
-#include <Poco/JSON/Object.h>
-#include <Poco/JSON/Stringifier.h>
 #include <Poco/String.h>
 
 namespace DB
@@ -370,18 +368,11 @@ String removeEscapedSlashes(const String & json_str)
     return result;
 }
 
-String stringifyJSON(const Poco::Dynamic::Var & json, unsigned indent)
-{
-    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    Poco::JSON::Stringifier::stringify(json, oss, indent);
-    return removeEscapedSlashes(oss.str());
-}
-
 static void extendSchemaForPartitions(
     String & schema,
     const std::vector<String> & partition_columns,
     const DataTypes & partition_types,
-    const Poco::JSON::Array::Ptr & partition_spec_fields)
+    const Iceberg::JSONArrayPtr & partition_spec_fields)
 {
     /// Iceberg projects the manifest `partition` values onto the spec by field-id, so reuse
     /// the persisted spec ids. A legacy v1 spec may omit them; there the spec assigns partition
@@ -399,14 +390,14 @@ static void extendSchemaForPartitions(
         }
     }
 
-    Poco::JSON::Array::Ptr partition_fields = new Poco::JSON::Array;
+    Iceberg::JSONArrayPtr partition_fields = Iceberg::JSONArray::create();
     for (size_t i = 0; i < partition_columns.size(); ++i)
     {
         Int32 field_id = spec_has_all_ids
             ? partition_spec_fields->getObject(static_cast<UInt32>(i))->getValue<Int32>(Iceberg::f_field_id)
             : static_cast<Int32>(1000 + i);
 
-        Poco::JSON::Object::Ptr field = new Poco::JSON::Object;
+        Iceberg::JSONObjectPtr field = Iceberg::JSONObject::create();
         field->set(Iceberg::f_field_id, field_id);
         field->set(Iceberg::f_name, partition_columns[i]);
         field->set(Iceberg::f_type, getAvroType(partition_types[i], field_id));
@@ -467,7 +458,7 @@ void setVersionedField(avro::GenericRecord & rec, const std::optional<T> & value
 
 }
 
-Poco::JSON::Object::Ptr getCurrentSchema(const Poco::JSON::Object::Ptr & metadata)
+Iceberg::JSONObjectPtr getCurrentSchema(const Iceberg::JSONObjectPtr & metadata)
 {
     Int32 current_schema_id = metadata->getValue<Int32>(Iceberg::f_current_schema_id);
     auto schemas = metadata->getArray(Iceberg::f_schemas);
@@ -484,7 +475,7 @@ Poco::JSON::Object::Ptr getCurrentSchema(const Poco::JSON::Object::Ptr & metadat
 }
 
 void generateManifestFile(
-    Poco::JSON::Object::Ptr metadata,
+    Iceberg::JSONObjectPtr metadata,
     const std::vector<String> & partition_columns,
     const std::vector<Field> & partition_values,
     const DataTypes & partition_types,
@@ -493,9 +484,9 @@ void generateManifestFile(
     const std::vector<UInt64> & data_file_byte_counts,
     const std::optional<DataFileStatistics> & data_file_statistics,
     SharedHeader sample_block,
-    Poco::JSON::Object::Ptr new_snapshot,
+    Iceberg::JSONObjectPtr new_snapshot,
     const String & format,
-    Poco::JSON::Object::Ptr partition_spec,
+    Iceberg::JSONObjectPtr partition_spec,
     Int64 partition_spec_id,
     WriteBuffer & buf,
     Iceberg::FileContentType content_type,
@@ -505,7 +496,7 @@ void generateManifestFile(
     const std::vector<DataFileColumnStatistics> & per_file_statistics,
     const std::vector<std::optional<Int32>> & data_file_sort_order_ids,
     const std::vector<DataFileEntryLineage> & per_file_entry_lineage,
-    Poco::JSON::Object::Ptr schema_to_serialize,
+    Iceberg::JSONObjectPtr schema_to_serialize,
     const std::vector<const DataFileStatistics *> * per_file_fresh_statistics)
 {
     /// A throw, not a `chassert`: mis-pairing statistics with data files publishes metadata that is
@@ -558,7 +549,7 @@ void generateManifestFile(
     if (root_schema->type() != avro::AVRO_RECORD)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Iceberg manifest file schema must be record");
 
-    Poco::JSON::Object::Ptr schema_object_to_write = schema_to_serialize ? schema_to_serialize : getCurrentSchema(metadata);
+    Iceberg::JSONObjectPtr schema_object_to_write = schema_to_serialize ? schema_to_serialize : getCurrentSchema(metadata);
     std::string json_representation = stringifyJSON(schema_object_to_write, 4);
 
     auto adapter = std::make_unique<OutputStreamWriteBufferAdapter>(buf);
@@ -785,11 +776,11 @@ void generateManifestFile(
 
 void generateManifestList(
     const Iceberg::IcebergPathResolver & path_resolver,
-    Poco::JSON::Object::Ptr metadata,
+    Iceberg::JSONObjectPtr metadata,
     ObjectStoragePtr object_storage,
     ContextPtr context,
     const std::vector<Iceberg::IcebergPathFromMetadata> & manifest_entry_names,
-    Poco::JSON::Object::Ptr new_snapshot,
+    Iceberg::JSONObjectPtr new_snapshot,
     const std::vector<Int64> & manifest_entry_sizes,
     WriteBuffer & buf,
     Iceberg::FileContentType content_type,
@@ -1658,7 +1649,7 @@ bool IcebergStorageSink::initializeMetadata()
                 auto catalog_filename = resolver.resolveForCatalog(metadata_info.path);
 
                 const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
-                if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, new_snapshot))
+                if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, Iceberg::toPocoJSON(new_snapshot)))
                 {
                     cleanup(true);
                     return false;

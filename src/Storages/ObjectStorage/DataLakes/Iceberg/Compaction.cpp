@@ -1,3 +1,5 @@
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergJSON.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergJSONPoco.h>
 #include <limits>
 #include <map>
 #include <optional>
@@ -30,9 +32,6 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <fmt/format.h>
-#include <Poco/JSON/Array.h>
-#include <Poco/JSON/Object.h>
-#include <Poco/JSON/Stringifier.h>
 #include <Common/Exception.h>
 #include <Common/FieldVisitorDump.h>
 #include <Common/Logger.h>
@@ -67,7 +66,7 @@ using namespace DB;
 
 struct ManifestFilePlan
 {
-    explicit ManifestFilePlan(Poco::JSON::Array::Ptr schema_)
+    explicit ManifestFilePlan(Iceberg::JSONArrayPtr schema_)
         : statistics(schema_)
     {
     }
@@ -112,7 +111,7 @@ struct Plan
     std::unordered_map<Int64, std::vector<std::shared_ptr<DataFilePlan>>> snapshot_id_to_data_files;
     std::unordered_map<Iceberg::IcebergPathFromMetadata, std::shared_ptr<DataFilePlan>> path_to_data_file;
     FileNamesGenerator generator;
-    Poco::JSON::Object::Ptr initial_metadata_object;
+    Iceberg::JSONObjectPtr initial_metadata_object;
 
     class ParititonEncoder
     {
@@ -149,7 +148,7 @@ struct Plan
 
 /// Cheap pre-check for `compactIcebergManifests`: read just the current manifest list and report whether its entry count exceeds `threshold`.
 static bool isCurrentManifestListAboveThreshold(
-    Poco::JSON::Object::Ptr metadata_object,
+    Iceberg::JSONObjectPtr metadata_object,
     const PersistentTableComponents & persistent_table_components,
     ObjectStoragePtr object_storage,
     ContextPtr context,
@@ -164,7 +163,7 @@ static bool isCurrentManifestListAboveThreshold(
         return false;
 
     String current_manifest_list_path;
-    auto snapshots = metadata_object->get(Iceberg::f_snapshots).extract<Poco::JSON::Array::Ptr>();
+    auto snapshots = metadata_object->get(Iceberg::f_snapshots).getArray();
     for (size_t i = 0; i < snapshots->size(); ++i)
     {
         const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
@@ -212,7 +211,7 @@ static Plan getPlan(
         /* ignore_metadata_pointer_overrides */ true);
     plan.generator.setVersion(metadata_version + 1);
 
-    Poco::JSON::Object::Ptr initial_metadata_object
+    Iceberg::JSONObjectPtr initial_metadata_object
         = getMetadataJSONObject(metadata_file_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid);
 
     /// Exactly version 2: v1 lacks the sequence-number machinery the rewrite relies on, and
@@ -225,7 +224,7 @@ static Plan getPlan(
 
     auto current_schema_id = initial_metadata_object->getValue<Int64>(Iceberg::f_current_schema_id);
     auto schemas = initial_metadata_object->getArray(Iceberg::f_schemas);
-    Poco::JSON::Array::Ptr current_schema;
+    Iceberg::JSONArrayPtr current_schema;
     for (size_t i = 0; i < schemas->size(); ++i)
     {
         if (schemas->getObject(static_cast<UInt32>(i))->getValue<Int32>(Iceberg::f_schema_id) == current_schema_id)
@@ -438,7 +437,7 @@ static void writeDataFiles(
 
 static bool writeConsolidatedManifestFile(
     int metadata_version,
-    Poco::JSON::Object::Ptr metadata_object,
+    Iceberg::JSONObjectPtr metadata_object,
     const PersistentTableComponents & persistent_table_components,
     ObjectStoragePtr object_storage, ContextPtr context,
     SharedHeader sample_block_,
@@ -467,7 +466,7 @@ static bool writeConsolidatedManifestFile(
     String current_manifest_list_path;
 
     {
-        auto snapshots = metadata_object->get(Iceberg::f_snapshots).extract<Poco::JSON::Array::Ptr>();
+        auto snapshots = metadata_object->get(Iceberg::f_snapshots).getArray();
         for (size_t i = 0; i < snapshots->size(); ++i)
         {
             const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
@@ -488,7 +487,7 @@ static bool writeConsolidatedManifestFile(
     LOG_INFO(log, "Writing consolidated manifest file from current snapshot {}", current_snapshot_id);
 
     auto current_schema_id = metadata_object->getValue<Int64>(Iceberg::f_current_schema_id);
-    Poco::JSON::Object::Ptr current_schema;
+    Iceberg::JSONObjectPtr current_schema;
     auto schemas = metadata_object->getArray(Iceberg::f_schemas);
     for (size_t i = 0; i < schemas->size(); ++i)
     {
@@ -512,7 +511,7 @@ static bool writeConsolidatedManifestFile(
     /// resolve and cache spec info per (spec-id, schema-id).
     struct ResolvedPartitionSpec
     {
-        Poco::JSON::Object::Ptr spec;
+        Iceberg::JSONObjectPtr spec;
         std::vector<String> partition_columns;
         DataTypes partition_types;
     };
@@ -522,7 +521,7 @@ static bool writeConsolidatedManifestFile(
         if (auto it = resolved_specs.find({spec_id, files_schema_id}); it != resolved_specs.end())
             return it->second;
 
-        Poco::JSON::Object::Ptr spec;
+        Iceberg::JSONObjectPtr spec;
         for (UInt32 i = 0; i < partitions_specs->size(); ++i)
         {
             auto candidate = partitions_specs->getObject(i);
@@ -606,7 +605,7 @@ static bool writeConsolidatedManifestFile(
     };
 
     /// Return the raw metadata schema object for a given schema-id, used as the verbatim Avro `schema` header of a rewritten manifest so its data-file bounds resolve under the same schema the files were written with.
-    auto get_schema_object_by_id = [&](Int32 schema_id) -> Poco::JSON::Object::Ptr
+    auto get_schema_object_by_id = [&](Int32 schema_id) -> Iceberg::JSONObjectPtr
     {
         for (UInt32 i = 0; i < schemas->size(); ++i)
             if (schemas->getObject(i)->getValue<Int32>(Iceberg::f_schema_id) == schema_id)
@@ -637,7 +636,7 @@ static bool writeConsolidatedManifestFile(
         /// Parallel to file_paths: the source entry's lineage, preserved so each file is emitted as an EXISTING entry retaining its lineage.
         std::vector<DataFileEntryLineage> file_entry_lineage;
 
-        explicit PartitionData(Poco::JSON::Array::Ptr /*schema*/)
+        explicit PartitionData(Iceberg::JSONArrayPtr /*schema*/)
         {}
     };
 
@@ -950,9 +949,7 @@ static bool writeConsolidatedManifestFile(
 
         // Commit: write metadata file with If-None-Match + ETag-based CAS version hint; returns false if another writer claimed this version, so the caller retries.
         {
-            std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-            Poco::JSON::Stringifier::stringify(metadata_object, oss, 4);
-            std::string json_representation = removeEscapedSlashes(oss.str());
+            std::string json_representation = Iceberg::stringifyJSON(metadata_object, 4);
 
             auto hint_path = generator.generateVersionHint();
             LOG_INFO(log, "Committing metadata file: {}",
@@ -981,7 +978,7 @@ static bool writeConsolidatedManifestFile(
             {
                 auto catalog_filename = path_resolver.resolveForCatalog(generated_metadata_info.path);
                 const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
-                if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, new_snapshot.snapshot))
+                if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, Iceberg::toPocoJSON(new_snapshot.snapshot)))
                 {
                     LOG_INFO(log, "Metadata commit conflict detected via catalog, cleaning up temporary files");
                     cleanup();
@@ -1063,7 +1060,7 @@ static bool writeMetadataFiles(
     auto [metadata_object, metadata_object_str] = createEmptyMetadataFile(table_path, columns_description, nullptr, nullptr, context);
 
     auto current_schema_id = metadata_object->getValue<Int64>(Iceberg::f_current_schema_id);
-    Poco::JSON::Object::Ptr current_schema;
+    Iceberg::JSONObjectPtr current_schema;
     auto schemas = metadata_object->getArray(Iceberg::f_schemas);
     for (size_t i = 0; i < schemas->size(); ++i)
     {
@@ -1077,7 +1074,7 @@ static bool writeMetadataFiles(
     MetadataGenerator metadata_generator(metadata_object);
     std::vector<MetadataGenerator::NextMetadataResult> new_snapshots;
     auto generated_metadata_info = plan.generator.generateMetadataPathWithInfo();
-    std::unordered_map<Int64, Poco::JSON::Object::Ptr> snapshot_id_to_snapshot;
+    std::unordered_map<Int64, Iceberg::JSONObjectPtr> snapshot_id_to_snapshot;
 
     std::unordered_map<Int64, UInt64> snapshot_id_to_records_count;
 
@@ -1111,7 +1108,7 @@ static bool writeMetadataFiles(
         snapshot_id_to_snapshot[history_record.snapshot_id] = new_snapshot.snapshot;
     }
 
-    Poco::JSON::Object::Ptr initial_metadata_object = plan.initial_metadata_object;
+    Iceberg::JSONObjectPtr initial_metadata_object = plan.initial_metadata_object;
     std::unordered_map<Iceberg::IcebergPathFromMetadata, Iceberg::IcebergPathFromMetadata> manifest_file_renamings;
     std::unordered_map<Iceberg::IcebergPathFromMetadata, Int64> manifest_file_sizes;
     /// Per rewritten manifest: actual file/row counts of its content, written into the
@@ -1138,7 +1135,7 @@ static bool writeMetadataFiles(
 
         auto partition_spec_id = initial_metadata_object->getValue<Int32>(f_default_spec_id);
         auto partitions_specs = initial_metadata_object->getArray(f_partition_specs);
-        Poco::JSON::Object::Ptr partititon_spec;
+        Iceberg::JSONObjectPtr partititon_spec;
 
         for (size_t i = 0; i < partitions_specs->size(); ++i)
         {
@@ -1221,7 +1218,7 @@ static bool writeMetadataFiles(
             /// rewritten history where the manifest exists.
             Int64 remapped_sequence_number = 0;
             {
-                Poco::JSON::Object::Ptr sequence_source = snapshot;
+                Iceberg::JSONObjectPtr sequence_source = snapshot;
                 if (auto it = snapshot_id_to_snapshot.find(manifest_lineage.added_snapshot_id);
                     it != snapshot_id_to_snapshot.end() && it->second)
                     sequence_source = it->second;

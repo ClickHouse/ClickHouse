@@ -1,3 +1,5 @@
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergJSON.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergJSONPoco.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotSummary.h>
 #include <base/defines.h>
 #include <DataTypes/DataTypeString.h>
@@ -29,9 +31,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <fmt/format.h>
-#include <Poco/JSON/Array.h>
-#include <Poco/JSON/Object.h>
-#include <Poco/JSON/Stringifier.h>
 #include <Common/Exception.h>
 
 #include <Interpreters/PreparedSets.h>
@@ -161,7 +160,7 @@ extern const SettingsUInt64 iceberg_data_file_size_upper_threshold_compaction;
 
 namespace
 {
-String dumpMetadataObjectToString(const Poco::JSON::Object::Ptr & metadata_object)
+String dumpMetadataObjectToString(const Iceberg::JSONObjectPtr & metadata_object)
 {
     return stringifyJSON(metadata_object);
 }
@@ -371,7 +370,7 @@ void IcebergMetadata::backgroundMetadataPrefetcherThread()
 }
 
 Int32 IcebergMetadata::parseTableSchema(
-    const Poco::JSON::Object::Ptr & metadata_object,
+    const Iceberg::JSONObjectPtr & metadata_object,
     IcebergSchemaProcessor & schema_processor,
     LoggerPtr metadata_logger)
 {
@@ -430,21 +429,21 @@ Int32 IcebergMetadata::parseTableSchema(
     }
 }
 
-static Poco::JSON::Object::Ptr traverseMetadataAndFindNecessarySnapshotObject(
-    Poco::JSON::Object::Ptr metadata_object, Int64 snapshot_id, IcebergSchemaProcessorPtr schema_processor)
+static Iceberg::JSONObjectPtr traverseMetadataAndFindNecessarySnapshotObject(
+    Iceberg::JSONObjectPtr metadata_object, Int64 snapshot_id, IcebergSchemaProcessorPtr schema_processor)
 {
     if (!metadata_object->has(f_snapshots))
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "No snapshot set found in metadata for iceberg file");
     if (metadata_object->has(f_last_column_id) && !metadata_object->isNull(f_last_column_id))
         schema_processor->updateLastColumnId(metadata_object->getValue<Int32>(f_last_column_id));
-    auto schemas = metadata_object->get(f_schemas).extract<Poco::JSON::Array::Ptr>();
+    auto schemas = metadata_object->get(f_schemas).getArray();
     for (UInt32 j = 0; j < schemas->size(); ++j)
     {
         auto schema = schemas->getObject(j);
         schema_processor->addIcebergTableSchema(schema);
     }
-    Poco::JSON::Object::Ptr current_snapshot = nullptr;
-    auto snapshots = metadata_object->get(f_snapshots).extract<Poco::JSON::Array::Ptr>();
+    Iceberg::JSONObjectPtr current_snapshot = nullptr;
+    auto snapshots = metadata_object->get(f_snapshots).getArray();
     for (size_t i = 0; i < snapshots->size(); ++i)
     {
         const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
@@ -460,7 +459,7 @@ static Poco::JSON::Object::Ptr traverseMetadataAndFindNecessarySnapshotObject(
 }
 
 IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSON(
-    Poco::JSON::Object::Ptr metadata_object, Poco::JSON::Object::Ptr snapshot_object, Int64 snapshot_id, ContextPtr local_context) const
+    Iceberg::JSONObjectPtr metadata_object, Iceberg::JSONObjectPtr snapshot_object, Int64 snapshot_id, ContextPtr local_context) const
 {
     if (!snapshot_object->has(f_manifest_list))
         throw Exception(
@@ -476,7 +475,7 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
 
     if (snapshot_object->has(f_summary))
     {
-        auto summary_object = snapshot_object->get(f_summary).extract<Poco::JSON::Object::Ptr>();
+        auto summary_object = snapshot_object->get(f_summary).getObject();
         if (summary_object->has(f_total_records))
             total_rows = summary_object->getValue<Int64>(f_total_records);
 
@@ -509,7 +508,7 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
         total_position_deletes,
         total_equality_deletes,
         refresh_cursor,
-        metadata_object->has(f_partition_specs) ? metadata_object->get(f_partition_specs).extract<Poco::JSON::Array::Ptr>() : nullptr);
+        metadata_object->has(f_partition_specs) ? metadata_object->get(f_partition_specs).getArray() : nullptr);
 }
 
 std::optional<String> IcebergMetadata::getRefreshCursor(ContextPtr local_context) const
@@ -521,7 +520,7 @@ std::optional<String> IcebergMetadata::getRefreshCursor(ContextPtr local_context
 }
 
 IcebergDataSnapshotPtr
-IcebergMetadata::getIcebergDataSnapshot(Poco::JSON::Object::Ptr metadata_object, Int64 snapshot_id, ContextPtr local_context) const
+IcebergMetadata::getIcebergDataSnapshot(Iceberg::JSONObjectPtr metadata_object, Int64 snapshot_id, ContextPtr local_context) const
 {
     auto object = traverseMetadataAndFindNecessarySnapshotObject(metadata_object, snapshot_id, persistent_components.schema_processor);
     if (!object)
@@ -640,7 +639,7 @@ bool IcebergMetadata::optimizeManifestFiles(
 }
 
 std::pair<IcebergDataSnapshotPtr, Int32>
-IcebergMetadata::getStateImpl(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object) const
+IcebergMetadata::getStateImpl(const ContextPtr & local_context, Iceberg::JSONObjectPtr metadata_object) const
 {
     std::optional<String> manifest_list_file;
 
@@ -664,7 +663,7 @@ IcebergMetadata::getStateImpl(const ContextPtr & local_context, Poco::JSON::Obje
         {
             Int64 closest_timestamp = 0;
             Int64 query_timestamp = local_context->getSettingsRef()[Setting::iceberg_timestamp_ms];
-            auto snapshot_log = metadata_object->get(f_snapshot_log).extract<Poco::JSON::Array::Ptr>();
+            auto snapshot_log = metadata_object->get(f_snapshot_log).getArray();
             for (size_t i = 0; i < snapshot_log->size(); ++i)
             {
                 const auto snapshot = snapshot_log->getObject(static_cast<UInt32>(i));
@@ -1060,7 +1059,7 @@ void IcebergMetadata::createInitial(
         /// A catalog that writes the first metadata file itself reads the codec from this property.
         /// Key on the raw setting: an explicit `none` must reach a catalog that defaults to gzip.
         const String codec_name = compression_method == CompressionMethod::None ? "none" : toContentEncodingName(compression_method);
-        Poco::JSON::Object::Ptr properties = new Poco::JSON::Object;
+        Iceberg::JSONObjectPtr properties = Iceberg::JSONObject::create();
         properties->set("write.metadata.compression-codec", codec_name);
         metadata_content_object->set("properties", properties);
         metadata_content = stringifyJSON(metadata_content_object, 4);
@@ -1106,7 +1105,7 @@ void IcebergMetadata::createInitial(
             configuration_ptr->getTypeName(),
             configuration_ptr->getNamespace(),
             configuration_ptr->getRawPath().path + fmt::format("metadata/v1{}.metadata.json", compression_suffix));
-        catalog->createTable(namespace_name, table_name, catalog_filename, metadata_content_object);
+        catalog->createTable(namespace_name, table_name, catalog_filename, Iceberg::toPocoJSON(metadata_content_object));
     }
 }
 
@@ -1124,7 +1123,7 @@ Iceberg::IcebergDataSnapshotPtr IcebergMetadata::getRelevantDataSnapshotFromTabl
         persistent_components.table_uuid);
     if (!table_state_snapshot.snapshot_id.has_value())
         return nullptr;
-    Poco::JSON::Object::Ptr snapshot_object = traverseMetadataAndFindNecessarySnapshotObject(
+    Iceberg::JSONObjectPtr snapshot_object = traverseMetadataAndFindNecessarySnapshotObject(
         metadata_object, *table_state_snapshot.snapshot_id, persistent_components.schema_processor);
 
     return createIcebergDataSnapshotFromSnapshotJSON(metadata_object, snapshot_object, *table_state_snapshot.snapshot_id, local_context);
@@ -1172,10 +1171,10 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
     /// History
     std::vector<Iceberg::IcebergHistoryRecord> iceberg_history;
 
-    auto snapshots = metadata_object->get(f_snapshots).extract<Poco::JSON::Array::Ptr>();
+    auto snapshots = metadata_object->get(f_snapshots).getArray();
     /// snapshot-log is optional; treat an absent log as empty rather than throwing.
-    Poco::JSON::Array::Ptr snapshot_logs
-        = metadata_object->has(f_snapshot_log) ? metadata_object->getArray(f_snapshot_log) : Poco::JSON::Array::Ptr(new Poco::JSON::Array);
+    Iceberg::JSONArrayPtr snapshot_logs
+        = metadata_object->has(f_snapshot_log) ? metadata_object->getArray(f_snapshot_log) : Iceberg::JSONArray::create();
 
     std::vector<Int64> ancestors;
     std::map<Int64, Int64> parents_list;
@@ -1204,7 +1203,7 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
     }
 
     /// Parse an Iceberg `timestamp-ms` field (unix milliseconds) into DateTime64.
-    auto parse_timestamp_ms = [](const Poco::JSON::Object::Ptr & object) -> DateTime64
+    auto parse_timestamp_ms = [](const Iceberg::JSONObjectPtr & object) -> DateTime64
     {
         auto value = object->getValue<std::string>(f_timestamp_ms);
         ReadBufferFromString in(value);

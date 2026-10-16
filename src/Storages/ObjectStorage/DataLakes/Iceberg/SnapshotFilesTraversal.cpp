@@ -1,10 +1,10 @@
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergJSON.h>
 #include "config.h"
 
 #if USE_AVRO
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotFilesTraversal.h>
 
-#include <Poco/JSON/Object.h>
 
 #include <filesystem>
 
@@ -19,7 +19,7 @@ namespace DB::Iceberg
 {
 
 SnapshotReferencedFiles collectSnapshotReferencedFiles(
-    const Poco::JSON::Array::Ptr & snapshots,
+    const Iceberg::JSONArrayPtr & snapshots,
     ObjectStoragePtr object_storage,
     const PersistentTableComponents & persistent_table_components,
     ContextPtr context,
@@ -65,14 +65,14 @@ namespace
 {
 
 void collectStatisticsPaths(
-    const Poco::JSON::Object::Ptr & metadata,
+    const Iceberg::JSONObjectPtr & metadata,
     const char * field_name,
     const IcebergPathResolver & resolver,
     std::unordered_set<String> & out)
 {
     if (!metadata->has(field_name))
         return;
-    auto arr = metadata->get(field_name).extract<Poco::JSON::Array::Ptr>();
+    auto arr = metadata->get(field_name).getArray();
     if (!arr)
         return;
     for (UInt32 j = 0; j < arr->size(); ++j)
@@ -91,7 +91,7 @@ void collectStatisticsPaths(
 /// statistics, partition-statistics, and version-hint files.
 void collectMetadataRootFiles(
     const String & metadata_path,
-    const Poco::JSON::Object::Ptr & metadata,
+    const Iceberg::JSONObjectPtr & metadata,
     const IcebergPathResolver & resolver,
     std::unordered_set<String> & out)
 {
@@ -102,7 +102,7 @@ void collectMetadataRootFiles(
 
     if (metadata->has(f_metadata_log))
     {
-        auto metadata_log = metadata->get(f_metadata_log).extract<Poco::JSON::Array::Ptr>();
+        auto metadata_log = metadata->get(f_metadata_log).getArray();
         if (metadata_log)
         {
             for (UInt32 i = 0; i < metadata_log->size(); ++i)
@@ -169,7 +169,7 @@ ReachableFilesResult collectReachableFiles(
         return {std::move(reachable), version, metadata_path};
     }
 
-    auto snapshots = metadata->get(f_snapshots).extract<Poco::JSON::Array::Ptr>();
+    auto snapshots = metadata->get(f_snapshots).getArray();
     if (!snapshots || snapshots->size() == 0)
     {
         LOG_INFO(log, "Empty snapshots array, reachable set contains only metadata-root files");

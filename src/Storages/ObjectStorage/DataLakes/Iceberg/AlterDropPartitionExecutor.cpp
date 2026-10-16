@@ -1,4 +1,6 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/AlterDropPartitionExecutor.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergJSON.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergJSONPoco.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotSummary.h>
 
 #if USE_AVRO
@@ -35,7 +37,6 @@
 #include <base/defines.h>
 #include <base/scope_guard.h>
 
-#include <Poco/JSON/Array.h>
 
 #include <fmt/ranges.h>
 
@@ -181,8 +182,8 @@ Row parsePartitionTuple(const IAST & value_ast, const DataTypes & partition_type
 }
 
 DataTypes resolvePartitionTypes(
-    const Poco::JSON::Object & partition_spec,
-    const Poco::JSON::Object & current_schema,
+    const Iceberg::JSONObject & partition_spec,
+    const Iceberg::JSONObject & current_schema,
     const IcebergSchemaProcessor & schema_processor,
     Int32 schema_id,
     ContextPtr context)
@@ -335,7 +336,7 @@ std::optional<AlterDropPartitionExecutor::SnapshotState> AlterDropPartitionExecu
             f_schemas,
             state.table_state.metadata_file_path);
 
-    Poco::JSON::Object::Ptr current_schema;
+    Iceberg::JSONObjectPtr current_schema;
     for (size_t i = 0; schemas && i < schemas->size(); ++i)
     {
         auto schema = schemas->getObject(static_cast<UInt32>(i));
@@ -536,7 +537,7 @@ AlterDropPartitionExecutor::ManifestListWriteResult AlterDropPartitionExecutor::
         /*added_delete_files=*/0,
         /*num_deleted_rows=*/0);
 
-    Poco::JSON::Object::Ptr parent_snapshot;
+    Iceberg::JSONObjectPtr parent_snapshot;
     auto snapshots = state.metadata_object->getArray(f_snapshots);
     for (size_t i = 0; snapshots && i < snapshots->size(); ++i)
     {
@@ -612,7 +613,7 @@ bool AlterDropPartitionExecutor::commitMetadataJSON(
     SnapshotState & state,
     FileNamesGenerator & filename_generator,
     const GeneratedMetadataFileWithInfo & metadata_info,
-    const Poco::JSON::Object::Ptr & new_snapshot)
+    const Iceberg::JSONObjectPtr & new_snapshot)
 {
     std::string json_representation = stringifyJSON(state.metadata_object, 4);
 
@@ -637,7 +638,7 @@ bool AlterDropPartitionExecutor::commitMetadataJSON(
     {
         auto catalog_filename = components.path_resolver.resolveForCatalog(metadata_info.path);
         const auto & [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
-        if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, new_snapshot))
+        if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, Iceberg::toPocoJSON(new_snapshot)))
             return false;
     }
 

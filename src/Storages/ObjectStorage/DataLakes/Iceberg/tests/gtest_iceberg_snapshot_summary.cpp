@@ -1,3 +1,4 @@
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergJSON.h>
 #include "config.h"
 
 #if USE_AVRO
@@ -11,8 +12,6 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Compaction.h>
 #endif
 
-#include <Poco/JSON/Object.h>
-#include <Poco/JSON/Parser.h>
 
 namespace
 {
@@ -97,7 +96,7 @@ TEST(IcebergSnapshotSummary, DeleteRejectsUnderreportedParentTotals)
 
 TEST(IcebergSnapshotSummary, RequiredTotalsRejectMissingFields)
 {
-    Poco::JSON::Object summary;
+    DB::Iceberg::JSONObject summary;
     summary.set(DB::Iceberg::f_operation, DB::Iceberg::f_append);
     summary.set(DB::Iceberg::f_total_records, "1");
 

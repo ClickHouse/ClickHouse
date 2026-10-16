@@ -1,3 +1,4 @@
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergJSON.h>
 #include <gtest/gtest.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ChunkPartitioner.h>
@@ -9,8 +10,6 @@
 #include <Common/tests/gtest_global_register.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypeString.h>
-#include <Poco/JSON/Array.h>
-#include <Poco/JSON/Object.h>
 
 using namespace DB;
 
@@ -20,8 +19,8 @@ namespace
 /// Single-column schema `c0 String`, partitioned by `identity(c0)`.
 struct PartitionerFixture
 {
-    Poco::JSON::Array::Ptr schema = new Poco::JSON::Array;
-    Poco::JSON::Array::Ptr spec = new Poco::JSON::Array;
+    Iceberg::JSONArrayPtr schema = Iceberg::JSONArray::create();
+    Iceberg::JSONArrayPtr spec = Iceberg::JSONArray::create();
     SharedHeader header;
     ContextPtr context;
 
@@ -30,12 +29,12 @@ struct PartitionerFixture
         tryRegisterFunctions();
         context = getContext().context;
 
-        Poco::JSON::Object::Ptr field = new Poco::JSON::Object;
+        Iceberg::JSONObjectPtr field = Iceberg::JSONObject::create();
         field->set("id", 1);
         field->set("name", "c0");
         schema->add(field);
 
-        Poco::JSON::Object::Ptr spec_field = new Poco::JSON::Object;
+        Iceberg::JSONObjectPtr spec_field = Iceberg::JSONObject::create();
         spec_field->set("transform", "identity");
         spec_field->set("source-id", 1);
         spec->add(spec_field);

@@ -1,3 +1,4 @@
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergJSON.h>
 #include <base/scope_guard.h>
 #include "config.h"
 
@@ -23,7 +24,6 @@
 #include <Core/TypeId.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Poco/JSON/Parser.h>
 #include <Poco/String.h>
 #include <Storages/ColumnsDescription.h>
 #include <Parsers/ASTFunction.h>
@@ -285,14 +285,12 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
                 DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Required columns are not found in manifest file: {}", column_name);
     }
 
-    Poco::JSON::Parser parser;
-
     auto partition_spec_json_string = manifest_file_deserializer_->tryGetAvroMetadataValue("partition-spec");
     if (!partition_spec_json_string.has_value())
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "No partition-spec in iceberg manifest file");
 
-    Poco::Dynamic::Var partition_spec_json = parser.parse(*partition_spec_json_string);
-    const Poco::JSON::Array::Ptr & partition_specification = partition_spec_json.extract<Poco::JSON::Array::Ptr>();
+    Iceberg::JSONValue partition_spec_json = Iceberg::parseJSON(*partition_spec_json_string);
+    const Iceberg::JSONArrayPtr & partition_specification = partition_spec_json.getArray();
 
     auto schema_json_string = manifest_file_deserializer_->tryGetAvroMetadataValue(f_schema);
     if (!schema_json_string.has_value())
@@ -316,8 +314,8 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
     }
     else
     {
-        Poco::Dynamic::Var json = parser.parse(*schema_json_string);
-        const Poco::JSON::Object::Ptr & schema_object = json.extract<Poco::JSON::Object::Ptr>();
+        Iceberg::JSONValue json = Iceberg::parseJSON(*schema_json_string);
+        const Iceberg::JSONObjectPtr & schema_object = json.getObject();
         Int32 embedded_schema_id = schema_object->getValue<int>(f_schema_id);
         if (header_schema_id.has_value() && *header_schema_id != embedded_schema_id)
             throw Exception(

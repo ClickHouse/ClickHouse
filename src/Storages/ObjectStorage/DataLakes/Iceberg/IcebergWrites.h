@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergJSON.h>
 #include <unordered_map>
 #include <unordered_set>
 #include <Core/Range.h>
@@ -12,7 +13,6 @@
 #include <Processors/Chunk.h>
 #include <Storages/KeyDescription.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
-#include <Poco/Dynamic/Var.h>
 #include <Poco/UUIDGenerator.h>
 #include <Common/Config/ConfigProcessor.h>
 
@@ -29,9 +29,6 @@
 
 #include <Common/randomSeed.h>
 
-#include <Poco/JSON/Array.h>
-#include <Poco/JSON/Object.h>
-#include <Poco/JSON/Parser.h>
 
 #include <Compiler.hh>
 #include <Encoder.hh>
@@ -44,8 +41,6 @@ namespace DB
 {
 
 String removeEscapedSlashes(const String & json_str);
-
-String stringifyJSON(const Poco::Dynamic::Var & json, unsigned indent = 0);
 
 /// Per-file column statistics carried over verbatim from a source manifest entry during a manifest-only rewrite.
 struct DataFileColumnStatistics
@@ -65,10 +60,10 @@ struct DataFileEntryLineage
     std::optional<Int64> file_sequence_number;
 };
 
-Poco::JSON::Object::Ptr getCurrentSchema(const Poco::JSON::Object::Ptr & metadata);
+Iceberg::JSONObjectPtr getCurrentSchema(const Iceberg::JSONObjectPtr & metadata);
 
 void generateManifestFile(
-    Poco::JSON::Object::Ptr metadata,
+    Iceberg::JSONObjectPtr metadata,
     const std::vector<String> & partition_columns,
     const std::vector<Field> & partition_values,
     const DataTypes & partition_types,
@@ -77,9 +72,9 @@ void generateManifestFile(
     const std::vector<UInt64> & data_file_byte_counts,
     const std::optional<DataFileStatistics> & data_file_statistics,
     SharedHeader sample_block,
-    Poco::JSON::Object::Ptr new_snapshot,
+    Iceberg::JSONObjectPtr new_snapshot,
     const String & format,
-    Poco::JSON::Object::Ptr partition_spec,
+    Iceberg::JSONObjectPtr partition_spec,
     Int64 partition_spec_id,
     WriteBuffer & buf,
     Iceberg::FileContentType content_type,
@@ -98,7 +93,7 @@ void generateManifestFile(
     /// Optional per-file manifest-entry lineage parallel to `data_file_names`; when non-empty entries are written as EXISTING keeping their original snapshot-id and sequence number, else as ADDED by the new snapshot.
     const std::vector<DataFileEntryLineage> & per_file_entry_lineage = {},
     /// Optional schema to serialize into the manifest's Avro `schema` header; when null the table's current schema is used.
-    Poco::JSON::Object::Ptr schema_to_serialize = nullptr,
+    Iceberg::JSONObjectPtr schema_to_serialize = nullptr,
     /// Optional freshly-computed per-file statistics parallel to `data_file_names`; when set each entry's stats
     /// describe only its own data file, else the shared `data_file_statistics` is used for every entry.
     const std::vector<const DataFileStatistics *> * per_file_fresh_statistics = nullptr);
@@ -124,11 +119,11 @@ struct ManifestListEntryCounts
 
 void generateManifestList(
     const Iceberg::IcebergPathResolver & path_resolver,
-    Poco::JSON::Object::Ptr metadata,
+    Iceberg::JSONObjectPtr metadata,
     ObjectStoragePtr object_storage,
     ContextPtr context,
     const std::vector<Iceberg::IcebergPathFromMetadata> & manifest_entry_names,
-    Poco::JSON::Object::Ptr new_snapshot,
+    Iceberg::JSONObjectPtr new_snapshot,
     const std::vector<Int64> & manifest_entry_sizes,
     WriteBuffer & buf,
     Iceberg::FileContentType content_type,
@@ -171,9 +166,9 @@ private:
     std::unordered_map<ChunkPartitioner::PartitionKey, std::vector<Field>, ChunkPartitioner::PartitionKeyHasher> last_fields_of_last_chunks;
     std::unordered_map<String, size_t> column_name_to_column_index;
     ObjectStoragePtr object_storage;
-    Poco::JSON::Object::Ptr metadata;
+    Iceberg::JSONObjectPtr metadata;
     Int64 current_schema_id;
-    Poco::JSON::Object::Ptr current_schema;
+    Iceberg::JSONObjectPtr current_schema;
     ContextPtr context;
     std::optional<FormatSettings> format_settings;
     KeyDescription sort_description;
@@ -189,7 +184,7 @@ private:
 
     FileNamesGenerator filename_generator;
     std::optional<ChunkPartitioner> partitioner;
-    Poco::JSON::Object::Ptr partititon_spec;
+    Iceberg::JSONObjectPtr partititon_spec;
     Int64 partition_spec_id;
 
     /// Generated once per insert so the manifests stay valid across commit retries.

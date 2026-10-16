@@ -1,4 +1,5 @@
 
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergJSON.h>
 #include <charconv>
 #include <memory>
 #include <string>
@@ -30,10 +31,6 @@
 #include <base/getThreadId.h>
 #include <base/types.h>
 #include <boost/algorithm/string/trim.hpp>
-#include <Poco/Dynamic/Var.h>
-#include <Poco/JSON/Array.h>
-#include <Poco/JSON/Object.h>
-#include <Poco/JSON/Stringifier.h>
 #include <Poco/UUID.h>
 #include <Poco/UUIDGenerator.h>
 #include <Common/DateLUT.h>
@@ -594,7 +591,7 @@ std::string normalizeUuid(const std::string & uuid)
     return result;
 }
 
-Poco::JSON::Object::Ptr getMetadataJSONObject(
+Iceberg::JSONObjectPtr getMetadataJSONObject(
     const String & metadata_file_path,
     ObjectStoragePtr object_storage,
     IcebergMetadataFilesCachePtr metadata_cache,
@@ -635,9 +632,7 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
     else
         metadata_json_str = create_fn();
 
-    Poco::JSON::Parser parser; /// For some reason base/base/JSON.h can not parse this json file
-    Poco::Dynamic::Var json = parser.parse(metadata_json_str);
-    return json.extract<Poco::JSON::Object::Ptr>();
+    return Iceberg::parseJSONObject(metadata_json_str);
 }
 
 /// Iceberg stores a decimal as its unscaled value in two's-complement big-endian form, in the
@@ -657,7 +652,7 @@ static size_t icebergDecimalRequiredBytes(UInt32 precision)
 }
 
 /// Returns type and required
-std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & iter)
+std::pair<Iceberg::JSONValue, bool> getIcebergType(DataTypePtr type, Int32 & iter)
 {
     switch (type->getTypeId())
     {
@@ -696,15 +691,15 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
         case TypeIndex::Tuple:
         {
             auto type_tuple = std::static_pointer_cast<const DataTypeTuple>(type);
-            Poco::JSON::Object::Ptr result = new Poco::JSON::Object;
+            Iceberg::JSONObjectPtr result = Iceberg::JSONObject::create();
             result->set(Iceberg::f_type, "struct");
-            Poco::JSON::Array::Ptr fields = new Poco::JSON::Array;
+            Iceberg::JSONArrayPtr fields = Iceberg::JSONArray::create();
             size_t iter_names = 1;
             size_t iter_fields = iter;
             iter += type_tuple->getElements().size();
             for (const auto & element : type_tuple->getElements())
             {
-                Poco::JSON::Object::Ptr field = new Poco::JSON::Object;
+                Iceberg::JSONObjectPtr field = Iceberg::JSONObject::create();
                 field->set(Iceberg::f_id, ++iter_fields);
                 field->set(Iceberg::f_name, type_tuple->getNameByPosition(iter_names));
                 /// Recurse on the element itself: `getNormalizedType` would rename a nested
@@ -721,7 +716,7 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
         case TypeIndex::Array:
         {
             auto type_array = std::static_pointer_cast<const DataTypeArray>(type);
-            Poco::JSON::Object::Ptr field = new Poco::JSON::Object;
+            Iceberg::JSONObjectPtr field = Iceberg::JSONObject::create();
 
             field->set(Iceberg::f_type, "list");
             field->set(Iceberg::f_element_id, ++iter);
@@ -734,7 +729,7 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
         case TypeIndex::Map:
         {
             auto type_map = std::static_pointer_cast<const DataTypeMap>(type);
-            Poco::JSON::Object::Ptr field = new Poco::JSON::Object;
+            Iceberg::JSONObjectPtr field = Iceberg::JSONObject::create();
 
             field->set(Iceberg::f_type, "map");
             field->set(Iceberg::f_key_id, ++iter);
@@ -762,7 +757,7 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
     }
 }
 
-Poco::Dynamic::Var getAvroType(DataTypePtr type, Int32 field_id)
+Iceberg::JSONValue getAvroType(DataTypePtr type, Int32 field_id)
 {
     switch (type->getTypeId())
     {
@@ -785,7 +780,7 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type, Int32 field_id)
             if (getDecimalScale(*type) != 6)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
 
-            Poco::JSON::Object::Ptr timestamp_type = new Poco::JSON::Object;
+            Iceberg::JSONObjectPtr timestamp_type = Iceberg::JSONObject::create();
             timestamp_type->set("type", "long");
             timestamp_type->set("logicalType", "timestamp-micros");
             timestamp_type->set("adjust-to-utc", assert_cast<const DataTypeDateTime64 &>(*type).hasExplicitTimeZone());
@@ -806,7 +801,7 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type, Int32 field_id)
             const UInt32 precision = getDecimalPrecision(*type);
             const UInt32 scale = getDecimalScale(*type);
 
-            Poco::JSON::Object::Ptr decimal_type = new Poco::JSON::Object;
+            Iceberg::JSONObjectPtr decimal_type = Iceberg::JSONObject::create();
             decimal_type->set("type", "fixed");
             decimal_type->set("size", icebergDecimalRequiredBytes(precision));
             /// `fixed` is a named Avro type, so the name must be unique within the manifest schema:
@@ -823,7 +818,7 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type, Int32 field_id)
             /// must be encoded as an Avro `["null", T]` union so the manifest can
             /// distinguish NULL from the inner type's default value (issue #105852).
             auto type_nullable = std::static_pointer_cast<const DataTypeNullable>(type);
-            Poco::JSON::Array::Ptr union_array = new Poco::JSON::Array;
+            Iceberg::JSONArrayPtr union_array = Iceberg::JSONArray::create();
             union_array->add("null");
             union_array->add(getAvroType(type_nullable->getNestedType(), field_id));
             return union_array;
@@ -833,7 +828,7 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type, Int32 field_id)
     }
 }
 
-static Poco::JSON::Object::Ptr getPartitionField(
+static Iceberg::JSONObjectPtr getPartitionField(
     ASTPtr partition_by_element,
     const std::unordered_map<String, Int32> & column_name_to_source_id,
     Int32 & partition_iter)
@@ -845,7 +840,7 @@ static Poco::JSON::Object::Ptr getPartitionField(
         if (!ast_identifier)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown expression for partitioning: {}", partition_by_element->formatForLogging());
 
-        Poco::JSON::Object::Ptr result = new Poco::JSON::Object;
+        Iceberg::JSONObjectPtr result = Iceberg::JSONObject::create();
         auto field = ast_identifier->name();
         auto it = column_name_to_source_id.find(field);
         if (it == column_name_to_source_id.end())
@@ -884,7 +879,7 @@ static Poco::JSON::Object::Ptr getPartitionField(
     if (!field)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Functions with no arguments are not supported in Iceberg.");
 
-    Poco::JSON::Object::Ptr result = new Poco::JSON::Object;
+    Iceberg::JSONObjectPtr result = Iceberg::JSONObject::create();
     result->set(Iceberg::f_name, field.value());
 
     if (!column_name_to_source_id.contains(*field))
@@ -936,14 +931,14 @@ static Poco::JSON::Object::Ptr getPartitionField(
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported function for iceberg partitioning {}", partition_function->name);
 }
 
-static std::pair<Poco::JSON::Object::Ptr, Int32> getPartitionSpec(
+static std::pair<Iceberg::JSONObjectPtr, Int32> getPartitionSpec(
     ASTPtr partition_by,
     const std::unordered_map<String, Int32> & column_name_to_source_id)
 {
-    Poco::JSON::Object::Ptr result = new Poco::JSON::Object;
+    Iceberg::JSONObjectPtr result = Iceberg::JSONObject::create();
     result->set(Iceberg::f_spec_id, 0);
 
-    Poco::JSON::Array::Ptr fields = new Poco::JSON::Array;
+    Iceberg::JSONArrayPtr fields = Iceberg::JSONArray::create();
     /// Partition field ids start at 1000. The first field gets 1000 after the pre-increment.
     Int32 partition_iter = 999;
     if (partition_by)
@@ -1128,7 +1123,7 @@ static std::vector<std::pair<String, String>> parseTransformAndColumnPairs(ASTPt
     return result;
 }
 
-std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
+std::pair<Iceberg::JSONObjectPtr, String> createEmptyMetadataFile(
     String path_location,
     const ColumnsDescription & columns,
     ASTPtr partition_by,
@@ -1139,7 +1134,7 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     std::unordered_map<String, Int32> column_name_to_source_id;
     static Poco::UUIDGenerator uuid_generator;
 
-    Poco::JSON::Object::Ptr new_metadata_file_content = new Poco::JSON::Object;
+    Iceberg::JSONObjectPtr new_metadata_file_content = Iceberg::JSONObject::create();
     new_metadata_file_content->set(Iceberg::f_format_version, format_version);
     new_metadata_file_content->set(Iceberg::f_table_uuid, uuid_generator.createRandom().toString());
     new_metadata_file_content->set(Iceberg::f_location, path_location);
@@ -1154,11 +1149,11 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     new_metadata_file_content->set(Iceberg::f_last_updated_ms, ms.count());
     new_metadata_file_content->set(Iceberg::f_current_schema_id, 0);
 
-    Poco::JSON::Object::Ptr schema_representation = new Poco::JSON::Object;
+    Iceberg::JSONObjectPtr schema_representation = Iceberg::JSONObject::create();
     schema_representation->set(Iceberg::f_type, "struct");
     schema_representation->set(Iceberg::f_schema_id, 0);
 
-    Poco::JSON::Array::Ptr schema_fields = new Poco::JSON::Array;
+    Iceberg::JSONArrayPtr schema_fields = Iceberg::JSONArray::create();
     /// Top-level columns get ids 1..N; nested tuple/array/map children get ids
     /// N+1.. via the shared `iter`. After the loop `iter` is the max assigned
     /// field id, which is what last-column-id must record (not the top-level
@@ -1167,7 +1162,7 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     Int32 iter_for_initial_columns = 0;
     for (const auto & column : columns)
     {
-        Poco::JSON::Object::Ptr field = new Poco::JSON::Object;
+        Iceberg::JSONObjectPtr field = Iceberg::JSONObject::create();
         field->set(Iceberg::f_id, ++iter_for_initial_columns);
         field->set(Iceberg::f_name, column.name);
         auto type = getIcebergType(column.type, iter);
@@ -1178,15 +1173,15 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     }
     new_metadata_file_content->set(Iceberg::f_last_column_id, iter);
     schema_representation->set(Iceberg::f_fields, schema_fields);
-    Poco::JSON::Array::Ptr schema_array = new Poco::JSON::Array;
+    Iceberg::JSONArrayPtr schema_array = Iceberg::JSONArray::create();
     schema_array->add(schema_representation);
     new_metadata_file_content->set(Iceberg::f_schemas, schema_array);
 
     new_metadata_file_content->set(Iceberg::f_default_spec_id, 0);
-    Poco::JSON::Object::Ptr partition_spec = new Poco::JSON::Object;
+    Iceberg::JSONObjectPtr partition_spec = Iceberg::JSONObject::create();
     partition_spec->set(Iceberg::f_spec_id, 0);
-    partition_spec->set(Iceberg::f_fields, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
-    Poco::JSON::Array::Ptr partition_specs = new Poco::JSON::Array;
+    partition_spec->set(Iceberg::f_fields, Iceberg::JSONArray::create());
+    Iceberg::JSONArrayPtr partition_specs = Iceberg::JSONArray::create();
     const auto & [part_spec, last_partition_id] = getPartitionSpec(partition_by, column_name_to_source_id);
     partition_specs->add(part_spec);
     new_metadata_file_content->set(Iceberg::f_partition_specs, partition_specs);
@@ -1194,16 +1189,16 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     new_metadata_file_content->set(Iceberg::f_current_snapshot_id, -1);
 
     /// No snapshots yet, so no refs.
-    new_metadata_file_content->set(Iceberg::f_refs, Poco::JSON::Object::Ptr(new Poco::JSON::Object));
-    new_metadata_file_content->set(Iceberg::f_snapshots, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
-    new_metadata_file_content->set(Iceberg::f_statistics, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
-    new_metadata_file_content->set(Iceberg::f_snapshot_log, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
-    new_metadata_file_content->set(Iceberg::f_metadata_log, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
+    new_metadata_file_content->set(Iceberg::f_refs, Iceberg::JSONObject::create());
+    new_metadata_file_content->set(Iceberg::f_snapshots, Iceberg::JSONArray::create());
+    new_metadata_file_content->set(Iceberg::f_statistics, Iceberg::JSONArray::create());
+    new_metadata_file_content->set(Iceberg::f_snapshot_log, Iceberg::JSONArray::create());
+    new_metadata_file_content->set(Iceberg::f_metadata_log, Iceberg::JSONArray::create());
 
     /// The spec reserves sort order id 0 for the unsorted order.
     const Int64 sort_order_id = order_by ? 1 : 0;
     new_metadata_file_content->set(Iceberg::f_default_sort_order_id, sort_order_id);
-    Poco::JSON::Object::Ptr sort_order = new Poco::JSON::Object;
+    Iceberg::JSONObjectPtr sort_order = Iceberg::JSONObject::create();
     sort_order->set(Iceberg::f_order_id, sort_order_id);
 
     if (order_by)
@@ -1221,11 +1216,11 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
                 "Invalid iceberg sort order: expected {} elements, but got {}",
                 sort_columns.size(), transform_and_column_pairs.size());
 
-        Poco::JSON::Array::Ptr sorting_fields = new Poco::JSON::Array;
+        Iceberg::JSONArrayPtr sorting_fields = Iceberg::JSONArray::create();
         for (size_t i = 0; i < transform_and_column_pairs.size(); ++i)
         {
             const auto & [transform_name, column_name] = transform_and_column_pairs[i];
-            Poco::JSON::Object::Ptr sorting_field = new Poco::JSON::Object;
+            Iceberg::JSONObjectPtr sorting_field = Iceberg::JSONObject::create();
             sorting_field->set(f_source_id, column_name_to_source_id[column_name]);
             sorting_field->set(f_transform, transform_name);
             if (reverse_flags.empty() || !reverse_flags[i])
@@ -1239,10 +1234,10 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     }
     else
     {
-        sort_order->set(Iceberg::f_fields, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
+        sort_order->set(Iceberg::f_fields, Iceberg::JSONArray::create());
     }
 
-    Poco::JSON::Array::Ptr sort_orders = new Poco::JSON::Array;
+    Iceberg::JSONArrayPtr sort_orders = Iceberg::JSONArray::create();
     sort_orders->add(sort_order);
     new_metadata_file_content->set(Iceberg::f_sort_orders, sort_orders);
 
@@ -1709,16 +1704,16 @@ MetadataFileWithInfo getLatestMetadataFileAndVersionWithCatalog(
 }
 
 
-std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV2Method(const Poco::JSON::Object::Ptr & metadata_object)
+std::pair<Iceberg::JSONObjectPtr, Int32> parseTableSchemaV2Method(const Iceberg::JSONObjectPtr & metadata_object)
 {
-    Poco::JSON::Object::Ptr schema;
+    Iceberg::JSONObjectPtr schema;
     if (!metadata_object->has(f_current_schema_id))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: '{}' field is missing in metadata", f_current_schema_id);
     auto current_schema_id = metadata_object->getValue<int>(f_current_schema_id);
     if (!metadata_object->has(f_schemas))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: '{}' field is missing in metadata", f_schemas);
-    auto schemas = metadata_object->get(f_schemas).extract<Poco::JSON::Array::Ptr>();
+    auto schemas = metadata_object->get(f_schemas).getArray();
     if (schemas->size() == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: '{}' field is empty", f_schemas);
     for (uint32_t i = 0; i != schemas->size(); ++i)
@@ -1743,24 +1738,24 @@ std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV2Method(const Poco::J
     return {schema, current_schema_id};
 }
 
-std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV1Method(const Poco::JSON::Object::Ptr & metadata_object)
+std::pair<Iceberg::JSONObjectPtr, Int32> parseTableSchemaV1Method(const Iceberg::JSONObjectPtr & metadata_object)
 {
     /// we have two ways to get current schema id
     /// 1. check field schema, which is required in V1 format, and there is schema-id in schema
     /// 2. check "schemas" and "current-schema-id", which is required in V2 format, but can also exist in V1.
     if (!metadata_object->has(f_schema))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: '{}' field is missing in metadata", f_schema);
-    Poco::JSON::Object::Ptr schema = metadata_object->getObject(f_schema);
+    Iceberg::JSONObjectPtr schema = metadata_object->getObject(f_schema);
     if (!schema->has(f_schema_id))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: '{}' field is missing in schema", f_schema_id);
     auto current_schema_id = schema->getValue<int>(f_schema_id);
     return {schema, current_schema_id};
 }
 
-KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr metadata_object, const NamesAndTypesList & ch_schema, ContextPtr local_context)
+KeyDescription getSortingKeyDescriptionFromMetadata(Iceberg::JSONObjectPtr metadata_object, const NamesAndTypesList & ch_schema, ContextPtr local_context)
 {
     auto sort_order_id = metadata_object->getValue<Int64>(f_default_sort_order_id);
-    Poco::JSON::Array::Ptr sort_orders = metadata_object->getArray(f_sort_orders);
+    Iceberg::JSONArrayPtr sort_orders = metadata_object->getArray(f_sort_orders);
     std::unordered_map<Int64, String> source_id_to_column_name;
     auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
 

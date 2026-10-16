@@ -1,3 +1,4 @@
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergJSON.h>
 #include "config.h"
 #if USE_AVRO
 
@@ -7,9 +8,6 @@
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
-#include <Poco/JSON/Array.h>
-#include <Poco/JSON/Object.h>
-#include <Poco/JSON/Stringifier.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 

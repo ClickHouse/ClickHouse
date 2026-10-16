@@ -1,12 +1,10 @@
 #pragma once
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergJSON.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
 #include "config.h"
 
 #if USE_AVRO
 
-#include <Poco/JSON/Array.h>
-#include <Poco/JSON/Object.h>
-#include <Poco/JSON/Parser.h>
 
 #include <Core/Types.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>

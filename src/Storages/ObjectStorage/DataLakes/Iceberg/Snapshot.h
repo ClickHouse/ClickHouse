@@ -1,10 +1,10 @@
 #pragma once
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergJSON.h>
 #include "config.h"
 
 #if USE_AVRO
 
 #include <DataTypes/DataTypeDateTime64.h>
-#include <Poco/JSON/Array.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotSummary.h>
@@ -23,7 +23,7 @@ struct IcebergDataSnapshot
     std::optional<size_t> total_equality_delete_rows;
     /// Opaque incremental refreshable-MV cursor from the snapshot summary (`clickhouse.refresh-cursor`), as stored.
     std::optional<String> refresh_cursor;
-    Poco::JSON::Array::Ptr partition_specs;
+    Iceberg::JSONArrayPtr partition_specs;
 
     std::optional<size_t> getTotalRows() const
     {

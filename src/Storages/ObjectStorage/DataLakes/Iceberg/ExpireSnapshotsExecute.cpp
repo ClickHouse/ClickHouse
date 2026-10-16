@@ -1,3 +1,5 @@
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergJSON.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergJSONPoco.h>
 #include "config.h"
 #if USE_AVRO
 
@@ -27,9 +29,6 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 
-#include <Poco/JSON/Array.h>
-#include <Poco/JSON/Object.h>
-#include <Poco/JSON/Stringifier.h>
 
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
@@ -161,7 +160,7 @@ struct RetentionPolicy
     Int64 max_ref_age_ms = Iceberg::default_max_ref_age_ms;
 };
 
-RetentionPolicy readRetentionPolicy(const Poco::JSON::Object::Ptr & metadata, ContextPtr context, const ExpireSnapshotsOptions & options)
+RetentionPolicy readRetentionPolicy(const Iceberg::JSONObjectPtr & metadata, ContextPtr context, const ExpireSnapshotsOptions & options)
 {
     RetentionPolicy policy;
     const auto & settings = context->getSettingsRef();
@@ -216,7 +215,7 @@ RetentionPolicy readRetentionPolicy(const Poco::JSON::Object::Ptr & metadata, Co
 class SnapshotGraph
 {
 public:
-    explicit SnapshotGraph(const Poco::JSON::Array::Ptr & snapshots)
+    explicit SnapshotGraph(const Iceberg::JSONArrayPtr & snapshots)
     {
         for (UInt32 i = 0; i < snapshots->size(); ++i)
         {
@@ -267,7 +266,7 @@ private:
 };
 
 std::pair<std::set<Int64>, Strings> applyRetentionPolicy(
-    const Poco::JSON::Object::Ptr & metadata,
+    const Iceberg::JSONObjectPtr & metadata,
     Int64 current_snapshot_id,
     const SnapshotGraph & graph,
     const RetentionPolicy & policy,
@@ -457,13 +456,13 @@ ExpiredFiles collectExpiredFiles(
 // ---------------------------------------------------------------------------
 
 void trimSnapshotLog(
-    Poco::JSON::Object::Ptr metadata,
+    Iceberg::JSONObjectPtr metadata,
     const std::set<Int64> & expired_snapshot_ids)
 {
     if (!metadata->has(Iceberg::f_snapshot_log))
         return;
 
-    auto snapshot_log = metadata->get(Iceberg::f_snapshot_log).extract<Poco::JSON::Array::Ptr>();
+    auto snapshot_log = metadata->get(Iceberg::f_snapshot_log).getArray();
     Int32 suffix_start = static_cast<Int32>(snapshot_log->size());
     for (Int32 j = static_cast<Int32>(snapshot_log->size()) - 1; j >= 0; --j)
     {
@@ -473,7 +472,7 @@ void trimSnapshotLog(
             break;
         suffix_start = j;
     }
-    Poco::JSON::Array::Ptr retained_log = new Poco::JSON::Array;
+    Iceberg::JSONArrayPtr retained_log = Iceberg::JSONArray::create();
     for (UInt32 j = static_cast<UInt32>(suffix_start); j < snapshot_log->size(); ++j)
         retained_log->add(snapshot_log->getObject(j));
     metadata->set(Iceberg::f_snapshot_log, retained_log);
@@ -481,13 +480,13 @@ void trimSnapshotLog(
 
 struct SnapshotPartition
 {
-    Poco::JSON::Array::Ptr retained_snapshots = new Poco::JSON::Array;
+    Iceberg::JSONArrayPtr retained_snapshots = Iceberg::JSONArray::create();
     std::set<Int64> expired_snapshot_ids;
     std::vector<Iceberg::IcebergPathFromMetadata> expired_manifest_list_paths;
 };
 
 SnapshotPartition partitionSnapshots(
-    const Poco::JSON::Array::Ptr & snapshots,
+    const Iceberg::JSONArrayPtr & snapshots,
     const std::set<Int64> & retention_retained_ids,
     std::optional<Int64> expire_before_ms)
 {
@@ -517,8 +516,8 @@ SnapshotPartition partitionSnapshots(
 }
 
 SnapshotPartition partitionSnapshotsByIds(
-    const Poco::JSON::Object::Ptr & metadata,
-    const Poco::JSON::Array::Ptr & snapshots,
+    const Iceberg::JSONObjectPtr & metadata,
+    const Iceberg::JSONArrayPtr & snapshots,
     const std::vector<Int64> & snapshot_ids,
     Int64 current_snapshot_id,
     std::optional<Int64> expire_before_ms)
@@ -583,9 +582,9 @@ SnapshotPartition partitionSnapshotsByIds(
 // ---------------------------------------------------------------------------
 
 void updateMetadataForExpiration(
-    Poco::JSON::Object::Ptr metadata,
+    Iceberg::JSONObjectPtr metadata,
     const Strings & expired_ref_names,
-    const Poco::JSON::Array::Ptr & retained_snapshots,
+    const Iceberg::JSONArrayPtr & retained_snapshots,
     const std::set<Int64> & expired_snapshot_ids)
 {
     for (const auto & ref_name : expired_ref_names)
@@ -695,7 +694,7 @@ ExpireSnapshotsResult expireSnapshots(
             return {.dry_run = options.dry_run};
         }
 
-        auto snapshots = metadata->get(Iceberg::f_snapshots).extract<Poco::JSON::Array::Ptr>();
+        auto snapshots = metadata->get(Iceberg::f_snapshots).getArray();
         auto now_ms = duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
         Strings expired_ref_names;
@@ -723,7 +722,7 @@ ExpireSnapshotsResult expireSnapshots(
         Int32 current_schema_id = metadata->getValue<Int32>(Iceberg::f_current_schema_id);
 
         /// The files of the expired snapshots that none of `retained_snapshots` references.
-        auto collect_expired_files = [&](const Poco::JSON::Array::Ptr & retained_snapshots)
+        auto collect_expired_files = [&](const Iceberg::JSONArrayPtr & retained_snapshots)
         {
             auto retained = collectSnapshotReferencedFiles(
                 retained_snapshots, object_storage, persistent_table_components, context, log, current_schema_id);
@@ -750,12 +749,12 @@ ExpireSnapshotsResult expireSnapshots(
         if (catalog_commits_metadata)
         {
             const auto & [namespace_name, parsed_table_name] = DataLake::parseTableName(table_name);
-            auto committed_metadata = catalog->removeSnapshots(
+            auto committed_metadata = Iceberg::fromPocoJSON(catalog->removeSnapshots(
                 namespace_name,
                 parsed_table_name,
-                metadata,
+                Iceberg::toPocoJSON(metadata),
                 std::vector<Int64>(partition.expired_snapshot_ids.begin(), partition.expired_snapshot_ids.end()),
-                expired_ref_names);
+                expired_ref_names));
             if (!committed_metadata)
             {
                 LOG_WARNING(log, "Catalog commit conflict during expire_snapshots, retrying ({} retries left)", max_retries);
@@ -766,7 +765,7 @@ ExpireSnapshotsResult expireSnapshots(
             /// reference the files of the expired snapshots.
             expired_files = collect_expired_files(
                 committed_metadata->has(Iceberg::f_snapshots) ? committed_metadata->getArray(Iceberg::f_snapshots)
-                                                              : Poco::JSON::Array::Ptr(new Poco::JSON::Array));
+                                                              : Iceberg::JSONArray::create());
         }
         else
         {

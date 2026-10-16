@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergJSON.h>
 #include "config.h"
 
 #if USE_AVRO
@@ -12,9 +13,6 @@
 #include <Columns/IColumn.h>
 #include <Core/SortDescription.h>
 #include <Storages/KeyDescription.h>
-#include <Poco/JSON/Array.h>
-#include <Poco/JSON/Object.h>
-#include <Poco/JSON/Parser.h>
 
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <IO/CompressedReadBufferWrapper.h>
@@ -92,7 +90,7 @@ String normalizeIcebergTransformFunctionName(const String & function_name);
 
 CompressionMethod getCompressionMethodFromMetadataFile(const String & path);
 
-Poco::JSON::Object::Ptr getMetadataJSONObject(
+Iceberg::JSONObjectPtr getMetadataJSONObject(
     const String & metadata_file_path,
     ObjectStoragePtr object_storage,
     IcebergMetadataFilesCachePtr metadata_cache,
@@ -102,11 +100,11 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
     const std::optional<String> & table_uuid);
 
 
-std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & iter);
-Poco::Dynamic::Var getAvroType(DataTypePtr type, Int32 field_id);
+std::pair<Iceberg::JSONValue, bool> getIcebergType(DataTypePtr type, Int32 & iter);
+Iceberg::JSONValue getAvroType(DataTypePtr type, Int32 field_id);
 
 /// Spec: https://iceberg.apache.org/spec/?h=metadata.json#table-metadata-fields
-std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
+std::pair<Iceberg::JSONObjectPtr, String> createEmptyMetadataFile(
     String path_location,
     const ColumnsDescription & columns,
     ASTPtr partition_by,
@@ -144,8 +142,8 @@ MetadataFileWithInfo getLatestMetadataFileAndVersionWithCatalog(
     CompressionMethod known_compression_method,
     bool ignore_metadata_pointer_overrides = true);
 
-std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV1Method(const Poco::JSON::Object::Ptr & metadata_object);
-std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV2Method(const Poco::JSON::Object::Ptr & metadata_object);
+std::pair<Iceberg::JSONObjectPtr, Int32> parseTableSchemaV1Method(const Iceberg::JSONObjectPtr & metadata_object);
+std::pair<Iceberg::JSONObjectPtr, Int32> parseTableSchemaV2Method(const Iceberg::JSONObjectPtr & metadata_object);
 std::string normalizeUuid(const std::string & uuid);
 
 DataTypePtr getFunctionResultType(const String & iceberg_transform_name, DataTypePtr source_type);
@@ -164,7 +162,7 @@ enum class FileCategory : uint8_t
 FileCategory inspectFileCategory(const String & relative_path);
 
 KeyDescription getSortingKeyDescriptionFromMetadata(
-    Poco::JSON::Object::Ptr metadata_object, const NamesAndTypesList & ch_schema, ContextPtr local_context);
+    Iceberg::JSONObjectPtr metadata_object, const NamesAndTypesList & ch_schema, ContextPtr local_context);
 void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_description, ContextPtr context);
 
 void forEachAvroEntry(

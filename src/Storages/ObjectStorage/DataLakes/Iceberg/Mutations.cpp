@@ -1,3 +1,5 @@
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergJSON.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergJSONPoco.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
@@ -32,8 +34,6 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Poco/JSON/Array.h>
-#include <Poco/JSON/Object.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
@@ -148,7 +148,7 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
     const Iceberg::IcebergPathResolver & path_resolver,
     const std::optional<FormatSettings> & format_settings,
     std::optional<ChunkPartitioner> & chunk_partitioner,
-    Poco::JSON::Object::Ptr data_schema)
+    Iceberg::JSONObjectPtr data_schema)
 {
     chassert(commands.size() == 1);
     DataFileWriteResultByPartitionKey delete_data_result;
@@ -373,8 +373,8 @@ static bool writeMetadataFiles(
     String write_format,
     std::shared_ptr<DataLake::ICatalog> catalog,
     StorageID table_id,
-    Poco::JSON::Object::Ptr metadata,
-    Poco::JSON::Object::Ptr partititon_spec,
+    Iceberg::JSONObjectPtr metadata,
+    Iceberg::JSONObjectPtr partititon_spec,
     Int32 partition_spec_id,
     std::optional<ChunkPartitioner> & chunk_partitioner,
     SharedHeader data_sample_block)
@@ -579,7 +579,7 @@ static bool writeMetadataFiles(
         {
             auto catalog_filename = path_resolver.resolveForCatalog(metadata_info.path);
             const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
-            if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, new_snapshot))
+            if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, Iceberg::toPocoJSON(new_snapshot)))
             {
                 cleanup();
                 return false;
@@ -617,7 +617,7 @@ namespace
 /// that will be written, closing the TOCTOU gap where a concurrent writer commits
 /// incompatible files after a pre-check. See issue #102508 and the PR #105893 review.
 void validateSnapshotForMutation(
-    Poco::JSON::Object::Ptr metadata,
+    Iceberg::JSONObjectPtr metadata,
     ObjectStoragePtr object_storage,
     const PersistentTableComponents & persistent_table_components,
     ContextPtr context,
@@ -633,7 +633,7 @@ void validateSnapshotForMutation(
         return;
 
     auto snapshots = metadata->getArray(f_snapshots);
-    Poco::JSON::Object::Ptr current_snapshot;
+    Iceberg::JSONObjectPtr current_snapshot;
     for (size_t i = 0; i < snapshots->size(); ++i)
     {
         auto snapshot_obj = snapshots->getObject(static_cast<UInt32>(i));
@@ -726,7 +726,7 @@ void mutate(
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Iceberg DELETE and UPDATE are not supported for format-version 3 tables");
         auto partition_spec_id = metadata->getValue<Int64>(Iceberg::f_default_spec_id);
         auto partitions_specs = metadata->getArray(Iceberg::f_partition_specs);
-        Poco::JSON::Object::Ptr partititon_spec;
+        Iceberg::JSONObjectPtr partititon_spec;
         for (size_t i = 0; i < partitions_specs->size(); ++i)
         {
             auto current_partition_spec = partitions_specs->getObject(static_cast<UInt32>(i));
@@ -738,7 +738,7 @@ void mutate(
         }
 
         auto current_schema_id = metadata->getValue<Int64>(Iceberg::f_current_schema_id);
-        Poco::JSON::Object::Ptr current_schema;
+        Iceberg::JSONObjectPtr current_schema;
         auto schemas = metadata->getArray(Iceberg::f_schemas);
         for (size_t i = 0; i < schemas->size(); ++i)
         {
@@ -873,7 +873,7 @@ void alter(
         }
 
         const auto new_schema_id = metadata->getValue<Int32>(Iceberg::f_current_schema_id);
-        Poco::JSON::Object::Ptr new_schema;
+        Iceberg::JSONObjectPtr new_schema;
         auto schemas = metadata->getArray(Iceberg::f_schemas);
         for (UInt32 schema_index = 0; schema_index < schemas->size(); ++schema_index)
         {
@@ -911,7 +911,7 @@ void alter(
         {
             auto catalog_filename = persistent_table_components.path_resolver.resolveForCatalog(metadata_info.path);
             const auto & [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
-            if (!catalog->updateSchema(namespace_name, table_name, catalog_filename, new_schema, previous_schema_id))
+            if (!catalog->updateSchema(namespace_name, table_name, catalog_filename, Iceberg::toPocoJSON(new_schema), previous_schema_id))
             {
                 ++i;
                 continue;

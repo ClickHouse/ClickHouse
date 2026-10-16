@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergJSON.h>
 #include "config.h"
 
 #if USE_AVRO
@@ -11,7 +12,6 @@
 #include <variant>
 #include <Core/Field.h>
 #include <base/types.h>
-#include <Poco/JSON/Object.h>
 
 namespace DB::Iceberg
 {
@@ -130,12 +130,12 @@ public:
     SnapshotSummaryTotals getTotals() const;
     const SnapshotSummaryExtraFields & getExtraFields() const;
 
-    Poco::JSON::Object::Ptr toJSON() const;
+    Iceberg::JSONObjectPtr toJSON() const;
     Map toMap() const;
 
     using Expected = std::expected<SnapshotSummary, std::string>;
     static Expected fromJSON(
-        const Poco::JSON::Object & obj,
+        const Iceberg::JSONObject & obj,
         bool with_extra_fields = false,
         bool require_totals = false);
 

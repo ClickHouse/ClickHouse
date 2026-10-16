@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergJSON.h>
 #include <memory>
 #include <variant>
 #include <vector>
@@ -10,10 +11,6 @@
 #include <Core/Field.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/IFunction.h>
-#include <Poco/JSON/Array.h>
-#include <Poco/JSON/Object.h>
-#include <Poco/JSON/Stringifier.h>
-#include <Poco/SharedPtr.h>
 
 #include <mutex>
 
@@ -91,7 +88,7 @@ class ExecutableEvolutionFunction : public IExecutableFunction
 {
 public:
     explicit ExecutableEvolutionFunction(
-        DataTypePtr type_, DataTypePtr old_type_, Poco::SharedPtr<Poco::JSON::Object> old_json_, Poco::SharedPtr<Poco::JSON::Object> field_)
+        DataTypePtr type_, DataTypePtr old_type_, Iceberg::JSONObjectPtr old_json_, Iceberg::JSONObjectPtr field_)
         : type(type_)
         , old_type(old_type_)
         , old_json(old_json_)
@@ -110,8 +107,8 @@ private:
     /// Struct below is state of out DFS algorithm.
     struct TraverseItem
     {
-        Poco::JSON::Array::Ptr old_subfields = nullptr;
-        Poco::JSON::Array::Ptr fields = nullptr;
+        Iceberg::JSONArrayPtr old_subfields = nullptr;
+        Iceberg::JSONArrayPtr fields = nullptr;
         std::vector<IcebergChangeSchemaOperation::Edge> current_path = {};
         TransformType type;
     };
@@ -120,17 +117,17 @@ private:
 
     static void pushNewNode(
         std::stack<TraverseItem> & walk_stack,
-        Poco::JSON::Object::Ptr old_node,
-        Poco::JSON::Object::Ptr new_node,
+        Iceberg::JSONObjectPtr old_node,
+        Iceberg::JSONObjectPtr new_node,
         std::vector<IcebergChangeSchemaOperation::Edge> * current_path);
 
     static void fillMissingElementsInPermutation(std::vector<size_t> & permutation, size_t target_size);
-    static Poco::JSON::Array::Ptr makeArrayFromObject(Poco::JSON::Object::Ptr object);
+    static Iceberg::JSONArrayPtr makeArrayFromObject(Iceberg::JSONObjectPtr object);
 
     DataTypePtr type;
     DataTypePtr old_type;
-    Poco::SharedPtr<Poco::JSON::Object> old_json;
-    Poco::SharedPtr<Poco::JSON::Object> field;
+    Iceberg::JSONObjectPtr old_json;
+    Iceberg::JSONObjectPtr field;
 
     mutable std::vector<std::shared_ptr<IIcebergSchemaTransform>> transforms;
     mutable bool initialized = false;
@@ -143,8 +140,8 @@ public:
     explicit EvolutionFunctionStruct(
         const DataTypes & types_,
         const DataTypes & old_types_,
-        Poco::SharedPtr<Poco::JSON::Object> old_json_,
-        Poco::SharedPtr<Poco::JSON::Object> field_)
+        Iceberg::JSONObjectPtr old_json_,
+        Iceberg::JSONObjectPtr field_)
         : types(types_)
         , old_types(old_types_)
         , old_json(old_json_)
@@ -170,8 +167,8 @@ public:
 private:
     DataTypes types;
     DataTypes old_types;
-    Poco::SharedPtr<Poco::JSON::Object> old_json;
-    Poco::SharedPtr<Poco::JSON::Object> field;
+    Iceberg::JSONObjectPtr old_json;
+    Iceberg::JSONObjectPtr field;
 };
 
 }

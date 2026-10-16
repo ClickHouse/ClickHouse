@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergJSON.h>
 #include "config.h"
 
 #if USE_AVRO
@@ -11,7 +12,6 @@
 #include <Databases/DataLake/ICatalog.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage_fwd.h>
 #include <Interpreters/Context_fwd.h>
-#include <Poco/JSON/Array.h>
 
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
@@ -31,7 +31,7 @@ struct SnapshotReferencedFiles
 };
 
 SnapshotReferencedFiles collectSnapshotReferencedFiles(
-    const Poco::JSON::Array::Ptr & snapshots,
+    const Iceberg::JSONArrayPtr & snapshots,
     ObjectStoragePtr object_storage,
     const PersistentTableComponents & persistent_table_components,
     ContextPtr context,

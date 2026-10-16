@@ -1,11 +1,10 @@
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergJSON.h>
 #include <gtest/gtest.h>
 
 #include <DataTypes/IDataType.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Common/Exception.h>
 
-#include <Poco/JSON/Object.h>
-#include <Poco/JSON/Parser.h>
 
 namespace DB::ErrorCodes
 {
@@ -16,10 +15,9 @@ using namespace DB::Iceberg;
 
 namespace
 {
-Poco::JSON::Object::Ptr parseSchema(const std::string & json)
+JSONObjectPtr parseSchema(const std::string & json)
 {
-    Poco::JSON::Parser parser;
-    return parser.parse(json).extract<Poco::JSON::Object::Ptr>();
+    return parseJSONObject(json);
 }
 }
 

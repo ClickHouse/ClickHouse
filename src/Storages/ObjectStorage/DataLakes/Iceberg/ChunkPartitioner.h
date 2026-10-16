@@ -1,8 +1,6 @@
 #pragma once
 
-#include <Poco/JSON/Array.h>
-#include <Poco/JSON/Object.h>
-#include <Poco/JSON/Parser.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergJSON.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 
 #include <Core/Range.h>
@@ -20,8 +18,8 @@ class ChunkPartitioner
 {
 public:
     explicit ChunkPartitioner(
-        Poco::JSON::Array::Ptr partition_specification,
-        Poco::JSON::Array::Ptr schema_fields,
+        Iceberg::JSONArrayPtr partition_specification,
+        Iceberg::JSONArrayPtr schema_fields,
         ContextPtr context,
         SharedHeader sample_block_);
 
@@ -54,8 +52,8 @@ class IcebergPartitionCalculator final : public ISimpleTransform
 {
 public:
     explicit IcebergPartitionCalculator(
-        Poco::JSON::Array::Ptr partition_specification,
-        Poco::JSON::Array::Ptr schema,
+        Iceberg::JSONArrayPtr partition_specification,
+        Iceberg::JSONArrayPtr schema,
         ContextPtr context,
         SharedHeader sample_block_)
         : ISimpleTransform(sample_block_, sample_block_, true)

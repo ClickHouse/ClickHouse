@@ -1,3 +1,4 @@
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergJSON.h>
 #include <gtest/gtest.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/MetadataGenerator.h>
@@ -8,8 +9,6 @@
 #include <IO/CompressionMethod.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/FileNamesGenerator.h>
-#include <Poco/JSON/Array.h>
-#include <Poco/JSON/Object.h>
 
 using namespace DB;
 
@@ -23,23 +22,23 @@ namespace
 
 /// Minimal V2 table metadata with all spec-optional arrays present, modelled on
 /// what createEmptyMetadataFile writes for a ClickHouse-created empty table.
-Poco::JSON::Object::Ptr makeMinimalV2Metadata()
+Iceberg::JSONObjectPtr makeMinimalV2Metadata()
 {
-    Poco::JSON::Object::Ptr metadata = new Poco::JSON::Object;
+    Iceberg::JSONObjectPtr metadata = Iceberg::JSONObject::create();
     metadata->set(Iceberg::f_format_version, 2);
     metadata->set(Iceberg::f_current_schema_id, 0);
     metadata->set(Iceberg::f_last_sequence_number, 0);
     metadata->set(Iceberg::f_current_snapshot_id, -1);
 
-    metadata->set(Iceberg::f_refs, Poco::JSON::Object::Ptr(new Poco::JSON::Object));
+    metadata->set(Iceberg::f_refs, Iceberg::JSONObject::create());
 
-    metadata->set(Iceberg::f_snapshots, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
-    metadata->set(Iceberg::f_snapshot_log, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
-    metadata->set(Iceberg::f_metadata_log, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
+    metadata->set(Iceberg::f_snapshots, Iceberg::JSONArray::create());
+    metadata->set(Iceberg::f_snapshot_log, Iceberg::JSONArray::create());
+    metadata->set(Iceberg::f_metadata_log, Iceberg::JSONArray::create());
     return metadata;
 }
 
-void appendSnapshot(Poco::JSON::Object::Ptr metadata, Int64 parent_snapshot_id = -1)
+void appendSnapshot(Iceberg::JSONObjectPtr metadata, Int64 parent_snapshot_id = -1)
 {
     FileNamesGenerator generator("s3://bucket/table", /*use_uuid_in_metadata=*/ false, CompressionMethod::None, "Parquet");
     generator.setVersion(1);
@@ -58,7 +57,7 @@ void appendSnapshot(Poco::JSON::Object::Ptr metadata, Int64 parent_snapshot_id =
 
 /// Generate one snapshot with explicit delete-file / operation parameters and return its `operation` summary field.
 String snapshotOperation(
-    Poco::JSON::Object::Ptr metadata,
+    Iceberg::JSONObjectPtr metadata,
     Int64 added_delete_files,
     Int64 num_deleted_rows,
     MetadataGenerator::SnapshotOperation operation = MetadataGenerator::SnapshotOperation::Append)
@@ -82,7 +81,7 @@ String snapshotOperation(
     return result.snapshot->getObject(Iceberg::f_summary)->getValue<String>(Iceberg::f_operation);
 }
 
-void callManifestOnlySnapshot(Poco::JSON::Object::Ptr metadata, Int64 parent_snapshot_id)
+void callManifestOnlySnapshot(Iceberg::JSONObjectPtr metadata, Int64 parent_snapshot_id)
 {
     FileNamesGenerator generator("s3://bucket/table", /*use_uuid_in_metadata=*/ false, CompressionMethod::None, "Parquet");
     generator.setVersion(1);
@@ -186,8 +185,7 @@ TEST(IcebergMetadataGenerator, ThrowsWhenSnapshotsArrayMissingButParentSnapshotE
 }
 
 /// `refs` is optional per the Iceberg spec too, so a manifest-only rewrite (OPTIMIZE ... MANIFEST)
-/// must seed it. isObject is asserted, not just the absence of a throw: it matches on the same
-/// typeid(Object::Ptr) as getObject, so it also rejects seeding a raw Poco::JSON::Object pointer.
+/// must seed it as an object.
 TEST(IcebergMetadataGenerator, ManifestOnlySnapshotWhenRefsMissing)
 {
     auto metadata = makeMinimalV2Metadata();
@@ -200,7 +198,7 @@ TEST(IcebergMetadataGenerator, ManifestOnlySnapshotWhenRefsMissing)
     EXPECT_NO_THROW(callManifestOnlySnapshot(metadata, parent_snapshot_id));
 
     EXPECT_TRUE(metadata->isObject(Iceberg::f_refs));
-    ASSERT_FALSE(metadata->getObject(Iceberg::f_refs).isNull());
+    ASSERT_NE(metadata->getObject(Iceberg::f_refs), nullptr);
     ASSERT_TRUE(metadata->getObject(Iceberg::f_refs)->has(Iceberg::f_main));
     EXPECT_EQ(
         metadata->getObject(Iceberg::f_refs)->getObject(Iceberg::f_main)->getValue<Int64>(Iceberg::f_metadata_snapshot_id),

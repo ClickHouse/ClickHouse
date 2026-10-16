@@ -98,7 +98,7 @@ ManifestListPruner::ManifestListPruner(
     const IcebergSchemaProcessor & schema_processor_,
     Int32 current_schema_id_,
     Int32 partition_schema_id_,
-    const Poco::JSON::Array::Ptr & partition_specs,
+    const Iceberg::JSONArrayPtr & partition_specs,
     const DB::ActionsDAG * filter_dag,
     DB::ContextPtr context)
 {
@@ -116,7 +116,7 @@ ManifestListPruner::ManifestListPruner(
         if (!spec->has(f_spec_id) || !spec->has(f_fields))
             continue;
 
-        auto fields = spec->get(f_fields).extract<Poco::JSON::Array::Ptr>();
+        auto fields = spec->get(f_fields).getArray();
         if (!fields || fields->size() == 0)
             continue;
 

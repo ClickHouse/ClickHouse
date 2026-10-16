@@ -26,7 +26,7 @@ namespace ErrorCodes
 }
 
 ChunkPartitioner::ChunkPartitioner(
-    Poco::JSON::Array::Ptr partition_specification, Poco::JSON::Array::Ptr schema_fields, ContextPtr context, SharedHeader sample_block_)
+    Iceberg::JSONArrayPtr partition_specification, Iceberg::JSONArrayPtr schema_fields, ContextPtr context, SharedHeader sample_block_)
     : sample_block(sample_block_)
     , max_partitions_count(context->getSettingsRef()[Setting::iceberg_insert_max_partitions])
 {

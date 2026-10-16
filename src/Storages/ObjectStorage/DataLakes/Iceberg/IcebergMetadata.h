@@ -1,11 +1,9 @@
 #pragma once
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergJSON.h>
 #include "config.h"
 
 #if USE_AVRO
 
-#include <Poco/JSON/Array.h>
-#include <Poco/JSON/Object.h>
-#include <Poco/JSON/Parser.h>
 
 #include <Core/Types.h>
 #include <Common/MultiVersion.h>
@@ -101,7 +99,7 @@ public:
     std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr local_context, ObjectInfoPtr object_info) const override;
 
     static Int32 parseTableSchema(
-        const Poco::JSON::Object::Ptr & metadata_object,
+        const Iceberg::JSONObjectPtr & metadata_object,
         Iceberg::IcebergSchemaProcessor & schema_processor,
         LoggerPtr metadata_logger);
 
@@ -229,11 +227,11 @@ private:
         LoggerPtr log);
 
     Iceberg::IcebergDataSnapshotPtr
-    getIcebergDataSnapshot(Poco::JSON::Object::Ptr metadata_object, Int64 snapshot_id, ContextPtr local_context) const;
+    getIcebergDataSnapshot(Iceberg::JSONObjectPtr metadata_object, Int64 snapshot_id, ContextPtr local_context) const;
 
-    Iceberg::IcebergDataSnapshotPtr createIcebergDataSnapshotFromSnapshotJSON(Poco::JSON::Object::Ptr metadata_object, Poco::JSON::Object::Ptr snapshot_object, Int64 snapshot_id, ContextPtr local_context) const;
+    Iceberg::IcebergDataSnapshotPtr createIcebergDataSnapshotFromSnapshotJSON(Iceberg::JSONObjectPtr metadata_object, Iceberg::JSONObjectPtr snapshot_object, Int64 snapshot_id, ContextPtr local_context) const;
     std::pair<Iceberg::IcebergDataSnapshotPtr, Int32>
-    getStateImpl(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object) const;
+    getStateImpl(const ContextPtr & local_context, Iceberg::JSONObjectPtr metadata_object) const;
     std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::TableStateSnapshot>
     getState(const ContextPtr & local_context, const String & metadata_path, Int32 metadata_version) const;
     Iceberg::IcebergDataSnapshotPtr

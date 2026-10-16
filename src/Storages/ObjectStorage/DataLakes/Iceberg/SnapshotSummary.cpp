@@ -163,9 +163,9 @@ SnapshotSummary::SnapshotSummary(
     }
 }
 
-Poco::JSON::Object::Ptr SnapshotSummary::toJSON() const
+Iceberg::JSONObjectPtr SnapshotSummary::toJSON() const
 {
-    Poco::JSON::Object::Ptr obj = new Poco::JSON::Object;
+    Iceberg::JSONObjectPtr obj = Iceberg::JSONObject::create();
     forEachField(
         [&obj](std::string_view key, std::string value)
         {
@@ -190,7 +190,7 @@ Map SnapshotSummary::toMap() const
 }
 
 SnapshotSummary::Expected SnapshotSummary::fromJSON(
-    const Poco::JSON::Object & obj, bool with_extra_fields, bool require_totals)
+    const Iceberg::JSONObject & obj, bool with_extra_fields, bool require_totals)
 {
     std::unordered_set<std::string_view> parsed;
 
@@ -314,7 +314,7 @@ SnapshotSummary::Expected SnapshotSummary::fromJSON(
             if (key == Iceberg::f_removed_data_files)
                 continue;
 
-            result.extra_fields.emplace(key, value);
+            result.extra_fields.emplace(key, value.toString());
         }
     }
 

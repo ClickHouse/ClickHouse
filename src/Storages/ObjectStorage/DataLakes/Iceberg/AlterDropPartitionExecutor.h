@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergJSON.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotSummary.h>
 #include "config.h"
 
@@ -20,7 +21,6 @@
 #include <Storages/PartitionCommands.h>
 #include <Common/Logger.h>
 
-#include <Poco/JSON/Object.h>
 
 #include <optional>
 #include <unordered_set>
@@ -62,8 +62,8 @@ private:
     {
         IcebergDataSnapshotPtr snapshot;
         TableStateSnapshot table_state;
-        Poco::JSON::Object::Ptr metadata_object;
-        Poco::JSON::Object::Ptr partition_spec;
+        Iceberg::JSONObjectPtr metadata_object;
+        Iceberg::JSONObjectPtr partition_spec;
         Int64 partition_spec_id = 0;
         Int32 schema_id = 0;
         std::vector<String> partition_columns;
@@ -100,7 +100,7 @@ private:
     struct ManifestListWriteResult
     {
         GeneratedMetadataFileWithInfo metadata_info;
-        Poco::JSON::Object::Ptr new_snapshot;
+        Iceberg::JSONObjectPtr new_snapshot;
     };
 
     ManifestListWriteResult writeManifestList(
@@ -110,7 +110,7 @@ private:
         SnapshotState & state,
         FileNamesGenerator & filename_generator,
         const GeneratedMetadataFileWithInfo & metadata_info,
-        const Poco::JSON::Object::Ptr & new_snapshot);
+        const Iceberg::JSONObjectPtr & new_snapshot);
 
     void cleanupNotCommited(std::vector<std::string> files);
 
