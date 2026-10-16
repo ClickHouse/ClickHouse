@@ -96,6 +96,18 @@ def test_rules_ignores_filter_parameters():
     check_response(response, "rules")
 
 
+@pytest.mark.parametrize(
+    "query",
+    ["rate(up[5m])", "sum by (job) (rate(up[5m]))", "up[5m]", "1 + 1", "sort(up)"],
+)
+def test_query_exemplars_valid_query(query):
+    response = requests.get(
+        f"http://{node.ip_address}:{PROMETHEUS_PORT}/api/v1/query_exemplars",
+        params={"query": query},
+    )
+    check_response(response, "query_exemplars")
+
+
 def test_query_exemplars_post():
     response = requests.post(
         f"http://{node.ip_address}:{PROMETHEUS_PORT}/api/v1/query_exemplars",
@@ -117,6 +129,8 @@ def test_query_exemplars_post():
         ("rules", {"match[]": "sum(up)"}),
         ("query_exemplars", {}),
         ("query_exemplars", {"query": "up{"}),
+        ("query_exemplars", {"query": "rate(up)"}),
+        ("query_exemplars", {"query": "abs()"}),
         ("query_exemplars", {"query": "up", "start": "abc"}),
         ("query_exemplars", {"query": "up", "start": "1700000600", "end": "1700000000"}),
     ],

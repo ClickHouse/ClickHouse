@@ -37,8 +37,11 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Parsers/Prometheus/parseTimeSeriesTypes.h>
+#include <Storages/TimeSeries/PrometheusQueryEvaluationSettings.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/Converter.h>
 #include <Storages/TimeSeries/PrometheusRemoteReadProtocol.h>
 #include <Storages/TimeSeries/PrometheusRemoteWriteProtocol.h>
 #include <Storages/TimeSeries/PrometheusHTTPProtocolAPI.h>
@@ -688,8 +691,23 @@ private:
             if (end_time < start_time)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'end' timestamp must not be before the 'start' timestamp");
 
-            PrometheusQueryTree promql_tree;
-            promql_tree.parse(params->get("query", ""));
+            /// The parser doesn't check the argument types and counts of functions, the conversion to SQL does.
+            /// The SQL is never run, so it may name a table that doesn't exist.
+            PrometheusQueryEvaluationSettings evaluation_settings;
+            evaluation_settings.time_series_storage_id = StorageID{"default", "query_exemplars"};
+            evaluation_settings.table_timestamp_type = std::make_shared<DataTypeDateTime64>(3);
+            evaluation_settings.use_current_time = true;
+            auto promql_tree = std::make_shared<PrometheusQueryTree>(params->get("query", ""));
+            try
+            {
+                PrometheusQueryToSQL::Converter{promql_tree, evaluation_settings}.getSQL();
+            }
+            catch (const Exception & e)
+            {
+                /// A function that ClickHouse can't evaluate yet is still valid PromQL.
+                if (e.code() != ErrorCodes::NOT_IMPLEMENTED)
+                    throw;
+            }
         }
         else if (uri_path.ends_with("/rules"))
         {
