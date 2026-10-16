@@ -3086,9 +3086,7 @@ void ReadFromMergeTree::buildIndexes(
         auto key_condition_factory = [query_context, metadata_snapshot](const ActionsDAG *, const ActionsDAG::Node * predicate)
         {
             ActionsDAGWithInversionPushDown wrapped(predicate, query_context, /* boolean_context */ false);
-            KeyCondition key_condition{wrapped, query_context, metadata_snapshot->getPrimaryKey(), /* single_point_ = */ false, !query_context->getSettingsRef()[Setting::use_primary_key]};
-            key_condition.relaxRangeAtomsOverNaNHidingTupleColumns(metadata_snapshot->getPrimaryKey().data_types);
-            return key_condition;
+            return KeyCondition{wrapped, query_context, metadata_snapshot->getPrimaryKey(), /* single_point_ = */ false, !query_context->getSettingsRef()[Setting::use_primary_key]};
         };
         auto key_condition_template = std::make_shared<ConditionTemplate<KeyCondition>>(filter_dag_ptr, std::move(key_condition_factory), metadata_snapshot, query_context, skip_constant_folding);
         indexes.emplace(std::move(key_condition_template));
@@ -5573,8 +5571,8 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     {
         const auto & primary_key = storage_snapshot->metadata->getPrimaryKey();
         const auto & column_type = top_k_filter_info->data_type;
-        /// Also nested inside `Tuple`, `Array`, ...: the threshold is compared as a raw `Field`, which places
-        /// a nested NULL or NaN regardless of NULLS FIRST/LAST.
+        /// Also nested inside `Tuple`, `Array`, ...: there too the primary key places a NULL or NaN by its own
+        /// order, not by the query's NULLS FIRST/LAST.
         bool has_nulls_direction_dependent_part = anyInTypeTree(
             *column_type, [](const IDataType & type) { return type.isNullable() || isFloat(type); });
         auto it = std::find(primary_key.column_names.begin(), primary_key.column_names.end(), top_k_filter_info->column_name);
