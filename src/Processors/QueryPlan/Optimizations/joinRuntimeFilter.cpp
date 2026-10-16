@@ -220,7 +220,7 @@ static bool supportsRuntimeFilter(JoinAlgorithm join_algorithm, bool can_run_gra
 /// (planting erases every other algorithm and would leave a standalone `grace_hash` that refuses to run).
 static bool supportsRuntimeFilterAndIsRunnable(JoinAlgorithm join_algorithm, const JoinStepLogical & join_step, bool can_run_grace_hash)
 {
-    if (!supportsRuntimeFilter(join_algorithm, can_run_grace_hash))
+    if (!supportsRuntimeFilter(join_algorithm, can_run_grace_hash, join_step.getJoinOperator().strictness))
         return false;
 
     if (join_algorithm == JoinAlgorithm::GRACE_HASH && join_step.isGraceHashJoinSkipped())
