@@ -6,7 +6,7 @@
 
 
 template <typename T> constexpr size_t max_int_width = 20;
-template <> inline constexpr size_t max_int_width<UInt8> = 3;    /// 255
+template <> inline constexpr size_t max_int_width<UInt8> = 4;    /// 255, and `itoa` stores four bytes
 template <> inline constexpr size_t max_int_width<Int8> = 4;     /// -128
 template <> inline constexpr size_t max_int_width<UInt16> = 5;   /// 65535
 template <> inline constexpr size_t max_int_width<Int16> = 6;    /// -32768

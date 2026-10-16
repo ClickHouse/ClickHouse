@@ -1,3 +1,4 @@
+#include <array>
 #include <bit>
 #include <cstring>
 #include <type_traits>
@@ -11,8 +12,97 @@
 #endif
 
 /// ----------------------------------------------------------------------------------------------------
+/// 8 bits
+/// A table of the text of every value: one load, one 4-byte store and no branch to mispredict.
+/// ----------------------------------------------------------------------------------------------------
+
+namespace
+{
+/// The shift that places byte `i` of an integer's in-memory representation.
+template <typename T>
+constexpr UInt32 byteShift(UInt32 i)
+{
+    return 8 * (std::endian::native == std::endian::little ? i : sizeof(T) - 1 - i);
+}
+
+/// Bytes 0 to 2: the digits. Byte 3: the length.
+constexpr std::array<UInt32, 256> uint8_text = []
+{
+    std::array<UInt32, 256> table{};
+    for (UInt32 value = 0; value < 256; ++value)
+    {
+        UInt32 length = value >= 100 ? 3 : (value >= 10 ? 2 : 1);
+        UInt32 entry = length << byteShift<UInt32>(3);
+        for (UInt32 i = length, rest = value; i > 0; --i, rest /= 10)
+            entry |= ('0' + rest % 10) << byteShift<UInt32>(i - 1);
+        table[value] = entry;
+    }
+    return table;
+}();
+
+/// Indexed by the bit pattern of the value. Bytes 0 to 3: the sign and the digits. Byte 4: the length.
+/// Wider than `uint8_text`: "-128" leaves no room for the length in four bytes, and computing it from
+/// the text instead is slower.
+constexpr std::array<UInt64, 256> int8_text = []
+{
+    std::array<UInt64, 256> table{};
+    for (Int32 value = -128; value < 128; ++value)
+    {
+        UInt32 negative = value < 0;
+        UInt32 magnitude = negative ? -value : value;
+        UInt32 digits = magnitude >= 100 ? 3 : (magnitude >= 10 ? 2 : 1);
+        UInt64 entry = UInt64(digits + negative) << byteShift<UInt64>(4);
+        if (negative)
+            entry |= UInt64('-') << byteShift<UInt64>(0);
+        for (UInt32 i = digits, rest = magnitude; i > 0; --i, rest /= 10)
+            entry |= UInt64('0' + rest % 10) << byteShift<UInt64>(negative + i - 1);
+        table[static_cast<UInt8>(value)] = entry;
+    }
+    return table;
+}();
+
+ALWAYS_INLINE inline char * writeUInt8Text(UInt8 value, char * p)
+{
+    UInt32 entry = uint8_text[value];
+    /// One 4-byte store instead of the exact length: storing 2 + 1 bytes is 1.35x slower, and storing only the
+    /// text needs a branch on the length. The bytes after the text are the rest of the entry (zeros and the length),
+    /// to be overwritten by whatever is written next; `max_int_width<UInt8>` reserves the extra byte.
+    memcpy(p, &entry, 4);
+    return p + ((entry >> byteShift<UInt32>(3)) & 0xFF);
+}
+
+ALWAYS_INLINE inline char * writeInt8Text(Int8 value, char * p)
+{
+    UInt64 entry = int8_text[static_cast<UInt8>(value)];
+    /// As for `UInt8`, one 4-byte store whatever the length. Here it never writes past the longest text, "-128".
+    memcpy(p, &entry, 4);
+    return p + ((entry >> byteShift<UInt64>(4)) & 0xFF);
+}
+}
+
+char * itoa(UInt8 i, char * p)
+{
+    return writeUInt8Text(i, p);
+}
+
+char * itoa(uint8_t i, char * p)
+{
+    return writeUInt8Text(UInt8(i), p);
+}
+
+char * itoa(Int8 i, char * p)
+{
+    return writeInt8Text(i, p);
+}
+
+char * itoa(int8_t i, char * p)
+{
+    return writeInt8Text(Int8(i), p);
+}
+
+/// ----------------------------------------------------------------------------------------------------
 /// Shared by several sizes
-/// Digit pair tables, the jeaiii algorithm (16 to 64 bits, and 8 bits for now), fixed blocks of eight digits and the sign.
+/// Digit pair tables, the jeaiii algorithm (16 to 64 bits), fixed blocks of eight digits and the sign.
 /// ----------------------------------------------------------------------------------------------------
 
 namespace
@@ -124,7 +214,8 @@ template <class T>
 inline ALWAYS_INLINE char * to_text_from_integer(char * b, T i)
 {
     constexpr auto q = sizeof(T);
-    using U = cond<q == 1, char8_t, cond<q <= sizeof(UInt16), UInt16, cond<q <= sizeof(UInt32), UInt32, UInt64>>>;
+    static_assert(q >= 2, "8-bit integers use their own table");
+    using U = cond<q <= sizeof(UInt16), UInt16, cond<q <= sizeof(UInt32), UInt32, UInt64>>;
 
     // convert bool to int before test with unary + to silence warning if T happens to be bool
     U const n = +i < 0 ? *b++ = '-', U(0) - U(i) : U(i);
@@ -142,14 +233,11 @@ inline ALWAYS_INLINE char * to_text_from_integer(char * b, T i)
     }
     if (n < UInt32(1e6))
     {
-        if (sizeof(U) == 1 || n < U(1e4))
+        if (n < U(1e4))
         {
             auto f0 = UInt32(10 * (1 << 24) / 1e3 + 1) * n;
             *reinterpret_cast<pair *>(b) = digits.fd[f0 >> 24];
-            if constexpr (sizeof(U) == 1)
-                b -= 1;
-            else
-                b -= n < U(1e3);
+            b -= n < U(1e3);
             auto f2 = (f0 & mask24) * 100;
             *reinterpret_cast<pair *>(b + 2) = digits.dd[f2 >> 24];
             return b + 4;
@@ -320,20 +408,6 @@ ALWAYS_INLINE inline char * writeLeadingMinus(char * pos)
 }
 
 /// ----------------------------------------------------------------------------------------------------
-/// 8 bits
-/// ----------------------------------------------------------------------------------------------------
-
-char * itoa(UInt8 i, char * p)
-{
-    return jeaiii::to_text_from_integer(p, uint8_t(i));
-}
-
-char * itoa(Int8 i, char * p)
-{
-    return jeaiii::to_text_from_integer(p, int8_t(i));
-}
-
-/// ----------------------------------------------------------------------------------------------------
 /// 16 and 32 bits, and `long` where it is a distinct type
 /// ----------------------------------------------------------------------------------------------------
 
@@ -344,10 +418,8 @@ char * itoa(Int8 i, char * p)
     }
 
 #define FOR_MISSING_INTEGER_TYPES(M) \
-    M(uint8_t) \
     M(UInt16) \
     M(UInt32) \
-    M(int8_t) \
     M(Int16) \
     M(Int32)
 
