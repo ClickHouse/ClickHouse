@@ -1847,8 +1847,7 @@ void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_descri
 {
     std::vector<String> initial_column_names;
     std::unordered_set<String> initial_column_names_set;
-    const auto names_columns = block.getNames();
-    for (const auto & column_name : names_columns)
+    for (const auto & column_name : block.getNames())
     {
         initial_column_names.push_back(column_name);
         initial_column_names_set.insert(column_name);
@@ -1862,9 +1861,9 @@ void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_descri
     ColumnsWithTypeAndName reordered_columns;
     for (const auto & column_name : initial_column_names)
         reordered_columns.push_back(block.getByName(column_name));
-    for (size_t i = 0; i < block.columns(); ++i)
-        if (!initial_column_names_set.contains(names_columns[i]))
-            reordered_columns.push_back(block.getColumnsWithTypeAndName()[i]);
+    for (const auto & column : block.getColumnsWithTypeAndName())
+        if (!initial_column_names_set.contains(column.name))
+            reordered_columns.push_back(column);
 
     block = Block(reordered_columns);
     SortDescription result_sort_description;
