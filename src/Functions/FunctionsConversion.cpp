@@ -2713,7 +2713,7 @@ FunctionCast::WrapperType FunctionCast::createEnumWrapper(const DataTypePtr & fr
         return createStringToEnumWrapper<ColumnFixedString, EnumType>();
     else if (isNativeNumber(from_type))
     {
-        if (!settings.check_conversion_from_numbers_to_enum)
+        if (!settings.check_conversion_from_numbers_to_enum && cast_type == CastType::nonAccurate)
         {
             auto function = Function::createFromSettings(settings);
             return createFunctionAdaptor(function, from_type);
@@ -2781,8 +2781,8 @@ template <typename ColumnStringType, typename EnumType>
 FunctionCast::WrapperType FunctionCast::createStringToEnumWrapper() const
 {
     const char * function_name = cast_name;
-    return [function_name] (
-        ColumnsWithTypeAndName & arguments, const DataTypePtr & res_type, const ColumnNullable * nullable_col, size_t /*input_rows_count*/)
+    return [function_name, report_failure_as_null = cast_type == CastType::accurateOrNull] (
+        ColumnsWithTypeAndName & arguments, const DataTypePtr & res_type, const ColumnNullable * nullable_col, size_t /*input_rows_count*/) -> ColumnPtr
     {
         const auto & first_col = arguments.front().column.get();
         const auto & result_type = typeid_cast<const EnumType &>(*res_type);
@@ -2801,6 +2801,29 @@ FunctionCast::WrapperType FunctionCast::createStringToEnumWrapper() const
             out_data.resize(size);
 
             auto default_enum_value = result_type.getValues().front().second;
+
+            if (report_failure_as_null)
+            {
+                auto failure_map = ColumnUInt8::create(size, 0);
+                auto & failures = failure_map->getData();
+
+                for (size_t i = 0; i < size; ++i)
+                {
+                    if (nullable_col && nullable_col->isNullAt(i))
+                    {
+                        out_data[i] = default_enum_value;
+                        continue;
+                    }
+
+                    if (!result_type.tryGetValue(out_data[i], col->getDataAt(i)))
+                    {
+                        out_data[i] = default_enum_value;
+                        failures[i] = 1;
+                    }
+                }
+
+                return ColumnNullable::create(std::move(res), std::move(failure_map));
+            }
 
             if (nullable_col)
             {
@@ -2831,8 +2854,8 @@ FunctionCast::WrapperType FunctionCast::createNumberToEnumWrapper() const
 {
     using FieldType = EnumType::FieldType;
 
-    return [function_name = cast_name] (
-        ColumnsWithTypeAndName & arguments, const DataTypePtr & res_type, const ColumnNullable * nullable_col, size_t /*input_rows_count*/)
+    return [function_name = cast_name, report_failure_as_null = cast_type == CastType::accurateOrNull] (
+        ColumnsWithTypeAndName & arguments, const DataTypePtr & res_type, const ColumnNullable * nullable_col, size_t /*input_rows_count*/) -> ColumnPtr
     {
         const auto & first_col = arguments.front().column.get();
         const auto & result_type = typeid_cast<const EnumType &>(*res_type);
@@ -2855,6 +2878,14 @@ FunctionCast::WrapperType FunctionCast::createNumberToEnumWrapper() const
 
         const auto default_enum_value = result_type.getValues().front().second;
 
+        MutableColumnPtr failure_map;
+        NullMap * failures = nullptr;
+        if (report_failure_as_null)
+        {
+            failure_map = ColumnUInt8::create(size, 0);
+            failures = &assert_cast<ColumnUInt8 &>(*failure_map).getData();
+        }
+
         const NullMap * null_map = nullptr;
         if (nullable_col)
             null_map = &nullable_col->getNullMapData();
@@ -2869,13 +2900,31 @@ FunctionCast::WrapperType FunctionCast::createNumberToEnumWrapper() const
             {
                 FieldType converted_value;
                 if (!accurate::convertNumeric<typename ColumnNumberType::ValueType, FieldType, false>(in_data[i], converted_value))
-                    throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value {} cannot be converted to enum type", toString(in_data[i]));
+                {
+                    if (!failures)
+                        throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value {} cannot be converted to enum type", toString(in_data[i]));
 
-                /// Validate that value exists in Enum (throws if not found)
-                result_type.getNameForValue(converted_value);
+                    out_data[i] = default_enum_value;
+                    (*failures)[i] = 1;
+                    continue;
+                }
+
+                if (failures && !result_type.hasValue(converted_value))
+                {
+                    out_data[i] = default_enum_value;
+                    (*failures)[i] = 1;
+                    continue;
+                }
+
+                /// Plain and strict casts still reject unknown Enum values.
+                if (!failures)
+                    result_type.getNameForValue(converted_value);
                 out_data[i] = converted_value;
             }
         }
+
+        if (failure_map)
+            return ColumnNullable::create(std::move(res), std::move(failure_map));
 
         return res;
     };

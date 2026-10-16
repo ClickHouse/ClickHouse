@@ -58,3 +58,29 @@ select accurateCastOrDefault('test', 'IPv6');
 select accurateCastOrDefault('192.0.2.1', 'IPv6');
 select accurateCastOrDefault('2001:db8::1', 'IPv6');
 select accurateCastOrDefault('2001:db8::1x', 'IPv6');
+
+-- A failed accurate cast to Enum must report NULL so OrDefault can use its fallback,
+-- regardless of the legacy numeric-to-Enum conversion setting.
+SET check_conversion_from_numbers_to_enum = 0;
+SELECT toInt8(accurateCastOrDefault(-1, $$Enum8('None' = 1, 'Hello' = 2, 'World' = 3)$$)),
+       isNull(accurateCastOrNull(-1, $$Enum8('None' = 1, 'Hello' = 2, 'World' = 3)$$));
+SELECT accurateCastOrDefault(-1, $$Enum8('None' = 1, 'Hello' = 2, 'World' = 3)$$);
+SELECT toInt8(accurateCastOrDefault(-1, $$Enum8('None' = 1, 'Hello' = 2, 'World' = 3)$$, CAST('Hello', $$Enum8('None' = 1, 'Hello' = 2, 'World' = 3)$$)));
+SELECT toInt8(CAST(-1, $$Enum8('None' = 1, 'Hello' = 2, 'World' = 3)$$));
+
+SET check_conversion_from_numbers_to_enum = 1;
+SELECT toInt8(accurateCastOrDefault(-1, $$Enum8('None' = 1, 'Hello' = 2, 'World' = 3)$$)),
+       isNull(accurateCastOrNull(-1, $$Enum8('None' = 1, 'Hello' = 2, 'World' = 3)$$));
+SELECT toInt8(accurateCastOrDefault(-1, $$Enum8('None' = 1, 'Hello' = 2, 'World' = 3)$$, CAST('Hello', $$Enum8('None' = 1, 'Hello' = 2, 'World' = 3)$$)));
+
+SELECT toInt8(accurateCastOrDefault('unknown', $$Enum8('None' = 1, 'Hello' = 2, 'World' = 3)$$)),
+       isNull(accurateCastOrNull('unknown', $$Enum8('None' = 1, 'Hello' = 2, 'World' = 3)$$)),
+       toInt8(accurateCastOrDefault('Hello', $$Enum8('None' = 1, 'Hello' = 2, 'World' = 3)$$));
+SELECT toInt8(accurateCastOrDefault('unknown', $$Enum8('None' = 1, 'Hello' = 2, 'World' = 3)$$, CAST('Hello', $$Enum8('None' = 1, 'Hello' = 2, 'World' = 3)$$)));
+SELECT toInt16(accurateCastOrDefault(32768, $$Enum16('None' = 1, 'Hello' = 2)$$)),
+       isNull(accurateCastOrNull(32768, $$Enum16('None' = 1, 'Hello' = 2)$$));
+
+SELECT number,
+       toInt8(accurateCastOrDefault(number + 1, $$Enum8('None' = 1, 'Hello' = 2, 'World' = 3)$$)),
+       isNull(accurateCastOrNull(number + 1, $$Enum8('None' = 1, 'Hello' = 2, 'World' = 3)$$))
+FROM numbers(4) ORDER BY number;
