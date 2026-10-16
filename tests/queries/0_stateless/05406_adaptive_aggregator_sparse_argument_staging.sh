@@ -37,7 +37,8 @@ $CLICKHOUSE_LOCAL --query "
 CREATE TABLE t_wide (n UInt64, k UInt64, v String) ENGINE = MergeTree ORDER BY n SETTINGS ${table_settings};
 INSERT INTO t_wide SELECT number, number % 8192 = 8191, repeat(repeat('x', 1024), if(number % 8192 = 4096, 16384, 0))
 FROM numbers(32768);
-SELECT column, serialization_kind FROM system.parts_columns WHERE table = 't_wide' AND column = 'v' AND active;
+SELECT column, serialization_kind FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_wide' AND column = 'v' AND active;
 ${settings}
 SET max_memory_usage = 83886080;
 ${query} SETTINGS enable_adaptive_aggregator = 0;
@@ -61,7 +62,7 @@ INSERT INTO t_sparse SELECT number, if(number % 8192 < 4096, 0, number), if(numb
     if(number % 10 = 0, number, 0), if(number % 10 = 0, number, NULL), if(number % 10 = 0, number, 0)
 FROM numbers(65536);
 SELECT column, serialization_kind FROM system.parts_columns
-WHERE table = 't_sparse' AND column IN ('s', 'x', 'y', 'z') AND active ORDER BY column;
+WHERE database = currentDatabase() AND table = 't_sparse' AND column IN ('s', 'x', 'y', 'z') AND active ORDER BY column;
 ${settings}
 ${query} SETTINGS enable_adaptive_aggregator = 0;
 ${query} SETTINGS enable_adaptive_aggregator = 1;
