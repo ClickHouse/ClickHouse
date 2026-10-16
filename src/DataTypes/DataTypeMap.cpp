@@ -252,7 +252,7 @@ void registerDataTypeMap(DataTypeFactory & factory)
 {
     factory.registerDataType("Map", create, DataTypeFactory::Case::Sensitive, Documentation{
             .description = R"DOCS_MD(
-Data type `Map(K, V)` stores key-value pairs.
+Data type `Map(K, V)` stores key-value pairs. It can also be written as `MAP(K, V)`.
 
 Unlike other databases, maps are not unique in ClickHouse, i.e. a map can contain two elements with the same key.
 (The reason for that is that maps are internally implemented as `Array(Tuple(K, V))`.)

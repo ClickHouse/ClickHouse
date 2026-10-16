@@ -11,13 +11,13 @@ doc_type: 'reference'
 
 Permite executar consultas `SELECT` e `INSERT` em dados armazenados em um servidor MySQL remoto.
 
-## Sintaxe
+## Sintaxe {#syntax}
 
 ```sql
 mysql({host:port, database, table, user, password[, replace_query, on_duplicate_clause] | named_collection[, option=value [,..]]})
 ```
 
-## Argumentos
+## Argumentos {#arguments}
 
 | Argument              | Descrição                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -35,7 +35,7 @@ Cláusulas `WHERE` simples, como `=, !=, >, >=, <, <=`, atualmente são executad
 
 O restante das condições e a restrição de amostragem `LIMIT` são executados no ClickHouse somente após a conclusão da consulta ao MySQL.
 
-## TLS/SSL
+## TLS/SSL {#tls-ssl}
 
 As credenciais de uma conexão criptografada com o MySQL são fornecidas como chaves de coleção nomeada (ou como argumentos de chave-valor):
 
@@ -49,13 +49,21 @@ Os valores correspondem ao conteúdo dos respectivos arquivos PEM, que pode ser 
 
 As mesmas credenciais também podem ser fornecidas como caminhos para arquivos no servidor, em `ssl_ca`, `ssl_cert` e `ssl_key` — mas **somente em uma coleção nomeada definida no arquivo de configuração do servidor**, e esse valor não pode ser substituído em uma consulta. O servidor abre esses arquivos com seus próprios privilégios. Portanto, aceitar um caminho via SQL permitiria que qualquer usuário capaz de definir uma fonte MySQL sondasse o sistema de arquivos local e se autenticasse com um certificado e uma chave que não tem permissão para ler.
 
-## Passando uma consulta em vez de um nome de tabela
+## Passando uma consulta em vez de um nome de tabela {#passing-a-query}
 
 Em vez de um nome de tabela, o terceiro argumento pode ser uma consulta `SELECT` passada ao MySQL como está. A estrutura da tabela resultante é inferida a partir do resultado da consulta. A consulta pode ser escrita como uma subconsulta ou encapsulada na função `query`:
 
 ```sql
 SELECT * FROM mysql('localhost:3306', 'test', (SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0), 'user', 'password');
 SELECT * FROM mysql('localhost:3306', 'test', query('SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0'), 'user', 'password');
+```
+
+A passagem de uma consulta é compatível a partir da versão 26.7. O ClickHouse encapsula a consulta em `SELECT ... FROM (<query>)` antes de enviá-la ao MySQL; portanto, ela não deve terminar com ponto e vírgula.
+
+Com uma [coleção nomeada](/pt-BR/concepts/features/configuration/server-config/named-collections), como `creds` dos [exemplos](#examples), passe a consulta na chave `query` em vez de `table`, seja na própria coleção ou como argumento chave-valor. `query` e `table` não podem ser especificados juntos:
+
+```sql
+SELECT * FROM mysql(creds, query = 'SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0');
 ```
 
 Isso é útil para executar junções, agregações ou qualquer outro processamento no MySQL. Essa tabela é somente leitura: não é permitido fazer `INSERT` nela. A mesma sintaxe é compatível com o motor de tabela [`MySQL`](/pt-BR/reference/engines/table-engines/integrations/mysql).
@@ -78,7 +86,7 @@ ou
 SELECT name FROM mysql(`mysql1:3306|mysql2:3306|mysql3:3306`, 'mysql_database', 'mysql_table', 'user', 'password');
 ```
 
-## Valor retornado
+## Valor retornado {#returned-value}
 
 Um objeto de tabela com as mesmas colunas da tabela MySQL original.
 
@@ -90,7 +98,7 @@ Um objeto de tabela com as mesmas colunas da tabela MySQL original.
   Na consulta `INSERT`, para distinguir a função de tabela `mysql(...)` do nome da tabela com uma lista de nomes de colunas, você deve usar as palavras-chave `FUNCTION` ou `TABLE FUNCTION`. Veja os exemplos abaixo.
 </Note>
 
-## Exemplos
+## Exemplos {#examples}
 
 Tabela no MySQL:
 
@@ -134,7 +142,7 @@ SELECT * FROM mysql(creds, table='test');
 └────────┴───────┘
 ```
 
-### `enable_compression`
+### `enable_compression` {#enable-compression}
 
 Habilita a compressão para a conexão via protocolo MySQL.
 
@@ -202,7 +210,7 @@ SELECT * FROM mysql('host:port', 'database', 'table', 'user', 'password')
 WHERE id > (SELECT max(id) FROM mysql_copy);
 ```
 
-## Relacionados
+## Relacionados {#related}
 
 * [O motor de tabela &#39;MySQL&#39;](/pt-BR/reference/engines/table-engines/integrations/mysql)
 * [Usar o MySQL como origem de dicionário](/pt-BR/reference/statements/create/dictionary/sources/mysql)
