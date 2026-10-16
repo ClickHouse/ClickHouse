@@ -441,6 +441,80 @@ else
     echo -e "Cannot submit the mutation that has to survive the upgrade$FAIL" >> /test_output/test_results.tsv
 fi
 
+# Drop the row policies left by the stress phase, before the server is upgraded.
+#
+# A test drops its row policies at the end of its file, but the stress runner regularly stops a test file before its
+# last statement (see the mutations above), and it runs many tests in one shared database (`--database=test_N`). A
+# leftover policy filters every table it matches, a database-level `ON db.*` one also the tables that later tests
+# created with other columns, so a background read on the upgraded server fails on its condition: an eager dictionary
+# over such a table logs `UNKNOWN_IDENTIFIER` for the whole post-upgrade window. The old server fails the same way, so
+# this is test garbage, not a backward-compatibility signal. `DROP` is the only remedy: a policy that applies to nobody
+# makes reads throw under `throw_on_unmatched_row_policies`. The statements are generated server-side from
+# `system.row_policies.name`, which is already the quoted `<name> ON <database>.<table>`, so no name passes through
+# the shell.
+echo "Drop the row policies left by the stress phase"
+
+if timeout 1m clickhouse-client --query "
+        SELECT name, storage, select_filter, is_restrictive, apply_to_all, apply_to_list, apply_to_except
+        FROM system.row_policies
+        WHERE storage != 'users_xml'
+        ORDER BY name
+        FORMAT Vertical" > /test_output/leftover_row_policies.txt \
+    && timeout 1m clickhouse-client --query "
+        SELECT 'DROP ROW POLICY IF EXISTS ' || name || ';'
+        FROM system.row_policies
+        WHERE storage != 'users_xml'
+        FORMAT TSVRaw" > /tmp/drop_leftover_row_policies.sql
+then
+    if [ -s /tmp/drop_leftover_row_policies.sql ]
+    then
+        timeout 5m clickhouse-client --ignore-error --queries-file /tmp/drop_leftover_row_policies.sql \
+            2> /test_output/undropped_row_policy_errors.txt ||:
+    fi
+else
+    echo -e "Cannot list the row policies left by the stress phase$FAIL" >> /test_output/test_results.tsv
+fi
+
+# Each `DROP` above may fail without stopping the rest, and this is where those failures are accounted for. It has to
+# stay before the row policy created below on purpose.
+if row_policies_left=$(timeout 1m clickhouse-client --query "SELECT count() FROM system.row_policies WHERE storage != 'users_xml'")
+then
+    if [ "$row_policies_left" = 0 ]
+    then
+        echo -e "The stress phase left no row policy to the upgrade$OK" >> /test_output/test_results.tsv
+    else
+        timeout 1m clickhouse-client --query "
+            SELECT name, storage, select_filter
+            FROM system.row_policies
+            WHERE storage != 'users_xml'
+            ORDER BY name
+            FORMAT Vertical" > /test_output/undropped_row_policies.txt ||:
+        echo -e "$row_policies_left row policies could not be dropped before the upgrade (see undropped_row_policies.txt and undropped_row_policy_errors.txt)$FAIL$(head_escaped /test_output/undropped_row_policies.txt)" >> /test_output/test_results.tsv
+    fi
+else
+    echo -e "Cannot count the row policies left by the stress phase$FAIL" >> /test_output/test_results.tsv
+fi
+
+[ -s /test_output/leftover_row_policies.txt ] || rm -f /test_output/leftover_row_policies.txt
+[ -s /test_output/undropped_row_policy_errors.txt ] || rm -f /test_output/undropped_row_policy_errors.txt
+
+# A row policy is persisted state that the upgraded server has to load and apply, and the drop above takes away
+# whatever the stress phase happened to leave of it. Create one deliberately, after the drop.
+echo "Create a row policy that the upgraded server has to apply"
+
+row_policy_across_upgrade_created=0
+
+if timeout 1m clickhouse-client --query "
+    DROP TABLE IF EXISTS default.row_policy_across_upgrade SYNC;
+    CREATE TABLE default.row_policy_across_upgrade (k UInt64) ENGINE = MergeTree ORDER BY k;
+    INSERT INTO default.row_policy_across_upgrade SELECT number FROM numbers(10);
+    CREATE ROW POLICY row_policy_across_upgrade ON default.row_policy_across_upgrade USING k < 3 TO ALL;"
+then
+    row_policy_across_upgrade_created=1
+else
+    echo -e "Cannot create the row policy that has to survive the upgrade$FAIL" >> /test_output/test_results.tsv
+fi
+
 # Use bigger timeout for previous version and disable additional hang check
 stop_server 300 false || (echo "Failed to stop server" && exit 1)
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.stress.log
@@ -670,6 +744,25 @@ then
     [ -s /test_output/mutation_across_upgrade_error.txt ] || rm -f /test_output/mutation_across_upgrade_error.txt
 fi
 
+# Without the row policy created before the upgrade the table returns all 10 rows.
+if [ "$row_policy_across_upgrade_created" = 1 ]
+then
+    if row_policy_across_upgrade_rows=$(timeout 1m clickhouse-client --query "SELECT count() FROM default.row_policy_across_upgrade" \
+        2> /test_output/row_policy_across_upgrade_error.txt)
+    then
+        if [ "$row_policy_across_upgrade_rows" = 3 ]
+        then
+            echo -e "The row policy created before the upgrade was applied by the new server$OK" >> /test_output/test_results.tsv
+        else
+            echo -e "The row policy created before the upgrade was not applied by the new server: $row_policy_across_upgrade_rows of 10 rows visible, 3 expected$FAIL" >> /test_output/test_results.tsv
+        fi
+    else
+        echo -e "Cannot check whether the row policy created before the upgrade was applied (see row_policy_across_upgrade_error.txt)$FAIL$(head_escaped /test_output/row_policy_across_upgrade_error.txt)" >> /test_output/test_results.tsv
+    fi
+
+    [ -s /test_output/row_policy_across_upgrade_error.txt ] || rm -f /test_output/row_policy_across_upgrade_error.txt
+fi
+
 stop_server || (echo "Failed to stop server" && exit 1)
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.upgrade.log
 cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickhouse-server.upgrade.log
@@ -683,6 +776,8 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       phase are killed before the upgrade (the `KILL MUTATION` loop above), so the upgraded server has
 #       none to resume and a mutation error here is a real finding. Do not allow-list a new one - when a
 #       test's intentionally broken mutation reaches this scan again, it is that kill step that is wrong.
+# Row-policy errors are absent for the same reason: the row policies left by the stress phase are dropped before the
+#       upgrade. When a leftover policy's error reaches this scan, it is that drop step that is wrong.
 # `NO_SUCH_INTERSERVER_IO_ENDPOINT` is expected during upgrades because replicated tables try to fetch parts
 # from replicas that are being restarted and whose interserver endpoints are temporarily unavailable.
 # `Azure::Storage::StorageException.*Not found address of host` is a transient Azure blob DNS resolution failure
