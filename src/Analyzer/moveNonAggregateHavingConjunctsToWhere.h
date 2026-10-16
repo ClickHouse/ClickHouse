@@ -18,10 +18,12 @@ class QueryNode;
   * rewrite of the analyzer keeps doing it.
   * With `keep_server_dependent_conjuncts`, conjuncts whose result may differ between servers also stay in `HAVING`:
   * the ones with functions like `shardNum` or `dictGet`, reading a table or a table function, or depending on the time zone
-  * of the server, like `toHour(toDateTime(k))`. This is needed when
+  * of the server, like `toHour(toDateTime(k))` or `toDate(k)` for a numeric `k`. This is needed when
   * the query runs on a shard, while `HAVING` would be executed on the initiator.
   * The right-hand side of `GLOBAL IN` is not considered server-dependent, because the initiator sends the same set to every server.
   * If any conjunct contains a window function, a stateful function or a function with observable side effects, nothing is moved.
+  * Nothing is moved either if the projection, `GROUP BY`, `ORDER BY`, `PREWHERE` or `WHERE` contains a stateful function, like
+  * `sum(rowNumberInAllBlocks())`: it would be computed on fewer rows before aggregation.
   * Nothing is moved for `WITH CUBE`, `WITH ROLLUP`, `WITH TOTALS` and `GROUPING SETS`, because
   * there the result of `HAVING` depends on the super-aggregate rows or on the totals.
   */

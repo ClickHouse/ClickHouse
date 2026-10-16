@@ -84,3 +84,12 @@
 0	1
 1	0
 1
+--- HAVING converting a Unix timestamp in the time zone of the server
+1704151800	2
+1
+1
+1
+1	0
+--- stateful function in the argument of an aggregate function
+0	900
+0	900

@@ -48,6 +48,61 @@ bool hasImplicitTimeZone(const DataTypePtr & type)
     return false;
 }
 
+/// Whether the function converts between a Unix timestamp and its calendar representation in the time zone
+/// of the executing server, without a `DateTime` or `DateTime64` value with an implicit time zone in between.
+bool dependsOnServerTimeZone(const FunctionNode & function_node)
+{
+    const auto & arguments = function_node.getArguments().getNodes();
+    if (arguments.empty() || !arguments[0])
+        return false;
+
+    auto function_base = function_node.getFunction();
+    if (!function_base)
+        return false;
+
+    const auto & function_name = function_base->getName();
+    auto first_argument_type = removeLowCardinalityAndNullable(arguments[0]->getResultType());
+
+    /// `toUnixTimestamp` parses a string in the time zone of the server.
+    if (function_name == "toUnixTimestamp" && arguments.size() == 1 && isStringOrFixedString(first_argument_type))
+        return true;
+
+    if (!isNumber(first_argument_type))
+        return false;
+
+    /// `toDate(k)`, `toDate32(k)` and `CAST(k AS Date)` take a number as a Unix timestamp.
+    if (isDateOrDate32(removeLowCardinalityAndNullable(function_node.getResultType())))
+        return true;
+
+    /// `fromUnixTimestamp(k, format)` formats a Unix timestamp; the optional third argument is the time zone.
+    return (function_name == "fromUnixTimestamp" || function_name == "fromUnixTimestampInJodaSyntax"
+            || function_name == "formatDateTime" || function_name == "formatDateTimeInJodaSyntax")
+        && arguments.size() < 3;
+}
+
+/// Whether the subtree contains a stateful function, like `rowNumberInAllBlocks` or `runningDifference`.
+bool hasStatefulFunction(const QueryTreeNodePtr & node)
+{
+    QueryTreeNodes nodes_to_visit{node};
+    while (!nodes_to_visit.empty())
+    {
+        auto current = std::move(nodes_to_visit.back());
+        nodes_to_visit.pop_back();
+
+        if (const auto * function_node = current->as<FunctionNode>(); function_node && function_node->isOrdinaryFunction())
+        {
+            auto function_base = function_node->getFunction();
+            if (function_base && function_base->isStateful())
+                return true;
+        }
+
+        for (const auto & child : current->getChildren())
+            if (child)
+                nodes_to_visit.push_back(child);
+    }
+    return false;
+}
+
 /** Classify a HAVING conjunct subtree for the `HAVING` -> `WHERE` rewrite.
   *
   * `AbortRewrite` outranks `KeepInHaving` outranks `Move`:
@@ -76,8 +131,9 @@ bool hasImplicitTimeZone(const DataTypePtr & type)
   * or reads a table or a table function, in a subquery or as the right-hand side of `IN`. A subquery without `FROM`,
   * which reads `system.one`, is still moved.
   * Such a conjunct also stays in `HAVING` if it has a value of type `DateTime` or `DateTime64` without an explicit time zone
-  * (like `toHour(toDateTime(k))`) or uses `toUnixTimestamp` to parse a string: the result depends on the time zone of
-  * the server, which may differ between the shards and the initiator.
+  * (like `toHour(toDateTime(k))`), uses `toUnixTimestamp` to parse a string, or converts a number as a Unix timestamp
+  * to a `Date` or `Date32` (like `toDate(k)`) or to a string (like `fromUnixTimestamp(k, '%F')`): the result depends
+  * on the time zone of the server, which may differ between the shards and the initiator.
   * The right-hand side of the `GLOBAL IN` family is an exception: the initiator computes the set once and sends the same
   * temporary table to every server, so it is not server-dependent.
   */
@@ -150,15 +206,8 @@ HavingConjunctMoveAction classifyHavingConjunctForMove(
         }
         else if (auto * function_node = current->as<FunctionNode>())
         {
-            /// `toUnixTimestamp` parses a string in the time zone of the server.
-            if (check_server_dependent && function_node->isOrdinaryFunction())
-            {
-                const auto & arguments = function_node->getArguments().getNodes();
-                auto function_base = function_node->getFunction();
-                if (function_base && function_base->getName() == "toUnixTimestamp" && arguments.size() == 1
-                    && isStringOrFixedString(removeLowCardinalityAndNullable(arguments[0]->getResultType())))
-                    keep_in_having();
-            }
+            if (check_server_dependent && function_node->isOrdinaryFunction() && dependsOnServerTimeZone(*function_node))
+                keep_in_having();
 
             if (inside_subquery)
             {
@@ -239,6 +288,16 @@ void moveNonAggregateHavingConjunctsToWhere(
         || query_node.isGroupByWithTotals()
         || query_node.isGroupByWithGroupingSets())
         return;
+
+    /// A conjunct moved to `WHERE` removes rows before the expressions computed before aggregation, like the arguments of
+    /// aggregate functions and the grouping keys. A stateful function there, like `sum(rowNumberInAllBlocks())`,
+    /// would see fewer rows and change the result even for the groups that pass the filter.
+    for (const auto & node : {query_node.getProjectionNode(), query_node.getGroupByNode(), query_node.getOrderByNode(),
+             query_node.getPrewhere(), query_node.getWhere()})
+    {
+        if (node && hasStatefulFunction(node))
+            return;
+    }
 
     auto & having_node = query_node.getHaving();
 

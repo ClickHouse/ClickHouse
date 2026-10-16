@@ -296,6 +296,61 @@ FROM (
 DROP TABLE t_tz_dist_04402;
 DROP TABLE t_tz_local_04402;
 
+-- A number converted as a Unix timestamp to a `Date`, `Date32` or a string also depends on the time zone of the server,
+-- without any `DateTime` value in between. The conjunct on the key itself is moved.
+SELECT '--- HAVING converting a Unix timestamp in the time zone of the server';
+DROP TABLE IF EXISTS t_ts_local_04402;
+DROP TABLE IF EXISTS t_ts_dist_04402;
+CREATE TABLE t_ts_local_04402 (k UInt32, x UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 10;
+CREATE TABLE t_ts_dist_04402 AS t_ts_local_04402
+    ENGINE = Distributed('test_cluster_two_shards', currentDatabase(), 't_ts_local_04402');
+INSERT INTO t_ts_local_04402 SELECT 1704151800 + number * 3600, 1 FROM numbers(1000);
+SELECT k, sum(x) FROM t_ts_dist_04402 GROUP BY k HAVING toDate(k) = '2024-01-01' ORDER BY k;
+SELECT
+    countIf(explain ILIKE '%Condition: true%') > 0 AS shard_reads_all_parts
+FROM (
+    EXPLAIN indexes = 1, distributed = 1
+    SELECT k, sum(x) FROM t_ts_dist_04402 GROUP BY k HAVING toDate(k) = '2024-01-01'
+);
+SELECT
+    countIf(explain ILIKE '%Condition: true%') > 0 AS shard_reads_all_parts
+FROM (
+    EXPLAIN indexes = 1, distributed = 1
+    SELECT k, sum(x) FROM t_ts_dist_04402 GROUP BY k HAVING toDate32(k) = '2024-01-01'
+);
+SELECT
+    countIf(explain ILIKE '%Condition: true%') > 0 AS shard_reads_all_parts
+FROM (
+    EXPLAIN indexes = 1, distributed = 1
+    SELECT k, sum(x) FROM t_ts_dist_04402 GROUP BY k HAVING fromUnixTimestamp(k, '%F') = '2024-01-01'
+);
+SELECT
+    countIf(explain ILIKE '%Condition: (k in%') > 0 AS shard_prunes,
+    countIf(explain ILIKE '%Condition: true%') > 0 AS shard_reads_all_parts
+FROM (
+    EXPLAIN indexes = 1, distributed = 1
+    SELECT k, sum(x) FROM t_ts_dist_04402 GROUP BY k HAVING k < 1704151800 + 3600
+);
+
+-- A stateful function computed before aggregation, like in the argument of an aggregate function, must see all rows:
+-- a grouping-key conjunct moved to `WHERE` would renumber the rows of the remaining groups.
+SELECT '--- stateful function in the argument of an aggregate function';
+DROP TABLE t_ts_dist_04402;
+DROP TABLE t_ts_local_04402;
+-- The table is not sorted by the key, so the rows of one group are spread over the block.
+DROP TABLE IF EXISTS t_stateful_local_04402;
+DROP TABLE IF EXISTS t_stateful_dist_04402;
+CREATE TABLE t_stateful_local_04402 (k UInt64) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_stateful_dist_04402 AS t_stateful_local_04402
+    ENGINE = Distributed('test_cluster_two_shards', currentDatabase(), 't_stateful_local_04402');
+INSERT INTO t_stateful_local_04402 SELECT number % 10 FROM numbers(100);
+SELECT k, sum(rowNumberInAllBlocks()) FROM t_stateful_dist_04402 GROUP BY k HAVING k = 0
+    SETTINGS prefer_localhost_replica = 0, max_threads = 1, max_block_size = 100;
+SELECT k, sum(rowNumberInAllBlocks()) FROM t_stateful_dist_04402 GROUP BY k HAVING k = 0
+    SETTINGS prefer_localhost_replica = 0, max_threads = 1, max_block_size = 100, query_plan_enable_optimizations = 0;
+DROP TABLE t_stateful_dist_04402;
+DROP TABLE t_stateful_local_04402;
+
 DROP VIEW v_hav_04402;
 DROP VIEW v_agg_04402;
 DROP TABLE t_dist_04402;
