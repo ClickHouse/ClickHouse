@@ -83,7 +83,7 @@ PackedFilesWriter::rewriteFile(const String & file_name, const WriteSettings & s
 
     /// A buffer of the replaced file may still be alive, but it owns its data and does not affect the new file.
     auto & data = written_files[file_name];
-    data = std::make_shared<Data>();
+    data = std::make_shared<Data>(state);
     return std::make_unique<FakeWriteBufferFromFile>(file_name, data);
 }
 
