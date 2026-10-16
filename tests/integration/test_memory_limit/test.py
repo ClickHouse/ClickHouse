@@ -12,6 +12,7 @@ node = cluster.add_instance(
     "node",
     main_configs=[
         "configs/async_metrics_no.xml",
+        "configs/disable_memory_worker_correct_memory_tracker.xml",
     ],
     user_configs=[
         "configs/disable_max_bytes_ratio_before_external_group_by.xml",
