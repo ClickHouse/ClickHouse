@@ -5,9 +5,6 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/convertFieldToType.h>
 
-#include <ostream>
-#include <streambuf>
-
 #if USE_DATASKETCHES
 
 namespace DB
@@ -25,39 +22,6 @@ namespace ErrorCodes
 /// And sketch the size is 152kb.
 static constexpr auto num_hashes = 7uz;
 static constexpr auto num_buckets = 2718uz;
-
-namespace
-{
-
-class StdStreamBufFromWriteBuffer : public std::streambuf
-{
-public:
-    explicit StdStreamBufFromWriteBuffer(WriteBuffer & out_) : out(out_) {}
-
-protected:
-    std::streamsize xsputn(const char * s, std::streamsize count) override
-    {
-        if (count <= 0)
-            return 0;
-
-        out.write(s, static_cast<size_t>(count));
-        return count;
-    }
-
-    int_type overflow(int_type ch) override
-    {
-        if (traits_type::eq_int_type(ch, traits_type::eof()))
-            return traits_type::not_eof(ch);
-
-        out.write(traits_type::to_char_type(ch));
-        return ch;
-    }
-
-private:
-    WriteBuffer & out;
-};
-
-}
 
 StatisticsCountMinSketch::StatisticsCountMinSketch(const SingleStatisticsDescription & description, const DataTypePtr & data_type_)
     : IStatistics(description)
@@ -113,12 +77,18 @@ void StatisticsCountMinSketch::merge(const StatisticsPtr & other_stats)
 
 void StatisticsCountMinSketch::serialize(WriteBuffer & buf)
 {
-    writeIntBinary(static_cast<UInt64>(sketch.get_serialized_size_bytes()), buf);
+    const size_t sketch_size = sketch.get_serialized_size_bytes();
+    writeIntBinary(static_cast<UInt64>(sketch_size), buf);
 
-    StdStreamBufFromWriteBuffer stream_buf(buf);
-    std::ostream stream(&stream_buf);
-    stream.exceptions(std::ios::badbit | std::ios::failbit);
-    sketch.serialize(stream);
+    /// Stream the sketch directly into the destination buffer, avoiding an intermediate copy.
+    const size_t written = sketch.serialize_to(
+        [&buf](const void * data, size_t size) { buf.write(static_cast<const char *>(data), size); });
+
+    if (written != sketch_size)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Statistics 'countmin' serialization wrote {} bytes but declared {} bytes",
+            written, sketch_size);
 }
 
 std::optional<UInt64> StatisticsCountMinSketch::getSerializedSize() const
