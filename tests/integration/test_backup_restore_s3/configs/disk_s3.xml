@@ -36,6 +36,12 @@
                 <max_size>1000000000</max_size>
                 <cache_on_write_operations>1</cache_on_write_operations>
             </disk_s3_cache>
+            <disk_s3_encrypted>
+                <type>encrypted</type>
+                <disk>disk_s3</disk>
+                <key>1234567812345678</key>
+                <path>encrypted/</path>
+            </disk_s3_encrypted>
         </disks>
         <policies>
             <policy_s3>
@@ -82,5 +88,6 @@
         <allowed_disk>disk_s3_plain_rewritable</allowed_disk>
         <allowed_disk>disk_s3_cache</allowed_disk>
         <allowed_disk>disk_s3_other_bucket</allowed_disk>
+        <allowed_disk>disk_s3_encrypted</allowed_disk>
     </backups>
 </clickhouse>
