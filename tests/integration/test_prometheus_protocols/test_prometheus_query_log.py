@@ -226,19 +226,95 @@ def test_remote_write_time_series_and_metadata_together_are_stored():
     )
 
 
-def test_remote_write_rejects_time_series_without_metric_name():
+def test_remote_write_skips_time_series_without_metric_name():
     """
-    A remote write whose timeseries has no non-empty __name__ label must fail
-    instead of being accepted and dropped.
+    A timeseries without a non-empty __name__ label is skipped and counted,
+    and the rest of the batch, including its metadata, is still written.
     """
-    protobuf = convert_time_series_to_protobuf(
-        [({"job": "test"}, {1753176720.0: 1})]
+    metric_name = "skip_nameless_test"
+    skipped_series_sql = (
+        "SELECT sum(value) FROM system.events "
+        "WHERE event = 'PrometheusRemoteWriteSkippedSeries'"
     )
+    skipped_before = int(node.query(skipped_series_sql))
+
+    write_request = convert_time_series_to_protobuf(
+        [
+            ({"job": metric_name}, {1753176720.0: 1}),
+            ({"__name__": metric_name, "job": metric_name}, {1753176720.0: 2}),
+        ]
+    )
+    metadata = convert_metrics_metadata_to_protobuf(
+        [(metric_name, "GAUGE", "Skip nameless test metric.", "")]
+    )
+    write_request.metadata.extend(metadata.metadata)
+
     response = get_response_to_remote_write(
-        node.ip_address, 9093, "/write", protobuf
+        node.ip_address, 9093, "/write", write_request
     )
-    assert response.status_code != requests.codes.no_content
-    assert "Metric name is missing" in response.text
+    assert response.status_code == requests.codes.no_content
+
+    # Only the named series and its sample are stored.
+    assert_eq_with_retry(
+        node,
+        f"SELECT tags.metric_name, data.value "
+        f"FROM timeSeriesData(prometheus) AS data "
+        f"JOIN timeSeriesTags(prometheus) AS tags ON data.id = tags.id "
+        f"WHERE tags.tags['job'] = '{metric_name}'",
+        f"{metric_name}\t2\n",
+    )
+    assert (
+        node.query(
+            f"SELECT count() FROM timeSeriesTags(prometheus) "
+            f"WHERE tags['job'] = '{metric_name}'"
+        )
+        == "1\n"
+    )
+    assert_eq_with_retry(
+        node,
+        timeseries_metrics_has_metric_family_sql("prometheus", metric_name),
+        "1\n",
+    )
+    assert int(node.query(skipped_series_sql)) == skipped_before + 1
+
+
+def test_remote_write_skips_time_series_without_metric_name_with_bad_labels():
+    """
+    As in Prometheus, a timeseries without __name__ is skipped even if its other
+    labels are invalid: an empty label name or one label name given twice.
+    """
+    metric_name = "skip_nameless_bad_labels_test"
+    skipped_series_sql = (
+        "SELECT sum(value) FROM system.events "
+        "WHERE event = 'PrometheusRemoteWriteSkippedSeries'"
+    )
+    skipped_before = int(node.query(skipped_series_sql))
+
+    write_request = remote_pb2.WriteRequest()
+    for labels in [
+        [("", "x")],
+        [("job", "a"), ("job", "b")],
+        [("__name__", metric_name), ("job", metric_name)],
+    ]:
+        timeseries = types_pb2.TimeSeries()
+        for name, value in labels:
+            timeseries.labels.append(types_pb2.Label(name=name, value=value))
+        timeseries.samples.append(
+            types_pb2.Sample(timestamp=1753176722 * 1000, value=1)
+        )
+        write_request.timeseries.append(timeseries)
+
+    response = get_response_to_remote_write(
+        node.ip_address, 9093, "/write", write_request
+    )
+    assert response.status_code == requests.codes.no_content
+
+    assert_eq_with_retry(
+        node,
+        timeseries_data_has_metric_sql("prometheus", metric_name),
+        "1\n",
+    )
+    assert int(node.query(skipped_series_sql)) == skipped_before + 2
 
 
 def test_remote_write_accepts_empty_then_nonempty_metric_name():
