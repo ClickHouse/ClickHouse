@@ -1,0 +1,21 @@
+-- without a grant on the source
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+no directory
+-- READ ON FILE
+0
+id	Int64
+ACCESS_DENIED
+-- READ ON S3 filtered to one prefix
+0
+id	Int64
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+-- READ ON S3 without a filter
+0
+0

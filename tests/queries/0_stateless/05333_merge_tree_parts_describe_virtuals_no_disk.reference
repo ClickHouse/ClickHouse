@@ -1,0 +1,5 @@
+x	UInt8	0
+_row_exists	UInt8	1
+_block_number	UInt64	1
+_block_offset	UInt64	1
+no directory
