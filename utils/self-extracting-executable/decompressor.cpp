@@ -367,6 +367,17 @@ static int decompressFiles(int input_fd, char * path, char * name, bool & have_c
         return 0;
     }
 
+#elif defined(OS_SUNOS)
+
+    static int read_exe_path(char *exe, size_t buf_sz)
+    {
+        ssize_t n = readlink("/proc/self/path/a.out", exe, buf_sz - 1);
+        if (n <= 0 || n >= static_cast<ssize_t>(buf_sz - 1))
+            return -1;
+        exe[n] = '\0';
+        return 0;
+    }
+
 #else
 
     static int read_exe_path(char *exe, size_t buf_sz)
@@ -379,7 +390,20 @@ static int decompressFiles(int input_fd, char * path, char * name, bool & have_c
 
 #endif
 
-#if !defined(OS_DARWIN) && !defined(OS_FREEBSD)
+#if defined(OS_SUNOS)
+
+static uint64_t getInode(const char *)
+{
+    struct stat info{};
+    if (stat("/proc/self/object/a.out", &info) != 0)
+    {
+        perror("stat executable");
+        return 0;
+    }
+    return info.st_ino;
+}
+
+#elif !defined(OS_DARWIN) && !defined(OS_FREEBSD)
 
 static uint64_t getInode(const char * self)
 {
