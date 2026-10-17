@@ -3,6 +3,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageParallelListingIterator.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/ParallelListingGlobPredicate.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/Exception.h>
 #include <Common/parseGlobs.h>
 #include <Common/re2.h>
 
@@ -17,6 +18,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -31,6 +33,25 @@ namespace CurrentMetrics
 
 namespace
 {
+
+/// A well-distributed `digits`-hex-digit name derived from `i` (splitmix64). A plain LCG sampled at its
+/// low bits (`hex[x & 0xf]`) is unusable here: the low nibble of an LCG cycles with a tiny period that does
+/// not depend on the seed's high bits, so all `i` sharing `i mod 16` collapse to one name (~16 distinct
+/// keys total) and a flat directory is never actually split. This yields ~`n` distinct keys with a uniform
+/// first byte, so keyspace splitting is genuinely exercised. `digits` must be <= 16.
+std::string hexName(uint64_t i, size_t digits = 16)
+{
+    uint64_t z = i + 0x9E3779B97F4A7C15ULL;
+    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
+    z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
+    z = z ^ (z >> 31);
+    static constexpr char hex[] = "0123456789abcdef";
+    std::string s;
+    s.reserve(digits);
+    for (size_t c = 0; c < digits; ++c)
+        s.push_back(hex[(z >> (c * 4)) & 0xf]);
+    return s;
+}
 
 /// A faithful in-memory emulation of S3 `ListObjectsV2`: holds a sorted, unique set of keys and
 /// answers one page at a time honoring Prefix, Delimiter (common-prefix grouping), StartAfter,
@@ -59,6 +80,12 @@ struct FakeS3
     /// With this set, the fake models such an endpoint: any request carrying a `StartAfter` fails, so a test
     /// listing must complete using the '/' delimiter and continuation tokens only.
     bool reject_start_after = false;
+
+    /// S3 Express / directory buckets do not return `ListObjectsV2` results in lexicographic order. With this
+    /// set, the fake lists the entries under a prefix in a fixed pseudo-random order across all pages (each
+    /// common prefix appears once, at the position of its first key), paginating by position. Requires
+    /// `reject_start_after`, as on those endpoints.
+    bool unordered = false;
 
     /// Optional `ObjectMetadata` payload attached to every listed object. Real S3 listings buffer an
     /// `etag` per object and a `_tags` scan fills `metadata.tags`, so tests of the buffered-object byte
@@ -89,6 +116,8 @@ struct FakeS3
         }
         if (delimiter.empty())
             requests_with_empty_delimiter.fetch_add(1, std::memory_order_relaxed);
+        if (unordered)
+            return listUnordered(prefix, delimiter, token);
 
         /// The continuation token is opaque in real `ListObjectsV2`, so its meaning cannot be recovered
         /// from the marker text: a real object key can itself end with the delimiter (a directory-marker
@@ -176,26 +205,56 @@ struct FakeS3
         }
         return res;
     }
-};
 
-/// A well-distributed `digits`-hex-digit name derived from `i` (splitmix64). A plain LCG sampled at its
-/// low bits (`hex[x & 0xf]`) is unusable here: the low nibble of an LCG cycles with a tiny period that does
-/// not depend on the seed's high bits, so all `i` sharing `i mod 16` collapse to one name (~16 distinct
-/// keys total) and a flat directory is never actually split. This yields ~`n` distinct keys with a uniform
-/// first byte, so keyspace splitting is genuinely exercised. `digits` must be <= 16.
-std::string hexName(uint64_t i, size_t digits = 16)
-{
-    uint64_t z = i + 0x9E3779B97F4A7C15ULL;
-    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
-    z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
-    z = z ^ (z >> 31);
-    static constexpr char hex[] = "0123456789abcdef";
-    std::string s;
-    s.reserve(digits);
-    for (size_t c = 0; c < digits; ++c)
-        s.push_back(hex[(z >> (c * 4)) & 0xf]);
-    return s;
-}
+    ObjectStorageListResult listUnordered(const std::string & prefix, const std::string & delimiter, const std::string & token) const
+    {
+        if (!reject_start_after)
+            throw std::logic_error("FakeS3: an unordered bucket must reject StartAfter");
+
+        std::vector<std::string> matching;
+        for (const auto & key : keys)
+            if (key.starts_with(prefix))
+                matching.push_back(key);
+        auto order = [](const std::string & key) { return std::make_pair(hexName(std::hash<std::string>{}(key)), key); };
+        std::sort(matching.begin(), matching.end(), [&](const auto & a, const auto & b) { return order(a) < order(b); });
+
+        /// (entry, is common prefix) in listing order.
+        std::vector<std::pair<std::string, bool>> entries;
+        std::unordered_set<std::string> groups;
+        for (const auto & key : matching)
+        {
+            const size_t dpos = delimiter.empty() ? std::string::npos : key.find(delimiter, prefix.size());
+            if (dpos == std::string::npos)
+                entries.emplace_back(key, false);
+            else if (std::string cp = key.substr(0, dpos + delimiter.size()); groups.insert(cp).second)
+                entries.emplace_back(std::move(cp), true);
+        }
+
+        size_t begin = 0;
+        if (!token.empty())
+        {
+            if (!token.starts_with("I:"))
+                throw std::logic_error("FakeS3: unknown continuation token: " + token);
+            begin = std::stoull(token.substr(2));
+        }
+
+        ObjectStorageListResult res;
+        const size_t end = std::min(entries.size(), begin + page_size);
+        for (size_t i = begin; i < end; ++i)
+        {
+            if (entries[i].second)
+                res.common_prefixes.push_back(entries[i].first);
+            else
+                res.objects.push_back(std::make_shared<RelativePathWithMetadata>(entries[i].first));
+        }
+        if (end < entries.size())
+        {
+            res.is_truncated = true;
+            res.next_continuation_token = fmt::format("I:{}", end);
+        }
+        return res;
+    }
+};
 
 ObjectStorageParallelListingIterator::ListLevelFunction makeListLevel(const FakeS3 & s3)
 {
@@ -958,6 +1017,138 @@ TEST(ObjectStorageParallelListing, BudgetTrimAvoidsStartAfterOnDirectoryBuckets)
         /// The trim really engaged (otherwise the test would pass vacuously): re-listing trimmed parents
         /// takes strictly more requests than the untrimmed walk of the same layout.
         EXPECT_GT(s3.requests.load(), requests_without_trimming) << "threads=" << threads;
+    }
+    EXPECT_EQ(s3.requests_with_start_after.load(), 0u);
+}
+
+TEST(ObjectStorageParallelListing, EmptyPathComponentIsNotPruned)
+{
+    /// `*` matches an empty path component, so `root//fixed/leaf/data.csv` matches `root/*/fixed/*/data.csv`.
+    /// The descend predicate used to drop empty components and compared `leaf` against `fixed`, pruning the
+    /// subtree and silently losing the matching key.
+    const std::string glob = "root/*/fixed/*/data.csv";
+    auto should_descend = makeShouldDescendPredicate(glob);
+    EXPECT_TRUE(should_descend("root//"));
+    EXPECT_TRUE(should_descend("root//fixed/"));
+    EXPECT_TRUE(should_descend("root//fixed/leaf/"));
+    EXPECT_TRUE(should_descend("root//fixed//"));
+    EXPECT_FALSE(should_descend("root//other/"));
+    EXPECT_FALSE(should_descend("root//fixed/leaf/data.csv/"));
+
+    FakeS3 s3;
+    s3.page_size = 2;
+    s3.add("root//fixed/leaf/data.csv");
+    s3.add("root//fixed//data.csv");
+    s3.add("root/a/fixed/b/data.csv");
+    s3.add("root/a/other/b/data.csv");
+    s3.add("root//other/leaf/data.csv");
+    s3.finalize();
+
+    re2::RE2 matcher(makeRegexpPatternFromGlobs(glob));
+    ASSERT_TRUE(matcher.ok());
+    const std::vector<std::string> expected{"root//fixed//data.csv", "root//fixed/leaf/data.csv", "root/a/fixed/b/data.csv"};
+    for (size_t threads : {1, 4, 16})
+    {
+        ObjectStorageParallelListingIterator iterator(
+            "root/", threads, /* max_buffered_keys */ 256, makeListLevel(s3), makeProbeLevel(s3), should_descend);
+        std::vector<std::string> got;
+        for (const auto & key : drain(iterator))
+            if (re2::RE2::FullMatch(key, matcher))
+                got.push_back(key);
+        std::sort(got.begin(), got.end());
+        EXPECT_EQ(got, expected) << "threads=" << threads;
+    }
+}
+
+TEST(ObjectStorageParallelListing, UnorderedDirectoryBucketWidenedWalkIsComplete)
+{
+    /// S3 Express / directory buckets list keys in no particular order. A widened walk over
+    /// `root/year=*/month=*/data.csv` must therefore not stop at the end of the fixed prefix's key region
+    /// when a page shows a key past it (`root/z-junk.csv`): a later page may still hold a matching subtree.
+    FakeS3 s3;
+    s3.page_size = 2;
+    s3.reject_start_after = true;
+    s3.unordered = true;
+    s3.add("root/year=stray.csv");
+    for (int i = 0; i < 20; ++i)
+        s3.add(fmt::format("root/z-junk-{:02}.csv", i));
+    for (int year = 2020; year < 2026; ++year)
+        for (int month = 1; month <= 3; ++month)
+            s3.add(fmt::format("root/year={}/month={:02}/data.csv", year, month));
+    s3.finalize();
+
+    const std::string glob = "root/year=*/month=*/data.csv";
+    re2::RE2 matcher(makeRegexpPatternFromGlobs(glob));
+    ASSERT_TRUE(matcher.ok());
+    std::vector<std::string> expected;
+    for (const auto & key : s3.keys)
+        if (re2::RE2::FullMatch(key, matcher))
+            expected.push_back(key);
+    ASSERT_EQ(expected.size(), 18u);
+
+    /// An unordered listing has no early stop, so a bound would be meaningless there.
+    EXPECT_THROW(
+        ObjectStorageParallelListingIterator(
+            "root/", 4, 256, makeListLevel(s3), makeProbeLevel(s3), makeShouldDescendPredicate(glob),
+            /* allow_keyspace_split */ false, /* check_cancellation */ {},
+            ObjectStorageParallelListingIterator::DEFAULT_MAX_PENDING_RANGE_BYTES,
+            ObjectStorageParallelListingIterator::DEFAULT_MAX_BUFFERED_OBJECT_BYTES,
+            /* allow_start_after */ false, /* root_range_end */ *leastKeyAfterPrefixRegion("root/year="),
+            /* is_marker_only_prefix */ {}, /* max_page_bytes_bound */ 0, /* listing_is_ordered */ false),
+        DB::Exception);
+
+    for (size_t threads : {1, 4, 16})
+    {
+        ObjectStorageParallelListingIterator iterator(
+            "root/", threads, /* max_buffered_keys */ 256, makeListLevel(s3), makeProbeLevel(s3), makeShouldDescendPredicate(glob),
+            /* allow_keyspace_split */ false, /* check_cancellation */ {},
+            ObjectStorageParallelListingIterator::DEFAULT_MAX_PENDING_RANGE_BYTES,
+            ObjectStorageParallelListingIterator::DEFAULT_MAX_BUFFERED_OBJECT_BYTES,
+            /* allow_start_after */ false, /* root_range_end */ {}, /* is_marker_only_prefix */ {},
+            /* max_page_bytes_bound */ 0, /* listing_is_ordered */ false);
+        std::vector<std::string> got;
+        for (const auto & key : drain(iterator))
+            if (re2::RE2::FullMatch(key, matcher))
+                got.push_back(key);
+        std::sort(got.begin(), got.end());
+        EXPECT_EQ(got, expected) << "threads=" << threads;
+    }
+    EXPECT_EQ(s3.requests_with_start_after.load(), 0u);
+}
+
+TEST(ObjectStorageParallelListing, UnorderedDirectoryBucketBudgetTrimKeepsEveryChild)
+{
+    /// The pending-range budget trim re-lists a parent after its last kept child, discarding the entries not
+    /// after it. On an unordered page (`x/c/`, `x/a/`, `x/b/`) that would drop children sorting before the
+    /// kept one, so an unordered listing must keep the whole fan-out instead.
+    FakeS3 s3;
+    s3.reject_start_after = true;
+    s3.unordered = true;
+    for (int d = 0; d < 60; ++d)
+    {
+        s3.add(fmt::format("x/d{:03}/f0.csv", d));
+        s3.add(fmt::format("x/d{:03}/f1.csv", d));
+    }
+    s3.add("x/aa.csv");
+    s3.add("x/zz.csv");
+    s3.finalize();
+    const auto expected = expectedUnder(s3, "x/");
+
+    for (size_t page_size : {7, 1000})
+    {
+        s3.page_size = page_size;
+        for (size_t threads : {1, 4, 16})
+        {
+            ObjectStorageParallelListingIterator iterator(
+                "x/", threads, /* max_buffered_keys */ 256, makeListLevel(s3), makeProbeLevel(s3), descendAll,
+                /* allow_keyspace_split */ false, /* check_cancellation */ {}, /* max_pending_range_bytes */ 1,
+                ObjectStorageParallelListingIterator::DEFAULT_MAX_BUFFERED_OBJECT_BYTES,
+                /* allow_start_after */ false, /* root_range_end */ {}, /* is_marker_only_prefix */ {},
+                /* max_page_bytes_bound */ 0, /* listing_is_ordered */ false);
+            auto got = drain(iterator);
+            std::sort(got.begin(), got.end());
+            EXPECT_EQ(got, expected) << "threads=" << threads << " page_size=" << page_size;
+        }
     }
     EXPECT_EQ(s3.requests_with_start_after.load(), 0u);
 }

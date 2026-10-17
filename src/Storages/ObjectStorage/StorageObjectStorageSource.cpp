@@ -2174,7 +2174,9 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
                 /// Invoked (once) only when the walk would start from a prefix wider than `key_prefix`:
                 /// samples every entry on the first delimited page of the widened level. Entries outside
                 /// the fixed prefix's region would force the widened walk to fetch pages the serial
-                /// listing never needs. Tags-free — only the paths matter here.
+                /// listing never needs. Tags-free — only the paths matter here. On a storage that lists keys
+                /// in no particular order the first page is an arbitrary one, so there the check is only a
+                /// cost heuristic; the walk returns the same keys either way.
                 [&](const std::string & widened_prefix)
                 {
                     auto page = object_storage->listObjectsSingleLevel(
@@ -2203,8 +2205,12 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
             /// which the sampled first page cannot rule out — are not paged through. The bound is the
             /// least key already outside that region, and the iterator treats it as exclusive, so even a
             /// loose object named exactly like it is neither emitted nor paginated towards.
+            /// A storage that lists keys in no particular order (S3 Express / directory buckets) cannot stop
+            /// at a bound — a later page may still hold matching keys — so its widened walk pages through the
+            /// whole widened level; the per-key match still filters the loose objects out.
+            const bool listing_is_ordered = object_storage->listsKeysInLexicographicOrder();
             std::string root_range_end;
-            if (*listing_start_prefix != key_prefix)
+            if (listing_is_ordered && *listing_start_prefix != key_prefix)
                 if (auto bound = leastKeyAfterPrefixRegion(key_prefix))
                     root_range_end = std::move(*bound);
 
@@ -2256,9 +2262,11 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
                 /// A trailing-slash glob (`root/*/`) matches directory markers, and the walk descends one
                 /// level into every matching directory only to surface its marker. Tell the iterator so
                 /// that such a range stops after its first page instead of paginating (and splitting) the
-                /// whole subtree to prove a marker is absent.
-                makeIsMarkerOnlyPrefixPredicate(key_with_globs.path),
-                max_page_bytes_bound);
+                /// whole subtree to prove a marker is absent. On an unordered storage the marker need not be
+                /// on the first page, so every page of such a directory is listed (its sub-"directories" are still pruned).
+                listing_is_ordered ? makeIsMarkerOnlyPrefixPredicate(key_with_globs.path) : std::function<bool(const std::string &)>{},
+                max_page_bytes_bound,
+                listing_is_ordered);
         }
         else
         {

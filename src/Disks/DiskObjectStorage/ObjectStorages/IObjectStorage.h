@@ -304,6 +304,13 @@ public:
     /// be expressed with the '/' delimiter and continuation tokens only (see `ObjectStorageParallelListingIterator`).
     virtual bool supportsStartAfterListing() const { return false; }
 
+    /// Whether `listObjectsSingleLevel` returns entries in ascending lexicographic (UTF-8 binary) order across
+    /// all pages of a listing, as general-purpose S3 buckets do. S3 Express / directory buckets do not
+    /// guarantee any order, so the parallel listing must not use the shortcuts that depend on it: stopping a
+    /// range once a key passes its upper bound, resuming a budget-trimmed parent after its last kept child,
+    /// and stopping a directory-marker range after its first page (see `ObjectStorageParallelListingIterator`).
+    virtual bool listsKeysInLexicographicOrder() const { return true; }
+
     /// Whether a big flat "directory" (no sub-"directories") may be listed in parallel by splitting its
     /// keyspace. The split issues `listObjectsSingleLevel` requests that resume strictly after an arbitrary
     /// key (`start_after`) while keeping the '/' delimiter, so subdirectories discovered in later slices

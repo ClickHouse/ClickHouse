@@ -54,7 +54,8 @@ ObjectStorageParallelListingIterator::ObjectStorageParallelListingIterator(
     bool allow_start_after_,
     std::string root_range_end_,
     std::function<bool(const std::string & common_prefix)> is_marker_only_prefix_,
-    size_t max_page_bytes_bound_)
+    size_t max_page_bytes_bound_,
+    bool listing_is_ordered_)
     : num_threads(std::max<size_t>(num_threads_, 1))
     , max_buffered_objects(std::max<size_t>(max_buffered_keys_, 1))
     , max_buffered_object_bytes(std::max<size_t>(max_buffered_object_bytes_, 1))
@@ -64,6 +65,7 @@ ObjectStorageParallelListingIterator::ObjectStorageParallelListingIterator(
     , max_pending_ranges(std::max<size_t>(num_threads * 4, 64))
     , max_pending_range_bytes(std::max<size_t>(max_pending_range_bytes_, 1))
     , allow_start_after(allow_start_after_)
+    , listing_is_ordered(listing_is_ordered_)
     , list_level(std::move(list_level_))
     , probe_level(std::move(probe_level_))
     , should_descend(std::move(should_descend_))
@@ -78,6 +80,14 @@ ObjectStorageParallelListingIterator::ObjectStorageParallelListingIterator(
           /* max_free_threads */ 0,
           /* queue_size */ num_threads)
 {
+    /// Both stop a range early on the assumption that the entries after a given one sort after it.
+    if (!listing_is_ordered && (!root_range_end_.empty() || is_marker_only_prefix))
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "The parallel listing of an unordered storage cannot stop a range early (root range end: '{}', marker-only prefixes: {})",
+            root_range_end_,
+            static_cast<bool>(is_marker_only_prefix));
+
     ListRange root;
     root.prefix = std::move(root_prefix_);
     /// Bounds only this root range (`listRange` stops paginating once past `end`); the ranges created for
@@ -90,8 +100,10 @@ ObjectStorageParallelListingIterator::ObjectStorageParallelListingIterator(
     root.split_pos = root.prefix.size();
     /// A zero budget disables flat keyspace splitting (and the `StartAfter` requests it issues), so a flat
     /// directory is paginated serially; the hierarchical delimiter walk is unaffected.
-    /// A storage that rejects `start_after` cannot be keyspace-split either, whatever the caller passed.
-    root.split_budget = allow_keyspace_split_ && allow_start_after_ ? FLAT_SPLIT_BUDGET : 0;
+    /// A storage that rejects `start_after` cannot be keyspace-split either, whatever the caller passed, and
+    /// neither can an unordered one: the split derives its boundaries from the last listed key and stops each
+    /// slice once its keys pass the slice's upper bound.
+    root.split_budget = allow_keyspace_split_ && allow_start_after_ && listing_is_ordered_ ? FLAT_SPLIT_BUDGET : 0;
     root.use_delimiter = true;
     pending_range_bytes = rangeBytes(root);
     peak_pending_range_bytes = pending_range_bytes;
@@ -227,6 +239,12 @@ void ObjectStorageParallelListingIterator::trimToBudgetLocked(
 
     if (hierarchical)
     {
+        /// The resume range below re-lists the parent strictly after the last kept child, which drops the
+        /// unkept children only if they sort after it, and drops the continuation-token range only if the
+        /// parent's later pages do too. Neither holds for an unordered listing: keep the whole fan-out.
+        if (!listing_is_ordered)
+            return;
+
         /// `follow_up` is the parent's pending continuation (if the page was truncated) followed by the
         /// child ranges of this page in ascending order. Keep the leading children that fit the budget (at
         /// least one, so the walk progresses) and replace everything else with a single "resume" range that

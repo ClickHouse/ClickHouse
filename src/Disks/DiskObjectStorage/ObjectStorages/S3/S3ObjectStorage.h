@@ -118,6 +118,9 @@ public:
     /// S3 Express / directory buckets reject `StartAfter` and only allow the '/' delimiter.
     bool supportsStartAfterListing() const override { return !client.get()->isS3ExpressBucket(); }
 
+    /// Directory buckets return `ListObjectsV2` results in no particular order.
+    bool listsKeysInLexicographicOrder() const override { return !client.get()->isS3ExpressBucket(); }
+
     /// Keyspace splitting of flat directories resumes by key, so it is available exactly where `StartAfter`
     /// is; without it, flat ranges are paginated serially and only the hierarchical delimiter walk runs
     /// in parallel.

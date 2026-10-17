@@ -162,6 +162,15 @@ public:
     /// (see `pageBytesUpperBound`), which every listing reserves against `max_buffered_object_bytes`; see
     /// `DEFAULT_MAX_BUFFERED_OBJECT_BYTES`. Zero means unknown: the reservation is then only the largest
     /// page listed so far, which does not bound the overshoot of pages bigger than the earlier ones.
+    /// `listing_is_ordered` states whether `list_level` returns entries in ascending lexicographic order
+    /// across all pages of a listing (see `IObjectStorage::listsKeysInLexicographicOrder`). S3 Express /
+    /// directory buckets do not, and then every shortcut that relies on the order is off: flat keyspace
+    /// splitting, the `root_range_end` early stop and the single-page `is_marker_only_prefix` stop (both
+    /// must be left empty, or the constructor throws), and the pending-range budget trim of a hierarchical
+    /// page, whose resume range skips the entries not after the last kept child. Every range is then
+    /// paginated to its end by continuation tokens only, so the pending-range budget is exceeded by at most
+    /// one page of child ranges per listed page instead of being trimmed; the depth-first walk still keeps
+    /// the frontier bounded by `O(num_threads * tree_depth * page_size)` ranges.
     ObjectStorageParallelListingIterator(
         std::string root_prefix_,
         size_t num_threads_,
@@ -176,7 +185,8 @@ public:
         bool allow_start_after_ = true,
         std::string root_range_end_ = {},
         std::function<bool(const std::string & common_prefix)> is_marker_only_prefix_ = {},
-        size_t max_page_bytes_bound_ = 0);
+        size_t max_page_bytes_bound_ = 0,
+        bool listing_is_ordered_ = true);
 
     ~ObjectStorageParallelListingIterator() override;
 
@@ -325,7 +335,8 @@ private:
     /// one, so the walk progresses) and represent the rest as a single range — a `StartAfter` resume of
     /// `range` after the last kept child for a hierarchical page (`hierarchical`; also subsumes the parent's
     /// pending continuation, and drops the already-covered tail of `batch`), or the merged contiguous tail
-    /// slice for a keyspace split. Requires lock (it reads `pending_range_bytes`).
+    /// slice for a keyspace split. Keeps a hierarchical page whole when `listing_is_ordered` is false, since
+    /// the resume relies on the order. Requires lock (it reads `pending_range_bytes`).
     void trimToBudgetLocked(
         const ListRange & range,
         bool hierarchical,
@@ -350,6 +361,8 @@ private:
     const size_t max_pending_range_bytes;
     /// Whether the storage accepts `start_after` (`StartAfter` of `ListObjectsV2`); see the constructor.
     const bool allow_start_after;
+    /// Whether listings return entries in ascending lexicographic order; see the constructor.
+    const bool listing_is_ordered;
     const ListLevelFunction list_level;
     /// Tags-free existence probe for the flat keyspace split; see `ProbeLevelFunction`.
     const ProbeLevelFunction probe_level;
