@@ -46,10 +46,18 @@ UInt64 alignUpTo4(UInt64 size)
 }
 
 /// A file is read only once and never seeked backwards while the header is being parsed, so the
-/// number of bytes consumed so far is the current offset in the file.
-void checkHeaderSize(ReadBuffer & in)
+/// number of bytes consumed since the magic bytes is the current offset in the file. The count of
+/// the buffer itself is not that offset: when the format is detected automatically, the buffer is
+/// a `PeekableReadBuffer` whose count includes the bytes read by the formats probed before, which
+/// a rollback does not subtract.
+UInt64 headerOffset(const ReadBuffer & in, size_t header_begin)
 {
-    if (in.count() > MAX_HEADER_SIZE)
+    return in.count() - header_begin;
+}
+
+void checkHeaderSize(const ReadBuffer & in, size_t header_begin)
+{
+    if (headerOffset(in, header_begin) > MAX_HEADER_SIZE)
         throw Exception(ErrorCodes::INCORRECT_DATA, "The header of the NetCDF file is larger than {} bytes", MAX_HEADER_SIZE);
 }
 
@@ -130,7 +138,7 @@ UInt64 readOffset(ReadBuffer & in, UInt8 version)
     return static_cast<UInt64>(value);
 }
 
-String readName(ReadBuffer & in, UInt8 version)
+String readName(ReadBuffer & in, UInt8 version, size_t header_begin)
 {
     UInt64 length = readSize(in, version);
     if (length > NETCDF_MAX_NAME_LENGTH)
@@ -139,7 +147,7 @@ String readName(ReadBuffer & in, UInt8 version)
     String name;
     readBytes(in, length, name);
     skipPadding(in, length);
-    checkHeaderSize(in);
+    checkHeaderSize(in, header_begin);
     return name;
 }
 
@@ -181,7 +189,7 @@ UInt64 readListHeader(ReadBuffer & in, UInt8 version, Int32 expected_tag, const 
     return num_elements;
 }
 
-std::vector<NetCDFAttribute> readAttributeList(ReadBuffer & in, UInt8 version)
+std::vector<NetCDFAttribute> readAttributeList(ReadBuffer & in, UInt8 version, size_t header_begin)
 {
     UInt64 num_attributes = readListHeader(in, version, NC_ATTRIBUTE, "attributes");
 
@@ -191,7 +199,7 @@ std::vector<NetCDFAttribute> readAttributeList(ReadBuffer & in, UInt8 version)
     for (UInt64 i = 0; i < num_attributes; ++i)
     {
         NetCDFAttribute attribute;
-        attribute.name = readName(in, version);
+        attribute.name = readName(in, version, header_begin);
         attribute.type = checkNetCDFType(readTag(in), version);
         attribute.num_elements = readSize(in, version);
 
@@ -205,7 +213,7 @@ std::vector<NetCDFAttribute> readAttributeList(ReadBuffer & in, UInt8 version)
 
         readBytes(in, data_size, attribute.data);
         skipPadding(in, data_size);
-        checkHeaderSize(in);
+        checkHeaderSize(in, header_begin);
 
         attributes.push_back(std::move(attribute));
     }
@@ -358,6 +366,8 @@ void NetCDFHeader::resolveNumberOfRecords(UInt64 file_size)
 
 NetCDFHeader readNetCDFHeader(ReadBuffer & in)
 {
+    const size_t header_begin = in.count();
+
     char magic[4];
     in.readStrict(magic, sizeof(magic));
 
@@ -404,7 +414,7 @@ NetCDFHeader readNetCDFHeader(ReadBuffer & in)
     for (UInt64 i = 0; i < num_dimensions; ++i)
     {
         NetCDFDimension dimension;
-        dimension.name = readName(in, header.version);
+        dimension.name = readName(in, header.version, header_begin);
         checkNameOfHeaderObject(dimension.name, "dimension");
         dimension.length = readSize(in, header.version);
 
@@ -430,14 +440,14 @@ NetCDFHeader readNetCDFHeader(ReadBuffer & in)
     if (header.unlimited_dimension_id)
         header.dimensions[*header.unlimited_dimension_id].length = header.num_records;
 
-    header.attributes = readAttributeList(in, header.version);
+    header.attributes = readAttributeList(in, header.version, header_begin);
 
     UInt64 num_variables = readListHeader(in, header.version, NC_VARIABLE, "variables");
     header.variables.reserve(std::min<UInt64>(num_variables, 1024));
     for (UInt64 i = 0; i < num_variables; ++i)
     {
         NetCDFVariable variable;
-        variable.name = readName(in, header.version);
+        variable.name = readName(in, header.version, header_begin);
         checkNameOfHeaderObject(variable.name, "variable");
 
         UInt64 rank = readSize(in, header.version);
@@ -463,7 +473,7 @@ NetCDFHeader readNetCDFHeader(ReadBuffer & in)
             variable.dimension_ids.push_back(dimension_id);
         }
 
-        variable.attributes = readAttributeList(in, header.version);
+        variable.attributes = readAttributeList(in, header.version, header_begin);
         variable.type = checkNetCDFType(readTag(in), header.version);
 
         /// The declared size is redundant: it is the size of the data of the variable, or of one of
@@ -484,11 +494,11 @@ NetCDFHeader readNetCDFHeader(ReadBuffer & in)
                     "The size of the variable {} of the NetCDF file does not fit in 64 bits", variable.name);
         }
 
-        checkHeaderSize(in);
+        checkHeaderSize(in, header_begin);
         header.variables.push_back(std::move(variable));
     }
 
-    header.size = in.count();
+    header.size = headerOffset(in, header_begin);
 
     /// The records of all record variables are interleaved: the file holds the slabs of every
     /// record variable for the record 0, then the same slabs for the record 1, and so on. Each slab
