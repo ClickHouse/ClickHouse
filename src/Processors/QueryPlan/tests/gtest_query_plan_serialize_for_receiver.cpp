@@ -84,7 +84,11 @@ TEST(QueryPlanRequiredSerializationVersion, WindowStepRaisesRequiredVersion)
     EXPECT_EQ(plan.getRequiredSerializationVersion(), 1u);
 
     plan.addStep(std::make_unique<WindowStep>(
-        plan.getCurrentHeader(), WindowDescription{}, std::vector<WindowFunctionDescription>{}, false));
+        plan.getCurrentHeader(),
+        WindowDescription{},
+        std::vector<WindowFunctionDescription>{},
+        false,
+        SortingStep::Settings(DEFAULT_BLOCK_SIZE)));
     EXPECT_EQ(plan.getRequiredSerializationVersion(), UInt64(DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_STEP));
 }
 

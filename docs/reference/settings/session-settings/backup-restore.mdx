@@ -29,7 +29,7 @@ Maximum size of batch for multiread request to [Zoo]Keeper during backup or rest
 
 <SettingsInfoBlock type="UInt64" default_value="3600" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "3600"},{"label": "New setting."}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "3600"},{"label": "New setting."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "3600"},{"label": "Keep the default regardless of `compatibility`."}]}, {"id": "row-2","items": [{"label": "24.11"},{"label": "3600"},{"label": "New setting."}]}, {"id": "row-3","items": [{"label": "24.10"},{"label": "3600"},{"label": "New setting."}]}]}/>
 
 If a host during a BACKUP ON CLUSTER or RESTORE ON CLUSTER operation doesn't recreate its ephemeral 'alive' node in ZooKeeper for this amount of time then the whole backup or restore is considered as failed.
 This value should be bigger than any reasonable time for a host to reconnect to ZooKeeper after a failure.
@@ -39,7 +39,7 @@ Zero means unlimited.
 
 <SettingsInfoBlock type="UInt64" default_value="180" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "180"},{"label": "New setting."}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "180"},{"label": "New setting."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "180"},{"label": "Keep the default regardless of `compatibility`."}]}, {"id": "row-2","items": [{"label": "24.11"},{"label": "180"},{"label": "New setting."}]}, {"id": "row-3","items": [{"label": "24.10"},{"label": "180"},{"label": "New setting."}]}]}/>
 
 How long the initiator should wait for other host to react to the 'error' node and stop their work on the current BACKUP ON CLUSTER or RESTORE ON CLUSTER operation.
 
@@ -68,7 +68,7 @@ Should be big enough so the whole operation won't fail because of a temporary [Z
 
 <SettingsInfoBlock type="UInt64" default_value="20" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "20"},{"label": "New setting."}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "20"},{"label": "New setting."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "20"},{"label": "Keep the default regardless of `compatibility`."}]}, {"id": "row-2","items": [{"label": "24.11"},{"label": "20"},{"label": "New setting."}]}, {"id": "row-3","items": [{"label": "24.10"},{"label": "20"},{"label": "New setting."}]}]}/>
 
 Max retries for [Zoo]Keeper operations while handling an error of a BACKUP ON CLUSTER or RESTORE ON CLUSTER operation.
 
@@ -76,7 +76,7 @@ Max retries for [Zoo]Keeper operations while handling an error of a BACKUP ON CL
 
 <SettingsInfoBlock type="UInt64" default_value="20" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "20"},{"label": "New setting."}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "20"},{"label": "New setting."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "20"},{"label": "Keep the default regardless of `compatibility`."}]}, {"id": "row-2","items": [{"label": "24.11"},{"label": "20"},{"label": "New setting."}]}, {"id": "row-3","items": [{"label": "24.10"},{"label": "20"},{"label": "New setting."}]}]}/>
 
 Max retries for [Zoo]Keeper operations during the initialization of a BACKUP ON CLUSTER or RESTORE ON CLUSTER operation.
 

@@ -450,6 +450,12 @@ struct BackupsWorker::BackupStarter
         if (is_internal_backup && !query_context->isDDLOrOnClusterInternal())
             throw Exception(ErrorCodes::ACCESS_DENIED, "Setting 'internal' cannot be set explicitly");
 
+        /// `backup_uuid` is how a backup proves that the lock file in the destination is its own:
+        /// a user-chosen value could repeat the UUID of a backup in progress and take over its lock.
+        /// Only queries initiated by another query may carry it (the initiator passes its UUID to them).
+        if (backup_settings.backup_uuid && !query_context->isDDLOrOnClusterInternal())
+            throw Exception(ErrorCodes::ACCESS_DENIED, "Setting 'backup_uuid' cannot be set explicitly");
+
         on_cluster = !backup_query->cluster.empty() || is_internal_backup;
 
         if (!backup_settings.backup_uuid)
@@ -465,7 +471,8 @@ struct BackupsWorker::BackupStarter
         if (is_internal_backup)
             backup_id += "-internal-" + backup_settings.host_id;
 
-        if (backup_settings.data_file_name_generator == BackupDataFileNameGeneratorType::FirstFileName)
+        /// An internal backup must name data files like the initiator, which sends its generator unless it is the default.
+        if (!is_internal_backup && backup_settings.data_file_name_generator == BackupDataFileNameGeneratorType::FirstFileName)
             backup_settings.data_file_name_generator = SettingFieldBackupDataFileNameGeneratorTypeTraits::fromString(
                 backup_context->getConfigRef().getString("backups.data_file_name_generator", ""));
 
@@ -680,6 +687,7 @@ BackupMutablePtr BackupsWorker::openBackupForWriting(
     /// workers never write a manifest (writeBackupMetadata asserts !is_internal_backup), so this is the id readers see.
     backup_create_params.backup_id = backup_settings.id.empty() ? toString(*backup_settings.backup_uuid) : backup_settings.id;
     backup_create_params.deduplicate_files = backup_settings.deduplicate_files;
+    backup_create_params.fsync_backup_files = backup_settings.fsync_backup_files;
     backup_create_params.allow_s3_native_copy = backup_settings.allow_s3_native_copy;
     backup_create_params.allow_azure_native_copy = backup_settings.allow_azure_native_copy;
     backup_create_params.use_same_s3_credentials_for_base_backup = backup_settings.use_same_s3_credentials_for_base_backup;

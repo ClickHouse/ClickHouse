@@ -82,9 +82,9 @@ SELECT count() FROM my_lake.`analytics.events`
 
 تتطلب العديد من عمليات التكامل علامة تفعيل لميزة معيّنة قبل استخدامها لأول مرة. تحقّق من إصدار خدمتك إذا فشل `CREATE DATABASE` بسبب خطأ في الأذونات.
 
-بالنسبة إلى اتصالات الكتالوج، لكل نوع من أنواع الكتالوج علامة خاصة به. راجع [الاتصال بالكتالوجات](/ar/guides/use-cases/data-warehousing/getting-started/connecting-catalogs) للحصول على نظرة عامة، و[مرجع DataLakeCatalog](/ar/reference/engines/database-engines/datalake) للاطّلاع على تفاصيل الإعدادات. أما إعداد كل كتالوج على حدة، فتجده في [دليل الكتالوجات](/ar/guides/use-cases/data-warehousing/reference).
+بالنسبة إلى اتصالات الكتالوج، لكل نوع من أنواع الكتالوج علامة خاصة به. راجع [الاتصال بالكتالوجات](/ar/guides/use-cases/data-warehousing/getting-started/connecting-catalogs) للحصول على نظرة عامة، و[مرجع DataLakeCatalog](/ar/reference/engines/database-engines/datalake) للاطّلاع على تفاصيل الإعدادات. أما إعداد كل كتالوج على حدة، فتجده في [أدلة الكتالوجات](/ar/guides/use-cases/data-warehousing/reference).
 
-بالنسبة إلى عمليات الكتابة، يتطلب Iceberg [allow&#95;insert&#95;into&#95;iceberg](/ar/reference/settings/session-settings/allow#allow_insert_into_iceberg) ‏(25.7+، وBeta بدءًا من 26.2). راجع [الكتابة إلى بحيرات البيانات](/ar/guides/use-cases/data-warehousing/getting-started/writing-data). ويتطلب Delta Lake [allow&#95;delta&#95;lake&#95;writes](/ar/reference/settings/session-settings/allow-experimental#allow_experimental_delta_lake_writes) ‏(25.9+). وتوضّح [مصفوفة الدعم](/ar/guides/use-cases/data-warehousing/support-matrix) العلامات التي تنطبق على كل تنسيق وكل عملية.
+بالنسبة إلى عمليات الكتابة، يتطلب Iceberg [allow&#95;insert&#95;into&#95;iceberg](/ar/reference/settings/session-settings/allow#allow_insert_into_iceberg) ‏(25.7+، وBeta بدءًا من 26.2). راجع [الكتابة إلى بحيرات البيانات](/ar/guides/use-cases/data-warehousing/getting-started/writing-data). ويتطلب Delta Lake [allow&#95;delta&#95;lake&#95;writes](/ar/reference/settings/session-settings/allow#allow_delta_lake_writes) ‏(25.9+). وتوضّح [مصفوفة الدعم](/ar/guides/use-cases/data-warehousing/support-matrix) العلامات التي تنطبق على كل تنسيق وكل عملية.
 
 <div id="query-performance">
   ## حسّن أداء الاستعلامات
@@ -133,6 +133,12 @@ WHERE event_time >= '2026-03-01'
 | Paimon     | [paimonS3Cluster()](/ar/reference/functions/table-functions/paimonCluster)                                                                                       |
 
 يمكنك دمج قراءات العناقيد مع إعدادات أداء أخرى.
+
+### دوال العنقود والحوسبة عند الطلب {#cluster-functions-and-on-demand-compute}
+
+توزّع إصدارات العنقود مثل [`icebergS3Cluster`](/ar/reference/functions/table-functions/icebergCluster) و[`deltaLakeCluster`](/ar/reference/functions/table-functions/deltalakeCluster) عمليات قراءة الملفات على العُقد في عنقودك الحالي، إلا أن دالة العنقود نفسها لا تضيف أي موارد حوسبة. أما الحوسبة عند الطلب، فهي إمكانية في ClickHouse Cloud تخصّص مؤقتًا عمّالًا إضافيين من مجمّع مُدار للاستعلامات المؤهلة، وذلك عبر الخدمة ونقطة النهاية الحاليتين لديك.
+
+خلال المعاينة الخاصة، لا تدعم الحوسبة عند الطلب سوى استعلامات `SELECT` المؤهلة على بيانات Apache Iceberg وDelta Lake المدعومة. راجع [توثيق الحوسبة عند الطلب](/ar/products/cloud/features/infrastructure/on-demand-compute) للاطلاع على شروط الأهلية والقيود.
 
 <div id="snapshot-bounds">
   ### قيّد قراءات الدُفعات بنطاق اللقطات
@@ -270,16 +276,14 @@ SETTINGS
 
 خزّن إصدار النهاية بعد كل عملية تحميل ناجحة، ومرّره باعتباره إصدار البداية في التشغيل التالي. تتضمن النتيجة أعمدة CDF (`_change_type`, `_commit_version`, `_commit_timestamp`). تعامل مع هذه الأعمدة قبل تحميل البيانات إلى الجدول الهدف. للاطلاع على النمط العام للّقطات، راجع [تقييد قراءات الدفعات باللقطات](#snapshot-bounds).
 
-<div id="delta-write-settings">
-  #### عمليات الكتابة في Delta Lake
-</div>
+#### عمليات الكتابة في Delta Lake {#delta-write-settings}
 
-إلى جانب [allow&#95;delta&#95;lake&#95;writes](/ar/reference/settings/session-settings/allow-experimental#allow_experimental_delta_lake_writes) ‏(25.9+)، تحكَّم في حجم ملف الإخراج أثناء الإدراج:
+إلى جانب [allow&#95;delta&#95;lake&#95;writes](/ar/reference/settings/session-settings/allow#allow_delta_lake_writes) ‏(25.9+)، تحكَّم في حجم ملف الإخراج أثناء الإدراج:
 
-| الإعداد                                                                                                                                                          | منذ  | الغرض                                       |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- | ------------------------------------------- |
-| [delta&#95;lake&#95;insert&#95;max&#95;rows&#95;in&#95;data&#95;file](/ar/reference/settings/session-settings/delta-lake#delta_lake_insert_max_rows_in_data_file)   | 25.9 | الحد الأقصى للصفوف في كل ملف بيانات ناتج   |
-| [delta&#95;lake&#95;insert&#95;max&#95;bytes&#95;in&#95;data&#95;file](/ar/reference/settings/session-settings/delta-lake#delta_lake_insert_max_bytes_in_data_file) | 25.9 | الحد الأقصى للبايتات في كل ملف بيانات ناتج |
+| الإعداد                                                                                                                                                             | منذ  | الغرض                                            |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- | ------------------------------------------------ |
+| [delta&#95;lake&#95;insert&#95;max&#95;rows&#95;in&#95;data&#95;file](/ar/reference/settings/session-settings/delta-lake#delta_lake_insert_max_rows_in_data_file)   | 25.9 | الحد الأقصى لعدد الصفوف في كل ملف بيانات ناتج   |
+| [delta&#95;lake&#95;insert&#95;max&#95;bytes&#95;in&#95;data&#95;file](/ar/reference/settings/session-settings/delta-lake#delta_lake_insert_max_bytes_in_data_file) | 25.9 | الحد الأقصى لعدد البايتات في كل ملف بيانات ناتج |
 
 ```sql
 SET allow_delta_lake_writes = 1;
@@ -371,9 +375,7 @@ WHERE query_id = '<previous_query_id>';
 
 راجع صفحتي المرجع [iceberg&#95;metadata&#95;log](/ar/reference/system-tables/iceberg_metadata_log) و[delta&#95;lake&#95;metadata&#95;log](/ar/reference/system-tables/delta_metadata_log) للاطلاع على تفاصيل الأعمدة وخيارات مستوى التفصيل.
 
-<div id="next-steps">
-  ## الخطوات التالية
-</div>
+## الخطوات التالية {#next-steps}
 
 * [البدء](/ar/guides/use-cases/data-warehousing/getting-started/overview) — دليل شامل من الاستعلام المباشر إلى إعادة الكتابة
 * [الاستعلام المباشر](/ar/guides/use-cases/data-warehousing/getting-started/querying-directly) — الدوال الجدولية والمحركات وإصدارات العناقيد للتنسيقات الأربعة

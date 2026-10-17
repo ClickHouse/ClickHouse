@@ -175,14 +175,19 @@ struct IntegerRoundingComputation
 };
 
 
-/// `Round` rounds half to even regardless of the current floating point rounding mode.
+/// `Round` rounds half to even regardless of the current floating point rounding mode, except on x86 without SSE4.1,
+/// where `roundeven` would be a libm call needing glibc 2.25, and `rint` rounds half to even only in the default rounding mode.
 /// Plain scalar code, so the loop in `FloatRoundingImpl::apply` vectorizes to the widest vectors of the target.
 
 inline float roundWithMode(float x, RoundingMode mode)
 {
     switch (mode)
     {
+#if defined(__x86_64__) && !defined(__SSE4_1__)
+        case RoundingMode::Round: return rintf(x);
+#else
         case RoundingMode::Round: return __builtin_roundevenf(x);
+#endif
         case RoundingMode::Floor: return floorf(x);
         case RoundingMode::Ceil: return ceilf(x);
         case RoundingMode::Trunc: return truncf(x);
@@ -195,7 +200,11 @@ inline double roundWithMode(double x, RoundingMode mode)
 {
     switch (mode)
     {
+#if defined(__x86_64__) && !defined(__SSE4_1__)
+        case RoundingMode::Round: return rint(x);
+#else
         case RoundingMode::Round: return __builtin_roundeven(x);
+#endif
         case RoundingMode::Floor: return floor(x);
         case RoundingMode::Ceil: return ceil(x);
         case RoundingMode::Trunc: return trunc(x);
@@ -569,17 +578,9 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"x", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "A number to round"},
-        };
-        FunctionArgumentDescriptors optional_args{
-            {"N", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeInteger), nullptr, "The number of decimal places to round to"},
-        };
-        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
-
-        return arguments[0].type;
+        return "(T : Number, [NativeInteger]) -> T";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
@@ -649,6 +650,11 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    String getSignatureString() const override
+    {
+        return "(X : Number, const Array(B : Number)) -> leastSupertype(X, B)";
+    }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
