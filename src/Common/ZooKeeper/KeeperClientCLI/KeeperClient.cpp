@@ -72,6 +72,45 @@ String formatKeeperNodeName(const String & name)
     return result;
 }
 
+String normalizeKeeperPath(String path)
+{
+    std::vector<String> stack;
+    size_t i = 0;
+    while (i <= path.size())
+    {
+        size_t j = path.find('/', i);
+        if (j == String::npos)
+            j = path.size();
+
+        String part = path.substr(i, j - i);
+        i = j + 1;
+
+        if (part.empty() || part == ".")
+            continue;
+        if (part == "..")
+        {
+            if (!stack.empty())
+                stack.pop_back();
+            continue;
+        }
+        stack.push_back(std::move(part));
+    }
+
+    if (stack.empty())
+        return "/";
+
+    String result;
+    result.reserve(path.size());
+    result = "/";
+    for (size_t k = 0; k < stack.size(); ++k)
+    {
+        if (k > 0)
+            result += '/';
+        result += stack[k];
+    }
+    return result;
+}
+
 String KeeperClientBase::executeFourLetterCommand(const String & /* command */)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "4lwc is not implemented");
@@ -92,11 +131,15 @@ void KeeperClientBase::askConfirmation(const String & prompt, std::function<void
 
 fs::path KeeperClientBase::getAbsolutePath(const String & relative) const
 {
-    String result;
+    String combined;
     if (relative.starts_with('/'))
-        result = fs::weakly_canonical(relative);
+        combined = relative;
+    else if (cwd == fs::path("/"))
+        combined = "/" + relative;
     else
-        result = fs::weakly_canonical(cwd / relative);
+        combined = cwd.string() + "/" + relative;
+
+    String result = normalizeKeeperPath(combined);
 
     if (result.ends_with('/') && result.size() > 1)
         result.pop_back();
