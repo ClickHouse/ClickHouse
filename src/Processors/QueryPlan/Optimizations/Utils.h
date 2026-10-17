@@ -10,6 +10,7 @@ namespace DB
 {
 
 class ActionsDAG;
+class IFunctionBase;
 
 struct IDescriptionHolder
 {
@@ -80,6 +81,8 @@ enum class FilterResult
 /// (`rowNumberInAllBlocks`, `aiEmbed`), or has observable side effects (`sleep`), so an observer can see how
 /// many times and on which rows it was evaluated.
 [[nodiscard]] bool isSensitiveToEvaluationCount(const ActionsDAG & dag);
+/// The negation of the above for one function (not looking into lambdas).
+[[nodiscard]] bool isInsensitiveToEvaluationCount(const IFunctionBase & function);
 
 /// True if optimizeExchanges will lift a plain gather above this step, so a scatter/gather pair separated
 /// by it still collapses. Shared with findGatherOverRead, which has to predict that rewrite.

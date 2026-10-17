@@ -68,11 +68,20 @@ public:
 
     explicit FunctionSqr(ContextPtr context)
         : multiply(FunctionFactory::instance().get("multiply", context))
+        , check_decimal_overflow(decimalCheckArithmeticOverflow(context))
+        , date_time_overflow_behavior(getDateTimeOverflowBehavior(context))
     {
     }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
+
+    /// What the `multiply` it builds captures, see `IFunctionBase::updateHash`.
+    void updateHash(SipHash & hash) const override
+    {
+        hash.update(check_decimal_overflow);
+        hash.update(date_time_overflow_behavior);
+    }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
@@ -124,6 +133,8 @@ private:
     FunctionBasePtr buildMultiply(const ColumnWithTypeAndName & argument) const { return multiply->build({argument, argument}); }
 
     FunctionOverloadResolverPtr multiply;
+    bool check_decimal_overflow;
+    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior;
 };
 
 REGISTER_FUNCTION(Multiply)

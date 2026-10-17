@@ -3849,6 +3849,7 @@ public:
         else
             return false;
     }
+    bool isNameInsensitive() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
     {
         return !(IsDataTypeDateOrDateTime<ToDataType> && isNumber(*arguments[0].type));
