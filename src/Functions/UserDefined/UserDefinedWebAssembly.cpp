@@ -837,6 +837,11 @@ public:
                 if (stripped->equals(*expected_arguments[i]))
                     continue;
 
+                /// A bare `NULL` is `Nullable(Nothing)`; buildColumnarLayout casts it to the Nullable declared type.
+                if (arguments[i]->onlyNull() && !expected_arguments[i]->lowCardinality()
+                    && (expected_arguments[i]->isNullable() || expected_arguments[i]->canBeInsideNullable()))
+                    continue;
+
                 /// COLUMNAR_V1 keeps LowCardinality, so LowCardinality(T) and T match either way;
                 /// the cast in buildColumnarLayout converts the data. A nullable argument cannot be
                 /// passed as LowCardinality(T): the frame has no null map for it.
