@@ -139,7 +139,7 @@ public:
     std::unordered_map<int, WriteBufferFromFile> write_fds;
 private:
 
-    pid_t pid;
+    pid_t pid = -1;
     Config config;
     bool wait_called = false;
     bool do_not_terminate = false;
@@ -168,7 +168,7 @@ private:
     /// deadline has passed, so both wait paths stop at one shared budget.
     UInt64 remainingTerminationTimeoutMs();
 
-    ShellCommand(pid_t pid_, int & in_fd_, int & out_fd_, int & err_fd_, const Config & config);
+    ShellCommand(int & in_fd_, int & out_fd_, int & err_fd_, const Config & config);
 
     bool tryWaitProcessWithTimeout(size_t timeout_in_seconds);
     struct tryWaitResult;
