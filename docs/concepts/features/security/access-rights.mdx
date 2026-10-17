@@ -114,6 +114,10 @@ A row policy applies where the table data is read locally. For a [Distributed](/
 Row policies makes sense only if you have readonly access. If you can modify table or copy partitions between tables, it defeats the restrictions of row policies.
 </Note>
 
+<Note>
+A row policy is not a boundary on engines which merge several rows into one (`SummingMergeTree`, `AggregatingMergeTree`, `CoalescingMergeTree`, `GraphiteMergeTree`), because the merged row carries the values of the hidden rows as well, see [engines which merge rows](/reference/statements/create/row-policy#blending-table-engines).
+</Note>
+
 Management queries:
 
 - [CREATE ROW POLICY](/reference/statements/create/row-policy)
