@@ -17,7 +17,7 @@ SZ3	157	1	0	0	1	Experimental	SZ3 is a lossy compressor for floating-point data w
 T64	147	1	0	0	0	Production	Preprocessor. Crops unused high bits; puts them into a 64x64 bit matrix; optimized for 64-bit data types.
 ZSTD	144	1	1	0	0	Production	Good compression; pretty fast; best for high compression needs. Don’t use levels higher than 6.
 ZXC	159	1	1	0	0	Experimental	Asymmetric LZ codec (zxc): slow compression, very fast decompression, ratio between LZ4 and ZSTD. Levels 1..7.
-18
+19
 name
 method_byte
 is_compression
