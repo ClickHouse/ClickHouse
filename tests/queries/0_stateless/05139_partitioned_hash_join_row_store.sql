@@ -74,8 +74,8 @@ SELECT 'left all, defaults for the unmatched probe rows', pa FROM (SELECT
     (SELECT (count(), sum(cityHash64(p.p, b.k, ifNull(b.kn, 0), b.a, ifNull(b.b, 0), b.c, b.d, b.e, ifNull(b.f, ''), b.g, b.s, ifNull(b.h, ''), b.i, b.j))) FROM t_rs_probe AS p LEFT JOIN t_rs_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS pa);
 
 SELECT '-- left all, first unmatched rows';
-SELECT p.k, p.p, b.k, b.kn, b.a, b.b, b.c, b.d, hex(b.e), hex(b.f), b.g, b.s, hex(b.h), hex(b.i), b.j FROM t_rs_probe AS p LEFT JOIN t_rs_build AS b ON p.k = b.k WHERE b.k = 0 ORDER BY p.p LIMIT 3 SETTINGS join_algorithm = 'hash';
-SELECT p.k, p.p, b.k, b.kn, b.a, b.b, b.c, b.d, hex(b.e), hex(b.f), b.g, b.s, hex(b.h), hex(b.i), b.j FROM t_rs_probe AS p LEFT JOIN t_rs_build AS b ON p.k = b.k WHERE b.k = 0 ORDER BY p.p LIMIT 3 SETTINGS join_algorithm = 'hash';
+SELECT p.k, p.p, b.k, b.kn, b.a, b.b, b.c, b.d, hex(b.e), hex(b.f), b.g, b.s, hex(b.h), hex(b.i), b.j FROM t_rs_probe AS p LEFT JOIN t_rs_build AS b ON p.k = b.k WHERE b.k = 0 ORDER BY p.p, b.a LIMIT 3 SETTINGS join_algorithm = 'hash';
+SELECT p.k, p.p, b.k, b.kn, b.a, b.b, b.c, b.d, hex(b.e), hex(b.f), b.g, b.s, hex(b.h), hex(b.i), b.j FROM t_rs_probe AS p LEFT JOIN t_rs_build AS b ON p.k = b.k WHERE b.k = 0 ORDER BY p.p, b.a LIMIT 3 SETTINGS join_algorithm = 'hash';
 
 SELECT 'right all on a nullable key: non-joined rows plus the null-key rows', pa FROM (SELECT
     (SELECT (count(), sum(cityHash64(p.p, b.k, ifNull(b.kn, 0), b.a, ifNull(b.b, 0), b.c, b.d, b.e, ifNull(b.f, ''), b.g, b.s, ifNull(b.h, ''), b.i, b.j))) FROM t_rs_probe AS p RIGHT JOIN t_rs_build AS b ON p.k = b.kn SETTINGS join_algorithm = 'hash') AS pa)

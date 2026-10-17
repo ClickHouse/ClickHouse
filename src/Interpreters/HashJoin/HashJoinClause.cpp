@@ -1,5 +1,6 @@
 #include <Interpreters/HashJoin/HashJoinClause.h>
 
+#include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsScatter.h>
 #include <DataTypes/NullableUtils.h>
 #include <Interpreters/HashJoin/HashJoinMethodsImpl.h>
@@ -1946,6 +1947,7 @@ void HashJoinClause::insertSingleLaneBlock(FillBlock & fill)
     auto & ctx = *post_build_ctx;
     auto & state = ctx.worker_state[0];
     Input & input = fill.clauses[clause_idx];
+    const UInt8 * skip = input.skipData();
     /// In sections, each finished on the spot when its duplicate groups look complete (see
     /// `PassScratch::cheapToFinish`). The cells a section touched and the scratch it filled are then
     /// still cache-resident; one finish over the whole build at the end walks every duplicated key's
@@ -1963,12 +1965,14 @@ void HashJoinClause::insertSingleLaneBlock(FillBlock & fill)
             /*locators=*/nullptr,
             /*narrow_locators_data=*/nullptr,
             fill.block_no,
-            input.skipData());
+            skip);
         if (state.scratch.cheapToFinish())
             state.scratch_used_high_water = std::max(state.scratch_used_high_water, finishPassScratch(state.scratch, *state.writer));
     }
-    ProfileEvents::increment(ProfileEvents::HashJoinInsertedRows, fill.rows);
-    state.inserted_rows += fill.rows;
+    /// Rows with a NULL key or a filtered ON condition do not reach the table.
+    const size_t inserted = fill.rows - (skip ? countBytesInFilter(skip, 0, fill.rows) : 0);
+    ProfileEvents::increment(ProfileEvents::HashJoinInsertedRows, inserted);
+    state.inserted_rows += inserted;
     input.releaseInputs();
 }
 
