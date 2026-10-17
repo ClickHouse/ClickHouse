@@ -95,6 +95,8 @@ private:
 
 bool isS3ExpressEndpoint(const std::string & endpoint);
 
+bool isRefusedPrecondition(const Aws::S3::S3Error & error);
+
 struct ClientSettings
 {
     bool use_virtual_addressing = false;
