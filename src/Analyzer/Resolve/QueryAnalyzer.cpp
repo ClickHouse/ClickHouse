@@ -1657,7 +1657,8 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
                 alias_node,
                 {} /* compound_expression_source */,
                 scope,
-                identifier_resolve_context.allow_to_check_join_tree /* can_be_not_found */))
+                identifier_resolve_context.allow_to_check_join_tree /* can_be_not_found */,
+                getFoldableIdentifierSuffix(identifier_lookup, 1 /*qualifier_parts*/, scope.context->getSettingsRef()[Setting::column_and_query_name_matching])))
             {
                 scope.used_alias_names.insert(identifier_bind_part);
                 return { .resolved_identifier = resolved_identifier, .resolve_place = IdentifierResolvePlace::ALIASES };
@@ -5507,8 +5508,7 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
                         scope.scope_node->formatASTForErrorMessage());
                 }
 
-                auto current_join_tree_node_alias = current_join_tree_node->getAlias();
-                resolved_identifier->setAlias(current_join_tree_node_alias);
+                resolved_identifier->setAlias(current_join_tree_node->getAlias(), current_join_tree_node->getAliasQuote());
                 current_join_tree_node = resolved_identifier;
 
                 scope.table_expressions_in_resolve_process.insert(current_join_tree_node.get());

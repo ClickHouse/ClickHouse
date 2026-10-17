@@ -89,7 +89,8 @@ UNKNOWN_IDENTIFIER
 UNKNOWN_IDENTIFIER
 1
 2
---- standard: compound over ARRAY JOIN alias folds the alias part, tuple element keeps canonical spelling
+--- standard: compound over ARRAY JOIN alias folds the alias part and the tuple element, a double-quoted element stays exact
+a
 a
 a
 UNKNOWN_IDENTIFIER

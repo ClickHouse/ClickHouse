@@ -85,10 +85,11 @@ ${CLIENT_STANDARD} --query 'SELECT "Item" FROM (SELECT [1,2] AS arr) ARRAY JOIN 
 ${CLICKHOUSE_CLIENT} --query "SELECT ITEM FROM (SELECT [1,2] AS arr) ARRAY JOIN arr AS item" 2>&1 | grep -oF 'UNKNOWN_IDENTIFIER' | uniq
 ${CLICKHOUSE_CLIENT} --query "SELECT item FROM (SELECT [1,2] AS arr) ARRAY JOIN arr AS item"
 
-echo '--- standard: compound over ARRAY JOIN alias folds the alias part, tuple element keeps canonical spelling'
+echo '--- standard: compound over ARRAY JOIN alias folds the alias part and the tuple element, a double-quoted element stays exact'
 ${CLIENT_STANDARD} --query "SELECT ITEM.Name FROM (SELECT CAST([tuple('a')], 'Array(Tuple(Name String))') AS arr) ARRAY JOIN arr AS item"
 ${CLIENT_STANDARD} --query "SELECT ITEM.\"Name\" FROM (SELECT CAST([tuple('a')], 'Array(Tuple(Name String))') AS arr) ARRAY JOIN arr AS item"
-${CLIENT_STANDARD} --query "SELECT ITEM.name FROM (SELECT CAST([tuple('a')], 'Array(Tuple(Name String))') AS arr) ARRAY JOIN arr AS item" 2>&1 | grep -oF 'UNKNOWN_IDENTIFIER' | uniq
+${CLIENT_STANDARD} --query "SELECT ITEM.name FROM (SELECT CAST([tuple('a')], 'Array(Tuple(Name String))') AS arr) ARRAY JOIN arr AS item"
+${CLIENT_STANDARD} --query "SELECT ITEM.\"name\" FROM (SELECT CAST([tuple('a')], 'Array(Tuple(Name String))') AS arr) ARRAY JOIN arr AS item" 2>&1 | grep -oF 'UNKNOWN_IDENTIFIER' | uniq
 
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_col_interp_nulls (x Int32, Val Int32) ENGINE = Memory; INSERT INTO t_col_interp_nulls VALUES (1, 10)"
 

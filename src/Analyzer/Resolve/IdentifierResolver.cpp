@@ -41,6 +41,7 @@
 #include <Core/Joins.h>
 #include <base/scope_guard.h>
 #include <ranges>
+#include <set>
 
 
 namespace DB
@@ -215,11 +216,16 @@ QueryTreeNodePtr IdentifierResolver::wrapExpressionNodeInTupleElement(QueryTreeN
 QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierAsNestedPrefix(
     const Identifier & identifier,
     const AnalysisTableExpressionData & table_expression_data,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    const IdentifierName & foldable_name)
 {
     QueryTreeNodes nested_column_nodes;
     DataTypes nested_types;
     Array nested_names_array;
+
+    const bool use_folded_matching = !foldable_name.empty() && foldable_name.size() == identifier.getPartsSize();
+    /// Canonical spelling of the matched prefix: under folded matching case-sibling prefixes are ambiguous.
+    std::set<String> matched_prefixes;
 
     bool allow_compound = context->getSettingsRef()[Setting::analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested];
 
@@ -232,15 +238,21 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierAsNestedPrefix(
         IdentifierView suffix(column_identifier);
         size_t prefix_size = identifier.getPartsSize();
 
-        for (const auto & part : identifier.getParts())
+        for (size_t i = 0; i < prefix_size; ++i)
         {
-            if (suffix.empty() || part != suffix.front())
+            if (suffix.empty())
+                break;
+            if (use_folded_matching ? !identifierPartMatchesName(foldable_name[i], String(suffix.front())) : identifier[i] != suffix.front())
                 break;
 
             suffix.popFirst();
         }
 
         if (suffix.empty() || prefix_size + suffix.getPartsSize() != column_identifier.getPartsSize())
+            continue;
+
+        /// A pinned column matches only an exact reference.
+        if (use_folded_matching && table_expression_data.pinned_column_names.contains(column_name))
             continue;
 
         /// Ignore compound identifiers because of the compatibility setting.
@@ -276,10 +288,18 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierAsNestedPrefix(
         nested_column_nodes.push_back(column_node);
         nested_types.push_back(column_type);
         nested_names_array.push_back(suffix.getFullName());
+        if (use_folded_matching)
+            matched_prefixes.insert(column_identifier[0]);
     }
 
     if (nested_types.empty())
         return nullptr;
+
+    if (matched_prefixes.size() > 1)
+        throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+            "Identifier '{}' is ambiguous under standard name matching: it matches Nested prefixes {}",
+            identifier.getFullName(),
+            fmt::join(matched_prefixes, ", "));
 
     auto nested_function_node = std::make_shared<FunctionNode>("nested");
     auto & nested_function_node_arguments = nested_function_node->getArguments().getNodes();
@@ -520,7 +540,8 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromCompoundExpression(
     const QueryTreeNodePtr & compound_expression,
     String compound_expression_source,
     IdentifierResolveScope & scope,
-    bool can_be_not_found)
+    bool can_be_not_found,
+    const IdentifierName & foldable_nested_path)
 {
     Identifier compound_expression_identifier;
     for (size_t i = 0; i < identifier_bind_size; ++i)
@@ -531,7 +552,25 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromCompoundExpression(
 
     auto expression_type = compound_expression->getResultType();
 
-    if (!expression_type->hasSubcolumn(nested_path.getFullName()))
+    String nested_path_name(nested_path.getFullName());
+
+    /// Under `standard` name matching the nested path is matched through ASCII case folding,
+    /// with double-quoted parts kept exact. Dynamic subcolumns (e.g. JSON paths) are not
+    /// enumerable, so when nothing is found the exact name is checked below.
+    if (!foldable_nested_path.empty() && foldable_nested_path.size() == nested_path.getPartsSize())
+    {
+        auto matches = collectFoldedNameMatchesInNames(expression_type->getSubcolumnNames(), foldable_nested_path);
+        if (matches.size() > 1)
+            throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                "Identifier '{}' is ambiguous under standard name matching. Candidates: {}. In scope {}",
+                expression_identifier.getFullName(),
+                fmt::join(matches, ", "),
+                scope.scope_node->formatASTForErrorMessage());
+        if (matches.size() == 1)
+            nested_path_name = std::move(matches.front());
+    }
+
+    if (!expression_type->hasSubcolumn(nested_path_name))
     {
         if (can_be_not_found)
             return {};
@@ -564,7 +603,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromCompoundExpression(
             scope.scope_node->formatASTForErrorMessage());
     }
 
-    return wrapExpressionNodeInSubcolumn(compound_expression, std::string(nested_path.getFullName()), scope.context);
+    return wrapExpressionNodeInSubcolumn(compound_expression, std::move(nested_path_name), scope.context);
 }
 
 /** Resolve identifier from expression arguments.
@@ -658,7 +697,9 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromExpressionAr
 
     if (!resolve_full_identifier && identifier_lookup.identifier.isCompound() && identifier_lookup.isExpressionLookup())
     {
-        if (auto resolved_identifier = tryResolveIdentifierFromCompoundExpression(identifier_lookup.identifier, 1 /*identifier_bind_size*/, it->second, {}, scope))
+        if (auto resolved_identifier = tryResolveIdentifierFromCompoundExpression(
+                identifier_lookup.identifier, 1 /*identifier_bind_size*/, it->second, {}, scope, false /*can_be_not_found*/,
+                getFoldableIdentifierSuffix(identifier_lookup, 1 /*qualifier_parts*/, name_match_mode)))
             return { .resolved_identifier = resolved_identifier, .resolve_place = IdentifierResolvePlace::EXPRESSION_ARGUMENTS };
         return {};
     }
@@ -1025,7 +1066,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
         /// For the identifier `x` and columns `x.a Array(String)` and `x.b Array(String)`
         /// we resolve `x` into Nested(a String, b String).
         if (auto nested_function_node = tryResolveIdentifierAsNestedPrefix(
-                identifier_without_column_qualifier, table_expression_data, scope.context))
+                identifier_without_column_qualifier, table_expression_data, scope.context, foldable_suffix))
         {
             clone_is_needed = false;
             result_expression = std::move(nested_function_node);
@@ -2601,13 +2642,15 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromArrayJoin(co
         }
 
         /// Resolve subcolumns. Example : SELECT x.y.z FROM tab ARRAY JOIN arr AS x
+        size_t identifier_bind_size = identifier_lookup.identifier.getPartsSize() - identifier_view.getPartsSize();
         auto compound_expr = tryResolveIdentifierFromCompoundExpression(
             identifier_lookup.identifier,
-            identifier_lookup.identifier.getPartsSize() - identifier_view.getPartsSize() /*identifier_bind_size*/,
+            identifier_bind_size,
             array_join_column,
             {} /* compound_expression_source */,
             scope,
-            true /* can_be_not_found */);
+            true /* can_be_not_found */,
+            getFoldableIdentifierSuffix(identifier_lookup, identifier_bind_size, name_match_mode));
 
         if (compound_expr)
             return { .resolved_identifier = compound_expr, .resolve_place = IdentifierResolvePlace::JOIN_TREE };

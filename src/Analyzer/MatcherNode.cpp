@@ -277,6 +277,14 @@ ASTPtr MatcherNode::toASTImpl(const ConvertToASTOptions & options) const
             transformers->children.push_back(column_transformer->toAST(options));
     }
 
+    /// Keep per-part quoting of the qualifier, which is semantic under `standard` name matching.
+    auto make_qualifier_ast = [&]() -> ASTPtr
+    {
+        if (qualified_identifier_name.size() == qualified_identifier.getPartsSize())
+            return make_intrusive<ASTIdentifier>(qualified_identifier_name);
+        return make_intrusive<ASTIdentifier>(Strings(qualified_identifier.getParts()));
+    };
+
     if (matcher_type == MatcherNodeType::ASTERISK)
     {
         if (qualified_identifier.empty())
@@ -295,8 +303,7 @@ ASTPtr MatcherNode::toASTImpl(const ConvertToASTOptions & options) const
         {
             auto qualified_asterisk = make_intrusive<ASTQualifiedAsterisk>();
 
-            auto identifier_parts = qualified_identifier.getParts();
-            qualified_asterisk->qualifier = make_intrusive<ASTIdentifier>(std::move(identifier_parts));
+            qualified_asterisk->qualifier = make_qualifier_ast();
             qualified_asterisk->children.push_back(qualified_asterisk->qualifier);
 
             if (transformers)
@@ -328,8 +335,7 @@ ASTPtr MatcherNode::toASTImpl(const ConvertToASTOptions & options) const
             auto regexp_matcher = make_intrusive<ASTQualifiedColumnsRegexpMatcher>();
             regexp_matcher->setPattern(columns_matcher->pattern());
 
-            auto identifier_parts = qualified_identifier.getParts();
-            regexp_matcher->qualifier = make_intrusive<ASTIdentifier>(std::move(identifier_parts));
+            regexp_matcher->qualifier = make_qualifier_ast();
             regexp_matcher->children.push_back(regexp_matcher->qualifier);
 
             if (transformers)
@@ -346,10 +352,14 @@ ASTPtr MatcherNode::toASTImpl(const ConvertToASTOptions & options) const
         auto column_list = make_intrusive<ASTExpressionList>();
         column_list->children.reserve(columns_identifiers.size());
 
-        for (const auto & identifier : columns_identifiers)
+        /// Keep per-part quoting, which is semantic under `standard` name matching.
+        bool has_columns_identifier_names = columns_identifier_names.size() == columns_identifiers.size();
+        for (size_t i = 0; i < columns_identifiers.size(); ++i)
         {
-            auto identifier_parts = identifier.getParts();
-            column_list->children.push_back(make_intrusive<ASTIdentifier>(std::move(identifier_parts)));
+            if (has_columns_identifier_names && columns_identifier_names[i].size() == columns_identifiers[i].getPartsSize())
+                column_list->children.push_back(make_intrusive<ASTIdentifier>(columns_identifier_names[i]));
+            else
+                column_list->children.push_back(make_intrusive<ASTIdentifier>(Strings(columns_identifiers[i].getParts())));
         }
 
         if (qualified_identifier.empty())
@@ -370,8 +380,7 @@ ASTPtr MatcherNode::toASTImpl(const ConvertToASTOptions & options) const
         {
             auto columns_list_matcher = make_intrusive<ASTQualifiedColumnsListMatcher>();
 
-            auto identifier_parts = qualified_identifier.getParts();
-            columns_list_matcher->qualifier = make_intrusive<ASTIdentifier>(std::move(identifier_parts));
+            columns_list_matcher->qualifier = make_qualifier_ast();
             columns_list_matcher->column_list = std::move(column_list);
             columns_list_matcher->children.push_back(columns_list_matcher->qualifier);
             columns_list_matcher->children.push_back(columns_list_matcher->column_list);

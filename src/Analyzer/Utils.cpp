@@ -491,16 +491,15 @@ static ASTPtr convertIntoTableExpressionAST(
         const auto & identifier_node = table_expression_node->as<IdentifierNode &>();
         const auto & identifier = identifier_node.getIdentifier();
 
-        if (identifier.getPartsSize() == 1)
-            table_expression_node_ast = make_intrusive<ASTTableIdentifier>(identifier[0]);
-        else if (identifier.getPartsSize() == 2)
-            table_expression_node_ast = make_intrusive<ASTTableIdentifier>(identifier[0], identifier[1]);
-        else
+        if (identifier.getPartsSize() != 1 && identifier.getPartsSize() != 2)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Identifier for table expression must contain 1 or 2 parts. Actual '{}'",
                 identifier.getFullName());
 
-        table_expression_node_ast->setAlias(identifier_node.getAlias());
+        /// Keep per-part and alias quoting, which is semantic under `standard` name matching.
+        auto table_identifier_ast = make_intrusive<ASTTableIdentifier>(identifier_node.getIdentifierName());
+        table_identifier_ast->setAlias(identifier_node.getAlias(), identifier_node.getAliasQuote());
+        table_expression_node_ast = std::move(table_identifier_ast);
     }
     else
     {
