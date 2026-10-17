@@ -113,7 +113,7 @@ To customize workload the following settings could be used:
 * `max_burst_bytes` - the maximum number of bytes that could be processed by the workload without being throttled (for every resource independently).
 * `max_concurrent_threads` - the limit on the number of threads for queries in this workload.
 * `max_concurrent_threads_ratio_to_cores` - the same as `max_concurrent_threads`, but normalized to the number of available CPU cores.
-* `max_threads_soft_limit` - (CPU only) per-query soft limit on CPU slots: requests of a query that already holds this many slots are served after all other requests of the workload. See [Per-query soft limit on CPU slots](#max-threads-soft-limit).
+* `max_threads_soft_limit` - per-query soft limit on CPU threads: requests of a query that already holds this many slots are served after all other requests of the workload. See [Per-query soft limit on CPU slots](#max-threads-soft-limit).
 * `max_cpus` - the limit on the number of CPU cores to serve queries in this workload.
 * `max_cpu_share` - the same as `max_cpus`, but normalized to the number of available CPU cores.
 * `max_burst_cpu_seconds` - the maximum number of CPU seconds that could be consumed by the workload without being throttled due to `max_cpus`.
@@ -244,7 +244,15 @@ SELECT ... SETTINGS workload = 'all', weight_lowering_cpu_seconds = 10, weight_l
 
 ### Per-query soft limit on CPU slots {#max-threads-soft-limit}
 
-The `max_threads_soft_limit` workload setting keeps wide queries from crowding out narrow ones inside a workload without capping them. Once a query holds this many CPU slots, its requests for further slots are *demoted*: they wait in a separate overflow queue, which is served only when no other CPU request of the workload is waiting. A demoted request goes back to the normal order as soon as the query holds fewer slots than the limit again, so a query is never starved below the limit. Demoted requests are served first-come-first-served among themselves, whatever the `scheduler` of the workload is.
+The max_threads_soft_limit workload setting specifies a soft limit on the number of CPU slots allocated to a query.
+
+When a query reaches this limit, subsequent CPU slot requests are demoted to an overflow queue. The overflow queue is served only when no regular CPU slot requests are waiting. Demoted requests are served in first-come-first-served (FCFS) order, regardless of the workload's scheduler setting.
+
+When a query's allocated CPU slots fall below the limit, its demoted requests will be re-enqueued into the normal scheduling queue. This ensures that a query is not deprioritized while operating below the limit.
+
+Rationale: Query execution typically exhibits diminishing returns from additional parallelism. Beyond a certain number of threads, allocating more CPU slots provides progressively smaller performance gains. The soft limit encourages the scheduler to distribute CPU slots across queries while remaining work-conserving.
+
+A higher max_threads_soft_limit allows the workload's scheduling policy to prioritize individual queries more aggressively, potentially reducing their latency at the cost of lower overall CPU allocation efficiency. A lower value encourages greater sharing across concurrent queries but may limit the parallelism available to high-priority queries.
 
 ```sql
 -- Queries in `production` compete normally for their first 4 CPU slots; slots above that are served from spare capacity only.
