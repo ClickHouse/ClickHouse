@@ -1,9 +1,12 @@
 #pragma once
 
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/MapWithMemoryTracking.h>
 #include <Common/Epoll.h>
 #include <Common/TimerDescriptor.h>
 #include <Common/WakeupFd.h>
 
+#include <atomic>
 #include <map>
 #include <mutex>
 
@@ -18,6 +21,14 @@ namespace Runtime::V1
 /// This queue is used to poll descriptors. Generally, just a wrapper over epoll (kqueue on macOS).
 class PollingQueue
 {
+public:
+    enum class Notification : uint8_t
+    {
+        Finish = 1,
+        Spill = 2,
+    };
+
+private:
     using Clock = std::chrono::steady_clock;
     using Key = std::uintptr_t;
 
@@ -31,9 +42,9 @@ class PollingQueue
         std::optional<Key> popExpired();
 
     private:
-        using Queue = std::multimap<Clock::time_point, Key>;
+        using Queue = MultiMapWithMemoryTracking<Clock::time_point, Key>;
         Queue queue;
-        std::unordered_map<Key, Queue::iterator> index;
+        UnorderedMapWithMemoryTracking<Key, Queue::iterator> index;
     };
 
     struct TaskData
@@ -42,8 +53,11 @@ class PollingQueue
 
         void * data = nullptr;
         int fd = -1;
+        uint8_t notifications = 0;
 
+        /// Notifications do not contain a task; inspect them with `hasNotification`.
         explicit operator bool() const { return data; }
+        bool hasNotification(Notification notification) const { return notifications & static_cast<uint8_t>(notification); }
     };
 
     TaskData getTask(std::unique_lock<std::mutex> & lock, int timeout);
@@ -62,29 +76,31 @@ public:
     void addTask(size_t thread_number, void * data, int fd, uint32_t events = EPOLLIN | EPOLLERR, int64_t timeout_ms = -1);
 
     /// Wait for any descriptor. If no descriptors in queue, blocks.
-    /// Returns ptr which was inserted into queue or nullptr if finished was called.
+    /// Returns a task or notification, including `Notification::Finish` after `finish`.
     /// Lock is unlocked during waiting.
     TaskData wait(std::unique_lock<std::mutex> & lock) { return getTask(lock, -1); }
 
     /// Get any ready descriptor.
-    /// Returns nullptr if no descriptor is ready or if finished was called.
+    /// Returns a task or notification, or an empty result if nothing is ready.
     /// Does not block.
     TaskData tryGetReadyTask(std::unique_lock<std::mutex> & lock) { return getTask(lock, 0); }
 
-    /// Interrupt waiting.
+    /// Interrupt waiting permanently.
     void finish();
+    /// Interrupt polling without removing an asynchronous task. Repeated notifications of the same kind coalesce.
+    void notify(Notification notification);
 
 private:
     Epoll epoll{EpollNesting::PipelinePoller};
-    std::unordered_map<Key, TaskData> tasks;
+    UnorderedMapWithMemoryTracking<Key, TaskData> tasks;
 
     /// In-Flight timers
     Deadlines deadlines;
     TimerDescriptor timer_signal;
 
-    /// Stop semantics
-    std::atomic_bool is_finished = false;
-    WakeupFd finish_signal;
+    /// `Finish` stays set; polling consumes the other notification bits.
+    std::atomic<uint8_t> pending_notifications = 0;
+    WakeupFd notification_signal;
 };
 #else
 class PollingQueue
