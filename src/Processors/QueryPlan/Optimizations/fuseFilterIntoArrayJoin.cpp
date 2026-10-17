@@ -34,6 +34,10 @@ size_t tryFuseFilterIntoArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node
         return 0;
 
     const auto & joined_columns = array_join->getColumns();
+
+    if (!expression.splitActionsBeforeArrayJoin(joined_columns).first.trivial())
+        return 0;
+
     NameSet joined_set(joined_columns.begin(), joined_columns.end());
 
     /// The filter may read row columns too (the step broadcasts them), but it must read at least one element.

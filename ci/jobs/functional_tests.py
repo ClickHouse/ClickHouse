@@ -2,6 +2,7 @@ import argparse
 import json
 import os
 import random
+import re
 import subprocess
 import traceback
 import zlib
@@ -244,6 +245,15 @@ OPTIONS_TO_INSTALL_ARGUMENTS = {
     "BugfixValidation": " --bugfix-validation",
     "db disk": "--remote-database-disk",
 }
+
+# Runner flags that change how a test executes rather than which tests are
+# selected. The diagnostics rerun must keep them to reproduce the failure.
+DIAGNOSTICS_MODE_RUNNER_ARGUMENTS = (
+    "--replicated-database",
+    "--s3-storage",
+    "--azure-blob-storage",
+    "--encrypted-storage",
+)
 
 OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
     "s3 storage": "--s3-storage --no-stateful",
@@ -546,6 +556,8 @@ def main():
         if "ParallelReplicas" in to:
             is_parallel_replicas = True
 
+    is_no_stateful = "--no-stateful" in runner_options
+
     # The xfail inversion (and therefore the "a crash on master HEAD is a
     # reproduction" reading of a server death) only applies when the PR is
     # labelled as a bugfix; an unlabelled run of this job executes the sanity
@@ -585,6 +597,19 @@ def main():
 
             is_coverage_replacement_with_ci_script_changes = info.job_name in [
                 j.name for j in JobConfigs.functional_tests_arm_binary_coverage_replacement_pr_jobs
+            ]
+        if changed_files:
+            # A changed test data submodule is owned by the tests that read it:
+            # treat it as a change of their source files, so that a bump of the
+            # submodule runs only the batches containing these tests.
+            changed_files = [
+                expanded
+                for f in changed_files
+                for expanded in (
+                    Targeting.test_files_using_test_data_submodule(f)
+                    if Targeting.is_test_data_submodule(f)
+                    else [f]
+                )
             ]
         if (
             changed_files
@@ -984,7 +1009,63 @@ def main():
             else:
                 print("skip log export config for local run")
 
+        def job_may_run_test_file(test_file):
+            # Whether this job can select the stateless test `test_file` (the file name with
+            # extension): the same filters as `clickhouse-test` applies to the test list.
+            if tests and not any(re.search(t, test_file) for t in tests):
+                return False
+            is_sequential_test = Targeting.is_sequential_functional_test(test_file)
+            # Compare whole options: `--no-parallel` is a prefix of `--no-parallel-replicas`.
+            runner_option_list = runner_options.split()
+            if "--no-sequential" in runner_option_list and is_sequential_test:
+                return False
+            if "--no-parallel" in runner_option_list and not is_sequential_test:
+                return False
+            if (
+                batch_num
+                and total_batches
+                and not is_flaky_check
+                and not is_targeted_check
+                and zlib.crc32(test_file.encode("utf-8")) % total_batches
+                != batch_num - 1
+            ):
+                return False
+            return True
+
+        def checkout_test_data_submodules():
+            # Check out a test data submodule only if this job can run a test reading it,
+            # so that the other jobs do not depend on fetching it. The job runs as `root`
+            # in docker on a checkout owned by another user, hence `safe.directory`.
+            submodules = [
+                submodule
+                for submodule in Targeting.TEST_DATA_SUBMODULES
+                if any(
+                    job_may_run_test_file(Path(f).name)
+                    for f in Targeting.test_files_using_test_data_submodule(submodule)
+                )
+            ]
+            if not submodules:
+                print("No test of this job reads test data submodules")
+                return True
+            return Shell.check(
+                "git -c safe.directory='*' submodule update --init --depth 1 --single-branch -- "
+                + " ".join(submodules),
+                retries=3,
+                verbose=True,
+            )
+
+        # Randomize the mark and uncompressed cache policy (cache_policy.xml) across LRU, SLRU
+        # and SIEVE to exercise all eviction policies. SIEVE is only implemented for the
+        # CacheBase-backed caches, so it is not applied to the filesystem cache (storage_conf,
+        # backed by FileCachePolicy). During bugfix validation the install configs are used with
+        # downloaded master-side binaries that do not have the SIEVE branch in CacheBase, so SIEVE
+        # is excluded there to avoid a server start-up failure.
+        cache_policies = ["LRU", "SLRU"] if is_bugfix_validation else ["LRU", "SLRU", "SIEVE"]
+        cache_policy = random.choice(cache_policies)
+        print(f"Using mark/uncompressed cache policy: {cache_policy}")
+
         commands = [
+            checkout_test_data_submodules,
             "rm -rf /etc/clickhouse-client/* /etc/clickhouse-server/* /etc/clickhouse-server1/* /etc/clickhouse-server2/*",
             # google *.proto files
             "mkdir -p /usr/share/clickhouse/ && ln -sf /usr/local/include /usr/share/clickhouse/protos",
@@ -1003,6 +1084,16 @@ def main():
             f"sed -i 's|>/test/chroot|>{temp_dir}/chroot|' /etc/clickhouse-server**/config.d/*.xml",
             CH.set_random_timezone,
         ]
+
+        # The mark and uncompressed caches default to SLRU (in cache_policy.xml).
+        # Patch the replica config directories (/etc/clickhouse-server1, /etc/clickhouse-server2)
+        # too: install.sh has already copied the configs for DBReplicated jobs by this point.
+        if cache_policy != "SLRU":
+            commands.append(
+                f"sed -i -e 's|<mark_cache_policy>SLRU</mark_cache_policy>|<mark_cache_policy>{cache_policy}</mark_cache_policy>|' "
+                f"-e 's|<uncompressed_cache_policy>SLRU</uncompressed_cache_policy>|<uncompressed_cache_policy>{cache_policy}</uncompressed_cache_policy>|' "
+                f"/etc/clickhouse-server*/config.d/cache_policy.xml"
+            )
 
         # Sanitizer builds run under heavy memory pressure: besides the server's
         # own ASan overhead, the parallel runner keeps dozens of ASan-instrumented
@@ -1125,6 +1216,7 @@ def main():
                 if not CH.prepare_stateful_data(
                     with_s3_storage=is_s3_storage,
                     is_db_replicated=is_database_replicated,
+                    no_stateful=is_no_stateful,
                     # `args.options` (e.g. "amd_asan_ubsan, distributed plan, parallel")
                     # already carries the sanitizer name in the same format
                     # `prepare_stateful_data`'s `is_sanitizer` check expects, so the
@@ -1385,6 +1477,7 @@ def main():
                         if not CH.prepare_stateful_data(
                             with_s3_storage=is_s3_storage,
                             is_db_replicated=is_database_replicated,
+                            no_stateful=is_no_stateful,
                             build_type=bugfix_bt,
                             step_timeout=stateful_prep_step_timeout(info),
                         ):
@@ -1516,6 +1609,14 @@ def main():
             )
         elif failed_tests:
             memory_limit = stateless_memory_limit(Info().job_name)
+            # Rerun in the same mode as the main run. Without these flags a
+            # failure specific to `DBReplicated` or to the s3/azure/encrypted
+            # disk passes every rerun and is wrongly diagnosed as flaky.
+            diag_mode_args = "".join(
+                f" {flag}"
+                for flag in DIAGNOSTICS_MODE_RUNNER_ARGUMENTS
+                if flag in runner_options.split()
+            )
             diag_command = (
                 f"clickhouse-test --testname --check-zookeeper-session --hung-check"
                 f" --memory-limit {memory_limit} --trace --capture-client-stacktrace"
@@ -1523,6 +1624,7 @@ def main():
                 f" --diagnose-random-settings"
                 f" --random-settings-diagnostics-dir {diagnostics_dir}"
                 f" --no-random-settings --no-random-merge-tree-settings"
+                f"{diag_mode_args}"
                 f" -- {' '.join(failed_tests)}"
             )
             print(f"Running diagnostics for {len(failed_tests)} test(s)...")
@@ -1554,12 +1656,6 @@ def main():
                 label_key = diag.get("label", "")
                 if label_key in label_map:
                     test_case.set_label(label_map[label_key])
-                if label_key == "flaky" and is_llvm_coverage:
-                    # Coverage binaries are slow and prone to timing-related flakiness
-                    # (e.g. TIMEOUT_EXCEEDED on SystemLogQueue). Don't penalise them
-                    # for it — mark the test green so it doesn't block coverage jobs.
-                    # See: https://github.com/ClickHouse/ClickHouse/pull/95763
-                    test_case.set_status(Result.Status.OK)
             if diag_exit_code != 0:
                 diag_status = Result.Status.FAIL
                 diag_info = (
