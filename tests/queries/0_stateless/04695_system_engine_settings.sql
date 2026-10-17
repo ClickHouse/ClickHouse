@@ -46,8 +46,10 @@ WHERE (name LIKE 'format\_%' OR name LIKE 'input\_format\_%' OR name LIKE 'outpu
         'kafka_sasl_password', 'kafka_compression_codec', 'kafka_compression_level'))
     OR (engine_name = 'FileLog' AND name IN ('max_block_size', 'poll_max_batch_size', 'poll_timeout_ms'))
     OR (engine_name = 'NATS' AND name IN ('nats_max_block_size', 'nats_flush_interval_ms'))
-    OR (engine_name = 'RabbitMQ' AND name IN ('rabbitmq_max_block_size', 'rabbitmq_flush_interval_ms'))
-    OR (engine_name IN ('S3Queue', 'AzureQueue') AND name = 'keeper_path'))
+    OR (engine_name = 'RabbitMQ' AND name IN ('rabbitmq_vhost', 'rabbitmq_max_block_size', 'rabbitmq_flush_interval_ms'))
+    OR (engine_name = 'ExecutablePool' AND name = 'max_command_execution_time')
+    OR (engine_name IN ('S3Queue', 'AzureQueue') AND name IN ('keeper_path',
+        'min_insert_block_size_rows_for_materialized_views', 'min_insert_block_size_bytes_for_materialized_views')))
     AND NOT (engine_name IN ('Kafka', 'FileLog', 'NATS', 'RabbitMQ')
         AND name IN ('input_format_csv_detect_header', 'input_format_tsv_detect_header', 'input_format_custom_detect_header'))
     AND NOT (engine_name IN ('Kafka', 'NATS', 'RabbitMQ')

@@ -15,6 +15,10 @@ WHERE (engine_name = 'Kafka' AND name IN ('kafka_max_block_size', 'format_csv_de
     OR (engine_name = 'PostgreSQL' AND name = 'postgresql_connection_pool_size')
     OR (engine_name = 'MySQL' AND name = 'mysql_datatypes_support_level')
     OR (engine_name = 'S3Queue' AND name = 'keeper_path')
+    OR (engine_name IN ('S3Queue', 'AzureQueue') AND name IN ('min_insert_block_size_rows_for_materialized_views',
+        'min_insert_block_size_bytes_for_materialized_views'))
+    OR (engine_name IN ('Executable', 'ExecutablePool') AND name = 'max_command_execution_time')
+    OR (engine_name = 'RabbitMQ' AND name = 'rabbitmq_vhost')
 ORDER BY engine_name, name;
 
 -- The format settings `Kafka`, `NATS` and `RabbitMQ` set themselves when a table does not state them.
@@ -45,3 +49,14 @@ SELECT count() FROM system.engine_settings WHERE engine_name = 'FileLog' AND nam
 -- `YTsaurus` does not list the settings only the YTsaurus dictionary sources take, which the table engine rejects.
 SELECT count() > 0, countIf(name IN ('lookup_throttler_max_requests_per_second', 'lookup_max_rows_per_query'))
 FROM system.engine_settings WHERE engine_name = 'YTsaurus';
+
+-- The `Iceberg` engines take their compaction settings from the query settings of the same names; the other data lake
+-- engines, which do not read them, do not.
+SELECT engine_name, countIf(inherited) FROM system.engine_settings
+WHERE engine_name IN ('IcebergS3', 'PaimonS3')
+    AND name IN ('allow_experimental_iceberg_compaction', 'allow_experimental_cleanup_old_data_files_compaction',
+        'iceberg_compaction_delay_bias', 'iceberg_compaction_data_cleanup', 'iceberg_compaction_commit_batch_size',
+        'iceberg_compaction_max_rows_in_data_file', 'iceberg_compaction_max_bytes_in_data_file',
+        'iceberg_max_number_datafiles_to_compact', 'iceberg_data_file_size_lower_threshold_compaction',
+        'iceberg_data_file_size_upper_threshold_compaction')
+GROUP BY engine_name ORDER BY engine_name;

@@ -1186,7 +1186,18 @@ Contains the engine-specific settings of table engines, one row per engine and s
 
 `changed` is 1 for a setting that the server configuration sets, that the engine itself sets (see below), or, for the `MergeTree` family, that the `compatibility` setting changes.
 
-A setting that a table takes from elsewhere unless its definition states it has `inherited` = 1, and its `value` is the engine's own value, which such a table does not use: the format settings, which every engine accepting them takes from the query or server settings; the connection pool settings of `PostgreSQL` and `mysql_datatypes_support_level` of `MySQL`, which a new table takes from the session creating it; the credentials of `NATS` and `RabbitMQ`, taken from the server configuration; the block size, poll and flush settings of `Kafka`, `FileLog`, `NATS` and `RabbitMQ`, which follow the server's `max_insert_block_size`, `max_block_size`, `stream_poll_timeout_ms` and `stream_flush_interval_ms`; the security and compression settings of `Kafka`, taken from the `kafka` section of the server configuration; and `keeper_path` of `S3Queue` and `AzureQueue`, built from the server's `s3queue_default_zookeeper_path` and the table. `WHERE NOT inherited` leaves only the settings whose `value` a new table uses.
+A setting that a table takes from elsewhere unless its definition states it has `inherited` = 1, and its `value` is the engine's own value, which such a table does not use:
+- The format settings, which every engine accepting them takes from the query or server settings.
+- The connection pool settings of `PostgreSQL` and `mysql_datatypes_support_level` of `MySQL`, which a new table takes from the session creating it.
+- `max_command_execution_time` of `ExecutablePool`, which the `max_execution_time` of the session creating the table caps.
+- The credentials of `NATS` and `RabbitMQ`, and `rabbitmq_vhost` of `RabbitMQ`, taken from the server configuration.
+- The block size, poll and flush settings of `Kafka`, `FileLog`, `NATS` and `RabbitMQ`, which follow the server's `max_insert_block_size`, `max_block_size`, `stream_poll_timeout_ms` and `stream_flush_interval_ms`.
+- The security and compression settings of `Kafka`, taken from the `kafka` section of the server configuration.
+- `keeper_path` of `S3Queue` and `AzureQueue`, built from the server's `s3queue_default_zookeeper_path` and the table.
+- `min_insert_block_size_rows_for_materialized_views` and `min_insert_block_size_bytes_for_materialized_views` of `S3Queue` and `AzureQueue`, which follow the query settings of the same names.
+- The compaction settings of the `Iceberg` engines, such as `allow_experimental_iceberg_compaction` and `iceberg_compaction_commit_batch_size`, which follow the query settings of the same names.
+
+`WHERE NOT inherited` leaves only the settings whose `value` a new table uses.
 
 Some settings the engine sets itself, so they have `inherited` = 0 and `changed` = 1 even when they are format settings, and even where `value` equals `default`: when a table does not state them, `Kafka`, `NATS` and `RabbitMQ` use `input_format_skip_unknown_fields` = 1, `input_format_allow_errors_ratio` = 0 and `input_format_allow_errors_num` = `kafka_skip_broken_messages`, `nats_skip_broken_messages` or `rabbitmq_skip_broken_messages` (0 for `NATS` and `RabbitMQ` with a `nats_handle_error_mode` or `rabbitmq_handle_error_mode` other than `default`); and `Kafka`, `FileLog`, `NATS` and `RabbitMQ` always disable the header detection of the `CSV`, `TSV` and `CustomSeparated` formats, whatever a table states, so `input_format_csv_detect_header`, `input_format_tsv_detect_header` and `input_format_custom_detect_header` show `0` with `readonly` = 1.
 

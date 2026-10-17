@@ -1651,12 +1651,12 @@ void registerStorageRabbitMQ(StorageFactory & factory)
             .has_builtin_setting_fn = RabbitMQSettings::hasBuiltin,
             .enumerate_engine_settings_fn = enumerateRabbitMQSettings,
             /// A table that leaves the credentials empty takes them from the `rabbitmq` section of the server
-            /// configuration; one that does not state the others takes the server's `max_insert_block_size` and
-            /// `stream_flush_interval_ms`.
+            /// configuration, whose `vhost` replaces the table's `rabbitmq_vhost`; one that does not state the others
+            /// takes the server's `max_insert_block_size` and `stream_flush_interval_ms`.
             .is_inherited_setting_fn = [](std::string_view name)
             {
-                return name == "rabbitmq_username" || name == "rabbitmq_password" || name == "rabbitmq_max_block_size"
-                    || name == "rabbitmq_flush_interval_ms";
+                return name == "rabbitmq_username" || name == "rabbitmq_password" || name == "rabbitmq_vhost"
+                    || name == "rabbitmq_max_block_size" || name == "rabbitmq_flush_interval_ms";
             },
         },
         Documentation{

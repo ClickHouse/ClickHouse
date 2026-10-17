@@ -185,13 +185,16 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
         /* keep_data_in_keeper */ false);
 }
 
-#if USE_AWS_S3
 /// A queue table that does not state its Keeper path builds it from the server's `s3queue_default_zookeeper_path`
-/// and the table.
-static bool isQueueSettingTakenFromElsewhere(std::string_view name)
+/// and the table; one that does not state the minimum block sizes for materialized views takes the query settings of
+/// the same names (`StorageObjectStorageQueue::streamToViews`).
+[[maybe_unused]] static bool isQueueSettingTakenFromElsewhere(std::string_view name)
 {
-    return name == "keeper_path";
+    return name == "keeper_path" || name == "min_insert_block_size_rows_for_materialized_views"
+        || name == "min_insert_block_size_bytes_for_materialized_views";
 }
+
+#if USE_AWS_S3
 
 void registerStorageS3Queue(StorageFactory & factory);
 void registerStorageS3Queue(StorageFactory & factory)

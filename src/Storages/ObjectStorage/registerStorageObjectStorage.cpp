@@ -53,6 +53,18 @@ namespace
     return name == "storage_catalog_type" || name == "storage_catalog_url" || name == "storage_aws_access_key_id";
 }
 
+/// The Iceberg compaction settings of `DataLakeStorageSettings`, which an Iceberg table that does not state them takes
+/// from the query settings of the same names, as their descriptions say.
+[[maybe_unused]] bool isIcebergSettingTakenFromQuery(std::string_view name)
+{
+    return name == "allow_experimental_iceberg_compaction" || name == "allow_experimental_cleanup_old_data_files_compaction"
+        || name == "iceberg_compaction_delay_bias" || name == "iceberg_compaction_data_cleanup"
+        || name == "iceberg_compaction_commit_batch_size" || name == "iceberg_compaction_max_rows_in_data_file"
+        || name == "iceberg_compaction_max_bytes_in_data_file" || name == "iceberg_max_number_datafiles_to_compact"
+        || name == "iceberg_data_file_size_lower_threshold_compaction"
+        || name == "iceberg_data_file_size_upper_threshold_compaction";
+}
+
 // LocalObjectStorage is only supported for Iceberg Datalake operations where Avro format is required. For regular file access, use FileStorage instead.
 #if USE_AWS_S3 || USE_AZURE_BLOB_STORAGE || USE_HDFS || USE_AVRO
 
@@ -1164,6 +1176,7 @@ void registerStorageIceberg(StorageFactory & factory)
             .source_access_type = AccessTypeObjects::Source::S3,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
             .enumerate_engine_settings_fn = enumerateCompiledDefaultsExcept<DataLakeStorageSettings, isDeprecatedDataLakeCatalogSetting>,
+            .is_inherited_setting_fn = isIcebergSettingTakenFromQuery,
         },
         Documentation{
             .description = R"DOCS_MD(
@@ -1610,6 +1623,7 @@ SETTINGS iceberg_metadata_staleness_ms=120000
             .source_access_type = AccessTypeObjects::Source::S3,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
             .enumerate_engine_settings_fn = enumerateCompiledDefaultsExcept<DataLakeStorageSettings, isDeprecatedDataLakeCatalogSetting>,
+            .is_inherited_setting_fn = isIcebergSettingTakenFromQuery,
         },
         Documentation{
             .description = "Provides an integration with Apache Iceberg tables stored in Amazon S3 or S3-compatible object storage.",
@@ -1651,6 +1665,7 @@ SETTINGS iceberg_metadata_staleness_ms=120000
             .source_access_type = AccessTypeObjects::Source::AZURE,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
             .enumerate_engine_settings_fn = enumerateCompiledDefaultsExcept<DataLakeStorageSettings, isDeprecatedDataLakeCatalogSetting>,
+            .is_inherited_setting_fn = isIcebergSettingTakenFromQuery,
         },
         Documentation{
             .description = "Provides an integration with Apache Iceberg tables stored in Microsoft Azure Blob Storage.",
@@ -1674,6 +1689,7 @@ SETTINGS iceberg_metadata_staleness_ms=120000
             .source_access_type = AccessTypeObjects::Source::HDFS,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
             .enumerate_engine_settings_fn = enumerateCompiledDefaultsExcept<DataLakeStorageSettings, isDeprecatedDataLakeCatalogSetting>,
+            .is_inherited_setting_fn = isIcebergSettingTakenFromQuery,
         },
         Documentation{
             .description = "Provides an integration with existing Apache Iceberg tables stored in HDFS.",
@@ -1714,6 +1730,7 @@ SETTINGS iceberg_metadata_staleness_ms=120000
             .source_access_type = AccessTypeObjects::Source::FILE,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
             .enumerate_engine_settings_fn = enumerateCompiledDefaultsExcept<DataLakeStorageSettings, isDeprecatedDataLakeCatalogSetting>,
+            .is_inherited_setting_fn = isIcebergSettingTakenFromQuery,
         },
         Documentation{
             .description = "Provides an integration with Apache Iceberg tables stored on the local filesystem.",
