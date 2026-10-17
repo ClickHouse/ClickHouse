@@ -764,9 +764,10 @@ def main():
         # hunt: the PR CI already ran the full flaky check, and this rerun only
         # needs to catch new tests broken by the current `master` state (e.g. a
         # setting randomization added to `tests/clickhouse-test` after the PR's
-        # last CI run). A randomized setting drawn with probability 0.4 per run
-        # escapes 20 iterations with probability 0.6^20 ~= 4e-5, so a reduced
-        # count keeps merge-queue latency bounded without losing the signal.
+        # last CI run), or new `master` tests broken by the PR. A randomized
+        # setting drawn with probability 0.4 per run escapes 20 iterations with
+        # probability 0.6^20 ~= 4e-5, so a reduced count keeps merge-queue
+        # latency bounded without losing the signal.
         rerun_count = 20
     elif is_flaky_check:
         # Large repeat count so the 45-min global_time_limit is the effective stopping
@@ -906,6 +907,8 @@ def main():
             if is_bugfix_validation and not is_labeled_bugfix_validation:
                 # Not a bugfix PR - run a simple sanity test
                 tests = ["00001_select_1"]
+            elif is_flaky_check and info.is_merge_queue_event:
+                tests = targeter.get_merge_queue_tests()
             elif is_flaky_check:
                 # Flaky check runs only changed/new test files in this PR.
                 # Previously failed and coverage-relevant tests are handled
