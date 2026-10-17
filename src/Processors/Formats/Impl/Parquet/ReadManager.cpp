@@ -10,6 +10,7 @@
 #include <Common/logger_useful.h>
 #include <base/scope_guard.h>
 
+#include <limits>
 #include <mutex>
 #include <shared_mutex>
 #include <string>
@@ -18,6 +19,7 @@
 
 namespace DB::ErrorCodes
 {
+    extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
     extern const int QUERY_WAS_CANCELLED;
 }
@@ -430,6 +432,18 @@ void ReadManager::addTasksToReadColumns(size_t row_group_idx, size_t row_subgrou
             }
             else
             {
+                /// Only columns whose data is read are checked.
+                const auto & column_meta = c.meta->meta_data;
+                const auto & size_statistics = column_meta.size_statistics;
+                if (row_subgroup.filter.rows_pass > 0
+                    && (column_meta.num_values < 0 || column_meta.total_uncompressed_size < 0
+                        || (column_meta.__isset.size_statistics && size_statistics.__isset.unencoded_byte_array_data_bytes
+                            && size_statistics.unencoded_byte_array_data_bytes < 0)))
+                    throw Exception(ErrorCodes::INCORRECT_DATA,
+                        "Column '{}' in row group {} has a negative value count or size: num_values {}, total_uncompressed_size {}, unencoded_byte_array_data_bytes {}",
+                        reader.primitive_columns[i].name, row_group.row_group_idx, column_meta.num_values, column_meta.total_uncompressed_size,
+                        size_statistics.unencoded_byte_array_data_bytes);
+
                 LOG_TEST(getLogger("ParquetReadManager"), "addTasksToReadColumns: added ColumnData: i={} step_idx={} row_group_idx={} row_subgroup_idx={}", i, step_idx, row_group_idx, row_subgroup_idx);
                 add_tasks.push_back(Task {
                     .stage = ReadStage::ColumnData,
@@ -878,7 +892,11 @@ void ReadManager::scheduleTask(Task task, bool is_first_in_group, MemoryUsageDif
                 }
 
                 double bytes_per_row = reader.estimateColumnMemoryBytesPerRow(column, row_group, reader.primitive_columns.at(task.column_idx));
-                size_t column_memory = static_cast<size_t>(bytes_per_row * static_cast<double>(row_subgroup.filter.rows_pass));
+                double estimate = bytes_per_row * static_cast<double>(row_subgroup.filter.rows_pass);
+                /// Keeps this batch's signed sum representable whatever the estimate.
+                ssize_t headroom = std::max<ssize_t>(0, std::numeric_limits<ssize_t>::max() / 2 - diff.by_stage.at(size_t(diff.cur_stage)));
+                size_t max_charge = std::min(reader.memoryEstimateLimit(), size_t(headroom));
+                size_t column_memory = estimate < static_cast<double>(max_charge) ? static_cast<size_t>(estimate) : max_charge;
                 subchunk.column_and_offsets_memory = MemoryUsageToken(column_memory, &diff);
                 break;
             }
