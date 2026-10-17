@@ -12761,9 +12761,12 @@ async function postSingle(cell, posted_request_num, query, history_query_text, p
         else el._pendingChangeLayout = true;
     }
 
+    /// Download re-executes the SQL, so offering it for a successful write would repeat its effects.
+    const download_is_read_only = await queryIsReadOnly(query);
+    if (posted_request_num != tab.reqNum) return;
     cell.progressPhase = 'done';
     cell.failed = false;
-    cell.downloadVisible = true;
+    cell.downloadVisible = download_is_read_only;
     cell.copyVisible = result.is_raw;
     cell.downloadQuery = query;
     cell.downloadParams = paramValuesSnapshot;
@@ -13994,11 +13997,14 @@ async function materializeResult(cell) {
     /// database/server/user are recorded on the cell so `paintDownloadCopy` targets the download at
     /// the connection that produced the result (see the download handler / `last_url_for_download`).
     const download_reproducible = result.url !== undefined && result.user !== undefined;
+    /// A saved INSERT/DDL result must not regain Download when its tab or history entry is restored.
+    const download_is_read_only = download_reproducible && await queryIsReadOnly(result.query || '');
+    if (matToken !== tab.reqNum) return;
     cell.downloadDatabase = result.database || '';
     cell.downloadUrl = result.url ?? '';
     cell.downloadUser = result.user ?? '';
     cell.progressPhase = 'done';
-    cell.downloadVisible = download_reproducible;
+    cell.downloadVisible = download_is_read_only;
     cell.copyVisible = is_raw;
     if (is_raw) {
         el.elapsedNs = result.elapsed_ns;
@@ -22245,6 +22251,11 @@ document.getElementById('download-button').addEventListener('click', async funct
 
     if (!query) {
         alert('No query to download results for');
+        return;
+    }
+    /// Recheck at the action boundary: this form submits the SQL again as a new HTTP query.
+    if (!await queryIsReadOnly(query)) {
+        alert('Download is only available for read-only queries because it re-executes the SQL.');
         return;
     }
 

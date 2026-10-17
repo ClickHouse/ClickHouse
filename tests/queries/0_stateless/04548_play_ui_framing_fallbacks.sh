@@ -109,6 +109,16 @@ rejection_pattern="$(echo "$page" | sed -n "s/.*framed_error_message\.includes('
 # the chosen extension. Checked here by the presence of the guard message on the served page (the
 # download itself is a browser-only flow, not reachable from this shell test).
 echo "$page" | grep -q -F 'overrides the download format' && echo 'download framing guard present: OK'
+# Download reruns SQL using a second POST. Never expose it for a successful write (including
+# history/tab restore), and refuse a stale/forced click before building that form. The shared
+# queryIsReadOnly classifier is already tested with INSERT, DDL and SELECT in
+# src/Parsers/tests/gtest_play_query_is_read_only.cpp.
+echo "$page" | grep -q -F 'const download_is_read_only = await queryIsReadOnly(query);' \
+    && echo 'successful writes do not offer download: OK'
+echo "$page" | grep -q -F "const download_is_read_only = download_reproducible && await queryIsReadOnly(result.query || '');" \
+    && echo 'restored writes do not offer download: OK'
+echo "$page" | grep -q -F 'if (!await queryIsReadOnly(query)) {' \
+    && echo 'download handler refuses writes: OK'
 # The result snapshot records the framing kind explicitly, and both restore paths (single result and
 # "Run all") dispatch on it via `snapshotFramingKind` rather than sniffing the payload's first bytes.
 echo "$page" | grep -q -F 'framing_kind:' && echo 'framing kind persisted: OK'
