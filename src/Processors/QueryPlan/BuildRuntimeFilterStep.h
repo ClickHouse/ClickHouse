@@ -27,9 +27,9 @@ public:
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 
     const String & getFilterColumnName() const { return filter_column_name; }
+    const DataTypePtr & getFilterColumnType() const { return filter_column_type; }
     const String & getFilterName() const { return filter_name; }
     const String & getFilterKey() const { return filter_key; }
-    const DataTypePtr & getFilterColumnType() const { return filter_column_type; }
     bool allowsNotExactFilter() const { return build_options.polarity == RuntimeFilterPolarity::Contains; }
     const RuntimeFilterGeometry & getGeometry() const { return build_options.geometry; }
     void setGeometry(const RuntimeFilterGeometry & geometry_) { build_options.geometry = geometry_; }
@@ -50,6 +50,18 @@ public:
 
     void setEstimatedBuildRows(std::optional<UInt64> estimated_build_rows_) { estimated_build_rows = estimated_build_rows_; }
     std::optional<UInt64> getEstimatedBuildRows() const { return estimated_build_rows; }
+
+    /// Whether the step was read with its key and `pairJoinRuntimeFilters` has not checked it yet. A step
+    /// built here, or one already checked, keeps its key when the plan is optimized again: its join may be
+    /// a physical step by then, which `pairJoinRuntimeFilters` cannot pair.
+    bool needsPairing() const { return needs_pairing; }
+    /// Done with pairing: keep the key, or make the step inert.
+    void finishPairing(bool keep_key)
+    {
+        needs_pairing = false;
+        if (!keep_key)
+            filter_key.clear();
+    }
 
     /// Make the built filter record its key values/range (see track_key_range). Called by plan
     /// optimizations whose pruning consumes them, e.g. markSealGatedReading.
@@ -84,10 +96,12 @@ private:
     /// step and its matching `__applyFilter` carry the same visible id.
     String filter_name;
     /// Random per-plan-build key the built filter is registered under in the `IRuntimeFilterLookup`;
-    /// the matching `__applyFilter` looks it up by the same key. `EXPLAIN` does not show it. Only a build
-    /// with filter exchanges serializes it, and a cache key never contains it. A deserialized step
-    /// without exchanges has an empty key and is inert.
+    /// the matching `__applyFilter` looks it up by the same key. Serialized, but not shown and left out of
+    /// a cache key, so it never enters a plan-step hash. Empty for an inert step.
     String filter_key;
+    /// See `needsPairing`. Not serialized: set by `deserialize`, so it marks the local builds of a plan taken
+    /// over the wire. A build with filter exchanges never needs it: its consumers are in other stages.
+    bool needs_pairing = false;
 
     RuntimeFilterBuildOptions build_options;
 
