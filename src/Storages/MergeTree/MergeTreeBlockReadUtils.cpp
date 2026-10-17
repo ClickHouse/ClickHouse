@@ -134,7 +134,9 @@ bool injectRequiredColumnsRecursively(
             add_column(column_in_storage->getNameInStorage());
             return true;
         }
-        else if (isTextIndexVirtualColumn(column_name_in_part) && hasMaterializedTextIndex(storage_snapshot, data_part_info_for_reader, column_name_in_part))
+        else if (isTextIndexVirtualColumn(column_name_in_part)
+            && hasMaterializedTextIndex(storage_snapshot, data_part_info_for_reader, column_name_in_part)
+            && canReadTextIndexInPart(alter_conversions))
         {
             /// If there is a materialized text index in the part, use the virtual column directly.
             add_column(column_name);
@@ -169,6 +171,12 @@ bool injectRequiredColumnsRecursively(
     return result;
 }
 
+}
+
+bool canReadTextIndexInPart(const AlterConversionsPtr & alter_conversions)
+{
+    /// Patches are joined by the keys read in the first step, which the text index reader cannot read.
+    return !alter_conversions || !alter_conversions->hasPatches();
 }
 
 /** If some of the requested columns are not in the part,

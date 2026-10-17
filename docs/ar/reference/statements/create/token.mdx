@@ -38,7 +38,7 @@ CREATE TOKEN
 نفسه. وتخوّل الصلاحية نفسها تنفيذ العبارة المكافئة
 `ALTER USER <current user> ADD IDENTIFIED ...`.
 
-## النتيجة
+## النتيجة {#result}
 
 يُرجع الاستعلام صفًا واحدًا يتكوّن من عمودين:
 
@@ -57,7 +57,7 @@ CREATE TOKEN VALID FOR INTERVAL 30 DAY GRANTS (SELECT ON db.*) FORMAT TSVRaw
 [قواعد تعقيد كلمة المرور](/ar/reference/statements/create/user#identification) — فهذه القواعد وُضعت لتقييد
 كلمات المرور التي يختارها البشر.
 
-## عبارتا VALID UNTIL و VALID FOR
+## عبارتا VALID UNTIL و VALID FOR {#valid-until-clause}
 
 تحدّان مدة صلاحية الرمز. وتعملان تمامًا مثل العبارتين المقابلتين لهما في طريقة المصادقة الخاصة بـ
 [`CREATE USER`](/ar/reference/statements/create/user#valid-until-clause): فـ `VALID UNTIL` تأخذ تاريخًا ووقتًا مطلقين،
@@ -75,7 +75,7 @@ CREATE TOKEN VALID FOR INTERVAL 30 DAY GRANTS (SELECT ON db.*) FORMAT TSVRaw
 * `CREATE TOKEN VALID FOR INTERVAL 30 DAY`
 * `CREATE TOKEN VALID UNTIL 'infinity'`
 
-## GRANTS Clause
+## GRANTS Clause {#grants-clause}
 
 يقصر حقوق الوصول للجلسات المُصادَق عليها بواسطة الرمز على التقاطع مع الصلاحيات المذكورة.
 وهو يعمل تمامًا مثل [`عبارة `GRANTS`في`CREATE USER&#96;](/ar/reference/statements/create/user#grants-clause)،
@@ -92,7 +92,7 @@ CREATE TOKEN VALID FOR INTERVAL 30 DAY GRANTS (SELECT ON db.*) FORMAT TSVRaw
 لا ينطبق هذا الحد ولا الحد الزمني على ما تخلّفه جلسات الرمز وراءها — راجع
 [اعتبارات الأمان](#security-considerations).
 
-## إدارة الرموز
+## إدارة الرموز {#managing-tokens}
 
 الرمز هو طريقة المصادقة خاصة بالمستخدم، ولذلك يظهر في
 [`SHOW CREATE USER`](/ar/reference/statements/show#show-create-user) (مع عبارتَي `VALID UNTIL` و`GRANTS`،
@@ -103,11 +103,14 @@ CREATE TOKEN VALID FOR INTERVAL 30 DAY GRANTS (SELECT ON db.*) FORMAT TSVRaw
 طرق المصادقة الخاصة به، مثلًا عبر `ALTER USER <name> IDENTIFIED WITH ...`، أو استخدم
 `ALTER USER <name> RESET AUTHENTICATION METHODS TO NEW` للإبقاء على أحدث طريقة مضافة فقط. ويُحدَّد
 عدد طرق المصادقة التي يمكن أن تكون لدى المستخدم في وقت واحد عبر server setting
-`max_authentication_methods_per_user`.
+`max_authentication_methods_per_user`. لا تبقى الرموز منتهية الصلاحية محسوبة ضمن هذا الحد طويلًا: فكما هو الحال مع
+كل `ALTER USER`، يحذف `CREATE TOKEN` طرق المصادقة الخاصة بالمستخدم التي انتهت صلاحيتها
+قبل إضافة الطريقة الجديدة، ولذلك يمكن الاستمرار في إنشاء الرموز التي تتضمن عبارة `VALID UNTIL` أو `VALID FOR` (أو مدة الصلاحية الافتراضية TTL)
+دون حد. انظر [`VALID UNTIL`](/ar/reference/statements/create/user#valid-until-clause).
 
 يُولَّد السر ويُخزَّن بواسطة الاستعلام نفسه، لذا فإن `CREATE TOKEN` الذي لا تصل نتيجته إلى
-العميل — سواء بسبب انقطاع connection أثناء إرسال الـ row، أو بسبب `INTO OUTFILE` لا يستطيع العميل فتحه —
-يترك خلفه طريقة المصادقة لا يمكن لأحد استخدامها ومع ذلك تُحتسب ضمن ذلك الحد. فلا أحد
+العميل — سواء بسبب انقطاع connection أثناء إرسال الصف، أو بسبب `INTO OUTFILE` لا يستطيع العميل فتحه —
+يترك خلفه طريقة مصادقة لا يمكن لأحد استخدامها وتظل محسوبة ضمن ذلك الحد حتى تنتهي صلاحيتها. فلا أحد
 يملك هذا السر؛ إذ لا يوجد إلا أثناء تنفيذ الاستعلام. أما الاستعلام الذي يُرفض قبل تنفيذه، بما في ذلك
 ما تُحدِّد فيه عبارة `FORMAT` صيغة لا يمكن استخدامها، فلا يضيف شيئًا.
 
@@ -115,7 +118,7 @@ CREATE TOKEN VALID FOR INTERVAL 30 DAY GRANTS (SELECT ON db.*) FORMAT TSVRaw
 كل node باستخدام العبارة المكافئة `ALTER USER ... ADD IDENTIFIED WITH sha256_hash`) لكي يعمل الرمز
 عبر cluster تُخزَّن access entities الخاصة به محليًا.
 
-## اعتبارات الأمان
+## اعتبارات الأمان {#security-considerations}
 
 يقيّد كل من `VALID UNTIL` و`GRANTS` الجلسات التي تُصادَق باستخدام الرمز، لكنهما لا يقيّدان
 ما تخلّفه تلك الجلسات وراءها:

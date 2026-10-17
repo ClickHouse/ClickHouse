@@ -1,7 +1,0 @@
-replace partition
-100	4950
-tmp_replace_from_ reclaim warning found
-move partition to table
-200	19900
-0
-tmp_move_from_ reclaim warning found
