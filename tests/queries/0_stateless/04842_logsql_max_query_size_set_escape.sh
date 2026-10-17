@@ -15,23 +15,23 @@ COMMENT='# padding padding padding padding padding padding'
 STATEMENT="SET max_threads = 4;"
 
 # The escape works when the whole raw text fits into the budget.
-$CLICKHOUSE_CLIENT --allow_experimental_logsql_dialect 1 --logsql_table logs_04842 --dialect logsql --max_query_size 100 \
+$CLICKHOUSE_CLIENT --enable_logsql_dialect 1 --logsql_table logs_04842 --dialect logsql --max_query_size 100 \
     -q "$COMMENT
 $STATEMENT" && echo "SET after comment within the budget ok"
 
 # The same statement is rejected once the comment prefix pushes it over the budget,
 # even though the SET statement alone is only 21 bytes long.
-$CLICKHOUSE_CLIENT --allow_experimental_logsql_dialect 1 --logsql_table logs_04842 --dialect logsql --max_query_size 60 \
+$CLICKHOUSE_CLIENT --enable_logsql_dialect 1 --logsql_table logs_04842 --dialect logsql --max_query_size 60 \
     -q "$COMMENT
 $STATEMENT" |& grep -om1 "Max query size exceeded"
 
 # A comment prefix longer than the whole budget is rejected too.
-$CLICKHOUSE_CLIENT --allow_experimental_logsql_dialect 1 --logsql_table logs_04842 --dialect logsql --max_query_size 20 \
+$CLICKHOUSE_CLIENT --enable_logsql_dialect 1 --logsql_table logs_04842 --dialect logsql --max_query_size 20 \
     -q "$COMMENT
 $STATEMENT" |& grep -om1 "Max query size exceeded"
 
 # Over HTTP the accounting is the same.
-LOGSQL_URL="${CLICKHOUSE_URL}&dialect=logsql&allow_experimental_logsql_dialect=1&logsql_table=logs_04842"
+LOGSQL_URL="${CLICKHOUSE_URL}&dialect=logsql&enable_logsql_dialect=1&logsql_table=logs_04842"
 ${CLICKHOUSE_CURL} -sS "${LOGSQL_URL}&max_query_size=100" --data-binary "$COMMENT
 $STATEMENT" && echo "HTTP SET after comment within the budget ok"
 ${CLICKHOUSE_CURL} -sS "${LOGSQL_URL}&max_query_size=60" --data-binary "$COMMENT

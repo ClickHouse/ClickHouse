@@ -87,16 +87,18 @@ wait_for_parts_to_leave_the_cache "$table_uuid" "['all_1_1_0', 'all_2_2_0']"
 # The merged part is a part of its own: it has to miss once and is served from the cache
 # afterwards. This is what would silently break if the entries of the source parts were
 # reused for it.
+# `enable_parallel_replicas = 0`: with parallel replicas another replica may do the read,
+# and its `ProfileEvents` never reach this query's `query_log` row.
 $CLICKHOUSE_CLIENT -q "
 SELECT sum(id), sum(value), count() FROM t_columns_cache_removal
 SETTINGS use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1,
-         max_threads = 1, log_queries = 1, log_comment = '05136_merged_part_read_1'
+         max_threads = 1, log_queries = 1, enable_parallel_replicas = 0, log_comment = '05136_merged_part_read_1'
 "
 
 $CLICKHOUSE_CLIENT -q "
 SELECT sum(id), sum(value), count() FROM t_columns_cache_removal
 SETTINGS use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1,
-         max_threads = 1, log_queries = 1, log_comment = '05136_merged_part_read_2'
+         max_threads = 1, log_queries = 1, enable_parallel_replicas = 0, log_comment = '05136_merged_part_read_2'
 "
 
 echo -n 'only the merged part is cached: '

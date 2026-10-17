@@ -18,7 +18,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 disk_path="${CLICKHOUSE_DISKS_FILES}/05234/${CLICKHOUSE_DATABASE}/"
 disk_path_with_hard_links="${CLICKHOUSE_DISKS_FILES}/05234_hard_links/${CLICKHOUSE_DATABASE}/"
 
+# The server-side AST fuzzer clones a CREATE TABLE as `<name>__fuzz_N` with other column types, which cannot be attached
+# over the shared parts later. A skipped DROP of a read-only table becomes a TRUNCATE, which fails.
 ${CLICKHOUSE_CLIENT} -m --query "
+SET ast_fuzzer_any_query = 0, ignore_drop_queries_probability = 0;
 DROP TABLE IF EXISTS writer SYNC;
 DROP TABLE IF EXISTS reader SYNC;
 
@@ -52,6 +55,7 @@ ${CLICKHOUSE_CLIENT} --query "CREATE HYPOTHETICAL INDEX h ON writer value TYPE m
 # The wrapper must not answer `false` unconditionally either: with the setting on, the read-only
 # attachment accepts what the disk it wraps accepts.
 ${CLICKHOUSE_CLIENT} -m --query "
+SET ast_fuzzer_any_query = 0, ignore_drop_queries_probability = 0;
 DROP TABLE IF EXISTS writer_hard_links SYNC;
 DROP TABLE IF EXISTS reader_hard_links SYNC;
 
@@ -81,6 +85,7 @@ SELECT name, table FROM system.hypothetical_indexes ORDER BY table;
 "
 
 ${CLICKHOUSE_CLIENT} -m --query "
+SET ignore_drop_queries_probability = 0;
 DROP TABLE reader SYNC;
 DROP TABLE writer SYNC;
 DROP TABLE reader_hard_links SYNC;
