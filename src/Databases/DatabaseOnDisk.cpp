@@ -415,7 +415,7 @@ void DatabaseOnDisk::detachTablePermanently(ContextPtr query_context, const Stri
     }
 }
 
-void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_name, bool /*sync*/)
+void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_name, bool sync)
 {
     auto component_guard = Coordination::setCurrentComponent("DatabaseOnDisk::dropTable");
     waitDatabaseStarted();
@@ -425,6 +425,10 @@ void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_na
     String table_data_path_relative = getTableDataPath(table_name);
     if (table_data_path_relative.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Path is empty");
+
+    /// Drop the inner tables while the table is still attached, as `DatabaseAtomic::dropTable` does.
+    if (auto table_to_drop = tryGetTable(table_name, local_context))
+        table_to_drop->dropInnerTableIfAny(sync, local_context);
 
     StoragePtr table = detachTable(local_context, table_name);
 
