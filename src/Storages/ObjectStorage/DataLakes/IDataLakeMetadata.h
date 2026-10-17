@@ -14,6 +14,7 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeTableStateSnapshot.h>
+#include <Storages/Statistics/RelationProfile.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Disks/DiskType.h>
@@ -51,23 +52,16 @@ using PartitionCommands = std::vector<PartitionCommand>;
 struct FormatParserSharedResources;
 using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResources>;
 
-class ConditionSelectivityEstimator;
-using ConditionSelectivityEstimatorPtr = std::shared_ptr<ConditionSelectivityEstimator>;
-
-/// Rows of a read, estimated from the data lake metadata without reading data (see `IDataLakeMetadata::estimateRead`).
+/// A read estimated from the data lake metadata without reading data (see `IDataLakeMetadata::estimateRead`).
 struct DataLakeReadEstimate
 {
-    /// Rows of the live data files left after pruning, deleted rows included; std::nullopt if the metadata is malformed.
-    std::optional<UInt64> rows;
     /// Pruning by the filter dropped at least one live data file or a whole data manifest.
     bool pruned_data_files = false;
     /// The snapshot has live delete files.
     bool has_delete_files = false;
-    /// Statistics of the requested columns over the remaining data files, merged as those of MergeTree parts;
-    /// nullptr unless `rows` is known and positive.
-    ConditionSelectivityEstimatorPtr column_statistics;
-    /// By storage column name: the number of distinct values that replaces the estimator's guess.
-    std::unordered_map<String, UInt64> num_distinct_values;
+    /// The rows of the live data files left after pruning, deleted rows included, and the statistics of the requested
+    /// columns over them; std::nullopt if the metadata is malformed.
+    std::optional<RelationProfile> profile;
 };
 
 class IDataLakeMetadata : boost::noncopyable

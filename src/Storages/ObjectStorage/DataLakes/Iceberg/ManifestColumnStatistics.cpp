@@ -211,13 +211,17 @@ void ManifestColumnStatistics::addToDistinctValuesInputs(DistinctValuesInputs & 
 
 void ManifestColumnStatistics::addFile(const ProcessedManifestFileEntry & entry, const IcebergPathFromMetadata & path_to_manifest_file)
 {
-    if (targets.empty() || entry.parsed_entry->record_count <= 0)
+    if (entry.parsed_entry->record_count <= 0)
         return;
 
     const auto rows = static_cast<UInt64>(entry.parsed_entry->record_count);
+    /// Trusted as written, although ClickHouse before 26.5 wrote the row count of the whole commit into each file.
+    total_rows += rows;
+    if (targets.empty())
+        return;
+
     const auto file_metrics = extractFileMetrics(entry, path_to_manifest_file, rows);
 
-    statistics_builder.incrementRowCount(rows);
     for (size_t i = 0; i < targets.size(); ++i)
     {
         const auto & metrics = file_metrics[i];
@@ -263,20 +267,19 @@ UInt64 ManifestColumnStatistics::estimateDistinctValues(
     return std::clamp<UInt64>(num_distinct_values, 1, std::max<UInt64>(non_null_rows, 1));
 }
 
-void ManifestColumnStatistics::finalize(DataLakeReadEstimate & estimate) const
+void ManifestColumnStatistics::finalize(DataLakeReadEstimate & estimate)
 {
-    if (!estimate.rows || *estimate.rows == 0)
+    auto & profile = estimate.profile.emplace();
+    profile.rows = total_rows;
+    const auto estimator = statistics_builder.getEstimator();
+    if (!estimator)
         return;
 
-    estimate.column_statistics = statistics_builder.getEstimator();
-    if (!estimate.column_statistics)
-        return;
-
-    const auto merged = estimate.column_statistics->estimateRelationProfile();
+    profile.column_stats = estimator->estimateRelationProfile().column_stats;
+    /// Without a `uniq` sketch the estimator guesses a fixed share of the rows; the manifests give better.
     for (size_t i = 0; i < targets.size(); ++i)
-        if (const auto it = merged.column_stats.find(targets[i].name); it != merged.column_stats.end())
-            estimate.num_distinct_values.emplace(
-                targets[i].name, estimateDistinctValues(targets[i], distinct_values_inputs[i], it->second, *estimate.rows));
+        if (const auto it = profile.column_stats.find(targets[i].name); it != profile.column_stats.end())
+            it->second.num_distinct_values = estimateDistinctValues(targets[i], distinct_values_inputs[i], it->second, total_rows);
 }
 
 }

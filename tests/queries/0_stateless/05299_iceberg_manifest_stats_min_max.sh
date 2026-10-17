@@ -2,7 +2,7 @@
 # Tags: no-fasttest
 # Tag no-fasttest: Iceberg needs Avro and Parquet, which the fasttest build lacks.
 
-# Issue 120440: the min/max and NULL fraction of an Iceberg read with `use_iceberg_manifest_column_statistics`, from the
+# Issue 120440: the min/max and NULL fraction of an Iceberg read with `use_iceberg_manifest_statistics`, from the
 # manifest bounds and NULL counts. The test checks that the min/max, NULL fraction and NDV come out as our rules compute
 # them: bounds decoded per type and merged over the files, NULLs counted per file, the NDV by the first rule that
 # applies, clamped to the non-NULL rows; and that the min/max reach an optimizer decision.
@@ -25,7 +25,7 @@ PINS="--query_plan_optimize_join_order_randomize=0
     --query_plan_propagate_predicate_across_join=0 --materialize_statistics_on_insert=1
     --explain_query_plan_default=legacy --max_insert_threads=1 --max_threads=1 --max_block_size=1000000
     --allow_insert_into_iceberg=1 --session_timezone=UTC
-    --use_iceberg_manifest_statistics=1 --use_iceberg_manifest_column_statistics=1 --use_statistics=1"
+    --use_iceberg_manifest_statistics=1 --use_statistics=1"
 # The printed conditions are mirrored when the join order optimizer swaps the sides, so it is off for `ie_join`.
 IE_JOIN="--join_algorithm=ie_join --join_use_nulls=0 --query_plan_optimize_join_order_limit=0"
 REORDER="--query_plan_optimize_join_order_limit=10"

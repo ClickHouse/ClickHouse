@@ -264,7 +264,8 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
     if (const auto * reading = typeid_cast<const ReadFromObjectStorageStep *>(step))
     {
-        if (!reading->getContext()->getSettingsRef()[Setting::use_iceberg_manifest_statistics])
+        const auto & settings = reading->getContext()->getSettingsRef();
+        if (!settings[Setting::use_iceberg_manifest_statistics] || !settings[Setting::use_statistics])
             return RelationStats{};
 
         auto estimate = reading->estimateReadFromDataLakeMetadata();
@@ -272,37 +273,31 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
             return RelationStats{};
 
         String table_display_name = reading->getStorageID().getTableName();
+        /// No rows, as `RelationStats{}`, so the join order is the same; but the metadata was read, so it names the table
+        /// and its source: `EXPLAIN` shows `t[no_stats~?]` and the data lake hint line lists it.
         RelationStats unknown{
             .estimated_rows = {},
             .table_name = table_display_name,
             .imprecise_estimate = true,
             .source = RowEstimateSource::DataLakeMetadata};
-        if (!estimate->rows)
+        if (!estimate->profile)
             return unknown;
+        const auto & profile = *estimate->profile;
 
         /// The step's filter also holds the `PREWHERE` and the row policy, so a read without it returns every row.
         const bool has_filter = filter || reading->getFilterActionsDAG() || reading->getPrewhereInfo() || reading->getRowLevelFilter();
 
         /// As for MergeTree without column statistics, a filter that pruned nothing gives no estimate.
-        if (has_filter && !estimate->pruned_data_files && *estimate->rows != 0)
+        if (has_filter && !estimate->pruned_data_files && profile.rows != 0)
             return unknown;
 
-        const bool exact = *estimate->rows == 0 || (!has_filter && !estimate->has_delete_files);
-        RelationStats stats{
-            .estimated_rows = estimate->rows,
+        const bool exact = profile.rows == 0 || (!has_filter && !estimate->has_delete_files);
+        return RelationStats{
+            .estimated_rows = profile.rows,
+            .column_stats = profile.column_stats,
             .table_name = table_display_name,
             .imprecise_estimate = !exact,
             .source = RowEstimateSource::DataLakeMetadata};
-        if (estimate->column_statistics)
-        {
-            auto profile = estimate->column_statistics->estimateRelationProfile();
-            /// Without a `uniq` sketch the estimator guesses a fixed share of the rows; the manifests give better.
-            for (auto & [name, column] : profile.column_stats)
-                if (auto it = estimate->num_distinct_values.find(name); it != estimate->num_distinct_values.end())
-                    column.num_distinct_values = it->second;
-            stats.column_stats = std::move(profile.column_stats);
-        }
-        return stats;
     }
 
     if (const auto * reading = typeid_cast<const ReadFromMemoryStorageStep *>(step))
