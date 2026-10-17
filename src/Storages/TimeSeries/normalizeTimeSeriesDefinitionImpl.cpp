@@ -20,6 +20,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/hasNullable.h>
 #include <Storages/ColumnsDescription.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -900,10 +901,24 @@ namespace
             inner_engine.reset(inner_engine.partition_by);
     }
 
+    /// Whether a declared inner column is nullable, also inside a tuple, an array or a map value.
+    bool hasNullableColumn(const ASTColumns * inner_columns)
+    {
+        if (!inner_columns || !inner_columns->columns)
+            return false;
+        return std::ranges::any_of(inner_columns->columns->children, [](const ASTPtr & column)
+        {
+            const auto & declaration = column->as<ASTColumnDeclaration &>();
+            return declaration.null_modifier.value_or(false)
+                || (declaration.getType() && hasNullable(DataTypeFactory::instance().get(declaration.getType())));
+        });
+    }
+
     /// Strips generated inner engine clauses (partition by, TTL, settings) so they are regenerated.
     /// Custom engine kinds or engines with arguments are preserved.
     /// `settings` are the settings of the table the engine was generated for.
-    void removeGeneratedInnerEngine(ASTStorage & inner_engine, ViewTarget::Kind inner_table_kind, const TimeSeriesSettings & settings)
+    void removeGeneratedInnerEngine(
+        ASTStorage & inner_engine, ViewTarget::Kind inner_table_kind, const TimeSeriesSettings & settings, const ASTColumns * inner_columns)
     {
         if (!inner_engine.engine)
             return;
@@ -1011,8 +1026,8 @@ namespace
                 if (primary_key_is_generated && sorting_key_is_generated)
                 {
                     /// `allow_nullable_key` is generated only for the nullable `min_time` and `max_time` in the sorting key.
-                    /// Otherwise the user set it for their own nullable key column, so it is kept.
-                    if (sorting_key_equals("metric_name, id, min_time, max_time"))
+                    /// Otherwise, or while a kept column is nullable and a key may still use it, the user needs it.
+                    if (sorting_key_equals("metric_name, id, min_time, max_time") && !hasNullableColumn(inner_columns))
                         remove_settings({{"allow_nullable_key", static_cast<UInt64>(1)}});
 
                     inner_engine.reset(inner_engine.primary_key);
@@ -2073,7 +2088,7 @@ namespace
                 {
                     auto new_inner_engine = boost::static_pointer_cast<ASTStorage>(old_inner_engine->clone());
                     removeInnerEngineKeysDisabledByNewSettings(*new_inner_engine, kind, new_settings);
-                    removeGeneratedInnerEngine(*new_inner_engine, kind, old_settings);
+                    removeGeneratedInnerEngine(*new_inner_engine, kind, old_settings, create_query.getTargetInnerColumns(kind));
                     create_query.setTargetInnerEngine(kind, new_inner_engine);
                 }
             }

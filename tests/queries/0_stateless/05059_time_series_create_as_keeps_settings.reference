@@ -15,3 +15,5 @@ ReplacingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS a
 -- allow_nullable_key generated for min_time and max_time goes away with them
 ReplacingMergeTree(v) PRIMARY KEY metric_name ORDER BY (metric_name, id, min_time, max_time) SETTINGS allow_nullable_key = 1, index_granularity = 8192
 ReplacingMergeTree(v) PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS index_granularity = 8192
+-- allow_nullable_key generated for min_time and max_time stays for a nullable metric_name
+ReplacingMergeTree(v) PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS allow_nullable_key = 1, index_granularity = 8192

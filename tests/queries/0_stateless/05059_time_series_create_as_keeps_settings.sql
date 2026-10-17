@@ -94,3 +94,12 @@ SELECT extract(create_table_query, 'TAGS INNER ENGINE = (.*?)(?: [A-Z ]+ INNER |
 FROM system.tables WHERE database = currentDatabase() AND name = 'ts_nullable_copy';
 DROP TABLE ts_nullable_copy;
 DROP TABLE ts_nullable_src;
+
+SELECT '-- allow_nullable_key generated for min_time and max_time stays for a nullable metric_name';
+CREATE TABLE ts_nullable_src ENGINE = TimeSeries SETTINGS version = 7, aggregate_min_time_and_max_time = 0
+TAGS INNER COLUMNS (metric_name Nullable(String), v UInt64) TAGS ENGINE = ReplacingMergeTree(v);
+CREATE TABLE ts_nullable_copy AS ts_nullable_src;
+SELECT extract(create_table_query, 'TAGS INNER ENGINE = (.*?)(?: [A-Z ]+ INNER |$)')
+FROM system.tables WHERE database = currentDatabase() AND name = 'ts_nullable_copy';
+DROP TABLE ts_nullable_copy;
+DROP TABLE ts_nullable_src;
