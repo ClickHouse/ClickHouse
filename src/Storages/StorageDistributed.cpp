@@ -851,6 +851,100 @@ void StorageDistributed::checkRemoteTableConversionPreservesOrder(
     }
 }
 
+namespace
+{
+
+bool isConstantBackedColumn(const ColumnNode & column_node)
+{
+    return column_node.hasExpression() && column_node.getExpression()->getNodeType() == QueryTreeNodeType::CONSTANT;
+}
+
+/// Maps each unqualified column name the plain-name `ActionsDAG` will reference to the sources exposing it. Like
+/// that builder, it looks through expression-backed columns (ALIAS, ARRAY JOIN), except constant-backed ones, which
+/// it names after the column.
+class KeyColumnSourcesVisitor : public InDepthQueryTreeVisitor<KeyColumnSourcesVisitor>
+{
+public:
+    bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & /*child*/)
+    {
+        const auto * column_node = parent->as<ColumnNode>();
+        return !(column_node && isConstantBackedColumn(*column_node));
+    }
+
+    void visitImpl(QueryTreeNodePtr & node)
+    {
+        const auto * column_node = node->as<ColumnNode>();
+        if (column_node && (!column_node->hasExpression() || isConstantBackedColumn(*column_node)))
+            name_to_sources[column_node->getColumnName()].insert(column_node->getColumnSourceOrNull().get());
+    }
+
+    std::unordered_map<String, std::unordered_set<const IQueryTreeNode *>> name_to_sources;
+};
+
+/// Whether `source` is reachable in `join_tree` without crossing a join that null-extends it: null-extended rows
+/// carry no sharding key and appear on every shard.
+bool sourceIsAlwaysPreserved(const QueryTreeNodePtr & join_tree, const QueryTreeNodePtr & source)
+{
+    if (join_tree.get() == source.get())
+        return true;
+
+    if (const auto * join_node = join_tree->as<JoinNode>())
+    {
+        const JoinKind kind = join_node->getKind();
+        if (!isRightOrFull(kind) && sourceIsAlwaysPreserved(join_node->getLeftTableExpressionNode(), source))
+            return true;
+        if (!isLeftOrFull(kind) && sourceIsAlwaysPreserved(join_node->getRightTableExpressionNode(), source))
+            return true;
+        return false;
+    }
+
+    if (const auto * cross_join_node = join_tree->as<CrossJoinNode>())
+    {
+        for (const auto & table_expression : cross_join_node->getTableExpressions())
+            if (sourceIsAlwaysPreserved(table_expression, source))
+                return true;
+        return false;
+    }
+
+    if (const auto * array_join_node = join_tree->as<ArrayJoinNode>())
+        return sourceIsAlwaysPreserved(array_join_node->getTableExpressionNode(), source);
+
+    return false;
+}
+
+/// Whether grouping by `expr` keeps each group on one shard. The sharding key is matched by unqualified name, so a
+/// name exposed by several sources, or a sharding-key column not backed by this table, does not pin the shard.
+bool isShardLocalKeyExpression(
+    const QueryTreeNodePtr & expr,
+    const QueryTreeNodePtr & expected_source,
+    const Names & sharding_key_columns,
+    const QueryTreeNodePtr & join_tree)
+{
+    if (!expected_source)
+        return false;
+
+    if (!sourceIsAlwaysPreserved(join_tree, expected_source))
+        return false;
+
+    KeyColumnSourcesVisitor visitor;
+    visitor.visit(const_cast<QueryTreeNodePtr &>(expr));
+
+    for (const auto & [name, sources] : visitor.name_to_sources)
+        if (sources.size() > 1)
+            return false;
+
+    for (const auto & sharding_key_column : sharding_key_columns)
+    {
+        auto it = visitor.name_to_sources.find(sharding_key_column);
+        if (it == visitor.name_to_sources.end() || *it->second.begin() != expected_source.get())
+            return false;
+    }
+
+    return true;
+}
+
+}
+
 /// Reuses the logic of isPartitionKeySuitsGroupByKey in useDataParallelAggregation.cpp
 /// Will skip merging step in the initial server when the following conditions are met:
 /// 1. Sharding key columns should be a subset of expression columns.
@@ -859,6 +953,15 @@ void StorageDistributed::checkRemoteTableConversionPreservesOrder(
 bool StorageDistributed::isShardingKeySuitsQueryTreeNodeExpression(
     const QueryTreeNodePtr & expr, const SelectQueryInfo & query_info) const
 {
+    /// Must run before the DAG below is built: it can throw on same-named columns of different sources.
+    const auto & query_node = query_info.query_tree->as<const QueryNode &>();
+    if (!isShardLocalKeyExpression(
+            expr,
+            query_info.table_expression,
+            sharding_key_expr->getActionsDAG().getRequiredColumnsNames(),
+            query_node.getJoinTreeNode()))
+        return false;
+
     ColumnsWithTypeAndName empty_input_columns;
     ColumnNodePtrWithHashSet empty_correlated_columns_set;
 
