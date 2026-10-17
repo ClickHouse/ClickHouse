@@ -2,7 +2,7 @@
 
 -- A typed `DateTime64` leaf of a `JSON` constant whose Unix timestamp has few digits of whole seconds, like
 -- `0.001`, must reach a remote shard as the exact instant under `date_time_input_format = 'basic'`, which reads
--- such a number as a date. It used to throw a logical error found by the AST fuzzer.
+-- such a number as a date. It used to throw a logical error found by the AST fuzzer. 
 
 SET enable_analyzer = 1;
 SET prefer_localhost_replica = 0;
