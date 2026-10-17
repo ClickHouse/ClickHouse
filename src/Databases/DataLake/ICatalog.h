@@ -28,6 +28,10 @@ StorageType parseStorageTypeFromLocation(const std::string & location);
 StorageType parseStorageTypeFromString(const std::string &type);
 std::optional<StorageType> tryParseStorageTypeFromString(const std::string & type);
 
+/// Percent-encodes the bytes a URI cannot carry raw (controls, space, DEL, non-ASCII, `?`, `#`) and every `%` that
+/// `S3::URI` would read literally: one that does not start an escape, or any `%` when the URL has a raw `?`.
+std::string encodeLocationForURI(std::string_view location);
+
 /// Registry of `ALTER DATABASE ... MODIFY SETTING` validators. Each catalog that
 /// supports altering settings registers its own validator; catalog types without
 /// a registered validator do not support altering settings and get `NOT_IMPLEMENTED`.
@@ -105,6 +109,7 @@ public:
     bool requiresDataLakeSpecificProperties() const { return with_datalake_specific_metadata; }
 
     StorageType getStorageType() const;
+    bool isS3Location() const;
 
     /// Some catalogs (Unity or Glue) may store not only Iceberg/DeltaLake tables but other kinds of "tables"
     /// as simple files or some in-memory tables, or even DataLake tables but in some private storages.
