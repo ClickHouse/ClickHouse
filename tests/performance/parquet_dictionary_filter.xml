@@ -82,4 +82,10 @@
 
     <query><![CDATA[SELECT count() FROM file('test_parquet_dictionary_filter_ids.parquet', Parquet) WHERE id = 9223372036854775807 SETTINGS max_threads = 1 FORMAT Null]]></query>
     <query><![CDATA[SELECT count() FROM file('test_parquet_dictionary_filter_ids.parquet', Parquet) WHERE id IN (1, 2, 3, 4, 9223372036854775807) SETTINGS max_threads = 1 FORMAT Null]]></query>
+    <!-- More constants than log2 of the number of dictionary values. -->
+    <query><![CDATA[SELECT count() FROM file('test_parquet_dictionary_filter_ids.parquet', Parquet) WHERE id IN (SELECT 9223372036854775807 - number FROM numbers(20)) SETTINGS max_threads = 1 FORMAT Null]]></query>
+    <!-- More constants than are compared with the dictionary values one by one. -->
+    <query><![CDATA[SELECT count() FROM file('test_parquet_dictionary_filter_ids.parquet', Parquet) WHERE id IN (SELECT 9223372036854775807 - number FROM numbers(100)) SETTINGS max_threads = 1 FORMAT Null]]></query>
+    <!-- Several conditions on one column: each constant is compared with a dictionary once. -->
+    <query><![CDATA[SELECT count() FROM file('test_parquet_dictionary_filter_ids.parquet', Parquet) WHERE id IN (SELECT 9223372036854775807 - number FROM numbers(31)) OR id IN (SELECT 9223372036854775807 - 100 - number FROM numbers(31)) OR id IN (SELECT 9223372036854775807 - 200 - number FROM numbers(31)) SETTINGS max_threads = 1 FORMAT Null]]></query>
 </test>
