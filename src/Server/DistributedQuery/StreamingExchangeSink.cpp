@@ -63,7 +63,7 @@ void StreamingExchangeSink::extractSocket()
 
     /// Set socket to non-blocking mode after handshake is finished.
     socket->setBlocking(false);
-    socket->setSendBufferSize(1 * 1024 * 1024);
+    StreamingExchangeProtocol::applySocketBufferSizes(*socket);
 
     /// Register the socket so the sink hears an inbound `NoMoreDataNeeded` while it waits.
     updateSocketWaitEvents();
