@@ -667,7 +667,9 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
                         return;
                     }
 
-                    if (do_not_load_unchanged_directories && !is_orphaned && !directories_with_pending_replaces.contains(remote_path))
+                    /// Two missing tags compare equal but say nothing about whether the object is the same.
+                    if (do_not_load_unchanged_directories && metadata->isEtagUsableAsCacheKey() && !is_orphaned
+                        && !directories_with_pending_replaces.contains(remote_path))
                     {
                         if (const auto known_info = read_snapshot->getDirectoryRemoteInfo(local_path);
                             known_info && known_info->remote_path == remote_path && known_info->etag == metadata->etag)
