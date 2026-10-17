@@ -58,7 +58,8 @@ struct AggregateFunctionProductData
     }
 
     bool isEmpty() const { return std::bit_cast<UInt64>(product) == empty_bits; }
-    bool isNullResult() const { return isEmpty() || isNaNValue(product); }
+    /// The empty-state sentinel is a NaN, so this also covers empty input.
+    bool isNullResult() const { return isNaNValue(product); }
 
     void add(Float64 value)
     {
@@ -114,7 +115,7 @@ private:
             return static_cast<Float64>(value);
     }
 
-    static Float64 selectValueOrOne(const T & value, UInt8 keep, UInt32 scale)
+    static Float64 selectValueOrOne(const T & value, bool keep, UInt32 scale)
     {
         if constexpr (is_floating_point<T>)
         {
@@ -122,7 +123,7 @@ private:
             /// rather than multiplied by an arithmetic mask.
             constexpr UInt64 identity_bits = std::bit_cast<UInt64>(1.0);
             const UInt64 value_bits = std::bit_cast<UInt64>(toFloat64(value, scale));
-            const UInt64 mask = 0 - static_cast<UInt64>(keep != 0);
+            const UInt64 mask = 0 - static_cast<UInt64>(keep);
             return std::bit_cast<Float64>((value_bits & mask) | (identity_bits & ~mask));
         }
         else
@@ -151,14 +152,43 @@ private:
                 return;
         }
 
+        /// Multiplication by 1.0 quiets a first signaling NaN, preventing a collision
+        /// with the reserved empty-state sentinel.
         Float64 running_product = was_empty ? 1.0 : data.product;
         for (size_t i = row_begin; i < row_end; ++i)
-        {
-            const UInt8 keep_value = static_cast<UInt8>(keep(i) != 0);
-            running_product *= selectValueOrOne(values[i], keep_value, decimal_scale);
-        }
+            running_product *= selectValueOrOne(values[i], keep(i) != 0, decimal_scale);
 
         data.product = running_product;
+    }
+
+    /// Choose the batch predicate once, rather than branching inside the row loop.
+    void addBatchSinglePlaceImpl(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        const UInt8 * null_map,
+        ssize_t if_argument_pos) const
+    {
+        const auto & column = assert_cast<const ColVecType &>(*columns[0]);
+        const auto * values = column.getData().data();
+
+        if (if_argument_pos >= 0)
+        {
+            const auto * flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
+            if (null_map)
+                addBatchWithKeep(place, values, row_begin, row_end, [&](size_t i) { return !null_map[i] && flags[i]; });
+            else
+                addBatchWithKeep(place, values, row_begin, row_end, [&](size_t i) { return flags[i]; });
+        }
+        else if (null_map)
+        {
+            addBatchWithKeep(place, values, row_begin, row_end, [&](size_t i) { return !null_map[i]; });
+        }
+        else
+        {
+            addBatchWithKeep(place, values, row_begin, row_end, [](size_t) { return true; });
+        }
     }
 
 public:
@@ -194,18 +224,7 @@ public:
         Arena *,
         ssize_t if_argument_pos) const override
     {
-        const auto & column = assert_cast<const ColVecType &>(*columns[0]);
-        const auto * values = column.getData().data();
-
-        if (if_argument_pos >= 0)
-        {
-            const auto * flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
-            addBatchWithKeep(place, values, row_begin, row_end, [&](size_t i) { return flags[i]; });
-        }
-        else
-        {
-            addBatchWithKeep(place, values, row_begin, row_end, [](size_t) { return UInt8(1); });
-        }
+        addBatchSinglePlaceImpl(row_begin, row_end, place, columns, nullptr, if_argument_pos);
     }
 
     void addBatchSparseSinglePlace(
@@ -232,21 +251,7 @@ public:
         Arena *,
         ssize_t if_argument_pos) const override
     {
-        const auto & column = assert_cast<const ColVecType &>(*columns[0]);
-        const auto * values = column.getData().data();
-
-        if (if_argument_pos >= 0)
-        {
-            const auto * if_flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
-            addBatchWithKeep(place, values, row_begin, row_end, [&](size_t i)
-            {
-                return static_cast<UInt8>(!null_map[i]) & static_cast<UInt8>(!!if_flags[i]);
-            });
-        }
-        else
-        {
-            addBatchWithKeep(place, values, row_begin, row_end, [&](size_t i) { return static_cast<UInt8>(!null_map[i]); });
-        }
+        addBatchSinglePlaceImpl(row_begin, row_end, place, columns, null_map, if_argument_pos);
     }
 
     void addManyDefaults(
