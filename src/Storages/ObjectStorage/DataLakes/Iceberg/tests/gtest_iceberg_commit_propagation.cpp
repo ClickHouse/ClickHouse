@@ -227,6 +227,8 @@ public:
     std::vector<std::string> removed;
     /// Every read of the hint fails, as a transient network error would.
     bool read_fails = false;
+    /// Every removal of the hint fails, as a transient network error would.
+    bool remove_of_hint_fails = false;
     /// With `Race::CreatedByThisCommit`: another writer advances the hint this commit has created to
     /// this content before the commit reads it back.
     std::optional<std::string> advanced_by_another_writer_to;
@@ -318,7 +320,12 @@ public:
     {
         unexpected("readObject");
     }
-    void removeObjectIfExists(const StoredObject & object) override { removed.push_back(object.remote_path); }
+    void removeObjectIfExists(const StoredObject & object) override
+    {
+        if (remove_of_hint_fails && object.remote_path.ends_with(version_hint_name))
+            throw Exception(ErrorCodes::NETWORK_ERROR, "Cannot remove {}", object.remote_path);
+        removed.push_back(object.remote_path);
+    }
     void removeObjectsIfExist(const StoredObjects &, StoredObjects *) override { unexpected("removeObjectsIfExist"); }
     void copyObject( /// NOLINT
         const StoredObject &,
@@ -559,25 +566,58 @@ TEST(IcebergCommitPropagation, CreatedVersionHintIsKeptWhenItsCheckFails)
 {
     /// The exclusive create of the hint succeeds, but reading it back for its tag fails. Nothing is
     /// known about the hint then: another writer may already have advanced it and published a
-    /// metadata file on top of this one. Removing either would break the table, so the error
-    /// propagates and both files stay.
+    /// metadata file on top of this one. Removing either would break the table, so both files stay.
+    /// The snapshot is published, so the commit succeeds: an error here would make the caller
+    /// clean up the data files, manifests and manifest list the retained metadata references.
     CommitOverExistingVersionHint commit("\"abc\"", CommitOverExistingVersionHint::Race::CreatedByThisCommit);
     commit.object_storage->read_fails = true;
-
-    try
-    {
-        bool committed = commit.run();
-        FAIL() << "Expected the failed read to propagate, got " << committed;
-    }
-    catch (const Exception & e)
-    {
-        EXPECT_EQ(e.code(), ErrorCodes::NETWORK_ERROR) << e.message();
-    }
+    EXPECT_TRUE(commit.run());
 
     const auto & writes = commit.writes();
     ASSERT_EQ(writes.size(), 2u);
     EXPECT_TRUE(writes[1].path.ends_with("version-hint.text")) << writes[1].path;
     EXPECT_TRUE(commit.removed().empty());
+}
+
+TEST(IcebergCommitPropagation, CreatedVersionHintThatCannotBeRemovedKeepsItsMetadataFile)
+{
+    /// The created hint has no tag, but removing it fails. It may still point at the metadata file,
+    /// so the metadata file must stay, and the commit, whose snapshot remains published, succeeds -
+    /// otherwise the caller would clean up the files that snapshot references.
+    CommitOverExistingVersionHint commit("", CommitOverExistingVersionHint::Race::CreatedByThisCommit);
+    commit.object_storage->remove_of_hint_fails = true;
+    EXPECT_TRUE(commit.run());
+
+    const auto & writes = commit.writes();
+    ASSERT_EQ(writes.size(), 2u);
+    EXPECT_TRUE(writes[1].path.ends_with("version-hint.text")) << writes[1].path;
+    EXPECT_TRUE(commit.removed().empty());
+}
+
+TEST(IcebergCommitPropagation, CreatedVersionHintOfCreateThatCannotBeRemovedKeepsItsMetadataFile)
+{
+    /// The same for the hint of `CREATE TABLE`: nothing references the first metadata file yet, so
+    /// the refusal propagates, but the metadata file stays while the hint may still point at it.
+    auto object_storage = std::make_shared<ExistingVersionHintObjectStorage>("");
+    object_storage->remove_of_hint_fails = true;
+
+    try
+    {
+        Iceberg::takeBackVersionHintWithoutETag(
+            object_storage,
+            "/table/metadata/version-hint.text",
+            /*version=*/ 1,
+            {"/table/metadata/v1.metadata.json"},
+            getContext().context,
+            /*no_concurrent_writer=*/ true);
+        FAIL() << "Expected the refusal of a version hint without an ETag";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::UNSUPPORTED_METHOD) << e.message();
+    }
+
+    EXPECT_TRUE(object_storage->removed.empty());
 }
 
 TEST(IcebergCommitPropagation, CreatedVersionHintAdvancedByAnotherWriterIsLeftAlone)

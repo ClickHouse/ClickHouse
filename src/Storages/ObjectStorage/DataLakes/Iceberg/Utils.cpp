@@ -428,11 +428,24 @@ void takeBackVersionHintWithoutETag(
     const DB::ContextPtr & context,
     bool no_concurrent_writer)
 {
+    /// Remove the hint first and the files it references only after that. If the hint cannot be
+    /// removed - or the outcome of the request is unknown - it may still point at the metadata
+    /// file, so the files must stay: removing them would leave a published hint that resolves to
+    /// nothing. Returns whether everything was taken back.
     auto take_back = [&]
     {
-        std::vector<std::string> paths{storage_version_hint_path};
-        paths.insert(paths.end(), files_to_take_back.begin(), files_to_take_back.end());
-        for (const auto & path : paths)
+        try
+        {
+            object_storage->removeObjectIfExists(StoredObject(storage_version_hint_path));
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            return false;
+        }
+
+        bool all_removed = true;
+        for (const auto & path : files_to_take_back)
         {
             try
             {
@@ -441,8 +454,26 @@ void takeBackVersionHintWithoutETag(
             catch (...)
             {
                 tryLogCurrentException(__PRETTY_FUNCTION__);
+                all_removed = false;
             }
         }
+        return all_removed;
+    };
+
+    /// A commit has already published its snapshot by the time it gets here: the metadata file and
+    /// the hint pointing at it are both in place. If that cannot be taken back entirely, the
+    /// snapshot stays visible, and the commit must be reported as successful - its caller would
+    /// otherwise clean up the data files, manifests and manifest lists the retained metadata
+    /// references, and corrupt the table. Such a table cannot be committed to later, but that
+    /// later commit fails with its own error before publishing anything.
+    auto keep_published_commit = [&](const std::string & reason)
+    {
+        LOG_WARNING(
+            getLogger("IcebergVersionHint"),
+            "The newly created {} could not be checked for an ETag or taken back ({}). Keeping the commit "
+            "published; later commits may be unable to advance the hint under a compare-and-swap.",
+            storage_version_hint_path,
+            reason);
     };
 
     /// Read the tag back the same way `readVersionHint` does for the next commit. A metadata-only
@@ -452,13 +483,14 @@ void takeBackVersionHintWithoutETag(
     /// Taking the files back is destructive, so do it only once the check proves that the hint is
     /// still the one this operation created. If the read fails, nothing is proven: another writer
     /// may already have advanced the hint and published a metadata file on top of ours, and
-    /// removing either would break the table for every reader. The error propagates and both
-    /// files stay; a later commit that cannot advance the hint fails with its own error.
+    /// removing either would break the table for every reader. Both files stay, and the commit is
+    /// kept published.
     ///
     /// The exception is an operation that knows no other writer can have built on its files yet
     /// (`CREATE TABLE` right after the exclusive creates of the first metadata file and the hint).
     /// There, keeping the files after a failed read would only wedge the location: a retry would
-    /// fail on the already existing first metadata file. Take both back before rethrowing.
+    /// fail on the already existing first metadata file. Take both back before rethrowing. Nothing
+    /// references the first metadata file of a new table, so the error can propagate either way.
     VersionHintState hint;
     try
     {
@@ -467,8 +499,12 @@ void takeBackVersionHintWithoutETag(
     catch (...)
     {
         if (no_concurrent_writer)
+        {
             take_back();
-        throw;
+            throw;
+        }
+        keep_published_commit(getCurrentExceptionMessage(false));
+        return;
     }
 
     /// Another writer has replaced the hint since it was created (that takes a compare-and-swap
@@ -480,7 +516,11 @@ void takeBackVersionHintWithoutETag(
     if (!hint.etag.empty())
         return;
 
-    take_back();
+    if (!take_back() && !no_concurrent_writer)
+    {
+        keep_published_commit("removing the published files failed");
+        return;
+    }
 
     throw Exception(
         ErrorCodes::UNSUPPORTED_METHOD,
@@ -643,7 +683,8 @@ bool tryWriteVersionHintFile(
         {
             /// A hint this commit has just created must be advanceable by the next one, the same
             /// rule applied above to an existing hint. If it is not, take back both files, so the
-            /// refused commit leaves nothing published.
+            /// refused commit leaves nothing published. If that is not possible, the commit stays
+            /// published and is reported as successful (see `takeBackVersionHintWithoutETag`).
             if (!version_hint.exists)
                 takeBackVersionHintWithoutETag(
                     object_storage,
