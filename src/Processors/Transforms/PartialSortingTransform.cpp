@@ -65,37 +65,42 @@ size_t getFilterMask(const ColumnRawPtrs & raw_block_columns, const Columns & th
     return result_size_hint;
 }
 
-bool compareWithThreshold(const ColumnRawPtrs & raw_block_columns, size_t min_block_index, const Columns & threshold_columns, const SortDescription & sort_description)
+int compareWithThreshold(
+    const ColumnRawPtrs & raw_block_columns,
+    size_t row,
+    const Columns & threshold_columns,
+    const SortDescription & sort_description,
+    size_t num_columns)
 {
     chassert(raw_block_columns.size() == threshold_columns.size());
     chassert(raw_block_columns.size() == sort_description.size());
+    chassert(num_columns <= raw_block_columns.size());
 
-    size_t raw_block_columns_size = raw_block_columns.size();
-    for (size_t i = 0; i < raw_block_columns_size; ++i)
+    for (size_t i = 0; i < num_columns; ++i)
     {
-        int res = sort_description[i].direction * raw_block_columns[i]->compareAt(min_block_index, 0, *threshold_columns[i], sort_description[i].nulls_direction);
+        int res = sort_description[i].direction * raw_block_columns[i]->compareAt(row, 0, *threshold_columns[i], sort_description[i].nulls_direction);
 
-        if (res < 0)
-            return true;
-        if (res > 0)
-            return false;
+        if (res != 0)
+            return res;
     }
 
-    return false;
+    return 0;
 }
 
 }
 
 PartialSortingTransform::PartialSortingTransform(
     SharedHeader header_, const SortDescription & description_, UInt64 limit_,
-    TopKThresholdTrackerPtr threshold_tracker_)
+    TopKThresholdTrackerPtr threshold_tracker_, size_t sorted_prefix_size_)
     : ISimpleTransform(header_, header_, false)
     , description(description_)
     , limit(limit_)
+    , sorted_prefix_size(sorted_prefix_size_)
     , threshold_tracker(threshold_tracker_)
 {
     // Sorting by no columns doesn't make sense.
     chassert(!description_.empty());
+    chassert(sorted_prefix_size <= description.size());
 
     for (const auto & column_sort_desc : description)
         description_with_positions.emplace_back(column_sort_desc, header_->getPositionByName(column_sort_desc.column_name));
@@ -135,6 +140,15 @@ void PartialSortingTransform::transform(Chunk & chunk)
                 block_columns, sort_description_threshold_columns,
                 description, rows_num, filter, rows_to_compare, compare_results);
 
+        /// FinishSortingTransform outputs a group of rows with an equal sorted prefix only when it receives a row of
+        /// the next group. Keep such a row (the last one, the input is sorted by the prefix) although it is not needed.
+        if (sorted_prefix_size && rows_num
+            && compareWithThreshold(block_columns, rows_num - 1, sort_description_threshold_columns, description, sorted_prefix_size) > 0)
+        {
+            filter[rows_num - 1] = 1;
+            ++result_size_hint;
+        }
+
         /// Everything was filtered. Skip whole chunk.
         if (result_size_hint == 0)
             return;
@@ -161,7 +175,7 @@ void PartialSortingTransform::transform(Chunk & chunk)
         auto raw_block_columns = extractRawColumns(block, description_with_positions);
 
         if (sort_description_threshold_columns.empty() ||
-            compareWithThreshold(raw_block_columns, min_row_to_compare, sort_description_threshold_columns, description))
+            compareWithThreshold(raw_block_columns, min_row_to_compare, sort_description_threshold_columns, description, description.size()) < 0)
         {
             size_t raw_block_columns_size = raw_block_columns.size();
             Columns sort_description_threshold_columns_updated(raw_block_columns_size);
