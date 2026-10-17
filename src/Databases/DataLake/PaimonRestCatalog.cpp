@@ -39,6 +39,7 @@
 #include <Poco/String.h>
 #include <Common/Base64.h>
 #include <Common/Exception.h>
+#include <Common/HTTPHeaderFilter.h>
 #include <Common/Logger.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Common/logger_useful.h>
@@ -285,6 +286,8 @@ DB::ReadWriteBufferFromHTTPPtr PaimonRestCatalog::createReadBuffer(
         DB::HTTPHeaderEntries request_headers(headers);
         const String bearer_token = createAuthHeaders(request_headers, endpoint, query_parameters_map, method);
         validateBearerToken(context, bearer_token);
+        /// The `dlf` provider adds headers built from the database settings (`dlf_access_key_id`, `region`).
+        context->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(request_headers);
 
         DB::WriteBufferFromOwnString headers_string;
         headers_string << "{";
