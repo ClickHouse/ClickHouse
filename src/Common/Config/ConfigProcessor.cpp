@@ -198,6 +198,20 @@ static bool allWhitespace(const std::string & s)
     return firstNonWhitespacePos(s) == std::string::npos;
 }
 
+/// An empty or whitespace-only file: there is nothing to merge from it.
+static bool isBlankFile(const std::string & path)
+{
+    std::ifstream file(path);
+    if (!file.is_open())
+        return false;
+
+    std::string line;
+    while (std::getline(file, line))
+        if (!allWhitespace(line))
+            return false;
+    return true;
+}
+
 static void deleteAttributesRecursive(Node * root)
 {
     const NodeListPtr children = root->childNodes();
@@ -873,6 +887,12 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     {
         try
         {
+            if (isBlankFile(merge_file))
+            {
+                LOG_WARNING(log, "Skipping configuration file '{}' because it is empty.", merge_file);
+                continue;
+            }
+
             if (is_config_changed)
                 LOG_DEBUG(log, "Merging configuration file '{}'.", merge_file);
 
