@@ -1,7 +1,5 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyOffset.h>
 
-#include <Core/DecimalFunctions.h>
-#include <IO/WriteHelpers.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -9,12 +7,10 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/NodeEvaluationRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
-#include <base/arithmeticOverflow.h>
 
 
 namespace DB::ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
 
@@ -32,6 +28,10 @@ namespace
         ConverterContext & context)
     {
         expression.node = offset_node;
+
+        /// A range vector keeps the timestamps of its samples, the range function consuming it shifts its grid instead.
+        if (expression.type == ResultType::RANGE_VECTOR)
+            return std::move(expression);
 
         switch (expression.store_method)
         {
@@ -53,52 +53,8 @@ namespace
 
             case StoreMethod::RAW_DATA:
             {
-                /// SELECT group, CAST(CAST(timestamp, 'result_timestamp_type') + INTERVAL <x> <unit>, 'result_timestamp_type') AS timestamp, value
-                /// FROM <raw_data>
-                SelectQueryBuilder builder;
-
-                builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
-
-                /// The interval functions don't accept Decimal arguments, so we choose the unit (milliseconds, microseconds
-                /// or nanoseconds) which is not longer than the tick of `result_timestamp_scale`, and pass an integer number of the units.
-                UInt32 result_scale = context.result_timestamp_scale;
-                chassert(result_scale <= 9); /// Maximum scale for DateTime64 is 9 (nanoseconds).
-                UInt32 interval_scale = (result_scale + 2) / 3 * 3;
-                Int64 offset_in_interval_units = 0;
-                if (common::mulOverflow(offset_value.value, DecimalUtils::scaleMultiplier<Int64>(interval_scale - result_scale), offset_in_interval_units))
-                {
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Offset {} is too big in expression {}",
-                                    toString(offset_value, result_scale), getPromQLText(expression, context));
-                }
-
-                static const std::string_view to_interval_functions[] = {"toIntervalSecond", "toIntervalMillisecond", "toIntervalMicrosecond", "toIntervalNanosecond"};
-                std::string_view to_interval_function = to_interval_functions[interval_scale / 3];
-
-                /// The column `timestamp` is converted to `result_timestamp_type` before adding the interval because it can have
-                /// a type which doesn't support intervals (UInt32). Adding an interval can change the scale
-                /// (for example, DateTime64(4) + INTERVAL 1 MICROSECOND is DateTime64(6)), so we cast the sum back.
-                /// Both casts do nothing if the types already match.
-                const String result_timestamp_type_name = context.result_timestamp_type->getName();
-                ASTPtr new_timestamp = makeASTFunction(
-                    "CAST",
-                    makeASTFunction(
-                        "plus",
-                        makeASTFunction("CAST", make_intrusive<ASTIdentifier>(ColumnNames::Timestamp), make_intrusive<ASTLiteral>(result_timestamp_type_name)),
-                        makeASTFunction(to_interval_function, make_intrusive<ASTLiteral>(offset_in_interval_units))),
-                    make_intrusive<ASTLiteral>(result_timestamp_type_name));
-
-                new_timestamp->setAlias(ColumnNames::Timestamp);
-                builder.select_list.push_back(std::move(new_timestamp));
-
-                builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
-
-                auto & subqueries = context.subqueries;
-                subqueries.emplace_back(subqueries.size(), std::move(expression.select_query), SQLSubqueryType::TABLE);
-                builder.from_table = subqueries.back().name;
-
-                expression.select_query = builder.getSelectQuery();
-
-                return std::move(expression);
+                /// Can't get in here because RAW_DATA is used only for range vectors, and they are returned above as is.
+                throwUnexpectedStoreMethod(expression, context);
             }
         }
 
