@@ -63,6 +63,7 @@ Configure one prefix-routed handler on the main ClickHouse HTTP port:
 | `/prometheus/api/v1/format_query` | PromQL expression formatting |
 | `/prometheus/api/v1/series` | Series metadata |
 | `/prometheus/api/v1/metadata` | Metric-family metadata |
+| `/prometheus/api/v1/federate` | Federation of the latest samples |
 
 The example omits `database` and `table` from the handler. Each request must provide the `table` query parameter (except for `/format_query`, which only parses the given PromQL expression and doesn't need a table). It can also provide `database`, use a qualified table name such as `prometheus.metrics`, or omit the database to use `default`. This allows one handler to serve multiple `TimeSeries` tables.
 
@@ -240,6 +241,23 @@ curl --user default:<password> --get \
   --data-urlencode "metric=http_requests_total" \
   --data-urlencode "database=prometheus" \
   --data-urlencode "table=metrics"
+```
+
+## Federate metrics {#federation}
+
+ClickHouse supports the [Prometheus federation](https://prometheus.io/docs/prometheus/latest/federation/) endpoint at `/prometheus/api/v1/federate` (or at any path ending with `/federate` served by a handler of type `query`). For each series matched by the `match[]` selectors, it returns the latest sample of the last 5 minutes in the Prometheus text format, so a Prometheus server can scrape it:
+
+```yaml
+scrape_configs:
+  - job_name: clickhouse-federate
+    honor_labels: true
+    scheme: https
+    metrics_path: /prometheus/api/v1/federate
+    params:
+      'match[]': ['{job="node"}']
+      table: ['prometheus.metrics']
+    static_configs:
+      - targets: ['clickhouse.example.com:8443']
 ```
 
 ## Read metrics with remote read {#remote-read}
