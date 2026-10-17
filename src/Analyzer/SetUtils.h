@@ -29,4 +29,8 @@ struct GetSetElementParams
 /// Array or Tuple). Values are read column-natively - no `Field` is materialized.
 ColumnsWithTypeAndName getSetElementsForConstantValue(const DataTypePtr & expression_type, const ColumnPtr & rhs_column, const DataTypePtr & rhs_type, GetSetElementParams params);
 
+/// Whether a `constant_type` constant sits at the nesting depth of an `expression_type` set's members,
+/// so that a tuple of such constants is the member list `getSetElementsForConstantValue` reads it as.
+bool constantIsReadAsSingleSetMember(const DataTypePtr & expression_type, const DataTypePtr & constant_type);
+
 }
