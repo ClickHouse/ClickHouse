@@ -112,7 +112,8 @@ void IStorageCluster::read(
     removeGroupingFunctionSpecializations(query_tree_to_send);
     ASTPtr query_to_send = queryNodeToDistributedSelectQuery(query_tree_to_send);
 
-    sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query_to_send, context, SelectQueryOptions(processed_stage));
+    sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(
+        query_to_send, context, SelectQueryOptions(processed_stage).positionalArgumentsAlreadyResolved());
 
     /// The nodes that will run the query are the nodes of this storage's own cluster.
     updateQueryToSendIfNeeded(query_to_send, storage_snapshot, context, getClusterName());

@@ -10,6 +10,7 @@
 #include <Poco/Net/HTTPServerParams.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
+#include <Poco/Net/HTMLForm.h>
 #include <Poco/Net/MessageHeader.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/ServerSocket.h>
@@ -123,8 +124,9 @@ public:
         last_request_info.emplace();
         last_request_info->headers = request;
 
-        Poco::URI uri(request.getURI());
-        last_request_info->query_params = uri.getQueryParameters();
+        /// The parameters arrive form-encoded in the POST body, as the AWS SDK sends them.
+        Poco::Net::HTMLForm form(request, request.stream());
+        last_request_info->query_params.assign(form.begin(), form.end());
 
         response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
         auto & out = response.send();
@@ -136,6 +138,7 @@ public:
         <AccessKeyId>{}</AccessKeyId>
         <SecretAccessKey>{}</SecretAccessKey>
         <SessionToken>session_token</SessionToken>
+        <Expiration>2030-01-01T00:00:00Z</Expiration>
     </Credentials>
 </AssumeRoleResult>
 </AssumeRoleResponse>)", role_access_key, role_secret_key);
