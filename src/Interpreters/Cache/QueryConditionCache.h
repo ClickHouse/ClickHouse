@@ -113,6 +113,9 @@ public:
     /// QueryConditionCacheHits/Misses events count consultations, not internal key lookups.
     std::optional<MatchingMarks> read(const UUID & table_id, const String & part_name, UInt64 condition_hash, bool increment_profile_events = true);
 
+    /// Whether `read` would find an entry, without the cache policy update and profile events.
+    bool contains(const UUID & table_id, const String & part_name, UInt64 condition_hash) const;
+
     /// For debugging and system tables
     std::vector<QueryConditionCache::Cache::KeyMapped> dump() const;
 

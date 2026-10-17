@@ -66,6 +66,8 @@ public:
 
     std::optional<ColumnsDescription> tryGetColumns(const Key & key, LastModificationTimeGetter get_last_mod_time = {});
     std::optional<size_t> tryGetNumRows(const Key & key, LastModificationTimeGetter get_last_mod_time = {});
+    /// Whether `tryGetNumRows` would return a number of rows, without the LRU update, invalidation and profile events.
+    bool hasValidNumRows(const Key & key, LastModificationTimeGetter get_last_mod_time = {}) const;
 
     void clear();
 
@@ -89,7 +91,7 @@ private:
     std::unordered_map<Key, Cell, KeyHash> data;
 
     size_t max_elements;
-    std::mutex mutex;
+    mutable std::mutex mutex;
 };
 
 }

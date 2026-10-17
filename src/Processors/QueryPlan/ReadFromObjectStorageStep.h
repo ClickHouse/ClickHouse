@@ -105,6 +105,9 @@ private:
 #endif
 
     void createIterator();
+
+    /// Whether every read of an object is pinned to the generation of the object seen when it was listed.
+    bool isReadPinnedToObjectGeneration() const;
 };
 
 }

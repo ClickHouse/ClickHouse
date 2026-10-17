@@ -16,6 +16,7 @@ namespace DB
 
 class BlockMissingValues;
 struct SelectQueryInfo;
+class ParquetPrefetchedFooter;
 
 using ColumnMappingPtr = std::shared_ptr<ColumnMapping>;
 using IColumnFilter = PaddedPODArray<UInt8>;
@@ -148,6 +149,9 @@ public:
     virtual bool isTopKFilterApplied() const { return false; }
     /// Whether the rows returned for this file were built from statistics (`FormatFilterInfo::min_max_from_statistics`).
     virtual bool isMinMaxFromStatisticsApplied() const { return false; }
+
+    /// The footer of the file read in the background before the reader was created, used by the Parquet reader.
+    virtual void setPrefetchedFooter(std::shared_ptr<ParquetPrefetchedFooter> /*footer*/) {}
 
 protected:
     ReadBuffer & getReadBuffer() const { chassert(in); return *in; }

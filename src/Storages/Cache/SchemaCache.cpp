@@ -135,6 +135,23 @@ std::optional<size_t> SchemaCache::tryGetNumRows(const DB::SchemaCache::Key & ke
     return schema_info->num_rows;
 }
 
+bool SchemaCache::hasValidNumRows(const Key & key, LastModificationTimeGetter get_last_mod_time) const
+{
+    std::lock_guard lock(mutex);
+    auto it = data.find(key);
+    if (it == data.end() || !it->second.schema_info.num_rows)
+        return false;
+
+    if (get_last_mod_time)
+    {
+        auto last_mod_time = get_last_mod_time();
+        if (!last_mod_time || *last_mod_time >= it->second.schema_info.registration_time)
+            return false;
+    }
+
+    return true;
+}
+
 std::optional<SchemaCache::SchemaInfo> SchemaCache::tryGetImpl(const Key & key, LastModificationTimeGetter get_last_mod_time)
 {
     std::lock_guard lock(mutex);
