@@ -1,0 +1,10 @@
+--- 12k random hex strings, d=1 ---
+12000
+--- 100 well-separated clusters of 120 random variants each, d=2 ---
+100	12000
+--- Naive vs q-gram path: identical input via modulo, identical answer ---
+200	200
+--- 20k strings, half cluster A, half cluster B, gap > d ---
+2	20000
+--- 10k well-separated + 1 short string at the end ---
+2
