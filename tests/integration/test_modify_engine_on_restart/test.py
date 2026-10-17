@@ -353,6 +353,49 @@ def test_modify_engine_on_restart_keeps_journal_when_part_is_missing(started_clu
     ch1.query(f"DROP DATABASE {database} SYNC")
 
 
+def test_modify_engine_on_restart_refuses_unattachable_journal_entries(started_cluster):
+    database = "modify_engine_bad_journal"
+    zk = cluster.get_kazoo_client("zoo1")
+    uuid = prepare_versioned_table(ch1, zk, database)
+    table_path = get_table_path(ch1, "mt", database)
+    parts = active_parts(database)
+    assert len(parts) == 2
+
+    pause_at(ch1, "rmt_restore_replica_pause_after_detaching_parts")
+    kill_paused(ch1)
+    journal = f"{table_path}{JOURNAL}"
+    ignored = f"ignored_{parts[0]}"
+    ch1.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"cp -r {table_path}detached/{parts[0]} {table_path}detached/{ignored} && cp {journal} /tmp/{JOURNAL}",
+        ]
+    )
+
+    # A part listed twice, then a detached/ directory that cannot be attached.
+    for edit in [f"echo {parts[0]} >> {journal}", f"sed -i '1a {ignored}' {journal}"]:
+        ch1.exec_in_container(["bash", "-c", f"cp /tmp/{JOURNAL} {journal} && {edit}"])
+        ch1.start_clickhouse()
+        error = ch1.query_and_get_error(f"SELECT count() FROM {database}.mt")
+        assert "INCORRECT_DATA" in error
+        assert JOURNAL in ls(ch1, table_path)
+        assert zk.exists(f"/clickhouse/tables/{uuid}/01") is None
+        ch1.stop_clickhouse()
+
+    ch1.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"cp /tmp/{JOURNAL} {journal} && rm -r {table_path}detached/{ignored}",
+        ]
+    )
+    ch1.start_clickhouse()
+    check_converted(database, uuid, zk, 200)
+
+    ch1.query(f"DROP DATABASE {database} SYNC")
+
+
 def test_modify_engine_on_restart_refuses_foreign_detached_part(started_cluster):
     database = "modify_engine_foreign_detached"
     zk = cluster.get_kazoo_client("zoo1")
