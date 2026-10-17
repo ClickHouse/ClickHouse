@@ -1,0 +1,51 @@
+<test>
+    <!-- optimize_aggregation_max_by_sorting_key: skip granules that cannot contain any group's answer for GROUP BY,
+         DISTINCT and LIMIT BY on a sorting key prefix with max/min of the next sorting key column. Each query runs with
+         the optimization off and on. The setting does not exist on older servers, so there the queries with it fail
+         and are run on the new server only. -->
+    <substitutions>
+        <substitution>
+            <name>table</name>
+            <values>
+                <!-- 500000 rows per symbol: about 61 granules per symbol, most of them skipped. -->
+                <value>max_by_sorting_key_100</value>
+                <!-- 5000 rows per symbol: fewer than one granule, nothing to skip. -->
+                <value>max_by_sorting_key_10k</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>optimize</name>
+            <values>
+                <value>0</value>
+                <value>1</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>CREATE TABLE max_by_sorting_key_100 (symbol String, ts DateTime64(3), price Float64) ENGINE = MergeTree ORDER BY (symbol, ts)</create_query>
+    <create_query>CREATE TABLE max_by_sorting_key_10k (symbol String, ts DateTime64(3), price Float64) ENGINE = MergeTree ORDER BY (symbol, ts)</create_query>
+
+    <!-- Every symbol has one row per 10 ms per symbol; timestamps are unique per symbol. -->
+    <fill_query>INSERT INTO max_by_sorting_key_100 SELECT 'SYM' || toString(number % 100), toDateTime64('2026-01-01 00:00:00', 3) + toIntervalMillisecond(intDiv(number, 100) * 10 + number % 7), (number * 7919) % 10000 / 100 FROM numbers_mt(50000000)</fill_query>
+    <fill_query>INSERT INTO max_by_sorting_key_10k SELECT 'SYM' || toString(number % 10000), toDateTime64('2026-01-01 00:00:00', 3) + toIntervalMillisecond(intDiv(number, 10000) * 10 + number % 7), (number * 7919) % 10000 / 100 FROM numbers_mt(50000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE max_by_sorting_key_100 FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE max_by_sorting_key_10k FINAL</fill_query>
+
+    <!-- Latest and earliest value per symbol. -->
+    <query>SELECT symbol, max(ts), argMax(price, ts) FROM {table} GROUP BY symbol SETTINGS optimize_aggregation_max_by_sorting_key = {optimize} FORMAT Null</query>
+    <query>SELECT symbol, min(ts), argMin(price, ts) FROM {table} GROUP BY symbol SETTINGS optimize_aggregation_max_by_sorting_key = {optimize} FORMAT Null</query>
+
+    <!-- Latest value per symbol in a time window, and for a list of symbols. -->
+    <query>SELECT symbol, argMax(price, ts) FROM {table} WHERE ts BETWEEN '2026-01-01 00:00:10' AND '2026-01-01 00:40:00' GROUP BY symbol SETTINGS optimize_aggregation_max_by_sorting_key = {optimize} FORMAT Null</query>
+    <query>SELECT symbol, argMax(price, ts) FROM {table} WHERE symbol IN ('SYM1', 'SYM2', 'SYM3', 'SYM4', 'SYM5', 'SYM6', 'SYM7', 'SYM8', 'SYM9', 'SYM10') GROUP BY symbol SETTINGS optimize_aggregation_max_by_sorting_key = {optimize} FORMAT Null</query>
+
+    <!-- Which symbols exist. -->
+    <query>SELECT DISTINCT symbol FROM {table} SETTINGS optimize_aggregation_max_by_sorting_key = {optimize} FORMAT Null</query>
+    <query>SELECT count(DISTINCT symbol) FROM {table} SETTINGS optimize_aggregation_max_by_sorting_key = {optimize} FORMAT Null</query>
+
+    <!-- Latest row per symbol. -->
+    <query>SELECT symbol, ts, price FROM {table} ORDER BY symbol, ts DESC LIMIT 1 BY symbol SETTINGS optimize_aggregation_max_by_sorting_key = {optimize} FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS max_by_sorting_key_100</drop_query>
+    <drop_query>DROP TABLE IF EXISTS max_by_sorting_key_10k</drop_query>
+</test>

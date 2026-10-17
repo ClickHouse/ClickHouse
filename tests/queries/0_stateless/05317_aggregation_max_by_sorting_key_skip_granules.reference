@@ -1,0 +1,284 @@
+-- max and argMax: the last granule of each group
+Granules: 4/12
+A	0	12	989
+A	1	12	977
+B	0	12	965
+B	1	12	953
+A	0	12	989
+A	1	12	977
+B	0	12	965
+B	1	12	953
+-- GROUP BY columns in another order
+Granules: 4/12
+0	A	12
+1	A	12
+0	B	12
+1	B	12
+0	A	12
+1	A	12
+0	B	12
+1	B	12
+-- min and argMin: the first and the last granule of each group
+Granules: 8/12
+A	0	1	1000
+A	1	1	988
+B	0	1	976
+B	1	1	964
+A	0	1	1000
+A	1	1	988
+B	0	1	976
+B	1	1	964
+-- min and max together
+Granules: 8/12
+A	0	1	12	1000	989
+A	1	1	12	988	977
+B	0	1	12	976	965
+B	1	1	12	964	953
+A	0	1	12	1000	989
+A	1	1	12	988	977
+B	0	1	12	976	965
+B	1	1	12	964	953
+-- a shorter prefix: max of the column after it
+Granules: 2/12
+A	1
+B	1
+A	1
+B	1
+-- GROUP BY keys that are only some of the columns before m: the last granule of each (k, k2) run
+Granules: 4/12
+A	12
+B	12
+A	12
+B	12
+Granules: 8/12
+0	12	1
+1	12	1
+0	12	1
+1	12	1
+Granules: 4/12
+12	1
+12	1
+-- WHERE fixes a leading column: GROUP BY k2 for one value of k
+Granules: 3/7
+0	12	965
+1	12	953
+0	12	965
+1	12	953
+-- a GROUP BY expression of the columns before m
+Granules: 4/12
+a	12
+b	12
+a	12
+b	12
+-- not applied: a GROUP BY key that is not a function of the columns before m
+not applied
+not applied
+-- GROUP BY and DISTINCT without aggregates: the last granule of each run
+Granules: 4/12
+A	0
+A	1
+B	0
+B	1
+Granules: 2/12
+A
+B
+Granules: 3/7
+0
+1
+-- aggregates that depend only on the distinct values of the columns before m
+Granules: 4/12
+A	2	2	0	1	1
+B	2	2	0	1	1
+A	2	2	0	1	1
+B	2	2	0	1	1
+Granules: 4/12
+A	2	12
+B	2	12
+Granules: 2/12
+2
+not applied
+not applied
+-- not applied: max of a column outside the sorting key
+not applied
+-- not applied: an aggregate that needs every row
+not applied
+-- not applied: a filter on a column outside the primary key
+not applied
+A	0	12
+A	1	8
+not applied
+A	0	10
+A	1	9
+B	0	9
+B	1	9
+-- not applied: a filter the primary key analysis cannot evaluate exactly
+not applied
+-- filters on GROUP BY columns only remove whole groups
+Granules: 2/6
+A	0	12
+A	1	12
+Granules: 4/12
+B	0	12
+B	1	12
+-- filters on m: a granule is skipped only if the first row of the next granule passes the filter
+Granules: 4/12
+A	0	9	992
+A	1	9	980
+B	0	9	968
+B	1	9	956
+A	0	9	992
+A	1	9	980
+B	0	9	968
+B	1	9	956
+Granules: 7/11
+A	0	8	993
+A	1	8	981
+B	0	8	969
+B	1	8	957
+A	0	8	993
+A	1	8	981
+B	0	8	969
+B	1	8	957
+Granules: 12/12
+A	0	3	10
+A	1	3	10
+B	0	3	10
+B	1	3	10
+A	0	3	10
+A	1	3	10
+B	0	3	10
+B	1	3	10
+Granules: 3/7
+B	0	10
+B	1	10
+B	0	10
+B	1	10
+-- ORDER BY ... LIMIT n BY: the last n rows (DESC) or the first n rows (ASC) of each run
+Granules: 4/12
+A	0	12	989
+A	1	12	977
+B	0	12	965
+B	1	12	953
+Granules: 8/12
+A	0	11	990
+A	1	11	978
+B	0	11	966
+B	1	11	954
+A	0	11	990
+A	1	11	978
+B	0	11	966
+B	1	11	954
+Granules: 8/12
+A	0	1	1000
+A	0	2	999
+A	0	3	998
+A	1	1	988
+A	1	2	987
+A	1	3	986
+B	0	1	976
+B	0	2	975
+B	0	3	974
+B	1	1	964
+B	1	2	963
+B	1	3	962
+A	0	1	1000
+A	0	2	999
+A	0	3	998
+A	1	1	988
+A	1	2	987
+A	1	3	986
+B	0	1	976
+B	0	2	975
+B	0	3	974
+B	1	1	964
+B	1	2	963
+B	1	3	962
+Granules: 3/7
+0	9	968
+1	9	956
+0	9	968
+1	9	956
+not applied
+not applied
+-- parts of a projection that was chosen: the projection sorting key is used
+└──ReadFromMergeTree (by_symbol)
+Granules: 3/7
+B	45	955
+C	46	954
+B	45	955
+C	46	954
+Granules: 4/12
+A	44	956
+B	45	955
+C	46	954
+D	47	953
+A	44	956
+B	45	955
+C	46	954
+D	47	953
+not applied
+-- every part is filtered on its own
+Granules: 4/6
+A	112	1
+A	112	1
+-- gaps shorter than merge_tree_min_rows_for_seek or merge_tree_min_bytes_for_seek are read through
+Granules: 4/12
+A	0	12	989
+A	1	12	977
+B	0	12	965
+B	1	12	953
+A	0	12	989
+A	1	12	977
+B	0	12	965
+B	1	12	953
+Granules: 10/12
+A	0	12	989
+A	1	12	977
+B	0	12	965
+B	1	12	953
+A	0	12	989
+A	1	12	977
+B	0	12	965
+B	1	12	953
+Granules: 12/12
+A	0	1	1000
+A	1	1	988
+B	0	1	976
+B	1	1	964
+A	0	1	1000
+A	1	1	988
+B	0	1	976
+B	1	1	964
+Granules: 10/12
+A	0	12	989
+A	1	12	977
+B	0	12	965
+B	1	12	953
+A	0	12	989
+A	1	12	977
+B	0	12	965
+B	1	12	953
+-- not applied: reverse sorting key
+not applied
+A	12
+-- not applied: Nullable column (max ignores the NULLs at the end of the group)
+not applied
+A	6
+-- not applied: floating-point column (NaN at the end of the group)
+not applied
+A	6
+-- not applied: floating-point prefix (-0 and +0 sort as equal but may be different groups)
+not applied
+-- not applied: an expression in the sorting key
+not applied
+-- not applied: FINAL
+not applied
+-- part read in full: lightweight DELETE
+Granules: 3/3
+A	8
+-- part read in full: DELETE written as a patch part
+Granules: 3/3
+A	8
+-- part read in full: ALTER DELETE applied on the fly
+Granules: 3/3
+A	8
