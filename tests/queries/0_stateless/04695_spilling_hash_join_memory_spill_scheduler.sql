@@ -15,6 +15,12 @@ set enable_parallel_replicas=0; -- parallel replicas distribute data across node
 set grace_hash_join_initial_buckets=1; -- more initial buckets split the right side, reducing per-bucket memory and preventing the expected OOM
 set collect_hash_table_stats_during_joins=0;
 set max_bytes_in_join=0;
+-- The expected OOM is the peak when the one-bucket map of the serial layout doubles. A two-level map grows
+-- bucket by bucket and may stay below the limit. The join is serial when its right side has an estimate below
+-- the threshold. The join order optimization gives the 1M-row estimate, so it must run with the real row counts.
+set parallel_hash_join_threshold=1000000000;
+set query_plan_optimize_join_order_limit=10;
+set query_plan_optimize_join_order_randomize=0;
 -- Put the join's own spill threshold out of reach so that only the scheduler can make it spill.
 set max_bytes_before_external_join='100Gi';
 set max_bytes_ratio_before_external_join=0;

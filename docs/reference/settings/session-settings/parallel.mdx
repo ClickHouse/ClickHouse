@@ -40,8 +40,13 @@ Since v25.4, `INSERT ... SELECT` from a `ReplicatedMergeTree` or `SharedMergeTre
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "100000"},{"label": "New setting"}]}, {"id": "row-2","items": [{"label": "25.4"},{"label": "0"},{"label": "New setting"}]}, {"id": "row-3","items": [{"label": "25.3"},{"label": "0"},{"label": "New setting"}]}]}/>
 
-When hash-based join algorithm is applied, this threshold helps to decide between using `hash` and `parallel_hash` (only if estimation of the right table size is available).
-The former is used when we know that the right table size is below the threshold.
+For an `INNER`, `LEFT`, `RIGHT` or `FULL` hash join, this threshold decides how the hash table is built.
+If the estimated number of rows in the right table is below the threshold, the join builds the hash table as one part, on one thread.
+At or above the threshold, and also when there is no estimate, the join splits the hash table into parts that up to `max_threads` threads fill at the same time (one thread with `max_threads = 1`).
+The largest value, `18446744073709551615`, always builds one part, also when there is no estimate. `0` always splits the hash table.
+The estimate comes from the query plan, or from the statistics of earlier runs of the same join (see `collect_hash_table_stats_during_joins`).
+`ASOF` joins never get an estimate, and with `query_plan_optimize_join_order_limit = 0` no join gets one.
+A right table known to be empty, such as a `MergeTree` table without data parts, counts as 0 rows for `INNER`, `RIGHT` and `LEFT SEMI` joins, which return no rows with it.
 
 ## parallel_non_joined_rows_processing {#parallel_non_joined_rows_processing}
 
@@ -50,8 +55,9 @@ The former is used when we know that the right table size is below the threshold
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "New setting to enable parallel processing of non-joined rows in RIGHT\/FULL parallel_hash joins."}]}]}/>
 
 Allow multiple threads to process non-joined rows from the right table in parallel during RIGHT and FULL JOINs.
-This can speed up the non-joined phase when using the `parallel_hash` join algorithm with large tables.
-When disabled, non-joined rows are processed by a single thread.
+This can speed up the non-joined phase of hash joins with large right tables that build the hash table on several threads (see `parallel_hash_join_threshold`).
+When disabled, or when the hash table is built on one thread, non-joined rows are processed by a single thread.
+In every case the non-joined rows come out in no fixed order. Use `ORDER BY` when the query needs a stable order.
 
 ## parallel_replica_offset {#parallel_replica_offset}
 
