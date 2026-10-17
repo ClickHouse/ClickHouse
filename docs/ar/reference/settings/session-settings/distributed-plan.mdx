@@ -15,7 +15,7 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## distributed_plan_default_reader_bucket_count
+## distributed_plan_default_reader_bucket_count {#distributed_plan_default_reader_bucket_count}
 
 <ExperimentalBadge />
 
@@ -26,7 +26,7 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 العدد الافتراضي للمهام اللازمة للقراءة المتوازية في استعلام موزّع. تُوزَّع المهام عبر النسخ المتماثلة.
 يستخدم المخطِّط الموزّع القائم على القواعد هذا الإعداد. ويختار محسن قائم على التكلفة مدى التوزيع للقراءة استنادًا إلى التكلفة المقدّرة، ولا يستخدم هذا الإعداد.
 
-## distributed_plan_default_shuffle_join_bucket_count
+## distributed_plan_default_shuffle_join_bucket_count {#distributed_plan_default_shuffle_join_bucket_count}
 
 <ExperimentalBadge />
 
@@ -37,7 +37,7 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 العدد الافتراضي للحاويات لعملية distributed shuffle-hash-join.
 يستخدمه مخطط موزع قائم على القواعد. يحدد المُحسِّن القائم على التكلفة درجة التشعّب بناءً على التكلفة المقدّرة، ولا يستخدم هذا الإعداد.
 
-## distributed_plan_execute_locally
+## distributed_plan_execute_locally {#distributed_plan_execute_locally}
 
 <ExperimentalBadge />
 
@@ -47,7 +47,7 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 
 شغّل جميع مهام خطة الاستعلام الموزعة محليًا. هذا مفيد للاختبار وتصحيح الأخطاء.
 
-## distributed_plan_fallback_to_local_execution
+## distributed_plan_fallback_to_local_execution {#distributed_plan_fallback_to_local_execution}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -57,7 +57,7 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 
 لا يسري مفعوله إلا عند تفعيل `make_distributed_plan` (معاينة خاصة).
 
-## distributed_plan_force_exchange_kind
+## distributed_plan_force_exchange_kind {#distributed_plan_force_exchange_kind}
 
 <ExperimentalBadge />
 
@@ -71,7 +71,7 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 * &#39;Persisted&#39; - استخدم ملفات مؤقتة في تخزين الكائنات،
 * &#39;Streaming&#39; - بثّ بيانات exchange عبر الشبكة.
 
-## distributed_plan_force_shuffle_aggregation
+## distributed_plan_force_shuffle_aggregation {#distributed_plan_force_shuffle_aggregation}
 
 <ExperimentalBadge />
 
@@ -82,7 +82,17 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 استخدم استراتيجية تجميع Shuffle بدلًا من PartialAggregation + Merge ضمن خطة الاستعلام الموزعة.
 يُتجاهل هذا الإعداد عندما لا تستطيع استراتيجية Shuffle إنتاج نتيجة صحيحة، على سبيل المثال مع `GROUPING SETS` أو عندما يجب أن ينتج التجميع نتائج مرتبة حسب حاوية.
 
-## distributed_plan_max_rows_to_broadcast
+## distributed_plan_max_buffered_log_rows {#distributed_plan_max_buffered_log_rows}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="100000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "100000"},{"label": "إعداد جديد يحدّد الحد الأقصى لعدد أسطر السجل التي تخزّنها مهمة العامل عديم الحالة مؤقتًا لإعادة توجيهها إلى المنسّق بين عمليات استطلاع الحالة؛ وتُحذف الأسطر الزائدة مع احتساب عددها. وبما أنها ميزة جديدة، فإن القيمة السابقة تساوي القيمة الافتراضية."}]}]} />
+
+عندما يعيد `send_logs_level` توجيه سجلات مهام العامل عديم الحالة إلى المنسّق، تخزّن كل مهمة عامل مؤقتًا هذا العدد من أسطر السجل كحد أقصى بين عمليات استطلاع الحالة. وتُحذف الأسطر التي تتجاوز هذا الحد، ويُبلَّغ العميل بعددها. وتعني القيمة `0` عدم وجود حد (فلا يُحذف أي سطر، لكن تعثّر استطلاع الحالة قد يؤدي إلى تضخّم المخزن المؤقت بلا حدود).
+
+## distributed_plan_max_rows_to_broadcast {#distributed_plan_max_rows_to_broadcast}
 
 <ExperimentalBadge />
 
@@ -93,7 +103,7 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 الحد الأقصى لعدد الصفوف لاستخدام broadcast join بدلًا من shuffle join ضمن خطة الاستعلام الموزعة.
 آلية استدلالية للمخطط الموزع القائم على القواعد. عند تمكين المُحسِّن القائم على التكلفة، يُحدَّد الاختيار بين broadcast وshuffle بناءً على التكلفة المقدّرة، ولا يكون لهذا الإعداد أي تأثير.
 
-## distributed_plan_optimize_exchanges
+## distributed_plan_optimize_exchanges {#distributed_plan_optimize_exchanges}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -101,7 +111,7 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 
 يزيل عمليات التبادل غير الضرورية في خطة الاستعلام الموزعة. عطِّله لأغراض تصحيح الأخطاء.
 
-## distributed_plan_prefer_replicas_over_workers
+## distributed_plan_prefer_replicas_over_workers {#distributed_plan_prefer_replicas_over_workers}
 
 <PrivatePreviewBadge />
 
@@ -111,7 +121,7 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 
 يُجري تسلسلًا لخطة الاستعلام الموزعة لتنفيذها على النسخ المتماثلة.
 
-## distributed_plan_read_in_order
+## distributed_plan_read_in_order {#distributed_plan_read_in_order}
 
 <ExperimentalBadge />
 
@@ -126,7 +136,7 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 مدخلاتها مرتبة مسبقًا، وقد تُغذّى عملية فرز تعتمد على ذلك بصفوف تمر عبر تبادل لا يحافظ على الترتيب. لا تكون
 آمنة حاليًا إلا البنى التي لا يبقى فيها أي تبادل بين القراءة والفرز.
 
-## distributed_plan_workers_num
+## distributed_plan_workers_num {#distributed_plan_workers_num}
 
 <PrivatePreviewBadge />
 
@@ -136,13 +146,13 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 
 عدد العمّال عديمي الحالة الذين سيُستخدمون لتنفيذ هذا الاستعلام. تؤدي القيمة صفر إلى تعطيل تخصيص العمّال عديمي الحالة لخطط التنفيذ الموزعة.
 
-## distributed_plan_workers_provisioning_timeout_ms
+## distributed_plan_workers_provisioning_timeout_ms {#distributed_plan_workers_provisioning_timeout_ms}
 
 <PrivatePreviewBadge />
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "10000"},{"label": "إعداد جديد يحدّد مدة انتظار الاستعلام حتى تصبح العاملات عديمات الحالة المستأجَرة قابلة للوصول قبل التنفيذ."}]}, {"id": "row-2","items": [{"label": "26.8"},{"label": "10000"},{"label": "إعداد جديد يحدّد مدة انتظار الاستعلام حتى تصبح العاملات عديمات الحالة المستأجَرة قابلة للوصول قبل التنفيذ؛ ضبط `compatibility` على أقل من 26.8 يستعيد السلوك السابق دون انتظار."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "10000"},{"label": "إعداد جديد يحدّد مدة انتظار الاستعلام حتى تصبح العاملات عديمات الحالة المستأجَرة قابلة للوصول قبل التنفيذ؛ ضبط `compatibility` على أقل من 26.8 يستعيد السلوك السابق دون انتظار."}]}]} />
 
 إجمالي الوقت المنقضي، بالمللي ثانية، الذي قد يقضيه الاستعلام في تجهيز العاملات عديمات الحالة قبل التنفيذ: تخصيصها من خدمة الاكتشاف والتحقق من إمكانية الوصول إليها. يُحجب الاستعلام ضمن هذه المهلة إلى أن تصبح العاملات المستأجَرة جاهزة؛ وعند انتهائها، يتابع الاستعلام باستخدام العاملات التي تم التحقق منها حتى ذلك الحين، أو يفشل إذا لم تصبح أي منها متاحة. تعني القيمة صفر الانتظار خلال مرحلة التخصيص والتحقق الأولية فقط (دون إعادة محاولات).
 
