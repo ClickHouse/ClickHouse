@@ -1,0 +1,86 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-09-24
+title: '데모 데이 - 2026-09-24'
+sidebarTitle: '2026-09-24'
+description: '2026-09-24 ClickStack 데모 데이'
+doc_type: 'guide'
+keywords: ['ClickStack', '데모 데이']
+---
+
+## 차트 축 렌더링 및 자동 세분화 수준 개선 사항 {#chart-axis-rendering-and-auto-granularity-improvements}
+
+*데모: [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/5KA6AxQiUy8" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+[@arj22](https://github.com/arj22)님이 기여한 차트 사용성 개선 사항 모음입니다. 수정해 주셔서 감사합니다!
+
+이전에는 Duration 레이블이 축의 가용 공간보다 넓어 잘리는 경우가 있었습니다. 이제 차트는 히트맵과 동일한 간결한 Duration 포매터를 사용하므로 `7.38min`이 `7.4m`으로 표시되어 가용 공간 안에 들어갑니다. CLI의 `hdx chart` 명령도 동일한 포맷팅을 사용합니다.
+
+또한 축 레이블이 더 높은 정밀도를 유지합니다. 이전에는 `1050`과 `1450` 같은 값이 모두 `1k`로 표시될 수 있어 인접한 값을 구분하기 어려웠습니다. 이제 포매터는 소수점 이하 최대 2자리까지 공간에 들어가는 가장 높은 정밀도를 사용하고 후행 0을 제거합니다. 따라서 해당 값은 레이블 폭을 넓히지 않고도 `1.05k`와 `1.45k`로 표시됩니다.
+
+이제 높이가 낮은 차트에서도 Y축 틱이 균일한 간격을 유지합니다. 이전에는 Recharts가 레이블 겹침을 막기 위해 일부 틱을 제거하면서 `0, 300, 1k`와 같이 간격이 고르지 않은 시퀀스가 남을 수 있었습니다. 이제 차트는 틱 개수는 그대로 유지하면서 균일한 간격의 틱 후보를 제공합니다.
+
+메트릭 소스에는 새로운 **Minimum Auto Granularity** 설정도 추가되었으며, **Team Settings → Sources**에서 구성할 수 있습니다. 이전에는 자동 세분화 수준이 선택한 시간 범위만을 기준으로 버킷 크기를 결정했습니다. 그래서 1분에 한 번 스크레이프되는 메트릭은 짧은 시간 범위에서 30초 버킷이 생성되어 값과 공백이 번갈아 나타났고, 그 결과 평탄한 메트릭이 물결 모양처럼 보였습니다.
+
+최솟값을 스크레이프 인터벌로 설정하면 이러한 공백을 방지할 수 있습니다. 이 설정은 Grafana의 데이터 소스별 최소 인터벌과 유사하게 동작하며, 세분화 수준이 **Auto**로 설정된 경우에만 적용됩니다. 세분화 수준을 명시적으로 지정한 타일은 기존 동작을 그대로 유지합니다.
+
+현재 최솟값은 대시보드와 타일에만 적용됩니다. 알림, 외부 API, CLI 및 MCP 쿼리 도구에는 아직 이 설정이 적용되지 않습니다.
+
+**관련 PR:** [#3148](https://github.com/hyperdxio/hyperdx/pull/3148) Duration 축 틱이 간결한 포매터를 거치도록 변경, [#3158](https://github.com/hyperdxio/hyperdx/pull/3158) 터미널 차트에서 Duration 축 틱을 간결하게 유지, [#3162](https://github.com/hyperdxio/hyperdx/pull/3162) 큰 숫자에서 차트 축 틱의 소수점이 버려지지 않도록 수정, [#3172](https://github.com/hyperdxio/hyperdx/pull/3172) Recharts가 겹침 방지를 위해 틱을 줄일 때도 Y축 틱 간격을 균일하게 유지, [#3149](https://github.com/hyperdxio/hyperdx/pull/3149) 자동 세분화 수준에 소스별 하한값 추가
+
+## 탭, 정렬, 태그 필터를 지원하는 대시보드 목록 {#dashboards-list-with-tabs-sort-and-tag-filters}
+
+*데모: [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/5KA6AxQiUy8?start=108" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+대시보드 목록이 새롭게 개편되었습니다. 이전에는 사전 설정 대시보드와 즐겨찾기가 테이블 위에 여러 줄의 카드로 표시되어 목록이 페이지 아래쪽으로 밀려났습니다. 이제 즐겨찾기는 **All**, **My dashboards**와 나란히 별도의 탭으로 제공되며, **Import**와 **New dashboard** 버튼은 페이지 헤더로 이동했습니다.
+
+이제 각 대시보드는 태그 수와 관계없이 한 번만 표시됩니다. 이전에는 대시보드가 보유한 태그마다 중복 표시되었고, 태그가 없는 대시보드는 하단에 따로 모여 있었습니다. 이제 태그는 다중 선택 필터로 동작하며, 선택 개수 배지가 표시되는 고정 폭 Tags 버튼으로 사용할 수 있습니다. 태그 두 개를 선택하면 두 태그를 모두 가진 대시보드만 표시됩니다.
+
+목록은 기본적으로 마지막 업데이트순으로 정렬되며, 이름순과 최근 생성순으로도 정렬할 수 있습니다. 마지막 조회 타임스탬프는 현재 기록되지 않으므로 마지막 조회순 정렬은 제공되지 않습니다.
+
+필터, 선택한 탭, 정렬 순서는 URL에 저장되므로 필터링된 화면을 다시 로드하거나 공유할 수 있습니다. 로컬 모드를 비롯해 현재 사용자의 이메일 정보가 없는 경우에는 **My dashboards** 탭이 표시되지 않습니다.
+
+**관련 PR:** [#3199](https://github.com/hyperdxio/hyperdx/pull/3199) 탭, 정렬, 태그 필터를 지원하도록 대시보드 목록 개편
+
+## 검색 결과 테이블 레이아웃 및 컬럼 설정 {#search-results-table-layout-and-column-settings}
+
+*데모: [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/5KA6AxQiUy8?start=232" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+**이 작업은 탐색 단계에 있으며, 출시가 확정된 것은 아닙니다.**
+
+여러 고객이 제기한 문제를 해결하기 위해 검색 결과 테이블의 새로운 레이아웃을 개발하고 있습니다. 현재 테이블 작업 버튼은 마지막 쿼리 필드와 같은 행에 있어서, `SELECT`에 컬럼이 많으면 공간이 비좁아집니다. 이 로컬 프로토타입에서는 작업 버튼을 별도의 행으로 분리했습니다.
+
+가장 많이 받는 질문은 컬럼을 추가하는 방법입니다. 현재는 `SELECT`를 직접 수정해야 하지만, 많은 사용자가 이 방법을 모르고 있습니다. 프로토타입에는 쿼리를 수정하지 않고도 컬럼을 선택하고 적용할 수 있는 **Columns** 컨트롤이 추가되었습니다.
+
+설정 패널에서는 여러 표시 옵션을 한곳에서 관리할 수 있습니다. 현재 행 선택 기능은 체크박스가 마우스를 올렸을 때만 나타나는데도 모든 행의 왼쪽에 체크박스 공간을 차지합니다. 게다가 행을 선택하면 테이블에 작업 버튼이 더 늘어납니다. 프로토타입에서는 체크박스를 항상 표시할지, 마우스를 올렸을 때만 표시할지, 아예 숨길지 선택할 수 있습니다. 줄 바꿈 컨트롤도 더 알기 쉽게 바뀌었으며, 화면에 더 많은 행을 보여 주는 촘촘한 레이아웃 같은 옵션도 향후 추가할 수 있습니다.
+
+이 작업은 아직 진행 중이며 PR도 아직 없습니다. 사용해 보신 의견을 보내 주시면 감사하겠습니다.
+
+**관련 PR:** 아직 없습니다. 출시된 기능이 아니라 탐색 단계의 작업입니다. 이번에 개선하는 행 선택 기능은 [#3140](https://github.com/hyperdxio/hyperdx/pull/3140)(다운로드 및 복사를 위한 검색 행 다중 선택)과 [#3164](https://github.com/hyperdxio/hyperdx/pull/3164)(마우스를 올렸을 때 체크박스 표시)를 통해 출시되었습니다.
+
+## 여러 줄 쿼리 필드와 포커스 시 확장되는 오버레이 {#multi-line-query-fields-and-an-expand-on-focus-overlay}
+
+*시연: [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/5KA6AxQiUy8?start=367" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+**이 작업은 탐색 단계이며, 출시가 확정된 것은 아닙니다.**
+
+검색 창에서 여러 줄 쿼리를 다루기 불편하다는 불만은 오래전부터 제기되어 왔습니다. 이전에는 필드가 포커스를 잃으면 쿼리가 한 줄로 접혀서, 전체 쿼리를 확인하려면 필드를 다시 클릭해야 했습니다.
+
+이 문제는 최근에 수정되었습니다. 이제 SQL, Lucene, PromQL 필드는 포커스가 없을 때에도 전체 내용이 표시되며, 내용이 늘어나면 페이지 레이아웃도 함께 확장됩니다. 시간 선택기와 **Run** 버튼은 첫 번째 줄에 맞춰 정렬된 상태를 유지합니다. 불필요한 `WHERE` 레이블과 `/` 키캡도 제거되었지만, 여전히 `/`와 `s` 키로 입력 필드에 포커스를 줄 수 있습니다.
+
+다만 높이가 늘어나면서 몇 가지 문제가 생깁니다. `SELECT` 및 `ORDER BY` 필드도 함께 늘어나며, 일반적인 고객 화면에서는 짧은 `ORDER BY`조차 두 줄로 줄바꿈될 수 있습니다. 차트 탐색기에서는 시리즈가 여러 개이면 많은 필드가 한꺼번에 확장되어 편집기가 세로 공간을 많이 차지하게 됩니다.
+
+이 초안에서는 유휴 상태일 때 필드를 한 줄로 유지하는 방식을 시도합니다. 필드에 포커스를 주면 아래 콘텐츠 위에 오버레이로 전체 쿼리가 열리며, 도구 모음과 결과는 제자리에 그대로 유지됩니다. 오버레이는 필드가 포커스를 잃으면 닫히지만, **Keep expanded**로 고정해 둘 수도 있습니다. 이렇게 하면 결과를 보면서 긴 쿼리를 함께 읽을 수 있습니다. 언어 선택기는 오버레이에 맞춰 함께 확장되며, 접힌 필드에 내용을 붙여넣어도 첫 번째 줄과 컨트롤이 계속 화면에 표시됩니다.
+
+현재로서는 이 초안을 머지하지 않는 쪽으로 기울어 있습니다. 입력하거나 마우스를 움직일 때마다 확장되는 필드는 혼란스러울 수 있습니다. 필드를 클릭할 때만 오버레이를 여는 방식이 이를 어느 정도 완화하지만, 내용에 따라 늘어나는 텍스트 영역이 이미 출시되어 문제없이 동작하고 있습니다. 또 다른 방안은 컬럼과 `ORDER BY` 컨트롤을 검색 창 밖으로 옮기는 것입니다. 그러면 `WHERE` 필드만 늘어나므로 현재 동작으로도 충분합니다.
+
+차트 탐색기를 비롯한 다른 곳에서 큰 입력을 어떻게 처리할지는 아직 결정되지 않았습니다. 이 동작에 대한 의견을 보내 주시면 감사하겠습니다.
+
+**관련 PR:** [#3150](https://github.com/hyperdxio/hyperdx/pull/3150) 포커스가 없을 때도 여러 줄 쿼리 필드 표시, [#3151](https://github.com/hyperdxio/hyperdx/pull/3151) 늘어나는 쿼리 필드 옆 도구 모음 상단 정렬, [#3168](https://github.com/hyperdxio/hyperdx/pull/3168) 검색 창의 WHERE 레이블과 / 키캡 삭제, [#3175](https://github.com/hyperdxio/hyperdx/pull/3175) 포커스 시 여러 줄 쿼리 필드를 오버레이로 표시(진행 중). #3175는 데모에서 소개한 초안이며, 머지된 세 개의 PR은 이 초안이 대체하게 될, 이미 출시된 &#39;항상 표시&#39; 동작입니다.

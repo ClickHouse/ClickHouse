@@ -1011,7 +1011,8 @@ void TableSnapshot::initOrUpdateSchemaIfChanged() const
     if (!schema.has_value())
     {
         auto state = getKernelSnapshotState();
-        auto [table_schema, physical_names_map] = getTableSchemaFromSnapshot(state->snapshot.get(), state->engine.get());
+        auto [table_schema, physical_names_map, timestamp_ntz_paths]
+            = getTableSchemaFromSnapshot(state->snapshot.get(), state->engine.get());
 
         if (table_schema.empty())
             throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Table schema cannot be empty");
@@ -1038,6 +1039,7 @@ void TableSnapshot::initOrUpdateSchemaIfChanged() const
             .read_schema = std::move(read_schema),
             .physical_names_map = std::move(physical_names_map),
             .partition_columns = std::move(partition_columns),
+            .timestamp_ntz_paths = std::move(timestamp_ntz_paths),
         });
     }
 }
@@ -1075,6 +1077,13 @@ const DB::NameToNameMap & TableSnapshot::getPhysicalNamesMap() const
     std::lock_guard lock(mutex);
     initOrUpdateSchemaIfChanged();
     return schema->physical_names_map;
+}
+
+const std::unordered_set<String> & TableSnapshot::getTimestampNtzPaths() const
+{
+    std::lock_guard lock(mutex);
+    initOrUpdateSchemaIfChanged();
+    return schema->timestamp_ntz_paths;
 }
 
 }
