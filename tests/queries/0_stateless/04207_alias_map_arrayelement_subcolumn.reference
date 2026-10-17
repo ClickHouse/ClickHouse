@@ -92,5 +92,5 @@ value-c	value-c	value-c
 -- Subquery: outer m[key1] reads through the subquery and returns the right value
 1	100
 2	300
--- Subquery: no spurious m.key_key1 ColumnNode is built for the outer reference
+-- Subquery: outer subcolumn is pushed into the subquery projection
 1

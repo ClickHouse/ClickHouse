@@ -1,0 +1,20 @@
+ALIAS column exported by a subquery
+Output: tup.a
+Output: tup.a
+1
+2
+chained ALIAS column exported by a subquery
+Output: tup.b
+Output: tup.b
+one
+two
+ALIAS column exported by a view
+Output: tup.a
+Output: tup.a
+1
+2
+non-trivial ALIAS is not rewritten
+Output: getSubcolumn(CAST(tuple(tup.a + 1, tup.b) AS Tuple(a UInt32, b String)), \'a\')
+Output: tup.a, tup.b
+2
+3

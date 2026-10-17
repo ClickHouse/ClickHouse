@@ -25,7 +25,8 @@ INSERT INTO bnl_bs_probe SELECT number, repeat('a', 1000) FROM numbers(500);
 INSERT INTO bnl_bs_build SELECT number, repeat('b', 1000) FROM numbers(500);
 
 -- The checks of the byte limit also read the wide column above the join, so that it is not removed as unused
--- and the rows the join emits stay a kilobyte wide.
+-- and the rows the join emits stay a kilobyte wide. They compare the whole value rather than its `length`,
+-- which would only need the `size` subcolumn and could be pushed into the subquery instead of the column.
 --
 -- Neither limit set: the whole result of a probe chunk goes out in as few blocks as `max_block_size`
 -- allows, so the blocks are far larger than either limit below would let them be.
@@ -40,7 +41,7 @@ FROM (SELECT blockSize() AS bs FROM (
 SETTINGS max_joined_block_size_rows = 111, max_joined_block_size_bytes = 0;
 
 -- A row is about a kilobyte wide, so a budget of 10 KB is reached long before 100000 rows are.
-SELECT 'matched, bytes', max(bs) < 1000 AND min(length(s)) = 1000
+SELECT 'matched, bytes', max(bs) < 1000 AND min(s) = repeat('a', 1000)
 FROM (SELECT blockSize() AS bs, s FROM (
     SELECT l.s, r.y FROM bnl_bs_probe l LEFT JOIN bnl_bs_build r ON l.x < r.y))
 SETTINGS max_joined_block_size_rows = 100000, max_joined_block_size_bytes = 10000;
@@ -51,7 +52,7 @@ FROM (SELECT blockSize() AS bs FROM (
     SELECT l.s FROM bnl_bs_probe l LEFT JOIN bnl_bs_build r ON l.x + 1000 < r.y))
 SETTINGS max_joined_block_size_rows = 0, max_joined_block_size_bytes = 0;
 
-SELECT 'unmatched probe rows, bytes', max(bs) < 100 AND min(length(s)) = 1000
+SELECT 'unmatched probe rows, bytes', max(bs) < 100 AND min(s) = repeat('a', 1000)
 FROM (SELECT blockSize() AS bs, s FROM (
     SELECT l.s FROM bnl_bs_probe l LEFT JOIN bnl_bs_build r ON l.x + 1000 < r.y))
 SETTINGS max_joined_block_size_rows = 0, max_joined_block_size_bytes = 10000;
@@ -61,7 +62,7 @@ FROM (SELECT blockSize() AS bs FROM (
     SELECT r.t FROM bnl_bs_probe l RIGHT JOIN bnl_bs_build r ON l.x > r.y + 1000))
 SETTINGS max_joined_block_size_rows = 0, max_joined_block_size_bytes = 0;
 
-SELECT 'unmatched build rows, bytes', max(bs) < 100 AND min(length(t)) = 1000
+SELECT 'unmatched build rows, bytes', max(bs) < 100 AND min(t) = repeat('b', 1000)
 FROM (SELECT blockSize() AS bs, t FROM (
     SELECT r.t FROM bnl_bs_probe l RIGHT JOIN bnl_bs_build r ON l.x > r.y + 1000))
 SETTINGS max_joined_block_size_rows = 0, max_joined_block_size_bytes = 10000;

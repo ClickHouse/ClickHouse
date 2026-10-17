@@ -2,6 +2,10 @@
 
 SET optimize_syntax_fuse_functions = 1;
 
+-- This test checks the plan shapes produced by the function fusion, so keep the subcolumn pushdown
+-- from rewriting `count` of a `Nullable` subquery column into `sum(not(b.null))` over the pushed `null` subcolumn.
+SET optimize_push_subcolumns_into_subqueries = 0;
+
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (`a` Float64, `b` Nullable(Int8)) ENGINE = Log;
 
