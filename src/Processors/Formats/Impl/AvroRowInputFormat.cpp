@@ -318,67 +318,38 @@ static Int64 decodeAvroIntOrLong(avro::Decoder & decoder, avro::Type physical_ty
 }
 
 /// Convert Avro logical TIME value to ClickHouse Time / Time64 with correct scale.
+/// A finer source is truncated to the target scale, the same as `CAST` between `Time64` types does.
 static AvroDeserializer::DeserializeFn createLogicalTimeDeserializeFn(
     const avro::NodePtr & root_node, const DataTypePtr & target_type, UInt32 source_scale)
 {
     const avro::Type physical_type = root_node->type();
-    const WhichDataType target(target_type);
-    const bool target_is_time = target.isTime();
-    const bool target_is_time64 = target.isTime64();
-    const UInt32 target_scale = target_is_time64 ? getDecimalScale(*target_type) : 0;
-    /// Time and Time64(0) are both second precision.
-    const bool target_is_seconds = target_is_time || (target_is_time64 && target_scale == 0);
+    const bool target_is_time = WhichDataType(target_type).isTime();
+    if (!target_is_time && !WhichDataType(target_type).isTime64())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Time or Time64 target for Avro logical time");
 
-    if (target_is_seconds)
-    {
-        const Int64 divisor = DataTypeTime64::getScaleMultiplier(source_scale).value;
-        return [physical_type, divisor, target_is_time](IColumn & column, avro::Decoder & decoder)
-        {
-            const Int64 value = decodeAvroIntOrLong(decoder, physical_type);
-            const Int64 seconds = value / divisor;
-            if (target_is_time)
-            {
-                if (seconds > std::numeric_limits<Int32>::max() || seconds < std::numeric_limits<Int32>::min())
-                    throw Exception(
-                        ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
-                        "Avro time value {} is out of range for ClickHouse type Time",
-                        value);
-                assert_cast<ColumnInt32 &>(column).insertValue(static_cast<Int32>(seconds));
-            }
-            else
-            {
-                assert_cast<ColumnDecimal<Time64> &>(column).insertValue(seconds);
-            }
-            return true;
-        };
-    }
+    /// `Time` is second precision.
+    const UInt32 target_scale = target_is_time ? 0 : getDecimalScale(*target_type);
+    const Int64 multiplier = target_scale > source_scale ? DataTypeTime64::getScaleMultiplier(target_scale - source_scale).value : 1;
+    const Int64 divisor = source_scale > target_scale ? DataTypeTime64::getScaleMultiplier(source_scale - target_scale).value : 1;
 
-    if (target_is_time64)
+    return [physical_type, multiplier, divisor, target_is_time, target_type](IColumn & column, avro::Decoder & decoder)
     {
-        if (target_scale < source_scale)
+        const Int64 value = decodeAvroIntOrLong(decoder, physical_type);
+        Int64 scaled = 0;
+        if (common::mulOverflow(value / divisor, multiplier, scaled)
+            || (target_is_time && (scaled > std::numeric_limits<Int32>::max() || scaled < std::numeric_limits<Int32>::min())))
             throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Cannot insert Avro time with scale {} into ClickHouse type {} without losing precision",
-                source_scale,
+                ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                "Avro time value {} is out of range for ClickHouse type {}",
+                value,
                 target_type->getName());
 
-        const Int64 multiplier = DataTypeTime64::getScaleMultiplier(target_scale - source_scale).value;
-        return [physical_type, multiplier](IColumn & column, avro::Decoder & decoder)
-        {
-            const Int64 value = decodeAvroIntOrLong(decoder, physical_type);
-            Int64 scaled = 0;
-            if (common::mulOverflow(value, multiplier, scaled))
-                throw Exception(
-                    ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
-                    "Avro time value {} is out of range for ClickHouse Time64 (multiplier {})",
-                    value,
-                    multiplier);
+        if (target_is_time)
+            assert_cast<ColumnInt32 &>(column).insertValue(static_cast<Int32>(scaled));
+        else
             assert_cast<ColumnDecimal<Time64> &>(column).insertValue(scaled);
-            return true;
-        };
-    }
-
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Time or Time64 target for Avro logical time");
+        return true;
+    };
 }
 
 AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro::NodePtr & root_node, const DataTypePtr & target_type)

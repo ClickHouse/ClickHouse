@@ -49,9 +49,8 @@ cat "$DATA_FILE" | ${CLICKHOUSE_LOCAL} --input-format Avro --output-format TSV \
 cat "$DATA_FILE" | ${CLICKHOUSE_LOCAL} --input-format Avro --output-format TSV \
     -S "t_millis Time64(6), t_micros Time64(6)" -q 'SELECT * FROM table ORDER BY ALL'
 
-# Downscale micros -> Time64(3) must be rejected (would lose precision).
-cat "$DATA_FILE" | ${CLICKHOUSE_LOCAL} --input-format Avro \
-    -S "t_millis Time64(3), t_micros Time64(3)" -q 'SELECT t_micros FROM table' 2>&1 \
-    | grep -o 'Cannot insert Avro time'
+# Downscale micros -> Time64(3) truncates, the same as `CAST` between `Time64` types.
+cat "$DATA_FILE" | ${CLICKHOUSE_LOCAL} --input-format Avro --output-format TSV \
+    -S "t_millis Time64(3), t_micros Time64(3)" -q 'SELECT * FROM table ORDER BY ALL'
 
 rm -f "$DATA_FILE"

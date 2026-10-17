@@ -8,11 +8,13 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
@@ -24,6 +26,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <Formats/FormatFactory.h>
 #include <IO/WriteBuffer.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/Formats/Impl/AvroConfluentSchemaRegistry.h>
 #include <Processors/Port.h>
@@ -34,6 +37,7 @@
 #include <NodeImpl.hh>
 #include <Schema.hh>
 #include <Common/re2.h>
+#include <base/arithmeticOverflow.h>
 
 namespace DB
 {
@@ -42,6 +46,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_COMPILE_REGEXP;
+    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
 class AvroSerializerTraits
@@ -222,6 +227,41 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
             {
                 const auto & col = assert_cast<const DataTypeDateTime64::ColumnType &>(column);
                 encoder.encodeLong(col.getElement(row_num));
+            }};
+        }
+        case TypeIndex::Time:
+        case TypeIndex::Time64:
+        {
+            /// Avro `time-micros` is a time of day: microseconds since midnight in [00:00:00, 24:00:00).
+            /// It is also what Iceberg requires for its `time`, so it is used for every scale.
+            const bool is_time64 = WhichDataType(data_type).isTime64();
+            const UInt32 scale = is_time64 ? getDecimalScale(*data_type) : 0;
+            if (scale > 6)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Type {} is not supported for Avro output: Avro `time-micros` has microsecond precision",
+                    data_type->getName());
+            const Int64 multiplier = DecimalUtils::scaleMultiplier<Int64>(6 - scale);
+
+            auto schema = avro::LongSchema();
+            schema.root()->setLogicalType(avro::LogicalType(avro::LogicalType::TIME_MICROS));
+            return {schema, [is_time64, multiplier, data_type](const IColumn & column, size_t row_num, avro::Encoder & encoder)
+            {
+                static constexpr Int64 microseconds_per_day = 24LL * 60 * 60 * 1'000'000;
+                const Int64 value = is_time64
+                    ? assert_cast<const ColumnDecimal<Time64> &>(column).getElement(row_num).value
+                    : Int64(assert_cast<const ColumnInt32 &>(column).getElement(row_num));
+                Int64 microseconds = 0;
+                if (common::mulOverflow(value, multiplier, microseconds) || microseconds < 0 || microseconds >= microseconds_per_day)
+                {
+                    WriteBufferFromOwnString text;
+                    data_type->getDefaultSerialization()->serializeText(column, row_num, text, FormatSettings{});
+                    throw Exception(
+                        ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                        "Value {} of type {} is out of range [00:00:00, 24:00:00) of Avro `time-micros`",
+                        text.str(), data_type->getName());
+                }
+                encoder.encodeLong(microseconds);
             }};
         }
         case TypeIndex::Decimal32:
