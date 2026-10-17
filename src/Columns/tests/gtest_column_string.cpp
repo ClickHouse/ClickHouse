@@ -225,3 +225,101 @@ TEST(ColumnString, InsertRangeFromDippingIntermediateOffsetThrows)
         ASSERT_NE(std::string::npos, std::string(e.message()).find("inconsistent with chars"));
     }
 }
+
+/// A consistent column of `num_rows` four-byte strings. 128 rows with an all-ones filter is two full
+/// 64-row chunks and no tail, so the tests below drive the SIMD chunk branch of `filterArraysImpl`,
+/// which sizes its copy from `offsets` alone (`chunk_size = offsets_pos[63] - offsets_pos[-1]`).
+static ColumnString::MutablePtr makeFilterableStringColumn(size_t num_rows)
+{
+    auto column = ColumnString::create();
+    for (size_t i = 0; i < num_rows; ++i)
+        column->insertData("abcd", 4);
+
+    return column;
+}
+
+/// A final offset past the end of `chars` makes that chunk copy run off the end of the source buffer.
+/// The overshoot is far larger than `PaddedPODArray`'s padding, so without the guard the copy leaves
+/// the allocation instead of landing in padding (ASan: `heap-buffer-overflow`, read of 262400 bytes).
+TEST(ColumnString, FilterInconsistentOffsetsThrows)
+{
+    auto source = makeFilterableStringColumn(128);
+    source->getOffsets().back() += 256 * 1024;
+    IColumn::Filter filt(source->size(), 1);
+
+    try
+    {
+        source->filter(filt, /*result_size_hint=*/ -1);
+        FAIL() << "filter did not detect offsets inconsistent with chars";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(e.code(), DB::ErrorCodes::INCORRECT_DATA);
+        ASSERT_NE(std::string::npos, std::string(e.message()).find("inconsistent with chars"));
+    }
+}
+
+/// The mirror case: a final offset short of chars.size() is equally inconsistent, and the last chunk
+/// then reports fewer bytes than the rows it covers.
+TEST(ColumnString, FilterFinalOffsetBelowCharsSizeThrows)
+{
+    auto source = makeFilterableStringColumn(128);
+    source->getOffsets().back() -= 4;
+    IColumn::Filter filt(source->size(), 1);
+
+    try
+    {
+        source->filter(filt, /*result_size_hint=*/ -1);
+        FAIL() << "filter did not detect a final offset below chars.size()";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(e.code(), DB::ErrorCodes::INCORRECT_DATA);
+        ASSERT_NE(std::string::npos, std::string(e.message()).find("inconsistent with chars"));
+    }
+}
+
+/// The in-place overload sizes its moves from the same offsets (`filterArraysImplInPlace`), so it
+/// needs its own guard.
+TEST(ColumnString, FilterInPlaceInconsistentOffsetsThrows)
+{
+    auto source = makeFilterableStringColumn(128);
+    source->getOffsets().back() += 256 * 1024;
+    IColumn::Filter filt(source->size(), 1);
+
+    try
+    {
+        source->filter(filt);
+        FAIL() << "in-place filter did not detect offsets inconsistent with chars";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(e.code(), DB::ErrorCodes::INCORRECT_DATA);
+        ASSERT_NE(std::string::npos, std::string(e.message()).find("inconsistent with chars"));
+    }
+}
+
+/// A consistent column must still filter correctly and not trip the new guard. The mask passes rows
+/// 0-63 as a block (the all-pass chunk branch), then every third row (the per-row branch inside a
+/// chunk, including the offset adjustment a non-first chunk needs), and leaves a partial trailing
+/// chunk for the scalar tail loop.
+TEST(ColumnString, FilterConsistentColumnStillWorks)
+{
+    auto column = makeFilterableStringColumn(200);
+
+    IColumn::Filter filt(column->size(), 0);
+    size_t expected = 0;
+    for (size_t i = 0; i < filt.size(); ++i)
+        if (i < 64 || i % 3 == 0)
+        {
+            filt[i] = 1;
+            ++expected;
+        }
+
+    auto filtered = column->filter(filt, /*result_size_hint=*/ -1);
+    ASSERT_EQ(filtered->size(), expected);
+    const auto & filtered_str = assert_cast<const ColumnString &>(*filtered);
+    ASSERT_EQ(filtered_str.getChars().size(), expected * 4); /// `ColumnString` values are not zero-terminated
+    for (size_t i = 0; i < filtered_str.size(); ++i)
+        ASSERT_EQ(filtered_str.getDataAt(i), std::string_view("abcd"));
+}
