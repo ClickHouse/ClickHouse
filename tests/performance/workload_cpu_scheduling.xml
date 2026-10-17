@@ -28,11 +28,12 @@
         </substitution>
     </substitutions>
 
-    <query>SELECT number % 1000000 AS k, count(), sum(number) FROM numbers_mt(100000000) GROUP BY k SETTINGS workload = '{workload}' FORMAT Null</query>
+    <query>SELECT number % 1000000 AS k, count(), sum(number) FROM numbers_mt(200000000) GROUP BY k SETTINGS workload = '{workload}' FORMAT Null</query>
     <!-- The window step runs in one thread after a parallel sort, so the other threads idle and park -->
-    <query>SELECT max(rn) FROM (SELECT row_number() OVER (ORDER BY h) AS rn FROM (SELECT cityHash64(number) AS h FROM numbers_mt(10000000))) SETTINGS workload = '{workload}'</query>
-    <!-- The initiator parks on the sockets while the two remote queries of the same workload need slots -->
-    <query>SELECT number % 100000 AS k, count() FROM remote('127.0.0.{{2,3}}', numbers_mt(120000000)) GROUP BY k SETTINGS async_socket_for_remote = 1, workload = '{workload}' FORMAT Null</query>
+    <query>SELECT max(rn) FROM (SELECT row_number() OVER (ORDER BY h) AS rn FROM (SELECT cityHash64(number) AS h FROM numbers_mt(10000000))) SETTINGS workload = 'perf_cpu_scheduling_wide'</query>
+    <!-- With one thread the executor thread itself waits on the sockets and parks its slot there; with more threads
+         the sockets are polled by a thread without a slot -->
+    <query>SELECT number % 100000 AS k, count() FROM remote('127.0.0.{{2,3}}', numbers_mt(80000000)) GROUP BY k SETTINGS async_socket_for_remote = 1, max_threads = 1, workload = 'perf_cpu_scheduling_wide' FORMAT Null</query>
     <!-- The `read` method throttles page cache reads too; the query parks on every throttler sleep -->
     <query>SELECT count() FROM perf_cpu_scheduling_set WHERE NOT ignore(s) SETTINGS workload = 'perf_cpu_scheduling_mixed_io', max_threads = 1, max_local_read_bandwidth = 1000000, max_read_buffer_size_local_fs = 4096, local_filesystem_read_method = 'read'</query>
     <!-- A CPU query next to a query of a sibling workload that has parked on every read of its set and now runs on
@@ -54,7 +55,7 @@
         until [ "$($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.processes WHERE query_id = '$W_ID' AND read_rows > 18500")" = 1 ]; do
             kill -0 "$W_PID"
         done
-        $CLICKHOUSE_CLIENT --query "SELECT count() FROM numbers(500000000) WHERE cityHash64(number) % 3 = 0 SETTINGS workload = 'perf_cpu_scheduling_mixed_cpu', max_threads = 1" > /dev/null
+        $CLICKHOUSE_CLIENT --query "SELECT count() FROM numbers(400000000) WHERE cityHash64(number) % 3 = 0 SETTINGS workload = 'perf_cpu_scheduling_mixed_cpu', max_threads = 1" > /dev/null
         [ "$($CLICKHOUSE_CLIENT --query "KILL QUERY WHERE query_id = '$W_ID' SYNC FORMAT TSV" | wc -l)" = 1 ]
         if ! wait "$W_PID"; then grep -q QUERY_WAS_CANCELLED "$W_ERR"; fi
         W_PID=""
