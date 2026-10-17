@@ -115,6 +115,15 @@ void setCurrentQueryMemoryDriftExpected()
 }
 
 
+void handOverCurrentQueryMemoryToServer(Int64 size)
+{
+    /// The trackers have to hold what the thread allocated so far before it is taken off them.
+    DB::CurrentThread::flushUntrackedMemory();
+    if (auto * tracker = DB::CurrentThread::getMemoryTracker())
+        tracker->handOverToServer(size);
+}
+
+
 MemoryTracker * getCurrentUserMemoryTracker()
 {
     auto * tracker = DB::CurrentThread::getMemoryTracker();

@@ -174,6 +174,19 @@ public:
         cache_policy->set(key, mapped);
     }
 
+    /// `set`, and whether `mapped` is in the cache right after it: the policy can refuse it or evict it at once.
+    /// If it is, calls `on_resident` under the same lock, so nothing else can replace it before the call returns.
+    template <typename OnResident>
+    bool setAndContains(const Key & key, const MappedPtr & mapped, OnResident && on_resident)
+    {
+        std::lock_guard lock(mutex);
+        cache_policy->set(key, mapped);
+        if (!cache_policy->contains(key))
+            return false;
+        on_resident();
+        return true;
+    }
+
     /// If the value for the key is in the cache, returns it. If it is not, calls load_func() to
     /// produce it, saves the result in the cache and returns it.
     /// Only one of several concurrent threads calling getOrSet() will call load_func(),
