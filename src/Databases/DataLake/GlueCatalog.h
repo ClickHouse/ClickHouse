@@ -99,7 +99,7 @@ public:
     /// in the Iceberg `metadata_object`. Falls back to `"timestamp_ns"` when `glue_column_type` is
     /// `"timestamp_nano"`, or `"timestamp"` otherwise, when the column is not found in the metadata.
     static String resolveTimestampTypeFromMetadata(
-        const Poco::JSON::Object::Ptr & metadata_object,
+        const Poco::JSON::Object & metadata_object,
         const String & column_name,
         const String & glue_column_type);
 
@@ -132,7 +132,7 @@ private:
 
     ObjectStorageWithPath createObjectStorageForEarlyTableAccess(const String & s3_location, const TableMetadata & table_metadata) const;
 
-    mutable DB::CacheBase<String, Poco::JSON::Object::Ptr> metadata_objects;
+    mutable DB::CacheBase<String, const Poco::JSON::Object> metadata_objects;
 };
 
 }
