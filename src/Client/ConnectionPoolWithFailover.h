@@ -51,6 +51,8 @@ public:
     /// Selecting a replica requires establishing a connection to it, so this is the same as get.
     Entry getUnchecked(const ConnectionTimeouts & timeouts, const Settings & settings) override;
 
+    size_t getActiveConnections() const override;
+
     /** Allocates up to the specified number of connections to work.
       * Connections provide access to different replicas of one shard.
       */
