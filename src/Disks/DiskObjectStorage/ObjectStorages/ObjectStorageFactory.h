@@ -6,6 +6,7 @@ namespace DB
 {
 
 /// How the endpoint of an object storage is checked against remote_url_allow_hosts.
+/// Anything but `None` also means the disk comes from user SQL, which Azure uses to restrict the server's identity.
 enum class RemoteHostFilterCheck : uint8_t
 {
     /// Endpoint from the server config: not checked.
