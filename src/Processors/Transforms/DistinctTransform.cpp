@@ -40,7 +40,7 @@ DistinctTransform::DistinctTransform(
     const UInt64 max_bytes_before_pass_through_,
     bool allow_spilling_)
     : ISimpleTransform(header_, header_, true)
-    , distinct_set(std::in_place, *header_, columns_, set_size_limits_, skip_null_keys_)
+    , distinct_set(std::in_place, *header_, columns_, set_size_limits_, skip_null_keys_, &getCancellationFlag())
     , limit_hint(limit_hint_)
     , max_bytes_before_pass_through(max_bytes_before_pass_through_)
     , allow_spilling(allow_spilling_)
@@ -76,6 +76,16 @@ void DistinctTransform::transform(Chunk & chunk)
 {
     if (unlikely(!chunk.hasRows()))
         return;
+
+    /// A cancelled query must not start deduplicating another chunk: drop the chunk and stop the
+    /// input, letting the pipeline report the cancellation (this transform never throws for it).
+    if (isCancelled())
+    {
+        LOG_TEST(getLogger("DistinctTransform"), "Cancelled before processing a chunk");
+        chunk.clear();
+        stopReading();
+        return;
+    }
 
     /// Releasing the filter permanently switches subsequent chunks to pass-through.
     if (!distinct_set)
@@ -138,6 +148,17 @@ void DistinctTransform::transform(Chunk & chunk)
 
     const size_t num_rows = chunk.getNumRows();
     chunk = distinct_set->filter(std::move(chunk));
+
+    /// The row loops inside the filter poll the same flag and abandon the rest of the chunk
+    /// mid-way; drop the partially processed chunk and stop, like `TotalsHavingTransform` does
+    /// when it observes a cancellation between chunks.
+    if (isCancelled())
+    {
+        LOG_TEST(getLogger("DistinctTransform"), "Cancelled after filtering a chunk");
+        chunk.clear();
+        stopReading();
+        return;
+    }
 
     /// Return the current chunk and stop before releasing the set if a size limit or the hint is reached.
     if (distinct_set->isLimitReached() || (limit_hint && distinct_set->getTotalRowCount() >= limit_hint))
