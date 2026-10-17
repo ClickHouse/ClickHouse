@@ -217,6 +217,8 @@ struct SelectQueryInfo
     bool is_internal = false;
     bool is_parameterized_view = false;
     bool optimize_trivial_count = false;
+    /// With `optimize_trivial_count`: the aggregate is `count()` without arguments, so the values of the columns the storage returns are not read.
+    bool trivial_count_without_arguments = false;
 
     // If not 0, that means it's a trivial limit query.
     UInt64 trivial_limit = 0;
