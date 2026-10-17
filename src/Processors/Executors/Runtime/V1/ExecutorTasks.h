@@ -73,8 +73,19 @@ class ExecutorTasks : public ISpillRequestListener
     /// CPU slots for each thread.
     SlotAllocationPtr cpu_slots;
 
+    /// Threads requested for queued tasks or in place of downscaled ones, that have not started yet,
+    /// because no CPU slot was granted at that time.
+    /// Changed under `mutex`; atomic so that `hasThreadsToSpawn` can be checked without the lock after every task.
+    /// Rarely changes, so it is kept apart from the frequently changed fields above to keep those checks cheap.
+    alignas(64) std::atomic<size_t> threads_to_spawn = 0;
+
     /// Threshold found by rolling dice.
     const static size_t TOO_MANY_IDLE_THRESHOLD = 4;
+
+    /// Pipeline width not taken by started threads. Requires `mutex`.
+    size_t widthLeft() const;
+    /// Add to `threads_to_spawn`, up to `widthLeft`. Requires `mutex`.
+    void addThreadsToSpawn(size_t threads);
 
 public:
     void notifySpillRequested() override;
@@ -113,9 +124,15 @@ public:
     // Local task optimization: the first regular task could be placed directly into thread to be executed next.
     // For async tasks proessor->schedule() is called.
     // If non-local tasks were added, wake up one thread to process them.
-    // Returns the number of additional threads the caller should try to spawn (0 if idle
-    // threads can cover the push, or no new tasks were added).
+    // Returns the number of additional threads requested for the new tasks that idle threads can't cover,
+    // clamped to the pipeline width not taken by started threads. They are added to `threads_to_spawn`.
     size_t pushTasks(Queue & queue, Queue & async_queue, ExecutionThreadContext & context);
+
+    /// Request `threads` more threads (e.g. for the initial tasks), clamped to the pipeline width.
+    void requestThreads(size_t threads);
+
+    /// Whether requested threads wait for a CPU slot. Lock-free, so it is checked after every task.
+    bool hasThreadsToSpawn() const { return threads_to_spawn.load(std::memory_order_relaxed) > 0; }
 
     void init(size_t num_threads_, size_t use_threads_, const SlotAllocationPtr & cpu_slots_, bool profile_processors,
         bool trace_processors, ReadProgressCallback * callback, StepProfiler * step_profiler, QueryStatus * process_list_element);
@@ -130,12 +147,15 @@ public:
     void freeCPU();
 
     /// Upscale to include slot_id. Updates use_threads to max(use_threads, slot_id + 1).
+    /// The new thread is one of `threads_to_spawn`.
     /// Returns the number of additional threads the caller may try to spawn next (0 means
     /// "stop spawning": either pipeline width is saturated or enough idle threads can absorb
-    /// the work). Callers should still spawn one at a time and re-call upscale after each.
+    /// the work, so the rest of `threads_to_spawn` is dropped). Callers should still spawn
+    /// one at a time and re-call upscale after each.
     size_t upscale(size_t slot_id);
 
-    /// Downscale by removing slot_id from active slots. Updates use_threads to highest active slot + 1
+    /// Downscale by removing slot_id from active slots. Updates use_threads to highest active slot + 1.
+    /// Requests a thread instead, to be started when a slot is granted again.
     void downscale(size_t slot_id);
 
     /// Temporarily release slot_id without downscale. Later either downscale() or resume() is called.

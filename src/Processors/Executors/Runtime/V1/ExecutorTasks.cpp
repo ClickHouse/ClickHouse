@@ -229,25 +229,41 @@ size_t ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, ExecutionThr
             queue.pop();
         }
 
-        /// Capture state under the lock — tryWakeUp may unlock it internally to wake a
-        /// thread, after which `total_slots` could change.
-        const size_t idle_before = threads_queue.size();
-        const size_t total_slots_now = total_slots;
-        const size_t num_threads_now = num_threads;  // const after init but read for clarity
+        /// Request a thread for every pushed task that idle threads can't cover, within the pipeline width
+        /// left after the started threads. `PipelineExecutor` adds this delta to the `cpu_slots->setMax(...)`
+        /// target so the slot allocator grows in step with demand, and spawns the requested threads once
+        /// their slots are granted. It is computed before `tryWakeUpAnyOtherThreadWithTasks`, which may
+        /// unlock the mutex.
+        const size_t uncovered = pushed - std::min(pushed, threads_queue.size());
+        const size_t requested = std::min(uncovered, widthLeft());
+        addThreadsToSpawn(requested);
 
         /// Wake up at least one thread that will wake up other threads if required
         tryWakeUpAnyOtherThreadWithTasks(context, lock);
 
-        /// Return the number of additional pipeline threads the caller should target: pushed
-        /// tasks that idle threads can't cover, clamped to remaining pipeline-width headroom
-        /// (`num_threads - total_slots`). `PipelineExecutor` adds this delta to the
-        /// `cpu_slots->setMax(...)` target so the slot allocator grows in step with demand.
-        const size_t coverable = std::min(pushed, idle_before);
-        const size_t uncovered = pushed - coverable;
-        const size_t headroom = (num_threads_now > total_slots_now) ? (num_threads_now - total_slots_now) : 0;
-        return std::min(uncovered, headroom);
+        return requested;
     }
     return 0; // No new tasks -- no need for new threads
+}
+
+size_t ExecutorTasks::widthLeft() const
+{
+    return num_threads > total_slots ? num_threads - total_slots : 0;
+}
+
+void ExecutorTasks::addThreadsToSpawn(size_t threads)
+{
+    /// Requests that wait for a CPU slot are not dropped, but they can't exceed the pipeline width.
+    const size_t requested = threads_to_spawn.load(std::memory_order_relaxed);
+    const size_t new_requested = std::min(requested + threads, widthLeft());
+    if (new_requested != requested)
+        threads_to_spawn.store(new_requested, std::memory_order_relaxed);
+}
+
+void ExecutorTasks::requestThreads(size_t threads)
+{
+    std::lock_guard lock(mutex);
+    addThreadsToSpawn(threads);
 }
 
 void ExecutorTasks::init(size_t num_threads_, size_t use_threads_, const SlotAllocationPtr & cpu_slots_, bool profile_processors,
@@ -323,12 +339,16 @@ size_t ExecutorTasks::upscale(size_t slot_id)
     ++total_slots;
     use_threads = std::max(use_threads, slot_id + 1);
 
-    // Too many idle threads can already cover incoming work — don't spawn more.
-    if (threads_queue.size() > TOO_MANY_IDLE_THRESHOLD)
-        return 0;
+    /// Concurrent spawners may acquire more slots than requested; such slots are granted anyway, so they get a thread.
+    if (const size_t requested = threads_to_spawn.load(std::memory_order_relaxed))
+        threads_to_spawn.store(requested - 1, std::memory_order_relaxed);
 
     // Remaining pipeline-width capacity. Callers spawn one at a time and re-call upscale.
-    return num_threads > total_slots ? num_threads - total_slots : 0;
+    // Too many idle threads can already cover incoming work — don't spawn more.
+    const size_t capacity = num_threads > total_slots && threads_queue.size() <= TOO_MANY_IDLE_THRESHOLD ? num_threads - total_slots : 0;
+    if (capacity == 0 && threads_to_spawn.load(std::memory_order_relaxed))
+        threads_to_spawn.store(0, std::memory_order_relaxed);
+    return capacity;
 }
 
 void ExecutorTasks::downscale(size_t slot_id)
@@ -351,6 +371,9 @@ void ExecutorTasks::downscale(size_t slot_id)
             }
         }
     }
+
+    /// The thread stopped because its slot was not granted in time. The slot may be granted later.
+    addThreadsToSpawn(1);
 }
 
 void ExecutorTasks::preempt(size_t slot_id)
