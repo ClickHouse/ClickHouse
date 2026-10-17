@@ -4,6 +4,8 @@
     <query>SELECT count() FROM numbers_mt(100000000) WHERE isValidUTF8(repeat(toString(number), 10)) AND number % 100 = 0 FORMAT Null</query>
     <query>SELECT count() FROM numbers_mt(100000000) WHERE NOT isValidUTF8(repeat(toString(number), 10)) OR number % 100 != 0 FORMAT Null</query>
     <query>SELECT sum(isValidUTF8(repeat(toString(number), 10)) AND number % 100 = 0) FROM numbers_mt(100000000) FORMAT Null</query>
+    <!-- The heavy argument is shared by several `and`: it is evaluated once, on all rows. -->
+    <query>SELECT sum(isValidUTF8(repeat(toString(number), 10)) AND number % 10 != 1), sum(isValidUTF8(repeat(toString(number), 10)) AND number % 10 != 2), sum(isValidUTF8(repeat(toString(number), 10)) AND number % 10 != 3) FROM numbers_mt(100000000) FORMAT Null</query>
 
     <!-- All arguments are lazy: the ones that cannot throw are ordered by the time per decided row,
          the third argument decides almost all rows, the second one almost none. -->
