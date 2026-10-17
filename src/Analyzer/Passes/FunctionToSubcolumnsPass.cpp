@@ -195,6 +195,8 @@ public:
 
     void leave() { stack.pop_back(); }
 
+    bool innermostIsCorrelated() const { return !stack.empty() && !stack.back().empty(); }
+
     bool contains(const ColumnInSource & column_in_source) const
     {
         for (const auto & columns : stack)
@@ -1656,6 +1658,12 @@ private:
             return;
 
         auto transformer_key = std::make_pair(column.type->getTypeId(), function_node.getFunctionName());
+
+        /// The planner restores an empty correlated group of `count` to 0 but keeps `sum` NULL,
+        /// so `count(x)` must not become `sum(not(x.null))` in a correlated subquery.
+        if (transformer_key.first == TypeIndex::Nullable && transformer_key.second == "count" && correlated_columns.innermostIsCorrelated())
+            return;
+
         if (node_transformers.contains(transformer_key))
         {
             ++optimized_identifiers_count[qualified_name];
