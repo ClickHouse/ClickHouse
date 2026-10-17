@@ -90,7 +90,12 @@ void appendDocumentOfRow(bson_t * document, const rapidjson::Value & row)
     /// Mongo writes the object id as the first field of a document, and a driver reads it back as
     /// the identity of the document it inserted.
     if (auto it = row.FindMember(objectIdColumn().c_str()); it != row.MemberEnd() && it->value.IsString())
-        BSON_APPEND_UTF8(document, objectIdColumn().c_str(), it->value.GetString());
+        bson_append_utf8(
+            document,
+            objectIdColumn().c_str(),
+            static_cast<int>(objectIdColumn().size()),
+            it->value.GetString(),
+            static_cast<int>(it->value.GetStringLength()));
 
     auto it = row.FindMember(documentAlias().c_str());
     if (it == row.MemberEnd() || !it->value.IsObject())

@@ -169,6 +169,19 @@ bool failedOnMissingCollection(const Exception & e, std::shared_ptr<QueryExecuto
 /// The same for a command that names a database rather than a collection, such as `listCollections`.
 bool failedOnMissingDatabase(const Exception & e, std::shared_ptr<QueryExecutor> executor, const String & database);
 
+/// The text of an error message as it goes into a reply: at most `max_bytes` long, cut at a boundary
+/// of a UTF-8 character. A message may quote the value that failed, which can be as large as a
+/// document, and a reply cannot be larger than `MAX_BSON_OBJECT_SIZE`.
+String truncateErrorMessage(const String & message, size_t max_bytes);
+
+/** Appends the element number `error_number` of the `writeErrors` array of a write reply: the index
+  * of the statement that failed, the code and the message of its exception. The messages of one
+  * reply share a budget of bytes, which `message_bytes` counts, so that a batch of statements that
+  * all fail with a large message still has a reply under `MAX_BSON_OBJECT_SIZE`; once it is spent,
+  * the index and the code are still reported, with a short message.
+  */
+void appendWriteError(bson_t * write_errors, size_t error_number, size_t statement_index, const Exception & e, size_t & message_bytes);
+
 struct IHandler
 {
     virtual std::vector<String> getIdentifiers() const = 0;

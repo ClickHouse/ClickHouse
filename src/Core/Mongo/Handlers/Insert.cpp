@@ -373,6 +373,7 @@ std::vector<Document> InsertHandler::handle(const std::vector<OpMessageSection> 
     bson_t write_errors;
     bool has_write_errors = false;
     size_t error_count = 0;
+    size_t error_message_bytes = 0;
 
     for (size_t document_index = 0; document_index < to_insert.size(); ++document_index)
     {
@@ -466,13 +467,7 @@ std::vector<Document> InsertHandler::handle(const std::vector<OpMessageSection> 
                 bson_append_array_begin(bson_doc, "writeErrors", -1, &write_errors);
                 has_write_errors = true;
             }
-            bson_t write_error;
-            const auto error_key = std::to_string(error_count++);
-            bson_append_document_begin(&write_errors, error_key.data(), static_cast<int>(error_key.size()), &write_error);
-            BSON_APPEND_INT32(&write_error, "index", static_cast<Int32>(document_index));
-            BSON_APPEND_INT32(&write_error, "code", e.code());
-            BSON_APPEND_UTF8(&write_error, "errmsg", e.message().c_str());
-            bson_append_document_end(&write_errors, &write_error);
+            appendWriteError(&write_errors, error_count++, document_index, e, error_message_bytes);
 
             if (ordered)
                 break;

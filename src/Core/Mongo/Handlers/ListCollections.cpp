@@ -144,7 +144,6 @@ std::vector<Document> ListCollectionsHandler::handle(
 
     if (result_doc->len > MAX_BSON_OBJECT_SIZE)
     {
-        bson_destroy(result_doc);
         throw Exception(
             ErrorCodes::LIMIT_EXCEEDED,
             "The list of collections is larger than the largest reply that can be sent ({} bytes)",

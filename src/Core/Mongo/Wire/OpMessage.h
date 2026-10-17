@@ -19,6 +19,10 @@ struct OpMessageSection : public FrontMessage, BackendMessage
     OpMessageSection(OpMessageSection && other) noexcept;
 
     void deserialize(ReadBuffer & in) override;
+    /// Reads the section, counting its documents against `remaining_documents`, the number of
+    /// documents the rest of the message may still carry. The budget is checked before each
+    /// document is read, so a message over it is refused before its documents are allocated.
+    void deserialize(ReadBuffer & in, size_t & remaining_documents);
 
     void serialize(WriteBuffer & out) const override;
 

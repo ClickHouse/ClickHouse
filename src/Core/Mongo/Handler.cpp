@@ -1149,6 +1149,13 @@ std::vector<OpMessageSection> normalizeMessageSections(const std::vector<OpMessa
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "The '{}' of the '{}' command is not a valid array", statements_field, command);
             while (bson_iter_next(&element))
             {
+                if (statements.size() >= MAX_WRITE_BATCH_SIZE)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "The '{}' of the '{}' command has more than {} statements, which is the 'maxWriteBatchSize' of this server",
+                        statements_field,
+                        command,
+                        MAX_WRITE_BATCH_SIZE);
                 if (!BSON_ITER_HOLDS_DOCUMENT(&element))
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS, "An element of the '{}' of the '{}' command must be a document", statements_field, command);
@@ -1197,6 +1204,46 @@ std::vector<Document> runQueryRequst(const std::vector<Document> &, std::shared_
 }
 
 
+/// A write has at most `MAX_WRITE_BATCH_SIZE` statements, and the element of each costs a few dozen
+/// bytes besides its message, so the messages may take what remains of a reply with some room.
+static constexpr size_t MAX_WRITE_ERROR_MESSAGE_BYTES = 1024;
+static constexpr size_t MAX_WRITE_ERRORS_MESSAGE_BYTES = 4 * 1024 * 1024;
+/// The message of an error that fails the whole command.
+static constexpr size_t MAX_ERROR_RESPONSE_MESSAGE_BYTES = 64 * 1024;
+
+String truncateErrorMessage(const String & message, size_t max_bytes)
+{
+    if (message.size() <= max_bytes)
+        return message;
+
+    static constexpr std::string_view ellipsis = "...";
+    size_t length = max_bytes > ellipsis.size() ? max_bytes - ellipsis.size() : 0;
+    /// Do not cut a multi-byte character: back off over its continuation bytes to its first byte.
+    while (length > 0 && (static_cast<UInt8>(message[length]) & 0xC0) == 0x80)
+        --length;
+    return message.substr(0, length) + String(ellipsis);
+}
+
+void appendWriteError(bson_t * write_errors, size_t error_number, size_t statement_index, const Exception & e, size_t & message_bytes)
+{
+    String message;
+    if (message_bytes < MAX_WRITE_ERRORS_MESSAGE_BYTES)
+    {
+        message = truncateErrorMessage(e.message(), MAX_WRITE_ERROR_MESSAGE_BYTES);
+        message_bytes += message.size();
+    }
+    else
+        message = fmt::format("The message of the error is omitted to keep the reply under {} bytes", MAX_BSON_OBJECT_SIZE);
+
+    bson_t write_error;
+    const auto error_key = std::to_string(error_number);
+    bson_append_document_begin(write_errors, error_key.data(), static_cast<int>(error_key.size()), &write_error);
+    BSON_APPEND_INT32(&write_error, "index", static_cast<Int32>(statement_index));
+    BSON_APPEND_INT32(&write_error, "code", e.code());
+    bson_append_utf8(&write_error, "errmsg", -1, message.data(), static_cast<int>(message.size()));
+    bson_append_document_end(write_errors, &write_error);
+}
+
 namespace
 {
 
@@ -1205,7 +1252,8 @@ std::vector<Document> makeErrorResponse()
 {
     bson_t * bson_doc = bson_new();
 
-    BSON_APPEND_UTF8(bson_doc, "errmsg", getCurrentExceptionMessage(false).c_str());
+    const String message = truncateErrorMessage(getCurrentExceptionMessage(false), MAX_ERROR_RESPONSE_MESSAGE_BYTES);
+    bson_append_utf8(bson_doc, "errmsg", -1, message.data(), static_cast<int>(message.size()));
     BSON_APPEND_DOUBLE(bson_doc, "ok", 0.0);
 
     std::vector<Document> result;

@@ -83,7 +83,6 @@ std::vector<Document> ListDatabasesHandler::handle(
             /// writer is open; the envelope around it is checked below, once the reply is whole.
             if (databases.len > MAX_BSON_OBJECT_SIZE)
             {
-                bson_destroy(bson_doc);
                 throw Exception(
                     ErrorCodes::LIMIT_EXCEEDED,
                     "The list of databases is larger than the largest reply that can be sent ({} bytes)",
@@ -97,7 +96,6 @@ std::vector<Document> ListDatabasesHandler::handle(
 
     if (bson_doc->len > MAX_BSON_OBJECT_SIZE)
     {
-        bson_destroy(bson_doc);
         throw Exception(
             ErrorCodes::LIMIT_EXCEEDED,
             "The list of databases is larger than the largest reply that can be sent ({} bytes)",

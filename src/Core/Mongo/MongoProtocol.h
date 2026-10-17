@@ -52,6 +52,11 @@ static constexpr UInt32 MAX_BSON_OBJECT_SIZE = 16777216;
 /// The smallest possible BSON document: a 4-byte length and the terminating zero byte.
 static constexpr UInt32 MIN_DOCUMENT_SIZE = 5;
 
+/// The largest number of statements of one write, which is the `maxWriteBatchSize` we advertise.
+/// A message carries them in its document sequences, and the frame limit alone does not bound
+/// their number: a frame of `MAX_MESSAGE_SIZE` bytes holds millions of empty documents.
+static constexpr UInt32 MAX_WRITE_BATCH_SIZE = 100000;
+
 /** Basic class for messages sent by client or server. */
 
 class ISerializable
