@@ -12,3 +12,5 @@ d_s3_limit_32mb	0
 e_s3_limit_1gb	1
 f_s3_offset_index	0
 g_s3_16_decoders	1
+1	0
+1	1

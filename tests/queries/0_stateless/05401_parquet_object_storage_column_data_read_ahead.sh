@@ -11,6 +11,8 @@
 # Read-ahead takes at most the column data stage's share (0.2) of the memory the query may still use:
 # the ~8 MB second row group of _big.parquet is not read ahead under a 32 MB limit, but is under 1 GB.
 # Column chunks with an offset index (_pi.parquet) are not read ahead.
+# Reads through the userspace page cache are not read ahead. The CI server has no page cache, so a
+# clickhouse-local with one reads the files, then reads them again without it as a control.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -46,3 +48,14 @@ $CLICKHOUSE_CLIENT --query "
     WHERE event_date >= yesterday() AND current_database = currentDatabase() AND type = 'QueryFinish'
         AND startsWith(log_comment, '${CLICKHOUSE_TEST_UNIQUE_NAME}_')
     ORDER BY read"
+
+config="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_page_cache.yaml"
+echo "page_cache_max_size: 134217728" > "$config"
+s3_url_files="s3('http://localhost:11111/test/${CLICKHOUSE_TEST_UNIQUE_NAME}_{1,2}.parquet', 'test', 'testtest', 'Parquet')"
+events="SELECT sumIf(value, event = 'PageCacheReadBytes') > 0, sumIf(value, event = 'ParquetColumnDataReadAheadRowGroups') > 0 FROM system.events"
+$CLICKHOUSE_LOCAL --config-file "$config" --multiquery "
+    $query FROM $s3_url_files SETTINGS ${settings/use_page_cache_for_object_storage = 0/use_page_cache_for_object_storage = 1}, max_download_threads = 4 FORMAT Null;
+    $events;
+    $query FROM $s3_url_files SETTINGS $settings, max_download_threads = 4 FORMAT Null;
+    $events;"
+rm -f "$config"
