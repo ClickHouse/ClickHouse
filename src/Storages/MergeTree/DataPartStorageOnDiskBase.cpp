@@ -707,7 +707,8 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::clonePart(
     const ReadSettings & read_settings,
     const WriteSettings & write_settings,
     LoggerPtr log,
-    const std::function<void()> & cancellation_hook) const
+    const std::function<void()> & cancellation_hook,
+    const std::function<bool()> & may_remove_after_failure) const
 {
     String path_to_clone = fs::path(to) / dir_path / "";
     auto src_disk = volume->getDisk();
@@ -726,6 +727,12 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::clonePart(
     }
     catch (...)
     {
+        if (may_remove_after_failure && !may_remove_after_failure())
+        {
+            LOG_WARNING(log, "Keeping directory {} after failed attempt to move a data part: it may no longer be ours to remove", path_to_clone);
+            throw;
+        }
+
         /// It's safe to remove it recursively (even with zero-copy-replication)
         /// because we've just did full copy through copyDirectoryContent
         LOG_WARNING(log, "Removing directory {} after failed attempt to move a data part", path_to_clone);

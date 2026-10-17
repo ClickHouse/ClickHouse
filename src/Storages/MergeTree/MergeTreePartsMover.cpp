@@ -246,6 +246,17 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(
             throw Exception(ErrorCodes::ABORTED, "Cancelled moving parts.");
         assertLeaderMayContinueMove(admission_epoch);
     };
+
+    /// The leadership epoch this move belongs to. Sampled before the first fence below, so a
+    /// lease lost and reacquired in between only makes the removals guarded by it more cautious.
+    /// The partially copied directory of a failed copy, the temporary clone and, after the swap,
+    /// the source copy are removed only by the lease holder in this epoch: after a lease loss the
+    /// deterministic `moving/<part>` path may already be used by the next leader for its own move.
+    const UInt64 move_epoch = admission_epoch.value_or(data->currentLeadershipEpoch());
+    auto may_remove_after_failure = [this, move_epoch]()
+    {
+        return data->mayMutateSharedStorage() && data->currentLeadershipEpoch() == move_epoch;
+    };
     cancellation_hook();
 
     auto settings = data->getSettings();
@@ -296,16 +307,19 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(
         {
             LOG_INFO(log, "Part {} was not fetched, we are the first who move it to another disk, so we will copy it", part->name);
             cloned_part_storage = part->getDataPartStorage().clonePart(
-                path_to_clone, part->getDataPartStorage().getPartDirectory(), disk, read_settings, write_settings, log, cancellation_hook);
+                path_to_clone, part->getDataPartStorage().getPartDirectory(), disk, read_settings, write_settings, log, cancellation_hook, may_remove_after_failure);
         }
     }
     else
     {
-        cloned_part_storage = part->makeCloneOnDisk(disk, MergeTreeData::MOVING_DIR_NAME, read_settings, write_settings, cancellation_hook);
+        cloned_part_storage = part->makeCloneOnDisk(
+            disk, MergeTreeData::MOVING_DIR_NAME, read_settings, write_settings, cancellation_hook, may_remove_after_failure);
     }
 
     MergeTreeDataPartBuilder builder(*data, part->name, cloned_part_storage, getReadSettings(), PartDirIntent::OpenExisting);
     cloned_part.part = std::move(builder).withPartFormatFromDisk().build();
+    if (data->hasLeaderElection())
+        cloned_part.part->move_leadership_epoch = move_epoch;
     LOG_TRACE(log, "Part {} was cloned to {}", part->name, cloned_part.part->getDataPartStorage().getFullPath());
 
     cloned_part.part->is_temp = false;

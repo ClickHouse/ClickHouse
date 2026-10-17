@@ -1211,11 +1211,18 @@ void IMergeTreeDataPart::removeIfNeeded()
         /// it, which can be long after the move. Under `leader_election` this node may have lost the
         /// lease in between, and the new leader may have taken over with this very copy as the active
         /// one (it still existed at the takeover scan), so removing it here would leave that leader
-        /// reading a deleted path. Only the lease holder may remove it; otherwise the copy is kept and
-        /// is reconciled like any other duplicate when the parts are loaded again.
-        if (state == MergeTreeDataPartState::DeleteOnDestroy && !storage.mayMutateSharedStorage())
+        /// reading a deleted path. Holding the lease again is not enough either: after a
+        /// lose-and-reacquire cycle, the intermediate leader may have removed the other copy as a
+        /// duplicate, and this node's takeover then made this copy active again. The same applies
+        /// to a temporary moving clone, whose deterministic `moving/` path the next leader may be
+        /// using for its own move of the same part. So only the lease holder in the epoch of the
+        /// move may remove it; otherwise the directory is kept and reconciled like any other
+        /// duplicate or stale moving directory when the parts are loaded again.
+        if ((state == MergeTreeDataPartState::DeleteOnDestroy || (is_temp && isMovingPart()))
+            && (!storage.mayMutateSharedStorage()
+                || (move_leadership_epoch && *move_leadership_epoch != storage.currentLeadershipEpoch())))
         {
-            LOG_WARNING(storage.log, "Keeping part {} at its old location {}: this node does not hold the leader lease", name, path);
+            LOG_WARNING(storage.log, "Keeping part {} at {}: this node does not hold the leader lease in the epoch of its move", name, path);
             return;
         }
 
@@ -3395,7 +3402,8 @@ MutableDataPartStoragePtr IMergeTreeDataPart::makeCloneOnDisk(
     const String & directory_name,
     const ReadSettings & read_settings,
     const WriteSettings & write_settings,
-    const std::function<void()> & cancellation_hook) const
+    const std::function<void()> & cancellation_hook,
+    const std::function<bool()> & may_remove_after_failure) const
 {
     if (disk->getName() == getDataPartStorage().getDiskName())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not clone data part {} to same disk {}", name, getDataPartStorage().getDiskName());
@@ -3403,7 +3411,7 @@ MutableDataPartStoragePtr IMergeTreeDataPart::makeCloneOnDisk(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not clone data part {} to empty directory.", name);
 
     String path_to_clone = fs::path(storage.relative_data_path) / directory_name / "";
-    return getDataPartStorage().clonePart(path_to_clone, getDataPartStorage().getPartDirectory(), disk, read_settings, write_settings, storage.log.load(), cancellation_hook);
+    return getDataPartStorage().clonePart(path_to_clone, getDataPartStorage().getPartDirectory(), disk, read_settings, write_settings, storage.log.load(), cancellation_hook, may_remove_after_failure);
 }
 
 IndexSize IMergeTreeDataPart::getIndexSizeFromFile() const

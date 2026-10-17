@@ -356,6 +356,16 @@ public:
     bool is_temp = false;
     std::atomic<bool> is_removed = false;
 
+    /// Under `leader_election`, the leadership epoch of the move that made this part a temporary
+    /// moving clone or put it into the `DeleteOnDestroy` state (see `currentLeadershipEpoch`). Such
+    /// a part is removed by its destructor, possibly long after the move; it is removed only if
+    /// this node still holds the lease in the same epoch. After a lose-and-reacquire cycle the
+    /// directory may be the active copy adopted by the intermediate leader (and then by this node
+    /// again on its takeover), or the moving clone of the intermediate leader, so it is kept and
+    /// reconciled like any other duplicate or stale moving directory. Written under the parts lock
+    /// before the part can reach its destructor.
+    mutable std::optional<UInt64> move_leadership_epoch;
+
     /// This type and the field remove_tmp_policy is used as a hint
     /// to help avoid communication with keeper when temporary part is deleting.
     /// The common procedure is to ask the keeper with unlock request to release a references to the blobs.
@@ -617,7 +627,8 @@ public:
         const String & directory_name,
         const ReadSettings & read_settings,
         const WriteSettings & write_settings,
-        const std::function<void()> & cancellation_hook) const;
+        const std::function<void()> & cancellation_hook,
+        const std::function<bool()> & may_remove_after_failure) const;
 
     /// Checks that .bin and .mrk files exist.
     ///

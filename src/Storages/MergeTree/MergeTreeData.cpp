@@ -9605,6 +9605,8 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy, DataPar
                 original_active_part->force_keep_shared_data = true;
             }
 
+            /// The source copy now belongs to the move: see `move_leadership_epoch`.
+            original_active_part->move_leadership_epoch = part_copy->move_leadership_epoch;
             modifyPartState(original_active_part, DataPartState::DeleteOnDestroy, lock);
             LOG_TEST(log, "swapActivePart: removing {} from data_parts_indexes", (*active_part_it)->getNameWithState());
             data_parts_indexes.erase(active_part_it);
