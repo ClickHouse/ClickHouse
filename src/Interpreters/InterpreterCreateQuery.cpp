@@ -4136,8 +4136,10 @@ BlockIO InterpreterCreateQuery::execute()
 
         /// Workers replay the DDL log with exact matching, so validate on the initiator. Access is
         /// checked first, so the name policy cannot leak the existence of unrelated objects.
+        /// `CLUSTER` is checked before the other privileges, as `executeDDLQueryOnCluster` does.
         if (is_create_database)
         {
+            getContext()->checkAccess(AccessType::CLUSTER);
             getContext()->checkAccess(getRequiredAccess());
             throwIfCaseSiblingDatabase(create, getContext());
         }
@@ -4147,6 +4149,7 @@ BlockIO InterpreterCreateQuery::execute()
         {
             if (!is_create_database)
             {
+                getContext()->checkAccess(AccessType::CLUSTER);
                 getContext()->checkAccess(getRequiredAccess());
                 String create_database_name = create.getDatabase().empty() ? getContext()->getCurrentDatabase() : create.getDatabase();
                 if (!create_database_name.empty())
