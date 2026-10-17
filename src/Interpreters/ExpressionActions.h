@@ -213,6 +213,11 @@ protected:
     /// Whether the action must be wrapped into a lazily executed ColumnFunction instead of being executed now.
     virtual bool shouldExecuteLazily(size_t action_index) const { return actions[action_index].is_lazy_executed; }
 
+    /// Called when the action is wrapped into a lazily executed `ColumnFunction` of `num_rows` rows.
+    /// `num_rows` is the size of the block at the position of the action, which is the number of rows
+    /// the action would be executed on if it was executed eagerly.
+    virtual void onLazyExecution(size_t /*action_index*/, size_t /*num_rows*/, bool /*dry_run*/) const {}
+
     /// Execute the function of the action on the prepared arguments.
     virtual ColumnPtr executeFunction(
         size_t action_index,
@@ -247,6 +252,8 @@ public:
 protected:
     bool shouldExecuteLazily(size_t action_index) const override;
 
+    void onLazyExecution(size_t action_index, size_t num_rows, bool dry_run) const override;
+
     ColumnPtr executeFunction(
         size_t action_index,
         ColumnsWithTypeAndName & arguments,
@@ -269,6 +276,9 @@ private:
         bool is_short_circuit_function = false;
         /// The execution profile of the current round. `is_lazy_execution_efficient` is updated after each round.
         FunctionExecutionProfile current_round_profile;
+        /// The number of rows of the blocks at the position of the action, which were wrapped into lazily
+        /// executed `ColumnFunction`s in the current round. The eager execution would run on all of them.
+        size_t current_round_block_rows = 0;
         /// The execution profile of all the rounds.
         FunctionExecutionProfile total_profile;
     };
@@ -280,7 +290,6 @@ private:
     mutable size_t current_round_input_rows = 0;
 
     void accumulateProfile(size_t action_index, const FunctionExecutionProfile & profile) const;
-    size_t getActionInputRows(size_t action_index) const;
     void updateActionsParentsProfile() const;
     void updateActionParentProfile(size_t action_index, size_t extra_elapsed) const;
     void identifyNonBeneficialLazyActions() const;

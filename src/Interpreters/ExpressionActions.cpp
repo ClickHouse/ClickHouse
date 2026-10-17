@@ -904,6 +904,8 @@ void ExpressionActions::executeAction(
             }
 
             if (shouldExecuteLazily(action_index))
+            {
+                onLazyExecution(action_index, num_rows, dry_run);
                 res_column.column = ColumnFunction::create(
                     num_rows,
                     action.node->function_base,
@@ -914,6 +916,7 @@ void ExpressionActions::executeAction(
                     /*allow_lazy_replicated_captures_=*/ false,
                     action.short_circuit_argument_statistics,
                     action.short_circuit_eager_argument);
+            }
             else
             {
                 ProfileEvents::increment(ProfileEvents::FunctionExecute);
@@ -1557,49 +1560,10 @@ void AdaptiveExpressionActions::accumulateProfile(size_t action_index, const Fun
     }
 }
 
-size_t AdaptiveExpressionActions::getActionInputRows(size_t action_index) const
+void AdaptiveExpressionActions::onLazyExecution(size_t action_index, size_t num_rows, bool dry_run) const
 {
-    /// A nested lazy action is executed only on the rows passed to its nearest lazy ancestor.
-    /// Walk through non-lazy wrappers to find that input domain. A DAG node may have several parents,
-    /// and a shared node is executed lazily once for every lazy ancestor, e.g. once on the `then` rows
-    /// and once on the `else` rows of `if(cond, plus(f(x), 1), plus(f(x), 2))`. The eager execution has
-    /// to cover the rows of all of them, so sum the domains of the nearest lazy ancestors over all paths.
-    /// The sum is an upper bound of their union, which keeps the decision on the side of the static
-    /// short-circuit schedule.
-    std::vector<size_t> stack{action_index};
-    std::vector<bool> visited(actions.size());
-    visited[action_index] = true;
-
-    size_t input_rows = 0;
-    bool reached_without_lazy_ancestor = false;
-
-    while (!stack.empty())
-    {
-        auto child_action_index = stack.back();
-        stack.pop_back();
-
-        const auto & parents = actions[child_action_index].parents_actions_pos;
-        if (parents.empty() && child_action_index != action_index)
-            reached_without_lazy_ancestor = true;
-
-        for (auto parent_action_index : parents)
-        {
-            if (visited[parent_action_index])
-                continue;
-
-            visited[parent_action_index] = true;
-            if (shouldExecuteLazily(parent_action_index))
-                input_rows += action_states[parent_action_index].current_round_profile.executed_rows;
-            else
-                stack.push_back(parent_action_index);
-        }
-    }
-
-    /// A path without a lazy ancestor needs the action on every row of the block.
-    if (reached_without_lazy_ancestor || !input_rows)
-        input_rows += current_round_input_rows;
-
-    return input_rows;
+    if (!dry_run)
+        action_states[action_index].current_round_block_rows += num_rows;
 }
 
 void AdaptiveExpressionActions::finalizeBlockExecution(size_t input_num_rows, bool dry_run) const
@@ -1619,19 +1583,29 @@ void AdaptiveExpressionActions::finalizeBlockExecution(size_t input_num_rows, bo
     identifyNonBeneficialLazyActions();
 
     for (auto & state : action_states)
+    {
         state.current_round_profile = FunctionExecutionProfile();
+        state.current_round_block_rows = 0;
+    }
     current_round_input_rows = 0;
 }
 
 void AdaptiveExpressionActions::updateActionsParentsProfile() const
 {
+    /// The parent should take into account the execution time of the children which it no longer
+    /// executes lazily, otherwise turning the lazy execution off would look free. Take a snapshot of the
+    /// measured costs first: the propagation modifies the profiles of the intermediate actions, and an
+    /// eager intermediate action must propagate only its own measured cost, not the contributions of its
+    /// descendants which were already charged to every ancestor.
+    std::vector<std::pair<size_t, size_t>> eager_actions_elapsed;
     for (size_t i = 0; i < actions.size(); ++i)
     {
-        /// The parent should take into account the execution time of the children which it no longer
-        /// executes lazily, otherwise turning the lazy execution off would look free.
         if (actions[i].is_lazy_executed && !shouldExecuteLazily(i))
-            updateActionParentProfile(i, action_states[i].current_round_profile.execution_elapsed);
+            eager_actions_elapsed.emplace_back(i, action_states[i].current_round_profile.execution_elapsed);
     }
+
+    for (const auto & [action_index, elapsed] : eager_actions_elapsed)
+        updateActionParentProfile(action_index, elapsed);
 }
 
 void AdaptiveExpressionActions::updateActionParentProfile(size_t action_index, size_t extra_elapsed) const
@@ -1711,7 +1685,10 @@ void AdaptiveExpressionActions::identifyNonBeneficialLazyActions() const
         }
         else
         {
-            auto input_rows = getActionInputRows(i);
+            /// The eager execution runs on the whole block at the position of the action (after any
+            /// `ARRAY JOIN` before it), regardless of the masks of its lazy ancestors, which are applied
+            /// only afterwards. So cost it over the rows of the blocks it was wrapped into `ColumnFunction`s for.
+            auto input_rows = state.current_round_block_rows;
             auto estimated_full_execution_elapsed = round_per_row_elapsed * static_cast<double>(input_rows);
             if (estimated_full_execution_elapsed < static_cast<double>(round_profile.execution_elapsed))
             {
