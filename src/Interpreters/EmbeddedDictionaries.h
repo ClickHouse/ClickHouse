@@ -2,6 +2,8 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <Common/Logger_fwd.h>
+#include <Common/ActionBlocker.h>
+#include <Common/ActionLock.h>
 #include <Common/MultiVersion.h>
 #include <Common/ThreadPool.h>
 
@@ -36,8 +38,11 @@ private:
     int reload_period;
     int cur_reload_period = 1;
     bool is_fast_start_stage = true;
+    ActionBlocker reload_blocker;
 
     mutable std::mutex mutex;
+    /// A load was skipped because of `SYSTEM STOP RELOAD DICTIONARIES`. Guarded by `mutex`.
+    bool reload_skipped_while_stopped = false;
 
     ThreadFromGlobalPool reloading_thread;
     Poco::Event destroy;
@@ -73,6 +78,11 @@ public:
 
     /// Forcibly reloads all dictionaries.
     void reload();
+
+    ActionLock getActionLock();
+
+    /// Makes the load skipped while reloads were stopped, if any, without waiting for the next periodic one.
+    void reloadSkippedWhileStopped();
 
     ~EmbeddedDictionaries();
 
