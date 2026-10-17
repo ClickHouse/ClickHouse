@@ -6,7 +6,8 @@ INSERT INTO jt_a SELECT number FROM numbers(1000);
 INSERT INTO jt_b SELECT number % 1000, number % 100 FROM numbers(100000);
 INSERT INTO jt_c SELECT number FROM numbers(100);
 
-SET query_plan_optimize_join_order_limit = 10, enable_parallel_replicas = 0;
+-- An expression step left between the joins splits the graph on its own.
+SET query_plan_optimize_join_order_limit = 10, enable_parallel_replicas = 0, query_plan_merge_expression_into_join = 1;
 
 SELECT countIf(explain LIKE '%⋈%⋈%')
 FROM (EXPLAIN SELECT count() FROM (SELECT jt_b.d AS d FROM jt_a, jt_b WHERE jt_a.k = jt_b.k AND materialize('w') = 'w') AS ab, jt_c WHERE ab.d = jt_c.d);

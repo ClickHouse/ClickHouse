@@ -25,8 +25,9 @@ create table test_stat (d Date STATISTICS(basic), v Int64) engine MergeTree orde
 insert into test_stat select toDate('2020-01-01') + number * 40, number from numbers(1300) SETTINGS materialize_statistics_on_insert = 1;
 -- The statistics of this part are readable, so the two counts below compare a pruner that ran
 -- against one that cannot. The probe is a range the part really excludes, since the wrapping
--- predicate is no longer allowed to prune and so can never show the entry.
-SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stat WHERE d > toDate('2149-06-05')) WHERE explain ILIKE '%Statistics%';
+-- predicate is no longer allowed to prune and so can never show the entry. The probe pins
+-- `use_statistics_for_part_pruning` like the two counts below, since the runner randomizes it off.
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stat WHERE d > toDate('2149-06-05') SETTINGS use_statistics_for_part_pruning = 1) WHERE explain ILIKE '%Statistics%';
 SELECT count() FROM test_stat WHERE toDateTime32(d) > toDateTime('2020-11-06 00:00:00') SETTINGS use_statistics_for_part_pruning = 1;
 SELECT count() FROM test_stat WHERE toDateTime32(identity(d)) > toDateTime('2020-11-06 00:00:00') SETTINGS use_statistics_for_part_pruning = 1;
 

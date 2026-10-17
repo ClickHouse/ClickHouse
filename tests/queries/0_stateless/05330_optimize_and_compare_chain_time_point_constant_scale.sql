@@ -2,6 +2,8 @@
 -- widened to the expression's scale, so `optimize_and_compare_chain` derives conditions through it.
 
 SET enable_analyzer = 1;
+-- Pinned (randomized in CI): a tiny work budget stops the derivation the checks below count.
+SET optimize_and_compare_chain_max_hash_work = 5000000;
 
 SELECT 'datetime constant',
     (SELECT count() FROM (EXPLAIN QUERY TREE

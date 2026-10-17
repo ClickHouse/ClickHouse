@@ -3,6 +3,9 @@
 SET max_threads=2;
 SET max_insert_threads=2;
 SET parallel_view_processing=1;
+-- Pin off: a ratio above 1.0 adds a ShrinkColumnsTransform to the insert chain,
+-- which shows up in the EXPLAIN PIPELINE output below.
+SET shrink_over_allocated_columns_min_waste_ratio = 1.0;
 
 -- { echo }
 
