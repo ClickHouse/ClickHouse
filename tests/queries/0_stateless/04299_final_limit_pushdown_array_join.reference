@@ -1,0 +1,14 @@
+array_join_top5_pushdown_on
+5	3
+6	3
+7	3
+8	3
+9	3
+array_join_top5_pushdown_off
+5	3
+6	3
+7	3
+8	3
+9	3
+explain_array_join_no_limit_in_merge
+1

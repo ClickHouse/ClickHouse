@@ -1,0 +1,59 @@
+ascending, pushdown off
+0
+1
+2
+3
+4
+
+0
+4
+ascending, pushdown on
+0
+1
+2
+3
+4
+
+0
+4
+ascending, pushdown on, sequential partitions
+0
+1
+2
+3
+4
+
+0
+4
+descending, pushdown off
+99
+98
+97
+96
+95
+
+95
+99
+descending, pushdown on
+99
+98
+97
+96
+95
+
+95
+99
+offset, pushdown off
+4
+5
+6
+
+4
+6
+offset, pushdown on
+4
+5
+6
+
+4
+6
