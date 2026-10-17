@@ -1,5 +1,6 @@
 #pragma once
 
+#include <base/defines.h>
 #include <base/types.h>
 #include <Common/Priority.h>
 #include <Common/Scheduler/CostUnit.h>
@@ -84,11 +85,12 @@ public:
         , weight_lowering_cpu_seconds(weight_lowering_cpu_seconds_ > 0 ? weight_lowering_cpu_seconds_ : 0.0)
         , weight_lowering_io_bytes(weight_lowering_io_bytes_ > 0 ? weight_lowering_io_bytes_ : 0.0)
         , priority(priority_)
-        // A set but non-positive override disables the limit for this query, like a workload `0`.
-        , max_threads_soft_limit(max_threads_soft_limit_ && *max_threads_soft_limit_ <= 0
+        // An override of `0` disables the limit for this query, like a workload `0`.
+        , max_threads_soft_limit(max_threads_soft_limit_ == 0
               ? std::optional<Int64>(std::numeric_limits<Int64>::max())
               : max_threads_soft_limit_)
     {
+        chassert(!max_threads_soft_limit_ || *max_threads_soft_limit_ >= 0);
     }
 
     /// Immutable per-query config (from query settings at query start).

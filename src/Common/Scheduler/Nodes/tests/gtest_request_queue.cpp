@@ -746,7 +746,7 @@ TEST(RequestQueue, ThreadsSoftLimitDisabledByDefault)
 }
 
 /// The query override of the `max_threads_soft_limit` beats the workload default in both directions,
-/// and an override of `0` (or below) disables demotion for that query.
+/// and an override of `0` disables demotion for that query.
 TEST(RequestQueue, ThreadsSoftLimitQueryOverride)
 {
     {
@@ -769,15 +769,13 @@ TEST(RequestQueue, ThreadsSoftLimitQueryOverride)
     }
 }
 
-/// A non-positive query override is normalized to "disabled" by the scheduling context.
+/// A query override of `0` is normalized to "disabled" by the scheduling context.
 TEST(RequestQueue, ThreadsSoftLimitOverrideNormalized)
 {
     ResourceSchedulingContext unset(clock_gettime_ns(), 1.0, 1.0, 0, 0, 0, Priority{});
     EXPECT_FALSE(unset.max_threads_soft_limit.has_value());
     ResourceSchedulingContext zero(clock_gettime_ns(), 1.0, 1.0, 0, 0, 0, Priority{}, Int64(0));
     EXPECT_EQ(zero.max_threads_soft_limit, std::numeric_limits<Int64>::max());
-    ResourceSchedulingContext negative(clock_gettime_ns(), 1.0, 1.0, 0, 0, 0, Priority{}, Int64(-3));
-    EXPECT_EQ(negative.max_threads_soft_limit, std::numeric_limits<Int64>::max());
     ResourceSchedulingContext positive(clock_gettime_ns(), 1.0, 1.0, 0, 0, 0, Priority{}, Int64(4));
     EXPECT_EQ(positive.max_threads_soft_limit, 4);
 }

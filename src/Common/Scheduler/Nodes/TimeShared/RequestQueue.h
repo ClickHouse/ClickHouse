@@ -744,8 +744,8 @@ public:
         return algorithm;
     }
 
-    /// Set the workload default of the `max_threads_soft_limit` (`no_threads_soft_limit` or a
-    /// non-positive value disables it). Called when the workload setting changes. Demoted requests
+    /// Set the workload default of the `max_threads_soft_limit` (`0` or `no_threads_soft_limit`
+    /// disables it). Called when the workload setting changes. Demoted requests
     /// that no longer exceed the limit are promoted; requests already in the active algorithm stay.
     void setThreadsSoftLimit(Int64 value) noexcept
     {
@@ -835,7 +835,8 @@ private:
 
     static Int64 normalizeThreadsSoftLimit(Int64 value) noexcept
     {
-        return value > 0 ? value : no_threads_soft_limit;
+        chassert(value >= 0);
+        return value == 0 ? no_threads_soft_limit : value;
     }
 
     /// The single place that decides demotion: the query's override of the `max_threads_soft_limit`
