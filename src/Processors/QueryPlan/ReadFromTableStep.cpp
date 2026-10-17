@@ -56,6 +56,11 @@ static constexpr UInt64 READ_FROM_TABLE_NODE_NAME_MAPPING_SERIALIZATION_VERSION 
 
 void ReadFromTableStep::serialize(Serialization & ctx) const
 {
+    /// The stream settings (cursor, watermark) are not serialized, and a deserialized step without them
+    /// would silently read the table as a plain non-streaming table.
+    if (table_expression_modifiers.hasStream())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization of ReadFromTableStep with the STREAM modifier is not supported");
+
     writeStringBinary(table_name, ctx.out);
 
     UInt8 flags = 0;
