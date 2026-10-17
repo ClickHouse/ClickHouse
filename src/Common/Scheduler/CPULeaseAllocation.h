@@ -340,7 +340,7 @@ private:
     /// `granted > 0` implies a free slot_id exists, which `upscale()` relies on.
     Int64 granted = 0;
     ResourceCost consumed_ns = 0; /// Real consumption accumulated from renew() calls
-    ResourceCost requested_ns = 0; /// Consumption requested from the scheduler (requested <= consumed + quantum)
+    ResourceCost requested_ns = 0; /// CPU time requested from the scheduler; `requested_ns - consumed_ns` is the budget left
 
     /// Soft ceiling on the number of slots to request from the scheduler. Initialised
     /// from the constructor's `initial_max_slots_` argument (or `max_threads` for the
@@ -370,12 +370,18 @@ private:
     public:
         RequestChain(CPULeaseAllocation * lease, size_t max_threads_, ResourceLink master_link_, ResourceLink worker_link_);
         void finish();
+        /// Finishes the oldest of `consuming` requests in consumption state, but gives back the latest expiry:
+        /// the remaining requests take the earliest ones
+        void finishKeepingEarliest(size_t consuming);
         void granted();
-        bool enqueue(ResourceCost cost, ResourceCost requested_ns_);
+        bool enqueue(ResourceCost cost, ResourceCost max_consumed_);
         /// Returns true if the pending request was removed before the scheduler processed it
         bool cancel(std::unique_lock<std::mutex> & lock);
         void scheduled();
         ResourceCost getMaxConsumed() const { return tail->max_consumed; }
+        /// Requires at least one request in consumption state
+        ResourceCost getNewestMaxConsumed() const;
+        ResourceCost getEnqueuedCost() const { return head->cost; }
         bool hasEnqueued() const { return enqueued; }
 
     private:
