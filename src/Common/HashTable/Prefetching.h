@@ -75,4 +75,18 @@ size_t minBytesForPrefetch(size_t min_bytes_for_prefetch)
     }
 }
 
+/// The size compared with `minBytesForPrefetch`. A two-level table allocates all its buckets up front, so until one
+/// grows its buffer is a constant; count its keys instead, as the smallest table that holds them at load factor 1/2.
+template <typename Table>
+size_t bytesForPrefetch(const Table & table)
+{
+    const size_t buffer_bytes = table.getBufferSizeInBytes();
+    if constexpr (requires { Table::NUM_BUCKETS; Table::Impl::initial_buffer_bytes; })
+    {
+        if (buffer_bytes == Table::NUM_BUCKETS * Table::Impl::initial_buffer_bytes)
+            return std::min(buffer_bytes, 2 * table.size() * sizeof(typename Table::cell_type));
+    }
+    return buffer_bytes;
+}
+
 }

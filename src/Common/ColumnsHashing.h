@@ -628,7 +628,7 @@ struct HashMethodSerialized
         /// it a key-only table (`GROUP BY` without aggregate functions) would wait for the byte
         /// threshold of a table twice as wide, and so start prefetching at twice the cardinality.
         const size_t min_bytes = minBytesForPrefetch<Data, Base::has_mapped>(min_bytes_for_prefetch);
-        if (min_bytes_for_prefetch != 0 && data.getBufferSizeInBytes() <= min_bytes)
+        if (min_bytes_for_prefetch != 0 && bytesForPrefetch(data) <= min_bytes)
         {
             can_precompute_hashes = false;
             return;
