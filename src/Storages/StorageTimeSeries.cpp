@@ -7,6 +7,8 @@
 #include <Core/UUID.h>
 #include <Common/Exception.h>
 #include <Common/Stopwatch.h>
+#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ThreadStatus.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -592,6 +594,10 @@ void StorageTimeSeries::prewarmTagsDeduplicationCache(TimeSeriesDeduplicationCac
     read_context->setSetting("timeout_overflow_mode", Field("break"));
 
     Stopwatch watch{CLOCK_MONOTONIC};
+
+    /// A loader thread has no thread group, and the process list entry requires one.
+    ThreadGroupSwitcher thread_group_switcher(
+        ThreadGroup::createForQuery(read_context), ThreadName::BACKGROUND_QUERY, /*allow_existing_group=*/ true);
 
     /// The read limits are checked through the process list entry.
     const auto query_for_logging = union_query->formatForLogging();
