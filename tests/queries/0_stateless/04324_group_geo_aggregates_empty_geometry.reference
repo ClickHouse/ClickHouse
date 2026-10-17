@@ -1,0 +1,16 @@
+union_empty_neutral
+9
+intersect_empty_absorbing
+0
+union_all_empty
+MULTIPOLYGON()
+intersect_all_empty
+MULTIPOLYGON()
+union_empty_geometry
+25
+intersect_empty_geometry
+0
+union_empty_geometric_equiv
+1
+union_empty_state_merge
+16

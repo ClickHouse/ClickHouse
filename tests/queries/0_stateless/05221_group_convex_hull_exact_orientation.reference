@@ -1,0 +1,9 @@
+direct	15	15
+reverse	15	15
+binary_roundtrip	15	15
+compression_roundtrip	15	15
+merge	15	15
+mixed_scales	1	1
+mixed_scales	2	1
+mixed_scales	3	1
+mixed_scales	4	1

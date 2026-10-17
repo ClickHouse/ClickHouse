@@ -1,0 +1,50 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>n_dense</name>
+            <values>
+                <value>500000</value>
+                <value>2000000</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <drop_query>DROP TABLE IF EXISTS bench_ch_dense_{n_dense}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS bench_ch_heavy_25k</drop_query>
+    <drop_query>DROP TABLE IF EXISTS bench_ch_heavy_100k</drop_query>
+
+    <create_query>CREATE TABLE bench_ch_dense_{n_dense} (pt Point, group_id UInt32) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE bench_ch_heavy_25k (pt Point) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE bench_ch_heavy_100k (pt Point) ENGINE = Memory</create_query>
+
+    <fill_query>
+        INSERT INTO bench_ch_dense_{n_dense} SELECT
+            (toFloat64((number * 1103515245 + 12345) % 100000) / 100,
+             toFloat64((number * 6364136223 + 1) % 100000) / 100),
+            number % 128
+        FROM numbers({n_dense})
+    </fill_query>
+
+    <fill_query>
+        INSERT INTO bench_ch_heavy_25k SELECT
+            (sin(number) * 1000 + cos(number * 3) * 500,
+             cos(number * 7) * 1000 + sin(number * 11) * 500)
+        FROM numbers(25000)
+    </fill_query>
+
+    <fill_query>
+        INSERT INTO bench_ch_heavy_100k SELECT
+            (sin(number) * 1000 + cos(number * 3) * 500,
+             cos(number * 7) * 1000 + sin(number * 11) * 500)
+        FROM numbers(100000)
+    </fill_query>
+
+    <query>SELECT groupConvexHull(pt) FROM bench_ch_dense_{n_dense} FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT group_id, groupConvexHull(pt) FROM bench_ch_dense_{n_dense} GROUP BY group_id FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT groupConvexHull(pt) FROM bench_ch_heavy_25k FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT groupConvexHull(pt) FROM bench_ch_heavy_100k FORMAT Null SETTINGS max_threads = 1</query>
+
+    <drop_query>DROP TABLE IF EXISTS bench_ch_dense_{n_dense}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS bench_ch_heavy_25k</drop_query>
+    <drop_query>DROP TABLE IF EXISTS bench_ch_heavy_100k</drop_query>
+</test>

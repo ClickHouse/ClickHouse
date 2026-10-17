@@ -1,0 +1,28 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>n</name>
+            <values>
+                <value>5000</value>
+                <value>10000</value>
+                <value>20000</value>
+            </values>
+        </substitution>
+    </substitutions>
+    <drop_query>DROP TABLE IF EXISTS bench_isect_early_empty_{n}</drop_query>
+    <create_query>CREATE TABLE bench_isect_early_empty_{n} (poly Polygon) ENGINE = Memory</create_query>
+    <fill_query>
+        INSERT INTO bench_isect_early_empty_{n} SELECT
+            if(number = 0,
+                [[(0., 0.), (1., 0.), (1., 1.), (0., 1.), (0., 0.)]],
+                if(number = 1,
+                    [[(10., 10.), (11., 10.), (11., 11.), (10., 11.), (10., 10.)]],
+                    [[(toFloat64(number), 0.), (toFloat64(number + 2), 0.),
+                      (toFloat64(number + 2), 2.), (toFloat64(number), 2.), (toFloat64(number), 0.)]]
+                )
+            )
+        FROM numbers({n})
+    </fill_query>
+    <query>SELECT groupPolygonIntersection(poly) FROM bench_isect_early_empty_{n} FORMAT Null SETTINGS max_threads = 1</query>
+    <drop_query>DROP TABLE IF EXISTS bench_isect_early_empty_{n}</drop_query>
+</test>
