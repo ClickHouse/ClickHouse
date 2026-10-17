@@ -177,7 +177,10 @@ private:
         {
             const auto * flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
             if (null_map)
-                addBatchWithKeep(place, values, row_begin, row_end, [&](size_t i) { return !null_map[i] && flags[i]; });
+                addBatchWithKeep(place, values, row_begin, row_end, [&](size_t i)
+                {
+                    return static_cast<UInt8>(!null_map[i]) & static_cast<UInt8>(!!flags[i]);
+                });
             else
                 addBatchWithKeep(place, values, row_begin, row_end, [&](size_t i) { return flags[i]; });
         }
