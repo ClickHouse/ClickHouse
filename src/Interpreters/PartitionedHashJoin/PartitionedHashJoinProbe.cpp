@@ -12,7 +12,11 @@ extern const int LOGICAL_ERROR;
 /** Each combination's maps shape mirrors the `MapGetter` table. Only combinations a real query plan
   * can reach are listed; anything else is a logic error, as in `HashJoin::joinBlock`.
   * `prefer_use_maps_all` is set when the barrier promoted ALL to RightAny on a unique-key build:
-  * the ALL-built `RowRefList` maps are probed with RightAny semantics and skip replication.
+  * the ALL-built `RowRefList` maps are probed with RightAny semantics and skip replication. It is
+  * also set for a mixed ON condition, whose residual filter has to see every right row of a key
+  * before it can decide: those joins run on `RowRefList` maps whatever their strictness. RIGHT and
+  * FULL joins with such a condition need per-row flags and take the delegated path, so they never
+  * reach this dispatch.
   *
   * Bodies live in `PartitionedHashJoinProbeImpl.h`, instantiated per kind so no one translation
   * unit compiles them all.
@@ -28,10 +32,28 @@ JoinResultPtr PartitionedHashJoin::probeDispatch(Block block, size_t lane)
 
     if (prefer_use_maps_all)
     {
-        if (kind == Inner && strictness == RightAny)
-            return probeImpl<Inner, RightAny, HashJoin::MapsAll>(std::move(block), lane);
-        if (kind == Left && strictness == RightAny)
-            return probeImpl<Left, RightAny, HashJoin::MapsAll>(std::move(block), lane);
+        if (kind == Inner)
+        {
+            switch (strictness)
+            {
+                case All: return probeImpl<Inner, All, HashJoin::MapsAll>(std::move(block), lane);
+                case RightAny: return probeImpl<Inner, RightAny, HashJoin::MapsAll>(std::move(block), lane);
+                case Any: return probeImpl<Inner, Any, HashJoin::MapsAll>(std::move(block), lane);
+                default: break;
+            }
+        }
+        else if (kind == Left)
+        {
+            switch (strictness)
+            {
+                case All: return probeImpl<Left, All, HashJoin::MapsAll>(std::move(block), lane);
+                case RightAny: return probeImpl<Left, RightAny, HashJoin::MapsAll>(std::move(block), lane);
+                case Any: return probeImpl<Left, Any, HashJoin::MapsAll>(std::move(block), lane);
+                case Semi: return probeImpl<Left, Semi, HashJoin::MapsAll>(std::move(block), lane);
+                case Anti: return probeImpl<Left, Anti, HashJoin::MapsAll>(std::move(block), lane);
+                default: break;
+            }
+        }
     }
     else
     {

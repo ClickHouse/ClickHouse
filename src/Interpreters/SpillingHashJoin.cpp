@@ -240,7 +240,8 @@ void SpillingHashJoin::createGraceJoin(size_t initial_buckets_hint)
         tmp_data,
         any_take_last_row,
         max_bytes_before_external_join,
-        getMaxBuildThreads());
+        getMaxBuildThreads(),
+        /*partitioned_buckets_=*/partitioned_join != nullptr);
 
     grace_join->initialize(*left_sample_block);
 }

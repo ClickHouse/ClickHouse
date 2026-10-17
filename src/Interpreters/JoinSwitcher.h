@@ -1,6 +1,7 @@
 #pragma once
 
 #include <mutex>
+#include <optional>
 
 #include <Core/Block.h>
 #include <Interpreters/HashTablesStatistics.h>
@@ -13,7 +14,10 @@ namespace DB
 
 /// Used when setting 'join_algorithm' set to JoinAlgorithm::AUTO.
 /// Starts JOIN with join-in-memory algorithm and switches to join-on-disk on the fly if there's no memory to place right table.
-/// Current join-in-memory and join-on-disk are JoinAlgorithm::HASH and JoinAlgorithm::PARTIAL_MERGE joins respectively.
+/// The join-in-memory is a `HashJoin`, or a `PartitionedHashJoin` when the planner says so (`use_partitioned_join_`:
+/// `join_algorithm` lists `partitioned_hash` and the shape allows it). The join-on-disk is `MergeJoin`
+/// (JoinAlgorithm::PARTIAL_MERGE). The blocks are added one at a time either way; a partitioned join still builds its
+/// table on up to `max_threads_` threads after the last block.
 class JoinSwitcher : public IJoin
 {
 public:
@@ -21,7 +25,10 @@ public:
         std::shared_ptr<TableJoin> table_join_,
         SharedHeader right_sample_block_,
         bool any_take_last_row_,
-        const HashJoinStatsCollectingParams & stats_collecting_params_ = {});
+        const HashJoinStatsCollectingParams & stats_collecting_params_ = {},
+        bool use_partitioned_join_ = false,
+        size_t max_threads_ = 1,
+        std::optional<size_t> build_rows_hint_ = {});
 
     std::string getName() const override { return "JoinSwitcher"; }
 
@@ -109,6 +116,8 @@ private:
     JoinPtr join;
     SizeLimits limits;
     bool switched;
+    /// Which in-memory join `join` holds until a switch.
+    const bool use_partitioned_join;
     mutable std::mutex switch_mutex;
     std::shared_ptr<TableJoin> table_join;
     const Block right_sample_block;

@@ -1,0 +1,4 @@
+-- the first run has no cached count
+1
+-- the second run sizes its table from the cached count and never grows it
+1	1

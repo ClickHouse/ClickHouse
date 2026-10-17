@@ -238,6 +238,104 @@ TEST(HashJoinTable, DegreeCap)
     EXPECT_GE(Key64Table::degreeFor(reserve_for_33), 33u);
 }
 
+/// `emplace` on a single-partition table. The first insert of a key claims a cell and a repeat finds it;
+/// the zero key takes the zero-value cell. The table doubles at the load factor and every key is still
+/// found afterwards. The iterator visits each occupied cell exactly once.
+TEST(HashJoinTable, EmplaceGrowsAndFinds)
+{
+    constexpr size_t keys = 10007;
+    Key64Table table(/*size_degree_=*/8, /*partition_bits_=*/0);
+    table.commitAll();
+    ASSERT_EQ(table.cellCount(), 256u);
+
+    auto emplace = [&](UInt64 key) -> std::pair<Key64Table::LookupResult, bool>
+    {
+        Key64Table::LookupResult it = nullptr;
+        bool inserted = false;
+        table.emplace(key, it, inserted);
+        return {it, inserted};
+    };
+
+    size_t grows = 0;
+    for (size_t i = 0; i < keys; ++i)
+    {
+        const size_t cells_before = table.cellCount();
+        auto [it, inserted] = emplace(keyOf(i));
+        ASSERT_TRUE(inserted) << "key " << i;
+        ASSERT_EQ(it->getKey(), keyOf(i));
+        /// The caller constructs the mapped value of a new cell, as with `HashTable::emplace`.
+        new (&it->getMapped()) RowRefList(RowRefList::fromWord(RowRef(0, i).encode()));
+        ASSERT_EQ(table.size(), i + 1);
+        ASSERT_LE(table.size(), table.maxFill());
+        grows += table.cellCount() != cells_before;
+    }
+    EXPECT_GT(grows, 0u);
+    EXPECT_GE(table.cellCount(), 2 * keys);
+
+    /// A repeat finds the cell of the first insert and leaves the size alone.
+    for (size_t i = 0; i < keys; i += 97)
+    {
+        auto [it, inserted] = emplace(keyOf(i));
+        EXPECT_FALSE(inserted) << "key " << i;
+        EXPECT_EQ(refWordRowNo(it->getMapped().word), i);
+    }
+    EXPECT_EQ(table.size(), keys);
+
+    /// The zero key lives in the zero-value cell, counted once.
+    {
+        auto [it, inserted] = emplace(0);
+        ASSERT_TRUE(inserted);
+        EXPECT_TRUE(table.hasZero());
+        EXPECT_EQ(it, table.zeroValue());
+        new (&it->getMapped()) RowRefList(RowRefList::fromWord(RowRef(0, keys).encode()));
+        auto [again, inserted_again] = emplace(0);
+        EXPECT_FALSE(inserted_again);
+        EXPECT_EQ(again, table.zeroValue());
+        EXPECT_EQ(table.size(), keys + 1);
+    }
+
+    /// Every key is found after the doublings, with the mapped value it was given.
+    for (size_t i = 0; i < keys; ++i)
+    {
+        const auto * found = table.find(keyOf(i));
+        ASSERT_NE(found, nullptr) << "key " << i;
+        ASSERT_EQ(refWordRowNo(found->getMapped().word), i);
+        ASSERT_EQ(table.offsetInternal(found), static_cast<size_t>(found - table.cells()) + 1);
+    }
+    EXPECT_EQ(table.find(keyOf(keys)), nullptr);
+
+    /// The walk: the zero cell first, then every occupied cell once, nothing else.
+    std::vector<UInt8> seen(keys + 1, 0);
+    size_t visited = 0;
+    for (auto it = table.begin(); it != table.end(); ++it, ++visited)
+    {
+        const size_t row = refWordRowNo(it->getMapped().word);
+        ASSERT_LT(row, seen.size());
+        ASSERT_EQ(seen[row], 0) << "row " << row << " visited twice";
+        seen[row] = 1;
+        if (visited == 0)
+            EXPECT_EQ(it.getPtr(), table.zeroValue());
+    }
+    EXPECT_EQ(visited, keys + 1);
+    EXPECT_TRUE(std::ranges::all_of(seen, [](UInt8 v) { return v == 1; }));
+
+    /// A partitioned table grows only through its build; `emplace` refuses to double it.
+    Key64Table partitioned(/*size_degree_=*/8, /*partition_bits_=*/2);
+    partitioned.commitAll();
+    expectThrowsCode(
+        ErrorCodes::LOGICAL_ERROR,
+        "emplace past the load factor of a partitioned table must throw",
+        [&]
+        {
+            for (size_t i = 0; i <= partitioned.maxFill(); ++i)
+            {
+                Key64Table::LookupResult it = nullptr;
+                bool inserted = false;
+                partitioned.emplace(keyOf(i), it, inserted);
+            }
+        });
+}
+
 /// The route the fill saves for a key names the partition whose range holds the key's home cell.
 /// That holds for every plan the 16-bit routes cover. Checked on `key64` and `key_string` with the
 /// same hashes the build and the probe use.
