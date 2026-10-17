@@ -18,6 +18,7 @@
   *   unsigned 64-bit vector compare, which on x86-64 means AVX-512 `vpcmpuq`. Without it the
   *   vectorizer has no such instruction, extracts every lane back into a general purpose register
   *   and the result is slower than the 128-bit form, so that form stays the default.
+  *   The halves form is also called directly by kernels dispatched at runtime to AVX-512.
   */
 
 namespace detail
@@ -41,9 +42,7 @@ inline unsigned __int128 loadBigEndian128(const void * p)
 }
 
 
-#if defined(__AVX512F__) && defined(__AVX512VL__)
-
-inline bool lessBigEndian16(const void * a, const void * b)
+inline bool lessBigEndian16Halves(const void * a, const void * b)
 {
     const UInt64 a_hi = detail::loadBigEndian64(a);
     const UInt64 b_hi = detail::loadBigEndian64(b);
@@ -52,7 +51,7 @@ inline bool lessBigEndian16(const void * a, const void * b)
     return (a_hi < b_hi) | ((a_hi == b_hi) & (a_lo < b_lo));
 }
 
-inline int compareBigEndian16(const void * a, const void * b)
+inline int compareBigEndian16Halves(const void * a, const void * b)
 {
     const UInt64 a_hi = detail::loadBigEndian64(a);
     const UInt64 b_hi = detail::loadBigEndian64(b);
@@ -62,6 +61,19 @@ inline int compareBigEndian16(const void * a, const void * b)
     const int less = (a_hi < b_hi) | (hi_equal & (a_lo < b_lo));
     const int greater = (a_hi > b_hi) | (hi_equal & (a_lo > b_lo));
     return greater - less;
+}
+
+
+#if defined(__AVX512F__) && defined(__AVX512VL__)
+
+inline bool lessBigEndian16(const void * a, const void * b)
+{
+    return lessBigEndian16Halves(a, b);
+}
+
+inline int compareBigEndian16(const void * a, const void * b)
+{
+    return compareBigEndian16Halves(a, b);
 }
 
 #else
