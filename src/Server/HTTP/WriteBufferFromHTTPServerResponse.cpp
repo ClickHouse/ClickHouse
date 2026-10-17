@@ -276,6 +276,12 @@ bool WriteBufferFromHTTPServerResponse::cancelWithException(HTTPServerRequest & 
             // If it is not HEAD request send the message in the body.
             setExceptionCode(exception_code_);
 
+            /// Without a usable compression buffer (e.g. it has been canceled by a compression
+            /// failure before producing any output) the exception message below is written raw, so
+            /// the pending Content-Encoding must not be sent, or the body would be mislabeled.
+            if (!use_compression_buffer)
+                compression_method = CompressionMethod::None;
+
             auto & out = use_compression_buffer ? *compression_buffer : *this;
             writeString(message, out);
             if (!message.ends_with('\n'))
