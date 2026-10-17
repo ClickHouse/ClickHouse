@@ -182,6 +182,7 @@ void QueryPlan::unitePlans(QueryPlanStepPtr step, std::vector<std::unique_ptr<Qu
     {
         max_threads = std::max(max_threads, plan->max_threads);
         concurrency_control = concurrency_control || plan->concurrency_control;
+        min_serialization_version = std::max(min_serialization_version, plan->min_serialization_version);
         resources = std::move(plan->resources);
     }
 }
@@ -1316,6 +1317,7 @@ QueryPlan QueryPlan::extractSubplan(Node * subplan_root)
     /// shared handles, so ownership is only shared, never moved out of this plan.
     new_plan.max_threads = max_threads;
     new_plan.concurrency_control = concurrency_control;
+    new_plan.min_serialization_version = min_serialization_version;
     new_plan.resources.append(resources);
 
     return new_plan;
@@ -1340,6 +1342,7 @@ QueryPlan QueryPlan::clone() const
     /// concurrency control instead of the caps the source plan carries.
     result.max_threads = max_threads;
     result.concurrency_control = concurrency_control;
+    result.min_serialization_version = min_serialization_version;
 
     /// Preserve the resource holder (storage holders, table locks, interpreter contexts, etc.).
     /// These keep the objects a cloned plan reads (e.g. MergeTree parts in the direct-join lookup
@@ -1367,6 +1370,7 @@ QueryPlan QueryPlan::cloneSubtree(Node * subplan_root, const QueryPlan & source_
     auto result = cloneSubtree(subplan_root);
     result.max_threads = source_plan.max_threads;
     result.concurrency_control = source_plan.concurrency_control;
+    result.min_serialization_version = source_plan.min_serialization_version;
     result.resources.append(source_plan.resources);
     return result;
 }
@@ -1478,6 +1482,7 @@ void QueryPlan::replaceNodeWithPlan(Node * node, QueryPlan plan, SharedHeader ex
 
     max_threads = std::max(max_threads, plan.max_threads);
     concurrency_control = concurrency_control || plan.concurrency_control;
+    min_serialization_version = std::max(min_serialization_version, plan.min_serialization_version);
     resources = std::move(plan.resources);
 }
 

@@ -89,9 +89,9 @@ PrewhereInfo PrewhereInfo::clone() const
 }
 
 /// `query_condition_cache_attribution` is not serialized: a deserialized plan does not attribute.
-void PrewhereInfo::serialize(IQueryPlanStep::Serialization & ctx) const
+void PrewhereInfo::serialize(IQueryPlanStep::Serialization & ctx, ActionsDAG::IndexHintActions index_hint_actions) const
 {
-    prewhere_actions.serialize(ctx.out, ctx.registry);
+    prewhere_actions.serialize(ctx.out, ctx.registry, index_hint_actions);
     writeStringBinary(prewhere_column_name, ctx.out);
     writeBinary(remove_prewhere_column, ctx.out);
     writeBinary(need_filter, ctx.out);
@@ -109,9 +109,9 @@ PrewhereInfo PrewhereInfo::deserialize(IQueryPlanStep::Deserialization & ctx)
     return prewhere_info;
 }
 
-void FilterDAGInfo::serialize(IQueryPlanStep::Serialization & ctx) const
+void FilterDAGInfo::serialize(IQueryPlanStep::Serialization & ctx, ActionsDAG::IndexHintActions index_hint_actions) const
 {
-    actions.serialize(ctx.out, ctx.registry);
+    actions.serialize(ctx.out, ctx.registry, index_hint_actions);
     writeStringBinary(column_name, ctx.out);
     writeBinary(do_remove_column, ctx.out);
 }

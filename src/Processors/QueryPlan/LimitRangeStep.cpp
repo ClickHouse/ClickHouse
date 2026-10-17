@@ -179,7 +179,8 @@ void LimitRangeStep::serialize(Serialization & ctx) const
             writeStringBinary(*end_column_name, ctx.out);
     }
 
-    conditions.serialize(ctx.out, ctx.registry, ctx.input_header);
+    const auto index_hint_actions = ctx.step_version >= 1 ? ActionsDAG::IndexHintActions::Write : ActionsDAG::IndexHintActions::Refuse;
+    conditions.serialize(ctx.out, ctx.registry, index_hint_actions, ctx.input_header);
 }
 
 QueryPlanStepPtr LimitRangeStep::deserialize(Deserialization & ctx)
@@ -266,7 +267,10 @@ QueryPlanStepPtr LimitRangeStep::clone() const
 void registerLimitRangeStep(QueryPlanStepRegistry & registry);
 void registerLimitRangeStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("LimitRange", LimitRangeStep::deserialize);
+    registry.registerStep(
+        "LimitRange",
+        LimitRangeStep::deserialize,
+        {{0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_INDEX_HINT_ACTIONS}});
 }
 
 }
