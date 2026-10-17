@@ -347,6 +347,8 @@ void NpyRowInputFormat::readPrefix()
                 expected_data_bytes,
                 available_data_bytes);
     }
+
+    data_size_confirmed = expected_data_bytes == 0 || file_size.has_value();
 }
 
 NpyRowInputFormat::NpyRowInputFormat(ReadBuffer & in_, SharedHeader header_, Params params_)
@@ -358,6 +360,7 @@ NpyRowInputFormat::NpyRowInputFormat(ReadBuffer & in_, SharedHeader header_, Par
     nested_type = getNestedType(types[0]);
 }
 
+/// Offered only when readPrefix could confirm the declared row count against the data size.
 size_t NpyRowInputFormat::countRows(size_t max_block_size)
 {
     size_t count = 0;
@@ -485,15 +488,6 @@ bool NpyRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &  /*
     if (read_rows >= header.shape[0])
         return false;
 
-    /// Check eof only when the current row requires data bytes. Rows with zero-size
-    /// elements or a zero inner dimension are represented without a data section.
-    bool row_requires_data_bytes = header.numpy_type->getSize() != 0;
-    for (size_t i = 1; i != header.shape.size(); ++i)
-        row_requires_data_bytes = row_requires_data_bytes && header.shape[i] != 0;
-
-    if (row_requires_data_bytes && in->eof())
-        return false;
-
     ++read_rows;
 
     auto & column = columns[0];
@@ -541,11 +535,6 @@ NamesAndTypesList NpySchemaReader::readSchema()
     DataTypePtr result_type = createNestedArrayType(nested_type, header.shape.size());
 
     return {{"array", result_type}};
-}
-
-std::optional<size_t> NpySchemaReader::readNumberOrRows()
-{
-    return header.shape[0];
 }
 
 void registerInputFormatNpy(FormatFactory & factory);
