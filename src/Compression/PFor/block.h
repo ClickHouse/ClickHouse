@@ -254,4 +254,50 @@ inline size_t blockDecode(const uint8_t * in, unsigned cnt, T * out, Delta mode,
     return static_cast<size_t>(p - in);
 }
 
+// Size of one block from its header, without decoding it. Returns 0 where blockDecode would reject the header or, with non-null `end`, overrun.
+// Exception positions are not validated: they only affect the values.
+template <typename T>
+inline size_t blockSkip(const uint8_t * in, unsigned cnt, const uint8_t * end = nullptr) noexcept
+{
+    const auto need = [end](const uint8_t * from, size_t bytes) noexcept
+    {
+        return !end || (from <= end && static_cast<size_t>(end - from) >= bytes);
+    };
+
+    if (!need(in, 1))
+        return 0;
+
+    const uint8_t b0 = in[0];
+    if (b0 & 0x80u)
+    {
+        const unsigned k = b0 & 0x7Fu;
+        if (k > sizeof(T) || !need(in + 1, k))
+            return 0;
+        return 1u + k;
+    }
+
+    const unsigned b = b0;
+    if (b > typeBits<T> || !need(in, 2))
+        return 0;
+
+    const unsigned e = in[1];
+    if (e > cnt || (e && b >= typeBits<T>))
+        return 0;
+
+    size_t bytes = 2 + packedBytes(cnt, b);
+    if (e)
+    {
+        if (!need(in + 2, 1))
+            return 0;
+
+        const unsigned hb = in[2];
+        if (hb == 0 || hb > typeBits<T> - b)
+            return 0;
+
+        bytes += 1 + e + packedBytes(e, hb);
+    }
+
+    return !need(in, bytes) ? 0 : bytes;
+}
+
 }

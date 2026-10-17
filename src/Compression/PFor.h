@@ -34,6 +34,13 @@ inline size_t decodeBlocks(const uint8_t * in, size_t count, Delta mode, T * out
     return detail::bulkDecode<T>(in, count, mode, out, end);
 }
 
+/// Bytes `decodeBlocks` would consume for `count` values, read from the block headers without decoding. Same `end` contract.
+template <typename T>
+inline size_t skipBlocks(const uint8_t * in, size_t count, const uint8_t * end = nullptr) noexcept
+{
+    return detail::bulkSkip<T>(in, count, end);
+}
+
 /// Self-describing compress into a caller buffer (>= maxCompressedBytes<T>): [varint count][u8 flags][block stream].
 template <typename T>
 inline size_t compressInto(std::span<const T> in, Delta mode, uint8_t * out) noexcept

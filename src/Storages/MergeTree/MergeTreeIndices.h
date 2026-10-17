@@ -97,7 +97,7 @@ struct IMergeTreeIndexGranule
 
     /// Serialize with multiple streams.
     /// By analogy with ISerialization::serializeBinaryBulkWithMultipleStreams.
-    virtual void serializeBinaryWithMultipleStreams(MergeTreeIndexOutputStreams & streams) const;
+    virtual void serializeBinaryWithMultipleStreams(MergeTreeIndexOutputStreams & streams, const MergeTreeIndexSerializationState & state) const;
 
     /// Version of the index to deserialize:
     ///

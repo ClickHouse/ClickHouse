@@ -4,6 +4,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPostingListCodec.h>
 
 #include <roaring/roaring.hh>
@@ -38,7 +39,7 @@ PostingList decodePostings(const String & encoded)
     ReadBufferFromString in(encoded);
     PostingList postings;
     PaddedPODArray<char> buffer;
-    codec.decode(in, std::numeric_limits<UInt64>::max(), postings, buffer);
+    codec.decode(in, std::numeric_limits<UInt64>::max(), postings, TextIndexScoringKind::None, buffer);
     return postings;
 }
 

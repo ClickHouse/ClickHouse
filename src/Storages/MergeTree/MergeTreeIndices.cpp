@@ -461,7 +461,7 @@ MergeTreeIndexSubstreams IMergeTreeIndex::getAllSubstreamsInPart(
     /// reports nothing once a required system column is invalidated, while a file left on disk
     /// still has to be skipped/stripped here. Probes `getPotentialSubstreams`, not `getSubstreams`:
     /// a part may hold a substream that the current definition does not write (the legacy minmax
-    /// `.idx`, the text index `.pos` after the index was redefined without `support_phrase_search`).
+    /// `.idx`, the text index `.pos` and `.dl` after the index was redefined without `support_phrase_search` or `scoring`).
     MergeTreeIndexSubstreams substreams;
     for (const auto & substream : getPotentialSubstreams())
         if (indexFileExistsInChecksums(checksums, relative_path_prefix + substream.suffix, substream.extension, storage))
@@ -470,7 +470,7 @@ MergeTreeIndexSubstreams IMergeTreeIndex::getAllSubstreamsInPart(
     return substreams;
 }
 
-void IMergeTreeIndexGranule::serializeBinaryWithMultipleStreams(MergeTreeIndexOutputStreams & streams) const
+void IMergeTreeIndexGranule::serializeBinaryWithMultipleStreams(MergeTreeIndexOutputStreams & streams, const MergeTreeIndexSerializationState &) const
 {
     auto * stream = streams.at(MergeTreeIndexSubstream::Type::Regular);
     serializeBinary(stream->compressed_hashing);
