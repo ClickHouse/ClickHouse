@@ -440,27 +440,6 @@ DataTypePtr resolveHint(
     return hint;
 }
 
-/// Whether a field's row count is backed by its buffers, so that it can be checked against the message body. The rows of a
-/// `RunEndEncoded` field come from its run ends: a few physical runs can describe many rows. Its run ends and values are
-/// checked when it is decoded (see `decodeRunEndEncoded`). A struct or fixed-size-list wrapper is backed when one of its
-/// children is: otherwise its only buffers are optional validity bitmaps, and a present bitmap satisfies the bound anyway.
-bool hasRowsBackedByBuffers(const ArrowField & field)
-{
-    if (field.dictionary)
-        return true;
-    switch (field.type.kind)
-    {
-        case TypeKind::RunEndEncoded:
-            return false;
-        case TypeKind::Struct:
-            return field.type.children.empty() || std::ranges::any_of(field.type.children, hasRowsBackedByBuffers);
-        case TypeKind::FixedSizeList:
-            return field.type.list_size == 0 || hasRowsBackedByBuffers(field.type.children.at(0));
-        default:
-            return true;
-    }
-}
-
 /// A `Null` field has no buffers. A struct or fixed-size-list tree of such fields needs only optional
 /// validity buffers, so its logical row count can be independent of the message body size.
 bool isBufferlessSubtree(const ArrowField & field)
@@ -477,6 +456,42 @@ bool isBufferlessSubtree(const ArrowField & field)
             return isBufferlessSubtree(field.type.children.at(0));
         default:
             return false;
+    }
+}
+
+/// Whether a field's row count is backed by its buffers, so that it can be checked against the message body. The rows of a
+/// `RunEndEncoded` field come from its run ends: a few physical runs can describe many rows. Its run ends and values are
+/// checked when it is decoded (see `decodeRunEndEncoded`). A struct or fixed-size-list wrapper is backed when one of its
+/// children with buffers is: otherwise its only buffers are optional validity bitmaps, and a present bitmap satisfies the
+/// bound anyway. Bufferless children (`Null` subtrees) back nothing, so they are ignored unless all children are bufferless;
+/// such a wrapper stays checked, as before.
+bool hasRowsBackedByBuffers(const ArrowField & field)
+{
+    if (field.dictionary)
+        return true;
+    auto has_backed_children = [](const auto & children)
+    {
+        bool has_children_with_buffers = false;
+        for (const ArrowField & child : children)
+        {
+            if (isBufferlessSubtree(child))
+                continue;
+            if (hasRowsBackedByBuffers(child))
+                return true;
+            has_children_with_buffers = true;
+        }
+        return !has_children_with_buffers;
+    };
+    switch (field.type.kind)
+    {
+        case TypeKind::RunEndEncoded:
+            return false;
+        case TypeKind::Struct:
+            return has_backed_children(field.type.children);
+        case TypeKind::FixedSizeList:
+            return field.type.list_size == 0 || has_backed_children(field.type.children);
+        default:
+            return true;
     }
 }
 
@@ -1160,6 +1175,14 @@ ColumnPtr RecordBatchDecoder::decodeInner(
             {
                 keys = keys->filter(*filt, -1);
                 values = values->filter(*filt, -1);
+            }
+            /// Map keys are never nullable, but a key column can still come out as `Nullable`: the values of a
+            /// `RunEndEncoded` key carry their own nullability. Its referenced keys must not be null.
+            if (const auto * nullable_keys = typeid_cast<const ColumnNullable *>(keys.get()))
+            {
+                if (std::ranges::find(nullable_keys->getNullMapData(), UInt8{1}) != nullable_keys->getNullMapData().end())
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC map field '{}' has null keys", field.name);
+                keys = nullable_keys->getNestedColumnPtr();
             }
             return ColumnMap::create(keys, values, std::move(offsets_col));
         }
@@ -2066,7 +2089,7 @@ RecordBatchDecoder::DecodedColumn RecordBatchDecoder::decodeBatchColumn(
             decoded.type = std::make_shared<DataTypeLowCardinality>(decoded.type);
     }
     else
-        decoded.type = fieldToCHType(field, settings, field.nullable, /*allow_null_type=*/true);
+        decoded.type = fieldToCHType(field, settings, isNullableField(field), /*allow_null_type=*/true);
     /// Bufferless roots store one physical value. The reader chooses the output row count before
     /// expanding it, and dictionaries retain its compact representation across deltas.
     const bool constant = batch_rows != 0 && isSizeDeterminedSubtree(field);

@@ -74,10 +74,22 @@ long_run = ree(pa.array([1000], pa.int32()), pa.array([7], pa.int32()))
 write("long", {"v": long_run})
 long_struct = pa.StructArray.from_arrays([long_run], names=["r"])
 write("long_struct", {"t": long_struct})
+write("long_struct_null", {"t": pa.StructArray.from_arrays([long_run, pa.nulls(1000)], names=["r", "n"])})
 write("long_lists", {
     "l": pa.ListArray.from_arrays(pa.array([0, 1000], pa.int32()), long_struct),
     "f": pa.FixedSizeListArray.from_arrays(long_struct, 1000),
 })
+
+# The nulls of a run-end-encoded field are those of its values, even when the field itself is declared non-nullable.
+null_run = ree(pa.array([2, 4], pa.int32()), pa.array([None, 7], pa.int32()))
+batch = pa.record_batch([null_run], schema=pa.schema([pa.field("v", null_run.type, nullable=False)]))
+with pa.OSFile(f"{base}.nonnullable", "wb") as sink:
+    with pa.ipc.new_stream(sink, batch.schema) as writer:
+        writer.write_batch(batch)
+
+# Map keys are never nullable, even when they are run-end encoded with (nullable) values.
+keys = ree(pa.array([1, 2], pa.int32()), pa.array([1, 2], pa.int32()))
+write("map_keys", {"m": pa.MapArray.from_arrays(pa.array([0, 2], pa.int32()), keys, pa.array([10, 20], pa.int32()))})
 
 # Rows hidden by a null struct row decode as defaults, even when they share a run with visible rows.
 masked = ree(pa.array([2], pa.int32()), pa.array([7], pa.int32()))
@@ -115,6 +127,14 @@ ${CLICKHOUSE_LOCAL} --query "SELECT count(), sum(v) FROM file('${DATA_FILE}.long
 echo "--- one run of 1000 rows in a struct, a list and a fixed-size list ---"
 ${CLICKHOUSE_LOCAL} --query "SELECT count(), sum(t.r) FROM file('${DATA_FILE}.long_struct', 'ArrowStream')"
 ${CLICKHOUSE_LOCAL} --query "SELECT length(l), arrayReduce('sum', l.r), length(f), arrayReduce('sum', f.r) FROM file('${DATA_FILE}.long_lists', 'ArrowStream')"
+echo "--- one run of 1000 rows in a struct with a null field ---"
+${CLICKHOUSE_LOCAL} --query "SELECT count(), sum(t.r), countIf(t.n IS NULL) FROM file('${DATA_FILE}.long_struct_null', 'ArrowStream', 't Tuple(r Int32, n Nullable(Int32))')"
+echo "--- a null run of a non-nullable field ---"
+${CLICKHOUSE_LOCAL} --query "
+    DESC file('${DATA_FILE}.nonnullable', 'ArrowStream') SETTINGS schema_inference_make_columns_nullable = 3;
+    SELECT * FROM file('${DATA_FILE}.nonnullable', 'ArrowStream') SETTINGS schema_inference_make_columns_nullable = 3"
+echo "--- run-end-encoded map keys ---"
+${CLICKHOUSE_LOCAL} --query "DESC file('${DATA_FILE}.map_keys', 'ArrowStream'); SELECT * FROM file('${DATA_FILE}.map_keys', 'ArrowStream')"
 echo "--- rows hidden by a null struct row ---"
 ${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${DATA_FILE}.masked', 'ArrowStream')"
 ${CLICKHOUSE_LOCAL} --query "

@@ -39,6 +39,17 @@ t	Nullable(Tuple(r Nullable(Float64), n Nullable(Int8)))
 --- one run of 1000 rows in a struct, a list and a fixed-size list ---
 1000	7000
 1000	7000	1000	7000
+--- one run of 1000 rows in a struct with a null field ---
+1000	7000	1000
+--- a null run of a non-nullable field ---
+v	Nullable(Int32)					
+\N
+\N
+7
+7
+--- run-end-encoded map keys ---
+m	Map(Int32, Nullable(Int32))					
+{1:10,2:20}
 --- rows hidden by a null struct row ---
 \N	\N
 (7)	(7)

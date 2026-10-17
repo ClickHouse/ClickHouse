@@ -1073,6 +1073,13 @@ IntervalKind::Kind timeUnitToIntervalKind(int unit)
 
 }
 
+bool isNullableField(const ArrowField & field)
+{
+    if (!field.dictionary && field.type.kind == TypeKind::RunEndEncoded)
+        return isNullableField(field.type.children.at(1));
+    return field.nullable;
+}
+
 DataTypePtr fieldToCHType(
     const ArrowField & field, const FormatSettings & settings, bool make_nullable, bool allow_null_type)
 {
@@ -1140,7 +1147,7 @@ DataTypePtr fieldToCHType(
         case TypeKind::FixedSizeList:
         {
             const ArrowField & element = type.children.at(0);
-            result = std::make_shared<DataTypeArray>(fieldToCHType(element, settings, element.nullable, allow_null_type));
+            result = std::make_shared<DataTypeArray>(fieldToCHType(element, settings, isNullableField(element), allow_null_type));
             break;
         }
         case TypeKind::Struct:
@@ -1151,7 +1158,7 @@ DataTypePtr fieldToCHType(
             names.reserve(type.children.size());
             for (const ArrowField & child : type.children)
             {
-                elems.push_back(fieldToCHType(child, settings, child.nullable, allow_null_type));
+                elems.push_back(fieldToCHType(child, settings, isNullableField(child), allow_null_type));
                 names.push_back(child.name);
             }
             result = std::make_shared<DataTypeTuple>(elems, names);
@@ -1166,7 +1173,7 @@ DataTypePtr fieldToCHType(
             /// ClickHouse map keys are never nullable.
             result = std::make_shared<DataTypeMap>(
                 fieldToCHType(key, settings, /*make_nullable=*/false),
-                fieldToCHType(value, settings, value.nullable, allow_null_type));
+                fieldToCHType(value, settings, isNullableField(value), allow_null_type));
             break;
         }
         case TypeKind::Union:
@@ -1199,9 +1206,9 @@ DataTypePtr fieldToCHType(
                 field.name);
         case TypeKind::RunEndEncoded:
         {
-            /// Read as the values type: each run is expanded into its rows. The nulls are those of the values.
-            const ArrowField & values = type.children.at(1);
-            return fieldToCHType(values, settings, make_nullable && values.nullable, allow_null_type);
+            /// Read as the values type: each run is expanded into its rows. The nulls are those of the values, so the
+            /// callers derive `make_nullable` from them (see `isNullableField`).
+            return fieldToCHType(type.children.at(1), settings, make_nullable, allow_null_type);
         }
         case TypeKind::Interval:
             throw Exception(

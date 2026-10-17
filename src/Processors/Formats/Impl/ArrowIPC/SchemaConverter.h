@@ -180,6 +180,11 @@ void buildFooter(
     const ArrowFileBlocks & dictionary_blocks,
     const ArrowFileBlocks & record_blocks);
 
+/// Whether the values of a field can be null, i.e. whether its natural ClickHouse type is `Nullable` when following the
+/// metadata. A `RunEndEncoded` field has no validity bitmap, so its own nullability flag says nothing: its nulls are the
+/// nulls of its values.
+bool isNullableField(const ArrowField & field);
+
 /// Maps a parsed Arrow field to the ClickHouse data type used for schema inference / the natural
 /// decode type. `make_nullable` forces a Nullable wrapper (used for schema_inference_make_columns_nullable).
 /// `allow_null_type` maps an Arrow `null`-typed field to the all-null `Nullable(Nothing)` instead of
