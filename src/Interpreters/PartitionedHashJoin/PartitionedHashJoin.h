@@ -25,8 +25,9 @@ namespace DB
 
 class MatchedRowsStats;
 class TableJoin;
+class MatchedRowsStats;
 
-/** Partitioned hash join (`join_algorithm = 'partitioned_hash'`).
+/** Partitioned hash join: the join behind `join_algorithm = 'hash'` (and its alias `parallel_hash`).
   *
   * `parallel_hash` probes one shared map. Once the build side outgrows the last-level cache,
   * every lookup is a cold miss. This join keeps one hash table for the whole right side and
@@ -138,13 +139,13 @@ public:
     /// `OPTIMIZE TABLE` on a Join table: compacts the columns of the stored blocks.
     void shrinkStoredBlocksToFit();
 
-    /// Shapes outside this predicate must be planned onto another enabled algorithm rather than
-    /// failing at execution time; see `tryCreateJoin` in `Planner/PlannerJoins.cpp`.
+    /// The join kinds and strictnesses this join serves; everything else is routed before the
+    /// algorithm loop of `tryCreateJoin` in `Planner/PlannerJoins.cpp`.
     static bool isSupported(const TableJoin & table_join);
 
     std::string getName() const override { return "PartitionedHashJoin"; }
     /// A Join table is the right side of a `hash` join whatever `join_algorithm` says, so it reports `hash`.
-    std::string getAlgorithm() const override { return toString(join_table_mode ? JoinAlgorithm::HASH : JoinAlgorithm::PARTITIONED_HASH); }
+    std::string getAlgorithm() const override { return toString(JoinAlgorithm::HASH); }
     const TableJoin & getTableJoin() const override;
 
     /// The build stream of `context` indexes the fill lanes; a stream past the lane table takes the thread-keyed lane.
@@ -160,6 +161,8 @@ public:
 
     size_t getTotalRowCount() const override;
     size_t getTotalByteCount() const override;
+    /// The distinct-key count, or a cheap bound when it cannot change the row-limit check.
+    size_t rowCountForLimit(size_t max_rows) const;
 
     /// The peak this build is heading for: the row store and routes already allocated, plus the table
     /// and arena still to come. `SpillingHashJoin` compares it with the external-join threshold, while
@@ -180,6 +183,9 @@ public:
     bool supportParallelJoin() const override { return !single_fill_thread; }
     /// Probe blocks are joined whole, never scattered across slots, and the result caps its own blocks.
     bool emitsSizedOutputBlocks() const override { return true; }
+    /// The left side is streamed through once; the find pass may run out of order, the emit pass walks
+    /// the block in input order.
+    bool preservesLeftBlockOrder() const override { return true; }
 
     /// One fill thread inserting as it goes: the rows live in the stored blocks and the table, never
     /// in fill lanes, so a spill switch drains the stored blocks.
@@ -221,14 +227,20 @@ public:
     std::shared_ptr<IJoin>
     clone(const std::shared_ptr<TableJoin> & table_join_, SharedHeader left_sample_block_, SharedHeader right_sample_block_) const override;
 
+    /// `joinPipelinesByShards` clones one join per primary-key layer, each filled by one stream and
+    /// probed by one, and never installs `NonJoinedBlocksTransform`: a clone that still advertised the
+    /// parallel non-joined regime would skip unmatched right rows of a RIGHT/FULL join.
     std::shared_ptr<IJoin> cloneNoParallel(
         const std::shared_ptr<TableJoin> & table_join_, SharedHeader left_sample_block_, SharedHeader right_sample_block_) const override;
 
-    /// This instance holds part of the right side - a `GraceHashJoin` bucket - so its table cannot stand
-    /// in for the whole build side. The exact runtime filter over a fixed table drops every probe row
-    /// whose key the table lacks, so it is not published from a partial build. A grace bucket is marked
-    /// by its owner.
+    /// This instance holds part of the right side: a `GraceHashJoin` bucket, or a primary-key shard of
+    /// `joinPipelinesByShards`. Its table cannot stand in for the whole build side. The exact runtime
+    /// filter over a fixed table drops every probe row whose key the table lacks, so a partial build
+    /// does not publish it. The shard clones mark themselves; a grace bucket is marked by its owner.
     void markPartialBuild() { partial_build = true; }
+    /// Same as `clone`, for a side swap: the caller has the estimate of the new build side.
+    std::shared_ptr<IJoin> cloneWithBuildRowsHint(
+        const std::shared_ptr<TableJoin> & table_join_, SharedHeader right_sample_block_, std::optional<size_t> build_rows_hint_) const;
 
     void setEnableLazyColumnsIndexing(bool value) override;
 
@@ -337,14 +349,14 @@ private:
 
     /// `HashJoin::data` is private and the non-joined filler is a friend of this class, not of it.
     const HashJoin::RightTableData & storedData() const { return *hash_join->data; }
-    /// The inner join is built with one worker: this join stores the blocks itself, one thread at a time.
-    HashJoin::StoredBlocksList & storedBlocks() const { return hash_join->data->workers.front().columns; }
-    HashJoin::NullmapList & storedNullmaps() const { return hash_join->data->workers.front().nullmaps; }
+    /// This join stores the blocks itself, one thread at a time.
+    HashJoin::StoredBlocksList & storedBlocks() const { return hash_join->data->columns; }
+    HashJoin::NullmapList & storedNullmaps() const { return hash_join->data->nullmaps; }
 
     using FillBlock = HashJoinClause::FillBlock;
 
     /// One filler owns each lane. Spill readers use the lane lock to observe its sketch as
-    /// `computeRoutes` left it; no-spill writers update atomic registers without that lock.
+    /// `computeRoutes` left it; fills without spill or row limits update atomic registers without it.
     struct FillLane
     {
         explicit FillLane(size_t num_clauses) : hll(num_clauses) { }
@@ -365,8 +377,12 @@ private:
     void dropLastStoredBlock();
     /// The saved-block form of one stored block, for the drains that hand blocks to another join.
     Block storedBlockToBlock(StoredBlock && stored) const;
+    /// Frees the stored blocks of a large build from several threads, at destruction; see the definition.
+    void destroyStoredBlocksInParallel();
     /// The fill-phase distinct estimate of one clause; refreshing it refreshes every clause's.
     size_t liveDistinctEstimate(size_t clause_idx) const;
+    /// The per-block check of `max_rows_in_join` and `max_bytes_in_join` while the fill is running.
+    bool checkFillLimits();
     /// The other clauses' tables and arenas, built or predicted; see `HashJoinClause::setBytesReservedElsewhere`.
     size_t bytesReservedForOtherClauses(size_t clause_idx) const;
     /// Every clause's table and arenas.
@@ -439,6 +455,8 @@ private:
     bool allocate_per_row_flags = false;
     /// A query's instance after `shareJoinTable`.
     bool shared_from_join_table = false;
+    /// Cleared on the clones of `cloneNoParallel`.
+    bool parallel_non_joined_allowed = true;
     /// See `markPartialBuild`.
     bool partial_build = false;
     /// The storage's read lock, see `setLock`.
@@ -459,6 +477,8 @@ private:
     std::vector<std::atomic<FillLane *>> fill_lane_slots;
     std::atomic<size_t> accumulated_rows{0};
     std::atomic<size_t> accumulated_bytes{0};
+    /// Some fill call asked for the limit checks, so the built table is checked against them too.
+    std::atomic<bool> limits_requested{false};
     /// Fill-phase distinct estimates for `predictedResidentBytes`, one per clause. Merging every lane
     /// on every block would cost `lanes * clauses * 8 KiB`. The values are therefore reused until the
     /// row count has grown by a sixteenth. A slightly stale value only delays the switch by one refresh

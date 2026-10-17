@@ -11,7 +11,7 @@
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/PartitionedHashJoin/PartitionedHashJoin.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/JoinExpressionActions.h>
 #include <Interpreters/JoinUtils.h>
@@ -201,9 +201,9 @@ bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes*/, co
 
     const auto & table_join = join->getTableJoin();
 
-    /// Algorithms other than HashJoin may not support all JOIN kinds, so changing from LEFT to RIGHT is not always possible
-    bool allow_outer_join = typeid_cast<const HashJoin *>(join.get());
-    if (table_join.kind() != JoinKind::Inner && !allow_outer_join)
+    /// Algorithms other than the hash join may not support all JOIN kinds, so changing from LEFT to RIGHT is not always possible
+    const auto * hash_join = typeid_cast<const PartitionedHashJoin *>(join.get());
+    if (table_join.kind() != JoinKind::Inner && !hash_join)
         return true;
 
     /// fixme: USING clause handled specially in join algorithm, so swap breaks it
@@ -212,20 +212,22 @@ bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes*/, co
         return true;
 
     bool need_swap = false;
+    std::optional<UInt64> lhs_estimation;
     if (!join_step->swap_join_tables.has_value())
     {
-        auto lhs_extimation = estimateReadRowsCount(*node.children[0]).estimated_rows;
-        auto rhs_extimation = estimateReadRowsCount(*node.children[1]).estimated_rows;
+        lhs_estimation = estimateReadRowsCount(*node.children[0]).estimated_rows;
+        auto rhs_estimation = estimateReadRowsCount(*node.children[1]).estimated_rows;
         LOG_TRACE(getLogger("optimizeJoinLegacy"), "Left table estimation: {}, right table estimation: {}",
-            lhs_extimation ? toString(lhs_extimation.value()) : "unknown",
-            rhs_extimation ? toString(rhs_extimation.value()) : "unknown");
+            lhs_estimation ? toString(lhs_estimation.value()) : "unknown",
+            rhs_estimation ? toString(rhs_estimation.value()) : "unknown");
 
-        if (lhs_extimation && rhs_extimation && lhs_extimation < rhs_extimation)
+        if (lhs_estimation && rhs_estimation && lhs_estimation < rhs_estimation)
             need_swap = true;
     }
     else if (join_step->swap_join_tables.value())
     {
         need_swap = true;
+        lhs_estimation = estimateReadRowsCount(*node.children[0]).estimated_rows;
     }
 
     if (!need_swap)
@@ -240,7 +242,13 @@ bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes*/, co
 
     auto updated_table_join = std::make_shared<TableJoin>(table_join);
     updated_table_join->swapSides();
-    auto updated_join = join->clone(updated_table_join, right_stream_input_header, left_stream_input_header);
+    /// After the swap the old left stream is the build side, so the clone gets that estimate;
+    /// `clone` would keep the pre-swap hint.
+    JoinPtr updated_join;
+    if (hash_join)
+        updated_join = hash_join->cloneWithBuildRowsHint(updated_table_join, left_stream_input_header, lhs_estimation);
+    else
+        updated_join = join->clone(updated_table_join, right_stream_input_header, left_stream_input_header);
 
     /// After swapping, the join output may lose columns because TableJoin::swapSides
     /// swaps result_columns_from_left_table with columns_added_by_join, and the join

@@ -921,7 +921,7 @@ static void predicateOperandsToCommonType(
     auto cast_right_node = [&]
     {
         /// The build-side key name is the rendezvous between the shared runtime filter descriptors
-        /// registered by the joinRuntimeFilter optimization and `HashJoin::publishSharedRuntimeFilters`;
+        /// registered by the joinRuntimeFilter optimization and `publishSharedFixedHashTableFilters`;
         /// keep the descriptors pointing at the cast key the join clause will use.
         String name_before_cast = right_node.getColumnName();
         right_node = JoinActionRef::transform({right_node}, cast_transform);
@@ -2062,7 +2062,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
             if (!ie_join_description)
             {
                 bool can_convert_to_cross = (isInner(join_operator.kind) || isCrossOrComma(join_operator.kind))
-                    && TableJoin::isHashFamilyEnabled(join_settings.join_algorithms)
+                    && TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::HASH)
                     && join_operator.strictness == JoinStrictness::All;
 
                 /// The last resort, which needs nothing to be determined about the keys: the whole

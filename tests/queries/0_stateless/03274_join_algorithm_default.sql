@@ -63,11 +63,3 @@ FROM
 USING number
 SETTINGS max_threads=16, log_comment='03274_compatibility'
 FORMAT Null;
-
--- The right side has no size estimate, so each join builds with the parallel layout
-SYSTEM FLUSH LOGS query_log;
-SELECT log_comment, ProfileEvents['HashJoinBuiltWithSerialLayout'] AS serial, ProfileEvents['HashJoinBuiltWithParallelLayout'] AS parallel
-FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish'
-    AND log_comment IN ('03274_default_setting', '03274_default_value', '03274_compatibility')
-ORDER BY event_time_microseconds;

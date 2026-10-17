@@ -1,7 +1,7 @@
 ============= hash ===============
 499.5
-      Algorithm: HashJoin
-            Algorithm: HashJoin
+      Algorithm: PartitionedHashJoin
+            Algorithm: PartitionedHashJoin
                 BuildRuntimeFilter (Build runtime join filter on __table2.c_custkey)
           BuildRuntimeFilter (Build runtime join filter on __table3.n_nationkey)
 6000
@@ -16,8 +16,8 @@
 ========================================
 ============= parallel_hash ===============
 499.5
-      Algorithm: HashJoin
-            Algorithm: HashJoin
+      Algorithm: PartitionedHashJoin
+            Algorithm: PartitionedHashJoin
                 BuildRuntimeFilter (Build runtime join filter on __table2.c_custkey)
           BuildRuntimeFilter (Build runtime join filter on __table3.n_nationkey)
 6000

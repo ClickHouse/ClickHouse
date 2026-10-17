@@ -1,4 +1,4 @@
--- After the build, a `partitioned_hash` join converts a dense 32- or 64-bit integer table to a fixed hash map, as
+-- After the build, a `hash` join converts a dense 32- or 64-bit integer table to a fixed hash map, as
 -- `hash` does, and publishes the exact runtime filter of a fixed table (8- or 16-bit keys, or a converted range) in
 -- place of the planner's Bloom filter. The conversion and the publication are visible in the text log; the results
 -- must not depend on either.
@@ -31,7 +31,7 @@ INSERT INTO t_rf_build_u8 SELECT toUInt8(number) FROM numbers(50);
 INSERT INTO t_rf_build_i32 SELECT toInt32(number * 2) FROM numbers(50);
 
 SET enable_analyzer = 1;
-SET join_algorithm = 'partitioned_hash';
+SET join_algorithm = 'hash';
 SET enable_join_fixed_hash_table_conversion = 1;
 SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0;
 SET query_plan_read_in_order_through_join = 0;

@@ -1,9 +1,9 @@
-budget 78 million bytes	1500000	1
-budget 80 million bytes	1500000	1
-budget 82 million bytes	1500000	1
-budget 84 million bytes	1500000	1
-budget 86 million bytes	1500000	1
-budget 50 million bytes: the same build switches to grace	1500000	1
+budget 78 million bytes	(1500000,224999250000)
+budget 80 million bytes	(1500000,224999250000)
+budget 82 million bytes	(1500000,224999250000)
+budget 84 million bytes	(1500000,224999250000)
+budget 86 million bytes	(1500000,224999250000)
+budget 50 million bytes: the same build switches to grace	(1500000,224999250000)
 -- at least one build split its scatter and stayed in memory
 1	1
 -- the build with the lower budget did switch

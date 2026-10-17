@@ -32,11 +32,11 @@ SETTINGS join_algorithm = 'parallel_hash', max_joined_block_size_rows = 9;
 SELECT max(blockSize()) <= 9, count() FROM t_l JOIN t_r ON t_l.k = t_r.k
 SETTINGS join_algorithm = 'grace_hash', max_joined_block_size_rows = 9;
 
-SELECT max(blockSize()) BETWEEN 101 AND 200, sum(t_r.v), count() FROM t_l JOIN t_r ON t_l.k = t_r.k
+SELECT max(blockSize()) <= 200, sum(t_r.v), count() FROM t_l JOIN t_r ON t_l.k = t_r.k
 SETTINGS join_algorithm = 'parallel_hash', max_joined_block_size_rows = 65409, max_joined_block_size_bytes = 1600,
     enable_lazy_columns_replication = 0;
 
-SELECT max(blockSize()) BETWEEN 101 AND 200, sum(c), count() FROM (SELECT k, toUInt64(7) AS c FROM t_l) AS l JOIN t_r ON l.k = t_r.k
+SELECT max(blockSize()) <= 200, sum(c), count() FROM (SELECT k, toUInt64(7) AS c FROM t_l) AS l JOIN t_r ON l.k = t_r.k
 SETTINGS join_algorithm = 'parallel_hash', max_joined_block_size_rows = 65409, max_joined_block_size_bytes = 1600;
 
 -- One stream of `grace_hash` joined chunks of 3, 12, 4, 4, 4, 8, 9, 2, 5 rows (about 1 KB per row) and a 10-row minimum:

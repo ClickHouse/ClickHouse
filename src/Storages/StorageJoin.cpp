@@ -919,7 +919,7 @@ public:
 protected:
     Chunk generate() override
     {
-        if (join->storedData().workers.front().columns.empty())
+        if (join->storedData().columns.empty())
             return {};
 
         /// The inner join's own maps stay empty; their variant only names the shape the table mirrors.

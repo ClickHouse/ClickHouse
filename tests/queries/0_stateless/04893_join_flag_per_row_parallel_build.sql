@@ -28,11 +28,5 @@ FULL JOIN t2_04893
     ON t1_04893.number = t2_04893.number OR t1_04893.number + 100000 = t2_04893.number
 SETTINGS log_comment = '04893_full_join';
 
--- The row counts would also match a serial build, so check that the join was built in parallel.
-SYSTEM FLUSH LOGS query_log;
-SELECT log_comment, ProfileEvents['HashJoinBuiltWithSerialLayout'] AS serial, ProfileEvents['HashJoinBuiltWithParallelLayout'] AS parallel
-FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '04893_full_join';
-
 DROP TABLE t1_04893;
 DROP TABLE t2_04893;

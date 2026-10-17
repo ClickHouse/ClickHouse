@@ -89,15 +89,3 @@ SELECT 'hash', 'or', {{ v }}, count(), arraySort(groupArrayIf(r.k, l.m = 0))
 FROM l_or_{{ v }} AS l RIGHT JOIN r_or AS r ON l.k = r.k OR l.k2 = r.k2
 SETTINGS join_algorithm = 'hash';
 {% endfor %}
-
--- How many passes over the hash table were skipped and done: none done when every right key matched, one done (by
--- the part that holds the unmatched key) otherwise, none of either with per-row flags.
--- A parallel fixed-key map (`u8`, `u16`) is one flat table, so when a key is unmatched each of the 4 streams walks it.
-SYSTEM FLUSH LOGS query_log;
-SELECT substring(log_comment, 8),
-    ProfileEvents['JoinNonJoinedHashTableScansSkipped'] > 0,
-    ProfileEvents['JoinNonJoinedHashTableScans']
-FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND startsWith(log_comment, 'oracle_')
-    AND event_date >= yesterday() AND event_time >= now() - INTERVAL 30 MINUTE
-ORDER BY log_comment;

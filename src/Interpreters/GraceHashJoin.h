@@ -24,7 +24,7 @@ class MatchedRowsStats;
 
 /**
  * Efficient and highly parallel implementation of external memory JOIN based on an in-memory hash join
- * (`HashJoin`, or `PartitionedHashJoin` when the query runs `partitioned_hash`).
+ * (a `PartitionedHashJoin`).
  * Supports most of the JOIN modes, except CROSS and ASOF.
  *
  * The joining algorithm consists of three stages:
@@ -52,8 +52,8 @@ class GraceHashJoin final : public IJoin
     class FileBucket;
     class DelayedBlocks;
 
-    /// The join of one bucket, see `partitioned_buckets`.
-    using InMemoryJoinPtr = std::shared_ptr<IJoin>;
+    /// The join of one bucket.
+    using InMemoryJoinPtr = std::shared_ptr<PartitionedHashJoin>;
 
     struct GraceHashJoinStats
     {
@@ -86,8 +86,7 @@ public:
         TemporaryDataOnDiskScopePtr tmp_data_,
         bool any_take_last_row_,
         size_t external_join_threshold_,
-        size_t max_threads_,
-        bool partitioned_buckets_ = false);
+        size_t max_threads_);
 
     ~GraceHashJoin() override;
 
@@ -135,24 +134,18 @@ private:
 
     void initBuckets();
     /// Create empty join for in-memory processing.
-    InMemoryJoinPtr makeInMemoryJoin(const String & bucket_id, size_t reserve_num = 0);
+    InMemoryJoinPtr makeInMemoryJoin() const;
 
-    /// The calls to the bucket's join beyond `IJoin`, each with a `HashJoin` and a `PartitionedHashJoin` arm.
-    /// The bytes the overflow checks compare with the limits: what `HashJoin` holds now, or what the
-    /// partitioned join predicts it will hold once it builds its table at the barrier.
-    size_t inMemoryBytes(const IJoin & join) const;
-    size_t inMemoryPeakBytes(const IJoin & join) const;
-    BlocksList releaseInMemoryBlocks(IJoin & join) const;
     /// The partitioned join builds its table in its post-build phase, so that phase runs here for every
-    /// bucket; a `HashJoin` bucket keeps its post-build optimizations for the single-bucket case.
-    void finishInMemoryBuild(IJoin & join) const;
-    void foldInMemoryJoin(GraceHashJoinStats & into, const IJoin & join) const;
+    /// bucket.
+    static void finishInMemoryBuild(PartitionedHashJoin & join);
+    void foldInMemoryJoin(GraceHashJoinStats & into, const PartitionedHashJoin & join) const;
 
     /// Add right table block to the @join. Calls @rehash on overflow.
     void addBlockToJoinImpl(Block block, JoinBuildContext context);
 
     /// Split the bucket held in memory in two, half of it onto disk. Caller holds `hash_join_mutex`.
-    void repartitionCurrentBucket(size_t prev_keys_num, Block leftover, JoinBuildContext context);
+    void repartitionCurrentBucket(Block leftover, JoinBuildContext context);
     bool canForceRepartition() const;
 
     /// Check that join satisfies limits on rows/bytes in table_join.
@@ -195,7 +188,6 @@ private:
     const size_t max_num_buckets;
     const size_t external_join_threshold;
     const size_t max_threads;
-    const bool partitioned_buckets;
 
     Names left_key_names;
     Names right_key_names;

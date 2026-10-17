@@ -1,17 +1,17 @@
-inner all, saturated key	400000	1
-right all, saturated key	400000	1
-right any, saturated key	400000	1
-inner any, saturated key	54000	1
-inner all, duplicates across 777-row blocks	400000	1
-full all, duplicates across 777-row blocks, max_threads 1	416000	1
-left all, max_threads 16	416000	1
-inner all, zipf	300000	1
-right all, zipf	300000	1
-inner all, zipf build probed by a zipf sample	1761104	1
-inner all, grouped scatter with a hot key	1500000	1
-right all, grouped scatter with a hot key, non-joined build rows	1500000	1
-full all, grouped scatter with a hot key, non-joined rows on both sides	1600000	1
-inner all, grouped scatter with a hot zero key	1499996	1
+inner all, saturated key	(400000,17479222658467473661)
+right all, saturated key	(400000,17479222658467473661)
+right any, saturated key	(400000,17444837660377882726)
+inner any, saturated key	(54000,2565755511306867137)
+inner all, duplicates across 777-row blocks	(400000,17479222658467473661)
+full all, duplicates across 777-row blocks, max_threads 1	(416000,12883812833683535068)
+left all, max_threads 16	(416000,12883812833683535068)
+inner all, zipf	(300000,16279080302678413960)
+right all, zipf	(300000,16279080302678413960)
+inner all, zipf build probed by a zipf sample	(1761104,2946158516866997478)
+inner all, grouped scatter with a hot key	(1500000,2868689179495495393)
+right all, grouped scatter with a hot key, non-joined build rows	(1500000,11412348108604374256)
+full all, grouped scatter with a hot key, non-joined rows on both sides	(1600000,10881325150875492042)
+inner all, grouped scatter with a hot zero key	(1499996,17001510238734230199)
 grouped hot key: at least one build split its scatter and stayed in memory	1
 saturated build: every row inserted, duplicate storage used	1	1
 zipf build: every row inserted, duplicate storage used	1	1

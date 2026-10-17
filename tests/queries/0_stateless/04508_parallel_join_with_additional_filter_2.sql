@@ -60,18 +60,6 @@ SELECT t1_16.*, t2_16.* FROM t1_16 FULL JOIN t2_16 ON t1_16.key = t2_16.key AND 
 SELECT '---- UINT16 FULL PARALLEL HASH';
 SELECT t1_16.*, t2_16.* FROM t1_16 FULL JOIN t2_16 ON t1_16.key = t2_16.key AND t1_16.a < t2_16.a ORDER BY ALL SETTINGS parallel_hash_join_threshold = 0, log_comment = '04508_uint16_full_parallel';
 
--- Each serial query must have built the serial layout, and each parallel query the parallel one.
--- Read the log in default-size blocks: with two-row blocks this read takes minutes under the thread fuzzer.
-SET max_block_size = DEFAULT;
-SYSTEM FLUSH LOGS query_log;
-SELECT log_comment, ProfileEvents['HashJoinBuiltWithSerialLayout'] AS serial, ProfileEvents['HashJoinBuiltWithParallelLayout'] AS parallel
-FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish'
-    AND log_comment IN ('04508_right_anti_serial', '04508_right_anti_parallel', '04508_right_serial', '04508_right_parallel',
-        '04508_full_serial', '04508_full_parallel', '04508_uint16_right_anti_serial', '04508_uint16_right_anti_parallel',
-        '04508_uint16_right_serial', '04508_uint16_right_parallel', '04508_uint16_full_serial', '04508_uint16_full_parallel')
-ORDER BY event_time_microseconds;
-
 DROP TABLE t1_16;
 DROP TABLE t2_16;
 
