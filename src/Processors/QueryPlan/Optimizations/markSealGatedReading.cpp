@@ -134,8 +134,8 @@ void tryMarkJoin(QueryPlan::Node & node)
         build_step->enableKeyRangeTracking();
 
     /// The gating (pipeline) edge is keyed by the leading filter; the refiner picks up the
-    /// whole prefix from the runtime filter lookup once the seal arrives (all the filters of
-    /// this join are complete by then: their transforms are upstream of the seal emitter).
+    /// whole prefix from the runtime filter lookup once the seal arrives (a filter still
+    /// building then, when the join stops reading its build side early, is skipped).
     join_step->enableSealGatedProbeReading(prefix.front().filter_id);
     reading->enableSealGatedReading(std::move(prefix));
 }

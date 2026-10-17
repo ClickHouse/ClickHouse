@@ -1,4 +1,7 @@
 finished_rows	20000
 unfinished_rows	20000
+gated	1
+unfinished_gated_rows	20000
 unfinished	1	1	1
 finished	1	0
+unfinished_gated	1	1
