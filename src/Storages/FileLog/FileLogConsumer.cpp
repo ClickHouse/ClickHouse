@@ -107,6 +107,7 @@ void FileLogConsumer::readNewRecords(FileLogConsumer::Records & new_records, siz
         StorageFileLog::assertStreamGood(reader);
 
         Record record;
+        const size_t records_before = read_records_size;
         while (read_records_size < need_records_size)
         {
             /// Need to get offset before reading record from stream
@@ -130,6 +131,8 @@ void FileLogConsumer::readNewRecords(FileLogConsumer::Records & new_records, siz
         StorageFileLog::assertStreamGood(reader);
 
         file_meta.last_writen_position = current_position;
+        if (read_records_size > records_before)
+            storage.addRecordsRead(file_ctx.inode, read_records_size - records_before);
 
         /// stream reach to end
         if (current_position == file_meta.last_open_end)
