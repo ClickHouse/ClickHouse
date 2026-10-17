@@ -795,11 +795,11 @@ TEST(RequestQueue, ThreadsSoftLimitPromotion)
         f.enqueue(2, y, 1, /*held_slots*/ 0);
 
         f.queue->updateHeldSlots(rx, 2); // still at the limit
-        EXPECT_TRUE(rx->scheduling.demoted);
+        EXPECT_TRUE(rx->isDemoted());
         EXPECT_EQ(f.queue->getDemotedLength(), 2u);
 
         f.queue->updateHeldSlots(rx, 1);
-        EXPECT_FALSE(rx->scheduling.demoted);
+        EXPECT_FALSE(rx->isDemoted());
         EXPECT_EQ(f.queue->getDemotedLength(), 1u);
         EXPECT_EQ(f.queue->getQueueLengthAndCost().first, 3u);
 
@@ -816,17 +816,17 @@ TEST(RequestQueue, ThreadsSoftLimitUpdateOfNotDemotedRequest)
     auto * r1 = f.enqueue(1, q, 1, /*held_slots*/ 0);
     auto * r2 = f.enqueue(2, q, 1, /*held_slots*/ 1);
     f.queue->updateHeldSlots(r1, 10); // a normal request is never demoted after the fact
-    EXPECT_FALSE(r1->scheduling.demoted);
+    EXPECT_FALSE(r1->isDemoted());
     EXPECT_EQ(f.queue->getDemotedLength(), 0u);
     auto [req, _] = f.queue->dequeueRequest();
     EXPECT_EQ(req, r1);
     f.queue->updateHeldSlots(r1, 0); // already dequeued
     EXPECT_EQ(f.dequeueIds(), (std::vector<int>{2}));
-    EXPECT_FALSE(r2->scheduling.demoted);
+    EXPECT_FALSE(r2->isDemoted());
 }
 
-/// Cancelling a demoted request removes it from the overflow, even when the active algorithm is
-/// `fifo`, whose list links requests through the same hook as the overflow.
+/// Cancelling a demoted request removes it from the overflow under every algorithm, including `fifo`,
+/// whose list is also an intrusive list of requests (through `enqueued_hook`, not `overflow_hook`).
 TEST(RequestQueue, ThreadsSoftLimitCancelDemoted)
 {
     for (auto algo : all_algorithms)
@@ -837,8 +837,10 @@ TEST(RequestQueue, ThreadsSoftLimitCancelDemoted)
         auto * normal = f.enqueue(1, q1, 1, /*held_slots*/ 0);
         auto * demoted = f.enqueue(2, q2, 1, /*held_slots*/ 1);
         auto * demoted_too = f.enqueue(3, q2, 1, /*held_slots*/ 4);
+        EXPECT_FALSE(normal->isDemoted());
+        EXPECT_TRUE(demoted->isDemoted());
         EXPECT_TRUE(f.queue->cancelRequest(demoted));
-        EXPECT_FALSE(demoted->scheduling.demoted);
+        EXPECT_FALSE(demoted->isDemoted());
         EXPECT_FALSE(f.queue->cancelRequest(demoted)); // already cancelled
         EXPECT_EQ(f.queue->getDemotedLength(), 1u);
         EXPECT_EQ(f.queue->getQueueLengthAndCost().first, 2u);
@@ -913,7 +915,7 @@ TEST(RequestQueue, ThreadsSoftLimitEvictionAndPurge)
         auto * normal = f.enqueue(2, q2, 1, /*held_slots*/ 0);
         f.queue->updateQueueLimit(1);
         EXPECT_EQ(demoted->failed_count, 1);
-        EXPECT_FALSE(demoted->scheduling.demoted);
+        EXPECT_FALSE(demoted->isDemoted());
         EXPECT_EQ(normal->failed_count, 0);
         EXPECT_EQ(f.dequeueIds(), (std::vector<int>{2}));
     }
@@ -925,18 +927,17 @@ TEST(RequestQueue, ThreadsSoftLimitEvictionAndPurge)
         f.queue->purgeQueue();
         EXPECT_EQ(normal->failed_count, 1);
         EXPECT_EQ(demoted->failed_count, 1);
-        EXPECT_FALSE(demoted->scheduling.demoted);
+        EXPECT_FALSE(demoted->isDemoted());
         EXPECT_EQ(f.queue->getQueueLengthAndCost().first, 0u);
     }
 }
 
-/// reset() clears the soft-limit state of a request, so a reused request is not demoted by stale data.
-TEST(RequestQueue, ResetClearsThreadsSoftLimitState)
+/// reset() clears `held_slots`, so a reused request is not demoted by a stale count.
+TEST(RequestQueue, ResetClearsHeldSlots)
 {
     TestRequest r(1);
     r.scheduling.held_slots = 7;
-    r.scheduling.demoted = true;
     r.reset(1);
     EXPECT_EQ(r.scheduling.held_slots, 0);
-    EXPECT_FALSE(r.scheduling.demoted);
+    EXPECT_FALSE(r.isDemoted());
 }

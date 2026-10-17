@@ -113,10 +113,6 @@ public:
         /// `CPULeaseAllocation` before enqueue and lowered through `ISchedulerQueue::updateHeldSlots`
         /// while queued. Zero for requests that do not track held slots (never demoted).
         Int64 held_slots = 0;
-
-        /// True while the request waits in the leaf's overflow queue (it exceeded the soft limit).
-        /// Owned by the `RequestQueue`: only accessed under the queue mutex.
-        bool demoted = false;
     } scheduling;
 
     /// Scheduler nodes to be notified on consumption finish
@@ -147,7 +143,6 @@ public:
         scheduling.priority = {};
         scheduling.vruntime_increment = 0.0;
         scheduling.held_slots = 0;
-        scheduling.demoted = false;
         // Note that the intrusive hooks are reset independently (by their intrusive containers)
     }
 
@@ -172,6 +167,10 @@ public:
     /// Returns `true` iff constraint was added successfully
     bool addConstraint(ISchedulerConstraint * new_constraint);
 
+    /// True while the request waits in a `RequestQueue` overflow (it exceeded the `max_threads_soft_limit`).
+    /// NOTE: Can only be accessed under the owning queue's mutex.
+    bool isDemoted() const noexcept { return overflow_hook.is_linked(); }
+
 private:
     friend class ISchedulingAlgorithm; // moves requests between algorithms through `EnqueuedList`
     friend class FifoAlgorithm; // uses `enqueued_hook` for the `fifo` scheduler
@@ -192,6 +191,13 @@ private:
     /// NOTE: Can only be accessed under the owning queue's mutex.
     boost::intrusive::set_member_hook<> scheduling_hook;
     using SchedulingHook = boost::intrusive::member_hook<ResourceRequest, boost::intrusive::set_member_hook<>, &ResourceRequest::scheduling_hook>;
+
+    /// For the intrusive overflow list of demoted requests in `RequestQueue`. A dedicated hook, so a linked
+    /// hook tells which container owns the request: a demoted request is never in `fifo` or the ordered set.
+    /// NOTE: Can only be accessed under the owning queue's mutex.
+    boost::intrusive::list_member_hook<> overflow_hook;
+    using OverflowHook = boost::intrusive::member_hook<ResourceRequest, boost::intrusive::list_member_hook<>, &ResourceRequest::overflow_hook>;
+    using OverflowList = boost::intrusive::list<ResourceRequest, OverflowHook>;
 };
 
 }
