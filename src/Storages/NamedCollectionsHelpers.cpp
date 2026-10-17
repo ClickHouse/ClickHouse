@@ -354,7 +354,7 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
         collection_copy->markQueryOverridden(key);
         collection_copy->setOrUpdate<String>(key, value_string, {});
 
-        /// The definition of a table keeps the value an expression had when the table was created, as for positional arguments.
+        /// The definition of a table keeps the value an expression had when the table was created.
         if (dependent_table_id)
         {
             auto & value_ast = (*it)->as<ASTFunction &>().arguments->children[1];
