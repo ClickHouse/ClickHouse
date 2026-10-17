@@ -34,8 +34,8 @@ The external aggregation settings (`max_bytes_before_external_group_by`, `max_by
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "New setting. Enable spill memory data into external storage adaptively."}]}]}/>
 
-Trigger processor to spill data into external storage adaptively. Hash joins that can spill are supported at present, both
-`grace_hash` and the adaptive `hash` / `parallel_hash` path.
+Adaptively spill eligible aggregation, sorting, `DISTINCT`, and hash-join processors to external storage under query memory pressure.
+Supported hash joins include `grace_hash` and the adaptive `hash` / `parallel_hash` path.
 
 ## enable_add_distinct_to_in_subqueries {#enable_add_distinct_to_in_subqueries}
 
@@ -441,6 +441,16 @@ All servers participating in a distributed query must agree on this value: with 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.10"},{"label": "1"},{"label": "New setting"}]}]}/>
 
 If true then data can be parsed directly to columns with custom serialization (e.g. Sparse) according to hints for serialization got from the table.
+
+## enable_pco_codec {#enable_pco_codec}
+
+<BetaBadge/>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "New setting to enable the beta `PCO` compression codec."}]}]}/>
+
+Enables the `PCO` compression codec.
 
 ## enable_producing_buckets_out_of_order_in_aggregation {#enable_producing_buckets_out_of_order_in_aggregation}
 
