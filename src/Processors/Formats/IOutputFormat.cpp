@@ -205,7 +205,8 @@ void IOutputFormat::write(const Block & block)
     writeProgressIfNeededUnlocked();
 
     writePrefixIfNeeded();
-    consume(Chunk(block.getColumns(), block.rows()));
+    /// A block with no columns keeps its number of rows in the block info, `Block::rows` reports zero for it.
+    consume(Chunk(block.getColumns(), block.columns() == 0 ? block.info.num_rows_without_columns : block.rows()));
 
     if (framing)
         writeFramingPayloadBoundary(FramedPacketKind::Data);

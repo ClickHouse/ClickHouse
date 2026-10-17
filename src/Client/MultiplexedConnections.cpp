@@ -179,7 +179,9 @@ void MultiplexedConnections::sendQuery(
         if (!replica.connection)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "MultiplexedConnections: Internal error");
 
-        if (replica.connection->getServerRevision(timeouts) < DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD)
+        replica.server_revision = replica.connection->getServerRevision(timeouts);
+
+        if (replica.server_revision < DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD)
         {
             /// Disable two-level aggregation due to version incompatibility.
             modified_settings[Setting::group_by_two_level_threshold] = 0;
@@ -436,6 +438,8 @@ Packet MultiplexedConnections::receivePacketUnlocked(AsyncCallback async_callbac
         }
         throw;
     }
+
+    server_revision_of_last_packet = state.server_revision;
 
     switch (packet.type)
     {

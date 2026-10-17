@@ -211,7 +211,11 @@ std::optional<Chunk> RemoteSource::tryGenerate()
     else
         block = query_executor->readBlock();
 
-    if (block.empty())
+    /// A block with no columns carries its number of rows in the block info; it is the end of the data
+    /// only when it has no rows either.
+    UInt64 num_rows = block.empty() ? block.info.num_rows_without_columns : block.rows();
+
+    if (block.empty() && num_rows == 0)
     {
         if (manually_add_rows_before_limit_counter)
             rows_before_limit->add(rows);
@@ -219,7 +223,6 @@ std::optional<Chunk> RemoteSource::tryGenerate()
         return {};
     }
 
-    UInt64 num_rows = block.rows();
     rows += num_rows;
     Chunk chunk(block.getColumns(), num_rows);
 
@@ -317,6 +320,9 @@ Pipe createRemoteSourcePipe(
     size_t parallel_marshalling_threads)
 {
     chassert(parallel_marshalling_threads);
+
+    /// The pipe reads the result of a distributed query, and its header is the structure of that result.
+    query_executor->setHeaderDescribesResult();
 
     Pipe pipe(std::make_shared<RemoteSource>(query_executor, add_aggregation_info, async_read, async_query_sending));
     pipe.addSimpleTransform([&](const SharedHeader & header) { return std::make_shared<AddSequenceNumber>(header); });
