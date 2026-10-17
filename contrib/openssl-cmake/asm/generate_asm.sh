@@ -84,10 +84,10 @@ declare -a jobs=(
     "crypto/sm4/asm/vpsm4_ex-armv8.pl crypto/sm4/asm/vpsm4_ex-armv8.S linux64"
 
     # ARCH_PPC64LE
-    "crypto/aes/asm/aesp8-ppc.pl crypto/aes/aesp8-ppc.s linux64v2"
-    "crypto/modes/asm/aes-gcm-ppc.pl crypto/modes/aes-gcm-ppc.s linux64v2"
-    "crypto/modes/asm/ghashp8-ppc.pl crypto/modes/ghashp8-ppc.s linux64v2"
-    "crypto/ppccpuid.pl crypto/ppccpuid.s linux64v2"
+    "crypto/aes/asm/aesp8-ppc.pl crypto/aes/aesp8-ppc.s linux64le"
+    "crypto/modes/asm/aes-gcm-ppc.pl crypto/modes/aes-gcm-ppc.s linux64le"
+    "crypto/modes/asm/ghashp8-ppc.pl crypto/modes/ghashp8-ppc.s linux64le"
+    "crypto/ppccpuid.pl crypto/ppccpuid.s linux64le"
 
     # ARCH_S390X
     "crypto/aes/asm/aes-s390x.pl crypto/aes/aes-s390x.S linux64"
