@@ -132,6 +132,13 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// know the name and has no block nested loop join: it rejects a join without equality keys by itself.
 /// Version 20 also registers the `MergeRuntimeFilters` step and adds the `join_runtime_filter_exact_bytes_limit`
 /// plan setting.
+/// Version 21 lets serialized join steps carry the in-memory join compression settings
+/// (`max_memory_usage`, `enable_join_in_memory_compression`). As with version 5, an older peer
+/// rejects the unknown names (`QueryPlanSerializationSettings::readBinary` throws), so they are
+/// omitted towards such a peer; an omitted `max_memory_usage` is restored on the receiver from the
+/// query settings that travel with the query (see `JoinStepLogical::deserialize`), and a fragment
+/// whose behavior really depends on either name raises its own required version instead (see
+/// `QueryPlanSerializationSettings::getMinRequiredVersion`).
 ///
 /// Rules for this version:
 /// - Bump it at most once per release: the first change in a release that needs it bumps it, later changes
@@ -143,8 +150,8 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 ///   bumps its own serialization version instead, with the value of the current release as `since_plan_version`
 ///   (see `QueryPlanStepRegistry::StepVersions`).
 ///
-/// Last bumped for release 26.10.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 20;
+/// Last bumped for release 26.11.
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 21;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
 /// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a
@@ -219,6 +226,12 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_QUERY_CONDI
 /// rejected: the peer aggregates without the heap and returns partial states for all its groups,
 /// which the initiator's merge, sort and limit handle correctly - the safe direction.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_GROUP_BY_TOP_K = 20;
+/// First query-plan serialization version that knows the `max_memory_usage` and
+/// `enable_join_in_memory_compression` plan setting names. Gates writing them in
+/// `QueryPlanSerializationSettings::writeChangedBinary`, and is the version
+/// `QueryPlanSerializationSettings::getMinRequiredVersion` returns for a fragment that really
+/// depends on either of them.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_IN_MEMORY_COMPRESSION = 21;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 /// Version 3 added the error code of a failed task to its status reply.

@@ -58,6 +58,7 @@ public:
     void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
+    UInt64 getRequiredSerializationVersion() const override;
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 

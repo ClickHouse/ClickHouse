@@ -42,6 +42,13 @@ SpillingHashJoin::SpillingHashJoin(
         /*is_concurrent_hash_join_=*/false, stats_collecting_params_);
     /// Until the build phase ends this join may have to hand its right blocks to `GraceHashJoin`.
     hash_join->keepRightBlocksForAnotherAlgorithm();
+
+    /// With `enable_join_in_memory_compression`, compression must act as the intermediate step
+    /// before spilling: arm its trigger at this wrapper's spill threshold, so the stored blocks
+    /// compress at the end of the insert that reaches half of `max_bytes_before_external_join` -
+    /// before the pre-insert check in `addBlockToJoin` would switch to `GraceHashJoin`.
+    if (table_join->enableJoinInMemoryCompression())
+        hash_join->setExternalJoinThresholdForCompression(max_bytes_before_external_join);
 }
 
 SpillingHashJoin::SpillingHashJoin(
@@ -98,8 +105,8 @@ void SpillingHashJoin::tryConvertSlots(JoinBuildContext context)
         auto blocks = concurrent_join->releaseSlotBlocks(slot);
         while (!blocks.empty())
         {
-            grace_join->addBlockToJoin(blocks.front(), blocks.front().rows(), context.callerChecksLimits());
-            blocks.pop_front();
+            Block block = blocks.next();
+            grace_join->addBlockToJoin(block, block.rows(), context.callerChecksLimits());
         }
     }
 }
@@ -143,7 +150,17 @@ bool SpillingHashJoin::addBlockToJoin(const Block & block, size_t num_rows, Join
     if (concurrent_join)
     {
         if (concurrent_join->getTotalByteCount() * 2 >= max_bytes_before_external_join)
-            switchToGraceHashJoin(context);
+        {
+            /// Give `enable_join_in_memory_compression` its chance before spilling. The per-slot
+            /// trigger fires at the same half of `max_bytes_before_external_join` at the end of the
+            /// insert that crosses it, but in the concurrent mode several threads can cross it
+            /// together: each slot publishes its byte delta only after its own insert returns, so
+            /// every one of them can evaluate the trigger against a total its peers have not
+            /// published yet and none of them fires, leaving the crossing for this check to see.
+            tryCompressStoredBlocksBeforeSwitch();
+            if (concurrent_join->getTotalByteCount() * 2 >= max_bytes_before_external_join)
+                switchToGraceHashJoin(context);
+        }
     }
     else
     {
@@ -173,6 +190,39 @@ bool SpillingHashJoin::addBlockToJoin(const Block & block, size_t num_rows, Join
 
     /// Single-thread HashJoin path.
     return hash_join->addBlockToJoin(block, num_rows, context);
+}
+
+void SpillingHashJoin::tryCompressStoredBlocksBeforeSwitch()
+{
+    chassert(concurrent_join);
+
+    if (!table_join->enableJoinInMemoryCompression())
+        return;
+
+    /// Exclusive lock: waits for all in-flight `addBlockToJoin` calls, so no slot is being inserted
+    /// into while its stored blocks are replaced by compressed ones.
+    /// It is taken even when the pass has already been made, instead of returning early on
+    /// `compression_attempted`: the caller re-checks the stored size right after this call, and a
+    /// thread that skipped the lock while another one is still compressing would observe the
+    /// pre-compression size and spill although the build side is about to shrink far below the
+    /// threshold. Waiting here orders the re-check after the pass.
+    std::unique_lock lock(switch_mutex);
+
+    /// Another thread may have run the pass or switched while we waited for the lock.
+    if (compression_attempted || state.load(std::memory_order_relaxed) != State::COLLECTING)
+        return;
+
+    compression_attempted = true;
+
+    /// One pass is enough: if the blocks compress, they stay compressed and the blocks added later are
+    /// compacted on insertion; if they do not compress below the threshold, repeating the pass on every
+    /// subsequent insert would only burn CPU on the same data before spilling anyway.
+    const size_t total_bytes = concurrent_join->compressStoredBlocks();
+    LOG_DEBUG(
+        log,
+        "Compressed stored blocks of ConcurrentHashJoin before spilling, {} bytes left of the {} bytes spill threshold",
+        total_bytes,
+        max_bytes_before_external_join);
 }
 
 ProcessorMemoryStats SpillingHashJoin::getMemoryStats() const
@@ -283,7 +333,7 @@ void SpillingHashJoin::switchToGraceHashJoin(JoinBuildContext context, bool spil
     log_switch(hash_join, "HashJoin");
     /// Single-thread path: extract from HashJoin, feed to GraceHashJoin.
     ProfileEvents::increment(ProfileEvents::JoinSpillingHashJoinSwitchedToGraceJoin);
-    BlocksList right_blocks = hash_join->releaseJoinedBlocks(/*restructure=*/false);
+    auto right_blocks = hash_join->releaseJoinedBlocks(/*restructure=*/false);
 
     grace_join = std::make_shared<GraceHashJoin>(
         num_buckets,
@@ -298,12 +348,13 @@ void SpillingHashJoin::switchToGraceHashJoin(JoinBuildContext context, bool spil
 
     chosen_join->initialize(*left_sample_block);
 
-    /// Drain extracted blocks into GraceHashJoin one by one,
-    /// freeing each after insertion to limit peak memory.
+    /// Drain extracted blocks into GraceHashJoin one by one. Each block is decompressed
+    /// and materialized only here and freed after insertion, so the peak memory overhead
+    /// stays at a single block even when the stored data was compressed under memory pressure.
     while (!right_blocks.empty())
     {
-        chosen_join->addBlockToJoin(right_blocks.front(), right_blocks.front().rows(), context.callerChecksLimits());
-        right_blocks.pop_front();
+        Block right_block = right_blocks.next();
+        chosen_join->addBlockToJoin(right_block, right_block.rows(), context.callerChecksLimits());
     }
 
     QueryExecutionCounters::addUsedJoinAlgorithm(JoinAlgorithm::GRACE_HASH);
@@ -319,7 +370,15 @@ void SpillingHashJoin::onBuildPhaseFinish()
         /// fires only on subsequent calls. If the very last block pushed total bytes past
         /// `max_bytes_before_external_join` without a follow-up insert to trigger the switch,
         /// promote it to `GraceHashJoin` here so the configured cap is honored.
-        const size_t total_bytes = concurrent_join ? concurrent_join->getTotalByteCount() : hash_join->getTotalByteCount();
+        size_t total_bytes = concurrent_join ? concurrent_join->getTotalByteCount() : hash_join->getTotalByteCount();
+        if (total_bytes >= max_bytes_before_external_join && concurrent_join)
+        {
+            /// The terminal block can also cross the threshold in a slot whose insert saw a total that
+            /// its peers had not published yet, so compression gets its chance here too.
+            tryCompressStoredBlocksBeforeSwitch();
+            total_bytes = concurrent_join->getTotalByteCount();
+        }
+
         if (total_bytes >= max_bytes_before_external_join)
         {
             switchToGraceHashJoin(JoinBuildContext::serial());

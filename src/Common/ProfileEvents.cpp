@@ -490,6 +490,9 @@
     M(ExternalSetCompressedBytes, "Number of compressed bytes written for `IN` sets in external memory.", ValueType::Bytes) \
     M(ExternalSetUncompressedBytes, "Amount of data (uncompressed, before compression) written for `IN` sets in external memory.", ValueType::Bytes) \
     M(ExternalSetReadBlocks, "Number of blocks read from the temporary files of `IN` sets in external memory to look up keys.", ValueType::Number) \
+    M(JoinInMemoryCompressedColumns, "Number of right-side join columns kept compressed in memory under memory pressure by enable_join_in_memory_compression.", ValueType::Number) \
+    M(JoinInMemoryDecompressWorkingSetReleases, "Number of times a probe-side output batch of a join with in-memory compressed blocks reached the budget on decompressed data held at once and released the already-consumed decompressed blocks early.", ValueType::Number) \
+    M(JoinInMemoryDecompressWorkingSetPinned, "Number of times a probe-side output batch of a join with in-memory compressed blocks stopped enforcing the decompressed working-set budget for the rest of the batch, because its reference pattern would otherwise re-decompress released blocks on every block switch.", ValueType::Number) \
     \
     M(IcebergPartitionPrunedFiles, "Number of skipped files during Iceberg partition pruning", ValueType::Number) \
     M(IcebergPartitionPrunedManifestFiles, "Number of Iceberg manifest files skipped without being read, using the partition summaries of the manifest list", ValueType::Number) \
