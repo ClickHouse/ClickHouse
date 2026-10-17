@@ -411,6 +411,12 @@ public:
         return {&view_plan};
     }
 
+    /// `getBuiltChildPlans` is deliberately left at the base implementation, which reports no child plans.
+    /// It is what the query plan captured into `system.query_log` walks, and that table is readable beyond
+    /// the user who ran the query, so returning `view_plan` here would write a sealed view's internals into
+    /// the log for readers that `show_plan` is meant to keep them from. The cost is that a sealed view is an
+    /// opaque leaf of the captured plan, which is the right trade.
+
     void describePipeline(FormatSettings & settings) const override
     {
         if (!show_plan)
