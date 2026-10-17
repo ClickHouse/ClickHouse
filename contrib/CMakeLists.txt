@@ -265,7 +265,6 @@ add_contrib (antlr4-cpp-runtime-cmake antlr4-cpp-runtime)
 
 add_contrib(simdcomp-cmake simdcomp)
 
-add_contrib (numactl-cmake numactl)
 
 # Google Cloud Cpp
 if(ENABLE_LIBRARIES AND (OS_LINUX OR OS_DARWIN OR OS_FREEBSD) AND (ARCH_AMD64 OR (ARCH_AARCH64 AND NOT NO_ARMV81_OR_HIGHER)))
