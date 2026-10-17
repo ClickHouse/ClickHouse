@@ -1,0 +1,18 @@
+-- table function in the joined left side
+10
+-- table function in the joined left side, the table read with parallel replicas directly
+10
+-- parallel_replicas_prefer_local_join = 0
+10
+-- comma join as the left side
+10
+-- explicit GLOBAL RIGHT JOIN
+10
+-- storage not eligible for parallel replicas in the joined left side
+10
+-- only MergeTree in the joined left side: the join stays local and parallel replicas are used
+1
+10
+-- table function in the joined left side: parallel replicas are not used
+0
+-- enable_parallel_replicas = 2 throws instead

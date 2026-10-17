@@ -37,6 +37,10 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
   */
 bool shippingQueryMaterializesSubqueries(const QueryTreeNodePtr & query_tree, const ContextPtr & context);
 
+/// Whether `buildQueryTreeForShard` can materialize the side of every join that shipping `query_tree` to parallel
+/// replicas makes `GLOBAL`; with `enable_parallel_replicas = 2` throws instead of returning false.
+bool canShipJoinsToParallelReplicas(const QueryTreeNodePtr & query_tree, const ContextPtr & context);
+
 /** Replace every `ALIAS` column node with its defining expression, so the expression is evaluated on the shard/replica
   * that reads the real table instead of the column being resolved there as if it were physical.
   *
