@@ -293,6 +293,7 @@ void registerStorageExecutable(StorageFactory & factory)
     StorageFactory::StorageFeatures storage_features;
     storage_features.supports_settings = true;
     storage_features.has_builtin_setting_fn = ExecutableSettings::hasBuiltin;
+    storage_features.enumerate_engine_settings_fn = enumerateCompiledDefaults<ExecutableSettings>;
 
     factory.registerStorage("Executable", [&](const StorageFactory::Arguments & args)
     {
@@ -520,10 +521,15 @@ ClickHouse will maintain 4 processes on-demand when your client queries the `sen
         .syntax = "ENGINE = Executable(script_name, format[, input_query...])",
         .related = {"ExecutablePool"}});
 
+    /// A pool table that does not state `max_command_execution_time` takes the creating session's
+    /// `max_execution_time` when it is shorter than the compiled default (`register_storage`).
+    auto pool_storage_features = storage_features;
+    pool_storage_features.is_inherited_setting_fn = [](std::string_view name) { return name == "max_command_execution_time"; };
+
     factory.registerStorage("ExecutablePool", [&](const StorageFactory::Arguments & args)
     {
         return register_storage(args, true /*is_executable_pool*/);
-    }, SecretArgumentsSpec{}, storage_features,
+    }, SecretArgumentsSpec{}, pool_storage_features,
     Documentation{
         .description = R"DOCS_MD(
 The `Executable` and `ExecutablePool` table engines allow you to define a table whose rows are generated from a script that you define (by writing rows to **stdout**). The executable script is stored in the `user_scripts` directory and can read data from any source.

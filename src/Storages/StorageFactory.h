@@ -7,6 +7,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage_fwd.h>
+#include <Storages/SettingDescription.h>
 #include <Storages/registerStorages.h>
 #include <Access/Common/AccessType.h>
 #include <unordered_map>
@@ -34,6 +35,14 @@ public:
     /// Helper function to validate if a specific storage supports a setting
     /// Used to validate if table settings belong to the engine or the query before the start of the query interpretation
     using HasBuiltinSettingFn = bool(std::string_view);
+
+    /// Describes the settings of an engine for `system.engine_settings`
+    using EnumerateEngineSettingsFn = SettingDescriptions(ContextPtr);
+
+    /// Whether a table of the engine takes a setting from elsewhere (the query context, the server configuration)
+    /// when its definition does not state it, which `system.engine_settings` shows as `inherited`. The format settings
+    /// always are, see `isInheritedSetting`; this names the others.
+    using IsInheritedSettingFn = bool(std::string_view);
 
     struct Arguments
     {
@@ -83,6 +92,8 @@ public:
         std::optional<AccessTypeObjects::Source> source_access_type = std::nullopt;
 
         HasBuiltinSettingFn * has_builtin_setting_fn = nullptr;
+        EnumerateEngineSettingsFn * enumerate_engine_settings_fn = nullptr;
+        IsInheritedSettingFn * is_inherited_setting_fn = nullptr;
     };
 
     using CreatorFn = std::function<StoragePtr(const Arguments & arguments)>;
@@ -122,7 +133,13 @@ public:
         .supports_sql_security = false,
         .source_access_type = std::nullopt,
         .has_builtin_setting_fn = nullptr,
+        .enumerate_engine_settings_fn = nullptr,
+        .is_inherited_setting_fn = nullptr,
     }, Documentation documentation = {});
+
+    /// Whether a table of the engine takes the setting from elsewhere when its definition does not state it: a format
+    /// setting, which every engine accepting one takes from the query or server settings, or one the engine names.
+    static bool isInheritedSetting(const StorageFeatures & features, std::string_view name);
 
     const Storages & getAllStorages() const
     {

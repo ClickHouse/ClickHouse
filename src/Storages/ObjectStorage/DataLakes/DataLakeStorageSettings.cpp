@@ -5,6 +5,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -72,5 +73,7 @@ DataLakeStorageSettings DataLakeStorageSettings::deserialize(ReadBuffer & in)
 
     return result;
 }
+
+IMPLEMENT_SETTINGS_ENUMERATION(DataLakeStorageSettings)
 
 }

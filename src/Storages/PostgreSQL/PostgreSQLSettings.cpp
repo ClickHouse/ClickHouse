@@ -6,6 +6,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/PostgreSQL/PostgreSQLSettings.h>
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Common/Exception.h>
 #include <Common/NamedCollections/NamedCollections.h>
 
@@ -87,6 +88,12 @@ void PostgreSQLSettings::loadFromQueryContext(const Context & context)
     (*impl)[PostgreSQLSetting::postgresql_connection_attempt_timeout] = settings[Setting::postgresql_connection_attempt_timeout];
 }
 
+bool PostgreSQLSettings::isLoadedFromQueryContext(std::string_view name)
+{
+    /// `loadFromQueryContext` seeds every setting of this class: they are all connection pool settings.
+    return hasBuiltin(name);
+}
+
 void PostgreSQLSettings::loadFromNamedCollection(const NamedCollection & named_collection)
 {
     for (const auto & setting : impl->all())
@@ -109,5 +116,7 @@ bool PostgreSQLSettings::hasBuiltin(std::string_view name)
 {
     return PostgreSQLSettingsImpl::hasBuiltin(name);
 }
+
+IMPLEMENT_SETTINGS_ENUMERATION(PostgreSQLSettings)
 
 }

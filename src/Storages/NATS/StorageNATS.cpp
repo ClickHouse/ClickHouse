@@ -1356,6 +1356,15 @@ bool resolveCredentialSource(
 
 }
 
+/// The settings of `NATS`, with the format settings the engine sets itself when a table does not state them (`addSettings`)
+/// and the header detection it always disables.
+static SettingDescriptions enumerateNATSSettings(ContextPtr context)
+{
+    auto settings = enumerateStreamingEngineDefaults<NATSSettings>(context);
+    setStreamingErrorHandlingDefaults(settings, "nats_skip_broken_messages");
+    return settings;
+}
+
 void registerStorageNATS(StorageFactory & factory);
 void registerStorageNATS(StorageFactory & factory)
 {
@@ -1503,6 +1512,17 @@ void registerStorageNATS(StorageFactory & factory)
             .supports_settings = true,
             .source_access_type = AccessTypeObjects::Source::NATS,
             .has_builtin_setting_fn = NATSSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = enumerateNATSSettings,
+            /// A table that states no authentication takes the credentials from the `nats` section of the server
+            /// configuration; one that does not state the others takes the server's `max_insert_block_size` and
+            /// `stream_flush_interval_ms`.
+            .is_inherited_setting_fn = [](std::string_view name)
+            {
+                static constexpr std::string_view names[] = {
+                    "nats_username", "nats_password", "nats_token", "nats_credential_file",
+                    "nats_max_block_size", "nats_flush_interval_ms"};
+                return std::ranges::find(names, name) != std::end(names);
+            },
         },
         Documentation{
             .description = R"DOCS_MD(
