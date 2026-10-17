@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/OpenTelemetryTraceContext.h>
+#include <Common/SettingsChanges.h>
 #include <Core/QueryProcessingStage.h>
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context_fwd.h>
@@ -109,7 +110,10 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     QueryProcessingStage::Enum stage = QueryProcessingStage::Complete    /// To which stage the query must be executed.
 );
 
-void executeQueryInBackground(std::string_view query, const ASTPtr & ast, ContextMutablePtr context);
+/// `parse_settings` are the values of the settings that governed the parse of `query`, taken before the query's own
+/// `SETTINGS` clause was applied to `context`. The background run re-parses `query` under them, so it accepts and
+/// interprets the text exactly as the invoking query did, and then applies the `SETTINGS` clause again itself.
+void executeQueryInBackground(std::string_view query, const ASTPtr & ast, ContextMutablePtr context, const SettingsChanges & parse_settings);
 
 /// Executes BlockIO returned from executeQuery(...)
 /// if built pipeline does not require any input and does not produce any output.
