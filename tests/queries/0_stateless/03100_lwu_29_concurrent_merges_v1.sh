@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-parallel, no-fasttest
 # Clone of 03100_lwu_29_concurrent_merges with the legacy patch part format (`patch_parts_version = 'v1'`).
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

@@ -1,33 +1,35 @@
 ---
 description: 'Une collection de Je n’aime pas sur des vidéos YouTube.'
-sidebarTitle: 'Dislikes YouTube'
+sidebarTitle: 'Je n’aime pas YouTube'
 slug: /getting-started/example-datasets/youtube-dislikes
 title: 'Jeu de données YouTube sur les Je n’aime pas'
 doc_type: 'guide'
-keywords: ['jeu de données d’exemple', 'youtube', 'données d’exemple', 'analyse vidéo', 'Je n’aime pas']
+keywords: ['example dataset', 'youtube', 'sample data', 'video analytics', 'dislikes']
 ---
 
 En novembre 2021, YouTube a supprimé le décompte public des ***Je n’aime pas*** sur toutes ses vidéos. Si les créateurs peuvent toujours voir le nombre de Je n’aime pas, les internautes, eux, ne peuvent voir que le nombre de ***J’aime*** reçus par une vidéo.
 
 <Warning>
-  Le jeu de données contient plus de 4,55 milliards d’enregistrements. Soyez donc prudent avant de simplement copier-coller les commandes ci-dessous, à moins que vos ressources ne puissent gérer un tel volume. Les commandes ci-dessous ont été exécutées sur une instance de **production** [ClickHouse Cloud](https://clickhouse.cloud).
+  Le jeu de données contient plus de 4,55 milliards d’enregistrements. Soyez donc prudent avant de simplement copier-coller les commandes ci-dessous, à moins que vos ressources ne puissent gérer un tel volume. Ces commandes ont été exécutées sur un service [ClickHouse Cloud](/fr/products/cloud/getting-started/intro) correctement dimensionné.
 </Warning>
+
+<Tip>
+  Pour essayer ces commandes vous-même, vous pouvez vous inscrire à un [essai gratuit de ClickHouse Cloud](https://clickhouse.cloud/signUp?loc=docs-get-started-sample-datasets-youtube-dislikes) ou installer [ClickHouse auto-hébergé](/fr/get-started/setup/install).
+</Tip>
 
 Les données sont au format JSON et peuvent être téléchargées depuis [archive.org](https://archive.org/download/dislikes_youtube_2021_12_video_json_files). Nous avons également mis ces données à disposition dans S3 afin qu’elles puissent être chargées plus efficacement dans une instance ClickHouse Cloud.
 
 Voici les étapes à suivre pour créer une table dans ClickHouse Cloud et y insérer les données.
 
 <Note>
-  Les étapes ci-dessous fonctionneront tout aussi bien sur une installation locale de ClickHouse. La seule modification consiste à utiliser la fonction `s3` au lieu de `s3cluster` (sauf si vous avez un cluster configuré — dans ce cas, remplacez `default` par le nom de votre cluster).
+  Les étapes ci-dessous fonctionnent également sur une installation locale de ClickHouse.
 </Note>
 
-<div id="step-by-step-instructions">
-  ## Instructions pas à pas
-</div>
+## Instructions pas à pas {#step-by-step-instructions}
 
 <Steps>
   <Step title="Exploration des données" id="data-exploration">
-    Voyons à quoi ressemblent les données. La fonction de table `s3cluster` renvoie une table ; nous pouvons donc `DESCRIBE` le résultat :
+    Voyons à quoi ressemblent les données. La fonction de table `s3` renvoie une table ; nous pouvons donc `DESCRIBE` le résultat :
 
     ```sql
     DESCRIBE s3(
@@ -178,10 +180,10 @@ Voici les étapes à suivre pour créer une table dans ClickHouse Cloud et y ins
     ```
 
     <Note>
-      La requête ci-dessus s’exécute aussi rapidement parce que nous avons choisi `uploader` comme première colonne de la clé primaire : elle n’a donc eu à traiter que 237k lignes.
+      La requête ci-dessus s’exécute aussi rapidement parce que nous avons choisi `uploader` comme première colonne de la clé primaire : elle n’a donc eu à traiter que 237k lignes.
     </Note>
 
-    Examinons les J’aime et les Je n’aime pas des vidéos ClickHouse :
+    Examinons les J’aime et les Je n’aime pas des vidéos ClickHouse :
 
     ```sql
     SELECT
@@ -241,13 +243,9 @@ Voici les étapes à suivre pour créer une table dans ClickHouse Cloud et y ins
   </Step>
 </Steps>
 
-<div id="questions">
-  ## Questions
-</div>
+## Questions {#questions}
 
-<div id="if-someone-disables-comments-does-it-lower-the-chance-someone-will-actually-click-like-or-dislike">
-  ### Si quelqu’un désactive les commentaires, cela réduit-il les chances que quelqu’un clique sur J’aime ou Je n’aime pas ?
-</div>
+### Si quelqu’un désactive les commentaires, cela réduit-il les chances que quelqu’un clique sur J’aime ou Je n’aime pas ? {#if-someone-disables-comments-does-it-lower-the-chance-someone-will-actually-click-like-or-dislike}
 
 Lorsque les commentaires sont désactivés, les gens sont-ils plus enclins à cliquer sur J’aime ou Je n’aime pas pour exprimer ce qu’ils ressentent face à une vidéo ?
 
@@ -302,9 +300,7 @@ ORDER BY
 
 L’activation des commentaires semble corrélée à un taux d’engagement plus élevé.
 
-<div id="how-does-the-number-of-videos-change-over-time---notable-events">
-  ### Comment le nombre de vidéos évolue-t-il au fil du temps, et quels sont les événements notables ?
-</div>
+### Comment le nombre de vidéos évolue-t-il au fil du temps, et quels sont les événements notables ? {#how-does-the-number-of-videos-change-over-time---notable-events}
 
 ```sql
 SELECT
@@ -342,9 +338,7 @@ ORDER BY month ASC;
 
 Un pic du nombre de comptes publiant des vidéos [autour du Covid est notable](https://www.theverge.com/2020/3/27/21197642/youtube-with-me-style-videos-views-coronavirus-cook-workout-study-home-beauty).
 
-<div id="more-subtitles-over-time-and-when">
-  ### Plus de sous-titres au fil du temps, et à partir de quand
-</div>
+### Plus de sous-titres au fil du temps, et à partir de quand {#more-subtitles-over-time-and-when}
 
 Grâce aux progrès de la reconnaissance vocale, il est plus facile que jamais de créer des sous-titres pour les vidéos. YouTube ayant ajouté le sous-titrage automatique fin 2009, est-ce à ce moment-là que le bond s’est produit ?
 
@@ -381,9 +375,7 @@ ORDER BY month ASC;
 Les résultats montrent un pic en 2009. Apparemment, à cette époque, YouTube supprimait sa fonctionnalité de sous-titres communautaires, qui permettait de téléverser des sous-titres pour la vidéo d’autres personnes.
 Cela a déclenché une campagne très fructueuse visant à inciter les créateurs à ajouter des sous-titres à leurs vidéos pour les spectateurs malentendants et sourds.
 
-<div id="top-uploaders-over-time">
-  ### Principaux comptes publiant des vidéos au fil du temps
-</div>
+### Principaux comptes publiant des vidéos au fil du temps {#top-uploaders-over-time}
 
 ```sql
 WITH uploaders AS
@@ -426,9 +418,7 @@ ORDER BY
 │ 2008-09-01 │ WWE                        │     3717092 │   0.07872802579349912 │
 ```
 
-<div id="how-do-like-ratio-changes-as-views-go-up">
-  ### Comment le ratio de J’aime évolue-t-il à mesure que le nombre de vues augmente ?
-</div>
+### Comment le ratio de J’aime évolue-t-il à mesure que le nombre de vues augmente ? {#how-do-like-ratio-changes-as-views-go-up}
 
 ```sql
 SELECT
@@ -476,9 +466,7 @@ ORDER BY
 └───────────────────┴─────────────────────┴────────────┘
 ```
 
-<div id="how-are-views-distributed">
-  ### Comment les vues sont-elles réparties ?
-</div>
+### Comment les vues sont-elles réparties ? {#how-are-views-distributed}
 
 ```sql
 SELECT

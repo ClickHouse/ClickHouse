@@ -107,9 +107,11 @@ void IStorageCluster::read(
     SharedHeader sample_block;
     ASTPtr query_to_send = query_info.query;
 
-    sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query_info.query, context, SelectQueryOptions(processed_stage));
+    sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(
+        query_info.query, context, SelectQueryOptions(processed_stage).positionalArgumentsAlreadyResolved());
 
-    updateQueryToSendIfNeeded(query_to_send, storage_snapshot, context);
+    /// The nodes that will run the query are the nodes of this storage's own cluster.
+    updateQueryToSendIfNeeded(query_to_send, storage_snapshot, context, getClusterName());
 
     RestoreQualifiedNamesVisitor::Data data;
     data.distributed_table = DatabaseAndTableWithAlias(*getTableExpression(query_info.query->as<ASTSelectQuery &>(), 0));
