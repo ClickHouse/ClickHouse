@@ -11,7 +11,9 @@
 #include <Common/checkStackSize.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
+#include <sstream>
 #include <Core/NamesAndTypes.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
 #include <Databases/DataLake/StorageCredentials.h>
@@ -83,7 +85,7 @@ std::pair<Poco::Dynamic::Var, std::string> UnityCatalog::getJSONRequest(const st
     return makeHTTPRequestAndReadJSON(base_url / route, context, bearer_token, params);
 }
 
-std::pair<Poco::Dynamic::Var, std::string> UnityCatalog::postJSONRequest(const std::string & route, std::function<void(std::ostream &)> out_stream_callaback) const
+std::pair<Poco::Dynamic::Var, std::string> UnityCatalog::postJSONRequest(const std::string & route, std::function<void(DB::WriteBuffer &)> out_stream_callaback) const
 {
     const auto & context = getContext();
     /// Some Unity servers reject a POST whose body has no explicit `Content-Type: application/json`
@@ -144,7 +146,11 @@ Poco::JSON::Object::Ptr UnityCatalog::requestCredentials(const String & table_id
     request_body.set("table_id", table_id);
     request_body.set("operation", operation);
 
-    auto callback = [&request_body] (std::ostream & os) { request_body.stringify(os); };
+    std::ostringstream request_body_str; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    request_body_str.exceptions(std::ios::failbit);
+    request_body.stringify(request_body_str);
+
+    auto callback = [body = request_body_str.str()](DB::WriteBuffer & out) { DB::writeString(body, out); };
     auto [json, _] = postJSONRequest(TEMPORARY_CREDENTIALS_ENDPOINT, callback);
     return json.extract<Poco::JSON::Object::Ptr>();
 }
@@ -336,11 +342,15 @@ void UnityCatalog::createTable(
 
     LOG_DEBUG(log, "Creating table {}.{}.{} at `{}` in Unity catalog", warehouse, namespace_name, table_name, table_location);
 
+    std::ostringstream body_str; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    body_str.exceptions(std::ios::failbit);
+    body->stringify(body_str);
+
     try
     {
         auto response = postJSONRequest(
             TABLES_ENDPOINT,
-            [&](std::ostream & os) { body->stringify(os); });
+            [body_serialized = body_str.str()](DB::WriteBuffer & out) { DB::writeString(body_serialized, out); });
         LOG_TEST(log, "Unity createTable response: {}", response.second);
     }
     catch (...)
@@ -385,6 +395,31 @@ bool UnityCatalog::existsTable(const std::string & schema_name, const std::strin
         e.addMessage("while parsing JSON: " + json_str);
         throw;
     }
+}
+
+std::optional<std::string> UnityCatalog::getDefaultTableLocation(
+    const std::string & namespace_name,
+    const std::string & table_name) const
+{
+    checkNamespaceExists(namespace_name);
+
+    auto [json, json_str] = getJSONRequest(std::filesystem::path{SCHEMAS_ENDPOINT} / (warehouse + "." + namespace_name));
+    const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
+
+    /// Only Unity on Databricks reports a location for a schema; the open-source server does not,
+    /// and then the table engine arguments have to name the location explicitly.
+    if (!hasValueAndItsNotNone("storage_location", object))
+    {
+        LOG_DEBUG(log, "Schema {}.{} has no storage location", warehouse, namespace_name);
+        return std::nullopt;
+    }
+
+    return std::string(std::filesystem::path(object->get("storage_location").extract<String>()) / table_name);
+}
+
+void UnityCatalog::createNamespaceIfNotExists(const String & namespace_name) const
+{
+    checkNamespaceExists(namespace_name);
 }
 
 void UnityCatalog::checkNamespaceExists(const std::string & schema_name) const

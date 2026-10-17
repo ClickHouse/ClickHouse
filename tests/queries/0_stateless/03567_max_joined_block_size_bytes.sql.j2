@@ -1,4 +1,6 @@
 -- Tags: long, no-tsan, no-asan, no-msan, no-ubsan
+-- The small blocks below come from the heavy column `v` passing through the join. Nothing else reads it above the
+-- join, so `NOT ignore(v)` does, or removing unused columns would take it out of the join.
 SET max_block_size = 65536;
 SET min_joined_block_size_rows = 65536;
 SET min_joined_block_size_bytes = 512000;
@@ -38,7 +40,7 @@ FROM
 )
 SETTINGS max_joined_block_size_bytes = '10Mi', join_algorithm = '{{ join_algorithm }}';
 
-SELECT DISTINCT if (blockSize() as bs < 1000, 'ok', toString(bs))
+SELECT DISTINCT if (blockSize() as bs < 1000 AND NOT ignore(v), 'ok', toString(bs))
 FROM
 (
     SELECT v
@@ -58,7 +60,7 @@ FROM
 )
 SETTINGS max_joined_block_size_bytes = '1Mi', join_algorithm='{{ join_algorithm }}';
 
-SELECT DISTINCT if (blockSize() as bs < 1000, 'ok', toString(bs))
+SELECT DISTINCT if (blockSize() as bs < 1000 AND NOT ignore(v), 'ok', toString(bs))
 FROM
 (
     SELECT v

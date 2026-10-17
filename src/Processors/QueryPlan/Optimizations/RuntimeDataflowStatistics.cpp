@@ -4,10 +4,12 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionFactory.h>
+#include <Core/SortDescription.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <IO/NullWriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Aggregator.h>
+#include <Interpreters/sortBlock.h>
 
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
@@ -20,6 +22,8 @@ namespace ProfileEvents
 {
 extern const Event RuntimeDataflowStatisticsInputBytes;
 extern const Event RuntimeDataflowStatisticsOutputBytes;
+extern const Event RuntimeDataflowStatisticsInputNanoseconds;
+extern const Event RuntimeDataflowStatisticsOutputNanoseconds;
 }
 
 namespace DB
@@ -32,6 +36,18 @@ std::optional<RuntimeDataflowStatisticsCache::Entry> RuntimeDataflowStatisticsCa
     return std::nullopt;
 }
 
+std::optional<RuntimeDataflowStatisticsCache::Boundary> RuntimeDataflowStatisticsCache::getBoundary(UInt64 root_key) const
+{
+    if (const auto boundary = boundary_cache->get(root_key))
+        return *boundary;
+    return std::nullopt;
+}
+
+void RuntimeDataflowStatisticsCache::setBoundary(UInt64 root_key, Boundary boundary)
+{
+    boundary_cache->set(root_key, std::make_shared<Boundary>(boundary));
+}
+
 void RuntimeDataflowStatisticsCache::update(size_t key, RuntimeDataflowStatistics stats)
 {
     ProfileEvents::increment(ProfileEvents::RuntimeDataflowStatisticsInputBytes, stats.input_bytes);
@@ -39,7 +55,7 @@ void RuntimeDataflowStatisticsCache::update(size_t key, RuntimeDataflowStatistic
     stats_cache->set(key, std::make_shared<RuntimeDataflowStatistics>(stats));
 }
 
-RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
+RuntimeDataflowStatisticsBlock::~RuntimeDataflowStatisticsBlock()
 {
     if (unsupported_case)
     {
@@ -71,6 +87,16 @@ RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
             res.input_bytes += static_cast<size_t>(static_cast<double>(stats.bytes) / compression_ratio);
         }
     }
+    for (size_t i = 0; i < InputStatisticsType::MaxInputType; ++i)
+    {
+        const auto & stats = duplicated_bytes_statistics[i];
+        if (stats.compressed_bytes)
+        {
+            log_stats(stats, fmt::format("Duplicated{}", toString(static_cast<InputStatisticsType>(i))));
+            const auto compression_ratio = static_cast<double>(stats.sample_bytes) / static_cast<double>(stats.compressed_bytes);
+            res.duplicated_bytes += static_cast<size_t>(static_cast<double>(stats.bytes) / compression_ratio);
+        }
+    }
     for (size_t i = 0; i < OutputStatisticsType::MaxOutputType; ++i)
     {
         const auto & stats = output_bytes_statistics[i];
@@ -84,8 +110,9 @@ RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
 
     LOG_DEBUG(
         getLogger("RuntimeDataflowStatisticsCacheUpdater"),
-        "Collected statistics: input bytes={}, output bytes={}",
+        "Collected statistics: input bytes={}, duplicated bytes={}, output bytes={}",
         res.input_bytes,
+        res.duplicated_bytes,
         res.output_bytes);
 
     if (res.input_bytes == 0 && res.output_bytes == 0)
@@ -137,6 +164,34 @@ static std::pair<size_t, size_t> estimateCompressedColumnSize(const ColumnWithTy
     return std::make_pair(compressed_buf.count(), null_buf.count());
 }
 
+/// The replicas merge their aggregation output with memory-bound merging, which sorts it by the group
+/// by keys; the single-node merge this sample is taken from leaves it in hash-table order. So what a
+/// replica puts on the wire is a sorted block, and pricing an unsorted sample of the very same rows
+/// misses by the whole difference between the two - a monotonic `UInt64` key column compresses 7.8x
+/// sorted and 3.0-3.9x in hash order.
+///
+/// The description is rebuilt ascending here instead of carrying the replica's own
+/// `group_by_sort_description` down: what the ratio responds to is equal and neighbouring keys
+/// ending up adjacent, which every direction and null placement gives equally.
+static IColumn::Permutation keyOrderPermutation(
+    const Columns & columns, const ColumnNumbers & keys_positions, const DataTypes & key_types)
+{
+    ColumnsWithTypeAndName key_columns;
+    SortDescription description;
+    key_columns.reserve(keys_positions.size());
+    description.reserve(keys_positions.size());
+    for (size_t i = 0; i < keys_positions.size(); ++i)
+    {
+        auto name = "__key_" + toString(i);
+        key_columns.emplace_back(columns[keys_positions[i]], key_types[i], name);
+        description.emplace_back(std::move(name), 1);
+    }
+
+    IColumn::Permutation permutation;
+    stableGetPermutation(Block(key_columns), description, permutation);
+    return permutation;
+}
+
 bool RuntimeDataflowStatisticsCacheUpdater::shouldSampleBlock(Statistics & statistics, size_t block_rows)
 {
     // Empty blocks produced during planning, when we calculate output headers. Skip them.
@@ -147,7 +202,11 @@ bool RuntimeDataflowStatisticsCacheUpdater::shouldSampleBlock(Statistics & stati
 }
 
 void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
-    Statistics & statistics, size_t num_rows, const ColumnsWithTypeAndName & cols, std::optional<size_t> full_bytes)
+    Statistics & statistics,
+    size_t num_rows,
+    const ColumnsWithTypeAndName & cols,
+    std::optional<size_t> full_bytes,
+    const KeyOrderProvider & key_order)
 {
     Stopwatch watch;
 
@@ -171,7 +230,16 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
         /// The transfer codec is `network_compression_method`, whose default the default codec matches.
         /// It is generic, so it applies to any serialization layout.
         const ColumnCodecs codecs{.generic = CompressionCodecFactory::instance().getDefaultCodec()};
-        for (const auto & col : cols)
+        /// Built only for a block that is actually sampled - one in five, and at most five per query.
+        ColumnsWithTypeAndName sorted;
+        if (key_order)
+        {
+            const auto permutation = key_order();
+            sorted = cols;
+            for (auto & col : sorted)
+                col.column = col.column->permute(permutation, 0);
+        }
+        for (const auto & col : (key_order ? sorted : cols))
         {
             auto [sample, compressed] = estimateCompressedColumnSize(col, codecs);
             sample_bytes += sample;
@@ -186,7 +254,28 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
         statistics.sample_bytes += sample_bytes;
         statistics.compressed_bytes += compressed_bytes;
     }
-    statistics.elapsed_microseconds += watch.elapsedMicroseconds();
+    /// Reported in nanoseconds: a call often takes well under a microsecond, and rounding each one down would add up to nothing.
+    const auto elapsed_nanoseconds = watch.elapsedNanoseconds();
+    statistics.elapsed_microseconds += elapsed_nanoseconds / 1000;
+    /// Only output columns get here, see above.
+    ProfileEvents::increment(ProfileEvents::RuntimeDataflowStatisticsOutputNanoseconds, elapsed_nanoseconds);
+}
+
+static DataTypes getKeyTypesFrom(const Block & header, const ColumnNumbers & keys_positions)
+{
+    DataTypes types;
+    types.reserve(keys_positions.size());
+    for (auto pos : keys_positions)
+        types.push_back(header.getByPosition(pos).type);
+    return types;
+}
+
+RuntimeDataflowStatisticsCacheUpdater::KeyOrderProvider RuntimeDataflowStatisticsCacheUpdater::keyOrderProviderFor(
+    const Columns & columns, const ColumnNumbers & keys_positions, const DataTypes & key_types) const
+{
+    if (!replicas_send_output_in_key_order || keys_positions.empty())
+        return {};
+    return [&columns, &keys_positions, key_types] { return keyOrderPermutation(columns, keys_positions, key_types); };
 }
 
 void RuntimeDataflowStatisticsCacheUpdater::recordOutputChunk(const Chunk & chunk, const Block & header)
@@ -197,7 +286,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordOutputChunk(const Chunk & chun
     cols.reserve(columns.size());
     for (size_t i = 0; i < columns.size(); ++i)
         cols.emplace_back(columns[i], header.getByPosition(i).type, "");
-    recordColumns(output_bytes_statistics[OutputStatisticsType::OutputChunk], chunk.getNumRows(), cols);
+    recordColumns(block->output_bytes_statistics[OutputStatisticsType::OutputChunk], chunk.getNumRows(), cols);
 }
 
 void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateSizes(AggregatedDataVariants & variant, ssize_t bucket)
@@ -216,12 +305,14 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateSizes(Aggregat
 
     size_t res = variant.aggregator->estimateSizeOfCompressedState(variant, bucket);
 
-    auto & statistics = output_bytes_statistics[OutputStatisticsType::AggregationState];
+    auto & statistics = block->output_bytes_statistics[OutputStatisticsType::AggregationState];
     std::lock_guard lock(statistics.mutex);
     statistics.bytes += res;
     statistics.sample_bytes += res;
     statistics.compressed_bytes += res;
-    statistics.elapsed_microseconds += watch.elapsedMicroseconds();
+    const auto elapsed_nanoseconds = watch.elapsedNanoseconds();
+    statistics.elapsed_microseconds += elapsed_nanoseconds / 1000;
+    ProfileEvents::increment(ProfileEvents::RuntimeDataflowStatisticsOutputNanoseconds, elapsed_nanoseconds);
 }
 
 void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(
@@ -232,7 +323,12 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(
     cols.reserve(keys_positions.size());
     for (size_t i = 0; i < keys_positions.size(); ++i)
         cols.emplace_back(columns[keys_positions[i]], key_types[i], "");
-    recordColumns(output_bytes_statistics[OutputStatisticsType::AggregationKeys], chunk.getNumRows(), cols);
+    recordColumns(
+        block->output_bytes_statistics[OutputStatisticsType::AggregationKeys],
+        chunk.getNumRows(),
+        cols,
+        /*full_bytes=*/{},
+        keyOrderProviderFor(columns, keys_positions, key_types));
 }
 
 void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(
@@ -244,8 +340,12 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(
 {
     ColumnsWithTypeAndName cols;
     cols.reserve(keys_positions.size());
-
     size_t num_rows = chunk.getNumRows();
+    /// Which columns carry the keys below, and where: the sample holds the key columns alone, the chunk
+    /// holds them at their own positions. The key order the replicas send in is taken from whichever of
+    /// the two is priced.
+    KeyOrderProvider key_order;
+    ColumnNumbers sample_positions;
     if (!untruncated_sample_columns.empty())
     {
         /// The byte count describes the untruncated keys, so the ratio it is divided by has to come from
@@ -256,15 +356,22 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(
         for (size_t i = 0; i < untruncated_sample_columns.size(); ++i)
             cols.emplace_back(untruncated_sample_columns[i], key_types[i], "");
         num_rows = untruncated_sample_columns.front()->size();
+
+        sample_positions.resize(untruncated_sample_columns.size());
+        for (size_t i = 0; i < sample_positions.size(); ++i)
+            sample_positions[i] = i;
+        key_order = keyOrderProviderFor(untruncated_sample_columns, sample_positions, key_types);
     }
     else
     {
         const auto & columns = chunk.getColumns();
         for (size_t i = 0; i < keys_positions.size(); ++i)
             cols.emplace_back(columns[keys_positions[i]], key_types[i], "");
+        key_order = keyOrderProviderFor(columns, keys_positions, key_types);
     }
 
-    recordColumns(output_bytes_statistics[OutputStatisticsType::AggregationKeys], num_rows, cols, full_key_bytes);
+    recordColumns(
+        block->output_bytes_statistics[OutputStatisticsType::AggregationKeys], num_rows, cols, full_key_bytes, key_order);
 }
 
 void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateColumnSizes(
@@ -285,7 +392,12 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateColumnSizes(
             continue;
         cols.emplace_back(columns[i], header.getByPosition(i).type, "");
     }
-    recordColumns(output_bytes_statistics[OutputStatisticsType::AggregationState], chunk.getNumRows(), cols);
+    recordColumns(
+        block->output_bytes_statistics[OutputStatisticsType::AggregationState],
+        chunk.getNumRows(),
+        cols,
+        /*full_bytes=*/{},
+        keyOrderProviderFor(columns, keys_positions, getKeyTypesFrom(header, keys_positions)));
 }
 
 void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
@@ -309,7 +421,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
 
     size_t sample_bytes = 0;
     size_t compressed_bytes = 0;
-    auto & statistics = input_bytes_statistics[type];
+    auto & statistics = duplicated ? block->duplicated_bytes_statistics[type] : block->input_bytes_statistics[type];
     if (read_bytes && !input_columns.empty())
     {
         if (!column_sizes.empty())
@@ -373,7 +485,9 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
         statistics.sample_bytes += sample_bytes;
         statistics.compressed_bytes += compressed_bytes;
     }
-    statistics.elapsed_microseconds += watch.elapsedMicroseconds();
+    const auto elapsed_nanoseconds = watch.elapsedNanoseconds();
+    statistics.elapsed_microseconds += elapsed_nanoseconds / 1000;
+    ProfileEvents::increment(ProfileEvents::RuntimeDataflowStatisticsInputNanoseconds, elapsed_nanoseconds);
 }
 
 RuntimeDataflowStatisticsCache & getRuntimeDataflowStatisticsCache()
