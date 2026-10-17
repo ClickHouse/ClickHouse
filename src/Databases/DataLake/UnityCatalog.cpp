@@ -585,7 +585,6 @@ UnityCatalog::UnityCatalog(
 {
 }
 
-/// getCredentialsConfigurationCallback method is supported only for S3 storage
 ICatalog::CredentialsRefreshCallback UnityCatalog::getCredentialsConfigurationCallback(
     const DB::StorageID & table_id, const TableMetadata & table_metadata)
 {
@@ -596,11 +595,12 @@ ICatalog::CredentialsRefreshCallback UnityCatalog::getCredentialsConfigurationCa
             "Cannot build a Unity credentials refresh callback for `{}`: the catalog returned no table_id",
             table_id.getNameForLogs());
 
-    return getCredentialsCallbackForOperation(*table_uuid, "READ");
+    return getCredentialsCallbackForOperation(*table_uuid, table_metadata.getStorageType(), "READ");
 }
 
 /// `StorageID::uuid` of a `DataLakeCatalog` table is the `table_id` returned by Unity.
-ICatalog::CredentialsRefreshCallback UnityCatalog::getWriteCredentialsConfigurationCallback(const DB::StorageID & table_id)
+ICatalog::CredentialsRefreshCallback UnityCatalog::getWriteCredentialsConfigurationCallback(
+    const DB::StorageID & table_id, StorageType storage_type)
 {
     if (table_id.uuid == DB::UUIDHelpers::Nil)
         throw DB::Exception(
@@ -608,16 +608,20 @@ ICatalog::CredentialsRefreshCallback UnityCatalog::getWriteCredentialsConfigurat
             "Cannot build a Unity credentials refresh callback for `{}`: the table has no UUID",
             table_id.getNameForLogs());
 
-    return getCredentialsCallbackForOperation(DB::toString(table_id.uuid), "READ_WRITE");
+    return getCredentialsCallbackForOperation(DB::toString(table_id.uuid), storage_type, "READ_WRITE");
 }
 
-ICatalog::CredentialsRefreshCallback UnityCatalog::getCredentialsCallbackForOperation(const String & unity_table_id, const String & operation)
+ICatalog::CredentialsRefreshCallback UnityCatalog::getCredentialsCallbackForOperation(
+    const String & unity_table_id, StorageType storage_type, const String & operation)
 {
-    return [this, unity_table_id, operation] () -> std::shared_ptr<IStorageCredentials>
+    return [this, unity_table_id, storage_type, operation] () -> std::shared_ptr<IStorageCredentials>
     {
         LOG_DEBUG(log, "Update {} credentials in the catalog", operation);
 
-        return parseS3Credentials(requestCredentials(unity_table_id, operation));
+        auto response = requestCredentials(unity_table_id, operation);
+        if (storage_type == StorageType::Azure)
+            return parseAzureCredentials(response);
+        return parseS3Credentials(response);
     };
 }
 

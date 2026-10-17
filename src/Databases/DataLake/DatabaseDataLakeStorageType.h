@@ -1,5 +1,6 @@
 #pragma once
 #include <Core/Types.h>
+#include <Disks/DiskType.h>
 
 namespace DB
 {
@@ -18,5 +19,24 @@ enum class DatabaseDataLakeStorageType : uint8_t
     /// schema.
     Other,
 };
+
+inline DatabaseDataLakeStorageType toDataLakeStorageType(ObjectStorageType type)
+{
+    switch (type)
+    {
+        case ObjectStorageType::S3:
+            return DatabaseDataLakeStorageType::S3;
+        case ObjectStorageType::Azure:
+            return DatabaseDataLakeStorageType::Azure;
+        case ObjectStorageType::HDFS:
+            return DatabaseDataLakeStorageType::HDFS;
+        case ObjectStorageType::Local:
+            return DatabaseDataLakeStorageType::Local;
+        case ObjectStorageType::None:
+        case ObjectStorageType::Web:
+        case ObjectStorageType::Max:
+            return DatabaseDataLakeStorageType::Other;
+    }
+}
 
 }
