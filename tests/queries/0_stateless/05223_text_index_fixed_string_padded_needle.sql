@@ -192,7 +192,7 @@ DROP TABLE t_text_padded_needle;
 
 SELECT '-- array tokenizer on an Array(FixedString) column';
 
--- A `String` needle keeps its trailing zero bytes and matches nothing; exact direct read must not answer it.
+-- `hasAny` keeps a `String` needle's trailing zero bytes and matches nothing, while `has` compares it zero-padded like `=`; the index declines such a needle.
 CREATE TABLE t_text_padded_needle (id UInt32, arr Array(FixedString(6)), INDEX tix arr TYPE text(tokenizer = array))
 ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
 
