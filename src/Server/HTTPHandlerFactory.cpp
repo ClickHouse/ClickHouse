@@ -646,6 +646,7 @@ void addDefaultHandlersFactory(
                              || request.getURI() == "/"
                              || request.getURI().empty();
             bool is_post_or_options_request = request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST
+                                    || request.getMethod() == Poco::Net::HTTPRequest::HTTP_QUERY
                                     || request.getMethod() == Poco::Net::HTTPRequest::HTTP_OPTIONS;
 
             return (path_matches_get_or_head && is_get_or_head_request) || (path_matches_post_or_options && is_post_or_options_request);
@@ -692,6 +693,7 @@ void addCatchAllQueryHandlerFactory(
             bool is_get_or_head = method == Poco::Net::HTTPRequest::HTTP_GET
                                || method == Poco::Net::HTTPRequest::HTTP_HEAD;
             bool is_post_or_options = method == Poco::Net::HTTPRequest::HTTP_POST
+                                   || method == Poco::Net::HTTPRequest::HTTP_QUERY
                                    || method == Poco::Net::HTTPRequest::HTTP_OPTIONS;
 
             /// An `OPTIONS` request is a CORS preflight (and the web-UI connectivity health-check).

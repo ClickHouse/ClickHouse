@@ -302,6 +302,12 @@ bool isMutatingHTTPMethod(const String & method)
     return method == "POST" || method == "PUT" || method == "DELETE";
 }
 
+/// The HTTP methods that carry a request body: the mutating ones and the safe `QUERY`.
+bool isBodyCarryingHTTPMethod(const String & method)
+{
+    return isMutatingHTTPMethod(method) || method == "QUERY";
+}
+
 }
 
 SQLDefinedHandlerPtr makeSQLDefinedHandler(const ASTCreateHandlerQuery & create)
@@ -439,17 +445,16 @@ SQLDefinedHandlerPtr makeSQLDefinedHandler(const ASTCreateHandlerQuery & create)
     /// the HTTP layer gives a non-chunked `GET` an empty body stream (see `HTTPServerRequest`), so the
     /// query would silently bind an empty body instead of ever reading or rejecting the request. And a
     /// declared `GET` is also served for `HEAD` (see `HTTPHandlerFactory`), so allowing safe methods
-    /// alongside body-carrying ones would keep those silent invocations reachable. The body-carrying
-    /// methods are exactly the mutating ones (`POST`, `PUT`, `DELETE`), so require *every* allowed
-    /// method to be one of them, and reject the handler with a clear error otherwise.
+    /// alongside body-carrying ones would keep those silent invocations reachable. So require *every* allowed
+    /// method to carry a body, and reject the handler with a clear error otherwise.
     if (handler->consumes_request_body
-        && !std::all_of(handler->methods.begin(), handler->methods.end(), isMutatingHTTPMethod))
+        && !std::all_of(handler->methods.begin(), handler->methods.end(), isBodyCarryingHTTPMethod))
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Handler `{}` reads the HTTP request body (an INSERT query taking its data from the body, "
             "or the `_request_body` parameter), "
             "but not all of its allowed HTTP methods ({}) carry a request body. "
-            "List only body-carrying methods (POST, PUT, or DELETE) in the METHODS clause.",
+            "List only body-carrying methods (POST, PUT, DELETE, or QUERY) in the METHODS clause.",
             create.handler_name, fmt::join(handler->methods, ", "));
     }
 

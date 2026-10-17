@@ -68,6 +68,9 @@ public:
     /// and SQL-defined handlers own their matched path and must execute their stored query unchanged.
     virtual bool parsesHTTPPath() const { return false; }
 
+    /// `media_type` is lowercase, without parameters. Handlers of a stored query define the meaning of the body themselves.
+    virtual bool supportsQueryMethodMediaType(const std::string & /* media_type */) const { return true; }
+
     /// `body` is the request body wrapped in the transport decompression chain - the same object the query
     /// itself would read. Handlers must read the body only through it, never through `request.getStream()`
     /// directly: the wrapper snapshots the inner buffer state on construction, so bytes taken from the inner
@@ -262,6 +265,8 @@ public:
     /// rule owns the path it is matched by, so it interprets only the part below its `url_prefix`,
     /// and nothing at all when it has none.
     bool parsesHTTPPath() const override { return parse_http_path; }
+
+    bool supportsQueryMethodMediaType(const std::string & media_type) const override;
 };
 
 class PredefinedQueryHandler : public HTTPHandler

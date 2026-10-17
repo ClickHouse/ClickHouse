@@ -65,7 +65,8 @@ public:
         OPTIONS = 3,
         PUT     = 4,
         DELETE  = 5,
-        HEAD    = 6
+        HEAD    = 6,
+        QUERY   = 7
     };
 
     enum class QueryKind : uint8_t
