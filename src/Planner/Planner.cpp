@@ -972,6 +972,15 @@ void addAggregationStep(QueryPlan & query_plan,
         /*aggregate_descriptions_remove_arguments=*/false,
         trivial_group_by_limit);
 
+    /// Without aggregate functions, `OptimizeTrivialGroupByLimitPass` caps the aggregation at
+    /// `LIMIT + OFFSET` keys in `ANY` mode; a tighter cap set by the user does not qualify.
+    /// Unlike the kept-keys cutoff, this is also sound on shards: the initiator applies the `LIMIT`.
+    if (aggregator_params.aggregates_size == 0 && aggregator_params.group_by_overflow_mode == OverflowMode::ANY)
+    {
+        if (const auto limit = getTrivialGroupByLimit(query_node, settings))
+            aggregator_params.stop_all_streams_on_overflow_any = aggregator_params.max_rows_to_group_by >= *limit;
+    }
+
     SortDescription sort_description_for_merging;
     SortDescription group_by_sort_description;
 
