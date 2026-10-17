@@ -9,6 +9,7 @@
 #include <Common/FailPoint.h>
 #include <Common/Logger.h>
 #include <Common/OpenTelemetryTraceContext.h>
+#include <Common/Scheduler/CurrentCPULease.h>
 #include <Common/logger_useful.h>
 #include <Core/Protocol.h>
 #include <Core/Settings.h>
@@ -789,7 +790,12 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
         /// below runs. `finish()` takes that mutex itself, which is not held at this point.
         fiu_do_on(FailPoints::remote_query_executor_cancel_and_drain_in_receive_window, { finish(); });
 
-        auto packet = connections->receivePacket();
+        Packet packet;
+        {
+            /// Non-CPU wait for the remote side: park the CPU lease while blocked
+            CPULeaseParkGuard cpu_park;
+            packet = connections->receivePacket();
+        }
 
         LockAndBlocker lock(was_cancelled_mutex);
         if (was_cancelled)
