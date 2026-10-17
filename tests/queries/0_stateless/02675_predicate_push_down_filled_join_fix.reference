@@ -23,7 +23,7 @@ Positions: 3 0 1
             __table2.value String
     Type: INNER
     Strictness: ALL
-    Algorithm: PartitionedHashJoin
+    Algorithm: HashJoin
     Clauses: [(__table1.id) = (id)]
       Expression (Left Join Actions)
       Header: __table1.id UInt64

@@ -48,7 +48,7 @@ SELECT
 FROM numbers(2000);
 
 SELECT '-- hash is selected for INNER ALL';
-SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT p.p FROM t_phj_probe AS p INNER JOIN t_phj_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') WHERE explain LIKE '%Algorithm: PartitionedHashJoin%';
+SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT p.p FROM t_phj_probe AS p INNER JOIN t_phj_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') WHERE explain LIKE '%Algorithm: HashJoin%';
 
 SELECT 'INNER ALL, UInt64 key', pa FROM (SELECT
     (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_phj_probe AS p INNER JOIN t_phj_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS pa);
@@ -74,13 +74,13 @@ SELECT 'LEFT ALL, UInt64 key', pa FROM (SELECT
     (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_phj_probe AS p LEFT JOIN t_phj_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS pa);
 
 SELECT '-- a mixed non-equi ON condition runs under hash (05218 covers every shape)';
-SELECT count() FROM (EXPLAIN actions = 1 SELECT p.p FROM t_phj_probe AS p LEFT JOIN t_phj_build AS b ON p.k = b.k AND p.p > b.k SETTINGS join_algorithm = 'hash') WHERE explain LIKE '%Algorithm: PartitionedHashJoin%';
+SELECT count() FROM (EXPLAIN actions = 1 SELECT p.p FROM t_phj_probe AS p LEFT JOIN t_phj_build AS b ON p.k = b.k AND p.p > b.k SETTINGS join_algorithm = 'hash') WHERE explain LIKE '%Algorithm: HashJoin%';
 
 SELECT 'mixed ON condition', pa FROM (SELECT
     (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_phj_probe AS p LEFT JOIN t_phj_build AS b ON p.k = b.k AND p.p > b.k SETTINGS join_algorithm = 'hash') AS pa);
 
 SELECT '-- shapes beyond INNER/LEFT ALL execute under hash (04928 and 04929 check their results)';
-SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT p.p FROM t_phj_probe AS p RIGHT JOIN t_phj_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') WHERE explain LIKE '%Algorithm: PartitionedHashJoin%';
+SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT p.p FROM t_phj_probe AS p RIGHT JOIN t_phj_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') WHERE explain LIKE '%Algorithm: HashJoin%';
 
 DROP TABLE t_phj_build;
 DROP TABLE t_phj_probe;

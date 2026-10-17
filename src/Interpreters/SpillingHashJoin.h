@@ -18,18 +18,18 @@ namespace DB
 {
 
 class GraceHashJoin;
-class PartitionedHashJoin;
+class HashJoin;
 
 /// An IJoin wrapper that automatically switches to GraceHashJoin to spill to disk when memory limits are exceeded.
 ///
-/// The build phase feeds one in-memory PartitionedHashJoin, possibly from multiple threads concurrently.
+/// The build phase feeds one in-memory HashJoin, possibly from multiple threads concurrently.
 /// A SharedMutex protects the COLLECTING -> GRACE_HASH_JOIN transition: addBlockToJoin takes a shared lock, while
 /// switchToGraceHashJoin takes an exclusive lock.
 ///
 /// The in-memory join builds its table only at the barrier, so the overflow check reads `predictedResidentBytes`
 /// instead of `getTotalByteCount`. On overflow a GraceHashJoin is created and the fill lanes are handed to it one
 /// block at a time (`tryConvertFillLanes`). A build that stays under the threshold runs its barrier and asks
-/// `planPostBuild`: a `MustSpill` verdict still switches, otherwise the PartitionedHashJoin is promoted to
+/// `planPostBuild`: a `MustSpill` verdict still switches, otherwise the HashJoin is promoted to
 /// chosen_join with zero rework.
 ///
 /// hasDelayedBlocks always returns true so that the pipeline includes the delayed-block
@@ -41,7 +41,7 @@ class PartitionedHashJoin;
 class SpillingHashJoin final : public IJoin
 {
 public:
-    /// `build_rows_hint_` is the planner's right-side row estimate, see `PartitionedHashJoin`.
+    /// `build_rows_hint_` is the planner's right-side row estimate, see `HashJoin`.
     SpillingHashJoin(
         std::shared_ptr<TableJoin> table_join_,
         SharedHeader left_sample_block_,
@@ -122,9 +122,9 @@ private:
 
     enum class State
     {
-        COLLECTING, // Right-side blocks are being collected in the PartitionedHashJoin, no spilling yet.
+        COLLECTING, // Right-side blocks are being collected in the HashJoin, no spilling yet.
         GRACE_HASH_JOIN, // Spilled to disk and switched to GraceHashJoin, but some fill lanes may still be unconverted.
-        IN_MEMORY_JOIN // All blocks fit in memory, using the PartitionedHashJoin directly without switching.
+        IN_MEMORY_JOIN // All blocks fit in memory, using the HashJoin directly without switching.
     };
 
     void switchToGraceHashJoin(JoinBuildContext context, bool spill_immediately = false);
@@ -155,7 +155,7 @@ private:
     std::atomic<State> state{State::COLLECTING};
 
     /// The in-memory join that collects the right blocks.
-    std::shared_ptr<PartitionedHashJoin> partitioned_join;
+    std::shared_ptr<HashJoin> partitioned_join;
 
     /// GraceHashJoin created during overflow. Also assigned to chosen_join.
     std::shared_ptr<GraceHashJoin> grace_join;

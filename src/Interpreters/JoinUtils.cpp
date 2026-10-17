@@ -876,6 +876,23 @@ bool hasNonJoinedBlocks(const TableJoin & table_join)
     return hasNonJoinedBlocks(table_join.kind(), table_join.strictness());
 }
 
+bool isUsedByAnotherAlgorithm(const TableJoin & table_join)
+{
+    return table_join.isEnabledAlgorithm(JoinAlgorithm::AUTO)
+        || table_join.isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH)
+        || table_join.maxBytesBeforeExternalJoin() > 0;
+}
+
+bool canRemoveColumnsFromLeftBlock(const TableJoin & table_join)
+{
+    /// `auto` may switch HashJoin -> MergeJoin (which keeps all left columns), so pruning would
+    /// desync block structure; keep `grace_hash` conservative too. A spill threshold alone only
+    /// switches HashJoin -> GraceHashJoin (same result path), so it must not disable pruning.
+    const bool keep_left_columns = table_join.isEnabledAlgorithm(JoinAlgorithm::AUTO)
+        || table_join.isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH);
+    return !table_join.hasUsing() && !keep_left_columns && table_join.strictness() != JoinStrictness::RightAny;
+}
+
 ColumnPtr filterWithBlanks(ColumnPtr src_column, const IColumn::Filter & filter, bool inverse_filter)
 {
     ColumnPtr column = src_column->convertToFullColumnIfConst();

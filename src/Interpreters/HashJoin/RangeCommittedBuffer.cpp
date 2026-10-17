@@ -1,4 +1,4 @@
-#include <Interpreters/PartitionedHashJoin/RangeCommittedBuffer.h>
+#include <Interpreters/HashJoin/RangeCommittedBuffer.h>
 
 #include <Common/AllocationInterceptors.h>
 #include <Common/CurrentMemoryTracker.h>

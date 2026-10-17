@@ -14,7 +14,7 @@ namespace DB
 
 /// Used when setting 'join_algorithm' set to JoinAlgorithm::AUTO.
 /// Starts JOIN with join-in-memory algorithm and switches to join-on-disk on the fly if there's no memory to place right table.
-/// The join-in-memory is a `PartitionedHashJoin`; the join-on-disk is `MergeJoin` (JoinAlgorithm::PARTIAL_MERGE).
+/// The join-in-memory is a `HashJoin`; the join-on-disk is `MergeJoin` (JoinAlgorithm::PARTIAL_MERGE).
 /// The blocks are added one at a time; the in-memory join still builds its table on up to `max_threads_` threads
 /// after the last block.
 class JoinSwitcher : public IJoin

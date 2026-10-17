@@ -43,7 +43,7 @@
 #include <Interpreters/IKeyValueEntity.h>
 #include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/MergeJoin.h>
-#include <Interpreters/PartitionedHashJoin/PartitionedHashJoin.h>
+#include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/PasteJoin.h>
 #include <Interpreters/SpillingHashJoin.h>
 
@@ -1233,7 +1233,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                 stats_collecting_params,
                 params.join_any_take_last_row,
                 rhs_rows);
-        return std::make_shared<PartitionedHashJoin>(
+        return std::make_shared<HashJoin>(
             table_join,
             right_table_expression_header,
             params.max_threads,
@@ -1265,7 +1265,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
         algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE ||
         algorithm == JoinAlgorithm::DEFAULT)
     {
-        if (PartitionedHashJoin::isSupported(*table_join))
+        if (HashJoin::isSupported(*table_join))
             return make_hash_join();
     }
 
@@ -1312,7 +1312,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
 
     if (algorithm == JoinAlgorithm::AUTO)
     {
-        if (!PartitionedHashJoin::isSupported(*table_join))
+        if (!HashJoin::isSupported(*table_join))
             return nullptr;
 
         if (spill_to_disk)

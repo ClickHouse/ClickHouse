@@ -47,7 +47,7 @@ struct JoinFeatures
     /// that indicates if they have matches in the left table.
     static constexpr bool need_flags = MapGetter<KIND, STRICTNESS, mapsKindOf<Map>()>::flagged;
 
-    static constexpr bool is_maps_all = std::is_same_v<std::decay_t<Map>, HashJoin::MapsAll>;
+    static constexpr bool is_maps_all = std::is_same_v<std::decay_t<Map>, HashJoinTypes::MapsAll>;
 };
 
 }

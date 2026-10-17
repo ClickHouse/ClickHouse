@@ -1,5 +1,5 @@
 #pragma once
-#include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/HashJoin/HashJoinTypes.h>
 #include <Common/ColumnsHashing.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnsNumber.h>
@@ -13,7 +13,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-template <HashJoin::Type type, typename Value, typename Mapped>
+template <HashJoinTypes::Type type, typename Value, typename Mapped>
 struct KeyGetterForTypeImpl;
 
 constexpr bool use_offset = true;
@@ -181,63 +181,63 @@ struct LowCardinalityKeyGetterForJoin
     }
 };
 
-template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::key8, Value, Mapped>
+template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoinTypes::Type::key8, Value, Mapped>
 {
     using Type = ColumnsHashing::HashMethodOneNumber<Value, Mapped, UInt8, false, use_offset>;
 };
-template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::key16, Value, Mapped>
+template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoinTypes::Type::key16, Value, Mapped>
 {
     using Type = ColumnsHashing::HashMethodOneNumber<Value, Mapped, UInt16, false, use_offset>;
 };
-template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::key32, Value, Mapped>
+template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoinTypes::Type::key32, Value, Mapped>
 {
     using Type = ColumnsHashing::HashMethodOneNumber<Value, Mapped, UInt32, false, use_offset>;
 };
-template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::key64, Value, Mapped>
+template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoinTypes::Type::key64, Value, Mapped>
 {
     using Type = ColumnsHashing::HashMethodOneNumber<Value, Mapped, UInt64, false, use_offset>;
 };
-template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::key_string, Value, Mapped>
+template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoinTypes::Type::key_string, Value, Mapped>
 {
     using Type = ColumnsHashing::HashMethodString<Value, Mapped, true, false, use_offset>;
 };
-template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::key_fixed_string, Value, Mapped>
+template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoinTypes::Type::key_fixed_string, Value, Mapped>
 {
     using Type = ColumnsHashing::HashMethodFixedString<Value, Mapped, true, false, use_offset>;
 };
-template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::keys32, Value, Mapped>
+template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoinTypes::Type::keys32, Value, Mapped>
 {
     using Type = ColumnsHashing::HashMethodKeysFixed<Value, UInt32, Mapped, false, false, false, use_offset>;
 };
-template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::keys64, Value, Mapped>
+template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoinTypes::Type::keys64, Value, Mapped>
 {
     using Type = ColumnsHashing::HashMethodKeysFixed<Value, UInt64, Mapped, false, false, false, use_offset>;
 };
-template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::keys128, Value, Mapped>
+template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoinTypes::Type::keys128, Value, Mapped>
 {
     using Type = ColumnsHashing::HashMethodKeysFixed<Value, UInt128, Mapped, false, false, false, use_offset>;
 };
-template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::keys256, Value, Mapped>
+template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoinTypes::Type::keys256, Value, Mapped>
 {
     using Type = ColumnsHashing::HashMethodKeysFixed<Value, UInt256, Mapped, false, false, false, use_offset>;
 };
-template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::hashed, Value, Mapped>
+template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoinTypes::Type::hashed, Value, Mapped>
 {
     using Type = ColumnsHashing::HashMethodHashed<Value, Mapped, false, use_offset>;
 };
-template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::low_cardinality_key_string, Value, Mapped>
+template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoinTypes::Type::low_cardinality_key_string, Value, Mapped>
 {
     using Type = LowCardinalityKeyGetterForJoin<
         ColumnsHashing::HashMethodString<Value, Mapped, true, false, use_offset>, Mapped>;
 };
-template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::low_cardinality_key_fixed_string, Value, Mapped>
+template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoinTypes::Type::low_cardinality_key_fixed_string, Value, Mapped>
 {
     using Type = LowCardinalityKeyGetterForJoin<
         ColumnsHashing::HashMethodFixedString<Value, Mapped, true, false, use_offset>, Mapped>;
 };
 #define KEYGETTER_RANGE_IMPL(TYPE, FIELD_TYPE) \
     template <typename Value, typename Mapped> \
-    struct KeyGetterForTypeImpl<HashJoin::Type::TYPE, Value, Mapped> \
+    struct KeyGetterForTypeImpl<HashJoinTypes::Type::TYPE, Value, Mapped> \
     { \
         using Type = ColumnsHashing::HashMethodOneNumberInRange<Value, Mapped, FIELD_TYPE, false, use_offset>; \
     };
@@ -261,7 +261,7 @@ struct JoinMappedType
     using Type = std::conditional_t<std::is_same_v<Raw, VoidMapped>, void, Raw>;
 };
 
-template <HashJoin::Type type, typename Data>
+template <HashJoinTypes::Type type, typename Data>
 struct KeyGetterForType
 {
     using Value = typename Data::value_type;
@@ -274,7 +274,8 @@ struct KeyGetterForType
 /// getter must not see. Only the range getters read `key_range`; callers that run before the build
 /// settles it pass the default, i.e. no shift.
 template <typename KeyGetter, bool is_asof_join>
-KeyGetter createKeyGetter(const ColumnRawPtrs & key_columns, const Sizes & key_sizes, HashJoin::RightTableData::KeyRange key_range = {})
+KeyGetter
+createKeyGetter(const ColumnRawPtrs & key_columns, const Sizes & key_sizes, HashJoinTypes::RightTableData::KeyRange key_range = {})
 {
     KeyGetter getter = [&]
     {

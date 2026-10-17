@@ -1,7 +1,7 @@
 #include <Common/typeid_cast.h>
 #include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/MergeJoin.h>
-#include <Interpreters/PartitionedHashJoin/PartitionedHashJoin.h>
+#include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/QueryExecutionCounters.h>
 #include <Common/logger_useful.h>
@@ -22,7 +22,7 @@ JoinSwitcher::JoinSwitcher(
     , right_sample_block(right_sample_block_->cloneEmpty())
 {
     /// No memory budget: the limits of `table_join` decide the switch, and there is no join to spill into.
-    join = std::make_shared<PartitionedHashJoin>(
+    join = std::make_shared<HashJoin>(
         table_join,
         right_sample_block_,
         std::max<size_t>(1, max_threads_),
@@ -46,7 +46,7 @@ bool JoinSwitcher::addBlockToJoin(const Block & block, size_t num_rows, JoinBuil
     /// The in-memory join, with the limits checked here instead
 
     join->addBlockToJoin(block, num_rows, context.callerChecksLimits());
-    size_t rows = assert_cast<const PartitionedHashJoin &>(*join).rowCountForLimit(limits.max_rows);
+    size_t rows = assert_cast<const HashJoin &>(*join).rowCountForLimit(limits.max_rows);
     size_t bytes = join->getTotalByteCount();
 
     if (!limits.softCheck(rows, bytes))
@@ -69,7 +69,7 @@ bool JoinSwitcher::switchJoin(JoinBuildContext context)
         join->getTotalByteCount(),
         join->getTotalRowCount());
 
-    BlocksList right_blocks = assert_cast<PartitionedHashJoin *>(join.get())->releaseJoinedBlocks(true);
+    BlocksList right_blocks = assert_cast<HashJoin *>(join.get())->releaseJoinedBlocks(true);
 
     /// Destroy old join & create new one.
     join = std::make_shared<MergeJoin>(table_join, std::make_shared<const Block>(right_sample_block));

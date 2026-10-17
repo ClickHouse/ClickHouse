@@ -21,6 +21,8 @@ settings=(
   --workload "$workload"
   --max_rows_to_read 0
   --grace_hash_join_initial_buckets 1
+  # With a random threshold the grace join spills by itself and the second query stays under its memory limit.
+  --max_bytes_before_external_join 0
   --min_bytes_to_spill 20Mi
 )
 $CLICKHOUSE_CLIENT -nm "${settings[@]}" -q "

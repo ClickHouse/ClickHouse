@@ -43,7 +43,7 @@
 #include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/MergeJoin.h>
-#include <Interpreters/PartitionedHashJoin/PartitionedHashJoin.h>
+#include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/PasteJoin.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
@@ -1064,7 +1064,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                     HashJoinStatsCollectingParams{},
                     /*any_take_last_row_=*/false,
                     rhs_size_estimation);
-        return std::make_shared<PartitionedHashJoin>(
+        return std::make_shared<HashJoin>(
             analyzed_join,
             right_sample_block,
             settings[Setting::max_threads],
@@ -1079,7 +1079,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
         algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE ||
         algorithm == JoinAlgorithm::DEFAULT)
     {
-        if (PartitionedHashJoin::isSupported(*analyzed_join))
+        if (HashJoin::isSupported(*analyzed_join))
             return make_hash_join();
     }
 
@@ -1124,7 +1124,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
 
     if (algorithm == JoinAlgorithm::AUTO)
     {
-        if (!PartitionedHashJoin::isSupported(*analyzed_join))
+        if (!HashJoin::isSupported(*analyzed_join))
             return nullptr;
 
         if (spill_to_disk)
