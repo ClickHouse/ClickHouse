@@ -481,7 +481,7 @@ void MergeTreeReaderCompact::readPrefix(size_t column_idx, size_t from_mark, Mer
 
     /// Build check_stream_exists_callback for this column if we have a column position.
     ISerialization::DeserializeBinaryBulkSettings::CheckStreamExistsCallback check_stream_exists_callback;
-    if (column_positions[column_idx])
+    if (column_positions[column_idx] && !columns_substreams.empty())
     {
         check_stream_exists_callback = [&](const ISerialization::SubstreamPath & substream_path) -> bool
         {
