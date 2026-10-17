@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/insertNullAsDefaultIfNeeded.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/SeekableReadBuffer.h>
@@ -79,6 +80,24 @@ void checkDataFitsInFile(const NetCDFHeader & header, UInt64 file_size)
                 "The data of the variable {} does not fit in the NetCDF file: it needs {} bytes, but the file is {} bytes",
                 variable.name, overflow ? "more than 2^64" : std::to_string(required_size), file_size);
     }
+}
+
+/// The approximate size in memory of one value of a type that the reader creates rather than
+/// reads: a default value of a column that the file lacks, or the result of a cast. A type of
+/// values of variable size, such as String, takes the memory of its default value, which holds
+/// the offsets and the null maps, plus `data_bytes` of the data of the value.
+UInt64 approximateValueBytes(const IDataType & type, UInt64 data_bytes)
+{
+    if (type.haveMaximumSizeOfValue())
+        return type.getMaximumSizeOfValueInMemory();
+
+    auto column = type.createColumn();
+    column->insertDefault();
+    UInt64 default_bytes = column->byteSize();
+    UInt64 value_bytes = 0;
+    if (common::addOverflow(default_bytes, data_bytes, value_bytes))
+        return std::numeric_limits<UInt64>::max();
+    return value_bytes;
 }
 
 DataTypePtr getDataType(NetCDFType type)
@@ -524,19 +543,33 @@ void NetCDFBlockInputFormat::initialize()
     }
 
     /// The approximate size of one row in memory: the value of every column, the offset of a
-    /// String and the byte of the null map of a Nullable column.
+    /// String and the byte of the null map of a Nullable column. A column that the file lacks
+    /// takes the memory of the default values of the requested type, and a column of another
+    /// type than the variable takes the memory of the result of the cast in addition.
     UInt64 row_bytes = 0;
-    for (const auto & state : states)
+    const auto & requested_header = getPort().getHeader();
+    for (size_t i = 0; i < states.size(); ++i)
     {
-        if (!state.column)
-            continue;
+        const auto & state = states[i];
+        const auto & requested_type = *requested_header.getByPosition(i).type;
+        UInt64 value_bytes = 0;
 
-        const auto & column = *state.column;
-        UInt64 value_bytes = column.variable ? column.element_size : sizeof(UInt64);
-        if (column.is_string)
-            value_bytes += sizeof(UInt64);
-        if (column.type->isNullable())
-            value_bytes += 1;
+        if (!state.column)
+        {
+            value_bytes = approximateValueBytes(requested_type, 0);
+        }
+        else
+        {
+            const auto & column = *state.column;
+            value_bytes = column.variable ? column.element_size : sizeof(UInt64);
+            if (column.is_string)
+                value_bytes += sizeof(UInt64);
+            if (column.type->isNullable())
+                value_bytes += 1;
+            if (!requested_type.equals(*column.type))
+                value_bytes += approximateValueBytes(requested_type, column.is_string ? column.element_size : 0);
+        }
+
         if (common::addOverflow(row_bytes, value_bytes, row_bytes))
             row_bytes = std::numeric_limits<UInt64>::max();
     }
@@ -887,6 +920,14 @@ Chunk NetCDFBlockInputFormat::read()
     approx_bytes_read_for_chunk = 0;
     block_missing_values.clear();
 
+    /// The number of rows is known from the header, so counting them reads no data.
+    if (need_only_count)
+    {
+        UInt64 count = layout.num_rows - current_row;
+        current_row = layout.num_rows;
+        return getChunkForCount(count);
+    }
+
     UInt64 count = std::min<UInt64>(max_chunk_rows, layout.num_rows - current_row);
     const auto & result_header = getPort().getHeader();
 
@@ -947,10 +988,19 @@ Chunk NetCDFBlockInputFormat::read()
         column->reserve(count);
         fillColumn(state, *column, indexes);
 
-        if (requested_type->equals(*state.column->type))
-            result.push_back(std::move(column));
+        ColumnWithTypeAndName read_column{std::move(column), state.column->type, ""};
+
+        /// A variable that is read as Nullable, because of its `_FillValue` or `missing_value`
+        /// attribute, gives the default value of a column that is not Nullable for its NULLs.
+        if (format_settings.null_as_default)
+            insertNullAsDefaultIfNeeded(
+                read_column, result_header.getByPosition(i), i,
+                format_settings.defaults_for_omitted_fields ? &block_missing_values : nullptr);
+
+        if (requested_type->equals(*read_column.type))
+            result.push_back(std::move(read_column.column));
         else
-            result.push_back(castColumn({std::move(column), state.column->type, ""}, requested_type));
+            result.push_back(castColumn(read_column, requested_type));
     }
 
     current_row += count;
@@ -1220,7 +1270,7 @@ an exception.
 | [`input_format_netcdf_add_dimension_columns`](/operations/settings/settings-formats#input_format_netcdf_add_dimension_columns) | Add a column with the index along every axis of the row space that has no coordinate variable. | `false` |
 | [`input_format_netcdf_allow_missing_columns`](/operations/settings/settings-formats#input_format_netcdf_allow_missing_columns) | Fill a requested column that the file has no variable for with the default values of its type. | `true` |
 )DOCS_MD",
-        .introduced_in = {26, 10},
+        .introduced_in = {26, 11},
         .related = {"Npy", "Parquet"}});
 }
 
