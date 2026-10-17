@@ -24,7 +24,7 @@ namespace ErrorCodes
 
 class FunctionBitSlice final : public IFunction
 {
-    const UInt8 word_size = 8;
+    static constexpr UInt8 word_size = 8;
 
 public:
     static constexpr auto name = "bitSlice";
@@ -138,14 +138,13 @@ public:
         return col_res;
     }
 
-    /// Call for positive lengths only; unsigned arithmetic avoids overflow at Int64::max().
-    void calculatePositiveLength(Int64 length, size_t offset_bit, size_t & length_byte, size_t & over_bit) const
+    /// For positive lengths, round up the bit count to whole bytes.
+    /// The conversion to UInt64 also avoids signed overflow for Int64::max().
+    static void calculatePositiveLength(Int64 length, size_t offset_bit, size_t & length_byte, size_t & over_bit)
     {
-        const UInt64 adjusted_length = static_cast<UInt64>(length) + offset_bit;
-        length_byte = adjusted_length / word_size;
-        over_bit = adjusted_length % word_size;
-        if (over_bit && (length_byte || over_bit > offset_bit))
-            ++length_byte;
+        const UInt64 bit_count = static_cast<UInt64>(length) + offset_bit;
+        length_byte = (bit_count + word_size - 1) / word_size;
+        over_bit = bit_count % word_size;
     }
 
     void writeSliceWithLeftShift(const StringSource::Slice & slice, StringSink & sink, size_t shift_bit, size_t abandon_last_bit = 0) const

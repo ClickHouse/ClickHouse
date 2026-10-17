@@ -77,6 +77,19 @@ public:
             checked_reader.emplace(*nested_column, argument_name);
     }
 
+    Int64 getOr(size_t row, Int64 default_value) const
+    {
+        return hasValue(row) ? get(row) : default_value;
+    }
+
+    /// The fallback is evaluated only if the argument is NULL or absent.
+    template <typename DefaultGetter>
+    Int64 getOrElse(size_t row, DefaultGetter get_default) const
+    {
+        return hasValue(row) ? get(row) : get_default();
+    }
+
+private:
     bool hasValue(size_t row) const
     {
         return nested_column && (!null_map || !(*null_map)[row]);
@@ -90,12 +103,6 @@ public:
             return nested_column->getInt(row);
     }
 
-    Int64 getOr(size_t row, Int64 default_value) const
-    {
-        return hasValue(row) ? get(row) : default_value;
-    }
-
-private:
     const IColumn * nested_column = nullptr;
     const ColumnUInt8::Container * null_map = nullptr;
     std::optional<CheckedSliceArgument> checked_reader;

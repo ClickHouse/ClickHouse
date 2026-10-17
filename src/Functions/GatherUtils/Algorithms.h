@@ -356,10 +356,8 @@ static void sliceDynamicOffsetBoundedImpl(Source && src, Sink && sink, const ICo
     {
         size_t row_num = src.rowNum();
         const Int64 offset = offset_reader.getOr(row_num, 1);
-        /// Do not calculate the full UTF-8 element size for a present length.
-        Int64 size = length_reader.hasValue(row_num)
-            ? length_reader.get(row_num)
-            : static_cast<Int64>(src.getElementSize());
+        /// Count UTF-8 code points only when the length argument is absent.
+        Int64 size = length_reader.getOrElse(row_num, [&] { return static_cast<Int64>(src.getElementSize()); });
 
         if (size < 0)
         {
