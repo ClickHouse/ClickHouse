@@ -288,9 +288,11 @@ WHERE explain ILIKE '%column_name: number,%result_type%';
 -- optimizer. Dedup by (name, source) makes the correlated-columns list robust to the in-place type
 -- change. Run under 24.3 so the duplicate resolution actually occurs; the query must complete.
 SELECT '-- 109509 correlated key in function argument, GROUPING SETS ---';
-SELECT (SELECT max(if(1, 2, a.k)))
-FROM (SELECT number AS k FROM numbers(4)) AS a
-GROUP BY GROUPING SETS ((k), ())
+SELECT x FROM (
+    SELECT (SELECT max(if(1, 2, a.k))) AS x
+    FROM (SELECT number AS k FROM numbers(4)) AS a
+    GROUP BY GROUPING SETS ((k), ())
+) ORDER BY x NULLS LAST
 SETTINGS compatibility = '24.3', group_by_use_nulls = 1, allow_experimental_correlated_subqueries = 1;
 
 -- The exact fuzzer query from the report (STID 4752-5ad8): -OrFill combinator over a correlated

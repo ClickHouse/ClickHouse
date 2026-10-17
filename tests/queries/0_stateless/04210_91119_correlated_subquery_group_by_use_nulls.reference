@@ -6,6 +6,7 @@ true
 \N
 -- GROUPING SETS ---
 true
+\N
 -- numeric ---
 1
 \N
@@ -66,6 +67,7 @@ a
 \N
 -- minOrDefault over correlated String with GROUPING SETS ---
 a
+\N
 -- non-correlated subquery ---
 inner
 inner
@@ -141,8 +143,9 @@ COLUMN id: N, column_name: number, result_type: UInt64, source_id: N
 2
 2
 2
+\N
 -- 109509 exact fuzzer query completes ---
-64
+65
 -- 109509 type pin: correlated key deduplicated ---
 2
 -- 109509 two distinct correlated keys both preserved ---
@@ -150,3 +153,4 @@ COLUMN id: N, column_name: number, result_type: UInt64, source_id: N
 3
 5
 7
+\N
