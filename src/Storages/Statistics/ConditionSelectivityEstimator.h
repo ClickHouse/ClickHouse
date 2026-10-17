@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Storages/Statistics/ColumnStatsProvenance.h>
 #include <Storages/Statistics/Statistics.h>
 
 #include <Core/Field.h>
@@ -14,12 +15,15 @@ class RPNBuilderTreeNode;
 struct ColumnStats
 {
     UInt64 num_distinct_values = 0;
+    ColumnStatsProvenance ndv_provenance = {};
     /// Average uncompressed size of one value; 0 means unknown.
     Float64 avg_bytes = 0;
     /// Value range from `basic`/`minmax` statistics; unset when unknown.
     std::optional<Field> min_value = {};
     std::optional<Field> max_value = {};
-    /// Fraction of NULL values; unset when unknown.
+    ColumnStatsProvenance range_provenance = {};
+    /// Fraction of NULL values; unset when unknown. This is a value fact for the same rows as
+    /// `min_value` and `max_value`, so consumers must consult `range_provenance` before using it.
     std::optional<Float64> null_fraction = {};
 };
 
@@ -63,7 +67,7 @@ public:
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * node) const;
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node) const;
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const std::vector<RPNBuilderTreeNode> & nodes) const;
-    RelationProfile estimateRelationProfile() const;
+    RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata = {}) const;
 
     struct RPNElement
     {
