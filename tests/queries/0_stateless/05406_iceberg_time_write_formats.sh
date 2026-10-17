@@ -86,6 +86,18 @@ done
 ${CLICKHOUSE_CLIENT} --query "SELECT icebergBucket(4, toTime64('22:31:08', 6)) = bitAnd(-662762989, 2147483647) % 4"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${table}"
 
+echo "--- write with iceberg_time_as_int64 ---"
+# A `time` field would be written as a plain integer, which Iceberg does not allow.
+table="${PREFIX}_as_int64"
+${CLICKHOUSE_CLIENT} --query "
+    CREATE TABLE ${table} (t Time64(6), l Array(Time64(6)))
+    ENGINE = IcebergLocal('${USER_FILES_PATH}/${table}/', 'Parquet')"
+${CLICKHOUSE_CLIENT} ${WRITE} --query "
+    INSERT INTO TABLE FUNCTION icebergLocal('${USER_FILES_PATH}/${table}/') SETTINGS iceberg_time_as_int64 = 1
+    VALUES (46800000000, [46800000000])" 2>&1 | grep -o -m1 'Cannot write column t of type Int64 into the Iceberg `time` field' | head -n1
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${table}"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE ${table}"
+
 echo "--- unsupported ---"
 ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE ${PREFIX}_ns (t Time64(9)) ENGINE = IcebergLocal('${USER_FILES_PATH}/${PREFIX}_ns/', 'Parquet')" 2>&1 \

@@ -8,6 +8,9 @@
 #include <Core/Settings.h>
 #include <Core/TypeId.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/NestedUtils.h>
+#include <Formats/FormatFilterInfo.h>
 #include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -812,6 +815,48 @@ void validateIcebergTimeOfDayMicroseconds(Int64 microseconds)
             "Iceberg time value {} microseconds is out of allowed range [0, {}) for time of day",
             microseconds,
             ICEBERG_TIME_OF_DAY_MAX_MICROS);
+}
+
+namespace
+{
+
+void checkIcebergTimeColumnIsWritable(const ColumnMapper & column_mapper, const DataTypePtr & type, const String & path)
+{
+    const auto unwrapped = removeNullable(removeLowCardinality(type));
+    const auto & encoding = column_mapper.getStorageColumnEncoding();
+    if (auto it = encoding.find(path); it != encoding.end() && column_mapper.isIcebergTimeFieldId(it->second)
+        && !WhichDataType(unwrapped).isTime() && !WhichDataType(unwrapped).isTime64())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Cannot write column {} of type {} into the Iceberg `time` field, which requires `Time` or `Time64`. "
+            "If the table is read with setting `iceberg_time_as_int64`, disable it for writing",
+            path,
+            type->getName());
+
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(unwrapped.get()))
+    {
+        for (size_t i = 0; i < tuple->getElements().size(); ++i)
+            checkIcebergTimeColumnIsWritable(column_mapper, tuple->getElement(i), Nested::concatenateName(path, tuple->getNameByPosition(i + 1)));
+    }
+    else if (const auto * array = typeid_cast<const DataTypeArray *>(unwrapped.get()))
+    {
+        checkIcebergTimeColumnIsWritable(column_mapper, array->getNestedType(), Nested::concatenateName(path, "element"));
+    }
+    else if (const auto * map = typeid_cast<const DataTypeMap *>(unwrapped.get()))
+    {
+        checkIcebergTimeColumnIsWritable(column_mapper, map->getKeyType(), Nested::concatenateName(path, "key"));
+        checkIcebergTimeColumnIsWritable(column_mapper, map->getValueType(), Nested::concatenateName(path, "value"));
+    }
+}
+
+}
+
+void checkIcebergTimeColumnsAreWritable(const ColumnMapper & column_mapper, const Block & header)
+{
+    if (!column_mapper.hasIcebergTimeFieldIds())
+        return;
+    for (const auto & column : header)
+        checkIcebergTimeColumnIsWritable(column_mapper, column.type, column.name);
 }
 
 Poco::Dynamic::Var getAvroLogicalType(DataTypePtr type)

@@ -173,5 +173,8 @@ VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE
 7
 7
 1
+--- write with iceberg_time_as_int64 ---
+Cannot write column t of type Int64 into the Iceberg `time` field
+0
 --- unsupported ---
 Unsupported type for iceberg Time64(9)
