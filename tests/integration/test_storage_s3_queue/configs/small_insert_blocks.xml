@@ -1,0 +1,9 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <!-- Do not squash the insert into the dependent views: every chunk the queue source hands over
+                 reaches the destination on its own, so rows are visible downstream while a file is in flight. -->
+            <min_insert_block_size_rows>1</min_insert_block_size_rows>
+        </default>
+    </profiles>
+</clickhouse>

@@ -14,6 +14,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Common/assert_cast.h>
+#include <Common/logger_useful.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/Context_fwd.h>
@@ -85,6 +86,7 @@ extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int LOGICAL_ERROR;
 extern const int UNSUPPORTED_METHOD;
 extern const int READONLY;
+extern const int UNKNOWN_STATUS_OF_INSERT;
 }
 
 namespace DB::DataLakeStorageSetting
@@ -358,20 +360,65 @@ void writeMessageToFile(
     }
 }
 
-/// Whether the storage refused the request itself rather than its condition, so that a retry is refused again.
-static bool isRefusedWrite(const Exception & e)
+namespace
 {
-    if (e.code() == ErrorCodes::UNSUPPORTED_METHOD || e.code() == ErrorCodes::READONLY)
-        return true;
-    if (const auto * errno_exception = dynamic_cast<const ErrnoException *>(&e))
-        return errno_exception->getErrno() == EACCES || errno_exception->getErrno() == EPERM
-            || errno_exception->getErrno() == EROFS;
-#if USE_AWS_S3
-    if (const auto * s3_exception = dynamic_cast<const S3Exception *>(&e))
-        return DB::S3::isAuthenticationError(s3_exception->getS3ErrorCode())
-            || s3_exception->getS3ErrorCode() == Aws::S3::S3Errors::SIGNATURE_DOES_NOT_MATCH;
-#endif
-    return false;
+
+/// What `version-hint.text` holds right now: whether it is there at all, the tag of the copy that
+/// was read (a rewrite has to name it to be a compare-and-swap), its trimmed content and the
+/// metadata version it points at.
+struct VersionHintState
+{
+    bool exists = false;
+    std::string etag;
+    std::string value;
+    Int32 version = 0;
+};
+
+VersionHintState readVersionHint(const DB::ObjectStoragePtr & object_storage, const std::string & path, const DB::ContextPtr & context)
+{
+    VersionHintState state;
+
+    StoredObject object_info(path);
+    if (!object_storage->exists(object_info))
+        return state;
+
+    auto [object_data, object_metadata]
+        = object_storage->readSmallObjectAndGetObjectMetadata(object_info, context->getReadSettings(), MAX_HINT_FILE_SIZE);
+    state.exists = true;
+    state.etag = object_metadata.etag;
+
+    state.value = object_data;
+    boost::algorithm::trim(state.value);
+    if (!state.value.empty())
+    {
+        if (std::all_of(state.value.begin(), state.value.end(), isdigit))
+            state.version = parseMetadataVersion(state.value, state.value);
+        else
+            state.version = getMetadataFileAndVersion(state.value).version;
+    }
+
+    return state;
+}
+
+/// The rewrite of an existing hint is kept monotonic by a compare-and-swap on the tag of the copy
+/// that was read. `ETag` is an optional response header, and without it the write would degrade
+/// into an unconditional overwrite, so two concurrent writers could move `version-hint.text`
+/// backwards. Skipping the rewrite instead is not an option either: the commit would report success
+/// while every reader with `iceberg_use_version_hint = 1` stays pinned to the previous snapshot,
+/// because `getLatestOrExplicitMetadataFileAndVersion` trusts the hint without cross-checking the
+/// listing. Fail the commit instead, the same way a backend that cannot express the compare-and-swap
+/// of the metadata file itself does.
+[[noreturn]] void throwVersionHintCannotBeAdvanced(const std::string & storage_version_hint_path, Int32 version)
+{
+    throw Exception(
+        ErrorCodes::UNSUPPORTED_METHOD,
+        "The object storage did not report an ETag for {}, so the version hint cannot be advanced to {} "
+        "under a compare-and-swap. Refusing to commit: leaving the hint behind would serve stale metadata "
+        "to readers with `iceberg_use_version_hint = 1`.",
+        storage_version_hint_path,
+        version);
+}
+
 }
 
 /// Whether `path` is known to be absent; a failed check proves nothing.
@@ -386,6 +433,229 @@ static bool isKnownAbsent(const DB::ObjectStoragePtr & object_storage, const std
         tryLogCurrentException(__PRETTY_FUNCTION__);
         return false;
     }
+}
+
+namespace
+{
+
+enum class RemovalOutcome
+{
+    /// The object is known to be gone.
+    Removed,
+    /// The removal failed and the object is known to be still there.
+    Kept,
+    /// The removal failed and whether it took effect is unknown.
+    Unknown,
+};
+
+/// A removal that throws may still have taken effect before its response was lost, so it is
+/// followed by an existence check, and only an object known to be absent counts as removed.
+RemovalOutcome removeObjectAndReconcile(const DB::ObjectStoragePtr & object_storage, const std::string & path)
+{
+    try
+    {
+        object_storage->removeObjectIfExists(StoredObject(path));
+        return RemovalOutcome::Removed;
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+
+    try
+    {
+        return object_storage->exists(StoredObject(path)) ? RemovalOutcome::Kept : RemovalOutcome::Removed;
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        return RemovalOutcome::Unknown;
+    }
+}
+
+}
+
+bool isUnknownCommitStatus()
+{
+    return getCurrentExceptionCode() == ErrorCodes::UNKNOWN_STATUS_OF_INSERT;
+}
+
+[[noreturn]] static void throwUnknownCommitStatus(const std::string & storage_metadata_path, const std::string & reason)
+{
+    throw Exception(
+        ErrorCodes::UNKNOWN_STATUS_OF_INSERT,
+        "Unknown status of the commit of {}: {}. The metadata file may still be published, so the files it "
+        "references are kept",
+        storage_metadata_path,
+        reason);
+}
+
+void takeBackVersionHintWithoutETag(
+    const DB::ObjectStoragePtr & object_storage,
+    const std::string & storage_version_hint_path,
+    Int32 version,
+    const std::vector<std::string> & files_to_take_back,
+    const DB::ContextPtr & context,
+    bool no_concurrent_writer)
+{
+    /// Remove the hint first and the files it references only after that. If the hint cannot be
+    /// removed it may still point at the metadata file, so the files must stay: removing them would
+    /// leave a published hint that resolves to nothing. Only a file known to be absent counts as
+    /// taken back (see `removeObjectAndReconcile`).
+    enum class TakeBack
+    {
+        /// The hint and all the files are known to be gone.
+        Done,
+        /// The hint may still be there; the files were not touched.
+        HintKept,
+        /// The hint is gone, and some of the files are known to be still there.
+        Incomplete,
+        /// The hint is gone, and whether some of the files are still there is unknown.
+        Unknown,
+    };
+
+    auto take_back = [&]
+    {
+        if (removeObjectAndReconcile(object_storage, storage_version_hint_path) != RemovalOutcome::Removed)
+            return TakeBack::HintKept;
+
+        auto result = TakeBack::Done;
+        for (const auto & path : files_to_take_back)
+        {
+            const auto removal = removeObjectAndReconcile(object_storage, path);
+            if (removal == RemovalOutcome::Unknown)
+                result = TakeBack::Unknown;
+            else if (removal == RemovalOutcome::Kept && result == TakeBack::Done)
+                result = TakeBack::Incomplete;
+        }
+        return result;
+    };
+
+    /// A commit has already published its snapshot by the time it gets here: the metadata file and
+    /// the hint pointing at it are both in place. If that cannot be taken back entirely, the
+    /// snapshot stays visible, and the commit must be reported as successful - its caller would
+    /// otherwise clean up the data files, manifests and manifest lists the retained metadata
+    /// references, and corrupt the table. Such a table cannot be committed to later, but that
+    /// later commit fails with its own error before publishing anything.
+    auto keep_published_commit = [&](const std::string & reason)
+    {
+        LOG_WARNING(
+            getLogger("IcebergVersionHint"),
+            "The newly created {} could not be checked for an ETag or taken back ({}). Keeping the commit "
+            "published; later commits may be unable to advance the hint under a compare-and-swap.",
+            storage_version_hint_path,
+            reason);
+    };
+
+    /// Read the tag back the same way `readVersionHint` does for the next commit. A metadata-only
+    /// request may legitimately disagree with a read about whether the optional header is there,
+    /// and only the tag the next commit will see decides whether it can advance the hint.
+    ///
+    /// Taking the files back is destructive, so do it only once the check proves that the hint is
+    /// still the one this operation created. If the read fails, nothing is proven: another writer
+    /// may already have advanced the hint and published a metadata file on top of ours, and
+    /// removing either would break the table for every reader. Both files stay, and the commit is
+    /// kept published.
+    ///
+    /// The exception is an operation that knows no other writer can have built on its files yet
+    /// (`CREATE TABLE` right after the exclusive creates of the first metadata file and the hint).
+    /// There, keeping the files after a failed read would only wedge the location: a retry would
+    /// fail on the already existing first metadata file. Take both back before rethrowing. Nothing
+    /// references the first metadata file of a new table, so the error can propagate either way.
+    VersionHintState hint;
+    try
+    {
+        hint = readVersionHint(object_storage, storage_version_hint_path, context);
+    }
+    catch (...)
+    {
+        if (no_concurrent_writer)
+        {
+            take_back();
+            throw;
+        }
+        keep_published_commit(getCurrentExceptionMessage(false));
+        return;
+    }
+
+    /// Another writer has replaced the hint since it was created (that takes a compare-and-swap
+    /// under a tag it has read, so the tag is evidently there), and its metadata file builds on
+    /// the one published here. Neither file is ours to take back anymore.
+    if (!hint.exists || hint.version != version)
+        return;
+
+    if (!hint.etag.empty())
+        return;
+
+    const auto outcome = take_back();
+    if (outcome == TakeBack::HintKept && !no_concurrent_writer)
+    {
+        keep_published_commit("removing the hint failed");
+        return;
+    }
+
+    if (outcome == TakeBack::Unknown && !no_concurrent_writer)
+    {
+        /// The hint is gone, and the metadata file it pointed at may or may not be there. Neither
+        /// success (the snapshot may not exist) nor an ordinary failure (the caller would clean up the
+        /// files a still published metadata file references) is right. Restoring the hint is not right
+        /// either: it could point at nothing. Report the status as unknown, so the caller keeps the
+        /// referenced files.
+        throwUnknownCommitStatus(
+            files_to_take_back.empty() ? storage_version_hint_path : files_to_take_back.front(),
+            "taking back a version hint without an ETag removed the hint, but whether the files it pointed at are gone is unknown");
+    }
+
+    if (outcome == TakeBack::Incomplete && !no_concurrent_writer)
+    {
+        /// The hint is gone, but the metadata file it pointed at is still there. Reporting the
+        /// commit as successful in this state would leave readers with `iceberg_use_version_hint = 1`
+        /// unable to open the table, and reporting it as failed would make the caller clean up the
+        /// files that metadata references while listing-based readers can still see it. Put the
+        /// hint back, so the publication is retained as a whole, as when the hint cannot be removed.
+        try
+        {
+            Iceberg::writeMessageToFile(
+                std::to_string(version), storage_version_hint_path, object_storage, context, /* write-if-none-match */ "*", "");
+        }
+        catch (...)
+        {
+            /// Nothing else can be done without risking the files the retained metadata may
+            /// reference: keep them and report the commit as published.
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            LOG_ERROR(
+                getLogger("IcebergVersionHint"),
+                "Could not restore {} after failing to take back the files of its commit. Readers with "
+                "`iceberg_use_version_hint = 1` cannot open the table until the hint is restored.",
+                storage_version_hint_path);
+            return;
+        }
+        keep_published_commit("removing the published files failed, the hint was restored");
+        return;
+    }
+
+    throw Exception(
+        ErrorCodes::UNSUPPORTED_METHOD,
+        "The object storage did not report an ETag for the newly created {}, so later commits could not "
+        "advance it under a compare-and-swap. Refusing to create it: disable `iceberg_use_version_hint` "
+        "for this object storage.",
+        storage_version_hint_path);
+}
+
+/// Whether the storage refused the request itself rather than its condition, so that a retry is refused again.
+static bool isRefusedWrite(const Exception & e)
+{
+    if (e.code() == ErrorCodes::UNSUPPORTED_METHOD || e.code() == ErrorCodes::READONLY)
+        return true;
+    if (const auto * errno_exception = dynamic_cast<const ErrnoException *>(&e))
+        return errno_exception->getErrno() == EACCES || errno_exception->getErrno() == EPERM
+            || errno_exception->getErrno() == EROFS;
+#if USE_AWS_S3
+    if (const auto * s3_exception = dynamic_cast<const S3Exception *>(&e))
+        return DB::S3::isAuthenticationError(s3_exception->getS3ErrorCode())
+            || s3_exception->getS3ErrorCode() == Aws::S3::S3Errors::SIGNATURE_DOES_NOT_MATCH;
+#endif
+    return false;
 }
 
 bool writeMetadataFile(
@@ -447,51 +717,48 @@ bool tryWriteVersionHintFile(
     /// writer that does not have the setting enabled advances the table.
     for (size_t attempt = 0; attempt < MAX_TRANSACTION_RETRIES; ++attempt)
     {
-        StoredObject object_info(storage_version_hint_path);
-        std::string version_hint_value;
-        std::string etag;
-        std::string write_if_none_match = "*";
-        Int32 old_version = 0;
-
         /// first, let's resolve an existing hint and the version it points to
-        if (object_storage->exists(object_info))
-        {
-            auto [object_data, object_metadata] = object_storage->readSmallObjectAndGetObjectMetadata(object_info, context->getReadSettings(), MAX_HINT_FILE_SIZE);
-            version_hint_value = object_data;
-            boost::algorithm::trim(version_hint_value);
-            etag = object_metadata.etag;
-            write_if_none_match.clear();
-        }
-        else if (!create)
+        const auto version_hint = readVersionHint(object_storage, storage_version_hint_path, context);
+        if (!version_hint.exists && !create)
             return true;
-
-        if (!version_hint_value.empty())
-        {
-            if (std::all_of(version_hint_value.begin(), version_hint_value.end(), isdigit))
-                old_version = parseMetadataVersion(version_hint_value, version_hint_value);
-            else
-                old_version = getMetadataFileAndVersion(version_hint_value).version;
-        }
 
         /// second, let's check exit conditions on the hint's state
         if (assert_version_exactly)
         {
-            if (old_version > metadata_file_info.version)
+            if (version_hint.version > metadata_file_info.version)
                 return false;
-            else if (old_version == metadata_file_info.version)
+            else if (version_hint.version == metadata_file_info.version)
             {
                 auto resolved = resolveMetadataFilenameFromVersionHint(
-                    version_hint_value, resolver.getTableRoot(), object_storage, metadata_file_info.compression_method, context);
+                    version_hint.value, resolver.getTableRoot(), object_storage, metadata_file_info.compression_method, context);
                 return resolved && std::filesystem::path(*resolved).filename() == std::filesystem::path(storage_metadata_path).filename();
             }
         }
         else
         {
-            if (old_version >= metadata_file_info.version)
+            if (version_hint.version >= metadata_file_info.version)
                 return true;
         }
 
+        if (version_hint.exists && version_hint.etag.empty())
+        {
+            /// `writeMetadataFileAndVersionHint` checks this before publishing the metadata file,
+            /// so there the hint was created concurrently after that check. The new metadata file
+            /// is already published, and this commit is about to fail, so take it back first -
+            /// otherwise listing-based readers would observe a snapshot that no command ever
+            /// committed. If the metadata file may remain, the snapshot may still be visible to them,
+            /// and an ordinary failure would make the caller clean up the files it references: report
+            /// the status as unknown instead, so the caller keeps them.
+            if (removeObjectAndReconcile(object_storage, storage_metadata_path) != RemovalOutcome::Removed)
+                throwUnknownCommitStatus(
+                    storage_metadata_path,
+                    fmt::format("{} was created without an ETag during the commit, and the metadata file could not be taken back",
+                        storage_version_hint_path));
+            throwVersionHintCannotBeAdvanced(storage_version_hint_path, metadata_file_info.version);
+        }
+
         /// lastly, let's update it
+        bool written = false;
         try
         {
             /// Write just the version number for Spark/spec compatibility.
@@ -500,15 +767,32 @@ bool tryWriteVersionHintFile(
                 storage_version_hint_path,
                 object_storage,
                 context,
-                write_if_none_match,
-                /* write-if-match */ etag);
-
-            if (!assert_version_exactly)
-                return true;
+                /* write-if-none-match */ version_hint.exists ? "" : "*",
+                /* write-if-match */ version_hint.etag);
+            written = true;
         }
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+
+        if (written)
+        {
+            /// A hint this commit has just created must be advanceable by the next one, the same
+            /// rule applied above to an existing hint. If it is not, take back both files, so the
+            /// refused commit leaves nothing published. If that is not possible, the commit stays
+            /// published and is reported as successful (see `takeBackVersionHintWithoutETag`).
+            if (!version_hint.exists)
+                takeBackVersionHintWithoutETag(
+                    object_storage,
+                    storage_version_hint_path,
+                    metadata_file_info.version,
+                    {storage_metadata_path},
+                    context,
+                    /*no_concurrent_writer=*/ false);
+
+            if (!assert_version_exactly)
+                return true;
         }
     }
     return false;
@@ -523,6 +807,16 @@ bool writeMetadataFileAndVersionHint(
     ContextPtr context,
     bool try_write_version_hint)
 {
+    /// Whether the hint can be advanced at all is decided *before* the new metadata file is
+    /// published. `expireSnapshots` and the schema-alter path in `Mutations.cpp` do not remove that
+    /// file when the commit throws, so failing after writing it would leave the new snapshot visible
+    /// to listing-based readers while readers with `iceberg_use_version_hint = 1` stay on the old
+    /// one.
+    auto storage_version_hint_path = resolver.resolve(version_hint_path);
+    const auto version_hint = readVersionHint(object_storage, storage_version_hint_path, context);
+    if (version_hint.exists && version_hint.etag.empty() && version_hint.version < metadata_file_info.version)
+        throwVersionHintCannotBeAdvanced(storage_version_hint_path, metadata_file_info.version);
+
     if (!writeMetadataFile(resolver, metadata_file_info, metadata_file_content, object_storage, context))
         return false;
 

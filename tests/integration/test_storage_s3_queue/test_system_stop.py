@@ -267,8 +267,10 @@ def test_stop_aborts_inflight_batch_pause_commits_it(started_cluster):
     # row keeps the batch in-flight long enough for the command to arrive mid-processing.
     #
     # Unlike the message-queue engines, S3Queue reads and inserts in one fused pipeline, so STOP/CANCEL
-    # interrupts the running insert and reprocesses the files on resume (like a crash mid-batch). A STOP
-    # landing during the insert can therefore duplicate already-inserted rows; that is accepted here.
+    # interrupts the running insert and reprocesses the files on resume (like a crash mid-batch). That
+    # replay re-inserts the rows that were already inserted, so the insert is interrupted only when a
+    # dependent target deduplicates them: the destination here has a deduplication window (a target
+    # without one is drained to the batch boundary instead, like PAUSE, see test_shutdown_replay.py).
     node = started_cluster.instances["instance"]
     n_files = 10
     for verb in ["PAUSE", "STOP"]:
@@ -293,7 +295,8 @@ def test_stop_aborts_inflight_batch_pause_commits_it(started_cluster):
         node.query(f"DROP TABLE IF EXISTS {table}_dst")
         node.query(
             f"CREATE TABLE {table}_dst (column1 UInt32, column2 UInt32, column3 UInt32) "
-            "ENGINE = MergeTree ORDER BY column1"
+            "ENGINE = MergeTree ORDER BY column1 "
+            "SETTINGS non_replicated_deduplication_window = 100"
         )
         # `sleepEachRow` slows the per-file blocks (0.1s * 10 rows = 1s/file, under the per-block
         # sleep limit) so the batch stays in-flight for ~n_files seconds.
