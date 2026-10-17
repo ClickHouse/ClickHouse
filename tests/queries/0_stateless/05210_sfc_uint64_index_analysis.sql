@@ -67,3 +67,31 @@ FROM (EXPLAIN indexes = 1
 
 DROP TABLE test_sfc_uint32_pk, test_sfc_uint64_morton_pk, test_sfc_uint64_hilbert_pk,
     test_sfc_uint64_morton_partition, test_sfc_uint64_hilbert_partition, test_sfc_uint64_skip;
+
+-- Test that space-filling curve index analysis does not prune matching rows when the curve
+-- arguments are Nullable(UInt64) holding values above 2^32.
+DROP TABLE IF EXISTS t_sfc_nullable_pk;
+DROP TABLE IF EXISTS t_sfc_nullable_skip;
+
+SET analyze_index_with_space_filling_curves = 1;
+
+CREATE TABLE t_sfc_nullable_pk (x Nullable(UInt64), y Nullable(UInt64))
+ENGINE = MergeTree ORDER BY mortonEncode(x, y)
+SETTINGS allow_nullable_key = 1;
+
+INSERT INTO t_sfc_nullable_pk VALUES (4294967296, 0);
+SELECT count() FROM t_sfc_nullable_pk WHERE x >= 4294967296 AND y = 0;
+
+CREATE TABLE t_sfc_nullable_skip
+(
+    x Nullable(UInt64),
+    y Nullable(UInt64),
+    INDEX i_hilbert hilbertEncode(x, y) TYPE minmax GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO t_sfc_nullable_skip VALUES (4294967296, 0);
+SELECT count() FROM t_sfc_nullable_skip WHERE x >= 4294967296 AND y = 0;
+
+DROP TABLE t_sfc_nullable_pk;
+DROP TABLE t_sfc_nullable_skip;
