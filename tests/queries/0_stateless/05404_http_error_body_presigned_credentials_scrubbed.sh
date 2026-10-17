@@ -42,11 +42,23 @@ class Handler(BaseHTTPRequestHandler):
     def reply(self, with_body):
         self.drain()
         path, _, query = self.path.partition("?")
+        params = dict(urllib.parse.parse_qsl(query))
+        sent = None
         if path == "/ready":
             body = b"ready"
             self.send_response(200)
+        elif path == "/ranges/key.csv":
+            # Answers a range GET with 200 and the signature as its reason phrase. A plain GET is cut short, so that the
+            # read is resumed with a range.
+            body = b"1\n" * 32
+            if "Range" in self.headers:
+                self.send_response(200, params["X-Amz-Signature"])
+            else:
+                self.send_response(200)
+                sent = body[:8]
+                self.close_connection = True
+            self.send_header("Accept-Ranges", "bytes")
         else:
-            params = dict(urllib.parse.parse_qsl(query))
             key_id = params.get("X-Amz-Credential", "").split("/")[0] or params.get("AWSAccessKeyId", "")
             signature = params.get("X-Amz-Signature") or params.get("Signature", "")
             canonical_query = "&amp;".join(
@@ -61,7 +73,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         if with_body:
-            self.wfile.write(body)
+            self.wfile.write(body if sent is None else sent)
 
     def do_GET(self):
         self.reply(True)
@@ -76,7 +88,14 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
-ThreadingHTTPServer(("127.0.0.1", int(sys.argv[1])), Handler).serve_forever()
+class Server(ThreadingHTTPServer):
+    # A failed parallel read resets the connections of its other readers.
+    def handle_error(self, request, client_address):
+        if not isinstance(sys.exc_info()[1], ConnectionError):
+            super().handle_error(request, client_address)
+
+
+Server(("127.0.0.1", int(sys.argv[1])), Handler).serve_forever()
 EOF
 HTTP_PID=$!
 trap 'kill $HTTP_PID 2>/dev/null' EXIT
@@ -97,6 +116,7 @@ TOKEN_V2="tokv2${U}"
 TOKEN_EXP="tokexp${U}"
 SIG_ENC="sigenc${U}"
 OVL="ovl${U}"
+SIG_RNG="sigrng${U}"
 BASE="http://127.0.0.1:${HTTP_PORT}/bucket/key.csv"
 URL_V4="${BASE}?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=${KEY_V4_SENT}%2F20261016%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20261016T000000Z&X-Amz-Expires=900&X-Amz-Security-Token=${TOKEN}%2Fp%2B2%3D&X-Amz-SignedHeaders=host&X-Amz-Signature=${SIG_V4}"
 URL_V2="${BASE}?AWSAccessKeyId=${KEY_V2}&Expires=1792200000&Signature=${SIG_V2}%2Bp%2F2%3D"
@@ -107,6 +127,7 @@ URL_ALT="${BASE}?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-S3session-Token=${TOKEN_
 URL_DUP="${BASE}?$(printf 'Signature=D&%.0s' {1..18})Expires=1792200000"
 # The signature is a prefix of the token and comes first: scrubbing it first would leave the token's tail visible.
 URL_OVL="${BASE}?X-Amz-Signature=${OVL}&X-Amz-Security-Token=${OVL}tail&X-Amz-Date=20261016T000000Z"
+URL_RNG="http://127.0.0.1:${HTTP_PORT}/ranges/key.csv?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Signature=${SIG_RNG}"
 
 # OK only if no credential survives (-), and every expected text is present (+): the scrubbed shapes prove the body
 # was echoed and scrubbed rather than absent, and the non-secret parts prove it was not blanked wholesale.
@@ -133,6 +154,7 @@ ALT=(-"$TOKEN_EXP" -"$TOKEN_V2" -"$SIG_ENC" +"<SignatureProvided>[HIDDEN]</Signa
     +"X-Amz-S3session-Token=[HIDDEN]&amp;x-amz-security-token=[HIDDEN]&amp;X-Amz-%53ignature=[HIDDEN]</CanonicalRequest>")
 OV=(-"$OVL" +"<SignatureProvided>[HIDDEN]</SignatureProvided>"
     +"X-Amz-Security-Token=[HIDDEN]&amp;X-Amz-Date=20261016T000000Z")
+RNG=(-"$SIG_RNG" +"HTTP status code: 416 '[HIDDEN]'" +"reason: [HIDDEN]), will retry")
 
 # Grep the error line: the client also echoes the submitted query, which carries the URL as typed.
 error_line() {
@@ -149,6 +171,12 @@ check insert_sigv4 "$(error_line "INSERT INTO TABLE FUNCTION url('${URL_V4}', 'C
 check select_sigv2 "$(error_line "SELECT * FROM url('${URL_V2}', 'CSV', 'x UInt8')")" "${V2[@]}"
 check select_overlap "$(error_line "SELECT * FROM url('${URL_OVL}', 'CSV', 'x UInt8')")" "${OV[@]}"
 check select_name_spellings "$(body_of "$(error_line "SELECT * FROM url('${URL_ALT}', 'CSV', 'x UInt8')")")" "${ALT[@]}"
+# A range that the server does not serve, in a parallel read and in a sequential read resumed after the connection is cut.
+check select_parallel_range "$(error_line "SELECT * FROM url('${URL_RNG}', 'CSV', 'x UInt8')
+    SETTINGS max_download_threads = 2, max_download_buffer_size = 1, http_max_tries = 1, http_make_head_request = 1,
+        parallel_replicas_for_cluster_engines = 0")" "${RNG[@]}" +"readBigAt"
+check select_resumed_range "$(error_line "SELECT * FROM url('${URL_RNG}', 'CSV', 'x UInt8')
+    SETTINGS max_download_threads = 1, max_read_buffer_size = 4, http_max_tries = 2")" "${RNG[@]}" +"range: [8, -]"
 # The server log can be sent along with the error, so the bound is per line.
 LINES=$(error_line "SELECT * FROM url('${URL_DUP}', 'CSV', 'x UInt8')")
 LONGEST=$(awk '{ if (length($0) > n) n = length($0) } END { print n + 0 }' <<< "$LINES")
@@ -158,14 +186,19 @@ else
     echo "select_duplicates: FAIL a line of $LONGEST bytes"
 fi
 
-# Nothing is selected on success. The needles are split so that this query does not itself contain a credential.
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
+# The errors are logged, scrubbed.
+${CLICKHOUSE_CLIENT} --query "
+    SELECT count() > 0 FROM system.query_log
+    WHERE event_date >= yesterday() AND current_database = currentDatabase() AND type = 'ExceptionWhileProcessing'
+      AND exception LIKE '%<SignatureProvided>[HIDDEN]</SignatureProvided>%'"
+# Nothing is selected on success. The needles are split so that this query does not itself contain a credential.
 ${CLICKHOUSE_CLIENT} --query "
     SELECT type, exception FROM system.query_log
     WHERE event_date >= yesterday() AND current_database = currentDatabase()
       AND (exception LIKE '%' || 'sigv4' || '${U}%' OR exception LIKE '%' || 'sigv2' || '${U}%'
         OR exception LIKE '%' || 'AKIAV4' || '${U}%' OR exception LIKE '%' || 'AKIAV2' || '${U}%'
         OR exception LIKE '%' || 'tokv4' || '${U}%' OR exception LIKE '%' || 'ovl' || '${U}%'
-        OR exception LIKE '%' || 'tokexp' || '${U}%'
+        OR exception LIKE '%' || 'tokexp' || '${U}%' OR exception LIKE '%' || 'sigrng' || '${U}%'
         OR position(exception, 'AKIA%564' || '${U}') > 0)
     FORMAT Vertical"

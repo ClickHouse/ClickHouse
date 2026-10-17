@@ -653,7 +653,7 @@ std::unique_ptr<ReadBuffer> ReadWriteBufferFromHTTP::initialize()
                 /// it is retriable error
                 throw HTTPException(
                     ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE,
-                    maskedURI(current_uri),
+                    current_uri.toString(),
                     Poco::Net::HTTPResponse::HTTP_REQUESTED_RANGE_NOT_SATISFIABLE,
                     response.getReason(),
                     explanation);
@@ -781,7 +781,7 @@ size_t ReadWriteBufferFromHTTP::readBigAt(char * to, size_t n, size_t offset, co
 
                 throw HTTPException(
                     ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE,
-                    maskedURI(current_uri),
+                    current_uri.toString(),
                     Poco::Net::HTTPResponse::HTTP_REQUESTED_RANGE_NOT_SATISFIABLE,
                     response.getReason(),
                     explanation);
