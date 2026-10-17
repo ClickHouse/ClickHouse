@@ -16,7 +16,7 @@ temp_path = Path(f"{Utils.cwd()}/ci/tmp")
 # warning in `system.warnings` is the observable signal, so exercise both sides:
 # registration succeeds regardless of the distribution's own libc, and a kernel
 # that refuses the syscall is reported.
-RSEQ_WARNING_QUERY = "select count() from system.warnings where message like '%rseq%'"
+RSEQ_WARNING_QUERY = "select count() as warnings from system.warnings where message like '%rseq%'"
 
 # Docker seccomp profile that makes the `rseq` syscall fail with ENOSYS, which is
 # what a pre-4.18 kernel or a restrictive sandbox looks like to the process.
@@ -27,7 +27,9 @@ SECCOMP_NO_RSEQ = {
 
 
 def rseq_check(image: str, expect_rseq: bool, extra_args: str = "") -> str:
-    condition = "count()" if expect_rseq else "not(count())"
+    # The condition is over the column of the one-row subquery: an outer `count()` would count that
+    # row and always be 1.
+    condition = "warnings" if expect_rseq else "not(warnings)"
     return (
         f"docker run --rm --volume={temp_path}/clickhouse:/clickhouse {extra_args} {image} "
         f'/clickhouse local --query "select throwIf({condition}) from ({RSEQ_WARNING_QUERY})"'
