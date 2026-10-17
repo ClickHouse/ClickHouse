@@ -3,6 +3,7 @@
 #include <IO/HTTPCommon.h>
 #include <IO/ReadBuffer.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
+#include <Server/HTTP/exceptionCodeToHTTPStatus.h>
 #include <Server/HTTP/sendExceptionToHTTPClient.h>
 #include <Server/HTTPHandler.h>
 #include <Server/IServer.h>
@@ -11,8 +12,10 @@
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/URI.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <Common/maskSensitiveQueryParameters.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/setThreadName.h>
 #include "config.h"
 
@@ -49,10 +52,16 @@ namespace Setting
     extern const SettingsUInt64 http_response_buffer_size;
 }
 
+namespace FailPoints
+{
+    extern const char prometheus_handler_finalize_throw[];
+}
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_WRITE_TO_OSTREAM;
+    extern const int FAULT_INJECTED;
     extern const int INCOMPATIBLE_SCHEMA;
     extern const int SUPPORT_IS_DISABLED;
     extern const int NOT_IMPLEMENTED;
@@ -146,43 +155,90 @@ protected:
             context.reset();
             session.reset();
             params.reset();
+            handled_exception.reset();
         });
 
-        const auto & method = request.getMethod();
-        if (shouldParseFormFromRequestBody(request)
-            && (method == Poco::Net::HTTPRequest::HTTP_POST || method == Poco::Net::HTTPRequest::HTTP_PUT))
-            params = std::make_unique<HTMLForm>(default_settings, request, *request.getStream());
-        else
-            params = std::make_unique<HTMLForm>(default_settings, request);
-        parent().send_stacktrace = config().is_stacktrace_enabled && params->getParsed<bool>("stacktrace", false);
-
-        if (!authenticateUserAndMakeContext(request, response))
-            return; /// The user is not authenticated yet, and the HTTP_UNAUTHORIZED response is sent with the "WWW-Authenticate" header,
-                    /// and `request_credentials` must be preserved until the next request or until any exception.
-
-        /// Apply `http_response_buffer_size` for the output buffer (0 means use the default).
-        auto buffer_size = context->getSettingsRef()[Setting::http_response_buffer_size].value;
-        if (buffer_size == 0)
-            buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
-        parent().http_response_buffer_size = buffer_size;
-
-        /// Initialize query scope.
-        QueryScope query_scope;
-        if (context)
-            query_scope = QueryScope::create(context);
-
-        handlingRequestWithContext(request, response);
-    }
-
-    bool authenticateUserAndMakeContext(HTTPServerRequest & request, HTTPServerResponse & response)
-    {
         session = std::make_unique<Session>(server().context(), ClientInfo::Interface::PROMETHEUS, request.isSecure());
 
-        if (!authenticateUser(request, response))
-            return false;
+        /// Parse the OpenTelemetry traceparent header.
+        auto & client_trace_context = session->getClientTraceContext();
+        if (request.has("traceparent"))
+        {
+            String traceparent = request.get("traceparent");
+            String error;
+            if (!client_trace_context.parseTraceparentHeader(traceparent, error))
+                LOG_DEBUG(log(), "Failed to parse OpenTelemetry traceparent header '{}': {}", traceparent, error);
+            client_trace_context.tracestate = request.get("tracestate", "");
+        }
 
-        makeContext(request);
-        return true;
+        QueryScope query_scope;
+
+        std::optional<OpenTelemetry::TracingContextHolder> thread_trace_context;
+        auto start_trace = [&](const ContextPtr & settings_context)
+        {
+            thread_trace_context.emplace("PrometheusRequestHandler",
+                client_trace_context,
+                settings_context->getSettingsRef(),
+                settings_context->getOpenTelemetrySpanLog());
+            thread_trace_context->root_span.kind = OpenTelemetry::SpanKind::SERVER;
+            thread_trace_context->root_span.addAttribute("http.method", request.getMethod());
+        };
+
+        /// A client trace starts before authentication, so that requests failing there are traced too.
+        /// Without one, sampling waits for the user's and the request's settings.
+        if (client_trace_context.isTraceEnabled())
+            start_trace(session->sessionOrGlobalContext());
+
+        try
+        {
+            const auto & method = request.getMethod();
+            if (shouldParseFormFromRequestBody(request)
+                && (method == Poco::Net::HTTPRequest::HTTP_POST || method == Poco::Net::HTTPRequest::HTTP_PUT))
+                params = std::make_unique<HTMLForm>(default_settings, request, *request.getStream());
+            else
+                params = std::make_unique<HTMLForm>(default_settings, request);
+            parent().send_stacktrace = config().is_stacktrace_enabled && params->getParsed<bool>("stacktrace", false);
+
+            /// If the user is not authenticated yet, the HTTP_UNAUTHORIZED response is sent with the "WWW-Authenticate" header,
+            /// and `request_credentials` must be preserved until the next request or until any exception.
+            if (authenticateUser(request, response))
+            {
+                makeContext(request);
+                if (!thread_trace_context)
+                    start_trace(context);
+
+                /// Apply `http_response_buffer_size` for the output buffer (0 means use the default).
+                auto buffer_size = context->getSettingsRef()[Setting::http_response_buffer_size].value;
+                if (buffer_size == 0)
+                    buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
+                parent().http_response_buffer_size = buffer_size;
+
+                query_scope = QueryScope::create(context);
+                handlingRequestWithContext(request, response);
+                if (handled_exception)
+                    thread_trace_context->root_span.addAttribute(*handled_exception);
+            }
+
+            /// Finalize the response here, so that a failure in the final flush is recorded on the root span.
+            fiu_do_on(FailPoints::prometheus_handler_finalize_throw,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while finalizing the Prometheus response");
+            });
+            getOutputStream(response).finalize();
+        }
+        catch (...)
+        {
+            if (thread_trace_context)
+            {
+                thread_trace_context->root_span.addAttribute(std::current_exception());
+                /// The outer handler sends the error status for this exception code unless the response is already sent.
+                thread_trace_context->root_span.addAttribute("clickhouse.http_status",
+                    response.sent() ? response.getStatus() : exceptionCodeToHTTPStatus(getCurrentExceptionCode()));
+            }
+            throw;
+        }
+        if (thread_trace_context)
+            thread_trace_context->root_span.addAttribute("clickhouse.http_status", response.getStatus());
     }
 
     bool authenticateUser(HTTPServerRequest & request, HTTPServerResponse & response)
@@ -205,6 +261,8 @@ protected:
     void makeContext(HTTPServerRequest & request)
     {
         context = session->makeQueryContext();
+
+        context->getClientTraceContext() = session->getClientTraceContext();
 
         /// Anything else beside HTTP POST should be readonly queries.
         setReadOnlyIfHTTPMethodIdempotent(context, request.getMethod());
@@ -288,6 +346,8 @@ protected:
     std::unique_ptr<Session> session;
     std::unique_ptr<Credentials> request_credentials;
     ContextMutablePtr context;
+    /// An error of the current request that was turned into a response, for the root span.
+    std::optional<Exception> handled_exception;
 };
 
 
@@ -626,6 +686,8 @@ public:
             /// Drop any partial success body still sitting in the output buffer
             /// before writing the error response.
             getOutputStream(response).rejectBufferedDataSave();
+
+            handled_exception.emplace(e);
 
             /// A schema-version rejection (see TimeSeriesVersion.h) is a problem with the server or the table,
             /// not with the query: report it as an internal error so that clients don't attribute it
