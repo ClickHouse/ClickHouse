@@ -236,6 +236,21 @@ static void applyReplyOutputSettings(ContextMutablePtr & query_context)
     query_context->setSetting("output_format_json_quote_denormals", true);
     query_context->setSetting("output_format_json_named_tuples_as_objects", true);
     query_context->setSetting("output_format_json_array_of_rows", false);
+    /// A `Map` is decoded as a BSON document only from a JSON object, and a member of a named
+    /// tuple that is `NULL` is still a field of the document, so neither representation may be
+    /// changed by the profile into an array of pairs or a missing member.
+    query_context->setSetting("output_format_json_map_as_array_of_tuples", false);
+    query_context->setSetting("output_format_json_skip_null_value_in_named_tuples", false);
+
+    /// A reply with cursor id `0` tells the client that it has the whole result, and there is no
+    /// way to tell it that the result was cut short. A limit of the profile with the `break` mode
+    /// would stop the query after a prefix of the result without an error, so the limits are kept,
+    /// but overflowing them is an error.
+    query_context->setSetting("result_overflow_mode", String("throw"));
+    query_context->setSetting("read_overflow_mode", String("throw"));
+    query_context->setSetting("read_overflow_mode_leaf", String("throw"));
+    query_context->setSetting("timeout_overflow_mode", String("throw"));
+    query_context->setSetting("timeout_overflow_mode_leaf", String("throw"));
 
     /// The dates of the result are parsed back into BSON dates, so they must be formatted the
     /// way the parsing expects rather than the way the user's profile asks.
@@ -276,6 +291,11 @@ static void applyAcknowledgedWriteSettings(ContextMutablePtr & query_context)
     /// not even affected by `async_insert`: the row would not be readable yet when the write is
     /// acknowledged, and a failure to send it would be reported to nobody.
     query_context->setSetting("distributed_foreground_insert", true);
+    /// A row that fails to parse would be skipped, and a shard that is unavailable would be left
+    /// out, while the write is still acknowledged as complete.
+    query_context->setSetting("input_format_allow_errors_num", Field(UInt64(0)));
+    query_context->setSetting("input_format_allow_errors_ratio", Field(Float64(0)));
+    query_context->setSetting("skip_unavailable_shards", false);
 }
 
 ContextMutablePtr QueryExecutor::makeQueryContext()
@@ -295,7 +315,6 @@ String QueryExecutor::execute(const String & query)
     /// Limit the query result before the format materializes it into `out`; the reply encoder
     /// checks the exact BSON size afterwards, including its envelope.
     query_context->setSetting("max_result_bytes", Field(UInt64(MAX_BSON_OBJECT_SIZE)));
-    query_context->setSetting("result_overflow_mode", String("throw"));
 
     auto query_scope = QueryScope::create(query_context);
     ReadBufferFromString read_buf(query);
