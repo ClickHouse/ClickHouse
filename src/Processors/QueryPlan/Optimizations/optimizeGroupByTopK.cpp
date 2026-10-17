@@ -193,10 +193,14 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
     }
 
     /// FINAL deduplicates rows by the sorting key while reading; dropping a row before that can change which
-    /// version of another row survives. Parallel replicas run the query text remotely, where nothing knows the tracker.
-    if (read_step->isQueryWithFinal() || read_step->isParallelReadingFromReplicas())
+    /// version of another row survives.
+    ///
+    /// A read from parallel replicas is fine: the heap it feeds is the partial aggregation of this replica, which ranks
+    /// only the rows this replica reads. Its boundary is never tighter than the one over all rows, so a row beyond it
+    /// cannot be in any group the query returns.
+    if (read_step->isQueryWithFinal())
     {
-        LOG_TRACE(log, "No dynamic filter: the read is FINAL or from parallel replicas");
+        LOG_TRACE(log, "No dynamic filter: the read is FINAL");
         return nullptr;
     }
 
