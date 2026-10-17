@@ -807,8 +807,8 @@ struct ByteStringSimilarityRatioImpl
 
         PaddedPODArray<UInt32> haystack_utf8;
         PaddedPODArray<UInt32> needle_utf8;
-        const SymbolT * haystack_symbols;
-        const SymbolT * needle_symbols;
+        const SymbolT * haystack_symbols = nullptr;
+        const SymbolT * needle_symbols = nullptr;
         if constexpr (is_utf8)
         {
             parseUTF8String(haystack, haystack_size, [&](UInt32 code_point) { haystack_utf8.push_back(code_point); });
