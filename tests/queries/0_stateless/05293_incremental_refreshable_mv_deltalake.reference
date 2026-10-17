@@ -2,7 +2,7 @@ round1	5	5
 plain insert	6	6
 round2	11	11
 round3	11	11
-writer features	['domainMetadata']
+writer features has domainMetadata	1
 1	1
 2	0
 3	1

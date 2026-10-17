@@ -69,9 +69,9 @@ SYSTEM WAIT VIEW irmv_mv;
 SELECT 'round3', count(), uniqExact(k) FROM irmv_tgt;
 "
 
-# The created table's protocol lists the feature.
+# The created table's protocol lists the feature (the kernel may add others, such as `invariants`).
 $CLICKHOUSE_CLIENT --query "
-SELECT 'writer features', JSONExtract(line, 'protocol', 'writerFeatures', 'Array(String)')
+SELECT 'writer features has domainMetadata', has(JSONExtract(line, 'protocol', 'writerFeatures', 'Array(String)'), 'domainMetadata')
 FROM file('${TABLE_PATH}/_delta_log/00000000000000000000.json', LineAsString)
 WHERE JSONHas(line, 'protocol')
 FORMAT TSV
