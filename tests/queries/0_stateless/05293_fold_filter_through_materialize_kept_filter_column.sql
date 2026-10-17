@@ -5,12 +5,12 @@ SET enable_analyzer = 1;
 SET explain_query_plan_default = 'pretty';
 
 -- The kept column is read above the filter.
-SELECT 'kept filter column folded', countIf(explain LIKE '%Filter column: 1%')
+SELECT 'kept filter column folded', countIf(explain LIKE '%Filter column%') = 0
 FROM (EXPLAIN PLAN actions = 1 SELECT c, number FROM (SELECT materialize(1) = 1 AS c, number FROM numbers(3) WHERE c));
 SELECT c, isConstant(c), number FROM (SELECT materialize(1) = 1 AS c, number FROM numbers(3) WHERE c);
 
 -- Nothing reads it above the filter, so only the constant is left.
-SELECT 'unused filter column folded', countIf(explain LIKE '%Filter column: 1%')
+SELECT 'unused filter column folded', countIf(explain LIKE '%Filter column%') = 0
 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM (SELECT materialize(1) = 1 AS c, number FROM numbers(10) WHERE c));
 SELECT count() FROM (SELECT materialize(1) = 1 AS c, number FROM numbers(10) WHERE c);
 
