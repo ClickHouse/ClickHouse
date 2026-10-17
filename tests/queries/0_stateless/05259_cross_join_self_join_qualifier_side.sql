@@ -1,6 +1,5 @@
 -- Tests that a column of both copies of a self comma join resolves to the copy aliased by the qualifier, else to the unaliased copy.
 DROP TABLE IF EXISTS self_comma;
-SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS self_comma;
 CREATE TABLE self_comma (id UInt32) ENGINE = MergeTree ORDER BY id;

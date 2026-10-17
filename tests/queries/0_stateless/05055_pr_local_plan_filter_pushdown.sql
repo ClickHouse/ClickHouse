@@ -27,7 +27,6 @@ INSERT INTO t_pr_local_pd_lambda_key SELECT arrayMap(i -> i % 4, range(number % 
 CREATE VIEW v_pr_local_pd AS SELECT tenant, arr, ts FROM t_pr_local_pd ORDER BY ts;
 CREATE VIEW v_lambda_key_pr_local_pd AS SELECT arr, ts FROM t_pr_local_pd_lambda_key ORDER BY ts;
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1;
 SET automatic_parallel_replicas_mode = 0;
 SET max_parallel_replicas = 3;

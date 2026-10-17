@@ -20,7 +20,6 @@ DROP TABLE IF EXISTS t_trivial_count_filter;
 CREATE TABLE t_trivial_count_filter (id UInt64) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t_trivial_count_filter SELECT number FROM numbers(100);
 
-SET enable_analyzer = 1;
 SET optimize_trivial_count_query = 1;
 SET max_threads = 1;
 SET optimize_use_implicit_projections = 0;

@@ -7,16 +7,16 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-${CLICKHOUSE_CLIENT} --enable_analyzer=1 << 'EOF'
+${CLICKHOUSE_CLIENT} << 'EOF'
 DROP FUNCTION IF EXISTS identity_det;
 DROP FUNCTION IF EXISTS identity_nondet;
 DELETE FROM system.webassembly_modules WHERE name = 'identity_cf_test';
 EOF
 
-cat "${CUR_DIR}/wasm/identity_int.wasm" | ${CLICKHOUSE_CLIENT} --enable_analyzer=1 \
+cat "${CUR_DIR}/wasm/identity_int.wasm" | ${CLICKHOUSE_CLIENT}\
     --query "INSERT INTO system.webassembly_modules (name, code) SELECT 'identity_cf_test', code FROM input('code String') FORMAT RawBlob"
 
-${CLICKHOUSE_CLIENT} --enable_analyzer=1 << 'EOF'
+${CLICKHOUSE_CLIENT} << 'EOF'
 SET webassembly_udf_max_fuel = 1000000;
 
 -- DETERMINISTIC: constant arguments should be folded to a literal

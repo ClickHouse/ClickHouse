@@ -15,7 +15,6 @@ SELECT
     dictGet('03148_dictionary', 'name', number) as dict_value
 FROM numbers(1)
 SETTINGS
-    enable_analyzer = 1,
     log_comment = 'simple_with_analyzer'
 FORMAT Null;
 
@@ -35,7 +34,6 @@ FROM (
     FROM numbers(1)
 ) t
 SETTINGS
-    enable_analyzer = 1,
     log_comment = 'nested_with_analyzer'
 FORMAT Null;
 

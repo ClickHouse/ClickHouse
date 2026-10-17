@@ -1,7 +1,6 @@
 -- An unspecified strictness of `LATERAL JOIN` means `ALL` and must not depend on
 -- `join_default_strictness` or `any_join_distinct_right_table_keys`.
 
-SET enable_analyzer = 1;
 SET allow_experimental_lateral_join = 1;
 
 DROP TABLE IF EXISTS outer_t;

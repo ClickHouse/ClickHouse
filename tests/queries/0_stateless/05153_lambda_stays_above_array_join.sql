@@ -2,7 +2,6 @@
 -- (debug builds trip on cutting the Function-typed constant in the step).
 
 -- only the analyzer folds a capture-free lambda into a constant; the plan shape below depends on it
-SET enable_analyzer = 1;
 
 SELECT uniq(x, arrayMap(elem -> [elem, elem], x)) FROM system.one ARRAY JOIN [[], ['a'], ['a', 'b'], []] AS x;
 SELECT count() FROM (EXPLAIN header = 1 SELECT uniq(x, arrayMap(elem -> [elem, elem], x)) FROM system.one ARRAY JOIN [[], ['a'], ['a', 'b'], []] AS x) WHERE explain ILIKE '%Function(%';

@@ -7,7 +7,6 @@
 -- and use equality conditions on both sides so that both are "good" conditions
 -- (isConditionGood only returns true for equals).
 
-SET enable_analyzer = 1;
 SET optimize_functions_to_subcolumns = 1;
 SET optimize_move_to_prewhere = 1;
 SET allow_reorder_prewhere_conditions = 1;

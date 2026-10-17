@@ -9,7 +9,7 @@ INSERT INTO t_big SELECT number, number FROM numbers(1000);
 INSERT INTO t_small SELECT number, number * 2 FROM numbers(100);
 INSERT INTO t_lc SELECT toString(number % 4), number FROM numbers(1000);
 
-SET enable_analyzer = 1, make_distributed_plan = 1, distributed_plan_execute_locally = 1, enable_parallel_replicas = 0, max_rows_to_group_by = 0;
+SET make_distributed_plan = 1, distributed_plan_execute_locally = 1, enable_parallel_replicas = 0, max_rows_to_group_by = 0;
 SET allow_correlated_subqueries = 0, rewrite_in_to_join = 0;
 -- The index settings decide whether the set is built during planning (and used by the index)
 -- or at query start; pin them against randomization.

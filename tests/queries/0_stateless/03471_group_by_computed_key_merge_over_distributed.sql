@@ -23,7 +23,6 @@ CREATE TABLE t_merge_111272 AS t_dist_111272
 -- OptimizeGroupByInjectiveFunctionsPass rewrites GROUP BY toString(g) into GROUP BY g
 -- and AggregateFunctionOfGroupByKeysPass then folds min(g). The test runner may
 -- randomly disable either, which would let this test pass against unfixed code.
-SET enable_analyzer = 1;
 SET optimize_injective_functions_in_group_by = 1;
 SET optimize_aggregators_of_group_by_keys = 1;
 SET group_by_use_nulls = 0;

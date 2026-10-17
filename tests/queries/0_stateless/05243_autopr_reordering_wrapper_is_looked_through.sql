@@ -26,7 +26,6 @@ SET enable_parallel_replicas=1, automatic_parallel_replicas_mode=2, parallel_rep
     parallel_replicas_for_non_replicated_merge_tree=1, max_parallel_replicas=3,
     cluster_for_parallel_replicas='parallel_replicas';
 -- For runs with the old analyzer
-SET enable_analyzer=1;
 SET max_threads=4;
 SET automatic_parallel_replicas_min_bytes_per_replica=0;
 -- A randomized join order changes which side the reorder ends up above, and the shape is the point here.

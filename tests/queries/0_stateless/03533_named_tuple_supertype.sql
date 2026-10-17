@@ -1,4 +1,3 @@
-SET enable_analyzer=1;
 
 CREATE TABLE named_tuples_03533_1 (`a` Tuple(s String, i Int64), `b` Tuple(s String, i Int32)) ENGINE=Memory;
 

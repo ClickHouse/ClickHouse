@@ -1,7 +1,6 @@
 -- Tags: no-replicated-database
 -- The `EXPLAIN` output contains database-specific identifiers.
 
-SET enable_analyzer = 1;
 SET optimize_inverse_dictionary_lookup = 1;
 
 CREATE TABLE comparison_source (k UInt16, s String, attr String) ENGINE = Memory;

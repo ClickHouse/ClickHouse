@@ -27,7 +27,6 @@ CREATE TABLE d_04850 (k UInt8, v UInt32)
 --
 -- Each arm also asserts which merge branch it reached, so a later plan change cannot silently move
 -- an arm onto a branch it is not meant to cover.
-SET enable_analyzer = 1;
 SET inject_random_order_for_select_without_order_by = 1;
 
 SELECT '-- memory-efficient branch, several merge threads';

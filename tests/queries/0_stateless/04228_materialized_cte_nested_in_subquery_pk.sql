@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 SET enable_materialized_cte = 1;
 
 DROP TABLE IF EXISTS test_04228 SYNC;

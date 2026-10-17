@@ -5,7 +5,6 @@
 --
 -- The right side must have exactly 1 row to trigger the ONE code path.
 
-SET enable_analyzer = 1;
 -- The probe sides are 2-row / 3-row subqueries, so the randomized `enable_join_runtime_filters` /
 -- `join_runtime_filter_min_probe_rows` would skip building the runtime filter and the regression
 -- this test guards would not be exercised at all.

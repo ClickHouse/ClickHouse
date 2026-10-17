@@ -1,7 +1,6 @@
 -- Tests the `join_runtime_filter_min_probe_rows` setting: a JOIN runtime filter is not installed
 -- when the probe (left) side is estimated to produce at most this many rows.
 
-SET enable_analyzer = 1;
 SET enable_join_runtime_filters = 1;
 SET enable_parallel_replicas = 0;
 SET query_plan_join_swap_table = 0;

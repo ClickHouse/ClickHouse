@@ -4,7 +4,6 @@
 -- on the assumption that a fused filter never leaves the initiator. The filter also carries an `ActionsDAG`,
 -- which is one more place an `IN` set could hide from the shipping checks.
 
-SET enable_analyzer = 1;
 -- Fusion is skipped for serialized plans; pin it so the plan-shape checks below hold in every suite.
 SET serialize_query_plan = 0;
 

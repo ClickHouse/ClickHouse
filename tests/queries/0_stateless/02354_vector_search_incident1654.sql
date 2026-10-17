@@ -7,8 +7,6 @@
 -- LOGICAL_ERROR ("Vector column unexpectedly already replaced"). Now it throws
 -- a user-facing ILLEGAL_COLUMN error.
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS tab;
 
 CREATE TABLE tab

@@ -8,7 +8,6 @@
 -- Each run is checked through the `AggregationPreallocatedElementsInHashTables` profile event. The
 -- group counts stay above the 500e3 lower bound under which `getSizeHint` does not preallocate.
 
-SET enable_analyzer = 1;
 SET max_threads = 1;
 -- Checks the aggregation of this node; with parallel replicas it would run on the replicas.
 SET enable_parallel_replicas = 0;

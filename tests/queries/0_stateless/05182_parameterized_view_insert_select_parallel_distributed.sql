@@ -1,6 +1,5 @@
 -- INSERT SELECT from a parameterized view resolved the view through the legacy interpreter when
 -- parallel_distributed_insert_select was enabled, so views only the analyzer can resolve failed.
-SET enable_analyzer = 1;
 SET parallel_distributed_insert_select = 2;
 
 CREATE TABLE t (id UInt8, p String) ENGINE = MergeTree ORDER BY id;

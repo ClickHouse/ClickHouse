@@ -1,7 +1,6 @@
 -- Exact non-interpolating quantiles and idempotent groupBitAnd / groupBitOr of a GROUP BY key
 -- equal the key, so `optimize_aggregators_of_group_by_keys` eliminates them like min/max/any.
 
-SET enable_analyzer = 1;
 SET allow_suspicious_low_cardinality_types = 1;
 
 DROP TABLE IF EXISTS t_agg_keys;

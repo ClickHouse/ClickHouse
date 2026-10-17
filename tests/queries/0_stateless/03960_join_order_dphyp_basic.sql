@@ -3,7 +3,6 @@
 -- no single-table filter, no dependence on column statistics - and the optimal
 -- plan is unique across environments. EXPLAIN pins it; the hash must match DPsize.
 
-SET allow_experimental_analyzer = 1;
 SET query_plan_optimize_join_order_limit = 10;
 SET use_statistics = 1;
 SET materialize_statistics_on_insert = 1; -- pin (randomized in CI): statistics built on INSERT change the join order

@@ -1,5 +1,4 @@
 SET explain_query_plan_default = 'legacy';
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 -- fusion is skipped for serialized plans, pin it so the plan-shape checks hold in the distributed-plan suite
 SET serialize_query_plan = 0;

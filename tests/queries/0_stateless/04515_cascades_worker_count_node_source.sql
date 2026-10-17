@@ -6,7 +6,6 @@
 -- still build a multi-node plan.
 
 SET explain_query_plan_default = 'legacy';
-SET enable_analyzer = 1;
 SET max_rows_to_group_by = 0;
 
 DROP TABLE IF EXISTS t_worker_count;

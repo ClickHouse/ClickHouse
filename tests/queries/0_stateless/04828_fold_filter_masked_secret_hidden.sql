@@ -1,8 +1,6 @@
 -- Tags: no-fasttest
 -- no-fasttest: `encrypt` needs OpenSSL
 
-SET enable_analyzer = 1;
-
 -- Constant filter folding through `materialize` rebuilds the filter output as a fresh COLUMN
 -- node. When a folded constant is a masked secret (here: the `encrypt` key reused in the WHERE
 -- through an alias), the rebuilt node must keep `is_masked_secret`, so plan dumps render it as

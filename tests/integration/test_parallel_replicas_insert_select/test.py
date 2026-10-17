@@ -94,7 +94,6 @@ def test_insert_select(start_cluster, cluster_name, max_parallel_replicas, local
             "cluster_for_parallel_replicas": cluster_name,
             "parallel_replicas_local_plan": local_plan,
             "parallel_replicas_plan_based": plan_based,
-            "enable_analyzer": 1,
         },
         query_id=query_id
     )
@@ -155,7 +154,6 @@ def test_insert_select_no_table(start_cluster, cluster_name, max_parallel_replic
                 "max_parallel_replicas": max_parallel_replicas,
                 "cluster_for_parallel_replicas": cluster_name,
                 "parallel_replicas_local_plan": local_plan,
-                "enable_analyzer": 1,
             },
         )
     assert(e.value.returncode == 60) # UNKNOWN_TABLE
@@ -185,7 +183,6 @@ def test_insert_select_no_target_table(start_cluster, cluster_name, max_parallel
                 "max_parallel_replicas": max_parallel_replicas,
                 "cluster_for_parallel_replicas": cluster_name,
                 "parallel_replicas_local_plan": local_plan,
-                "enable_analyzer": 1,
             },
         )
     assert(e.value.returncode == 60) # UNKNOWN_TABLE
@@ -224,7 +221,6 @@ def test_insert_select_limit(start_cluster, max_parallel_replicas, parallel_repl
             "max_parallel_replicas": max_parallel_replicas,
             "cluster_for_parallel_replicas": cluster_name,
             "parallel_replicas_local_plan": parallel_replicas_local_plan,
-            "enable_analyzer": 1,
         },
         query_id=query_id
     )
@@ -269,7 +265,6 @@ def test_insert_select_with_constant(start_cluster, max_parallel_replicas, paral
             "max_parallel_replicas": max_parallel_replicas,
             "cluster_for_parallel_replicas": cluster_name,
             "parallel_replicas_local_plan": parallel_replicas_local_plan,
-            "enable_analyzer": 1,
         },
         query_id=query_id
     )
@@ -315,7 +310,6 @@ def test_insert_select_where(start_cluster, max_parallel_replicas, parallel_repl
             "max_parallel_replicas": max_parallel_replicas,
             "cluster_for_parallel_replicas": cluster_name,
             "parallel_replicas_local_plan": parallel_replicas_local_plan,
-            "enable_analyzer": 1,
         },
         query_id=query_id
     )

@@ -4,7 +4,6 @@
 --- These tests verify the caching of deserialized text index token infos in consecutive executions.
 --- The tokens cache caches individual token infos (not entire dictionary blocks).
 
-SET enable_analyzer = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET query_plan_direct_read_from_text_index = 1;
 SET use_text_index_tokens_cache = 1;

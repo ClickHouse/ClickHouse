@@ -13,11 +13,11 @@ ${CLICKHOUSE_CLIENT} -q "DROP FUNCTION IF EXISTS ${FUNCTION}"
 ${CLICKHOUSE_CLIENT} -q "DROP FUNCTION IF EXISTS ${FUNCTION_DETERMINISTIC}"
 ${CLICKHOUSE_CLIENT} -q "DELETE FROM system.webassembly_modules WHERE name = '${MODULE}'"
 
-${CLICKHOUSE_CLIENT} --enable_analyzer 1 \
+${CLICKHOUSE_CLIENT}\
     -q "INSERT INTO system.webassembly_modules (name, code) SELECT '${MODULE}', code FROM input('code String') FORMAT RawBlob" \
     < "${CUR_DIR}"/wasm/host_api.wasm
 
-${CLICKHOUSE_CLIENT} --enable_analyzer 1 --allow_suspicious_low_cardinality_types 1 -m -q "
+${CLICKHOUSE_CLIENT} --allow_suspicious_low_cardinality_types 1 -m -q "
 CREATE FUNCTION ${FUNCTION} LANGUAGE WASM ABI ROW_DIRECT FROM '${MODULE}' :: 'test_random' ARGUMENTS (UInt32) RETURNS UInt32;
 CREATE FUNCTION ${FUNCTION_DETERMINISTIC} LANGUAGE WASM ABI ROW_DIRECT FROM '${MODULE}' :: 'test_random' ARGUMENTS (UInt32) RETURNS UInt32 DETERMINISTIC;
 

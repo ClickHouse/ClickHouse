@@ -7,7 +7,6 @@
 -- join at all, so `topKThroughJoin` must NOT defer to it - otherwise both
 -- optimizations are silently disabled for `RIGHT JOIN`.
 
-SET enable_analyzer = 1;
 SET query_plan_top_k_through_join = 1;
 
 DROP TABLE IF EXISTS t_l;

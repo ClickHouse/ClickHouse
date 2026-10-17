@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 
 -- Chained set operations (EXCEPT / INTERSECT) and nested UNION ALL build a Variant that is itself cast to
 -- another Variant (Variant -> Variant). When one branch produces the window state representation and another

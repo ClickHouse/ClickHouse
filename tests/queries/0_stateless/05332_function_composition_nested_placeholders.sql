@@ -1,8 +1,6 @@
 -- Placeholders in the lambda position of a nested higher-order function call belong to that
 -- call, not to the enclosing one.
 
-SET enable_analyzer = 1;
-
 SELECT arrayMap(x -> arrayMap(y -> y + 1, x), [[1, 2], [3]]);
 SELECT arrayMap(arrayMap(_ + 1, _1), [[1, 2], [3]]);
 SELECT arrayMap(arrayMap(_ + 1, _), [[1, 2], [3]]);

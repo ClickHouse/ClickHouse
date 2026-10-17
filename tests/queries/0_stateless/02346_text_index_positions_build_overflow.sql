@@ -7,8 +7,6 @@
 -- heap-buffer-overflow under ASan. A large token set is needed to grow the hash table so a short
 -- token lands at such a boundary.
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS tab;
 
 CREATE TABLE tab

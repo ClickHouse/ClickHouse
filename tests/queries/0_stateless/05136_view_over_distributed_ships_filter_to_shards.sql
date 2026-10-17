@@ -5,7 +5,6 @@
 -- back to the initiator, which then does the filtering.
 -- https://github.com/ClickHouse/ClickHouse/issues/78188
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 -- Take the network path, so that the shard really receives a query and logs it.
 SET prefer_localhost_replica = 0;

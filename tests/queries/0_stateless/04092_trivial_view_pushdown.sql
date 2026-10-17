@@ -2,7 +2,6 @@
 -- to Distributed tables (optimize_trivial_view_pushdown_to_distributed).
 -- Tags: distributed
 
-SET enable_analyzer = 1;
 -- Pin the legacy EXPLAIN plan format: the pushdown checks below grep for the
 -- "Convert VIEW subquery result to VIEW table structure" step, which the default
 -- 'pretty' EXPLAIN format (explain_query_plan_default) does not print.

@@ -56,14 +56,9 @@ tx 3 "BEGIN TRANSACTION"
 
 # Without these the counts below would be correct for the wrong reason: an optimization that declined and
 # fell back to a plain read cannot get the snapshot wrong in the first place.
-# The plain variant is implemented on both planning paths, so it must always be applied. The sparsity variant is
-# implemented only with the analyzer enabled, so rather than skipping the whole test with the old analyzer,
-# assert that it is applied exactly when `enable_analyzer` is on. That keeps the check meaningful in both
-# configurations and the expected output identical. If the rewrite is ever implemented for the old analyzer
-# this assertion starts failing, which is the right signal rather than a false alarm.
-echo 'the plain optimization must be applied inside the transaction, the sparsity one when it is available'
+echo 'the plain and the sparsity optimizations must be applied inside the transaction'
 tx 3 "SELECT countIf(explain LIKE '%Optimized trivial count%') > 0 FROM (EXPLAIN SELECT count() FROM txn_count_snapshot SETTINGS optimize_trivial_count_query = 1)"
-tx 3 "SELECT toUInt8((countIf(explain LIKE '%Optimized trivial count with sparsity filter%') > 0) = getSetting('enable_analyzer')) FROM (EXPLAIN SELECT count() FROM txn_count_snapshot WHERE s = 0 SETTINGS optimize_trivial_count_query = 1, optimize_trivial_count_with_sparsity_filter = 1)"
+tx 3 "SELECT countIf(explain LIKE '%Optimized trivial count with sparsity filter%') > 0 FROM (EXPLAIN SELECT count() FROM txn_count_snapshot WHERE s = 0 SETTINGS optimize_trivial_count_query = 1, optimize_trivial_count_with_sparsity_filter = 1)"
 
 echo 'tx3 counts its own snapshot: the part tx1 drops still counts, the parts tx2 adds do not'
 tx 3 "SELECT count() FROM txn_count_snapshot SETTINGS optimize_trivial_count_query = 1"

@@ -23,7 +23,7 @@ $CLICKHOUSE_CLIENT --multiquery -q "
 warm=0
 for i in $(seq 1 40); do
     $CLICKHOUSE_CLIENT -q "SELECT sum(v) FROM readonly_statistics_cache WHERE k % 3 = 0 AND v % 2 = 0
-        SETTINGS enable_analyzer = 1, use_statistics = 1,
+        SETTINGS use_statistics = 1,
             use_statistics_for_part_pruning = 0, optimize_move_to_prewhere = 1,
             use_query_cache = 0,
             log_comment = '05183-readonly-$i' FORMAT Null"

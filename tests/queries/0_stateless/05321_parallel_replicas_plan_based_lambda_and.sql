@@ -11,7 +11,6 @@ DROP TABLE IF EXISTS t_05321;
 CREATE TABLE t_05321 (id UInt64, col Map(String, UInt64)) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t_05321 SELECT number, map('key' || toString(number % 3), number * 100) FROM numbers(1000);
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1;
 SET parallel_replicas_for_non_replicated_merge_tree = 1;
 SET max_parallel_replicas = 3;

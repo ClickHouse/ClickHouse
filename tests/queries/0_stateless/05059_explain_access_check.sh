@@ -21,7 +21,7 @@ ${CLICKHOUSE_CLIENT} -m --query "
 
 as_user()
 {
-    ${CLICKHOUSE_CLIENT} --user="${username}" --enable_analyzer=1 --query "$1" 2>&1
+    ${CLICKHOUSE_CLIENT} --user="${username}" --query "$1" 2>&1
 }
 
 # The error must be ACCESS_DENIED, and must not disclose the column names. The probe query

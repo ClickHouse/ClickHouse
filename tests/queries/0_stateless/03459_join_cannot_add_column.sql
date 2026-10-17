@@ -1,4 +1,4 @@
-SET enable_analyzer = 1, max_threads = 1;
+SET max_threads = 1;
 -- rowNumberInAllBlocks() is order-dependent; pin join order so the row numbering is deterministic
 SET query_plan_optimize_join_order_randomize = 0;
 

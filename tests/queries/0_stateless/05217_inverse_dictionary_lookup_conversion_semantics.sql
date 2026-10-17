@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 SET optimize_rewrite_like_perfect_affix = 0;
 SET short_circuit_function_evaluation = 'enable';
 

@@ -2,7 +2,6 @@
 -- optimize_or_like_chain non-determinism check (previously threw LOGICAL_ERROR
 -- "Function node with name '...' is not resolved as ordinary function").
 SET optimize_or_like_chain = 1;
-SET enable_analyzer = 1;
 -- The default thresholds (4 substrings / 10 patterns) are above the branch counts used
 -- here, so pin them to 1: without this the chains are kept as written and the queries
 -- below pass even if the rewrite never runs.

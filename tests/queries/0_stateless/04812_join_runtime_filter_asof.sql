@@ -6,7 +6,6 @@
 -- safe to drop such rows before the join. RIGHT ASOF JOIN is not supported by ClickHouse
 -- at all (regardless of join algorithm), so only INNER is covered here.
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 SET join_algorithm = 'hash';
 SET query_plan_join_swap_table = 0;

@@ -42,7 +42,6 @@ CREATE VIEW v_untuple_pr_rewrite_shapes AS
     SELECT tenant, ts, untuple((ts, ts + 1)) FROM t_pr_rewrite_shapes ORDER BY ts;
 
 -- For runs with the old analyzer
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1;
 SET automatic_parallel_replicas_mode = 0;
 SET max_parallel_replicas = 3;

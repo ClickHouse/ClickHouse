@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 
 select * APPLY hex
 from (

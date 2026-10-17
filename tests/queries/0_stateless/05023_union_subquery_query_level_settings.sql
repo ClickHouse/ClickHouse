@@ -3,7 +3,6 @@
 -- therefore shape every arm, including the non-last ones - the same contract
 -- `InterpreterSetQuery::applySettingsFromQuery` implements for a directly executed query.
 
-SET enable_analyzer = 1;
 SET obfuscate_markov_order = 0;
 
 SELECT 'setting reset covers every arm';

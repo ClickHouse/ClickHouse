@@ -66,7 +66,7 @@ LEFT JOIN attributes_04206 AS t1 ON t1.OtherId = t0.Idu32n
 GROUP BY t1.EventId = t0.Idlcn
 ORDER BY 1, 2, 3
 LIMIT 713
-SETTINGS enable_analyzer = 1, join_algorithm = 'direct';
+SETTINGS join_algorithm = 'direct';
 
 -- SEMI/ANTI joins project no right-side columns, so the lookup requests a minimal column
 -- set. The successful-lookup path must still return a chunk whose schema matches the
@@ -76,14 +76,14 @@ FROM events_04206 AS t0
 LEFT SEMI JOIN attributes_04206 AS t1 ON t1.EventId = t0.Id
 ORDER BY t0.Id
 LIMIT 5
-SETTINGS enable_analyzer = 1, join_algorithm = 'direct';
+SETTINGS join_algorithm = 'direct';
 
 SELECT t0.Id
 FROM events_04206 AS t0
 LEFT ANTI JOIN attributes_04206 AS t1 ON t1.EventId = t0.Id
 ORDER BY t0.Id
 LIMIT 5
-SETTINGS enable_analyzer = 1, join_algorithm = 'direct';
+SETTINGS join_algorithm = 'direct';
 
 DROP TABLE events_04206;
 DROP TABLE attributes_04206;
@@ -104,17 +104,15 @@ INSERT INTO rgt_107272 VALUES (1, 'a'), (2, 'b');
 ALTER TABLE rgt_107272 ADD COLUMN extra UInt64 DEFAULT 0;
 INSERT INTO rgt_107272 SELECT number + 100, 'c', 0 FROM numbers(50);
 
--- direct join over a MergeTree right table is only supported by the analyzer; the old
--- analyzer rejects it with NOT_IMPLEMENTED, so pin enable_analyzer = 1 like the cases above.
 -- Used to crash in ColumnString::compareAt; must return 1.
 SELECT count() FROM (SELECT r.value FROM lft_107272 AS l INNER JOIN rgt_107272 AS r ON l.id = r.id WHERE r.id = 1)
-SETTINGS enable_analyzer = 1, join_algorithm = 'direct';
+SETTINGS join_algorithm = 'direct';
 -- Used to return wrong result 0; must return 1.
 SELECT count() FROM (SELECT r.extra FROM lft_107272 AS l INNER JOIN rgt_107272 AS r ON l.id = r.id WHERE r.id = 1)
-SETTINGS enable_analyzer = 1, join_algorithm = 'direct';
+SETTINGS join_algorithm = 'direct';
 -- Projected value must match the hash/full_sorting_merge result.
 SELECT r.value FROM lft_107272 AS l INNER JOIN rgt_107272 AS r ON l.id = r.id WHERE r.id = 1
-SETTINGS enable_analyzer = 1, join_algorithm = 'direct';
+SETTINGS join_algorithm = 'direct';
 
 DROP TABLE lft_107272;
 DROP TABLE rgt_107272;

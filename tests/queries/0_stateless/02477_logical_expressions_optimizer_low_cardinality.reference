@@ -17,7 +17,6 @@ QUERY id: 0
                 COLUMN id: 2, column_name: a, result_type: LowCardinality(String), source_id: 3
                 CONSTANT id: 8, constant_value: Tuple_(\'x\', \'y\'), constant_value_type: Tuple(String, String)
           CONSTANT id: 9, constant_value: UInt64_0, constant_value_type: UInt8
-  SETTINGS enable_analyzer=1
 SELECT a\nFROM t_logical_expressions_optimizer_low_cardinality\nWHERE or(equals(a, \'x\'), equals(\'y\', a))
 QUERY id: 0
   PROJECTION COLUMNS
@@ -37,7 +36,6 @@ QUERY id: 0
                 COLUMN id: 2, column_name: a, result_type: LowCardinality(String), source_id: 3
                 CONSTANT id: 8, constant_value: Tuple_(\'x\', \'y\'), constant_value_type: Tuple(String, String)
           CONSTANT id: 9, constant_value: UInt64_0, constant_value_type: UInt8
-  SETTINGS enable_analyzer=1
 SELECT a\nFROM t_logical_expressions_optimizer_low_cardinality\nWHERE and(notEquals(a, \'x\'), notEquals(a, \'y\'))
 QUERY id: 0
   PROJECTION COLUMNS
@@ -57,7 +55,6 @@ QUERY id: 0
                 COLUMN id: 2, column_name: a, result_type: LowCardinality(String), source_id: 3
                 CONSTANT id: 8, constant_value: Tuple_(\'x\', \'y\'), constant_value_type: Tuple(String, String)
           CONSTANT id: 9, constant_value: \'UInt8\', constant_value_type: String
-  SETTINGS enable_analyzer=1
 SELECT a\nFROM t_logical_expressions_optimizer_low_cardinality\nWHERE and(notEquals(a, \'x\'), notEquals(\'y\', a))
 QUERY id: 0
   PROJECTION COLUMNS
@@ -77,7 +74,6 @@ QUERY id: 0
                 COLUMN id: 2, column_name: a, result_type: LowCardinality(String), source_id: 3
                 CONSTANT id: 8, constant_value: Tuple_(\'x\', \'y\'), constant_value_type: Tuple(String, String)
           CONSTANT id: 9, constant_value: \'UInt8\', constant_value_type: String
-  SETTINGS enable_analyzer=1
 SELECT a\nFROM t_logical_expressions_optimizer_low_cardinality\nWHERE or(equals(b, 0), equals(b, 1))
 QUERY id: 0
   PROJECTION COLUMNS
@@ -101,7 +97,6 @@ QUERY id: 0
               LIST id: 11, nodes: 2
                 COLUMN id: 8, column_name: b, result_type: UInt32, source_id: 3
                 CONSTANT id: 12, constant_value: UInt64_1, constant_value_type: UInt8
-  SETTINGS enable_analyzer=1
 SELECT a\nFROM t_logical_expressions_optimizer_low_cardinality\nWHERE and(notEquals(b, 0), notEquals(b, 1))
 QUERY id: 0
   PROJECTION COLUMNS
@@ -125,4 +120,3 @@ QUERY id: 0
               LIST id: 11, nodes: 2
                 COLUMN id: 8, column_name: b, result_type: UInt32, source_id: 3
                 CONSTANT id: 12, constant_value: UInt64_1, constant_value_type: UInt8
-  SETTINGS enable_analyzer=1

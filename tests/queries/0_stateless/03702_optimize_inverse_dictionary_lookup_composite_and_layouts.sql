@@ -2,7 +2,6 @@
 -- no-replicated-database: EXPLAIN output differs for replicated database.
 -- no-parallel-replicas: Dictionary is not available on parallel-replica workers.
 
-SET enable_analyzer = 1;
 SET optimize_inverse_dictionary_lookup = 1;
 SET optimize_or_like_chain = 0;
 

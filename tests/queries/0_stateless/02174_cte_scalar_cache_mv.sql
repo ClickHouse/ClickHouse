@@ -14,8 +14,6 @@ CREATE MATERIALIZED VIEW mv1 TO t2 AS
     FROM t1
     LIMIT 5;
 
-set enable_analyzer = 1;
-
 -- FIRST INSERT ANALYZER
 INSERT INTO t1
 WITH
@@ -60,8 +58,6 @@ SELECT
     sum(i) + sum(j) + (SELECT * FROM (SELECT min(i) + min(j) FROM (SELECT * FROM system.one _a, t1 _b))) AS z
 FROM t1;
 
-set enable_analyzer = 1;
-
 -- SECOND INSERT ANALYZER
 INSERT INTO t1
 SELECT 0 as i, number as j from numbers(100)
@@ -94,8 +90,6 @@ SELECT
     -- This includes an unnecessarily complex query but now it uses t2 so it can be cached
     min(i) + min(j) + (SELECT * FROM (SELECT min(k) + min(l) FROM (SELECT * FROM system.one _a, t2 _b))) AS z
 FROM t1;
-
-set enable_analyzer = 1;
 
 -- THIRD INSERT ANALYZER
 INSERT INTO t1

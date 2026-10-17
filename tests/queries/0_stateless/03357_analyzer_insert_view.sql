@@ -1,5 +1,4 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/65981
-SET allow_experimental_analyzer = 1;
 DROP TABLE IF EXISTS input;
 DROP TABLE IF EXISTS deduplicate;
 DROP TABLE IF EXISTS deduplicate_mv;

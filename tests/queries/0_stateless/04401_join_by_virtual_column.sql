@@ -2,8 +2,6 @@
 -- Joining tables by a virtual column (e.g. `_part_index`) used to throw
 -- `Not found column _part_index in block`. It works with the analyzer.
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS t0;
 DROP TABLE IF EXISTS t1;
 

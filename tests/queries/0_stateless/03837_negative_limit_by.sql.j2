@@ -1,9 +1,5 @@
 -- { echo }
 
-{% for analyzer, label in [(1, 'Analyzer')] -%}
-SET enable_analyzer = {{ analyzer }};
--- {{ label }}
-
 -- Negative Limit By Only
 SELECT number, number % 3 AS g FROM numbers(15) ORDER BY g, number LIMIT -1 BY g;
 SELECT number, number % 3 AS g FROM numbers(15) ORDER BY number LIMIT -1 BY g;
@@ -140,5 +136,3 @@ SELECT number, number % 3 AS g FROM numbers(15) ORDER BY g, number LIMIT -922337
 SELECT number, number % 3 AS g FROM numbers(15) ORDER BY number LIMIT -9223372036854775808 OFFSET -5 BY g;
 SELECT number, number % 3 AS g FROM numbers(15) ORDER BY g, number LIMIT -9223372036854775808 OFFSET 5 BY g;
 SELECT number, number % 3 AS g FROM numbers(15) ORDER BY number LIMIT -9223372036854775808 OFFSET 5 BY g;
-
-{% endfor -%}

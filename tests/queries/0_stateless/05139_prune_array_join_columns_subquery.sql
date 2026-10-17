@@ -2,7 +2,6 @@
 -- read only the referenced subcolumns, like the top-level query does.
 -- https://github.com/ClickHouse/clickhouse-private/issues/58384
 
-SET enable_analyzer = 1;
 SET explain_query_plan_default = 'legacy';
 SET enable_parallel_replicas = 0;
 SET serialize_query_plan = 0;

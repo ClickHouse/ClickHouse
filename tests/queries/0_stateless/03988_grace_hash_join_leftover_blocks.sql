@@ -2,7 +2,6 @@ DROP TABLE IF EXISTS test;
 DROP TABLE IF EXISTS test2;
 
 SET max_joined_block_size_rows = 5;
-SET enable_analyzer = 1;
 
 CREATE TABLE test
 (

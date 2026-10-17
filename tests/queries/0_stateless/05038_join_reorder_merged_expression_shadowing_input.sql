@@ -9,7 +9,6 @@ CREATE TABLE t_b_05038 (c0 Int32) ENGINE = MergeTree ORDER BY c0;
 INSERT INTO t_a_05038 VALUES (1), (2), (3);
 INSERT INTO t_b_05038 VALUES (10), (20);
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 SET query_plan_optimize_join_order_limit = 16;
 SET query_plan_optimize_join_order_algorithm = 'greedy';

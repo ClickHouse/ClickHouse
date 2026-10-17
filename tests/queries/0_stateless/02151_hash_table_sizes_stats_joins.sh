@@ -76,8 +76,7 @@ $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 
 for i in "${!queries_without_preallocation[@]}"; do
   $CLICKHOUSE_CLIENT --param_query_id="${queries_without_preallocation[$i]}" -q "
-    -- the old analyzer is not supported
-    SELECT if(sum(if(getSetting('enable_analyzer'), ProfileEvents['HashJoinPreallocatedElementsInHashTables'] = 0, 1)) == 1, '1', 'Error: ' || any(query_id))
+    SELECT if(sum(ProfileEvents['HashJoinPreallocatedElementsInHashTables'] = 0) == 1, '1', 'Error: ' || any(query_id))
       FROM system.query_log
      WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = {query_id:String} AND current_database = currentDatabase() AND type = 'QueryFinish'
   "
@@ -85,8 +84,7 @@ done
 
 for i in "${!queries_with_preallocation[@]}"; do
   $CLICKHOUSE_CLIENT --param_query_id="${queries_with_preallocation[$i]}" -q "
-    -- the old analyzer is not supported
-    SELECT if(sum(if(getSetting('enable_analyzer'), ProfileEvents['HashJoinPreallocatedElementsInHashTables'] > 0, 1)) == 1, '1', 'Error: ' || any(query_id))
+    SELECT if(sum(ProfileEvents['HashJoinPreallocatedElementsInHashTables'] > 0) == 1, '1', 'Error: ' || any(query_id))
       FROM system.query_log
      WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = {query_id:String} AND current_database = currentDatabase() AND type = 'QueryFinish'
   "

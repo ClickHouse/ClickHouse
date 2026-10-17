@@ -20,16 +20,13 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # spill thresholds are pinned to 0 (see 04625_hash_table_sizes_stats_table_expression_modifiers).
 #
 # Every setting that decides which of the two paths under test runs is pinned rather than taken
-# from the defaults: the lazy FINAL optimization is built by the analyzer only (with
-# enable_analyzer = 0 the poisoning query never runs and the test would pass on the unfixed
-# binary), and the victim must aggregate through a hash table, not in order. The trace log of
+# from the defaults: the victim must aggregate through a hash table, not in order. The trace log of
 # LazyFinalKeyAnalysisTransform is checked so that the poisoning query cannot silently stop
 # being one.
 
 LOG="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.log"
 
 $CLICKHOUSE_LOCAL \
-    --enable_analyzer=1 \
     --optimize_aggregation_in_order=0 \
     --collect_hash_table_stats_during_aggregation=1 \
     --max_size_to_preallocate_for_aggregation=1000000000000 \

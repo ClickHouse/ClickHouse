@@ -8,7 +8,6 @@
 -- type, so the planner leaves it in charge wherever it applies; the cutoff only serves the
 -- queries it does not apply to (disabled, the LIMIT above its cap, `max_rows_to_group_by` set).
 
-SET enable_analyzer = 1;
 SET optimize_trivial_group_by_limit_query = 1;
 SET enable_group_by_top_k_optimization = 1;
 -- The heap does not apply above this cap (CI randomizes it down to 1) or to serialized plans.

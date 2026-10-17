@@ -183,13 +183,10 @@ SELECT 'arm3 row ref lists control', count(), sum(cityHash64(*)) FROM dg_list_pr
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     join_output_by_rowlist_perkey_rows_threshold = 0, joined_block_split_single_row = 0;
 
--- Every arm below that asks for the limit and offset builder also pins `enable_analyzer = 1`: only
--- the `TableJoin` the analyzer builds carries `joined_block_split_single_row`, so with the old
--- analyzer the arm silently gets the plain path that arms 3 and 14 already cover.
 SELECT 'arm5 limit and offset', count(), sum(cityHash64(*)) FROM dg_list_probe JOIN dg_list USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 1,
-    max_joined_block_size_rows = 7, enable_analyzer = 1;
+    max_joined_block_size_rows = 7;
 
 -- Arms 5b and 5c pin which builder ran. The limit and offset builder records the ref words its walk
 -- selects, so it reaches the kernels like every other builder: 2 columns x 1000 rows, `a` through
@@ -203,7 +200,7 @@ INSERT INTO dg_list_mixed SELECT number % 200, number * 1000003, toString(number
 SELECT 'arm5b mixed limit and offset', count(), sum(cityHash64(*)) FROM dg_list_probe JOIN dg_list_mixed USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 1,
-    max_joined_block_size_rows = 7, enable_hash_join_row_store = 0, enable_analyzer = 1;
+    max_joined_block_size_rows = 7, enable_hash_join_row_store = 0;
 
 SELECT 'arm5c mixed by blocks', count(), sum(cityHash64(*)) FROM dg_list_probe JOIN dg_list_mixed USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
@@ -504,7 +501,7 @@ SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls
 SELECT 'arm14c extended limit and offset', count(), sum(cityHash64(*)) FROM dg_list_probe JOIN dg_list_ext USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 1,
-    max_joined_block_size_rows = 7, enable_hash_join_row_store = 0, enable_analyzer = 1;
+    max_joined_block_size_rows = 7, enable_hash_join_row_store = 0;
 
 -- Arm asof: an `ASOF` match is a single inline ref word like any other, so it resolves the same emit
 -- table and runs the same kernels. Its three emitted right columns are the two payloads and the

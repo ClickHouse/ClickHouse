@@ -6,8 +6,7 @@ GROUP BY
     '2018-01-02 22:33:44',
     toFixedString(toFixedString('2018-01-02 22:33:44', 19), 19),
     'gr',
-    '2018-01-02 22:33:44'
-SETTINGS enable_analyzer = 1;
+    '2018-01-02 22:33:44';
 
 -- WITH CUBE (note that result is different with the analyzer (analyzer is correct including all combinations)
 SELECT
@@ -19,5 +18,4 @@ GROUP BY
     toFixedString(toFixedString('2018-01-02 22:33:44', 19), 19),
     'gr',
     '2018-01-02 22:33:44'
-WITH CUBE
-SETTINGS enable_analyzer = 1;
+WITH CUBE;

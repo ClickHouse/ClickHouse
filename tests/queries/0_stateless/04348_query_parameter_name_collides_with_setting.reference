@@ -12,7 +12,7 @@ foo
 05
 -- colliding param 'limit' (a Double setting), non-numeric string value
 x>1
--- colliding param 'enable_analyzer' (alias of 'allow_experimental_analyzer'), name preserved through alias resolution
+-- colliding param 'replication_alter_partitions_sync' (alias of 'alter_sync'), name preserved through alias resolution
 foo
 -- non-colliding custom param, value starting with a quote still works
 \'hello

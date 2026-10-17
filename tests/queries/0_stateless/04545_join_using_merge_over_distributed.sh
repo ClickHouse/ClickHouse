@@ -28,7 +28,6 @@ CREATE TABLE ${DB}.jm_m AS ${DB}.jm_d ENGINE = Merge(${DB}, '^jm_d\$');
 CREATE TABLE ${DB}.jr (k UInt32, n Int64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO ${DB}.jr SELECT number, number FROM numbers(150);
 
-SET enable_analyzer = 1;
 SET distributed_product_mode = 'global';
 
 -- Bare-column predicate over the joined-away table: the exception from the issue.

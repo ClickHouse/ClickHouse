@@ -1,5 +1,4 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/35652
-SET enable_analyzer=1;
 CREATE TABLE test (
   id UInt64
 )

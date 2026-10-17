@@ -11,7 +11,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #
 # `--compression 1` is required: without a network codec the marshalling callback returns the block
 # unchanged, so nothing is wrapped into `ColumnBLOB`.
-CLIENT="$CLICKHOUSE_CLIENT --compression 1 --enable_analyzer 1"
+CLIENT="$CLICKHOUSE_CLIENT --compression 1"
 
 # Mode 2 throws instead of silently falling back to plain local execution, so an unavailable cluster
 # fails the test instead of making it assert nothing.

@@ -13,7 +13,6 @@ SET enable_group_by_top_k_optimization = 1;
 -- The trivial `GROUP BY ... LIMIT` rewrite sets max_rows_to_group_by, which
 -- disables the top-K optimization for aggregate-free projections; keep it off.
 SET optimize_trivial_group_by_limit_query = 0;
-SET enable_analyzer = 1;
 SET optimize_use_projections = 1;
 -- This test observes single-node plan shapes.
 SET enable_parallel_replicas = 0;

@@ -1,8 +1,6 @@
 -- Tags: no-parallel
 -- Tag no-parallel: Messes with internal cache
 
-SET enable_analyzer = 1;
-
 SYSTEM DROP QUERY CACHE;
 
 -- If an exception is thrown during query execution, results for sub-queries can (not necessarily) appear in QC

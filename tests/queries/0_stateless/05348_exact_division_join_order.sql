@@ -4,7 +4,7 @@ CREATE TABLE t3 (k Nullable(Float64)) ENGINE = MergeTree ORDER BY tuple() SETTIN
 INSERT INTO t1 VALUES (1), (2);
 INSERT INTO t2 VALUES (1, 10);
 INSERT INTO t3 VALUES (5);
-SET enable_analyzer = 1, single_join_prefer_left_table = 0, join_use_nulls = 1;
+SET single_join_prefer_left_table = 0, join_use_nulls = 1;
 -- The assertions compare the local join-plan shape.
 SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
 SET query_plan_optimize_join_order_randomize = 0, use_hash_table_stats_for_join_reordering = 0;

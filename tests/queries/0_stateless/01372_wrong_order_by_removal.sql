@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 
 CREATE TEMPORARY TABLE moving_sum_num
 (

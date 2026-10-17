@@ -120,12 +120,12 @@ def test_cluster_function(started_cluster):
     table_function = f"""
         deltaLakeAzureCluster(cluster, azure, container = '{started_cluster.azure_container_name}', storage_account_url = '{started_cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '{table_name}')
         """
-    instance.query(f"SELECT * FROM {table_function} SETTINGS allow_experimental_analyzer=1")
+    instance.query(f"SELECT * FROM {table_function}")
     assert 5 == int(
         instance.query(
-            f"SELECT count() FROM {table_function} SETTINGS allow_experimental_analyzer=1"
+            f"SELECT count() FROM {table_function}"
         )
     )
     assert "1\taa\n2\tbb\n3\tcc\n4\taa\n5\tbb\n" == instance.query(
-        f"SELECT * FROM {table_function} ORDER BY a SETTINGS allow_experimental_analyzer=1"
+        f"SELECT * FROM {table_function} ORDER BY a"
     )

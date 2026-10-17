@@ -9,7 +9,6 @@
 SET query_plan_optimize_join_order_randomize = 0;
 
 -- For runs with old analyzer
-SET enable_analyzer=1;
 
 DROP TABLE IF EXISTS pr_dp_a;
 DROP TABLE IF EXISTS pr_dp_b;

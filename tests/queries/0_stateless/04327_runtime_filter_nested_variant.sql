@@ -3,7 +3,6 @@
 -- case was not detected, so the single-element "equals" runtime filter path was chosen and
 -- produced Nullable(UInt8), tripping the __applyFilter return-type assertion.
 
-SET enable_analyzer = 1;
 SET enable_join_runtime_filters = 1;
 SET join_runtime_filter_min_probe_rows = 0;
 SET allow_suspicious_types_in_order_by = 1;

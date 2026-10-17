@@ -1,7 +1,6 @@
 -- Tags: no-parallel-replicas
 -- Bounded streaming reads everything committed so far and finishes, so it runs synchronously.
 
-SET enable_analyzer = 1; -- streaming queries require the analyzer (CI randomizes this setting)
 SET enable_streaming_queries = 1;
 -- A projection makes an earlier optimizer memoize the analysis result, which is the state in
 -- which the range set captured for a lazy re-read does not match what a STREAM read selects.

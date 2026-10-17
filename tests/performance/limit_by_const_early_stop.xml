@@ -2,7 +2,6 @@
     <settings>
         <max_threads>1</max_threads>
         <max_block_size>8192</max_block_size>
-        <enable_analyzer>1</enable_analyzer>
     </settings>
 
     <!-- The generic LimitByTransform should stop after the first block once the constant group is full. -->

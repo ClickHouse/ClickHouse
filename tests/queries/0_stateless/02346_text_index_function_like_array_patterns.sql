@@ -2,7 +2,6 @@
 
 -- Tests arbitrary LIKE/ILIKE patterns on a text index with the `array` tokenizer, where a token is the value.
 
-SET enable_analyzer = 1;
 SET explain_query_plan_default = 'legacy';
 SET enable_full_text_index = 1;
 SET use_skip_indexes_on_data_read = 1;

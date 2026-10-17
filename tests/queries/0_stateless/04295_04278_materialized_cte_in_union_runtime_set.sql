@@ -6,7 +6,6 @@
 -- (UNKNOWN_TABLE). Shipping materialized CTE storage to replicas for non-GLOBAL runtime sets
 -- is a separate piece of work; this test only exercises the planner fix.
 
-SET enable_analyzer = 1;
 SET enable_materialized_cte = 1;
 
 DROP TABLE IF EXISTS t_04278 SYNC;

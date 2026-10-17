@@ -27,8 +27,6 @@ ENGINE = ReplacingMergeTree
 ORDER BY (campaign_sid, campaign_batch_sid, sid)
 SETTINGS index_granularity = 8192;
 
-SET enable_analyzer=1;
-
 WITH
     records AS (SELECT address.email_address FROM address GROUP BY address.email_address),
     stats AS (

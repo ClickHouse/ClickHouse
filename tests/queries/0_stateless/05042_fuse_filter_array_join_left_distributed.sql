@@ -1,7 +1,6 @@
 -- Fusing a filter into ARRAY JOIN must be skipped for LEFT ARRAY JOIN (optimizeReadInOrder keeps LIMIT
 -- through it, but a fused filter drops rows) and when the plan may be serialized to older workers.
 
-SET enable_analyzer = 1;
 -- fusion is skipped for serialized plans, pin it so the plan-shape checks hold in the distributed-plan suite
 SET serialize_query_plan = 0;
 

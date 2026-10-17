@@ -19,7 +19,7 @@ ${CLICKHOUSE_CLIENT} --user="${USER}" --compatibility='23.8' --max_threads=8 -q 
 # CONST unchanged
 ${CLICKHOUSE_CLIENT} --user="${USER}" --compatibility='23.8' --max_threads=4 -q "SELECT getSetting('max_threads')"
 # Explicit setting preserved despite compatibility
-${CLICKHOUSE_CLIENT} --compatibility='23.8' --enable_analyzer=1 -q "SELECT getSetting('enable_analyzer')"
+${CLICKHOUSE_CLIENT} --compatibility='23.8' --output_format_json_quote_64bit_integers=0 -q "SELECT getSetting('output_format_json_quote_64bit_integers')"
 # readonly=2 unchanged with compatibility
 ${CLICKHOUSE_CLIENT} -q "SET readonly = 2; SELECT 1 SETTINGS compatibility = '24.12', readonly = 2"
 # readonly=2 changed with compatibility

@@ -10,8 +10,6 @@
 -- by design (so the outer result limit cannot truncate the training data), so they do not apply
 -- to the inner query at all.
 
-SET allow_experimental_analyzer = 1;
-
 -- With the inner limit honored on every pass, `numbers(100) SETTINGS limit = 2` is equivalent to
 -- `numbers(2)`: identical training data, identical 2-row passes, identical seed advancement.
 -- The two obfuscated streams must therefore match across many passes (here 20 rows = 10 passes).

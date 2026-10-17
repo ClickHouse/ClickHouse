@@ -2,9 +2,6 @@
 # There will be warnings in logs for unavailable replicas that we have in parallel_replicas cluster.
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=error
 
-# Proper push down is supported only with analyzer
-CLICKHOUSE_CLIENT_OPT="--allow_experimental_analyzer=1"
-
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh

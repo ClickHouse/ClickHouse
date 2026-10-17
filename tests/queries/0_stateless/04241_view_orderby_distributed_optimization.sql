@@ -8,7 +8,6 @@
 -- ^ no-parallel: the SQL SECURITY DEFINER cases below create globally-named users,
 -- which would collide across concurrent runs (e.g. the flaky check).
 
-SET allow_experimental_analyzer = 1;
 -- This test targets `pushOrderByIntoView` specifically. Disable the unrelated
 -- `optimize_trivial_view_pushdown_to_distributed` (default on): it ships the
 -- whole outer query (including modifiers like FINAL/SAMPLE) to the underlying

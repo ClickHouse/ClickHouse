@@ -4,8 +4,6 @@
 -- in tuple() and treated as a single set element, giving a wrong (always-false) result
 -- for stringifiable elements, or an error for non-stringifiable ones.
 
-SET enable_analyzer = 1;
-
 -- String array column (matches the reported case with `has(tables, 'system.tables')`).
 SELECT 'a' IN arr AS in_res, has(arr, 'a') AS has_res
 FROM (SELECT ['a', 'b'] AS arr UNION ALL SELECT ['c', 'd'] AS arr)

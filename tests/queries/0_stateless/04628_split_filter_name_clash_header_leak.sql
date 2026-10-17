@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 SET query_plan_enable_optimizations = 1;
 SET query_plan_split_filter = 1;
 -- The '[split]' step marker is only emitted when this is non-zero.

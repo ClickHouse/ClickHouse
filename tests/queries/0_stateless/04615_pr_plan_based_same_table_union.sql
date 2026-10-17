@@ -12,7 +12,6 @@ CREATE TABLE t_pr_stu (a UInt64) ENGINE = MergeTree ORDER BY a;
 INSERT INTO t_pr_stu SELECT number FROM numbers(1000);
 CREATE VIEW v_pr_stu AS SELECT a FROM t_pr_stu UNION ALL SELECT a FROM t_pr_stu;
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1;
 SET parallel_replicas_for_non_replicated_merge_tree = 1;
 SET max_parallel_replicas = 3;

@@ -1,7 +1,6 @@
 -- Two aliases holding a `*` matcher are the same alias only when their column transformers agree in contents.
 
 DROP TABLE IF EXISTS test_transformer_alias;
-SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS test_transformer_alias;
 CREATE TABLE test_transformer_alias (id UInt64, value String) ENGINE = MergeTree ORDER BY id;

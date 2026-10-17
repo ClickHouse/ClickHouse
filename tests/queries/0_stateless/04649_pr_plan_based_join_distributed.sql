@@ -13,7 +13,6 @@ CREATE TABLE jd_r (id UInt64) ENGINE = MergeTree ORDER BY id;
 INSERT INTO jd_l SELECT number FROM numbers(200000);            -- 0 .. 199999
 INSERT INTO jd_r SELECT number + 100000 FROM numbers(200000);   -- 100000 .. 299999 (overlap 100000..199999)
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1;
 SET max_parallel_replicas = 3;
 SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';

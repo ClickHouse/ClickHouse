@@ -39,7 +39,7 @@ predicates=(
 # One client per column runs all its predicates; each row carries the plain and the pushed-down count.
 for null_in in 0 1; do
     for column in x "tupleElement(t, 'x')"; do
-        queries="SET enable_nullable_tuple_type = 1; SET enable_analyzer = 1; SET max_threads = 1;
+        queries="SET enable_nullable_tuple_type = 1; SET max_threads = 1;
                  SET transform_null_in = ${null_in};"
         for predicate in "${predicates[@]}"; do
             filter="${predicate//value/${column}}"
@@ -61,6 +61,6 @@ done
 # NULL-aware exclusion still prunes the stride whose values all belong to the set.
 ${CLICKHOUSE_CLIENT} --query "
     SELECT count() FROM file('${DATA_FILE}', ORC) WHERE tupleElement(t, 'x') NOT IN (0, 1)
-    SETTINGS enable_nullable_tuple_type = 1, enable_analyzer = 1, max_threads = 1,
+    SETTINGS enable_nullable_tuple_type = 1, max_threads = 1,
              transform_null_in = 1, optimize_functions_to_subcolumns = 1, input_format_orc_filter_push_down = 1
     FORMAT JSON" | jq -c '{result: .data, rows_read: .statistics.rows_read}'

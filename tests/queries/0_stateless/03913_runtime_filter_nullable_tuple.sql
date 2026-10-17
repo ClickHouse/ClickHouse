@@ -2,7 +2,6 @@
 -- when joining on Tuple columns with Nullable subfields.
 
 SET allow_suspicious_low_cardinality_types = 1;
-SET enable_analyzer = 1;
 -- Both sides are single-row, so the randomized `enable_join_runtime_filters` /
 -- `join_runtime_filter_min_probe_rows` would skip building the runtime filter and the regression
 -- this test guards would not be exercised at all.

@@ -9,7 +9,6 @@
 -- results must match the plain plan. The physical tables stay tiny to keep the test fast.
 -- Keys are unique on each side, so ANY joins are deterministic.
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 SET enable_join_runtime_filters = 0;
 SET max_rows_to_group_by = 0;

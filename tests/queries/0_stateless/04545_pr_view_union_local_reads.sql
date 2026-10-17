@@ -17,7 +17,6 @@ INSERT INTO t_pr_union_local_1 SELECT number FROM numbers(5);
 INSERT INTO t_pr_union_local_2 SELECT number + 5 FROM numbers(5);
 CREATE VIEW v_pr_union_local AS SELECT a FROM t_pr_union_local_1 UNION ALL SELECT a FROM t_pr_union_local_2;
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1;
 SET parallel_replicas_for_non_replicated_merge_tree = 1;
 SET max_parallel_replicas = 3;

@@ -1,7 +1,5 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/34697
 
-SET enable_analyzer = 1;
-
 SELECT table1_id FROM (
     SELECT first.table1_id
     FROM (SELECT number+1 as table1_id FROM numbers(1)) as first

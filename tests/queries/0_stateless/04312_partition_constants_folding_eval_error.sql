@@ -4,7 +4,6 @@
 -- sub-expression fail to evaluate (e.g. intDiv(1, p - 1) with p = 1 -> division by zero). The result
 -- must match the unfolded path, and analysis must not throw even when all index analysis is disabled.
 
-SET enable_analyzer = 1;
 SET use_statistics_for_part_pruning=0;
 
 DROP TABLE IF EXISTS t_folding_eval_error;

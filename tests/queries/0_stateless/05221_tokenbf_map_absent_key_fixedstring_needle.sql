@@ -4,8 +4,6 @@
 -- The default value of `FixedString(N)` is reported as '', while the constant holds N zero bytes, so the guard
 -- has to compare the constant without its padding.
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS t_tokenbf;
 DROP TABLE IF EXISTS t_ngrambf;
 

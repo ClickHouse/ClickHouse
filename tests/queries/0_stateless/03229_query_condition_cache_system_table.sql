@@ -4,8 +4,6 @@
 
 -- Tests system table 'system.query_condition_cache'
 
-SET allow_experimental_analyzer = 1;
-
 DROP TABLE IF EXISTS tab;
 
 CREATE TABLE tab (a Int64, b Int64) ENGINE = MergeTree ORDER BY a;

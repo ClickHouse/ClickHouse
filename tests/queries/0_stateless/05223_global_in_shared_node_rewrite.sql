@@ -28,7 +28,6 @@ CREATE TABLE t_dist AS t_local
 CREATE TABLE t_dist_not_null AS t_local_not_null
     ENGINE = Distributed(test_cluster_two_shards_localhost, currentDatabase(), t_local_not_null, rand());
 
-SET enable_analyzer = 1;
 -- `prefer_global_in_and_join` is the only setting that runs the rewrite this test covers.
 SET prefer_global_in_and_join = 1;
 -- The shipped shard queries are read back from `system.query_log` below. A local replica is read

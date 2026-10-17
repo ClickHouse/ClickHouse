@@ -45,8 +45,6 @@ TRUNCATE TABLE t_union_mut;
 
 DROP TABLE t_union_mut;
 
-SET enable_analyzer = 1;
-
 -- A lightweight UPDATE (the default `update_parallel_mode = 'auto'`) computes its affected columns via
 -- `getUpdateAffectedColumns`, which builds the query tree for the re-parsed predicate and assignment
 -- expressions. Set operators in those subqueries must be normalized there too, otherwise the lightweight

@@ -1,6 +1,5 @@
 <test>
     <settings>
-        <enable_analyzer>1</enable_analyzer>
         <max_expanded_ast_elements>5000000000</max_expanded_ast_elements>
     </settings>
 

@@ -1,7 +1,6 @@
 -- A row policy with a non-deterministic lambda folded into a constant ColumnFunction
 -- must be deferred after FINAL, otherwise stale row versions can win the merge
 SET explain_query_plan_default = 'legacy';
-SET enable_analyzer = 1;
 SET apply_row_policy_after_final = 1;
 
 DROP TABLE IF EXISTS t_rp_folded_lambda;

@@ -47,12 +47,12 @@ SELECT 'm_v_filtered', countIf(
     splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[1]::UInt64
     < splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[2]::UInt64)
 FROM (EXPLAIN indexes = 1 SELECT * FROM t_expand_mutate WHERE v = 250) AS s
-WHERE explain LIKE '%Granules:%' AND explain NOT LIKE '%PrimaryKey%' SETTINGS allow_experimental_analyzer = 1;
+WHERE explain LIKE '%Granules:%' AND explain NOT LIKE '%PrimaryKey%';
 SELECT 'bf_w_filtered', countIf(
     splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[1]::UInt64
     < splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[2]::UInt64)
 FROM (EXPLAIN indexes = 1 SELECT * FROM t_expand_mutate WHERE w = 250) AS s
-WHERE explain LIKE '%Granules:%' AND explain NOT LIKE '%PrimaryKey%' SETTINGS allow_experimental_analyzer = 1;
+WHERE explain LIKE '%Granules:%' AND explain NOT LIKE '%PrimaryKey%';
 CHECK TABLE t_expand_mutate SETTINGS check_query_single_value_result = 1;
 
 DROP TABLE t_expand_mutate;

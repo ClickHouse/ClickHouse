@@ -1,6 +1,6 @@
 parts and sparse encoding of s
 3	3
-the plain optimization must be applied inside the transaction, the sparsity one when it is available
+the plain and the sparsity optimizations must be applied inside the transaction
 tx3	1
 tx3	1
 tx3 counts its own snapshot: the part tx1 drops still counts, the parts tx2 adds do not

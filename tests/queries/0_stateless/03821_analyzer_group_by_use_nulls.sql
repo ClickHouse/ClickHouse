@@ -14,21 +14,21 @@ CREATE TABLE t2 (a LowCardinality(UInt16), b LowCardinality(UInt16)) ENGINE = Me
 INSERT INTO t2 VALUES (1024, 2048);
 
 SELECT 'analyzer=1, LC(String), ROLLUP';
-SELECT x IS NULL, x FROM t GROUP BY x WITH ROLLUP ORDER BY ALL SETTINGS enable_analyzer = 1, group_by_use_nulls = 1;
+SELECT x IS NULL, x FROM t GROUP BY x WITH ROLLUP ORDER BY ALL SETTINGS group_by_use_nulls = 1;
 
 SELECT 'analyzer=0, LC(String), ROLLUP';
 
 SELECT 'analyzer=1, LC(UInt16), GROUPING SETS';
-SELECT a, b FROM t2 GROUP BY GROUPING SETS ((a, b), (a)) ORDER BY ALL SETTINGS enable_analyzer = 1, group_by_use_nulls = 1;
+SELECT a, b FROM t2 GROUP BY GROUPING SETS ((a, b), (a)) ORDER BY ALL SETTINGS group_by_use_nulls = 1;
 
 SELECT 'analyzer=0, LC(UInt16), GROUPING SETS';
 
 SELECT 'analyzer=1, LC(UInt16), CUBE';
-SELECT a, b FROM t2 GROUP BY a, b WITH CUBE ORDER BY ALL SETTINGS enable_analyzer = 1, group_by_use_nulls = 1;
+SELECT a, b FROM t2 GROUP BY a, b WITH CUBE ORDER BY ALL SETTINGS group_by_use_nulls = 1;
 
 SELECT 'analyzer=0, LC(UInt16), CUBE';
 
 SELECT 'analyzer=1, LC(UInt16), ROLLUP';
-SELECT a, b FROM t2 GROUP BY a, b WITH ROLLUP ORDER BY ALL SETTINGS enable_analyzer = 1, group_by_use_nulls = 1;
+SELECT a, b FROM t2 GROUP BY a, b WITH ROLLUP ORDER BY ALL SETTINGS group_by_use_nulls = 1;
 
 SELECT 'analyzer=0, LC(UInt16), ROLLUP';

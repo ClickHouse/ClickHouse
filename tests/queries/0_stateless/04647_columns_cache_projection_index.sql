@@ -5,7 +5,6 @@
 -- gets no columns cache at all, which also means it needs no query-scoped write budget.
 
 SET max_threads = 1;
-SET enable_analyzer = 1;
 SET optimize_use_projections = 1, optimize_use_projection_filtering = 1;
 SET min_table_rows_to_use_projection_index = 0;
 

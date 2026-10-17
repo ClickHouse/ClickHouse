@@ -1,8 +1,4 @@
 -- { echo }
--- The mechanism is analyzer-only. This one has to be a session-level SET: a subquery may not
--- change it (INCORRECT_QUERY when the top-level value differs), and the runner never
--- randomizes it.
-SET enable_analyzer = 1;
 DROP TABLE IF EXISTS t_left_big;
 DROP TABLE IF EXISTS t_right_big;
 CREATE TABLE t_left_big (a UInt64) ENGINE = Log;

@@ -2,7 +2,6 @@
 -- Tag no-parallel: The test checks system.errors values which are global
 
 -- For the old analyzer last_error_message is slightly different.
-SET enable_analyzer = 1;
 
 SELECT throwIf(1); -- {serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO}
 

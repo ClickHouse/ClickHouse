@@ -2,7 +2,6 @@
 -- Test outer to inner join conversion driven by a null-rejecting constraint that is proven
 -- arbitrarily higher in the plan: by a filter, or by the predicate of an enclosing join.
 
-SET enable_analyzer = 1;
 SET explain_query_plan_default = 'legacy';
 SET query_plan_optimize_join_order_randomize = 0;
 SET query_plan_join_swap_table = 0;

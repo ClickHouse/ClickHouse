@@ -24,13 +24,12 @@ INSERT INTO pv_other VALUES ('b');
 SET enable_parallel_replicas = 2, max_parallel_replicas = 3,
     cluster_for_parallel_replicas = 'parallel_replicas',
     parallel_replicas_for_non_replicated_merge_tree = 1;
--- The randomizer varies all five of these, and each one alone stops the two reads from being
--- planned in different coordination modes: at automatic_parallel_replicas_mode = 2 or
--- enable_analyzer = 0 parallel replicas do not run, at optimize_read_in_order = 0 the outer
+-- The randomizer varies all four of these, and each one alone stops the two reads from being
+-- planned in different coordination modes: at automatic_parallel_replicas_mode = 2
+-- parallel replicas do not run, at optimize_read_in_order = 0 the outer
 -- read is not in-order so both reads announce Default, and at parallel_replicas_local_plan = 0
 -- the initiator contributes no in-order local plan.
 SET automatic_parallel_replicas_mode = 0;
-SET enable_analyzer = 1;
 SET optimize_read_in_order = 1;
 SET parallel_replicas_local_plan = 1;
 SET parallel_replicas_min_number_of_rows_per_replica = 0;

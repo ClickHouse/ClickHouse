@@ -1,5 +1,4 @@
 SET explain_query_plan_default = 'legacy';
-SET enable_analyzer = 1;
 SET union_default_mode = 'DISTINCT';
 
 -- The plans below contain a preliminary DISTINCT, which a single stream does not get. The

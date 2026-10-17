@@ -4,7 +4,6 @@
 -- `getLeastSupertype.cpp`, including timezone preservation and scale selection.
 
 SET session_timezone = 'UTC';
-SET enable_analyzer = 1;
 SET use_variant_as_common_type = 0;
 
 -- Time + DateTime → DateTime64(0) (DateTime is UInt32, cannot hold negative Time values)

@@ -47,7 +47,6 @@ DROP TABLE t;
 for enabled in 1 0; do
     echo "-- query_plan_optimize_lazy_materialization_for_file = $enabled"
     "${LOCAL[@]}" \
-        --enable_analyzer=1 \
         --query_plan_optimize_lazy_materialization=1 \
         --query_plan_max_limit_for_lazy_materialization=0 \
         --query_plan_optimize_lazy_materialization_for_file="$enabled" \

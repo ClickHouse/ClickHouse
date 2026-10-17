@@ -4,7 +4,6 @@
 -- predicate uses `LIKE pattern ESCAPE 'c'` or `NOT LIKE pattern ESCAPE 'c'`. `ILIKE` is not covered
 -- because these index types do not support case-insensitive LIKE at all.
 
-SET enable_analyzer = 1;
 SET use_query_condition_cache = 0;
 
 DROP TABLE IF EXISTS tab;

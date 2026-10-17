@@ -1,8 +1,6 @@
 -- Tags: no-fasttest
 --   No existing test covers combining projection INDEX TYPE syntax with WITH SETTINGS.
 
-SET enable_analyzer=1;
-
 DROP TABLE IF EXISTS test_idx_settings_cov;
 
 -- 1. INDEX TYPE basic WITH SETTINGS (index_granularity = 2)

@@ -19,7 +19,6 @@ INSERT INTO t_pr_computed_output SELECT number % 100, number FROM numbers(200000
 CREATE VIEW v_pr_computed_output AS SELECT tenant, ts, tenant = 5 AS is_five FROM t_pr_computed_output ORDER BY ts;
 CREATE VIEW v_odd_pr_computed_output AS SELECT tenant, ts FROM t_pr_computed_output WHERE tenant % 2 = 1 ORDER BY ts;
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1;
 SET automatic_parallel_replicas_mode = 0;
 SET max_parallel_replicas = 3;

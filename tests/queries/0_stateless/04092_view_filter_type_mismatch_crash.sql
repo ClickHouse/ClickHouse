@@ -33,7 +33,6 @@ CREATE VIEW v_join_04092 AS
 -- b as UInt32, but the propagated filter expects Nullable(UInt32).
 -- Before the fix this was a SIGSEGV.
 SET join_use_nulls = 0;
-SET enable_analyzer = 1;
 SELECT * FROM v_join_04092 WHERE b + 0 IN (10) ORDER BY id;
 
 DROP VIEW v_join_04092;

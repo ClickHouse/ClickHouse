@@ -26,24 +26,22 @@ ${CLICKHOUSE_CLIENT} -q "
 SELECT t1.rev FROM ${db}.t0 AS t1
 INNER JOIN ${db}.t0 AS right_0 ON t1.id = right_0.id
 INNER JOIN ${db}.t1 AS right_1 ON t1.id = right_1.id
-SETTINGS enable_analyzer = 1
 "
 
 echo 'and the alias of the second table wins over the name of the first one'
-${CLICKHOUSE_CLIENT} -q "SELECT t1.rev FROM ${db}.t1 AS a INNER JOIN ${db}.t0 AS t1 ON a.id = t1.id SETTINGS enable_analyzer = 1"
+${CLICKHOUSE_CLIENT} -q "SELECT t1.rev FROM ${db}.t1 AS a INNER JOIN ${db}.t0 AS t1 ON a.id = t1.id"
 
 echo 'the same for a comma join'
-${CLICKHOUSE_CLIENT} -q "SELECT t1.rev FROM ${db}.t1 AS a, ${db}.t0 AS t1 WHERE a.id = t1.id SETTINGS enable_analyzer = 1"
+${CLICKHOUSE_CLIENT} -q "SELECT t1.rev FROM ${db}.t1 AS a, ${db}.t0 AS t1 WHERE a.id = t1.id"
 
 echo 'a qualifier that is only a table name still resolves'
-${CLICKHOUSE_CLIENT} -q "SELECT t1.rev FROM ${db}.t0 AS left_0 INNER JOIN ${db}.t1 ON left_0.id = t1.id SETTINGS enable_analyzer = 1"
+${CLICKHOUSE_CLIENT} -q "SELECT t1.rev FROM ${db}.t0 AS left_0 INNER JOIN ${db}.t1 ON left_0.id = t1.id"
 
 echo 'an unqualified column of both sides is still ambiguous'
 ${CLICKHOUSE_CLIENT} -q "
 SELECT rev FROM ${db}.t0 AS a
 INNER JOIN ${db}.t1 AS b ON a.id = b.id
 INNER JOIN ${db}.t1 AS c ON a.id = c.id
-SETTINGS enable_analyzer = 1
 " 2>&1 | grep -c -m1 AMBIGUOUS_IDENTIFIER
 
 # A subcolumn of a subquery projection or of an `ALIAS` column is resolved through a `getSubcolumn`
@@ -65,27 +63,24 @@ ${CLICKHOUSE_CLIENT} -q "
 SELECT s1.x.y FROM ${db}.s0 AS s1
 INNER JOIN ${db}.s0 AS right_0 ON s1.id = right_0.id
 INNER JOIN ${db}.s1 AS right_1 ON s1.id = right_1.id
-SETTINGS enable_analyzer = 1
 "
-${CLICKHOUSE_CLIENT} -q "SELECT s1.x.y FROM ${db}.s1 AS a INNER JOIN ${db}.s0 AS s1 ON a.id = s1.id SETTINGS enable_analyzer = 1"
+${CLICKHOUSE_CLIENT} -q "SELECT s1.x.y FROM ${db}.s1 AS a INNER JOIN ${db}.s0 AS s1 ON a.id = s1.id"
 
 echo 'a tuple subcolumn of a subquery projection'
 ${CLICKHOUSE_CLIENT} -q "
 SELECT s1.x.y FROM (SELECT id, x FROM ${db}.s0) AS s1
 INNER JOIN ${db}.s0 AS right_0 ON s1.id = right_0.id
 INNER JOIN ${db}.s1 AS right_1 ON s1.id = right_1.id
-SETTINGS enable_analyzer = 1
 "
-${CLICKHOUSE_CLIENT} -q "SELECT s1.x.y FROM ${db}.s1 AS a INNER JOIN (SELECT id, x FROM ${db}.s0) AS s1 ON a.id = s1.id SETTINGS enable_analyzer = 1"
+${CLICKHOUSE_CLIENT} -q "SELECT s1.x.y FROM ${db}.s1 AS a INNER JOIN (SELECT id, x FROM ${db}.s0) AS s1 ON a.id = s1.id"
 
 echo 'a tuple subcolumn of an ALIAS column'
 ${CLICKHOUSE_CLIENT} -q "
 SELECT a1.x.y FROM ${db}.a0 AS a1
 INNER JOIN ${db}.a0 AS right_0 ON a1.id = right_0.id
 INNER JOIN ${db}.a1 AS right_1 ON a1.id = right_1.id
-SETTINGS enable_analyzer = 1
 "
-${CLICKHOUSE_CLIENT} -q "SELECT a1.x.y FROM ${db}.a1 AS a INNER JOIN ${db}.a0 AS a1 ON a.id = a1.id SETTINGS enable_analyzer = 1"
+${CLICKHOUSE_CLIENT} -q "SELECT a1.x.y FROM ${db}.a1 AS a INNER JOIN ${db}.a0 AS a1 ON a.id = a1.id"
 
 # A CTE or a temporary table cannot be named with a database, so a reference to one that is spelled like
 # an alias of the same query is the aliased table expression itself and never competes with the alias.
@@ -97,12 +92,11 @@ WITH cte AS (SELECT * FROM ${db}.t1)
 SELECT cte.rev, right_1.rev FROM ${db}.t0 AS cte
 INNER JOIN ${db}.t0 AS right_0 ON cte.id = right_0.id
 INNER JOIN cte AS right_1 ON cte.id = right_1.id
-SETTINGS enable_analyzer = 1
 "
 ${CLICKHOUSE_CLIENT} -q "
 WITH cte AS MATERIALIZED (SELECT * FROM ${db}.t1)
 SELECT cte.rev, a.rev FROM cte AS a INNER JOIN ${db}.t0 AS cte ON a.id = cte.id
-SETTINGS enable_analyzer = 1, enable_materialized_cte = 1
+SETTINGS enable_materialized_cte = 1
 "
 
 # A `Nested` prefix is resolved as a `nested` function of the columns under it rather than as a column.
@@ -119,6 +113,5 @@ ${CLICKHOUSE_CLIENT} -q "
 SELECT n1.n FROM ${db}.n0 AS n1
 INNER JOIN ${db}.n0 AS right_0 ON n1.id = right_0.id
 INNER JOIN ${db}.n1 AS right_1 ON n1.id = right_1.id
-SETTINGS enable_analyzer = 1
 "
-${CLICKHOUSE_CLIENT} -q "SELECT n1.n FROM ${db}.n1 AS a INNER JOIN ${db}.n0 AS n1 ON a.id = n1.id SETTINGS enable_analyzer = 1"
+${CLICKHOUSE_CLIENT} -q "SELECT n1.n FROM ${db}.n1 AS a INNER JOIN ${db}.n0 AS n1 ON a.id = n1.id"

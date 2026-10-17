@@ -2,7 +2,6 @@
 -- in a hidden filter of a table read inside it (a row policy or `additional_table_filters`) is rejected
 -- the same way as a volatile function written in the subquery itself.
 
-SET enable_analyzer = 1;
 SET allow_experimental_lateral_join = 1;
 
 DROP ROW POLICY IF EXISTS 05319_policy ON inner_policy_t;

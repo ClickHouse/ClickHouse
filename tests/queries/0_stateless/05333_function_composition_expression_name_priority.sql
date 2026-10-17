@@ -1,5 +1,4 @@
 -- The composition is resolved only in the analyzer.
-SET enable_analyzer = 1;
 
 -- A column or an alias keeps priority over a registered function with the same name,
 -- the same way as for a bare function name passed to a higher-order function.

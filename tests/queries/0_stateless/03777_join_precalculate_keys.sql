@@ -4,7 +4,6 @@ CREATE TABLE t0 (c0 Int, c1 Int) ENGINE = Memory;
 INSERT INTO t0 VALUES (1, 2);
 INSERT INTO t0 VALUES (2, 3);
 
-SET enable_analyzer=1;
 SET enable_parallel_replicas=0;
 SET enable_join_runtime_filters=1;
 SET join_runtime_filter_min_probe_rows=0;

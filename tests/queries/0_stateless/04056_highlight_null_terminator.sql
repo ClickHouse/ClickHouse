@@ -1,7 +1,5 @@
 -- Test: highlight() edge cases — empty strings, FixedString conversion, adjacent rows.
 
-SET enable_analyzer = 1;
-
 -- Empty string: should return empty
 SELECT '-- empty string';
 SELECT highlight('', ['a']);

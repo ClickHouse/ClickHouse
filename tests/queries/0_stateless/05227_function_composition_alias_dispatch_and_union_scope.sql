@@ -1,5 +1,4 @@
 -- The composition and the placeholders are resolved only in the analyzer.
-SET enable_analyzer = 1;
 
 -- The operator syntax `f | g` always denotes a composition. A lambda bound in the query under
 -- the name the operator parses into applies to an ordinary call only and does not change the

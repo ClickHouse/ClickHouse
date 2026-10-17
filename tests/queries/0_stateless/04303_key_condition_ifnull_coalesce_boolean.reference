@@ -1,6 +1,5 @@
 -- { echo }
 
-SET enable_analyzer = 1;
 SET allow_key_condition_coalesce_rewrite = 1;
 DROP TABLE IF EXISTS t_ifnull_keycond;
 CREATE TABLE t_ifnull_keycond (team_id UInt64, k UInt8, s String)

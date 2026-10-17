@@ -4,7 +4,6 @@
 -- The mutation plan must gate the CTE readers like the Planner does for a SELECT,
 -- also when the set is built at run time (empty table, non-key column, index analysis for IN disabled).
 
-SET enable_analyzer = 1;
 SET enable_materialized_cte = 1;
 SET enable_lightweight_update = 1;
 SET lightweight_delete_mode = 'lightweight_update_force';

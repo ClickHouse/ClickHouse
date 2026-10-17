@@ -6,7 +6,6 @@
 -- https://github.com/ClickHouse/ClickHouse/pull/108100
 
 SET explain_query_plan_default = 'legacy';
-SET enable_analyzer = 1;
 
 CREATE TABLE qbit (id UInt32, vec QBit(BFloat16, 16)) ENGINE = Memory;
 

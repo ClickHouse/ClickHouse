@@ -18,21 +18,17 @@ INSERT INTO t_array_join_alias_nested (id, `loc.x`, `loc.y`)
 VALUES ('a', ['x1', 'x2'], ['y1', 'y2']);
 
 
-SELECT loc.x FROM t_array_join_alias_nested ARRAY JOIN loc
-SETTINGS enable_analyzer = 1;
+SELECT loc.x FROM t_array_join_alias_nested ARRAY JOIN loc;
 
-SELECT loc.x, loc.y FROM t_array_join_alias_nested ARRAY JOIN loc
-SETTINGS enable_analyzer = 1;
+SELECT loc.x, loc.y FROM t_array_join_alias_nested ARRAY JOIN loc;
 
 -- Identifier qualified by table alias must be stripped before retrying as Nested prefix.
-SELECT s.loc.x FROM t_array_join_alias_nested AS s ARRAY JOIN s.loc
-SETTINGS enable_analyzer = 1;
+SELECT s.loc.x FROM t_array_join_alias_nested AS s ARRAY JOIN s.loc;
 
 -- Identifier qualified by table name.
 SELECT t_array_join_alias_nested.loc.x
 FROM t_array_join_alias_nested
-ARRAY JOIN t_array_join_alias_nested.loc
-SETTINGS enable_analyzer = 1;
+ARRAY JOIN t_array_join_alias_nested.loc;
 
 -- ARRAY JOIN over a join tree: the column source is the inner `s` TableNode,
 -- not the enclosing JoinNode that the ARRAY JOIN immediately wraps. The retry
@@ -41,8 +37,7 @@ SETTINGS enable_analyzer = 1;
 SELECT s.loc.x
 FROM t_array_join_alias_nested AS s
 JOIN system.one ON 1
-ARRAY JOIN s.loc
-SETTINGS enable_analyzer = 1;
+ARRAY JOIN s.loc;
 
 -- A `WITH` alias that shadows the Nested prefix must NOT be silently rewritten
 -- into `nested(['x','y'], loc.x, loc.y)`. The non-Array alias should surface
@@ -50,7 +45,6 @@ SETTINGS enable_analyzer = 1;
 WITH 1 AS loc
 SELECT loc
 FROM t_array_join_alias_nested
-ARRAY JOIN loc
-SETTINGS enable_analyzer = 1; -- { serverError TYPE_MISMATCH }
+ARRAY JOIN loc; -- { serverError TYPE_MISMATCH }
 
 DROP TABLE t_array_join_alias_nested;

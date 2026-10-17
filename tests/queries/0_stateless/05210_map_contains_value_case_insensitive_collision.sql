@@ -1,7 +1,5 @@
 -- Tags: no-fasttest
 
-SET enable_analyzer = 1;
-
 -- A case-insensitive file reader can resolve m.values to a physical M.values column.
 -- Do not rewrite mapContainsValue() when such a column shadows the Map subcolumn.
 INSERT INTO FUNCTION file(currentDatabase() || '_05210_map_contains_value_ci.orc', ORC, 'm Map(String, UInt64), `M.values` Array(UInt64)')

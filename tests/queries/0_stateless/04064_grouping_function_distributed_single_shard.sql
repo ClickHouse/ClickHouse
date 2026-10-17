@@ -117,7 +117,7 @@ GROUP BY
         (number % 2)
     )
 ORDER BY number, gr
-SETTINGS enable_analyzer = 1, allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 
 -- Part 4: Test with parallel replicas and serialize_query_plan = 1
 -- (exercises buildQueryPlanForParallelReplicas / findParallelReplicasQuery code path,
@@ -132,7 +132,7 @@ GROUP BY
         (number % 2)
     )
 ORDER BY number, gr
-SETTINGS enable_analyzer = 1, serialize_query_plan = 1, allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
+SETTINGS serialize_query_plan = 1, allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 
 DROP TABLE dist_t;
 DROP TABLE local_t;

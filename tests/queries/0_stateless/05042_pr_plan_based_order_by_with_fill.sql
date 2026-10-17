@@ -18,7 +18,6 @@ ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 8;
 INSERT INTO t_pr_with_fill SELECT number * 4, toString(number) FROM numbers(100);
 OPTIMIZE TABLE t_pr_with_fill FINAL;
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1;
 SET parallel_replicas_for_non_replicated_merge_tree = 1;
 SET max_parallel_replicas = 3;

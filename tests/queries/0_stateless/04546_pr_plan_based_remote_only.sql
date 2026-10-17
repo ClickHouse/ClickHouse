@@ -15,7 +15,6 @@ INSERT INTO t_pr_remote_only_2 SELECT number FROM numbers(1000);
 CREATE TABLE t_pr_name_clash (a UInt64, __parallel_replicas_fragment_dummy String) ENGINE = MergeTree ORDER BY a;
 INSERT INTO t_pr_name_clash SELECT number, 'v' FROM numbers(1000);
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1;
 SET parallel_replicas_for_non_replicated_merge_tree = 1;
 SET max_parallel_replicas = 3;

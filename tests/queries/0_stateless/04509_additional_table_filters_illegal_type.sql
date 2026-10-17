@@ -2,7 +2,6 @@
 -- FilterStep (Planner/PlannerJoinTree.cpp) whose FilterTransform::transformHeader type
 -- guard rejects it at plan-build time, independent of read path or projection settings.
 DROP TABLE IF EXISTS t_04509;
-SET enable_analyzer = 1;
 SET query_plan_remove_unused_columns = 1;
 
 DROP TABLE IF EXISTS t_04509;

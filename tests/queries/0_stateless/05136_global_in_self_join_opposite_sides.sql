@@ -14,8 +14,6 @@
 -- Every arm pairs the `GLOBAL IN` witness with a local `IN` control: `GLOBAL` changes only where
 -- the set is built, never the result, so the two must agree.
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS t_05136;
 
 CREATE TABLE t_05136 (x UInt8) ENGINE = MergeTree ORDER BY x;

@@ -7,8 +7,6 @@
 -- effective value from the node's context rather than the first `use_query_cache` entry of the clause,
 -- otherwise `use_query_cache = 1, use_query_cache = 0` takes the cache path for a subquery that opted out.
 
-SET allow_experimental_analyzer = 1;
-
 SYSTEM DROP QUERY CACHE TAG '05154_last_wins_out';
 SYSTEM DROP QUERY CACHE TAG '05154_last_wins_in';
 SYSTEM DROP QUERY CACHE TAG '05154_reset_out';

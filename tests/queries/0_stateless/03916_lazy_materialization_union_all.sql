@@ -4,7 +4,6 @@ SET explain_query_plan_default = 'legacy';
 
 SET query_plan_optimize_lazy_materialization = 1;
 SET query_plan_max_limit_for_lazy_materialization = 10;
-SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t_union_lm_1;
 DROP TABLE IF EXISTS t_union_lm_2;

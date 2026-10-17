@@ -6,8 +6,6 @@
 -- referencing JSON sub-paths.
 -- https://github.com/ClickHouse/ClickHouse/issues/97812
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS json_merge_t1;
 DROP TABLE IF EXISTS json_merge_t2;
 DROP TABLE IF EXISTS json_merge_m;
@@ -135,7 +133,7 @@ CREATE TABLE json_old_t2 (json JSON(SKIP y)) ENGINE = MergeTree() ORDER BY tuple
 CREATE TABLE json_old_m ENGINE = Merge(currentDatabase(), 'json_old_t.*');
 
 SELECT 'old analyzer';
-SELECT count() FROM json_old_m SETTINGS enable_analyzer = 1;
+SELECT count() FROM json_old_m;
 
 DROP TABLE json_old_m;
 DROP TABLE json_old_t1;

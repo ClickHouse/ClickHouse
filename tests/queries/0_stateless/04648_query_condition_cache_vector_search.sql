@@ -15,7 +15,6 @@
 
 -- The vector-search optimization needs the analyzer, so the assertions below are
 -- vacuous under the `old analyzer` CI variant unless it is pinned here.
-SET enable_analyzer = 1;
 -- The plan assertions below read the legacy `EXPLAIN` format; the default `pretty` format rewrites
 -- the step descriptions.
 SET explain_query_plan_default = 'legacy';

@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 SET enable_materialized_cte = 1;
 SET serialize_query_plan = 1;
 

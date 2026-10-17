@@ -9,7 +9,6 @@
 -- The provider is deduced from the endpoint at client creation and the plan is built without any
 -- network I/O, so unresolvable `.invalid` endpoints are enough to test the plan-time gate.
 
-SET enable_analyzer = 1;
 SET s3_validate_etag_on_read = 1;
 SET query_plan_optimize_lazy_materialization = 1;
 SET query_plan_max_limit_for_lazy_materialization = 0;

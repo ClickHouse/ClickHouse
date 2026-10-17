@@ -17,8 +17,6 @@ SET enable_parallel_replicas=1, automatic_parallel_replicas_mode=2, parallel_rep
 
 SET max_threads=4, max_block_size=8192;
 
-SET enable_analyzer=1;
-
 DROP TABLE IF EXISTS t_default_codec;
 DROP TABLE IF EXISTS t_column_codec;
 

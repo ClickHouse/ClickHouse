@@ -1,4 +1,3 @@
-set enable_analyzer = 1;
 
 SELECT min(*) y FROM (SELECT 1 IN (SELECT y));
 

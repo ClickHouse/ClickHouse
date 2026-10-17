@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 SET enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0;
 
 CREATE TABLE nation(n_nationkey Int32, n_name String) ENGINE MergeTree ORDER BY n_nationkey;

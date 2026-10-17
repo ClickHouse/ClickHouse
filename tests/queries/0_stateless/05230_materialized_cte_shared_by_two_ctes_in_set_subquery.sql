@@ -3,7 +3,6 @@
 -- gate for the shared CTE, so a reader ran before its writer: "Reading from materialized CTE 'c' before
 -- its materialization completed - DelayedPortsProcessor gate is missing in the query plan".
 
-SET enable_analyzer = 1;
 SET enable_materialized_cte = 1;
 SET enable_lightweight_update = 1;
 -- Pin: the table must be read with more than one stream, or no reader of the side pipeline is ever

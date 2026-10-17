@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 set join_algorithm = 'hash';
 
 select '-';

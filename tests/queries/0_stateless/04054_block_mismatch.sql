@@ -1,4 +1,3 @@
-SET enable_analyzer = 1; -- the analyzer is required for QUALIFY
 DROP TABLE IF EXISTS t0;
 CREATE TABLE t0 (c0 Int, c1 Int) ENGINE = ReplacingMergeTree(c1) ORDER BY c0;
 INSERT INTO t0 VALUES (1, 1);

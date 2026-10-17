@@ -4,8 +4,6 @@
 -- so two constants that differ only in their alternative render to the same value string.
 -- They must not collapse to one action node in the DAG. See issue #110698.
 
-SET enable_analyzer = 1;
-
 -- Empty geometries: three distinct types that all fold to an empty array.
 SELECT wkt(readWKT('LINESTRING EMPTY')), wkt(readWKT('MULTILINESTRING EMPTY')), wkt(readWKT('MULTIPOLYGON EMPTY'));
 SELECT hex(wkb(readWKT('LINESTRING EMPTY'))), hex(wkb(readWKT('MULTILINESTRING EMPTY'))), hex(wkb(readWKT('MULTIPOLYGON EMPTY')));
