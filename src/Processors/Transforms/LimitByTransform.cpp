@@ -290,12 +290,16 @@ LimitBySortedStreamTransform::LimitBySortedStreamTransform(
     UInt64 group_length_,
     UInt64 group_offset_,
     const SortDescription & sorted_columns_descr,
-    bool always_read_till_end_)
+    bool always_read_till_end_,
+    UInt64 max_groups_)
     : ISimpleTransform(header, header, true)
     , group_offset(group_offset_)
     , group_limit_end(computeGroupLimitEnd(group_length_, group_offset_))
     , always_read_till_end(always_read_till_end_)
+    , max_groups(max_groups_)
 {
+    chassert(!max_groups || !always_read_till_end);
+
     Names key_names;
     key_names.reserve(sorted_columns_descr.size());
     for (const auto & column_description : sorted_columns_descr)
@@ -342,6 +346,12 @@ void LimitBySortedStreamTransform::processRun(UInt64 run_start_row, UInt64 run_r
     current_group_rows_seen = group_rows_seen_before_run + run_row_count;
 }
 
+void LimitBySortedStreamTransform::finishGroup()
+{
+    current_group_rows_seen = 0;
+    ++completed_groups;
+}
+
 void LimitBySortedStreamTransform::transform(Chunk & chunk)
 {
     /// See `LimitByTransform::transform`: a previous call may have thrown after populating
@@ -372,7 +382,7 @@ void LimitBySortedStreamTransform::transform(Chunk & chunk)
     const bool have_previous_chunk_key
         = !previous_chunk_last_grouping_key_columns.empty() && !previous_chunk_last_grouping_key_columns.front()->empty();
     if (have_previous_chunk_key && !firstRowContinuesPreviousChunkGroup(normalized_grouping_key_columns))
-        current_group_rows_seen = 0;
+        finishGroup();
 
     /// Segment the sorted chunk into maximal runs of rows that share one grouping key. Each run is
     /// one group.
@@ -399,7 +409,7 @@ void LimitBySortedStreamTransform::transform(Chunk & chunk)
 
         /// A group boundary inside the chunk resets the per-group counter before the next run.
         if (run_end != row_count)
-            current_group_rows_seen = 0;
+            finishGroup();
         current_run_start_row = run_end;
         ++run_count;
     }
@@ -422,6 +432,10 @@ void LimitBySortedStreamTransform::transform(Chunk & chunk)
         stopReading();
         return;
     }
+
+    /// Later groups of this stream sort after the completed ones, so an outer `LIMIT` of `max_groups` rows never needs them.
+    if (max_groups && completed_groups >= max_groups)
+        stopReading();
 
     /// No row from this chunk survived.
     if (output_slices.empty())
