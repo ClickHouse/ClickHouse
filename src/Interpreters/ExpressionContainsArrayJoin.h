@@ -12,8 +12,10 @@ namespace DB
 /// filter, a TTL expression). It can hide behind an alias - the case-insensitive `unnest`, which is
 /// caught by resolving the name to its canonical one instead of comparing the spelling, so the check
 /// does not depend on `normalize_function_names` - or behind a SQL UDF that is inlined into the
-/// expression later, which is caught by descending into the UDF body. A call inside a nested
-/// subquery has its own scope and does not multiply the outer rows, so it is skipped.
+/// expression later, which is caught by descending into the UDF body. It can also hide inside an
+/// `APPLY` column transformer, whose lambda, parameters and function name the parser keeps outside
+/// the node's children. A call inside a nested subquery has its own scope and does not multiply the
+/// outer rows, so it is skipped.
 bool expressionContainsArrayJoin(const IAST & ast);
 
 /// A null AST contains nothing.
