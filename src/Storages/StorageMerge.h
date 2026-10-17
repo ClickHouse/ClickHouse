@@ -145,7 +145,8 @@ private:
     /// The metadata of each data lake source table as the schema inference of the `merge` table function read it, so
     /// that its read uses the same snapshot instead of refreshing the table again. Keyed by the table, not the storage
     /// object, because a database may build a new object on each lookup (`DataLakeCatalog` does). A table without a UUID
-    /// is identified only by its storage object, since its name can be given to another table in the meantime.
+    /// is identified only by its storage object, since its name can be given to another table in the meantime. So a Glue or
+    /// Hive catalog table (no UUID, a new object per lookup) is refreshed again by the read, which can see a newer schema.
     struct InferredSourceMetadata
     {
         std::weak_ptr<IStorage> storage;

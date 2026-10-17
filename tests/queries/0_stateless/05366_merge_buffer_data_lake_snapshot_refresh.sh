@@ -41,6 +41,11 @@ DESCRIBE TABLE merge(currentDatabase(), '^t_lake\$') SETTINGS describe_compact_o
 INSERT INTO t_writer SELECT number + 600 FROM numbers(10);
 SELECT 'merge() after rename', count(), sum(v) FROM merge(currentDatabase(), '^t_lake\$');
 
+ALTER TABLE t_writer RENAME COLUMN v TO w;
+DESCRIBE TABLE loop(currentDatabase(), 't_lake') SETTINGS describe_compact_output = 1;
+ALTER TABLE t_writer RENAME COLUMN w TO u;
+SELECT 'loop() after rename', sum(u) FROM (SELECT u FROM loop(currentDatabase(), 't_lake') LIMIT 160);
+
 DROP TABLE t_buffer;
 DROP TABLE t_alias;
 DROP TABLE t_nested;
