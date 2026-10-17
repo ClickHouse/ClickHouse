@@ -47,9 +47,9 @@ SETTINGS optimize_aggregation_in_order = 1, optimize_read_in_order = 1, optimize
 
 DROP TABLE t_query_cache_partial_read;
 
--- Both reads above were served from the cache.
+-- Both reads above were served from the cache. With parallel replicas, the hits of the replicas are added to the hits of the initiator.
 SYSTEM FLUSH LOGS query_log;
-SELECT ProfileEvents['QueryCacheHits'] FROM system.query_log
+SELECT ProfileEvents['QueryCacheHits'] > 0 FROM system.query_log
 WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND query LIKE '%05331 % read%' AND query NOT LIKE '%system.query_log%'
 ORDER BY event_time_microseconds;
 
