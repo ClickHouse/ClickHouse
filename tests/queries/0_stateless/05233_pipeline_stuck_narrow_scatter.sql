@@ -39,7 +39,7 @@ WHERE explain ILIKE '%Concat%';
 SELECT count() FROM
 (
     EXPLAIN PIPELINE
-    SELECT count() FROM
+    SELECT sum(r) FROM
     (
         SELECT row_number() OVER (PARTITION BY a ORDER BY b) AS r
             FROM (SELECT number % 64 AS a, number AS b FROM numbers_mt(4000000))

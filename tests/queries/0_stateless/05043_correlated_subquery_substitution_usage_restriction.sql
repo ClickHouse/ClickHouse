@@ -61,8 +61,8 @@ INSERT INTO t_inner_36 VALUES (1, 10), (NULL, 20);
 
 SELECT format('plan: substituted={}',
               toString(countIf(explain LIKE '%Renaming correlated columns to equivalent expressions in subquery%') > 0))
-FROM (EXPLAIN PLAN actions = 1 SELECT x FROM t_outer_36 AS o WHERE EXISTS (SELECT i.y + o.x FROM t_inner_36 AS i WHERE i.x = o.x));
-SELECT x FROM t_outer_36 AS o WHERE EXISTS (SELECT i.y + o.x FROM t_inner_36 AS i WHERE i.x = o.x) ORDER BY x;
+FROM (EXPLAIN PLAN actions = 1 SELECT x FROM t_outer_36 AS o WHERE (SELECT i.y + o.x FROM t_inner_36 AS i WHERE i.x = o.x) > 0);
+SELECT x FROM t_outer_36 AS o WHERE (SELECT i.y + o.x FROM t_inner_36 AS i WHERE i.x = o.x) > 0 ORDER BY x;
 
 SELECT '-- Case 37: guarded, the correlated column is an aggregate argument / a user group key';
 SELECT format('plan: substituted={}',
