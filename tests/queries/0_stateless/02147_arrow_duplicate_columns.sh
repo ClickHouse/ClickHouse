@@ -26,6 +26,8 @@ GZDATA="H4sIAHTzuWEAA9VTuw3CMBB9+RCsyIULhFIwAC0SJQWZACkNi1CAxCCMwCCMQMEIKdkgPJ8P
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS t1"
 ${CLICKHOUSE_CLIENT} --query="CREATE TABLE t1 ( x Int64, y Int64, z Int64 ) ENGINE = Memory"
 
-echo ${GZDATA} | base64 --decode | gunzip | ${CLICKHOUSE_CLIENT} -q "INSERT INTO t1 settings input_format_arrow_allow_missing_columns = true FORMAT Arrow" 2>&1 | grep -qF "DUPLICATE_COLUMN" && echo 'OK' || echo 'FAIL' ||:
+# The repeated column is read as `x_1`, so `x` and `y` are inserted and `z` gets its default.
+echo ${GZDATA} | base64 --decode | gunzip | ${CLICKHOUSE_CLIENT} -q "INSERT INTO t1 settings input_format_arrow_allow_missing_columns = true FORMAT Arrow"
+${CLICKHOUSE_CLIENT} -q "SELECT * FROM t1"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t1"
