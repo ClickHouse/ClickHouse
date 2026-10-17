@@ -79,8 +79,8 @@ void assertNoDefOverflow(ColumnChunkWriteState & s)
 {
     if (s.max_def == UINT8_MAX)
         throw Exception(ErrorCodes::TOO_DEEP_RECURSION,
-            "Column has more than 255 levels of nested Array/Nullable. Impressive! Unfortunately, "
-            "this is not supported by this Parquet encoder (but is supported by Parquet, if you "
+            "Column has more than 255 levels of nested Array/Nullable. "
+            "This is not supported by this Parquet encoder (but is supported by Parquet, if you "
             "really need this for some reason).");
 }
 

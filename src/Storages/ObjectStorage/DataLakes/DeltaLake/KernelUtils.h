@@ -70,7 +70,7 @@ namespace KernelUtils
         }
         throw DB::Exception(
             DB::ErrorCodes::LOGICAL_ERROR,
-            "Invalid error ExternResult tag found!");
+            "Invalid error ExternResult tag found");
     }
 };
 
