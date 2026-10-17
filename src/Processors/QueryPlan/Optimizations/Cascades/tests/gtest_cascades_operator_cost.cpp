@@ -44,7 +44,7 @@ TEST(CascadesOperatorCost, BroadcastJoinBuildsFullTablePerNode)
         .input_stats = {&left, &right},
         .parallelism = 4.0,
         .node_count = 4.0,
-        .exchange_rows_override = {},
+        .input_physical_rows = {},
         .config = config,
     };
 
@@ -79,7 +79,7 @@ TEST(CascadesOperatorCost, UnknownResultGatherPricedOnBound)
         .input_stats = {},
         .parallelism = 1.0,
         .node_count = 3.0,
-        .exchange_rows_override = {},
+        .input_physical_rows = {},
         .unknown_exchange_rows = 100000,
         .config = config,
     };
@@ -104,7 +104,7 @@ TEST(CascadesOperatorCost, UnknownResultGatherPricedOnBound)
         .input_stats = {},
         .parallelism = 1.0,
         .node_count = 3.0,
-        .exchange_rows_override = {},
+        .input_physical_rows = {},
         .unknown_exchange_rows = 100000,
         .config = config,
     };
@@ -121,7 +121,7 @@ TEST(CascadesOperatorCost, UnknownResultGatherPricedOnBound)
         .input_stats = {},
         .parallelism = 1.0,
         .node_count = 3.0,
-        .exchange_rows_override = {},
+        .input_physical_rows = {},
         .unknown_exchange_rows = 100000,
         .config = config,
     };
@@ -135,7 +135,7 @@ TEST(CascadesOperatorCost, UnknownResultGatherPricedOnBound)
         .input_stats = {},
         .parallelism = 1.0,
         .node_count = 3.0,
-        .exchange_rows_override = {},
+        .input_physical_rows = {},
         .unknown_exchange_rows = 100000,
         .config = config,
     };
@@ -182,7 +182,7 @@ TEST(CascadesOperatorCost, DistinctOverUnknownJoinGatheredOnItsOwnSearchValue)
         .input_stats = {},
         .parallelism = 1.0,
         .node_count = 3.0,
-        .exchange_rows_override = {},
+        .input_physical_rows = {},
         .unknown_exchange_rows = 100000,
         .config = config,
     };

@@ -155,8 +155,13 @@ void StatisticsDerivation::deriveGroupStatistics(GroupId group_id)
     {
         /// A preliminary `DISTINCT` gets the rows of a full one, as if over one stream. Over several nodes it
         /// can emit each value once per node; its physical expression records that (see `CostEstimator`),
-        /// and the exchange above it is priced on those rows.
-        group->statistics = deriveDistinctStatistics(*distinct_step, input_statistics(0));
+        /// and the exchange above it is priced on those rows. The final `DISTINCT` over it keeps those rows:
+        /// its input is already distinct, and without that a key without an NDV would take the default
+        /// reduction twice.
+        if (isOverPreliminaryDistinct(*distinct_step, *memo.getGroup(expression->inputs.at(0).group_id)))
+            group->statistics = input_statistics(0);
+        else
+            group->statistics = deriveDistinctStatistics(*distinct_step, input_statistics(0));
     }
     else if (const auto * union_step = typeid_cast<const UnionStep *>(plan_step))
     {
@@ -808,6 +813,14 @@ ExpressionStatistics StatisticsDerivation::deriveUnionStatistics(
         result.estimated_distinct_bound += other.estimated_distinct_bound;
     }
     return result;
+}
+
+bool StatisticsDerivation::isOverPreliminaryDistinct(const DistinctStep & distinct_step, const Group & input_group)
+{
+    if (distinct_step.isPreliminary() || input_group.logical_expressions.empty())
+        return false;
+    const auto * input_step = typeid_cast<const DistinctStep *>(input_group.logical_expressions.front()->getQueryPlanStep());
+    return input_step && input_step->isPreliminary() && input_step->getColumnNames() == distinct_step.getColumnNames();
 }
 
 ExpressionStatistics StatisticsDerivation::deriveDistinctStatistics(const DistinctStep & distinct_step, const ExpressionStatistics & input_statistics)

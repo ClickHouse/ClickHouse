@@ -14,6 +14,9 @@ SET max_rows_to_group_by = 0;
 SET query_plan_optimize_join_order_randomize = 0;
 SET query_plan_join_swap_table = 'false';
 SET explain_query_plan_default = 'legacy';
+-- A `DISTINCT` with a size limit stays on one node, and the test config sets one.
+SET max_rows_in_distinct = 0;
+SET max_bytes_in_distinct = 0;
 
 DROP TABLE IF EXISTS t_dd_sales;
 -- The number of distinct values decides the plans, so the column statistics that count them are pinned.
