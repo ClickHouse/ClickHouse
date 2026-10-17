@@ -10,6 +10,7 @@
 
 #include <chrono>
 #include <cstddef>
+#include <optional>
 
 namespace DB
 {
@@ -63,6 +64,10 @@ struct QueryPlanOptimizationSettings
     /// Allows to globally disable all plan-level optimizations.
     /// Note: Even if set to 'true', individual optimizations may still be disabled via below settings.
     bool optimize_plan;
+
+    /// Override `optimize_plan` for set subqueries when only the outer plan must keep its shape
+    /// (mutation stages). Unset means that set subqueries inherit the outer plan's policy.
+    std::optional<bool> optimize_plan_for_sets;
 
     /// If not zero, throw if too many optimizations were applied to query plan.
     /// It helps to avoid infinite optimization loop.

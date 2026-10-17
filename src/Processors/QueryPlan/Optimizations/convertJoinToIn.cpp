@@ -17,6 +17,11 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
+#include <Processors/QueryPlan/ReadFromLocalReplica.h>
+#include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
+#include <Storages/StorageMemory.h>
+
+#include <unordered_set>
 
 
 namespace DB::ErrorCodes
@@ -148,6 +153,47 @@ static bool hasCommonSubplanNodes(const QueryPlan::Node & root)
     return false;
 }
 
+static bool readsUnbuiltMaterializedCTE(const QueryPlan::Node & root)
+{
+    std::vector<const QueryPlan::Node *> stack{&root};
+    std::unordered_set<const QueryPlan::Node *> visited;
+    const auto add_plan = [&](const QueryPlan * plan)
+    {
+        if (plan && plan->getRootNode())
+            stack.push_back(plan->getRootNode());
+    };
+
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+
+        if (!visited.insert(node).second)
+            continue;
+
+        if (const auto * read = typeid_cast<const ReadFromMemoryStorageStep *>(node->step.get()))
+        {
+            const auto * storage = typeid_cast<const StorageMemory *>(read->getStorage().get());
+            if (auto cte = storage->getMaterializedCTE(); cte && !cte->isBuilt())
+                return true;
+        }
+
+        /// A deferred set can itself read a CTE. Its source is held outside the node tree;
+        /// a set that is already built no longer needs that source or its dependencies.
+        if (const auto * sets = typeid_cast<const DelayedCreatingSetsStep *>(node->step.get()))
+        {
+            for (const auto & set : sets->getSets())
+                if (!set->get())
+                    add_plan(set->getQueryPlan());
+        }
+        else if (const auto * local = typeid_cast<const ReadFromLocalParallelReplicaStep *>(node->step.get()))
+            add_plan(local->getQueryPlan());
+
+        stack.insert(stack.end(), node->children.begin(), node->children.end());
+    }
+    return false;
+}
+
 size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
 {
     auto & parent = parent_node->step;
@@ -217,6 +263,12 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     /// both input node addresses and splices the right input into the IN set's own plan.
     if (hasCommonSubplanNodes(*parent_node->children.at(0))
         || hasCommonSubplanNodes(*parent_node->children.at(1)))
+        return 0;
+
+    /// Index analysis can execute the extracted set source synchronously, before an outer CTE
+    /// materialization gate runs. Unlike a set planned by `Planner`, this new source does not
+    /// carry CTE safety nets, so keep the join until its right-side CTEs have been materialized.
+    if (readsUnbuiltMaterializedCTE(*parent_node->children.at(1)))
         return 0;
 
     // {
