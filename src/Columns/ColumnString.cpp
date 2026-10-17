@@ -362,14 +362,15 @@ ALWAYS_INLINE char * ColumnString::serializeValueIntoMemory(size_t n, char * mem
     return memory + string_size;
 }
 
-void ColumnString::batchSerializeValueIntoMemory(std::span<char *> memories, const IColumn::SerializationSettings * settings) const
+void ColumnString::batchSerializeValueIntoMemory(
+    std::span<char *> memories, size_t start_row, const IColumn::SerializationSettings * settings) const
 {
-    chassert(memories.size() == size());
+    chassert(start_row + memories.size() <= size());
     bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
     for (size_t i = 0; i < memories.size(); ++i)
     {
-        size_t string_size = sizeAt(i) + serialize_string_with_zero_byte;
-        size_t offset = offsetAt(i);
+        size_t string_size = sizeAt(start_row + i) + serialize_string_with_zero_byte;
+        size_t offset = offsetAt(start_row + i);
 
         memcpy(memories[i], &string_size, sizeof(string_size));
         memories[i] += sizeof(string_size);
@@ -852,17 +853,20 @@ void ColumnString::validate() const
                         last_offset, chars.size());
 }
 
-void ColumnString::updateHashWithValue(size_t n, SipHash & hash) const
+void ColumnString::updateHashWithStringValue(std::string_view value, SipHash & hash)
 {
-    size_t string_size = sizeAt(n);
-    size_t offset = offsetAt(n);
     /// For compatibility, which is required in certain aggregate function states.
-    size_t size_used_in_hash = string_size + 1;
+    size_t size_used_in_hash = value.size() + 1;
 
     hash.update(reinterpret_cast<const char *>(&size_used_in_hash), sizeof(size_used_in_hash));
-    hash.update(reinterpret_cast<const char *>(&chars[offset]), string_size);
+    hash.update(value.data(), value.size());
     /// This is for compatibility
     hash.update(UInt8(0));
+}
+
+void ColumnString::updateHashWithValue(size_t n, SipHash & hash) const
+{
+    updateHashWithStringValue({reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n)}, hash);
 }
 
 void ColumnString::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const

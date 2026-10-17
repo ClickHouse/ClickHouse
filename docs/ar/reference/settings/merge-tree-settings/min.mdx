@@ -13,14 +13,14 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.merge&#95;tree&#95;settings](/ar/reference/system-tables/merge_tree_settings)، وهي مُولَّدة تلقائيًا من الشفرة المصدرية لـ ClickHouse.
 
-## min_absolute_delay_to_close
+## min_absolute_delay_to_close {#min_absolute_delay_to_close}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 الحد الأدنى للتأخير المطلق قبل الإغلاق، والتوقف عن خدمة الطلبات، وعدم
 إرجاع Ok أثناء التحقق من status.
 
-## min_columns_to_activate_adaptive_write_buffer
+## min_columns_to_activate_adaptive_write_buffer {#min_columns_to_activate_adaptive_write_buffer}
 
 <SettingsInfoBlock type="UInt64" default_value="500" />
 
@@ -35,7 +35,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 * 0 - معطّل
 * 1 - ممكّن دائمًا
 
-## min_compress_block_size
+## min_compress_block_size {#min_compress_block_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -45,7 +45,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 تتجاوز القيمة المحددة عند إنشاء الجدول القيمة العامة
 لهذا الإعداد.
 
-## min_index_granularity_bytes
+## min_index_granularity_bytes {#min_index_granularity_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="1024" />
 
@@ -54,7 +54,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 لتوفير وسيلة حماية من إنشاء الجداول عن طريق الخطأ مع قيمة منخفضة جدًا لـ
 `index_granularity_bytes`.
 
-## min_marks_to_honor_max_concurrent_queries
+## min_marks_to_honor_max_concurrent_queries {#min_marks_to_honor_max_concurrent_queries}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -75,7 +75,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 <min_marks_to_honor_max_concurrent_queries>10</min_marks_to_honor_max_concurrent_queries>
 ```
 
-## min_merge_bytes_to_use_direct_io
+## min_merge_bytes_to_use_direct_io {#min_merge_bytes_to_use_direct_io}
 
 <SettingsInfoBlock type="UInt64" default_value="10737418240" />
 
@@ -86,7 +86,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 ويكتبها إلى قرص التخزين باستخدام واجهة I/O المباشر (الخيار `O_DIRECT`).
 إذا كانت قيمة `min_merge_bytes_to_use_direct_io = 0`، فسيتم تعطيل I/O المباشر.
 
-## min_partition_age_to_force_merge_seconds
+## min_partition_age_to_force_merge_seconds {#min_partition_age_to_force_merge_seconds}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -130,7 +130,7 @@ StochasticSimple.
 
 * عدد صحيح موجب.
 
-## min_parts_to_merge_at_once
+## min_parts_to_merge_at_once {#min_parts_to_merge_at_once}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -138,7 +138,7 @@ StochasticSimple.
 (إعداد مخصّص لمستوى الخبراء، لا تغيّره إذا لم تكن تفهم ما الذي يفعله).
 0 - معطّل. يعمل مع محددات الدمج من النوعين Simple وStochasticSimple.
 
-## min_replicated_logs_to_keep
+## min_replicated_logs_to_keep {#min_replicated_logs_to_keep}
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 
@@ -149,5 +149,49 @@ StochasticSimple.
 القيم الممكنة:
 
 * أي عدد صحيح موجب.
+
+## min_unreserved_disk_space_for_merge {#min_unreserved_disk_space_for_merge}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "إعداد جديد لإبقاء قدر من مساحة القرص غير المحجوزة بعيدًا عن متناول عمليات الدمج في الخلفية، حتى لا تستأثر بالمساحة على حساب عمليات الإدراج."}]}]} />
+
+يُبقي هذا الإعداد القدر المحدد من مساحة القرص غير المحجوزة (بالبايت) بعيدًا عن متناول
+عمليات الدمج في الخلفية، حتى لا تستأثر بالمساحة على حساب عمليات الإدراج. يُطرح هذا القدر
+من المساحة الحرة، ثم يُحسب الحد الأقصى للحجم الإجمالي لأجزاء البيانات المصدرية لعملية الدمج
+من المساحة المتبقية مع تطبيق معامل أمان إضافي، بحيث تظل أكبر عملية دمج
+مسموح بها أدنى من ذلك بفارق كبير. ويتقلص هذا الحد كلما امتلأ القرص،
+ويبلغ الصفر عندما تنخفض المساحة الحرة إلى هذا القدر، وعندئذٍ لا تُختار
+أي عملية دمج في الخلفية على الإطلاق. (القيمة 0 تعني أن الإعداد معطَّل)
+
+بخلاف `keep_free_space_bytes`، تظل المساحة المحمية متاحة لـ ClickHouse
+نفسه، إذ تُستبعد من جدولة عمليات الدمج فحسب. ولا تخضع عمليات التعديل لهذا القيد،
+بل يمكنها استهلاك المساحة المحمية، كما لا يكون لهذا الإعداد أي تأثير على
+الأقراص ذات المساحة غير المحدودة (مثل التخزين الكائني).
+
+تتجاهل عمليات الدمج التي تُطلق عبر [OPTIMIZE](/ar/reference/statements/optimize) مع `FINAL` أو
+مع `PARTITION` صريح هذا الإعداد. أما عمليات الدمج التي تحذف أجزاء بيانات
+منتهية الصلاحية بالكامل، فتُختار متى كان الحد أعلى من الصفر أيًّا كان حجمها،
+ولا يُختار أي منها عند الصفر. وتحجز كل عملية دمج 1 MiB على الأقل، لذا
+فإن عملية الدمج التي تبدأ وقد تبقّى أقل من 1 MiB فوق المساحة المحمية قد تستهلك ما يصل
+إلى 1 MiB منها. كذلك تنفّذ النسخة المتماثلة من `ReplicatedMergeTree` عمليات الحذف المنتظرة في قائمة الانتظار حتى عندما يكون
+حدها الخاص صفرًا، إذا كان TTL الصفوف بدون `WHERE` هو TTL الوحيد للجدول. أما مع
+TTL يتضمن `GROUP BY` أو `WHERE` أو TTL على مستوى العمود، فإن عملية الحذف هذه تعيد كتابة الصفوف المتبقية:
+إذ يؤجلها `ReplicatedMergeTree` بمقدار حجم أجزاء بياناتها، في حين لا يفعل `MergeTree`
+ذلك وقد يكتبها في المساحة المحمية.
+
+بمجرد أن يبلغ الحد الصفر، لا يُسند أمر `OPTIMIZE` العادي أي عملية: فإما أن يكون بلا أثر، أو
+يرفع الاستثناء `CANNOT_ASSIGN_OPTIMIZE` عند ضبط `optimize_throw_if_noop = 1`. استخدم `FINAL`
+أو `PARTITION` صريحًا لإجراء الدمج داخل المساحة المحمية. وفي
+`ReplicatedMergeTree`، لا يُسجَّل هذا الإعفاء في إدخال سجل التماثل
+إلا إذا كانت قيمة الإعداد غير صفرية على النسخة المتماثلة التي تضعه في قائمة الانتظار، ولذلك فإن أمر
+`OPTIMIZE` الذي وُضع في قائمة الانتظار حين كانت القيمة 0 يظل يُنفَّذ ضمن قيود هامش المساحة الاحتياطية.
+
+لا يُنسخ `ALTER TABLE ... MODIFY SETTING` إلى النسخ المتماثلة، لذا اضبط القيمة نفسها
+على كل نسخة متماثلة: فالنسخة المتماثلة ذات الهامش الاحتياطي الأكبر تعيد تطبيقه على عمليات الدمج المُسندة
+من نسخ أخرى، وقد تؤجلها إلى أجل غير مسمى. أبقِ القيمة عند `0` إلى أن تعمل جميع
+النسخ المتماثلة بإصدار يدعم هذا الإعداد، إذ لا تستطيع النسخة المتماثلة الأقدم تحليل
+إدخالات السجل المكتوبة لعمليات الدمج المُعفاة، فتتوقف عن سحب أي
+إدخالات لاحقة للجدول، بما في ذلك الإدخالات الخاصة بعمليات الإدراج العادية.
 
 {/*AUTOGENERATED_END*/}

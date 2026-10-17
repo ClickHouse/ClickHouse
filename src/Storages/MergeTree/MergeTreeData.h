@@ -109,6 +109,23 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+/// Whether the current thread holds the parts lock of any table.
+bool partsLockHeldByCurrentThread();
+
+class PartsLockHoldCount
+{
+public:
+    PartsLockHoldCount();
+    PartsLockHoldCount(PartsLockHoldCount && other) noexcept : held(std::exchange(other.held, false)) {}
+    PartsLockHoldCount & operator=(PartsLockHoldCount && other) noexcept;
+    ~PartsLockHoldCount() { release(); }
+
+    void release() noexcept;
+
+private:
+    bool held;
+};
+
 struct DataPartsLock
 {
     explicit DataPartsLock(SharedMutex & data_parts_mutex_, const MergeTreeData * data_);
@@ -122,6 +139,7 @@ struct DataPartsLock
 private:
     std::optional<Stopwatch> wait_watch;
     std::unique_lock<DB::SharedMutex> lock;
+    PartsLockHoldCount hold_count;
     std::optional<Stopwatch> lock_watch;
     const MergeTreeData * data;
 };
@@ -136,11 +154,12 @@ struct DataPartsSharedLock
     DataPartsSharedLock(DataPartsSharedLock &&) = default;
     DataPartsSharedLock & operator=(DataPartsSharedLock &&) = default;
 
-    void unlock() { lock.unlock(); }
+    void unlock();
 
 private:
     std::optional<Stopwatch> wait_watch;
     std::shared_lock<DB::SharedMutex> lock;
+    PartsLockHoldCount hold_count;
     std::optional<Stopwatch> lock_watch;
 };
 
@@ -605,6 +624,8 @@ public:
         {
             Int64 metadata_version = -1;
             Int64 min_part_metadata_version = -1;
+            /// The lowest metadata version of the patch parts the snapshot is applied with.
+            Int64 min_patch_metadata_version = std::numeric_limits<Int64>::max();
             PartitionIdToMinBlockPtr min_part_data_versions = nullptr;
             PartitionIdToMaxBlockPtr max_mutation_versions = nullptr;
             bool need_data_mutations = false;
@@ -626,7 +647,8 @@ public:
         virtual MutationCommands getOnFlyMutationCommandsForPart(const DataPartPtr & part) const = 0;
         virtual PatchParts getPatchesForPart(const DataPartPtr & part) const = 0;
         virtual std::shared_ptr<IMutationsSnapshot> cloneEmpty() const = 0;
-        virtual NameSet getAllUpdatedColumns() const = 0;
+        /// Columns changed on the fly by patches, data mutations and alter mutations of the whole snapshot.
+        virtual NameSet getColumnsChangedOnFly() const = 0;
 
         virtual bool hasPatchParts() const = 0;
         virtual bool hasDataMutations() const = 0;
@@ -658,6 +680,8 @@ public:
     protected:
         NameSet getColumnsUpdatedInPatches() const;
         void addSupportedCommands(const MutationCommands & commands, UInt64 mutation_version, MutationCommands & result_commands) const;
+        /// Adds the columns changed by the commands that are applied on the fly in this snapshot.
+        void addColumnsChangedOnFly(const MutationCommands & commands, NameSet & result) const;
     };
 
     using MutationsSnapshotPtr = std::shared_ptr<const IMutationsSnapshot>;
@@ -720,14 +744,15 @@ public:
         MarkCachePtr mark_cache;
         MarkCachePtr index_mark_cache;
         PrimaryIndexCachePtr primary_index_cache;
+        StatisticsCachePtr statistics_cache;
 
-        bool hasAny() const { return mark_cache || index_mark_cache || primary_index_cache; }
+        bool hasAny() const { return mark_cache || index_mark_cache || primary_index_cache || statistics_cache; }
     };
 
     /// Returns caches that should be prewarmed for a part of the given size.
     CachesToPrewarm getCachesToPrewarm(size_t part_uncompressed_bytes) const;
 
-    /// Prewarm mark cache, index mark cache, and primary index cache for the most recent data parts.
+    /// Prewarm mark cache, index mark cache, primary index cache and statistics cache for the most recent data parts.
     void prewarmCaches(ThreadPool & pool, const CachesToPrewarm & caches);
 
     String getLogName() const { return log.loadName(); }
@@ -776,6 +801,7 @@ public:
     DataPartsVector getAllDataPartsVector(DataPartStateVector * out_states = nullptr, const std::function<bool()> & need_stop = {}) const;
 
     DataPartsVector getDataPartsVectorInPartitionForInternalUsage(const DataPartState & state, const String & partition_id, const DataPartsAnyLock & acquired_lock) const;
+    DataPartsVector getDataPartsVectorInPartitionForInternalUsage(const DataPartState & state, const String & partition_id) const;
     DataPartsVector getDataPartsVectorInPartitionForInternalUsage(const DataPartStates & affordable_states, const String & partition_id, const DataPartsAnyLock & acquired_lock) const;
 
     /// Returns the number of data mutations suitable for applying on the fly.
@@ -922,7 +948,7 @@ public:
     /// covered by 'drop_range' would make the table exceed the `max_temporary_table_size_bytes_compressed` or
     /// `max_temporary_table_size_bytes_uncompressed` settings of 'query_context'. Used by the operations that add
     /// parts: `INSERT` (in `MergeTreeSink`), `ATTACH PART`, `ATTACH PARTITION FROM`, `REPLACE PARTITION FROM`,
-    /// `MOVE PARTITION TO TABLE` and `CREATE TEMPORARY TABLE ... CLONE AS`.
+    /// `MOVE PARTITION TO TABLE`, `CREATE TEMPORARY TABLE ... CLONE AS` and `RESTORE`.
     void throwIfTemporaryTableSizeLimitsExceededForReplacement(
         const ContextPtr & query_context,
         const DataPartsLock & parts_lock,
@@ -1463,6 +1489,11 @@ public:
 #endif
         );
 
+#if CLICKHOUSE_CLOUD
+    /// Commands that apply the enabled masking policies on the fly.
+    static MutationCommands getMaskingPolicyCommands(const StorageID & storage_id, const EnabledMaskingPoliciesPtr & enabled_masking_policies);
+#endif
+
     /// Returns destination disk or volume for the TTL rule according to current storage policy.
     SpacePtr getDestinationForMoveTTL(const TTLDescription & move_ttl) const;
 
@@ -1521,8 +1552,16 @@ public:
 
     ExpressionActionsPtr
     getPrimaryKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot, const MergeTreeIndices & indices) const;
-    ExpressionActionsPtr
-    getSortingKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot, const MergeTreeIndices & indices) const;
+    /// `use_index_expression` selects skip index expressions by result name; without it all of them are used.
+    ExpressionActionsPtr getSortingKeyAndSkipIndicesExpression(
+        const StorageMetadataPtr & metadata_snapshot,
+        const MergeTreeIndices & indices,
+        const std::function<bool(const String &)> & use_index_expression = {}) const;
+    /// Returns nullptr when no expression is selected.
+    ExpressionActionsPtr getSkipIndicesExpression(
+        const StorageMetadataPtr & metadata_snapshot,
+        const MergeTreeIndices & indices,
+        const std::function<bool(const String &)> & use_index_expression = {}) const;
 
     struct PartCompressionCodec
     {
@@ -2113,7 +2152,7 @@ protected:
     MutableDataPartPtr loadPartRestoredFromBackup(const String & part_name, const DiskPtr & disk, const String & temp_part_dir, bool detach_if_broken) const;
 
     /// Attaches restored parts to the storage.
-    virtual void attachRestoredParts(MutableDataPartsVector && parts, const std::optional<ZooKeeperRetriesInfo> & zookeeper_retries_info) = 0;
+    virtual void attachRestoredParts(MutableDataPartsVector && parts, const ContextPtr & query_context, const std::optional<ZooKeeperRetriesInfo> & zookeeper_retries_info) = 0;
 
     void resetSerializationHints(const DataPartsLock & lock);
 
@@ -2246,24 +2285,6 @@ protected:
     /// not done under a single lock).
     std::mutex refresh_parts_mutex;
 
-    /// Protects the `refresh_stats_task` holder itself (it is reassigned by `startStatisticsCache`, which
-    /// can run concurrently with `stopStatisticsCache` when a table startup or an `ALTER` races with a
-    /// shutdown) and `refresh_stats_stopped`. The task callback reads the holder without this mutex: it
-    /// only runs while the task is active, and the holder is reassigned only after deactivating it.
-    std::mutex refresh_stats_task_mutex;
-    BackgroundSchedulePoolTaskHolder refresh_stats_task;
-    /// Set by `stopStatisticsCache`, after which `startStatisticsCache` does not arm the task anymore.
-    bool refresh_stats_stopped TSA_GUARDED_BY(refresh_stats_task_mutex) = false;
-
-    mutable std::mutex stats_mutex;
-    ConditionSelectivityEstimatorPtr cached_estimator;
-
-    void startStatisticsCache();
-    /// Deactivates the statistics refresh task and prevents any later `startStatisticsCache` from arming it.
-    /// Idempotent. Called on shutdown.
-    void stopStatisticsCache();
-    void refreshStatistics(UInt64 interval_seconds);
-
     static void incrementInsertedPartsProfileEvent(MergeTreeDataPartType type);
     static void incrementMergedPartsProfileEvent(MergeTreeDataPartType type);
 
@@ -2287,6 +2308,10 @@ protected:
     static MutableDataPartPtr asMutableDeletingPart(const DataPartPtr & part);
 
 private:
+    /// A writable `table_disk` disk holds the data of one table, which owns its root until the instance is destroyed.
+    void acquireTableDiskRoots();
+    void releaseTableDiskRoots();
+
     /// Checking that candidate part doesn't break invariants: correct partition
     void checkPartPartition(MutableDataPartPtr & part, const DataPartsAnyLock & lock) const;
     void checkPartDuplicate(MutableDataPartPtr & part, Transaction & transaction, const DataPartsAnyLock & lock) const;

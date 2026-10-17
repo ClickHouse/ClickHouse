@@ -153,6 +153,9 @@ struct KeyMetadata : private std::map<size_t, FileSegmentMetadataPtr>,
     auto emplaceUnlocked(Args &&... args) { return emplace(std::forward<Args>(args)...); }
     size_t sizeUnlocked() const { return size(); }
 
+    size_t alignFileSize(size_t file_size) const;
+    bool useRealDiskSize() const;
+
     KeyState getState();
 
 private:
@@ -190,7 +193,8 @@ public:
         const std::string & path_,
         size_t background_download_queue_size_limit_,
         size_t background_download_threads_,
-        bool write_cache_per_user_directory_);
+        bool write_cache_per_user_directory_,
+        bool use_real_disk_size_);
 
     virtual ~CacheMetadata();
 
@@ -252,6 +256,12 @@ public:
 
     bool isBackgroundDownloadEnabled();
 
+    size_t alignFileSize(size_t file_size) const;
+
+    bool useRealDiskSize() const;
+
+    void fillStatVFS();
+
     void setClientAccessCallback(std::function<void(const UserID &)> callback) { on_client_access = std::move(callback); }
 
 private:
@@ -261,6 +271,10 @@ private:
     const CleanupQueuePtr cleanup_queue;
     const DownloadQueuePtr download_queue;
     const bool write_cache_per_user_directory;
+    /// Filesystem block size of `path` populated by `fillStatVFS` at startup.
+    /// Used to align file sizes when `use_real_disk_size` is enabled.
+    std::atomic<size_t> fs_block_size{0};
+    const bool use_real_disk_size;
     std::function<void(const UserID &)> on_client_access;
 
     LoggerPtr log;
