@@ -60,7 +60,7 @@ SharedHeader makeHeader()
         ColumnWithTypeAndName(type->createColumn(), type, "b")}));
 }
 
-std::unique_ptr<AggregatingStep> makeStep(std::optional<Aggregator::Params::TopKParams> top_k)
+std::unique_ptr<AggregatingStep> makeStep(std::optional<Aggregator::Params::TopKParams> top_k, bool in_order = false)
 {
     /// Merge-only constructor.
     Aggregator::Params params(
@@ -74,6 +74,16 @@ std::unique_ptr<AggregatingStep> makeStep(std::optional<Aggregator::Params::TopK
         /*enable_packed_string_keys=*/true);
     params.top_k = std::move(top_k);
 
+    /// Input sorted by `a`, aggregated in order over `GROUP BY a, b`.
+    SortDescription sort_description_for_merging;
+    SortDescription group_by_sort_description;
+    if (in_order)
+    {
+        sort_description_for_merging.emplace_back("a");
+        group_by_sort_description.emplace_back("a");
+        group_by_sort_description.emplace_back("b");
+    }
+
     return std::make_unique<AggregatingStep>(
         makeHeader(),
         std::move(params),
@@ -85,8 +95,8 @@ std::unique_ptr<AggregatingStep> makeStep(std::optional<Aggregator::Params::TopK
         /*temporary_data_merge_threads=*/1,
         /*storage_has_evenly_distributed_read=*/false,
         /*group_by_use_nulls=*/false,
-        /*sort_description_for_merging=*/SortDescription{},
-        /*group_by_sort_description=*/SortDescription{},
+        std::move(sort_description_for_merging),
+        std::move(group_by_sort_description),
         /*should_produce_results_in_order_of_bucket_number=*/false,
         /*memory_bound_merging_of_aggregation_results_enabled=*/false,
         /*explicit_sorting_required_for_aggregation_in_order=*/false);
@@ -220,6 +230,26 @@ TEST(AggregatingStepTopKSerialization, MoreRankedColumnsThanKeysIsRejected)
 
     const UInt64 version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION;
     const String bytes = serializeStep(*makeStep(makeTopK(3, {1, 1, 1}, {1, 1, 1})), version);
+
+    try
+    {
+        deserializeStep(bytes, version);
+        FAIL() << "expected INCORRECT_DATA";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::INCORRECT_DATA);
+    }
+}
+
+/// `AggregatingInOrderTransform` cannot run the heap, so an in-order step carrying top-K is rejected.
+TEST(AggregatingStepTopKSerialization, TopKOnInOrderAggregationIsRejected)
+{
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    const UInt64 version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION;
+    const String bytes = serializeStep(*makeStep(makeTopK(1, {1}, {1}), /*in_order=*/true), version);
 
     try
     {

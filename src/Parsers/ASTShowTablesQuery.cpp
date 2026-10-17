@@ -98,49 +98,46 @@ void ASTShowTablesQuery::formatLimit(WriteBuffer & ostr, const FormatSettings & 
 
 void ASTShowTablesQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
+    /// `ParserShowTablesQuery` accepts `FULL` before every form.
+    ostr << "SHOW " << (full ? "FULL " : "");
+
     if (databases)
     {
-        ostr << "SHOW DATABASES";
+        ostr << "DATABASES";
         formatLike(ostr, settings);
         formatLimit(ostr, settings, state, frame);
-
     }
     else if (clusters)
     {
-        ostr << "SHOW CLUSTERS";
+        ostr << "CLUSTERS";
         formatLike(ostr, settings);
         formatLimit(ostr, settings, state, frame);
-
     }
     else if (cluster)
     {
-        ostr << "SHOW CLUSTER";
+        ostr << "CLUSTER";
         ostr << " " << backQuoteIfNeed(cluster_str);
     }
     else if (caches)
     {
-        ostr << "SHOW FILESYSTEM CACHES";
+        ostr << "FILESYSTEM CACHES";
         formatLike(ostr, settings);
         formatLimit(ostr, settings, state, frame);
     }
     else if (m_settings)
     {
-        ostr << "SHOW " << (changed ? "CHANGED " : "") << "SETTINGS";
+        ostr << (changed ? "CHANGED " : "") << "SETTINGS";
         formatLike(ostr, settings);
     }
     else if (merges)
     {
-        ostr << "SHOW MERGES";
+        ostr << "MERGES";
         formatLike(ostr, settings);
         formatLimit(ostr, settings, state, frame);
     }
     else
     {
-        /// `full` changes the result schema of the table/dictionary form (`InterpreterShowTablesQuery`
-        /// selects `name, engine` instead of `name`), so dropping it here would make the formatted
-        /// query execute differently from the original.
-        ostr << "SHOW " << (full ? "FULL " : "") << (temporary ? "TEMPORARY " : "") <<
-             (dictionaries ? "DICTIONARIES" : "TABLES");
+        ostr << (temporary ? "TEMPORARY " : "") << (dictionaries ? "DICTIONARIES" : "TABLES");
 
         if (from)
         {

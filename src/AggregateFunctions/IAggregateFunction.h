@@ -439,6 +439,17 @@ public:
         const UInt64 * offsets,
         Arena * arena) const = 0;
 
+    /** Row `i` of [row_begin, row_end) goes to the state at `place + (i - row_begin) * place_stride`.
+      * Used by -ForEach, whose nested states for one array are consecutive.
+      */
+    virtual void addBatchConsecutivePlaces(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        size_t place_stride,
+        const IColumn ** columns,
+        Arena * arena) const = 0;
+
     /** The case when the aggregation key is UInt8
       * and pointers to aggregation states are stored in AggregateDataPtr[256] lookup table.
       */
@@ -512,16 +523,6 @@ public:
 
     /// Returns the parameters passed to the constructor as is.
     const Array & getParameters() const override { return parameters; }
-
-    /// Whether DataTypeAggregateFunction::getName() should print parameters with ::Type
-    /// suffixes so the type name round-trips losslessly. Default false.
-    virtual bool shouldPrintParametersWithTypes() const
-    {
-        /// Combinators propagate the wrapped function's answer.
-        if (auto nested = getNestedFunction())
-            return nested->shouldPrintParametersWithTypes();
-        return false;
-    }
 
     // Any aggregate function can be calculated over a window, but there are some
     // window functions such as rank() that require a different interface, e.g.
@@ -885,6 +886,18 @@ public:
                     static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, j, arena);
             current_offset = next_offset;
         }
+    }
+
+    void addBatchConsecutivePlaces(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        size_t place_stride,
+        const IColumn ** columns,
+        Arena * arena) const override
+    {
+        for (size_t i = row_begin; i < row_end; ++i, place += place_stride)
+            static_cast<const Derived *>(this)->add(place, columns, i, arena);
     }
 
     void addBatchLookupTable8(

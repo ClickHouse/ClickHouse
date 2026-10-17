@@ -2,6 +2,7 @@
 
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatSettings.h>
+#include <IO/Archives/ArchiveEntryPositions.h>
 #include <IO/Archives/IArchiveReader.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/ISource.h>
@@ -433,6 +434,9 @@ private:
 
     std::shared_ptr<IArchiveReader> archive_reader;
     std::unique_ptr<IArchiveReader::FileEnumerator> file_enumerator;
+    ArchiveEntryPositions entry_positions;
+    /// The row count cache key of the archive entry being read, unset for a plain file.
+    std::optional<String> current_archive_entry_cache_key;
 
     ColumnsDescription columns_description;
     NamesAndTypesList requested_columns;
@@ -471,6 +475,9 @@ public:
     bool supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_column) const override;
     void setTopKFilter(std::shared_ptr<const FormatTopKFilterInfo> info_) override { top_k_filter = std::move(info_); }
 
+    bool supportsMinMaxFromStatistics() const override;
+    void setMinMaxFromStatistics() override { read_min_max_from_statistics = true; }
+
     ReadFromFile(
         const Names & column_names_,
         const SelectQueryInfo & query_info_,
@@ -503,7 +510,7 @@ public:
     LazyFileRegistryPtr getLazyRowIndexRegistry() const { return lazy_row_index_registry; }
 
 private:
-    StorageFileSource::TopKQueryConditionCacheKeyPtr makeTopKQueryConditionCacheKey(const FormatFilterInfo & format_filter_info) const;
+    StorageFileSource::TopKQueryConditionCacheKeyPtr makeTopKQueryConditionCacheKey() const;
 
     std::shared_ptr<StorageFile> storage;
     const Strings paths_snapshot;
@@ -515,6 +522,7 @@ private:
 
     std::shared_ptr<StorageFileSource::FilesIterator> files_iterator;
     std::shared_ptr<const FormatTopKFilterInfo> top_k_filter;
+    bool read_min_max_from_statistics = false;
 
     /// Lazy materialization: set iff keepOnlyRequiredColumnsAndCreateLazyReadStep was called.
     LazyFileRegistryPtr lazy_row_index_registry;
