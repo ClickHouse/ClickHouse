@@ -159,6 +159,9 @@ protected:
 
     ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
+    /// Initial name from column identifier.
+    std::string column_name;
+
 private:
     static constexpr size_t sort_expression_child_index = 0;
     static constexpr size_t fill_from_child_index = 1;
