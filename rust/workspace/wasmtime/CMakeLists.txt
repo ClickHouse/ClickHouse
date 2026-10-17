@@ -54,4 +54,11 @@ clickhouse_config_crate_flags(_ch_rust_wasmtime)
 
 target_link_libraries(_ch_wasmtime INTERFACE _ch_rust_wasmtime)
 
+# wasmtime defines the GDB JIT interface hook __jit_debug_register_code, an empty function on which
+# lldb puts a breakpoint (plugin.jit-loader.gdb.enable, default ON). ICF folds it with every other
+# empty function, so the breakpoint fires on each of their calls and the binary crawls under lldb.
+if (OS_LINUX AND LINKER_NAME MATCHES "lld")
+    target_link_options(_ch_wasmtime INTERFACE "-Wl,--keep-unique=__jit_debug_register_code")
+endif()
+
 add_library(ch_rust::wasmtime ALIAS _ch_wasmtime)

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel, no-replicated-database
+# Tags: no-fasttest, no-replicated-database
 # no-fasttest: the MySQL integration is not available in the fast test build.
-# no-parallel, no-replicated-database: a named collection is used.
+# no-replicated-database: a named collection is used.
 
 # TLS credentials of a MySQL source that are given as the contents of a certificate or a key file
 # (`ssl_ca_pem`, `ssl_cert_pem`, `ssl_key_pem`) must be redacted as [HIDDEN] when a query is
@@ -49,6 +49,22 @@ format "MySQL table engine, positional arguments" \
 format "MySQL database engine, positional arguments" \
     "CREATE DATABASE d ENGINE = MySQL('127.0.0.1:3306', 'db', 'u', '${SECRET}', ssl_ca_pem = '${SECRET}')"
 
+# The same credentials written before the positional arguments: the call is invalid, but it is
+# formatted for logging before it is rejected, so the scan must not start past the first argument,
+# and the positional password must be located among the positional arguments rather than at a fixed
+# argument index, which a named argument written first moves.
+format "mysql table function, credentials before the positional arguments" \
+    "SELECT * FROM mysql(ssl_key_pem = '${SECRET}', '127.0.0.1:3306', 'db', 't', 'u', '${SECRET}')"
+format "MySQL database engine, credentials before the positional arguments" \
+    "CREATE DATABASE d ENGINE = MySQL(ssl_ca_pem = '${SECRET}', '127.0.0.1:3306', 'db', 'u', '${SECRET}')"
+
+# A named `password` override with no named collection: the parsers reject the mix, but the statement is
+# formatted for logging first, and the key is readable, so only the named scan can hide this value.
+format "mysql table function, named password without a collection" \
+    "SELECT * FROM mysql('127.0.0.1:3306', 'db', 't', password = '${SECRET}')"
+format "MySQL database engine, named password without a collection" \
+    "CREATE DATABASE d ENGINE = MySQL('127.0.0.1:3306', 'db', password = '${SECRET}')"
+
 # The key of a named argument is not required to be a plain identifier or literal: the named
 # collection parser evaluates it as a constant expression, so `concat('ssl_ca', '_pem')` names a TLS
 # credential too. The formatter cannot evaluate it, so it hides the value of every argument whose key
@@ -69,20 +85,20 @@ expect_error() {
 }
 
 echo "--- paths from SQL are rejected"
-$CLICKHOUSE_CLIENT --query "DROP NAMED COLLECTION IF EXISTS mysql_04648"
+$CLICKHOUSE_CLIENT --query "DROP NAMED COLLECTION IF EXISTS mysql_04648_${CLICKHOUSE_DATABASE}"
 $CLICKHOUSE_CLIENT --query "
-    CREATE NAMED COLLECTION mysql_04648 AS
+    CREATE NAMED COLLECTION mysql_04648_${CLICKHOUSE_DATABASE} AS
         host = '127.0.0.1', port = 3306, user = 'u', password = 'p', database = 'd', ssl_ca = '/etc/ssl/certs/ca.crt'"
 
 MESSAGE="can only be specified in a named collection defined in the server configuration file"
 
 # Stored in a collection created with SQL.
-expect_error "$MESSAGE" $CLICKHOUSE_CLIENT --query "SELECT * FROM mysql(mysql_04648, table = 't')"
+expect_error "$MESSAGE" $CLICKHOUSE_CLIENT --query "SELECT * FROM mysql(mysql_04648_${CLICKHOUSE_DATABASE}, table = 't')"
 
 # Passed as a query argument.
 for key in ssl_ca ssl_cert ssl_key; do
     expect_error "$MESSAGE" $CLICKHOUSE_CLIENT --query \
-        "SELECT * FROM mysql(mysql_04648, table = 't', ${key} = '/etc/ssl/certs/ca.crt')"
+        "SELECT * FROM mysql(mysql_04648_${CLICKHOUSE_DATABASE}, table = 't', ${key} = '/etc/ssl/certs/ca.crt')"
 done
 
 # Passed as a query argument without a named collection.
@@ -90,7 +106,7 @@ for key in ssl_ca ssl_cert ssl_key; do
     expect_error "$MESSAGE" $CLICKHOUSE_CLIENT --query \
         "SELECT * FROM mysql('127.0.0.1:3306', 'd', 't', 'u', 'p', ${key} = '/etc/ssl/certs/ca.crt')"
     expect_error "$MESSAGE" $CLICKHOUSE_CLIENT --query \
-        "CREATE DATABASE db_04648 ENGINE = MySQL('127.0.0.1:3306', 'd', 'u', 'p', ${key} = '/etc/ssl/certs/ca.crt')"
+        "CREATE DATABASE db_04648_${CLICKHOUSE_DATABASE} ENGINE = MySQL('127.0.0.1:3306', 'd', 'u', 'p', ${key} = '/etc/ssl/certs/ca.crt')"
 done
 
 # The contents are accepted in the same place: the query gets as far as connecting, which is a
@@ -116,5 +132,5 @@ expect_error "cannot be specified in a dictionary created with a DDL query" bash
     $CLICKHOUSE_CLIENT --query 'SYSTEM RELOAD DICTIONARY dict_04648'"
 
 $CLICKHOUSE_CLIENT --query "DROP DICTIONARY IF EXISTS dict_04648"
-$CLICKHOUSE_CLIENT --query "DROP DATABASE IF EXISTS db_04648"
-$CLICKHOUSE_CLIENT --query "DROP NAMED COLLECTION mysql_04648"
+$CLICKHOUSE_CLIENT --query "DROP DATABASE IF EXISTS db_04648_${CLICKHOUSE_DATABASE}"
+$CLICKHOUSE_CLIENT --query "DROP NAMED COLLECTION mysql_04648_${CLICKHOUSE_DATABASE}"
