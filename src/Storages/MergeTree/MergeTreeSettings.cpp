@@ -551,6 +551,38 @@ Limit the number of part mutations per replica to the specified amount.
 Zero means no limit on the number of mutations per replica (the execution can
 still be constrained by other settings).
 )", 0) \
+    DECLARE(Bool, enable_row_mask_update_coalescing, true, R"(
+Coalesce adjacent singleton `UPDATE _row_exists = 0` commands while mutating a
+Wide part with Full storage. The persisted mutation commands and their
+versions are unchanged.
+Set to false to execute each command separately.
+)", 0, \
+        {"26.10", false, true, "Enable row-mask update coalescing by default"}) \
+    DECLARE(UInt64, max_row_mask_update_coalescing_keys, 256, R"(
+Maximum number of keys in one coalesced row-mask update. The effective limit
+also respects `max_rows_in_set` in the background query settings. Values below
+2 disable coalescing.
+)", 0, \
+        {"26.10", 256, 256, "New setting"}) \
+    DECLARE(UInt64, max_row_mask_update_coalescing_key_bytes, 64 * 1024, R"(
+Maximum total number of key-literal bytes in one coalesced row-mask update.
+This bounds the size of the generated `IN` predicate. Set to 0 to disable
+coalescing.
+)", 0, \
+        {"26.10", 64 * 1024, 64 * 1024, "New setting"}) \
+    DECLARE(UInt64, max_row_mask_update_coalescing_commands, 4096, R"(
+Maximum number of part-local mutation commands eligible for row-mask update
+coalescing. This bounds the extra command-list copy made by the optimization;
+the value is a resource guard, not a semantic limit. Values below 2 disable
+coalescing.
+)", 0, \
+        {"26.10", 4096, 4096, "New setting"}) \
+    DECLARE(UInt64, max_row_mask_update_coalescing_ast_bytes, 1024 * 1024, R"(
+Maximum sum of the original commands' `ast_text` bytes eligible for row-mask
+update coalescing. The command-count limit alone cannot bound this copy when
+commands contain large literals. Set to 0 to disable coalescing.
+)", 0, \
+        {"26.10", 1024 * 1024, 1024 * 1024, "New setting"}) \
     DECLARE(UInt64, max_number_of_merges_with_ttl_in_pool, 2, R"(When there is
     more than specified number of merges with TTL entries in pool, do not assign
     new merge with TTL. This is to leave free threads for regular merges and
