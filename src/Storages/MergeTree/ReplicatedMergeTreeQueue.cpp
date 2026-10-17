@@ -57,6 +57,14 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+static bool hasSupportedMetadataMutation(const MutationCommands & commands)
+{
+    for (const auto & cmd : commands)
+        if (AlterConversions::isSupportedMetadataMutation(cmd.type))
+            return true;
+    return false;
+}
+
 
 ReplicatedMergeTreeQueue::ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & storage_, ReplicatedMergeTreeMergeStrategyPicker & merge_strategy_picker_)
     : storage(storage_)
@@ -85,6 +93,7 @@ void ReplicatedMergeTreeQueue::clear()
     mutation_pointer.clear();
     mutation_pointer_mtime = 0;
     mutation_counters = {};
+    num_metadata_mutations_in_map.store(0, std::memory_order_release);
 }
 
 void ReplicatedMergeTreeQueue::setBrokenPartsToEnqueueFetchesOnLoading(Strings && parts_to_fetch)
@@ -1198,6 +1207,9 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
                         mutations_by_partition.erase(partition_and_block_num.first);
                 }
 
+                if (hasSupportedMetadataMutation(entry.commands))
+                    num_metadata_mutations_in_map.fetch_sub(1, std::memory_order_release);
+
                 if (!it->second.is_done)
                 {
                     const auto commands = entry.commands;
@@ -1257,6 +1269,8 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
             {
                 auto & mutation = mutations_by_znode.emplace(entry->znode_name, MutationStatus(entry, format_version)).first->second;
                 incrementMutationsCounters(mutation_counters, entry->commands);
+                if (hasSupportedMetadataMutation(entry->commands))
+                    num_metadata_mutations_in_map.fetch_add(1, std::memory_order_release);
 
                 NOEXCEPT_SCOPE({
                     for (const auto & pair : entry->block_numbers)
@@ -1334,6 +1348,9 @@ ReplicatedMergeTreeMutationEntryPtr ReplicatedMergeTreeQueue::removeMutation(
         {
             decrementMutationsCounters(mutation_counters, entry->commands);
         }
+
+        if (hasSupportedMetadataMutation(entry->commands))
+            num_metadata_mutations_in_map.fetch_sub(1, std::memory_order_release);
 
         mutations_by_znode.erase(it);
         LOG_DEBUG(log, "Removed mutation {} from local state.", entry->znode_name);
@@ -2455,9 +2472,13 @@ MergeTreeData::MutationsSnapshotPtr ReplicatedMergeTreeQueue::getMutationsSnapsh
     for (const auto & patch : patch_parts)
         min_metadata_version = std::min<Int64>(min_metadata_version, patch->getMetadataVersion());
 
-    std::shared_lock lock(state_mutex);
-    if (!params.need_data_mutations && !params.need_alter_mutations && min_metadata_version >= params.metadata_version)
+    const bool need_metadata_mutations = min_metadata_version < params.metadata_version
+        && num_metadata_mutations_in_map.load(std::memory_order_acquire) > 0;
+
+    if (!params.need_data_mutations && !params.need_alter_mutations && !need_metadata_mutations)
         return std::make_shared<MutationsSnapshot>(params, std::move(mutations_snapshot_counters), std::move(mutations_snapshot), std::move(patch_parts));
+
+    std::shared_lock lock(state_mutex);
 
     for (const auto & [partition_id, mutations] : mutations_by_partition)
     {

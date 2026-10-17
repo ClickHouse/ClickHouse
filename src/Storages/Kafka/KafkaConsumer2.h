@@ -10,6 +10,8 @@
 #include <cppkafka/topic_partition_list.h>
 #include <Common/CurrentMetrics.h>
 
+#include <unordered_set>
+
 namespace CurrentMetrics
 {
 extern const Metric KafkaConsumers;
@@ -173,6 +175,9 @@ private:
 
     // order is important, need to be destructed before consumer
     std::unordered_map<TopicPartition, cppkafka::Queue, TopicPartitionHash, TopicPartitionEquality> queues;
+    /// Partitions paused by `initializeQueues` when they were removed from the assignment. They have to be resumed
+    /// if they are assigned again, because librdkafka clears only its own pause flag on unassign.
+    std::unordered_set<TopicPartition, TopicPartitionHash, TopicPartitionEquality> paused_partitions;
     const Names topics;
 
     bool polledDataUnusable(const TopicPartition & topic_partition) const;
