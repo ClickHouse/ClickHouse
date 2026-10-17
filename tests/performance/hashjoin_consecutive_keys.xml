@@ -1,0 +1,43 @@
+<test>
+    <settings>
+        <max_insert_threads>1</max_insert_threads>
+        <max_threads>1</max_threads>
+        <query_plan_join_swap_table>false</query_plan_join_swap_table>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>run_length</name>
+            <values>
+                <value>1</value>
+                <value>2</value>
+                <value>4</value>
+                <value>8</value>
+                <value>16</value>
+                <value>64</value>
+                <value>10000</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <!--
+        Measure consecutive key64 probes only when the build map is larger than L2.
+        Run lengths 1 and 2 are no-cache controls; longer runs measure lookup reuse.
+    -->
+    <create_query>CREATE TABLE hash_join_consecutive_build (k UInt64, v UInt64) ENGINE = Memory</create_query>
+    <fill_query>INSERT INTO hash_join_consecutive_build SELECT number, number FROM numbers(2000000)</fill_query>
+
+    <query>
+        SELECT count()
+        FROM
+        (
+            SELECT intDiv(number, {run_length}) % 2000000 AS k
+            FROM numbers_mt(20000000)
+        ) AS l
+        INNER JOIN hash_join_consecutive_build AS r ON l.k = r.k
+        SETTINGS join_algorithm = 'hash', enable_join_fixed_hash_table_conversion = 0, query_plan_join_swap_table = 0
+        FORMAT Null
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS hash_join_consecutive_build</drop_query>
+</test>
