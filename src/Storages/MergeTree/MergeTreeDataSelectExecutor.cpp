@@ -1290,7 +1290,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     /// drops the deleted candidates in the same way. A pending `ALTER DELETE` is applied regardless.
                     const bool has_deleted_rows = (query_hides_lightweight_deleted_rows
                             && (ranges.data_part->hasLightweightDelete() || alter_conversions->hasLightweightDelete()))
-                        || alter_conversions->hasDeleteMutation();
+                        || alter_conversions->hasDeleteMutation()
+                        /// TODO(unique-key): check the part's delete bitmap, not the table.
+                        || metadata_snapshot->hasUniqueKey();
                     if (index->isVectorSimilarityIndex() && has_deleted_rows)
                     {
                         return std::unexpected(PreformattedMessage::create(
