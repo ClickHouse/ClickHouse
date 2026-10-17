@@ -9,7 +9,7 @@ Granules: 3/6
 SELECT arraySort(groupArray(ifNull(toString(y), 'NULL'))) FROM t_ifnull WHERE y < 3;
 ['0','1','2']
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM t_ifnull WHERE y < 3) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
-Condition: (ifNull(y, 0) in (-Inf, 3])
+Condition: (ifNull(y, 0) in (-Inf, 2])
 Granules: 3/6
 -- The atom is relaxed, so exact counting must not count the NULL rows.
 SELECT count() FROM t_ifnull WHERE y <= 0 SETTINGS optimize_use_implicit_projections = 1;
