@@ -24,6 +24,7 @@ SELECT '-- build side computed key';
 SELECT extract(explain, 'Input \\((?:left|right)\\): .*')
 FROM (EXPLAIN SELECT sum(v) FROM l JOIN r ON l.k = r.k + 1)
 WHERE explain LIKE '%Input (%';
+SELECT count() > 0 FROM (EXPLAIN SELECT sum(v) FROM l JOIN r ON l.k = r.k + 1) WHERE explain LIKE '%BuildRuntimeFilter%';
 
 SELECT sum(v) FROM l JOIN r ON l.k = r.k + 1;
 SELECT sum(v) FROM l JOIN r ON l.k = r.k + 1 SETTINGS enable_join_runtime_filters = 0;
@@ -32,6 +33,7 @@ SELECT '-- probe side computed key';
 SELECT extract(explain, 'Input \\((?:left|right)\\): .*')
 FROM (EXPLAIN SELECT sum(v) FROM l JOIN r ON l.k + 1 = r.k)
 WHERE explain LIKE '%Input (%';
+SELECT count() > 0 FROM (EXPLAIN SELECT sum(v) FROM l JOIN r ON l.k + 1 = r.k) WHERE explain LIKE '%BuildRuntimeFilter%';
 
 SELECT sum(v) FROM l JOIN r ON l.k + 1 = r.k;
 SELECT sum(v) FROM l JOIN r ON l.k + 1 = r.k SETTINGS enable_join_runtime_filters = 0;
@@ -56,6 +58,14 @@ FROM
     )
     WHERE explain LIKE '%Input (%'
 );
+SELECT count() > 0
+FROM
+(
+    EXPLAIN SELECT sum(o_price)
+    FROM orders JOIN (SELECT * FROM customer JOIN nation ON c_nationkey = n_nationkey WHERE n_name = 'a') AS cn ON c_custkey = o_custkey
+    SETTINGS query_plan_merge_expression_into_join = 1
+)
+WHERE explain LIKE '%BuildRuntimeFilter%';
 
 SELECT sum(o_price)
 FROM orders JOIN (SELECT * FROM customer JOIN nation ON c_nationkey = n_nationkey WHERE n_name = 'a') AS cn ON c_custkey = o_custkey
