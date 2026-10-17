@@ -117,3 +117,7 @@ SELECT formatDateTime(toDateTime('2024-01-07 00:30:00', 'UTC'), '%Y-%U', 'Americ
 SELECT formatDateTime(toDate('2023-12-31'), '%Y-%U-%V');
 SELECT formatDateTime(toDate('2024-01-07'), '%U') = leftPad(toString(toWeek(toDate('2024-01-07'), 0)), 2, '0');
 SELECT countIf(formatDateTime(addDays(toDate('2023-12-20'), toInt32(number)), '%U') != leftPad(toString(toWeek(addDays(toDate('2023-12-20'), toInt32(number)), 0)), 2, '0')) FROM numbers(25);
+
+-- UInt64 timestamps also use the MySQL format parser via fromUnixTimestamp.
+SELECT fromUnixTimestamp(toUInt64(1704067200), '%Y-%U', 'UTC');
+SELECT fromUnixTimestamp(toUInt64(1704585600), '%Y-%U', 'UTC');
