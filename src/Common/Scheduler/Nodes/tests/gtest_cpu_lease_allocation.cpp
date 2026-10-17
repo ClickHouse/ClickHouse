@@ -326,7 +326,7 @@ TEST(SchedulerCPULeaseAllocation, ThreadsSoftLimitPromotesWhenSlotsExpire)
     ASSERT_TRUE(waitUntil([&] { return semaphore->getInflights().first == 1; }));
 
     // Query A holds its free master slot and waits for a worker slot: demoted
-    auto a = std::make_shared<CPULeaseAllocation>(/*max_threads=*/ 2, ResourceLink{}, link, settings);
+    auto a = std::make_shared<CPULeaseAllocation>(/*max_threads=*/ 3, ResourceLink{}, link, settings);
     ASSERT_TRUE(waitUntil([&] { return queue->getQueueLengthAndCost().first == 1; }));
     EXPECT_EQ(queue->getDemotedLength(), 1u);
 
@@ -347,8 +347,8 @@ TEST(SchedulerCPULeaseAllocation, ThreadsSoftLimitPromotesWhenSlotsExpire)
     EXPECT_EQ(queue->getDemotedLength(), 0u) << "the request of a query below the soft limit stays demoted";
     EXPECT_EQ(queue->getQueueLengthAndCost().first, 1u);
 
-    // Query C asks after the promotion, so A is served first. Once granted, A asks for its next slot and,
-    // holding one again, that request is demoted.
+    // Query C asks after the promotion, so A is served first. Once granted, A takes its free master slot again
+    // and asks for one more worker slot. Holding two slots, that request is demoted.
     auto c = std::make_shared<CPULeaseAllocation>(/*max_threads=*/ 1, link, link, settings);
     ASSERT_TRUE(waitUntil([&] { return queue->getQueueLengthAndCost().first == 2; }));
     x->free();
