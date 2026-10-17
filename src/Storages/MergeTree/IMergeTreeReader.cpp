@@ -10,15 +10,19 @@
 #if CLICKHOUSE_CLOUD
 #include <Storages/MergeTree/BorrowedMergeTreeDataPartInfoForReader.h>
 #endif
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/Serializations/SerializationQuantizedVector.h>
 #include <Common/escapeForFileName.h>
 #include <Compression/CachedCompressedReadBuffer.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnObject.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/getColumnFromBlock.h>
 #include <Interpreters/Context.h>
@@ -660,6 +664,17 @@ bool IMergeTreeReader::hasSubcolumnInPart(const String & name_in_part, const IDa
     return type_in_part.hasSubcolumn(subcolumn_name);
 }
 
+/// Sets the SHARED REGEXP matcher of the type to the JSON column, possibly inside Array or Nullable.
+static void setSharedDataPathMatcher(IColumn & column, const IDataType & type)
+{
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(&type))
+        setSharedDataPathMatcher(assert_cast<ColumnArray &>(column).getData(), *array_type->getNestedType());
+    else if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&type))
+        setSharedDataPathMatcher(assert_cast<ColumnNullable &>(column).getNestedColumn(), *nullable_type->getNestedType());
+    else
+        assert_cast<ColumnObject &>(column).setSharedDataPathMatcher(assert_cast<const DataTypeObject &>(type).getSharedDataPathMatcher());
+}
+
 void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
 {
     try
@@ -701,6 +716,13 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
             const auto & column_in_part = columns_to_read[pos];
             if (column_in_part.type->equals(*name_and_type->type))
                 continue;
+            if (isJSONSharedDataPathRegexpsOnlyChange(*column_in_part.type, *name_and_type->type))
+            {
+                auto column = IColumn::mutate(std::move(res_columns[pos]));
+                setSharedDataPathMatcher(*column, *name_and_type->type);
+                res_columns[pos] = std::move(column);
+                continue;
+            }
             copy_block.insert({res_columns[pos], column_in_part.type, name_and_type->name});
         }
 

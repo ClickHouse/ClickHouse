@@ -54,6 +54,11 @@ ASTPtr ASTObjectTypeArgument::clone() const
         res->skip_path_regexp = skip_path_regexp->clone();
         res->children.push_back(res->skip_path_regexp);
     }
+    else if (shared_path_regexp)
+    {
+        res->shared_path_regexp = shared_path_regexp->clone();
+        res->children.push_back(res->shared_path_regexp);
+    }
     else if (parameter)
     {
         res->parameter = parameter->clone();
@@ -84,6 +89,12 @@ void ASTObjectTypeArgument::formatImpl(WriteBuffer & ostr, const FormatSettings 
         std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
         ostr << indent_str << "SKIP REGEXP" << ' ';
         skip_path_regexp->format(ostr, settings, state, frame);
+    }
+    else if (shared_path_regexp)
+    {
+        std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
+        ostr << indent_str << "SHARED REGEXP" << ' ';
+        shared_path_regexp->format(ostr, settings, state, frame);
     }
 }
 
