@@ -4,6 +4,7 @@
 #include <filesystem>
 
 #include <Access/AccessControl.h>
+#include <Access/ContextAccess.h>
 #include <Access/User.h>
 
 #include <Core/Settings.h>
@@ -910,6 +911,23 @@ void throwIfTableFunctionCannotBeUsedToCreateTable(const ASTPtr & table_function
     throwIfNestedTableFunctionDependsOnCurrentUserGrants(table_function_ast, context);
 }
 
+/// `TABLE ENGINE ON <name>` cannot be granted for an unregistered name, so it is reported as unknown if that is the first missing grant.
+void throwIfEngineIsUnknownAndNotGranted(
+    const String & engine_name, bool is_database_engine, const AccessRightsElements & required_before, const ContextPtr & context)
+{
+    if (is_database_engine ? DatabaseFactory::instance().getDatabaseEngines().contains(engine_name)
+                           : StorageFactory::instance().getAllStorages().contains(engine_name))
+        return;
+    const auto access = context->getAccess();
+    if (access->isGranted(AccessType::TABLE_ENGINE, engine_name) || !access->isGranted(required_before))
+        return;
+    if (is_database_engine)
+        throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Unknown database engine {}{}",
+                        engine_name, DatabaseFactory::instance().getHintsMessage(engine_name));
+    throw Exception(ErrorCodes::UNKNOWN_STORAGE, "Unknown table engine {}{}",
+                    engine_name, StorageFactory::instance().getHintsMessage(engine_name));
+}
+
 }
 
 InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTablePropertiesAndNormalizeCreateQuery(
@@ -933,7 +951,11 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
     /// We have to check access rights again (in case engine was changed).
     if (create.storage && create.storage->engine)
+    {
+        throwIfEngineIsUnknownAndNotGranted(
+            create.storage->engine->name, /*is_database_engine=*/ false, /*required_before=*/ {}, getContext());
         getContext()->checkAccess(AccessType::TABLE_ENGINE, create.storage->engine->name);
+    }
 
     /// If this is a TimeSeries table then we need to normalize list of columns (add missing columns and reorder), and also set inner table engines.
     if (create.is_time_series_table && (mode <= LoadingStrictnessLevel::SECONDARY_CREATE))
@@ -1451,6 +1473,8 @@ namespace
         {
             *ptr = nullptr;
         });
+        /// children keeps the old nodes, and hasSecretParts reads them
+        storage.children.clear();
 
         auto engine_ast = make_intrusive<ASTFunction>();
         engine_ast->name = "Null";
@@ -1631,11 +1655,23 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         String as_database_name = getContext()->resolveDatabase(create.as_database);
         String as_table_name = create.as_table;
 
+        /// check SHOW COLUMNS first, else the error tells a user who cannot see the table that it
+        /// holds credentials
+        getContext()->checkAccess(AccessType::SHOW_COLUMNS, as_database_name, as_table_name);
+
         ASTPtr as_create_ptr = DatabaseCatalog::instance().getDatabase(as_database_name)->getCreateTableQuery(as_table_name, getContext());
 
         const auto & as_create = as_create_ptr->as<ASTCreateQuery &>();
 
         const String qualified_name = backQuoteIfNeed(as_database_name) + "." + backQuoteIfNeed(as_table_name);
+
+        /// SHOW CREATE TABLE masks credentials, so a copy of them gives the source data to a user who
+        /// cannot SELECT it. SHOW COLUMNS already shows the rest
+        auto check_access_to_inherited_definition = [&](const IAST & definition)
+        {
+            if (definition.hasSecretParts())
+                getContext()->checkAccess(AccessType::SELECT, as_database_name, as_table_name);
+        };
 
         if (as_create.is_ordinary_view)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot CREATE a table AS {}, it is a View", qualified_name);
@@ -1662,6 +1698,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
             /// clauses were specified for the new table; otherwise keep the explicit storage definition.
             if (!create.storage)
             {
+                check_access_to_inherited_definition(*as_create.as_table_function);
                 create.set(create.as_table_function, as_create.as_table_function->ptr());
                 return;
             }
@@ -1672,6 +1709,15 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
             storage_def = make_intrusive<ASTStorage>();
             storage_def->set(storage_def->engine, as_create.storage->engine->clone());
             create.is_time_series_table = true;
+
+            /// normalizeTimeSeriesDefinition copies the settings and the inner engines of the source,
+            /// and this query inherits each one it does not give itself
+            if (as_create.storage->settings && !(create.storage && create.storage->settings))
+                check_access_to_inherited_definition(*as_create.storage->settings);
+            if (as_create.targets)
+                for (const auto & target : as_create.targets->targets)
+                    if (target.inner_engine && !create.getTargetInnerEngine(target.kind))
+                        check_access_to_inherited_definition(*target.inner_engine);
         }
         else if (as_create.storage)
         {
@@ -1680,6 +1726,36 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         else
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot set engine, it's a bug.");
+        }
+
+        if (storage_def)
+        {
+            /// check what the server stores: settings in this query replace the source settings, and
+            /// Null can replace an external engine
+            auto inherited = boost::static_pointer_cast<ASTStorage>(storage_def->clone());
+            if (create.storage)
+            {
+                /// inheritStorageFromSource keeps the clauses this query gives, so drop them here too
+                if (create.storage->partition_by)
+                    inherited->reset(inherited->partition_by);
+                if (create.storage->primary_key)
+                    inherited->reset(inherited->primary_key);
+                if (create.storage->order_by)
+                    inherited->reset(inherited->order_by);
+                if (create.storage->sample_by)
+                    inherited->reset(inherited->sample_by);
+                if (create.storage->ttl_table)
+                    inherited->reset(inherited->ttl_table);
+                if (create.storage->unique_key)
+                    inherited->reset(inherited->unique_key);
+                if (inherited->settings && create.storage->settings)
+                    for (const auto & change : create.storage->settings->changes)
+                        inherited->settings->changes.removeSetting(change.name);
+            }
+            replaceExternalEngineWithNullIfNeeded(
+                *inherited, getContext()->getSettingsRef()[Setting::restore_replace_external_engines_to_null]);
+
+            check_access_to_inherited_definition(*inherited);
         }
     }
 
@@ -3868,6 +3944,32 @@ BlockIO InterpreterCreateQuery::execute()
                 && create.storage->engine->name == "Backup" && create.storage->engine->arguments)
                 DatabaseBackup::parseAndAuthorizeLocator(create.storage->engine->arguments->children, getContext());
 
+            /// this branch returns before setEngine, and the worker builds AS src with no user, so
+            /// check the inherited definition here, on a copy of the query
+            if (!create.as_table.empty())
+            {
+                /// a worker resolves a name without a database in its own database, so set ours, as
+                /// the UUIDs above do
+                create.as_database = getContext()->resolveDatabase(create.as_database);
+
+                /// OLDEST_VERSION sends no settings, so a worker replaces nothing with Null. check
+                /// what the worker builds, not what our settings give
+                auto preflight_context = Context::createCopy(getContext());
+                if (on_cluster_version == DDLLogEntry::OLDEST_VERSION)
+                {
+                    preflight_context->setSetting("restore_replace_external_engines_to_null", false);
+                    preflight_context->setSetting("restore_replace_external_table_functions_to_null", false);
+                }
+
+                ASTPtr inherited_query = query_ptr->clone();
+                auto & inherited = inherited_query->as<ASTCreateQuery &>();
+                InterpreterCreateQuery(inherited_query, preflight_context).setEngine(inherited);
+
+                /// getRequiredAccess sees no engine, because this query holds none of its own
+                if (inherited.storage && inherited.storage->engine)
+                    getContext()->checkAccess(AccessType::TABLE_ENGINE, inherited.storage->engine->name);
+            }
+
             /// This branch ships the query text as written, and `OLDEST_VERSION` also ships no settings,
             /// so a worker there would resolve `toTime` with its own default.
             if (!is_create_database && !create.attach_short_syntax && !is_restore_from_backup
@@ -3974,7 +4076,18 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
     }
 
     if (create.storage && create.storage->engine)
+    {
+        auto required_before = required_access;
+        /// `CREATE DATABASE` and legacy-format `CREATE TABLE` `ON CLUSTER` check `CLUSTER` before these.
+        if (!create.cluster.empty()
+            && (!create.table
+                || getContext()->getSettingsRef()[Setting::distributed_ddl_entry_format_version].value
+                    < DDLLogEntry::NORMALIZE_CREATE_ON_INITIATOR_VERSION))
+            required_before.emplace_back(AccessType::CLUSTER);
+        throwIfEngineIsUnknownAndNotGranted(
+            create.storage->engine->name, /*is_database_engine=*/ !create.table, required_before, getContext());
         required_access.emplace_back(AccessType::TABLE_ENGINE, create.storage->engine->name);
+    }
 
     /// `ATTACH TABLE ... FROM '<path>'` reads a directory in `user_files` as the table data and then moves it to the
     /// data path of the new table. Reading it needs `READ` on the FILE source like the `file` function does, and
