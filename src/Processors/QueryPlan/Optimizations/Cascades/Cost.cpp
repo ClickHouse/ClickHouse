@@ -176,7 +176,7 @@ static Cost aggregationCost(const CostInputs & inputs, Float64 divide_by)
 /// also sequential there; a preliminary one deduplicates all streams in parallel.
 static Cost distinctCost(const CostInputs & inputs, bool is_final)
 {
-    const Float64 input_rows = inputStats(inputs, 0).estimated_row_count;
+    const Float64 input_rows = inputs.input_physical_rows.value_or(inputStats(inputs, 0).estimated_row_count);
     Cost cost;
     cost.work = (input_rows + inputs.output_stats.estimated_row_count * inputs.output_stats.estimated_bytes_per_row)
         / inputs.parallelism;
@@ -268,7 +268,7 @@ static Cost exchangeCost(const CostInputs & inputs, const IQueryPlanStep & step)
 {
     /// A sorted gather over a partial top-N transfers min(input_rows, L * node_count) rows,
     /// not the group's trimmed L; the caller resolves that override from the memo.
-    const Float64 rows = inputs.exchange_rows_override.value_or(inputs.output_stats.estimated_row_count);
+    const Float64 rows = inputs.input_physical_rows.value_or(inputs.output_stats.estimated_row_count);
     Cost cost;
     /// The network term is wall-clock per node, like the work term. A shuffle (N->N) moves
     /// 1/N of the data per node, all nodes concurrently; without the division one node
@@ -411,20 +411,27 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
         selected_inputs.push_back(std::move(best));
     }
 
-    /// A selected child whose physical output differs from the group's logical statistics
-    /// (a partial top-N emits up to L rows per node) overrides the exchange row count.
-    std::optional<Float64> exchange_rows_override;
-    if (dynamic_cast<const LogicalExchangeStep *>(expression->getQueryPlanStep())
-        && !selected_inputs.empty() && selected_inputs[0].expression)
-        exchange_rows_override = selected_inputs[0].expression->physical_output_rows;
+    /// A selected input whose physical output differs from its group's logical statistics overrides the
+    /// rows an exchange moves and a final `DISTINCT` inserts. An exchange emits the rows it moves, so it
+    /// records them for its parent.
+    const auto * step = expression->getQueryPlanStep();
+    const bool is_exchange = dynamic_cast<const LogicalExchangeStep *>(step) != nullptr;
+    const auto * final_distinct = typeid_cast<const DistinctStep *>(step);
+    if (final_distinct && final_distinct->isPreliminary())
+        final_distinct = nullptr;
+    std::optional<Float64> input_physical_rows;
+    if ((is_exchange || final_distinct) && !selected_inputs.empty() && selected_inputs[0].expression)
+        input_physical_rows = selected_inputs[0].expression->physical_output_rows;
+    if (is_exchange)
+        expression->physical_output_rows = input_physical_rows;
 
     CostInputs inputs{
-        .step = expression->getQueryPlanStep(),
+        .step = step,
         .output_stats = *group->statistics,
         .input_stats = {},
         .parallelism = parallelism,
         .node_count = distribution_node_count,
-        .exchange_rows_override = exchange_rows_override,
+        .input_physical_rows = input_physical_rows,
         .config = memo.getContext().cost_config,
     };
     inputs.input_stats.reserve(expression->inputs.size());
