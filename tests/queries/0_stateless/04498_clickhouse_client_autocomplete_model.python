@@ -1,0 +1,159 @@
+import multiprocessing
+import os
+import pty
+import select
+import shlex
+import time
+
+TIMEOUT_SECONDS = 30
+
+# How long to keep reading after the last keystroke while waiting for the expected output. Seeding
+# a query and then predicting from it involves executing that query server-side first, which can
+# take longer than the inter-keystroke drain on slow (sanitizer) builds.
+FINAL_WAIT_SECONDS = 20
+
+DEBUG_LOG = os.path.join(
+    os.environ["CLICKHOUSE_TMP"],
+    os.path.basename(os.path.abspath(__file__)).strip(".python") + ".debuglog",
+)
+
+# The gray SGR sequence replxx uses for the as-you-type hint (Color::GRAY -> "0;90").
+HINT_COLOR = "\x1b[0;90m"
+
+
+def read_until(master, debug_log_fd, predicate, timeout):
+    output = ""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        r, _, _ = select.select([master], [], [], 0.3)
+        if not r:
+            if predicate(output):
+                return output
+            continue
+        try:
+            chunk = os.read(master, 4096)
+        except OSError:
+            break
+        debug_log_fd.write(repr(chunk) + "\n")
+        debug_log_fd.flush()
+        output += chunk.decode(errors="replace")
+        if predicate(output):
+            return output
+    return output
+
+
+def drain(master, debug_log_fd, idle):
+    output = ""
+    while True:
+        r, _, _ = select.select([master], [], [], idle)
+        if not r:
+            break
+        try:
+            chunk = os.read(master, 4096)
+        except OSError:
+            break
+        debug_log_fd.write(repr(chunk) + "\n")
+        debug_log_fd.flush()
+        output += chunk.decode(errors="replace")
+    return output
+
+
+def run_case(program, argv, name, keystrokes, check, state=None):
+    """Fork a PTY, wait for the prompt, send keystrokes (with a small pause between
+    them so replxx repaints / the seeding query executes), then run `check` over the
+    collected output."""
+    shell_pid, master = pty.fork()
+    if shell_pid == 0:
+        os.environ["TERM"] = "xterm"
+        os.execv(program, argv)
+        return
+
+    debug_log_fd = open(DEBUG_LOG, "a")
+    try:
+        read_until(master, debug_log_fd, lambda o: ":)" in o, TIMEOUT_SECONDS)
+
+        output = ""
+        for keys in keystrokes:
+            os.write(master, keys)
+            # A generous drain: the seeding query must finish and a fresh prompt reappear before
+            # the next keystrokes are processed, otherwise the model has not learned it yet.
+            output += drain(master, debug_log_fd, 1.0)
+
+        if not check(output):
+            output += read_until(
+                master, debug_log_fd, lambda extra: check(output + extra), FINAL_WAIT_SECONDS
+            )
+
+        ok = check(output)
+        print(f"{name}: {'OK' if ok else 'FAIL'}")
+        state.value = 0 if ok else 1
+    finally:
+        os.close(master)
+        debug_log_fd.close()
+
+
+def run_with_timeout(program, argv, name, keystrokes, check):
+    for attempt in range(5):
+        state = multiprocessing.Value("i", -1)
+        process = multiprocessing.Process(
+            target=run_case,
+            args=(program, argv, name, keystrokes, check),
+            kwargs={"state": state},
+        )
+        process.start()
+        process.join(TIMEOUT_SECONDS + FINAL_WAIT_SECONDS)
+        if process.is_alive():
+            process.terminate()
+        if state.value in (0, 1):
+            return
+        # transient timeout on a loaded machine - retry
+    print(f"{name}: FAIL")
+
+
+def main():
+    program = os.environ["CLICKHOUSE_LOCAL"]
+    base = shlex.split(program)
+    # A fresh clickhouse-local has no query log backing system.user_query_log, so the predictive
+    # model seeds empty and learns from the queries entered this session. Enable it explicitly
+    # (off by default). Seeding from real history is covered by
+    # 04838_clickhouse_client_autocomplete_model_history_seed.
+    args = base + ["--autocomplete_model", "1", "--hints", "1"]
+
+    # A query using a distinctive function; once it has executed, the Markov model has seen
+    # "SELECT" followed by "uniqExact", so it predicts "uniqExact" as the next token.
+    seed = b"SELECT uniqExact(number) FROM numbers(10)\r"
+
+    # 1. After a word break (here right after "SELECT "), there is no prefix for the static
+    #    dictionary to match, so it shows nothing. The predictive model, however, suggests the next
+    #    token from the preceding context: the full "uniqExact" appears as gray ghost text. Anchor
+    #    on the colored full word so this cannot be satisfied by the echoed input or by a dictionary
+    #    prefix hint shown while the seeding query was typed.
+    run_with_timeout(
+        base[0],
+        args,
+        "model_next_token_ghost",
+        [seed, b"SELECT "],
+        lambda o: (HINT_COLOR + "uniqExact") in o,
+    )
+
+    # 2. The predicted next token is acceptable like any other hint: step into the list with Down
+    #    (several tokens can be predicted, so one is selected explicitly, exactly like the static
+    #    multi-match case), then Tab inserts the whole selected token. Nothing is overwritten, so
+    #    "SELECT " becomes "SELECT uniqExact"; typing "FOO" right after yields the contiguous
+    #    "uniqExactFOO" only if the token was really inserted into the buffer (the ghost hint alone
+    #    would never produce that), which distinguishes acceptance from merely showing the hint.
+    run_with_timeout(
+        base[0],
+        args,
+        "model_next_token_accept",
+        [seed, b"SELECT ", b"\x1b[B", b"\t", b"FOO"],
+        lambda o: "uniqExactFOO" in o,
+    )
+
+
+if __name__ == "__main__":
+    # The cases fork a PTY and pass a `check` closure to the worker; that requires the "fork" start
+    # method (the closure is not picklable, as "spawn"/"forkserver" would need). Python 3.14 made
+    # "forkserver" the default on Linux, so request "fork" explicitly.
+    multiprocessing.set_start_method("fork", force=True)
+    main()
