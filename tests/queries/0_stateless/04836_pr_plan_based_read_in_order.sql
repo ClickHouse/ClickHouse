@@ -14,8 +14,12 @@
 
 DROP TABLE IF EXISTS t_pr_read_in_order;
 
+-- No implicit min-max index on `a`: a skip index over the sort column makes `tryOptimizeTopK` pick the
+-- skip-index top-K path, and `mergeTreeReadCanBeShipped` then keeps such a read local, so the plan-based
+-- split would never engage. That precedence is independent of this test - an explicit `INDEX a TYPE minmax`
+-- has the same effect - so opt out of the implicit index instead of testing the interaction here.
 CREATE TABLE t_pr_read_in_order (a UInt64, b UInt64)
-ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 128;
+ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 128, add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO t_pr_read_in_order SELECT number, number % 10 FROM numbers(100000);
 OPTIMIZE TABLE t_pr_read_in_order FINAL;

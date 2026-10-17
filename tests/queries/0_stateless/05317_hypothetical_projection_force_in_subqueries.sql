@@ -2,7 +2,7 @@
 -- the verdict still names the setting
 DROP TABLE IF EXISTS t_whatif_force_nested;
 CREATE TABLE t_whatif_force_nested (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a
-    SETTINGS index_granularity = 100, index_granularity_bytes = '10Mi';
+    SETTINGS index_granularity = 100, index_granularity_bytes = '10Mi', add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_whatif_force_nested SELECT number, number % 100, number FROM numbers(300);
 
 SET optimize_use_projections = 1, optimize_use_implicit_projections = 0, prefer_optimize_projection = 0, enable_parallel_replicas = 0, optimize_move_to_prewhere = 1;

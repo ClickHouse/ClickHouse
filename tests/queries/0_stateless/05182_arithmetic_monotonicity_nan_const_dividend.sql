@@ -16,14 +16,15 @@ SET explain_query_plan_default = 'legacy';
 SET materialize_statistics_on_insert = 1;
 
 DROP TABLE IF EXISTS t_monotonicity_nan_const_dividend;
-CREATE TABLE t_monotonicity_nan_const_dividend (k Float64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = 'basic';
+-- The implicit minmax index on `k` would add its own `Granules` line to the plans checked below.
+CREATE TABLE t_monotonicity_nan_const_dividend (k Float64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = 'basic', add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_monotonicity_nan_const_dividend VALUES (1), (2), (3), (inf);
 
 -- The liveness probes use an integer key over `[1, 100]`: the statistics pruner does not analyze a function
 -- chain over a `Float` column at all (its min/max can hide a `NaN`), so a probe over the `Float64` table
 -- could never show a `Statistics` entry. An integer key also makes a non-zero multiplier monotonic.
 DROP TABLE IF EXISTS t_monotonicity_const_dividend_finite;
-CREATE TABLE t_monotonicity_const_dividend_finite (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1, auto_statistics_types = 'basic';
+CREATE TABLE t_monotonicity_const_dividend_finite (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1, auto_statistics_types = 'basic', add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_monotonicity_const_dividend_finite SELECT number + 1 FROM numbers(100);
 
 SELECT 'the statistics pruner analyzes a constant dividend';

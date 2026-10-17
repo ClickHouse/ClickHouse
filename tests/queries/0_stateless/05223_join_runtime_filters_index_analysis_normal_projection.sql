@@ -8,6 +8,7 @@
 -- sorted by the join key prunes, a projection sorted by an unrelated column does not, and both return
 -- the same rows as the read from the base table.
 
+-- The implicit minmax indices of `add_minmax_index_for_numeric_columns` change the plans this test pins.
 DROP TABLE IF EXISTS rf_proj_fact SYNC;
 DROP TABLE IF EXISTS rf_proj_dim SYNC;
 
@@ -21,8 +22,8 @@ CREATE TABLE rf_proj_fact
     PROJECTION p_by_id (SELECT k, id, v ORDER BY id),
     PROJECTION p_by_v (SELECT k, id, v ORDER BY v)
 )
-ENGINE = MergeTree ORDER BY (k, id) SETTINGS index_granularity = 16;
-CREATE TABLE rf_proj_dim (id UInt64, tag String) ENGINE = MergeTree ORDER BY id;
+ENGINE = MergeTree ORDER BY (k, id) SETTINGS index_granularity = 16, add_minmax_index_for_numeric_columns = 0;
+CREATE TABLE rf_proj_dim (id UInt64, tag String) ENGINE = MergeTree ORDER BY id SETTINGS add_minmax_index_for_numeric_columns = 0;
 INSERT INTO rf_proj_fact SELECT cityHash64(number), number, 1999 - number FROM numbers(2000);
 INSERT INTO rf_proj_dim SELECT number, if(number < 64, 'hot', 'cold') FROM numbers(2000);
 

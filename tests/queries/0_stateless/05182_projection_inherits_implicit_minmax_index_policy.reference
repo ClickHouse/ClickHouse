@@ -1,0 +1,10 @@
+table off, projection inherits
+ReadFromMergeTree (p_inherit)
+table off, projection explicitly on
+ReadFromMergeTree (p_explicit_on)
+Name: auto_minmax_index_c
+table on, projection inherits
+ReadFromMergeTree (p_inherit)
+Name: auto_minmax_index_c
+table on, projection explicitly off
+ReadFromMergeTree (p_explicit_off)

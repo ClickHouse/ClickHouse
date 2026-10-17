@@ -43,8 +43,11 @@ ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS ${user_hide}, ${user_show}"
 
 ${CLICKHOUSE_CLIENT} --multiquery --query "
 DROP TABLE IF EXISTS t_qcc_where;
+-- \`add_minmax_index_for_numeric_columns = 0\`: an implicit minmax index on \`v\` would prune every
+-- mark of the restricted read (\`v >= 50\` ANDed with the \`v < 50\` policy) before the residual
+-- WHERE ever runs, so the writer under test would see no marks and record nothing.
 CREATE TABLE t_qcc_where (id UInt64, v UInt64)
-ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_qcc_where SELECT number, number FROM numbers(100);
 
 CREATE USER ${user_hide} NOT IDENTIFIED;

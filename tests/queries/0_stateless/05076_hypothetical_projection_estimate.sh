@@ -5,13 +5,15 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# the implicit minmax indices of add_minmax_index_for_numeric_columns change the plans and estimates this test pins
+
 # count() must reach the read step and the real projection must be allowed to win
 PIN="optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0, optimize_use_projections = 1, optimize_read_in_order = 1, prefer_optimize_projection = 0"
 
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_est; DROP TABLE IF EXISTS t_real;
     CREATE TABLE t_est (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a
-        SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+        SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
     CREATE TABLE t_real AS t_est;
     ALTER TABLE t_real ADD PROJECTION p_b (SELECT a, b, v ORDER BY b);
     ALTER TABLE t_real ADD PROJECTION p_ba (SELECT a, b, v ORDER BY (b, a));
@@ -29,7 +31,7 @@ $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_est_g; DROP TABLE IF EXISTS t_real_g;
     CREATE TABLE t_est_g (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a
         SETTINGS index_granularity = 100, index_granularity_bytes = 10485760, use_const_adaptive_granularity = 0,
-                 min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+                 min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
     CREATE TABLE t_real_g AS t_est_g;
     ALTER TABLE t_real_g ADD PROJECTION p_g (SELECT a, b, v ORDER BY b) WITH SETTINGS (index_granularity = 50);
     -- kept larger than the other tables: the not-chosen case needs the projection to read several granules
@@ -108,7 +110,7 @@ $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_est_a;
     CREATE TABLE t_est_a (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a
         SETTINGS index_granularity = 100, index_granularity_bytes = 10485760, use_const_adaptive_granularity = 0,
-                 min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+                 min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
     INSERT INTO t_est_a SELECT number, number % 100, number FROM numbers(250);
     CREATE HYPOTHETICAL PROJECTION p_a ON t_est_a (SELECT a, b, v ORDER BY b);
     EXPLAIN WHATIF SELECT a, b, v FROM t_est_a WHERE b >= 0 SETTINGS ${PIN};
@@ -126,7 +128,7 @@ echo "--- a baseline already served by a real projection is reported as such ---
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_served;
     CREATE TABLE t_served (a UInt64, b UInt64, c UInt64) ENGINE = MergeTree ORDER BY a
-        SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+        SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
     ALTER TABLE t_served ADD PROJECTION p_ab (SELECT a, b ORDER BY b);
     INSERT INTO t_served SELECT number, number % 100, number FROM numbers(1000);
     CREATE HYPOTHETICAL PROJECTION p_c ON t_served (SELECT a, b, c ORDER BY c);

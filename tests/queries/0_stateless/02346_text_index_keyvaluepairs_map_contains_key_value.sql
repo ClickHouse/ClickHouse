@@ -9,6 +9,7 @@ SET enable_analyzer = 1;
 SET use_skip_indexes = 1;
 SET query_plan_direct_read_from_text_index = 1;
 
+-- The implicit minmax indices of `add_minmax_index_for_numeric_columns` change the plans this test pins.
 DROP TABLE IF EXISTS tab;
 
 CREATE TABLE tab
@@ -20,7 +21,7 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 2, min_bytes_for_wide_part = 0;
+SETTINGS index_granularity = 2, min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
 
 -- One part with two granules: rows (1, 2) and rows (3, 4). Row 4 has no pairs at all.
 INSERT INTO tab VALUES (1, {'level':'error','service':'api'}, 'error'), (2, {'level':'warn','service':'api'}, 'warn'), (3, {'level':'error','service':'web'}, 'x'), (4, {}, '');
@@ -77,7 +78,7 @@ CREATE TABLE tab_dup
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 2, min_bytes_for_wide_part = 0;
+SETTINGS index_granularity = 2, min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO tab_dup VALUES (1, map('k', 'first', 'k', 'second')), (2, map('k', 'second')), (3, map('k', ''));
 
@@ -110,7 +111,7 @@ CREATE TABLE tab_lc
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 2, min_bytes_for_wide_part = 0;
+SETTINGS index_granularity = 2, min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO tab_lc VALUES (1, {'level':'error'}), (2, {'level':'warn'});
 
@@ -130,7 +131,7 @@ CREATE TABLE tab_partial
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0;
+SETTINGS min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
 
 SYSTEM STOP MERGES tab_partial;
 
@@ -161,7 +162,7 @@ CREATE TABLE tab_keys
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 2, min_bytes_for_wide_part = 0;
+SETTINGS index_granularity = 2, min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO tab_keys VALUES (1, {'level':'error'}), (2, {'level':'warn'}), (3, {'service':'error'});
 

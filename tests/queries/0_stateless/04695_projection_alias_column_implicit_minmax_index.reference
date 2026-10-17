@@ -1,0 +1,8 @@
+alias	1	15
+alias	2	2
+parent-index	auto_minmax_index_ab_sum
+proj-read	2
+proj-read	15
+materialized	1	42
+materialized	2	6
+create-no-respect-aliases-ok

@@ -18,7 +18,8 @@ ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0,
          packed_skip_index_max_bytes = '1M',
          auto_statistics_types = '',
-         index_granularity = 1024;
+         index_granularity = 1024,
+         add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO t_text_no_pack SELECT number,     toString(number * 7919)  FROM numbers(2000);
 INSERT INTO t_text_no_pack SELECT number+2000, toString(number * 31337) FROM numbers(2000);

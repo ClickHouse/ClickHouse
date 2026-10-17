@@ -1,6 +1,8 @@
 -- Tags: zookeeper, no-shared-merge-tree
 -- no-shared-merge-tree: SharedMergeTree replaces the replicated engine and has no replica with fixed granularity
 -- a replica with fixed granularity makes the table write fixed marks, so the row widths do not change the projection layout
+-- the implicit minmax indices of add_minmax_index_for_numeric_columns would give the projection its own skip indexes,
+-- and `EXPLAIN WHATIF` does not estimate such projections, so the tables opt out
 
 SET optimize_use_projections = 1, optimize_use_implicit_projections = 0, prefer_optimize_projection = 0, force_optimize_projection = 0, enable_parallel_replicas = 0;
 
@@ -10,17 +12,17 @@ DROP TABLE IF EXISTS t_real_r1;
 DROP TABLE IF EXISTS t_real_r2;
 
 CREATE TABLE t_fixed_r1 (a UInt64, b UInt64, s String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/05323/t', 'r1') ORDER BY a
-    SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+    SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
 CREATE TABLE t_fixed_r2 (a UInt64, b UInt64, s String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/05323/t', 'r2') ORDER BY a
-    SETTINGS index_granularity = 100, index_granularity_bytes = 1024, enable_mixed_granularity_parts = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+    SETTINGS index_granularity = 100, index_granularity_bytes = 1024, enable_mixed_granularity_parts = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
 
 -- the twin tables have the projection from the start, so the replica that inserts writes the projection part
 CREATE TABLE t_real_r1 (a UInt64, b UInt64, s String, PROJECTION p_b (SELECT a, b, s ORDER BY b))
     ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/05323/t_real', 'r1') ORDER BY a
-    SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+    SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
 CREATE TABLE t_real_r2 (a UInt64, b UInt64, s String, PROJECTION p_b (SELECT a, b, s ORDER BY b))
     ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/05323/t_real', 'r2') ORDER BY a
-    SETTINGS index_granularity = 100, index_granularity_bytes = 1024, enable_mixed_granularity_parts = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+    SETTINGS index_granularity = 100, index_granularity_bytes = 1024, enable_mixed_granularity_parts = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO t_fixed_r2 SELECT number, number % 100, repeat('x', number % 50) FROM numbers(1000);
 INSERT INTO t_real_r2 SELECT number, number % 100, repeat('x', number % 50) FROM numbers(1000);

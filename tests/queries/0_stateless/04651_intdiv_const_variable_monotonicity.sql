@@ -3,6 +3,12 @@
 -- `getMonotonicityForRange` is strictly negative, strictly positive or spans zero, so the
 -- randomizer (`randint(1, 65536)`) would make these probes non-deterministic. It is pinned
 -- per DDL below as well.
+--
+-- `add_minmax_index_for_numeric_columns` is pinned to 0 per DDL as well: these probes measure
+-- primary-key pruning alone. With an implicit min-max index on the key column the condition
+-- becomes exactly resolvable by a skip index, so the plan collapses into
+-- `ReadFromPreparedSource (_exact_count_projection)` and the `Granules: N/M` line the case 8
+-- rows look for disappears from `EXPLAIN indexes = 1`.
 
 -- Every query prints 1 when the count read through the primary key equals the full-scan
 -- ground truth from an identical `ENGINE = Memory` table.
@@ -33,7 +39,7 @@ DROP TABLE IF EXISTS m_cv_i64p;
 -- Case 1: strictly-negative range, signed constant, integer divisor.
 -- `intDiv(-1000, a)` over ascending a = -40, -30, -20, -10 is 25, 33, 50, 100, i.e. INCREASING.
 -- ---------------------------------------------------------------------------------------------
-CREATE TABLE t_cv_neg (a Int32) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1;
+CREATE TABLE t_cv_neg (a Int32) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 CREATE TABLE m_cv_neg (a Int32) ENGINE = Memory;
 INSERT INTO t_cv_neg VALUES (-40), (-30), (-20), (-10);
 INSERT INTO m_cv_neg VALUES (-40), (-30), (-20), (-10);
@@ -50,7 +56,7 @@ SELECT 'c1 divide neg c>0 eq', (SELECT count() FROM t_cv_neg WHERE divide(toInt3
 -- ---------------------------------------------------------------------------------------------
 -- Case 2: strictly-positive range, signed constant (regression guard: these are correct today).
 -- ---------------------------------------------------------------------------------------------
-CREATE TABLE t_cv_pos (a Int32) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1;
+CREATE TABLE t_cv_pos (a Int32) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 CREATE TABLE m_cv_pos (a Int32) ENGINE = Memory;
 INSERT INTO t_cv_pos VALUES (10), (20), (30), (40);
 INSERT INTO m_cv_pos VALUES (10), (20), (30), (40);
@@ -67,11 +73,11 @@ SELECT 'c2 divide pos c>0 eq', (SELECT count() FROM t_cv_pos WHERE divide(toInt3
 -- `make_signed_t`, so `intDiv(toUInt8(200), x)` == `intDiv(toInt8(-56), x)`. BOTH range signs are
 -- load-bearing: on the negative range master is accidentally correct, so a `!`-only fix breaks it.
 -- ---------------------------------------------------------------------------------------------
-CREATE TABLE t_cv_i8p (a Int8) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1;
+CREATE TABLE t_cv_i8p (a Int8) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 CREATE TABLE m_cv_i8p (a Int8) ENGINE = Memory;
 INSERT INTO t_cv_i8p VALUES (10), (20), (30), (40);
 INSERT INTO m_cv_i8p VALUES (10), (20), (30), (40);
-CREATE TABLE t_cv_i8n (a Int8) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1;
+CREATE TABLE t_cv_i8n (a Int8) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 CREATE TABLE m_cv_i8n (a Int8) ENGINE = Memory;
 INSERT INTO t_cv_i8n VALUES (-40), (-30), (-20), (-10);
 INSERT INTO m_cv_i8n VALUES (-40), (-30), (-20), (-10);
@@ -91,11 +97,11 @@ SELECT 'c3 divide pos eq', (SELECT count() FROM t_cv_i8p WHERE divide(toUInt8(20
 -- Case 4: wider unsigned constants. The boundary is `2^(8 * width - 1)` of the dividend's own
 -- width; the divisor width is irrelevant. Big-int constants must be STRING literals.
 -- ---------------------------------------------------------------------------------------------
-CREATE TABLE t_cv_i64n (a Int64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1;
+CREATE TABLE t_cv_i64n (a Int64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 CREATE TABLE m_cv_i64n (a Int64) ENGINE = Memory;
 INSERT INTO t_cv_i64n VALUES (-40), (-30), (-20), (-10);
 INSERT INTO m_cv_i64n VALUES (-40), (-30), (-20), (-10);
-CREATE TABLE t_cv_i64p (a Int64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1;
+CREATE TABLE t_cv_i64p (a Int64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 CREATE TABLE m_cv_i64p (a Int64) ENGINE = Memory;
 INSERT INTO t_cv_i64p VALUES (10), (20), (30), (40);
 INSERT INTO m_cv_i64p VALUES (10), (20), (30), (40);

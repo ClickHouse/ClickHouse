@@ -2,12 +2,13 @@
 -- so no atom can use the set of `x IN (subquery)`. Index analysis must not build that set, otherwise even
 -- `EXPLAIN` executes the subquery. A key column that the predicate does reach builds the set, which shows
 -- that the read rows observe building it.
+-- the implicit minmax index of add_minmax_index_for_numeric_columns on `x` could use the set and build it, so the table opts out
 
 SET log_queries = 1;
 SET use_index_for_in_with_subqueries = 1;
 SET analyze_index_with_multiple_key_columns_per_condition = 1;
 
-CREATE TABLE t_set (x UInt64, y UInt64, z UInt64) ENGINE = MergeTree ORDER BY (tuple(x, y), z);
+CREATE TABLE t_set (x UInt64, y UInt64, z UInt64) ENGINE = MergeTree ORDER BY (tuple(x, y), z) SETTINGS add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_set VALUES (1, 1, 1), (2, 2, 2);
 
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT sum(x) FROM t_set WHERE x IN (SELECT number FROM numbers(1000000)))

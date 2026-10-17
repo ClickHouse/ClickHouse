@@ -5,12 +5,13 @@
 DROP TABLE IF EXISTS r1;
 DROP TABLE IF EXISTS r2;
 
+-- Implicit min-max indices let the original table read as few marks as projection `pr`, so `pr` would not be chosen.
 CREATE TABLE r1 (g UInt8, k UInt32, i UInt32, s UInt32)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t', 'r1') PARTITION BY g ORDER BY k
-SETTINGS index_granularity = 16, lightweight_mutation_projection_mode = 'rebuild';
+SETTINGS index_granularity = 16, lightweight_mutation_projection_mode = 'rebuild', add_minmax_index_for_numeric_columns = 0;
 CREATE TABLE r2 (g UInt8, k UInt32, i UInt32, s UInt32)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t', 'r2') PARTITION BY g ORDER BY k
-SETTINGS index_granularity = 16, lightweight_mutation_projection_mode = 'rebuild';
+SETTINGS index_granularity = 16, lightweight_mutation_projection_mode = 'rebuild', add_minmax_index_for_numeric_columns = 0;
 
 SET alter_sync = 1;
 

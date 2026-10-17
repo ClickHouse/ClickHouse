@@ -983,6 +983,20 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (args.storage_def->settings)
             metadata.settings_changes = args.storage_def->settings->ptr();
 
+        /// Whether the table's own stored `SETTINGS` clause states this setting. The merged
+        /// `storage_settings` cannot answer that: it starts from the server-level defaults, and
+        /// `loadFromConfig` marks every `<merge_tree>` config override as `changed`, so an inherited
+        /// value is indistinguishable from one written in the table definition.
+        const auto is_stored_in_definition = [&](std::string_view name)
+        {
+            if (!args.storage_def->settings)
+                return false;
+            for (const auto & change : args.storage_def->settings->changes)
+                if (change.name == name)
+                    return true;
+            return false;
+        };
+
         /// The codec-valued MergeTree settings accept an arbitrary codec expression and are applied without
         /// going through the codec gate that column codecs and `TTL ... RECOMPRESS` use, so a gated codec
         /// could slip in through `SETTINGS default_compression_codec = ...`.
@@ -999,16 +1013,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// documented to skip all sanity checks and is left alone.
         if (args.mode != LoadingStrictnessLevel::FORCE_RESTORE)
         {
-            const auto is_stored_in_definition = [&](std::string_view name)
-            {
-                if (!args.storage_def->settings)
-                    return false;
-                for (const auto & change : args.storage_def->settings->changes)
-                    if (change.name == name)
-                        return true;
-                return false;
-            };
-
             const auto validate_codec_setting = [&](std::string_view name, const String & codec)
             {
                 if (codec.empty())
@@ -1048,14 +1052,23 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
                     /// Backward compatibility: older versions (before 25.12) stored implicit indices
                     /// on disk as regular indices. Re-mark them so `explicitToString` excludes them.
+                    /// Only the policy of the indexed column's own category proves that the index was
+                    /// implicit, and only when the table's stored `SETTINGS` clause enables it: an
+                    /// inherited value may differ from the one the table was created with, and a stored
+                    /// policy of another category (or a disabled one) says nothing about this index.
                     auto & added = metadata.secondary_indices.back();
                     String col_name = index_name.substr(strlen(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX));
                     if (columns.has(col_name))
                     {
                         const auto & col_type = columns.get(col_name).type;
-                        if ((metadata.add_minmax_index_for_numeric_columns && isNumber(col_type))
-                            || (metadata.add_minmax_index_for_string_columns && isString(col_type))
-                            || (metadata.add_minmax_index_for_temporal_columns && isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(col_type)))
+                        const auto stored_and_enabled = [&](std::string_view name, bool enabled)
+                        {
+                            return enabled && is_stored_in_definition(name);
+                        };
+                        if ((isNumber(col_type) && stored_and_enabled("add_minmax_index_for_numeric_columns", metadata.add_minmax_index_for_numeric_columns))
+                            || (isString(col_type) && stored_and_enabled("add_minmax_index_for_string_columns", metadata.add_minmax_index_for_string_columns))
+                            || (isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(col_type)
+                                && stored_and_enabled("add_minmax_index_for_temporal_columns", metadata.add_minmax_index_for_temporal_columns)))
                             added.is_implicitly_created = true;
                     }
                 }
@@ -1083,7 +1096,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 try
                 {
                     auto projection = ProjectionDescription::getProjectionFromAST(
-                        projection_ast, columns, &metadata.partition_key, context, args.mode, args.query.attach_short_syntax);
+                        projection_ast, columns, &metadata.partition_key, context, args.mode, args.query.attach_short_syntax, &metadata);
                     metadata.projections.add(std::move(projection));
                 }
                 catch (...)

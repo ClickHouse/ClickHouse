@@ -6,11 +6,11 @@ SYSTEM FLUSH LOGS metric_log;
 
 SELECT database, table, name, type, granularity
 FROM system.data_skipping_indices
-WHERE database = 'system' AND table = 'query_log'
+WHERE database = 'system' AND table = 'query_log' AND name NOT LIKE 'auto_minmax_index_%'
 ORDER BY name;
 
 -- Check that a table without query_id (metric_log) only has minmax indexes.
 SELECT database, table, name, type, granularity
 FROM system.data_skipping_indices
-WHERE database = 'system' AND table = 'metric_log'
+WHERE database = 'system' AND table = 'metric_log' AND name NOT LIKE 'auto_minmax_index_%'
 ORDER BY name;

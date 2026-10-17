@@ -24,7 +24,9 @@ settings
     max_merge_delayed_streams_for_parallel_write = 10,
     -- avoid superfluous merges
     merge_selector_base = 1000,
-    auto_statistics_types = '';
+    auto_statistics_types = '',
+    -- the test caps memory tightly; per-column auto minmax indices add overhead and trigger MEMORY_LIMIT_EXCEEDED
+    add_minmax_index_for_numeric_columns = 0;
 
 insert into t_wide select * from generateRandom() limit 10 settings optimize_trivial_insert_select = 0;
 

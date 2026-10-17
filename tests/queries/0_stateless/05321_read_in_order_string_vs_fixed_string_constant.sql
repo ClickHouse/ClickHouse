@@ -135,7 +135,9 @@ DROP TABLE t_rio_wrapped;
 SET optimize_limit_by_in_order = 1, use_primary_key = 0, use_statistics_for_part_pruning = 0;
 
 DROP TABLE IF EXISTS t_rio_decimal_float;
-CREATE TABLE t_rio_decimal_float (d Decimal(38, 18), ts UInt32) ENGINE = MergeTree ORDER BY (d, ts);
+-- Implicit min-max indices would prune by `d` like the primary key, which is disabled above.
+-- That pruning drops rows: https://github.com/ClickHouse/ClickHouse/issues/126494
+CREATE TABLE t_rio_decimal_float (d Decimal(38, 18), ts UInt32) ENGINE = MergeTree ORDER BY (d, ts) SETTINGS add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_rio_decimal_float VALUES ('1', 20), ('1', 30), ('1.000000000000000001', 10), ('1.000000000000000001', 20), ('2', 5);
 
 SELECT 'Decimal(38, 18) key, Float64 constant';

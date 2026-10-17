@@ -2,6 +2,10 @@
 
 SET enable_full_text_index = 1;
 
+-- Pin the implicit min-max indices off: the size comparison below reads `data_compressed_bytes` of the
+-- table's only skip index through a scalar subquery over `system.data_skipping_indices`, and an implicit
+-- `auto_minmax_index_id` would add a second row to it.
+
 DROP TABLE IF EXISTS tab_src;
 DROP TABLE IF EXISTS tab_none;
 DROP TABLE IF EXISTS tab_bitpacking;
@@ -29,7 +33,8 @@ CREATE TABLE tab_none (
     INDEX idx str TYPE text(tokenizer = splitByNonAlpha, posting_list_codec = 'none', posting_list_block_size = 1048576)
 )
 ENGINE = MergeTree
-ORDER BY id;
+ORDER BY id
+SETTINGS add_minmax_index_for_numeric_columns = 0;
 
 CREATE TABLE tab_bitpacking (
     id UInt64,
@@ -37,7 +42,8 @@ CREATE TABLE tab_bitpacking (
     INDEX idx str TYPE text(tokenizer = splitByNonAlpha, posting_list_codec = 'bitpacking', posting_list_block_size = 1048576)
 )
 ENGINE = MergeTree
-ORDER BY id;
+ORDER BY id
+SETTINGS add_minmax_index_for_numeric_columns = 0;
 
 CREATE TABLE tab_pfor (
     id UInt64,
@@ -45,7 +51,8 @@ CREATE TABLE tab_pfor (
     INDEX idx str TYPE text(tokenizer = splitByNonAlpha, posting_list_codec = 'pfor', posting_list_block_size = 1048576)
 )
 ENGINE = MergeTree
-ORDER BY id;
+ORDER BY id
+SETTINGS add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO tab_none SELECT * FROM tab_src;
 INSERT INTO tab_bitpacking SELECT * FROM tab_src;
