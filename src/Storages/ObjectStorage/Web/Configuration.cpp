@@ -115,6 +115,7 @@ StorageObjectStorageQuerySettings StorageWebConfiguration::getQuerySettings(cons
     return StorageObjectStorageQuerySettings{
         .truncate_on_insert = false,
         .create_new_file_on_insert = false,
+        .split_on_write_by_size_bytes = 0,
         .schema_inference_use_cache = settings[Setting::schema_inference_use_cache_for_url],
         .schema_inference_mode = settings[Setting::schema_inference_mode],
         .skip_empty_files = settings[Setting::engine_url_skip_empty_files],

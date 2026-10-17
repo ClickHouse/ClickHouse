@@ -1,0 +1,16 @@
+--- A split insert
+1000	0	999
+data.1.tsv
+data.2.tsv
+data.3.tsv
+data.tsv
+--- After a reload the table reads only the base object
+300	0	299
+--- The truncate removes the base object and leaves the forgotten tail in place, with a warning in the log
+1
+data.1.tsv
+data.2.tsv
+data.3.tsv
+--- A truncating split insert reclaims the forgotten tail by number instead of failing on it
+300	0	299
+data.tsv

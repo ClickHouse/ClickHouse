@@ -1,0 +1,10 @@
+--- An object of the running insert is published
+1
+--- The second truncating insert is refused while the first one is running
+1
+--- Only the rows of the first insert are there
+200	200	1000000	1000199
+200	200	1000000	1000199
+--- Once the first insert is over, a truncating insert rewrites the table
+10	2000000	2000009
+10	2000000	2000009

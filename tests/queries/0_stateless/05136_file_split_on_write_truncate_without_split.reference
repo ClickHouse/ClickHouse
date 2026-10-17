@@ -1,0 +1,6 @@
+--- A large split insert, then a truncating rewrite with the splitting turned off
+engine table	100	0	99
+wildcard	100	0	99
+data.tsv
+--- The stale rows are not visible for a new reader either
+100	0	99
