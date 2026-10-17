@@ -1,0 +1,13 @@
+2
+2
+1
+2
+2
+SELECT *\nFROM\n(\n    SELECT *\n    FROM default.data\n    WHERE equals(id, _CAST(1, \'UInt64\'))\n) AS filtered
+1
+scalar function name rejected
+scalar function name rejected by formatQueryFromJSON
+non-Identifier parameter type rejected
+alias on the name rejected
+alias on the name rejected by the dialect
+alias on the placeholder rejected

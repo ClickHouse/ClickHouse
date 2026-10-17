@@ -40,6 +40,14 @@ public:
     ASTFunction() = default;
 
     String name;
+    /// An unresolved function name containing one or more `Identifier` query parameters.
+    /// Only `ASTTableExpression::table_function` may carry it, so after substitution the name
+    /// resolves to a parameterized view or to a table function with ordinary argument syntax.
+    /// Anything decided before substitution is out of reach: the bare `SELECT` argument grammar of
+    /// `view`, `viewIfPermitted` and `eval`, and inline insert data for `input`. While the name is
+    /// unresolved the arguments are formatted as secrets, because the function may take a password.
+    /// `ReplaceQueryParameterVisitor` resolves it before query analysis and rejects it elsewhere.
+    ASTPtr query_parameter_name;
     ASTPtr arguments;
     /// parameters - for parametric aggregate function. Example: quantile(0.9)(x) - what in first parens are 'parameters'.
     ASTPtr parameters;
@@ -113,6 +121,8 @@ public:
     /// This is used for parameterized view, to identify if name is 'db.view'
     bool isCompoundName() const { return flags<ASTFunctionFlags>().is_compound_name; }
     void setIsCompoundName(bool value) { flags<ASTFunctionFlags>().is_compound_name = value; }
+
+    void setQueryParameterName(ASTPtr identifier);
 
     bool hasSecretParts() const override;
 
