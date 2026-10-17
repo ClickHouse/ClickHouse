@@ -9995,7 +9995,7 @@ The mode applies to references to existing objects. Names of newly created objec
 written; creating an unquoted database or table whose name differs only in character case from an
 existing one is rejected, while a double-quoted new name is allowed and later matched exactly.
 )", 0, \
-        {"26.10", "sensitive", "sensitive", "New setting to resolve database and table names through an ASCII-case-folded namespace (`standard`) instead of exact matching."}) \
+        {"26.11", "sensitive", "sensitive", "New setting to resolve database and table names through an ASCII-case-folded namespace (`standard`) instead of exact matching."}) \
     DECLARE(NameMatchMode, column_and_query_name_matching, NameMatchMode::Sensitive, R"(
 Controls how column names and other query-scope names — subcolumns, aliases, CTE names, lambda
 arguments and similar — are matched during SELECT query analysis.
@@ -10016,7 +10016,7 @@ table reloaded from metadata are not pinned.
 
 Database and table names are covered by the separate setting `database_and_table_name_matching`.
 )", 0, \
-        {"26.10", "sensitive", "sensitive", "New setting to resolve column and other query-scope names through an ASCII-case-folded namespace (`standard`) instead of exact matching."}) \
+        {"26.11", "sensitive", "sensitive", "New setting to resolve column and other query-scope names through an ASCII-case-folded namespace (`standard`) instead of exact matching."}) \
     DECLARE(UInt64, max_limit_for_vector_search_queries, 1'000, R"(
 SELECT queries with LIMIT bigger than this setting cannot use vector similarity indices. Helps to prevent memory overflows in vector similarity indices.
 )", 0, \
