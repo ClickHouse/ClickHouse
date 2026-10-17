@@ -1,0 +1,26 @@
+--- input_format_netcdf_add_dimension_columns, on and then off
+x	UInt64					
+v	Int32					
+v	Int32					
+1
+-1
+3
+--- input_format_netcdf_add_dimension_columns, off and then on
+v	Int32					
+x	UInt64					
+v	Int32					
+0	1
+1	-1
+2	3
+--- input_format_netcdf_fill_value_as_null, on and then off
+v	Nullable(Int32)					
+v	Int32					
+1
+-1
+3
+--- input_format_netcdf_fill_value_as_null, off and then on
+v	Int32					
+v	Nullable(Int32)					
+1
+\N
+3

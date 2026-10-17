@@ -1,0 +1,17 @@
+--- a NULL and an empty string are not the same value
+Nullable(String)	1	\N
+Nullable(String)	0	
+Nullable(String)	0	68656C6C6F
+--- without the setting the sentinel is an ordinary value
+String	01
+String	
+String	68656C6C6F
+--- the sentinel avoids the data of the column
+1	\N
+0	01
+--- a FixedString of one byte whose data takes the shortest sentinel
+1	\N
+0	01
+--- a String column with no NULLs is written without the attribute
+String	hello
+String	hello
