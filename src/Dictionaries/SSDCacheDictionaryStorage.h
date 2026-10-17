@@ -580,14 +580,16 @@ public:
         return true;
     }
 
-    bool readKeys(size_t block_start, size_t blocks_length, PaddedPODArray<KeyType> & out) const
+    /// For complex keys, the keys written into `out` are `std::string_view`s pointing into `read_buffer_memory`,
+    /// so the caller must keep `read_buffer_memory` alive for as long as it uses `out`.
+    bool readKeys(size_t block_start, size_t blocks_length, Memory<> & read_buffer_memory, PaddedPODArray<KeyType> & out) const
     {
         if (block_start + blocks_length > current_blocks_size)
             return false;
 
         size_t buffer_size_in_bytes = blocks_length * block_size;
 
-        Memory<> read_buffer_memory(block_size * blocks_length, block_size);
+        read_buffer_memory = Memory<>(block_size * blocks_length, block_size);
 
         iocb request{};
         iocb * request_ptr = &request;
@@ -1323,8 +1325,10 @@ private:
                 if (started_reusing_old_partitions)
                 {
                     /// If we start reusing old partitions we need to remove old keys on disk from index before writing buffer
+                    /// For complex keys, `old_keys` point into `old_keys_buffer`, so it must outlive them.
+                    Memory<> old_keys_buffer;
                     PaddedPODArray<KeyType> old_keys;
-                    file_buffer.readKeys(block_index_in_file_before_write, configuration.write_buffer_blocks_size, old_keys);
+                    file_buffer.readKeys(block_index_in_file_before_write, configuration.write_buffer_blocks_size, old_keys_buffer, old_keys);
 
                     size_t file_read_end_block_index = block_index_in_file_before_write + configuration.write_buffer_blocks_size;
 
