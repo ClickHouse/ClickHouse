@@ -99,6 +99,10 @@ private:
 
     bool lists_writing_thread_is_waiting = false;
 
+    /// Written under `mutex`, so an exit request made before `listsWritingThreadFunc` starts waiting
+    /// is still visible to the predicate of that wait.
+    bool lists_writing_thread_must_exit = false;
+
     std::atomic<bool> readonly;
     std::atomic<bool> backup_allowed;
     mutable std::mutex mutex;
