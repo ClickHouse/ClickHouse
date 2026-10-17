@@ -418,10 +418,11 @@ String extractConstStringFromArgument(std::string_view function_name, const Colu
 }
 
 
-String extractConstTagNameFromArgument(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index)
+String extractConstTagNameFromArgument(
+    std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index, bool allow_empty_tag_name)
 {
     String tag_name = extractConstStringFromArgument(function_name, arguments, argument_index);
-    if (tag_name.empty())
+    if (tag_name.empty() && !allow_empty_tag_name)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} must not be called with an empty tag name", function_name);
     }
@@ -480,13 +481,16 @@ Strings extractConstStringsFromArgument(std::string_view function_name, const Co
 }
 
 
-Strings extractConstTagNamesFromArgument(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index)
+Strings extractConstTagNamesFromArgument(
+    std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index, bool allow_empty_tag_name)
 {
     Strings tag_names = extractConstStringsFromArgument(function_name, arguments, argument_index);
     for (const auto & tag_name : tag_names)
     {
-        if (tag_name.empty())
+        if (tag_name.empty() && !allow_empty_tag_name)
+        {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} must not be called with an empty tag name", function_name);
+        }
     }
     return tag_names;
 }

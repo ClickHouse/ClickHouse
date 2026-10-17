@@ -5,7 +5,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
-#include <Storages/TimeSeries/PrometheusQueryToSQL/makeNoDuplicateSeriesPerStepCheck.h>
 
 
 namespace DB::ErrorCodes
@@ -37,11 +36,10 @@ SQLQueryPiece dropMetricName(SQLQueryPiece && query_piece, ConverterContext & co
 
         case StoreMethod::VECTOR_GRID:
         {
-            /// When we remove the metric name `__name__` it's possible that we get the same set of tags (i.e. the same `group`)
-            /// on time series which were different before we removed the metric name.
-            /// Prometheus evaluates each step independently, so this is allowed only if such series don't have values
-            /// at the same step (for example, if a metric was renamed at some point), and then their values are merged into one series.
-            /// Otherwise it's an error, we can't have multiple time series with the same set of tags in the same resultset.
+            /// The metric name `__name__` is not removed here, it's removed from the final result by finalizeSQL.
+            /// Here we only mark the series which have a metric name with the tag `kDroppedMetricNameMarker`.
+            /// This is the same as the delayed name removal in Prometheus: series which differ only by the metric name
+            /// stay distinct in intermediate results, and functions like label_replace can still read `__name__`.
             ///
             /// Example:
             ///             tags                           timestamp1        timestamp2
@@ -49,61 +47,48 @@ SQLQueryPiece dropMetricName(SQLQueryPiece && query_piece, ConverterContext & co
             /// metric2{tag1='value1', tag2='value2'}       value_c           value_d
             ///                                 ||
             ///                                 \/
-            ///             tags                           timestamp1        timestamp2
-            /// {tag1='value1', tag2='value2'}              value_a           value_b
-            /// {tag1='value1', tag2='value2'}              value_c           value_d
+            ///             tags                                   timestamp1        timestamp2
+            /// metric1{tag1='value1', tag2='value2', ''='1'}       value_a           value_b
+            /// metric2{tag1='value1', tag2='value2', ''='1'}       value_c           value_d
             ///
-            /// That's why we need the function timeSeriesThrowDuplicateSeriesIf() to detect such cases and throw an exception.
+            /// finalizeSQL removes both `__name__` and the marker, and throws an exception if series collide after that.
 
-            /// Step 1:
-            /// SELECT timeSeriesRemoveTag(group, '__name__') AS new_group,
-            ///        anyForEach(values) AS values
+            /// SELECT if(isNotNull(timeSeriesExtractTag(group, '__name__')), timeSeriesReplaceTag(group, '', '1', '', ''), group) AS group,
+            ///        values
             /// FROM <vector_grid>
-            /// GROUP BY new_group
-            /// HAVING timeSeriesThrowDuplicateSeriesIf(arrayExists(c -> c > 1, countForEach(<vector_grid>.values)), new_group) = 0
-            ASTPtr metric_name_removing_query;
+            ///
+            /// The empty source tag is a missing tag, and the empty regular expression matches its empty value,
+            /// so the marker is written to every series which has a metric name, whatever bytes that name contains.
+            /// The `if` reads the source column `group`. Its alias is the output column of the same name.
             {
                 SelectQueryBuilder builder;
 
                 builder.select_list.push_back(makeASTFunction(
-                    "timeSeriesRemoveTag", make_intrusive<ASTIdentifier>(ColumnNames::Group), make_intrusive<ASTLiteral>(kMetricName)));
-                builder.select_list.back()->setAlias(ColumnNames::NewGroup);
-
-                builder.select_list.push_back(makeNoDuplicateSeriesPerStepValues(make_intrusive<ASTIdentifier>(ColumnNames::Values)));
-                builder.select_list.back()->setAlias(ColumnNames::Values);
-
-                context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(query_piece.select_query), SQLSubqueryType::TABLE});
-                builder.from_table = context.subqueries.back().name;
-
-                builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
-
-                builder.having = makeNoDuplicateSeriesPerStepCheck(
-                    make_intrusive<ASTIdentifier>(Strings{builder.from_table, ColumnNames::Values}),
-                    make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
-
-                metric_name_removing_query = builder.getSelectQuery();
-            }
-
-            /// Step 2:
-            /// SELECT new_group AS group, values
-            /// FROM step1
-            ASTPtr column_renaming_query;
-            {
-                SelectQueryBuilder builder;
-
-                builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
+                    "if",
+                    makeASTFunction(
+                        "isNotNull",
+                        makeASTFunction(
+                            "timeSeriesExtractTag",
+                            make_intrusive<ASTIdentifier>(ColumnNames::Group),
+                            make_intrusive<ASTLiteral>(kMetricName))),
+                    makeASTFunction(
+                        "timeSeriesReplaceTag",
+                        make_intrusive<ASTIdentifier>(ColumnNames::Group),
+                        make_intrusive<ASTLiteral>(kDroppedMetricNameMarker),
+                        make_intrusive<ASTLiteral>(kDroppedMetricNameMarkerValue),
+                        make_intrusive<ASTLiteral>(String{}),
+                        make_intrusive<ASTLiteral>(String{})),
+                    make_intrusive<ASTIdentifier>(ColumnNames::Group)));
                 builder.select_list.back()->setAlias(ColumnNames::Group);
 
                 builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
 
-                context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(metric_name_removing_query), SQLSubqueryType::TABLE});
+                context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(query_piece.select_query), SQLSubqueryType::TABLE});
                 builder.from_table = context.subqueries.back().name;
 
-                column_renaming_query = builder.getSelectQuery();
+                query_piece.select_query = builder.getSelectQuery();
             }
-
-            query_piece.select_query = std::move(column_renaming_query);
-            query_piece.metric_name_dropped = true;
+            context.metric_name_drop_deferred = true;
 
             return std::move(query_piece);
         }

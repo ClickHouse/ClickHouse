@@ -665,8 +665,12 @@ namespace
         : dest_tag(dest_tag_), separator(separator_)
         {
             src_values.resize(src_tags_.size());
+            /// A tag with an empty name can't be stored, so an empty source tag always behaves like a missing tag.
             for (size_t i = 0; i != src_tags_.size(); ++i)
-                positions_in_src_tags[src_tags_[i]].push_back(i);
+            {
+                if (!src_tags_[i].empty())
+                    positions_in_src_tags[src_tags_[i]].push_back(i);
+            }
             separators_total_length = src_values.empty() ? 0 : (separator.length() * (src_values.size() - 1));
         }
 
@@ -739,12 +743,16 @@ namespace
 
         TagNamesAndValuesPtr operator()(const TagNamesAndValuesPtr & old_tags)
         {
-            /// Find `src_tag` in the old tags.
+            /// Find `src_tag` in the old tags. A tag with an empty name can't be stored,
+            /// so an empty source tag always behaves like a missing tag.
             std::string_view src_value;
-            for (const auto & [tag_name, tag_value] : *old_tags)
+            if (!src_tag.empty())
             {
-                if (tag_name == src_tag)
-                    src_value = tag_value;
+                for (const auto & [tag_name, tag_value] : *old_tags)
+                {
+                    if (tag_name == src_tag)
+                        src_value = tag_value;
+                }
             }
 
             /// Check if it matches and extract submatches if it is so.
