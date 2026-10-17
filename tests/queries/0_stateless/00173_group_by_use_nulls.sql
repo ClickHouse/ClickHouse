@@ -22,7 +22,6 @@ LIMIT 10
 SETTINGS group_by_use_nulls = 1 FORMAT Null;
 
 -- { echoOn }
-
 SELECT
     CounterID AS k,
     quantileBFloat16(0.5)(ResolutionWidth)
