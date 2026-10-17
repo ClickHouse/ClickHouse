@@ -620,7 +620,7 @@ private:
     void createNewZooKeeperNodes(const ZooKeeperRetriesInfo & zookeeper_retries_info);
     void createNewZooKeeperNodesAttempt() const;
 
-    /// Throws unless detached/ of all disks has `expected_count` (0 or 1) directories named after each of `part_names`.
+    /// Throws unless detached/ of all disks has `expected_count` (0 or 1) attachable directories named after each of `part_names`.
     void checkDetachedPartDirectories(const Strings & part_names, size_t expected_count) const;
 
     /// Returns the ZooKeeper retries info specified for the CREATE TABLE query which is creating and starting this table right now.

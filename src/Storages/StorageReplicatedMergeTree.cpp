@@ -7595,12 +7595,17 @@ void StorageReplicatedMergeTree::checkDetachedPartDirectories(const Strings & pa
 {
     std::unordered_map<String, size_t> directories_by_name;
     for (const auto & detached_part : getDetachedParts())
-        ++directories_by_name[detached_part.dir_name];
+    {
+        if (detached_part.valid_name && detached_part.prefix.empty() && !detached_part.has_try_suffix)
+            ++directories_by_name[detached_part.dir_name];
+    }
 
     Strings mismatched;
     for (const auto & part_name : part_names)
+    {
         if (directories_by_name[part_name] != expected_count)
             mismatched.push_back(part_name);
+    }
 
     if (!mismatched.empty())
         throw Exception(ErrorCodes::INCORRECT_DATA,
