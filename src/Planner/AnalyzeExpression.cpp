@@ -14,6 +14,7 @@
 #include <Columns/ColumnConst.h>
 #include <Common/checkStackSize.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/quoteString.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/indexHint.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
@@ -33,6 +34,10 @@
 #include <Planner/PlannerContext.h>
 #include <Planner/Utils.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/FieldToDataType.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/parseQuery.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageDummy.h>
 
@@ -464,6 +469,31 @@ static void sortNodesByAvailableColumnsOrder(
         });
 }
 
+/// The AST-style name of a constant: its literal spelling if a literal with this spelling has the
+/// type of the constant, e.g. `1` for `1_UInt8`. Otherwise the spelling alone would not identify
+/// the constant - `toUInt128(1)` is printed as `'1'`, a `String` - so name it as a `_CAST` of
+/// the spelling to its type, which keeps a typed key subexpression from matching a predicate over
+/// another type.
+static String getConstantASTName(const ColumnConst & constant, const DataTypePtr & type)
+{
+    Field field = constant.getField();
+    String spelling = applyVisitor(FieldVisitorToString(), field);
+
+    ParserExpression parser;
+    const char * begin = spelling.data();
+    String error_message;
+    ASTPtr ast = tryParseQuery(
+        parser, begin, spelling.data() + spelling.size(), error_message, /*hilite=*/ false, "constant", /*allow_multi_statements=*/ false,
+        /*max_query_size=*/ 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS, /*skip_insignificant=*/ true);
+    if (const auto * literal = ast ? ast->as<ASTLiteral>() : nullptr)
+    {
+        if (applyVisitor(FieldToDataType(), literal->value)->equals(*type))
+            return spelling;
+    }
+
+    return "_CAST(" + spelling + ", " + quoteString(type->getName()) + ")";
+}
+
 /// Apply the `add_aliases=false` post-processing branch in place: rebuild constant
 /// and function `result_name`s in AST style (so KeyCondition can match subexpression
 /// names against WHERE clause names), override top-level output names from
@@ -488,8 +518,7 @@ static void applyASTNamingAndAppendSourceColumns(
             && (!node.result_type || node.result_type->getTypeId() != TypeIndex::Set))
         {
             const auto & constant = assert_cast<const ColumnConst &>(*node.column);
-            const_cast<ActionsDAG::Node &>(node).result_name
-                = applyVisitor(FieldVisitorToString(), constant.getField());
+            const_cast<ActionsDAG::Node &>(node).result_name = getConstantASTName(constant, node.result_type);
         }
         else if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base)
         {
