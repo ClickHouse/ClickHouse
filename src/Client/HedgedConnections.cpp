@@ -114,7 +114,7 @@ void HedgedConnections::sendScalarsData(Scalars & data)
     for (auto & offset_state : offset_states)
         for (auto & replica : offset_state.replicas)
             if (replica.connection)
-                send_scalars_data(replica);
+                sendToReplica(replica, send_scalars_data);
 
     pipeline_for_new_replicas.add(send_scalars_data);
 }
@@ -131,7 +131,7 @@ void HedgedConnections::sendQueryPlan(const QueryPlan & query_plan)
     for (auto & offset_state : offset_states)
         for (auto & replica : offset_state.replicas)
             if (replica.connection)
-                send_query_plan(replica);
+                sendToReplica(replica, send_query_plan);
 
     pipeline_for_new_replicas.add(send_query_plan);
 }
@@ -176,7 +176,7 @@ void HedgedConnections::sendExternalTablesData(std::vector<ExternalTablesData> &
     for (auto & offset_state : offset_states)
         for (auto & replica : offset_state.replicas)
             if (replica.connection)
-                send_external_tables_data(replica);
+                sendToReplica(replica, send_external_tables_data);
 
     pipeline_for_new_replicas.add(send_external_tables_data);
 }
@@ -265,7 +265,7 @@ void HedgedConnections::sendQuery(
 
     for (auto & offset_status : offset_states)
         for (auto & replica : offset_status.replicas)
-            send_query(replica);
+            sendToReplica(replica, send_query);
 
     pipeline_for_new_replicas.add(send_query);
     sent_query = true;
@@ -322,6 +322,16 @@ std::string HedgedConnections::dumpAddresses() const
     }
 
     return addresses;
+}
+
+std::vector<IConnections::ReplicaAddress> HedgedConnections::getFailedReplicaAddresses() const
+{
+    std::lock_guard lock(cancel_mutex);
+
+    /// Only the replicas that actually failed: while receiving a packet (see `resumePacketReceiver`) or
+    /// while sending to them (see `sendToReplica`). The other hedges, if any, are healthy and must not
+    /// be penalized together with them.
+    return failed_replica_addresses;
 }
 
 void HedgedConnections::sendCancel()
@@ -482,6 +492,7 @@ bool HedgedConnections::resumePacketReceiver(const HedgedConnections::ReplicaLoc
     if (replica_state.packet_receiver->isTimeoutExpired())
     {
         const String & description = replica_state.connection->getDescription();
+        rememberFailedReplica(replica_state);
         finishProcessReplica(replica_state, true);
 
         /// Check if there is no more active connections with the same offset and there is no new replica in process.
@@ -494,6 +505,7 @@ bool HedgedConnections::resumePacketReceiver(const HedgedConnections::ReplicaLoc
     }
     else if (replica_state.packet_receiver->hasException())
     {
+        rememberFailedReplica(replica_state);
         finishProcessReplica(replica_state, true);
         std::rethrow_exception(replica_state.packet_receiver->getException());
     }
@@ -656,7 +668,7 @@ void HedgedConnections::processNewReplicaState(HedgedConnectionsFactory::State s
             epoll.add(replica.change_replica_timeout.getDescriptor());
             timeout_fd_to_replica_location[replica.change_replica_timeout.getDescriptor()] = ReplicaLocation{offset, offset_states[offset].replicas.size() - 1};
 
-            pipeline_for_new_replicas.run(replica);
+            sendToReplica(replica, [this](ReplicaState & replica_) { pipeline_for_new_replicas.run(replica_); });
             break;
         }
         case HedgedConnectionsFactory::State::CANNOT_CHOOSE:
@@ -673,6 +685,25 @@ void HedgedConnections::processNewReplicaState(HedgedConnectionsFactory::State s
         }
         case HedgedConnectionsFactory::State::NOT_READY:
             break;
+    }
+}
+
+void HedgedConnections::rememberFailedReplica(const ReplicaState & replica)
+{
+    failed_replica_addresses.push_back({replica.connection->getHost(), replica.connection->getPort()});
+}
+
+void HedgedConnections::sendToReplica(ReplicaState & replica, const std::function<void(ReplicaState &)> & send_function)
+{
+    try
+    {
+        send_function(replica);
+    }
+    catch (...)
+    {
+        /// Remember which hedge broke, so that a retry after a network error penalizes only it.
+        rememberFailedReplica(replica);
+        throw;
     }
 }
 
