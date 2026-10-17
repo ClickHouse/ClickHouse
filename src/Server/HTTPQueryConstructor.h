@@ -32,7 +32,15 @@ struct HTTPPathInfo
 ///   - If allow_filters is true, components matching `name<op>value` (with op in =, !=, <>, <, >, <=, >=)
 ///     are parsed as filter expressions.
 /// Throws on conflicts or ambiguity (e.g., two database components, or compression without format).
-HTTPPathInfo parseHTTPPath(const String & path, bool allow_database, bool allow_table, bool allow_filters);
+HTTPPathInfo parseHTTPPath(
+    const String & path,
+    bool allow_database,
+    bool allow_table,
+    bool allow_filters,
+    bool allow_table_after_database = false);
+
+/// Check for a format suffix before routing a PUT request to the table upload handler.
+bool hasHTTPPathFormatSuffix(const String & path);
 
 /// Parse a URL parameter as a filter expression for the `http_allow_filters_as_unrecognized_url_parameters` mode.
 /// Returns the constructed SQL filter expression. The value must contain a comparison operator or
