@@ -933,36 +933,80 @@ def test_optimize_rejected_after_nested_requiredness_change(
     assert f"field id {nested_id}" in err, err
 
 
-def test_compaction_keeps_everything_if_the_commit_throws():
+@pytest.mark.parametrize("hint", ["unreadable", "ahead"])
+def test_optimize_keeps_both_generations_if_the_hint_is_not_confirmed(
+    started_cluster_iceberg_no_spark, hint
+):
     """
-    The metadata is published before the version hint is updated, and that update can throw. It
-    must therefore be wrapped and keep every file: the published metadata references the rewritten
-    data and a reader may still resolve the previous generation through the hint, so a throw there
-    must neither remove files nor fail an OPTIMIZE that already committed.
+    The compacted metadata is published before `version-hint.text` is updated. When that update
+    throws (`unreadable`) or the hint cannot be confirmed to name the new version (`ahead`), a
+    reader may still resolve the previous generation, so OPTIMIZE must succeed and delete neither
+    the pre-compaction files nor the rewritten ones.
+    """
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
+    TABLE_NAME = "test_optimize_unconfirmed_hint_" + hint + "_" + get_uuid_str()
+    table_dir = f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}"
+    metadata_dir = _metadata_dir(TABLE_NAME)
 
-    Asserted statically: making the hint update throw needs fault injection inside object storage,
-    which an integration test cannot arrange.
-    """
-    source = pathlib.Path(__file__).resolve().parents[3] / (
-        "src/Storages/ObjectStorage/DataLakes/Iceberg/Compaction.cpp"
+    create_iceberg_table(
+        "local",
+        instance,
+        TABLE_NAME,
+        started_cluster_iceberg_no_spark,
+        "(id Int32, value Nullable(String))",
+        2,
     )
-    statements = " ".join(source.read_text().split())
-    assert "Iceberg::tryWriteVersionHintFile(" in statements, (
-        f"{source} no longer updates the version hint through tryWriteVersionHintFile; update this guard"
+    instance.query(
+        f"INSERT INTO {TABLE_NAME} VALUES (1,'a'),(2,'b'),(3,'c');",
+        settings={"allow_insert_into_iceberg": 1},
     )
-    # The `try {` must be the last thing before the call, and its handler must keep everything.
-    # Checking only for "a try somewhere earlier" would pass even with the wrapper deleted.
-    call = statements.index("Iceberg::tryWriteVersionHintFile(")
-    window = statements[max(0, call - 120) : call]
-    assert "try {" in window, (
-        "the version hint update is no longer directly inside a try block, so a throw after "
-        f"publication escapes the commit; preceding text: {window!r}"
+    # Positional delete so compaction has work to do.
+    instance.query(
+        f"DELETE FROM {TABLE_NAME} WHERE id = 2;",
+        settings={"allow_insert_into_iceberg": 1},
     )
-    catch = statements.index("catch", call)
-    handler = statements[catch : statements.index("}", catch)]
-    assert "CommitResult::KeepEverything" in handler, (
-        f"the version hint update's exception handler no longer keeps every file: {handler!r}"
+
+    _, pre_path = _read_latest_metadata(instance, TABLE_NAME)
+    n = int(pre_path.split("/v")[-1].split(".")[0])
+    hint_path = f"{metadata_dir}/version-hint.text"
+    if hint == "unreadable":
+        # Reading a directory fails, so the hint update throws after the metadata is written.
+        instance.exec_in_container(["bash", "-c", f"rm -f {hint_path} && mkdir {hint_path}"])
+    else:
+        instance.exec_in_container(["bash", "-c", f"echo {n + 100} > {hint_path}"])
+
+    def object_set():
+        listing = instance.exec_in_container(
+            ["bash", "-c", f"find {table_dir}/data {metadata_dir} -type f | sort"]
+        )
+        return set(line for line in listing.split("\n") if line.strip())
+
+    objects_before = object_set()
+    instance.query(
+        f"OPTIMIZE TABLE {TABLE_NAME};",
+        settings={
+            "allow_experimental_iceberg_compaction": 1,
+            "allow_insert_into_iceberg": 1,
+        },
     )
+    objects_after = object_set()
+
+    assert objects_before <= objects_after, (
+        f"pre-compaction files were removed: {sorted(objects_before - objects_after)}"
+    )
+    written = objects_after - objects_before
+    assert f"{metadata_dir}/v{n + 1}.metadata.json" in written, sorted(written)
+    assert any(f.startswith(f"{table_dir}/data/") for f in written), (
+        f"OPTIMIZE rewrote no data file: {sorted(written)}"
+    )
+
+    # Both generations stay readable: the compacted one and the one an unconfirmed hint may name.
+    assert instance.query(f"SELECT id, value FROM {TABLE_NAME} ORDER BY id") == "1\ta\n3\tc\n"
+    instance.query(
+        f"CREATE TABLE {TABLE_NAME}_pre ENGINE = IcebergLocal(local, path = '{table_dir}', format = Parquet) "
+        f"SETTINGS iceberg_metadata_file_path = 'metadata/{pre_path.rsplit('/', 1)[-1]}'"
+    )
+    assert instance.query(f"SELECT id, value FROM {TABLE_NAME}_pre ORDER BY id") == "1\ta\n3\tc\n"
 
 
 def test_compaction_never_cleans_up_the_commit_target():
