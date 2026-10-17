@@ -5,7 +5,6 @@ SET optimize_use_projections = 1;
 SET optimize_use_implicit_projections = 1;
 SET optimize_use_projection_filtering = 1;
 SET optimize_move_to_prewhere = 1;
-SET query_plan_optimize_prewhere = 1;
 SET read_in_order_use_virtual_row = 1;
 SET enable_parallel_replicas = 0;
 SET parallel_replicas_for_non_replicated_merge_tree = 0;

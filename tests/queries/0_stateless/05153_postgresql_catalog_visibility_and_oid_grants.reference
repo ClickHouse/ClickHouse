@@ -1,0 +1,10 @@
+--- a relation of the current database is visible, one of another database is not
+only_in_other|0
+visible_here|1
+--- a built-in catalog relation is always on the search path
+1
+--- the OID state holds no entry for a table the session user cannot see
+0
+0
+0
+1

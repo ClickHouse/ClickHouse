@@ -1,0 +1,5 @@
+<clickhouse>
+<!-- A template expanding {uuid} twice cannot be matched back against a literal path. -->
+<default_replica_path>/clickhouse/tables/{uuid}/{uuid}/{shard}</default_replica_path>
+<default_replica_name>{replica}</default_replica_name>
+</clickhouse>
