@@ -1,0 +1,9 @@
+-- no grant: the structure, the rows and whether a table exists are all hidden
+the grant SHOW COLUMNS ON ts
+the grant SHOW COLUMNS ON ts
+the grant SHOW COLUMNS ON no_such_table
+-- SHOW COLUMNS: the structure is shown, the rows are not
+OK
+the grant SELECT ON ts
+-- SELECT: the rows are read
+1
