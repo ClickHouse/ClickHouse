@@ -11,6 +11,7 @@
 
 
 #include <Parsers/ParserSetQuery.h>
+#include <Parsers/PartialASTCapture.h>
 
 namespace DB
 {
@@ -185,6 +186,28 @@ bool ParserDictionary::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr ast_range;
     ASTPtr ast_settings;
 
+#if defined(CLICKHOUSE_PARSER_PARTIAL_AST)
+    /// The parts stay in the locals above until the whole definition has parsed, so the fragment a
+    /// failure captures is assembled from them; see `Parsers/PartialASTCapture.h`.
+    auto dictionary_so_far = [&]() -> ASTPtr
+    {
+        auto partial = make_intrusive<ASTDictionary>();
+        if (primary_key)
+            partial->set(partial->primary_key, primary_key);
+        if (ast_source)
+            partial->set(partial->source, ast_source);
+        if (ast_lifetime)
+            partial->set(partial->lifetime, ast_lifetime);
+        if (ast_layout)
+            partial->set(partial->layout, ast_layout);
+        if (ast_range)
+            partial->set(partial->range, ast_range);
+        if (ast_settings)
+            partial->set(partial->dict_settings, ast_settings);
+        return partial;
+    };
+#endif
+
     /// Primary is required to be the first in dictionary definition
     if (primary_key_keyword.ignore(pos, expected))
     {
@@ -194,10 +217,16 @@ bool ParserDictionary::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             was_open = true;
 
         if (!expression_list_p.parse(pos, primary_key, expected))
+        {
+            PARTIAL_AST_FRAGMENT(expected, dictionary_so_far(), pos, "primary_key");
             return false;
+        }
 
         if (was_open && !close.ignore(pos, expected))
+        {
+            PARTIAL_AST_FRAGMENT(expected, dictionary_so_far(), pos, "primary_key");
             return false;
+        }
     }
 
     /// Loop is used to avoid strict order of dictionary properties
@@ -207,13 +236,22 @@ bool ParserDictionary::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {
 
             if (!open.ignore(pos, expected))
+            {
+                PARTIAL_AST_FRAGMENT(expected, dictionary_so_far(), pos, "source");
                 return false;
+            }
 
             if (!key_value_pairs_p.parse(pos, ast_source, expected))
+            {
+                PARTIAL_AST_FRAGMENT(expected, dictionary_so_far(), pos, "source");
                 return false;
+            }
 
             if (!close.ignore(pos, expected))
+            {
+                PARTIAL_AST_FRAGMENT(expected, dictionary_so_far(), pos, "source");
                 return false;
+            }
 
             continue;
         }
@@ -221,13 +259,22 @@ bool ParserDictionary::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!ast_lifetime && lifetime_keyword.ignore(pos, expected))
         {
             if (!open.ignore(pos, expected))
+            {
+                PARTIAL_AST_FRAGMENT(expected, dictionary_so_far(), pos, "lifetime");
                 return false;
+            }
 
             if (!lifetime_p.parse(pos, ast_lifetime, expected))
+            {
+                PARTIAL_AST_FRAGMENT(expected, dictionary_so_far(), pos, "lifetime");
                 return false;
+            }
 
             if (!close.ignore(pos, expected))
+            {
+                PARTIAL_AST_FRAGMENT(expected, dictionary_so_far(), pos, "lifetime");
                 return false;
+            }
 
             continue;
         }
@@ -235,13 +282,22 @@ bool ParserDictionary::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!ast_layout && layout_keyword.ignore(pos, expected))
         {
             if (!open.ignore(pos, expected))
+            {
+                PARTIAL_AST_FRAGMENT(expected, dictionary_so_far(), pos, "layout");
                 return false;
+            }
 
             if (!layout_p.parse(pos, ast_layout, expected))
+            {
+                PARTIAL_AST_FRAGMENT(expected, dictionary_so_far(), pos, "layout");
                 return false;
+            }
 
             if (!close.ignore(pos, expected))
+            {
+                PARTIAL_AST_FRAGMENT(expected, dictionary_so_far(), pos, "layout");
                 return false;
+            }
 
             continue;
         }
@@ -249,13 +305,22 @@ bool ParserDictionary::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!ast_range && range_keyword.ignore(pos, expected))
         {
             if (!open.ignore(pos, expected))
+            {
+                PARTIAL_AST_FRAGMENT(expected, dictionary_so_far(), pos, "range");
                 return false;
+            }
 
             if (!range_p.parse(pos, ast_range, expected))
+            {
+                PARTIAL_AST_FRAGMENT(expected, dictionary_so_far(), pos, "range");
                 return false;
+            }
 
             if (!close.ignore(pos, expected))
+            {
+                PARTIAL_AST_FRAGMENT(expected, dictionary_so_far(), pos, "range");
                 return false;
+            }
 
             continue;
         }
@@ -263,13 +328,22 @@ bool ParserDictionary::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!ast_settings && settings_keyword.ignore(pos, expected))
         {
             if (!open.ignore(pos, expected))
+            {
+                PARTIAL_AST_FRAGMENT(expected, dictionary_so_far(), pos, "dict_settings");
                 return false;
+            }
 
             if (!settings_p.parse(pos, ast_settings, expected))
+            {
+                PARTIAL_AST_FRAGMENT(expected, dictionary_so_far(), pos, "dict_settings");
                 return false;
+            }
 
             if (!close.ignore(pos, expected))
+            {
+                PARTIAL_AST_FRAGMENT(expected, dictionary_so_far(), pos, "dict_settings");
                 return false;
+            }
 
             continue;
         }
