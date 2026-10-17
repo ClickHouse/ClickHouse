@@ -1,0 +1,4 @@
+Dynamic	UInt8	42
+Array(Dynamic)	['Int16','String']	['42','x']
+Map(String, Dynamic)	UInt8	42
+JSON(max_dynamic_paths=1)	1

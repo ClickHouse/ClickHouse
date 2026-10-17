@@ -12,6 +12,7 @@ namespace DB::ErrorCodes
 
 namespace DB
 {
+class ColumnLowCardinality;
 class IDataType;
 class StringValueFilter;
 }
@@ -70,6 +71,7 @@ struct Dictionary
     /// distinct value exactly once: letting it feed `updateStats` would make the adaptive disable be
     /// driven by the dictionary's value mix instead of the row frequencies the scan actually sees.
     void index(const ColumnUInt32 & indexes_col, IColumn & out, bool use_string_value_filter = true);
+    void insertIndexesIntoLowCardinalityColumn(const ColumnUInt32 & indexes_col, ColumnLowCardinality & out);
     /// Append the values at the given dictionary indexes to `out`. Same as `index`, from a plain
     /// array; `index` delegates here. The indexes must be within bounds.
     void appendIndexes(const UInt32 * indexes, size_t n, IColumn & out, bool use_string_value_filter = true);

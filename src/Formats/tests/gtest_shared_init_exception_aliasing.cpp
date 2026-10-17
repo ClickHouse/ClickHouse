@@ -106,8 +106,9 @@ TEST(FormatSharedInit, FilterInfoDoesNotLeakCallerContext)
     dag.getOutputs() = {&predicate};
 
     /// A row-level filter over a column outside `keys` makes the init append to
-    /// `additional_columns`, which is how a caller observes that the init body ran: unlike the
-    /// sibling test the init callable is internal here, so there is no attempt counter to check.
+    /// `key_condition_derived_columns`, which is how a caller observes that the init body ran:
+    /// unlike the sibling test the init callable is internal here, so there is no attempt counter
+    /// to check.
     ActionsDAG row_level_dag;
     const auto & extra_node = row_level_dag.addInput("extra", key_type);
     row_level_dag.getOutputs() = {&extra_node};
@@ -125,7 +126,10 @@ TEST(FormatSharedInit, FilterInfoDoesNotLeakCallerContext)
 
     /// The init body must run exactly once; later callers are served from `init_exception`. If
     /// the failure were not cached, every caller would re-run the body and append `extra` again.
-    EXPECT_EQ(filter_info->additional_columns.columns(), 1u);
+    /// The derived columns are published in `key_condition_derived_columns`; `additional_columns`
+    /// stays immutable after construction because other threads read it unsynchronized.
+    EXPECT_EQ(filter_info->key_condition_derived_columns.columns(), 1u);
+    EXPECT_EQ(filter_info->additional_columns.columns(), 0u);
 }
 
 }

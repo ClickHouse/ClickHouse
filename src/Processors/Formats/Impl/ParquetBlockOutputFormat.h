@@ -8,6 +8,7 @@
 #include <Formats/FormatSettings.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Common/ThreadPool.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 
 namespace DB
 {
@@ -103,6 +104,7 @@ private:
     void writeRowGroup(std::vector<Chunk> chunks);
     void writeRowGroupInOneThread(Chunk chunk);
     void writeRowGroupInParallel(std::vector<Chunk> chunks);
+    void initializeSchemaForCustomEncoder(const Columns & columns);
 
     void threadFunction();
     void startMoreThreadsIfNeeded(const std::unique_lock<std::mutex> & lock);
@@ -121,9 +123,17 @@ private:
     /// Filled in by the ctor and read-only afterwards, so the encoder threads can share it.
     Parquet::IcebergOptionality iceberg_optionality;
     Parquet::SchemaElements schema;
+    Parquet::VariantWriteTypeHints variant_type_hints;
+    Parquet::VariantWriteAnalysisMap variant_write_analysis;
+    Parquet::VariantWrapperPaths variant_wrapper_paths;
+    std::vector<Parquet::ColumnChunkWriteStates> prepared_first_row_group_columns;
+    std::optional<std::unordered_map<String, Int64>> column_field_ids;
     Parquet::FileWriteState file_state;
     std::unordered_map<String, size_t> column_sizes_on_disk;
     size_t base_offset = 0; // initial out.count(), just for assert
+    bool needs_file_level_variant_analysis = false;
+    bool replaying_buffered_input = false;
+    std::optional<TemporaryBlockStreamHolder> buffered_input;
 
     std::mutex mutex;
     std::condition_variable condvar; // wakes up consume()

@@ -1,5 +1,6 @@
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromString.h>
@@ -928,6 +929,64 @@ TEST(ColumnDynamic, InsertRangeFromOverflow9)
     ASSERT_EQ(field, Field(Array({Field(42)})));
 }
 
+TEST(ColumnDynamic, InsertRangeFromRestoresGlobalLimitWhenSharedVariantIsEmpty)
+{
+    auto column_from = ColumnDynamic::create(2);
+    column_from->insert(Field(42.42));
+
+    auto base_column_to = ColumnDynamic::create(1);
+    base_column_to->insert(Field("str"));
+    ASSERT_TRUE(base_column_to->getSharedVariant().empty());
+
+    auto column_to_holder = ColumnDynamic::create(
+        base_column_to->getVariantColumnPtr(),
+        base_column_to->getVariantInfo(),
+        base_column_to->getMaxDynamicTypes(),
+        2)->assumeMutable();
+    auto & column_to = assert_cast<ColumnDynamic &>(*column_to_holder);
+    ASSERT_EQ(column_to.getMaxDynamicTypes(), 1);
+    ASSERT_EQ(column_to.getGlobalMaxDynamicTypes(), 2);
+
+    column_to.insertRangeFrom(*column_from, 0, 1);
+    ASSERT_TRUE(column_to.getVariantInfo().variant_name_to_discriminator.contains("Float64"));
+    ASSERT_EQ(column_to.getSharedVariant().size(), 0);
+    ASSERT_NE(column_to.getVariantColumn().globalDiscriminatorAt(column_to.size() - 1), column_to.getSharedVariantDiscriminator());
+    ASSERT_EQ(column_to[column_to.size() - 1], Field(42.42));
+}
+
+TEST(ColumnDynamic, InsertRangeFromKeepsStructureChosenForMergeWhenSharedVariantIsEmpty)
+{
+    auto source_for_structure = ColumnDynamic::create(2);
+    source_for_structure->insert(Field(42));
+
+    VectorWithMemoryTracking<ColumnPtr> source_columns;
+    source_columns.push_back(std::move(source_for_structure));
+
+    auto column_to = ColumnDynamic::create(2);
+    column_to->chooseDynamicStructureForMerge(source_columns, std::nullopt);
+    ASSERT_EQ(column_to->getMaxDynamicTypes(), 1);
+    ASSERT_EQ(column_to->getGlobalMaxDynamicTypes(), 2);
+    ASSERT_TRUE(column_to->getSharedVariant().empty());
+
+    auto column_from = ColumnDynamic::create(2);
+    column_from->insert(Field(42.42));
+
+    IColumn::Filter empty_filter;
+    auto filtered_column_holder = column_to->filter(empty_filter, 0)->assumeMutable();
+    auto & filtered_column = assert_cast<ColumnDynamic &>(*filtered_column_holder);
+    filtered_column.insertRangeFrom(*column_from, 0, 1);
+    ASSERT_FALSE(filtered_column.getVariantInfo().variant_name_to_discriminator.contains("Float64"));
+    ASSERT_EQ(filtered_column.getSharedVariant().size(), 1);
+    ASSERT_EQ(filtered_column.getVariantColumn().globalDiscriminatorAt(filtered_column.size() - 1), filtered_column.getSharedVariantDiscriminator());
+    ASSERT_EQ(filtered_column[filtered_column.size() - 1], Field(42.42));
+
+    column_to->insertRangeFrom(*column_from, 0, 1);
+    ASSERT_FALSE(column_to->getVariantInfo().variant_name_to_discriminator.contains("Float64"));
+    ASSERT_EQ(column_to->getSharedVariant().size(), 1);
+    ASSERT_EQ(column_to->getVariantColumn().globalDiscriminatorAt(column_to->size() - 1), column_to->getSharedVariantDiscriminator());
+    ASSERT_EQ((*column_to)[column_to->size() - 1], Field(42.42));
+}
+
 TEST(ColumnDynamic, SerializeDeserializeFromArena1)
 {
     auto column = ColumnDynamic::create(254);
@@ -1157,6 +1216,108 @@ TEST(ColumnDynamic, rollback)
         check_checkpoint(*dynamic_checkpoints[i].first, dynamic_checkpoints[i].second);
         check_variant(assert_cast<const ColumnDynamic &>(*column_copy).getVariantColumn(), variant_checkpoints_sizes[i]);
     }
+}
+
+TEST(ColumnDynamic, InsertContainerWrappedObjectRequiresExactStorage)
+{
+    auto column = ColumnDynamic::create(254);
+    auto parameterized_type = DataTypeFactory::instance().get("Array(JSON(a UInt64))");
+    ASSERT_TRUE(column->addNewVariant(parameterized_type));
+
+    /// A raw row like `[{'b':'x'}]` infers `Array(JSON)`. `JSON(...)` variants are partitioned
+    /// by exact storage type, so the row must not reuse the `Array(JSON(a UInt64))` discriminator
+    /// even though `ColumnObject::tryInsert` would accept the value into its shared data.
+    Object object;
+    object["b"] = Field("x");
+    Array array;
+    array.push_back(object);
+    column->insert(Field(array));
+
+    const auto & variant_info = column->getVariantInfo();
+    auto parameterized_discr = variant_info.variant_name_to_discriminator.at(parameterized_type->getName());
+    ASSERT_TRUE(column->getVariantColumn().getVariantByGlobalDiscriminator(parameterized_discr).empty());
+
+    /// The row must land in its own `Array(JSON)` variant.
+    auto inferred_discr = variant_info.variant_name_to_discriminator.at("Array(JSON)");
+    ASSERT_EQ(column->getVariantColumn().getVariantByGlobalDiscriminator(inferred_discr).size(), 1);
+}
+
+namespace
+{
+
+/// A source Dynamic column whose only regular variant is `Int64` and whose second row is a
+/// `JSON(max_dynamic_paths=0)` value stored in the shared variant.
+ColumnDynamic::MutablePtr createColumnWithSharedVariantJSONRow(const DataTypePtr & json_type)
+{
+    auto src = ColumnDynamic::create(1);
+    src->insert(Field(Int64(42)));
+
+    auto json_column = json_type->createColumn();
+    Object object;
+    object["a"] = Field(UInt64(1));
+    json_column->insert(Field(object));
+    src->insertTypedValueFrom(*json_column, json_type, 0);
+    return src;
+}
+
+}
+
+TEST(ColumnDynamic, InsertFromSharedVariantObjectRequiresExactStorage)
+{
+    auto json_type = DataTypeFactory::instance().get("JSON(max_dynamic_paths=0)");
+    auto src = createColumnWithSharedVariantJSONRow(json_type);
+    ASSERT_EQ(src->getSharedVariant().size(), 1);
+
+    /// The destination already has a compatible-but-not-equal plain `JSON` variant and no free
+    /// variant slots. The copied row must not be routed into it: that would change `dynamicType`
+    /// and drop the exact type hint.
+    auto dst = ColumnDynamic::create(1);
+    auto plain_json_type = DataTypeFactory::instance().get("JSON");
+    ASSERT_TRUE(dst->addNewVariant(plain_json_type));
+
+    dst->insertFrom(*src, 1);
+
+    ASSERT_EQ(dst->getTypeNameAt(0), json_type->getName());
+    auto plain_json_discr = dst->getVariantInfo().variant_name_to_discriminator.at(plain_json_type->getName());
+    ASSERT_TRUE(dst->getVariantColumn().getVariantByGlobalDiscriminator(plain_json_discr).empty());
+    ASSERT_EQ(dst->getSharedVariant().size(), 1);
+}
+
+TEST(ColumnDynamic, InsertRangeFromSharedVariantObjectRequiresExactStorage)
+{
+    auto json_type = DataTypeFactory::instance().get("JSON(max_dynamic_paths=0)");
+    auto src = createColumnWithSharedVariantJSONRow(json_type);
+
+    /// Two free slots so the variants combine and the shared-variant row goes through
+    /// `try_insert_shared_variant_value_into_existing_variant`: it must not reuse the plain
+    /// `JSON` variant, only an exact new `JSON(max_dynamic_paths=0)` variant.
+    auto dst = ColumnDynamic::create(3);
+    auto plain_json_type = DataTypeFactory::instance().get("JSON");
+    ASSERT_TRUE(dst->addNewVariant(plain_json_type));
+
+    dst->insertRangeFrom(*src, 0, 2);
+
+    ASSERT_EQ(dst->getTypeNameAt(1), json_type->getName());
+    auto plain_json_discr = dst->getVariantInfo().variant_name_to_discriminator.at(plain_json_type->getName());
+    ASSERT_TRUE(dst->getVariantColumn().getVariantByGlobalDiscriminator(plain_json_discr).empty());
+}
+
+TEST(ColumnDynamic, InsertManyFromSharedVariantObjectRequiresExactStorage)
+{
+    auto json_type = DataTypeFactory::instance().get("JSON(max_dynamic_paths=0)");
+    auto src = createColumnWithSharedVariantJSONRow(json_type);
+
+    auto dst = ColumnDynamic::create(1);
+    auto plain_json_type = DataTypeFactory::instance().get("JSON");
+    ASSERT_TRUE(dst->addNewVariant(plain_json_type));
+
+    dst->insertManyFrom(*src, 1, 3);
+
+    ASSERT_EQ(dst->size(), 3);
+    for (size_t i = 0; i < 3; ++i)
+        ASSERT_EQ(dst->getTypeNameAt(i), json_type->getName());
+    auto plain_json_discr = dst->getVariantInfo().variant_name_to_discriminator.at(plain_json_type->getName());
+    ASSERT_TRUE(dst->getVariantColumn().getVariantByGlobalDiscriminator(plain_json_discr).empty());
 }
 
 TEST(ColumnDynamic, InsertRangeFrom4)

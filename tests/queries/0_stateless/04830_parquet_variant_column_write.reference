@@ -1,0 +1,21 @@
+-- Top-level Variant column round-trips (read back as Dynamic)
+\N	None
+42	Int64
+7	Int64
+[1,2,3]	Array(Int64)
+hello	String
+-- Reading back with an explicit Variant type hint
+\N	None
+42	Int64
+7	Int64
+[1,2,3]	Array(Int64)
+hello	String
+-- Variant nested inside Array
+[1,'x']
+-- Single-type Variant column (homogeneous rows shred to a typed_value)
+0	Int64
+1	Int64
+2	Int64
+-- Variant with JSON inside
+5	Int64
+{"a":1}	JSON

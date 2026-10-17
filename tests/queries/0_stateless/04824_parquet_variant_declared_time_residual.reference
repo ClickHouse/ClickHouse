@@ -1,0 +1,8 @@
+-- Declared `Time64(6)` typed path is written through residual encoding
+{"t":"00:01:02.345678"}
+00:01:02.345678	Time64(6)
+-- The same file read back as plain JSON
+{"t":"00:01:02.345678"}	{'t':'Time64(6)'}
+-- Declared `Time` typed path is written through residual encoding
+{"t":"00:01:02"}
+00:01:02	Time
