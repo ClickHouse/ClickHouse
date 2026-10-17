@@ -59,15 +59,12 @@ SELECT x FROM values('x Array(Variant(Array(Int64), Array(Float64)))', [[9223372
 -- When no alternative can represent the value exactly, the nearest representable value is used.
 SELECT x FROM values('x Array(Variant(Array(Float32), Array(String)))', [[0.1, 0.2]]) SETTINGS allow_experimental_analyzer = 1;
 
-SELECT '-- the exact-first preference does not extend to a directly-insertable field (pre-existing ColumnVariant order, unchanged)';
--- This documents the scope of the contract above: the exact-first preference only governs the
--- fall-through conversion loop. When a field is directly insertable, the alternative is chosen by
--- ColumnVariant's pre-existing insertion order (variants in sorted order: `Float32` before
--- `Float64`), not by `convertFieldToType`. So a Float64 value exact in `Float64` but inexact in
--- `Float32` (16777217 = 2^24 + 1) is stored lossily in the earlier `Float32` alternative and
--- rounded to 16777216. Reworking that selection is a core `ColumnVariant` change outside the scope
--- of this fix. `Variant(Float32, Float64)` is itself a suspicious type (the two float alternatives
--- are ambiguous), so it requires `allow_suspicious_variant_types`.
+SELECT '-- a directly-insertable field takes the alternative that names its type, not the first that accepts it';
+-- 16777217 = 2^24 + 1 is exact in `Float64` and inexact in `Float32`, so the two rules are
+-- distinguishable here: naming the type keeps the value exact, while `ColumnVariant`'s insertion
+-- order (variants sorted, `Float32` first) would round it to 16777216.
+-- `Variant(Float32, Float64)` is itself a suspicious type (the two float alternatives are
+-- ambiguous), so it requires `allow_suspicious_variant_types`.
 SELECT x, variantType(x) FROM values('x Variant(Float32, Float64)', toFloat64(16777217)) SETTINGS allow_experimental_analyzer = 1, allow_suspicious_variant_types = 1;
 
 SELECT '-- INSERT ... VALUES with an inexact-float expression rounds to the nearest value, like the streaming literal path';

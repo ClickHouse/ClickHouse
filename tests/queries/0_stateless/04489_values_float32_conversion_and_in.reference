@@ -26,8 +26,8 @@
 -- the fall-through Variant conversion path prefers a lossless alternative, falling back to lossy only when needed
 [[9223372036854775807,-9223372036854775808],[0.9999,7]]
 [[0.1,0.2]]
--- the exact-first preference does not extend to a directly-insertable field (pre-existing ColumnVariant order, unchanged)
-16777216	Float32
+-- a directly-insertable field takes the alternative that names its type, not the first that accepts it
+16777217	Float64
 -- INSERT ... VALUES with an inexact-float expression rounds to the nearest value, like the streaming literal path
 1
 -- the default templated INSERT ... VALUES path accepts inexact-float literals in complex types (issue #43144)
