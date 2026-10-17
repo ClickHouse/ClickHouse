@@ -100,9 +100,9 @@ private:
     void resetFormatterImpl() override;
     void onCancel() noexcept override;
 
-    void writeRowGroup(std::vector<Chunk> chunks);
+    void writeRowGroup(Chunks chunks);
     void writeRowGroupInOneThread(Chunk chunk);
-    void writeRowGroupInParallel(std::vector<Chunk> chunks);
+    void writeRowGroupInParallel(Chunks chunks);
 
     void threadFunction();
     void startMoreThreadsIfNeeded(const std::unique_lock<std::mutex> & lock);
@@ -113,7 +113,7 @@ private:
     const FormatSettings format_settings;
 
     /// Chunks to squash together to form a row group.
-    std::vector<Chunk> staging_chunks;
+    Chunks staging_chunks;
     size_t staging_rows = 0;
     size_t staging_bytes = 0;
 

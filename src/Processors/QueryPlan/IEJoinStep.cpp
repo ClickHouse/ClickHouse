@@ -1,3 +1,4 @@
+#include <Common/VectorWithMemoryTracking.h>
 #include <optional>
 
 #include <Core/Block.h>
@@ -162,7 +163,7 @@ QueryPipelineBuilderPtr IEJoinStep::updatePipeline(QueryPipelineBuilders pipelin
         /// With swapped inputs the joined stream carries the right table's columns first.
         const size_t num_left = input_headers[0]->columns();
         const size_t num_right = input_headers[1]->columns();
-        std::vector<size_t> permutation(num_left + num_right);
+        VectorWithMemoryTracking<size_t> permutation(num_left + num_right);
         for (size_t i = 0; i < num_left; ++i)
             permutation[i] = num_right + i;
         for (size_t i = 0; i < num_right; ++i)

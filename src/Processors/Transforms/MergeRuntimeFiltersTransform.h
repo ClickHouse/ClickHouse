@@ -1,4 +1,5 @@
 #pragma once
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/IProcessor.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
 
@@ -77,7 +78,7 @@ private:
     bool enable_index_analysis = false;
 
     /// Which inputs have delivered their state.
-    std::vector<bool> received;
+    VectorWithMemoryTracking<bool> received;
     size_t states_received = 0;
     /// Union of the states received so far. Wrapped in a `RuntimeFilter` only when it is registered.
     std::unique_ptr<AdaptiveSetRuntimeFilter> accumulated;

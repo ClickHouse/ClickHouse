@@ -1,5 +1,6 @@
 #pragma once
 
+#include <span>
 #include <vector>
 #include <algorithm>
 
@@ -1011,7 +1012,7 @@ size_t getEqualRangeEndAssumeSorted(const TColumns & columns, size_t begin, size
   */
 template <typename TColumns>
 size_t getEqualRangeEndAssumeSorted(
-    const TColumns & columns, const std::vector<size_t> & positions, size_t begin, size_t end, int nan_direction_hint)
+    const TColumns & columns, std::span<const size_t> positions, size_t begin, size_t end, int nan_direction_hint)
 {
     return detail::equalRangeEndAcrossColumns(
         positions.size(), begin, end, [&](size_t i) -> decltype(auto) { return columns[positions[i]]; }, [&](size_t) { return nan_direction_hint; });
@@ -1042,7 +1043,7 @@ ALWAYS_INLINE size_t getEqualRangeEndAssumeSorted(SortedKeyRuns & runs, const TC
 
 template <typename TColumns>
 ALWAYS_INLINE size_t getEqualRangeEndAssumeSorted(
-    SortedKeyRuns & runs, const TColumns & columns, const std::vector<size_t> & positions, size_t begin, size_t end, int nan_direction_hint)
+    SortedKeyRuns & runs, const TColumns & columns, std::span<const size_t> positions, size_t begin, size_t end, int nan_direction_hint)
 {
     if (positions.size() < 2)
         return getEqualRangeEndAssumeSorted(columns, positions, begin, end, nan_direction_hint);

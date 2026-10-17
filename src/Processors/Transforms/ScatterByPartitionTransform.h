@@ -1,5 +1,6 @@
 #pragma once
 #include <Columns/IColumn.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/ColumnNumbers.h>
 #include <DataTypes/IDataType.h>
 #include <Processors/Chunk.h>
@@ -42,7 +43,7 @@ private:
     bool has_output_chunks = false;
     /// Inputs are not requested before an output asks for data.
     bool was_output_needed = false;
-    std::vector<char> was_output_processed;
+    VectorWithMemoryTracking<char> was_output_processed;
     Chunk chunk;
 
     PaddedPODArray<UInt32> hash;
