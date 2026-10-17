@@ -62,6 +62,9 @@ void ASTInsertQuery::writeJSON(WriteBuffer & out) const
     if (data || tail)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "INSERT with inline data is not supported by parseQueryToJSON during AST JSON deserialization");
 
+    if (by_name && (columns || !select || table_function))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid INSERT ... BY NAME AST");
+
     JSONObjectWriter w(out, "InsertQuery");
 
     if (!table_id.database_name.empty())
@@ -77,6 +80,9 @@ void ASTInsertQuery::writeJSON(WriteBuffer & out) const
 
     if (async_insert_flush)
         w.writeBool("async_insert_flush", true);
+
+    if (by_name)
+        w.writeBool("by_name", true);
 
     w.writeChild("columns", columns);
     w.writeChild("table_function", table_function);
@@ -112,6 +118,7 @@ void ASTInsertQuery::readJSON(const Poco::JSON::Object & json)
 
     format = r.getString("format");
     async_insert_flush = r.getBool("async_insert_flush");
+    by_name = r.getBool("by_name");
 
     /// `columns` is parser-produced as an `ASTExpressionList` (the INSERT column list).
     /// `formatImpl` prints it and `processColumnTransformers` iterates `columns->children`,
@@ -212,6 +219,18 @@ void ASTInsertQuery::readJSON(const Poco::JSON::Object & json)
     if (database && !table)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "`InsertQuery` 'database' requires a 'table' during AST JSON deserialization");
+
+    if (by_name && columns)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`InsertQuery` cannot contain both 'by_name' and 'columns' during AST JSON deserialization");
+
+    if (by_name && !select)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`InsertQuery` 'by_name' requires a 'select' during AST JSON deserialization");
+
+    if (by_name && table_function)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`InsertQuery` 'by_name' is not supported for table-function destinations during AST JSON deserialization");
 }
 
 void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
@@ -248,6 +267,10 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         ostr << " (";
         columns->format(ostr, settings, state, frame);
         ostr << ")";
+    }
+    else if (by_name)
+    {
+        ostr << " BY NAME";
     }
 
     if (infile)
@@ -322,6 +345,7 @@ void ASTInsertQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliase
     hash_state.update(table_id.table_name);
     hash_state.update(table_id.uuid);
     hash_state.update(format);
+    hash_state.update(by_name);
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
