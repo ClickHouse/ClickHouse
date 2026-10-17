@@ -13,7 +13,11 @@ namespace DB
 namespace
 {
 
-/// Splits a path into its non-empty components separated by '/'.
+/// Splits a path into its components separated by '/', keeping empty ones: `*` matches an empty component
+/// too, so `root//fixed/leaf/data.csv` matches `root/*/fixed/*/data.csv`, and dropping the empty component
+/// would misalign the prefix `root//fixed/leaf/` against the glob segments and prune a matching subtree.
+/// A trailing '/' does not start another component: a common prefix (`root/dir/`) and a trailing-slash
+/// glob (`root/*/`) both consist of the components before it.
 std::vector<std::string> splitPathComponents(const std::string & path)
 {
     std::vector<std::string> parts;
@@ -23,13 +27,11 @@ std::vector<std::string> splitPathComponents(const std::string & path)
         size_t next = path.find('/', pos);
         if (next == std::string::npos)
             next = path.size();
-        if (next > pos)
-            parts.emplace_back(path.substr(pos, next - pos));
+        parts.emplace_back(path.substr(pos, next - pos));
         pos = next + 1;
     }
     return parts;
 }
-
 }
 
 bool globSelectorSpansPathComponents(const std::string & glob_path)
