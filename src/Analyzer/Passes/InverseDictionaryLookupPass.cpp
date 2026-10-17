@@ -128,9 +128,13 @@ tryResolveViewInnerQueryForInspection(const TableNode & table_node, const Contex
 
     const auto & storage = table_node.getStorage();
     const auto * view = typeid_cast<const StorageView *>(storage.get());
-    if (view && !view->isParameterizedView() && !table_node.hasTableExpressionModifiers())
+    const auto & storage_snapshot = table_node.getStorageSnapshot();
+
+    /// A sealed view hides its definition from the invoker (see `StorageView::isSealed`), so its body
+    /// must not leak into the outer query tree, e.g. through `EXPLAIN QUERY TREE`.
+    if (view && !view->isParameterizedView() && !table_node.hasTableExpressionModifiers()
+        && !view->isSealed(*storage_snapshot->metadata, context))
     {
-        const auto & storage_snapshot = table_node.getStorageSnapshot();
         auto view_context = StorageView::getViewSubqueryContext(context, storage_snapshot);
 
         ASTPtr view_ast = storage_snapshot->metadata->getSelectQuery().inner_query->clone();

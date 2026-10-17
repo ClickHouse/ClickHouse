@@ -74,6 +74,14 @@ ${CLICKHOUSE_CLIENT} --user="${col_user}" -nm --query "
     SETTINGS enable_analyzer = 1, optimize_inverse_dictionary_lookup = 1;
 "
 
+# A `SQL SECURITY DEFINER` view whose body is not a plain projection is sealed: the rewrite must not
+# pull the key column or `dictGetKeys` / `dictionary` built from its private definition into the outer query tree,
+# even for a user who has every grant the rewrite needs.
+${CLICKHOUSE_CLIENT} -nm --query "
+    EXPLAIN QUERY TREE SELECT count() FROM ${db_name}.${view_name} WHERE name = 'match'
+    SETTINGS enable_analyzer = 1, optimize_inverse_dictionary_lookup = 1;
+" | grep -c -E "column_name: id,|function_name: (dictGetKeys|dictionary),"
+
 ${CLICKHOUSE_CLIENT} -nm --query "
     DROP USER IF EXISTS ${user};
     DROP USER IF EXISTS ${col_user};
