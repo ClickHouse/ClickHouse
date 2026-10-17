@@ -41,17 +41,17 @@ bool ParserJSONPathRange::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
             return false;
         }
 
-        std::pair<UInt32, UInt32> range_indices;
+        std::pair<UInt64, UInt64> range_indices;
         if (!number_p.parse(pos, number_ptr, expected))
         {
             return false;
         }
-        range_indices.first = static_cast<UInt32>(number_ptr->as<ASTLiteral>()->value.safeGet<UInt32>());
+        range_indices.first = number_ptr->as<ASTLiteral>()->value.safeGet<UInt64>();
 
         if (pos->type == TokenType::Comma || pos->type == TokenType::ClosingSquareBracket)
         {
             /// Single index case
-            range_indices.second = range_indices.first + 1;
+            range_indices.second = range_indices.first;
         }
         else if (pos->type == TokenType::BareWord)
         {
@@ -63,20 +63,21 @@ bool ParserJSONPathRange::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
             {
                 return false;
             }
-            range_indices.second = static_cast<UInt32>(number_ptr->as<ASTLiteral>()->value.safeGet<UInt32>());
+            const UInt64 end = number_ptr->as<ASTLiteral>()->value.safeGet<UInt64>();
+            if (range_indices.first >= end)
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Start of range must be less than end of range, however {} >= {}",
+                    range_indices.first,
+                    end);
+            }
+            /// The end of `a to b` is exclusive
+            range_indices.second = end - 1;
         }
         else
         {
             return false;
-        }
-
-        if (range_indices.first >= range_indices.second)
-        {
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Start of range must be greater than end of range, however {} >= {}",
-                range_indices.first,
-                range_indices.second);
         }
 
         range->ranges.push_back(std::move(range_indices));

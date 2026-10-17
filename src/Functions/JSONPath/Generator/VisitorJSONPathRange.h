@@ -33,6 +33,7 @@ public:
             return VisitorStatus::Error;
         }
 
+        const auto & range = range_ptr->ranges[current_range];
         VisitorStatus status = {};
         if (current_index < element.getArray().size())
         {
@@ -41,11 +42,12 @@ public:
         }
         else
         {
+            /// The rest of the current range is past the end of the array too
+            current_index = range.second;
             status = VisitorStatus::Ignore;
         }
 
-        if (current_index + 1 == range_ptr->ranges[current_range].second
-            && current_range + 1 == range_ptr->ranges.size())
+        if (current_index == range.second && current_range + 1 == range_ptr->ranges.size())
         {
             this->setExhausted(true);
         }
@@ -62,18 +64,21 @@ public:
 
     void updateState() override
     {
-        current_index++;
         if (current_index == range_ptr->ranges[current_range].second)
         {
             current_range++;
             current_index = range_ptr->ranges[current_range].first;
+        }
+        else
+        {
+            current_index++;
         }
     }
 
 private:
     ASTJSONPathRange * range_ptr;
     size_t current_range;
-    UInt32 current_index;
+    UInt64 current_index;
 };
 
 }
