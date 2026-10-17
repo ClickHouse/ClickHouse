@@ -6,10 +6,12 @@
 -- `tracestate` headers, so the worker's task span joins the initiator's trace:
 --
 --   query (initiator)
---   └── StatelessWorkerClient::sendTask [CLIENT]
---       └── InterserverIOHTTPHandler [SERVER]
---           └── (worker thread pool span)
---               └── DistributedPlanTask::execute [SERVER]
+--   └── DistributedPlanExecutor::execute
+--       └── DistributedPlanTask::dispatch [CLIENT]
+--           └── StatelessWorkerClient::sendTask [CLIENT]
+--               └── InterserverIOHTTPHandler [SERVER]
+--                   └── (worker thread pool span)
+--                       └── DistributedPlanTask::execute [SERVER]
 --
 -- The harness worker cluster (test_cluster_one_shard_two_replicas) is this same server, so every
 -- span lands in the local span log. The traces are started by sampling (a .sql test has no client
@@ -31,8 +33,8 @@ SET make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_fa
 SET log_comment = 'otel worker spans: stateless workers', distributed_plan_execute_locally = 0;
 SELECT x, count() FROM t_dp_otel GROUP BY x FORMAT Null;
 
--- Nothing is dispatched when the tasks run in-process: they run on the initiator's threads and their
--- spans attach to the initiator's trace directly, with no span of the local executor in between.
+-- Nothing is sent when the tasks run in-process: they run on the initiator's threads and their spans
+-- are children of the `INTERNAL` dispatch spans, with no request span in between.
 SET log_comment = 'otel worker spans: local execution', distributed_plan_execute_locally = 1;
 SELECT x, count() FROM t_dp_otel GROUP BY x FORMAT Null;
 
@@ -143,8 +145,8 @@ WHERE operation_name = 'DistributedPlanTask::execute'
 ORDER BY ALL;
 
 -- Every task span must reach the initiator's `query` span through its parents. Printed are the
--- distributed-plan spans met on the way: through the dispatch request for a worker, and nothing at
--- all for in-process execution. The depth of the chain depends on the thread pools in between.
+-- distributed-plan spans met on the way: the execution and dispatch spans of the initiator, and the
+-- dispatch request for a worker. The depth of the chain depends on the thread pools in between.
 SELECT 'ancestors of the task spans:';
 WITH RECURSIVE chain AS
 (
