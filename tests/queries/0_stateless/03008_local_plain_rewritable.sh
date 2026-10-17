@@ -37,7 +37,7 @@ select count(*) from 03008_test_local_mt;
 select (*) from 03008_test_local_mt order by tuple(a, b) limit 10;
 "
 
-${CLICKHOUSE_CLIENT} -m --query "
+${CLICKHOUSE_CLIENT} -m --mutations_sync 1 --query "
 alter table 03008_test_local_mt update c = 0 where a % 2 = 1;
 alter table 03008_test_local_mt add column d Int64 after c;
 alter table 03008_test_local_mt drop column c;
