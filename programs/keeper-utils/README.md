@@ -117,7 +117,7 @@ clickhouse-keeper-utils snapshot-analyzer [options]
 ```
 
 #### Options
-- `--snapshot-path <path>` (required): Path to the snapshots directory or a specific snapshot file (`.bin` or `.bin.zstd`). When a directory is given, every `snapshot_*.bin`/`snapshot_*.bin.zstd` file in it is analyzed (newest first).
+- `--snapshot-path <path>` (required): Path to a snapshot file or to a snapshots directory. When a directory is given, every `snapshot_*.bin`/`snapshot_*.bin.zstd` file in it is analyzed, newest first (by the log index in the file name). If any snapshot can't be analyzed, the remaining ones are still analyzed and the command exits with a non-zero code.
 - `--with-node-stats`: Additionally compute and show the biggest subtrees (the nodes with the most descendants). This keeps all node paths in memory (O(number of nodes)), which is the only part of the analysis that is not O(1) memory.
 - `--subtrees-limit <N>`: Show the top N biggest subtrees (default: 10). Only has an effect together with `--with-node-stats`.
 - `--sample-size <N>`: Show N randomly chosen nodes with their data sizes (default: 20). Set to 0 to disable the random sample.

@@ -28,6 +28,7 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/randomSeed.h>
 
+#include <fmt/ranges.h>
 #include <pcg_random.hpp>
 
 namespace DB
@@ -172,7 +173,12 @@ uint64_t childrenSetHeapBytes(int32_t num_children)
 /// If `paths_out` is not null, every path is appended to it (used for the subtree analysis,
 /// the only non-O(1)-memory feature).
 void calculateSnapshotStats(
-    KeeperSnapshotReader & reader, ReadBuffer & raw_in, size_t sample_size, std::vector<std::string> * paths_out, SnapshotStats & stats)
+    KeeperSnapshotReader & reader,
+    ReadBuffer & raw_in,
+    size_t sample_size,
+    size_t top_children_limit,
+    std::vector<std::string> * paths_out,
+    SnapshotStats & stats)
 {
     reader.readMetadata();
 
@@ -204,6 +210,7 @@ void calculateSnapshotStats(
         stats.sample.reserve(sample_size);
     if (paths_out != nullptr)
         paths_out->reserve(reader.node_count);
+    TopChildrenTracker top_children(top_children_limit);
 
     auto streams = reader.createStreams(1);
     auto & stream = *streams.at(0);
@@ -247,6 +254,7 @@ void calculateSnapshotStats(
         stats.children_set_bytes += childrenSetHeapBytes(num_children);
         size_t bucket = num_children <= 0 ? 0 : (num_children > 4 ? 5 : static_cast<size_t>(num_children));
         ++stats.children_histogram[bucket];
+        top_children.add(path, num_children);
 
         /// Reservoir sampling (Algorithm R): keep a uniform sample of size `sample_size`.
         if (sample_size != 0)
@@ -270,6 +278,7 @@ void calculateSnapshotStats(
             std::cerr << fmt::format("Processed {} / {} nodes\n", node_idx + 1, stats.num_nodes);
     }
     reader.finishStreams(std::move(streams));
+    stats.top_children = std::move(top_children).finish();
 
     /// The reader deserializes sessions into a KeeperStorage; give it an empty one just to count
     /// the sessions (a few bytes each, so still effectively O(1) memory).
@@ -357,6 +366,12 @@ void printStats(const SnapshotStats & stats)
     std::cout << fmt::format(
         "  Sum of last-component lengths: {} (avg {:.1f})\n", stats.sum_last_component_lengths, avg(stats.sum_last_component_lengths));
     std::cout << fmt::format("  Max number of children: {}\n", stats.max_num_children);
+    if (!stats.top_children.empty())
+    {
+        std::cout << fmt::format("  Top {} nodes by children count:\n", stats.top_children.size());
+        for (const auto & [path, num_children] : stats.top_children)
+            std::cout << fmt::format("    {}: {} children\n", path, num_children);
+    }
     std::cout << fmt::format(
         "  Nodes by children count:\n    0: {}\n    1: {}\n    2: {}\n    3: {}\n    4: {}\n    >4: {}\n",
         stats.children_histogram[0],
@@ -459,7 +474,7 @@ void printMemoryEstimate(const SnapshotStats & stats)
 }
 
 void analyzeSingleSnapshot(
-    const std::string & full_path, bool with_node_stats, size_t subtrees_limit, size_t sample_size)
+    const std::string & full_path, bool with_node_stats, size_t subtrees_limit, size_t sample_size, size_t top_children_limit)
 {
     auto keeper_context = std::make_shared<KeeperContext>(/* standalone_keeper_ */ true, std::make_shared<CoordinationSettings>());
 
@@ -471,7 +486,7 @@ void analyzeSingleSnapshot(
 
     SnapshotStats stats;
     std::vector<std::string> paths;
-    calculateSnapshotStats(reader, raw_in, sample_size, with_node_stats ? &paths : nullptr, stats);
+    calculateSnapshotStats(reader, raw_in, sample_size, top_children_limit, with_node_stats ? &paths : nullptr, stats);
 
     printStats(stats);
     printMemoryEstimate(stats);
@@ -482,60 +497,75 @@ void analyzeSingleSnapshot(
     std::cout << std::endl;
 }
 
+/// Lists the snapshot files in a directory the same way KeeperSnapshotManager does
+/// (`snapshot_<log_idx>[_<suffix>].bin[.zstd]`), newest first.
+std::vector<std::filesystem::path> listSnapshotsInDirectory(const std::filesystem::path & dir)
+{
+    std::vector<std::pair<uint64_t, std::filesystem::path>> snapshots;
+    for (const auto & entry : std::filesystem::directory_iterator(dir))
+    {
+        if (!entry.is_regular_file())
+            continue;
+        auto name = entry.path().filename().string();
+        if (name.starts_with("snapshot_") && (name.ends_with(".bin") || name.ends_with(".bin.zstd")))
+            snapshots.emplace_back(getLogIdxFromSnapshotPath(name), entry.path());
+    }
+
+    if (snapshots.empty())
+        throw Exception(ErrorCodes::UNKNOWN_SNAPSHOT, "No snapshot files found in {}", dir.string());
+
+    /// Sort by the log index parsed from the file name, not lexicographically: `snapshot_9.bin`
+    /// must come after `snapshot_10.bin`.
+    std::sort(snapshots.begin(), snapshots.end(), std::greater<>());
+
+    std::vector<std::filesystem::path> paths;
+    paths.reserve(snapshots.size());
+    for (auto & [_, path] : snapshots)
+        paths.push_back(std::move(path));
+    return paths;
+}
+
 }
 
 void analyzeSnapshot(
-    const std::string & snapshot_path, bool with_node_stats, size_t subtrees_limit, size_t sample_size)
+    const std::string & snapshot_path, bool with_node_stats, size_t subtrees_limit, size_t sample_size, size_t top_children_limit)
 {
-    try
+    if (!std::filesystem::is_directory(snapshot_path))
     {
-        std::vector<std::string> snapshot_paths;
-        bool specific_snapshot_defined = snapshot_path.ends_with(".bin") || snapshot_path.ends_with(".bin.zstd");
+        /// A single snapshot file: let any error propagate so the process exits with a failure.
+        std::cout << "=== Snapshot: " << snapshot_path << " ===\n";
+        analyzeSingleSnapshot(snapshot_path, with_node_stats, subtrees_limit, sample_size, top_children_limit);
+        return;
+    }
 
-        if (specific_snapshot_defined)
+    auto snapshot_paths = listSnapshotsInDirectory(snapshot_path);
+    std::cout << "Found " << snapshot_paths.size() << " snapshots in " << snapshot_path << ":\n\n";
+
+    /// In directory mode keep going after a broken snapshot so the rest still get analyzed,
+    /// but fail at the end so that scripts can tell that something was wrong.
+    std::vector<std::string> failed;
+    for (const auto & path : snapshot_paths)
+    {
+        std::cout << "=== Snapshot: " << path.filename().string() << " ===\n";
+        try
         {
-            snapshot_paths.push_back(snapshot_path);
+            analyzeSingleSnapshot(path.string(), with_node_stats, subtrees_limit, sample_size, top_children_limit);
         }
-        else
+        catch (const Exception & e)
         {
-            for (const auto & entry : std::filesystem::directory_iterator(snapshot_path))
-            {
-                if (!entry.is_regular_file())
-                    continue;
-                auto name = entry.path().filename().string();
-                if (name.starts_with("snapshot_") && (name.ends_with(".bin") || name.ends_with(".bin.zstd")))
-                    snapshot_paths.push_back(name);
-            }
-
-            if (snapshot_paths.empty())
-                throw Exception(ErrorCodes::UNKNOWN_SNAPSHOT, "No snapshot files found in {}", snapshot_path);
-
-            // Sort snapshots by their index (newest first)
-            std::sort(snapshot_paths.begin(), snapshot_paths.end(), std::greater<>());
-
-            std::cout << "Found " << snapshot_paths.size() << " snapshots in " << snapshot_path << ":\n\n";
-        }
-
-        for (const auto & snapshot_file : snapshot_paths)
-        {
-            try
-            {
-                std::string full_path
-                    = specific_snapshot_defined ? snapshot_path : (std::filesystem::path(snapshot_path) / snapshot_file).generic_string();
-                std::cout << "=== Snapshot: " << snapshot_file << " ===\n";
-
-                analyzeSingleSnapshot(full_path, with_node_stats, subtrees_limit, sample_size);
-            }
-            catch (const Exception & e)
-            {
-                std::cerr << "  Error analyzing snapshot " << snapshot_file << ": " << e.message() << "\n\n";
-            }
+            std::cerr << "  Error analyzing snapshot " << path.filename().string() << ": " << e.message() << "\n\n";
+            failed.push_back(path.filename().string());
         }
     }
-    catch (const Exception & e)
-    {
-        throw Exception(ErrorCodes::UNKNOWN_SNAPSHOT, "Failed to analyze snapshots in {}: {}", snapshot_path, e.message());
-    }
+
+    if (!failed.empty())
+        throw Exception(
+            ErrorCodes::UNKNOWN_SNAPSHOT,
+            "Failed to analyze {} of {} snapshots in {}: {}",
+            failed.size(),
+            snapshot_paths.size(),
+            snapshot_path,
+            fmt::join(failed, ", "));
 }
 
 }
