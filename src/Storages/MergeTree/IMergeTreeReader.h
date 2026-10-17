@@ -242,8 +242,11 @@ private:
     SerializationPtr getSerializationInPart(const NameAndTypePair & required_column) const;
 
     /// The column of the part under the given (column name, subcolumn name), or nothing when it has no such
-    /// column or subcolumn.
-    std::optional<NameAndTypePair> tryGetColumnInPart(const String & name_in_storage, const String & subcolumn_name) const;
+    /// column or subcolumn. @requested_as_nested tells that the column is a subcolumn of a `Nested` column.
+    std::optional<NameAndTypePair> tryGetColumnInPart(const String & name_in_storage, const String & subcolumn_name, bool requested_as_nested) const;
+
+    /// Whether the partition key or the primary key of the table reads the column or subcolumn.
+    bool isReadByKey(const String & column_name) const;
 
     /// The serialization of @column_in_part the part holds (composed for a subcolumn), or null when the part holds
     /// none for it or when it is not safe to share with the other readers.

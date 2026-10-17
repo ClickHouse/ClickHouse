@@ -6047,7 +6047,8 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         /// column `a`, or `a.x` whose subcolumn `a.x.y` is a path of a `JSON` column `a`) would change what the key
         /// expression reads: the parts written before hold no such column, so they read its default, while their
         /// primary index, partition minmax index, partition ID and physical order were all computed from the old
-        /// subcolumn. Pruning and in-order reads would then use values the key no longer evaluates to.
+        /// subcolumn. Pruning and in-order reads would then use values the key no longer evaluates to. The same holds
+        /// for the key of a projection, by which the projection parts are indexed and sorted.
         if (is_initial_alter && std::ranges::any_of(commands, [](const AlterCommand & c) { return c.type == AlterCommand::ADD_COLUMN && !c.ignore; }))
         {
             Names key_columns;
@@ -6055,6 +6056,9 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 key_columns = old_metadata.getColumnsRequiredForPartitionKey();
             if (old_metadata.hasSortingKey())
                 std::ranges::copy(old_metadata.getColumnsRequiredForSortingKey(), std::back_inserter(key_columns));
+            for (const auto & projection : old_metadata.getProjections())
+                if (projection.metadata)
+                    std::ranges::copy(projection.metadata->getColumnsRequiredForSortingKey(), std::back_inserter(key_columns));
 
             const auto & new_columns = new_metadata.getColumns();
             for (const auto & key_column : key_columns)

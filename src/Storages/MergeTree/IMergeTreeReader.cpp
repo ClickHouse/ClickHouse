@@ -536,9 +536,19 @@ std::pair<String, String> IMergeTreeReader::getStorageAndSubcolumnNameInPart(con
     return {name_in_storage, subcolumn_name};
 }
 
-std::optional<NameAndTypePair> IMergeTreeReader::tryGetColumnInPart(const String & name_in_storage, const String & subcolumn_name) const
+bool IMergeTreeReader::isReadByKey(const String & column_name) const
+{
+    auto is_required = [&](const Names & required_columns) { return std::ranges::find(required_columns, column_name) != required_columns.end(); };
+
+    const auto & metadata = *storage_snapshot->metadata;
+    return is_required(metadata.getColumnsRequiredForPartitionKey()) || is_required(metadata.getColumnsRequiredForPrimaryKey());
+}
+
+std::optional<NameAndTypePair> IMergeTreeReader::tryGetColumnInPart(
+    const String & name_in_storage, const String & subcolumn_name, bool requested_as_nested) const
 {
     auto name_in_part = Nested::concatenateName(name_in_storage, subcolumn_name);
+    const auto & stored_columns = data_part_info_for_read->getColumnsDescription();
 
     /// The lookup goes through subcolumns because for a wide part the flattened columns of a `Nested`
     /// column are collected back into one column, whose subcolumns they become. A column that the table
@@ -547,15 +557,39 @@ std::optional<NameAndTypePair> IMergeTreeReader::tryGetColumnInPart(const String
     /// before `ALTER TABLE ... ADD COLUMN` added it, and the generated subcolumn of the other column
     /// would answer with the array's sizes where the column's own default belongs. A column the part
     /// really stores - under its own name, flattened or not - is unaffected.
-    if (subcolumn_name.empty() && !data_part_info_for_read->getColumnsDescription().hasPhysical(name_in_part))
-        return {};
+    bool is_missing = false;
+    if (subcolumn_name.empty())
+    {
+        is_missing = !stored_columns.hasPhysical(name_in_part);
+    }
+    else if (!stored_columns.hasPhysical(name_in_part))
+    {
+        /// For the same reason a subcolumn is read only from the column that holds it in the current metadata. A part
+        /// written before `ALTER TABLE ... ADD COLUMN` added a column `a.x` next to a `JSON` column `a` does not hold `a.x`,
+        /// and its subcolumn `a.x.y` is extracted from the default of `a.x`, not read from the path `x.y` of `a`. For a wide
+        /// part a `Nested` column is found here as the column collected from its flattened columns.
+        auto parent_in_part = part_columns.tryGetPhysical(name_in_storage);
+        is_missing = !parent_in_part;
 
-    /// For the same reason a subcolumn is read only from the column that holds it in the current metadata. A part
-    /// written before `ALTER TABLE ... ADD COLUMN` added a column `a.x` next to a `JSON` column `a` does not hold `a.x`,
-    /// and its subcolumn `a.x.y` is extracted from the default of `a.x`, not read from the path `x.y` of `a`. For a wide
-    /// part a `Nested` column is found here as the column collected from its flattened columns.
-    if (!subcolumn_name.empty() && !part_columns.hasPhysical(name_in_storage)
-        && !data_part_info_for_read->getColumnsDescription().hasPhysical(name_in_part))
+        /// A column `a.x` of type `Array` is requested as the subcolumn `x` of a `Nested` column `a` (see
+        /// `Nested::convertToSubcolumns`). Another kind of column `a` of the part, such as a `JSON` column, does not hold it:
+        /// only a `Nested` column collected from the flattened columns, or the flattened column `a.x` itself.
+        if (parent_in_part && requested_as_nested && !isNested(parent_in_part->type))
+        {
+            is_missing = std::ranges::none_of(
+                Nested::getAllColumnAndSubcolumnPairs(name_in_part),
+                [&](const auto & split)
+                { return split.first.size() > name_in_storage.size() && stored_columns.hasPhysical(String(split.first)); });
+        }
+    }
+
+    /// Before `ALTER TABLE ... ADD COLUMN` refused such a column, it could be added under the name of a subcolumn that the
+    /// partition key or the primary key reads. Neither key changes after the table is created, so a part that misses
+    /// such a column was written before it was added, and holds a partition and an index computed from that subcolumn.
+    /// For these parts the name keeps the meaning it had then, as it always did, so that pruning agrees with the values
+    /// read. A column added to the sorting key alone by `MODIFY ORDER BY` in the same `ALTER` is not affected: the parts
+    /// written before are not sorted by it.
+    if (is_missing && (data_part_info_for_read->isProjectionPart() || !isReadByKey(name_in_part)))
         return {};
 
     auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withRegularSubcolumns();
@@ -606,12 +640,26 @@ SerializationPtr IMergeTreeReader::tryGetSerializationFromPart(const NameAndType
 IMergeTreeReader::ColumnAndSerializationInPart IMergeTreeReader::getColumnAndSerializationInPart(const NameAndTypePair & required_column) const
 {
     auto name_pair = getStorageAndSubcolumnNameInPart(required_column);
-    auto column_in_part = tryGetColumnInPart(name_pair.first, name_pair.second);
+    const bool requested_as_nested = isNested(required_column.getTypeInStorage());
+    auto column_in_part = tryGetColumnInPart(name_pair.first, name_pair.second, requested_as_nested);
 
     const auto & infos = data_part_info_for_read->getSerializationInfos();
 
     if (!column_in_part)
     {
+        /// A column `a.x` requested as the subcolumn `x` of a `Nested` column `a` is missing from a part that has another
+        /// kind of column `a`, such as a `JSON` column. The streams of the `Nested` column, like its shared sizes `a.size0`,
+        /// must not be looked up in that column, so the column is read as the missing column `a.x` in its own right.
+        if (requested_as_nested && !name_pair.second.empty())
+        {
+            auto parent_in_part = part_columns.tryGetPhysical(name_pair.first);
+            if (parent_in_part && !isNested(parent_in_part->type))
+            {
+                NameAndTypePair missed_column{Nested::concatenateName(name_pair.first, name_pair.second), required_column.type};
+                return {missed_column, IDataType::getSerialization(missed_column)};
+            }
+        }
+
         DataTypePtr type_in_part = required_column.getTypeInStorage();
         DataTypePtr requested_type_in_part = required_column.type;
         if (const auto * missing = infos.getMissingColumnInfo(name_pair.first); missing && !missing->type_name.empty())
