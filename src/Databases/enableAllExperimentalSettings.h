@@ -1,15 +1,20 @@
 #pragma once
 #include <Interpreters/Context_fwd.h>
 
+#include <string>
+#include <vector>
+
 namespace DB
 {
 
-/*
- * Enables all settings that allow the use of experimental, deprecated, or potentially unsafe features
- * in a CREATE query. This function is used in DatabaseReplicated::recoverLostReplica() to create tables
- * when the original settings used to create the table are not available.
- */
+/// Settings that allow experimental, deprecated or unsafe features in a CREATE query.
+/// The list covers every gate that recovery needs: recoverLostReplica() enables all of them.
+/// --dump-schema emits only those that the CREATE statements it dumps can reach.
+const std::vector<std::string> & allExperimentalSettingNames();
 
+/*
+ * Enables all of the above on the given context.
+ */
 void enableAllExperimentalSettings(ContextMutablePtr context);
 
 }
