@@ -629,7 +629,9 @@ option(ENABLE_LIBRARIES "Enable all external libraries by default" ON)
 # Increase stack size on Musl. We need big stack for our recursive-descend parser
 # and for analyzer passes that recurse on deeply-nested join trees (e.g.
 # 1000-join queries). Match glibc's 8 MiB default; musl reads this from
-# PT_GNU_STACK and clamps it to DEFAULT_STACK_MAX (also 8 MiB).
+# PT_GNU_STACK and clamps it to DEFAULT_STACK_MAX (also 8 MiB). Our musl fork,
+# like glibc, uses a finite RLIMIT_STACK soft limit instead, so this only
+# applies when the limit is unlimited.
 if (USE_MUSL)
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,stack-size=8388608")
 endif ()
