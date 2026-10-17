@@ -10,8 +10,9 @@ SET max_bytes_before_external_join = 0;
 SET max_bytes_ratio_before_external_join = 0;
 SET max_bytes_in_join = 0;
 SET max_threads = 4;
--- A randomized join order has no row estimate, and the queries below need the estimate to choose the build layout.
+-- The queries below need the planner's row estimate to choose the build layout. A randomized join order or a reordering limit of 0 loses it.
 SET query_plan_optimize_join_order_randomize = 0;
+SET query_plan_optimize_join_order_limit = 10;
 SET join_algorithm = 'partitioned_hash';
 
 DROP TABLE IF EXISTS t_sf_build;
